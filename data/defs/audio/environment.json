@@ -5,26 +5,94 @@
     "maxDb": 6,
     "refDistance": 25,
     "hullCutoffHz": 1400,
-    "hullGainDb": -2,
-    "wind": { "asset": "aero-wind", "gainDb": -2, "cutoffHz": [500, 9000], "machForMaxCutoff": 2.2 },
-    "noise": { "gainDb": -8, "bandHz": [200, 2500], "bandAtMachMax": [600, 7000] },
-    "buffet": { "gainDb": 2, "machCenter": 1.0, "machWidth": 0.22, "cutoffHz": 90, "turbulence": 0.9, "turbulenceHz": 9 }
+    "hullGainDb": 1,
+    "wind": {
+      "asset": "aero-wind",
+      "gainDb": -2,
+      "cutoffHz": [
+        500,
+        9000
+      ],
+      "machForMaxCutoff": 2.2
+    },
+    "noise": {
+      "gainDb": -8,
+      "bandHz": [
+        200,
+        2500
+      ],
+      "bandAtMachMax": [
+        600,
+        7000
+      ]
+    },
+    "buffet": {
+      "gainDb": 2,
+      "machCenter": 1,
+      "machWidth": 0.22,
+      "cutoffHz": 90,
+      "turbulence": 0.9,
+      "turbulenceHz": 9
+    }
   },
   "reentry": {
     "refDistance": 15,
     "hullCutoffHz": 3500,
-    "hullGainDb": 0,
-    "roar": { "asset": "reentry-roar", "gainDb": 2, "exponent": 1.0 },
-    "hiss": { "gainDb": -12, "highpassHz": 1800, "lowpassHz": 9000, "exponent": 1.6 },
-    "crackle": { "gainDb": -14, "rateHz": [60, 900], "highpassHz": 1200 },
-    "rumble": { "gainDb": -2, "cutoffHz": 70, "gLoadRef": 5, "turbulence": 0.7, "turbulenceHz": 3 }
+    "hullGainDb": 4,
+    "roar": {
+      "asset": "reentry-roar",
+      "gainDb": 2,
+      "exponent": 1
+    },
+    "hiss": {
+      "gainDb": -12,
+      "highpassHz": 1800,
+      "lowpassHz": 9000,
+      "exponent": 1.6
+    },
+    "crackle": {
+      "gainDb": -14,
+      "rateHz": [
+        60,
+        900
+      ],
+      "highpassHz": 1200
+    },
+    "rumble": {
+      "gainDb": -2,
+      "cutoffHz": 70,
+      "gLoadRef": 5,
+      "turbulence": 0.7,
+      "turbulenceHz": 3
+    }
   },
   "cabin": {
-    "ambience": { "asset": "cabin-fans", "gainDb": -14 },
-    "airflow": { "gainDb": -36, "bandHz": [300, 3500] },
-    "hum": { "freqHz": 400, "harmonics": [1, 0.35, 0.12], "gainDb": -44 },
+    "ambience": {
+      "asset": "cabin-fans",
+      "gainDb": -14
+    },
+    "airflow": {
+      "gainDb": -36,
+      "bandHz": [
+        300,
+        3500
+      ]
+    },
+    "hum": {
+      "freqHz": 400,
+      "harmonics": [
+        1,
+        0.35,
+        0.12
+      ],
+      "gainDb": -44
+    },
     "creaks": {
-      "assets": ["creak-1", "creak-2", "creak-3"],
+      "assets": [
+        "creak-1",
+        "creak-2",
+        "creak-3"
+      ],
       "gainDb": -10,
       "gMin": 1.6,
       "gMax": 8,

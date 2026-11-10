@@ -1,51 +1,235 @@
 {
   "$comment": "One-shots for SimSnapshot.events, keyed by SimEvent type. source: part (event.partId, or posVes for partDestroyed), vessel (centre of mass), explosion (event.posRoot) or listener (player feedback played directly, unpropagated). Airborne copies follow mix.json propagation (pressure at the listener, distance, delay distance/c); structureBorne copies reach a listener inside the event's vessel through the hull at once (and faintly an external camera near it). scaleBy adds 20 exponent log10(field / ref) dB clamped to [minDb, maxDb]; variantBy picks the asset index = number of thresholds <= field; otherwise the variant is a deterministic hash of the event. match filters events by field equality. Engine ignition and shutdown are voiced by the engine voices from ModuleState ages, not here. Events are suppressed while on rails warp.",
   "events": {
-    "stageFired": { "assets": ["switch-click-1", "switch-click-2", "switch-click-3"], "gainDb": -6, "source": "listener", "structureBorne": false, "refDistance": 1, "minInterval": 0.05, "maxVoices": 4 },
-    "clampsReleased": { "assets": ["clamp-release"], "gainDb": 2, "source": "vessel", "structureBorne": true, "refDistance": 15, "minInterval": 1, "maxVoices": 1 },
-    "decoupled": { "assets": ["pyro-bang"], "gainDb": 4, "source": "part", "structureBorne": true, "refDistance": 10, "minInterval": 0.1, "maxVoices": 4, "rate": [0.94, 1.04] },
-    "fairingJettisoned": { "assets": ["fairing-jettison"], "gainDb": 2, "source": "part", "structureBorne": true, "refDistance": 10, "minInterval": 0.2, "maxVoices": 2 },
-    "lesFired": { "assets": ["les-motor"], "gainDb": 4, "source": "part", "structureBorne": true, "refDistance": 12, "minInterval": 1, "maxVoices": 1 },
-    "legsToggled": { "assets": ["legs-deploy"], "gainDb": -4, "source": "vessel", "structureBorne": true, "refDistance": 5, "minInterval": 0.5, "maxVoices": 1 },
-    "chuteDeployed": { "assets": ["chute-mortar"], "gainDb": 2, "source": "part", "structureBorne": true, "refDistance": 5, "minInterval": 0.1, "maxVoices": 3 },
-    "chuteInflated": { "assets": ["chute-inflate"], "gainDb": 0, "source": "part", "structureBorne": true, "refDistance": 15, "minInterval": 0.2, "maxVoices": 3, "rate": [0.92, 1.05] },
-    "chuteCut": { "assets": ["chute-cut"], "gainDb": -2, "source": "part", "structureBorne": true, "refDistance": 4, "minInterval": 0.1, "maxVoices": 3 },
-    "chuteFailed": { "assets": ["chute-fail"], "gainDb": 0, "source": "part", "structureBorne": true, "refDistance": 15, "minInterval": 0.2, "maxVoices": 2 },
-    "rcsPulse": { "assets": ["rcs-puff-1", "rcs-puff-2"], "gainDb": -10, "source": "part", "structureBorne": true, "refDistance": 2, "minInterval": 0.04, "maxVoices": 6, "rate": [0.9, 1.1] },
-    "touchdown": {
-      "assets": ["touchdown-soft", "touchdown-hard"],
+    "stageFired": {
+      "assets": [
+        "switch-click-1",
+        "switch-click-2",
+        "switch-click-3"
+      ],
+      "gainDb": -6,
+      "source": "listener",
+      "structureBorne": false,
+      "refDistance": 1,
+      "minInterval": 0.05,
+      "maxVoices": 4
+    },
+    "clampsReleased": {
+      "assets": [
+        "clamp-release"
+      ],
+      "gainDb": 2,
+      "source": "vessel",
+      "structureBorne": true,
+      "refDistance": 15,
+      "minInterval": 1,
+      "maxVoices": 1
+    },
+    "decoupled": {
+      "assets": [
+        "pyro-bang"
+      ],
+      "gainDb": 4,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 10,
+      "minInterval": 0.1,
+      "maxVoices": 4,
+      "rate": [
+        0.94,
+        1.04
+      ]
+    },
+    "fairingJettisoned": {
+      "assets": [
+        "fairing-jettison"
+      ],
+      "gainDb": 2,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 10,
+      "minInterval": 0.2,
+      "maxVoices": 2
+    },
+    "lesFired": {
+      "assets": [
+        "les-motor"
+      ],
+      "gainDb": 4,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 12,
+      "minInterval": 1,
+      "maxVoices": 1
+    },
+    "legsToggled": {
+      "assets": [
+        "legs-deploy"
+      ],
+      "gainDb": -4,
+      "source": "vessel",
+      "structureBorne": true,
+      "refDistance": 5,
+      "minInterval": 0.5,
+      "maxVoices": 1
+    },
+    "chuteDeployed": {
+      "assets": [
+        "chute-mortar"
+      ],
+      "gainDb": 2,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 5,
+      "minInterval": 0.1,
+      "maxVoices": 3
+    },
+    "chuteInflated": {
+      "assets": [
+        "chute-inflate"
+      ],
       "gainDb": 0,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 15,
+      "minInterval": 0.2,
+      "maxVoices": 3,
+      "rate": [
+        0.92,
+        1.05
+      ]
+    },
+    "chuteCut": {
+      "assets": [
+        "chute-cut"
+      ],
+      "gainDb": -2,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 4,
+      "minInterval": 0.1,
+      "maxVoices": 3
+    },
+    "chuteFailed": {
+      "assets": [
+        "chute-fail"
+      ],
+      "gainDb": 0,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 15,
+      "minInterval": 0.2,
+      "maxVoices": 2
+    },
+    "rcsPulse": {
+      "assets": [
+        "rcs-puff-1",
+        "rcs-puff-2"
+      ],
+      "gainDb": -10,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 2,
+      "minInterval": 0.04,
+      "maxVoices": 6,
+      "rate": [
+        0.9,
+        1.1
+      ]
+    },
+    "touchdown": {
+      "assets": [
+        "touchdown-soft",
+        "touchdown-hard"
+      ],
+      "gainDb": 4,
       "source": "part",
       "structureBorne": true,
       "refDistance": 6,
       "minInterval": 0.25,
       "maxVoices": 4,
-      "match": { "surface": "land" },
-      "variantBy": { "field": "speed", "thresholds": [2.5] },
-      "scaleBy": { "field": "speed", "ref": 2.5, "exponent": 1, "minDb": -18, "maxDb": 8 }
+      "match": {
+        "surface": "land"
+      },
+      "variantBy": {
+        "field": "speed",
+        "thresholds": [
+          2.5
+        ]
+      },
+      "scaleBy": {
+        "field": "speed",
+        "ref": 2.5,
+        "exponent": 1,
+        "minDb": -18,
+        "maxDb": 8
+      }
     },
     "splash": {
-      "assets": ["splashdown"],
-      "gainDb": 0,
+      "assets": [
+        "splashdown"
+      ],
+      "gainDb": 10,
       "source": "vessel",
       "structureBorne": true,
       "refDistance": 12,
       "minInterval": 1,
       "maxVoices": 1,
-      "scaleBy": { "field": "speed", "ref": 8, "exponent": 1, "minDb": -18, "maxDb": 6 }
+      "scaleBy": {
+        "field": "speed",
+        "ref": 8,
+        "exponent": 1,
+        "minDb": -18,
+        "maxDb": 6
+      }
     },
-    "partDestroyed": { "assets": ["part-destroyed"], "gainDb": 2, "source": "part", "structureBorne": true, "refDistance": 10, "minInterval": 0.1, "maxVoices": 4, "rate": [0.9, 1.08] },
-    "jointBroken": { "assets": ["joint-broken"], "gainDb": 0, "source": "part", "structureBorne": true, "refDistance": 6, "minInterval": 0.1, "maxVoices": 3 },
+    "partDestroyed": {
+      "assets": [
+        "part-destroyed"
+      ],
+      "gainDb": 2,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 10,
+      "minInterval": 0.1,
+      "maxVoices": 4,
+      "rate": [
+        0.9,
+        1.08
+      ]
+    },
+    "jointBroken": {
+      "assets": [
+        "joint-broken"
+      ],
+      "gainDb": 0,
+      "source": "part",
+      "structureBorne": true,
+      "refDistance": 6,
+      "minInterval": 0.1,
+      "maxVoices": 3
+    },
     "explosion": {
-      "assets": ["explosion"],
+      "assets": [
+        "explosion"
+      ],
       "gainDb": 6,
       "source": "explosion",
       "structureBorne": false,
       "refDistance": 40,
       "minInterval": 0.2,
       "maxVoices": 3,
-      "rate": [0.92, 1.04],
-      "scaleBy": { "field": "energy", "ref": 1000000000, "exponent": 0.5, "minDb": -20, "maxDb": 10 }
+      "rate": [
+        0.92,
+        1.04
+      ],
+      "scaleBy": {
+        "field": "energy",
+        "ref": 1000000000,
+        "exponent": 0.5,
+        "minDb": -20,
+        "maxDb": 10
+      }
     }
   }
 }
