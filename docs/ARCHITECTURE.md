@@ -59,6 +59,7 @@ docs/RENDER_API.md             render core API for feature authors (render-core)
 docs/handoff/<package>.md      hand-off note of each work package (that package)
 docs/requests/                 change requests against code you do not own (README.md there; anyone may add a file)
 docs/WORK_PACKAGES.json        the work-package list with full briefs (lead)
+docs/PACKAGE_RULES.md          rules common to every work package (lead)
 index.html, src/app/           app shell and final wiring (lead)
 src/core/                      contracts, f64 math, cube mapping, tile codec, def loader, GPU acquire,
                                test-API base, FakeSim (lead; frozen for everyone else)
@@ -805,7 +806,7 @@ GPU lock in its lab; the lead enforces the sums in the integrated app from `Perf
 | Ocean FFT + near field (ocean) | 0.8 | 0.3 | 0.1 | 0.1 | 0 | 0.1 | 0.9 |
 | Sky background + probe + flare (sky-lighting) | 0.2 | 0.2 | 0.3 | 0.3 | 0.3 | 0.2 | 0.2 |
 | Plumes, smoke, particles, plasma, canopies (vfx) | 1.3 | 1.0 | 0.6 | 0.6 | 0.9 | 1.2 | 0.9 |
-| Navball + map overlay (flight-ui, map-view) | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 |
+| Navball 0.05 (flight-ui); map overlay up to 0.1, drawn only in map view (map-view) | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 |
 | **Sum** (budget 11.0) | **10.95** | **10.1** | **9.1** | **9.4** | **7.8** (9.0 cockpit) | **8.9** (10.1) | **9.5** (10.7) |
 
 "Governed" = at pad lift-off the plume and smoke volumes push the frame to its limit; the cloud march may
