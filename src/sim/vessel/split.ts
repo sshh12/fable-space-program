@@ -52,6 +52,23 @@ function reRoot(vessel: Vessel, root: PartRuntime): void {
   if (vessel.sas.hasTarget && !identity) vessel.sas.target = quat.normalize(quat.mul(vessel.sas.target, rootRot));
 }
 
+/** Display name of a separated piece: the label of its heaviest stage group, or the part's own name for one or two parts. */
+function pieceName(vessel: Vessel, parts: PartRuntime[]): string {
+  const root = parts[0]!;
+  if (parts.length <= 2) return root.def.name;
+  const byGroup = new Map<string, number>();
+  for (const p of parts) byGroup.set(p.stageGroup, (byGroup.get(p.stageGroup) ?? 0) + partMass(p));
+  let best = root.stageGroup;
+  let bestMass = -1;
+  for (const [group, mass] of byGroup) {
+    if (mass > bestMass) {
+      best = group;
+      bestMass = mass;
+    }
+  }
+  return vessel.vehicle.stageGroups.find((g) => g.id === best)?.label ?? root.def.name;
+}
+
 function hasCrew(parts: PartRuntime[]): boolean {
   return parts.some((p) => p.modules.some((m) => m.type === 'command' && m.crew > 0 && m.crewAlive));
 }
@@ -134,7 +151,7 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
     resetTransient(target);
     if (c !== keeper) {
       target.id = `${base}~${root.instanceId}`;
-      target.name = root.def.name;
+      target.name = pieceName(vessel, newParts);
       target.age = 0;
       target.stepCount = 0;
       target.hold = null;

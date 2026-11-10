@@ -217,6 +217,10 @@ describe('the ten stages', () => {
       expect(main!.nextStage).toBe(index + 1);
       expect(spawned.map(ids)).toEqual(exp.spawned);
       for (const v of spawned) expect(v.id.startsWith('meridian-lunar~')).toBe(true);
+      if (index === 1) expect(spawned[0]!.name).toBe('Meridian M-1');
+      if (index === 3) expect(spawned[0]!.name).toBe('Meridian M-2');
+      if (index === 6) expect(spawned[0]!.name).toBe('Heron descent stage');
+      if (index === 8) expect(spawned[0]!.name).toBe('Kestrel apex cover');
       expect(new Set(s.vessels.map((v) => v.id)).size).toBe(s.vessels.length);
       expect(main!.parts.some((p) => p.instanceId === 'capsule')).toBe(true);
       expect(main!.crewAlive).toBe(true);

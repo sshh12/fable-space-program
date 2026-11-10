@@ -68,7 +68,7 @@
   "modules": [
     {
       "type": "decoupler",
-      "impulse": 3000,
+      "impulse": 5000,
       "separationPlaneY": 0.3
     }
   ],
