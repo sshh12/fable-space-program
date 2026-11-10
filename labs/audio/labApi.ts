@@ -3,7 +3,7 @@
  * Each call renders a script with renderOffline (same SoundModel + graph as the live engine) and returns
  * measurements computed in the page.
  */
-import { renderOffline, SoundModel, TAP_NAMES, type AssetBank, type AudioConfig, type OfflineRender, type TapName } from '@/audio';
+import { audioAnalysis, renderOffline, SoundModel, TAP_NAMES, type AssetBank, type AudioConfig, type OfflineRender, type TapName } from '@/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEventType } from '@/core/contracts/sim';
 import type { LabStackId } from './labVehicle';
@@ -24,12 +24,15 @@ export interface AudioLabApi {
   /** Onset of the ignition at `at` s in the given taps (relative to each tap's own maximum). */
   ignition(stack: LabStackId, distance: number, taps: TapName[], windows: [number, number][]): Promise<MeasureResult & { onsets: Record<string, number | null>; at: number }>;
   plasma(level: number, kind: 'interior' | 'external'): Promise<MeasureResult>;
-  events(): Promise<MeasureResult & { schedule: { type: SimEventType; t: number }[]; onsets: { type: SimEventType; t: number; onset: number | null }[] }>;
+  /** Each event type rendered on its own: onset of its one-shot on the events bus. */
+  events(): Promise<MeasureResult & { schedule: { type: SimEventType; t: number }[]; onsets: { type: SimEventType; t: number; onset: number | null; silentBefore: boolean }[] }>;
   maximum(kind: 'interior' | 'external'): Promise<MeasureResult>;
   /** The same lift-off heard by an external camera with mode 'chase' and with an unknown mode of kind 'external'. */
   modes(unknownMode: string): Promise<{ modelIdentical: boolean; frames: number; masterDiff: number; selfMasterDiff: number; tapDiff: number; selfTapDiff: number; masterRms: number; enginesRms: number }>;
   clipNames(): string[];
   clip(name: string): Promise<{ wav: string; stats: ClipStats; renderMs: number; problems: string[] }>;
+  /** Per-bus and per-path levels of a clip in the given windows (diagnosis of what is heard when). */
+  clipTaps(name: string, windows: [number, number][]): Promise<MeasureResult>;
 }
 
 export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetBank): AudioLabApi {
@@ -60,14 +63,27 @@ export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetB
       return result(await render(plasmaScript(defs, level, kind), taps.filter((t) => t !== 'master')), taps, [[1, 2.5]]);
     },
     async events() {
-      const s = eventsScript(defs, eventTypes, 0.8);
-      const taps: TapName[] = ['events', 'events.air', 'events.body', 'events.direct', 'master'];
-      const r = await render(s, taps.filter((t) => t !== 'master'));
-      const onsets = s.schedule.map((e, i) => {
-        const next = s.schedule[i + 1]?.t ?? s.duration;
-        return { type: e.type, t: e.t, onset: onsetAbove(r, 'events', e.t - 0.1, next, 1e-4) };
-      });
-      return { ...result(r, taps, [[0, s.duration]]), schedule: s.schedule, onsets };
+      // One short render per event type, so no earlier one-shot is still ringing when the next is measured.
+      const taps: TapName[] = ['events', 'events.air', 'events.body', 'events.direct'];
+      const schedule: { type: SimEventType; t: number }[] = [];
+      const onsets: { type: SimEventType; t: number; onset: number | null; silentBefore: boolean }[] = [];
+      const oneShots: MeasureResult['oneShots'] = [];
+      const problems: string[] = [];
+      let renderMs = 0;
+      let measured: MeasureResult['taps'] = {};
+      for (const type of eventTypes) {
+        const s = eventsScript(defs, [type], 1);
+        const at = s.schedule[0]!.t;
+        const r = await render(s, taps);
+        renderMs += r.renderMs;
+        problems.push(...r.problems);
+        oneShots.push(...r.oneShots.map((o) => ({ time: o.time, cause: o.cause, bus: o.bus })));
+        const before = audioAnalysis.peakOf(r.taps['events']!, 0, Math.round(at * r.sampleRate));
+        schedule.push({ type, t: at });
+        onsets.push({ type, t: at, onset: onsetAbove(r, 'events', 0, s.duration, 1e-4), silentBefore: before === 0 });
+        measured = measureRender(r, taps, [[at, s.duration]]);
+      }
+      return { renderMs, taps: measured, problems, oneShots, schedule, onsets };
     },
     async maximum(kind) {
       const taps: TapName[] = ['master', 'engines', 'events', 'aero', 'reentry', 'cabin', 'ui'];
@@ -104,6 +120,12 @@ export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetB
     },
     clipNames() {
       return clipScripts(defs).map((s) => s.name);
+    },
+    async clipTaps(name, windows) {
+      const s = clipScripts(defs).find((x) => x.name === name);
+      if (!s) throw new Error(`unknown clip ${name}`);
+      const taps = TAP_NAMES.filter((t) => t !== 'master');
+      return result(await render(s, taps), ['master', ...taps], windows);
     },
     async clip(name) {
       const s = clipScripts(defs).find((x) => x.name === name);

@@ -150,6 +150,8 @@ test('every event type produces a one-shot on the events bus within 50 ms', asyn
   record('events', late);
   for (const o of late) {
     expect(o.onset, `${o.type} produced sound`).not.toBeNull();
+    expect(o.silentBefore, `${o.type}: events bus silent before the event`).toBe(true);
+    expect(o.latencyMs!, `${o.type} latency`).toBeGreaterThanOrEqual(0);
     expect(o.latencyMs!, `${o.type} latency`).toBeLessThanOrEqual(50);
     expect(r.oneShots.some((s) => s.cause === o.type && s.bus === 'events'), `${o.type} one-shot on the events bus`).toBe(true);
   }

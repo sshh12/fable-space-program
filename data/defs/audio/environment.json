@@ -93,13 +93,13 @@
         "creak-2",
         "creak-3"
       ],
-      "gainDb": -10,
+      "gainDb": -15,
       "gMin": 1.6,
       "gMax": 8,
       "maxRate": 1.4,
       "jerkRate": 0.25,
       "thermalRate": 3,
-      "gainPerG": 1.5,
+      "gainPerG": 1,
       "seed": 7331,
       "minInterval": 0.18
     }

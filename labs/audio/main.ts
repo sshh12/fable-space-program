@@ -23,7 +23,7 @@ import { compose, externalAt, listener, makeEvent, SEA_LEVEL, type ListenerSpec 
 declare global {
   interface Window {
     __audioLab?: AudioLabApi;
-    __audioLabLive?: { set(partial: Partial<LiveState>): void; get(): LiveState; fire(type: SimEventType): void; ignite(): void; fireSolids(): void; shutdown(): void; engine: FableAudioEngine };
+    __audioLabLive?: { set(partial: Partial<LiveState>): void; get(): LiveState; fire(type: SimEventType): void; ignite(): void; fireSolids(): void; shutdown(): void; updateCost(): { frames: number; p50: number; p99: number; max: number }; engine: FableAudioEngine };
   }
 }
 
@@ -159,6 +159,8 @@ async function boot(): Promise<void> {
   let stack = stackPlacements(lib, state.stack);
   let engines = new LabEngines(stack.parts, lib.parts);
   const pending: SimEventType[] = [];
+  /** Main-thread cost of AudioEngine.update over the last 600 frames, ms. */
+  const updateMs: number[] = [];
   const rebuild = (): void => {
     sim = createFakeSim(lib, { scene: state.scene });
     stack = stackPlacements(lib, state.stack);
@@ -174,6 +176,11 @@ async function boot(): Promise<void> {
       syncControls();
     },
     get: () => ({ ...state }),
+    updateCost() {
+      const v = [...updateMs].sort((a, b) => a - b);
+      const q = (p: number): number => v[Math.min(v.length - 1, Math.floor(p * v.length))] ?? 0;
+      return { frames: v.length, p50: q(0.5), p99: q(0.99), max: v[v.length - 1] ?? 0 };
+    },
     fire(type: SimEventType) {
       pending.push(type);
     },
@@ -365,7 +372,10 @@ async function boot(): Promise<void> {
         ? { kind: 'interior', mode: state.mode, position: stack.seat, pressure: state.pressure }
         : { ...externalAt(state.distance, { height: state.height, az, kind: state.kind, mode: state.mode, pressure: state.pressure }) };
     const audioFrame: AudioFrame = { snapshot, listener: listener(spec, vesselId), realDt: dt, warpFactor: state.warpFactor, paused: state.paused };
+    const u0 = performance.now();
     engine.update(audioFrame);
+    updateMs.push(performance.now() - u0);
+    if (updateMs.length > 600) updateMs.shift();
     engine.setMasterVolume(state.volume);
     const probe = engine.probe();
     drawMeters(canvas, probe, peaks);

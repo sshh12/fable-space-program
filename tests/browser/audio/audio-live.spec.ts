@@ -60,12 +60,16 @@ test('created suspended, resumed by a real key press; meters follow throttle and
   const shot = await saveScreenshot(page, 'audio', 'lab-live-meters');
   assertRealImage(shot.stats, 'audio lab', { minNonBlack: 0.02, minStd: 5, minBuckets: 20 });
 
+  // Main-thread cost of update() with the booster cluster, aero and cabin voices live (provisional while the bakes run).
+  await page.evaluate(() => window.__test!.waitFrames(400));
+  const cost = await page.evaluate(() => window.__audioLabLive!.updateCost());
+  expect(cost.frames).toBeGreaterThan(300);
   await page.evaluate(() => window.__audioLabLive!.set({ paused: true }));
   await page.waitForFunction(() => window.__test!.audio()!.buses.master.peak === 0, undefined, { timeout: 20_000 });
   const p1 = await probe(page);
   expect(p1.activeVoices).toBeGreaterThan(0);
   fs.mkdirSync(path.join(repoRoot, 'out', 'audio'), { recursive: true });
-  fs.writeFileSync(path.join(repoRoot, 'out', 'audio', 'live.json'), JSON.stringify({ before: p0, enginesFullRms: full, enginesLowRms: low, throttleDropDb: 20 * Math.log10(full / low), paused: p1 }, null, 2));
+  fs.writeFileSync(path.join(repoRoot, 'out', 'audio', 'live.json'), JSON.stringify({ before: p0, enginesFullRms: full, enginesLowRms: low, throttleDropDb: 20 * Math.log10(full / low), updateCostMs: cost, paused: p1 }, null, 2));
   await expectNoErrors(page, pageLog);
 });
 
