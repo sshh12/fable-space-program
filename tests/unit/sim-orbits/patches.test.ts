@@ -223,6 +223,7 @@ describe('return from the Moon with an atmosphere-entry marker', () => {
     expect(Math.abs(lat - m.latitude!) * RAD).toBeLessThan(0.01);
     const dLon = Math.atan2(Math.sin(lon - m.longitude!), Math.cos(lon - m.longitude!));
     expect(Math.abs(dLon) * RAD).toBeLessThan(0.01);
+    if (process.env["SIM_ORBITS_VERBOSE"]) console.log("entry lat/lon error deg", Math.abs(lat - m.latitude!) * RAD, Math.abs(dLon) * RAD);
     expect(Math.abs(v3.len(r) - (sys.body(EARTH).radius + 140e3))).toBeLessThan(1);
   });
 

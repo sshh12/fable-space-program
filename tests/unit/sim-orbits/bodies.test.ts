@@ -221,6 +221,28 @@ describe('sun visibility', () => {
     expect(partial).toBeGreaterThan(3);
   });
 
+  it('a surface point below the datum (lunar maria) still has day and night', () => {
+    const R = defs.bodies[MOON]!.radius;
+    let day = 0;
+    let night = 0;
+    for (let t = T_REF; t < T_REF + 30 * 86400; t += 6 * 3600) {
+      const q = sys.orientation(MOON, t);
+      const up = quat.rotate(q, { x: Math.cos(23.4 * DEG), y: Math.sin(23.4 * DEG), z: 0 });
+      const pos = v3.add(sys.stateRoot(MOON, t).r, v3.scale(up, R - 1908));
+      const vis = sys.sunVisibility(pos, t);
+      const elev = Math.asin(v3.dot(up, sys.sunDirection(pos, t).dir)) * RAD;
+      if (elev > 1) {
+        expect(vis).toBe(1);
+        day++;
+      } else if (elev < -1) {
+        expect(vis).toBe(0);
+        night++;
+      }
+    }
+    expect(day).toBeGreaterThan(20);
+    expect(night).toBeGreaterThan(20);
+  });
+
   it('two occulters at once: strip integration agrees with the single-body formula', () => {
     const star = { x: 1.5e11, y: 0, z: 0 };
     const sr = 6.957e8;

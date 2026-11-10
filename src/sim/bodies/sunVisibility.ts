@@ -132,7 +132,8 @@ export interface OccultingSphere {
 
 /**
  * Visible fraction of the disc of a star (centre `starPos`, radius `starRadius`) seen from `point`
- * behind the given spheres. All positions in one frame. Returns 0 when the point is inside a sphere.
+ * behind the given spheres. All positions in one frame. A point on or below a sphere's surface sees that
+ * sphere as its horizon plane (half the sky), so surface points below the datum keep a day/night cycle.
  */
 export function sunVisibleFraction(point: Vec3, starPos: Vec3, starRadius: number, spheres: readonly OccultingSphere[]): number {
   const toSun = v3.sub(starPos, point);
@@ -144,10 +145,12 @@ export function sunVisibleFraction(point: Vec3, starPos: Vec3, starRadius: numbe
   for (const sp of spheres) {
     const toB = v3.sub(sp.centre, point);
     const dB = v3.len(toB);
-    if (!(dB > sp.radius)) return 0;
+    if (!(dB > 0)) return 0;
     if (dB - sp.radius >= dS) continue; // entirely beyond the star
     const bHat = v3.scale(toB, 1 / dB);
-    const rb = Math.asin(Math.min(1, sp.radius / dB));
+    // A point at or below the datum sphere (terrain below the reference radius, e.g. lunar maria) sees the
+    // body's horizon as its local tangent plane: angular radius 90 deg.
+    const rb = dB > sp.radius ? Math.asin(sp.radius / dB) : Math.PI / 2;
     const sep = v3.angle(sHat, bHat);
     if (sep - rb >= rs) continue;
     const f = occultedFraction(rs, rb, sep);
