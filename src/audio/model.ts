@@ -125,9 +125,6 @@ export interface ModelOutput {
   problems: string[];
 }
 
-const SILENT_AIR: AirPath = { gain: 0, cutoff: 20000, delay: 0, jump: false, pan: { x: 0, y: 0, z: -1 } };
-const silentPaths = (bodyCutoff: number): SourcePaths => ({ air: { ...SILENT_AIR, pan: { ...SILENT_AIR.pan } }, body: { gain: 0, cutoff: bodyCutoff } });
-
 /** An ignition seen for the first time is fresh (gets its transient) if it is younger than this. */
 const FRESH_IGNITION = 0.5;
 
@@ -176,6 +173,8 @@ export class SoundModel {
   private time = 0;
   private readonly engineAges = new Map<string, EngineAges>();
   private readonly tracks = new Map<string, SourceTrack>();
+  /** Sources seen this frame; tracks of sources that disappeared (debris, one-shots) are dropped. */
+  private readonly touched = new Set<string>();
   private readonly lastTransient = new Map<string, number>();
   private readonly lastEventPlay = new Map<string, number[]>();
   private readonly watched = new Map<string, unknown>();
@@ -223,6 +222,8 @@ export class SoundModel {
       if (geom.interior && continuous === 1) this.creaks(geom.active, dt, out.oneShots);
     }
     this.clicks(snap, out.oneShots, !frame.paused);
+    for (const k of this.tracks.keys()) if (!this.touched.has(k)) this.tracks.delete(k);
+    this.touched.clear();
     if (geom.interior) {
       this.prevG = geom.active.gLoad;
       this.prevSun = geom.active.sunVisibility;
@@ -242,7 +243,8 @@ export class SoundModel {
     if (!active) throw new Error('audio: snapshot has no vessels');
     if (active.id !== snap.activeVesselId) this.report(problems, `active vessel ${snap.activeVesselId} is not in the snapshot`);
     const fwd = v3.normalize(l.forwardVes);
-    const right = v3.normalize(v3.cross(fwd, l.upVes));
+    const side = v3.cross(fwd, l.upVes);
+    const right = v3.len(side) > 1e-9 ? v3.normalize(side) : v3.anyOrthogonal(fwd);
     const up = v3.cross(right, fwd);
     const interior = l.kind === 'interior';
     const vesselId = interior ? (l.insideVesselId ?? active.id) : active.id;
@@ -285,6 +287,7 @@ export class SoundModel {
 
   /** Distance, recession speed and jump detection for a tracked source. */
   private track(key: string, distance: number): { recession: number; jump: boolean } {
+    this.touched.add(key);
     const prev = this.tracks.get(key);
     const prop = this.config.mix.propagation;
     if (!prev) {
