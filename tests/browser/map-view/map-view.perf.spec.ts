@@ -1,7 +1,8 @@
 /**
- * Overlay budget (ARCHITECTURE 17.1: map overlay up to 0.1 ms GPU, drawn only in map view; UI CPU 0.5 ms):
- * the 8-patch synthetic chain plus 20 debris orbits, the camera orbiting continuously so the whole scene
- * (adaptive sampling, projection, labels, upload) is rebuilt every frame. Measured under the GPU lock.
+ * Overlay budget (ARCHITECTURE 17.1: map overlay up to 0.1 ms GPU, drawn only in map view; the map-view
+ * brief: under 0.5 ms CPU per frame): the 8-patch synthetic chain plus 20 debris orbits, the camera orbiting
+ * continuously so the whole scene (adaptive sampling, projection, labels, upload) is rebuilt every frame.
+ * Measured under the GPU lock. CPU numbers track the machine load (other agents' bakes): record the load.
  */
 import type { Page } from '@playwright/test';
 import { expect, expectNoErrors, test, withGpuLock } from '../harness';

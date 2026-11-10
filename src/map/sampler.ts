@@ -17,7 +17,9 @@
  *    of an orbit seen nearly edge-on, where the curve overshoots an end point) the curve lies inside the
  *    triangle A'T'B', so its distance to the segment is bounded by that of T', and the piece is split until
  *    the triangle is acute. Pieces are refined greatest-error-first (a max-heap) until every error is under
- *    the tolerance or the vertex cap is reached; each refinement step evaluates exactly one new vertex.
+ *    the tolerance or the vertex cap is reached. Since the error of a smooth piece shrinks with the square
+ *    of its span, a piece is cut into ceil(sqrt(error / tolerance)) equal parts at once (at most 8), which
+ *    lands closer to the tolerance than bisection; every new vertex costs exactly one curve evaluation.
  * 3. A piece whose triangle reaches the near plane (it passes right next to or behind the eye) evaluates its
  *    midpoint instead and uses the angle its 3-D sagitta subtends at the eye, in pixels.
  * In the parabolic band (|e - 1| < 1e-6, sampled in true anomaly) T comes from the end tangents and the
@@ -38,6 +40,8 @@ const MAX_INITIAL_PIECES = 512;
 const CULL_MARGIN_PX = 16;
 /** The near-plane fallback measures the deviation at one point only: keep a margin below the tolerance. */
 const MIDPOINT_MARGIN = 0.85;
+/** Most parts a piece is cut into in one refinement step. */
+const MAX_SPLIT = 8;
 
 /** Output of one sampled curve, in arrays owned by the Sampler (valid until the next call). */
 export interface SampledCurve {
@@ -178,23 +182,42 @@ export class Sampler {
       const b = this.kb[k]!;
       const ua = this.pu[a]!;
       const ub = this.pu[b]!;
-      let m = this.km[k]!;
-      if (m < 0) m = this.evalPoint(curve, (ua + ub) / 2);
-      const um = this.pu[m]!;
-      if (!(um > ua && ub > um)) continue; // parameter exhausted: accept as is
-      const r = this.nPieces++;
-      this.ka[r] = m;
-      this.kb[r] = b;
-      this.km[r] = -1;
-      this.knext[r] = this.knext[k]!;
-      this.kb[k] = m;
+      // The chord error of a smooth piece shrinks with the square of its parameter span, so a piece is cut
+      // into n = ceil(sqrt(err / tolerance)) equal parts at once (plain bisection ends between a quarter of
+      // the tolerance and the tolerance, wasting vertices). A piece whose midpoint is already evaluated
+      // (near-plane measure) is bisected at it.
+      const want = Math.ceil(Math.sqrt(err / tolerancePx));
+      let n = this.km[k]! >= 0 || !(want >= 2) ? 2 : Math.min(MAX_SPLIT, want);
+      n = Math.max(2, Math.min(n, maxVerts - vertices + 1));
+      const last = this.knext[k]!;
+      let prevPiece = k;
+      let prevU = ua;
+      let added = 0;
+      for (let j = 1; j < n; j++) {
+        let m: number;
+        if (n === 2 && this.km[k]! >= 0) m = this.km[k]!;
+        else m = this.evalPoint(curve, ua + ((ub - ua) * j) / n);
+        const um = this.pu[m]!;
+        if (!(um > prevU && ub > um)) break; // parameter exhausted: keep what was split so far
+        this.kb[prevPiece] = m;
+        const r = this.nPieces++;
+        this.ka[r] = m;
+        this.km[r] = -1;
+        this.knext[prevPiece] = r;
+        prevPiece = r;
+        prevU = um;
+        added++;
+      }
+      this.kb[prevPiece] = b;
+      this.knext[prevPiece] = last;
       this.km[k] = -1;
-      this.knext[k] = r;
-      this.kerr[k] = this.pieceError(k);
-      this.kerr[r] = this.pieceError(r);
-      this.heapPush(k);
-      this.heapPush(r);
-      vertices++;
+      if (added === 0) continue; // accept as is
+      for (let p = k, i = 0; i <= added; i++, p = this.knext[p]!) {
+        this.km[p] = -1;
+        this.kerr[p] = this.pieceError(p);
+        this.heapPush(p);
+      }
+      vertices += added;
     }
     let n = 0;
     for (let k = first; k >= 0; k = this.knext[k]!) {
