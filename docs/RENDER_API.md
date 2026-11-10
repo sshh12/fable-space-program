@@ -680,6 +680,11 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   with loadOp `load`: `features[id].gpuMs` is then exact. Perf specs use it. In normal mode one frame in
   64 is rendered in attribution mode and the measured shares split the pass time, so the breakdown stays
   close without the extra passes.
+- **Measure with the GPU busy.** An RTX 5090 with only a lab's 1-2 ms of work per frame clocks down:
+  the same pass then reads 2-5 times longer and its p99 is unstable (TAA 0.32 ms idle, 0.10 ms inside a
+  9 ms frame). Budgets are for the game's frame: add a ballast pass of about 7 ms while measuring (see
+  `tests/browser/render-core/core.perf.spec.ts` and the `heavy` probe in `labs/render-core/probes.ts`)
+  with `?governor=off&scale=1` so quality and resolution stay at 1.
 - `renderer.passStats()` gives p50 / p99 / mean per pass name; a pass that does not run in a frame counts
   as 0, so `mean` is the amortised cost (staggered shadow cascades).
 

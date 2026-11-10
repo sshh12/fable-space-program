@@ -131,13 +131,23 @@ and other agents' test runs were loading the machine, so CPU numbers and rAF cad
 | Frame graph: order, attachments, copies hold this frame, colour copies only when required | all markers exact (table in `framegraph.spec.ts`); `framegraph-markers.png` | `framegraph.spec.ts` |
 | Half-resolution volume from preTransparent composited in drawTransparent, occluded by opaque geometry | tower pixels change by less than 2 % of the fog's contribution; `framegraph-volume.png` | `framegraph.spec.ts` |
 | `applyAtmosphere` neutral with defaults, hides a quad behind a synthetic cloud | bit-exact 2.0 with defaults; behind the cloud 2 % remains | `framegraph.spec.ts` |
-| Governor first, then dynamic resolution, 60 fps held | 49 ms heavy pass at 1440p: quality lowered at frame 4, resolution at frame 11; settled quality 0.5, scale 0.5625, GPU p99 8.5 ms, 0 frames over 33 ms, rAF p95 18.05 ms against 18.03 ms for the same browser without load | `governor.perf.spec.ts` |
-| Core fixed budget 3.0 ms at 1440p internal | p99: AO + contact 0.135, lighting 0.302, TAA 0.325, bloom 0.136, tonemap + histogram 0.083, depth pyramid 0.018 = **1.00 ms**. The three `copyTextureToTexture` calls are outside any pass and cannot be timed by timestamp queries; they are not in the sum | `core.perf.spec.ts` |
-| 1.5 M triangle scene: G-buffer + amortised shadows under 2.0 ms | 1,695,306 triangles: G-buffer p99 0.642 ms + shadows amortised 0.198 ms = **0.84 ms** | `core.perf.spec.ts` |
-| CPU frame under 2 ms | **not met at p99 in these runs**: lab frame (FakeSim + camera + renderer) p50 1.2 - 1.3 ms, p99 2.2 - 2.8 ms on the loaded machine. The spec keeps the 2.0 ms assertion; re-measure on a quiet machine. Breakdown of one frame: frame context 0.16, cascade planning 0.15, stand batch 0.14, uniforms 0.05, hook encoding 0.25, the rest is about 35 passes of WebGPU calls + submit | `core.perf.spec.ts` |
+| Governor first, then dynamic resolution, 60 fps held | 50 ms heavy pass at 1440p: quality lowered at frame 3-4, resolution at frame 10-11; settled quality 0.5, scale 0.56 - 0.69, GPU p99 8.5 - 9.3 ms, 0 frames over 33 ms, rAF p95 18.05 ms against 17.95 - 18.03 ms for the same browser without load (headless Chrome at 2560 x 1440 presents every 17.5 ms on this machine, not 16.67) | `governor.perf.spec.ts` |
+| Core fixed budget 3.0 ms at 1440p internal | p99 with the GPU as busy as a real frame (7 ms ballast pass, see 4.1): AO + contact 0.099, lighting 0.156, TAA 0.111, bloom 0.059, tonemap + histogram 0.053, depth pyramid 0.007 = **0.49 ms**. With an otherwise idle GPU: 0.143 / 0.333 / 0.400 / 0.149 / 0.095 / 0.023 = 1.14 ms. The three `copyTextureToTexture` calls are outside any pass and cannot be timed by timestamp queries; they are not in the sum | `core.perf.spec.ts` |
+| 1.5 M triangle scene: G-buffer + amortised shadows under 2.0 ms | 1,695,308 triangles: G-buffer p99 0.179 ms + shadows amortised 0.156 ms = **0.34 ms** (busy GPU); 0.79 + 0.27 = 1.06 ms on an idle GPU | `core.perf.spec.ts` |
+| CPU frame under 2 ms | lab frame (FakeSim + camera + renderer): p50 0.67 ms, p99 1.65 ms in the last run (bakes mostly finished). Earlier runs on the heavily loaded machine gave p50 1.2 - 1.3 ms and p99 2.2 - 2.8 ms, i.e. **over the line under load**: provisional, re-measure on a quiet machine. Breakdown of one frame: frame context 0.16, cascade planning 0.15, stand batch 0.14, uniforms 0.05, hook encoding 0.25, the rest is about 35 passes of WebGPU calls + submit | `core.perf.spec.ts` |
 | All default SharedResources work with no feature; a brdf chunk can be overridden at run time | empty renderer: 0 errors, black frame; `brdf_terrain` replaced with a red BRDF and restored | `lighting.spec.ts` |
 | Unit tests for CPU maths | 46 tests: jitter, projection, float64 poses, eclipse lens area, planetshine (15 lux earthshine), cascade snapping and per-frame re-derivation, planning, scheduler, exposure rules, governor, Hapke inversion, black body | `tests/unit/render-core` |
 | Zero uncaptured GPU errors | `expectNoErrors` in every spec | all |
+
+### 4.1 Measuring GPU time on this machine: keep the GPU busy
+
+An RTX 5090 that has only a lab's 1-2 ms of work per frame drops into a low clock state. Measured in one
+session, same scene, same passes (p50 ms): TAA 0.32 idle vs 0.104 with 5-10 ms of other GPU work in the
+frame; lighting 0.29 vs 0.153; the 1.7 M triangle G-buffer 0.23 vs 0.093; bloom 0.126 vs 0.048; and the
+idle p99 values jump by 2-3x from run to run. Budgets are for the game's 9-11 ms frame, so
+`core.perf.spec.ts` asserts with a 7 ms ballast pass (the `heavy` probe) and logs the idle numbers.
+**Every package's perf spec should do the same** (or it will report 2-5x too much and be flaky); the
+ballast feature is 40 lines in `labs/render-core/probes.ts` (`heavy`).
 
 Additional checks beyond the acceptance list: every lighting input against a hand calculation (transmittance
 x 0.5; far cloud shadow exp(-tau / mu_s); near cloud shadow map; sky irradiance 0.12939 vs 0.12952; point
@@ -173,9 +183,10 @@ light 0.4082 vs 0.4016; `env.sh9` 0.1224 vs 0.1214; `env.probeCube` 10,000 cd/m^
 
 ## 6. Known weaknesses (plainly)
 
-- **CPU p99** above the 2 ms line on the loaded machine (section 4). Not investigated further; the bulk is
-  WebGPU call overhead of about 35 passes per frame. If it holds on a quiet machine, the first things to
-  cut are the 11 bloom passes (merge levels) and per-frame allocations in cascade planning.
+- **CPU p99** was above the 2 ms line while the machine was heavily loaded and below it (1.65 ms) later
+  (section 4). The bulk is WebGPU call overhead of about 35 passes per frame. If it is tight on a quiet
+  machine, the first things to cut are the 11 bloom passes (merge levels) and per-frame allocations in
+  cascade planning.
 - **GTAO has no denoiser of its own.** It relies on the main TAA; in deterministic screenshots (frozen
   noise) a fine grain is visible in occluded areas (`lighting-material-sweep-env.png`, under the spheres).
 - **Contact shadows are binary** (no penumbra) and screen-space only; they vanish at screen edges.
@@ -188,8 +199,12 @@ light 0.4082 vs 0.4016; `env.sh9` 0.1224 vs 0.1214; `env.probeCube` 10,000 cd/m^
   view of a second body from the ground.
 - **AO / contact-shadow / TAA cost scales with pixels only**; `qualityScale` does not reduce core passes.
 - **Copies are not timed** (no timestamp query outside passes).
-- **Texture loading from a URL**, LOD cross-fade and the LabPlanet `'ocean.nearField'` path have a browser
-  test each (`mesh.spec.ts`), but skinned or alpha-tested meshes do not exist in the mesh system.
+- The mesh system has no skinning, no alpha-tested materials and no per-instance tint; texture loading
+  (procedural and URL), LOD cross-fade and the LabPlanet `'ocean.nearField'` path are each covered by a
+  browser test (`mesh.spec.ts`), normal / ORM / emissive textures only by code review.
+- Interior metering and the vessel-anchored cascade are exercised (`extras.spec.ts`) but there is no real
+  cockpit to judge them on; cloth translucency and the wetness / soot / frost instance parameters were
+  looked at in the lab only (no numeric test).
 - `MATERIAL_DISPLAY` is lit as a standard surface; there is no display-specific shading.
 - The exposure compensation curve and bloom strength are first values tuned on the lab scenes, not on the
   integrated game.
