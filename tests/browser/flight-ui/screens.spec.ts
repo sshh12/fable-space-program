@@ -56,5 +56,8 @@ for (const [w, h, tag] of [
     test('MFD pages', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarOrbit&mfd=1&predicted=impact&node=1', `mfd-pages-${tag}`, 10);
     });
+    test('MFD pages, landed 400 m from the target (no ground track: north-up scope)', async ({ page, pageLog }) => {
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarSurface&mfd=1&targetOffset=400,30', `mfd-pages-hover-${tag}`, 10);
+    });
   });
 }

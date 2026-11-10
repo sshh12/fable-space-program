@@ -6,22 +6,82 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import {
   formatAltitude,
+  formatApsis,
   formatBearing,
   formatCountdown,
+  formatDeg,
   formatDeltaV,
   formatDistance,
   formatDuration,
+  formatG,
   formatLatLon,
   formatNumber,
   formatPercent,
   formatRadAsDeg,
   formatSignedRange,
+  formatSpeed,
   formatTwr,
+  formatVerticalSpeed,
   formatWarp,
 } from './format';
 
 export function activeVesselOf(s: SimSnapshot): VesselSnapshot | null {
   return s.vessels.find((v) => v.id === s.activeVesselId) ?? null;
+}
+
+/** True while the vessel rests on a surface (pad, landed, splashed). */
+export function isLanded(v: VesselSnapshot | null): boolean {
+  return v !== null && (v.situation === 'prelaunch' || v.situation === 'landed' || v.situation === 'splashed');
+}
+
+// --------------------------------------------------------------------------------------- flight data
+
+/** Below this radar altitude (m), in flight, the automatic altimeter reads radar altitude. */
+export const RADAR_ALTITUDE_SWITCH = 2000;
+
+export type AltitudeMode = 'auto' | 'asl' | 'radar';
+
+/** Altimeter source: `auto` = radar below RADAR_ALTITUDE_SWITCH in flight, sea level otherwise. */
+export function altitudeSource(s: SimSnapshot, mode: AltitudeMode = 'auto'): 'radar' | 'asl' {
+  if (mode !== 'auto') return mode;
+  return !isLanded(activeVesselOf(s)) && s.readouts.altitudeRadar < RADAR_ALTITUDE_SWITCH ? 'radar' : 'asl';
+}
+
+export interface FlightView {
+  altitudeSource: 'radar' | 'asl';
+  altitude: string;
+  /** "▲ 12.3 m/s" / "▼ 4.0 m/s" (formatVerticalSpeed). */
+  verticalSpeed: string;
+  horizontalSpeed: string;
+  /** Speed of the navball mode: surface speed or orbital speed. */
+  speedMode: 'surface' | 'orbit';
+  speed: string;
+  pitch: string;
+  /** Compass heading of the nose, "087°". */
+  heading: string;
+  roll: string;
+  throttle: string;
+  gLoad: string;
+}
+
+/** Primary flight data, the same strings on the HUD and the MFD flight / landing pages. */
+export function describeFlight(s: SimSnapshot, mode: AltitudeMode = 'auto'): FlightView {
+  const r = s.readouts;
+  const src = altitudeSource(s, mode);
+  const speedMode = s.navball.mode === 'surface' ? 'surface' : 'orbit';
+  return {
+    altitudeSource: src,
+    altitude: formatAltitude(src === 'radar' ? r.altitudeRadar : r.altitudeAsl),
+    verticalSpeed: formatVerticalSpeed(r.verticalSpeed),
+    horizontalSpeed: formatSpeed(r.horizontalSpeed),
+    speedMode,
+    speed: formatSpeed(speedMode === 'surface' ? r.speedSurface : r.speedOrbital),
+    pitch: formatDeg(s.navball.pitchDeg),
+    heading: formatBearing(s.navball.headingDeg),
+    roll: formatDeg(s.navball.rollDeg),
+    throttle: formatPercent(r.throttle),
+    gLoad: formatG(r.gLoad),
+  };
 }
 
 // ------------------------------------------------------------------------------------- landing target
@@ -37,6 +97,11 @@ export interface LandingTargetView {
   downRange: string;
   /** "1.2 km right" / "0.8 km left" / "on track"; "no ground track" below 0.1 m/s over the ground. */
   crossRange: string;
+  /**
+   * True while there is a ground track (horizontal speed >= 0.1 m/s): only then are the readout's down-range and
+   * cross-range meaningful (the sim reports both as 0 below that speed, whatever the distance).
+   */
+  tracked: boolean;
   /** Inside a recovery zone's radius (zones only). */
   insideZone: boolean;
   zoneRadius: string | null;
@@ -65,6 +130,7 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
     bearing: formatBearing(lt.bearingDeg),
     downRange: tracked ? formatSignedRange(lt.downRange, 'ahead', 'behind') : 'no ground track',
     crossRange: tracked ? formatSignedRange(lt.crossRange, 'right', 'left') : 'no ground track',
+    tracked,
     insideZone: isZone && target !== undefined && lt.distance <= target.radius,
     zoneRadius: isZone && target ? formatDistance(target.radius) : null,
     predicted: p
@@ -101,6 +167,41 @@ export function landingTargetRows(v: LandingTargetView): [string, string][] {
   return rows;
 }
 
+/** Below this separation (m) the readout's down-range / cross-range carry no usable track direction. */
+const TRACK_RECOVERY_MIN_RANGE = 1;
+
+export interface LandingScope {
+  /** Target relative to the vessel on the ground, metres east and north. */
+  east: number;
+  north: number;
+  /**
+   * Compass direction of the ground track (degrees in [0, 360)), recovered from the readout's own down-range
+   * and cross-range; null without a ground track (below 0.1 m/s) and within 1 m of the target.
+   */
+  trackDeg: number | null;
+}
+
+/**
+ * Geometry of the landing scope (MFD landing page). The scope is north-up at every speed: the target is placed
+ * from the distance and the compass bearing, which the readout gives whatever the speed, so a target 400 m
+ * away never sits on the vessel symbol while hovering (when down-range and cross-range are both 0), and the
+ * picture does not jump or swing as a slow drift crosses the 0.1 m/s ground-track threshold or wanders in
+ * direction. The ground track is drawn as a line at `trackDeg`: with the target at bearing B, down-range =
+ * d cos(B - T) and cross-range = d sin(B - T) (cross-range positive = target right of the track), so
+ * T = B - atan2(cross, down), and the line agrees with the "ahead / right" rows by construction.
+ */
+export function landingScope(v: LandingTargetView): LandingScope {
+  const b = (v.raw.bearingDeg * Math.PI) / 180;
+  const east = v.raw.distance * Math.sin(b);
+  const north = v.raw.distance * Math.cos(b);
+  let trackDeg: number | null = null;
+  if (v.tracked && Math.hypot(v.raw.downRange, v.raw.crossRange) >= TRACK_RECOVERY_MIN_RANGE) {
+    const t = v.raw.bearingDeg - (Math.atan2(v.raw.crossRange, v.raw.downRange) * 180) / Math.PI;
+    trackDeg = ((t % 360) + 360) % 360;
+  }
+  return { east, north, trackDeg };
+}
+
 // --------------------------------------------------------------------------------------------- orbit
 
 export interface OrbitView {
@@ -119,9 +220,9 @@ export function describeOrbit(s: SimSnapshot): OrbitView {
   const r = s.readouts;
   const closed = r.eccentricity < 1 && Number.isFinite(r.apoapsisAltitude) && r.apoapsisAltitude > -1e30;
   return {
-    apoapsis: closed ? formatAltitude(r.apoapsisAltitude) : 'escape',
+    apoapsis: closed ? formatApsis(r.apoapsisAltitude) : 'escape',
     apoapsisTime: r.timeToApoapsis !== null ? formatCountdown(r.timeToApoapsis) : '—',
-    periapsis: formatAltitude(r.periapsisAltitude),
+    periapsis: formatApsis(r.periapsisAltitude),
     periapsisTime: r.timeToPeriapsis !== null ? formatCountdown(r.timeToPeriapsis) : '—',
     inclination: formatRadAsDeg(r.inclination, 2),
     eccentricity: formatNumber(r.eccentricity, 4),

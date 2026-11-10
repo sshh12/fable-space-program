@@ -29,15 +29,21 @@ export function formatNumber(x: number, decimals = 0): string {
 
 /**
  * A length with an SI prefix chosen for readability: m below 10 km (0.1 m precision below 100 m), km below
- * 10,000 km, Mm below 10 million km, Gm above. `altitude` keeps metres up to 100 km (ascent and landing).
+ * 10,000 km, Mm below 10 million km, Gm above.
+ *
+ * No unit or precision boundary may sit where a value hovers in flight, or the string flickers between two
+ * forms. `altitude` (the current altitude) keeps metres up to 50 km for ascent and landing; no planned orbit
+ * or hover is near 50 km (LEO about 185 km, the lunar parking orbit 100 km, the descent orbit 15 x 110 km is
+ * crossed in passing), and above it km keep one decimal, so nothing changes form around 100 km either.
+ * `apsis` (apoapsis / periapsis) never uses metres and keeps one decimal in km up to 10,000 km, so Ap and Pe
+ * shown side by side share unit and precision and nothing changes form around the 100 km circular orbit.
  */
-export function formatLength(m: number, style: 'distance' | 'altitude' = 'distance'): string {
+export function formatLength(m: number, style: 'distance' | 'altitude' | 'apsis' = 'distance'): string {
   if (!Number.isFinite(m)) return '—';
   const a = Math.abs(m);
-  const meterLimit = style === 'altitude' ? 1e5 : 1e4;
-  if (a < 100) return `${formatNumber(m, 1)}${NBSP}m`;
-  if (a < meterLimit) return `${formatNumber(m, 0)}${NBSP}m`;
-  if (a < 1e5) return `${formatNumber(m / 1e3, 2)}${NBSP}km`;
+  const meterLimit = style === 'altitude' ? 5e4 : style === 'apsis' ? 0 : 1e4;
+  if (a < meterLimit) return `${formatNumber(m, a < 100 ? 1 : 0)}${NBSP}m`;
+  if (a < 1e5 && style === 'distance') return `${formatNumber(m / 1e3, 2)}${NBSP}km`;
   if (a < 1e7) return `${formatNumber(m / 1e3, 1)}${NBSP}km`;
   if (a < 1e10) return `${formatNumber(m / 1e6, a < 1e8 ? 2 : 1)}${NBSP}Mm`;
   return `${formatNumber(m / 1e9, 3)}${NBSP}Gm`;
@@ -45,9 +51,17 @@ export function formatLength(m: number, style: 'distance' | 'altitude' = 'distan
 
 export const formatAltitude = (m: number): string => formatLength(m, 'altitude');
 export const formatDistance = (m: number): string => formatLength(m, 'distance');
+/** Apoapsis / periapsis altitude: always km or larger (see formatLength). */
+export const formatApsis = (m: number): string => formatLength(m, 'apsis');
 
 /** Speed in m/s with 0.1 m/s precision. */
 export const formatSpeed = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 1e5 ? 1 : 0)}${NBSP}m/s`;
+
+/** Vertical speed as a direction arrow and a magnitude: "▲ 12.3 m/s" (climbing), "▼ 4.0 m/s", "■ 0.0 m/s". */
+export function formatVerticalSpeed(mps: number): string {
+  if (!Number.isFinite(mps)) return '—';
+  return `${mps >= 0.05 ? '▲' : mps <= -0.05 ? '▼' : '■'}${NBSP}${formatSpeed(Math.abs(mps))}`;
+}
 
 /** Delta-v in m/s (integer above 100 m/s). */
 export const formatDeltaV = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 100 ? 1 : 0)}${NBSP}m/s`;

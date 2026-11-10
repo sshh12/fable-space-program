@@ -28,7 +28,7 @@ function createInputSystem(canvas: HTMLElement, opts?: {
   bindings?: readonly Binding[];
   captureKeyboard?: boolean;                // default TRUE: first real gesture -> fullscreen + navigator.keyboard.lock()
   fullscreenElement?: () => Element;        // default document.documentElement (HUD stays visible)
-  isInteractive?: (target: EventTarget | null) => boolean;   // default: ancestor with [data-hud-interactive]
+  isOverUi?: (target: EventTarget | null) => boolean;   // PointerState.overUi; default: an element other than the canvas
 }): InputSystem;
 interface InputSystem {
   readonly bindings: readonly Binding[];
@@ -40,7 +40,6 @@ interface InputSystem {
   heldCodes(): string[];
   dispose(): void;
 }
-const HUD_INTERACTIVE_ATTR = 'data-hud-interactive';  // same string as src/ui INTERACTIVE_ATTR
 
 function createInputCore(bindings): InputCore;        // DOM-free core (used by the system; unit-tested)
 
@@ -56,10 +55,16 @@ function installUnloadGuard(isFlightInProgress: () => boolean): () => void;   //
 Semantics: axes = sum of held bindings clamped to [-1, 1]; a tap shorter than a frame still counts for one
 frame; buttons fire once per physical press (auto-repeat and duplicate keydowns ignored); `requiresKeyboardLock`
 bindings are inert unless `keyboardLocked`; every bound code is `preventDefault`ed; keyboard events whose target
-is an editable element are ignored and focusing one releases all keys; release-all on window blur, page hidden
-and fullscreen exit; the wheel listener is non-passive, always cancelled, and steps are normalised to their
-sign (+1 = away from the user). PointerState is complete (position, deltas incl. pointer lock, buttons, edges,
-doubleClick, wheel, shift/ctrl/alt, overUi). Primary-button edges are queued so that every click yields exactly
+is an editable element (`input` other than buttons / checkboxes, `textarea`, `select`, contenteditable) reach
+no binding and are not `preventDefault`ed (digits, Backspace, Space and Enter edit the text), and focusing one
+releases all keys; release-all on window blur, page hidden and fullscreen exit; the wheel listener is
+non-passive, always cancelled, and steps are normalised to their sign (+1 = away from the user). PointerState
+is complete (position, deltas incl. pointer lock, buttons, edges, doubleClick, wheel, shift/ctrl/alt, overUi).
+**`overUi` is true while the pointer is over any element other than the canvas** (HUD controls, the map's node
+panel, any overlay that takes pointer events; the HUD lets the pointer through everywhere else); edges and wheel
+steps are still reported, with `overUi` set, and consumers (camera mapper, map view) ignore them. A press on
+the canvas captures the pointer, so a drag that starts on the scene stays a scene drag (`overUi` false) until
+release wherever it goes. Primary-button edges are queued so that every click yields exactly
 one `pressed` and one `released` frame even when a fast double click falls into one frame (the `doubleClick`
 flag arrives with the second press). Right-click context menus are suppressed except in text fields.
 
@@ -179,18 +184,31 @@ interface HudOptions {
 interface HudImpl extends Hud {
   readonly root: HTMLElement; readonly visible: boolean; readonly keyHelpOpen: boolean;
   setKeyboardLocked(locked: boolean): void; toggleKeyHelp(force?: boolean): void;
-  readonly lastUpdateMs: number; readonly meanUpdateMs: number;
+  readonly lastUpdateMs: number; readonly meanUpdateMs: number;   // JavaScript of update() only (see section 4)
+  readonly textUpdates: number;                                     // updates that refreshed the text readouts
   landingTargetRows(): [string, string][] | null; notifications(): string[];
 }
+const HUD_TEXT_HZ = 10;                                             // refresh rate of the numeric text readouts
 
 function createMfdPainter(): MfdPainter & { build(page, snapshot, defs): MfdPageModel };
 function buildMfdPage(page: MfdPage, snapshot, defs): MfdPageModel;   // { title, rows, section?, status }
 const MFD_PAGES = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
 // shared display models and formatters (HUD and MFD render from these):
-describeLandingTarget, landingTargetRows, describeOrbit, describeStages, describeResources, describeWarp, describeNodeBurn, describePad,
-formatLength / formatAltitude / formatDistance / formatSpeed / formatDeltaV / formatDuration / formatCountdown / formatMet / formatUt /
-formatBearing / formatDeg / formatPercent / formatPressure / formatHeatFlux / formatG / formatMach / formatMass / formatSignedRange / formatLatLon ...
+describeFlight(s, mode?: 'auto' | 'asl' | 'radar'): FlightView;   // altitude (+ source), vertical / horizontal speed,
+                                                                   // speed of the navball mode, pitch, heading, roll, throttle, g
+altitudeSource(s, mode?): 'radar' | 'asl';  const RADAR_ALTITUDE_SWITCH = 2000;  isLanded(v): boolean;
+describeLandingTarget (LandingTargetView incl. `tracked`), landingTargetRows, landingScope(view): { east; north; trackDeg: number | null },
+describeOrbit, describeStages, describeResources, describeWarp, describeNodeBurn, describePad,
+formatLength(m, 'distance' | 'altitude' | 'apsis') / formatAltitude / formatDistance / formatApsis / formatSpeed / formatVerticalSpeed /
+formatDeltaV / formatDuration / formatCountdown / formatMet / formatUt / formatBearing / formatDeg / formatPercent / formatPressure /
+formatHeatFlux / formatG / formatMach / formatMass / formatSignedRange / formatLatLon ...
 ```
+
+Number formats that matter (one rule for HUD and MFD, chosen so that no unit or precision boundary sits where a
+value hovers in flight): current altitude in m below 50 km, then km with one decimal; apoapsis / periapsis
+always in km with one decimal (Mm from 10,000 km), so Ap and Pe share unit and precision and nothing changes
+form around the 100 km lunar parking orbit; distances m below 10 km; vertical speed "▲ 12.3 m/s" / "▼ 4.0 m/s";
+heading "087°" (compass, integer); pitch and roll one decimal.
 
 - **Navball**: an analytically ray-cast sphere (exact silhouette, per-pixel normal) whose equirectangular
   texture (2048 x 1024 + mips, drawn once with Canvas 2D: sky/ground hemispheres, horizon, heading ticks and
@@ -202,25 +220,42 @@ formatBearing / formatDeg / formatPercent / formatPressure / formatHeatFlux / fo
   light, limb darkening, faint gloss. **Texture contents: sRGB-encoded colour, premultiplied by coverage,
   alpha = coverage** (the cockpit should treat it as a premultiplied sRGB image). `render` and `renderTo` share
   one marker uniform buffer: within one submission, render both from the same state.
-- **HUD**: DOM + the navball canvas over the WebGPU canvas; only interactive parts take pointer events (and
-  carry `data-hud-interactive`). Layout by `camera.kind`: external = everything; interior = clock, warp,
+- **HUD**: DOM + the navball canvas over the WebGPU canvas; only interactive parts take pointer events (exactly
+  the elements carrying `data-hud-interactive`, `INTERACTIVE_ATTR`). Layout by `camera.kind`: external = everything; interior = clock, warp,
   notifications, landing target, stage stack, keyboard pill, help; map = clock, warp, altitude, orbit, landing
   target, node burn, navball + SAS. Panels: MET / UT / warp chevrons with the limit reason and warp buttons;
-  altitude (auto: radar within 2 km of the ground in flight, else sea level; click cycles auto / sea level /
-  radar) with vertical and horizontal speed; launch panel on the ground (target body buttons via `commands`,
-  relative inclination, plane crossing countdown, launch azimuth); orbit (Ap / Pe with time-to, inclination,
+  altitude (auto: radar within 2 km of the ground in flight, else sea level - `altitudeSource`, the same rule
+  as the MFD flight page; click cycles auto / sea level / radar) with vertical and horizontal speed; launch
+  panel on the ground, shown only when it has content (a target body button to pick - every attractor except
+  the root and the body underfoot -, a target, or a launch window; so not on the lunar surface) with relative
+  inclination, plane crossing countdown, launch azimuth; orbit (Ap / Pe with time-to, inclination,
   period; Pe red below the surface, amber inside the atmosphere); landing target (name, kind, distance, bearing,
   down-range ahead/behind, cross-range left/right, "no ground track" when stationary, impact / entry-point miss
   or "Predicted arrival: none", INSIDE ZONE badge); atmosphere (q, Mach, AoA); entry (heat flux, ablator bar,
-  skin temperature bar, LIFT UP/DOWN, chute envelope light); stage stack (next 6 unfired stages, next at the
-  bottom, icon + action icons, delta-v, TWR, burn time, propellant bar, Space key cap, click to stage, LOCKED
-  state); resources per stage group; SAS / RCS / GEAR / LIGHTS / FINE / ABORT toggles and the 8 SAS mode buttons
+  skin temperature bar, LIFT UP/DOWN, chute envelope light); stage stack (one tile per unfired StageInfo -
+  fired stages leave the stack -, next at the bottom, icon + action icons, delta-v, TWR, burn time, propellant
+  bar, Space key cap, click to stage, LOCKED state; with more than 6 stages the stages after the next two are
+  compact one-line tiles (number, icon, name, delta-v, propellant), so the 10-stage mission vehicle fits on the
+  pad above the resources at every resolution; a stack taller than the column would be clipped at its far end,
+  never at the next stage; header "Δv … total"); resources per stage group; SAS / RCS / GEAR / LIGHTS / FINE / ABORT toggles and the 8 SAS mode buttons
   (unavailable modes disabled); speed with surface/orbit (click toggles); navball with heading, pitch, roll;
   throttle and g gauges with g-dose bar; node burn (delta-v, burn time, start countdown, pulsing in the last
-  10 s); terrain-loading notice (pending below 2 km radar); mission-failed banner; keyboard-capture pill (click
-  to capture) / "Keyboard captured"; key-help overlay generated from the binding table; toasts (deduplicated
-  with a count; also for warp drops with a reason, milestones, SOI changes, crew loss, part loss, vessel switch,
-  chute failure). Sizes derive from `min(1vh, 0.5625vw)`, so 1280 x 720 and 3840 x 2160 look identical.
+  10 s); terrain-loading notice (pending below 2 km radar; under the altimeter, above the toasts, clear of every
+  panel); mission-failed banner; keyboard-capture pill (click to capture) / "Keyboard captured"; key-help
+  overlay generated from the binding table; toasts (deduplicated with a count; the same text twice within one
+  HUD frame - e.g. a refusal reported as a CommandResult and again as a sim event - counts once; a
+  `warpChanged` reason is toasted only when the sim LOWERED the warp by itself, because refusals of the
+  player's own warp requests come back as CommandResults that the flight controller reports; also milestones,
+  SOI changes, crew loss, part loss, vessel switch, chute failure). Sizes derive from `min(1vh, 0.5625vw)`, so
+  1280 x 720 and 3840 x 2160 look identical.
+- **HUD main-thread cost**: a changed text node costs a style / layout / paint / layerization pass (about 1 ms
+  on this page), far more than the JavaScript formatting it. So the numeric readouts refresh at `HUD_TEXT_HZ`
+  (10 Hz), all in one frame; the navball, the throttle and g gauges (composited transforms), every indicator
+  light and every panel's visibility follow each frame; and any discrete change (a panel appearing, SAS or
+  navball mode, warp level, altimeter source, a stage fired, a target set...) refreshes the text in that same
+  frame, so a label and its number never disagree. Every box whose text changes is a relayout boundary
+  (fixed height + `contain: size layout`), so a changed number lays out only its own line. The node pulse
+  animates opacity (compositor), the warp chevrons are one SVG (no clip-path per chevron).
 - **The HUD renders the navball** in every `update` (the shared 512 texture always, the HUD canvas copy while it
   is on screen) on its own command encoder and submits it. The app must not render the navball separately; it
   publishes `navball.view` as `'ui.navball'`.
@@ -228,7 +263,16 @@ formatBearing / formatDeg / formatPercent / formatPressure / formatHeatFlux / fo
   ADI on flight, orbit diagram on orbit, resource bars on systems, stage list on staging, g / dose / ablator /
   temperature gauges + lift arrow on entry, landing scope on landing - and a SAS / RCS / warp / UT footer). All
   sizes scale with the canvas height (designed for 1024 x 768, legible at 512 x 384). The entry and landing
-  pages carry `landingTargetRows()` verbatim. The ADI uses rollDeg positive = roll right (ARCHITECTURE sign).
+  pages carry `landingTargetRows()` verbatim; the flight and landing pages take altitude, speeds, heading,
+  pitch, roll, throttle and g from `describeFlight` (the HUD's strings). The landing scope (log-scaled rings
+  100 m .. 100 km) is **north-up at every speed** (`landingScope`): the target is placed from distance and
+  bearing, which the readout gives at any speed, so a target 400 m from a hovering lander (down/cross-range both
+  0 below 0.1 m/s) is never drawn on the vessel, and nothing jumps or swings as a slow drift crosses the
+  0.1 m/s threshold. While there is a ground track it is drawn as a dashed line at the compass direction
+  recovered from the readout's own down/cross-range (T = bearing - atan2(cross, down)), so the line agrees with
+  the "ahead / right" rows; caption "NORTH UP · TRACK 218°" or "NORTH UP · NO GROUND TRACK". The staging page
+  lists every remaining stage; the orbit diagram keeps room for its Ap / Pe labels.
+  The ADI uses rollDeg positive = roll right (ARCHITECTURE sign).
 
 ## 2. How the app wires it (ARCHITECTURE section 5)
 
@@ -262,24 +306,29 @@ frame(realDt):
 
 ## 3. How to run and verify
 
+Through the machine-load gate (docs/PACKAGE_RULES.md, "Machine load"):
+
 ```
-npm run typecheck:paths -- src/input src/camera src/ui labs/flight-ui tests/browser/flight-ui tests/unit/flight-ui
-npx vitest run src/input src/camera src/ui tests/unit/flight-ui tools/dev/boundaries.test.ts      # 62 tests
-npx playwright test tests/browser/flight-ui --project=functional                                  # 45 tests
-npx playwright test tests/browser/flight-ui --project=perf                                        # under the GPU lock
+node tools/dev/heavy.mjs --class=cpu -- npm run typecheck:paths -- src/input src/camera src/ui labs/flight-ui tests/browser/flight-ui tests/unit/flight-ui
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/input src/camera src/ui tests/unit/flight-ui tools/dev/boundaries.test.ts   # 69 tests
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/flight-ui --project=functional                               # 49 tests
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/flight-ui --project=perf                                     # under the GPU lock
 ```
 
 Lab: `/labs/flight-ui/?scene=<FakeScene>` with `view=chase|cockpit|map`, `capture=1`, `extraRig=1`,
-`node=1`, `target=moon`, `predicted=impact|entry`, `failed=1`, `terrainPending=1`, `lockout=1`, `guard=1`,
-`mfd=1` (the six MFD pages), `help=1`, `orbit=<yawDeg>,<pitchDeg>,<distance>`. The lab adds a test vehicle
-(`labs/flight-ui/labVehicle.ts`: four stage groups, resources, a command part with the mouldline seats) to the
-loaded library and tags FakeSim snapshots with it; `predicted`, `failed`, `terrainPending`, `lockout` are lab
-decorations of the snapshot (the FakeSim produces none of them). The backdrop (`backdrop.ts`) is a lab-only ray
+`node=1`, `target=moon`, `predicted=impact|entry`, `targetOffset=<m>,<bearingDeg>`, `failed=1`,
+`terrainPending=1`, `lockout=1`, `guard=1`, `mfd=1` (the six MFD pages), `help=1`, `ballast=<iterations>` (perf: GPU ballast),
+`orbit=<yawDeg>,<pitchDeg>,<distance>`. The lab adds a test vehicle (`labs/flight-ui/labVehicle.ts`: four stage
+groups, resources, a command part with the mouldline seats) to the loaded library and tags FakeSim snapshots
+with it; `predicted`, `targetOffset`, `failed`, `terrainPending`, `lockout` are lab decorations of the snapshot
+(the FakeSim produces none of them; `targetOffset` follows the readout rule, down/cross-range 0 without a
+ground track, track due north otherwise). The backdrop (`backdrop.ts`) is a lab-only ray
 tracer for judging cameras and HUD legibility; it is not shipped.
 
 Screenshots (all reviewed by eye): `out/screens/flight-ui/<scene>-720p.png` and `<scene>-4k.png` for all eight
-FakeSim scenes, plus `cockpit-lowOrbit`, `map-lowOrbit`, `keyhelp`, `failed`, `terrain-pending`, `mfd-pages`
-(both sizes), `prograde-hold`, `warp-refused`, `extra-rig`, `stage-lockout`.
+FakeSim scenes, plus `cockpit-lowOrbit`, `map-lowOrbit`, `keyhelp`, `failed`, `terrain-pending`, `mfd-pages`,
+`mfd-pages-hover` (landed 400 m from the target: no ground track) (all at both sizes), `prograde-hold`,
+`warp-refused`, `extra-rig`, `stage-lockout`.
 
 ## 4. Acceptance criteria and measured results
 
@@ -293,28 +342,38 @@ FakeSim scenes, plus `cockpit-lowOrbit`, `map-lowOrbit`, `keyhelp`, `failed`, `t
 | Space stages; T / R / G toggle | met |
 | Digit2 -> prograde; reticle converges onto the prograde marker (within 2 px on the 512 texture) | met |
 | Digit9 emits mfdCycle:0 (and 0 / - -> 1 / 2) exactly once | met |
-| Period / comma / slash change warp; refusal shows a notification | met ("Cannot warp faster here" toast at the physics-warp cap) |
+| Period / comma / slash change warp; refusal shows a notification | met ("Cannot warp faster here" toast at the physics-warp cap; one refused press = one toast without a count, a second press reads "×2") |
 | Clicking SAS buttons, toggles, the stage tile (and the speed readout) works | met; lockout blocks the tile |
 | Blur releases all keys | met |
 | captureKeyboard: a real click leaves `keyboardLocked` a boolean, no error | met (either answer accepted; the HUD shows the matching pill) |
 | PointerState edges and doubleClick exactly once | met (click: 1 / 1 / 0; double click: 2 / 2 / 1) |
 | Navball: zenith at the reticle for nose-up; heading 090 wings level horizontal horizon with sky on top; roll right raises the horizon's right end by tan(roll) | met on the CPU reference (unit) and on the GPU texture (readback spec) |
 | Marker positions match an independent projection within 1 px | met: < 1e-6 px over 2,000 random directions (`navball.test.ts`) |
-| Camera: continuous through switches (< 1 cm / 0.1 deg at both blend ends, no spikes), incl. a vessel at 7.8 km/s | met (6 switch cases) |
+| Camera: no jump above 1 cm / 0.1 deg between consecutive frames of a blend, incl. a vessel at 7.8 km/s | met (6 switch cases), read as: every frame's step is at most the blend's own smooth motion over that frame + 1 cm (turn: + 0.1 deg). The smooth motion is bounded analytically from the two endpoints (log-polar path, slerped orientation, weight k(t)), so near both ends, where k barely moves, any step beyond 1 cm / 0.1 deg fails; mid-blend a 0.6 s move from 2 m to 95 m necessarily moves metres per frame, so a literal per-frame 1 cm bound cannot hold there. A 2 cm jump injected at frame 2 or 50 of the blend is caught |
 | Chase respects a fake terrain; cockpit eye at the seat; map 100 km .. 2e9 m in float64; focus request smooth; unknown-mode external rig through manager, HUD and listener | met (vitest + "M and C" browser spec) |
-| Landing-target panel shows the lunar scenes' numbers and equals the MFD landing page strings | met (DOM rows == `buildMfdPage('landing')` rows, distance and bearing checked against the readout) |
+| Landing-target panel shows the lunar scenes' numbers and equals the MFD landing page strings | met (DOM rows == `buildMfdPage('landing')` rows, distance and bearing checked against the readout); the MFD's flight data (altitude source, vertical speed, heading) and Ap / Pe come from the same models as the HUD (unit tests) |
+| Landing scope never shows "on target" while hovering away from it | met: a hovering vessel 400 m from the target draws it 400 m out at its bearing (unit test on the painted canvas calls); the target does not move when the drift crosses 0.1 m/s; the track line matches the down/cross-range rows |
+| Text fields and DOM panels over the scene (request map-view-1) | met: typing digits / Backspace / Space / Enter edits the field and fires nothing; clicks and wheel over the panel come with `overUi` |
 | Screenshots of every scene at 720p and 4K reviewed by eye | done (section 3) |
-| HUD update < 0.5 ms per frame average | **0.28 ms mean**, p50 0.26 ms, p99 0.55 ms (400 frames, 2560 x 1440, lowOrbit with a node; includes the navball encode + submit) |
-| Navball < 0.05 ms GPU (17.1) | **0.009 ms p50, 0.025 ms p99** for the 512 texture; HUD canvas copy 0.0005 ms p50 / 0.007 ms p99 |
+| HUD update < 0.5 ms per frame average | met: **whole main-thread cost 0.09 ms per frame** (low orbit with a node) and **0.11 ms** (powered ascent, every readout moving): CDP main-thread task time, HUD visible minus hidden (F2) over 5 + 5 alternating windows of 240 frames, plus the hidden HUD's own update; includes style, layout, paint and the navball encode + submit; 2560 x 1440. JavaScript inside `update()` alone: 0.06 ms mean. Without the GPU ballast (previous runs, busier machine): 0.16 / 0.19 ms and 0.25 / 0.30 ms. Before the fix the same method read 0.6-0.7 ms (text written every frame) |
+| Navball < 0.05 ms GPU (17.1), p99 | met: **0.0065 ms p50, 0.008 ms p99** for the 512 texture (2,698 frames per scene, both scenes), HUD canvas copy 0.0006 / 0.0014 ms, measured with a 7 ms GPU ballast per frame as in the game (`labs/flight-ui/ballast.ts`, the method of docs/handoff/render-core.md 4.1). With an otherwise idle GPU the card drops its clocks and the same pass reads p50 0.014-0.016 ms and p99 0.025-0.077 ms from run to run (logged by the spec, not asserted) |
 | expectNoErrors on every spec | yes (window errors, GPU errors and console warnings) |
 
-Timings were taken under the GPU lock while other agents' work may have been loading the machine (wave 1):
-provisional, to be re-measured by the lead.
+Timings were taken under the GPU lock and through the heavy-job gate while the Earth bake and other agents' work
+were loading the machine (wave 1): provisional, to be re-measured by the lead.
 
 ## 5. Known limits (stated plainly)
 
 - `InputFrame.pressed` is a set: two presses of the same key inside one frame (under ~16 ms) count once. Pointer
   edges are queued across frames; key presses are not, because the contract has no count.
+- The HUD's numeric text refreshes at 10 Hz (`HUD_TEXT_HZ`), not every frame (the main-thread budget; see
+  section 1). Gauges, lights, panel visibility and the navball follow every frame, and discrete changes refresh
+  the text at once, so the only visible effect is digits stepping at 10 Hz.
+- The landing scope's ground-track line is recovered from the readout's down-range / cross-range, so it is not
+  drawn within 1 m of the target (those numbers carry no direction there), and for targets thousands of km
+  away its direction carries the spherical error of a flat recovery (the target then sits on the rim anyway).
+- Wheel steps take `overUi` from the last pointer event: a wheel over an overlay with no pointer movement onto
+  it since the last pointer event (practically impossible with a mouse) would be attributed to the old target.
 - FakeSim's `rollDeg` has the opposite sign to the ARCHITECTURE / real-sim convention (request
   `sim-orbits-2`, against `src/core`). The HUD prints `rollDeg` as given and the MFD ADI assumes the
   ARCHITECTURE sign, so the ADI looks mirrored on the FakeSim only. The navball itself uses the quaternion and is
@@ -334,7 +393,15 @@ provisional, to be re-measured by the lead.
 
 ## 6. Requests and contract notes
 
-No request files were filed. No open request in `docs/requests/` targets flight-ui paths. Notes for the lead:
+Requests filed: `flight-ui-1` (Vite's cold dependency scan walked `data/` and held the first page load of every
+Playwright run for minutes) - resolved by the lead in fa1c31b; the warm-up workaround and the raised timeouts
+are gone again (the perf spec keeps 25 minutes because `withGpuLock` itself may wait up to 20 minutes).
+
+Requests against flight-ui paths: `map-view-1` (text fields of the map's node panel, overUi over any DOM
+element) - resolved here: editable targets reach no binding and are not `preventDefault`ed, and `overUi` is
+true over every element other than the canvas (section 1); browser spec "a text field over the scene ..." types
+"25" + Backspace + Space + Enter into a field over the canvas and clicks / wheels over the panel without any
+action, SAS or staging change. No other open request targets flight-ui paths. Notes for the lead:
 
 1. `createHud` takes an options object (the brief wrote `createHud(): Hud`): it needs the GPU handle, the navball
    renderer and the dispatch / capture callbacks, and `src/ui` may not import `src/input`, so the binding table

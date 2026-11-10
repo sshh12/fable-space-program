@@ -3,6 +3,11 @@
  * nothing touches nothing (no style recalculation, no layout).
  */
 
+/**
+ * Marks the HUD parts that take pointer events (the stylesheet gives exactly these `pointer-events: auto`);
+ * everything else lets the pointer through to the scene canvas. The input system reports the pointer over any
+ * of them as PointerState.overUi (it is over an element other than the canvas).
+ */
 export const INTERACTIVE_ATTR = 'data-hud-interactive';
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', children: (Node | string)[] = [], attrs: Record<string, string> = {}): HTMLElementTagNameMap[K] {

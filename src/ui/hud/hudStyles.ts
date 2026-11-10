@@ -62,15 +62,21 @@ export const HUD_CSS = /* css */ `
   margin-bottom: calc(var(--u) * 0.45);
 }
 .hud .ptitle .pname { color: var(--text); letter-spacing: 0.02em; text-transform: none; font-size: 1.22em; font-weight: 600; }
+/*
+ * Relayout boundaries: every box whose text changes at the 10 Hz text rate (label/value rows, apsis rows, clock
+ * lines, the big readouts, gauge values, the navball pills) has a fixed height and contain: size layout, so a
+ * changed number lays out only its own line instead of its panel and column.
+ */
 .hud .row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: calc(var(--u) * 1.2);
-  min-height: 1.4em;
+  height: 1.4em;
+  contain: size layout style;
 }
 .hud .lbl { font-size: 0.76em; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: var(--label); white-space: nowrap; }
-.hud .val { font-weight: 600; white-space: nowrap; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hud .val { font-weight: 600; white-space: nowrap; text-align: right; min-width: 0; }
 .hud .val.big { font-size: 1.75em; font-weight: 600; letter-spacing: 0.01em; }
 .hud .sub { font-size: 0.8em; color: var(--label); white-space: nowrap; }
 .hud .t-accent { color: var(--accent); }
@@ -80,7 +86,6 @@ export const HUD_CSS = /* css */ `
 .hud .t-dim { color: var(--dim); }
 
 .hud button {
-  pointer-events: auto;
   font: inherit;
   color: inherit;
   text-shadow: inherit;
@@ -95,7 +100,8 @@ export const HUD_CSS = /* css */ `
 .hud button:hover { background: rgba(120, 200, 255, 0.14); border-color: rgba(120, 200, 255, 0.45); }
 .hud button:active { background: rgba(120, 200, 255, 0.24); }
 .hud button[aria-disabled="true"] { opacity: 0.32; cursor: default; background: rgba(255, 255, 255, 0.03); border-color: var(--line); }
-.hud .clickable { pointer-events: auto; cursor: pointer; }
+/* Only the interactive parts take pointer events (everything else lets the pointer through to the scene). */
+.hud [data-hud-interactive] { pointer-events: auto; }
 .hud .kbd {
   display: inline-block;
   min-width: 1.7em;
@@ -125,24 +131,28 @@ export const HUD_CSS = /* css */ `
 .hud .rcol { position: absolute; right: var(--gap); top: calc(var(--gap) + var(--u) * 6); width: calc(var(--u) * 33); display: flex; flex-direction: column; gap: calc(var(--u) * 1); align-items: stretch; max-height: calc(100% - var(--u) * 9); }
 
 /* ---------------------------------------------------------------- clock + warp */
-.hud .clock .met { font-size: 1.55em; font-weight: 600; letter-spacing: 0.02em; }
-.hud .clock .ut { font-size: 0.82em; color: var(--label); margin-top: calc(var(--u) * 0.1); }
+.hud .clock .met { font-size: 1.55em; font-weight: 600; letter-spacing: 0.02em; height: 1.25em; contain: size layout style; }
+.hud .clock .ut { font-size: 0.82em; color: var(--label); margin-top: calc(var(--u) * 0.1); height: 1.25em; contain: size layout style; }
 .hud .warp { display: flex; align-items: center; gap: calc(var(--u) * 0.6); margin-top: calc(var(--u) * 0.7); }
 .hud .warp button { padding: 0 calc(var(--u) * 0.55); line-height: 1.3; font-weight: 700; }
-.hud .chev { display: flex; gap: calc(var(--u) * 0.18); flex: 1; }
-.hud .chev i { flex: 1; height: calc(var(--u) * 1.1); clip-path: polygon(0 0, 70% 0, 100% 50%, 70% 100%, 0 100%, 30% 50%); background: rgba(150, 175, 210, 0.22); }
-.hud .chev i.on { background: var(--good); }
-.hud .chev i.on.phys { background: var(--caution); }
-.hud .chev i.cap { background: rgba(150, 175, 210, 0.07); }
+/* Chevrons are polygons of one SVG (no clip-path per chevron: fewer paint chunks to layerize). */
+.hud .chev { flex: 1; height: calc(var(--u) * 1.1); display: block; }
+.hud .chev polygon { fill: rgba(150, 175, 210, 0.22); }
+.hud .chev polygon.on { fill: var(--good); }
+.hud .chev polygon.on.phys { fill: var(--caution); }
+.hud .chev polygon.cap { fill: rgba(150, 175, 210, 0.07); }
 .hud .warp .factor { min-width: 4.4em; text-align: right; font-weight: 600; }
 .hud .warp-limit { font-size: 0.76em; color: var(--caution); margin-top: calc(var(--u) * 0.35); white-space: normal; }
 
 /* ---------------------------------------------------------------- altitude */
-.hud .alt { min-width: calc(var(--u) * 26); text-align: center; padding: calc(var(--u) * 0.6) calc(var(--u) * 1.6); pointer-events: auto; cursor: pointer; }
-.hud .alt .val.big { display: block; text-align: center; }
+.hud .alt { min-width: calc(var(--u) * 26); text-align: center; padding: calc(var(--u) * 0.6) calc(var(--u) * 1.6); cursor: pointer; }
+.hud .alt .val.big { display: block; text-align: center; height: 1.25em; contain: size layout style; }
 .hud .alt .vs { font-size: 0.86em; color: var(--label); }
 
 /* ---------------------------------------------------------------- toasts */
+.hud .notice .pill { background: var(--bg-strong); border: 1px solid rgba(85, 212, 255, 0.45); color: var(--accent); }
+.hud .notice .spin { width: 0.9em; height: 0.9em; border-radius: 50%; border: 0.16em solid rgba(85, 212, 255, 0.3); border-top-color: var(--accent); animation: hud-spin 0.9s linear infinite; }
+@keyframes hud-spin { to { transform: rotate(360deg); } }
 .hud .toasts { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 0.6); }
 .hud .toast {
   background: var(--bg-strong);
@@ -170,8 +180,9 @@ export const HUD_CSS = /* css */ `
 .hud .warp button { background: var(--bg-strong); }
 
 /* ---------------------------------------------------------------- stage stack */
-.hud .stages { display: flex; flex-direction: column; gap: calc(var(--u) * 0.55); }
-.hud .stages .more { font-size: 0.76em; color: var(--label); text-align: right; letter-spacing: 0.06em; text-transform: uppercase; padding-right: calc(var(--u) * 0.6); }
+.hud .stagewrap { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.hud .stages { display: flex; flex-direction: column-reverse; gap: calc(var(--u) * 0.55); min-height: 0; overflow: hidden; }
+.hud .stagewrap .more { align-self: flex-end; font-size: 0.8em; font-weight: 600; color: var(--text); letter-spacing: 0.03em; white-space: nowrap; background: var(--bg); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); padding: calc(var(--u) * 0.1) calc(var(--u) * 0.7); margin-bottom: calc(var(--u) * 0.55); }
 .hud .tile {
   display: flex;
   gap: calc(var(--u) * 0.9);
@@ -192,7 +203,7 @@ export const HUD_CSS = /* css */ `
 .hud .tile .dv { flex: none; font-weight: 600; font-size: 0.92em; text-align: right; white-space: nowrap; }
 .hud .tile .meta { flex: 1; min-width: 0; font-size: 0.76em; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud .tile .bar { flex: none; height: calc(var(--u) * 0.55); width: calc(var(--u) * 7.5); }
-.hud .tile.next { border-color: rgba(85, 212, 255, 0.75); background: rgba(10, 30, 44, 0.78); box-shadow: 0 0 0 1px rgba(85, 212, 255, 0.25), 0 0 calc(var(--u) * 1.4) rgba(85, 212, 255, 0.18); pointer-events: auto; cursor: pointer; }
+.hud .tile.next { border-color: rgba(85, 212, 255, 0.75); background: rgba(10, 30, 44, 0.78); box-shadow: 0 0 0 1px rgba(85, 212, 255, 0.25), 0 0 calc(var(--u) * 1.4) rgba(85, 212, 255, 0.18); cursor: pointer; }
 .hud .tile.next .ico { background: rgba(85, 212, 255, 0.18); color: var(--accent); }
 .hud .tile.next:hover { background: rgba(14, 44, 64, 0.85); }
 .hud .tile.next .hint { color: var(--accent); }
@@ -200,11 +211,18 @@ export const HUD_CSS = /* css */ `
 .hud .tile.locked .hint { color: var(--caution); }
 .hud .tile .hint { font-size: 0.7em; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .hud .tile .hint .kbd { font-size: 0.95em; }
+.hud .tile.compact { gap: calc(var(--u) * 0.8); padding: calc(var(--u) * 0.3) calc(var(--u) * 0.9); }
+.hud .tile.compact .ico { width: calc(var(--u) * 2.3); height: calc(var(--u) * 2.3); border-radius: calc(var(--u) * 0.45); }
+.hud .tile.compact .ico .num { font-size: 0.6em; right: -0.5em; bottom: -0.45em; }
+.hud .tile.compact .name { font-size: 0.86em; }
+.hud .tile.compact .dv { font-size: 0.8em; color: var(--label); }
+.hud .tile.compact .bar { width: calc(var(--u) * 4.5); height: calc(var(--u) * 0.45); }
 
 /* ---------------------------------------------------------------- resources */
+.hud .res { flex: none; }
 .hud .res .grp + .grp { margin-top: calc(var(--u) * 0.6); }
 .hud .res .gname { font-size: 0.72em; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: calc(var(--u) * 0.2); }
-.hud .res .rrow { display: grid; grid-template-columns: 1fr calc(var(--u) * 11) 3.2em; gap: calc(var(--u) * 0.8); align-items: center; font-size: 0.86em; }
+.hud .res .rrow { display: grid; grid-template-columns: 1fr calc(var(--u) * 11) 3.2em; gap: calc(var(--u) * 0.8); align-items: center; font-size: 0.86em; height: 1.4em; contain: size layout style; }
 .hud .res .rrow .rn { color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud .res .rrow .rp { text-align: right; font-weight: 600; }
 
@@ -218,17 +236,17 @@ export const HUD_CSS = /* css */ `
 .hud .toggles button.abort { color: var(--warning); border-color: rgba(255, 98, 98, 0.4); }
 .hud .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 0.45); }
 .hud .modes button { aspect-ratio: 1; padding: 12%; display: flex; align-items: center; justify-content: center; position: relative; }
-.hud .modes button svg { width: 100%; height: 100%; filter: drop-shadow(0 0 0.08em rgba(0,0,0,0.8)); }
+.hud .modes button svg { width: 100%; height: 100%; }
 .hud .modes button.on { border-color: rgba(95, 227, 154, 0.95); background: rgba(95, 227, 154, 0.2); box-shadow: inset 0 0 0 1px rgba(95, 227, 154, 0.6); }
 .hud .modes button .key { position: absolute; left: 0.25em; top: 0.1em; font-size: 0.56em; font-weight: 700; color: var(--label); }
 .hud .modecap { font-size: 0.72em; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--label); text-align: center; white-space: nowrap; }
 .hud .modecap b { color: var(--good); font-weight: 700; }
 
 .hud .nbwrap { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 0.5); }
-.hud .speed { text-align: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 1.5); pointer-events: auto; cursor: pointer; min-width: calc(var(--u) * 22); }
-.hud .speed .val.big { font-size: 1.55em; display: block; text-align: center; }
+.hud .speed { text-align: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 1.5); cursor: pointer; width: calc(var(--u) * 24); }
+.hud .speed .val.big { font-size: 1.55em; display: block; text-align: center; height: 1.25em; contain: size layout style; }
 .hud .speed .mode { color: var(--accent); }
-.hud .ball { position: relative; width: calc(var(--u) * 29); height: calc(var(--u) * 29); }
+.hud .ball { position: relative; width: calc(var(--u) * 29); height: calc(var(--u) * 29); contain: size layout style; }
 .hud .ball canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
 .hud .ball .bezel { position: absolute; inset: calc(var(--u) * 0.2); border-radius: 50%; border: calc(var(--u) * 0.85) solid rgba(10, 15, 22, 0.78); box-shadow: inset 0 0 0 1px rgba(170, 200, 240, 0.28), 0 0 0 1px rgba(170, 200, 240, 0.22), 0 calc(var(--u) * 0.5) calc(var(--u) * 2.4) rgba(0, 0, 0, 0.45); pointer-events: none; }
 .hud .ball .hdg { position: absolute; left: 50%; top: calc(var(--u) * -1.7); transform: translateX(-50%); background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); padding: 0 calc(var(--u) * 0.7); font-weight: 700; font-size: 0.92em; }
@@ -240,24 +258,27 @@ export const HUD_CSS = /* css */ `
 .hud .gauges { display: flex; gap: calc(var(--u) * 0.6); align-items: flex-end; padding: calc(var(--u) * 0.8) calc(var(--u) * 0.6); }
 .hud .gauge { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 0.45); width: calc(var(--u) * 7.6); }
 .hud .gauge .tube { position: relative; width: calc(var(--u) * 2.6); height: calc(var(--u) * 19); border-radius: calc(var(--u) * 1.3); background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
-.hud .gauge .tube > i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform-origin: 50% 100%; background: linear-gradient(to top, #2bb8ff, #7fe3ff); }
+.hud .gauge .tube > i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform-origin: 50% 100%; will-change: transform; background: linear-gradient(to top, #2bb8ff, #7fe3ff); }
 .hud .gauge.g .tube > i { background: linear-gradient(to top, #5fe39a, #ffbb4d 55%, #ff6262); }
 .hud .gauge .tube .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0, transparent calc(10% - 1px), rgba(255,255,255,0.22) calc(10% - 1px), rgba(255,255,255,0.22) 10%); }
-.hud .gauge .gv { font-weight: 700; font-size: 0.9em; }
+.hud .gauge .gv { font-weight: 700; font-size: 0.9em; display: block; width: 100%; text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
 .hud .gauge .gl { font-size: 0.62em; letter-spacing: 0.08em; color: var(--label); font-weight: 600; white-space: nowrap; }
 .hud .gauge .dose { width: 100%; }
 .hud .gauge .dose .bar { height: calc(var(--u) * 0.45); }
 
-.hud .node { width: calc(var(--u) * 25); border-color: rgba(79, 141, 255, 0.55); }
+.hud .node { position: relative; width: calc(var(--u) * 25); border-color: rgba(79, 141, 255, 0.55); }
 .hud .node .ptitle { color: #8fb4ff; }
-.hud .node.imminent { border-color: var(--caution); animation: hud-pulse 1s ease-in-out infinite; }
-@keyframes hud-pulse { 50% { box-shadow: 0 0 calc(var(--u) * 1.6) rgba(255, 187, 77, 0.45); } }
+.hud .node.imminent { border-color: var(--caution); }
+/* The pulse animates the opacity of a glow layer, which runs on the compositor (no paint per frame). */
+.hud .node.imminent::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; box-shadow: 0 0 calc(var(--u) * 1.6) rgba(255, 187, 77, 0.55); opacity: 0; animation: hud-pulse 1s ease-in-out infinite; pointer-events: none; }
+@keyframes hud-pulse { 50% { opacity: 1; } }
 
 /* ---------------------------------------------------------------- left panels */
-.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 1); align-items: baseline; min-height: 1.4em; }
+.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 1); align-items: baseline; height: 1.4em; contain: size layout style; }
 .hud .orbit .apsis .sub { text-align: right; min-width: 4.6em; font-size: 0.74em; }
 .hud .lt .inside { color: var(--good); font-weight: 700; font-size: 0.72em; letter-spacing: 0.08em; }
-.hud .lt .pred { margin-top: calc(var(--u) * 0.3); padding-top: calc(var(--u) * 0.35); border-top: 1px solid var(--line); }
+.hud .lt .tname { font-size: 1.22em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2em; }
+.hud .lt .pred { margin-top: calc(var(--u) * 0.3); padding-top: calc(var(--u) * 0.35); border-top: 1px solid var(--line); height: calc(1.4em + var(--u) * 0.35 + 1px); }
 .hud .entry .lift { font-weight: 700; color: #7dffa8; letter-spacing: 0.08em; }
 .hud .entry .light { display: inline-flex; align-items: center; gap: 0.4em; font-weight: 700; letter-spacing: 0.06em; }
 .hud .entry .light::before { content: ''; width: 0.75em; height: 0.75em; border-radius: 50%; background: currentColor; box-shadow: 0 0 0.6em currentColor; }
@@ -267,16 +288,12 @@ export const HUD_CSS = /* css */ `
 .hud .pad .targets button.on { background: rgba(255, 91, 214, 0.22); border-color: rgba(255, 91, 214, 0.75); }
 
 /* ---------------------------------------------------------------- centre */
-.hud .notice { position: absolute; left: 50%; bottom: calc(var(--u) * 37); transform: translateX(-50%); }
-.hud .notice .pill { background: var(--bg-strong); border: 1px solid rgba(85, 212, 255, 0.45); color: var(--accent); }
-.hud .notice .spin { width: 0.9em; height: 0.9em; border-radius: 50%; border: 0.16em solid rgba(85, 212, 255, 0.3); border-top-color: var(--accent); animation: hud-spin 0.9s linear infinite; }
-@keyframes hud-spin { to { transform: rotate(360deg); } }
 .hud .failed { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; background: rgba(40, 6, 8, 0.86); border: 1px solid rgba(255, 98, 98, 0.75); border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 2) calc(var(--u) * 5); box-shadow: 0 0 calc(var(--u) * 6) rgba(255, 60, 60, 0.25); }
 .hud .failed h2 { margin: 0; font-size: 2.4em; letter-spacing: 0.18em; color: var(--warning); font-weight: 700; }
 .hud .failed p { margin: calc(var(--u) * 0.8) 0 0; font-size: 1.05em; color: #ffd5d5; }
 
 /* ---------------------------------------------------------------- key help */
-.hud .help { position: absolute; inset: 0; background: rgba(2, 4, 8, 0.62); display: flex; align-items: center; justify-content: center; pointer-events: auto; }
+.hud .help { position: absolute; inset: 0; background: rgba(2, 4, 8, 0.62); display: flex; align-items: center; justify-content: center; }
 .hud .help .sheet { background: rgba(10, 15, 22, 0.94); border: 1px solid var(--line); border-radius: calc(var(--u) * 1.4); padding: calc(var(--u) * 2.4) calc(var(--u) * 3); width: min(calc(var(--u) * 150), 94%); max-height: 92%; overflow: hidden; box-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 8) rgba(0, 0, 0, 0.6); }
 .hud .help .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: calc(var(--u) * 1.4); }
 .hud .help h2 { margin: 0; font-size: 1.45em; letter-spacing: 0.04em; font-weight: 600; }

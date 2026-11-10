@@ -19,6 +19,7 @@ import {
   MAP_MAX_DISTANCE,
   MAP_MIN_DISTANCE,
   resolveSeatPose,
+  VIEW_BLEND_SECONDS,
   vesselComRoot,
   viewForward,
   type ViewFrame,
@@ -79,6 +80,26 @@ function runSwitch(scene: FakeScene, startMode: string, keys: ('toggleMap' | 'cy
   return { recs, switchAt };
 }
 
+/** Blend weight after `n` frames of DT: the documented C-infinity smooth step over VIEW_BLEND_SECONDS. */
+function blendWeight(n: number): number {
+  const t = Math.min(1, (n * DT) / VIEW_BLEND_SECONDS);
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const a = Math.exp(-1 / t);
+  const b = Math.exp(-1 / (1 - t));
+  return a / (a + b);
+}
+
+/**
+ * The brief's "no jump above 1 cm or 0.1 degree between consecutive frames of a blend", made exact. A blend
+ * that carries the eye from 2 m to 95 m (or from 20,000 km to 95 m) in 0.6 s must move metres per frame, so
+ * a jump is a step beyond the blend's own smooth motion. That motion is bounded analytically from the two
+ * endpoints alone (the documented path: log-polar about the CoM, slerped orientation, weight k(t) above):
+ *   |dp/dk| = r(k) * sqrt(ln(rb / ra)^2 + theta^2), r(k) = ra^(1-k) rb^k (monotone), |dq/dk| = Omega,
+ * so frame i may move at most (k_i - k_{i-1}) * max r * sqrt(...) + the endpoints' own motion + 1 cm, and turn
+ * at most (k_i - k_{i-1}) * Omega + the endpoints' own turn + 0.1 deg. Near both ends k barely changes, so any
+ * step there beyond 1 cm / 0.1 deg fails.
+ */
 function assertContinuousBlend(recs: Rec[], switchAt: number): void {
   // 1. No jump into the blend: the first blended frame continues the last frame before the switch.
   const before = recs[switchAt - 1]!;
@@ -91,19 +112,45 @@ function assertContinuousBlend(recs: Rec[], switchAt: number): void {
   const lastBlend = blendFrames[blendFrames.length - 1]!;
   expect(v3.dist(lastBlend.frame.camera.positionRoot, lastBlend.frame.target.positionRoot)).toBeLessThan(0.01);
   expect(angleDeg(lastBlend.frame.camera, lastBlend.frame.target)).toBeLessThan(0.1);
-  // 3. Smooth in between: no frame-to-frame step is a spike against its neighbours.
-  const steps: number[] = [];
-  const turns: number[] = [];
+  // 3. Every frame of the blend: no step beyond the analytic bound of the smooth motion.
+  const from = before.frame.camera;
+  const v0 = before.snap.vessels.find((x) => x.id === before.snap.activeVesselId)!;
+  // The start pose is held in the vessel frame for interior views, CoM-relative otherwise (documented freeze).
+  const startPose = (s: SimSnapshot): { pos: Vec3; q: CameraState['qViewToRoot'] } => {
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    if (from.kind === 'interior') {
+      const posVes = quat.rotateInv(v0.q, v3.sub(from.positionRoot, v0.rRoot));
+      const pos = v3.sub(v3.add(v.rRoot, quat.rotate(v.q, posVes)), vesselComRoot(v));
+      return { pos, q: quat.mul(v.q, quat.mul(quat.conj(v0.q), from.qViewToRoot)) };
+    }
+    return { pos: rel(before.snap, from), q: from.qViewToRoot };
+  };
+  let checked = 0;
   for (let i = switchAt; i < recs.length; i++) {
     const a = recs[i - 1]!;
     const b = recs[i]!;
-    steps.push(v3.dist(rel(a.snap, a.frame.camera), rel(b.snap, b.frame.camera)));
-    turns.push(angleDeg(a.frame.camera, b.frame.camera));
+    const n = i - switchAt + 1;
+    const dk = blendWeight(n) - blendWeight(n - 1);
+    const s0 = startPose(a.snap);
+    const s1 = startPose(b.snap);
+    const t1 = { pos: rel(b.snap, b.frame.target), q: b.frame.target.qViewToRoot };
+    const t0 = i === switchAt ? t1 : { pos: rel(a.snap, a.frame.target), q: a.frame.target.qViewToRoot };
+    const ra = v3.len(s1.pos);
+    const rb = v3.len(t1.pos);
+    const theta = v3.angle(s1.pos, t1.pos);
+    const rMax = Math.max(ra ** (1 - blendWeight(n - 1)) * rb ** blendWeight(n - 1), ra ** (1 - blendWeight(n)) * rb ** blendWeight(n));
+    const endpointMotion = v3.dist(s0.pos, s1.pos) + v3.dist(t0.pos, t1.pos);
+    const posBound = dk * rMax * Math.hypot(Math.log(rb / ra), theta) + 2 * endpointMotion + 0.01;
+    const omega = quat.angleBetween(s1.q, t1.q) / DEG;
+    const endpointTurn = (quat.angleBetween(s0.q, s1.q) + quat.angleBetween(t0.q, t1.q)) / DEG;
+    const turnBound = dk * omega + 2 * endpointTurn + 0.1;
+    const step = v3.dist(rel(a.snap, a.frame.camera), rel(b.snap, b.frame.camera));
+    const turn = angleDeg(a.frame.camera, b.frame.camera);
+    expect(step, `frame ${n}: step ${step} m > bound ${posBound} m`).toBeLessThanOrEqual(posBound);
+    expect(turn, `frame ${n}: turn ${turn} deg > bound ${turnBound} deg`).toBeLessThanOrEqual(turnBound);
+    checked++;
   }
-  for (let i = 1; i < steps.length - 1; i++) {
-    expect(steps[i]!).toBeLessThanOrEqual(2.2 * Math.max(steps[i - 1]!, steps[i + 1]!) + 0.01);
-    expect(turns[i]!).toBeLessThanOrEqual(2.2 * Math.max(turns[i - 1]!, turns[i + 1]!) + 0.1);
-  }
+  expect(checked).toBeGreaterThan(36);
 }
 
 describe('view manager blends', () => {
@@ -114,7 +161,7 @@ describe('view manager blends', () => {
     ['map -> chase', 'map', ['toggleMap'], false],
     ['chase -> cockpit, vessel in orbit at 7.8 km/s', 'chase', ['cycleCamera'], true],
     ['chase -> map, vessel in orbit', 'chase', ['toggleMap'], true],
-  ] as const)('%s is continuous (no step above 1 cm / 0.1 deg at either end, no spikes)', (_name, start, keys, moving) => {
+  ] as const)('%s is continuous (no step beyond the smooth blend motion + 1 cm / 0.1 deg)', (_name, start, keys, moving) => {
     const { recs, switchAt } = runSwitch('lowOrbit', start, [...keys], moving);
     expect(recs[switchAt + 79]!.frame.camera.mode).not.toBe(start);
     assertContinuousBlend(recs, switchAt);

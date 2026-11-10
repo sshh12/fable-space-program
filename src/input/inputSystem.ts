@@ -9,7 +9,12 @@
  * - The wheel listener is non-passive and cancelled (Ctrl+wheel would zoom the page); steps are normalised to
  *   their sign (+1 = away from the user), because wheel deltas depend on the device and OS scaling.
  * - Keyboard events whose target is an editable element (a text field of the map's node panel) are left
- *   alone, and focusing such an element releases every held key.
+ *   alone (no binding, no preventDefault: digits, Backspace, Enter and Space edit the text), and focusing such
+ *   an element releases every held key.
+ * - PointerState.overUi is true while the pointer is over any element other than the canvas (HUD controls,
+ *   the map's node panel, any overlay that takes pointer events); the scene ignores presses, drags and wheel
+ *   steps reported with it. A drag that starts on the canvas captures the pointer, so it stays a scene drag
+ *   (overUi false) until release wherever the pointer goes.
  * - Release-all on window blur, when the page is hidden, and when fullscreen is left.
  * - With `captureKeyboard` (default true), the first real user gesture requests fullscreen and
  *   `navigator.keyboard.lock()`; `keyboardLocked` reports the outcome and is re-evaluated on every
@@ -20,17 +25,14 @@ import { DEFAULT_BINDINGS, type Binding, type UiAction } from './bindings';
 import { createInputCore, type FlightInputFrame, type ModifierState } from './inputCore';
 import { createKeyboardCapture } from './keyboardCapture';
 
-/** Attribute that marks interactive HUD elements (pointer over them => PointerState.overUi). */
-export const HUD_INTERACTIVE_ATTR = 'data-hud-interactive';
-
 export interface InputSystemOptions {
   bindings?: readonly Binding[];
   /** Request fullscreen + keyboard lock on the first real user gesture (default true). */
   captureKeyboard?: boolean;
   /** Element made fullscreen (default document.documentElement, so the HUD stays visible). */
   fullscreenElement?: () => Element;
-  /** True when the pointer is over an interactive HUD element. Default: the target has an ancestor with HUD_INTERACTIVE_ATTR. */
-  isInteractive?: (target: EventTarget | null) => boolean;
+  /** PointerState.overUi for a pointer event's target. Default: an element other than the canvas (and not inside it). */
+  isOverUi?: (target: EventTarget | null) => boolean;
 }
 
 export interface InputSystem {
@@ -50,8 +52,6 @@ export interface InputSystem {
   dispose(): void;
 }
 
-const defaultIsInteractive = (target: EventTarget | null): boolean => target instanceof Element && target.closest(`[${HUD_INTERACTIVE_ATTR}]`) !== null;
-
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -69,7 +69,7 @@ const modsOf = (e: KeyboardEvent | MouseEvent): ModifierState => ({ shift: e.shi
 export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions = {}): InputSystem {
   const bindings = opts.bindings ?? DEFAULT_BINDINGS;
   const core = createInputCore(bindings);
-  const isInteractive = opts.isInteractive ?? defaultIsInteractive;
+  const isOverUi = opts.isOverUi ?? ((target: EventTarget | null): boolean => target instanceof Element && target !== canvas && !canvas.contains(target));
   const listeners = new Set<(locked: boolean) => void>();
   const capture = createKeyboardCapture(opts.fullscreenElement ?? (() => document.documentElement), (locked) => {
     core.setKeyboardLocked(locked);
@@ -108,7 +108,7 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
   const onPointerDown = (e: PointerEvent): void => {
     refreshRect();
     const [x, y] = local(e);
-    const overUi = isInteractive(e.target);
+    const overUi = isOverUi(e.target);
     core.setModifiers(modsOf(e));
     core.pointerButtons(e.buttons, x, y, overUi);
     if (e.target === canvas) {
@@ -123,7 +123,7 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
   };
   const onPointerMove = (e: PointerEvent): void => {
     const [x, y] = local(e);
-    const overUi = isInteractive(e.target);
+    const overUi = isOverUi(e.target);
     core.pointerMove(x, y, e.movementX, e.movementY, overUi);
     // Chorded buttons (a second button pressed while one is held) only arrive as pointermove.
     core.pointerButtons(e.buttons, x, y, overUi);
@@ -131,7 +131,7 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
   const onPointerUp = (e: PointerEvent): void => {
     const [x, y] = local(e);
     core.setModifiers(modsOf(e));
-    core.pointerButtons(e.buttons, x, y, isInteractive(e.target));
+    core.pointerButtons(e.buttons, x, y, isOverUi(e.target));
   };
   const onDoubleClick = (e: MouseEvent): void => {
     if (e.button === 0) core.doubleClick();

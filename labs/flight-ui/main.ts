@@ -10,9 +10,12 @@
  *   node=1                     plan a 120 m/s prograde maneuver node 10 minutes ahead (orbit scenes)
  *   target=<bodyId>            set a target body at start
  *   predicted=impact|entry     lab decoration: a predicted arrival point in the landing-target readout
+ *   targetOffset=<m>,<deg>     lab decoration: landing target at that distance and compass bearing (down/cross-range
+ *                              follow the readout rule: 0 without a ground track)
  *   failed=1, terrainPending=1, lockout=1   lab decorations: mission-failed banner, terrain-loading notice, staging lockout
  *   guard=1                    install the beforeunload guard (flight always in progress)
  *   mfd=1                      show the six MFD pages instead of the flight view
+ *   ballast=<iterations>       perf: a GPU ballast pass before the navball (ballast.ts; setBallast() at run time)
  *   help=1                     open the key-help overlay
  *   orbit=<yawDeg>,<pitchDeg>,<distance>   initial chase / map orbit
  */
@@ -33,6 +36,7 @@ import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel } from '@/input';
 import { buildMfdPage, createHud, createMfdPainter, createNavballRenderer, MFD_PAGES, projectMarker, type NavballRendererImpl } from '@/ui';
 import { createLabBackdrop, LAB_GROUND } from './backdrop';
+import { createGpuBallast } from './ballast';
 import { createGpuTimer } from './gpuTimer';
 import { labCylinders, labVehicleParts, tagLabVehicle, withLabVehicle, type LabGroup } from './labVehicle';
 
@@ -64,8 +68,8 @@ interface FlightUiLabApi {
   heldCodes(): string[];
   /** Cumulative log of every ButtonAction / UI action seen in an InputFrame. */
   actions(): string[];
-  /** Number of frames whose PointerState had each edge set. */
-  pointerEdges(): { pressed: number; released: number; doubleClick: number; wheelFrames: number };
+  /** Number of frames whose PointerState had each edge set (uiPressed / uiWheelFrames: those with overUi set). */
+  pointerEdges(): { pressed: number; released: number; doubleClick: number; wheelFrames: number; uiPressed: number; uiWheelFrames: number };
   /** Per-frame samples (performance.now ms, lever throttle as applied, pitch). */
   frames(): { t: number; throttle: number; pitch: number; hudMs: number }[];
   /** Pixel position of a navball marker on the 512 x 512 texture (CPU projection of the current snapshot). */
@@ -74,8 +78,14 @@ interface FlightUiLabApi {
   mfdRows(page: MfdPage): { label: string; value: string }[];
   mfdSection(page: MfdPage): { heading: string; rows: { label: string; value: string }[] } | null;
   notifications(): string[];
-  hudTiming(): { last: number; mean: number };
+  hudTiming(): { last: number; mean: number; textUpdates: number };
+  /** Show / hide the HUD (as F2 does) without a key press. */
+  setHudVisible(on: boolean): void;
+  /** Frames presented since boot. */
+  frameCount(): number;
   gpuTimes(): Record<string, number[]>;
+  /** GPU ballast iterations per pixel (0 = off); see ballast.ts. */
+  setBallast(iterations: number): void;
   resetTimes(): void;
   setPointerCaptured(on: boolean): void;
   mode(): string;
@@ -133,6 +143,14 @@ async function boot(): Promise<void> {
     if (params.get('failed') === '1') s = { ...s, mission: { failed: true, failureReason: 'Heat shield burned through at 61 km (lab decoration)', crewAlive: false } };
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };
     if (params.get('lockout') === '1') s = { ...s, staging: { ...s.staging, lockout: true } };
+    const offset = params.get('targetOffset');
+    if (offset && s.readouts.landingTarget) {
+      const [dist, brg] = offset.split(',').map(Number) as [number, number];
+      const tracked = s.readouts.horizontalSpeed >= 0.1;
+      // Ground-track direction from the surface velocity is not modelled here: track = north for the decoration.
+      const b = brg * DEG;
+      s = { ...s, readouts: { ...s.readouts, landingTarget: { ...s.readouts.landingTarget, distance: dist, bearingDeg: brg, downRange: tracked ? dist * Math.cos(b) : 0, crossRange: tracked ? dist * Math.sin(b) : 0 } } };
+    }
     const lt = s.readouts.landingTarget;
     if (lt && (predicted === 'impact' || predicted === 'entry')) {
       const target = s.surfaceTargets.find((t) => t.id === lt.targetId)!;
@@ -185,6 +203,7 @@ async function boot(): Promise<void> {
   const viewManager = createViewManager(rigs, { defs, initialMode: params.get('view') ?? 'chase' });
   const mapper = createCameraInputMapper();
   const timer = createGpuTimer(gpu);
+  const ballast = createGpuBallast(gpu, timer, Number(params.get('ballast') ?? 0));
   const navball: NavballRendererImpl = createNavballRenderer(gpu, { perf: timer });
   const keyFor = (action: ButtonAction): string | null => {
     const b = DEFAULT_BINDINGS.find((x) => x.kind === 'button' && x.action === action && !x.requiresKeyboardLock);
@@ -229,11 +248,12 @@ async function boot(): Promise<void> {
   let pointerCaptured = false;
   const testOverride: Partial<ControlInputs> = {};
   const actionLog: string[] = [];
-  const edges = { pressed: 0, released: 0, doubleClick: 0, wheelFrames: 0 };
+  const edges = { pressed: 0, released: 0, doubleClick: 0, wheelFrames: 0, uiPressed: 0, uiWheelFrames: 0 };
   const frameLog: { t: number; throttle: number; pitch: number; hudMs: number }[] = [];
   const orbitParam = params.get('orbit');
   let orbitApplied = false;
   let probe: NavballRendererImpl | null = null;
+  let frameCount = 0;
 
   testApi.extend({
     state: () => structuredClone(snapshot),
@@ -275,9 +295,14 @@ async function boot(): Promise<void> {
       return sec ? { heading: sec.heading, rows: sec.rows.map((r) => ({ label: r.label, value: r.value })) } : null;
     },
     notifications: () => hud.notifications(),
-    hudTiming: () => ({ last: hud.lastUpdateMs, mean: hud.meanUpdateMs }),
+    hudTiming: () => ({ last: hud.lastUpdateMs, mean: hud.meanUpdateMs, textUpdates: hud.textUpdates }),
+    setHudVisible: (on) => hud.setVisible(on),
+    frameCount: () => frameCount,
     gpuTimes: () => structuredClone(timer.samples()),
     resetTimes: () => timer.reset(),
+    setBallast: (n) => {
+      ballast.iterations = Math.max(0, Math.round(n));
+    },
     setPointerCaptured: (on) => {
       pointerCaptured = on;
     },
@@ -330,6 +355,8 @@ async function boot(): Promise<void> {
     if (f.pointer.released) edges.released++;
     if (f.pointer.doubleClick) edges.doubleClick++;
     if (f.pointer.wheel !== 0) edges.wheelFrames++;
+    if (f.pointer.pressed && f.pointer.overUi) edges.uiPressed++;
+    if (f.pointer.wheel !== 0 && f.pointer.overUi) edges.uiWheelFrames++;
     if (f.pressed.has('toggleHud')) hud.setVisible(!hud.visible);
     if (f.pressed.has('pause')) paused = !paused;
 
@@ -354,6 +381,7 @@ async function boot(): Promise<void> {
       orbitApplied = true;
     }
     camera = view.camera;
+    ballast.submit();
     hud.update(snapshot, camera, realDt);
 
     const encoder = gpu.device.createCommandEncoder({ label: 'lab.frame' });
@@ -369,6 +397,7 @@ async function boot(): Promise<void> {
     }
     frameLog.push({ t: now, throttle: snapshot.appliedControls.throttle, pitch: snapshot.appliedControls.pitch, hudMs: hud.lastUpdateMs });
     if (frameLog.length > 1500) frameLog.splice(0, frameLog.length - 1500);
+    frameCount++;
     testApi.frameDone();
     requestAnimationFrame(frame);
   };

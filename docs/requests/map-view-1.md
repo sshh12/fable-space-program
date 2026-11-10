@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (flight-ui fix stage; see Resolution)
 From: map-view
 Owner path: src/input (flight-ui: DOM events -> InputFrame / PointerState)
 Blocking: no
@@ -25,3 +25,21 @@ is applied; with the real input layer it must also leave SAS and staging untouch
    the map node panel), and presses/wheel over such elements are not reported as scene presses.
 What must NOT change: the binding table, PointerState field meanings, pointer capture during drags that
 started on the canvas (a drag that leaves the canvas keeps overUi false until release).
+
+## Resolution
+flight-ui (fix stage), src/input/inputSystem.ts:
+1. Already in place since the first flight-ui commit and kept: keyboard events whose target is an editable
+   element (`input` other than button-like types, `textarea`, `select`, contenteditable) reach no binding and
+   are not `preventDefault`ed; focusing such an element releases every held key.
+2. New: the default `overUi` predicate is "the pointer event's target is an element other than the canvas (and
+   not inside it)" (it was "inside an element marked `data-hud-interactive`", which the node panel is not).
+   Edges and wheel steps are still reported, with `overUi` set, exactly as the field is documented; the
+   camera mapper and the map controller already ignore them. A press on the canvas still captures the pointer,
+   so a drag that started on the scene keeps `overUi` false until release. The option is now
+   `isOverUi?: (target) => boolean` (the unused `HUD_INTERACTIVE_ATTR` export is gone; the HUD's own
+   `INTERACTIVE_ATTR` now only marks which HUD parts take pointer events).
+Verified by tests/browser/flight-ui/controls.spec.ts "a text field over the scene (the map node panel) keeps its
+keys, clicks and wheel away from the flight": a held W is released when the field takes focus; "25",
+Backspace, Space, Enter edit the field to "2" with no action logged and SAS / staging unchanged; the click on
+the field, the click on a panel button and a wheel step over the panel all arrive with overUi; a later click on
+the canvas is a scene press and T toggles SAS again. The binding table and the PointerState fields are unchanged.

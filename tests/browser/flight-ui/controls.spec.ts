@@ -168,9 +168,17 @@ test.describe('flight-ui controls', () => {
     }
     await page.keyboard.press('Period');
     await page.waitForFunction(() => window.__flightUi!.notifications().includes('Cannot warp faster here'));
-    await expect(page.locator('.hud .toast').filter({ hasText: 'Cannot warp faster here' })).toBeVisible();
+    const toast = page.locator('.hud .toast').filter({ hasText: 'Cannot warp faster here' });
+    await expect(toast).toBeVisible();
+    // One refused press is one notification, although the refusal arrives both as the command result and as
+    // the sim's warpChanged event.
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    await expect(toast.locator('.count')).toHaveText('');
     expect((await state(page)).warp.index).toBe(3);
     await saveScreenshot(page, 'flight-ui', 'warp-refused');
+    // A second refused press (a later frame) counts.
+    await page.keyboard.press('Period');
+    await expect(toast.locator('.count')).toHaveText('×2');
     await expectNoErrors(page, pageLog);
   });
 
@@ -238,6 +246,8 @@ test.describe('flight-ui controls', () => {
     expect(e2.pressed - e1.pressed).toBe(2);
     expect(e2.released - e1.released).toBe(2);
     expect(e2.doubleClick - e1.doubleClick).toBe(1);
+    // Clicks on the scene are scene presses (overUi false).
+    expect(e2.uiPressed - e0.uiPressed).toBe(0);
     // A right-drag orbits the chase camera; the wheel zooms it.
     const cam0 = await page.evaluate(() => window.__test!.camera()!);
     await page.mouse.move(600, 300);
@@ -251,6 +261,61 @@ test.describe('flight-ui controls', () => {
     const q1 = cam1.qViewToRoot;
     const dot = Math.abs(q0.x * q1.x + q0.y * q1.y + q0.z * q1.z + q0.w * q1.w);
     expect(dot).toBeLessThan(0.999);
+    await expectNoErrors(page, pageLog);
+  });
+
+  test('a text field over the scene (the map node panel) keeps its keys, clicks and wheel away from the flight', async ({ page, pageLog }) => {
+    // docs/requests/map-view-1.md: a DOM panel over the canvas with a numeric field and a button, like the map
+    // view's maneuver-node panel (which carries no HUD attribute).
+    await open(page, 'scene=lowOrbit');
+    await page.evaluate(() => {
+      const panel = document.createElement('div');
+      panel.className = 'fable-map-panel';
+      panel.style.cssText = 'position:fixed;left:45%;top:40%;padding:12px;background:#132030;z-index:10;display:flex;gap:8px';
+      const field = document.createElement('input');
+      field.type = 'number';
+      field.id = 'lab-field';
+      const btn = document.createElement('button');
+      btn.id = 'lab-btn';
+      btn.textContent = '+1 orbit';
+      panel.append(field, btn);
+      document.body.append(panel);
+    });
+    const s0 = await state(page);
+    const a0 = (await page.evaluate(() => window.__flightUi!.actions())).length;
+    const e0 = await page.evaluate(() => window.__flightUi!.pointerEdges());
+    // A key held when the field takes focus is released.
+    await page.keyboard.down('KeyW');
+    await page.waitForFunction(() => window.__test!.state()!.appliedControls.pitch === -1);
+    await page.locator('#lab-field').click();
+    await page.waitForFunction(() => window.__test!.state()!.appliedControls.pitch === 0 && window.__flightUi!.heldCodes().length === 0);
+    await page.keyboard.up('KeyW');
+    // Digits, Backspace, Space and Enter edit the text and reach no binding (SAS modes, stage, abort).
+    await page.keyboard.type('25');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#lab-field')).toHaveValue('2');
+    // Clicks and wheel steps over the panel are reported with overUi set (the scene ignores them).
+    await page.locator('#lab-btn').click();
+    await page.mouse.wheel(0, -200);
+    await page.waitForFunction((n) => window.__flightUi!.pointerEdges().uiWheelFrames > n, e0.uiWheelFrames);
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    const e1 = await page.evaluate(() => window.__flightUi!.pointerEdges());
+    expect(e1.pressed - e0.pressed).toBe(2);
+    expect(e1.uiPressed - e0.uiPressed).toBe(2);
+    expect(e1.wheelFrames - e0.wheelFrames).toBe(e1.uiWheelFrames - e0.uiWheelFrames);
+    const s1 = await state(page);
+    expect(await page.evaluate(() => window.__flightUi!.actions().length)).toBe(a0);
+    expect(s1.readouts.sasEnabled).toBe(s0.readouts.sasEnabled);
+    expect(s1.readouts.sasMode).toBe(s0.readouts.sasMode);
+    expect(s1.staging.nextStage).toBe(s0.staging.nextStage);
+    // Back on the scene: a click is a scene press again and the keys fly the vessel.
+    await page.mouse.click(300, 600);
+    await page.waitForFunction((n) => window.__flightUi!.pointerEdges().pressed > n, e1.pressed);
+    expect((await page.evaluate(() => window.__flightUi!.pointerEdges())).uiPressed).toBe(e1.uiPressed);
+    await page.keyboard.press('KeyT');
+    await page.waitForFunction((on) => window.__test!.state()!.readouts.sasEnabled !== on, s0.readouts.sasEnabled);
     await expectNoErrors(page, pageLog);
   });
 
@@ -285,7 +350,9 @@ test.describe('flight-ui controls', () => {
     for (const query of ['scene=lunarOrbit', 'scene=lunarSurface', 'scene=lunarOrbit&predicted=impact', 'scene=reentry&predicted=entry']) {
       await open(page, query);
       await page.evaluate(() => window.__test!.setPaused(true));
-      await page.evaluate(() => window.__test!.waitFrames(2));
+      // The text readouts refresh at 10 Hz: wait for a refresh of the paused snapshot.
+      const n0 = await page.evaluate(() => window.__test!.waitFrames(1).then(() => window.__flightUi!.hudTiming().textUpdates));
+      await page.waitForFunction((n) => window.__flightUi!.hudTiming().textUpdates > n, n0);
       const dom = await page.locator('.hud .lt .rows .row').evaluateAll((rows) => rows.map((r) => [r.querySelector('.lbl')!.textContent!, r.querySelector('.val')!.textContent!]));
       const mfd = await page.evaluate(() => window.__flightUi!.mfdSection('landing')!);
       expect(dom).toEqual(mfd.rows.map((r) => [r.label, r.value]));
@@ -324,6 +391,40 @@ test.describe('flight-ui controls', () => {
     await page.evaluate(() => window.__test!.waitFrames(5));
     expect((await state(page)).staging.nextStage).toBe(0);
     await saveScreenshot(page, 'flight-ui', 'stage-lockout');
+    await expectNoErrors(page, pageLog);
+  });
+
+  test('HUD layout: one tile per remaining stage, no empty launch panel, the terrain notice clear of the panels', async ({ page, pageLog }) => {
+    // Pad: the 10-stage lab vehicle shows all 10 stages (the next two in full, the rest compact), the next
+    // stage at the bottom, and nothing overlaps the resources panel below the stack.
+    await open(page, 'scene=pad');
+    const s = await state(page);
+    const tiles = page.locator('.hud .stages .tile');
+    await expect(tiles).toHaveCount(s.staging.stages.filter((x) => !x.fired).length);
+    expect(await tiles.count()).toBe(10);
+    await expect(page.locator('.hud .stages .tile.compact')).toHaveCount(8);
+    const boxes = await tiles.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect));
+    const res = (await page.locator('.hud .res').boundingBox())!;
+    const next = (await page.locator('.hud .tile.next').boundingBox())!;
+    for (const b of boxes) {
+      expect(b.top).toBeGreaterThanOrEqual(0);
+      expect(b.bottom).toBeLessThanOrEqual(res.y);
+      expect(b.bottom).toBeLessThanOrEqual(next.y + next.height + 0.5);
+    }
+    await expect(page.locator('.hud .stagewrap .more')).toHaveText(/^Δv .* total$/);
+
+    // Lunar surface: no target can be picked (Earth is the root, the Moon is underfoot) -> no launch panel; the
+    // terrain-loading notice sits under the altimeter, clear of every panel.
+    await open(page, 'scene=lunarSurface&terrainPending=1');
+    await expect(page.locator('.hud .pad')).toBeHidden();
+    const notice = page.locator('.hud .notice');
+    await expect(notice).toBeVisible();
+    const nb = (await notice.boundingBox())!;
+    const panels = await page.locator('.hud .panel').evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => ({ cls: e.className, r: e.getBoundingClientRect().toJSON() as DOMRect })));
+    for (const p of panels) {
+      const overlap = nb.x < p.r.right && nb.x + nb.width > p.r.left && nb.y < p.r.bottom && nb.y + nb.height > p.r.top;
+      expect(overlap, `notice overlaps ${p.cls}`).toBe(false);
+    }
     await expectNoErrors(page, pageLog);
   });
 

@@ -14,7 +14,6 @@ import type { GpuHandle } from '@/core/gpu/device';
 import type { PerfRecorder } from '@/core/contracts/render';
 import type { NavballMarkers, NavballState, SimSnapshot } from '@/core/contracts/sim';
 import type { NavballRenderer } from '@/core/contracts/ui';
-import { mat3 } from '@/core/math/mat';
 import type { Vec3 } from '@/core/math/vec3';
 import type { MarkerIconName } from '../icons';
 import { ATLAS_LAYOUT, ATLAS_SIZE, drawMarkerAtlas, type AtlasEntry } from './markerAtlas';
@@ -144,7 +143,9 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
   interface Slot {
     buf: GPUBuffer;
     bind: GPUBindGroup;
+    /** Bytes last written to the buffer (meaningful once `valid`). */
     data: Float32Array;
+    valid: boolean;
   }
   const makeSlot = (label: string): Slot => {
     const buf = device.createBuffer({ label, size: BALL_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -159,7 +160,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
         { binding: 4, resource: atlasTex.createView() },
       ],
     });
-    return { buf, bind, data: new Float32Array(BALL_BYTES / 4) };
+    return { buf, bind, data: new Float32Array(BALL_BYTES / 4), valid: false };
   };
   const shared = makeSlot('ui.navball.uniforms');
   const hudSlot = makeSlot('ui.navball.hud.uniforms');
@@ -193,29 +194,80 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
   };
   pipelinesFor(NAVBALL_FORMAT);
 
-  let lastMarkers: MarkerInstance[] = [];
-  let lastMarkerKey = '';
+  // Per-frame work is kept to plain float writes: no strings, no temporary arrays, each marker set processed once
+  // per NavballState.markers object (render + renderTo of one state share it), and a uniform buffer is only
+  // written when its bytes change.
+  const ballScratch = new Float32Array(BALL_BYTES / 4);
+  const markerScratch = new Float32Array(MARKER_BYTES / 4);
+  const markerScratchU32 = new Uint32Array(markerScratch.buffer);
+  let markerSource: NavballMarkers | null = null;
+  let markerCount = 0;
+  let markerBytesValid = false;
+
+  const putMarker = (i: number, name: AtlasEntry, sx: number, sy: number, halfSize: number, alpha: number): void => {
+    const r = ATLAS_LAYOUT[name];
+    const o = 4 + i * 8;
+    markerScratch[o] = sx;
+    markerScratch[o + 1] = sy;
+    markerScratch[o + 2] = halfSize;
+    markerScratch[o + 3] = alpha;
+    markerScratch[o + 4] = r[0];
+    markerScratch[o + 5] = r[1];
+    markerScratch[o + 6] = r[2];
+    markerScratch[o + 7] = r[3];
+  };
+
+  /** Same instances and order as markerInstances(), written straight into the uniform layout. */
+  const updateMarkers = (markers: NavballMarkers): number => {
+    if (markers === markerSource) return markerCount;
+    markerSource = markers;
+    let count = 0;
+    putMarker(count++, 'reticle', 0, 0, RETICLE_HALF_SIZE, 1);
+    for (const name of MARKER_ORDER) {
+      if (count >= MAX_MARKERS) break;
+      const d = markers[name];
+      if (!d) continue;
+      const alpha = limbFade(d.y);
+      if (alpha <= 0) continue;
+      putMarker(count++, name, d.x, d.z, MARKER_HALF_SIZE, alpha);
+    }
+    markerScratchU32[0] = count;
+    const used = 4 + count * 8;
+    let same = markerBytesValid && markerU32[0] === count;
+    for (let i = 4; same && i < used; i++) same = markerF32[i] === markerScratch[i];
+    if (!same) {
+      markerF32.set(markerScratch.subarray(0, used));
+      device.queue.writeBuffer(markerBuf, 0, markerData, 0, used * 4);
+      markerBytesValid = true;
+    }
+    markerCount = count;
+    return count;
+  };
 
   const writeState = (slot: Slot, state: NavballState, sizePx: number): number => {
-    const m = mat3.fromQuat(state.qVesselToHorizon);
+    const { x, y, z, w } = state.qVesselToHorizon;
+    const b = ballScratch;
+    // mat3.fromQuat, row by row, each padded to a vec4.
+    b[0] = 1 - 2 * (y * y + z * z);
+    b[1] = 2 * (x * y - w * z);
+    b[2] = 2 * (x * z + w * y);
+    b[4] = 2 * (x * y + w * z);
+    b[5] = 1 - 2 * (x * x + z * z);
+    b[6] = 2 * (y * z - w * x);
+    b[8] = 2 * (x * z - w * y);
+    b[9] = 2 * (y * z + w * x);
+    b[10] = 1 - 2 * (x * x + y * y);
+    b[12] = BALL_RADIUS_FRACTION;
+    b[13] = sizePx;
     const d = slot.data;
-    d.set([m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, BALL_RADIUS_FRACTION, sizePx, 0, 0]);
-    device.queue.writeBuffer(slot.buf, 0, d);
-    const inst = markerInstances(state.markers);
-    const count = Math.min(MAX_MARKERS, inst.length);
-    const key = inst.map((x) => `${x.name}${x.sx},${x.sy},${x.alpha}`).join('|');
-    if (key !== lastMarkerKey) {
-      markerU32[0] = count;
-      for (let i = 0; i < count; i++) {
-        const x = inst[i]!;
-        const r = ATLAS_LAYOUT[x.name];
-        markerF32.set([x.sx, x.sy, x.halfSize, x.alpha, r[0], r[1], r[2], r[3]], 4 + i * 8);
-      }
-      device.queue.writeBuffer(markerBuf, 0, markerData);
-      lastMarkerKey = key;
+    let same = slot.valid;
+    for (let i = 0; same && i < 16; i++) same = d[i] === b[i];
+    if (!same) {
+      d.set(b);
+      device.queue.writeBuffer(slot.buf, 0, d);
+      slot.valid = true;
     }
-    lastMarkers = inst;
-    return count;
+    return updateMarkers(state.markers);
   };
 
   const draw = (encoder: GPUCommandEncoder, slot: Slot, count: number, targetView: GPUTextureView, format: GPUTextureFormat, passName: string): void => {
@@ -243,7 +295,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     view,
     texture: target,
     get lastMarkers() {
-      return lastMarkers;
+      return markerSource ? markerInstances(markerSource).slice(0, MAX_MARKERS) : [];
     },
     render(encoder: GPUCommandEncoder, snapshot: SimSnapshot) {
       renderState(encoder, snapshot.navball);

@@ -24,6 +24,6 @@ export {
   type UiAction,
 } from './bindings';
 export { createInputCore, type FlightInputFrame, type InputCore, type ModifierState } from './inputCore';
-export { createInputSystem, HUD_INTERACTIVE_ATTR, type InputSystem, type InputSystemOptions } from './inputSystem';
+export { createInputSystem, type InputSystem, type InputSystemOptions } from './inputSystem';
 export { createFlightController, isControllerAction, THROTTLE_RATE, type FlightController, type FlightControllerOptions } from './flightController';
 export { installUnloadGuard } from './unloadGuard';

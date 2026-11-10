@@ -6,10 +6,14 @@ import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import {
   buildMfdPage,
+  createMfdPainter,
+  describeFlight,
   describeLandingTarget,
+  describeOrbit,
   describeResources,
   describeStages,
   describeWarp,
+  formatApsis,
   formatBearing,
   formatCountdown,
   formatDuration,
@@ -18,9 +22,13 @@ import {
   formatNumber,
   formatSignedRange,
   formatUt,
+  formatVerticalSpeed,
+  landingScope,
   landingTargetRows,
+  MARKER_COLORS,
   MFD_PAGES,
   NBSP,
+  RADAR_ALTITUDE_SWITCH,
 } from '@/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
 import { labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
@@ -60,6 +68,25 @@ describe('formatters', () => {
     expect(n(formatMet(3725))).toBe('T+ 01:02:05');
     expect(formatUt(0)).toBe('2000-01-01 12:00:00 UTC');
     expect(formatUt(86400 + 3661)).toBe('2000-01-02 13:01:01 UTC');
+  });
+
+  it('formats apsides in km on both sides of 100 km, and vertical speed with a direction arrow', () => {
+    // The 100 km lunar parking orbit: never "100.0 km" next to "100 000 m", nor "100.0" next to "99.96".
+    expect(n(formatApsis(100_040))).toBe('100.0 km');
+    expect(n(formatApsis(99_960))).toBe('100.0 km');
+    expect(n(formatApsis(99_640))).toBe('99.6 km');
+    expect(n(formatApsis(15_200))).toBe('15.2 km');
+    expect(n(formatApsis(360))).toBe('0.4 km');
+    expect(n(formatApsis(-1_736_400))).toBe('−1 736.4 km');
+    expect(n(formatApsis(384_400_000))).toBe('384.4 Mm');
+    // The current altitude keeps metres up to 50 km (ascent, landing), and reads the 100 km orbit in km.
+    expect(n(formatLength(49_960, 'altitude'))).toBe('49 960 m');
+    expect(n(formatLength(60_000, 'altitude'))).toBe('60.0 km');
+    expect(n(formatLength(99_960, 'altitude'))).toBe('100.0 km');
+    expect(n(formatLength(100_040, 'altitude'))).toBe('100.0 km');
+    expect(n(formatVerticalSpeed(12.34))).toBe('▲ 12.3 m/s');
+    expect(n(formatVerticalSpeed(-4))).toBe('▼ 4.0 m/s');
+    expect(n(formatVerticalSpeed(0.01))).toBe('■ 0.0 m/s');
   });
 
   it('spells out signs of ranges and normalises bearings', () => {
@@ -105,6 +132,44 @@ describe('display models', () => {
     expect(landingTargetRows(describeLandingTarget(withEntry)!)[4]![0]).toBe('Entry point miss');
   });
 
+  it('shows Ap and Pe of the lunar parking orbit in one unit on the HUD and the MFD', () => {
+    const s = snap('lunarOrbit');
+    const o = describeOrbit(s);
+    expect(n(o.apoapsis)).toMatch(/ km$/);
+    expect(n(o.periapsis)).toMatch(/ km$/);
+    const rows = buildMfdPage('orbit', s, defs).rows;
+    expect(rows.find((r) => r.label === 'Apoapsis')!.value).toBe(o.apoapsis);
+    expect(rows.find((r) => r.label === 'Periapsis')!.value).toBe(o.periapsis);
+  });
+
+  it('uses one flight-data model on the HUD and the MFD (heading, radar switch, vertical speed)', () => {
+    const base = snap('ascent');
+    const at = (radar: number, vs: number): SimSnapshot => ({ ...base, readouts: { ...base.readouts, altitudeRadar: radar, verticalSpeed: vs } });
+    for (const [radar, expectSource] of [
+      [RADAR_ALTITUDE_SWITCH - 1, 'radar'],
+      [RADAR_ALTITUDE_SWITCH + 1, 'asl'],
+      [4000, 'asl'],
+    ] as const) {
+      const s = at(radar, -12.34);
+      const f = describeFlight(s);
+      expect(f.altitudeSource).toBe(expectSource);
+      const rows = buildMfdPage('flight', s, defs).rows;
+      expect(rows[0]).toMatchObject({ label: expectSource === 'radar' ? 'Radar alt' : 'Altitude', value: f.altitude });
+      expect(rows.find((r) => r.label === 'Vertical')!.value).toBe(f.verticalSpeed);
+      expect(n(f.verticalSpeed)).toBe('▼ 12.3 m/s');
+      expect(rows.find((r) => r.label === 'Heading')!.value).toBe(formatBearing(s.navball.headingDeg));
+      expect(rows.find((r) => r.label === 'Heading')!.value).toBe(f.heading);
+    }
+    // On the ground the automatic altimeter reads sea level (the HUD rule), whatever the radar altitude.
+    const pad = snap('pad');
+    expect(describeFlight(pad).altitudeSource).toBe('asl');
+    expect(buildMfdPage('flight', pad, defs).rows[0]!.label).toBe('Altitude');
+    // The landing page reads radar altitude and the same vertical / horizontal speed strings.
+    const landing = buildMfdPage('landing', at(850, 3.21), defs).rows;
+    expect(landing[0]).toMatchObject({ label: 'Radar alt', value: describeFlight(at(850, 3.21), 'radar').altitude });
+    expect(n(landing[1]!.value)).toBe('▲ 3.2 m/s');
+  });
+
   it('MFD landing and entry pages carry exactly the landing-target rows of the HUD panel', () => {
     for (const scene of ['lunarOrbit', 'lunarSurface', 'reentry'] as const) {
       const s = snap(scene);
@@ -136,6 +201,123 @@ describe('display models', () => {
     // Without a vehicle definition, everything is one group under the vessel name.
     const untagged = describeResources(sim.snapshot(), defs);
     expect(untagged.map((g) => g.label)).toEqual(['Fake vessel']);
+  });
+
+  describe('landing scope (MFD landing page)', () => {
+    /** Canvas 2D stand-in that records every call and property write (Node has no canvas). */
+    function recordingCtx(): { ctx: OffscreenCanvasRenderingContext2D; calls: { op: string; args: unknown[] }[] } {
+      const calls: { op: string; args: unknown[] }[] = [];
+      const props: Record<string | symbol, unknown> = {};
+      const ctx = new Proxy(props, {
+        get(t, prop) {
+          if (prop in t) return t[prop];
+          if (prop === 'measureText') return (s: string) => ({ width: s.length * 10 });
+          return (...args: unknown[]) => void calls.push({ op: String(prop), args });
+        },
+        set(t, prop, value) {
+          t[prop] = value;
+          calls.push({ op: `set:${String(prop)}`, args: [value] });
+          return true;
+        },
+      });
+      return { ctx: ctx as unknown as OffscreenCanvasRenderingContext2D, calls };
+    }
+
+    /** Centres and colours of every icon drawIcon drew (save, translate, scale(k), ..., strokeStyle = colour). */
+    function icons(calls: { op: string; args: unknown[] }[]): { x: number; y: number; color: string }[] {
+      const out: { x: number; y: number; color: string }[] = [];
+      calls.forEach((c, i) => {
+        if (c.op !== 'translate' || calls[i + 1]?.op !== 'scale') return;
+        const k = calls[i + 1]!.args[0] as number;
+        const color = calls.slice(i + 2).find((x) => x.op === 'set:strokeStyle' && x.args[0] !== 'rgba(6,10,16,0.85)')!.args[0] as string;
+        out.push({ x: (c.args[0] as number) + 12 * k, y: (c.args[1] as number) + 12 * k, color });
+      });
+      return out;
+    }
+
+    /** Compass direction of the dashed ground-track line (the only dashed path of the page), or null. */
+    function trackLine(calls: { op: string; args: unknown[] }[]): number | null {
+      const i = calls.findIndex((c) => c.op === 'setLineDash');
+      if (i < 0) return null;
+      const from = calls.slice(i).find((c) => c.op === 'moveTo')!.args as number[];
+      const to = calls.slice(i).find((c) => c.op === 'lineTo')!.args as number[];
+      const deg = (Math.atan2(to[0]! - from[0]!, -(to[1]! - from[1]!)) * 180) / Math.PI;
+      return (deg + 360) % 360;
+    }
+
+    function paintLanding(s: SimSnapshot): { vessel: { x: number; y: number }; target: { x: number; y: number }; texts: string[]; trackLineDeg: number | null } {
+      const g = globalThis as unknown as { Path2D?: unknown };
+      g.Path2D ??= class {};
+      const { ctx, calls } = recordingCtx();
+      createMfdPainter().paint(ctx, 1024, 768, 'landing', s, defs);
+      const drawn = icons(calls);
+      return {
+        vessel: drawn.find((d) => d.color === '#ffa53a')!,
+        target: drawn.find((d) => d.color === MARKER_COLORS.target)!,
+        texts: calls.filter((c) => c.op === 'fillText').map((c) => c.args[0] as string),
+        trackLineDeg: trackLine(calls),
+      };
+    }
+
+    const withTarget = (horizontalSpeed: number, lt: { distance: number; bearingDeg: number; downRange: number; crossRange: number }): SimSnapshot => {
+      const s = snap('lunarSurface');
+      return { ...s, readouts: { ...s.readouts, horizontalSpeed, landingTarget: { ...s.readouts.landingTarget!, ...lt, predicted: null } } };
+    };
+
+    it('places a target 400 m away off the vessel symbol while hovering (no ground track)', () => {
+      // Hovering: surface speed below 0.1 m/s, so the readout's down-range and cross-range are both 0.
+      const s = withTarget(0.03, { distance: 400, bearingDeg: 30, downRange: 0, crossRange: 0 });
+      const view = describeLandingTarget(s)!;
+      expect(view.tracked).toBe(false);
+      const g = landingScope(view);
+      expect(Math.hypot(g.east, g.north)).toBeCloseTo(400, 9);
+      expect(g.trackDeg).toBeNull();
+      const { vessel, target, texts, trackLineDeg } = paintLanding(s);
+      const dx = target.x - vessel.x;
+      const dy = target.y - vessel.y;
+      expect(Math.hypot(dx, dy)).toBeGreaterThan(40);
+      // North-up: bearing 030 is up and to the right.
+      expect((Math.atan2(dx, -dy) * 180) / Math.PI).toBeCloseTo(30, 6);
+      expect(texts).toContain('N');
+      expect(texts).toContain('NORTH UP · NO GROUND TRACK');
+      expect(trackLineDeg).toBeNull();
+    });
+
+    it('stays north-up with a ground track, and draws the track where the down-range / cross-range rows put it', () => {
+      // Target at bearing 200, 300 m ahead and 100 m left of the track: the track heads 200 + 18.4 = 218.4 deg.
+      const s = withTarget(45, { distance: Math.hypot(300, 100), bearingDeg: 200, downRange: 300, crossRange: -100 });
+      const view = describeLandingTarget(s)!;
+      const g = landingScope(view);
+      const expectedTrack = 200 - (Math.atan2(-100, 300) * 180) / Math.PI;
+      expect(g.trackDeg).toBeCloseTo(expectedTrack, 9);
+      // Rotating the target into the track frame gives back the readout's own numbers.
+      const rel = ((200 - g.trackDeg!) * Math.PI) / 180;
+      expect(view.raw.distance * Math.cos(rel)).toBeCloseTo(300, 9);
+      expect(view.raw.distance * Math.sin(rel)).toBeCloseTo(-100, 9);
+      const { vessel, target, texts, trackLineDeg } = paintLanding(s);
+      const dx = target.x - vessel.x;
+      const dy = target.y - vessel.y;
+      expect((((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360)).toBeCloseTo(200, 6);
+      expect(trackLineDeg).toBeCloseTo(expectedTrack, 6);
+      expect(texts).toContain(`NORTH UP · TRACK ${formatBearing(expectedTrack)}`);
+    });
+
+    it('does not move the target when a slow drift crosses the 0.1 m/s ground-track threshold', () => {
+      // The same geometry just below (no track: down/cross-range 0) and just above (track due east) the threshold.
+      const d = 250;
+      const brg = 120;
+      const rel = ((brg - 90) * Math.PI) / 180;
+      const below = paintLanding(withTarget(0.09, { distance: d, bearingDeg: brg, downRange: 0, crossRange: 0 }));
+      const above = paintLanding(withTarget(0.11, { distance: d, bearingDeg: brg, downRange: d * Math.cos(rel), crossRange: d * Math.sin(rel) }));
+      expect(Math.hypot(above.target.x - below.target.x, above.target.y - below.target.y)).toBeLessThan(1e-9);
+      expect(below.trackLineDeg).toBeNull();
+      expect(above.trackLineDeg).toBeCloseTo(90, 6);
+    });
+
+    it('draws a target at the vessel only when it really is there', () => {
+      const { vessel, target } = paintLanding(withTarget(0, { distance: 0.2, bearingDeg: 0, downRange: 0, crossRange: 0 }));
+      expect(Math.hypot(target.x - vessel.x, target.y - vessel.y)).toBeLessThan(1e-9);
+    });
   });
 
   it('describes stages and the warp limit', () => {

@@ -1,8 +1,9 @@
 /**
  * The flight HUD (src/core/contracts/ui.ts `Hud`): DOM + Canvas over the WebGPU canvas, with pointer events
- * only on interactive parts (marked `data-hud-interactive`, which the input system reads as
- * PointerState.overUi). It renders only from the SimSnapshot and the presented CameraState, and acts only by
- * dispatching ButtonActions (the same path as the keys) or, for target selection on the pad, PlayerCommands.
+ * only on interactive parts (marked `data-hud-interactive`; the pointer over them is PointerState.overUi, and
+ * everywhere else it passes through to the scene). It renders only from the SimSnapshot and the presented
+ * CameraState, and acts only by dispatching ButtonActions (the same path as the keys) or, for target selection
+ * on the pad, PlayerCommands.
  *
  * Layout by camera.kind (unknown modes behave as their kind):
  *   external  everything;
@@ -12,6 +13,13 @@
  * The navball: every update renders the shared 512 x 512 texture (NavballRenderer.view, published as
  * 'ui.navball' for the cockpit) and, while the navball is on screen, the same ball at native resolution into
  * the HUD's own WebGPU canvas. The app must not render the navball separately.
+ *
+ * Main-thread cost: a changed text node costs a style / layout / paint / layerization pass of the page (about
+ * 1 ms here), far more than the JavaScript that formats it. So the numeric readouts refresh at TEXT_HZ (10 Hz,
+ * a readable rate for changing digits), all in the same frame, while the navball, the throttle and g gauges
+ * (composited transforms) and every indicator light and panel visibility follow each frame. Any discrete
+ * change (a panel appearing, SAS mode, navball mode, warp level, a stage fired...) refreshes the text in the
+ * same frame, so labels and their numbers never disagree.
  */
 import type { ButtonAction, PlayerCommands, SasMode } from '@/core/contracts/controls';
 import { SAS_MODES } from '@/core/contracts/controls';
@@ -20,22 +28,24 @@ import type { CameraState, ViewKind } from '@/core/contracts/render';
 import type { SimEvent, SimSnapshot } from '@/core/contracts/sim';
 import type { Hud } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
-import {
-  formatAltitude,
-  formatBearing,
-  formatDeg,
-  formatG,
-  formatHeatFlux,
-  formatMach,
-  formatMet,
-  formatPercent,
-  formatPressure,
-  formatRadAsDeg,
-  formatSpeed,
-  formatUt,
-} from '../format';
+import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt } from '../format';
 import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, svgIcon, UNLOCK_ICON } from '../icons';
-import { activeVesselOf, describeLandingTarget, describeNodeBurn, describeOrbit, describePad, describeResources, describeStages, describeWarp, landingTargetRows } from '../model';
+import {
+  activeVesselOf,
+  altitudeSource,
+  describeFlight,
+  describeLandingTarget,
+  describeNodeBurn,
+  describeOrbit,
+  describePad,
+  describeResources,
+  describeStages,
+  describeWarp,
+  isLanded,
+  landingTargetRows,
+  RADAR_ALTITUDE_SWITCH,
+  type AltitudeMode,
+} from '../model';
 import type { NavballRendererImpl } from '../navball/navballRenderer';
 import { bar, classFlag, el, FillSlot, Flag, hiddenFlag, hudButton, INTERACTIVE_ATTR, TextSlot, ToneSlot } from './dom';
 import { HUD_CSS, HUD_STYLE_ID } from './hudStyles';
@@ -71,14 +81,23 @@ export interface HudImpl extends Hud {
   setKeyboardLocked(locked: boolean): void;
   toggleKeyHelp(force?: boolean): void;
   readonly keyHelpOpen: boolean;
-  /** CPU time of the last update and its running mean, ms. */
+  /** CPU time of the last update and its running mean, ms (JavaScript only; see the hand-off for the full cost). */
   readonly lastUpdateMs: number;
   readonly meanUpdateMs: number;
+  /** Number of updates that refreshed the text readouts (about TEXT_HZ per second while visible). */
+  readonly textUpdates: number;
   /** Label/value rows currently shown by the landing-target panel (null when hidden). */
   landingTargetRows(): [string, string][] | null;
   /** Current notifications (oldest first). */
   notifications(): string[];
 }
+
+/** Refresh rate of the numeric text readouts. */
+export const HUD_TEXT_HZ = 10;
+const TEXT_PERIOD = 1 / HUD_TEXT_HZ;
+
+/** Stacks longer than this show the stages after the next two as compact one-line tiles. */
+const FULL_STAGE_TILES = 6;
 
 const SAS_NAMES: Record<SasMode, string> = {
   stability: 'Stability',
@@ -91,6 +110,7 @@ const SAS_NAMES: Record<SasMode, string> = {
   maneuver: 'Maneuver',
 };
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOAST_SECONDS = 4.5;
 const MAX_TOASTS = 4;
 
@@ -107,6 +127,15 @@ function row(label: string, value: TextSlot, valueCls = ''): { root: HTMLDivElem
   return { root: el('div', 'row', [el('span', 'lbl', [l.node]), valueEl]), label: l, valueEl };
 }
 
+interface StageSlot {
+  /** Index into SimSnapshot.staging.stages. */
+  index: number;
+  dv: TextSlot;
+  meta: TextSlot | null;
+  fill: FillSlot | null;
+  barTone: Flag | null;
+}
+
 export function createHud(opts: HudOptions): HudImpl {
   const { defs, gpu, navball, dispatch } = opts;
   const keyFor = opts.keyFor ?? (() => null);
@@ -121,16 +150,32 @@ export function createHud(opts: HudOptions): HudImpl {
   const root = el('div', 'hud', [], { 'data-kind': 'external' });
   const kindFlag = { cur: '' as string };
   let visible = true;
-  /** Altimeter source: auto = radar within 2 km of the ground in flight, sea level otherwise. */
-  let altMode: 'auto' | 'asl' | 'radar' = 'auto';
+  /** Altimeter source chosen by clicking the altitude panel (model.altitudeSource). */
+  let altMode: AltitudeMode = 'auto';
 
   // ------------------------------------------------------------------------------------ top left: clock
   const met = new TextSlot('T+ 00:00:00');
   const ut = new TextSlot('');
   const warpFactor = new TextSlot('×1');
   const warpLimit = new TextSlot('');
-  const chevrons: HTMLElement[] = [];
-  for (let i = 1; i < WARP_LEVELS.length; i++) chevrons.push(el('i', i <= MAX_PHYSICS_WARP_INDEX ? 'phys' : ''));
+  // Warp chevrons: one SVG, one polygon per warp level above x1 (physics-warp levels flagged 'phys').
+  const chevSvg = document.createElementNS(SVG_NS, 'svg');
+  chevSvg.setAttribute('class', 'chev');
+  const chevCount = WARP_LEVELS.length - 1;
+  const chevW = 10;
+  const chevGap = 1.2;
+  chevSvg.setAttribute('viewBox', `0 0 ${chevCount * chevW + (chevCount - 1) * chevGap} 10`);
+  chevSvg.setAttribute('preserveAspectRatio', 'none');
+  chevSvg.setAttribute('aria-hidden', 'true');
+  const chevrons: SVGPolygonElement[] = [];
+  for (let i = 1; i <= chevCount; i++) {
+    const x = (i - 1) * (chevW + chevGap);
+    const p = document.createElementNS(SVG_NS, 'polygon');
+    p.setAttribute('points', `${x},0 ${x + 0.7 * chevW},0 ${x + chevW},5 ${x + 0.7 * chevW},10 ${x},10 ${x + 0.3 * chevW},5`);
+    if (i <= MAX_PHYSICS_WARP_INDEX) p.setAttribute('class', 'phys');
+    chevSvg.append(p);
+    chevrons.push(p);
+  }
   const chevOn = chevrons.map((c) => classFlag(c, 'on'));
   const chevCap = chevrons.map((c) => classFlag(c, 'cap'));
   const warpLimitEl = el('div', 'warp-limit', [warpLimit.node]);
@@ -141,7 +186,7 @@ export function createHud(opts: HudOptions): HudImpl {
     el('div', 'ut', [ut.node]),
     el('div', 'warp', [
       hudButton(['‹'], 'warpdown', 'Slower time warp (,)', () => dispatch('warpDown')),
-      el('div', 'chev', chevrons),
+      chevSvg,
       hudButton(['›'], 'warpup', 'Faster time warp (.)', () => dispatch('warpUp')),
       el('span', 'factor', [warpFactor.node]),
     ]),
@@ -149,7 +194,6 @@ export function createHud(opts: HudOptions): HudImpl {
   ]);
   const railsLabel = new TextSlot('');
   clock.querySelector('.rails')!.append(railsLabel.node);
-
 
   // ------------------------------------------------------------------------------- top centre: altitude
   const altLabel = new TextSlot('Altitude · sea level');
@@ -164,8 +208,11 @@ export function createHud(opts: HudOptions): HudImpl {
   altPanel.addEventListener('click', () => {
     altMode = altMode === 'auto' ? 'asl' : altMode === 'asl' ? 'radar' : 'auto';
   });
+  // Terrain-loading notice: under the altimeter (whose radar value is coarse while it shows), above the toasts.
+  const notice = el('div', 'notice', [el('div', 'pill', [el('span', 'spin'), el('span', '', ['Loading terrain…'])])]);
+  const noticeShow = hiddenFlag(notice);
   const toastsEl = el('div', 'toasts');
-  const tc = el('div', 'tc', [el('div', '', [altPanel], { 'data-show': 'external map' }), toastsEl]);
+  const tc = el('div', 'tc', [el('div', '', [altPanel], { 'data-show': 'external map' }), notice, toastsEl]);
 
   // ------------------------------------------------------------------------- top right: keyboard + help
   const kbCapture = hudButton(
@@ -235,10 +282,9 @@ export function createHud(opts: HudOptions): HudImpl {
     if (i === 4) r.root.classList.add('pred');
     ltRowsEl.append(r.root);
   }
-  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node]), ltInside]), el('div', 'row', [el('span', 'pname', [ltName.node])]), ltRowsEl], {
+  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node]), ltInside]), el('div', 'tname', [el('span', 'pname', [ltName.node])]), ltRowsEl], {
     'data-show': 'external map interior',
   });
-  ltPanel.querySelector('.row')!.setAttribute('style', 'justify-content:flex-start;margin-bottom:0.25em');
   const ltShow = hiddenFlag(ltPanel);
   let ltCurrentRows: [string, string][] | null = null;
 
@@ -256,6 +302,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const commands = opts.commands;
   if (commands) {
     for (const b of Object.values(defs.bodies)) {
+      // The root body has no orbit to compare planes with: it is never a launch target.
       if (b.gravityRole !== 'attractor' || b.parent === null) continue;
       const btn = hudButton([b.name], '', `Set ${b.name} as target`, () => {
         const c = commands();
@@ -273,6 +320,8 @@ export function createHud(opts: HudOptions): HudImpl {
   const lcol = el('div', 'lcol', [clock, padPanel, orbitPanel, ltPanel, atmPanel, entryPanel]);
 
   // ---------------------------------------------------------------------------------- right column
+  // The stack is a column-reverse flexbox: the next stage (first child) sits at the bottom; a stack taller than
+  // the column is clipped at the far end (top), never at the next stage.
   const stagesEl = el('div', 'stages');
   const stagesMore = new TextSlot('');
   const stagesMoreEl = el('div', 'more', [stagesMore.node]);
@@ -281,7 +330,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const resShow = hiddenFlag(resPanel);
   const rcol = el('div', 'rcol', [el('div', 'stagewrap', [stagesMoreEl, stagesEl], { 'data-show': 'external interior' }), resPanel]);
   let stageKey = '';
-  let stageSlots: { dv: TextSlot; meta: TextSlot; fill: FillSlot | null; barTone: Flag | null; tile: HTMLElement }[] = [];
+  let stageSlots: StageSlot[] = [];
   let resKey = '';
   let resSlots: { fill: FillSlot; pct: TextSlot; low: Flag }[] = [];
 
@@ -359,8 +408,6 @@ export function createHud(opts: HudOptions): HudImpl {
   const bottom = el('div', 'bottom', [sasPanel, el('div', '', [nbwrap], { 'data-show': 'external map' }), rightStack]);
 
   // ---------------------------------------------------------------------------------------- centre
-  const notice = el('div', 'notice', [el('div', 'pill', [el('span', 'spin'), el('span', '', ['Loading terrain…'])])]);
-  const noticeShow = hiddenFlag(notice);
   const failReason = new TextSlot('');
   const failed = el('div', 'failed', [el('h2', '', ['MISSION FAILED']), el('p', '', [failReason.node])]);
   const failedShow = hiddenFlag(failed);
@@ -401,7 +448,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const helpShow = hiddenFlag(help);
   helpShow.set(false);
 
-  root.append(tc, tr, lcol, rcol, bottom, notice, failed, help);
+  root.append(tc, tr, lcol, rcol, bottom, failed, help);
 
   // ---------------------------------------------------------------------------------- navball canvas
   const ctx = ballCanvas.getContext('webgpu');
@@ -424,17 +471,25 @@ export function createHud(opts: HudOptions): HudImpl {
     text: string;
     count: number;
     life: number;
+    /** HUD frame of the last notification (repeats inside one frame do not count). */
+    frame: number;
     el: HTMLDivElement;
     countSlot: TextSlot;
     fading: boolean;
   }
   const toasts: Toast[] = [];
+  /** Incremented at the end of every update: notifications between two updates belong to one frame. */
+  let frameNo = 0;
   const notify = (message: string, tone: 'caution' | 'info' = 'caution'): void => {
     const existing = toasts.find((t) => t.text === message);
     if (existing) {
-      existing.count++;
+      // The same message reported twice for one event (e.g. a command result and a sim event) is one toast.
+      if (existing.frame !== frameNo) {
+        existing.count++;
+        existing.countSlot.set(`×${existing.count}`);
+      }
+      existing.frame = frameNo;
       existing.life = TOAST_SECONDS;
-      existing.countSlot.set(`×${existing.count}`);
       if (existing.fading) {
         existing.fading = false;
         existing.el.classList.remove('fade');
@@ -442,17 +497,17 @@ export function createHud(opts: HudOptions): HudImpl {
       return;
     }
     const countSlot = new TextSlot('');
-    const t: Toast = { text: message, count: 1, life: TOAST_SECONDS, el: el('div', `toast ${tone === 'info' ? 'info' : ''}`.trim(), [message, el('span', 'count', [countSlot.node])]), countSlot, fading: false };
+    const t: Toast = { text: message, count: 1, life: TOAST_SECONDS, frame: frameNo, el: el('div', `toast ${tone === 'info' ? 'info' : ''}`.trim(), [message, el('span', 'count', [countSlot.node])]), countSlot, fading: false };
     toasts.push(t);
     toastsEl.append(t.el);
     while (toasts.length > MAX_TOASTS) toasts.shift()!.el.remove();
   };
 
+  /** Warp index of the previous snapshot (null before the first update). */
+  let warpSeen: number | null = null;
+
   const eventToast = (e: SimEvent, s: SimSnapshot): void => {
     switch (e.type) {
-      case 'warpChanged':
-        if (e.reason) notify(e.reason);
-        break;
       case 'milestone':
         notify(titleCase(e.milestone.id), 'info');
         break;
@@ -478,10 +533,28 @@ export function createHud(opts: HudOptions): HudImpl {
     }
   };
 
+  function eventToasts(s: SimSnapshot): void {
+    let prev = warpSeen ?? s.warp.index;
+    for (const e of s.events) {
+      if (e.type === 'warpChanged') {
+        // A refused request of the player comes back as a CommandResult, which the flight controller reports;
+        // the event's reason is shown only when the sim lowered the warp by itself (atmosphere, an event ahead).
+        if (e.reason && e.index < prev) notify(e.reason);
+        prev = e.index;
+      } else eventToast(e, s);
+    }
+    warpSeen = s.warp.index;
+  }
+
   let lastSnapshot: SimSnapshot | null = null;
   let lastMs = 0;
   let meanMs = 0;
   let samples = 0;
+  let textUpdates = 0;
+  /** Seconds since the last text refresh; a refresh is forced by `forceText` or a changed signature. */
+  let textClock = 0;
+  let forceText = true;
+  let lastSig = '';
   const sasCaptionOn = new Flag((on) => sasCaption.node.parentElement?.classList.toggle('t-good', on));
 
   function setKind(kind: ViewKind): void {
@@ -499,57 +572,66 @@ export function createHud(opts: HudOptions): HudImpl {
   function updateStages(s: SimSnapshot): void {
     const st = describeStages(s);
     const remaining = st.tiles.filter((t) => !t.fired);
-    const shown = remaining.slice(0, 6).reverse();
-    const key = `${shown.map((t) => `${t.index}:${t.label}:${t.icon}:${t.actionKinds.join(',')}:${t.next ? 1 : 0}:${t.hasEngines ? 1 : 0}`).join('|')}#${st.lockout ? 1 : 0}`;
+    // One tile per remaining StageInfo, next first. Long stacks keep the next two stages in full and show the
+    // rest as compact one-line tiles (number, icon, name, delta-v, propellant).
+    const compactFrom = remaining.length > FULL_STAGE_TILES ? 2 : Infinity;
+    const key = `${remaining.map((t, i) => `${t.index}:${t.label}:${t.icon}:${t.actionKinds.join(',')}:${t.next ? 1 : 0}:${t.hasEngines ? 1 : 0}:${i >= compactFrom ? 'c' : 'f'}`).join('|')}#${st.lockout ? 1 : 0}`;
     if (key !== stageKey) {
       stageKey = key;
       stagesEl.replaceChildren();
       stageSlots = [];
-      for (const t of shown) {
-        const dv = new TextSlot(t.deltaV);
-        const meta = new TextSlot('');
+      remaining.forEach((t, i) => {
+        const compact = i >= compactFrom;
+        const dv = new TextSlot(t.hasEngines ? `Δv ${t.deltaV}` : '');
         const icon = el('div', 'ico', [svgIcon(STAGE_ICONS[stageIconFor(t.icon)]), el('span', 'num', [t.number])]);
-        const acts = el('span', 'acts', t.actionKinds.slice(0, 4).map((k) => svgIcon(STAGE_ICONS[stageIconFor(k)])));
-        const lower = el('div', 'meta', [meta.node]);
         let fill: FillSlot | null = null;
         let barTone: Flag | null = null;
-        const line2: HTMLElement[] = [lower, acts];
+        let barEl: HTMLElement | null = null;
         if (t.propellant !== null) {
           const b = bar();
           fill = b.fill;
           barTone = classFlag(b.root, 'caution');
-          line2.push(b.root);
+          barEl = b.root;
         }
-        const main = el('div', 'main', [el('div', 'l1', [el('div', 'name', [t.label]), el('div', 'dv', [dv.node])]), el('div', 'l2', line2)]);
-        const tile = el('div', 'tile', [icon, main]);
-        if (t.next) {
-          tile.classList.add('next');
-          if (st.lockout) tile.classList.add('locked');
-          const hint = el('span', 'hint', st.lockout ? ['Locked'] : [el('span', 'kbd', [keyFor('stage') ?? 'Space'])]);
-          lower.prepend(hint, ' ');
-          tile.setAttribute(INTERACTIVE_ATTR, '');
-          tile.title = st.lockout ? 'Staging is locked for a moment after the last stage' : 'Fire this stage (Space)';
-          tile.addEventListener('pointerdown', (e) => e.preventDefault());
-          tile.addEventListener('click', () => {
-            if (!tile.classList.contains('locked')) dispatch('stage');
-          });
+        let tile: HTMLElement;
+        let meta: TextSlot | null = null;
+        if (compact) {
+          tile = el('div', 'tile compact', [icon, el('div', 'name', [t.label]), el('div', 'dv', [dv.node]), ...(barEl ? [barEl] : [])]);
+        } else {
+          meta = new TextSlot('');
+          const acts = el('span', 'acts', t.actionKinds.slice(0, 4).map((k) => svgIcon(STAGE_ICONS[stageIconFor(k)])));
+          const lower = el('div', 'meta', [meta.node]);
+          const line2: HTMLElement[] = [lower, acts, ...(barEl ? [barEl] : [])];
+          const main = el('div', 'main', [el('div', 'l1', [el('div', 'name', [t.label]), el('div', 'dv', [dv.node])]), el('div', 'l2', line2)]);
+          tile = el('div', 'tile', [icon, main]);
+          if (t.next) {
+            tile.classList.add('next');
+            if (st.lockout) tile.classList.add('locked');
+            const hint = el('span', 'hint', st.lockout ? ['Locked'] : [el('span', 'kbd', [keyFor('stage') ?? 'Space'])]);
+            lower.prepend(hint, ' ');
+            tile.setAttribute(INTERACTIVE_ATTR, '');
+            tile.title = st.lockout ? 'Staging is locked for a moment after the last stage' : 'Fire this stage (Space)';
+            tile.addEventListener('pointerdown', (e) => e.preventDefault());
+            tile.addEventListener('click', () => {
+              if (!tile.classList.contains('locked')) dispatch('stage');
+            });
+          }
         }
         stagesEl.append(tile);
-        stageSlots.push({ dv, meta, fill, barTone, tile });
-      }
+        stageSlots.push({ index: t.index, dv, meta, fill, barTone });
+      });
     }
-    shown.forEach((t, i) => {
+    remaining.forEach((t, i) => {
       const slot = stageSlots[i];
       if (!slot) return;
       slot.dv.set(t.hasEngines ? `Δv ${t.deltaV}` : '');
-      slot.meta.set(t.hasEngines ? `TWR ${t.twr} · ${t.burnTime}` : '');
+      slot.meta?.set(t.hasEngines ? `TWR ${t.twr} · ${t.burnTime}` : '');
       if (slot.fill && t.propellant !== null) {
         slot.fill.set(t.propellant);
         slot.barTone?.set(t.propellant < 0.1);
       }
     });
-    const hiddenCount = remaining.length - shown.length;
-    stagesMore.set(remaining.length === 0 ? 'No stages left' : hiddenCount > 0 ? `+${hiddenCount} more stages · Δv ${st.deltaVTotal}` : `Δv ${st.deltaVTotal} total`);
+    stagesMore.set(remaining.length === 0 ? 'No stages left' : `Δv ${st.deltaVTotal} total`);
   }
 
   function updateResources(s: SimSnapshot): void {
@@ -605,6 +687,201 @@ export function createHud(opts: HudOptions): HudImpl {
     gpu.device.queue.submit([encoder.finish()]);
   }
 
+  /** Every frame while visible: panel visibility, indicator lights, the throttle and g gauges. */
+  function updateFrame(s: SimSnapshot, kind: ViewKind, dt: number): void {
+    const r = s.readouts;
+    const v = activeVesselOf(s);
+    const landed = isLanded(v);
+    const altSrc = altitudeSource(s, altMode);
+    const w = s.warp;
+
+    // Panel visibility.
+    const showOrbit = !landed && (kind === 'external' || kind === 'map');
+    const inAir = !landed && (r.dynamicPressure > 1 || r.mach > 0.02);
+    const heating = r.heatFlux > 1000;
+    const showEntry = heating || r.chuteEnvelope !== null || r.liftVectorUp !== null;
+    let targetButtonsShown = 0;
+    for (const [id, b] of targetButtons) {
+      // The body the vessel sits on cannot be its target.
+      const show = id !== v?.bodyId;
+      b.show.set(show);
+      if (show) targetButtonsShown++;
+    }
+    const onGround = v !== null && (v.situation === 'prelaunch' || v.situation === 'landed');
+    // The launch panel shows only with something in it: a target to pick, a target, or a launch window.
+    const showPad = onGround && (targetButtonsShown > 0 || r.targetBodyId !== null || r.targetRelativeInclination !== null || r.launchWindow !== null);
+    const nb = r.nodeBurn;
+    const tBurn = nb?.timeToBurnStart ?? null;
+    orbitShow.set(showOrbit);
+    atmShow.set(inAir);
+    entryShow.set(showEntry);
+    fluxShow.set(heating);
+    ablShow.set(r.ablatorFraction !== null);
+    liftShow.set(r.liftVectorUp !== null);
+    chuteShow.set(r.chuteEnvelope !== null);
+    ltShow.set(r.landingTarget !== null);
+    if (r.landingTarget === null) ltCurrentRows = null;
+    padShow.set(showPad);
+    padTargetsShow.set(targetButtonsShown > 0);
+    relIncShow.set(r.targetRelativeInclination !== null);
+    crossShow.set(r.launchWindow !== null);
+    azShow.set(r.launchWindow !== null);
+    for (const [id, b] of targetButtons) b.on.set(r.targetBodyId === id);
+    nodeShow.set(nb !== null);
+    nodeImminent.set(tBurn !== null && tBurn >= 0 && tBurn < 10);
+    noticeShow.set(s.terrain.pending && r.altitudeRadar < RADAR_ALTITUDE_SWITCH);
+    failedShow.set(s.mission.failed);
+    doseShow.set(r.gDose > 0);
+
+    // Warp chevrons.
+    for (let i = 0; i < chevrons.length; i++) {
+      chevOn[i]!.set(i + 1 <= w.index);
+      chevCap[i]!.set(i + 1 > w.maxIndex);
+    }
+
+    // Systems and SAS.
+    sasOn.set(r.sasEnabled);
+    rcsOn.set(r.rcsEnabled);
+    gearAvail.set(r.legsDeployed !== null);
+    gearOn.set(r.legsDeployed === true);
+    lightsOn.set(r.lightsOn);
+    fineOn.set(r.fineControl);
+    for (const mode of SAS_MODES) {
+      const b = modeButtons.get(mode)!;
+      b.enabled.set(r.sasModesAvailable.includes(mode));
+      b.on.set(r.sasEnabled && r.sasMode === mode);
+    }
+    sasCaptionOn.set(r.sasEnabled);
+
+    // Gauges (composited transforms: no layout, no paint).
+    thrFill.set(r.throttle);
+    gFill.set(r.gLoad / 10);
+
+    // Text: at HUD_TEXT_HZ, and at once on any discrete change.
+    const lt = r.landingTarget;
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${s.staging.nextStage}|${s.staging.lockout}|${s.staging.stages.length}|${s.mission.failed}`;
+    textClock += dt;
+    const due = textClock >= TEXT_PERIOD - 1e-4;
+    if (forceText || due || sig !== lastSig) {
+      textClock = due ? Math.min(Math.max(0, textClock - TEXT_PERIOD), TEXT_PERIOD) : 0;
+      forceText = false;
+      lastSig = sig;
+      textUpdates++;
+      updateText(s, kind, { showOrbit, inAir, showEntry, showPad });
+    }
+  }
+
+  /** Every text readout (and the slow bars) of the visible panels. */
+  function updateText(s: SimSnapshot, kind: ViewKind, show: { showOrbit: boolean; inAir: boolean; showEntry: boolean; showPad: boolean }): void {
+    const r = s.readouts;
+    const v = activeVesselOf(s);
+    const bodyDef = v ? defs.bodies[v.bodyId] : undefined;
+    const f = describeFlight(s, altMode);
+
+    // Clock and warp.
+    met.set(formatMet(r.met));
+    ut.set(formatUt(s.ut));
+    const w = describeWarp(s, WARP_LEVELS);
+    warpFactor.set(w.factor);
+    railsLabel.set(w.index > 0 ? (w.onRails ? 'rails warp' : 'physics warp') : '');
+    warpLimit.set(w.limit ?? '');
+    warpLimitShow.set(w.limit !== null);
+
+    // Altitude.
+    altLabel.set(`Altitude · ${f.altitudeSource === 'radar' ? 'radar' : 'sea level'}${altMode === 'auto' ? ' · auto' : ''}`);
+    altValue.set(f.altitude);
+    vsValue.set(`${f.verticalSpeed}  ·  horiz. ${f.horizontalSpeed}`);
+
+    // Orbit.
+    if (show.showOrbit) {
+      const o = describeOrbit(s);
+      orbitBody.set(bodyDef?.name ?? '');
+      orbit.ap.set(o.apoapsis);
+      orbit.apT.set(o.apoapsisTime);
+      orbit.pe.set(o.periapsis);
+      orbit.peT.set(o.periapsisTime);
+      peTone.set(r.periapsisAltitude < 0 ? 'warning' : bodyDef?.atmosphere && r.periapsisAltitude < bodyDef.atmosphere.simTop ? 'caution' : '');
+      orbit.inc.set(o.inclination);
+      orbit.per.set(o.period);
+    }
+
+    // Atmospheric flight.
+    if (show.inAir) {
+      atm.q.set(formatPressure(r.dynamicPressure));
+      atm.mach.set(formatMach(r.mach));
+      atm.aoa.set(formatRadAsDeg(r.angleOfAttack));
+    }
+
+    // Entry: heat shield, skin temperature, lift vector, chute envelope.
+    if (show.showEntry) {
+      entry.flux.set(formatHeatFlux(r.heatFlux));
+      if (r.ablatorFraction !== null) {
+        entry.abl.set(formatPercent(r.ablatorFraction));
+        ablBar.fill.set(r.ablatorFraction);
+      }
+      entry.temp.set(formatPercent(r.maxTempFraction));
+      tempBar.fill.set(r.maxTempFraction);
+      entry.lift.set(r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN');
+      if (r.chuteEnvelope) {
+        entry.chute.set(r.chuteEnvelope.toUpperCase());
+        chuteTone.set(r.chuteEnvelope === 'safe' ? 'good' : r.chuteEnvelope === 'risky' ? 'caution' : 'warning');
+      }
+    }
+
+    // Landing target.
+    const lt = describeLandingTarget(s);
+    if (lt) {
+      ltName.set(lt.name);
+      ltKind.set(lt.kindLabel);
+      ltInsideShow.set(lt.insideZone);
+      const rows = landingTargetRows(lt);
+      rows.forEach(([label, value], i) => {
+        const slot = ltRows[i];
+        if (!slot) return;
+        slot.label.set(label);
+        slot.value.set(value);
+      });
+      ltCurrentRows = rows;
+    } else ltCurrentRows = null;
+
+    // Pad: target and launch opportunity.
+    if (show.showPad) {
+      const p = describePad(s, defs);
+      if (p) {
+        pad.target.set(p.target);
+        pad.relInc.set(p.relativeInclination ?? '');
+        pad.cross.set(p.planeCrossing ?? '');
+        pad.az.set(p.launchAzimuth ?? '');
+      }
+    }
+
+    // Stage stack and resources.
+    if (kind !== 'map') updateStages(s);
+    if (kind === 'external') updateResources(s);
+
+    // SAS caption, speed, navball readouts, gauges.
+    sasCaption.set(r.sasEnabled ? `Hold · ${SAS_NAMES[r.sasMode]}` : 'SAS off');
+    speedMode.set(f.speedMode === 'surface' ? 'Surface' : 'Orbit');
+    speedValue.set(f.speed);
+    hdg.set(f.heading);
+    pitchText.set(f.pitch);
+    rollText.set(f.roll);
+    thrText.set(f.throttle);
+    gText.set(f.gLoad);
+    if (r.gDose > 0) doseBar.fill.set(r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0);
+
+    // Node burn.
+    const nb = describeNodeBurn(s);
+    if (nb) {
+      node.dv.set(nb.deltaV);
+      node.burn.set(nb.burnTime);
+      node.start.set(nb.started ? `burning · ${nb.startIn}` : nb.startIn);
+      nodeDvTone.set(nb.insufficient ? 'warning' : 'accent');
+    }
+
+    if (s.mission.failed) failReason.set(s.mission.failureReason ?? 'The mission cannot continue.');
+  }
+
   const hud: HudImpl = {
     root,
     get visible() {
@@ -619,10 +896,14 @@ export function createHud(opts: HudOptions): HudImpl {
     get meanUpdateMs() {
       return meanMs;
     },
+    get textUpdates() {
+      return textUpdates;
+    },
     mount(container) {
       container.append(root);
     },
     setVisible(v) {
+      if (v && !visible) forceText = true;
       visible = v;
       root.hidden = !v;
     },
@@ -636,172 +917,15 @@ export function createHud(opts: HudOptions): HudImpl {
     notifications: () => toasts.map((t) => t.text),
     update(s: SimSnapshot, camera: CameraState, realDt: number) {
       const t0 = performance.now();
+      const dt = Math.max(0, realDt);
       lastSnapshot = s;
       const kind = camera.kind;
       setKind(kind);
-      const showBall = visible && (kind === 'external' || kind === 'map');
-      renderNavball(s, showBall);
-      for (const e of s.events) eventToast(e, s);
-      updateToasts(Math.max(0, realDt));
-      if (!visible) {
-        record(t0);
-        return;
-      }
-      const r = s.readouts;
-      const v = activeVesselOf(s);
-      const landed = v !== null && (v.situation === 'prelaunch' || v.situation === 'landed' || v.situation === 'splashed');
-      const bodyDef = v ? defs.bodies[v.bodyId] : undefined;
-
-      // Clock and warp.
-      met.set(formatMet(r.met));
-      ut.set(formatUt(s.ut));
-      const w = describeWarp(s, WARP_LEVELS);
-      warpFactor.set(w.factor);
-      railsLabel.set(w.index > 0 ? (w.onRails ? 'rails warp' : 'physics warp') : '');
-      for (let i = 0; i < chevrons.length; i++) {
-        chevOn[i]!.set(i + 1 <= w.index);
-        chevCap[i]!.set(i + 1 > w.maxIndex);
-      }
-      warpLimit.set(w.limit ?? '');
-      warpLimitShow.set(w.limit !== null);
-
-      // Altitude.
-      const useRadar = altMode === 'radar' || (altMode === 'auto' && !landed && r.altitudeRadar < 2000);
-      altLabel.set(`Altitude · ${useRadar ? 'radar' : 'sea level'}${altMode === 'auto' ? ' · auto' : ''}`);
-      altValue.set(formatAltitude(useRadar ? r.altitudeRadar : r.altitudeAsl));
-      const vs = r.verticalSpeed;
-      vsValue.set(`${vs >= 0.05 ? '▲' : vs <= -0.05 ? '▼' : '■'} ${formatSpeed(Math.abs(vs))}  ·  horiz. ${formatSpeed(r.horizontalSpeed)}`);
-
-      // Orbit.
-      const showOrbit = !landed && (kind === 'external' || kind === 'map');
-      orbitShow.set(showOrbit);
-      if (showOrbit) {
-        const o = describeOrbit(s);
-        orbitBody.set(bodyDef?.name ?? '');
-        orbit.ap.set(o.apoapsis);
-        orbit.apT.set(o.apoapsisTime);
-        orbit.pe.set(o.periapsis);
-        orbit.peT.set(o.periapsisTime);
-        peTone.set(r.periapsisAltitude < 0 ? 'warning' : bodyDef?.atmosphere && r.periapsisAltitude < bodyDef.atmosphere.simTop ? 'caution' : '');
-        orbit.inc.set(o.inclination);
-        orbit.per.set(o.period);
-      }
-
-      // Atmospheric flight.
-      const inAir = r.dynamicPressure > 1 || (r.mach > 0.02 && !landed);
-      atmShow.set(inAir && !landed);
-      if (inAir) {
-        atm.q.set(formatPressure(r.dynamicPressure));
-        atm.mach.set(formatMach(r.mach));
-        atm.aoa.set(formatRadAsDeg(r.angleOfAttack));
-      }
-
-      // Entry: heat shield, skin temperature, lift vector, chute envelope.
-      const heating = r.heatFlux > 1000;
-      const showEntry = heating || r.chuteEnvelope !== null || r.liftVectorUp !== null;
-      entryShow.set(showEntry);
-      if (showEntry) {
-        fluxShow.set(heating);
-        entry.flux.set(formatHeatFlux(r.heatFlux));
-        ablShow.set(r.ablatorFraction !== null);
-        if (r.ablatorFraction !== null) {
-          entry.abl.set(formatPercent(r.ablatorFraction));
-          ablBar.fill.set(r.ablatorFraction);
-        }
-        entry.temp.set(formatPercent(r.maxTempFraction));
-        tempBar.fill.set(r.maxTempFraction);
-        liftShow.set(r.liftVectorUp !== null);
-        entry.lift.set(r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN');
-        chuteShow.set(r.chuteEnvelope !== null);
-        if (r.chuteEnvelope) {
-          entry.chute.set(r.chuteEnvelope.toUpperCase());
-          chuteTone.set(r.chuteEnvelope === 'safe' ? 'good' : r.chuteEnvelope === 'risky' ? 'caution' : 'warning');
-        }
-      }
-
-      // Landing target.
-      const lt = describeLandingTarget(s);
-      ltShow.set(lt !== null);
-      if (lt) {
-        ltName.set(lt.name);
-        ltKind.set(lt.kindLabel);
-        ltInsideShow.set(lt.insideZone);
-        const rows = landingTargetRows(lt);
-        rows.forEach(([label, value], i) => {
-          const slot = ltRows[i];
-          if (!slot) return;
-          slot.label.set(label);
-          slot.value.set(value);
-        });
-        ltCurrentRows = rows;
-      } else ltCurrentRows = null;
-
-      // Pad: target and launch opportunity.
-      const p = describePad(s, defs);
-      padShow.set(p !== null && (p.target !== 'No target' || targetButtons.size > 0));
-      if (p) {
-        pad.target.set(p.target);
-        padTargetsShow.set(targetButtons.size > 0);
-        for (const [id, b] of targetButtons) {
-          b.on.set(r.targetBodyId === id);
-          // The body the vessel sits on cannot be its target.
-          b.show.set(id !== v?.bodyId);
-        }
-        relIncShow.set(p.relativeInclination !== null);
-        pad.relInc.set(p.relativeInclination ?? '');
-        crossShow.set(p.planeCrossing !== null);
-        pad.cross.set(p.planeCrossing ?? '');
-        azShow.set(p.launchAzimuth !== null);
-        pad.az.set(p.launchAzimuth ?? '');
-      }
-
-      // Stage stack and resources.
-      if (kind !== 'map') updateStages(s);
-      if (kind === 'external') updateResources(s);
-
-      // SAS, systems, navball readouts.
-      sasOn.set(r.sasEnabled);
-      rcsOn.set(r.rcsEnabled);
-      gearAvail.set(r.legsDeployed !== null);
-      gearOn.set(r.legsDeployed === true);
-      lightsOn.set(r.lightsOn);
-      fineOn.set(r.fineControl);
-      for (const mode of SAS_MODES) {
-        const b = modeButtons.get(mode)!;
-        b.enabled.set(r.sasModesAvailable.includes(mode));
-        b.on.set(r.sasEnabled && r.sasMode === mode);
-      }
-      sasCaption.set(r.sasEnabled ? `Hold · ${SAS_NAMES[r.sasMode]}` : 'SAS off');
-      sasCaptionOn.set(r.sasEnabled);
-      speedMode.set(s.navball.mode === 'surface' ? 'Surface' : 'Orbit');
-      speedValue.set(formatSpeed(s.navball.mode === 'surface' ? r.speedSurface : r.speedOrbital));
-      hdg.set(formatBearing(s.navball.headingDeg));
-      pitchText.set(formatDeg(s.navball.pitchDeg));
-      rollText.set(formatDeg(s.navball.rollDeg));
-
-      // Gauges.
-      thrText.set(formatPercent(r.throttle));
-      thrFill.set(r.throttle);
-      gText.set(formatG(r.gLoad));
-      gFill.set(r.gLoad / 10);
-      doseShow.set(r.gDose > 0);
-      if (r.gDose > 0) doseBar.fill.set(r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0);
-
-      // Node burn.
-      const nb = describeNodeBurn(s);
-      nodeShow.set(nb !== null);
-      if (nb) {
-        node.dv.set(nb.deltaV);
-        node.burn.set(nb.burnTime);
-        node.start.set(nb.started ? `burning · ${nb.startIn}` : nb.startIn);
-        nodeImminent.set(nb.imminent);
-        nodeDvTone.set(nb.insufficient ? 'warning' : 'accent');
-      }
-
-      // Centre notices.
-      noticeShow.set(s.terrain.pending && r.altitudeRadar < 2000);
-      failedShow.set(s.mission.failed);
-      if (s.mission.failed) failReason.set(s.mission.failureReason ?? 'The mission cannot continue.');
+      renderNavball(s, visible && (kind === 'external' || kind === 'map'));
+      eventToasts(s);
+      updateToasts(dt);
+      if (visible) updateFrame(s, kind, dt);
+      frameNo++;
       record(t0);
     },
     dispose() {

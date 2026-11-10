@@ -13,8 +13,7 @@ import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
 import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor } from '../icons';
 import {
-  formatAltitude,
-  formatDeg,
+  formatBearing,
   formatDeltaV,
   formatG,
   formatHeatFlux,
@@ -25,12 +24,11 @@ import {
   formatPercent,
   formatPressure,
   formatRadAsDeg,
-  formatSpeed,
   formatTwr,
   formatUt,
   NBSP,
 } from '../format';
-import { activeVesselOf, describeLandingTarget, describeNodeBurn, describeOrbit, describeResources, describeStages, describeWarp, landingTargetRows } from '../model';
+import { activeVesselOf, describeFlight, describeLandingTarget, describeNodeBurn, describeOrbit, describeResources, describeStages, describeWarp, landingScope, landingTargetRows } from '../model';
 
 export const MFD_PAGES: readonly MfdPage[] = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
 
@@ -95,20 +93,21 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
   const ltSection = lt ? { heading: `${lt.kindLabel}: ${lt.name}`, rows: landingTargetRows(lt).map(([label, value]) => ({ label, value })) } : undefined;
   switch (page) {
     case 'flight': {
-      const radar = r.altitudeRadar < 5000;
+      const f = describeFlight(s);
+      const radar = f.altitudeSource === 'radar';
       return {
         page,
         title: TITLE[page],
         rows: [
-          { label: radar ? 'Radar alt' : 'Altitude', value: formatAltitude(radar ? r.altitudeRadar : r.altitudeAsl), tone: 'accent' },
-          { label: 'Vertical', value: formatSpeed(r.verticalSpeed), tone: r.verticalSpeed < -50 && radar ? 'caution' : 'normal' },
-          { label: s.navball.mode === 'surface' ? 'Surface spd' : 'Orbital spd', value: formatSpeed(s.navball.mode === 'surface' ? r.speedSurface : r.speedOrbital) },
-          { label: 'Horizontal', value: formatSpeed(r.horizontalSpeed) },
-          { label: 'Pitch', value: formatDeg(s.navball.pitchDeg) },
-          { label: 'Heading', value: formatDeg(s.navball.headingDeg) },
-          { label: 'Roll', value: formatDeg(s.navball.rollDeg) },
-          { label: 'Throttle', value: formatPercent(r.throttle) },
-          { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad > 6 ? 'warning' : r.gLoad > 4 ? 'caution' : 'normal' },
+          { label: radar ? 'Radar alt' : 'Altitude', value: f.altitude, tone: 'accent' },
+          { label: 'Vertical', value: f.verticalSpeed, tone: r.verticalSpeed < -50 && radar ? 'caution' : 'normal' },
+          { label: f.speedMode === 'surface' ? 'Surface spd' : 'Orbital spd', value: f.speed },
+          { label: 'Horizontal', value: f.horizontalSpeed },
+          { label: 'Pitch', value: f.pitch },
+          { label: 'Heading', value: f.heading },
+          { label: 'Roll', value: f.roll },
+          { label: 'Throttle', value: f.throttle },
+          { label: 'G load', value: f.gLoad, tone: r.gLoad > 6 ? 'warning' : r.gLoad > 4 ? 'caution' : 'normal' },
         ],
         status,
       };
@@ -200,10 +199,11 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       return { page, title: TITLE[page], rows, section: ltSection, status };
     }
     case 'landing': {
+      const f = describeFlight(s, 'radar');
       const rows: MfdRow[] = [
-        { label: 'Radar alt', value: formatAltitude(r.altitudeRadar), tone: 'accent' },
-        { label: 'Vertical', value: formatSpeed(r.verticalSpeed), tone: r.verticalSpeed < -5 && r.altitudeRadar < 200 ? 'warning' : 'normal' },
-        { label: 'Horizontal', value: formatSpeed(r.horizontalSpeed), tone: r.horizontalSpeed > 2 && r.altitudeRadar < 100 ? 'caution' : 'normal' },
+        { label: 'Radar alt', value: f.altitude, tone: 'accent' },
+        { label: 'Vertical', value: f.verticalSpeed, tone: r.verticalSpeed < -5 && r.altitudeRadar < 200 ? 'warning' : 'normal' },
+        { label: 'Horizontal', value: f.horizontalSpeed, tone: r.horizontalSpeed > 2 && r.altitudeRadar < 100 ? 'caution' : 'normal' },
         { label: 'Tilt', value: formatRadAsDeg(r.tiltFromVertical), tone: r.tiltFromVertical > (12 * Math.PI) / 180 ? 'caution' : 'normal' },
         { label: 'Gear', value: r.legsDeployed === null ? 'none' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed ? 'good' : r.altitudeRadar < 1000 ? 'caution' : 'normal' },
         { label: 'Terrain', value: s.terrain.pending ? 'LOADING' : s.terrain.complete ? 'FINAL' : 'COARSE', tone: s.terrain.pending ? 'caution' : 'normal' },
@@ -368,7 +368,11 @@ function drawOrbit(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimS
     const rp = conic.a * (1 - conic.e);
     const ra = conic.a * (1 + conic.e);
     const b = conic.a * Math.sqrt(1 - conic.e * conic.e);
-    scale = Math.min((w * 0.92) / (rp + ra), (h * 0.92) / (2 * b));
+    // The apsis labels sit outside the ellipse on the major axis: keep room for them inside the graphic area.
+    ctx.font = `600 ${Math.round(h * 0.045)}px ${FONT}`;
+    const gap = h * 0.02;
+    const labelRoom = gap + Math.max(ctx.measureText('Ap').width, ctx.measureText('Pe').width) + h * 0.01;
+    scale = Math.min(Math.max(1, w - 2 * labelRoom) / (rp + ra), (h * 0.92) / (2 * b));
     ctx.save();
     // Periapsis to the right; centre of the ellipse at -a e from the focus.
     ctx.strokeStyle = COLORS.accent;
@@ -388,13 +392,12 @@ function drawOrbit(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimS
     ctx.lineWidth = 1.5;
     ctx.stroke();
     // Apsides.
-    ctx.font = `600 ${Math.round(h * 0.045)}px ${FONT}`;
     ctx.fillStyle = COLORS.normal;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText('Pe', focusX + rp * scale + h * 0.02, cy - h * 0.04);
+    ctx.fillText('Pe', focusX + rp * scale + gap, cy - h * 0.04);
     ctx.textAlign = 'right';
-    ctx.fillText('Ap', focusX - ra * scale - h * 0.02, cy - h * 0.04);
+    ctx.fillText('Ap', focusX - ra * scale - gap, cy - h * 0.04);
     // Vessel: true anomaly from the current position.
     const nu = Math.atan2(v.r.x * conic.Q.x + v.r.y * conic.Q.y + v.r.z * conic.Q.z, v.r.x * conic.P.x + v.r.y * conic.P.y + v.r.z * conic.P.z);
     const rr = conic.p / (1 + conic.e * Math.cos(nu));
@@ -414,8 +417,13 @@ function drawOrbit(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimS
   }
 }
 
-/** Landing-target scope: target offset by down-range (up) and cross-range (right), log-scaled rings. */
+/**
+ * Landing-target scope, log-scaled rings around the vessel, north-up at every speed (model.landingScope): the
+ * target from distance and bearing, the ground track as a line from the vessel while there is one.
+ */
 function drawScope(ctx: Ctx, cx: number, cy: number, r: number, s: SimSnapshot): void {
+  const lt = describeLandingTarget(s);
+  const scope = lt ? landingScope(lt) : null;
   ctx.strokeStyle = 'rgba(120,150,190,0.35)';
   ctx.lineWidth = Math.max(1, r * 0.008);
   const rings = [100, 1000, 10_000, 100_000];
@@ -433,29 +441,49 @@ function drawScope(ctx: Ctx, cx: number, cy: number, r: number, s: SimSnapshot):
   ctx.beginPath();
   ctx.moveTo(cx - r, cy);
   ctx.lineTo(cx + r, cy);
-  ctx.moveTo(cx, cy - r);
-  ctx.lineTo(cx, cy + r);
+  // The vertical hair stops short of the N above and the caption below.
+  ctx.moveTo(cx, cy - r * 0.9);
+  ctx.lineTo(cx, cy + r * 0.9);
   ctx.stroke();
-  ctx.fillStyle = LABEL;
+  ctx.fillStyle = COLORS.normal;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText('AHEAD', cx, cy - r);
-  // Vessel at the centre, target placed by its down-range / cross-range.
+  ctx.font = `700 ${Math.round(r * 0.075)}px ${FONT}`;
+  ctx.fillText('N', cx, cy - r);
+  // Ground track: a dashed line from the vessel to the rim, in the prograde colour.
+  const track = scope?.trackDeg ?? null;
+  if (track !== null) {
+    const t = (track * Math.PI) / 180;
+    ctx.save();
+    ctx.strokeStyle = MARKER_COLORS.prograde;
+    ctx.lineWidth = Math.max(1.5, r * 0.012);
+    ctx.setLineDash([r * 0.05, r * 0.035]);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.sin(t) * r * 0.1, cy - Math.cos(t) * r * 0.1);
+    ctx.lineTo(cx + Math.sin(t) * r, cy - Math.cos(t) * r);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.font = `500 ${Math.round(r * 0.07)}px ${FONT}`;
+  ctx.fillStyle = LABEL;
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(lt === null ? 'NORTH UP' : track !== null ? `NORTH UP · TRACK ${formatBearing(track)}` : 'NORTH UP · NO GROUND TRACK', cx, cy + r * 1.08);
+  // Vessel at the centre.
   drawIcon(ctx, MARKER_ICONS.stability, cx, cy, r * 0.14, '#ffa53a');
-  const lt = describeLandingTarget(s);
-  if (!lt) return;
-  const d = Math.hypot(lt.raw.downRange, lt.raw.crossRange);
+  if (!scope) return;
+  const d = Math.hypot(scope.east, scope.north);
   if (d > 0.5) {
     // Beyond the outer ring the target sits on the rim, pointing the way.
     const k = Math.min(map(d), r * 0.94) / d;
-    drawIcon(ctx, MARKER_ICONS.target, cx + lt.raw.crossRange * k, cy - lt.raw.downRange * k, r * 0.16, MARKER_COLORS.target);
+    drawIcon(ctx, MARKER_ICONS.target, cx + scope.east * k, cy - scope.north * k, r * 0.16, MARKER_COLORS.target);
   } else drawIcon(ctx, MARKER_ICONS.target, cx, cy, r * 0.16, MARKER_COLORS.target);
 }
 
 function drawStages(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimSnapshot): void {
   const st = describeStages(s);
-  const tiles = st.tiles.filter((t) => !t.fired).slice(0, 7);
-  const th = Math.min(h / 7, h * 0.14);
+  // Every remaining stage, next first; tiles shrink to fit long stacks (and leave a row for the lockout line).
+  const tiles = st.tiles.filter((t) => !t.fired);
+  const th = Math.min(h / Math.max(7, tiles.length + (st.lockout ? 1 : 0)), h * 0.14);
   tiles.forEach((t, i) => {
     const yy = y + i * th;
     ctx.fillStyle = t.next ? 'rgba(85,212,255,0.12)' : 'rgba(255,255,255,0.03)';
