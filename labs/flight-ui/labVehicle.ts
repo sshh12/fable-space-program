@@ -121,17 +121,29 @@ export function withLabVehicle(defs: DefLibrary): DefLibrary {
   };
 }
 
-/** Part snapshots of the lab vehicle stacked along +Y (fill fractions per group). */
-export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<'booster' | 'upper' | 'lander' | 'capsule', number>> = {}): PartSnapshot[] {
+export type LabGroup = 'booster' | 'upper' | 'lander' | 'capsule';
+export const LAB_GROUPS: readonly LabGroup[] = ['booster', 'upper', 'lander', 'capsule'];
+
+/** Base of each part above the bottom of the full stack, m (the part origin sits at its bounds.yMin above it). */
+const STACK_BASE: Record<string, number> = { 'm1-engines': 0, 'm1-tank': 3, 'm2-engine': 33, 'm2-tank': 35, lander: 47, capsule: 50.2 };
+
+/**
+ * Part snapshots of the lab vehicle stacked along +Y for the given stage groups (what remains of the stack
+ * after staging), with the bottom of the lowest included part at VES y = 0. `fill` sets the resource level per group.
+ */
+export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup, number>> = {}, groups: readonly LabGroup[] = LAB_GROUPS): PartSnapshot[] {
   const vehicle = defs.vehicles[LAB_VEHICLE_ID]!;
-  const stackY: Record<string, number> = { 'm1-engines': 0, 'm1-tank': 3, 'm2-engine': 35, 'm2-tank': 37, lander: 49, capsule: 52.7 };
-  return vehicle.parts.map((placement) => {
+  const included = vehicle.parts.filter((p) => groups.includes(p.stageGroup as LabGroup));
+  const base = Math.min(...included.map((p) => STACK_BASE[p.id] ?? 0));
+  // The engines of the lowest remaining stage are the ones running (active) in the FakeSim.
+  const activeGroup = included.find((p) => defs.parts[p.def]!.modules.some((m) => m.type === 'engine'))?.stageGroup;
+  return included.map((placement) => {
     const def = defs.parts[placement.def]!;
     const f = fill[placement.stageGroup as keyof typeof fill] ?? 1;
     const modules: ModuleState[] = def.modules.map((m): ModuleState => {
       switch (m.type) {
         case 'engine':
-          return { type: 'engine', active: placement.stageGroup === 'booster', throttleActual: 0, thrust: 0, massFlow: 0, ambientPressure: 0, pressureRatio: 1, gimbal: [0, 0], ignitionAge: -1, shutdownAge: -1, ignitionsLeft: null, flameout: false };
+          return { type: 'engine', active: placement.stageGroup === activeGroup, throttleActual: 0, thrust: 0, massFlow: 0, ambientPressure: 0, pressureRatio: 1, gimbal: [0, 0], ignitionAge: -1, shutdownAge: -1, ignitionsLeft: null, flameout: false };
         case 'command':
           return { type: 'command', crew: 1, crewAlive: true };
         case 'legs':
@@ -147,7 +159,7 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<'booster'
     return {
       instanceId: placement.id,
       def: placement.def,
-      localPos: v3.new(0, stackY[placement.id] ?? 0, 0),
+      localPos: v3.new(0, (STACK_BASE[placement.id] ?? 0) - base - def.bounds.yMin, 0),
       localRot: quat.identity(),
       tempSkin: 290,
       maxTemp: 1400,
@@ -161,4 +173,14 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<'booster'
 /** The FakeSim reports vehicleId ''; the lab tags its snapshots with the lab vehicle. */
 export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
   return { ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Lab Meridian' } : v)) };
+}
+
+/** Cylinders (yMin, yMax, radius, dark band 0/1) of the given part snapshots for the lab backdrop. */
+export function labCylinders(defs: DefLibrary, parts: PartSnapshot[]): [number, number, number, number][] {
+  return parts.map((p) => {
+    const d = defs.parts[p.def]!;
+    const y = p.localPos.y;
+    const dark = d.category === 'engine' || p.def === 'lab-lander' ? 1 : 0;
+    return [y + d.bounds.yMin, y + d.bounds.yMax, d.category === 'command' ? d.bounds.radius * 0.8 : d.bounds.radius, dark];
+  });
 }

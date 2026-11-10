@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Lab - flight UI</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font: 13px/1.4 system-ui, 'Segoe UI', sans-serif;
+        color: #cfd6e4;
+      }
+      #viewport {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        outline: none;
+      }
+      #ui-root {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      #mfd {
+        position: fixed;
+        inset: 0;
+        display: none;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 1.2vh;
+        padding: 2vh;
+        background: #020305;
+        pointer-events: none;
+      }
+      #mfd.visible {
+        display: grid;
+      }
+      #mfd canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        border-radius: 0.6vh;
+        box-shadow: 0 0 0 0.35vh #11161d, 0 0 0 0.5vh #2a323d;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="viewport" tabindex="0"></canvas>
+    <div id="ui-root"></div>
+    <div id="mfd"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
