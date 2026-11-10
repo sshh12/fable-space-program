@@ -13,13 +13,34 @@
  * Modulators: [0] log2 data wavelength, [1] S (RMS slope at 1 m), [2] H.
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
-import { CraterField } from '../craters';
+import { CraterField, type CraterParams } from '../craters';
 import { NOISE_MAX } from '../noise';
 import { RockField, rockLog2Length } from '../rocks';
 import { LatticeField } from '../smoothField';
 import { smoothstep01, smootherstep01 } from '../util';
 import { bandOctaves, minOf, multifractalFactor, noiseAmplitude, OctaveStack, param, splatCraters, splatRocks } from './common';
 import type { AmplificationModel, BandRasterJob, ModelContext, PointInfo } from './types';
+
+/** Crater-field parameters of a lunar-regolith definition (the model's own craters; also used by tests). */
+export function lunarCraterParams(def: TerrainAmplificationDef, radius: number, globalMaxLevel: number, lambda0: number): CraterParams {
+  const p = (k: string): number => param(def, k);
+  const craterOffset = Math.log2(p('craterMaxDiameterInPostings') / 2);
+  return {
+    seed: (def.seed ^ 0x3c6ef372) >>> 0,
+    radius,
+    minDiameter: p('craterMinDiameterM'),
+    maxDiameter: 2 ** (Math.log2(lambda0) - globalMaxLevel + craterOffset),
+    equilibriumFraction: p('craterEquilibriumFraction'),
+    extentRadii: p('craterEjectaExtentRadii'),
+    freshDepthToDiameter: p('freshDepthToDiameter'),
+    degradedDepthToDiameter: p('degradedDepthToDiameter'),
+    rimHeightToDiameter: p('rimHeightToDiameter'),
+    rimDegraded: p('degradedRimFraction'),
+    freshnessExponent: p('craterFreshnessExponent'),
+    rimRoundingFresh: p('rimRoundingFresh'),
+    rimRoundingDegraded: p('rimRoundingDegraded'),
+  };
+}
 
 export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelContext): AmplificationModel {
   const p = (k: string): number => param(def, k);
@@ -38,21 +59,7 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
   const kFresh = p('rockAreaFractionFreshEjecta');
   const rockSourceMinD = p('rockSourceMinCraterDiameterM');
 
-  const craters = new CraterField({
-    seed: (def.seed ^ 0x3c6ef372) >>> 0,
-    radius: R,
-    minDiameter: p('craterMinDiameterM'),
-    maxDiameter: 2 ** (log2LambdaDataMax + craterOffset),
-    equilibriumFraction: p('craterEquilibriumFraction'),
-    extentRadii: p('craterEjectaExtentRadii'),
-    freshDepthToDiameter: p('freshDepthToDiameter'),
-    degradedDepthToDiameter: p('degradedDepthToDiameter'),
-    rimHeightToDiameter: p('rimHeightToDiameter'),
-    rimDegraded: p('degradedRimFraction'),
-    freshnessExponent: p('craterFreshnessExponent'),
-    rimRoundingFresh: p('rimRoundingFresh'),
-    rimRoundingDegraded: p('rimRoundingDegraded'),
-  });
+  const craters = new CraterField(lunarCraterParams(def, R, ctx.globalMaxLevel, ctx.lambda0));
   const rocks = new RockField({
     seed: (def.seed ^ 0xa54ff53a) >>> 0,
     radius: R,

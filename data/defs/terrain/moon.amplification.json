@@ -2,13 +2,13 @@
   "model": "lunar-regolith",
   "seed": 19690720,
   "params": {
-    "hurstMaria": 0.9,
+    "hurstMaria": 0.95,
     "hurstHighlands": 0.65,
     "hurstRoughnessRange": 2.0,
-    "regolithSlope1m": 0.06,
+    "regolithSlope1m": 0.0268,
     "multifractalGain": 0.8,
     "multifractalMax": 3.0,
-    "craterEquilibriumFraction": 0.03,
+    "craterEquilibriumFraction": 0.005,
     "craterMaxDiameterInPostings": 4,
     "craterMinDiameterM": 0.6,
     "craterEjectaExtentRadii": 2.5,
@@ -28,6 +28,10 @@
     "rockCollisionMinDiameterM": 0.3,
     "rockHeightRatioMin": 0.35,
     "rockHeightRatioMax": 0.8,
-    "rockVariants": 6
+    "rockVariants": 6,
+    "calibrationTargetRmsSlope2m": 0.0582,
+    "calibrationTargetRmsSlope4m": 0.0563,
+    "calibrationTargetRmsSlope8m": 0.0565,
+    "calibrationLambdaM": 5.2
   }
 }
