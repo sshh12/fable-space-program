@@ -221,6 +221,10 @@ export interface Structure {
   /** Maximum commanded rate, rad/s. */
   maxRate: number;
   crew: number;
+  /** Occupied seat positions in VES, 3 numbers per seat (the g-load is felt there). */
+  seats: number[];
+  /** Set by the contact broad phase when the whole vessel is below the terrain surface. */
+  buried: boolean;
   minJointG: number;
   anyQAlpha: boolean;
   /** Tumbling-average drag area for the reduced tier, m^2; lumped thermal properties. */
@@ -260,15 +264,37 @@ export function panelCentroid(def: PartDef, index: number, count: number): Vec3 
   return { x: rad.x * rc, y: (def.bounds.yMin + def.bounds.yMax) / 2, z: rad.z * rc };
 }
 
-function defaultContactPoints(def: PartDef): ContactPointDef[] {
-  const out: ContactPointDef[] = [];
+/** Crash tolerance of probes the engine synthesises (bounds-derived probes, leg hinges, fairing panels), m/s. */
+const STRUCTURAL_CRASH_TOLERANCE = 6;
+const DEFAULT_PROBE_RADIUS = 0.05;
+const LEG_HINGE_PROBE_RADIUS = 0.15;
+
+/** An end face counts as covered by the authored probes when one lies within this fraction of the part's length (at least 0.5 m) of it. */
+const END_COVER_FRACTION = 0.25;
+const END_COVER_MIN = 0.5;
+
+/**
+ * Contact points of a part: the authored ones, completed with probes derived from the bounds cylinder
+ * (a ring of eight plus the axis point, inset so that the probe spheres touch the bounds from inside) on
+ * every end face that the authored set leaves uncovered - both faces for a definition that lists none,
+ * the mount face of an engine whose points describe the bell only. Every part therefore collides with
+ * the ground in any attitude when it flies on its own after a break-up.
+ */
+function contactPointsOf(def: PartDef): ContactPointDef[] {
+  const authored = def.contactPoints ?? [];
+  const out = authored.slice();
   const b = def.bounds;
-  for (const y of [b.yMin, b.yMax]) {
+  const reach = Math.max(END_COVER_FRACTION * (b.yMax - b.yMin), END_COVER_MIN);
+  const rad = Math.min(DEFAULT_PROBE_RADIUS, b.radius / 2, (b.yMax - b.yMin) / 2);
+  const ring = b.radius - rad;
+  for (const end of [b.yMin, b.yMax]) {
+    if (authored.some((c) => Math.abs(c.pos[1] - end) <= reach)) continue;
+    const y = end === b.yMin ? end + rad : end - rad;
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4;
-      out.push({ pos: [b.radius * Math.sin(a), y, b.radius * Math.cos(a)], radius: 0.05, crashTolerance: 6 });
+      out.push({ pos: [ring * Math.sin(a), y, ring * Math.cos(a)], radius: rad, crashTolerance: STRUCTURAL_CRASH_TOLERANCE });
     }
-    out.push({ pos: [0, y, 0], radius: 0.05, crashTolerance: 6 });
+    out.push({ pos: [0, y, 0], radius: rad, crashTolerance: STRUCTURAL_CRASH_TOLERANCE });
   }
   return out;
 }
@@ -377,6 +403,8 @@ export function rebuildStructure(vessel: Vessel): Structure {
     sasAvailable: false,
     maxRate: 10 * DEG,
     crew: 0,
+    seats: [],
+    buried: false,
     minJointG: Infinity,
     anyQAlpha: false,
     cdAAverage: 0,
@@ -462,13 +490,23 @@ export function rebuildStructure(vessel: Vessel): Structure {
           pr.legs = ref;
           pr.leg = l;
           ref.probes.push(pr);
+          // The hinge fitting is a structural probe that is always active, so a gear assembly with stowed or
+          // collapsed legs (or one flying alone after a break-up) still meets the ground.
+          s.probes.push(newProbe(i, hinge, LEG_HINGE_PROBE_RADIUS, NaN, NaN, NaN, STRUCTURAL_CRASH_TOLERANCE, STRUCTURAL_CRASH_TOLERANCE));
+          s.baseY = Math.min(s.baseY, hinge.y - LEG_HINGE_PROBE_RADIUS);
         }
         s.legs.push(ref);
       } else if (md.type === 'command' && ms.type === 'command') {
         const cmd: CommandDef = md;
         if (cmd.sas) s.sasAvailable = true;
         maxRate = Math.max(maxRate, cmd.maxRateDegPerS * DEG);
-        s.crew += ms.crewAlive ? ms.crew : 0;
+        if (ms.crewAlive) {
+          s.crew += ms.crew;
+          for (let k = 0; k < ms.crew && k < cmd.seats.length; k++) {
+            const seat = partPoint(p, cmd.seats[k]!.pos);
+            s.seats.push(seat.x, seat.y, seat.z);
+          }
+        }
       } else if (md.type === 'antenna' && ms.type === 'antenna') {
         // Antennas unfold once their part is out in the open (not inside a closed fairing or on the pad).
         ms.deployed = !p.shielded && vessel.hold !== 'clamps';
@@ -477,9 +515,9 @@ export function rebuildStructure(vessel: Vessel): Structure {
       }
     }
 
-    // Contact probes (leg parts use their contactPoints as foot-pad descriptors instead).
-    if (!hasLegs && !isClamp) {
-      const pts = p.panel ? [] : (def.contactPoints ?? defaultContactPoints(def));
+    // Contact probes (leg parts use their contactPoints as foot-pad descriptors and their hinges as structure).
+    if (!hasLegs) {
+      const pts = p.panel ? [] : contactPointsOf(def);
       for (const c of pts) {
         const pos = partPoint(p, c.pos);
         s.probes.push(
@@ -494,7 +532,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
             c.crashToleranceWater ?? c.crashTolerance,
           ),
         );
-        s.baseY = Math.min(s.baseY, pos.y - c.radius);
+        if (!isClamp) s.baseY = Math.min(s.baseY, pos.y - c.radius);
       }
       if (p.panel) {
         const c = panelCentroid(def, p.panel.index, p.panel.count);

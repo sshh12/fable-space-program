@@ -12,7 +12,7 @@ import { Prng } from '@/core/math/hash';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
-import { destroyParts } from '@/sim/dynamics/failure';
+import { destroyParts, EXPLOSION_IMPULSE_PER_KG, EXPLOSION_MAX_DELTA_V, presentedArea } from '@/sim/dynamics/failure';
 import {
   abort,
   assembleVessel as assembleInternal,
@@ -378,10 +378,56 @@ describe('structural failure', () => {
     expect(ctx.spawned.map((s) => s.parts[0]!.instanceId).sort()).toEqual(['m2-ullage', 'vela-2-1', 'vela-2-2', 'vela-2-3', 'vela-2-4', 'vela-2-5', 'vela-2-6']);
     expect(v.parts.some((p) => p.instanceId === 'm2')).toBe(false);
     expect(v.parts.some((p) => p.instanceId === 'capsule')).toBe(true);
+    // The 164 t upper stack catches the share of the blast that its presented area cuts out of the sphere
+    // at its distance (CoM some 24 m from the tank centre): a push of a few m/s, not a launch.
     const kick = v3.sub(v.v, v0);
-    expect(kick.y).toBeCloseTo((634000 * 2) / v.mp.mass, 3);
+    expect(kick.y).toBeGreaterThan(1);
+    expect(kick.y).toBeLessThan(20);
+    expect(Math.hypot(kick.x, kick.z)).toBeLessThan(1e-6 + 0.05 * kick.y);
     expect(v.crewAlive).toBe(true);
-    for (const s of ctx.spawned) expect(v3.dot(v3.sub(s.v, v0), { x: 0, y: -1, z: 0 })).toBeGreaterThan(0);
+    // The engines right under the tank are thrown down and outward, each at a bounded speed.
+    for (const s of ctx.spawned) {
+      const dv = v3.sub(s.v, v0);
+      expect(v3.dot(dv, { x: 0, y: -1, z: 0 })).toBeGreaterThan(0);
+      expect(v3.len(dv)).toBeLessThanOrEqual(EXPLOSION_MAX_DELTA_V + 1e-9);
+    }
+  });
+
+  it('an explosion pushes each piece by its presented area over distance squared, never beyond the cap', () => {
+    const env = makeEnv({});
+    // The whole stack with a full first stage: 1 760 t of propellant goes up.
+    const v = assembleInternal(defs, VEHICLE, { stagesAlreadyFired: 1 });
+    v.r = { x: 0, y: env.radius + 2000, z: 0 };
+    v.v = { x: 0, y: 60, z: 0 };
+    const ctx: StepContext = { ut: 0, env, instant: false, events: [], spawned: [] };
+    const v0 = v3.clone(v.v);
+    const m1 = v.parts.find((p) => p.instanceId === 'm1')!;
+    const propellant = m1.resources.reduce((a, b) => a + b, 0);
+    expect(propellant).toBeGreaterThan(1.7e6);
+    const centre = v3.add(v.r, { x: 0, y: m1.pos.y + 20, z: 0 });
+    destroyParts(v, [v.parts.indexOf(m1)], 'overstress', ctx);
+    const pieces = [v, ...ctx.spawned];
+    expect(pieces.length).toBeGreaterThanOrEqual(10);
+    const log: string[] = [];
+    for (const s of pieces) {
+      const dv = v3.len(v3.sub(s.v, v0));
+      const com = v3.add(s.r, quat.rotate(s.q, s.mp.com));
+      const dist = v3.dist(com, centre);
+      const area = presentedArea(s);
+      const expected = Math.min((propellant * EXPLOSION_IMPULSE_PER_KG * area) / (4 * Math.PI * Math.max(dist, Math.sqrt(area / Math.PI)) ** 2) / s.mp.mass, EXPLOSION_MAX_DELTA_V);
+      log.push(`${s.parts[0]!.instanceId} (${(s.mp.mass / 1000).toFixed(1)} t, ${dist.toFixed(0)} m): ${dv.toFixed(1)} m/s`);
+      expect(dv).toBeCloseTo(expected, 6);
+      expect(dv).toBeLessThanOrEqual(EXPLOSION_MAX_DELTA_V + 1e-9);
+      // Radially away from the blast.
+      if (dv > 1e-9) expect(v3.dot(v3.normalize(v3.sub(s.v, v0)), v3.normalize(v3.sub(com, centre)))).toBeGreaterThan(0.999);
+    }
+    console.log(`M-1 explosion with ${(propellant / 1000).toFixed(0)} t aboard:\n  ${log.join('\n  ')}`);
+    // The crewed upper stack (about 850 t, CoM 38 m from the blast) is shoved by some m/s; giving every
+    // piece the same absolute impulse would put hundreds of m/s on an engine.
+    expect(v3.len(v3.sub(v.v, v0))).toBeGreaterThan(2);
+    expect(v3.len(v3.sub(v.v, v0))).toBeLessThan(12);
+    expect(presentedArea(v)).toBeGreaterThan(300);
+    expect(presentedArea(v)).toBeLessThan(700);
   });
 
   it('a joint loaded beyond its acceleration limit for 0.2 s breaks', () => {

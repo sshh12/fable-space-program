@@ -16,7 +16,7 @@ import { computeMassProps, isGroundFixed, partDryMass } from './massProps';
 import { anyEngineBurning, ispAt } from './modules/engine';
 import { anyChuteDeployed, chuteEnvelope } from './modules/parachute';
 import { actionParts } from './split';
-import { legsDeployed } from './staging';
+import { legsDeployed, nextLiveStage } from './staging';
 import { structureOf } from './structure';
 import { G_DOSE_LIMIT, type EngineDef, type Vessel } from './types';
 
@@ -368,10 +368,12 @@ export function stagingInfo(vessel: Vessel, env: VesselEnvironment): StageInfo[]
   const model = buildModel(vessel);
   // Delayed actions already under way (an ignition a second after separation) count as done.
   applyToModel(model, vessel.pending.map((p) => p.action));
+  // Stages the next press will pass over (nothing left for them to do, e.g. after an abort) show as done.
+  const next = nextLiveStage(vessel);
   const infos: StageInfo[] = stages.map((s, i) => ({
     label: s.label,
     icon: s.icon,
-    fired: i < vessel.nextStage,
+    fired: i < next,
     deltaVVac: 0,
     deltaVNow: 0,
     twr: 0,

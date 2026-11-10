@@ -88,10 +88,21 @@ describe('settling from a 90 degree error', () => {
       const env = makeEnv({});
       const v = inOrbit(c.fired, env);
       run(v, env, c.throttle > 0 ? 3 : 0.1, controls({ throttle: c.throttle }));
+      // Time-optimal (bang-bang) 90 degree turn with the hardware at hand: 2 sqrt(theta I / torque) about the yaw axis.
+      const bangBang = 2 * Math.sqrt(((Math.PI / 2) * v.mp.i[2]) / v.authority[2]);
       const r = slew90(v, env, 'yaw', c.throttle, 110);
-      log.push(`${c.name}, yaw: settled after ${r.settle.toFixed(1)} s, overshoot ${r.overshoot.toFixed(2)} deg, final error ${r.finalError.toFixed(3)} deg`);
+      log.push(
+        `${c.name}, yaw: settled after ${r.settle.toFixed(1)} s, overshoot ${r.overshoot.toFixed(2)} deg, final error ${r.finalError.toFixed(3)} deg` +
+          (c.throttle === 0 ? ` (authority ${(v.authority[2] / 1000).toFixed(2)} kN m on ${(v.mp.i[2] / 1e6).toFixed(2)}e6 kg m^2: bang-bang limit ${bangBang.toFixed(1)} s)` : ''),
+      );
       expect(r.settle, c.name).toBeLessThan(c.limit);
       expect(r.overshoot, c.name).toBeLessThan(5);
+      // Coasting, these two stacks are limited by their thrusters, not by the controller: the SAS stays
+      // within 30 % of the time-optimal turn (which itself would have no margin for settling).
+      if (c.throttle === 0) {
+        expect(bangBang, c.name).toBeGreaterThan(15);
+        expect(r.settle, c.name).toBeLessThan(1.3 * bangBang);
+      }
     }
     console.log(log.join('\n'));
   });

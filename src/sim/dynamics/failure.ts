@@ -11,8 +11,15 @@ import { G_DOSE_LIMIT, type StepContext, type Vessel } from '../vessel/types';
 
 export type DestroyCause = 'impact' | 'overheat' | 'overstress' | 'explosion';
 
-/** Explosion impulse per kg of propellant left in a destroyed tank, N s / kg (2 kN s per tonne). */
-export const EXPLOSION_IMPULSE_PER_KG = 2;
+/**
+ * Blast of an exploding tank: total radial impulse carried by the expanding gas over the whole sphere per
+ * kg of propellant left, N s / kg (about a tenth of the propellant mass in TNT at close range). A piece
+ * receives the share its mean presented area cuts out of the sphere at its distance, so the push falls
+ * off with the square of the distance and light fragments are not handed the impulse meant for a stage.
+ */
+export const EXPLOSION_IMPULSE_PER_KG = 150;
+/** No piece gains more than this from one blast, m/s. */
+export const EXPLOSION_MAX_DELTA_V = 60;
 /** Chemical energy reported with the explosion event per kg of propellant, J / kg. */
 export const EXPLOSION_ENERGY_PER_KG = 4.0e6;
 export const EXPLOSION_MIN_FILL = 0.05;
@@ -30,6 +37,24 @@ function propellantIds(vessel: Vessel): Set<string> {
     }
   }
   return ids;
+}
+
+/**
+ * Mean presented area of a vessel seen from a random direction, m^2: a quarter of its outer surface - the
+ * side walls of its exposed part envelopes plus one pair of end faces of the widest part (the faces
+ * between stacked parts are mated, parts inside a fairing are hidden).
+ */
+export function presentedArea(vessel: Vessel): number {
+  let area = 0;
+  let widest = 0;
+  for (const p of vessel.parts) {
+    if (p.shielded) continue;
+    const b = p.def.bounds;
+    const side = (Math.PI * b.radius * (b.yMax - b.yMin)) / 2;
+    area += p.panel ? side / p.panel.count : side;
+    if (!p.panel && b.radius > widest) widest = b.radius;
+  }
+  return area + (Math.PI * widest * widest) / 2;
 }
 
 /**
@@ -87,13 +112,18 @@ export function destroyParts(vessel: Vessel, indices: readonly number[], cause: 
     }
     if (v.parts.length > 0 && v.mp.mass <= 0) computeMassProps(v);
     // Radial blast on every surviving piece.
+    if (blasts.length === 0 || v.hold !== null || !(v.mp.mass > 0)) continue;
+    const area = presentedArea(v);
+    const reach = Math.sqrt(area / Math.PI);
+    const com = v3.add(v.r, quat.rotate(v.q, v.mp.com));
     for (const bl of blasts) {
-      if (v.hold !== null) continue;
-      const com = v3.add(v.r, quat.rotate(v.q, v.mp.com));
       const d = v3.sub(com, bl.pos);
       const l = v3.len(d);
       const dir = l > 1e-6 ? v3.scale(d, 1 / l) : quat.rotate(v.q, { x: 0, y: 1, z: 0 });
-      applyImpulse(v, dir.x * bl.impulse, dir.y * bl.impulse, dir.z * bl.impulse);
+      // Share of the sphere the piece covers; a piece right at the blast still catches a quarter at most.
+      const dist = Math.max(l, reach);
+      const impulse = Math.min((bl.impulse * area) / (4 * Math.PI * dist * dist), EXPLOSION_MAX_DELTA_V * v.mp.mass);
+      applyImpulse(v, dir.x * impulse, dir.y * impulse, dir.z * impulse);
     }
   }
 }

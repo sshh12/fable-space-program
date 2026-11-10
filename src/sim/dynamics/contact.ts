@@ -102,6 +102,7 @@ export function contactBroadphase(vessel: Vessel, st: Structure, env: VesselEnvi
   const alt = rr - env.radius;
   st.waterHere = false;
   st.waterHeight = -Infinity;
+  st.buried = false;
   if (alt - st.boundingRadius > TERRAIN_QUERY_CEILING || !(rr > 0)) {
     vessel.groundClearance = Infinity;
     clearNear(st);
@@ -114,6 +115,8 @@ export function contactBroadphase(vessel: Vessel, st: Structure, env: VesselEnvi
   dirObj.z = tmp[2]!;
   let hT = env.terrainHeight(dirObj, Math.max(0.3, 0.02 * Math.max(alt, 0)));
   if (alt - hT - st.boundingRadius < 50) hT = env.terrainHeight(dirObj);
+  // Backstop: no point of a vessel whose origin is deeper than its bounding radius can be above ground.
+  st.buried = alt - hT < -st.boundingRadius;
   let surface = hT;
   if (env.ocean !== null && env.surfaceKind(dirObj) === 'water') {
     st.waterHere = true;

@@ -311,12 +311,22 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   let ngy = bfy + afy;
   let ngz = bfz + afz;
 
-  body.wx = w.x;
-  body.wy = w.y;
-  body.wz = w.z;
+  const w0x = w.x;
+  const w0y = w.y;
+  const w0z = w.z;
+  body.wx = w0x;
+  body.wy = w0y;
+  body.wz = w0z;
   let qNew: Quat = vessel.q;
   let mNew: number[] = m;
   const near = contactBroadphase(vessel, st, env, dt);
+  if (st.buried) {
+    // Entirely below the terrain (it got past the probes, e.g. at extreme speed): an impact.
+    const all: number[] = [];
+    for (let i = 0; i < vessel.parts.length; i++) all.push(i);
+    destroyParts(vessel, all, 'impact', ctx);
+    return ctx;
+  }
   const contact = vessel.contact;
 
   if (!near) {
@@ -468,7 +478,32 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   vessel.properAccel.x = ngx * invMass;
   vessel.properAccel.y = ngy * invMass;
   vessel.properAccel.z = ngz * invMass;
-  const gNow = Math.sqrt(ngx * ngx + ngy * ngy + ngz * ngz) * invMass / G0;
+  let gNow = Math.sqrt(ngx * ngx + ngy * ngy + ngz * ngz) * invMass;
+  if (st.seats.length > 0) {
+    // The crew feel the acceleration of their seats: CoM value plus the centripetal and tangential terms
+    // of the rotation (mean angular acceleration of this step), worst seat.
+    const alx = (w.x - w0x) / dt;
+    const aly = (w.y - w0y) / dt;
+    const alz = (w.z - w0z) / dt;
+    const ax0 = ngx * invMass;
+    const ay0 = ngy * invMass;
+    const az0 = ngz * invMass;
+    gNow = 0;
+    for (let k = 0; k < st.seats.length; k += 3) {
+      const sx = st.seats[k]! - com.x;
+      const sy = st.seats[k + 1]! - com.y;
+      const sz = st.seats[k + 2]! - com.z;
+      const ux = w.y * sz - w.z * sy;
+      const uy = w.z * sx - w.x * sz;
+      const uz = w.x * sy - w.y * sx;
+      const gx = ax0 + (w.y * uz - w.z * uy) + (aly * sz - alz * sy);
+      const gy = ay0 + (w.z * ux - w.x * uz) + (alz * sx - alx * sz);
+      const gz = az0 + (w.x * uy - w.y * ux) + (alx * sy - aly * sx);
+      const gs = Math.sqrt(gx * gx + gy * gy + gz * gz);
+      if (gs > gNow) gNow = gs;
+    }
+  }
+  gNow /= G0;
   vessel.gLoad += (gNow - vessel.gLoad) * (1 - Math.exp(-dt / G_FILTER_TAU));
 
   // ------------------------------------------------------------------ surface state and sleep

@@ -16,7 +16,9 @@ vehicle, vfx and world teams read `defs.ts`, not my code.
    along `dir` for engines and thrusters alike).
 2. `ModuleDef` `legs` has no pad radius, friction or crash tolerance. Implemented as: **for a part with a `legs`
    module, `PartDef.contactPoints[i]` describes the foot pad of leg `i`** (`radius`, `mu`, `crashTolerance`; `pos`
-   repeats `footDeployed`) and is not a structural probe. The lateral touchdown limit is 0.625 x `crashTolerance`
+   repeats `footDeployed`) and is not a structural probe (the engine adds one at each hinge). A part whose
+   `contactPoints` are missing, empty, or leave an end face of its bounds uncovered gets probes derived from
+   `bounds` there. The lateral touchdown limit is 0.625 x `crashTolerance`
    (2.5 of 4.0 m/s, sim-design 9.2).
 3. `ModuleDef` `decoupler` / `StageAction` `decouple`, `jettisonLES`: which joint breaks is not stated. Implemented
    as: **the joint between the named part and its PARENT is cut**; `separationPlaneY` is the height of that plane

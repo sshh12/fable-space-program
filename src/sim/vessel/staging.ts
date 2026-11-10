@@ -314,6 +314,53 @@ function stageHasParts(vessel: Vessel, actions: readonly TimedStageAction[]): bo
   return false;
 }
 
+/** Whether executing `action` on this vessel would still change anything. */
+function actionIsLive(vessel: Vessel, action: StageAction): boolean {
+  for (const id of actionParts(action)) {
+    const i = findPart(vessel, id);
+    if (i < 0) continue;
+    const part = vessel.parts[i]!;
+    switch (action.kind) {
+      case 'igniteEngines':
+      case 'fireSeparationMotors':
+      case 'shutdownEngines':
+      case 'deployLegs':
+        // Engines and gear stay pressable while their parts are aboard (the gear stage after `G` is a
+        // harmless press, never a silent skip to the stage behind it).
+        return true;
+      case 'releaseClamps':
+        if (part.modules.some((m) => m.type === 'launchClamp' && !m.released)) return true;
+        break;
+      case 'decouple':
+      case 'jettisonLES':
+        if (part.parent >= 0 && part.modules.some((m) => m.type === 'decoupler' && !m.fired)) return true;
+        break;
+      case 'jettisonFairing':
+        if (part.modules.some((m) => m.type === 'fairing' && !m.jettisoned)) return true;
+        break;
+      case 'deployParachute':
+        for (let m = 0; m < part.def.modules.length; m++) {
+          const md = part.def.modules[m]!;
+          const ms = part.modules[m]!;
+          if (md.type === 'parachute' && ms.type === 'parachute' && md.mode === action.mode && ms.state === 'stowed') return true;
+        }
+        break;
+      case 'cutParachute':
+        if (part.modules.some((m) => m.type === 'parachute' && (m.state === 'reefed' || m.state === 'full'))) return true;
+        break;
+      case 'enableRcs':
+        if (part.modules.some((m) => m.type === 'rcs' && !m.enabled)) return true;
+        break;
+    }
+  }
+  return false;
+}
+
+function stageIsLive(vessel: Vessel, actions: readonly TimedStageAction[]): boolean {
+  for (const a of actions) if (actionIsLive(vessel, a)) return true;
+  return false;
+}
+
 function runSequence(vessel: Vessel, actions: readonly TimedStageAction[], stageIndex: number, ctx: StepContext): void {
   // Queue the delayed ones first so that a split in an immediate action hands them to the right piece.
   for (const a of actions) {
@@ -324,11 +371,15 @@ function runSequence(vessel: Vessel, actions: readonly TimedStageAction[], stage
   }
 }
 
-/** Index of the next stage that still refers to a part of this vessel (stages for parts long gone are skipped). */
+/**
+ * Index of the next stage that can still do something on this vessel. Stages whose parts are gone, or
+ * whose effects have all happened already (after an abort: the capsule is free and its RCS is on, so
+ * "Capsule separation" has nothing left to do), are skipped: the next press is the next useful one.
+ */
 export function nextLiveStage(vessel: Vessel): number {
   const stages = vessel.vehicle.stages;
   let i = vessel.nextStage;
-  while (i < stages.length && !stageHasParts(vessel, stages[i]!.actions)) i++;
+  while (i < stages.length && !stageIsLive(vessel, stages[i]!.actions)) i++;
   return i;
 }
 

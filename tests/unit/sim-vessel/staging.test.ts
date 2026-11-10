@@ -8,7 +8,7 @@ import type { SimEvent } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { abort, assembleVessel, computeMassProps, fireNextStage, needsIntegration, stagingInfo, type Vessel } from '@/sim/vessel';
+import { abort, assembleVessel, computeMassProps, fireNextStage, needsIntegration, nextLiveStage, stagingInfo, type Vessel } from '@/sim/vessel';
 import { executeAction } from '@/sim/vessel/staging';
 import type { StepContext } from '@/sim/vessel/types';
 import { controls, DT, earthAir, loadLibrary, makeEnv, momentum, placeUpright, run, runAll, VEHICLE } from './helpers';
@@ -326,19 +326,26 @@ describe('abort', () => {
     expect(v.gDose).toBeLessThan(1);
     expect(v3.dist(v.r, stackV.r)).toBeGreaterThan(150);
     expect(count(events, 'engineShutdown')).toBeGreaterThanOrEqual(9);
-    const later = runAll(vessels, env, 3, controls());
+    // The tower stays on through the coast (the stack flies apex-first like a dart) and goes 14 s after the abort.
+    const coast = runAll(vessels, env, 9, controls());
+    expect(coast.some((e) => e.type === 'decoupled' && e.partId === 'les')).toBe(false);
+    expect(ids(v)).toEqual(['apex-cover', 'capsule', 'les', 'les-jettison-motor']);
+    const later = runAll(vessels, env, 2, controls());
     expect(later.some((e) => e.type === 'decoupled' && e.partId === 'les')).toBe(true);
     expect(ids(v)).toEqual(['apex-cover', 'capsule']);
     expect(v.crewAlive).toBe(true);
-    // The stage stack now skips to the capsule's own stages: RCS is on, the next press deploys the drogues.
+    // The capsule is free and its RCS is on, so "Capsule separation" has nothing left to do: the very next
+    // press is the drogue stage, the one after that the mains (sim-design section 11).
     run(v, env, 1, controls());
     expect(v.rcsEnabled).toBe(true);
-    const next = fireNextStage(v, env);
-    expect(next.ok).toBe(true);
-    expect(next.events[0]).toMatchObject({ type: 'stageFired', stageIndex: 7 });
-    run(v, env, 1, controls());
+    expect(nextLiveStage(v)).toBe(8);
+    // The staging stack shows everything up to "Capsule separation" as done.
+    expect(stagingInfo(v, env).map((i) => i.fired)).toEqual([true, true, true, true, true, true, true, true, false, false]);
     const drogue = fireNextStage(v, env);
-    expect(drogue.events[0]).toMatchObject({ type: 'stageFired', stageIndex: 8 });
+    expect(drogue.ok).toBe(true);
+    expect(drogue.events[0]).toMatchObject({ type: 'stageFired', stageIndex: 8, label: 'Drogues' });
+    run(v, env, 1, controls());
+    expect(nextLiveStage(v)).toBe(9);
     // A second abort has nothing left to do but is harmless.
     run(v, env, 1, controls());
     expect(abort(v, env).ok).toBe(true);

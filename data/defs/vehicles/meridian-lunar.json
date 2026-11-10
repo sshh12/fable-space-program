@@ -756,12 +756,12 @@
       "parts": [
         "les-jettison-motor"
       ],
-      "delay": 5
+      "delay": 14
     },
     {
       "kind": "jettisonLES",
       "part": "les",
-      "delay": 5
+      "delay": 14
     }
   ],
   "actionGroups": {
