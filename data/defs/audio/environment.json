@@ -1,0 +1,39 @@
+{
+  "$comment": "Continuous sounds of the active vessel's environment. aero: boundary-layer wind (level 20 log10(q / qRef) dB, brightness from Mach) and transonic buffet (Gaussian in Mach around machCenter, modulated rumble). reentry: shock-layer roar and plasma hiss from aero.plasmaIntensity, a buffet rumble that also follows the g-load. Both are airborne for an outside listener and hull-borne (low-passed at hullCutoffHz) inside the cabin. cabin: interior ambience (fans, pumps, airflow, 400 Hz power hum) heard only by an interior listener, and structural creaks whose Poisson rate follows g-load, its rate of change and sunlight changes (thermal creaks); creaks use a seeded generator so renders are reproducible.",
+  "aero": {
+    "qRef": 30000,
+    "maxDb": 6,
+    "refDistance": 25,
+    "hullCutoffHz": 1400,
+    "hullGainDb": -2,
+    "wind": { "asset": "aero-wind", "gainDb": -2, "cutoffHz": [500, 9000], "machForMaxCutoff": 2.2 },
+    "noise": { "gainDb": -8, "bandHz": [200, 2500], "bandAtMachMax": [600, 7000] },
+    "buffet": { "gainDb": 2, "machCenter": 1.0, "machWidth": 0.22, "cutoffHz": 90, "turbulence": 0.9, "turbulenceHz": 9 }
+  },
+  "reentry": {
+    "refDistance": 15,
+    "hullCutoffHz": 3500,
+    "hullGainDb": 0,
+    "roar": { "asset": "reentry-roar", "gainDb": 2, "exponent": 1.0 },
+    "hiss": { "gainDb": -12, "highpassHz": 1800, "lowpassHz": 9000, "exponent": 1.6 },
+    "crackle": { "gainDb": -14, "rateHz": [60, 900], "highpassHz": 1200 },
+    "rumble": { "gainDb": -2, "cutoffHz": 70, "gLoadRef": 5, "turbulence": 0.7, "turbulenceHz": 3 }
+  },
+  "cabin": {
+    "ambience": { "asset": "cabin-fans", "gainDb": -14 },
+    "airflow": { "gainDb": -36, "bandHz": [300, 3500] },
+    "hum": { "freqHz": 400, "harmonics": [1, 0.35, 0.12], "gainDb": -44 },
+    "creaks": {
+      "assets": ["creak-1", "creak-2", "creak-3"],
+      "gainDb": -10,
+      "gMin": 1.6,
+      "gMax": 8,
+      "maxRate": 1.4,
+      "jerkRate": 0.25,
+      "thermalRate": 3,
+      "gainPerG": 1.5,
+      "seed": 7331,
+      "minInterval": 0.18
+    }
+  }
+}

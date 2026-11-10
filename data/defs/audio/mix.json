@@ -1,0 +1,40 @@
+{
+  "$comment": "Mixer, master dynamics and propagation. Buses: engines, aero, reentry, events, cabin, ui -> master (compressor, limiter, soft ceiling below 1.0). fadeAboveWarp buses fade to exact silence over warp.fadeTime when warpFactor > warp.threshold. propagation: airborne gain (p / referencePressure)^pressureGainExponent (0 in vacuum), low-pass cutoff from pressure and from distance (air absorption), inverse-distance attenuation beyond the source's refDistance, propagation delay d / (speedOfSound + recession speed), faded out between airborneFadeStart and airborneFadeEnd. hull: what of the airborne path reaches a cabin listener. structure: attenuation along the vessel for structure-borne sound. attach: the faint structure-borne share an external camera near the vessel hears.",
+  "buses": {
+    "engines": { "gainDb": 0, "fadeAboveWarp": true },
+    "aero": { "gainDb": 0, "fadeAboveWarp": true },
+    "reentry": { "gainDb": 0, "fadeAboveWarp": true },
+    "events": { "gainDb": 0, "fadeAboveWarp": false },
+    "cabin": { "gainDb": 0, "fadeAboveWarp": false },
+    "ui": { "gainDb": 0, "fadeAboveWarp": false }
+  },
+  "master": {
+    "gainDb": 0,
+    "compressor": { "thresholdDb": -22, "kneeDb": 10, "ratio": 3, "attack": 0.008, "release": 0.35, "makeupDb": 5 },
+    "limiter": { "thresholdDb": -5, "kneeDb": 0, "ratio": 20, "attack": 0.001, "release": 0.1 },
+    "ceiling": 0.97,
+    "linearUntil": 0.8,
+    "headroom": 4
+  },
+  "propagation": {
+    "speedOfSound": 340,
+    "referencePressure": 101325,
+    "pressureGainExponent": 0.6,
+    "pressureCutoffHz": [250, 18000],
+    "pressureCutoffExponent": 0.5,
+    "absorption": { "refDistance": 300, "refCutoffHz": 4500, "exponent": 0.7, "maxCutoffHz": 20000 },
+    "distanceExponent": 1.0,
+    "maxDelay": 20,
+    "airborneFadeStart": 5500,
+    "airborneFadeEnd": 6500,
+    "teleportSpeed": 1500,
+    "hull": { "gainDb": -16, "cutoffHz": 1500 },
+    "structure": { "dbPerMetre": 0.15, "minDb": -24 },
+    "attach": { "gainDb": -30, "fullDistance": 120, "maxDistance": 800 },
+    "events": { "bodyCutoffHz": 700, "bodyGainDb": -2 },
+    "interiorPanWidth": 0.25
+  },
+  "warp": { "threshold": 4, "fadeTime": 0.5 },
+  "pause": { "fadeTime": 0.3 },
+  "smoothing": { "gain": 0.05, "filter": 0.06, "position": 0.04, "delay": 0.08, "listenerKind": 0.12, "volume": 0.05 }
+}

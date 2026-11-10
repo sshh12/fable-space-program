@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>Audio lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #07090d;
+        color: #cfd6e4;
+        font: 12px/1.35 ui-monospace, Consolas, monospace;
+        overflow: hidden;
+      }
+      #app {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        height: 100%;
+      }
+      #controls {
+        padding: 10px 12px;
+        overflow-y: auto;
+        border-right: 1px solid #1d2430;
+        background: #0b0e14;
+      }
+      #controls h2 {
+        font-size: 12px;
+        margin: 12px 0 6px;
+        color: #8fa3c4;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 110px 1fr 64px;
+        align-items: center;
+        gap: 6px;
+        margin: 3px 0;
+      }
+      .row input[type='range'] {
+        width: 100%;
+      }
+      .row select,
+      .row input[type='text'] {
+        width: 100%;
+        background: #121722;
+        color: #cfd6e4;
+        border: 1px solid #263044;
+      }
+      .val {
+        text-align: right;
+        color: #e8c77a;
+      }
+      #events {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      button {
+        background: #162033;
+        color: #cfd6e4;
+        border: 1px solid #2c3b57;
+        padding: 3px 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #1e2c46;
+      }
+      #meters {
+        position: relative;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #status {
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        white-space: pre;
+        pointer-events: none;
+      }
+      #hint {
+        position: absolute;
+        right: 16px;
+        top: 12px;
+        color: #e8c77a;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="controls"></div>
+      <div id="meters">
+        <canvas id="viewport" tabindex="0"></canvas>
+        <div id="status"></div>
+        <div id="hint"></div>
+      </div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

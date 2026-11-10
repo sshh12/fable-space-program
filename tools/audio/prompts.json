@@ -1,0 +1,247 @@
+{
+  "$comment": "Source recordings generated with the ElevenLabs sound-effects API by tools/audio/generate.mjs and turned into shipped assets by tools/audio/process.mjs. The API has no seed parameter: a take is reproduced from the cached raw file (data/cache/audio/elevenlabs/) and identified by the sha256 recorded in manifest.json. 'take' only distinguishes repeated generations of the same prompt. 'kind' selects processing: loop = seamless equal-power crossfade loop normalised to integrated loudness; oneshot = trimmed, faded and normalised to short-term loudness; multi = one generation holding several separate sounds that is split at silences into <id>-1..n one-shots.",
+  "model": "eleven_text_to_sound_v2",
+  "promptInfluence": 0.45,
+  "outputFormats": [
+    "pcm_48000",
+    "opus_48000_192",
+    "opus_48000_128",
+    "mp3_44100_128"
+  ],
+  "targets": {
+    "loopLufs": -20,
+    "oneshotLufs": -14,
+    "peakDbfs": -1
+  },
+  "sounds": [
+    {
+      "id": "engine-booster-core",
+      "kind": "loop",
+      "duration": 14,
+      "loop": true,
+      "crossfade": 2.5,
+      "prompt": "Close recording of a gigantic rocket launch: a cluster of nine methane rocket engines at full thrust, one continuous thunderous roar with dense ragged crackle and deep rumble, steady and unchanging, no music, no voices"
+    },
+    {
+      "id": "engine-hydrolox-core",
+      "kind": "loop",
+      "duration": 12,
+      "loop": true,
+      "crossfade": 2,
+      "prompt": "Rocket engine test firing recorded at close range, loud bright roaring hiss like a jet of high pressure steam with a high turbopump whine, broadband white noise roar, continuous and unchanging, no music, no voices"
+    },
+    {
+      "id": "engine-lander-core",
+      "kind": "loop",
+      "duration": 12,
+      "loop": true,
+      "crossfade": 2,
+      "prompt": "Small throttleable rocket engine of a lunar lander firing continuously, steady breathy hissing roar with faint pump whine, recorded close, continuous and unchanging, no music"
+    },
+    {
+      "id": "engine-solid-core",
+      "kind": "loop",
+      "duration": 10,
+      "loop": true,
+      "crossfade": 1.5,
+      "prompt": "Solid rocket motor burning at full thrust, harsh ragged crackling roar, continuous and unchanging, no music, no voices"
+    },
+    {
+      "id": "rcs-hiss",
+      "kind": "loop",
+      "duration": 8,
+      "loop": true,
+      "crossfade": 1.5,
+      "prompt": "Spacecraft attitude control thruster firing continuously, sharp pressurised gas jet hiss, steady and unchanging, no music"
+    },
+    {
+      "id": "aero-wind",
+      "kind": "loop",
+      "duration": 12,
+      "loop": true,
+      "crossfade": 2,
+      "prompt": "Violent rushing wind against the outside of a fast aircraft fuselage, turbulent high speed airflow roar, continuous, no engine sound, no music",
+      "channels": 2
+    },
+    {
+      "id": "reentry-roar",
+      "kind": "loop",
+      "duration": 14,
+      "loop": true,
+      "crossfade": 2.5,
+      "prompt": "Inside a space capsule during atmospheric reentry, deep violent roaring and rumbling of hypersonic air and plasma on the heat shield, continuous heavy vibration, no music, no voices",
+      "channels": 2
+    },
+    {
+      "id": "cabin-fans",
+      "kind": "loop",
+      "duration": 16,
+      "loop": true,
+      "crossfade": 3,
+      "prompt": "Room tone inside a small spacecraft cabin, steady ventilation fans and coolant pumps humming, soft electronic hum, continuous, no voices, no music, no beeps",
+      "channels": 2
+    },
+    {
+      "id": "ignition-booster",
+      "kind": "oneshot",
+      "duration": 5,
+      "prompt": "Huge rocket engines igniting on a launch pad, sharp ignition crack followed by a rapidly building thunderous roar"
+    },
+    {
+      "id": "ignition-upper",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Large rocket engine igniting, sudden deep whump and a quickly rising roar"
+    },
+    {
+      "id": "ignition-small",
+      "kind": "oneshot",
+      "duration": 2,
+      "prompt": "Small rocket thruster igniting, quick sharp pop followed by a hissing start"
+    },
+    {
+      "id": "shutdown-booster",
+      "kind": "oneshot",
+      "duration": 4,
+      "prompt": "Huge rocket engines shutting down abruptly, the roar cuts off into a low decaying rumble with metallic ticking"
+    },
+    {
+      "id": "shutdown-small",
+      "kind": "oneshot",
+      "duration": 2,
+      "prompt": "Small rocket engine shutting off, the hiss stops with a short pressure release puff"
+    },
+    {
+      "id": "pyro-bang",
+      "kind": "oneshot",
+      "duration": 2.5,
+      "prompt": "Explosive bolts firing during rocket stage separation, one sharp loud metallic bang with a ringing steel tail"
+    },
+    {
+      "id": "clamp-release",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Massive launch pad hold-down clamps releasing, heavy hydraulic hiss and a loud steel clunk"
+    },
+    {
+      "id": "fairing-jettison",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Rocket payload fairing separation, pyrotechnic cord crack followed by large metal panels swinging away"
+    },
+    {
+      "id": "les-motor",
+      "kind": "oneshot",
+      "duration": 3.5,
+      "prompt": "Launch escape tower rocket motor firing, a violent short ferocious rocket blast that ends abruptly"
+    },
+    {
+      "id": "legs-deploy",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Spacecraft landing legs deploying, electric actuator whine and a heavy mechanical latch clunk"
+    },
+    {
+      "id": "chute-mortar",
+      "kind": "oneshot",
+      "duration": 1.5,
+      "prompt": "Parachute deployment mortar firing, one deep pneumatic thump"
+    },
+    {
+      "id": "chute-inflate",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Huge parachute canopy snapping open in strong wind, loud fabric crack and whoosh with rope tension"
+    },
+    {
+      "id": "chute-fail",
+      "kind": "oneshot",
+      "duration": 3,
+      "prompt": "Parachute lines snapping and canopy fabric tearing apart in strong wind"
+    },
+    {
+      "id": "chute-cut",
+      "kind": "oneshot",
+      "duration": 1,
+      "prompt": "Small pyrotechnic line cutter firing, short sharp snap"
+    },
+    {
+      "id": "touchdown-hard",
+      "kind": "oneshot",
+      "duration": 2.5,
+      "prompt": "Spacecraft landing pads slamming onto rocky ground, heavy metallic thud and creaking struts"
+    },
+    {
+      "id": "touchdown-soft",
+      "kind": "oneshot",
+      "duration": 2,
+      "prompt": "Lander footpads settling gently onto dusty ground, soft thump and a short strut creak"
+    },
+    {
+      "id": "splashdown",
+      "kind": "oneshot",
+      "duration": 4,
+      "prompt": "Space capsule splashing down into the ocean at speed, huge heavy water impact and spray"
+    },
+    {
+      "id": "explosion",
+      "kind": "oneshot",
+      "duration": 6,
+      "prompt": "Huge rocket explosion, massive deep blast followed by rumbling and falling debris"
+    },
+    {
+      "id": "part-destroyed",
+      "kind": "oneshot",
+      "duration": 2,
+      "prompt": "Metal spacecraft structure tearing and crunching apart"
+    },
+    {
+      "id": "joint-broken",
+      "kind": "oneshot",
+      "duration": 1.5,
+      "prompt": "Thick metal strut snapping under heavy load, sharp crack"
+    },
+    {
+      "id": "creak-1",
+      "kind": "oneshot",
+      "duration": 1.5,
+      "prompt": "A single squeaky creak of stressed aluminium, a short mid-pitched metallic creak like an old ship hull, then silence"
+    },
+    {
+      "id": "creak-2",
+      "kind": "oneshot",
+      "duration": 2,
+      "prompt": "A single long creaking squeal of metal panels flexing under load, then silence"
+    },
+    {
+      "id": "creak-3",
+      "kind": "oneshot",
+      "duration": 1.2,
+      "prompt": "A single sharp metallic tick and creak of a spacecraft panel flexing, then silence"
+    },
+    {
+      "id": "switch-click",
+      "kind": "multi",
+      "duration": 4,
+      "split": {
+        "count": 3,
+        "minGap": 0.15,
+        "minLength": 0.03
+      },
+      "prompt": "Three separate cockpit toggle switch clicks with pauses between them"
+    },
+    {
+      "id": "rcs-puff-1",
+      "kind": "oneshot",
+      "duration": 1,
+      "prompt": "One single short sharp burst of a small spacecraft gas thruster, then silence"
+    },
+    {
+      "id": "rcs-puff-2",
+      "kind": "oneshot",
+      "duration": 1,
+      "prompt": "One single quick thump of a small rocket thruster pulse, then silence"
+    }
+  ],
+  "highpassHz": 28
+}

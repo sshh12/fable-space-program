@@ -1,0 +1,36 @@
+{
+  "$comment": "UI bus. clicks: a switch click whenever one of the watched snapshot paths changes value (SAS, RCS, lights, gear, fine control, navball mode, warp, target). alarm: the master caution-and-warning tone, a procedurally rendered two-tone pattern looped while any condition holds (at least minDuration seconds per trigger; a cleared condition re-arms after rearm seconds). Condition fields: path into the snapshot, then one of above / below / equals; `relativeTo` divides the value by another path first.",
+  "clicks": {
+    "assets": ["switch-click-1", "switch-click-2", "switch-click-3"],
+    "gainDb": -9,
+    "minInterval": 0.04,
+    "watch": [
+      "readouts.sasEnabled",
+      "readouts.sasMode",
+      "readouts.rcsEnabled",
+      "readouts.lightsOn",
+      "readouts.fineControl",
+      "readouts.legsDeployed",
+      "readouts.targetBodyId",
+      "navball.mode",
+      "warp.index"
+    ]
+  },
+  "alarm": {
+    "gainDb": -15,
+    "tones": [
+      { "freqHz": 750, "duration": 0.22 },
+      { "freqHz": 2000, "duration": 0.22 }
+    ],
+    "gap": 0.03,
+    "lowpassHz": 5000,
+    "minDuration": 2.5,
+    "rearm": 1.5,
+    "conditions": [
+      { "path": "readouts.maxTempFraction", "above": 0.92 },
+      { "path": "readouts.gDose", "relativeTo": "readouts.gDoseLimit", "above": 0.8 },
+      { "path": "readouts.ablatorFraction", "below": 0.08 },
+      { "path": "mission.failed", "equals": true }
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "$comment": "Engine sound profiles, keyed by the `sound` id of engine modules (PartDef.modules[].sound). A profile is one layered voice per (vessel, profile) cluster: n engines of one profile sound as ONE source whose level is the power sum. Level in dB re the layers' normalised -20 dBFS: L = level.levelDb + efficiencyDb + 10 log10(refThrust / level.refThrust) + 10 throttleExponent log10(thrust per engine / refThrust) + 10 log10(n running). Layers add gainDb to L. core = recorded loop (rate and low-pass follow throttleActual), rumble = brown noise low-passed (deeper for bigger clusters: cutoff * n^-clusterExponent), hiss = pink noise band, crackle = shock-wave impulse train whose rate follows throttle and whose level is scaled by (nozzle ambient pressure / referencePressure)^pressureExponent, so it does not exist in vacuum. body = structure-borne coupling (heavily low-passed; level also falls with distance along the structure, mix.json propagation.structure). RCS modules (no sound field) use rcsModuleProfile.",
+  "level": { "refThrust": 1000000, "levelDb": -4 },
+  "rcsModuleProfile": "rcs.thruster",
+  "profiles": {
+    "engine.methalox-booster": {
+      "refThrust": 3900000,
+      "efficiencyDb": 0,
+      "throttleExponent": 1.4,
+      "refDistance": 30,
+      "core": { "asset": "engine-booster-core", "gainDb": 0, "rate": [0.86, 1.0], "cutoffHz": [2200, 14000], "turbulence": 0.12 },
+      "rumble": { "gainDb": -1, "cutoffHz": 140, "clusterExponent": 0.2, "turbulence": 0.45, "turbulenceHz": 4 },
+      "hiss": { "gainDb": -16, "highpassHz": 1800, "lowpassHz": 9000 },
+      "crackle": { "gainDb": -4, "rateHz": [25, 240], "highpassHz": 450, "pressureExponent": 1.0 },
+      "ignition": { "asset": "ignition-booster", "gainDb": 3 },
+      "shutdown": { "asset": "shutdown-booster", "gainDb": 1, "minRunTime": 1.0 },
+      "body": { "gainDb": 0, "cutoffHz": 160, "resonanceHz": 34, "resonanceDb": 6 },
+      "clusterWindow": 0.6
+    },
+    "engine.hydrolox-vacuum": {
+      "refThrust": 1100000,
+      "efficiencyDb": -2,
+      "throttleExponent": 1.4,
+      "refDistance": 20,
+      "core": { "asset": "engine-hydrolox-core", "gainDb": 0, "rate": [0.9, 1.04], "cutoffHz": [3000, 16000], "turbulence": 0.1 },
+      "rumble": { "gainDb": -5, "cutoffHz": 170, "clusterExponent": 0.2, "turbulence": 0.35, "turbulenceHz": 5 },
+      "hiss": { "gainDb": -9, "highpassHz": 2200, "lowpassHz": 12000 },
+      "crackle": { "gainDb": -12, "rateHz": [20, 120], "highpassHz": 600, "pressureExponent": 1.0 },
+      "ignition": { "asset": "ignition-upper", "gainDb": 1 },
+      "shutdown": { "asset": "shutdown-small", "gainDb": -2, "minRunTime": 0.5 },
+      "body": { "gainDb": 3, "cutoffHz": 190, "resonanceHz": 46, "resonanceDb": 5 },
+      "clusterWindow": 0.6
+    },
+    "engine.lander-descent": {
+      "refThrust": 200000,
+      "efficiencyDb": 0,
+      "throttleExponent": 1.4,
+      "refDistance": 8,
+      "core": { "asset": "engine-lander-core", "gainDb": 0, "rate": [0.84, 1.0], "cutoffHz": [2600, 15000], "turbulence": 0.1 },
+      "rumble": { "gainDb": -4, "cutoffHz": 200, "clusterExponent": 0.2, "turbulence": 0.3, "turbulenceHz": 6 },
+      "hiss": { "gainDb": -12, "highpassHz": 2000, "lowpassHz": 11000 },
+      "crackle": { "gainDb": -10, "rateHz": [15, 90], "highpassHz": 700, "pressureExponent": 1.0 },
+      "ignition": { "asset": "ignition-small", "gainDb": 0 },
+      "shutdown": { "asset": "shutdown-small", "gainDb": -1, "minRunTime": 0.3 },
+      "body": { "gainDb": 12, "cutoffHz": 220, "resonanceHz": 58, "resonanceDb": 5 },
+      "clusterWindow": 0.4
+    },
+    "engine.lander-ascent": {
+      "refThrust": 60000,
+      "efficiencyDb": 0,
+      "throttleExponent": 1.4,
+      "refDistance": 5,
+      "core": { "asset": "engine-lander-core", "gainDb": 0, "rate": [1.0, 1.16], "cutoffHz": [3000, 16000], "turbulence": 0.1 },
+      "rumble": { "gainDb": -6, "cutoffHz": 240, "clusterExponent": 0.2, "turbulence": 0.3, "turbulenceHz": 7 },
+      "hiss": { "gainDb": -11, "highpassHz": 2400, "lowpassHz": 12000 },
+      "crackle": { "gainDb": -10, "rateHz": [15, 80], "highpassHz": 800, "pressureExponent": 1.0 },
+      "ignition": { "asset": "ignition-small", "gainDb": 0 },
+      "shutdown": { "asset": "shutdown-small", "gainDb": -1, "minRunTime": 0.3 },
+      "body": { "gainDb": 17, "cutoffHz": 240, "resonanceHz": 64, "resonanceDb": 5 },
+      "clusterWindow": 0.4
+    },
+    "engine.solid": {
+      "refThrust": 200000,
+      "efficiencyDb": 4,
+      "throttleExponent": 1.0,
+      "refDistance": 10,
+      "core": { "asset": "engine-solid-core", "gainDb": 0, "rate": [0.95, 1.0], "cutoffHz": [6000, 14000], "turbulence": 0.2 },
+      "rumble": { "gainDb": -3, "cutoffHz": 160, "clusterExponent": 0.2, "turbulence": 0.5, "turbulenceHz": 7 },
+      "hiss": { "gainDb": -14, "highpassHz": 2000, "lowpassHz": 10000 },
+      "crackle": { "gainDb": -2, "rateHz": [80, 320], "highpassHz": 400, "pressureExponent": 1.0 },
+      "ignition": { "asset": "ignition-small", "gainDb": 2 },
+      "shutdown": null,
+      "body": { "gainDb": 6, "cutoffHz": 200, "resonanceHz": 50, "resonanceDb": 4 },
+      "clusterWindow": 0.3
+    },
+    "rcs.thruster": {
+      "refThrust": 440,
+      "efficiencyDb": 22,
+      "throttleExponent": 1.0,
+      "refDistance": 2,
+      "core": { "asset": "rcs-hiss", "gainDb": 0, "rate": [0.95, 1.05], "cutoffHz": [5000, 16000], "turbulence": 0.15 },
+      "rumble": null,
+      "hiss": { "gainDb": -10, "highpassHz": 3000, "lowpassHz": 14000 },
+      "crackle": null,
+      "ignition": null,
+      "shutdown": null,
+      "body": { "gainDb": 18, "cutoffHz": 600, "resonanceHz": 120, "resonanceDb": 4 },
+      "clusterWindow": 0.1
+    }
+  }
+}
