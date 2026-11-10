@@ -19,7 +19,7 @@ import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { mat3 } from '@/core/math/mat';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0 } from '@/core/math/scalar';
-import { actuatorOut, applyActuators, computeAuthority, rcsTranslationActive } from '../control/allocation';
+import { applyActuators, computeAuthority, rcsTranslationActive } from '../control/allocation';
 import { sasOut, sasUpdate } from '../control/sas';
 import { computeMassProps } from '../vessel/massProps';
 import { updateEngines } from '../vessel/modules/engine';

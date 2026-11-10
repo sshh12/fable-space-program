@@ -36,9 +36,9 @@
         "area": 3,
         "normal": "axisym",
         "noseRadius": 0.5,
-        "emissivity": 0.8,
-        "arealHeatCapacity": 6000,
-        "maxTemp": 800
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
       }
     ]
   },
