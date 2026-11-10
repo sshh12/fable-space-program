@@ -1,4 +1,4 @@
-Status: resolved (flight-ui fix stage; see Resolution)
+Status: resolved (commit 264d8ac)
 From: map-view
 Owner path: src/input (flight-ui: DOM events -> InputFrame / PointerState)
 Blocking: no
@@ -27,7 +27,7 @@ What must NOT change: the binding table, PointerState field meanings, pointer ca
 started on the canvas (a drag that leaves the canvas keeps overUi false until release).
 
 ## Resolution
-flight-ui (fix stage), src/input/inputSystem.ts:
+flight-ui fix stage, commit 264d8ac, src/input/inputSystem.ts:
 1. Already in place since the first flight-ui commit and kept: keyboard events whose target is an editable
    element (`input` other than button-like types, `textarea`, `select`, contenteditable) reach no binding and
    are not `preventDefault`ed; focusing such an element releases every held key.
