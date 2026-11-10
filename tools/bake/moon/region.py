@@ -28,6 +28,8 @@ pulled to LOLA shots along the polar ground tracks) lose their narrow across-tra
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import math
 import sys
 import time
@@ -291,7 +293,10 @@ def _abs_d2(x: np.ndarray, axis: int) -> np.ndarray:
     return out
 
 
-def line_roughness_ratio(x: np.ndarray, axis: int, neighbours: int) -> np.ndarray:
+ROUGHNESS_NEIGHBOURS = 15  # lines in the reference of line_roughness_ratio (the stripe metric; fixed, not tuned)
+
+
+def line_roughness_ratio(x: np.ndarray, axis: int, neighbours: int = ROUGHNESS_NEIGHBOURS) -> np.ndarray:
     """Per interior column (axis=1) or row (axis=0): mean |second difference across it| over the whole grid,
     divided by the running median of that over `neighbours` lines. An altimeter track along a column stands
     out (> 1.3); isotropic terrain stays near 1. The first and last line have no second difference and are
@@ -334,13 +339,13 @@ def correct_track_stripes(a: np.ndarray, sc: dict) -> tuple[np.ndarray, dict]:
     y = x - w * resid
     out = np.where(fin, y, a).astype(np.float32)
     chg = (y - x)[fin]
-    before_c, after_c = line_roughness_ratio(x, 1, nb), line_roughness_ratio(y, 1, nb)
+    before_c, after_c = line_roughness_ratio(x, 1), line_roughness_ratio(y, 1)
     rep = {"weightedFraction": float(np.mean(w[fin] > 0)), "fullWeightFraction": float(np.mean(w[fin] >= 1.0)),
            "changeRmsM": float(np.sqrt(np.mean(chg ** 2))), "changeP99M": float(np.percentile(np.abs(chg), 99)),
            "maxChangeM": float(np.abs(chg).max()),
            "columnRatioMaxBefore": float(before_c.max()), "columnRatioMaxAfter": float(after_c.max()),
            "columnsAbove1p3Before": int((before_c > 1.3).sum()), "columnsAbove1p3After": int((after_c > 1.3).sum()),
-           "rowRatioMaxControl": float(line_roughness_ratio(x, 0, nb).max()),
+           "rowRatioMaxControl": float(line_roughness_ratio(x, 0).max()),
            "rmsD2xBefore": float(np.sqrt(np.mean(_abs_d2(x, 1) ** 2))), "rmsD2xAfter": float(np.sqrt(np.mean(_abs_d2(y, 1) ** 2))),
            "rmsD2yBefore": float(np.sqrt(np.mean(_abs_d2(x, 0) ** 2))), "rmsD2yAfter": float(np.sqrt(np.mean(_abs_d2(y, 0) ** 2)))}
     return out, rep
@@ -600,18 +605,21 @@ def bake_tile(task) -> tuple:
     scale = m.bands[m.band_of_level(level)].scale
     data = frt1.to_file_bytes(frt1.encode_height(h, scale))
     rt.write_tile(layout.tile_file(m.region["tileset"], "height", face, level, x, y, "hgt"), data)
-    return task, len(data), float(h.min()), float(h.max())
+    return task, len(data), float(h.min()), float(h.max()), hashlib.sha256(data).hexdigest()
 
 
 # -- manifest ----------------------------------------------------------------------------------------------
 def update_manifest(region: dict, rects: dict[int, list[dict]], source_rects: dict[int, list[dict]],
-                    scales: dict[int, float], credits: list[str]) -> None:
+                    scales: dict[int, float], credits: list[str], tiles_sha: str) -> None:
     """Merge the region's rectangles (and those of every other registered region) into the height layer.
 
-    `sourceCoverage` is the field docs/requests/terrain-core-1.md asks for (same shape as `coverage`)."""
+    `sourceCoverage` is the field docs/requests/terrain-core-1.md asks for (same shape as `coverage`).
+    `build` hashes the content of every registered region's tiles: layout.write_manifest hashes only the
+    manifest body, so without it a re-bake that changes tiles but no rectangle would keep the contentHash the
+    tile URLs are cache-busted with (TileManifest.contentHash: "changes whenever tiles are re-baked")."""
     reg = rt.read_json(REGISTRY) if REGISTRY.is_file() else {}
     reg[region["id"]] = {"rects": {str(L): r for L, r in rects.items()}, "sourceRects": {str(L): r for L, r in source_rects.items()},
-                         "scales": {str(L): s for L, s in scales.items()}, "credits": credits}
+                         "scales": {str(L): s for L, s in scales.items()}, "credits": credits, "tilesSha256": tiles_sha}
     # overlapping regions would bake the same tile twice with different content
     claimed: dict = {}
     for rid, e in reg.items():
@@ -629,8 +637,8 @@ def update_manifest(region: dict, rects: dict[int, list[dict]], source_rects: di
     level_scale: dict[int, float] = {}
     sources = [s for s in layer["sources"]]
     for rid, e in reg.items():
-        if "sourceRects" not in e:
-            raise ValueError(f"region {rid} in {REGISTRY} predates source coverage: re-run region.py {rid}")
+        if "sourceRects" not in e or "tilesSha256" not in e:
+            raise ValueError(f"region {rid} in {REGISTRY} predates source coverage / tile hashes: re-run region.py {rid}")
         for L, rs in e["rects"].items():
             coverage.setdefault(L, []).extend(rs)
         for L, rs in e["sourceRects"].items():
@@ -650,6 +658,7 @@ def update_manifest(region: dict, rects: dict[int, list[dict]], source_rects: di
     layer["sourceCoverage"] = {L: source_cov[L] for L in sorted(source_cov, key=int)}
     layer["heightScales"] = hs
     layer["sources"] = sources
+    layer["build"] = hashlib.sha256(json.dumps({rid: e["tilesSha256"] for rid, e in sorted(reg.items())}).encode("utf-8")).hexdigest()[:16]
     layout.merge_layer(region["tileset"], rt.MOON_RADIUS, "height", layer, attribution=credits)
     rt.write_json(REGISTRY, reg)
 
@@ -681,14 +690,18 @@ def main() -> None:
     report["sourceCoverage"] = {str(L): r for L, r in source_rects.items()}
     rt.log(f"region {region['id']}: {len(tasks)} tiles {report['tilesPerLevel']}")
     total = 0
+    digests: dict = {}
     with rt.pool() as p:
-        for i, (task, n, lo, hi) in enumerate(p.imap_unordered(bake_tile, tasks, chunksize=2)):
+        for i, (task, n, lo, hi, dg) in enumerate(p.imap_unordered(bake_tile, tasks, chunksize=2)):
             total += n
+            digests[task] = dg
             if (i + 1) % 200 == 0 or i + 1 == len(tasks):
                 rt.log(f"  {i + 1}/{len(tasks)} tiles, {total / 1e6:.1f} MB")
+    tiles_sha = hashlib.sha256("".join(f"{t}:{digests[t]};" for t in tasks).encode("utf-8")).hexdigest()
+    report["tilesSha256"] = tiles_sha
     scales = {L: model.bands[model.band_of_level(L)].scale for L in rects}
     credits = [region["sources"][b.source_id]["credit"] for b in model.bands]
-    update_manifest(region, rects, source_rects, scales, credits)
+    update_manifest(region, rects, source_rects, scales, credits, tiles_sha)
     report["bytes"] = total
     report["seconds"] = time.time() - t0
     rt.write_json(work_dir(region["id"]) / "report.json", report)

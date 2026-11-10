@@ -278,8 +278,8 @@ def nac_seam(region: dict) -> dict:
 
 
 # Worst column's across-track roughness / its neighbouring columns. Raw SLDEM2015 over the Tranquility disc: 2.65
-# (61 columns > 1.3); isotropic terrain (the rows, E-W control): up to 1.31. The corrected source keeps ~1.5
-# where a track error exceeds the 3 m clamp inside craters.
+# (61 columns > 1.3); isotropic terrain (the rows, E-W control): up to 1.31; the corrected source: 1.47 (3
+# columns > 1.3), where a track error inside a crater exceeds the 3 m clamp.
 STRIPE_RATIO_LIMIT = 1.6
 
 
@@ -309,10 +309,9 @@ def track_stripes(region: dict, reader: TileReader, model: RegionModel) -> dict:
         d = cube.lat_lon_to_dir(np.radians(lat), np.radians(lon)).reshape(-1, 3)
         shipped = reader.data_height(d, L).reshape(R.shape)
         raw = acquire_raw_source(region, b.source_id).mips[0][rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1].astype(np.float64)
-        nb = int(sc["neighbourCols"])
         res = {"level": L, "squareHalfM": half_m, "pixels": int(R.size)}
         for name, arr in (("raw", raw), ("shipped", shipped)):
-            cr, rr = line_roughness_ratio(arr, 1, nb), line_roughness_ratio(arr, 0, nb)
+            cr, rr = line_roughness_ratio(arr, 1), line_roughness_ratio(arr, 0)
             res[name] = {"columnRatioMax": float(cr.max()), "columnsAbove1p3": int((cr > 1.3).sum()),
                          "rowRatioMax": float(rr.max()), "rowsAbove1p3": int((rr > 1.3).sum())}
         out[b.source_id] = res

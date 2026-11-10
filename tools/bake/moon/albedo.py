@@ -1,6 +1,6 @@
 """Moon `albedo` layer (levels 0..7, opaque 256 x 256 WebP) and the `albedoLowRes` global map.
 
-    data/cache/moon/venv/Scripts/python.exe -I tools/bake/moon/albedo.py [--steps svs,resolution,fit,detail,svsdeshade,tiles,lowres]
+    data/cache/moon/venv/Scripts/python.exe -I tools/bake/moon/albedo.py [--steps svs,resolution,fit,detail,svsdeshade,tiles,lowres,build]
 
 Base colour: NASA SVS CGI Moon Kit colour (`lroc_color.exr`, linear, LROC WAC 643/566/415 nm as R/G/B from the
 Hapke-normalised WAC mosaic, no baked shadows), resampled to 27648 x 13824 so its area-averaged mip chain halves
@@ -23,6 +23,7 @@ so tiles are seamless across tile and cube edges.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import math
 import sys
@@ -863,16 +864,32 @@ def step_lowres() -> None:
                                                   "channels": ["r", "g", "b"], "format": "png"}})
 
 
+def step_build() -> None:
+    """`layers.albedo.build` = hash of every albedo tile's content (in key order). layout.write_manifest hashes
+    only the manifest body, so without it a re-bake that changes tiles would keep the contentHash the tile
+    URLs are cache-busted with (TileManifest.contentHash: "changes whenever tiles are re-baked")."""
+    h = hashlib.sha256()
+    keys = [(f, L, x, y) for L in range(GLOBAL_MAX_LEVEL + 1) for f in range(6) for y in range(2 ** L) for x in range(2 ** L)]
+    for f, L, x, y in keys:
+        h.update(f"{f}/{L}/{x}/{y}:".encode("ascii"))
+        h.update(hashlib.sha256(layout.tile_file(rt.TILESET, "albedo", f, L, x, y, "webp").read_bytes()).digest())
+    m = layout.read_manifest(rt.TILESET)
+    layer = m["layers"]["albedo"]
+    layer["build"] = h.hexdigest()[:16]
+    layout.merge_layer(rt.TILESET, rt.MOON_RADIUS, "albedo", layer)
+    rt.log(f"albedo build {layer['build']} over {len(keys)} tiles")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--steps", default="svs,resolution,fit,detail,svsdeshade,tiles,lowres")
+    ap.add_argument("--steps", default="svs,resolution,fit,detail,svsdeshade,tiles,lowres,build")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
     WORK.mkdir(parents=True, exist_ok=True)
     steps = {"svs": step_svs, "resolution": step_svs_resolution, "fit": step_fit, "detail": step_detail,
              "svsdeshade": step_svs_deshade,
-             "tiles": step_tiles, "lowres": step_lowres}
+             "tiles": step_tiles, "lowres": step_lowres, "build": step_build}
     for s in a.steps.split(","):
         t0 = time.time()
         steps[s]()
