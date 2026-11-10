@@ -23,7 +23,8 @@ ATTRIBUTION = {
     "landcover": ["Regional land cover: ESA WorldCover 2021 v200 (ESA WorldCover project / Contains modified "
                   "Copernicus Sentinel data (2021) processed by ESA WorldCover consortium), CC BY 4.0"],
     "clouds": ["Clouds: global cloud composite by Matt Eason (clouds.matteason.co.uk), derived from EUMETSAT/NOAA "
-               "geostationary imagery; licence unstated, bake-time snapshot, swappable"],
+               "geostationary imagery; licence unstated, bake-time snapshot, swappable",
+               "Polar clouds: Solar System Scope 8k cloud map (solarsystemscope.com, based on NASA imagery), CC BY 4.0"],
 }
 
 

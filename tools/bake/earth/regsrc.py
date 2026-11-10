@@ -4,7 +4,8 @@ feathered into the global source (ETOPO 2022 bicubic) at the edge of the region.
     t  = Terrarium z15 Catmull-Rom, g = ETOPO 2022 15" Catmull-Rom,
     L  = bilinear ESA WorldCover land indicator (class not water/no-data): the COASTLINE is L = 0.5
     land (L >= 0.5):         s = max(t, 0.2 m)                    (g where Terrarium has no tile)
-    sea  (L <  0.5):         s = min(g, -1 m) * smootherstep(d / d1)    d = distance to that coastline
+    sea  (L <  0.5):         s = min(g, -1 m) * smootherstep(d / d1)    d = distance to that coastline,
+                                                                       Gaussian-smoothed over RAMP_SMOOTH_M
     regional source:         S = a s + (1 - a) g                     a = region.source_weight (1 inside the
                                                                        AOI, 0 featherKm beyond it)
 The coastline is WorldCover's (10 m, Sentinel-2 based, the same sensor as the regional imagery): Terrarium's
@@ -26,6 +27,7 @@ from earth.tilestack import TileStack
 from earth.util import log
 
 COAST_GRID_M = 40.0
+RAMP_SMOOTH_M = 300.0  # Gaussian smoothing of the coast distance that drives the sea-floor ramp
 LAND_BUFFER_KM = 3.5
 MIN_LAND_M = 0.2       # land (by the coastline) never dips below sea level
 
@@ -56,6 +58,7 @@ class RegionalHeight:
         self.g = etopo.local_grid(lat0 - 0.05, lat1 + 0.05, lon0 - 0.05, lon1 + 0.05)
         self._t = None
         self._wc = None
+        self._ramp = None
         self._coast_grid()
 
     # -- data -----------------------------------------------------------------------------------------
@@ -142,6 +145,7 @@ class RegionalHeight:
         dlat = COAST_GRID_M / (math.pi * paths.RADIUS / 180.0)
         dlon = dlat / math.cos(math.radians(latc))
         key = paths.WORK / f"coastdist-wc-{lat0:.4f}-{lat1:.4f}-{lon0:.4f}-{lon1:.4f}.npy"
+        self._coast_key = key
         meta = key.with_suffix(".json")
         if key.is_file() and meta.is_file():           # memory-mapped: shared by all worker processes
             z = json.loads(meta.read_text(encoding="utf-8"))
@@ -176,6 +180,39 @@ class RegionalHeight:
         cy = (self.coast.lat_r0 - np.ravel(lat)) / self.coast.step
         return bilinear(self.coast.data, cx, cy)
 
+    def _ensure_ramp(self) -> None:
+        if self._ramp is not None:
+            return
+        key = self._coast_key.with_name(self._coast_key.stem + f"-smooth{RAMP_SMOOTH_M:g}.npy")
+        if not key.is_file():
+            sm = ndimage.gaussian_filter(np.asarray(self.coast.data, np.float32), RAMP_SMOOTH_M / COAST_GRID_M,
+                                         mode="nearest")
+            tmp = key.with_name(key.stem + ".partial.npy")
+            np.save(tmp, sm)
+            del sm
+            tmp.replace(key)
+        self._ramp = np.load(key, mmap_mode="r")
+
+    def prepare(self) -> None:
+        """Build every cached input (Terrarium stack, smoothed ramp distance) in the calling process, so that
+        worker processes only memory-map them."""
+        _ = self.t
+        self._ensure_ramp()
+
+    def ramp_distance(self, lat, lon) -> np.ndarray:
+        """The coast distance smoothed with a RAMP_SMOOTH_M Gaussian, for the sea-floor ramp only.
+
+        A Euclidean distance field has a gradient that jumps along the medial axes of the coastline (lines
+        running out to sea from every bay and headland); a ramp built on it shows those lines as facets fanning
+        out from the coast in a hillshade (docs/requests/terrain-core-3.md). The smoothed field keeps the ramp
+        smooth; it is positive on every sea point (about 0.4 RAMP_SMOOTH_M at the coastline, where the ramp
+        factor is still below 0.5 %), so the sea floor stays below sea level."""
+        from earth.sample import bilinear
+        self._ensure_ramp()
+        cx = (np.ravel(lon) - self.coast.lon_c0) / self.coast_dlon
+        cy = (self.coast.lat_r0 - np.ravel(lat)) / self.coast.step
+        return bilinear(self._ramp, cx, cy)
+
     # -- the source -----------------------------------------------------------------------------------
     def local(self, lat, lon) -> np.ndarray:
         """s: Terrarium/ETOPO merge on the WorldCover coastline, without the regional feather."""
@@ -189,7 +226,7 @@ class RegionalHeight:
             s[land] = np.maximum(np.where(np.isnan(t), g[land], t), MIN_LAND_M)
         sea = ~land
         if sea.any():
-            d = self.coast_distance(lat[sea], lon[sea])
+            d = self.ramp_distance(lat[sea], lon[sea])
             s[sea] = np.minimum(g[sea], -1.0) * regmod.smootherstep(d / self.d1)
         return s
 

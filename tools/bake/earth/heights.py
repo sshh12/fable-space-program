@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from common import cube
-from earth import etopo, hpyramid, paths, region as regmod, sample, tiles
+from earth import etopo, hpyramid, paths, region as regmod, regsrc, sample, tiles
 from earth.util import log, run_units, units_done
 
 GLOBAL_SCALE = 0.5
@@ -142,14 +142,15 @@ def bake_region(region_id: str) -> None:
         scale = float(reg["levels"][str(level)]["heightScale"])
         chunks = [tl[i:i + 64] for i in range(0, len(tl), 64)]
         units = [(region_id, level, finest, scale, tuple(c)) for c in chunks]
-        plan.append((level, len(tl), units, {"v": 3, "region": reg, "level": level}))
+        plan.append((level, len(tl), units, {"v": 4, "region": reg, "level": level,
+                                             "rampSmoothM": regsrc.RAMP_SMOOTH_M}))
     from earth import manifest
     if all(units_done(f"height-{region_id}-l{level}", units, key, cfg) for level, _, units, cfg in plan):
         log(f"height {region_id}: every level already baked")
         manifest.mark("height", region_id)
         return
     # build (and cache) the regional source once in the parent so workers only memory-map it
-    _ = _regional_height(region_id).t
+    _regional_height(region_id).prepare()
     for level, n_tiles, units, cfg in plan:
         log(f"height {region_id} level {level}: {n_tiles} tiles")
         run_units(f"height-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)
@@ -163,13 +164,18 @@ def layer_manifest(regions: list[dict]) -> dict:
         vals = [float(r["levels"][str(L)]["heightScale"]) for r in regions if str(L) in r["levels"]]
         scales.append(min(vals) if (vals and L > paths.GLOBAL_MAX_LEVEL) else GLOBAL_SCALE)
     coverage: dict[str, list] = {}
+    source_coverage: dict[str, list] = {}
     sources = list(SOURCES_GLOBAL)
     for reg in regions:
         for L in regmod.levels(reg):
             coverage.setdefault(str(L), []).extend(regmod.coverage_rects(reg, L))
+            source_coverage.setdefault(str(L), []).extend(regmod.source_rects(reg, L))
         s = ("AWS Terrain Tiles (Terrarium; USGS 3DEP 10 m in Hawai'i), attribution: "
              "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
         if s not in sources:
             sources.append(s)
+    # sourceCoverage (docs/requests/terrain-core-1.md, optional, additive): the rectangles of tiles that touch
+    # each region's area of interest, where the regional source has full weight. Outside them, in the feather
+    # and margin ring of the coverage, the regional levels hold data that converges on the parent's.
     return {"encoding": "frt1-height", "ext": "hgt", "globalMaxLevel": paths.GLOBAL_MAX_LEVEL,
-            "coverage": coverage, "heightScales": scales, "sources": sources}
+            "coverage": coverage, "sourceCoverage": source_coverage, "heightScales": scales, "sources": sources}

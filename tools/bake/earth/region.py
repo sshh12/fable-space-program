@@ -117,6 +117,22 @@ def source_weight(region: dict, lat_deg, lon_deg) -> np.ndarray:
 def coverage_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
     grow = (radius_km(region, level) + float(region["featherKm"])) * 1000.0 \
         + float(region["marginTiles"]) * cube.mean_tile_size(paths.RADIUS, level)
+    return _tiles_within(region, level, grow)
+
+
+def source_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
+    """Tiles of `level` that touch the area of interest itself (no feather, no margin): where the level holds
+    regional data genuinely finer than its parent (the manifest's `sourceCoverage`, requested in
+    docs/requests/terrain-core-1.md; a subset of the coverage)."""
+    return _tiles_within(region, level, radius_km(region, level) * 1000.0)
+
+
+def source_rects(region: dict, level: int) -> list[dict]:
+    return cube.rects_from_tiles(source_tiles(region, level))
+
+
+def _tiles_within(region: dict, level: int, grow: float) -> list[tuple[int, int, int]]:
+    """Every tile of `level` within `grow` metres of the disc centre / strip polyline."""
     pts = shape_points(region)
     out: set[tuple[int, int, int]] = set()
     if region["shape"]["kind"] == "disc":

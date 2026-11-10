@@ -267,22 +267,46 @@ def regional_hillshade(region_id: str) -> None:
     log(f"contact: regional hillshade and pad sheets for {region_id}")
 
 
+def _edge_window(r: dict, side: str, pos: float):
+    """Global texel coordinates (GX east, GY north; display rows run north to south) of a window straddling
+    one side of a coverage rect: 256 texels inside, 128 outside, 256 along the edge centred on `pos`."""
+    a = np.arange(-128, 128) + 0.5
+    if side in ("E", "W"):
+        e = (r["x1"] + 1) * 256 if side == "E" else r["x0"] * 256
+        gx = e + (np.arange(-256, 128) if side == "E" else np.arange(-128, 256)) + 0.5
+        gy = pos - a                                            # north up
+        GX, GY = np.meshgrid(gx, gy)
+        inside = GX < e if side == "E" else GX > e
+    else:
+        e = (r["y1"] + 1) * 256 if side == "N" else r["y0"] * 256
+        gy = e + (np.arange(128, -256, -1) if side == "N" else np.arange(256, -128, -1)) - 0.5
+        GX, GY = np.meshgrid(pos + a, gy)
+        inside = GY < e if side == "N" else GY > e
+    return GX, GY, inside
+
+
 def coverage_edge_crops(region_id: str) -> None:
-    """For every regional level, a 384 x 256 texel window straddling the east edge of the coverage: inside
-    from the level itself, outside from its parent (bilinear) -- the switch the renderer makes."""
+    """For every regional level, a window of 384 x 256 texels straddling the coverage boundary where it crosses
+    the most land (an all-ocean window would show nothing): inside from the level itself, outside from its
+    parent (bilinear) -- the switch the renderer makes. North up (the region lies on an equatorial face)."""
     reg = regmod.load(region_id)
     for lv in regmod.levels(reg):
         r = max(regmod.coverage_rects(reg, lv), key=lambda q: (q["x1"] - q["x0"] + 1) * (q["y1"] - q["y0"] + 1))
         f = r["face"]
-        gx_edge = (r["x1"] + 1) * 256
-        gy_mid = (r["y0"] + r["y1"] + 1) * 128
-        gx = gx_edge + np.arange(-256, 128) + 0.5
-        gy = gy_mid + np.arange(128, -128, -1) - 0.5
-        GX, GY = np.meshgrid(gx, gy)
-        S = -1 + 2 * GX / (256 * 2 ** lv)
-        T = -1 + 2 * GY / (256 * 2 ** lv)
-        d = cube.face_st_to_dir(f, S, T)
-        inside = GX < gx_edge
+        n = 256 * 2 ** lv
+        parent_mask = Sampler("watermask", lv - 1)
+        best = None
+        for side in ("E", "W", "N", "S"):
+            lo, hi = ((r["y0"] * 256, (r["y1"] + 1) * 256) if side in ("E", "W") else (r["x0"] * 256, (r["x1"] + 1) * 256))
+            for pos in np.arange(lo + 128, hi - 127, 64):
+                GX, GY, _ = _edge_window(r, side, float(pos))
+                g = cube.face_st_to_dir(f, -1 + 2 * GX[::16, ::16] / n, -1 + 2 * GY[::16, ::16] / n).reshape(-1, 3)
+                land = float(np.mean(1.0 - parent_mask(g) / 255.0))
+                if best is None or land > best[0]:
+                    best = (land, side, float(pos))
+        land, side, pos = best
+        GX, GY, inside = _edge_window(r, side, pos)
+        d = cube.face_st_to_dir(f, -1 + 2 * GX / n, -1 + 2 * GY / n)
         px = 2 * math.pi * paths.RADIUS / 4 / 2 ** lv / 256 * 0.8
         for layer in ("albedo", "height"):
             fine = Sampler(layer, lv)
@@ -298,8 +322,10 @@ def coverage_edge_crops(region_id: str) -> None:
                 v[inside] = fine(dd[inside.ravel()])
                 img = np.clip(v, 0, 255).astype(np.uint8)
             img = np.kron(img, np.ones((2, 2, 1), np.uint8))
+            where = {"E": "left | right, edge at x = 512", "W": "right | left, edge at x = 256",
+                     "N": "bottom | top, edge at y = 256", "S": "top | bottom, edge at y = 512"}[side]
             save(img, f"region-{region_id}-edge-l{lv}-{layer}.png",
-                 f"level {lv} (left) | level {lv - 1} (right), coverage edge at x = 512")
+                 f"{side} edge, level {lv} | level {lv - 1}: {where} (land {land * 100:.0f} %)")
     log(f"contact: coverage edge crops for {region_id}")
 
 

@@ -352,24 +352,41 @@ def _read_rgb(f, lv, x, y):
 
 
 def check_albedo_seams(m: dict) -> None:
+    """Mean |difference| of the texel pairs that straddle a tile border vs interior texel pairs, per level group.
+
+    For seamless tiles both have the same expectation, so the measured means differ only by sampling noise of
+    either sign. The gate is therefore: the border mean exceeds the mean of the interior pairs right next to
+    the same borders (same rows, columns 254|255 and 0|1: same content) by no more than two standard errors
+    of that paired difference. A seam (compression or registration) shows up as a border excess of many
+    standard errors (independently compressed lossy WebP q90 tiles: +0.45 levels, about 60 % of the interior
+    mean). The plain mean over all interior pairs of the tiles is reported alongside."""
     rng = np.random.default_rng(9)
-    border, interior = [], []
     L = m["layers"]["albedo"]
-    keys = [(int(rng.integers(6)), 7, int(rng.integers(127)), int(rng.integers(127))) for _ in range(300)]
-    for lv, rects in L.get("coverage", {}).items():
+    groups = {"global level 7": [(int(rng.integers(6)), 7, int(rng.integers(127)), int(rng.integers(127)))
+                                 for _ in range(1000)]}
+    for lv, rects in sorted(L.get("coverage", {}).items(), key=lambda kv: int(kv[0])):
+        keys = []
         for r in rects:
             keys += [(r["face"], int(lv), int(rng.integers(r["x0"], r["x1"])), int(rng.integers(r["y0"], r["y1"])))
-                     for _ in range(60)]
-    for f, lv, x, y in keys:
-        a = _read_rgb(f, lv, x, y)
-        b = _read_rgb(f, lv, x + 1, y)
-        c = _read_rgb(f, lv, x, y + 1)
-        border.append(np.abs(a[:, 255] - b[:, 0]).mean())
-        border.append(np.abs(a[255, :] - c[0, :]).mean())
-        interior.append(np.abs(a[:, 1:] - a[:, :-1]).mean())
-        interior.append(np.abs(a[1:, :] - a[:-1, :]).mean())
-    b, i = float(np.mean(border)), float(np.mean(interior))
-    check("albedo seams", b <= i, f"mean |difference| across {len(border)} tile borders {b:.3f} vs interior texel pairs {i:.3f} (sRGB levels)")
+                     for _ in range(150)]
+        groups[f"regional level {lv}"] = keys
+    for name, keys in groups.items():
+        border, adjacent, interior = [], [], []
+        for f, lv, x, y in keys:
+            a = _read_rgb(f, lv, x, y)
+            b = _read_rgb(f, lv, x + 1, y)
+            c = _read_rgb(f, lv, x, y + 1)
+            for p, q in ((a, b), (np.swapaxes(a, 0, 1), np.swapaxes(c, 0, 1))):     # east and north neighbour
+                border.append(np.abs(p[:, 255] - q[:, 0]).mean())
+                adjacent.append(0.5 * (np.abs(p[:, 254] - p[:, 255]).mean() + np.abs(q[:, 0] - q[:, 1]).mean()))
+                interior.append(np.abs(p[:, 1:] - p[:, :-1]).mean())
+        border, adjacent = np.array(border), np.array(adjacent)
+        d = border - adjacent
+        se = float(d.std(ddof=1) / math.sqrt(d.size))
+        check(f"albedo seams, {name}", float(d.mean()) <= 2.0 * se,
+              f"{d.size} tile borders: mean |difference| across the border {border.mean():.3f}, interior pairs next "
+              f"to it {adjacent.mean():.3f} (excess {d.mean():+.4f}, 2 s.e. {2 * se:.4f}), all interior pairs "
+              f"{np.mean(interior):.3f} (sRGB levels)")
 
 
 def check_coverage_edges(m: dict) -> None:
@@ -390,7 +407,7 @@ def check_coverage_edges(m: dict) -> None:
                        [(x, rc["y1"], 3) for x in range(rc["x0"], rc["x1"] + 1)] + \
                        [(rc["x0"], y, 0) for y in range(rc["y0"], rc["y1"] + 1)] + \
                        [(rc["x1"], y, 1) for y in range(rc["y0"], rc["y1"] + 1)]
-                for x, y, side in ring[::max(1, len(ring) // 48)]:
+                for x, y, side in ring:                     # every tile of the outer ring
                     vals, d, _ = _edge_values(f, lv, x, y, side)
                     la, lo = tiles.dirs_latlon(d)
                     par = height_at(cache, lv - 1, la, lo)
@@ -415,11 +432,12 @@ def check_coverage_edges(m: dict) -> None:
             ma = float(np.mean(np.concatenate([a.ravel() for a in diffs_a])))
             mw = float(np.mean(np.concatenate([a.ravel() for a in diffs_w])))
             worst_h = max(worst_h, rms)
-            ok = rms < 3.0 and ma <= 2.0 and mw <= 2.0
+            ok = rms < 3.0 and maxa <= 2.0 and maxw <= 2.0
             details.append(ok)
             check(f"coverage edge {r_id} level {lv}", ok,
-                  f"height vs bicubic parent RMS {rms:.2f} m (< 3); outermost texel row vs bilinear parent: albedo mean "
-                  f"{ma:.2f} (max {maxa:.0f}) /255, watermask mean {mw:.2f} (max {maxw:.0f}) /255 (<= 2)")
+                  f"height vs bicubic parent RMS {rms:.2f} m (< 3); outermost texel row vs bilinear parent: albedo "
+                  f"max {maxa:.0f} (mean {ma:.2f}) /255, watermask max {maxw:.0f} (mean {mw:.2f}) /255 (every texel "
+                  f"within 2)")
 
 
 def check_water_fraction() -> None:
