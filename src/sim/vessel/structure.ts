@@ -4,7 +4,7 @@
  * aerodynamic elements, contact probes, buoyancy spheres, thermal surfaces.
  */
 import type { ContactPointDef, MachTable, PartDef } from '@/core/contracts/defs';
-import { quat, type Quat } from '@/core/math/quat';
+import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type {
@@ -214,8 +214,6 @@ export interface Structure {
   /** Open water under the vessel in the current step, and its surface height above the reference radius. */
   waterHere: boolean;
   waterHeight: number;
-  /** Part index -> children indices. */
-  children: number[][];
   boundingRadius: number;
   /** Lowest y of any probe or bound in VES (where the vessel rests). */
   baseY: number;
@@ -230,8 +228,6 @@ export interface Structure {
   lumpHeatCap: number;
   lumpMaxTemp: number;
   lumpEmissivity: number;
-  /** Part index of an unreleased launch clamp present (the vessel is held). */
-  clamps: number[];
 }
 
 const Y_AXIS: Vec3 = { x: 0, y: 1, z: 0 };
@@ -360,12 +356,6 @@ function newProbe(part: number, pos: Vec3, radius: number, k: number, c: number,
 export function rebuildStructure(vessel: Vessel): Structure {
   const parts = vessel.parts;
   const n = parts.length;
-  const children: number[][] = [];
-  for (let i = 0; i < n; i++) children.push([]);
-  for (let i = 0; i < n; i++) {
-    const par = parts[i]!.parent;
-    if (par >= 0) children[par]!.push(i);
-  }
   for (const p of parts) p.shielded = isShieldedBy(parts, p);
 
   const s: Structure = {
@@ -382,7 +372,6 @@ export function rebuildStructure(vessel: Vessel): Structure {
     buoyVolume: 0,
     waterHere: false,
     waterHeight: -Infinity,
-    children,
     boundingRadius: 0,
     baseY: Infinity,
     sasAvailable: false,
@@ -394,7 +383,6 @@ export function rebuildStructure(vessel: Vessel): Structure {
     lumpHeatCap: Infinity,
     lumpMaxTemp: Infinity,
     lumpEmissivity: 0.8,
-    clamps: [],
   };
   let maxRate = 0;
 
@@ -484,9 +472,8 @@ export function rebuildStructure(vessel: Vessel): Structure {
       } else if (md.type === 'antenna' && ms.type === 'antenna') {
         // Antennas unfold once their part is out in the open (not inside a closed fairing or on the pad).
         ms.deployed = !p.shielded && vessel.hold !== 'clamps';
-      } else if (md.type === 'launchClamp' && ms.type === 'launchClamp') {
+      } else if (md.type === 'launchClamp') {
         isClamp = true;
-        if (!ms.released) s.clamps.push(i);
       }
     }
 
@@ -731,8 +718,4 @@ export function legFootLocal(def: LegsDef, l: number, deploy: number): [number, 
     leg.footStowed[1] + (leg.footDeployed[1] - leg.footStowed[1]) * t,
     leg.footStowed[2] + (leg.footDeployed[2] - leg.footStowed[2]) * t,
   ];
-}
-
-export function identityPose(): { pos: Vec3; rot: Quat } {
-  return { pos: v3.zero(), rot: quat.identity() };
 }

@@ -371,9 +371,12 @@ Known weaknesses:
   alone would need 8-9 s). It follows from the capsule force model; it has not been compared with flight data.
 - **The capsule is monostable**: entering apex-first it turns shield-first within seconds instead of burning
   (sim-design 10.1 expected destruction). An ablator-less or tumbling entry still destroys it.
-- **Abort**: the escape motor pulls the capsule clear (9 g, 150 m in 3.4 s, tested at 9 km), but there is no
-  pitch-over motor or canards and the tower + capsule aerodynamics are one axisymmetric element; an abort at
-  max-q has not been examined for attitude behaviour.
+- **Abort**: the escape motor pulls the capsule clear (tested at 9 km: 9 g, 150 m in 3.4 s; explored at max-q,
+  11 km and 480 m/s: 7.8 g, angle of attack below 27 deg during the burn, 690 m from the stack when the tower
+  goes). There is no pitch-over motor and there are no canards: the tower is jettisoned 5 s after the abort
+  with the capsule still apex-first, so at high dynamic pressure the capsule then swings round hard (up to
+  500 deg/s in the max-q case) and takes some 20 s of aerodynamic damping to settle shield-first. The g-load
+  model sees only the CoM, so this tumble costs the crew nothing in the simulation.
 - **Aerodynamics of the stack are cross-flow only** (no linear lift slope), exposure is a radius ratio, and a
   capsule mated to a stack is a plain nose.
 - **Clearance query**: cylinders are exact; a fairing panel is a sampled thick sector (0.9 m grid), conservative
