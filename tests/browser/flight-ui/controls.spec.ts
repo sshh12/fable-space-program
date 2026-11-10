@@ -304,6 +304,29 @@ test.describe('flight-ui controls', () => {
     }
   });
 
+  test('the unload guard asks before leaving a flight in progress', async ({ page, pageLog }) => {
+    await open(page, 'scene=lowOrbit&guard=1');
+    // Chrome only shows the dialog after a user interaction with the page.
+    await page.mouse.click(640, 300);
+    await expectNoErrors(page, pageLog);
+    const dialog = new Promise<string>((resolve) => page.once('dialog', (d) => {
+      resolve(d.type());
+      void d.accept();
+    }));
+    await page.close({ runBeforeUnload: true });
+    expect(await dialog).toBe('beforeunload');
+  });
+
+  test('a staging lockout disables the stage tile', async ({ page, pageLog }) => {
+    await open(page, 'scene=pad&lockout=1');
+    await expect(page.locator('.hud .tile.next.locked')).toBeVisible();
+    await page.locator('.hud .tile.next').click();
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    expect((await state(page)).staging.nextStage).toBe(0);
+    await saveScreenshot(page, 'flight-ui', 'stage-lockout');
+    await expectNoErrors(page, pageLog);
+  });
+
   test('pointer captured by the map: Shift drags never move the throttle', async ({ page, pageLog }) => {
     await open(page, 'scene=lowOrbit');
     await page.evaluate(() => window.__flightUi!.setPointerCaptured(true));

@@ -10,7 +10,8 @@
  *   node=1                     plan a 120 m/s prograde maneuver node 10 minutes ahead (orbit scenes)
  *   target=<bodyId>            set a target body at start
  *   predicted=impact|entry     lab decoration: a predicted arrival point in the landing-target readout
- *   failed=1, terrainPending=1 lab decorations: mission-failed banner, terrain-loading notice
+ *   failed=1, terrainPending=1, lockout=1   lab decorations: mission-failed banner, terrain-loading notice, staging lockout
+ *   guard=1                    install the beforeunload guard (flight always in progress)
  *   mfd=1                      show the six MFD pages instead of the flight view
  *   help=1                     open the key-help overlay
  *   orbit=<yawDeg>,<pitchDeg>,<distance>   initial chase / map orbit
@@ -29,7 +30,7 @@ import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { installTestApi } from '@/core/testing/testApi';
 import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, vesselComRoot, type ViewFrame } from '@/camera';
-import { createFlightController, createInputSystem, DEFAULT_BINDINGS, keyHelpEntries, keyLabel } from '@/input';
+import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel } from '@/input';
 import { buildMfdPage, createHud, createMfdPainter, createNavballRenderer, MFD_PAGES, projectMarker, type NavballRendererImpl } from '@/ui';
 import { createLabBackdrop, LAB_GROUND } from './backdrop';
 import { createGpuTimer } from './gpuTimer';
@@ -131,6 +132,7 @@ async function boot(): Promise<void> {
     let s = tagLabVehicle(raw);
     if (params.get('failed') === '1') s = { ...s, mission: { failed: true, failureReason: 'Heat shield burned through at 61 km (lab decoration)', crewAlive: false } };
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };
+    if (params.get('lockout') === '1') s = { ...s, staging: { ...s.staging, lockout: true } };
     const lt = s.readouts.landingTarget;
     if (lt && (predicted === 'impact' || predicted === 'entry')) {
       const target = s.surfaceTargets.find((t) => t.id === lt.targetId)!;
@@ -147,6 +149,7 @@ async function boot(): Promise<void> {
 
   const notifySink: { fn: (m: string) => void } = { fn: () => undefined };
   const input = createInputSystem(canvas, { captureKeyboard: params.get('capture') === '1' });
+  if (params.get('guard') === '1') installUnloadGuard(() => true);
   const controller = createFlightController({ notify: (m) => notifySink.fn(m) });
   const terrain: TerrainProvider = {
     heightAt: (bodyId) => LAB_GROUND[bodyId] ?? 0,

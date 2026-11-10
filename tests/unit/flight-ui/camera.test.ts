@@ -253,6 +253,19 @@ describe('cockpit rig', () => {
     expect(v3.dist(c.positionRoot, rest.positionRoot)).toBeLessThan(0.012);
   });
 
+  it('resolves the cockpit seat of every vehicle in the library that has a cockpit', () => {
+    const base = createFakeSim(defs, { scene: 'lowOrbit' }).snapshot();
+    const withCockpit = Object.values(defs.vehicles).filter((v) => v.cockpit !== null);
+    expect(withCockpit.length).toBeGreaterThan(0);
+    for (const vehicle of withCockpit) {
+      const parts = vehicle.parts.map((p) => ({ instanceId: p.id, def: p.def, localPos: v3.new(0, 10, 0), localRot: quat.identity(), tempSkin: 290, maxTemp: 1000, resources: {}, modules: [], shielded: false }));
+      const s = { ...base, vessels: base.vessels.map((v) => ({ ...v, vehicleId: vehicle.id, parts })) };
+      const pose = resolveSeatPose(defs, s.vessels[0]!);
+      expect(pose, vehicle.id).not.toBeNull();
+      expect(pose!.eyeVes.y).toBeGreaterThan(10);
+    }
+  });
+
   it('is unavailable for a vessel without a cockpit and the manager falls back to chase', () => {
     const s = createFakeSim(defs, { scene: 'lowOrbit' }).snapshot();
     const rig = createCockpitRig({ defs });

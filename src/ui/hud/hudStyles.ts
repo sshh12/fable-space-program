@@ -166,7 +166,8 @@ export const HUD_CSS = /* css */ `
 .hud .kbcap { background: rgba(60, 40, 8, 0.72); border-color: rgba(255, 187, 77, 0.55); color: #ffe2b0; }
 .hud .kbcap b { color: var(--caution); font-weight: 700; }
 .hud .kbok { background: var(--bg); color: var(--good); border: 1px solid var(--line); }
-.hud .helpbtn { font-weight: 700; min-width: 2.2em; }
+.hud .helpbtn { font-weight: 700; min-width: 2.2em; background: var(--bg-strong); }
+.hud .warp button { background: var(--bg-strong); }
 
 /* ---------------------------------------------------------------- stage stack */
 .hud .stages { display: flex; flex-direction: column; gap: calc(var(--u) * 0.55); }
