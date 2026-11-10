@@ -3,9 +3,9 @@
  * modulation, and octave stacks of gradient noise with their per-point and band-raster evaluation.
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
-import { CraterField, profile, type CraterClass } from '../craters';
+import { profile, type CraterClass, type CraterField, type CraterRecord } from '../craters';
 import { GradientNoise3, NOISE_GRAD_RMS, subSeed } from '../noise';
-import { acceptanceRatio, rockBump, type RockField } from '../rocks';
+import { acceptanceRatio, rockBump, rockLog2Length, type RockAbundance, type RockAbundanceBound, type RockCandidate, type RockField } from '../rocks';
 import { smootherstep01 } from '../util';
 import type { BandRasterJob } from './types';
 
@@ -82,13 +82,14 @@ export function splatCraters(field: CraterField, job: BandRasterJob, log2MaxDOf:
     if (c.log2DLo <= job.log2LambdaN) break;
     const wb = bandDiff(c.log2DLo, job.log2LambdaN, job.log2LambdaLow);
     if (wb === 0) continue;
-    splatClass(field, c, job, wb, ext, log2MaxDOf);
+    splatClass(c, job, wb, ext, log2MaxDOf);
   }
 }
 
-function splatClass(field: CraterField, c: CraterClass, job: BandRasterJob, wb: number, ext: number, log2MaxDOf: (i: number) => number): void {
-  const g = job.gatherPoints(c.cell / 2);
-  const list = field.gather(c, g.pts, g.count);
+function splatClass(c: CraterClass, job: BandRasterJob, wb: number, ext: number, log2MaxDOf: (i: number) => number): void {
+  const cells = job.cells(c.cell, c.shellHalf, c.reach);
+  const list: CraterRecord[] = [];
+  for (let k = 0; k < cells.length; k += 3) c.cellCraters(cells[k]!, cells[k + 1]!, cells[k + 2]!, list);
   for (const r of list) {
     const reach = Math.sqrt(r.reach2);
     job.forEachNear(r.cx, r.cy, r.cz, reach, (i, d2) => {
@@ -110,38 +111,26 @@ const smoothFall = (e0: number, e1: number, x: number): number => {
 };
 
 /** Splat accepted rocks of the high band (bumps weighted by the band difference). */
-export function splatRocks(rocks: RockField, job: BandRasterJob, abundance: (x: number, y: number, z: number) => number): void {
+export function splatRocks(rocks: RockField, job: BandRasterJob, abundance: RockAbundance, bound: RockAbundanceBound): void {
   const top = job.log2LambdaLow + 1;
   for (const c of rocks.classes) {
-    // Rock length = 4 D (see RockField.addBumps).
-    if (Math.log2(4 * c.dLo) >= top) continue;
-    if (Math.log2(4 * c.dHi) <= job.log2LambdaN) break;
-    const g = job.gatherPoints(c.cell / 2);
-    const seen = new Set<string>();
-    for (let i = 0; i < g.count; i++) {
-      const bx = Math.floor(g.pts[3 * i]! * c.invCell) | 0;
-      const by = Math.floor(g.pts[3 * i + 1]! * c.invCell) | 0;
-      const bz = Math.floor(g.pts[3 * i + 2]! * c.invCell) | 0;
-      for (let dx = -1; dx <= 1; dx++)
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dz = -1; dz <= 1; dz++) {
-            const key = `${bx + dx},${by + dy},${bz + dz}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            c.cellRocks(bx + dx, by + dy, bz + dz, (rk) => {
-              const log2Len = Math.log2(4 * rk.diameter);
-              const wb = bandDiff(log2Len, job.log2LambdaN, job.log2LambdaLow);
-              if (wb === 0) return;
-              if (rk.accept >= acceptanceRatio(rk.diameter, abundance(rk.cx, rk.cy, rk.cz), rocks.p.kMax)) return;
-              const rad = rk.diameter / 2;
-              const r2 = rad * rad;
-              const hR = rk.heightRatio * rad;
-              job.forEachNear(rk.cx, rk.cy, rk.cz, rad, (si, d2) => {
-                job.out[si] = job.out[si]! + wb * rockBump(d2, r2, hR);
-                if (job.material[si]! < 1) job.material[si] = 1;
-              });
-            });
-          }
+    if (rockLog2Length(c.dLo) >= top) continue;
+    if (rockLog2Length(c.dHi) <= job.log2LambdaN) break;
+    const cells = job.cells(c.cell, c.shellHalf, c.dHi / 2);
+    const list: RockCandidate[] = [];
+    rocks.cellsCandidates(c, cells, list, bound);
+    for (const rk of list) {
+      const log2Len = rockLog2Length(rk.diameter);
+      const wb = bandDiff(log2Len, job.log2LambdaN, job.log2LambdaLow);
+      if (wb === 0) continue;
+      if (rk.accept >= acceptanceRatio(rk.diameter, abundance(rk.cx, rk.cy, rk.cz), rocks.p.kMax)) continue;
+      const rad = rk.diameter / 2;
+      const r2 = rad * rad;
+      const hR = rk.heightRatio * rad;
+      job.forEachNear(rk.cx, rk.cy, rk.cz, rad, (si, d2) => {
+        job.out[si] = job.out[si]! + wb * rockBump(d2, r2, hR);
+        if (job.material[si]! < 1) job.material[si] = 1;
+      });
     }
   }
 }

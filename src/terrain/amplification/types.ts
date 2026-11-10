@@ -41,10 +41,15 @@ export interface BodyServices {
   /** Effective data level E at a datum-sphere point. */
   effectiveLevelAt(x: number, y: number, z: number): number;
   /**
-   * Land-cover class weights at a datum-sphere point at the data scale. Returns false when the body has no
-   * landcover layer. Missing tiles make the current query incomplete (best resident ancestor used).
+   * Land-cover class weights at a datum-sphere point at the data scale into `out`. Returns 0 when the body
+   * has no landcover layer, 1 when the weights come from final data, 2 when tiles were missing (the best
+   * resident ancestor was used and the current query is flagged incomplete).
    */
-  landcoverAt(x: number, y: number, z: number, out: Float64Array): boolean;
+  landcoverAt(x: number, y: number, z: number, out: Float64Array): 0 | 1 | 2;
+  /** Changes whenever any tile of the body becomes resident or is evicted. */
+  dataGeneration(): number;
+  /** Flag the evaluation in progress as having used non-final data. */
+  markIncomplete(): void;
 }
 
 /**
@@ -64,10 +69,10 @@ export interface BandRasterJob {
   out: Float64Array;
   material: Float32Array;
   /**
-   * Positions (xyz triples) covering the tile and its sample margin at no more than `spacing` metres, for
-   * gathering hash cells of features that are splatted.
+   * Hash cells (xyz triples, sorted) of a shell-in-cell feature class (cell size, shell half-thickness) that
+   * can hold a feature of reach `reach` m touching any sample of the tile.
    */
-  gatherPoints(spacing: number): { pts: Float64Array; count: number };
+  cells(cell: number, shellHalf: number, reach: number): Int32Array;
   /** Calls fn(sampleIndex, distance^2) for every sample within `reach` metres of the datum point (x, y, z). */
   forEachNear(x: number, y: number, z: number, reach: number, fn: (i: number, d2: number) => void): void;
 }
@@ -98,6 +103,8 @@ export interface AmplificationModel {
   addBandRaster(job: BandRasterJob): void;
   /** Local rock area fraction at a datum point (0 = none). */
   rockAbundance(x: number, y: number, z: number): number;
+  /** Upper bound of rockAbundance within `extent` m (per axis) of a point; Infinity when unknown. */
+  rockAbundanceBound(x: number, y: number, z: number, extent: number): number;
   /**
    * Bound on |amplification| from components with len > 2^log2Lambda, anywhere the effective level is >=
    * minE (conservative; for tile height ranges).

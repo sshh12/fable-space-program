@@ -232,9 +232,11 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
       const b = get(bodyId);
       const model = b.terrain.model;
       if (!model.rocks) return [];
-      const list = model.rocks.rocksIn(unit(dir), Math.max(0, radius), Math.max(0, minRadius), model.rockAbundance);
+      const d = unit(dir);
+      const r = Math.max(0, radius);
+      const list = model.rocks.rocksIn(d, r, Math.max(0, minRadius), model.rockAbundance, model.rockAbundanceBound);
       const ev = b.terrain.main;
-      return list.map(({ c }) => {
+      return list.map((c) => {
         const inst = toInstance(c, 0);
         ev.setDir(inst.dir.x, inst.dir.y, inst.dir.z);
         inst.baseHeight = ev.height(b.terrain.collisionLog2Lambda, false);

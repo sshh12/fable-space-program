@@ -15,7 +15,8 @@
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
 import { CraterField } from '../craters';
 import { NOISE_MAX } from '../noise';
-import { RockField } from '../rocks';
+import { RockField, rockLog2Length } from '../rocks';
+import { LatticeField } from '../smoothField';
 import { smoothstep01, smootherstep01 } from '../util';
 import { bandOctaves, minOf, multifractalFactor, noiseAmplitude, OctaveStack, param, splatCraters, splatRocks } from './common';
 import type { AmplificationModel, BandRasterJob, ModelContext, PointInfo } from './types';
@@ -66,14 +67,26 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
   const stack = new OctaveStack(def.seed >>> 0, Math.floor(ctx.log2FinestLambda), Math.ceil(log2LambdaDataMax));
   const svc = ctx.services;
 
+  // Rock abundance k: mare background plus fresh crater ejecta. A smooth field (ejecta of craters of at
+  // least rockSourceMinCraterDiameterM), so it is sampled on a lattice and interpolated; it depends only on
+  // the manifest (E) and the crater hash, never on resident data.
+  const abundanceField = new LatticeField(
+    p('rockAbundanceGridM'),
+    R,
+    (x, y, z) => {
+      const E = svc.effectiveLevelAt(x, y, z);
+      const src = craters.rockSource(x, y, z, Math.log2(ctx.lambda0) - E + craterOffset, rockSourceMinD);
+      return kMare + (kFresh - kMare) * src;
+    },
+    null,
+  );
   const rockAbundance = (x: number, y: number, z: number): number => {
     const flat = svc.flattenAt(x, y, z);
     if (flat >= 1) return 0;
-    const E = svc.effectiveLevelAt(x, y, z);
-    const log2MaxD = Math.log2(ctx.lambda0) - E + craterOffset;
-    const src = craters.rockSource(x, y, z, log2MaxD, rockSourceMinD);
-    return (kMare + (kFresh - kMare) * src) * (1 - flat);
+    return abundanceField.at(x, y, z) * (1 - flat);
   };
+  const halfGrid = abundanceField.spacing / 2;
+  const rockAbundanceBound = (x: number, y: number, z: number, extent: number): number => (extent <= halfGrid ? abundanceField.blockMax(x, y, z) : Infinity);
 
   const M = 3;
   return {
@@ -92,7 +105,7 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
     },
 
     maxLengthLog2(log2LambdaData: number): number {
-      return Math.max(log2LambdaData, log2LambdaData + craterOffset, Math.log2(4 * rocks.p.maxDiameter));
+      return Math.max(log2LambdaData, log2LambdaData + craterOffset, rockLog2Length(rocks.p.maxDiameter));
     },
 
     add(px, py, pz, m, o, log2Lambdas, n, out, skipAboveLog2, withRocks): void {
@@ -147,10 +160,11 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
         job.out[i] = job.out[i]! + sum;
       }
       splatCraters(craters, job, (i) => mod[i * M]! + craterOffset);
-      splatRocks(rocks, job, rockAbundance);
+      splatRocks(rocks, job, rockAbundance, rockAbundanceBound);
     },
 
     rockAbundance,
+    rockAbundanceBound,
 
     amplitudeBound(log2Lambda: number, minE: number): number {
       const m0 = Math.log2(ctx.lambda0) - minE;
@@ -177,7 +191,8 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
       for (const c of craters.classes) {
         if (c.log2DLo - log2Lambda > -1 && c.log2DLo - log2Lambda < 1) crater += CraterField.reliefBound(craters.p, c.dHi);
       }
-      const rock = rocks.p.heightRatioMax * (2 ** log2Lambda / 4);
+      // Rocks whose weight changes between lambda and lambda / 2 have D in (lambda / 4, lambda): height <= ratio * D / 2.
+      const rock = rocks.p.heightRatioMax * (2 ** log2Lambda / 2);
       return noise + crater + rock;
     },
   };

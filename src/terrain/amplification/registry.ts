@@ -21,6 +21,7 @@ export const createNoAmplification: AmplificationFactory = () => ({
   material: () => 0,
   addBandRaster: () => undefined,
   rockAbundance: () => 0,
+  rockAbundanceBound: () => 0,
   amplitudeBound: () => 0,
   octaveBound: () => 0,
 });

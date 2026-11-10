@@ -101,14 +101,19 @@ export class BodyTerrain implements EvalBody {
         return this.aux.effectiveLevel();
       },
       landcoverAt: (x, y, z, out) => {
-        if (!this.lcRef) return false;
+        if (!this.lcRef) return 0;
         const l = Math.sqrt(x * x + y * y + z * z);
         const a = this.aux;
         a.setDir(x / l, y / l, z / l);
         a.incomplete = false;
         a.landcoverWeights(this.log2Lambda0 - a.effectiveLevel(), out);
-        if (a.incomplete && this.active) this.active.incomplete = true;
-        return true;
+        if (!a.incomplete) return 1;
+        if (this.active) this.active.incomplete = true;
+        return 2;
+      },
+      dataGeneration: () => this.dataGeneration(),
+      markIncomplete: () => {
+        if (this.active) this.active.incomplete = true;
       },
     };
 

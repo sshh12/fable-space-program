@@ -7,16 +7,17 @@
  * so the number density per unit diameter is n(D; k) = 4 k q e^(-q D) / (pi D^2) per m^2.
  * Classes are octaves of diameter [D_c, 2 D_c). Candidates are placed at the density of the largest k
  * anywhere (kMax) and thinned by n(D; k_local) / n(D; kMax) <= 1 with k_local from the model (fresh crater
- * ejecta on the Moon, land cover on Earth, 0 on a launch pad). Placement uses the radially projected
- * shell-in-cell scheme of craters.ts, so a point query visits the 2 x 2 x 2 nearest cells of each class.
+ * ejecta on the Moon, land cover on Earth, 0 on a launch pad). Placement uses the shell-in-cell hash grid
+ * (shellCells.ts), so a point query visits the 2 x 2 x 2 nearest cells of each class.
  *
  * A rock of diameter D is an ellipsoidal cap: horizontal radius r = D/2, height above its base
- * hR = heightRatio * r, bump(rho) = hR sqrt(1 - (rho/r)^2) for rho < r (see rockBump()).
+ * hR = heightRatio * r, bump(rho) = hR sqrt(1 - (rho/r)^2) for rho < r (rockBump()).
  */
 import { hashToUnit, hashU32 } from '../core/math/hash';
 import type { Vec3 } from '../core/math/vec3';
 import type { RockInstance } from '../core/contracts/terrain';
 import { subSeed } from './noise';
+import { cellLayout, SHELL_ALPHA, shellCellsInCap } from './shellCells';
 import { smootherstep01 } from './util';
 
 export interface RockParams {
@@ -34,8 +35,6 @@ export interface RockParams {
   variants: number;
 }
 
-const SHELL_ALPHA = 0.5;
-const REACH_MARGIN = 1.02;
 const CDF_STEPS = 64;
 
 export const golombekQ = (k: number): number => 1.79 + 0.152 / k;
@@ -47,11 +46,30 @@ export const golombekDensity = (D: number, k: number): number => {
 /** Cumulative fractional area covered by rocks of diameter >= D. */
 export const golombekArea = (D: number, k: number): number => k * Math.exp(-golombekQ(k) * D);
 
-/** Ellipsoidal-cap rock bump height at horizontal distance rho from the rock centre (0 outside). */
+/**
+ * Characteristic length of a rock of diameter D for band limiting: its dominant wavelength, 2 D. With the
+ * band weight smootherstep(log2(len / lambdaMin)) a rock is fully present for D >= lambdaMin and absent for
+ * D <= lambdaMin / 2; at the collision band (~0.3 m) every collidable rock (D >= 0.3 m) has weight >= 0.99.
+ */
+export const rockLog2Length = (D: number): number => Math.log2(2 * D);
+
+/** Ellipsoidal-cap rock bump height at squared horizontal distance rho2 from the centre (0 outside r). */
 export function rockBump(rho2: number, r2: number, hR: number): number {
   if (rho2 >= r2) return 0;
   return hR * Math.sqrt(1 - rho2 / r2);
 }
+
+/** Thinning probability n(D; k) / n(D; kMax). */
+export function acceptanceRatio(D: number, k: number, kMax: number): number {
+  if (!(k > 0)) return 0;
+  if (k >= kMax) return 1;
+  const ql = golombekQ(k);
+  const qm = golombekQ(kMax);
+  return ((k * ql) / (kMax * qm)) * Math.exp(-(ql - qm) * D);
+}
+
+/** Local rock area fraction k at a point on the datum sphere (model-specific; 0 = no rocks). */
+export type RockAbundance = (x: number, y: number, z: number) => number;
 
 /** A rock candidate (before thinning). */
 export interface RockCandidate {
@@ -65,6 +83,8 @@ export interface RockCandidate {
   variant: number;
   seed: number;
 }
+
+const STRIDE = 8;
 
 export class RockClass {
   readonly dLo: number;
@@ -82,7 +102,9 @@ export class RockClass {
   private bx = 0x7fffffff;
   private by = 0;
   private bz = 0;
-  readonly block: RockCandidate[] = [];
+  /** Block cache: count and records [cx, cy, cz, D, heightRatio, accept, variant, seed]. */
+  count = 0;
+  readonly rec: Float64Array;
 
   constructor(
     readonly k: number,
@@ -90,11 +112,7 @@ export class RockClass {
   ) {
     this.dLo = p.minDiameter * 2 ** k;
     this.dHi = this.dLo * 2;
-    const reach = this.dHi / 2;
-    this.cell = (2 * REACH_MARGIN * reach) / Math.sqrt(1 - REACH_MARGIN * REACH_MARGIN * SHELL_ALPHA * SHELL_ALPHA);
-    this.invCell = 1 / this.cell;
-    this.shellHalf = (SHELL_ALPHA * this.cell) / 2;
-    // Integrate n(D; kMax) over the class (trapezoid on a fine grid) and keep the CDF for sampling.
+    // Integrate n(D; kMax) over the class (trapezoid) and keep the CDF for sampling diameters.
     let acc = 0;
     this.cdfD[0] = this.dLo;
     this.cdfF[0] = 0;
@@ -107,10 +125,14 @@ export class RockClass {
     }
     this.densityMax = acc;
     for (let i = 0; i <= CDF_STEPS; i++) this.cdfF[i] = this.cdfF[i]! / acc;
-    const perCell = (acc * this.cell * this.cell) / SHELL_ALPHA;
-    this.slots = Math.max(1, Math.ceil(perCell));
-    this.pSlot = perCell / this.slots;
+    const lay = cellLayout(acc, this.dHi / 2);
+    this.cell = lay.cell;
+    this.slots = lay.slots;
+    this.pSlot = lay.pSlot;
+    this.invCell = 1 / this.cell;
+    this.shellHalf = (SHELL_ALPHA * this.cell) / 2;
     this.hs = hashU32(subSeed(p.seed ^ 0x5bd1e995, k));
+    this.rec = new Float64Array(8 * this.slots * STRIDE);
   }
 
   private sampleDiameter(u: number): number {
@@ -127,64 +149,78 @@ export class RockClass {
     return this.cdfD[lo]! + t * (this.cdfD[hi]! - this.cdfD[lo]!);
   }
 
-  /** Candidates of one cell in slot order (shell-accepted, not yet thinned). */
-  cellRocks(ix: number, iy: number, iz: number, sink: (c: RockCandidate) => void): void {
-    const hc = hashU32((iz ^ hashU32((iy ^ hashU32((ix ^ this.hs) >>> 0)) >>> 0)) >>> 0);
+  private cellHash(ix: number, iy: number, iz: number): number {
+    return hashU32((iz ^ hashU32((iy ^ hashU32((ix ^ this.hs) >>> 0)) >>> 0)) >>> 0);
+  }
+
+  /**
+   * Decode slot m of a cell into out[o..o+STRIDE); false when absent, outside the shell, or when its
+   * acceptance draw is >= acceptMax (callers that know an upper bound of the thinning ratio reject early).
+   */
+  private decode(hc: number, m: number, ix: number, iy: number, iz: number, out: Float64Array, o: number, acceptMax = 1): boolean {
+    const hm = hashU32((hc + Math.imul(m, 0x632be5ab)) >>> 0);
+    if (hashToUnit(hm) >= this.pSlot) return false;
+    if (acceptMax < 1 && hashToUnit(hashU32(hm ^ 0x16)) >= acceptMax) return false;
     const s = this.cell;
+    const x = (ix + hashToUnit(hashU32(hm ^ 0x11))) * s;
+    const y = (iy + hashToUnit(hashU32(hm ^ 0x12))) * s;
+    const z = (iz + hashToUnit(hashU32(hm ^ 0x13))) * s;
+    const len = Math.sqrt(x * x + y * y + z * z);
     const R = this.p.radius;
+    if (Math.abs(len - R) >= this.shellHalf) return false;
+    const f = R / len;
+    out[o] = x * f;
+    out[o + 1] = y * f;
+    out[o + 2] = z * f;
+    out[o + 3] = this.sampleDiameter(hashToUnit(hashU32(hm ^ 0x14)));
+    out[o + 4] = this.p.heightRatioMin + (this.p.heightRatioMax - this.p.heightRatioMin) * hashToUnit(hashU32(hm ^ 0x15));
+    out[o + 5] = hashToUnit(hashU32(hm ^ 0x16));
+    out[o + 6] = hashU32(hm ^ 0x17) % this.p.variants;
+    out[o + 7] = hashU32(hm ^ 0x18);
+    return true;
+  }
+
+  private readonly scratch = new Float64Array(STRIDE);
+
+  /**
+   * Candidates of one cell in slot order (object form; rocksNear and splatting). `kBound` = an upper bound of
+   * the local abundance wherever these candidates can be accepted: candidates that thinning must reject even
+   * at kBound are skipped without decoding.
+   */
+  cellRocks(ix: number, iy: number, iz: number, out: RockCandidate[], kBound = Infinity): void {
+    const hc = this.cellHash(ix, iy, iz);
+    const t = this.scratch;
+    const acceptMax = kBound >= this.p.kMax ? 1 : acceptanceRatio(this.dLo, kBound, this.p.kMax);
+    if (acceptMax <= 0) return;
     for (let m = 0; m < this.slots; m++) {
-      const hm = hashU32((hc + Math.imul(m, 0x632be5ab)) >>> 0);
-      if (hashToUnit(hm) >= this.pSlot) continue;
-      const x = (ix + hashToUnit(hashU32(hm ^ 0x11))) * s;
-      const y = (iy + hashToUnit(hashU32(hm ^ 0x12))) * s;
-      const z = (iz + hashToUnit(hashU32(hm ^ 0x13))) * s;
-      const len = Math.sqrt(x * x + y * y + z * z);
-      if (Math.abs(len - R) >= this.shellHalf) continue;
-      const f = R / len;
-      const h5 = hashU32(hm ^ 0x15);
-      sink({
-        cx: x * f,
-        cy: y * f,
-        cz: z * f,
-        diameter: this.sampleDiameter(hashToUnit(hashU32(hm ^ 0x14))),
-        heightRatio: this.p.heightRatioMin + (this.p.heightRatioMax - this.p.heightRatioMin) * hashToUnit(h5),
-        accept: hashToUnit(hashU32(hm ^ 0x16)),
-        variant: hashU32(hm ^ 0x17) % this.p.variants,
-        seed: hashU32(hm ^ 0x18),
-      });
+      if (!this.decode(hc, m, ix, iy, iz, t, 0, acceptMax)) continue;
+      out.push({ cx: t[0]!, cy: t[1]!, cz: t[2]!, diameter: t[3]!, heightRatio: t[4]!, accept: t[5]!, variant: t[6]!, seed: t[7]! });
     }
   }
 
-  /** The candidates of the 2 x 2 x 2 cells nearest P (memoised per block). */
-  nearBlock(px: number, py: number, pz: number): RockCandidate[] {
+  /** Fill the block cache with the candidates of the 2 x 2 x 2 cells nearest P. */
+  nearBlock(px: number, py: number, pz: number): void {
     const bx = Math.floor(px * this.invCell - 0.5) | 0;
     const by = Math.floor(py * this.invCell - 0.5) | 0;
     const bz = Math.floor(pz * this.invCell - 0.5) | 0;
-    if (bx !== this.bx || by !== this.by || bz !== this.bz) {
-      this.bx = bx;
-      this.by = by;
-      this.bz = bz;
-      this.block.length = 0;
-      const sink = (c: RockCandidate): void => {
-        this.block.push(c);
-      };
-      for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) for (let dz = 0; dz < 2; dz++) this.cellRocks(bx + dx, by + dy, bz + dz, sink);
+    if (bx === this.bx && by === this.by && bz === this.bz) return;
+    this.bx = bx;
+    this.by = by;
+    this.bz = bz;
+    let count = 0;
+    for (let dx = 0; dx < 2; dx++) {
+      const hx = hashU32(((bx + dx) ^ this.hs) >>> 0);
+      for (let dy = 0; dy < 2; dy++) {
+        const hy = hashU32(((by + dy) ^ hx) >>> 0);
+        for (let dz = 0; dz < 2; dz++) {
+          const hc = hashU32(((bz + dz) ^ hy) >>> 0);
+          for (let m = 0; m < this.slots; m++) if (this.decode(hc, m, bx + dx, by + dy, bz + dz, this.rec, count * STRIDE)) count++;
+        }
+      }
     }
-    return this.block;
+    this.count = count;
   }
 }
-
-/** Thinning probability n(D; k) / n(D; kMax). */
-export function acceptanceRatio(D: number, k: number, kMax: number): number {
-  if (!(k > 0)) return 0;
-  if (k >= kMax) return 1;
-  const ql = golombekQ(k);
-  const qm = golombekQ(kMax);
-  return ((k * ql) / (kMax * qm)) * Math.exp(-(ql - qm) * D);
-}
-
-/** Local rock area fraction k at a point on the datum sphere (model-specific; 0 = no rocks). */
-export type RockAbundance = (x: number, y: number, z: number) => number;
 
 export class RockField {
   /** Classes coarse to fine. */
@@ -201,32 +237,32 @@ export class RockField {
 
   /**
    * Add the bumps of collidable rocks at P (on the datum sphere) to out[b] for each band limit: rock weight
-   * smootherstep(log2(4 D) - log2 lambda) (full for D >= lambda / 2). Rocks with log2(4 D) >= skipAboveLog2
-   * are omitted. `scale` multiplies every bump (1 - launch-pad flattening at P).
+   * smootherstep(rockLog2Length(D) - log2 lambda). Rocks with rockLog2Length(D) >= skipAboveLog2 are omitted.
    */
   addBumps(px: number, py: number, pz: number, log2Lambdas: Float64Array, n: number, out: Float64Array, skipAboveLog2: number, abundance: RockAbundance): void {
     const minD = this.p.collisionMinDiameter;
     for (const c of this.classes) {
       if (c.dHi < minD) break;
       let any = false;
-      const l4 = Math.log2(4 * c.dHi);
+      const l4 = rockLog2Length(c.dHi);
       for (let b = 0; b < n; b++) if (l4 > log2Lambdas[b]!) any = true;
       if (!any) break;
-      const block = c.nearBlock(px, py, pz);
-      for (let i = 0; i < block.length; i++) {
-        const r = block[i]!;
-        if (r.diameter < minD) continue;
-        const rad = r.diameter / 2;
-        const dx = px - r.cx;
-        const dy = py - r.cy;
-        const dz = pz - r.cz;
+      c.nearBlock(px, py, pz);
+      const rec = c.rec;
+      for (let i = 0, o = 0; i < c.count; i++, o += STRIDE) {
+        const D = rec[o + 3]!;
+        if (D < minD) continue;
+        const rad = D / 2;
+        const dx = px - rec[o]!;
+        const dy = py - rec[o + 1]!;
+        const dz = pz - rec[o + 2]!;
         const d2 = dx * dx + dy * dy + dz * dz;
         const r2 = rad * rad;
         if (d2 >= r2) continue;
-        const log2Len = Math.log2(4 * r.diameter);
+        const log2Len = rockLog2Length(D);
         if (log2Len >= skipAboveLog2) continue;
-        if (r.accept >= acceptanceRatio(r.diameter, abundance(r.cx, r.cy, r.cz), this.p.kMax)) continue;
-        const h = rockBump(d2, r2, r.heightRatio * rad);
+        if (rec[o + 5]! >= acceptanceRatio(D, abundance(rec[o]!, rec[o + 1]!, rec[o + 2]!), this.p.kMax)) continue;
+        const h = rockBump(d2, r2, rec[o + 4]! * rad);
         for (let b = 0; b < n; b++) out[b] = out[b]! + smootherstep01(log2Len - log2Lambdas[b]!) * h;
       }
     }
@@ -234,102 +270,58 @@ export class RockField {
 
   /**
    * Accepted rocks with diameter >= 2 minRadius whose centre lies within `radius` m of the surface point
-   * `centre` (unit dir), in canonical order (class coarse to fine, then cell, then slot). Cells are enumerated
-   * exactly: every cell whose shell slab can hold a candidate inside the cap.
+   * `centre` (unit dir), in canonical order (class coarse to fine, then cell, then slot).
    */
-  rocksIn(centre: Vec3, radius: number, minRadius: number, abundance: RockAbundance): { c: RockCandidate; cls: RockClass }[] {
-    const out: { c: RockCandidate; cls: RockClass }[] = [];
+  rocksIn(centre: Vec3, radius: number, minRadius: number, abundance: RockAbundance, bound: RockAbundanceBound): RockCandidate[] {
+    const out: RockCandidate[] = [];
     const R = this.p.radius;
     const px = centre.x * R;
     const py = centre.y * R;
     const pz = centre.z * R;
     const r2 = radius * radius;
+    const list: RockCandidate[] = [];
     for (const cls of this.classes) {
       if (cls.dHi / 2 < minRadius) break;
-      const cells = shellCellsInCap(centre, radius, R, cls.cell, cls.shellHalf);
-      for (let i = 0; i < cells.length; i += 3) {
-        cls.cellRocks(cells[i]!, cells[i + 1]!, cells[i + 2]!, (c) => {
-          if (c.diameter / 2 < minRadius) return;
-          const dx = c.cx - px;
-          const dy = c.cy - py;
-          const dz = c.cz - pz;
-          if (dx * dx + dy * dy + dz * dz > r2) return;
-          if (c.accept >= acceptanceRatio(c.diameter, abundance(c.cx, c.cy, c.cz), this.p.kMax)) return;
-          out.push({ c, cls });
-        });
+      list.length = 0;
+      this.cellsCandidates(cls, shellCellsInCap(centre, radius, R, cls.cell, cls.shellHalf), list, bound);
+      for (const c of list) {
+        if (c.diameter / 2 < minRadius) continue;
+        const dx = c.cx - px;
+        const dy = c.cy - py;
+        const dz = c.cz - pz;
+        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        if (c.accept >= acceptanceRatio(c.diameter, abundance(c.cx, c.cy, c.cz), this.p.kMax)) continue;
+        out.push(c);
       }
     }
     return out;
   }
+
+  /**
+   * Candidates of the given cells (xyz triples) that thinning could accept: for each cell an upper bound of
+   * the abundance around it (bound(x, y, z, extent) with extent = the farthest a candidate of the cell can lie
+   * from the cell centre per axis) rejects hopeless candidates before they are decoded. Same survivors, in
+   * the same order, as decoding every candidate and thinning exactly.
+   */
+  cellsCandidates(cls: RockClass, cells: Int32Array, out: RockCandidate[], bound: RockAbundanceBound): void {
+    const s = cls.cell;
+    const extent = s / 2 + cls.shellHalf;
+    for (let i = 0; i < cells.length; i += 3) {
+      const ix = cells[i]!;
+      const iy = cells[i + 1]!;
+      const iz = cells[i + 2]!;
+      const kb = bound((ix + 0.5) * s, (iy + 0.5) * s, (iz + 0.5) * s, extent);
+      if (kb <= 0) continue;
+      cls.cellRocks(ix, iy, iz, out, kb);
+    }
+  }
 }
 
 /**
- * Integer cells (xyz triples, sorted) of size `cell` that intersect the shell R +- shellHalf within angular
- * radius (radius + cell) / R of `centre`. Columns run along the axis most aligned with the centre normal; per
- * column the axis range is bounded from the shell radii at the column corners.
+ * Upper bound of the rock abundance at every point within `extent` m (per axis) of (x, y, z); Infinity when
+ * no bound is known.
  */
-export function shellCellsInCap(centre: Vec3, radius: number, R: number, cell: number, shellHalf: number): Int32Array {
-  const n = [centre.x, centre.y, centre.z];
-  const ax = Math.abs(n[0]!) >= Math.abs(n[1]!) && Math.abs(n[0]!) >= Math.abs(n[2]!) ? 0 : Math.abs(n[1]!) >= Math.abs(n[2]!) ? 1 : 2;
-  const j = (ax + 1) % 3;
-  const k = (ax + 2) % 3;
-  const sign = n[ax]! >= 0 ? 1 : -1;
-  const reach = radius + cell * 2;
-  // Projected extent of the cap onto the (j, k) plane (bounding square, conservative).
-  const cj = n[j]! * R;
-  const ck = n[k]! * R;
-  const j0 = Math.floor((cj - reach) / cell);
-  const j1 = Math.floor((cj + reach) / cell);
-  const k0 = Math.floor((ck - reach) / cell);
-  const k1 = Math.floor((ck + reach) / cell);
-  const rIn = R - shellHalf;
-  const rOut = R + shellHalf;
-  // Columns whose centre point on the sphere lies farther than this angle from the cap centre cannot hold
-  // a candidate inside the cap (column half-diagonal on the sphere <= sqrt(3/2) cell for |n_ax| >= 1/sqrt(3)).
-  const maxAngle = (reach + 1.25 * cell + shellHalf) / R;
-  const cells: number[] = [];
-  for (let a = j0; a <= j1; a++) {
-    for (let b = k0; b <= k1; b++) {
-      const xj0 = a * cell;
-      const xj1 = xj0 + cell;
-      const xk0 = b * cell;
-      const xk1 = xk0 + cell;
-      // Range of the in-plane radius over the column square.
-      const nj = xj0 > 0 ? xj0 : xj1 < 0 ? -xj1 : 0;
-      const nk = xk0 > 0 ? xk0 : xk1 < 0 ? -xk1 : 0;
-      const fj = Math.max(Math.abs(xj0), Math.abs(xj1));
-      const fk = Math.max(Math.abs(xk0), Math.abs(xk1));
-      const qMin = nj * nj + nk * nk;
-      const qMax = fj * fj + fk * fk;
-      if (qMin >= rOut * rOut) continue;
-      const hiA = Math.sqrt(rOut * rOut - qMin);
-      const loA = qMax < rIn * rIn ? Math.sqrt(rIn * rIn - qMax) : 0;
-      const mj = (xj0 + xj1) / 2;
-      const mk = (xk0 + xk1) / 2;
-      const ma = Math.sqrt(Math.max(0, R * R - mj * mj - mk * mk));
-      const dotc = Math.max(-1, Math.min(1, (mj * n[j]! + mk * n[k]! + sign * ma * n[ax]!) / R));
-      if (Math.acos(dotc) > maxAngle) continue;
-      const c0 = sign > 0 ? Math.floor(loA / cell) : Math.floor(-hiA / cell);
-      const c1 = sign > 0 ? Math.floor(hiA / cell) : Math.floor(-loA / cell);
-      for (let c = c0; c <= c1; c++) {
-        const v = [0, 0, 0];
-        v[ax] = c;
-        v[j] = a;
-        v[k] = b;
-        cells.push(v[0]!, v[1]!, v[2]!);
-      }
-    }
-  }
-  const idx = Array.from({ length: cells.length / 3 }, (_, i) => i);
-  idx.sort((p, q) => cells[3 * p]! - cells[3 * q]! || cells[3 * p + 1]! - cells[3 * q + 1]! || cells[3 * p + 2]! - cells[3 * q + 2]!);
-  const out = new Int32Array(cells.length);
-  idx.forEach((p, i) => {
-    out[3 * i] = cells[3 * p]!;
-    out[3 * i + 1] = cells[3 * p + 1]!;
-    out[3 * i + 2] = cells[3 * p + 2]!;
-  });
-  return out;
-}
+export type RockAbundanceBound = (x: number, y: number, z: number, extent: number) => number;
 
 /** Convert an accepted candidate into the contract's RockInstance. */
 export function toInstance(c: RockCandidate, baseHeight: number): RockInstance {

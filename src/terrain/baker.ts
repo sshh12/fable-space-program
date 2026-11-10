@@ -28,6 +28,7 @@ import { faceStDir, GEOMETRY_BAND_DIVISOR, GEOMETRY_GRID, NORMAL_BAND_DIVISOR, N
 import { vertexFaceCoord } from './collision';
 import { weightFromMask } from './coverage';
 import { applyDiscs } from './modifiers';
+import { shellCellsInCap } from './shellCells';
 import { smootherstep01, tileNumber } from './util';
 
 export interface GeometryBake {
@@ -196,15 +197,22 @@ export class TileBaker {
     let complete = coarseComplete;
 
     // Texel-centre positions (exact; beyond-face border samples are normalised cube points).
+    const fb = CUBE_FACES[key.face]!;
     for (let j = 0; j < NS; j++) {
       const t = -1 + (2 * (key.y + (j - 0.5) / NORMAL_MAP_SIZE)) / n;
+      const bx = fb.n[0] + t * fb.v[0];
+      const by = fb.n[1] + t * fb.v[1];
+      const bz = fb.n[2] + t * fb.v[2];
       for (let i = 0; i < NS; i++) {
         const s = -1 + (2 * (key.x + (i - 0.5) / NORMAL_MAP_SIZE)) / n;
-        const d = faceStDir(key.face, s, t);
+        const cx = bx + s * fb.u[0];
+        const cy = by + s * fb.u[1];
+        const cz = bz + s * fb.u[2];
+        const k = R / Math.sqrt(cx * cx + cy * cy + cz * cz);
         const o = j * NS + i;
-        this.px[o] = d.x * R;
-        this.py[o] = d.y * R;
-        this.pz[o] = d.z * R;
+        this.px[o] = cx * k;
+        this.py[o] = cy * k;
+        this.pz[o] = cz * k;
       }
     }
 
@@ -410,10 +418,15 @@ export class TileBaker {
       minTexel = Math.min(minTexel, (R * Math.sqrt(1 + t * t) * ds) / q, (R * Math.sqrt(1 + s * s) * ds) / q);
     }
     minTexel *= 0.9;
-    const ts = b.tileSize(key.level);
     const px = this.px;
     const py = this.py;
     const pz = this.pz;
+    // Cap around the tile centre that contains every sample (incl. the 1-texel border).
+    const centre = faceStDir(key.face as FaceId, vertexFaceCoord(key.x, 32, key.level), vertexFaceCoord(key.y, 32, key.level));
+    let capR = 0;
+    for (const o of [0, NS - 1, NSS - NS, NSS - 1]) {
+      capR = Math.max(capR, Math.hypot(px[o]! - centre.x * R, py[o]! - centre.y * R, pz[o]! - centre.z * R));
+    }
     return {
       count: NSS,
       px,
@@ -424,23 +437,8 @@ export class TileBaker {
       log2LambdaLow: log2Low,
       out: this.band,
       material,
-      gatherPoints(spacing: number) {
-        const margin = 4 / NORMAL_MAP_SIZE;
-        const span = 1 + 2 * margin;
-        const m = Math.max(2, Math.ceil((span * ts * 1.4) / spacing) + 1);
-        const pts = new Float64Array(m * m * 3);
-        let c = 0;
-        for (let j = 0; j < m; j++) {
-          const t = -1 + (2 * (key.y - margin + (span * j) / (m - 1))) / n;
-          for (let i = 0; i < m; i++) {
-            const s = -1 + (2 * (key.x - margin + (span * i) / (m - 1))) / n;
-            const d = faceStDir(key.face as FaceId, s, t);
-            pts[c++] = d.x * R;
-            pts[c++] = d.y * R;
-            pts[c++] = d.z * R;
-          }
-        }
-        return { pts, count: m * m };
+      cells(cell: number, shellHalf: number, reach: number): Int32Array {
+        return shellCellsInCap(centre, capR * 1.01 + reach, R, cell, shellHalf);
       },
       forEachNear(x: number, y: number, z: number, reach: number, fn: (i: number, d2: number) => void) {
         const dn = x * f.n[0] + y * f.n[1] + z * f.n[2];

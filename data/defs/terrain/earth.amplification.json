@@ -20,6 +20,7 @@
     "rockHeightRatioMin": 0.35,
     "rockHeightRatioMax": 0.75,
     "rockVariants": 6,
+    "rockAbundanceGridM": 10,
 
     "slope1m.unknown": 0.1,
     "slope1m.water": 0.03,

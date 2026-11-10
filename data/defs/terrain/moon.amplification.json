@@ -22,6 +22,7 @@
     "rockAreaFractionMare": 0.02,
     "rockAreaFractionFreshEjecta": 0.25,
     "rockSourceMinCraterDiameterM": 20,
+    "rockAbundanceGridM": 10,
     "rockMinDiameterM": 0.1,
     "rockMaxDiameterM": 4,
     "rockCollisionMinDiameterM": 0.3,

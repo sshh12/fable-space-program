@@ -19,7 +19,8 @@ import type { TerrainAmplificationDef } from '../../core/contracts/defs';
 import { LANDCOVER_CLASS, type LandcoverClassName } from '../../core/contracts/terrain';
 import { hashToUnit, hashU32 } from '../../core/math/hash';
 import { GradientNoise3, NOISE_MAX, NOISE_MEAN_ABS, subSeed } from '../noise';
-import { RockField } from '../rocks';
+import { RockField, rockLog2Length } from '../rocks';
+import { LatticeField } from '../smoothField';
 import { smoothstep01, smootherstep01 } from '../util';
 import { bandDiff, bandOctaves, minOf, multifractalFactor, noiseAmplitude, OctaveStack, param, splatRocks } from './common';
 import type { AmplificationModel, BandRasterJob, ModelContext, PointInfo } from './types';
@@ -157,18 +158,33 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
         })
       : null;
 
+  // Rock abundance k from land cover, a smooth field sampled on a lattice (land-cover texels are 9.5 m or
+  // coarser); nodes computed while land-cover tiles were missing are provisional (smoothField.ts).
   const lc = new Float64Array(LANDCOVER_CLASS_COUNT);
+  let lcIncomplete = false;
+  const abundanceField = new LatticeField(
+    p('rockAbundanceGridM'),
+    R,
+    (x, y, z) => {
+      const r = svc.landcoverAt(x, y, z, lc);
+      lcIncomplete = r === 2;
+      if (r === 0) {
+        lc.fill(0);
+        lc[LANDCOVER_CLASS.unknown] = 1;
+      }
+      let k = 0;
+      for (let c = 0; c < LANDCOVER_CLASS_COUNT; c++) k += lc[c]! * rockK[c]!;
+      return k;
+    },
+    { generation: () => svc.dataGeneration(), lastRawIncomplete: () => lcIncomplete, onIncompleteUse: () => svc.markIncomplete() },
+  );
   const rockAbundance = (x: number, y: number, z: number): number => {
     const flat = svc.flattenAt(x, y, z);
     if (flat >= 1) return 0;
-    if (!svc.landcoverAt(x, y, z, lc)) {
-      lc.fill(0);
-      lc[LANDCOVER_CLASS.unknown] = 1;
-    }
-    let k = 0;
-    for (let c = 0; c < LANDCOVER_CLASS_COUNT; c++) k += lc[c]! * rockK[c]!;
-    return k * (1 - flat);
+    return abundanceField.at(x, y, z) * (1 - flat);
   };
+  const halfGrid = abundanceField.spacing / 2;
+  const rockAbundanceBound = (x: number, y: number, z: number, extent: number): number => (extent <= halfGrid ? abundanceField.blockMax(x, y, z) : Infinity);
 
   const M = 7;
   return {
@@ -207,7 +223,7 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
     },
 
     maxLengthLog2(log2LambdaData: number): number {
-      return Math.max(log2LambdaData, rocks ? Math.log2(4 * rocks.p.maxDiameter) : -Infinity);
+      return Math.max(log2LambdaData, rocks ? rockLog2Length(rocks.p.maxDiameter) : -Infinity);
     },
 
     add(px, py, pz, m, o, log2Lambdas, n, out, skipAboveLog2, withRocks): void {
@@ -291,10 +307,11 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
         if (wRip !== 0 && mod[o + 4]! > 0) sum += wRip * smootherstep01(m0 - log2RippleL) * mod[o + 4]! * rippleA * ripples.value(px, py, pz);
         job.out[i] = job.out[i]! + sum;
       }
-      if (rocks) splatRocks(rocks, job, rockAbundance);
+      if (rocks) splatRocks(rocks, job, rockAbundance, rockAbundanceBound);
     },
 
     rockAbundance,
+    rockAbundanceBound,
 
     amplitudeBound(log2Lambda: number, minE: number): number {
       const m0 = Math.log2(ctx.lambda0) - minE;
@@ -317,7 +334,8 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
       let b = Math.max(noiseAmplitude(s, j1, H), noiseAmplitude(s, j1 - 1, H)) * NOISE_MAX;
       if (Math.abs(log2DuneL - log2Lambda) < 1) b += 1.3 * duneA * m[o + 5]!;
       if (Math.abs(log2RippleL - log2Lambda) < 1) b += 1.3 * rippleA * m[o + 4]!;
-      if (rocks) b += rocks.p.heightRatioMax * (2 ** log2Lambda / 4);
+      // Rocks whose weight changes between lambda and lambda / 2 have D in (lambda / 4, lambda): height <= ratio * D / 2.
+      if (rocks) b += rocks.p.heightRatioMax * (2 ** log2Lambda / 2);
       return b;
     },
   };

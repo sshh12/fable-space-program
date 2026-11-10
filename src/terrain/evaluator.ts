@@ -118,6 +118,9 @@ export class HeightEvaluator {
       this.idxStamp.fill(0);
       this.hStamp.fill(0);
       this.hSmpStamp.fill(0);
+      this.eStamp = 0;
+      this.dsStamp = 0;
+      this.modStamp = 0;
     }
     this.covDone = -1;
     this.covEnd = false;
@@ -554,10 +557,13 @@ export class HeightEvaluator {
 
   // ---------------------------------------------------------------------------------------- full height
 
-  /** Fill this.mod with the model modulators at the point (lambda-independent). */
+  private modStamp = 0;
+
+  /** Fill this.mod with the model modulators at the point (lambda-independent; computed once per point). */
   modulators(): void {
     const b = this.body;
-    if (b.model.modulatorCount === 0) return;
+    if (b.model.modulatorCount === 0 || this.modStamp === this.stamp) return;
+    this.modStamp = this.stamp;
     const E = this.effectiveLevel();
     this.dataScale();
     const pt = this.pt;
