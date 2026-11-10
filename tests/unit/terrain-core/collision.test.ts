@@ -124,6 +124,75 @@ describe('collision surface', () => {
     console.log(`[collision] prewarm 30 m: ${a.length} calls of 2000 vertices, remaining ${a.slice(0, 4).join(', ')} ... 0`);
   });
 
+  it('prewarmCollision with a moving centre: work per call follows maxVertices (job reused, built lazily)', async () => {
+    const work: Record<number, number> = {};
+    for (const mv of [1, 50, 200]) {
+      const p = (await fixtureProvider({ bodies: ['moon'] })).tp;
+      const c = FIXTURE_POINTS.moonGlobal;
+      await p.ensureLoaded('moon', c, 300, 'pw');
+      const w0 = p.diagnostics().prewarmWork['moon']!;
+      const times: number[] = [];
+      const N = 400;
+      for (let k = 0; k < N; k++) {
+        // The predicted touchdown point drifts 5.4 cm per call.
+        const d = offset(c, 0.05 * k, 0.02 * k, MOON_R);
+        const e0 = p.diagnostics().vertexEvaluations['moon']!;
+        const t0 = performance.now();
+        const r = p.prewarmCollision('moon', d, 30, mv);
+        times.push(performance.now() - t0);
+        expect(p.diagnostics().vertexEvaluations['moon']! - e0).toBeLessThanOrEqual(mv);
+        expect(r).toBeGreaterThanOrEqual(0);
+        const job = p.diagnostics().prewarm['moon']!;
+        expect(job.clamped).toBe(false);
+        expect(job.radius).toBeLessThanOrEqual(30 * 1.1 + 1e-9);
+      }
+      work[mv] = (p.diagnostics().prewarmWork['moon']! - w0) / N;
+      times.sort((a, b) => a - b);
+      console.log(`[collision] prewarm, centre moving 5 cm/call, ${mv} vertices/call: ${work[mv]!.toFixed(0)} work units/call, median ${(times[N >> 1]! * 1000).toFixed(0)} us, p99 ${(times[Math.floor(N * 0.99)]! * 1000).toFixed(0)} us`);
+      // Amortised bookkeeping (vertex slots scanned or sorted, heap steps, tiles visited) is a constant plus a
+      // bounded multiple of the budget: no O(disc) work per call.
+      expect(work[mv]!).toBeLessThan(1000 + 30 * mv);
+      if (process.env['TERRAIN_PERF'] === '1' && mv === 1) expect(times[N >> 1]!).toBeLessThan(0.1);
+    }
+  }, 120_000);
+
+  it('prewarmCollision clamps a radius larger than the collision memo can hold instead of throwing', async () => {
+    const p = (await fixtureProvider({ bodies: ['moon'], collisionCacheTiles: 64 })).tp;
+    const c = FIXTURE_POINTS.moonGlobal;
+    await p.ensureLoaded('moon', c, 200, 'pw');
+    let r = p.prewarmCollision('moon', c, 150, 0);
+    const job = p.diagnostics().prewarm['moon']!;
+    expect(job.clamped).toBe(true);
+    expect(job.radius).toBeGreaterThan(20);
+    expect(job.radius).toBeLessThan(150);
+    for (let k = 0; k < 200 && r > 0; k++) r = p.prewarmCollision('moon', c, 150, 5000);
+    expect(r).toBe(0);
+    const before = p.diagnostics().vertexEvaluations['moon']!;
+    const rng = prng(8);
+    for (let i = 0; i < 200; i++) {
+      const a = rng.range(0, 2 * Math.PI);
+      const d = (job.radius - 0.5) * Math.sqrt(rng.next());
+      p.heightAt('moon', offset(c, d * Math.cos(a), d * Math.sin(a), MOON_R));
+    }
+    expect(p.diagnostics().vertexEvaluations['moon']!).toBe(before);
+  });
+
+  it('the first collision query on a fresh provider after ensureLoaded does not allocate the memo and evaluates at most 4 vertices', async () => {
+    const p = (await fixtureProvider({ bodies: ['moon', 'earth'] })).tp;
+    expect(p.diagnostics().collisionMemoBytes['moon']).toBe(0);
+    const c = offset(FIXTURE_POINTS.moonDeep, 1234, -567, MOON_R);
+    await p.ensureLoaded('moon', c, 50, 'td');
+    // The memo slab is allocated by ensureLoaded (async), not by the first contact.
+    expect(p.diagnostics().collisionMemoBytes['moon']).toBeGreaterThan(0);
+    expect(p.diagnostics().collisionMemoBytes['earth']).toBe(0);
+    const t0 = performance.now();
+    p.heightAt('moon', c);
+    const dt = performance.now() - t0;
+    expect(p.diagnostics().vertexEvaluations['moon']).toBeLessThanOrEqual(4);
+    console.log(`[collision] first query on a fresh provider: ${(dt * 1000).toFixed(0)} us`);
+    if (process.env['TERRAIN_PERF'] === '1') expect(dt).toBeLessThan(0.2);
+  });
+
   it('prewarm evaluates the nearest vertices first', async () => {
     const p = (await fixtureProvider({ bodies: ['moon'] })).tp;
     const c = FIXTURE_POINTS.moonDeep;

@@ -2,18 +2,22 @@
  * TerrainBaker: tile products for the renderer's workers, computed from the same height function the
  * physics uses (pure, worker-safe; data must have been made resident with prepareTile first).
  *
- * Geometry: 65 x 65 vertices at the tile's vertex grid, band limit tileSize/32 (2 quads), via exactly the
- * per-vertex evaluation of the collision surface, so at maxRenderLevel the result IS the collision surface.
+ * Coarse grid: 69 x 69 points at the geometry vertex spacing (4 texels, 2 vertices of margin), each a full
+ * point evaluation: heights at the geometry band tileSize/32 (the 65 x 65 interior IS the geometry, exactly the
+ * per-vertex evaluation of the collision surface, so at maxRenderLevel the result IS the collision surface) and
+ * at the low band tileSize/8, the data chain through level L-4 at the normal band, the model modulators (data
+ * scale capped at the render level) and the coarse material. bakeGeometry computes it and keeps it for a
+ * following bakeNormalMaterial of the same tile while the body's resident data is unchanged (bakeTile does both
+ * at once): geometry + normal map cost one coarse grid.
  *
  * Normal/material map: 256 x 256 cell-registered texels (texel (i, j) centre at u = (i + 0.5)/256), band
  * limit tileSize/128 (2 texels). The height grid over the texel centres plus a 1-texel border is
  *   H = interp(coarse) + per-sample high band,
- * coarse: a 69 x 69 grid at the geometry vertex spacing (4 texels, 2 vertices of margin) evaluated with the
- * full point evaluator at band limit tileSize/16: data chain through level L-3, amplification, modulators,
- * coarse material; bicubic (heights) and bilinear (modulators) interpolation to the texels.
- * high band: data levels L-2..L continued per sample (separable scanline bicubic, coverage weights per
- * sample), and every amplification component whose weight differs between tileSize/128 and tileSize/16
- * (noise octaves per sample, craters and rocks gathered per tile and splatted).
+ * coarse part: components >= 32 texels (bicubic from the 4-texel grid: >= 8 samples per wavelength); data
+ * levels L-3..L continued per sample (separable scanline bicubic, coverage weights per sample); every
+ * amplification component whose weight differs between tileSize/128 and tileSize/8 per sample (noise octaves,
+ * craters and rocks gathered per tile and splatted). Modulators are interpolated only where the model's band
+ * raster reads them.
  * Channels: r, g = 0.5 + 0.5 tanh(slope / slopeScale) of the directional derivatives of H along the unit
  * tangents tU = normalize(dP/du), tV = normalize(dP/dv) (m/m; tU . tV = -s t / sqrt((1 + s^2)(1 + t^2)) on
  * the gnomonic face, so reconstruct the gradient with the dual basis); b = AO from a two-scale concavity
@@ -30,7 +34,7 @@ import { weightFromMask } from './coverage';
 import { applyDiscs } from './modifiers';
 import { seamMaskOfRange } from './seams';
 import { shellCellsInCap } from './shellCells';
-import { smootherstep01, tileNumber } from './util';
+import { POW2, smootherstep01, tileNumber } from './util';
 
 export interface GeometryBake {
   /** 65 x 65 heights (m above the reference radius), row-major, row = v. */
@@ -51,12 +55,40 @@ export interface NormalMaterialBake {
 
 /** Strength of the concavity -> AO mapping of the normal/material map (AO = 1 - AO_GAIN * concavity). */
 export const AO_GAIN = 2;
-/** Band limit of the coarse part of a normal/material bake, as a divisor of the tile size. */
-const LOW_BAND_DIVISOR = 16;
+/** Band limit of the coarse part of a normal/material bake, as a divisor of the tile size (32 texels). */
+const LOW_BAND_DIVISOR = 8;
+/** Data levels above (render level - DATA_SPLIT) are continued per texel. */
+const DATA_SPLIT = 4;
 const CG = 69; // coarse grid samples per side (k = -2 .. 66)
 const CG0 = 2; // index of k = 0
 const NS = NORMAL_MAP_SIZE + 2; // texel centres incl. 1-texel border (i = -1 .. 256)
 const NSS = NS * NS;
+
+/**
+ * Slope encoding byte(x) = round(255 (0.5 + 0.5 tanh x)) through its thresholds: byte >= b iff
+ * x >= atanh((b - 128) / 127.5). A bin table over [-4, 4] (bins narrower than the closest thresholds, 1/127.5
+ * apart near 0) gives the byte at the bin start; one comparison finishes it. Exact, no tanh per texel.
+ */
+const ENC_T = new Float64Array(257);
+const ENC_LO = -4;
+const ENC_HI = 4;
+const ENC_BINS = 4096;
+const ENC_SCALE = ENC_BINS / (ENC_HI - ENC_LO);
+const ENC_BIN = new Uint8Array(ENC_BINS + 1);
+ENC_T[0] = -Infinity;
+ENC_T[256] = Infinity;
+for (let b = 1; b <= 255; b++) ENC_T[b] = Math.atanh((b - 128) / 127.5);
+for (let k = 0, b = 0; k <= ENC_BINS; k++) {
+  const x = ENC_LO + k / ENC_SCALE;
+  while (b < 255 && x >= ENC_T[b + 1]!) b++;
+  ENC_BIN[k] = b;
+}
+function encodeSlope(x: number): number {
+  if (!(x > ENC_LO)) return 0;
+  if (x >= ENC_HI) return 255;
+  const b = ENC_BIN[Math.floor((x - ENC_LO) * ENC_SCALE)]!;
+  return x >= ENC_T[b + 1]! ? b + 1 : b;
+}
 
 export class TileBaker {
   private readonly px = new Float64Array(NSS);
@@ -67,18 +99,20 @@ export class TileBaker {
   private readonly band = new Float64Array(NSS);
   private readonly mat = new Float32Array(NSS);
   private readonly matBand = new Float32Array(NSS);
-  private readonly cav = new Float32Array(NSS);
   private readonly sU = new Float64Array(NORMAL_MAP_SIZE * NORMAL_MAP_SIZE);
   private readonly sV = new Float64Array(NORMAL_MAP_SIZE * NORMAL_MAP_SIZE);
-  private readonly ao = new Float64Array(NORMAL_MAP_SIZE * NORMAL_MAP_SIZE);
   private readonly cgCav = new Float64Array(CG * CG);
   private mod = new Float64Array(0);
-  // coarse grid
+  // coarse grid (valid for coarseKey at coarseGen, see bakeGeometry)
   private readonly cgD = new Float64Array(CG * CG);
   private readonly cgA = new Float64Array(CG * CG);
   private readonly cgH = new Float64Array(CG * CG);
   private readonly cgMat = new Float64Array(CG * CG);
   private cgMod = new Float64Array(0);
+  private readonly m0Only = new Float64Array(1);
+  private coarseKey: TileKey | null = null;
+  private coarseGen = -1;
+  private coarseComplete = false;
   private readonly lam = new Float64Array(2);
   private readonly outs = new Float64Array(2);
   private readonly dOut = new Float64Array(2);
@@ -88,33 +122,10 @@ export class TileBaker {
 
   // -------------------------------------------------------------------------------------------- geometry
 
+  /** Geometry of a tile; also leaves the tile's coarse grid for a following bakeNormalMaterial. */
   bakeGeometry(key: TileKey): GeometryBake {
-    const b = this.body;
-    const ev = b.vertexEval;
-    const log2G = Math.log2(b.tileSize(key.level) / GEOMETRY_BAND_DIVISOR);
     const heights = new Float32Array(GEOMETRY_GRID * GEOMETRY_GRID);
-    let complete = true;
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (let j = 0; j < GEOMETRY_GRID; j++) {
-      const t = vertexFaceCoord(key.y, j, key.level);
-      for (let i = 0; i < GEOMETRY_GRID; i++) {
-        ev.setFaceSt(key.face, vertexFaceCoord(key.x, i, key.level), t);
-        ev.incomplete = false;
-        const h = ev.height(log2G);
-        if (ev.incomplete) complete = false;
-        const f = (heights[j * GEOMETRY_GRID + i] = h);
-        if (f < lo) lo = f;
-        if (f > hi) hi = f;
-      }
-    }
-    return { heights, hMin: lo, hMax: hi, complete };
-  }
-
-  /** Geometry and normal/material map of one tile, sharing the coarse evaluation. */
-  bakeTile(key: TileKey): { geometry: GeometryBake; normalMaterial: NormalMaterialBake } {
-    const heights = new Float32Array(GEOMETRY_GRID * GEOMETRY_GRID);
-    const r = this.coarseGrid(key, heights);
+    const complete = this.coarseGrid(key, heights);
     let lo = Infinity;
     let hi = -Infinity;
     for (let k = 0; k < heights.length; k++) {
@@ -122,22 +133,30 @@ export class TileBaker {
       if (f < lo) lo = f;
       if (f > hi) hi = f;
     }
-    const nm = this.normalFromCoarse(key, r.complete);
-    return { geometry: { heights, hMin: lo, hMax: hi, complete: r.complete }, normalMaterial: nm };
+    return { heights, hMin: lo, hMax: hi, complete };
+  }
+
+  /** Geometry and normal/material map of one tile, sharing the coarse evaluation. */
+  bakeTile(key: TileKey): { geometry: GeometryBake; normalMaterial: NormalMaterialBake } {
+    const geometry = this.bakeGeometry(key);
+    return { geometry, normalMaterial: this.normalFromCoarse(key, geometry.complete) };
   }
 
   bakeNormalMaterial(key: TileKey): NormalMaterialBake {
-    const r = this.coarseGrid(key, null);
-    return this.normalFromCoarse(key, r.complete);
+    const k = this.coarseKey;
+    const reuse = k !== null && k.face === key.face && k.level === key.level && k.x === key.x && k.y === key.y && this.coarseGen === this.body.dataGeneration();
+    const complete = reuse ? this.coarseComplete : this.coarseGrid(key, null);
+    return this.normalFromCoarse(key, complete);
   }
 
   // ---------------------------------------------------------------------------------------- coarse grid
 
   /**
    * Evaluate the 69 x 69 coarse grid; when `geometry` is given, the 65 x 65 interior also yields the geometry
-   * heights (same arithmetic as bakeGeometry / the collision surface).
+   * heights (same arithmetic as the collision surface: any modulator cap at or above the band's level gives the
+   * same heights). Returns whether every tile read was resident and final.
    */
-  private coarseGrid(key: TileKey, geometry: Float32Array | null): { complete: boolean } {
+  private coarseGrid(key: TileKey, geometry: Float32Array | null): boolean {
     const b = this.body;
     const ev = b.vertexEval;
     const M = b.model.modulatorCount;
@@ -146,8 +165,13 @@ export class TileBaker {
     const log2G = Math.log2(ts / GEOMETRY_BAND_DIVISOR);
     const log2Low = Math.log2(ts / LOW_BAND_DIVISOR);
     const log2N = Math.log2(ts / NORMAL_BAND_DIVISOR);
-    const splitLevel = key.level - 3;
+    const splitLevel = Math.max(0, key.level - DATA_SPLIT);
     const matMin = log2Low + 1;
+    // Data-driven modulators are needed where the material reads them or the band raster can reach a
+    // data-modulated component anywhere (data wavelength at most that of the global level); otherwise the
+    // manifest-only modulator 0 is all the normal map reads.
+    const needData = M > 0 && (b.model.materialFromData || (b.model.bandModulators(log2N, log2Low, b.log2Lambda0 - b.g) & ~1) !== 0);
+    const m0Only = this.m0Only;
     let complete = true;
     for (let l = 0; l < CG; l++) {
       const kv = l - CG0;
@@ -173,16 +197,24 @@ export class TileBaker {
           this.cgH[o] = this.outs[0]!;
           this.cgA[o] = this.aOut[0]!;
         }
-        this.cgD[o] = splitLevel >= 0 ? ev.dataChain(log2N, splitLevel) : ev.dataChain(log2N, 0);
-        if (M > 0) {
+        this.cgD[o] = ev.dataChain(log2N, splitLevel);
+        if (needData) {
           ev.modulators(key.level);
           for (let q = 0; q < M; q++) this.cgMod[o * M + q] = ev.mod[q]!;
           this.cgMat[o] = b.model.material(ev.px, ev.py, ev.pz, ev.mod, 0, matMin, Infinity);
+        } else if (M > 0) {
+          const m0 = b.log2Lambda0 - ev.effectiveLevel();
+          this.cgMod[o * M] = m0;
+          m0Only[0] = m0;
+          this.cgMat[o] = b.model.material(ev.px, ev.py, ev.pz, m0Only, 0, matMin, Infinity);
         } else this.cgMat[o] = 0;
         if (ev.incomplete) complete = false;
       }
     }
-    return { complete };
+    this.coarseKey = { face: key.face, level: key.level, x: key.x, y: key.y };
+    this.coarseGen = b.dataGeneration();
+    this.coarseComplete = complete;
+    return complete;
   }
 
   // ---------------------------------------------------------------------------------------- normal map
@@ -192,14 +224,150 @@ export class TileBaker {
     const R = b.radius;
     const M = b.model.modulatorCount;
     if (this.mod.length !== NSS * M) this.mod = new Float64Array(NSS * M);
-    const n = 2 ** key.level;
+    const n = POW2[key.level]!;
     const ts = b.tileSize(key.level);
     const log2N = Math.log2(ts / NORMAL_BAND_DIVISOR);
     const log2Low = Math.log2(ts / LOW_BAND_DIVISOR);
-    const splitLevel = Math.max(0, key.level - 3);
+    const splitLevel = Math.max(0, key.level - DATA_SPLIT);
     let complete = coarseComplete;
 
-    // Texel-centre positions (exact; beyond-face border samples are normalised cube points).
+    // Interpolate the coarse grid: data (chain through the split level) and low-band amplification (bicubic),
+    // coarse material (bilinear), and the modulators the band raster reads (bilinear).
+    interpBicubic(this.cgD, this.dat);
+    interpBicubic(this.cgA, this.hgt);
+    interpBilinear(this.cgMat, this.mat);
+
+    // Data levels above the split, per sample.
+    const top = Math.min(key.level, b.heightCov.maxLevel);
+    if (top > splitLevel) {
+      if (!this.continueData(key, splitLevel, top, log2N)) complete = false;
+    }
+
+    // High band of the amplification.
+    const band = this.band;
+    band.fill(0);
+    const matBand = this.matBand;
+    matBand.fill(0);
+    if (M > 0) {
+      this.positions(key, n, R);
+      // m0 (log2 data wavelength, manifest only) for every sample - constant over most tiles - and the other
+      // modulators only when the model reads them in this band.
+      let m0Min = Infinity;
+      let m0Max = -Infinity;
+      for (let o = 0; o < CG * CG; o++) {
+        const v = this.cgMod[o * M]!;
+        if (v < m0Min) m0Min = v;
+        if (v > m0Max) m0Max = v;
+      }
+      if (m0Min === m0Max) for (let o = 0; o < NSS; o++) this.mod[o * M] = m0Min;
+      else interpBilinearStrided(this.cgMod, M, 0, this.mod);
+      const need = b.model.bandModulators(log2N, log2Low, m0Max);
+      for (let q = 1; q < M; q++) if ((need & (1 << q)) !== 0) interpBilinearStrided(this.cgMod, M, q, this.mod);
+      const job = this.bandJob(key, log2N, log2Low, matBand);
+      const ev = b.vertexEval;
+      const prev = b.active;
+      b.active = ev;
+      ev.incomplete = false;
+      try {
+        b.model.addBandRaster(job);
+      } finally {
+        b.active = prev;
+      }
+      if (ev.incomplete) complete = false;
+    }
+
+    // Total height with modifiers (into hgt), material = max(coarse, band).
+    const H = this.hgt;
+    const dat = this.dat;
+    const mat = this.mat;
+    for (let o = 0; o < NSS; o++) {
+      H[o] = dat[o]! + H[o]! + band[o]!;
+      if (matBand[o]! > mat[o]!) mat[o] = matBand[o]!;
+    }
+    const discs = b.discs;
+    if (discs.length > 0) {
+      if (M === 0) this.positions(key, n, R);
+      const near = discs.filter((d) => discNearTile(d, this.px, this.py, this.pz, R));
+      if (near.length > 0) {
+        for (let o = 0; o < NSS; o++) H[o] = applyDiscs(near, H[o]!, this.px[o]! / R, this.py[o]! / R, this.pz[o]! / R, R);
+      }
+    }
+
+    // Coarse concavity (height above the mean of the 4 coarse neighbours, m), bilinear to texels below.
+    const cgCav = this.cgCav;
+    const cgH = this.cgH;
+    for (let l = 1; l < CG - 1; l++) {
+      for (let k = 1; k < CG - 1; k++) {
+        const o = l * CG + k;
+        const c = cgH[o]!;
+        cgCav[o] = (cgH[o - 1]! + cgH[o + 1]! - 2 * c) / 2 + (cgH[o - CG]! + cgH[o + CG]! - 2 * c) / 2;
+      }
+    }
+
+    // Slopes (and their RMS), AO and material bytes in one pass; slope bytes once the tile's scale is known.
+    const rgba = new Uint8Array(NORMAL_MAP_SIZE * NORMAL_MAP_SIZE * 4);
+    const sU = this.sU;
+    const sV = this.sV;
+    const dsTexel = 2 / (n * NORMAL_MAP_SIZE);
+    const sCol = this.sCol;
+    for (let i = 0; i < NORMAL_MAP_SIZE; i++) {
+      const s = -1 + (2 * (key.x + (i + 0.5) / NORMAL_MAP_SIZE)) / n;
+      sCol[i] = s * s;
+      this.rCol[i] = R * dsTexel * Math.sqrt(1 + s * s);
+    }
+    let sum2 = 0;
+    for (let j = 0; j < NORMAL_MAP_SIZE; j++) {
+      const t = -1 + (2 * (key.y + (j + 0.5) / NORMAL_MAP_SIZE)) / n;
+      const t2 = t * t;
+      const rRow = R * dsTexel * Math.sqrt(1 + t2);
+      const r0 = BL_IDX[j + 1]!;
+      const tv = BL_T[j + 1]!;
+      for (let i = 0; i < NORMAL_MAP_SIZE; i++) {
+        const iq = 1 / (1 + sCol[i]! + t2);
+        const mu = rRow * iq;
+        const mv = this.rCol[i]! * iq;
+        const o = (j + 1) * NS + (i + 1);
+        const h = H[o]!;
+        const hl = H[o - 1]!;
+        const hr = H[o + 1]!;
+        const hd = H[o - NS]!;
+        const hu = H[o + NS]!;
+        const su = (hr - hl) / (2 * mu);
+        const sv = (hu - hd) / (2 * mv);
+        const k = j * NORMAL_MAP_SIZE + i;
+        sU[k] = su;
+        sV[k] = sv;
+        sum2 += su * su + sv * sv;
+        const fine = ((hl + hr) / 2 - h) / mu + ((hd + hu) / 2 - h) / mv;
+        // Coarse neighbours are 4 texels away: bilinear of the coarse concavity.
+        const c0 = BL_IDX[i + 1]!;
+        const tu = BL_T[i + 1]!;
+        const ra = r0 * CG + c0;
+        const ca = cgCav[ra]! + tu * (cgCav[ra + 1]! - cgCav[ra]!);
+        const cb = cgCav[ra + CG]! + tu * (cgCav[ra + CG + 1]! - cgCav[ra + CG]!);
+        const coarse = (ca + tv * (cb - ca)) / (4 * Math.sqrt(mu * mv));
+        const c = fine + coarse;
+        const ao = 1 - Math.min(1, AO_GAIN * (c > 0 ? c : 0));
+        rgba[4 * k + 2] = Math.round(255 * ao);
+        const m = mat[o]!;
+        rgba[4 * k + 3] = Math.round(255 * (m < 0 ? 0 : m > 1 ? 1 : m));
+      }
+    }
+    const rms = Math.sqrt(sum2 / (2 * NORMAL_MAP_SIZE * NORMAL_MAP_SIZE));
+    const slopeScale = Math.min(8, Math.max(0.01, 2 * rms));
+    const inv = 1 / slopeScale;
+    for (let k = 0; k < NORMAL_MAP_SIZE * NORMAL_MAP_SIZE; k++) {
+      rgba[4 * k] = encodeSlope(sU[k]! * inv);
+      rgba[4 * k + 1] = encodeSlope(sV[k]! * inv);
+    }
+    return { rgba, slopeScale, complete };
+  }
+
+  private readonly sCol = new Float64Array(NORMAL_MAP_SIZE);
+  private readonly rCol = new Float64Array(NORMAL_MAP_SIZE);
+
+  /** Texel-centre positions (exact; beyond-face border samples are normalised cube points). */
+  private positions(key: TileKey, n: number, R: number): void {
     const fb = CUBE_FACES[key.face]!;
     for (let j = 0; j < NS; j++) {
       const t = -1 + (2 * (key.y + (j - 0.5) / NORMAL_MAP_SIZE)) / n;
@@ -218,106 +386,6 @@ export class TileBaker {
         this.pz[o] = cz * k;
       }
     }
-
-    // Interpolate the coarse grid: data (chain through the split level), low-band amplification (bicubic),
-    // modulators and coarse material (bilinear).
-    interpBicubic(this.cgD, this.dat);
-    interpBicubic(this.cgA, this.hgt);
-    for (let q = 0; q < M; q++) interpBilinearStrided(this.cgMod, M, q, this.mod);
-    interpBilinear(this.cgMat, this.mat);
-
-    // Data levels above the split, per sample.
-    const top = Math.min(key.level, b.heightCov.maxLevel);
-    if (top > splitLevel) {
-      if (!this.continueData(key, splitLevel, top, log2N)) complete = false;
-    }
-
-    // High band of the amplification.
-    this.band.fill(0);
-    const matBand = this.matBand;
-    matBand.fill(0);
-    if (M > 0) {
-      const job = this.bandJob(key, log2N, log2Low, matBand);
-      const ev = b.vertexEval;
-      const prev = b.active;
-      b.active = ev;
-      ev.incomplete = false;
-      try {
-        b.model.addBandRaster(job);
-      } finally {
-        b.active = prev;
-      }
-      if (ev.incomplete) complete = false;
-    }
-
-    // Total height with modifiers.
-    const H = this.hgt;
-    const discs = b.discs;
-    for (let o = 0; o < NSS; o++) H[o] = this.dat[o]! + H[o]! + this.band[o]!;
-    if (discs.length > 0) {
-      const near = discs.filter((d) => discNearTile(d, this.px, this.py, this.pz, R));
-      if (near.length > 0) {
-        for (let o = 0; o < NSS; o++) H[o] = applyDiscs(near, H[o]!, this.px[o]! / R, this.py[o]! / R, this.pz[o]! / R, R);
-      }
-    }
-    for (let o = 0; o < NSS; o++) if (matBand[o]! > this.mat[o]!) this.mat[o] = matBand[o]!;
-
-    // Coarse concavity (height above the mean of the 4 coarse neighbours, m), then bilinear to texels.
-    const cgCav = this.cgCav;
-    for (let l = 1; l < CG - 1; l++) {
-      for (let k = 1; k < CG - 1; k++) {
-        const o = l * CG + k;
-        const c = this.cgH[o]!;
-        cgCav[o] = (this.cgH[o - 1]! + this.cgH[o + 1]! - 2 * c) / 2 + (this.cgH[o - CG]! + this.cgH[o + CG]! - 2 * c) / 2;
-      }
-    }
-    const cav = this.cav;
-    interpBilinear(cgCav, cav);
-
-    // Slopes, AO, material; encode.
-    const rgba = new Uint8Array(NORMAL_MAP_SIZE * NORMAL_MAP_SIZE * 4);
-    const sU = this.sU;
-    const sV = this.sV;
-    const ao = this.ao;
-    const dsTexel = 2 / (n * NORMAL_MAP_SIZE);
-    let sum2 = 0;
-    for (let j = 0; j < NORMAL_MAP_SIZE; j++) {
-      const t = -1 + (2 * (key.y + (j + 0.5) / NORMAL_MAP_SIZE)) / n;
-      for (let i = 0; i < NORMAL_MAP_SIZE; i++) {
-        const s = -1 + (2 * (key.x + (i + 0.5) / NORMAL_MAP_SIZE)) / n;
-        const q = 1 + s * s + t * t;
-        const mu = (R * Math.sqrt(1 + t * t) * dsTexel) / q;
-        const mv = (R * Math.sqrt(1 + s * s) * dsTexel) / q;
-        const o = (j + 1) * NS + (i + 1);
-        const h = H[o]!;
-        const su = (H[o + 1]! - H[o - 1]!) / (2 * mu);
-        const sv = (H[o + NS]! - H[o - NS]!) / (2 * mv);
-        const k = j * NORMAL_MAP_SIZE + i;
-        sU[k] = su;
-        sV[k] = sv;
-        sum2 += su * su + sv * sv;
-        const fine = ((H[o - 1]! + H[o + 1]!) / 2 - h) / mu + ((H[o - NS]! + H[o + NS]!) / 2 - h) / mv;
-        // Coarse neighbours are 4 texels away.
-        const coarse = cav[o]! / (4 * Math.sqrt(mu * mv));
-        const c = fine + coarse;
-        ao[k] = 1 - Math.min(1, AO_GAIN * (c > 0 ? c : 0));
-      }
-    }
-    const rms = Math.sqrt(sum2 / (2 * NORMAL_MAP_SIZE * NORMAL_MAP_SIZE));
-    const slopeScale = Math.min(8, Math.max(0.01, 2 * rms));
-    const inv = 1 / slopeScale;
-    for (let j = 0; j < NORMAL_MAP_SIZE; j++) {
-      for (let i = 0; i < NORMAL_MAP_SIZE; i++) {
-        const k = j * NORMAL_MAP_SIZE + i;
-        const o = (j + 1) * NS + (i + 1);
-        rgba[4 * k] = Math.round(255 * (0.5 + 0.5 * Math.tanh(sU[k]! * inv)));
-        rgba[4 * k + 1] = Math.round(255 * (0.5 + 0.5 * Math.tanh(sV[k]! * inv)));
-        rgba[4 * k + 2] = Math.round(255 * ao[k]!);
-        const m = this.mat[o]!;
-        rgba[4 * k + 3] = Math.round(255 * (m < 0 ? 0 : m > 1 ? 1 : m));
-      }
-    }
-    return { rgba, slopeScale, complete };
   }
 
   /** Continue the data chain over levels splitLevel+1 .. top per sample (into this.dat). */

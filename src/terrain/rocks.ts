@@ -85,6 +85,8 @@ export interface RockCandidate {
 }
 
 const STRIDE = 8;
+/** Numbers per typed rock record (cellRocksInto): cx, cy, cz, diameter, heightRatio, accept, variant, seed. */
+export const ROCK_STRIDE = STRIDE;
 
 export class RockClass {
   readonly dLo: number;
@@ -187,6 +189,18 @@ export class RockClass {
    * the local abundance wherever these candidates can be accepted: candidates that thinning must reject even
    * at kBound are skipped without decoding.
    */
+  /**
+   * Like cellRocks, appending typed records (ROCK_STRIDE numbers: cx, cy, cz, D, heightRatio, accept, variant,
+   * seed) to `out` from record `count` on; returns the new count. `out` must hold slots more records.
+   */
+  cellRocksInto(ix: number, iy: number, iz: number, out: Float64Array, count: number, kBound = Infinity): number {
+    const hc = this.cellHash(ix, iy, iz);
+    const acceptMax = kBound >= this.p.kMax ? 1 : acceptanceRatio(this.dLo, kBound, this.p.kMax);
+    if (acceptMax <= 0) return count;
+    for (let m = 0; m < this.slots; m++) if (this.decode(hc, m, ix, iy, iz, out, count * STRIDE, acceptMax)) count++;
+    return count;
+  }
+
   cellRocks(ix: number, iy: number, iz: number, out: RockCandidate[], kBound = Infinity): void {
     const hc = this.cellHash(ix, iy, iz);
     const t = this.scratch;

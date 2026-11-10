@@ -3,9 +3,9 @@
  * modulation, and octave stacks of gradient noise with their per-point and band-raster evaluation.
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
-import { profile, type CraterClass, type CraterField, type CraterRecord } from '../craters';
+import { CRATER_O, CRATER_STRIDE, profile, type CraterClass, type CraterField } from '../craters';
 import { GradientNoise3, NOISE_GRAD_RMS, subSeed } from '../noise';
-import { acceptanceRatio, rockBump, rockLog2Length, type RockAbundance, type RockAbundanceBound, type RockCandidate, type RockField } from '../rocks';
+import { acceptanceRatio, ROCK_STRIDE, rockBump, rockLog2Length, type RockAbundance, type RockAbundanceBound, type RockField } from '../rocks';
 import { smootherstep01 } from '../util';
 import type { BandRasterJob } from './types';
 
@@ -86,19 +86,40 @@ export function splatCraters(field: CraterField, job: BandRasterJob, log2MaxDOf:
   }
 }
 
+/** Typed record buffer of the craters gathered for one class (grown on demand, reused). */
+let splatBuf = new Float64Array(CRATER_STRIDE * 512);
+/** Typed record buffer of the rock candidates gathered for one class (grown on demand, reused). */
+let rockBuf = new Float64Array(ROCK_STRIDE * 512);
+
 function splatClass(c: CraterClass, job: BandRasterJob, wb: number, ext: number, log2MaxDOf: (i: number) => number): void {
   const cells = job.cells(c.cell, c.shellHalf, c.reach);
-  const list: CraterRecord[] = [];
-  for (let k = 0; k < cells.length; k += 3) c.cellCraters(cells[k]!, cells[k + 1]!, cells[k + 2]!, list);
-  for (const r of list) {
-    const reach = Math.sqrt(r.reach2);
-    job.forEachNear(r.cx, r.cy, r.cz, reach, (i, d2) => {
-      const wE = smootherstep01(log2MaxDOf(i) - c.log2DHi);
+  let count = 0;
+  for (let k = 0; k < cells.length; k += 3) {
+    if ((count + c.slots) * CRATER_STRIDE > splatBuf.length) {
+      const grown = new Float64Array(Math.max(2 * splatBuf.length, (count + c.slots) * CRATER_STRIDE));
+      grown.set(splatBuf);
+      splatBuf = grown;
+    }
+    count = c.cellCratersInto(cells[k]!, cells[k + 1]!, cells[k + 2]!, splatBuf, count);
+  }
+  const buf = splatBuf;
+  const out = job.out;
+  const material = job.material;
+  const log2DHi = c.log2DHi;
+  for (let r = 0; r < count; r++) {
+    const o = r * CRATER_STRIDE;
+    const invHalfD = buf[o + CRATER_O.invHalfD]!;
+    const depth = buf[o + CRATER_O.depth]!;
+    const rim = buf[o + CRATER_O.rim]!;
+    const rounding = buf[o + CRATER_O.rounding]!;
+    const freshness = buf[o + CRATER_O.freshness]!;
+    job.forEachNear(buf[o + CRATER_O.cx]!, buf[o + CRATER_O.cy]!, buf[o + CRATER_O.cz]!, Math.sqrt(buf[o + CRATER_O.reach2]!), (i, d2) => {
+      const wE = smootherstep01(log2MaxDOf(i) - log2DHi);
       if (wE === 0) return;
-      const rr = Math.sqrt(d2) * r.invHalfD;
-      job.out[i] = job.out[i]! + wb * wE * profile(rr, r.depth, r.rim, r.rounding, ext);
-      const fresh = wE * r.freshness * (1 - smoothFall(1, ext, rr));
-      if (fresh > job.material[i]!) job.material[i] = fresh;
+      const rr = Math.sqrt(d2) * invHalfD;
+      out[i] = out[i]! + wb * wE * profile(rr, depth, rim, rounding, ext);
+      const fresh = wE * freshness * (1 - smoothFall(1, ext, rr));
+      if (fresh > material[i]!) material[i] = fresh;
     });
   }
 }
@@ -123,20 +144,43 @@ export function splatRocks(rocks: RockField, job: BandRasterJob, abundance: Rock
     if (rockLog2Length(c.dLo) >= top) continue;
     if (rockLog2Length(c.dHi) <= job.log2LambdaN) break;
     const cells = job.cells(c.cell, c.shellHalf, c.dHi / 2);
-    const list: RockCandidate[] = [];
-    rocks.cellsCandidates(c, cells, list, bound);
-    for (const rk of list) {
-      if (rk.diameter < minD) continue;
-      const log2Len = rockLog2Length(rk.diameter);
+    // Candidates as typed records (same survivors in the same order as RockField.cellsCandidates).
+    const s = c.cell;
+    const extent = s / 2 + c.shellHalf;
+    let count = 0;
+    for (let i = 0; i < cells.length; i += 3) {
+      const ix = cells[i]!;
+      const iy = cells[i + 1]!;
+      const iz = cells[i + 2]!;
+      const kb = bound((ix + 0.5) * s, (iy + 0.5) * s, (iz + 0.5) * s, extent);
+      if (kb <= 0) continue;
+      if ((count + c.slots) * ROCK_STRIDE > rockBuf.length) {
+        const grown = new Float64Array(Math.max(2 * rockBuf.length, (count + c.slots) * ROCK_STRIDE));
+        grown.set(rockBuf);
+        rockBuf = grown;
+      }
+      count = c.cellRocksInto(ix, iy, iz, rockBuf, count, kb);
+    }
+    const buf = rockBuf;
+    const out = job.out;
+    const material = job.material;
+    for (let r = 0; r < count; r++) {
+      const o = r * ROCK_STRIDE;
+      const D = buf[o + 3]!;
+      if (D < minD) continue;
+      const log2Len = rockLog2Length(D);
       const wb = bandDiff(log2Len, job.log2LambdaN, job.log2LambdaLow);
       if (wb === 0) continue;
-      if (rk.accept >= acceptanceRatio(rk.diameter, abundance(rk.cx, rk.cy, rk.cz), rocks.p.kMax)) continue;
-      const rad = rk.diameter / 2;
+      const cx = buf[o]!;
+      const cy = buf[o + 1]!;
+      const cz = buf[o + 2]!;
+      if (buf[o + 5]! >= acceptanceRatio(D, abundance(cx, cy, cz), rocks.p.kMax)) continue;
+      const rad = D / 2;
       const r2 = rad * rad;
-      const hR = rk.heightRatio * rad;
-      job.forEachNear(rk.cx, rk.cy, rk.cz, rad, (si, d2) => {
-        job.out[si] = job.out[si]! + wb * rockBump(d2, r2, hR);
-        if (job.material[si]! < 1) job.material[si] = 1;
+      const hR = buf[o + 4]! * rad;
+      job.forEachNear(cx, cy, cz, rad, (si, d2) => {
+        out[si] = out[si]! + wb * rockBump(d2, r2, hR);
+        if (material[si]! < 1) material[si] = 1;
       });
     }
   }

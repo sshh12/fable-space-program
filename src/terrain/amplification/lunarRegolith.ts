@@ -13,7 +13,7 @@
  * Modulators: [0] log2 data wavelength, [1] S (RMS slope at 1 m), [2] H.
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
-import { CraterField, type CraterParams } from '../craters';
+import { CRATER_O, CRATER_STRIDE, CraterField, type CraterParams } from '../craters';
 import { NOISE_MAX } from '../noise';
 import { RockField, rockLog2Length } from '../rocks';
 import { LatticeField } from '../smoothField';
@@ -99,6 +99,31 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
   };
   const halfGrid = abundanceField.spacing / 2;
   const rockAbundanceBound = (x: number, y: number, z: number, extent: number): number => (extent <= halfGrid ? abundanceField.blockMax(x, y, z) : Infinity);
+  // Upper bound of the rock abundance anywhere a rock candidate of a baked tile (or the lattice nodes its
+  // abundance interpolates) can lie: k <= kMare + (kFresh - kMare) max(phi^2) over the source craters whose
+  // ejecta can reach that region (rockSource <= phi^2; E and pad weights <= 1). Rock candidates lie within
+  // 3 cells (shellCellsInCap) plus a diameter of the tile, their nodes within sqrt(3) grid of them. Thinning
+  // stays exact (acceptance uses rockAbundance); the bound only skips candidates it would reject.
+  let maxRockCell = 0;
+  for (const c of rocks.classes) maxRockCell = Math.max(maxRockCell, c.cell);
+  const boundMargin = rocks.p.maxDiameter + 4 * maxRockCell + 2 * abundanceField.spacing;
+  let boundBuf = new Float64Array(CRATER_STRIDE * 64);
+  const tileAbundanceBound = (job: BandRasterJob): number => {
+    let phi2 = 0;
+    for (const c of craters.classes) {
+      if (c.dHi < rockSourceMinD) break;
+      const cells = job.cells(c.cell, c.shellHalf, c.reach + boundMargin);
+      for (let k = 0; k < cells.length; k += 3) {
+        if (c.slots * CRATER_STRIDE > boundBuf.length) boundBuf = new Float64Array(c.slots * CRATER_STRIDE);
+        const n = c.cellCratersInto(cells[k]!, cells[k + 1]!, cells[k + 2]!, boundBuf, 0);
+        for (let r = 0; r < n; r++) {
+          const phi = boundBuf[r * CRATER_STRIDE + CRATER_O.freshness]!;
+          if (phi * phi > phi2) phi2 = phi * phi;
+        }
+      }
+    }
+    return kMare + (kFresh - kMare) * phi2;
+  };
 
   const M = 3;
   return {
@@ -146,34 +171,66 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
     material(px, py, pz, m, o, minLog2, maxLog2): number {
       return craters.freshness(px, py, pz, m[o]! + craterOffset, minLog2, maxLog2);
     },
+    materialFromData: false,
 
     addBandRaster(job: BandRasterJob): void {
       const { top, bot, wb } = bandOctaves(stack, job);
       const mod = job.mod;
-      for (let i = 0; i < job.count; i++) {
-        const m0 = mod[i * M]!;
-        const S = mod[i * M + 1]!;
-        const H = mod[i * M + 2]!;
-        const jt = Math.min(top, Math.ceil(m0) - 1);
-        if (jt < bot) continue;
-        let a = noiseAmplitude(S, jt, H);
-        const r = 2 ** -H;
-        const px = job.px[i]!;
-        const py = job.py[i]!;
-        const pz = job.pz[i]!;
-        let sum = 0;
-        for (let j = jt; j >= bot; j--, a *= r) {
-          const w = wb[j - bot]! * innerW[j - stack.jMin]!;
-          if (w === 0) continue;
-          const wE = smootherstep01(m0 - j);
-          if (wE === 0) continue;
-          const inv = 2 ** -j;
-          sum += w * wE * a * stack.noise(j).value(px * inv, py * inv, pz * inv);
+      if (top >= bot) {
+        // Per-octave constants (band weight x inner-scale weight, lattice scale), and the top-octave amplitude
+        // and ratio cached while S, H and the top octave repeat (constant over most tiles): no pow per sample.
+        const nOct = top - bot + 1;
+        const wOct = new Float64Array(nOct);
+        const invOct = new Float64Array(nOct);
+        for (let j = bot; j <= top; j++) {
+          wOct[j - bot] = wb[j - bot]! * innerW[j - stack.jMin]!;
+          invOct[j - bot] = 2 ** -j;
         }
-        job.out[i] = job.out[i]! + sum;
+        let lastS = NaN;
+        let lastH = NaN;
+        let lastJt = NaN;
+        let a0 = 0;
+        let r = 0;
+        for (let i = 0; i < job.count; i++) {
+          const m0 = mod[i * M]!;
+          const jt = Math.min(top, Math.ceil(m0) - 1);
+          if (jt < bot) continue;
+          const S = mod[i * M + 1]!;
+          const H = mod[i * M + 2]!;
+          if (S !== lastS || H !== lastH || jt !== lastJt) {
+            lastS = S;
+            lastH = H;
+            lastJt = jt;
+            a0 = noiseAmplitude(S, jt, H);
+            r = 2 ** -H;
+          }
+          const px = job.px[i]!;
+          const py = job.py[i]!;
+          const pz = job.pz[i]!;
+          let a = a0;
+          let sum = 0;
+          for (let j = jt; j >= bot; j--, a *= r) {
+            const w = wOct[j - bot]!;
+            if (w === 0) continue;
+            const d = m0 - j;
+            const wE = d >= 1 ? 1 : smootherstep01(d);
+            if (wE === 0) continue;
+            const inv = invOct[j - bot]!;
+            sum += w * wE * a * stack.noise(j).value(px * inv, py * inv, pz * inv);
+          }
+          job.out[i] = job.out[i]! + sum;
+        }
       }
       splatCraters(craters, job, (i) => mod[i * M]! + craterOffset);
-      splatRocks(rocks, job, rockAbundance, rockAbundanceBound);
+      // Computed on first use only: tiles whose band holds no collidable rock never ask.
+      let kTile = NaN;
+      splatRocks(rocks, job, rockAbundance, () => (kTile === kTile ? kTile : (kTile = tileAbundanceBound(job))));
+    },
+
+    bandModulators(log2N: number, log2Low: number, maxLog2LambdaData: number): number {
+      // S and H drive the noise octaves only; craters read modulator 0.
+      const top = Math.min(stack.jMax, Math.ceil(log2Low + 1) - 1, Math.ceil(maxLog2LambdaData) - 1);
+      return top >= stack.bottom(log2N) ? 0b110 : 0;
     },
 
     rockAbundance,

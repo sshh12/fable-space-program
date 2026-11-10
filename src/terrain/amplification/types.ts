@@ -104,8 +104,19 @@ export interface AmplificationModel {
   add(px: number, py: number, pz: number, m: Float64Array, o: number, log2Lambdas: Float64Array, n: number, out: Float64Array, skipAboveLog2: number, withRocks: boolean): void;
   /** Material weight 0..1 at P from components with log2(len) in [minLog2, maxLog2). */
   material(px: number, py: number, pz: number, m: Float64Array, o: number, minLog2: number, maxLog2: number): number;
+  /**
+   * True when material() reads data-driven modulators (anything but modulator 0, the log2 data wavelength).
+   * Bakers skip the data-scale evaluation where neither the material nor the band raster needs it.
+   */
+  readonly materialFromData: boolean;
   /** See BandRasterJob. */
   addBandRaster(job: BandRasterJob): void;
+  /**
+   * Bit mask of the modulators (bit q = modulator q) that addBandRaster reads for a band
+   * [2^log2LambdaN, 2^log2LambdaLow) when the data wavelength is at most 2^maxLog2LambdaData anywhere on the tile.
+   * Modulator 0 (log2 data wavelength) is always provided; the baker interpolates the others only when asked.
+   */
+  bandModulators(log2LambdaN: number, log2LambdaLow: number, maxLog2LambdaData: number): number;
   /** Local rock area fraction at a datum point (0 = none). */
   rockAbundance(x: number, y: number, z: number): number;
   /** Upper bound of rockAbundance within `extent` m (per axis) of a point; Infinity when unknown. */

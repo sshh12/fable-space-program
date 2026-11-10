@@ -277,42 +277,79 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
     material(_px, _py, _pz, m, o): number {
       return m[o + 6]!;
     },
+    materialFromData: true,
 
     addBandRaster(job: BandRasterJob): void {
       const { top, bot, wb } = bandOctaves(stack, job);
       const mod = job.mod;
       const wDune = bandDiff(log2DuneL, job.log2LambdaN, job.log2LambdaLow);
       const wRip = bandDiff(log2RippleL, job.log2LambdaN, job.log2LambdaLow);
+      // A sample reads modulators 1-5 only where its own m0 makes the component present, which bandModulators
+      // (with the tile's largest m0) has then requested.
+      const octaves = top >= bot;
+      const invOct = new Float64Array(Math.max(0, top - bot + 1));
+      for (let j = bot; j <= top; j++) invOct[j - bot] = 2 ** -j;
+      // Top-octave amplitudes and ratio cached while the modulators repeat (no pow per sample).
+      let lastSoft = NaN;
+      let lastRidge = NaN;
+      let lastH = NaN;
+      let lastJt = NaN;
+      let aS0 = 0;
+      let aR0 = 0;
+      let r = 0;
       for (let i = 0; i < job.count; i++) {
         const o = i * M;
         const m0 = mod[o]!;
-        const sSoft = mod[o + 1]!;
-        const sRidge = mod[o + 2]!;
-        const H = mod[o + 3]!;
+        const jt = octaves ? Math.min(top, Math.ceil(m0) - 1) : bot - 1;
+        const dunes0 = wDune !== 0 && m0 > log2DuneL && mod[o + 5]! > 0;
+        const ripples0 = wRip !== 0 && m0 > log2RippleL && mod[o + 4]! > 0;
+        if (jt < bot && !dunes0 && !ripples0) continue;
         const px = job.px[i]!;
         const py = job.py[i]!;
         const pz = job.pz[i]!;
         let sum = 0;
-        const jt = Math.min(top, Math.ceil(m0) - 1);
-        if (jt >= bot && sSoft + sRidge > 0) {
-          let aS = noiseAmplitude(sSoft, jt, H);
-          let aR = noiseAmplitude(sRidge, jt, H) * 0.5;
-          const r = 2 ** -H;
-          for (let j = jt; j >= bot; j--, aS *= r, aR *= r) {
-            const w = wb[j - bot]!;
-            if (w === 0) continue;
-            const wE = smootherstep01(m0 - j);
-            if (wE === 0) continue;
-            const inv = 2 ** -j;
-            const nz = stack.noise(j).value(px * inv, py * inv, pz * inv);
-            sum += w * wE * (aS * nz + aR * (1 - 2 * Math.abs(nz) - RIDGE_MEAN));
+        if (jt >= bot) {
+          const sSoft = mod[o + 1]!;
+          const sRidge = mod[o + 2]!;
+          if (sSoft + sRidge > 0) {
+            const H = mod[o + 3]!;
+            if (sSoft !== lastSoft || sRidge !== lastRidge || H !== lastH || jt !== lastJt) {
+              lastSoft = sSoft;
+              lastRidge = sRidge;
+              lastH = H;
+              lastJt = jt;
+              aS0 = noiseAmplitude(sSoft, jt, H);
+              aR0 = noiseAmplitude(sRidge, jt, H) * 0.5;
+              r = 2 ** -H;
+            }
+            let aS = aS0;
+            let aR = aR0;
+            for (let j = jt; j >= bot; j--, aS *= r, aR *= r) {
+              const w = wb[j - bot]!;
+              if (w === 0) continue;
+              const d = m0 - j;
+              const wE = d >= 1 ? 1 : smootherstep01(d);
+              if (wE === 0) continue;
+              const inv = invOct[j - bot]!;
+              const nz = stack.noise(j).value(px * inv, py * inv, pz * inv);
+              sum += w * wE * (aS * nz + aR * (1 - 2 * Math.abs(nz) - RIDGE_MEAN));
+            }
           }
         }
-        if (wDune !== 0 && mod[o + 5]! > 0) sum += wDune * smootherstep01(m0 - log2DuneL) * mod[o + 5]! * duneA * dunes.value(px, py, pz);
-        if (wRip !== 0 && mod[o + 4]! > 0) sum += wRip * smootherstep01(m0 - log2RippleL) * mod[o + 4]! * rippleA * ripples.value(px, py, pz);
+        if (dunes0) sum += wDune * smootherstep01(m0 - log2DuneL) * mod[o + 5]! * duneA * dunes.value(px, py, pz);
+        if (ripples0) sum += wRip * smootherstep01(m0 - log2RippleL) * mod[o + 4]! * rippleA * ripples.value(px, py, pz);
         job.out[i] = job.out[i]! + sum;
       }
       if (rocks) splatRocks(rocks, job, rockAbundance, rockAbundanceBound);
+    },
+
+    bandModulators(log2N: number, log2Low: number, maxLog2LambdaData: number): number {
+      let need = 0;
+      const top = Math.min(stack.jMax, Math.ceil(log2Low + 1) - 1, Math.ceil(maxLog2LambdaData) - 1);
+      if (top >= stack.bottom(log2N)) need |= 0b1110;
+      if (bandDiff(log2RippleL, log2N, log2Low) !== 0 && maxLog2LambdaData > log2RippleL) need |= 0b10000;
+      if (bandDiff(log2DuneL, log2N, log2Low) !== 0 && maxLog2LambdaData > log2DuneL) need |= 0b100000;
+      return need;
     },
 
     rockAbundance,

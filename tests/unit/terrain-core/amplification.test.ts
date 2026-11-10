@@ -4,16 +4,17 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { TerrainAmplificationDef } from '../../../src/core/contracts/defs';
-import { latLonToDir } from '../../../src/core/geo/cubeSphere';
+import { dirToTile, latLonToDir, tileUvToDir } from '../../../src/core/geo/cubeSphere';
 import { Prng } from '../../../src/core/math/hash';
 import { DEG } from '../../../src/core/math/scalar';
 import type { Vec3 } from '../../../src/core/math/vec3';
 import { createAmplificationModel } from '../../../src/terrain/amplification/registry';
 import { lunarCraterParams } from '../../../src/terrain/amplification/lunarRegolith';
 import { CraterField, type CraterRecord } from '../../../src/terrain/craters';
+import { tangentBasis } from '../../../src/terrain/discTiles';
 import { GradientNoise3, NOISE_GRAD_RMS, NOISE_RMS } from '../../../src/terrain/noise';
 import type { TerrainAuthority } from '../../../src/terrain/provider';
-import { golombekArea, golombekDensity } from '../../../src/terrain/rocks';
+import { golombekArea, golombekDensity, rockBump } from '../../../src/terrain/rocks';
 import { shellCellsInCap } from '../../../src/terrain/shellCells';
 import { BASELINES, boxPoints, calibrationModel, modelSlopes } from '../../../tools/terrain-core/calibrate-regolith';
 import { amplificationDefs, EARTH_R, FIXTURE_POINTS, MOON_R } from '../../../tools/terrain-core/fixtures';
@@ -201,27 +202,82 @@ describe('rocks', () => {
     }
   });
 
-  it('collidable rocks raise the height function (and the collision surface); small rocks do not', () => {
-    let tested = 0;
-    for (const [body, c, R] of [
-      ['moon', FIXTURE_POINTS.moonGlobal, MOON_R],
-      ['earth', lava, EARTH_R],
+  it('collidable rocks raise the height function and the collision surface carries their caps within 3 cm; small rocks do not', async () => {
+    const amp = await amplificationDefs(REPO_ROOT);
+    const rows: string[] = [];
+    for (const [body, c, R, def] of [
+      ['moon', FIXTURE_POINTS.moonGlobal, MOON_R, amp.moon],
+      ['earth', lava, EARTH_R, amp.earth],
     ] as const) {
-      const rocks = tp.rocksNear(body, c, 60, 0.05);
-      // Rocks are tested in isolation: overlapping footprints add up.
-      const isolated = rocks.filter((r) => rocks.every((o) => o === r || angleBetween(o.dir, r.dir) * R > o.radius + r.radius));
+      const minD = def.params['rockCollisionMinDiameterM']!;
+      const ratioMax = def.params['rockHeightRatioMax']!;
+      const ratioMin = def.params['rockHeightRatioMin']!;
+      await tp.ensureLoaded(body, c, 130, `rocks-${body}`);
+      const rocks = tp.rocksNear(body, c, 120, 0.05);
+      // Rocks are tested in isolation (overlapping footprints add up): neighbours found through a 4 m grid in
+      // the tangent plane.
+      const { ex, ey } = tangentBasis(c);
+      const cell = (r: { dir: Vec3 }): [number, number] => {
+        const u = (r.dir.x * ex.x + r.dir.y * ex.y + r.dir.z * ex.z) * R;
+        const v = (r.dir.x * ey.x + r.dir.y * ey.y + r.dir.z * ey.z) * R;
+        return [Math.floor(u / 4), Math.floor(v / 4)];
+      };
+      const grid = new Map<string, typeof rocks>();
+      for (const r of rocks) {
+        const [i, j] = cell(r);
+        const k = `${i},${j}`;
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k)!.push(r);
+      }
+      const isolated = rocks.filter((r) => {
+        const [i, j] = cell(r);
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const o of grid.get(`${i + a},${j + b}`) ?? []) if (o !== r && angleBetween(o.dir, r.dir) * R <= o.radius + r.radius + 0.2) return false;
+        return true;
+      });
+      const maxLevel = body === 'moon' ? 18 : 20;
+      const lamC = (Math.PI * R) / 2 / 2 ** maxLevel / 32;
+      let tested = 0;
+      let worstSampled = 0;
+      let worstTotal = 0;
       for (const r of isolated) {
-        const h = tp.heightAt(body, r.dir, body === 'moon' ? 0.32 : 0.3);
-        const bump = h - r.baseHeight;
-        if (r.radius >= 0.15) {
-          expect(bump).toBeGreaterThan(0.35 * r.radius * 0.99);
-          expect(bump).toBeLessThan(0.8 * r.radius * 1.01 + 0.02);
-          if (r.radius >= 0.3) expect(tp.heightAt(body, r.dir) - r.baseHeight).toBeGreaterThan(0.1 * r.radius);
+        const bump = tp.heightAt(body, r.dir, body === 'moon' ? 0.32 : 0.3) - r.baseHeight;
+        if (2 * r.radius >= minD) {
+          expect(bump).toBeGreaterThan(ratioMin * r.radius * 0.99);
+          expect(bump).toBeLessThan(ratioMax * r.radius * 1.01 + 0.02);
+          // Cap height in H at the collision band (every collidable rock has full weight there).
+          const hR = tp.heightAt(body, r.dir, lamC) - r.baseHeight;
+          // The cap as the collision grid carries it: rockBump at the 4 vertices of the max-level quad around the
+          // rock centre, bilinear at the centre. The threshold must keep this within 3 cm of the cap top (what a
+          // leg on the rock touches vs the drawn rock).
+          const t = dirToTile(r.dir, maxLevel);
+          const gu = t.u * 64;
+          const gv = t.v * 64;
+          const i0 = Math.min(63, Math.floor(gu));
+          const j0 = Math.min(63, Math.floor(gv));
+          const vb = (i: number, j: number): number => {
+            const d = tileUvToDir(t.key, i / 64, j / 64);
+            const dd = angleBetween(d, r.dir) * R;
+            return rockBump(dd * dd, r.radius * r.radius, hR);
+          };
+          const a = gu - i0;
+          const b = gv - j0;
+          const sampled = (1 - b) * ((1 - a) * vb(i0, j0) + a * vb(i0 + 1, j0)) + b * ((1 - a) * vb(i0, j0 + 1) + a * vb(i0 + 1, j0 + 1));
+          worstSampled = Math.max(worstSampled, hR - sampled);
+          expect(hR - sampled, `${body} rock D ${(2 * r.radius).toFixed(2)} m`).toBeLessThan(0.03);
+          // The whole collision surface against H at its own band also carries the bilinear error of the terrain
+          // around the rock (fine noise, crater rims).
+          const total = Math.abs(hR - (tp.heightAt(body, r.dir) - r.baseHeight));
+          worstTotal = Math.max(worstTotal, total);
+          expect(total).toBeLessThan(0.05);
           tested++;
         } else expect(Math.abs(bump)).toBeLessThan(0.02);
       }
+      rows.push(
+        `${body}: ${tested} isolated collidable rocks (D >= ${minD} m), worst cap undersampling by the collision grid ${(100 * worstSampled).toFixed(1)} cm, worst |collision - H| at the rock top ${(100 * worstTotal).toFixed(1)} cm`,
+      );
+      expect(tested).toBeGreaterThan(3);
     }
-    expect(tested).toBeGreaterThan(3);
+    console.log(`[rocks] ${rows.join('; ')}`);
   });
 
   it('no rocks on the launch pad', () => {

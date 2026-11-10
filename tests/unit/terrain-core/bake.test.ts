@@ -84,7 +84,7 @@ describe('baker', () => {
       }
       const rel = Math.sqrt(se / Math.max(ss, 1e-12));
       console.log(`[bake] ${c.body} L${c.key.level}: slopeScale ${nm.slopeScale.toFixed(3)}, RMS slope ${Math.sqrt(ss / n).toFixed(4)}, relative RMS error of encoded slopes ${rel.toFixed(3)}`);
-      expect(rel, `${c.body} L${c.key.level}`).toBeLessThan(0.25);
+      expect(rel, `${c.body} L${c.key.level}`).toBeLessThan(0.08);
     }
   });
 
@@ -102,10 +102,11 @@ describe('baker', () => {
     }
   });
 
-  it('normal maps of neighbouring tiles agree along the shared edge', async () => {
-    for (const [body, dir, level] of [
-      ['moon', FIXTURE_POINTS.moonDeep, 16],
-      ['earth', offset(FIXTURE_POINTS.padDir, 2500, 900, EARTH_R), 16],
+  it('normal maps of neighbouring tiles agree along the shared edge: both edge columns match H there', async () => {
+    for (const [body, dir, level, R] of [
+      ['moon', FIXTURE_POINTS.moonDeep, 16, MOON_R],
+      ['earth', offset(FIXTURE_POINTS.padDir, 2500, 900, EARTH_R), 16, EARTH_R],
+      ['moon', FIXTURE_POINTS.moonDeep, 11, MOON_R],
     ] as const) {
       const a = dirToTile(dir, level).key;
       const b: TileKey = { ...a, x: a.x + 1 };
@@ -113,16 +114,38 @@ describe('baker', () => {
       await tp.prepareTile(body, b, 'eb');
       const na = tp.bakeNormalMaterial(body, a);
       const nb = tp.bakeNormalMaterial(body, b);
-      // Height-gradient continuity: the last column of a and the first of b are one texel apart.
-      let diff = 0;
-      let mag = 0;
-      for (let j = 0; j < 256; j++) {
+      const lam = (Math.PI * R) / 2 / 2 ** level / 128;
+      // Each tile's texels next to the seam (a's last column, b's first) against the central difference of H at
+      // the same texel centres (u slope, encoded domain), and the two tiles' decoded slopes reconstructed at the
+      // same points of the seam (midpoint of the two columns) against each other.
+      let seA = 0;
+      let seB = 0;
+      let ss = 0;
+      let sd = 0;
+      for (let j = 0; j < 256; j += 2) {
+        const ref = (key: TileKey, i: number): number => {
+          const p = tileUvToDir(key, (i + 1.5) / 256, (j + 0.5) / 256);
+          const q = tileUvToDir(key, (i - 0.5) / 256, (j + 0.5) / 256);
+          return (tp.heightAt(body, p, lam) - tp.heightAt(body, q, lam)) / (Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) * R);
+        };
         const sa = decode(na.rgba[4 * (j * 256 + 255)]!, na.slopeScale);
         const sb = decode(nb.rgba[4 * (j * 256)]!, nb.slopeScale);
-        diff += (sa - sb) ** 2;
-        mag += sa * sa + sb * sb;
+        const ra = ref(a, 255);
+        const rb = ref(b, 0);
+        seA += (Math.tanh(sa / na.slopeScale) - Math.tanh(ra / na.slopeScale)) ** 2;
+        seB += (Math.tanh(sb / nb.slopeScale) - Math.tanh(rb / nb.slopeScale)) ** 2;
+        ss += Math.tanh(ra / na.slopeScale) ** 2 + Math.tanh(rb / nb.slopeScale) ** 2;
+        // Both tiles' view of the seam midpoint, each corrected by H's own change over the half texel.
+        const mid = (ra + rb) / 2;
+        sd += (sa + (mid - ra) - (sb + (mid - rb))) ** 2;
       }
-      expect(Math.sqrt(diff / (mag / 2))).toBeLessThan(0.6);
+      const relA = Math.sqrt(seA / (ss / 2));
+      const relB = Math.sqrt(seB / (ss / 2));
+      const relSeam = Math.sqrt(sd / ((ss / 2) * (na.slopeScale * nb.slopeScale)));
+      console.log(`[bake] seam ${body} L${level}: edge columns vs H ${relA.toFixed(3)} / ${relB.toFixed(3)}, tiles vs each other at the seam ${relSeam.toFixed(3)}`);
+      expect(relA).toBeLessThan(0.08);
+      expect(relB).toBeLessThan(0.08);
+      expect(relSeam).toBeLessThan(0.08);
     }
   });
 });

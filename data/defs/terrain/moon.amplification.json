@@ -26,7 +26,7 @@
     "rockAbundanceGridM": 10,
     "rockMinDiameterM": 0.1,
     "rockMaxDiameterM": 4,
-    "rockCollisionMinDiameterM": 0.3,
+    "rockCollisionMinDiameterM": 0.5,
     "rockHeightRatioMin": 0.35,
     "rockHeightRatioMax": 0.8,
     "rockVariants": 6,

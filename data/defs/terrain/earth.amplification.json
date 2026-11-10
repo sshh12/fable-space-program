@@ -16,7 +16,7 @@
     "windCellM": 20000,
     "rockMinDiameterM": 0.15,
     "rockMaxDiameterM": 3,
-    "rockCollisionMinDiameterM": 0.3,
+    "rockCollisionMinDiameterM": 0.5,
     "rockHeightRatioMin": 0.35,
     "rockHeightRatioMax": 0.75,
     "rockVariants": 6,

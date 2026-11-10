@@ -60,7 +60,7 @@ export interface CraterRecord {
   invHalfD: number;
 }
 
-/** Record layout in the block cache. */
+/** Record layout in the block cache and in cellCratersInto. */
 const STRIDE = 10;
 const O_CX = 0;
 const O_CY = 1;
@@ -72,6 +72,8 @@ const O_RIM = 6;
 const O_ROUND = 7;
 const O_FRESH = 8;
 const O_DIAM = 9;
+export const CRATER_STRIDE = STRIDE;
+export const CRATER_O = { cx: O_CX, cy: O_CY, cz: O_CZ, reach2: O_REACH2, invHalfD: O_INVHALF, depth: O_DEPTH, rim: O_RIM, rounding: O_ROUND, freshness: O_FRESH, diameter: O_DIAM } as const;
 
 export class CraterClass {
   readonly dLo: number;
@@ -151,7 +153,17 @@ export class CraterClass {
     return hashU32((iz ^ hashU32((iy ^ hashU32((ix ^ this.hs) >>> 0)) >>> 0)) >>> 0);
   }
 
-  /** Accepted craters of one cell in slot order (object form, for splatting and tests). */
+  /**
+   * Accepted craters of one cell in slot order, appended to `out` from record `count` on (layout: CRATER_STRIDE
+   * numbers per record, offsets CRATER_O_*); returns the new record count. `out` must hold slots more records.
+   */
+  cellCratersInto(ix: number, iy: number, iz: number, out: Float64Array, count: number): number {
+    const hc = this.cellHash(ix, iy, iz);
+    for (let m = 0; m < this.slots; m++) if (this.decode(hc, m, ix, iy, iz, out, count * STRIDE)) count++;
+    return count;
+  }
+
+  /** Accepted craters of one cell in slot order (object form, for tests and tools). */
   cellCraters(ix: number, iy: number, iz: number, out: CraterRecord[]): void {
     const hc = this.cellHash(ix, iy, iz);
     const tmp = new Float64Array(STRIDE);
