@@ -2,14 +2,31 @@
   "model": "lunar-regolith",
   "seed": 19690720,
   "params": {
-    "hurstHighlands": 0.65,
     "hurstMaria": 0.9,
+    "hurstHighlands": 0.65,
+    "hurstRoughnessRange": 2.0,
+    "regolithSlope1m": 0.06,
+    "multifractalGain": 0.8,
+    "multifractalMax": 3.0,
     "craterEquilibriumFraction": 0.03,
     "craterMaxDiameterInPostings": 4,
     "craterMinDiameterM": 0.6,
+    "craterEjectaExtentRadii": 2.5,
     "freshDepthToDiameter": 0.196,
+    "degradedDepthToDiameter": 0.04,
+    "rimHeightToDiameter": 0.036,
+    "degradedRimFraction": 0.15,
+    "craterFreshnessExponent": 3,
+    "rimRoundingFresh": 0.08,
+    "rimRoundingDegraded": 0.9,
     "rockAreaFractionMare": 0.02,
+    "rockAreaFractionFreshEjecta": 0.25,
+    "rockSourceMinCraterDiameterM": 20,
+    "rockMinDiameterM": 0.1,
+    "rockMaxDiameterM": 4,
     "rockCollisionMinDiameterM": 0.3,
-    "collisionLambdaMin": 0.32
+    "rockHeightRatioMin": 0.35,
+    "rockHeightRatioMax": 0.8,
+    "rockVariants": 6
   }
 }
