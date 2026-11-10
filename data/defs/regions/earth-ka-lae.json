@@ -1,0 +1,102 @@
+{
+  "id": "earth-ka-lae",
+  "tileset": "earth",
+  "name": "Ka Lae Pacific Spaceport region, Ka'u coast, Hawai'i",
+  "site": "ka-lae-lc1",
+  "shape": {
+    "kind": "disc",
+    "centre": {
+      "latDeg": 18.987556,
+      "lonDeg": -155.603239
+    }
+  },
+  "levels": {
+    "8": {
+      "radiusKm": 100,
+      "heightScale": 0.125
+    },
+    "9": {
+      "radiusKm": 100,
+      "heightScale": 0.125
+    },
+    "10": {
+      "radiusKm": 100,
+      "heightScale": 0.125
+    },
+    "11": {
+      "radiusKm": 100,
+      "heightScale": 0.0625
+    },
+    "12": {
+      "radiusKm": 100,
+      "heightScale": 0.0625
+    }
+  },
+  "featherKm": 5,
+  "marginTiles": 1,
+  "layers": [
+    "height",
+    "albedo",
+    "watermask",
+    "landcover"
+  ],
+  "sources": {
+    "height": {
+      "id": "terrarium",
+      "landZoom": 15,
+      "surveyZoom": 12,
+      "coastBlendKm": [
+        0.5,
+        3.0
+      ],
+      "note": "AWS Terrain Tiles (Terrarium, USGS 3DEP 10 m in Hawai'i) on land and within 3 km of the 3DEP coastline; ETOPO 2022 15 arc-second offshore (Terrarium bathymetry there is coarse and blocky)."
+    },
+    "albedo": {
+      "id": "s2cloudless",
+      "years": [
+        2020,
+        2021,
+        2023,
+        2024,
+        2025
+      ],
+      "zoom": 14,
+      "licence": "CC BY-NC-SA 4.0 (Sentinel-2 cloudless by EOX IT Services GmbH, contains modified Copernicus Sentinel data)",
+      "swappable": true
+    },
+    "watermask": {
+      "id": "esa-worldcover-2021",
+      "waterClasses": [
+        80
+      ]
+    },
+    "landcover": {
+      "id": "esa-worldcover-2021"
+    }
+  },
+  "siteResolution": {
+    "nominal": {
+      "latDeg": 19.1,
+      "lonDeg": -155.5
+    },
+    "searchRadiusKm": 45,
+    "gridM": 30,
+    "minShoreDistanceM": 600,
+    "discRadiusM": 500,
+    "maxSlopeDeg": 4,
+    "maxReliefM": 12,
+    "minHeightM": 15,
+    "oceanAzimuthDeg": [
+      60,
+      130
+    ],
+    "oceanReachKm": 6,
+    "openOceanKm": 100,
+    "allowedLandcover": [
+      "bareRock",
+      "sparseScrub"
+    ],
+    "minAllowedFraction": 0.8,
+    "maxLatDeg": 20.5
+  }
+}
