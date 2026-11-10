@@ -8,7 +8,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEventType } from '@/core/contracts/sim';
 import type { LabStackId } from './labVehicle';
 import { clipStats, masterWavBase64, maxAbsDiff, measureRender, onset, onsetAbove, type ClipStats, type TapMeasure } from './measure';
-import { externalAt, SEA_LEVEL, type ListenerSpec, type Script } from './scenes';
+import type { Script } from './scenes';
 import { clipScripts, eventsScript, ignitionScript, maximumScript, modeScript, plasmaScript, steadyScript, type SteadyCase } from './scripts';
 
 export interface MeasureResult {
