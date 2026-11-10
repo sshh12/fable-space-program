@@ -648,7 +648,9 @@ export class HeightEvaluator {
     for (let k = 0; k < n; k++) this.data[k] = this.dataChain(log2Lambdas[k]!);
     const amp = this.amp;
     for (let k = 0; k < n; k++) amp[k] = 0;
-    if (!this.ampInactive(lmin)) {
+    // Skip the model when no component can reach the band: first by the coarsest data anywhere, then by the
+    // effective level at the point (manifest only, cheap).
+    if (!this.ampInactive(lmin) && lmin < b.model.maxLengthLog2(b.log2Lambda0 - this.effectiveLevel())) {
       this.modulators();
       this.addAmplification(log2Lambdas, n, amp, skipAboveLog2, withRocks);
     }

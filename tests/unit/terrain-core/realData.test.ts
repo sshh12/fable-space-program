@@ -110,8 +110,8 @@ describe.skipIf(!HAS_MOON)('real Moon tiles', () => {
       const mean = sum / n;
       // ldem_64 is a 474 m binned LOLA value: on steep ground it differs from the mean of the 118 m data
       // inside the pixel by a fraction of the relief within the pixel. (Tycho floor: the bake's own reader,
-      // tools/bake/moon/tiles.py, gives the same -1383.5 m as terrain-core; the 88 m are a property of the
-      // baked level-6 data against that pixel, reported in docs/handoff/terrain-core.md.)
+      // tools/bake/moon/tiles.py, gives the same -1383.5 m as terrain-core; ldem_64 is offset by 1-2 pixels of
+      // 118 m against the 256 ppd LOLA products and the pixel sits on the central peak: docs/requests/bake-moon-sky-1.md.)
       const tol = Math.max(60, 0.3 * (hi - lo));
       console.log(`[real moon] ${b.name}: ${mean.toFixed(1)} m (ldem_64 ${b.ref} m), relief inside the pixel ${(hi - lo).toFixed(0)} m, tolerance ${tol.toFixed(0)} m`);
       expect(Math.abs(mean - b.ref), b.name).toBeLessThan(tol);
