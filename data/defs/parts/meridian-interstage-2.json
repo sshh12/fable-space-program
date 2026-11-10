@@ -205,7 +205,7 @@
   "buoyancy": [],
   "joint": {
     "maxAccelG": 6,
-    "maxQAlpha": 60000
+    "maxQAlpha": 3500
   },
   "modules": [
     {

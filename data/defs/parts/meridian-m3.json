@@ -304,7 +304,7 @@
   ],
   "joint": {
     "maxAccelG": 6,
-    "maxQAlpha": 80000
+    "maxQAlpha": 4500
   },
   "modules": [
     {

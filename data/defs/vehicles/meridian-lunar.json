@@ -332,9 +332,9 @@
       "def": "meridian-launch-clamp",
       "parent": "m1",
       "position": [
-        3.747666,
-        -2.9,
-        3.747666
+        3.959798,
+        -3.5,
+        3.959798
       ],
       "rotationDeg": [
         0,
@@ -348,9 +348,9 @@
       "def": "meridian-launch-clamp",
       "parent": "m1",
       "position": [
-        3.747666,
-        -2.9,
-        -3.747666
+        3.959798,
+        -3.5,
+        -3.959798
       ],
       "rotationDeg": [
         0,
@@ -364,9 +364,9 @@
       "def": "meridian-launch-clamp",
       "parent": "m1",
       "position": [
-        -3.747666,
-        -2.9,
-        -3.747666
+        -3.959798,
+        -3.5,
+        -3.959798
       ],
       "rotationDeg": [
         0,
@@ -380,9 +380,9 @@
       "def": "meridian-launch-clamp",
       "parent": "m1",
       "position": [
-        -3.747666,
-        -2.9,
-        3.747666
+        -3.959798,
+        -3.5,
+        3.959798
       ],
       "rotationDeg": [
         0,

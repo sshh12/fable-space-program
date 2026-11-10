@@ -6,7 +6,7 @@
   "comOffset": [
     0,
     0.62,
-    -0.157
+    -0.165
   ],
   "inertiaShape": {
     "kind": "solidCylinder",

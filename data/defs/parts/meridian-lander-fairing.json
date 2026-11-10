@@ -173,13 +173,13 @@
   "buoyancy": [],
   "joint": {
     "maxAccelG": 12,
-    "maxQAlpha": 90000
+    "maxQAlpha": 5000
   },
   "modules": [
     {
       "type": "fairing",
       "panels": 4,
-      "impulse": 7500,
+      "impulse": 9000,
       "shields": [
         "heron-descent-stage",
         "heron-ascent-stage",
