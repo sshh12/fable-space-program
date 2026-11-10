@@ -1,0 +1,121 @@
+{
+  "generatedBy": "tools/sim/findStartTime.ts",
+  "note": "Re-run when the bakes move the pad or the landing target; tests re-check these constraints for the scenario.",
+  "search": {
+    "from": "2027-01-01T00:00:00.000Z",
+    "to": "2031-01-01T00:00:00.000Z",
+    "launchOpportunitiesChecked": 1465,
+    "solutionsInRequestedRange": 0,
+    "searchExtended": true,
+    "extendedTo": "2038-01-01T00:00:00.000Z",
+    "extensionReason": "no launch opportunity in the requested range satisfies all three constraints; the first exact solution after it was taken",
+    "nearMissesInRequestedRange": [
+      {
+        "startUt": 902556773.6217529,
+        "startUtc": "2028-08-07T18:12:53.621Z",
+        "padSunDeg": 29.54,
+        "landingSunMinDeg": 4.38,
+        "landingSunMaxDeg": 28.85,
+        "violationDeg": 0.62
+      },
+      {
+        "startUt": 935729948.4761231,
+        "startUtc": "2029-08-26T16:59:08.476Z",
+        "padSunDeg": 11.59,
+        "landingSunMinDeg": 12.32,
+        "landingSunMaxDeg": 36.78,
+        "violationDeg": 1.78
+      },
+      {
+        "startUt": 871968521.4833075,
+        "startUtc": "2027-08-19T17:28:41.483Z",
+        "padSunDeg": 18.8,
+        "landingSunMinDeg": 2.4,
+        "landingSunMaxDeg": 26.87,
+        "violationDeg": 2.6
+      },
+      {
+        "startUt": 966232036.5240378,
+        "startUtc": "2030-08-14T17:47:16.524Z",
+        "padSunDeg": 23.32,
+        "landingSunMinDeg": 2.13,
+        "landingSunMaxDeg": 26.6,
+        "violationDeg": 2.87
+      },
+      {
+        "startUt": 966318200.6145686,
+        "startUtc": "2030-08-15T17:43:20.614Z",
+        "padSunDeg": 22.36,
+        "landingSunMinDeg": 14.33,
+        "landingSunMaxDeg": 38.79,
+        "violationDeg": 3.79
+      }
+    ],
+    "selection": "first solution with >= 1 deg margin on every elevation bound (else the first solution)"
+  },
+  "site": {
+    "id": "ka-lae-lc1",
+    "bodyId": "earth",
+    "latDeg": 19.1,
+    "lonDeg": -155.5,
+    "padElevation": 0,
+    "padElevationSource": "definition says 'terrain': 0 m assumed (geocentric angles do not depend on it)"
+  },
+  "targetBodyId": "moon",
+  "landing": {
+    "bodyId": "moon",
+    "latDeg": 0.674,
+    "lonDeg": 23.473,
+    "source": "built-in default (0.674 N, 23.473 E)"
+  },
+  "constraints": {
+    "launchDelaySeconds": 600,
+    "launchDelayToleranceSeconds": 30,
+    "padSunElevationDeg": [
+      10,
+      35
+    ],
+    "landingWindowDays": [
+      3,
+      5
+    ],
+    "landingSunElevationDeg": [
+      5,
+      35
+    ]
+  },
+  "startUt": 1187932241.4598682,
+  "startUtc": "2037-08-23T17:10:41.459Z",
+  "launch": {
+    "opportunityUt": 1187932841.4598682,
+    "opportunityUtc": "2037-08-23T17:20:41.459Z",
+    "delaySeconds": 600,
+    "launchAzimuthDeg": 80.8653,
+    "inertialAzimuthDeg": 81.3775
+  },
+  "padSun": {
+    "elevationDeg": 14.4059,
+    "elevationAtLaunchDeg": 16.7522,
+    "rising": true
+  },
+  "landingSun": {
+    "windowStartUtc": "2037-08-26T17:10:41.459Z",
+    "windowEndUtc": "2037-08-28T17:10:41.459Z",
+    "startDeg": 9.5294,
+    "endDeg": 33.9862,
+    "minDeg": 9.5294,
+    "maxDeg": 33.9862,
+    "rising": true,
+    "lit": true,
+    "minVisibility": 1
+  },
+  "alternatives": [
+    {
+      "startUt": 1187932241.4598682,
+      "startUtc": "2037-08-23T17:10:41.459Z",
+      "padSunDeg": 14.41,
+      "landingSunStartDeg": 9.53,
+      "landingSunEndDeg": 33.99
+    }
+  ]
+}

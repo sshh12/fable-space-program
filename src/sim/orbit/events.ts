@@ -44,6 +44,12 @@ export function timeOfTrueAnomaly(o: Orbit, nu: number, tAfter: number): number 
   return t > tAfter ? t : null;
 }
 
+/** True anomaly ((-pi, pi]) of the orbit at time t (propagated from the epoch). */
+export function trueAnomalyAt(o: Orbit, t: number): number {
+  propagateInto(o, t, R_, V_);
+  return Math.atan2(v3.dot(R_, o.conic.Q), v3.dot(R_, o.conic.P));
+}
+
 /** True anomaly magnitude (in [0, pi]) at which the conic has radius R, or null if it never does. */
 export function radiusCrossingAnomaly(o: Orbit, R: number): number | null {
   const c = o.conic;
@@ -58,9 +64,88 @@ export function radiusCrossingAnomaly(o: Orbit, R: number): number | null {
  * Null when the conic never reaches R (or, for open orbits, the crossing is already past).
  */
 export function nextRadiusCrossing(o: Orbit, R: number, direction: 1 | -1, tAfter: number): number | null {
+  if (o.nearRadial) return universalEventTime(o, { radius: R, direction }, tAfter);
   const nu = radiusCrossingAnomaly(o, R);
   if (nu === null) return null;
   return timeOfTrueAnomaly(o, direction * nu, tAfter);
+}
+
+/**
+ * First periapsis (or, for closed orbits, apoapsis) passage strictly after `tAfter`; null when there is
+ * none (apoapsis of an open orbit, periapsis of an open orbit already passed).
+ */
+export function nextApsisTime(o: Orbit, kind: 'periapsis' | 'apoapsis', tAfter: number): number | null {
+  if (kind === 'apoapsis' && o.period === null) return null;
+  if (o.nearRadial) return universalEventTime(o, kind, tAfter);
+  return timeOfTrueAnomaly(o, kind === 'periapsis' ? 0 : Math.PI, tAfter);
+}
+
+/**
+ * Event times from the universal anomaly relative to the epoch, without the conic's anomalies (which
+ * degenerate for radial trajectories). With s = chi sqrt|alpha|:
+ *   ellipse:   r = a + (r0 - a) cos s + sigma0 sqrt(a) sin s = a + A cos(s - phi),
+ *              sqrt(mu) dt = a^1.5 (s - (1 - r0/a) sin s) + sigma0 a (1 - cos s)
+ *   hyperbola: r = -|a| + (r0 + |a|) cosh s + sigma0 sqrt|a| sinh s = -|a| + Q cosh(s + delta),
+ *              sqrt(mu) dt = |a|^1.5 ((1 + r0/|a|) sinh s - s) + sigma0 |a| (cosh s - 1)
+ *   parabola:  r = r0 + sigma0 chi + chi^2/2,  sqrt(mu) dt = sigma0 chi^2/2 + chi^3/6 + r0 chi
+ */
+function universalEventTime(o: Orbit, ev: { radius: number; direction: 1 | -1 } | 'periapsis' | 'apoapsis', tAfter: number): number | null {
+  const r0 = o.r0m;
+  const s0 = o.sigma0;
+  const ar = o.alpha * r0;
+  if (ar > 1e-9) {
+    const a = 1 / o.alpha;
+    const sa = Math.sqrt(a);
+    const C = r0 - a;
+    const S = s0 * sa;
+    const A = Math.hypot(C, S);
+    const phi = Math.atan2(S, C);
+    let s: number;
+    if (ev === 'apoapsis') s = phi;
+    else if (ev === 'periapsis') s = phi + Math.PI;
+    else {
+      if (!(A > 0)) return null;
+      const c = (ev.radius - a) / A;
+      if (c < -1 || c > 1) return null;
+      const d = Math.acos(c);
+      s = ev.direction < 0 ? phi + d : phi - d;
+    }
+    let t = o.t0 + (a * sa * (s - (1 - r0 / a) * Math.sin(s)) + s0 * a * (1 - Math.cos(s))) / o.sqrtMu;
+    const P = o.period!;
+    t += P * (Math.floor((tAfter - t) / P) + 1);
+    if (t <= tAfter) t += P;
+    return t;
+  }
+  let t: number;
+  if (ar < -1e-9) {
+    const aa = -1 / o.alpha;
+    const sa = Math.sqrt(aa);
+    const C = r0 + aa;
+    const S = s0 * sa;
+    const Q = Math.sqrt(Math.max(0, C * C - S * S));
+    const dh = Math.atanh(Math.max(-1 + 1e-16, Math.min(1 - 1e-16, S / C)));
+    let s: number;
+    if (ev === 'periapsis') s = -dh;
+    else if (ev === 'apoapsis') return null;
+    else {
+      const K = ev.radius + aa;
+      if (K < Q) return null;
+      const g = Math.acosh(K / Q);
+      s = ev.direction < 0 ? -dh - g : -dh + g;
+    }
+    t = o.t0 + (aa * sa * ((1 + r0 / aa) * Math.sinh(s) - s) + s0 * aa * (Math.cosh(s) - 1)) / o.sqrtMu;
+  } else {
+    let chi: number;
+    if (ev === 'periapsis') chi = -s0;
+    else if (ev === 'apoapsis') return null;
+    else {
+      const disc = s0 * s0 - 2 * (r0 - ev.radius);
+      if (disc < 0) return null;
+      chi = ev.direction < 0 ? -s0 - Math.sqrt(disc) : -s0 + Math.sqrt(disc);
+    }
+    t = o.t0 + ((s0 * chi * chi) / 2 + (chi * chi * chi) / 6 + r0 * chi) / o.sqrtMu;
+  }
+  return t > tAfter ? t : null;
 }
 
 const R_ = { x: 0, y: 0, z: 0 };

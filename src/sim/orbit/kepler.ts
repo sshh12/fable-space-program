@@ -38,7 +38,15 @@ export interface Orbit {
   readonly conic: ConicElements;
   /** True when r0 x v0 vanishes (radial trajectory): `conic` is then the limit of a vanishing tangential velocity. */
   readonly radial: boolean;
+  /**
+   * Radial or nearly so (p < NEAR_RADIAL_P |r0|): anomaly-based event times are ill-conditioned there, so the
+   * event finders work with the universal anomaly from the epoch instead.
+   */
+  readonly nearRadial: boolean;
 }
+
+/** Semi-latus rectum below this fraction of |r0| makes an orbit "near-radial". */
+export const NEAR_RADIAL_P = 1e-6;
 
 /** Build an Orbit (with derived constants and conic) from a state in BCI(bodyId) at time t0. */
 export function makeOrbit(bodyId: string, mu: number, r0: Vec3, v0: Vec3, t0: number): Orbit {
@@ -61,7 +69,10 @@ export function makeOrbit(bodyId: string, mu: number, r0: Vec3, v0: Vec3, t0: nu
   const conic = conicFromState(mu, r0, vConic, t0);
   const nu0 = Math.atan2(v3.dot(r0, conic.Q), v3.dot(r0, conic.P));
   conic.tPeriapsis = t0 - timeFromPeriapsis(conic.e, conic.p, mu, nu0);
-  const period = conic.period !== null && alpha > 0 ? (2 * Math.PI) / (sqrtMu * alpha * Math.sqrt(alpha)) : null;
+  // Near-radial: the conic's anomalies are ill-conditioned (e -> 1, p -> 0); events use the universal
+  // variable instead (events.ts). A bound (near-)radial trajectory is closed although e rounds to 1.
+  const nearRadial = radial || conic.p < NEAR_RADIAL_P * r0m;
+  const period = alpha > 0 && (conic.period !== null || nearRadial) ? (2 * Math.PI) / (sqrtMu * alpha * Math.sqrt(alpha)) : null;
   conic.period = period;
   return {
     bodyId,
@@ -76,6 +87,7 @@ export function makeOrbit(bodyId: string, mu: number, r0: Vec3, v0: Vec3, t0: nu
     period,
     conic,
     radial,
+    nearRadial,
   };
 }
 

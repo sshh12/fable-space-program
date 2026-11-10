@@ -9,7 +9,7 @@ import { quat } from '../../core/math/quat';
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
 import { surfaceVelocity } from '../frames/bodyFrames';
-import { timeOfTrueAnomaly } from '../orbit/events';
+import { nextApsisTime } from '../orbit/events';
 import { makeOrbit } from '../orbit/kepler';
 import { relativeInclination } from '../orbit/relative';
 
@@ -77,9 +77,10 @@ export function computeOrbitalReadouts(input: OrbitalReadoutInput): OrbitalReado
   const c = o.conic;
   const rp = c.p / (1 + c.e);
   const closed = o.period !== null;
-  const ra = closed ? c.p / (1 - c.e) : Infinity;
-  const tPe = timeOfTrueAnomaly(o, 0, ut);
-  const tAp = closed ? timeOfTrueAnomaly(o, Math.PI, ut) : null;
+  // 2a - rp is exact for every closed orbit and stays finite for (near-)radial ones, where p/(1 - e) is 0/0.
+  const ra = closed ? 2 / o.alpha - rp : Infinity;
+  const tPe = nextApsisTime(o, 'periapsis', ut);
+  const tAp = nextApsisTime(o, 'apoapsis', ut);
   const pole = body.rotation.kind === 'uniform' ? body.rotation.pole : { x: 0, y: 0, z: 1 };
 
   const targetId = input.targetBodyId ?? null;

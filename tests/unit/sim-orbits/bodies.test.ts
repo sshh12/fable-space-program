@@ -9,6 +9,7 @@ import { occultedFraction, sunVisibleFraction } from '../../../src/sim/bodies/su
 import { primeMeridianAngle } from '../../../src/sim/bodies/rotation';
 import { latLonAlt } from '../../../src/sim/frames/bodyFrames';
 import { padState } from '../../../src/sim/frames/padState';
+import { orbitalEnvironment } from '../../../src/sim/bodies/environment';
 import { loadWorld, mainIds, utOf } from './fixtures';
 
 let defs: DefLibrary;
@@ -305,6 +306,24 @@ describe('atmosphere models', () => {
     expect(e.pressure).toBeCloseTo(600 * Math.exp(-2), 10);
     expect(e.temperature).toBeCloseTo(600 / (0.02 * base.gasConstant), 9);
     expect(atmosphereAt(ex, 120e3).density).toBe(0);
+  });
+});
+
+describe('orbital environment', () => {
+  it('gives the body-system members of VesselEnvironment', () => {
+    const site = Object.values(defs.sites)[0]!;
+    const pad = padState(sys, site, T_REF, 0, 2);
+    const env = orbitalEnvironment(sys, EARTH, T_REF, pad.r);
+    expect(env.mu).toBe(defs.bodies[EARTH]!.mu);
+    expect(env.radius).toBe(defs.bodies[EARTH]!.radius);
+    expect(env.atmosphereAt(0).density).toBeCloseTo(1.225, 4); // R = 8.314462 (sim-design 8.1), not the 8.31432 of 1976
+    expect(env.heating).toBe(defs.bodies[EARTH]!.atmosphere!.heating);
+    expect(quat.angleBetween(env.qFixedToInertial, sys.orientation(EARTH, T_REF))).toBe(0);
+    expect(env.sunVisibility).toBe(sys.sunVisibility(pad.r, T_REF));
+    const moonEnv = orbitalEnvironment(sys, MOON, T_REF, { x: 2e6, y: 0, z: 0 });
+    expect(moonEnv.heating).toBeNull();
+    expect(moonEnv.atmosphereAt(0).density).toBe(0);
+    expect(v3.len(moonEnv.sunDir)).toBeCloseTo(1, 12);
   });
 });
 

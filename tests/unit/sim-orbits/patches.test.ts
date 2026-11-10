@@ -10,6 +10,7 @@ import { estimateBurnTime, nodeBurnInfo, nodeDeltaVInertial } from '../../../src
 import { patchOrbit, predictPatches, stateOnPatches } from '../../../src/sim/orbit/patches';
 import { nextWarpEvent } from '../../../src/sim/orbit/warp';
 import { meanAnomalyFromTrue } from '../../../src/sim/orbit/anomaly';
+import { computeOrbitalReadouts } from '../../../src/sim/nav/readouts';
 import { loadWorld, mainIds, utOf } from './fixtures';
 
 let sys: BodySystem;
@@ -355,6 +356,30 @@ describe('prediction edge cases', () => {
     expect(out.current[1]!.bodyId).toBe(EARTH);
     // the Earth patch must not re-enter the Moon immediately (hysteresis + outward motion)
     expect(out.current[1]!.tEnd - out.current[1]!.tStart).toBeGreaterThan(1000);
+  });
+
+  it('radial trajectories (dropped from rest, straight up): exact impact time and apoapsis', () => {
+    const mu = sys.body(MOON).mu;
+    const R = sys.body(MOON).radius;
+    // drop from rest at 2 km: radial Kepler fall time t = sqrt(r0^3 / 2mu) (sqrt(x(1 - x)) + acos(sqrt(x))), x = R/r0
+    const r0 = R + 2000;
+    const x = R / r0;
+    const tFall = Math.sqrt((r0 * r0 * r0) / (2 * mu)) * (Math.sqrt(x * (1 - x)) + Math.acos(Math.sqrt(x)));
+    const drop = predictPatches(sys, { bodyId: MOON, r: { x: 0, y: 0, z: r0 }, v: v3.zero() }, T0, []).current;
+    expect(drop[0]!.endReason).toBe('impact');
+    expect(drop[0]!.tEnd - T0).toBeCloseTo(tFall, 6);
+    // straight up at 1 km/s from the surface: apoapsis from the energy, back down at the same time by symmetry
+    const v0 = 1000;
+    const up = predictPatches(sys, { bodyId: MOON, r: { x: 0, y: 0, z: R + 1 }, v: { x: 0, y: 0, z: v0 } }, T0, []).current[0]!;
+    const ra = mu / (mu / (R + 1) - (v0 * v0) / 2);
+    const ap = up.markers.find((m) => m.kind === 'apoapsis')!;
+    expect(ap.altitude! + R).toBeCloseTo(ra, 3);
+    expect(up.endReason).toBe('impact');
+    // impact on the reference sphere, 1 m below the start: 1 m / 1 km/s later than the mirror time
+    expect(up.tEnd - T0 - 2 * (ap.ut - T0)).toBeCloseTo(1 / v0, 5);
+    const ro = computeOrbitalReadouts({ system: sys, bodyId: MOON, r: { x: 0, y: 0, z: R + 1 }, v: { x: 0, y: 0, z: v0 }, ut: T0 });
+    expect(ro.apoapsisAltitude + R).toBeCloseTo(ra, 3);
+    expect(ro.timeToApoapsis!).toBeCloseTo(ap.ut - T0, 3);
   });
 
   it('orbit inside the atmosphere going up: vacuum conic re-enters (atmosphere) or impacts', () => {

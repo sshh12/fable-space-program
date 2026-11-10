@@ -33,6 +33,7 @@ import {
   closestApproaches,
   findImpact,
   findSoiEntry,
+  nextApsisTime,
   soiExitTime,
   timeOfTrueAnomaly,
   type CoarseHeightFn,
@@ -262,16 +263,11 @@ function buildMarkers(
   const eps = 1e-6;
 
   // apsides
-  const tPe = timeOfTrueAnomaly(o, 0, tStart - eps);
-  if (tPe !== null && tPe <= tEnd) {
-    const r = conicPosition(c, 0);
-    markers.push({ kind: 'periapsis', ut: tPe, bodyId, r, altitude: v3.len(r) - R, ...latLonOf(system, bodyId, r, tPe) });
-  }
-  if (o.period !== null) {
-    const tAp = timeOfTrueAnomaly(o, Math.PI, tStart - eps);
-    if (tAp !== null && tAp <= tEnd) {
-      const r = conicPosition(c, Math.PI);
-      markers.push({ kind: 'apoapsis', ut: tAp, bodyId, r, altitude: v3.len(r) - R, ...latLonOf(system, bodyId, r, tAp) });
+  for (const kind of ['periapsis', 'apoapsis'] as const) {
+    const ta = nextApsisTime(o, kind, tStart - eps);
+    if (ta !== null && ta <= tEnd) {
+      const r = propagate(o, ta).r;
+      markers.push({ kind, ut: ta, bodyId, r, altitude: v3.len(r) - R, ...latLonOf(system, bodyId, r, ta) });
     }
   }
 
@@ -279,7 +275,7 @@ function buildMarkers(
   if (targetId !== null && targetId !== bodyId) {
     const target = system.body(targetId);
     if (target.parentId === bodyId && target.kepler) {
-      const nodes = nodesVersusPlane(c, target.kepler.normal);
+      const nodes = o.nearRadial ? null : nodesVersusPlane(c, target.kepler.normal);
       if (nodes) {
         for (const [kind, nu] of [
           ['ascendingNode', nodes.nuAscending],
