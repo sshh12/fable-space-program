@@ -11,7 +11,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const outDir = path.join(repoRoot, 'out', 'audio');
 
 test('records the listen-proof clips', async ({ page, pageLog }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   await openPage(page, '/labs/audio/?scene=pad');
   await assertDiscreteGpu(page);
   await page.waitForFunction(() => window.__audioLab !== undefined);

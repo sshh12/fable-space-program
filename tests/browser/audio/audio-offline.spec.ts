@@ -15,10 +15,12 @@ const outDir = path.join(repoRoot, 'out', 'audio');
 const SEA = 101325;
 const db = (a: number): number => (a > 0 ? 20 * Math.log10(a) : -Infinity);
 
-const results: Record<string, unknown> = {};
+/** Merge one criterion's measurements into out/audio/acceptance.json (single-test runs keep the others). */
 function record(key: string, value: unknown): void {
-  results[key] = value;
   fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, 'acceptance.json');
+  const results = (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}) as Record<string, unknown>;
+  results[key] = value;
   fs.writeFileSync(path.join(outDir, 'acceptance.json'), JSON.stringify(results, (_, v: unknown) => (v === -Infinity ? '-Infinity' : v), 2));
 }
 
@@ -32,7 +34,8 @@ type Lab = AudioLabApi;
 const call = <T>(page: Page, fn: (lab: Lab, arg: never) => Promise<T>, arg?: unknown): Promise<T> =>
   page.evaluate(([src, a]) => (new Function('lab', 'arg', `return (${src})(lab, arg);`) as (l: Lab, x: unknown) => Promise<T>)(window.__audioLab!, a), [fn.toString(), arg] as const);
 
-test.describe.configure({ mode: 'serial' });
+// The first navigation pays Vite's cold transform of the lab; on a machine busy with bakes that alone can take minutes.
+test.describe.configure({ mode: 'serial', timeout: 360_000 });
 
 test('engine level rises monotonically with throttle (>= 12 dB from 10 % to 100 %)', async ({ page, pageLog }) => {
   await lab(page);

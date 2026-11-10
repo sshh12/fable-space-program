@@ -14,6 +14,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 // No autoplay flag: the page gets exactly the policy a real user's browser applies.
 test.use({ launchOptions: { args: chromeArgs().filter((a) => !a.startsWith('--autoplay-policy')) } });
+// The first navigation pays Vite's cold transform of the lab; on a machine busy with bakes that can take minutes.
+test.describe.configure({ timeout: 360_000 });
 
 const probe = (page: Page) => page.evaluate(() => window.__test!.audio()!);
 const busRms = async (page: Page, bus: 'engines' | 'master'): Promise<number> => {
