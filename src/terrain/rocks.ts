@@ -125,7 +125,7 @@ export class RockClass {
     }
     this.densityMax = acc;
     for (let i = 0; i <= CDF_STEPS; i++) this.cdfF[i] = this.cdfF[i]! / acc;
-    const lay = cellLayout(acc, this.dHi / 2);
+    const lay = cellLayout(acc, this.dHi / 2, 2);
     this.cell = lay.cell;
     this.slots = lay.slots;
     this.pSlot = lay.pSlot;

@@ -110,16 +110,23 @@ const smoothFall = (e0: number, e1: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/** Splat accepted rocks of the high band (bumps weighted by the band difference). */
+/**
+ * Splat accepted collidable rocks of the high band (bumps weighted by the band difference). Only rocks that
+ * are bumps in the height function (diameter >= collisionMinDiameter): smaller rocks are visual only, drawn as
+ * meshes by the renderer, and the normal map must match H.
+ */
 export function splatRocks(rocks: RockField, job: BandRasterJob, abundance: RockAbundance, bound: RockAbundanceBound): void {
   const top = job.log2LambdaLow + 1;
+  const minD = rocks.p.collisionMinDiameter;
   for (const c of rocks.classes) {
+    if (c.dHi < minD) break;
     if (rockLog2Length(c.dLo) >= top) continue;
     if (rockLog2Length(c.dHi) <= job.log2LambdaN) break;
     const cells = job.cells(c.cell, c.shellHalf, c.dHi / 2);
     const list: RockCandidate[] = [];
     rocks.cellsCandidates(c, cells, list, bound);
     for (const rk of list) {
+      if (rk.diameter < minD) continue;
       const log2Len = rockLog2Length(rk.diameter);
       const wb = bandDiff(log2Len, job.log2LambdaN, job.log2LambdaLow);
       if (wb === 0) continue;

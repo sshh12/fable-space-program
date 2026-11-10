@@ -105,7 +105,7 @@ export class CraterClass {
     this.reach = (p.extentRadii / 2) * this.dHi;
     const c = 1.54 * p.equilibriumFraction;
     this.density = c / (this.dLo * this.dLo) - c / (this.dHi * this.dHi);
-    const lay = cellLayout(this.density, this.reach);
+    const lay = cellLayout(this.density, this.reach, 0.5);
     this.cell = lay.cell;
     this.slots = lay.slots;
     this.pSlot = lay.pSlot;

@@ -10,9 +10,6 @@ import type { Vec3 } from '../core/math/vec3';
 export const SHELL_ALPHA = 0.5;
 /** Safety factor on the reach bound (curvature of the sphere within one cell). */
 const REACH_MARGIN = 1.02;
-/** Sparse classes get cells large enough to hold about this many candidates (fewer empty cells to visit). */
-const TARGET_PER_CELL = 0.5;
-
 /** Smallest cell size for which a feature reaching `reach` m is always in the nearest 2 x 2 x 2 block. */
 export function cellSizeForReach(reach: number): number {
   return (2 * REACH_MARGIN * reach) / Math.sqrt(1 - REACH_MARGIN * REACH_MARGIN * SHELL_ALPHA * SHELL_ALPHA);
@@ -20,11 +17,13 @@ export function cellSizeForReach(reach: number): number {
 
 /**
  * Cell size, slot count and slot probability for features of areal density `density` (per m^2) with the
- * given reach: the cell is the reach minimum, enlarged for sparse classes to ~TARGET_PER_CELL candidates.
+ * given reach: the cell is the reach minimum, enlarged when that would hold fewer than `targetPerCell`
+ * candidates (fewer cells to visit per candidate when enumerating an area, at the price of more candidates
+ * per point query: craters use 0.5, rocks 2).
  */
-export function cellLayout(density: number, reach: number): { cell: number; slots: number; pSlot: number } {
+export function cellLayout(density: number, reach: number, targetPerCell: number): { cell: number; slots: number; pSlot: number } {
   const sMin = cellSizeForReach(reach);
-  const sSparse = density > 0 ? Math.sqrt((SHELL_ALPHA * TARGET_PER_CELL) / density) : sMin;
+  const sSparse = density > 0 ? Math.sqrt((SHELL_ALPHA * targetPerCell) / density) : sMin;
   const cell = Math.max(sMin, sSparse);
   const perCell = (density * cell * cell) / SHELL_ALPHA;
   const slots = Math.max(1, Math.ceil(perCell));

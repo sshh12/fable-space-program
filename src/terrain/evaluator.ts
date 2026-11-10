@@ -305,17 +305,30 @@ export class HeightEvaluator {
     if (base < 0) base = 0;
     if (base > stopLevel) base = stopLevel;
     const top = Math.min(b.heightCov.maxLevel, fl + 1, stopLevel);
+    if (top > b.g) this.ensureCoverage(top);
+    // A level whose weight is exactly 1 (beta = 1 and w = 1) replaces everything below it: start the chain
+    // at the highest such level (inside regional coverage that is the top level - one bicubic, not seven).
+    let start = base;
+    for (let L = top; L > base; L--) {
+      if (L > Ll) continue;
+      if (L > b.g && (L > this.covDone || this.w[L] !== 1)) continue;
+      start = L;
+      break;
+    }
     let D: number;
-    if (this.sample(base, true)) {
+    if (start > base && this.sample(start, true)) {
+      D = this.hSmp[3 * start]!;
+    } else if (this.sample(base, true)) {
+      start = base;
       D = this.hSmp[3 * base]!;
     } else {
+      start = base;
       this.incomplete = true;
       let L = base - 1;
       while (L >= 0 && !this.sample(L, false)) L--;
       D = L >= 0 ? this.hSmp[3 * L]! : 0;
     }
-    if (top > b.g) this.ensureCoverage(top);
-    for (let L = base + 1; L <= top; L++) {
+    for (let L = start + 1; L <= top; L++) {
       const beta = smootherstep01(Ll - L + 1);
       if (beta === 0) break;
       let c = beta;
