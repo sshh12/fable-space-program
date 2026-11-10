@@ -5,9 +5,9 @@ import { quat } from '../../../src/core/math/quat';
 import { DEG, RAD, TWO_PI } from '../../../src/core/math/scalar';
 import { v3, type Vec3 } from '../../../src/core/math/vec3';
 import type { BodySystem } from '../../../src/sim/bodies/bodySystem';
-import { makeOrbit, propagate } from '../../../src/sim/orbit/kepler';
+import { conicStateAtTime, makeOrbit, propagate } from '../../../src/sim/orbit/kepler';
 import { estimateBurnTime, nodeBurnInfo, nodeDeltaVInertial } from '../../../src/sim/orbit/maneuver';
-import { patchOrbit, predictPatches, stateOnPatches } from '../../../src/sim/orbit/patches';
+import { patchOrbit, predictPatches, predictPatchesWithOrbits, stateOnPatches } from '../../../src/sim/orbit/patches';
 import { nextWarpEvent } from '../../../src/sim/orbit/warp';
 import { meanAnomalyFromTrue } from '../../../src/sim/orbit/anomaly';
 import { computeOrbitalReadouts } from '../../../src/sim/nav/readouts';
@@ -381,6 +381,75 @@ describe('prediction edge cases', () => {
     const ro = computeOrbitalReadouts({ system: sys, bodyId: MOON, r: { x: 0, y: 0, z: R + 1 }, v: { x: 0, y: 0, z: v0 }, ut: T0 });
     expect(ro.apoapsisAltitude + R).toBeCloseTo(ra, 3);
     expect(ro.timeToApoapsis!).toBeCloseTo(ap.ut - T0, 3);
+  });
+
+  it('radial and near-radial patches: self-consistent conic, stateOnPatches never throws and matches the exact propagation', () => {
+    const M = sys.body(MOON);
+    const E = sys.body(EARTH);
+    const pole = M.radius + 2000;
+    const cases: { body: string; r: Vec3; v: Vec3; radial: boolean }[] = [
+      { body: MOON, r: { x: 0, y: 0, z: pole }, v: v3.zero(), radial: true }, // hover / drop at the lunar pole
+      { body: MOON, r: { x: 0, y: 0, z: M.radius + 1 }, v: { x: 0, y: 0, z: 1000 }, radial: true }, // straight up, falls back
+      { body: MOON, r: { x: 0, y: 0, z: M.radius + 1 }, v: { x: 0, y: 0, z: 3000 }, radial: true }, // radial escape (hyperbolic)
+      { body: EARTH, r: { x: 3e8, y: 0, z: 0 }, v: { x: -100, y: 0, z: 0 }, radial: true }, // radial fall from far out
+      ...[1e-7, 1e-5, 1e-3, 0.01, 1].map((vt) => ({ body: MOON, r: { x: 0, y: 0, z: pole }, v: { x: vt, y: 0, z: 0 }, radial: false })),
+      { body: MOON, r: { x: 0, y: 0, z: M.radius + 1 }, v: { x: 0.01, y: 0, z: 3000 }, radial: false },
+      { body: EARTH, r: { x: 0, y: 1e7, z: 0 }, v: { x: 1e-6, y: -50, z: 0 }, radial: false },
+    ];
+    for (const c of cases) {
+      const mu = sys.body(c.body).mu;
+      const o = makeOrbit(c.body, mu, c.r, c.v, T0);
+      expect(o.radial).toBe(c.radial);
+      expect(o.nearRadial).toBe(true);
+      const k = o.conic;
+      // conic: a from the energy, period non-null exactly when e < 1 (bound near-radial: e strictly below 1)
+      expect(k.a).toBeCloseTo(1 / o.alpha, 6);
+      if (o.alpha > 0 && !c.radial) expect(k.e).toBeLessThan(1);
+      if (o.alpha < 0) expect(k.e).toBeGreaterThanOrEqual(1);
+      expect(k.period).toBe(k.e < 1 ? o.period : null);
+      if (c.radial) {
+        expect(k.e).toBe(1);
+        expect(k.p).toBe(0);
+        expect(v3.dist(k.P, v3.neg(v3.normalize(c.r)))).toBeLessThan(1e-15);
+      }
+      const items = predictPatchesWithOrbits(sys, { bodyId: c.body, r: c.r, v: c.v }, T0, []).current;
+      const patches = items.map((x) => x.patch);
+      const first = patches[0]!;
+      if (c.radial) {
+        expect(first.nuStart).toBe(Math.PI);
+        expect(first.nuEnd).toBe(Math.PI);
+      }
+      // the patch conic alone rebuilds the trajectory (time form from the periapsis passage): sub-mm
+      for (let i = 0; i < items.length; i++) {
+        const p = items[i]!.patch;
+        expect(() => patchOrbit(p)).not.toThrow();
+        for (let j = 0; j <= 16; j++) {
+          const t = p.tStart + ((p.tEnd - p.tStart) * j) / 16;
+          const exact = propagate(items[i]!.orbit, t);
+          const s = stateOnPatches(patches, t)!;
+          if (s.patchIndex !== i) continue;
+          expect(v3.dist(s.r, exact.r)).toBeLessThan(1e-3);
+          expect(v3.dist(s.v, exact.v)).toBeLessThan(1e-5);
+          // with the orbits passed, the state is the exact propagation itself
+          const w = stateOnPatches(items, t)!;
+          expect(w.r).toEqual(exact.r);
+          expect(w.v).toEqual(exact.v);
+        }
+      }
+      // conicStateAtTime from the conic agrees with the epoch state at the epoch, to |v| x ~1e-7 s (the
+      // resolution of t - tPeriapsis at ut ~ 9e8 s)
+      const s0 = conicStateAtTime(k, T0);
+      expect(v3.dist(s0.r, c.r)).toBeLessThan(2e-7 * v3.len(c.v) + 1e-5);
+      expect(v3.dist(s0.v, c.v)).toBeLessThan(1e-6);
+    }
+    // the reviewer's case: 0.01 m/s tangential, 10 s after the start (was 6.75 m off)
+    const nr = predictPatches(sys, { bodyId: MOON, r: { x: 0, y: 0, z: pole }, v: { x: 0.01, y: 0, z: 0 } }, T0, []).current;
+    const exact = propagate(makeOrbit(MOON, M.mu, { x: 0, y: 0, z: pole }, { x: 0.01, y: 0, z: 0 }, T0), T0 + 10);
+    expect(v3.dist(stateOnPatches(nr, T0 + 10)!.r, exact.r)).toBeLessThan(1e-4);
+    // ordinary conics keep the true-anomaly reconstruction (exact to rounding)
+    const leo = predictPatchesWithOrbits(sys, { bodyId: EARTH, r: { x: E.radius + 300e3, y: 0, z: 0 }, v: { x: 0, y: 7700, z: 100 } }, T0, []).current[0]!;
+    const tq = leo.patch.tStart + 1234.5;
+    expect(v3.dist(propagate(patchOrbit(leo.patch), tq).r, propagate(leo.orbit, tq).r)).toBeLessThan(1e-6);
   });
 
   it('orbit inside the atmosphere going up: vacuum conic re-enters (atmosphere) or impacts', () => {

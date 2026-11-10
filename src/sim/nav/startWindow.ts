@@ -1,8 +1,11 @@
 /**
  * Scenario start-time constraints (docs/research/sim-design.md 15.3), used by tools/sim/findStartTime.ts
  * and re-asserted by tests for any scenario:
- *   (a) a coplanar, ascending-azimuth (northbound) launch opportunity into the target body's orbit plane
- *       opens `launchDelay` (600 s) +/- `launchDelayTolerance` (30 s) after the start;
+ *   (a) a coplanar launch opportunity into the target body's orbit plane opens `launchDelay` (600 s) +/-
+ *       `launchDelayTolerance` (30 s) after the start; `launchKind` selects which crossing counts:
+ *       'ascending' (northbound azimuth, ~81 deg from Ka Lae: the brief's definition and the default),
+ *       'descending' (southbound, ~99 deg) or 'either' (the next crossing of either kind). Both kinds put
+ *       the parking orbit in the target's plane, so TLI needs no plane change either way;
  *   (b) the Sun is `padSunElevationDeg` (10-35 deg) above the pad horizon at the start and rising (morning);
  *   (c) from start + 3 d to start + 5 d the Sun at the landing target stays within
  *       `landingSunElevationDeg` (5-35 deg), rises throughout, and its disc is fully visible (no eclipse).
@@ -13,7 +16,7 @@ import { DEG, RAD } from '../../core/math/scalar';
 import { v3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
 import { fixedPosition } from '../frames/bodyFrames';
-import { computeLaunchWindow } from './launchWindow';
+import { computeLaunchWindow, type LaunchWindowKind } from './launchWindow';
 
 export interface SurfacePoint {
   bodyId: string;
@@ -23,9 +26,14 @@ export interface SurfacePoint {
   elevation: number;
 }
 
+/** Which coplanar plane crossing satisfies constraint (a). */
+export type StartLaunchKind = 'ascending' | 'descending' | 'either';
+
 export interface StartConstraintOptions {
   launchDelay?: number;
   launchDelayTolerance?: number;
+  /** Default 'ascending'. */
+  launchKind?: StartLaunchKind;
   padSunElevationDeg?: readonly [number, number];
   /** Landing-stay window after the start, s. */
   landingWindow?: readonly [number, number];
@@ -39,6 +47,7 @@ export interface StartConstraintOptions {
 export const START_CONSTRAINT_DEFAULTS = {
   launchDelay: 600,
   launchDelayTolerance: 30,
+  launchKind: 'ascending' as StartLaunchKind,
   padSunElevationDeg: [10, 35] as const,
   landingWindow: [3 * 86400, 5 * 86400] as const,
   landingSunElevationDeg: [5, 35] as const,
@@ -81,6 +90,8 @@ export interface StartConstraintReport {
     delay: number | null;
     launchAzimuthDeg: number | null;
     inertialAzimuthDeg: number | null;
+    /** The crossing found is northbound (ascending); null when there is none or it is not coplanar. */
+    ascending: boolean | null;
   };
   padSun: { ok: boolean; elevationDeg: number; rising: boolean; elevationAtLaunchDeg: number | null };
   landingSun: {
@@ -94,6 +105,9 @@ export interface StartConstraintReport {
     minVisibility: number;
   };
 }
+
+/** computeLaunchWindow kind for a constraint-(a) launch kind ('either' = the next crossing of any kind). */
+export const launchWindowKind = (k: StartLaunchKind): LaunchWindowKind => (k === 'either' ? 'next' : k);
 
 /** Pad Sun constraint (b) only (cheap pre-filter for searches). */
 export function padSunOk(system: BodySystem, site: SurfacePoint, startUt: number, range: readonly [number, number] = START_CONSTRAINT_DEFAULTS.padSunElevationDeg): boolean {
@@ -111,7 +125,9 @@ export function checkStartConstraints(
   startUt: number,
   options: StartConstraintOptions = {},
 ): StartConstraintReport {
-  const o = { ...START_CONSTRAINT_DEFAULTS, ...options };
+  // Options given as undefined keep the default (a plain spread would overwrite it with undefined).
+  const given = Object.fromEntries(Object.entries(options).filter(([, val]) => val !== undefined)) as StartConstraintOptions;
+  const o = { ...START_CONSTRAINT_DEFAULTS, ...given };
   // (a) launch opportunity
   const w = computeLaunchWindow({
     system,
@@ -121,7 +137,7 @@ export function checkStartConstraints(
     elevation: site.elevation,
     ut: startUt,
     targetBodyId,
-    kind: 'ascending',
+    kind: launchWindowKind(o.launchKind),
     ...(options.parkingAltitude !== undefined ? { parkingAltitude: options.parkingAltitude } : {}),
   });
   const coplanar = w !== null && w.coplanar;
@@ -167,6 +183,7 @@ export function checkStartConstraints(
       delay,
       launchAzimuthDeg: w ? w.launchAzimuthDeg : null,
       inertialAzimuthDeg: w ? w.inertialAzimuthDeg : null,
+      ascending: w ? w.ascending : null,
     },
     padSun: { ok: padOk, elevationDeg: padDeg, rising: pad.rate > 0, elevationAtLaunchDeg: padAtLaunch },
     landingSun: { ok: landOk, startDeg, endDeg, minDeg, maxDeg, rising, lit, minVisibility: minVis },

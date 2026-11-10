@@ -11,44 +11,44 @@
     "extensionReason": "no launch opportunity in the requested range satisfies all three constraints; the first exact solution after it was taken",
     "nearMissesInRequestedRange": [
       {
-        "startUt": 902556773.6217529,
-        "startUtc": "2028-08-07T18:12:53.621Z",
-        "padSunDeg": 29.54,
-        "landingSunMinDeg": 4.38,
-        "landingSunMaxDeg": 28.85,
-        "violationDeg": 0.62
+        "startUt": 902556613.3253119,
+        "startUtc": "2028-08-07T18:10:13.325Z",
+        "padSunDeg": 28.8,
+        "landingSunMinDeg": 4.35,
+        "landingSunMaxDeg": 28.83,
+        "violationDeg": 0.65
       },
       {
-        "startUt": 935729948.4761231,
-        "startUtc": "2029-08-26T16:59:08.476Z",
-        "padSunDeg": 11.59,
-        "landingSunMinDeg": 12.32,
-        "landingSunMaxDeg": 36.78,
-        "violationDeg": 1.78
+        "startUt": 935729788.1796821,
+        "startUtc": "2029-08-26T16:56:28.179Z",
+        "padSunDeg": 10.85,
+        "landingSunMinDeg": 12.3,
+        "landingSunMaxDeg": 36.75,
+        "violationDeg": 1.75
       },
       {
-        "startUt": 871968521.4833075,
-        "startUtc": "2027-08-19T17:28:41.483Z",
-        "padSunDeg": 18.8,
-        "landingSunMinDeg": 2.4,
-        "landingSunMaxDeg": 26.87,
-        "violationDeg": 2.6
+        "startUt": 871968361.1868664,
+        "startUtc": "2027-08-19T17:26:01.186Z",
+        "padSunDeg": 18.06,
+        "landingSunMinDeg": 2.38,
+        "landingSunMaxDeg": 26.84,
+        "violationDeg": 2.62
       },
       {
-        "startUt": 966232036.5240378,
-        "startUtc": "2030-08-14T17:47:16.524Z",
-        "padSunDeg": 23.32,
-        "landingSunMinDeg": 2.13,
-        "landingSunMaxDeg": 26.6,
-        "violationDeg": 2.87
+        "startUt": 966231876.2275968,
+        "startUtc": "2030-08-14T17:44:36.227Z",
+        "padSunDeg": 22.58,
+        "landingSunMinDeg": 2.1,
+        "landingSunMaxDeg": 26.58,
+        "violationDeg": 2.9
       },
       {
-        "startUt": 966318200.6145686,
-        "startUtc": "2030-08-15T17:43:20.614Z",
-        "padSunDeg": 22.36,
-        "landingSunMinDeg": 14.33,
-        "landingSunMaxDeg": 38.79,
-        "violationDeg": 3.79
+        "startUt": 966318040.3181275,
+        "startUtc": "2030-08-15T17:40:40.318Z",
+        "padSunDeg": 21.62,
+        "landingSunMinDeg": 14.31,
+        "landingSunMaxDeg": 38.77,
+        "violationDeg": 3.77
       }
     ],
     "selection": "first solution with >= 1 deg margin on every elevation bound (else the first solution)"
@@ -56,10 +56,10 @@
   "site": {
     "id": "ka-lae-lc1",
     "bodyId": "earth",
-    "latDeg": 19.1,
-    "lonDeg": -155.5,
-    "padElevation": 0,
-    "padElevationSource": "definition says 'terrain': 0 m assumed (geocentric angles do not depend on it)"
+    "latDeg": 18.987556,
+    "lonDeg": -155.603239,
+    "padElevation": 21.62,
+    "padElevationSource": "data/defs/sites (ka-lae-lc1.location)"
   },
   "targetBodyId": "moon",
   "landing": {
@@ -69,6 +69,7 @@
     "source": "built-in default (0.674 N, 23.473 E)"
   },
   "constraints": {
+    "launchKind": "ascending",
     "launchDelaySeconds": 600,
     "launchDelayToleranceSeconds": 30,
     "padSunElevationDeg": [
@@ -85,38 +86,112 @@
       35
     ]
   },
-  "startUt": 1187932241.4598682,
-  "startUtc": "2037-08-23T17:10:41.459Z",
+  "startUt": 1187932081.163427,
+  "startUtc": "2037-08-23T17:08:01.163Z",
   "launch": {
-    "opportunityUt": 1187932841.4598682,
-    "opportunityUtc": "2037-08-23T17:20:41.459Z",
+    "opportunityUt": 1187932681.1634274,
+    "opportunityUtc": "2037-08-23T17:18:01.163Z",
     "delaySeconds": 600,
-    "launchAzimuthDeg": 80.8653,
-    "inertialAzimuthDeg": 81.3775
+    "ascending": true,
+    "launchAzimuthDeg": 80.5979,
+    "inertialAzimuthDeg": 81.1253
   },
   "padSun": {
-    "elevationDeg": 14.4059,
-    "elevationAtLaunchDeg": 16.7522,
+    "elevationDeg": 13.6687,
+    "elevationAtLaunchDeg": 16.0153,
     "rising": true
   },
   "landingSun": {
-    "windowStartUtc": "2037-08-26T17:10:41.459Z",
-    "windowEndUtc": "2037-08-28T17:10:41.459Z",
-    "startDeg": 9.5294,
-    "endDeg": 33.9862,
-    "minDeg": 9.5294,
-    "maxDeg": 33.9862,
+    "windowStartUtc": "2037-08-26T17:08:01.163Z",
+    "windowEndUtc": "2037-08-28T17:08:01.163Z",
+    "startDeg": 9.5067,
+    "endDeg": 33.9635,
+    "minDeg": 9.5067,
+    "maxDeg": 33.9635,
     "rising": true,
     "lit": true,
     "minVisibility": 1
   },
   "alternatives": [
     {
-      "startUt": 1187932241.4598682,
-      "startUtc": "2037-08-23T17:10:41.459Z",
-      "padSunDeg": 14.41,
-      "landingSunStartDeg": 9.53,
-      "landingSunEndDeg": 33.99
+      "startUt": 1187932081.163427,
+      "startUtc": "2037-08-23T17:08:01.163Z",
+      "padSunDeg": 13.67,
+      "landingSunStartDeg": 9.51,
+      "landingSunEndDeg": 33.96
     }
-  ]
+  ],
+  "otherLaunchKinds": {
+    "note": "Requested range only, same pad-Sun and landing-Sun constraints; constraint (a) with the given launch kind (--launch-kind).",
+    "results": [
+      {
+        "launchKind": "descending",
+        "opportunities": 1465,
+        "solutionsInRequestedRange": 2,
+        "chosen": {
+          "startUt": 938240818.839663,
+          "startUtc": "2029-09-24T18:26:58.839Z",
+          "ascending": false,
+          "launchAzimuthDeg": 99.4,
+          "padSunDeg": 30.87,
+          "landingSunStartDeg": 7.47,
+          "landingSunEndDeg": 31.9
+        },
+        "solutions": [
+          {
+            "startUt": 907652566.7012175,
+            "startUtc": "2028-10-05T17:42:46.701Z",
+            "ascending": false,
+            "launchAzimuthDeg": 99.4,
+            "padSunDeg": 19.85,
+            "landingSunStartDeg": 5.23,
+            "landingSunEndDeg": 29.65
+          },
+          {
+            "startUt": 938240818.839663,
+            "startUtc": "2029-09-24T18:26:58.839Z",
+            "ascending": false,
+            "launchAzimuthDeg": 99.4,
+            "padSunDeg": 30.87,
+            "landingSunStartDeg": 7.47,
+            "landingSunEndDeg": 31.9
+          }
+        ]
+      },
+      {
+        "launchKind": "either",
+        "opportunities": 2930,
+        "solutionsInRequestedRange": 2,
+        "chosen": {
+          "startUt": 938240818.839663,
+          "startUtc": "2029-09-24T18:26:58.839Z",
+          "ascending": false,
+          "launchAzimuthDeg": 99.4,
+          "padSunDeg": 30.87,
+          "landingSunStartDeg": 7.47,
+          "landingSunEndDeg": 31.9
+        },
+        "solutions": [
+          {
+            "startUt": 907652566.7012175,
+            "startUtc": "2028-10-05T17:42:46.701Z",
+            "ascending": false,
+            "launchAzimuthDeg": 99.4,
+            "padSunDeg": 19.85,
+            "landingSunStartDeg": 5.23,
+            "landingSunEndDeg": 29.65
+          },
+          {
+            "startUt": 938240818.839663,
+            "startUtc": "2029-09-24T18:26:58.839Z",
+            "ascending": false,
+            "launchAzimuthDeg": 99.4,
+            "padSunDeg": 30.87,
+            "landingSunStartDeg": 7.47,
+            "landingSunEndDeg": 31.9
+          }
+        ]
+      }
+    ]
+  }
 }

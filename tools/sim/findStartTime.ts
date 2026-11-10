@@ -5,21 +5,24 @@
  *        [--landing-body <bodyId>] [--landing-lat <deg>] [--landing-lon <deg>]
  *        [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--extend-years <n>] [--out <path>]
  *        [--pad-sun-min <deg>] [--pad-sun-max <deg>] [--landing-sun-min <deg>] [--landing-sun-max <deg>]
- *        [--stay-from-days <d>] [--stay-to-days <d>]
+ *        [--stay-from-days <d>] [--stay-to-days <d>] [--launch-kind ascending|descending|either]
  *
  * Constraints (checked by checkStartConstraints in src/sim/nav/startWindow.ts, which tests re-run for any
- * scenario): (a) a coplanar ascending-azimuth launch opportunity into the target's orbit plane opens 600 s
- * after the start; (b) Sun 10-35 deg above the pad horizon and rising; (c) from start + 3 d to start + 5 d
- * the Sun at the landing target stays 5-35 deg, rising, disc fully visible. The numbers of (b) and (c) can
- * be overridden with the flags above; the values used are written to the output (`constraints`).
+ * scenario): (a) a coplanar launch opportunity into the target's orbit plane opens 600 s after the start -
+ * by default an ascending-azimuth (northbound) one as the brief defines it; --launch-kind descending /
+ * either accepts the southbound crossing as well (also coplanar: no plane change at TLI); (b) Sun 10-35 deg
+ * above the pad horizon and rising; (c) from start + 3 d to start + 5 d the Sun at the landing target stays
+ * 5-35 deg, rising, disc fully visible. The numbers of (b) and (c) can be overridden with the flags above;
+ * the values used are written to the output (`constraints`).
  *
- * Search: every ascending plane crossing in [from, to) is a candidate (start = crossing - 600 s, so (a)
- * holds exactly); the first candidate that satisfies all constraints with a 1 deg margin on every
+ * Search: every plane crossing of the selected kind in [from, to) is a candidate (start = crossing - 600 s,
+ * so (a) holds exactly); the first candidate that satisfies all constraints with a 1 deg margin on every
  * elevation bound is chosen (the first plain solution if none has the margin). When NO candidate in the
  * requested range [--from, --to) (default 2027-01-01 .. 2031-01-01) satisfies the constraints, the tool
  * says so, records the closest in-range near misses, and continues year by year (at most --extend-years,
  * default 20; 0 = fail instead) to the first exact solution; the output then has search.searchExtended =
- * true. Constraints are never relaxed.
+ * true. Constraints are never relaxed. For the lead's start-policy decision the output also lists, under
+ * `otherLaunchKinds`, what the requested range holds for each other launch kind (same (b) and (c)).
  *
  * Defaults come from data/defs: the site of the first scenario with a suggested landing (else the only
  * site), its numeric padElevation (0 m when the definition says 'terrain' - the pad elevation does not
@@ -36,7 +39,17 @@ import { loadDefs } from '../../src/core/defs/loader';
 import { DEG } from '../../src/core/math/scalar';
 import { createBodySystem } from '../../src/sim/bodies/bodySystem';
 import { computeLaunchWindow } from '../../src/sim/nav/launchWindow';
-import { checkStartConstraints, padSunOk, START_CONSTRAINT_DEFAULTS, type StartConstraintReport, type SurfacePoint } from '../../src/sim/nav/startWindow';
+import {
+  checkStartConstraints,
+  launchWindowKind,
+  padSunOk,
+  START_CONSTRAINT_DEFAULTS,
+  type StartConstraintReport,
+  type StartLaunchKind,
+  type SurfacePoint,
+} from '../../src/sim/nav/startWindow';
+
+const LAUNCH_KINDS: readonly StartLaunchKind[] = ['ascending', 'descending', 'either'];
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
@@ -121,9 +134,13 @@ async function main(): Promise<void> {
   const landingPoint = { bodyId: landing.bodyId, latitude: landing.latDeg * DEG, longitude: landing.lonDeg * DEG };
   // Constraint values: the defaults of src/sim/nav/startWindow.ts unless overridden on the command line.
   const D = START_CONSTRAINT_DEFAULTS;
+  const launchKindArg = args['launch-kind'] ?? D.launchKind;
+  if (!LAUNCH_KINDS.includes(launchKindArg as StartLaunchKind)) throw new Error(`--launch-kind must be one of ${LAUNCH_KINDS.join(', ')}`);
+  const launchKind = launchKindArg as StartLaunchKind;
   const cons = {
     launchDelay: D.launchDelay,
     launchDelayTolerance: D.launchDelayTolerance,
+    launchKind,
     padSunElevationDeg: [num(args, 'pad-sun-min') ?? D.padSunElevationDeg[0], num(args, 'pad-sun-max') ?? D.padSunElevationDeg[1]] as const,
     landingWindow: [(num(args, 'stay-from-days') ?? D.landingWindow[0] / 86400) * 86400, (num(args, 'stay-to-days') ?? D.landingWindow[1] / 86400) * 86400] as const,
     landingSunElevationDeg: [num(args, 'landing-sun-min') ?? D.landingSunElevationDeg[0], num(args, 'landing-sun-max') ?? D.landingSunElevationDeg[1]] as const,
@@ -133,22 +150,24 @@ async function main(): Promise<void> {
 
   const extendYears = num(args, 'extend-years') ?? 20;
   type Found = { startUt: number; report: StartConstraintReport };
-  /** Every ascending opportunity with start in [a, b): solutions, the margin-preferred choice, and near misses. */
-  const searchRange = (a: number, b: number): { solutions: Found[]; chosen: Found | null; candidates: number; nearMisses: (Found & { violationDeg: number })[] } => {
+  type RangeResult = { solutions: Found[]; chosen: Found | null; candidates: number; nearMisses: (Found & { violationDeg: number })[] };
+  /** Every opportunity of `kind` with start in [a, b): solutions, the margin-preferred choice, and near misses. */
+  const searchRange = (a: number, b: number, kind: StartLaunchKind = launchKind): RangeResult => {
     const solutions: Found[] = [];
     const nearMisses: (Found & { violationDeg: number })[] = [];
+    const kindCons = { ...cons, launchKind: kind };
     let chosen: Found | null = null;
     let candidates = 0;
     let t = a + delay;
     while (t < b + delay) {
-      const w = computeLaunchWindow({ system, bodyId: site.bodyId, latitude: sitePoint.latitude, longitude: sitePoint.longitude, elevation: padElevation, ut: t, targetBodyId, kind: 'ascending' });
+      const w = computeLaunchWindow({ system, bodyId: site.bodyId, latitude: sitePoint.latitude, longitude: sitePoint.longitude, elevation: padElevation, ut: t, targetBodyId, kind: launchWindowKind(kind) });
       if (!w || !w.coplanar) throw new Error(`site latitude ${site.location.latDeg} deg allows no coplanar launch into the ${targetBodyId} plane`);
       const startUt = w.crossingUt - delay;
       t = w.crossingUt + 1;
       if (startUt < a || startUt >= b) continue;
       candidates++;
       if (!padSunOk(system, sitePoint, startUt, cons.padSunElevationDeg)) continue;
-      const report = checkStartConstraints(system, sitePoint, targetBodyId, landingPoint, startUt, cons);
+      const report = checkStartConstraints(system, sitePoint, targetBodyId, landingPoint, startUt, kindCons);
       const ls = report.landingSun;
       if (!report.ok) {
         if (report.launch.ok && report.padSun.ok && ls.rising && ls.minDeg > 0) {
@@ -198,6 +217,27 @@ async function main(): Promise<void> {
     }
   }
 
+  const brief = (s: Found) => ({
+    startUt: s.startUt,
+    startUtc: iso(s.startUt),
+    ascending: s.report.launch.ascending,
+    launchAzimuthDeg: round(s.report.launch.launchAzimuthDeg!, 2),
+    padSunDeg: round(s.report.padSun.elevationDeg, 2),
+    landingSunStartDeg: round(s.report.landingSun.startDeg, 2),
+    landingSunEndDeg: round(s.report.landingSun.endDeg, 2),
+  });
+  // What the requested range holds under each other definition of constraint (a) (same (b) and (c)).
+  const otherLaunchKinds = LAUNCH_KINDS.filter((k) => k !== launchKind).map((k) => {
+    const res = searchRange(fromUt, toUt, k);
+    return { launchKind: k, opportunities: res.candidates, solutionsInRequestedRange: res.solutions.length, chosen: res.chosen ? brief(res.chosen) : null, solutions: res.solutions.slice(0, 12).map(brief) };
+  });
+  for (const alt of otherLaunchKinds) {
+    console.log(
+      `launch kind '${alt.launchKind}': ${alt.solutionsInRequestedRange} solutions in the requested range` +
+        (alt.chosen ? `; would choose ${alt.chosen.startUtc} (az ${alt.chosen.launchAzimuthDeg} deg, pad Sun ${alt.chosen.padSunDeg} deg, landing Sun ${alt.chosen.landingSunStartDeg} -> ${alt.chosen.landingSunEndDeg} deg)` : ''),
+    );
+  }
+
   const r = chosen.report;
   const result = {
     generatedBy: 'tools/sim/findStartTime.ts',
@@ -228,11 +268,14 @@ async function main(): Promise<void> {
     targetBodyId,
     landing: { ...landing, source: landingSource },
     constraints: {
+      launchKind,
       launchDelaySeconds: delay,
       launchDelayToleranceSeconds: cons.launchDelayTolerance,
       padSunElevationDeg: cons.padSunElevationDeg,
       landingWindowDays: cons.landingWindow.map((s) => s / 86400),
-      differFromDefaults: JSON.stringify([cons.padSunElevationDeg, cons.landingWindow, cons.landingSunElevationDeg]) !== JSON.stringify([D.padSunElevationDeg, D.landingWindow, D.landingSunElevationDeg]),
+      differFromDefaults:
+        JSON.stringify([launchKind, cons.padSunElevationDeg, cons.landingWindow, cons.landingSunElevationDeg]) !==
+        JSON.stringify([D.launchKind, D.padSunElevationDeg, D.landingWindow, D.landingSunElevationDeg]),
       landingSunElevationDeg: cons.landingSunElevationDeg,
     },
     startUt: chosen.startUt,
@@ -241,6 +284,7 @@ async function main(): Promise<void> {
       opportunityUt: r.launch.crossingUt,
       opportunityUtc: iso(r.launch.crossingUt!),
       delaySeconds: round(r.launch.delay!, 3),
+      ascending: r.launch.ascending,
       launchAzimuthDeg: round(r.launch.launchAzimuthDeg!),
       inertialAzimuthDeg: round(r.launch.inertialAzimuthDeg!),
     },
@@ -263,9 +307,13 @@ async function main(): Promise<void> {
       landingSunStartDeg: round(s.report.landingSun.startDeg, 2),
       landingSunEndDeg: round(s.report.landingSun.endDeg, 2),
     })),
+    otherLaunchKinds: {
+      note: 'Requested range only, same pad-Sun and landing-Sun constraints; constraint (a) with the given launch kind (--launch-kind).',
+      results: otherLaunchKinds,
+    },
   };
   await fs.writeFile(outPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  console.log(`start ${result.startUtc} (ut ${result.startUt}); launch ${result.launch.opportunityUtc} az ${result.launch.launchAzimuthDeg} deg; pad Sun ${result.padSun.elevationDeg} deg; landing Sun ${result.landingSun.startDeg} -> ${result.landingSun.endDeg} deg`);
+  console.log(`start ${result.startUtc} (ut ${result.startUt}); ${launchKind} launch ${result.launch.opportunityUtc} az ${result.launch.launchAzimuthDeg} deg; pad Sun ${result.padSun.elevationDeg} deg; landing Sun ${result.landingSun.startDeg} -> ${result.landingSun.endDeg} deg`);
   console.log(`${solutions.length} solutions among ${candidates} launch opportunities; wrote ${path.relative(repoRoot, outPath)}`);
 }
 

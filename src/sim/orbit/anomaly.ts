@@ -10,17 +10,22 @@
  * S3 = (sinh H - H)/H^3, H = 2 atanh(w) for hyperbolas. At e = 1 it reduces to Barker's equation
  * (D/2 + D^3/6). Every factor is evaluated without cancellation (series near zero). For ellipses with
  * |E| > pi/2 the classical form is used instead (no cancellation there and D may be infinite).
+ *
+ * This is the same relation as timeSincePeriapsis in src/core/math/conic.ts (what UI consumers of
+ * Patch.conic evaluate), conditioned for the near-parabolic band where the core form E - e sin E / its
+ * Barker band lose digits; tests/unit/sim-orbits/anomaly.test.ts asserts the two agree for e in [0, 5].
+ * docs/requests/sim-orbits-3.md asks core to adopt this form, after which the sim calls the core function.
  */
 
 /** atan(w)/w, exact at 0. */
-function atanOverX(w: number): number {
+export function atanOverX(w: number): number {
   const w2 = w * w;
   if (w2 < 1e-6) return 1 - w2 / 3 + (w2 * w2) / 5;
   return Math.atan(w) / w;
 }
 
 /** atanh(w)/w, exact at 0 (|w| < 1). */
-function atanhOverX(w: number): number {
+export function atanhOverX(w: number): number {
   const w2 = w * w;
   if (w2 < 1e-6) return 1 + w2 / 3 + (w2 * w2) / 5;
   return Math.atanh(w) / w;
@@ -107,9 +112,4 @@ export function eccentricFromMean(e: number, M: number): number {
     if (Math.abs(d) <= 1e-15 * Math.max(1, Math.abs(E))) break;
   }
   return E;
-}
-
-/** Largest true anomaly magnitude on the conic: pi for ellipses, the asymptote angle for e >= 1. */
-export function maxTrueAnomaly(e: number): number {
-  return e < 1 ? Math.PI : Math.acos(-1 / e);
 }

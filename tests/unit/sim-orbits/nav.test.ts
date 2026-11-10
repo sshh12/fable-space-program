@@ -59,6 +59,25 @@ describe('navball', () => {
     }
   });
 
+  it('pitch keeps full precision at the vertical (pads anywhere, any time; a 1e-8 rad tilt is resolved)', () => {
+    let worst = 0;
+    for (let i = 0; i < 400; i++) {
+      const t = T0 + i * 7919.3;
+      const s: LaunchSiteDef = { ...site, location: { ...site.location, latDeg: -85 + (i * 37.1) % 170, lonDeg: -180 + (i * 53.7) % 360 }, padAzimuthDeg: (i * 29) % 360 };
+      const pad = padState(sys, s, t, 0);
+      const nb = computeNavball({ mode: 'surface', q: pad.q, r: pad.r, v: pad.v, qFixedToInertial: sys.orientation(EARTH, t), spin: sys.spin(EARTH) });
+      worst = Math.max(worst, Math.abs(nb.pitchDeg - 90));
+    }
+    expect(worst).toBeLessThan(1e-12);
+    const pad = padState(sys, site, T0, 0);
+    for (const tilt of [1e-8, 1e-6, 1e-3]) {
+      // pitch down about +X by `tilt`: the nose leaves the vertical by exactly that angle
+      const q = quat.mul(pad.q, quat.fromAxisAngle(v3.unitX(), -tilt));
+      const nb = computeNavball({ mode: 'surface', q, r: pad.r, v: pad.v, qFixedToInertial: sys.orientation(EARTH, T0), spin: sys.spin(EARTH) });
+      expect(Math.abs(nb.pitchDeg - (90 - tilt * RAD))).toBeLessThan(1e-10);
+    }
+  });
+
   function orbitalAttitude(): { q: Quat; r: Vec3; v: Vec3 } {
     // equatorial circular orbit over the prime meridian direction of ROOT +X, moving east (+Y)
     const R = sys.body(EARTH).radius + 300e3;

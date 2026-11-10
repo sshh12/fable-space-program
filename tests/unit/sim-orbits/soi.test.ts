@@ -212,9 +212,9 @@ function buildCases(): Case[] {
 }
 
 describe('SOI transitions vs a patched-gravity RK4 reference', () => {
-  it('match within 0.5 s for 32 trajectories (grazing included), with no missed encounter', () => {
+  it('match within 0.5 s for 38 translunar, grazing, TLI and return trajectories, with no missed encounter', () => {
     const cases = buildCases();
-    expect(cases.length).toBeGreaterThanOrEqual(20);
+    expect(cases.length).toBe(38);
     let compared = 0;
     let grazingEntries = 0;
     let worst = 0;

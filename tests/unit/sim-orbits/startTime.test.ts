@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
 import { DEG } from '../../../src/core/math/scalar';
 import type { BodySystem } from '../../../src/sim/bodies/bodySystem';
-import { checkStartConstraints, type StartConstraintOptions, type SurfacePoint } from '../../../src/sim/nav/startWindow';
+import { checkStartConstraints, START_CONSTRAINT_DEFAULTS, type StartConstraintOptions, type StartLaunchKind, type SurfacePoint } from '../../../src/sim/nav/startWindow';
 import { loadWorld, repoRoot } from './fixtures';
 
 interface StartTimeFile {
@@ -16,16 +16,27 @@ interface StartTimeFile {
   launch: { opportunityUt: number; launchAzimuthDeg: number };
   padSun: { elevationDeg: number };
   landingSun: { minDeg: number; maxDeg: number };
-  search: { searchExtended: boolean; nearMissesInRequestedRange?: { startUt: number }[] };
-  constraints: { padSunElevationDeg: [number, number]; landingWindowDays: [number, number]; landingSunElevationDeg: [number, number] };
+  search: { from: string; to: string; searchExtended: boolean; nearMissesInRequestedRange?: { startUt: number }[] };
+  constraints: {
+    launchKind: StartLaunchKind;
+    padSunElevationDeg: [number, number];
+    landingWindowDays: [number, number];
+    landingSunElevationDeg: [number, number];
+  };
+  otherLaunchKinds: {
+    results: { launchKind: StartLaunchKind; solutionsInRequestedRange: number; chosen: { startUt: number; ascending: boolean } | null; solutions: { startUt: number; ascending: boolean }[] }[];
+  };
 }
 
 /** The constraint values the file was generated with (defaults unless the tool was run with overrides). */
-const optionsOf = (s: StartTimeFile): StartConstraintOptions => ({
+const optionsOf = (s: StartTimeFile, launchKind: StartLaunchKind = s.constraints.launchKind): StartConstraintOptions => ({
+  launchKind,
   padSunElevationDeg: s.constraints.padSunElevationDeg,
   landingWindow: [s.constraints.landingWindowDays[0] * 86400, s.constraints.landingWindowDays[1] * 86400],
   landingSunElevationDeg: s.constraints.landingSunElevationDeg,
 });
+const J2000_MS = Date.UTC(2000, 0, 1, 12);
+const utOfIso = (s: string): number => (Date.parse(s) - J2000_MS) / 1000;
 
 let defs: DefLibrary;
 let sys: BodySystem;
@@ -47,6 +58,7 @@ describe('scenario start time', () => {
     expect(st.site.latDeg).toBe(def.location.latDeg);
     expect(st.site.lonDeg).toBe(def.location.lonDeg);
     expect(st.site.bodyId).toBe(def.bodyId);
+    if (typeof def.location.padElevation === 'number') expect(st.site.padElevation).toBe(def.location.padElevation);
   });
 
   it('satisfies the three constraints (launch 600 +/- 30 s, pad Sun 10-35 deg rising, landing Sun 5-35 deg rising and lit)', () => {
@@ -71,6 +83,33 @@ describe('scenario start time', () => {
       const r = checkStartConstraints(sys, site, st.targetBodyId, landing, m.startUt, optionsOf(st));
       expect(r.launch.ok).toBe(true);
       expect(r.ok).toBe(false);
+    }
+  });
+
+  it('the recorded launch kind is honoured: ascending = northbound crossing, the other kinds as recorded', () => {
+    const asc = checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt, optionsOf(st));
+    if (st.constraints.launchKind === 'ascending') expect(asc.launch.ascending).toBe(true);
+    if (st.constraints.launchKind === 'descending') expect(asc.launch.ascending).toBe(false);
+    // the default is the brief's definition, and an explicit undefined keeps it
+    expect(START_CONSTRAINT_DEFAULTS.launchKind).toBe('ascending');
+    const und = checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt, { ...optionsOf(st), launchKind: undefined });
+    expect(und.launch.ascending).toBe(true);
+    // every solution recorded for another launch kind passes the checks with that kind, inside the requested range
+    const from = utOfIso(st.search.from);
+    const to = utOfIso(st.search.to);
+    for (const alt of st.otherLaunchKinds.results) {
+      expect(alt.solutions).toHaveLength(Math.min(12, alt.solutionsInRequestedRange));
+      for (const s of alt.solutions) {
+        const r = checkStartConstraints(sys, site, st.targetBodyId, landing, s.startUt, optionsOf(st, alt.launchKind));
+        expect(r.ok).toBe(true);
+        expect(r.launch.ascending).toBe(s.ascending);
+        expect(r.launch.delay!).toBeCloseTo(600, 6);
+        expect(s.startUt).toBeGreaterThanOrEqual(from);
+        expect(s.startUt).toBeLessThan(to);
+        if (alt.launchKind === 'ascending') expect(s.ascending).toBe(true);
+        if (alt.launchKind === 'descending') expect(s.ascending).toBe(false);
+      }
+      if (alt.chosen) expect(alt.solutions.map((s) => s.startUt)).toContain(alt.chosen.startUt);
     }
   });
 });

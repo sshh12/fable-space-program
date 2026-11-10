@@ -4,6 +4,7 @@
  * coarse height function), child-SOI entry (guaranteed-safe sampling + Brent + grazing-minimum check) and
  * closest approach to a body.
  */
+import { conicRadiusCrossing } from '../../core/math/conic';
 import { quat } from '../../core/math/quat';
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
@@ -50,14 +51,11 @@ export function trueAnomalyAt(o: Orbit, t: number): number {
   return Math.atan2(v3.dot(R_, o.conic.Q), v3.dot(R_, o.conic.P));
 }
 
-/** True anomaly magnitude (in [0, pi]) at which the conic has radius R, or null if it never does. */
-export function radiusCrossingAnomaly(o: Orbit, R: number): number | null {
-  const c = o.conic;
-  if (c.e < 1e-12) return null;
-  const cosNu = (c.p / R - 1) / c.e;
-  if (!(cosNu >= -1 && cosNu <= 1)) return null;
-  return Math.acos(cosNu);
-}
+/**
+ * True anomaly magnitude (in [0, pi]) at which the orbit's conic has radius R, or null if it never does
+ * (core conicRadiusCrossing; near-radial orbits use universalEventTime instead).
+ */
+export const radiusCrossingAnomaly = (o: Orbit, R: number): number | null => conicRadiusCrossing(o.conic, R);
 
 /**
  * First time strictly after `tAfter` at which |r| crosses R outbound (direction +1) or inbound (-1).
@@ -292,7 +290,8 @@ export function findSoiEntry(system: BodySystem, o: Orbit, childId: string, tFro
   if (!kep || Rsoi === null || child.parentId !== o.bodyId) return null;
   const c = o.conic;
   const rpV = c.p / (1 + c.e);
-  const raV = c.e < 1 ? c.p / (1 - c.e) : Infinity;
+  // 2a - rp: exact for every bound orbit, including near-radial ones where p/(1 - e) has lost its digits.
+  const raV = o.period !== null ? 2 / o.alpha - rpV : Infinity;
   const rpC = kep.a * (1 - kep.e);
   const raC = kep.a * (1 + kep.e);
   if (rpV > raC + Rsoi || raV < rpC - Rsoi) return null;

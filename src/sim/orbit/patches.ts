@@ -38,7 +38,7 @@ import {
   timeOfTrueAnomaly,
   type CoarseHeightFn,
 } from './events';
-import { makeOrbit, propagate, type Orbit } from './kepler';
+import { conicStateAtTime, makeOrbit, NEAR_RADIAL_P, propagate, type Orbit } from './kepler';
 import { nodeDeltaVInertial } from './maneuver';
 import { nodesVersusPlane } from './relative';
 
@@ -198,8 +198,9 @@ function runChain(
     }
 
     const end = propagate(o, tEnd);
-    const nuStart = Math.atan2(v3.dot(r, o.conic.Q), v3.dot(r, o.conic.P));
-    const nuEnd = reason === 'closed' ? nuStart + TWO_PI : unwrappedNuEnd(o, t, nuStart, tEnd, end.r);
+    // A radial trajectory stays on the ray -P: true anomaly pi throughout (see Orbit.conic).
+    const nuStart = o.radial ? Math.PI : Math.atan2(v3.dot(r, o.conic.Q), v3.dot(r, o.conic.P));
+    const nuEnd = o.radial ? Math.PI : reason === 'closed' ? nuStart + TWO_PI : unwrappedNuEnd(o, t, nuStart, tEnd, end.r);
     const markers = buildMarkers(system, o, t, tEnd, reason, nextBodyId, end, imp?.height ?? null, mode, nextNode, targetId, opts);
     const patch: Patch = {
       bodyId,
@@ -358,26 +359,39 @@ export function predictPatches(system: BodySystem, state: TrajectoryState, ut: n
   return { current: p.current.map((x) => x.patch), planned: p.planned.map((x) => x.patch) };
 }
 
-/** Orbit of a patch (re-built from its conic at tStart; exact to rounding). */
+/**
+ * Orbit of a patch re-built from the contract data alone (conic, nuStart, tStart), for patches received
+ * without their Orbit. Ordinary conics: the state at nuStart (exact to rounding). Radial (p = 0) and
+ * near-radial conics (p < NEAR_RADIAL_P r at the start, where 1 + e cos nu has lost its digits): the state
+ * at tStart from the periapsis passage by conicStateAtTime (error ~ |v| x 1e-7 s). Never throws for a
+ * patch produced by predictPatches. Prefer the Orbit from predictPatchesWithOrbits where available.
+ */
 export function patchOrbit(patch: Patch): Orbit {
   const c = patch.conic;
   const nu = patch.nuStart;
-  const r = conicPosition(c, nu);
-  const k = Math.sqrt(c.mu / c.p);
-  const vv = { x: -Math.sin(nu) * k, y: (c.e + Math.cos(nu)) * k };
-  const v = v3.add(v3.scale(c.P, vv.x), v3.scale(c.Q, vv.y));
-  return makeOrbit(patch.bodyId, c.mu, r, v, patch.tStart);
+  const cs = Math.cos(nu);
+  if (c.p > 0 && 1 + c.e * cs > NEAR_RADIAL_P) {
+    const r = conicPosition(c, nu);
+    const k = Math.sqrt(c.mu / c.p);
+    const v = v3.add(v3.scale(c.P, -Math.sin(nu) * k), v3.scale(c.Q, (c.e + cs) * k));
+    return makeOrbit(patch.bodyId, c.mu, r, v, patch.tStart);
+  }
+  const s = conicStateAtTime(c, patch.tStart);
+  return makeOrbit(patch.bodyId, c.mu, s.r, s.v, patch.tStart);
 }
 
 /**
- * State on a patch list at time t: the first patch with tStart <= t <= tEnd, propagated there. Null when
- * t is outside the predicted span.
+ * State at time t on a patch list: the first patch with tStart <= t <= tEnd, propagated there; null when t
+ * is outside the predicted span. Pass the PatchWithOrbit items of predictPatchesWithOrbits for states
+ * exact to rounding (propagated from each patch's own epoch state, e.g. the node pre-burn state); plain
+ * Patch items are re-built by patchOrbit.
  */
-export function stateOnPatches(patches: readonly Patch[], t: number): (TrajectoryState & { patchIndex: number }) | null {
+export function stateOnPatches(patches: readonly (Patch | PatchWithOrbit)[], t: number): (TrajectoryState & { patchIndex: number }) | null {
   for (let i = 0; i < patches.length; i++) {
-    const p = patches[i]!;
+    const item = patches[i]!;
+    const p = 'orbit' in item ? item.patch : item;
     if (t >= p.tStart && t <= p.tEnd) {
-      const s = propagate(patchOrbit(p), t);
+      const s = propagate('orbit' in item ? item.orbit : patchOrbit(p), t);
       return { bodyId: p.bodyId, r: s.r, v: s.v, patchIndex: i };
     }
   }

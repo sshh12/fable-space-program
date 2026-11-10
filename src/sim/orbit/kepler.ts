@@ -10,7 +10,7 @@
 import type { StateVector } from '../../core/contracts/simInternal';
 import { conicFromState, type ConicElements } from '../../core/math/conic';
 import { v3, type Vec3 } from '../../core/math/vec3';
-import { timeFromPeriapsis } from './anomaly';
+import { atanhOverX, atanOverX, timeFromPeriapsis } from './anomaly';
 
 export interface Orbit {
   /** Central body; the state is in BCI(bodyId). */
@@ -29,14 +29,23 @@ export interface Orbit {
   readonly sigma0: number;
   /** 1/a = 2/|r0| - |v0|^2/mu (> 0 ellipse, < 0 hyperbola). */
   readonly alpha: number;
-  /** Period (s) for closed orbits (conic.period !== null), else null. */
+  /**
+   * Period (s) of every bound trajectory that is propagated as closed (ellipses with e < 1 - 1e-9, and
+   * bound near-radial ones), else null. conic.period carries the same value whenever conic.e < 1.
+   */
   readonly period: number | null;
   /**
-   * Geometry of the conic. `tPeriapsis` is the periapsis passage nearest t0 computed with the
-   * cancellation-free relation of ./anomaly.ts; `period` equals Orbit.period.
+   * Geometry of the conic (the Patch.conic wire format). `tPeriapsis` is the periapsis passage nearest t0
+   * from the cancellation-free relations of ./anomaly.ts (from the universal anomaly of the state for
+   * near-radial orbits); `period` is Orbit.period when e < 1, else null. Near-radial orbits carry
+   * a = 1/alpha (finite) and e strictly on the side of 1 their energy says (e < 1 bound, e > 1 unbound).
+   * A RADIAL trajectory has the documented degenerate conic { e: 1, p: 0, a: 1/alpha, P: -r_hat (the limit
+   * periapsis direction, from the vessel's ray through the body centre), W: an arbitrary unit normal,
+   * period: null }: the vessel is at true anomaly pi for the whole trajectory, and positions follow from
+   * (a, tPeriapsis, P) by conicStateAtTime.
    */
   readonly conic: ConicElements;
-  /** True when r0 x v0 vanishes (radial trajectory): `conic` is then the limit of a vanishing tangential velocity. */
+  /** True when r0 x v0 vanishes (|h| <= 1e-12 |r0| max(|v0|, v_circ)): `conic` is the degenerate radial conic. */
   readonly radial: boolean;
   /**
    * Radial or nearly so (p < NEAR_RADIAL_P |r0|): anomaly-based event times are ill-conditioned there, so the
@@ -57,23 +66,30 @@ export function makeOrbit(bodyId: string, mu: number, r0: Vec3, v0: Vec3, t0: nu
   }
   const sqrtMu = Math.sqrt(mu);
   const alpha = 2 / r0m - v3.lenSq(v0) / mu;
-  const vm = v3.len(v0);
+  const sigma0 = v3.dot(r0, v0) / sqrtMu;
+  const vRef = Math.max(v3.len(v0), Math.sqrt(mu / r0m));
   const hm = v3.len(v3.cross(r0, v0));
-  const radial = !(hm > 1e-12 * r0m * Math.max(vm, Math.sqrt(mu / r0m)));
-  let vConic = v0;
-  if (radial) {
-    // Degenerate (radial) trajectory: the conic is the e -> 1 limit; propagation itself stays exact.
-    const dv = 1e-9 * Math.max(vm, Math.sqrt(mu / r0m));
-    vConic = v3.addScaled(v0, v3.anyOrthogonal(r0), dv);
-  }
-  const conic = conicFromState(mu, r0, vConic, t0);
-  const nu0 = Math.atan2(v3.dot(r0, conic.Q), v3.dot(r0, conic.P));
-  conic.tPeriapsis = t0 - timeFromPeriapsis(conic.e, conic.p, mu, nu0);
+  const radial = !(hm > 1e-12 * r0m * vRef);
+  const conic = radial ? radialConic(mu, r0, vRef, t0) : conicFromState(mu, r0, v0, t0);
   // Near-radial: the conic's anomalies are ill-conditioned (e -> 1, p -> 0); events use the universal
   // variable instead (events.ts). A bound (near-)radial trajectory is closed although e rounds to 1.
   const nearRadial = radial || conic.p < NEAR_RADIAL_P * r0m;
+  if (nearRadial && !radial) {
+    // e = sqrt(1 - p alpha) can lie within rounding of 1 here. When it rounded to the wrong side, take the
+    // nearest double on the side the energy says: the geometry is carried by p (and a, tPeriapsis), and e
+    // only has to classify the conic consistently with its period.
+    if (alpha > 0 && conic.e >= 1) conic.e = 1 - 2 ** -53;
+    else if (!(alpha > 0) && conic.e <= 1) conic.e = 1 + 2 ** -52;
+  }
+  if (nearRadial) {
+    conic.a = alpha !== 0 ? 1 / alpha : Infinity;
+    conic.tPeriapsis = t0 - timeSincePeriapsisOfState(sqrtMu, alpha, r0m, sigma0, conic.p / (1 + conic.e));
+  } else {
+    const nu0 = Math.atan2(v3.dot(r0, conic.Q), v3.dot(r0, conic.P));
+    conic.tPeriapsis = t0 - timeFromPeriapsis(conic.e, conic.p, mu, nu0);
+  }
   const period = alpha > 0 && (conic.period !== null || nearRadial) ? (2 * Math.PI) / (sqrtMu * alpha * Math.sqrt(alpha)) : null;
-  conic.period = period;
+  conic.period = period !== null && conic.e < 1 ? period : null;
   return {
     bodyId,
     mu,
@@ -82,12 +98,113 @@ export function makeOrbit(bodyId: string, mu: number, r0: Vec3, v0: Vec3, t0: nu
     t0,
     sqrtMu,
     r0m,
-    sigma0: v3.dot(r0, v0) / sqrtMu,
+    sigma0,
     alpha,
     period,
     conic,
     radial,
     nearRadial,
+  };
+}
+
+/**
+ * Degenerate conic of a radial trajectory through r0: the plane, normal and angles of conicFromState for a
+ * vanishing velocity perpendicular to r0 (whose eccentricity vector is exactly -r_hat), with e = 1, p = 0
+ * and P = -r_hat exactly. a, tPeriapsis and period are set by makeOrbit.
+ */
+function radialConic(mu: number, r0: Vec3, vRef: number, t0: number): ConicElements {
+  const c = conicFromState(mu, r0, v3.scale(v3.anyOrthogonal(r0), 1e-9 * vRef), t0);
+  c.P = v3.neg(v3.normalize(r0));
+  c.Q = v3.cross(c.W, c.P);
+  c.e = 1;
+  c.p = 0;
+  return c;
+}
+
+/**
+ * Universal anomaly chi from the periapsis passage to a state with radius r, sigma = r.v/sqrt(mu), on a
+ * conic with 1/a = alpha: chi = E/sqrt(alpha) (ellipse), H/sqrt(-alpha) (hyperbola), sigma (parabola),
+ * from e cos E = 1 - alpha r, e sin E = sigma sqrt(alpha) (cosh/sinh for hyperbolas). Well conditioned for
+ * every energy and for (near-)radial states, without the conic's anomalies.
+ */
+function chiFromPeriapsis(alpha: number, r: number, sigma: number): number {
+  const s = Math.sqrt(Math.abs(alpha));
+  const x = 1 - alpha * r;
+  if (alpha > 0 && !(x > 0)) return Math.atan2(sigma * s, x) / s;
+  const w = (sigma * s) / x;
+  return (sigma / x) * (alpha > 0 ? atanOverX(w) : alpha < 0 ? atanhOverX(w) : 1);
+}
+
+/**
+ * Time since the periapsis passage (s; negative before it; elliptic results in [-P/2, P/2]) of a state with
+ * radius r and sigma = r.v/sqrt(mu) on the conic with 1/a = alpha and periapsis radius rp:
+ * sqrt(mu) dt = (1 - alpha rp) chi^3 c3(alpha chi^2) + rp chi (Kepler's equation from the periapsis).
+ */
+export function timeSincePeriapsisOfState(sqrtMu: number, alpha: number, r: number, sigma: number, rp: number): number {
+  const chi = chiFromPeriapsis(alpha, r, sigma);
+  stumpffSet(alpha * chi * chi);
+  return ((1 - alpha * rp) * chi * chi * chi * C3 + rp * chi) / sqrtMu;
+}
+
+/**
+ * State at time t on a conic, from its periapsis passage (universal variables anchored at the periapsis,
+ * 1/a = 1/conic.a, rp = p/(1 + e)):
+ *   x = rp - chi^2 c2,  y = sqrt(p) chi (1 - psi c3)                         (along P, Q)
+ *   vx = sqrt(mu) chi (psi c3 - 1)/r,  vy = sqrt(mu p) (1 - psi c2)/r,  r = (1 - alpha rp) chi^2 c2 + rp
+ * with chi from Kepler's equation from the periapsis (bracketed Newton, monotonic). Nothing divides by p
+ * or 1 - e, so this stays exact for radial (p = 0) and near-radial conics, where reconstructing from the
+ * true anomaly loses ~1e-16 r^2/p; its accuracy is that of t - tPeriapsis (|v| x ~1e-7 s at ut ~ 1e9).
+ */
+export function conicStateAtTime(c: ConicElements, t: number): StateVector {
+  const sqrtMu = Math.sqrt(c.mu);
+  const alpha = Number.isFinite(c.a) ? 1 / c.a : 0;
+  const rp = c.p / (1 + c.e);
+  const k = 1 - alpha * rp;
+  let dt = t - c.tPeriapsis;
+  let lo: number;
+  let hi: number;
+  if (alpha > 0) {
+    const sa = Math.sqrt(alpha);
+    const P = (2 * Math.PI) / (sqrtMu * alpha * sa);
+    dt -= P * Math.round(dt / P);
+    lo = -Math.PI / sa;
+    hi = Math.PI / sa;
+  } else {
+    // c3 >= 1/6 for psi <= 0, so |G(chi)| >= k |chi|^3/6 + rp |chi| - |target|: this bound brackets the root.
+    const at = sqrtMu * Math.abs(dt);
+    const b = Math.min(Math.cbrt((6 * at) / k), rp > 0 ? at / rp : Infinity);
+    lo = dt >= 0 ? 0 : -b;
+    hi = dt >= 0 ? b : 0;
+  }
+  const target = sqrtMu * dt;
+  let chi = 0.5 * (lo + hi);
+  for (let i = 0; i < 200; i++) {
+    const chi2 = chi * chi;
+    stumpffSet(alpha * chi2);
+    const g = k * chi2 * chi * C3 + rp * chi - target;
+    if (g === 0) break;
+    if (g > 0) hi = chi;
+    else lo = chi;
+    let next = chi - g / (k * chi2 * C2 + rp);
+    if (!(next > lo && next < hi)) next = 0.5 * (lo + hi);
+    if (next === chi || Math.abs(next - chi) <= 1e-15 * Math.abs(next)) {
+      chi = next;
+      break;
+    }
+    chi = next;
+  }
+  const chi2 = chi * chi;
+  const psi = alpha * chi2;
+  stumpffSet(psi);
+  const r = k * chi2 * C2 + rp;
+  const sp = Math.sqrt(c.p);
+  const x = rp - chi2 * C2;
+  const y = sp * chi * (1 - psi * C3);
+  const vx = (sqrtMu * chi * (psi * C3 - 1)) / r;
+  const vy = (sqrtMu * sp * (1 - psi * C2)) / r;
+  return {
+    r: { x: c.P.x * x + c.Q.x * y, y: c.P.y * x + c.Q.y * y, z: c.P.z * x + c.Q.z * y },
+    v: { x: c.P.x * vx + c.Q.x * vy, y: c.P.y * vx + c.Q.y * vy, z: c.P.z * vx + c.Q.z * vy },
   };
 }
 

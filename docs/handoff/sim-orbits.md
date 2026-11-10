@@ -13,12 +13,14 @@ Owned paths: `src/sim/orbit`, `src/sim/frames`, `src/sim/bodies`, `src/sim/nav`,
 ```
 npm run typecheck:paths -- src/sim/orbit src/sim/frames src/sim/bodies src/sim/nav tests/unit/sim-orbits tools/sim
 npx vitest run src/sim/orbit src/sim/frames src/sim/bodies src/sim/nav tests/unit/sim-orbits tools/dev/boundaries.test.ts
-npx tsx tools/sim/findStartTime.ts            # rewrites tools/sim/start-time.json
+npx tsx tools/sim/findStartTime.ts            # rewrites tools/sim/start-time.json (about 3 s)
 SIM_ORBITS_VERBOSE=1 npx vitest run tests/unit/sim-orbits/soi.test.ts --silent=false   # per-trajectory SOI table
 ```
 
-116 tests, about 2.5 s in total. Files: `src/sim/orbit/kepler.test.ts` (propagator acceptance),
-`tests/unit/sim-orbits/{bodies,patches,soi,nav,warp,timing,startTime}.test.ts`.
+141 tests in 10 files (boundaries test included), about 3.8 s in total. Files:
+`src/sim/orbit/kepler.test.ts` (propagator acceptance),
+`tests/unit/sim-orbits/{anomaly,bodies,patches,soi,nav,warp,timing,startTime}.test.ts`. The package is
+headless: there are no browser specs or screenshots for it.
 
 ## Acceptance criteria - measured
 
@@ -34,7 +36,7 @@ SIM_ORBITS_VERBOSE=1 npx vitest run tests/unit/sim-orbits/soi.test.ts --silent=f
 | Perigee / apogee 363,300 / 405,500 km +/- 500 | 363,295.5 / 405,502.5 km |
 | Inclination to Earth's equator 20.9 +/- 0.1 deg | 20.890 deg |
 | Sub-Earth libration within +/- 8 deg | max |lat| 5.16 deg, max |lon| 6.42 deg (mean longitude < 1 deg) |
-| Pad inertial speed 465.1 cos(lat) +/- 0.5 m/s | 439.005 m/s vs 439.496: passes by 0.009 m/s. 465.1 m/s is omega x the WGS-84 equatorial radius; the physics datum is the 6,371 km sphere, which gives omega R cos(lat) = 464.58 cos(lat) exactly (also tested). At the equator the difference would be 0.52 m/s |
+| Pad inertial speed 465.1 cos(lat) +/- 0.5 m/s | resolved Ka Lae pad (18.987556 N): 439.303 m/s vs 439.794: passes by 0.009 m/s. 465.1 m/s is omega x the WGS-84 equatorial radius; the physics datum is the 6,371 km sphere, which gives omega R cos(lat) = 464.58 cos(lat) exactly (also tested). At the equator the difference would be 0.52 m/s |
 | Sidereal day 86,164.09 s | 86,164.0905 s |
 | Sun declination at solstices/equinoxes within 0.05 deg | worst 0.0032 deg (2024-2025, 8 events) |
 | USSA-76 at 0/11/20/32/47/51/71/86/100/150 km within 0.1 %; zero density at simTop | worst 4.7e-5 relative (T, p, rho); density exactly 0 at and above simTop, smooth fade from simTop - 10 km |
@@ -42,34 +44,39 @@ SIM_ORBITS_VERBOSE=1 npx vitest run tests/unit/sim-orbits/soi.test.ts --silent=f
 | Return Moon -> Earth with atmosphereEntry marker lat/lon = independent propagation + Earth rotation within 0.01 deg | met: 2e-12 deg latitude, 2e-10 deg longitude (entry speed asserted 10.5-11.2 km/s, FPA < 0) |
 | Multi-revolution: node 3.4 periods ahead, nuEnd - nuStart = 3.4 x 2 pi within 1e-6, planned after it, nodeBurn timing, nextWarpEvent reports it; same with tStart far in the past | met: circular and e = 0.2 orbits, orbit epoch 1e7 s in the past, and a node 1000.4 periods ahead |
 | Landing-target readout (analytic distance/bearing, ahead/behind/left/right signs, miss = marker-to-target arc, null without target) | met |
-| Navball: known attitudes, markers, no NaN at zero velocity / on the pad / vertical / at a pole | met |
+| Navball: known attitudes, markers, no NaN at zero velocity / on the pad / vertical / at a pole | met; pitch exact at the vertical (worst 90 deg error < 1e-12 deg over 400 pad states at any latitude, time and azimuth; a 1e-8 rad tilt reads 90 - 5.7e-7 deg to 1e-10) |
 | Warp look-ahead never steps past an event (property test) | met: 200,000 random cases + a simulated fall from 40,000 km over the Moon through every admissible level |
 | Launch opportunity: pad in the Moon's orbit plane at the returned time within 0.01 deg | met (~1e-12 deg; analytic solution) |
-| Timings: propagate < 2 us; predictPatches with a node through an SOI change < 1 ms | 0.26-0.31 us/call; 0.20-0.24 ms (0.25 ms with target markers and a terrain callback). Measured with CPU load at 77 % from concurrent agents: provisional |
+| Timings: propagate < 2 us; predictPatches with a node through an SOI change < 1 ms | 0.33-0.34 us/call; 0.26-0.29 ms (0.26-0.27 ms with target markers and a terrain callback). Measured with CPU load at 94-97 % from concurrent agents (earlier run at 77 %: 0.26-0.31 us, 0.20-0.24 ms): provisional |
 
 ## Scenario start time (tools/sim/start-time.json)
 
-**The three constraints cannot be met in 2027-2030** for Ka Lae (19.1 N, 155.5 W, nominal) with either the
-nominal target (0.674 N, 23.473 E) or the bake-recommended one (0.661471 N, 23.435999 E). The lunar Sun
-climbs ~24.4 deg between start + 3 d and start + 5 d, leaving a 5.6 deg band of admissible start elevations;
-consecutive ascending opportunities step 12.2 deg, and pad mornings occur ~25 days a year. Closest misses:
-2028-08-07T18:12:53Z (landing Sun 4.38 -> 28.85 deg, 0.62 deg short), 2027-08-19 (2.40 deg), 2030-08-14
-(2.13 deg). The tool therefore extended the search (recorded as `search.searchExtended: true` with the
-near misses) and chose the first exact solution:
+Computed for the RESOLVED pad (bake-earth commit 46b8647: 18.987556 N, 155.603239 W, 21.62 m) and the
+nominal target. **With constraint (a) as the brief defines it (coplanar ASCENDING azimuth), the three
+constraints cannot be met in 2027-2030**, for the nominal target (0.674 N, 23.473 E) or the bake-recommended
+one (0.661471 N, 23.435999 E). The lunar Sun climbs ~24.4 deg between start + 3 d and start + 5 d, leaving a
+5.6 deg band of admissible start elevations; consecutive ascending opportunities step 12.2 deg, and pad
+mornings occur ~25 days a year. Closest misses: 2028-08-07T18:10:13Z (landing Sun 4.35 -> 28.83 deg, 0.65 deg
+short), 2029-08-26 (1.75 deg over), 2027-08-19 (2.62 deg short). The tool therefore extended the search
+(recorded as `search.searchExtended: true` with the near misses) and chose the first exact solution:
 
 | | |
 |---|---|
-| startUt | **1187932241.4598682** = 2037-08-23T17:10:41.460Z |
-| launch opportunity | start + 600.000 s (2037-08-23T17:20:41Z), coplanar, ascending; surface azimuth 80.865 deg (inertial 81.377) |
-| pad Sun | 14.41 deg at start, rising (16.75 deg at launch) |
-| landing Sun (+3 d .. +5 d) | 9.53 -> 33.99 deg, rising throughout, disc fully visible |
-| site / target used | ka-lae-lc1 19.1, -155.5, pad elevation 0 m (definition says 'terrain'; geocentric angles do not depend on it); landing 0.674 N, 23.473 E on moon (built-in default: no scenario exists yet) |
+| startUt | **1187932081.163427** = 2037-08-23T17:08:01.163Z |
+| launch opportunity | start + 600.000 s (2037-08-23T17:18:01Z), coplanar, ascending; surface azimuth 80.598 deg (inertial 81.125) |
+| pad Sun | 13.67 deg at start, rising (16.02 deg at launch) |
+| landing Sun (+3 d .. +5 d) | 9.51 -> 33.96 deg, rising throughout, disc fully visible |
+| site / target used | ka-lae-lc1 18.987556, -155.603239, pad elevation 21.62 m (data/defs/sites/ka-lae-lc1.location.json); landing 0.674 N, 23.473 E on moon (built-in default: no scenario exists yet) |
 
-The same date is the first solution for the bake-recommended target (9.5 -> 33.9 deg). If a 2028 date is
-preferred, `npx tsx tools/sim/findStartTime.ts --landing-sun-min 4` gives 2028-08-07T18:12:53Z (ut
-902556773.6217529); this is the decision asked of the lead in `docs/requests/sim-orbits-1.md`. Whatever is
-chosen, the scenario test must call `checkStartConstraints` with the same numbers as `start-time.json`
-`constraints` (the sim-orbits test does).
+The same date is the first solution for the bake-recommended target (9.47 -> 33.93 deg). The DESCENDING
+crossing (~99 deg, equally coplanar: no plane change at TLI) has solutions inside 2027-2030, recorded in
+`otherLaunchKinds`: 2028-10-05T17:42:46.7Z (pad Sun 19.85 deg, landing Sun 5.23 -> 29.65 deg) and
+2029-09-24T18:26:58.8Z (ut 938240818.839663; pad Sun 30.87 deg, landing Sun 7.47 -> 31.90 deg, >= 1 deg margin
+everywhere; what `--launch-kind either` or `descending` chooses). `--landing-sun-min 4` gives
+2028-08-07T18:10:13Z (ut 902556613.3253119). The policy decision is asked of the lead in
+`docs/requests/sim-orbits-1.md`. Whatever is chosen, the scenario test must call `checkStartConstraints` with
+the values of `start-time.json` `constraints` (launchKind included); the sim-orbits test does, and also
+re-checks every `otherLaunchKinds` solution with its kind.
 
 ## Public API
 
@@ -139,9 +146,21 @@ All functions are pure unless noted; `ut` is seconds since J2000; vectors are fl
 ### src/sim/orbit
 
 - `makeOrbit(bodyId, mu, r0, v0, t0): Orbit` - `Orbit = { bodyId, mu, r0, v0, t0 }` plus derived
-  `sqrtMu, r0m, sigma0, alpha (1/a), period (closed orbits; also bound radial ones), conic (ConicElements with
-  a cancellation-free tPeriapsis and period = Orbit.period), radial, nearRadial (p < 1e-6 |r0|)`. Throws on
-  non-finite input or |r0| = 0. A radial state (r x v = 0) propagates exactly; its `conic` is the e -> 1 limit.
+  `sqrtMu, r0m, sigma0, alpha (1/a), period (closed orbits; also bound near-radial ones), conic, radial
+  (|r0 x v0| <= 1e-12 |r0| max(|v0|, v_circ)), nearRadial (p < 1e-6 |r0|)`. Throws on non-finite input or
+  |r0| = 0. Every state propagates exactly from the epoch, radial ones included.
+  `conic` (the Patch.conic wire format): tPeriapsis = the periapsis passage nearest t0 from the
+  cancellation-free relations (for near-radial orbits from the universal anomaly of the state, not from the
+  ill-conditioned true anomaly); `period` = Orbit.period when e < 1, else null. Near-radial: `a = 1/alpha`
+  (finite) and e strictly on the side of 1 its energy says (a rounded-over e is moved to 1 -/+ 1 ulp).
+  **Radial conic** (documented degenerate case, test `conic.p === 0`): `{ e: 1, p: 0, a: 1/alpha, P: -r_hat
+  (the limit periapsis direction), W: an arbitrary unit normal, period: null }`; the vessel stays at true
+  anomaly pi (patch nuStart = nuEnd = pi), so anomaly-based helpers do not apply; positions follow from
+  (a, tPeriapsis, P) by `conicStateAtTime`.
+- `conicStateAtTime(conic, t): StateVector` - state from the periapsis passage (universal variables
+  anchored at the periapsis; nothing divides by p or 1 - e): valid for every conic, exact for radial and
+  near-radial ones to |v| x ~1e-7 s (the resolution of t - tPeriapsis at ut ~ 1e9 s).
+  `timeSincePeriapsisOfState(sqrtMu, alpha, r, sigma, rp)` - the matching time-since-periapsis of a state.
 - `propagate(o, t): StateVector`, `propagateInto(o, t, outR, outV)` (allocation-free), `positionAt(o, t)`:
   universal variables from the epoch state every time; elliptic time of flight reduced modulo the period
   (to (-P/2, P/2]); Stumpff by series for |psi| <= 1, closed forms beyond; Laguerre-Conway (n = 5) to
@@ -149,10 +168,16 @@ All functions are pure unless noted; `ut` is seconds since J2000; vectors are fl
 - `reanchor(o, t)` (same trajectory, new epoch), `solveUniversalAnomaly(o, dt, maxIter?)`,
   `lagrangeCoefficients(o, t)`, `stumpff(psi)`, `specificEnergy(mu, r, v)`.
 - Anomalies: `timeFromPeriapsis(e, p, mu, nu)` (well conditioned for every e incl. e ~ 1: Barker at e = 1;
-  elliptic results in (-P/2, P/2]; +/-Infinity beyond a hyperbola's asymptote), `meanAnomalyFromTrue(e, nu)`,
-  `eccentricFromMean(e, M)`, `trueFromEccentric(e, E)`, `maxTrueAnomaly(e)`; `trueAnomalyAt(o, t)`;
+  elliptic results in (-P/2, P/2]; +/-Infinity beyond a hyperbola's asymptote) - the same relation as core
+  `timeSincePeriapsis`, which UI consumers evaluate on Patch.conic; tests/unit/sim-orbits/anomaly.test.ts
+  pins the agreement (<= 1e-13 + 4e-16/|1 - e| relative; inside core's |e - 1| < 1e-9 Barker band the core
+  drops (1 - e) terms and differs by up to 1e-4 far from periapsis). Request sim-orbits-3 asks core to adopt
+  the sim form so the sim can call it. `meanAnomalyFromTrue(e, nu)`, `eccentricFromMean(e, M)`,
+  `trueFromEccentric(e, E)`, `atanOverX`, `atanhOverX`; `trueAnomalyAt(o, t)`;
   `timeOfTrueAnomaly(o, nu, tAfter)` (first time strictly after tAfter; any number of revolutions ahead).
-- Radius crossings and apsides: `radiusCrossingAnomaly(o, R)`, `nextRadiusCrossing(o, R, +1 outbound | -1
+  (The former `maxTrueAnomaly(e)` is gone: use core `conicMaxTrueAnomaly(conic)`.)
+- Radius crossings and apsides: `radiusCrossingAnomaly(o, R)` (= core `conicRadiusCrossing(o.conic, R)`),
+  `nextRadiusCrossing(o, R, +1 outbound | -1
   inbound, tAfter)`, `nextApsisTime(o, 'periapsis' | 'apoapsis', tAfter)` - analytic; near-radial orbits use
   closed forms in the universal anomaly from the epoch (the conic's anomalies degenerate there).
 - Events (`events.ts`): `soiExitTime(o, soiRadius, tFrom)` (tFrom itself if already outside and moving out),
@@ -201,9 +226,15 @@ All functions are pure unless noted; `ut` is seconds since J2000; vectors are fl
     inertial speed, body-fixed latitude/longitude at ut with the body's rotation), atmosphereEntry (altitude =
     simTop, value = inertial speed, flightPathAngle (negative descending), vacuumPeriapsisAltitude,
     latitude/longitude), maneuverNode (nodeId).
-  - `predictPatchesWithOrbits(...)` - same, each patch with its `Orbit`; `patchOrbit(patch): Orbit`;
-    `stateOnPatches(patches, t): { bodyId, r, v, patchIndex } | null` (e.g. the pre-node state for
-    nodeDeltaVInertial / NodeBurnInfo).
+  - `predictPatchesWithOrbits(...)` - same, each patch as `PatchWithOrbit = { patch, orbit }` (the Orbit the
+    patch was propagated on).
+  - `stateOnPatches(patches: readonly (Patch | PatchWithOrbit)[], t): { bodyId, r, v, patchIndex } | null` -
+    first patch with tStart <= t <= tEnd. With PatchWithOrbit items the state is the exact propagation of
+    the stored Orbit (use this for the node pre-burn state); plain Patch items go through `patchOrbit`.
+  - `patchOrbit(patch): Orbit` - re-built from the contract data alone: ordinary conics from the state at
+    nuStart (exact to rounding); radial (p = 0) and near-radial conics (1 + e cos nuStart < 1e-6) by
+    `conicStateAtTime(conic, tStart)` (sub-mm: measured <= 1e-5 m over lunar drops/ascents and <= 6e-4 m
+    for an 11 km/s radial Earth arrival). Never throws for a patch produced by predictPatches.
 - Warp (`warp.ts`): `warpFactor(index)`, `maxWarpIndexForAltitude(bodyDef, altitude)` (physics levels always;
   rails level i needs altitude >= warpAltitudeLimits[i - 4]), `warpAltitudeLimit(bodyDef, index)`,
   `lookAheadWarpIndex(ut, event | null)` (largest level with (event.ut - ut)/factor >= 4 s; never below 50x
@@ -221,7 +252,8 @@ All functions are pure unless noted; `ut` is seconds since J2000; vectors are fl
   liftVectorVes? }): NavballState` - horizon = ENU at the sub-point; orbit mode prograde = v, surface mode =
   v - spin x r; normal = normalize(r_hat x prograde), radialOut = prograde x normal; markers are unit VES
   vectors (maneuver/target from ROOT-axes vectors, lift vector passed through normalised, null when absent).
-  Below 1e-3 m/s prograde = up; vertical prograde takes north (projected) as normal. pitch = asin(nose . up);
+  Below 1e-3 m/s prograde = up; vertical prograde takes north (projected) as normal. pitch =
+  atan2(nose . up, |nose - (nose . up) up|) (asin(nose . up) without its ~1e-6 deg loss at the vertical);
   heading = compass direction of the nose in [0, 360), of the ventral side (nose up) / dorsal side (nose
   down) when the nose is vertical (then roll = 0); **roll positive = rotation about +Y (dorsal toward
   starboard), the sign of ControlInputs.roll** (FakeSim has the opposite sign: request sim-orbits-2).
@@ -259,24 +291,30 @@ All functions are pure unless noted; `ut` is seconds since J2000; vectors are fl
 - `buildSurfaceTargets(defs, scenario): SurfaceTarget[]` - `landing` (suggestedLanding, radius 0),
   `site:<siteId>` (radius = pad.flatRadius), `recovery:<index>` (radius = radiusKm x 1000); radians.
 - `checkStartConstraints(system, site: SurfacePoint, targetBodyId, landing, startUt, options?):
-  StartConstraintReport` - (a) next ascending coplanar crossing at start + 600 +/- 30 s, (b) pad Sun 10-35
-  deg and rising, (c) landing Sun within 5-35 deg, rising and with the disc fully visible (>= 0.999) at
-  10-minute samples over start + 3 d .. + 5 d. `options` overrides any number (`START_CONSTRAINT_DEFAULTS`).
-  Also `sunAtSurfacePoint(system, point, ut)` -> `{ elevation, rate, visibility }`, `padSunOk(...)`,
-  `surfacePointFromDeg(bodyId, latDeg, lonDeg, elevation?)`.
+  StartConstraintReport` - (a) the next coplanar crossing of `options.launchKind` (`StartLaunchKind =
+  'ascending'` (default, the brief's definition) | `'descending'` | `'either'`) at start + 600 +/- 30 s,
+  (b) pad Sun 10-35 deg and rising, (c) landing Sun within 5-35 deg, rising and with the disc fully visible
+  (>= 0.999) at 10-minute samples over start + 3 d .. + 5 d. `options` overrides any number
+  (`START_CONSTRAINT_DEFAULTS`; an option given as undefined keeps the default). `report.launch` carries
+  `{ ok, crossingUt, delay, launchAzimuthDeg, inertialAzimuthDeg, ascending }`.
+  Also `launchWindowKind(kind)` (-> computeLaunchWindow kind; 'either' = 'next'), `sunAtSurfacePoint(system,
+  point, ut)` -> `{ elevation, rate, visibility }`, `padSunOk(...)`, `surfacePointFromDeg(bodyId, latDeg,
+  lonDeg, elevation?)`.
 
 ### tools/sim/findStartTime.ts
 
 `npx tsx tools/sim/findStartTime.ts [--site id] [--pad-elevation m] [--target body] [--landing-body body]
 [--landing-lat deg] [--landing-lon deg] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--extend-years n]
-[--pad-sun-min/max deg] [--landing-sun-min/max deg] [--stay-from-days d] [--stay-to-days d] [--out path]`.
+[--pad-sun-min/max deg] [--landing-sun-min/max deg] [--stay-from-days d] [--stay-to-days d]
+[--launch-kind ascending|descending|either] [--out path]`.
 Defaults from data/defs (site of the first scenario with a suggested landing, else the only site; numeric
 padElevation, else 0 m with a note; scenario target, else the first attractor of the site's body; scenario
-landing, else 0.674 N 23.473 E). Every ascending opportunity in [from, to) is a candidate (start = crossing -
-600 s); the first solution with 1 deg margin on each elevation bound wins (else the first solution). If
-none exists in the range it prints the near misses and continues year by year (default 20 years, 0 = fail
-with exit code 1); constraints are never relaxed implicitly. Output records the site/target coordinates and
-constraint numbers used, the angles, near misses and alternatives.
+landing, else 0.674 N 23.473 E; launch kind ascending). Every opportunity of the launch kind in [from, to)
+is a candidate (start = crossing - 600 s); the first solution with 1 deg margin on each elevation bound wins
+(else the first solution). If none exists in the range it prints the near misses and continues year by year
+(default 20 years, 0 = fail with exit code 1); constraints are never relaxed implicitly. Output records the
+site/target coordinates and constraint numbers used (launchKind included), the angles, near misses,
+alternatives, and `otherLaunchKinds` (what the requested range holds under each other launch kind).
 
 ## Integration notes for sim-world-pilot
 
@@ -287,8 +325,13 @@ constraint numbers used, the angles, near misses and alternatives.
 - Patch refresh: call `predictPatches` with `terrainHeight` = a band-limited `TerrainProvider.heightAt`
   closure (e.g. lambdaMin 200 m) on the resident level; impact markers then carry lat/lon for the impact-disc
   terrain request.
-- NodeBurnInfo: dvRemaining = `nodeDeltaVInertial(node.dv, pre.r, pre.v)` with `pre = stateOnPatches(current,
-  node.ut)` until the burn starts, then the world's bookkeeping vector.
+- NodeBurnInfo: dvRemaining = `nodeDeltaVInertial(node.dv, pre.r, pre.v)` with `pre = stateOnPatches(items,
+  node.ut)`, `items` = the `current` list of `predictPatchesWithOrbits` (exact pre-node state), until the burn
+  starts, then the world's bookkeeping vector. Publish `items.map((x) => x.patch)` in the snapshot.
+- Radial patches (`conic.p === 0`, e.g. a vessel at rest or moving vertically at the lunar pole) have
+  nuStart = nuEnd = pi: their line cannot be drawn from (conic, nu). Map-view's sampler returns an empty
+  curve for such a span (no NaN); the start position and the end marker's `r` give the segment. The
+  convention is proposed for the ConicElements doc in request sim-orbits-3.
 - Warp per frame: `cap = min(requested, maxWarpIndexForAltitude(def, alt), lookAheadWarpIndex(ut,
   nextWarpEvent({... warpIndex: current})))`, then `railsAdvanceTarget`. Re-evaluate after every clamp.
 - Navball mode: keep the previous altitude and apply `navballModeAfter` each snapshot; PlayerCommands
@@ -297,11 +340,15 @@ constraint numbers used, the angles, near misses and alternatives.
 
 ## Requests filed
 
-- `docs/requests/sim-orbits-1.md` (non-blocking, lead): start-time constraints infeasible in 2027-2030;
-  options: accept 2037-08-23 (current file), relax the landing-Sun minimum to 4 deg (2028-08-07), or change
-  the stay window.
+- `docs/requests/sim-orbits-1.md` (non-blocking, lead): start-time constraints with an ASCENDING launch are
+  infeasible in 2027-2030 at the resolved pad; options: accept 2037-08-23 (current file), accept either
+  coplanar azimuth (descending 2029-09-24, or 2028-10-05 with 0.23 deg margin), relax the landing-Sun minimum
+  to 4 deg (2028-08-07), or change the stay window.
 - `docs/requests/sim-orbits-2.md` (non-blocking, lead): document the sign of `NavballState.rollDeg` in
   sim.ts and flip FakeSim's roll to the control sign (flight-ui's ADI already assumes it).
+- `docs/requests/sim-orbits-3.md` (non-blocking, src/core/math/conic.ts): adopt the cancellation-free
+  time-since-periapsis relation in core `timeSincePeriapsis` (then the sim drops its copy), and document the
+  radial-conic convention (p = 0, e = 1) and the period/e band in the ConicElements comment.
 
 No requests against the sim-orbits paths were open.
 
@@ -321,8 +368,13 @@ No requests against the sim-orbits paths were open.
 - `predictPatches` stops at `maxPatches` (8); a first node beyond 8 transitions of the current trajectory
   would leave `planned` empty.
 - A node exactly at an SOI boundary time yields a zero-length planned patch before the transition (harmless).
-- Radial trajectories: the patch `conic` is the e -> 1 limit (P along the trajectory); times and markers are
-  exact (universal-anomaly closed forms), AN/DN are not produced for near-radial patches.
+- Radial trajectories: the patch `conic` is the documented degenerate radial conic (p = 0, e = 1); times
+  and markers are exact (universal-anomaly closed forms); AN/DN are not produced for near-radial patches.
+  Consumers that only have the conic cannot draw a radial patch (see the integration note) and lose
+  ~1e-16 r^2/p in true-anomaly reconstructions of near-radial ones; `conicStateAtTime` is exact for both.
+- Duplication with src/core/math: `timeFromPeriapsis` remains the sim's own (better conditioned) form of
+  core `timeSincePeriapsis` until request sim-orbits-3 is answered; the agreement is pinned by a test. The
+  former copies of `conicRadiusCrossing` and `conicMaxTrueAnomaly` were replaced by the core functions.
 - The USSA-76 gas constant is sim-design's CODATA value 8.314462 (the 1976 standard used 8.31432): sea-level
   density 1.224978 instead of 1.225 kg/m^3 (1.8e-5), within the 0.1 % acceptance; base pressures are the
   tabulated ones, so pressure is continuous across layers to ~2.5e-5 relative.
@@ -335,6 +387,13 @@ No requests against the sim-orbits paths were open.
   normal), not the 6.7 deg sim-design quotes (that needs the E1 = 125.045 deg periodic terms: pole about
   266.82, 65.65 at J2000). Within the +/-8 deg acceptance; lead-owned data.
 - Earth w0Deg = 190.46061837 is used as given (GMST at J2000 = 280.46 deg at the prime meridian: tested).
-- Ka Lae pad elevation is 'terrain' in data: the start-time tool assumes 0 m (no effect on its angles).
-- The Moon's fixed Kepler elements reproduce the real mean longitude closely (lunar phases realistic), but
-  without nodal regression or apsidal precession by design.
+- Ka Lae LC-1 was resolved by bake-earth (commit 46b8647) to 18.987556 N, 155.603239 W, padElevation 21.62 m;
+  tools/sim/start-time.json was regenerated for it (the startTime test fails when the site moves again
+  without a re-run).
+- The Moon's fixed Kepler elements match the real mean longitude only AT THEIR EPOCH (J2000: lan + argPe +
+  M0 = 218.316 deg, as Meeus). The model mean motion sqrt((mu_E + mu_M)/a^3) = 13.19434 deg/day (period
+  27.2844 d, required by the 27.285 d acceptance) exceeds the real 13.17640 deg/day by 0.01794 deg/day = 6.55
+  deg/year, so the model Moon leads the real one by ~187 deg in mid-2028, ~195 deg in late 2029 and ~247 deg
+  in August 2037. Lunar phases are self-consistent (the Sun is the real Almanac Sun) but do NOT match real
+  calendar dates; sky/render must take phases from the body system, never from a real ephemeris. No nodal
+  regression or apsidal precession, by design.

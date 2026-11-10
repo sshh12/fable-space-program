@@ -7,7 +7,8 @@
  *
  * Robustness (never NaN): with |velocity| < MIN_SPEED (vessel at rest, on the pad) prograde = up; when
  * prograde is vertical the normal is the local north projected perpendicular to prograde (the continuous
- * limit of an eastward tilt). Pitch = asin(nose . up); heading = compass direction of the nose; when the
+ * limit of an eastward tilt). Pitch = atan2(nose . up, |nose - (nose . up) up|) (= asin(nose . up), but
+ * exact near the vertical); heading = compass direction of the nose; when the
  * nose is vertical the heading is taken from the ventral side (nose up) / dorsal side (nose down), which is
  * the direction a pitch-down / pitch-up leaves the vertical in, and roll is then 0. Roll is positive for
  * a rotation about +Y (dorsal toward starboard), the sign of the roll control.
@@ -60,9 +61,11 @@ export function attitudeAngles(q: Quat, enu: EnuBasis): { pitchDeg: number; head
   const nose = quat.rotate(q, { x: 0, y: 1, z: 0 });
   const dorsal = quat.rotate(q, { x: 0, y: 0, z: 1 });
   const up = enu.up;
-  const sinP = Math.max(-1, Math.min(1, v3.dot(nose, up)));
-  const pitchDeg = Math.asin(sinP) * RAD;
+  const sinP = v3.dot(nose, up);
   let horiz = v3.reject(nose, up);
+  // atan2 of the vertical and horizontal components keeps full precision at the vertical, where asin(sinP)
+  // turns a dot product a few ulp below 1 into a ~1e-6 deg error.
+  const pitchDeg = Math.atan2(sinP, v3.len(horiz)) * RAD;
   let upRef: Vec3;
   if (v3.len(horiz) > 1e-9) {
     upRef = v3.normalize(v3.reject(up, nose));
