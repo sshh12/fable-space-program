@@ -64,8 +64,7 @@ def texel_solid_angle(n: int) -> np.ndarray:
 
 
 def radec_to_dir(ra_rad, dec_rad) -> np.ndarray:
-    ra = np.asarray(ra_rad, dtype=np.float64)
-    dec = np.asarray(dec_rad, dtype=np.float64)
+    ra, dec = np.broadcast_arrays(np.asarray(ra_rad, dtype=np.float64), np.asarray(dec_rad, dtype=np.float64))
     c = np.cos(dec)
     return np.stack([c * np.cos(ra), c * np.sin(ra), np.sin(dec)], axis=-1)
 

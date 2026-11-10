@@ -42,7 +42,7 @@ class EquirectPyramid:
     mips[k] has shape (H / 2^k, W / 2^k[, C]); values are multiplied by `value_scale` on read.
     """
 
-    def __init__(self, mips: list, lon0: float = -180.0, value_scale: float = 1.0):
+    def __init__(self, mips: list, lon0: float = -180.0, value_scale: float = 1.0, lat0: float = 90.0):
         h0, w0 = mips[0].shape[:2]
         if w0 != 2 * h0:
             raise ValueError("global equirect raster must have W = 2 H")
@@ -51,6 +51,7 @@ class EquirectPyramid:
                 raise ValueError(f"mip {k} has shape {m.shape}, expected exact halving of {mips[0].shape}")
         self.mips = mips
         self.lon0 = float(lon0)
+        self.lat0 = float(lat0)
         self.value_scale = float(value_scale)
         self.px_deg0 = 180.0 / h0
         self.channels = 1 if mips[0].ndim == 2 else mips[0].shape[2]
@@ -61,7 +62,7 @@ class EquirectPyramid:
         h, w = a.shape[:2]
         px = self.px_deg0 * 2.0 ** m
         x = (lon - self.lon0) / px - 0.5
-        y = (90.0 - lat) / px - 0.5
+        y = (self.lat0 - lat) / px - 0.5
         ix0 = np.floor(x)
         iy0 = np.floor(y)
         wx = catmull_rom_weights(x - ix0)

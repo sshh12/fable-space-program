@@ -106,15 +106,20 @@ def disc_stats(Y: np.ndarray, ra: float, dec: float, radius_px: float, ring_px: 
     return rows, cols, ang, pdec
 
 
-def integrated_flux(Y: np.ndarray, ra: float, dec: float, radius_px: float = 4.0) -> tuple[float, float, float]:
-    """(sum of (Y - background) * pixel solid angle over the disc [unit * sr], background, peak)."""
-    rows, cols, ang, pdec = disc_stats(Y, ra, dec, radius_px)
+def integrated_flux(Y: np.ndarray, ra: float, dec: float, radius_px: float = 4.0, with_ring: bool = False):
+    """(sum of (Y - background) * pixel solid angle over the disc [unit * sr], background, peak
+    [, brightest pixel of the 2-px ring outside the disc, which flags unresolved neighbours])."""
+    rows, cols, ang, pdec = disc_stats(Y, ra, dec, radius_px + 6.0)
     win = Y[rows][:, cols].astype(np.float64)
     ring = (ang >= radius_px) & (ang < radius_px + 2.0)
     bg = float(np.median(win[ring])) if np.any(ring) else 0.0
     disc = ang < radius_px
     omega = pixel_solid_angle(Y.shape[0], Y.shape[1], pdec)[:, None] * np.ones((1, len(cols)))
-    return float(((win - bg) * omega)[disc].sum()), bg, float(win[disc].max())
+    res = (float(((win - bg) * omega)[disc].sum()), bg, float(win[disc].max()))
+    if with_ring:
+        outer = (ang >= radius_px) & (ang < radius_px + 6.0)
+        return res + (float(win[outer].max()) if np.any(outer) else 0.0,)
+    return res
 
 
 def fit_luminance_scale(Y: np.ndarray, faint: dict, all_ra: np.ndarray, all_dec: np.ndarray, all_mag: np.ndarray,
@@ -134,8 +139,9 @@ def fit_luminance_scale(Y: np.ndarray, faint: dict, all_ra: np.ndarray, all_dec:
         near = [j for j in tree.query_ball_point(p, 10 * pix) if np.linalg.norm(xyz_all[j] - p) > 1e-9]
         if any(all_mag[j] < faint["mag"][i] + 3.0 for j in near):
             continue
-        f, bg, peak = integrated_flux(Y, faint["ra"][i], faint["dec"][i])
-        if peak >= 0.5 or f <= 0:
+        f, bg, peak, ring_max = integrated_flux(Y, faint["ra"][i], faint["dec"][i], with_ring=True)
+        # HYG holds the Hipparcos stars only; Tycho neighbours show up as flux just outside the disc
+        if peak >= 0.5 or f <= 0 or ring_max > 0.05 * peak:
             continue
         e = mag0_lux * 10 ** (-0.4 * faint["mag"][i])
         ratios.append(e / f)
