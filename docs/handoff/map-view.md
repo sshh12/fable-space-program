@@ -66,7 +66,7 @@ Also exported: `MapController` (all CPU logic, runs in vitest), `HANDLES`, `drag
   (`{ vesselId }`). A double click never changes the target: a single click on a body sets the target only
   after 500 ms without a second click (`DOUBLE_CLICK_MS`, the Windows default double-click time).
 - The panel stops key events in the bubble phase; the input layer must ignore editable targets and report
-  `overUi` over DOM UI (`docs/requests/map-view-1.md`, being resolved by flight-ui).
+  `overUi` over DOM UI (`docs/requests/map-view-1.md`, resolved by flight-ui in 264d8ac).
 
 ## Behaviour
 
@@ -283,10 +283,9 @@ show through less; the label cache also keys on the landing-target prediction (t
 ## Requests filed
 
 - `docs/requests/map-view-1.md` (src/input, flight-ui): ignore key events from editable elements; `overUi`
-  over DOM UI. Needed so typing in the node panel never fires SAS/staging keys. flight-ui was writing its
-  resolution when this note was written (not yet committed): editable targets reach no binding, and `overUi`
-  is true for any pointer target other than the canvas. src/map already ignores presses and wheel steps with
-  `overUi` and needs no change for it.
+  over DOM UI. Needed so typing in the node panel never fires SAS/staging keys. Resolved by flight-ui
+  (264d8ac): editable targets reach no binding, and `overUi` is true for any pointer target other than the
+  canvas. src/map already ignores presses and wheel steps with `overUi` and needs no change for it.
 - `docs/requests/map-view-2.md` (vite.config.ts), resolved by the lead (fa1c31b); the map-view specs are back
   on the default timeout.
 - `docs/requests/map-view-3.md` (contracts, doc comments only), open: displaySize units, overlay target
