@@ -40,7 +40,7 @@ export const CLICK_SLOP_PX = 4;
 export const DOUBLE_CLICK_MS = 500;
 
 /** Node panel: nominal size (the DOM panel reports its real size once shown) and offset from the node. */
-export const PANEL_WIDTH_PX = 220;
+export const PANEL_WIDTH_PX = 232;
 export const PANEL_HEIGHT_PX = 262;
 export const PANEL_OFFSET_X_PX = 92;
 export const PANEL_OFFSET_Y_PX = 28;

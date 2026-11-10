@@ -100,6 +100,12 @@ for (const [name, query, node] of CLOSEUPS) {
     await frames(page, 5);
     const shot = await saveScreenshot(page, 'map-view', name);
     assertRealImage(shot.stats, name, { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
+    // Every panel field shows its whole text (multi-day times to the node included).
+    const fields = await page.locator('[data-map-panel] input').evaluateAll((els) =>
+      els.map((e) => ({ field: (e as HTMLInputElement).dataset['field'], value: (e as HTMLInputElement).value, fits: e.scrollWidth <= e.clientWidth })),
+    );
+    expect(fields).toHaveLength(6);
+    for (const f of fields) expect(f.fits, `${f.field} "${f.value}"`).toBe(true);
     await expectNoErrors(page, pageLog);
   });
 }

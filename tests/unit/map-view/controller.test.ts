@@ -15,6 +15,7 @@ import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicPosition, conicTrueAnomaly } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
+import { PANEL_HEIGHT_PX, PANEL_WIDTH_PX } from '@/map/constants';
 import { dragDelta, MapController, modifierFactor } from '@/map/controller';
 import { occlusionWeight } from '@/map/occlusion';
 import { lookAtCamera, orbitCamera } from '@/map/testing/camera';
@@ -577,7 +578,7 @@ describe('node panel', () => {
     map.selectNode(fx.nodeA.id);
     const withPanel = map.frame(s, cam, CSS);
     const st = map.panelState()!;
-    const rect = { x0: st.x, y0: st.y, x1: st.x + 220, y1: st.y + 262 };
+    const rect = { x0: st.x, y0: st.y, x1: st.x + PANEL_WIDTH_PX, y1: st.y + PANEL_HEIGHT_PX };
     expect(overlapping(withPanel, rect)).toEqual([]);
     // Without the panel the same view does put labels there (the check above is not vacuous).
     map.selectNode(null);

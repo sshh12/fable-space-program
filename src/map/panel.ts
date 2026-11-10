@@ -12,8 +12,8 @@ import type { MapController, PanelField, PanelState } from './controller';
 import { formatDuration, formatDurationField, parseDuration, parseNumber } from './format';
 
 const STYLE = `
-.fable-map-panel { position: absolute; z-index: 20; width: 220px; padding: 8px 10px 9px; box-sizing: border-box;
-  background: rgba(10, 15, 22, 0.88); border: 1px solid rgba(80, 104, 136, 0.9); border-radius: 6px;
+.fable-map-panel { position: absolute; z-index: 20; width: 232px; padding: 8px 10px 9px; box-sizing: border-box;
+  background: rgba(10, 15, 22, 0.94); border: 1px solid rgba(80, 104, 136, 0.9); border-radius: 6px;
   font: 12px/1.35 Consolas, 'Cascadia Mono', ui-monospace, monospace; color: #e8eef7; user-select: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); }
 .fable-map-panel .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; color: #38d9e8; }
@@ -22,6 +22,7 @@ const STYLE = `
 .fable-map-panel .row.pro span.k { color: #d7e85a; } .fable-map-panel .row.nrm span.k { color: #e35cf5; }
 .fable-map-panel .row.rad span.k { color: #47c8ff; } .fable-map-panel .row.tot span.k, .fable-map-panel .row.time span.k { color: #aab6c8; }
 .fable-map-panel .row.tot { margin-bottom: 7px; }
+.fable-map-panel .row .wide { grid-column: 2 / 4; }
 .fable-map-panel input { width: 100%; box-sizing: border-box; background: #05080d; color: #e8eef7; border: 1px solid #34465e;
   border-radius: 3px; padding: 2px 4px; font: inherit; text-align: right; }
 .fable-map-panel input:focus { outline: none; border-color: #38d9e8; }
@@ -65,14 +66,15 @@ export class NodePanel {
     el.dataset['mapPanel'] = '1';
     el.style.position = fixed ? 'fixed' : 'absolute';
     el.style.display = 'none';
-    const input = (field: PanelField, title: string): string => `<input data-field="${field}" inputmode="decimal" spellcheck="false" autocomplete="off" title="${title}">`;
+    const input = (field: PanelField, title: string, cls = ''): string =>
+      `<input data-field="${field}"${cls ? ` class="${cls}"` : ''} inputmode="decimal" spellcheck="false" autocomplete="off" title="${title}">`;
     el.innerHTML = `
       <div class="hdr"><button data-action="previous" title="Previous node">&lsaquo;</button><span class="title"></span><button data-action="next" title="Next node">&rsaquo;</button></div>
       <div class="row pro"><span class="k">Prograde</span>${input('prograde', 'Prograde delta-v, m/s')}<span class="u">m/s</span></div>
       <div class="row nrm"><span class="k">Normal</span>${input('normal', 'Normal delta-v, m/s')}<span class="u">m/s</span></div>
       <div class="row rad"><span class="k">Radial</span>${input('radial', 'Radial delta-v, m/s')}<span class="u">m/s</span></div>
       <div class="row tot"><span class="k">Total Δv</span>${input('total', 'Total delta-v, m/s: rescales the burn, keeping its direction')}<span class="u">m/s</span></div>
-      <div class="row time"><span class="k">In</span>${input('timeTo', 'Time to the node: 1h 02m 03s, 1:02:03, 90 (seconds)')}<span class="u"></span></div>
+      <div class="row time"><span class="k">In</span>${input('timeTo', 'Time to the node: 1h 02m 03s, 1:02:03, 90 (seconds)', 'wide')}</div>
       <div class="row time"><span class="k">UT</span>${input('ut', 'Node time, s since J2000')}<span class="u">s</span></div>
       <div class="btns"><button data-action="minusOrbit" title="One orbit earlier">-1 orbit</button><button data-action="plusOrbit" title="One orbit later">+1 orbit</button><button data-action="delete" title="Delete node">Delete</button></div>`;
     root.appendChild(el);
