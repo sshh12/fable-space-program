@@ -24,14 +24,14 @@ export function surfaceTolerance(radius: number, centreDistance: number): number
  * `focalPx` converts angles to device pixels; `fadePx` is the soft ramp width in device pixels.
  */
 export function occlusionWeight(p: Vec3, occluders: readonly Occluder[], focalPx: number, fadePx: number): number {
-  const tp = Math.hypot(p.x, p.y, p.z);
+  const tp = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
   if (!(tp > 0)) return 0;
   const dx = p.x / tp;
   const dy = p.y / tp;
   const dz = p.z / tp;
   let w = 0;
   for (const o of occluders) {
-    const L = Math.hypot(o.x, o.y, o.z);
+    const L = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z);
     if (!(L > o.radius)) continue; // eye inside the sphere: no meaningful occlusion
     const tc = dx * o.x + dy * o.y + dz * o.z;
     if (tc <= 0) continue; // body behind the eye
@@ -39,7 +39,7 @@ export function occlusionWeight(p: Vec3, occluders: readonly Occluder[], focalPx
     const cxv = dy * o.z - dz * o.y;
     const cyv = dz * o.x - dx * o.z;
     const czv = dx * o.y - dy * o.x;
-    const theta = Math.atan2(Math.hypot(cxv, cyv, czv), tc);
+    const theta = Math.atan2(Math.sqrt(cxv * cxv + cyv * cyv + czv * czv), tc);
     const alpha = Math.asin(o.radius / L);
     if (theta >= alpha) continue;
     const dPerp2 = Math.max(0, L * L - tc * tc);

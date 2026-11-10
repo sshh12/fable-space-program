@@ -31,7 +31,7 @@ function check(c: ConicElements, nu0: number, nu1: number, eye: Vec3, target: Ve
   const proj = new Projector(lookAtCamera(eye, target), VIEWPORT);
   const curve = new ViewConic().setFromElements(c, v3.zero(), proj);
   const s = new Sampler().sample(curve, curve.nuToU(nu0), curve.nuToU(nu1), proj);
-  const tmp = new Float64Array(2);
+  const tmp = new Float64Array(4);
   let maxErr = 0;
   let checked = 0;
   for (let i = 0; i + 1 < s.count; i++) {
@@ -42,7 +42,7 @@ function check(c: ConicElements, nu0: number, nu1: number, eye: Vec3, target: Ve
     if (!Number.isFinite(ax) || !Number.isFinite(bx)) continue;
     for (let k = 1; k < 48; k++) {
       const u = s.u[i]! + ((s.u[i + 1]! - s.u[i]!) * k) / 48;
-      curve.perifocal(u, tmp);
+      curve.perifocalWithDerivative(u, tmp);
       const p = {
         x: curve.ox + curve.px * tmp[0]! + curve.qx * tmp[1]!,
         y: curve.oy + curve.py * tmp[0]! + curve.qy * tmp[1]!,

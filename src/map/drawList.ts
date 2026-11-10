@@ -30,7 +30,6 @@ export const ICON = {
   bar: 20,
   roundRect: 21,
   addGhost: 22,
-  dot: 23,
 } as const;
 export type IconId = (typeof ICON)[keyof typeof ICON];
 

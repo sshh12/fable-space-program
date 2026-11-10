@@ -30,6 +30,8 @@ import {
   RAMP_DOUBLING_S,
   RAMP_MAX_RATE,
   RAMP_START_RATE,
+  TARGET_LABEL_BODY_PX,
+  TARGET_MIN_BODY_PX,
   WHEEL_DV,
   type Rgba,
 } from './constants';
@@ -126,7 +128,7 @@ export interface MapControllerOptions {
 }
 
 export interface MapStats {
-  lines: { id: string; kind: string; vertices: number; visibleVertices: number; capped: boolean }[];
+  lines: { id: string; kind: string; vertices: number; visibleVertices: number; capped: boolean; evaluations: number }[];
   markers: number;
   nodes: number;
   targets: number;
@@ -145,6 +147,7 @@ export class MapController implements MapView {
   private sceneCssSize: [number, number] = [0, 0];
   private pxScale = 1;
   private selected: string | null = null;
+  private selectedMissing = 0;
   private drag: DragState | null = null;
   private pending: Pending | null = null;
   private hover: Hit | null = null;
@@ -199,6 +202,7 @@ export class MapController implements MapView {
 
   selectNode(id: string | null): void {
     this.selected = id;
+    this.selectedMissing = 0;
   }
 
   update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: PointerState, displaySize: [number, number]): MapUpdateResult {
@@ -210,7 +214,10 @@ export class MapController implements MapView {
     const px = pointer.x * k;
     const py = pointer.y * k;
     const tMs = this.now();
-    if (this.selected && !snapshot.nodes.some((n) => n.id === this.selected)) this.selected = null;
+    // A node selected from outside (or just added) appears one snapshot later: deselect only when it stays gone.
+    if (this.selected && !snapshot.nodes.some((n) => n.id === this.selected)) {
+      if (++this.selectedMissing > 2) this.selected = null;
+    } else this.selectedMissing = 0;
     let focus: MapUpdateResult['focus'];
     let consumedNow = false;
     const primaryDown = (pointer.buttons & 1) !== 0;
@@ -277,7 +284,8 @@ export class MapController implements MapView {
     }
     for (const b of scene.bodies) push('body', b.id, b.x, b.y, vis(b.x, b.y, b.front, b.hidden));
     for (const v of scene.vessels) push('vessel', v.id, v.x, v.y, vis(v.x, v.y, v.front, v.hidden));
-    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden));
+    const bodyPx = new Map(scene.bodies.filter((b) => !b.ghost).map((b) => [b.bodyId, b.radiusPx / k]));
+    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden) && (bodyPx.get(t.target.bodyId) ?? 0) >= TARGET_MIN_BODY_PX);
     return out;
   }
 
@@ -301,10 +309,11 @@ export class MapController implements MapView {
     if (!node) return null;
     const k = scene.proj.pxScale;
     const [w, h] = this.sceneCssSize;
-    let x = item && item.front ? item.x / k + 92 : 24;
+    // Beside the node, clear of the gizmo; clamped so the whole panel (220 x ~215 CSS px) stays on screen.
+    let x = item && item.front ? item.x / k + 92 : w - 236;
     let y = item && item.front ? item.y / k + 28 : 24;
-    x = Math.max(8, Math.min(w - 236, x));
-    y = Math.max(8, Math.min(h - 200, y));
+    x = Math.max(8, Math.min(w - 228, x));
+    y = Math.max(8, Math.min(h - 224, y));
     const period = item?.loc.patch.conic.period ?? null;
     const sorted = [...s.nodes].sort((a, b) => a.ut - b.ut);
     return {
@@ -396,7 +405,7 @@ export class MapController implements MapView {
     const s = this.scene;
     const d = this.lastDraw;
     return {
-      lines: s ? s.lines.map((l) => ({ id: l.id, kind: l.kind, vertices: l.count, visibleVertices: l.visibleVertices, capped: l.capped })) : [],
+      lines: s ? s.lines.map((l) => ({ id: l.id, kind: l.kind, vertices: l.count, visibleVertices: l.visibleVertices, capped: l.capped, evaluations: l.evaluations })) : [],
       markers: s?.markers.length ?? 0,
       nodes: s?.nodes.length ?? 0,
       targets: s?.targets.length ?? 0,
@@ -582,7 +591,10 @@ export class MapController implements MapView {
         const patch = p.line.patch!;
         const nu = p.line.curve.uToNu(p.u);
         const ut = utAtTrueAnomaly(patch, nu);
-        if (ut > s.ut) this.selected = this.commands.addNode(ut);
+        if (ut > s.ut) {
+          const id = this.commands.addNode(ut);
+          if (id) this.selectNode(id);
+        }
         return;
       }
       case 'body': {
@@ -666,14 +678,17 @@ export class MapController implements MapView {
       clearIcons.push({ x, y, r: r * k * 0.9 });
     };
 
-    // Surface targets.
+    // Surface targets, once their body is big enough on screen to place them meaningfully.
+    const bodyPx = new Map(scene.bodies.filter((b) => !b.ghost).map((b) => [b.bodyId, b.radiusPx / k]));
     for (const t of scene.targets) {
       if (!visible(t.x, t.y, t.front)) continue;
-      const a = 1 - t.hidden;
+      const rPx = bodyPx.get(t.target.bodyId) ?? 0;
+      if (rPx < TARGET_MIN_BODY_PX) continue;
+      const a = (1 - t.hidden) * Math.min(1, (rPx - TARGET_MIN_BODY_PX) / 10);
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
       const r = t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5;
       icon(t.x, t.shape === 'pin' ? t.y - 9 * k : t.y, r, shape, t.color, a);
-      addLabel(t.x, t.y, r * k, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.textDim, a);
+      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r * k, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.textDim, a);
     }
     // Small bodies (icon + label) and ghost bodies.
     for (const b of scene.bodies) {
@@ -694,7 +709,8 @@ export class MapController implements MapView {
         icon(v.x, v.y, 7, ICON.vessel, COLORS.vessel, a);
         addLabel(v.x, v.y, 7 * k, [v.name], 5, COLORS.text, a);
       } else if (v.debris) {
-        icon(v.x, v.y, 3, ICON.debris, COLORS.debris, a);
+        // Debris dots stay out of the label-avoidance set: labels may pass over them.
+        if (a >= 0.01) icons.push({ x: v.x, y: v.y, hx: 3 * k, hy: 3 * k, rot: 0, shape: ICON.debris, color: COLORS.debris, alpha: a });
       } else {
         icon(v.x, v.y, 5.5, ICON.vessel, COLORS.otherVessel, a * 0.85);
         addLabel(v.x, v.y, 5.5 * k, [v.name], 1, COLORS.textDim, a);
@@ -847,12 +863,6 @@ function shapeIcon(s: MarkerShape): IconId {
       return ICON.pad;
     case 'zone':
       return ICON.zone;
-    case 'vessel':
-      return ICON.vessel;
-    case 'debris':
-      return ICON.debris;
-    case 'bodyRing':
-      return ICON.bodyRing;
   }
 }
 

@@ -161,6 +161,8 @@ export class OverlayRenderer {
     let j = 0;
     for (const l of scene.lines) {
       const dashed = l.dashed ? 2 : 0;
+      const rgb = packColor(l.color, 0);
+      const a255 = l.color[3] * 255;
       for (let i = 0; i < l.count; i++) {
         const s = l.start + i;
         const o = j * POINT_WORDS;
@@ -168,7 +170,8 @@ export class OverlayRenderer {
         pf[o + 1] = verts.vy[s]!;
         pf[o + 2] = verts.vz[s]!;
         pf[o + 3] = verts.len[s]!;
-        pu[o + 4] = packColor(l.color, verts.alpha[s]!);
+        const alpha = Math.max(0, Math.min(255, Math.round(a255 * verts.alpha[s]!)));
+        pu[o + 4] = (rgb | (alpha << 24)) >>> 0;
         pu[o + 5] = (i < l.count - 1 ? 1 : 0) | dashed;
         pf[o + 6] = l.width;
         pf[o + 7] = 0;
@@ -181,10 +184,11 @@ export class OverlayRenderer {
     // Icons (two layers in one buffer).
     const [i0, i1] = list.icons;
     this.ensureIcons(i0.length + i1.length);
-    const iv = new DataView(this.iconData);
+    const ivf = new Float32Array(this.iconData);
+    const ivu = new Uint32Array(this.iconData);
     let ic = 0;
-    for (const icon of i0) this.writeIcon(iv, ic++, icon);
-    for (const icon of i1) this.writeIcon(iv, ic++, icon);
+    for (const icon of i0) this.writeIcon(ivf, ivu, ic++, icon);
+    for (const icon of i1) this.writeIcon(ivf, ivu, ic++, icon);
     this.icons0 = i0.length;
     this.icons1 = i1.length;
     if (ic > 0) this.device.queue.writeBuffer(this.iconBuf!, 0, this.iconData, 0, ic * ICON_BYTES);
@@ -194,10 +198,11 @@ export class OverlayRenderer {
     const [t0, t1] = list.texts;
     const count = (runs: TextRun[]): number => runs.reduce((a, r) => a + r.text.length, 0);
     this.ensureGlyphs(2 * (count(t0) + count(t1)));
-    const gv = new DataView(this.glyphData);
+    const gvf = new Float32Array(this.glyphData);
+    const gvu = new Uint32Array(this.glyphData);
     let g = 0;
     for (const layer of [t0, t1]) {
-      for (const pass of [0, 1]) for (const run of layer) g = this.writeRun(gv, g, run, atlas, pass === 0);
+      for (const pass of [0, 1]) for (const run of layer) g = this.writeRun(gvf, gvu, g, run, atlas, pass === 0);
       if (layer === t0) this.glyphs0 = g;
     }
     this.glyphs1 = g - this.glyphs0;
@@ -248,38 +253,38 @@ export class OverlayRenderer {
 
   // --------------------------------------------------------------------------------- internals
 
-  private writeIcon(v: DataView, i: number, icon: IconInstance): void {
-    const o = i * ICON_BYTES;
-    v.setFloat32(o, icon.x, true);
-    v.setFloat32(o + 4, icon.y, true);
-    v.setFloat32(o + 8, icon.hx, true);
-    v.setFloat32(o + 12, icon.hy, true);
-    v.setFloat32(o + 16, icon.rot, true);
-    v.setUint32(o + 20, icon.shape, true);
-    v.setUint32(o + 24, packColor(icon.color, 1), true);
-    v.setFloat32(o + 28, icon.alpha, true);
+  private writeIcon(f: Float32Array, u: Uint32Array, i: number, icon: IconInstance): void {
+    const o = i * (ICON_BYTES / 4);
+    f[o] = icon.x;
+    f[o + 1] = icon.y;
+    f[o + 2] = icon.hx;
+    f[o + 3] = icon.hy;
+    f[o + 4] = icon.rot;
+    u[o + 5] = icon.shape;
+    u[o + 6] = packColor(icon.color, 1);
+    f[o + 7] = icon.alpha;
   }
 
-  private writeRun(v: DataView, g: number, run: TextRun, atlas: GlyphAtlas, halo: boolean): number {
+  private writeRun(f: Float32Array, u: Uint32Array, g: number, run: TextRun, atlas: GlyphAtlas, halo: boolean): number {
     const m = atlas.margin;
     const x0 = Math.round(run.x) - m;
     const y0 = Math.round(run.y) - m;
     const color = packColor(run.color, halo ? 0 : run.alpha);
     const haloColor = packColor(COLORS.halo, halo ? run.alpha : 0);
-    for (let i = 0; i < run.text.length; i++) {
-      const ch = run.text[i]!;
-      if (ch === ' ') continue;
-      const cell = atlas.cell(ch);
-      if (!cell) continue;
-      const o = g * GLYPH_BYTES;
-      v.setFloat32(o, x0 + Math.round(i * atlas.metrics.advance), true);
-      v.setFloat32(o + 4, y0, true);
-      v.setFloat32(o + 8, atlas.cellW, true);
-      v.setFloat32(o + 12, atlas.cellH, true);
-      v.setFloat32(o + 16, cell.u, true);
-      v.setFloat32(o + 20, cell.v, true);
-      v.setUint32(o + 24, color, true);
-      v.setUint32(o + 28, haloColor, true);
+    const text = run.text;
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      if (code === 32) continue;
+      const cell = atlas.cell(code);
+      const o = g * (GLYPH_BYTES / 4);
+      f[o] = x0 + Math.round(i * atlas.metrics.advance);
+      f[o + 1] = y0;
+      f[o + 2] = atlas.cellW;
+      f[o + 3] = atlas.cellH;
+      f[o + 4] = cell.u;
+      f[o + 5] = cell.v;
+      u[o + 6] = color;
+      u[o + 7] = haloColor;
       g++;
     }
     return g;

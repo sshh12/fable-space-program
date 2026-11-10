@@ -25,7 +25,10 @@ export class GlyphAtlas {
   /** Offset of the glyph origin inside its cell (halo margin). */
   readonly margin: number;
   readonly pxScale: number;
-  private readonly cells = new Map<string, GlyphCell>();
+  /** Cells of ASCII code units (dense) and of the few non-ASCII symbols. */
+  private readonly ascii: (GlyphCell | undefined)[] = new Array<GlyphCell | undefined>(128).fill(undefined);
+  private readonly extra = new Map<number, GlyphCell>();
+  private readonly fallback: GlyphCell;
 
   constructor(device: GPUDevice, pxScale: number) {
     this.pxScale = pxScale;
@@ -70,7 +73,13 @@ export class GlyphAtlas {
       data[2 * i] = fill[4 * i + 3]!;
       data[2 * i + 1] = halo[4 * i + 3]!;
     }
-    chars.forEach((ch, i) => this.cells.set(ch, { u: (i % cols) * this.cellW, v: Math.floor(i / cols) * this.cellH }));
+    chars.forEach((ch, i) => {
+      const cell = { u: (i % cols) * this.cellW, v: Math.floor(i / cols) * this.cellH };
+      const code = ch.charCodeAt(0);
+      if (code < 128) this.ascii[code] = cell;
+      else this.extra.set(code, cell);
+    });
+    this.fallback = this.ascii['?'.charCodeAt(0)]!;
     this.texture = device.createTexture({
       label: 'map.glyphAtlas',
       size: { width, height },
@@ -81,8 +90,9 @@ export class GlyphAtlas {
     this.view = this.texture.createView();
   }
 
-  cell(ch: string): GlyphCell | undefined {
-    return this.cells.get(ch) ?? this.cells.get('?');
+  /** Atlas cell of a UTF-16 code unit ('?' for characters outside the label charset). */
+  cell(code: number): GlyphCell {
+    return (code < 128 ? this.ascii[code] : this.extra.get(code)) ?? this.fallback;
   }
 
   destroy(): void {

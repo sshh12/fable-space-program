@@ -301,7 +301,7 @@ fn shapeSd(shape: u32, p: vec2f, h: vec2f, px: f32) -> vec2f {
     case 9u: { // pad: rounded square outline with a centre dot
       return vec2f(min(abs(sdBox(p, vec2f(r * 0.8), r * 0.2)) - w * 0.5, sdCircle(p, r * 0.25)), 0.0);
     }
-    case 10u, 12u, 23u: { // zone centre / debris / dot
+    case 10u, 12u: { // zone centre / debris
       return vec2f(sdCircle(p, r * 0.8), 0.0);
     }
     case 11u: { // vessel: ring with a bright core

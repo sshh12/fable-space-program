@@ -342,6 +342,36 @@ describe('multi-revolution patches', () => {
     expect(nodeB.loc.approximateFrame).toBe(false);
   });
 
+  it('at intercept, the encounter is drawn around the body where it was at the SOI entry: the chain is continuous', () => {
+    const fx = createSyntheticFixture(defs);
+    const s = fx.snapshot;
+    const map = new MapController(defs);
+    map.setActive(true);
+    const cam = lookAtCamera({ x: 2e8, y: -3e8, z: 9e8 }, { x: 1e8, y: 0, z: 0 });
+    const ends = () => {
+      const scene = map.currentScene!;
+      const dep = scene.lines.find((l) => l.id === 'current/0')!;
+      const enc = scene.lines.find((l) => l.id === 'current/1')!;
+      const v = scene.verts;
+      const i = dep.start + dep.count - 1;
+      return { gap: Math.hypot(v.sx[i]! - v.sx[enc.start]!, v.sy[i]! - v.sy[enc.start]!), scene };
+    };
+    map.frame(s, cam, CSS);
+    expect(ends().gap).toBeGreaterThan(5); // current-position drawing: the Moon has moved on since the encounter
+    map.setDrawAtIntercept(true);
+    map.frame(s, cam, CSS);
+    const { gap, scene } = ends();
+    expect(gap).toBeLessThan(1e-6);
+    // The ghost is the Moon's true position at the SOI entry (fixture ephemeris).
+    const anchor = scene.ghostAnchors.get(fx.moonId)!;
+    expect(v3.dist(anchor, fx.bodyPosition(fx.moonId, s.patches.current[1]!.tStart))).toBeLessThan(1);
+    expect(scene.bodies.some((b) => b.id === `${fx.moonId}@intercept`)).toBe(true);
+    // Node A (on the encounter patch) and the planned flyby after it share that anchor.
+    const nodeA = scene.nodes.find((n) => n.id === fx.nodeA.id)!;
+    const flyby = scene.lines.find((l) => l.id === 'planned/0')!;
+    expect(Math.hypot(nodeA.x - scene.verts.sx[flyby.start]!, nodeA.y - scene.verts.sy[flyby.start]!)).toBeLessThan(1e-6);
+  });
+
   it('+1 orbit moves a node one period later and delete removes it (panel actions)', () => {
     const r = rig();
     clickOrbit(r, 0.4);

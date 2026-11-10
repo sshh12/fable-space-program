@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Patch } from '@/core/contracts/sim';
 import { conicFromState, conicPosition, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
 import { v3 } from '@/core/math/vec3';
-import { forwardTime, patchContainsAnomaly, utAtTrueAnomaly } from './anomalyTime';
+import { forwardTime, isFullRevolution, utAtTrueAnomaly } from './anomalyTime';
 import { stateAt } from './testing/kepler';
 
 const MU = 3.986004418e14;
@@ -71,13 +71,11 @@ describe('true anomaly -> time on the right revolution', () => {
     expect(forwardTime(h, 0.5, 0.2)).toBeLessThan(0);
   });
 
-  it('knows which anomalies a patch covers', () => {
+  it('knows full-revolution patches', () => {
     const p = patchOn(c, T0);
-    expect(patchContainsAnomaly(p, 2)).toBe(true);
-    const arc: Patch = { ...p, nuStart: 1, nuEnd: 2, endReason: 'impact' };
-    expect(patchContainsAnomaly(arc, 1.5)).toBe(true);
-    expect(patchContainsAnomaly(arc, 2.5)).toBe(false);
-    expect(patchContainsAnomaly(arc, 1.5 + 2 * Math.PI)).toBe(true);
+    expect(isFullRevolution(p)).toBe(true);
+    expect(isFullRevolution({ ...p, nuEnd: p.nuStart + 5 * Math.PI, endReason: 'maneuver' })).toBe(true);
+    expect(isFullRevolution({ ...p, nuStart: 1, nuEnd: 2, endReason: 'impact' })).toBe(false);
     expect(v3.len(conicPosition(c, 0))).toBeCloseTo(6.771e6, 3);
   });
 });

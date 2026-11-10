@@ -36,8 +36,13 @@ export interface MapViewApi extends MapView {
   readonly isActive: boolean;
   readonly selectedNodeId: string | null;
   selectNode(id: string | null): void;
-  /** Geometry statistics of the last built scene (labs and tests). */
-  stats(): MapStats & { gpu: OverlayCounts | null };
+  /**
+   * Geometry statistics of the last built scene and the CPU split of the last prepare(), ms: scene build +
+   * draw list, GPU buffer upload, node-panel DOM sync (labs and tests).
+   */
+  stats(): MapStats & { gpu: OverlayCounts | null; cpu: { sceneMs: number; uploadMs: number; panelMs: number } };
+  /** The CPU split of the last prepare() alone (cheap; for per-frame sampling in labs). */
+  cpuTimes(): { sceneMs: number; uploadMs: number; panelMs: number };
   /** The node panel element (null without a DOM). */
   readonly panelElement: HTMLElement | null;
   /** The CPU controller (hit-testing, panel actions) for labs and tests. */
@@ -54,6 +59,8 @@ export function createMapView(gpu: GpuHandle, defs: DefLibrary, opts: MapViewOpt
   let renderer: OverlayRenderer | null = null;
   let counts: OverlayCounts | null = null;
   let drawn = false;
+  const cpu = { sceneMs: 0, uploadMs: 0, panelMs: 0 };
+  const clock = (): number => performance.now();
   // Text metrics come from the glyph atlas once the GPU side exists (labels are laid out with real advances).
   const controller = new MapController(defs, {
     now: opts.now,
@@ -76,11 +83,17 @@ export function createMapView(gpu: GpuHandle, defs: DefLibrary, opts: MapViewOpt
         panel?.sync(null);
         return;
       }
+      const t0 = clock();
       const list = controller.frame(frame.snapshot, frame.camera, frame.displaySize);
       if (!list) return;
+      const t1 = clock();
       counts = renderer.upload(list);
       drawn = true;
+      const t2 = clock();
       panel?.sync(controller.panelState());
+      cpu.sceneMs = t1 - t0;
+      cpu.uploadMs = t2 - t1;
+      cpu.panelMs = clock() - t2;
     },
     drawOverlay(_frame: FrameContext, pass: GPURenderPassEncoder): void {
       if (drawn && renderer) renderer.draw(pass);
@@ -111,7 +124,8 @@ export function createMapView(gpu: GpuHandle, defs: DefLibrary, opts: MapViewOpt
       return controller.selectedNodeId;
     },
     selectNode: (id) => controller.selectNode(id),
-    stats: () => ({ ...controller.stats(), gpu: counts }),
+    stats: () => ({ ...controller.stats(), gpu: counts, cpu: { ...cpu } }),
+    cpuTimes: () => cpu,
     panelElement: panel?.element ?? null,
     controller,
     dispose: () => feature.dispose?.(),

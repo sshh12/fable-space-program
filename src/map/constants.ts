@@ -5,8 +5,16 @@
 
 /** Maximum screen-space distance (device px) between a sampled polyline and the exact conic. */
 export const CHORD_ERROR_PX = 0.3;
-/** The sampler refines until the midpoint deviation is below this (leaves margin for the cubic term). */
-export const CHORD_TOLERANCE_PX = 0.22;
+/**
+ * The sampler refines until its rigorous chord-error bound (tangent triangle, see sampler.ts) is below this;
+ * the actual error is typically about half the bound.
+ */
+export const CHORD_TOLERANCE_PX = 0.29;
+/**
+ * Bound for the faint reference lines that are not predicted patches (debris and other vessels' orbits,
+ * recovery-zone circles): 1.5 px wide at 20-45 % alpha, where under a pixel of chord error is invisible.
+ */
+export const FAINT_CHORD_TOLERANCE_PX = 0.9;
 /** Hard cap on the vertices of one sampled conic. */
 export const MAX_POINTS_PER_CURVE = 2048;
 
@@ -26,6 +34,9 @@ export const CLICK_SLOP_PX = 4;
 
 /** Icons drawn for bodies and vessels whose projected diameter is below this. */
 export const SMALL_OBJECT_PX = 6;
+/** Surface targets appear once their body's projected radius reaches this; their labels from the second value. */
+export const TARGET_MIN_BODY_PX = 18;
+export const TARGET_LABEL_BODY_PX = 70;
 
 /** Maneuver-node editing: 1 m/s per 10 px of drag along a handle, Shift x0.1, Ctrl x10. */
 export const DV_PER_PX = 0.1;
@@ -68,8 +79,8 @@ const hex = (h: string, a = 1): Rgba => {
 export const COLORS = {
   current: [hex('#4fc3f7'), hex('#ffb74d'), hex('#ba8cf2'), hex('#81c784')] as readonly Rgba[],
   planned: [hex('#ffd166'), hex('#ff8a65'), hex('#f48fb1'), hex('#c5e1a5')] as readonly Rgba[],
-  vesselOrbit: hex('#b8c4d6', 0.5),
-  debrisOrbit: hex('#8a94a6', 0.3),
+  vesselOrbit: hex('#b8c4d6', 0.45),
+  debrisOrbit: hex('#7d879a', 0.2),
   bodyOrbit: hex('#9aa6e0', 0.55),
   soi: hex('#9aa6e0', 0.28),
   ghost: hex('#9aa6e0', 0.6),

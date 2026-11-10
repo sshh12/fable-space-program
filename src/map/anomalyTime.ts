@@ -39,12 +39,3 @@ export function utAtTrueAnomaly(patch: Patch, nu: number, nearUt?: number): numb
   const k = Math.round((nearUt - base) / c.period);
   return base + k * c.period;
 }
-
-/** Is `nu` (any wrapping) inside the drawn range of the patch? Full revolutions contain every anomaly. */
-export function patchContainsAnomaly(patch: Patch, nu: number): boolean {
-  if (isFullRevolution(patch)) return true;
-  const span = patch.nuEnd - patch.nuStart;
-  let d = nu - patch.nuStart;
-  if (patch.conic.period !== null) d -= TWO_PI * Math.floor(d / TWO_PI);
-  return d >= -1e-9 && d <= span + 1e-9;
-}

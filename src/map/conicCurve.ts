@@ -103,20 +103,51 @@ export class ViewConic {
     return 2 * Math.atan(Math.tanh(u / 2) / this.sqRatio);
   }
 
-  /** Perifocal coordinates at parameter u, written to out[0], out[1]. */
-  perifocal(u: number, out: Float64Array): void {
+  /** Perifocal coordinates and their derivatives with respect to u: out = [X, Y, dX/du, dY/du]. */
+  perifocalWithDerivative(u: number, out: Float64Array): void {
     if (this.kind === 'E') {
-      out[0] = this.aAbs * (Math.cos(u) - this.e);
-      out[1] = this.b * Math.sin(u);
+      const c = Math.cos(u);
+      const s = Math.sin(u);
+      out[0] = this.aAbs * (c - this.e);
+      out[1] = this.b * s;
+      out[2] = -this.aAbs * s;
+      out[3] = this.b * c;
     } else if (this.kind === 'H') {
-      out[0] = this.aAbs * (this.e - Math.cosh(u));
-      out[1] = this.b * Math.sinh(u);
+      const ch = Math.cosh(u);
+      const sh = Math.sinh(u);
+      out[0] = this.aAbs * (this.e - ch);
+      out[1] = this.b * sh;
+      out[2] = -this.aAbs * sh;
+      out[3] = this.b * ch;
     } else {
       const c = Math.cos(u);
-      const r = this.p / (1 + this.e * c);
+      const s = Math.sin(u);
+      const den = 1 + this.e * c;
+      const r = this.p / den;
+      const dr = (this.p * this.e * s) / (den * den);
       out[0] = r * c;
-      out[1] = r * Math.sin(u);
+      out[1] = r * s;
+      out[2] = dr * c - r * s;
+      out[3] = dr * s + r * c;
     }
+  }
+
+  /**
+   * Mean anomaly at parameter u (E - e sin E, or e sinh H - H), unwrapped like u; NaN in the parabolic band.
+   * Time between two parameters is the mean-anomaly difference divided by the mean motion sqrt(mu/|a|^3).
+   */
+  meanAnomaly(u: number): number {
+    if (this.kind === 'E') return u - this.e * Math.sin(u);
+    if (this.kind === 'H') return this.e * Math.sinh(u) - u;
+    return NaN;
+  }
+
+  /**
+   * Upper bound of the velocity-direction turning per unit parameter for ellipses (a/b, reached at the
+   * apsides); null when only the per-point heading can bound it (hyperbolas, parabolic band).
+   */
+  maxTurnRate(): number | null {
+    return this.kind === 'E' ? 1 / Math.sqrt(1 - this.e * this.e) : null;
   }
 
   /** In-plane direction angle of the velocity at parameter u (monotonic along the curve): nu + pi/2 - flight-path angle. */

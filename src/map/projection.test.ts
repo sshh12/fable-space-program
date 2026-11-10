@@ -54,15 +54,12 @@ describe('float64 projection', () => {
     expect(Math.hypot(q.x - s0.x, q.y - s0.y)).toBeCloseTo(1000 / metresPerPx, 9);
   });
 
-  it('round-trips rays and flags points behind the near plane', () => {
+  it('flags points behind the near plane', () => {
     const eye = { x: 7e6, y: 0, z: 0 };
     const proj = new Projector(lookAtCamera(eye, v3.zero()), VIEWPORT);
-    const behind = proj.projectRoot({ x: 8e6, y: 0, z: 0 });
-    expect(behind.front).toBe(false);
-    const ray = proj.rayView(100, 650);
-    const p = proj.projectView(v3.scale(ray, 1234.5));
-    expect(p.x).toBeCloseTo(100, 9);
-    expect(p.y).toBeCloseTo(650, 9);
+    expect(proj.projectRoot({ x: 8e6, y: 0, z: 0 }).front).toBe(false);
+    expect(proj.projectRoot({ x: 7e6 - 0.04, y: 0, z: 0 }).front).toBe(false); // inside the 0.05 m near plane
+    expect(proj.projectRoot({ x: 7e6 - 0.06, y: 0, z: 0 }).front).toBe(true);
   });
 
   it('matches the GPU projection matrix', () => {

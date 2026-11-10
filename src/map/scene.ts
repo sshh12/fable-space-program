@@ -8,25 +8,29 @@ import type { CameraState } from '@/core/contracts/render';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { Marker, MarkerKind, Patch, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
-import { conicFromState, conicMaxTrueAnomaly, conicRadiusCrossing, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
+import { conicFromState, conicMaxTrueAnomaly, conicPosition, conicRadiusCrossing, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { forwardTime, isFullRevolution } from './anomalyTime';
+import { isFullRevolution } from './anomalyTime';
 import { ViewConic } from './conicCurve';
 import {
   AFTER_NODE_DIM,
+  CHORD_TOLERANCE_PX,
   COLORS,
+  FAINT_CHORD_TOLERANCE_PX,
   FADE_FLOOR,
   FAINT_LINE_WIDTH_PX,
   LINE_WIDTH_PX,
+  MAX_POINTS_PER_CURVE,
   OCCLUSION_FADE_PX,
   SMALL_OBJECT_PX,
+  TARGET_MIN_BODY_PX,
   type Rgba,
 } from './constants';
 import { locateNode, type NodeLocation, type PatchKey, type PatchList } from './nodes';
 import { occlusionWeight, type Occluder } from './occlusion';
 import { Projector, type Viewport } from './projection';
-import { Sampler } from './sampler';
+import { FAINT_MAX_TURN, Sampler } from './sampler';
 
 const TWO_PI = 2 * Math.PI;
 
@@ -50,6 +54,8 @@ export interface LineRecord {
   /** Vertices on screen and in front of the eye (for tests and the lab statistics). */
   visibleVertices: number;
   capped: boolean;
+  /** Curve evaluations the sampler spent on this line this frame. */
+  evaluations: number;
 }
 
 export type MarkerShape =
@@ -63,10 +69,7 @@ export type MarkerShape =
   | 'surfacePoint'
   | 'pin'
   | 'pad'
-  | 'zone'
-  | 'vessel'
-  | 'debris'
-  | 'bodyRing';
+  | 'zone';
 
 export interface PointItem {
   id: string;
@@ -170,7 +173,10 @@ export class VertexArrays {
 }
 
 export interface SceneOptions {
-  /** Draw encounter patches around their body's position at intercept (Patch.bodyPosAtEnd). */
+  /**
+   * Draw encounter patches around their body's position at the intercept (derived from the preceding
+   * patch's Patch.bodyPosAtEnd) instead of its current position.
+   */
   atIntercept: boolean;
 }
 
@@ -224,6 +230,8 @@ export class SceneBuilder {
   private readonly sampler = new Sampler();
   private readonly verts = new VertexArrays();
   private readonly tmpV: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Label text per marker object, reused while the snapshot time and target are unchanged (camera-only frames). */
+  private readonly labelCache = new WeakMap<Marker, Map<string, { ut: number; target: string | null; text: { label: string[]; details: string[] } }>>();
 
   constructor(
     private readonly defs: DefLibrary,
@@ -252,15 +260,22 @@ export class SceneBuilder {
     const bodies = this.bodyInfo(snapshot);
     const active = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId) ?? null;
 
-    // Encounter anchors for at-intercept drawing: one per body, from its first encounter patch.
+    // Encounter anchors for at-intercept drawing: one per body, its ROOT position at the intercept (SOI
+    // entry) of its first encounter patch. The preceding patch ends there in ROOT at
+    // prev.bodyPosAtEnd + r(prev.nuEnd) (Patch contract), so the body sat at that point minus the
+    // encounter conic's start: the drawn chain is continuous at the intercept. An encounter patch without a
+    // predecessor in its list falls back to its own bodyPosAtEnd.
     const anchors = new Map<string, Vec3>();
     if (options.atIntercept) {
       for (const list of [snapshot.patches.current, snapshot.patches.planned]) {
-        for (const p of list) {
-          if (active && p.bodyId === active.bodyId) continue;
-          if (p.bodyId === this.defs.rootBodyId) continue;
-          if (!anchors.has(p.bodyId)) anchors.set(p.bodyId, v3.clone(p.bodyPosAtEnd));
-        }
+        list.forEach((p, i) => {
+          if ((active && p.bodyId === active.bodyId) || p.bodyId === this.defs.rootBodyId || anchors.has(p.bodyId)) return;
+          const prev = list[i - 1];
+          if (prev && prev.bodyId !== p.bodyId) {
+            const endRoot = v3.add(prev.bodyPosAtEnd, conicPosition(prev.conic, prev.nuEnd));
+            anchors.set(p.bodyId, v3.sub(endRoot, conicPosition(p.conic, p.nuStart)));
+          } else anchors.set(p.bodyId, v3.clone(p.bodyPosAtEnd));
+        });
       }
     }
     scene.ghostAnchors = anchors;
@@ -334,6 +349,16 @@ export class SceneBuilder {
       ['current', snapshot.patches.current],
       ['planned', snapshot.patches.planned],
     ];
+    const labelOf = (item: Omit<MarkerItem, 'label' | 'details'>): { label: string[]; details: string[] } => {
+      let per = this.labelCache.get(item.marker);
+      if (!per) this.labelCache.set(item.marker, (per = new Map()));
+      const hit = per.get(item.kind);
+      const target = snapshot.readouts.targetBodyId;
+      if (hit && hit.ut === snapshot.ut && hit.target === target) return hit.text;
+      const text = this.labels.markerLabel(item, { snapshot, defs: this.defs });
+      per.set(item.kind, { ut: snapshot.ut, target, text });
+      return text;
+    };
     for (const [list, patches] of markerPatches) {
       patches.forEach((p, index) => {
         if (list === 'planned' && p.afterNodeId === undefined) return;
@@ -349,7 +374,7 @@ export class SceneBuilder {
           const style = MARKER_STYLE[m.kind];
           const base = this.point(scene, id, root);
           const item = { ...base, kind: m.kind, marker: m, patchKey: { list, index }, shape: style.shape, color: style.color, priority: style.priority };
-          scene.markers.push({ ...item, ...this.labels.markerLabel(item, { snapshot, defs: this.defs }) });
+          scene.markers.push({ ...item, ...labelOf(item) });
           // Impact and entry points also sit on the ground, on the body as it is now (body-fixed lat/lon).
           if ((m.kind === 'impact' || m.kind === 'atmosphereEntry') && m.latitude !== undefined && m.longitude !== undefined) {
             const b = bodies.get(m.bodyId);
@@ -359,7 +384,7 @@ export class SceneBuilder {
               const sBase = this.point(scene, `${id}/surface`, rootS);
               const kind = m.kind === 'impact' ? ('impactSurface' as const) : ('entrySurface' as const);
               const sItem = { ...sBase, kind, marker: m, patchKey: { list, index }, shape: 'surfacePoint' as const, color: style.color, priority: 2 };
-              scene.markers.push({ ...sItem, ...this.labels.markerLabel(sItem, { snapshot, defs: this.defs }) });
+              scene.markers.push({ ...sItem, ...labelOf(sItem) });
             }
           }
         }
@@ -495,7 +520,8 @@ export class SceneBuilder {
 
   private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): LineRecord | null {
     const proj = scene.proj;
-    const s = this.sampler.sample(curve, u0, u1, proj);
+    const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit' || kind === 'recoveryZone';
+    const s = faint ? this.sampler.sample(curve, u0, u1, proj, FAINT_CHORD_TOLERANCE_PX, MAX_POINTS_PER_CURVE, FAINT_MAX_TURN) : this.sampler.sample(curve, u0, u1, proj, CHORD_TOLERANCE_PX);
     if (s.count < 2) return null;
     const verts = this.verts;
     verts.reserve(s.count);
@@ -515,15 +541,15 @@ export class SceneBuilder {
       verts.t[j] = NaN;
       verts.alpha[j] = 1;
       if (i > 0) {
-        const px = verts.sx[j - 1]!;
-        const py = verts.sy[j - 1]!;
-        if (Number.isFinite(px) && Number.isFinite(sx)) len += Math.hypot(sx - px, sy - py);
+        const dx = sx - verts.sx[j - 1]!;
+        const dy = sy - verts.sy[j - 1]!;
+        if (Number.isFinite(dx) && Number.isFinite(dy)) len += Math.sqrt(dx * dx + dy * dy);
       }
       verts.len[j] = len;
       if (Number.isFinite(sx) && proj.onScreen(sx, sy)) visible++;
     }
     verts.n = start + s.count;
-    const rec: LineRecord = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped };
+    const rec: LineRecord = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations };
     scene.lines.push(rec);
     return rec;
   }
@@ -543,16 +569,19 @@ export class SceneBuilder {
     if (!rec) return;
     rec.patchKey = { list, index };
     rec.patch = p;
-    // Time at every vertex (first lap for multi-revolution patches) and the fade with time ahead.
+    // Time at every vertex (first lap for multi-revolution patches) and the fade with time ahead. With the
+    // eccentric/hyperbolic anomaly as the parameter this is Kepler's equation itself: dt = dM / n.
     const verts = this.verts;
+    const curve = rec.curve;
     const tspStart = timeSincePeriapsis(c, wrapPi(p.nuStart));
+    const aAbs = Math.abs(c.a);
+    const meanMotion = Number.isFinite(aAbs) ? Math.sqrt(c.mu / (aAbs * aAbs * aAbs)) : NaN;
+    const m0 = curve.meanAnomaly(verts.u[rec.start]!);
     for (let i = 0; i < rec.count; i++) {
       const j = rec.start + i;
-      const nu = rec.curve.uToNu(verts.u[j]!);
       let t: number;
-      if (c.period !== null) t = p.tStart + forwardTime(c, p.nuStart, nu);
-      else t = p.tStart + (timeSincePeriapsis(c, nu) - tspStart);
-      if (i === 0) t = p.tStart;
+      if (Number.isFinite(m0) && Number.isFinite(meanMotion)) t = p.tStart + (curve.meanAnomaly(verts.u[j]!) - m0) / meanMotion;
+      else t = p.tStart + (timeSincePeriapsis(c, curve.uToNu(verts.u[j]!)) - tspStart);
       verts.t[j] = t;
       const ahead = Math.max(0, t - now);
       let a = FADE_FLOOR + (1 - FADE_FLOOR) * Math.exp(-ahead / tau);
@@ -630,6 +659,10 @@ export class SceneBuilder {
 
   /** A recovery zone: the small circle of the zone radius lying on the body sphere (body-fixed, rotates with it). */
   private addZoneLine(scene: MapScene, t: SurfaceTarget, b: BodyInfo): void {
+    // Zones appear with the other surface targets, once the body is large enough on screen.
+    const c = scene.proj.toView(b.pos);
+    const L = Math.hypot(c.x, c.y, c.z);
+    if (L > b.radius && Math.tan(Math.asin(b.radius / L)) * scene.proj.focal < TARGET_MIN_BODY_PX * scene.proj.pxScale) return;
     const rho = Math.min(t.radius / b.radius, Math.PI / 2);
     const nFixed = latLonToDir(t.latitude, t.longitude);
     let east = v3.cross({ x: 0, y: 0, z: 1 }, nFixed);

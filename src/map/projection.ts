@@ -84,16 +84,6 @@ export class Projector {
     return out;
   }
 
-  /** Rotate a view-space vector back into ROOT axes. */
-  unrotate(v: Vec3): Vec3 {
-    const m = this.m;
-    return {
-      x: m[0]! * v.x + m[3]! * v.y + m[6]! * v.z,
-      y: m[1]! * v.x + m[4]! * v.y + m[7]! * v.z,
-      z: m[2]! * v.x + m[5]! * v.y + m[8]! * v.z,
-    };
-  }
-
   /** ROOT position -> view space (float64: subtract the eye first, then rotate). */
   toView(p: Vec3, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
     const dx = p.x - this.eye.x;
@@ -116,14 +106,6 @@ export class Projector {
 
   projectRoot(p: Vec3): ScreenPoint {
     return this.projectView(this.toView(p));
-  }
-
-  /** Unit view-space direction of the ray through a screen point. */
-  rayView(sx: number, sy: number): Vec3 {
-    const x = (sx - this.cx) / this.focal;
-    const y = -(sy - this.cy) / this.focal;
-    const l = Math.hypot(x, y, 1);
-    return { x: x / l, y: y / l, z: -1 / l };
   }
 
   /** Is a screen point inside the viewport enlarged by `margin` device pixels? */
