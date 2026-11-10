@@ -1,4 +1,4 @@
-Status: open
+Status: resolved
 From: map-view
 Owner path: vite.config.ts (dev server used by tests/browser/globalSetup.ts)
 Blocking: no
@@ -20,3 +20,6 @@ Workaround in my paths: tests/browser/map-view/helpers.ts `MAP_SPEC_TIMEOUT_MS` 
 In vite.config.ts set `optimizeDeps: { entries: ['index.html', 'labs/*/index.html'] }` (explicit entry
 HTML files, so the scanner never walks data/), and add `server.watch.ignored` for `data/**` for interactive
 use. What must NOT change: the served URLs (/labs/<name>/, /tiles/..., /defs/...) and the data plugin.
+
+## Resolution
+Lead, commit fa1c31b: vite.config.ts sets optimizeDeps { noDiscovery: true, include: [], entries: [index.html, labs/*/index.html] } (the project has no runtime npm dependencies, so nothing is pre-bundled and nothing is scanned) and ignores data/, out/, dist/, test-results/, spikes/ and tools/bake/ in the watcher. Measured: a cold run of tests/browser/shell (3 specs) takes 2.5-4 s in total. Served URLs and the data plugin are unchanged. Per-package timeouts raised as a workaround can go back to the defaults.
