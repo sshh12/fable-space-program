@@ -184,6 +184,45 @@ def edge_crops(reader: TileReader) -> list[Path]:
     return paths
 
 
+def source_edge_crops(reader: TileReader, region_id: str) -> list[Path]:
+    """Across the source feathers inside the coverage: the SLDEM disc edge (level 9) and the NAC strip's
+    west edge (level 12), both through the run-time data height D_L."""
+    from moon.region import load_region
+
+    region = load_region(region_id)
+    c = region["centre"]
+    z = np.load(rt.MOON_WORK / f"region-{region_id}" / "target-grid.npz")
+    clat, clon = (float(v) for v in z["plane"])
+    real = z["real"]
+    i0 = real.shape[0] // 2
+    c_west = int(np.nonzero(real[i0])[0].min())
+    x_edge = float(z["xs"][c_west])
+    y_mid = float(z["ys"][i0])
+    disc_r = region["bands"][0]["area"]["radiusM"]
+    out = []
+    for name, lat0, lon0, x_off, y_off, level, step in (
+            ("sldem-disc-edge-L9", c["latDeg"], c["lonDeg"], -disc_r, 0.0, 9, 20.0),
+            ("nac-strip-edge-L12", clat, clon, x_edge, y_mid, 12, 2.0)):
+        la, lo = math.radians(lat0), math.radians(lon0)
+        cd = cube.lat_lon_to_dir(la, lo)
+        e = np.array([-math.sin(lo), math.cos(lo), 0.0])
+        n = np.cross(cd, e)
+        k = (np.arange(-200, 200) + 0.5) * step
+        X, Y = np.meshgrid(k + x_off, -k + y_off)
+        p = rt.MOON_RADIUS * cd + X[..., None] * e + Y[..., None] * n
+        d = p / np.linalg.norm(p, axis=-1, keepdims=True)
+        h = reader.data_height(d, level)
+        hs = imaging.to_u8(imaging.hillshade(h, step, az_deg=90.0, elev_deg=20.0), 0, 1)
+        img = Image.fromarray(hs).convert("RGB")
+        dr = ImageDraw.Draw(img)
+        dr.line([200, 0, 200, 399], fill=(255, 255, 0))
+        imaging.label(img, (6, 6), f"{name}: data height at level {level}, {step:g} m/px, source edge at the yellow line")
+        pth = OUT / f"{name}.png"
+        img.save(pth)
+        out.append(pth)
+    return out
+
+
 def deshade_sheets(names=("Kepler", "Plinius", "Bullialdus", "Aristarchus")) -> list[Path]:
     from moon import albedo
 
@@ -241,7 +280,7 @@ def target_sheet(region_id: str) -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--region", default="moon-tranquility")
-    ap.add_argument("--only", default="faces,globes,region,edges,deshade,target")
+    ap.add_argument("--only", default="faces,globes,region,edges,sources,deshade,target")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
@@ -257,6 +296,8 @@ def main() -> None:
         made += region_sheets(reader)
     if "edges" in todo:
         made += edge_crops(reader)
+    if "sources" in todo:
+        made += source_edge_crops(reader, a.region)
     if "deshade" in todo:
         made += deshade_sheets()
     if "target" in todo:

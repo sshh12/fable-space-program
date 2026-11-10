@@ -73,7 +73,9 @@ def alignment(before: np.ndarray, after: np.ndarray, rec: np.ndarray, named: dic
             bg = float(np.median(ring))
             peak_before = float(Yb[f, j - 1:j + 2, k - 1:k + 2].max())
             peak_after = float(Ya[f, j - 1:j + 2, k - 1:k + 2].max())
-            gone = peak_after <= 3.0 * bg + 1e-6 and peak_after < 0.05 * peak_before
+            # removed: what is left above the local median is < 1 % of the star's excess before removal (the
+            # milky-way layer itself may carry nebulosity there, e.g. the Flame Nebula next to Alnitak)
+            gone = (peak_after - bg) < 0.01 * (peak_before - bg)
             rows.append({"star": nm, "V": float(rec[i, 7]), "face": f, "texel": [j, k], "peakOffset": [int(dj), int(dk)],
                          "peakBefore": peak_before, "peakAfter": peak_after, "localMedianAfter": bg, "removed": gone})
             check(max(abs(dj), abs(dk)) <= 1, f"cube alignment {group}/{nm}: catalogue texel {f}/{j},{k}, peak at offset ({dj},{dk}) before removal")
@@ -109,8 +111,12 @@ def main() -> None:
     rng = np.random.default_rng(1)
     v = np.exp(rng.uniform(-14, 9, (100000, 3)))
     back = cubemap.unpack_rgb9e5(cubemap.pack_rgb9e5(v))
-    err = float(np.max(np.abs(back - v) / v.max(axis=1, keepdims=True)))
-    check(err <= 2 ** -9 + 1e-12, f"rgb9e5 pack/unpack relative error {err:.2e} <= 2^-9 of the largest channel")
+    normal = v.max(axis=1) >= 2.0 ** -15
+    err = float(np.max(np.abs(back - v)[normal] / v.max(axis=1, keepdims=True)[normal]))
+    check(err <= 2 ** -9 + 1e-12, f"rgb9e5 pack/unpack error {err:.2e} <= 2^-9 of the largest channel (normal range)")
+    tiny = np.exp(rng.uniform(-22, -11, (10000, 3)))
+    terr = float(np.max(np.abs(cubemap.unpack_rgb9e5(cubemap.pack_rgb9e5(tiny)) - tiny)))
+    check(terr <= 2.0 ** -25 + 1e-15, f"rgb9e5 below 2^-15: absolute error {terr:.2e} <= 2^-25 (half the smallest step)")
     one = cubemap.unpack_rgb9e5(np.array([cubemap.pack_rgb9e5(np.array([1.0, 0.5, 0.25]))]))[0]
     check(np.allclose(one, [1.0, 0.5, 0.25]), f"rgb9e5 exact for (1, 0.5, 0.25): {one}")
     # catalogue

@@ -64,18 +64,23 @@ def refine(reader, name: str, lat: float, lon: float, diam_km: float) -> dict:
             "depthM": float(max(prof) - h.flat[i])}
 
 
-def wall_ratio(sample_fn, crater: dict, step_m: float) -> dict:
-    """Mean of sample_fn over the inner east wall / inner west wall (0.45-0.85 rim radius, +-35 deg of due E/W).
+def wall_ratio(sample_fn, crater: dict, step_m: float, reader) -> dict:
+    """Brightness of west-facing / east-facing crater walls.
 
-    The east wall faces west and the west wall faces east, so baked illumination from either side shows up as
-    a ratio far from 1."""
+    Wall pixels lie inside the rim and slope more than 8 deg (level-6 heights); west-facing = downhill aspect
+    within 45 deg of due west, east-facing likewise. Baked illumination from either side makes one family
+    brighter than the other, so the ratio measures residual shading independently of where the crater centre
+    was estimated."""
     rim = crater["rimRadiusM"]
-    d, X, Y = local_grid(crater["latDeg"], crater["lonDeg"], 0.9 * rim, step_m)
-    r = np.hypot(X, Y) / rim
-    az = np.degrees(np.arctan2(X, Y))  # 0 = north, 90 = east
-    ring = (r > 0.45) & (r < 0.85)
-    east = ring & (np.abs(az - 90.0) < 35.0)
-    west = ring & (np.abs(az + 90.0) < 35.0)
+    d, X, Y = local_grid(crater["latDeg"], crater["lonDeg"], 1.05 * rim, step_m)
+    h = reader.bicubic(d, 6)
+    gy, gx = np.gradient(h, step_m)
+    gy = -gy  # grid rows run north -> south
+    slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+    aspect = np.degrees(np.arctan2(-gx, -gy))  # downhill direction: 0 north, 90 east
+    wall = (np.hypot(X, Y) < rim) & (slope > 8.0)
+    east = wall & (np.abs((aspect - 90.0 + 180.0) % 360.0 - 180.0) < 45.0)
+    west = wall & (np.abs((aspect + 90.0 + 180.0) % 360.0 - 180.0) < 45.0)
     v = sample_fn(d)
     ve, vw = float(v[east].mean()), float(v[west].mean())
-    return {"east": ve, "west": vw, "ratio": ve / vw}
+    return {"eastFacing": ve, "westFacing": vw, "ratio": vw / ve, "pixels": [int(west.sum()), int(east.sum())]}

@@ -42,7 +42,7 @@ from moon.tiles import TileReader  # noqa: E402
 
 GLOBAL_MAX_LEVEL = 7
 DETAIL_LEVELS = (6, 7)
-WEBP_QUALITY = 88
+WEBP_QUALITY = 95
 
 SVS_URL = "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color.exr"
 SVS_BYTES = 988_589_585
@@ -539,6 +539,162 @@ def step_svs_resolution() -> None:
     rt.log(f"SVS effective resolution and registration: {c['svsResolution']}")
 
 
+# -- step: de-shade the SVS base colour ---------------------------------------------------------------------
+# The SVS map comes from the Hapke-normalised WAC mosaic. Hapke normalisation corrects the photometric angles
+# of the reference sphere only, so the inner walls of craters keep part of the shading of the source images
+# (measured east/west wall ratios 0.7-1.2 on 26 craters before this step). The residual is removed with the
+# same regression as the WAC de-shading, on the SVS grid: in 1-deg cells the high-passed log red is regressed
+# on the high-passed LOLA slopes (filtered to the SVS resolution); the smoothed gradient field (a, b) gives
+# the shading factor exp(a hx + b hy) that is divided out of all three channels (clamped to 0.5..2, faded out
+# between 66 and 70 deg latitude where the SVS map is inpainted).
+SVS_SLOPES = WORK / "svs_slopes.f16"
+SVS_FIT = WORK / "svs_deshade_fit.npz"
+SVS_LAT = 70.0
+SVS_FADE = (66.0, 70.0)
+
+
+def _svs_geom():
+    reg = rt.read_json(CALIB)["svsResolution"]
+    px = 180.0 / SVS_H
+    lat0, lon0 = 90.0 + reg["latOffsetDeg"], -180.0 + reg["lonOffsetDeg"]
+    r0 = int(math.floor((lat0 - SVS_LAT) / px))
+    r1 = int(math.ceil((lat0 + SVS_LAT) / px))
+    return px, lat0, lon0, r0, r1
+
+
+def _svs_band(task):
+    """Slopes on SVS rows [b0, b1) (LOLA streamed, filtered to the SVS footprint) and regression sums per cell."""
+    b0, b1 = task
+    px, lat0, lon0, r0, r1 = _svs_geom()
+    sig_px = rt.read_json(CALIB)["svsResolution"]["sigmaWacPx"] * 100.0 / 395.0  # SVS effective blur in SVS px
+    m = 24
+    a0, a1 = b0 - m, b1 + m
+    lat = lat0 - (np.arange(a0, a1) + 0.5) * px
+    offs = lola.strip_offsets()
+    ly = (90.0 - lat) / 180.0 * lola.HEIGHT - 0.5
+    lr0, lr1 = int(np.floor(ly.min())) - 8, int(np.floor(ly.max())) + 10
+    L = read_lola_rows(offs, lr0, lr1)
+    k = 395.0 / 118.45
+    L = ndimage.gaussian_filter1d(ndimage.gaussian_filter1d(L, 0.5 * k, axis=0, mode="nearest"), 0.5 * k, axis=1, mode="wrap")
+    iy, wy = _cr_matrix(ly - lr0, lr1 - lr0, wrap=False)
+    rows = sum(wy[j][:, None] * L[iy[j]] for j in range(4))
+    lon = lon0 + (np.arange(SVS_W) + 0.5) * px
+    ix, wx = _cr_matrix(np.mod(lon + 180.0, 360.0) / 360.0 * lola.WIDTH - 0.5, lola.WIDTH, wrap=True)
+    h = sum(wx[j][None, :] * rows[:, ix[j]] for j in range(4)).astype(np.float32)
+    dx = 2.0 * math.pi * rt.MOON_RADIUS / SVS_W * np.cos(np.radians(lat))[:, None]
+    dy = math.pi * rt.MOON_RADIUS / SVS_H
+    hx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / (2.0 * dx)
+    hy = np.zeros_like(h)
+    hy[1:-1] = (h[:-2] - h[2:]) / (2.0 * dy)
+    lat_mid = float(lat[len(lat) // 2])
+    hx, hy = gauss_iso(hx, sig_px, lat_mid), gauss_iso(hy, sig_px, lat_mid)
+    svs = np.memmap(_svs_mip_path(0), dtype=np.float16, mode="r", shape=(SVS_H, SVS_W, 3))
+    red = np.asarray(svs[max(a0, 0):a1, :, 0], dtype=np.float32)
+    if a0 < 0:
+        red = np.pad(red, ((-a0, 0), (0, 0)), mode="edge")
+    valid = red > 1e-4
+    lr = np.log(np.maximum(red, 1e-4))
+    s = 5.0
+    y = lr - masked_gauss(lr, valid, s, lat_mid)
+    x1 = hx - gauss_iso(hx, s, lat_mid)
+    x2 = hy - gauss_iso(hy, s, lat_mid)
+    use = valid & np.isfinite(y) & (np.abs(y) < 0.7) & (np.hypot(hx, hy) < 0.5)
+    use[:m] = use[-m:] = False
+    cell_lat = np.floor(SVS_LAT - lat).astype(int)  # 0 at the +70..+69 deg row of cells
+    cell_lon = np.floor(np.mod(lon + 180.0, 360.0)).astype(int)
+    sums = np.zeros((NB, NC, 6))
+    for rr in range(len(lat)):
+        cl = cell_lat[rr]
+        if not (0 <= cl < NB):
+            continue
+        u = use[rr]
+        if not u.any():
+            continue
+        c = cell_lon[u]
+        a, b, yy = x1[rr, u].astype(np.float64), x2[rr, u].astype(np.float64), y[rr, u].astype(np.float64)
+        for q, v in enumerate((a * a, a * b, b * b, a * yy, b * yy, np.ones_like(a))):
+            sums[cl, :, q] += np.bincount(c, weights=v, minlength=NC)
+    out = np.memmap(SVS_SLOPES, dtype=np.float16, mode="r+", shape=(r1 - r0, SVS_W, 2))
+    out[b0 - r0:b1 - r0, :, 0] = hx[m:m + (b1 - b0)]
+    out[b0 - r0:b1 - r0, :, 1] = hy[m:m + (b1 - b0)]
+    out.flush()
+    return sums
+
+
+def step_svs_deshade() -> None:
+    c = rt.read_json(CALIB)
+    if "svsDeshade" in c:
+        return
+    px, lat0, lon0, r0, r1 = _svs_geom()
+    np.memmap(SVS_SLOPES, dtype=np.float16, mode="w+", shape=(r1 - r0, SVS_W, 2)).flush()
+    edges = np.linspace(r0, r1, 85).round().astype(int)
+    sums = np.zeros((NB, NC, 6))
+    with rt.pool(DETAIL_WORKERS) as p:
+        for i, s in enumerate(p.imap_unordered(_svs_band, list(zip(edges[:-1], edges[1:])))):
+            sums += s
+            if (i + 1) % 20 == 0:
+                rt.log(f"SVS slope bands {i + 1}/{len(edges) - 1}")
+    sxx, sxy, syy, sxv, syv, n = (sums[..., q] for q in range(6))
+    det = sxx * syy - sxy * sxy
+    ok = (n > 500) & (det > 1e-12)
+    a = np.where(ok, (syy * sxv - sxy * syv) / np.where(ok, det, 1.0), 0.0)
+    b = np.where(ok, (sxx * syv - sxy * sxv) / np.where(ok, det, 1.0), 0.0)
+    wgt = np.where(ok, n * (sxx + syy) / np.maximum(n, 1), 0.0)
+    sm = lambda v: ndimage.gaussian_filter(v, 1.0, mode=("nearest", "wrap"))  # noqa: E731
+    ws = sm(wgt)
+    a_s, b_s = sm(a * wgt) / np.maximum(ws, 1e-12), sm(b * wgt) / np.maximum(ws, 1e-12)
+    np.savez(SVS_FIT, a=a_s, b=b_s, a_raw=a, b_raw=b, n=n)
+    # apply in place on mip 0 (all channels), then rebuild the mips
+    svs = np.memmap(_svs_mip_path(0), dtype=np.float16, mode="r+", shape=(SVS_H, SVS_W, 3))
+    sl = np.memmap(SVS_SLOPES, dtype=np.float16, mode="r", shape=(r1 - r0, SVS_W, 2))
+    lon = lon0 + (np.arange(SVS_W) + 0.5) * px
+    fx = np.mod(lon + 180.0, 360.0) - 0.5
+    x0 = np.floor(fx).astype(np.int64)
+    tx = fx - x0
+    fmin, fmax = 1.0, 1.0
+    for q0 in range(r0, r1, 256):
+        q1 = min(r1, q0 + 256)
+        lat = lat0 - (np.arange(q0, q1) + 0.5) * px
+        fy = np.clip(SVS_LAT - 0.5 - lat, 0.0, NB - 1.0)
+        y0 = np.minimum(np.floor(fy).astype(np.int64), NB - 2)
+        ty = (fy - y0)[:, None]
+
+        def field(g):
+            g0 = (1 - tx) * g[y0][:, np.mod(x0, NC)] + tx * g[y0][:, np.mod(x0 + 1, NC)]
+            g1 = (1 - tx) * g[y0 + 1][:, np.mod(x0, NC)] + tx * g[y0 + 1][:, np.mod(x0 + 1, NC)]
+            return (1 - ty) * g0 + ty * g1
+
+        A, B = field(a_s), field(b_s)
+        s_ = np.asarray(sl[q0 - r0:q1 - r0], dtype=np.float32)
+        f = np.clip(np.exp(A * s_[..., 0] + B * s_[..., 1]), 0.5, 2.0)
+        w = np.clip((SVS_FADE[1] - np.abs(lat)) / (SVS_FADE[1] - SVS_FADE[0]), 0.0, 1.0)[:, None]
+        f = 1.0 + w * (f - 1.0)
+        fmin, fmax = min(fmin, float(f.min())), max(fmax, float(f.max()))
+        blk = np.asarray(svs[q0:q1], dtype=np.float32) / f[..., None]
+        svs[q0:q1] = blk.astype(np.float16)
+    svs.flush()
+    del svs, sl
+    cur = np.fromfile(_svs_mip_path(0), dtype=np.float16).reshape(SVS_H, SVS_W, 3).astype(np.float32)
+    red = cur[..., 0]
+    gain_after = {"maria": {n: region_median(red, la, lo) for n, la, lo in MARIA},
+                  "highlands": {n: region_median(red, la, lo) for n, la, lo in HIGHLANDS}}
+    for k in range(1, SVS_MIPS):
+        h2, w2 = cur.shape[0] // 2, cur.shape[1] // 2
+        cur = cur.reshape(h2, 2, w2, 2, 3).mean(axis=(1, 3), dtype=np.float64).astype(np.float32)
+        cur.astype(np.float16).tofile(_svs_mip_path(k))
+    good = n > 500
+    i0, az = gradient_to_sun(a_s, b_s)
+    c = rt.read_json(CALIB)
+    c["svsDeshade"] = {"cells": int(good.sum()), "factorMin": fmin, "factorMax": fmax,
+                       "gradientMagnitudeMedian": float(np.median(np.hypot(a_s, b_s)[good])),
+                       "equivalentLunarLambertIncidenceDegMedian": float(np.degrees(np.median(i0[good]))),
+                       "sunFromEastFraction": float(np.mean(np.cos(az[good]) > 0)),
+                       "medians643nmAfter": gain_after}
+    rt.write_json(CALIB, c)
+    SVS_SLOPES.unlink()
+    rt.log(f"SVS de-shaded: {c['svsDeshade']}")
+
+
 # -- step: tiles -----------------------------------------------------------------------------------------------
 _TILE_CTX: dict = {}
 
@@ -587,8 +743,41 @@ def albedo_linear(dirs: np.ndarray, level: int) -> np.ndarray:
             D = np.ones(lat.shape)
             sel = w > 0
             D[sel] = detail_sample(lat[sel], lon[sel], fp[sel])
+            w = w * steep_attenuation(dirs, fp)
             rgb = rgb * (1.0 + w * (D - 1.0))[..., None]
     return np.clip(rgb, 0.0, 1.0)
+
+
+STEEP_DEG = (10.0, 20.0)
+
+
+def steep_attenuation(dirs: np.ndarray, fp: np.ndarray) -> np.ndarray:
+    """1 on slopes below 10 deg, 0 above 20 deg (smoothstep), from the level-6 heights.
+
+    `dirs` is a texel-centre grid (rows along v, columns along u) of one tile; heights are evaluated on that
+    grid extended by one texel on every side, and the slope is the central difference over two texels
+    (166 m at level 7, 333 m at level 6). The 118 m LOLA cannot model the mosaic's shading on steep crater
+    walls (nor cast shadows there), so the de-shaded detail is attenuated where slopes are steep
+    (moon-sky-data.md 3.6)."""
+    if "dem" not in _TILE_CTX:
+        _TILE_CTX["dem"] = TileReader(rt.TILESET, cache_tiles=256)
+    dem = _TILE_CTX["dem"]
+    # extend the grid by one texel by linear extrapolation in direction space (renormalised)
+    ext = np.empty((dirs.shape[0] + 2, dirs.shape[1] + 2, 3))
+    ext[1:-1, 1:-1] = dirs
+    ext[0, 1:-1] = 2 * dirs[0] - dirs[1]
+    ext[-1, 1:-1] = 2 * dirs[-1] - dirs[-2]
+    ext[:, 0] = 2 * ext[:, 1] - ext[:, 2]
+    ext[:, -1] = 2 * ext[:, -2] - ext[:, -3]
+    ext /= np.linalg.norm(ext, axis=-1, keepdims=True)
+    h = dem.bicubic(ext, 6)
+    du = rt.MOON_RADIUS * np.linalg.norm(ext[1:-1, 2:] - ext[1:-1, :-2], axis=-1)
+    dv = rt.MOON_RADIUS * np.linalg.norm(ext[2:, 1:-1] - ext[:-2, 1:-1], axis=-1)
+    gu = (h[1:-1, 2:] - h[1:-1, :-2]) / du
+    gv = (h[2:, 1:-1] - h[:-2, 1:-1]) / dv
+    s = np.degrees(np.arctan(np.hypot(gu, gv)))
+    t = np.clip((STEEP_DEG[1] - s) / (STEEP_DEG[1] - STEEP_DEG[0]), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
 
 
 def encode_webp(lin: np.ndarray) -> bytes:
@@ -648,12 +837,13 @@ def step_lowres() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--steps", default="svs,resolution,fit,detail,tiles,lowres")
+    ap.add_argument("--steps", default="svs,resolution,fit,detail,svsdeshade,tiles,lowres")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
     WORK.mkdir(parents=True, exist_ok=True)
     steps = {"svs": step_svs, "resolution": step_svs_resolution, "fit": step_fit, "detail": step_detail,
+             "svsdeshade": step_svs_deshade,
              "tiles": step_tiles, "lowres": step_lowres}
     for s in a.steps.split(","):
         t0 = time.time()

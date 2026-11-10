@@ -26,6 +26,9 @@ from moon import fetch, rt  # noqa: E402
 from sky import cubemap, milkyway, stars  # noqa: E402
 
 FACE_SIZE = 2048
+# Stored texels = sky in SVS starmap units x STORE_SCALE (a power of two, exact): keeps the faintest sky well
+# inside the normal range of rgb9e5 (smallest normal 2^-15) while the brightest texel stays far below 65408.
+STORE_SCALE = 2.0 ** 13
 FIT_V_RANGE = (8.5, 11.0)
 REPORT = rt.SKY_WORK / "report.json"
 BEFORE = rt.SKY_WORK / "cube_before_f16.npy"
@@ -102,7 +105,7 @@ def main() -> None:
             bright.append({"index": idx, "name": nm, "V": float(cat["mag"][idx]), "mapFluxUnitSr": f, "peak": peak,
                            "catalogueLux": float(rec[idx, 3]), "luxPerUnitSr": float(rec[idx, 3] / f) if f > 0 else None,
                            "deficitMag": float(2.5 * math.log10((rec[idx, 3] / f) / fit["luminanceScale"])) if f > 0 else None})
-    rep["photometry"] = {**fit, "luminanceScaleStoredUnits": k, "brightStars": bright,
+    rep["photometry"] = {**fit, "luminanceScaleStoredUnits": k / STORE_SCALE, "storeScale": STORE_SCALE, "brightStars": bright,
                          "note": "hiptyc pixels clip at 1.0: stars brighter than V~5.5 are saturated, so the scale is fitted on "
                                  f"isolated unsaturated Tycho-range stars V {FIT_V_RANGE[0]}-{FIT_V_RANGE[1]}; the bright stars are listed "
                                  "with the flux deficit (mag) their saturation causes."}
@@ -113,7 +116,7 @@ def main() -> None:
     sky_before = a_mw * mw + b_ht * ht
     cube_before = milkyway.equirect_to_cube(sky_before, FACE_SIZE)
     del sky_before
-    np.save(BEFORE, cube_before.astype(np.float16))
+    np.save(BEFORE, (cube_before * STORE_SCALE).astype(np.float16))
     rem = milkyway.remove_stars(ht, cat["ra"], cat["dec"], cat["mag"])
     rep["removal"] = {"stars": int(len(rem["radii"])), "radiusPxMedian": float(np.median(rem["radii"])),
                       "radiusPxMax": int(rem["radii"].max()), "removedFluxUnitSr": rem["removedFluxUnitSr"],
@@ -145,11 +148,11 @@ def main() -> None:
     rt.log(f"galactic centre {rep['galacticCentre']}")
 
     # 6. write faces + manifest
-    files, mips = write_faces(cube)
+    files, mips = write_faces(cube * STORE_SCALE)
     manifest = {
         "formatVersion": 1, "frame": "j2000-equatorial",
         "milkyWay": {"faceSize": FACE_SIZE, "mipLevels": mips, "format": "rgb9e5ufloat", "files": files,
-                     "luminanceScale": k},
+                     "luminanceScale": k / STORE_SCALE},
         "stars": {"file": "stars.f32", "count": int(len(rec)), "recordFloats": stars.RECORD_FLOATS,
                   "catalogCutoffMag": stars.CUTOFF_MAG},
         "namedStars": "named-stars.json",

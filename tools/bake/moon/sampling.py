@@ -125,13 +125,16 @@ class EquirectPyramid:
         for m in np.unique(flat_m0):
             sel = flat_m0 == m
             la, lo, f, c, tt = lat[sel], lon[sel], fp[sel], coslat[sel], t[sel]
+            if top == 0 or not np.any(tt > 0.0):
+                out[sel] = self._aniso(int(m), la, lo, f, c)
+                continue
+            v1 = self._aniso(int(m) + 1, la, lo, f, c)
+            tw = tt if self.channels == 1 else tt[..., None]
+            if np.all(tt >= 1.0):
+                out[sel] = v1
+                continue
             v0 = self._aniso(int(m), la, lo, f, c)
-            if top > 0:
-                v1 = self._aniso(int(m) + 1, la, lo, f, c)
-                tw = tt if self.channels == 1 else tt[..., None]
-                out[sel] = (1.0 - tw) * v0 + tw * v1
-            else:
-                out[sel] = v0
+            out[sel] = (1.0 - tw) * v0 + tw * v1
         return out * self.value_scale
 
 
