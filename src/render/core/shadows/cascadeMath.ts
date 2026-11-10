@@ -1,0 +1,366 @@
+/**
+ * Sun shadow cascades, CPU side, float64 (ARCHITECTURE 10.1). Pure: no GPU, no DOM.
+ *
+ * A cascade is CAPTURED in the frame of its anchor (the body-fixed frame of the body it covers, or a
+ * vessel frame): light basis, texel-snapped centre and extents are stored in anchor coordinates. The
+ * matrix used for rendering and sampling is re-derived EVERY frame from the capture and the anchor's
+ * current pose, so a cascade re-rendered only every 2nd / 4th / 8th frame stays registered to ground that
+ * moves 7-30 m per frame in ROOT axes.
+ */
+import { quat, v3, type Mat4, type Quat, type Vec3 } from '@/core/math';
+
+/** Camera-fitted cascade radii (m): logarithmic, 12 m .. 1500 km. Texel = 2 r / map size. */
+export const CASCADE_RADII: readonly number[] = [12, 60, 300, 1500, 8000, 40000, 200000, 1500000];
+export const MAX_CASCADES = 8;
+/** Cascades below this index are always re-rendered every frame. */
+export const ALWAYS_EVERY_FRAME = 2;
+/** Upper bound on cascades re-rendered every frame (GPU cost guard). */
+export const MAX_EVERY_FRAME = 4;
+/** Staggered cascades are re-captured early when the sun has moved this much in the anchor frame (rad). */
+export const SUN_DRIFT_LIMIT = (0.05 * Math.PI) / 180;
+/** ... or when the camera has left the central part of a camera-fitted cascade (fraction of its radius). */
+export const CAMERA_DRIFT_FRACTION = 0.15;
+/** A body-fitted cascade is wanted for another body once its disc is larger than this on screen (px); it fades in from half of it. */
+export const BODY_FIT_MIN_PIXELS = 64;
+
+export interface AnchorRef {
+  kind: 'body' | 'vessel';
+  id: string;
+}
+
+/** Pose of an anchor frame this frame: origin relative to the camera (ROOT axes) and anchor -> ROOT rotation. */
+export interface AnchorPose {
+  originRelCam: Vec3;
+  q: Quat;
+}
+
+export interface CascadeCapture {
+  key: string;
+  fit: 'camera' | 'body';
+  anchor: AnchorRef;
+  /** Half extent of the orthographic footprint, m. */
+  radius: number;
+  texelSize: number;
+  /** Half of the depth range along the light, m. */
+  zHalf: number;
+  /** Light basis in ANCHOR coordinates: lx = +u of the map, ly = up in the map, lz = towards the sun. */
+  lx: Vec3;
+  ly: Vec3;
+  lz: Vec3;
+  /** Texel-snapped centre in anchor coordinates (float64). */
+  center: Vec3;
+  capturedFrame: number;
+}
+
+/** Orthonormal light basis for a unit direction towards the sun, all in the same (anchor) frame. */
+export function lightBasis(lz: Vec3): { lx: Vec3; ly: Vec3; lz: Vec3 } {
+  const ref = Math.abs(lz.z) < 0.99 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  const lx = v3.normalize(v3.cross(ref, lz));
+  return { lx, ly: v3.cross(lz, lx), lz };
+}
+
+/**
+ * Fit a cascade around `focus` (anchor coordinates): the centre is snapped to whole texels along the light
+ * basis so the map never crawls over geometry that is static in the anchor frame.
+ */
+export function captureCascade(
+  key: string,
+  fit: 'camera' | 'body',
+  anchor: AnchorRef,
+  focus: Vec3,
+  sunDirAnchor: Vec3,
+  radius: number,
+  mapSize: number,
+  frame: number,
+  snap = true,
+  previous: CascadeCapture | null = null,
+): CascadeCapture {
+  const { lx, ly, lz } = lightBasis(v3.normalize(sunDirAnchor));
+  const texelSize = (2 * radius) / mapSize;
+  // Snap RELATIVE to the previous capture of this cascade when there is one. The anchor origin is millions
+  // of metres away, so snapping absolute coordinates would re-phase the grid every time the sun (and with
+  // it the light basis) moves by a micro-radian; relative to a centre a few metres away the grid is stable
+  // and static geometry sees whole-texel steps only.
+  const usePrev = snap && previous !== null && previous.radius === radius;
+  const origin = usePrev ? previous.center : v3.zero();
+  const rel = v3.sub(focus, origin);
+  let cx = v3.dot(lx, rel);
+  let cy = v3.dot(ly, rel);
+  let cz = v3.dot(lz, rel);
+  if (snap) {
+    cx = Math.round(cx / texelSize) * texelSize;
+    cy = Math.round(cy / texelSize) * texelSize;
+    cz = Math.round(cz / texelSize) * texelSize;
+  }
+  const center = { x: origin.x + lx.x * cx + ly.x * cy + lz.x * cz, y: origin.y + lx.y * cx + ly.y * cy + lz.y * cz, z: origin.z + lx.z * cx + ly.z * cy + lz.z * cz };
+  const zHalf = fit === 'body' ? radius : Math.max(2 * radius, 200);
+  return { key, fit, anchor, radius, texelSize, zHalf, lx, ly, lz, center, capturedFrame: frame };
+}
+
+export interface CascadeMatrices {
+  /** Camera-relative ROOT axes -> shadow clip (xy in [-1, 1]; z = 0 at the sun side .. 1), column-major float64. */
+  viewProj: Mat4;
+  /** World (ROOT) directions: towards the sun, +u of the map, +v of the map (texture y, down). */
+  lightDirRoot: Vec3;
+  axisURoot: Vec3;
+  axisVRoot: Vec3;
+}
+
+/**
+ * World-to-shadow matrix for THIS frame: capture matrix x motion of the anchor frame since capture.
+ * Everything large (anchor origin 6.4e6 m from the centre, cascade centre in anchor coordinates) cancels
+ * in float64 here; the result has only small translations and survives the narrowing to float32.
+ */
+export function cascadeMatrices(c: CascadeCapture, anchor: AnchorPose): CascadeMatrices {
+  const Lx = quat.rotate(anchor.q, c.lx);
+  const Ly = quat.rotate(anchor.q, c.ly);
+  const Lz = quat.rotate(anchor.q, c.lz);
+  const o = anchor.originRelCam;
+  const tx = -(v3.dot(Lx, o) + v3.dot(c.lx, c.center)) / c.radius;
+  const ty = -(v3.dot(Ly, o) + v3.dot(c.ly, c.center)) / c.radius;
+  const zs = 1 / (2 * c.zHalf);
+  const tz = 0.5 + (v3.dot(Lz, o) + v3.dot(c.lz, c.center)) * zs;
+  const r = 1 / c.radius;
+  const m = new Float64Array(16);
+  m[0] = Lx.x * r;
+  m[4] = Lx.y * r;
+  m[8] = Lx.z * r;
+  m[12] = tx;
+  m[1] = Ly.x * r;
+  m[5] = Ly.y * r;
+  m[9] = Ly.z * r;
+  m[13] = ty;
+  m[2] = -Lz.x * zs;
+  m[6] = -Lz.y * zs;
+  m[10] = -Lz.z * zs;
+  m[14] = tz;
+  m[15] = 1;
+  return { viewProj: m, lightDirRoot: Lz, axisURoot: Lx, axisVRoot: v3.neg(Ly) };
+}
+
+// ------------------------------------------------------------------------------------------- planning
+
+export interface PlanBody {
+  id: string;
+  radius: number;
+  /** Highest terrain above the reference radius, m (0 for a smooth body). */
+  maxElevation: number;
+  hasTerrain: boolean;
+  /** Body centre relative to the camera, ROOT axes. */
+  centerRelCam: Vec3;
+  qFixedToRoot: Quat;
+  /** Unit direction body -> star, ROOT axes. */
+  sunDirRoot: Vec3;
+}
+
+export interface PlanVessel {
+  id: string;
+  originRelCam: Vec3;
+  q: Quat;
+  boundingRadius: number;
+}
+
+export interface PlanInput {
+  frame: number;
+  bodies: PlanBody[];
+  vessels: PlanVessel[];
+  /** Vessel whose interior the camera is in (cascade 0 is anchored to it), or null. */
+  insideVesselId: string | null;
+  fovY: number;
+  renderHeight: number;
+  mapSize: number;
+  /** Unit direction to the star at the camera (ROOT axes): used for vessel-anchored cascades. */
+  sunDirRoot: Vec3;
+}
+
+export interface DesiredCascade {
+  key: string;
+  fit: 'camera' | 'body';
+  anchor: AnchorRef;
+  radius: number;
+  everyFrame: boolean;
+  /** 0..1 cross-fade weight (body-fitted cascades fade in/out; camera cascades are 1). */
+  weight: number;
+  /** Far distance from the camera (Infinity for body-fitted). */
+  farDistance: number;
+}
+
+const smooth = (a: number, b: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Decide which cascades exist this frame (at most MAX_CASCADES), in sampling order: camera-fitted from
+ * the finest outwards, then body-fitted ones.
+ */
+export function planCascades(input: PlanInput): DesiredCascade[] {
+  const bodies = input.bodies;
+  let nearest: PlanBody | null = null;
+  let nearestAlt = Infinity;
+  for (const b of bodies) {
+    const alt = v3.len(b.centerRelCam) - b.radius;
+    if (alt < nearestAlt) {
+      nearestAlt = alt;
+      nearest = b;
+    }
+  }
+  if (!nearest) return [];
+  const h = Math.max(nearestAlt, 0);
+  const hMin = Math.max(0, nearestAlt - nearest.maxElevation);
+  const R = nearest.radius;
+  const horizon = Math.sqrt(h * (2 * R + h)) + Math.sqrt(nearest.maxElevation * (2 * R + nearest.maxElevation));
+  const texelOf = (r: number): number => (2 * r) / input.mapSize;
+
+  const cam: DesiredCascade[] = [];
+  let everyFrameCount = 0;
+  for (let i = 0; i < CASCADE_RADII.length; i++) {
+    const r = CASCADE_RADII[i]!;
+    const prevR = i > 0 ? CASCADE_RADII[i - 1]! : 0;
+    const reachesGround = r > hMin;
+    let holdsVessel = false;
+    let needsEveryFrame = i < ALWAYS_EVERY_FRAME;
+    for (const v of input.vessels) {
+      const d = v3.len(v.originRelCam);
+      if (d - v.boundingRadius >= r) continue;
+      holdsVessel = true;
+      // A moving caster needs this cascade every frame unless it and the room for its shadow sit wholly
+      // inside the finer cascade, or it is smaller than a few texels here.
+      const insideFiner = i > 0 && d + 4 * v.boundingRadius < prevR;
+      if (!insideFiner && texelOf(r) <= v.boundingRadius / 4) needsEveryFrame = true;
+    }
+    let active: boolean;
+    if (i < ALWAYS_EVERY_FRAME) active = true;
+    else if (i < 4) active = holdsVessel || (reachesGround && prevR < horizon);
+    else active = reachesGround && prevR < horizon;
+    if (!active) continue;
+    const everyFrame = needsEveryFrame && everyFrameCount < MAX_EVERY_FRAME;
+    if (everyFrame) everyFrameCount++;
+    const vesselAnchored = i === 0 && input.insideVesselId !== null && input.vessels.some((v) => v.id === input.insideVesselId);
+    cam.push({
+      key: `cam:${i}`,
+      fit: 'camera',
+      anchor: vesselAnchored ? { kind: 'vessel', id: input.insideVesselId! } : { kind: 'body', id: nearest.id },
+      radius: r,
+      everyFrame,
+      weight: 1,
+      farDistance: r,
+    });
+  }
+
+  const lastCamRadius = cam.length > 0 ? cam[cam.length - 1]!.radius : 0;
+  const bodyFit: (DesiredCascade & { score: number })[] = [];
+  for (const b of bodies) {
+    if (!b.hasTerrain) continue;
+    const d = v3.len(b.centerRelCam);
+    const px = d > b.radius ? ((2 * Math.asin(b.radius / d)) / input.fovY) * input.renderHeight : Infinity;
+    let weight: number;
+    if (b === nearest) {
+      // The camera-fitted cascades stop at lastCamRadius; the whole-body cascade takes over for visible
+      // ground beyond it and fades out once the horizon is comfortably inside.
+      const reach = Math.max(lastCamRadius, 1);
+      weight = hMin >= CASCADE_RADII[CASCADE_RADII.length - 1]! ? 1 : smooth(0.8, 1.0, horizon / reach);
+    } else {
+      weight = smooth(BODY_FIT_MIN_PIXELS / 2, BODY_FIT_MIN_PIXELS, px);
+    }
+    if (weight <= 0) continue;
+    bodyFit.push({
+      key: `body:${b.id}`,
+      fit: 'body',
+      anchor: { kind: 'body', id: b.id },
+      radius: (b.radius + b.maxElevation) * 1.1,
+      everyFrame: false,
+      weight,
+      farDistance: Infinity,
+      score: weight * Math.min(px, 1e6),
+    });
+  }
+  bodyFit.sort((a, b) => b.score - a.score);
+
+  // Slots: the vessel-range cascades first, then whole-body cascades, then the far camera cascades.
+  const near = cam.filter((c) => c.radius <= CASCADE_RADII[3]!);
+  const far = cam.filter((c) => c.radius > CASCADE_RADII[3]!);
+  const bodySlots = bodyFit.slice(0, Math.max(0, MAX_CASCADES - near.length));
+  const farSlots = far.slice(0, Math.max(0, MAX_CASCADES - near.length - bodySlots.length));
+  return [...near, ...farSlots, ...bodySlots.map(({ score: _score, ...c }) => c)];
+}
+
+export interface CascadeFrame {
+  /** Layer of the shadow array this cascade lives in. */
+  layer: number;
+  desired: DesiredCascade;
+  capture: CascadeCapture;
+  matrices: CascadeMatrices;
+  /** True when the layer must be rendered this frame. */
+  render: boolean;
+}
+
+/**
+ * Keeps cascade captures across frames, assigns stable texture layers, staggers re-rendering and
+ * re-derives every matrix each frame.
+ */
+export class CascadeScheduler {
+  private readonly byKey = new Map<string, { layer: number; capture: CascadeCapture | null }>();
+
+  /** Captures currently held (for tests and debugging). */
+  captureOf(key: string): CascadeCapture | null {
+    return this.byKey.get(key)?.capture ?? null;
+  }
+
+  update(input: PlanInput, desired: DesiredCascade[] = planCascades(input)): CascadeFrame[] {
+    // Release layers of cascades that are gone, then give new cascades the free layers.
+    const wanted = new Set(desired.map((d) => d.key));
+    for (const key of [...this.byKey.keys()]) if (!wanted.has(key)) this.byKey.delete(key);
+    const used = new Set([...this.byKey.values()].map((e) => e.layer));
+    for (const d of desired) {
+      if (this.byKey.has(d.key)) continue;
+      let layer = 0;
+      while (used.has(layer)) layer++;
+      used.add(layer);
+      this.byKey.set(d.key, { layer, capture: null });
+    }
+
+    const bodyById = new Map(input.bodies.map((b) => [b.id, b]));
+    const vesselById = new Map(input.vessels.map((v) => [v.id, v]));
+    const out: CascadeFrame[] = [];
+    let staggerRank = 0;
+    for (const d of desired) {
+      const entry = this.byKey.get(d.key)!;
+      let pose: AnchorPose;
+      let sunDirRoot: Vec3;
+      if (d.anchor.kind === 'body') {
+        const b = bodyById.get(d.anchor.id);
+        if (!b) continue;
+        pose = { originRelCam: b.centerRelCam, q: b.qFixedToRoot };
+        sunDirRoot = b.sunDirRoot;
+      } else {
+        const v = vesselById.get(d.anchor.id);
+        if (!v) continue;
+        pose = { originRelCam: v.originRelCam, q: v.q };
+        sunDirRoot = input.sunDirRoot;
+      }
+      const sunAnchor = quat.rotateInv(pose.q, sunDirRoot);
+      // Focus in anchor coordinates: the camera for camera-fitted cascades, the body centre otherwise.
+      const focus = d.fit === 'body' ? v3.zero() : quat.rotateInv(pose.q, v3.neg(pose.originRelCam));
+
+      let render = false;
+      const cap = entry.capture;
+      if (!cap || cap.anchor.kind !== d.anchor.kind || cap.anchor.id !== d.anchor.id || cap.radius !== d.radius) render = true;
+      else if (d.everyFrame) render = true;
+      else {
+        const period = staggerRank < 2 ? 2 : staggerRank < 4 ? 4 : 8;
+        if ((input.frame + staggerRank) % period === 0) render = true;
+        else if (v3.angle(cap.lz, sunAnchor) > SUN_DRIFT_LIMIT) render = true;
+        else if (d.fit === 'camera' && v3.dist(focus, cap.center) > CAMERA_DRIFT_FRACTION * cap.radius) render = true;
+      }
+      if (!d.everyFrame) staggerRank++;
+      if (render) {
+        const sameAnchor = cap !== null && cap.anchor.kind === d.anchor.kind && cap.anchor.id === d.anchor.id;
+        entry.capture = captureCascade(d.key, d.fit, d.anchor, focus, sunAnchor, d.radius, input.mapSize, input.frame, d.fit === 'camera', sameAnchor ? cap : null);
+      }
+      const capture = entry.capture!;
+      out.push({ layer: entry.layer, desired: d, capture, matrices: cascadeMatrices(capture, pose), render });
+    }
+    return out;
+  }
+}
