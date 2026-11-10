@@ -2,8 +2,10 @@
  * Hillshaded renders of the height function for visual review (out/terrain-core/*.png):
  *   npx tsx tools/terrain-core/render-hillshade.ts
  *  - the lunar landing region (real Moon tiles when baked, else the fixture) at 20 km, 2 km, 200 m, 20 m;
- *  - across a coverage edge of every regional level of the Moon (real) and of the synthetic sparse set,
- *    with the boundary vertical through the image centre (small red ticks on the top and bottom rows mark it);
+ *  - across a coverage edge of every regional level of the Moon and Earth (real) and of the synthetic sparse
+ *    set, with the boundary vertical through the image centre (small red ticks on the top and bottom rows mark
+ *    it), and across the edge of each level's `sourceCoverage` (where real detail begins; 3 tiles wide, the
+ *    effective level rises over the tile right of the line);
  *  - the launch pad (real Earth tiles when baked, else the fixture Earth) at 3 km and 300 m.
  * Each pixel samples H at a band limit of 1.5 pixels (anti-aliased, like a rendered tile at that scale);
  * shading is Lambert with a low sun (azimuth 100 deg, elevation 12 deg) plus a little ambient.
@@ -13,7 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import type { DefLibrary } from '../../src/core/contracts/defs';
-import type { TileManifest } from '../../src/core/contracts/terrain';
+import type { TileManifest, TileRect } from '../../src/core/contracts/terrain';
 import { latLonToDir, tileUvToDir, type FaceId, type TileKey } from '../../src/core/geo/cubeSphere';
 import { DEG } from '../../src/core/math/scalar';
 import type { Vec3 } from '../../src/core/math/vec3';
@@ -52,20 +54,29 @@ async function render(tp: TerrainAuthority, R: number, v: View): Promise<string>
   const { ex, ey } = basis(v.centre, v.xAxis);
   const px = v.extent / SIZE;
   const lambda = 1.5 * px;
-  await tp.ensureLoaded(v.body, v.centre, v.extent * 0.75, `render-${v.name}`);
   const n = SIZE + 2;
   const h = new Float64Array(n * n);
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const ox = (i - 1 - SIZE / 2 + 0.5) * px;
-      const oy = (SIZE / 2 - (j - 1) - 0.5) * px;
-      const x = v.centre.x + (ex.x * ox + ey.x * oy) / R;
-      const y = v.centre.y + (ex.y * ox + ey.y * oy) / R;
-      const z = v.centre.z + (ex.z * ox + ey.z * oy) / R;
-      const m = Math.hypot(x, y, z);
-      h[j * n + i] = tp.heightAt(v.body, { x: x / m, y: y / m, z: z / m }, lambda);
+  const dirAt = (i: number, j: number): Vec3 => {
+    const ox = (i - 1 - SIZE / 2 + 0.5) * px;
+    const oy = (SIZE / 2 - (j - 1) - 0.5) * px;
+    const x = v.centre.x + (ex.x * ox + ey.x * oy) / R;
+    const y = v.centre.y + (ex.y * ox + ey.y * oy) / R;
+    const z = v.centre.z + (ex.z * ox + ey.z * oy) / R;
+    const m = Math.hypot(x, y, z);
+    return { x: x / m, y: y / m, z: z / m };
+  };
+  // Load and evaluate in blocks (one slot, replaced per block): a wide view over deep regional levels would not
+  // fit the tile cache in one piece.
+  const B = 64;
+  for (let j0 = 0; j0 < n; j0 += B) {
+    for (let i0 = 0; i0 < n; i0 += B) {
+      const i1 = Math.min(n, i0 + B);
+      const j1 = Math.min(n, j0 + B);
+      await tp.ensureLoaded(v.body, dirAt((i0 + i1 - 1) / 2, (j0 + j1 - 1) / 2), Math.SQRT1_2 * B * px + 1, `render-${v.name}`);
+      for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) h[j * n + i] = tp.heightAt(v.body, dirAt(i, j), lambda);
     }
   }
+  await tp.ensureLoaded(v.body, v.centre, 0, `render-${v.name}`);
   // Sun in the local frame: x east-ish (image right), y image up, z up.
   const az = 100 * DEG;
   const el = 12 * DEG;
@@ -103,9 +114,26 @@ async function render(tp: TerrainAuthority, R: number, v: View): Promise<string>
   return `${path.relative(repo, file)}: ${v.extent} m wide, ${px.toFixed(3)} m/px, heights ${lo.toFixed(1)}..${hi.toFixed(1)} m`;
 }
 
-/** A point on the coverage boundary of `level` (middle of the longest boundary edge) and the inward axis. */
-function boundaryView(layer: TileManifest['layers'][string], level: number): { p: Vec3; inward: Vec3 } | null {
-  const rects = layer.coverage[String(level)];
+/** The height layer's optional `sourceCoverage` (docs/requests/terrain-core-1.md). */
+type HeightLayer = TileManifest['layers'][string] & { sourceCoverage?: Record<string, TileRect[]> };
+
+/** Renders across the coverage edge and the source edge of every regional level of a real tile set. */
+async function edgeViews(tp: TerrainAuthority, body: string, R: number, layer: HeightLayer, lines: string[]): Promise<void> {
+  for (const L of Object.keys(layer.coverage).map(Number).sort((a, b) => a - b)) {
+    const tileSize = (Math.PI * R) / 2 / 2 ** L;
+    const bv = boundaryView(layer.coverage[String(L)], L);
+    if (bv) {
+      // The coverage blend ring is a quarter tile wide: show 1.5 tile widths across the boundary, and a close-up.
+      lines.push(await render(tp, R, { name: `${body}-edge-L${L}`, body, centre: bv.p, xAxis: bv.inward, extent: 1.5 * tileSize, mark: true }));
+      lines.push(await render(tp, R, { name: `${body}-edge-L${L}-close`, body, centre: bv.p, xAxis: bv.inward, extent: Math.max(50, tileSize / 16), mark: true }));
+    }
+    const sv = boundaryView(layer.sourceCoverage?.[String(L)], L);
+    if (sv) lines.push(await render(tp, R, { name: `${body}-source-L${L}`, body, centre: sv.p, xAxis: sv.inward, extent: 3 * tileSize, mark: true }));
+  }
+}
+
+/** A point on the west boundary of the first rectangle of `rects` (middle of the edge) and the inward axis. */
+function boundaryView(rects: readonly TileRect[] | undefined, level: number): { p: Vec3; inward: Vec3 } | null {
   if (!rects || rects.length === 0) return null;
   const r = rects[0]!;
   // Middle of the west edge of the first rect (x0), where the neighbour x0 - 1 is outside unless another rect has it.
@@ -140,15 +168,7 @@ async function main(): Promise<void> {
     const g = latLonToDir(0.5 * DEG, 21.5 * DEG);
     for (const e of [2000, 200]) lines.push(await render(tp, R, { name: `moon-global-${e}m`, body: 'moon', centre: g, extent: e }));
     const m = JSON.parse(readFileSync(path.join(tiles, 'moon', 'manifest.json'), 'utf8')) as TileManifest;
-    const layer = m.layers['height']!;
-    for (const L of Object.keys(layer.coverage).map(Number).sort((a, b) => a - b)) {
-      const bv = boundaryView(layer, L);
-      if (!bv) continue;
-      const tileSize = (Math.PI * R) / 2 / 2 ** L;
-      // The blend ring is a quarter tile wide: show 1.5 tile widths across the boundary, and a close-up.
-      lines.push(await render(tp, R, { name: `moon-edge-L${L}`, body: 'moon', centre: bv.p, xAxis: bv.inward, extent: 1.5 * tileSize, mark: true }));
-      lines.push(await render(tp, R, { name: `moon-edge-L${L}-close`, body: 'moon', centre: bv.p, xAxis: bv.inward, extent: Math.max(50, tileSize / 16), mark: true }));
-    }
+    await edgeViews(tp, 'moon', R, m.layers['height']!, lines);
   } else {
     for (const e of [20000, 2000, 200, 20]) lines.push(await render(fixTp, 1737400, { name: `moon-fixture-${e}m`, body: 'moon', centre: FIXTURE_POINTS.moonDeep, extent: e }));
   }
@@ -156,7 +176,7 @@ async function main(): Promise<void> {
   // Synthetic sparse set: every regional level, incl. the region straddling the cube edge.
   const fm = JSON.parse(readFileSync(path.join(fixRoot, 'fixture-moon', 'manifest.json'), 'utf8')) as TileManifest;
   for (const L of [3, 4, 5]) {
-    const bv = boundaryView(fm.layers['height']!, L);
+    const bv = boundaryView(fm.layers['height']!.coverage[String(L)], L);
     if (!bv) continue;
     const ts = (Math.PI * 1737400) / 2 / 2 ** L;
     lines.push(await render(fixTp, 1737400, { name: `fixture-edge-L${L}`, body: 'moon', centre: bv.p, xAxis: bv.inward, extent: 1.5 * ts, mark: true }));
@@ -170,6 +190,8 @@ async function main(): Promise<void> {
     const s = Object.values(defs.sites).find((x) => x.bodyId === 'earth')!;
     const c = latLonToDir(s.location.latDeg * DEG, s.location.lonDeg * DEG);
     for (const e of [3000, 300]) lines.push(await render(tp, defs.bodies['earth']!.radius, { name: `earth-pad-${e}m`, body: 'earth', centre: c, extent: e }));
+    const m = JSON.parse(readFileSync(path.join(tiles, 'earth', 'manifest.json'), 'utf8')) as TileManifest;
+    await edgeViews(tp, 'earth', defs.bodies['earth']!.radius, m.layers['height']!, lines);
   } else {
     for (const e of [3000, 300]) lines.push(await render(fixTp, 6371000, { name: `earth-fixture-pad-${e}m`, body: 'earth', centre: FIXTURE_POINTS.padDir, extent: e }));
   }

@@ -10,7 +10,11 @@
  * beta is 1 and this is exactly the COVERAGE_BLEND_TILES recursion of terrain.ts. Band-limiting the data the
  * same way as the amplification is what makes coarse queries cheap and coarse render tiles independent of
  * fine data; it is C2 in lambda.
- * Effective level E: E = g, E_L = E_(L-1) + w_L (L - E_(L-1)) (manifest only).
+ * Effective level E: E = g, E_L = E_(L-1) + s_L (L - E_(L-1)) (manifest only), s_L = the weight of the height
+ * layer's `sourceCoverage` rectangles when the manifest has them (where a level holds data finer than its
+ * parent, docs/requests/terrain-core-1.md): like w_L but rising over SOURCE_BLEND_TILES (coverage.ts); else
+ * s_L = w_L (the contract's recursion). The margin the bakes add around their source data holds parent-identical
+ * data, so keying E on coverage there would switch off the parent's procedural detail with nothing to replace it.
  * Data scale: the chain at lambda_s = lambda_data(E_m) gives the data height, slope and land cover that drive
  * the amplification modulators, with E_m = min(E, L_cap) and L_cap = log2(lambda0 / lambdaMin) of the query
  * (the render level for bakes). Every data-modulated component (noise octave, ripple, dune) of length len is
@@ -27,7 +31,7 @@ import { IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
 import type { AmplificationModel, PointInfo } from './amplification/types';
 import { bicubicSample } from './bicubic';
 import type { LayerCoverage } from './coverage';
-import { weightFromMask } from './coverage';
+import { SOURCE_BLEND_TILES, weightFromMask } from './coverage';
 import { applyDiscs, flattenWeight, type FlattenDisc } from './modifiers';
 import { seamMaskAt } from './seams';
 import type { LayerRef, TileEntry, TileStore } from './tileStore';
@@ -40,6 +44,8 @@ export interface EvalBody {
   readonly log2Lambda0: number;
   readonly g: number;
   readonly heightCov: LayerCoverage;
+  /** Coverage of the height layer's `sourceCoverage` (E keys on it), null when the manifest has none. */
+  readonly sourceCov: LayerCoverage | null;
   readonly heightRef: LayerRef;
   readonly lcCov: LayerCoverage | null;
   readonly lcRef: LayerRef | null;
@@ -93,6 +99,10 @@ export class HeightEvaluator {
   private readonly cLastNum = new Float64Array(MAXL).fill(-1);
   private readonly cLastHas = new Uint8Array(MAXL);
   private readonly cLastMask = new Int32Array(MAXL);
+  // per-level source coverage of the last tile seen (same memo for sourceCoverage)
+  private readonly sLastNum = new Float64Array(MAXL).fill(-1);
+  private readonly sLastHas = new Uint8Array(MAXL);
+  private readonly sLastMask = new Int32Array(MAXL);
   // coverage of the height layer for the current point
   private readonly w = new Float64Array(MAXL);
   private covDone = -1;
@@ -267,16 +277,35 @@ export class HeightEvaluator {
     return this.covDone;
   }
 
-  /** Effective data level E (pure function of the manifest). */
+  /** Effective data level E (pure function of the manifest: sourceCoverage when present, else coverage). */
   effectiveLevel(): number {
     if (this.eStamp === this.stamp) return this.eVal;
     const b = this.body;
     this.ensureCoverage(b.heightCov.maxLevel);
     let E = b.g;
-    for (let L = b.g + 1; L <= this.covDone; L++) E += this.w[L]! * (L - E);
+    const sc = b.sourceCov;
+    // Source tiles lie inside coverage (checked when the body is created): none exists beyond covDone.
+    if (sc === null) for (let L = b.g + 1; L <= this.covDone; L++) E += this.w[L]! * (L - E);
+    else for (let L = b.g + 1; L <= this.covDone; L++) E += this.sourceWeight(sc, L) * (L - E);
     this.eStamp = this.stamp;
     this.eVal = E;
     return E;
+  }
+
+  /** Weight s_L of the sourceCoverage of sparse level L at the current point (index(L) is current). */
+  private sourceWeight(sc: LayerCoverage, L: number): number {
+    const x = this.lx[L]!;
+    const y = this.ly[L]!;
+    const num = tileNumber(L, this.face, x, y);
+    if (this.sLastNum[L] !== num) {
+      this.sLastNum[L] = num;
+      const has = sc.has(L, this.face, x, y);
+      this.sLastHas[L] = has ? 1 : 0;
+      this.sLastMask[L] = has ? sc.missingMask(L, this.face, x, y) : 0;
+    }
+    if (this.sLastHas[L] === 0) return 0;
+    const mask = this.sLastMask[L]!;
+    return mask === 0 ? 1 : weightFromMask(mask, this.lu[L]!, this.lv[L]!, SOURCE_BLEND_TILES);
   }
 
   // ----------------------------------------------------------------------------------- height samples

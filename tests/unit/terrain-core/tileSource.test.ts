@@ -1,12 +1,13 @@
 /**
- * Tile sources: manifest caching, unpromised tiles never requested, promised-but-missing tiles reject.
+ * Tile sources: manifest caching, unpromised tiles never requested, promised-but-missing tiles reject, the fs
+ * source's bounded number of open files.
  */
-import { promises as fs } from 'node:fs';
+import fsSync, { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TileManifest } from '../../../src/core/contracts/terrain';
-import { createFsTileSource } from '../../../src/terrain/fsTileSource';
+import { createFsTileSource, MAX_OPEN_READS } from '../../../src/terrain/fsTileSource';
 import { createFetchTileSource } from '../../../src/terrain/tileSource';
 import { FIXTURE_VERSION } from '../../../tools/terrain-core/fixtures';
 import { fixtureRoot } from './helpers';
@@ -23,6 +24,35 @@ describe('fs tile source', () => {
     const t = await src.tile('fixture-moon', 'height', { face: 0, level: 5, x: 16, y: 16 });
     expect(t).toBeInstanceOf(Uint8Array);
     expect(t!.byteLength).toBeGreaterThan(100);
+  });
+
+  it('queues reads: thousands of concurrent tile requests all resolve with at most MAX_OPEN_READS files open', async () => {
+    const root = await fixtureRoot();
+    const src = createFsTileSource(root);
+    await src.manifest('fixture-moon');
+    const real = fsSync.promises.readFile.bind(fsSync.promises);
+    let open = 0;
+    let maxOpen = 0;
+    const spy = vi.spyOn(fsSync.promises, 'readFile').mockImplementation(async (...args: Parameters<typeof fsSync.promises.readFile>) => {
+      open++;
+      maxOpen = Math.max(maxOpen, open);
+      try {
+        return await real(...args);
+      } finally {
+        open--;
+      }
+    });
+    try {
+      const keys = [];
+      for (let k = 0; k < 4000; k++) keys.push({ face: (k % 6) as 0 | 1 | 2 | 3 | 4 | 5, level: 2, x: k % 4, y: (k >> 2) % 4 });
+      const all = await Promise.all(keys.map((key) => src.tile('fixture-moon', 'height', key)));
+      expect(all.every((t) => t instanceof Uint8Array && t.byteLength > 100)).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(4000);
+      expect(maxOpen).toBeLessThanOrEqual(MAX_OPEN_READS);
+      expect(maxOpen).toBe(MAX_OPEN_READS);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('rejects a promised tile that is missing on disk (a bake bug)', async () => {

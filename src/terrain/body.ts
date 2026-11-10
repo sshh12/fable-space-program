@@ -3,7 +3,7 @@
  * modifiers, evaluators and the services models call back into.
  */
 import type { BodyDef, LaunchSiteDef } from '../core/contracts/defs';
-import type { TileManifest } from '../core/contracts/terrain';
+import type { TileLayerManifest, TileManifest, TileRect } from '../core/contracts/terrain';
 import { LANDCOVER_CLASS } from '../core/contracts/terrain';
 import { CUBE_FACES, dirToTile, type FaceId } from '../core/geo/cubeSphere';
 import { HEIGHT_TILE_CELLS, IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
@@ -34,6 +34,11 @@ export class BodyTerrain implements EvalBody {
   readonly log2Lambda0: number;
   readonly g: number;
   readonly heightCov: LayerCoverage;
+  /**
+   * The height layer's optional `sourceCoverage` (where a sparse level holds data genuinely finer than its
+   * parent; see sourceCoverageOf), or null when the manifest has none: the effective level E keys on it.
+   */
+  readonly sourceCov: LayerCoverage | null;
   readonly heightRef: LayerRef;
   /** Makes samples shared by neighbouring height tiles identical (tiles may use different scales). */
   readonly seams: SeamReconciler;
@@ -76,6 +81,7 @@ export class BodyTerrain implements EvalBody {
     const hl = manifest.layers['height'];
     if (!hl || hl.encoding !== 'frt1-height') throw new Error(`tile set "${terrain.tileset}": no frt1-height "height" layer`);
     this.heightCov = new LayerCoverage(hl);
+    this.sourceCov = sourceCoverageOf(hl, this.heightCov, terrain.tileset);
     this.heightRef = new LayerRef(terrain.tileset, 'height', 'height', this.heightCov, 1);
     this.seams = new SeamReconciler(this.heightRef);
     this.heightRef.onResident = (e) => this.seams.onResident(e);
@@ -263,6 +269,37 @@ export class BodyTerrain implements EvalBody {
 
 /** Reach (m) every load set adds around its points: the collision quad around a query and normalAt baselines. */
 export const BASE_REACH = 4;
+
+/** A height layer that may carry the `sourceCoverage` field of docs/requests/terrain-core-1.md. */
+type HeightLayerWithSource = TileLayerManifest & { sourceCoverage?: Record<string, TileRect[]> };
+
+/**
+ * Coverage of the height layer's optional `sourceCoverage`: per sparse level, the rectangles of tiles whose data
+ * is genuinely finer than the parent level (the bakes extend `coverage` one or more tiles beyond the source data
+ * and fill that margin with parent-identical data). Requested from the contract in docs/requests/terrain-core-1.md
+ * and written by both bakes; read here as an additive manifest field. The effective level E keys on these
+ * rectangles (weights computed exactly like the coverage weight), the data blend D keeps using `coverage`.
+ * Absent: null (E keys on `coverage`, the contract's COVERAGE_BLEND_TILES recursion). Every source tile must lie
+ * in `coverage` at a sparse level, otherwise the manifest is rejected.
+ */
+function sourceCoverageOf(layer: TileLayerManifest, cov: LayerCoverage, tileset: string): LayerCoverage | null {
+  const sc = (layer as HeightLayerWithSource).sourceCoverage;
+  if (sc === undefined) return null;
+  for (const [k, rects] of Object.entries(sc)) {
+    const level = Number(k);
+    if (!Number.isInteger(level) || level <= layer.globalMaxLevel) {
+      throw new Error(`tile set "${tileset}": height sourceCoverage level "${k}" is not a sparse level (globalMaxLevel ${layer.globalMaxLevel})`);
+    }
+    for (const r of rects) {
+      for (let x = r.x0; x <= r.x1; x++) {
+        for (let y = r.y0; y <= r.y1; y++) {
+          if (!cov.has(level, r.face, x, y)) throw new Error(`tile set "${tileset}": height sourceCoverage tile ${level}/${r.face}/${x}/${y} lies outside the coverage`);
+        }
+      }
+    }
+  }
+  return new LayerCoverage({ ...layer, coverage: sc });
+}
 
 /** Unit direction of face coordinates (s, t), which may lie beyond the face (normalised cube point). */
 export function faceStDir(face: FaceId, s: number, t: number): Vec3 {

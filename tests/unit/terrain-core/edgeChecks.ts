@@ -1,7 +1,7 @@
 /**
  * Coverage-edge and continuity checks shared by the synthetic suite and the real-data suite.
  */
-import type { TileLayerManifest, TileManifest, TileSource } from '../../../src/core/contracts/terrain';
+import type { TileLayerManifest, TileManifest, TileRect, TileSource } from '../../../src/core/contracts/terrain';
 import { layerHasTile } from '../../../src/core/contracts/terrain';
 import { dirToTile, tileUvToDir, type FaceId, type TileKey } from '../../../src/core/geo/cubeSphere';
 import type { Prng } from '../../../src/core/math/hash';
@@ -59,14 +59,22 @@ export function boundaryPoints(layer: TileLayerManifest, level: number, count: n
   return out;
 }
 
-/** A TileSource whose manifest has no coverage at levels >= fromLevel (the "parent-level" surface). */
+/** A height layer with the optional `sourceCoverage` of docs/requests/terrain-core-1.md. */
+export type LayerWithSource = TileLayerManifest & { sourceCoverage?: Record<string, TileRect[]> };
+
+/**
+ * A TileSource whose manifest has no coverage (and no source coverage) at levels >= fromLevel (the
+ * "parent-level" surface).
+ */
 export function truncatedSource(src: TileSource, fromLevel: number): TileSource {
   return {
     async manifest(tileset: string): Promise<TileManifest> {
       const m = await src.manifest(tileset);
       const copy: TileManifest = JSON.parse(JSON.stringify(m)) as TileManifest;
-      for (const layer of Object.values(copy.layers)) {
+      for (const layer of Object.values(copy.layers) as LayerWithSource[]) {
         for (const k of Object.keys(layer.coverage)) if (Number(k) >= fromLevel) delete layer.coverage[k];
+        const sc = layer.sourceCoverage;
+        if (sc) for (const k of Object.keys(sc)) if (Number(k) >= fromLevel) delete sc[k];
       }
       return copy;
     },
@@ -90,7 +98,14 @@ export interface EdgeStats {
   maxExcess: number;
   maxSlopeChange: number;
   maxParentDiff: number;
+  /**
+   * Discontinuity detector of the effective level, built like maxExcess: |E(+1 mm) - E(-1 mm)| minus the larger
+   * one-sided change over the neighbouring 2 mm. A step adds its size; E rising smoothly through a source ring
+   * of another level (gradient up to ~1.9 levels per ring width) gives ~0.
+   */
   maxEJump: number;
+  /** The raw |E(+1 mm) - E(-1 mm)| (reported). */
+  maxEChange: number;
   /**
    * The same jump and slope tests applied to what the coverage edge adds, Delta = H - H_parent (H_parent =
    * the surface of the manifest without this level): isolates the edge from procedural features that are
@@ -121,6 +136,7 @@ export function edgeStats(
   let maxSlopeChange = 0;
   let maxParentDiff = 0;
   let maxEJump = 0;
+  let maxEChange = 0;
   let deltaJump = 0;
   let deltaSlopeChange = 0;
   const h = (d: Vec3, lam: number): number => tp.heightAt(body, d, lam);
@@ -144,9 +160,14 @@ export function edgeStats(
     const dslope = (c: Vec3): number => (dlt(moveToward(c, q.inside, 0.05, R), lambdaH) - dlt(moveToward(c, q.inside, -0.05, R), lambdaH)) / 0.1;
     deltaSlopeChange = Math.max(deltaSlopeChange, Math.abs(dslope(pin) - dslope(pout)));
     maxParentDiff = Math.max(maxParentDiff, Math.abs(h(q.p, lambdaH) - parent.heightAt(body, q.p, lambdaH)));
-    maxEJump = Math.max(maxEJump, Math.abs(tp.residency(body, pin).effectiveLevel - tp.residency(body, pout).effectiveLevel));
+    const E = (d: Vec3): number => tp.residency(body, d).effectiveLevel;
+    const eIn = E(pin);
+    const eOut = E(pout);
+    const eChange = Math.abs(eIn - eOut);
+    maxEChange = Math.max(maxEChange, eChange);
+    maxEJump = Math.max(maxEJump, eChange - Math.max(Math.abs(E(moveToward(q.p, q.inside, 3e-3, R)) - eIn), Math.abs(eOut - E(moveToward(q.p, q.inside, -3e-3, R)))));
   }
-  return { points: pts.length, maxJump, rawOver1mm, maxLocalChangeAtOver, maxExcess, maxSlopeChange, maxParentDiff, maxEJump, deltaJump, deltaSlopeChange };
+  return { points: pts.length, maxJump, rawOver1mm, maxLocalChangeAtOver, maxExcess, maxSlopeChange, maxParentDiff, maxEJump, maxEChange, deltaJump, deltaSlopeChange };
 }
 
 /** Pin the data around every point (unique slots) and wait for it. */

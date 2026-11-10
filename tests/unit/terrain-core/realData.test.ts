@@ -9,14 +9,15 @@ import { constants as zlibConstants, inflateSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
 import type { TileManifest } from '../../../src/core/contracts/terrain';
-import { latLonToDir, tilePath, tileUvToDir, type FaceId, type TileKey } from '../../../src/core/geo/cubeSphere';
+import { layerHasTile } from '../../../src/core/contracts/terrain';
+import { dirToTile, latLonToDir, tilePath, tileUvToDir, type FaceId, type TileKey } from '../../../src/core/geo/cubeSphere';
 import { DEG } from '../../../src/core/math/scalar';
 import type { Vec3 } from '../../../src/core/math/vec3';
 import { fsDefSource } from '../../../src/core/defs/fsSource';
 import { loadDefs } from '../../../src/core/defs/loader';
 import { createFsTileSource } from '../../../src/terrain/fsTileSource';
 import { createTerrainProvider, type TerrainAuthority } from '../../../src/terrain/provider';
-import { boundaryPoints, edgeStats, loadAround, truncatedSource } from './edgeChecks';
+import { boundaryPoints, edgeStats, loadAround, truncatedSource, type LayerWithSource } from './edgeChecks';
 import { moveToward, offset, prng, REPO_ROOT } from './helpers';
 
 const TILES = path.join(REPO_ROOT, 'data/tiles');
@@ -113,6 +114,94 @@ function tileBorderSuite(body: string, R: () => number, defsP: () => DefLibrary)
       expect(worstAmp, `L${L}`).toBeLessThan(1e-3);
     }
     console.log(`[real ${body} tile borders] ${mixedTotal} mixed-scale pairs in total; seam samples rewritten: ${none.diagnostics().seamWrites[body]}`);
+  }, 900_000);
+}
+
+/**
+ * Texture across the coverage margins and source rings of every regional level (docs/requests/terrain-core-1.md).
+ * Statistic: RMS slope over a baseline b of the band-pass height H(b/4) - H(4 b), b = 1 and 4 postings of level
+ * L, six baselines around each point, divided by the same statistic of the PARENT-LEVEL surface (the manifest
+ * without level L and deeper) at the SAME points, so regional differences of the terrain cancel.
+ *  - Coverage margin (0.12 / 0.4 / 0.8 tile inside the coverage boundary, in level-L tiles outside the source
+ *    rectangles): the bakes store parent-identical data there, so the surface must keep the parent's texture
+ *    (ratio 1). Keying E on coverage (the contract's literal recursion) gave 0.35-0.77 there: the parent's
+ *    procedural detail was switched off with nothing to replace it.
+ *  - Source ring (0.1 / 0.5 / 1 tile inside the source boundary): where the ring starts the texture must not
+ *    step; further in, real data replaces the procedural detail and the ratio (real data against the model) is
+ *    reported, not asserted.
+ */
+async function ringTexture(body: string, defs: DefLibrary, R: number): Promise<{ level: number; margin: number[]; source: number[]; row: string }[]> {
+  const tileset = defs.bodies[body]!.terrain!.tileset;
+  const layer = (JSON.parse(readFileSync(path.join(TILES, tileset, 'manifest.json'), 'utf8')) as TileManifest).layers['height'] as LayerWithSource;
+  const sc = layer.sourceCoverage;
+  if (!sc) throw new Error(`${tileset}: the height layer has no sourceCoverage`);
+  const srcLayer = { ...layer, coverage: sc };
+  const base = createFsTileSource(TILES);
+  const out: { level: number; margin: number[]; source: number[]; row: string }[] = [];
+  for (const L of Object.keys(layer.coverage).map(Number).sort((a, b) => a - b)) {
+    const opts = { bodies: [body], cacheBytes: 768 * 1024 * 1024 };
+    const tp = await createTerrainProvider(defs, base, opts);
+    const par = await createTerrainProvider(defs, truncatedSource(base, L), opts);
+    const ts = (Math.PI * R) / 2 / 2 ** L;
+    const stat = (t: TerrainAuthority, cs: Vec3[], b: number): number => {
+      const hp = (d: Vec3): number => t.heightAt(body, d, b / 4) - t.heightAt(body, d, 4 * b);
+      let s2 = 0;
+      for (const c of cs) {
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI;
+          const off = (k - 2.5) * 3 * b;
+          const p = offset(c, off * Math.sin(a), -off * Math.cos(a), R);
+          const g = (hp(offset(p, (Math.cos(a) * b) / 2, (Math.sin(a) * b) / 2, R)) - hp(offset(p, (-Math.cos(a) * b) / 2, (-Math.sin(a) * b) / 2, R))) / b;
+          s2 += g * g;
+        }
+      }
+      return Math.sqrt(s2 / (6 * cs.length));
+    };
+    /** Ratios at 1 and 4 postings for the points moved `w` tiles inward (stencils reach 0.125 tile). */
+    const ratios = async (cs: Vec3[], tag: string): Promise<number[]> => {
+      await Promise.all(cs.map((c, i) => Promise.all([tp.ensureLoaded(body, c, 0.14 * ts, `t${i}`), par.ensureLoaded(body, c, 0.14 * ts, `t${i}`)])));
+      for (const c of cs) expect(tp.residency(body, c).complete && par.residency(body, c).complete, tag).toBe(true);
+      return [1, 4].map((m) => stat(tp, cs, (m * ts) / 256) / stat(par, cs, (m * ts) / 256));
+    };
+    const cells: string[] = [];
+    const margin: number[] = [];
+    const cov = boundaryPoints(layer, L, 40, prng(300 + L));
+    for (const w of [0.12, 0.4, 0.8]) {
+      const cs = cov.map((q) => moveToward(q.p, q.inside, w * ts, R)).filter((c) => !layerHasTile(srcLayer, dirToTile(c, L).key));
+      expect(cs.length, `L${L} margin points at ${w}`).toBeGreaterThan(10);
+      const r = await ratios(cs, `L${L} margin ${w}`);
+      margin.push(...r);
+      cells.push(`margin ${w}: ${r.map((x) => x.toFixed(2)).join('/')}`);
+    }
+    const source: number[] = [];
+    const sp = boundaryPoints(srcLayer, L, 40, prng(600 + L));
+    for (const w of [0.1, 0.5, 1]) {
+      const r = await ratios(
+        sp.map((q) => moveToward(q.p, q.inside, w * ts, R)),
+        `L${L} source ${w}`,
+      );
+      if (w === 0.1) source.push(...r);
+      cells.push(`source +${w}: ${r.map((x) => x.toFixed(2)).join('/')}`);
+    }
+    out.push({ level: L, margin, source, row: cells.join(', ') });
+  }
+  return out;
+}
+
+function ringTextureSuite(body: string, R: () => number, defsP: () => DefLibrary): void {
+  it(`${body}: texture of every coverage margin equals the parent level's; no step where a source ring starts (H / H_parent band-pass slope, 1 and 4 postings)`, async () => {
+    const rows = await ringTexture(body, defsP(), R());
+    for (const r of rows) console.log(`[real ${body} ring texture L${r.level}] ${r.row}`);
+    for (const r of rows) {
+      for (const x of r.margin) {
+        expect(x, `L${r.level} margin`).toBeGreaterThan(0.9);
+        expect(x, `L${r.level} margin`).toBeLessThan(1.1);
+      }
+      for (const x of r.source) {
+        expect(x, `L${r.level} source ring start`).toBeGreaterThan(0.8);
+        expect(x, `L${r.level} source ring start`).toBeLessThan(1.25);
+      }
+    }
   }, 900_000);
 }
 
@@ -234,6 +323,12 @@ describe.skipIf(!HAS_MOON)('real Moon tiles', () => {
     () => R,
     () => defs,
   );
+
+  ringTextureSuite(
+    'moon',
+    () => R,
+    () => defs,
+  );
 });
 
 describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
@@ -273,6 +368,12 @@ describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
   );
 
   tileBorderSuite(
+    'earth',
+    () => R,
+    () => defs,
+  );
+
+  ringTextureSuite(
     'earth',
     () => R,
     () => defs,

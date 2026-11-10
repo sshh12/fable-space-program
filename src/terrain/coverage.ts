@@ -1,7 +1,8 @@
 /**
- * Coverage of one tile layer: existence of tiles (layerHasTile), the coverage weight w_L of sparse levels and
- * the effective-level recursion, exactly as specified at COVERAGE_BLEND_TILES in src/core/contracts/terrain.ts.
- * Everything here is a pure function of the manifest (never of residency), memoised per tile.
+ * Coverage of one tile layer: existence of tiles (layerHasTile) and the coverage weight w_L of sparse levels,
+ * exactly as specified at COVERAGE_BLEND_TILES in src/core/contracts/terrain.ts (also used for the height
+ * layer's `sourceCoverage`, with SOURCE_BLEND_TILES). Everything here is a pure function of the manifest (never
+ * of residency), memoised per tile.
  */
 import type { FaceId } from '../core/geo/cubeSphere';
 import { dirToTile, tileUvToDir } from '../core/geo/cubeSphere';
@@ -107,8 +108,20 @@ export class LayerCoverage {
   }
 }
 
-/** Coverage weight from a missing-neighbour mask and tile-local (u, v). */
-export function weightFromMask(mask: number, u: number, v: number): number {
+/**
+ * Width, in tiles of the level, of the ring inside a `sourceCoverage` boundary over which the effective level
+ * rises (the source weight s_L; evaluator.ts). Source rectangles are tile-granular ("tiles touching the area
+ * where the source data lies"): the real detail begins anywhere in the outermost tile and fades in over the
+ * bake's feather. Measured on the real Moon tiles (level-L data detail against the distance from the source
+ * boundary): ~0.1-0.3 of its full value at 0.2-0.3 tile, ~0.5 at 0.5 tile, ~0.8-1 at 1 tile. A one-tile
+ * smootherstep follows that; the quarter-tile coverage ring switched the procedural detail off ~half a tile
+ * before the real detail arrived (RMS slope down to 0.4-0.6 there). Regions of interest need to lie at least
+ * this far inside their source rectangles for E to reach the level.
+ */
+export const SOURCE_BLEND_TILES = 1;
+
+/** Coverage weight from a missing-neighbour mask and tile-local (u, v), rising over `blend` tiles. */
+export function weightFromMask(mask: number, u: number, v: number, blend = COVERAGE_BLEND_TILES): number {
   let d2 = Infinity;
   for (let k = 0; k < 8; k++) {
     if ((mask & (1 << k)) === 0) continue;
@@ -119,5 +132,5 @@ export function weightFromMask(mask: number, u: number, v: number): number {
     if (e < d2) d2 = e;
   }
   const d = Math.sqrt(d2);
-  return smootherstep01(d >= COVERAGE_BLEND_TILES ? 1 : d / COVERAGE_BLEND_TILES);
+  return smootherstep01(d >= blend ? 1 : d / blend);
 }

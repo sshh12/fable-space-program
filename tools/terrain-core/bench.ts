@@ -82,35 +82,55 @@ async function benchBody(tp: TerrainAuthority, body: string, centre: Vec3, R: nu
     const tg: number[] = [];
     const tn: number[] = [];
     const tb: number[] = [];
-    for (let r = 0; r < 5; r++) {
+    let complete = true;
+    for (let r = 0; r < 9; r++) {
+      // A worker's sequence: geometry, then the normal map of the same tile (which reuses its coarse grid).
       let q = performance.now();
-      tp.bakeGeometry(body, key);
+      const g = tp.bakeGeometry(body, key);
       tg.push(performance.now() - q);
       q = performance.now();
-      tp.bakeNormalMaterial(body, key);
+      const n = tp.bakeNormalMaterial(body, key);
       tn.push(performance.now() - q);
       q = performance.now();
       tp.bakeTile(body, key);
       tb.push(performance.now() - q);
+      complete &&= g.complete && n.complete;
     }
     const g = stats(tg).median;
     const n = stats(tn).median;
     const b = stats(tb).median;
-    bakeRows.push(`    L${level}: geometry ${g.toFixed(2)} ms + normalMaterial ${n.toFixed(2)} ms = ${(g + n).toFixed(2)} ms; bakeTile ${b.toFixed(2)} ms`);
+    bakeRows.push(`    L${level}: geometry ${g.toFixed(2)} ms + normalMaterial ${n.toFixed(2)} ms = ${(g + n).toFixed(2)} ms; bakeTile ${b.toFixed(2)} ms${complete ? '' : ' (INCOMPLETE: data missing after prepareTile)'}`);
   }
   const f = stats(fresh);
   console.log(`${label} (${body})`);
   console.log(`  analytic heightAt(lambdaMin = 100 m): ${analytic.toFixed(3)} us/query (budget 3 us)`);
   console.log(`  cached collision query: ${cached.toFixed(3)} us/query (budget 0.5 us)`);
   console.log(`  first collision query in a fresh area: median ${f.median.toFixed(1)} us, p99 ${f.p99.toFixed(1)} us, max ${f.max.toFixed(1)} us (budget 200 us)`);
-  console.log('  bakes (median of 5, single thread):');
+  console.log('  bakes (median of 9, single thread; normalMaterial right after geometry of the same tile):');
   for (const r of bakeRows) console.log(r);
   if (acc === 42) console.log('');
 }
 
+/** Fraction of all CPU time spent busy (every core) since `from` (os.loadavg() is 0 on Windows). */
+function cpuBusy(from: os.CpuInfo[]): number {
+  const to = os.cpus();
+  let busy = 0;
+  let total = 0;
+  to.forEach((c, i) => {
+    const a = from[i]!.times;
+    const t = c.times;
+    const idle = t.idle - a.idle;
+    const all = t.user - a.user + (t.nice - a.nice) + (t.sys - a.sys) + (t.irq - a.irq) + idle;
+    busy += all - idle;
+    total += all;
+  });
+  return total > 0 ? busy / total : 0;
+}
+
 async function main(): Promise<void> {
-  const load = os.loadavg();
-  console.log(`machine: ${os.cpus()[0]?.model} x${os.cpus().length}, node ${process.version}, loadavg ${load.map((x) => x.toFixed(2)).join(' ')}`);
+  const start = os.cpus();
+  process.on('exit', () => console.log(`machine CPU busy during the run (all cores, this process included): ${(100 * cpuBusy(start)).toFixed(0)} %`));
+  console.log(`machine: ${os.cpus()[0]?.model} x${os.cpus().length}, node ${process.version}`);
   if (real) {
     const root = path.join(repo, 'data/tiles');
     const defs: DefLibrary = await loadDefs(fsDefSource(path.join(repo, 'data/defs')));
