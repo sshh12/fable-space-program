@@ -28,13 +28,17 @@ export class MemoTile {
   x = 0;
   y = 0;
   key = -1;
-  readonly h = new Float32Array(NV).fill(NaN);
-  readonly prov = new Uint8Array(NV);
+  constructor(
+    readonly h: Float32Array,
+    readonly prov: Uint8Array,
+  ) {}
   evaluated = 0;
   provisional = 0;
   gen = 0;
-  lastUse = 0;
   epoch = 0;
+  /** LRU list links (most recently used at the head). */
+  prev: MemoTile | null = null;
+  next: MemoTile | null = null;
 
   clear(): void {
     this.h.fill(NaN);
@@ -58,9 +62,11 @@ export class CollisionSurface {
   /** Bumped whenever any memo tile is cleared or recycled (prewarm jobs revalidate). */
   epochSum = 0;
   private readonly tiles = new Map<number, MemoTile>();
-  private readonly pool: MemoTile[] = [];
   private last: MemoTile | null = null;
   private job: PrewarmJob | null = null;
+  // LRU list: head = most recently used. The order is the order of calls, never of time.
+  private head: MemoTile | null = null;
+  private tail: MemoTile | null = null;
 
   constructor(
     readonly body: BodyTerrain,
@@ -80,6 +86,23 @@ export class CollisionSurface {
     return (face * this.n + x) * this.n + y;
   }
 
+  private unlink(t: MemoTile): void {
+    if (t.prev) t.prev.next = t.next;
+    else this.head = t.next;
+    if (t.next) t.next.prev = t.prev;
+    else this.tail = t.prev;
+    t.prev = null;
+    t.next = null;
+  }
+
+  private pushFront(t: MemoTile): void {
+    t.prev = null;
+    t.next = this.head;
+    if (this.head) this.head.prev = t;
+    this.head = t;
+    if (!this.tail) this.tail = t;
+  }
+
   /** Memo tile for (face, x, y), created on demand; marks it used by the current call. */
   tile(face: FaceId, x: number, y: number): MemoTile {
     const key = this.keyOf(face, x, y);
@@ -87,9 +110,12 @@ export class CollisionSurface {
     if (!t || t.key !== key) {
       t = this.tiles.get(key) ?? null;
       if (!t) t = this.create(face, x, y, key);
+      else if (t !== this.head) {
+        this.unlink(t);
+        this.pushFront(t);
+      }
       this.last = t;
     }
-    t.lastUse = this.body.store.tick;
     if (t.provisional > 0 && t.gen !== this.body.dataGeneration()) {
       t.clear();
       this.epochSum++;
@@ -107,21 +133,33 @@ export class CollisionSurface {
     return t;
   }
 
+  private free: MemoTile[] | null = null;
+
   private create(face: FaceId, x: number, y: number, key: number): MemoTile {
+    if (!this.free) {
+      // One allocation for the whole memo on first use, so steady-state queries never allocate (no GC
+      // pauses at touchdown); bakers that never query collision never pay for it.
+      const hs = new Float32Array(this.capacity * NV).fill(NaN);
+      const ps = new Uint8Array(this.capacity * NV);
+      this.free = [];
+      for (let k = this.capacity - 1; k >= 0; k--) this.free.push(new MemoTile(hs.subarray(k * NV, (k + 1) * NV), ps.subarray(k * NV, (k + 1) * NV)));
+    }
     let t: MemoTile;
-    if (this.tiles.size >= this.capacity) {
-      let victim: MemoTile | null = null;
-      for (const c of this.tiles.values()) if (!victim || c.lastUse < victim.lastUse || (c.lastUse === victim.lastUse && c.key < victim.key)) victim = c;
-      this.tiles.delete(victim!.key);
-      t = victim!;
+    if (this.free.length > 0) t = this.free.pop()!;
+    else {
+      // Recycle the least recently used tile (O(1)).
+      t = this.tail!;
+      this.unlink(t);
+      this.tiles.delete(t.key);
       t.clear();
       this.epochSum++;
-    } else t = this.pool.pop() ?? new MemoTile();
+    }
     t.face = face;
     t.x = x;
     t.y = y;
     t.key = key;
     this.tiles.set(key, t);
+    this.pushFront(t);
     return t;
   }
 

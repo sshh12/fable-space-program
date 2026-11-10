@@ -40,8 +40,8 @@ export interface EvalBody {
   readonly store: TileStore;
   readonly model: AmplificationModel;
   readonly discs: readonly FlattenDisc[];
-  /** 1 / meanTileSize per level (index = level). */
-  readonly invTileSize: Float64Array;
+  /** Evaluator reserved for the finite-difference data slope of dataScale() (never the caller itself). */
+  readonly slopeEval: HeightEvaluator;
   /** log2 of the longest amplification component anywhere (at E = g); band limits above it skip the model. */
   readonly ampMaxLog2: number;
   /** Evaluator currently running the model (service calls flag it incomplete). */
@@ -75,7 +75,6 @@ export class HeightEvaluator {
   private readonly hEntry: (TileEntry | undefined)[] = new Array(MAXL).fill(undefined);
   private readonly hSmpStamp = new Int32Array(MAXL);
   private readonly hSmp = new Float64Array(3 * MAXL);
-  private readonly hSlope = new Float64Array(MAXL);
   // per-level last-entry caches across points
   private readonly hLastNum = new Float64Array(MAXL).fill(-1);
   private readonly hLastEntry: (TileEntry | undefined)[] = new Array(MAXL).fill(undefined);
@@ -284,9 +283,6 @@ export class HeightEvaluator {
     if (this.hSmpStamp[level] !== this.stamp) {
       this.hSmpStamp[level] = this.stamp;
       bicubicSample(e, this.lu[level]!, this.lv[level]!, this.hSmp, 3 * level);
-      const gu = this.hSmp[3 * level + 1]!;
-      const gv = this.hSmp[3 * level + 2]!;
-      this.hSlope[level] = Math.sqrt(gu * gu + gv * gv) * this.body.invTileSize[level]!;
     }
     return true;
   }
@@ -298,9 +294,8 @@ export class HeightEvaluator {
   }
 
   /**
-   * Data chain at band limit 2^log2Lambda; returns D and writes |grad D| (m/m, chain of per-level slope
-   * magnitudes) to this.lastSlope. `stopLevel`: levels above it are left out (used by the bakers to split the
-   * chain); Infinity = all.
+   * Data chain at band limit 2^log2Lambda. `stopLevel`: levels above it are left out (used by the bakers to
+   * split the chain); Infinity = all.
    */
   dataChain(log2Lambda: number, stopLevel = Infinity): number {
     const b = this.body;
@@ -309,23 +304,15 @@ export class HeightEvaluator {
     let base = Math.min(b.g, fl);
     if (base < 0) base = 0;
     if (base > stopLevel) base = stopLevel;
-    let top = Math.min(b.heightCov.maxLevel, fl + 1, stopLevel);
+    const top = Math.min(b.heightCov.maxLevel, fl + 1, stopLevel);
     let D: number;
-    let S: number;
     if (this.sample(base, true)) {
       D = this.hSmp[3 * base]!;
-      S = this.hSlope[base]!;
     } else {
       this.incomplete = true;
       let L = base - 1;
       while (L >= 0 && !this.sample(L, false)) L--;
-      if (L >= 0) {
-        D = this.hSmp[3 * L]!;
-        S = this.hSlope[L]!;
-      } else {
-        D = 0;
-        S = 0;
-      }
+      D = L >= 0 ? this.hSmp[3 * L]! : 0;
     }
     if (top > b.g) this.ensureCoverage(top);
     for (let L = base + 1; L <= top; L++) {
@@ -342,19 +329,61 @@ export class HeightEvaluator {
         continue;
       }
       D += c * (this.hSmp[3 * L]! - D);
-      S += c * (this.hSlope[L]! - S);
     }
-    this.lastSlope = S;
     return D;
   }
-  lastSlope = 0;
 
-  /** Data height and slope at the data scale (band limit = data wavelength at E). */
+  /**
+   * Data height and slope at the data scale (band limit lambda_s = data wavelength at E). The slope is
+   * |grad D_s| by forward differences over lambda_s / 8 along a face-independent tangent basis (the data
+   * surface is C0 everywhere but only approximately C1 across cube edges, so per-face bicubic derivatives
+   * would make the amplitude modulation jump there).
+   */
   dataScale(): void {
     if (this.dsStamp === this.stamp) return;
+    const b = this.body;
     const E = this.effectiveLevel();
-    this.dsHeight = this.dataChain(this.body.log2Lambda0 - E);
-    this.dsSlope = this.lastSlope;
+    const log2Ls = b.log2Lambda0 - E;
+    const h0 = this.dataChain(log2Ls);
+    this.dsHeight = h0;
+    const delta = 2 ** log2Ls / 8;
+    const x = this.dx;
+    const y = this.dy;
+    const z = this.dz;
+    // Tangent basis: e1 = normalize(z x dir) (east), e2 = dir x e1 (north); x axis near the poles.
+    let e1x = -y;
+    let e1y = x;
+    let e1z = 0;
+    let l = Math.sqrt(e1x * e1x + e1y * e1y);
+    if (l < 1e-9) {
+      e1x = 1;
+      e1y = 0;
+      l = 1;
+    }
+    e1x /= l;
+    e1y /= l;
+    const e2x = y * e1z - z * e1y;
+    const e2y = z * e1x - x * e1z;
+    const e2z = x * e1y - y * e1x;
+    const k = delta / b.radius;
+    const fd = b.slopeEval;
+    let ax = x + e1x * k;
+    let ay = y + e1y * k;
+    let az = z + e1z * k;
+    let al = Math.sqrt(ax * ax + ay * ay + az * az);
+    fd.setDir(ax / al, ay / al, az / al);
+    fd.incomplete = false;
+    const h1 = fd.dataChain(log2Ls);
+    ax = x + e2x * k;
+    ay = y + e2y * k;
+    az = z + e2z * k;
+    al = Math.sqrt(ax * ax + ay * ay + az * az);
+    fd.setDir(ax / al, ay / al, az / al);
+    const h2 = fd.dataChain(log2Ls);
+    if (fd.incomplete) this.incomplete = true;
+    const g1 = (h1 - h0) / delta;
+    const g2 = (h2 - h0) / delta;
+    this.dsSlope = Math.sqrt(g1 * g1 + g2 * g2);
     this.dsStamp = this.stamp;
   }
   get dataScaleHeight(): number {

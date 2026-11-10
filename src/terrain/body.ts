@@ -39,7 +39,6 @@ export class BodyTerrain implements EvalBody {
   readonly lcClassCount: number;
   readonly model: AmplificationModel;
   readonly discs: FlattenDisc[];
-  readonly invTileSize: Float64Array;
   readonly ampMaxLog2: number;
   active: HeightEvaluator | null = null;
   readonly maxRenderLevel: number;
@@ -54,6 +53,8 @@ export class BodyTerrain implements EvalBody {
   private readonly aux: HeightEvaluator;
   /** Evaluator for collision vertices and bakes. */
   readonly vertexEval: HeightEvaluator;
+  /** Evaluator of the finite-difference data slope (dataScale) of the other evaluators. */
+  readonly slopeEval: HeightEvaluator;
 
   constructor(
     readonly def: BodyDef,
@@ -81,9 +82,6 @@ export class BodyTerrain implements EvalBody {
     this.collisionLog2Lambda = Math.log2(meanTileSizeAt(this.radius, this.maxRenderLevel) / GEOMETRY_BAND_DIVISOR);
     this.residentLevel = Math.min(this.g, residentLevelOverride ?? manifest.residentHeightLevel);
     this.seaLevel = def.ocean ? def.ocean.seaLevel : null;
-    const maxL = Math.max(this.heightCov.maxLevel, this.maxRenderLevel) + 1;
-    this.invTileSize = new Float64Array(maxL + 1);
-    for (let l = 0; l <= maxL; l++) this.invTileSize[l] = 1 / meanTileSizeAt(this.radius, l);
     this.discs = buildFlattenDiscs(def, sites);
 
     this.services = {
@@ -138,6 +136,7 @@ export class BodyTerrain implements EvalBody {
     this.main = new HeightEvaluator(this);
     this.aux = new HeightEvaluator(this);
     this.vertexEval = new HeightEvaluator(this);
+    this.slopeEval = new HeightEvaluator(this);
   }
 
   /** Mean tile size of a level, m. */
