@@ -7,7 +7,8 @@
   "pad": { "flatRadius": 450, "blendRadius": 900, "clampHeight": 18 },
   "structures": { "$ref": "ka-lae-lc1.structures.json" },
   "recoveryZones": [
-    { "name": "Central Pacific", "latDeg": 18.0, "lonDeg": -168.0, "radiusKm": 600 },
-    { "name": "Western Atlantic", "latDeg": 27.0, "lonDeg": -60.0, "radiusKm": 600 }
+    { "name": "Central Pacific", "latDeg": 5.0, "lonDeg": -140.0, "radiusKm": 2000 },
+    { "name": "South Pacific", "latDeg": -20.0, "lonDeg": -122.0, "radiusKm": 1800 },
+    { "name": "Central Atlantic", "latDeg": -8.0, "lonDeg": -22.0, "radiusKm": 1300 }
   ]
 }

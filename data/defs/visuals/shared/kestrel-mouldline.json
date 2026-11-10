@@ -1,0 +1,31 @@
+{
+  "profile": [
+    [0.0, -0.45],
+    [0.4, -0.433],
+    [0.8, -0.383],
+    [1.2, -0.297],
+    [1.6, -0.175],
+    [1.86, -0.075],
+    [1.96, -0.03],
+    [2.0, 0.0],
+    [0.5, 2.35],
+    [0.5, 2.85]
+  ],
+  "heatShield": { "maxDiameter": 4.0, "maxDiameterY": 0.0, "apexY": -0.45, "radiusOfCurvature": 4.8, "shoulderRadius": 0.12 },
+  "cone": { "halfAngleDeg": 32.55, "yBottom": 0.0, "yTop": 2.35, "radiusTop": 0.5 },
+  "apexTunnel": { "radius": 0.5, "yBottom": 2.35, "yTop": 2.85 },
+  "wallThickness": 0.12,
+  "cabinFloorY": 0.25,
+  "windows": [
+    { "id": "fwd-left", "azimuthDeg": -20, "y": 1.45, "shape": "rect", "width": 0.28, "height": 0.55, "cornerRadius": 0.06 },
+    { "id": "fwd-right", "azimuthDeg": 20, "y": 1.45, "shape": "rect", "width": 0.28, "height": 0.55, "cornerRadius": 0.06 },
+    { "id": "side-left", "azimuthDeg": -90, "y": 1.15, "shape": "rect", "width": 0.33, "height": 0.33, "cornerRadius": 0.07 },
+    { "id": "side-right", "azimuthDeg": 90, "y": 1.15, "shape": "rect", "width": 0.33, "height": 0.33, "cornerRadius": 0.07 }
+  ],
+  "hatch": { "azimuthDeg": 180, "y": 1.2, "width": 0.75, "height": 0.85, "cornerRadius": 0.12, "window": { "radius": 0.12 } },
+  "seats": [
+    { "id": "cdr", "pos": [-0.72, 1.05, 0.1], "lookDir": [0, 0.94, 0.34], "upDir": [0, -0.34, 0.94] },
+    { "id": "plt", "pos": [0, 1.05, 0.1], "lookDir": [0, 0.94, 0.34], "upDir": [0, -0.34, 0.94] },
+    { "id": "ms", "pos": [0.72, 1.05, 0.1], "lookDir": [0, 0.94, 0.34], "upDir": [0, -0.34, 0.94] }
+  ]
+}

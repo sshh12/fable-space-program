@@ -386,6 +386,30 @@ export type ModuleDef =
 
 export type ModuleType = ModuleDef['type'];
 
+/**
+ * Outer mould line and openings of a crew capsule, shared by the simulation part (bounds, seats, hatch),
+ * the exterior model (which cuts the openings) and the cockpit interior (which frames them). ONE file per
+ * capsule under data/defs/visuals/shared/, owned by the lead; nobody else restates these numbers.
+ * All coordinates are in the capsule part frame (+Y nose, +X starboard, +Z dorsal), metres.
+ * Azimuth is measured about +Y from +Z (dorsal) toward +X (starboard), degrees.
+ */
+export interface CapsuleMouldLineDef {
+  /** Lathe profile of the outer surface about the Y axis as [radius, y] pairs, from the shield apex upward. */
+  profile: [number, number][];
+  heatShield: { maxDiameter: number; maxDiameterY: number; apexY: number; radiusOfCurvature: number; shoulderRadius: number };
+  /** Half-angle of the conical back shell from the Y axis, degrees, and its y range. */
+  cone: { halfAngleDeg: number; yBottom: number; yTop: number; radiusTop: number };
+  apexTunnel: { radius: number; yBottom: number; yTop: number };
+  /** Pressure-wall + insulation thickness measured normal to the mould line, and the cabin floor height. */
+  wallThickness: number;
+  cabinFloorY: number;
+  /** Openings on the cone: centre given by azimuth and y on the mould line; width is tangential, height along the slope. */
+  windows: { id: string; azimuthDeg: number; y: number; shape: 'rect' | 'round'; width: number; height: number; cornerRadius: number }[];
+  hatch: { azimuthDeg: number; y: number; width: number; height: number; cornerRadius: number; window: { radius: number } };
+  /** Eye points of the seats; must equal the seats of the capsule's `command` module. */
+  seats: { id: string; pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple }[];
+}
+
 /** Render/audio-facing description of a part. Owned by the vehicle model team; null until authored. */
 export interface PartVisualDef {
   /** Procedural mesh generator id registered in src/render/vehicle. */
@@ -462,6 +486,42 @@ export type ScenarioStart =
   | { kind: 'state'; bodyId: BodyId; r: Vec3Tuple; v: Vec3Tuple; attitude?: 'prograde' | 'retrograde' | 'radialOut' };
 
 /**
+ * Generic, mission-independent milestone triggers. The simulation evaluates them against the ACTIVE vessel
+ * with one generic evaluator; it has no knowledge of any particular mission. A new mission is a scenario
+ * file listing rules; a new kind of trigger is a new member here plus its evaluator.
+ */
+export type MilestoneTrigger =
+  /** The vessel leaves the 'prelaunch' situation (launch clamps released). */
+  | { kind: 'liftoff' }
+  /** Dynamic pressure has passed its maximum during the first ascent (recorded with the peak value). */
+  | { kind: 'maxQ' }
+  /** Stage-stack entry `stageIndex` (0-based) has fired. */
+  | { kind: 'stageFired'; stageIndex: number }
+  /** Engines off, on rails or coasting, in a closed orbit about `bodyId` within the given bounds. */
+  | { kind: 'orbit'; bodyId: BodyId; minPeriapsisAltitude: number; maxApoapsisAltitude?: number; maxEccentricity?: number }
+  /** Engines off and the node-free predicted trajectory enters the SOI of `bodyId`. */
+  | { kind: 'encounterPredicted'; bodyId: BodyId }
+  | { kind: 'soiEnter'; bodyId: BodyId }
+  | { kind: 'soiExit'; bodyId: BodyId }
+  /** At rest on `bodyId` (landed or splashed) for `settleTime` seconds after first contact. */
+  | { kind: 'touchdown'; bodyId: BodyId; surface: 'land' | 'water' | 'any'; settleTime: number }
+  /** Was landed on `bodyId` and has climbed above `minAltitude` radar altitude under thrust. */
+  | { kind: 'liftoffFromSurface'; bodyId: BodyId; minAltitude: number }
+  /** Engines off and the predicted trajectory has a vacuum periapsis about `bodyId` within the band. */
+  | { kind: 'predictedPeriapsis'; bodyId: BodyId; minAltitude: number; maxAltitude: number }
+  /** Altitude above the reference radius of `bodyId` crossed in the given direction. */
+  | { kind: 'altitudeCrossing'; bodyId: BodyId; altitude: number; direction: 'ascending' | 'descending' }
+  | { kind: 'chuteDeployed'; mode: 'drogue' | 'main' };
+
+export interface MilestoneRuleDef {
+  /** Free-form id recorded in MilestoneRecord.id, unique within the scenario. */
+  id: string;
+  trigger: MilestoneTrigger;
+  /** Ids that must already be recorded before this rule is armed (default: none). Each rule fires once. */
+  after?: string[];
+}
+
+/**
  * A scenario places a vehicle in the world. Only `start.kind === 'pad'` with `stagesAlreadyFired === 0`
  * is a valid basis for the mission acceptance run; the other start kinds exist for training scenarios,
  * labs and visual QA and are reported in SimSnapshot.scenario so tests can tell them apart.
@@ -477,7 +537,10 @@ export interface ScenarioDef {
   /** Number of stage-stack entries considered already fired (their dropped parts are not spawned). */
   stagesAlreadyFired: number;
   target: BodyId | null;
+  /** Landing target: becomes the SurfaceTarget of kind 'landing' (HUD, map, landingTarget readout). */
   suggestedLanding: { bodyId: BodyId; latDeg: number; lonDeg: number; name: string } | null;
+  /** Milestone rules, evaluated generically by the simulation (may be empty). */
+  milestones: MilestoneRuleDef[];
 }
 
 // ----------------------------------------------------------------------------------------------- library
@@ -492,6 +555,14 @@ export interface DefLibrary {
   parts: Record<PartDefId, PartDef>;
   vehicles: Record<VehicleId, VehicleDef>;
   scenarios: Record<ScenarioId, ScenarioDef>;
+  /**
+   * Every JSON file under the section directories `audio/` and `visuals/` (with $refs resolved), keyed by
+   * its path relative to data/defs without the extension, e.g. 'audio/engines', 'visuals/plumes',
+   * 'visuals/cockpits/kestrel', 'visuals/shared/kestrel-mouldline'. This is how presentation packages get
+   * their own data: read with getSection()/listSections() from src/core/defs/loader.ts and validate there.
+   * Nobody fetches /defs/... on their own.
+   */
+  sections: Record<string, unknown>;
 }
 
 /** Warp table shared by sim, UI and pilot. Indices 0..3 are physics warp; 4.. are rails warp. */

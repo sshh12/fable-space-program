@@ -21,7 +21,9 @@
     "e2e:perf": "playwright test --project=perf",
     "e2e:mission": "playwright test --project=mission",
     "golden": "tsx tools/dev/gen-golden.ts",
-    "check": "npm run typecheck && npm run test && npm run test:py && npm run build && npm run e2e"
+    "check:secrets": "node tools/dev/check-secrets.mjs",
+    "check:boundaries": "vitest run tools/dev/boundaries.test.ts",
+    "check": "npm run check:secrets && npm run typecheck && npm run test && npm run test:py && npm run build && npm run check:secrets && npm run e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

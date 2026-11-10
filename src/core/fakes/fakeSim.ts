@@ -23,9 +23,10 @@ import type {
   SimEvent,
   SimSnapshot,
   StageInfo,
+  SurfaceTarget,
   VesselSnapshot,
 } from '../contracts/sim';
-import { latLonToDir } from '../geo/cubeSphere';
+import { dirToLatLon, latLonToDir } from '../geo/cubeSphere';
 import { conicApsides, conicFromState, conicPosition, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '../math/conic';
 import { quat, type Quat } from '../math/quat';
 import { clamp, DEG, G0, TWO_PI } from '../math/scalar';
@@ -81,6 +82,7 @@ export class FakeSim implements Sim {
   readonly scenario: ScenarioDef;
   readonly commands: PlayerCommands;
   readonly debug: SimDebug;
+  readonly ready: Promise<void> = Promise.resolve();
   cheatCounter = 0;
 
   private ut: number;
@@ -125,7 +127,7 @@ export class FakeSim implements Sim {
       lunarOrbit: { bodyId: moon, kind: 'orbit', altitude: 100e3, inclinationDeg: 4 },
       lunarSurface: { bodyId: moon, kind: 'surface', altitude: 4, latDeg: 0.674, lonDeg: 23.473 },
       reentry: { bodyId: root, kind: 'orbit', altitude: 68e3, inclinationDeg: 21, plasma: 0.85 },
-      chutes: { bodyId: root, kind: 'surface', altitude: 2500, latDeg: 18, lonDeg: -168, climbRate: -8, chutes: true },
+      chutes: { bodyId: root, kind: 'surface', altitude: 2500, latDeg: 8, lonDeg: -146, climbRate: -8, chutes: true },
     };
     this.spec = specs[opts.scene];
     this.siteDir = latLonToDir((this.spec.latDeg ?? 0) * DEG, (this.spec.lonDeg ?? 0) * DEG);
@@ -142,7 +144,8 @@ export class FakeSim implements Sim {
       start: { kind: 'state', bodyId: this.spec.bodyId, r: [0, 0, 0], v: [0, 0, 0] },
       stagesAlreadyFired: 0,
       target: null,
-      suggestedLanding: null,
+      suggestedLanding: this.spec.bodyId === moon && moon !== root ? { bodyId: moon, latDeg: 0.674, lonDeg: 23.473, name: 'Tranquility Base' } : null,
+      milestones: [],
     };
     this.q = this.initialAttitude();
     const ok = (): CommandResult => ({ ok: true });
@@ -209,6 +212,10 @@ export class FakeSim implements Sim {
 
   get nextEventUt(): number {
     return this.nodes[0]?.ut ?? Infinity;
+  }
+
+  terrainPending(): Promise<void> | null {
+    return null;
   }
 
   setControls(inputs: ControlInputs): void {
@@ -451,6 +458,50 @@ export class FakeSim implements Sim {
     return dt;
   }
 
+  /** Scenario landing target, the site and its recovery zones as SurfaceTargets. */
+  private surfaceTargets(): SurfaceTarget[] {
+    const out: SurfaceTarget[] = [];
+    const l = this.scenario.suggestedLanding;
+    if (l) out.push({ id: 'landing', name: l.name, bodyId: l.bodyId, kind: 'landing', latitude: l.latDeg * DEG, longitude: l.lonDeg * DEG, radius: 0 });
+    const site = this.defs.sites[this.scenario.site];
+    if (site) {
+      out.push({ id: `site:${site.id}`, name: site.name, bodyId: site.bodyId, kind: 'site', latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, radius: site.pad.flatRadius });
+      site.recoveryZones.forEach((z, i) =>
+        out.push({ id: `recovery:${i}`, name: z.name, bodyId: site.bodyId, kind: 'recovery', latitude: z.latDeg * DEG, longitude: z.lonDeg * DEG, radius: z.radiusKm * 1000 }),
+      );
+    }
+    return out;
+  }
+
+  /** Range/bearing from the sub-point to the nearest landing or recovery target on the scene body (no prediction: fake). */
+  private landingTargetReadout(targets: SurfaceTarget[], subDir: Vec3, groundTrackDir: Vec3 | null, radius: number): Readouts['landingTarget'] {
+    let best: { t: SurfaceTarget; angle: number; dir: Vec3 } | null = null;
+    for (const t of targets) {
+      if (t.bodyId !== this.spec.bodyId || t.kind === 'site') continue;
+      const dir = latLonToDir(t.latitude, t.longitude);
+      const angle = v3.angle(subDir, dir);
+      if (!best || angle < best.angle) best = { t, angle, dir };
+    }
+    if (!best) return null;
+    // Local east/north at the sub-point in the body-fixed frame.
+    let east = v3.cross(v3.unitZ(), subDir);
+    east = v3.len(east) < 1e-9 ? v3.unitY() : v3.normalize(east);
+    const north = v3.cross(subDir, east);
+    const toTarget = v3.reject(best.dir, subDir);
+    const hasDir = v3.len(toTarget) > 1e-12;
+    const tHat = hasDir ? v3.normalize(toTarget) : north;
+    const bearingDeg = ((Math.atan2(v3.dot(tHat, east), v3.dot(tHat, north)) / DEG) + 360) % 360;
+    const distance = best.angle * radius;
+    let downRange = 0;
+    let crossRange = 0;
+    if (groundTrackDir && hasDir) {
+      const right = v3.cross(groundTrackDir, subDir);
+      downRange = distance * v3.dot(tHat, groundTrackDir);
+      crossRange = distance * v3.dot(tHat, right);
+    }
+    return { targetId: best.t.id, distance, bearingDeg, downRange, crossRange, predicted: null };
+  }
+
   private buildParts(pressure: number): PartSnapshot[] {
     return this.parts.map((p) => {
       const def = this.defs.parts[p.def];
@@ -565,15 +616,18 @@ export class FakeSim implements Sim {
 
     const verticalSpeed = v3.dot(vSurf, u);
     const gLocal = body.mu / v3.lenSq(st.r);
+    const qFixedToRoot = this.bodyOrientation(body.id, ut).q;
+    const subDir = quat.rotateInv(qFixedToRoot, u);
+    const subLatLon = dirToLatLon(subDir);
+    const vHorizontal = v3.reject(vSurf, u);
+    const groundTrackDir = v3.len(vHorizontal) > 0.1 ? quat.rotateInv(qFixedToRoot, v3.normalize(vHorizontal)) : null;
+    const surfaceTargets = this.surfaceTargets();
     const readouts: Readouts = {
       met: Math.max(0, ut - this.ut0),
       altitudeAsl: st.altitude,
       altitudeRadar: st.altitude,
-      latitude: Math.asin(clamp(quat.rotateInv(this.bodyOrientation(body.id, ut).q, u).z, -1, 1)),
-      longitude: (() => {
-        const f = quat.rotateInv(this.bodyOrientation(body.id, ut).q, u);
-        return Math.atan2(f.y, f.x);
-      })(),
+      latitude: subLatLon.lat,
+      longitude: subLatLon.lon,
       speedOrbital: v3.len(st.v),
       speedSurface: speedSurf,
       verticalSpeed,
@@ -615,6 +669,7 @@ export class FakeSim implements Sim {
       nodeBurn: node ? { nodeId: node.id, dvRemaining: v3.scale(maneuverDir ?? v3.unitX(), dvMag), dvRemainingMag: dvMag, burnTime: dvMag / 10, timeToBurnStart: node.ut - ut - dvMag / 20, timeToNode: node.ut - ut, insufficientDeltaV: false } : null,
       liftVectorUp: this.spec.plasma !== undefined ? v3.dot(dorsal, u) > 0 : null,
       tiltFromVertical: v3.angle(nose, u),
+      landingTarget: this.landingTargetReadout(surfaceTargets, subDir, groundTrackDir, body.radius),
     };
 
     const stages: StageInfo[] = this.stageLabels.map((label, i) => ({
@@ -670,9 +725,12 @@ export class FakeSim implements Sim {
     const events = this.events.slice();
     return {
       ut,
+      simUt: ut,
       tick: this.tick,
       warp: { index: this.warpIndex, factor: WARP_LEVELS[this.warpIndex]!, maxIndex: this.maxWarpIndex(), limitedBy: this.needsIntegration ? 'under acceleration or in atmosphere' : null, onRails: !this.needsIntegration },
       scenario: { id: this.scenario.id, startKind: this.scenario.start.kind, stagesAlreadyFired: 0 },
+      surfaceTargets,
+      terrain: { complete: true, pending: false, incompleteQueries: 0 },
       bodies,
       starId: star?.id ?? root,
       vessels: [vessel],

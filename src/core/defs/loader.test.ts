@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fsDefSource } from './fsSource';
-import { DefError, loadDefs, resolveRefs, type DefSource } from './loader';
+import type { CapsuleMouldLineDef } from '../contracts/defs';
+import { DefError, getSection, listSections, loadDefs, resolveRefs, type DefSource } from './loader';
 
 function memorySource(files: Record<string, unknown>): DefSource {
   return {
@@ -46,6 +47,72 @@ describe('definition loader', () => {
     const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
     const child = { id: 'b', parent: 'zzz', mu: 1, radius: 1, orbit: { kind: 'sunLowPrecision' } };
     await expect(loadDefs(memorySource({ 'bodies/a.json': root, 'bodies/b.json': child }))).rejects.toThrow(/unknown parent/);
+  });
+
+  it('exposes audio/ and visuals/ files as sections with refs resolved', async () => {
+    const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
+    const lib = await loadDefs(
+      memorySource({
+        'bodies/a.json': root,
+        'visuals/plumes.json': { 'plume.x': { color: [1, 2, 3], shared: { $ref: 'shared/common.json' } } },
+        'visuals/shared/common.json': { k: 7 },
+        'audio/engines.json': { 'engine.x': { gain: 0.5 } },
+        'regions/r.json': { ignored: true },
+      }),
+    );
+    expect(Object.keys(lib.sections).sort()).toEqual(['audio/engines', 'visuals/plumes', 'visuals/shared/common']);
+    expect(getSection<Record<string, { shared: { k: number } }>>(lib, 'visuals/plumes')['plume.x']!.shared.k).toBe(7);
+    expect(Object.keys(listSections(lib, 'visuals/shared/'))).toEqual(['common']);
+    expect(() => getSection(lib, 'visuals/nope')).toThrow(DefError);
+  });
+
+  it('ships one shared capsule mould line whose numbers are self-consistent', async () => {
+    const lib = await loadDefs(fsDefSource());
+    const m = getSection<CapsuleMouldLineDef>(lib, 'visuals/shared/kestrel-mouldline');
+    expect(m.heatShield.maxDiameter).toBe(4.0);
+    // the cone joins the shield shoulder and the apex tunnel at the stated half-angle
+    const slope = (m.heatShield.maxDiameter / 2 - m.cone.radiusTop) / (m.cone.yTop - m.cone.yBottom);
+    expect((Math.atan(slope) * 180) / Math.PI).toBeCloseTo(m.cone.halfAngleDeg, 1);
+    expect(m.apexTunnel.radius).toBe(m.cone.radiusTop);
+    expect(m.apexTunnel.yBottom).toBe(m.cone.yTop);
+    // the profile is a monotonic climb in y from the shield apex to the top of the tunnel
+    for (let i = 1; i < m.profile.length; i++) expect(m.profile[i]![1]).toBeGreaterThanOrEqual(m.profile[i - 1]![1]);
+    expect(m.profile[0]).toEqual([0, m.heatShield.apexY]);
+    expect(m.profile.at(-1)![1]).toBe(m.apexTunnel.yTop);
+    // every seat eye point is inside the pressure wall, with orthonormal look/up directions
+    const innerRadius = (y: number): number => m.heatShield.maxDiameter / 2 - slope * (y - m.cone.yBottom) - m.wallThickness / Math.cos((m.cone.halfAngleDeg * Math.PI) / 180);
+    for (const s of m.seats) {
+      expect(Math.hypot(s.pos[0], s.pos[2])).toBeLessThan(innerRadius(s.pos[1]) - 0.25);
+      expect(Math.hypot(...s.lookDir)).toBeCloseTo(1, 2);
+      expect(Math.hypot(...s.upDir)).toBeCloseTo(1, 2);
+      expect(s.lookDir[0] * s.upDir[0] + s.lookDir[1] * s.upDir[1] + s.lookDir[2] * s.upDir[2]).toBeCloseTo(0, 6);
+    }
+    // openings lie on the cone and do not overlap in azimuth at their height
+    for (const w of [...m.windows, m.hatch]) {
+      expect(w.y).toBeGreaterThan(m.cone.yBottom + 0.3);
+      expect(w.y).toBeLessThan(m.cone.yTop - 0.3);
+    }
+    expect(new Set(m.windows.map((w) => w.id)).size).toBe(m.windows.length);
+  });
+
+  it('validates scenario milestone rules', async () => {
+    const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
+    const base = { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null };
+    const files = (milestones: unknown): Record<string, unknown> => ({
+      'bodies/a.json': root,
+      'sites/k.json': { id: 'k', bodyId: 'a' },
+      'vehicles/v.json': { id: 'v', parts: [] },
+      'scenarios/s.json': { ...base, milestones },
+    });
+    const good = [
+      { id: 'UP', trigger: { kind: 'liftoff' } },
+      { id: 'ORBIT', trigger: { kind: 'orbit', bodyId: 'a', minPeriapsisAltitude: 1 }, after: ['UP'] },
+    ];
+    expect((await loadDefs(memorySource(files(good)))).scenarios['s']!.milestones).toHaveLength(2);
+    await expect(loadDefs(memorySource(files(undefined)))).rejects.toThrow(/milestones/);
+    await expect(loadDefs(memorySource(files([good[0], good[0]])))).rejects.toThrow(/duplicate milestone/);
+    await expect(loadDefs(memorySource(files([{ id: 'X', trigger: { kind: 'soiEnter', bodyId: 'zzz' } }])))).rejects.toThrow(/unknown body/);
+    await expect(loadDefs(memorySource(files([good[1], good[0]])))).rejects.toThrow(/prerequisite/);
   });
 
   it('ignores dotted section files as definitions', async () => {

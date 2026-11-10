@@ -3,13 +3,15 @@
  */
 import type { Vec3 } from '../math/vec3';
 import type { DefLibrary } from './defs';
-import type { ViewMode } from './render';
+import type { ViewKind, ViewMode } from './render';
 import type { SimSnapshot } from './sim';
 
 export type AudioBusName = 'engines' | 'aero' | 'reentry' | 'events' | 'cabin' | 'ui' | 'master';
 
 export interface AudioListener {
   mode: ViewMode;
+  /** Branch on this, not on `mode`: 'interior' = cabin mix, 'external' and 'map' = outside listener. */
+  kind: ViewKind;
   /** Vessel the listener is inside (cockpit) or null for an external camera. */
   insideVesselId: string | null;
   /** Listener position in the active vessel's VES frame, m (external cameras: where the chase camera is). */
@@ -42,7 +44,10 @@ export interface AudioProbe {
 }
 
 export interface AudioEngine {
-  /** Load and decode assets, build the graph. Safe to call before a user gesture (context starts suspended). */
+  /**
+   * Load and decode assets, build the graph. Sound definitions come from defs.sections ('audio/...').
+   * Safe to call before a user gesture (context starts suspended).
+   */
   init(defs: DefLibrary, assetsUrl: string): Promise<void>;
   /** Resume the AudioContext; call from the first real user gesture. */
   resume(): Promise<void>;

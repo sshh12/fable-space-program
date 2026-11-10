@@ -4,6 +4,7 @@
  * this API. Nothing here can set vehicle state directly.
  */
 import type { Vec3 } from '../math/vec3';
+import type { ViewKind } from './render';
 import type { ManeuverNode, SimSnapshot } from './sim';
 
 /** Continuous inputs, latched by the sim until replaced. Sign conventions are in the vessel frame. */
@@ -127,15 +128,52 @@ export type ButtonAction =
   | 'prevVessel'
   | 'toggleHud'
   | 'pause'
+  /** Cycle the page of cockpit multi-function display 0 (left), 1 (centre) or 2 (right). */
+  | `mfdCycle:${0 | 1 | 2}`
   | `sas:${SasMode}`;
+
+/** Pointer state for one frame, in CSS pixels relative to the canvas. Shared by camera rigs and the map view. */
+export interface PointerState {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  /** Bit mask of held buttons (1 = primary, 2 = secondary, 4 = middle). */
+  buttons: number;
+  /** Edges since the previous frame for the primary button, and a completed double click. */
+  pressed: boolean;
+  released: boolean;
+  doubleClick: boolean;
+  /** Wheel steps since the previous frame, normalised to sign (+1 = away from the user). */
+  wheel: number;
+  /** Modifier keys held (pointer gestures only; they are never bound to browser-reserved chords). */
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  /** True while the pointer is over an interactive HUD element (the scene must ignore it). */
+  overUi: boolean;
+}
 
 /** One frame of device-independent input, produced by src/input from DOM events. */
 export interface InputFrame {
   axes: Readonly<Record<AxisAction, number>>;
   /** Actions whose key went down since the previous frame. */
   pressed: ReadonlySet<ButtonAction>;
-  /** Pointer state in CSS pixels relative to the canvas, for map/camera interaction. */
-  pointer: { x: number; y: number; dx: number; dy: number; buttons: number; wheel: number; overUi: boolean };
+  pointer: PointerState;
+  /** True while fullscreen keyboard lock is active (browser shortcuts such as Ctrl+W reach the page). */
+  keyboardLocked: boolean;
+}
+
+/** What the controller needs to know about the rest of the frame. */
+export interface ControlContext {
+  /** Kind of the active view. */
+  view: ViewKind;
+  /**
+   * True while the map view owns the pointer (hovering a handle, dragging, typing in the node panel).
+   * While set, the controller ignores the throttleRate axis: the Shift/Ctrl drag modifiers of the node
+   * editor must never move the throttle.
+   */
+  pointerCaptured: boolean;
 }
 
 /**
@@ -145,8 +183,8 @@ export interface InputFrame {
  */
 export interface ActiveController {
   readonly kind: string;
-  /** Called once per rendered frame before the sim advances. */
-  update(input: InputFrame, snapshot: SimSnapshot, commands: PlayerCommands, realDt: number): ControlInputs;
+  /** Called once per rendered frame before the sim advances (after the map view has seen the pointer). */
+  update(input: InputFrame, snapshot: SimSnapshot, commands: PlayerCommands, realDt: number, ctx: ControlContext): ControlInputs;
 }
 
 /**

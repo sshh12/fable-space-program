@@ -5,8 +5,12 @@
  * Layout (paths relative to data/defs):
  *   bodies/*.json  sites/*.json  parts/*.json  vehicles/*.json  scenarios/*.json   one definition per file
  *   resources.json                                                                  array of ResourceDef
+ *   audio/**.json  visuals/**.json                                                  sections (DefLibrary.sections)
  * Only files whose name has no extra dot segment are definitions ("earth.json" yes, "earth.atmosphere.json"
  * and "ka-lae-lc1.location.json" no): dotted files are sections pulled in through { "$ref": ... }.
+ * Every JSON file under the section directories is additionally exposed, with its $refs resolved, in
+ * DefLibrary.sections under its path without the extension ("visuals/plumes", "audio/engines", ...).
+ * `regions/` (bake manifests) is not loaded: only the Python bake tools read it.
  */
 import type {
   BodyDef,
@@ -120,10 +124,43 @@ export function validateLibrary(lib: DefLibrary): void {
     }
   }
   for (const s of Object.values(lib.scenarios)) {
-    if (!lib.vehicles[s.vehicle]) throw new DefError(`scenarios/${s.id}.json`, `unknown vehicle "${s.vehicle}"`);
-    if (!lib.sites[s.site]) throw new DefError(`scenarios/${s.id}.json`, `unknown site "${s.site}"`);
-    if (s.target !== null && !lib.bodies[s.target]) throw new DefError(`scenarios/${s.id}.json`, `unknown target "${s.target}"`);
+    const file = `scenarios/${s.id}.json`;
+    if (!lib.vehicles[s.vehicle]) throw new DefError(file, `unknown vehicle "${s.vehicle}"`);
+    if (!lib.sites[s.site]) throw new DefError(file, `unknown site "${s.site}"`);
+    if (s.target !== null && !lib.bodies[s.target]) throw new DefError(file, `unknown target "${s.target}"`);
+    if (s.suggestedLanding && !lib.bodies[s.suggestedLanding.bodyId]) throw new DefError(file, `unknown landing body "${s.suggestedLanding.bodyId}"`);
+    if (!Array.isArray(s.milestones)) throw new DefError(file, '"milestones" must be an array (it may be empty)');
+    const seen = new Set<string>();
+    for (const m of s.milestones) {
+      if (typeof m.id !== 'string' || m.id === '') throw new DefError(file, 'every milestone needs a non-empty string id');
+      if (seen.has(m.id)) throw new DefError(file, `duplicate milestone id "${m.id}"`);
+      if (!isObject(m.trigger) || typeof m.trigger.kind !== 'string') throw new DefError(file, `milestone "${m.id}" needs a trigger with a kind`);
+      const bodyId = (m.trigger as { bodyId?: unknown }).bodyId;
+      if (bodyId !== undefined && (typeof bodyId !== 'string' || !lib.bodies[bodyId])) throw new DefError(file, `milestone "${m.id}" refers to unknown body "${String(bodyId)}"`);
+      for (const dep of m.after ?? []) {
+        if (!seen.has(dep)) throw new DefError(file, `milestone "${m.id}" must be listed after its prerequisite "${dep}"`);
+      }
+      seen.add(m.id);
+    }
   }
+}
+
+/** Directories whose JSON files are exposed as DefLibrary.sections. */
+export const SECTION_DIRS = ['audio', 'visuals'] as const;
+
+/** A section by key (path under data/defs without ".json"); throws a DefError naming the file when absent. */
+export function getSection<T>(lib: DefLibrary, key: string): T {
+  if (!(key in lib.sections)) throw new DefError(`${key}.json`, 'section file not found under data/defs');
+  return lib.sections[key] as T;
+}
+
+/** All sections whose key starts with `prefix` (e.g. "visuals/cockpits/"), keyed by the remainder of the key. */
+export function listSections<T>(lib: DefLibrary, prefix: string): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const key of Object.keys(lib.sections).sort()) {
+    if (key.startsWith(prefix)) out[key.slice(prefix.length)] = lib.sections[key] as T;
+  }
+  return out;
 }
 
 export async function loadDefs(source: DefSource): Promise<DefLibrary> {
@@ -139,8 +176,12 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
     if (!Array.isArray(resList)) throw new DefError('resources.json', 'must be an array');
     for (const r of resList as ResourceDef[]) resources[r.id] = r;
   }
+  const sections: Record<string, unknown> = {};
+  for (const file of files.filter((f) => SECTION_DIRS.some((d) => f.startsWith(`${d}/`)) && f.endsWith('.json')).sort()) {
+    sections[file.slice(0, -5)] = await resolveRefs(await source.read(file), file, source);
+  }
   const rootBodyId = Object.values(bodies).find((b) => b.parent === null)?.id ?? '';
-  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, scenarios };
+  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, scenarios, sections };
   validateLibrary(lib);
   return lib;
 }

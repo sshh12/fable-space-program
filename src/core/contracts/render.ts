@@ -16,7 +16,15 @@ import type { Vec3, Vec3Tuple } from '../math/vec3';
 import type { DefLibrary } from './defs';
 import type { SimSnapshot } from './sim';
 
-export type ViewMode = 'cockpit' | 'chase' | 'map';
+/**
+ * Name of a camera rig. The three built-in views plus any rig added later (EVA first/third person...).
+ * Consumers must NOT switch exhaustively on this: they branch on `ViewKind` and treat unknown modes by
+ * their kind.
+ */
+export type ViewMode = 'cockpit' | 'chase' | 'map' | (string & {});
+
+/** What a view is for presentation purposes: inside a vessel, an external camera, or the map. */
+export type ViewKind = 'interior' | 'external' | 'map';
 
 export const RENDER_FORMATS = {
   /** Pre-exposed scene radiance. */
@@ -26,16 +34,37 @@ export const RENDER_FORMATS = {
   gbufferAlbedo: 'rgba8unorm-srgb',
   /** G-buffer RT1: octahedral-encoded world (ROOT-axes) normal. */
   gbufferNormal: 'rg16float',
-  /** G-buffer RT2: r = perceptual roughness, g = metallic, b = material id / 255, a = material parameter. */
+  /** G-buffer RT2: r = perceptual roughness, g = metallic, b = material id / 255, a = material parameter (see MATERIAL_PARAM). */
   gbufferMaterial: 'rgba8unorm',
   /** G-buffer RT3: screen-space velocity in UV units (current - previous). */
   gbufferVelocity: 'rg16float',
+  /**
+   * G-buffer RT4, used by MATERIAL_ID.standard (every other material writes 0, 0.5, 0, 0):
+   * r = tangent angle / 2 pi about the normal, measured in the canonical tangent frame of the gbuffer chunk
+   * (`tangentFrame(n)`), g = anisotropy * 0.5 + 0.5, b = clearcoat weight, a = clearcoat perceptual roughness.
+   */
+  gbufferExtra: 'rgba8unorm',
   /** Sun shadow cascades: standard (non-reversed) orthographic depth. */
   shadow: 'depth32float',
 } as const satisfies Record<string, GPUTextureFormat>;
 
 /** Near plane distance in metres (cockpit geometry is centimetres from the eye). */
 export const NEAR_PLANE = 0.05;
+
+/**
+ * Largest value any feature may write to the pre-exposed HDR target. rgba16float overflows at 65504, and an
+ * Inf turns into NaN in bloom and TAA history. Every HDR write goes through the frame chunk's
+ * `writeHdr(rgb)` (min with this value, NaN -> 0); the sun disc and mirror glints simply saturate here.
+ */
+export const HDR_MAX = 60000;
+
+/**
+ * Water depth carried in RT2.a for MATERIAL_ID.water: encoded = sqrt(saturate(depth / WATER_DEPTH_ENCODE_MAX)).
+ * Gives 3 mm steps at the shoreline and 1.6 m steps at 200 m (deeper water is optically identical).
+ * WGSL helpers `encodeWaterDepth` / `decodeWaterDepth` live in the gbuffer chunk; the writer (terrain) and
+ * the readers (default and overridden brdf_water) must use them.
+ */
+export const WATER_DEPTH_ENCODE_MAX = 200;
 
 /** Values written to G-buffer RT2.b (times 1/255). */
 export const MATERIAL_ID = {
@@ -48,10 +77,22 @@ export const MATERIAL_ID = {
 } as const;
 export type MaterialIdName = keyof typeof MATERIAL_ID;
 
+/** Meaning of the single material parameter RT2.a for each material id. */
+export const MATERIAL_PARAM: Readonly<Record<MaterialIdName, string>> = {
+  standard: 'wetness 0..1 (darkens and smooths; 0 for dry hardware)',
+  terrain: 'wetness 0..1 (shoreline, deluge)',
+  regolith: 'crater freshness / maturity 0..1 (drives the opposition-surge parameters)',
+  water: 'encoded water depth (WATER_DEPTH_ENCODE_MAX)',
+  cloth: 'thin-surface translucency 0..1 (parachute fabric back-lighting)',
+  display: 'display brightness 0..1 (the emitted colour itself is written to the HDR emissive target)',
+};
+
 // ------------------------------------------------------------------------------------------------ camera
 
 export interface CameraState {
   mode: ViewMode;
+  /** How consumers treat this view (audio mix, exposure metering, HUD layout). */
+  kind: ViewKind;
   /** Eye position in the ROOT frame, metres, float64. */
   positionRoot: Vec3;
   /** View space -> ROOT orientation. */
@@ -90,7 +131,7 @@ export interface CameraInput {
   yaw: number;
   pitch: number;
   zoom: number;
-  /** Map view: request to focus another body/vessel. */
+  /** Map view: request to focus another body/vessel (from MapUpdateResult.focus or a UI control). */
   focusBodyId?: string | null;
   focusVesselId?: string | null;
 }
@@ -124,11 +165,15 @@ export interface PbrMaterialDef {
   roughness: number;
   /** Emitted luminance, cd/m^2 (before exposure). */
   emissive?: Vec3Tuple;
+  /** Clearcoat weight and roughness (shading 'standard' only; stored in G-buffer RT4.ba). */
   clearcoat?: number;
   clearcoatRoughness?: number;
-  /** -1..1 anisotropy along the tangent (brushed metal, MLI foil). */
+  /**
+   * -1..1 anisotropy along the mesh tangent (brushed metal, MLI foil); shading 'standard' only. The tangent
+   * direction is written to G-buffer RT4.r, so anisotropic GGX is evaluated in the deferred pass.
+   */
   anisotropy?: number;
-  /** 0..1 thin-surface translucency (parachute fabric). */
+  /** 0..1 thin-surface translucency (shading 'cloth' only; stored in RT2.a). */
   translucency?: number;
   doubleSided?: boolean;
   /** Texture URLs (public/assets/**) or ids of procedural textures registered with the render core. */
@@ -157,10 +202,28 @@ export interface SharedResourceMap {
   'atmosphere.skyViewLut': GPUTextureView;
   /** 64x16 rgba16float hemispherical sky illuminance (mu_s, r). */
   'atmosphere.skyIrradianceLut': GPUTextureView;
+  /**
+   * Camera-frustum aerial-perspective volume, 32 x 32 x 32 rgba16float: rgb = in-scattered luminance between
+   * the eye and the froxel (cd/m^2, NOT pre-exposed), a = mean transmittance. Slice <-> distance mapping is
+   * `aerialSliceToDistance` / `aerialDistanceToSlice` in the atmosphere_common chunk. Default: rgb 0, a 1.
+   * Everything drawn after the atmosphere composite (transparents) applies it through `applyAtmosphere()`.
+   */
+  'atmosphere.aerialPerspective': GPUTextureView;
   /** Orthographic cloud optical-depth map around the camera for near-field cloud shadows. */
   'clouds.shadowMap': GPUTextureView;
   /** Global cloud coverage (equirect) for far-field shadows and the environment probe. */
   'clouds.coverageMap': GPUTextureView;
+  /**
+   * Result of this frame's cloud march at half render resolution, rgba16float: rgb = cloud radiance
+   * (pre-exposed, premultiplied), a = transmittance through the clouds. Default: rgb 0, a 1.
+   */
+  'clouds.screen': GPUTextureView;
+  /**
+   * Half-resolution r32float: transmittance-weighted mean distance from the eye to the cloud in front of
+   * each pixel, metres (3.0e38 where there is none, which is also the default). Transparents farther than
+   * this are attenuated by 'clouds.screen'.a inside `applyAtmosphere()`.
+   */
+  'clouds.depth': GPUTextureView;
   /** 64^2 x 6 rgba16float prefiltered environment cube at the active vessel (luminance, cd/m^2). */
   'env.probeCube': GPUTextureView;
   /** 9 x vec4 SH coefficients of the environment (illuminance), uniform buffer. */
@@ -168,15 +231,43 @@ export interface SharedResourceMap {
   /** Ocean FFT cascades: displacement and slope/Jacobian arrays. */
   'ocean.displacement': GPUTextureView;
   'ocean.derivatives': GPUTextureView;
+  /**
+   * Hand-over between the far (deferred, G-buffer) sea surface and the near forward wave surface.
+   * Uniform buffer, 16 bytes: i32 bodyIndex (index into the frame body list, -1 = no near field),
+   * f32 fadeStart, f32 fadeEnd (metres from the eye), f32 reserved. Default: bodyIndex -1, radii 0.
+   * Rules (ARCHITECTURE section 10.2): the far-water writer discards its sea-level sheet where the eye
+   * distance is below fadeStart; the forward pass draws out to fadeEnd with opacity 1 inside fadeStart
+   * falling to 0 at fadeEnd, and with displacement, refraction and shore foam already zero at fadeStart.
+   */
+  'ocean.nearField': GPUBuffer;
   /** 512^2 rgba8 navball render (also used by the cockpit instrument). */
   'ui.navball': GPUTextureView;
   /** Array texture of cockpit multi-function displays. */
   'ui.mfd': GPUTextureView;
-  /** Scene depth of the current frame at render resolution (reversed-Z). */
+  /**
+   * Sampleable COPIES of the reversed-Z depth attachment at render resolution (depth32float, bound as
+   * texture_depth_2d, read with textureLoad). The live depth attachment itself is never sampled.
+   *  - 'scene.depthOpaque': taken after the G-buffer pass (opaque geometry and the far water sheet; no
+   *    near-field waves). Valid from deferred lighting to the end of the frame. The ocean reads the seabed here.
+   *  - 'scene.depth': taken after drawWater (opaque + near water). Valid in compositeAtmosphere,
+   *    preTransparent and drawTransparent; in prepare/compute of the NEXT frame it still holds the previous frame.
+   *  - 'scene.depthHalf': half render resolution rg32float built from 'scene.depth': r = farthest (min) and
+   *    g = nearest (max) reversed-Z depth of each 2 x 2 block. For half-resolution volumetrics and the
+   *    core's depth-aware upsample. Same validity as 'scene.depth'.
+   */
+  'scene.depthOpaque': GPUTextureView;
   'scene.depth': GPUTextureView;
-  /** Scene colour copied before transparents (refraction source). */
+  'scene.depthHalf': GPUTextureView;
+  /**
+   * Copies of the pre-exposed HDR target (rgba16float, render resolution), made only when a registered
+   * feature lists the key in `RenderFeature.requires`:
+   *  - 'scene.colorCopy': after deferred lighting, before drawWater (the lit opaque scene: refraction source for water).
+   *  - 'scene.colorCopyTransparent': after preTransparent, before drawTransparent (everything except
+   *    transparents: refraction source for glass and heat shimmer).
+   */
   'scene.colorCopy': GPUTextureView;
-  /** Sun shadow cascade array + its uniform buffer (matrices, splits). */
+  'scene.colorCopyTransparent': GPUTextureView;
+  /** Sun shadow cascade array + its uniform buffer (per-frame world-to-shadow matrices, splits). */
   'shadow.cascades': GPUTextureView;
   'shadow.uniforms': GPUBuffer;
 }
@@ -198,7 +289,12 @@ export interface ShaderLibrary {
 }
 
 export interface PerfRecorder {
-  /** timestampWrites for a pass named `name` (undefined when timestamp-query is unavailable). */
+  /**
+   * timestampWrites for a pass named `name` (undefined when timestamp-query is unavailable). Passes that a
+   * feature creates itself must be named `<featureId>.<pass>`. Draws a feature makes inside a core-owned
+   * pass are attributed by the core (see RENDER_API.md), so PerfSnapshot.features is a complete
+   * per-feature breakdown.
+   */
   gpuPass(name: string): GPURenderPassTimestampWrites | GPUComputePassTimestampWrites | undefined;
   cpuBegin(name: string): void;
   cpuEnd(name: string): void;
@@ -252,14 +348,31 @@ export interface LocalLight {
   range: number;
 }
 
+/**
+ * One sun shadow cascade. Cascades are anchored and texel-snapped in a MOVING frame: the body-fixed frame
+ * of the body they cover (the ground never moves in it, although it moves 0.4-1.7 km/s in ROOT axes), or
+ * the vessel frame for the cockpit cascade. The render core re-derives `viewProj` EVERY frame in float64
+ * as captureViewProj x (motion of the anchor frame since capture), so a cascade that is re-rendered only
+ * every few frames still lines up with the ground it was rendered from.
+ */
 export interface ShadowCascadeView {
   index: number;
-  /** World(camera-relative, ROOT axes) -> shadow clip. */
+  /** World (camera-relative, ROOT axes) -> shadow clip, valid for THIS frame. */
   viewProj: Mat4;
   /** World-space size of one shadow texel, m. */
   texelSize: number;
-  /** Far distance of this cascade from the camera, m. */
+  /** Far distance of this cascade from the camera, m (Infinity for a cascade fitted to a whole distant body). */
   farDistance: number;
+  /** Frame the cascade is anchored to. */
+  anchor: { kind: 'body' | 'vessel'; id: string };
+  /**
+   * True when this cascade is re-rendered every frame. Moving casters (vessels, debris, canopies, anything
+   * not fixed to the anchor body) draw ONLY into cascades with everyFrame = true; staggered cascades hold
+   * body-fixed casters (terrain, rocks, site structures) exclusively.
+   */
+  everyFrame: boolean;
+  /** 'camera': fitted to a slice of the view frustum. 'body': fitted to the sunlit disc of a whole distant body. */
+  fit: 'camera' | 'body';
 }
 
 export interface FrameContext {
@@ -289,9 +402,16 @@ export interface FrameContext {
   vesselPose(id: string): VesselPose | undefined;
   /** The star as seen from the camera: unit direction (ROOT axes), illuminance (lux), colour, angular radius. */
   sun: { dirRoot: Vec3; illuminance: number; color: Vec3Tuple; angularRadius: number; bodyId: string };
-  /** Multiply photometric radiance by this before writing to the HDR target. */
+  /** Multiply photometric radiance by this before writing to the HDR target (then clamp with writeHdr). */
   exposure: number;
   ev100: number;
+  /**
+   * GPU load governor, 0.5..1. The core lowers it when the measured GPU frame time approaches the budget
+   * (ARCHITECTURE section 17) and raises it back with hysteresis. Features with scalable sample counts
+   * (cloud and atmosphere march steps, plume and smoke march steps, particle counts) multiply them by this
+   * BEFORE the core resorts to lowering the render resolution. Always 1 during deterministic screenshots.
+   */
+  qualityScale: number;
   observers: LodObserver[];
   /** Lights registered for this frame by features during prepare() (plumes, plasma, cabin lights). */
   lights: LocalLight[];
@@ -317,30 +437,72 @@ export interface RenderContext {
 }
 
 /**
- * A pluggable piece of the frame. All hooks are optional; the render core calls them in frame-graph order:
- *   prepare -> compute -> drawShadow (per cascade) -> drawGBuffer -> [core: AO, deferred lighting] ->
- *   drawWater -> drawBackground -> compositeAtmosphere -> drawTransparent -> [core: TAA, bloom, tonemap] ->
- *   drawOverlay.
- * Features never create their own swap-chain passes and never read another feature's internals; they
- * exchange GPU data only through SharedResources.
+ * A pluggable piece of the frame. All hooks are optional; the render core calls them in frame-graph order
+ * (docs/ARCHITECTURE.md section 10 has the table with attachments and load/store rules):
+ *
+ *   prepare -> compute -> drawShadow (per re-rendered cascade) -> drawGBuffer
+ *     -> [core: copy 'scene.depthOpaque'; AO, contact shadows, deferred lighting; copy 'scene.colorCopy']
+ *   -> drawWater
+ *     -> [core: copy 'scene.depth', build 'scene.depthHalf']
+ *   -> drawBackground -> compositeAtmosphere -> preTransparent
+ *     -> [core: copy 'scene.colorCopyTransparent']
+ *   -> drawTransparent
+ *     -> [core: TAA, bloom, exposure, tonemap]
+ *   -> drawOverlay.
+ *
+ * WebGPU forbids sampling a texture that is an attachment of the current pass, hence the copies: hooks
+ * sample the published copies, never the live targets. Features never create their own swap-chain passes
+ * and never read another feature's internals; they exchange GPU data only through SharedResources.
+ * Within one hook, features run in ascending `order`, ties in registration order.
  */
 export interface RenderFeature {
   readonly id: string;
+  /** Sort key within each hook (default 0). */
+  readonly order?: number;
+  /** Optional scene copies this feature samples; the core makes only the copies somebody asks for. */
+  readonly requires?: readonly ('scene.colorCopy' | 'scene.colorCopyTransparent')[];
   init(ctx: RenderContext): void | Promise<void>;
   /** CPU work: culling, streaming, uniform uploads, registering lights. */
   prepare?(frame: FrameContext): void;
   /** Compute passes that must run before rasterisation (LUTs, FFT, particle simulation). */
   compute?(frame: FrameContext, encoder: GPUCommandEncoder): void;
+  /**
+   * Depth-only draw into one cascade (called only for cascades re-rendered this frame). Honour
+   * `cascade.everyFrame`: moving casters draw only when it is true.
+   */
   drawShadow?(frame: FrameContext, pass: GPURenderPassEncoder, cascade: ShadowCascadeView): void;
-  /** Opaque geometry into the G-buffer (targets: RENDER_FORMATS gbuffer*, HDR emissive, depth). */
+  /**
+   * Opaque geometry into the G-buffer. Colour targets in this order: RT0 albedo, RT1 normal, RT2 material,
+   * RT3 velocity, RT4 extra, then HDR emissive; depth write, compare 'greater'.
+   */
   drawGBuffer?(frame: FrameContext, pass: GPURenderPassEncoder): void;
-  /** Forward water/refraction pass after deferred lighting (HDR + depth + velocity). */
+  /**
+   * Forward water after deferred lighting. Colour targets: HDR (blending allowed) and RT3 velocity; the
+   * depth attachment is writable (compare 'greater-equal'). Sample the seabed from 'scene.depthOpaque' and
+   * 'scene.colorCopy', never from the live targets.
+   */
   drawWater?(frame: FrameContext, pass: GPURenderPassEncoder): void;
-  /** Sky background where depth == 0 (stars, star disc, distant bodies). HDR target. */
+  /** Sky background where depth == 0 (stars, star disc, distant bodies). HDR target; depth read-only, compare 'equal'. */
   drawBackground?(frame: FrameContext, pass: GPURenderPassEncoder): void;
-  /** Atmosphere/cloud march and composite over the lit scene; the feature creates its own passes on `encoder`. */
+  /**
+   * Atmosphere/cloud march and composite over the lit scene; the feature creates its own passes on
+   * `encoder` (half-resolution march targets, then a blend into `hdrTarget`). May sample 'scene.depth' and
+   * 'scene.depthHalf'. Publishes 'atmosphere.aerialPerspective', 'clouds.screen' and 'clouds.depth'.
+   */
   compositeAtmosphere?(frame: FrameContext, encoder: GPUCommandEncoder, hdrTarget: GPUTextureView): void;
-  /** Forward transparents and volumetrics (plumes, plasma, particles, glass, canopies). HDR target, depth read-only. */
+  /**
+   * Offscreen work that needs THIS frame's depth before the transparent pass: half-resolution ray-marched
+   * volumes (plumes, smoke, plasma), particle lighting. The feature creates its own passes on `encoder`
+   * into its own targets and must not touch the HDR target; it composites the result in drawTransparent
+   * (core helper: depth-aware upsample from 'scene.depthHalf').
+   */
+  preTransparent?(frame: FrameContext, encoder: GPUCommandEncoder): void;
+  /**
+   * Forward transparents and composites of preTransparent results (plumes, plasma, particles, canopies,
+   * glass). HDR target with blending (premultiplied, or dual-source where a per-channel transmittance is
+   * needed); depth read-only, compare 'greater-equal'. Everything drawn here applies `applyAtmosphere()`
+   * (aerial perspective + cloud occlusion), because the atmosphere composite has already happened.
+   */
   drawTransparent?(frame: FrameContext, pass: GPURenderPassEncoder): void;
   /** LDR overlay after tonemapping, at display resolution (orbit lines, markers). No depth attachment. */
   drawOverlay?(frame: FrameContext, pass: GPURenderPassEncoder): void;
@@ -372,6 +534,14 @@ export interface PerfSnapshot {
   gpu: { p50: number; p95: number; p99: number };
   /** Latest per-pass timings, ms. */
   passes: Record<string, { gpuMs: number; cpuMs: number }>;
+  /**
+   * Per-feature totals (p99 over the window), ms: GPU time of the feature's own passes plus its share of
+   * core-owned passes, and CPU time of its hooks. Keys are RenderFeature ids plus 'core'.
+   * The budget table in ARCHITECTURE section 17 is enforced against this.
+   */
+  features: Record<string, { gpuMs: number; cpuMs: number }>;
+  /** Current GPU load governor value (FrameContext.qualityScale). */
+  qualityScale: number;
   counters: Record<string, number>;
   renderScale: number;
 }

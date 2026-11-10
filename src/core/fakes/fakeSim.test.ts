@@ -95,6 +95,35 @@ describe('FakeSim', () => {
     expect(sim.snapshot().events).toHaveLength(0);
   });
 
+  it('reports surface targets, landing-target navigation and the presentation/simulation times', async () => {
+    const sim = createFakeSim(defs, { scene: 'lunarOrbit' });
+    await sim.ready;
+    expect(sim.terrainPending()).toBeNull();
+    for (let i = 0; i < 30; i++) sim.advance(1 / 144);
+    const s = sim.snapshot();
+    expect(s.simUt).toBe(s.ut);
+    expect(s.terrain).toEqual({ complete: true, pending: false, incompleteQueries: 0 });
+    expect(s.surfaceTargets.map((t) => t.kind).sort()).toEqual(['landing', 'recovery', 'recovery', 'recovery', 'site']);
+    const lt = s.readouts.landingTarget!;
+    expect(lt.targetId).toBe('landing');
+    // distance is the great-circle arc between the sub-point and the target on the reference sphere
+    const target = s.surfaceTargets.find((t) => t.id === 'landing')!;
+    const a = { lat: s.readouts.latitude, lon: s.readouts.longitude };
+    const central = Math.acos(
+      Math.sin(a.lat) * Math.sin(target.latitude) + Math.cos(a.lat) * Math.cos(target.latitude) * Math.cos(a.lon - target.longitude),
+    );
+    expect(lt.distance).toBeCloseTo(central * 1737400, 0);
+    expect(Math.hypot(lt.downRange, lt.crossRange)).toBeCloseTo(lt.distance, 3);
+    expect(lt.bearingDeg).toBeGreaterThanOrEqual(0);
+    expect(lt.bearingDeg).toBeLessThan(360);
+    // on Earth the nearest recovery zone is offered instead; on the pad there is no ground track
+    const chutes = createFakeSim(defs, { scene: 'chutes' }).snapshot();
+    expect(chutes.readouts.landingTarget?.targetId).toBe('recovery:0');
+    expect(chutes.readouts.landingTarget!.distance).toBeLessThan(2000e3);
+    const pad = createFakeSim(defs, { scene: 'pad' }).snapshot();
+    expect(pad.readouts.landingTarget?.downRange).toBe(0);
+  });
+
   it('debug calls are counted as cheats', () => {
     const sim = createFakeSim(defs, { scene: 'lowOrbit' });
     sim.debug.setUt(0);

@@ -19,7 +19,11 @@ export type TileLayerEncoding =
   | 'frt1-height'
   /** FRT1 kind 2, zlib-compressed, 256 x 256 (extension "u8"). */
   | 'frt1-u8'
-  /** WebP image, 256 x 256, sRGB colour; optional alpha with layer-specific meaning (extension "webp"). */
+  /**
+   * WebP image, 256 x 256, OPAQUE sRGB colour (extension "webp"). Image tiles never carry alpha: lossy WebP
+   * rewrites colour under transparent pixels and browsers premultiply on decode, so masks are separate
+   * frt1-u8 layers. Decode with createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }).
+   */
   | 'webp';
 
 export interface TileLayerManifest {
@@ -36,9 +40,7 @@ export interface TileLayerManifest {
   coverage: Record<string, TileRect[]>;
   /** frt1-height only: preferred metres-per-count per level (index = level); tiles may use a coarser power of two. */
   heightScales?: number[];
-  /** webp only: meaning of the alpha channel. */
-  alpha?: 'none' | 'waterMask';
-  /** frt1-u8 only: meaning of the byte values, e.g. land-cover class ids. */
+  /** frt1-u8 only: meaning of the byte values, e.g. land-cover class ids, or { land: 0, water: 255 }. */
   classes?: Record<string, number>;
   /** Data provenance for the credits screen. */
   sources: string[];
@@ -62,7 +64,7 @@ export interface TileManifest {
   /** Reference radius the heights are relative to, m. */
   radius: number;
   mapping: 'gnomonic-cube';
-  /** Layer name -> description. Standard names: height, albedo, night, landcover. */
+  /** Layer name -> description. Standard names: height, albedo, watermask, night, landcover. */
   layers: Record<string, TileLayerManifest>;
   globals: Record<string, GlobalMapManifest>;
   /** Coarse height pyramid level that is small enough to keep resident for the whole body (impact prediction). */
@@ -93,8 +95,34 @@ export const LANDCOVER_CLASS = {
 } as const;
 export type LandcoverClassName = keyof typeof LANDCOVER_CLASS;
 
-/** Standard layer names. A tile set may omit layers that make no sense for the body. */
-export const TILE_LAYER = { height: 'height', albedo: 'albedo', night: 'night', landcover: 'landcover' } as const;
+/**
+ * Standard layer names. A tile set may omit layers that make no sense for the body.
+ * `watermask` (frt1-u8, 256 x 256, same coverage as `albedo`): 0 = land, 255 = open water, values between
+ * for anti-aliased shorelines. Render-only (physics decides water from the height, ARCHITECTURE section 1).
+ */
+export const TILE_LAYER = { height: 'height', albedo: 'albedo', watermask: 'watermask', night: 'night', landcover: 'landcover' } as const;
+
+/**
+ * Width, in tiles of the level in question, of the ring along the edge of SPARSE coverage over which that
+ * level's data is blended into its parent level (64 samples of a 256-cell tile).
+ *
+ * Coverage weight w_L(p) of level L at a point p (a pure function of the manifest, never of residency):
+ *   - L <= globalMaxLevel: 1.   No level-L tile contains p: 0.
+ *   - otherwise, with (u, v) in [0,1]^2 the coordinates of p in its level-L tile T:
+ *       d = the smallest Euclidean distance, in tile units, from (u, v) to the unit square of any of the 8
+ *           neighbouring level-L tile positions that the manifest does NOT contain (neighbours across a cube
+ *           edge are found by mapping a point just beyond T's edge through dirToTile); Infinity if none;
+ *       w_L = smootherstep(min(1, d / COVERAGE_BLEND_TILES)),  smootherstep(x) = x^3 (6 x^2 - 15 x + 10).
+ * w_L is C2-continuous, 0 on the coverage boundary and 1 from a quarter tile inside it.
+ *
+ * Data height:      D_g = bicubic(level g = globalMaxLevel),  D_L = D_(L-1) + w_L (bicubic_L - D_(L-1)).
+ * Effective level:  E_g = g,                                  E_L = E_(L-1) + w_L (L - E_(L-1)).
+ * So the surface is exactly the parent-level surface on a coverage boundary: no wall where high-resolution
+ * regions end, whatever the two sources disagree by. The effective level (fractional) is what procedural
+ * amplification keys its octave and crater-size weights on, so synthetic detail also fades smoothly there.
+ * Bakes keep regions of interest at least COVERAGE_BLEND_TILES inside their coverage rectangles.
+ */
+export const COVERAGE_BLEND_TILES = 0.25;
 
 /** Does `layer` contain tile `key`? Pure function of the manifest. */
 export function layerHasTile(layer: TileLayerManifest, key: TileKey): boolean {
@@ -133,7 +161,9 @@ export interface TerrainResidency {
   /** Deepest data level resident at the point, and the deepest level the manifest offers there. */
   residentLevel: number;
   availableLevel: number;
-  /** True when residentLevel === availableLevel (collision uses final data). */
+  /** Fractional effective data level E at the point (see COVERAGE_BLEND_TILES); equals availableLevel away from coverage edges. */
+  effectiveLevel: number;
+  /** True when every level that contributes at the point is resident (collision uses final data). */
   complete: boolean;
 }
 
@@ -141,16 +171,21 @@ export interface TerrainResidency {
  * THE height authority. One implementation (src/terrain) serves physics (collision, radar altitude, impact
  * prediction), tile baking for the renderer (in workers) and rock/crater placement. Requirements:
  *  - Deterministic and pure given the same resident data; never throws for a valid direction.
- *  - height = bicubic sample of the deepest resident data tile + site/terrain modifiers + band-limited
- *    procedural amplification with wavelengths >= lambdaMin.
+ *  - height = data height D (Catmull-Rom bicubic of the data tiles, blended across the edges of sparse
+ *    coverage exactly as specified at COVERAGE_BLEND_TILES) + site/terrain modifiers + band-limited
+ *    procedural amplification with wavelengths >= lambdaMin. The function is continuous everywhere:
+ *    across tiles, cube faces, coverage edges, and in lambdaMin.
  *  - With `lambdaMin` omitted the COLLISION SURFACE is returned: the bilinear interpolation of the height
  *    function sampled on the vertex grid of the body's max-render-level tiles (65 x 65 vertices per tile,
  *    band limit = 2 quads). That is exactly the mesh the renderer draws at full detail, so legs, wheels and
- *    boots touch what is drawn (difference < 3 cm). Implementations cache these grids around callers.
+ *    boots touch what is drawn (difference < 3 cm). Collision vertices are evaluated LAZILY, one at a
+ *    time, and memoised: a collision query evaluates at most the 4 vertices of the quad it falls in (well
+ *    under 0.1 ms the first time, a table lookup afterwards). No query ever builds a whole 65 x 65 grid.
  *  - With `lambdaMin` given, the height function is evaluated analytically with amplification wavelengths
  *    >= lambdaMin only (cost falls as lambdaMin grows); used for altimetry, prediction and tile baking.
- *  - Amplification starts below the data resolution that the MANIFEST offers at the point, not below the
- *    level that happens to be resident, so detail never doubles up while finer data is still streaming.
+ *  - Amplification starts below the data resolution that the MANIFEST offers at the point (its fractional
+ *    effective level E, which varies smoothly across coverage edges), not below the level that happens to
+ *    be resident, so detail never doubles up while finer data is streaming and never ends at a wall.
  *  - Synchronous: queries never wait for I/O. If finer data is still loading, the best resident ancestor
  *    is used (see residency()); callers that need final data await ensureLoaded() first.
  * All directions are unit vectors in the body-fixed frame; heights are metres above the reference radius.
@@ -161,8 +196,19 @@ export interface TerrainProvider {
   normalAt(bodyId: string, dir: Vec3, baseline: number): Vec3;
   /** 'water' where the body has an ocean and the solid surface is below sea level. */
   surfaceKind(bodyId: string, dir: Vec3): SurfaceKind;
-  /** Load (and keep resident) the deepest data within `radius` metres of the point. */
-  ensureLoaded(bodyId: string, dir: Vec3, radius: number): Promise<void>;
+  /**
+   * Load (and keep resident until the next call for the same `slot`) every data tile the height function
+   * reads within `radius` metres of the point, at all contributing levels. `slot` names the requester's
+   * purpose ("vessel:<id>", "impact", "pad") so that a moving vessel replaces its own pin instead of
+   * accumulating pins. Resolves when all of it is resident.
+   */
+  ensureLoaded(bodyId: string, dir: Vec3, radius: number, slot?: string): Promise<void>;
+  /**
+   * Evaluate up to `maxVertices` not-yet-memoised collision-surface vertices within `radius` metres of the
+   * point, nearest first, and return how many are still missing. Deterministic (a count budget, no clock).
+   * Lets the sim spread the cost of warming the touchdown area over many steps before contact.
+   */
+  prewarmCollision(bodyId: string, dir: Vec3, radius: number, maxVertices: number): number;
   residency(bodyId: string, dir: Vec3): TerrainResidency;
   /** Highest / lowest terrain anywhere on the body (from the definition), m. */
   elevationRange(bodyId: string): { min: number; max: number };

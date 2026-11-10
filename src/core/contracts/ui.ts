@@ -1,9 +1,9 @@
 /**
  * Player-facing interface contracts: HUD, navball, cockpit displays and the map view.
  */
-import type { PlayerCommands } from './controls';
+import type { PlayerCommands, PointerState } from './controls';
 import type { DefLibrary } from './defs';
-import type { CameraState, ViewMode } from './render';
+import type { CameraState } from './render';
 import type { SimSnapshot } from './sim';
 
 /**
@@ -28,7 +28,8 @@ export interface MfdPainter {
 export interface Hud {
   /** Mount into the given container element (positioned over the canvas). */
   mount(container: HTMLElement): void;
-  update(snapshot: SimSnapshot, view: ViewMode, realDt: number): void;
+  /** `camera` tells the HUD which view is shown; branch on camera.kind (unknown modes behave as their kind). */
+  update(snapshot: SimSnapshot, camera: CameraState, realDt: number): void;
   setVisible(visible: boolean): void;
   /** Transient message line (warp refusals, staging lockout...). */
   notify(message: string): void;
@@ -39,29 +40,40 @@ export interface Hud {
 export interface MapView {
   setActive(active: boolean): void;
   /**
-   * Per-frame update while active: hit-testing and dragging use the same camera the frame is rendered with.
-   * Returns true when the pointer interaction was consumed (so the camera rig ignores it).
+   * Per-frame update while active. Called BEFORE the flight controller and the camera rig, with the camera
+   * and snapshot of the frame currently on screen (what the player is pointing at), so hit-testing matches
+   * what was drawn. The result tells the rest of the frame whether the pointer is taken and whether the
+   * player asked to focus something (double click on a body or vessel).
    */
-  update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: MapPointer, displaySize: [number, number]): boolean;
+  update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: MapPointer, displaySize: [number, number]): MapUpdateResult;
   /** For tests and the pilot HUD: screen positions (CSS px) of interactive elements. */
   describe(): MapElementInfo[];
 }
 
-export interface MapPointer {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  buttons: number;
-  pressed: boolean;
-  released: boolean;
-  wheel: number;
-  shift: boolean;
-  ctrl: boolean;
+/** The map view consumes the input system's pointer state unchanged. */
+export type MapPointer = PointerState;
+
+export interface MapUpdateResult {
+  /**
+   * True while the map owns the pointer (hover over an interactive element, a drag in progress, focus in
+   * the numeric panel). The camera rig then ignores pointer input and the flight controller ignores the
+   * throttle axis (ControlContext.pointerCaptured).
+   */
+  consumed: boolean;
+  /** Set on the frame the player double-clicks a body or vessel: the app passes it to the map camera rig. */
+  focus?: { bodyId?: string; vesselId?: string };
+}
+
+/** Handle the app shell uses to forward `mfdCycle:*` button actions to the cockpit feature. */
+export interface CockpitControls {
+  readonly displayCount: number;
+  page(display: number): MfdPage;
+  setPage(display: number, page: MfdPage): void;
+  cyclePage(display: number): void;
 }
 
 export interface MapElementInfo {
-  kind: 'marker' | 'nodeHandle' | 'node' | 'body' | 'vessel';
+  kind: 'marker' | 'nodeHandle' | 'node' | 'body' | 'vessel' | 'surfaceTarget';
   id: string;
   x: number;
   y: number;

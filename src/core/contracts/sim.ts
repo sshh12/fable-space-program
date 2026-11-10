@@ -43,10 +43,26 @@ export interface Marker {
   /** For atmosphereEntry: flight-path angle (rad, negative = descending) and vacuum periapsis altitude (m). */
   flightPathAngle?: number;
   vacuumPeriapsisAltitude?: number;
+  /**
+   * For impact and atmosphereEntry (optional on apsides): planetocentric latitude and east longitude (rad)
+   * of the point in the BODY-FIXED frame of `bodyId` at `ut`, i.e. with the body's rotation until then
+   * taken into account. This is where on the ground the trajectory arrives.
+   */
+  latitude?: number;
+  longitude?: number;
   nodeId?: string;
 }
 
-/** One conic arc of a predicted trajectory. */
+/**
+ * One conic arc of a predicted trajectory.
+ *
+ * Closed orbits and maneuver nodes: a closed patch with no event ends after one revolution
+ * (endReason 'closed', nuEnd = nuStart + 2 pi). When a maneuver node lies further ahead than that, the
+ * SAME conic is simply followed for as many revolutions as it takes: the patch ends at the node
+ * (tEnd = node.ut, endReason 'maneuver') and nuEnd is unwrapped, nuEnd = nuStart + 2 pi k + (remaining
+ * angle), so nuEnd - nuStart may exceed 2 pi. Consumers draw the ellipse once and place the node by nuEnd
+ * modulo 2 pi. A node is therefore never lost, however many orbits ahead it is planned.
+ */
 export interface Patch {
   bodyId: string;
   conic: ConicElements;
@@ -348,6 +364,48 @@ export interface Readouts {
   liftVectorUp: boolean | null;
   /** Tilt of the nose from local vertical, rad (landing). */
   tiltFromVertical: number;
+  /**
+   * Navigation to a surface target (precision landing, splashdown zone); null when the current SOI body has
+   * no 'landing' or 'recovery' target. The target is the one of those nearest to the predicted arrival point
+   * (or to the sub-point when nothing is predicted). Information only: the player or pilot does the steering.
+   */
+  landingTarget: LandingTargetReadout | null;
+}
+
+export interface LandingTargetReadout {
+  /** Id of the SurfaceTarget in SimSnapshot.surfaceTargets. */
+  targetId: string;
+  /** Great-circle distance along the surface from the vessel's sub-point to the target centre, m. */
+  distance: number;
+  /** Compass bearing from the sub-point to the target, degrees clockwise from north. */
+  bearingDeg: number;
+  /**
+   * The same separation resolved along the current ground track (surface-relative velocity direction):
+   * downRange > 0 = target ahead; crossRange > 0 = target to the right of the track. Both 0 when the
+   * surface speed is below 0.1 m/s.
+   */
+  downRange: number;
+  crossRange: number;
+  /**
+   * Where the current (node-free) trajectory arrives: the 'impact' marker when the vacuum conic hits
+   * terrain, else the 'atmosphereEntry' marker (the entry interface point, NOT the splash point), else null.
+   * `missDistance` / `missBearingDeg` go from the target centre to that point.
+   */
+  predicted: { kind: 'impact' | 'entry'; ut: number; latitude: number; longitude: number; missDistance: number; missBearingDeg: number } | null;
+}
+
+/** A named place on a body, shown by the HUD and the map and used by the landingTarget readout. */
+export interface SurfaceTarget {
+  id: string;
+  name: string;
+  bodyId: string;
+  /** 'landing' = ScenarioDef.suggestedLanding; 'recovery' = LaunchSiteDef.recoveryZones; 'site' = the launch site. */
+  kind: 'landing' | 'recovery' | 'site';
+  /** Planetocentric latitude and east longitude, rad. */
+  latitude: number;
+  longitude: number;
+  /** Radius of the zone on the surface, m (0 for a point target). */
+  radius: number;
 }
 
 // ------------------------------------------------------------------------------------------------ events
@@ -372,8 +430,10 @@ export type MilestoneId =
   | 'SPLASHDOWN';
 
 /**
- * Mission milestones are detected by the sim from physical state only. Their ids are generic strings
- * so other scenarios can define their own; the lunar scenario uses MilestoneId.
+ * Mission milestones are detected by the sim from physical state only, by a GENERIC evaluator of the
+ * declarative rules in ScenarioDef.milestones (defs.ts: MilestoneRuleDef). The sim contains no milestone
+ * ids and no mission-specific logic; `MilestoneId` above is merely the vocabulary that
+ * data/defs/scenarios/lunar-direct.json uses, typed here for the mission tests and the mission pilot.
  */
 export interface MilestoneRecord {
   id: string;
@@ -431,12 +491,29 @@ export interface WarpState {
 }
 
 export interface SimSnapshot {
-  /** Seconds since J2000.0. */
+  /**
+   * Seconds since J2000.0 that every pose in this snapshot (bodies, vessels, parts) corresponds to.
+   * For peek() this equals simUt. For snapshot() it is the PRESENTATION time: Sim.advance() accumulates
+   * real time, runs whole fixed steps, and snapshot() interpolates integrated vessels between the last
+   * two steps (bodies, rails and landed vessels are evaluated exactly at `ut`), so motion is smooth at any
+   * display refresh rate. simUt - ut is in [0, PHYSICS_DT).
+   */
   ut: number;
+  /** Time of the latest completed physics step or rails advance: the true simulation state time. */
+  simUt: number;
   /** Monotonic count of physics steps + rails advances (lets consumers detect "no change"). */
   tick: number;
   warp: WarpState;
   scenario: { id: string; startKind: ScenarioDef['start']['kind']; stagesAlreadyFired: number };
+  /** Named surface places of this scenario (landing target, recovery zones, launch site). */
+  surfaceTargets: SurfaceTarget[];
+  /**
+   * Terrain data status for the active vessel. `complete`: final-resolution data is resident under it.
+   * `pending`: a load requested by the sim has not finished (Sim.terrainPending() is non-null).
+   * `incompleteQueries`: number of physics steps so far in which a contact probe or a radar-altitude query
+   * below 50 km ran on data that was not final. Mission proofs require 0.
+   */
+  terrain: { complete: boolean; pending: boolean; incompleteQueries: number };
   bodies: BodySnapshot[];
   /** Id of the star that lights the system. */
   starId: string;
@@ -473,13 +550,33 @@ export interface SimDebug {
 
 /**
  * The simulation facade (implemented by src/sim, faked by src/core/fakes for UI development).
- * Deterministic: same scenario + same sequence of calls => bit-identical state.
+ * Deterministic: same scenario + same sequence of calls => bit-identical state, PROVIDED the caller follows
+ * the terrain protocol below.
+ *
+ * Terrain protocol. Terrain tiles load asynchronously, yet every Sim method is synchronous. The sim asks
+ * the TerrainProvider for data only from deterministic triggers evaluated at step boundaries (altitude
+ * thresholds, the predicted impact point, scenario start) - never from wall-clock time. While such a
+ * request is outstanding, terrainPending() returns a promise. A caller that needs reproducible results
+ * (the headless runner, mission tests, replays) must `await sim.ready` once and then
+ * `await sim.terrainPending()` whenever it is non-null BEFORE the next step()/advanceRails()/advance();
+ * the state hash is defined only under that rule. The browser loop does not wait: it keeps rendering and
+ * relies on the rule that warp is clamped to 1x below 300 m radar altitude until final data is resident.
  */
 export interface Sim {
   readonly defs: DefLibrary;
   readonly scenario: ScenarioDef;
   /**
-   * Browser entry point: advance by a real-time frame delta (s), honouring warp.
+   * Resolves when the start state is usable: terrain under every scenario vessel is resident (collision
+   * surface warmed, pad elevation resolved). Await it before the first step, advance or snapshot.
+   */
+  readonly ready: Promise<void>;
+  /** Null when no terrain request of the sim is outstanding; otherwise a promise that resolves when all are in. */
+  terrainPending(): Promise<void> | null;
+  /**
+   * Browser entry point: advance by a real-time frame delta (s), honouring warp. Real time is accumulated
+   * and consumed in whole PHYSICS_DT steps (the remainder carries over and drives the interpolation in
+   * snapshot()), so the presented motion is uniform at 60, 120, 144 or 240 Hz alike. On rails the advance
+   * is an exact Kepler step of realDt x warp.
    * `onControlTick`, when given, is invoked before every CONTROL_TICK_STEPS-th physics step and before
    * each rails advance; inside it a pilot may call peek(), setControls() and commands. This gives a
    * scripted pilot the same 30 Hz (sim time) cadence in the browser as in the headless loop.
@@ -496,11 +593,15 @@ export interface Sim {
   setControls(inputs: ControlInputs): void;
   readonly commands: PlayerCommands;
   /**
-   * Build a snapshot of the current state and DRAIN the event queue into it. Called exactly once per
-   * presented frame by the app loop; the same object is handed to renderer, audio, HUD and map.
+   * Build a snapshot for presentation and DRAIN the event queue into it. Called exactly once per presented
+   * frame by the app loop; the same object is handed to renderer, audio, HUD and map. Poses are
+   * interpolated to the presentation time (see SimSnapshot.ut).
    */
   snapshot(): SimSnapshot;
-  /** Like snapshot() but leaves the event queue untouched (`events` lists what is pending). For pilots and tests. */
+  /**
+   * The true state at simUt, never interpolated (ut === simUt), leaving the event queue untouched
+   * (`events` lists what is pending). For pilots, tests and the headless runner.
+   */
   peek(): SimSnapshot;
   readonly cheatCounter: number;
   /** Hash of the complete dynamic state (golden-run determinism check). */
