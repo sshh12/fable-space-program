@@ -2,17 +2,26 @@
  * Adaptive float64 sampling of a conic arc to a screen-space chord error.
  *
  * 1. The arc is cut into initial pieces whose velocity direction turns by at most 22.5 degrees (45 for
- *    faint lines), so every piece lies inside the sphere that has its chord as diameter (Thales): a piece
- *    whose sphere is outside the view frustum is kept as one chord without further work, and a whole
- *    ellipse outside the frustum is not sampled at all.
- * 2. Every vertex carries its analytic screen-space tangent. A conic arc in front of the eye projects to a
- *    convex arc, which lies inside the triangle formed by its chord and the tangent lines at its ends, so
- *    the triangle's height is a RIGOROUS bound of the chord error, obtained without evaluating the curve
- *    again. Pieces are refined greatest-bound-first (a max-heap) until every bound is under the tolerance or
- *    the vertex cap is reached; each refinement step evaluates exactly one new vertex.
- * 3. Where the bound does not apply (a piece touching the near plane, a degenerate tangent, a hairpin
- *    turning 90 degrees or more against its chord) the midpoint is evaluated and its distance to the chord
- *    is used instead (for near-plane pieces: the angle the sagitta subtends at the eye, in pixels).
+ *    faint lines) and whose eccentric anomaly spans at most 90 degrees, so every piece lies inside the
+ *    sphere that has its chord as diameter (Thales): a piece whose sphere is outside the view frustum is
+ *    kept as one chord without further work, and a whole ellipse outside the frustum is not sampled at all.
+ * 2. The chord error of a piece is computed EXACTLY, without evaluating the curve again. A conic arc is a
+ *    rational quadratic Bezier curve: end points A, B, control point T (where the end tangents meet) and
+ *    middle weight w (cos of half the eccentric-anomaly span; cosh of half the hyperbolic-anomaly span).
+ *    A perspective projection maps it to a rational quadratic Bezier on screen with control points A', T',
+ *    B' and weights (depth A, w depth T, depth B), as long as A, T and B lie in front of the eye. With the
+ *    end weights normalised, w' = w depth(T) / sqrt(depth(A) depth(B)), and the curve's greatest distance
+ *    from the chord LINE is exactly h w' / (1 + w'), h being the distance of T' from that line (reached at
+ *    the parameter midpoint). When T' projects inside the chord (both base angles of the triangle A'T'B'
+ *    acute) every curve point does, so that is also the distance to the chord SEGMENT. Otherwise (a hairpin
+ *    of an orbit seen nearly edge-on, where the curve overshoots an end point) the curve lies inside the
+ *    triangle A'T'B', so its distance to the segment is bounded by that of T', and the piece is split until
+ *    the triangle is acute. Pieces are refined greatest-error-first (a max-heap) until every error is under
+ *    the tolerance or the vertex cap is reached; each refinement step evaluates exactly one new vertex.
+ * 3. A piece whose triangle reaches the near plane (it passes right next to or behind the eye) evaluates its
+ *    midpoint instead and uses the angle its 3-D sagitta subtends at the eye, in pixels.
+ * In the parabolic band (|e - 1| < 1e-6, sampled in true anomaly) T comes from the end tangents and the
+ * weight is not known: h itself (w' / (1 + w') < 1) bounds the error there.
  */
 import { CHORD_TOLERANCE_PX, MAX_POINTS_PER_CURVE } from './constants';
 import type { ViewConic } from './conicCurve';
@@ -21,14 +30,14 @@ import type { Projector } from './projection';
 /** Largest velocity-direction turn of an initial piece (patches); faint lines may pass up to pi/4. */
 const MAX_TURN = Math.PI / 8;
 export const FAINT_MAX_TURN = Math.PI / 4;
+/** Largest eccentric-anomaly span of an initial piece (keeps the Bezier control point finite and close). */
+const MAX_E_SPAN = Math.PI / 2;
 /** Largest number of initial pieces (pathological ranges are capped, never looped forever). */
 const MAX_INITIAL_PIECES = 512;
 /** Frustum margin in device pixels (line half width + anti-aliasing + label slack). */
 const CULL_MARGIN_PX = 16;
-/** The midpoint fallback measures the deviation at one point only: keep a margin below the tolerance. */
+/** The near-plane fallback measures the deviation at one point only: keep a margin below the tolerance. */
 const MIDPOINT_MARGIN = 0.85;
-/** Tangent bound applies while both end tangents are within acos(0.05) = 87 degrees of the chord. */
-const MIN_TANGENT_COS = 0.05;
 
 /** Output of one sampled curve, in arrays owned by the Sampler (valid until the next call). */
 export interface SampledCurve {
@@ -48,9 +57,6 @@ export interface SampledCurve {
   evaluations: number;
 }
 
-const FRONT = 1;
-const TANGENT = 2;
-
 export class Sampler {
   private cap: number;
   // Scratch point storage (unordered); pieces refer to point indices.
@@ -58,14 +64,14 @@ export class Sampler {
   private px: Float64Array;
   private py: Float64Array;
   private pz: Float64Array;
+  /** Unit-curve coordinates of the point: (cos E, sin E), (cosh H, sinh H) or (cos nu, sin nu). */
+  private pc: Float64Array;
+  private ps: Float64Array;
   private psx: Float64Array;
   private psy: Float64Array;
-  /** Unit screen tangent (direction of increasing parameter). */
-  private ptx: Float64Array;
-  private pty: Float64Array;
-  private pflags: Uint8Array;
+  private pfront: Uint8Array;
   private nPoints = 0;
-  // Pieces: endpoints a, b, evaluated midpoint m (-1: none), error bound, list link.
+  // Pieces: endpoints a, b, evaluated midpoint m (-1: none), error, list link.
   private ka: Int32Array;
   private kb: Int32Array;
   private km: Int32Array;
@@ -75,6 +81,9 @@ export class Sampler {
   private heap: Int32Array;
   private heapSize = 0;
   private readonly tmp = new Float64Array(4);
+  private readonly tmp2 = new Float64Array(4);
+  private readonly breaks: number[] = [];
+  private readonly stack: number[] = [];
   // Per-call constants: frustum planes (view space, widened by CULL_MARGIN_PX) and projection.
   private ftx = 1;
   private fty = 1;
@@ -95,11 +104,11 @@ export class Sampler {
     this.px = new Float64Array(nPts);
     this.py = new Float64Array(nPts);
     this.pz = new Float64Array(nPts);
+    this.pc = new Float64Array(nPts);
+    this.ps = new Float64Array(nPts);
     this.psx = new Float64Array(nPts);
     this.psy = new Float64Array(nPts);
-    this.ptx = new Float64Array(nPts);
-    this.pty = new Float64Array(nPts);
-    this.pflags = new Uint8Array(nPts);
+    this.pfront = new Uint8Array(nPts);
     this.ka = new Int32Array(nPieces);
     this.kb = new Int32Array(nPieces);
     this.km = new Int32Array(nPieces);
@@ -208,23 +217,29 @@ export class Sampler {
   }
 
   private initialPieces(curve: ViewConic, u0: number, u1: number, maxTurn: number): number {
-    const breaks: number[] = [u0];
+    const breaks = this.breaks;
+    breaks.length = 0;
+    breaks.push(u0);
     const rate = curve.maxTurnRate();
     if (rate !== null && rate < 2) {
-      // Ellipse of moderate eccentricity: uniform steps bounded by the maximum turning rate (a/b).
+      // Ellipse of moderate eccentricity: uniform steps bounded by the maximum turning rate (a/b >= 1, so
+      // the eccentric-anomaly span of a piece stays under maxTurn as well).
       const n = Math.min(MAX_INITIAL_PIECES, Math.max(2, Math.ceil(((u1 - u0) * rate) / maxTurn)));
       for (let i = 1; i <= n; i++) breaks.push(u0 + ((u1 - u0) * i) / n);
     } else {
-      // Otherwise: 4 uniform pieces, split any whose heading turns more than maxTurn.
-      const stack: number[] = [];
+      // Otherwise: 4 uniform pieces, split any whose heading turns more than maxTurn (or, on an ellipse,
+      // whose eccentric anomaly spans more than MAX_E_SPAN).
+      const stack = this.stack;
+      stack.length = 0;
       const n0 = 4;
       for (let i = n0; i >= 1; i--) stack.push(u0 + ((u1 - u0) * i) / n0);
+      const spanLimit = curve.kind === 'E' ? MAX_E_SPAN : Infinity;
       let ua = u0;
       let ha = curve.heading(ua);
       while (stack.length > 0) {
         const ub = stack[stack.length - 1]!;
         const hb = curve.heading(ub);
-        if (Math.abs(hb - ha) > maxTurn && breaks.length + stack.length < MAX_INITIAL_PIECES && ub - ua > 1e-12 * Math.max(1, Math.abs(ub))) {
+        if ((Math.abs(hb - ha) > maxTurn || ub - ua > spanLimit) && breaks.length + stack.length < MAX_INITIAL_PIECES && ub - ua > 1e-12 * Math.max(1, Math.abs(ub))) {
           stack.push((ua + ub) / 2);
           continue;
         }
@@ -254,27 +269,29 @@ export class Sampler {
     return firstPiece;
   }
 
-  /** Evaluate position, projection and screen tangent at parameter u; returns the point index. */
+  /** Evaluate the view-space position and projection at parameter u; returns the point index. */
   private evalPoint(curve: ViewConic, u: number): number {
     const i = this.nPoints++;
+    let c: number;
+    let s: number;
     let X: number;
     let Y: number;
-    let dX: number;
-    let dY: number;
     if (curve.kind === 'E') {
-      const c = Math.cos(u);
-      const s = Math.sin(u);
+      c = Math.cos(u);
+      s = Math.sin(u);
       X = curve.aAbs * (c - curve.e);
       Y = curve.b * s;
-      dX = -curve.aAbs * s;
-      dY = curve.b * c;
+    } else if (curve.kind === 'H') {
+      c = Math.cosh(u);
+      s = Math.sinh(u);
+      X = curve.aAbs * (curve.e - c);
+      Y = curve.b * s;
     } else {
-      const t = this.tmp;
-      curve.perifocalWithDerivative(u, t);
-      X = t[0]!;
-      Y = t[1]!;
-      dX = t[2]!;
-      dY = t[3]!;
+      c = Math.cos(u);
+      s = Math.sin(u);
+      const r = curve.p / (1 + curve.e * c);
+      X = r * c;
+      Y = r * s;
     }
     const x = curve.ox + curve.px * X + curve.qx * Y;
     const y = curve.oy + curve.py * X + curve.qy * Y;
@@ -283,33 +300,76 @@ export class Sampler {
     this.px[i] = x;
     this.py[i] = y;
     this.pz[i] = z;
+    this.pc[i] = c;
+    this.ps[i] = s;
     const depth = -z;
     if (depth > this.near) {
-      const inv = 1 / depth;
-      const k = this.focal * inv;
+      const k = this.focal / depth;
       this.psx[i] = this.cx + x * k;
       this.psy[i] = this.cy - y * k;
-      // d(screen)/du: x' = F (dx d + x dz) / d^2, y' = -F (dy d + y dz) / d^2 (d = -z)
-      const dx = curve.px * dX + curve.qx * dY;
-      const dy = curve.py * dX + curve.qy * dY;
-      const dz = curve.pz * dX + curve.qz * dY;
-      const tx = (dx + x * dz * inv) * k;
-      const ty = -(dy + y * dz * inv) * k;
-      const tl = Math.sqrt(tx * tx + ty * ty);
-      if (tl > 1e-12) {
-        this.ptx[i] = tx / tl;
-        this.pty[i] = ty / tl;
-        this.pflags[i] = FRONT | TANGENT;
-      } else this.pflags[i] = FRONT;
+      this.pfront[i] = 1;
     } else {
       this.psx[i] = NaN;
       this.psy[i] = NaN;
-      this.pflags[i] = 0;
+      this.pfront[i] = 0;
     }
     return i;
   }
 
-  /** Chord-error bound of a piece (0 when it is outside the frustum). */
+  /**
+   * Bezier control point of piece (a, b) in perifocal coordinates, written to tmp[0..1]. Returns its weight
+   * (NaN when unknown: parabolic band), or null when the piece has no usable control point.
+   */
+  private controlPoint(curve: ViewConic, a: number, b: number): number | null {
+    const t = this.tmp;
+    if (curve.kind === 'E' || curve.kind === 'H') {
+      const ca = this.pc[a]!;
+      const sa = this.ps[a]!;
+      const cb = this.pc[b]!;
+      const sb = this.ps[b]!;
+      // cos / cosh of the parameter span (cosh from the span itself: the products cancel badly far out).
+      const cosSpan = curve.kind === 'E' ? ca * cb + sa * sb : Math.cosh(this.pu[b]! - this.pu[a]!);
+      const den = 1 + cosSpan;
+      if (!(den > 1e-6)) return null;
+      // On the unit circle / hyperbola the tangents at the ends meet at the chord midpoint divided by
+      // cos^2(span / 2) = (1 + cos span) / 2; the perifocal conic is an affine image of it.
+      const tu = (ca + cb) / den;
+      const tv = (sa + sb) / den;
+      t[0] = curve.kind === 'E' ? curve.aAbs * (tu - curve.e) : curve.aAbs * (curve.e - tu);
+      t[1] = curve.b * tv;
+      return Math.sqrt(den / 2);
+    }
+    // Parabolic band: intersect the end tangents (perifocal plane).
+    const da = this.tmp2;
+    curve.perifocalWithDerivative(this.pu[a]!, da);
+    const ax = da[0]!;
+    const ay = da[1]!;
+    const tax = da[2]!;
+    const tay = da[3]!;
+    curve.perifocalWithDerivative(this.pu[b]!, da);
+    const bx = da[0]!;
+    const by = da[1]!;
+    const tbx = da[2]!;
+    const tby = da[3]!;
+    // a + s ta = b - r tb
+    const det = tax * tby - tay * tbx;
+    const ex = bx - ax;
+    const ey = by - ay;
+    if (Math.abs(det) <= 1e-12 * Math.hypot(tax, tay) * Math.hypot(tbx, tby)) {
+      // Parallel tangents: a straight piece (its control point is anywhere on the chord).
+      t[0] = (ax + bx) / 2;
+      t[1] = (ay + by) / 2;
+      return NaN;
+    }
+    const sParam = (ex * tby - ey * tbx) / det;
+    const rParam = (tax * ey - tay * ex) / det;
+    if (sParam < 0 || rParam < 0) return null;
+    t[0] = ax + sParam * tax;
+    t[1] = ay + sParam * tay;
+    return NaN;
+  }
+
+  /** Exact chord error of a piece in device px (0 when it is outside the frustum); see the module comment. */
   private pieceError(k: number): number {
     const a = this.ka[k]!;
     const b = this.kb[k]!;
@@ -320,57 +380,63 @@ export class Sampler {
     const by = this.py[b]!;
     const bz = this.pz[b]!;
     // Thales sphere of the chord contains the whole piece (heading turns < 90 degrees).
-    const cx = (ax + bx) / 2;
-    const cy = (ay + by) / 2;
-    const cz = (az + bz) / 2;
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    const mz = (az + bz) / 2;
     const ex = bx - ax;
     const ey = by - ay;
     const ez = bz - az;
-    const rad = 0.51 * Math.sqrt(ex * ex + ey * ey + ez * ez) + 1e-6 * Math.sqrt(cx * cx + cy * cy + cz * cz);
-    if (this.sphereOutside(cx, cy, cz, rad)) return 0;
-    const fa = this.pflags[a]!;
-    const fb = this.pflags[b]!;
-    if (fa & fb & TANGENT) {
-      // Tangent-triangle bound in screen space.
-      const sx = this.psx[b]! - this.psx[a]!;
-      const sy = this.psy[b]! - this.psy[a]!;
-      const L = Math.sqrt(sx * sx + sy * sy);
-      if (L > 1e-9) {
-        const ux = sx / L;
-        const uy = sy / L;
-        const tax = this.ptx[a]!;
-        const tay = this.pty[a]!;
-        const tbx = this.ptx[b]!;
-        const tby = this.pty[b]!;
-        const ca = ux * tax + uy * tay;
-        const cb = ux * tbx + uy * tby;
-        if (ca > MIN_TANGENT_COS && cb > MIN_TANGENT_COS) {
-          const ta = (ux * tay - uy * tax) / ca;
-          const tb = (tbx * uy - tby * ux) / cb;
-          if (ta * tb >= 0) {
-            const t1 = Math.abs(ta);
-            const t2 = Math.abs(tb);
-            return t1 + t2 > 0 ? (L * t1 * t2) / (t1 + t2) : 0;
+    const rad = 0.51 * Math.sqrt(ex * ex + ey * ey + ez * ez) + 1e-6 * Math.sqrt(mx * mx + my * my + mz * mz);
+    if (this.sphereOutside(mx, my, mz, rad)) return 0;
+    const curve = this.curve!;
+    if (this.pfront[a]! & this.pfront[b]!) {
+      const w = this.controlPoint(curve, a, b);
+      if (w !== null) {
+        const X = this.tmp[0]!;
+        const Y = this.tmp[1]!;
+        const tx = curve.ox + curve.px * X + curve.qx * Y;
+        const ty = curve.oy + curve.py * X + curve.qy * Y;
+        const tz = curve.oz + curve.pz * X + curve.qz * Y;
+        const dT = -tz;
+        if (dT > this.near) {
+          const f = this.focal / dT;
+          const Tx = this.cx + tx * f;
+          const Ty = this.cy - ty * f;
+          const sax = this.psx[a]!;
+          const say = this.psy[a]!;
+          const cxs = this.psx[b]! - sax;
+          const cys = this.psy[b]! - say;
+          const qx = Tx - sax;
+          const qy = Ty - say;
+          const L2 = cxs * cxs + cys * cys;
+          if (!(L2 > 1e-18)) return Math.sqrt(qx * qx + qy * qy);
+          const lambda = (qx * cxs + qy * cys) / L2;
+          if (lambda >= 0 && lambda <= 1) {
+            const h = Math.abs(qx * cys - qy * cxs) / Math.sqrt(L2);
+            if (Number.isNaN(w)) return h;
+            const wn = (w * dT) / Math.sqrt(-az * -bz);
+            return (h * wn) / (1 + wn);
           }
-          // Not convex within rounding: bounded by the steeper tangent line over the whole chord.
-          return L * Math.max(Math.abs(ta), Math.abs(tb));
+          // Obtuse base angle: bounded by the distance of T' from the segment.
+          const ox = lambda < 0 ? qx : Tx - this.psx[b]!;
+          const oy = lambda < 0 ? qy : Ty - this.psy[b]!;
+          return Math.sqrt(ox * ox + oy * oy);
         }
       }
     }
-    // Fallback: evaluate the midpoint and measure it (scaled so the one-point estimate keeps a margin).
-    const m = this.evalPoint(this.curve!, (this.pu[a]! + this.pu[b]!) / 2);
-    this.km[k] = m;
-    const scale = 1 / MIDPOINT_MARGIN;
-    if (fa & this.pflags[m]! & fb & FRONT) {
-      return pointSegmentDistance2D(this.psx[m]!, this.psy[m]!, this.psx[a]!, this.psy[a]!, this.psx[b]!, this.psy[b]!) * scale;
+    // Near the eye: evaluate the midpoint; the angle its 3-D sagitta subtends at the eye, in pixels (x1.5
+    // for the off-axis stretch), with a margin because one point is measured.
+    let m = this.km[k]!;
+    if (m < 0) {
+      m = this.evalPoint(curve, (this.pu[a]! + this.pu[b]!) / 2);
+      this.km[k] = m;
     }
-    // Near-plane piece: angle subtended by the sagitta at the eye, in pixels (x1.5 for off-axis stretch).
-    const mx = this.px[m]!;
-    const my = this.py[m]!;
-    const mz = this.pz[m]!;
-    const dev = pointSegmentDistance3D(mx, my, mz, ax, ay, az, bx, by, bz);
-    const dist = Math.max(Math.sqrt(mx * mx + my * my + mz * mz), this.near);
-    return (dev / dist) * this.focal * 1.5 * scale + (dev > 0 ? 1e-9 : 0);
+    const px = this.px[m]!;
+    const py = this.py[m]!;
+    const pz = this.pz[m]!;
+    const dev = pointSegmentDistance3D(px, py, pz, ax, ay, az, bx, by, bz);
+    const dist = Math.max(Math.sqrt(px * px + py * py + pz * pz), this.near);
+    return ((dev / dist) * this.focal * 1.5) / MIDPOINT_MARGIN + (dev > 0 ? 1e-9 : 0);
   }
 
   private sphereOutside(x: number, y: number, z: number, r: number): boolean {

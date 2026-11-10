@@ -138,47 +138,118 @@ export interface LabelBox {
   placed: boolean;
 }
 
-interface Rect {
+/** An axis-aligned screen rectangle (device px) that labels must keep clear of, e.g. a DOM panel. */
+export interface BlockedRect {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
 }
 
-const overlaps = (a: Rect, b: Rect): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+/** Scratch rectangles (x0, y0, x1, y1 per entry), grown on demand and reused between frames. */
+let rects = new Float64Array(4 * 256);
+const ensureRects = (n: number): void => {
+  if (4 * n > rects.length) rects = new Float64Array(4 * Math.max(n, rects.length / 2));
+};
+const order: number[] = [];
 
 /**
  * Greedy de-cluttering: labels are placed in priority order at the first of eight candidate positions
- * around their anchor that overlaps neither an earlier label nor any icon; labels with no free position
- * are hidden (their icon stays and the hover tooltip still shows the details).
+ * around their anchor that overlaps neither an earlier label, nor any icon, nor a blocked rectangle (the
+ * node panel); labels with no free position are hidden (their icon stays and the hover tooltip still shows
+ * the details).
  */
-export function declutter(labels: LabelBox[], icons: readonly { x: number; y: number; r: number }[], viewport: { width: number; height: number }, gap: number): void {
-  const placed: Rect[] = [];
-  const iconRects: Rect[] = icons.map((i) => ({ x0: i.x - i.r, y0: i.y - i.r, x1: i.x + i.r, y1: i.y + i.r }));
-  const order = labels.map((_, i) => i).sort((a, b) => labels[b]!.priority - labels[a]!.priority || a - b);
+export function declutter(
+  labels: readonly LabelBox[],
+  icons: readonly { x: number; y: number; r: number }[],
+  viewport: { width: number; height: number },
+  gap: number,
+  blocked: readonly BlockedRect[] = [],
+): void {
+  // Fixed obstacles first (icons, blocked rectangles), then the labels as they are placed.
+  const nFixed = icons.length + blocked.length;
+  ensureRects(nFixed + labels.length);
+  let n = 0;
+  for (const i of icons) {
+    rects[4 * n] = i.x - i.r;
+    rects[4 * n + 1] = i.y - i.r;
+    rects[4 * n + 2] = i.x + i.r;
+    rects[4 * n + 3] = i.y + i.r;
+    n++;
+  }
+  for (const b of blocked) {
+    rects[4 * n] = b.x0;
+    rects[4 * n + 1] = b.y0;
+    rects[4 * n + 2] = b.x1;
+    rects[4 * n + 3] = b.y1;
+    n++;
+  }
+  order.length = labels.length;
+  for (let i = 0; i < labels.length; i++) order[i] = i;
+  order.sort((a, b) => labels[b]!.priority - labels[a]!.priority || a - b);
+  const W = viewport.width;
+  const H = viewport.height;
   for (const i of order) {
     const l = labels[i]!;
     l.placed = false;
     const d = l.clear + gap;
-    const candidates: [number, number][] = [
-      [l.ax + d, l.ay - l.height / 2],
-      [l.ax - d - l.width, l.ay - l.height / 2],
-      [l.ax - l.width / 2, l.ay - d - l.height],
-      [l.ax - l.width / 2, l.ay + d],
-      [l.ax + d * 0.75, l.ay - d * 0.75 - l.height],
-      [l.ax + d * 0.75, l.ay + d * 0.75],
-      [l.ax - d * 0.75 - l.width, l.ay - d * 0.75 - l.height],
-      [l.ax - d * 0.75 - l.width, l.ay + d * 0.75],
-    ];
-    for (const [x, y] of candidates) {
-      const r: Rect = { x0: x, y0: y, x1: x + l.width, y1: y + l.height };
-      if (r.x0 < 0 || r.y0 < 0 || r.x1 > viewport.width || r.y1 > viewport.height) continue;
-      if (placed.some((p) => overlaps(p, r))) continue;
-      if (iconRects.some((p) => overlaps(p, r))) continue;
+    const e = d * 0.75;
+    for (let c = 0; c < 8; c++) {
+      let x: number;
+      let y: number;
+      switch (c) {
+        case 0:
+          x = l.ax + d;
+          y = l.ay - l.height / 2;
+          break;
+        case 1:
+          x = l.ax - d - l.width;
+          y = l.ay - l.height / 2;
+          break;
+        case 2:
+          x = l.ax - l.width / 2;
+          y = l.ay - d - l.height;
+          break;
+        case 3:
+          x = l.ax - l.width / 2;
+          y = l.ay + d;
+          break;
+        case 4:
+          x = l.ax + e;
+          y = l.ay - e - l.height;
+          break;
+        case 5:
+          x = l.ax + e;
+          y = l.ay + e;
+          break;
+        case 6:
+          x = l.ax - e - l.width;
+          y = l.ay - e - l.height;
+          break;
+        default:
+          x = l.ax - e - l.width;
+          y = l.ay + e;
+      }
+      const x1 = x + l.width;
+      const y1 = y + l.height;
+      if (x < 0 || y < 0 || x1 > W || y1 > H) continue;
+      let free = true;
+      for (let k = 0; k < n; k++) {
+        const o = 4 * k;
+        if (x < rects[o + 2]! && rects[o]! < x1 && y < rects[o + 3]! && rects[o + 1]! < y1) {
+          free = false;
+          break;
+        }
+      }
+      if (!free) continue;
       l.x = Math.round(x);
       l.y = Math.round(y);
       l.placed = true;
-      placed.push(r);
+      rects[4 * n] = x;
+      rects[4 * n + 1] = y;
+      rects[4 * n + 2] = x1;
+      rects[4 * n + 3] = y1;
+      n++;
       break;
     }
   }

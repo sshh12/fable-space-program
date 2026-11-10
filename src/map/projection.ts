@@ -43,7 +43,15 @@ export class Projector {
   readonly tanHalfY: number;
   readonly fovY: number;
   /** ROOT -> view rotation, row-major. */
-  private readonly m: Float64Array;
+  private readonly m00: number;
+  private readonly m01: number;
+  private readonly m02: number;
+  private readonly m10: number;
+  private readonly m11: number;
+  private readonly m12: number;
+  private readonly m20: number;
+  private readonly m21: number;
+  private readonly m22: number;
 
   constructor(camera: CameraState, viewport: Viewport) {
     this.eye = { x: camera.positionRoot.x, y: camera.positionRoot.y, z: camera.positionRoot.z };
@@ -58,26 +66,23 @@ export class Projector {
     this.tanHalfY = t;
     this.tanHalfX = (t * this.width) / this.height;
     // R(view -> root) from the quaternion; its transpose maps ROOT components into view space.
-    const q = camera.qViewToRoot;
-    const { x, y, z, w } = q;
-    const r00 = 1 - 2 * (y * y + z * z);
-    const r01 = 2 * (x * y - w * z);
-    const r02 = 2 * (x * z + w * y);
-    const r10 = 2 * (x * y + w * z);
-    const r11 = 1 - 2 * (x * x + z * z);
-    const r12 = 2 * (y * z - w * x);
-    const r20 = 2 * (x * z - w * y);
-    const r21 = 2 * (y * z + w * x);
-    const r22 = 1 - 2 * (x * x + y * y);
-    this.m = new Float64Array([r00, r10, r20, r01, r11, r21, r02, r12, r22]);
+    const { x, y, z, w } = camera.qViewToRoot;
+    this.m00 = 1 - 2 * (y * y + z * z);
+    this.m01 = 2 * (x * y + w * z);
+    this.m02 = 2 * (x * z - w * y);
+    this.m10 = 2 * (x * y - w * z);
+    this.m11 = 1 - 2 * (x * x + z * z);
+    this.m12 = 2 * (y * z + w * x);
+    this.m20 = 2 * (x * z + w * y);
+    this.m21 = 2 * (y * z - w * x);
+    this.m22 = 1 - 2 * (x * x + y * y);
   }
 
   /** Rotate a camera-relative ROOT vector into view space. */
   rotate(v: Vec3, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
-    const m = this.m;
-    const x = m[0]! * v.x + m[1]! * v.y + m[2]! * v.z;
-    const y = m[3]! * v.x + m[4]! * v.y + m[5]! * v.z;
-    const z = m[6]! * v.x + m[7]! * v.y + m[8]! * v.z;
+    const x = this.m00 * v.x + this.m01 * v.y + this.m02 * v.z;
+    const y = this.m10 * v.x + this.m11 * v.y + this.m12 * v.z;
+    const z = this.m20 * v.x + this.m21 * v.y + this.m22 * v.z;
     out.x = x;
     out.y = y;
     out.z = z;
@@ -89,10 +94,9 @@ export class Projector {
     const dx = p.x - this.eye.x;
     const dy = p.y - this.eye.y;
     const dz = p.z - this.eye.z;
-    const m = this.m;
-    out.x = m[0]! * dx + m[1]! * dy + m[2]! * dz;
-    out.y = m[3]! * dx + m[4]! * dy + m[5]! * dz;
-    out.z = m[6]! * dx + m[7]! * dy + m[8]! * dz;
+    out.x = this.m00 * dx + this.m01 * dy + this.m02 * dz;
+    out.y = this.m10 * dx + this.m11 * dy + this.m12 * dz;
+    out.z = this.m20 * dx + this.m21 * dy + this.m22 * dz;
     return out;
   }
 
@@ -115,6 +119,8 @@ export class Projector {
 
   /** Projection matrix (view space -> clip) for the GPU; same as the engine's reversed-Z infinite projection. */
   projectionMatrix(): Mat4 {
-    return mat4.perspectiveReversedZInfinite(this.fovY, this.width / this.height, this.near);
+    return (this.projection ??= mat4.perspectiveReversedZInfinite(this.fovY, this.width / this.height, this.near));
   }
+
+  private projection: Mat4 | null = null;
 }

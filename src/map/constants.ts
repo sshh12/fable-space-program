@@ -6,8 +6,9 @@
 /** Maximum screen-space distance (device px) between a sampled polyline and the exact conic. */
 export const CHORD_ERROR_PX = 0.3;
 /**
- * The sampler refines until its rigorous chord-error bound (tangent triangle, see sampler.ts) is below this;
- * the actual error is typically about half the bound.
+ * The sampler refines until the chord error of every piece is below this. The error is computed exactly
+ * (projected rational-Bezier form of the conic arc, see sampler.ts), so the actual error approaches this
+ * value; the 0.01 px margin covers float64 rounding of the projection.
  */
 export const CHORD_TOLERANCE_PX = 0.29;
 /**
@@ -31,6 +32,18 @@ export const DASH_ON_PX = 8;
 export const HIT_TOLERANCE_PX = 10;
 /** A press that moves less than this before release is a click, not a drag. */
 export const CLICK_SLOP_PX = 4;
+/**
+ * A click on a body sets the target only after this long without a second click (ms): the first click of a
+ * double click (focus) must not retarget. 500 ms is the Windows default double-click time and the longest
+ * interval browsers use for dblclick.
+ */
+export const DOUBLE_CLICK_MS = 500;
+
+/** Node panel: nominal size (the DOM panel reports its real size once shown) and offset from the node. */
+export const PANEL_WIDTH_PX = 220;
+export const PANEL_HEIGHT_PX = 262;
+export const PANEL_OFFSET_X_PX = 92;
+export const PANEL_OFFSET_Y_PX = 28;
 
 /** Icons drawn for bodies and vessels whose projected diameter is below this. */
 export const SMALL_OBJECT_PX = 6;

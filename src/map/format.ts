@@ -45,6 +45,65 @@ export function formatTimeTo(dt: number): string {
   return dt >= 0 ? `T-${formatDuration(dt)}` : `T+${formatDuration(-dt)}`;
 }
 
+/**
+ * Duration for an editable field, to a tenth of a second and readable back by parseDuration:
+ * "2d 03h 04m 05.0s", "1h 02m 03.4s", "4m 05.0s", "12.5s".
+ */
+export function formatDurationField(s: number): string {
+  if (!Number.isFinite(s)) return '--';
+  const sign = s < 0 ? '-' : '';
+  const tenths = Math.round(Math.abs(s) * 10);
+  const d = Math.floor(tenths / 864000);
+  const h = Math.floor((tenths % 864000) / 36000);
+  const m = Math.floor((tenths % 36000) / 600);
+  const sec = (tenths % 600) / 10;
+  const p2 = (n: number): string => n.toString().padStart(2, '0');
+  const ss = sec.toFixed(1).padStart(4, '0');
+  if (d > 0) return `${sign}${d}d ${p2(h)}h ${p2(m)}m ${ss}s`;
+  if (h > 0) return `${sign}${h}h ${p2(m)}m ${ss}s`;
+  if (m > 0) return `${sign}${m}m ${ss}s`;
+  return `${sign}${sec.toFixed(1)}s`;
+}
+
+const UNIT_SECONDS: Record<string, number> = { d: 86400, h: 3600, m: 60, min: 60, s: 1 };
+
+/**
+ * A typed duration in seconds, or NaN. Accepts plain seconds ("90", "12.5"), clock form ("1:30",
+ * "2:03:04.5", "1:02:03:04" with days), and unit form ("1h 30m", "2d4h", "90 s", "1.5h"), each optionally
+ * prefixed by "T-" or "in". A comma works as the decimal separator.
+ */
+export function parseDuration(text: string): number {
+  let t = text.trim().toLowerCase().replace(/,/g, '.');
+  t = t.replace(/^(t\s*[-−]|in\s)\s*/, '');
+  if (t === '') return NaN;
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (/^\d+(:\d+){1,3}(\.\d+)?$/.test(t)) {
+    const parts = t.split(':').map(Number);
+    const weights = [1, 60, 3600, 86400];
+    let total = 0;
+    for (let i = 0; i < parts.length; i++) total += parts[parts.length - 1 - i]! * weights[i]!;
+    return total;
+  }
+  const unit = /(\d+(?:\.\d+)?)\s*(d|h|min|m|s)/gy;
+  let total = 0;
+  let matched = 0;
+  let m: RegExpExecArray | null;
+  while ((m = unit.exec(t)) !== null) {
+    total += Number(m[1]) * UNIT_SECONDS[m[2]!]!;
+    while (t[unit.lastIndex] === ' ') unit.lastIndex++;
+    matched = unit.lastIndex;
+  }
+  return matched === t.length && matched > 0 ? total : NaN;
+}
+
+/** A typed number (comma or point as the decimal separator, an optional unit after it), or NaN. */
+export function parseNumber(text: string, unit?: string): number {
+  let t = text.trim().replace(/,/g, '.');
+  if (unit && t.toLowerCase().endsWith(unit)) t = t.slice(0, -unit.length).trim();
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i.test(t)) return NaN;
+  return Number(t);
+}
+
 export function formatLatLon(lat: number, lon: number): string {
   const la = lat * RAD;
   let lo = lon * RAD;

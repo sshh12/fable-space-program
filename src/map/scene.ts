@@ -3,10 +3,14 @@
  * trajectory and reference orbit, markers, nodes, bodies, vessels and surface targets, all positioned in
  * float64 and projected by one Projector. Both the GPU draw list and hit-testing read this structure, so
  * the pointer is always tested against exactly what is drawn.
+ *
+ * The builder runs every frame the camera or the snapshot changes. It keeps its scratch storage (vertex
+ * arrays, sampler, curve objects) between frames, and caches what depends on the snapshot alone (orbits of
+ * other vessels, node locations, label text) for as long as its inputs are unchanged.
  */
 import type { CameraState } from '@/core/contracts/render';
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { Marker, MarkerKind, Patch, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
+import type { ManeuverNode, Marker, MarkerKind, Patch, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicFromState, conicMaxTrueAnomaly, conicPosition, conicRadiusCrossing, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
@@ -33,6 +37,8 @@ import { Projector, type Viewport } from './projection';
 import { FAINT_MAX_TURN, Sampler } from './sampler';
 
 const TWO_PI = 2 * Math.PI;
+/** Time tolerance (s) when matching a planned patch to the current patch it continues. */
+const UT_EPS = 1e-3;
 
 export type LineKind = 'current' | 'planned' | 'vesselOrbit' | 'debrisOrbit' | 'bodyOrbit' | 'soi' | 'recoveryZone' | 'ghostBody';
 
@@ -46,7 +52,10 @@ export interface LineRecord {
   /** Device pixels. */
   width: number;
   dashed: boolean;
-  /** The sampled curve (for parameter -> anomaly on hit-testing); null for a radial (straight) patch. */
+  /**
+   * The sampled curve (for parameter -> anomaly on hit-testing); null for a radial (straight) patch. Curve
+   * objects are reused by the next build: read it only while this scene is the current one.
+   */
   curve: ViewConic | null;
   /** Set for trajectories of the active vessel. */
   patchKey?: PatchKey;
@@ -141,6 +150,17 @@ export interface TargetItem extends PointItem {
   color: Rgba;
 }
 
+/** An encounter body drawn where it was at the intercept (at-intercept drawing). */
+export interface GhostBody {
+  /** `<body>@intercept`, then `<body>@intercept#2`, ... for further encounters with the same body. */
+  id: string;
+  bodyId: string;
+  /** ROOT position the encounter's patches are drawn around. */
+  pos: Vec3;
+  /** True when only the planned trajectory meets the body there. */
+  plannedOnly: boolean;
+}
+
 /** Struct-of-arrays vertex storage of all polylines (float64). */
 export class VertexArrays {
   capacity = 0;
@@ -182,8 +202,8 @@ export class VertexArrays {
 
 export interface SceneOptions {
   /**
-   * Draw encounter patches around their body's position at the intercept (derived from the preceding
-   * patch's Patch.bodyPosAtEnd) instead of its current position.
+   * Draw each encounter's patches around their body's position at that encounter's intercept (derived from
+   * the preceding patch's Patch.bodyPosAtEnd) instead of the body's current position.
    */
   atIntercept: boolean;
 }
@@ -201,7 +221,9 @@ export interface MapScene {
   vessels: VesselItem[];
   targets: TargetItem[];
   occluders: Occluder[];
-  /** ROOT origin of each body's patches (current position, or the at-intercept anchor). */
+  /** At-intercept ghosts (empty when drawing at current positions). */
+  ghosts: GhostBody[];
+  /** ROOT position of each ghost by ghost id (`<body>@intercept`, `<body>@intercept#2`, ...). */
   ghostAnchors: Map<string, Vec3>;
 }
 
@@ -230,16 +252,44 @@ const MARKER_STYLE: Record<MarkerKind, { shape: MarkerShape; color: Rgba; priori
   maneuverNode: { shape: 'node', color: COLORS.node, priority: 9 },
 };
 
+const NO_TEXT: string[] = [];
+
 export interface LabelSource {
   markerLabel(item: Omit<MarkerItem, 'label' | 'details'>, scene: { snapshot: SimSnapshot; defs: DefLibrary }): { label: string[]; details: string[] };
+}
+
+/** Orbit of another vessel, kept while its state is unchanged. */
+interface VesselOrbitCache {
+  rx: number;
+  ry: number;
+  rz: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  ut: number;
+  conic: ConicElements;
+  nuNow: number;
+}
+
+/** Node location, kept while the node and the predicted patches are the same objects. */
+interface NodeCache {
+  node: ManeuverNode;
+  current: Patch[];
+  planned: Patch[];
+  loc: NodeLocation | null;
 }
 
 export class SceneBuilder {
   private readonly sampler = new Sampler();
   private readonly verts = new VertexArrays();
   private readonly tmpV: Vec3 = { x: 0, y: 0, z: 0 };
-  /** Label text per marker object, reused while the snapshot time and target are unchanged (camera-only frames). */
-  private readonly labelCache = new WeakMap<Marker, Map<string, { ut: number; target: string | null; text: { label: string[]; details: string[] } }>>();
+  /** Curve objects, reused by index every build. */
+  private readonly curves: ViewConic[] = [];
+  private curvesUsed = 0;
+  /** Label text per marker object, reused while its inputs are unchanged (camera-only frames). */
+  private readonly labelCache = new WeakMap<Marker, Map<string, { ut: number; target: string | null; landingId: string | null; miss: number; text: { label: string[]; details: string[] } }>>();
+  private readonly vesselOrbits = new Map<string, VesselOrbitCache>();
+  private readonly nodeLocations = new Map<string, NodeCache>();
 
   constructor(
     private readonly defs: DefLibrary,
@@ -250,6 +300,7 @@ export class SceneBuilder {
     const proj = new Projector(camera, viewport);
     const verts = this.verts;
     verts.n = 0;
+    this.curvesUsed = 0;
     const scene: MapScene = {
       snapshot,
       camera,
@@ -263,30 +314,11 @@ export class SceneBuilder {
       vessels: [],
       targets: [],
       occluders: [],
+      ghosts: [],
       ghostAnchors: new Map(),
     };
     const bodies = this.bodyInfo(snapshot);
-    const active = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId) ?? null;
-
-    // Encounter anchors for at-intercept drawing: one per body, its ROOT position at the intercept (SOI
-    // entry) of its first encounter patch. The preceding patch ends there in ROOT at
-    // prev.bodyPosAtEnd + r(prev.nuEnd) (Patch contract), so the body sat at that point minus the
-    // encounter conic's start: the drawn chain is continuous at the intercept. An encounter patch without a
-    // predecessor in its list falls back to its own bodyPosAtEnd.
-    const anchors = new Map<string, Vec3>();
-    if (options.atIntercept) {
-      for (const list of [snapshot.patches.current, snapshot.patches.planned]) {
-        list.forEach((p, i) => {
-          if ((active && p.bodyId === active.bodyId) || p.bodyId === this.defs.rootBodyId || anchors.has(p.bodyId)) return;
-          const prev = list[i - 1];
-          if (prev && prev.bodyId !== p.bodyId) {
-            const endRoot = v3.add(prev.bodyPosAtEnd, conicPosition(prev.conic, prev.nuEnd));
-            anchors.set(p.bodyId, v3.sub(endRoot, conicPosition(p.conic, p.nuStart)));
-          } else anchors.set(p.bodyId, v3.clone(p.bodyPosAtEnd));
-        });
-      }
-    }
-    scene.ghostAnchors = anchors;
+    const anchors = options.atIntercept ? this.encounterAnchors(snapshot, bodies, scene) : null;
 
     // Occluders: every body at its current position, plus ghosts at their anchors.
     for (const b of bodies.values()) {
@@ -294,18 +326,14 @@ export class SceneBuilder {
       const c = proj.toView(b.pos);
       scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius });
     }
-    for (const [id, pos] of anchors) {
-      const b = bodies.get(id);
+    for (const g of scene.ghosts) {
+      const b = bodies.get(g.bodyId);
       if (!b || !(b.radius > 0)) continue;
-      const c = proj.toView(pos);
+      const c = proj.toView(g.pos);
       scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius });
     }
 
-    const patchOrigin = (p: Patch): Vec3 => {
-      const anchor = anchors.get(p.bodyId);
-      if (anchor) return anchor;
-      return bodies.get(p.bodyId)?.pos ?? v3.zero();
-    };
+    const patchOrigin = (p: Patch): Vec3 => anchors?.get(p) ?? bodies.get(p.bodyId)?.pos ?? ORIGIN;
 
     // ------------------------------------------------------------------------- reference geometry
     for (const b of bodies.values()) {
@@ -318,10 +346,10 @@ export class SceneBuilder {
       if (!(b.soi && b.soi > 0)) continue;
       this.addSoiLine(scene, b);
     }
-    for (const [id, pos] of anchors) {
-      const b = bodies.get(id);
+    for (const g of scene.ghosts) {
+      const b = bodies.get(g.bodyId);
       if (!b || !(b.radius > 0)) continue;
-      this.addSphereOutline(scene, `ghost:${id}`, 'ghostBody', proj.toView(pos), b.radius, COLORS.ghost, FAINT_LINE_WIDTH_PX, b.orbit);
+      this.addSphereOutline(scene, `ghost:${g.id}`, 'ghostBody', proj.toView(g.pos), b.radius, COLORS.ghost, FAINT_LINE_WIDTH_PX, b.orbit);
     }
     for (const v of snapshot.vessels) {
       if (v.id === snapshot.activeVesselId) continue;
@@ -334,7 +362,8 @@ export class SceneBuilder {
     }
 
     // ------------------------------------------------------------------------------ trajectories
-    const firstNodeUt = snapshot.nodes.length > 0 ? Math.min(...snapshot.nodes.map((n) => n.ut)) : Infinity;
+    let firstNodeUt = Infinity;
+    for (const n of snapshot.nodes) if (n.ut < firstNodeUt) firstNodeUt = n.ut;
     const cur0 = snapshot.patches.current[0];
     const span = cur0 ? Math.min(Math.max(cur0.tEnd - cur0.tStart, 600), 30 * 86400) : 86400;
     const tau = 1.5 * span;
@@ -353,100 +382,170 @@ export class SceneBuilder {
     drawPatches('planned', snapshot.patches.planned);
 
     // ---------------------------------------------------------------------------------- markers
-    const markerPatches: [PatchList, Patch[]][] = [
-      ['current', snapshot.patches.current],
-      ['planned', snapshot.patches.planned],
-    ];
-    const labelOf = (item: Omit<MarkerItem, 'label' | 'details'>): { label: string[]; details: string[] } => {
+    const target = snapshot.readouts.targetBodyId;
+    // Label text reads the time, the target (closest approach) and the landing-target prediction (miss).
+    const landing = snapshot.readouts.landingTarget;
+    const landingId = landing?.targetId ?? null;
+    const miss = landing?.predicted ? landing.predicted.missDistance : -1;
+    const labelOf = (item: MarkerItem): void => {
       let per = this.labelCache.get(item.marker);
       if (!per) this.labelCache.set(item.marker, (per = new Map()));
-      const hit = per.get(item.kind);
-      const target = snapshot.readouts.targetBodyId;
-      if (hit && hit.ut === snapshot.ut && hit.target === target) return hit.text;
-      const text = this.labels.markerLabel(item, { snapshot, defs: this.defs });
-      per.set(item.kind, { ut: snapshot.ut, target, text });
-      return text;
+      let hit = per.get(item.kind);
+      if (!hit || hit.ut !== snapshot.ut || hit.target !== target || hit.landingId !== landingId || hit.miss !== miss) {
+        hit = { ut: snapshot.ut, target, landingId, miss, text: this.labels.markerLabel(item, { snapshot, defs: this.defs }) };
+        per.set(item.kind, hit);
+      }
+      item.label = hit.text.label;
+      item.details = hit.text.details;
     };
-    for (const [list, patches] of markerPatches) {
-      patches.forEach((p, index) => {
-        if (list === 'planned' && p.afterNodeId === undefined) return;
+    for (let li = 0; li < 2; li++) {
+      const list: PatchList = li === 0 ? 'current' : 'planned';
+      const patches = li === 0 ? snapshot.patches.current : snapshot.patches.planned;
+      for (let index = 0; index < patches.length; index++) {
+        const p = patches[index]!;
+        if (list === 'planned' && p.afterNodeId === undefined) continue;
         const origin = patchOrigin(p);
-        const counts = new Map<string, number>();
-        for (const m of p.markers) {
+        const markers = p.markers;
+        for (let mi = 0; mi < markers.length; mi++) {
+          const m = markers[mi]!;
           if (m.kind === 'maneuverNode') continue;
-          const n = (counts.get(m.kind) ?? 0) + 1;
-          counts.set(m.kind, n);
+          // n-th marker of this kind on the patch (ids stay stable when other kinds come and go)
+          let n = 1;
+          for (let j = 0; j < mi; j++) if (markers[j]!.kind === m.kind) n++;
           const id = `${list}/${index}/${m.kind}${n > 1 ? `#${n}` : ''}`;
           const frameOrigin = m.bodyId === p.bodyId ? origin : bodies.get(m.bodyId)?.pos ?? origin;
-          const root = v3.add(frameOrigin, m.r);
           const style = MARKER_STYLE[m.kind];
-          const base = this.point(scene, id, root);
-          const item = { ...base, kind: m.kind, marker: m, patchKey: { list, index }, shape: style.shape, color: style.color, priority: style.priority };
-          scene.markers.push({ ...item, ...labelOf(item) });
+          const patchKey: PatchKey = { list, index };
+          const item = this.markerItem(scene, id, v3.add(frameOrigin, m.r), m.kind, m, patchKey, style.shape, style.color, style.priority);
+          labelOf(item);
+          scene.markers.push(item);
           // Impact and entry points also sit on the ground, on the body as it is now (body-fixed lat/lon).
           if ((m.kind === 'impact' || m.kind === 'atmosphereEntry') && m.latitude !== undefined && m.longitude !== undefined) {
             const b = bodies.get(m.bodyId);
             if (b) {
               const dirFixed = latLonToDir(m.latitude, m.longitude);
-              const rootS = v3.add(b.pos, v3.scale(quat.rotate(b.q, dirFixed), b.radius));
-              const sBase = this.point(scene, `${id}/surface`, rootS);
+              const rootS = v3.addScaled(b.pos, quat.rotate(b.q, dirFixed), b.radius);
               const kind = m.kind === 'impact' ? ('impactSurface' as const) : ('entrySurface' as const);
-              const sItem = { ...sBase, kind, marker: m, patchKey: { list, index }, shape: 'surfacePoint' as const, color: style.color, priority: 2 };
-              scene.markers.push({ ...sItem, ...labelOf(sItem) });
+              const sItem = this.markerItem(scene, `${id}/surface`, rootS, kind, m, patchKey, 'surfacePoint', style.color, 2);
+              labelOf(sItem);
+              scene.markers.push(sItem);
             }
           }
         }
-      });
+      }
     }
 
     // ------------------------------------------------------------------------------------ nodes
     for (const node of snapshot.nodes) {
-      const loc = locateNode(snapshot, node);
+      const loc = this.locate(snapshot, node);
       if (!loc) continue;
       const root = v3.add(patchOrigin(loc.patch), loc.rBody);
-      const base = this.point(scene, node.id, root);
-      scene.nodes.push({
-        ...base,
+      const view = proj.toView(root);
+      const item: NodeItem = {
+        id: node.id,
+        x: 0,
+        y: 0,
+        front: false,
+        hidden: 1,
+        view,
         loc,
         root,
         axes: {
-          prograde: this.axisScreen(scene, root, loc.prograde),
-          normal: this.axisScreen(scene, root, loc.normal),
-          radial: this.axisScreen(scene, root, loc.radial),
+          prograde: this.axisScreen(scene, view, loc.prograde),
+          normal: this.axisScreen(scene, view, loc.normal),
+          radial: this.axisScreen(scene, view, loc.radial),
         },
-      });
+      };
+      this.place(scene, item);
+      scene.nodes.push(item);
     }
 
     // ------------------------------------------------------------------------- bodies, vessels
     const pxScale = viewport.pxScale;
     for (const b of bodies.values()) {
       if (!(b.radius > 0)) continue;
-      scene.bodies.push(this.bodyItem(scene, b.id, b.name, b.pos, b.radius, false, pxScale));
+      scene.bodies.push(this.bodyItem(scene, b.id, b.id, b.name, b.pos, b.radius, false, pxScale, b.name));
     }
-    for (const [id, pos] of anchors) {
-      const b = bodies.get(id);
+    for (const g of scene.ghosts) {
+      const b = bodies.get(g.bodyId);
       if (!b) continue;
-      scene.bodies.push(this.bodyItem(scene, `${id}@intercept`, b.name, pos, b.radius, true, pxScale));
+      scene.bodies.push(this.bodyItem(scene, g.id, g.bodyId, b.name, g.pos, b.radius, true, pxScale, `${b.name} (${g.plannedOnly ? 'planned encounter' : 'encounter'})`));
     }
     for (const v of snapshot.vessels) {
-      const base = this.point(scene, v.id, v.rRoot);
-      scene.vessels.push({ ...base, vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable });
+      const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view: proj.toView(v.rRoot), vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable };
+      this.place(scene, item);
+      scene.vessels.push(item);
     }
 
     // --------------------------------------------------------------------------- surface targets
     for (const t of snapshot.surfaceTargets) {
       const b = bodies.get(t.bodyId);
       if (!b) continue;
-      const rootT = v3.add(b.pos, v3.scale(quat.rotate(b.q, latLonToDir(t.latitude, t.longitude)), b.radius));
-      const base = this.point(scene, t.id, rootT);
+      const rootT = v3.addScaled(b.pos, quat.rotate(b.q, latLonToDir(t.latitude, t.longitude)), b.radius);
       const shape: MarkerShape = t.kind === 'landing' ? 'pin' : t.kind === 'site' ? 'pad' : 'zone';
       const color = t.kind === 'landing' ? COLORS.landing : t.kind === 'site' ? COLORS.site : COLORS.recovery;
-      scene.targets.push({ ...base, target: t, shape, color });
+      const item: TargetItem = { id: t.id, x: 0, y: 0, front: false, hidden: 1, view: proj.toView(rootT), target: t, shape, color };
+      this.place(scene, item);
+      scene.targets.push(item);
     }
     return scene;
   }
 
   // -------------------------------------------------------------------------------------- helpers
+
+  /**
+   * At-intercept anchors, one per ENCOUNTER: a run of consecutive patches about the same body in one list.
+   * The patch before the run ends in ROOT at prev.bodyPosAtEnd + r(prev.nuEnd) (Patch contract), so the
+   * body sat at that point minus the run's first conic start: the drawn chain is continuous at that
+   * intercept. A planned list that starts inside an encounter of the current list (its first node lies
+   * there) continues that encounter and shares its anchor. Not anchored: the root body, and the run the
+   * vessel is in now (current[0], drawn where its body is now). Fills scene.ghosts / ghostAnchors.
+   */
+  private encounterAnchors(s: SimSnapshot, bodies: Map<string, BodyInfo>, scene: MapScene): Map<Patch, Vec3> {
+    const anchors = new Map<Patch, Vec3>();
+    /** Distinct anchors in order of appearance, with their body and whether the current list meets them. */
+    const distinct = new Map<Vec3, { bodyId: string; current: boolean }>();
+    const root = this.defs.rootBodyId;
+    const current = s.patches.current;
+    const lists: [Patch[], boolean][] = [
+      [current, true],
+      [s.patches.planned, false],
+    ];
+    for (const [list, isCurrent] of lists) {
+      let anchor: Vec3 | null = null;
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i]!;
+        const prev = list[i - 1];
+        if (prev && prev.bodyId === p.bodyId) {
+          if (anchor) anchors.set(p, anchor);
+          continue;
+        }
+        // first patch of a run
+        anchor = null;
+        if (p.bodyId === root || !bodies.has(p.bodyId)) continue;
+        if (prev) {
+          anchor = v3.sub(v3.add(prev.bodyPosAtEnd, conicPosition(prev.conic, prev.nuEnd)), conicPosition(p.conic, p.nuStart));
+        } else if (isCurrent) {
+          continue; // the encounter the vessel is in now
+        } else {
+          const host = current.find((c) => c.bodyId === p.bodyId && p.tStart >= c.tStart - UT_EPS && p.tStart <= c.tEnd + UT_EPS);
+          anchor = host ? anchors.get(host) ?? null : v3.clone(p.bodyPosAtEnd);
+        }
+        if (!anchor) continue;
+        anchors.set(p, anchor);
+        if (!distinct.has(anchor)) distinct.set(anchor, { bodyId: p.bodyId, current: isCurrent });
+      }
+    }
+    const perBody = new Map<string, number>();
+    for (const [pos, { bodyId, current: metByCurrent }] of distinct) {
+      const n = (perBody.get(bodyId) ?? 0) + 1;
+      perBody.set(bodyId, n);
+      const id = `${bodyId}@intercept${n > 1 ? `#${n}` : ''}`;
+      scene.ghosts.push({ id, bodyId, pos, plannedOnly: !metByCurrent });
+      scene.ghostAnchors.set(id, pos);
+    }
+    return anchors;
+  }
 
   private bodyInfo(s: SimSnapshot): Map<string, BodyInfo> {
     const out = new Map<string, BodyInfo>();
@@ -467,25 +566,48 @@ export class SceneBuilder {
     return out;
   }
 
-  /** Projected point with occlusion. */
-  private point(scene: MapScene, id: string, root: Vec3): PointItem {
-    const proj = scene.proj;
-    const view = proj.toView(root);
-    const sp = proj.projectView(view);
-    const hidden = sp.front ? occlusionWeight(view, scene.occluders, proj.focal, OCCLUSION_FADE_PX * proj.pxScale) : 1;
-    return { id, x: sp.x, y: sp.y, front: sp.front, hidden, view };
+  /** Node location from the snapshot, recomputed only when the node or the predicted patches change. */
+  private locate(s: SimSnapshot, node: ManeuverNode): NodeLocation | null {
+    const c = this.nodeLocations.get(node.id);
+    if (c && c.node === node && c.current === s.patches.current && c.planned === s.patches.planned) return c.loc;
+    const loc = locateNode(s, node);
+    this.nodeLocations.set(node.id, { node, current: s.patches.current, planned: s.patches.planned, loc });
+    if (this.nodeLocations.size > 4 * s.nodes.length + 16) {
+      for (const id of this.nodeLocations.keys()) if (!s.nodes.some((n) => n.id === id)) this.nodeLocations.delete(id);
+    }
+    return loc;
   }
 
-  private axisScreen(scene: MapScene, root: Vec3, axisRoot: Vec3): AxisScreen {
+  /** Project an item's view-space position and evaluate its occlusion. */
+  private place(scene: MapScene, item: PointItem): void {
     const proj = scene.proj;
-    const a = proj.rotate(axisRoot);
-    const p = proj.toView(root);
+    const v = item.view;
+    const depth = -v.z;
+    if (depth > proj.near) {
+      const k = proj.focal / depth;
+      item.x = proj.cx + v.x * k;
+      item.y = proj.cy - v.y * k;
+      item.front = true;
+      item.hidden = occlusionWeight(v, scene.occluders, proj.focal, OCCLUSION_FADE_PX * proj.pxScale);
+    } else {
+      item.x = NaN;
+      item.y = NaN;
+      item.front = false;
+      item.hidden = 1;
+    }
+  }
+
+  private markerItem(scene: MapScene, id: string, root: Vec3, kind: MarkerItem['kind'], marker: Marker, patchKey: PatchKey, shape: MarkerShape, color: Rgba, priority: number): MarkerItem {
+    const item: MarkerItem = { id, x: 0, y: 0, front: false, hidden: 1, view: scene.proj.toView(root), kind, marker, patchKey, shape, color, label: NO_TEXT, details: NO_TEXT, priority };
+    this.place(scene, item);
+    return item;
+  }
+
+  private axisScreen(scene: MapScene, p: Vec3, axisRoot: Vec3): AxisScreen {
+    const a = scene.proj.rotate(axisRoot, this.tmpV);
     const dist = Math.hypot(p.x, p.y, p.z);
     // Component of the axis perpendicular to the view ray, and its screen direction (derivative of the projection).
-    const rx = p.x / dist;
-    const ry = p.y / dist;
-    const rz = p.z / dist;
-    const along = a.x * rx + a.y * ry + a.z * rz;
+    const along = (a.x * p.x + a.y * p.y + a.z * p.z) / dist;
     const extent = Math.sqrt(Math.max(0, 1 - along * along));
     const depth = -p.z;
     // d(screen)/d(t) for p + t a: x' = (a.x depth + p.x a.z) / depth^2 ... (y flipped)
@@ -495,18 +617,35 @@ export class SceneBuilder {
     return l > 0 ? { dx: dxs / l, dy: dys / l, extent } : { dx: 1, dy: 0, extent: 0 };
   }
 
-  private bodyItem(scene: MapScene, id: string, name: string, pos: Vec3, radius: number, ghost: boolean, pxScale: number): BodyItem {
+  private bodyItem(scene: MapScene, id: string, bodyId: string, name: string, pos: Vec3, radius: number, ghost: boolean, pxScale: number, label: string): BodyItem {
     const proj = scene.proj;
     const view = proj.toView(pos);
-    const sp = proj.projectView(view);
     const L = Math.hypot(view.x, view.y, view.z);
     const ang = L > radius ? Math.asin(radius / L) : Math.PI / 2;
     const radiusPx = Math.tan(Math.min(ang, 1.5)) * proj.focal;
-    // A body is hidden by another body in front of it (never by itself).
-    const others = scene.occluders.filter((o) => Math.abs(o.x - view.x) + Math.abs(o.y - view.y) + Math.abs(o.z - view.z) > 1e-3 * radius);
-    const hidden = sp.front ? occlusionWeight(view, others, proj.focal, OCCLUSION_FADE_PX * pxScale) : 1;
-    const small = 2 * radiusPx < SMALL_OBJECT_PX * pxScale;
-    return { id, x: sp.x, y: sp.y, front: sp.front, hidden, view, bodyId: ghost ? id.slice(0, id.indexOf('@')) : id, name, radiusPx, small, ghost, label: ghost ? `${name} (encounter)` : name };
+    const item: BodyItem = { id, x: NaN, y: NaN, front: false, hidden: 1, view, bodyId, name, radiusPx, small: 2 * radiusPx < SMALL_OBJECT_PX * pxScale, ghost, label };
+    const depth = -view.z;
+    if (depth > proj.near) {
+      const k = proj.focal / depth;
+      item.x = proj.cx + view.x * k;
+      item.y = proj.cy - view.y * k;
+      item.front = true;
+      // A body is hidden by another body in front of it (never by itself).
+      let w = 0;
+      for (const o of scene.occluders) {
+        if (Math.abs(o.x - view.x) + Math.abs(o.y - view.y) + Math.abs(o.z - view.z) <= 1e-3 * radius) continue;
+        w = Math.max(w, occlusionWeight(view, ONE_OCCLUDER(o), proj.focal, OCCLUSION_FADE_PX * pxScale));
+      }
+      item.hidden = w;
+    }
+    return item;
+  }
+
+  private nextCurve(): ViewConic {
+    let c = this.curves[this.curvesUsed];
+    if (!c) this.curves.push((c = new ViewConic()));
+    this.curvesUsed++;
+    return c;
   }
 
   /** Sample a conic arc between true anomalies (unwrapped) around a ROOT focus and append a line. */
@@ -522,7 +661,7 @@ export class SceneBuilder {
     widthPx: number,
     dashed: boolean,
   ): PatchCurveLine | null {
-    const curve = new ViewConic().setFromElements(conic, focusRoot, scene.proj);
+    const curve = this.nextCurve().setFromElements(conic, focusRoot, scene.proj);
     return this.addCurve(scene, id, kind, curve, curve.nuToU(nu0), curve.nuToU(nu1), color, widthPx, dashed);
   }
 
@@ -536,6 +675,8 @@ export class SceneBuilder {
     const start = verts.n;
     let len = 0;
     let visible = 0;
+    const w = proj.width;
+    const h = proj.height;
     for (let i = 0; i < s.count; i++) {
       const j = start + i;
       verts.vx[j] = s.vx[i]!;
@@ -551,10 +692,10 @@ export class SceneBuilder {
       if (i > 0) {
         const dx = sx - verts.sx[j - 1]!;
         const dy = sy - verts.sy[j - 1]!;
-        if (Number.isFinite(dx) && Number.isFinite(dy)) len += Math.sqrt(dx * dx + dy * dy);
+        if (dx === dx && dy === dy) len += Math.sqrt(dx * dx + dy * dy);
       }
       verts.len[j] = len;
-      if (Number.isFinite(sx) && proj.onScreen(sx, sy)) visible++;
+      if (sx >= 0 && sy >= 0 && sx <= w && sy <= h) visible++;
     }
     verts.n = start + s.count;
     const rec: PatchCurveLine = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
@@ -585,17 +726,16 @@ export class SceneBuilder {
     // eccentric/hyperbolic anomaly as the parameter this is Kepler's equation itself: dt = dM / n.
     const verts = this.verts;
     const curve = rec.curve;
-    const tspStart = timeSincePeriapsis(c, wrapPi(p.nuStart));
     const aAbs = Math.abs(c.a);
     const meanMotion = Number.isFinite(aAbs) ? Math.sqrt(c.mu / (aAbs * aAbs * aAbs)) : NaN;
     const m0 = curve.meanAnomaly(verts.u[rec.start]!);
+    const kepler = Number.isFinite(m0) && Number.isFinite(meanMotion);
+    const tspStart = kepler ? 0 : timeSincePeriapsis(c, wrapPi(p.nuStart));
     for (let i = 0; i < rec.count; i++) {
       const j = rec.start + i;
-      let t: number;
-      if (Number.isFinite(m0) && Number.isFinite(meanMotion)) t = p.tStart + (curve.meanAnomaly(verts.u[j]!) - m0) / meanMotion;
-      else t = p.tStart + (timeSincePeriapsis(c, curve.uToNu(verts.u[j]!)) - tspStart);
+      const t = kepler ? p.tStart + (curve.meanAnomaly(verts.u[j]!) - m0) / meanMotion : p.tStart + (timeSincePeriapsis(c, curve.uToNu(verts.u[j]!)) - tspStart);
       verts.t[j] = t;
-      const ahead = Math.max(0, t - now);
+      const ahead = t > now ? t - now : 0;
       let a = FADE_FLOOR + (1 - FADE_FLOOR) * Math.exp(-ahead / tau);
       if (t > dimAfterUt) a *= AFTER_NODE_DIM;
       verts.alpha[j] = a;
@@ -645,14 +785,26 @@ export class SceneBuilder {
     scene.lines.push({ kind: list, id: `${list}/${index}`, start, count: 2, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: visible, capped: false, evaluations: 0, occlusionSlack: 0 });
   }
 
+  /** Orbit of another vessel from its state (cached while the state and time are unchanged). */
+  private vesselOrbit(v: VesselSnapshot, mu: number, ut: number): VesselOrbitCache {
+    const c = this.vesselOrbits.get(v.id);
+    if (c && c.ut === ut && c.rx === v.r.x && c.ry === v.r.y && c.rz === v.r.z && c.vx === v.v.x && c.vy === v.v.y && c.vz === v.v.z && c.conic.mu === mu) return c;
+    const conic = conicFromState(mu, v.r, v.v, ut);
+    const entry: VesselOrbitCache = { rx: v.r.x, ry: v.r.y, rz: v.r.z, vx: v.v.x, vy: v.v.y, vz: v.v.z, ut, conic, nuNow: conicTrueAnomaly(conic, v.r) };
+    this.vesselOrbits.set(v.id, entry);
+    return entry;
+  }
+
   private addVesselOrbit(scene: MapScene, v: VesselSnapshot, bodies: Map<string, BodyInfo>, ut: number): void {
     if (v.translationMode === 'landed' || v.situation === 'landed' || v.situation === 'splashed' || v.situation === 'prelaunch') return;
     const b = bodies.get(v.bodyId);
     const mu = this.defs.bodies[v.bodyId]?.mu;
     if (!b || !mu) return;
-    if (!(v3.len(v3.cross(v.r, v.v)) > 0)) return;
-    const c = conicFromState(mu, v.r, v.v, ut);
-    const nuNow = conicTrueAnomaly(c, v.r);
+    const hx = v.r.y * v.v.z - v.r.z * v.v.y;
+    const hy = v.r.z * v.v.x - v.r.x * v.v.z;
+    const hz = v.r.x * v.v.y - v.r.y * v.v.x;
+    if (!(hx * hx + hy * hy + hz * hz > 0)) return;
+    const { conic: c, nuNow } = this.vesselOrbit(v, mu, ut);
     let nu0 = nuNow;
     let nu1: number;
     const rp = c.p / (1 + c.e);
@@ -688,7 +840,7 @@ export class SceneBuilder {
     } else if (b.orbit) {
       const P = scene.proj.rotate(b.orbit.P);
       const Q = scene.proj.rotate(b.orbit.Q);
-      const curve = new ViewConic().setCircle(c, P, Q, R);
+      const curve = this.nextCurve().setCircle(c, P, Q, R);
       this.addCurve(scene, `soi:${b.id}`, 'soi', curve, 0, TWO_PI, COLORS.soi, FAINT_LINE_WIDTH_PX, false);
     }
   }
@@ -698,7 +850,7 @@ export class SceneBuilder {
     const L = Math.hypot(c.x, c.y, c.z);
     if (!(L > R)) {
       if (!orbit) return;
-      const curve = new ViewConic().setCircle(c, scene.proj.rotate(orbit.P), scene.proj.rotate(orbit.Q), R);
+      const curve = this.nextCurve().setCircle(c, scene.proj.rotate(orbit.P), scene.proj.rotate(orbit.Q), R);
       this.addCurve(scene, id, kind, curve, 0, TWO_PI, color, widthPx, false);
       return;
     }
@@ -708,7 +860,7 @@ export class SceneBuilder {
     const n = v3.scale(c, 1 / L);
     const u = v3.anyOrthogonal(n);
     const w = v3.cross(n, u);
-    const curve = new ViewConic().setCircle(centre, u, w, radius);
+    const curve = this.nextCurve().setCircle(centre, u, w, radius);
     this.addCurve(scene, id, kind, curve, 0, TWO_PI, color, widthPx, false);
   }
 
@@ -728,22 +880,32 @@ export class SceneBuilder {
     const no = quat.rotate(b.q, north);
     const centreRoot = v3.add(b.pos, v3.scale(n, b.radius * Math.cos(rho)));
     const proj = scene.proj;
-    const curve = new ViewConic().setCircle(proj.toView(centreRoot, this.tmpV), proj.rotate(e), proj.rotate(no), b.radius * Math.sin(rho));
+    const curve = this.nextCurve().setCircle(proj.toView(centreRoot, this.tmpV), proj.rotate(e), proj.rotate(no), b.radius * Math.sin(rho));
     const rec = this.addCurve(scene, `zone:${t.id}`, 'recoveryZone', curve, 0, TWO_PI, COLORS.recovery, FAINT_LINE_WIDTH_PX + 0.5, false);
     if (!rec) return;
     // The chords cut below the sphere between vertices: their deepest point is the occlusion slack.
-    const cb = proj.toView(b.pos);
     const v = this.verts;
     let depth = 0;
     for (let i = rec.start; i < rec.start + rec.count - 1; i++) {
-      const mx = (v.vx[i]! + v.vx[i + 1]!) / 2 - cb.x;
-      const my = (v.vy[i]! + v.vy[i + 1]!) / 2 - cb.y;
-      const mz = (v.vz[i]! + v.vz[i + 1]!) / 2 - cb.z;
+      const mx = (v.vx[i]! + v.vx[i + 1]!) / 2 - c.x;
+      const my = (v.vy[i]! + v.vy[i + 1]!) / 2 - c.y;
+      const mz = (v.vz[i]! + v.vz[i + 1]!) / 2 - c.z;
       depth = Math.max(depth, b.radius - Math.sqrt(mx * mx + my * my + mz * mz));
     }
     rec.occlusionSlack = depth + 1e-3 * b.radius;
   }
 }
+
+const ORIGIN: Vec3 = { x: 0, y: 0, z: 0 };
+
+/** A one-element occluder list (reused: occlusionWeight only reads it). */
+const ONE_OCCLUDER = (() => {
+  const list: Occluder[] = [{ x: 0, y: 0, z: 0, radius: 0 }];
+  return (o: Occluder): Occluder[] => {
+    list[0] = o;
+    return list;
+  };
+})();
 
 const wrapPi = (a: number): number => {
   const r = a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);

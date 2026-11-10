@@ -17,7 +17,7 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { dragDelta, MapController, modifierFactor } from '@/map/controller';
 import { occlusionWeight } from '@/map/occlusion';
-import { lookAtCamera } from '@/map/testing/camera';
+import { lookAtCamera, orbitCamera } from '@/map/testing/camera';
 import { trueAnomalyAt } from '@/map/testing/kepler';
 import { createSyntheticFixture } from '@/map/testing/syntheticSnapshots';
 
@@ -255,6 +255,33 @@ describe('handle drags', () => {
     // hovering a handle consumes, hovering empty space does not
     expect(r.frame(pointer({ x: h.x, y: h.y })).consumed).toBe(true);
   });
+
+  it('hover consumes over nodes, handles and the panel, not over click-only trajectories and bodies', () => {
+    const r = rig();
+    clickOrbit(r, 0.3);
+    const scene = r.map.currentScene!;
+    const node = scene.nodes[0]!;
+    expect(r.frame(pointer({ x: node.x, y: node.y })).consumed).toBe(true);
+    // a point of the orbit far from the node: the add-maneuver preview shows, the camera keeps the pointer
+    const line = scene.lines.find((l) => l.id === 'current/0')!;
+    const i = line.start + Math.floor(line.count * 0.8);
+    const onLine = { x: scene.verts.sx[i]!, y: scene.verts.sy[i]! };
+    expect(Math.hypot(onLine.x - node.x, onLine.y - node.y)).toBeGreaterThan(100);
+    expect(r.map.hitTest(r.map.currentScene!, onLine.x, onLine.y, true)?.type).toBe('line');
+    expect(r.frame(pointer(onLine)).consumed).toBe(false);
+    // the Earth disc (click: target; double click: focus)
+    const earth = el(r.map, 'body', r.snap.vessels[0]!.bodyId);
+    expect(r.map.hitTest(r.map.currentScene!, earth.x, earth.y, false)?.type).toBe('body');
+    expect(r.frame(pointer({ x: earth.x, y: earth.y })).consumed).toBe(false);
+    // the node panel: hovered or focused
+    r.map.setPanelHover(true);
+    expect(r.frame(pointer({ x: earth.x, y: earth.y })).consumed).toBe(true);
+    r.map.setPanelHover(false);
+    r.map.setPanelFocus(true);
+    expect(r.frame(pointer({ x: earth.x, y: earth.y })).consumed).toBe(true);
+    r.map.setPanelFocus(false);
+    expect(r.frame(pointer({ x: earth.x, y: earth.y })).consumed).toBe(false);
+  });
 });
 
 describe('sliding a node along its orbit', () => {
@@ -306,15 +333,72 @@ describe('focus requests', () => {
     expect(r.frame(pointer({ x: v.x, y: v.y, doubleClick: true })).focus).toEqual({ vesselId: r.snap.vessels[0]!.id });
   });
 
-  it('a click on another body sets it as target; on the body being orbited it clears the target', () => {
+  /** translunar, seen from above the Earth with the Moon's orbit around it: both bodies are on screen. */
+  const twoBodies = (): { r: Rig; earthId: string; moonId: string } => {
     const r = rig('translunar', (s) => {
-      const moon = s.bodies.find((b) => b.id !== s.vessels[0]!.bodyId && b.soiRadius !== null)!;
-      return lookAtCamera(v3.add(moon.rRoot, { x: 0, y: 0, z: 2e8 }), moon.rRoot);
+      const earth = s.bodies.find((b) => b.id === s.vessels[0]!.bodyId)!;
+      return lookAtCamera(v3.add(earth.rRoot, { x: 0, y: 0, z: 1.6e9 }), earth.rRoot);
     });
-    const moonId = r.snap.bodies.find((b) => b.soiRadius !== null)!.id;
+    const earthId = r.snap.vessels[0]!.bodyId;
+    const moonId = r.snap.bodies.find((b) => b.id !== earthId && b.soiRadius !== null)!.id;
+    return { r, earthId, moonId };
+  };
+  /** Frames with nothing happening, `ms` milliseconds apart. */
+  const idle = (r: Rig, at: { x: number; y: number }, frames: number, ms = 50): void => {
+    for (let i = 0; i < frames; i++) {
+      r.clock.t += ms;
+      r.frame(pointer(at));
+    }
+  };
+
+  it('a click on another body sets it as target; on the body being orbited it clears the target', () => {
+    const { r, earthId, moonId } = twoBodies();
     const moon = el(r.map, 'body', moonId);
+    expect(moon.visible).toBe(true);
     r.frame(pointer({ x: moon.x, y: moon.y, pressed: true, released: true }));
+    // Not before the double-click interval has passed without a second click...
+    idle(r, moon, 8);
+    expect(r.snap.readouts.targetBodyId).toBeNull();
+    // ... then it is set.
+    idle(r, moon, 4);
     expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    const earth = el(r.map, 'body', earthId);
+    r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true }));
+    idle(r, earth, 12);
+    expect(r.snap.readouts.targetBodyId).toBeNull();
+  });
+
+  it('a double click focuses a body and leaves the target alone (orbited body and another body)', () => {
+    const { r, earthId, moonId } = twoBodies();
+    r.sim.commands.setTarget(moonId);
+    r.snap = r.sim.snapshot();
+    r.map.frame(r.snap, r.camera, CSS);
+    expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    // Double click on the Earth (the body being orbited: a single click would clear the target).
+    const earth = el(r.map, 'body', earthId);
+    const results = [r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true }))];
+    r.clock.t += 120;
+    results.push(r.frame(pointer({ x: earth.x, y: earth.y })));
+    r.clock.t += 120;
+    results.push(r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true, doubleClick: true })));
+    idle(r, earth, 30);
+    expect(results.filter((x) => x.focus).map((x) => x.focus)).toEqual([{ bodyId: earthId }]);
+    expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    // Double click on the Moon after clearing the target: focus, and still no target.
+    r.sim.commands.setTarget(null);
+    r.snap = r.sim.snapshot();
+    r.map.frame(r.snap, r.camera, CSS);
+    const moon = el(r.map, 'body', moonId);
+    r.frame(pointer({ x: moon.x, y: moon.y, pressed: true, buttons: 1 }));
+    r.clock.t += 60;
+    r.frame(pointer({ x: moon.x, y: moon.y, released: true }));
+    r.clock.t += 150;
+    r.frame(pointer({ x: moon.x, y: moon.y, pressed: true, buttons: 1 }));
+    r.clock.t += 60;
+    const second = r.frame(pointer({ x: moon.x, y: moon.y, released: true, doubleClick: true }));
+    expect(second.focus).toEqual({ bodyId: moonId });
+    idle(r, moon, 30);
+    expect(r.snap.readouts.targetBodyId).toBeNull();
   });
 });
 
@@ -363,13 +447,56 @@ describe('multi-revolution patches', () => {
     const { gap, scene } = ends();
     expect(gap).toBeLessThan(1e-6);
     // The ghost is the Moon's true position at the SOI entry (fixture ephemeris).
-    const anchor = scene.ghostAnchors.get(fx.moonId)!;
+    const anchor = scene.ghostAnchors.get(`${fx.moonId}@intercept`)!;
     expect(v3.dist(anchor, fx.bodyPosition(fx.moonId, s.patches.current[1]!.tStart))).toBeLessThan(1);
     expect(scene.bodies.some((b) => b.id === `${fx.moonId}@intercept`)).toBe(true);
-    // Node A (on the encounter patch) and the planned flyby after it share that anchor.
+    // Node A (on the encounter patch) and the planned flyby after it share that anchor: one ghost only.
+    expect(scene.ghosts.map((g) => g.id)).toEqual([`${fx.moonId}@intercept`]);
     const nodeA = scene.nodes.find((n) => n.id === fx.nodeA.id)!;
     const flyby = scene.lines.find((l) => l.id === 'planned/0')!;
     expect(Math.hypot(nodeA.x - scene.verts.sx[flyby.start]!, nodeA.y - scene.verts.sy[flyby.start]!)).toBeLessThan(1e-6);
+  });
+
+  it('at intercept, a planned encounter at another time than the current one gets its own anchor and ghost', () => {
+    // A mid-course correction that shifts the arrival: the current chain is the fixture at ut, the planned
+    // chain (after a node on the departure arc) the fixture built 4 h later, whose Moon arrival differs.
+    const ut = 8.89e8;
+    const a = createSyntheticFixture(defs, { ut });
+    const b = createSyntheticFixture(defs, { ut: ut + 4 * 3600 });
+    const mcc = { id: 'mcc', ut: ut + 3600, dv: { prograde: 0, normal: 0, radial: 0 } };
+    const dep = a.snapshot.patches.current[0]!;
+    const preNode = { ...dep, markers: [...dep.markers, { kind: 'maneuverNode' as const, ut: mcc.ut, bodyId: dep.bodyId, r: conicPosition(dep.conic, trueAnomalyAt(dep.conic, mcc.ut)), nodeId: mcc.id }] };
+    const planned = b.snapshot.patches.current.map((p) => ({ ...p, afterNodeId: mcc.id }));
+    const s: SimSnapshot = { ...a.snapshot, nodes: [mcc], patches: { current: [preNode, a.snapshot.patches.current[1]!], planned } };
+    const arrivalA = s.patches.current[1]!.tStart;
+    const arrivalB = planned[1]!.tStart;
+    expect(Math.abs(arrivalB - arrivalA)).toBeGreaterThan(3600);
+    const map = new MapController(defs);
+    map.setActive(true);
+    map.setDrawAtIntercept(true);
+    map.frame(s, lookAtCamera({ x: 2e8, y: -3e8, z: 9e8 }, { x: 1e8, y: 0, z: 0 }), CSS);
+    const scene = map.currentScene!;
+    const gap = (from: string, to: string): number => {
+      const l0 = scene.lines.find((l) => l.id === from)!;
+      const l1 = scene.lines.find((l) => l.id === to)!;
+      const i = l0.start + l0.count - 1;
+      return Math.hypot(scene.verts.sx[i]! - scene.verts.sx[l1.start]!, scene.verts.sy[i]! - scene.verts.sy[l1.start]!);
+    };
+    // Both chains are continuous at their own intercept...
+    expect(gap('current/0', 'current/1')).toBeLessThan(1e-6);
+    expect(gap('planned/0', 'planned/1')).toBeLessThan(1e-6);
+    // ... each encounter has its ghost where the Moon is at that encounter's SOI entry.
+    expect(scene.ghosts.map((g) => [g.id, g.plannedOnly])).toEqual([
+      [`${a.moonId}@intercept`, false],
+      [`${a.moonId}@intercept#2`, true],
+    ]);
+    expect(v3.dist(scene.ghostAnchors.get(`${a.moonId}@intercept`)!, a.bodyPosition(a.moonId, arrivalA))).toBeLessThan(1);
+    expect(v3.dist(scene.ghostAnchors.get(`${a.moonId}@intercept#2`)!, b.bodyPosition(b.moonId, arrivalB))).toBeLessThan(1);
+    expect(scene.bodies.filter((x) => x.ghost).map((x) => x.label)).toEqual(['Moon (encounter)', 'Moon (planned encounter)'].map((l) => l.replace('Moon', defs.bodies[a.moonId]!.name)));
+    // The planned impact marker lies on the surface of its own ghost.
+    const impact = scene.markers.find((m) => m.id === 'planned/1/impact')!;
+    const ghost2 = scene.proj.toView(scene.ghostAnchors.get(`${a.moonId}@intercept#2`)!);
+    expect(v3.dist(impact.view, ghost2)).toBeCloseTo(defs.bodies[a.moonId]!.radius, -1);
   });
 
   it('+1 orbit moves a node one period later and delete removes it (panel actions)', () => {
@@ -397,6 +524,64 @@ describe('multi-revolution patches', () => {
     expect(r.map.panelAction('delete')).toBe(true);
     r.snap = r.sim.snapshot();
     expect(r.snap.nodes).toHaveLength(0);
+  });
+});
+
+describe('node panel', () => {
+  it('a typed total rescales the burn keeping its direction; a typed time to node sets the node time', () => {
+    const r = rig();
+    clickOrbit(r, 0.4);
+    const id = r.map.selectedNodeId!;
+    const refresh = (): void => {
+      r.snap = r.sim.snapshot();
+      r.map.frame(r.snap, r.camera, CSS);
+    };
+    const dv = () => r.snap.nodes.find((n) => n.id === id)!.dv;
+    refresh();
+    expect(r.map.panelSetValue('total', 10)).toBe(true); // a zero burn becomes prograde
+    refresh();
+    expect(dv()).toEqual({ prograde: 10, normal: 0, radial: 0 });
+    expect(r.map.panelSetValue('normal', -10)).toBe(true);
+    refresh();
+    expect(r.map.panelState()!.total).toBeCloseTo(10 * Math.SQRT2, 9);
+    expect(r.map.panelSetValue('total', 5 * Math.SQRT2)).toBe(true);
+    refresh();
+    expect(dv().prograde).toBeCloseTo(5, 9);
+    expect(dv().normal).toBeCloseTo(-5, 9);
+    expect(dv().radial).toBe(0);
+    expect(r.map.panelSetValue('total', -1)).toBe(false);
+    expect(r.map.panelSetValue('timeTo', 600)).toBe(true);
+    refresh();
+    expect(r.snap.nodes.find((n) => n.id === id)!.ut).toBeCloseTo(r.snap.ut + 600, 6);
+    expect(r.map.panelState()!.timeTo).toBeCloseTo(600, 6);
+    expect(r.map.panelSetValue('timeTo', -5)).toBe(false);
+    expect(r.map.panelSetValue('ut', r.snap.ut - 1)).toBe(false);
+  });
+
+  it('map labels keep clear of the node panel', () => {
+    // The synthetic Moon close-up at intercept with node A selected: Ap and AN labels fall where the panel goes.
+    const fx = createSyntheticFixture(defs);
+    const s = fx.snapshot;
+    const map = new MapController(defs);
+    map.setActive(true);
+    map.setDrawAtIntercept(true);
+    const active = s.vessels.find((v) => v.id === s.activeVesselId)!;
+    const moon = s.bodies.find((b) => b.id === fx.moonId)!;
+    const dir = v3.normalize(v3.add(moon.orbit!.W, v3.scale(v3.normalize(active.rRoot), -0.35)));
+    const ghost = fx.bodyPosition(fx.moonId, s.patches.current[1]!.tStart);
+    const cam = orbitCamera(ghost, Math.atan2(dir.y, dir.x), Math.asin(dir.z), 1.4e8);
+    const overlapping = (list: ReturnType<MapController['frame']>, rect: { x0: number; y0: number; x1: number; y1: number }): string[] =>
+      list!.texts[0].filter((t) => t.x < rect.x1 && t.x + t.text.length * 6.6 > rect.x0 && t.y < rect.y1 && t.y + 15 > rect.y0).map((t) => t.text);
+    map.update(s, cam, createFakeSim(defs, { scene: 'lowOrbit' }).commands, pointer({ x: 5, y: 5 }), CSS);
+    map.frame(s, cam, CSS);
+    map.selectNode(fx.nodeA.id);
+    const withPanel = map.frame(s, cam, CSS);
+    const st = map.panelState()!;
+    const rect = { x0: st.x, y0: st.y, x1: st.x + 220, y1: st.y + 262 };
+    expect(overlapping(withPanel, rect)).toEqual([]);
+    // Without the panel the same view does put labels there (the check above is not vacuous).
+    map.selectNode(null);
+    expect(overlapping(map.frame(s, cam, CSS), rect).length).toBeGreaterThan(0);
   });
 });
 

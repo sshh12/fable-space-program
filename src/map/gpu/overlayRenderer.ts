@@ -29,18 +29,25 @@ export class OverlayRenderer {
   private readonly device: GPUDevice;
   private readonly uniform: GPUBuffer;
   private readonly uniformData = new ArrayBuffer(UNIFORM_BYTES);
+  private readonly uniformF32 = new Float32Array(this.uniformData);
   private readonly linePipeline: GPURenderPipeline;
   private readonly iconPipeline: GPURenderPipeline;
   private readonly glyphPipeline: GPURenderPipeline;
   private pointBuf: GPUBuffer | null = null;
   private pointCap = 0;
   private pointData = new ArrayBuffer(0);
+  private pointF32 = new Float32Array(0);
+  private pointU32 = new Uint32Array(0);
   private iconBuf: GPUBuffer | null = null;
   private iconCap = 0;
   private iconData = new ArrayBuffer(0);
+  private iconF32 = new Float32Array(0);
+  private iconU32 = new Uint32Array(0);
   private glyphBuf: GPUBuffer | null = null;
   private glyphCap = 0;
   private glyphData = new ArrayBuffer(0);
+  private glyphF32 = new Float32Array(0);
+  private glyphU32 = new Uint32Array(0);
   private lineGroup: GPUBindGroup | null = null;
   private iconGroup: GPUBindGroup;
   private glyphGroup: GPUBindGroup | null = null;
@@ -142,13 +149,28 @@ export class OverlayRenderer {
     const proj = scene.proj;
     const k = proj.pxScale;
     // Uniforms.
-    const f = new Float32Array(this.uniformData);
+    const f = this.uniformF32;
     f.set(proj.projectionMatrix(), 0);
-    f.set([proj.width, proj.height, 1 / proj.width, 1 / proj.height], 16);
-    const occ = scene.occluders.slice(0, MAX_OCCLUDERS);
-    f.set([k, proj.focal, proj.near, occ.length], 20);
-    f.set([OCCLUSION_FADE_PX * k, DASH_PERIOD_PX * k, DASH_ON_PX * k, 0], 24);
-    occ.forEach((o, i) => f.set([o.x, o.y, o.z, o.radius], 28 + 4 * i));
+    f[16] = proj.width;
+    f[17] = proj.height;
+    f[18] = 1 / proj.width;
+    f[19] = 1 / proj.height;
+    const nOcc = Math.min(MAX_OCCLUDERS, scene.occluders.length);
+    f[20] = k;
+    f[21] = proj.focal;
+    f[22] = proj.near;
+    f[23] = nOcc;
+    f[24] = OCCLUSION_FADE_PX * k;
+    f[25] = DASH_PERIOD_PX * k;
+    f[26] = DASH_ON_PX * k;
+    f[27] = 0;
+    for (let i = 0; i < nOcc; i++) {
+      const o = scene.occluders[i]!;
+      f[28 + 4 * i] = o.x;
+      f[29 + 4 * i] = o.y;
+      f[30 + 4 * i] = o.z;
+      f[31 + 4 * i] = o.radius;
+    }
     this.device.queue.writeBuffer(this.uniform, 0, this.uniformData);
 
     // Line points.
@@ -156,8 +178,8 @@ export class OverlayRenderer {
     let n = 0;
     for (const l of scene.lines) n += l.count;
     this.ensurePoints(n);
-    const pf = new Float32Array(this.pointData, 0, n * POINT_WORDS);
-    const pu = new Uint32Array(this.pointData, 0, n * POINT_WORDS);
+    const pf = this.pointF32;
+    const pu = this.pointU32;
     let j = 0;
     for (const l of scene.lines) {
       const dashed = l.dashed ? 2 : 0;
@@ -184,8 +206,8 @@ export class OverlayRenderer {
     // Icons (two layers in one buffer).
     const [i0, i1] = list.icons;
     this.ensureIcons(i0.length + i1.length);
-    const ivf = new Float32Array(this.iconData);
-    const ivu = new Uint32Array(this.iconData);
+    const ivf = this.iconF32;
+    const ivu = this.iconU32;
     let ic = 0;
     for (const icon of i0) this.writeIcon(ivf, ivu, ic++, icon);
     for (const icon of i1) this.writeIcon(ivf, ivu, ic++, icon);
@@ -196,15 +218,18 @@ export class OverlayRenderer {
     // Glyphs: halos of a layer first, then its fills, so a halo never covers a neighbouring glyph.
     const atlas = this.atlasFor(k);
     const [t0, t1] = list.texts;
-    const count = (runs: TextRun[]): number => runs.reduce((a, r) => a + r.text.length, 0);
-    this.ensureGlyphs(2 * (count(t0) + count(t1)));
-    const gvf = new Float32Array(this.glyphData);
-    const gvu = new Uint32Array(this.glyphData);
+    let chars = 0;
+    for (const r of t0) chars += r.text.length;
+    for (const r of t1) chars += r.text.length;
+    this.ensureGlyphs(2 * chars);
+    const gvf = this.glyphF32;
+    const gvu = this.glyphU32;
     let g = 0;
-    for (const layer of [t0, t1]) {
-      for (const pass of [0, 1]) for (const run of layer) g = this.writeRun(gvf, gvu, g, run, atlas, pass === 0);
-      if (layer === t0) this.glyphs0 = g;
-    }
+    for (const run of t0) g = this.writeRun(gvf, gvu, g, run, atlas, true);
+    for (const run of t0) g = this.writeRun(gvf, gvu, g, run, atlas, false);
+    this.glyphs0 = g;
+    for (const run of t1) g = this.writeRun(gvf, gvu, g, run, atlas, true);
+    for (const run of t1) g = this.writeRun(gvf, gvu, g, run, atlas, false);
     this.glyphs1 = g - this.glyphs0;
     if (g > 0) this.device.queue.writeBuffer(this.glyphBuf!, 0, this.glyphData, 0, g * GLYPH_BYTES);
     return { points: n, icons: ic, glyphs: g };
@@ -296,6 +321,8 @@ export class OverlayRenderer {
     this.pointBuf?.destroy();
     this.pointBuf = this.device.createBuffer({ label: 'map.linePoints', size: cap * POINT_WORDS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.pointData = new ArrayBuffer(cap * POINT_WORDS * 4);
+    this.pointF32 = new Float32Array(this.pointData);
+    this.pointU32 = new Uint32Array(this.pointData);
     this.pointCap = cap;
     this.lineGroup = this.device.createBindGroup({
       layout: this.linePipeline.getBindGroupLayout(0),
@@ -312,6 +339,8 @@ export class OverlayRenderer {
     this.iconBuf?.destroy();
     this.iconBuf = this.device.createBuffer({ label: 'map.icons', size: cap * ICON_BYTES, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.iconData = new ArrayBuffer(cap * ICON_BYTES);
+    this.iconF32 = new Float32Array(this.iconData);
+    this.iconU32 = new Uint32Array(this.iconData);
     this.iconCap = cap;
   }
 
@@ -321,6 +350,8 @@ export class OverlayRenderer {
     this.glyphBuf?.destroy();
     this.glyphBuf = this.device.createBuffer({ label: 'map.glyphs', size: cap * GLYPH_BYTES, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.glyphData = new ArrayBuffer(cap * GLYPH_BYTES);
+    this.glyphF32 = new Float32Array(this.glyphData);
+    this.glyphU32 = new Uint32Array(this.glyphData);
     this.glyphCap = cap;
   }
 }

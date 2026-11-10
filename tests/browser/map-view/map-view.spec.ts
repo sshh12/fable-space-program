@@ -1,16 +1,16 @@
 /**
  * Map view acceptance in the real browser against the FakeSim (labs/map-view): node creation by clicking
- * the orbit, handle drags (plain and Shift), sliding a node in time, +1 orbit, typed values, delete,
- * occlusion of markers, the Moon's orbit and SOI, surface targets on rotating bodies, and pixel-stable
- * lines across zoom levels with a static camera.
+ * the orbit, handle drags (plain and Shift), sliding a node in time, +1 orbit, typed values (applied once;
+ * Escape reverts; total and time-to-node fields), delete, occlusion of markers, the Moon's orbit and SOI,
+ * surface targets on rotating bodies, pixel-stable lines across zoom levels with a static camera, and no
+ * wobble with a camera following the moving vessel.
  */
 import type { Page } from '@playwright/test';
 import { latLonToDir } from '../../../src/core/geo/cubeSphere';
 import { quat } from '../../../src/core/math/quat';
+import { formatDurationField } from '../../../src/map/format';
 import { expect, expectNoErrors, pngDiff, saveScreenshot, test } from '../harness';
-import { describeMap, element, frames, lookAlong, MAP_SPEC_TIMEOUT_MS, moveInSteps, openLab, state } from './helpers';
-
-test.setTimeout(MAP_SPEC_TIMEOUT_MS);
+import { describeMap, element, frames, lookAlong, moveInSteps, openLab, state } from './helpers';
 
 type Lab = {
   view: { selectedNodeId: string | null; setActive(a: boolean): void };
@@ -135,7 +135,18 @@ test.describe('map view on the FakeSim', () => {
     expect((await element(page, 'node', id)).visible).toBe(true);
     expect((await state(page)).patches.planned).toHaveLength(1);
 
-    // Typed values are applied; the panel holds the pointer/keyboard while focused.
+    // Typed values are applied once each; the panel holds the pointer/keyboard while focused.
+    await page.evaluate(() => {
+      const c = window.__test!.commands!;
+      const setNode = c.setNode.bind(c);
+      const calls: unknown[] = [];
+      (window as unknown as { __setNodeCalls: unknown[] }).__setNodeCalls = calls;
+      c.setNode = (nodeId, edit) => {
+        calls.push(edit);
+        return setNode(nodeId, edit);
+      };
+    });
+    const setNodeCalls = (): Promise<{ ut?: number; dv?: Record<string, number> }[]> => page.evaluate(() => (window as unknown as { __setNodeCalls: { ut?: number; dv?: Record<string, number> }[] }).__setNodeCalls.splice(0));
     const pro = panel.locator('input[data-field="prograde"]');
     await pro.click();
     await pro.fill('25');
@@ -143,11 +154,46 @@ test.describe('map view on the FakeSim', () => {
     await page.waitForFunction(() => window.__test!.state()!.nodes[0]!.dv.prograde === 25);
     await frames(page, 2);
     expect((await lab(page, (l) => l.results())).slice(-1)[0]!.consumed).toBe(true);
+    // Enter, then leaving the field: one command, not two.
+    const nrm = panel.locator('input[data-field="normal"]');
+    await nrm.click();
+    await nrm.fill('5');
+    await nrm.press('Enter');
+    await nrm.press('Tab');
+    await frames(page, 3);
+    expect(await setNodeCalls()).toEqual([{ dv: { prograde: 25 } }, { dv: { normal: 5 } }]);
+    // Escape restores the node's value and sends nothing.
+    await pro.click();
+    await pro.fill('999');
+    await pro.press('Escape');
+    await frames(page, 3);
+    expect(await setNodeCalls()).toEqual([]);
+    expect((await state(page)).nodes[0]!.dv.prograde).toBe(25);
+    await expect(pro).toHaveValue('25.0');
+    // The total rescales the burn, keeping its direction.
+    const tot = panel.locator('input[data-field="total"]');
+    await tot.click();
+    await tot.fill('51');
+    await tot.press('Enter');
+    const scale = 51 / Math.hypot(25, 5);
+    await page.waitForFunction((p) => Math.abs(window.__test!.state()!.nodes[0]!.dv.prograde - p) < 1e-6, 25 * scale);
+    expect((await state(page)).nodes[0]!.dv.normal).toBeCloseTo(5 * scale, 6);
+    expect((await state(page)).nodes[0]!.dv.radial).toBe(0);
+    // Node time typed as time from now, and as UT.
+    const timeTo = panel.locator('input[data-field="timeTo"]');
+    await timeTo.click();
+    await timeTo.fill('T-1h 30m');
+    await timeTo.press('Enter');
+    const now = (await state(page)).ut;
+    await page.waitForFunction((t) => Math.abs(window.__test!.state()!.nodes[0]!.ut - t) < 1e-3, now + 5400);
     const ut = panel.locator('input[data-field="ut"]');
     const target = Math.round(((await state(page)).nodes[0]!.ut + 120.5) * 10) / 10;
     await ut.fill(target.toFixed(1));
     await ut.press('Enter');
     await page.waitForFunction((t) => Math.abs(window.__test!.state()!.nodes[0]!.ut - t) < 1e-3, target);
+    await ut.press('Tab');
+    await frames(page, 3);
+    await expect(timeTo).toHaveValue(formatDurationField(target - now));
     await saveScreenshot(page, 'map-view', 'accept-panel');
 
     // Delete.
@@ -265,6 +311,85 @@ test.describe('map view on the FakeSim', () => {
       if (distance === 2e5 || distance === 1e9) await saveScreenshot(page, 'map-view', `accept-zoom-${distance === 2e5 ? '200km' : '1e9m'}`);
     }
     expect((await describeMap(page)).length).toBeGreaterThan(0);
+    await expectNoErrors(page, pageLog);
+  });
+
+  test('a camera following the moving vessel keeps the vessel and its orbit line pinned to sub-pixel accuracy', async ({ page, pageLog }) => {
+    // The static-camera check above cannot tell a float32 world-space path from the camera-relative one
+    // (identical frames upload identical buffers). Here the sim advances between frames and the camera
+    // follows the vessel from 100 km, in Earth orbit and in lunar orbit (3.8e8 m from the ROOT origin, where
+    // a float32 ROOT position is quantised to 32 m = 0.25 px at this distance). The vessel must project to
+    // an independent float64 projection of its state, and the rendered orbit line next to it must keep a
+    // constant sub-pixel offset from the ideal line through the vessel.
+    const { PNG } = await import('pngjs');
+    for (const sceneName of ['lowOrbit', 'lunarOrbit']) {
+      await openLab(page, `scene=${sceneName}&paused=1&quiet=1`);
+      const s0 = await state(page);
+      const vid = s0.activeVesselId;
+      await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId }));
+      const W = s0.patches.current[0]!.conic.W;
+      await lookAlong(page, { x: W.x + 0.3, y: W.y - 0.2, z: W.z + 0.1 }, 1e5);
+      const offsets: number[] = [];
+      for (let step = 0; step < 8; step++) {
+        await page.evaluate(() => (window as unknown as { __mapLab: { step(dt: number): void } }).__mapLab.step(0.1));
+        await frames(page, 3);
+        const cam = await page.evaluate(() => window.__test!.camera()!);
+        const st = await state(page);
+        const v = st.vessels.find((x) => x.id === vid)!;
+        // Independent float64 projection of the vessel (CSS px, 1280 x 720, pxScale 1).
+        const rel = { x: v.rRoot.x - cam.positionRoot.x, y: v.rRoot.y - cam.positionRoot.y, z: v.rRoot.z - cam.positionRoot.z };
+        const pv = quat.rotateInv(cam.qViewToRoot, rel);
+        const F = 360 / Math.tan(cam.fovY / 2);
+        const px = 640 + (F * pv.x) / -pv.z;
+        const py = 360 - (F * pv.y) / -pv.z;
+        const icon = await element(page, 'vessel', vid);
+        expect(Math.hypot(icon.x - px, icon.y - py), `${sceneName} step ${step}: vessel icon`).toBeLessThan(1e-6);
+        // Screen direction of the orbit at the vessel: the projected velocity relative to its body.
+        const vv = quat.rotateInv(cam.qViewToRoot, v.v);
+        const tl = Math.hypot(vv.x, vv.y);
+        let tx = vv.x / tl;
+        let ty = -vv.y / tl;
+        if (tx > 0) {
+          // sample the half-line pointing left: the vessel's label sits to its right
+          tx = -tx;
+          ty = -ty;
+        }
+        const nx = -ty;
+        const ny = tx;
+        // Overlay pixels alone: the frame with the map minus the same frame without it.
+        const on = await page.screenshot();
+        await lab(page, (l) => l.view.setActive(false));
+        await frames(page, 2);
+        const off = await page.screenshot();
+        await lab(page, (l) => l.view.setActive(true));
+        await frames(page, 2);
+        const A = PNG.sync.read(on);
+        const B = PNG.sync.read(off);
+        let sw = 0;
+        let swd = 0;
+        for (let y = Math.floor(py - 70); y <= Math.ceil(py + 70); y++) {
+          for (let x = Math.floor(px - 70); x <= Math.ceil(px + 70); x++) {
+            const ax = x + 0.5 - px;
+            const ay = y + 0.5 - py;
+            const along = ax * tx + ay * ty;
+            const across = ax * nx + ay * ny;
+            if (along < 14 || along > 60 || Math.abs(across) > 6) continue;
+            const i = (y * A.width + x) * 4;
+            let w = 0;
+            for (let c = 0; c < 3; c++) w += Math.abs(A.data[i + c]! - B.data[i + c]!);
+            sw += w;
+            swd += w * across;
+          }
+        }
+        expect(sw, `${sceneName} step ${step}: orbit line pixels next to the vessel`).toBeGreaterThan(2000);
+        offsets.push(swd / sw);
+      }
+      const spread = Math.max(...offsets) - Math.min(...offsets);
+      console.log(`[map-view jitter ${sceneName}] line offsets ${offsets.map((o) => o.toFixed(3)).join(' ')} spread ${spread.toFixed(3)} px`);
+      expect(spread, `${sceneName}: frame-to-frame wobble of the line next to the vessel`).toBeLessThan(0.08);
+      expect(Math.abs(offsets[0]!), `${sceneName}: the line passes through the vessel`).toBeLessThan(0.3);
+      await saveScreenshot(page, 'map-view', `accept-follow-${sceneName}`);
+    }
     await expectNoErrors(page, pageLog);
   });
 });

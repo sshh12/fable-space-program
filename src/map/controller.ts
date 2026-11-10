@@ -9,13 +9,14 @@
 import type { PlayerCommands, PointerState } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState } from '@/core/contracts/render';
-import type { ManeuverNode, SimSnapshot } from '@/core/contracts/sim';
+import type { ManeuverNode, Patch, SimSnapshot } from '@/core/contracts/sim';
 import type { MapElementInfo, MapUpdateResult, MapView } from '@/core/contracts/ui';
 import { utAtTrueAnomaly } from './anomalyTime';
 import {
   CLICK_SLOP_PX,
   COARSE_FACTOR,
   COLORS,
+  DOUBLE_CLICK_MS,
   DV_PER_PX,
   FINE_FACTOR,
   HANDLE_DISTANCE_PX,
@@ -27,6 +28,10 @@ import {
   LABEL_LINE_PX,
   MARKER_RADIUS_PX,
   NODE_RADIUS_PX,
+  PANEL_HEIGHT_PX,
+  PANEL_OFFSET_X_PX,
+  PANEL_OFFSET_Y_PX,
+  PANEL_WIDTH_PX,
   RAMP_DOUBLING_S,
   RAMP_MAX_RATE,
   RAMP_START_RATE,
@@ -37,7 +42,7 @@ import {
 } from './constants';
 import { ICON, type DrawList, type IconId, type IconInstance, type TextMetricsLike, type TextRun } from './drawList';
 import { formatDistance, formatDuration, formatDv, formatTimeTo } from './format';
-import { declutter, markerLabels, type LabelBox } from './labels';
+import { declutter, markerLabels, type BlockedRect, type LabelBox } from './labels';
 import { occlusionWeight } from './occlusion';
 import { closestParam2D } from './sampler';
 import { SceneBuilder, type LineRecord, type MapScene, type MarkerShape, type NodeItem } from './scene';
@@ -78,7 +83,19 @@ type Hit =
   | { type: 'line'; d: number; line: LineRecord; u: number }
   | { type: 'vessel'; d: number; id: string }
   | { type: 'body'; d: number; id: string }
-  | { type: 'marker'; d: number; index: number };
+  | { type: 'marker'; d: number; id: string };
+
+/**
+ * What the pointer hovers, kept across frames by id (the draw list of the next frame is built on a new scene:
+ * line records and curve objects are not carried over).
+ */
+type Hover =
+  | { type: 'handle'; nodeId: string; handle: HandleName }
+  | { type: 'node'; nodeId: string }
+  | { type: 'line'; lineId: string; u: number }
+  | { type: 'vessel'; id: string }
+  | { type: 'body'; id: string }
+  | { type: 'marker'; id: string };
 
 type DragState =
   | {
@@ -98,7 +115,8 @@ type DragState =
 
 type Pending =
   | { type: 'node'; nodeId: string; x: number; y: number; moved: number }
-  | { type: 'line'; line: LineRecord; u: number; x: number; y: number; moved: number }
+  /** A press on a trajectory: the patch and the true anomaly under the pointer, resolved at the press. */
+  | { type: 'line'; patch: Patch; nu: number; x: number; y: number; moved: number }
   | { type: 'body'; id: string; x: number; y: number; moved: number }
   | { type: 'empty'; x: number; y: number; moved: number };
 
@@ -118,7 +136,11 @@ export interface PanelState {
   y: number;
 }
 
-export type PanelField = 'prograde' | 'normal' | 'radial' | 'ut';
+/**
+ * Typed fields of the node panel: the three components, the total (rescales the vector, keeping its
+ * direction), the node time as UT and as time from now.
+ */
+export type PanelField = 'prograde' | 'normal' | 'radial' | 'total' | 'ut' | 'timeTo';
 
 export interface MapControllerOptions {
   /** Milliseconds clock (default: performance.now when available). */
@@ -139,6 +161,13 @@ export interface MapStats {
 /** Metrics of the 12 px monospace label font without an atlas (vitest); the atlas reports the real ones. */
 export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({ advance: 6.6 * pxScale, lineHeight: LABEL_LINE_PX * pxScale });
 
+interface LabelEntry {
+  box: LabelBox;
+  lines: string[];
+  color: Rgba;
+  alpha: number;
+}
+
 export class MapController implements MapView {
   private active = false;
   private atIntercept = false;
@@ -150,15 +179,21 @@ export class MapController implements MapView {
   private selectedMissing = 0;
   private drag: DragState | null = null;
   private pending: Pending | null = null;
-  private hover: Hit | null = null;
+  private hover: Hover | null = null;
   private hoverPos: { x: number; y: number } | null = null;
+  /** A body click waiting out the double-click interval before it sets the target. */
+  private pendingTarget: { bodyId: string | null; due: number } | null = null;
   private commands: PlayerCommands | null = null;
   private panelFocused = false;
   private panelHovered = false;
+  /** CSS px size of the node panel (reported by the DOM panel once it is shown). */
+  private panelSize: [number, number] = [PANEL_WIDTH_PX, PANEL_HEIGHT_PX];
   private consumed = false;
   private lastDraw: DrawList | null = null;
   private readonly now: () => number;
   private readonly metrics: (pxScale: number) => TextMetricsLike;
+  private readonly sortedNodes: ManeuverNode[] = [];
+  private readonly blocked: BlockedRect[] = [{ x0: 0, y0: 0, x1: 0, y1: 0 }];
 
   constructor(
     private readonly defs: DefLibrary,
@@ -176,6 +211,7 @@ export class MapController implements MapView {
     if (!active) {
       this.drag = null;
       this.pending = null;
+      this.pendingTarget = null;
       this.hover = null;
       this.consumed = false;
     }
@@ -253,18 +289,27 @@ export class MapController implements MapView {
       }
     }
 
-    // ---- double click on a body or vessel: one focus request on that frame
+    // ---- double click on a body or vessel: one focus request on that frame. Its first click never acts
+    // as a target click (that one is still waiting out the double-click interval).
     if (pointer.doubleClick && !pointer.overUi) {
+      this.pendingTarget = null;
       const hit = this.hitTest(scene, px, py, false, true);
       if (hit?.type === 'body') focus = { bodyId: hit.id };
       else if (hit?.type === 'vessel') focus = { vesselId: hit.id };
     }
+    // ---- a single body click: the target changes once no second click followed
+    const t = this.pendingTarget;
+    if (t && tMs >= t.due && !pointer.released && !pointer.doubleClick && this.pending?.type !== 'body') {
+      this.pendingTarget = null;
+      if (snapshot.readouts.targetBodyId !== t.bodyId) commands.setTarget(t.bodyId);
+    }
 
     // ---- hover (for consumption, tooltips and the add-maneuver preview)
     this.hoverPos = pointer.overUi ? null : { x: px, y: py };
-    this.hover = pointer.overUi || this.drag ? null : this.hitTest(scene, px, py, true, true, true);
-    const hoverInteractive = this.hover !== null && (this.hover.type === 'handle' || this.hover.type === 'node');
-    this.consumed = consumedNow || this.drag !== null || hoverInteractive || this.panelFocused || this.panelHovered || (this.pending?.type === 'node');
+    const hover = pointer.overUi || this.drag ? null : this.hitTest(scene, px, py, true, true, true);
+    this.hover = hover ? toHover(hover) : null;
+    const hoverInteractive = hover !== null && (hover.type === 'handle' || hover.type === 'node');
+    this.consumed = consumedNow || this.drag !== null || hoverInteractive || this.panelFocused || this.panelHovered || this.pending?.type === 'node';
     return focus ? { consumed: this.consumed, focus } : { consumed: this.consumed };
   }
 
@@ -284,8 +329,7 @@ export class MapController implements MapView {
     }
     for (const b of scene.bodies) push('body', b.id, b.x, b.y, vis(b.x, b.y, b.front, b.hidden));
     for (const v of scene.vessels) push('vessel', v.id, v.x, v.y, vis(v.x, v.y, v.front, v.hidden));
-    const bodyPx = new Map(scene.bodies.filter((b) => !b.ghost).map((b) => [b.bodyId, b.radiusPx / k]));
-    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden) && (bodyPx.get(t.target.bodyId) ?? 0) >= TARGET_MIN_BODY_PX);
+    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden) && this.bodyRadiusCss(scene, t.target.bodyId) >= TARGET_MIN_BODY_PX);
     return out;
   }
 
@@ -299,23 +343,22 @@ export class MapController implements MapView {
     this.panelHovered = hovered;
   }
 
+  /** The DOM panel reports its size (CSS px) once shown; placement and label de-cluttering use it. */
+  setPanelSize(width: number, height: number): void {
+    if (width > 0 && height > 0) this.panelSize = [width, height];
+  }
+
   /** State of the node editor panel for the selected node (null: no panel). */
   panelState(): PanelState | null {
     const scene = this.scene;
     if (!this.active || !scene || !this.selected) return null;
     const s = scene.snapshot;
     const node = s.nodes.find((n) => n.id === this.selected);
-    const item = scene.nodes.find((n) => n.id === this.selected);
     if (!node) return null;
-    const k = scene.proj.pxScale;
-    const [w, h] = this.sceneCssSize;
-    // Beside the node, clear of the gizmo; clamped so the whole panel (220 x ~215 CSS px) stays on screen.
-    let x = item && item.front ? item.x / k + 92 : w - 236;
-    let y = item && item.front ? item.y / k + 28 : 24;
-    x = Math.max(8, Math.min(w - 228, x));
-    y = Math.max(8, Math.min(h - 224, y));
+    const item = scene.nodes.find((n) => n.id === this.selected);
+    const at = this.panelPlacement(scene, item);
     const period = item?.loc.patch.conic.period ?? null;
-    const sorted = [...s.nodes].sort((a, b) => a.ut - b.ut);
+    const sorted = this.nodesByTime(s);
     return {
       nodeId: node.id,
       index: sorted.findIndex((n) => n.id === node.id),
@@ -326,20 +369,33 @@ export class MapController implements MapView {
       timeTo: node.ut - s.ut,
       period,
       canMinusOrbit: period !== null && node.ut - period > s.ut,
-      x,
-      y,
+      x: at.x,
+      y: at.y,
     };
   }
 
-  /** Apply a typed value from the numeric panel. Returns false when the text is not a finite number. */
+  /**
+   * Apply a typed value from the numeric panel. Returns false when the value is not acceptable (not finite,
+   * a time not in the future, a negative total) or the command was refused.
+   */
   panelSetValue(field: PanelField, value: number): boolean {
     const st = this.panelState();
-    if (!st || !this.commands || !Number.isFinite(value)) return false;
-    if (field === 'ut') {
-      if (!(value > this.scene!.snapshot.ut)) return false;
-      return this.commands.setNode(st.nodeId, { ut: value }).ok;
+    const s = this.scene?.snapshot;
+    if (!st || !s || !this.commands || !Number.isFinite(value)) return false;
+    switch (field) {
+      case 'ut':
+        return value > s.ut && this.commands.setNode(st.nodeId, { ut: value }).ok;
+      case 'timeTo':
+        return value > 0 && this.commands.setNode(st.nodeId, { ut: s.ut + value }).ok;
+      case 'total': {
+        if (value < 0) return false;
+        // Rescale the vector, keeping its direction; a zero burn becomes a prograde one.
+        const dv = st.total > 1e-9 ? { prograde: (st.dv.prograde * value) / st.total, normal: (st.dv.normal * value) / st.total, radial: (st.dv.radial * value) / st.total } : { prograde: value, normal: 0, radial: 0 };
+        return this.commands.setNode(st.nodeId, { dv }).ok;
+      }
+      default:
+        return this.commands.setNode(st.nodeId, { dv: { [field]: value } }).ok;
     }
-    return this.commands.setNode(st.nodeId, { dv: { [field]: value } }).ok;
   }
 
   panelAction(action: 'plusOrbit' | 'minusOrbit' | 'delete' | 'next' | 'previous'): boolean {
@@ -351,7 +407,7 @@ export class MapController implements MapView {
       return ok;
     }
     if (action === 'next' || action === 'previous') {
-      const sorted = [...this.scene!.snapshot.nodes].sort((a, b) => a.ut - b.ut);
+      const sorted = this.nodesByTime(this.scene!.snapshot);
       const i = st.index + (action === 'next' ? 1 : -1);
       const n = sorted[(i + sorted.length) % sorted.length];
       if (n) this.selected = n.id;
@@ -448,9 +504,9 @@ export class MapController implements MapView {
     for (const n of scene.nodes) if (n.front && n.hidden < 0.5) consider({ type: 'node', d: edge(n.x, n.y, NODE_RADIUS_PX), node: n });
     for (const v of scene.vessels) if (v.front && v.hidden < 0.5) consider({ type: 'vessel', d: edge(v.x, v.y, v.active ? 7 : 4), id: v.vesselId });
     if (withMarkers) {
-      scene.markers.forEach((m, index) => {
-        if (m.front && m.hidden < 0.5 && m.details.length > 0) consider({ type: 'marker', d: edge(m.x, m.y, MARKER_RADIUS_PX), index });
-      });
+      for (const m of scene.markers) {
+        if (m.front && m.hidden < 0.5 && m.details.length > 0) consider({ type: 'marker', d: edge(m.x, m.y, MARKER_RADIUS_PX), id: m.id });
+      }
     }
     if (withLines) {
       for (const line of scene.lines) {
@@ -557,9 +613,12 @@ export class MapController implements MapView {
         this.selected = hit.node.id;
         this.pending = { type: 'node', nodeId: hit.node.id, x: px, y: py, moved: 0 };
         return;
-      case 'line':
-        this.pending = { type: 'line', line: hit.line, u: hit.u, x: px, y: py, moved: 0 };
+      case 'line': {
+        const { patch, curve } = hit.line;
+        if (patch && curve) this.pending = { type: 'line', patch, nu: curve.uToNu(hit.u), x: px, y: py, moved: 0 };
+        else this.pending = { type: 'empty', x: px, y: py, moved: 0 };
         return;
+      }
       case 'vessel':
         this.pending = { type: 'empty', x: px, y: py, moved: 0 };
         return;
@@ -588,11 +647,7 @@ export class MapController implements MapView {
     const s = scene.snapshot;
     switch (p.type) {
       case 'line': {
-        const patch = p.line.patch;
-        const curve = p.line.curve;
-        if (!patch || !curve) return;
-        const nu = curve.uToNu(p.u);
-        const ut = utAtTrueAnomaly(patch, nu);
+        const ut = utAtTrueAnomaly(p.patch, p.nu);
         if (ut > s.ut) {
           const id = this.commands.addNode(ut);
           if (id) this.selectNode(id);
@@ -600,10 +655,11 @@ export class MapController implements MapView {
         return;
       }
       case 'body': {
+        // Clicking the body being orbited clears the target, any other body becomes it. Deferred by the
+        // double-click interval: a double click focuses the body and must leave the target alone.
         const active = s.vessels.find((v) => v.id === s.activeVesselId);
-        if (active && active.bodyId === p.id) {
-          if (s.readouts.targetBodyId !== null) this.commands.setTarget(null);
-        } else if (s.readouts.targetBodyId !== p.id) this.commands.setTarget(p.id);
+        const bodyId = active && active.bodyId === p.id ? null : p.id;
+        if (!this.pendingTarget || this.pendingTarget.bodyId !== bodyId) this.pendingTarget = { bodyId, due: tMs + DOUBLE_CLICK_MS };
         return;
       }
       case 'empty':
@@ -658,6 +714,30 @@ export class MapController implements MapView {
 
   // ------------------------------------------------------------------------------- draw list
 
+  private nodesByTime(s: SimSnapshot): ManeuverNode[] {
+    const out = this.sortedNodes;
+    out.length = 0;
+    for (const n of s.nodes) out.push(n);
+    return out.sort((a, b) => a.ut - b.ut);
+  }
+
+  private bodyRadiusCss(scene: MapScene, bodyId: string): number {
+    for (const b of scene.bodies) if (!b.ghost && b.bodyId === bodyId) return b.radiusPx / scene.proj.pxScale;
+    return 0;
+  }
+
+  /** Where the node panel goes (CSS px): beside the node, clear of the gizmo, clamped into the viewport. */
+  private panelPlacement(scene: MapScene, item: NodeItem | undefined): { x: number; y: number } {
+    const k = scene.proj.pxScale;
+    const [w, h] = this.sceneCssSize[0] > 0 ? this.sceneCssSize : [scene.proj.width / k, scene.proj.height / k];
+    const [pw, ph] = this.panelSize;
+    let x = item && item.front ? item.x / k + PANEL_OFFSET_X_PX : w - pw - 16;
+    let y = item && item.front ? item.y / k + PANEL_OFFSET_Y_PX : 24;
+    x = Math.max(8, Math.min(w - pw - 8, x));
+    y = Math.max(8, Math.min(h - ph - 8, y));
+    return { x, y };
+  }
+
   private buildDrawList(scene: MapScene): DrawList {
     const k = scene.proj.pxScale;
     const tm = this.metrics(k);
@@ -666,13 +746,17 @@ export class MapController implements MapView {
     const texts: TextRun[] = [];
     const topTexts: TextRun[] = [];
     const s = scene.snapshot;
-    const labels: { box: LabelBox; lines: string[]; color: Rgba; alpha: number }[] = [];
+    const labels: LabelEntry[] = [];
+    const boxes: LabelBox[] = [];
     const clearIcons: { x: number; y: number; r: number }[] = [];
     const visible = (x: number, y: number, front: boolean): boolean => front && scene.proj.onScreen(x, y, 24 * k);
     const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number): void => {
       if (lines.length === 0 || alpha < 0.05) return;
-      const width = Math.max(...lines.map((l) => l.length)) * tm.advance;
-      labels.push({ box: { ax, ay, clear, width, height: lines.length * tm.lineHeight, priority, x: 0, y: 0, placed: false }, lines, color, alpha });
+      let chars = 0;
+      for (const l of lines) if (l.length > chars) chars = l.length;
+      const box: LabelBox = { ax, ay, clear, width: chars * tm.advance, height: lines.length * tm.lineHeight, priority, x: 0, y: 0, placed: false };
+      boxes.push(box);
+      labels.push({ box, lines, color, alpha });
     };
     const icon = (x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rot = 0, list = icons): void => {
       if (alpha < 0.01) return;
@@ -681,10 +765,9 @@ export class MapController implements MapView {
     };
 
     // Surface targets, once their body is big enough on screen to place them meaningfully.
-    const bodyPx = new Map(scene.bodies.filter((b) => !b.ghost).map((b) => [b.bodyId, b.radiusPx / k]));
     for (const t of scene.targets) {
       if (!visible(t.x, t.y, t.front)) continue;
-      const rPx = bodyPx.get(t.target.bodyId) ?? 0;
+      const rPx = this.bodyRadiusCss(scene, t.target.bodyId);
       if (rPx < TARGET_MIN_BODY_PX) continue;
       const a = (1 - t.hidden) * Math.min(1, (rPx - TARGET_MIN_BODY_PX) / 10);
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
@@ -719,18 +802,20 @@ export class MapController implements MapView {
       }
     }
     // Markers.
-    scene.markers.forEach((m) => {
-      if (!visible(m.x, m.y, m.front)) return;
+    for (const m of scene.markers) {
+      if (!visible(m.x, m.y, m.front)) continue;
       const a = 1 - m.hidden;
       icon(m.x, m.y, m.shape === 'surfacePoint' ? 5 : MARKER_RADIUS_PX, shapeIcon(m.shape), m.color, a);
       addLabel(m.x, m.y, MARKER_RADIUS_PX * k, m.label, m.priority, COLORS.text, a);
-    });
+    }
     // Nodes (+ gizmo of the selected one).
-    const sortedNodes = [...s.nodes].sort((a, b) => a.ut - b.ut);
+    const sortedNodes = this.nodesByTime(s);
+    let selectedItem: NodeItem | undefined;
     for (const n of scene.nodes) {
+      if (n.id === this.selected) selectedItem = n;
       if (!visible(n.x, n.y, n.front)) continue;
       const a = Math.max(0.35, 1 - n.hidden);
-      const node = s.nodes.find((x) => x.id === n.id)!;
+      const node = n.loc.node;
       const total = Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial);
       const isSel = n.id === this.selected;
       if (isSel) {
@@ -744,7 +829,7 @@ export class MapController implements MapView {
             const cy = n.y + h.dy * (r0 + r1) * 0.5;
             icons.push({ x: cx, y: cy, hx: (r1 - r0) / 2, hy: 0.75 * k, rot: Math.atan2(h.dy, h.dx), shape: ICON.bar, color: def.color, alpha: 0.55 * a });
           }
-          const hovered = this.hover?.type === 'handle' && this.hover.handle.name === h.name;
+          const hovered = this.hover?.type === 'handle' && this.hover.handle === h.name;
           const dragging = this.drag?.type === 'handle' && this.drag.handle === h.name;
           icon(h.x, h.y, HANDLE_RADIUS_PX * (hovered || dragging ? 1.15 : 1), def.icon, def.color, a);
         }
@@ -754,35 +839,42 @@ export class MapController implements MapView {
       addLabel(n.x, n.y, (isSel ? HANDLE_DISTANCE_PX * 0.5 : NODE_RADIUS_PX) * k, [`Node ${idx + 1}  Δv ${formatDv(total)}`, formatTimeTo(node.ut - s.ut)], 9, COLORS.text, a);
     }
     // Add-maneuver preview where the pointer hovers a trajectory.
-    if (this.hover?.type === 'line' && this.hoverPos && !this.drag && this.commands) {
-      const line = this.hover.line;
-      const p = this.pointAt(scene, line, this.hover.u);
-      if (p && line.curve && line.patch) {
+    const hv = this.hover;
+    if (hv?.type === 'line' && this.hoverPos && !this.drag && this.commands) {
+      const line = scene.lines.find((l) => l.id === hv.lineId);
+      const p = line ? this.pointAt(scene, line, hv.u) : null;
+      if (line && p && line.curve && line.patch) {
         icon(p.x, p.y, NODE_RADIUS_PX, ICON.addGhost, COLORS.hover, 0.9);
-        const nu = line.curve.uToNu(this.hover.u);
-        const ut = utAtTrueAnomaly(line.patch, nu);
+        const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
         addLabel(p.x, p.y, NODE_RADIUS_PX * k, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
       }
     }
 
-    // De-clutter and emit labels.
-    declutter(
-      labels.map((l) => l.box),
-      clearIcons,
-      scene.proj,
-      LABEL_GAP_PX * k,
-    );
+    // De-clutter (labels keep clear of icons and of the node panel) and emit labels.
+    let blocked: BlockedRect[] = [];
+    if (this.selected && s.nodes.some((n) => n.id === this.selected)) {
+      const at = this.panelPlacement(scene, selectedItem);
+      const r = this.blocked[0]!;
+      r.x0 = at.x * k;
+      r.y0 = at.y * k;
+      r.x1 = (at.x + this.panelSize[0]) * k;
+      r.y1 = (at.y + this.panelSize[1]) * k;
+      blocked = this.blocked;
+    }
+    declutter(boxes, clearIcons, scene.proj, LABEL_GAP_PX * k, blocked);
     for (const l of labels) {
       if (!l.box.placed) continue;
-      l.lines.forEach((line, i) => {
-        texts.push({ x: l.box.x, y: l.box.y + i * tm.lineHeight, text: line, color: i === 0 ? l.color : COLORS.textDim, alpha: l.alpha });
-      });
+      for (let i = 0; i < l.lines.length; i++) {
+        texts.push({ x: l.box.x, y: l.box.y + i * tm.lineHeight, text: l.lines[i]!, color: i === 0 ? l.color : COLORS.textDim, alpha: l.alpha });
+      }
     }
 
     // Hover tooltip with details (markers, nodes, bodies).
     const tip = this.tooltipLines(scene);
     if (tip && this.hoverPos) {
-      const width = Math.max(...tip.map((t) => t.length)) * tm.advance + 16 * k;
+      let chars = 0;
+      for (const t of tip) if (t.length > chars) chars = t.length;
+      const width = chars * tm.advance + 16 * k;
       const height = tip.length * tm.lineHeight + 10 * k;
       let x = this.hoverPos.x + 18 * k;
       let y = this.hoverPos.y + 18 * k;
@@ -815,9 +907,9 @@ export class MapController implements MapView {
     const h = this.hover;
     if (!h) return null;
     const s = scene.snapshot;
-    if (h.type === 'marker') return scene.markers[h.index]?.details ?? null;
+    if (h.type === 'marker') return scene.markers.find((m) => m.id === h.id)?.details ?? null;
     if (h.type === 'node' || h.type === 'handle') {
-      const node = s.nodes.find((n) => n.id === h.node.id);
+      const node = s.nodes.find((n) => n.id === h.nodeId);
       if (!node) return null;
       const lines = [
         'Maneuver node',
@@ -827,7 +919,7 @@ export class MapController implements MapView {
         `Total    ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`,
         `In ${formatDuration(node.ut - s.ut)}`,
       ];
-      if (h.type === 'handle') lines.splice(1, 0, `Drag: ${h.handle.name} (Shift fine, Ctrl coarse)`);
+      if (h.type === 'handle') lines.splice(1, 0, `Drag: ${h.handle} (Shift fine, Ctrl coarse)`);
       return lines;
     }
     if (h.type === 'vessel') {
@@ -838,6 +930,23 @@ export class MapController implements MapView {
       return [v.name, `${v.controllable ? 'Vessel' : 'Debris'} around ${body?.name ?? v.bodyId}`, `Altitude ${formatDistance(alt)}`];
     }
     return null;
+  }
+}
+
+function toHover(h: Hit): Hover {
+  switch (h.type) {
+    case 'handle':
+      return { type: 'handle', nodeId: h.node.id, handle: h.handle.name };
+    case 'node':
+      return { type: 'node', nodeId: h.node.id };
+    case 'line':
+      return { type: 'line', lineId: h.line.id, u: h.u };
+    case 'vessel':
+      return { type: 'vessel', id: h.id };
+    case 'body':
+      return { type: 'body', id: h.id };
+    case 'marker':
+      return { type: 'marker', id: h.id };
   }
 }
 

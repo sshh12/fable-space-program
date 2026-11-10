@@ -4,12 +4,6 @@ import type { MapElementInfo } from '../../../src/core/contracts/ui';
 import type { SimSnapshot } from '../../../src/core/contracts/sim';
 import { assertDiscreteGpu, openPage } from '../harness';
 
-/**
- * Test timeout for map-view specs: the first page of a run waits for the dev server's cold dependency scan,
- * which takes many minutes while data/tiles holds hundreds of thousands of files (docs/requests/map-view-2.md).
- */
-export const MAP_SPEC_TIMEOUT_MS = 15 * 60_000;
-
 export async function openLab(page: Page, query: string): Promise<void> {
   await openPage(page, `/labs/map-view/?${query}`);
   await assertDiscreteGpu(page);

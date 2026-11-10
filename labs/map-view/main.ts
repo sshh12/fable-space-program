@@ -7,7 +7,7 @@
  *
  * Query: ?scene=<FakeScene|synthetic> &paused=1 &intercept=1 &perf=1 &yaw=&pitch=&dist= (radians, metres)
  *        &quiet=1 (no lab text) &spin=<rad per frame> (camera orbits continuously: full rebuild every frame)
- * window.__mapLab: stats(), perf(), resetPerf(), setIntercept(on), setFocus(f), results(), view.
+ * window.__mapLab: stats(), perf(), resetPerf(), setIntercept(on), setFocus(f), step(dt), results(), view.
  */
 import type { PlayerCommands } from '@/core/contracts/controls';
 import type { FrameContext, RenderContext, ShaderLibrary } from '@/core/contracts/render';
@@ -144,8 +144,8 @@ async function boot(): Promise<void> {
       const v = s.vessels.find((x) => x.id === cam.focus.vesselId);
       if (v) return { pos: v.rRoot, minDist: 1e5 };
     }
-    // "<body>@intercept": the ghost of an encounter body drawn at Patch.bodyPosAtEnd.
-    const ghost = cam.focus.bodyId?.endsWith('@intercept') ? view.controller.currentScene?.ghostAnchors.get(cam.focus.bodyId.slice(0, -'@intercept'.length)) : undefined;
+    // "<body>@intercept" (or "<body>@intercept#2", ...): a ghost of an encounter body drawn at its intercept.
+    const ghost = cam.focus.bodyId?.includes('@intercept') ? view.controller.currentScene?.ghostAnchors.get(cam.focus.bodyId) : undefined;
     if (ghost) return { pos: ghost, minDist: 1e5 };
     const b = s.bodies.find((x) => x.id === cam.focus.bodyId) ?? s.bodies.find((x) => x.id === defs.rootBodyId)!;
     return { pos: b.rRoot, minDist: Math.max(1e5, (defs.bodies[b.id]?.radius ?? 0) * 1.02 + 1e5) };
@@ -202,6 +202,8 @@ async function boot(): Promise<void> {
     setFocus: (f: { bodyId?: string; vesselId?: string }) => {
       cam.focus = { bodyId: f.bodyId, vesselId: f.vesselId };
     },
+    /** Advance the sim by `dt` seconds (with ?paused=1: one deterministic step; the next frame shows it). */
+    step: (dt: number) => sim.advance(dt),
     results: () => results.slice(-200),
     camState: () => ({ ...cam }),
   };

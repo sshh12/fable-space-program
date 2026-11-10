@@ -4,9 +4,7 @@
  */
 import type { Page } from '@playwright/test';
 import { assertRealImage, expect, expectNoErrors, saveScreenshot, test } from '../harness';
-import { describeMap, frames, MAP_SPEC_TIMEOUT_MS, openLab, state } from './helpers';
-
-test.setTimeout(MAP_SPEC_TIMEOUT_MS);
+import { describeMap, frames, openLab, state } from './helpers';
 
 const KINDS = ['apoapsis', 'periapsis', 'ascendingNode', 'descendingNode', 'soiEnter', 'soiExit', 'impact', 'atmosphereEntry', 'closestApproach'];
 
@@ -44,7 +42,8 @@ test('synthetic chain: every marker kind, both nodes, current-position and at-in
   const shot = await saveScreenshot(page, 'map-view', 'synthetic-chain');
   assertRealImage(shot.stats, 'synthetic-chain', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
 
-  // At intercept: the lunar patches move to the Moon's position at the end of its first encounter patch.
+  // At intercept: the lunar patches move to the Moon's position at the SOI entry of their encounter (the
+  // planned flyby starts inside the current encounter at node A, so both share one ghost).
   const impactBefore = markers.find((e) => markerKind(e.id) === 'impact')!;
   await lab(page, (l) => l.setIntercept(true));
   await frames(page, 3);
@@ -52,6 +51,7 @@ test('synthetic chain: every marker kind, both nodes, current-position and at-in
   const moonId = s.bodies.find((b) => b.orbit !== null)!.id;
   const ghost = d2.find((e) => e.kind === 'body' && e.id === `${moonId}@intercept`);
   expect(ghost?.visible).toBe(true);
+  expect(d2.filter((e) => e.kind === 'body' && e.id.includes('@intercept')).map((e) => e.id)).toEqual([`${moonId}@intercept`]);
   const impactAfter = d2.find((e) => e.id === impactBefore.id)!;
   expect(Math.hypot(impactAfter.x - impactBefore.x, impactAfter.y - impactBefore.y)).toBeGreaterThan(20);
   // the impact now lies on the ghost Moon (within its projected radius)

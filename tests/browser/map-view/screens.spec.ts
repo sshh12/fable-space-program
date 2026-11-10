@@ -4,9 +4,7 @@
  * with its panel. Each is asserted to be a real image; all are reviewed by eye.
  */
 import { assertRealImage, expect, expectNoErrors, saveScreenshot, test } from '../harness';
-import { frames, MAP_SPEC_TIMEOUT_MS, openLab } from './helpers';
-
-test.setTimeout(MAP_SPEC_TIMEOUT_MS);
+import { frames, openLab } from './helpers';
 
 const SCENES: [string, string][] = [
   ['lowOrbit', 'scene=lowOrbit&paused=1'],
