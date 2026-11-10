@@ -1,0 +1,308 @@
+{
+  "id": "moon-tranquility",
+  "body": "moon",
+  "tileset": "moon",
+  "title": "Mare Tranquillitatis, Apollo 11 landing region",
+  "centre": {
+    "latDeg": 0.674,
+    "lonDeg": 23.473
+  },
+  "coverageMarginTiles": 1,
+  "bands": [
+    {
+      "id": "sldem",
+      "levels": [
+        7,
+        8,
+        9
+      ],
+      "heightScale": 0.125,
+      "source": "sldem2015",
+      "area": {
+        "kind": "disc",
+        "radiusM": 20000
+      },
+      "featherM": 2000
+    },
+    {
+      "id": "nac",
+      "levels": [
+        10,
+        11,
+        12
+      ],
+      "heightScale": 0.03125,
+      "source": "nac-apollo11",
+      "area": {
+        "kind": "sourceFootprint",
+        "marginM": 2000
+      },
+      "featherM": 300
+    }
+  ],
+  "sources": {
+    "sldem2015": {
+      "kind": "geotiff-window",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/LolaKaguya_Topo/Lunar_LRO_LOLAKaguya_DEMmerge_60N60S_512ppd.tif",
+      "bytes": 22650225603,
+      "windowRadiusM": 32000,
+      "biasSmoothingM": 3000,
+      "credit": "SLDEM2015, LOLA + SELENE/Kaguya TC merged DEM, 512 ppd (Barker et al. 2016, Icarus 273; NASA GSFC, JAXA; USGS Astrogeology mosaic)"
+    },
+    "nac-apollo11": {
+      "kind": "geotiff-download",
+      "url": "https://pds.lroc.asu.edu/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO11/NAC_DTM_APOLLO11.TIF",
+      "bytes": 118142727,
+      "biasSmoothingM": 1000,
+      "seamCorrection": {
+        "note": "step of up to 0.7 m along the NAC left/right image boundary near columns 940-1060 of the DTM",
+        "searchColumns": [
+          880,
+          1120
+        ],
+        "blockRows": 250,
+        "halfWidthPx": 10,
+        "rampPx": 60
+      },
+      "credit": "LROC NAC DTM Apollo 11, 2 m posts (NASA/GSFC/Arizona State University)"
+    }
+  },
+  "targetSearch": {
+    "level": 12,
+    "insideSource": "nac-apollo11",
+    "gridSpacingM": 2.0,
+    "candidateSpacingM": 20.0,
+    "maxSlopeDeg": 3.0,
+    "slopeBaselineM": 100.0,
+    "craterMinDiameterM": 20.0,
+    "craterExclusionRadiusM": 150.0,
+    "selectionSlopeMarginDeg": 0.75,
+    "selectionCraterMarginM": 40.0,
+    "sunAzimuthsDeg": [
+      75.0,
+      90.0,
+      105.0
+    ],
+    "minSunElevationDeg": 5.0,
+    "horizonMarginDeg": 1.0,
+    "horizonRangeM": 25000.0,
+    "missionRadiusM": 1500.0,
+    "minMissionDiscSourceFraction": 0.9,
+    "discRadiusM": 2000.0,
+    "discInsetM": 500.0,
+    "preferNear": {
+      "latDeg": 0.67408,
+      "lonDeg": 23.47297
+    }
+  },
+  "recommendedTarget": {
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "heightM": -1907.7,
+    "level": 12,
+    "criteria": {
+      "planeSlopeDeg": 1.145,
+      "steepestBaselineSlopeDeg": 1.402,
+      "slopeBaselineM": 100.0,
+      "nearestCraterDistanceM": 190.9,
+      "craterMinDiameterM": 20.0,
+      "maxHorizonDeg": -0.357,
+      "horizonAzimuthsDeg": [
+        75.0,
+        90.0,
+        105.0
+      ],
+      "minSunElevationDeg": 5.0,
+      "missionDiscSourceFraction": 1.0,
+      "coverageDiscRadiusM": 2500.0,
+      "minCoverageWeightInDisc": 1.0,
+      "distanceToPreferNearM": 1184.4
+    },
+    "cratersWithin600m": [
+      {
+        "distanceM": 200.9,
+        "diameterM": 20.3,
+        "depthM": 2.85
+      },
+      {
+        "distanceM": 205.8,
+        "diameterM": 25.9,
+        "depthM": 3.61
+      },
+      {
+        "distanceM": 209.4,
+        "diameterM": 32.0,
+        "depthM": 4.08
+      },
+      {
+        "distanceM": 326.6,
+        "diameterM": 165.1,
+        "depthM": 5.12
+      },
+      {
+        "distanceM": 339.8,
+        "diameterM": 224.0,
+        "depthM": 11.26
+      },
+      {
+        "distanceM": 384.4,
+        "diameterM": 50.4,
+        "depthM": 8.37
+      },
+      {
+        "distanceM": 420.4,
+        "diameterM": 21.8,
+        "depthM": 0.88
+      },
+      {
+        "distanceM": 441.0,
+        "diameterM": 21.4,
+        "depthM": 0.72
+      },
+      {
+        "distanceM": 461.5,
+        "diameterM": 27.5,
+        "depthM": 4.06
+      },
+      {
+        "distanceM": 465.2,
+        "diameterM": 52.1,
+        "depthM": 4.45
+      },
+      {
+        "distanceM": 473.5,
+        "diameterM": 86.0,
+        "depthM": 3.0
+      },
+      {
+        "distanceM": 473.8,
+        "diameterM": 39.7,
+        "depthM": 2.8
+      },
+      {
+        "distanceM": 477.6,
+        "diameterM": 33.0,
+        "depthM": 1.0
+      },
+      {
+        "distanceM": 491.1,
+        "diameterM": 32.2,
+        "depthM": 1.45
+      },
+      {
+        "distanceM": 530.1,
+        "diameterM": 87.5,
+        "depthM": 3.12
+      },
+      {
+        "distanceM": 547.4,
+        "diameterM": 48.0,
+        "depthM": 1.53
+      },
+      {
+        "distanceM": 557.8,
+        "diameterM": 29.1,
+        "depthM": 1.24
+      },
+      {
+        "distanceM": 584.5,
+        "diameterM": 258.3,
+        "depthM": 11.04
+      },
+      {
+        "distanceM": 584.5,
+        "diameterM": 22.6,
+        "depthM": 2.31
+      },
+      {
+        "distanceM": 590.7,
+        "diameterM": 40.2,
+        "depthM": 2.79
+      }
+    ],
+    "detectorCheckAtPreferNear": [
+      {
+        "distanceM": 54.6,
+        "diameterM": 58.1,
+        "depthM": 3.4
+      },
+      {
+        "distanceM": 135.9,
+        "diameterM": 22.3,
+        "depthM": 1.2
+      },
+      {
+        "distanceM": 166.8,
+        "diameterM": 29.9,
+        "depthM": 1.11
+      },
+      {
+        "distanceM": 221.6,
+        "diameterM": 26.3,
+        "depthM": 0.98
+      },
+      {
+        "distanceM": 239.2,
+        "diameterM": 36.0,
+        "depthM": 1.43
+      },
+      {
+        "distanceM": 252.1,
+        "diameterM": 21.6,
+        "depthM": 2.15
+      },
+      {
+        "distanceM": 322.5,
+        "diameterM": 256.0,
+        "depthM": 8.58
+      },
+      {
+        "distanceM": 327.7,
+        "diameterM": 35.7,
+        "depthM": 4.32
+      },
+      {
+        "distanceM": 331.1,
+        "diameterM": 197.9,
+        "depthM": 13.83
+      },
+      {
+        "distanceM": 383.6,
+        "diameterM": 122.5,
+        "depthM": 15.82
+      },
+      {
+        "distanceM": 387.5,
+        "diameterM": 24.8,
+        "depthM": 1.18
+      },
+      {
+        "distanceM": 411.9,
+        "diameterM": 20.4,
+        "depthM": 0.92
+      },
+      {
+        "distanceM": 421.1,
+        "diameterM": 26.7,
+        "depthM": 2.12
+      },
+      {
+        "distanceM": 438.0,
+        "diameterM": 25.3,
+        "depthM": 0.99
+      },
+      {
+        "distanceM": 450.3,
+        "diameterM": 25.8,
+        "depthM": 2.82
+      },
+      {
+        "distanceM": 495.9,
+        "diameterM": 231.7,
+        "depthM": 15.29
+      }
+    ],
+    "candidatesPassingGridCriteria": 988,
+    "candidatesTried": 1
+  }
+}
