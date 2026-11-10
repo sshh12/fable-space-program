@@ -1,0 +1,298 @@
+{
+  "id": "kestrel-les",
+  "name": "Launch escape system with boost cover",
+  "category": "aero",
+  "dryMass": 2439.851765,
+  "comOffset": [
+    0,
+    2.9,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.9,
+    "h": 9
+  },
+  "bounds": {
+    "radius": 2.05,
+    "yMin": -3.15,
+    "yMax": 7.5
+  },
+  "attachNodes": [
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1
+    }
+  ],
+  "resources": [
+    {
+      "resource": "SolidProp",
+      "capacity": 1260.148235,
+      "tankBottomY": 3.5,
+      "tankHeight": 3
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 13.202543,
+      "length": 10.65,
+      "diameter": 1.6,
+      "cdAxialFwd": [
+        [
+          0,
+          0.3
+        ],
+        [
+          0.6,
+          0.3
+        ],
+        [
+          0.9,
+          0.42
+        ],
+        [
+          1.1,
+          0.55
+        ],
+        [
+          1.3,
+          0.52
+        ],
+        [
+          2,
+          0.4
+        ],
+        [
+          3,
+          0.32
+        ],
+        [
+          5,
+          0.27
+        ],
+        [
+          10,
+          0.25
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.2
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 60,
+        "normal": "axisym",
+        "noseRadius": 0.45,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 9000,
+        "maxTemp": 1100
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        7.5,
+        0
+      ],
+      "radius": 0.3,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        -3.15,
+        2.05
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.05,
+        -3.15,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        -3.15,
+        -2.05
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.05,
+        -3.15,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 30
+  },
+  "modules": [
+    {
+      "type": "les"
+    },
+    {
+      "type": "decoupler",
+      "impulse": 500,
+      "separationPlaneY": 0
+    },
+    {
+      "type": "engine",
+      "thrustVac": 882702.33517,
+      "ispVac": 250,
+      "ispSL": 235,
+      "minThrottle": 1,
+      "throttleable": false,
+      "spoolUp": 0.05,
+      "spoolDown": 0.1,
+      "maxIgnitions": 1,
+      "propellants": [
+        {
+          "resource": "SolidProp",
+          "ratio": 1
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0.353553,
+            4,
+            0.353553
+          ],
+          "dir": [
+            0.298836,
+            -0.906308,
+            0.298836
+          ],
+          "exitDiameter": 0.45,
+          "exitPressure": 90000
+        },
+        {
+          "pos": [
+            0.353553,
+            4,
+            -0.353553
+          ],
+          "dir": [
+            0.298836,
+            -0.906308,
+            -0.298836
+          ],
+          "exitDiameter": 0.45,
+          "exitPressure": 90000
+        },
+        {
+          "pos": [
+            -0.353553,
+            4,
+            -0.353553
+          ],
+          "dir": [
+            -0.298836,
+            -0.906308,
+            -0.298836
+          ],
+          "exitDiameter": 0.45,
+          "exitPressure": 90000
+        },
+        {
+          "pos": [
+            -0.353553,
+            4,
+            0.353553
+          ],
+          "dir": [
+            -0.298836,
+            -0.906308,
+            0.298836
+          ],
+          "exitDiameter": 0.45,
+          "exitPressure": 90000
+        }
+      ],
+      "fixedBurn": {
+        "duration": 3.5
+      },
+      "chamberPressure": 7000000,
+      "plume": "plume.solid",
+      "sound": "engine.solid"
+    },
+    {
+      "type": "fairing",
+      "panels": 1,
+      "impulse": 0,
+      "shields": [
+        "kestrel-capsule",
+        "kestrel-apex-cover"
+      ]
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/kestrel-les.json",
+    "optional": true
+  }
+}

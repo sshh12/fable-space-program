@@ -1,0 +1,719 @@
+{
+  "id": "kestrel-capsule",
+  "name": "Kestrel crew capsule",
+  "category": "command",
+  "dryMass": 4590,
+  "comOffset": [
+    0,
+    0.62,
+    -0.157
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 1.75,
+    "h": 2.6
+  },
+  "bounds": {
+    "radius": 2,
+    "yMin": -0.45,
+    "yMax": 2.85
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        2.85,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 4
+    }
+  ],
+  "resources": [
+    {
+      "resource": "RCSProp",
+      "capacity": 150,
+      "tankBottomY": 0.3,
+      "tankHeight": 0.3
+    },
+    {
+      "resource": "Ablator",
+      "capacity": 200,
+      "tankBottomY": -0.45,
+      "tankHeight": 0.12
+    }
+  ],
+  "aero": [
+    {
+      "kind": "bluntCapsule",
+      "refArea": 12.566370614359172,
+      "diameter": 4,
+      "cdTable": [
+        [
+          0,
+          0.9
+        ],
+        [
+          0.6,
+          0.92
+        ],
+        [
+          0.9,
+          1.05
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.4
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.38
+        ],
+        [
+          5,
+          1.32
+        ],
+        [
+          10,
+          1.3
+        ]
+      ],
+      "cn": 0.1,
+      "cmAlpha": 0.16,
+      "cmq": 0.4,
+      "refPoint": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 12.566370614359172,
+        "normal": [
+          0,
+          -1,
+          0
+        ],
+        "noseRadius": 4.8,
+        "emissivity": 0.85,
+        "arealHeatCapacity": 20000,
+        "maxTemp": 1400
+      },
+      {
+        "area": 27,
+        "normal": "axisym",
+        "noseRadius": 2,
+        "emissivity": 0.85,
+        "arealHeatCapacity": 14000,
+        "maxTemp": 1900
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        1,
+        0,
+        1.732051
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        1.732051,
+        0,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        2,
+        0,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        1.732051,
+        0,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        1,
+        0,
+        -1.732051
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        -1,
+        0,
+        -1.732051
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        -1.732051,
+        0,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        -2,
+        0,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        -1.732051,
+        0,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        -1,
+        0,
+        1.732051
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        0,
+        -0.45,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 9,
+      "crashToleranceWater": 12
+    },
+    {
+      "pos": [
+        0.782331,
+        1.4,
+        0.782331
+      ],
+      "radius": 0.05,
+      "crashTolerance": 4,
+      "crashToleranceWater": 8
+    },
+    {
+      "pos": [
+        0.782331,
+        1.4,
+        -0.782331
+      ],
+      "radius": 0.05,
+      "crashTolerance": 4,
+      "crashToleranceWater": 8
+    },
+    {
+      "pos": [
+        -0.782331,
+        1.4,
+        -0.782331
+      ],
+      "radius": 0.05,
+      "crashTolerance": 4,
+      "crashToleranceWater": 8
+    },
+    {
+      "pos": [
+        -0.782331,
+        1.4,
+        0.782331
+      ],
+      "radius": 0.05,
+      "crashTolerance": 4,
+      "crashToleranceWater": 8
+    },
+    {
+      "pos": [
+        0,
+        2.85,
+        0
+      ],
+      "radius": 0.3,
+      "crashTolerance": 4,
+      "crashToleranceWater": 8
+    }
+  ],
+  "buoyancy": [
+    {
+      "pos": [
+        0,
+        1,
+        0
+      ],
+      "radius": 1
+    },
+    {
+      "pos": [
+        0,
+        0.55,
+        1
+      ],
+      "radius": 0.6
+    },
+    {
+      "pos": [
+        0.866025,
+        0.55,
+        0.5
+      ],
+      "radius": 0.6
+    },
+    {
+      "pos": [
+        0.866025,
+        0.55,
+        -0.5
+      ],
+      "radius": 0.6
+    },
+    {
+      "pos": [
+        0,
+        0.55,
+        -1
+      ],
+      "radius": 0.6
+    },
+    {
+      "pos": [
+        -0.866025,
+        0.55,
+        -0.5
+      ],
+      "radius": 0.6
+    },
+    {
+      "pos": [
+        -0.866025,
+        0.55,
+        0.5
+      ],
+      "radius": 0.6
+    }
+  ],
+  "joint": {
+    "maxAccelG": 20
+  },
+  "modules": [
+    {
+      "type": "command",
+      "crewCapacity": 3,
+      "sas": true,
+      "maxRateDegPerS": 25,
+      "seats": [
+        {
+          "id": "cdr",
+          "pos": [
+            -0.72,
+            1.05,
+            0.1
+          ],
+          "lookDir": [
+            0,
+            0.94,
+            0.34
+          ],
+          "upDir": [
+            0,
+            -0.34,
+            0.94
+          ]
+        },
+        {
+          "id": "plt",
+          "pos": [
+            0,
+            1.05,
+            0.1
+          ],
+          "lookDir": [
+            0,
+            0.94,
+            0.34
+          ],
+          "upDir": [
+            0,
+            -0.34,
+            0.94
+          ]
+        },
+        {
+          "id": "ms",
+          "pos": [
+            0.72,
+            1.05,
+            0.1
+          ],
+          "lookDir": [
+            0,
+            0.94,
+            0.34
+          ],
+          "upDir": [
+            0,
+            -0.34,
+            0.94
+          ]
+        }
+      ],
+      "hatch": {
+        "pos": [
+          0,
+          1.2,
+          -1.234043
+        ],
+        "dir": [
+          0,
+          0.538035,
+          -0.842922
+        ]
+      }
+    },
+    {
+      "type": "heatShield",
+      "ablatorResource": "Ablator",
+      "area": 12.566370614359172,
+      "qThreshold": 150000,
+      "heff": 28000000,
+      "conductFraction": 0.02
+    },
+    {
+      "type": "rcs",
+      "thrusters": [
+        {
+          "pos": [
+            1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            -1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            -1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0,
+            0.5,
+            1.7
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0,
+            0.5,
+            -1.7
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0,
+            0.5,
+            1.7
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0,
+            0.5,
+            -1.7
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            -1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            -1.7,
+            0.5,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 220
+        }
+      ],
+      "isp": 290,
+      "resource": "RCSProp"
+    },
+    {
+      "type": "reactionWheel",
+      "torque": [
+        300,
+        300,
+        300
+      ]
+    },
+    {
+      "type": "parachute",
+      "mode": "drogue",
+      "count": 2,
+      "cdAFull": 20,
+      "reefStages": [
+        {
+          "fraction": 0.4,
+          "duration": 4
+        }
+      ],
+      "fullInflateTime": 1.5,
+      "safe": {
+        "maxAlt": 12000,
+        "maxMach": 0.85,
+        "maxQ": 9000
+      },
+      "destroy": {
+        "maxMach": 1.2,
+        "maxQ": 14000
+      },
+      "attach": [
+        0,
+        2.85,
+        0
+      ],
+      "lineLength": 22,
+      "canopyDiameter": 5.6
+    },
+    {
+      "type": "parachute",
+      "mode": "main",
+      "count": 3,
+      "cdAFull": 420,
+      "reefStages": [
+        {
+          "fraction": 0.08,
+          "duration": 6
+        },
+        {
+          "fraction": 0.3,
+          "duration": 6
+        }
+      ],
+      "fullInflateTime": 3,
+      "safe": {
+        "maxAlt": 4500,
+        "maxSpeed": 95,
+        "maxQ": 2800
+      },
+      "destroy": {
+        "maxSpeed": 130,
+        "maxQ": 4500
+      },
+      "attach": [
+        0,
+        2.85,
+        0
+      ],
+      "lineLength": 52,
+      "canopyDiameter": 26
+    },
+    {
+      "type": "light",
+      "params": {
+        "lumens": 6000,
+        "beamDeg": 60
+      }
+    },
+    {
+      "type": "antenna",
+      "params": {
+        "gainDb": 12
+      }
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/kestrel-capsule.json",
+    "optional": true
+  }
+}

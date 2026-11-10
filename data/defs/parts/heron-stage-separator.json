@@ -1,0 +1,79 @@
+{
+  "id": "heron-stage-separator",
+  "name": "Ascent / descent stage separation ring",
+  "category": "decoupler",
+  "dryMass": 100,
+  "comOffset": [
+    0,
+    0.25,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 2,
+    "h": 0.5
+  },
+  "bounds": {
+    "radius": 2,
+    "yMin": 0,
+    "yMax": 0.5
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0.5,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 4
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 4
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 6,
+        "normal": "axisym",
+        "noseRadius": 2,
+        "emissivity": 0.75,
+        "arealHeatCapacity": 4000,
+        "maxTemp": 700
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 12
+  },
+  "modules": [
+    {
+      "type": "decoupler",
+      "impulse": 3000,
+      "separationPlaneY": 0.5
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/heron-stage-separator.json",
+    "optional": true
+  }
+}

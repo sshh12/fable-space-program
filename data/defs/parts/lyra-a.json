@@ -1,0 +1,114 @@
+{
+  "id": "lyra-a",
+  "name": "Lyra-A methalox ascent engine",
+  "category": "engine",
+  "dryMass": 120,
+  "comOffset": [
+    0,
+    -0.45499999999999996,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.27,
+    "h": 1.3
+  },
+  "bounds": {
+    "radius": 0.45,
+    "yMin": -1.3,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 0.54
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 2.572964,
+        "normal": "axisym",
+        "noseRadius": 0.45,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -1.3,
+        0
+      ],
+      "radius": 0.45,
+      "crashTolerance": 2
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 10
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 60000,
+      "ispVac": 355,
+      "ispSL": 100,
+      "minThrottle": 0.2,
+      "throttleable": true,
+      "spoolUp": 0.25,
+      "spoolDown": 0.15,
+      "maxIgnitions": null,
+      "propellants": [
+        {
+          "resource": "LOX",
+          "ratio": 0.782608695652174
+        },
+        {
+          "resource": "CH4",
+          "ratio": 0.2173913043478261
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -1.3,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 0.9,
+          "exitPressure": 10000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 4,
+        "rateDegPerS": 20
+      },
+      "chamberPressure": 6000000,
+      "plume": "plume.methalox-lander",
+      "sound": "engine.lander-ascent"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/lyra-a.json",
+    "optional": true
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "id": "meridian-m3-rcs-pod",
+  "name": "M-3 aft RCS pod",
+  "category": "utility",
+  "dryMass": 130,
+  "comOffset": [
+    0,
+    0,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "box",
+    "size": [
+      0.6,
+      1,
+      0.8
+    ]
+  },
+  "bounds": {
+    "radius": 0.55,
+    "yMin": -0.5,
+    "yMax": 0.5
+  },
+  "attachNodes": [],
+  "resources": [
+    {
+      "resource": "RCSProp",
+      "capacity": 120,
+      "tankBottomY": -0.3,
+      "tankHeight": 0.6
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 3,
+        "normal": "axisym",
+        "noseRadius": 0.5,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "rcs",
+      "thrusters": [
+        {
+          "pos": [
+            0.3,
+            0,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "thrust": 600
+        },
+        {
+          "pos": [
+            0.3,
+            0,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 600
+        },
+        {
+          "pos": [
+            0.3,
+            0,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            1
+          ],
+          "thrust": 600
+        },
+        {
+          "pos": [
+            0.3,
+            0,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "thrust": 600
+        }
+      ],
+      "isp": 290,
+      "resource": "RCSProp"
+    },
+    {
+      "type": "engine",
+      "thrustVac": 600,
+      "ispVac": 290,
+      "ispSL": 100,
+      "minThrottle": 1,
+      "throttleable": false,
+      "spoolUp": 0.05,
+      "spoolDown": 0.05,
+      "maxIgnitions": 1,
+      "propellants": [
+        {
+          "resource": "RCSProp",
+          "ratio": 1
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0.3,
+            0.2,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "exitDiameter": 0.12,
+          "exitPressure": 20000
+        }
+      ],
+      "fixedBurn": {
+        "duration": 3
+      },
+      "chamberPressure": 1000000,
+      "plume": "plume.rcs",
+      "sound": "rcs.thruster"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-m3-rcs-pod.json",
+    "optional": true
+  }
+}

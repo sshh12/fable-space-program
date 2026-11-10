@@ -1,0 +1,114 @@
+{
+  "id": "lyra-d",
+  "name": "Lyra-D deep-throttling methalox descent engine",
+  "category": "engine",
+  "dryMass": 350,
+  "comOffset": [
+    0,
+    -0.77,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.51,
+    "h": 2.2
+  },
+  "bounds": {
+    "radius": 0.85,
+    "yMin": -2.2,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1.02
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 8.22469,
+        "normal": "axisym",
+        "noseRadius": 0.85,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -2.2,
+        0
+      ],
+      "radius": 0.85,
+      "crashTolerance": 2
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 10
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 200000,
+      "ispVac": 360,
+      "ispSL": 100,
+      "minThrottle": 0.1,
+      "throttleable": true,
+      "spoolUp": 0.25,
+      "spoolDown": 0.15,
+      "maxIgnitions": null,
+      "propellants": [
+        {
+          "resource": "LOX",
+          "ratio": 0.782608695652174
+        },
+        {
+          "resource": "CH4",
+          "ratio": 0.2173913043478261
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -2.2,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 1.7,
+          "exitPressure": 8000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 6,
+        "rateDegPerS": 20
+      },
+      "chamberPressure": 8000000,
+      "plume": "plume.methalox-lander",
+      "sound": "engine.lander-descent"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/lyra-d.json",
+    "optional": true
+  }
+}

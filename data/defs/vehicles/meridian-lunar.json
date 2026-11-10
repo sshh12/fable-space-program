@@ -1,0 +1,803 @@
+{
+  "id": "meridian-lunar",
+  "name": "Meridian / Heron / Kestrel lunar stack",
+  "parts": [
+    {
+      "id": "capsule",
+      "def": "kestrel-capsule",
+      "parent": null,
+      "stageGroup": "capsule"
+    },
+    {
+      "id": "apex-cover",
+      "def": "kestrel-apex-cover",
+      "parent": "capsule",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "capsule"
+    },
+    {
+      "id": "les",
+      "def": "kestrel-les",
+      "parent": "apex-cover",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "les"
+    },
+    {
+      "id": "les-jettison-motor",
+      "def": "kestrel-les-jettison-motor",
+      "parent": "les",
+      "position": [
+        0,
+        3.869617,
+        0
+      ],
+      "stageGroup": "les-jettison"
+    },
+    {
+      "id": "capsule-adapter",
+      "def": "heron-capsule-adapter",
+      "parent": "capsule",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "ascent"
+    },
+    {
+      "id": "ascent-stage",
+      "def": "heron-ascent-stage",
+      "parent": "capsule-adapter",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "ascent"
+    },
+    {
+      "id": "lyra-a",
+      "def": "lyra-a",
+      "parent": "ascent-stage",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "ascent"
+    },
+    {
+      "id": "stage-separator",
+      "def": "heron-stage-separator",
+      "parent": "ascent-stage",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "descent"
+    },
+    {
+      "id": "descent-stage",
+      "def": "heron-descent-stage",
+      "parent": "stage-separator",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "descent"
+    },
+    {
+      "id": "lyra-d",
+      "def": "lyra-d",
+      "parent": "descent-stage",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "descent"
+    },
+    {
+      "id": "landing-legs",
+      "def": "heron-landing-legs",
+      "parent": "descent-stage",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "descent"
+    },
+    {
+      "id": "payload-adapter",
+      "def": "meridian-payload-adapter",
+      "parent": "descent-stage",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m3"
+    },
+    {
+      "id": "m3",
+      "def": "meridian-m3",
+      "parent": "payload-adapter",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m3"
+    },
+    {
+      "id": "fairing",
+      "def": "meridian-lander-fairing",
+      "parent": "m3",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "fairing"
+    },
+    {
+      "id": "vela-2v",
+      "def": "vela-2v",
+      "parent": "m3",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "m3"
+    },
+    {
+      "id": "m3-rcs-pod-a",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        3.45,
+        1,
+        0
+      ],
+      "stageGroup": "m3"
+    },
+    {
+      "id": "m3-rcs-pod-b",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        -3.45,
+        1,
+        0
+      ],
+      "rotationDeg": [
+        0,
+        180,
+        0
+      ],
+      "stageGroup": "m3"
+    },
+    {
+      "id": "interstage-2",
+      "def": "meridian-interstage-2",
+      "parent": "m3",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "m2",
+      "def": "meridian-m2",
+      "parent": "interstage-2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-1",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-1",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-2",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-2",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-3",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-3",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-4",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-4",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-5",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-5",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-6",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-6",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "m2-ullage",
+      "def": "meridian-m2-ullage-motors",
+      "parent": "m2",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "m2"
+    },
+    {
+      "id": "interstage-1",
+      "def": "meridian-interstage-1",
+      "parent": "m2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "m1-retro",
+      "def": "meridian-m1-retro-motors",
+      "parent": "interstage-1",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "m1"
+    },
+    {
+      "id": "m1",
+      "def": "meridian-m1",
+      "parent": "interstage-1",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-1",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-1",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-2",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-2",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-3",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-3",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-4",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-4",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-5",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-5",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-6",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-6",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-7",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-7",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-8",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-8",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-9",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-9",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "clamp-1",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        3.747666,
+        -2.9,
+        3.747666
+      ],
+      "rotationDeg": [
+        0,
+        45,
+        0
+      ],
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-2",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        3.747666,
+        -2.9,
+        -3.747666
+      ],
+      "rotationDeg": [
+        0,
+        135,
+        0
+      ],
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-3",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        -3.747666,
+        -2.9,
+        -3.747666
+      ],
+      "rotationDeg": [
+        0,
+        225,
+        0
+      ],
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-4",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        -3.747666,
+        -2.9,
+        3.747666
+      ],
+      "rotationDeg": [
+        0,
+        315,
+        0
+      ],
+      "stageGroup": "pad"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "capsule",
+      "label": "Kestrel capsule"
+    },
+    {
+      "id": "les",
+      "label": "Launch escape motor"
+    },
+    {
+      "id": "les-jettison",
+      "label": "Tower jettison motor"
+    },
+    {
+      "id": "ascent",
+      "label": "Heron ascent stage"
+    },
+    {
+      "id": "descent",
+      "label": "Heron descent stage"
+    },
+    {
+      "id": "fairing",
+      "label": "Lander fairing"
+    },
+    {
+      "id": "m3",
+      "label": "Meridian M-3"
+    },
+    {
+      "id": "m2",
+      "label": "Meridian M-2"
+    },
+    {
+      "id": "m1",
+      "label": "Meridian M-1"
+    },
+    {
+      "id": "pad",
+      "label": "Launch pad"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Launch",
+      "icon": "engine",
+      "actions": [
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2",
+            "atlas-3",
+            "atlas-4",
+            "atlas-5",
+            "atlas-6",
+            "atlas-7",
+            "atlas-8",
+            "atlas-9"
+          ]
+        },
+        {
+          "kind": "releaseClamps",
+          "parts": [
+            "clamp-1",
+            "clamp-2",
+            "clamp-3",
+            "clamp-4"
+          ],
+          "minThrustToWeight": 1.1,
+          "delay": 3
+        }
+      ]
+    },
+    {
+      "label": "M-1 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2",
+            "atlas-3",
+            "atlas-4",
+            "atlas-5",
+            "atlas-6",
+            "atlas-7",
+            "atlas-8",
+            "atlas-9"
+          ]
+        },
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "m2-ullage"
+          ],
+          "delay": 1.7
+        },
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "m1-retro"
+          ],
+          "delay": 2
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage-1",
+          "delay": 2
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "vela-2-1",
+            "vela-2-2",
+            "vela-2-3",
+            "vela-2-4",
+            "vela-2-5",
+            "vela-2-6"
+          ],
+          "delay": 3.5
+        }
+      ]
+    },
+    {
+      "label": "Tower + fairing jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "les-jettison-motor"
+          ]
+        },
+        {
+          "kind": "jettisonLES",
+          "part": "les"
+        },
+        {
+          "kind": "jettisonFairing",
+          "part": "fairing"
+        }
+      ]
+    },
+    {
+      "label": "M-2 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "vela-2-1",
+            "vela-2-2",
+            "vela-2-3",
+            "vela-2-4",
+            "vela-2-5",
+            "vela-2-6"
+          ]
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "m3-rcs-pod-a",
+            "m3-rcs-pod-b"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage-2",
+          "delay": 1.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "vela-2v"
+          ],
+          "delay": 3.5
+        }
+      ]
+    },
+    {
+      "label": "M-3 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "vela-2v"
+          ]
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "descent-stage",
+            "ascent-stage"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "payload-adapter",
+          "delay": 1.5
+        },
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "m3-rcs-pod-a",
+            "m3-rcs-pod-b"
+          ],
+          "delay": 2
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "lyra-d"
+          ],
+          "delay": 2
+        }
+      ]
+    },
+    {
+      "label": "Landing gear",
+      "icon": "legs",
+      "actions": [
+        {
+          "kind": "deployLegs",
+          "parts": [
+            "landing-legs"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Lunar lift-off",
+      "icon": "engine",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "lyra-d"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "stage-separator",
+          "delay": 0.7
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "lyra-a"
+          ],
+          "delay": 0.7
+        }
+      ]
+    },
+    {
+      "label": "Capsule separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "lyra-a"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "capsule-adapter",
+          "delay": 0.8
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "capsule"
+          ],
+          "delay": 0.8
+        }
+      ]
+    },
+    {
+      "label": "Drogues",
+      "icon": "chute",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "apex-cover"
+        },
+        {
+          "kind": "deployParachute",
+          "parts": [
+            "capsule"
+          ],
+          "mode": "drogue",
+          "delay": 0.4
+        }
+      ]
+    },
+    {
+      "label": "Mains",
+      "icon": "chute",
+      "actions": [
+        {
+          "kind": "cutParachute",
+          "parts": [
+            "capsule"
+          ]
+        },
+        {
+          "kind": "deployParachute",
+          "parts": [
+            "capsule"
+          ],
+          "mode": "main",
+          "delay": 0.5
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "atlas-1",
+        "atlas-2",
+        "atlas-3",
+        "atlas-4",
+        "atlas-5",
+        "atlas-6",
+        "atlas-7",
+        "atlas-8",
+        "atlas-9",
+        "vela-2-1",
+        "vela-2-2",
+        "vela-2-3",
+        "vela-2-4",
+        "vela-2-5",
+        "vela-2-6",
+        "vela-2v",
+        "lyra-d",
+        "lyra-a"
+      ]
+    },
+    {
+      "kind": "igniteEngines",
+      "parts": [
+        "les"
+      ]
+    },
+    {
+      "kind": "decouple",
+      "part": "capsule-adapter"
+    },
+    {
+      "kind": "enableRcs",
+      "parts": [
+        "capsule"
+      ]
+    },
+    {
+      "kind": "fireSeparationMotors",
+      "parts": [
+        "les-jettison-motor"
+      ],
+      "delay": 5
+    },
+    {
+      "kind": "jettisonLES",
+      "part": "les",
+      "delay": 5
+    }
+  ],
+  "actionGroups": {
+    "legs": [
+      {
+        "kind": "deployLegs",
+        "parts": [
+          "landing-legs"
+        ]
+      }
+    ]
+  },
+  "crew": [
+    {
+      "seat": "cdr",
+      "name": "Ilse Marwen"
+    },
+    {
+      "seat": "plt",
+      "name": "Tobias Achterberg"
+    },
+    {
+      "seat": "ms",
+      "name": "Noor Valkonen"
+    }
+  ],
+  "cameras": {
+    "cockpit": {
+      "part": "capsule",
+      "seat": "cdr"
+    },
+    "chase": {
+      "defaultDistance": 140,
+      "minDistance": 8,
+      "maxDistance": 3000
+    }
+  },
+  "cockpit": "kestrel"
+}

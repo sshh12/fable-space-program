@@ -1,0 +1,114 @@
+{
+  "id": "atlas-9m",
+  "name": "Atlas-9M methalox booster engine",
+  "category": "engine",
+  "dryMass": 3200,
+  "comOffset": [
+    0,
+    -1.26,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.57,
+    "h": 3.6
+  },
+  "bounds": {
+    "radius": 0.95,
+    "yMin": -3.6,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1.14
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 15.041946,
+        "normal": "axisym",
+        "noseRadius": 0.95,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -3.6,
+        0
+      ],
+      "radius": 0.95,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 8
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 4174000,
+      "ispVac": 350,
+      "ispSL": 327,
+      "minThrottle": 0.5,
+      "throttleable": true,
+      "spoolUp": 1.2,
+      "spoolDown": 0.4,
+      "maxIgnitions": 3,
+      "propellants": [
+        {
+          "resource": "LOX",
+          "ratio": 0.782608695652174
+        },
+        {
+          "resource": "CH4",
+          "ratio": 0.2173913043478261
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -3.6,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 1.9,
+          "exitPressure": 70000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 6,
+        "rateDegPerS": 20
+      },
+      "chamberPressure": 30000000,
+      "plume": "plume.methalox-booster",
+      "sound": "engine.methalox-booster"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/atlas-9m.json",
+    "optional": true
+  }
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "LOX",
+    "name": "Liquid oxygen",
+    "density": 1141
+  },
+  {
+    "id": "CH4",
+    "name": "Liquid methane",
+    "density": 422.6
+  },
+  {
+    "id": "LH2",
+    "name": "Liquid hydrogen",
+    "density": 70.85
+  },
+  {
+    "id": "RCSProp",
+    "name": "RCS propellant (gaseous methane / oxygen)",
+    "density": 260
+  },
+  {
+    "id": "SolidProp",
+    "name": "Solid propellant",
+    "density": 1750
+  },
+  {
+    "id": "Ablator",
+    "name": "Ablator",
+    "density": 1450
+  }
+]

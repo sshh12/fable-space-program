@@ -1,0 +1,114 @@
+{
+  "id": "vela-2v",
+  "name": "Vela-2V restartable hydrolox vacuum engine",
+  "category": "engine",
+  "dryMass": 1800,
+  "comOffset": [
+    0,
+    -1.4,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.87,
+    "h": 4
+  },
+  "bounds": {
+    "radius": 1.45,
+    "yMin": -4,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1.74
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 25.509732,
+        "normal": "axisym",
+        "noseRadius": 1.45,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -4,
+        0
+      ],
+      "radius": 1.45,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 8
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 1000000,
+      "ispVac": 452,
+      "ispSL": 290,
+      "minThrottle": 0.6,
+      "throttleable": true,
+      "spoolUp": 0.8,
+      "spoolDown": 0.3,
+      "maxIgnitions": null,
+      "propellants": [
+        {
+          "resource": "LOX",
+          "ratio": 0.8571428571428571
+        },
+        {
+          "resource": "LH2",
+          "ratio": 0.14285714285714285
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -4,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 2.9,
+          "exitPressure": 6000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 5,
+        "rateDegPerS": 20
+      },
+      "chamberPressure": 12000000,
+      "plume": "plume.hydrolox-vacuum",
+      "sound": "engine.hydrolox-vacuum"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/vela-2v.json",
+    "optional": true
+  }
+}

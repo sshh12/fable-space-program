@@ -1,0 +1,441 @@
+{
+  "id": "meridian-m1",
+  "name": "Meridian M-1 first stage",
+  "category": "tank",
+  "dryMass": 114700,
+  "comOffset": [
+    0,
+    13,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 4.5,
+    "h": 40
+  },
+  "bounds": {
+    "radius": 4.5,
+    "yMin": 0,
+    "yMax": 40
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        40,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 9
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 9
+    },
+    {
+      "id": "engine-1",
+      "pos": [
+        0,
+        1.2,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-2",
+      "pos": [
+        0,
+        1.2,
+        3.3
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-3",
+      "pos": [
+        2.333452,
+        1.2,
+        2.333452
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-4",
+      "pos": [
+        3.3,
+        1.2,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-5",
+      "pos": [
+        2.333452,
+        1.2,
+        -2.333452
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-6",
+      "pos": [
+        0,
+        1.2,
+        -3.3
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-7",
+      "pos": [
+        -2.333452,
+        1.2,
+        -2.333452
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-8",
+      "pos": [
+        -3.3,
+        1.2,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    },
+    {
+      "id": "engine-9",
+      "pos": [
+        -2.333452,
+        1.2,
+        2.333452
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.2
+    }
+  ],
+  "resources": [
+    {
+      "resource": "CH4",
+      "capacity": 382608.69565217395,
+      "tankBottomY": 2.5,
+      "tankHeight": 14.9
+    },
+    {
+      "resource": "LOX",
+      "capacity": 1377391.3043478262,
+      "tankBottomY": 18.5,
+      "tankHeight": 19.9
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 63.617251,
+      "length": 40,
+      "diameter": 9,
+      "cdAxialFwd": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 1130,
+        "normal": "axisym",
+        "noseRadius": 4.5,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        3.897114,
+        0,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        3.897114,
+        0,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -3.897114,
+        0,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -3.897114,
+        0,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        40,
+        4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        3.897114,
+        40,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        3.897114,
+        40,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        40,
+        -4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -3.897114,
+        40,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -3.897114,
+        40,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [
+    {
+      "pos": [
+        0,
+        6,
+        0
+      ],
+      "radius": 4.2
+    },
+    {
+      "pos": [
+        0,
+        14,
+        0
+      ],
+      "radius": 4.2
+    },
+    {
+      "pos": [
+        0,
+        22,
+        0
+      ],
+      "radius": 4.2
+    },
+    {
+      "pos": [
+        0,
+        30,
+        0
+      ],
+      "radius": 4.2
+    }
+  ],
+  "joint": {
+    "maxAccelG": 6
+  },
+  "modules": [],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-m1.json",
+    "optional": true
+  }
+}

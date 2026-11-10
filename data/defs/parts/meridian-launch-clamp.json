@@ -1,0 +1,51 @@
+{
+  "id": "meridian-launch-clamp",
+  "name": "Hold-down clamp",
+  "category": "structural",
+  "dryMass": 6000,
+  "comOffset": [
+    0,
+    1.5,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "box",
+    "size": [
+      1.4,
+      3.5,
+      1.8
+    ]
+  },
+  "bounds": {
+    "radius": 1,
+    "yMin": 0,
+    "yMax": 3.5
+  },
+  "attachNodes": [],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 20,
+        "normal": "axisym",
+        "noseRadius": 1,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 30000,
+        "maxTemp": 1600
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 50
+  },
+  "modules": [
+    {
+      "type": "launchClamp"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-launch-clamp.json",
+    "optional": true
+  }
+}

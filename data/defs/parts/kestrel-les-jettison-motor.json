@@ -1,0 +1,106 @@
+{
+  "id": "kestrel-les-jettison-motor",
+  "name": "Tower jettison motor",
+  "category": "engine",
+  "dryMass": 147.042568,
+  "comOffset": [
+    0,
+    0.1,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.45,
+    "h": 0.8
+  },
+  "bounds": {
+    "radius": 0.7,
+    "yMin": -0.3,
+    "yMax": 0.5
+  },
+  "attachNodes": [],
+  "resources": [
+    {
+      "resource": "SolidProp",
+      "capacity": 152.957432,
+      "tankBottomY": -0.2,
+      "tankHeight": 0.6
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 3,
+        "normal": "axisym",
+        "noseRadius": 0.45,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 9000,
+        "maxTemp": 1100
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 40
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 250000,
+      "ispVac": 250,
+      "ispSL": 235,
+      "minThrottle": 1,
+      "throttleable": false,
+      "spoolUp": 0.03,
+      "spoolDown": 0.08,
+      "maxIgnitions": 1,
+      "propellants": [
+        {
+          "resource": "SolidProp",
+          "ratio": 1
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            0,
+            -0.55
+          ],
+          "dir": [
+            0,
+            -0.766044,
+            -0.642788
+          ],
+          "exitDiameter": 0.3,
+          "exitPressure": 80000
+        },
+        {
+          "pos": [
+            0,
+            0,
+            0.55
+          ],
+          "dir": [
+            0,
+            -0.996195,
+            0.087156
+          ],
+          "exitDiameter": 0.3,
+          "exitPressure": 80000
+        }
+      ],
+      "fixedBurn": {
+        "duration": 1.5
+      },
+      "chamberPressure": 6000000,
+      "plume": "plume.solid",
+      "sound": "engine.solid"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/kestrel-les-jettison-motor.json",
+    "optional": true
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "id": "meridian-payload-adapter",
+  "name": "Payload adapter ring",
+  "category": "decoupler",
+  "dryMass": 500,
+  "comOffset": [
+    0,
+    0.6,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 3.1,
+    "h": 1.2
+  },
+  "bounds": {
+    "radius": 3.2,
+    "yMin": 0,
+    "yMax": 1.2
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        1.2,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 6
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 6.6
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 24,
+        "normal": "axisym",
+        "noseRadius": 3.2,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        1.2,
+        3.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        2.771281,
+        1.2,
+        1.6
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        2.771281,
+        1.2,
+        -1.6
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        1.2,
+        -3.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -2.771281,
+        1.2,
+        -1.6
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -2.771281,
+        1.2,
+        1.6
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 10
+  },
+  "modules": [
+    {
+      "type": "decoupler",
+      "impulse": 8000,
+      "separationPlaneY": 1.2
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-payload-adapter.json",
+    "optional": true
+  }
+}

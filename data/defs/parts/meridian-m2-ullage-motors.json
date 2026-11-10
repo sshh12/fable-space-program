@@ -1,0 +1,134 @@
+{
+  "id": "meridian-m2-ullage-motors",
+  "name": "M-2 ullage motors (4)",
+  "category": "engine",
+  "dryMass": 347.381624,
+  "comOffset": [
+    0,
+    1,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 4.6,
+    "h": 1
+  },
+  "bounds": {
+    "radius": 4.75,
+    "yMin": 0.5,
+    "yMax": 1.5
+  },
+  "attachNodes": [],
+  "resources": [
+    {
+      "resource": "SolidProp",
+      "capacity": 652.618376,
+      "tankBottomY": 0.7,
+      "tankHeight": 0.6
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 6,
+        "normal": "axisym",
+        "noseRadius": 0.3,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 400000,
+      "ispVac": 250,
+      "ispSL": 235,
+      "minThrottle": 1,
+      "throttleable": false,
+      "spoolUp": 0.03,
+      "spoolDown": 0.08,
+      "maxIgnitions": 1,
+      "propellants": [
+        {
+          "resource": "SolidProp",
+          "ratio": 1
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            3.288047,
+            0.6,
+            3.288047
+          ],
+          "dir": [
+            0.122788,
+            -0.984808,
+            0.122788
+          ],
+          "exitDiameter": 0.35,
+          "exitPressure": 60000
+        },
+        {
+          "pos": [
+            3.288047,
+            0.6,
+            -3.288047
+          ],
+          "dir": [
+            0.122788,
+            -0.984808,
+            -0.122788
+          ],
+          "exitDiameter": 0.35,
+          "exitPressure": 60000
+        },
+        {
+          "pos": [
+            -3.288047,
+            0.6,
+            -3.288047
+          ],
+          "dir": [
+            -0.122788,
+            -0.984808,
+            -0.122788
+          ],
+          "exitDiameter": 0.35,
+          "exitPressure": 60000
+        },
+        {
+          "pos": [
+            -3.288047,
+            0.6,
+            3.288047
+          ],
+          "dir": [
+            -0.122788,
+            -0.984808,
+            0.122788
+          ],
+          "exitDiameter": 0.35,
+          "exitPressure": 60000
+        }
+      ],
+      "fixedBurn": {
+        "duration": 4
+      },
+      "chamberPressure": 7000000,
+      "plume": "plume.solid",
+      "sound": "engine.solid"
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-m2-ullage-motors.json",
+    "optional": true
+  }
+}

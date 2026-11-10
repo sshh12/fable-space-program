@@ -1,0 +1,199 @@
+{
+  "id": "meridian-lander-fairing",
+  "name": "Lander adapter fairing",
+  "category": "aero",
+  "dryMass": 6000,
+  "comOffset": [
+    0,
+    4.75,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 3.3,
+    "h": 9.5
+  },
+  "bounds": {
+    "radius": 3.35,
+    "yMin": 0,
+    "yMax": 9.5
+  },
+  "attachNodes": [
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 6.6
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 35.256524,
+      "length": 9.5,
+      "diameter": 6,
+      "cdAxialFwd": [
+        [
+          0,
+          0.3
+        ],
+        [
+          0.6,
+          0.3
+        ],
+        [
+          0.9,
+          0.42
+        ],
+        [
+          1.1,
+          0.55
+        ],
+        [
+          1.3,
+          0.52
+        ],
+        [
+          2,
+          0.4
+        ],
+        [
+          3,
+          0.32
+        ],
+        [
+          5,
+          0.27
+        ],
+        [
+          10,
+          0.25
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 190,
+        "normal": "axisym",
+        "noseRadius": 3.3,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 9000,
+        "maxTemp": 1100
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        9.5,
+        3.35
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.35,
+        9.5,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        9.5,
+        -3.35
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.35,
+        9.5,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 12,
+    "maxQAlpha": 90000
+  },
+  "modules": [
+    {
+      "type": "fairing",
+      "panels": 4,
+      "impulse": 7500,
+      "shields": [
+        "heron-descent-stage",
+        "heron-ascent-stage",
+        "heron-landing-legs",
+        "heron-stage-separator",
+        "heron-capsule-adapter",
+        "meridian-payload-adapter",
+        "lyra-d",
+        "lyra-a"
+      ]
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/meridian-lander-fairing.json",
+    "optional": true
+  }
+}

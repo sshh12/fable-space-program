@@ -1,0 +1,234 @@
+{
+  "id": "heron-landing-legs",
+  "name": "Heron landing gear (4 legs)",
+  "category": "legs",
+  "dryMass": 420,
+  "comOffset": [
+    0,
+    1,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 3.4,
+    "h": 2.5
+  },
+  "bounds": {
+    "radius": 6.95,
+    "yMin": -1.15,
+    "yMax": 2.25
+  },
+  "attachNodes": [],
+  "aero": [
+    {
+      "kind": "flatPlate",
+      "area": 1.2,
+      "normal": [
+        0.707107,
+        0,
+        0.707107
+      ],
+      "pos": [
+        3.323402,
+        0.55,
+        3.323402
+      ]
+    },
+    {
+      "kind": "flatPlate",
+      "area": 1.2,
+      "normal": [
+        0.707107,
+        0,
+        -0.707107
+      ],
+      "pos": [
+        3.323402,
+        0.55,
+        -3.323402
+      ]
+    },
+    {
+      "kind": "flatPlate",
+      "area": 1.2,
+      "normal": [
+        -0.707107,
+        0,
+        -0.707107
+      ],
+      "pos": [
+        -3.323402,
+        0.55,
+        -3.323402
+      ]
+    },
+    {
+      "kind": "flatPlate",
+      "area": 1.2,
+      "normal": [
+        -0.707107,
+        0,
+        0.707107
+      ],
+      "pos": [
+        -3.323402,
+        0.55,
+        3.323402
+      ]
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 10,
+        "normal": "axisym",
+        "noseRadius": 0.4,
+        "emissivity": 0.75,
+        "arealHeatCapacity": 4000,
+        "maxTemp": 700
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        4.596194,
+        -0.7,
+        4.596194
+      ],
+      "radius": 0.4,
+      "mu": 0.9,
+      "crashTolerance": 4
+    },
+    {
+      "pos": [
+        4.596194,
+        -0.7,
+        -4.596194
+      ],
+      "radius": 0.4,
+      "mu": 0.9,
+      "crashTolerance": 4
+    },
+    {
+      "pos": [
+        -4.596194,
+        -0.7,
+        -4.596194
+      ],
+      "radius": 0.4,
+      "mu": 0.9,
+      "crashTolerance": 4
+    },
+    {
+      "pos": [
+        -4.596194,
+        -0.7,
+        4.596194
+      ],
+      "radius": 0.4,
+      "mu": 0.9,
+      "crashTolerance": 4
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 10
+  },
+  "modules": [
+    {
+      "type": "legs",
+      "legs": [
+        {
+          "hinge": [
+            2.05061,
+            1.8,
+            2.05061
+          ],
+          "footDeployed": [
+            4.596194,
+            -0.7,
+            4.596194
+          ],
+          "footStowed": [
+            1.838478,
+            6.172642,
+            1.838478
+          ],
+          "stroke": 0.6,
+          "k": 180000,
+          "c": 45000,
+          "preload": 2000
+        },
+        {
+          "hinge": [
+            2.05061,
+            1.8,
+            -2.05061
+          ],
+          "footDeployed": [
+            4.596194,
+            -0.7,
+            -4.596194
+          ],
+          "footStowed": [
+            1.838478,
+            6.172642,
+            -1.838478
+          ],
+          "stroke": 0.6,
+          "k": 180000,
+          "c": 45000,
+          "preload": 2000
+        },
+        {
+          "hinge": [
+            -2.05061,
+            1.8,
+            -2.05061
+          ],
+          "footDeployed": [
+            -4.596194,
+            -0.7,
+            -4.596194
+          ],
+          "footStowed": [
+            -1.838478,
+            6.172642,
+            -1.838478
+          ],
+          "stroke": 0.6,
+          "k": 180000,
+          "c": 45000,
+          "preload": 2000
+        },
+        {
+          "hinge": [
+            -2.05061,
+            1.8,
+            2.05061
+          ],
+          "footDeployed": [
+            -4.596194,
+            -0.7,
+            4.596194
+          ],
+          "footStowed": [
+            -1.838478,
+            6.172642,
+            1.838478
+          ],
+          "stroke": 0.6,
+          "k": 180000,
+          "c": 45000,
+          "preload": 2000
+        }
+      ],
+      "deployTime": 4
+    }
+  ],
+  "visual": {
+    "$ref": "../visuals/parts/heron-landing-legs.json",
+    "optional": true
+  }
+}
