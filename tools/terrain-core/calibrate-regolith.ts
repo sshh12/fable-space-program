@@ -153,7 +153,7 @@ async function main(): Promise<void> {
   // fBm amplitude S1 by bisection per f, Hurst exponent on a grid. Prior: the fBm (regolith micro-relief)
   // carries at least FBM_SHARE of the slope variance at 2 m, so the split between craters and regolith is not
   // left to the noise of three nearly equal targets.
-  const FBM_SHARE = 0.25;
+  const FBM_SHARE = 0.15;
   const mpts = boxPoints(-20, 20, -60, 60, 3000, new Prng(77));
   let best = { err: Infinity, s1: def.params['regolithSlope1m']!, h: def.params['hurstMaria']!, f: def.params['craterEquilibriumFraction']!, slopes: [0, 0, 0] };
   const trial = (s1: number, h: number, f: number): number[] => {
@@ -161,13 +161,13 @@ async function main(): Promise<void> {
     return modelSlopes(d2, R, g, body.terrain!.maxRenderLevel, lambdaCal, mpts, 9);
   };
   const logErr = (sl: number[]): number => BASELINES.reduce((acc, _b, k) => acc + Math.log(sl[k]! / target[k]!) ** 2, 0);
-  for (const f of [0.003, 0.004, 0.005, 0.006, 0.008, 0.01, 0.0125, 0.015, 0.02, 0.03]) {
+  for (const f of [0.004, 0.006, 0.008, 0.01, 0.0125, 0.015, 0.02, 0.025, 0.03, 0.04]) {
     const craterOnly = trial(1e-7, 0.9, f);
     if (craterOnly[0]! ** 2 > (1 - FBM_SHARE) * target[0]! ** 2) {
       console.log(`  f ${f}: craters + rocks alone ${craterOnly.map((x) => x.toFixed(4)).join(' / ')} exceed ${(100 * (1 - FBM_SHARE)).toFixed(0)} % of the target variance`);
       continue;
     }
-    for (const h of [0.8, 0.85, 0.9, 0.95]) {
+    for (const h of [0.85, 0.9, 0.95]) {
       let lo = 0.0005;
       let hi = 0.4;
       for (let it = 0; it < 16; it++) {

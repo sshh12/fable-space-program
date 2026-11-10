@@ -71,14 +71,16 @@ describe('lunar craters', () => {
     for (let k = 0; k < cells.length; k += 3) c.cellCraters(cells[k]!, cells[k + 1]!, cells[k + 2]!, list);
     const dD = list.map((r) => r.depth / r.diameter);
     expect(dD.length).toBeGreaterThan(200);
-    const mean = dD.reduce((a, b) => a + b, 0) / dD.length;
+    // The bake's detector (36 NAC craters >= 20 m around the recommended target, bake-moon-sky region file)
+    // sees craters with d/D >= ~0.03: mean d/D ~0.07, 2 of 36 deeper than 0.15. Ghost craters below that are
+    // invisible to it but present in the model.
+    const visible = dD.filter((x) => x >= 0.03);
+    const mean = visible.reduce((a, b) => a + b, 0) / visible.length;
     const fresh = dD.filter((x) => x > 0.15).length / dD.length;
-    console.log(`[craters] ${dD.length} craters >= 20 m: mean d/D ${mean.toFixed(3)}, fraction with d/D > 0.15: ${fresh.toFixed(3)}`);
-    // 36 NAC craters >= 20 m around the recommended target (bake-moon-sky region file): mean d/D ~0.07,
-    // 2 of 36 deeper than 0.15.
+    console.log(`[craters] ${dD.length} craters >= 20 m: ${visible.length} with d/D >= 0.03 (mean ${mean.toFixed(3)}), fraction with d/D > 0.15: ${fresh.toFixed(3)}`);
     expect(mean).toBeGreaterThan(0.06);
     expect(mean).toBeLessThan(0.1);
-    expect(fresh).toBeLessThan(0.15);
+    expect(fresh).toBeLessThan(0.1);
   });
 });
 

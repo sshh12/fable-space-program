@@ -4,19 +4,20 @@
   "params": {
     "hurstMaria": 0.95,
     "hurstHighlands": 0.65,
-    "hurstRoughnessRange": 2.0,
-    "regolithSlope1m": 0.0268,
+    "hurstRoughnessRange": 2,
+    "regolithSlope1m": 0.0186,
+    "regolithInnerScaleM": 1,
     "multifractalGain": 0.8,
-    "multifractalMax": 3.0,
-    "craterEquilibriumFraction": 0.005,
+    "multifractalMax": 3,
+    "craterEquilibriumFraction": 0.0125,
     "craterMaxDiameterInPostings": 4,
     "craterMinDiameterM": 0.6,
     "craterEjectaExtentRadii": 2.5,
     "freshDepthToDiameter": 0.196,
-    "degradedDepthToDiameter": 0.04,
+    "degradedDepthToDiameter": 0.02,
     "rimHeightToDiameter": 0.036,
     "degradedRimFraction": 0.15,
-    "craterFreshnessExponent": 3,
+    "craterFreshnessExponent": 5,
     "rimRoundingFresh": 0.08,
     "rimRoundingDegraded": 0.9,
     "rockAreaFractionMare": 0.02,
@@ -32,6 +33,6 @@
     "calibrationTargetRmsSlope2m": 0.0582,
     "calibrationTargetRmsSlope4m": 0.0563,
     "calibrationTargetRmsSlope8m": 0.0565,
-    "calibrationLambdaM": 5.2
+    "calibrationLambdaM": 5.205
   }
 }

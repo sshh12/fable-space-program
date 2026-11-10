@@ -72,6 +72,11 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
     variants: p('rockVariants'),
   });
   const stack = new OctaveStack(def.seed >>> 0, Math.floor(ctx.log2FinestLambda), Math.ceil(log2LambdaDataMax));
+  // Inner scale of the regolith fBm: octaves fade out below regolithInnerScaleM (full at >= inner, zero at
+  // <= inner / 2). Below it the surface is fine dust: small craters and rocks carry the relief.
+  const log2Inner = Math.log2(p('regolithInnerScaleM'));
+  const innerW = new Float64Array(stack.jMax - stack.jMin + 1);
+  for (let j = stack.jMin; j <= stack.jMax; j++) innerW[j - stack.jMin] = smootherstep01(j - log2Inner + 1);
   const svc = ctx.services;
 
   // Rock abundance k: mare background plus fresh crater ejecta. A smooth field (ejecta of craters of at
@@ -126,7 +131,7 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
         let a = noiseAmplitude(S, top, H);
         const r = 2 ** -H;
         for (let j = top; j >= bot; j--, a *= r) {
-          const wE = smootherstep01(m0 - j);
+          const wE = smootherstep01(m0 - j) * innerW[j - stack.jMin]!;
           if (wE === 0) continue;
           const inv = 2 ** -j;
           const v = a * wE * stack.noise(j).value(px * inv, py * inv, pz * inv);
@@ -157,7 +162,7 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
         const pz = job.pz[i]!;
         let sum = 0;
         for (let j = jt; j >= bot; j--, a *= r) {
-          const w = wb[j - bot]!;
+          const w = wb[j - bot]! * innerW[j - stack.jMin]!;
           if (w === 0) continue;
           const wE = smootherstep01(m0 - j);
           if (wE === 0) continue;

@@ -74,8 +74,11 @@ describe('baker', () => {
           const b = tileUvToDir(c.key, (i - 0.5) / 256, (j + 0.5) / 256);
           const dist = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) * c.R;
           const ref = (tp.heightAt(c.body, a, lam) - tp.heightAt(c.body, b, lam)) / dist;
-          se += (su - ref) ** 2;
-          ss += ref * ref;
+          // Compared in the encoded (tanh) domain the shader reads: steep rock flanks saturate by design.
+          const e1 = Math.tanh(su / nm.slopeScale);
+          const e2 = Math.tanh(ref / nm.slopeScale);
+          se += (e1 - e2) ** 2;
+          ss += e2 * e2;
           n++;
         }
       }
