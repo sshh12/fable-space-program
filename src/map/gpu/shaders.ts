@@ -21,7 +21,8 @@ struct Uniforms {
 };
 @group(0) @binding(0) var<uniform> U: Uniforms;
 
-fn occlusion(p: vec3f) -> f32 {
+// slack: extra depth (m) below a body surface that still counts as on it (lines drawn on a surface).
+fn occlusion(p: vec3f, slack: f32) -> f32 {
   let tp = length(p);
   if (tp <= 0.0) { return 0.0; }
   let dir = p / tp;
@@ -41,7 +42,7 @@ fn occlusion(p: vec3f) -> f32 {
     if (theta >= alpha) { continue; }
     let t1 = tc - sqrt(max(0.0, (R - dperp) * (R + dperp)));
     let tol = max(1e-3 * R, 4e-7 * L);
-    if (tp <= t1 + tol) { continue; }
+    if (tp <= t1 + tol + slack) { continue; }
     let inside = (alpha - theta) * U.params.y;
     let s = clamp(inside / U.style.x, 0.0, 1.0);
     w = max(w, s * s * (3.0 - 2.0 * s));
@@ -62,7 +63,7 @@ struct LinePoint {
   color: u32,
   flags: u32,
   width: f32,
-  pad: f32,
+  slack: f32,
 };
 @group(0) @binding(1) var<storage, read> pts: array<LinePoint>;
 
@@ -151,7 +152,7 @@ fn vsLine(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
   o.cb = cb;
   let flags = select(0.0, 1.0, hasPrev) + select(0.0, 2.0, hasNext) + select(0.0, 4.0, (A.flags & 2u) != 0u);
   o.misc = vec4f(hw, la, lb, flags);
-  o.misc2 = vec4f(0.0);
+  o.misc2 = vec4f(A.slack, 0.0, 0.0, 0.0);
   return o;
 }
 
@@ -191,7 +192,7 @@ fn fsLine(i: LineOut) -> @location(0) vec4f {
   let wb = i.bw.w;
   let t = s * wa / max((1.0 - s) * wb + s * wa, 1e-30);
   let P = mix(i.aw.xyz, i.bw.xyz, t);
-  let occ = occlusion(P);
+  let occ = occlusion(P, i.misc2.x);
   let col = mix(i.ca, i.cb, s);
   let a = col.a * cov * (1.0 - occ);
   if (a <= 0.0) { discard; }

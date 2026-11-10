@@ -62,6 +62,7 @@ export function locateNode(s: SimSnapshot, node: ManeuverNode): NodeLocation | n
   for (const [list, patches] of lists(s)) {
     for (let i = 0; i < patches.length; i++) {
       const p = patches[i]!;
+      if (!(p.conic.p > 0)) continue; // radial (degenerate) conic: no node frame
       for (const m of p.markers) {
         if (m.kind !== 'maneuverNode' || m.nodeId !== node.id || m.bodyId !== p.bodyId) continue;
         const nu = conicTrueAnomaly(p.conic, m.r);
@@ -74,7 +75,7 @@ export function locateNode(s: SimSnapshot, node: ManeuverNode): NodeLocation | n
   for (const [list, patches] of lists(s)) {
     for (let i = 0; i < patches.length; i++) {
       const p = patches[i]!;
-      if (p.endReason !== 'maneuver' || Math.abs(p.tEnd - node.ut) > UT_EPS) continue;
+      if (p.endReason !== 'maneuver' || Math.abs(p.tEnd - node.ut) > UT_EPS || !(p.conic.p > 0)) continue;
       const nu = p.nuEnd;
       const r = conicPosition(p.conic, nu);
       const v = conicVelocity(p.conic, nu);
@@ -85,7 +86,7 @@ export function locateNode(s: SimSnapshot, node: ManeuverNode): NodeLocation | n
   for (const [list, patches] of lists(s)) {
     for (let i = 0; i < patches.length; i++) {
       const p = patches[i]!;
-      if (p.afterNodeId !== node.id || Math.abs(p.tStart - node.ut) > UT_EPS) continue;
+      if (p.afterNodeId !== node.id || Math.abs(p.tStart - node.ut) > UT_EPS || !(p.conic.p > 0)) continue;
       const nu = p.nuStart;
       const r = conicPosition(p.conic, nu);
       const vPost = conicVelocity(p.conic, nu);

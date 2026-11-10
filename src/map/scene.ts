@@ -46,8 +46,8 @@ export interface LineRecord {
   /** Device pixels. */
   width: number;
   dashed: boolean;
-  /** The sampled curve (for parameter -> anomaly on hit-testing). */
-  curve: ViewConic;
+  /** The sampled curve (for parameter -> anomaly on hit-testing); null for a radial (straight) patch. */
+  curve: ViewConic | null;
   /** Set for trajectories of the active vessel. */
   patchKey?: PatchKey;
   patch?: Patch;
@@ -56,7 +56,15 @@ export interface LineRecord {
   capped: boolean;
   /** Curve evaluations the sampler spent on this line this frame. */
   evaluations: number;
+  /**
+   * Depth (m) below a body surface that still counts as on it in the occlusion test: non-zero for lines
+   * lying on a body (recovery zones), whose chords dip below the sphere between vertices.
+   */
+  occlusionSlack: number;
 }
+
+/** A line sampled from a conic (every line except a radial patch). */
+export type PatchCurveLine = LineRecord & { curve: ViewConic };
 
 export type MarkerShape =
   | 'apsis'
@@ -513,12 +521,12 @@ export class SceneBuilder {
     color: Rgba,
     widthPx: number,
     dashed: boolean,
-  ): LineRecord | null {
+  ): PatchCurveLine | null {
     const curve = new ViewConic().setFromElements(conic, focusRoot, scene.proj);
     return this.addCurve(scene, id, kind, curve, curve.nuToU(nu0), curve.nuToU(nu1), color, widthPx, dashed);
   }
 
-  private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): LineRecord | null {
+  private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): PatchCurveLine | null {
     const proj = scene.proj;
     const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit' || kind === 'recoveryZone';
     const s = faint ? this.sampler.sample(curve, u0, u1, proj, FAINT_CHORD_TOLERANCE_PX, MAX_POINTS_PER_CURVE, FAINT_MAX_TURN) : this.sampler.sample(curve, u0, u1, proj, CHORD_TOLERANCE_PX);
@@ -549,13 +557,17 @@ export class SceneBuilder {
       if (Number.isFinite(sx) && proj.onScreen(sx, sy)) visible++;
     }
     verts.n = start + s.count;
-    const rec: LineRecord = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations };
+    const rec: PatchCurveLine = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
     scene.lines.push(rec);
     return rec;
   }
 
   private addPatchLine(scene: MapScene, list: PatchList, index: number, p: Patch, origin: Vec3, color: Rgba, dashed: boolean, now: number, tau: number, dimAfterUt: number): void {
     const c = p.conic;
+    if (!(c.p > 0)) {
+      this.addRadialPatchLine(scene, list, index, p, origin, color, dashed);
+      return;
+    }
     let nu0 = p.nuStart;
     let nu1 = p.nuEnd;
     if (isFullRevolution(p)) nu1 = nu0 + TWO_PI;
@@ -588,6 +600,49 @@ export class SceneBuilder {
       if (t > dimAfterUt) a *= AFTER_NODE_DIM;
       verts.alpha[j] = a;
     }
+  }
+
+  /**
+   * A radial trajectory (h = 0) comes as a degenerate conic with p = 0 and P = minus the radial direction
+   * (sim-orbits convention): it is drawn as the straight segment along -P between the lowest and highest
+   * radius known on it (the vessel for the first current patch, and the patch's markers). Anomaly-based
+   * editing does not apply, so the line is not interactive.
+   */
+  private addRadialPatchLine(scene: MapScene, list: PatchList, index: number, p: Patch, origin: Vec3, color: Rgba, dashed: boolean): void {
+    const dir = v3.neg(p.conic.P);
+    const radii: number[] = [];
+    for (const m of p.markers) if (m.bodyId === p.bodyId) radii.push(v3.len(m.r));
+    const active = scene.snapshot.vessels.find((v) => v.id === scene.snapshot.activeVesselId);
+    if (list === 'current' && index === 0 && active && active.bodyId === p.bodyId) radii.push(v3.len(active.r));
+    const finite = radii.filter((r) => Number.isFinite(r));
+    if (finite.length < 2) return;
+    const r0 = Math.min(...finite);
+    const r1 = Math.max(...finite);
+    if (!(r1 - r0 > 1)) return;
+    const proj = scene.proj;
+    const verts = this.verts;
+    verts.reserve(2);
+    const start = verts.n;
+    let len = 0;
+    let visible = 0;
+    [r0, r1].forEach((r, i) => {
+      const j = start + i;
+      const v = proj.toView(v3.addScaled(origin, dir, r));
+      const s = proj.projectView(v);
+      verts.vx[j] = v.x;
+      verts.vy[j] = v.y;
+      verts.vz[j] = v.z;
+      verts.sx[j] = s.x;
+      verts.sy[j] = s.y;
+      verts.u[j] = r;
+      verts.t[j] = NaN;
+      verts.alpha[j] = 1;
+      if (i > 0 && s.front && Number.isFinite(verts.sx[j - 1]!)) len += Math.hypot(s.x - verts.sx[j - 1]!, s.y - verts.sy[j - 1]!);
+      verts.len[j] = len;
+      if (s.front && proj.onScreen(s.x, s.y)) visible++;
+    });
+    verts.n = start + 2;
+    scene.lines.push({ kind: list, id: `${list}/${index}`, start, count: 2, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: visible, capped: false, evaluations: 0, occlusionSlack: 0 });
   }
 
   private addVesselOrbit(scene: MapScene, v: VesselSnapshot, bodies: Map<string, BodyInfo>, ut: number): void {
@@ -674,7 +729,19 @@ export class SceneBuilder {
     const centreRoot = v3.add(b.pos, v3.scale(n, b.radius * Math.cos(rho)));
     const proj = scene.proj;
     const curve = new ViewConic().setCircle(proj.toView(centreRoot, this.tmpV), proj.rotate(e), proj.rotate(no), b.radius * Math.sin(rho));
-    this.addCurve(scene, `zone:${t.id}`, 'recoveryZone', curve, 0, TWO_PI, COLORS.recovery, FAINT_LINE_WIDTH_PX + 0.5, false);
+    const rec = this.addCurve(scene, `zone:${t.id}`, 'recoveryZone', curve, 0, TWO_PI, COLORS.recovery, FAINT_LINE_WIDTH_PX + 0.5, false);
+    if (!rec) return;
+    // The chords cut below the sphere between vertices: their deepest point is the occlusion slack.
+    const cb = proj.toView(b.pos);
+    const v = this.verts;
+    let depth = 0;
+    for (let i = rec.start; i < rec.start + rec.count - 1; i++) {
+      const mx = (v.vx[i]! + v.vx[i + 1]!) / 2 - cb.x;
+      const my = (v.vy[i]! + v.vy[i + 1]!) / 2 - cb.y;
+      const mz = (v.vz[i]! + v.vz[i + 1]!) / 2 - cb.z;
+      depth = Math.max(depth, b.radius - Math.sqrt(mx * mx + my * my + mz * mz));
+    }
+    rec.occlusionSlack = depth + 1e-3 * b.radius;
   }
 }
 

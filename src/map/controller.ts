@@ -588,8 +588,10 @@ export class MapController implements MapView {
     const s = scene.snapshot;
     switch (p.type) {
       case 'line': {
-        const patch = p.line.patch!;
-        const nu = p.line.curve.uToNu(p.u);
+        const patch = p.line.patch;
+        const curve = p.line.curve;
+        if (!patch || !curve) return;
+        const nu = curve.uToNu(p.u);
         const ut = utAtTrueAnomaly(patch, nu);
         if (ut > s.ut) {
           const id = this.commands.addNode(ut);
@@ -642,7 +644,7 @@ export class MapController implements MapView {
     const line = scene.lines.find((l) => l.patchKey && l.patchKey.list === item.loc.key.list && l.patchKey.index === item.loc.key.index);
     if (!line) return;
     const u = this.nearestOnLine(scene, line, px, py);
-    if (u === null) return;
+    if (u === null || !line.curve) return;
     const nu = line.curve.uToNu(u);
     let ut = utAtTrueAnomaly(item.loc.patch, nu, d.lastUt);
     const minUt = scene.snapshot.ut + 1;
@@ -755,10 +757,10 @@ export class MapController implements MapView {
     if (this.hover?.type === 'line' && this.hoverPos && !this.drag && this.commands) {
       const line = this.hover.line;
       const p = this.pointAt(scene, line, this.hover.u);
-      if (p) {
+      if (p && line.curve && line.patch) {
         icon(p.x, p.y, NODE_RADIUS_PX, ICON.addGhost, COLORS.hover, 0.9);
         const nu = line.curve.uToNu(this.hover.u);
-        const ut = utAtTrueAnomaly(line.patch!, nu);
+        const ut = utAtTrueAnomaly(line.patch, nu);
         addLabel(p.x, p.y, NODE_RADIUS_PX * k, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
       }
     }

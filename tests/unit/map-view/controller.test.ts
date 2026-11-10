@@ -329,8 +329,8 @@ describe('multi-revolution patches', () => {
     const scene = map.currentScene!;
     const orbit = s.patches.planned[1]!;
     const line = scene.lines.find((l) => l.id === 'planned/1')!;
-    const nu0 = line.curve.uToNu(scene.verts.u[line.start]!);
-    const nu1 = line.curve.uToNu(scene.verts.u[line.start + line.count - 1]!);
+    const nu0 = line.curve!.uToNu(scene.verts.u[line.start]!);
+    const nu1 = line.curve!.uToNu(scene.verts.u[line.start + line.count - 1]!);
     expect(nu1 - nu0).toBeCloseTo(2 * Math.PI, 9);
     const nodeB = scene.nodes.find((n) => n.id === fx.nodeB.id)!;
     const expected = scene.proj.projectRoot(v3.add(orbit.bodyPosAtEnd, conicPosition(orbit.conic, orbit.nuEnd % (2 * Math.PI))));
@@ -397,6 +397,43 @@ describe('multi-revolution patches', () => {
     expect(r.map.panelAction('delete')).toBe(true);
     r.snap = r.sim.snapshot();
     expect(r.snap.nodes).toHaveLength(0);
+  });
+});
+
+describe('degenerate trajectories', () => {
+  it('a radial patch (p = 0, sim-orbits convention) is drawn as a straight, non-interactive segment', () => {
+    const sim = createFakeSim(defs, { scene: 'lowOrbit' });
+    const base = sim.snapshot();
+    const v = base.vessels[0]!;
+    const rHat = v3.normalize(v.r);
+    const R = defs.bodies[v.bodyId]!.radius;
+    const radial = {
+      ...base.patches.current[0]!,
+      conic: { ...base.patches.current[0]!.conic, p: 0, e: 1, a: -5e6, P: v3.neg(rHat), period: null },
+      nuStart: Math.PI,
+      nuEnd: Math.PI,
+      endReason: 'impact' as const,
+      markers: [
+        { kind: 'apoapsis' as const, ut: base.ut + 300, bodyId: v.bodyId, r: v3.scale(rHat, R + 900e3), altitude: 900e3 },
+        { kind: 'impact' as const, ut: base.ut + 900, bodyId: v.bodyId, r: v3.scale(rHat, R), altitude: 0 },
+      ],
+    };
+    const s = { ...base, patches: { current: [radial], planned: [] }, nodes: [] };
+    const map = new MapController(defs);
+    map.setActive(true);
+    map.frame(s, lookAtCamera(v3.add(v.rRoot, v3.scale(base.patches.current[0]!.conic.W, 3e6)), v.rRoot), CSS);
+    const scene = map.currentScene!;
+    const line = scene.lines.find((l) => l.id === 'current/0')!;
+    expect(line.count).toBe(2);
+    expect(line.patchKey).toBeUndefined();
+    for (let i = line.start; i < line.start + 2; i++) {
+      expect(Number.isFinite(scene.verts.vx[i]!)).toBe(true);
+      expect(Number.isFinite(scene.verts.sx[i]!)).toBe(true);
+    }
+    expect(scene.markers.every((m) => Number.isFinite(m.x))).toBe(true);
+    // Clicking it does not add a node.
+    map.update(s, map.currentScene!.camera, sim.commands, pointer({ x: scene.verts.sx[line.start]!, y: scene.verts.sy[line.start]!, pressed: true, released: true }), CSS);
+    expect(sim.snapshot().nodes).toHaveLength(0);
   });
 });
 

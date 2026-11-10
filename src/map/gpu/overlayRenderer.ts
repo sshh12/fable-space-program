@@ -174,7 +174,7 @@ export class OverlayRenderer {
         pu[o + 4] = (rgb | (alpha << 24)) >>> 0;
         pu[o + 5] = (i < l.count - 1 ? 1 : 0) | dashed;
         pf[o + 6] = l.width;
-        pf[o + 7] = 0;
+        pf[o + 7] = l.occlusionSlack;
         j++;
       }
     }
