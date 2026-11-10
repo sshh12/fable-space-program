@@ -327,7 +327,7 @@ test.describe('flight-ui navball rendering', () => {
     // Heading 090, wings level: sky above, ground below, a horizontal horizon through the centre.
     const level = await page.evaluate(
       ([c, r]) => window.__flightUi!.navballProbe({ pitchDeg: 0, headingDeg: 90, rollDeg: 0 }, [[c + r * 0.17, c - r * 0.45], [c + r * 0.17, c + r * 0.45], [6, 6]], [c - r * 0.6, c + r * 0.6]),
-      [centre, R],
+      [centre, R] as [number, number],
     );
     const [sky, ground, outside] = level.pixels;
     expect(sky![2]!).toBeGreaterThan(sky![0]! + 40);
@@ -336,14 +336,14 @@ test.describe('flight-ui navball rendering', () => {
     expect(Math.abs(level.horizonRows[0]! - level.horizonRows[1]!)).toBeLessThanOrEqual(1);
     expect(Math.abs(level.horizonRows[0]! - centre)).toBeLessThanOrEqual(2);
     // Roll right 30 deg: the right end of the horizon rises (smaller y), by tan(30) of the half-span.
-    const rolled = await page.evaluate(([c, r]) => window.__flightUi!.navballProbe({ pitchDeg: 0, headingDeg: 90, rollDeg: 30 }, [], [c - r * 0.5, c + r * 0.5]), [centre, R]);
+    const rolled = await page.evaluate(([c, r]) => window.__flightUi!.navballProbe({ pitchDeg: 0, headingDeg: 90, rollDeg: 30 }, [], [c - r * 0.5, c + r * 0.5]), [centre, R] as [number, number]);
     const rise = rolled.horizonRows[0]! - rolled.horizonRows[1]!;
     expect(rise).toBeGreaterThan(R * Math.tan((30 * Math.PI) / 180) - 4);
     expect(rise).toBeLessThan(R * Math.tan((30 * Math.PI) / 180) + 4);
     // Nose at the zenith: sky all around the reticle (pitch 90 at its centre); samples between the meridians.
     const up = await page.evaluate(
       ([c, r]) => window.__flightUi!.navballProbe({ pitchDeg: 90, headingDeg: 0, rollDeg: 0 }, [0, 1, 2, 3].map((k) => [c + r * 0.3 * Math.cos(((15 + 90 * k) * Math.PI) / 180), c + r * 0.3 * Math.sin(((15 + 90 * k) * Math.PI) / 180)] as [number, number]), []),
-      [centre, R],
+      [centre, R] as [number, number],
     );
     for (const p of up.pixels) expect(p[2]!).toBeGreaterThan(p[0]! + 30);
     await expectNoErrors(page, pageLog);
