@@ -45,11 +45,8 @@
       "id": "terrarium",
       "landZoom": 15,
       "surveyZoom": 12,
-      "coastBlendKm": [
-        0.5,
-        3.0
-      ],
-      "note": "AWS Terrain Tiles (Terrarium, USGS 3DEP 10 m in Hawai'i) on land and within 3 km of the 3DEP coastline; ETOPO 2022 15 arc-second offshore (Terrarium bathymetry there is coarse and blocky)."
+      "seaFloorRampKm": 1.5,
+      "note": "AWS Terrain Tiles (Terrarium, USGS 3DEP 10 m in Hawai'i) on land only; the sea floor is ETOPO 2022 15 arc-second, ramped from 0 m at the 3DEP coastline to the ETOPO depth over 1.5 km (Terrarium bathymetry is coarse and steps at every tile edge)."
     },
     "albedo": {
       "id": "s2cloudless",
