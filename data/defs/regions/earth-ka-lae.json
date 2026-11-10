@@ -46,7 +46,8 @@
       "landZoom": 15,
       "surveyZoom": 12,
       "seaFloorRampKm": 1.5,
-      "note": "AWS Terrain Tiles (Terrarium, USGS 3DEP 10 m in Hawai'i) on land only; the sea floor is ETOPO 2022 15 arc-second, ramped from 0 m at the 3DEP coastline to the ETOPO depth over 1.5 km (Terrarium bathymetry is coarse and steps at every tile edge)."
+      "nearShoreSlope": 0.1,
+      "note": "AWS Terrain Tiles (Terrarium, USGS 3DEP 10 m in Hawai'i) on land and inland water (lakes keep their surface); the sea floor of the ocean (WorldCover water connected to the open sea) is ETOPO 2022 15 arc-second, starting at the WorldCover coastline with a 1:10 slope (shallower where ETOPO is shallower) and becoming the ETOPO depth 1.5 km offshore (Terrarium bathymetry is coarse and steps at every tile edge)."
     },
     "albedo": {
       "id": "s2cloudless",

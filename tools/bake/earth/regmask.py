@@ -1,13 +1,22 @@
-"""Regional `watermask` levels: the coastline of the regional height (USGS 3DEP via Terrarium) with ESA
-WorldCover 2021 water for inland water and dry ground below sea level, then the 64-texel coverage feather.
+"""Regional `watermask` levels: the coastline of the regional height (USGS 3DEP via Terrarium, the sea floor on
+the WorldCover coastline of the ocean) plus ESA WorldCover 2021 inland water, then the 64-texel coverage feather.
 
 Base mask per tile (fine to coarse):
   - finest level, and coarser tiles not wholly covered by the next finer level: 4 x 4 sub-sample fraction of
     the stored height tile of the same key below sea level (watermask.height_fraction), corrected with
-    WorldCover exactly like the global layer corrects with MODIS (lakes, dry depressions; 2 texels from the
-    other source's water/sea);
+    WorldCover:
+      inland water   WorldCover water that is NOT the ocean (regsrc.RegionalHeight.inland_water: not connected
+                     to the open sea), where the height is above sea level: mask = max(f_h, f_inland). Lakes,
+                     ponds and reservoirs at any altitude (the regional height keeps their surface).
+      dry ground     WorldCover land where the height is below sea level and WorldCover water is more than
+                     CORRECT_TEXELS away: mask = f_wc, but only where the global level-7 mask (which decides
+                     ocean connectivity, watermask.py) is land too; otherwise the height sign stands.
+    Everywhere else the mask IS the height sign, so mask and height share their coastline (inside the area of
+    interest the regional height's sign is the WorldCover ocean by construction).
   - other coarser tiles: 2 x 2 means of the finer base masks.
 Stored tiles (coarse to fine): base, feathered into the stored parent over the outer 64 texels.
+The configuration records the build hashes of the regional height layer and of the global water mask, so the
+mask is re-baked whenever either was re-baked.
 """
 from __future__ import annotations
 
@@ -17,7 +26,7 @@ import numpy as np
 from scipy import ndimage
 
 from common import cube
-from earth import manifest, paths, region as regmod, regional, tiles
+from earth import manifest, paths, region as regmod, regional, regsrc, tiles, worldcover as wcmod
 from earth.regsrc import land_bbox
 from earth.util import run_units
 from earth.watermask import CORRECT_TEXELS, SUB, height_fraction, to_u8
@@ -36,57 +45,51 @@ def worldcover(region: dict) -> WorldCoverGrid:
     return _WC[k]
 
 
-def wc_fraction(wc: WorldCoverGrid, face: int, level: int, x: int, y: int, pad: int, sub: int):
-    """WorldCover water fraction on sub x sub sub-samples per texel over a grid padded by `pad` texels;
-    also whether WorldCover has data there (class != 0)."""
+def _rh(region: dict):
+    from earth.heights import _regional_height
+    return _regional_height(region["id"])
+
+
+def wc_fractions(region: dict, face: int, level: int, x: int, y: int, pad: int, sub: int):
+    """Per texel over a grid padded by `pad` texels, from sub x sub sub-samples: WorldCover water fraction,
+    inland-water fraction (water that is not the ocean), and data fraction (class != 0)."""
     n = 256 + 2 * pad
     k = (np.arange(n * sub) + 0.5) / (256 * sub) - pad / 256.0
     uu, vv = np.meshgrid(k, k)
     d = cube.tile_uv_to_dir(face, level, x, y, uu, vv).reshape(-1, 3)
     lat, lon = tiles.dirs_latlon(d)
-    c = wc.nearest(lat, lon).reshape(n, sub, n, sub)
-    return (c == WATER).mean(axis=(1, 3)), (c != 0).mean(axis=(1, 3))
+    c = worldcover(region).nearest(lat, lon)
+    water = c == WATER
+    inland = np.zeros_like(water)
+    if water.any():
+        inland[water] = _rh(region).inland_water(lat[water], lon[water])
+
+    def frac(a):
+        return a.reshape(n, sub, n, sub).mean(axis=(1, 3))
+    return frac(water), frac(inland), frac(c != 0)
 
 
 def own_mask(region: dict, face: int, level: int, x: int, y: int) -> np.ndarray:
     """Base mask of one tile from its own height tile + WorldCover corrections."""
-    from earth import hpyramid
     pad = 8
     h = tiles.read_height(face, level, x, y)
     f_h = height_fraction(h)
-    wc = worldcover(region)
-    f_w, has = wc_fraction(wc, face, level, x, y, pad, 2)
-    # padded height sign at texel centres (stored tiles of this level, global source outside coverage)
-    kp = (np.arange(-pad, 256 + pad) + 0.5) / 256
-    up, vp = np.meshgrid(kp, kp)
-    dp = cube.tile_uv_to_dir(face, level, x, y, up, vp).reshape(-1, 3)
-    cache = hpyramid.TileCache(level, tiles.read_height)
-    hp = hpyramid.bilinear_from_tiles(dp, cache, fallback=lambda p: _fallback_height(p)).reshape(up.shape)
-    sea = hp < 0.0
-    sea[pad:-pad, pad:-pad] = f_h >= 0.5
+    f_w, f_i, has = wc_fractions(region, face, level, x, y, pad, 2)
     ww = (f_w >= 0.5) & (has > 0.5)
     d_ww = ndimage.distance_transform_edt(~ww)[pad:-pad, pad:-pad] if ww.any() else np.full((256, 256), np.inf)
-    d_sea = ndimage.distance_transform_edt(~sea)[pad:-pad, pad:-pad] if sea.any() else np.full((256, 256), np.inf)
-    fw = f_w[pad:-pad, pad:-pad]
-    hs = has[pad:-pad, pad:-pad] > 0.5
+    inner = (slice(pad, -pad), slice(pad, -pad))
+    fw, fi, hs = f_w[inner], f_i[inner], has[inner] > 0.5
     mask = f_h.copy()
+    lake = hs & (fi >= 0.5) & (f_h < 0.5)
+    mask[lake] = np.maximum(f_h[lake], fi[lake])
     dry = hs & (f_h > 0.0) & (fw < 0.5) & (d_ww > CORRECT_TEXELS)
-    mask[dry] = fw[dry]
-    lake = hs & (fw >= 0.5) & (f_h < 0.5) & (d_sea > CORRECT_TEXELS)
-    mask[lake] = np.maximum(f_h[lake], fw[lake])
+    if dry.any():
+        g7 = regional.parent_upsample("watermask", face, level, x, y,
+                                      lambda f_, l_, x_, y_: tiles.read_u8("watermask", f_, l_, x_, y_)[..., None]
+                                      .astype(np.float64), ancestor=paths.GLOBAL_MAX_LEVEL)[..., 0]
+        dry &= g7 < 127.5
+        mask[dry] = fw[dry]
     return mask
-
-
-_FALLBACK = {}
-
-
-def _fallback_height(p: np.ndarray) -> np.ndarray:
-    """Global level-7 surface for stencil points outside the regional coverage."""
-    from earth import hpyramid
-    c = _FALLBACK.get("c")
-    if c is None:
-        c = _FALLBACK["c"] = hpyramid.TileCache(7, tiles.read_height)
-    return hpyramid.bilinear_from_tiles(p, c)
 
 
 def base_path(region_id: str, face: int, level: int, x: int, y: int):
@@ -142,7 +145,11 @@ def bake(region_id: str) -> None:
         if not manifest.is_marked(layer, scope):
             raise RuntimeError(f"regional watermask needs the {layer} layer ({scope}) baked first")
     worldcover(reg)
-    cfg = {"v": 2, "region": reg, "correct": CORRECT_TEXELS, "sub": SUB}
+    _rh(reg)                     # builds the coast grid here (if needed), so workers only memory-map it
+    cfg = {"v": 3, "region": reg, "correct": CORRECT_TEXELS, "sub": SUB,
+           "inputs": {"height": manifest.build_hash("height", region_id),
+                      "watermaskGlobal": manifest.build_hash("watermask", "global")},
+           "worldcover": wcmod.URL, "coastGrid": regsrc.GRID_VERSION}
     lv = regmod.levels(reg)
     for level in reversed(lv):
         tl = regional.level_tiles(reg, level)

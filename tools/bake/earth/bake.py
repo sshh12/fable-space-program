@@ -10,8 +10,8 @@ skipped on a re-run with the same configuration):
     watermask   watermask layer: global + regional
     night       night-lights layer: global (Black Marble 2016)
     landcover   landcover layer: global classifier + regional (ESA WorldCover)
-    clouds      global cloud coverage map (globals/cloudCoverage.png)
-    globals     clouds + albedoLowRes
+    clouds      global cloud coverage map (globals/cloudCoverage.png; a new snapshot of the live composite)
+    globals     clouds (only if cloudCoverage.png is missing) + albedoLowRes
     region      every regional layer of --region (or of every region): heights, albedo, watermask, landcover
     all         everything, in dependency order, then the manifest, contact sheets, recovery report, verify.py
                 and (only if verify passes) the raw-data cleanup

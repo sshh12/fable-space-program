@@ -71,11 +71,20 @@ def _fit_path(region_id: str):
     return paths.WORK / f"regalbedo-fit-{region_id}.json"
 
 
+def _inputs(region_id: str) -> dict:
+    """Build hashes of the layers the regional albedo reads: the regional height (de-shading normals), the
+    regional water mask (land/water colour match) and the global albedo (colour target, coverage feather)."""
+    return {"height": manifest.build_hash("height", region_id), "watermask": manifest.build_hash("watermask", region_id),
+            "albedoGlobal": manifest.build_hash("albedo", "global")}
+
+
 def fit(region_id: str) -> dict:
     p = _fit_path(region_id)
     reg = regmod.load(region_id)
-    key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 3,
-               "sigma": FIT_SIGMA_M, "minHeight": FIT_MIN_HEIGHT_M})
+    inp = _inputs(region_id)
+    key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 4,
+               "sigma": FIT_SIGMA_M, "minHeight": FIT_MIN_HEIGHT_M,
+               "inputs": {"height": inp["height"], "albedoGlobal": inp["albedoGlobal"]}})
     if p.is_file():
         f = read_json(p)
         if f.get("key") == key:
@@ -188,10 +197,12 @@ def bake(region_id: str) -> None:
     for layer, scope in (("albedo", "global"), ("height", region_id), ("watermask", region_id)):
         if not manifest.is_marked(layer, scope):
             raise RuntimeError(f"regional albedo needs the {layer} layer ({scope}) baked first")
+    from earth.heights import _regional_height
+    _regional_height(region_id)       # builds the coast grid here (if needed), so workers only memory-map it
     s2.fetch(reg)
     _get(region_id)
     f = fit(region_id)
-    cfg = {"v": 4, "region": reg, "fit": f, "offshore": OFFSHORE_M, "lossless": True}
+    cfg = {"v": 5, "region": reg, "fit": f, "offshore": OFFSHORE_M, "lossless": True, "inputs": _inputs(region_id)}
     for level in regmod.levels(reg):                      # coarse to fine: feathers read stored parents
         tl = regional.level_tiles(reg, level)
         units = [(region_id, level, tuple(tl[i:i + 32])) for i in range(0, len(tl), 32)]

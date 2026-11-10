@@ -34,6 +34,7 @@ class WorldCoverGrid:
         p = paths.WORK / f"worldcover-{key}.npy"
         if not p.is_file():
             self._build(p, rows, cols)
+        self.key = key
         self.data = np.load(p, mmap_mode="r")
 
     def _build(self, p, rows: int, cols: int) -> None:

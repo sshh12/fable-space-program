@@ -51,7 +51,10 @@ def run(step: str, regions: list[str], region_given: bool = False) -> None:
         return
     if step == "globals":
         from earth import clouds, globals_
-        clouds.bake()
+        if clouds.OUT.is_file():         # the composite is a live service: only `clouds` takes a new snapshot
+            log("globals: cloudCoverage.png kept (bake.py clouds takes a new snapshot)")
+        else:
+            clouds.bake()
         globals_.bake_albedo_lowres()
         _manifest(None, regions)
         return

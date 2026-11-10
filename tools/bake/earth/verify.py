@@ -458,14 +458,19 @@ def check_water_fraction() -> None:
     check("water area fraction", 0.70 <= frac <= 0.72, f"{frac * 100:.2f} % of the sphere at level 5 (need 70-72 %)")
 
 
-def check_coastline() -> None:
-    rng = np.random.default_rng(3)
+def coast_points(level: int, n_pts: int, rng, pick, max_tries: int = 40000) -> list:
+    """Height zero crossings between horizontally adjacent vertices of stored height tiles at one level:
+    (face, x, y, j, uu) with j the vertex row and uu the crossing in vertex (= texel edge) units. pick() draws
+    a tile key (face, x, y) or None."""
     pts = []
     tries = 0
-    while len(pts) < 1000 and tries < 20000:
+    while len(pts) < n_pts and tries < max_tries:
         tries += 1
-        f, x, y = int(rng.integers(6)), int(rng.integers(128)), int(rng.integers(128))
-        h = tiles.read_height(f, 7, x, y)[1:258, 1:258]
+        k = pick()
+        if k is None:
+            continue
+        f, x, y = k
+        h = tiles.read_height(f, level, x, y)[1:258, 1:258]
         sc = np.nonzero(((h[:, :-1] > 0) & (h[:, 1:] < 0)) | ((h[:, :-1] < 0) & (h[:, 1:] > 0)))
         if sc[0].size == 0:
             continue
@@ -477,32 +482,258 @@ def check_coastline() -> None:
         nb_b = h[max(j - 1, 0):j + 2, c:c + 3]
         if (np.sign(nb_a) == np.sign(a)).sum() < 3 or (np.sign(nb_b) == np.sign(b)).sum() < 3:
             continue
-        uu = c + a / (a - b)                       # zero crossing in vertex units (= texel edge units)
-        pts.append((f, x, y, j, uu))
-    from earth.watermask import height_fraction
-    ok_n = corrected = bad = 0
+        pts.append((f, x, y, j, c + a / (a - b)))
+    return pts
+
+
+def coast_window(m: np.ndarray, j: int, uu: float):
+    """The mask texels within one texel of a crossing, and 'ok' if the anti-aliased shoreline (texels neither
+    all land nor all water, or a land/water change) passes there, else 'land' / 'water' (uniform window)."""
+    r = min(max(j, 0), 255)
+    c0 = int(math.floor(uu - 0.5))
+    rs = slice(max(r - 1, 0), min(r + 1, 255) + 1)
+    cs = slice(max(c0 - 1, 0), min(c0 + 2, 255) + 1)
+    win = m[rs, cs]
+    if (win.min() < 250.0 and win.max() > 5.0) or ((win >= 128).any() and (win < 128).any()):
+        return "ok", rs, cs
+    return ("water" if win.min() >= 250.0 else "land"), rs, cs
+
+
+# open-sea fjords and inlets that MODIS 250 m maps as land (review of 2026-11-10): the mask must follow the sea
+FJORD_PROBES = [(65.669, -39.623), (67.657, -65.977), (67.705, -33.159)]
+
+
+def check_coastline() -> None:
+    """Global level 7: on 1000 sampled height zero crossings the mask's shoreline lies within one texel, except
+    where the bake deliberately departs from the height sign, which needs independent evidence:
+      - the mask is LAND on both sides: only if the below-sea-level texel there is NOT connected to the ocean
+        (watermask.py: an enclosed basin, or shallow ground MODIS maps as land with no deep ground next to it;
+        the class map the bake writes for every tile);
+      - the mask is WATER on both sides: water above sea level, i.e. inland water (MODIS lakes).
+    Every other disagreement is a failure (an ocean-connected fjord drawn as land, for example)."""
+    from earth import watermask as wmod
+    rng = np.random.default_rng(3)
+    pts = coast_points(7, 1000, rng, lambda: (int(rng.integers(6)), int(rng.integers(128)), int(rng.integers(128))))
+    tally = {"ok": 0, "lake": 0, "basin": 0, "shallow": 0, "bad": 0}
+    bad = []
     for f, x, y, j, uu in pts:
-        m = tiles.read_u8("watermask", f, 7, x, y).astype(np.float64)
-        sign = height_fraction(tiles.read_height(f, 7, x, y)) * 255.0     # the elevation-sign-only mask
-        r = min(max(j, 0), 255)
-        c0 = int(math.floor(uu - 0.5))
-        rs = slice(max(r - 1, 0), min(r + 1, 255) + 1)
-        cs = slice(max(c0 - 1, 0), min(c0 + 2, 255) + 1)
-        win = m[rs, cs]
-        # the anti-aliased shoreline (texels neither all land nor all water, or a land/water change) passes
-        # within one texel of the height's coast point
-        if (win.min() < 250.0 and win.max() > 5.0) or ((win >= 128).any() and (win < 128).any()):
-            ok_n += 1
-        elif (np.abs(win - sign[rs, cs]) > 32).any():
-            corrected += 1          # MODIS overrides the sign here on purpose (dry depression, lake shore)
+        kind, rs, cs = coast_window(tiles.read_u8("watermask", f, 7, x, y).astype(np.float64), j, uu)
+        if kind == "ok":
+            tally["ok"] += 1
+        elif kind == "water":
+            tally["lake"] += 1
         else:
-            bad += 1
-    sea = ok_n + bad
-    check("coastline agreement", bad == 0,
-          f"of {len(pts)} sampled level-7 height zero crossings, {ok_n} have the mask's 50 % contour within one "
-          f"texel, {corrected} lie where the independent MODIS source deliberately overrides the elevation sign "
-          f"(dry land below sea level such as the Caspian depression, Qattara, polders; lakes), {bad} disagree "
-          f"otherwise ({ok_n / max(1, sea) * 100:.1f} % agreement on the remaining coast points)")
+            cls = wmod.inland_class(f, x, y)[rs, cs]
+            if (cls == 1).any():
+                tally["basin"] += 1
+            elif (cls == 2).any():
+                tally["shallow"] += 1
+            else:
+                tally["bad"] += 1
+                la, lo = tiles.dirs_latlon(cube.tile_uv_to_dir(f, 7, x, y, np.array([uu / 256]), np.array([(j + 0.5) / 256])))
+                bad.append(f"{float(la[0]):.3f} {float(lo[0]):.3f}")
+    probes, fj_ok = [], True
+    for la, lo in FJORD_PROBES:
+        f, x, y, u, v = cube.dir_to_tile(cube.lat_lon_to_dir(math.radians(la), math.radians(lo)), 7)
+        h = tiles.read_height(f, 7, x, y).astype(np.float64)
+        hc = 0.25 * (h[1:257, 1:257] + h[1:257, 2:258] + h[2:258, 1:257] + h[2:258, 2:258])
+        m = tiles.read_u8("watermask", f, 7, x, y)
+        r, c = min(int(v * 256), 255), min(int(u * 256), 255)
+        sl = (slice(max(r - 1, 0), r + 2), slice(max(c - 1, 0), c + 2))
+        sea = hc[sl] < 0
+        wet = int((m[sl][sea] >= 128).sum())
+        fj_ok &= wet == int(sea.sum())
+        probes.append(f"{la:.3f} {lo:.3f}: mask water on {wet} of the {int(sea.sum())} texels below sea level "
+                      f"(deepest {hc[sl].min():.0f} m)")
+    n = len(pts)
+    check("coastline agreement", tally["bad"] == 0 and n >= 1000 and fj_ok,
+          f"of {n} sampled level-7 height zero crossings, {tally['ok']} have the mask's 50 % contour within one "
+          f"texel ({tally['ok'] / max(1, n) * 100:.1f} %); deliberate departures with independent evidence: "
+          f"{tally['basin']} in enclosed basins below sea level not connected to the ocean, {tally['shallow']} on "
+          f"shallow below-sea-level ground MODIS maps as land with no deep ground next to it (polders, ETOPO coast "
+          f"offsets), {tally['lake']} at inland water above sea level; {tally['bad']} other disagreements"
+          + (f" ({', '.join(bad[:8])})" if bad else "") + f". Open-sea fjords MODIS misses: {'; '.join(probes)}",
+          tally)
+
+
+def check_regional_coastline() -> None:
+    """Regional levels: the mask's shoreline lies within one texel of the regional height's zero crossing,
+    except at inland water above sea level and where the global level-7 mask also calls the below-sea-level
+    ground dry; crossings in the 64-texel coverage feather are skipped (blended into the parent there)."""
+    from earth import regional
+    for r_id in regmod.list_regions():
+        reg = regmod.load(r_id)
+        for lv in regmod.levels(reg):
+            rects = regmod.coverage_rects(reg, lv)
+            rng = np.random.default_rng(100 + lv)
+            finest = lv == regmod.levels(reg)[-1]
+
+            def pick():
+                rc = rects[int(rng.integers(len(rects)))]
+                return rc["face"], int(rng.integers(rc["x0"], rc["x1"] + 1)), int(rng.integers(rc["y0"], rc["y1"] + 1))
+            pts = coast_points(lv, 1000 if finest else 300, rng, pick, 60000)
+            tally = {"ok": 0, "lake": 0, "dry": 0, "feather": 0, "bad": 0}
+            bad = []
+            for f, x, y, j, uu in pts:
+                r, c0 = min(max(j, 0), 255), min(max(int(uu), 0), 255)
+                if regional.boundary_distance(rects, f, lv, x, y)[r, c0] < regional.FEATHER_TEXELS:
+                    tally["feather"] += 1
+                    continue
+                kind, rs, cs = coast_window(tiles.read_u8("watermask", f, lv, x, y).astype(np.float64), j, uu)
+                if kind == "ok":
+                    tally["ok"] += 1
+                elif kind == "water":
+                    tally["lake"] += 1
+                else:
+                    g7 = regional.parent_upsample("watermask", f, lv, x, y,
+                                                  lambda a, b, c, e: tiles.read_u8("watermask", a, b, c, e)[..., None]
+                                                  .astype(np.float64), ancestor=paths.GLOBAL_MAX_LEVEL)[..., 0]
+                    if (g7[rs, cs] < 127.5).all():
+                        tally["dry"] += 1
+                    else:
+                        tally["bad"] += 1
+                        la, lo = tiles.dirs_latlon(cube.tile_uv_to_dir(f, lv, x, y, np.array([uu / 256]),
+                                                                       np.array([(j + 0.5) / 256])))
+                        bad.append(f"{float(la[0]):.4f} {float(lo[0]):.4f}")
+            n = tally["ok"] + tally["lake"] + tally["dry"] + tally["bad"]
+            check(f"regional coastline {r_id} level {lv}", tally["bad"] == 0 and n >= (500 if finest else 150),
+                  f"of {n} sampled height zero crossings (outside the coverage feather; {tally['feather']} more inside "
+                  f"it skipped), {tally['ok']} have the mask's 50 % contour within one texel; {tally['lake']} at inland "
+                  f"water above sea level, {tally['dry']} on ground the global mask also keeps dry; {tally['bad']} "
+                  f"other disagreements" + (f" ({', '.join(bad[:8])})" if bad else ""), tally)
+
+
+def check_regional_pits() -> None:
+    """No closed depression in the regional heights that the source DEM does not have: on every regional
+    tile, the 4-connected areas at or below 0.5 m that lie within its 3 x 3 tile neighbourhood, hold no sea floor
+    (nothing below -2 m) and are ringed by ground more than 10 m high (median of the 3-vertex ring) are pits
+    (inland water baked as sea, for example). Also: no regional vertex is stored as exactly 0 m (the sign of
+    every vertex decides water for physics)."""
+    for r_id in regmod.list_regions():
+        reg = regmod.load(r_id)
+        pits, zeros, tiles_n, big = [], 0, 0, 0
+        for lv in regmod.levels(reg):
+            rects = regmod.coverage_rects(reg, lv)
+            cache: dict = {}
+
+            def get(f, x, y):
+                k = (f, x, y)
+                if k not in cache:
+                    h = tiles.read_height(f, lv, x, y)
+                    cache[k] = None if h is None else h[1:257, 1:257].astype(np.float64)
+                return cache[k]
+            for rc in rects:
+                f = rc["face"]
+                for x in range(rc["x0"], rc["x1"] + 1):
+                    for y in range(rc["y0"], rc["y1"] + 1):
+                        tiles_n += 1
+                        h0 = get(f, x, y)
+                        zeros += int((h0 == 0.0).sum())
+                        if not (h0 <= 0.5).any() or (h0 < -2.0).all():
+                            continue
+                        mos = np.full((768, 768), np.nan)
+                        for i in range(3):
+                            for j in range(3):
+                                t = get(f, x - 1 + i, y - 1 + j) if 0 <= x - 1 + i < 2 ** lv and 0 <= y - 1 + j < 2 ** lv else None
+                                if t is not None:
+                                    mos[j * 256:(j + 1) * 256, i * 256:(i + 1) * 256] = t
+                        low = np.nan_to_num(mos, nan=1e9) <= 0.5
+                        lab, n = ndimage.label(low)      # 4-connected (diagonal = bilinear saddle)
+                        edge = np.zeros_like(low)
+                        edge[0, :] = edge[-1, :] = edge[:, 0] = edge[:, -1] = True
+                        edge |= ndimage.binary_dilation(np.isnan(mos))
+                        touching = set(np.unique(lab[edge & low]))
+                        for L in np.unique(lab[256:512, 256:512]):
+                            if L == 0:
+                                continue
+                            if L in touching:
+                                big += 1
+                                continue
+                            comp = lab == L
+                            if mos[comp].min() < -2.0:
+                                continue
+                            ring = ndimage.binary_dilation(comp, iterations=3) & ~comp & ~np.isnan(mos)
+                            rim = float(np.median(mos[ring]))
+                            if rim > 10.0:
+                                jj, ii = np.nonzero(comp)
+                                d = cube.tile_uv_to_dir(f, lv, x - 1, y - 1, np.array([ii.mean() / 256]), np.array([jj.mean() / 256]))
+                                la, lo = tiles.dirs_latlon(d.reshape(-1, 3))
+                                pits.append((rim, lv, float(la[0]), float(lo[0]), float(mos[comp].min()), int(comp.sum())))
+                        if len(cache) > 3000:
+                            for k in list(cache)[:1500]:
+                                del cache[k]
+        pits = sorted(set(pits), reverse=True)
+        check(f"no inland pits in regional heights {r_id}", not pits and zeros == 0,
+              f"{tiles_n} tiles of levels {regmod.levels(reg)[0]}-{regmod.levels(reg)[-1]}: {len(pits)} closed areas at "
+              f"or below 0.5 m without sea floor under a rim more than 10 m high"
+              + (": " + "; ".join(f"level {p[1]} {p[2]:.4f} {p[3]:.4f} rim {p[0]:.0f} m bottom {p[4]:.2f} m"
+                                  for p in pits[:6]) if pits else "")
+              + (f" (vertices per area: {[p[5] for p in pits]})" if pits else "")
+              + f"; {zeros} vertices stored as exactly 0 m ({big} low areas reach beyond the 3 x 3 neighbourhood: sea)")
+
+
+def near_shore_profile() -> None:
+    """INFO: depth of the level-12 sea floor by distance from the shore, 8 x 8 km around each pad."""
+    from earth.site import destination
+    for r_id in regmod.list_regions():
+        reg = regmod.load(r_id)
+        lv = regmod.levels(reg)[-1]
+        loc = read_json(paths.SITES_DIR / f"{reg['site']}.location.json")
+        k = np.arange(-4000.0, 4000.0, 10.0)
+        E, N = np.meshgrid(k, k)
+        la, lo = destination(loc["latDeg"], loc["lonDeg"], E.ravel(), N.ravel())
+        d = cube.lat_lon_to_dir(np.radians(la), np.radians(lo))
+        h = bilinear_from_tiles(d, TileCache(lv, tiles.read_height)).reshape(E.shape)
+        sea = h < 0.0
+        dist = ndimage.distance_transform_edt(sea) * 10.0
+        parts = []
+        for d0, d1 in ((0, 50), (50, 100), (100, 200), (200, 300), (300, 400), (400, 600), (600, 800), (800, 1000),
+                       (1000, 1500)):
+            s = sea & (dist > d0) & (dist <= d1)
+            if s.any():
+                parts.append(f"{d0}-{d1} m {np.median(h[s]):.1f}")
+        shallow = sea & (h > -5.0)
+        info(f"near-shore sea floor {r_id} level {lv}",
+             f"median depth by distance from the shore (8 x 8 km around the pad, 10 m grid): {', '.join(parts)}; sea "
+             f"shallower than 5 m reaches {np.percentile(dist[shallow], 95):.0f} m from the shore (95th percentile), "
+             f"{dist[shallow].max():.0f} m at most; shallowest sea sample {h[sea].max():.3f} m")
+
+
+ARID_RANGES = [("Tibesti", 21.0, 17.8), ("Hoggar", 23.3, 5.6), ("Sinai", 28.6, 33.9), ("Hajar", 23.1, 57.4),
+               ("Kunlun", 36.0, 85.0), ("Panamint", 36.2, -117.1), ("Atacama Andes", -23.5, -68.0),
+               ("Namib escarpment", -23.5, 15.8)]
+
+
+def check_arid_aspect() -> None:
+    """No relief shading in the global imagery (level 7): over hyper-arid bare ranges, where vegetation does
+    not follow aspect, the mean albedo of east- vs west-facing and north- vs south-facing texels steeper than
+    10 deg (3 x 3 level-7 tiles around each range; land, Y < 0.4) agree within 5 %. Relief shading of the
+    10:30 sun makes east-facing slopes brighter everywhere and equator-facing slopes brighter; an over-strong
+    de-shading inverts both."""
+    from earth.albedo import tile_normals
+    rows, worst = [], 0.0
+    for name, la, lo in ARID_RANGES:
+        f, x0, y0, _, _ = cube.dir_to_tile(cube.lat_lon_to_dir(math.radians(la), math.radians(lo)), 7)
+        Ys, NEs, NNs = [], [], []
+        for x in range(x0 - 1, x0 + 2):
+            for y in range(y0 - 1, y0 + 2):
+                Y = tiles.srgb_to_linear(tiles.read_webp("albedo", f, 7, x, y)) @ LUMA
+                ne, nn, _ = tile_normals(tiles.read_height(f, 7, x, y), f, 7, x, y)
+                ok = (tiles.read_u8("watermask", f, 7, x, y) < 128) & (Y < 0.4)
+                Ys.append(Y[ok])
+                NEs.append(ne[ok])
+                NNs.append(nn[ok])
+        Y, ne, nn = np.concatenate(Ys), np.concatenate(NEs), np.concatenate(NNs)
+        slope = np.degrees(np.arcsin(np.clip(np.hypot(ne, nn), 0, 1)))
+        asp = (np.degrees(np.arctan2(ne, nn)) + 360) % 360
+        st = slope > 10
+        E, W = st & (asp > 45) & (asp < 135), st & (asp > 225) & (asp < 315)
+        Nf, S = st & ((asp > 315) | (asp < 45)), st & (asp > 135) & (asp < 225)
+        ew, ns = float(Y[E].mean() / Y[W].mean()), float(Y[Nf].mean() / Y[S].mean())
+        worst = max(worst, abs(ew - 1), abs(ns - 1))
+        rows.append(f"{name} E/W {ew:.3f} N/S {ns:.3f} ({int(E.sum())}/{int(W.sum())}/{int(Nf.sum())}/{int(S.sum())})")
+    check("no relief shading in the global imagery", worst <= 0.05,
+          f"level 7, slopes > 10 deg, mean albedo ratios (need 1 +/- 0.05; texels E/W/N/S): {'; '.join(rows)}")
 
 
 def mauna_kea_east_west(lv: int, local_sigma_m: float = 300.0):
@@ -647,7 +878,11 @@ def main(argv: list[str]) -> int:
     check_coverage_edges(m)
     check_water_fraction()
     check_coastline()
+    check_regional_coastline()
+    check_regional_pits()
+    near_shore_profile()
     check_deshade()
+    check_arid_aspect()
     check_night()
     check_typescript()
     check_size()

@@ -36,6 +36,8 @@ def run() -> None:
     if g("albedo") and g("night") and (paths.TILES / "globals" / "albedoLowRes.png").is_file():
         freed += _rm(src / "bmng-200408")
         freed += _rm(work / "albedo-l3")
+        for p in work.glob("deshade-acc*"):
+            freed += _rm(p)
         for p in work.glob("crop-*"):
             freed += _rm(p)
     if g("night"):
@@ -45,6 +47,7 @@ def run() -> None:
     if g("watermask"):
         freed += _rm(src / "gibs-modis-water")
         freed += _rm(work / "watermask-l3")
+        freed += _rm(work / "watermask-cc")
     if g("landcover"):
         freed += _rm(work / "landcover-l3")
     if (paths.TILES / "globals" / "cloudCoverage.png").is_file():
