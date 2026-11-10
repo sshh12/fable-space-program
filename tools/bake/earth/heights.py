@@ -132,17 +132,27 @@ def bake_region(region_id: str) -> None:
     reg = regmod.load(region_id)
     lv = regmod.levels(reg)
     finest = lv[-1]
-    # build (and cache) the regional source once in the parent so workers only memory-map it
-    _regional_height(region_id)
+
+    def key(u):
+        return f"{u[4][0][0]}-{u[4][0][1]}-{u[4][0][2]}-{len(u[4])}"
+
+    plan = []
     for level in reversed(lv):
         tl = regmod.rect_tiles(regmod.coverage_rects(reg, level))
         scale = float(reg["levels"][str(level)]["heightScale"])
         chunks = [tl[i:i + 64] for i in range(0, len(tl), 64)]
         units = [(region_id, level, finest, scale, tuple(c)) for c in chunks]
-        log(f"height {region_id} level {level}: {len(tl)} tiles")
-        run_units(f"height-{region_id}-l{level}", _reg_unit, units, key=lambda u: f"{u[4][0][0]}-{u[4][0][1]}-{u[4][0][2]}-{len(u[4])}",
-                  config={"v": 3, "region": reg, "level": level})
+        plan.append((level, len(tl), units, {"v": 3, "region": reg, "level": level}))
     from earth import manifest
+    if all(units_done(f"height-{region_id}-l{level}", units, key, cfg) for level, _, units, cfg in plan):
+        log(f"height {region_id}: every level already baked")
+        manifest.mark("height", region_id)
+        return
+    # build (and cache) the regional source once in the parent so workers only memory-map it
+    _ = _regional_height(region_id).t
+    for level, n_tiles, units, cfg in plan:
+        log(f"height {region_id} level {level}: {n_tiles} tiles")
+        run_units(f"height-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)
     manifest.mark("height", region_id)
 
 

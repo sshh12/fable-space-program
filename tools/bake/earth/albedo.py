@@ -1,4 +1,6 @@
-"""`albedo` layer: opaque sRGB WebP, 256 x 256, cell-registered.
+"""`albedo` layer: opaque sRGB WebP, 256 x 256, cell-registered, LOSSLESS (tiles.LOSSLESS_LAYERS: lossy tiles
+compressed one by one differ more across their shared border than between interior texels, which the seam
+acceptance test measures; lossless costs about 6x the bytes of q90, ~2 GB for the global levels).
 
 Global levels 0-7: NASA Blue Marble Next Generation, August 2004 base map (no relief shading added by the
 producer), topographically de-shaded (deshade.py) with ETOPO normals on the same 15" grid. Level 7 samples
@@ -14,7 +16,7 @@ from PIL import Image
 
 from common import cube
 from earth import deshade, equirect, etopo, manifest, paths, sample, tiles
-from earth.util import log, read_json, run_units, write_json
+from earth.util import log, read_json, run_units, units_done, write_json
 
 MONTH = 8
 BANDS = 36                      # 5 deg latitude bands for the de-shading fit
@@ -154,16 +156,20 @@ def _top_levels() -> None:
 
 
 def bake_global() -> None:
-    cfg = {"v": 3, "month": MONTH, "quality": tiles.WEBP_QUALITY, "deshade": True}
+    cfg = {"v": 4, "month": MONTH, "lossless": True, "deshade": True}
     if manifest.is_marked("albedo", "global") and (paths.STATE / "albedo-global.cfg").is_file() \
             and (paths.STATE / "albedo-global.cfg").read_text(encoding="utf-8") == str(cfg):
         log("albedo: global levels already baked")
         return
     fit_deshading()
     for face in range(6):
-        equirect.build_face_crop("bmng", face, MONTH)
         units = [(face, x, y) for x in range(8) for y in range(8)]
-        run_units(f"albedo-f{face}", _subtree_unit, units, key=lambda u: "%d-%d-%d" % u, config=cfg)
+        key = lambda u: "%d-%d-%d" % u   # noqa: E731
+        if units_done(f"albedo-f{face}", units, key, cfg):
+            continue
+        equirect.download("bmng", MONTH)                 # resumable; a no-op when the quadrants are cached
+        equirect.build_face_crop("bmng", face, MONTH)
+        run_units(f"albedo-f{face}", _subtree_unit, units, key=key, config=cfg)
         equirect.delete_face_crop("bmng", face, MONTH)
     _top_levels()
     (paths.STATE / "albedo-global.cfg").write_text(str(cfg), encoding="utf-8")

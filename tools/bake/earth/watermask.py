@@ -3,7 +3,7 @@
 Global level 7, per texel:
   f_h  = fraction of 4 x 4 sub-samples of the texel where the bilinear height surface of the baked level-7
          height tile is below sea level (the elevation sign, exactly the surface the height authority uses);
-  f_m  = fraction of 4 x 4 sub-samples that the independent MODIS MOD44W 250 m water mask calls water.
+  f_m  = fraction of 2 x 2 sub-samples that the independent MODIS MOD44W 250 m water mask calls water.
   default                          mask = f_h
   land below sea level             mask = f_m   where f_h > 0, f_m < 0.5 and MODIS water is more than
                                                 CORRECT_TEXELS away (Qattara, Death Valley, polders ...)
@@ -25,6 +25,7 @@ from earth.util import log, run_units
 CORRECT_TEXELS = 2
 PAD = 8
 SUB = 4
+SUB_MODIS = 2
 L3_DIR = paths.WORK / "watermask-l3"
 SOURCES_GLOBAL = ["Sign of the baked height (ETOPO 2022)",
                   "MODIS MOD44W 250 m water mask via NASA GIBS (MODIS_Water_Mask; public domain): inland water and "
@@ -52,12 +53,12 @@ def height_fraction(h259: np.ndarray, sub: int = SUB) -> np.ndarray:
 def level7_mask(face: int, x: int, y: int, cache: hpyramid.TileCache, modis) -> np.ndarray:
     h = cache.get(face, x, y)
     f_h = height_fraction(h)
-    # MODIS sub-samples
-    k = (np.arange(256 * SUB) + 0.5) / (256 * SUB)
+    # MODIS sub-samples (2 x 2 per texel: the source is 250 m, the texels 150-305 m)
+    k = (np.arange(256 * SUB_MODIS) + 0.5) / (256 * SUB_MODIS)
     uu, vv = np.meshgrid(k, k)
     d = cube.tile_uv_to_dir(face, 7, x, y, uu, vv).reshape(-1, 3)
     lat, lon = tiles.dirs_latlon(d)
-    f_m = modis.water(lat, lon).reshape(256, SUB, 256, SUB).mean(axis=(1, 3))
+    f_m = modis.water(lat, lon).reshape(256, SUB_MODIS, 256, SUB_MODIS).mean(axis=(1, 3))
     # padded texel-centre grid for distances
     kp = (np.arange(-PAD, 256 + PAD) + 0.5) / 256
     up, vp = np.meshgrid(kp, kp)
@@ -128,7 +129,7 @@ def _top_levels() -> None:
 
 def bake_global() -> None:
     from earth import gibs
-    cfg = {"v": 2, "correct": CORRECT_TEXELS, "sub": SUB}
+    cfg = {"v": 3, "correct": CORRECT_TEXELS, "sub": SUB, "subModis": SUB_MODIS}
     if manifest.is_marked("watermask", "global") and (paths.STATE / "watermask-global.cfg").is_file() \
             and (paths.STATE / "watermask-global.cfg").read_text(encoding="utf-8") == str(cfg):
         log("watermask: global levels already baked")

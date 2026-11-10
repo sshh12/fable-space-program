@@ -141,12 +141,21 @@ class RegionalHeight:
         latc = 0.5 * (lat0 + lat1)
         dlat = COAST_GRID_M / (math.pi * paths.RADIUS / 180.0)
         dlon = dlat / math.cos(math.radians(latc))
-        key = paths.WORK / f"coastdist-wc-{lat0:.4f}-{lat1:.4f}-{lon0:.4f}-{lon1:.4f}.npz"
-        if key.is_file():
-            z = np.load(key)
-            self.coast = etopo.LocalGrid(z["d"], float(z["la"]), float(z["lo"]), float(z["s"]))
-            self.coast_dlon = float(z["dlon"])
+        key = paths.WORK / f"coastdist-wc-{lat0:.4f}-{lat1:.4f}-{lon0:.4f}-{lon1:.4f}.npy"
+        meta = key.with_suffix(".json")
+        if key.is_file() and meta.is_file():           # memory-mapped: shared by all worker processes
+            z = json.loads(meta.read_text(encoding="utf-8"))
+            self.coast = etopo.LocalGrid(np.load(key, mmap_mode="r"), z["la"], z["lo"], z["s"])
+            self.coast_dlon = z["dlon"]
             return
+        old = key.with_suffix(".npz")
+        if old.is_file():                               # earlier .npz cache: convert once
+            with np.load(old) as z:
+                np.save(key, z["d"])
+                meta.write_text(json.dumps({"la": float(z["la"]), "lo": float(z["lo"]), "s": float(z["s"]),
+                                            "dlon": float(z["dlon"])}), encoding="utf-8")
+            old.unlink()
+            return self._coast_grid()
         lats = np.arange(lat1, lat0, -dlat)
         lons = np.arange(lon0, lon1, dlon)
         land = np.zeros((lats.size, lons.size), bool)
@@ -154,8 +163,10 @@ class RegionalHeight:
             LA, LO = np.meshgrid(lats[i:i + 512], lons, indexing="ij")
             land[i:i + 512] = (self.land_fraction(LA, LO) >= 0.5).reshape(LA.shape)
         d = (ndimage.distance_transform_edt(~land, sampling=(1.0, 1.0)) * COAST_GRID_M).astype(np.float32)
-        np.savez(key, d=d, la=lats[0], lo=lons[0], s=dlat, dlon=dlon)
-        self.coast = etopo.LocalGrid(d, lats[0], lons[0], dlat)
+        np.save(key, d)
+        meta.write_text(json.dumps({"la": float(lats[0]), "lo": float(lons[0]), "s": float(dlat), "dlon": float(dlon)}),
+                        encoding="utf-8")
+        self.coast = etopo.LocalGrid(np.load(key, mmap_mode="r"), float(lats[0]), float(lons[0]), dlat)
         self.coast_dlon = dlon
 
     def coast_distance(self, lat, lon) -> np.ndarray:

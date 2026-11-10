@@ -3,14 +3,16 @@
 Every regional level is the area average of the composite over each texel footprint (box filter over the
 z14 mosaic near land, z12 offshore), then
   1. de-shaded with the regional DEM (the stored height tile of the same key) using alpha/beta fitted on the
-     region at level 10 (deshade.py; the S2 mornings light east-facing slopes);
-  2. colour-matched to the global base: per-channel gain and offset in linear light, fitted separately for
-     land and water between level-8 texels and the stored level-7 tiles (bilinear), blended by the water mask;
-     water further than 1.5-6 km from the 3DEP coast fades to the global base itself (the S2 open ocean
-     carries granule edges and sun glint);
+     region at level 10 (deshade.py) against the brightness relative to a 600 m neighbourhood, on ground above
+     1500 m (sparse vegetation): at larger scales the windward / leeward vegetation pattern of the volcanoes
+     correlates with aspect and would masquerade as shading;
+  2. colour-matched to the global base: per-channel gain (ratio of the means in linear light, so contrast is
+     kept), separately for land and water, between coarsest-regional-level texels and the stored level-7 tiles
+     (bilinear), blended by the water mask; water further than 1.5-6 km from the coast fades to the global
+     base itself (the S2 open ocean carries granule edges and sun glint);
   3. feathered over the outer 64 texels of the level's coverage into the bilinear upsample of the stored
-     parent level (regional.py); tiles touching that band are stored as lossless WebP (still opaque RGB),
-     every other tile as lossy WebP q90.
+     parent level (regional.py). Albedo tiles are lossless WebP (opaque RGB, tiles.LOSSLESS_LAYERS), so the
+     outermost texels equal that upsample exactly.
 Levels are written coarse to fine because each feather reads its stored parent.
 """
 from __future__ import annotations
@@ -23,6 +25,8 @@ from earth import albedo, deshade, manifest, paths, region as regmod, regional, 
 from earth.util import log, read_json, run_units, write_json
 
 FIT_LEVEL = 10
+FIT_SIGMA_M = 600.0             # de-shading fit: brightness relative to this neighbourhood
+FIT_MIN_HEIGHT_M = 1500.0       # ... on sparsely vegetated ground only
 OFFSHORE_M = (1500.0, 6000.0)   # water colour: S2 near the coast, the global base beyond (smootherstep)
 
 
@@ -70,7 +74,8 @@ def _fit_path(region_id: str):
 def fit(region_id: str) -> dict:
     p = _fit_path(region_id)
     reg = regmod.load(region_id)
-    key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 2})
+    key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 3,
+               "sigma": FIT_SIGMA_M, "minHeight": FIT_MIN_HEIGHT_M})
     if p.is_file():
         f = read_json(p)
         if f.get("key") == key:
@@ -87,10 +92,8 @@ def fit(region_id: str) -> dict:
     NE = np.zeros((H, W))
     NN = np.zeros((H, W))
     HC = np.zeros((H, W))
-    raws = {}
     for _, x, y in tl:
         lin = raw_tile(region_id, face, FIT_LEVEL, x, y)
-        raws[(x, y)] = lin
         ne, nn, hc = albedo.tile_normals(tiles.read_height(face, FIT_LEVEL, x, y), face, FIT_LEVEL, x, y)
         j, i = (y - ys[0]) * 256, (x - xs[0]) * 256
         Y[j:j + 256, i:i + 256] = lin @ albedo.LUMA
@@ -99,8 +102,8 @@ def fit(region_id: str) -> dict:
         HC[j:j + 256, i:i + 256] = hc
     land = (HC > 5.0) & (Y > 0.003)
     tm = regional.texel_metres(face, FIT_LEVEL, xs[len(xs) // 2], ys[len(ys) // 2])
-    lr = deshade.local_log_ratio(Y, land, sigma_px=10000.0 / tm)
-    sel = land & (np.hypot(NE, NN) > math.sin(math.radians(2.0))) & (Y < 0.6)
+    lr = deshade.local_log_ratio(Y, land, sigma_px=FIT_SIGMA_M / tm)
+    sel = land & (HC > FIT_MIN_HEIGHT_M) & (np.hypot(NE, NN) > math.sin(math.radians(2.0))) & (Y < 0.6)
     acc = deshade.Accumulator(1)
     acc.add(0, NE[sel], NN[sel], lr[sel])
     a, b = acc.solve(min_n=1000)[0]
@@ -121,18 +124,15 @@ def fit(region_id: str) -> dict:
         src_w.append(lin[wat])
         dst_w.append(par[wat])
 
-    def affine(s, d):
+    def gains(s, d):
+        """Per-channel ratio of the means (gain, offset 0): matches the mean colour, keeps the contrast
+        (a regression would be diluted towards zero gain by the resolution mismatch)."""
         s = np.concatenate(s)
         d = np.concatenate(d)
-        out = []
-        for c in range(3):
-            A = np.stack([s[:, c], np.ones(s.shape[0])], axis=1)
-            g, o = np.linalg.lstsq(A, d[:, c], rcond=None)[0]
-            out.append([float(g), float(o)])
-        return out, int(s.shape[0])
+        return [[float(d[:, c].mean() / max(s[:, c].mean(), 1e-6)), 0.0] for c in range(3)], int(s.shape[0])
 
-    land_fit, nl = affine(src_l, dst_l)
-    water_fit, nw = affine(src_w, dst_w)
+    land_fit, nl = gains(src_l, dst_l)
+    water_fit, nw = gains(src_w, dst_w)
     log(f"regalbedo: colour match land {land_fit} ({nl} texels), water {water_fit} ({nw} texels)")
     out = {"key": key, "alpha": float(a), "beta": float(b), "land": land_fit, "water": water_fit,
            "fitLevel": FIT_LEVEL, "samplesLand": nl, "samplesWater": nw}
@@ -173,15 +173,13 @@ def _unit(u: tuple) -> int:
         lin = finish(raw_tile(region_id, face, level, x, y), region_id, face, level, x, y, f)
         srgb = tiles.linear_to_srgb8(lin).astype(np.float64)
         d = regional.boundary_distance(rects, face, level, x, y)
-        edge = d.min() < regional.FEATHER_TEXELS
-        if edge:
+        if d.min() < regional.FEATHER_TEXELS:
             w = regional.feather_weight(d)[..., None]
             par = regional.parent_upsample("albedo", face, level, x, y,
                                            lambda f_, l_, x_, y_: tiles.read_webp("albedo", f_, l_, x_, y_).astype(np.float64))
             srgb = w * srgb + (1.0 - w) * par
         out = np.clip(np.floor(srgb + 0.5), 0, 255).astype(np.uint8)
-        # tiles in the feather band are stored lossless so their outer texels equal the parent upsample exactly
-        n += tiles.write_webp("albedo", face, level, x, y, out, lossless=edge)
+        n += tiles.write_webp("albedo", face, level, x, y, out)       # lossless: outer texels = parent upsample
     return n
 
 
@@ -193,7 +191,7 @@ def bake(region_id: str) -> None:
     s2.fetch(reg)
     _get(region_id)
     f = fit(region_id)
-    cfg = {"v": 3, "region": reg, "fit": f, "offshore": OFFSHORE_M}
+    cfg = {"v": 4, "region": reg, "fit": f, "offshore": OFFSHORE_M, "lossless": True}
     for level in regmod.levels(reg):                      # coarse to fine: feathers read stored parents
         tl = regional.level_tiles(reg, level)
         units = [(region_id, level, tuple(tl[i:i + 32])) for i in range(0, len(tl), 32)]

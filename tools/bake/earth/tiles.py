@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import time
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ from earth import paths
 EXT = {"height": "hgt", "albedo": "webp", "watermask": "u8", "night": "webp", "landcover": "u8"}
 WEBP_QUALITY = 90
 WEBP_METHOD = 6
+LOSSLESS_LAYERS = {"albedo"}
 
 
 def tile_file(layer: str, face: int, level: int, x: int, y: int) -> Path:
@@ -22,6 +24,19 @@ def tile_file(layer: str, face: int, level: int, x: int, y: int) -> Path:
 
 def exists(layer: str, face: int, level: int, x: int, y: int) -> bool:
     return tile_file(layer, face, level, x, y).is_file()
+
+
+def write_file(path: Path, data: bytes, attempts: int = 8) -> None:
+    """layout.write_atomic, retried when Windows refuses the rename because something (a virus scanner, a
+    concurrently running dev server or test reading the tile set) holds the old file open."""
+    for k in range(attempts):
+        try:
+            layout.write_atomic(path, data)
+            return
+        except PermissionError:          # write_atomic has already removed its own temporary file
+            if k == attempts - 1:
+                raise
+            time.sleep(0.05 * 2 ** k)
 
 
 def dirs_latlon(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -35,7 +50,7 @@ def write_height(face: int, level: int, x: int, y: int, h: np.ndarray, preferred
     if h.shape != (259, 259):
         raise ValueError("height tile must be 259 x 259")
     data = frt1.to_file_bytes(frt1.encode_height(h, preferred_scale), level=9)
-    layout.write_atomic(tile_file("height", face, level, x, y), data)
+    write_file(tile_file("height", face, level, x, y), data)
     return len(data)
 
 
@@ -51,7 +66,7 @@ def write_u8(layer: str, face: int, level: int, x: int, y: int, a: np.ndarray) -
     if a.shape != (256, 256) or a.dtype != np.uint8:
         raise ValueError("u8 tile must be uint8 256 x 256")
     data = frt1.to_file_bytes(frt1.encode_u8(a), level=9)
-    layout.write_atomic(tile_file(layer, face, level, x, y), data)
+    write_file(tile_file(layer, face, level, x, y), data)
     return len(data)
 
 
@@ -76,9 +91,12 @@ def encode_webp(rgb: np.ndarray, quality: int = WEBP_QUALITY, lossless: bool = F
 
 
 def write_webp(layer: str, face: int, level: int, x: int, y: int, rgb: np.ndarray, quality: int = WEBP_QUALITY,
-               lossless: bool = False) -> int:
-    data = encode_webp(rgb, quality, lossless)
-    layout.write_atomic(tile_file(layer, face, level, x, y), data)
+               lossless: bool | None = None) -> int:
+    """Albedo tiles are lossless (LOSSLESS_LAYERS): independently compressed lossy tiles differ more across
+    their shared border than between interior texels (no deblocking across files), which the seam
+    acceptance test measures; night tiles stay lossy (mostly black, a few hundred bytes)."""
+    data = encode_webp(rgb, quality, layer in LOSSLESS_LAYERS if lossless is None else lossless)
+    write_file(tile_file(layer, face, level, x, y), data)
     return len(data)
 
 

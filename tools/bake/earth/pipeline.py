@@ -72,7 +72,13 @@ def run(step: str, regions: list[str], region_given: bool = False) -> None:
         run("manifest", regions)
         run("contact", regions)
         run("recovery", regions)
-        run("cleanup", regions)
+        import subprocess
+        import sys
+        rc = subprocess.call([sys.executable, "-I", str(paths.HERE / "verify.py")])
+        if rc == 0:
+            run("cleanup", regions)
+        else:
+            log("verify.py failed: raw downloads are kept for the fix-up re-run (cleanup skipped)")
         return
     if step == "manifest":
         from earth import manifest

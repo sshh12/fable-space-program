@@ -16,7 +16,8 @@ import psutil
 
 from earth import paths
 
-MAX_WORKERS = min(8, int(os.environ.get("EARTH_BAKE_WORKERS", "8")))   # brief: at most 8 worker processes
+# docs/PACKAGE_RULES.md 13c (after the 2026-11-10 crash): at most 6 worker processes per bake
+MAX_WORKERS = min(6, int(os.environ.get("EARTH_BAKE_WORKERS", "6")))
 
 
 def set_below_normal() -> None:

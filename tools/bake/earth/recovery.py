@@ -36,6 +36,9 @@ GAZETTEER = [
     ("Tematangi (Tuamotu)", -21.68, -140.62), ("Vanavana (Tuamotu)", -20.78, -139.13), ("Nukutavake (Tuamotu)", -19.28, -138.78),
     ("Vahitahi (Tuamotu)", -18.78, -138.85), ("Pukarua (Tuamotu)", -18.30, -137.02), ("Reao (Tuamotu)", -18.50, -136.43),
     ("Hao (Tuamotu)", -18.07, -140.95), ("Mururoa (Tuamotu)", -21.84, -138.89), ("Fangataufa (Tuamotu)", -22.24, -138.73),
+    ("Tatakoto (Tuamotu)", -17.34, -138.39), ("Akiaki (Tuamotu)", -18.53, -139.21), ("Vairaatea (Tuamotu)", -19.34, -139.25),
+    ("Pinaki (Tuamotu)", -19.40, -138.68), ("Tenararo (Acteon Group)", -21.30, -136.75), ("Vahanga (Acteon Group)", -21.33, -136.64),
+    ("Tenarunga (Acteon Group)", -21.35, -136.55), ("Matureivavao (Acteon Group)", -21.47, -136.39),
     ("Ascension Island", -7.95, -14.37), ("Saint Helena", -15.97, -5.70), ("Fernando de Noronha", -3.85, -32.42),
     ("Atol das Rocas", -3.86, -33.82), ("Saint Peter and Saint Paul Archipelago", 0.92, -29.35),
 ]
@@ -58,11 +61,14 @@ def zone_report(z: dict) -> dict:
     r_m = z["radiusKm"] * 1000.0
     step = REPORT_GRID_KM * 1000.0
     k = np.arange(-r_m, r_m + 1, step)
+    m = np.empty((k.size, k.size), np.uint8)
+    for r0 in range(0, k.size, 200):                    # row chunks keep the memory small
+        E, N = np.meshgrid(k, k[r0:r0 + 200])
+        la, lo = destination(z["latDeg"], z["lonDeg"], E.ravel(), N.ravel())
+        m[r0:r0 + 200] = mask_at(la, lo).reshape(E.shape)
     E, N = np.meshgrid(k, k)
     rho = np.hypot(E, N)
     inside = rho <= r_m
-    la, lo = destination(z["latDeg"], z["lonDeg"], E.ravel(), N.ravel())
-    m = mask_at(la, lo).reshape(E.shape)
     ang = rho / paths.RADIUS
     w = np.where(ang > 0, np.sin(ang) / np.maximum(ang, 1e-12), 1.0) * inside
     land = (m < 128) & inside
@@ -71,16 +77,28 @@ def zone_report(z: dict) -> dict:
     comps = []
     for i in range(1, n + 1):
         sel = lab == i
-        cla, clo = la.reshape(E.shape)[sel], lo.reshape(E.shape)[sel]
+        cla, clo = destination(z["latDeg"], z["lonDeg"], E[sel], N[sel])
         area = float(w[sel].sum() * (step / 1000.0) ** 2)
         c_lat, c_lon = float(cla.mean()), float(clo.mean())
         names = sorted(((gc_distance_m(c_lat, c_lon, g[1], g[2]), g[0]) for g in GAZETTEER))
         name = names[0][1] if names and names[0][0] < 60000 else "unnamed"
-        comps.append({"name": name, "latDeg": round(c_lat, 3), "lonDeg": round(c_lon, 3), "areaKm2": round(area, 1),
-                      "extentKm": [round((cla.max() - cla.min()) * 111.2 + REPORT_GRID_KM, 1),
-                                   round((clo.max() - clo.min()) * 111.2 * math.cos(math.radians(c_lat)) + REPORT_GRID_KM, 1)],
-                      "distanceFromCentreKm": round(gc_distance_m(z["latDeg"], z["lonDeg"], c_lat, c_lon) / 1000.0, 0)})
-    comps.sort(key=lambda c: -c["areaKm2"])
+        comps.append({"name": name, "lat": cla, "lon": clo, "area": area,
+                      "key": name if name != "unnamed" else f"unnamed {c_lat:.3f} {c_lon:.3f}"})
+    # one entry per named island / atoll (an atoll rim breaks into several components at 1 km)
+    groups: dict[str, list] = {}
+    for c in comps:
+        groups.setdefault(c["key"], []).append(c)
+    out = []
+    for g in groups.values():
+        la = np.concatenate([c["lat"] for c in g])
+        lo = np.concatenate([c["lon"] for c in g])
+        c_lat, c_lon = float(la.mean()), float(lo.mean())
+        out.append({"name": g[0]["name"], "latDeg": round(c_lat, 3), "lonDeg": round(c_lon, 3),
+                    "areaKm2": round(sum(c["area"] for c in g), 1), "parts": len(g),
+                    "extentKm": [round(float(la.max() - la.min()) * 111.2 + REPORT_GRID_KM, 1),
+                                 round(float(lo.max() - lo.min()) * 111.2 * math.cos(math.radians(c_lat)) + REPORT_GRID_KM, 1)],
+                    "distanceFromCentreKm": round(gc_distance_m(z["latDeg"], z["lonDeg"], c_lat, c_lon) / 1000.0, 0)})
+    comps = sorted(out, key=lambda c: -c["areaKm2"])
     unresolved = [{"name": g[0], "latDeg": g[1], "lonDeg": g[2],
                    "distanceFromCentreKm": round(gc_distance_m(z["latDeg"], z["lonDeg"], g[1], g[2]) / 1000.0, 0)}
                   for g in GAZETTEER if gc_distance_m(z["latDeg"], z["lonDeg"], g[1], g[2]) <= r_m

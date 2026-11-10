@@ -13,7 +13,8 @@ skipped on a re-run with the same configuration):
     clouds      global cloud coverage map (globals/cloudCoverage.png)
     globals     clouds + albedoLowRes
     region      every regional layer of --region (or of every region): heights, albedo, watermask, landcover
-    all         everything, in dependency order, then the manifest, contact sheets and raw-data cleanup
+    all         everything, in dependency order, then the manifest, contact sheets, recovery report, verify.py
+                and (only if verify passes) the raw-data cleanup
     manifest    (re)write data/tiles/earth/manifest.json from what has been baked
     contact     contact sheets into out/bake/earth
     recovery    recovery-zone report (out/bake/earth/recovery-zones.json)
