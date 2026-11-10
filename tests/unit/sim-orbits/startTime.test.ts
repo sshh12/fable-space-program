@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
 import { DEG } from '../../../src/core/math/scalar';
 import type { BodySystem } from '../../../src/sim/bodies/bodySystem';
-import { checkStartConstraints, type SurfacePoint } from '../../../src/sim/nav/startWindow';
+import { checkStartConstraints, type StartConstraintOptions, type SurfacePoint } from '../../../src/sim/nav/startWindow';
 import { loadWorld, repoRoot } from './fixtures';
 
 interface StartTimeFile {
@@ -17,7 +17,15 @@ interface StartTimeFile {
   padSun: { elevationDeg: number };
   landingSun: { minDeg: number; maxDeg: number };
   search: { searchExtended: boolean; nearMissesInRequestedRange?: { startUt: number }[] };
+  constraints: { padSunElevationDeg: [number, number]; landingWindowDays: [number, number]; landingSunElevationDeg: [number, number] };
 }
+
+/** The constraint values the file was generated with (defaults unless the tool was run with overrides). */
+const optionsOf = (s: StartTimeFile): StartConstraintOptions => ({
+  padSunElevationDeg: s.constraints.padSunElevationDeg,
+  landingWindow: [s.constraints.landingWindowDays[0] * 86400, s.constraints.landingWindowDays[1] * 86400],
+  landingSunElevationDeg: s.constraints.landingSunElevationDeg,
+});
 
 let defs: DefLibrary;
 let sys: BodySystem;
@@ -42,7 +50,7 @@ describe('scenario start time', () => {
   });
 
   it('satisfies the three constraints (launch 600 +/- 30 s, pad Sun 10-35 deg rising, landing Sun 5-35 deg rising and lit)', () => {
-    const r = checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt);
+    const r = checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt, optionsOf(st));
     expect(r.launch.ok).toBe(true);
     expect(Math.abs(r.launch.delay! - 600)).toBeLessThanOrEqual(30);
     expect(r.padSun.ok).toBe(true);
@@ -57,10 +65,10 @@ describe('scenario start time', () => {
   });
 
   it('the checks reject a start that misses the window and the recorded near misses', () => {
-    expect(checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt + 3 * 3600).launch.ok).toBe(false);
-    expect(checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt + 86164.0905).ok).toBe(false);
+    expect(checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt + 3 * 3600, optionsOf(st)).launch.ok).toBe(false);
+    expect(checkStartConstraints(sys, site, st.targetBodyId, landing, st.startUt + 86164.0905, optionsOf(st)).ok).toBe(false);
     for (const m of st.search.nearMissesInRequestedRange ?? []) {
-      const r = checkStartConstraints(sys, site, st.targetBodyId, landing, m.startUt);
+      const r = checkStartConstraints(sys, site, st.targetBodyId, landing, m.startUt, optionsOf(st));
       expect(r.launch.ok).toBe(true);
       expect(r.ok).toBe(false);
     }

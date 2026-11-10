@@ -4,11 +4,14 @@
  *   npx tsx tools/sim/findStartTime.ts [--site <id>] [--pad-elevation <m>] [--target <bodyId>]
  *        [--landing-body <bodyId>] [--landing-lat <deg>] [--landing-lon <deg>]
  *        [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--extend-years <n>] [--out <path>]
+ *        [--pad-sun-min <deg>] [--pad-sun-max <deg>] [--landing-sun-min <deg>] [--landing-sun-max <deg>]
+ *        [--stay-from-days <d>] [--stay-to-days <d>]
  *
  * Constraints (checked by checkStartConstraints in src/sim/nav/startWindow.ts, which tests re-run for any
  * scenario): (a) a coplanar ascending-azimuth launch opportunity into the target's orbit plane opens 600 s
  * after the start; (b) Sun 10-35 deg above the pad horizon and rising; (c) from start + 3 d to start + 5 d
- * the Sun at the landing target stays 5-35 deg, rising, disc fully visible.
+ * the Sun at the landing target stays 5-35 deg, rising, disc fully visible. The numbers of (b) and (c) can
+ * be overridden with the flags above; the values used are written to the output (`constraints`).
  *
  * Search: every ascending plane crossing in [from, to) is a candidate (start = crossing - 600 s, so (a)
  * holds exactly); the first candidate that satisfies all constraints with a 1 deg margin on every
@@ -116,7 +119,17 @@ async function main(): Promise<void> {
 
   const sitePoint: SurfacePoint = { bodyId: site.bodyId, latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, elevation: padElevation };
   const landingPoint = { bodyId: landing.bodyId, latitude: landing.latDeg * DEG, longitude: landing.lonDeg * DEG };
-  const delay = START_CONSTRAINT_DEFAULTS.launchDelay;
+  // Constraint values: the defaults of src/sim/nav/startWindow.ts unless overridden on the command line.
+  const D = START_CONSTRAINT_DEFAULTS;
+  const cons = {
+    launchDelay: D.launchDelay,
+    launchDelayTolerance: D.launchDelayTolerance,
+    padSunElevationDeg: [num(args, 'pad-sun-min') ?? D.padSunElevationDeg[0], num(args, 'pad-sun-max') ?? D.padSunElevationDeg[1]] as const,
+    landingWindow: [(num(args, 'stay-from-days') ?? D.landingWindow[0] / 86400) * 86400, (num(args, 'stay-to-days') ?? D.landingWindow[1] / 86400) * 86400] as const,
+    landingSunElevationDeg: [num(args, 'landing-sun-min') ?? D.landingSunElevationDeg[0], num(args, 'landing-sun-max') ?? D.landingSunElevationDeg[1]] as const,
+    sampleStep: D.sampleStep,
+  };
+  const delay = cons.launchDelay;
 
   const extendYears = num(args, 'extend-years') ?? 20;
   type Found = { startUt: number; report: StartConstraintReport };
@@ -134,22 +147,22 @@ async function main(): Promise<void> {
       t = w.crossingUt + 1;
       if (startUt < a || startUt >= b) continue;
       candidates++;
-      if (!padSunOk(system, sitePoint, startUt)) continue;
-      const report = checkStartConstraints(system, sitePoint, targetBodyId, landingPoint, startUt);
+      if (!padSunOk(system, sitePoint, startUt, cons.padSunElevationDeg)) continue;
+      const report = checkStartConstraints(system, sitePoint, targetBodyId, landingPoint, startUt, cons);
       const ls = report.landingSun;
       if (!report.ok) {
         if (report.launch.ok && report.padSun.ok && ls.rising && ls.minDeg > 0) {
-          const violationDeg = Math.max(0, START_CONSTRAINT_DEFAULTS.landingSunElevationDeg[0] - ls.minDeg) + Math.max(0, ls.maxDeg - START_CONSTRAINT_DEFAULTS.landingSunElevationDeg[1]);
+          const violationDeg = Math.max(0, cons.landingSunElevationDeg[0] - ls.minDeg) + Math.max(0, ls.maxDeg - cons.landingSunElevationDeg[1]);
           nearMisses.push({ startUt, report, violationDeg });
         }
         continue;
       }
       solutions.push({ startUt, report });
       const withMargin =
-        report.padSun.elevationDeg >= START_CONSTRAINT_DEFAULTS.padSunElevationDeg[0] + 1 &&
-        report.padSun.elevationDeg <= START_CONSTRAINT_DEFAULTS.padSunElevationDeg[1] - 1 &&
-        ls.minDeg >= START_CONSTRAINT_DEFAULTS.landingSunElevationDeg[0] + 1 &&
-        ls.maxDeg <= START_CONSTRAINT_DEFAULTS.landingSunElevationDeg[1] - 1;
+        report.padSun.elevationDeg >= cons.padSunElevationDeg[0] + 1 &&
+        report.padSun.elevationDeg <= cons.padSunElevationDeg[1] - 1 &&
+        ls.minDeg >= cons.landingSunElevationDeg[0] + 1 &&
+        ls.maxDeg <= cons.landingSunElevationDeg[1] - 1;
       if (!chosen && withMargin) chosen = { startUt, report };
     }
     nearMisses.sort((p, q) => p.violationDeg - q.violationDeg || p.startUt - q.startUt);
@@ -216,10 +229,11 @@ async function main(): Promise<void> {
     landing: { ...landing, source: landingSource },
     constraints: {
       launchDelaySeconds: delay,
-      launchDelayToleranceSeconds: START_CONSTRAINT_DEFAULTS.launchDelayTolerance,
-      padSunElevationDeg: START_CONSTRAINT_DEFAULTS.padSunElevationDeg,
-      landingWindowDays: START_CONSTRAINT_DEFAULTS.landingWindow.map((s) => s / 86400),
-      landingSunElevationDeg: START_CONSTRAINT_DEFAULTS.landingSunElevationDeg,
+      launchDelayToleranceSeconds: cons.launchDelayTolerance,
+      padSunElevationDeg: cons.padSunElevationDeg,
+      landingWindowDays: cons.landingWindow.map((s) => s / 86400),
+      differFromDefaults: JSON.stringify([cons.padSunElevationDeg, cons.landingWindow, cons.landingSunElevationDeg]) !== JSON.stringify([D.padSunElevationDeg, D.landingWindow, D.landingSunElevationDeg]),
+      landingSunElevationDeg: cons.landingSunElevationDeg,
     },
     startUt: chosen.startUt,
     startUtc: iso(chosen.startUt),
@@ -232,8 +246,8 @@ async function main(): Promise<void> {
     },
     padSun: { elevationDeg: round(r.padSun.elevationDeg), elevationAtLaunchDeg: round(r.padSun.elevationAtLaunchDeg!), rising: r.padSun.rising },
     landingSun: {
-      windowStartUtc: iso(chosen.startUt + START_CONSTRAINT_DEFAULTS.landingWindow[0]),
-      windowEndUtc: iso(chosen.startUt + START_CONSTRAINT_DEFAULTS.landingWindow[1]),
+      windowStartUtc: iso(chosen.startUt + cons.landingWindow[0]),
+      windowEndUtc: iso(chosen.startUt + cons.landingWindow[1]),
       startDeg: round(r.landingSun.startDeg),
       endDeg: round(r.landingSun.endDeg),
       minDeg: round(r.landingSun.minDeg),
