@@ -18,7 +18,9 @@ Levels of band k sample G_k on their 259 x 259 vertex grid. Coverage rectangles:
 area (disc, or source footprint dilated by marginM), dilated by coverageMarginTiles, closed under parents.
 Source-coverage rectangles (the height layer's `sourceCoverage`, requested in docs/requests/terrain-core-1.md):
 tiles touching the area where band k's source data actually lies (the disc; the source's valid footprint
-without marginM), without coverageMarginTiles - where a level holds data finer than its parent.
+without marginM), without coverageMarginTiles - where a level holds data finer than its parent. A level whose
+source pixel is coarser than its parent level's sample spacing adds no finer detail and lists no tiles
+(source_detail_levels, docs/requests/terrain-core-4.md).
 
 A source may carry `seamCorrection` (correct_column_seam): a stereo-model seam running along the columns of a
 DTM is tracked as one path and replaced by a smooth ramp before anything else reads the source; and
@@ -556,8 +558,27 @@ def band_tiles(model: RegionModel, k: int, level: int, source_only: bool = False
     return set(zip(f.tolist(), x.tolist(), y.tolist()))
 
 
+def source_detail_levels(model: RegionModel) -> dict[int, dict]:
+    """Per regional level: does its band's source hold detail finer than the parent level's data? The parent's
+    data reach wavelengths of two parent postings; the source adds shorter ones only where its ground pixel (the
+    larger of kx, ky at the raster centre) is finer than the parent's sample spacing at the region centre
+    (docs/requests/terrain-core-4.md). SLDEM2015 (59 m) at Tranquility: yes for level 8 (parent 93 m), no for
+    level 9 (parent 47 m); the NAC DTM (2 m): yes for 10-12."""
+    c = model.region["centre"]
+    d = cube.lat_lon_to_dir(math.radians(c["latDeg"]), math.radians(c["lonDeg"]))
+    out = {}
+    for b in model.bands:
+        px = max(b.grid.kx, b.grid.ky)
+        for L in b.levels:
+            parent = float(footprint_m(d, L - 1, rt.MOON_RADIUS))
+            out[L] = {"band": b.id, "sourcePixelM": round(px, 2), "parentSpacingM": round(parent, 2), "listed": px < parent}
+    return out
+
+
 def region_coverage(model: RegionModel) -> tuple[dict[int, list[dict]], dict[int, list[dict]]]:
-    """(coverage rectangles, source-coverage rectangles) per level; see the module docstring."""
+    """(coverage rectangles, source-coverage rectangles) per level; see the module docstring. A level whose
+    source holds no detail finer than its parent (source_detail_levels) gets an empty source list."""
+    detail = source_detail_levels(model)
     margin = int(model.region["coverageMarginTiles"])
     levels = sorted({L for b in model.bands for L in b.levels})
     if levels[0] != model.gmax + 1 or levels != list(range(levels[0], levels[-1] + 1)):
@@ -567,7 +588,7 @@ def region_coverage(model: RegionModel) -> tuple[dict[int, list[dict]], dict[int
     for b in model.bands:
         for L in b.levels:
             tiles[L] = dilate_tiles(band_tiles(model, b.k, L), L, margin)
-            source[L] = cube.rects_from_tiles(sorted(band_tiles(model, b.k, L, source_only=True)))
+            source[L] = cube.rects_from_tiles(sorted(band_tiles(model, b.k, L, source_only=True))) if detail[L]["listed"] else []
     rects: dict[int, list[dict]] = {}
     for L in reversed(levels):
         rects[L] = cube.rects_from_tiles(sorted(tiles[L]))
@@ -688,6 +709,7 @@ def main() -> None:
     report["tilesPerLevel"] = {str(L): len(rect_tiles(r)) for L, r in rects.items()}
     report["coverage"] = {str(L): r for L, r in rects.items()}
     report["sourceCoverage"] = {str(L): r for L, r in source_rects.items()}
+    report["sourceDetailLevels"] = {str(L): v for L, v in source_detail_levels(model).items()}
     rt.log(f"region {region['id']}: {len(tasks)} tiles {report['tilesPerLevel']}")
     total = 0
     digests: dict = {}

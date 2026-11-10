@@ -235,8 +235,11 @@ def coverage_edges(reader: TileReader, per_tile: int = 1500) -> dict:
 
 
 def source_coverage(reader: TileReader, model: RegionModel) -> dict:
-    """The height layer's sourceCoverage (docs/requests/terrain-core-1.md): inside coverage, and every
-    direction where a band's source has weight > 0 lies in a source rectangle of that band's levels."""
+    """The height layer's sourceCoverage (docs/requests/terrain-core-1.md, -4.md): inside coverage; every level
+    whose band's source resolves detail finer than its parent (region.source_detail_levels) lists every tile
+    where that source has weight > 0; every other level lists none."""
+    from moon.region import source_detail_levels
+
     meta = reader.meta
     sc = meta.get("sourceCoverage")
     check(sc is not None and set(sc) == set(meta["coverage"]), "height layer has sourceCoverage for every regional level")
@@ -244,6 +247,8 @@ def source_coverage(reader: TileReader, model: RegionModel) -> dict:
         return {}
     ok_inside = all(any(r["face"] == q["face"] and q["x0"] <= r["x0"] and r["x1"] <= q["x1"] and q["y0"] <= r["y0"] and r["y1"] <= q["y1"]
                         for q in meta["coverage"][L]) for L, rs in sc.items() for r in rs)
+    detail = source_detail_levels(model)
+    empty_ok = all((len(sc[str(L)]) > 0) == v["listed"] for L, v in detail.items())
     missing = 0
     for b in model.bands:
         g = b.grid
@@ -251,15 +256,20 @@ def source_coverage(reader: TileReader, model: RegionModel) -> dict:
         lat, lon = g.pixel_to_latlon(rr * 8.0, cc * 8.0)
         d = cube.lat_lon_to_dir(np.radians(lat), np.radians(lon))
         for L in b.levels:
+            if not detail[L]["listed"]:
+                continue
             w = model.weight(b.k, d, lat, lon, np.full(len(lat), 1.0))
             f, x, y, _, _ = dirs_to_tiles(d[w > 0], L)
             for key in set(zip(f.tolist(), x.tolist(), y.tolist())):
                 if not any(r["face"] == key[0] and r["x0"] <= key[1] <= r["x1"] and r["y0"] <= key[2] <= r["y1"] for r in sc[str(L)]):
                     missing += 1
     tiles = {L: sum((r["x1"] - r["x0"] + 1) * (r["y1"] - r["y0"] + 1) for r in rs) for L, rs in sc.items()}
-    check(ok_inside and missing == 0, f"sourceCoverage inside coverage and covering all source data (tiles per level {tiles}; "
-                                      f"source tiles outside it: {missing})")
-    return {"tilesPerLevel": tiles, "sourceTilesOutside": missing}
+    unlisted = {L: f"{v['sourcePixelM']:.0f} m source vs {v['parentSpacingM']:.0f} m parent posting" for L, v in detail.items() if not v["listed"]}
+    check(ok_inside and missing == 0 and empty_ok,
+          f"sourceCoverage inside coverage and covering all source data where the source is finer than the parent level "
+          f"(tiles per level {tiles}; source tiles outside it: {missing}; levels without finer source detail, listed empty: {unlisted})")
+    return {"tilesPerLevel": tiles, "sourceTilesOutside": missing, "levelsWithoutFinerDetail": unlisted,
+            "sourceDetailLevels": {str(L): v for L, v in detail.items()}}
 
 
 def nac_seam(region: dict) -> dict:
