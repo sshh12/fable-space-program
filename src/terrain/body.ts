@@ -6,7 +6,7 @@ import type { BodyDef, LaunchSiteDef } from '../core/contracts/defs';
 import type { TileManifest } from '../core/contracts/terrain';
 import { LANDCOVER_CLASS } from '../core/contracts/terrain';
 import { CUBE_FACES, dirToTile, type FaceId } from '../core/geo/cubeSphere';
-import { IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
+import { HEIGHT_TILE_CELLS, IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
 import type { Vec3 } from '../core/math/vec3';
 import { createAmplificationModel } from './amplification/registry';
 import { tilesInDisc } from './discTiles';
@@ -14,6 +14,7 @@ import type { AmplificationModel, BodyServices } from './amplification/types';
 import { LayerCoverage } from './coverage';
 import { HeightEvaluator, type EvalBody } from './evaluator';
 import { buildFlattenDiscs, flattenWeight, type FlattenDisc } from './modifiers';
+import { SEAM_CELLS, SeamReconciler } from './seams';
 import { LayerRef, type TileRequest, type TileStore } from './tileStore';
 import { meanTileSizeAt } from './util';
 
@@ -34,6 +35,8 @@ export class BodyTerrain implements EvalBody {
   readonly g: number;
   readonly heightCov: LayerCoverage;
   readonly heightRef: LayerRef;
+  /** Makes samples shared by neighbouring height tiles identical (tiles may use different scales). */
+  readonly seams: SeamReconciler;
   readonly lcCov: LayerCoverage | null;
   readonly lcRef: LayerRef | null;
   readonly lcClassCount: number;
@@ -74,6 +77,8 @@ export class BodyTerrain implements EvalBody {
     if (!hl || hl.encoding !== 'frt1-height') throw new Error(`tile set "${terrain.tileset}": no frt1-height "height" layer`);
     this.heightCov = new LayerCoverage(hl);
     this.heightRef = new LayerRef(terrain.tileset, 'height', 'height', this.heightCov, 1);
+    this.seams = new SeamReconciler(this.heightRef);
+    this.heightRef.onResident = (e) => this.seams.onResident(e);
     this.g = hl.globalMaxLevel;
     this.lambda0 = (Math.PI * this.radius) / 256;
     this.log2Lambda0 = Math.log2(this.lambda0);
@@ -144,6 +149,25 @@ export class BodyTerrain implements EvalBody {
     return meanTileSizeAt(this.radius, level);
   }
 
+  /**
+   * How far (m) beyond a query point the height function reads tiles of height level `level`:
+   *  - the two slope probes of the data scale (evaluator.dataScale) at lambda_data(E_m) / 8 from the point; a
+   *    probe reads level L only where E_m > L - 1 (smootherstep weight of L at band level E_m), so its reach for
+   *    L is at most lambda0 2^-max(g, L - 1) / 8 (41.6 m on the Moon and 76 m on Earth at the global levels);
+   *  - the seam neighbours of the tiles the point's stencils touch (seams.ts: SEAM_CELLS samples of the level);
+   *  - BASE_REACH: the collision quad around the point and normalAt baselines.
+   * Probes add their own seam neighbours, hence the sum.
+   */
+  heightReach(level: number): number {
+    const probe = this.model.modulatorCount > 0 ? (this.lambda0 * 2 ** -Math.max(this.g, level - 1)) / 8 : 0;
+    return probe + (SEAM_CELLS * this.tileSize(level)) / HEIGHT_TILE_CELLS + BASE_REACH;
+  }
+
+  /** How far (m) beyond a query point land-cover tiles of `level` are read: model reach + one texel (bilinear). */
+  landcoverReach(level: number): number {
+    return this.model.landcoverReach + this.tileSize(level) / IMAGE_TILE_SIZE + BASE_REACH;
+  }
+
   /** Data generation: changes whenever any tile of this body becomes resident or is evicted. */
   dataGeneration(): number {
     return this.heightRef.generation + (this.lcRef ? this.lcRef.generation * 4096 : 0);
@@ -166,16 +190,15 @@ export class BodyTerrain implements EvalBody {
   /**
    * Tiles of every layer and level the height function can read within `radius` m of `dir` (all band
    * limits): levels 0..maxLevel of the height layer (and land cover when used), each tile that intersects
-   * the disc widened by `margin` m.
+   * the disc widened by the layer's reach at that level (heightReach / landcoverReach).
    */
-  discRequests(dir: Vec3, radius: number, margin: number, maxLevel = Infinity): TileRequest[] {
+  discRequests(dir: Vec3, radius: number, maxLevel = Infinity): TileRequest[] {
     const out: TileRequest[] = [];
-    const layers: [LayerRef, LayerCoverage, number][] = [[this.heightRef, this.heightCov, 0]];
-    // Land cover is cell-registered: its bilinear weights reach half a texel into neighbour tiles.
-    if (this.lcRef && this.lcCov) layers.push([this.lcRef, this.lcCov, 1]);
-    for (const [ref, cov, texelMargin] of layers) {
+    const layers: [LayerRef, LayerCoverage, (l: number) => number][] = [[this.heightRef, this.heightCov, (l) => this.heightReach(l)]];
+    if (this.lcRef && this.lcCov) layers.push([this.lcRef, this.lcCov, (l) => this.landcoverReach(l)]);
+    for (const [ref, cov, reach] of layers) {
       for (let level = 0; level <= Math.min(cov.maxLevel, maxLevel); level++) {
-        const r = radius + margin + texelMargin * (this.tileSize(level) / IMAGE_TILE_SIZE);
+        const r = radius + reach(level);
         for (const k of tilesInDisc(dir, r, level, this.radius, (f, x, y) => cov.has(level, f, x, y))) out.push({ ref, level, face: k.face, x: k.x, y: k.y });
       }
     }
@@ -183,17 +206,27 @@ export class BodyTerrain implements EvalBody {
   }
 
   /**
-   * Tiles the bakers read for render tile (face, level, x, y): levels 0..min(level, maxLevel) of every layer,
-   * over the tile widened by `marginTiles` (fraction of the tile) on every side.
+   * Tiles the bakers read for render tile (face, level, x, y): levels 0..min(level, maxLevel) of every layer
+   * (the modulators' data scale is capped at the render level, evaluator.ts), over the tile widened by the bake's
+   * own extent (coarse grid: 2 vertices = 2/64 of the tile) plus the layer's reach at that level, converted to
+   * tile units with the tile's shortest edge and a 1.5 safety factor (gnomonic distortion beyond face edges).
    */
-  tileRequests(face: FaceId, level: number, x: number, y: number, marginTiles: number): TileRequest[] {
+  tileRequests(face: FaceId, level: number, x: number, y: number): TileRequest[] {
     const out: TileRequest[] = [];
-    const layers: [LayerRef, LayerCoverage][] = [[this.heightRef, this.heightCov]];
-    if (this.lcRef && this.lcCov) layers.push([this.lcRef, this.lcCov]);
+    const layers: [LayerRef, LayerCoverage, (l: number) => number][] = [[this.heightRef, this.heightCov, (l) => this.heightReach(l)]];
+    if (this.lcRef && this.lcCov) layers.push([this.lcRef, this.lcCov, (l) => this.landcoverReach(l)]);
     const n = 2 ** level;
-    const N = 12;
-    for (const [ref, cov] of layers) {
-      for (let l = 0; l <= Math.min(level, cov.maxLevel); l++) {
+    const edge = this.shortestTileEdge(face, level, x, y);
+    // Rock abundance reads land cover at the true effective level: all its levels when rocks reach the band.
+    const rocks = this.model.rocks;
+    const rocksInBand = rocks !== null && Math.log2(2 * rocks.p.maxDiameter) > Math.log2(this.tileSize(level) / NORMAL_BAND_DIVISOR);
+    for (const [ref, cov, reach] of layers) {
+      const top = ref === this.lcRef && rocksInBand ? cov.maxLevel : Math.min(level, cov.maxLevel);
+      for (let l = 0; l <= top; l++) {
+        const marginTiles = 2 / GEOMETRY_QUADS + (1.5 * reach(l)) / edge;
+        // Sample spacing at most half a level-l tile (in render-tile units), endpoints included: every level-l
+        // tile meeting the widened rectangle contains a sample.
+        const N = Math.max(12, Math.ceil(2 * (1 + 2 * marginTiles) * 2 ** (l - level)));
         const seen = new Set<string>();
         for (let a = 0; a <= N; a++) {
           for (let b = 0; b <= N; b++) {
@@ -214,7 +247,22 @@ export class BodyTerrain implements EvalBody {
     }
     return out;
   }
+
+  /** Shortest edge (chord, m) of render tile (face, level, x, y). */
+  shortestTileEdge(face: FaceId, level: number, x: number, y: number): number {
+    const n = 2 ** level;
+    const c = (u: number, v: number): Vec3 => faceStDir(face, -1 + (2 * (x + u)) / n, -1 + (2 * (y + v)) / n);
+    const p00 = c(0, 0);
+    const p10 = c(1, 0);
+    const p01 = c(0, 1);
+    const p11 = c(1, 1);
+    const d = (a: Vec3, b: Vec3): number => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) * this.radius;
+    return Math.min(d(p00, p10), d(p00, p01), d(p10, p11), d(p01, p11));
+  }
 }
+
+/** Reach (m) every load set adds around its points: the collision quad around a query and normalAt baselines. */
+export const BASE_REACH = 4;
 
 /** Unit direction of face coordinates (s, t), which may lie beyond the face (normalised cube point). */
 export function faceStDir(face: FaceId, s: number, t: number): Vec3 {

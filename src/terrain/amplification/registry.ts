@@ -15,6 +15,7 @@ export const createNoAmplification: AmplificationFactory = () => ({
   modulatorCount: 0,
   usesLandcover: false,
   rocks: null,
+  landcoverReach: 0,
   modulators: () => undefined,
   maxLengthLog2: () => -Infinity,
   add: () => undefined,

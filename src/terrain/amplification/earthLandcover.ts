@@ -187,11 +187,16 @@ export function createEarthLandcover(def: TerrainAmplificationDef, ctx: ModelCon
   const rockAbundanceBound = (x: number, y: number, z: number, extent: number): number => (extent <= halfGrid ? abundanceField.blockMax(x, y, z) : Infinity);
 
   const M = 7;
+  // Land cover read away from a query point: abundance nodes around rock centres (a rock reaches a point from
+  // up to D/2 away; trilinear nodes lie within sqrt(3) grid of the rock centre) and the 3 x 3 x 3 node bounds
+  // of candidate cells (cell extent <= half a grid, nodes within 1.5 sqrt(3) grid of the cell centre).
+  const landcoverReach = rocks ? rocks.p.maxDiameter / 2 + abundanceField.spacing * (0.5 + 1.5 * Math.sqrt(3)) + halfGrid : 0;
   return {
     name: 'earth-landcover',
     modulatorCount: M,
     usesLandcover: true,
     rocks,
+    landcoverReach,
 
     modulators(pt: PointInfo, m: Float64Array, o: number): void {
       const w = pt.landcover;

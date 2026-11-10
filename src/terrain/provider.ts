@@ -50,6 +50,14 @@ export interface TerrainDiagnostics {
   vertexEvaluations: Record<string, number>;
   /** Collision memo tiles held, per body. */
   collisionTiles: Record<string, number>;
+  /** Bytes of the collision memo slab, per body (0 until ensureLoaded, prewarmCollision or a query allocates it). */
+  collisionMemoBytes: Record<string, number>;
+  /** prewarmCollision bookkeeping work units so far (vertex slots scanned/sorted, tiles visited), per body. */
+  prewarmWork: Record<string, number>;
+  /** Current prewarm job per body: its radius (m) and whether the request was clamped to the memo capacity. */
+  prewarm: Record<string, { radius: number; clamped: boolean } | null>;
+  /** Shared height samples rewritten by seam reconciliation (tiles quantised with different scales), per body. */
+  seamWrites: Record<string, number>;
   cache: { tiles: number; resident: number; pending: number; bytes: number; budget: number };
 }
 
@@ -82,8 +90,6 @@ interface BodyRuntime {
   terrain: BodyTerrain;
   collision: CollisionSurface;
   baker: TileBaker;
-  /** Extra radius (m) loaded around ensureLoaded discs: rock and land-cover reach. */
-  loadMargin: number;
 }
 
 export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSource, opts: TerrainProviderOptions = {}): Promise<TerrainAuthority> {
@@ -97,12 +103,10 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     if (!def.terrain) throw new Error(`createTerrainProvider: body "${id}" has no terrain definition`);
     const manifest = await tileSource.manifest(def.terrain.tileset);
     const terrain = new BodyTerrain(def, manifest, store, sites, opts.residentLevel);
-    const rocks = terrain.model.rocks;
     bodies.set(id, {
       terrain,
       collision: new CollisionSurface(terrain, opts.collisionCacheTiles ?? DEFAULT_COLLISION_TILES),
       baker: new TileBaker(terrain),
-      loadMargin: (rocks ? rocks.p.maxDiameter : 0) + 4,
     });
   }
   // Resident pyramid (pinned forever).
@@ -113,7 +117,7 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     for (const disc of t.discs) {
       if (!disc.sample) continue;
       const centre = { x: disc.cx, y: disc.cy, z: disc.cz };
-      await store.ensure(t.discRequests(centre, 1, b.loadMargin), '__disc-elevation');
+      await store.ensure(t.discRequests(centre, 1), '__disc-elevation');
       t.main.setDir(centre.x, centre.y, centre.z);
       t.main.incomplete = false;
       const h = t.main.naturalDataHeight();
@@ -200,7 +204,9 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     ensureLoaded(bodyId: string, dir: Vec3, radius: number, slot?: string): Promise<void> {
       store.tick++;
       const b = get(bodyId);
-      return store.ensure(b.terrain.discRequests(unit(dir), Math.max(0, radius), b.loadMargin), slot ?? 'default');
+      // The collision memo is allocated here (async context) rather than inside the first contact query.
+      b.collision.allocate();
+      return store.ensure(b.terrain.discRequests(unit(dir), Math.max(0, radius)), slot ?? 'default');
     },
 
     prewarmCollision(bodyId: string, dir: Vec3, radius: number, maxVertices: number): number {
@@ -247,8 +253,7 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     prepareTile(bodyId: string, key: TileKey, slot?: string): Promise<void> {
       store.tick++;
       const b = get(bodyId);
-      const margin = Math.max(0.04, b.loadMargin / b.terrain.tileSize(key.level));
-      return store.ensure(b.terrain.tileRequests(key.face, key.level, key.x, key.y, margin), slot ?? 'bake');
+      return store.ensure(b.terrain.tileRequests(key.face, key.level, key.x, key.y), slot ?? 'bake');
     },
 
     bakeGeometry(bodyId: string, key: TileKey): GeometryBake {
@@ -274,11 +279,19 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     diagnostics(): TerrainDiagnostics {
       const vertexEvaluations: Record<string, number> = {};
       const collisionTiles: Record<string, number> = {};
+      const collisionMemoBytes: Record<string, number> = {};
+      const prewarmWork: Record<string, number> = {};
+      const prewarm: Record<string, { radius: number; clamped: boolean } | null> = {};
+      const seamWrites: Record<string, number> = {};
       for (const [id, b] of bodies) {
         vertexEvaluations[id] = b.collision.vertexEvaluations;
         collisionTiles[id] = b.collision.tileCount;
+        collisionMemoBytes[id] = b.collision.memoBytes;
+        prewarmWork[id] = b.collision.prewarmWork;
+        prewarm[id] = b.collision.prewarmState;
+        seamWrites[id] = b.terrain.seams.writes;
       }
-      return { vertexEvaluations, collisionTiles, cache: store.stats() };
+      return { vertexEvaluations, collisionTiles, collisionMemoBytes, prewarmWork, prewarm, seamWrites, cache: store.stats() };
     },
 
     cachedTiles(): string[] {

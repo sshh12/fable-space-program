@@ -11,10 +11,16 @@
  * same way as the amplification is what makes coarse queries cheap and coarse render tiles independent of
  * fine data; it is C2 in lambda.
  * Effective level E: E = g, E_L = E_(L-1) + w_L (L - E_(L-1)) (manifest only).
- * Data scale: the chain at lambda_s = lambda_data(E) gives the data height and slope that drive the
- * amplification modulators (independent of the query's band limit).
+ * Data scale: the chain at lambda_s = lambda_data(E_m) gives the data height, slope and land cover that drive
+ * the amplification modulators, with E_m = min(E, L_cap) and L_cap = log2(lambda0 / lambdaMin) of the query
+ * (the render level for bakes). Every data-modulated component (noise octave, ripple, dune) of length len is
+ * weighted by smootherstep(log2 len - log2 lambdaMin) * smootherstep(log2 lambda_data(E) - log2 len), which
+ * is non-zero only where E < L_cap; there E_m = E. So the cap never changes H, but a coarse query or a coarse
+ * render tile never reads data finer than its own band (E itself and lambda_data(E), which place craters
+ * and octaves, stay uncapped and manifest-only).
  * Missing (not yet resident) tiles: the level's term is skipped (or the deepest resident ancestor stands in
- * for the base) and the evaluation is flagged incomplete.
+ * for the base) and the evaluation is flagged incomplete; so is a sample whose stencil touches a seam band
+ * that is not reconciled yet (seams.ts).
  */
 import { CUBE_FACES, type FaceId } from '../core/geo/cubeSphere';
 import { IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
@@ -23,8 +29,9 @@ import { bicubicSample } from './bicubic';
 import type { LayerCoverage } from './coverage';
 import { weightFromMask } from './coverage';
 import { applyDiscs, flattenWeight, type FlattenDisc } from './modifiers';
+import { seamMaskAt } from './seams';
 import type { LayerRef, TileEntry, TileStore } from './tileStore';
-import { smootherstep01, tileNumber } from './util';
+import { POW2, smootherstep01, tileNumber } from './util';
 
 /** What the evaluator needs to know about its body (BodyTerrain implements it). */
 export interface EvalBody {
@@ -75,21 +82,29 @@ export class HeightEvaluator {
   private readonly hEntry: (TileEntry | undefined)[] = new Array(MAXL).fill(undefined);
   private readonly hSmpStamp = new Int32Array(MAXL);
   private readonly hSmp = new Float64Array(3 * MAXL);
+  /** Seam bands touched by the level's bicubic stencil at the current point. */
+  private readonly hSeam = new Int32Array(MAXL);
   // per-level last-entry caches across points
   private readonly hLastNum = new Float64Array(MAXL).fill(-1);
   private readonly hLastEntry: (TileEntry | undefined)[] = new Array(MAXL).fill(undefined);
   private readonly lLastNum = new Float64Array(MAXL).fill(-1);
   private readonly lLastEntry: (TileEntry | undefined)[] = new Array(MAXL).fill(undefined);
+  // per-level coverage of the last tile seen (pure memo of manifest facts)
+  private readonly cLastNum = new Float64Array(MAXL).fill(-1);
+  private readonly cLastHas = new Uint8Array(MAXL);
+  private readonly cLastMask = new Int32Array(MAXL);
   // coverage of the height layer for the current point
   private readonly w = new Float64Array(MAXL);
   private covDone = -1;
   private covEnd = false;
   private eStamp = 0;
   private eVal = 0;
-  // data scale
+  // data scale (at the capped level dsE)
   private dsStamp = 0;
+  private dsE = NaN;
   private dsHeight = 0;
   private dsSlope = 0;
+  private dsComplete = true;
   // scratch
   private readonly lcTmp: Float64Array;
   private readonly lcTmp2: Float64Array;
@@ -180,7 +195,7 @@ export class HeightEvaluator {
   private index(level: number): void {
     if (this.idxStamp[level] === this.stamp) return;
     this.idxStamp[level] = this.stamp;
-    const n = 2 ** level;
+    const n = POW2[level]!;
     let fx = ((this.s + 1) / 2) * n;
     let fy = ((this.t + 1) / 2) * n;
     if (fx < 0) fx = 0;
@@ -221,12 +236,19 @@ export class HeightEvaluator {
       this.index(L);
       const x = this.lx[L]!;
       const y = this.ly[L]!;
-      if (!b.heightCov.has(L, this.face, x, y)) {
+      const num = tileNumber(L, this.face, x, y);
+      if (this.cLastNum[L] !== num) {
+        this.cLastNum[L] = num;
+        const has = b.heightCov.has(L, this.face, x, y);
+        this.cLastHas[L] = has ? 1 : 0;
+        this.cLastMask[L] = has ? b.heightCov.missingMask(L, this.face, x, y) : 0;
+      }
+      if (this.cLastHas[L] === 0) {
         this.w[L] = 0;
         this.covEnd = true;
         break;
       }
-      const mask = b.heightCov.missingMask(L, this.face, x, y);
+      const mask = this.cLastMask[L]!;
       this.w[L] = mask === 0 ? 1 : weightFromMask(mask, this.lu[L]!, this.lv[L]!);
       this.covDone = L;
     }
@@ -274,7 +296,10 @@ export class HeightEvaluator {
     return e;
   }
 
-  /** Bicubic of `level` at the point; false when not resident. `primary` marks the tile as used. */
+  /**
+   * Bicubic of `level` at the point; false when not resident. `primary` marks the tile as used. A stencil
+   * touching a seam band that is not reconciled yet flags the evaluation incomplete (the value is used).
+   */
   private sample(level: number, primary: boolean): boolean {
     const e = this.heightEntry(level);
     if (!e) return false;
@@ -282,8 +307,12 @@ export class HeightEvaluator {
     if (e.state !== 'resident') return false;
     if (this.hSmpStamp[level] !== this.stamp) {
       this.hSmpStamp[level] = this.stamp;
-      bicubicSample(e, this.lu[level]!, this.lv[level]!, this.hSmp, 3 * level);
+      const u = this.lu[level]!;
+      const v = this.lv[level]!;
+      bicubicSample(e, u, v, this.hSmp, 3 * level);
+      this.hSeam[level] = seamMaskAt(u, v);
     }
+    if ((this.hSeam[level]! & ~e.seamDone) !== 0) this.incomplete = true;
     return true;
   }
 
@@ -291,6 +320,13 @@ export class HeightEvaluator {
   heightResident(level: number): boolean {
     const e = this.heightEntry(level);
     return e !== undefined && e.state === 'resident';
+  }
+
+  /** True when the height tile of `level` is resident and every seam band its stencil touches is reconciled. */
+  private heightFinal(level: number): boolean {
+    const e = this.heightEntry(level);
+    if (e === undefined || e.state !== 'resident') return false;
+    return (seamMaskAt(this.lu[level]!, this.lv[level]!) & ~e.seamDone) === 0;
   }
 
   /**
@@ -347,16 +383,24 @@ export class HeightEvaluator {
   }
 
   /**
-   * Data height and slope at the data scale (band limit lambda_s = data wavelength at E). The slope is
-   * |grad D_s| by forward differences over lambda_s / 8 along a face-independent tangent basis (the data
-   * surface is C0 everywhere but only approximately C1 across cube edges, so per-face bicubic derivatives
-   * would make the amplitude modulation jump there).
+   * Data height and slope at the data scale (band limit lambda_s = data wavelength at E_m = min(E, capLevel)).
+   * The slope is |grad D_s| by forward differences over lambda_s / 8 along a face-independent tangent basis
+   * (the data surface is C0 everywhere but only approximately C1 across cube edges, so per-face bicubic
+   * derivatives would make the amplitude modulation jump there). The two probe points lie up to
+   * probeReach(level) from the point (load sets include it); dsComplete records whether every tile read,
+   * probes included, was final.
    */
-  dataScale(): void {
-    if (this.dsStamp === this.stamp) return;
+  dataScale(capLevel = Infinity): void {
     const b = this.body;
     const E = this.effectiveLevel();
-    const log2Ls = b.log2Lambda0 - E;
+    const Em = E < capLevel ? E : capLevel;
+    if (this.dsStamp === this.stamp && this.dsE === Em) {
+      if (!this.dsComplete) this.incomplete = true;
+      return;
+    }
+    const before = this.incomplete;
+    this.incomplete = false;
+    const log2Ls = b.log2Lambda0 - Em;
     const h0 = this.dataChain(log2Ls);
     this.dsHeight = h0;
     const delta = 2 ** log2Ls / 8;
@@ -393,24 +437,35 @@ export class HeightEvaluator {
     al = Math.sqrt(ax * ax + ay * ay + az * az);
     fd.setDir(ax / al, ay / al, az / al);
     const h2 = fd.dataChain(log2Ls);
-    if (fd.incomplete) this.incomplete = true;
     const g1 = (h1 - h0) / delta;
     const g2 = (h2 - h0) / delta;
     this.dsSlope = Math.sqrt(g1 * g1 + g2 * g2);
+    this.dsComplete = !this.incomplete && !fd.incomplete;
     this.dsStamp = this.stamp;
+    this.dsE = Em;
+    this.incomplete = before || !this.dsComplete;
   }
   get dataScaleHeight(): number {
     this.dataScale();
     return this.dsHeight;
   }
 
-  /** True when every height tile the full-detail function reads at the point is resident. */
+  /**
+   * True when every height tile the full-detail function reads at the point is resident and final: each
+   * contributing level's tile with its seam bands, and (for a model with data modulators) the tiles of the
+   * data-scale chain at the point and at its two slope probes.
+   */
   heightComplete(): boolean {
     const b = this.body;
-    if (!this.heightResident(b.g)) return false;
+    if (!this.heightFinal(b.g)) return false;
     this.ensureCoverage(b.heightCov.maxLevel);
-    for (let L = b.g + 1; L <= this.covDone; L++) if (this.w[L]! > 0 && !this.heightResident(L)) return false;
-    return true;
+    for (let L = b.g + 1; L <= this.covDone; L++) if (this.w[L]! > 0 && !this.heightFinal(L)) return false;
+    if (b.model.modulatorCount === 0) return true;
+    const before = this.incomplete;
+    this.dataScale();
+    const ok = this.dsComplete;
+    this.incomplete = before;
+    return ok;
   }
 
   /** Deepest resident height level at the point. */
@@ -600,14 +655,25 @@ export class HeightEvaluator {
   // ---------------------------------------------------------------------------------------- full height
 
   private modStamp = 0;
+  private modE = NaN;
+  private modComplete = true;
 
-  /** Fill this.mod with the model modulators at the point (lambda-independent; computed once per point). */
-  modulators(): void {
+  /**
+   * Fill this.mod with the model modulators at the point. Data inputs come from the data scale at
+   * E_m = min(E, capLevel) (see the module comment: H does not depend on the cap); memoised per point and E_m.
+   */
+  modulators(capLevel = Infinity): void {
     const b = this.body;
-    if (b.model.modulatorCount === 0 || this.modStamp === this.stamp) return;
-    this.modStamp = this.stamp;
+    if (b.model.modulatorCount === 0) return;
     const E = this.effectiveLevel();
-    this.dataScale();
+    const Em = E < capLevel ? E : capLevel;
+    if (this.modStamp === this.stamp && this.modE === Em) {
+      if (!this.modComplete) this.incomplete = true;
+      return;
+    }
+    const before = this.incomplete;
+    this.incomplete = false;
+    this.dataScale(capLevel);
     const pt = this.pt;
     pt.px = this.px;
     pt.py = this.py;
@@ -616,8 +682,12 @@ export class HeightEvaluator {
     pt.log2LambdaData = b.log2Lambda0 - E;
     pt.dataHeight = this.dsHeight;
     pt.dataSlope = this.dsSlope;
-    if (b.model.usesLandcover && b.lcRef) this.landcoverWeights(b.log2Lambda0 - E, this.landcover);
+    if (b.model.usesLandcover && b.lcRef) this.landcoverWeights(b.log2Lambda0 - Em, this.landcover);
     b.model.modulators(pt, this.mod, 0);
+    this.modStamp = this.stamp;
+    this.modE = Em;
+    this.modComplete = !this.incomplete;
+    this.incomplete = before || !this.modComplete;
   }
 
   /** True when no amplification component can reach any of the band limits (min log2 band given). */
@@ -644,7 +714,8 @@ export class HeightEvaluator {
    * Heights at band limits 2^log2Lambdas[0..n) into out (m), with modifiers applied. Optionally also the
    * data and amplification parts (before modifiers) into dataOut / ampOut. `skipAboveLog2` removes
    * amplification components of length >= 2^skip (band splitting by the normal-map baker); `withRocks` =
-   * false leaves rock bumps out (rock base heights).
+   * false leaves rock bumps out (rock base heights). `modCap`: level cap of the modulators' data scale
+   * (default: the level of the finest band; any cap >= it gives the same heights).
    */
   heights(
     log2Lambdas: Float64Array,
@@ -654,6 +725,7 @@ export class HeightEvaluator {
     dataOut?: Float64Array,
     ampOut?: Float64Array,
     withRocks = true,
+    modCap = NaN,
   ): void {
     const b = this.body;
     let lmin = Infinity;
@@ -664,7 +736,7 @@ export class HeightEvaluator {
     // Skip the model when no component can reach the band: first by the coarsest data anywhere, then by the
     // effective level at the point (manifest only, cheap).
     if (!this.ampInactive(lmin) && lmin < b.model.maxLengthLog2(b.log2Lambda0 - this.effectiveLevel())) {
-      this.modulators();
+      this.modulators(modCap === modCap ? modCap : b.log2Lambda0 - lmin);
       this.addAmplification(log2Lambdas, n, amp, skipAboveLog2, withRocks);
     }
     for (let k = 0; k < n; k++) {

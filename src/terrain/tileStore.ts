@@ -24,6 +24,8 @@ export type LayerKind = 'height' | 'u8';
 export class LayerRef {
   /** Changes whenever a tile of this layer becomes resident or is evicted. */
   generation = 0;
+  /** Called when a tile became resident, before the generation bump (height layers: seam reconciliation). */
+  onResident: ((e: TileEntry) => void) | null = null;
   readonly maps: Map<number, TileEntry>[] = [];
   readonly bytesPerTile: number;
 
@@ -53,6 +55,8 @@ export class TileEntry {
   hMax = 0;
   /** u8: 256 x 256 x channels. */
   data: Uint8Array | null = null;
+  /** Height tiles: bit mask of the reconciled seam bands (seams.ts); 0xff = every shared sample canonical. */
+  seamDone = 0;
   lastUse = 0;
   pins = 0;
   permanent = false;
@@ -235,6 +239,7 @@ export class TileStore {
         e.data = raster.data;
       }
       e.state = 'resident';
+      if (e.ref.onResident) e.ref.onResident(e);
       e.ref.generation++;
     } catch (err) {
       this.remove(e);

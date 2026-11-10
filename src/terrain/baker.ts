@@ -28,6 +28,7 @@ import { faceStDir, GEOMETRY_BAND_DIVISOR, GEOMETRY_GRID, NORMAL_BAND_DIVISOR, N
 import { vertexFaceCoord } from './collision';
 import { weightFromMask } from './coverage';
 import { applyDiscs } from './modifiers';
+import { seamMaskOfRange } from './seams';
 import { shellCellsInCap } from './shellCells';
 import { smootherstep01, tileNumber } from './util';
 
@@ -157,22 +158,24 @@ export class TileBaker {
         ev.setFaceSt(key.face, vertexFaceCoord(key.x, ku, key.level), t);
         ev.incomplete = false;
         const interior = geometry !== null && ku >= 0 && ku <= 64 && kv >= 0 && kv <= 64;
+        // Modulators' data scale capped at the render level (the normal band): the tile never reads data finer
+        // than its own level, and the heights are unchanged (evaluator.ts).
         if (interior) {
           this.lam[0] = log2G;
           this.lam[1] = log2Low;
-          ev.heights(this.lam, 2, this.outs, Infinity, this.dOut, this.aOut);
+          ev.heights(this.lam, 2, this.outs, Infinity, this.dOut, this.aOut, true, key.level);
           geometry[kv * GEOMETRY_GRID + ku] = this.outs[0]!;
           this.cgH[o] = this.outs[1]!;
           this.cgA[o] = this.aOut[1]!;
         } else {
           this.lam[0] = log2Low;
-          ev.heights(this.lam, 1, this.outs, Infinity, this.dOut, this.aOut);
+          ev.heights(this.lam, 1, this.outs, Infinity, this.dOut, this.aOut, true, key.level);
           this.cgH[o] = this.outs[0]!;
           this.cgA[o] = this.aOut[0]!;
         }
         this.cgD[o] = splitLevel >= 0 ? ev.dataChain(log2N, splitLevel) : ev.dataChain(log2N, 0);
         if (M > 0) {
-          ev.modulators();
+          ev.modulators(key.level);
           for (let q = 0; q < M; q++) this.cgMod[o * M + q] = ev.mod[q]!;
           this.cgMat[o] = b.model.material(ev.px, ev.py, ev.pz, ev.mod, 0, matMin, Infinity);
         } else this.cgMat[o] = 0;
@@ -359,6 +362,8 @@ export class TileBaker {
       const q = e.q!;
       const c0 = colI[0]! - 1;
       const c1 = colI[NORMAL_MAP_SIZE - 1]! + 2;
+      // Shared samples of a neighbour quantised differently are canonical only once the seam is reconciled.
+      if ((seamMaskOfRange(c0, c1, rowJ[0]! - 1, rowJ[NORMAL_MAP_SIZE - 1]! + 2) & ~e.seamDone) !== 0) complete = false;
       const tmp = new Float64Array(HEIGHT_TILE_STORED);
       for (let j = 0; j < NORMAL_MAP_SIZE; j++) {
         const r0 = (rowJ[j]! - 1) * HEIGHT_TILE_STORED;

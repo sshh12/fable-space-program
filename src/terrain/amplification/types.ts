@@ -84,6 +84,11 @@ export interface AmplificationModel {
   readonly usesLandcover: boolean;
   /** Rocks of this body (null when the model places none). */
   readonly rocks: RockField | null;
+  /**
+   * How far (m) from a query point (or from a baked tile) the model reads land cover beyond the point itself
+   * (rock abundance lattices and their bounds); 0 when it reads none. Load sets add it.
+   */
+  readonly landcoverReach: number;
   /** Fill m[o .. o + modulatorCount) from the point info. */
   modulators(pt: PointInfo, m: Float64Array, o: number): void;
   /**

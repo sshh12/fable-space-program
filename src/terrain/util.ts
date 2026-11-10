@@ -64,8 +64,15 @@ export function dataWavelength(radius: number, level: number): number {
   return (Math.PI * radius) / 256 / 2 ** level;
 }
 
+/** 2^k for k = 0..40 (levels, lattice sizes): a table read instead of Math.pow in hot paths. */
+export const POW2: Float64Array = (() => {
+  const t = new Float64Array(41);
+  for (let k = 0; k <= 40; k++) t[k] = 2 ** k;
+  return t;
+})();
+
 /** Numeric key of tile (face, x, y) within one level (exact for level <= 24). */
 export function tileNumber(level: number, face: number, x: number, y: number): number {
-  const n = 2 ** level;
+  const n = POW2[level]!;
   return (face * n + x) * n + y;
 }

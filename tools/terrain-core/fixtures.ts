@@ -10,6 +10,7 @@
  *    tens of metres (what the coverage blend has to hide).
  *  - fixture-earth (R = 6,371,000 m): heights and land cover, global 0-2, sparse 3-5 around the fixture pad
  *    at 19.1 N 155.5 W (face 1); an island with a coast, sand, lava and scrub classes.
+ * In both, a third of the height tiles use twice their level's preferred scale (fixtureScaleFactor).
  * The set is generated once per FIXTURE_VERSION into os.tmpdir() and reused (atomic rename).
  */
 import { existsSync, promises as fs } from 'node:fs';
@@ -23,7 +24,7 @@ import { deflateZlib, encodeFrt1Height, encodeFrt1U8, HEIGHT_TILE_STORED, IMAGE_
 import { DEG } from '../../src/core/math/scalar';
 import type { Vec3 } from '../../src/core/math/vec3';
 
-export const FIXTURE_VERSION = 3;
+export const FIXTURE_VERSION = 4;
 export const MOON_R = 1737400;
 export const EARTH_R = 6371000;
 export const FIXTURE_PAD = { latDeg: 19.1, lonDeg: -155.5 };
@@ -141,12 +142,22 @@ function allKeys(globalMaxLevel: number, coverage: Record<string, TileRect[]>): 
   return out;
 }
 
+/**
+ * Scale factor of a fixture height tile over its level's preferred scale. The contract lets a tile use a
+ * coarser power of two; a deterministic third of the tiles at every level does, so same-face, diagonal and
+ * cross-face neighbours with different quantisation exist everywhere (their shared samples differ by up to
+ * half a coarse count until terrain-core reconciles the seams).
+ */
+export function fixtureScaleFactor(key: TileKey): number {
+  return (key.x + 2 * key.y + 3 * key.face) % 3 === 0 ? 2 : 1;
+}
+
 async function writeHeightLayer(root: string, tileset: string, keys: TileKey[], scales: number[], h: (dir: Vec3, level: number) => number): Promise<void> {
   const S = HEIGHT_TILE_STORED;
   const buf = new Float64Array(S * S);
   for (const key of keys) {
     for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) buf[j * S + i] = h(tileUvToDir(key, (i - 1) / 256, (j - 1) / 256), key.level);
-    const raw = encodeFrt1Height(buf, S, S, scales[key.level]!);
+    const raw = encodeFrt1Height(buf, S, S, scales[key.level]! * fixtureScaleFactor(key));
     await writeFile(path.join(root, tilePath(tileset, 'height', key, 'hgt')), await deflateZlib(raw));
   }
 }

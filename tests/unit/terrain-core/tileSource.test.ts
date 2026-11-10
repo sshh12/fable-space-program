@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TileManifest } from '../../../src/core/contracts/terrain';
 import { createFsTileSource } from '../../../src/terrain/fsTileSource';
 import { createFetchTileSource } from '../../../src/terrain/tileSource';
+import { FIXTURE_VERSION } from '../../../tools/terrain-core/fixtures';
 import { fixtureRoot } from './helpers';
 
 describe('fs tile source', () => {
@@ -71,7 +72,7 @@ describe('fetch tile source', () => {
     expect(urls.length).toBe(1);
     const t = await src.tile('fixture-moon', 'height', { face: 0, level: 5, x: 16, y: 16 });
     expect(t!.byteLength).toBeGreaterThan(100);
-    expect(urls[1]).toBe('/tiles/fixture-moon/height/0/5/16/16.hgt?v=fixture-v3');
+    expect(urls[1]).toBe(`/tiles/fixture-moon/height/0/5/16/16.hgt?v=fixture-v${FIXTURE_VERSION}`);
   });
 
   it('rejects when a promised tile returns an HTTP error', async () => {

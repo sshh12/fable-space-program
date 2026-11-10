@@ -106,6 +106,7 @@ export function createLunarRegolith(def: TerrainAmplificationDef, ctx: ModelCont
     modulatorCount: M,
     usesLandcover: false,
     rocks,
+    landcoverReach: 0,
 
     modulators(pt: PointInfo, m: Float64Array, o: number): void {
       const m0 = pt.log2LambdaData;
