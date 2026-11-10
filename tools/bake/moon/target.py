@@ -17,6 +17,13 @@ Criteria (region.targetSearch; all evaluated on the baked level-`level` data, i.
     over the disc of discRadiusM.
 Among candidates passing everything, the one nearest `preferNear` wins. The result is written into the
 region file as `recommendedTarget`.
+
+    ... target.py moon-tranquility --keep
+
+re-evaluates the region's existing `recommendedTarget` (same latitude and longitude) on the current tiles
+after a re-bake: every criterion is measured again at that point and the height and numbers are rewritten;
+it fails, changing nothing, if the point no longer meets the criteria. Scenarios are built on the target, so
+a re-bake keeps it unless it has become invalid.
 """
 from __future__ import annotations
 
@@ -139,9 +146,38 @@ def horizon_deg(reader: TileReader, plane: Plane, x0: float, y0: float, az_deg: 
     return float(elev.max())
 
 
+def lit_and_covered(reader: TileReader, plane: Plane, ts: dict, x0: float, y0: float, level: int):
+    """(lit, horizon elevations, inside coverage, min coverage weight over discRadiusM) at (x0, y0)."""
+    hz = {}
+    lit = True
+    for ox, oy in ((0, 0), (50, 0), (-50, 0), (0, 50), (0, -50)):
+        for az in ts["sunAzimuthsDeg"]:
+            e = horizon_deg(reader, plane, x0 + ox, y0 + oy, az, float(ts["horizonRangeM"]), level)
+            hz[f"{ox},{oy},{az:g}"] = e
+            if e >= ts["minSunElevationDeg"] - ts["horizonMarginDeg"]:
+                lit = False
+                break
+        if not lit:
+            break
+    if not lit:
+        return False, hz, False, 0.0
+    # coverage: disc of discRadius + inset inside the level's coverage; weight 1 over discRadius
+    rads = np.arange(0.0, ts["discRadiusM"] + ts["discInsetM"] + 1.0, 50.0)
+    angs = np.radians(np.arange(0.0, 360.0, 5.0))
+    RR, AA = np.meshgrid(rads, angs)
+    d = plane.dirs(x0 + RR * np.sin(AA), y0 + RR * np.cos(AA)).reshape(-1, 3)
+    f, tx, ty, _, _ = dirs_to_tiles(d, level)
+    inside = all(reader.has(int(a_), level, int(b_), int(c_)) for a_, b_, c_ in set(zip(f, tx, ty)))
+    if not inside:
+        return True, hz, False, 0.0
+    inner = RR.ravel() <= ts["discRadiusM"]
+    return True, hz, True, float(reader.coverage_weight(d[inner], level).min())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("region")
+    ap.add_argument("--keep", action="store_true", help="re-evaluate the existing recommendedTarget instead of searching")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
@@ -189,49 +225,49 @@ def main() -> None:
     dist = np.hypot(xs[cj] - px, ys[ci] - py)
     order = np.argsort(np.where(ok, dist, np.inf))
     rt.log(f"{int(ok.sum())} of {len(ok)} candidates pass slope, crater and data-fraction criteria")
-    chosen = None
     tried = 0
-    for k in order:
-        if not ok[k]:
-            break
-        tried += 1
-        x0, y0 = float(xs[cj[k]]), float(ys[ci[k]])
-        hz = {}
-        lit = True
-        for ox, oy in ((0, 0), (50, 0), (-50, 0), (0, 50), (0, -50)):
-            for az in ts["sunAzimuthsDeg"]:
-                e = horizon_deg(reader, plane, x0 + ox, y0 + oy, az, float(ts["horizonRangeM"]), level)
-                hz[f"{ox},{oy},{az:g}"] = e
-                if e >= ts["minSunElevationDeg"] - ts["horizonMarginDeg"]:
-                    lit = False
-                    break
-            if not lit:
+    if a.keep:
+        old = region["recommendedTarget"]
+        lat0, lon0 = float(old["latDeg"]), float(old["lonDeg"])
+        tx, ty = plane.xy(cube.lat_lon_to_dir(math.radians(lat0), math.radians(lon0)))
+        j, i = int(np.argmin(np.abs(xs - tx))), int(np.argmin(np.abs(ys - ty)))
+        if math.hypot(float(xs[j] - tx), float(ys[i] - ty)) > 0.1:
+            raise RuntimeError(f"recommendedTarget is not on a node of the search grid ({xs[j] - tx:.3f}, {ys[i] - ty:.3f} m)")
+        x0, y0 = float(xs[j]), float(ys[i])
+        lit, hz, inside, wmin = lit_and_covered(reader, plane, ts, x0, y0, level)
+        fr = float(frac[min(i // 8, frac.shape[0] - 1), min(j // 8, frac.shape[1] - 1)])
+        fails = [msg for bad, msg in (
+            (not real[i, j], "not on real source data"),
+            (plane_slope[i, j] >= ts["maxSlopeDeg"] or steep[i, j] >= ts["maxSlopeDeg"],
+             f"slope {plane_slope[i, j]:.2f} / {steep[i, j]:.2f} deg"),
+            (cdist[i, j] <= ts["craterExclusionRadiusM"], f"crater at {cdist[i, j]:.1f} m"),
+            (fr < ts["minMissionDiscSourceFraction"], f"mission-disc source fraction {fr:.3f}"),
+            (not lit, f"not lit (horizon {max(hz.values()):.2f} deg)"),
+            (not inside or wmin < 1.0, f"coverage (inside {inside}, weight {wmin})")) if bad]
+        if fails:
+            raise RuntimeError("the recommended target no longer meets its criteria: " + "; ".join(fails)
+                               + " - run target.py without --keep to choose a new one")
+        d0 = cube.lat_lon_to_dir(math.radians(lat0), math.radians(lon0))[None]
+        dist_pn = float(np.hypot(x0 - px, y0 - py))
+    else:
+        chosen = None
+        for k in order:
+            if not ok[k]:
                 break
-        if not lit:
-            continue
-        # coverage: disc of discRadius + inset inside the level's coverage; weight 1 over discRadius
-        rads = np.arange(0.0, ts["discRadiusM"] + ts["discInsetM"] + 1.0, 50.0)
-        angs = np.radians(np.arange(0.0, 360.0, 5.0))
-        RR, AA = np.meshgrid(rads, angs)
-        d = plane.dirs(x0 + RR * np.sin(AA), y0 + RR * np.cos(AA)).reshape(-1, 3)
-
-        f, tx, ty, _, _ = dirs_to_tiles(d, level)
-        inside = all(reader.has(int(a_), level, int(b_), int(c_)) for a_, b_, c_ in set(zip(f, tx, ty)))
-        if not inside:
-            continue
-        inner = RR.ravel() <= ts["discRadiusM"]
-        wmin = float(reader.coverage_weight(d[inner], level).min())
-        if wmin < 1.0:
-            continue
-        chosen = (k, x0, y0, hz, wmin)
-        break
-    if chosen is None:
-        raise RuntimeError("no candidate satisfies every criterion")
-    k, x0, y0, hz, wmin = chosen
-    d0 = plane.dirs(np.array([x0]), np.array([y0]))
-    lat0, lon0 = (float(np.degrees(v[0])) for v in cube.dir_to_lat_lon(d0))
+            tried += 1
+            x0, y0 = float(xs[cj[k]]), float(ys[ci[k]])
+            lit, hz, inside, wmin = lit_and_covered(reader, plane, ts, x0, y0, level)
+            if lit and inside and wmin >= 1.0:
+                chosen = (k, x0, y0, hz, wmin)
+                break
+        if chosen is None:
+            raise RuntimeError("no candidate satisfies every criterion")
+        k, x0, y0, hz, wmin = chosen
+        d0 = plane.dirs(np.array([x0]), np.array([y0]))
+        lat0, lon0 = (float(np.degrees(v[0])) for v in cube.dir_to_lat_lon(d0))
+        i, j = ci[k], cj[k]
+        dist_pn = float(dist[k])
     h0 = float(reader.data_height(d0, level)[0])
-    i, j = ci[k], cj[k]
     near = [c for c in craters if math.hypot(xs[int(round(c["col"]))] - x0, ys[int(round(c["row"]))] - y0) < 600.0]
     near = sorted(({"distanceM": round(math.hypot(xs[int(round(c["col"]))] - x0, ys[int(round(c["row"]))] - y0), 1),
                     "diameterM": round(c["diameterM"], 1), "depthM": round(c["depthM"], 2)} for c in near),
@@ -251,16 +287,19 @@ def main() -> None:
             "horizonAzimuthsDeg": ts["sunAzimuthsDeg"], "minSunElevationDeg": ts["minSunElevationDeg"],
             "missionDiscSourceFraction": round(float(frac[min(i // 8, frac.shape[0] - 1), min(j // 8, frac.shape[1] - 1)]), 3),
             "coverageDiscRadiusM": ts["discRadiusM"] + ts["discInsetM"], "minCoverageWeightInDisc": wmin,
-            "distanceToPreferNearM": round(float(dist[k]), 1),
+            "distanceToPreferNearM": round(dist_pn, 1),
         },
         "cratersWithin600m": near,
         "detectorCheckAtPreferNear": hist,
         "candidatesPassingGridCriteria": int(ok.sum()),
-        "candidatesTried": tried,
+        "candidatesTried": region["recommendedTarget"].get("candidatesTried", 0) if a.keep else tried,
     }
+    if a.keep:
+        rec["reEvaluatedOnRebake"] = True
     reg = json.loads(region_path(region["id"]).read_text(encoding="utf-8"))
     reg["recommendedTarget"] = rec
-    region_path(region["id"]).write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
+    with open(region_path(region["id"]), "w", encoding="utf-8", newline="\n") as fh:  # LF, as committed
+        fh.write(json.dumps(reg, indent=2) + "\n")
     np.savez_compressed(rt.MOON_WORK / f"region-{region['id']}" / "target-grid.npz", xs=xs, ys=ys,
                         h=h.astype(np.float32), real=real, craters=cmask, x0=x0, y0=y0,
                         plane=np.array([clat, clon]))

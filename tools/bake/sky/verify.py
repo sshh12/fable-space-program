@@ -5,6 +5,8 @@
 The cube-alignment checker performs the WebGPU cube lookup on the CPU (sky/cubemap.dir_to_face_uv, the Vulkan
 face-selection table) for catalogue directions and requires the brightest texel near each test star to lie
 within one texel of the looked-up texel in the cube built BEFORE star removal, and the star to be gone after.
+Photometry is recomputed from the shipped faces and the manifest's luminanceScale (galactic-centre box; the
+illuminance each isolated catalogue star had in the cube before removal against its catalogue value).
 Writes out/bake/sky/verify.json.
 """
 from __future__ import annotations
@@ -21,6 +23,7 @@ import numpy as np  # noqa: E402
 
 from moon import rt  # noqa: E402
 from sky import cubemap, stars  # noqa: E402
+from sky.bake import GALACTIC_CENTRE  # noqa: E402
 
 FAIL: list[str] = []
 OUT: dict = {}
@@ -99,6 +102,59 @@ def alignment(before: np.ndarray, after: np.ndarray, rec: np.ndarray, named: dic
     return out
 
 
+def galactic_centre(after: np.ndarray, k: float) -> dict:
+    """Mean luminance (cd/m^2) of the 10 x 10 deg box around the galactic centre, from the shipped level-0
+    faces (stored units x luminanceScale), looked up through the CPU cube lookup."""
+    n = after.shape[1]
+    lum = (after.astype(np.float64) @ LUMA) * k
+    ra0, dec0 = GALACTIC_CENTRE
+    box = []
+    for dra in np.linspace(-5, 5, 41):
+        for ddec in np.linspace(-5, 5, 41):
+            d = cubemap.radec_to_dir(ra0 + math.radians(dra) / math.cos(dec0), dec0 + math.radians(ddec))
+            f, u, v = cubemap.dir_to_face_uv(d)
+            box.append(lum[int(f), min(int(v * n), n - 1), min(int(u * n), n - 1)])
+    return {"meanLuminance10x10deg": float(np.mean(box)), "medianLuminance10x10deg": float(np.median(box)),
+            "p90Luminance10x10deg": float(np.percentile(box, 90)), "allSkyMedianLuminance": float(np.median(lum))}
+
+
+def star_photometry(before: np.ndarray, after: np.ndarray, rec: np.ndarray, k: float, r: int = 6) -> dict:
+    """Illuminance of each isolated catalogue star as the cube carried it before removal: sum over a
+    (2r+1)^2 window of (before - after) luminance x texel solid angle x luminanceScale, against the catalogue
+    lux. Shows the SVS star layer's saturation (bright stars) and non-linearity, and guards the photometric
+    chain (storage scale, solid angles, luminanceScale) against gross errors."""
+    n = after.shape[1]
+    Yd = (before.astype(np.float64) - after.astype(np.float64)) @ LUMA
+    om = cubemap.texel_solid_angle(n)
+    f, u, v = cubemap.dir_to_face_uv(rec[:, :3].astype(np.float64))
+    f = f.astype(int)
+    j = np.minimum((v * n).astype(int), n - 1)
+    i = np.minimum((u * n).astype(int), n - 1)
+    mags, ratios = [], []
+    for s in range(len(rec)):
+        if min(j[s], i[s]) < r + 2 or max(j[s], i[s]) > n - r - 3:
+            continue
+        if np.sum((f == f[s]) & (np.abs(j - j[s]) <= 2 * r) & (np.abs(i - i[s]) <= 2 * r)) > 1:
+            continue  # another catalogue star nearby
+        e = float((Yd[f[s], j[s] - r:j[s] + r + 1, i[s] - r:i[s] + r + 1] * om[j[s] - r:j[s] + r + 1, i[s] - r:i[s] + r + 1]).sum()) * k
+        mags.append(float(rec[s, 7]))
+        ratios.append(e / float(rec[s, 3]))
+    mags, ratios = np.array(mags), np.array(ratios)
+    bins = {}
+    for lo in np.arange(-1.5, 6.5, 0.5):
+        b = (mags > lo) & (mags <= lo + 0.5)
+        if b.sum():
+            bins[f"{lo:+.1f}..{lo + 0.5:+.1f}"] = {"n": int(b.sum()), "medianCubeOverCatalogue": float(np.median(ratios[b]))}
+    print("INFO catalogue stars as carried by the cube before removal (median cube/catalogue illuminance per V bin): "
+          + ", ".join(f"V {kk} {vv['medianCubeOverCatalogue']:.2f} (n {vv['n']})" for kk, vv in bins.items()))
+    faint = (mags > 6.0) & (mags <= 6.5)
+    dm = float(-2.5 * math.log10(np.median(ratios[faint])))
+    check(abs(dm) < 0.5, f"photometric chain: isolated V 6.0-6.5 catalogue stars ({int(faint.sum())}) carry {np.median(ratios[faint]):.2f} x their catalogue "
+                         f"illuminance in the cube ({dm:+.2f} mag, limit 0.5 mag: the SVS layer's non-linearity; a gross error of the "
+                         f"chain - storage scale, solid angles, units - would show as magnitudes)")
+    return {"isolatedStars": int(len(mags)), "bins": bins, "v6to6p5DeltaMag": dm}
+
+
 def main() -> None:
     rt.check_python()
     t0 = time.time()
@@ -152,18 +208,21 @@ def main() -> None:
     before = np.load(rt.SKY_WORK / "cube_before_f16.npy")
     after = np.stack([ch[0] for ch in faces])
     OUT["alignment"] = alignment(before, after, rec, named)
-    # photometry from the bake report
+    # photometry, recomputed from the shipped faces with the manifest's luminanceScale
     ph = rep["photometry"]
     k = m["milkyWay"]["luminanceScale"]
-    check(abs(k - ph["luminanceScaleStoredUnits"]) / k < 1e-9, f"luminanceScale {k:.4e} cd/m^2 per stored unit "
-                                                              f"(fitted on {ph['stars']} isolated unsaturated stars V {ph['vRange']}, MAD {ph['madMag']:.3f} mag)")
+    check(abs(k - ph["luminanceScaleStoredUnits"]) / k < 1e-9, f"manifest luminanceScale {k:.4e} cd/m^2 per stored unit = the bake's fit "
+                                                              f"({ph['stars']} isolated unsaturated stars V {ph['vRange']}, MAD {ph['madMag']:.3f} mag)")
     check(ph["stars"] >= 23, f"luminanceScale fit uses >= 23 stars ({ph['stars']})")
-    gc = rep["galacticCentre"]
-    check(1e-3 <= gc["meanLuminance10x10deg"] <= 1e-2, f"galactic-centre region mean luminance {gc['meanLuminance10x10deg']:.2e} cd/m^2 "
-                                                       f"(10x10 deg; p90 {gc['p90Luminance10x10deg']:.2e}) within 1e-3..1e-2")
+    gc = galactic_centre(after, k)
+    check(1e-3 <= gc["meanLuminance10x10deg"] <= 1e-2, f"galactic-centre region mean luminance from the shipped faces {gc['meanLuminance10x10deg']:.2e} cd/m^2 "
+                                                       f"(10x10 deg; median {gc['medianLuminance10x10deg']:.2e}, p90 {gc['p90Luminance10x10deg']:.2e}) "
+                                                       f"within 1e-3..1e-2; all-sky median {gc['allSkyMedianLuminance']:.2e}")
+    stp = star_photometry(before, after, rec, k)
     OUT["photometry"] = {"luminanceScale": k, "fit": {kk: ph[kk] for kk in ("stars", "vRange", "madMag", "bins")},
                          "brightStars": [b for b in ph["brightStars"] if b["name"] in ("Sirius", "Vega", "Canopus")],
-                         "galacticCentre": gc, "layerWeights": rep["layerWeights"], "orientation": rep["orientation"],
+                         "galacticCentreFromShippedFaces": gc, "galacticCentreBakeReport": rep["galacticCentre"],
+                         "catalogueStarsInCube": stp, "layerWeights": rep["layerWeights"], "orientation": rep["orientation"],
                          "removal": rep["removal"], "resampling": rep["resampling"]}
     sizes = {p.name: p.stat().st_size for p in sorted(rt.SKY_ROOT.iterdir())}
     OUT["sizes"] = sizes

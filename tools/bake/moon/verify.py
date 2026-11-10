@@ -200,8 +200,15 @@ def benchmarks(reader: TileReader) -> dict:
 
 
 # -- 4. regional checks ---------------------------------------------------------------------------------
-def coverage_edges(reader: TileReader) -> dict:
+def coverage_edges(reader: TileReader, per_tile: int = 1500) -> dict:
+    """Level-L data (Catmull-Rom of its tiles) against the surface the run time blends it into, the
+    coverage-blended parent surface D_(L-1), at random points of the quarter-tile ring (0 < w_L < 1).
+
+    Random (u, v) rather than vertices: a vertex of the ring sits on a parent grid node, where a margin tile
+    holds a quantised copy of the parent sample by construction, so vertices alone cannot see a mismatch of
+    the interpolated surfaces between nodes."""
     meta = reader.meta
+    rng = np.random.default_rng(11)
     out = {}
     for Ls in sorted(meta["coverage"], key=int):
         L = int(Ls)
@@ -211,19 +218,147 @@ def coverage_edges(reader: TileReader) -> dict:
                 for y in range(r["y0"], r["y1"] + 1):
                     if r["x0"] < x < r["x1"] and r["y0"] < y < r["y1"]:
                         continue
-                    k = (np.arange(0, 257, 4)) / 256.0
-                    U, V = np.meshgrid(k, k)
+                    U, V = rng.random(per_tile), rng.random(per_tile)
                     pts.append(cube.tile_uv_to_dir(r["face"], L, x, y, U, V).reshape(-1, 3))
         d = np.concatenate(pts)
         w = reader.coverage_weight(d, L)
         ring = d[(w > 0.0) & (w < 1.0)]
         a = reader.bicubic(ring, L)
-        b = reader.bicubic(ring, L - 1)
+        b = reader.data_height(ring, L - 1)
         rms = float(np.sqrt(np.mean((a - b) ** 2)))
-        out[Ls] = {"ringSamples": int(len(ring)), "rmsM": rms, "maxAbsM": float(np.abs(a - b).max())}
+        out[Ls] = {"ringSamples": int(len(ring)), "rmsM": rms, "maxAbsM": float(np.abs(a - b).max()),
+                   "p99AbsM": float(np.percentile(np.abs(a - b), 99))}
         lim = 3.0 if L == meta["globalMaxLevel"] + 1 else 1.0
-        check(rms < lim, f"coverage edge level {L}: data vs bicubic upsample of level {L - 1}: RMS {rms:.3f} m, max {out[Ls]['maxAbsM']:.3f} m "
-                         f"over {len(ring)} ring samples (limit {lim} m RMS)")
+        check(rms < lim, f"coverage edge level {L}: level-{L} data vs the blended level-{L - 1} surface at {len(ring)} random ring points: "
+                         f"RMS {rms:.3f} m, p99 {out[Ls]['p99AbsM']:.3f} m, max {out[Ls]['maxAbsM']:.3f} m (limit {lim} m RMS)")
+    return out
+
+
+def source_coverage(reader: TileReader, model: RegionModel) -> dict:
+    """The height layer's sourceCoverage (docs/requests/terrain-core-1.md): inside coverage, and every
+    direction where a band's source has weight > 0 lies in a source rectangle of that band's levels."""
+    meta = reader.meta
+    sc = meta.get("sourceCoverage")
+    check(sc is not None and set(sc) == set(meta["coverage"]), "height layer has sourceCoverage for every regional level")
+    if sc is None:
+        return {}
+    ok_inside = all(any(r["face"] == q["face"] and q["x0"] <= r["x0"] and r["x1"] <= q["x1"] and q["y0"] <= r["y0"] and r["y1"] <= q["y1"]
+                        for q in meta["coverage"][L]) for L, rs in sc.items() for r in rs)
+    missing = 0
+    for b in model.bands:
+        g = b.grid
+        rr, cc = np.nonzero(g.valid[::8, ::8])
+        lat, lon = g.pixel_to_latlon(rr * 8.0, cc * 8.0)
+        d = cube.lat_lon_to_dir(np.radians(lat), np.radians(lon))
+        for L in b.levels:
+            w = model.weight(b.k, d, lat, lon, np.full(len(lat), 1.0))
+            f, x, y, _, _ = dirs_to_tiles(d[w > 0], L)
+            for key in set(zip(f.tolist(), x.tolist(), y.tolist())):
+                if not any(r["face"] == key[0] and r["x0"] <= key[1] <= r["x1"] and r["y0"] <= key[2] <= r["y1"] for r in sc[str(L)]):
+                    missing += 1
+    tiles = {L: sum((r["x1"] - r["x0"] + 1) * (r["y1"] - r["y0"] + 1) for r in rs) for L, rs in sc.items()}
+    check(ok_inside and missing == 0, f"sourceCoverage inside coverage and covering all source data (tiles per level {tiles}; "
+                                      f"source tiles outside it: {missing})")
+    return {"tilesPerLevel": tiles, "sourceTilesOutside": missing}
+
+
+def nac_seam(region: dict) -> dict:
+    """The stereo-seam correction of the NAC source, re-run on the published DTM (see region.correct_column_seam)."""
+    from moon.region import acquire_raw_source, correct_column_seam
+
+    sid = next(s for s, d in region["sources"].items() if d.get("seamCorrection"))
+    _, rep = correct_column_seam(acquire_raw_source(region, sid).mips[0], region["sources"][sid]["seamCorrection"])
+    tab = rep.pop("blockTable")
+    print(f"INFO NAC stereo seam: tracked as one path, columns {rep['pathColumns'][0]}-{rep['pathColumns'][1]}, step sign {rep['sign']:+d}; "
+          f"{rep['correctedBlocks']} of {rep['blocks']} blocks of {region['sources'][sid]['seamCorrection']['blockRows']} rows corrected "
+          f"({rep['fullyCorrectedBlocks']} fully); step at the path in those blocks RMS {rep['rmsStepBeforeM']:.3f} -> {rep['rmsStepAfterM']:.3f} m, "
+          f"max {rep['maxStepBeforeM']:.3f} -> {rep['maxStepAfterM']:.3f} m (block noise {rep['medianStepNoiseM']:.3f} m); "
+          f"largest change {rep['maxAbsChangeM']:.3f} m")
+    return {**rep, "blockTable": tab}
+
+
+# Worst column's across-track roughness / its neighbouring columns. Raw SLDEM2015 over the Tranquility disc: 2.65
+# (61 columns > 1.3); isotropic terrain (the rows, E-W control): up to 1.31. The corrected source keeps ~1.5
+# where a track error exceeds the 3 m clamp inside craters.
+STRIPE_RATIO_LIMIT = 1.6
+
+
+def track_stripes(region: dict, reader: TileReader, model: RegionModel) -> dict:
+    """Altimeter-track stripes (region.correct_track_stripes) in the SHIPPED data: the top level of every band
+    whose source carries trackStripeCorrection is sampled at the source's own pixel centres over a square inside
+    the band's full-weight area, and each column's across-track roughness is compared with its neighbours (the
+    rows, i.e. the E-W direction, are the control). The raw source over the same square is shown for reference."""
+    from moon.region import acquire_raw_source, line_roughness_ratio
+
+    out = {}
+    for b in model.bands:
+        sc = region["sources"][b.source_id].get("trackStripeCorrection")
+        if not sc:
+            continue
+        if b.area["kind"] != "disc":
+            raise ValueError(f"band {b.id}: track-stripe check expects a disc band")
+        L = b.levels[-1]
+        c = region["centre"]
+        half_m = (b.area["radiusM"] - b.feather) / math.sqrt(2.0) - 500.0
+        g = b.grid
+        r0, c0 = (float(v[0]) for v in g.latlon_to_pixel(np.array([c["latDeg"]]), np.array([c["lonDeg"]])))
+        n = int(half_m / abs(float(g.transform.a)))
+        rows, cols = np.arange(int(r0) - n, int(r0) + n + 1), np.arange(int(c0) - n, int(c0) + n + 1)
+        R, C = np.meshgrid(rows, cols, indexing="ij")
+        lat, lon = g.pixel_to_latlon(R.astype(np.float64), C.astype(np.float64))
+        d = cube.lat_lon_to_dir(np.radians(lat), np.radians(lon)).reshape(-1, 3)
+        shipped = reader.data_height(d, L).reshape(R.shape)
+        raw = acquire_raw_source(region, b.source_id).mips[0][rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1].astype(np.float64)
+        nb = int(sc["neighbourCols"])
+        res = {"level": L, "squareHalfM": half_m, "pixels": int(R.size)}
+        for name, arr in (("raw", raw), ("shipped", shipped)):
+            cr, rr = line_roughness_ratio(arr, 1, nb), line_roughness_ratio(arr, 0, nb)
+            res[name] = {"columnRatioMax": float(cr.max()), "columnsAbove1p3": int((cr > 1.3).sum()),
+                         "rowRatioMax": float(rr.max()), "rowsAbove1p3": int((rr > 1.3).sum())}
+        out[b.source_id] = res
+        s, w = res["shipped"], res["raw"]
+        check(s["columnRatioMax"] < STRIPE_RATIO_LIMIT,
+              f"no altimeter-track stripes in level {L} ({b.source_id}, {R.shape[0]} x {R.shape[1]} source pixel centres inside the "
+              f"{b.area['radiusM'] / 1000:.0f} km disc): worst column roughness {s['columnRatioMax']:.2f} x its neighbours, "
+              f"{s['columnsAbove1p3']} columns > 1.3 (raw source {w['columnRatioMax']:.2f}, {w['columnsAbove1p3']} columns; "
+              f"E-W control: worst row {s['rowRatioMax']:.2f}) (limit {STRIPE_RATIO_LIMIT})")
+    return out
+
+
+def nac_edge_bias(region: dict, model: RegionModel) -> dict:
+    """How much the edge-local NAC bias (biasEdgeSmoothingM) changes the heights inside the mission disc."""
+    t = region.get("recommendedTarget")
+    k = next(b.k for b in model.bands if b.area["kind"] == "sourceFootprint")
+    b = model.bands[k]
+    z = np.load(rt.MOON_WORK / f"region-{region['id']}" / f"bias-{b.id}.npz")
+    if t is None or "bias_wide" not in z.files:
+        check(False, "edge-local NAC bias: recommendedTarget and the wide bias field are needed (re-run region.py)")
+        return {}
+    ts = region["targetSearch"]
+    la, lo = math.radians(t["latDeg"]), math.radians(t["lonDeg"])
+    c = cube.lat_lon_to_dir(la, lo)
+    e = np.array([-math.sin(lo), math.cos(lo), 0.0])
+    n = np.cross(c, e)
+    k_ = np.arange(-ts["missionRadiusM"], ts["missionRadiusM"] + 1.0, 10.0)
+    X, Y = np.meshgrid(k_, k_)
+    inside = np.hypot(X, Y) <= ts["missionRadiusM"]
+    p = rt.MOON_RADIUS * c + X[inside][:, None] * e + Y[inside][:, None] * n
+    d = p / np.linalg.norm(p, axis=-1, keepdims=True)
+    lat, lon = (np.degrees(v) for v in cube.dir_to_lat_lon(d))
+    row, col = b.grid.latlon_to_pixel(lat, lon)
+    f = 2.0 ** int(z["mip"])
+    from moon.region import bilinear
+    delta = bilinear(z["bias"].astype(np.float64) - z["bias_wide"].astype(np.float64), (row + 0.5) / f - 0.5, (col + 0.5) / f - 0.5)
+    w = model.weight(k, d, lat, lon, np.full(len(lat), 2.0))
+    dh = np.abs(w * delta)
+    r = np.hypot(X[inside], Y[inside])
+    edge_d = bilinear(b.dist, row, col)
+    out = {"missionRadiusM": ts["missionRadiusM"], "maxAbsM": float(dh.max()), "p95AbsM": float(np.percentile(dh, 95)),
+           "fractionAbove0p5M": float(np.mean(dh > 0.5)), "nearestStripEdgeM": float(edge_d.min()),
+           "untouchedWithinM": float(r[dh > 0.01].min()) if np.any(dh > 0.01) else float(ts["missionRadiusM"])}
+    print(f"INFO edge-local NAC bias inside the {ts['missionRadiusM']:.0f} m mission disc (the disc comes within {out['nearestStripEdgeM']:.0f} m "
+          f"of the NAC strip edge): height change max {out['maxAbsM']:.2f} m, p95 {out['p95AbsM']:.2f} m, {100 * out['fractionAbove0p5M']:.1f} % "
+          f"of the disc > 0.5 m; below 1 cm within {out['untouchedWithinM']:.0f} m of the target")
     return out
 
 
@@ -377,8 +512,8 @@ def deshading(reader: TileReader) -> dict:
     corr = float(np.corrcoef(lf, lw)[0, 1])
     mean_ratio = float(np.exp(lf.mean()))
     print(f"INFO residual wall asymmetry vs the mosaic's baked shading: correlation of log ratios {corr:.3f} "
-          f"(residual shading would correlate); geometric-mean ratio over all craters {mean_ratio:.3f}")
-    check(abs(mean_ratio - 1.0) <= 0.05, f"albedo de-shading: geometric mean west-/east-facing wall ratio over {len(rows)} craters {mean_ratio:.3f} (within 5 %)")
+          f"(residual shading would correlate); geometric-mean ratio over all craters {mean_ratio:.3f} (not an acceptance "
+          f"criterion: the brief asks for each of 20 craters within 5 %, see docs/requests/bake-moon-sky-2.md)")
     check(len(ok) >= 20, f"albedo de-shading: {len(ok)} of {len(rows)} craters have a west-/east-facing wall brightness ratio within 5 % at level 7 "
                          f"(median |1 - ratio| {np.median([abs(r['ratioLevel7'] - 1) for r in rows]):.3f}; raw WAC "
                          f"{np.median([abs(r['ratioRawWac'] - 1) for r in rows]):.3f})")
@@ -423,7 +558,11 @@ def main() -> None:
     OUT["benchmarks"] = benchmarks(reader)
     OUT["coverageEdges"] = coverage_edges(reader)
     model = RegionModel(region, reader)
+    OUT["sourceCoverage"] = source_coverage(reader, model)
+    OUT["nacSeam"] = nac_seam(region)
+    OUT["trackStripes"] = track_stripes(region, reader, model)
     OUT["nacBlend"] = nac_blend(model)
+    OUT["nacEdgeBias"] = nac_edge_bias(region, model)
     OUT["rmsSlope"] = rms_slope(reader, model)
     OUT["target"] = target(region, reader)
     OUT["deshading"] = deshading(reader)

@@ -8,7 +8,8 @@
   region-L{7..12}.png                  regional pyramid as hillshades, one level per sheet
   edge-L{7..12}.png                    run-time-blended surface across a coverage edge (left: hillshade of D_L,
                                        right: D_L - D_(L-1), +-2 m), the coverage boundary marked
-  deshade-<crater>.png                 raw WAC | undeshaded detail x SVS | de-shaded detail x SVS | final level-7 albedo
+  deshade-<crater>.png                 raw WAC | undeshaded detail x SVS | de-shaded detail x SVS | final level-7 albedo |
+                                       the slope-dependent detail amplitude (albedo.steep_attenuation_at)
   target.png                           level-12 hillshade around the recommended target with detected craters
 """
 from __future__ import annotations
@@ -244,10 +245,15 @@ def deshade_sheets(names=("Kepler", "Plinius", "Bullialdus", "Aristarchus")) -> 
         svs = albedo.svs_pyramid().sample(LA, LO, np.zeros_like(LA))[..., 0]
         fin = L7.linear(d)[..., 0]
 
+        # the detail amplitude the tiles apply on steep slopes (albedo.steep_attenuation_at): it must be smooth on
+        # the ground, or crater walls get outlined by a change of texture (doubled rims, painted bands)
+        mask = albedo.steep_attenuation_at(d)
         panels = [imaging.to_u8(np.asarray(arr["W"])), imaging.to_u8(svs * np.asarray(arr["Draw"]), 0, 0.3),
-                  imaging.to_u8(svs * np.asarray(arr["D"]), 0, 0.3), imaging.to_u8(fin, 0, 0.3)]
+                  imaging.to_u8(svs * np.asarray(arr["D"]), 0, 0.3), imaging.to_u8(fin, 0, 0.3),
+                  imaging.to_u8(mask, albedo.STEEP_FLOOR, 1.0)]
         img = Image.fromarray(np.concatenate(panels, axis=1)).convert("RGB")
-        imaging.label(img, (6, 6), f"{nm}: raw WAC | SVS x raw detail | SVS x de-shaded detail | final level 7 (red, linear 0-0.3)")
+        imaging.label(img, (6, 6), f"{nm}: raw WAC | SVS x raw detail | SVS x de-shaded detail | final level 7 (red, linear 0-0.3) | "
+                                   f"detail amplitude on slopes ({albedo.STEEP_FLOOR:g} black .. 1 white)")
         p = OUT / f"deshade-{nm}.png"
         img.save(p)
         paths.append(p)

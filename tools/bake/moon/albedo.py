@@ -58,6 +58,7 @@ WAC_CREDIT = "LROC WAC global morphology mosaic 100 m, June 2013 (NASA/GSFC/Ariz
 DETAIL_LAT = 70.0
 DETAIL_FADE = (65.0, 69.0)
 D_LO, D_HI = 0.7, 1.3
+SHADOW_SOFT_PX = 2.0  # Gaussian (WAC pixels) over which the detail fades toward excluded shadow pixels
 DETAIL_WORKERS = 6  # each band holds ~1.5 GB of float32 work arrays
 
 WORK = rt.MOON_WORK
@@ -276,7 +277,13 @@ def step_svs() -> None:
         h2, w2 = cur.shape[0] // 2, cur.shape[1] // 2
         cur = cur.reshape(h2, 2, w2, 2, 3).mean(axis=(1, 3), dtype=np.float64).astype(np.float32)
         cur.astype(np.float16).tofile(_svs_mip_path(k))
-    rt.write_json(CALIB, {"svs": calib})
+    # fresh mips: every result derived from the SVS map is recomputed by the later steps; the WAC
+    # illumination fit (deshadeFit, from WAC + LOLA only) stays valid as long as its file exists
+    old = rt.read_json(CALIB) if CALIB.is_file() else {}
+    new = {"svs": calib}
+    if FIT.is_file() and "deshadeFit" in old:
+        new["deshadeFit"] = old["deshadeFit"]
+    rt.write_json(CALIB, new)
     SVS_FILE.unlink()
     rt.log("SVS mips written, EXR deleted")
 
@@ -409,7 +416,9 @@ def detail_band(r0: int, r1: int, sun: np.ndarray, sigma_svs: float, margin: int
     lp = masked_gauss(Wd, ok, sigma_svs, lat_mid)
     D = np.where(ok & np.isfinite(lp), Wd / np.maximum(lp, 1e-3), 1.0)
     D = np.clip(D, D_LO, D_HI)
-    soft = gauss_iso(ok.astype(np.float32), 1.0, lat_mid)
+    # fade the detail out toward excluded (shadow) pixels over ~200 m, so shadow outlines do not show as
+    # texture edges
+    soft = gauss_iso(ok.astype(np.float32), SHADOW_SOFT_PX, lat_mid)
     D = 1.0 + soft * (D - 1.0)
     lpr = masked_gauss(W, valid, sigma_svs, lat_mid)
     Draw = np.clip(np.where(valid & np.isfinite(lpr), W / np.maximum(lpr, 1e-3), 1.0), D_LO, D_HI)
@@ -728,10 +737,11 @@ def detail_sample(lat: np.ndarray, lon: np.ndarray, fp_m: np.ndarray) -> np.ndar
     return acc / (ny * nx)
 
 
-def albedo_linear(dirs: np.ndarray, level: int) -> np.ndarray:
-    """Calibrated linear albedo RGB at texel directions for a level (SVS x de-shaded detail at levels 6-7)."""
+def albedo_tile_linear(face: int, level: int, x: int, y: int) -> np.ndarray:
+    """Calibrated linear albedo RGB at the texel centres of one tile (SVS x de-shaded detail at levels 6-7)."""
     if "svs" not in _TILE_CTX:
         _TILE_CTX["svs"] = svs_pyramid()
+    dirs = cube.image_tile_dirs(face, level, x, y)
     lat, lon = (np.degrees(a) for a in cube.dir_to_lat_lon(dirs))
     fp = footprint_m(dirs, level, rt.MOON_RADIUS, cube.IMAGE_TILE_SIZE)
     rgb = _TILE_CTX["svs"].sample(lat, lon, np.degrees(fp / rt.MOON_RADIUS))
@@ -743,41 +753,60 @@ def albedo_linear(dirs: np.ndarray, level: int) -> np.ndarray:
             D = np.ones(lat.shape)
             sel = w > 0
             D[sel] = detail_sample(lat[sel], lon[sel], fp[sel])
-            w = w * steep_attenuation(dirs, fp)
+            w = w * steep_attenuation(face, level, x, y)
             rgb = rgb * (1.0 + w * (D - 1.0))[..., None]
     return np.clip(rgb, 0.0, 1.0)
 
 
-STEEP_DEG = (10.0, 20.0)
+# Detail amplitude on steep slopes. The 118 m LOLA cannot model the mosaic's shading of terraces and slumps
+# on steep crater walls (nor their cast shadows), so the de-shaded detail is reduced there (moon-sky-data.md
+# 3.6) - but only to STEEP_FLOOR, never removed, and with a mask that is smooth on the ground: removing it
+# outright behind a slope threshold turned every large crater wall into a smooth 500 m SVS band with sharp
+# texture-change outlines at levels 6-7.
+STEEP_DEG = (10.0, 26.0)   # full detail below, STEEP_FLOOR above (smoothstep in between)
+STEEP_FLOOR = 0.5
+STEEP_LEVEL = 4            # slopes of the level-4 surface (666 m samples, Catmull-Rom): smooth at ~1 km
+STEEP_BASELINE_M = 400.0   # one-sided differences over 400 m toward east, west, north and south
+STEEP_LATTICE = 128        # mask evaluated on a 129 x 129 vertex lattice of the tile, bilinear to the texels
 
 
-def steep_attenuation(dirs: np.ndarray, fp: np.ndarray) -> np.ndarray:
-    """1 on slopes below 10 deg, 0 above 20 deg (smoothstep), from the level-6 heights.
+def steep_attenuation_at(dirs: np.ndarray) -> np.ndarray:
+    """Detail amplitude factor (STEEP_FLOOR..1) at unit directions: a function of the direction only.
 
-    `dirs` is a texel-centre grid (rows along v, columns along u) of one tile; heights are evaluated on that
-    grid extended by one texel on every side, and the slope is the central difference over two texels
-    (166 m at level 7, 333 m at level 6). The 118 m LOLA cannot model the mosaic's shading on steep crater
-    walls (nor cast shadows there), so the de-shaded detail is attenuated where slopes are steep
-    (moon-sky-data.md 3.6)."""
+    Steepness = sqrt(sum of the four squared one-sided height differences / (2 b^2)): the gradient magnitude
+    on a plane, and still the wall slope on a rim crest or a bowl floor, where a central difference would
+    drop to zero and draw a full-detail line along every rim."""
     if "dem" not in _TILE_CTX:
         _TILE_CTX["dem"] = TileReader(rt.TILESET, cache_tiles=256)
     dem = _TILE_CTX["dem"]
-    # extend the grid by one texel by linear extrapolation in direction space (renormalised)
-    ext = np.empty((dirs.shape[0] + 2, dirs.shape[1] + 2, 3))
-    ext[1:-1, 1:-1] = dirs
-    ext[0, 1:-1] = 2 * dirs[0] - dirs[1]
-    ext[-1, 1:-1] = 2 * dirs[-1] - dirs[-2]
-    ext[:, 0] = 2 * ext[:, 1] - ext[:, 2]
-    ext[:, -1] = 2 * ext[:, -2] - ext[:, -3]
-    ext /= np.linalg.norm(ext, axis=-1, keepdims=True)
-    h = dem.bicubic(ext, 6)
-    du = rt.MOON_RADIUS * np.linalg.norm(ext[1:-1, 2:] - ext[1:-1, :-2], axis=-1)
-    dv = rt.MOON_RADIUS * np.linalg.norm(ext[2:, 1:-1] - ext[:-2, 1:-1], axis=-1)
-    gu = (h[1:-1, 2:] - h[1:-1, :-2]) / du
-    gv = (h[2:, 1:-1] - h[:-2, 1:-1]) / dv
-    s = np.degrees(np.arctan(np.hypot(gu, gv)))
+    _, lon = cube.dir_to_lat_lon(dirs)
+    e = np.stack([-np.sin(lon), np.cos(lon), np.zeros_like(lon)], axis=-1)
+    n = np.cross(dirs, e)
+    p = rt.MOON_RADIUS * dirs
+    b = STEEP_BASELINE_M
+
+    def h(off):
+        q = p + off
+        return dem.bicubic(q / np.linalg.norm(q, axis=-1, keepdims=True), STEEP_LEVEL)
+
+    h0 = h(0.0)
+    ss = sum((h(sgn * b * ax) - h0) ** 2 for ax in (e, n) for sgn in (1.0, -1.0))
+    s = np.degrees(np.arctan(np.sqrt(ss / (2.0 * b * b))))
     t = np.clip((STEEP_DEG[1] - s) / (STEEP_DEG[1] - STEEP_DEG[0]), 0.0, 1.0)
-    return t * t * (3 - 2 * t)
+    return STEEP_FLOOR + (1.0 - STEEP_FLOOR) * t * t * (3 - 2 * t)
+
+
+def steep_attenuation(face: int, level: int, x: int, y: int) -> np.ndarray:
+    """steep_attenuation_at on the tile's vertex lattice (u, v = k / STEEP_LATTICE), bilinear at the texel
+    centres. Neighbouring tiles share their edge nodes (also across cube edges), so the mask is seamless."""
+    k = np.arange(STEEP_LATTICE + 1) / STEEP_LATTICE
+    U, V = np.meshgrid(k, k, indexing="xy")
+    m = steep_attenuation_at(cube.tile_uv_to_dir(face, level, x, y, U, V))
+    c = (np.arange(cube.IMAGE_TILE_SIZE) + 0.5) * STEEP_LATTICE / cube.IMAGE_TILE_SIZE
+    i0 = np.minimum(np.floor(c).astype(np.int64), STEEP_LATTICE - 1)
+    f = c - i0
+    rows = (1.0 - f)[:, None] * m[i0] + f[:, None] * m[i0 + 1]
+    return (1.0 - f)[None, :] * rows[:, i0] + f[None, :] * rows[:, i0 + 1]
 
 
 def encode_webp(lin: np.ndarray) -> bytes:
@@ -789,9 +818,8 @@ def encode_webp(lin: np.ndarray) -> bytes:
 
 def bake_albedo_tile(key):
     face, level, x, y = key
-    d = cube.image_tile_dirs(face, level, x, y)
-    data = encode_webp(albedo_linear(d, level))
-    layout.write_atomic(layout.tile_file(rt.TILESET, "albedo", face, level, x, y, "webp"), data)
+    data = encode_webp(albedo_tile_linear(face, level, x, y))
+    rt.write_tile(layout.tile_file(rt.TILESET, "albedo", face, level, x, y, "webp"), data)
     return key, len(data)
 
 

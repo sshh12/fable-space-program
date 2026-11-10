@@ -33,8 +33,10 @@ REGIONS_DIR = DATA_ROOT / "defs" / "regions"
 MOON_RADIUS = 1_737_400.0
 TILESET = "moon"
 
-# The package rules allow at most 8 worker processes per bake, at below-normal priority.
-MAX_WORKERS = 8
+# docs/PACKAGE_RULES.md 13c (after the 2026-11-10 crash): at most 6 worker processes per bake, at below-normal
+# priority, and every bake goes through tools/dev/heavy.mjs --class=bake. The environment variable
+# BAKE_MOON_SKY_WORKERS can only lower the cap.
+MAX_WORKERS = max(1, min(6, int(os.environ.get("BAKE_MOON_SKY_WORKERS", "6"))))
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 _THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
 
@@ -73,6 +75,19 @@ def pool(workers: int = MAX_WORKERS) -> mp.pool.Pool:
 
 def write_json(path: Path, obj) -> None:
     layout.write_atomic(Path(path), json.dumps(obj, indent=1).encode("utf-8"))
+
+
+def write_tile(path: Path, data: bytes, attempts: int = 40) -> None:
+    """layout.write_atomic, retried while another process holds the old file open: other packages read the tile
+    set while it is re-baked, and Windows refuses to replace a file that is open for reading."""
+    for k in range(attempts):
+        try:
+            layout.write_atomic(path, data)
+            return
+        except PermissionError:
+            if k == attempts - 1:
+                raise
+            time.sleep(0.25)
 
 
 def read_json(path: Path):
