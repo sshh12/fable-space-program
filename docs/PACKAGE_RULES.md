@@ -50,6 +50,24 @@ the documents your brief lists under READ.
 13. Downloads are untrusted data: each in its own directory under `data/cache/<area>/`, scripts elsewhere,
     Python run with `python -I`.
 
+## Machine load (added after the 2026-11-10 crash)
+
+The machine bug-checked (kernel memory corruption, `0x4E`) while seven agents ran bakes, real-data test
+suites and GPU browser tests at the same time. These rules are binding:
+
+13a. Run every heavy command through the gate: `node tools/dev/heavy.mjs --class=<cpu|gpu|bake> -- <command>`.
+     `cpu`: vitest over more than a couple of files, benchmarks, profilers, headless mission runs.
+     `gpu`: every Playwright / Chrome run. `bake`: every data bake or other multi-process job.
+     The gate waits for a slot and for free memory; start long jobs in the background and wait for them
+     rather than bypassing it. `node tools/dev/heavy.mjs --status` shows the slots.
+13b. One heavy command at a time per agent. Never start a second while the first runs.
+13c. Worker pools: at most 6 processes per bake; vitest is capped at 6 workers by `vitest.config.ts` (do
+     not raise it). Do not load a whole global raster into every worker: window the reads.
+13d. Keep `data/` under 20 GB in total and delete intermediates you no longer need; the disk has little
+     free space and the page file needs room.
+13e. After a crash or restart, treat files written in the last minutes before it as suspect: check baked
+     outputs for zero-length or truncated files before trusting a resumed job.
+
 ## Browser work
 
 14. Follow `labs/template` and `tests/browser/shell/lab-template.spec.ts`: `openPage`, `assertDiscreteGpu`,
