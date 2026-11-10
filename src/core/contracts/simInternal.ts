@@ -45,9 +45,15 @@ export interface VesselEnvironment {
   atmosphereAt(altitude: number): AtmosphereSample;
   /** Aerothermal constants, null when there is no atmosphere. */
   heating: AtmosphereHeatingDef | null;
-  /** Solid-surface height above the reference radius and unit normal (body-fixed) under a body-fixed direction. */
-  terrainHeight(dirFixed: Vec3): number;
-  terrainNormal(dirFixed: Vec3): Vec3;
+  /**
+   * Solid-surface height above the reference radius under a body-fixed direction. With `lambdaMin` omitted this
+   * is the collision surface (identical to the rendered max-level mesh; cached and cheap near a vessel) - use
+   * it for contact probes. Pass a band limit in metres (e.g. max(0.3, 0.02 * altitude)) for altimetry and
+   * look-ahead queries far from the ground, which are evaluated analytically without fine detail.
+   */
+  terrainHeight(dirFixed: Vec3, lambdaMin?: number): number;
+  /** Unit outward surface normal in the body-fixed frame by central differences over `baseline` metres (default 1). */
+  terrainNormal(dirFixed: Vec3, baseline?: number): Vec3;
   surfaceKind(dirFixed: Vec3): SurfaceKind;
   surfaceFriction: number;
   /** Ocean: null when the body has none. waterHeight includes swell (src/core/geo/oceanSwell.ts). */

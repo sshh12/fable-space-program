@@ -294,10 +294,15 @@ heightAt(body, dir, lambdaMin?) = bicubic(deepest resident data tile)
                                   (BodyDef.terrain.amplification: model + seed + params)
 ```
 
-- Physics calls it with the collision band limit (about 0.3 m). Terrain workers call it per tile with the
-  tile's band limit to bake geometry heights and normal maps. Rock and crater placement use the same hash.
-  The renderer has no private copy of any of it, so **rendered surface = collision surface** (target
-  < 3 cm at max level).
+- Terrain workers call it per tile with the tile's band limit (2 quads) to bake geometry heights and normal
+  maps. Rock and crater placement use the same hash. The renderer has no private copy of any of it.
+- **Collision surface = rendered surface.** `heightAt` without a band limit returns the bilinear
+  interpolation of the height function on the vertex grid of the body's max-render-level tiles - exactly
+  the mesh drawn at full detail (difference < 3 cm). Those grids are cached around vessels, so contact
+  probes are cheap. Altimetry and prediction far from the ground pass a band limit and get the analytic
+  function without fine detail.
+- Amplification starts below the data resolution the manifest offers at a point (not below whatever level
+  happens to be resident), so detail never doubles up while finer data is streaming.
 - Queries are synchronous and never wait for I/O; `ensureLoaded()` preloads around vessels and
   `residency()` reports whether final data is in. The sim clamps warp to 1x if a vessel is below 300 m
   radar altitude without final data (asserted never to happen in scripted missions).

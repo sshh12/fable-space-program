@@ -143,8 +143,14 @@ export interface TerrainResidency {
  *  - Deterministic and pure given the same resident data; never throws for a valid direction.
  *  - height = bicubic sample of the deepest resident data tile + site/terrain modifiers + band-limited
  *    procedural amplification with wavelengths >= lambdaMin.
- *  - With `lambdaMin` omitted the full collision detail is returned (finest amplification octave used for
- *    physics, about 0.3 m); the rendered max-level mesh must match it within 3 cm.
+ *  - With `lambdaMin` omitted the COLLISION SURFACE is returned: the bilinear interpolation of the height
+ *    function sampled on the vertex grid of the body's max-render-level tiles (65 x 65 vertices per tile,
+ *    band limit = 2 quads). That is exactly the mesh the renderer draws at full detail, so legs, wheels and
+ *    boots touch what is drawn (difference < 3 cm). Implementations cache these grids around callers.
+ *  - With `lambdaMin` given, the height function is evaluated analytically with amplification wavelengths
+ *    >= lambdaMin only (cost falls as lambdaMin grows); used for altimetry, prediction and tile baking.
+ *  - Amplification starts below the data resolution that the MANIFEST offers at the point, not below the
+ *    level that happens to be resident, so detail never doubles up while finer data is still streaming.
  *  - Synchronous: queries never wait for I/O. If finer data is still loading, the best resident ancestor
  *    is used (see residency()); callers that need final data await ensureLoaded() first.
  * All directions are unit vectors in the body-fixed frame; heights are metres above the reference radius.
