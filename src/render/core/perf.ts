@@ -7,6 +7,10 @@
  * between the participating features: in attribution mode each feature's hook runs in its own pass named
  * `<featureId>.<hook>` and is measured exactly; in normal mode the pass time is divided by the shares
  * measured in the most recent attribution frames (equal shares until one has run).
+ *
+ * Work encoded BETWEEN passes (the core's texture copies) has no timestamp of its own. `gpuGap(name)`
+ * marks such work: its time is the gap from the end timestamp of the pass encoded before it to the
+ * begin timestamp of the pass encoded after it, reported as pass `name` and included in the GPU total.
  */
 import type { PerfRecorder, PerfSnapshot } from '@/core/contracts/render';
 
@@ -52,8 +56,15 @@ class Ring {
   }
 }
 
+interface Gap {
+  name: string;
+  /** Index (into the frame's pass names) of the last pass begun before the marked work. */
+  prev: number;
+}
+
 interface PendingFrame {
   names: string[];
+  gaps: Gap[];
   buffer: GPUBuffer;
   /** Hook pass -> feature ids that took part (normal mode). */
   hookFeatures: Map<string, { ids: string[]; core: boolean }>;
@@ -65,6 +76,7 @@ export class Perf implements PerfRecorder {
   private readonly resolveBuffer: GPUBuffer | null;
   private readonly freeBuffers: GPUBuffer[] = [];
   private names: string[] = [];
+  private gaps: Gap[] = [];
   private hookFeatures = new Map<string, { ids: string[]; core: boolean }>();
   private readonly passRings = new Map<string, Ring>();
   private cpuOpen = new Map<string, number>();
@@ -127,6 +139,7 @@ export class Perf implements PerfRecorder {
     }
     this.lastFrameStart = now;
     this.names = [];
+    this.gaps = [];
     this.hookFeatures = new Map();
     this.cpuFrame = new Map();
   }
@@ -136,6 +149,19 @@ export class Perf implements PerfRecorder {
     const i = this.names.length;
     this.names.push(name);
     return { querySet: this.querySet, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 };
+  }
+
+  /**
+   * Mark GPU work that is encoded outside any pass at this point of the frame (a texture copy). It is
+   * timed as the gap between the pass encoded before it and the pass encoded after it, so call it where
+   * both neighbours are timestamped passes with nothing else between them and the marked work; several
+   * marks in one gap count once. Without a timestamped pass on both sides the mark is dropped.
+   */
+  gpuGap(name: string): void {
+    if (!this.querySet || this.names.length === 0) return;
+    const prev = this.names.length - 1;
+    if (this.gaps.some((g) => g.prev === prev)) return;
+    this.gaps.push({ name, prev });
   }
 
   cpuBegin(name: string): void {
@@ -166,7 +192,7 @@ export class Perf implements PerfRecorder {
     const buffer = this.freeBuffers.pop() ?? this.device.createBuffer({ label: 'perf.readback', size: MAX_QUERIES * 8, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     encoder.resolveQuerySet(this.querySet, 0, count, this.resolveBuffer, 0);
     encoder.copyBufferToBuffer(this.resolveBuffer, 0, buffer, 0, count * 8);
-    const pending: PendingFrame = { names: this.names, buffer, hookFeatures: this.hookFeatures, cpu };
+    const pending: PendingFrame = { names: this.names, gaps: this.gaps, buffer, hookFeatures: this.hookFeatures, cpu };
     this.inFlight++;
     // Call after queue.submit().
     return () => {
@@ -220,6 +246,17 @@ export class Perf implements PerfRecorder {
       if (ms > 1000) continue;
       const name = frame.names[i]!;
       passMs.set(name, (passMs.get(name) ?? 0) + ms);
+      total += ms;
+    }
+    // Marked gaps: end of the pass before the work -> begin of the pass after it.
+    for (const g of frame.gaps) {
+      if (g.prev + 1 >= frame.names.length) continue;
+      const a = t[2 * g.prev + 1]!;
+      const b = t[2 * g.prev + 2]!;
+      if (a === 0n || b <= a) continue;
+      const ms = Number(b - a) / 1e6;
+      if (ms > 1000) continue;
+      passMs.set(g.name, (passMs.get(g.name) ?? 0) + ms);
       total += ms;
     }
     this.gpu.push(total);

@@ -1,7 +1,7 @@
 /**
  * The render-core test stand: a ground slab fixed to a body with a PBR material sweep (dielectric, metal,
  * anisotropic and clearcoat rows), shadow casters (tower, thin pole, floating bar), emissive and hot
- * objects, a translucent cloth panel, a white Lambert card and a vessel-sized cylinder. Everything is
+ * objects, a display, a translucent cloth panel, a white Lambert card and a vessel-sized cylinder. Everything is
  * drawn through the core mesh system, body-fixed, so it also exercises the caster rules of the cascades.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -51,6 +51,10 @@ export interface StandFeature extends RenderFeature {
   readonly whiteCard: { pos: Vec3Tuple; albedo: number };
   /** Centres of the two 2 m textured planes: a procedural checker and the same pattern loaded from a PNG URL (8 x 8 squares of 0.25 m). */
   readonly texturedPlanes: { procedural: Vec3Tuple; url: Vec3Tuple };
+  /** Centre (site ENU) of the display panel, whose 1.2 x 0.8 m faces look south and north, and its emitted luminance at brightness 1 (cd/m^2). */
+  readonly display: { pos: Vec3Tuple; emissive: Vec3Tuple };
+  /** MeshInstance.displayBrightness of the display panel (0..1, default 1). */
+  setDisplayBrightness(brightness: number): void;
   triangles(): number;
 }
 
@@ -61,6 +65,9 @@ export function createStandFeature(options: StandOptions): StandFeature {
   let vesselProbe = false;
   const upright = quat.fromAxisAngle({ x: 1, y: 0, z: 0 }, Math.PI / 2);
   const whiteCard = { pos: [-9, 6, 0.02] as Vec3Tuple, albedo: 0.8 };
+  const display = { pos: [8.5, -1, 1] as Vec3Tuple, emissive: [400, 400, 400] as Vec3Tuple };
+  let displayIndex = -1;
+  let displayBrightness = 1;
   const texturedPlanes = { procedural: [-9, -9, 0.02] as Vec3Tuple, url: [-6, -9, 0.02] as Vec3Tuple };
 
   const model = (name: string, mesh: ModelData['lods'][number], material: PbrMaterialDef): ModelHandle => coreOf(ctx).meshes.createModel({ name, lods: [mesh], materials: [material] });
@@ -84,6 +91,10 @@ export function createStandFeature(options: StandOptions): StandFeature {
     id: options.id ?? 'lab-stand',
     whiteCard,
     texturedPlanes,
+    display,
+    setDisplayBrightness(b) {
+      displayBrightness = b;
+    },
     batch: () => batch,
     setVesselProbe(on) {
       vesselProbe = on;
@@ -143,6 +154,13 @@ export function createStandFeature(options: StandOptions): StandFeature {
       placed.push({ model: model('lamp', boxMesh(1.2, 0.1, 0.8), mat('lamp', [0.02, 0.02, 0.02], 0.4, 0, { emissive: [20000, 9000, 2500] })), pos: [8.5, 1, 1], rot: null });
       placed.push({ model: model('lampDim', boxMesh(1.2, 0.1, 0.8), mat('lampDim', [0.02, 0.02, 0.02], 0.4, 0, { emissive: [80, 240, 300] })), pos: [8.5, 3, 1], rot: null });
       placed.push({ model: model('hot', sphere, mat('hot', [0.05, 0.05, 0.05], 0.8, 0)), pos: [8.5, 5, 0.5], rot: null, temperature: 1500 });
+      // A display (MATERIAL_ID.display): a 400 cd/m^2 emitter behind a glass front, facing south (-y) and north.
+      displayIndex = placed.length;
+      placed.push({
+        model: model('display', boxMesh(1.2, 0.1, 0.8), { name: 'display', shading: 'display', baseColor: [0.01, 0.01, 0.012], roughness: 0.05, metallic: 0, emissive: [...display.emissive] }),
+        pos: display.pos,
+        rot: null,
+      });
 
       // Translucent cloth panel standing up (double sided, back-lit when the sun is behind it).
       placed.push({
@@ -163,9 +181,9 @@ export function createStandFeature(options: StandOptions): StandFeature {
       const active = frame.vesselPose(frame.snapshot.activeVesselId);
       const vesselParent: ParentPose | null = active ? { originRelCam: active.originRelCam, q: active.q, prevOriginRelCam: active.prevOriginRelCam, prevQ: active.prevQ } : null;
       batch.begin(frame);
-      for (const p of placed) {
-        batch.add(p.model, instanceInFrame(site, v3.fromTuple(p.pos), p.rot, { bodyFixed: true, scale: p.scale, temperature: p.temperature }));
-      }
+      placed.forEach((p, i) => {
+        batch.add(p.model, instanceInFrame(site, v3.fromTuple(p.pos), p.rot, { bodyFixed: true, scale: p.scale, temperature: p.temperature, displayBrightness: i === displayIndex ? displayBrightness : undefined }));
+      });
       if (vesselProbe && vesselParent) {
         // A moving caster in the vessel frame: must only ever be drawn into every-frame cascades.
         batch.add(placed[placed.length - 1]!.model, instanceInFrame(vesselParent, { x: 0, y: 0, z: 0 }, null, { bodyFixed: false, scale: 3 }));

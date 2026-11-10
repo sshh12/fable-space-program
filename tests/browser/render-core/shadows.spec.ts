@@ -214,6 +214,176 @@ test('lunar orbit: flying 1.6 km/s over a body-fixed ridge, shadows from stagger
   await expectNoErrors(page, pageLog);
 });
 
+interface EdgeFit {
+  /** Edge samples that had a usable light / shadow contrast. */
+  n: number;
+  /** RMS and largest deviation (px) of the measured shadow edge from a smooth (quadratic) curve. */
+  rms: number;
+  max: number;
+  /** Median 10-90 % width of the edge along the light, px. */
+  width: number;
+  /** Screen length of the measured stretch of edge, px. */
+  length: number;
+}
+
+/**
+ * Shape of the far edge of the ridge's shadow in the resolved image. The ridge (probe `ridge`) is a box
+ * 150 km long whose top west edge, 6 km above the datum, casts a straight edge onto the smooth LabPlanet:
+ * that edge is ray-cast analytically onto the sphere, and at 300 points along it the luminance profile
+ * along the light is read from the image and its half-way crossing located to a fraction of a pixel. What
+ * remains after a quadratic fit (perspective, curvature of the ground, a constant offset of the penumbra)
+ * is the stair-stepping of the shadow map.
+ */
+async function ridgeShadowEdge(page: Page, sunAzDeg: number, sunElDeg: number, halfWindowPx: number): Promise<EdgeFit> {
+  return page.evaluate(
+    async ({ azDeg, elDeg, T }) => {
+      const lab = window.__lab!;
+      const rc = window.__rc!;
+      const site = rc.probes.ridgeSite;
+      const R = lab.defs.bodies[site.bodyId]!.radius;
+      const img = await lab.renderer.readHdrPixels('resolved');
+      const az = (azDeg * Math.PI) / 180;
+      const el = (elDeg * Math.PI) / 180;
+      const s = [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)] as const;
+      const sample = (x: number, y: number): number => {
+        const fx = Math.min(img.width - 2, Math.max(0, x - 0.5));
+        const fy = Math.min(img.height - 2, Math.max(0, y - 0.5));
+        const x0 = Math.floor(fx);
+        const y0 = Math.floor(fy);
+        const g = (xx: number, yy: number): number => img.data[(yy * img.width + xx) * 4 + 1]!;
+        return (g(x0, y0) * (1 - (fx - x0)) + g(x0 + 1, y0) * (fx - x0)) * (1 - (fy - y0)) + (g(x0, y0 + 1) * (1 - (fx - x0)) + g(x0 + 1, y0 + 1) * (fx - x0)) * (fy - y0);
+      };
+      const rows: { x: number; y: number; mid: number; width: number }[] = [];
+      const N = 300;
+      for (let i = 0; i < N; i++) {
+        // A point of the top west edge (site ENU, m), cast along -s onto the sphere centred at (0, 0, -R).
+        const e = [-10e3, -60e3 + (120e3 * i) / (N - 1), 6e3] as const;
+        const oc = [e[0], e[1], e[2] + R] as const;
+        const ocs = oc[0] * s[0] + oc[1] * s[1] + oc[2] * s[2];
+        const disc = ocs * ocs - (oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2] - R * R);
+        if (disc < 0) continue;
+        const u = ocs - Math.sqrt(disc);
+        const p: [number, number, number] = [e[0] - u * s[0], e[1] - u * s[1], e[2] - u * s[2]];
+        const ps = rc.projectSitePoint(p, site);
+        const pd = rc.projectSitePoint([p[0] + 2000 * Math.sin(az), p[1] + 2000 * Math.cos(az), p[2]], site);
+        if (!ps || !pd) continue;
+        const dl = Math.hypot(pd.x - ps.x, pd.y - ps.y);
+        if (dl < 1e-6 || ps.x < T + 2 || ps.y < T + 2 || ps.x > img.width - T - 2 || ps.y > img.height - T - 2) continue;
+        // Profile along the light on screen, 4 samples per pixel: lit ground first, shadow last.
+        const dx = (pd.x - ps.x) / dl;
+        const dy = (pd.y - ps.y) / dl;
+        const prof: number[] = [];
+        for (let k = -T * 4; k <= T * 4; k++) prof.push(sample(ps.x + (k / 4) * dx, ps.y + (k / 4) * dy));
+        const median = (a: number[]): number => a.slice().sort((p1, p2) => p1 - p2)[a.length >> 1]!;
+        const lit = median(prof.slice(0, T));
+        const dark = median(prof.slice(prof.length - T));
+        if (!(lit > 2.5 * dark) || !(lit > 1e-4)) continue;
+        const cross = (level: number): number => {
+          for (let k = 1; k < prof.length; k++) {
+            if (prof[k - 1]! >= level && prof[k]! < level) return (k - 1 + (prof[k - 1]! - level) / (prof[k - 1]! - prof[k]!)) / 4 - T;
+          }
+          return NaN;
+        };
+        const mid = cross(dark + 0.5 * (lit - dark));
+        if (Number.isFinite(mid)) rows.push({ x: ps.x, y: ps.y, mid, width: cross(dark + 0.1 * (lit - dark)) - cross(dark + 0.9 * (lit - dark)) });
+      }
+      const n = rows.length;
+      if (n < 20) return { n, rms: NaN, max: NaN, width: NaN, length: 0 };
+      // Least-squares quadratic of the crossing position against the position along the edge.
+      const xs = rows.map((_, i) => (2 * i) / (n - 1) - 1);
+      const A = [
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ];
+      for (let i = 0; i < n; i++) {
+        const b = [1, xs[i]!, xs[i]! * xs[i]!];
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) A[r]![c]! += b[r]! * b[c]!;
+          A[r]![3]! += b[r]! * rows[i]!.mid;
+        }
+      }
+      for (let i = 0; i < 3; i++) {
+        let piv = i;
+        for (let r = i + 1; r < 3; r++) if (Math.abs(A[r]![i]!) > Math.abs(A[piv]![i]!)) piv = r;
+        [A[i], A[piv]] = [A[piv]!, A[i]!];
+        for (let r = 0; r < 3; r++) {
+          if (r === i) continue;
+          const f = A[r]![i]! / A[i]![i]!;
+          for (let c = i; c < 4; c++) A[r]![c]! -= f * A[i]![c]!;
+        }
+      }
+      const coef = [A[0]![3]! / A[0]![0]!, A[1]![3]! / A[1]![1]!, A[2]![3]! / A[2]![2]!];
+      let ss = 0;
+      let max = 0;
+      for (let i = 0; i < n; i++) {
+        const r = rows[i]!.mid - (coef[0]! + coef[1]! * xs[i]! + coef[2]! * xs[i]! * xs[i]!);
+        ss += r * r;
+        max = Math.max(max, Math.abs(r));
+      }
+      const widths = rows.map((r) => r.width).filter(Number.isFinite).sort((a, b) => a - b);
+      return { n, rms: Math.sqrt(ss / n), max, width: widths[widths.length >> 1] ?? NaN, length: Math.hypot(rows[n - 1]!.x - rows[0]!.x, rows[n - 1]!.y - rows[0]!.y) };
+    },
+    { azDeg: sunAzDeg, elDeg: sunElDeg, T: halfWindowPx },
+  );
+}
+
+test('low sun: shadow edges from the far staggered cascades are straight (no teeth at 14 deg, no comb at 6 deg)', async ({ page, pageLog }) => {
+  // Animated noise, jitter and TAA as in flight; the sim is paused so the picture is static and converges.
+  // (1) Low lunar orbit, 100 km up, sun 14 deg above the horizon at the ridge 140 km ahead: the ridge is
+  // shadowed through the 200 km camera cascade (195 m texels, each 800 m long on the ground at this sun).
+  await openPage(page, '/labs/render-core/?scene=lunarOrbit&stand=0&probe=ridge,casters&ridge=track&hud=0&fov=40&ev=14.3&paused=1&scale=1');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    const rc = window.__rc!;
+    rc.setSunAtSite(rc.probes.ridgeSite, [80, 14]);
+    rc.trackSiteFromVessel(rc.probes.ridgeSite, 40);
+  });
+  await waitIdle(page, 150);
+  const cascadesNow = (): Promise<{ fit: string; texelSize: number; aspect: number; everyFrame: boolean }[]> =>
+    page.evaluate(() => {
+      const seen = new Map<string, { fit: string; texelSize: number; aspect: number; everyFrame: boolean }>();
+      for (const c of window.__rc!.probes.cascadeLog().slice(-80)) seen.set(`${c.fit}:${c.texelSize.toFixed(1)}`, { fit: c.fit, texelSize: c.texelSize, aspect: c.aspect, everyFrame: c.everyFrame });
+      return [...seen.values()];
+    });
+  const orbit = await ridgeShadowEdge(page, 80, 14, 40);
+  const orbitCascade = (await cascadesNow()).find((c) => c.fit === 'camera' && Math.abs(c.texelSize - 195.3) < 1)!;
+  console.log(`low orbit, sun 14 deg: edge over ${orbit.length.toFixed(0)} px (${orbit.n} samples): residual rms ${orbit.rms.toFixed(2)} px, max ${orbit.max.toFixed(2)} px, 10-90 % width ${orbit.width.toFixed(1)} px; 200 km cascade ${orbitCascade.aspect.toFixed(2)} times finer along v`);
+  await saveScreenshot(page, 'render-core', 'shadows-low-sun-orbit-14deg');
+  expect(orbitCascade.everyFrame).toBe(false);
+  // The cascade is fitted to the ground it shadows: finer texels along the light than a square map has.
+  expect(orbitCascade.aspect).toBeGreaterThan(2);
+  expect(orbit.n).toBeGreaterThan(200);
+  expect(orbit.length).toBeGreaterThan(600);
+  // Bound. Before the receiver fit and the receiver-space kernel this edge was a saw of 2.3 px amplitude
+  // (rms 1.33 px) with a 15 px wide penumbra. What is left is the sub-pixel wobble of 70 m texels.
+  expect(orbit.rms).toBeLessThan(0.8);
+  expect(orbit.max).toBeLessThan(1.5);
+  expect(orbit.width).toBeLessThan(11);
+
+  // (2) The ridge near the terminator (sun 6 deg up) from 1,000 km with a 20 deg lens: the 1500 km camera
+  // cascade (1.46 km texels, each 14 km long on the ground at this sun). The shadow tip used to break up
+  // into fringes 70 km long and could not be located at all.
+  await openPage(page, '/labs/render-core/?scene=lunarOrbit&stand=0&probe=ridge,casters&hud=0&fov=20&ev=13.5&paused=1&scale=1');
+  await page.evaluate(() => {
+    const rc = window.__rc!;
+    rc.setSunAtSite(rc.probes.ridgeSite, [90, 6]);
+    rc.lookAt([-10e3, 0, 0], 180, 70, 1000e3, rc.probes.ridgeSite);
+  });
+  await waitIdle(page, 150);
+  const tip = await ridgeShadowEdge(page, 90, 6, 60);
+  const tipCascade = (await cascadesNow()).find((c) => c.fit === 'camera' && Math.abs(c.texelSize - 1464.8) < 1)!;
+  console.log(`terminator from 1,000 km, sun 6 deg: edge over ${tip.length.toFixed(0)} px (${tip.n} samples): residual rms ${tip.rms.toFixed(2)} px, max ${tip.max.toFixed(2)} px, 10-90 % width ${tip.width.toFixed(1)} px; 1500 km cascade ${tipCascade.aspect.toFixed(2)} times finer along v`);
+  await saveScreenshot(page, 'render-core', 'shadows-low-sun-terminator-6deg');
+  expect(tipCascade.aspect).toBeGreaterThan(3);
+  expect(tip.n).toBeGreaterThan(150);
+  expect(tip.length).toBeGreaterThan(120);
+  expect(tip.rms).toBeLessThan(0.6);
+  expect(tip.max).toBeLessThan(1.2);
+  expect(tip.width).toBeLessThan(20);
+  await expectNoErrors(page, pageLog);
+});
+
 test('a body-fixed ridge on a Moon-sized LabPlanet casts a visible shadow at the terminator from 20,000 km, and an approach through 1,500 km shows no pop', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?scene=lunarOrbit&stand=0&probe=ridge,casters&hud=0&fov=5&ev=13.5&paused=1');
   await assertDiscreteGpu(page);

@@ -26,7 +26,9 @@ test('static scene with TAA: frame-to-frame difference below 1/255 mean, near ob
   await assertDiscreteGpu(page);
   const s = await setUp(page);
   expect(s.el).toBeGreaterThan(20);
-  await waitIdle(page, 90);
+  // Four seconds: exposure has settled and the resolve has converged (the rim of a saturated highlight takes
+  // about two seconds to reach its full value: section 13 of RENDER_API).
+  await waitIdle(page, 240);
   const a = await saveScreenshot(page, 'render-core', 'stability-near-and-moon');
   await page.evaluate(() => window.__test!.waitFrames(7));
   const b = await page.screenshot();

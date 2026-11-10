@@ -202,12 +202,23 @@ fn envIrradiance(n: vec3f) -> vec3f {
     s.altitude = r - bodyRadius;
     sunDir = b.sunDir.xyz;
   }
-  if (s.materialId == MATERIAL_STANDARD || s.materialId == MATERIAL_DISPLAY) {
-    // Wetness darkens dielectrics and smooths the surface.
-    let wet = s.param * f32(s.materialId == MATERIAL_STANDARD);
-    s.albedo *= mix(1.0, 0.6, wet * (1.0 - s.metallic));
-    s.roughness = mix(s.roughness, min(s.roughness, 0.2), wet);
+  var emissiveScale = 1.0;
+  if (s.materialId == MATERIAL_DISPLAY) {
+    // A display is an emitter behind a glass front: a dielectric (F0 0.04) at the G-buffer roughness, never
+    // metallic, never wet, RT4 unused. RT5 holds its image at full brightness; RT2.a (brightness 0..1)
+    // scales it here, together with the transmission of the glass towards the eye relative to normal
+    // incidence, (1 - F(NoV)) / (1 - F0): a display states its luminance as seen head-on and fades into
+    // the reflection at grazing angles.
+    emissiveScale = s.param * (1.0 - pow5(1.0 - saturate(dot(s.n, s.v))));
+    s.metallic = 0.0;
+    s.anisotropy = 0.0;
+    s.clearcoat = 0.0;
+    s.param = 0.0;
     s.materialId = MATERIAL_STANDARD;
+  } else if (s.materialId == MATERIAL_STANDARD) {
+    // Wetness darkens dielectrics and smooths the surface.
+    s.albedo *= mix(1.0, 0.6, s.param * (1.0 - s.metallic));
+    s.roughness = mix(s.roughness, min(s.roughness, 0.2), s.param);
   }
 
   // ---- sun
@@ -229,12 +240,17 @@ fn envIrradiance(n: vec3f) -> vec3f {
   s.lightAlpha = 0.0;
 
   // ---- ambient
+  // The sky table and the probe are alternatives, never summed (the probe already contains the sky):
+  // terrain and water take the table, standard and cloth the probe, regolith the table on a body that
+  // has one and the probe on an airless body.
   var amb: AmbientInput;
   amb.skyIrradiance = vec3f(0.0);
   var skyHorizontal = vec3f(0.0);
+  var hasSkyTable = false;
   if (bi >= 0) {
     let b = frame.bodies[bi];
     let layer = i32(b.fixedX.w);
+    hasSkyTable = layer >= 0;
     if (layer >= 0 && r < b.prevCenter.w) {
       let uv = skyIrradianceUvFromRMuS(max(r, bodyRadius), muS, bodyRadius, b.prevCenter.w);
       skyHorizontal = textureSampleLevel(skyIrradianceLut, linearClamp, uv, layer, 0.0).rgb;
@@ -248,7 +264,7 @@ fn envIrradiance(n: vec3f) -> vec3f {
   amb.envSpecular = vec3f(0.0);
   amb.envSpecularCoat = vec3f(0.0);
   amb.skyReflection = vec3f(0.0);
-  if (s.materialId == MATERIAL_STANDARD || s.materialId == MATERIAL_CLOTH || s.materialId == MATERIAL_REGOLITH) {
+  if (s.materialId == MATERIAL_STANDARD || s.materialId == MATERIAL_CLOTH || (s.materialId == MATERIAL_REGOLITH && !hasSkyTable)) {
     amb.envIrradiance = envIrradiance(s.n);
     if (s.materialId == MATERIAL_STANDARD) {
       let mips = f32(textureNumLevels(envProbeCube)) - 1.0;
@@ -294,7 +310,7 @@ fn envIrradiance(n: vec3f) -> vec3f {
   // ---- map-view fill light (declared ambient, unshadowed)
   lit += s.albedo * frame.sunIlluminance.rgb * (frame.misc.x / PI);
 
-  return vec4f(writeHdr(lit * frame.exposure.x + emissive), 1.0);
+  return vec4f(writeHdr(lit * frame.exposure.x + emissive * emissiveScale), 1.0);
 }
 `;
 

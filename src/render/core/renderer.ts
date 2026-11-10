@@ -640,8 +640,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       attribution,
     );
 
-    // 3a. depth -> 'scene.depthOpaque'
+    // 3a. depth -> 'scene.depthOpaque'. Copies run between passes: perf.gpuGap times each as the gap between its
+    // neighbours; the frame's sum is reported as 'core.copies'.
     encoder.copyTextureToTexture({ texture: T.depth }, { texture: T.depthOpaque }, [rw, rh]);
+    perf.gpuGap('core.copies');
 
     // 4. AO + contact shadows, deferred lighting
     ao.run(encoder, frame, perf, frameBindGroup, T.views.normal);
@@ -658,7 +660,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     }
 
     // 4a. HDR -> 'scene.colorCopy' (only when a feature requires it)
-    if (requires('scene.colorCopy')) encoder.copyTextureToTexture({ texture: T.hdr }, { texture: ensureColorCopy('colorCopy') }, [rw, rh]);
+    if (requires('scene.colorCopy')) {
+      encoder.copyTextureToTexture({ texture: T.hdr }, { texture: ensureColorCopy('colorCopy') }, [rw, rh]);
+      perf.gpuGap('core.copies');
+    }
 
     // 5. forward water (skipped entirely when no feature draws water)
     const hasWater = features.some((f) => f.drawWater);
@@ -680,6 +685,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
 
     // 5a. depth -> 'scene.depth', min/max downsample -> 'scene.depthHalf'
     encoder.copyTextureToTexture({ texture: T.depth }, { texture: T.depthCopy }, [rw, rh]);
+    perf.gpuGap('core.copies');
     {
       if (!depthHalfGroup || depthHalfSource !== T.views.depthCopy) {
         depthHalfSource = T.views.depthCopy;
@@ -715,7 +721,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     for (const f of features) if (f.preTransparent) runCpu(`${f.id}.preTransparent`, () => f.preTransparent!(frame, encoder));
 
     // 8a. HDR -> 'scene.colorCopyTransparent' (only when required)
-    if (requires('scene.colorCopyTransparent')) encoder.copyTextureToTexture({ texture: T.hdr }, { texture: ensureColorCopy('colorCopyTransparent') }, [rw, rh]);
+    if (requires('scene.colorCopyTransparent')) {
+      encoder.copyTextureToTexture({ texture: T.hdr }, { texture: ensureColorCopy('colorCopyTransparent') }, [rw, rh]);
+      perf.gpuGap('core.copies');
+    }
 
     // 9. transparents
     if (features.some((f) => f.drawTransparent)) {

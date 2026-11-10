@@ -4,8 +4,17 @@
  * TAA resolves at DISPLAY resolution from the jittered internal-resolution HDR target: jitter-aware
  * 3 x 3 reconstruction, closest-depth velocity dilation, 5-tap Catmull-Rom history, YCoCg variance
  * clipping, luminance-weighted blend. Inputs and history are sanitised (NaN / Inf -> 0, clamp to HDR_MAX).
- * RCAS sharpening happens in the tonemap pass. Bloom is threshold-free: 13-tap downsamples (Karis average
- * on the first), 9-tap tent upsamples blended level by level, mixed into the image at 4 % by the tonemapper.
+ * RCAS sharpening happens in the tonemap pass. Bloom is threshold-free and linear: 13-tap downsamples,
+ * 9-tap tent upsamples blended level by level, mixed into the image at 4 % by the tonemapper.
+ *
+ * Energy of saturated sources (ARCHITECTURE 10.4: the sun disc at HDR_MAX still drives bloom). The spatial
+ * reconstruction of the resolve and the whole bloom chain are LINEAR, so a source of a pixel or two (the
+ * sun at a wide field of view, a glint) keeps its energy. Only the temporal blend runs in the reversible
+ * tonemap space: that is where fireflies are rejected (a value that is bright in one jittered frame and
+ * dark in the others converges towards the dark ones), and a pixel that is bright in every frame is not
+ * touched by it. Averaging the 3 x 3 taps in that space instead let a single dark tap of 0.7 % weight pull
+ * a 60,000 tap down to about 140, and a Karis average on the first bloom level clamped whatever was left
+ * of an isolated source to about 1.
  */
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { CoreApi } from '../coreApi';
@@ -44,7 +53,7 @@ struct TaaUniforms { v: vec4f }   // x = 1 when the history is invalid, y = hist
 
 fn toYcocg(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
 fn fromYcocg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
-// Reversible tonemap for stable filtering of HDR values.
+// Reversible tonemap: the space of the variance clip and of the temporal blend (never of a spatial average).
 fn squash(c: vec3f) -> vec3f { return c / (1.0 + luminance(c)); }
 fn unsquash(c: vec3f) -> vec3f { return c / max(1.0 - luminance(c), 1e-5); }
 
@@ -80,33 +89,43 @@ fn historyCatmullRom(uv: vec2f) -> vec3f {
   let p = in.uv * frame.renderSize.xy;
   let base = vec2i(floor(p + frame.jitter.xy));
 
-  var colour = vec3f(0.0);
+  var sumLinear = vec3f(0.0);
   var wsum = 0.0;
+  // Moments of the squashed taps are taken about the centre tap. Near saturation the taps differ from 1 by
+  // 1e-5, and m2 / 9 - mean^2 of such values is float32 noise: a box 4e-4 wide, i.e. "anything above 2,400".
+  let pivot = toYcocg(squash(writeHdr(textureLoad(hdrTex, clamp(base, vec2i(0), rs - 1), 0).rgb)));
   var m1 = vec3f(0.0);
   var m2 = vec3f(0.0);
+  var tapMin = pivot;
+  var tapMax = pivot;
   var closest = 0.0;
   var closestAt = base;
   var wCentre = 0.0;
   for (var j = -1; j <= 1; j++) {
     for (var i = -1; i <= 1; i++) {
       let q = clamp(base + vec2i(i, j), vec2i(0), rs - 1);
-      let c = squash(writeHdr(textureLoad(hdrTex, q, 0).rgb));
+      let texel = writeHdr(textureLoad(hdrTex, q, 0).rgb);
+      let c = squash(texel);
       // Distance from the output pixel centre to this sample's true position, in render pixels.
       let d = (vec2f(q) + 0.5 - frame.jitter.xy) - p;
       let w = exp(-2.29 * dot(d, d));
-      colour += c * w;
+      sumLinear += texel * w;
       wsum += w;
       if (i == 0 && j == 0) { wCentre = w; }
       let y = toYcocg(c);
-      m1 += y;
-      m2 += y * y;
+      m1 += y - pivot;
+      m2 += (y - pivot) * (y - pivot);
+      tapMin = min(tapMin, y);
+      tapMax = max(tapMax, y);
       let dz = textureLoad(depthTex, q, 0);
       if (dz > closest) { closest = dz; closestAt = q; }
     }
   }
-  colour /= wsum;
-  let mean = m1 / 9.0;
-  let sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3f(0.0)));
+  // Linear (energy-conserving) reconstruction of this frame; squashed only for the temporal blend below.
+  let colour = squash(sumLinear / wsum);
+  let meanRel = m1 / 9.0;
+  let mean = pivot + meanRel;
+  let sigma = sqrt(max(m2 / 9.0 - meanRel * meanRel, vec3f(0.0)));
 
   // Velocity of the closest surface in the neighbourhood (keeps silhouettes of moving objects sharp).
   var velocity = textureLoad(velocityTex, closestAt, 0).xy;
@@ -127,8 +146,17 @@ fn historyCatmullRom(uv: vec2f) -> vec3f {
     var h = toYcocg(historyCatmullRom(prevUv));
     // Variance clip towards the neighbourhood mean (wider box when static: less flicker on thin features).
     let gamma = mix(1.25, 1.0, saturate(speedPx * 0.5));
-    let lo = mean - sigma * gamma;
-    let hi = mean + sigma * gamma;
+    var lo = mean - sigma * gamma;
+    var hi = mean + sigma * gamma;
+    // Where the neighbourhood holds very bright taps (above about 10 x white) the box is widened to the
+    // range of the taps. In the squashed space every such tap sits just below 1, so a source of a few
+    // pixels has a neighbourhood mean far below its own value, and the variance box would cut its history
+    // down to about 10 in every frame in which the jitter leaves it three bright taps or fewer. Nothing is
+    // lost for ghosting: a bright history over a pixel that has gone dark fades within a few frames
+    // anyway, because the blend below weights dark values up.
+    let bright = smoothstep(0.75, 0.95, tapMax.x);
+    lo = mix(lo, min(lo, tapMin), bright);
+    hi = mix(hi, max(hi, tapMax), bright);
     let centre = 0.5 * (lo + hi);
     let extent = 0.5 * (hi - lo) + vec3f(1e-5);
     let off = h - centre;
@@ -146,27 +174,19 @@ fn historyCatmullRom(uv: vec2f) -> vec3f {
 `;
 
 const BLOOM_DOWN_FS = /* wgsl */ `
-struct BloomUniforms { v: vec4f }   // x = 1 for the first level (Karis average + input sanitising)
-@group(1) @binding(0) var<uniform> bloom: BloomUniforms;
-@group(1) @binding(1) var srcTex: texture_2d<f32>;
+@group(1) @binding(0) var srcTex: texture_2d<f32>;
 fn tap(uv: vec2f) -> vec3f { return writeHdr(textureSampleLevel(srcTex, linearClamp, uv, 0.0).rgb); }
-fn karis(c: vec3f) -> f32 { return 1.0 / (1.0 + luminance(c)); }
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let t = 1.0 / vec2f(textureDimensions(srcTex));
   let uv = in.uv;
-  // 13-tap downsample (Jimenez, Call of Duty: Advanced Warfare): five overlapping 2 x 2 boxes.
+  // 13-tap downsample (Jimenez, Call of Duty: Advanced Warfare): five overlapping 2 x 2 boxes, with linear
+  // weights on every level. No Karis average: it clamps an isolated saturated source (a small sun disc, a
+  // glint) to about 1; fireflies are rejected by the temporal blend of the resolve instead.
   let a = tap(uv + t * vec2f(-2.0, -2.0)); let b = tap(uv + t * vec2f(0.0, -2.0)); let c = tap(uv + t * vec2f(2.0, -2.0));
   let d = tap(uv + t * vec2f(-2.0, 0.0));  let e = tap(uv);                          let f = tap(uv + t * vec2f(2.0, 0.0));
   let g = tap(uv + t * vec2f(-2.0, 2.0));  let h = tap(uv + t * vec2f(0.0, 2.0));    let i = tap(uv + t * vec2f(2.0, 2.0));
   let j = tap(uv + t * vec2f(-1.0, -1.0)); let k = tap(uv + t * vec2f(1.0, -1.0));
   let l = tap(uv + t * vec2f(-1.0, 1.0));  let m = tap(uv + t * vec2f(1.0, 1.0));
-  if (bloom.v.x > 0.5) {
-    // Karis average per box suppresses fireflies from single very bright pixels.
-    let b0 = (j + k + l + m) * 0.25; let b1 = (a + b + d + e) * 0.25; let b2 = (b + c + e + f) * 0.25;
-    let b3 = (d + e + g + h) * 0.25; let b4 = (e + f + h + i) * 0.25;
-    let w0 = 0.5 * karis(b0); let w1 = 0.125 * karis(b1); let w2 = 0.125 * karis(b2); let w3 = 0.125 * karis(b3); let w4 = 0.125 * karis(b4);
-    return vec4f((b0 * w0 + b1 * w1 + b2 * w2 + b3 * w3 + b4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
-  }
   return vec4f(e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125, 1.0);
 }
 `;
@@ -203,7 +223,6 @@ export class PostProcess {
   private readonly downPipeline: Tracked<GPURenderPipeline>;
   private readonly upPipeline: Tracked<GPURenderPipeline>;
   private readonly taaUniform: GPUBuffer;
-  private readonly bloomUniforms: GPUBuffer[];
   private history: GPUTexture[] = [];
   private historyViews: GPUTextureView[] = [];
   private down: GPUTexture[] = [];
@@ -229,17 +248,12 @@ export class PostProcess {
     const tex = (binding: number, sampleType: GPUTextureSampleType = 'float'): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType } });
     const ubo = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
     this.taaLayout = device.createBindGroupLayout({ label: 'core.taa', entries: [ubo(0), tex(1), tex(2), tex(3, 'depth'), tex(4)] });
-    this.downLayout = device.createBindGroupLayout({ label: 'core.bloomDown', entries: [ubo(0), tex(1)] });
+    this.downLayout = device.createBindGroupLayout({ label: 'core.bloomDown', entries: [tex(0)] });
     this.upLayout = device.createBindGroupLayout({ label: 'core.bloomUp', entries: [tex(0), tex(1)] });
     this.taaPipeline = core.fullscreenPipeline({ label: 'core.taa', fragment: TAA_FS, layouts: [this.taaLayout], targets: [{ format: 'rgba16float' }] });
     this.downPipeline = core.fullscreenPipeline({ label: 'core.bloomDown', fragment: BLOOM_DOWN_FS, layouts: [this.downLayout], targets: [{ format: this.bloomFormat }] });
     this.upPipeline = core.fullscreenPipeline({ label: 'core.bloomUp', fragment: BLOOM_UP_FS, layouts: [this.upLayout], targets: [{ format: this.bloomFormat }] });
     this.taaUniform = device.createBuffer({ label: 'core.taa', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.bloomUniforms = [1, 0].map((first) => {
-      const b = device.createBuffer({ label: 'core.bloom', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      device.queue.writeBuffer(b, 0, new Float32Array([first, 0, 0, 0]));
-      return b;
-    });
   }
 
   warm(): void {
@@ -319,10 +333,7 @@ export class PostProcess {
       this.downGroups[key] ??= device.createBindGroup({
         label: `core.bloomDown${l}`,
         layout: this.downLayout,
-        entries: [
-          { binding: 0, resource: { buffer: this.bloomUniforms[l === 0 ? 0 : 1]! } },
-          { binding: 1, resource: l === 0 ? resolved : this.downViews[l - 1]! },
-        ],
+        entries: [{ binding: 0, resource: l === 0 ? resolved : this.downViews[l - 1]! }],
       });
       const pass = encoder.beginRenderPass({ label: `bloomDown${l}`, colorAttachments: [{ view: this.downViews[l]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.bloom') });
       pass.setBindGroup(0, frameGroup);

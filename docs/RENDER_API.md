@@ -266,9 +266,9 @@ struct Surface {
   lightAlpha: f32,                  // extra GGX alpha for the light being evaluated (sun: 0.6 x angular radius); use ggxAlpha(roughness, s.lightAlpha)
   materialId: u32, bodyIndex: i32,  // bodyIndex = nearest frame body, -1 = none
 }
-struct AmbientInput {
-  skyIrradiance: vec3f,     // lux from 'atmosphere.skyIrradianceLut', already tilted to the normal
-  envIrradiance: vec3f,     // lux from 'env.sh9' along the normal (0 for terrain and water)
+struct AmbientInput {           // the two irradiance terms are ALTERNATIVES (the probe already contains the sky): see section 7
+  skyIrradiance: vec3f,     // lux from 'atmosphere.skyIrradianceLut', already tilted to the normal (terrain, water, regolith)
+  envIrradiance: vec3f,     // lux from 'env.sh9' along the normal (standard, cloth; regolith on an airless body; 0 otherwise)
   envSpecular: vec3f,       // cd/m^2, 'env.probeCube' along the reflection vector at s.roughness (standard only)
   envSpecularCoat: vec3f,   // the same at the clearcoat roughness
   skyReflection: vec3f,     // cd/m^2, sky along the reflection vector, valid at any distance (terrain, water)
@@ -329,7 +329,14 @@ return o;
 Material parameter (RT2.a) per id: standard and terrain = wetness; regolith = crater freshness; water =
 `encodeWaterDepth(depth)`; cloth = translucency; display = brightness (the emitted colour itself goes to
 RT5). RT4 is read for `MATERIAL_STANDARD` only; every other material writes the neutral value that
-`gbufferPack` sets. `MATERIAL_DISPLAY` is lit as a standard surface (glass over the emitter).
+`gbufferPack` sets.
+
+`MATERIAL_DISPLAY` is an emitter behind a glass front. Write the image at FULL brightness to RT5 (cd/m^2
+x exposure, as any emissive), the brightness 0..1 to RT2.a, the off-state colour of the panel to RT0 and
+the roughness of the glass to RT2.r. The deferred pass shades it as a dielectric (F0 0.04, never
+metallic, no wetness, no anisotropy or clearcoat) and emits `RT5 x brightness x (1 - (1 - NoV)^5)`: the
+stated luminance head-on, fading into the reflection at grazing angles (the transmission of the glass
+relative to normal incidence). Do not pre-multiply the brightness into RT5.
 
 Emissive: luminance in cd/m^2 times `frame.exposure.x`. Velocity of sky pixels stays 0 (TAA reprojects
 depth-0 pixels by camera rotation).
@@ -353,7 +360,7 @@ lights, the map fill light and RT5 emissive. Eclipses and planetshine are comput
 | `atmosphere.skyIrradianceLut` | `texture_2d_array<f32>` 64 x 16, same layers; `skyIrradianceUvFromRMuS`. rgb = sky illuminance on a HORIZONTAL surface in lux (absolute, not pre-exposed). The core tilts it with `0.5 + 0.5 dot(n, up)`. | black |
 | `atmosphere.skyViewLut` | `texture_2d<f32>` 192 x 108, `skyViewUv(dir, up, sunDir)`, rgb = sky luminance around the camera in cd/m^2. Used for water / terrain sky reflection within 50 km of the camera (beyond: sky irradiance / pi). | black |
 | `env.probeCube` | `texture_cube<f32>` with mips, ROOT axes, cd/m^2 (not pre-exposed), GGX-prefiltered: mip = roughness x (mipCount - 1). Standard materials only. | black |
-| `env.sh9` | uniform `array<vec4f, 9>`: IRRADIANCE coefficients (cosine lobe already convolved), lux, real SH basis in ROOT axes, order `Y00, Y1-1 (y), Y10 (z), Y11 (x), Y2-2 (xy), Y2-1 (yz), Y20 (3z^2-1), Y21 (xz), Y22 (x^2-y^2)` with the usual constants (0.282095, 0.488603, 1.092548, 0.315392, 0.546274). `E(n) = sum c_i Y_i(n)`. Standard, cloth and regolith. | 0 |
+| `env.sh9` | uniform `array<vec4f, 9>`: IRRADIANCE coefficients (cosine lobe already convolved), lux, real SH basis in ROOT axes, order `Y00, Y1-1 (y), Y10 (z), Y11 (x), Y2-2 (xy), Y2-1 (yz), Y20 (3z^2-1), Y21 (xz), Y22 (x^2-y^2)` with the usual constants (0.282095, 0.488603, 1.092548, 0.315392, 0.546274). `E(n) = sum c_i Y_i(n)`. The probe INCLUDES the sky as seen from the active vessel (rendering-design 8.3). Standard and cloth; regolith on a body without an atmosphere table. | 0 |
 | `clouds.shadowMap` | `texture_2d<f32>`, r = cloud optical depth along the local vertical, orthographic around the camera. Placement by `coreOf(ctx).setCloudShadowParams({ near: { bodyIndex, originRelCam, axisU, axisV, halfExtent, opticalDepthScale } })` every frame; uv = `0.5 + 0.5 * dot(p - origin, axis) / halfExtent`; transmittance = `exp(-r * scale / max(mu_s, 0.05))`. Fades to the far term over the outer 1/8. | off |
 | `clouds.coverageMap` | `texture_2d<f32>` equirect (row 0 = north, column 0 = lon -180), r = coverage. `setCloudShadowParams({ far: { bodyIndex, layerRadius, opticalDepth, longitudeOffset } })`: transmittance = `exp(-coverage * opticalDepth / max(mu_s, 0.05))` at the point where the sun ray crosses `layerRadius`. | off |
 | `FrameContext.lights` | push `LocalLight`s in `prepare`: point or capsule (closest point on the segment), `intensity` in cd, inverse square with a smooth window reaching 0 at `range`. At most 16 per frame. Unshadowed. | - |
@@ -369,8 +376,12 @@ lights, the map fill light and RT5 emissive. Eclipses and planetshine are comput
   bodies as directional lights, `E = E_sun x geometricAlbedo x (R / d)^2 x Phi(phase)` (Lambert sphere),
   coloured by `meanColor`, faded out closer than 4 R (there the environment probe must carry it). A pixel
   uses its nearest body's list when it is lower than half a radius above it, else the free-space list.
-- Ambient by material: terrain and water use the sky irradiance LUT (never the probe); standard and cloth
-  use `env.sh9` (+ `env.probeCube` specular for standard); regolith uses both irradiance terms.
+- Ambient by material. The sky irradiance table and the probe are alternatives, never summed on one
+  surface, because the probe already contains the sky: terrain and water use the table (never the probe);
+  standard, cloth and display use `env.sh9` alone (+ `env.probeCube` specular for standard and display),
+  so publishing the table does not change them; regolith uses the table on a body that has an atmosphere
+  layer and `env.sh9` on an airless one. `brdfStandardAmbient` and `brdfClothAmbient` ignore
+  `AmbientInput.skyIrradiance`; a forward shader that fills an `AmbientInput` itself follows the same rule.
 - `CameraState.fillLight` adds `albedo x fill x E_sun / pi` (map view only).
 
 Request `docs/requests/render-core-1.md` asks for the cloud-shadow placement to become a SharedResources
@@ -392,10 +403,10 @@ let lit = sampleSunShadow(posRelCam, normalRootAxes, vec2u(fragCoord.xy));   // 
 ```wgsl
 struct ShadowCascade {
   viewProj: mat4x4f,   // camera-relative ROOT axes -> shadow clip (xy in [-1, 1], z = 0 at the sun side .. 1), valid THIS frame
-  params: vec4f,       // x = texel size (m), y = depth range (m), z = blend weight 0..1, w = fit (0 camera, 1 body)
-  lightDir: vec4f,     // xyz = unit direction to the sun of this cascade (ROOT), w = cascade radius (m)
+  params: vec4f,       // x = texel size along u (m), y = depth range (m), z = blend weight 0..1, w = texel size along v (m; smaller than x in a cascade fitted to its receivers)
+  lightDir: vec4f,     // xyz = unit direction to the sun of this cascade (ROOT), w = half extent along u (m)
   axisU: vec4f,        // xyz = world direction of +u, w = array layer of 'shadow.cascades'
-  axisV: vec4f,        // xyz = world direction of +v, w = 1 when re-rendered every frame
+  axisV: vec4f,        // xyz = world direction of +v, w = flags: 1 = re-rendered every frame, 2 = fitted to a whole body
 }
 struct ShadowUniforms {                 // 'shadow.uniforms', 1056 bytes (SHADOW_UNIFORM_BYTES)
   count: vec4u,                         // x = cascades in use; cascades[0 .. count) in sampling order
@@ -412,8 +423,35 @@ bias (0.7 texel x sin of the incidence angle) plus an exact receiver-plane depth
 light, e.g. the terminator in a 1.9 km whole-body cascade, neither shows acne nor loses low relief). Returns
 1 where no cascade covers the point, on faces turned away from the sun, and with the default resources.
 
+**Low sun.** At a sun elevation e one shadow texel covers 1 / sin(e) texels of ground along the light
+(4 at 14 deg, 10 at 6 deg), so a one-texel step of a shadow edge is that long on the ground. Two things
+keep the edges of the staggered cascades straight:
+
+- *Receiver fit* (CPU, `cascadeMath.ts`). A staggered camera cascade holds body-fixed casters only, so
+  everything it shadows is ground. Its footprint is narrowed along v (the map axis in the vertical plane
+  of the light) from the square around the camera to the band that the terrain shell
+  (`BodyDef.terrain.minElevation .. maxElevation`) occupies inside the cascade's reach (its radius, or the
+  horizon if nearer): half height `radius x 2^(-k/2)`, k = 0..8, the narrowest step that holds the band
+  with 25 % to spare. The map is turned so that v lies along the local vertical. The 200 km cascade of a
+  100 km lunar orbit at 14 deg sun gets 2.8 times, the 1500 km cascade seen from 1000 km at 6 deg 5.7 times
+  finer texels along the light. Band and orientation are kept from capture to capture (same texel grid)
+  until the band no longer holds the ground, a narrower step would do, or the vertical has turned 10 deg;
+  each of those re-phases the grid once. Cascades whose relief is as large as they are (8 km and below
+  with the global elevation range) and all every-frame cascades stay square.
+- *Receiver-space kernel* (shader). The PCF kernel is laid out along the receiver: "along" = the map
+  direction in which the receiver plane recedes from the light, "across" = constant depth. In staggered
+  cascades the 1.5 texel minimum is widened across the light until the kernel is round on the receiver
+  (at most 4 times), which averages the steps of an edge instead of leaving them as teeth; taps in the
+  widened part only count blockers that stand clear of the receiver plane by a slope of 0.3, so relief
+  beside the receiver does not darken it. Every-frame cascades keep the round 1.5 texel minimum (thin
+  shadows of nearby hardware stay crisp).
+
+Measured on a 150 km straight ridge (`shadows.spec.ts`, 1280 x 720): low orbit at 14 deg, residual of the
+shadow edge against a smooth curve 0.54 px rms / 0.99 px max with a 6.8 px penumbra (before: 1.33 / 2.33
+px with 15 px); the terminator at 6 deg from 1000 km, 0.18 / 0.41 px (before: a comb of 70 km fringes).
+
 Cascades (ARCHITECTURE 10.1): radii 12 m, 60 m, 300 m, 1.5 km, 8 km, 40 km, 200 km, 1500 km around the
-camera (texel = 2 r / 2048), a `depth32float` 2048^2 x 8 array.
+camera (texel = 2 r / 2048 along u; along v the same or finer, see above), a `depth32float` 2048^2 x 8 array.
 
 - **Anchoring.** Each cascade is captured in the body-fixed frame of the nearest body (cascade 0 in the
   active vessel's frame for an interior camera): light basis, extents and a texel-snapped centre are stored
@@ -446,7 +484,10 @@ camera (texel = 2 r / 2048), a `depth32float` 2048^2 x 8 array.
    ONLY when `cascade.everyFrame` is true. A staggered cascade must never contain anything that moves
    relative to its anchor.
 4. Cull against `cascade.viewProj` (float64, this frame): `|clip.x|, |clip.y| <= 1 + margin`; skip casters
-   smaller than half of `cascade.texelSize`. Do not cull by clip z on the sun side (pancaking).
+   smaller than half of `cascade.texelSize`. Do not cull by clip z on the sun side (pancaking). The
+   footprint is not always a square around the camera (receiver fit, above): never cull by distance from
+   the camera or by `cascade.farDistance`, only by the clip rectangle. `cascade.texelSize` is the texel
+   along u, the coarser of the two: pick terrain LODs from it.
 5. `cascade.index` is the array layer (stable for the lifetime of a cascade), `cascade.fit` tells a
    whole-body cascade (`farDistance` is Infinity): terrain should draw coarse resident tiles of that body.
 
@@ -524,6 +565,7 @@ interface MeshInstance {
   soot?: number; frost?: number; wetness?: number;   // 0..1, multiplied by the vertex masks b / a (soot, frost)
   fade?: number;                             // dither fade 0..1 (1 = solid); below 0.5 the instance casts no shadow
   emissiveScale?: number;                    // multiplies PbrMaterialDef.emissive
+  displayBrightness?: number;                // 'display' materials: brightness 0..1 -> RT2.a (default 1; section 6)
 }
 function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | null, rest): MeshInstance
 // ParentPose = { originRelCam, q, prevOriginRelCam, prevQ }: a VesselPose is one; for a body use
@@ -534,7 +576,8 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   normals, tangents xyzw, uvs, optional masks rgba8: r = edge wear, g = baked AO, b = soot weight,
   a = frost weight; without masks: wear 0, the others 1).
 - Materials (`PbrMaterialDef`): `shading` selects the material id; `anisotropy`, `clearcoat`,
-  `clearcoatRoughness` go to RT4 (standard only); `translucency` to RT2.a (cloth); `emissive` in cd/m^2;
+  `clearcoatRoughness` go to RT4 (standard only); `translucency` to RT2.a (cloth); for `display` RT2.a is
+  `MeshInstance.displayBrightness` and `emissive` is the image at full brightness; `emissive` in cd/m^2;
   `doubleSided` disables culling and flips the normal on back faces. Textures: `baseColor` and `emissive`
   are sRGB, `normal` is tangent-space (rgb * 2 - 1, +Y up in v), `orm` is r = AO, g = roughness factor,
   b = metallic factor; each string is a registered procedural id or a URL (absolute, or relative to
@@ -657,7 +700,19 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
 - Screen-space AO (GTAO, 2 slices x 6 steps per side) and contact shadows (10 steps towards the sun over
   max(0.3 m, 1.5 % of the distance)) are computed at half resolution from `'scene.depthOpaque'` and RT1;
   AO multiplies ambient light only (`Surface.ao`), the contact term multiplies the sun.
-- Bloom is threshold-free (6 levels, Karis average on the first), mixed at 4 %; the tonemapper is AgX.
+- Bloom is threshold-free and linear (6 levels, 13-tap downsamples, no Karis average), mixed at 4 %; the
+  tonemapper is AgX.
+- Saturated sources keep their energy (ARCHITECTURE 10.4): the spatial reconstruction of the resolve and the
+  bloom chain are linear, and the history clip does not cut very bright values down, so a sun disc of a
+  few pixels or a stable glint at `HDR_MAX` reaches the bloom. Measured on a 9-pixel disc at `HDR_MAX`:
+  the resolved peak is 60,000 two frames after the disc appears and 95 % of the disc's energy is in the
+  resolved image once it has settled. Fireflies are rejected in one place only, the temporal blend of the
+  resolve, which runs in a reversible tonemap space: a value that is bright in one jittered frame and dark
+  in the others converges towards the dark ones. Two consequences: a highlight smaller than a pixel that
+  flickers under the jitter does not bloom (keep sub-pixel emitters stable; the mesh system widens
+  roughness for specular AA), and a pixel that turns from dark to saturated takes time to be believed
+  unless its whole 3 x 3 neighbourhood is bright: the core of a new source is there at once, its rim
+  (and with it the full glow) builds up over about two seconds. Darkening is immediate.
 - `frame.qualityScale` (0.5..1): multiply march step counts and particle counts by it. The core lowers it
   when the measured GPU time exceeds 92 % of the 11 ms budget and only when it is at 0.5 lowers the
   internal resolution (`QualitySettings.renderScaleMin..Max`, steps of 1/16); recovery below 72 % runs in
@@ -683,10 +738,22 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
 - **Measure with the GPU busy.** An RTX 5090 with only a lab's 1-2 ms of work per frame clocks down:
   the same pass then reads 2-5 times longer and its p99 is unstable (TAA 0.32 ms idle, 0.10 ms inside a
   9 ms frame). Budgets are for the game's frame: add a ballast pass of about 7 ms while measuring (see
-  `tests/browser/render-core/core.perf.spec.ts` and the `heavy` probe in `labs/render-core/probes.ts`)
-  with `?governor=off&scale=1` so quality and resolution stay at 1.
+  `tests/browser/render-core/core.perf.spec.ts` and the `heavy` probe in `labs/render-core/probes.ts`,
+  which encodes it in the `compute` hook, away from the core's copies) with `?governor=off&scale=1` so
+  quality and resolution stay at 1. Calibrate any synthetic load while it is running, not on the idle
+  GPU (`governor.perf.spec.ts`: a 40-iteration burst on the idle GPU read up to 6 times too slow).
 - `renderer.passStats()` gives p50 / p99 / mean per pass name; a pass that does not run in a frame counts
   as 0, so `mean` is the amortised cost (staggered shadow cascades).
+- `core.copies` is not a pass: it is the time of the core's texture copies (depth -> `'scene.depthOpaque'`,
+  HDR -> `'scene.colorCopy'`, depth -> `'scene.depth'`, HDR -> `'scene.colorCopyTransparent'`), which are
+  encoded between passes. Each is timed as the gap from the end timestamp of the pass before it to the
+  begin timestamp of the pass after it, and the sum is part of the frame's GPU total (what the governor
+  acts on) and of the `core` feature row. All four copies at 1440p: 0.04 ms (p50), 0.05 ms (p99). Two
+  caveats of a gap: for the last copy the pass before it is whatever a feature encoded last in
+  `compositeAtmosphere` / `preTransparent`, so give every pass of yours a timestamp (`ctx.perf.gpuPass`)
+  or its time is counted as a copy; and a gap also holds whatever of the pass before it is still in
+  flight (a 7 ms fullscreen pass right before a copy left 0.23 ms in the gap in one frame out of five).
+  When `core.copies` looks large in the integrated app, read its p50 and look at the pass before the copy.
 
 ---
 

@@ -111,6 +111,60 @@ test('every default SharedResource works with no feature present, and a brdf chu
   await expectNoErrors(page, pageLog);
 });
 
+test('display material: the emitted image is scaled by the brightness parameter and sits behind a glass reflection', async ({ page, pageLog }) => {
+  // Sun in the north: the south face of the display panel is in its own shade, so the pixel is the emitter alone.
+  await openPage(page, '/labs/render-core/?sun=0,40&hud=0&ev=10&paused=1&probe=inputs');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+    // Head-on, 3 m south of the panel.
+    window.__rc!.lookAt(window.__rc!.stand!.display.pos, 180, 0, 3);
+  });
+  await waitIdle(page, 12);
+  const centre = (): Promise<number> =>
+    page.evaluate(async () => {
+      const lab = window.__lab!;
+      await window.__test!.waitFrames(6);
+      const [w, h] = lab.renderer.frameContext!.renderSize;
+      const px = await lab.renderer.readHdrPixels('hdr', { x: (w >> 1) - 2, y: (h >> 1) - 2, width: 4, height: 4 });
+      let g = 0;
+      for (let i = 0; i < px.data.length; i += 4) g += px.data[i + 1]! / 16;
+      return g;
+    });
+  const { exposure, luminance } = await page.evaluate(() => ({ exposure: window.__lab!.renderer.frameContext!.exposure, luminance: window.__rc!.stand!.display.emissive[1] }));
+  const full = await centre();
+  await saveScreenshot(page, 'render-core', 'lighting-display');
+  await page.evaluate(() => window.__rc!.stand!.setDisplayBrightness(0.5));
+  const half = await centre();
+  await page.evaluate(() => window.__rc!.stand!.setDisplayBrightness(0));
+  const off = await centre();
+  console.log(`display: brightness 1 reads ${(full / exposure).toFixed(1)} cd/m^2 (emitter ${luminance}), brightness 0.5 ${(half / exposure).toFixed(1)}, brightness 0 ${(off / exposure).toFixed(2)}`);
+  // Head-on the glass transmits the stated luminance; MATERIAL_PARAM (RT2.a) scales it.
+  expect(full / (luminance * exposure)).toBeGreaterThan(0.98);
+  expect(full / (luminance * exposure)).toBeLessThan(1.02);
+  expect((half - off) / (full - off)).toBeCloseTo(0.5, 2);
+  expect(off).toBeLessThan(0.01 * full);
+  // Switched off, the panel is a dark glass front: a uniform 10,000 cd/m^2 environment reflects with the
+  // dielectric Fresnel factor (F0 0.04 at normal incidence: about 440 cd/m^2 with the split-sum terms).
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvRadiance(10000));
+  const reflected = (await centre()) - off;
+  console.log(`display glass reflects ${(reflected / exposure).toFixed(0)} cd/m^2 of a 10,000 cd/m^2 environment`);
+  expect(reflected / (10000 * exposure)).toBeGreaterThan(0.03);
+  expect(reflected / (10000 * exposure)).toBeLessThan(0.06);
+  await page.evaluate(() => {
+    window.__rc!.probes.inputs.setEnvRadiance(null);
+    window.__rc!.stand!.setDisplayBrightness(1);
+  });
+  // Seen at 75 deg from the normal the emitter fades into the reflection: 1 - (1 - cos 75)^5 = 0.776 of head-on.
+  await page.evaluate(() => window.__rc!.lookAt(window.__rc!.stand!.display.pos, 180 + 75, 0, 3));
+  const oblique = await centre();
+  console.log(`display at 75 deg: ${(oblique / full).toFixed(3)} of the head-on luminance (expected 0.776)`);
+  expect(oblique / full).toBeGreaterThan(0.74);
+  expect(oblique / full).toBeLessThan(0.81);
+  await expectNoErrors(page, pageLog);
+});
+
 test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH and cube, local lights match hand calculations', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?sun=180,60&hud=0&ev=15&paused=1&probe=inputs');
   await assertDiscreteGpu(page);
@@ -183,7 +237,33 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   console.log(`env.sh9 30,000 lux adds ${stepAmb.toFixed(5)} on the step (expected about ${expectAmb.toFixed(5)})`);
   expect(stepAmb / expectAmb).toBeGreaterThan(0.85);
   expect(stepAmb / expectAmb).toBeLessThan(1.1);
+  // The probe already contains the sky (rendering-design 8.3): a standard material must not receive the sky
+  // irradiance table on top of env.sh9. Publishing the table changes nothing, with or without the probe.
+  const stepEnv = g(await centre());
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(20000));
+  const stepEnvSky = g(await centre());
   await page.evaluate(() => window.__rc!.probes.inputs.setEnvIrradiance(null));
+  const stepSky = g(await centre());
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(null));
+  console.log(`standard material: env.sh9 alone ${stepEnv.toFixed(5)}, env.sh9 + sky table ${stepEnvSky.toFixed(5)}; no ambient ${g(stepBase).toFixed(5)}, sky table alone ${stepSky.toFixed(5)}`);
+  expect(Math.abs(stepEnvSky - stepEnv)).toBeLessThan(1e-4 * stepEnv);
+  expect(Math.abs(stepSky - g(stepBase))).toBeLessThan(1e-4 * g(stepBase));
+
+  // The same for cloth: the standing panel (albedo 0.42 in green) seen from the east takes the probe, not the sky table.
+  await page.evaluate(() => window.__rc!.lookAt([-9, 0, 1.55], 90, 0, 4));
+  const clothBase = g(await centre());
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(20000));
+  const clothSky = g(await centre());
+  await page.evaluate(() => {
+    window.__rc!.probes.inputs.setSkyIrradiance(null);
+    window.__rc!.probes.inputs.setEnvIrradiance(30000);
+  });
+  const clothEnv = g(await centre()) - clothBase;
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvIrradiance(null));
+  console.log(`cloth: sky table changes ${(clothSky - clothBase).toExponential(2)}, env.sh9 30,000 lux adds ${clothEnv.toFixed(5)} (expected about ${(((0.42 * 30000) / Math.PI) * exposure).toFixed(5)})`);
+  expect(Math.abs(clothSky - clothBase)).toBeLessThan(1e-4 * Math.max(clothBase, 1e-3));
+  expect(clothEnv / (((0.42 * 30000) / Math.PI) * exposure)).toBeGreaterThan(0.85);
+  expect(clothEnv / (((0.42 * 30000) / Math.PI) * exposure)).toBeLessThan(1.1);
 
   // Prefiltered cube on the most polished gold sphere, seen from straight above: the mirror reflection of a
   // uniform 10,000 cd/m^2 environment is 10,000 x F0 (gold: 1.0, 0.77, 0.34), minus a little roughness loss.

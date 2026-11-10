@@ -31,10 +31,14 @@ struct Surface {
   bodyIndex: i32,          // nearest frame body, -1 = none
 }
 
-/// Ambient light arriving at a surface, prepared by the caller.
+/// Ambient light arriving at a surface, prepared by the caller. The two irradiance terms are ALTERNATIVES:
+/// the probe already contains the sky (rendering-design 8.3), so no surface may add both. Terrain and water
+/// take skyIrradiance (valid per pixel at any distance); standard and cloth take envIrradiance (the probe
+/// at the active vessel) and ignore skyIrradiance; for regolith the caller sets envIrradiance only on a
+/// body without an atmosphere table (where skyIrradiance is 0).
 struct AmbientInput {
   skyIrradiance: vec3f,    // lux from the sky hemisphere ('atmosphere.skyIrradianceLut'), already tilted to the surface normal
-  envIrradiance: vec3f,    // lux from the environment probe SH ('env.sh9') along the normal
+  envIrradiance: vec3f,    // lux from the environment probe SH ('env.sh9') along the normal (0 for terrain and water)
   envSpecular: vec3f,      // cd/m^2, prefiltered 'env.probeCube' along the reflection vector at the surface roughness
   envSpecularCoat: vec3f,  // the same at the clearcoat roughness
   skyReflection: vec3f,    // cd/m^2, sky radiance along the reflection vector, valid at any distance (water)
@@ -122,7 +126,8 @@ fn brdfStandardAmbient(s: Surface, a: AmbientInput) -> vec3f {
   let NoV = max(dot(s.n, s.v), 1e-4);
   let f0 = mix(vec3f(0.04), s.albedo, s.metallic);
   let dfg = envBrdfApprox(s.roughness, NoV);
-  let diffuse = s.albedo * (1.0 - s.metallic) * (a.envIrradiance + a.skyIrradiance) * (s.ao / PI);
+  // Diffuse ambient is the probe alone: 'env.sh9' already holds the sky, adding a.skyIrradiance would count it twice.
+  let diffuse = s.albedo * (1.0 - s.metallic) * a.envIrradiance * (s.ao / PI);
   let spec = a.envSpecular * (f0 * dfg.x + vec3f(dfg.y)) * energyCompensation(f0, s.roughness, NoV) * a.specularOcclusion;
   var c = diffuse + spec;
   if (s.clearcoat > 0.0) {
@@ -153,7 +158,7 @@ fn brdfClothDirect(s: Surface, l: vec3f) -> vec3f {
   return front + through;
 }
 fn brdfClothAmbient(s: Surface, a: AmbientInput) -> vec3f {
-  return s.albedo * (a.envIrradiance + a.skyIrradiance) * (s.ao / PI);
+  return s.albedo * a.envIrradiance * (s.ao / PI);   // the probe alone, as for standard materials
 }
 `;
 
@@ -222,6 +227,7 @@ fn brdfRegolithDirect(s: Surface, l: vec3f) -> vec3f {
   return hapke(hapkeW(s.albedo, s.bodyIndex), mu0, mu, g, p);
 }
 fn brdfRegolithAmbient(s: Surface, a: AmbientInput) -> vec3f {
+  // At most one of the two is non-zero: the sky table on a body with an atmosphere, the probe on an airless one.
   return s.albedo * (a.skyIrradiance + a.envIrradiance) * (s.ao / PI);
 }
 `;
@@ -401,16 +407,25 @@ export const SHADOWS_WGSL = /* wgsl */ `
 const SHADOW_MAX_CASCADES = ${SHADOW_MAX_CASCADES}u;
 struct ShadowCascade {
   viewProj: mat4x4f,   // camera-relative ROOT axes -> shadow clip; xy in [-1, 1], z = 0 at the sun side .. 1; valid for THIS frame
-  params: vec4f,       // x = world size of one texel (m), y = world length of the clip z range (m), z = blend weight 0..1, w = fit (0 camera, 1 body)
-  lightDir: vec4f,     // xyz = unit direction towards the sun of this cascade (ROOT axes), w = cascade radius (m)
+  params: vec4f,       // x = world size of one texel along u (m), y = world length of the clip z range (m), z = blend weight 0..1, w = world size of one texel along v (m; smaller than x in a cascade fitted to its receivers)
+  lightDir: vec4f,     // xyz = unit direction towards the sun of this cascade (ROOT axes), w = half extent along u (m)
   axisU: vec4f,        // xyz = world direction of +u in the shadow map (unit), w = layer of 'shadow.cascades' holding this cascade
-  axisV: vec4f,        // xyz = world direction of +v (texture y, down), w = 1 when re-rendered every frame
+  axisV: vec4f,        // xyz = world direction of +v (texture y, down), w = flags: 1 = re-rendered every frame, 2 = fitted to a whole body
 }
 struct ShadowUniforms {
   count: vec4u,        // x = cascades in use
   settings: vec4f,     // x = penumbra slope (2 tan(sun angular radius)), y = 1 / map size, z = map size, w = normal offset (texels)
   cascades: array<ShadowCascade, ${SHADOW_MAX_CASCADES}>,
 }
+
+/// Smallest PCF kernel radius and largest penumbra radius, in texels; radius of the blocker search.
+const SHADOW_MIN_KERNEL = 1.5;
+const SHADOW_MAX_KERNEL = 12.0;
+const SHADOW_SEARCH = 6.0;
+/// Staggered cascades: how far the smallest kernel may grow across the light to become round on the receiver.
+const SHADOW_STRETCH_MAX = 4.0;
+/// Slope by which a blocker must stand clear of the receiver plane to count for the widened part of the kernel.
+const SHADOW_CONE = 0.3;
 
 fn shadowVogel(i: u32, n: u32, phi: f32) -> vec2f {
   let r = sqrt((f32(i) + 0.5) / f32(n));
@@ -420,40 +435,67 @@ fn shadowVogel(i: u32, n: u32, phi: f32) -> vec2f {
 
 /// PCSS-lite lookup in one cascade: 8-tap blocker search, 12-tap rotated Vogel PCF with a penumbra from the
 /// true solar angular size, normal-offset and receiver-plane slope bias.
+///
+/// The kernel is laid out in metres on the map plane, along two axes given by the receiver: 'along' (the
+/// direction in which the receiver plane recedes from the light: one metre of map covers 1 / NoL metres of
+/// receiver there) and 'across' (constant depth, unstretched). Its smallest size is SHADOW_MIN_KERNEL
+/// texels. In a staggered cascade that minimum is widened across the light until the kernel is round ON THE
+/// RECEIVER (at most SHADOW_STRETCH_MAX times): at low sun a one-texel step of a shadow edge is 1 / sin(sun
+/// elevation) texels long on the ground, and a kernel that is only 1.5 texels wide across the light leaves
+/// those steps standing as teeth (14 deg sun) or as a comb at the shadow tip (6 deg). Every-frame cascades
+/// keep the round map-space minimum, so the thin shadows of nearby hardware stay crisp.
 fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
   let cas = shadowU.cascades[i];
-  let texel = cas.params.x;
+  let texel = vec2f(cas.params.x, cas.params.w);
+  let texelMax = max(texel.x, texel.y);
   let zRange = cas.params.y;
   let layer = i32(cas.axisU.w);
+  let staggered = (u32(cas.axisV.w) & 1u) == 0u;
   let l = cas.lightDir.xyz;
   let NoL = dot(n, l);
   if (NoL <= 0.0) { return 1.0; }   // back faces are dark through the BRDF; avoids acne at the terminator
   let sinT = sqrt(saturate(1.0 - NoL * NoL));
-  let po = p + n * (texel * shadowU.settings.w * sinT) + l * (texel * 0.5);
+  let po = p + n * (texelMax * shadowU.settings.w * sinT) + l * (texelMax * 0.5);
   let c = cas.viewProj * vec4f(po, 1.0);
   let uv = vec2f(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
   let zr = c.z;
-  let inv = shadowU.settings.y;
-  // Receiver-plane depth gradient per texel step along u and v (world dz = dot(step, n) / NoL), clamped.
-  let g = clamp(vec2f(dot(cas.axisU.xyz, n), dot(cas.axisV.xyz, n)) / max(NoL, 0.02), vec2f(-40.0), vec2f(40.0)) * (texel / zRange);
+  // Map metres -> uv.
+  let toUv = shadowU.settings.y / texel;
+  // Receiver-plane depth gradient per metre along u and v (world dz = dot(step, n) / NoL), clamped, in clip z.
+  let nUV = vec2f(dot(cas.axisU.xyz, n), dot(cas.axisV.xyz, n));
+  let g = clamp(nUV / max(NoL, 0.02), vec2f(-40.0), vec2f(40.0)) / zRange;
+  var alongDir = vec2f(1.0, 0.0);
+  if (dot(nUV, nUV) > 1e-8) { alongDir = normalize(nUV); }
+  let acrossDir = vec2f(-alongDir.y, alongDir.x);
+  let minAlong = SHADOW_MIN_KERNEL * length(alongDir * texel);
+  let minAcross0 = SHADOW_MIN_KERNEL * length(acrossDir * texel);
+  var minAcross = minAcross0;
+  if (staggered) { minAcross = max(minAcross0, min(minAlong / max(NoL, 1e-3), minAcross0 * SHADOW_STRETCH_MAX)); }
   let phi = noise.x * TWO_PI;
-  let searchTexels = 6.0;
+  let search = max(SHADOW_SEARCH * texelMax, minAcross);
   var blockerSum = 0.0;
   var blockers = 0.0;
   for (var k = 0u; k < 8u; k++) {
-    let o = shadowVogel(k, 8u, phi) * searchTexels;
-    let d = textureSampleLevel(shadowCascades, nearestClamp, uv + o * inv, layer, 0);
-    let zref = zr + dot(g, o) - 1.0 * texel / zRange;
+    let w = shadowVogel(k, 8u, phi) * search;
+    let d = textureSampleLevel(shadowCascades, nearestClamp, uv + w * toUv, layer, 0);
+    let zref = zr + dot(g, w) - texelMax / zRange;
     if (d < zref) { blockerSum += d; blockers += 1.0; }
   }
   if (blockers == 0.0) { return 1.0; }
   let blockerDist = max(zr - blockerSum / blockers, 0.0) * zRange;
-  let filterTexels = clamp(blockerDist * shadowU.settings.x * 0.5 / texel, 1.5, 12.0);
+  let penumbra = blockerDist * shadowU.settings.x * 0.5;
+  let largest = SHADOW_MAX_KERNEL * texelMax;
+  let rAlong = min(max(penumbra, minAlong), largest);
+  let rAcross = min(max(penumbra, minAcross), largest);
   var lit = 0.0;
   for (var k = 0u; k < 12u; k++) {
-    let o = shadowVogel(k, 12u, phi + 1.3) * filterTexels;
-    let zref = zr + dot(g, o) - 0.75 * texel / zRange;
-    lit += textureSampleCompareLevel(shadowCascades, shadowCompare, uv + o * inv, layer, zref);
+    let dk = shadowVogel(k, 12u, phi + 1.3);
+    let w = alongDir * (dk.x * rAlong) + acrossDir * (dk.y * rAcross);
+    // Beyond the basic kernel a tap only counts blockers that stand clear of the receiver plane by a slope
+    // of SHADOW_CONE, so relief beside the receiver (a crater wall across the light) does not darken it.
+    let bias = 0.75 * texelMax + SHADOW_CONE * max(abs(dk.y) * rAcross - max(penumbra, minAcross0), 0.0);
+    let zref = zr + dot(g, w) - bias / zRange;
+    lit += textureSampleCompareLevel(shadowCascades, shadowCompare, uv + w * toUv, layer, zref);
   }
   return lit / 12.0;
 }

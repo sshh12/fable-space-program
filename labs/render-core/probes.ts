@@ -8,7 +8,8 @@
  *   casters  logs the cascades handed to drawShadow
  *   sun      the solar disc as a background feature (1.9e9 cd/m^2, limb darkened)
  *   heavy    a deliberately expensive fullscreen pass that honours FrameContext.qualityScale
- *   ridge    a 300 km body-fixed ridge on the moon-sized body (terminator shadow from far away)
+ *   copies   a feature that only requires both colour copies, so all four core copies run (perf spec)
+ *   ridge    a 150 km body-fixed ridge on the moon-sized body (terminator shadow from far away)
  *
  * Markers are 16 x 16 px squares in the top-left corner of the render target: marker k covers
  * x = 8 + 24 k .. 24 + 24 k, y = 8 .. 24.
@@ -33,6 +34,8 @@ export interface CascadeLogEntry {
   fit: string;
   anchor: string;
   texelSize: number;
+  /** Half extent along u over half extent along v of the footprint (1 = square, above 1 = fitted to its receivers). */
+  aspect: number;
 }
 
 /** Setters of the `inputs` probe: constant lighting inputs published through SharedResources (null = back to the default). */
@@ -128,7 +131,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       id: 'lab-casters',
       init() {},
       drawShadow(frame: FrameContext, _pass: GPURenderPassEncoder, c: ShadowCascadeView) {
-        cascadeLog.push({ frame: frame.frameIndex, index: c.index, everyFrame: c.everyFrame, fit: c.fit, anchor: `${c.anchor.kind}:${c.anchor.id}`, texelSize: c.texelSize });
+        cascadeLog.push({ frame: frame.frameIndex, index: c.index, everyFrame: c.everyFrame, fit: c.fit, anchor: `${c.anchor.kind}:${c.anchor.id}`, texelSize: c.texelSize, aspect: Math.hypot(c.viewProj[1]!, c.viewProj[5]!, c.viewProj[9]!) / Math.hypot(c.viewProj[0]!, c.viewProj[4]!, c.viewProj[8]!) });
         if (cascadeLog.length > 4000) cascadeLog.splice(0, 2000);
       },
     });
@@ -821,7 +824,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       prepare() {
         ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([heavyIterations, 0, 0, 0]));
       },
-      preTransparent(frame, encoder) {
+      // Encoded first in the frame (compute hook), so that the long pass is followed by ordinary passes and not
+      // by one of the core's texture copies: the gap that times a copy would pick up the tail of this pass.
+      compute(frame, encoder) {
         if (heavyIterations <= 0) return;
         const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-heavy.burn') });
         pass.setBindGroup(0, frame.frameBindGroup);
@@ -829,9 +834,16 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         pass.setBindGroup(1, group);
         pass.draw(3);
         pass.end();
+        // An empty pass of this feature right behind it: in one frame out of five about 0.23 ms of the burn is
+        // still in flight at its end timestamp and is charged to whatever is encoded next (measured on the copy
+        // that used to follow, then on the G-buffer pass). Here it is charged to the ballast itself.
+        encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-heavy.tail') }).end();
       },
     });
   }
+
+  // ------------------------------------------------------------------------------------------ copies
+  if (names.has('copies')) features.push({ id: 'lab-copies', requires: ['scene.colorCopy', 'scene.colorCopyTransparent'], init() {} });
 
   // ------------------------------------------------------------------------------------------- ridge
   const moonId = Object.values(defs.bodies).find((b) => b.parent === defs.rootBodyId && b.gravityRole === 'attractor')?.id ?? defs.rootBodyId;

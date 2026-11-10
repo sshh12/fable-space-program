@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
 // The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
@@ -81,9 +82,13 @@ test('a sunlit object covering 3 % of a black frame exposes within 0.5 EV of sun
   await settled(page);
   expect(Math.abs((await exposure(page)).ev100 - s16)).toBeLessThan(0.5);
 
-  // A fully dark frame: look away from the ball, the Earth and the Moon -> the dark-adapted floor.
+  // A fully dark frame: look away from the ball, the sun, the Earth and the Moon -> the dark-adapted floor.
+  // The sim is paused and the sun pinned where it is first: the override above follows the camera, so
+  // turning the camera would bring the sun along (35 deg off the view axis, inside the frame or not
+  // depending on the moment), and the vessel flies 1.5 km/s past a camera that is fixed in ROOT axes.
   await page.evaluate(() => {
     const lab = window.__lab!;
+    lab.setPaused(true);
     const s = lab.snapshot();
     const v = s.vessels.find((x) => x.id === s.activeVesselId)!.rRoot;
     const sun = s.bodies.find((b) => b.id === s.starId)!.rRoot;
@@ -96,12 +101,28 @@ test('a sunlit object covering 3 % of a black frame exposes within 0.5 EV of sun
     const fwd = { x: f.x / fl, y: f.y / fl, z: f.z / fl };
     const al = Math.hypot(a.x, a.y, a.z);
     const up = { x: a.x / al, y: a.y / al, z: a.z / al };
+    window.__rc!.setSunOverride({ dirRoot: () => up });
     const right = { x: fwd.y * up.z - fwd.z * up.y, y: fwd.z * up.x - fwd.x * up.z, z: fwd.x * up.y - fwd.y * up.x };
-    // Quaternion from the basis (right, up, -forward).
-    const m = [right.x, up.x, -fwd.x, right.y, up.y, -fwd.y, right.z, up.z, -fwd.z];
-    const tr = m[0]! + m[4]! + m[8]!;
-    const w = Math.sqrt(Math.max(0, 1 + tr)) / 2;
-    const q = { x: (m[7]! - m[5]!) / (4 * w), y: (m[2]! - m[6]!) / (4 * w), z: (m[3]! - m[1]!) / (4 * w), w };
+    // Quaternion of the rotation whose columns are (right, up, -forward); the branch with the largest
+    // pivot keeps the division well conditioned for every orientation.
+    const m00 = right.x, m01 = up.x, m02 = -fwd.x;
+    const m10 = right.y, m11 = up.y, m12 = -fwd.y;
+    const m20 = right.z, m21 = up.z, m22 = -fwd.z;
+    const tr = m00 + m11 + m22;
+    let q: { x: number; y: number; z: number; w: number };
+    if (tr > 0) {
+      const k = 2 * Math.sqrt(1 + tr);
+      q = { w: k / 4, x: (m21 - m12) / k, y: (m02 - m20) / k, z: (m10 - m01) / k };
+    } else if (m00 > m11 && m00 > m22) {
+      const k = 2 * Math.sqrt(1 + m00 - m11 - m22);
+      q = { w: (m21 - m12) / k, x: k / 4, y: (m01 + m10) / k, z: (m02 + m20) / k };
+    } else if (m11 > m22) {
+      const k = 2 * Math.sqrt(1 + m11 - m00 - m22);
+      q = { w: (m02 - m20) / k, x: (m01 + m10) / k, y: k / 4, z: (m12 + m21) / k };
+    } else {
+      const k = 2 * Math.sqrt(1 + m22 - m00 - m11);
+      q = { w: (m10 - m01) / k, x: (m02 + m20) / k, y: (m12 + m21) / k, z: k / 4 };
+    }
     lab.camera.spec = { type: 'free', positionRoot: { x: v.x + fwd.x * 200, y: v.y + fwd.y * 200, z: v.z + fwd.z * 200 }, qViewToRoot: q };
   });
   await page.waitForFunction(() => window.__lab!.renderer.exposureInfo().targetEv100 === -3, undefined, { timeout: 30_000 });
@@ -131,20 +152,81 @@ test('a thin crescent of a body exposes within 0.5 EV of sunny 16', async ({ pag
   await expectNoErrors(page, pageLog);
 });
 
-test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, and the image recovers as exposure adapts', async ({ page, pageLog }) => {
-  await openPage(page, '/labs/render-core/?scene=translunar&planet=0&stand=0&probe=ball,mirror,sun&orbit=20,10,40&hud=0&fov=100');
+test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the small disc keeps its energy through the resolve, and the image recovers as exposure adapts', async ({ page, pageLog }) => {
+  // The sim is paused, so the camera that places the sun is the camera the frame is rendered with (in a
+  // running sim the vessel moves 24 m per frame under a camera 40 m away).
+  await openPage(page, '/labs/render-core/?scene=translunar&planet=0&stand=0&probe=ball,mirror,sun&orbit=20,10,40&hud=0&fov=100&paused=1&scale=1');
   await assertDiscreteGpu(page);
-  // Sun 40 deg off the view axis: inside the 100 deg field of view together with both balls.
-  await sunAtPhase(page, 140);
+  // Sun 25 deg to the right of the view axis, taken from the camera's own basis: inside the 100 deg field
+  // of view together with both balls. At this field of view the disc is about 3 px across.
+  await page.evaluate(() => {
+    const rotate = (q: { x: number; y: number; z: number; w: number }, v: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+      const cx = q.y * v.z - q.z * v.y + q.w * v.x;
+      const cy = q.z * v.x - q.x * v.z + q.w * v.y;
+      const cz = q.x * v.y - q.y * v.x + q.w * v.z;
+      return { x: v.x + 2 * (q.y * cz - q.z * cy), y: v.y + 2 * (q.z * cx - q.x * cz), z: v.z + 2 * (q.x * cy - q.y * cx) };
+    };
+    window.__rc!.setSunOverride({
+      dirRoot: () => {
+        const q = window.__lab!.cameraState().qViewToRoot;
+        const f = rotate(q, { x: 0, y: 0, z: -1 });
+        const r = rotate(q, { x: 1, y: 0, z: 0 });
+        const a = (25 * Math.PI) / 180;
+        return { x: f.x * Math.cos(a) + r.x * Math.sin(a), y: f.y * Math.cos(a) + r.y * Math.sin(a), z: f.z * Math.cos(a) + r.z * Math.sin(a) };
+      },
+    });
+  });
   await waitIdle(page, 10);
   const r = await page.evaluate(async () => {
     const lab = window.__lab!;
     lab.renderer.setExposureOverride(-3);
     lab.setLoop(false);
-    const frames: { hdr: { maxLuminance: number; nanPixels: number }; resolved: { maxLuminance: number; nanPixels: number } }[] = [];
+    /** Where the sun is in the HDR target, and how many saturated SKY pixels (depth == 0) lie on its disc. */
+    const sunOnScreen = async (): Promise<{ x: number; y: number; inFrame: boolean; saturatedSky: number; saturatedGeometry: number }> => {
+      const f = lab.renderer.frameContext!;
+      const s = f.sun.dirRoot;
+      const m = f.view;
+      const vx = m[0]! * s.x + m[4]! * s.y + m[8]! * s.z;
+      const vy = m[1]! * s.x + m[5]! * s.y + m[9]! * s.z;
+      const vz = m[2]! * s.x + m[6]! * s.y + m[10]! * s.z;
+      const [w, h] = f.renderSize;
+      const x = (((f.projUnjittered[0]! * vx) / -vz) * 0.5 + 0.5) * w;
+      const y = (0.5 - ((f.projUnjittered[5]! * vy) / -vz) * 0.5) * h;
+      const img = await lab.renderer.readHdrPixels('hdr');
+      const depth = await lab.renderer.readDepth();
+      let saturatedSky = 0;
+      let saturatedGeometry = 0;
+      for (let i = 0; i < w * h; i++) {
+        if (!(img.data[i * 4 + 1]! > 50000)) continue;
+        if (depth.data[i] !== 0) saturatedGeometry++;
+        else if (Math.hypot((i % w) + 0.5 - x, Math.floor(i / w) + 0.5 - y) < 6) saturatedSky++;
+      }
+      return { x, y, inFrame: vz < 0 && x >= 0 && y >= 0 && x < w && y < h, saturatedSky, saturatedGeometry };
+    };
+    const frames: { hdr: { maxLuminance: number; nanPixels: number }; resolved: { maxLuminance: number; nanPixels: number }; sun: Awaited<ReturnType<typeof sunOnScreen>> }[] = [];
     for (let i = 0; i < 12; i++) {
       lab.renderFrame(1 / 60);
-      frames.push({ hdr: await lab.renderer.readHdrStats('hdr'), resolved: await lab.renderer.readHdrStats('resolved') });
+      frames.push({ hdr: await lab.renderer.readHdrStats('hdr'), resolved: await lab.renderer.readHdrStats('resolved'), sun: await sunOnScreen() });
+    }
+    // The resolved image around the sun only (the mirror ball saturates too): brightest pixel within 6 px of the disc centre.
+    const sun = frames[frames.length - 1]!.sun;
+    const box = { x: Math.max(0, Math.round(sun.x) - 6), y: Math.max(0, Math.round(sun.y) - 6), width: 13, height: 13 };
+    const around = await lab.renderer.readHdrPixels('resolved', box);
+    let resolvedSunMax = 0;
+    for (let i = 0; i < around.data.length; i += 4) resolvedSunMax = Math.max(resolvedSunMax, around.data[i + 1]!);
+    // Energy of the disc after the resolve has settled (the rim takes about two seconds): sums over the
+    // box in the HDR target and in the resolved image, averaged over one jitter cycle.
+    for (let i = 0; i < 180; i++) lab.renderFrame(1 / 60);
+    let hdrEnergy = 0;
+    let resolvedEnergy = 0;
+    for (let i = 0; i < 8; i++) {
+      lab.renderFrame(1 / 60);
+      const h = await lab.renderer.readHdrPixels('hdr', box);
+      const s = await lab.renderer.readHdrPixels('resolved', box);
+      for (let k = 0; k < h.data.length; k += 4) {
+        hdrEnergy += h.data[k + 1]! / 8;
+        resolvedEnergy += s.data[k + 1]! / 8;
+      }
     }
     // Release the override: exposure adapts from EV -3 upwards; check every frame on the way.
     lab.renderer.setExposureOverride(null);
@@ -158,9 +240,13 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, and th
       }
     }
     lab.setLoop(true);
-    return { frames, recovery };
+    return { frames, recovery, resolvedSunMax, hdrEnergy, resolvedEnergy };
   });
   for (const f of r.frames) {
+    // The sun disc really is in the frame, on sky pixels, saturated: this is the overflow path under test.
+    expect(f.sun.inFrame).toBe(true);
+    expect(f.sun.saturatedSky).toBeGreaterThanOrEqual(1);
+    expect(f.sun.saturatedGeometry).toBeGreaterThanOrEqual(1); // the glint on the mirror ball
     expect(f.hdr.nanPixels).toBe(0);
     expect(f.resolved.nanPixels).toBe(0);
     // The sun disc saturates exactly at HDR_MAX (60,000 per channel), never above.
@@ -170,12 +256,44 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, and th
   }
   for (const f of r.recovery) expect(f.nan).toBe(0);
   const last = r.recovery[r.recovery.length - 1]!;
-  console.log(`overflow: EV100 after recovery ${last.ev.toFixed(2)}; frames at EV -3 max ${r.frames[0]!.hdr.maxLuminance.toFixed(0)}`);
+  const sun = r.frames[r.frames.length - 1]!.sun;
+  console.log(
+    `overflow: sun at (${sun.x.toFixed(0)}, ${sun.y.toFixed(0)}) with ${r.frames.map((f) => f.sun.saturatedSky).join(',')} saturated sky pixels per frame, ${sun.saturatedGeometry} saturated geometry pixels; ` +
+      `HDR max ${r.frames[0]!.hdr.maxLuminance.toFixed(0)}, resolved max at the sun after 12 frames ${r.resolvedSunMax.toFixed(0)}; ` +
+      `disc energy after 200 frames: resolved ${r.resolvedEnergy.toFixed(0)} of ${r.hdrEnergy.toFixed(0)} in the HDR target (${((100 * r.resolvedEnergy) / r.hdrEnergy).toFixed(0)} %); EV100 after recovery ${last.ev.toFixed(2)}`,
+  );
+  // ARCHITECTURE 10.4: the saturated disc still drives bloom. A disc of about 9 pixels comes out of the
+  // resolve with its peak within a few frames (it used to stick at 4 % of HDR_MAX: 2,412) and with most of
+  // its energy once the rim has converged (it used to keep under 1 %).
+  expect(r.resolvedSunMax).toBeGreaterThan(0.5 * 60000);
+  expect(r.resolvedEnergy).toBeGreaterThan(0.6 * r.hdrEnergy);
+  expect(r.resolvedEnergy).toBeLessThan(1.1 * r.hdrEnergy);
   expect(last.ev).toBeGreaterThan(13);
   await page.evaluate(() => window.__test!.waitFrames(30));
   const shot = await saveScreenshot(page, 'render-core', 'overflow-recovered');
-  // Recovered: a black sky with a small sun and two balls, not a white-out.
+  // Recovered: a black sky with the sun (and its glow) and two back-lit balls, not a white-out.
   expect(shot.stats.meanLuma).toBeLessThan(60);
   expect(shot.stats.maxLuma).toBeGreaterThan(200);
+  // The glow of the disc: the display image is clearly brighter in a ring 5-9 px from the disc centre
+  // than far away from it on the same black sky.
+  const png = PNG.sync.read(shot.buffer);
+  const ringMean = (r0: number, r1: number): number => {
+    let sum = 0;
+    let n = 0;
+    for (let y = Math.floor(sun.y - r1); y <= sun.y + r1; y++) {
+      for (let x = Math.floor(sun.x - r1); x <= sun.x + r1; x++) {
+        const d = Math.hypot(x + 0.5 - sun.x, y + 0.5 - sun.y);
+        if (d < r0 || d > r1 || x < 0 || y < 0 || x >= png.width || y >= png.height) continue;
+        const i = (y * png.width + x) * 4;
+        sum += 0.2126 * png.data[i]! + 0.7152 * png.data[i + 1]! + 0.0722 * png.data[i + 2]!;
+        n++;
+      }
+    }
+    return sum / Math.max(1, n);
+  };
+  const glow = ringMean(5, 9);
+  const sky = ringMean(70, 80);
+  console.log(`overflow: glow around the recovered sun ${glow.toFixed(1)} / 255 at 5-9 px, sky ${sky.toFixed(1)} / 255 at 70-80 px`);
+  expect(glow).toBeGreaterThan(sky + 12);
   await expectNoErrors(page, pageLog);
 });

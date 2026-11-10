@@ -23,7 +23,7 @@ export const SHADOW_PASS_WGSL = /* wgsl */ `
 // Group 1 of every drawShadow pipeline; the core binds it before calling the hooks.
 struct ShadowPassUniforms {
   viewProj: mat4x4f,   // camera-relative ROOT axes -> shadow clip of the cascade being rendered
-  params: vec4f,       // x = texel size (m), y = depth range (m), z = array layer, w = 1 when re-rendered every frame
+  params: vec4f,       // x = texel size along u (m; the coarser axis), y = depth range (m), z = array layer, w = 1 when re-rendered every frame
 }
 @group(1) @binding(0) var<uniform> shadowPass: ShadowPassUniforms;
 `;
@@ -33,7 +33,7 @@ struct MeshInstance {
   m0: vec4f, m1: vec4f, m2: vec4f,   // rows of the 3x4 local -> camera-relative transform (ROOT axes)
   p0: vec4f, p1: vec4f, p2: vec4f,   // the same for the previous frame, relative to the PREVIOUS eye
   params: vec4f,                     // temperature (K), soot, frost, wetness
-  params2: vec4f,                    // dither fade (1 = solid), inverted dither pattern (0 / 1), emissive scale, reserved
+  params2: vec4f,                    // dither fade (1 = solid), inverted dither pattern (0 / 1), emissive scale, display brightness
 }
 fn instancePos(m0: vec4f, m1: vec4f, m2: vec4f, p: vec3f) -> vec3f {
   return vec3f(dot(m0.xyz, p) + m0.w, dot(m1.xyz, p) + m1.w, dot(m2.xyz, p) + m2.w);
@@ -145,6 +145,9 @@ fn blackbody(T: f32) -> vec3f {
     roughness = mix(roughness, 0.62, frost);
     metallic *= 1.0 - frost;
     param = max(param, I.params.w);
+  } else if (shading == MATERIAL_DISPLAY) {
+    // RT2.a of a display is its brightness; the deferred pass scales the emitted image (RT5) by it.
+    param = saturate(param * I.params2.w);
   }
 
   // Kaplanyan-Hill geometric specular anti-aliasing: widen the lobe by the normal variance in the pixel.
@@ -211,6 +214,8 @@ export interface MeshInstance {
   fade?: number;
   /** Multiplier on the material's emissive luminance (default 1). */
   emissiveScale?: number;
+  /** Brightness 0..1 of a 'display' material (default 1): written to RT2.a, applied to the emitted image by the deferred pass. */
+  displayBrightness?: number;
 }
 
 /** Place something given in a parent frame (body-fixed or VES): exact float64 composition for now and the previous frame. */
@@ -558,7 +563,7 @@ export function createMeshSystem(args: {
         d[o + 28] = fade;
         d[o + 29] = invert;
         d[o + 30] = inst.emissiveScale ?? 1;
-        d[o + 31] = 0;
+        d[o + 31] = inst.displayBrightness ?? 1;
         g.spheres.set(sphere, g.count * 4);
         g.flags[g.count] = (inView ? 1 : 0) | (inst.castShadow !== false && fade >= 0.5 ? 2 : 0);
         g.count++;
@@ -694,7 +699,9 @@ export function createMeshSystem(args: {
         drawShadow(pass, cascade) {
           if (!bindGroup || stats.instances === 0) return;
           const m = cascade.viewProj;
-          const scale = Math.hypot(m[0]!, m[4]!, m[8]!);
+          // Clip units per metre along u and along v (they differ in a cascade fitted to its receivers).
+          const scaleU = Math.hypot(m[0]!, m[4]!, m[8]!);
+          const scaleV = Math.hypot(m[1]!, m[5]!, m[9]!);
           let pipelineSet = false;
           for (const g of groups.values()) {
             if (g.count === 0 || !(g.bodyFixed || cascade.everyFrame)) continue;
@@ -707,8 +714,7 @@ export function createMeshSystem(args: {
               const x = g.spheres[o]!;
               const y = g.spheres[o + 1]!;
               const z = g.spheres[o + 2]!;
-              const rc = r * scale;
-              return Math.abs(m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) < 1 + rc && Math.abs(m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) < 1 + rc;
+              return Math.abs(m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) < 1 + r * scaleU && Math.abs(m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) < 1 + r * scaleV;
             };
             let bound = false;
             let i = 0;

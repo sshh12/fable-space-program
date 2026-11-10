@@ -18,6 +18,9 @@ async function measure(page: Page, frames: number): Promise<Measured> {
   }, frames);
 }
 
+/** The core's texture copies: per frame, the sum of the gaps between passes that hold them ('core.copies'). */
+const copies = (r: Measured, key: 'p50' | 'p99' | 'mean'): number => r.passes['core.copies']?.[key] ?? 0;
+
 function summarise(r: Measured): { core: Record<string, number>; total: number; gbuffer: number; shadows: number } {
   const p99 = (name: string): number => r.passes[name]?.p99 ?? 0;
   const core = {
@@ -26,7 +29,8 @@ function summarise(r: Measured): { core: Record<string, number>; total: number; 
     taa: p99('core.taa'),
     bloom: p99('core.bloom'),
     tonemapExposure: p99('core.tonemap.clear') + p99('core.tonemap') + p99('core.histogram'),
-    depthPyramid: p99('core.depthHalf'),
+    // The four texture copies (two depth, two colour) are timed as the gaps between their neighbouring passes.
+    copiesPyramid: copies(r, 'p99') + p99('core.depthHalf'),
   };
   const sum = (suffix: string, key: 'p99' | 'mean'): number =>
     Object.entries(r.passes)
@@ -51,12 +55,19 @@ const fmt = (c: Record<string, number>): string =>
  * game's frame (9-11 ms of GPU work), so the measurement that is ASSERTED runs with a ballast pass (the
  * `heavy` probe, about 7 ms) keeping the GPU as busy as a real frame. The idle-GPU numbers are logged for
  * the record.
+ *
+ * The `copies` probe requires both colour copies, so all four core copies run (depth -> 'scene.depthOpaque',
+ * HDR -> 'scene.colorCopy', depth -> 'scene.depth', HDR -> 'scene.colorCopyTransparent'). They are encoded
+ * between passes; the recorder times them as the gaps between the neighbouring passes ('core.copies'),
+ * which is also part of the frame's GPU total. A gap also holds whatever of the pass before it is still in
+ * flight, so the ballast pass is encoded in the compute hook, away from the copies: placed right before a
+ * copy its tail showed up as 0.23 ms in every fifth frame.
  */
 test('core fixed GPU budget at 1440p, 1.5 M triangle scene, CPU frame time', async ({ page, pageLog }) => {
   test.setTimeout(30 * 60_000);
   await withGpuLock(async () => {
     // Attribution mode: every feature hook in its own pass; governor off: quality 1 and scale 1 throughout.
-    await openPage(page, '/labs/render-core/?sun=110,32&hud=0&perf=features&scale=1&governor=off&tris=1500000&probe=heavy&heavy=0');
+    await openPage(page, '/labs/render-core/?sun=110,32&hud=0&perf=features&scale=1&governor=off&tris=1500000&probe=heavy,copies&heavy=0');
     await assertDiscreteGpu(page);
     await page.evaluate(() => window.__rc!.lookAt([0, 6, 1], 200, 28, 26));
     await waitIdle(page, 120);
@@ -85,6 +96,7 @@ test('core fixed GPU budget at 1440p, 1.5 M triangle scene, CPU frame time', asy
     console.log(`loaded GPU  (p99 ms, ballast ${ballast.toFixed(1)} ms): ${fmt(s.core)}; total ${s.total.toFixed(3)} (budget 3.0)`);
     console.log(`1.5 M triangle scene: ${r.tris.triangles} tris in the G-buffer; G-buffer p99 ${s.gbuffer.toFixed(3)} ms + shadows amortised ${s.shadows.toFixed(3)} ms = ${(s.gbuffer + s.shadows).toFixed(3)} (budget 2.0)`);
     console.log(`frame: GPU p50 ${r.perf.gpu.p50.toFixed(2)} p99 ${r.perf.gpu.p99.toFixed(2)} ms; CPU p50 ${r.perf.cpu.p50.toFixed(2)} p99 ${r.perf.cpu.p99.toFixed(2)} ms (idle run: p50 ${idle.perf.cpu.p50.toFixed(2)} p99 ${idle.perf.cpu.p99.toFixed(2)}); rAF p95 ${r.perf.raf.p95.toFixed(2)} ms`);
+    console.log(`copies (2 depth + 2 colour, timed as the gaps between passes): p50 ${copies(r, 'p50').toFixed(3)} mean ${copies(r, 'mean').toFixed(3)} p99 ${copies(r, 'p99').toFixed(3)} ms (idle GPU: p50 ${copies(idle, 'p50').toFixed(3)} p99 ${copies(idle, 'p99').toFixed(3)}); depth pyramid p99 ${(r.passes['core.depthHalf']?.p99 ?? 0).toFixed(3)} ms`);
     console.log(`features (p99 GPU ms): ${JSON.stringify(Object.fromEntries(Object.entries(r.perf.features).map(([k, v]) => [k, +v.gpuMs.toFixed(3)])))}`);
 
     expect(ballast).toBeGreaterThan(5);
@@ -96,7 +108,8 @@ test('core fixed GPU budget at 1440p, 1.5 M triangle scene, CPU frame time', asy
     expect(s.core.taa).toBeLessThanOrEqual(0.55);
     expect(s.core.bloom).toBeLessThanOrEqual(0.3);
     expect(s.core.tonemapExposure).toBeLessThanOrEqual(0.2);
-    expect(s.core.depthPyramid).toBeLessThanOrEqual(0.35);
+    expect(copies(r, 'p50')).toBeGreaterThan(0);
+    expect(s.core.copiesPyramid).toBeLessThanOrEqual(0.35);
     expect(s.total).toBeLessThanOrEqual(3.0);
     expect(s.gbuffer + s.shadows).toBeLessThan(2.0);
     expect(r.perf.cpu.p99).toBeLessThan(2.0);

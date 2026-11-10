@@ -78,6 +78,7 @@ export class ShadowSystem {
             id: b.id,
             radius: def.radius,
             maxElevation: def.terrain?.maxElevation ?? 0,
+            minElevation: def.terrain?.minElevation ?? 0,
             hasTerrain: def.terrain !== null,
             centerRelCam: b.centerRelCam,
             qFixedToRoot: b.qFixedToRoot,
@@ -107,10 +108,10 @@ export class ShadowSystem {
       const m = c.matrices;
       f.set(m.viewProj, o);
       const zRange = 2 * c.capture.zHalf;
-      f.set([c.capture.texelSize, zRange, c.desired.weight, c.desired.fit === 'body' ? 1 : 0], o + 16);
+      f.set([c.capture.texelSize, zRange, c.desired.weight, c.capture.texelSizeV], o + 16);
       f.set([m.lightDirRoot.x, m.lightDirRoot.y, m.lightDirRoot.z, c.capture.radius], o + 20);
       f.set([m.axisURoot.x, m.axisURoot.y, m.axisURoot.z, c.layer], o + 24);
-      f.set([m.axisVRoot.x, m.axisVRoot.y, m.axisVRoot.z, c.desired.everyFrame ? 1 : 0], o + 28);
+      f.set([m.axisVRoot.x, m.axisVRoot.y, m.axisVRoot.z, (c.desired.everyFrame ? 1 : 0) + (c.desired.fit === 'body' ? 2 : 0)], o + 28);
       if (c.render) {
         this.passData.set(m.viewProj, 0);
         this.passData.set([c.capture.texelSize, zRange, c.layer, c.desired.everyFrame ? 1 : 0], 16);
