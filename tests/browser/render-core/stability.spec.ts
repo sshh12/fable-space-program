@@ -1,6 +1,9 @@
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, pngDiff, saveScreenshot, test, waitIdle } from '../harness';
 
+// The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
+test.describe.configure({ timeout: 600_000 });
+
 /**
  * True-scale precision: a vessel-sized cylinder 30 m from the camera, 6,371 km from the origin, and the
  * Moon-sized LabPlanet 384,400 km away, in one frame and one depth buffer.

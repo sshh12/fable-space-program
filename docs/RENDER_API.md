@@ -408,8 +408,9 @@ struct ShadowUniforms {                 // 'shadow.uniforms', 1056 bytes (SHADOW
 takes the first one that contains the point, cross-fades to the next over the outer 10 % by blue-noise
 dither (TAA resolves it), and filters with PCSS-lite: 8-tap blocker search, 12-tap rotated Vogel PCF whose
 radius follows the blocker distance and the true solar angular size (min 1.5, max 12 texels), normal-offset
-bias (1.5 texels, slope scaled) plus a receiver-plane depth bias. Returns 1 where no cascade covers the point
-and with the default resources.
+bias (0.7 texel x sin of the incidence angle) plus an exact receiver-plane depth bias per tap (so grazing
+light, e.g. the terminator in a 1.9 km whole-body cascade, neither shows acne nor loses low relief). Returns
+1 where no cascade covers the point, on faces turned away from the sun, and with the default resources.
 
 Cascades (ARCHITECTURE 10.1): radii 12 m, 60 m, 300 m, 1.5 km, 8 km, 40 km, 200 km, 1500 km around the
 camera (texel = 2 r / 2048), a `depth32float` 2048^2 x 8 array.
@@ -418,7 +419,8 @@ camera (texel = 2 r / 2048), a `depth32float` 2048^2 x 8 array.
   active vessel's frame for an interior camera): light basis, extents and a texel-snapped centre are stored
   in anchor coordinates. `ShadowCascadeView.viewProj` and `shadow.uniforms` are re-derived EVERY frame in
   float64 as capture matrix x current anchor pose, so a cascade rendered several frames ago still matches
-  the ground it was rendered from.
+  the ground it was rendered from. The centre is snapped in whole texels RELATIVE to the previous capture
+  of the same cascade, so the grid does not re-phase when the sun (and with it the light basis) turns.
 - **Schedule.** `everyFrame` cascades: the 12 m and 60 m ones always, plus any cascade that a vessel reaches
   into unless the vessel and the room for its shadow fit in the next finer cascade (at most 4). The others
   are staggered: every 2nd, 2nd, 4th, 4th, 8th, 8th frame, and re-captured early when the sun has moved
@@ -601,9 +603,15 @@ Also exported from `@/render/core`: `MipGenerator`, `createSolidTexture`, `creat
 `exposureFromEv100`, `ev100ForMidGrey`).
 
 `CoreRenderer` (what `createRenderer` returns) adds to the `Renderer` contract: `core`, `resources`
-(`reset(key)`, `isDefault(key)`), `setDeterministic(on)`, `setExposureOverride(ev100 | null)`,
-`exposureInfo()`, `readHdrPixels(target?, rect?)`, `readHdrStats(target?)`, `readDepth()`, `resetPerf()`,
-`passStats()`, `featureOrder()`, `frameContext`.
+(`reset(key)`, `isDefault(key)`), `setDeterministic(on)`, `setJitter(enabled)` (identical sub-pixel sampling
+every frame, for A/B readbacks), `setExposureOverride(ev100 | null)`, `exposureInfo()`,
+`readHdrPixels(target?, rect?)` and `readHdrStats(target?)` with target `'hdr'` (the scene target before
+TAA, internal resolution) or `'resolved'` (TAA output, display resolution), `readDepth()` (`'scene.depth'`),
+`resetPerf()`, `passStats()`, `featureOrder()`, `frameContext`.
+
+`createRenderer(canvas, gpu, defs, options)`: `options.quality` (partial `QualitySettings`),
+`tilesUrl` / `skyUrl` / `assetsUrl`, `onError`, `perfFeatures` (attribution mode), `governor` (partial
+`GovernorConfig`: `budgetMs`, `pressure`, `recovery`, `qualityMin`, ...).
 
 ---
 
@@ -635,13 +643,21 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   (depth != 0, luminance above 0.008 cd/m^2 and within 10 EV of the brightest lit pixels): arithmetic mean
   of the lit range to mid-grey with the compensation curve `clamp((EV - 4) x 0.08, -1, 0.8)`, capped so
   the 99th percentile stays below 4 x mid-grey. Below 0.5 % lit coverage the photometric prior is used
-  alone (sunny 16 x sun visibility at the camera when a lit body or vessel is in view, EV -3 otherwise);
+  alone (sunny 16 x sun visibility at the camera when a lit body, a lit vessel, any lit geometry or the
+  unoccluded solar disc itself is in view; EV -3, the dark-adapted floor, otherwise);
   between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` (meters geometry within 8 m, no highlight cap)
   are honoured. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
-- TAA: Halton(2, 3) jitter of 8 samples (more when upscaling) in `frame.proj`; write correct RT3 velocity
-  for everything that moves on screen, or it will ghost. `frame.animate` is false in deterministic mode:
-  do not animate noise then.
+- TAA / TAAU: Halton(2, 3) jitter of 8 samples (8 / scale^2 when upscaling, at most 32) in `frame.proj`;
+  the resolve runs at display resolution (jitter-aware 3 x 3 reconstruction, closest-depth velocity,
+  5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
+  velocity for everything that moves on screen, or it will ghost. History weight is halved when the view
+  turns more than 2 deg per frame or at warp >= 50x. `frame.animate` is false in deterministic mode: do
+  not animate noise then.
+- Screen-space AO (GTAO, 2 slices x 6 steps per side) and contact shadows (10 steps towards the sun over
+  max(0.3 m, 1.5 % of the distance)) are computed at half resolution from `'scene.depthOpaque'` and RT1;
+  AO multiplies ambient light only (`Surface.ao`), the contact term multiplies the sun.
+- Bloom is threshold-free (6 levels, Karis average on the first), mixed at 4 %; the tonemapper is AgX.
 - `frame.qualityScale` (0.5..1): multiply march step counts and particle counts by it. The core lowers it
   when the measured GPU time exceeds 92 % of the 11 ms budget and only when it is at 0.5 lowers the
   internal resolution (`QualitySettings.renderScaleMin..Max`, steps of 1/16); recovery below 72 % runs in
@@ -654,15 +670,18 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
 - Name your own passes `<featureId>.<pass>`: `timestampWrites: ctx.perf.gpuPass('my-feature.march')`
   (undefined without `timestamp-query`; pass it through). CPU zones: `ctx.perf.cpuBegin/cpuEnd(name)`;
   counters: `ctx.perf.counter(name, value)`.
-- `window.__perf` (`PerfSnapshot`) is updated every frame: rAF, CPU and GPU percentiles over the last 300
+- `window.__perf` (`PerfSnapshot`, computed on access): rAF, CPU and GPU percentiles over the last 300
   frames, `passes` (latest), `features` (p99 per feature id and `core`), `qualityScale`, `renderScale`.
+  `cpu` is the zone named `'frame'` when the app brackets its frame function with
+  `ctx.perf.cpuBegin('frame')` / `cpuEnd('frame')` (the lab app does), else the renderer's own time.
 - Draws inside core-owned passes (`shadow`, `gbuffer`, `water`, `background`, `transparent`, `overlay`)
   cannot be timed separately in one pass. **Attribution mode** (`createRenderer(..., { perfFeatures: true })`
   or `?perf=features` in a lab) runs each feature's hook in its own pass named `<featureId>.<hook pass>`
   with loadOp `load`: `features[id].gpuMs` is then exact. Perf specs use it. In normal mode one frame in
   64 is rendered in attribution mode and the measured shares split the pass time, so the breakdown stays
   close without the extra passes.
-- `renderer.passStats()` gives p50 / p99 per pass name.
+- `renderer.passStats()` gives p50 / p99 / mean per pass name; a pass that does not run in a frame counts
+  as 0, so `mean` is the amortised cost (staggered shadow cascades).
 
 ---
 
@@ -686,8 +705,13 @@ loop, and wires `window.__test` completely (`ready`, `errors`, `adapter`, `state
 `snapshot()`, `cameraState()`, `setPaused`, `setDeterministic`, `onFrame(cb)`, `renderFrame(dt?)`,
 `setLoop(running)`.
 
-Query string: `scene=`, `perf=features`, `scale=<render scale>`, `ev=<forced EV100>`, `deterministic=1`,
-`paused=1`, and the camera:
+Options: `scene` | `sim` (a `Sim` or `(defs) => Sim`), `features` (array or `(defs, sim) => array`),
+`camera` (a `LabCameraSpec` or `(snapshot, defs) => spec`; camera parameters in the query string win),
+`cameraSettings`, `renderer` (RendererOptions), `onFrame`, `autoReady: false` when the page has set-up to
+do after `createLabApp` returns (then call `app.testApi.markReady(true)` itself).
+
+Query string: `scene=`, `perf=features`, `scale=<render scale>` (pins the internal resolution),
+`governor=off` (pins qualityScale at 1), `ev=<forced EV100>`, `deterministic=1`, `paused=1`, and the camera:
 
 ```
 body=<id>&lat=&lon=&alt=&heading=&pitch=            on a body (deg, m; heading clockwise from north)

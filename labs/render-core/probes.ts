@@ -18,7 +18,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { dirToLatLon } from '@/core/geo/cubeSphere';
 import { quat, v3, type Vec3 } from '@/core/math';
-import { boxMesh, coreOf, instanceInFrame, sphereMesh, type CoreApi, type ManagedTarget, type MeshBatch, type ModelHandle, type SceneBindings, type Tracked } from '@/render/core';
+import { boxMesh, coreOf, createSolidTexture, instanceInFrame, sphereMesh, type CoreApi, type ManagedTarget, type MeshBatch, type ModelHandle, type SceneBindings, type Tracked } from '@/render/core';
 import type { LabApp } from '@/render/core/lab';
 import { sitePoseOf, type Site } from './world';
 
@@ -35,8 +35,29 @@ export interface CascadeLogEntry {
   texelSize: number;
 }
 
+/** Setters of the `inputs` probe: constant lighting inputs published through SharedResources (null = back to the default). */
+export interface LightingInputsProbe {
+  /** 'atmosphere.transmittanceLut' filled with one value. */
+  setTransmittance(t: number | null): void;
+  /** 'atmosphere.skyIrradianceLut' filled with one illuminance (lux on a horizontal surface). */
+  setSkyIrradiance(lux: number | null): void;
+  /** 'env.sh9' for a constant irradiance (lux) from every direction. */
+  setEnvIrradiance(lux: number | null): void;
+  /** 'env.probeCube' with one luminance (cd/m^2) in every direction. */
+  setEnvRadiance(nits: number | null): void;
+  /** 'clouds.coverageMap' with one coverage value and the far cloud-shadow parameters. */
+  setCloudFar(v: { coverage: number; opticalDepth: number } | null): void;
+  /** 'clouds.shadowMap' = 1 everywhere over a 200 m square at the site, scaled by `opticalDepth`. */
+  setCloudNear(v: { opticalDepth: number } | null): void;
+  /** One point light (cd, white) `height` metres above the site-frame point `at`. */
+  setPointLight(v: { intensity: number; height: number; at: [number, number] } | null): void;
+  /** 'ocean.nearField' for the site's body (what the ocean feature will publish). */
+  setNearField(v: { fadeStart: number; fadeEnd: number } | null): void;
+}
+
 export interface Probes {
   features: RenderFeature[];
+  inputs: LightingInputsProbe;
   /** Where the ridge probe puts its ridge (on the moon-sized body). */
   ridgeSite: Site;
   attach(app: LabApp): void;
@@ -637,6 +658,102 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     });
   }
 
+  // ---------------------------------------------------------------------------------------- inputs
+  // Publishes constant lighting inputs through SharedResources so specs can check each term of the
+  // deferred lighting equation against a hand calculation.
+  const inputs: LightingInputsProbe = {
+    setTransmittance: () => undefined,
+    setSkyIrradiance: () => undefined,
+    setEnvIrradiance: () => undefined,
+    setEnvRadiance: () => undefined,
+    setCloudFar: () => undefined,
+    setCloudNear: () => undefined,
+    setPointLight: () => undefined,
+    setNearField: () => undefined,
+  };
+  if (names.has('inputs')) {
+    let ctx: RenderContext;
+    let cloudFar: { coverage: number; opticalDepth: number } | null = null;
+    let cloudNear: { opticalDepth: number } | null = null;
+    let light: { intensity: number; height: number; at: [number, number] } | null = null;
+    const solid = (format: 'rgba16float' | 'r16float' | 'r8unorm', value: number[], opts: { layers?: number } = {}): GPUTexture => createSolidTexture(ctx.device, 'lab-inputs', format, value, opts);
+    features.push({
+      id: 'lab-inputs',
+      init(c) {
+        ctx = c;
+        inputs.setTransmittance = (t) => {
+          if (t === null) app?.renderer.resources.reset('atmosphere.transmittanceLut');
+          else c.resources.publish('atmosphere.transmittanceLut', solid('rgba16float', [t, t, t, 1]).createView({ dimension: '2d-array' }));
+        };
+        inputs.setSkyIrradiance = (lux) => {
+          if (lux === null) app?.renderer.resources.reset('atmosphere.skyIrradianceLut');
+          else c.resources.publish('atmosphere.skyIrradianceLut', solid('rgba16float', [lux, lux, lux, 1]).createView({ dimension: '2d-array' }));
+        };
+        inputs.setEnvIrradiance = (lux) => {
+          if (lux === null) {
+            app?.renderer.resources.reset('env.sh9');
+            return;
+          }
+          // Constant irradiance E in every direction: only the Y00 coefficient, E = c0 x 0.282095.
+          const data = new Float32Array(36);
+          data.fill(lux / 0.282095, 0, 3);
+          const b = c.device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          c.device.queue.writeBuffer(b, 0, data);
+          c.resources.publish('env.sh9', b);
+        };
+        inputs.setEnvRadiance = (nits) => {
+          if (nits === null) app?.renderer.resources.reset('env.probeCube');
+          else c.resources.publish('env.probeCube', solid('rgba16float', [nits, nits, nits, 1], { layers: 6 }).createView({ dimension: 'cube' }));
+        };
+        inputs.setCloudFar = (v) => {
+          cloudFar = v;
+          if (v) c.resources.publish('clouds.coverageMap', solid('r8unorm', [v.coverage]).createView());
+          else app?.renderer.resources.reset('clouds.coverageMap');
+        };
+        inputs.setCloudNear = (v) => {
+          cloudNear = v;
+          if (v) c.resources.publish('clouds.shadowMap', solid('r16float', [1]).createView());
+          else app?.renderer.resources.reset('clouds.shadowMap');
+        };
+        inputs.setPointLight = (v) => {
+          light = v;
+        };
+        inputs.setNearField = (v) => {
+          if (!v) {
+            app?.renderer.resources.reset('ocean.nearField');
+            return;
+          }
+          const data = new ArrayBuffer(16);
+          new Int32Array(data, 0, 1)[0] = app?.snapshot().bodies.findIndex((b) => b.id === site.bodyId) ?? -1;
+          new Float32Array(data, 4, 3).set([v.fadeStart, v.fadeEnd, 0]);
+          const b = c.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          c.device.queue.writeBuffer(b, 0, data);
+          c.resources.publish('ocean.nearField', b);
+        };
+      },
+      prepare(frame) {
+        const core = coreOf(ctx);
+        const bodyIndex = frame.bodies.findIndex((b) => b.id === site.bodyId);
+        const pose = sitePoseOf(site, frame, defs);
+        core.setCloudShadowParams({
+          far: cloudFar ? { bodyIndex, layerRadius: defs.bodies[site.bodyId]!.radius + 5000, opticalDepth: cloudFar.opticalDepth, longitudeOffset: 0 } : null,
+          // A 200 m wide map centred on the site, aligned with east / north.
+          near: cloudNear
+            ? { bodyIndex, originRelCam: pose.originRelCam, axisU: quat.rotate(pose.q, { x: 1, y: 0, z: 0 }), axisV: quat.rotate(pose.q, { x: 0, y: 1, z: 0 }), halfExtent: 100, opticalDepthScale: cloudNear.opticalDepth }
+            : null,
+        });
+        if (light) {
+          frame.lights.push({
+            kind: 'point',
+            posRelCam: v3.add(pose.originRelCam, quat.rotate(pose.q, { x: light.at[0], y: light.at[1], z: light.height })),
+            intensity: [light.intensity, light.intensity, light.intensity],
+            range: light.height * 4,
+          });
+        }
+      },
+    });
+  }
+
   // --------------------------------------------------------------------------------------------- sun
   if (names.has('sun')) {
     let pipeline: Tracked<GPURenderPipeline>;
@@ -758,6 +875,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
 
   return {
     features,
+    inputs,
     ridgeSite,
     attach(a) {
       app = a;

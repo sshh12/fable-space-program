@@ -1,6 +1,9 @@
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
+// The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
+test.describe.configure({ timeout: 600_000 });
+
 /** Sunny-16 EV100 for the frame's (unoccluded) solar illuminance. */
 const sunny16 = (page: Page): Promise<number> => page.evaluate(() => Math.log2(window.__lab!.renderer.frameContext!.sun.illuminance / (1.2 * Math.PI)));
 const exposure = (page: Page): ReturnType<typeof info> => info(page);

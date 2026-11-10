@@ -1,5 +1,8 @@
 import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
+// The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
+test.describe.configure({ timeout: 600_000 });
+
 test('a sun-lit white Lambert surface reads back E x albedo / pi x exposure within 10 %', async ({ page, pageLog }) => {
   // Sun 60 deg above the horizon, exposure fixed at EV100 15, camera straight above the white card.
   await openPage(page, '/labs/render-core/?sun=180,60&hud=0&ev=15&paused=1');
@@ -105,5 +108,96 @@ test('every default SharedResource works with no feature present, and a brdf chu
   await waitIdle(page, 6);
   const after = await centre();
   expect(after[1]).toBeCloseTo(before[1]!, 3);
+  await expectNoErrors(page, pageLog);
+});
+
+test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH and cube, local lights match hand calculations', async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?sun=180,60&hud=0&ev=15&paused=1&probe=inputs');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+    window.__rc!.lookAt(window.__rc!.stand!.whiteCard.pos, 0, 89.9, 6);
+  });
+  await waitIdle(page, 12);
+  /** Mean colour at the centre of the HDR target after a few frames. */
+  const centre = (): Promise<number[]> =>
+    page.evaluate(async () => {
+      const lab = window.__lab!;
+      await window.__test!.waitFrames(6);
+      const [w, h] = lab.renderer.frameContext!.renderSize;
+      const px = await lab.renderer.readHdrPixels('hdr', { x: (w >> 1) - 2, y: (h >> 1) - 2, width: 4, height: 4 });
+      const m = [0, 0, 0];
+      for (let i = 0; i < px.data.length; i += 4) for (let c = 0; c < 3; c++) m[c]! += px.data[i + c]! / 16;
+      return m;
+    });
+  const exposure = await page.evaluate(() => window.__lab!.renderer.frameContext!.exposure);
+  const muS = Math.sin((60 * Math.PI) / 180);
+  const albedo = 0.8;
+  const base = await centre();
+  const g = (v: number[]): number => v[1]!;
+
+  // Atmosphere transmittance: sunlight x 0.5.
+  await page.evaluate(() => window.__rc!.probes.inputs.setTransmittance(0.5));
+  expect(g(await centre()) / g(base)).toBeCloseTo(0.5, 2);
+  await page.evaluate(() => window.__rc!.probes.inputs.setTransmittance(null));
+
+  // Far cloud shadow from the coverage map: exp(-coverage x tau / mu_s).
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar({ coverage: 1, opticalDepth: 1 }));
+  expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-1 / muS), 2);
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar(null));
+
+  // Near cloud shadow map (takes over from the far term inside its footprint): exp(-map x scale / mu_s).
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5 }));
+  expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-0.5 / muS), 2);
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear(null));
+  expect(g(await centre())).toBeCloseTo(g(base), 4);
+
+  // Sky irradiance on a horizontal Lambert surface: + albedo x E / pi.
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(20000));
+  const sky = g(await centre()) - g(base);
+  console.log(`sky irradiance 20,000 lux adds ${sky.toFixed(5)} (expected ${(((albedo * 20000) / Math.PI) * exposure).toFixed(5)})`);
+  expect(sky / (((albedo * 20000) / Math.PI) * exposure)).toBeGreaterThan(0.9);
+  expect(sky / (((albedo * 20000) / Math.PI) * exposure)).toBeLessThan(1.05);
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(null));
+
+  // A point light of 1e6 cd, 4 m above the card: E = I / d^2, smooth window (1 - (d / range)^4)^2 with range = 4 d.
+  await page.evaluate(() => {
+    const c = window.__rc!.stand!.whiteCard.pos;
+    window.__rc!.probes.inputs.setPointLight({ intensity: 1e6, height: 4, at: [c[0], c[1]] });
+  });
+  const lit = g(await centre()) - g(base);
+  const expectLight = ((albedo * (1e6 / 16)) / Math.PI) * (1 - (1 / 16) ** 2) ** 2 * exposure;
+  console.log(`point light adds ${lit.toFixed(5)} (expected ${expectLight.toFixed(5)})`);
+  expect(lit / expectLight).toBeGreaterThan(0.95);
+  expect(lit / expectLight).toBeLessThan(1.08);
+  await page.evaluate(() => window.__rc!.probes.inputs.setPointLight(null));
+
+  // Environment probe on standard materials. Top of the step (rough dielectric, albedo 0.5 in green):
+  // constant irradiance of 30,000 lux -> + albedo x E / pi (plus a small specular term; the cube is black).
+  await page.evaluate(() => window.__rc!.lookAt([6, -5, 0.4], 0, 89.9, 5));
+  const stepBase = await centre();
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvIrradiance(30000));
+  const stepAmb = g(await centre()) - g(stepBase);
+  const expectAmb = ((0.5 * 30000) / Math.PI) * exposure;
+  console.log(`env.sh9 30,000 lux adds ${stepAmb.toFixed(5)} on the step (expected about ${expectAmb.toFixed(5)})`);
+  expect(stepAmb / expectAmb).toBeGreaterThan(0.85);
+  expect(stepAmb / expectAmb).toBeLessThan(1.1);
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvIrradiance(null));
+
+  // Prefiltered cube on the most polished gold sphere, seen from straight above: the mirror reflection of a
+  // uniform 10,000 cd/m^2 environment is 10,000 x F0 (gold: 1.0, 0.77, 0.34), minus a little roughness loss.
+  await page.evaluate(() => window.__rc!.lookAt([-4.55, 1.6, 1.0], 0, 89.9, 3));
+  const sphereBase = await centre();
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvRadiance(10000));
+  const refl = (await centre()).map((v, i) => v - sphereBase[i]!);
+  console.log(`env.probeCube 10,000 cd/m^2 reflects ${refl.map((v) => (v / exposure).toFixed(0)).join(', ')} cd/m^2 off polished gold`);
+  expect(refl[0]! / (10000 * exposure)).toBeGreaterThan(0.85);
+  expect(refl[0]! / (10000 * exposure)).toBeLessThan(1.1);
+  expect(refl[1]! / refl[0]!).toBeGreaterThan(0.7);
+  expect(refl[1]! / refl[0]!).toBeLessThan(0.85);
+  expect(refl[2]! / refl[0]!).toBeGreaterThan(0.28);
+  expect(refl[2]! / refl[0]!).toBeLessThan(0.45);
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvRadiance(null));
   await expectNoErrors(page, pageLog);
 });

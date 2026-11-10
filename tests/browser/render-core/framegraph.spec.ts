@@ -1,6 +1,9 @@
 import { PNG } from 'pngjs';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
+// The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
+test.describe.configure({ timeout: 600_000 });
+
 const MARKER_X = (k: number): number => 8 + 24 * k + 8;
 const MARKER_Y = 16;
 

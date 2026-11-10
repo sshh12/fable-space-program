@@ -15,8 +15,10 @@ export interface StandOptions {
   defs: DefLibrary;
   /** Leave out the big cylinder (default: present). */
   vesselSizedObject?: boolean;
-  /** Extra copies of a dense sphere to reach a triangle budget (perf lab). */
+  /** Extra copies of a dense sphere (two LODs) to reach a triangle budget (perf lab, LOD test). */
   heavyTriangles?: number;
+  /** Only the slab and the dense spheres (LOD test). */
+  denseOnly?: boolean;
   /** Size of the slab, m. */
   slabSize?: number;
   id?: string;
@@ -47,6 +49,8 @@ export interface StandFeature extends RenderFeature {
   readonly batch: () => MeshBatch;
   /** Site-frame (ENU) centre of the white Lambert card and its albedo, for the HDR readback test. */
   readonly whiteCard: { pos: Vec3Tuple; albedo: number };
+  /** Centres of the two 2 m textured planes: a procedural checker and the same pattern loaded from a PNG URL (8 x 8 squares of 0.25 m). */
+  readonly texturedPlanes: { procedural: Vec3Tuple; url: Vec3Tuple };
   triangles(): number;
 }
 
@@ -57,12 +61,29 @@ export function createStandFeature(options: StandOptions): StandFeature {
   let vesselProbe = false;
   const upright = quat.fromAxisAngle({ x: 1, y: 0, z: 0 }, Math.PI / 2);
   const whiteCard = { pos: [-9, 6, 0.02] as Vec3Tuple, albedo: 0.8 };
+  const texturedPlanes = { procedural: [-9, -9, 0.02] as Vec3Tuple, url: [-6, -9, 0.02] as Vec3Tuple };
 
   const model = (name: string, mesh: ModelData['lods'][number], material: PbrMaterialDef): ModelHandle => coreOf(ctx).meshes.createModel({ name, lods: [mesh], materials: [material] });
+
+  /**
+   * Dense spheres (130,320 triangles each, with a 960-triangle second LOD that takes over below 40 px) in a
+   * block behind the sweep: load for the G-buffer and shadow passes, and the subject of the LOD test.
+   */
+  const addDense = (triangles: number): void => {
+    const dense = sphereMesh(0.6, 362, 181);
+    const count = Math.ceil(triangles / (dense.indices.length / 3));
+    const m = coreOf(ctx).meshes.createModel(
+      { name: 'dense', lods: [dense, sphereMesh(0.6, 32, 16)], materials: [mat('dense', [0.5, 0.55, 0.6], 0.5, 0)] },
+      { lodPixels: [40] },
+    );
+    const cols = Math.ceil(Math.sqrt(count));
+    for (let i = 0; i < count; i++) placed.push({ model: m, pos: [(i % cols) * 1.5 - (cols - 1) * 0.75, 9 + Math.floor(i / cols) * 1.5, 0.6], rot: null });
+  };
 
   return {
     id: options.id ?? 'lab-stand',
     whiteCard,
+    texturedPlanes,
     batch: () => batch,
     setVesselProbe(on) {
       vesselProbe = on;
@@ -77,8 +98,26 @@ export function createStandFeature(options: StandOptions): StandFeature {
 
       // Ground slab: terrain shading (Lambert + low GGX), top face at z = 0.
       placed.push({ model: model('slab', boxMesh(size, size, 1), { name: 'slab', shading: 'terrain', baseColor: [0.32, 0.31, 0.3], roughness: 0.9, metallic: 0 }), pos: [0, 0, -0.5], rot: null });
+      if (options.denseOnly) {
+        addDense(Math.max(options.heavyTriangles ?? 0, 1));
+        return;
+      }
       // White Lambert card lying on the slab.
       placed.push({ model: model('card', planeMesh(4, 4), { name: 'card', shading: 'terrain', baseColor: [whiteCard.albedo, whiteCard.albedo, whiteCard.albedo], roughness: 1, metallic: 0 }), pos: whiteCard.pos, rot: null });
+
+      // Textured planes: a procedural checker registered with the mesh system, and a PNG loaded by URL
+      // (public/assets/render/lab-grid.png, relative to RenderContext.assetsUrl). Both get full mip chains.
+      const checker = new Uint8Array(64 * 64 * 4);
+      for (let y = 0; y < 64; y++) {
+        for (let x = 0; x < 64; x++) {
+          const v = ((x >> 3) + (y >> 3)) % 2 === 0 ? 220 : 30;
+          checker.set([v, v, v, 255], (y * 64 + x) * 4);
+        }
+      }
+      meshes.registerProceduralTexture('lab-checker', { width: 64, height: 64, data: checker });
+      const textured = (name: string, texture: string): PbrMaterialDef => ({ name, shading: 'terrain', baseColor: [1, 1, 1], roughness: 1, metallic: 0, textures: { baseColor: texture } });
+      placed.push({ model: model('texProc', planeMesh(2, 2), textured('texProc', 'lab-checker')), pos: texturedPlanes.procedural, rot: null });
+      placed.push({ model: model('texUrl', planeMesh(2, 2), textured('texUrl', 'render/lab-grid.png')), pos: texturedPlanes.url, rot: null });
 
       const sphere = sphereMesh(0.5, 64, 32);
       const n = 8;
@@ -116,15 +155,7 @@ export function createStandFeature(options: StandOptions): StandFeature {
         placed.push({ model: model('stack', cylinderMesh(2, 40, 64), mat('stack', [0.85, 0.85, 0.86], 0.45, 0, { clearcoat: 0.3, clearcoatRoughness: 0.2 })), pos: [0, 28, 20], rot: upright });
       }
 
-      if (options.heavyTriangles) {
-        // Dense spheres (about 131k triangles each) in a block behind the sweep, to load the G-buffer and shadow passes.
-        const dense = sphereMesh(0.6, 362, 181);
-        const tris = dense.indices.length / 3;
-        const count = Math.ceil(options.heavyTriangles / tris);
-        const m = model('dense', dense, mat('dense', [0.5, 0.55, 0.6], 0.5, 0));
-        const cols = Math.ceil(Math.sqrt(count));
-        for (let i = 0; i < count; i++) placed.push({ model: m, pos: [(i % cols) * 1.5 - (cols - 1) * 0.75, 9 + Math.floor(i / cols) * 1.5, 0.6], rot: null });
-      }
+      if (options.heavyTriangles) addDense(options.heavyTriangles);
     },
 
     prepare(frame: FrameContext) {

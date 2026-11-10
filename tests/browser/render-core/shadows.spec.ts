@@ -1,6 +1,9 @@
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
+// The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
+test.describe.configure({ timeout: 600_000 });
+
 /**
  * Render `frames` frames by hand (fixed 1/60 s steps) and return, per frame, the mean absolute difference
  * to the previous frame over a centred crop of the resolved image, in 8-bit display units (0..255 scale,

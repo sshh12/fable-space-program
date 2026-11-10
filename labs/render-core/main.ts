@@ -6,7 +6,9 @@
  *   &site=lat,lon[,alt]         where the stand sits (default: the scenario's launch site; `site=moonview`
  *                               picks a spot on the root body from which the moon stands 35 deg high)
  *   &sun=az,el                  pin the sun at this azimuth / elevation (deg) at the site
- *   &planet=0                   no LabPlanet;  &stand=0  no stand
+ *   &planet=0                   no LabPlanet;  &stand=0  no stand;  &stand=dense  slab + dense LOD spheres only
+ *   &tris=<n>                   add dense spheres (130k triangles each, two LODs) up to n triangles
+ *   &maps=tileset|ocean         LabPlanet albedo: the baked albedoLowRes maps, or open ocean everywhere
  *   &probe=<name>[,<name>...]   extra lab features (see probes.ts)
  * plus every camera / renderer parameter of createLabApp. Specs drive the rest through window.__lab and
  * window.__rc (this page's own handle).
@@ -119,11 +121,15 @@ async function boot(): Promise<void> {
         if (query.get('maps') !== 'tileset') {
           let seed = 100;
           for (const b of Object.values(defs.bodies)) if (!b.emission) maps[b.id] = proceduralPlanetMap(seed++, b.ocean !== null);
+          // ?maps=ocean: open water everywhere on bodies with an ocean (LabPlanet water and near-field test).
+          if (query.get('maps') === 'ocean') {
+            for (const b of Object.values(defs.bodies)) if (b.ocean) maps[b.id] = { width: 2, height: 1, data: new Uint8Array([28, 52, 84, 255, 28, 52, 84, 255]) };
+          }
         }
         list.push(createLabPlanetFeature({ maps }));
       }
       if (query.get('stand') !== '0') {
-        stand = createStandFeature({ site, defs, heavyTriangles: Number(query.get('tris') ?? 0) || undefined, vesselSizedObject: query.get('stack') !== '0' });
+        stand = createStandFeature({ site, defs, heavyTriangles: Number(query.get('tris') ?? 0) || undefined, vesselSizedObject: query.get('stack') !== '0', denseOnly: query.get('stand') === 'dense' });
         list.push(stand);
       }
       probes = createProbes(query, site, defs, sim.peek());
