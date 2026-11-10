@@ -1,18 +1,25 @@
 /**
- * Milestone A: the HDR target goes straight to the tonemapper (no TAA, no bloom). Milestone B replaces this
- * file with TAA / TAAU, bloom and dynamic-resolution handling behind the same interface.
+ * Temporal anti-aliasing / upscaling (TAAU) and bloom.
+ *
+ * TAA resolves at DISPLAY resolution from the jittered internal-resolution HDR target: jitter-aware
+ * 3 x 3 reconstruction, closest-depth velocity dilation, 5-tap Catmull-Rom history, YCoCg variance
+ * clipping, luminance-weighted blend. Inputs and history are sanitised (NaN / Inf -> 0, clamp to HDR_MAX).
+ * RCAS sharpening happens in the tonemap pass. Bloom is threshold-free: 13-tap downsamples (Karis average
+ * on the first), 9-tap tent upsamples blended level by level, mixed into the image at 4 % by the tonemapper.
  */
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { CoreApi } from '../coreApi';
 import type { Perf } from '../perf';
-import type { CoreShaderLibrary } from '../shaders/library';
-import { createSolidTexture } from '../util/gpu';
+import type { CoreShaderLibrary, Tracked } from '../shaders/library';
+import { createTextureChecked } from '../util/gpu';
 
 export interface PostInputs {
   hdr: GPUTextureView;
   velocity: GPUTextureView;
   depth: GPUTextureView;
+  /** True when the history is invalid (first frame, resize, mode switch). */
   reset: boolean;
+  /** Multiplier on the history weight (0.5 under fast view rotation or high time warp). */
   historyScale: number;
 }
 export interface PostOutputs {
@@ -22,19 +29,324 @@ export interface PostOutputs {
   sharpness: number;
 }
 
+export const BLOOM_LEVELS = 6;
+export const BLOOM_MIX = 0.04;
+export const TAA_HISTORY_WEIGHT = 0.9;
+export const RCAS_SHARPNESS = 0.87; // exp2(-0.2): the FSR "0.2 stops" setting
+
+const TAA_FS = /* wgsl */ `
+struct TaaUniforms { v: vec4f }   // x = 1 when the history is invalid, y = history weight
+@group(1) @binding(0) var<uniform> taa: TaaUniforms;
+@group(1) @binding(1) var hdrTex: texture_2d<f32>;
+@group(1) @binding(2) var velocityTex: texture_2d<f32>;
+@group(1) @binding(3) var depthTex: texture_depth_2d;
+@group(1) @binding(4) var historyTex: texture_2d<f32>;
+
+fn toYcocg(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
+fn fromYcocg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
+// Reversible tonemap for stable filtering of HDR values.
+fn squash(c: vec3f) -> vec3f { return c / (1.0 + luminance(c)); }
+fn unsquash(c: vec3f) -> vec3f { return c / max(1.0 - luminance(c), 1e-5); }
+
+fn historyTap(uv: vec2f) -> vec3f { return squash(writeHdr(textureSampleLevel(historyTex, linearClamp, uv, 0.0).rgb)); }
+/// 5-tap Catmull-Rom (the four corner taps of the 9-tap bilinear form are dropped).
+fn historyCatmullRom(uv: vec2f) -> vec3f {
+  let size = vec2f(textureDimensions(historyTex));
+  let pos = uv * size;
+  let tc1 = floor(pos - 0.5) + 0.5;
+  let f = pos - tc1;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let w12 = w1 + w2;
+  let tc0 = (tc1 - 1.0) / size;
+  let tc3 = (tc1 + 2.0) / size;
+  let tc12 = (tc1 + w2 / w12) / size;
+  let wa = w12.x * w0.y;
+  let wb = w0.x * w12.y;
+  let wc = w12.x * w12.y;
+  let wd = w3.x * w12.y;
+  let we = w12.x * w3.y;
+  let c = historyTap(vec2f(tc12.x, tc0.y)) * wa + historyTap(vec2f(tc0.x, tc12.y)) * wb + historyTap(tc12) * wc
+        + historyTap(vec2f(tc3.x, tc12.y)) * wd + historyTap(vec2f(tc12.x, tc3.y)) * we;
+  return max(c / (wa + wb + wc + wd + we), vec3f(0.0));
+}
+
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let rs = vec2i(frame.renderSize.xy);
+  // This output pixel in render-pixel coordinates. A render pixel with centre c shows the scene point that
+  // sits at c - jitter on the unjittered screen, so the nearest input sample to p is at floor(p + jitter).
+  let p = in.uv * frame.renderSize.xy;
+  let base = vec2i(floor(p + frame.jitter.xy));
+
+  var colour = vec3f(0.0);
+  var wsum = 0.0;
+  var m1 = vec3f(0.0);
+  var m2 = vec3f(0.0);
+  var closest = 0.0;
+  var closestAt = base;
+  var wCentre = 0.0;
+  for (var j = -1; j <= 1; j++) {
+    for (var i = -1; i <= 1; i++) {
+      let q = clamp(base + vec2i(i, j), vec2i(0), rs - 1);
+      let c = squash(writeHdr(textureLoad(hdrTex, q, 0).rgb));
+      // Distance from the output pixel centre to this sample's true position, in render pixels.
+      let d = (vec2f(q) + 0.5 - frame.jitter.xy) - p;
+      let w = exp(-2.29 * dot(d, d));
+      colour += c * w;
+      wsum += w;
+      if (i == 0 && j == 0) { wCentre = w; }
+      let y = toYcocg(c);
+      m1 += y;
+      m2 += y * y;
+      let dz = textureLoad(depthTex, q, 0);
+      if (dz > closest) { closest = dz; closestAt = q; }
+    }
+  }
+  colour /= wsum;
+  let mean = m1 / 9.0;
+  let sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3f(0.0)));
+
+  // Velocity of the closest surface in the neighbourhood (keeps silhouettes of moving objects sharp).
+  var velocity = textureLoad(velocityTex, closestAt, 0).xy;
+  if (closest == 0.0) {
+    // Sky: no geometry wrote a velocity; reproject the view direction (camera rotation only).
+    let ndc = vec2f(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
+    let dir = frame.cameraForward.xyz + frame.cameraRight.xyz * (ndc.x * frame.cameraRight.w) + frame.cameraUp.xyz * (ndc.y * frame.cameraUp.w);
+    let prev = frame.prevViewProj * vec4f(dir, 0.0);
+    velocity = select(vec2f(0.0), (ndc - prev.xy / prev.w) * vec2f(0.5, -0.5), prev.w > 1e-6);
+  }
+  let prevUv = in.uv - velocity;
+  let speedPx = length(velocity * frame.displaySize.xy);
+
+  var weight = taa.v.y * (1.0 - taa.v.x);
+  if (prevUv.x <= 0.0 || prevUv.y <= 0.0 || prevUv.x >= 1.0 || prevUv.y >= 1.0) { weight = 0.0; }
+  var result = colour;
+  if (weight > 0.0) {
+    var h = toYcocg(historyCatmullRom(prevUv));
+    // Variance clip towards the neighbourhood mean (wider box when static: less flicker on thin features).
+    let gamma = mix(1.25, 1.0, saturate(speedPx * 0.5));
+    let lo = mean - sigma * gamma;
+    let hi = mean + sigma * gamma;
+    let centre = 0.5 * (lo + hi);
+    let extent = 0.5 * (hi - lo) + vec3f(1e-5);
+    let off = h - centre;
+    let unit = abs(off / extent);
+    let k = max(unit.x, max(unit.y, unit.z));
+    if (k > 1.0) { h = centre + off / k; }
+    let hist = fromYcocg(h);
+    // When upscaling, an output pixel far from this frame's nearest sample trusts the history more.
+    let fresh = mix(0.35, 1.0, saturate(wCentre * 1.6));
+    weight = clamp(1.0 - (1.0 - weight) * fresh, 0.0, 0.98) * mix(1.0, 0.85, saturate(speedPx / 24.0));
+    result = mix(colour, hist, weight);
+  }
+  return vec4f(writeHdr(unsquash(max(result, vec3f(0.0)))), 1.0);
+}
+`;
+
+const BLOOM_DOWN_FS = /* wgsl */ `
+struct BloomUniforms { v: vec4f }   // x = 1 for the first level (Karis average + input sanitising)
+@group(1) @binding(0) var<uniform> bloom: BloomUniforms;
+@group(1) @binding(1) var srcTex: texture_2d<f32>;
+fn tap(uv: vec2f) -> vec3f { return writeHdr(textureSampleLevel(srcTex, linearClamp, uv, 0.0).rgb); }
+fn karis(c: vec3f) -> f32 { return 1.0 / (1.0 + luminance(c)); }
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let t = 1.0 / vec2f(textureDimensions(srcTex));
+  let uv = in.uv;
+  // 13-tap downsample (Jimenez, Call of Duty: Advanced Warfare): five overlapping 2 x 2 boxes.
+  let a = tap(uv + t * vec2f(-2.0, -2.0)); let b = tap(uv + t * vec2f(0.0, -2.0)); let c = tap(uv + t * vec2f(2.0, -2.0));
+  let d = tap(uv + t * vec2f(-2.0, 0.0));  let e = tap(uv);                          let f = tap(uv + t * vec2f(2.0, 0.0));
+  let g = tap(uv + t * vec2f(-2.0, 2.0));  let h = tap(uv + t * vec2f(0.0, 2.0));    let i = tap(uv + t * vec2f(2.0, 2.0));
+  let j = tap(uv + t * vec2f(-1.0, -1.0)); let k = tap(uv + t * vec2f(1.0, -1.0));
+  let l = tap(uv + t * vec2f(-1.0, 1.0));  let m = tap(uv + t * vec2f(1.0, 1.0));
+  if (bloom.v.x > 0.5) {
+    // Karis average per box suppresses fireflies from single very bright pixels.
+    let b0 = (j + k + l + m) * 0.25; let b1 = (a + b + d + e) * 0.25; let b2 = (b + c + e + f) * 0.25;
+    let b3 = (d + e + g + h) * 0.25; let b4 = (e + f + h + i) * 0.25;
+    let w0 = 0.5 * karis(b0); let w1 = 0.125 * karis(b1); let w2 = 0.125 * karis(b2); let w3 = 0.125 * karis(b3); let w4 = 0.125 * karis(b4);
+    return vec4f((b0 * w0 + b1 * w1 + b2 * w2 + b3 * w3 + b4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
+  }
+  return vec4f(e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125, 1.0);
+}
+`;
+
+const BLOOM_UP_FS = /* wgsl */ `
+@group(1) @binding(0) var lowTex: texture_2d<f32>;    // the coarser, already blurred level
+@group(1) @binding(1) var highTex: texture_2d<f32>;   // this level's downsample
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let t = 1.0 / vec2f(textureDimensions(lowTex));
+  let uv = in.uv;
+  // 9-tap upsample: the centre and eight bilinear taps on a circle of 1.25 texels (weights of the 3 x 3 tent,
+  // but isotropic, so a saturated point source blooms round instead of square).
+  var s = textureSampleLevel(lowTex, linearClamp, uv, 0.0).rgb * 4.0;
+  for (var k = 0; k < 8; k++) {
+    let a = f32(k) * 0.78539816;
+    let w = select(1.0, 2.0, (k & 1) == 0);
+    s += textureSampleLevel(lowTex, linearClamp, uv + t * vec2f(cos(a), sin(a)) * 1.25, 0.0).rgb * w;
+  }
+  let high = textureSampleLevel(highTex, linearClamp, uv, 0.0).rgb;
+  // Convex blend: the chain conserves energy, wide levels carry the long tail.
+  return vec4f(mix(high, s / 16.0, 0.62), 1.0);
+}
+`;
+
 export class PostProcess {
-  /** True when the projection must be jittered (temporal anti-aliasing active). */
-  readonly temporal = false;
-  private readonly black: GPUTextureView;
-  constructor(ctx: RenderContext, _shaders: CoreShaderLibrary, _core: CoreApi, _rg11b10: boolean) {
-    this.black = createSolidTexture(ctx.device, 'post.black', 'rgba16float', [0, 0, 0, 1]).createView();
+  /** The projection is jittered: temporal anti-aliasing is active. */
+  readonly temporal = true;
+  private readonly device: GPUDevice;
+  private readonly bloomFormat: GPUTextureFormat;
+  private readonly taaLayout: GPUBindGroupLayout;
+  private readonly downLayout: GPUBindGroupLayout;
+  private readonly upLayout: GPUBindGroupLayout;
+  private readonly taaPipeline: Tracked<GPURenderPipeline>;
+  private readonly downPipeline: Tracked<GPURenderPipeline>;
+  private readonly upPipeline: Tracked<GPURenderPipeline>;
+  private readonly taaUniform: GPUBuffer;
+  private readonly bloomUniforms: GPUBuffer[];
+  private history: GPUTexture[] = [];
+  private historyViews: GPUTextureView[] = [];
+  private down: GPUTexture[] = [];
+  private up: GPUTexture[] = [];
+  private downViews: GPUTextureView[] = [];
+  private upViews: GPUTextureView[] = [];
+  private downGroups: GPUBindGroup[] = [];
+  private upGroups: GPUBindGroup[] = [];
+  private taaGroups: (GPUBindGroup | null)[] = [null, null];
+  private taaInputs: PostInputs | null = null;
+  private current = 0;
+  private width = 0;
+  private height = 0;
+
+  constructor(
+    private readonly ctx: RenderContext,
+    _shaders: CoreShaderLibrary,
+    private readonly core: CoreApi,
+    rg11b10: boolean,
+  ) {
+    const device = (this.device = ctx.device);
+    this.bloomFormat = rg11b10 ? 'rg11b10ufloat' : 'rgba16float';
+    const tex = (binding: number, sampleType: GPUTextureSampleType = 'float'): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType } });
+    const ubo = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
+    this.taaLayout = device.createBindGroupLayout({ label: 'core.taa', entries: [ubo(0), tex(1), tex(2), tex(3, 'depth'), tex(4)] });
+    this.downLayout = device.createBindGroupLayout({ label: 'core.bloomDown', entries: [ubo(0), tex(1)] });
+    this.upLayout = device.createBindGroupLayout({ label: 'core.bloomUp', entries: [tex(0), tex(1)] });
+    this.taaPipeline = core.fullscreenPipeline({ label: 'core.taa', fragment: TAA_FS, layouts: [this.taaLayout], targets: [{ format: 'rgba16float' }] });
+    this.downPipeline = core.fullscreenPipeline({ label: 'core.bloomDown', fragment: BLOOM_DOWN_FS, layouts: [this.downLayout], targets: [{ format: this.bloomFormat }] });
+    this.upPipeline = core.fullscreenPipeline({ label: 'core.bloomUp', fragment: BLOOM_UP_FS, layouts: [this.upLayout], targets: [{ format: this.bloomFormat }] });
+    this.taaUniform = device.createBuffer({ label: 'core.taa', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.bloomUniforms = [1, 0].map((first) => {
+      const b = device.createBuffer({ label: 'core.bloom', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(b, 0, new Float32Array([first, 0, 0, 0]));
+      return b;
+    });
   }
-  resize(_w: number, _h: number): void {}
-  warm(): void {}
+
+  warm(): void {
+    this.taaPipeline.get();
+    this.downPipeline.get();
+    this.upPipeline.get();
+  }
+
+  /** (Re)allocate the display-resolution history and the bloom chain. */
+  resize(w: number, h: number): void {
+    if (w === this.width && h === this.height) return;
+    this.width = w;
+    this.height = h;
+    for (const t of [...this.history, ...this.down, ...this.up]) t.destroy();
+    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
+    const make = (label: string, format: GPUTextureFormat, tw: number, th: number): GPUTexture =>
+      createTextureChecked(this.device, { label, format, size: [Math.max(1, tw), Math.max(1, th)], usage }, this.core.reportError);
+    this.history = [0, 1].map((i) => make(`core.taaHistory${i}`, 'rgba16float', w, h));
+    this.historyViews = this.history.map((t) => t.createView());
+    this.down = [];
+    this.up = [];
+    for (let l = 0; l < BLOOM_LEVELS; l++) {
+      const tw = Math.ceil(w / 2 ** (l + 1));
+      const th = Math.ceil(h / 2 ** (l + 1));
+      this.down.push(make(`core.bloomDown${l}`, this.bloomFormat, tw, th));
+      if (l < BLOOM_LEVELS - 1) this.up.push(make(`core.bloomUp${l}`, this.bloomFormat, tw, th));
+    }
+    this.downViews = this.down.map((t) => t.createView());
+    this.upViews = this.up.map((t) => t.createView());
+    this.downGroups = [];
+    this.upGroups = [];
+    this.taaGroups = [null, null];
+    this.taaInputs = null;
+  }
+
+  /** The texture holding the resolved image of the last frame (display resolution, pre-exposed). */
   resolvedTexture(): GPUTexture | null {
-    return null;
+    return this.history[this.current] ?? null;
   }
-  run(_encoder: GPUCommandEncoder, _frame: FrameContext, _perf: Perf, _frameGroup: GPUBindGroup, inputs: PostInputs): PostOutputs {
-    return { color: inputs.hdr, bloom: this.black, bloomMix: 0, sharpness: 0 };
+
+  run(encoder: GPUCommandEncoder, _frame: FrameContext, perf: Perf, frameGroup: GPUBindGroup, inputs: PostInputs): PostOutputs {
+    const device = this.device;
+    const prev = this.current;
+    const cur = 1 - prev;
+    this.current = cur;
+    const t = this.taaInputs;
+    if (!t || t.hdr !== inputs.hdr || t.velocity !== inputs.velocity || t.depth !== inputs.depth) {
+      this.taaInputs = inputs;
+      this.taaGroups = [null, null];
+    }
+    // Group i reads history i (the previous frame) while rendering into the other one.
+    this.taaGroups[prev] ??= device.createBindGroup({
+      label: 'core.taa',
+      layout: this.taaLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.taaUniform } },
+        { binding: 1, resource: inputs.hdr },
+        { binding: 2, resource: inputs.velocity },
+        { binding: 3, resource: inputs.depth },
+        { binding: 4, resource: this.historyViews[prev]! },
+      ],
+    });
+    device.queue.writeBuffer(this.taaUniform, 0, new Float32Array([inputs.reset ? 1 : 0, TAA_HISTORY_WEIGHT * inputs.historyScale, 0, 0]));
+    {
+      const pass = encoder.beginRenderPass({ label: 'taa', colorAttachments: [{ view: this.historyViews[cur]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.taa') });
+      pass.setBindGroup(0, frameGroup);
+      pass.setPipeline(this.taaPipeline.get());
+      pass.setBindGroup(1, this.taaGroups[prev]!);
+      pass.draw(3);
+      pass.end();
+    }
+
+    // Bloom chain from the resolved image. The first downsample reads the history texture that was just written.
+    const resolved = this.historyViews[cur]!;
+    for (let l = 0; l < BLOOM_LEVELS; l++) {
+      const key = l === 0 ? cur : 2 + l;
+      this.downGroups[key] ??= device.createBindGroup({
+        label: `core.bloomDown${l}`,
+        layout: this.downLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.bloomUniforms[l === 0 ? 0 : 1]! } },
+          { binding: 1, resource: l === 0 ? resolved : this.downViews[l - 1]! },
+        ],
+      });
+      const pass = encoder.beginRenderPass({ label: `bloomDown${l}`, colorAttachments: [{ view: this.downViews[l]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.bloom') });
+      pass.setBindGroup(0, frameGroup);
+      pass.setPipeline(this.downPipeline.get());
+      pass.setBindGroup(1, this.downGroups[key]!);
+      pass.draw(3);
+      pass.end();
+    }
+    for (let l = BLOOM_LEVELS - 2; l >= 0; l--) {
+      this.upGroups[l] ??= device.createBindGroup({
+        label: `core.bloomUp${l}`,
+        layout: this.upLayout,
+        entries: [
+          { binding: 0, resource: l === BLOOM_LEVELS - 2 ? this.downViews[l + 1]! : this.upViews[l + 1]! },
+          { binding: 1, resource: this.downViews[l]! },
+        ],
+      });
+      const pass = encoder.beginRenderPass({ label: `bloomUp${l}`, colorAttachments: [{ view: this.upViews[l]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.bloom') });
+      pass.setBindGroup(0, frameGroup);
+      pass.setPipeline(this.upPipeline.get());
+      pass.setBindGroup(1, this.upGroups[l]!);
+      pass.draw(3);
+      pass.end();
+    }
+    return { color: resolved, bloom: this.upViews[0]!, bloomMix: BLOOM_MIX, sharpness: RCAS_SHARPNESS };
   }
 }

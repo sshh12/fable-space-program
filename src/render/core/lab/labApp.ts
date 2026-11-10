@@ -4,7 +4,7 @@
  * the full TestApi wiring (isIdle, perf, hdrStats, setDeterministic, setPaused). Used by every render lab.
  *
  * Query parameters (all optional): scene=<FakeScene>, the camera parameters of labCameraFromQuery,
- * perf=features (attribution mode), scale=<render scale>, ev=<forced EV100>, deterministic=1, paused=1.
+ * perf=features (attribution mode), scale=<render scale>, governor=off, ev=<forced EV100>, deterministic=1, paused=1.
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -95,6 +95,8 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       perfFeatures: query.get('perf') === 'features',
       ...options.renderer,
       quality: { ...(Number.isFinite(scale) && scale > 0 ? { renderScaleMin: scale, renderScaleMax: scale } : {}), ...options.renderer?.quality },
+      // ?governor=off pins qualityScale at 1 (budgets are stated at scale 1); combine with ?scale= to pin the resolution.
+      governor: { ...(query.get('governor') === 'off' ? { qualityMin: 1 } : {}), ...options.renderer?.governor },
     };
     const renderer = await createRenderer(canvas, gpu, defs, rendererOptions);
     const fit = (): void => renderer.resize(Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio)));

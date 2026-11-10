@@ -3,6 +3,7 @@ import { openPage, test } from '../harness';
 /** Scratch spec for interactive debugging (skipped unless RC_DEBUG_URL is set). */
 test('debug', async ({ page, pageLog }) => {
   test.skip(!process.env.RC_DEBUG_URL, 'set RC_DEBUG_URL to use');
+  test.setTimeout(600_000);
   await openPage(page, process.env.RC_DEBUG_URL!).catch((e: unknown) => console.log('open failed', String(e)));
   await page.waitForTimeout(Number(process.env.RC_DEBUG_WAIT ?? 1500));
   const out = await page.evaluate(process.env.RC_DEBUG_EVAL ?? '(() => window.__test.errors)()');

@@ -100,7 +100,7 @@ export class ShadowSystem {
     f[4] = 2 * Math.tan(frame.sun.angularRadius);
     f[5] = 1 / this.mapSize;
     f[6] = this.mapSize;
-    f[7] = 1.5;
+    f[7] = 0.7;
     const targets: ShadowPassTarget[] = [];
     this.frames.forEach((c, i) => {
       const o = 8 + i * 32;

@@ -88,7 +88,7 @@ test('every hook has the attachments of the table and the scene copies hold this
 });
 
 test('a half-resolution volume from preTransparent is occluded by opaque geometry; applyAtmosphere is neutral by default and hides what is behind a cloud', async ({ page, pageLog }) => {
-  await openPage(page, '/labs/render-core/?probe=volume,cloud&sun=120,40&hud=0&paused=1');
+  await openPage(page, '/labs/render-core/?probe=volume,cloud&sun=120,40&hud=0&paused=1&ev=14.5');
   await assertDiscreteGpu(page);
   await page.evaluate(() => window.__test!.setDeterministic(true));
   await waitIdle(page, 6);
@@ -98,6 +98,8 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
     const lab = window.__lab!;
     const rc = window.__rc!;
     lab.setLoop(false);
+    // Identical sub-pixel sampling in every frame, so that A/B readbacks differ only by what is toggled.
+    lab.renderer.setJitter(false);
     const grab = async (): Promise<{ width: number; height: number; data: Float32Array }> => {
       lab.renderFrame();
       return lab.renderer.readHdrPixels('hdr');
@@ -143,6 +145,7 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
     const clouded = await grab();
     const cloud = { farLeft: at(clouded, 0.3, row0), farRight: at(clouded, 0.7, row0), nearLeft: at(clouded, 0.3, row1), nearRight: at(clouded, 0.7, row1), background: at(clouded, 0.3, row0 - 20) };
     rc.probes.setCloudLayer(false);
+    lab.renderer.setJitter(true);
     lab.setLoop(true);
     return { towerMaxDiff, towerPixels, fogMaxDiff, neutral, cloud, screen };
   });

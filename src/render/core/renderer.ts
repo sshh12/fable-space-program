@@ -82,6 +82,8 @@ export interface CoreRenderer extends Renderer {
   readonly canvas: HTMLCanvasElement;
   /** Freeze presentation-only animation: fixed jitter-free noise, qualityScale 1, maximum render scale. */
   setDeterministic(on: boolean): void;
+  /** Switch the sub-pixel TAA jitter off / on (off: consecutive frames are pixel-identical, for A/B readbacks). */
+  setJitter(enabled: boolean): void;
   /** Force EV100 (null = automatic). */
   setExposureOverride(ev100: number | null): void;
   exposureInfo(): ExposureInfo;
@@ -91,8 +93,8 @@ export interface CoreRenderer extends Renderer {
   /** Read back the reversed-Z scene depth copy ('scene.depth'), row 0 = top. */
   readDepth(): Promise<{ width: number; height: number; data: Float32Array }>;
   resetPerf(): void;
-  /** p50 / p99 of every GPU pass over the measurement window, ms. */
-  passStats(): Record<string, { p50: number; p99: number }>;
+  /** p50 / p99 / mean (amortised over all frames) of every GPU pass over the measurement window, ms. */
+  passStats(): Record<string, { p50: number; p99: number; mean: number }>;
   /** Ids of registered features in call order of a hook. */
   featureOrder(): string[];
   readonly frameContext: FrameContext | null;
@@ -377,6 +379,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let evOverride: number | null = null;
   let disposed = false;
   let historyReset = true;
+  let jitterEnabled = true;
 
   const runCpu = <T>(name: string, fn: () => T): T => {
     perf.cpuBegin(name);
@@ -459,6 +462,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     return false;
   };
 
+  const sunInView = (camera: CameraState, dir: { x: number; y: number; z: number }, angularRadius: number, aspect: number): boolean => {
+    const basis = cameraBasis(camera);
+    const z = v3.dot(dir, basis.forward);
+    if (z <= 0) return false;
+    const tanY = Math.tan(camera.fovY / 2);
+    const m = Math.tan(angularRadius);
+    return Math.abs(v3.dot(dir, basis.right)) / z < tanY * aspect + m && Math.abs(v3.dot(dir, basis.up)) / z < tanY + m;
+  };
+
   // ------------------------------------------------------------------------------------------ render
   const render = (snapshot: SimSnapshot, camera: CameraState, observers: LodObserver[], realDt: number): void => {
     if (disposed) return;
@@ -489,7 +501,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     // Camera, jitter, projection.
     const animate = !deterministic;
     if (animate) realTime += realDt;
-    const jitterPx: [number, number] = post.temporal ? taaJitter(jitterIndex, jitterSequenceLength(rw / displayW)) : [0, 0];
+    const jitterPx: [number, number] = post.temporal && jitterEnabled ? taaJitter(jitterIndex, jitterSequenceLength(rw / displayW)) : [0, 0];
     const projection = buildProjection(camera.fovY, rw, rh, jitterPx);
     const view = mat4.viewRotation(camera.qViewToRoot);
     const basis = cameraBasis(camera);
@@ -503,7 +515,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const metering = meter.evaluate({
       sunIlluminance: sun.illuminance,
       sunVisibility,
-      litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh),
+      // The solar disc itself counts: a camera pointed at the unoccluded sun stops down to the daylight exposure.
+      litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || (sunVisibility > 0 && sunInView(camera, sun.dirRoot, sun.angularRadius, rw / rh)),
       kind: camera.kind,
       exposureCompensation: camera.exposureCompensation,
       minEv100: camera.minEv100,
@@ -760,10 +773,11 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     prevCamera = camera;
     frameIndex++;
     jitterIndex = deterministic ? jitterIndex + 1 : frameIndex;
-    window.__perf = perfSnapshot();
   };
 
   const perfSnapshot = (): PerfSnapshot => perf.snapshot(governor.qualityScale, governor.renderScale);
+  // window.__perf is computed on access (percentiles over the window are not free).
+  Object.defineProperty(window, '__perf', { get: perfSnapshot, configurable: true });
 
   const readHdrPixels: CoreRenderer['readHdrPixels'] = async (target = 'hdr', rect) => {
     const texture = target === 'hdr' ? targets?.hdr : post.resolvedTexture();
@@ -837,6 +851,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     setExposureOverride(ev) {
       evOverride = ev;
+    },
+    setJitter(enabled) {
+      jitterEnabled = enabled;
     },
     exposureInfo() {
       const m = meter.last();

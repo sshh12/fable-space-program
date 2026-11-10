@@ -429,13 +429,13 @@ fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
   let NoL = dot(n, l);
   if (NoL <= 0.0) { return 1.0; }   // back faces are dark through the BRDF; avoids acne at the terminator
   let sinT = sqrt(saturate(1.0 - NoL * NoL));
-  let po = p + n * (texel * shadowU.settings.w * (0.25 + sinT)) + l * (texel * 0.5);
+  let po = p + n * (texel * shadowU.settings.w * sinT) + l * (texel * 0.5);
   let c = cas.viewProj * vec4f(po, 1.0);
   let uv = vec2f(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
   let zr = c.z;
   let inv = shadowU.settings.y;
   // Receiver-plane depth gradient per texel step along u and v (world dz = dot(step, n) / NoL), clamped.
-  let g = clamp(vec2f(dot(cas.axisU.xyz, n), dot(cas.axisV.xyz, n)) / max(NoL, 0.05), vec2f(-6.0), vec2f(6.0)) * (texel / zRange);
+  let g = clamp(vec2f(dot(cas.axisU.xyz, n), dot(cas.axisV.xyz, n)) / max(NoL, 0.02), vec2f(-40.0), vec2f(40.0)) * (texel / zRange);
   let phi = noise.x * TWO_PI;
   let searchTexels = 6.0;
   var blockerSum = 0.0;

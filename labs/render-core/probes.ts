@@ -15,8 +15,10 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
+import type { SimSnapshot } from '@/core/contracts/sim';
+import { dirToLatLon } from '@/core/geo/cubeSphere';
 import { quat, v3, type Vec3 } from '@/core/math';
-import { boxMesh, coreOf, instanceInFrame, type CoreApi, type ManagedTarget, type MeshBatch, type ModelHandle, type SceneBindings, type Tracked } from '@/render/core';
+import { boxMesh, coreOf, instanceInFrame, sphereMesh, type CoreApi, type ManagedTarget, type MeshBatch, type ModelHandle, type SceneBindings, type Tracked } from '@/render/core';
 import type { LabApp } from '@/render/core/lab';
 import { sitePoseOf, type Site } from './world';
 
@@ -35,6 +37,8 @@ export interface CascadeLogEntry {
 
 export interface Probes {
   features: RenderFeature[];
+  /** Where the ridge probe puts its ridge (on the moon-sized body). */
+  ridgeSite: Site;
   attach(app: LabApp): void;
   /** `<featureId>.<hook>` in call order for the last completed frame (order probe). */
   hookLog(): string[];
@@ -52,7 +56,7 @@ export interface Probes {
 
 const scissorMarker = (pass: GPURenderPassEncoder, k: number): void => pass.setScissorRect(MARKER.x(k), MARKER.y, MARKER.size, MARKER.size);
 
-export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrary): Probes {
+export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrary, initial: SimSnapshot): Probes {
   const names = new Set((query.get('probe') ?? '').split(',').filter(Boolean));
   const features: RenderFeature[] = [];
   let app: LabApp | null = null;
@@ -601,8 +605,160 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     });
   }
 
+  // ------------------------------------------------------------------------- ball / mirror (vessel frame)
+  if (names.has('ball') || names.has('mirror')) {
+    let batch: MeshBatch;
+    let white: ModelHandle;
+    let mirror: ModelHandle;
+    features.push({
+      id: 'lab-ball',
+      init(c) {
+        const meshes = coreOf(c).meshes;
+        batch = meshes.createBatch('lab-ball');
+        // A white Lambert-like ball (5 m radius) and a mirror-like metal ball (3 m radius, 12 m to starboard).
+        white = meshes.createModel({ name: 'ball', lods: [sphereMesh(5, 96, 48)], materials: [{ name: 'ball', shading: 'terrain', baseColor: [0.8, 0.8, 0.8], roughness: 1, metallic: 0 }] });
+        mirror = meshes.createModel({ name: 'mirror', lods: [sphereMesh(3, 128, 64)], materials: [{ name: 'mirror', shading: 'standard', baseColor: [0.95, 0.95, 0.95], roughness: 0.02, metallic: 1 }] });
+      },
+      prepare(frame) {
+        batch.begin(frame);
+        const v = frame.vesselPose(frame.snapshot.activeVesselId);
+        if (v) {
+          if (names.has('ball')) batch.add(white, instanceInFrame(v, { x: 0, y: 0, z: 0 }, null, { bodyFixed: false }));
+          if (names.has('mirror')) batch.add(mirror, instanceInFrame(v, { x: 12, y: 0, z: 0 }, null, { bodyFixed: false }));
+        }
+        batch.finish();
+      },
+      drawGBuffer(_f, pass) {
+        batch.drawGBuffer(pass);
+      },
+      drawShadow(_f, pass, cascade) {
+        batch.drawShadow(pass, cascade);
+      },
+    });
+  }
+
+  // --------------------------------------------------------------------------------------------- sun
+  if (names.has('sun')) {
+    let pipeline: Tracked<GPURenderPipeline>;
+    features.push({
+      id: 'lab-sun',
+      init(c) {
+        pipeline = coreOf(c).fullscreenPipeline({
+          label: 'lab-sun.disc',
+          // Mean luminance E / (pi sin^2(theta_s)) = 1.9e9 cd/m^2 with limb darkening; saturates at HDR_MAX.
+          fragment: /* wgsl */ `@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+              let d = normalize(viewRay(in.uv));
+              let s = frame.sunDir.xyz;
+              let ang = atan2(length(cross(d, s)), dot(d, s));
+              let r = ang / frame.sunDir.w;
+              if (r >= 1.0) { discard; }
+              let limb = 1.0 - 0.6 * (1.0 - sqrt(max(1.0 - r * r, 0.0)));
+              let lum = frame.sunIlluminance.rgb / (PI * sq(sin(frame.sunDir.w))) * (limb / 0.8) * frame.misc.y;
+              return vec4f(writeHdr(lum * frame.exposure.x), 1.0);
+            }`,
+          targets: [{ format: RENDER_FORMATS.hdr }],
+          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'equal' },
+        });
+        pipeline.get();
+      },
+      drawBackground(_frame, pass) {
+        pass.setPipeline(pipeline.get());
+        pass.draw(3);
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------------------------------- heavy
+  if (names.has('heavy')) {
+    let ctx: RenderContext;
+    let pipeline: Tracked<GPURenderPipeline>;
+    let target: ManagedTarget;
+    let uniform: GPUBuffer;
+    let layout: GPUBindGroupLayout;
+    let group: GPUBindGroup;
+    features.push({
+      id: 'lab-heavy',
+      init(c) {
+        ctx = c;
+        const core = coreOf(c);
+        target = core.createTarget('lab-heavy.scratch', 'rgba16float', 1);
+        uniform = c.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        layout = c.device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
+        group = c.device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: uniform } }] });
+        // A march whose step count scales with FrameContext.qualityScale, like a real volumetric feature.
+        pipeline = core.fullscreenPipeline({
+          label: 'lab-heavy.burn',
+          layouts: [layout],
+          fragment: /* wgsl */ `struct HeavyU { v: vec4f }
+            @group(1) @binding(0) var<uniform> heavy: HeavyU;
+            @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+              let steps = i32(heavy.v.x * frame.exposure.z);
+              var a = vec3f(in.uv, 0.5);
+              for (var i = 0; i < steps; i++) { a = fract(sin(a.yzx * 12.9898 + a.zxy * 78.233 + f32(i)) * 43758.5453); }
+              return vec4f(a, 1.0);
+            }`,
+          targets: [{ format: 'rgba16float' }],
+        });
+        pipeline.get();
+      },
+      prepare() {
+        ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([heavyIterations, 0, 0, 0]));
+      },
+      preTransparent(frame, encoder) {
+        if (heavyIterations <= 0) return;
+        const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-heavy.burn') });
+        pass.setBindGroup(0, frame.frameBindGroup);
+        pass.setPipeline(pipeline.get());
+        pass.setBindGroup(1, group);
+        pass.draw(3);
+        pass.end();
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------------------------------- ridge
+  const moonId = Object.values(defs.bodies).find((b) => b.parent === defs.rootBodyId && b.gravityRole === 'attractor')?.id ?? defs.rootBodyId;
+  const ridgeSite: Site = { bodyId: query.get('ridgeBody') ?? moonId, latDeg: 10, lonDeg: 20, alt: 0 };
+  if (query.get('ridge') === 'track') {
+    // Under the active vessel's ground track, about 60 s of flight ahead of its starting point.
+    const v = initial.vessels.find((x) => x.id === initial.activeVesselId);
+    const b = initial.bodies.find((x) => x.id === v?.bodyId);
+    if (v && b) {
+      const ahead = quat.rotateInv(b.qFixedToRoot, v3.addScaled(v.r, v.v, 60));
+      const ll = dirToLatLon(v3.normalize(ahead));
+      ridgeSite.bodyId = b.id;
+      ridgeSite.latDeg = (ll.lat * 180) / Math.PI;
+      ridgeSite.lonDeg = (ll.lon * 180) / Math.PI;
+    }
+  }
+  if (names.has('ridge')) {
+    let batch: MeshBatch;
+    let model: ModelHandle;
+    features.push({
+      id: 'lab-ridge',
+      init(c) {
+        const meshes = coreOf(c).meshes;
+        batch = meshes.createBatch('lab-ridge');
+        // 150 km long (north-south), 20 km wide, 6 km above the datum: a body-fixed caster for the whole-body cascade.
+        model = meshes.createModel({ name: 'ridge', lods: [boxMesh(20e3, 150e3, 12e3)], materials: [{ name: 'ridge', shading: 'regolith', baseColor: [0.14, 0.135, 0.13], roughness: 1, metallic: 0 }] });
+      },
+      prepare(frame) {
+        batch.begin(frame);
+        batch.add(model, instanceInFrame(sitePoseOf(ridgeSite, frame, defs), { x: 0, y: 0, z: 0 }, null, { bodyFixed: true }));
+        batch.finish();
+      },
+      drawGBuffer(_f, pass) {
+        batch.drawGBuffer(pass);
+      },
+      drawShadow(_f, pass, cascade) {
+        batch.drawShadow(pass, cascade);
+      },
+    });
+  }
+
   return {
     features,
+    ridgeSite,
     attach(a) {
       app = a;
     },

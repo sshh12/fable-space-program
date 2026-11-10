@@ -45,6 +45,11 @@ class Ring {
     for (let k = 0; k < this.n; k++) m = Math.max(m, this.data[k]!);
     return m;
   }
+  mean(): number {
+    let s = 0;
+    for (let k = 0; k < this.n; k++) s += this.data[k]!;
+    return this.n ? s / this.n : 0;
+  }
 }
 
 interface PendingFrame {
@@ -104,10 +109,13 @@ export class Perf implements PerfRecorder {
     this.hookFeatures.set(passName, { ids, core });
   }
 
-  /** p50 / p99 of every GPU pass over the window, ms. */
-  passStats(): Record<string, { p50: number; p99: number }> {
-    const out: Record<string, { p50: number; p99: number }> = {};
-    for (const [name, r] of this.passRings) out[name] = { p50: r.percentile(0.5), p99: r.percentile(0.99) };
+  /**
+   * p50 / p99 / mean of every GPU pass over the window, ms. A pass that does not run in a frame (a staggered
+   * shadow cascade, an attribution-only pass) counts as 0 for that frame, so `mean` is the amortised cost.
+   */
+  passStats(): Record<string, { p50: number; p99: number; mean: number }> {
+    const out: Record<string, { p50: number; p99: number; mean: number }> = {};
+    for (const [name, r] of this.passRings) out[name] = { p50: r.percentile(0.5), p99: r.percentile(0.99), mean: r.mean() };
     return out;
   }
 
@@ -222,7 +230,6 @@ export class Perf implements PerfRecorder {
       featureMs.set(f, (featureMs.get(f) ?? 0) + ms);
     };
     for (const [name, ms] of passMs) {
-      this.ringOf(this.passRings, name).push(ms);
       const split = frame.hookFeatures.get(name);
       if (split && split.ids.length > 0) {
         const shares = this.shares.get(name.replace(/^core\./, ''));
@@ -252,6 +259,9 @@ export class Perf implements PerfRecorder {
         m.set(f, prev === undefined ? ms : prev + (ms - prev) * 0.3);
       }
     }
+    // Every known pass gets one sample per frame (0 when it did not run), so means are amortised costs.
+    for (const name of passMs.keys()) this.ringOf(this.passRings, name);
+    for (const [name, ring] of this.passRings) ring.push(passMs.get(name) ?? 0);
     for (const id of ['core', ...this.featureIds]) this.ringOf(this.featureGpu, id).push(featureMs.get(id) ?? 0);
     this.accumulateCpuOnly(frame.cpu);
 
