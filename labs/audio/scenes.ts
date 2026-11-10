@@ -1,30 +1,42 @@
 /**
  * AudioFrame builders for the audio lab, its offline acceptance checks and the listen-proof clips.
  * A FakeSim scene provides a consistent snapshot (bodies, vessel, readouts); the lab overrides what the
- * FakeSim cannot know yet (engine parts from labVehicle.ts, aero state, g-load, events) and places the
- * listener. Pure TypeScript: also used by the vitest model tests.
+ * FakeSim does not simulate (engine module states of real parts from labVehicle.ts, aero state, g-load,
+ * events, surface contact) and places the listener. Pure TypeScript: also used by the vitest model tests.
  */
 import type { AudioFrame, AudioListener } from '@/core/contracts/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { ViewKind } from '@/core/contracts/render';
-import type { PartSnapshot, Readouts, SimEvent, SimSnapshot, VesselAeroState, VesselSnapshot, WarpState } from '@/core/contracts/sim';
+import type { PartSnapshot, Readouts, SimEvent, SimSnapshot, VesselAeroState, VesselSituation, VesselSnapshot, WarpState } from '@/core/contracts/sim';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { LAB_PART_DEFS, LabEngines, labStack, type LabStackId } from './labVehicle';
+import { isFixedBurn, LabEngines, labStack, type LabStackId } from './labVehicle';
 
 export const SEA_LEVEL = 101325;
+/** Speed of sound the lab converts a scripted Mach number with (data/defs/audio/mix.json speedOfSound). */
+export const LAB_SOUND_SPEED = 340;
 
 export interface SceneState {
   parts: PartSnapshot[];
   aero: Partial<VesselAeroState>;
+  /**
+   * Air-relative velocity of the vessel in its own VES axes, m/s. When omitted and `aero.mach` is given,
+   * the vessel flies nose first (+Y) at mach x LAB_SOUND_SPEED; otherwise the FakeSim's value is kept.
+   */
+  airVelocityVes: Vec3;
   gLoad: number;
   sunVisibility: number;
+  situation: VesselSituation;
+  /** 0..1 submerged volume fraction (floating after splashdown). */
+  waterSubmersion: number;
   events: SimEvent[];
   readouts: Partial<Readouts>;
   mission: Partial<SimSnapshot['mission']>;
   warp: Partial<WarpState>;
   boundingRadius: number;
+  /** Centre of mass in VES (the FakeSim's is the origin). */
+  comLocal: Vec3;
   extraVessels: VesselSnapshot[];
 }
 
@@ -35,14 +47,19 @@ export function baseSnapshot(lib: DefLibrary, scene: FakeScene): SimSnapshot {
 /** A copy of `base` with the lab's overrides applied to the active vessel. */
 export function compose(base: SimSnapshot, s: Partial<SceneState>, t: number, tick: number): SimSnapshot {
   const v = base.vessels[0]!;
+  const aero: VesselAeroState = { ...v.aero, ...s.aero };
+  if (s.airVelocityVes) aero.airVelocity = quat.rotate(v.q, s.airVelocityVes);
+  else if (s.aero?.mach !== undefined) aero.airVelocity = quat.rotate(v.q, { x: 0, y: s.aero.mach * LAB_SOUND_SPEED, z: 0 });
   const vessel: VesselSnapshot = {
     ...v,
     parts: s.parts ?? v.parts,
-    aero: { ...v.aero, ...s.aero },
+    aero,
     gLoad: s.gLoad ?? v.gLoad,
     sunVisibility: s.sunVisibility ?? v.sunVisibility,
+    situation: s.situation ?? v.situation,
+    contact: { ...v.contact, waterSubmersion: s.waterSubmersion ?? v.contact.waterSubmersion },
     boundingRadius: s.boundingRadius ?? v.boundingRadius,
-    comLocal: v3.zero(),
+    comLocal: s.comLocal ?? v3.zero(),
   };
   return {
     ...base,
@@ -94,20 +111,24 @@ export function externalAt(distance: number, opts: { height?: number; az?: numbe
   };
 }
 
-export function seatOf(stack: LabStackId): Vec3 {
-  return labStack(stack).seat;
+export function seatOf(lib: DefLibrary, stack: LabStackId): Vec3 {
+  return labStack(lib, stack).seat;
 }
 
-/** A lab stack's engines, synthesised every frame. */
-export function labEngines(stack: LabStackId): LabEngines {
-  return new LabEngines(labStack(stack).parts, LAB_PART_DEFS);
+/** A lab stack's engines (real part definitions), synthesised every frame. */
+export function labEngines(lib: DefLibrary, stack: LabStackId): LabEngines {
+  return new LabEngines(labStack(lib, stack).parts, lib.parts);
 }
 
-/** Engines already running steadily at `throttle` (no ignition transient). */
-export function steadyEngines(stack: LabStackId, throttle: number, filter: (instanceId: string, def: string) => boolean = () => true): LabEngines {
-  const e = labEngines(stack);
-  e.activate((p) => filter(p.instanceId, p.def) && p.def !== 'lab-les-motor' && p.def !== 'lab-sep-motor');
-  for (let i = 0; i < 600; i++) e.step(1 / 60, throttle);
+/**
+ * Throttleable engines already running steadily at a throttle LEVER (no transient): staged, then spooled
+ * for 10 s through the sim's law, so throttleActual = minThrottle + (1 - minThrottle) lever. Fixed-burn
+ * solids stay unlit.
+ */
+export function steadyEngines(lib: DefLibrary, stack: LabStackId, lever: number, filter: (instanceId: string, def: string) => boolean = () => true): LabEngines {
+  const e = labEngines(lib, stack);
+  e.activate((p) => filter(p.instanceId, p.def) && !isFixedBurn(lib, p.def));
+  for (let i = 0; i < 600; i++) e.step(1 / 60, lever);
   return e;
 }
 

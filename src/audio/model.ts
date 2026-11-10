@@ -7,7 +7,13 @@
  * Listener rules: branch on AudioListener.kind only. 'interior' = cabin mix (structure-borne path from the
  * vessel the listener sits in, airborne sound only through the hull); 'external' and 'map' (and any kind
  * a future rig reports as such) = outside listener. `mode` is never inspected, so an unknown view mode
- * sounds exactly like the built-in rig of the same kind.
+ * sounds exactly like the built-in rig of the same kind. A 'map' listener is placed where the last
+ * external flight camera of the active vessel was (VES), in the vessel's own ambient pressure: the map
+ * camera itself is 100 km or more away and would hear nothing.
+ *
+ * Airborne propagation is convected: delays are the exact retarded times for sources that move with their
+ * vessel's air-relative velocity (mapping.retardedDelay), so a listener riding with a supersonic vessel
+ * ahead of its nozzles gets no airborne engine sound, only the structure-borne path.
  */
 import type { AudioFrame } from '@/core/contracts/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -30,11 +36,14 @@ import {
   eventScaleDb,
   hashString,
   lerp,
+  localSoundSpeed,
   plasmaAmplitude,
   pressureCutoff,
   pressureGain,
-  propagationDelay,
+  retardedDelay,
   structureDb,
+  surfaceFactor,
+  throttleLever,
   windDb,
 } from './mapping';
 
@@ -44,7 +53,7 @@ export interface AirPath {
   cutoff: number;
   /** Propagation delay, s. */
   delay: number;
-  /** True when the source-listener geometry jumped (camera cut): set the delay at once, no Doppler sweep. */
+  /** True when the delay must be set at once instead of swept (camera cut, sound newly reachable). */
   jump: boolean;
   /** Unit direction to the source in listener axes (+X right, +Y up, -Z forward). */
   pan: Vec3;
@@ -67,6 +76,8 @@ export interface EngineVoiceTarget {
   engines: number;
   running: number;
   levelDb: number;
+  /** Thrust-weighted position of the running engines in their throttle range (the lever), 0..1. */
+  lever: number;
   core: { gain: number; rate: number; cutoff: number };
   rumble: { gain: number; cutoff: number };
   hiss: { gain: number };
@@ -95,6 +106,11 @@ export interface CabinTarget {
   airflow: number;
   hum: number;
 }
+/** Surface ambience around the listener (air bed, sea): gain per ambience loop asset, one low-pass. */
+export interface AmbienceTarget {
+  gains: Record<string, number>;
+  cutoff: number;
+}
 
 export type OneShotBus = 'events' | 'cabin' | 'ui';
 export interface OneShotRequest {
@@ -115,9 +131,11 @@ export interface ModelOutput {
   /** 1 = continuous sounds audible, 0 = faded out (time warp above physics warp). */
   continuous: number;
   paused: boolean;
+  /** Engine clusters that sound now (running, a transient, or within voiceHold of either). */
   engines: EngineVoiceTarget[];
   aero: AeroTarget;
   reentry: ReentryTarget;
+  ambience: AmbienceTarget;
   cabin: CabinTarget;
   oneShots: OneShotRequest[];
   alarm: boolean;
@@ -138,7 +156,7 @@ interface ListenerGeometry {
   vesselId: string;
   pressure: number;
   active: VesselSnapshot;
-  /** Distance from an outside listener to the active vessel's bounding sphere, m. */
+  /** Distance from an outside listener to the active vessel's bounding sphere (about the VES origin), m. */
   distanceToActive: number;
 }
 
@@ -150,7 +168,7 @@ interface ClusterAcc {
   engines: number;
   running: number;
   thrust: number;
-  throttleWeighted: number;
+  leverWeighted: number;
   pressureWeighted: number;
   posWeighted: Vec3;
   posSum: Vec3;
@@ -161,7 +179,7 @@ interface ClusterAcc {
 interface SourceTrack {
   distance: number;
   time: number;
-  recession: number;
+  reach: number;
 }
 
 interface EngineAges {
@@ -169,9 +187,17 @@ interface EngineAges {
   shutdownAge: number;
 }
 
+/** A source's motion through the air, in the active vessel's VES axes. */
+interface SourceAir {
+  velocity: Vec3;
+  soundSpeed: number;
+}
+
 export class SoundModel {
   private time = 0;
   private readonly engineAges = new Map<string, EngineAges>();
+  /** Last time each engine cluster sounded (running or transient), for voiceHold. */
+  private readonly lastSounding = new Map<string, number>();
   private readonly tracks = new Map<string, SourceTrack>();
   /** Sources seen this frame; tracks of sources that disappeared (debris, one-shots) are dropped. */
   private readonly touched = new Set<string>();
@@ -188,12 +214,16 @@ export class SoundModel {
   private lastCreak = -Infinity;
   private readonly creakRng: Prng;
   private readonly reported = new Set<string>();
+  /** The last outside (non-map) listener, in the VES frame of the vessel that was active then. */
+  private lastOutside: { vesselId: string; pos: Vec3; fwd: Vec3; up: Vec3 } | null = null;
+  private readonly ambienceAssets: string[];
 
   constructor(
     private readonly config: AudioConfig,
     private readonly defs: DefLibrary,
   ) {
     this.creakRng = new Prng(config.environment.cabin.creaks.seed);
+    this.ambienceAssets = ambienceAssetIds(config);
   }
 
   update(frame: AudioFrame): ModelOutput {
@@ -212,6 +242,7 @@ export class SoundModel {
       engines: this.engineVoices(snap, geom, problems),
       aero: this.aero(geom),
       reentry: this.reentry(geom),
+      ambience: this.ambience(snap, geom),
       cabin: this.cabinTarget(geom),
       oneShots: [],
       alarm: this.alarm(snap),
@@ -242,23 +273,41 @@ export class SoundModel {
     const active = snap.vessels.find((v) => v.id === snap.activeVesselId) ?? snap.vessels[0];
     if (!active) throw new Error('audio: snapshot has no vessels');
     if (active.id !== snap.activeVesselId) this.report(problems, `active vessel ${snap.activeVesselId} is not in the snapshot`);
-    const fwd = v3.normalize(l.forwardVes);
-    const side = v3.cross(fwd, l.upVes);
+    let position = l.positionVes;
+    let forward = l.forwardVes;
+    let upHint = l.upVes;
+    let pressure = l.ambientPressure;
+    if (l.kind === 'map') {
+      const last = this.lastOutside?.vesselId === active.id ? this.lastOutside : null;
+      if (last) {
+        position = last.pos;
+        forward = last.fwd;
+        upHint = last.up;
+      } else {
+        position = this.config.mix.propagation.mapListener.positionVes;
+        forward = v3.len(position) > 1e-6 ? v3.neg(position) : v3.unitY();
+        upHint = v3.unitY();
+      }
+      pressure = active.aero.pressure;
+    } else if (l.kind !== 'interior') {
+      this.lastOutside = { vesselId: active.id, pos: v3.clone(l.positionVes), fwd: v3.clone(l.forwardVes), up: v3.clone(l.upVes) };
+    }
+    const fwd = v3.len(forward) > 1e-9 ? v3.normalize(forward) : v3.unitY();
+    const side = v3.cross(fwd, upHint);
     const right = v3.len(side) > 1e-9 ? v3.normalize(side) : v3.anyOrthogonal(fwd);
     const up = v3.cross(right, fwd);
     const interior = l.kind === 'interior';
     const vesselId = interior ? (l.insideVesselId ?? active.id) : active.id;
-    const toCom = v3.len(v3.sub(l.positionVes, active.comLocal));
     return {
-      pos: v3.clone(l.positionVes),
+      pos: v3.clone(position),
       right,
       up,
       fwd,
       interior,
       vesselId,
-      pressure: l.ambientPressure,
+      pressure,
       active,
-      distanceToActive: Math.max(0, toCom - active.boundingRadius),
+      distanceToActive: Math.max(0, v3.len(position) - active.boundingRadius),
     };
   }
 
@@ -274,6 +323,12 @@ export class SoundModel {
     return v3.sub(quat.rotateInv(geom.active.q, v3.sub(posRoot, geom.active.rRoot)), geom.pos);
   }
 
+  /** Air-relative motion of sources carried by a vessel, in the active VES axes. */
+  private airOf(geom: ListenerGeometry, vessel: VesselSnapshot): SourceAir {
+    const v = vessel.aero.airVelocity;
+    return { velocity: quat.rotateInv(geom.active.q, v), soundSpeed: localSoundSpeed(vessel.aero.mach, v3.len(v), this.config.mix.propagation) };
+  }
+
   private panOf(geom: ListenerGeometry, rel: Vec3): Vec3 {
     const d = v3.len(rel);
     if (d < 1e-6) return { x: 0, y: 0, z: -1 };
@@ -285,41 +340,30 @@ export class SoundModel {
     return v3.normalize({ x: p.x * w, y: p.y * w, z: -1 + (p.z + 1) * w });
   }
 
-  /** Distance, recession speed and jump detection for a tracked source. */
-  private track(key: string, distance: number): { recession: number; jump: boolean } {
+  /**
+   * Jump detection for a tracked source: a camera cut (distance changing faster than teleportSpeed), a
+   * source seen for the first time, or a source that just became reachable through the air.
+   */
+  private track(key: string, distance: number, reach: number): boolean {
     this.touched.add(key);
     const prev = this.tracks.get(key);
-    const prop = this.config.mix.propagation;
-    if (!prev) {
-      this.tracks.set(key, { distance, time: this.time, recession: 0 });
-      return { recession: 0, jump: true };
-    }
+    this.tracks.set(key, { distance, time: this.time, reach });
+    if (!prev) return true;
+    if (prev.reach === 0 && reach > 0) return true;
     const dt = this.time - prev.time;
-    let recession = prev.recession;
-    let jump = false;
-    if (dt > 1e-6) {
-      const v = (distance - prev.distance) / dt;
-      if (Math.abs(v) > prop.teleportSpeed) {
-        jump = true;
-        recession = 0;
-      } else {
-        // One-pole smoothing (~0.1 s) of the recession speed keeps the Doppler shift free of frame jitter.
-        const a = 1 - Math.exp(-dt / 0.1);
-        recession += (v - recession) * a;
-      }
-    }
-    this.tracks.set(key, { distance, time: this.time, recession });
-    return { recession, jump };
+    return dt > 1e-6 && Math.abs(distance - prev.distance) / dt > this.config.mix.propagation.teleportSpeed;
   }
 
   /**
-   * Both paths for a source. `sourceVesselId` couples structure-borne sound when it is the vessel the
-   * listener is coupled to. `bodyGain` is the source's structure coupling (linear) before path losses.
+   * Both paths for a source at `rel` (source minus listener, active VES axes) moving with `air`.
+   * `sourceVesselId` couples structure-borne sound when it is the vessel the listener is coupled to;
+   * `bodyGain` is the source's structure coupling (linear) before path losses.
    */
   private paths(
     geom: ListenerGeometry,
     key: string,
     rel: Vec3,
+    air: SourceAir,
     refDistance: number,
     sourceVesselId: string,
     structureBorne: boolean,
@@ -329,9 +373,10 @@ export class SoundModel {
   ): SourcePaths {
     const prop = this.config.mix.propagation;
     const d = v3.len(rel);
-    const { recession, jump } = this.track(key, d);
+    const ret = retardedDelay(v3.neg(rel), air.velocity, air.soundSpeed, prop.maxDelay, prop.coneEdge);
+    const jump = this.track(key, d, ret.reach);
     const coupled = structureBorne && sourceVesselId === geom.vesselId;
-    let airGain = pressureGain(geom.pressure, prop) * distanceGain(d, refDistance, prop);
+    let airGain = pressureGain(geom.pressure, prop) * distanceGain(d, refDistance, prop) * ret.reach;
     let cutoff = combineCutoffs(pressureCutoff(geom.pressure, prop), absorptionCutoff(d, prop));
     let body = 0;
     if (geom.interior) {
@@ -343,7 +388,7 @@ export class SoundModel {
       body = bodyGain * dbToGain(prop.attach.gainDb) * attachFactor(geom.distanceToActive, prop);
     }
     return {
-      air: { gain: airGain, cutoff, delay: propagationDelay(d, recession, prop), jump, pan: this.panOf(geom, rel) },
+      air: { gain: airGain, cutoff, delay: ret.delay, jump, pan: this.panOf(geom, rel) },
       body: { gain: body, cutoff: bodyCutoff },
     };
   }
@@ -372,7 +417,7 @@ export class SoundModel {
           engines: 0,
           running: 0,
           thrust: 0,
-          throttleWeighted: 0,
+          leverWeighted: 0,
           pressureWeighted: 0,
           posWeighted: v3.zero(),
           posSum: v3.zero(),
@@ -403,7 +448,8 @@ export class SoundModel {
             const c = cluster(vessel, profileId);
             const nozzle = md.nozzles.length > 0 ? v3.scale(md.nozzles.reduce((s, n) => v3.add(s, v3.fromTuple(n.pos)), v3.zero()), 1 / md.nozzles.length) : v3.zero();
             const pos = v3.add(part.localPos, quat.rotate(part.localRot, nozzle));
-            this.addEngine(c, `${vessel.id}|${part.instanceId}|${i}`, m, pos, seen);
+            const lever = throttleLever(m.throttleActual, md.minThrottle, md.throttleable && md.fixedBurn === undefined);
+            this.addEngine(c, `${vessel.id}|${part.instanceId}|${i}`, m, lever, pos, seen);
           } else if (m.type === 'rcs' && md.type === 'rcs') {
             const c = cluster(vessel, engines.rcsModuleProfile);
             c.engines += md.thrusters.length;
@@ -415,7 +461,7 @@ export class SoundModel {
                 const thrust = level * t.thrust;
                 c.running++;
                 c.thrust += thrust;
-                c.throttleWeighted += level * thrust;
+                c.leverWeighted += thrust;
                 c.pressureWeighted += vessel.aero.pressure * thrust;
                 c.posWeighted = v3.addScaled(c.posWeighted, pos, thrust);
               }
@@ -425,20 +471,30 @@ export class SoundModel {
       }
     }
     for (const k of [...this.engineAges.keys()]) if (!seen.has(k)) this.engineAges.delete(k);
+    for (const k of [...this.lastSounding.keys()]) if (!clusters.has(k)) this.lastSounding.delete(k);
 
+    // Only clusters that sound get a voice: running, starting a transient, or within voiceHold of either
+    // (the graph keeps a released voice until its delay line and transients have drained).
     const out: EngineVoiceTarget[] = [];
-    for (const c of clusters.values()) out.push(this.engineTarget(c, geom));
+    for (const c of clusters.values()) {
+      const last = this.lastSounding.get(c.key);
+      const held = last !== undefined && this.time - last <= engines.voiceHold;
+      if (c.running === 0 && c.ignitionOffset === null && c.shutdownOffset === null && !held) continue;
+      const t = this.engineTarget(c, geom);
+      if (t.running > 0 || t.ignition || t.shutdown) this.lastSounding.set(c.key, this.time);
+      if (t.running > 0 || t.ignition || t.shutdown || held) out.push(t);
+    }
     return out;
   }
 
-  private addEngine(c: ClusterAcc, engineKey: string, m: Extract<ModuleState, { type: 'engine' }>, pos: Vec3, seen: Set<string>): void {
+  private addEngine(c: ClusterAcc, engineKey: string, m: Extract<ModuleState, { type: 'engine' }>, lever: number, pos: Vec3, seen: Set<string>): void {
     seen.add(engineKey);
     c.engines++;
     c.posSum = v3.add(c.posSum, pos);
     if (m.thrust > 0) {
       c.running++;
       c.thrust += m.thrust;
-      c.throttleWeighted += m.throttleActual * m.thrust;
+      c.leverWeighted += lever * m.thrust;
       c.pressureWeighted += m.ambientPressure * m.thrust;
       c.posWeighted = v3.addScaled(c.posWeighted, pos, m.thrust);
     }
@@ -459,13 +515,13 @@ export class SoundModel {
     const p = c.profile;
     const engines = this.config.engines;
     const prop = this.config.mix.propagation;
-    const levelDb = engineLevelDb(c.running > 0 ? c.thrust / c.running : 0, c.running, p, engines);
+    const lever = c.thrust > 0 ? Math.min(1, c.leverWeighted / c.thrust) : 0;
+    const levelDb = engineLevelDb(c.running > 0 ? c.thrust / c.running : 0, c.running, lever, p, engines);
     const L = dbToGain(levelDb);
-    const throttle = c.thrust > 0 ? Math.min(1, c.throttleWeighted / c.thrust) : 0;
     const nozzlePressure = c.thrust > 0 ? c.pressureWeighted / c.thrust : 0;
     const pos = c.thrust > 0 ? v3.scale(c.posWeighted, 1 / c.thrust) : v3.scale(c.posSum, 1 / Math.max(1, c.engines));
     const rel = this.relative(geom, c.vessel, pos);
-    const fullDb = engineLevelDb(p.refThrust, Math.max(1, c.engines), p, engines);
+    const fullDb = engineLevelDb(p.refThrust, Math.max(1, c.engines), 1, p, engines);
     const now = this.time;
     const transient = (kind: 'ign' | 'sd', offset: number | null, def: { gainDb: number } | null): { gain: number; offset: number } | null => {
       if (offset === null || !def) return null;
@@ -482,16 +538,17 @@ export class SoundModel {
       engines: c.engines,
       running: c.running,
       levelDb,
-      core: { gain: L * dbToGain(p.core.gainDb), rate: lerp(p.core.rate[0], p.core.rate[1], throttle), cutoff: lerp(p.core.cutoffHz[0], p.core.cutoffHz[1], throttle) },
+      lever,
+      core: { gain: L * dbToGain(p.core.gainDb), rate: lerp(p.core.rate[0], p.core.rate[1], lever), cutoff: lerp(p.core.cutoffHz[0], p.core.cutoffHz[1], lever) },
       rumble: { gain: p.rumble ? L * dbToGain(p.rumble.gainDb) : 0, cutoff: rumbleCutoff },
       hiss: { gain: p.hiss ? L * dbToGain(p.hiss.gainDb) : 0 },
       crackle: {
         gain: p.crackle ? L * dbToGain(p.crackle.gainDb) * crackleFactor(nozzlePressure, p.crackle.pressureExponent, prop) : 0,
-        rate: p.crackle ? lerp(p.crackle.rateHz[0], p.crackle.rateHz[1], throttle) : 0,
+        rate: p.crackle ? lerp(p.crackle.rateHz[0], p.crackle.rateHz[1], lever) : 0,
       },
       ignition: transient('ign', c.ignitionOffset, p.ignition),
       shutdown: transient('sd', c.shutdownOffset, p.shutdown),
-      paths: this.paths(geom, `engine|${c.key}`, rel, p.refDistance, c.vessel.id, true, dbToGain(p.body.gainDb), p.body.cutoffHz),
+      paths: this.paths(geom, `engine|${c.key}`, rel, this.airOf(geom, c.vessel), p.refDistance, c.vessel.id, true, dbToGain(p.body.gainDb), p.body.cutoffHz),
     };
   }
 
@@ -503,9 +560,10 @@ export class SoundModel {
     const w = windDb(v.aero.q, a.qRef, a.maxDb);
     const m = Math.min(1, Math.max(0, v.aero.mach / a.wind.machForMaxCutoff));
     const rel = this.relative(geom, v, v.comLocal);
+    const air = this.airOf(geom, v);
     const paths = geom.interior
-      ? { air: { ...this.paths(geom, 'aero', rel, a.refDistance, v.id, false, 0, a.hullCutoffHz).air, gain: 0 }, body: { gain: w === -Infinity ? 0 : dbToGain(a.hullGainDb), cutoff: a.hullCutoffHz } }
-      : this.paths(geom, 'aero', rel, Math.max(a.refDistance, v.boundingRadius), v.id, false, 0, a.hullCutoffHz);
+      ? { air: { ...this.paths(geom, 'aero', rel, air, a.refDistance, v.id, false, 0, a.hullCutoffHz).air, gain: 0 }, body: { gain: w === -Infinity ? 0 : dbToGain(a.hullGainDb), cutoff: a.hullCutoffHz } }
+      : this.paths(geom, 'aero', rel, air, Math.max(a.refDistance, v.boundingRadius), v.id, false, 0, a.hullCutoffHz);
     return {
       wind: { gain: dbToGain(w + a.wind.gainDb), cutoff: lerp(a.wind.cutoffHz[0], a.wind.cutoffHz[1], m) },
       noise: { gain: dbToGain(w + a.noise.gainDb), lowHz: lerp(a.noise.bandHz[0], a.noise.bandAtMachMax[0], m), highHz: lerp(a.noise.bandHz[1], a.noise.bandAtMachMax[1], m) },
@@ -519,13 +577,14 @@ export class SoundModel {
     const v = geom.active;
     const plasma = v.aero.plasmaIntensity;
     const rel = this.relative(geom, v, v.comLocal);
+    const air = this.airOf(geom, v);
     const hull = { gainDb: r.hullGainDb, cutoffHz: r.hullCutoffHz };
     let paths: SourcePaths;
     if (geom.interior) {
-      const base = this.paths(geom, 'reentry', rel, r.refDistance, v.id, false, 0, r.hullCutoffHz, hull);
+      const base = this.paths(geom, 'reentry', rel, air, r.refDistance, v.id, false, 0, r.hullCutoffHz, hull);
       paths = { air: { ...base.air, gain: 0 }, body: { gain: dbToGain(r.hullGainDb), cutoff: r.hullCutoffHz } };
     } else {
-      paths = this.paths(geom, 'reentry', rel, Math.max(r.refDistance, v.boundingRadius), v.id, true, 1, r.hullCutoffHz);
+      paths = this.paths(geom, 'reentry', rel, air, Math.max(r.refDistance, v.boundingRadius), v.id, true, 1, r.hullCutoffHz);
     }
     const gRatio = Math.min(1, Math.max(0, v.gLoad / r.rumble.gLoadRef));
     return {
@@ -535,6 +594,24 @@ export class SoundModel {
       rumble: { gain: dbToGain(r.rumble.gainDb) * plasmaAmplitude(plasma, 1) * Math.sqrt(gRatio) },
       paths,
     };
+  }
+
+  // ---------------------------------------------------------------------------------- surface ambience
+
+  /** The air and sea around the listener: a bed per surface type, scaled by listener pressure (0 in vacuum). */
+  private ambience(snap: SimSnapshot, geom: ListenerGeometry): AmbienceTarget {
+    const a = this.config.environment.ambience;
+    const prop = this.config.mix.propagation;
+    const v = geom.active;
+    const water = v.situation === 'splashed' || v.contact.waterSubmersion > 0;
+    const bed = water ? a.beds.water : a.beds.land;
+    const share = water ? 1 : surfaceFactor(snap.readouts.altitudeRadar, a.surfaceAltitude[0], a.surfaceAltitude[1]);
+    const level = pressureGain(geom.pressure, prop) * share * (geom.interior ? dbToGain(a.hullGainDb) : 1);
+    const gains: Record<string, number> = {};
+    for (const id of this.ambienceAssets) gains[id] = 0;
+    if (level > 0) for (const layer of bed) gains[layer.asset] = (gains[layer.asset] ?? 0) + dbToGain(layer.gainDb) * level;
+    const cutoff = geom.interior ? combineCutoffs(pressureCutoff(geom.pressure, prop), a.hullCutoffHz) : pressureCutoff(geom.pressure, prop);
+    return { gains, cutoff };
   }
 
   // --------------------------------------------------------------------------------------------- cabin
@@ -595,7 +672,9 @@ export class SoundModel {
     const vessel = snap.vessels.find((v) => v.id === e.vesselId) ?? geom.active;
     const rel = this.eventPosition(e, def, vessel, geom);
     const prop = this.config.mix.propagation;
-    const p = this.paths(geom, `event|${e.type}|${h}`, rel, def.refDistance, vessel.id, def.structureBorne, dbToGain(prop.events.bodyGainDb), prop.events.bodyCutoffHz);
+    // An explosion's fireball is at rest in the air; part events move with their vessel.
+    const air = def.source === 'explosion' ? { velocity: v3.zero(), soundSpeed: prop.speedOfSound } : this.airOf(geom, vessel);
+    const p = this.paths(geom, `event|${e.type}|${h}`, rel, air, def.refDistance, vessel.id, def.structureBorne, dbToGain(prop.events.bodyGainDb), prop.events.bodyCutoffHz);
     out.push({ bus: 'events', cause: e.type, asset, gain, rate, direct: false, air: p.air.gain > 0 ? p.air : null, body: p.body.gain > 0 ? p.body : null });
   }
 
@@ -663,4 +742,9 @@ export class SoundModel {
   }
 }
 
-
+/** Every loop asset any ambience bed uses, in a fixed order (the graph makes one source per asset). */
+export function ambienceAssetIds(config: AudioConfig): string[] {
+  const ids = new Set<string>();
+  for (const bed of Object.values(config.environment.ambience.beds)) for (const l of bed) ids.add(l.asset);
+  return [...ids].sort();
+}

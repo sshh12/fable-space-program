@@ -1,5 +1,5 @@
 {
-  "$comment": "Continuous sounds of the active vessel's environment. aero: boundary-layer wind (level 20 log10(q / qRef) dB, brightness from Mach) and transonic buffet (Gaussian in Mach around machCenter, modulated rumble). reentry: shock-layer roar and plasma hiss from aero.plasmaIntensity, a buffet rumble that also follows the g-load. Both are airborne for an outside listener and hull-borne (low-passed at hullCutoffHz) inside the cabin. cabin: interior ambience (fans, pumps, airflow, 400 Hz power hum) heard only by an interior listener, and structural creaks whose Poisson rate follows g-load, its rate of change and sunlight changes (thermal creaks); creaks use a seeded generator so renders are reproducible.",
+  "$comment": "Continuous sounds of the active vessel's environment. aero: boundary-layer wind (level 20 log10(q / qRef) dB, brightness from Mach) and transonic buffet (Gaussian in Mach around machCenter, modulated rumble). reentry: shock-layer roar and plasma hiss from aero.plasmaIntensity, a buffet rumble that also follows the g-load. Both are airborne for an outside listener and hull-borne (low-passed at hullCutoffHz) inside the cabin. turbulence = depth of the slow random amplitude modulation g (1 + depth x), x the average of two coprime value-noise buffers (RMS 0.35, bounded to [-1, 1]). ambience: the air and sea around the listener, one bed per surface ('water' when the active vessel floats, else 'land'), scaled by (listener pressure / sea level)^pressureGainExponent (silent in vacuum) and, for land, faded out between surfaceAltitude[0] and [1] m of radar altitude; inside the cabin heard through the hull (hullGainDb, hullCutoffHz). cabin: interior ambience (fans, pumps, airflow, 400 Hz power hum) heard only by an interior listener, and structural creaks whose Poisson rate follows g-load, its rate of change and sunlight changes (thermal creaks); creaks use a seeded generator so renders are reproducible.",
   "aero": {
     "qRef": 30000,
     "maxDb": 6,
@@ -31,8 +31,34 @@
       "machCenter": 1,
       "machWidth": 0.22,
       "cutoffHz": 90,
-      "turbulence": 0.9,
+      "turbulence": 1,
       "turbulenceHz": 9
+    }
+  },
+  "ambience": {
+    "surfaceAltitude": [
+      150,
+      1500
+    ],
+    "hullGainDb": -16,
+    "hullCutoffHz": 900,
+    "beds": {
+      "land": [
+        {
+          "asset": "ambience-outdoor",
+          "gainDb": -26
+        }
+      ],
+      "water": [
+        {
+          "asset": "ambience-ocean",
+          "gainDb": -12
+        },
+        {
+          "asset": "ambience-outdoor",
+          "gainDb": -30
+        }
+      ]
     }
   },
   "reentry": {
@@ -62,17 +88,17 @@
       "gainDb": -2,
       "cutoffHz": 70,
       "gLoadRef": 5,
-      "turbulence": 0.7,
+      "turbulence": 0.99,
       "turbulenceHz": 3
     }
   },
   "cabin": {
     "ambience": {
       "asset": "cabin-fans",
-      "gainDb": -14
+      "gainDb": -27
     },
     "airflow": {
-      "gainDb": -36,
+      "gainDb": -49,
       "bandHz": [
         300,
         3500
@@ -85,7 +111,7 @@
         0.35,
         0.12
       ],
-      "gainDb": -44
+      "gainDb": -57
     },
     "creaks": {
       "assets": [

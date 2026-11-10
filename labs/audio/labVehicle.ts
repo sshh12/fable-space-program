@@ -1,12 +1,13 @@
 /**
- * Lab vehicle for the audio lab and the audio unit tests. Until data/defs/vehicles exists the FakeSim has
- * no engines, so this module supplies engine part DEFINITIONS that mirror the stage table of
- * docs/research/sim-design.md 13.1 (thrust, Isp, nozzle exits, sound ids) and synthesises their
- * ModuleState every frame with the sim's documented engine law (spool lag, Isp(p), ignition/shutdown
- * ages). The audio engine reads these parts exactly as it reads real ones: through DefLibrary.parts.
+ * Lab vehicles for the audio lab and the audio unit tests: stacks of the REAL part definitions in
+ * data/defs/parts (Atlas-9M, Vela-2, Vela-2V, Lyra-D, Lyra-A, the solid motors and the Kestrel capsule),
+ * whose ModuleState the lab synthesises every frame with the sim's engine law (src/sim/vessel/modules/
+ * engine.ts: throttleActual = minThrottle + (1 - minThrottle) lever, first-order spool lag, Isp linear in
+ * ambient pressure, ignition/shutdown ages, fixed burns). The audio engine reads these parts exactly as it
+ * reads the sim's: through DefLibrary.parts.
  *
- * Positions are in the VES frame of each lab stack (+Y nose); y = 0 is the engine plane of the lowest
- * stage, so the capsule seat (the cockpit listener) sits at the top of the stack.
+ * Positions are in the VES frame of each lab stack (+Y nose); y = 0 is the nozzle-exit plane of the
+ * lowest stage, so the capsule seat (the cockpit listener) sits at the top of the stack.
  */
 import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot } from '@/core/contracts/sim';
@@ -16,85 +17,26 @@ import type { Vec3 } from '@/core/math/vec3';
 
 type EngineModuleDef = Extract<ModuleDef, { type: 'engine' }>;
 
-function engineDef(id: string, name: string, m: { thrustVac: number; ispVac: number; ispSL: number; exitDiameter: number; exitPressure: number; minThrottle: number; spoolUp: number; spoolDown: number; sound: string; fixedBurn?: number; radius: number; height: number }): PartDef {
-  const module: EngineModuleDef = {
-    type: 'engine',
-    thrustVac: m.thrustVac,
-    ispVac: m.ispVac,
-    ispSL: m.ispSL,
-    minThrottle: m.minThrottle,
-    throttleable: m.fixedBurn === undefined,
-    spoolUp: m.spoolUp,
-    spoolDown: m.spoolDown,
-    maxIgnitions: null,
-    propellants: [{ resource: 'lab-propellant', ratio: 1 }],
-    nozzles: [{ pos: [0, -m.height, 0], dir: [0, -1, 0], exitDiameter: m.exitDiameter, exitPressure: m.exitPressure }],
-    ...(m.fixedBurn !== undefined ? { fixedBurn: { duration: m.fixedBurn } } : {}),
-    chamberPressure: 2e7,
-    plume: 'lab',
-    sound: m.sound,
-  };
-  return {
-    id,
-    name,
-    category: 'engine',
-    dryMass: 1000,
-    comOffset: [0, -m.height / 2, 0],
-    inertiaShape: { kind: 'solidCylinder', r: m.radius, h: m.height },
-    bounds: { radius: m.radius, yMin: -m.height, yMax: 0 },
-    attachNodes: [],
-    thermal: { surfaces: [] },
-    joint: { maxAccelG: 20 },
-    modules: [module],
-    visual: null,
-  };
+/** The real part definitions the lab stacks are built from. */
+export const LAB_PARTS = {
+  booster: 'atlas-9m',
+  upper: 'vela-2',
+  ullage: 'meridian-m2-ullage-motors',
+  tli: 'vela-2v',
+  descent: 'lyra-d',
+  ascent: 'lyra-a',
+  les: 'kestrel-les',
+  capsule: 'kestrel-capsule',
+} as const;
+
+function engineModuleOf(def: PartDef | undefined): EngineModuleDef | null {
+  const m = def?.modules.find((x) => x.type === 'engine');
+  return m && m.type === 'engine' ? m : null;
 }
 
-const capsule: PartDef = {
-  id: 'lab-capsule',
-  name: 'Lab capsule with RCS',
-  category: 'command',
-  dryMass: 5000,
-  comOffset: [0, 1.2, 0],
-  inertiaShape: { kind: 'cone', r: 2, h: 3.3 },
-  bounds: { radius: 2, yMin: 0, yMax: 3.3 },
-  attachNodes: [],
-  thermal: { surfaces: [] },
-  joint: { maxAccelG: 20 },
-  modules: [
-    { type: 'command', crewCapacity: 3, sas: true, maxRateDegPerS: 10, seats: [{ id: 'cdr', pos: [0, 1.4, 0.4], lookDir: [0, 1, 0], upDir: [0, 0, 1] }] },
-    {
-      type: 'rcs',
-      isp: 290,
-      resource: 'lab-propellant',
-      thrusters: Array.from({ length: 12 }, (_, i) => {
-        const a = (i / 12) * 2 * Math.PI;
-        return { pos: [1.7 * Math.sin(a), 2.2, 1.7 * Math.cos(a)] as [number, number, number], dir: [Math.cos(a), 0, -Math.sin(a)] as [number, number, number], thrust: 220 };
-      }),
-    },
-  ],
-  visual: null,
-};
-
-/** Engine part definitions (numbers from sim-design.md 13.1) keyed by id. */
-export const LAB_PART_DEFS: Record<string, PartDef> = {
-  'lab-atlas-9m': engineDef('lab-atlas-9m', 'Atlas-9M (lab)', { thrustVac: 4.174e6, ispVac: 350, ispSL: 327, exitDiameter: 1.9, exitPressure: 70e3, minThrottle: 0.5, spoolUp: 1.2, spoolDown: 0.4, sound: 'engine.methalox-booster', radius: 1.1, height: 3.2 }),
-  'lab-vela-2': engineDef('lab-vela-2', 'Vela-2 (lab)', { thrustVac: 1.1e6, ispVac: 445, ispSL: 300, exitDiameter: 2.6, exitPressure: 12e3, minThrottle: 0.6, spoolUp: 0.8, spoolDown: 0.3, sound: 'engine.hydrolox-vacuum', radius: 1.4, height: 4 }),
-  'lab-vela-2v': engineDef('lab-vela-2v', 'Vela-2V (lab)', { thrustVac: 1.0e6, ispVac: 452, ispSL: 290, exitDiameter: 2.9, exitPressure: 6e3, minThrottle: 0.6, spoolUp: 0.8, spoolDown: 0.3, sound: 'engine.hydrolox-vacuum', radius: 1.5, height: 4.4 }),
-  'lab-lyra-d': engineDef('lab-lyra-d', 'Lyra-D (lab)', { thrustVac: 200e3, ispVac: 360, ispSL: 280, exitDiameter: 1.7, exitPressure: 8e3, minThrottle: 0.1, spoolUp: 0.25, spoolDown: 0.15, sound: 'engine.lander-descent', radius: 0.9, height: 2.2 }),
-  'lab-lyra-a': engineDef('lab-lyra-a', 'Lyra-A (lab)', { thrustVac: 60e3, ispVac: 355, ispSL: 270, exitDiameter: 0.9, exitPressure: 10e3, minThrottle: 0.2, spoolUp: 0.25, spoolDown: 0.15, sound: 'engine.lander-ascent', radius: 0.5, height: 1.4 }),
-  'lab-les-motor': engineDef('lab-les-motor', 'LES motor (lab)', { thrustVac: 800e3, ispVac: 250, ispSL: 240, exitDiameter: 0.4, exitPressure: 50e3, minThrottle: 1, spoolUp: 0.05, spoolDown: 0.1, sound: 'engine.solid', fixedBurn: 3.5, radius: 0.45, height: 1.0 }),
-  'lab-sep-motor': engineDef('lab-sep-motor', 'Separation motor (lab)', { thrustVac: 60e3, ispVac: 240, ispSL: 230, exitDiameter: 0.25, exitPressure: 40e3, minThrottle: 1, spoolUp: 0.05, spoolDown: 0.1, sound: 'engine.solid', fixedBurn: 1.5, radius: 0.15, height: 0.8 }),
-  'lab-capsule': capsule,
-};
-
-/** The library with the lab parts added (and a lab propellant), leaving every real definition untouched. */
-export function withLabParts(lib: DefLibrary): DefLibrary {
-  return {
-    ...lib,
-    parts: { ...lib.parts, ...LAB_PART_DEFS },
-    resources: { ...lib.resources, 'lab-propellant': { id: 'lab-propellant', name: 'Lab propellant', density: 1000 } },
-  };
+/** True for solid motors and other fixed burns (they are staged, not throttled). */
+export function isFixedBurn(lib: DefLibrary, def: string): boolean {
+  return engineModuleOf(lib.parts[def])?.fixedBurn !== undefined;
 }
 
 export interface LabPlacement {
@@ -106,52 +48,59 @@ export interface LabPlacement {
 export type LabStackId = 'booster' | 'upper' | 'tli' | 'lander' | 'ascent' | 'capsule';
 
 /** Engine/capsule placements of each lab stack and where the commander's eye is (VES). */
-export function labStack(id: LabStackId): { parts: LabPlacement[]; seat: Vec3; boundingRadius: number } {
+export function labStack(lib: DefLibrary, id: LabStackId): { parts: LabPlacement[]; seat: Vec3; boundingRadius: number } {
+  const need = (def: string): PartDef => {
+    const d = lib.parts[def];
+    if (!d) throw new Error(`audio lab: part definition "${def}" is missing from data/defs/parts`);
+    return d;
+  };
   const parts: LabPlacement[] = [];
   const add = (instanceId: string, def: string, x: number, y: number, z: number): void => {
+    need(def);
     parts.push({ instanceId, def, pos: { x, y, z } });
   };
+  /** Part-origin height that puts this engine's nozzle exit at `plane`. */
+  const above = (def: string, plane: number): number => plane - (engineModuleOf(need(def))?.nozzles[0]?.pos[1] ?? 0);
   let capsuleY = 0;
   switch (id) {
     case 'booster':
-      add('atlas-c', 'lab-atlas-9m', 0, 3.2, 0);
+      add('atlas-c', LAB_PARTS.booster, 0, above(LAB_PARTS.booster, 0), 0);
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * 2 * Math.PI;
-        add(`atlas-${i + 1}`, 'lab-atlas-9m', 3.3 * Math.sin(a), 3.2, 3.3 * Math.cos(a));
+        add(`atlas-${i + 1}`, LAB_PARTS.booster, 3.3 * Math.sin(a), above(LAB_PARTS.booster, 0), 3.3 * Math.cos(a));
       }
       capsuleY = 94;
-      add('les', 'lab-les-motor', 0, capsuleY + 7, 0);
+      add('les', LAB_PARTS.les, 0, capsuleY + 3.3, 0);
       break;
     case 'upper':
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * 2 * Math.PI;
-        add(`vela-${i + 1}`, 'lab-vela-2', 2.9 * Math.sin(a), 4, 2.9 * Math.cos(a));
+        add(`vela-${i + 1}`, LAB_PARTS.upper, 2.9 * Math.sin(a), above(LAB_PARTS.upper, 0), 2.9 * Math.cos(a));
       }
-      for (let i = 0; i < 4; i++) {
-        const a = ((i + 0.5) / 4) * 2 * Math.PI;
-        add(`ullage-${i + 1}`, 'lab-sep-motor', 4.3 * Math.sin(a), 6, 4.3 * Math.cos(a));
-      }
+      add('ullage', LAB_PARTS.ullage, 0, 5.5, 0);
       capsuleY = 52;
       break;
     case 'tli':
-      add('vela-2v', 'lab-vela-2v', 0, 4.4, 0);
+      add('vela-2v', LAB_PARTS.tli, 0, above(LAB_PARTS.tli, 0), 0);
       capsuleY = 21;
       break;
     case 'lander':
-      add('lyra-d', 'lab-lyra-d', 0, 2.2, 0);
+      add('lyra-d', LAB_PARTS.descent, 0, above(LAB_PARTS.descent, 0), 0);
       capsuleY = 7.2;
       break;
     case 'ascent':
-      add('lyra-a', 'lab-lyra-a', 0, 1.4, 0);
+      add('lyra-a', LAB_PARTS.ascent, 0, above(LAB_PARTS.ascent, 0), 0);
       capsuleY = 3.8;
       break;
     case 'capsule':
       capsuleY = 0;
       break;
   }
-  add('capsule', 'lab-capsule', 0, capsuleY, 0);
+  add('capsule', LAB_PARTS.capsule, 0, capsuleY, 0);
+  const cmd = need(LAB_PARTS.capsule).modules.find((m) => m.type === 'command');
+  const seat = cmd && cmd.type === 'command' ? cmd.seats[Math.floor(cmd.seats.length / 2)] : undefined;
   const top = capsuleY + 3.3;
-  return { parts, seat: { x: 0, y: capsuleY + 1.4, z: 0.4 }, boundingRadius: Math.max(5, top / 2 + 5) };
+  return { parts, seat: seat ? { x: seat.pos[0], y: capsuleY + seat.pos[1], z: seat.pos[2] } : { x: 0, y: capsuleY + 1, z: 0 }, boundingRadius: Math.max(5, top / 2 + 5) };
 }
 
 /** State of a non-propulsive module at rest on the pad (the lab does not simulate these). */
@@ -224,16 +173,32 @@ export function placeVehicle(lib: DefLibrary, vehicleId: string): { parts: LabPl
 
 interface EngineRuntime {
   active: boolean;
+  lit: boolean;
   throttleActual: number;
   ignitionAge: number;
   shutdownAge: number;
   burnLeft: number | null;
 }
 
+/** The sim's ignition and shutdown thresholds on the spooled throttle (src/sim/vessel/modules/engine.ts). */
+const IGNITION_THRESHOLD = 0.02;
+const SHUTDOWN_THRESHOLD = 0.01;
+
+/** Effective throttle for a lever position: a copy of the sim's throttleTarget (labs may not import src/sim). */
+export function labThrottleTarget(m: EngineModuleDef, lever: number): number {
+  if (m.fixedBurn) return 1;
+  if (!m.throttleable) return lever > 0 ? 1 : 0;
+  return lever <= 0 ? 0 : m.minThrottle + (1 - m.minThrottle) * Math.min(1, lever);
+}
+
 /**
- * Synthesised engine module states for a lab stack: the sim's engine law (sim-design.md 7.1) - effective
- * throttle with minThrottle, first-order spool lag, Isp linear in ambient pressure, ignition when the
- * spooled throttle first exceeds 0.02, shutdown below 0.01, fixed-burn solids that ignore the throttle.
+ * Synthesised engine module states for a lab stack: the sim's engine law (sim-design.md 7.1,
+ * src/sim/vessel/modules/engine.ts throttleTarget / updateEngines, copied because labs may not import
+ * src/sim) - effective throttle minThrottle + (1 - minThrottle) lever (0 / 1 for engines that cannot
+ * throttle), exact first-order spool lag, thrust = throttleActual x full thrust at the ambient pressure
+ * (Isp linear in pressure), ignition when the spooled throttle first exceeds 0.02, shutdown when it falls
+ * below 0.01 with the lever at 0, ignitionAge counting while lit and shutdownAge after, fixed-burn solids
+ * that ignore the lever. Propellant is unlimited (no flame-out).
  */
 export class LabEngines {
   private readonly rt = new Map<string, EngineRuntime>();
@@ -243,7 +208,7 @@ export class LabEngines {
     readonly stack: LabPlacement[],
     private readonly defs: Record<string, PartDef>,
   ) {
-    for (const p of stack) this.rt.set(p.instanceId, { active: false, throttleActual: 0, ignitionAge: -1, shutdownAge: -1, burnLeft: null });
+    for (const p of stack) this.rt.set(p.instanceId, { active: false, lit: false, throttleActual: 0, ignitionAge: -1, shutdownAge: -1, burnLeft: null });
   }
 
   /** Activate (stage) engines; fixed-burn solids light at once. */
@@ -251,7 +216,7 @@ export class LabEngines {
     for (const p of this.stack) {
       if (!filter(p)) continue;
       const r = this.rt.get(p.instanceId)!;
-      const m = this.engineModule(p);
+      const m = engineModuleOf(this.defs[p.def]);
       if (!m) continue;
       r.active = true;
       if (m.fixedBurn) r.burnLeft = m.fixedBurn.duration;
@@ -262,51 +227,55 @@ export class LabEngines {
     for (const p of this.stack) if (filter(p)) this.rt.get(p.instanceId)!.active = false;
   }
 
-  private engineModule(p: LabPlacement): EngineModuleDef | null {
-    const m = this.defs[p.def]?.modules.find((x) => x.type === 'engine');
-    return m && m.type === 'engine' ? m : null;
-  }
-
-  /** Advance by dt with the shared throttle lever and the ambient pressure at the nozzles. */
-  step(dt: number, throttle: number): void {
+  /** Advance by dt with the shared throttle lever (0..1). */
+  step(dt: number, lever: number): void {
+    if (!(dt > 0)) return;
     for (const p of this.stack) {
-      const m = this.engineModule(p);
+      const m = engineModuleOf(this.defs[p.def]);
       if (!m) continue;
       const r = this.rt.get(p.instanceId)!;
+      if (r.lit) r.ignitionAge += dt;
+      else if (r.shutdownAge >= 0) r.shutdownAge += dt;
       let target = 0;
       if (r.active) {
-        if (m.fixedBurn) {
-          target = (r.burnLeft ?? 0) > 0 ? 1 : 0;
-          if (r.burnLeft !== null) r.burnLeft = Math.max(0, r.burnLeft - dt);
-        } else target = throttle <= 0 ? 0 : m.minThrottle + (1 - m.minThrottle) * throttle;
+        if (m.fixedBurn) target = (r.burnLeft ?? 0) > 0 ? 1 : 0;
+        else target = labThrottleTarget(m, lever);
       }
+      if (target === 0 && r.throttleActual === 0 && !r.lit) continue;
       const tau = target > r.throttleActual ? m.spoolUp : m.spoolDown;
-      const before = r.throttleActual;
-      r.throttleActual += (target - r.throttleActual) * Math.min(1, dt / Math.max(1e-3, tau));
-      if (r.throttleActual < 1e-4 && target === 0) r.throttleActual = 0;
-      if (r.ignitionAge >= 0) r.ignitionAge += dt;
-      if (r.shutdownAge >= 0) r.shutdownAge += dt;
-      const running = r.shutdownAge < 0 && r.ignitionAge >= 0;
-      if (before <= 0.02 && r.throttleActual > 0.02 && !running) {
+      const k = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
+      let actual = r.throttleActual + (target - r.throttleActual) * k;
+      if (!r.lit && actual > IGNITION_THRESHOLD) {
+        r.lit = true;
         r.ignitionAge = 0;
         r.shutdownAge = -1;
-      } else if (running && r.throttleActual < 0.01) {
-        r.shutdownAge = 0;
+      }
+      if (target === 0 && actual < SHUTDOWN_THRESHOLD) {
+        actual = 0;
+        if (r.lit) {
+          r.lit = false;
+          r.shutdownAge = 0;
+        }
+      }
+      r.throttleActual = actual;
+      if (m.fixedBurn && r.burnLeft !== null && actual > 0) {
+        r.burnLeft = Math.max(0, r.burnLeft - dt);
+        if (r.burnLeft === 0) r.active = false;
       }
     }
   }
 
-  /** PartSnapshots of the stack with current module states. */
+  /** PartSnapshots of the stack with current module states, at this ambient pressure at the nozzles. */
   parts(ambientPressure: number): PartSnapshot[] {
     return this.stack.map((p) => {
       const def = this.defs[p.def]!;
       const r = this.rt.get(p.instanceId)!;
       const modules: ModuleState[] = def.modules.map((md): ModuleState => {
         if (md.type === 'engine') {
-          const running = r.ignitionAge >= 0 && r.shutdownAge < 0;
-          const isp = md.ispVac - (md.ispVac - md.ispSL) * Math.min(1, ambientPressure / 101325);
-          const massFlow = running ? (r.throttleActual * md.thrustVac) / (md.ispVac * G0) : 0;
-          const exit = md.nozzles[0]?.exitPressure ?? 1e4;
+          // As the sim: Isp linear in pressure, mass flow = throttleActual x full mass flow.
+          const isp = md.ispVac - (md.ispVac - md.ispSL) * (ambientPressure / 101325);
+          const massFlow = (r.throttleActual * md.thrustVac) / (md.ispVac * G0);
+          const pExit = (md.nozzles[0]?.exitPressure ?? 0) * r.throttleActual;
           return {
             type: 'engine',
             active: r.active,
@@ -314,7 +283,7 @@ export class LabEngines {
             thrust: Math.max(0, massFlow * G0 * isp),
             massFlow,
             ambientPressure,
-            pressureRatio: Math.min(1e6, exit / Math.max(ambientPressure, 1e-3)),
+            pressureRatio: ambientPressure > 0 ? Math.min(1e6, pExit / ambientPressure) : 1e6,
             gimbal: [0, 0],
             ignitionAge: r.ignitionAge,
             shutdownAge: r.shutdownAge,

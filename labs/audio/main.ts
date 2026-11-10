@@ -17,7 +17,7 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { acquireGpu } from '@/core/gpu/device';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApi, type AudioLabApi } from './labApi';
-import { LabEngines, labStack, placeVehicle, withLabParts, type LabPlacement, type LabStackId } from './labVehicle';
+import { LabEngines, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
 import { compose, externalAt, listener, makeEvent, SEA_LEVEL, type ListenerSpec } from './scenes';
 
 declare global {
@@ -73,7 +73,7 @@ const state: LiveState = {
 
 function stackPlacements(lib: DefLibrary, stack: string): { parts: LabPlacement[]; seat: { x: number; y: number; z: number } } {
   if (stack.startsWith('vehicle:')) return placeVehicle(lib, stack.slice('vehicle:'.length));
-  const s = labStack(stack as LabStackId);
+  const s = labStack(lib, stack as LabStackId);
   return { parts: s.parts, seat: s.seat };
 }
 
@@ -141,7 +141,7 @@ function drawMeters(canvas: HTMLCanvasElement, probe: AudioProbe, peaks: Map<str
 async function boot(): Promise<void> {
   const gpu = await acquireGpu({ onError: testApi.reportError });
   testApi.setAdapter(gpu.report);
-  const lib = withLabParts(await loadDefs(fetchDefSource()));
+  const lib = await loadDefs(fetchDefSource());
   const engine = createAudioEngine({ onError: testApi.reportError });
   await engine.init(lib, '/assets/audio');
   const config = engine.config!;
@@ -379,8 +379,9 @@ async function boot(): Promise<void> {
     engine.setMasterVolume(state.volume);
     const probe = engine.probe();
     drawMeters(canvas, probe, peaks);
+    const stats = engine.stats();
     status.textContent =
-      `audio ${probe.state}   ${probe.sampleRate} Hz   assets ${probe.assetsLoaded}/${probe.assetsTotal}   voices ${probe.activeVoices}   output ${engine.status.output}\n` +
+      `audio ${probe.state}   ${probe.sampleRate} Hz   assets ${probe.assetsLoaded}/${probe.assetsTotal}   voices ${probe.activeVoices}   engine voices ${stats?.engineVoices ?? 0}   nodes ${stats?.nodes ?? 0}   delay lines ${stats?.delayLines ?? 0}   output ${engine.status.output}\n` +
       `scene ${state.scene}   stack ${state.stack}   listener ${state.kind}/${state.mode} ${state.kind === 'interior' ? 'seat' : `${state.distance.toFixed(0)} m`}   p ${state.pressure.toFixed(0)} Pa   throttle ${(state.throttle * 100).toFixed(0)} %`;
     hint.textContent = probe.state === 'running' ? '' : 'press any key or click to start sound';
     testApi.frameDone();

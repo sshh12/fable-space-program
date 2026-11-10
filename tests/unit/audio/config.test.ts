@@ -96,6 +96,12 @@ describe('section validation errors name the file and the field', () => {
     expect(errorOf(withSection('audio/ui', (s) => s['alarm'].conditions.push({ path: 'vessels.0', above: 1 }))).message).toContain('must be <group>.<field>');
     expect(errorOf(withSection('audio/ui', (s) => s['alarm'].conditions.push({ path: 'readouts.gLoad', above: 1, below: 2 }))).message).toContain('exactly one of above, below, equals');
   });
+  it('ambience beds: known surfaces only, loop assets only; buses need both listener gains', () => {
+    expect(errorOf(withSection('audio/environment', (s) => (s['ambience'].beds['lava'] = []))).message).toContain('unknown surface');
+    expect(errorOf(withSection('audio/environment', (s) => (s['ambience'].beds.water[0].asset = 'splashdown'))).message).toContain('ambience.beds.water[0].asset: asset "splashdown" must be a loop');
+    expect(errorOf(withSection('audio/mix', (s) => delete s['buses'].engines.interiorGainDb)).message).toContain('buses.engines.interiorGainDb: is required');
+    expect(errorOf(withSection('audio/mix', (s) => (s['propagation'].mapListener.positionVes = [1, 2]))).message).toContain('mapListener.positionVes: must be an [x, y, z] triple');
+  });
   it('a part whose engine sound has no profile is reported against the part file', () => {
     const part = Object.values(lib.parts).find((p) => p.modules.some((m) => m.type === 'engine'))!;
     const broken = structuredClone(part);

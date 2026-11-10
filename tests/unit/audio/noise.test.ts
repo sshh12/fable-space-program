@@ -1,13 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { rmsOf } from '@/audio/analysis';
-import { CRACKLE_LEVELS, crackleWeights, generateNoise, type NoiseKind } from '@/audio/noise';
+import { CRACKLE_LEVELS, crackleWeights, generateNoise, NOISE_KINDS, noiseBufferShape, type NoiseKind } from '@/audio/noise';
 
 const SR = 48000;
-const gen = (kind: NoiseKind, seconds: number, seed = 3): Float32Array => {
-  const x = new Float32Array(Math.round(seconds * SR));
-  generateNoise(kind, x, SR, seed);
+const gen = (kind: NoiseKind, seconds: number, seed = 3, rate = SR): Float32Array => {
+  const x = new Float32Array(Math.round(seconds * rate));
+  generateNoise(kind, x, rate, seed);
   return x;
 };
+
+/** Sample-to-sample steps inside the buffer, and the step across the loop point. */
+function steps(x: Float32Array): { wrap: number; max: number; rms: number } {
+  let max = 0;
+  let sq = 0;
+  for (let i = 1; i < x.length; i++) {
+    const d = Math.abs(x[i]! - x[i - 1]!);
+    max = Math.max(max, d);
+    sq += d * d;
+  }
+  return { wrap: Math.abs(x[0]! - x[x.length - 1]!), max, rms: Math.sqrt(sq / (x.length - 1)) };
+}
 
 describe('procedural noise buffers', () => {
   it('are normalised: brown and pink RMS 0.1, crackle 0.1 * sqrt(rate / 100)', () => {
@@ -32,17 +44,48 @@ describe('procedural noise buffers', () => {
     expect(skew(gen('crackle-80', 30))).toBeGreaterThan(5);
     expect(Math.abs(skew(gen('pink', 10)))).toBeLessThan(0.2);
   });
-  it('slow modulation is bounded to [-1, 1]', () => {
-    const x = gen('slow', 60);
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const v of x) {
-      lo = Math.min(lo, v);
-      hi = Math.max(hi, v);
+  it('slow modulation is bounded to [-1, 1] and smooth', () => {
+    for (const kind of ['slow-a', 'slow-b'] as const) {
+      const shape = noiseBufferShape(kind, SR);
+      const x = new Float32Array(shape.length);
+      generateNoise(kind, x, shape.sampleRate, 9);
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const v of x) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+      expect(hi).toBeLessThanOrEqual(1);
+      expect(lo).toBeGreaterThanOrEqual(-1);
+      expect(rmsOf(x)).toBeGreaterThan(0.35);
+      // One knot per second: no step anywhere is larger than a cosine ramp between two extremes allows.
+      expect(steps(x).max).toBeLessThan((2 * Math.PI) / 2 / shape.sampleRate + 1e-6);
     }
-    expect(hi).toBeLessThanOrEqual(1);
-    expect(lo).toBeGreaterThanOrEqual(-1);
-    expect(rmsOf(x)).toBeGreaterThan(0.35);
+  });
+  it('every buffer loops seamlessly: the step across the loop point is an ordinary step', () => {
+    for (const kind of NOISE_KINDS) {
+      const shape = noiseBufferShape(kind, SR);
+      const x = new Float32Array(shape.length);
+      generateNoise(kind, x, shape.sampleRate, 0x51ed);
+      const s = steps(x);
+      expect(s.wrap, `${kind}: wrap step vs largest in-buffer step`).toBeLessThanOrEqual(s.max);
+      if (!kind.startsWith('crackle')) expect(s.wrap, `${kind}: wrap step vs RMS step`).toBeLessThan(5 * s.rms);
+    }
+  });
+  it('the slow modulator never repeats within 30 s, even at the fastest allowed turbulence rate', () => {
+    const knots = (kind: 'slow-a' | 'slow-b'): number => {
+      const s = noiseBufferShape(kind, SR);
+      return s.length / s.sampleRate;
+    };
+    const a = knots('slow-a');
+    const b = knots('slow-b');
+    const gcd = (x: number, y: number): number => (y === 0 ? x : gcd(y, x % y));
+    expect(Number.isInteger(a) && Number.isInteger(b)).toBe(true);
+    expect(gcd(a, b)).toBe(1);
+    const maxHz = 50; // audio/engines.json and environment.json validate turbulenceHz <= 50
+    expect((a * b) / maxHz).toBeGreaterThan(30);
+    // At the fastest rate the data uses (9 Hz) each component alone runs longer than 14 s before it repeats.
+    expect(Math.min(a, b) / 9).toBeGreaterThan(14);
   });
   it('is deterministic per seed and decorrelated across seeds', () => {
     expect(gen('pink', 1, 5)).toEqual(gen('pink', 1, 5));

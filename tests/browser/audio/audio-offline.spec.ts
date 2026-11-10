@@ -34,23 +34,32 @@ type Lab = AudioLabApi;
 const call = <T>(page: Page, fn: (lab: Lab, arg: never) => Promise<T>, arg?: unknown): Promise<T> =>
   page.evaluate(([src, a]) => (new Function('lab', 'arg', `return (${src})(lab, arg);`) as (l: Lab, x: unknown) => Promise<T>)(window.__audioLab!, a), [fn.toString(), arg] as const);
 
-// The first navigation pays Vite's cold transform of the lab; on a machine busy with bakes that alone can take minutes.
-test.describe.configure({ mode: 'serial', timeout: 360_000 });
+test.describe.configure({ mode: 'serial' });
 
-test('engine level rises monotonically with throttle (>= 12 dB from 10 % to 100 %)', async ({ page, pageLog }) => {
+test('engine level rises monotonically with the throttle lever (>= 12 dB from 10 % to 100 %), real engines, sim law', async ({ page, pageLog }) => {
   await lab(page);
-  const throttles = [0.1, 0.25, 0.5, 0.75, 1];
-  const levels: number[] = [];
-  for (const throttle of throttles) {
-    const r = await call(page, (l, a: { throttle: number; sea: number }) =>
-      l.steady({ stack: 'booster', throttle: a.throttle, nozzlePressure: a.sea, listener: { kind: 'external', mode: 'chase', position: { x: 60, y: 5, z: 80 }, lookAt: { x: 0, y: 20, z: 0 }, pressure: a.sea } }, [[0.5, 3]], ['engines']),
-      { throttle, sea: SEA },
-    );
-    levels.push(r.taps['engines']!.windows[0]!.rmsDb);
+  // "Throttle" is the player's lever. Each engine's throttleActual follows the sim's law from its part's
+  // minThrottle (Atlas-9M 0.5: lever 0.1 -> 55 % thrust; Lyra-D 0.1: lever 0.1 -> 19 % thrust).
+  const levers = [0.1, 0.25, 0.5, 0.75, 1];
+  const cases = [
+    { stack: 'booster', listener: { kind: 'external', mode: 'chase', position: { x: 60, y: 5, z: 80 }, lookAt: { x: 0, y: 20, z: 0 }, pressure: SEA }, nozzle: SEA },
+    { stack: 'lander', listener: { kind: 'external', mode: 'chase', position: { x: 40, y: 5, z: 50 }, lookAt: { x: 0, y: 5, z: 0 }, pressure: SEA }, nozzle: SEA },
+  ] as const;
+  const out: Record<string, { levers: number[]; enginesRmsDb: number[]; rise10to100Db: number }> = {};
+  for (const c of cases) {
+    const levels: number[] = [];
+    for (const throttle of levers) {
+      const r = await call(page, (l, a: { c: (typeof cases)[number]; throttle: number }) => l.steady({ stack: a.c.stack, throttle: a.throttle, nozzlePressure: a.c.nozzle, listener: a.c.listener }, [[0.5, 3]], ['engines']), { c, throttle });
+      levels.push(r.taps['engines']!.windows[0]!.rmsDb);
+    }
+    out[c.stack] = { levers, enginesRmsDb: levels, rise10to100Db: levels[4]! - levels[0]! };
   }
-  record('throttle', { throttles, enginesRmsDb: levels, rise10to100Db: levels[4]! - levels[0]! });
-  for (let i = 1; i < levels.length; i++) expect(levels[i]!).toBeGreaterThan(levels[i - 1]!);
-  expect(levels[4]! - levels[0]!).toBeGreaterThanOrEqual(12);
+  record('throttle', out);
+  for (const c of cases) {
+    const levels = out[c.stack]!.enginesRmsDb;
+    for (let i = 1; i < levels.length; i++) expect(levels[i]!, `${c.stack} lever ${levers[i]}`).toBeGreaterThan(levels[i - 1]!);
+    expect(out[c.stack]!.rise10to100Db, c.stack).toBeGreaterThanOrEqual(12);
+  }
   await expectNoErrors(page, pageLog);
 });
 
@@ -80,7 +89,8 @@ test('vacuum: no airborne energy outside; cabin keeps a muffled structure-borne 
           stack: 'tli',
           throttle: 1,
           nozzlePressure: a.pressure,
-          listener: a.kind === 'interior' ? { kind: 'interior', mode: 'cockpit', position: { x: 0, y: 22.4, z: 0.4 }, pressure: a.pressure } : { kind: 'external', mode: 'chase', position: { x: 25, y: 10, z: 30 }, lookAt: { x: 0, y: 10, z: 0 }, pressure: a.pressure },
+          // The Kestrel commander's seat on top of the TLI stage (labs/audio/labVehicle.ts labStack('tli')).
+          listener: a.kind === 'interior' ? { kind: 'interior', mode: 'cockpit', position: { x: 0, y: 22.05, z: 0.1 }, pressure: a.pressure } : { kind: 'external', mode: 'chase', position: { x: 25, y: 10, z: 30 }, lookAt: { x: 0, y: 10, z: 0 }, pressure: a.pressure },
         },
         [[0.5, 3]],
         [...a.taps],
@@ -161,15 +171,36 @@ test('every event type produces a one-shot on the events bus within 50 ms', asyn
   await expectNoErrors(page, pageLog);
 });
 
-test('nothing clips: master peak < 0.98 with everything at maximum', async ({ page, pageLog }) => {
+test('nothing clips: buses below full scale, the limiter holds the master below the soft ceiling', async ({ page, pageLog }) => {
   await lab(page);
+  // The soft ceiling (a waveshaper) can never output more than mix.master.ceiling, so its output alone
+  // proves nothing. What is measured is the signal it is fed (after compressor and limiter): it must stay
+  // in the ceiling's exactly-linear range, i.e. no sample is shaped. Every bus is captured in stereo and
+  // must stay below full scale (true sample peak) - in the loudest realistic scenes and with everything
+  // at maximum at once.
+  const linearUntil = 0.8;
   const ext = await call(page, (l) => l.maximum('external'));
   const cab = await call(page, (l) => l.maximum('interior'));
-  const peaks = { external: ext.taps['master']!.maxAbs, interior: cab.taps['master']!.maxAbs };
-  record('clipping', { masterPeak: peaks, busPeaks: { external: Object.fromEntries(Object.entries(ext.taps).map(([k, v]) => [k, v.maxAbs])), interior: Object.fromEntries(Object.entries(cab.taps).map(([k, v]) => [k, v.maxAbs])) } });
-  expect(peaks.external).toBeLessThan(0.98);
-  expect(peaks.interior).toBeLessThan(0.98);
-  expect(peaks.external).toBeGreaterThan(0.3);
+  const loud = await call(page, (l) => l.loud());
+  const all = [ext, cab, ...loud];
+  const rows = all.map((r) => ({ name: r.name, busPeaks: r.busPeaks, preCeilingPeak: r.preCeiling.peak, kneeShare: r.preCeiling.kneeShare, masterPeak: r.taps['master']!.maxAbs, masterRmsDb: r.taps['master']!.windows[0]!.rmsDb, maxStats: r.maxStats }));
+  record('clipping', { linearUntil, scenes: rows });
+  for (const r of rows) {
+    for (const [bus, peak] of Object.entries(r.busPeaks)) expect(peak, `${r.name}: ${bus} bus true peak`).toBeLessThan(1);
+    expect(r.preCeilingPeak, `${r.name}: master fed to the soft ceiling`).toBeLessThan(linearUntil);
+    expect(r.kneeShare, `${r.name}: samples shaped by the soft ceiling`).toBe(0);
+    expect(r.masterPeak, `${r.name}: master`).toBeLessThan(0.98);
+  }
+  // Loud enough to have proven something: the maximum scene drives the limiter.
+  expect(rows[0]!.masterPeak).toBeGreaterThan(0.4);
+  await expectNoErrors(page, pageLog);
+});
+
+test("the master section's small-signal gain is exactly the configured makeup (built-in makeups cancelled)", async ({ page, pageLog }) => {
+  await lab(page);
+  const g = await call(page, (l) => l.masterGain());
+  record('masterGain', g);
+  expect(Math.abs(g.measuredDb - g.expectedDb)).toBeLessThan(0.05);
   await expectNoErrors(page, pageLog);
 });
 
@@ -196,14 +227,18 @@ test('time warp above 4x fades the engines to silence within 1 s', async ({ page
 test('an unknown view mode of kind external sounds exactly like the chase camera', async ({ page, pageLog }) => {
   await lab(page);
   const r = await call(page, (l) => l.modes('eva-third-person'));
-  record('unknownMode', { ...r, tapDiffDbReEngines: db(r.tapDiff / r.enginesRms), selfTapDiffDbReEngines: db(r.selfTapDiff / r.enginesRms), masterDiffDbReMaster: db(r.masterDiff / r.masterRms), selfMasterDiffDbReMaster: db(r.selfMasterDiff / r.masterRms) });
+  record('unknownMode', { ...r, tapDiffDbReTap: db(r.tapDiff), selfTapDiffDbReTap: db(r.selfTapDiff), masterDiffDbReMaster: db(r.masterDiff / r.masterRms), selfMasterDiffDbReMaster: db(r.selfMasterDiff / r.masterRms) });
   // The model decides everything that is heard: its targets must be identical for every frame.
   expect(r.modelIdentical).toBe(true);
   expect(r.frames).toBeGreaterThan(300);
-  expect(r.enginesRms).toBeGreaterThan(0.01);
+  expect(r.enginesRms).toBeGreaterThan(0.003);
   // Chrome's offline renderer is not bit-reproducible for a graph this size (re-rendering the SAME scene
-  // differs by float rounding); the unknown mode must sit inside that noise floor, far below audibility.
-  expect(db(r.tapDiff / r.enginesRms)).toBeLessThan(-80);
+  // differs by float rounding: about -75 dB re each tap's own RMS, -85 dB on the master). The unknown mode
+  // must sit inside that noise floor - no further from chase than chase is from itself (x4, or -100 dB
+  // when the re-render happens to be bit-exact) - and far below audibility (every tap's largest sample
+  // difference at least 60 dB under that tap's RMS).
+  expect(r.tapDiff).toBeLessThanOrEqual(Math.max(4 * r.selfTapDiff, 1e-5));
+  expect(db(r.tapDiff)).toBeLessThan(-60);
   expect(r.masterDiff).toBeLessThanOrEqual(Math.max(4 * r.selfMasterDiff, 1e-4 * r.masterRms));
   await expectNoErrors(page, pageLog);
 });

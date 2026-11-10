@@ -3,17 +3,20 @@
  * (AudioContext) and offline in tests (OfflineAudioContext). The graph only applies the targets the
  * sound model computes (model.ts); it holds no game logic.
  *
- *   voice layers -> voice sum -+-> airborne: delay (propagation, Doppler) -> gain -> 2x low-pass -> panner -> bus.air
- *                              +-> structure-borne: 2x low-pass -> resonance -> gain ----------------> bus.body
+ *   voice layers -> voice sum -+-> airborne: mono -> delay (propagation, Doppler) -> gain -> 2x low-pass -> panner -> bus.air
+ *                              +-> structure-borne: 2x low-pass -> resonance -> gain ------------------------> bus.body
  *   one-shots: the same two paths (airborne copy started `delay` later), or bus.direct for feedback sounds
  *   bus.air + bus.body + bus.direct -> bus.sum (bus gain) -> bus.fade (time-warp fade) -> bus.out -> master
- *   master: volume -> pause -> compressor -> limiter -> soft ceiling (never above mix.master.ceiling) -> out
+ *   master: volume -> pause -> compressor -> limiter (+ makeup cancel) = preCeiling -> soft ceiling -> out
+ *
+ * Engine voices exist only while their cluster sounds (the model emits them) and until their delay line
+ * and transients have drained after that; a cluster that sounds again revives its draining voice.
  */
 import type { AudioConfig, BusId, MixConfig } from './config';
 import { BUS_NAMES } from './config';
-import { dbToGain } from './mapping';
-import type { AeroTarget, CabinTarget, EngineVoiceTarget, ModelOutput, OneShotRequest, ReentryTarget, SourcePaths } from './model';
-import { CRACKLE_LEVELS, crackleWeights, noiseBank, noiseSource, type NoiseBank } from './noise';
+import { compressorMakeupDb, dbToGain } from './mapping';
+import { ambienceAssetIds, type AeroTarget, type AmbienceTarget, type CabinTarget, type EngineVoiceTarget, type ModelOutput, type OneShotRequest, type ReentryTarget, type SourcePaths } from './model';
+import { CRACKLE_LEVELS, crackleWeights, noiseBank, noiseSource, slowModulator, type NoiseBank } from './noise';
 
 /** Decoded sound assets by id (audio/assets.json), plus procedurally rendered ones. */
 export interface AssetBank {
@@ -72,6 +75,8 @@ interface BusNodes {
   body: GainNode;
   direct: GainNode;
   sum: GainNode;
+  /** Bus gain: mix.json gainDb outside, interiorGainDb for the cabin mix. */
+  sumParam: Smooth;
   fade: GainNode;
   fadeParam: Smooth;
   out: GainNode;
@@ -107,6 +112,8 @@ class PathOut {
   /** A delay-line jump waiting for the duck to complete. */
   private pendingJumpAt: number | null = null;
   lastDelay = 0;
+  /** Seconds of delay line this path holds (one channel: the airborne branch is mono). */
+  readonly delaySeconds: number;
 
   constructor(
     private readonly ctx: BaseAudioContext,
@@ -115,12 +122,15 @@ class PathOut {
     resonance: { hz: number; db: number } | null,
   ) {
     this.input = new GainNode(ctx, { gain: 1 });
+    // A point source far away is mono; downmixing before the delay also halves the line of stereo loops.
+    const mono = new GainNode(ctx, { gain: 1, channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
     const delay = new DelayNode(ctx, { maxDelayTime: maxDelay, delayTime: 0 });
+    this.delaySeconds = maxDelay;
     const airGain = new GainNode(ctx, { gain: 0 });
     const lp1 = lowpass(ctx, 20000);
     const lp2 = lowpass(ctx, 20000);
     const panner = new PannerNode(ctx, { panningModel: 'equalpower', distanceModel: 'linear', refDistance: 1, maxDistance: 10000, rolloffFactor: 0, positionX: 0, positionY: 0, positionZ: -1 });
-    this.input.connect(delay).connect(airGain).connect(lp1).connect(lp2).connect(panner).connect(bus.air);
+    this.input.connect(mono).connect(delay).connect(airGain).connect(lp1).connect(lp2).connect(panner).connect(bus.air);
     const blp1 = lowpass(ctx, 200);
     const blp2 = lowpass(ctx, 200);
     const bodyGain = new GainNode(ctx, { gain: 0 });
@@ -142,7 +152,11 @@ class PathOut {
     this.bodyGain = new Smooth(bodyGain.gain, 0);
     this.bodyLp1 = new Smooth(blp1.frequency, blp1.frequency.value);
     this.bodyLp2 = new Smooth(blp2.frequency, blp2.frequency.value);
-    this.nodes = [this.input, delay, airGain, lp1, lp2, panner, blp1, blp2, bodyGain, ...extra];
+    this.nodes = [this.input, mono, delay, airGain, lp1, lp2, panner, blp1, blp2, bodyGain, ...extra];
+  }
+
+  get nodeCount(): number {
+    return this.nodes.length;
   }
 
   apply(p: SourcePaths, time: number, sm: Smoothing): void {
@@ -188,6 +202,9 @@ class PathOut {
   }
 }
 
+/** Seconds a released engine voice is kept beyond its propagation delay (smoothing ramps, filter tails). */
+const DRAIN_MARGIN = 1.5;
+
 /** Deterministic start offset inside a loop so voices sharing an asset are never phase-aligned. */
 const loopOffset = (buffer: AudioBuffer, seed: number): number => (((seed >>> 0) % 9973) / 9973) * buffer.duration;
 
@@ -227,6 +244,9 @@ class ModGain {
   get target(): number {
     return this.g.target;
   }
+  get nodeCount(): number {
+    return this.depthNode ? 2 : 1;
+  }
   dispose(): void {
     this.node.disconnect();
     this.depthNode?.disconnect();
@@ -260,6 +280,9 @@ class CrackleLayer {
   }
   get target(): number {
     return this.gain.target;
+  }
+  get nodeCount(): number {
+    return this.nodes.length + 1;
   }
   dispose(): void {
     for (const n of this.nodes) {
@@ -302,8 +325,10 @@ class EngineVoice {
     this.sum = new GainNode(ctx, { gain: 1 });
     this.path = new PathOut(ctx, bus, config.mix.propagation.maxDelay, { hz: p.body.resonanceHz, db: p.body.resonanceDb });
     this.sum.connect(this.path.input);
-    const slow = noiseSource(ctx, noise, 'slow', seed, time, p.rumble?.turbulenceHz ?? 4);
-    this.sources.push(slow);
+    const mod = slowModulator(ctx, noise, seed, time, p.rumble?.turbulenceHz ?? 4);
+    const slow = mod.output;
+    this.sources.push(...mod.sources);
+    this.nodes.push(slow);
 
     const coreBuf = bank.buffers.get(p.core.asset)!;
     this.coreSrc = loopSource(ctx, coreBuf, seed, time);
@@ -386,13 +411,31 @@ class EngineVoice {
     this.running = 0;
   }
 
-  /** Released and everything (including the propagation delay line) has drained. */
+  /** The cluster sounds again while this voice is still draining: keep it (its delay line holds the tail). */
+  revive(): void {
+    this.releasedAt = null;
+  }
+
+  /** Released and everything (the propagation delay line, the layers' ramps, transients) has drained. */
   finished(now: number): boolean {
-    return this.releasedAt !== null && now > this.releasedAt + this.path.lastDelay + 6 && this.transients.size === 0;
+    return this.releasedAt !== null && now > this.releasedAt + this.path.lastDelay + DRAIN_MARGIN && this.transients.size === 0;
   }
 
   get playingTransients(): number {
     return this.transients.size;
+  }
+
+  get nodeCount(): number {
+    return (
+      this.sources.length +
+      this.nodes.length +
+      this.core.nodeCount +
+      (this.rumble?.nodeCount ?? 0) +
+      (this.hiss?.nodeCount ?? 0) +
+      (this.crackle?.nodeCount ?? 0) +
+      this.path.nodeCount +
+      2 * this.transients.size
+    );
   }
 
   dispose(): void {
@@ -422,7 +465,7 @@ class AeroVoice {
     const sum = new GainNode(ctx);
     this.path = new PathOut(ctx, bus, config.mix.propagation.maxDelay, null);
     sum.connect(this.path.input);
-    const slow = noiseSource(ctx, noise, 'slow', seed, time, a.buffet.turbulenceHz);
+    const slow = slowModulator(ctx, noise, seed, time, a.buffet.turbulenceHz).output;
     const windSrc = loopSource(ctx, bank.buffers.get(a.wind.asset)!, seed, time);
     const windLp = lowpass(ctx, a.wind.cutoffHz[1]);
     const windGain = new GainNode(ctx, { gain: 0 });
@@ -442,7 +485,11 @@ class AeroVoice {
     const blp2 = lowpass(ctx, a.buffet.cutoffHz);
     this.buffet = new ModGain(ctx, slow, a.buffet.turbulence);
     brown.connect(blp1).connect(blp2).connect(this.buffet.node).connect(sum);
+    // sum, slow (2 sources + mix), wind (3), pink band (4), brown buffet (3) + the path and the modulated gain
+    this.nodeCount = 1 + 3 + 3 + 4 + 3 + this.path.nodeCount + this.buffet.nodeCount;
   }
+
+  readonly nodeCount: number;
 
   apply(t: AeroTarget, time: number, sm: Smoothing): void {
     this.wind.set(t.wind.gain, time, sm.gain);
@@ -472,7 +519,7 @@ class ReentryVoice {
     const sum = new GainNode(ctx);
     this.path = new PathOut(ctx, bus, config.mix.propagation.maxDelay, null);
     sum.connect(this.path.input);
-    const slow = noiseSource(ctx, noise, 'slow', seed, time, r.rumble.turbulenceHz);
+    const slow = slowModulator(ctx, noise, seed, time, r.rumble.turbulenceHz).output;
     const roarSrc = loopSource(ctx, bank.buffers.get(r.roar.asset)!, seed, time);
     const roarGain = new GainNode(ctx, { gain: 0 });
     roarSrc.connect(roarGain).connect(sum);
@@ -490,7 +537,11 @@ class ReentryVoice {
     const l2 = lowpass(ctx, r.rumble.cutoffHz);
     this.rumble = new ModGain(ctx, slow, r.rumble.turbulence);
     brown.connect(l1).connect(l2).connect(this.rumble.node).connect(sum);
+    // sum, slow (3), roar (2), hiss band (4), brown rumble (3) + path, crackle and the modulated gain
+    this.nodeCount = 1 + 3 + 2 + 4 + 3 + this.path.nodeCount + this.crackle.nodeCount + this.rumble.nodeCount;
   }
+
+  readonly nodeCount: number;
 
   apply(t: ReentryTarget, time: number, sm: Smoothing): void {
     this.roar.set(t.roar.gain, time, sm.gain);
@@ -524,6 +575,7 @@ class CabinVoice {
     pink.connect(hp).connect(lp).connect(ag).connect(bus.direct);
     this.airflow = new Smooth(ag.gain, 0);
     const hg = new GainNode(ctx, { gain: 0 });
+    let oscillators = 0;
     c.hum.harmonics.forEach((amp, i) => {
       const f = c.hum.freqHz * (i + 1);
       if (f >= ctx.sampleRate * NYQUIST_MARGIN || amp === 0) return;
@@ -531,10 +583,14 @@ class CabinVoice {
       const og = new GainNode(ctx, { gain: amp });
       osc.connect(og).connect(hg);
       osc.start(time);
+      oscillators++;
     });
     hg.connect(bus.direct);
     this.hum = new Smooth(hg.gain, 0);
+    this.nodeCount = 2 + 4 + 1 + 2 * oscillators;
   }
+
+  readonly nodeCount: number;
 
   apply(t: CabinTarget, time: number, tc: number): void {
     this.ambience.set(t.ambience, time, tc);
@@ -544,6 +600,43 @@ class CabinVoice {
 
   get audible(): boolean {
     return this.ambience.target > 0;
+  }
+}
+
+/** Surface ambience beds: one looping source per ambience asset, mixed, low-passed, into the aero bus. */
+class AmbienceVoice {
+  private readonly gains = new Map<string, Smooth>();
+  private readonly lp: Smooth;
+  readonly nodeCount: number;
+
+  constructor(
+    private readonly ctx: BaseAudioContext,
+    bank: AssetBank,
+    config: AudioConfig,
+    bus: BusNodes,
+    time: number,
+  ) {
+    const lp = lowpass(ctx, 18000);
+    lp.connect(bus.direct);
+    this.lp = new Smooth(lp.frequency, lp.frequency.value);
+    const ids = ambienceAssetIds(config);
+    ids.forEach((id, i) => {
+      const src = loopSource(ctx, bank.buffers.get(id)!, 0xa3b1 + 131 * i, time);
+      const g = new GainNode(ctx, { gain: 0 });
+      src.connect(g).connect(lp);
+      this.gains.set(id, new Smooth(g.gain, 0));
+    });
+    this.nodeCount = 1 + 2 * ids.length;
+  }
+
+  apply(t: AmbienceTarget, time: number, sm: Smoothing): void {
+    for (const [id, s] of this.gains) s.set(t.gains[id] ?? 0, time, sm.listenerKind);
+    this.lp.set(Math.min(t.cutoff, this.ctx.sampleRate * NYQUIST_MARGIN), time, sm.filter);
+  }
+
+  get audible(): boolean {
+    for (const s of this.gains.values()) if (s.target > 0) return true;
+    return false;
   }
 }
 
@@ -582,15 +675,34 @@ export interface AudioGraphOptions {
   startTime?: number;
 }
 
+/** What the graph holds right now (resource load, not just what is audible). */
+export interface AudioGraphStats {
+  /** Engine voices allocated: sounding, or released and draining their delay line and transients. */
+  engineVoices: number;
+  /** Audio nodes held: the static mix (buses, master, environment voices) + engine voices + one-shots. */
+  nodes: number;
+  /** Delay lines allocated, and their total length (each one mono): memory = seconds x sampleRate x 4 B. */
+  delayLines: number;
+  delayLineSeconds: number;
+  /** One-shot sources playing (events, creaks, clicks, engine transients). */
+  oneShots: number;
+}
+
 export interface AudioGraph {
   readonly ctx: BaseAudioContext;
   /** Final output (connect to ctx.destination or an analyser). */
   readonly output: AudioNode;
+  /** The master just before the soft ceiling (after compressor and limiter), in output units. */
+  readonly preCeiling: AudioNode;
+  /** Input of the master section (where the buses sum): tests feed calibration signals here. */
+  readonly masterInput: AudioNode;
   /** Measurement points: bus outputs, their path sub-mixes, and the master output. */
   readonly taps: Record<TapName, AudioNode>;
   apply(out: ModelOutput, time: number): void;
   setMasterVolume(volume: number, time: number): void;
+  /** Voices using resources: allocated engine voices (also while draining), one-shots, transients, audible environment voices, alarm. */
   activeVoices(): number;
+  stats(): AudioGraphStats;
   dispose(): void;
 }
 
@@ -616,7 +728,7 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
     body.connect(sum);
     direct.connect(sum);
     sum.connect(fade).connect(out).connect(masterSum);
-    buses[id] = { air, body, direct, sum, fade, fadeParam: new Smooth(fade.gain, 1), out };
+    buses[id] = { air, body, direct, sum, sumParam: new Smooth(sum.gain, sum.gain.value), fade, fadeParam: new Smooth(fade.gain, 1), out };
   }
 
   const volume = new GainNode(ctx, { gain: 1 });
@@ -625,12 +737,16 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
   const pauseParam = new Smooth(pause.gain, 1);
   const c = mix.master.compressor;
   const comp = new DynamicsCompressorNode(ctx, { threshold: c.thresholdDb, knee: c.kneeDb, ratio: c.ratio, attack: c.attack, release: c.release });
-  const makeup = new GainNode(ctx, { gain: dbToGain(c.makeupDb) });
+  // Both dynamics nodes add an automatic makeup gain; it is cancelled exactly, so the configured makeup is the only one.
+  const makeup = new GainNode(ctx, { gain: dbToGain(c.makeupDb - compressorMakeupDb(c.thresholdDb, c.kneeDb, c.ratio)) });
   const l = mix.master.limiter;
   const limiter = new DynamicsCompressorNode(ctx, { threshold: l.thresholdDb, knee: l.kneeDb, ratio: l.ratio, attack: l.attack, release: l.release });
+  const limiterMakeup = new GainNode(ctx, { gain: dbToGain(-compressorMakeupDb(l.thresholdDb, l.kneeDb, l.ratio)) });
   const pre = new GainNode(ctx, { gain: 1 / mix.master.headroom });
   const shaper = new WaveShaperNode(ctx, { curve: ceilingCurve(mix.master), oversample: 'none' });
-  masterSum.connect(volume).connect(pause).connect(comp).connect(makeup).connect(limiter).connect(pre).connect(shaper);
+  masterSum.connect(volume).connect(pause).connect(comp).connect(makeup).connect(limiter).connect(limiterMakeup).connect(pre).connect(shaper);
+  // buses: 7 nodes each (+ fade param); master: sum, volume, pause, compressor, makeup, limiter, makeup, pre, shaper
+  const staticNodes = 7 * BUS_NAMES.length + 9;
 
   const taps = { master: shaper } as unknown as Record<TapName, AudioNode>;
   for (const id of BUS_NAMES) {
@@ -644,9 +760,13 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
   const aero = new AeroVoice(ctx, bank, noise, config, buses.aero, t0);
   const reentry = new ReentryVoice(ctx, bank, noise, config, buses.reentry, t0);
   const cabin = new CabinVoice(ctx, bank, noise, config, buses.cabin, t0);
-  const oneShots = new Set<AudioBufferSourceNode>();
+  const ambience = new AmbienceVoice(ctx, bank, config, buses.aero, t0);
+  /** Playing one-shot sources and the number of nodes each holds. */
+  const oneShots = new Map<AudioBufferSourceNode, number>();
   const alarmBuffer = renderAlarmBuffer(ctx, config.ui);
   let alarm: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+  /** The first frame sets the listener-kind bus gains at once (no glide from the outside mix). */
+  let firstApply = true;
 
   const startOneShot = (r: OneShotRequest, time: number): void => {
     const buffer = bank.buffers.get(r.asset);
@@ -657,7 +777,7 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
       let node: AudioNode = src;
       for (const n of chain) node = node.connect(n);
       node.connect(dest);
-      oneShots.add(src);
+      oneShots.set(src, 1 + chain.length);
       src.onended = () => {
         src.disconnect();
         for (const n of chain) n.disconnect();
@@ -691,22 +811,27 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
   const graph: AudioGraph = {
     ctx,
     output: shaper,
+    preCeiling: limiterMakeup,
+    masterInput: masterSum,
     taps,
     apply(out, time) {
       for (const p of out.problems) opts.onProblem?.(p);
       for (const id of BUS_NAMES) {
-        if (mix.buses[id].fadeAboveWarp) buses[id].fadeParam.ramp(out.continuous, time, mix.warp.fadeTime);
+        const b = mix.buses[id];
+        const g = dbToGain(out.interior ? b.interiorGainDb : b.gainDb);
+        if (firstApply) buses[id].sumParam.jump(g, time);
+        else buses[id].sumParam.set(g, time, sm.listenerKind);
+        if (b.fadeAboveWarp) buses[id].fadeParam.ramp(out.continuous, time, mix.warp.fadeTime);
       }
       pauseParam.ramp(out.paused ? 0 : 1, time, mix.pause.fadeTime);
       const live = new Set<string>();
       for (const t of out.engines) {
         live.add(t.key);
         let v = engines.get(t.key);
-        if (!v || v.releasedAt !== null) {
-          if (v) v.dispose();
+        if (!v) {
           v = new EngineVoice(ctx, bank, noise, t, config, buses.engines, time);
           engines.set(t.key, v);
-        }
+        } else if (v.releasedAt !== null) v.revive();
         v.apply(t, time, sm);
       }
       for (const [k, v] of engines) {
@@ -717,8 +842,10 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
           engines.delete(k);
         }
       }
+      firstApply = false;
       aero.apply(out.aero, time, sm);
       reentry.apply(out.reentry, time, sm);
+      ambience.apply(out.ambience, time, sm);
       cabin.apply(out.cabin, time, sm.listenerKind);
       for (const r of out.oneShots) startOneShot(r, time);
       if (out.alarm && !alarm) {
@@ -744,16 +871,31 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
     },
     activeVoices() {
       let n = oneShots.size + (alarm ? 1 : 0);
-      for (const v of engines.values()) n += (v.running > 0 ? 1 : 0) + v.playingTransients;
+      for (const v of engines.values()) n += 1 + v.playingTransients;
       if (aero.audible) n++;
       if (reentry.audible) n++;
+      if (ambience.audible) n++;
       if (cabin.audible) n++;
       return n;
+    },
+    stats() {
+      let nodes = staticNodes + aero.nodeCount + reentry.nodeCount + cabin.nodeCount + ambience.nodeCount + (alarm ? 2 : 0);
+      let delayLines = 2;
+      let delayLineSeconds = aero.path.delaySeconds + reentry.path.delaySeconds;
+      let transients = 0;
+      for (const v of engines.values()) {
+        nodes += v.nodeCount;
+        delayLines++;
+        delayLineSeconds += v.path.delaySeconds;
+        transients += v.playingTransients;
+      }
+      for (const k of oneShots.values()) nodes += k;
+      return { engineVoices: engines.size, nodes, delayLines, delayLineSeconds, oneShots: oneShots.size + transients };
     },
     dispose() {
       for (const v of engines.values()) v.dispose();
       engines.clear();
-      for (const s of oneShots) s.stop();
+      for (const s of oneShots.keys()) s.stop();
       alarm?.src.stop();
       masterSum.disconnect();
       shaper.disconnect();

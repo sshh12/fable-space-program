@@ -53,6 +53,8 @@ export interface EngineProfile {
   refThrust: number;
   efficiencyDb: number;
   throttleExponent: number;
+  /** Level drop from full throttle to the bottom of the engine's throttle range (lever 0), dB. */
+  throttleRangeDb: number;
   refDistance: number;
   core: EngineLayerCore;
   rumble: EngineLayerRumble | null;
@@ -65,6 +67,8 @@ export interface EngineProfile {
 }
 export interface EnginesConfig {
   level: { refThrust: number; levelDb: number };
+  /** A cluster keeps its voice this long after it last sounded (no churn on brief throttle dips), s. */
+  voiceHold: number;
   rcsModuleProfile: string;
   profiles: Record<string, EngineProfile>;
 }
@@ -85,6 +89,13 @@ export interface EventSoundDef {
 }
 export type EventsConfig = Partial<Record<SimEventType, EventSoundDef>>;
 
+export type AmbienceSurface = 'land' | 'water';
+export const AMBIENCE_SURFACES: readonly AmbienceSurface[] = ['land', 'water'];
+export interface AmbienceLayer {
+  asset: string;
+  gainDb: number;
+}
+
 export interface EnvironmentConfig {
   aero: {
     qRef: number;
@@ -104,6 +115,13 @@ export interface EnvironmentConfig {
     hiss: BandLayer & { exponent: number };
     crackle: { gainDb: number; rateHz: Range; highpassHz: number };
     rumble: { gainDb: number; cutoffHz: number; gLoadRef: number; turbulence: number; turbulenceHz: number };
+  };
+  ambience: {
+    /** Radar altitude of the active vessel up to which the land bed is full, and above which it is silent, m. */
+    surfaceAltitude: Range;
+    hullGainDb: number;
+    hullCutoffHz: number;
+    beds: Record<AmbienceSurface, AmbienceLayer[]>;
   };
   cabin: {
     ambience: { asset: string; gainDb: number };
@@ -128,10 +146,13 @@ export const BUS_NAMES = ['engines', 'aero', 'reentry', 'events', 'cabin', 'ui']
 export type BusId = (typeof BUS_NAMES)[number];
 
 export interface MixConfig {
-  buses: Record<BusId, { gainDb: number; fadeAboveWarp: boolean }>;
+  /** gainDb for an outside listener, interiorGainDb for the cabin mix (ramped over smoothing.listenerKind on a view change). */
+  buses: Record<BusId, { gainDb: number; interiorGainDb: number; fadeAboveWarp: boolean }>;
   master: {
     gainDb: number;
+    /** makeupDb is the makeup applied after the compressor; the node's own automatic makeup is cancelled. */
     compressor: { thresholdDb: number; kneeDb: number; ratio: number; attack: number; release: number; makeupDb: number };
+    /** The node's built-in makeup gain is cancelled (mapping.compressorMakeupDb): the output settles at the threshold. */
     limiter: { thresholdDb: number; kneeDb: number; ratio: number; attack: number; release: number };
     /** Absolute output ceiling (< 1): the final soft saturator never exceeds it. */
     ceiling: number;
@@ -157,6 +178,10 @@ export interface MixConfig {
     attach: { gainDb: number; fullDistance: number; maxDistance: number };
     events: { bodyCutoffHz: number; bodyGainDb: number };
     interiorPanWidth: number;
+    /** Width of the airborne fade at a supersonic source's Mach cone (mapping.retardedDelay). */
+    coneEdge: number;
+    /** Where a 'map' listener stands (VES) before any external flight camera was seen. */
+    mapListener: { positionVes: { x: number; y: number; z: number } };
   };
   warp: { threshold: number; fadeTime: number };
   pause: { fadeTime: number };
@@ -380,6 +405,7 @@ function parseEngines(n: Field, assets: Record<string, AssetDef>): EnginesConfig
       refThrust: p.get('refThrust').num({ gt: 0 }),
       efficiencyDb: p.get('efficiencyDb').num({ min: -60, max: 60 }),
       throttleExponent: p.get('throttleExponent').num({ gt: 0, max: 4 }),
+      throttleRangeDb: p.get('throttleRangeDb').num({ min: 0, max: 40 }),
       refDistance: p.get('refDistance').num({ gt: 0 }),
       core: {
         asset: assetRef(core.get('asset'), assets, true),
@@ -419,7 +445,7 @@ function parseEngines(n: Field, assets: Record<string, AssetDef>): EnginesConfig
   }
   const rcsModuleProfile = n.get('rcsModuleProfile').str();
   if (!profiles[rcsModuleProfile]) n.get('rcsModuleProfile').fail(`"${rcsModuleProfile}" is not a profile`);
-  return { level, rcsModuleProfile, profiles };
+  return { level, voiceHold: n.get('voiceHold').num({ min: 0, max: 30 }), rcsModuleProfile, profiles };
 }
 
 function parseEvents(n: Field, assets: Record<string, AssetDef>): EventsConfig {
@@ -470,6 +496,13 @@ function parseEnvironment(n: Field, assets: Record<string, AssetDef>): Environme
   const rumble = r.get('rumble');
   const creaks = c.get('creaks');
   const hum = c.get('hum');
+  const amb = n.get('ambience');
+  const bedsNode = amb.get('beds');
+  const beds = {} as Record<AmbienceSurface, AmbienceLayer[]>;
+  for (const surface of AMBIENCE_SURFACES) {
+    beds[surface] = bedsNode.get(surface).arr().map((l) => ({ asset: assetRef(l.get('asset'), assets, true), gainDb: l.get('gainDb').num() }));
+  }
+  for (const [k, b] of bedsNode.entries()) if (!(AMBIENCE_SURFACES as readonly string[]).includes(k)) b.fail(`unknown surface (surfaces are ${AMBIENCE_SURFACES.join(', ')})`);
   return {
     aero: {
       qRef: a.get('qRef').num({ gt: 0 }),
@@ -508,6 +541,12 @@ function parseEnvironment(n: Field, assets: Record<string, AssetDef>): Environme
         turbulenceHz: rumble.get('turbulenceHz').num({ gt: 0, max: 50 }),
       },
     },
+    ambience: {
+      surfaceAltitude: amb.get('surfaceAltitude').range({ min: 0 }),
+      hullGainDb: amb.get('hullGainDb').num(),
+      hullCutoffHz: amb.get('hullCutoffHz').num({ gt: 0 }),
+      beds,
+    },
     cabin: {
       ambience: { asset: assetRef(c.get('ambience').get('asset'), assets, true), gainDb: c.get('ambience').get('gainDb').num() },
       airflow: { gainDb: c.get('airflow').get('gainDb').num(), bandHz: c.get('airflow').get('bandHz').range({ gt: 0 }) },
@@ -533,7 +572,7 @@ function parseMix(n: Field): MixConfig {
   const buses = {} as MixConfig['buses'];
   for (const id of BUS_NAMES) {
     const b = busesNode.get(id);
-    buses[id] = { gainDb: b.get('gainDb').num(), fadeAboveWarp: b.get('fadeAboveWarp').bool() };
+    buses[id] = { gainDb: b.get('gainDb').num({ min: -60, max: 24 }), interiorGainDb: b.get('interiorGainDb').num({ min: -60, max: 24 }), fadeAboveWarp: b.get('fadeAboveWarp').bool() };
   }
   for (const [k, b] of busesNode.entries()) if (!(BUS_NAMES as readonly string[]).includes(k)) b.fail(`unknown bus (buses are ${BUS_NAMES.join(', ')})`);
   const m = n.get('master');
@@ -599,6 +638,8 @@ function parseMix(n: Field): MixConfig {
       },
       events: { bodyCutoffHz: p.get('events').get('bodyCutoffHz').num({ gt: 0 }), bodyGainDb: p.get('events').get('bodyGainDb').num() },
       interiorPanWidth: p.get('interiorPanWidth').num({ min: 0, max: 1 }),
+      coneEdge: p.get('coneEdge').num({ min: 0, max: 0.5 }),
+      mapListener: { positionVes: vec3Field(p.get('mapListener').get('positionVes')) },
     },
     warp: { threshold: n.get('warp').get('threshold').num({ min: 1 }), fadeTime: n.get('warp').get('fadeTime').num({ gt: 0, max: 1 }) },
     pause: { fadeTime: n.get('pause').get('fadeTime').num({ gt: 0, max: 5 }) },
@@ -611,6 +652,12 @@ function parseMix(n: Field): MixConfig {
       volume: sm.get('volume').num({ gt: 0, max: 2 }),
     },
   };
+}
+
+function vec3Field(n: Field): { x: number; y: number; z: number } {
+  const a = n.arr();
+  if (a.length !== 3) n.fail('must be an [x, y, z] triple');
+  return { x: a[0]!.num(), y: a[1]!.num(), z: a[2]!.num() };
 }
 
 function snapshotPath(n: Field): string {

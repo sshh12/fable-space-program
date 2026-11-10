@@ -164,22 +164,22 @@
       "generatedAt": "2026-11-10T06:03:00.680Z"
     },
     "cabin-fans": {
-      "prompt": "Room tone inside a small spacecraft cabin, steady ventilation fans and coolant pumps humming, soft electronic hum, continuous, no voices, no music, no beeps",
+      "prompt": "Inside a small spacecraft cabin: the steady broadband whoosh of ventilation fans blowing air through ducts, the soft whirring and gurgling of coolant pumps, airy and even, continuous, no voices, no music, no beeps, no alarms",
       "model": "eleven_text_to_sound_v2",
       "durationSeconds": 16,
       "loop": true,
       "promptInfluence": 0.45,
       "seed": null,
       "seedNote": "the sound-generation API takes no seed; this take is identified by rawSha256",
-      "take": 1,
-      "promptHash": "9cfd7ae2d035fa2b",
+      "take": 2,
+      "promptHash": "a32a373c7442eba1",
       "outputFormat": "pcm_48000",
       "rawFile": "data/cache/audio/elevenlabs/cabin-fans.pcm",
       "rawBytes": 3072000,
-      "rawSha256": "563b71625441bd44025f5a88839ca10cd48c858f4d7fd424c329beb35402bfaa",
+      "rawSha256": "e02989dfc04e9d4217154ca34012e19cff4359a60cb1edc52488d29e70a079b0",
       "requestId": null,
       "characterCost": "160",
-      "generatedAt": "2026-11-10T06:03:01.739Z"
+      "generatedAt": "2026-11-10T08:30:46.914Z"
     },
     "shutdown-booster": {
       "prompt": "Huge rocket engines shutting down abruptly, the roar cuts off into a low decaying rumble with metallic ticking",
@@ -612,6 +612,42 @@
       "requestId": null,
       "characterCost": "10",
       "generatedAt": "2026-11-10T06:05:33.901Z"
+    },
+    "ambience-outdoor": {
+      "prompt": "Outdoor ambience at a flat coastal launch site: a steady gentle breeze blowing across open ground, soft wind rustle, distant ocean surf far away, continuous and even, no birds, no insects, no voices, no traffic, no music",
+      "model": "eleven_text_to_sound_v2",
+      "durationSeconds": 16,
+      "loop": true,
+      "promptInfluence": 0.45,
+      "seed": null,
+      "seedNote": "the sound-generation API takes no seed; this take is identified by rawSha256",
+      "take": 1,
+      "promptHash": "5b58715843cf537d",
+      "outputFormat": "pcm_48000",
+      "rawFile": "data/cache/audio/elevenlabs/ambience-outdoor.pcm",
+      "rawBytes": 3072000,
+      "rawSha256": "e43834a4e6aab01f6e504e07a48b76d04d294a111c4828c0f36b63506b769a3d",
+      "requestId": null,
+      "characterCost": "160",
+      "generatedAt": "2026-11-10T08:30:45.835Z"
+    },
+    "ambience-ocean": {
+      "prompt": "At the waterline next to a floating metal space capsule in the open ocean: gentle waves lapping and slapping against the hull, water sloshing and gurgling, light sea breeze, continuous, no voices, no music, no boat engine, no seagulls",
+      "model": "eleven_text_to_sound_v2",
+      "durationSeconds": 16,
+      "loop": true,
+      "promptInfluence": 0.45,
+      "seed": null,
+      "seedNote": "the sound-generation API takes no seed; this take is identified by rawSha256",
+      "take": 1,
+      "promptHash": "5b6d1300081b971a",
+      "outputFormat": "pcm_48000",
+      "rawFile": "data/cache/audio/elevenlabs/ambience-ocean.pcm",
+      "rawBytes": 3072000,
+      "rawSha256": "57c2599176a47ef92d209340f285b6c9cfa72f7f32417e15611965843f351e48",
+      "requestId": null,
+      "characterCost": "160",
+      "generatedAt": "2026-11-10T08:30:46.215Z"
     }
   },
   "outputFormat": "pcm_48000"

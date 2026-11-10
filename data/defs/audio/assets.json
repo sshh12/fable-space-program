@@ -9,6 +9,8 @@
     "aero-wind": { "file": "aero-wind.flac", "loop": true },
     "reentry-roar": { "file": "reentry-roar.flac", "loop": true },
     "cabin-fans": { "file": "cabin-fans.flac", "loop": true },
+    "ambience-outdoor": { "file": "ambience-outdoor.flac", "loop": true },
+    "ambience-ocean": { "file": "ambience-ocean.flac", "loop": true },
     "ignition-booster": { "file": "ignition-booster.flac", "loop": false },
     "ignition-upper": { "file": "ignition-upper.flac", "loop": false },
     "ignition-small": { "file": "ignition-small.flac", "loop": false },

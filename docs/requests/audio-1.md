@@ -25,4 +25,10 @@ with an 800 m range the pad camera 445 m away heard the structure-borne rumble 1
 2. Document `ambientPressure` for `kind: 'interior'` as the static pressure OUTSIDE the hull at the listener
    (what the audio engine assumes today: it scales the hull-transmitted airborne path; cabin sounds always
    have cabin air).
+3. Document for `kind: 'map'` that the audio engine does not use the listener's position, orientation or
+   `ambientPressure`: it places a map listener where the last outside flight camera of the active vessel
+   was, in that vessel's air (`src/audio/model.ts` listenerGeometry, `data/defs/audio/mix.json`
+   `propagation.mapListener` before any outside camera was seen). Reason: `src/camera/listener.ts` places a
+   map listener at the map camera, 100 km or more away in vacuum, which would make the map view silent;
+   with this rule the producer needs no change.
 Must not change: `kind` / `mode` semantics, `insideVesselId`, the existing fields' units.

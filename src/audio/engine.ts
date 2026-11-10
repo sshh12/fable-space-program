@@ -4,16 +4,19 @@
  * Life cycle: init() parses and validates the audio sections of the DefLibrary, creates the AudioContext
  * and immediately holds it suspended (even where the browser's autoplay policy would let it run), decodes
  * every asset and builds the graph; resume() - called from the first real user gesture - starts sound.
- * A machine without an audio output device is tolerated: the context is then created (or re-routed) with
- * `sinkId: { type: 'none' }` so the graph still renders silently and probes keep working; if no context
- * can be created at all the engine stays silent with probe().state 'closed', and says why in `status`.
+ * A device that is slow to open is waited for (never abandoned). A machine without an audio output device
+ * is tolerated: when creating the context or opening the device fails, or the device reports an error,
+ * the context renders to `sinkId: { type: 'none' }` so the graph keeps running and probes keep working,
+ * and the default device is tried again on the next user gesture and on every `devicechange`. If no
+ * context can be created at all the engine stays silent with probe().state 'closed', and says why in
+ * `status`.
  */
 import type { AudioBusName, AudioEngine, AudioFrame, AudioProbe } from '@/core/contracts/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { levelsFromAnalyser, SILENT_LEVELS, type Levels } from './analysis';
 import { loadAssetBank } from './assets';
 import { BUS_NAMES, parseAudioConfig, type AudioConfig } from './config';
-import { createAudioGraph, type AssetBank, type AudioGraph } from './graph';
+import { createAudioGraph, type AssetBank, type AudioGraph, type AudioGraphStats } from './graph';
 import { SoundModel } from './model';
 
 export interface AudioEngineOptions {
@@ -37,6 +40,8 @@ export interface FableAudioEngine extends AudioEngine {
   readonly status: AudioEngineStatus;
   /** The live context once init() has run (null when none could be created). */
   readonly context: AudioContext | null;
+  /** Resource load of the graph (allocated voices, nodes, delay-line memory); null before init. */
+  stats(): AudioGraphStats | null;
 }
 
 const PROBE_FFT = 2048;
@@ -85,9 +90,12 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
     }
   };
 
+  type WithSink = AudioContext & { setSinkId?: (id: string | { type: 'none' }) => Promise<void> };
+  const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
   /** Re-route a context whose device failed to the null sink so it keeps rendering (probes, timing). */
   const toNullSink = async (c: AudioContext, why: string): Promise<void> => {
-    const withSink = c as AudioContext & { setSinkId?: (id: { type: 'none' }) => Promise<void> };
+    const withSink = c as WithSink;
     if (typeof withSink.setSinkId !== 'function') {
       status.message = `${why}; this browser cannot render without a device`;
       return;
@@ -95,11 +103,37 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
     try {
       await withSink.setSinkId({ type: 'none' });
       status.output = 'none';
-      status.message = `${why}; rendering without a sink`;
+      status.message = `${why}; rendering without a sink until the device is back (next gesture or device change)`;
     } catch (e) {
-      status.message = `${why}; null sink failed (${e instanceof Error ? e.message : String(e)})`;
+      status.message = `${why}; null sink failed (${errorText(e)})`;
     }
   };
+
+  /** While rendering to the null sink, try the default device again (a user gesture or a device change). */
+  let retrying: Promise<void> | null = null;
+  const retryDefaultDevice = (c: AudioContext): Promise<void> => {
+    const withSink = c as WithSink;
+    if (status.output !== 'none' || typeof withSink.setSinkId !== 'function' || c.state === 'closed') return Promise.resolve();
+    retrying ??= withSink
+      .setSinkId('')
+      .then(
+        () => {
+          status.output = 'device';
+          status.message = null;
+        },
+        (e: unknown) => {
+          status.message = `default audio device still unavailable (${errorText(e)}); rendering without a sink`;
+        },
+      )
+      .finally(() => {
+        retrying = null;
+      });
+    return retrying;
+  };
+  const onDeviceChange = (): void => {
+    if (ctx) void retryDefaultDevice(ctx);
+  };
+  const mediaDevices = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
 
   const engine: FableAudioEngine = {
     get config() {
@@ -117,6 +151,9 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
     get context() {
       return ctx;
     },
+    stats() {
+      return graph?.stats() ?? null;
+    },
 
     async init(defs, assetsUrl) {
       if (config) throw new Error('AudioEngine.init called twice');
@@ -125,9 +162,11 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
       assetsTotal = Object.keys(config.assets).length;
       ctx = createContext();
       if (ctx && ctx.state === 'running' && !resumeWanted) await ctx.suspend();
+      // The device failed while running: keep rendering on the null sink and try the device again later.
       ctx?.addEventListener('error', () => {
         if (ctx) void toNullSink(ctx, 'audio device error');
       });
+      mediaDevices?.addEventListener('devicechange', onDeviceChange);
       const decodeCtx: BaseAudioContext = ctx ?? new OfflineAudioContext({ numberOfChannels: 2, length: 1, sampleRate: 48000 });
       bank = await loadAssetBank(decodeCtx, config, assetsUrl, (p) => {
         assetsLoaded = p.loaded;
@@ -143,27 +182,31 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
       }
       graph.setMasterVolume(volume, ctx.currentTime);
       model = new SoundModel(config, defs);
-      if (resumeWanted) await engine.resume();
+      // A gesture that arrived during init: start sound now (without blocking init on a slow device).
+      if (resumeWanted) void engine.resume();
     },
 
     async resume() {
       resumeWanted = true;
       const c = ctx;
-      if (!c || c.state === 'running' || c.state === 'closed') return;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const settled = await Promise.race([
-        c.resume().then(
-          () => 'resumed' as const,
-          (e: unknown) => (e instanceof Error ? e.message : String(e)),
-        ),
-        new Promise<'timeout'>((r) => {
-          timer = setTimeout(() => r('timeout'), 3000);
-        }),
-      ]);
-      clearTimeout(timer);
-      if (settled !== 'resumed' && (c.state as AudioContextState) !== 'running') {
-        await toNullSink(c, `resume failed (${settled})`);
-        await c.resume().catch((e: unknown) => options.onError?.(`audio: resume failed: ${e instanceof Error ? e.message : String(e)}`));
+      if (!c || c.state === 'closed') return;
+      // A gesture is the moment to bring back a device that failed earlier (or appeared since).
+      await retryDefaultDevice(c);
+      if ((c.state as AudioContextState) === 'running') return;
+      // A device that is slow to open (Bluetooth, waking from sleep) is waited for, never abandoned.
+      const waiting = 'waiting for the audio device to open';
+      const slow = setTimeout(() => {
+        if (c.state !== 'running') status.message = waiting;
+      }, 3000);
+      try {
+        await c.resume();
+        if (status.message === waiting) status.message = null;
+      } catch (e) {
+        // Opening the device failed outright: render to the null sink so the graph and probes keep working.
+        await toNullSink(c, `resume failed (${errorText(e)})`);
+        await c.resume().catch((e2: unknown) => options.onError?.(`audio: resume failed: ${errorText(e2)}`));
+      } finally {
+        clearTimeout(slow);
       }
     },
 
@@ -198,6 +241,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): FableAudioE
 
     dispose() {
       disposed = true;
+      mediaDevices?.removeEventListener('devicechange', onDeviceChange);
       graph?.dispose();
       graph = null;
       model = null;

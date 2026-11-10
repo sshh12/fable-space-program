@@ -1,43 +1,49 @@
 {
-  "$comment": "Mixer, master dynamics and propagation. Buses: engines, aero, reentry, events, cabin, ui -> master (compressor, limiter, soft ceiling below 1.0). fadeAboveWarp buses fade to exact silence over warp.fadeTime when warpFactor > warp.threshold. propagation: airborne gain (p / referencePressure)^pressureGainExponent (0 in vacuum), low-pass cutoff from pressure and from distance (air absorption), inverse-distance attenuation beyond the source's refDistance, propagation delay d / (speedOfSound + recession speed), faded out between airborneFadeStart and airborneFadeEnd. hull: what of the airborne path reaches a cabin listener. structure: attenuation along the vessel for structure-borne sound. attach: the faint structure-borne share an external camera near the vessel hears. The DynamicsCompressorNode adds its own makeup gain (0.6 x its gain reduction at 0 dBFS, about +4.5 dB here); compressor.makeupDb cancels it so quiet scenes (a vacuum burn heard through the hull) stay quiet.",
+  "$comment": "Mixer, master dynamics and propagation. Buses: engines, aero, reentry, events, cabin, ui -> master; gainDb applies to an outside listener (kinds external and map), interiorGainDb to the cabin mix, ramped over smoothing.listenerKind on a view change. Gain staging: in the loudest realistic scenes (booster cluster at 25 m, every loud event at once) every bus peaks below 0 dBFS, and the master is fed to its soft ceiling below linearUntil (tests/browser/audio/audio-offline.spec.ts). Master: compressor, then makeupDb (the DynamicsCompressorNode's own automatic makeup gain is cancelled exactly, mapping.compressorMakeupDb, so the small-signal gain of the master is gainDb + compressor.makeupDb), a limiter (its automatic makeup also cancelled), then a soft ceiling: exactly linear below linearUntil, a tanh knee above, never beyond ceiling. fadeAboveWarp buses fade to exact silence over warp.fadeTime when warpFactor > warp.threshold. propagation: airborne gain (p / referencePressure)^pressureGainExponent (0 in vacuum), low-pass cutoff from pressure and from distance (air absorption), inverse-distance attenuation beyond the source's refDistance, faded out between airborneFadeStart and airborneFadeEnd; the delay is the exact retarded time of a source moving with its vessel's air-relative velocity (supersonic sources reach only listeners inside their Mach cone, faded over coneEdge) on a maxDelay-second delay line. hull: what of the airborne path reaches a cabin listener. structure: attenuation along the vessel for structure-borne sound. attach: the faint structure-borne share an outside listener near the active vessel hears (full within fullDistance of its bounding sphere about the VES origin, none beyond maxDistance). mapListener: where a map listener stands (VES) before any outside flight camera was seen; afterwards it stands where the last one was.",
   "buses": {
     "engines": {
-      "gainDb": 0,
+      "gainDb": -21,
+      "interiorGainDb": -13,
       "fadeAboveWarp": true
     },
     "aero": {
-      "gainDb": 0,
+      "gainDb": 2,
+      "interiorGainDb": -3,
       "fadeAboveWarp": true
     },
     "reentry": {
-      "gainDb": 0,
+      "gainDb": -7,
+      "interiorGainDb": -7,
       "fadeAboveWarp": true
     },
     "events": {
-      "gainDb": 0,
+      "gainDb": -16,
+      "interiorGainDb": -6,
       "fadeAboveWarp": false
     },
     "cabin": {
       "gainDb": 0,
+      "interiorGainDb": 0,
       "fadeAboveWarp": false
     },
     "ui": {
       "gainDb": 0,
+      "interiorGainDb": 0,
       "fadeAboveWarp": false
     }
   },
   "master": {
     "gainDb": 0,
     "compressor": {
-      "thresholdDb": -14,
+      "thresholdDb": -32,
       "kneeDb": 8,
-      "ratio": 3,
+      "ratio": 2,
       "attack": 0.01,
-      "release": 0.3,
-      "makeupDb": -4.5
+      "release": 0.25,
+      "makeupDb": 12
     },
     "limiter": {
-      "thresholdDb": -5,
+      "thresholdDb": -4,
       "kneeDb": 0,
       "ratio": 20,
       "attack": 0.001,
@@ -76,7 +82,7 @@
       "minDb": -24
     },
     "attach": {
-      "gainDb": -30,
+      "gainDb": -12,
       "fullDistance": 60,
       "maxDistance": 250
     },
@@ -84,7 +90,15 @@
       "bodyCutoffHz": 700,
       "bodyGainDb": 1
     },
-    "interiorPanWidth": 0.25
+    "interiorPanWidth": 0.25,
+    "coneEdge": 0.02,
+    "mapListener": {
+      "positionVes": [
+        30,
+        20,
+        60
+      ]
+    }
   },
   "warp": {
     "threshold": 4,

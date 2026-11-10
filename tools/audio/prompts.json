@@ -78,7 +78,25 @@
       "duration": 16,
       "loop": true,
       "crossfade": 3,
-      "prompt": "Room tone inside a small spacecraft cabin, steady ventilation fans and coolant pumps humming, soft electronic hum, continuous, no voices, no music, no beeps",
+      "prompt": "Inside a small spacecraft cabin: the steady broadband whoosh of ventilation fans blowing air through ducts, the soft whirring and gurgling of coolant pumps, airy and even, continuous, no voices, no music, no beeps, no alarms",
+      "channels": 2
+    },
+    {
+      "id": "ambience-outdoor",
+      "kind": "loop",
+      "duration": 16,
+      "loop": true,
+      "crossfade": 3,
+      "prompt": "Outdoor ambience at a flat coastal launch site: a steady gentle breeze blowing across open ground, soft wind rustle, distant ocean surf far away, continuous and even, no birds, no insects, no voices, no traffic, no music",
+      "channels": 2
+    },
+    {
+      "id": "ambience-ocean",
+      "kind": "loop",
+      "duration": 16,
+      "loop": true,
+      "crossfade": 3,
+      "prompt": "At the waterline next to a floating metal space capsule in the open ocean: gentle waves lapping and slapping against the hull, water sloshing and gurgling, light sea breeze, continuous, no voices, no music, no boat engine, no seagulls",
       "channels": 2
     },
     {

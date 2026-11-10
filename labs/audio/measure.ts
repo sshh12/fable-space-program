@@ -52,9 +52,25 @@ export function measureRender(r: OfflineRender, taps: TapName[], windows: [numbe
     }
     const x = r.taps[t];
     if (!x) throw new Error(`tap ${t} was not captured`);
-    out[t] = measureTap(x, r.sampleRate, windows);
+    const m = measureTap(x, r.sampleRate, windows);
+    // With a stereo capture the peak is the true sample peak of either side (a panned source is louder there).
+    const st = r.stereo[t];
+    out[t] = st ? { ...m, maxAbs: Math.max(audioAnalysis.peakOf(st[0]), audioAnalysis.peakOf(st[1])) } : m;
   }
   return out;
+}
+
+/** The master before its soft ceiling: true peak, and the share of samples that reach the ceiling's knee. */
+export function preCeilingLevels(r: OfflineRender, linearUntil: number): { peak: number; kneeShare: number } {
+  const [L, R] = r.preCeiling;
+  let peak = 0;
+  let knee = 0;
+  for (let i = 0; i < L.length; i++) {
+    const a = Math.max(Math.abs(L[i]!), Math.abs(R[i]!));
+    if (a > peak) peak = a;
+    if (a > linearUntil) knee++;
+  }
+  return { peak, kneeShare: knee / L.length };
 }
 
 export function onset(r: OfflineRender, tap: TapName, opts: { from?: number; fraction?: number; win?: number }): number | null {

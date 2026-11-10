@@ -11,6 +11,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const outDir = path.join(repoRoot, 'out', 'audio');
 
 test('records the listen-proof clips', async ({ page, pageLog }) => {
+  // Eight 10 s offline renders of the full graph (each a few seconds to half a minute on a busy machine).
   test.setTimeout(480_000);
   await openPage(page, '/labs/audio/?scene=pad');
   await assertDiscreteGpu(page);
@@ -22,9 +23,11 @@ test('records the listen-proof clips', async ({ page, pageLog }) => {
   for (const name of names) {
     const c = await page.evaluate((n) => window.__audioLab!.clip(n), name);
     fs.writeFileSync(path.join(outDir, `${name}.wav`), Buffer.from(c.wav, 'base64'));
-    stats[name] = { ...c.stats, renderMs: Math.round(c.renderMs) };
+    stats[name] = { ...c.stats, preCeilingPeak: c.preCeiling.peak, maxStats: c.maxStats, renderMs: Math.round(c.renderMs) };
     expect(c.problems, name).toEqual([]);
     expect(c.stats.durationS, name).toBeCloseTo(10, 2);
+    // Nothing in a normal scene reaches the soft ceiling's knee (mix.json master.linearUntil 0.8).
+    expect(c.preCeiling.peak, name).toBeLessThan(0.8);
     expect(c.stats.peak, name).toBeLessThan(0.98);
     expect(c.stats.rmsDbfs, name).toBeGreaterThan(-50);
   }

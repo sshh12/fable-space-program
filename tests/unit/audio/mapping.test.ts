@@ -5,6 +5,7 @@ import {
   attachFactor,
   buffetWeight,
   combineCutoffs,
+  compressorMakeupDb,
   continuousAudible,
   crackleFactor,
   creakRate,
@@ -13,10 +14,13 @@ import {
   engineLevelDb,
   eventScaleDb,
   gainToDb,
+  localSoundSpeed,
   pressureCutoff,
   pressureGain,
-  propagationDelay,
+  retardedDelay,
   structureDb,
+  surfaceFactor,
+  throttleLever,
   windDb,
 } from '@/audio/mapping';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -72,19 +76,59 @@ describe('distance -> attenuation, absorption and delay', () => {
     expect(c).toBeGreaterThan(900);
     expect(combineCutoffs(1000)).toBeCloseTo(1000, 9);
   });
-  it('delay = distance / c for a static source, retarded for a moving one', () => {
+  it('retarded delay: d / c for a static source; the exact retarded time for a moving one', () => {
     const c = prop().speedOfSound;
-    expect(propagationDelay(340, 0, prop())).toBeCloseTo(1, 12);
-    expect(propagationDelay(2000, 0, prop()) - propagationDelay(50, 0, prop())).toBeCloseTo(1950 / c, 12);
-    // Receding at 100 m/s: the sound now arriving left when the source was closer.
-    expect(propagationDelay(1000, 100, prop())).toBeCloseTo(1000 / (c + 100), 12);
-    // Doppler playback rate of the delay line stays positive even for supersonic recession.
-    const v = 3 * c;
+    const max = prop().maxDelay;
+    const edge = prop().coneEdge;
+    const at = (D: { x: number; y: number; z: number }, V = { x: 0, y: 0, z: 0 }) => retardedDelay(D, V, c, max, edge);
+    expect(at({ x: 340, y: 0, z: 0 }).delay).toBeCloseTo(1, 12);
+    expect(at({ x: 340, y: 0, z: 0 }).reach).toBe(1);
+    expect(at({ x: 0, y: 2000, z: 0 }).delay - at({ x: 0, y: 50, z: 0 }).delay).toBeCloseTo(1950 / c, 12);
+    // Source moving at v toward the listener (listener ahead): tau = d / (c - v); away: d / (c + v).
+    const v = 100;
+    expect(at({ x: 0, y: 1000, z: 0 }, { x: 0, y: v, z: 0 }).delay).toBeCloseTo(1000 / (c - v), 9);
+    expect(at({ x: 0, y: -1000, z: 0 }, { x: 0, y: v, z: 0 }).delay).toBeCloseTo(1000 / (c + v), 9);
+    // Any geometry: the sound left the source where it was tau ago and travelled c tau.
+    const D = { x: 120, y: -40, z: 75 };
+    const V = { x: 30, y: 160, z: -20 };
+    const tau = at(D, V).delay;
+    expect(Math.hypot(D.x + V.x * tau, D.y + V.y * tau, D.z + V.z * tau)).toBeCloseTo(c * tau, 6);
+    // Doppler of an approaching source on a static listener: delay-line playback rate c / (c - v).
     const dt = 0.01;
-    const rate = 1 - (propagationDelay(1000 + v * dt, v, prop()) - propagationDelay(1000, v, prop())) / dt;
-    expect(rate).toBeGreaterThan(0);
-    expect(rate).toBeCloseTo(c / (c + v), 6);
-    expect(propagationDelay(1e7, 0, prop())).toBe(prop().maxDelay);
+    const rate = 1 - (at({ x: 0, y: 1000 - v * dt, z: 0 }, { x: 0, y: v, z: 0 }).delay - at({ x: 0, y: 1000, z: 0 }, { x: 0, y: v, z: 0 }).delay) / dt;
+    expect(rate).toBeCloseTo(c / (c - v), 6);
+    // Out of the delay line's reach: no airborne sound.
+    expect(at({ x: 1e7, y: 0, z: 0 })).toEqual({ delay: max, reach: 0 });
+  });
+  it('supersonic sources are heard only inside their Mach cone, behind them', () => {
+    const c = prop().speedOfSound;
+    const r = (D: { x: number; y: number; z: number }, mach: number) => retardedDelay(D, { x: 0, y: mach * c, z: 0 }, c, prop().maxDelay, prop().coneEdge);
+    // A listener riding ahead of the nozzles (the cockpit, a chase camera beside the nose): nothing above Mach 1.
+    expect(r({ x: 0, y: 60, z: 0 }, 1.5).reach).toBe(0);
+    expect(r({ x: 0, y: 60, z: 0 }, 1.0).reach).toBe(0);
+    expect(r({ x: 0, y: 60, z: 0 }, 0.5).reach).toBe(1);
+    // Beside the vehicle (90 degrees off the flight path): outside the cone at Mach 1.5.
+    expect(r({ x: 60, y: 0, z: 0 }, 1.5).reach).toBe(0);
+    // Trailing behind, 20 degrees off the axis: inside the cone (half-angle asin(1/1.5) = 42 degrees).
+    const behind = r({ x: 60 * Math.sin(0.35), y: -60 * Math.cos(0.35), z: 0 }, 1.5);
+    expect(behind.reach).toBe(1);
+    expect(behind.delay).toBeGreaterThan(0);
+  });
+  it('local speed of sound follows the vessel Mach number when it moves', () => {
+    expect(localSoundSpeed(2, 600, prop())).toBe(300);
+    expect(localSoundSpeed(0, 0, prop())).toBe(prop().speedOfSound);
+  });
+});
+
+describe('master dynamics', () => {
+  it("knows the DynamicsCompressorNode's automatic makeup gain, so it can be cancelled", () => {
+    // Hard knee: the static curve at 0 dBFS is T (1 - 1/R) dB; the node adds 0.6 x its inverse.
+    expect(compressorMakeupDb(-4, 0, 20)).toBeCloseTo(0.6 * 4 * (1 - 1 / 20), 9);
+    expect(compressorMakeupDb(-30, 0, 3)).toBeCloseTo(0.6 * 30 * (1 - 1 / 3), 9);
+    // A soft knee reduces less at 0 dBFS than the hard knee at the knee's end would (and more than none).
+    const soft = compressorMakeupDb(-32, 8, 2);
+    expect(soft).toBeGreaterThan(0.6 * 24 * (1 - 1 / 2));
+    expect(soft).toBeLessThan(0.6 * 32 * (1 - 1 / 2));
   });
 });
 
@@ -103,19 +147,36 @@ describe('structure-borne paths', () => {
   });
 });
 
-describe('thrust -> level', () => {
+describe('thrust and lever -> level', () => {
   it('rises 10 * throttleExponent dB per decade of thrust and adds the power sum of a cluster', () => {
     const p = cfg.engines.profiles['engine.methalox-booster']!;
-    const full = engineLevelDb(p.refThrust, 1, p, cfg.engines);
-    expect(full - engineLevelDb(0.1 * p.refThrust, 1, p, cfg.engines)).toBeCloseTo(10 * p.throttleExponent, 9);
-    expect(engineLevelDb(p.refThrust, 9, p, cfg.engines) - full).toBeCloseTo(10 * Math.log10(9), 9);
-    expect(engineLevelDb(0, 9, p, cfg.engines)).toBe(-Infinity);
-    expect(dbToGain(engineLevelDb(0, 9, p, cfg.engines))).toBe(0);
+    const full = engineLevelDb(p.refThrust, 1, 1, p, cfg.engines);
+    expect(full - engineLevelDb(0.1 * p.refThrust, 1, 1, p, cfg.engines)).toBeCloseTo(10 * p.throttleExponent, 9);
+    expect(engineLevelDb(p.refThrust, 9, 1, p, cfg.engines) - full).toBeCloseTo(10 * Math.log10(9), 9);
+    expect(engineLevelDb(0, 9, 1, p, cfg.engines)).toBe(-Infinity);
+    expect(dbToGain(engineLevelDb(0, 9, 1, p, cfg.engines))).toBe(0);
+  });
+  it('drops throttleRangeDb over the throttle range, so the lever is heard on engines that throttle only to 50 %', () => {
+    const p = cfg.engines.profiles['engine.methalox-booster']!;
+    expect(engineLevelDb(p.refThrust, 1, 1, p, cfg.engines) - engineLevelDb(p.refThrust, 1, 0, p, cfg.engines)).toBeCloseTo(p.throttleRangeDb, 9);
+    // The sim's lever law on a minThrottle 0.5 engine: lever 0.1 -> throttleActual 0.55.
+    const lever = (l: number): number => throttleLever(0.5 + 0.5 * l, 0.5, true);
+    expect(lever(0.1)).toBeCloseTo(0.1, 12);
+    const at = (l: number): number => engineLevelDb((0.5 + 0.5 * l) * p.refThrust, 9, lever(l), p, cfg.engines);
+    expect(at(1) - at(0.1)).toBeGreaterThanOrEqual(12);
+    for (let l = 0.1; l < 1; l += 0.1) expect(at(l + 0.1)).toBeGreaterThan(at(l));
+  });
+  it('lever: position in the throttle range; 1 for solids and fixed burns, 0 while spooling below the range', () => {
+    expect(throttleLever(1, 0.5, true)).toBe(1);
+    expect(throttleLever(0.75, 0.5, true)).toBeCloseTo(0.5, 12);
+    expect(throttleLever(0.3, 0.5, true)).toBe(0);
+    expect(throttleLever(0.4, 1, false)).toBe(1);
+    expect(throttleLever(0, 1, false)).toBe(0);
   });
   it('makes the nine-engine booster cluster far louder than the lander engine', () => {
     const b = cfg.engines.profiles['engine.methalox-booster']!;
     const l = cfg.engines.profiles['engine.lander-descent']!;
-    expect(engineLevelDb(b.refThrust, 9, b, cfg.engines) - engineLevelDb(l.refThrust, 1, l, cfg.engines)).toBeGreaterThan(20);
+    expect(engineLevelDb(b.refThrust, 9, 1, b, cfg.engines) - engineLevelDb(l.refThrust, 1, 1, l, cfg.engines)).toBeGreaterThan(20);
   });
   it('has crackle only where there is air at the nozzle', () => {
     expect(crackleFactor(0, 1, prop())).toBe(0);
@@ -135,6 +196,12 @@ describe('aero, reentry, cabin and events', () => {
     expect(buffetWeight(1, 1, 0.2)).toBe(1);
     expect(buffetWeight(0.5, 1, 0.2)).toBeLessThan(0.05);
     expect(buffetWeight(1.2, 1, 0.2)).toBeCloseTo(Math.exp(-0.5), 12);
+  });
+  it('surface ambience is full near the ground and gone well above it', () => {
+    expect(surfaceFactor(0, 150, 1500)).toBe(1);
+    expect(surfaceFactor(150, 150, 1500)).toBe(1);
+    expect(surfaceFactor(825, 150, 1500)).toBeCloseTo(0.5, 12);
+    expect(surfaceFactor(1500, 150, 1500)).toBe(0);
   });
   it('continuous sounds stop above physics warp', () => {
     expect(continuousAudible(1, 4)).toBe(true);

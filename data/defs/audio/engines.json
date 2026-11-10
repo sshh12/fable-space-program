@@ -1,16 +1,18 @@
 {
-  "$comment": "Engine sound profiles, keyed by the `sound` id of engine modules (PartDef.modules[].sound). A profile is one layered voice per (vessel, profile) cluster: n engines of one profile sound as ONE source whose level is the power sum. Level in dB re the layers' normalised -20 dBFS: L = level.levelDb + efficiencyDb + 10 log10(refThrust / level.refThrust) + 10 throttleExponent log10(thrust per engine / refThrust) + 10 log10(n running). Layers add gainDb to L. core = recorded loop (rate and low-pass follow throttleActual), rumble = brown noise low-passed (deeper for bigger clusters: cutoff * n^-clusterExponent), hiss = pink noise band, crackle = shock-wave impulse train whose rate follows throttle and whose level is scaled by (nozzle ambient pressure / referencePressure)^pressureExponent, so it does not exist in vacuum. body = structure-borne coupling (heavily low-passed; level also falls with distance along the structure, mix.json propagation.structure). RCS modules (no sound field) use rcsModuleProfile.",
+  "$comment": "Engine sound profiles, keyed by the `sound` id of engine modules (PartDef.modules[].sound). A profile is one layered voice per (vessel, profile) cluster: n engines of one profile sound as ONE source whose level is the power sum. Level in dB re the layers' normalised -20 dBFS: L = level.levelDb + efficiencyDb + 10 log10(refThrust / level.refThrust) + 10 throttleExponent log10(thrust per engine / refThrust) - throttleRangeDb (1 - lever) + 10 log10(n running), where lever = (throttleActual - minThrottle) / (1 - minThrottle) is where the engine sits in its throttle range (the player's lever by the sim's law; 1 for solids and fixed burns): an engine that can only throttle down to 50 % thrust still sounds clearly throttled. Layers add gainDb to L. core = recorded loop (rate and low-pass follow the lever), rumble = brown noise low-passed (deeper for bigger clusters: cutoff * n^-clusterExponent), hiss = pink noise band, crackle = shock-wave impulse train whose rate follows the lever and whose level is scaled by (nozzle ambient pressure / referencePressure)^pressureExponent, so it does not exist in vacuum. body = structure-borne coupling (heavily low-passed; level also falls with distance along the structure, mix.json propagation.structure). RCS modules (no sound field) use rcsModuleProfile. A cluster has a voice only while it sounds (running, an ignition/shutdown transient, or within voiceHold seconds of either).",
   "level": {
     "refThrust": 1000000,
     "levelDb": 6
   },
+  "voiceHold": 1,
   "rcsModuleProfile": "rcs.thruster",
   "profiles": {
     "engine.methalox-booster": {
       "refThrust": 3900000,
       "efficiencyDb": 0,
       "throttleExponent": 1.4,
-      "refDistance": 30,
+      "throttleRangeDb": 13,
+      "refDistance": 60,
       "core": {
         "asset": "engine-booster-core",
         "gainDb": 0,
@@ -22,13 +24,13 @@
           2200,
           14000
         ],
-        "turbulence": 0.12
+        "turbulence": 0.17
       },
       "rumble": {
         "gainDb": -1,
         "cutoffHz": 140,
         "clusterExponent": 0.2,
-        "turbulence": 0.45,
+        "turbulence": 0.64,
         "turbulenceHz": 4
       },
       "hiss": {
@@ -37,7 +39,7 @@
         "lowpassHz": 9000
       },
       "crackle": {
-        "gainDb": -4,
+        "gainDb": -13,
         "rateHz": [
           25,
           240
@@ -47,7 +49,7 @@
       },
       "ignition": {
         "asset": "ignition-booster",
-        "gainDb": 3
+        "gainDb": 0
       },
       "shutdown": {
         "asset": "shutdown-booster",
@@ -66,6 +68,7 @@
       "refThrust": 1100000,
       "efficiencyDb": -2,
       "throttleExponent": 1.4,
+      "throttleRangeDb": 13,
       "refDistance": 20,
       "core": {
         "asset": "engine-hydrolox-core",
@@ -78,13 +81,13 @@
           3000,
           16000
         ],
-        "turbulence": 0.1
+        "turbulence": 0.14
       },
       "rumble": {
         "gainDb": -5,
         "cutoffHz": 170,
         "clusterExponent": 0.2,
-        "turbulence": 0.35,
+        "turbulence": 0.49,
         "turbulenceHz": 5
       },
       "hiss": {
@@ -122,6 +125,7 @@
       "refThrust": 200000,
       "efficiencyDb": 0,
       "throttleExponent": 1.4,
+      "throttleRangeDb": 6,
       "refDistance": 8,
       "core": {
         "asset": "engine-lander-core",
@@ -134,13 +138,13 @@
           2600,
           15000
         ],
-        "turbulence": 0.1
+        "turbulence": 0.14
       },
       "rumble": {
         "gainDb": -4,
         "cutoffHz": 200,
         "clusterExponent": 0.2,
-        "turbulence": 0.3,
+        "turbulence": 0.42,
         "turbulenceHz": 6
       },
       "hiss": {
@@ -178,6 +182,7 @@
       "refThrust": 60000,
       "efficiencyDb": 0,
       "throttleExponent": 1.4,
+      "throttleRangeDb": 8,
       "refDistance": 5,
       "core": {
         "asset": "engine-lander-core",
@@ -190,13 +195,13 @@
           3000,
           16000
         ],
-        "turbulence": 0.1
+        "turbulence": 0.14
       },
       "rumble": {
         "gainDb": -6,
         "cutoffHz": 240,
         "clusterExponent": 0.2,
-        "turbulence": 0.3,
+        "turbulence": 0.42,
         "turbulenceHz": 7
       },
       "hiss": {
@@ -234,6 +239,7 @@
       "refThrust": 200000,
       "efficiencyDb": 4,
       "throttleExponent": 1,
+      "throttleRangeDb": 0,
       "refDistance": 10,
       "core": {
         "asset": "engine-solid-core",
@@ -246,13 +252,13 @@
           6000,
           14000
         ],
-        "turbulence": 0.2
+        "turbulence": 0.28
       },
       "rumble": {
         "gainDb": -3,
         "cutoffHz": 160,
         "clusterExponent": 0.2,
-        "turbulence": 0.5,
+        "turbulence": 0.71,
         "turbulenceHz": 7
       },
       "hiss": {
@@ -261,7 +267,7 @@
         "lowpassHz": 10000
       },
       "crackle": {
-        "gainDb": -2,
+        "gainDb": -8,
         "rateHz": [
           80,
           320
@@ -286,6 +292,7 @@
       "refThrust": 440,
       "efficiencyDb": 22,
       "throttleExponent": 1,
+      "throttleRangeDb": 0,
       "refDistance": 2,
       "core": {
         "asset": "rcs-hiss",
@@ -298,7 +305,7 @@
           5000,
           16000
         ],
-        "turbulence": 0.15
+        "turbulence": 0.21
       },
       "rumble": null,
       "hiss": {

@@ -23,28 +23,74 @@
       },
       "sourceStereoCorrelation": 0.928
     },
+    "ambience-ocean": {
+      "file": "ambience-ocean.flac",
+      "source": "ambience-ocean",
+      "prompt": "At the waterline next to a floating metal space capsule in the open ocean: gentle waves lapping and slapping against the hull, water sloshing and gurgling, light sea breeze, continuous, no voices, no music, no boat engine, no seagulls",
+      "rawSha256": "57c2599176a47ef92d209340f285b6c9cfa72f7f32417e15611965843f351e48",
+      "paramHash": "716bdab47d00da35",
+      "bytes": 1179302,
+      "durationS": 12.8,
+      "peakDbfs": -3.82,
+      "rmsDbfs": -31.6,
+      "integratedLufs": -28.84,
+      "maxMomentaryLufs": -22.07,
+      "spectralCentroidHz": 1386,
+      "kind": "loop",
+      "channels": 2,
+      "gainDb": 0.78,
+      "peakLimited": true,
+      "seam": {
+        "rmsRatio": 0.6939782626176283,
+        "jumpRatio": 0.1871028961525082
+      },
+      "sourceStereoCorrelation": 0.881
+    },
+    "ambience-outdoor": {
+      "file": "ambience-outdoor.flac",
+      "source": "ambience-outdoor",
+      "prompt": "Outdoor ambience at a flat coastal launch site: a steady gentle breeze blowing across open ground, soft wind rustle, distant ocean surf far away, continuous and even, no birds, no insects, no voices, no traffic, no music",
+      "rawSha256": "e43834a4e6aab01f6e504e07a48b76d04d294a111c4828c0f36b63506b769a3d",
+      "paramHash": "f7d455099f2e13ca",
+      "bytes": 1631590,
+      "durationS": 12.8,
+      "peakDbfs": -6.47,
+      "rmsDbfs": -20.86,
+      "integratedLufs": -23.01,
+      "maxMomentaryLufs": -18.3,
+      "spectralCentroidHz": 200,
+      "kind": "loop",
+      "channels": 2,
+      "gainDb": 30.78,
+      "peakLimited": false,
+      "seam": {
+        "rmsRatio": 0.7056087319927812,
+        "jumpRatio": 1.3224513169553342
+      },
+      "sourceStereoCorrelation": 0.165
+    },
     "cabin-fans": {
       "file": "cabin-fans.flac",
       "source": "cabin-fans",
-      "prompt": "Room tone inside a small spacecraft cabin, steady ventilation fans and coolant pumps humming, soft electronic hum, continuous, no voices, no music, no beeps",
-      "rawSha256": "563b71625441bd44025f5a88839ca10cd48c858f4d7fd424c329beb35402bfaa",
-      "paramHash": "8fb56fe9ba393c65",
-      "bytes": 817972,
+      "prompt": "Inside a small spacecraft cabin: the steady broadband whoosh of ventilation fans blowing air through ducts, the soft whirring and gurgling of coolant pumps, airy and even, continuous, no voices, no music, no beeps, no alarms",
+      "rawSha256": "e02989dfc04e9d4217154ca34012e19cff4359a60cb1edc52488d29e70a079b0",
+      "paramHash": "4a6037f84dc70829",
+      "bytes": 1192847,
       "durationS": 12.8,
-      "peakDbfs": -12.71,
-      "rmsDbfs": -21.43,
+      "peakDbfs": -9.69,
+      "rmsDbfs": -22.57,
       "integratedLufs": -23.01,
-      "maxMomentaryLufs": -21.2,
-      "spectralCentroidHz": 119,
+      "maxMomentaryLufs": -22.32,
+      "spectralCentroidHz": 593,
       "kind": "loop",
       "channels": 2,
-      "gainDb": 18.41,
+      "gainDb": 4.82,
       "peakLimited": false,
       "seam": {
-        "rmsRatio": 0.9343930409184534,
-        "jumpRatio": 0.6320144238011991
+        "rmsRatio": 0.9254476675064977,
+        "jumpRatio": 0.436266662078273
       },
-      "sourceStereoCorrelation": 0.834
+      "sourceStereoCorrelation": 0.85
     },
     "chute-cut": {
       "file": "chute-cut.flac",
@@ -720,8 +766,8 @@
       "sourceStereoCorrelation": 0.73
     }
   },
-  "totalBytes": 7806911,
-  "totalMiB": 7.45,
+  "totalBytes": 10992678,
+  "totalMiB": 10.48,
   "format": "FLAC, 48 kHz, 16-bit (TPDF dither); mono except loops marked channels: 2",
   "licence": "Generated with the ElevenLabs sound-effects API (eleven_text_to_sound_v2) on a paid plan; ElevenLabs terms grant the subscriber commercial use of generated sound effects. No third-party recordings are included."
 }
