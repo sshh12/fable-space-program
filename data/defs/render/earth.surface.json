@@ -1,0 +1,8 @@
+{
+  "brdf": "terrain",
+  "materialSet": "earth-volcanic-coast",
+  "nightLights": true,
+  "params": {
+    "detailFadeDistanceM": 3000
+  }
+}

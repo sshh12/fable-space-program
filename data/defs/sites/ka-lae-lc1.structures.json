@@ -1,0 +1,12 @@
+[
+  { "model": "pad.launchMount", "offsetEnu": [0, 0, 0], "headingDeg": 90 },
+  { "model": "pad.flameTrench", "offsetEnu": [0, 0, 0], "headingDeg": 90 },
+  { "model": "pad.umbilicalTower", "offsetEnu": [-22, 0, 0], "headingDeg": 90 },
+  { "model": "pad.lightningMast", "offsetEnu": [95, 0, 0], "headingDeg": 0 },
+  { "model": "pad.lightningMast", "offsetEnu": [-48, 82, 0], "headingDeg": 0 },
+  { "model": "pad.lightningMast", "offsetEnu": [-48, -82, 0], "headingDeg": 0 },
+  { "model": "pad.waterTower", "offsetEnu": [-120, 110, 0], "headingDeg": 0 },
+  { "model": "pad.tankFarm", "offsetEnu": [-260, -190, 0], "headingDeg": 30, "params": { "propellant": "lox-ch4" } },
+  { "model": "pad.tankFarm", "offsetEnu": [-300, 160, 0], "headingDeg": -20, "params": { "propellant": "lh2" } },
+  { "model": "pad.crawlerway", "offsetEnu": [-225, 0, 0], "headingDeg": 90 }
+]

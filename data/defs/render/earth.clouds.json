@@ -1,0 +1,15 @@
+{
+  "coverageMap": "cloudCoverage",
+  "bottomAltitude": 1200,
+  "topAltitude": 12500,
+  "params": {
+    "baseNoiseScaleM": 9000,
+    "detailNoiseScaleM": 1100,
+    "mesoscaleScaleM": 40000,
+    "extinctionMin": 0.04,
+    "extinctionMax": 0.12,
+    "phaseG1": 0.8,
+    "phaseG2": -0.3,
+    "phaseMix": 0.5
+  }
+}

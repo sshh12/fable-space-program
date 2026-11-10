@@ -1,0 +1,11 @@
+{
+  "windSpeed": 7,
+  "windDirDeg": 60,
+  "absorption": [0.45, 0.06, 0.028],
+  "params": {
+    "cascadePeriodM": 8192,
+    "foamDecayPerS": 0.6,
+    "nearFieldFadeStartM": 15000,
+    "nearFieldFadeEndM": 30000
+  }
+}

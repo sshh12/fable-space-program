@@ -1,0 +1,43 @@
+{
+  "id": "moon",
+  "name": "Moon",
+  "parent": "earth",
+  "mu": 4.9048695e12,
+  "radius": 1737400,
+  "soiRadius": 66100000,
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 384399000,
+    "e": 0.0549,
+    "iDeg": 5.145,
+    "lanDeg": 125.045,
+    "argPeDeg": 318.308,
+    "meanAnomalyDeg": 134.963,
+    "epochUt": 0
+  },
+  "rotation": { "mode": "tidalLock", "poleRaDeg": 269.9949, "poleDecDeg": 66.5392 },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "tileset": "moon",
+    "maxElevation": 10790,
+    "minElevation": -9130,
+    "maxRenderLevel": 18,
+    "modifiers": [],
+    "surfaceFriction": 0.7,
+    "amplification": { "$ref": "../terrain/moon.amplification.json" }
+  },
+  "warpAltitudeLimits": [0, 5000, 10000, 25000, 60000, 500000, 3000000],
+  "navballSwitchAltitude": 20000,
+  "render": {
+    "meanColor": [0.12, 0.115, 0.105],
+    "geometricAlbedo": 0.12,
+    "surface": { "$ref": "../render/moon.surface.json" },
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

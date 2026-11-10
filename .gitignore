@@ -1,0 +1,43 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# dependencies / build output
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# test output
+test-results/
+playwright-report/
+blob-report/
+out/
+coverage/
+
+# baked / downloaded data (large; reproducible with tools/bake)
+data/tiles/
+data/sky/
+data/cache/
+data/raw/
+data/tmp/
+*.whl
+*.partial
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# spikes
+spikes/**/node_modules/
+spikes/**/out/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+*.log

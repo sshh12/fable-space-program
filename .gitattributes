@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.hgt binary
+*.u8 binary
+*.bin binary
+*.webp binary
+*.png binary
+*.jpg binary
+*.ogg binary
+*.opus binary
+*.wav binary
+*.ktx2 binary
+*.rgb9e5 binary

@@ -1,0 +1,15 @@
+{
+  "model": "lunar-regolith",
+  "seed": 19690720,
+  "params": {
+    "hurstHighlands": 0.65,
+    "hurstMaria": 0.9,
+    "craterEquilibriumFraction": 0.03,
+    "craterMaxDiameterInPostings": 4,
+    "craterMinDiameterM": 0.6,
+    "freshDepthToDiameter": 0.196,
+    "rockAreaFractionMare": 0.02,
+    "rockCollisionMinDiameterM": 0.3,
+    "collisionLambdaMin": 0.32
+  }
+}

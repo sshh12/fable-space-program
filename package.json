@@ -1,0 +1,37 @@
+{
+  "name": "fable-space-game",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "True-scale Earth/Moon spaceflight simulator on WebGPU",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:paths": "node tools/dev/typecheck-paths.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:mission": "node tools/dev/run-mission.mjs",
+    "test:py": "python -I tools/bake/common/test_common.py",
+    "e2e": "playwright test --project=functional",
+    "e2e:perf": "playwright test --project=perf",
+    "e2e:mission": "playwright test --project=mission",
+    "golden": "tsx tools/dev/gen-golden.ts",
+    "check": "npm run typecheck && npm run test && npm run test:py && npm run build && npm run e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^24.0.0",
+    "@types/pngjs": "^6.0.5",
+    "@webgpu/types": "^0.1.60",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
+  }
+}

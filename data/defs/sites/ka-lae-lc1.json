@@ -1,0 +1,13 @@
+{
+  "id": "ka-lae-lc1",
+  "name": "Ka Lae Pacific Spaceport, Launch Complex 1",
+  "bodyId": "earth",
+  "location": { "$ref": "ka-lae-lc1.location.json" },
+  "padAzimuthDeg": 90,
+  "pad": { "flatRadius": 450, "blendRadius": 900, "clampHeight": 18 },
+  "structures": { "$ref": "ka-lae-lc1.structures.json" },
+  "recoveryZones": [
+    { "name": "Central Pacific", "latDeg": 18.0, "lonDeg": -168.0, "radiusKm": 600 },
+    { "name": "Western Atlantic", "latDeg": 27.0, "lonDeg": -60.0, "radiusKm": 600 }
+  ]
+}

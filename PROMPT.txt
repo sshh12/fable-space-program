@@ -1,0 +1,32 @@
+Build a AAA-quality, photorealistic spaceflight simulator that runs in desktop Chrome/Edge on WebGPU, on a modern dedicated GPU. Don't build a WebGL fallback or a mobile version.
+
+World
+- A photorealistic Earth at true scale (atmosphere, clouds, oceans, day/night), with a fictional but plausible launch pad to start from.
+- The real Moon at its true size and distance, with terrain detailed enough to fly over and land on.
+- Every body must look photorealistic at every distance: standing on the pad, climbing through the atmosphere, in orbit, and far out in deep space. The view must change seamlessly during flight, with no loading screens, visible LOD popping, or swaps between separate scenes.
+- KSP-style physics: patched conics with spheres of influence, on rails while coasting and integrated during burns and in atmosphere, plus atmospheric drag, reentry heating, and time warp. Keep the true scale: solve the precision and LOD problems it creates instead of shrinking the world.
+
+Vehicle
+- A fictional but plausible modern multi-stage rocket with a crew capsule and a lunar lander. It needs convincing engine plumes and burns, visible stage separation, and full sound design (ignition, rumble, staging, reentry, muffled in vacuum).
+
+Controls & UI
+- KSP-style controls: a navball, throttle, pitch/yaw/roll, a stage stack that the player fires by hand, and SAS with hold modes (stability, prograde/retrograde, normal/antinormal, radial in/out). The player flies every burn by hand: no autopilots.
+- Three views: a first-person cockpit (no EVA for now), a third-person chase cam, and a map view for planning orbits (trajectories, Ap/Pe, maneuver nodes).
+
+Architecture
+- Don't hard-code this one mission. Planets, moons, vehicles, and launch sites should be data-driven, so we can add new ones later without rewriting the engine. Leave room to add EVA later, both floating in space and walking on planet and moon surfaces.
+
+Don't cut corners
+- Rendering: physically based atmospheric scattering (sky color, sunsets, the glow at the planet's edge from orbit), real elevation data with streamed high-res terrain on Earth and the Moon, Sun lighting, and a real starfield. No blue gradients, halo sprites, or smooth spheres.
+- Simulation: Earth rotates (launches pick up its spin), the Moon really orbits, and landings collide with the actual terrain. The map view draws true predicted trajectories across SOI changes, with maneuver nodes the player can edit. The navball is a true 3D ball with prograde/retrograde, normal, and radial markers.
+- Vehicle: detailed models and a real cockpit interior. Plumes respond to throttle and air pressure, and spent stages fall away as physical objects. Reentry shows plasma, builds heat, and can destroy the ship. Splashdown needs parachutes and a real ocean. Sound reacts to throttle, altitude, and camera position.
+- Finish: no placeholder art, stubs, or TODOs, and 60 fps on the target GPU. To call it done, fly the whole mission under real physics. Test scripts may drive the controls, but no teleporting or cheats.
+
+Process
+- Work on your own until you're done, and only stop if you're truly blocked. Check your own work as you go with automated tests and browser screenshots.
+- When you use workflows or subagents, be mindful of model choice and scale: match the model to each task, and don't start more agents than the work needs.
+
+Resources
+- The .env file has keys for OpenAI, Hugging Face, and ElevenLabs. The Modal CLI is logged in for GPU jobs; leave the existing Modal apps alone. Use any of these if they help (textures, sound effects, GPU jobs), up to $500 per provider. Never commit the keys or ship them to the client.
+
+Done means I can launch from the pad, reach orbit, land on the Moon, return to Earth, and survive reentry and splashdown, all in one session.

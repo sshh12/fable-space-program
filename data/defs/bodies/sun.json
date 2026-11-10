@@ -1,0 +1,31 @@
+{
+  "id": "sun",
+  "name": "Sun",
+  "parent": "earth",
+  "mu": 1.32712440018e20,
+  "radius": 695700000,
+  "soiRadius": null,
+  "orbit": { "kind": "sunLowPrecision" },
+  "rotation": { "mode": "none" },
+  "gravityRole": "lightOnly",
+  "emission": {
+    "radius": 695700000,
+    "illuminance": 128000,
+    "refDistance": 149597870700,
+    "color": [1.0356, 0.9942, 0.9528],
+    "limbDarkening": [0.45, 0.6, 0.78]
+  },
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": null,
+  "warpAltitudeLimits": [],
+  "navballSwitchAltitude": 0,
+  "render": {
+    "meanColor": [1, 1, 1],
+    "geometricAlbedo": 0,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

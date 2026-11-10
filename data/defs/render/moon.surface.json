@@ -1,0 +1,9 @@
+{
+  "brdf": "hapke",
+  "hapke": { "b0": 1.8, "hS": 0.065, "bP": 0.25, "cP": 0.3 },
+  "materialSet": "lunar-regolith",
+  "nightLights": false,
+  "params": {
+    "detailFadeDistanceM": 3000
+  }
+}

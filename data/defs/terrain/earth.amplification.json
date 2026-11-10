@@ -1,0 +1,10 @@
+{
+  "model": "earth-landcover",
+  "seed": 20261109,
+  "params": {
+    "hurstLand": 0.8,
+    "hurstSeabed": 0.9,
+    "roughnessGain": 1.0,
+    "collisionLambdaMin": 0.3
+  }
+}
