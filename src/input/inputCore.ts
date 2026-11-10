@@ -91,6 +91,12 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
   let mods: ModifierState = { shift: false, ctrl: false, alt: false, meta: false };
 
   const pointer: PointerState = { x: 0, y: 0, dx: 0, dy: 0, buttons: 0, pressed: false, released: false, doubleClick: false, wheel: 0, shift: false, ctrl: false, alt: false, overUi: false };
+  // Primary-button edges waiting to be reported. A fast double click can put two presses into one frame;
+  // they are reported in consecutive frames (one press and one release per frame), so every click yields
+  // exactly one pressed edge and the double click comes with the second press.
+  let pendingPress = 0;
+  let pendingRelease = 0;
+  let pendingDouble = false;
 
   const active = (b: Binding): boolean => !b.requiresKeyboardLock || locked;
 
@@ -120,7 +126,7 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
     releaseAll() {
       held.clear();
       tapped.clear();
-      if ((pointer.buttons & 1) !== 0) pointer.released = true;
+      if ((pointer.buttons & 1) !== 0) pendingRelease++;
       pointer.buttons = 0;
       mods = { shift: false, ctrl: false, alt: false, meta: false };
     },
@@ -140,12 +146,12 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
       pointer.overUi = overUi;
       const was = (pointer.buttons & 1) !== 0;
       const now = (buttons & 1) !== 0;
-      if (!was && now) pointer.pressed = true;
-      if (was && !now) pointer.released = true;
+      if (!was && now) pendingPress++;
+      if (was && !now) pendingRelease++;
       pointer.buttons = buttons;
     },
     doubleClick() {
-      pointer.doubleClick = true;
+      pendingDouble = true;
     },
     wheel(sign) {
       if (sign > 0) pointer.wheel += 1;
@@ -173,6 +179,13 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
       for (const a of ALL_AXIS_ACTIONS) axes[a] = Math.max(-1, Math.min(1, axes[a]));
       tapped.clear();
 
+      // At most one press and one release per frame, in event order (a release never precedes its press).
+      pointer.pressed = pendingPress > 0;
+      if (pointer.pressed) pendingPress--;
+      pointer.released = pendingRelease > 0 && pendingRelease > pendingPress;
+      if (pointer.released) pendingRelease--;
+      pointer.doubleClick = pendingDouble && pendingPress === 0;
+      if (pointer.doubleClick) pendingDouble = false;
       const frame: FlightInputFrame = {
         axes,
         pressed: new Set(pressed),

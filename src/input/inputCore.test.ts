@@ -85,8 +85,11 @@ describe('input core', () => {
     c.wheel(-3);
     c.wheel(1);
     c.wheel(5);
+    // A double click inside one frame: each click is reported in its own frame, the double click with the second.
     let f = c.sample();
-    expect(f.pointer).toMatchObject({ x: 7, y: 8, dx: 5, dy: -1, pressed: true, released: true, doubleClick: true, wheel: 1, buttons: 0 });
+    expect(f.pointer).toMatchObject({ x: 7, y: 8, dx: 5, dy: -1, pressed: true, released: true, doubleClick: false, wheel: 1, buttons: 0 });
+    f = c.sample();
+    expect(f.pointer).toMatchObject({ dx: 0, dy: 0, pressed: true, released: true, doubleClick: true, wheel: 0 });
     f = c.sample();
     expect(f.pointer).toMatchObject({ dx: 0, dy: 0, pressed: false, released: false, doubleClick: false, wheel: 0 });
     // A chorded secondary button does not produce primary edges.

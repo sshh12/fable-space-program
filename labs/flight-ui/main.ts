@@ -66,7 +66,7 @@ interface FlightUiLabApi {
   /** Number of frames whose PointerState had each edge set. */
   pointerEdges(): { pressed: number; released: number; doubleClick: number; wheelFrames: number };
   /** Per-frame samples (performance.now ms, lever throttle as applied, pitch). */
-  frames(): { t: number; throttle: number; pitch: number }[];
+  frames(): { t: number; throttle: number; pitch: number; hudMs: number }[];
   /** Pixel position of a navball marker on the 512 x 512 texture (CPU projection of the current snapshot). */
   marker(name: string): { px: number; py: number; visible: boolean } | null;
   hudLandingRows(): [string, string][] | null;
@@ -227,7 +227,7 @@ async function boot(): Promise<void> {
   const testOverride: Partial<ControlInputs> = {};
   const actionLog: string[] = [];
   const edges = { pressed: 0, released: 0, doubleClick: 0, wheelFrames: 0 };
-  const frameLog: { t: number; throttle: number; pitch: number }[] = [];
+  const frameLog: { t: number; throttle: number; pitch: number; hudMs: number }[] = [];
   const orbitParam = params.get('orbit');
   let orbitApplied = false;
   let probe: NavballRendererImpl | null = null;
@@ -296,19 +296,18 @@ async function boot(): Promise<void> {
         const i = (Math.round(y) * 512 + Math.round(x)) * 4;
         return [px[i]!, px[i + 1]!, px[i + 2]!, px[i + 3]!];
       };
-      // Horizon row of a column: the centre of the brightest near-white run between sky and ground.
+      // Horizon row of a column: midway between the last sky pixel (blue-dominant) and the first ground pixel
+      // (red-dominant) below it; white lines and labels in between are neither.
+      const isSky = (p: number[]): boolean => p[3]! > 200 && p[2]! > p[0]! + 30;
+      const isGround = (p: number[]): boolean => p[3]! > 200 && p[0]! > p[2]! + 30;
       const horizonRows = columns.map((x) => {
-        let best: number | null = null;
-        let bestScore = 0;
+        let lastSky: number | null = null;
         for (let y = 8; y < 504; y++) {
-          const [r, g, b] = at(x, y);
-          const score = Math.min(r!, g!, b!);
-          if (score > bestScore && score > 170) {
-            bestScore = score;
-            best = y;
-          }
+          const p = at(x, y);
+          if (isSky(p)) lastSky = y;
+          else if (isGround(p) && lastSky !== null) return (lastSky + y) / 2;
         }
-        return best;
+        return null;
       });
       return { pixels: points.map(([x, y]) => at(x, y)), horizonRows };
     },
@@ -365,7 +364,7 @@ async function boot(): Promise<void> {
         mfdCanvases[i]!.getContext('2d')!.drawImage(mfdOffscreen, 0, 0);
       });
     }
-    frameLog.push({ t: now, throttle: snapshot.appliedControls.throttle, pitch: snapshot.appliedControls.pitch });
+    frameLog.push({ t: now, throttle: snapshot.appliedControls.throttle, pitch: snapshot.appliedControls.pitch, hudMs: hud.lastUpdateMs });
     if (frameLog.length > 1500) frameLog.splice(0, frameLog.length - 1500);
     testApi.frameDone();
     requestAnimationFrame(frame);
