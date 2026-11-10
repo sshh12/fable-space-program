@@ -11,6 +11,8 @@ export const LEG_LOCKED = 0.999;
 export const LEG_BOTTOM_STIFFNESS = 4e6;
 /** A strut pushed this far past its stroke collapses, m. */
 export const LEG_OVERSTROKE = 0.08;
+/** Strut damping in extension as a multiple of the compression damping (rebound control). */
+export const LEG_REBOUND_DAMPING_FACTOR = 4;
 /** Lateral touchdown speed limit of a pad as a fraction of its normal crash tolerance (2.5 of 4.0 m/s). */
 export const LEG_LATERAL_TOLERANCE_RATIO = 0.625;
 

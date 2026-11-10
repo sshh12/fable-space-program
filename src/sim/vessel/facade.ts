@@ -624,7 +624,7 @@ export function vesselStateHash(vessel: Vessel): string {
   h.str(vessel.id);
   h.any([vessel.r, vessel.v, vessel.q, vessel.w]);
   h.any([vessel.nextStage, vessel.stageLockout, vessel.hold, vessel.surface, vessel.gLoad, vessel.gDose, vessel.crewAlive, vessel.rcsEnabled, vessel.lightsOn, vessel.throttle]);
-  h.any([vessel.sas.enabled, vessel.sas.mode, vessel.sas.hold, vessel.sas.hasTarget, vessel.sas.hasTarget ? vessel.sas.target : null]);
+  h.any([vessel.sas.enabled, vessel.sas.mode, vessel.sas.hold, vessel.sas.integral, vessel.sas.hasTarget, vessel.sas.hasTarget ? vessel.sas.target : null]);
   h.any(vessel.anchor);
   for (const pa of vessel.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
   for (const p of vessel.parts) {

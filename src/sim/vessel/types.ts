@@ -88,6 +88,8 @@ export interface SasState {
   releaseTimer: [number, number, number];
   /** Hold weight per axis, 1 = full direction hold, 0 = rate damping only (authority-aware anti-windup). */
   hold: [number, number, number];
+  /** Integrated attitude error per axis, rad s (removes steady offsets under full hold). */
+  integral: [number, number, number];
   /** External torque that holding the target attitude would have to oppose, N m (VES axes, diagnostic). */
   externalTorque: [number, number, number];
 }

@@ -21,6 +21,10 @@ export const SAS_TAU_RATE = 0.3;
 /** Fraction of the available angular acceleration that the rate profile plans with. */
 export const SAS_ACCEL_MARGIN = 0.6;
 export const FINE_CONTROL_SCALE = 0.3;
+/** Integral time of the hold loop, s, and the error band in which it acts. */
+export const SAS_TAU_INTEGRAL = 4;
+const INTEGRAL_ZONE = 3 * DEG;
+const INTEGRAL_MAX_RATE = 0.3 * DEG;
 const DEADBAND_ANGLE = 0.05 * DEG;
 const DEADBAND_RATE = 0.01 * DEG;
 const RECAPTURE_RATE = 0.5 * DEG;
@@ -34,6 +38,10 @@ const HOLD_FADE_RATE = 1.0;
 const HOLD_RETURN_RATE = 0.5;
 /** Below this dynamic pressure no external torque is evaluated. */
 const MIN_Q_FOR_ESTIMATE = 0.5;
+/** Coordinated-roll feed-forward needs the airflow to have this much component along the roll axis. */
+const COORDINATED_ROLL_MIN_AXIAL = 0.3;
+/** Rate deadband of an axis whose hold is released (rate damping only), rad/s. */
+const RELEASED_RATE_DEADBAND = 0.5 * DEG;
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = x <= e0 ? 0 : x >= e1 ? 1 : (x - e0) / (e1 - e0);
@@ -47,6 +55,7 @@ const theta = [0, 0, 0];
 const u = [0, 0, 0];
 const inp = [0, 0, 0];
 const rate = [0, 0, 0];
+const ref = [0, 0, 0];
 
 export function setSasEnabled(vessel: Vessel, on: boolean): void {
   if (on && !vessel.sas.enabled) vessel.sas.hasTarget = false;
@@ -56,6 +65,7 @@ export function setSasEnabled(vessel: Vessel, on: boolean): void {
 export function setSasMode(vessel: Vessel, mode: Vessel['sas']['mode']): void {
   if (vessel.sas.mode !== mode) {
     vessel.sas.hasTarget = false;
+    vessel.sas.integral[0] = vessel.sas.integral[1] = vessel.sas.integral[2] = 0;
     vessel.sas.hold[0] = vessel.sas.hold[1] = vessel.sas.hold[2] = 1;
   }
   vessel.sas.mode = mode;
@@ -92,9 +102,10 @@ export function sasUpdate(vessel: Vessel, st: Structure, controls: ControlInputs
   // surface (and keep thrusters firing) for an attitude error it cannot remove.
   let engineLit = false;
   for (let i = 0; i < st.engines.length; i++) if (st.engines[i]!.rt.lit) engineLit = true;
-  const resting = (vessel.surface === 'landed' || vessel.surface === 'splashed') && !engineLit;
+  const resting = (vessel.surface === 'landed' || vessel.surface === 'splashed' || vessel.contact.waterSubmersion > 0) && !engineLit;
   const active = sas.enabled && st.sasAvailable && vessel.hold === null && vessel.crewAlive && !resting;
   if (!active) {
+    sas.integral[0] = sas.integral[1] = sas.integral[2] = 0;
     sas.hasTarget = false;
     sas.hold[0] = sas.hold[1] = sas.hold[2] = 1;
   } else {
@@ -170,9 +181,28 @@ export function sasUpdate(vessel: Vessel, st: Structure, controls: ControlInputs
       sas.hold[i] = h;
     }
 
+    // Coordinated roll: a vessel riding its aerodynamic trim rolls ABOUT THE AIRFLOW, which shows up as
+    // pitch/yaw body rates proportional to the roll rate. Those are not errors and must not be damped
+    // away, so the rate reference of the pitch and yaw axes is the rotation about the air-relative
+    // velocity that has the measured roll rate, weighted by how far the hold has been released.
+    ref[0] = ref[1] = ref[2] = 0;
+    const released = 1 - Math.min(sas.hold[0], sas.hold[2]);
+    if (released > 0 && qDyn > MIN_Q_FOR_ESTIMATE) {
+      const sp = Math.sqrt(vax * vax + vay * vay + vaz * vaz);
+      const hy = sp > 0 ? vay / sp : 0;
+      if (Math.abs(hy) > COORDINATED_ROLL_MIN_AXIAL) {
+        const omega = (released * rate[1]!) / hy;
+        ref[0] = (omega * vax) / sp;
+        ref[2] = (omega * vaz) / sp;
+      }
+    }
+
     const I = vessel.mp.i;
     for (let i = 0; i < 3; i++) {
-      if (inp[i] !== 0) continue; // player override on this axis
+      if (inp[i] !== 0) {
+        sas.integral[i] = 0;
+        continue; // player override on this axis
+      }
       const tauMax = vessel.authority[i]!;
       const inertia = I[i]!;
       if (!(tauMax > 0) || !(inertia > 0)) {
@@ -186,10 +216,26 @@ export function sasUpdate(vessel: Vessel, st: Structure, controls: ControlInputs
         const th = theta[i]! * sas.hold[i]!;
         const wLim = Math.min(st.maxRate, Math.sqrt(2 * SAS_ACCEL_MARGIN * alpha * Math.PI));
         const lim = Math.min(wLim, Math.sqrt(2 * SAS_ACCEL_MARGIN * alpha * Math.abs(th)));
+        // Slow integral action near the target removes the offset a steady disturbance (thrust line off
+        // the CoM) would leave. It only runs under full hold, so it cannot wind up against aerodynamics.
+        // And only once the vessel has all but stopped near the target: an approach must not charge it.
+        if (Math.abs(theta[i]!) < INTEGRAL_ZONE && sas.hold[i]! > 0.99 && Math.abs(rate[i]!) < INTEGRAL_MAX_RATE) {
+          // At most the rate bias that asks for the full authority.
+          const cap = alpha * SAS_TAU_RATE * SAS_TAU_ANGLE * SAS_TAU_INTEGRAL;
+          let acc = sas.integral[i]! + theta[i]! * dt;
+          if (acc > cap) acc = cap;
+          else if (acc < -cap) acc = -cap;
+          sas.integral[i] = acc;
+        } else {
+          sas.integral[i] = sas.integral[i]! * Math.max(0, 1 - dt);
+        }
         wDes = th / SAS_TAU_ANGLE;
         if (wDes > lim) wDes = lim;
         else if (wDes < -lim) wDes = -lim;
-        if (Math.abs(theta[i]!) < DEADBAND_ANGLE && Math.abs(rate[i]!) < DEADBAND_RATE) {
+        wDes += sas.integral[i]! / (SAS_TAU_ANGLE * SAS_TAU_INTEGRAL);
+        if (wDes > wLim) wDes = wLim;
+        else if (wDes < -wLim) wDes = -wLim;
+        if (Math.abs(theta[i]!) < DEADBAND_ANGLE && Math.abs(rate[i]!) < DEADBAND_RATE && Math.abs(sas.integral[i]!) < DEADBAND_ANGLE * SAS_TAU_INTEGRAL) {
           u[i] = 0;
           continue;
         }
@@ -197,7 +243,14 @@ export function sasUpdate(vessel: Vessel, st: Structure, controls: ControlInputs
         u[i] = 0;
         continue;
       }
-      u[i] = clampUnit((wDes - rate[i]!) / (alpha * SAS_TAU_RATE));
+      const rateError = wDes + ref[i]! - rate[i]!;
+      // An axis that has lost its hold only damps: a wider rate deadband keeps the thrusters off the
+      // small motions the airflow itself drives.
+      if (sas.hold[i]! < 0.5 && Math.abs(rateError) < RELEASED_RATE_DEADBAND) {
+        u[i] = 0;
+        continue;
+      }
+      u[i] = clampUnit(rateError / (alpha * SAS_TAU_RATE));
     }
   }
 

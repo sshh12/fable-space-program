@@ -5,25 +5,25 @@
   "dryMass": 100,
   "comOffset": [
     0,
-    0.25,
+    0.15,
     0
   ],
   "inertiaShape": {
     "kind": "shellCylinder",
     "r": 2,
-    "h": 0.5
+    "h": 0.3
   },
   "bounds": {
     "radius": 2,
     "yMin": 0,
-    "yMax": 0.5
+    "yMax": 0.3
   },
   "attachNodes": [
     {
       "id": "top",
       "pos": [
         0,
-        0.5,
+        0.3,
         0
       ],
       "dir": [
@@ -69,7 +69,7 @@
     {
       "type": "decoupler",
       "impulse": 3000,
-      "separationPlaneY": 0.5
+      "separationPlaneY": 0.3
     }
   ],
   "visual": {

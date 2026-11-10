@@ -10,7 +10,7 @@
 import type { SimEvent } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import type { Quat } from '@/core/math/quat';
-import { LEG_BOTTOM_STIFFNESS, LEG_LATERAL_TOLERANCE_RATIO, LEG_LOCKED, LEG_OVERSTROKE } from '../vessel/modules/legs';
+import { LEG_BOTTOM_STIFFNESS, LEG_LATERAL_TOLERANCE_RATIO, LEG_LOCKED, LEG_OVERSTROKE, LEG_REBOUND_DAMPING_FACTOR } from '../vessel/modules/legs';
 import type { Probe, Structure } from '../vessel/structure';
 import type { Vessel } from '../vessel/types';
 
@@ -23,6 +23,8 @@ export const CONTACT_RANGE = 5;
 /** Above this altitude no terrain query is made at all, m. */
 const TERRAIN_QUERY_CEILING = 25000;
 export const WATER_DRAG_CD = 0.8;
+/** Linear water damping: force = k rho V_submerged sqrt(g / a) v for a sphere of radius a. */
+export const WATER_LINEAR_DAMPING = 0.5;
 /** Lateral strut stiffness as a multiple of the axial spring. */
 const LEG_LATERAL_STIFFNESS_FACTOR = 4;
 
@@ -294,9 +296,13 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
     const tvz = vz - vn * nz;
 
     if (!pr.inContact) {
-      // First contact: crash tolerances and the touchdown event.
+      // First contact: the touchdown event, then the crash tolerances.
       const closing = -vn;
       const lateral = Math.sqrt(tvx * tvx + tvy * tvy + tvz * tvz);
+      if (vessel.airborneTime > 0.5 && !out.anyContact && !vessel.contact.anyContact) {
+        events.push({ type: 'touchdown', ut, vesselId: vessel.id, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), surface: 'land', partId: vessel.parts[pr.part]!.instanceId });
+        vessel.airborneTime = 0;
+      }
       if (lg) {
         if (closing > pr.crash || lateral > LEG_LATERAL_TOLERANCE_RATIO * pr.crash) {
           out.collapsedLegs.push({ probe: pr });
@@ -305,10 +311,6 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       } else if (closing > pr.crash) {
         addCrash(pr, out);
         return;
-      }
-      if (vessel.airborneTime > 0.5 && !out.anyContact && !vessel.contact.anyContact) {
-        events.push({ type: 'touchdown', ut, vesselId: vessel.id, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), surface: 'land', partId: vessel.parts[pr.part]!.instanceId });
-        vessel.airborneTime = 0;
       }
       pr.inContact = true;
     }
@@ -327,7 +329,8 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       if (un < 0.3) un = 0.3;
       const s = dn / un;
       const sDot = -vn / un;
-      let fa = legDef.preload * Math.min(1, s / 0.01) + legDef.k * s + legDef.c * sDot;
+      // Asymmetric damper: the strut resists extension harder than compression, so it does not kick back.
+      let fa = legDef.preload * Math.min(1, s / 0.01) + legDef.k * s + legDef.c * (sDot >= 0 ? sDot : LEG_REBOUND_DAMPING_FACTOR * sDot);
       if (s > legDef.stroke) {
         fa += LEG_BOTTOM_STIFFNESS * (s - legDef.stroke);
         if (s > legDef.stroke + LEG_OVERSTROKE) {
@@ -454,7 +457,8 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       out.submergedVolume += V;
       const g = env.mu / (pl * pl);
       const fb = rhoW * g * V;
-      const kd = -0.5 * rhoW * WATER_DRAG_CD * Math.PI * a * a * (V / s.volume) * speed;
+      // Quadratic slam drag plus a linear term standing in for wave-radiation damping of the floating body.
+      const kd = -0.5 * rhoW * WATER_DRAG_CD * Math.PI * a * a * (V / s.volume) * speed - WATER_LINEAR_DAMPING * rhoW * V * Math.sqrt(g / a);
       const fx = fb * upx + kd * vx;
       const fy = fb * upy + kd * vy;
       const fz = fb * upz + kd * vz;

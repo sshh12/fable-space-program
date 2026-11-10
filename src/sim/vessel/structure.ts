@@ -481,6 +481,9 @@ export function rebuildStructure(vessel: Vessel): Structure {
         if (cmd.sas) s.sasAvailable = true;
         maxRate = Math.max(maxRate, cmd.maxRateDegPerS * DEG);
         s.crew += ms.crewAlive ? ms.crew : 0;
+      } else if (md.type === 'antenna' && ms.type === 'antenna') {
+        // Antennas unfold once their part is out in the open (not inside a closed fairing or on the pad).
+        ms.deployed = !p.shielded && vessel.hold !== 'clamps';
       } else if (md.type === 'launchClamp' && ms.type === 'launchClamp') {
         isClamp = true;
         if (!ms.released) s.clamps.push(i);
@@ -583,8 +586,12 @@ export function rebuildStructure(vessel: Vessel): Structure {
       s.cdAAverage += (area * 1.28) / 2;
       continue;
     }
+    // A blunt capsule flies on its capsule model while its shield face is uncovered (free flight); mated to
+    // a stack below it, it is an ordinary axisymmetric nose and uses its axisymBody element instead.
+    const capsuleFree = (def.aero ?? []).some((e) => e.kind === 'bluntCapsule') && coverFraction(parts, i, -1) <= 0.25;
     for (const e of def.aero ?? []) {
       if (e.kind === 'axisymBody') {
+        if (capsuleFree) continue;
         const cp = partPoint(p, [0, b.yMin + e.cpFraction * e.length, 0]);
         const f = partPoint(p, [0, b.yMax, 0]);
         const a = partPoint(p, [0, b.yMin, 0]);
@@ -619,8 +626,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
         });
         s.cdAAverage += (e.refArea * 1.0 + 2 * e.length * e.diameter * e.cdCross) / 3;
       } else if (e.kind === 'bluntCapsule') {
-        // Active only while the shield face is uncovered (flying free).
-        if (coverFraction(parts, i, -1) > 0.25) continue;
+        if (!capsuleFree) continue;
         const ref = partPoint(p, e.refPoint);
         s.aero.push({
           kind: AERO_CAPSULE,
@@ -699,6 +705,21 @@ function plate(part: number, n: Vec3, pos: Vec3, area: number): AeroElem {
 
 export function structureOf(vessel: Vessel): Structure {
   return (vessel.struct as Structure | null) ?? rebuildStructure(vessel);
+}
+
+/**
+ * Lowest point of the vessel along its own Y axis, in VES (m): the base of the launch clamps while they
+ * hold it, otherwise the lowest contact probe (deployed leg pads included). The orchestrator stands a
+ * vessel on a surface by putting this point on the ground.
+ */
+export function vesselBaseY(vessel: Vessel): number {
+  const st = structureOf(vessel);
+  let base = st.baseY;
+  for (const lg of st.legs) {
+    if (lg.state.deploy < 0.999) continue;
+    for (let l = 0; l < lg.probes.length; l++) if (!lg.state.broken[l]) base = Math.min(base, lg.probes[l]!.y - lg.probes[l]!.radius);
+  }
+  return base;
 }
 
 /** Pose of leg foot `l` in the part frame for a deployment fraction (smooth-stepped swing from stowed to deployed). */

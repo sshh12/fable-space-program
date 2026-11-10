@@ -50,10 +50,46 @@
     {
       "pos": [
         0,
-        -3.6,
+        -3.5,
         0
       ],
-      "radius": 0.95,
+      "radius": 0.1,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        -3.55,
+        0.9
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0.9,
+        -3.55,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        -3.55,
+        -0.9
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -0.9,
+        -3.55,
+        0
+      ],
+      "radius": 0.05,
       "crashTolerance": 3
     }
   ],

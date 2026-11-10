@@ -30,6 +30,8 @@ export interface FakeEnvOptions {
   radius?: number;
   /** Exponential atmosphere; omit for vacuum. */
   atmosphere?: { rho0: number; scaleHeight: number; temperature?: number; top?: number };
+  /** Piecewise-exponential density table [altitude m, density kg/m^3] (takes precedence over the exponential model); vacuum above the last row. */
+  densityTable?: readonly (readonly [number, number])[];
   /** Terrain height above the reference radius for a body-fixed unit direction (default: 0 everywhere). */
   terrain?: (dir: Vec3) => number;
   /** Ocean with a still or user-supplied surface (height above the reference radius). */
@@ -60,6 +62,19 @@ export function makeEnv(o: FakeEnvOptions = {}): FakeEnv {
     qFixedToInertial: quat.identity(),
     spin: { x: 0, y: 0, z: spinRate },
     atmosphereAt(altitude: number): AtmosphereSample {
+      const table = o.densityTable;
+      if (table) {
+        const last = table[table.length - 1]!;
+        if (altitude >= last[0]) return VACUUM;
+        let i = 1;
+        while (i < table.length - 1 && altitude > table[i]![0]) i++;
+        const a = table[i - 1]!;
+        const b = table[i]!;
+        // Exponential between rows (and below the first one).
+        const t = (altitude - a[0]) / (b[0] - a[0]);
+        const density = a[1] * Math.pow(b[1] / a[1], t);
+        return { density, pressure: density * 287.053 * temperature, temperature, speedOfSound };
+      }
       if (!atm || altitude > (atm.top ?? 140000)) return VACUUM;
       const density = atm.rho0 * Math.exp(-Math.max(altitude, -500) / atm.scaleHeight);
       return { density, pressure: density * 287.053 * temperature, temperature, speedOfSound };
@@ -94,6 +109,25 @@ export function makeEnv(o: FakeEnvOptions = {}): FakeEnv {
 }
 
 export const earthAir = { rho0: 1.225, scaleHeight: 7200, temperature: 250 };
+
+/** Standard-atmosphere densities every 10 km, used as a piecewise-exponential profile for entry tests. */
+export const STANDARD_DENSITY: readonly (readonly [number, number])[] = [
+  [0, 1.225],
+  [10000, 0.4135],
+  [20000, 0.0889],
+  [30000, 0.01841],
+  [40000, 3.996e-3],
+  [50000, 1.027e-3],
+  [60000, 3.097e-4],
+  [70000, 8.283e-5],
+  [80000, 1.846e-5],
+  [90000, 3.416e-6],
+  [100000, 5.604e-7],
+  [110000, 9.708e-8],
+  [120000, 2.222e-8],
+  [130000, 8.152e-9],
+  [140000, 3.831e-9],
+];
 
 export function controls(partial: Partial<ControlInputs> = {}): ControlInputs {
   return { ...NEUTRAL_CONTROLS, translate: v3.zero(), ...partial };

@@ -7,7 +7,7 @@ export { G_DOSE_LIMIT, STAGE_LOCKOUT } from './types';
 export { assembleVessel, vesselPartSnapshots, setModuleStateForLab, splitForStage } from './public';
 export { cloneVessel, VesselAssemblyError } from './assemble';
 export { computeMassProps, vesselMass, partMass } from './massProps';
-export { structureOf, rebuildStructure, panelAzimuth, legFootLocal } from './structure';
+export { structureOf, rebuildStructure, vesselBaseY, panelAzimuth, legFootLocal } from './structure';
 export type { Structure } from './structure';
 export {
   fireNextStage,
