@@ -111,9 +111,8 @@ def column_seam_profile(a: np.ndarray, sc: dict) -> list[dict]:
     c0, c1 = sc["searchColumns"]
     hw = int(sc["halfWidthPx"])
     out = []
-    d = np.diff(a.astype(np.float64), axis=1)
     for r0 in range(0, a.shape[0], int(sc["blockRows"])):
-        blk = d[r0:r0 + int(sc["blockRows"])]
+        blk = np.diff(a[r0:r0 + int(sc["blockRows"])].astype(np.float64), axis=1)
         if not np.isfinite(blk[:, c0:c1]).any():
             continue
         with np.errstate(all="ignore"):
@@ -152,8 +151,11 @@ def correct_column_seam(a: np.ndarray, sc: dict) -> tuple[np.ndarray, dict]:
     r = np.arange(a.shape[0], dtype=np.float64)
     j = np.clip(np.searchsorted(rows, r) - 1, 0, len(rows) - 2)
     t = np.clip((r - rows[j]) / (rows[j + 1] - rows[j]), 0.0, 1.0)
-    corr = (1.0 - t)[:, None] * corr_blocks[j] + t[:, None] * corr_blocks[j + 1]
-    out = (a.astype(np.float64) - corr).astype(np.float32)
+    out = np.empty(a.shape, dtype=np.float32)
+    for q in range(0, a.shape[0], 1024):  # row chunks keep the float64 work arrays small
+        s_ = slice(q, q + 1024)
+        corr = (1.0 - t[s_])[:, None] * corr_blocks[j[s_]] + t[s_][:, None] * corr_blocks[j[s_] + 1]
+        out[s_] = (a[s_].astype(np.float64) - corr).astype(np.float32)
     after = column_seam_profile(out, sc)
     rep = {"blocks": len(prof), "maxStepBeforeM": float(max(abs(p["stepM"]) for p in prof)),
            "maxStepAfterM": float(max(abs(p["stepM"]) for p in after)),
@@ -193,6 +195,7 @@ class Band:
         self.sdef = region["sources"][self.source_id]
         self.area = b["area"]
         self.feather = float(b["featherM"])
+        self.inset = float(b.get("featherInsetM", 0.0))
         self.grid = grid
         self.dist = grid.distance_inside()
         self.bias: np.ndarray | None = None
@@ -228,7 +231,7 @@ class RegionModel:
         footprint) no longer reaches any missing pixel, so the source is only ever read where it is complete."""
         b = self.bands[k]
         row, col = b.grid.latlon_to_pixel(lat, lon)
-        w = smootherstep((bilinear(b.dist, row, col) - b.grid.stencil_reach_m(fp)) / b.feather)
+        w = smootherstep((bilinear(b.dist, row, col) - b.grid.stencil_reach_m(fp) - b.inset) / b.feather)
         if b.area["kind"] == "disc":
             r = rt.MOON_RADIUS * np.arctan2(np.linalg.norm(np.cross(dirs, self.centre), axis=-1), dirs @ self.centre)
             w = w * smootherstep((b.area["radiusM"] - r) / b.feather)
@@ -267,8 +270,9 @@ def compute_bias(model: RegionModel, k: int, report: dict) -> None:
     b = model.bands[k]
     g = b.grid
     smooth = float(b.sdef["biasSmoothingM"])
+    edge_s = b.sdef.get("biasEdgeSmoothingM")
     k_coarse = max(g.kx, g.ky)
-    m = int(np.clip(round(math.log2(smooth / 8.0 / k_coarse)), 0, len(g.mips) - 1))
+    m = int(np.clip(round(math.log2(min(smooth, edge_s or smooth) / 8.0 / k_coarse)), 0, len(g.mips) - 1))
     a = g.mips[m].astype(np.float64)
     f = 2.0 ** m
     rr, cc = np.mgrid[0:a.shape[0], 0:a.shape[1]].astype(np.float64)
@@ -277,6 +281,14 @@ def compute_bias(model: RegionModel, k: int, report: dict) -> None:
     base = model.height(k - 1, dirs, np.full(lat.shape, f * k_coarse))
     delta = a - base
     bias = nan_gaussian(delta, smooth / (f * k_coarse))
+    if edge_s:
+        # near the source's edge the bias follows the difference more closely (sigma biasEdgeSmoothingM), so
+        # the feather never bridges a local offset; from biasEdgeFullM inside the edge the wide bias takes over
+        # over biasEdgeWidthM
+        near = nan_gaussian(delta, edge_s / (f * k_coarse))
+        dist = bilinear(b.dist, (rr + 0.5) * f - 0.5, (cc + 0.5) * f - 0.5)
+        w_edge = 1.0 - smootherstep((dist - float(b.sdef["biasEdgeFullM"])) / float(b.sdef["biasEdgeWidthM"]))
+        bias = bias + w_edge * (near - bias)
     fin = np.isfinite(delta)
     resid = (delta - bias)[fin]
     report[f"bias-{b.id}"] = {

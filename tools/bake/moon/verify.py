@@ -139,7 +139,9 @@ def check_shared_edges(edges: dict) -> dict:
             if nkey not in edges:
                 continue
             d = cube.tile_uv_to_dir(f, L, x, y, uu, vv)
-            _, s, t = cube.dir_to_face_st(d)
+            # face coordinates on the NEIGHBOUR's face (on a cube edge dir_to_face_st would pick the lower id)
+            dn = d @ cube.FACE_N[nf]
+            s, t = (d @ cube.FACE_U[nf]) / dn, (d @ cube.FACE_V[nf]) / dn
             n = 2 ** L
             nu = np.round(((s + 1) / 2 * n - nx) * 256) / 256
             nv = np.round(((t + 1) / 2 * n - ny) * 256) / 256
@@ -214,7 +216,7 @@ def coverage_edges(reader: TileReader) -> dict:
                     pts.append(cube.tile_uv_to_dir(r["face"], L, x, y, U, V).reshape(-1, 3))
         d = np.concatenate(pts)
         w = reader.coverage_weight(d, L)
-        ring = d[w < 1.0]
+        ring = d[(w > 0.0) & (w < 1.0)]
         a = reader.bicubic(ring, L)
         b = reader.bicubic(ring, L - 1)
         rms = float(np.sqrt(np.mean((a - b) ** 2)))
@@ -235,7 +237,8 @@ def nac_blend(model: RegionModel) -> dict:
     dist = b.dist[rr, cc]
     lv = max(b.levels)
     fp = 3.0
-    band = (dist > g.stencil_reach_m(fp)) & (dist < g.stencil_reach_m(fp) + b.feather)
+    start = g.stencil_reach_m(fp) + b.inset
+    band = (dist > start) & (dist < start + b.feather)
     r, c = rr[band].astype(np.float64), cc[band].astype(np.float64)
     lat, lon = g.pixel_to_latlon(r, c)
     d = cube.lat_lon_to_dir(np.radians(lat), np.radians(lon))
@@ -369,10 +372,17 @@ def deshading(reader: TileReader) -> dict:
     print("INFO crater wall brightness west-facing / east-facing (level 7 final | level 5 SVS only | raw WAC mosaic):")
     for r in rows:
         print(f"     {r['name']:14s} {r['ratioLevel7']:.3f} | {r['ratioLevel5SvsOnly']:.3f} | {r['ratioRawWac']:.3f}")
+    lf = np.log([r["ratioLevel7"] for r in rows])
+    lw = np.log([r["ratioRawWac"] for r in rows])
+    corr = float(np.corrcoef(lf, lw)[0, 1])
+    mean_ratio = float(np.exp(lf.mean()))
+    print(f"INFO residual wall asymmetry vs the mosaic's baked shading: correlation of log ratios {corr:.3f} "
+          f"(residual shading would correlate); geometric-mean ratio over all craters {mean_ratio:.3f}")
+    check(abs(mean_ratio - 1.0) <= 0.05, f"albedo de-shading: geometric mean west-/east-facing wall ratio over {len(rows)} craters {mean_ratio:.3f} (within 5 %)")
     check(len(ok) >= 20, f"albedo de-shading: {len(ok)} of {len(rows)} craters have a west-/east-facing wall brightness ratio within 5 % at level 7 "
                          f"(median |1 - ratio| {np.median([abs(r['ratioLevel7'] - 1) for r in rows]):.3f}; raw WAC "
                          f"{np.median([abs(r['ratioRawWac'] - 1) for r in rows]):.3f})")
-    return {"craters": rows, "within5pct": len(ok)}
+    return {"craters": rows, "within5pct": len(ok), "correlationWithRawShading": corr, "geometricMeanRatio": mean_ratio}
 
 
 # -- 6. TypeScript decoder ---------------------------------------------------------------------------------
@@ -407,12 +417,12 @@ def main() -> None:
     rt.below_normal_priority()
     t0 = time.time()
     manifest = layout.read_manifest(rt.TILESET)
-    reader = TileReader(rt.TILESET, cache_tiles=4096)
+    reader = TileReader(rt.TILESET, cache_tiles=1024)
     region = load_region(a.region)
-    model = RegionModel(region, reader)
     OUT["tiles"] = check_tiles(manifest)
     OUT["benchmarks"] = benchmarks(reader)
     OUT["coverageEdges"] = coverage_edges(reader)
+    model = RegionModel(region, reader)
     OUT["nacBlend"] = nac_blend(model)
     OUT["rmsSlope"] = rms_slope(reader, model)
     OUT["target"] = target(region, reader)

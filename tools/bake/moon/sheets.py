@@ -240,11 +240,12 @@ def deshade_sheets(names=("Kepler", "Plinius", "Bullialdus", "Aristarchus")) -> 
         lo = -180.0 + (np.mod(cols, albedo.WAC_W) + 0.5) * 360.0 / albedo.WAC_W
         LA, LO = np.meshgrid(la, lo, indexing="ij")
         d = cube.lat_lon_to_dir(np.radians(LA), np.radians(LO))
-        svs = albedo.svs_pyramid().sample(LA, LO, np.zeros_like(LA))[..., 0] if (rt.MOON_WORK / "svs_mip0.f16").is_file() else None
+        # needs the albedo work files (svs_mip*.f16) of a bake that has not been cleaned up yet
+        svs = albedo.svs_pyramid().sample(LA, LO, np.zeros_like(LA))[..., 0]
         fin = L7.linear(d)[..., 0]
-        base = svs if svs is not None else fin
-        panels = [imaging.to_u8(np.asarray(arr["W"])), imaging.to_u8(base * np.asarray(arr["Draw"]), 0, 0.3),
-                  imaging.to_u8(base * np.asarray(arr["D"]), 0, 0.3), imaging.to_u8(fin, 0, 0.3)]
+
+        panels = [imaging.to_u8(np.asarray(arr["W"])), imaging.to_u8(svs * np.asarray(arr["Draw"]), 0, 0.3),
+                  imaging.to_u8(svs * np.asarray(arr["D"]), 0, 0.3), imaging.to_u8(fin, 0, 0.3)]
         img = Image.fromarray(np.concatenate(panels, axis=1)).convert("RGB")
         imaging.label(img, (6, 6), f"{nm}: raw WAC | SVS x raw detail | SVS x de-shaded detail | final level 7 (red, linear 0-0.3)")
         p = OUT / f"deshade-{nm}.png"

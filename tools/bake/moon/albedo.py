@@ -1,6 +1,6 @@
 """Moon `albedo` layer (levels 0..7, opaque 256 x 256 WebP) and the `albedoLowRes` global map.
 
-    data/cache/moon/venv/Scripts/python.exe -I tools/bake/moon/albedo.py [--steps svs,fit,detail,tiles,lowres]
+    data/cache/moon/venv/Scripts/python.exe -I tools/bake/moon/albedo.py [--steps svs,resolution,fit,detail,svsdeshade,tiles,lowres]
 
 Base colour: NASA SVS CGI Moon Kit colour (`lroc_color.exr`, linear, LROC WAC 643/566/415 nm as R/G/B from the
 Hapke-normalised WAC mosaic, no baked shadows), resampled to 27648 x 13824 so its area-averaged mip chain halves

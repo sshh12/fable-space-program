@@ -54,6 +54,9 @@
       "url": "https://pds.lroc.asu.edu/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/SDP/NAC_DTM/APOLLO11/NAC_DTM_APOLLO11.TIF",
       "bytes": 118142727,
       "biasSmoothingM": 1000,
+      "biasEdgeSmoothingM": 60,
+      "biasEdgeFullM": 400,
+      "biasEdgeWidthM": 600,
       "seamCorrection": {
         "note": "step of up to 0.7 m along the NAC left/right image boundary near columns 940-1060 of the DTM",
         "searchColumns": [
@@ -101,8 +104,8 @@
     "heightM": -1907.7,
     "level": 12,
     "criteria": {
-      "planeSlopeDeg": 1.145,
-      "steepestBaselineSlopeDeg": 1.402,
+      "planeSlopeDeg": 1.143,
+      "steepestBaselineSlopeDeg": 1.382,
       "slopeBaselineM": 100.0,
       "nearestCraterDistanceM": 190.9,
       "craterMinDiameterM": 20.0,
@@ -121,26 +124,26 @@
     "cratersWithin600m": [
       {
         "distanceM": 200.9,
-        "diameterM": 20.3,
-        "depthM": 2.85
+        "diameterM": 20.4,
+        "depthM": 2.88
       },
       {
         "distanceM": 205.8,
-        "diameterM": 25.9,
-        "depthM": 3.61
+        "diameterM": 25.7,
+        "depthM": 3.63
       },
       {
         "distanceM": 209.4,
-        "diameterM": 32.0,
-        "depthM": 4.08
+        "diameterM": 32.1,
+        "depthM": 4.07
       },
       {
         "distanceM": 326.6,
-        "diameterM": 165.1,
-        "depthM": 5.12
+        "diameterM": 164.8,
+        "depthM": 5.1
       },
       {
-        "distanceM": 339.8,
+        "distanceM": 337.9,
         "diameterM": 224.0,
         "depthM": 11.26
       },
@@ -151,8 +154,8 @@
       },
       {
         "distanceM": 420.4,
-        "diameterM": 21.8,
-        "depthM": 0.88
+        "diameterM": 21.3,
+        "depthM": 0.87
       },
       {
         "distanceM": 441.0,
@@ -162,99 +165,99 @@
       {
         "distanceM": 461.5,
         "diameterM": 27.5,
-        "depthM": 4.06
+        "depthM": 4.05
       },
       {
         "distanceM": 465.2,
-        "diameterM": 52.1,
-        "depthM": 4.45
+        "diameterM": 52.0,
+        "depthM": 4.43
       },
       {
         "distanceM": 473.5,
-        "diameterM": 86.0,
-        "depthM": 3.0
+        "diameterM": 85.5,
+        "depthM": 3.01
       },
       {
         "distanceM": 473.8,
         "diameterM": 39.7,
-        "depthM": 2.8
+        "depthM": 2.79
       },
       {
         "distanceM": 477.6,
-        "diameterM": 33.0,
-        "depthM": 1.0
+        "diameterM": 33.4,
+        "depthM": 1.01
       },
       {
         "distanceM": 491.1,
-        "diameterM": 32.2,
-        "depthM": 1.45
+        "diameterM": 32.1,
+        "depthM": 1.44
       },
       {
-        "distanceM": 530.1,
+        "distanceM": 528.1,
         "diameterM": 87.5,
         "depthM": 3.12
       },
       {
         "distanceM": 547.4,
-        "diameterM": 48.0,
+        "diameterM": 47.6,
         "depthM": 1.53
       },
       {
         "distanceM": 557.8,
-        "diameterM": 29.1,
-        "depthM": 1.24
+        "diameterM": 29.3,
+        "depthM": 1.22
       },
       {
         "distanceM": 584.5,
-        "diameterM": 258.3,
+        "diameterM": 258.5,
         "depthM": 11.04
       },
       {
         "distanceM": 584.5,
-        "diameterM": 22.6,
-        "depthM": 2.31
+        "diameterM": 22.5,
+        "depthM": 2.3
       },
       {
         "distanceM": 590.7,
-        "diameterM": 40.2,
-        "depthM": 2.79
+        "diameterM": 40.4,
+        "depthM": 2.78
       }
     ],
     "detectorCheckAtPreferNear": [
       {
-        "distanceM": 54.6,
-        "diameterM": 58.1,
-        "depthM": 3.4
+        "distanceM": 53.6,
+        "diameterM": 60.5,
+        "depthM": 3.39
       },
       {
         "distanceM": 135.9,
         "diameterM": 22.3,
-        "depthM": 1.2
+        "depthM": 1.19
       },
       {
         "distanceM": 166.8,
-        "diameterM": 29.9,
+        "diameterM": 29.4,
         "depthM": 1.11
       },
       {
         "distanceM": 221.6,
-        "diameterM": 26.3,
-        "depthM": 0.98
+        "diameterM": 26.4,
+        "depthM": 1.0
       },
       {
         "distanceM": 239.2,
-        "diameterM": 36.0,
-        "depthM": 1.43
+        "diameterM": 36.2,
+        "depthM": 1.41
       },
       {
         "distanceM": 252.1,
-        "diameterM": 21.6,
-        "depthM": 2.15
+        "diameterM": 21.3,
+        "depthM": 2.13
       },
       {
-        "distanceM": 322.5,
-        "diameterM": 256.0,
-        "depthM": 8.58
+        "distanceM": 322.0,
+        "diameterM": 255.9,
+        "depthM": 8.63
       },
       {
         "distanceM": 327.7,
@@ -263,33 +266,33 @@
       },
       {
         "distanceM": 331.1,
-        "diameterM": 197.9,
-        "depthM": 13.83
+        "diameterM": 197.8,
+        "depthM": 13.84
       },
       {
         "distanceM": 383.6,
-        "diameterM": 122.5,
-        "depthM": 15.82
+        "diameterM": 122.9,
+        "depthM": 15.85
       },
       {
         "distanceM": 387.5,
-        "diameterM": 24.8,
-        "depthM": 1.18
+        "diameterM": 24.6,
+        "depthM": 1.17
       },
       {
         "distanceM": 411.9,
-        "diameterM": 20.4,
-        "depthM": 0.92
+        "diameterM": 20.1,
+        "depthM": 0.91
       },
       {
         "distanceM": 421.1,
-        "diameterM": 26.7,
+        "diameterM": 26.9,
         "depthM": 2.12
       },
       {
         "distanceM": 438.0,
-        "diameterM": 25.3,
-        "depthM": 0.99
+        "diameterM": 26.3,
+        "depthM": 1.01
       },
       {
         "distanceM": 450.3,
@@ -297,12 +300,17 @@
         "depthM": 2.82
       },
       {
+        "distanceM": 472.5,
+        "diameterM": 29.3,
+        "depthM": 2.38
+      },
+      {
         "distanceM": 495.9,
-        "diameterM": 231.7,
-        "depthM": 15.29
+        "diameterM": 231.8,
+        "depthM": 15.31
       }
     ],
-    "candidatesPassingGridCriteria": 988,
+    "candidatesPassingGridCriteria": 1059,
     "candidatesTried": 1
   }
 }
