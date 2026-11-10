@@ -14,7 +14,19 @@ export default defineConfig({
   root: repoRoot,
   resolve: { alias: { '@': path.join(repoRoot, 'src') } },
   plugins: [fableDataPlugin(repoRoot)],
-  server: { host: '127.0.0.1', headers: ISOLATION_HEADERS, strictPort: false },
+  // The project has no runtime npm dependencies, so there is nothing to pre-bundle. Without this, a cold
+  // server globbed every *.html under the root to find entries, which walked data/ (hundreds of thousands
+  // of tile files) and held the first page load for minutes. A package that adds a browser dependency
+  // lists it in `include`.
+  optimizeDeps: { noDiscovery: true, include: [], entries: ['index.html', 'labs/*/index.html'] },
+  server: {
+    host: '127.0.0.1',
+    headers: ISOLATION_HEADERS,
+    strictPort: false,
+    watch: {
+      ignored: ['**/data/**', '**/out/**', '**/dist/**', '**/test-results/**', '**/spikes/**', '**/tools/bake/**'],
+    },
+  },
   preview: { host: '127.0.0.1', headers: ISOLATION_HEADERS, strictPort: false },
   worker: { format: 'es' },
   build: {
