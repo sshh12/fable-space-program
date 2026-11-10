@@ -15,6 +15,8 @@ Regional levels: regmask.py.
 """
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 from scipy import ndimage
 
@@ -129,7 +131,9 @@ def _top_levels() -> None:
 
 def bake_global() -> None:
     from earth import gibs
-    cfg = {"v": 3, "correct": CORRECT_TEXELS, "sub": SUB, "subModis": SUB_MODIS}
+    listing = gibs.fetch_list()          # cached after the first call; which MODIS tiles exist is an input
+    cfg = {"v": 3, "correct": CORRECT_TEXELS, "sub": SUB, "subModis": SUB_MODIS,
+           "modisTiles": hashlib.sha256(repr(listing).encode("utf-8")).hexdigest()[:16]}
     if manifest.is_marked("watermask", "global") and (paths.STATE / "watermask-global.cfg").is_file() \
             and (paths.STATE / "watermask-global.cfg").read_text(encoding="utf-8") == str(cfg):
         log("watermask: global levels already baked")

@@ -6,6 +6,8 @@ a region's coverage rectangles are added once that region's part of the layer is
 """
 from __future__ import annotations
 
+import hashlib
+
 from common import layout
 from earth import paths, region as regmod
 
@@ -80,6 +82,29 @@ def globals_dict() -> dict:
     return g
 
 
+def build_hash(layer: str, scope: str | None = None) -> str:
+    """Hash of the resumability records of a layer (unit markers hold the hash of the configuration they
+    were baked with, plus the per-layer .cfg / .done markers). It changes whenever tiles of the layer are
+    re-baked with a different configuration; stored as the layer's `build` field, it makes the manifest's
+    contentHash (computed from the manifest body by layout.write_manifest) change too, as the contract's
+    cache busting requires. Dependent steps put it into their own configuration so that they re-run when an
+    input layer was re-baked. scope: None = all records, "global" = the global levels only, or a region id."""
+    h = hashlib.sha256()
+    prefix = f"{paths.TILESET}-"
+    for p in sorted(paths.STATE.rglob("*")):
+        rel = p.relative_to(paths.STATE).as_posix()
+        top = rel.split("/")[0]
+        if not p.is_file() or not (top.startswith(f"{layer}-") or top.startswith(f"layer-{layer}-")):
+            continue
+        if scope == "global" and f"-{prefix}" in top:
+            continue
+        if scope not in (None, "global") and f"-{scope}" not in top:
+            continue
+        h.update(rel.encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()[:16]
+
+
 def write_all(region_ids: list[str], only: str | None = None) -> None:
     for layer in LAYERS:
         if only and layer != only:
@@ -90,7 +115,9 @@ def write_all(region_ids: list[str], only: str | None = None) -> None:
         attribution = list(ATTRIBUTION[layer])
         if layer == "watermask":
             attribution = attribution[:1] + (attribution[1:] if regs else [])
-        layout.merge_layer(paths.TILESET, paths.RADIUS, layer, _layer_dict(layer, regs),
+        entry = _layer_dict(layer, regs)
+        entry["build"] = build_hash(layer)
+        layout.merge_layer(paths.TILESET, paths.RADIUS, layer, entry,
                            attribution=attribution, resident_height_level=paths.RESIDENT_HEIGHT_LEVEL)
     g = globals_dict()
     if g and only is None:

@@ -9,14 +9,20 @@ Global levels 0-7: a documented heuristic classifier on level-7 texels (classify
     snowIce      Y > 0.30 and s < 0.20, or Y > 0.20 and s < 0.15 and (|lat| > 55 or h > 3500 m)
     builtUp      N > 0.08 (bright night lights: dense settlement)
     bareRock     h > 4500 m
-    trees        g > 0.06 and Y < 0.06 (dark green)
-    crop         g > 0.0 and 0.04 <= Y < 0.12 and 20 <= |lat| <= 60 and h < 800 m (green mid-latitude lowland)
+    trees        g > 0.06 and Y < 0.030 (dark green closed canopy)
+    crop         g > -0.05 and 0.030 <= Y < 0.12 and 20 <= |lat| <= 60 and h < 800 m (mid-latitude lowland,
+                 green maize/soy to harvested wheat in August)
     grass        g > 0.03 (remaining green)
     sand         y > 0.35 and Y > 0.15 and g < 0 (bright yellow-orange desert)
     shrub        g > -0.02 and Y < 0.10 (dark olive)
-    sparseScrub  g > -0.07 and 0.06 <= Y <= 0.28 (tan, partly vegetated)
-    bareRock     everything else on land (grey or dark rock, lava, stony desert)
-  wetland is not separable from colour at 300 m and is never assigned globally.
+    sparseScrub  g > -0.07 and 0.06 <= Y <= 0.28 (tan, partly vegetated), or 0.025 <= Y <= 0.15 and s >= 0.55
+                 (dry savanna, steppe, tundra, red-sand scrubland: Blue Marble's August colours of these are
+                 strongly red, g -0.1 .. -0.5, and only their brightness and saturation separate them from rock)
+    bareRock     everything else on land (grey or bright stony desert, high mountains)
+  wetland is not separable from colour at 300 m and is never assigned globally. Known confusions (colour
+  cannot separate them at 300 m): temperate forest vs August maize (both Y 0.03), dark lava fields vs dry
+  scrub, stony desert vs bright savanna. Thresholds were set on 36 reference biomes (Amazon, taiga, Corn Belt,
+  Serengeti, Cerrado, outback, Patagonia, tundra, ergs, stony deserts, lava fields, ...).
 Coarser levels: majority of the 2 x 2 children (ties to the lower id).
 Regional levels: ESA WorldCover 2021 majority per texel (sub-sampled at about 10 m), mapped to the ids
 (WORLDCOVER_MAP); class 60 (bare / sparse vegetation) is split into sand / sparseScrub / bareRock by the
@@ -28,7 +34,7 @@ import numpy as np
 
 from common import cube
 from earth import manifest, paths, region as regmod, regional, tiles
-from earth.util import run_units
+from earth.util import run_units, units_done
 
 CLASS = {"unknown": 0, "water": 1, "bareRock": 2, "sand": 3, "sparseScrub": 4, "grass": 5, "shrub": 6, "trees": 7,
          "crop": 8, "builtUp": 9, "snowIce": 10, "wetland": 11}
@@ -36,6 +42,11 @@ WORLDCOVER_MAP = {10: CLASS["trees"], 20: CLASS["shrub"], 30: CLASS["grass"], 40
                   50: CLASS["builtUp"], 60: -1, 70: CLASS["snowIce"], 80: CLASS["water"], 90: CLASS["wetland"],
                   95: CLASS["wetland"], 100: CLASS["sparseScrub"]}
 L3_DIR = paths.WORK / "landcover-l3"
+TREES_MAX_Y = 0.030             # closed canopy: forest Y 0.015-0.030; August maize/soy 0.030-0.040 (they overlap)
+CROP_MIN_G = -0.05              # August cropland: green maize/soy (g +0.3) to harvested wheat (g -0.04)
+DRY_VEG_Y = (0.025, 0.15)       # dry savanna, steppe, tundra, red-sand scrubland: mid-dark ...
+DRY_VEG_MIN_S = 0.55            # ... and coloured (soil + dry vegetation); grey or bright ground stays rock
+CLASSIFIER = {"treesMaxY": TREES_MAX_Y, "cropMinG": CROP_MIN_G, "dryVegY": DRY_VEG_Y, "dryVegMinS": DRY_VEG_MIN_S}
 SOURCES_GLOBAL = ["Heuristic classifier (tools/bake/earth/landcover.py) on Blue Marble NG colour, Black Marble lights, "
                   "the water mask, ETOPO 2022 height and latitude"]
 
@@ -66,12 +77,13 @@ def classify(rgb_lin, night_lum, wm, h, lat) -> np.ndarray:
     put(((Y > 0.30) & (s < 0.20)) | ((Y > 0.20) & (s < 0.15) & ((alat > 55) | (h > 3500))), CLASS["snowIce"])
     put(night_lum > 0.08, CLASS["builtUp"])
     put(h > 4500, CLASS["bareRock"])
-    put((g > 0.06) & (Y < 0.06), CLASS["trees"])
-    put((g > 0.0) & (Y >= 0.04) & (Y < 0.12) & (alat >= 20) & (alat <= 60) & (h < 800), CLASS["crop"])
+    put((g > 0.06) & (Y < TREES_MAX_Y), CLASS["trees"])
+    put((g > CROP_MIN_G) & (Y >= TREES_MAX_Y) & (Y < 0.12) & (alat >= 20) & (alat <= 60) & (h < 800), CLASS["crop"])
     put(g > 0.03, CLASS["grass"])
     put((yel > 0.35) & (Y > 0.15) & (g < 0), CLASS["sand"])
     put((g > -0.02) & (Y < 0.10), CLASS["shrub"])
     put((g > -0.07) & (Y >= 0.06) & (Y <= 0.28), CLASS["sparseScrub"])
+    put((Y >= DRY_VEG_Y[0]) & (Y <= DRY_VEG_Y[1]) & (s >= DRY_VEG_MIN_S), CLASS["sparseScrub"])
     return out
 
 
@@ -138,7 +150,8 @@ def bake_global() -> None:
     for layer in ("albedo", "night", "watermask", "height"):
         if not manifest.is_marked(layer, "global"):
             raise RuntimeError(f"global landcover needs the {layer} layer first")
-    cfg = {"v": 2}
+    cfg = {"v": 3, "classifier": CLASSIFIER,       # re-run when an input layer was re-baked
+           "inputs": {layer: manifest.build_hash(layer, "global") for layer in ("albedo", "night", "watermask", "height")}}
     units = [(f, x, y) for f in range(6) for x in range(8) for y in range(8)]
     run_units("landcover-global", _subtree_unit, units, key=lambda u: "%d-%d-%d" % u, config=cfg)
     _top_levels()
@@ -188,12 +201,21 @@ def bake_region(region_id: str) -> None:
     for layer, scope in (("albedo", region_id), ("watermask", region_id), ("height", region_id)):
         if not manifest.is_marked(layer, scope):
             raise RuntimeError(f"regional landcover needs the {layer} layer ({scope}) first")
-    cfg = {"v": 2, "region": reg}
+    cfg = {"v": 3, "region": reg, "classifier": CLASSIFIER,       # classify() is the fallback for no-data texels
+           "inputs": {layer: manifest.build_hash(layer, region_id) for layer in ("albedo", "watermask", "height")}}
+
+    def key(u):
+        return f"{u[2][0][1]}-{u[2][0][2]}-{len(u[2])}"
+
+    plan = []
     for level in regmod.levels(reg):
         tl = regional.level_tiles(reg, level)
-        units = [(region_id, level, tuple(tl[i:i + 32])) for i in range(0, len(tl), 32)]
-        run_units(f"landcover-{region_id}-l{level}", _reg_unit, units,
-                  key=lambda u: f"{u[2][0][1]}-{u[2][0][2]}-{len(u[2])}", config=cfg)
+        plan.append((level, [(region_id, level, tuple(tl[i:i + 32])) for i in range(0, len(tl), 32)]))
+    if not all(units_done(f"landcover-{region_id}-l{level}", units, key, cfg) for level, units in plan):
+        from earth import regmask
+        regmask.worldcover(reg)        # download / build the WorldCover grid here, so workers only memory-map it
+        for level, units in plan:
+            run_units(f"landcover-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)
     manifest.mark("landcover", region_id)
 
 

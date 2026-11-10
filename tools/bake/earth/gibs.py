@@ -1,8 +1,9 @@
 """NASA GIBS EPSG:4326 tiles: the MODIS (MOD44W) water mask at 250 m (TileMatrix 8: 320 x 160 tiles of
 512 px, 1.125 deg per tile, origin lon -180 lat 90). Water = opaque palette colour, land = transparent.
 
-Only tiles that can contain land are fetched (ETOPO maximum above -10 m inside the tile plus a margin);
-the rest of the ocean is water by construction.
+Only tiles that can contain land are fetched (ETOPO maximum above -10 m inside the tile plus a margin, and
+every tile over a below-sea-level depression not connected to the ocean, depression_tiles()); the rest of
+the ocean is water by construction.
 """
 from __future__ import annotations
 
@@ -46,15 +47,78 @@ def wanted_tiles() -> list[tuple[int, int]]:
 
 
 LISTING = paths.WORK / "gibs-modis-water-tiles.npy"
+DEPRESSION_LISTING = paths.WORK / "gibs-modis-water-depression-tiles.npy"
+DEPRESSION_GRID_DEG = 0.0625
+DEPRESSION_LEVEL = 4
+
+
+def depression_tiles() -> list[tuple[int, int]]:
+    """Tiles over ground below sea level that is not connected to the world ocean (the Caspian Sea and its
+    depression, Qattara, the Dead Sea, ...). The ETOPO-maximum rule of wanted_tiles() misses them where a whole
+    tile lies below -10 m (the north Caspian lowland): such a tile would count as open ocean.
+
+    From the baked level-4 heights (2.4 km vertex spacing): cells of a 0.0625 deg grid that lie entirely below
+    sea level are labelled into connected regions; every region except the one holding the open Pacific is a
+    depression (narrow straits are not resolved at 7 km, so the Black Sea, Azov and parts of the Baltic count
+    too, which costs only a few extra tiles). Tiles touching such a region, grown by 3 cells, are wanted."""
+    from scipy import ndimage
+
+    from common import cube
+    from earth import tiles
+
+    W, H = int(round(360.0 / DEPRESSION_GRID_DEG)), int(round(180.0 / DEPRESSION_GRID_DEG))
+    cmax = np.full(H * W, -np.inf)
+    n = 2 ** DEPRESSION_LEVEL
+    for f in range(6):
+        for x in range(n):
+            for y in range(n):
+                h = tiles.read_height(f, DEPRESSION_LEVEL, x, y)[1:258, 1:258].reshape(-1).astype(np.float64)
+                d = cube.height_tile_dirs(f, DEPRESSION_LEVEL, x, y)[1:258, 1:258].reshape(-1, 3)
+                lat, lon = tiles.dirs_latlon(d)
+                r = np.clip(((90.0 - lat) / DEPRESSION_GRID_DEG).astype(np.int64), 0, H - 1)
+                c = (np.floor((lon + 180.0) / DEPRESSION_GRID_DEG).astype(np.int64)) % W
+                idx = r * W + c
+                order = np.argsort(idx, kind="stable")
+                u, first = np.unique(idx[order], return_index=True)
+                cmax[u] = np.maximum(cmax[u], np.maximum.reduceat(h[order], first))
+    cmax = cmax.reshape(H, W)
+    # cells narrower than the vertex spacing (towards the poles) received no sample: take the nearest cell's
+    empty = ~np.isfinite(cmax)
+    if empty.any():
+        _, (ir, ic) = ndimage.distance_transform_edt(empty, return_distances=True, return_indices=True)
+        cmax = cmax[ir, ic]
+    below = cmax < 0.0
+    lab, nlab = ndimage.label(below)
+    # join regions across the antimeridian
+    for a, b in zip(lab[:, 0], lab[:, -1]):
+        if a and b and a != b:
+            lab[lab == b] = a
+    ocean = lab[int((90.0 - 0.0) / DEPRESSION_GRID_DEG), int((-160.0 + 180.0) / DEPRESSION_GRID_DEG)]
+    if ocean == 0:
+        raise ValueError("depression_tiles: the reference ocean cell (0 N 160 W) is not below sea level")
+    dep = ndimage.binary_dilation((lab > 0) & (lab != ocean), iterations=3)
+    rr, cc = np.nonzero(dep)
+    lat_c = 90.0 - (rr + 0.5) * DEPRESSION_GRID_DEG
+    lon_c = -180.0 + (cc + 0.5) * DEPRESSION_GRID_DEG
+    rows = np.clip(((90.0 - lat_c) / SPAN).astype(np.int64), 0, NROW - 1)
+    cols = np.clip(((lon_c + 180.0) / SPAN).astype(np.int64), 0, NCOL - 1)
+    return sorted({(int(a), int(b)) for a, b in zip(rows, cols)})
 
 
 def fetch_list() -> list[tuple[int, int]]:
-    """The tiles to fetch (computed once from the ETOPO memmap, then cached)."""
+    """The tiles to fetch: wanted_tiles() (computed once from the ETOPO memmap) plus depression_tiles()
+    (computed once from the baked heights); both cached in data/cache/earth/work."""
     if LISTING.is_file():
-        return [tuple(int(v) for v in t) for t in np.load(LISTING)]
-    tl = wanted_tiles()
-    np.save(LISTING, np.array(tl, dtype=np.int32))
-    return tl
+        base = [tuple(int(v) for v in t) for t in np.load(LISTING)]
+    else:
+        base = wanted_tiles()
+        np.save(LISTING, np.array(base, dtype=np.int32))
+    if DEPRESSION_LISTING.is_file():
+        dep = [tuple(int(v) for v in t) for t in np.load(DEPRESSION_LISTING)]
+    else:
+        dep = depression_tiles()
+        np.save(DEPRESSION_LISTING, np.array(dep, dtype=np.int32).reshape(-1, 2))
+    return sorted(set(base) | set(dep))
 
 
 def fetch_all() -> list[tuple[int, int]]:
@@ -69,12 +133,7 @@ def fetch_all() -> list[tuple[int, int]]:
 
 def decode(row: int, col: int) -> np.ndarray:
     """Boolean water raster (512 x 512, row 0 = north) of one tile."""
-    p = tile_path(row, col)
-    im = Image.open(p)
-    if im.mode == "P":
-        a = np.asarray(im.convert("RGBA"))
-    else:
-        a = np.asarray(im.convert("RGBA"))
+    a = np.asarray(Image.open(tile_path(row, col)).convert("RGBA"))      # palette with transparency -> alpha
     return a[..., 3] > 127
 
 
@@ -82,9 +141,8 @@ class WaterMask:
     """Nearest-neighbour lookups into the MODIS water mask; tiles not fetched are open ocean (water)."""
 
     def __init__(self):
-        listing = paths.WORK / "gibs-modis-water-tiles.npy"
         have = np.zeros((NROW, NCOL), bool)
-        for r, c in np.load(listing):
+        for r, c in fetch_list():          # cached listings (built by fetch_all in the parent process)
             have[r, c] = True
         self.have = have
         self.cache: dict[tuple[int, int], np.ndarray] = {}
