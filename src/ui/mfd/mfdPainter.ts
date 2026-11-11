@@ -1087,8 +1087,7 @@ function drawScope(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: Sim
   ctx.beginPath();
   ctx.moveTo(cx - r, cy);
   ctx.lineTo(cx + r, cy);
-  // The vertical hair stops short of the N above.
-  ctx.moveTo(cx, cy - r * 0.88);
+  ctx.moveTo(cx, cy - r);
   ctx.lineTo(cx, cy + r);
   ctx.stroke();
   for (const m of rings) {
@@ -1100,8 +1099,9 @@ function drawScope(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: Sim
     ctx.fillRect(lx - tw / 2 - 3, ly - f.min * 0.62, tw + 6, f.min * 1.24);
     text(ctx, label, lx, ly, 'center', 'middle', '#b7c5d8');
   }
+  // North is marked outside the rim, so ring labels can stack upward without meeting it.
   setFont(ctx, 700, px(f, 0.04));
-  text(ctx, 'N', cx, cy - r * 0.98, 'center', 'top', COLORS.normal);
+  text(ctx, 'N', cx, cy - r - f.h * 0.006, 'center', 'bottom', COLORS.normal);
   // Ground track: a dashed line from the vessel to the rim, in the prograde colour.
   const track = scope?.trackDeg ?? null;
   if (track !== null) {
@@ -1141,8 +1141,8 @@ function paintLanding(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
   const gx = f.pad * 2 + leftW;
   const gw = f.w - gx - f.pad;
   const gh = f.bottom - f.top;
-  const r = Math.min(gw / 2, (gh - f.h * 0.07) / 2) * 0.97;
-  drawScope(ctx, f, gx + gw / 2, f.top + r + f.h * 0.005, r, s);
+  const r = Math.min(gw / 2, (gh - f.h * 0.12) / 2) * 0.97;
+  drawScope(ctx, f, gx + gw / 2, f.top + f.h * 0.048 + r, r, s);
 }
 
 export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSnapshot, defs: DefLibrary): MfdPageModel } {

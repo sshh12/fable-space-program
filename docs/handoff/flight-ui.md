@@ -363,8 +363,8 @@ Through the machine-load gate (docs/PACKAGE_RULES.md, "Machine load"):
 
 ```
 node tools/dev/heavy.mjs --class=cpu -- npm run typecheck:paths -- src/input src/camera src/ui labs/flight-ui tests/browser/flight-ui tests/unit/flight-ui
-node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/input src/camera src/ui tests/unit/flight-ui tools/dev/boundaries.test.ts   # 69 tests
-node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/flight-ui --project=functional                               # 49 tests
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/input src/camera src/ui tests/unit/flight-ui tools/dev/boundaries.test.ts   # 75 tests
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/flight-ui --project=functional                               # 56 tests
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/flight-ui --project=perf                                     # under the GPU lock
 ```
 
@@ -413,8 +413,8 @@ and `mfd-pages-native-reentry` (512 x 384 at 1 : 1), `prograde-hold`, `warp-refu
 | Landing scope never shows "on target" while hovering away from it | met: a hovering vessel 400 m from the target draws it 400 m out at its bearing (unit test on the painted canvas calls); the target does not move when the drift crosses 0.1 m/s; the track line matches the down/cross-range rows |
 | Text fields and DOM panels over the scene (request map-view-1) | met: typing digits / Backspace / Space / Enter edits the field and fires nothing; clicks and wheel over the panel come with `overUi` |
 | Screenshots of every scene at 720p and 4K reviewed by eye | done (section 3) |
-| HUD update < 0.5 ms per frame average | met: **whole main-thread cost 0.09 ms per frame** (low orbit with a node) and **0.11 ms** (powered ascent, every readout moving): CDP main-thread task time, HUD visible minus hidden (F2) over 5 + 5 alternating windows of 240 frames, plus the hidden HUD's own update; includes style, layout, paint and the navball encode + submit; 2560 x 1440. JavaScript inside `update()` alone: 0.06 ms mean. Without the GPU ballast (previous runs, busier machine): 0.16 / 0.19 ms and 0.25 / 0.30 ms. Before the fix the same method read 0.6-0.7 ms (text written every frame) |
-| Navball < 0.05 ms GPU (17.1), p99 | met: **0.0065 ms p50, 0.008 ms p99** for the 512 texture (2,698 frames per scene, both scenes), HUD canvas copy 0.0006 / 0.0014 ms, measured with a 7 ms GPU ballast per frame as in the game (`labs/flight-ui/ballast.ts`, the method of docs/handoff/render-core.md 4.1). With an otherwise idle GPU the card drops its clocks and the same pass reads p50 0.014-0.016 ms and p99 0.025-0.077 ms from run to run (logged by the spec, not asserted) |
+| HUD update < 0.5 ms per frame average | met: **whole main-thread cost 0.14 ms per frame** (low orbit with a node) and **0.12 ms** (powered ascent, every readout moving) after the round-1 visual rework (wave 1: 0.09 / 0.11 ms): CDP main-thread task time, HUD visible minus hidden (F2) over 5 + 5 alternating windows of 240 frames, plus the hidden HUD's own update; includes style, layout, paint and the navball encode + submit; 2560 x 1440. JavaScript inside `update()` alone: 0.06 ms mean. Without the GPU ballast (previous runs, busier machine): 0.16 / 0.19 ms and 0.25 / 0.30 ms. Before the fix the same method read 0.6-0.7 ms (text written every frame) |
+| Navball < 0.05 ms GPU (17.1), p99 | met: **0.0080 ms p50, 0.0092 ms p99** for the 512 texture after the round-1 rework (wave 1: 0.0065 / 0.008 ms; 2,698 frames per scene, both scenes), HUD instrument canvas 0.0024 / 0.0028 ms, measured with a 7 ms GPU ballast per frame as in the game (`labs/flight-ui/ballast.ts`, the method of docs/handoff/render-core.md 4.1). With an otherwise idle GPU the card drops its clocks and the same pass reads p50 0.014-0.016 ms and p99 0.025-0.077 ms from run to run (logged by the spec, not asserted) |
 | expectNoErrors on every spec | yes (window errors, GPU errors and console warnings) |
 
 Timings were taken under the GPU lock and through the heavy-job gate while the Earth bake and other agents' work
@@ -480,10 +480,63 @@ action, SAS or staging change. No other open request targets flight-ui paths. No
 
 Full list: `docs/handoff/lead-baseline.md`.
 
-## Visual close-out, round 1 (in progress)
+## Visual close-out, round 1
 
-Work list: `out/qa/wave2/flight-ui.md` (19 items). Status while the work runs (a successor continues from here):
-all 19 items have code changes committed (HUD plates, centring grid, tape gauges, vertical-speed icon, datum
-altimeter, stage tiles and lock state, navball texture / shading / bezel / reticle / marker clipping, MFD page
-layouts, help sheet, SAS key corners, zone status row, phase-aware orbit panel). Screenshots and perf are being
-re-run; the final section below replaces this one.
+Work list: `out/qa/wave2/flight-ui.md` (19 items, round 0: photo 5.5, artifact 6.5). References used:
+`out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg` (FDAI: strongly shaded ball, black recess, roll
+index ring, glass reflections), `soyuz-ms20-descent-module.jpg` and `dragon-seats.jpg` (display pages that fill
+the glass). Every item below was changed at its cause, re-shot and looked at (720p and 4K, crops enlarged).
+
+| # | Item | What was done | Screenshot |
+|---|---|---|---|
+| 1 | G tube red at every reading | Tape gauges rebuilt: the colour layer is fixed to the scale (g: green to 6 g, amber to the 10 g limit, red above, from the sim's g-dose thresholds, `G_SCALE`) and only revealed by the fill (window translated by 1 - f, layer counter-translated: two composited transforms); numerals 0/4/8/12 g and 0/50/100 %, ticks, a red 10 g limit mark, rounded fill top with a meniscus line; the faint zone track shows where the bands lie. One shared threshold set for the HUD and both MFD pages (`gTone`). Lab decoration `flight=<thr>,<g>` photographs a powered ascent | `ascent-720p/4k` (86 %, 2.35 g all green), `reentry-*` (4.50 g green), `pad-*` (1.00 g) |
+| 2 | Pole-on dartboard, zenith hidden | Texture: numerals only between meridians at 45/135/225/315 deg, +-20..60 on four columns, +-70 on two, none at +-10 / +-80; meridians and ladder stop at a bold 80 deg pole ring with four inward ticks plus a cap from 87.5 deg, larger than the reticle hub, so the ring frames the reticle pole-on; numeral size 40 (about 12 px at 720p) | `pad-*`, `chutes-*`, `lunarSurface-*` |
+| 3 | Node pushes the cluster off centre | Bottom cluster is a `1fr auto 1fr` grid with the ball alone in the middle column; browser assertion: ball centre = viewport centre within 1 px with and without `node=1`, flight and map views | `lowOrbit-*`, `map-lowOrbit-*` |
+| 4 | See-through panels, label contrast | Plates 86 % opaque (gradient, light hairline, dark outer ring, lit top edge), `--label` #aebccf; lab `backdrop=bright` (near-white cloud deck / regolith, pale sky); the spec measures every visible label against its plate on the screenshot and asserts >= 4.5 : 1 | `bright-pad/ascent/reentry/lunarSurface-720p` |
+| 5 | Zero vertical speed as a solid square | `formatVerticalSpeed` is a signed number; the direction is an SVG chevron / level bar (HUD) and a Path2D icon (MFD), coloured by trend | all scenes (altitude panel), `mfd-pages-*` |
+| 6 | "Sea level" on the Moon | `altitudeDatumName`: "sea level" only on a body with an ocean, "datum" elsewhere; title, tooltip and click cycle follow | `lunarOrbit-*`, `lunarSurface-*`, `terrain-pending-*` |
+| 7 | Stage names cut, badge over icon, icon twice | Tile = number column, icon plate, the name on its own line with only the action icons that differ from the stage icon, then key cap / delta-v / TWR / burn, and a thin propellant strip; compact rows are number, icon, name, delta-v; right column 38u; the lab uses the mission vehicle's stage table (engine-less gear / chute / jettison stages); assertion: no stage name or meta line truncated, number and icon inside their tile | `pad-*`, `ascent-*`, `lowOrbit-*` |
+| 8 | Locked stage looks armed | Amber hatched tile, amber padlock plate in place of the stage icon, "LOCKED after last stage" at label size | `stage-lockout` |
+| 9 | Ball not a lit sphere, flat bezel | HUD instrument look in the shader: wrap-diffuse key light (dark terminator side), limb darkening to 0.4, contact shadow at the bezel, a curved window reflection on the varnish (annular sector with crisp edges and a frame bar), faint Fresnel rim, the broad gloss lobe removed; machined bezel (static 2-D canvas): recessed black gap, top-lit outer and inner chamfers, roll index ticks at 10/20/30/45/60 and every 30 deg, orange top index; the shared texture keeps soft shading only (the cockpit relights it) | `lowOrbit-4k`, `pad-4k`, `reentry-4k` |
+| 10 | MFD pages are tables | Purpose-built layouts: FLT primary flight display (ADI about 60 % of the height, ladder every 5 deg with numerals at both ends and none near the aircraft symbol, fixed bank scale with the sky pointer against it, velocity vector, speed / altitude tapes, log VSI, heading tape, read-out boxes); ORB conic in the body's colour with exaggerated altitude for low orbits (Ap / Pe apart, labelled), "—" while landed; SYS large resource bars; STG summary strip + full stack; ENT bar gauges with scales, zones, redlines, readouts (ablator gauge only with an ablator) | `mfd-pages-*`, `mfd-pages-hover-*`, `mfd-pages-native*` |
+| 11 | Context-blind panels | `orbitPhase`: Pe amber + "suborbital" under power / in the atmosphere, red only for a coasting impact; orbit panel hidden while falling through the atmosphere on a suborbital path; landing rows without data collapse to one "Track · arrival: none" row; atmosphere rows fold into the entry panel (four plates on the left edge in entry, was five) | `ascent-*`, `chutes-*`, `reentry-*`, `pad-*` |
+| 12 | Reticle under the markers | Reticle drawn last with an open centre ring and a thin outline (marker visible through it); unit test, comments and this note updated | `prograde-hold`, `lowOrbit-4k`, `pad-4k` |
+| 13 | Labels collide on the horizon band | Every label drawn over a halo of the local background (no line through a glyph); numeral columns 15 deg from any heading label; +-10 numerals dropped | `lowOrbit-*`, `reentry-*` |
+| 14 | SAS key digits on their icons | Asymmetric padding reserves the top-left corner; digit 0.68em | every external view |
+| 15 | Markers spill over the edge, lumpy target | Marker fragments clipped to the ball's silhouette (same edge as the ball); target icon = ring + centre dot + four separate diagonal ticks; atlas 2048 x 512 with 256 px cells | `pad-4k`, `stage-lockout` |
+| 16 | INSIDE ZONE smallest text | Zone status row at value size with a light: green INSIDE ZONE / amber OUTSIDE ZONE (once committed), with the radius | `chutes-*`, `reentry-*` |
+| 17 | MFD small text, scope wastes space | Text floor 3 % of the page height on every page (unit test paints every page of every scene at 1024 x 768 and 512 x 384 and checks every font size), full-height scope, ring labels stacked along the vertical hair away from the target; 1 : 1 512 x 384 sheet photographed | `mfd-pages-native*`, `mfd-pages-hover-*` |
+| 18 | Help sheet ghosting, punctuation caps | Opaque sheet; flight panels hidden while it is open; punctuation caps show ". >", ", <", "` ~" etc. at a larger glyph size | `keyhelp-*` |
+| 19 | Tubes staggered | Both gauges on one grid (shared value, tube, dose-slot and caption rows); the dose bar keeps its slot (visibility) | every external view |
+
+Not fixed / limits, plainly:
+- The MFD ADI is drawn in Canvas 2D; it is not painted from the navball texture (the painter contract is a 2-D
+  context without GPU access), so cockpit and HUD show two different instruments with the same data.
+- At 720p the ball is about 194 px wide: numerals near the limb are foreshortened by the sphere itself and stay
+  small there (as on a real FDAI / KSP navball); the ones near the centre are about 12 px.
+- Pole-on, the numeral columns above the reticle read upside down: the texture is fixed to the horizon frame,
+  as on every attitude ball.
+- The lab's stage numbers (delta-v, TWR, burn) are plausible lab data, not the sim's (FakeSim limitation).
+- Pre-existing out-of-path typecheck errors in `src/render/cockpit` (sunmap work of the cockpit package) are
+  not flight-ui's.
+
+Requests filed: none (everything was inside flight-ui paths). Open requests against flight-ui paths: none.
+
+Perf (measured 2026-11-11 under the machine-wide GPU lock through the gate, other agents' jobs running;
+2560 x 1440; method of section 4): HUD whole main-thread cost **0.14 ms** per frame (low orbit with a node)
+and **0.12 ms** (powered ascent, every readout moving), JavaScript inside `update()` 0.06 / 0.07 ms; navball
+512 texture **p50 0.0080 ms, p99 0.0092 ms** with the 7 ms GPU ballast (idle GPU, for the record: p99 0.044 /
+0.057 ms), HUD instrument canvas p50 0.0024 ms, p99 0.0028 ms. Budgets: HUD < 0.5 ms, navball < 0.05 ms p99
+(ARCHITECTURE 17.1): met. The bezel is a static 2-D canvas (redrawn only on resize) and the gauges move by two
+composited transforms, so the new look adds no per-frame paint.
+
+Verification: typecheck of the package paths OK; `npx vitest run src/input src/camera src/ui tests/unit/flight-ui
+tools/dev/boundaries.test.ts` 75 passed; `playwright --project=functional` 56 passed (screens of every view
+re-shot; new assertions: ball centred within 1 px with and without a node in flight and map views, no stage
+name or meta line cut and number / icon inside their tile, label contrast >= 4.5 : 1 over the near-white
+backdrop); `--project=perf` passed.
+
+Own estimate after this round (honest, from the screenshots against the references): photo lens about 7.5,
+artifact lens about 8. What still holds the photo lens back: the HUD is clean and readable but not yet
+distinctive (flat type, no per-panel art direction), and the MFD ADI is a 2-D drawing rather than the same
+ball as the HUD.
