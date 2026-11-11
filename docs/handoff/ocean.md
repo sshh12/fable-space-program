@@ -22,6 +22,7 @@ src/render/ocean/uniforms.ts         CPU mirror of the WGSL OceanUniforms block
 src/render/ocean/shaders/waves.ts    chunk "ocean_waves": chart, swell, cascades, displaced-surface function
 src/render/ocean/shaders/waterBrdf.ts  the "brdf_water" override (shared shading function)
 src/render/ocean/shaders/surfaceWgsl.ts  forward surface (vertex + fragment) and the readback compute
+src/render/ocean/shaders/reactiveWgsl.ts  TAA reactive mask of the near-field water ('post.reactive')
 src/render/ocean/shaders/fftWgsl.ts  FFT compute shaders
 data/defs/render/earth.ocean.json    tunables (section 7)
 labs/ocean/                          lab: main.ts (presets, window.__ocean), labSky.ts, labSim.ts, props.ts, ballast.ts
@@ -33,7 +34,7 @@ tests/browser/ocean/                 swell, handover, glint, stability, screens 
 
 ```ts
 // '@/render/ocean'
-createOceanFeature(options?: { id?: string; order?: number }): OceanFeature   // id 'ocean', requires ['scene.colorCopy']
+createOceanFeature(options?: { id?: string; order?: number }): OceanFeature   // id 'ocean', requires ['scene.colorCopy', 'post.reactive']
 type OceanFeature = RenderFeature & { readonly debug: OceanDebug };
 interface OceanDebug {
   nearField(): OceanNearFieldValue;                       // what 'ocean.nearField' holds this frame
@@ -41,6 +42,7 @@ interface OceanDebug {
   setChopScale(scale: number): void;                      // FFT chop x scale (0 = swell alone)
   setDebugView(view: 'none' | 'skyReflection' | 'body' | 'sunSpecular' | 'foam' | 'normal' | 'roughness'): void;
   setRefractionScale(scale: number): void;
+  setReactiveScale(scale: number): void;                  // x the TAA reactive values (0 = no mask)
   setDirectSpecular(on: boolean): void;                   // re-registers brdf_water without the direct specular
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;   // 'scene.depthOpaque' at render pixels
   sampleSurface(dirsFixed: readonly Vec3[]): Promise<{ ut: number; samples: OceanSurfaceSample[] }>;
@@ -140,15 +142,24 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
 - Inside fadeStart the forward pass uses the seabed: water depth from `'scene.depthOpaque'` (vertical,
   stable altitude formula), quantised like RT2.a; the imagery colour from the seabed's `gbuffer.albedo`
   (the terrain draws the seabed with its albedo layer; LabPlanet does the same since request ocean-2).
-- Refraction: a 6-step march of the refracted ray through the depth copy, refined, sampling
-  `'scene.colorCopy'` with a chromatic offset in the shallows; the in-water path of the march attenuates the
-  seen radiance; it REPLACES the modelled bottom term of the body colour (so the near field converges to the
-  far model as detail fades). Skipped where the seabed cannot be seen (column x min absorption > 3: about
-  95 m of clear ocean) and in the band.
+- Refraction: a 6-step march of the refracted ray through the depth copy (at least 4 m deep, so it passes
+  under objects in the water), refined at the crossing, sampling `'scene.colorCopy'` with a chromatic offset
+  in the shallows; the in-water path of the march attenuates the seen radiance; it REPLACES the modelled
+  bottom term of the body colour (so the near field converges to the far model as detail fades). When the
+  refracted view leaves the frame (steep refraction near the bottom edge) the modelled bottom term stays
+  (the seabed's own G-buffer albedo; no screen-space features), under an object the last on-screen sample is
+  used. Skipped where the seabed cannot be seen (column x min absorption > 3: about 95 m of clear ocean) and
+  in the band. A submerged object appears raised and flattened, as at a grazing angle in reality.
 - TMA depth attenuation per cascade band (its mean omega) with the seabed depth from the depth copy (vertex
   and fragment); objects in the water do not count as seabed.
 - Motion vectors: the surface's own motion (particle orbits, swell, body rotation, camera) from float64
   previous-frame poses, previous FFT field (a copy of last frame's arrays, all mips) and previous swell phases.
+- TAA reactive mask (`'post.reactive'`, request ocean-4, pass `ocean.reactive` in `preTransparent`): the wave
+  PATTERN evolves with no single motion vector, so where the forward water drew ('scene.depth' nearer than
+  'scene.depthOpaque') the pass writes taaReactive x (1 - e^(-phase / 0.1 rad)) x the detail fade, phase =
+  omega dt of the shortest wave the pixel resolves (2 x the footprint, longer by 1/sin(grazing) up to the
+  4x anisotropy; gravity from the body's ripple dispersion). Frozen time writes nothing (a still sea keeps
+  its full history); within metres of a low camera at 60 fps it reaches about 0.45.
 
 ## 6. Vessels (snapshot only)
 
@@ -156,7 +167,7 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
   water surface, has waterSubmersion > 0, or is `splashed` (active vessel first, at most 8).
 - Damping: within 3 hull radii the two long cascades vanish and the short ones keep a 3-sigma height under
   4 cm (residual 0.61 here); the chop returns over two more hull radii; the strength fades in as an entering
-  vessel comes within its reach. The waterline then follows the physics swell (section 8: 3.4 cm worst).
+  vessel comes within its reach. The waterline then follows the physics swell (section 8: 3.8 cm worst).
 - Ripples: a 'splash' event, or 'touchdown' on water, starts a radial capillary-gravity packet at the vessel
   (planet-fixed; `rippleWavelengthM`, amplitude x speed / 9 m/s, lifetime `rippleLifetimeS`), drawn in
   displacement and normals.
@@ -173,7 +184,7 @@ backscatter (0.0021, 0.003, 0.0045) /m (deep-ocean Rrs at 443/555/670 nm of clea
 foam (decay 0.6/s, sigma 3.0, ramp 0.8, albedo 0.72), shoreFoamDepthM 0.8, refractionDistortion 1 (physical),
 chromaticOffset 0.012, vesselDampingHullRadii 3, wake extent / splash foam, ripple wavelength / amplitude /
 lifetime, wet-line drying rate, capillaryScale 4.2, unresolvedSlopeVariance 0.0025, windVariability 0.35,
-slickStrength 0.35. Every value is validated at load (`oceanTunables`, errors name the file).
+slickStrength 0.35, taaReactive 0.45. Every value is validated at load (`oceanTunables`, errors name the file).
 Swell (physics) stays in `data/defs/bodies/earth.json` (lead-owned). Gravity for the swell = mu / R^2,
 radius = R + seaLevel, exactly as `src/sim/world/environment.ts` calls `oceanSwellHeight`.
 
@@ -197,21 +208,21 @@ concurrently (up to three GPU slots busy).
 
 | Criterion | Result | Spec |
 |---|---|---|
-| GPU readback of the displaced surface = `oceanSwellHeight` within 2 cm at 200 points and several times; FFT reported separately | worst 0.019 mm over 200 points at 3 sim times; FFT term rms 0.10-0.11 m, max 0.31 m; identity total = swell + fft + ripple to 6e-8 m; Lagrangian solve residual under 0.7 mm | swell.spec |
-| Inside the vessel damping zone the total surface within 5 cm of the swell | worst 2.8 / 3.0 / 3.4 cm at 3 times (120 points within 3 hull radii); outside the zone rms 0.10 m (chop back) | swell.spec |
+| GPU readback of the displaced surface = `oceanSwellHeight` within 2 cm at 200 points and several times; FFT reported separately | worst 0.023 mm over 200 points at 3 sim times; FFT term rms 0.10-0.11 m, max 0.31 m; identity total = swell + fft + ripple to 6e-8 m; Lagrangian solve residual under 0.7 mm | swell.spec |
+| Inside the vessel damping zone the total surface within 5 cm of the swell | worst 3.2 / 3.8 / 3.5 cm at 3 times (120 points within 3 hull radii); outside the zone rms 0.11-0.13 m (chop back) | swell.spec |
 | Markers at the physics height sit on the rendered surface | RASTERISED surface from the depth buffer at 120 pixels near the camera: chop off, worst 0.011 mm from `oceanSwellHeight`; chop on, worst 6.2 mm from the readback total. Screenshots `markers-swell-only.png`, `markers-with-chop.png`: spheres centred on the physics height are half-submerged | swell.spec |
-| Inside fadeStart the depth copy holds the seabed; a submerged object is refracted | `scene.depthOpaque` altitude -200.00 m at 24 pixels (LabPlanet seabed at the sheet's encoded depth); with the near field off 0.000 m (the sheet). Refraction moves 3.4 % of the pixels around the object by more than 20 % (mean 2.8 %); `handover-refraction.png` | handover.spec |
+| Inside fadeStart the depth copy holds the seabed; a submerged object is refracted | `scene.depthOpaque` altitude -200.00 m at 24 pixels (LabPlanet seabed at the sheet's encoded depth); with the near field off 0.000 m (the sheet). The submerged ball's image (frame with minus without it) moves 23.5-24.7 px against the unrefracted lookup and overlaps it by 0.38-0.39 (it appears raised and flattened); `handover-refraction.png` | handover.spec |
 | At fadeStart the forward pixel equals the deferred pixel within 2 % | worst 0.18 %, mean 0.03 % over 519 pixels 5-300 m inside fadeStart (camera 6 km up, A/B with the near field forced off, frozen time, jitter off) | handover.spec |
 | Across the band the cross-fade of two equal images; a slow dolly shows no line | band worst 0.11 % (12,345 pixels); dolly frame differences at the fade radii about 1.3e-5 against 1.2e-3 elsewhere | handover.spec |
 | Beyond fadeEnd nothing is drawn | 9,857 / 9,857 sampled pixels bit-identical to the deferred-only frame | handover.spec |
-| Climb 2 m -> 400 km, no ring or pop (frozen time) | 150 log-spaced steps: largest step / local median 1.56 (at 99 km, deferred only); fade radii on screen in 59 steps, worst ring ratio 1.18 (change at the radii vs around them) | handover.spec |
+| Climb 2 m -> 400 km, no ring or pop (frozen time) | 150 log-spaced steps: largest step / local median 1.56 (at 99 km, deferred only); fade radii on screen in 59 steps, worst ring ratio 1.19 (change at the radii vs around them) | handover.spec |
 | Feature removed: the far water alone unchanged | `?ocean=0`: 16,188 sampled sea pixels, 0 holes (depth and colour present everywhere) | handover.spec |
-| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | isolated exactly (A - B with the direct specular off): peak at facet tan(beta) 0.019; half maximum at tan(beta) 0.179 against 0.164 for sigma^2 = 0.0388 (ratio 1.09) | glint.spec |
-| 2 m: a glitter path toward the sun, same function | glint centroid 639.6 px vs the sun's 640.0 px; coefficient of variation 1.67 (sparkles); 2 % of the energy off the path | glint.spec |
+| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | isolated exactly (A - B with the direct specular off): peak at facet tan(beta) 0.012; half maximum at tan(beta) 0.167 against 0.164 for sigma^2 = 0.0388 (ratio 1.02) | glint.spec |
+| 2 m: a glitter path toward the sun, same function | glint centroid 643.7 px vs the sun's 640.0 px; coefficient of variation 2.06 (sparkles); 3.4 % of the energy off the path | glint.spec |
 | Sun on the horizon: no pixel above HDR_MAX, nanPixels 0 | elevations +0.4, 0, -0.3 deg at EV 13 and 4: max 56,131 (saturating glint at EV 4), NaN 0 | glint.spec |
-| No swimming when the camera translates | the surface at 64 planet-fixed points from two camera positions 3 km apart: worst 0.52 mm (2.2 m height spread); 25 steps 250 m away and back: frame bit-identical | stability.spec |
+| No swimming when the camera translates | the surface at 64 planet-fixed points from two camera positions 3 km apart: worst 0.38-0.53 mm (2.2 m height spread); 25 steps 250 m away and back: frame bit-identical | stability.spec |
 | Triplanar blend zones not visible | not applicable: a single planet-fixed chart replaces triplanar sampling (section 9.1) - no blend zones exist | - |
-| Correct motion vectors | TAA output / single-frame gradient energy, camera flying 5 m/s and turning 3 deg/s over a frozen sea: 0.68 of the still camera (terrain with the core's mesh motion vectors: 0.81; this water with its motion vectors zeroed: 0.40) | stability.spec |
+| Correct motion vectors | TAA output / single-frame gradient energy, camera flying 5 m/s and turning 3 deg/s over a frozen sea: 0.68 of the still camera (terrain with the core's mesh motion vectors: 0.81; this water with its motion vectors zeroed: 0.40). Animated sea with the reactive mask 0.89-0.92 of the still camera, without it 0.41-0.44 | stability.spec |
 | Reviewed screenshots | `out/screens/ocean/{midday,sunset,overcast,alt500,alt10k,alt100k,leo,shore,refraction,splash,night}.png` (section 10) | screens.spec |
 | Unit tests: float64 phase preparation, spectrum high-pass, near-field uniform | 20 tests (2000 points worldwide out to 30 km within 1 mm and a naive float32 evaluation off by > 10 cm; high-pass zero at >= 25 m on every grid mode; band partition; realised variance within 10 % of the integral; activation by altitude and the 16-byte layout; chart round trip; CDLOD coverage exactly once out to fadeEnd and the crack-free condition) + boundaries | tests/unit/ocean |
 | `expectNoErrors` | in every spec | all |
@@ -257,7 +268,8 @@ between 0 and 30 km the near field is active and costs about what the 10 km row 
 8. **Damping** covers the whole 3-hull-radius zone and fades over two more radii (the acceptance asks for the
    swell within 5 cm *within* three hull radii).
 9. **Pattern motion**: a phase-velocity term in the motion vectors was tried and measured (it does not help a
-   dispersive multi-directional field); motion vectors are those of the surface itself. Request ocean-4.
+   dispersive multi-directional field); motion vectors are those of the surface itself, and the evolving
+   pattern is handled by the reactive mask (request ocean-4, resolved by core-support).
 
 ## 10. Screenshots (looked at)
 
@@ -276,8 +288,9 @@ spheres on the physics height), `night` (moon path), `markers-*`, `handover-*`, 
   no clouds (overcast is a CIE sky plus a uniform deck in the core's cloud-shadow term). The 10 km and 100 km
   views are dominated by its haze; orbital presets use EV 15 (a camera in sunlight) because without clouds
   or land the meter exposes the dark sea to mid-grey. Re-judge these views in the integrated app.
-- **Animated sea under TAA**: the moving wave pattern keeps 0.48 of the frozen sea's resolved detail
-  (moving sun glints are also rejected by the core's firefly guard). Request ocean-4 (reactive mask).
+- **Animated sea under TAA**: with the reactive mask the moving sea keeps its detail (0.89 against 0.41
+  without), at the price of less temporal anti-aliasing on the nearest waves (a reactive pixel leans on this
+  frame's 3 x 3 reconstruction). Moving sun glints are still rejected by the core's firefly guard.
 - **Swell lattice from altitude**: the four discrete swell components of `bodies/earth.json` form a regular
   crossing pattern visible as a fine lattice in the glint from 5-15 km. Heights are physics and must stay;
   more components with directional spread (data, lead) would look natural.
@@ -285,8 +298,9 @@ spheres on the physics height), `night` (moon path), `markers-*`, `handover-*`, 
   altitude the sea is the flat sheet with the roughness field only (no swell lines in the glint).
 - **Whitecap calibration**: resolved foam is tuned by eye (rare white flecks at 7 m/s); its mean coverage is
   not calibrated against the statistical Monahan coverage used beyond the detail zone.
-- **Refraction** is screen-space: objects outside the view or behind the water's own crests are not seen,
-  and a submerged object can show a faint second image where waves bend the march onto it.
+- **Refraction** is screen-space: what the refracted ray meets off screen (steep refraction near the bottom
+  edge) falls back to the modelled bottom, and a faint seam can show between the two on a perfectly flat sea
+  (not with waves); objects behind the water's own crests are not seen.
 - **Underwater views** (eye below the surface) are not handled: the surface is drawn from above only.
 - **TMA** uses the seabed under the pixel / vertex from the depth copy: vertices off screen use the nearest
   edge pixel. The swell is never depth-attenuated (it is the physics surface).
@@ -303,6 +317,6 @@ spheres on the physics height), `night` (moon path), `markers-*`, `handover-*`, 
 | `ocean-1` G-buffer views for drawWater (`gbuffer.albedo/normal/material`, set `gbuffer`) | core | resolved b812ec4; used for the band and the seabed's imagery colour |
 | `ocean-2` LabPlanet seabed = the water its sheet describes (depth and albedo) | core lab | resolved 9debd1f; the hand-over spec relies on it |
 | `ocean-3` `'ocean.wetness'` shared uniform | contracts | resolved 9debd1f (slot-by-position, see section 2) |
-| `ocean-4` TAA reactive mask for surfaces whose pattern has no single motion vector | core TAA | open, non-blocking |
+| `ocean-4` TAA reactive mask for surfaces whose pattern has no single motion vector | core TAA | resolved (2cc2aea); used by `ocean.reactive` |
 
 No request against the ocean's paths was open at hand-off.

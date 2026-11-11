@@ -15,6 +15,7 @@ interface Row {
   waterP50: number;
   fftP99: number;
   wakeP99: number;
+  reactiveP99: number;
   waterP99: number;
   patches: number;
   frameP99: number;
@@ -36,15 +37,18 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
         const ps = window.__lab!.renderer.passStats();
         const perf = window.__test!.perf()!;
         const p99 = (n: string): number => ps[n]?.p99 ?? 0;
+        const separate = ['ocean.fft', 'ocean.wake', 'ocean.reactive'];
         return {
           oceanP99: perf.features['ocean']?.gpuMs ?? 0,
           fftP99: p99('ocean.fft'),
           wakeP99: p99('ocean.wake'),
+          reactiveP99: p99('ocean.reactive'),
+          // The near (water) pass: everything of the ocean's but its compute passes and the reactive mask.
           waterP99: Object.entries(ps)
-            .filter(([n]) => n.startsWith('ocean.') && n !== 'ocean.fft' && n !== 'ocean.wake')
+            .filter(([n]) => n.startsWith('ocean.') && !separate.includes(n))
             .reduce((a, [, v]) => a + v.p99, 0),
           waterP50: Object.entries(ps)
-            .filter(([n]) => n.startsWith('ocean.') && n !== 'ocean.fft' && n !== 'ocean.wake')
+            .filter(([n]) => n.startsWith('ocean.') && !separate.includes(n))
             .reduce((a, [, v]) => a + v.p50, 0),
           patches: perf.counters['ocean.patches'] ?? 0,
           frameP99: perf.gpu.p99,
@@ -92,7 +96,7 @@ test('ocean GPU budget at 1440p: splashdown, pad-like coast, near field inactive
     });
     const high = await measure(page);
     const fmt = (r: Row & { windows: string }): string =>
-      `ocean ${r.oceanP99.toFixed(3)} ms (FFT ${r.fftP99.toFixed(3)}, wake ${r.wakeP99.toFixed(3)}, water pass ${r.waterP99.toFixed(3)} p99 / ${r.waterP50.toFixed(3)} p50), ${r.patches} patches, frame p99 ${r.frameP99.toFixed(2)} ms, ballast ${r.ballast.toFixed(2)} ms; windows ocean/water/fft p99: ${r.windows}`;
+      `ocean ${r.oceanP99.toFixed(3)} ms (FFT ${r.fftP99.toFixed(3)}, wake ${r.wakeP99.toFixed(3)}, reactive ${r.reactiveP99.toFixed(3)}, water pass ${r.waterP99.toFixed(3)} p99 / ${r.waterP50.toFixed(3)} p50), ${r.patches} patches, frame p99 ${r.frameP99.toFixed(2)} ms, ballast ${r.ballast.toFixed(2)} ms; windows ocean/water/fft p99: ${r.windows}`;
     console.log(`splashdown : ${fmt(splash)}`);
     console.log(`coast 60 m : ${fmt(coast)}`);
     console.log(`10 km      : ${fmt(high)}`);
