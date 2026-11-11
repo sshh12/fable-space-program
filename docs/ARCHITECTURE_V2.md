@@ -15,7 +15,10 @@ for wave 2. `docs/MIGRATION_V2.md` says how the code moves from v1 to this desig
 How numbers are marked: **measured** = taken from `docs/research/v2/codebase-audit.md`, a hand-off or
 `frontend-ux.md` (one Ryzen 9950X3D core, Node 24); **derived** = arithmetic on measured numbers and list
 prices; **assumed** = a planning value that the load test (section 28.7) must replace. No capacity or cost
-figure in this file has been measured on Railway. The cloud derating used is 2.5x (assumed).
+figure in this file has been measured on Railway. The cloud derating used is 2.5x (assumed, and a
+single-thread figure: a shard runs many workers that all step the same tick at the same wall instant, so
+the first cloud measurement is taken with 1, 8, 16 and 22 synchronised workers and replaces it; section
+16.2). Every large cost line carries a low and a high value.
 
 ---
 
@@ -26,30 +29,32 @@ figure in this file has been measured on Railway. The cloud derating used is 2.5
 | # | Topic | Decision | Why |
 |---|---|---|---|
 | 29 | Authority | The server alone advances and commits vessel state. A client sends stamped control inputs, discrete commands and time requests; it never sends state, a trajectory or a result. There is no client authority holder and no hook for one. | "Server-authoritative state, no client-only outcomes." The three proposals' own numbers put the CPU difference at tens of dollars on the busiest day (section 30); soundness decides, not cost. |
-| 30 | Compute balance | One step loop, three schedules. The server simulates every vessel that is not on rails, from the pilot's stamped inputs, in **islands**. Islands that another owner can reach run in real time. A single-owner island may run up to a **commit lag** `L` behind its pilot. `L` is capped at 0 in the first release (everything real time) and raised only after the lane-equivalence tests pass. Work that is the same for everyone (screening, census, pads, fates) runs once on the server; work that is a pure function of replicated state (snapshot, readouts, patches, planning) runs on the client. Section 6. | Gives single-player feel for a pilot alone, full authority, an invisible hand-over when a second player appears, and overload that degrades invisibly first. |
-| 31 | Time model | Per-vessel head time on one universe axis, forward only; server-owned clocks (live, cohort, private, shared); a passive vessel is timeless inside its **solid window**; interaction only on one clock; echoes for everything else. Canonical time is an integer tick of 1/120 s. Section 5. | The only family that gives private warp without a global warp control or merged timelines. |
+| 30 | Compute balance | One step loop, three schedules. The server simulates every vessel that is not on rails, from the pilot's stamped inputs, in **islands**. Islands that another owner can reach run in real time. A single-owner island may run up to a **commit lag** `L` behind its pilot. `L` is capped at 0 in the first release (everything real time) and raised only on evidence: the lane-equivalence tests, a multi-client profile at `L` = 2 s and an A/B run of the load test (6.2). Planning work is placed by a table between a worker, a cache and the API (`PlanningService`, 6.3). Work that is the same for everyone (screening, census, pads, fates) runs once on the server; work that is a pure function of replicated state (snapshot, readouts, patches, planning) runs on the client. Section 6. | Gives single-player feel for a pilot alone, full authority, an invisible hand-over when a second player appears, and overload that degrades invisibly first. |
+| 31 | Time model | Per-vessel head time on one universe axis, forward only; server-owned clocks (live, cohort, private, shared); a passive vessel is timeless inside its **solid window**, over a patch chain that only the directory computes; interaction only on one clock; a passive vessel is taken by a two-phase claim (exclusive reservation, then commit); echoes for everything else. Canonical time is an integer tick of 1/120 s, and every clock, start instant and rails landing lies on the tick grid. Section 5. | The only family that gives private warp without a global warp control or merged timelines. |
 | 32 | Unit of simulation | An **island**: the vessels of one clock that could touch within seconds, stepped together on one thread in one local frame. A vessel alone is an island of one. Single-player flying is an island of one in an in-process universe. | One execution path for tests, offline play, the client replica and the servers. |
 | 33 | Vessel model | A vessel is a forest of craft trees joined by dock links: `Vessel.crafts[]`, `Vessel.links[]`, `Vessel.helm`. Parts are addressed `craftId/instanceId`. Stage stacks, abort sequences and lend policies belong to the craft. Section 7.2. | Docking, universe-unique ids, persistence and a later ship builder all need this one change. |
 | 34 | Docked control | One helm with explicit hand-over, plus craft sovereignty: every owner keeps their own stage stack, ports, pumps and lend policy, and either side of a port can always release it. Section 7.5. | Clear, predictable, and no docking takes a station from its builders. |
 | 35 | Damage | A part is intact or destroyed; a joint is intact or broken. No health values. | One rule on the ground and between vessels; nothing to desynchronise. |
-| 36 | Bodies | The body system is rooted at the Sun: Sun, eight planets, 20 moons, Ceres, Pluto and Charon (30 bodies), three levels. Planet elements are JPL mean elements with secular rates; Earth keeps the Almanac formula (inverted) and the Moon its frozen ellipse so the lunar mission's windows are unchanged. Section 8. | "Entire solar system at true scale, real orbits." |
+| 36 | Bodies | The body system is rooted at the Sun: Sun, eight planets, 20 moons, Ceres, Pluto and Charon (**32 bodies**, listed by name in 8.1), three levels. Planet elements are JPL mean elements with secular rates; Earth keeps the Almanac formula (inverted) and the Moon its frozen ellipse so the lunar mission's windows are unchanged. Section 8. | "Entire solar system at true scale, real orbits." |
 | 37 | Simple bodies | Every solid body enters the existing tile pipeline as a small pyramid baked by one config-driven tool; giants are a cloud-top map plus an atmosphere shell with no surface. No second terrain code path. | Placeholder visuals are allowed off Earth and Moon; landing later is deeper levels from the same tool. |
 | 38 | Presentation frame | Positions handed to presentation are relative to the **render root**: axes J2000 equatorial, origin near the viewer (`SimSnapshot.frame`). The field names `rRoot`, `positionRoot`, `posRoot` are kept; "ROOT" now means the render root, never the Sun. Section 3. | A heliocentric float64 origin gives millimetre jitter in a cockpit at Neptune; 543 read sites keep compiling. |
-| 39 | Presentation contract | `SimSnapshot` stays the only thing presentation consumes, and is built on the client from replicated island state. `Sim` becomes `FlightSession` with two implementations: `LocalSession` (in-process universe) and `NetSession` (network replica with prediction). `createSim(defs, scenarioId, { terrain })` stays and returns a `LocalSession`. | About 190 singleton read sites and every lab keep working; the app loop is written once. |
+| 39 | Presentation contract | `SimSnapshot` stays the only thing presentation consumes, and is built on the client from replicated island state. `Sim` becomes `FlightSession` with two implementations: `LocalSession` (in-process universe, `src/session`) and `NetSession` (network replica with prediction, `src/client`). `createSession(defs, scenarioId, { terrain })` in `src/session` replaces `createSim` (same arguments) and returns a `LocalSession`; `src/sim` exports no session. | About 190 singleton read sites and every lab keep working; the app loop is written once; the simulation cannot import its own host. |
 | 40 | Warp table | `WARP_LEVELS` gains 1,000,000x and 10,000,000x (nine rails levels). Rails altitude limits default from the body radius. | Neptune is a 2.7 h cruise at 100,000x. |
 | 41 | Low thrust | No ion or electric propulsion. The high-Isp stage is nuclear thermal. Thrust on rails is a named seam (section 32). | Patched conics, nodes and rails warp cannot express months of thrust. |
 | 42 | Protocol | Binary WebSocket, inputs up, state down. Exact keyframes, deltas against the last keyframe, structural changes as deterministic operations, coasting craft as conic elements on change. Section 13. | Railway has no UDP; latest-wins messages would also survive datagrams. |
-| 43 | Persistence | Postgres, written only by the directory, in 250 ms batches. Islands are durable through checkpoints plus an input journal, replayed exactly on one pinned build. Transitions that involve two owners are committed before they are shown. Section 15. | A deploy is a lossless restart; a dock can never be half-stored. |
+| 43 | Persistence | Postgres, written only by the directory (which holds a fenced lease), in 250 ms batches. Islands are durable through checkpoints of the whole island state plus an input journal, replayed exactly on one pinned build. Every stored blob carries a codec version and the definition fingerprints it was written under. Transitions that involve two owners are committed before they are shown. Section 15. | A deploy freezes the universe for a measured number of seconds and loses no committed state; a dock can never be half-stored; parked ships survive definition changes. |
 | 44 | Expiry clock | The wall clock. A ship is kept 14 days after its owner's last session; an assembly lives as long as its most recently active owner. All numbers are fields of `UniverseRules` and are shown to players. | Universe times differ by centuries between vessels; the wall clock is the only one all share. |
-| 45 | Hosting | Railway hosts everything at run time (gateways, directory, shards, API, Postgres, buckets, the static shell). Modal hosts bots, bakes, audits and burst batch work in its own environment. Netlify is an optional host for the shell only, configured but not required. One region, US East. Section 16. | Only Railway holds long-lived sockets cheaply; a Railway static service needs no extra credential. |
-| 46 | Tile delivery | The bake output and the dev server stay plain files. Production serves content-addressed range-readable **packs** from a Railway bucket through presigned URLs, with a CDN-fronted mirror service as fallback. Revises row 4. | 862,000 files cannot be addressed one presigned URL at a time; 15 TB in a day must not be billed egress. |
+| 45 | Hosting | Railway hosts everything at run time, **always in the split topology**: `gate`, `dir`, `sim-1..K`, `api`, `pub` (cacheable public documents, CDN on), `shell` (static, CDN on), `packs` (tile mirror, CDN on, own domain), Postgres and buckets. One image, built once and deployed by digest; scale-out adds `sim-k` services and gateway replicas with no role move. Modal hosts bots, bakes, audits and burst batch work in its own environment. Netlify is an optional host for the shell only. One region, US East. Section 16. | Only Railway holds long-lived sockets cheaply; a front-page day is unannounced, so the path from quiet to busy must not contain a restart or a human. |
+| 46 | Tile delivery | The bake output and the dev server stay plain files. Production serves content-addressed range-readable **packs** from a Railway bucket through presigned URLs, with the `packs` mirror service (a streaming proxy of the bucket with a disk cache, replicas and the CDN) as fallback, and a first-paint **boot pack** of at most 25 MB from the shell's CDN. Revises row 4. | 862,000 files cannot be addressed one presigned URL at a time; 15 TB in a day must not be billed egress; a visitor must see the title in seconds. |
 | 47 | Identity | Anonymous by default: an account record that a non-extractable device key points at, a callsign, a recovery code. Other sign-ins are more credential rows later. Nothing else is built. | User decision. |
 | 48 | Lobbies | The lobby is the unit of deployment (one directory, one shard set, one Postgres schema). One public lobby exists; the client lists lobbies. | "Build around lobbies, one mega-lobby for now." |
 | 49 | Front end | One scene, one renderer, one loop from the menu to flight; the menu is DOM over the live canvas; the app shell is a state machine. Section 23. | "Menu over a live Earth and space view, seamless transition." |
-| 50 | Capability gate | An inline script blocks mobile and unsupported devices before the main bundle loads; adapter class is judged by a benchmark on the real renderer, not by name. Settings are declared by features. Section 24. | The adapter name is empty in production Chrome. |
-| 51 | Chat | Quick-comms (fixed phrases) only. Free-text proximity chat is behind a rules flag that is off (OPEN_QUESTIONS Q9). | An anonymous free-text channel at front-page scale is a moderation job nobody has taken on. |
+| 50 | Capability gate | An inline script blocks mobile and unsupported devices before the main bundle loads; adapter class is judged by a benchmark on the real renderer, not by name. The title appears on a class-hint preset; the benchmark runs at the first Play, when its data is resident. Settings are declared by features. Section 24. | The adapter name is empty in production Chrome; a visitor who leaves should not have downloaded the benchmark's data. |
+| 51 | Chat | Quick-comms (fixed phrases) only. Free-text chat is not built and has no rules flag; it is a forward seam (section 32, OPEN_QUESTIONS Q9). | An anonymous free-text channel at front-page scale is a moderation job nobody has taken on; a flag that switches nothing is a stub. |
 | 52 | Rules are data | Every number of sections 5, 7.4-7.6, 9.4 and 15.5 is a field of one versioned `UniverseRules` document served to clients, which render the rules screen and every countdown from it. A staging rule set with lifetimes of minutes demonstrates expiry. | "Configurable, visible to players." |
-| 53 | Accepted inconsistencies | (a) An object launched at an earlier time is not collided against histories already committed. (b) Two passive vessels never collide with each other. (c) After a private warp a player is alone in their time until someone jumps, holds or arranges a meeting. All three are stated on the rules screen. | They cannot be designed away in any forward-only model; hiding them would be merging timelines. |
+| 53 | Accepted inconsistencies | (a) An object launched at an earlier time is not collided against histories already committed. (b) Two passive vessels never collide with each other. (c) After a private warp a player is alone in their time until someone jumps, holds or arranges a meeting. (d) A server crash may re-run up to 250 ms of flight; an outcome between two owners that was shown inside that window is marked provisional until it is durable (15.1). All four are stated on the rules screen. | They cannot be designed away in any forward-only model; hiding them would be merging timelines. |
+| 54 | Launch capacity | The launch complex is sized from a launches-per-day target, not from a pad count: `pads x (cohort horizon + 24 h) / mean cycle` must cover the sessions of a front-page day. Release defaults: 32 pads (16 per site), a 14-day cohort horizon, a 150 s mean cycle: 276,000 launches in the first day, 18,400 a day sustained. Sections 5.9, 9.3, 16.3. | Pads, not CPU, bind first; a capacity plan that ignores them is wrong by an order of magnitude. |
+| 55 | Scheduling | Waves 3-7 with sub-waves; contracts are written by the lead before each wave; every shared file has one owner per sub-wave; the three risky switches (tick grid, `LocalSession` replacing `World`, activation of the Sun-rooted body set) and the app integration are packages with gates, not lead chores. Section 33. | The first plan put five packages into one agent and three switches between waves with no owner. |
 
 ### 1.2 Decisions carried over from v1
 
@@ -57,7 +62,7 @@ Rows 1-28 of the v1 table. Rows revised by v2 are marked "(v2)".
 
 | # | Topic | Decision | Why |
 |---|---|---|---|
-| 1 | Launch site | **Ka Lae Pacific Spaceport LC-1**, Ka'u coast, Hawai'i, nominal 19.10 N 155.50 W (`data/defs/sites/ka-lae.json`, pad `lc-1`; (v2) the site has eight pads and a second site exists, section 9.3; exact pad coordinates are snapped to real terrain by the Earth bake). The Florida site in `earth-data.md` is dropped. | Latitude below the Moon's 20.9 deg orbital inclination gives a coplanar launch twice a day, so TLI needs no plane change. Arid lava coast looks real at ground level without vegetation geometry. USGS 10 m elevation and Sentinel-2 imagery cover it. |
+| 1 | Launch site | **Ka Lae Pacific Spaceport LC-1**, Ka'u coast, Hawai'i, nominal 19.10 N 155.50 W (`data/defs/sites/ka-lae.json`, pad `lc-1`; (v2) the site has sixteen pads and a second site exists, section 9.3; exact pad coordinates are snapped to real terrain by the Earth bake). The Florida site in `earth-data.md` is dropped. | Latitude below the Moon's 20.9 deg orbital inclination gives a coplanar launch twice a day, so TLI needs no plane change. Arid lava coast looks real at ground level without vegetation geometry. USGS 10 m elevation and Sentinel-2 imagery cover it. |
 | 2 | Cube-sphere mapping | **Plain gnomonic** cube (`src/core/geo/cubeSphere.ts`, Python mirror `tools/bake/common/cube.py`). The tan-warped mapping in `moon-sky-data.md` is dropped. | Tile offsets stay linear in cube space, which the float32-stable vertex formula and crack-free geomorphing rely on. |
 | 3 | Tile URL scheme | `/tiles/{tileset}/{layer}/{face}/{level}/{x}/{y}.{ext}` + `/tiles/{tileset}/manifest.json` | One scheme for every body and layer. |
 | 4 | Height tile encoding (v2) | **FRT1** container, zlib-compressed, 259 x 259 vertex-registered int16 with a delta predictor and per-tile power-of-two scale (`src/core/geo/tileCodec.ts`, `tools/bake/common/frt1.py`). No PNG, no Brotli. Plain files on disk at bake time and in development; production delivery wraps the same tile bytes in range-readable packs (decision 46, section 10.4). | Decodes identically in the browser, in workers and in Node; shared edges are bit-identical; browsers cannot decode 16-bit PNG faithfully. Packs are a delivery container, not a second encoding. |
@@ -90,7 +95,7 @@ Rows 1-28 of the v1 table. Rows revised by v2 are marked "(v2)".
 
 ## 2. Repository layout and ownership
 
-Every directory has exactly one owner per wave. Owners are the work packages of
+Every path has exactly one owner per sub-wave. Owners are the work packages of
 `docs/WORK_PACKAGES_V2.json`; `lead` is the architect/integrator. **Nobody edits outside their own paths.** A
 needed change to someone else's path is a request in `docs/requests/`.
 
@@ -103,65 +108,98 @@ docs/RENDER_API.md             render core API for feature authors
 docs/handoff/<package>.md      hand-off note of each work package
 docs/requests/                 change requests against code you do not own
 docs/capacity/                 load-test reports (measured capacity, published on the rules screen)
-index.html, src/app/           app entry and final wiring (lead)
+package.json, package-lock.json, tsconfig*.json, vite.config.ts, vitest.config.ts, playwright.config.ts
+                               root configuration (lead; changed only in the lead step before a wave,
+                               MIGRATION_V2 section 3; packages never run npm install)
+index.html, src/app/           app entry and wiring: `presentation-sweep` (3.2), `capability-settings`
+                               (index.html only, 4.1: the inlined gate), `app-integration-1` (4.5),
+                               `app-integration-2` (5.3), `final-gate` (7); the lead otherwise
 src/gate/                      inline capability gate and block pages (no imports from the rest of src)
-src/core/                      contracts, f64 math, cube mapping, tile codec, def loader and validators,
-                               GPU acquire, test-API base, FakeSession
+src/core/                      contracts, f64 math, cube mapping, tile codec, def loader and structural
+                               validators, GPU acquire, test-API base, FakeSession
 src/sim/orbit|frames|bodies|nav/     orbital mechanics, ephemerides, atmospheres, navigation maths, screening
-src/sim/vessel|dynamics|control/     vessel and craft model, codec, forces, staging, thermal, colliders, SAS
+src/sim/vessel|dynamics|control/     vessel and craft model, versioned codec, forces, staging, thermal,
+                               colliders, SAS, `validateVehicle` and `analyzeVehicle`
 src/sim/island/                the island: N vessels on one tick grid; per-vessel state machine, contact and
-                               capture pass, structural operations, step modes (authoritative, predict)
+                               capture pass, structural operations, step modes (authoritative, predict), the
+                               island codec
 src/sim/view/                  pure builders of the presentation blocks (readouts, navball, staging, patches,
                                markers, burn bookkeeping, target and docking readouts)
-src/universe/                  directory (records, worldlines, solid windows, claims), clocks and the time
-                               rules, island lifecycle and lanes, pad timetable, expiry, UniverseRules.
-                               Pure TypeScript like src/sim: time and storage are injected
-src/net/                       wire layer: message codec, framing, transports (WebSocket, loopback), time
-                               sync, latency and stall injector
-src/client/                    FlightSession implementations (LocalSession, NetSession with prediction),
-                               client stores (census, pads, ships, rules, presence, feed), identity key
-src/pilot/                     scripted pilots: the mission pilot, generic ascent/rendezvous/docking pilots
-src/terrain/                   CPU height authority, tile sources (fs, fetch, pack), amplification, rocks
+src/universe/                  directory (records, worldlines, forecast chains, solid windows, reservations
+                               and claims), clocks and the time rules, island lifecycle and the scheduler
+                               interface, pad timetable, expiry, UniverseRules. Pure TypeScript like src/sim:
+                               time and storage are injected
+src/session/                   headless: `LocalSession` and `createSession` (an in-process universe behind
+                               the FlightSession contract). Imports src/core, src/sim, src/universe
+src/net/                       wire layer: message codec, framing, transports (WebSocket, loopback), the
+                               session layer (handshake, resume, subscription and budget state machines for
+                               both ends), time sync, latency and stall injector
+src/client/                    browser and bot side of the network: `NetSession` with prediction, client
+                               stores (census, pads, ships, rules, presence, feed), identity key, the
+                               planning service providers and their chooser
+src/pilot/                     scripted pilots: the mission pilot, generic ascent/rendezvous/docking/transfer
+                               pilots
+src/terrain/                   CPU height authority, tile sources (fs, fetch, pack) behind
+                               `createTileSource(spec)`, amplification, rocks
 src/render/core|terrain|atmosphere|sky|ocean|vehicle|cockpit|vfx/    as in v1
 src/input/, src/camera/, src/ui/     bindings and controllers, camera rigs, HUD, instruments, nameplates
 src/map/                       map view: trajectories, census layer, targets, intercepts, node editing
 src/shell/                     app state machine, menu framework and screens, settings models
 src/bench/                     calibration shots, solver, quality profiles
 src/audio/                     audio engine
-server/                        Node roles: gateway, directory host, shard host, API; Postgres writer and
-                               schema; bucket access; role wiring. Imports src/core, src/sim, src/terrain,
-                               src/universe, src/net
+server/                        Node roles: gateway, directory host, shard host, API, publisher; Postgres
+                               writer and schema; bucket access; role wiring; the trailing-lane executor.
+                               Imports src/core, src/sim, src/terrain, src/universe, src/net
 bots/                          headless bot players (NetSession + pilots) and the Modal fleet app
-deploy/                        Railway service definitions, Dockerfile, scale script, Netlify config, CI
+deploy/                        Railway service definitions, Dockerfile, rollout and scale scripts, the
+                               scale controller, local compose stack, CI
 labs/<package>/                lab pages
 tests/unit/<package>/, tests/browser/<package>/, tests/mission/    as in v1
-tests/universe/                headless rule, fuzz and lane-equivalence suites
+tests/browser/app/, tests/browser/mission/   the integrated app (app-integration packages, final-gate)
+tests/universe/                headless rule, fuzz and adversarial suites
 tests/net/                     separate-process multi-client suites with latency injection
 tests/acceptance/              two-browser stories, restart, expiry, whole flights
 tests/load/                    load-test scenarios;  tools/net/  the multi-process test harness
 tools/bake/common|earth|moon|sky|planet/   bake pipelines;  tools/bodies/  body-definition generator
 tools/pack/                    tile packer and uploader;  tools/audio/, tools/sim/, tools/server/, tools/dev/
 data/defs/                     JSON definitions (tracked)
-data/tiles/, data/sky/, data/cache/, data/packs/     baked data, raw downloads, packs (git-ignored)
+data/tiles/, data/sky/, data/cache/, data/packs/, data/baselines/     baked data, raw downloads, packs,
+                               reference screenshots (git-ignored)
 public/assets/<area>/          shipped binary assets
 ```
+
+Paths that stay with the lead in every wave: the root configuration, `docs/` outside hand-offs and capacity
+reports, `src/core/contracts` (requests are answered during a wave; `net.ts`'s wire-message section belongs to
+`wire-protocol` and `universe.ts` to `universe-directory` from wave 4), `src/core/math`, `src/core/testing`,
+`labs/template`, `tests/browser/{harness,globalSetup,chromeArgs}.ts`, `tests/browser/shell`, `tools/dev`
+(including `boundaries.test.ts` and `heavy.mjs`, which gains the class `stack` for the docker compose
+stack). `WORK_PACKAGES_V2.json` lists the owner of every other shared path per sub-wave (`labs/integration`,
+`src/core/fakes`, `src/core/defs`, `src/terrain`, `src/pilot/generic`).
 
 Import rules (enforced by `tools/dev/boundaries.test.ts`):
 
 - `src/core` imports nothing outside `src/core`. `src/gate` imports nothing at all.
-- `src/sim`, `src/terrain`, `src/universe`, `src/pilot` are headless and deterministic: no DOM, no WebGPU,
-  no `performance.now`, no `Date.now`, no timers, no `Math.random`, no sockets, no file or database access.
-  `sim -> terrain` only through `TerrainProvider`; `universe -> sim` through the public APIs of `src/sim`;
-  `pilot` reaches a session only through the `FlightSession` contract.
-- `src/net` imports `src/core` only. `src/client` imports `src/core`, `src/sim`, `src/universe` (LocalSession
-  only) and `src/net`.
+- `src/sim`, `src/terrain`, `src/universe`, `src/session`, `src/pilot` are headless and deterministic: no
+  DOM, no WebGPU, no `performance.now`, no `Date.now`, no timers, no `Math.random`, no sockets, no file or
+  database access. `sim -> terrain` only through `TerrainProvider`; `universe -> sim` through the public APIs
+  of `src/sim`; `session -> universe, sim`; `src/sim` never imports `src/universe`, `src/session` or
+  `src/client`; `pilot` reaches a session only through the `FlightSession` contract and receives
+  `VehicleCapabilities` as data.
+- `src/net` imports `src/core` only. `src/client` imports `src/core`, `src/sim` (island, view, orbit: the
+  replica and the planning providers) and `src/net`; never `src/universe`, `src/session` or `server/`.
 - Render packages import `src/core` and the public API of `src/render/core`; never each other, never
   `src/client` or `src/net`. `src/ui`, `src/map`, `src/audio`, `src/input`, `src/camera`, `src/shell`,
   `src/bench` import `src/core` only (plus `src/render/core` public helpers and, for labs and the turntable,
-  the frozen vessel facade `src/sim/vessel/public.ts`).
+  the frozen vessel facade `src/sim/vessel/public.ts`). They reach planning results through the
+  `PlanningService` interface of `session.ts`, never through `src/sim`.
+- Presentation code never indexes `defs.vehicles` by a runtime id: stage group, label and camera hints
+  arrive per craft and per part in the snapshot, so a design that is not in the library draws correctly.
 - Only `src/app` knows every client subsystem. Only `server/` and `bots/` import Node networking, worker
   threads and the database driver. Node builtins elsewhere stay in `fs*.ts`, `*.node.ts` or `node/`.
-- `server/` never imports `src/render`, `src/ui`, `src/map`, `src/shell`, `src/audio`.
+- `server/` never imports `src/render`, `src/ui`, `src/map`, `src/shell`, `src/audio`, `src/client`; the
+  client bundle never contains `server/`, `bots/` or `src/universe` outside `src/session`. The rules for
+  `server/`, `bots/`, `src/net`, `src/client` and `src/session` are added to the boundary test by the lead
+  before wave 3, so no later package has to edit it.
 
 Repo etiquette is unchanged from v1 (`docs/PACKAGE_RULES.md`): scoped verification, own paths only, the
 heavy-job gate, no placeholders, secrets only in build-time tools and in provider secret stores.
@@ -182,8 +220,16 @@ heavy-job gate, no placeholders, secrets only in build-time tools and in provide
   arguments. An event instant (sphere-of-influence crossing, encounter) keeps a float64 second inside its
   tick for the hand-over, as v1 does. Rails warp and jumps land on whole ticks.
 - `PHYSICS_DT = 1/120 s` is one tick. A control tick is `CONTROL_TICK_STEPS = 4` ticks (30 Hz).
-- Wall-clock time is used for presentation, for the clock schedules of section 5 and for every lifetime and
-  timer of sections 9.4 and 15.5. Headless code receives it as an argument.
+- Timers have exactly three bases, and every timer in this file names one. **Universe ticks**: pad
+  occupancy and safing, soft-capture, port cooldown and U5 clearing timers; they stop when their clock
+  stops. **Directory up-time** (the persisted counter behind the live clock, 5.2; frozen while the universe
+  is down): clock schedules, pad reservation holds, ready-checks, helm requests, the reconnect grace and
+  the resume window, the latch and dead-man timers of U16, rate limits. **Wall clock**: expiry only (15.5).
+  Headless code receives up-time and wall time as arguments; an island receives neither, only tick-stamped
+  inputs (7.2).
+- v1's clock was not on this grid (scenario starts were arbitrary float instants and every rails advance
+  re-based the step grid). The move to the grid is its own guarded step in wave 3, before any other change
+  (MIGRATION_V2 step 3.1).
 - Warp levels are `WARP_LEVELS = [1, 2, 3, 4, 5, 10, 50, 100, 1000, 10000, 100000, 1e6, 1e7]`: indices 0-3
   physics warp, 4-12 rails warp.
 
@@ -224,10 +270,29 @@ applies `b` first; `Mat3` row-major float64, `Mat4` column-major; reversed-Z inf
 nose toward +Z, yaw + = nose toward +X, roll + = about +Y). They apply in the CTL frame.
 
 **Ids.** Lower-kebab strings for definitions. Engine code never mentions a specific body, vehicle, part,
-site, scenario, milestone or rule value. Runtime ids are issued by the directory and are universe-unique:
-`craftId` (never changes), `vesselId` (a single-craft vessel has `vesselId = craftId`; a piece split from it is
-`<craftId>~<root part instance id>`; an assembly keeps its base vessel's id), part key `craftId/instanceId`.
-The local universe issues ids from a seeded counter, so tests are reproducible.
+site, scenario, milestone or rule value. Runtime ids are issued by the directory, are universe-unique, and
+are deterministic functions of ids and ticks so that a replay issues the same ones. The local universe
+issues craft ids from a seeded counter, so tests are reproducible.
+
+| Thing | Id | Rule |
+|---|---|---|
+| Craft | `craftId` | Never changes; never reused; never names a vessel of several craft |
+| Part | `craftId/instanceId` | `instanceId` is unique within the craft |
+| Whole single craft (holds its craft's root part) | `vesselId = craftId` | One row per id for ever: the row is a tombstone while the craft is docked and is reopened when it undocks alone |
+| Piece of one craft without that craft's root | `<craftId>~<root part instance id of the piece>` | Staging debris, fragments |
+| Vessel of two or more craft (assembly, or a fragment spanning craft) | `a~<lowest vessel id of the two that first docked>~<tick>` | Issued at the first dock; kept while craft join (the arriving vessel's row becomes a tombstone); when two assemblies dock the base's id is kept |
+| Pieces after an undock or a break | each whole single craft: its `craftId`; the piece with the most craft (tie: the lowest craft id) keeps the assembly id if it still has two or more craft; every other multi-craft piece: `a~<its lowest craft id>~<tick>` | An assembly id whose last multi-craft piece is gone becomes a tombstone |
+
+- A **tombstone** is a vessel row with no state, `merged_into` or `split_into` and the tick of the
+  operation. It keeps its worldline up to that tick, so a viewer behind a dock still sees two recorded
+  echoes, and a viewer behind an undock sees the assembly.
+- Lineage redirects everything that pointed at an id: targets and census handles follow `merged_into` /
+  `split_into` to the vessel that now holds the targeted craft (a target is stored with its craft id); a
+  plan belongs to its craft and travels with it; a pad slot stays with the piece that holds the pad
+  interface.
+- Tests (`tests/universe`): dock, undock of the base craft alone, re-dock, a break that splits an assembly
+  into three: ids unique at every tick, no primary-key reuse while a row is live, echoes intact for a
+  viewer behind each operation, identical ids in a replay.
 
 **Determinism.** `src/sim`, `src/terrain`, `src/universe` and `src/pilot` iterate in defined order (vessels
 by id, parts by index, bodies by sorted id) and use only the seeded hash / PRNG of `src/core/math/hash.ts`.
@@ -235,7 +300,9 @@ Same build + same runtime image + same inputs at the same ticks = bit-identical 
 one runtime (measured). It does **not** hold between Node and Chrome (15 of 17 transcendental functions
 differ in the last bit, measured), so server and client never compare hashes; they compare state with a
 tolerance. Server against server (journal replay, audit) compares hashes, on one pinned Node build and one
-CPU architecture.
+CPU architecture. For the same reason a client never **chains** the patches of a vessel it could touch: a
+chain through several encounters amplifies a last-bit difference, so the directory computes forecast
+chains and clients only evaluate the published conics (U14).
 
 ---
 
@@ -281,38 +348,71 @@ what is at your time, and you can only move forward.*
 |---|---|
 | Tick, UT | Section 3. Bodies are functions of the tick. |
 | Head | The latest tick at which a vessel's state is committed. History before it is immutable. It never decreases. |
-| Worldline | Per vessel: committed conic segments and sampled integrated arcs up to the head. |
+| Worldline | Per vessel: committed conic segments and sampled integrated arcs up to the head, and after it the **forecast chain**. |
+| Forecast chain | The coast of a passive vessel after its head as a list of conic patches across sphere-of-influence changes, each with a valid-from and valid-to tick. Only the directory computes it (U14); clients evaluate the published patches and never chain a solid vessel themselves. |
 | Attended | A connected pilot is aboard, or the server is still carrying the vessel for a pilot inside the reconnect grace. |
 | Quiescent | On rails or at rest: no thrust, no contact, not in atmosphere. State is a pure function of the tick. |
-| Passive | Not attended and quiescent. A passive vessel is on no clock and is never stepped. |
-| Horizon | The tick of a passive vessel's next atmosphere entry or impact; infinite on a stable orbit or at rest. |
+| Passive | Not attended and quiescent. A passive vessel is on no clock, is never stepped and has no timers: everything about it is computed when somebody asks. |
+| Horizon | The tick of a passive vessel's next atmosphere entry or impact, searched over its forecast chain; infinite when the computed chain is a closed orbit clear of every surface and atmosphere, or the vessel is at rest. |
 | Clock | A server object (5.2). Every attended vessel is on exactly one. |
+| Pacing clock | The clock that paces an object which is neither attended nor passive (debris in atmosphere in the Reduced tier, an unattended run, a fate). It is the clock the object was on when its pilot left or when it was shed, for as long as that clock is live, cohort or shared, or private at 4x or below. When a private pacing clock ends, jumps or exceeds 4x, the object is resolved un-paced at once if a screening finds no solid vessel of another owner within reach of its arc; otherwise it waits as a projected echo and is paced by the live clock from the moment the live clock reaches its head. An object is solid to the islands of its pacing clock. |
 | Lead | A clock's tick minus the live clock's tick. |
-| Island | Vessels of one clock that could touch within seconds; one step loop, one frame, one thread. |
+| Island | Vessels of one clock that could touch within seconds; one step loop, one frame, one thread. Its **anchor** is the lowest vessel id among its attended members, else the lowest id; a change of anchor is a `rebase` operation. |
 | Party | Pilots who linked on purpose and share a clock at any distance. |
+| Bound, guest | A member of a clock is **bound** to its rate when linked in a party, aboard one assembly with another pilot, or on the live or a cohort clock. Every other member is a **guest**: there by jump, attach or proximity, never able to hold anyone at a rate. |
 | Solid | Can be touched: collided with, docked to, targeted for contact. |
-| Echo | A drawing of a vessel that is not solid for the viewer. A **recorded echo** shows where a vessel that is ahead was at the viewer's time; a **projected echo** shows where a vessel that is behind, or beyond its window, would be if it coasted. Echoes never collide and always carry their offset and the one action that makes the vessel reachable. |
+| Reservation | The exclusive, epoch-fenced right of one island to touch a passive vessel (U4). It does not move the head. |
+| Carry limit | The latest tick to which a clock may take craft whose owners have not explicitly agreed (5.2). |
+| Echo | A drawing of a vessel that is not solid for the viewer. A **recorded echo** shows where a vessel that is ahead was at the viewer's time; a **projected echo** shows where a vessel that is behind, reserved by another clock, or beyond its window, would be if it coasted. Echoes never collide and always carry their offset and the one action that makes the vessel reachable. |
 | Holder | The one server component that has authority over a vessel: the directory or an island on a shard. |
 
 ### 5.2 Clocks
 
-A clock is `{ id, kind, tick0, anchorWallMs, rate, untilTick, limitedBy, members }` with the schedule
-`tick(wall) = min(untilTick, tick0 + floor(rate x 120 x (wall - anchorWallMs) / 1000))`. Server and clients
-evaluate the same closed form from the same message; a client never reports time. `untilTick` is the
-earliest event of any member (sphere-of-influence crossing, horizon, screened encounter, target approach,
-lead cap), so nobody is drawn past an event the server will stop at.
+A clock is `{ id, kind, tick0, anchorUpMs, rate, untilTick, limitedBy, members }` with the schedule
+`tick(up) = min(untilTick, tick0 + floor(rate x 120 x (up - anchorUpMs) / 1000))`, where `up` is directory
+up-time (section 3). Server and clients evaluate the same closed form from the same message; a client never
+reports time. `untilTick` is the earliest of: any member's sphere-of-influence crossing, horizon, screened
+encounter and target approach; the lead cap; the **carry limit**; and the end of the computed forecast chain
+of anything the clock has been screened against. Nobody is drawn past an event the server will stop at.
 
-| Kind | Rate | Members |
-|---|---|---|
-| **Live** | 1, fixed | Everyone who spawned at the default and has not warped. One per lobby. |
-| **Cohort** | 1, fixed, at a fixed lead of `k x 5 min` over the live clock | Players who took a future pad slot in that bucket (5.9). |
-| **Private** | Set by its one pilot | One pilot's island or cruising vessel. |
-| **Shared** | The lowest rate any member requests or is limited to | An island with two or more pilots, an assembly with two or more pilots aboard, or a party. |
+| Kind | Rate | Members | Who is bound |
+|---|---|---|---|
+| **Live** | 1, fixed | Everyone who spawned at the default and has not warped. One per lobby. | Everyone (fixed) |
+| **Cohort** | 1, fixed, at a fixed lead of `k x 5 min` over the live clock, up to the cohort horizon | Players who took a future pad slot in that bucket (5.9). | Everyone (fixed) |
+| **Private** | Set by its host, the one pilot who made it | The host's island or cruising vessel; guests who jumped or attached onto it | Nobody but the host |
+| **Shared** | The lowest rate any bound member requests or is limited to | A party; an assembly with two or more pilots aboard | Party members; pilots aboard |
 
-The live clock is a **persisted mapping** from directory up-time to ticks. It does not advance while the
-universe is down, so after any restart every clock resumes at its stored tick and the pad crowd is still
-one group. Cohort clocks follow it. The lobby's epoch (the live tick at first start) is a deployment
-setting; the default is the start of the `lunar-direct` scenario (2029-09-24T18:26:58Z).
+**Membership.**
+
+- Membership is sticky. Pilots who were in one island stay on the same clock after the island splits, are
+  still solid to each other and merge again when they meet. Nothing about distance changes a clock.
+- A member leaves a clock only by its own act: a rate request the clock does not grant, a jump, a hold or a
+  logout. Leaving **forks**: the member gets a private clock at the same tick (U11) and is from then on an
+  echo to those who stayed.
+- A guest's rate request never binds anyone. If a guest asks for another rate, the guest forks. If the host
+  of a private clock changes its rate, the host continues on it at the new rate and every guest who has not
+  set **follow** for the host forks onto a private clock at the old rate (clamped to what that guest's own
+  situation allows). Both take effect at the stamped tick, at once, unless U11's contact conditions hold.
+- Two strangers therefore share a rate only while both choose to: in a party, in one assembly, or at 1x on
+  the live or a cohort clock, where the rate is fixed for everybody.
+- Joining an attended clock without a link (by jump or attach) has a per-account cooldown of 60 s, and of
+  30 minutes for a clock whose host has forked away from that account. A scripted client cannot pin a
+  warping player: it never binds them, and it cannot follow them faster than the cooldown.
+
+**Carry limit.** `carryLimit(clock) = min over every craft aboard a vessel on the clock or in one of its
+islands whose owner has not explicitly accepted the request in force, of liveTick + advanceLimit(craft)`.
+`untilTick`, every jump target, every `warp to` and every advance (U9) is capped by it. A craft's owner
+accepts explicitly by making the request or by answering its prompt; idleness, absence and disconnection
+count as acceptance only up to the carry limit. Unowned craft impose no limit. Taking a vacant helm of
+someone's station, entering the island of a pilot who is away from the keyboard, or advancing an idle group
+therefore never carries their craft further than their own `advanceLimit` allows.
+
+**The live clock** is a persisted mapping from directory up-time to ticks. It does not advance while the
+universe is down, and after every restart it is held for a **resume window** (30 s for a restart on the same
+build, 90 s when the build changed and clients must reload; 15.4), so the pad crowd is still one group and
+nobody's burn runs without them. Cohort clocks follow it. The lobby's epoch (the live tick at first start)
+is a deployment setting on the tick grid; the default is the start of the `lunar-direct` scenario
+(2029-09-24T18:26:58Z).
 
 ### 5.3 Rules
 
@@ -320,85 +420,156 @@ Every number below is a field of `UniverseRules`; the values are the defaults.
 
 - **U1. Forward only.** A head never decreases. Nothing committed is recomputed.
 - **U2. Solid window.** For a viewer whose clock reads `t`, a vessel is solid when it is on the viewer's
-  clock, or when it is passive and `head <= t <= min(horizon, limit)`. `limit` is infinite for the viewer's
-  own vessels, party members' vessels, unowned vessels and debris. For anyone else's vessel it is
-  `liveTick + advanceLimit`, anchored to the live clock (never to the head, so repeated claims cannot walk a
-  ship forward), where `advanceLimit` is the owner's policy: 30 days for a ship, 6 years for an assembly with
-  craft of two or more owners or marked public; the owner may set any value up to the cap. A hard guard
-  refuses any claim that would carry another owner's vessel past `liveTick + leadCap - 20 years`.
+  clock, or when it is passive, not reserved by another clock, and
+  `head <= t <= min(horizon, limit, chainEnd)`. `chainEnd` is the end of the forecast chain the directory has
+  computed (U14); past it the vessel is a projected echo labelled "not computed this far ahead" until a
+  viewer or a screening asks for more. `limit` is infinite for the viewer's own vessels, for party members'
+  vessels and for vessels with no owned craft (unowned ships, debris). For any other vessel it is
+  `liveTick + advanceLimit(vessel)`, anchored to the live clock (never to the head, so repeated claims cannot
+  walk a ship forward). `advanceLimit(vessel)` is the **minimum over its owned craft** of each owner's
+  policy for that craft: 30 days by default, 6 years for a craft its owner has marked as a station module;
+  an owner may set any value up to the cap. Docking never raises a limit: a 30-day ferry docked to a 6-year
+  station makes a 30-day assembly until the ferry's owner raises theirs or undocks. A hard guard refuses any
+  claim that would carry another owner's craft past `liveTick + leadCap - 20 years`.
 - **U3. Interaction.** Contact, docking, transfer and control exist only between vessels on one clock, or
-  between a vessel on a clock and a passive vessel it has claimed inside its solid window.
-- **U4. Claim, in two steps.** *Admit*: when a vessel on a clock comes within the join distance
-  (`1 km + 2 s x closing speed`) of a solid passive vessel, the passive vessel is loaded into the island in
-  the Armed tier (6.2). Its head does not move. *Commit*: the first time a force, a contact, a capture, a
-  transfer or a command acts on it, the directory sets its head to the island's tick in one ordered
-  transaction. If the island dissolves first, the vessel is released with its old head. The directory is
-  the single place where competing commits are ordered; a loser's copy becomes an echo with a jump offer.
-- **U5. Materialise.** When a vessel becomes solid for a clock that is already past its head (a release, a
-  logout, a returned claim, a wreck of an earlier cohort reached by the live clock), it is not collidable
-  toward any vessel whose bounding sphere it overlaps or would reach ballistically within 30 s, until the
-  two have first been `Ra + Rb + 5 m` apart. Nothing ever appears inside, or on a collision course seconds
-  from, a ship that was there first.
-- **U6. Rate.** A private clock may run at any level its vessel's situation allows: 1-4x while anything on
-  it is integrated (the ceiling `physicsWarpMax` is a load-aware rules field), the altitude ladder on rails
-  up to 10,000,000x, and 1x inside a launch range (within 150 km of a site and below 100 km altitude). The
+  between a vessel on a clock and a passive vessel its island has reserved inside its solid window.
+- **U4. Claim, in three steps.**
+  *Admit*: when a vessel on a clock comes within the join distance (`1 km + 2 s x closing speed`) of a solid
+  passive vessel, a copy is loaded into the island in the Armed tier (6.2). Nothing is written; the head
+  does not move; islands on other clocks may hold copies of the same vessel at the same wall time.
+  *Reserve*: before the copy may leave the Armed tier, that is when a member comes within the armed margin
+  (`200 m + 2 s x closing speed`, at least 2 s of closing time before any contact) or addresses a command to
+  it, the island asks the directory for the vessel's **reservation**. The directory, the single place where
+  competing requests are ordered, grants it when the row is `passive` and unreserved, the island's tick is
+  inside the solid window and the carry limit, and no removal, fate or attach of that vessel is in progress.
+  The grant is an in-memory decision fenced by the island's epoch (no database write is on its path; it is
+  made durable with the next batch and re-asserted by the holder after a directory restart). It does not
+  move the head. **An island never steps a tick in which an unreserved copy would be inside the contact
+  margin**: if the answer has not arrived it holds at that tick (U18). The margin makes that a matter of
+  milliseconds against two seconds.
+  *Commit*: the first force, contact, capture, transfer or command that acts on the reserved vessel sets
+  its head to the island's tick. For the reservation holder the commit is unconditional, so the island
+  steps on without waiting; only the release of the event to clients waits for the durable write (15.1).
+  *Release*: when the vessel has been outside the armed margin for 10 s, when the island dissolves, or when
+  the island's epoch is fenced, an uncommitted reservation ends and the vessel is exactly as it was: a
+  fly-by leaves the head where it found it.
+  *Losing*: a denied island removes its copy at the stamped tick, before it could touch it. The vessel is
+  then an echo for that pilot with an offer **by relation**: a pilot who is behind the holder's tick is
+  offered a jump to the holder's clock; a pilot who is ahead is offered hold or ask-to-advance (U9), since
+  nobody can jump back. If the reservation is released uncommitted the copy is admitted again.
+  *Order against everything else*: while a vessel is reserved the expiry sweep, pad safing, the fate of
+  U13 and removal for any reason do not act on its row; they are applied when it is released, or enter the
+  holding island as tick-stamped inputs (a `remove` with its reason) when they must act now. An owner who
+  attaches to a reserved vessel is seated on the holder's clock (U8b). Grant, denial and release are
+  journaled inputs of the island (7.2), so a replay makes the same claim.
+- **U5. Materialise.** When a vessel becomes solid for a clock that is already past its head (a hold, a
+  logout, a released claim, a wreck of an earlier cohort reached by the live clock), contact impulses and
+  port capture are switched off between it and any vessel whose bounding sphere it overlaps or would reach
+  ballistically within 30 s, until the two have first been `Ra + Rb + 5 m` apart. Explosions and plume
+  heating still act on such a pair. The exemption is bounded: while the pair overlaps, the vessel that
+  arrived later has capture, engines and RCS translation inhibited and receives a server-applied separation
+  acceleration along the line of centres, sized to reach clearance in 15 s and capped at 0.5 m/s^2 (a
+  journaled input, shown to both pilots as "RANGE: CLEARING"). If clearance is not reached within 30 s the
+  later vessel is recovered (removed, reason `recovered`). Nothing stays inside another ship, and nothing
+  appears on a collision course seconds from a ship that was there first.
+- **U6. Rate.** A private clock may run at any level its host's situation allows: 1-4x while anything on it
+  is integrated (the ceiling `physicsWarpMax` is a load-aware rules field), the altitude ladder on rails up
+  to 10,000,000x, and 1x inside a launch range (within 150 km of a site and below 100 km altitude). The
   clock is clamped at the next sphere-of-influence crossing, at 1x from 10 s before a screened encounter
-  (U10), and steps down before the selected target's closest approach (50x at 60 s, 1x at 10 s). A shared
-  clock runs at the lowest request; a change above 1x is a proposal with a 15 s ready-check. A pilot may set
-  **follow** for a named pilot (their proposals are accepted automatically). A pilot who has given no input
-  for 120 s and whose vessel is quiescent or docked counts as accepting. A disconnected member never blocks.
+  (U10), by the carry limit (5.2), and steps down before the selected target's closest approach (50x at
+  60 s, 1x at 10 s). A shared clock runs at the lowest request of its bound members; a change above 1x is a
+  proposal with a 15 s ready-check, at most one open proposal per clock and one new proposal per account
+  per 30 s. A pilot may set **follow** for a named pilot (their proposals are accepted automatically). A
+  bound member who has given no input for 120 s and whose vessel is quiescent or docked, or who is
+  disconnected, does not block a proposal, but such acceptance is valid only up to the carry limit.
 - **U7. Stopping warp.** On a private clock above 4x the committed head trails the schedule by a stop
-  window of 0.5 s of wall time. A rate change or stop stamped by the pilot with tick `T` takes effect at
+  window of 0.5 s of up-time. A rate change or stop stamped by the pilot with tick `T` takes effect at
   `max(T, head)`. The warp therefore stops where the pilot saw it, at any rate, and the server still owns
-  the clock: nothing can interact with a private rails clock inside that window.
+  the clock: nothing can interact with a private rails clock inside that window. When the request brings
+  the rate to 4x or below the vessel is handed to an island before any control input is accepted (6.1);
+  the HUD shows the new rate only on the acknowledgement.
 - **U8. Jump, hold, meet.** A quiescent vessel (or a clock whose vessels are all quiescent) may **jump** to
-  any later tick, or to another clock, which it then joins. A jump is refused when the interval contains its
-  horizon or a screened encounter, when it would pass the lead cap, when the arrival state is within
-  `300 m + 3 x (Ra + Rb)` of a vessel that is solid there, or when a ballistic screening of the arrival
-  predicts an approach inside `Ra + Rb + 50 m` in the next 30 s. An attended vessel near the arrival point is
+  any later tick, or to another clock, which it joins as a guest (5.2). A jump is refused when the interval
+  contains its horizon or a screened encounter, when it would pass the lead cap or the carry limit, when a
+  ballistic screening of the arrival predicts an approach inside `Ra + Rb + 50 m` in the next 30 s, or when
+  it would arrive on another pilot's clock inside the join distance of an attended vessel whose pilot is not
+  linked with the jumper. Whatever it overlaps on arrival is handled by U5; there is no separate arrival
+  radius, so a jump and a hold reach exactly the same places. A refusal names the reason and carries an
+  **alternative**: the latest clean tick, 10 s before the first encounter. The planner chains "jump, pass at
+  1x, jump" so an in-phase offer completes in a crowded orbit. An attended vessel near the arrival point is
   notified. **Hold** is rate 0: the pilot stays seated while the vessel is, for every purpose, passive.
   **Meet** fixes a tick not earlier than two pilots' heads; each warps there privately and they link on
   arrival. The planner offers a jump that arrives **in phase** (the first tick at or after the target's
   time at which the chaser's coast puts it at the wanted phase angle).
+- **U8b. Where a pilot resumes.** Leaving hold, attaching to a parked ship and returning after a
+  disconnect all seat the pilot by one rule, in this order: (i) on the clock of the island that currently
+  holds or has reserved the vessel, if any; (ii) else on the clock the pilot asked for
+  (`Attach { clock }`), if that clock's tick is at or after the head and the vessel is already solid to it
+  (it is already there: no arrival check, U5 applies), as a guest; (iii) else on the live clock, if
+  `head <= liveTick` and the interval contains no horizon and no screened encounter; (iv) else at the head
+  on a new private clock. Leads therefore shrink by themselves while a player is away.
 - **U9. Advance for a visitor.** A pilot who is ahead of an occupied group may ask it to advance to their
   tick. Granted when every vessel in the group is quiescent, the interval is clean for every member (U8
-  checks) and every pilot accepts or is idle (U6). While a request is open the group accepts no further
-  visitors, so the wait is bounded by one ready-check.
+  checks), the target is within the group's carry limit, and every bound pilot accepts or does not block
+  (U6). While a request is open the group accepts no further visitors, so the wait is bounded by one
+  ready-check. After a refusal the same account may ask the same group again after 5 minutes.
 - **U10. Nothing tunnels through warp.** Before any rate above 4x and before any jump, every member's
   trajectory is screened over the whole interval against the solid predicate as a function of time: passive
-  vessels from their heads on, and the other members of the same clock. A predicted miss below
-  `Ra + Rb + 10 m` is an **encounter**: the clock is at 1x from 10 s before it, both vessels are in one
-  island, and the pass is integrated with swept tests (7.4). Every later conic commit by anyone is
-  re-screened against clearances already granted and shortens `untilTick`, never to before the committed
-  head.
-- **U11. Leaving a shared clock.** A vessel may leave alone (warp, jump or hold) unless it is in contact,
-  in soft capture or docked, or a ballistic screening predicts contact (miss below `Ra + Rb + 10 m`) within
-  30 s. Other pilots in the island see a 10 s notice; nobody can veto, and proximity alone never blocks. To
-  those left behind the departed vessel is a recorded echo.
+  vessels from their heads on along their forecast chains, and the other members of the same clock. A
+  predicted miss below `Ra + Rb + 10 m` is an **encounter**: the clock is at 1x from 10 s before it, both
+  vessels are in one island, and the pass is integrated with swept tests (7.4). Every later conic commit by
+  anyone is re-screened against clearances already granted and may shorten `untilTick`, but only to a tick
+  the client has not yet displayed: never earlier than the schedule's value at now plus the stop window
+  plus one round trip (0.25 s). An encounter that falls before that tick is a case of accepted
+  inconsistency (a) and is logged.
+- **U11. Leaving a clock.** A vessel may leave alone (rate change, jump or hold; 5.2) unless it is in
+  contact, in soft capture or docked, or a ballistic screening predicts contact (miss below
+  `Ra + Rb + 10 m`) within 30 s. The departure takes effect at the stamped tick and is not delayed; the
+  other pilots in the island see a notice for 10 s and the departed vessel as a recorded echo. Nobody can
+  veto, and proximity alone never blocks.
 - **U12. Passive against passive is not simulated.** A passive vessel has no "when" in which to collide.
   The one exception is U13.
-- **U13. Fate.** Beyond its horizon a passive vessel is a projected echo labelled "fate pending". It is
-  resolved (an unattended run, 6.2) when the live clock reaches the horizon and its owner has not flown it.
-  Debris without a command part is resolved at once when it becomes passive.
-- **U14. Spheres of influence.** Crossings are exact per vessel on rails. An island crosses as a unit at
-  its anchor's crossing tick; a merged island adopts the anchor's frame at the merge tick; a shared clock
-  clamps to the earliest event of any member.
+- **U13. Fate.** Beyond its horizon a passive vessel, **a ship or a piece of debris alike**, is a projected
+  echo labelled "fate pending"; up to the horizon it is passive and solid. Its fate is an unattended run
+  (6.2) started when its pacing clock (5.1) reaches the horizon, paced by that clock and solid to the
+  islands it meets, unless its owner flies it first. A stage dropped on the live clock therefore falls
+  through the corridor as a physical object that a later rocket can hit. An immediate un-paced resolution
+  is allowed only under the pacing-clock rule of 5.1 (a private clock, nothing of another owner within
+  reach of the arc).
+- **U14. Spheres of influence and forecast chains.** Crossings are exact per vessel on rails. An island
+  crosses as a unit at its anchor's crossing tick, **Armed members included**; a merged island adopts the
+  anchor's frame at the merge tick; a shared clock clamps to the earliest event of any member. The
+  directory extends a passive vessel's forecast chain lazily, up to the furthest tick that a subscribed
+  viewer, a screening or a horizon search needs, at most 16 patches, stores the patches as `forecast`
+  worldline segments and publishes them in the census with their validity intervals. A commit that changes
+  the vessel's orbit discards its forecast.
 - **U15. Burns** run on the vessel's own clock at 1-4x.
-- **U16. Disconnect and logout.** While the socket lives, controls stay latched; a hidden tab is not a
-  disconnect. When the socket is lost, a solo island keeps the latched controls for 10 s, then closes the
-  throttle (SAS keeps its mode). In an island with another owner's vessel the dead-man rule applies
-  instead: rotation and translation commands are zeroed after 250 ms without input and the throttle after
-  2 s. The reconnect grace is 120 s. After it, or on an explicit leave: a quiescent vessel becomes passive
-  at its head; any other is flown to rest by an **unattended run** with no invented input (no stage fired,
-  no chute opened), in real time and solid if it was on the live, a cohort or a shared clock, un-paced if it
-  was on a private clock. A vessel is never removed from an island during contact. A returning pilot is
-  attached at `max(head, liveTick)` on the live clock when no horizon lies between, else at the head on a
-  private clock; leads therefore shrink by themselves while a player is away.
+- **U16. Disconnect and logout.** A socket is **lost** when it closes or when no frame has arrived for 3 s
+  on a 1 s ping; a hidden tab is not a disconnect, and a stall shorter than that changes nothing (controls
+  stay latched). What happens at a declared loss, with timers in directory up-time entering the island as
+  stamped inputs:
+
+  | Situation | Rotation and translation | Throttle | Helm seat | Clock |
+  |---|---|---|---|---|
+  | Solo island | latched 10 s, then zero (SAS keeps its mode) | latched 10 s, then closed | - | a private clock above 1x goes to hold at `max(last stamped tick, committed head)` |
+  | Island with another owner's vessel | zero after 250 ms | closed after 2 s | - | the member counts as requesting 1x for itself; if the others continue it is forked (U11) |
+  | Helm of an assembly with other pilots aboard | zero after 250 ms | closed after 2 s | reserved for the reconnect grace, unless the anchor's owner takes it | as the row above |
+
+  The reconnect grace is 120 s. After it, or on an explicit leave, the throttle is closed at that tick,
+  then: a quiescent vessel becomes passive at its head; any other is flown to rest by an **unattended run**
+  with no invented input (no stage fired, no chute opened), paced by its pacing clock (5.1). A vessel is
+  never removed from an island during contact. The flight menu states these outcomes before the player
+  leaves. A returning pilot is seated by U8b. After a shard loss or a restart the latch and dead-man timers
+  start when the pilot has resumed or the grace has ended, never while the pilot could not see (15.4).
 - **U17. Lead cap.** No clock may run more than 250 years ahead of the live clock. Hold is always available.
-- **U18. Overload.** An island that cannot hold 120 Hz leaves onto its own clock running below 1x and is
-  shown as `behind`. It rejoins by a jump (U8) when it is next quiescent. No other island is affected.
-- **U19. Wall clock.** Expiry, pad dwell, reconnect grace, ready-checks and rate limits run on the wall
-  clock. An outage longer than one hour extends every expiry deadline by its length.
+- **U18. Overload and holds.** An island that cannot hold 120 Hz, or that is held (waiting for a
+  reservation answer, for terrain, or for its pilots after a recovery), leaves onto its own clock running
+  below 1x and is shown as `behind`. It rejoins by a jump (U8), offered as one key, when it is next
+  quiescent. No other island is affected.
+- **U19. Timer bases.** Every timer runs on one of the three bases of section 3. Pad occupancy is a tick
+  interval; reservation holds, ready-checks, helm requests and the reconnect grace run on directory
+  up-time and so do not expire while the universe is down; expiry runs on the wall clock, and an outage
+  longer than one hour extends every expiry deadline by its length.
 
 ### 5.4 What players at different times see
 
@@ -406,8 +577,9 @@ Each client evaluates bodies, lighting and site daylight at its own clock. The m
 
 | The other vessel is | behind me | on my clock | ahead of me |
 |---|---|---|---|
-| passive, inside its solid window | Solid at my tick; admitted and claimed if I reach it (U4) | (a passive vessel is on no clock) | Recorded echo; "JUMP +3 d 4 h" |
-| passive, outside its window | Projected echo: "fate pending" or "not available this far ahead" | | |
+| passive, inside its solid window | Solid at my tick; admitted, reserved and claimed if I reach it (U4) | (a passive vessel is on no clock) | Recorded echo; "JUMP +3 d 4 h" |
+| passive, reserved by an island on another clock | Projected echo; "IN USE: HOLD or ASK TO ADVANCE" if I am ahead of the holder | | Echo; "JUMP" to the holder's clock if I am behind it |
+| passive, outside its window | Projected echo: "fate pending", "not available this far ahead" or "not computed this far ahead" | | |
 | attended | Projected echo of its coast, updated when its pilot manoeuvres; "ASK TO JOIN" or I hold | Live and solid | Recorded echo; I can jump to its clock, or ask it to hold |
 
 `SimSnapshot.time` (`TimeView`) carries, for the HUD's time strip: `myTick`, `liveTick`, `rate`, `maxRate`,
@@ -430,8 +602,10 @@ forecast after it, with the boundary marked.
 3. **Another pilot, later**: MEET at a tick; both warp privately; LINK on arrival.
 4. **Another pilot, now**: whoever is behind jumps, or whoever is ahead holds; then LINK and fly the phasing
    with warp by ready-check or follow. Inside the join distance the server merges the islands.
-5. **Arriving ahead of an occupied station**: the station is a projected echo; ASK TO ADVANCE (U9), hold, or
-   park and log out (the ship is attached at the live clock on return).
+5. **Arriving ahead of an occupied station**: the station is a projected echo; ASK TO ADVANCE (U9, within
+   the station's carry limit), hold, or park and log out (the pilot is seated by U8b on return).
+6. **A jump refused for an encounter on the way**: the refusal carries the latest clean tick; the planner
+   offers "jump, pass at 1x, jump" as one action.
 
 ### 5.6 Warp in every situation the brief names
 
@@ -443,7 +617,8 @@ forecast after it, with the boundary marked.
 | Entering warp near a passive vessel | Allowed; U10 has screened the pair; an encounter forces 1x and an island |
 | Inside an island with other pilots | A rate change is a proposal (U6). Leaving alone follows U11 |
 | In contact, soft capture or docked | No rate change by one craft; a docked assembly is one vessel on one clock, the helm proposes |
-| Dropping out of warp, ending a jump, joining a clock | U8 arrival checks and U5: nothing materialises inside or onto another ship |
+| Dropping out of warp, ending a jump, joining a clock | U8 screening and U5: nothing stays inside another ship or arrives on a collision course; the vessel is in an island before controls are live (U7) |
+| Socket lost during warp | The private clock goes to hold at the last stamped tick (U16); nothing runs on for years |
 | Sphere-of-influence change ahead | The clock clamps to the crossing, then continues if still permitted |
 | Logout | U16; the flight menu states the outcome first |
 | Cleanup | Section 15.5, on the wall clock |
@@ -454,17 +629,20 @@ forecast after it, with the boundary marked.
 |---|---|
 | Changing something's past | U1; recorded echoes are not solid |
 | Touching a future its pilot has not flown | Attended-and-behind vessels are projected echoes |
-| A stranger dragging a ship or a station far ahead | U2: the limit is anchored to the live clock and bounded by the owner; the guard band before the cap |
-| A fly-by that exiles a parked ship | U4: admission does not move the head; only a first interaction does |
-| Two players at different times taking one passive vessel | Commits are ordered by the directory; the head moves once |
+| A stranger dragging a ship or a station far ahead | U2: the limit is anchored to the live clock and is the minimum over the owned craft; the carry limit (5.2) bounds a clock that already carries the craft, so docking, taking a vacant helm, an idle crew or an advance never pass it; the guard band before the cap |
+| A fly-by that exiles a parked ship | U4: admission and reservation do not move the head; only a first interaction does |
+| Two players at different times taking one passive vessel | U4: one reservation at a time, ordered by the directory, taken at least 2 s of closing time before contact; an island never steps an unreserved copy into the contact margin, so the loser has resolved nothing against it; the loser's offer depends on who is ahead |
+| A parked ship vanishing or changing clock in front of a docking ferry | U4: sweep, safing, fate and attach respect the reservation |
 | Leaving a collision course by changing time or by logging out | U10 before any encounter; U11 on predicted contact; U16 paces unattended runs on shared clocks in real time |
-| Appearing inside or onto another vessel | U8 arrival checks; U5 |
-| Being held at 1x by a neighbour | U11: only contact or a predicted contact inside 30 s blocks a departure |
+| Appearing inside or onto another vessel | U8 screening; U5 with its 30 s bound, inhibited controls and recovery |
+| Being held at 1x by a neighbour or by a scripted client | 5.2: only bound members share a rate; a guest forks; U11: only contact or a predicted contact inside 30 s blocks a departure; the join cooldown |
 | An absent crew member blocking a visitor | U6 idle rule, follow, and "a disconnected member never blocks" |
 | A vessel existing twice or vanishing | One record, one holder, fenced by epoch (6.1); clients never hold state |
 | A pad used by two rockets | One timetable of tick intervals per pad across all clocks (5.9) |
 | A decaying parked ship seen "already crashed" by someone ahead | U13: beyond the horizon it is a projection, never history |
-| Time running backwards after a crash | The live clock is a stored mapping; recovery restores a consistent cut (15.4) |
+| Time running backwards after a crash | The live clock is a stored mapping; every island is restored at its own durable tick and never earlier (15.4) |
+| A burn running on while its pilot cannot see | 15.4: islands in flight are held until their pilots resume; U16 timers start at the resume |
+| A coasting ship that has no defined state after its next sphere-of-influence change | U14: the directory's forecast chain; the window ends where the chain ends |
 | Launched earlier, should have hit a committed history; passive against passive | Not excluded (decision 53) |
 
 ### 5.8 Why this model
@@ -472,21 +650,33 @@ forecast after it, with the boundary marked.
 A solo player keeps everything single-player KSP gives, up to 10,000,000x, with no waiting on anyone and
 instant stops. The launch site is a shared place by construction (default spawn on the live clock, the range
 rule, cohorts). Meeting someone is one action for whoever is behind. Nobody's warp can touch a burn in
-progress and nobody can be pinned at 1x. The alternatives fail the brief: one clock makes Mars eight months
+progress and nobody can be pinned at 1x (5.2, U11). The alternatives fail the brief: one clock makes Mars eight months
 away or lets one player's warp wreck every burn; subspaces with client authority duplicate and rewind
 ships; timeline repair teleports them. The price is stated to the player, not hidden: an offset next to
 every name, echoes that cannot be touched, and a sky that after the first warp is mostly echoes, each one
-keypress away for whoever is behind. That last point is the first thing to play-test.
+keypress away for whoever is behind. That last point is not left to hope: the load test measures how much
+of the lobby is mutually solid when bots warp as players do (28.7, target and tuning fields stated there),
+an acceptance story has two strangers who warped to different leads end up docked using only offered
+actions (28.5), and the lead play-tests the U6, U8 and U9 defaults between waves 5 and 6 and writes the
+result into OPEN_QUESTIONS Q7.
 
 ### 5.9 Pads and time
 
 - A spawn is a pad and a tick. Each pad has **one timetable** of non-overlapping tick intervals
-  `[t, t + dwell + safing]` across all clocks. There are no per-clock copies of pad state.
+  `[t, t + dwell + safing]` across all clocks, on the pad's own clock (U19). There are no per-clock copies
+  of pad state.
 - The default slot is the live tick. When the wait for a live pad of the vehicle's class exceeds 60 s the
-  menu offers the earliest free **cohort slot**: buckets of 5 minutes, at most 24 h ahead. Everyone in a
-  bucket shares one cohort clock and is solid to each other; other cohorts are echoes. A cohort slot uses
-  future universe time, so it removes the wall-clock wait during a spike, not the pads' throughput per
-  universe hour; pads are added as data.
+  menu offers the earliest free **cohort slot**: buckets of 5 minutes up to the **cohort horizon**
+  (`cohortHorizon`, default 14 days). Everyone in a bucket shares one cohort clock and is solid to each
+  other; other cohorts are echoes.
+- **What cohorts buy.** Every clock runs at 1x, so the complex produces `pads x 3600 / cycle` launch slots
+  per wall hour for ever (768 with 32 pads and a 150 s mean cycle) plus a one-time **reservoir** of
+  `pads x horizon / cycle` slots (258,000 with a 14-day horizon). The reservoir is what absorbs a front-page
+  day: 240,000 sessions of one launch each fit in the first 24 hours, each bucket flying at once in wall
+  time. It refills only at the sustained rate. The trade is stated to players: during a spike people start
+  up to 14 days ahead of the live clock, 64 to a bucket, and are echoes to the live crowd until someone
+  jumps. Sustained demand above the sustained rate needs more pads, a shorter cycle or fewer launches per
+  session (16.3); a longer horizon only postpones it.
 - The menu also offers a **launch-window slot** ("plane crossing in 46 min", as a cohort) and a friend's
   clock. Waiting for a window is done by choosing the slot; there is no rails warp on a pad.
 - Debris and wrecks of an earlier cohort become solid for later clocks under U5; pad safing removes anything
@@ -499,15 +689,30 @@ keypress away for whoever is behind. That last point is the first thing to play-
 ### 6.1 Authority
 
 - Every vessel has exactly one **holder**, recorded in the directory with an **epoch** number: the directory
-  itself (passive and cruising vessels) or one island on one shard. A hand-over is: serialise at a tick,
-  the receiver acknowledges, the directory flips the pointer and increments the epoch. Writes, frames and
-  events that carry an old epoch are rejected, so a shard that was presumed dead cannot speak for islands
-  that were recovered elsewhere.
+  itself or one island on one shard. Writes, frames and events that carry an old epoch are rejected, so a
+  shard that was presumed dead cannot speak for islands that were recovered elsewhere. The directory itself
+  is fenced the same way against a second directory process (15.3).
+- **Who holds what.** A passive vessel is held by the directory. An attended vessel at 4x or below is
+  **always held by an island on a shard**, in its rails state at zero step cost while it coasts, so a
+  throttle or RCS input never waits for a hand-over. Only an attended vessel above 4x is held by the
+  directory (`cruising`); its island is materialised when the rate request drops to 4x or below, **before
+  any control input is accepted** (U7).
+- **A hand-over** (directory to island, island to island, island to directory) is: serialise at a tick, the
+  receiver acknowledges, the directory flips the pointer and increments the epoch in memory, the receiver
+  steps. The flip is written ahead in the next batch; no database commit is on the path of an input. If the
+  directory dies before the batch, recovery finds the old holder's last durable state and the island
+  re-registers (15.4).
+- **No island steps past a pending merge tick.** When the directory decides that two islands merge at tick
+  `M` (they will be inside the join distance), both are told `M`; each stops at `M` if the migration of the
+  other has not completed, and is `behind` (U18) for that long. A pair at the join distance is at least 2 s
+  from contact, so the stop is normally never reached.
+- **Lag is drained before a read.** Any arrival screening, admission, reservation or claim that reads an
+  island's state first brings a trailing island (6.2) to the reader's tick.
 - Two vessels exchange force, propellant, crew or control only inside one island: one clock, one step loop,
   one thread.
 - Irreversible facts carry `(vesselId, epoch, tick)` and are idempotent: structural operations (split,
-  merge, destroy, capture, release), ids of spawned vessels, pad assignments, claims, helm changes, warp
-  grants.
+  merge, destroy, capture, release), ids of spawned vessels, pad assignments, reservations and claims, helm
+  changes, warp grants. A shard may therefore re-send them after a directory restart.
 - Same-tick ordering is canonical: vessels by id, then parts by index, commands by `(tick, pilot account
   id, sequence)`. The journal records the applied order, so a replay reproduces a live run.
 
@@ -517,20 +722,33 @@ Simulation tiers (what the server does for a vessel):
 
 | Tier | Step | Applies to | Cost (measured, desktop core) |
 |---|---|---|---|
-| Rails | none; one timer per event | Passive vessels; attended quiescent vessels at any warp | 0 between events; 0.15-0.26 us per Kepler evaluation |
-| Armed | none; a swept-sphere test at 10 Hz against the island's other members | A quiescent vessel inside an island that is farther than `200 m + 2 s x closing speed` from every other member (a parked station while a ferry approaches) | under 0.1 us per second |
-| Full | 120 Hz, contact sub-steps at 480 Hz | Thrust, RCS translation, atmosphere, contact, soft capture, anything inside the armed margin | 2.6-14.5 us per step; 45 us mean, 244 us p99 at touchdown |
-| Reduced | 2 Hz | Unowned debris in atmosphere outside any island | 0.35 us per step |
-| Unattended run | Full fidelity, no pilot | A vessel whose pilot left while it was not quiescent; a fate (U13) | as Full; un-paced unless the clock is shared |
+| Rails | none | Passive vessels (no timers at all: chains and horizons are computed on demand, U14); attended quiescent vessels at any warp (one timer per event of their clock) | 0 between events; 0.15-0.26 us per Kepler evaluation |
+| Armed | none; a swept-sphere test at 10 Hz against the island's other members | A quiescent vessel inside an island that is farther than the armed margin `200 m + 2 s x closing speed` from every other member (a parked station while a ferry approaches) | under 0.1 us per second |
+| Full | RK4 at 120 Hz for the centre of mass with the semi-implicit attitude update, exactly as v1's `stepVessel`. The **sub-stepped path** (four semi-implicit sub-steps, 480 Hz) is taken only by a vessel with a ground or water probe within 5 m, and by a **pair** inside the speculative-contact margin: both vessels of a pair enter it at the same tick and leave it at the same tick | Thrust, RCS translation, atmosphere, contact, soft capture, anything inside the armed margin | 2.6-14.5 us per step; 45 us mean, 244 us p99 at touchdown |
+| Reduced | 2 Hz, paced by the pacing clock (5.1) | Debris in atmosphere outside any island, owned or not | 0.35 us per step |
+| Unattended run | Full fidelity, no pilot | A vessel whose pilot left while it was not quiescent; a fate (U13) | as Full; paced by its pacing clock, un-paced only under the rule of 5.1 |
+
+An object in the Reduced tier or in an unattended run is solid to the islands of its pacing clock: when one
+comes within the join distance it is admitted to that island and stepped in the Full tier there.
 
 Lanes (when the server runs the steps of a Full-tier island). All lanes run the identical loop on the
-identical stamped inputs.
+identical stamped inputs. `src/universe` defines the scheduler interface (the caller says how much up-time
+has passed) and the acceptance window; the executors live in `server/`.
 
 | Lane | Tick `k` is stepped | Used for | Worker utilisation target |
 |---|---|---|---|
 | Real-time | at `wall(k)`, with a jitter buffer of two control ticks | Islands with vessels of two or more owners; any island in contact; every island while `lagCap = 0` | 50 % |
 | Trailing | any time before `wall(k) + L`, in batches | Single-owner islands | 85 % |
 | Deferred | whenever a core is free | Un-paced unattended runs, crash-recovery replays, audits | whatever is free |
+
+- **Ticks are scheduled by sleeping, never by spinning.** A worker sleeps to the next tick boundary (the
+  two-control-tick jitter buffer absorbs a millisecond of wake-up error), so Railway bills what is used and
+  an idle shard costs its memory. The load test reports billed vCPU-seconds per integrated vessel-second
+  and idle shard CPU.
+- **Inter-role traffic is batched.** One frame per gateway process per shard per control tick in each
+  direction; one batch (or a SharedArrayBuffer ring) per worker per tick between a shard's main thread and
+  its workers. No message crosses a thread or a socket per input or per vessel. Main-thread utilisation of
+  every shard and of the directory is a published metric and a line of the capacity report.
 
 Rules for the commit lag `L` of a single-owner island:
 
@@ -540,12 +758,18 @@ Rules for the commit lag `L` of a single-owner island:
 - `L = 0` during a **threshold watch**: any part within 10 % of its temperature limit, structural load above
   80 % of a joint limit, a contact probe within 2 s of the ground, or a parachute outside its safe envelope.
 - An input stamped for tick `k` is applied at `k` when it arrives before the server steps `k`; later, it is
-  applied at the arrival tick and the acknowledgement says so. The window is therefore the jitter buffer in
-  the real-time lane and `L` in the trailing lane, so a TCP stall shorter than `L` costs a solo pilot no
-  correction. The server never accepts a stamp beyond `clock(wall) + 0.25 s`.
-- **`lagCap` is 0 in the first release.** It is raised to 2 s when the lane-equivalence suite (28.2) is green
-  and the first load test asks for it. A launch day is provisioned as real time in any case: neighbours 1 to
-  2.5 km apart on a pad row hold `L` under 0.35 s for a whole ascent.
+  applied at the arrival tick. **Every input is acknowledged with the tick it was applied at**
+  (`InputAck { seq, appliedTick }`, sent with the next delta), so the client replays with the server's
+  tick and a gateway's input buffer can reproduce what a dead shard did. The window is the jitter buffer
+  in the real-time lane and `L` in the trailing lane, so a TCP stall shorter than `L` costs a solo pilot
+  no correction. The server never accepts a stamp beyond `clock(up) + 0.25 s`.
+- A late **command** is re-timed, never refused for being late: validity that depends only on the craft's
+  own stage state (lockout, next stage) is judged as of the stamped tick, so a command the client could
+  legally show is not refused afterwards (6.4).
+- **`lagCap` is 0 in the first release.** It is raised to 2 s only on evidence: the lane-equivalence suite
+  green (28.2), the multi-client `lagCap = 2 s` profile green (28.4), and the load test's A/B run at one
+  ramp level showing what it saves (28.7). A launch day is provisioned as real time in any case:
+  neighbours 1 to 2.5 km apart on a pad row hold `L` under 0.35 s for a whole ascent.
 - A leased burst job on Modal is never the holder of an attended vessel.
 
 ### 6.3 Who computes what
@@ -561,18 +785,35 @@ Rules for the commit lag `L` of a single-owner island:
 | Pilot left mid-flight | Unattended run | - | 1 Hz to watchers |
 | `SimSnapshot`, readouts, navball, staging delta-v, patches, nodes, closest approaches to one target, proximity plot, launch windows, capability read-outs | Stores nodes as an opaque blob with the ship | Everything (35-42 us per snapshot, 27-140 us per prediction, measured; more than stepping the vessel) | - |
 | Conjunction screening, census, pad timetable, debris fates, expiry, admission | Directory and its helper threads | Receives its own conjunction list | on change |
-| Target closest approaches for a weak client (`cpuScore` below threshold in hello) | Computed by the API from the same pure function, cached per (vessel revision, target revision) | Skips the computation; census and near-tier rates are halved | on change |
+| Planning for a weak client (`cpuScore` below `weakClientCpuScore`, a rules field set from the calibration data of wave 4) | The API's planning endpoint runs the same pure functions, cached per (vessel revision, target revision) | Skips the computation; census and near-tier rates are halved | on change |
 
-The chooser for planning work is a table lookup, not an optimiser: local when the estimate is under 50 ms or
-the link is down; the cache when the key exists; the service otherwise. Bots, bakes, replay audits and
-bucket throughput tests are batch work on Modal.
+**Planning is a service with three providers.** `PlanningService` (`session.ts`) offers patch prediction,
+closest approaches between two chains, the proximity plot and launch windows; every call is asynchronous
+and keyed by vessel and target revision, so the map and the HUD never import the simulation and never block
+a frame. Providers, all running the same functions of `src/sim/orbit` and `src/sim/nav`: **in-process**
+(`LocalSession`, tests, bots), a **planning worker** in the browser, and the **API endpoint**. The chooser
+is a table in `UniverseRules`, not an optimiser: the worker when the estimate is under 50 ms or the link is
+down; the cache when the key exists; the endpoint for a weak client or an estimate above the threshold.
+`netcode-client` owns the providers and the chooser; the acceptance is that a weak client shows the same
+closest approaches as local computation to tolerance, with the endpoint's p95 latency and cache hit rate
+reported. Bots, bakes, replay audits and bucket throughput tests are batch work on Modal.
+
+The balance between server and client is therefore set by four dials, each with a measurement behind it:
+`lagCap` (how far a solo island may trail), `physicsWarpMax`, the planning chooser's thresholds, and
+`weakClientCpuScore`. The load test runs one ramp level twice (`lagCap` 0 and 2 s) and once with a share of
+low-score bots, and reports server CPU, egress and correction rate for each (28.7).
 
 ### 6.4 What a client may show before the server
 
 - Attitude, throttle, translation, contact forces and the soft-capture spring are predicted.
 - In a **single-owner island**, command-triggered structural changes of the pilot's own craft (stage, abort,
-  legs, chute deployment, undocking two of their own craft) are applied locally at once: client and server
-  run the same inputs at the same ticks, and spawned vessel ids are deterministic.
+  legs, chute deployment, undocking two of their own craft) are applied locally at once, **provided the
+  measured input margin is positive for the stamped tick**; otherwise the client waits for the server's
+  operation. Client and server run the same inputs at the same ticks, and spawned vessel ids are
+  deterministic. If the command nevertheless arrives late (a stall), the server re-times it and the client
+  replays the same operation at the acknowledged tick: the pieces stay separated on screen and move by the
+  difference. A re-time is a **correction**; a command that was shown and then did not happen is a
+  **reversal**, and the tests require zero reversals (28.4).
 - **Threshold-triggered outcomes are never predicted**: part destruction by heat, impact or overstress,
   joint breaks, explosions, crew loss, chute failure, and the confirmation of a touchdown. The predict step
   mode holds a part at its limit; the outcome arrives with the server's event, at most one round trip later
@@ -585,10 +826,14 @@ bucket throughput tests are batch work on Modal.
 1. Trailing islands' lag grows toward `lagCap` (invisible; only once `lagCap > 0`).
 2. The hot shard stops receiving islands; single-owner islands migrate to cooler workers and shards.
 3. Un-paced deferred work waits.
-4. The scale script adds shard services and gateway replicas (Railway has no autoscaler; this takes a
-   minute or two).
-5. Dilation: U18, single-owner islands first.
-6. Admission: new spawns queue in the menu, which holds no socket; queued players may spectate.
+4. The scale controller adds shard services and gateway replicas (16.2): shards are pulled by image digest,
+   not built, and nothing restarts. The measured time from trigger to new shards taking islands is in the
+   capacity report.
+5. Dilation: U18, single-owner islands first; an island above its vessel budget (7.2) dilates and its
+   neighbourhood is closed to new arrivals.
+6. Admission: new spawns queue in the menu, which holds no socket. A queued player spectates from the
+   public documents (the `live.json` markers and the census snapshot of the menu region, 13.1): no socket,
+   no server cost per spectator beyond CDN misses.
 
 Admission is driven by measurement: the directory admits a pilot only while the fleet's p99 step time is
 under 6 ms of the 8.33 ms tick.
@@ -613,22 +858,29 @@ same TypeScript runs in the shard workers, in the in-process universe and in the
   codec, and the per-vessel force evaluation. It sees the world only through `VesselEnvironment`.
 - **Island** (`src/sim/island`): N vessels on one clock's tick grid. Owns the per-vessel state machine
   (landed, rails, armed, integrated), exact rails advance to events, SOI hand-over as a unit, the reference
-  orbit, the sub-stepped step loop with the vessel-vessel contact and capture pass, swept tests, structural
-  operations, and the two step modes: **authoritative** and **predict** (threshold transitions suppressed).
-  It knows no player, no socket and no storage. An island of one with no origin produces exactly the
-  numbers of v1's `stepVessel`.
+  orbit and the anchor, the step loop (v1's RK4 path for every vessel that has no ground probe within 5 m
+  and is in no pair inside the speculative-contact margin; the sub-stepped path with the vessel-vessel
+  contact and capture pass otherwise, 6.2), swept tests, structural operations, the island codec (7.2), and
+  the two step modes: **authoritative** and **predict** (threshold transitions suppressed). It knows no
+  player, no socket, no storage and no clock other than its tick: everything from outside reaches it as a
+  tick-stamped input. An island of one with no origin produces exactly the numbers of v1's `stepVessel`,
+  and never takes the sub-stepped path unless v1 would.
 - **View** (`src/sim/view`): pure builders of the presentation blocks from island state plus client-side
   planning state: `SimSnapshot` assembly with presentation interpolation, readouts, navball, staging info,
-  patches and markers, burn bookkeeping, target and docking readouts. Never runs on a server.
-- **Universe** (`src/universe`): the directory (records, worldlines, solid windows, claims, epochs), clocks
-  and the rules of section 5, island lifecycle (materialise, merge, split, to rails, migrate) and lanes,
-  screening, the pad timetable, expiry, the milestone observer for optional objectives. Time and storage
-  are injected. Its server-facing interface is `UniverseHost` (spawn, attach, detach, input, command, time
-  request, subscriptions) which emits the typed messages of section 13.
+  patches and markers, burn bookkeeping, target and docking readouts (through the navigation functions
+  whose signatures the contracts fix). Never runs on a server.
+- **Universe** (`src/universe`): the directory (records, worldlines, forecast chains, solid windows,
+  reservations and claims, epochs), clocks and the rules of section 5, island lifecycle (materialise, merge,
+  split, to rails, migrate) and the scheduler interface, screening, the pad timetable, expiry, the
+  milestone observer for optional objectives. Time and storage are injected. Its server-facing interface is
+  `UniverseHost` (spawn, attach, detach, input, command, time request, subscriptions) which emits the typed
+  messages of section 13.
+- **Session** (`src/session`): `LocalSession`, the in-process universe behind `FlightSession`, and
+  `createSession`.
 
 Key rules carried from v1: point-mass gravity of the current SOI body both on rails and when integrating
 (mode switches are exact); rails propagation always from the epoch state; physics warp is more steps, never
-a bigger step; contact sub-steps at 480 Hz; terrain only through `TerrainProvider`; the atmosphere
+a bigger step; free flight is RK4 at 120 Hz and only contact is sub-stepped at 480 Hz; terrain only through `TerrainProvider`; the atmosphere
 co-rotates; Earth's rotation gives the pad its 439 m/s; SAS never fights aerodynamics; SAS only holds
 attitude and nothing steers, stages or plans automatically.
 
@@ -667,12 +919,44 @@ interface Vessel {
   both owners. A transfer is a pure state process and continues on rails in closed form.
 - **State is whole.** What v1 kept in `Vessel.struct` and was not derived (friction anchors, thermal wake
   factors, wet flags, probe contact flags) is vessel state. The binary codec (`src/sim/vessel/codec.ts`)
-  carries the complete dynamic state with definitions by id, non-finite numbers tagged and the sign of zero
-  preserved; `stateHash` hashes the codec output. Codec round trip is exact in every regime, including a
-  lander mid-touchdown and a capsule in entry. It is used by persistence, hand-over, keyframes and the
-  client's rollback ring.
-- **Limits**: 32 craft and 600 parts per assembly, 64 vessels per island; a capture that would exceed them
-  is refused with a message.
+  carries the complete dynamic state, non-finite numbers tagged and the sign of zero preserved;
+  `stateHash` hashes the codec output. Codec round trip is exact in every regime, including a lander
+  mid-touchdown and a capsule in entry. It is used by persistence, hand-over, keyframes and the client's
+  rollback ring.
+- **The codec is versioned, because ships outlive deploys.** Every blob starts with a codec version and
+  the `defsHash` it was written under. Per craft it carries a vehicle reference of one of two kinds: a
+  library id with the content hash of that `VehicleDef`, or an embedded design (the future builder's
+  `craft.design`); vehicles are resolved through an injected resolver, never by indexing the library. Per
+  part it carries the fingerprint of its `PartDef`, and module and resource blocks are length-prefixed, so
+  an unknown or changed block is detected instead of mis-read. Rules that keep old blobs readable: part,
+  module and resource ids are never removed or renumbered, only deprecated; a change of a part's modules,
+  resources or mass is a new fingerprint with an entry in the **migration registry**
+  (`src/sim/vessel/migrations`: pure, tested functions from an old fingerprint's state to the new one,
+  clamping resource amounts to the new capacity and recomputing mass properties). Migrations run lazily on
+  load and eagerly in a post-deploy sweep that lists every stored vessel and checkpoint the new library
+  cannot decode **before the lobby opens**. CI keeps a corpus of blobs written by every released build and
+  proves each still decodes and re-validates.
+- **The island has state of its own, and it is whole too.** `src/sim/island/codec.ts` carries, besides its
+  vessels: the member list with tier flags (Armed or Full) and the anchor; the reference orbit; nascent
+  (born-overlapping) pairs; U5 pairs with their clearing timers; soft-capture constraints with their clamp
+  and timeout timers and the hard-dock dwell timer; threshold-watch flags; admitted copies with their old
+  heads and reservation state; a pending merge tick; per pilot the latched controls, the open latch and
+  dead-man timers and the inputs queued in the jitter buffer. `islandHash` hashes this output. The island
+  codec is what `island_ckpt.state`, migration between workers, `IslandEnter` and the lane-equivalence,
+  replay and audit comparisons use; a checkpoint taken at a staging tick restores the stage and its booster
+  still ignoring each other.
+- **Nothing reaches an island except as a tick-stamped, journaled input**: control inputs and commands;
+  admissions, reservation grants, denials and releases; adds and removes; range-safety destructs and
+  safing removals; helm grants; clock rate changes; and everything derived from a wall clock or up-time
+  (declared socket loss, the 10 s latch end, the dead-man steps, the helm timeout, the end of the grace).
+  The shard host turns timers into "at tick k" inputs; the island never reads a clock.
+- **Limits.** 32 craft and 600 parts per assembly are hard: a capture that would exceed them is refused
+  with a message. **64 vessels per island is a performance budget, not a correctness limit**: merges and
+  admissions are never refused, because two solid vessels within reach must always be in one island. An
+  island above the budget dilates (U18), and the directory closes its neighbourhood to new spawns, attaches
+  and jump arrivals (a keep-out notice in the approach HUD and on the map). Fragments that a collision
+  would create beyond the budget are merged into the nearest surviving fragment or become effects, chosen
+  deterministically by id order.
 
 ### 7.3 Islands: formation, frame, hand-overs
 
@@ -687,10 +971,16 @@ interface Vessel {
   changes no pose on screen.
 - Inside a planet's or moon's SOI an island integrates in BCI. In the Sun's SOI it integrates in ISL
   (section 4). The reference orbit is replaced (new frame epoch) when an offset passes 30 km, when the
-  anchor finishes a burn, or at an SOI change.
-- A single-owner island's lag is drained before a merge (6.2). Islands migrate between workers and shards by
-  value at a tick boundary (codec bytes over the private network); the gateway holds the socket, so the
-  client never reconnects. An island is not migrated while any pair is in contact or soft capture.
+  anchor (5.1) finishes a burn, when the anchor changes, or at an SOI change; each is a `rebase` operation
+  in the journal, so a merge is independent of arrival order and a replay rebases at the same ticks.
+- A single-owner island's lag is drained before a merge, and neither island steps past the merge tick
+  (6.1). Islands migrate between workers and shards **of one build** by value at a tick boundary (island
+  codec bytes over the private network); the gateway holds the socket, so the client does not reconnect
+  for a migration. An island is not migrated while any pair is in contact or soft capture.
+- A piece of debris that leaves its island (at twice the join distance) is still simulated and still
+  visible: in atmosphere it is in the Reduced tier on its pacing clock and is streamed in the near tier
+  (section 14); in vacuum it is passive, in the census, and solid until its horizon (U13). It can hit a
+  neighbour's craft either way.
 
 ### 7.4 Contact, collisions and damage
 
@@ -701,10 +991,16 @@ interface Vessel {
   do not collide; parts of one vessel never collide with each other.
 - **Nothing tunnels.** Pairs are covered by exactly one mechanism: encounters from screening (rails
   against solid passive, U10); the neighbour list and admission (integrated against passive); islands
-  (integrated against integrated). Inside an island, per pair per step: a sphere sweep; speculative
-  contacts for slow pairs (relative travel per step below a quarter of the thinnest collider); conservative
-  advancement to the time of impact for fast pairs. At 15.6 km/s a craft moves 130 m per step; nothing is
-  skipped by step size.
+  (integrated against integrated, and against objects of the Reduced tier and unattended runs on the same
+  pacing clock). No merge or admission is ever refused (7.2). Inside an island, per pair per step: a sphere
+  sweep; speculative contacts for slow pairs (relative travel per step below a quarter of the thinnest
+  collider); conservative advancement to the time of impact for fast pairs. At 15.6 km/s a craft moves
+  130 m per step; nothing is skipped by step size.
+- **Which integrator.** A pair enters the sub-stepped path when the sweep puts it inside the
+  speculative-contact margin and leaves it when it is outside again; both vessels switch at the same tick,
+  so their relative state sees one integrator. The switch itself must not disturb a docking: two craft
+  20 m apart, in low Earth orbit and at 30 AU, crossing the boundary in both directions gain less than
+  0.1 mm/s of relative velocity (tested), against the 3 mm/s hard-dock threshold.
 - **Born overlapping.** Vessels created by one split, and a pair that has just undocked, ignore each other
   until their colliders have first been 5 cm apart (the separated envelopes of the existing stack overlap
   for 0.01-0.39 s, measured).
@@ -719,7 +1015,8 @@ interface Vessel {
 - **Explosions** reach other vessels in the island (150 N s per kg of propellant, area-weighted, capped).
 - **Agreement.** Every outcome is an operation and an event from the one island both players are in, with
   the same numbers for both (`collision { otherVesselId, relSpeed, partsDestroyed }`). Neither client shows
-  it earlier.
+  it earlier. Destructive outcomes between two owners are released at once and flushed at once (15.1); until
+  the `Durable` tick passes them the ops log marks them provisional.
 - **Growth is bounded.** Destroyed parts vanish into effects; survivors are connected components; at most
   twelve new vessels per collision; fragments under 50 kg live 60 s; the debris budgets of 15.5 apply.
 - Crashing into a parked ship is a real collision with real damage, written to its record; its owner sees
@@ -742,16 +1039,25 @@ interface Vessel {
 - **Hard dock** at a tick boundary once offset, angle and relative speed have stayed under 3 mm, 0.1 deg and
   3 mm/s for 0.5 s. The merge re-expresses the arriving vessel's parts in the base's VES with their own
   tree, adds the link, recomputes mass properties, and conserves linear and angular momentum by
-  construction. The heavier vessel is the base (equal mass: the lower id). The directory replaces two
-  records by one before the `docked` event is released.
+  construction. The heavier vessel is the base (equal mass: the lower id). The merged vessel's id follows
+  section 3 (an assembly id issued at the first dock; the absorbed rows become tombstones that keep their
+  worldlines). The directory makes that change, with the island checkpoint and the journal up to the dock
+  tick, in one transaction before the `docked` event is released.
 - **One helm or none.** The helm's inputs steer the vessel through its own craft and through actuators
   other craft have lent. An arriving craft goes to docked free drift: engines, thrusters and wheels
   inhibited until its owner's policy admits them (`lendAttitude` on by default, `lendEngines` and
-  `lendPropellant` off). At dock the base vessel's helm stays. The **anchor** is the craft longest in the
-  assembly (never the heaviest); its owner may take the helm at any time; others request it under the
-  anchor's helm policy (`crew` by default) and are granted on acceptance or after 30 s without helm input.
-  A helm whose socket drops is vacant at once and the throttle goes to zero. Inputs from a pilot who is not
-  helm are dropped by the island; their HUD says who is flying.
+  `lendPropellant` off). At dock the base vessel's helm stays. The **assembly anchor** is the craft longest
+  in the assembly **among craft with an unexpired owner** (never the heaviest); when its owner lapses or it
+  leaves, the role and the helm policy pass to the next most senior such craft. The anchor's owner may take
+  the helm at any time. A **vacant** helm (nobody seated, as on a parked station) is granted at once to any
+  pilot aboard whom the helm policy admits (`crew` by default), so a ferry that docks to an empty station
+  can fly it without waiting. An **occupied** helm is requested and granted on acceptance or after 30 s of
+  up-time without helm input. A helm whose socket is lost follows the one table of U16: the seat stays
+  reserved for the reconnect grace unless the anchor's owner takes it. Inputs from a pilot who is not helm
+  are dropped by the island; their HUD says who is flying. The cockpit eye of every pilot is their own
+  seated command part (section 20).
+- **Unowned craft in an assembly** revert to the default lend policy, and their ports can be released by
+  any owner in the assembly (15.5).
 - **Craft sovereignty.** Each owner's commands for their own craft are always accepted: fire their own
   stage stack, abort, arm and release their own ports, pump out of their own tanks, change their lend
   policy. Staging while docked separates the pieces physically.
@@ -760,10 +1066,14 @@ interface Vessel {
 - **Undock.** The owner of either port commands it (or a stage action does). At a tick the island removes
   the link, splits the forest, applies the spring impulse equal and opposite at the port point, puts both
   ports in cooldown and marks the pair nascent. The piece with the helm's craft keeps the helm; every other
-  piece gets its own connected owner at zero throttle, or none. The directory replaces one record by
-  several before the `undocked` event is released.
-- **One vessel, one clock.** Every pilot aboard is a member of the assembly's clock; warp is the helm's
-  proposal (U6). A passenger who does not want to come along undocks, which is always possible.
+  piece gets its own connected owner at zero throttle, or none. Ids, worldlines, plans and other players'
+  targets follow section 3 (a craft that leaves alone reopens its own row). The directory makes the change
+  in one transaction before the `undocked` event is released.
+- **One vessel, one clock.** Every pilot aboard is a bound member of the assembly's clock; warp is the
+  helm's proposal (U6) and never passes the carry limit of the craft aboard whose owners have not accepted
+  it (5.2). A passenger who does not want to come along undocks, which is always possible.
+- Two craft that reach one port in one step are ordered by 6.1; the second receives the event
+  `captureLost { reason: 'occupied' }` (a capture is not a command and has no `CommandResult`).
 - An assembly with nobody aboard and quiescent is passive, costs nothing, and is solid for every later
   visitor inside its window.
 
@@ -789,7 +1099,9 @@ stages already fired) plus an optional objective list of generic triggers, attac
 evaluated by the universe's milestone observer. A local scenario also fixes the local universe's epoch. No
 vehicle is tied to a mission; the `lunar-direct` scenario remains the Earth-Moon-return proof. Only a `pad`
 start with no stage fired and `cheatCounter = 0`, in a `LocalSession` or on a deployed lobby, counts as a
-mission proof; debug mutators exist only in `LocalSession`.
+mission proof; debug mutators exist only in `LocalSession`. The same holds for multiplayer proofs: a test
+harness that loads vessels into the database marks the run `seeded`, and a seeded run is never counted as
+a completion proof of rendezvous or docking (28.4, 28.5).
 
 ---
 
@@ -801,8 +1113,12 @@ Design and source data: `docs/research/v2/solar-system.md`.
 
 Sun (root attractor and star); Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune; Moon; Phobos,
 Deimos; Io, Europa, Ganymede, Callisto; Mimas, Enceladus, Tethys, Dione, Rhea, Titan, Iapetus; Miranda,
-Ariel, Umbriel, Titania, Oberon; Triton; Ceres; Pluto and Charon. Thirty bodies, three levels, no moon of a
-moon. Every one is an attractor a player can reach and orbit.
+Ariel, Umbriel, Titania, Oberon; Triton; Ceres; Pluto and Charon. **Thirty-two bodies** (the Sun, 8 planets,
+20 moons, 3 dwarf-system bodies), three levels, no moon of a moon. Acceptance criteria name this list, never
+a count. Every one is an attractor, and that a player can reach and orbit each is **proven, not asserted**:
+`tools/sim/reachability` generates from `analyzeVehicle` and the body library a table with, for every body,
+the cheapest fleet profile (vehicle, refuels, aerobraking), the delta-v required and available and the
+margin, and fails when any body has no profile with a positive margin (9.1).
 
 ### 8.2 Ephemerides
 
@@ -863,8 +1179,10 @@ kill radius.
   with methane absorption for Uranus and Neptune, limb darkening from the scattering. Venus and Titan are
   drawn as their cloud and haze shells with the surface underneath. Saturn's rings are a flat annulus with
   analytic ring and planet shadows.
-- Sources are USGS Astrogeology mosaics (public domain) and Solar System Scope textures (CC BY 4.0, credited
-  on the credits screen). Maps that forbid redistribution are not used.
+- Sources are USGS Astrogeology mosaics (public domain) and Solar System Scope textures (CC BY 4.0). Maps
+  that forbid redistribution are not used. Every source and licence line is in `visuals/credits.json`
+  (staged by the bake, moved into `data/defs/visuals` at activation) and shown on the **Credits** screen
+  (section 23), together with the Sentinel-2 cloudless imagery (CC BY-NC-SA), the audio and the font.
 - Landing later is the same tool with deeper levels and regional rectangles.
 
 ---
@@ -881,17 +1199,34 @@ vehicle is tied to a mission.
 
 | Vehicle id | Stack | For | Cockpit |
 |---|---|---|---|
-| `azimuth-pathfinder` | Azimuth 1 + Pathfinder probe | Smallest launch; a probe that can orbit the Moon, Venus or Mars | none |
+| `azimuth-pathfinder` | Azimuth 1 + Pathfinder probe | Smallest launch; a probe that can orbit the Moon, Venus or Mars | sensor camera |
 | `solstice-kestrel` | Solstice + Kestrel LF crew ferry | Low-orbit rendezvous and docking; capsule returns under parachutes | `kestrel` |
-| `solstice-atoll` | Solstice + Atoll station core | First module of a station: six ports | none |
-| `solstice-pelican` | Solstice + Pelican tug/tanker | Pushes modules, refuels craft | none |
+| `solstice-atoll` | Solstice + Atoll station core | First module of a station: six ports | sensor camera |
+| `solstice-pelican` | Solstice + Pelican tug/tanker | Pushes modules, refuels craft | sensor camera |
 | `meridian-lunar` | Meridian + Heron lander + Kestrel (exists, unchanged) | Direct-ascent lunar landing and return | `kestrel` |
 | `meridian-egret` | Meridian + Egret lunar ferry | Reusable lander between lunar orbit and surface | `kestrel` (shared cabin mould line) |
-| `meridian-albatross` | Meridian M-1 + M-2 + Albatross cruiser | Nuclear-thermal cruiser, 10.9 km/s from low Earth orbit: capture ellipses at every outer planet | none (remote); crew arrive by ferry |
-| `meridian-pelican-heavy` | Meridian + depot | Propellant depot in lunar or Earth orbit (no new parts) | none |
+| `meridian-albatross` | Meridian M-1 + M-2 + Albatross cruiser | Nuclear-thermal cruiser, 10.9 km/s from low Earth orbit: capture ellipses at every outer planet | sensor camera; crew arrive by ferry |
+| `meridian-pelican-heavy` | Meridian + depot | Propellant depot in lunar or high Earth orbit, carrying the cruiser's propellant | sensor camera |
 
 "Orbit" at a giant means a bound capture ellipse (7.0-9.4 km/s from low Earth orbit); low circular orbits
 there cost 15-24 km/s and are not on offer. Uncrewed craft have a `command` module flagged `remote`.
+
+**Reach.** 10.9 km/s from low Earth orbit is not enough for every body: the research puts Mercury at
+12.1-13.4 km/s, Io 12.8, Europa 11.7, the inner Saturnian moons 11.6-13.8, the Uranian moons 11.1-12.1 and
+Triton 11.2; Ceres, Pluto and Charon were not computed. Those are reached by the **refuelled profile**: the
+cruiser raises itself to a high elliptical Earth orbit or to lunar orbit, docks with a depot, takes
+propellant through the port and departs with full tanks. `fleet-data` sizes the depot (or adds a kick
+stage) until the reachability table of 8.1 shows a positive margin for all 32 bodies; a body that still has
+none is put to the user in OPEN_QUESTIONS Q17 instead of being claimed. The profile is flown, not only
+computed (31.4).
+
+**First-person view without a cabin.** Three vehicles have the Kestrel interior. On every other command
+part the first-person view is a **sensor camera**: the eye at the part's camera mount, the instrument pages
+(navball, target, docking) composed around the frame by the same painters as the cockpit displays, labelled
+as a remote view. It is one of the three views, is built to the standard of the rest (owner of the surface:
+`fleet-models-pads`; of the rig: `flight-hud-multiplayer`) and is tested; the hangar card says which kind a
+vehicle has. Whether the two crewed modules without an interior (the Albatross habitat, the Atoll core)
+get real cabins is the user's decision (OPEN_QUESTIONS Q15).
 
 ### 9.2 Vehicle and part data
 
@@ -901,10 +1236,15 @@ there cost 15-24 km/s and are not on offer. Uncrewed craft have a `command` modu
   arm), pre-mated ports recorded as dock links. `meridian-lunar.json` stays flat and untouched.
 - `PartDef` gains `collision`, `crossfeed`, `crashTolerance`, `resources[].transferable`, the `dockingPort`
   module, `command.remote`, `command.cockpit`, and the categories `dock` and `habitat`.
-- `validateVehicle(defs, vehicle): Issue[]` (pure, `src/core/defs`) is run by the loader, by the server on
-  every spawn, and later by a builder. `analyzeVehicle(defs, vehicle): VehicleCapabilities` (pure,
-  `src/sim/vessel`) computes every read-out the menu shows (delta-v per stage, TWR, crew, ports, RCS,
-  entry limit, the "can reach" ladder from the bodies' data); capabilities are never authored.
+- The loader (`src/core/defs`) keeps the **structural** checks only (references, one root, node kinds,
+  stage actions naming existing parts). `validateVehicle(defs, vehicle): Issue[]` lives beside
+  `analyzeVehicle` in `src/sim/vessel`, because it needs part poses from the assembler and distances from
+  the collider library, and the overlap it reports must be the overlap the simulation would see. It is
+  pure, and is called by the definition tests, by the server and `LocalSession` on every spawn, and later
+  by a builder. `analyzeVehicle(defs, vehicle): VehicleCapabilities` computes every read-out the menu shows
+  (delta-v per stage, TWR, crew, ports, RCS, entry limit, first-person view kind, the "can reach" ladder
+  from the bodies' data); capabilities are never authored. `VehicleCapabilities` and `Issue` are contract
+  types in `src/core/contracts`, so the shell's stores and the generic pilots receive them as data.
 - Menu text and thumbnails live in `visuals/vehicles/<id>.json`, not in `VehicleDef`.
 
 ### 9.3 Sites and pads
@@ -913,26 +1253,35 @@ there cost 15-24 km/s and are not on offer. Uncrewed craft have a `command` modu
   (`light`, `medium`, `heavy`; a pad hosts its class and anything smaller), mass and diameter limits, flat
   and blend radii, mount height, keep-out radius, structures. Flatten-disc terrain modifiers are derived
   from the pads at load.
-- **Ka Lae** (site id `ka-lae`, the v1 site renamed in one sweep): eight pads inside the existing 100 km
-  region (2 heavy, 3 medium, 3 light), heavy pads at least 2.5 km apart, light pads at least 1 km.
+- **Ka Lae** (site id `ka-lae`, the v1 site renamed in one sweep): sixteen pads inside the existing 100 km
+  region (4 heavy, 6 medium, 6 light), heavy pads at least 2.5 km apart, medium 1.5 km, light 1 km. LC-1
+  stays where it is.
 - **Madrakah Coast** (site id `madrakah`, a fictional facility on the Arabian Sea coast of Oman near
-  19.0 N 57.8 E): eight pads. Same latitude as Ka Lae, 14.2 hours of solar time away, so one of the two
-  sites is in daylight at almost any hour. One regional Earth bake.
-- Pads are data plus a resolve run; the pad count is the capacity dial of the launch complex (16 pads give
-  240-640 launches per universe hour at 90-240 s cycles, computed).
+  19.0 N 57.8 E): sixteen pads. Same latitude as Ka Lae, 14.2 hours of solar time away, so one of the two
+  sites is in daylight at almost any hour. One regional Earth bake (about 30 m elevation data; if the
+  ground there cannot meet the v1 standard at pad level, the bake's hand-off says so and the pads go to
+  the Ka Lae coast instead, OPEN_QUESTIONS Q8).
+- **Pads are data plus a resolve run, and the pad count is the capacity dial of the launch complex**
+  (decision 54). With a mean cycle of 150 s (dwell, lift-off, clearance, 20 s of safing; 90-240 s
+  observed range) one pad gives 24 launches per universe hour; 32 pads give 768. What a player count
+  needs is in 16.3.
 
-### 9.4 Pad rules (wall-clock timers; all `UniverseRules` fields)
+### 9.4 Pad rules (each timer names its base, section 3; all `UniverseRules` fields)
 
-| Rule | Default |
-|---|---|
-| Reservation hold (briefing and transit) | 90 s |
-| Longest stay on a pad | 300 s, one 120 s extension while engines run |
-| Grace after a disconnect on the pad | 60 s, then roll-back to the hangar (no debris) |
-| Pad cleared when the vehicle is | above 1,500 m and more than 1,000 m away, or destroyed |
-| Safing after clearance | 20 s; wreckage inside the keep-out radius is removed |
-| Keep-out radius | 600 m heavy, 450 m medium, 300 m light |
-| At rest inside a keep-out radius | recovered (removed) after 60 s |
-| Range safety | A vehicle below 5 km whose instantaneous impact point enters another pad's keep-out radius is destroyed by the range; a server event shown as such |
+| Rule | Default | Base |
+|---|---|---|
+| Reservation hold (briefing and transit) | 90 s | up-time |
+| Longest stay on a pad | 300 s of the pad's clock, one 120 s extension while engines run; an up-time cap of 600 s that can only trigger a roll-back, never a launch | ticks, capped in up-time |
+| Grace after a disconnect on the pad | 60 s, then roll-back to the hangar (no debris) | up-time |
+| Pad cleared when the vehicle is | above 1,500 m and more than 1,000 m away, or destroyed | state |
+| Safing after clearance | 20 s; wreckage inside the keep-out radius is removed | ticks |
+| Keep-out radius | 600 m heavy, 450 m medium, 300 m light | - |
+| At rest inside a keep-out radius | recovered (removed) after 60 s | ticks |
+| Range safety | A vehicle below 5 km whose instantaneous impact point enters another pad's keep-out radius is destroyed by the range; a journaled input to its island and a server event shown as such | state |
+
+None of these runs while the universe is down, so a rocket on a pad is not rolled back by a deploy.
+A dilated or held island on a pad (U18) keeps its tick interval; the timetable is in ticks, so the next
+slot simply starts later in up-time.
 
 A spawn is refused while anything unheld is inside the pad's keep-out radius at that tick. Pad structures
 are not damageable. Two vehicles lifting off from neighbouring pads are separate islands until they come
@@ -999,7 +1348,10 @@ Planned content (final numbers are recorded in each manifest):
 | moon | albedo | 0-7 (83 m/px; SVS colour x de-shaded WAC detail) | - | SVS CGI Moon Kit; LROC WAC |
 | moon | globals | `albedoLowRes` 1024 x 512 | | |
 
-The simple bodies of section 8.5 and the second site's region (section 9.3) add about 4 GB. Total baked data stays under 22 GB including caches; raw downloads are deleted after a bake.
+The simple bodies of section 8.5 and the second site's region (section 9.3) add about 4 GB to the 17 GB on
+disk today. Total baked data stays under 22 GB including caches; raw downloads are deleted after a bake;
+packs (10.4) are built into a separate directory of at most 20 GB; and the disk keeps at least 25 GB free
+at all times, packs included (the lead updates rule 13d of `PACKAGE_RULES.md` to these numbers).
 
 Between about 20 km and 300 km altitude a pixel is smaller than a global imagery texel (LEO nadir: 80-160 m
 per pixel against 305 m imagery). The terrain renderer fills that gap with an orbital-scale detail layer:
@@ -1049,7 +1401,13 @@ heightAt(body, dir, lambdaMin?) = D(dir)        data height: Catmull-Rom bicubic
   vessel is below 300 m radar altitude without final data (asserted never to happen in scripted missions),
   and follows the deterministic request policy of section 7.6.
 - A coarse level (`manifest.residentHeightLevel`) is always resident for impact prediction.
-- Tile bytes come from a `TileSource`: fetch-based in the browser and workers, fs-based in vitest and tools.
+- Tile bytes come from a `TileSource` made by `createTileSource(spec)` (`src/terrain`), where
+  `TileSourceSpec = { kind: 'fs' | 'fetch' | 'pack', ... }` is plain data: fs in vitest and tools, fetch
+  against the dev server, packs in production. Tile workers receive the spec in their init message, so the
+  same worker code streams from any source.
+- The provider loads a body's manifest and pins its resident levels **lazily**, when the first query,
+  observer or island needs that body, and releases them when nothing does. Creating a provider with 27
+  terrain bodies in the library costs what one body costs.
 - Launch-site pads become `flattenDisc` modifiers automatically (from `LaunchSiteDef.pad`), so the pad is
   flat for both physics and rendering.
 
@@ -1069,23 +1427,56 @@ into a stream of fallbacks. Image tiles are decoded with
 
 ### 10.4 Delivery: packs
 
-- The bake output and the dev server stay plain files (`TileSource`: fs in tools and tests, fetch against
-  the dev server). Production adds one more `TileSource`: **packs**.
+- The bake output and the dev server stay plain files. Production adds the `pack` kind of `TileSource`.
 - `tools/pack` writes content-addressed packs of 64-256 MB (hash in the name, never rewritten): all layers
   of one tile coordinate adjacent, groups in Morton order per level, height layers in their own packs, small
   bodies one pack per body and layer. The index (`[pack, offset, length]` per tile group) lives beside the
   manifest, which stays the single promise of what exists.
+- **Boot pack.** Everything needed to draw the title is one small pack served by the `shell` service's CDN:
+  the bundle, the definition library, levels 0-3 of Earth and the Moon, the low mips of the sky and cloud
+  maps, the menu's assets. Budget: **25 MB or less before the title** (section 29.2). Everything else
+  (129 MB of sky data, 37 MB of assets, regional tiles, the calibration's pad region) streams behind the
+  title screen.
 - Clients read packs by HTTP range from an ordered mirror list with failover on 429, 5xx and timeout:
-  presigned URLs on a Railway bucket (free egress; signed with a quantised date so every client gets the
-  same URL for a week), then the `edge` service with its CDN. Tile bytes are cached by content hash in OPFS,
-  so presigned URLs changing does not cause a re-download. Sky data and `public/assets` take the same path.
+  1. **The bucket**: presigned URLs on a Railway bucket (free egress; signed with a quantised date so every
+     client gets the same URL for a week).
+  2. **The `packs` mirror**: its own Railway service on its own domain with the CDN on, separate from the
+     shell so that tiles and the shell share neither a connection limit nor a purge. It is a streaming
+     proxy of the bucket with a local disk cache and several replicas (no volume, so it can have replicas
+     and redeploys without downtime), and serves immutable cache headers. Railway's CDN keys on path and
+     query, not on `Range`: if the wave-3 test shows it does not slice ranged reads, the mirror exposes
+     each pack as fixed, aligned **16 MB slice objects** (`/p/<hash>/<n>`) and the client maps a range to
+     slices; the pack format does not change.
+- Tile bytes are cached by content hash in OPFS, so a changed URL never causes a re-download. Sky data and
+  `public/assets` take the same path.
 - The page is cross-origin isolated; every pack response carries CORS headers and exposes `Content-Range`.
+- **Pass or fail, measured in wave 3** (`platform-delivery` scope D) at 500 and 2,000 concurrent fetchers
+  replaying real tile requests for 15 minutes. The bucket path passes with p95 first byte of a cold range
+  at or under 400 ms, errors at or under 0.5 %, and 1.5 Gbit/s sustained in aggregate (15 TB in a day is
+  1.4 Gbit/s on average). The mirror path passes with p95 first byte at or under 600 ms, a CDN hit rate of
+  90 % or more from the origin's logs after warm-up, and billed egress at or under 0.15 GB per GB delivered.
+  If the bucket fails and the mirror fails, the escalation to a store outside the three providers is
+  already written with these thresholds (OPEN_QUESTIONS, "Outside the three providers") and is put to the
+  user the same day.
 
 ### 10.5 Terrain on the servers
 
-Shards need the height layers only (9.65 GB for Earth and Moon today). Each shard reads the height packs by
-range from the bucket into an LRU on its ephemeral disk; first touch in a new region stalls only the island
-that needs it (7.6). The directory places landings on shards that already hold the region where it can.
+Shards need the height layers only (9.65 GB for Earth and Moon today). A `TerrainProvider` is JavaScript
+heap and every worker is its own isolate, so server memory is designed, not left to the client defaults
+(which pin the resident pyramid of every body and allow a 384 MiB tile cache per provider: with 27 terrain
+bodies and 22 workers that would be 10-40 GB per shard).
+
+- **Lazy per-body residency** (10.2): a body's pyramid is loaded when the first island enters its sphere of
+  influence on that shard and released when the last one leaves.
+- **One decoded-tile store per shard**, in SharedArrayBuffers, read by every worker isolate; the data is
+  read-only, and the journal already records the resident level. Its cap is a setting: 1 GB on the base
+  shard, 2.5 GB on a launch shard. Each worker keeps only its lazily memoised collision vertices (32 MB).
+- Height packs are read by range from the bucket into an LRU on the shard's ephemeral disk; first touch in
+  a new region stalls only the island that needs it (7.6). The directory places landings on shards that
+  already hold the region where it can.
+- **Budget**: 200 MB per worker isolate, 0.5 GB for the shard's main thread, the store cap; 7.4 GB for a
+  22-worker shard, about 2 GB for the base shard (29.2). Resident memory per shard is a line of the
+  load-test report, and the memory line of section 30 is computed from isolate counts.
 
 ---
 
@@ -1122,10 +1513,15 @@ regions/{id}.json       bake region manifests; Python only
 
 - File name = id; files with an extra dot segment are sections. `{ "$ref": ... }` assembles a definition
   from sections. The dev server lists the directory at `/defs/index.json`; the production build ships one
-  bundled, hashed library. `validateLibrary()` checks cross references; `validateVehicle()` checks every
-  vehicle; each subsystem validates the sections it consumes.
+  bundled, hashed library (built by the lead-owned build configuration). `validateLibrary()` checks cross
+  references and structure; `validateVehicle()` (`src/sim/vessel`) checks every vehicle in the definition
+  tests and on every spawn; each subsystem validates the sections it consumes. A loader `DefSource` may
+  overlay a second root (bodies staged outside `data/defs` are loaded this way before activation).
 - `defsHash` (a hash of the bundled library) and the sim build id are part of the session handshake: a
   client whose library or sim differs from the server's is refused before anything else.
+- **Definitions change under stored ships.** Part, module and resource ids are never removed or
+  renumbered, only deprecated; a changed part gets a migration (7.2). The post-deploy sweep refuses to
+  open the lobby while a stored vessel cannot be decoded.
 - One file per shared shape (the capsule mould line) as in v1.
 - The library stays loadable at every commit: resources before parts, parts before assemblies and
   vehicles, vehicles before scenarios.
@@ -1154,9 +1550,15 @@ Types: `src/core/contracts/net.ts`. Implementation of the wire layer: `src/net`.
 - Every high-rate message is idempotent and latest-wins (it carries a tick). A gateway may drop a queued
   delta when a newer one is ready (it watches the socket's buffered amount). The same messages would
   survive an unreliable transport.
-- The menu holds **no socket**. It polls `GET /live.json` (presence, feed, pads summary, up to 200 markers
-  of the menu region), regenerated once a second and cacheable for one second, so 50,000 visitors cost one
-  computation a second and none of Railway's 10,000 connections per service.
+- The menu holds **no socket**. It polls `GET /live.json` (presence, feed, pads summary with the wait per
+  class, up to 200 markers of the menu region) every 3 to 5 s with jitter, and stops while the tab is
+  hidden. The document is generated once a second by the directory and served by the **`pub` service**
+  (stateless replicas, Railway CDN on) with `Cache-Control: public, max-age=1, s-maxage=1`, as are
+  `status.json`, the rules document and the public census (13.3). The `api` service (accounts, pack
+  signing) serves none of them, so menu traffic cannot starve account creation. That 50,000 visitors then
+  cost one computation a second and CDN hits is a claim about a beta CDN: its behaviour at a one-second
+  lifetime is verified in wave 3, and the lifetime is raised to 5 s if it is not honoured. A spectating or
+  queued player draws craft from these documents and holds no socket either.
 
 ### 13.2 Session
 
@@ -1170,7 +1572,10 @@ Spawn { vehicleId, site, pad, slot, name }  or  Attach { vesselId, clock? }   ->
 ```
 
 A mismatched build or `defsHash` is refused with "a new version is ready"; a session that is already
-flying is kept on its build until it leaves or the server drains. `TimeSync` round trips with a
+flying is kept on its build until it leaves or the server drains, and after a deploy that changes the build
+its island is held until the pilot has reloaded and resumed or the build-change grace has ended (15.4).
+`Attach { vesselId, clock? }` is validated by U8b: the optional clock is honoured only when its tick is at
+or after the vessel's head and the vessel is already solid to it. `TimeSync` round trips with a
 minimum-round-trip filter give the client the server's wall clock to a few milliseconds. One session per
 account flies at a time; attaching elsewhere takes the flight over (`takenOver`).
 
@@ -1182,9 +1587,9 @@ Client to server:
 |---|---|---|
 | `Input` | `seq, applyTick`, pitch/yaw/roll/translate as `i8`, throttle `u8`, and the SAS hold direction (3 x `f32`) when a maneuver or target mode needs it; each message repeats the changes of the last 250 ms | 30 Hz while flying |
 | `Command` | `cmdId, tick, kind, args`: stage, abort, SAS, RCS, legs, lights, fine control, arm or disarm a port, undock, control-from-here, helm request/grant/release, lend policy, transfer, cross-feed, rename, abandon | on press; acknowledged |
-| `Time` | set rate (with the stamped tick, U7), warp to tick, jump (tick or clock), hold, link, unlink, follow, meet, reply to a proposal, ask to advance | on press; acknowledged with the reason when refused |
+| `Time` | set rate (with the stamped tick, U7), warp to tick, jump (tick or clock), hold, link, unlink, follow, meet, reply to a proposal, ask to advance | on press; acknowledged, with the reason and an alternative when refused; rate-limited per account (section 26) |
 | `Target` | `TargetRef` (body, vessel, port) | on change |
-| `Subscribe` | census scopes (spheres of influence, categories), pads, roster page, the worldline of one vessel | on change |
+| `Subscribe` | the relevant-set parameters (target, distance tier), pads, roster page, the worldline of one vessel | on change |
 | `Plan` | the pilot's maneuver nodes and target for this ship, opaque to the simulation | on edit, at most 1 Hz |
 | `Quick`, `Ping`, `TimeSync` | | |
 
@@ -1193,15 +1598,17 @@ Server to client:
 | Message | Content | Rate |
 |---|---|---|
 | `ClockState` | the clock of 5.2 with members, proposals, relation and offers | on change |
-| `IslandEnter` | island id, epoch, reference orbit, the complete state of every vessel (vessel codec, deflated) | on entering or re-forming |
+| `IslandEnter` | island id, epoch, and the complete island state in the island codec (7.2): reference orbit and anchor, every vessel, tiers, nascent and U5 pairs, capture constraints and timers, deflated | on entering or re-forming |
 | `IslandOp` | a structural change at a tick as an operation both sides execute: `split`, `merge`, `destroy`, `capture`, `release`, `add`, `remove`, `rebase`, `replace`; with a checksum of the result (part count, craft list, mass to 1e-9) | on event; reliable |
-| `IslandKey` | tick, last own input tick applied, input margin, and per stepped vessel the **exact** pose: position and velocity as float64 offsets from the reference orbit, attitude and rate as float32, applied controls | 1 Hz |
+| `IslandKey` | tick, input margin, and per stepped vessel the **exact** pose: position and velocity as float64 offsets from the reference orbit, attitude and rate as float32, applied controls | 1 Hz |
+| `InputAck` | for the pilot's own inputs and commands: `seq` and the tick each was applied at (a range when applied as stamped, one entry per late input) | with every delta |
 | `IslandDelta` | tick, key tick, and per vessel the groups that changed against the last key: POSE (quantised, 16-22 B), CONTROL, PART-FAST (ignition, gimbal, legs, chutes); a pair in contact is sent exact with its friction anchors and port state | 10 Hz single-owner, 30 Hz shared, 60 Hz for a contact pair |
 | `IslandSlow` | resource levels and part temperatures that changed | 2 Hz |
 | `Event` | a `SimEvent` with its tick, vessel and epoch | reliable |
 | `CommandResult` | `cmdId, ok, appliedTick, reason` | per command |
-| `Near` | vessels of the near tier: quantised pose relative to their own island reference, throttle, thrust direction; inputs when warm | 10 Hz within 20 km, 2 Hz beyond |
-| `CensusFull` / `CensusDelta` | per sphere of influence: handle, kind, owner, conic, valid-from tick, head, horizon, clock id, radius, expiry time, flags (about 84 B per object) | on subscribe / on change; 1 Hz osculating elements for thrusting craft |
+| `Near` | vessels of the near tier, including debris in the Reduced tier and unattended runs: quantised pose relative to their own island reference, throttle, thrust direction, staging and ignition state; inputs when warm | 10 Hz within 20 km, 2 Hz beyond |
+| `RelevantFull` / `RelevantDelta` | the pilot's **relevant set** only (own ships, target, party, stations, craft solid to the pilot within the distance tier): handle, kind, owner, the forecast chain patches with their validity ticks, head, horizon, clock id, reservation flag, radius, expiry time, flags (about 84 B per patch) | on subscribe / on change; 1 Hz osculating elements for thrusting craft **of that set** |
+| (HTTP, not the socket) `census/<soi>` | the complete census of one sphere of influence: a snapshot and sequence-numbered deltas, identical for every viewer, built once a second per sphere of influence and served by `pub` through the CDN. A craft under thrust is flagged and gets one update at burn end | fetched by the map; polled at 1 Hz while the map is open |
 | `Worldline` | committed segments and arc samples of one vessel between two ticks | on request |
 | `Conjunctions` | the pilot's screened encounters and proximity warnings | on change |
 | `Durable` | the tick up to which this pilot's island is durable | 1 Hz |
@@ -1238,8 +1645,13 @@ Server to client:
   report, so everything the player can touch is drawn at one predicted tick. Near-tier vessels are drawn by
   blending between the osculating conics of consecutive samples with a 150 ms delay (exact for a coasting
   craft; about 1 m of error at 4 Hz under thrust).
-- On rails, client and server evaluate the same conic at the same clock tick; `untilTick` is known in
-  advance.
+- On rails, client and server evaluate the same conic at the same clock tick. `untilTick` is sent with the
+  schedule and only ever shortens to a tick the client has not yet displayed (U10), so the closed form
+  never runs backwards on screen.
+- Observed flight has stated bounds (28.4): another pilot's craft in my island is drawn within 0.05 m of
+  the server's state at the same tick while coasting and within 0.5 m under main-engine thrust; a
+  near-tier craft within 1 m while coasting, 5 m under thrust within 20 km and 50 m beyond; throttle and
+  ignition state within 150 ms plus the round trip; each staging event is shown once and never reversed.
 
 ### 13.6 Lag, reconnects and simultaneous actions
 
@@ -1249,40 +1661,53 @@ Server to client:
 - Capture and hard dock are slow by design (0.5 s of residuals below threshold; an envelope two to three
   times wider than the real standard), so one round trip of event delay is hidden inside the latch
   sequence. Above a 250 ms round trip or 5 % stalled sends for 3 s the HUD shows "UNSTABLE LINK".
-- Two pilots pressing undock in one tick, or two craft reaching one port in one step, are resolved by the
-  canonical order of 6.1; the second gets `CommandResult { ok: false, reason }`.
+- Two pilots pressing undock in one tick are resolved by the canonical order of 6.1 and the second gets
+  `CommandResult { ok: false, reason }`. Two craft reaching one port in one step are resolved by the same
+  order and the second receives the event `captureLost { reason: 'occupied' }`.
+- A stall shorter than the declared-loss time (3 s, U16) changes nothing: controls stay latched and no
+  seat is given up.
 - The gateway owns the socket. `Hello { resume }` to any gateway inside the grace period returns the pilot
   to the same vessel on the same clock: `ClockState`, `IslandEnter`, census deltas from the client's last
   sequence number. Backoff: 0.5, 1, 2, 4, 8 s, then every 15 s, with jitter; gateways admit resumes before
   new sessions. A returning hidden tab rebuilds its replica from a fresh `IslandEnter`, never by
   fast-forward.
 - Every client has a hard downstream budget (6 kB/s by default) spent in priority order: own island, nearest
-  near-tier vessels, census; superseded samples are dropped.
+  near-tier vessels, the relevant set; superseded samples are dropped. The complete census never rides the
+  socket. On a pad row the own island plus eight near islands reach the cap, so a launch day is costed at
+  the cap, not at the 2.5 kB/s planning average (section 30).
 
 ---
 
 ## 14. Interest management
 
-Relevance has two axes, space and clock relation. Nothing is broadcast per frame; a parked ship costs its
-census subscribers 84 bytes once.
+Relevance has two axes, space and clock relation. Nothing is broadcast per frame, and nothing that is the
+same for every viewer is built per client.
 
-| Tier | Who | What | Rate |
-|---|---|---|---|
-| A | Vessels in my island | Exact keys, deltas, operations, others' inputs, events | 10 / 30 / 60 Hz (13.3) |
-| B (near) | The 8 nearest integrated islands on my clock within 300 km, or with a visible plume; warm from `tau <= 60 s` | `Near` states; warm: with inputs | 10 Hz within 20 km, 2 Hz beyond; warm 10 Hz |
-| C (census) | Every object in the subscribed spheres of influence and categories | Conic entries; worldline segments for my target, my party and my own ships | on change; 1 Hz for thrusting craft |
-| D (directory) | Everything else | Paged lists: my ships, roster, stations; counts per body | on demand |
+| Tier | Who | What | Rate | Carried by |
+|---|---|---|---|---|
+| A | Vessels in my island | Exact keys, deltas, operations, others' inputs, events | 10 / 30 / 60 Hz (13.3) | socket |
+| B (near) | The 8 nearest integrated islands, Reduced-tier objects and unattended runs on my clock within 300 km, or with a visible plume; warm from `tau <= 60 s` | `Near` states; warm: with inputs | 10 Hz within 20 km, 2 Hz beyond; warm 10 Hz | socket |
+| C1 (relevant set) | My ships, my target, my party, stations, craft solid to me within the distance tier (2,000 km by default) | Forecast-chain entries; worldline segments for my target, my party and my own ships; 1 Hz elements while one of them thrusts | on change | socket |
+| C2 (census) | Every object in a sphere of influence | The public census: snapshot plus sequence-numbered deltas, the same bytes for everyone | 1 Hz while the map is open | HTTP through the CDN (`pub`) |
+| D (directory) | Everything else | Paged lists: my ships, roster, stations; counts per body | on demand | socket / API |
 
-- **Solid or echo** is decided on the client from the census entry and its own clock (U2). The server
-  applies the sphere-of-influence and category filters to the subscription; the client applies distance,
-  line caps and the timeline filter.
-- The first census sync is the relevant set only (own ships, target, everything on my clock within 500 km,
-  stations); the full list of a sphere of influence (10,000 objects is 840 kB) is sent when the map asks.
+- **Solid or echo** is decided on the client from the entry (head, horizon, chain, reservation, clock id)
+  and its own clock (U2); that is why the census can be one document for all viewers. The client applies
+  distance, line caps and the timeline filter.
+- The census is O(N) to build per sphere of influence and costs the gateways nothing. With 1,000 craft
+  thrusting in one sphere of influence a per-client feed would be 84 kB/s per subscriber and N x N drop
+  decisions; the public census is one 84 kB delta a second in total, free on CDN hits.
+- The first sync on a socket is the relevant set only; the full list of a sphere of influence (10,000
+  objects is 840 kB) is fetched over HTTP when the map opens.
 - The map draws icons for the census by propagation on the client (GPU compute above 500 objects) and
   float64 lines and markers only for a capped relevant set (own ships, target, docked partners, hovered,
   plus 32 others).
-- Recorded echoes need history: conic segments are kept for the vessel's lifetime after the live clock;
-  integrated arcs are stored as 1 Hz samples for 24 wall hours and reduced to their end points afterwards.
+- Recorded echoes need history: conic segments are kept for the vessel's lifetime after the live clock,
+  including the worldlines of tombstones (section 3); integrated arcs are stored as 1 Hz samples for 24
+  wall hours and reduced to their end points afterwards.
+- A spent stage stays visible and continuous after it leaves its island: near-tier samples while it is in
+  the Reduced tier, the census while it is passive, its fate's sampled worldline to its owner and to
+  nearby viewers.
 - Near-tier selection and island formation between attended vessels use the directory's spatial hash; a
   gateway receives "islands visible to pilot P" and forwards their frames.
 - Presentation applies its own relevance cut on top: full-detail remote vessels up to the "other craft
@@ -1298,89 +1723,141 @@ census subscribers 84 bytes once.
 | Class | Content | Guarantee |
 |---|---|---|
 | Directory state | Accounts, craft, vessel records, worldlines, clocks, pad timetable, rules, the event log | Written by the directory in one transaction per 250 ms batch |
-| Two-owner transitions | Claim commit, dock, undock between owners, ownership and helm-policy changes, hand-over between holders | The record change **and the island checkpoint** are committed in one transaction before the event is released to any client |
-| Single-owner transitions | Staging splits, destruction, to-rails, own undock | Ride the 250 ms batch; a crash before the batch is repaired by journal replay or shown to the one owner as a resync |
-| Islands in flight | A checkpoint every 60 s and at every structural operation; the input journal in between | At most 250 ms of flight lost in a crash, less when the gateway's input buffer covers it |
-| Derivable | Patches, readouts, census, prediction | Never stored |
+| Two-owner transitions | Claim commit, dock, undock between owners, ownership and helm-policy changes | The record change, the island checkpoint **and the journal chunk up to the transition tick** are committed in one transaction before the event is released to any client. The island does not wait (the outcome is already decided, U4); only the event does, inside the latch sequence |
+| Destructive outcomes between two owners | Collision damage, part destruction, joint breaks, crew loss, an explosion reaching another owner's vessel | Released at once: the latch argument does not cover them, and holding a crash back would show it late. The island flushes a checkpoint and its journal immediately and the directory commits them in their own transaction (typically under 50 ms). Until the `Durable` tick passes the event, the client's ops log marks it provisional; a server crash inside that window may re-run the collision (decision 53 d, stated on the rules screen) |
+| Hand-overs and reservations | The epoch flip of a hand-over; a reservation's grant and release | Decided in memory, fenced by epoch, written ahead in the next batch; never on the path of an input (6.1). After a directory restart the holders re-assert them (15.4) |
+| Single-owner transitions | Staging splits, destruction, to-rails, own undock | Ride the 250 ms batch; a crash before the batch is repaired by journal replay, by the shard re-sending them, or shown to the one owner as a resync |
+| Islands in flight | A checkpoint of the whole island state (island codec) every 60 s and at every structural operation; the input journal in between | At most 250 ms of flight lost in a crash, less when the gateway's input buffer covers it |
+| Derivable | Patches, readouts, census, prediction. Forecast chains are derivable and are stored only as a cache | Never the source of truth |
 
 ### 15.2 Schema (Postgres on Railway, private network; one schema per lobby)
 
 ```
-account     (id uuid pk, callsign citext unique, created_at, last_session_at, settings jsonb, flags)
+account     (id uuid pk, callsign citext unique, created_at, last_session_at, session_count int,
+             settings jsonb, flags)
 credential  (id, account_id fk, kind text, public_key bytea, label, added_at, revoked_at)   -- 'deviceKey' today
 recovery    (account_id pk, code_hash, rotated_at)
-craft       (id text pk, vessel_id fk, owner_account uuid null, vehicle_id text, design jsonb null,
-             name, joined_tick float8, policy jsonb, abandoned_at timestamptz null)
-vessel      (id text pk, state smallint,            -- passive | cruising | island | tombstone
+craft       (id text pk, vessel_id fk, owner_account uuid null, slot_account uuid null,   -- whose slot it uses
+             vehicle_id text, vehicle_hash text, design jsonb null,
+             name, joined_tick float8, policy jsonb, advance_limit_ticks float8, station bool,
+             abandoned_at timestamptz null)
+vessel      (id text pk, state smallint,            -- passive | reserved | cruising | island | tombstone
              holder text, epoch bigint,             -- authority fence
-             body_id text, head_tick float8, horizon_tick float8,
-             seg_r0 float8[3], seg_v0 float8[3], seg_t0 float8,   -- or a body-fixed rest pose
+             reserved_by text null, reserved_epoch bigint null, reserved_tick float8 null,
+             merged_into text null, split_into text[] null, lineage_tick float8 null,   -- tombstones
+             body_id text, head_tick float8, horizon_tick float8, chain_end_tick float8,
+             seg_r0 float8[3], seg_v0 float8[3], seg_t0 float8,   -- head segment, or a body-fixed rest pose
              mass real, bounding_radius real, situation smallint, part_count int,
              anchor_craft text, helm_account uuid null, advance_limit_ticks float8, access smallint,
-             clock_id text null, island_id text null,
+             clock_id text null, island_id text null, pacing_clock_id text null,
+             codec_version int, defs_hash text,     -- what `dyn` was written under
              dyn bytea,                             -- complete dynamic state, vessel codec, deflated
              expires_at timestamptz null, row_version bigint)
-worldline   (vessel_id, seq int, tick_start float8, tick_end float8, kind smallint, body_id text, data bytea)
+worldline   (vessel_id, seq int, tick_start float8, tick_end float8, kind smallint,   -- conic | arc | rest | forecast
+             body_id text, data bytea)
 clock       (id text pk, kind smallint, tick0 float8, anchor_uptime_ms float8, rate float8, members jsonb)
 pad_slot    (site_id, pad_id, tick_from float8, tick_to float8, vessel_id, account_id, state smallint)
-island_ckpt (island_id, tick float8, clock_id text, reference bytea, state bytea, terrain_levels jsonb)  -- newest two
-island_jrnl (island_id, seq bigint, tick_from float8, tick_to float8, data bytea)   -- partitioned by hour
+island_ckpt (island_id, tick float8, clock_id text, codec_version int, defs_hash text, state bytea,
+             terrain_levels jsonb)                  -- insert-only, partitioned by 5 minutes
+island_jrnl (island_id, seq bigint, tick_from float8, tick_to float8, data bytea)   -- insert-only, partitioned by hour
 plan        (craft_id, account_id, nodes jsonb, target jsonb)
 event_log   (seq bigserial, at timestamptz, tick float8, kind text, data jsonb)     -- audit trail and feed source
 rules       (version int pk, doc jsonb, activated_at)
 report      (id, at, reporter, subject, kind, context jsonb)
+lease       (name text pk, holder text, token bigint, renewed_at timestamptz)       -- the directory's writer lease
 ```
 
 - An assembly is one `vessel` row with several `craft` rows; links and per-craft stage stacks are inside
-  `dyn`. Persisting a docked assembly needs nothing beyond persisting a vessel.
-- `craft.design` is empty today; it is where a builder's `VehicleDef` document will live.
+  `dyn`. Persisting a docked assembly needs nothing beyond persisting a vessel. Ids, tombstones and
+  lineage follow section 3: a `vessel.id` is never held by two live rows, and a craft's own row is
+  reopened when it undocks alone.
+- A `reserved` row is a passive vessel that one island may touch (U4); the sweep, safing, fates and
+  attach read `state` and `reserved_by` in the same transaction that would act.
+- `craft.design` is empty today; it is where a builder's `VehicleDef` document will live, and the codec's
+  vehicle reference already has that kind (7.2).
 - A parked ship is never kept as a live `Vessel` (375 kB of heap each, measured): the directory holds about
   0.5 kB per vessel in memory and loads `dyn` on admission or attach. One hundred thousand parked ships are
   about 50 MB of memory and under 1 GB of table.
 
 ### 15.3 Write path
 
-- **The directory is the single writer** of every table. Shards send checkpoints, journal chunks and
-  transition requests to it over the private network; a database worker thread writes the batches.
-- A journal chunk holds everything needed to replay: tick range, every pilot's input changes with their
-  applied ticks, commands in applied order, clock rate changes, the terrain data level that was resident.
-  Replay on the same runtime image is bit-exact (measured). Replays are valid only for the build that wrote
-  the journal: a deploy that changes the build always takes the graceful path.
-- Volumes (derived): about 70 kB/s at 500 players, about 1.3 MB/s on a 5,000-player launch day.
-  `island_jrnl` partitions are dropped, never vacuumed. A rules switch turns the journal off (checkpoints
-  every 10 s, at most 10 s lost).
-- Copies: Railway volume backups daily; a logical dump and the newest checkpoints to a Railway bucket (a
-  different storage system) every hour; one sampled journal in a hundred archived for the replay audit.
+- **The directory is the single writer** of every table, and proves it: it holds a Postgres advisory lock
+  and a row in `lease` whose `token` increases with every holder; every write transaction checks the
+  token. A second directory process (Railway starts and health-checks a new deployment before it stops the
+  old one) passes its health check in standby, loads nothing and writes nothing until it holds the lease;
+  the old one's writes fail from the moment the token moves. Shards send checkpoints, journal chunks and
+  transition requests to the directory over the private network; a database worker thread writes the
+  batches.
+- A journal chunk holds everything needed to replay: tick range, **every tick-stamped input of 7.2** (each
+  pilot's input changes with their applied ticks, commands in applied order, admissions, reservation
+  results, adds and removes, range-safety and safing actions, helm grants, the inputs derived from timers,
+  clock rate changes) and the terrain data level that was resident. Replay on the same runtime image is
+  bit-exact (measured). **A journal is valid only for the build that wrote it; checkpoints and `dyn` are
+  not build-bound**: they carry their codec version and `defsHash` and are migrated on load (7.2), which
+  is what lets a deploy change the build.
+- Volumes (derived): about 70 kB/s at 500 players, about 1.3 MB/s on a 5,000-player launch day. Both tables
+  that churn are **insert-only and partitioned; partitions are dropped, never vacuumed**: `island_jrnl` by
+  the hour, kept for two hours (two checkpoints always exist inside that); `island_ckpt` by five minutes,
+  dropping every partition older than the one that holds each live island's second-newest checkpoint (15
+  minutes in practice). Nothing is rewritten in place, so there is no dead-tuple growth and daily volume
+  backups do not pin churned blocks. Volume: 20 GB on the base deployment, 100 GB for a launch; table and
+  WAL size are lines of the load-test report. A rules switch turns the journal off (checkpoints every
+  10 s, at most 10 s lost).
+- Copies: Railway volume backups daily; a compressed logical dump of everything **except** `island_jrnl`
+  and `island_ckpt` to a Railway bucket (a different storage system) every 6 hours (about 0.3 GB each;
+  uploads from a service to a bucket are billed egress and have their own cost line); one sampled journal
+  in a hundred archived for the replay audit. A restore from the dump returns every passive ship and
+  assembly; flights that were in progress restart from their last passive record.
 
 ### 15.4 Restart and recovery
 
-Every deploy of a simulation role is a restart, so this is the normal path.
+Every deploy of a simulation role is a restart, so this is a normal path, and it is honest about its cost:
+**a deploy that affects the simulation freezes the whole universe for a measured number of seconds**
+(target: under 40 s plus the resume window; reported at 200 and 2,000 bots). Rolling restarts shard by
+shard exist only for restarts on the same build, because an island cannot migrate between builds.
 
-| Phase | Graceful (deploy, SIGTERM, 30 s drain) | Crash |
+| Phase | Graceful (the rollout sequence of 16.2) | Crash of everything |
 |---|---|---|
-| Stop | `Notice restart`; every clock freezes at a tick boundary; shards write final checkpoints; the directory flushes | Nothing |
-| Load | The directory reads rules, clocks, pads and the index columns of every vessel; rebuilds the per-body passive index | Same |
-| Islands | Restored from the final checkpoints | Restored from the latest checkpoint; the journal is replayed un-paced (60 s of flight is about 0.2 CPU-seconds per vessel, derived) |
-| Clocks | Resume at the stored tick; the live clock did not advance | **Consistent cut per clock**: every clock resumes at the minimum durable tick over its islands, and each island is replayed only to that tick |
-| Pilots | Reconnect with jittered backoff and resume; the grace period starts when the universe is back | Same |
-| Result | Nothing lost | At most 250 ms rolled back; clients reconcile through the normal correction path |
+| Stop | `Notice restart`; every clock freezes at a tick boundary; shards write final checkpoints through the old directory; it flushes and releases the lease | Nothing |
+| Load | The new directory takes the lease, reads rules, clocks, pads and the index columns of every vessel, rebuilds the per-body passive index, runs the decode sweep (7.2) | Same |
+| Islands | Restored from the final checkpoints (migrated if the codec or definitions changed) | **Each island is restored at its own durable tick** (latest checkpoint plus journal, replayed un-paced; 60 s of flight is about 0.2 CPU-seconds per vessel, derived), **never earlier** |
+| Clocks | Resume at the stored tick; the live clock did not advance | A clock resumes at the minimum durable tick over its islands. An island whose durable tick is ahead of its clock is **held** until the clock reaches it (inputs stamped earlier are discarded). An island more than 1 s behind the rest of its clock does not drag the clock back: it continues `behind` (U18) |
+| Pilots | The live and cohort clocks are held for the **resume window** (30 s; 90 s when the build changed and clients must reload). Gateways admit resumes first, with jittered backoff | Same |
+| Flights in progress | A non-quiescent island starts **held on its own clock** until every pilot attached before the outage has resumed or the reconnect grace has ended, then steps at 1x from the recovered tick. If that is after the resume window it is `behind` and rejoins by the one-key jump when quiescent. U16's timers start at the pilot's resume or at the end of the grace. Quiescent islands are simply fast-forwarded | Same |
+| Result | No committed state lost; no burn flown without its pilot; the pad crowd is one group again after the window, except pilots who came back late | At most 250 ms rolled back per island; a two-owner transition is fully applied or absent, and a committed one is never rolled back because its island is restored at or after it |
 
-- A single shard dying: the directory notices the missing heartbeat (2 s), fences the shard's epoch, and
-  another shard restores its islands from checkpoint and journal, then catches them up to their clocks by
-  un-paced replay of the inputs the gateways buffered (5 s per island). An island whose inputs cannot be
-  recovered that far continues on its own clock, `behind` (U18).
-- Gateways and the API are stateless and roll one replica at a time. Simulation, gateway, API and shell
-  have their own watch paths; a front-end push never restarts the universe.
-- With several shards, a deploy drains one shard at a time by migrating its islands (7.3).
+- **A single shard dying**: the directory notices the missing heartbeat (2 s) and fences the shard's epoch.
+  Another shard restores its islands from checkpoint and journal, then replays the inputs the gateways
+  buffered **with their acknowledged ticks, only up to the last tick whose frame a client was sent**: that
+  reproduces what the dead shard did and the pilots saw. Past that point the pilots were looking at a
+  frozen screen (prediction stops 500 ms after the last server state), so nothing is replayed blind: a
+  non-quiescent island is held until its pilots have resumed (as above) and is then `behind` by the length
+  of the outage; quiescent islands catch up at once. The live crowd is split for those pilots only, and the
+  rejoin is one key.
+- **The directory dying while shards live**: shards and gateways notice the missing heartbeat (2 s). Shards
+  **freeze** at the next tick boundary and keep their unacknowledged journal chunks, checkpoints,
+  single-owner transitions and reservation table; gateways tell clients `Notice recovering`. The restarted
+  directory takes the lease, loads Postgres and asks every shard to **re-register** its islands by
+  `(island id, epoch, durable tick)`. A shard re-sends everything after that tick; facts are idempotent
+  (6.1), so a staging split whose record was in the lost batch is simply written now, with the same ids.
+  Reservations are re-asserted by their holders. Only an island whose epoch the directory does not
+  recognise is discarded and restored from its checkpoint. Clocks resume at the tick the shards froze at
+  (never before the stored value). The universe is frozen for the directory's restart time; nothing is
+  rolled back.
+- Gateways, the API, `pub`, `shell` and `packs` are stateless. Gateways are replaced **last** in a rollout,
+  one replica at a time, after the shards are back, so input buffers are not lost while they matter;
+  clients of a replaced gateway resume on another.
 
 ### 15.5 Expiry and cleanup (wall clock; every number a `UniverseRules` field)
 
 | Object | Kept for | Reset or protected by | Then |
 |---|---|---|---|
-| A craft with a command part and an owner | 14 days after the owner's last session | Any session of the owner renews all of the owner's craft | Becomes unowned |
-| Ship slots | 10 owned craft per account | Abandon one | An eleventh launch asks which to abandon |
-| A craft docked in an assembly | Kept while any craft in the assembly has an unexpired owner | The assembly lives as long as its most recently active owner | A lapsed craft becomes unowned but stays attached; the anchor's owner may release it |
-| An unowned craft (abandoned, or lapsed and not docked) | 48 h | Nobody can re-own it | Removed |
+| A craft with a command part and an owner | 14 days after the owner's last session (shortened under pressure, below) | Any session of the owner renews all of the owner's craft | Becomes unowned |
+| Ship slots | 10 craft per account, counting craft the account abandoned while docked for as long as they are still part of an assembly | Abandon one that is not docked, or wait for its assembly to go | An eleventh launch asks which to abandon |
+| A craft docked in an assembly | Kept while any craft in the assembly has an unexpired owner | The assembly lives as long as its most recently active owner | A lapsed or abandoned craft becomes **unowned-attached**: it stays physically part of the assembly, reverts to the default lend policy, and its ports can be released by any owner in the assembly. **A docked craft is never removed alone** |
+| The anchor of an assembly lapses | - | - | The anchor role and the helm policy pass to the most senior craft with an unexpired owner (7.5) |
+| An assembly with no unexpired owner | 48 h after its last owner lapsed | Nobody can re-own it | The whole assembly becomes unowned and is **removed whole** |
+| An unowned single craft (abandoned or lapsed, not docked) | 48 h | Nobody can re-own it | Removed |
 | Debris (no command part) | 2 h after it leaves every island | Budget of 24 pieces per account and 5,000 unowned objects per sphere of influence; oldest first | Removed |
 | Fragments under 50 kg | 60 s of simulation | - | Removed |
 | A landed wreck | 2 h | - | Removed |
@@ -1388,15 +1865,27 @@ Every deploy of a simulation role is a restart, so this is the normal path.
 | A vessel escaping beyond 100 AU | - | - | Removed, reason `lost` |
 | Sampled arcs in worldlines | 24 h | - | Reduced to end points |
 | An account with no ships | 90 days without a session | Any session | Deleted |
-| All passive objects | 50,000 per lobby | Admission back-pressure on spawns | Launch refused with the reason |
+| All passive objects | 50,000 per lobby | The pressure rule, then admission back-pressure | See below |
 
-- Only passive vessels expire; the sweep (every 60 s) never removes a vessel that is attended or in an
-  island. Removal deletes the vessel at every universe time at once and its whole worldline; it is an
-  out-of-fiction act ("recovered by the range") and is shown as such, with its reason (`expired`, `limit`,
-  `rolledBack`, `recovered`, `lost`).
+- **Pressure rule: abandoned ships go before any launch is refused.** Above 70 % of the per-lobby cap
+  (`pressureStart`) the retention of owned craft shortens for the owners least likely to return: accounts
+  with a single session first, then by oldest last session, down to a floor of 24 h for single-session
+  accounts and 72 h for others, until the count is back under the threshold. The shortened date is what My
+  Ships and the census show, and the rules screen states the rule. A launch is refused for the cap only
+  when every remaining object belongs to an account seen inside the floor.
+- Only passive, unreserved vessels expire; the sweep (every 60 s) never removes a vessel that is attended,
+  in an island or reserved (U4), and never changes the structure of an assembly. Removal deletes the vessel
+  at every universe time at once and its whole worldline; it is an out-of-fiction act ("recovered by the
+  range") and is shown as such, with its reason (`expired`, `limit`, `pressure`, `rolledBack`, `recovered`,
+  `lost`).
+- The advance limit of an assembly with owned and unowned craft is the minimum over its owned craft (U2).
 - Visible everywhere: every census entry carries its removal time; My Ships shows a countdown and the
   reason a ship is kept; the rules screen lists this table from the live `UniverseRules`.
-- Growth bound: accounts seen in 14 days times 10 craft, plus the unowned caps.
+- **Growth bound**: accounts seen inside the retention time, times 10 slots (docked-abandoned craft
+  included, so slots cannot be recycled into unowned hardware), plus the debris budgets, and never above
+  the per-lobby cap because of the pressure rule. A front-page week of one-visit accounts therefore
+  plateaus under the cap instead of blocking launches for 14 days; the churn test of 28.2 and the soak of
+  28.7 assert the plateau.
 
 ---
 
@@ -1408,14 +1897,16 @@ Platform facts and prices: `docs/research/v2/hosting.md`.
 
 One Node program, one image, roles selected by configuration. Roles talk through one message schema; the
 transport is a `MessagePort` inside one process and a length-prefixed TCP stream on Railway's private
-network.
+network, **batched per control tick** (6.2).
 
 | Role | Count | Does | Does not |
 |---|---|---|---|
-| **Gateway** | N replicas, stateless | Sockets, authentication, subscriptions, fan-out of island frames and census, input routing, the 5 s input buffer, back-pressure, rate limits | Physics, decisions |
-| **Directory** | 1 per lobby | Single writer of the universe: records, clocks, claims, pads, island placement and epochs, screening (helper threads), expiry, admission, persistence | Stepping |
-| **Shard** | one Railway service each (`sim-1` ... `sim-K`), one main thread plus one isolate per worker thread | Steps islands, runs unattended runs, holds the height authority and its pack cache, encodes frames, sends checkpoints and journals | Anything about vessels it does not hold |
-| **API** | 2 replicas, stateless | HTTP: accounts and recovery, lobby list, rules, `live.json`, status and metrics, presigned pack list, weak-client planning | Sockets |
+| **Gateway** (`gate`) | N replicas, stateless | Sockets, the session layer of `src/net`, subscriptions, fan-out of island frames and the relevant set, input routing, the 5 s input buffer **with the acknowledged ticks**, back-pressure, rate limits | Physics, decisions |
+| **Directory** (`dir`) | 1 per lobby, holder of the writer lease | Single writer of the universe: records, clocks, reservations and claims, pads, island placement and epochs, screening and forecast chains (helper threads), expiry, admission, persistence, the public documents once a second | Stepping |
+| **Shard** (`sim-k`) | one Railway service each, one main thread plus one isolate per worker thread | Steps islands, runs unattended runs and the Reduced tier, holds the height authority with one shared tile store (10.5), encodes frames, sends checkpoints and journals, turns timers into stamped inputs | Anything about vessels it does not hold |
+| **API** (`api`) | 2 replicas, stateless, no CDN | Accounts and recovery, lobby list, presigned pack list, the planning endpoint, token-protected metrics and `/ops`, bulk account provisioning with an operator token on staging only | Sockets; public polling |
+| **Publisher** (`pub`) | 2 replicas, stateless, CDN on | Serves what is the same for everyone: `live.json`, `status.json`, rules, the census snapshots and deltas, with explicit cache lifetimes | Anything per player |
+| **Static** (`shell`, `packs`) | replicas, no volume, CDN on, separate domains | The shell and the boot pack; the tile mirror (10.4) | Anything dynamic |
 
 - A worker is one isolate because `src/sim` keeps module-level scratch state. Vessels move between workers
   by value.
@@ -1424,43 +1915,95 @@ network.
   learn which shard holds them.
 - Gateways in one replica are separate processes (the Node cluster module), because worker threads cannot
   share a listening socket.
+- For tests, offline tools and the local stack every role can also run in one process. That is a test
+  configuration, not a deployment stage.
 
-### 16.2 Deployment stages (same code)
+### 16.2 Deployment (same code; one topology at every size)
 
-| Stage | Railway services | Holds |
+The production topology is **always split**. Moving from quiet to busy adds services and replicas; no role
+moves and nothing restarts. (The first design ran all roles in one replica when quiet, which made the
+unannounced spike a universe restart plus the creation of twenty services by hand.)
+
+| Size | Railway services | Holds |
 |---|---|---|
-| A. Development and quiet times | `universe` (all roles in one replica: one gateway process, the directory, worker threads), `api`, `postgres`, `edge` (the static shell and the pack mirror, CDN on), buckets | about 300-500 concurrent players (assumed) |
-| B. Announced launch | `gate` x 3 replicas, `dir`, `sim-1..K` (22 worker threads each), `api` x 2, `postgres`, `edge`, buckets | per shard about 360 integrated objects on the conservative figure and about 2,200 on the derived one, at 50 % headroom |
-| C. Beyond | a second gateway service at 8,000 connections, directory helpers on their own service, a second lobby as a second copy of the stack | 10,000+ |
+| Base (always on) | `gate` x 1, `dir`, `sim-1` (4 workers, 1 GB tile store), `api` x 2, `pub` x 2, `shell`, `packs` x 2, `postgres` (20 GB volume), buckets | about 300-500 concurrent players (assumed); admission cap 500 until the load test says otherwise |
+| Launch | `gate` x 3 or more, `dir`, `sim-1..K` (workers per shard from the measured knee, 22 at most; 2.5 GB tile store), `api` x 2, `pub` x 2, `shell`, `packs` x 4, `postgres` (100 GB) | per shard about 360 integrated objects on the conservative figure and about 2,200 on the derived one, at 50 % headroom |
+| Beyond | a second gateway service at 8,000 connections, directory helpers on their own service, a second lobby as a second copy of the stack | 10,000+ |
 
-- Stage B is entered by `deploy/scale.mjs` against the Railway API before an announcement; idle shards cost
-  only their memory because CPU is billed on use.
-- **Shell**: the `edge` service on Railway by default. `deploy/netlify.toml` (headers, redirects) is kept
-  ready; switching the shell to Netlify is a DNS change once a Pro team with auto-recharge and a token
-  exist (OPEN_QUESTIONS Q3). Both send the COOP and COEP headers.
+- **One image, built once.** CI builds the image, pushes it to the registry and records its digest; every
+  service is deployed by digest. Adding a shard is a pull, not a build (Railway allows ten concurrent
+  builds, so building per service would take longer than the spike).
+- **Scale-out is automatic inside a ceiling the user approved.** A controller (a scheduled job of the `api`
+  service reading the directory's metrics) calls `deploy/scale.mjs` when the admission queue has been
+  above its threshold for three minutes, and scales in after thirty quiet minutes. It never exceeds the
+  ceiling of OPEN_QUESTIONS Q6 (maximum shards, maximum dollars per day) and its Railway token is a sealed
+  variable (creating services through the API probably needs a workspace-level token: verified in wave
+  3). It posts every action, and an alert when the queue, p99 step time or connection count crosses its
+  threshold, to the webhook or address the user names (Q18). The same script can be run by hand.
+- **The transition is tested**: the load test measures the time from trigger to K new shards taking islands
+  under a 500-bot load, and a skeleton of this topology is deployed in wave 3 so that service-add time and
+  private-network behaviour are known before wave 6.
+- **Deploys of `dir`, `sim-*` and `gate` are not automatic.** One push would otherwise redeploy all of
+  them at once, in no order, with two directory processes alive. `deploy/rollout.mjs` drives one ordered
+  sequence through the Railway API at one image digest: notice; freeze clocks; shard checkpoints;
+  directory flush and lease release; the new directory takes the lease (15.3) and runs the decode sweep;
+  shards start and register; clocks resume into the resume window; gateways roll last. `api`, `pub`,
+  `shell` and `packs` autodeploy on their own watch paths; a front-end push never touches the universe.
+- **Releases come from tags.** Nothing deploys from `main`: the lead moves a release tag, and packages never
+  push `main`. A measured row of a capacity report names the build it ran on.
+- **Shell**: the `shell` service on Railway by default. Netlify is an option for the shell only
+  (OPEN_QUESTIONS Q3); its configuration is written and validated when the user chooses it, not kept as an
+  untested file.
 - **Modal** (own environment `fsp`, app names prefixed `fsp-`; existing apps and volumes untouched):
-  `fsp-bots` (load-test players), `fsp-bake` (bakes), `fsp-audit` (nightly replay of archived journals
-  against committed checkpoints), `fsp-probe` (bucket throughput tests).
+  `fsp-bots` (load-test players, 100 or more per 4-core container so that 5,000 bots stay well under the
+  workspace's container limit shared with the existing apps), `fsp-bake`, `fsp-audit` (nightly replay of
+  archived journals against committed checkpoints), `fsp-probe` (bucket throughput tests, expressed as
+  concurrent fetchers per container).
 - **Region**: US East. Europe sees roughly 90-120 ms of round trip, Asia and Australia about 250 ms. A
   second region would be a second lobby.
 - **Secrets**: deploy secrets in GitHub Actions; run-time secrets as Railway sealed or reference variables;
   the client holds no provider credential.
-- **CI** (GitHub Actions on `sshh12/fable-space-program`): secrets check, typecheck, boundaries, unit and
-  universe suites, the net suites on synthetic terrain. Railway autodeploys per service with watch paths
-  and "Wait for CI". Mission proofs and GPU suites run on the development machine (they need baked tiles
-  and a GPU).
+- **CI** (GitHub Actions on `sshh12/fable-space-program`): secrets check, a repository scan for `TODO`,
+  `FIXME`, `stub` and `placeholder` outside the allowed simple-body data, typecheck (browser and Node
+  configurations), boundaries, unit and universe suites, the net suites on synthetic terrain, the
+  production build and the image. The repository is private, so Actions minutes are finite and "Wait for
+  CI" blocks deploys when they run out: CI stays under 8 minutes per push with path filters, and the
+  monthly budget is a line of section 30. Mission proofs and GPU suites run on the development machine
+  (they need baked tiles and a GPU).
+- **A staging environment** is a second copy of the base topology on `rules/staging.json`; it sleeps when
+  idle.
 
 ### 16.3 Scaling path
 
-1. Stage A, vertical: one replica up to 24 vCPU.
-2. Split roles (stage B): gateways, directory, shards.
-3. More shards; the directory places islands by clock and sphere of influence so likely merges are local.
-4. `lagCap > 0` for single-owner islands (fewer shards on the conservative figure: about 12 instead of 19
-   for a launch-heavy 5,000).
-5. A second gateway service; ask Railway for more than 10,000 connections per service.
-6. Screening helpers on their own service; partition the directory by planetary system.
-7. Postgres: pooling, then the HA cluster, then journals on a separate instance.
-8. More lobbies.
+Simulation and network:
+
+1. Base, vertical: more workers on `sim-1`, up to the measured knee.
+2. More shards and gateway replicas (the controller); the directory places islands by clock and sphere of
+   influence so likely merges are local.
+3. `lagCap > 0` for single-owner islands, on the evidence of 6.2 (fewer shards on the conservative figure:
+   about 12 instead of 19 for a launch-heavy 5,000).
+4. A second gateway service; ask Railway for more than 10,000 connections per service.
+5. Screening helpers on their own service; partition the directory by planetary system.
+6. Postgres: pooling, then the HA cluster, then journals on a separate instance.
+7. More lobbies.
+
+**Launch slots** bind before any of the above (decision 54). With 30-minute sessions, `f` launches per
+session and a 150 s mean cycle, launches per hour are `concurrent x 2 x f` and the pads needed to sustain
+them are that divided by 24:
+
+| Concurrent players | Launches per hour (f = 1 / 0.5) | Pads to sustain it | With the release complex (32 pads, 768 per hour, 258,000 in the 14-day reservoir) |
+|---|---|---|---|
+| 500 | 1,000 / 500 | 42 / 21 | f = 0.5: sustained for ever. f = 1: the reservoir covers the deficit for 46 days |
+| 2,000 | 4,000 / 2,000 | 167 / 84 | the reservoir lasts 80 hours / 8.7 days |
+| 5,000 | 10,000 / 5,000 | 417 / 209 | the reservoir lasts 28 hours / 61 hours: one front-page day fits, a sustained 5,000 does not |
+
+How more is obtained, in order of cost: (a) `cohortHorizon`, a rules field (more reservoir, players start
+further from the live clock); (b) a shorter cycle: the dwell and safing defaults are rules fields, and a 90 s
+cycle is 1.67 times the throughput; (c) more pads at a site: the pad generator and one resolve run, up to
+about 48 per 100 km of coast at the stated spacing; (d) more sites: one regional bake and a structures file
+each. A sustained launch-heavy 5,000 needs about 200-400 pads, that is about ten sites, and is not offered
+by the first release; the rules screen says what a player waits at the measured limit, and the load test
+makes the wait from Deploy to control-enabled its own service level (28.7).
 
 ---
 
@@ -1472,19 +2015,30 @@ network.
 `advance(realDt, onControlTick?)`, `snapshot()`, `peek()`, `setControls()`, `commands: PlayerCommands`
 (flight, target, time, port, helm and transfer commands: everything a pilot does from the seat),
 `universe: UniverseCommands` (spawn, attach, detach, subscriptions, rename, abandon),
-`stores: ClientStores` (census, pads, ships, assembly, roster, rules, presence, feed, prompts, link state).
+`stores: ClientStores` (census, pads, ships, assembly, roster, rules, presence, feed, prompts, link state),
+`planning: PlanningService` (6.3).
 
-- **`LocalSession`** (`src/client/local`) runs `src/universe` in process: a directory, islands, no sockets,
-  no lag, authoritative state presented directly. It adds `ready`, `terrainPending()`, `step()`,
+- **`LocalSession`** (`src/session`, headless) runs `src/universe` in process: a directory, islands, no
+  sockets, no lag, authoritative state presented directly. It adds `ready`, `terrainPending()`, `step()`,
   `advanceRails()`, `needsIntegration`, `nextEventUt`, `stateHash()`, `debug` and `cheatCounter`. It is the
-  headless mission, every lab, the calibration benchmark and offline play. `createSim(defs, scenarioId,
-  { terrain })` returns it.
-- **`NetSession`** (`src/client/net`) is the same interface over a gateway: the replica of 13.5, the census
-  store, the clock, the stores. Commands that change state return `{ ok: true, pending: true }` at once and
-  are confirmed by a `commandResult` event; planning commands (`addNode`, `setNode`, `removeNode`,
-  `setNavballMode`, `setTarget`) stay synchronous because they are local.
+  headless mission, every lab, the calibration benchmark and offline practice (`rules/local.json`).
+  `createSession(defs, scenarioId, { terrain })` returns it. It lives above the universe and not in
+  `src/sim` (which may not import its own host) nor in `src/client` (which is not headless); `src/sim`
+  exports no session. Until `src/universe` exists (waves 3 and 4) `createSession` returns `World` typed as
+  `LocalSession`; the switch is a gated step with an owner (MIGRATION_V2 step 4.3).
+- **`NetSession`** (`src/client/net`) is the same interface over a gateway: the session layer of `src/net`,
+  the replica of 13.5, the relevant-set and census stores, the clock, the planning providers. Commands that
+  change state return `{ ok: true, pending: true }` at once and are confirmed by a `commandResult` event;
+  planning commands (`addNode`, `setNode`, `removeNode`, `setNavballMode`, `setTarget`) stay synchronous
+  because they are local.
 - **`FakeSession`** (`src/core/fakes`) keeps the v1 FakeSim's role for labs, with multi-vessel, target,
-  docking, echo and time-strip scenes.
+  docking, echo and time-strip scenes. Because five packages build against it, each of its scenes has a
+  **conformance test** against the output of a real `LocalSession` in the same situation (field presence,
+  units, frames, value ranges), owned with the fakes by the package that owns them in that wave.
+- The app (`src/app`) switches between `LocalSession` (offline practice, labs, calibration) and
+  `NetSession` (the lobby). It is built by two packages with gates, not between waves:
+  `app-integration-1` (the shell, calibration and the browser mission on `LocalSession`) and
+  `app-integration-2` (`NetSession` against the local stack, reconnect states, stores, the pack source).
 
 ### 17.2 One frame of the app loop
 
@@ -1520,7 +2074,8 @@ requestAnimationFrame(now)
 - Events are edge-triggered facts scoped by relevance; `vesselId` is on every event. Events of a
   single-owner island's own commands appear when predicted; all others when the server's event arrives.
 - Threads: the session and view builders on the main thread (about 0.1 ms per step); terrain tiles in a
-  worker pool; heliocentric predictions, closest approaches and the proximity plot in a planning worker;
+  worker pool; heliocentric predictions, closest approaches and the proximity plot behind `PlanningService`
+  (a planning worker in the browser, 6.3);
   census icons on the GPU above 500 objects; socket keep-alive in a worker so a hidden tab stays connected;
   audio in the browser's audio thread.
 - Time warp never changes this flow.
@@ -1730,9 +2285,11 @@ Additions for v2:
 `kind: 'interior' | 'external' | 'map'`. Consumers (audio, HUD, exposure metering, test API) branch on the
 kind, never exhaustively on the mode, so an unknown mode behaves as its kind.
 
-- **Cockpit**: eye at the commander's seat of the helm's command part, free look with the mouse; the
-  interior is ordinary scene geometry; `insideVesselId` switches audio to the cabin mix and exposure to
-  interior metering.
+- **Cockpit**: eye at the seat of **the viewer's own seated command part** (in a docked assembly each pilot
+  looks out of their own craft, whoever holds the helm), free look with the mouse; the interior is ordinary
+  scene geometry; `insideVesselId` switches audio to the cabin mix and exposure to interior metering. On a
+  command part without a cabin the same view mode is the **sensor camera** of 9.1: never an empty frame,
+  never someone else's cabin.
 - **Chase**: orbits the active vessel; orientation reference follows the navball mode (surface up near the
   ground, orbit plane in space) and blends between them; never clips into terrain (uses `TerrainProvider`).
 - **Map**: detaches and orbits a focus body or vessel from 100 km to 1e13 m with exponential zoom; enables a
@@ -1746,8 +2303,10 @@ kind, never exhaustively on the mode, so an unknown mode behaves as its kind.
 Additions for v2 (open mode strings, no contract change): `menu` (a spectator eye in the Sun-Earth frame
 above the dawn terminator), `turntable` (frames the presentation-only display vessel), `transit` (the
 menu-to-pad or menu-to-ship flight with gates and exposure hints), `port` (the eye on a docking port's
-axis), `spectate` (a chase camera on another player's craft). The map rig zooms from 1e5 m to 1e13 m. The
-cockpit eye comes from the helm's command part.
+axis), `spectate` (a chase camera on another player's craft), `sensor` (the first-person view of a command
+part without a cabin). The map rig zooms from 1e5 m to 1e13 m. The chase rig takes its distance limits from
+the vessel's bounding radius and per-craft hints in the snapshot, never from a vehicle definition, so an
+assembly and a later builder design frame correctly.
 
 ---
 
@@ -1833,21 +2392,33 @@ data. Nothing plays before the first user gesture.
 
 Design, wireframes and visual language ("Dawn Line"): `docs/research/v2/frontend-ux.md` sections 3-5.
 
-- **States**: `boot -> gate -> calibrate -> title -> hub(PLAY | HANGAR | MY SHIPS | UNIVERSE | SETTINGS)
-  -> deploy -> transit -> flight <-> flightMenu -> leaving -> hub`, with `queued`, `reconnecting` and
-  `blocked` as side states. From `calibrate` on the renderer runs through every state; from `title` on the
-  client polls `live.json`; the socket opens at `deploy`.
+- **States**: `boot -> gate -> title -> hub(PLAY | HANGAR | MY SHIPS | UNIVERSE | SETTINGS | CREDITS)
+  -> deploy -> transit -> flight <-> flightMenu -> leaving -> hub`, with `calibrate`, `queued`,
+  `reconnecting`, `practice` and `blocked` as side states. The renderer runs from `title` on, on a preset
+  chosen from the adapter class hint; the client polls the public documents from `title` on; the socket
+  opens at `deploy`. `calibrate` (section 24) is entered at the first Play, or from Settings, and only when
+  its data is resident.
+- **Cold start is designed** (budget in 29.2): the title needs only the boot pack (10.4). While it loads
+  the page shows the wordmark and a status line with real progress; while the rest streams behind the
+  title the status line says what is still loading, and Play is enabled when the hangar's data is in.
 - **One scene.** The menu, the turntable, pad selection, the transition and flight are the same renderer,
   loop and scene. The DOM menu sits over the live canvas at the live clock's time. There is never a video,
   a second canvas or a loading screen. Text sits on scrim-pass panels; contrast is checked over the
   brightest backdrop frame.
 - **Screens**: title (live Earth at the dawn terminator, presence, feed ticker); identity (first Play
-  only); hub with the lobby list; hangar and vehicle selection on a turntable with computed read-outs and an
-  exploded stage view; site and pad selection over the live globe with pad states, local solar time, the
-  launch-window readout and slot offers (live, cohort, window, a friend's clock); briefing and commit; My
-  Ships (where, kept for how long and why, resume, track, rename, abandon); Universe ("How this universe
-  works", rendered from `UniverseRules`, with the measured capacity report); Settings; controls reference;
-  the flight menu, which overlays a live flight and states what happens to the craft if the player leaves.
+  only, with the ephemeral-profile warning before the first ship exists); hub with the lobby list; hangar
+  and vehicle selection on a turntable with computed read-outs (including the first-person view kind and
+  the "can reach" ladder) and an exploded stage view; site and pad selection over the live globe with pad
+  states, the wait per class, local solar time, the launch-window readout and slot offers (live, cohort
+  with its lead stated, window, a friend's clock); briefing and commit; My Ships (where, kept for how long
+  and why, resume, track, rename, abandon); Universe ("How this universe works", rendered from
+  `UniverseRules`, with the measured capacity report and the wait a player can expect at the measured
+  limit); Settings; controls reference; **Credits** (rendered from `visuals/credits.json` plus the audio
+  and font licences; reachable from the hub and from the footer of the block pages; a test checks that
+  every source in the file appears); **Practice (offline)** (a `LocalSession` on `rules/local.json`,
+  offered in the hub and in the `reconnecting` state when the server is unreachable); the flight menu,
+  which overlays a live flight and states what happens to the craft if the player leaves (U16: throttle
+  closed at the leave tick, then the unattended run or passive).
 - **Transit** (about 10 s, skippable to 2.5 s, continuous): pull back from the turntable, dive in log
   altitude to the pad, hand over to the chase rig. Gates: the spawn is acknowledged with the vessel state,
   pad terrain is resident, the vessel's models are ready. An open gate at 3 km turns into a holding drift
@@ -1873,12 +2444,15 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
   browser" banner.
 - **Adapter class** is a hint from vendor and architecture only. `acquireGpu` keeps its hard failures and no
   longer throws on `looksIntegrated`.
-- **Calibration** (first run, or when the adapter fingerprint changes; skippable; re-runnable): four
-  scripted shots (pad dawn, lift-off, LEO terminator, cockpit) through the real renderer, a `LocalSession`
-  and the scripted pilot, with the governor off and per-feature GPU timestamps. A solver picks the internal
-  pixel cap and per-feature levels that maximise a perceptual weight under `0.85 x governor budget`, snaps
-  to a named preset where it can, and confirms with a 3 s run. It also yields the `cpuScore` sent in hello.
-  The calibration doubles as the warm-up of every pipeline.
+- **Calibration** (at the first Play, or when the adapter fingerprint changes; skippable; re-runnable
+  from Settings): four scripted shots (pad dawn, lift-off, LEO terminator, cockpit) through the real
+  renderer, a `LocalSession` and the scripted pilot, with the governor off and per-feature GPU timestamps,
+  presented full-screen as a pre-flight check with a progress line. It starts only when the tiles and
+  assets its shots need are resident (they stream behind the title), so a slow mirror delays the benchmark,
+  never the title. A solver picks the internal pixel cap and per-feature levels that maximise a perceptual
+  weight under `0.85 x governor budget`, snaps to a named preset where it can, and confirms with a 3 s
+  run. It also yields the `cpuScore` sent in hello. The calibration doubles as the warm-up of every
+  pipeline. Until it has run, the title and the menu use the preset of the adapter class hint.
 - **Presets** Low, Medium, High, Ultra are internal pixel caps (0.9, 1.6, 2.4, 3.7 MP) plus per-feature
   levels; Ultra keeps the v1 look. Any manual change makes the preset Custom and keeps the predicted cost
   on screen. Settings are stored per adapter fingerprint in `localStorage`; `?safe=1` starts at Low.
@@ -1897,7 +2471,9 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
   a short-lived session token for that socket. No cookies.
 - **Recovery code** (100 bits, shown once, stored as a slow hash): entering it on a new device binds that
   device's key and rotates the code. The client asks for persistent storage once the first ship exists and
-  warns in an ephemeral profile.
+  warns in an ephemeral profile before that. Ownership hangs on this path when a profile is cleared, so it
+  has an acceptance test: park a ship, open a clean profile, enter the code, resume the ship; the old code
+  no longer works (28.5).
 - **Callsigns**: unique, case-insensitive, 3-14 characters `[A-Z0-9-]` starting with a letter, checked
   against reserved words and a word list on the server; one rename per 30 days.
 - **Lobbies**: the client lists `LobbySummary` entries (one today) with region, measured round trip,
@@ -1913,14 +2489,21 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
 - A client can send only inputs, commands, time requests and subscriptions. Forged state is impossible by
   construction. Every command is checked against `craft.owner` and the helm on the island.
 - Bounds at the gateway: inputs above 60 per second, commands above 20 per second, subscription churn and
-  stamps beyond `clock(wall) + 0.25 s` are dropped. Account creation is limited per IP address per hour;
-  `X-Real-IP` comes from Railway's edge.
+  stamps beyond `clock(up) + 0.25 s` are dropped. Account creation is limited per IP address per hour;
+  `X-Real-IP` comes from Railway's edge. (Load-test bots share addresses: the staging environment only
+  accepts bulk provisioning with an operator token.)
+- **Time requests are bounded per account** (all `UniverseRules` fields): six `Time` messages per 10 s;
+  one warp proposal per 30 s and one open proposal per clock; one ask-to-advance per group per 5 minutes
+  after a refusal, and one open request per group; joining an attended clock at most once per 60 s, and
+  once per 30 minutes for a clock whose host forked away from that account (5.2). A client cannot hold a
+  group's visitor slot, prompt its pilots continuously or follow a player it is not linked with.
 - Object spam is bounded by ship slots, debris budgets, the per-lobby cap and expiry. Uninvited docking
   needs an armed port; a visitor is in free drift and can be released by the port's owner. Range safety
   protects other pads.
 - Griefing that remains and is stated: ramming parked ships (allowed by the brief), parking debris near a
-  station, forcing 1x for the seconds a predicted contact lasts. Input automation cannot be prevented and
-  is not attempted. All state is public by nature.
+  station, forcing 1x for the seconds a predicted contact lasts. Parking inside someone's echo no longer
+  works (U5 clears or recovers the intruder within 30 s), and nobody can be held at a rate by a stranger
+  (5.2). Input automation cannot be prevented and is not attempted. All state is public by nature.
 - Secrets never reach the repository or the client (section 16.2); `node tools/dev/check-secrets.mjs` runs
   in CI and before commits by packages whose tools use keys. Chat is fixed phrases (decision 51).
 - The nightly audit replays sampled journals on Modal and compares hashes with committed checkpoints: a
@@ -1932,9 +2515,16 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
 
 - Railway caps logs at 500 lines per second per replica and sums metrics across replicas, so every role
   publishes its own numbers to the directory every second: per worker step time p50/p99/max, integrated
-  and armed vessel counts, lag distribution, dilated islands, encode time; per gateway connections, bytes
-  per second per tier, dropped frames, input lateness; directory transitions per second, screening time,
-  batch commit latency, passive object count, pad queue; recovery durations.
+  and armed vessel counts, lag distribution, dilated and held islands, encode time; per shard main-thread
+  utilisation, resident memory and tile-store size; per gateway connections, bytes per second per tier,
+  dropped frames, input lateness; directory main-thread utilisation, transitions per second, screening and
+  chain time, batch commit latency, passive object count and its fill fraction, pad queue and wait per
+  class, reservations granted and denied; recovery and freeze durations.
+- **Alerts**: the controller of 16.2 posts to the webhook or address the user names (OPEN_QUESTIONS Q18)
+  when the admission queue, p99 step time, connection count per gateway service, the passive fill fraction
+  or the day's spend crosses its threshold, and whenever it scales. Railway's own usage alert is set by
+  the user; a hard usage limit is a deliberate choice, because it would take the game offline in the
+  middle of the spike it exists for (Q1).
 - The API serves them as `GET /status.json` (public: players online, in flight, queue, build, rules
   version) and `GET /metrics` (Prometheus text, token-protected). An operator page under `/ops` (token)
   shows the same live.
@@ -1952,102 +2542,206 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
 ### 28.1 Unit (vitest, Node; every commit)
 
 Unit tests next to the code and in `tests/unit/<package>/`; cross-language golden files for the bake
-library; `tools/dev/boundaries.test.ts`; the secrets check. Added by v2: codec round trip exact in every
-regime (ascent, touchdown with live friction anchors, entry with hot parts, a docked assembly), identical
-continuation for 6,000 steps; an island of one equals v1's `stepVessel` bit for bit; merge then undock
-restores every part pose and conserves linear and angular momentum to 1e-9; every stage separation of the
-existing stack survives with contact on; two craft closing at 15.6 km/s never pass through each other at
-any step phase; capture succeeds just inside and fails just outside each envelope limit; a dock at 30 AU
-keeps relative speed noise under 1 mm/s; every body within its Horizons tolerance; `validateVehicle` and
-`analyzeVehicle` against hand-computed values; gate classification tables; the benchmark solver.
+library; `tools/dev/boundaries.test.ts`; the secrets check; the repository scan for stubs. Added by v2:
+
+- Vessel codec round trip exact in every regime (ascent, touchdown with live friction anchors, entry with
+  hot parts, a docked assembly), identical continuation for 6,000 steps; a blob written by the previous
+  codec version and by a changed part definition decodes through the migration registry; the corpus of
+  released builds decodes.
+- **Island codec**: checkpoint, restore and continue at a staging tick (nascent pair), in the middle of a
+  soft capture, and with a U5 pair, each bit-identical to the uninterrupted run.
+- An island of one equals `stepVessel` on the tick-grid `World` bit for bit and never takes the sub-stepped
+  path unless v1 would; two craft 20 m apart, in low Earth orbit and at 30 AU, crossing the integrator
+  boundary in both directions gain under 0.1 mm/s of relative velocity.
+- Merge then undock restores every part pose and conserves linear and angular momentum to 1e-9; every
+  stage separation of the existing stack survives with contact on; the clamp weld of held ground
+  structures is unchanged; two craft closing at 15.6 km/s never pass through each other at any step phase;
+  capture succeeds just inside and fails just outside each envelope limit; a dock at 30 AU keeps relative
+  speed noise under 1 mm/s.
+- Every body of the 8.1 list within its Horizons tolerance; `validateVehicle` and `analyzeVehicle` against
+  hand-computed values; the reachability table has a positive margin for every body; gate classification
+  tables; the benchmark solver; each `FakeSession` scene conforms to `LocalSession`.
 
 ### 28.2 Universe suites (`tests/universe`, headless, every commit)
 
-- **Rules**: each of U1-U19 and the pad rules has a test that fails when the rule is removed.
+- **Rules**: each of U1-U19, U8b and the pad rules has a test that fails when the rule is removed.
 - **Fuzz**: a model of the directory driven by thousands of random sequences of spawn, warp, jump, hold,
-  link, admit, claim, dock, undock, logout, crash and expiry, checking after every operation: heads never
-  decrease; one holder per vessel; no interaction between vessels on different clocks; no claim outside a
-  solid window; no arrival inside the arrival range; pad slots never overlap; no vessel solid for a clock
-  while overlapping one that was there first.
-- **Lane equivalence**: one recorded input log through the real-time lane, the trailing lane in batches of
-  30 and 240 ticks, and a mid-flight migration between workers gives identical state hashes.
-- **Replay**: checkpoint plus journal reproduces the island's hash.
-- **Adversarial cases, written failing-first**: park inside a recorded echo and log out (the victim ahead
-  must not receive an overlapping solid vessel); repeated stranger claims must not move a ship beyond
-  `liveTick + advanceLimit`; a fly-by within 1 km without contact leaves the passive head unchanged; a
-  station-keeping neighbour at 100 m does not block a departure and a ram inside 30 s does; a jump arriving
-  on a crossing path is refused; two linked pilots on crossing orbits at 100,000x are stopped by
-  screening; a vessel that goes passive inside another clock's cleared interval shortens that clearance; a
-  logout 130 s before a live-clock impact still produces the collision; two craft entering one port in one
-  tick resolve identically in a live run and a replay; an SOI crossing during a group jump and during an
-  island merge.
+  attach, link, admit, reserve, claim, dock, undock, logout, crash and expiry, checking after every
+  operation: heads never decrease; one holder and at most one reservation per vessel; no interaction
+  between vessels on different clocks; no touch without a reservation; no claim outside a solid window or
+  past a carry limit; no jump arrival with a predicted approach inside `Ra + Rb + 50 m` within 30 s; **no
+  U5 pair overlapping for more than 30 s**; pad slots never overlap; vessel ids unique and never reused
+  while live; no vessel solid for a clock while overlapping one that was there first.
+- **Replay**: checkpoint plus journal reproduces the island hash, including runs whose journal contains
+  reservation results, range-safety actions, helm grants and timer-derived inputs.
+- **Lane equivalence and migration** (one input log through the real-time lane, the trailing lane in
+  batches of 30 and 240 ticks, and a mid-flight migration between workers: identical island hashes) run
+  where the executors live, in `tests/net/server` (`server-persistence`), and are a commit gate from wave
+  5 on.
+- **Adversarial cases, written failing-first**:
+  - park inside a recorded echo and log out: the victim ahead never has an overlapping solid vessel for
+    more than 30 s, and the intruder is cleared or recovered;
+  - repeated stranger claims do not move a ship beyond `liveTick + advanceLimit`;
+  - **carry limit**: dock to a parked ship at +0, take the vacant helm, propose the maximum rate: the
+    clock stops at the ship's limit; enter the island of an idle or disconnected pilot and propose
+    100,000x: their vessel is carried no further than its limit; ask an idle occupied group to advance
+    past its limit: refused;
+  - a merged assembly's limit is the minimum of its craft's limits;
+  - **two islands at different ticks reach one passive station in the same wall millisecond**, at docking
+    speed and as a 1 km/s impact: exactly one touches it, the other has resolved nothing against it and
+    is offered a jump (behind) or hold and ask-to-advance (ahead); the same in a replay;
+  - the expiry sweep, pad safing, a fate and the owner's attach arriving during a reservation;
+  - a fly-by within 1 km without contact leaves the passive head unchanged and releases the reservation;
+  - a guest who jumps onto a warping player's clock and requests 1x does not slow the host, and cannot
+    rejoin inside the cooldown; an island that splits keeps one clock and its members stay solid;
+  - a station-keeping neighbour at 100 m does not block a departure and a ram inside 30 s does;
+  - a jump arriving on a crossing path is refused with the latest clean tick as alternative, and the
+    chained "jump, pass, jump" completes an in-phase jump through a crowded orbit;
+  - two linked pilots on crossing orbits at 100,000x are stopped by screening; a vessel that goes passive
+    inside another clock's cleared interval shortens that clearance, never to a displayed tick;
+  - a logout 130 s before a live-clock impact still produces the collision; an explicit leave during a
+    burn closes the throttle at the leave tick; a socket lost at 10,000,000x holds the clock at the last
+    stamped tick;
+  - **a stage dropped by pad 1's rocket hits pad 2's rocket launched two minutes later**;
+  - **a debris piece on a free-return orbit viewed and claimed at +10 days** (forecast chain across two
+    sphere-of-influence changes; a viewer past the chain's end sees "not computed this far ahead");
+  - a 65th vessel approaching an island at its budget still collides; fragments beyond the budget are
+    merged deterministically;
+  - two craft entering one port in one tick resolve identically in a live run and a replay; an SOI
+    crossing during a group jump and during an island merge, with an Armed member;
+  - dock, undock of the base craft alone and re-dock: ids unique, echoes intact (section 3);
+  - every expiry row of 15.5, and **churn**: 50,000 distinct accounts launching once each and never
+    returning, on staging rules: the passive count plateaus under the cap and no spawn is refused for the
+    cap.
 
 ### 28.3 Mission (headless, `tests/mission`)
 
-The Earth-Moon-return flight through `LocalSession` and the real `TerrainProvider` on real tiles, with the
-gates of section 31.1, the golden hash, and zero incomplete terrain queries.
+The Earth-Moon-return flight through `createSession` and the real `TerrainProvider` on real tiles, with the
+gates of section 31.1, the golden hash, and zero incomplete terrain queries. The **trajectory guard**
+compares attended craft and the six unit fixtures bit-exact against the recording made on the tick-grid
+`World`; debris is compared by fate (impact or decay within 2 s and 500 m, or the same orbit), because its
+tier changes by design.
 
 ### 28.4 Separate processes with injected latency (`tests/net`)
 
-A harness starts the roles as separate processes (or one process with all roles), a proxy that injects
-delay, jitter and TCP-style stalls per client, and two to six headless `NetSession` clients driven by
-scripted pilots. Matrix: 0, 50, 150 and 300 ms round trip; 0 and 5 % stalled sends of 200 ms.
+A harness starts the roles as separate processes **inside the pinned Linux image through docker compose**
+(a host Node process on Windows cannot receive SIGTERM and is not the build replay is defined on), a proxy
+that injects delay, jitter and TCP-style stalls per client, and two to six headless `NetSession` clients
+driven by scripted pilots. Matrix: 0, 50, 150 and 300 ms round trip; 0 and 5 % stalled sends of 200 ms.
+Every run records whether it started from pad spawns on a fresh database or from **seeded** vessels; a
+seeded run is marked in the result table and never counts as a completion proof.
 
 | Scenario | Passes when |
 |---|---|
 | Concurrent launches from six pads | All reach orbit; no cross-pad interference without contact; pad states cycle; a seventh is offered a slot |
-| Rendezvous and docking | Hard dock within the envelope; both clients report the same port offsets to 1 mm at the event tick; momentum conserved |
-| Control sharing | Hand-over prompt round trip; non-helm inputs have no effect; a passenger stages their own craft; undock from each side |
-| Collision at 2 m/s, 20 m/s and 1 km/s | Both clients receive the same event numbers; neither shows damage before the event |
-| Warp | Private warp leaves the others untouched; proposal, follow, idle accept, refusal with reason; in-phase jump to a station; meet at a tick; advance for a visitor; departure notice; echoes never collide |
-| Disconnect and reconnect | Drop mid-burn (latched 10 s, then throttle zero), mid-docking, as helm and mid-warp; resume inside the grace; the unattended run's outcome after it; a hidden tab keeps flying |
-| Prediction quality | Count and size of corrections in ascent, entry and touchdown per latency; no visible correction in solo flight at 150 ms; no reversed outcome at any latency |
-| Abusive client | Altered inputs, a fast clock, stamps in the future, withheld inputs before an encounter, floods: each is bounded or refused |
+| Rendezvous and docking, **from pad spawns, unseeded, once per latency profile** (warp only through the time requests a player has) | Hard dock within the envelope; both clients report the same port offsets to 1 mm at the event tick; momentum conserved |
+| Control sharing | Hand-over prompt round trip; a vacant helm granted at once; non-helm inputs have no effect; a passenger stages their own craft; undock from each side |
+| Collision at 2 m/s, 20 m/s and 1 km/s | Both clients receive the same event numbers; neither shows damage before the event; events are provisional until durable |
+| **Observed flight** | Client B watches client A's ascent with staging from a neighbouring pad, and a burn at 500 m and at 5 km: B's drawn position of A against the server's state at the same tick within the bounds of 13.5 per tier; throttle and ignition within the stated delay; each staging event shown once and never reversed; each spent stage visible and continuous in chase view to impact or expiry |
+| Warp | Private warp leaves the others untouched; proposal, follow, idle accept (within the carry limit), refusal with reason and alternative; in-phase jump to a station; meet at a tick; advance for a visitor; departure notice without delay; echoes never collide; two claimants of one station |
+| Disconnect and reconnect | Drop mid-burn (solo: latched 10 s, then throttle closed; beside another owner: 250 ms and 2 s), mid-docking, as helm (seat reserved for the grace), **mid-warp (the clock holds at the last stamped tick)**; an explicit leave during a burn (throttle closed at the leave tick); a 200 ms stall changes nothing; resume inside the grace; the unattended run's outcome after it; a hidden tab keeps flying. Each outcome equals the flight menu's "if you leave" text |
+| Prediction quality | Count and size of corrections in ascent, entry and touchdown per latency; no visible correction in solo flight at 150 ms; **zero reversals** at any latency (6.4); a late command is re-timed and counted as a correction |
+| **Commit lag** (`lagCap = 2 s` profile) | Solo ascent, entry and touchdown at 150 and 300 ms with stalls: no correction for a stall shorter than the lag; the threshold watch drains the lag before touchdown; a second owner approaching a trailing island sees no pose change above tolerance on either client |
+| Abusive client | Altered inputs, a fast clock, stamps in the future, withheld inputs before an encounter, floods of inputs, commands and time requests, **a warp-pinning client** (jumps onto a warping player's clock and requests 1x, re-jumps after every fork), a visitor-slot holder (ask-to-advance every 15 s): each is bounded or refused, and the victim's rate is unaffected |
 
 ### 28.5 Real browsers (`tests/acceptance`, Playwright, real Chrome, real GPU)
 
-Two Chrome instances with separate profiles against a local server, at 150 and 300 ms. The four stories are
+Two Chrome instances with separate profiles against the local stack, at 150 and 300 ms. The stories are
 scripted and assert on **what each player sees** (offset labels, the single offered action, lamps, numbers
-that mirror each other, no reversed outcome), not only on state: (1) first launch with strangers on
-neighbouring pads; (2) a station built by several people, with a helm hand-over; (3) two friends meeting in
-lunar orbit by meet-at-a-tick and by in-phase jump; (4) one player back from Saturn finding hubs as echoes
-with their offers. Plus the menu flow by keyboard only, the gate's block pages (and that the main bundle is
-not requested), transition continuity, and calibration choosing Ultra on the reference GPU.
+that mirror each other, zero reversals), not only on state: (1) first launch with strangers on
+neighbouring pads; (2) a station built by several people **from pad spawns on a fresh database**, with a
+helm hand-over; (3) two friends meeting in lunar orbit by meet-at-a-tick and by in-phase jump; (4) one
+player back from Saturn finding hubs as echoes with their offers; (5) **two strangers who each warped
+during ascent to different leads end up docked, and in a second run collided, using only offered
+actions**. Stories 3 and 4 may start from seeded ships and say so. Plus: the menu flow by keyboard only;
+the gate's block pages (and that the main bundle is not requested); transition continuity; calibration
+choosing Ultra on the reference GPU; **account recovery** (park a ship, clean profile, recovery code, the
+same ships, the old code dead; the ephemeral-profile warning shown before the first ship); the sensor
+camera view on a craft without a cabin and each pilot's own cockpit in a docked assembly; the Credits
+screen. **Frame time is asserted**: at the v2 checkpoints of 29.1 the measured browser (one at a time under
+the GPU lock) holds rAF p95 under 16.7 ms and GPU p99 at or under 11 ms.
 
 ### 28.6 Restart, recovery and expiry
 
-- Graceful restart during an ascent, a docking approach and with a three-craft assembly parked: every
-  vessel identical by hash afterwards; clients resume.
-- SIGKILL of a shard during a soft capture, during an ascent, between the commit of a dock and the island
-  checkpoint, and during a soft capture on the live clock (the pad crowd must be mutually solid
-  afterwards); SIGKILL of the directory during a claim and a dock (the transition is fully applied or
-  absent). A shard frozen for 5 s after its islands were recovered elsewhere has its writes and events
+- Graceful rollout (16.2) during an ascent, a docking approach and with a three-craft assembly parked:
+  every vessel identical by island hash afterwards; the burning island is held until its pilot resumes and
+  the throttle is where the pilot left it; clients on the old build are told to reload and resume inside
+  the build-change grace; the freeze duration is reported.
+- **Two directory processes overlapping** (the new one started before the old one stops): the standby
+  writes nothing; the old one's writes fail once the lease moves; no record is written twice.
+- SIGKILL of a shard during a soft capture, during an ascent, between the directory's commit of a dock and
+  its acknowledgement to the shard, and during a soft capture on the live clock: at most 250 ms lost; the
+  dock is fully applied or absent and never rolled back once shown; recovered islands in flight are held
+  until their pilots resume and rejoin by the one-key jump; the pad crowd is mutually solid except pilots
+  who resumed after the window, who are told so.
+- **SIGKILL of the directory with live shards** during an ascent with a staging split inside the lost
+  batch, during a claim and during a dock: shards freeze, re-register and re-send; the split's records
+  exist with the same ids; the transition is fully applied or absent; nothing is rolled back.
+- A shard frozen for 5 s after its islands were recovered elsewhere has its writes, frames and events
   rejected.
+- A deploy that changes a part definition with ships parked: the decode sweep migrates them; a planted
+  undecodable row keeps the lobby closed and is named.
 - Stop everything, restore Postgres from the bucket dump, start: every passive ship and assembly is where
   its worldline says.
 - Expiry on the staging rule set with an injected wall clock: every row of 15.5, including an assembly
-  kept alive by one active owner and released when that owner lapses; the countdown shown matches the
-  removal.
+  kept alive by one active owner, the anchor role passing when the anchor's owner lapses, a lapsed craft
+  staying attached and counting against its former owner's slots, the whole assembly becoming unowned and
+  being removed whole 48 h after its last owner lapsed, and the pressure rule; the countdown shown matches
+  the removal. Pad dwell, reservations and helm requests do not expire across a 40 s outage.
 
 ### 28.7 Load tests with simulated active players
 
-- **Bots** are real `NetSession` clients with scripted pilots, headless in Node on Modal (about 50 per
-  container), against a staged deployment on Railway. Each does what a player does: spawn, fly a real
-  ascent with staging, circularise, warp; a share rendezvous and dock with a parked station; a share
-  re-enter. Idle connections and HTTP requests do not count. At least one bot in ten runs full prediction
-  and checks every correction; the rest may replay recorded input logs of real flights with jitter.
+- **Bots** are real `NetSession` clients with scripted pilots, headless in Node on Modal (100 or more per
+  4-core container; at most 50 containers at 5,000, leaving the workspace's headroom to the existing
+  apps), against the staging deployment on Railway. Each does what a player does: spawn, fly a real ascent
+  with staging, circularise, **warp for coasts and transfers as a player would**; a share rendezvous and
+  dock with a parked station; a share re-enter. Idle connections and HTTP requests do not count.
+- **Every bot connects through the `src/net` injector** with a stated latency mix (30 % at 40 ms, 40 % at
+  100 ms, 20 % at 180 ms, 10 % at 280 ms; 2-5 % stalled sends), so the correction, late-input, jitter-buffer
+  and drop-superseded paths are exercised as real players would exercise them.
+- **"Active" is a number.** Each level reports integrated objects per connected bot and inputs per second
+  per bot, and counts only when the ratio meets the mix's target (0.75 for the normal mix, 1.35 for the
+  launch-day mix). At least one bot in ten runs full prediction and checks every correction; the rest may
+  replay recorded input logs with jitter, and a replay that crashes early is replaced, not counted.
+- Bots read height packs through the pack source, as a browser does. Accounts are provisioned in bulk with
+  the operator token on staging; Railway is told before the 2,000 and 5,000 runs.
+- **Pads and compute are measured separately.** The pad-storm and launch-day mixes run on the release rule
+  set and report the **pad-limited** player count: launches per wall hour (reservoir and sustained) and
+  the median and p95 wall-clock wait from Deploy to control-enabled per level. The compute ramps run on a
+  load-test rule set with synthetic extra pads (`tests/load/rules`), so the CPU, gateway and directory
+  limits are found independently of pads, and report the **compute-limited** player count.
 - **Ramps**: 50, 200, 500, 1,000, 2,000, 5,000 concurrent, each held 15 minutes; a two-hour soak at the
-  highest level that held; a reconnect storm; a deploy under load; a forced shard kill at load. Mixes: pad
-  storm, cruise-heavy, 20 % in docking pairs, the launch-day mix.
-- **Measured and published**: step time per worker; integrated objects per worker thread at the admission
-  threshold; dilated islands; gateway CPU per connection; bytes per second per player per tier as billed;
-  directory transitions and screening time; Postgres batch latency; correction rate seen by predicting
-  bots; players per shard when admission starts to queue; recovery time.
+  highest level that held, with passive-object count, table and WAL size over time; a reconnect storm; a
+  rollout under load at 200 and 2,000 bots (freeze duration); a forced shard kill and a directory kill at
+  load; **scale-out under load** (time from the controller's trigger to K new shards taking islands, at 500
+  bots); a **visitor mix** (5,000 menu clients polling the public documents and creating accounts while 500
+  bots fly: `api` and `pub` requests per second and connections, CDN hit rate, billed egress); a **cold
+  start** from a clean profile at 50 Mbit/s (bytes and seconds to title and to the end of calibration).
+  Mixes: pad storm, cruise-heavy, 20 % in docking pairs, the launch-day mix.
+- **The balance is measured**: one ramp level is repeated with `lagCap = 2 s`, and once with 30 % of bots
+  reporting a low `cpuScore`; server CPU per player, bytes per player and correction rate are reported for
+  each, so `lagCap` and the weak-client threshold are chosen on data.
+- **Coherence is measured.** In the launch-day and cruise-heavy mixes: the share of attended vessels that
+  are solid to at least one other attended vessel, the distribution of leads, echoes against solid craft
+  within 300 km, and the success rates of jump, meet and ask-to-advance. Target: at least half of attended
+  vessels solid to another attended vessel in the launch-day mix. If it is missed, the fields to tune are
+  the cohort bucket length, the launch range, the default of follow, `advanceLimit` and the in-phase offer;
+  the report says which were changed.
+- **Measured and published**: step time per worker at 1, 8, 16 and 22 synchronised workers; integrated
+  objects per worker thread at the admission threshold; billed vCPU-seconds per integrated vessel-second
+  and idle shard CPU; shard and directory main-thread utilisation; resident memory per shard; dilated and
+  held islands; gateway CPU per connection; bytes per second per player per tier as billed; directory
+  transitions, screening and chain time; Postgres batch latency; correction rate seen by predicting bots;
+  players per shard when admission starts to queue; recovery time; cumulative spend after every run.
 - The limit reported is the player count at which a service level breaks: more than 1 % of real-time ticks
-  over 8.33 ms, a correction rate above one per player-minute, or admission queueing. If a level fails, the
-  report says so and gives the level that held.
-- The first load test (50-500 bots on stage A) runs before shard migration is relied on: it replaces the
-  2.5x derating and decides how many shards a launch day needs.
+  over 8.33 ms, a correction rate above one per player-minute, admission queueing, or a p95 wait from
+  Deploy to control-enabled above 120 s. If a level fails, the report says so and gives the level that
+  held.
+- The first load test (50-500 bots on the base topology) runs before shard migration is relied on: it
+  replaces the 2.5x derating and decides how many shards a launch day needs.
+- **Without approvals there is no capacity claim.** If the deployment or the bot fleet is not approved
+  (OPEN_QUESTIONS Q1, Q2, Q4), the report is titled local-only, makes no front-page statement, and the
+  package reports the unmet completion criteria to the user as a blocker.
 
 ### 28.8 Whole flights
 
@@ -2065,7 +2759,7 @@ Section 31.
 | Tile generation | 6-12 ms per tile in workers; <= 8 uploads or 2 ms per frame |
 | VRAM | about 3 GB (terrain 1.1, vehicle + materials 0.6, G-buffer/history 0.5, clouds/LUTs 0.2, shadows 0.13, sky 0.1) |
 | Headless full mission | < 5 min wall-clock (target 90 s) |
-| Baked data on disk | < 22 GB including caches |
+| Baked data on disk | < 22 GB including caches; packs <= 20 GB in their own directory; at least 25 GB of the disk free at all times |
 
 ### 29.1 GPU budget per checkpoint
 
@@ -2097,68 +2791,121 @@ run at `qualityScale` down to 0.7 there (0.9 ms), which is invisible behind the 
 on the governor to meet its line. The governor and dynamic resolution hold 60 fps if a checkpoint exceeds
 its budget on a slower machine, but budgets are measured at the stated internal resolution.
 
-### 29.2 Multiplayer and server budgets
+**v2 checkpoints.** The table above is the single-vehicle flight. The scenes v2 adds have their own
+columns, with the same owners and the same 11.0 ms budget at the **Ultra default**. Where several craft
+are in view the vehicle, shadow, structure and effect lines are caps: the Ultra value of the "other craft
+detail" setting and the nearest-eight emitter budget are whatever fits them, measured by
+`fleet-models-pads`, not the other way round.
+
+| Line (owner) | Menu / turntable | Transit | Pad row: 6 stacks, 3 lift-offs | Docking approach, 3-craft station | 600-part assembly | Low Mars orbit | Map, 10,000 census objects |
+|---|---|---|---|---|---|---|---|
+| Core fixed (render-core) | 3.0 | 3.0 | 3.0 | 3.0 | 3.0 | 3.0 | 3.0 |
+| Terrain G-buffer incl. far water sheet | 1.5 | 1.5 | 1.5 | 1.5 | 1.5 | 1.5 | 1.2 |
+| Terrain shadow casting | 0.4 | 0.5 | 0.5 | 0.4 | 0.4 | 0.4 | 0.3 |
+| Rocks | 0 | 0.15 | 0.1 | 0 | 0 | 0 | 0 |
+| Vehicles, G-buffer, every craft in view | 0.5 | 0.8 | 1.0 | 1.0 | 1.6 | 0.6 | 0.3 |
+| Vehicle shadows | 0.3 | 0.4 | 0.45 | 0.5 | 0.8 | 0.3 | 0.1 |
+| Site structures | 0 | 0.5 | 0.55 | 0 | 0 | 0 | 0 |
+| Cockpit or sensor-camera console | 0 | 0 | 0 | 0 (1.2 in first person) | 0 | 0 | 0 |
+| Atmosphere | 0.9 | 0.9 | 0.8 | 0.9 | 0.9 | 0.7 | 0.9 |
+| Clouds | 1.3 | 1.2 | 0.7 (governed) | 1.3 | 1.3 | 0 | 1.3 |
+| Ocean | 0.1 | 0.6 | 0.7 | 0.1 | 0.1 | 0 | 0.1 |
+| Sky | 0.3 | 0.2 | 0.2 | 0.3 | 0.3 | 0.3 | 0.3 |
+| Plumes, smoke, particles for the nearest eight (vfx) | 0 | 0.3 | 1.3 | 0.3 | 0.3 | 0.3 | 0 |
+| Navball, nameplates, scrim, map overlay and census icons | 0.25 | 0.15 | 0.2 | 0.2 | 0.2 | 0.15 | 0.4 |
+| **Sum** (budget 11.0) | **8.55** | **10.2** | **11.0** | **9.5** (10.7) | **10.4** | **7.25** | **7.9** |
+
+The pad row is at the limit by construction, so it is the scene the lead measures first. These columns are
+asserted in the integrated app (`app-integration` packages, `final-gate`) and in `tests/acceptance`: rAF p95
+under 16.7 ms and GPU p99 at or under 11 ms, one browser measured at a time under the GPU lock.
+
+### 29.2 Multiplayer, server and delivery budgets
 
 | Budget | Target |
 |---|---|
 | Real-time island step, per worker | p99 <= 6 ms of the 8.33 ms tick at the admission threshold; utilisation <= 50 % |
 | Client session per frame (prediction, replay, view build) | p99 <= 1.5 ms main thread at 1x with two vessels in the island; a 150 ms replay of ten vessels <= 2 ms |
-| Corrections, solo flight at 150 ms round trip | none visible; fewer than one per player-minute above tolerance |
-| Downstream per player | planning average 2.5 kB/s; hard cap 6 kB/s; upstream under 0.6 kB/s |
+| Snapshot build for a crowded island | <= 1.0 ms p99 for 64 vessels: full part snapshots only for the vessels inside the presentation relevance cut (about 40 us each, measured), pose-only snapshots for the rest (<= 5 us each); nameplates <= 0.2 ms |
+| Planning | never on the main thread above 1 ms; a heliocentric prediction up to 20 ms in the worker; the endpoint's p95 reported |
+| Corrections, solo flight at 150 ms round trip | none visible; fewer than one per player-minute above tolerance; zero reversals |
+| Downstream per player | planning average 2.5 kB/s (cruise); 6 kB/s hard cap, which a launch day reaches; upstream under 0.6 kB/s. The complete census is HTTP through the CDN and is not in this budget |
 | Server CPU per connected player (derived; conservative) | 0.0055 vCPU normal mix, 0.0094 launch-heavy; 0.025 and 0.043 on `hosting.md`'s figure |
-| One worker thread at 50 % (derived; conservative) | 100-125 integrated objects; 16 |
+| One worker thread at 50 % (derived; conservative) | 100-125 integrated objects; 16. Replaced by the 1, 8, 16, 22 synchronised-worker measurement |
+| Shard and directory main threads | <= 50 % utilisation with per-tick batching (about 48,000 inputs and as many frames a second per shard at 1,600 players would otherwise be most of a core) |
+| Shard memory | 200 MB per worker isolate; tile store 1 GB (base) or 2.5 GB (launch); 7.4 GB for 22 workers, about 2 GB for the base shard (10.5) |
 | One gateway vCPU (assumed) | 250-500 connections; 10,000 per service |
-| Directory | 10,000 transitions a second; 100,000 vessels in 50 MB (assumed) |
-| Graceful restart | nothing lost; universe back within 40 s |
-| Crash | at most 250 ms of flight lost; islands back within 60 s at 5,000 integrated vessels |
+| Public documents | `pub`: one generation a second; menu clients poll every 3-5 s; 5,000 menu tabs are about 1,250 requests a second before the CDN |
+| Directory | 10,000 transitions a second; 100,000 vessels in 50 MB (assumed); a reservation answered in under 5 ms |
+| Rollout (deploy that affects the simulation) | universe frozen under 40 s plus the resume window (30 s, or 90 s on a build change); no committed state lost; no burn flown without its pilot |
+| Crash | at most 250 ms of flight lost per island; islands back within 60 s at 5,000 integrated vessels; flights in progress held for their pilots |
+| Scale-out | time from trigger to new shards taking islands: measured in wave 6, target under 3 minutes |
+| **Cold start** (first visit, 50 Mbit/s, cold OPFS, clean profile) | <= 25 MB and <= 8 s to the title; the rest streams behind it; calibration data (<= 150 MB) resident before the benchmark starts; calibration itself under 30 s. Owners: `capability-settings` (ordering, what is deferred), `platform-delivery` (boot pack layout). Measured against the deployed mirrors by `deploy-loadtest` |
 | Menu DOM | 0.5 ms main thread per frame; scrim pass under 0.1 ms GPU |
-| Calibration | under 30 s; transit about 10 s with no frame at or above 33 ms |
-| Launch complex | 16 pads: 240-640 launches per universe hour |
-| Remote vessels | full detail for up to 10 (Ultra); nameplates for 8 plus target, partners and own ships |
+| Transit | about 10 s with no frame at or above 33 ms |
+| **Launch slots** | 32 pads, 150 s mean cycle: 768 launches per wall hour sustained, 258,000 in the 14-day reservoir, 276,000 in the first day. p95 wait from Deploy to control-enabled <= 120 s at the stated limit |
+| Passive objects | plateau under the 50,000 cap under account churn (pressure rule, 15.5) |
+| Remote vessels | full detail for as many as fit the pad-row column at Ultra; nameplates for 8 plus target, partners and own ships |
 
-Bottlenecks in the order they bind: (1) pads, by a factor of 20 to 80 on a front-page day, relieved by
-cohort slots and more pads; (2) sockets and fan-out (about a third to a half of all CPU on derived
+Bottlenecks in the order they bind: (1) **launch slots**: the sustained rate is 768 per wall hour whatever
+the CPU does; the cohort reservoir absorbs one front-page day and no more, and sustained demand needs pads,
+sites or a shorter cycle (16.3); (2) sockets and fan-out (about a third to a half of all CPU on derived
 figures); (3) real-time worker threads, only if the conservative figure is true (about 19 shard services
-for a launch-heavy 5,000, about 12 with the trailing lane); (4) egress as a sustained cost; (5) one crowded
-island (single-threaded; per-island dilation and the caps of 7.2); (6) directory screening against a
-crowded low-orbit shell (estimated at 1-2 cores at 5,000 players, not measured); (7) terrain on shards;
-(8) Postgres batches.
+for a launch-heavy 5,000, about 12 with the trailing lane); note that a launch-heavy 5,000 exists only
+while the reservoir lasts, so this is a one-day sizing; (4) the shard main thread, if batching is not
+enough; (5) egress as a sustained cost, at the cap on a launch day; (6) memory per shard; (7) one crowded
+island (single-threaded; per-island dilation and the vessel budget of 7.2); (8) directory screening and
+forecast chains against a crowded low-orbit shell (estimated at 1-2 cores at 5,000 players, not measured);
+(9) terrain on shards; (10) Postgres batches. The capacity report lists each with its measured number.
 
 ---
 
 ## 30. Cost model
 
-List prices (`hosting.md`): Railway $20 per vCPU-month, $10 per GB-month, $0.05 per GB of service egress,
-bucket egress free; Modal preemptible CPU $0.0000131 per core-second. "Derived" uses the measured step
-costs with the 2.5x derating; "conservative" uses 0.03 vCPU per integrated vessel. Both hold the stated
-concurrency for a whole month, with everything in the real-time lane and the shell on Railway. Every figure
-is an estimate until the load test replaces it.
+List prices (`hosting.md`): Railway $20 per vCPU-month, $10 per GB-month, $0.05 per GB of service egress
+(uploads from a service to a bucket included), bucket egress free; Modal preemptible CPU $0.0000131 per
+core-second. "Low" uses the measured step costs with the 2.5x derating, the planning-average bit rate and
+the derived shard count; "high" uses 0.03 vCPU per integrated vessel, the 6 kB/s cap and the conservative
+shard count. Both hold the stated concurrency for a whole month in the split topology, with everything in
+the real-time lane, sleep-scheduled workers and the shell on Railway. Every figure is an estimate until the
+load test replaces it.
 
-| Line | 20 players | 500 players | 5,000 players |
+| Line | 20 players (base) | 500 players | 5,000 players |
 |---|---|---|---|
-| Simulation, gateway, directory CPU (derived / conservative) | $8 / $16 | $65 / $260 | $575 / $2,520 |
-| Memory | $15 | $60 | $290 |
-| Postgres, volume, backups | $8 | $46 | $120 |
-| WebSocket egress at 2.5 kB/s | $6 | $162 | $1,620 |
-| Buckets, `edge` (shell and pack mirror) | $4 | $20 | $60 |
-| Modal (audits, rehearsals) | $0 (inside the free credit) | $0-30 | $30 |
-| **Total (derived / conservative)** | **about $45 / $50** | **about $355-385 / $550-580** | **about $2,700 / $4,650** |
+| Simulation, gateway, directory CPU (low / high) | $8 / $16 | $65 / $260 | $575 / $2,520 |
+| Memory, from isolate counts (10.5, 16.2) | $60 | $120 / $240 | $600 / $1,710 |
+| Postgres, volume, backups | $8 / $12 | $46 / $70 | $120 / $250 |
+| WebSocket egress at 2.5 kB/s / at the 6 kB/s cap | $6 / $16 | $162 / $389 | $1,620 / $3,890 |
+| Dumps to the bucket (billed egress) | $2 | $4 | $6 / $18 |
+| Buckets, `shell`, `packs`, `pub` | $8 | $25 | $70 |
+| Modal (audits) | $0 (inside the free credit) | $0 / $30 | $30 |
+| **Total (low / high)** | **about $90 / $115** | **about $420 / $1,020** | **about $3,000 / $8,500** |
 
 - The Railway Pro fee ($20) includes $20 of usage and is not added. The shell on Netlify Pro instead adds
-  about $20, $80 and $135-420 at the three levels.
+  about $20, $80 and $135-420 at the three levels. A staging environment costs the base column while it is
+  awake; it sleeps when idle.
+- GitHub Actions: the repository is private, so minutes are finite (2,000 a month on the free plan). CI is
+  kept under 8 minutes per push with path filters, about 200 pushes a month; overage is $0.008 a minute.
 - With the trailing lane on, solo downstream falls from about 2.2 to 0.4-1.9 kB/s: about $300-800 a month
-  less at 5,000.
+  less at 5,000. The load test's A/B run replaces this estimate.
 - **A front-page day** (5,000 concurrent for 24 hours, launch-heavy, 50,000 visitors, on top of a quiet
-  month): about $105-140 derived, $215-255 conservative. Tile egress is $0 on the bucket path and up to
-  $750 if that path fails on the day and tiles fall back to billed egress through `edge`.
-- **Rehearsals**: a one-hour 5,000-bot run is about $13 on Modal plus about $9 on Railway; the whole
-  rehearsal programme is about $100-150.
+  month): CPU $19-143, memory $20-57, socket egress $54 at the planning average and $130 at the cap, the
+  rest about $10: **about $105-185 on the low CPU figure, $265-345 on the high one**. Tile egress is $0 on
+  the bucket path and up to $750 if that path fails on the day and tiles fall back to billed egress
+  through `packs` with every request a miss. The $750 rests on 300 MB of tiles per new visitor, which is
+  an assumption: `platform-delivery` measures the bytes and requests of a recorded first session (boot,
+  calibration, title, one launch to orbit) and this figure and the 15 TB behind it are recomputed from it.
+- **Rehearsals**: one clean pass of the load-test programme is about 22,500 bot-hours ($45-100 on Modal),
+  the Railway side about $30, and the mirror throughput test bills up to 900 GB ($45) when the CDN misses:
+  about $150 with no rerun. A load test exists to fail, be fixed and run again, so **$400** is asked, and
+  every run prints the cumulative spend. Probes, bot fleets and bakes on Modal are R&D and may also draw
+  on the existing Modal allowance.
 - **What the compute split costs**: simulating every attended vessel on the server instead of letting
   clients integrate solo flight costs $1-6 a day at 500 players and $20-100 on a 5,000-player day. The
   split was decided on authority, feel, deadlines and send rate (decision 30).
-- Budget asked of the user (OPEN_QUESTIONS Q1): $100 a month standing, a $300 spike reserve (plus the $750
-  tile worst case), $150 once for rehearsals. A sustained 5,000 players is a separate $2,700-4,650 a month
-  decision (OPEN_QUESTIONS Q6).
+- Budget asked of the user (OPEN_QUESTIONS Q1): **$150 a month standing**, a **$400 spike reserve** (plus
+  the $750 tile worst case), **$400 once for rehearsals**. A sustained 5,000 players is a separate
+  $3,000-8,500 a month decision (OPEN_QUESTIONS Q6), and its launch-heavy form is beyond the first
+  release's launch complex in any case (16.3).
 
 ---
 
@@ -2169,11 +2916,12 @@ orbit, fly to the Moon, land on real lunar terrain, lift off, return, survive re
 under parachutes - flying every burn by hand - at 60 fps, with Earth and the Moon photoreal at every
 distance (the other bodies may use the simple visuals of section 8.5, as the expansion allows), full
 sound, and no placeholder, stub or TODO anywhere else. v2 adds the multiplayer, fleet, solar-system, menu
-and capability requirements of 31.4.
+and capability requirements of 31.4, and ends with the final gate of 31.5, which re-proves all of it on the
+final tree and on the deployed game.
 
 ### 31.1 Headless mission (vitest, `tests/mission`)
 
-The scripted pilot flies `scenarios/lunar-direct` through a `LocalSession` (the in-process universe) and the real `TerrainProvider`
+The scripted pilot flies `scenarios/lunar-direct` through a `LocalSession` from `createSession` (the in-process universe; start instant and every rails landing on the tick grid) and the real `TerrainProvider`
 (fs tile source, real baked tiles), calling only `await sim.ready`, `await sim.terrainPending()` (whenever
 it is non-null, before the next step: the terrain protocol of the `Sim` contract), `step()` /
 `advanceRails()` / `peek()` / `setControls()` / `commands`. The run fails on crew loss, loss of the command
@@ -2232,23 +2980,66 @@ the cockpit, reentry peak heating, parachute descent, splashdown, a shoreline, a
 lead. A LOD pop detector flies a scripted camera path with sim time frozen and asserts bounded
 frame-to-frame image difference.
 
+**Reference images.** Statistics alone cannot show that three reworks of the renderer (the wave-3 sweep,
+the quality plumbing of wave 4, the generic terrain path of wave 5) changed nothing. Before wave 3 the lead
+records a reference PNG of every checkpoint in deterministic mode on a fixed site-data snapshot into
+`data/baselines/` (git-ignored, with a tracked manifest of hashes), and a compare helper in
+`tests/browser/harness.ts` reports mean absolute difference and the 99.9th percentile against a
+per-checkpoint tolerance. The comparison is a gate of `presentation-sweep`, of `capability-settings` at
+Ultra, of `bodies-activation` and of `planet-render`. Re-recording a checkpoint needs a note signed by the
+lead; the pad scenes are re-recorded once, when the new pads and their flatten discs land.
+
+**The new pads.** A player may spawn on any of 32 pads, so the ground is looked at there too: at one pad
+per class at each site, in the integrated app: ground level at local noon and at low sun, 300 m up, and the
+lift-off perf column; with image-statistics assertions, a flatten-disc seam check, the shoreline and the
+near ocean in frame where the pad is coastal, and review by eye. Owners: `planet-render` (terrain, ocean),
+`fleet-models-pads` (structures); the lift-off budget must hold at Madrakah on its 30 m data.
+
+**v2 scenes** with screenshots in all three views: a heliocentric cruise at 1,000,000x, a Mars arrival and
+capture, the rebase at a sphere-of-influence change (no visible step), the menu and turntable, the pad row,
+a docking approach, the sensor-camera view.
+
 ### 31.4 Flights and demonstrations added by v2
 
-- **The Earth-Moon-return mission through a socket**: the scripted pilot as a `NetSession` client against a
-  local server at 150 ms, spawning in a launch-window slot, with the same milestone gates evaluated on the
-  server as objectives.
-- **An interplanetary flight into orbit**: `meridian-albatross` flown by a scripted pilot from a pad to a
-  bound capture ellipse about Mars under private warp, ending with the server's record showing a closed
-  orbit about Mars; and an arrival at Neptune at 10,000,000x proving that the event clamps hold at the top
-  level.
+- **The Earth-Moon-return mission through a socket**: the scripted pilot as a `NetSession` client against
+  the local stack at 150 ms, spawning in a launch-window slot, with the same milestone gates evaluated on
+  the server as objectives.
+- **Interplanetary flights into orbit**, headless, by the transfer pilot: `meridian-albatross` from a pad
+  to a bound capture ellipse about Mars under private warp, ending with the server's record showing a
+  closed orbit; an arrival at Neptune at 10,000,000x that **ends in a bound capture ellipse on the
+  server's record**, proving that the event clamps hold at the top level; and, on `LocalSession`, into
+  orbit of one inner planet, one giant's moon (Titan or Callisto), one tiny moon (Phobos), and one
+  **refuelled profile** (depot dock, propellant transfer, departure to a body beyond the cruiser's
+  unrefuelled reach).
+- **The reachability table** (8.1) with a positive margin for every body.
 - **Concurrent launches, rendezvous, docking, undocking, collision, warp, disconnect and reconnect between
-  separate clients under latency** (28.4, 28.5); **restart recovery and expiry** (28.6); **measured load
-  limits** (28.7).
-- **Deployed**: the public lobby on Railway, reachable from the repository's deploy pipeline, with freely
-  selectable vehicles, persistent ships and assemblies, the menu, and automatic graphics setup.
+  separate clients under latency** (28.4, 28.5), with the docking proofs from pad spawns and unseeded;
+  **restart recovery and expiry** (28.6); **measured load limits** (28.7).
+- **Deployed**: the public lobby on Railway, with freely selectable vehicles, persistent ships and
+  assemblies, the menu, and automatic graphics setup. Production runs `rules/default.json`. A scripted
+  two-browser run **against the production URL** spawns two vehicles from pads, docks them, logs both out,
+  rolls a simulation deploy, resumes both and finds the assembly intact (record ids and island hash from
+  `/ops`), then undocks; the pack list and tiles load from a clean profile. The URL, build id, rules
+  version and results are recorded. Expiry is demonstrated on deployed staging in real wall-clock time.
 
-Done for v2 means all of the above pass, the original definition of done still holds, and the capacity
-report states honestly which load levels held.
+### 31.5 The final gate (wave 7)
+
+Nothing is done until it has been proven on the final tree, after wave 6 has changed the simulation, the
+universe, the client and the server. The `final-gate` package:
+
+1. Re-runs 31.1, 31.2 and 31.3 (reference images, pop detector, budgets) on the final tree.
+2. Flies the **Earth-Moon mission in real Chrome through `NetSession`** against the local stack at 150 ms,
+   with the perf and audio assertions of 31.2: the path a player actually uses.
+3. Flies the **Mars transfer in real Chrome** with screenshots in all three views at departure, in
+   heliocentric cruise at 1,000,000x, at sphere-of-influence entry and at capture, with the pop detector
+   and the frame-time assertions.
+4. Runs the production acceptance of 31.4.
+5. Runs the repository scan (`TODO`, `FIXME`, `stub`, `placeholder` outside the allowed simple-body data)
+   and the secrets check.
+6. Produces one results table with a row per line of `PROMPT.txt`, naming the test or demonstration that
+   proves it and its result. A line without proof is reported to the user as not done. If the deployment
+   or the load test was not approved, the table says "not deployed" and lists the completion criteria
+   that are therefore unmet, as a blocker for the user, not as a pass on the local stack.
 
 ---
 
@@ -2265,6 +3056,8 @@ report states honestly which load levels held.
 | **More lobbies and regions** | The lobby is the unit of deployment; the client lists lobbies; a region is a lobby. |
 | **Other sign-ins** | A credential row of another kind on the same account. |
 | **Client-held authority** | Not a seam. The holder is the directory or an island; nothing else is defined. |
+| **Free-text chat** | The `comms` audio bus and the quick-comms channel message; a text channel would be one more message kind with its own moderation tools. No rules flag exists for it today. |
+| **Cabins for the Albatross habitat and the Atoll** | `command.cockpit` on the part; the sensor-camera view is replaced per part when an interior exists. |
 | **Transfer-window grids, moon-tour searches** | The API's planning endpoint and Modal batch jobs; the same answer for everyone at a tick is computed once and cached. |
 | **Gamepad** | The menu's focus model is spatial. |
 
@@ -2273,19 +3066,28 @@ report states honestly which load levels held.
 ## 33. Work packages
 
 The briefs are in `docs/WORK_PACKAGES_V2.json`; the order that keeps the tree green is in
-`docs/MIGRATION_V2.md`.
+`docs/MIGRATION_V2.md`. Sub-waves run in order; packages inside one run in parallel on disjoint paths.
 
-- **Wave 3**: `core-v2` (contracts, vessel model, codec, the sweep), `world-data-bake` (body definitions,
-  planet pyramids, the second site's region), `platform-delivery` (packs, buckets, CI, the Railway and Modal
-  skeleton, first cloud measurements).
-- **Wave 4**: `universe-core`, `wire-protocol`, `solar-system-sim`, `fleet-data`, `shell-menu`,
-  `capability-settings`.
-- **Wave 5**: `netcode-client`, `server-persistence`, `contact-docking`, `fleet-models-pads`,
-  `planet-render`, `map-multiplayer`, `flight-hud-multiplayer`.
-- **Wave 6**: `deploy-loadtest`, `acceptance-multiclient`.
+| Wave | Packages |
+|---|---|
+| 3.0 (lead) | `lead-baseline-v2`: the v2 contracts, root configuration and dependencies, boundary rules for every new directory, reference images, the pre-change mission baseline |
+| 3.1 | `sim-core-v2` (tick grid, trajectory guard, vessel and craft model, versioned codec, `World` speaking v2, site model), `bodies-ephemeris`, `planet-bake`, `site-bake`, `platform-delivery` (packs, boot pack, CI, the split-topology skeleton, first cloud measurements) |
+| 3.2 | `presentation-sweep` (every presentation consumer once, `FakeSession`, frame rebase, the tile-source seam in workers, the scrim step and exposure hints, `src/app` for the sweep) |
+| 4.1 | `island-core`, `wire-protocol` (with the session layer), `solar-system-sim`, `fleet-data`, `shell-menu`, `capability-settings` |
+| 4.2 | `universe-directory` (directory, clocks, rules, screening, pads, expiry, `UniverseHost`, `LocalSession`) |
+| 4.3 | `session-switch` (gated: `createSession` returns `LocalSession`; `World` is deleted) |
+| 4.4 | `bodies-activation` (the Sun-rooted body set goes live) |
+| 4.5 | `app-integration-1` (shell, calibration and the browser mission on `LocalSession` in `src/app`) |
+| 5.1 | `contact-docking`, `server-persistence`, `netcode-client`, `planet-render`, `fleet-models-pads` |
+| 5.2 | `net-joint-gate` (one real client against the real server on the local stack), `map-multiplayer`, `flight-hud-multiplayer` |
+| 5.3 | `app-integration-2` (`NetSession`, reconnect states, stores and the pack source in `src/app`) |
+| 6 | `deploy-loadtest`, `acceptance-multiclient` |
+| 7 | `final-gate` (31.5) |
 
-Integration, the browser mission and visual QA are run by the lead between waves in `src/app`, including
-the activation of the Sun-rooted body set after wave 4.
+The lead reviews between sub-waves, answers contract requests, applies the root-configuration changes the
+next sub-wave needs, runs the platform measurement scripts as soon as OPEN_QUESTIONS Q1, Q2 and Q4 are
+approved (their result is required before the sizing decisions of wave 5), and play-tests the time rules
+between waves 5 and 6.
 
 ---
 
@@ -2293,18 +3095,24 @@ the activation of the Sun-rooted body set after wave 4.
 
 | Risk | Mitigation |
 |---|---|
-| No capacity number is measured | The first load test runs on stage A before shards are relied on; every figure in sections 29 and 30 carries both the derived and the conservative value; the report replaces them |
-| The sky is mostly echoes after the first warp | Live clock, range rule, cohorts, follow, meet, in-phase jump, attach at the live clock; the four stories are tested for legibility; the rule values are data and expected to move after play |
+| No capacity number is measured | The first load test runs on the base topology before shards are relied on; every figure in sections 29 and 30 carries a low and a high value; the report replaces them; without approvals the report is titled local-only and the gap is reported as a blocker |
+| Launch slots bind long before CPU | Sized from a launches-per-day target (decision 54): 32 pads, a 14-day cohort reservoir; pad wait is its own service level; the load test finds the pad limit and the compute limit separately; the scaling path names pads, sites and cycle with numbers |
+| The sky is mostly echoes after the first warp | Live clock, range rule, cohorts, follow, meet, in-phase jump, U8b; coherence is measured by the load test with a target and named tuning fields; an acceptance story for two strangers at different leads; a play-test with a written result (Q7) |
+| A front-page day arrives unannounced | The split topology is always on; shards are added by digest without a restart; a controller scales inside a pre-approved ceiling and alerts; the transition is measured under load |
 | Touchdown is where client and server can disagree visibly | Threshold watch drains lag; exact contact state on the wire; outcomes only on the server's event; its own tolerance tests |
-| The refactor lands on a moving tree | `core-v2` alone owns the sweep in wave 3; a guard test proves the single-craft trajectory is bit-identical before the golden hash is re-baselined; `LocalSession` keeps every lab and the mission on the multiplayer path |
-| Lanes and hand-overs add states | One step loop; `lagCap = 0` first; lane-equivalence and fuzz suites are commit gates; the deferred lane holds no attended vessel |
-| The directory is a single writer and a single point of failure | It does event-driven work only; its crash freezes the universe for the recovery time and loses at most one batch; partitioning is on the scaling path |
-| Pads saturate long before CPU | Cohort slots, launch-window slots, 16 pads at launch, pads as data |
-| Bucket throughput under concurrent ranged reads is unproven | Measured in wave 3 by a Modal fleet; the `edge` mirror with CDN is the fallback; the OPFS cache keeps return visits off the network |
-| Determinism is tied to one V8 build and CPU architecture | One pinned image for shards and audits; a build change takes the graceful path; a Node upgrade is a re-baseline |
-| Railway has no autoscaler, no sticky routing, a restart on every deploy | Gateways own sockets; shards are services; the scale script; restart recovery is the normal deploy path |
-| Server-side terrain | Height packs by range into an LRU; pads analytic; landings placed on warm shards; a stall is lag or dilation for one island |
+| The refactor lands on a moving tree | The tick grid moves first, on `World`, in its own guarded step; the guard is bit-exact for attended craft on the tick-grid `World`; contracts are the lead's pre-wave step; the sim side and the presentation sweep are separate packages; `LocalSession` is built beside `World` and the switch is a gated step with the other packages' flight suites as its gate |
+| Wave-2 pixels drift through three reworks | Reference images recorded before wave 3 with a compare helper as a gate of every package that touches the renderer |
+| Lanes and hand-overs add states | One step loop; `lagCap = 0` first; hand-overs and reservations are fenced in memory and off the input path; no island steps past a pending merge or into an unreserved copy; lane-equivalence and fuzz suites are commit gates; the deferred lane holds no attended vessel |
+| The directory is a single writer and a single point of failure | It does event-driven work only; it holds a fenced lease, so a second process cannot write; its crash freezes the universe for its restart time while shards keep their state and re-register, losing nothing; partitioning is on the scaling path |
+| Stored ships meet changed definitions | Versioned codec with part fingerprints, a migration registry, a decode sweep before the lobby opens, a corpus of every released build in CI |
+| Server memory per isolate | Lazy per-body residency, one shared tile store per shard, a per-worker budget, resident memory in the load-test report |
+| Bucket throughput under concurrent ranged reads is unproven | Measured in wave 3 by a Modal fleet with pass and fail numbers; the `packs` mirror with slice objects is the fallback; the escalation outside the three providers is written with thresholds; the OPFS cache keeps return visits off the network |
+| The first minute of a front-page visitor | A 25 MB boot pack and an 8 s title budget; calibration behind the title; measured from a clean profile against the deployed mirrors |
+| Determinism is tied to one V8 build and CPU architecture | One pinned image for shards, tests and audits; journals are build-bound and checkpoints are not; a Node upgrade is a re-baseline |
+| Railway restarts on every deploy and overlaps old and new | An ordered rollout script at one digest; the directory lease; gateways last; the freeze is measured and stated |
 | WebSocket over TCP in one region | Prediction hides stalls up to 500 ms; docking is slow by design; a quarter second of round trip in Asia and Australia is stated |
-| Ground-level realism at two sites; clouds, tiles, corridor, landing data (v1 risks) | Unchanged from v1: arid coastal sites, landcover-driven detail, one march path, lifting capsule with roll rule, NAC region with calibrated procedural detail |
-| Frame over budget with several launches in view | Other-craft detail cap, relevance cuts, the summed budget table, the governor before resolution scaling |
-| Disk space on the development machine | Baked data is capped at 22 GB including the new bodies and the second region; raw downloads are deleted after a bake; packs are built to a separate, deletable directory |
+| Ground-level realism at 32 pads on two sites; clouds, tiles, corridor, landing data (v1 risks) | Arid coastal sites, landcover-driven detail, one march path, lifting capsule with roll rule, NAC region with calibrated procedural detail; checkpoints at one pad per class per site; the Madrakah fall-back of Q8 |
+| Frame over budget with several launches in view | The v2 budget columns sum to 11 ms at the Ultra default with the vehicle lines as caps; other-craft detail is what fits; frame time is asserted in the integrated app and in the two-browser stories |
+| Not every body is reachable by the fleet | A generated reachability table that fails the build; the refuelled profile is flown; exceptions go to the user (Q17) |
+| Disk space on the development machine | Baked data is capped at 22 GB, packs at 20 GB in a separate deletable directory, 25 GB kept free; raw downloads are deleted after a bake |
+| The plan completes without ever deploying | Q1, Q2 and Q4 are marked blocking for wave 6 and asked now; `deploy-loadtest` and `final-gate` report "not deployed" as a blocker, never a local-stack pass |
