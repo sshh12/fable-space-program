@@ -1091,6 +1091,29 @@ let dt = (tEnd - tStart) / f32(steps);          // the same integral with fewer,
   own passes (AO, lighting, TAA, bloom) do not scale; only when the scale has reached 0.5 does the core lower
   the internal resolution.
 
+### 17.6 Cloud shadow in a shader of your own (forward-lit surface, compute pass)
+
+The deferred lighting applies the cloud shadow to everything in the G-buffer. A shader that lights by
+itself (a forward-lit water surface, a cabin's ambient pass, a particle that takes sunlight) uses the same
+lookup, never a copy of it:
+
+```ts
+const scene = coreOf(ctx).createSceneBindings(1, firstBinding, ['cloudShadow']);   // declares cloudShadowMapTex, cloudCoverageMapTex
+```
+
+```wgsl
+#include "cloud_shadow"
+// pos: camera-relative, ROOT axes; bi: index of the body the point belongs to (frame.bodies)
+let rel = pos - frame.bodies[bi].center.xyz;
+let r = length(rel);
+let sunT = cloudShadow(pos, i32(bi), rel / r, r, frame.bodies[bi].sunDir.xyz);    // 1 = no cloud between the point and the sun
+```
+
+- The near map is depth-resolved (section 7): a point above the cloud is not shaded by it, a point inside
+  it by the part above it. A shader that reads `cloudShadowMapTex.r` by hand shades everything on the sun
+  line, the cabin of a capsule that has climbed through the deck included (`docs/requests/cockpit-cs-1.md`).
+- With nothing published the lookup returns exactly 1; no branch is needed for bodies without clouds.
+
 ---
 
 ## 18. Changes in wave 2
