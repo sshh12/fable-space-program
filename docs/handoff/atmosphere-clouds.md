@@ -154,22 +154,22 @@ Functional suite: 45 passed, 1 skipped (the tuning tool). Unit: 35. Boundary tes
 | Horizon / zenith | 2.62 (> 2) |
 | Sun transmittance at the horizon, R/B | 267 at mu = 0.009 (> 3); table vs reference worst 0.09 % |
 | Climb 0-200 km, 500 m samples | no rise, largest departure from a smooth profile 0.53 % (deviation 1) |
-| Aerial volume vs march, 20 froxels | worst 0.37 % |
-| Transparent vs opaque at 50 km | luminance ratio 0.964 (dark quad), 1.029 (bright quad); colour: deviation 3 |
+| Aerial volume vs march, 20 froxels | worst 0.23 % |
+| Transparent vs opaque at 50 km | luminance ratio 0.964 (dark quad), 1.027 (bright quad); colour: deviation 3 |
 | Deck hides a climbing quad / fog volume | visibility 0.96 -> 0.00 across the base; volume 0.00 % above |
 | Broken layer | 0.000 behind a cloud, 0.902 in a gap |
-| From orbit | quad under the tops -0.001; 150 km up 0.999 |
+| From orbit | quad under the tops 0.003; 150 km up 0.999 |
 | Energy | no NaN, no negative, max 60,000 in five views |
-| Coverage map registration (60,000 km) | correlation 0.908 over 1,354 pixels, opacity monotonic in coverage (0.09 at 0 - 0.1, 0.98 at 0.9 - 1) |
+| Coverage map registration (60,000 km) | correlation 0.903 over 1,354 pixels, opacity monotonic in coverage (0.09 at 0 - 0.1, 0.99 at 0.9 - 1) |
 | Static frame difference after TAA | mean 0.10 %, 99th percentile 0.87 % |
-| 2 km/s ascent vs converged frame | mean 1.4 % / 2.4 %, pixels off by > 30 %: 0.04 % / 0.11 % |
-| qualityScale 1 -> 0.7, mean cloud luminance | -0.01 % ground, +2.30 % above a deck, -0.26 % orbit (limit 3 %) |
+| 2 km/s ascent vs converged frame | mean 1.4 % / 2.4 %, pixels off by > 30 %: 0.10 % / 0.13 % |
+| qualityScale 1 -> 0.7, mean cloud luminance | -0.01 % ground, +2.34 % above a deck, -0.04 % orbit (limit 3 %) |
 | Small shell (Earth from the Moon, 29 - 130 px discs) | 0 lit pixels outside the bare planet's disc, 0 holes in its daylight side, air and clouds; with `fine=0` 4 - 109 pixels outside (the review's blocker) |
 | Lit surface and cloud shadow | under an overcast deck 0.002 of the clear value; 6 km up, above the deck 1.000; at 400 km 1.000 |
-| Frozen step phase vs accumulated (deterministic vs animated) | 10 km horizon bank 2.3 % mean difference, 0.16 % of pixels off by > 25 %; 5 km 1.9 % / 0.01 %; low-orbit limb 1.0 % / 0.00 %; row period 2 below the detail at 3 - 4 rows in all three |
+| Frozen step phase vs accumulated (deterministic vs animated) | 10 km horizon bank 2.3 % mean difference, 0.17 % of pixels off by > 25 %; 5 km 1.9 % / 0.00 %; low-orbit limb 0.9 % / 0.00 %; row period 2 below the detail at 3 - 4 rows in all three |
 | Tunable sweep (11 sets, overcast from 25 km) | no pixel above a sunlit white surface (brightest 29,000 - 37,000 of 41,446 cd/m^2), no isolated spike, mean cloud transmittance 0.0002 - 0.022 |
-| Solar eclipse by the moon | visible share 0.584 -> sky 0.571 of the open sun; central, share 0.040 -> sky 0.041 |
-| Twilight sky 40 deg up, 3 deg after sunset | scene rgb 40.5, 41.9, 78.9 cd/m^2; on the screen 35.6, 36.7, 63.3 of 255 (red below green below blue); arch rgb 46.1, 40.4, 65.9 (pink) |
+| Solar eclipse by the moon | visible share 0.584 -> sky 0.570 of the open sun; central, share 0.040 -> sky 0.041 |
+| Twilight sky 40 deg up, 3 deg after sunset | scene rgb 40.5, 41.8, 78.8 cd/m^2; on the screen 32.7, 33.8, 59.6 of 255 (red below green below blue); arch rgb 46.4, 40.6, 66.1 (pink) |
 
 GPU, 1440p, attribution mode, 7 ms ballast, five windows of 160 frames, MEDIAN window (last full run; the
 three other GPU slots of the gate were free at its start and end):
@@ -186,7 +186,7 @@ three other GPU slots of the gate were free at its start and end):
 | above a deck | 0.589 / **0.928** | 0.421 / 0.452 | 0.503 / 0.756 | 0.319 / 0.342 |
 
 Budgets: atmosphere 0.9 (0.8 at the pad), clouds 1.3 at quality 1 and 0.9 at 0.7. The cloud line is met in
-every scene at both scales, in every window of the last three runs. The atmosphere line is met by its
+every scene at both scales, in every window of the last two full runs. The atmosphere line is met by its
 medians everywhere and by the p99 of the median window in 15 of 16 rows; the spec FAILS on "above a deck"
 at quality 1 (0.928 against 0.9) in that run. In the run before it, while other agents' GPU jobs ran, the
 same assertion failed on three rows (3.07, 1.29 and 4.11 ms; the cloud line was unaffected).
@@ -250,7 +250,7 @@ units), new `lowThinDensity` 0.2 and `lowDensityVariation` 1.0.
    from the geometric mean of its neighbours under 2 % (measured 0.53 %), no rise, steps under 9 % below 70 km.
 2. **`clouds.depth`** is `min(max(mean, begin / 0.9), end / 1.1)`, not the mean distance, because of the
    +-10 % band in `applyAtmosphere` (request 1, open). From orbit a transparent up to ~70 km in front of a
-   cloud is hidden with it (a quad 15 km up: visibility 0.001).
+   cloud is hidden with it (a quad 15 km up: visibility 0.003).
 3. **One transmittance for three channels** in `atmosphere.aerialPerspective.a` (contract). A white
    transparent 50 km away keeps its brightness within 3 % but not the reddening of the opaque scene (red
    -10 %, blue +27 %). Request 4 asked for a per-channel volume; core-support DECLINED it for this wave
