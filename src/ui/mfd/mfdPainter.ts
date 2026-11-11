@@ -60,6 +60,7 @@ import {
   isLanded,
   landingScope,
   landingTargetRows,
+  zoneStatus,
 } from '../model';
 
 export const MFD_PAGES: readonly MfdPage[] = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
@@ -130,7 +131,11 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
   const r = s.readouts;
   const status = statusLine(s);
   const lt = describeLandingTarget(s);
-  const ltSection = lt ? { heading: `${lt.kindLabel}: ${lt.name}`, rows: landingTargetRows(lt).map(([label, value]) => ({ label, value })) } : undefined;
+  // The landing-target rows of the HUD, and for a recovery zone the HUD's zone light as a row (zoneStatus: only
+  // once a predicted impact or the sub-point under chutes says where the vessel comes down).
+  const zone = lt ? zoneStatus(s, defs) : null;
+  const zoneRows: MfdRow[] = zone && lt?.zoneRadius ? [{ label: 'Zone', value: `${zone.inside ? 'INSIDE' : 'OUTSIDE'} · r ${lt.zoneRadius}`, tone: zone.inside ? 'good' : 'caution' }] : [];
+  const ltSection = lt ? { heading: `${lt.kindLabel}: ${lt.name}`, rows: [...landingTargetRows(lt).map(([label, value]) => ({ label, value })), ...zoneRows] } : undefined;
   switch (page) {
     case 'flight': {
       const f = describeFlight(s);
@@ -209,7 +214,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       };
     }
     case 'staging': {
-      const st = describeStages(s);
+      const st = describeStages(s, defs);
       const remaining = st.tiles.filter((t) => !t.fired);
       const next = remaining.find((t) => t.next);
       const active = st.active >= 0 ? st.tiles[st.active] : undefined;
@@ -219,7 +224,8 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         page,
         title: TITLE[page],
         rows: [
-          { label: 'Active stage', value: active ? `${active.number} · ${active.label}` : 'none', tone: active ? 'good' : 'dim' },
+          // What is burning (the HUD's active tile), not the event that lit it.
+          { label: 'Active stage', value: active ? `${active.number} · ${active.burnName ?? active.label}` : 'none', tone: active ? 'good' : 'dim' },
           { label: 'Next stage', value: next ? `${next.number} · ${next.label}` : 'none', tone: 'accent' },
           { label: 'Stage Δv', value: subject ? subject.deltaV : '—' },
           { label: 'Stage TWR', value: subject ? subject.twr : '—' },
@@ -817,7 +823,7 @@ function bodyColor(meanColor: readonly number[] | undefined, gain: number): stri
  * leaves the orbit clear of the body; otherwise (low orbits) the radius is drawn as body + exaggerated altitude,
  * so a 100 x 100 km orbit is a ring well outside the disc with Ap and Pe apart, and the page says so.
  */
-function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h: number, s: SimSnapshot, defs: DefLibrary): void {
+function drawOrbitDiagram(ctx: Ctx, env: PaintEnv, f: Frame, x: number, y: number, w: number, h: number, s: SimSnapshot, defs: DefLibrary): void {
   const v = activeVesselOf(s);
   const body = v ? defs.bodies[v.bodyId] : undefined;
   if (!v || !body) return;
@@ -854,8 +860,8 @@ function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h
   // conic) the vessel is at the top: screen up = its radial direction.
   const up = Math.hypot(v.r.x, v.r.y, v.r.z) > 0 ? scaleVec(v.r, 1 / Math.hypot(v.r.x, v.r.y, v.r.z)) : { x: 0, y: 0, z: 1 };
   const frame = conic ? { P: conic.P, Q: conic.Q, W: conic.W } : surfaceFrame(up);
-  const sunDir = s.bodies.find((b) => b.id === body.id)?.sunDir ?? null;
-  drawBodyDisc(ctx, focusX, cy, bodyR, body.render?.meanColor, body.atmosphere !== null, sunDir, frame);
+  const bodySnap = s.bodies.find((b) => b.id === body.id);
+  drawBodyDisc(ctx, env, body.id, focusX, cy, bodyR, body.render?.meanColor, body.atmosphere !== null, bodySnap?.sunDir ?? null, frame, bodySnap?.qFixedToRoot ?? null);
   setFont(ctx, 600, px(f, MIN_TEXT));
   const name = body.name.toUpperCase();
   if (landed || !conic) {
@@ -937,60 +943,171 @@ function surfaceFrame(up: { x: number; y: number; z: number }): Axes {
   return { P, Q: up, W: cross3(P, up) };
 }
 
+type V3 = { x: number; y: number; z: number };
+
+/** sRGB 8-bit -> linear, and linear -> sRGB 8-bit through a 4096-entry table (the disc is shaded per pixel). */
+const SRGB_TO_LINEAR = Array.from({ length: 256 }, (_, i) => {
+  const c = i / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+});
+const LINEAR_TO_SRGB8 = Array.from({ length: 4096 }, (_, i) => Math.round(255 * linearToSrgb(i / 4095)));
+const toSrgb8 = (lin: number): number => LINEAR_TO_SRGB8[Math.max(0, Math.min(4095, Math.round(lin * 4095)))]!;
+
+/** A body's albedo map for the ORB page: equirectangular, row 0 = north, column 0 = longitude -180, sRGB RGBA. */
+export interface BodyAlbedoMap {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+export interface MfdPainterOptions {
+  /**
+   * The albedo map of a body (e.g. the tile set's `globals.albedoLowRes`, already loaded by the app for its globe
+   * or map view), drawn on the ORB page's body graphic. Without one the disc is the body's mean colour with a
+   * faint mottle of its own.
+   */
+  bodyAlbedo?: (bodyId: string) => BodyAlbedoMap | null;
+}
+
+interface PaintEnv {
+  opts: MfdPainterOptions;
+  /** The last shaded disc per body (re-shaded only when its size, the view or the light changes visibly). */
+  discs: Map<string, { key: string; canvas: OffscreenCanvas }>;
+}
+
+/** Rotate a vector by the inverse of a unit quaternion (ROOT -> body-fixed for qFixedToRoot). */
+function rotateInv(q: { x: number; y: number; z: number; w: number }, v: V3): V3 {
+  // v' = q* v q: the rotation by the conjugate.
+  const x = -q.x;
+  const y = -q.y;
+  const z = -q.z;
+  const w = q.w;
+  const tx = 2 * (y * v.z - z * v.y);
+  const ty = 2 * (z * v.x - x * v.z);
+  const tz = 2 * (x * v.y - y * v.x);
+  return { x: v.x + w * tx + (y * tz - z * ty), y: v.y + w * ty + (z * tx - x * tz), z: v.z + w * tz + (x * ty - y * tx) };
+}
+
+/** A fixed per-body seed from its id (the mottle of a body without an albedo map never changes). */
+function seedOf(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10007) / 10007;
+}
+
 /**
- * The body as seen down the view's W axis: night side in a dark tone of its own colour, the sunlit part
- * (bounded by the limb and the terminator, the projection of the great circle facing the sun) graded from the
- * sub-solar side, limb darkening, and an atmosphere rim brighter on the day side. Without a sun direction the
- * whole disc is lit from the upper left.
+ * The body shaded per pixel into a canvas of 2R + 2 px: seen down the view's W axis (screen right P, up Q), each
+ * point lit by the cosine of the sun's incidence, so the day side falls continuously to the night level at the
+ * terminator (softened over about 1.5 % of R, more with an atmosphere's twilight), a dim night side, mild limb
+ * darkening under an atmosphere, and the surface from the albedo map (land, cloud and sea; maria and highlands)
+ * or, without one, the mean colour with a low-contrast mottle fixed to the body.
  */
-function drawBodyDisc(ctx: Ctx, x: number, y: number, R: number, meanColor: readonly number[] | undefined, atmosphere: boolean, sunDir: { x: number; y: number; z: number } | null, axes: Axes): void {
-  // Sun in the view: in-plane direction (screen x right, screen y down) and its component toward the viewer.
-  const su = sunDir ? dot3(sunDir, axes.P) : -0.5;
-  const sv = sunDir ? dot3(sunDir, axes.Q) : 0.5;
-  const sz = sunDir ? dot3(sunDir, axes.W) : 0.7;
-  const ang = Math.hypot(su, sv) > 1e-6 ? Math.atan2(-sv, su) : 0;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x, y, R, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillStyle = bodyColor(meanColor, 0.09);
-  ctx.fillRect(x - R, y - R, 2 * R, 2 * R);
-  // Lit region in a frame whose +u axis points at the sun: with the sun at (c, 0, sz) in (u, v, toward the viewer),
-  // the front half of the terminator projects to u = -sz sqrt(R^2 - v^2) (a half-ellipse of semi-axis R |sz|);
-  // the lit part lies between it and the limb on the sun's side.
-  ctx.translate(x, y);
-  ctx.rotate(ang);
-  const n = 48;
-  ctx.beginPath();
-  for (let i = 0; i <= n; i++) {
-    const t = -Math.PI / 2 + (Math.PI * i) / n;
-    if (i === 0) ctx.moveTo(Math.cos(t) * R, Math.sin(t) * R);
-    else ctx.lineTo(Math.cos(t) * R, Math.sin(t) * R);
+function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmosphere: boolean, sun: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null, map: BodyAlbedoMap | null): OffscreenCanvas {
+  const size = Math.ceil(2 * R) + 2;
+  const c = size / 2;
+  const canvas = new OffscreenCanvas(size, size);
+  const cx = canvas.getContext('2d') as Ctx;
+  const img = cx.createImageData(size, size);
+  const d = img.data;
+  // Body-fixed directions of the screen axes (the surface turns with the body).
+  const id = { x: 0, y: 0, z: 0, w: 1 };
+  const P = rotateInv(qFixed ?? id, axes.P);
+  const Q = rotateInv(qFixed ?? id, axes.Q);
+  const W = rotateInv(qFixed ?? id, axes.W);
+  // The sun in screen terms: (su, sv, sz) along P, Q, W. Without a sun: lit from the upper left, toward the viewer.
+  const su = sun ? dot3(sun, axes.P) : -0.5;
+  const sv = sun ? dot3(sun, axes.Q) : 0.5;
+  const sz = sun ? dot3(sun, axes.W) : 0.7;
+  // Display scale: the brightest mean channel at 0.3 linear; the sub-solar point about 1.5 x that.
+  const mc = meanColor;
+  const k = 0.3 / Math.max(1e-3, Math.max(mc[0]!, mc[1]!, mc[2]!));
+  const seed = seedOf(bodyId) * 40;
+  const soft = atmosphere ? 0.05 : 0.015;
+  const night = 0.045;
+  for (let j = 0; j < size; j++) {
+    const v = -(j + 0.5 - c) / R;
+    for (let i = 0; i < size; i++) {
+      const u = (i + 0.5 - c) / R;
+      const rr = u * u + v * v;
+      const edge = (1 - Math.sqrt(rr)) * R + 0.5;
+      if (edge <= 0) continue;
+      const a = Math.min(1, edge);
+      const z = Math.sqrt(Math.max(0, 1 - Math.min(1, rr)));
+      // Incidence cosine, with the terminator softened (and a faint twilight under an atmosphere).
+      const mu = u * su + v * sv + z * sz;
+      const t = Math.max(0, Math.min(1, (mu + soft) / (2 * soft)));
+      const day = mu > soft ? mu : soft * t * t * (3 - 2 * t) * (t > 0 ? 1 : 0);
+      const light = night + 1.45 * day;
+      const limb = atmosphere ? 0.72 + 0.28 * z : 1;
+      // Surface colour at this point (body-fixed direction).
+      const bx = u * P.x + v * Q.x + z * W.x;
+      const by = u * P.y + v * Q.y + z * W.y;
+      const bz = u * P.z + v * Q.z + z * W.z;
+      let r: number;
+      let g: number;
+      let b: number;
+      if (map) {
+        const lat = Math.asin(Math.max(-1, Math.min(1, bz)));
+        const lon = Math.atan2(by, bx);
+        const col = Math.min(map.width - 1, Math.max(0, Math.floor(((lon + Math.PI) / (2 * Math.PI)) * map.width)));
+        const row = Math.min(map.height - 1, Math.max(0, Math.floor(((Math.PI / 2 - lat) / Math.PI) * map.height)));
+        const o = (row * map.width + col) * 4;
+        r = SRGB_TO_LINEAR[map.data[o]!]!;
+        g = SRGB_TO_LINEAR[map.data[o + 1]!]!;
+        b = SRGB_TO_LINEAR[map.data[o + 2]!]!;
+      } else {
+        // A faint mottle: a few broad waves over the sphere, phases fixed by the body's id (+-12 %).
+        const m = 1 + 0.06 * (Math.sin(3.1 * bx + 1.7 * by + seed) + Math.sin(2.3 * by - 2.9 * bz + 0.7 * seed) + Math.sin(4.7 * bz + 3.3 * bx - 1.3 * seed) * 0.6 + Math.sin(9.1 * bx - 7.3 * by + 5.1 * bz + seed) * 0.4);
+        r = mc[0]! * m;
+        g = mc[1]! * m;
+        b = mc[2]! * m;
+      }
+      const s = k * light * limb;
+      const o = (j * size + i) * 4;
+      d[o] = toSrgb8(r * s);
+      d[o + 1] = toSrgb8(g * s);
+      d[o + 2] = toSrgb8(b * s);
+      d[o + 3] = Math.round(255 * a);
+    }
   }
-  for (let i = n; i >= 0; i--) {
-    const vv = -R + (2 * R * i) / n;
-    ctx.lineTo(-sz * Math.sqrt(Math.max(0, R * R - vv * vv)), vv);
+  cx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+/**
+ * The body as seen down the view's W axis (shadeDisc), and an atmosphere rim brighter on the day side. Shaded per
+ * pixel where the browser has an OffscreenCanvas (always in the app); elsewhere (unit tests in Node) a flat disc.
+ */
+function drawBodyDisc(ctx: Ctx, env: PaintEnv, bodyId: string, x: number, y: number, R: number, meanColor: readonly number[] | undefined, atmosphere: boolean, sunDir: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null): void {
+  const mc = meanColor ?? [0.2, 0.2, 0.2];
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const Rq = Math.max(2, Math.round(R));
+    const map = env.opts.bodyAlbedo?.(bodyId) ?? null;
+    // Re-shade only when the picture would change visibly: about 0.3 deg of rotation or of the sun's direction.
+    const qv = (v: V3 | null): string => (v ? `${Math.round(v.x * 200)},${Math.round(v.y * 200)},${Math.round(v.z * 200)}` : '-');
+    const P = qFixed ? rotateInv(qFixed, axes.P) : axes.P;
+    const Q = qFixed ? rotateInv(qFixed, axes.Q) : axes.Q;
+    const key = `${Rq}|${map ? `${map.width}x${map.height}` : 'mean'}|${atmosphere}|${qv(P)}|${qv(Q)}|${sunDir ? qv({ x: dot3(sunDir, axes.P), y: dot3(sunDir, axes.Q), z: dot3(sunDir, axes.W) }) : '-'}`;
+    let disc = env.discs.get(bodyId);
+    if (!disc || disc.key !== key) {
+      disc = { key, canvas: shadeDisc(Rq, bodyId, mc, atmosphere, sunDir, axes, qFixed, map) };
+      env.discs.set(bodyId, disc);
+    }
+    ctx.drawImage(disc.canvas, x - disc.canvas.width / 2, y - disc.canvas.height / 2, disc.canvas.width * (R / Rq), disc.canvas.height * (R / Rq));
+  } else {
+    ctx.fillStyle = bodyColor(mc, 0.6);
+    ctx.beginPath();
+    ctx.arc(x, y, R, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.closePath();
-  const day = ctx.createLinearGradient(R, 0, Math.min(R * 0.8, -sz * R), 0);
-  day.addColorStop(0, bodyColor(meanColor, 1.35));
-  day.addColorStop(0.6, bodyColor(meanColor, 1.0));
-  day.addColorStop(1, bodyColor(meanColor, 0.42));
-  ctx.fillStyle = day;
-  ctx.fill();
-  ctx.rotate(-ang);
-  // Limb darkening over day and night.
-  const limb = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
-  limb.addColorStop(0, 'rgba(0,0,0,0)');
-  limb.addColorStop(1, 'rgba(0,0,0,0.42)');
-  ctx.fillStyle = limb;
-  ctx.fillRect(-R, -R, 2 * R, 2 * R);
-  ctx.restore();
   if (atmosphere) {
+    const su = sunDir ? dot3(sunDir, axes.P) : -0.5;
+    const sv = sunDir ? dot3(sunDir, axes.Q) : 0.5;
+    const ang = Math.hypot(su, sv) > 1e-6 ? Math.atan2(-sv, su) : 0;
     // A thin blue rim, brighter where it is lit.
     const rim = ctx.createLinearGradient(x + Math.cos(ang) * R, y + Math.sin(ang) * R, x - Math.cos(ang) * R, y - Math.sin(ang) * R);
     rim.addColorStop(0, 'rgba(120,180,255,0.8)');
-    rim.addColorStop(1, 'rgba(120,180,255,0.18)');
+    rim.addColorStop(1, 'rgba(120,180,255,0.12)');
     ctx.strokeStyle = rim;
     ctx.lineWidth = Math.max(2, R * 0.03);
     ctx.beginPath();
@@ -999,7 +1116,7 @@ function drawBodyDisc(ctx: Ctx, x: number, y: number, R: number, meanColor: read
   }
 }
 
-function paintOrbit(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
+function paintOrbit(ctx: Ctx, env: PaintEnv, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
   if (isLanded(activeVesselOf(s))) {
     // Landed: the status in two boxes on top and the body graphic over the rest of the page.
     const bh = f.h * 0.095;
@@ -1007,7 +1124,7 @@ function paintOrbit(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model:
     const bw = (f.w - 2 * f.pad - gap) / 2;
     model.rows.slice(0, 2).forEach((row, i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, bh, row.label, row.value, row.tone ?? 'normal'));
     const top = f.top + bh + f.h * 0.02;
-    drawOrbitDiagram(ctx, f, f.pad, top, f.w - 2 * f.pad, f.bottom - top, s, defs);
+    drawOrbitDiagram(ctx, env, f, f.pad, top, f.w - 2 * f.pad, f.bottom - top, s, defs);
     return;
   }
   const leftW = f.w * 0.4;
@@ -1019,7 +1136,7 @@ function paintOrbit(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model:
     drawRows(ctx, f, model.section.rows, f.pad, y + rowH * 1.3, leftW, rowH, 8);
   }
   const gx = f.pad * 2 + leftW;
-  drawOrbitDiagram(ctx, f, gx, f.top, f.w - gx - f.pad, f.bottom - f.top, s, defs);
+  drawOrbitDiagram(ctx, env, f, gx, f.top, f.w - gx - f.pad, f.bottom - f.top, s, defs);
 }
 
 // ---------------------------------------------------------------------------------------------- systems
@@ -1117,13 +1234,14 @@ function paintTanks(ctx: Ctx, f: Frame, groups: ReturnType<typeof describeResour
 
 // ---------------------------------------------------------------------------------------------- staging
 
-function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
-  const st = describeStages(s);
+function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
+  const st = describeStages(s, defs);
   const active = st.active >= 0 ? st.tiles[st.active]! : null;
-  // The stack: the stage burning now first (green), then the next (cyan) and the later stages.
-  const tiles = [...(active ? [active] : []), ...st.tiles.filter((t) => !t.fired)];
-  // Summary strip: the active stage's numbers (the next engine stage's before the first ignition), total
-  // delta-v, staging state.
+  // The stack reads bottom-up like the HUD's (and KSP's): the later stages on top (highest number first), the
+  // next stage under them and the stage burning now at the bottom, just above the summary strip.
+  const tiles = [...st.tiles.filter((t) => !t.fired).reverse(), ...(active ? [active] : [])];
+  // Summary strip at the bottom: the active stage's numbers (the next engine stage's before the first
+  // ignition), total delta-v, staging state.
   const stripH = f.h * 0.095;
   const gap = f.w * 0.012;
   const get = (label: string): MfdRow => model.rows.find((r) => r.label === label)!;
@@ -1136,11 +1254,14 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
     ['Staging', get('Staging')],
   ];
   const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
-  boxes.forEach(([label, b], i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, stripH, label, b.value, i < 3 && active ? 'good' : (b.tone ?? 'normal')));
-  // The stack fills the rest of the page: tiles grow when few stages remain (two stages take two thirds of it).
-  const y0 = f.top + stripH + f.h * 0.03;
-  const avail = f.bottom - y0;
+  const stripY = f.bottom - stripH;
+  boxes.forEach(([label, b], i) => statBox(ctx, f, f.pad + i * (bw + gap), stripY, bw, stripH, label, b.value, i < 3 && active ? 'good' : (b.tone ?? 'normal')));
+  // The stack fills the rest of the page from the strip up: tiles grow when few stages remain (two stages take
+  // two thirds of it).
+  const areaBottom = stripY - f.h * 0.03;
+  const avail = areaBottom - f.top;
   const th = avail / Math.max(3, tiles.length);
+  const y0 = areaBottom - tiles.length * th;
   const x = f.pad;
   const w = f.w - 2 * f.pad;
   tiles.forEach((t, i) => {
@@ -1157,16 +1278,17 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
     const s1 = Math.min(th * 0.36, f.h * 0.05);
     setFont(ctx, 700, Math.max(s1, f.min));
     text(ctx, t.number, x + th * 0.5, yy + th / 2, 'center', 'middle', tone);
-    drawIcon(ctx, STAGE_ICONS[stageIconFor(t.icon)], x + th * 1.25, yy + th / 2, Math.min(th * 0.6, f.h * 0.08), tone, null);
+    // The burning stage shows an engine and the name of what burns (the HUD's active tile).
+    drawIcon(ctx, STAGE_ICONS[stageIconFor(isActive && t.hasEngines ? 'engine' : t.icon)], x + th * 1.25, yy + th / 2, Math.min(th * 0.6, f.h * 0.08), tone, null);
     setFont(ctx, 600, Math.max(Math.min(th * 0.34, f.h * 0.045), f.min));
     const nameX = x + th * 1.9;
     const twoLines = th > f.min * 2.3;
-    text(ctx, t.label, nameX, yy + (twoLines ? th * 0.36 : th / 2), 'left', 'middle', COLORS.normal, w * 0.45);
+    text(ctx, isActive ? (t.burnName ?? t.label) : t.label, nameX, yy + (twoLines ? th * 0.36 : th / 2), 'left', 'middle', COLORS.normal, w * 0.45);
     // Engine stages: their numbers; engine-less stages: what firing them does.
     const meta = t.hasEngines ? `Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}` : t.actions;
     const tag = isActive ? 'ACTIVE · ' : '';
     setFont(ctx, 500, Math.max(Math.min(th * 0.26, f.h * 0.036), f.min));
-    if (twoLines) text(ctx, locked ? 'LOCKED · after last stage' : `${tag}${meta}`, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : isActive ? COLORS.good : LABEL, w * 0.55);
+    if (twoLines) text(ctx, locked ? 'LOCKED · staging interlock' : `${tag}${meta}`, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : isActive ? COLORS.good : LABEL, w * 0.55);
     else text(ctx, `${tag}${meta}`, x + w * 0.5, yy + th / 2, 'left', 'middle', isActive ? COLORS.good : LABEL, w * 0.28);
     if (t.propellant !== null) {
       bar(ctx, x + w * 0.8, yy + th * 0.42, w * 0.18, Math.min(th * 0.18, f.h * 0.025), t.propellant, t.propellant < 0.1 ? COLORS.caution : COLORS.good);
@@ -1174,7 +1296,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
   });
   if (tiles.length === 0) {
     setFont(ctx, 600, px(f, 0.04));
-    text(ctx, 'NO STAGES LEFT', f.w / 2, y0 + avail / 2, 'center', 'middle', LABEL);
+    text(ctx, 'NO STAGES LEFT', f.w / 2, f.top + avail / 2, 'center', 'middle', LABEL);
   }
 }
 
@@ -1298,7 +1420,7 @@ function paintEntry(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): vo
     },
     {
       label: 'G DOSE',
-      value: `${formatNumber(r.gDose, 1)}`,
+      value: `${formatNumber(r.gDose, 1)}${NBSP}g·s`,
       frac: r.gDose / doseLimit,
       zones: [[0.4, COLORS.good], [0.7, COLORS.caution], [1, COLORS.warning]],
       redline: 1,
@@ -1414,7 +1536,8 @@ function paintLanding(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
   drawScope(ctx, f, gx + gw / 2, f.top + f.h * 0.048 + r, r, s);
 }
 
-export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSnapshot, defs: DefLibrary): MfdPageModel } {
+export function createMfdPainter(opts: MfdPainterOptions = {}): MfdPainter & { build(page: MfdPage, s: SimSnapshot, defs: DefLibrary): MfdPageModel } {
+  const env: PaintEnv = { opts, discs: new Map() };
   return {
     pages: MFD_PAGES,
     build: buildMfdPage,
@@ -1431,13 +1554,13 @@ export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSn
           paintFlight(ctx, f, s, model);
           break;
         case 'orbit':
-          paintOrbit(ctx, f, s, defs, model);
+          paintOrbit(ctx, env, f, s, defs, model);
           break;
         case 'systems':
           paintSystems(ctx, f, s, defs, model);
           break;
         case 'staging':
-          paintStaging(ctx, f, s, model);
+          paintStaging(ctx, f, s, defs, model);
           break;
         case 'entry':
           paintEntry(ctx, f, s, model);

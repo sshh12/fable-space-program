@@ -40,7 +40,7 @@ import { labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/fl
 import { UI_COLORS } from '@/core/ui/theme';
 import { balanceColumns } from '@/ui/hud/hud';
 import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
-import { landingTargetExpanded, stageActionText, summarizeResources } from '@/ui/model';
+import { landingTargetExpanded, stageActionText, stageBurnLabel, summarizeResources, zoneStatus } from '@/ui/model';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -147,7 +147,38 @@ describe('display models', () => {
     const v = describeLandingTarget(withImpact)!;
     expect(landingTargetRows(v)[4]).toEqual(['Impact miss', `1${NBSP}234${NBSP}m · 090°`]);
     const withEntry = { ...s, readouts: { ...s.readouts, landingTarget: { ...lt, predicted: { kind: 'entry' as const, ut: s.ut + 100, latitude: 0, longitude: 0, missDistance: 12, missBearingDeg: 271 } } } };
-    expect(landingTargetRows(describeLandingTarget(withEntry)!)[4]![0]).toBe('Entry point miss');
+    expect(landingTargetRows(describeLandingTarget(withEntry)!)[4]![0]).toBe('Entry interface');
+  });
+
+  it('lights the recovery zone only once something says where the vessel comes down', () => {
+    const s = snap('reentry');
+    const lt = s.readouts.landingTarget!;
+    const zone = s.surfaceTargets.find((t) => t.id === lt.targetId)!;
+    expect(zone.kind).toBe('recovery');
+    const withPrediction = (kind: 'impact' | 'entry', missDistance: number): SimSnapshot => ({ ...s, readouts: { ...s.readouts, landingTarget: { ...lt, predicted: { kind, ut: s.ut + 100, latitude: 0, longitude: 0, missDistance, missBearingDeg: 0 } } } });
+    // A predicted impact decides it, whatever the sub-point.
+    expect(zoneStatus(withPrediction('impact', zone.radius * 0.5), defs)).toEqual({ inside: true, basis: 'impact' });
+    expect(zoneStatus(withPrediction('impact', zone.radius * 1.5), defs)).toEqual({ inside: false, basis: 'impact' });
+    // The entry interface is where the trajectory meets the air, not where it ends: no light.
+    expect(zoneStatus(withPrediction('entry', 10), defs)).toBeNull();
+    // Coming down slowly through the air (under chutes) the sub-point decides it.
+    const chutes = snap('chutes');
+    const c = zoneStatus(chutes, defs)!;
+    expect(c.basis).toBe('position');
+    expect(c.inside).toBe(chutes.readouts.landingTarget!.distance <= chutes.surfaceTargets.find((t) => t.id === chutes.readouts.landingTarget!.targetId)!.radius);
+    // In orbit nothing does.
+    expect(zoneStatus({ ...s, readouts: { ...s.readouts, landingTarget: { ...lt, predicted: null }, altitudeAsl: 200e3 } }, defs)).toBeNull();
+  });
+
+  it('names what a stage burns from the vehicle definition', () => {
+    const s = snap('ascent');
+    expect(stageBurnLabel(s, defs, 0)).toBe('Meridian M-1');
+    expect(stageBurnLabel(s, defs, 3)).toBe('Meridian M-3');
+    expect(stageBurnLabel(s, defs, 4)).toBe('Heron descent stage');
+    // Stages that ignite nothing, and vessels without a vehicle definition, have no burn name.
+    expect(stageBurnLabel(s, defs, 5)).toBeNull();
+    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs, 0)).toBeNull();
+    expect(describeStages(s, defs).tiles[3]!.burnName).toBe('Meridian M-3');
   });
 
   it('shows Ap and Pe of the lunar parking orbit in one unit on the HUD and the MFD', () => {
@@ -213,9 +244,9 @@ describe('display models', () => {
   });
 
   it('aggregates resources per stage group in vehicle order', () => {
-    const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: labVehicleParts(defs, { upper: 0.25 }, ['upper', 'lander', 'capsule']) });
+    const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: labVehicleParts(defs, { upper: 0.25 }, ['upper', 'descent', 'ascent', 'capsule']) });
     const groups = describeResources(tagLabVehicle(sim.snapshot()), defs);
-    expect(groups.map((g) => g.label)).toEqual(['M-2 upper stage', 'Lander', 'Capsule']);
+    expect(groups.map((g) => g.label)).toEqual(['Meridian M-2', 'Heron descent stage', 'Heron ascent stage', 'Kestrel capsule']);
     expect(groups[0]!.bars.map((b) => b.name)).toEqual(['RP-1', 'Liquid oxygen']);
     expect(groups[0]!.bars[0]!.fraction).toBeCloseTo(0.25, 9);
     // Without a vehicle definition, everything is one group under the vessel name.
@@ -473,7 +504,8 @@ describe('round-2 display rules', () => {
     expect(describeStages(off).active).toBe(-1);
     // The MFD staging strip takes its numbers from the active stage.
     const rows = buildMfdPage('staging', s, defs).rows;
-    expect(rows.find((r) => r.label === 'Active stage')!.value).toBe(`1 · ${stages[0]!.label}`);
+    // ... titled with what burns (the stage group of the engines stage 1 ignites), not the event that lit it.
+    expect(rows.find((r) => r.label === 'Active stage')!.value).toBe('1 · Meridian M-1');
     expect(rows.find((r) => r.label === 'Stage Δv')!.value).toBe(st.tiles[0]!.deltaV);
   });
 
@@ -546,7 +578,7 @@ describe('round-2 display rules', () => {
     // Entry: the capsule's ablator alone is one tank gauge filling the column's height.
     const sim = createFakeSim(defs, { scene: 'reentry', parts: labVehicleParts(defs, { capsule: 0.8 }, ['capsule']) });
     const capsule = paintSystems(tagLabVehicle(sim.snapshot()));
-    expect(capsule.texts).toEqual(expect.arrayContaining(['CAPSULE', 'ABLATOR', `80${NBSP}%`]));
+    expect(capsule.texts).toEqual(expect.arrayContaining(['KESTREL CAPSULE', 'ABLATOR', `80${NBSP}%`]));
     // The tallest fill is the tank's track above the low zone (90 % of the tube).
     expect(capsule.tallest, 'tank track height').toBeGreaterThan(768 * 0.4);
     // The full stack on the pad (more than six resources): bars, no tall tank.

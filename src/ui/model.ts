@@ -132,8 +132,11 @@ export interface LandingTargetView {
   /** Inside a recovery zone's radius (zones only). */
   insideZone: boolean;
   zoneRadius: string | null;
-  /** "Impact" or "Entry point" and its miss from the target centre; null when nothing is predicted. */
-  predicted: { label: 'Impact' | 'Entry point'; miss: string; missBearing: string; countdown: string; where: string } | null;
+  /**
+   * "Impact" or "Entry interface" (where the vacuum trajectory meets the atmosphere: not the splash point) and
+   * its miss from the target centre; null when nothing is predicted.
+   */
+  predicted: { label: 'Impact' | 'Entry interface'; miss: string; missBearing: string; countdown: string; where: string } | null;
   /** Shown instead of `predicted` when it is null ("Predicted arrival: none"). */
   noPrediction: string;
   /** Raw numbers for graphics (m), +down = ahead, +cross = right. */
@@ -168,7 +171,7 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
     zoneRadius: isZone && target ? formatDistance(target.radius) : null,
     predicted: p
       ? {
-          label: p.kind === 'impact' ? 'Impact' : 'Entry point',
+          label: p.kind === 'impact' ? 'Impact' : 'Entry interface',
           miss: formatDistance(p.missDistance),
           missBearing: formatBearing(p.missBearingDeg),
           countdown: formatCountdown(p.ut - s.ut),
@@ -199,14 +202,44 @@ export function landingTargetRows(v: LandingTargetView): [string, string][] {
   ];
   if (v.tracked) rows.push(['Down-range', v.downRange], ['Cross-range', v.crossRange]);
   else if (v.predicted) rows.push(['Ground track', 'none']);
-  if (v.predicted) rows.push([`${v.predicted.label} miss`, `${v.predicted.miss} · ${v.predicted.missBearing}`]);
+  // An impact is where the vessel comes down; the entry interface only where it meets the atmosphere (its
+  // miss from the target centre says nothing about the splash point), so the row is named for what it is.
+  if (v.predicted) rows.push([v.predicted.label === 'Impact' ? 'Impact miss' : 'Entry interface', `${v.predicted.miss} · ${v.predicted.missBearing}`]);
   else if (v.tracked) rows.push(['Predicted arrival', v.noPrediction]);
   else rows.push(['Track · arrival', 'none']);
   return rows;
 }
 
 /** True for the prediction row of landingTargetRows (drawn under a rule). */
-export const isPredictionRow = (label: string): boolean => label.endsWith(' miss') || label === 'Predicted arrival' || label === 'Track · arrival';
+export const isPredictionRow = (label: string): boolean => label.endsWith(' miss') || label === 'Entry interface' || label === 'Predicted arrival' || label === 'Track · arrival';
+
+/** Below this surface speed (m/s), descending through the air, the vessel comes down close to its sub-point. */
+export const TERMINAL_DESCENT_SPEED = 250;
+
+export interface ZoneStatus {
+  /** The vessel comes down (or is down) inside the recovery zone's radius. */
+  inside: boolean;
+  /** What decides it: a predicted impact point, or the sub-point (landed, or the slow end of a descent). */
+  basis: 'impact' | 'position';
+}
+
+/**
+ * Whether the vessel will come down inside its recovery zone, once something says where it comes down: a predicted
+ * impact point, or the sub-point while landed / splashed or in the slow last part of a descent through the air
+ * (under drogues or mains the vessel lands close to its sub-point). Null for a target that is not a recovery
+ * zone and while nothing tells where the vessel will land: in orbit, and with only an entry-interface prediction
+ * (where the trajectory meets the atmosphere, not where it ends). One rule for the HUD light and the MFD row.
+ */
+export function zoneStatus(s: SimSnapshot, defs: DefLibrary): ZoneStatus | null {
+  const lt = s.readouts.landingTarget;
+  if (!lt) return null;
+  const target = s.surfaceTargets.find((t) => t.id === lt.targetId);
+  if (!target || target.kind !== 'recovery') return null;
+  if (lt.predicted?.kind === 'impact') return { inside: lt.predicted.missDistance <= target.radius, basis: 'impact' };
+  const r = s.readouts;
+  const terminal = isLanded(activeVesselOf(s)) || (inAtmosphere(s, defs) && r.verticalSpeed < 0 && r.speedSurface < TERMINAL_DESCENT_SPEED);
+  return terminal ? { inside: lt.distance <= target.radius, basis: 'position' } : null;
+}
 
 /** Below this separation (m) the readout's down-range / cross-range carry no usable track direction. */
 const TRACK_RECOVERY_MIN_RANGE = 1;
@@ -327,6 +360,35 @@ export interface StageTileView {
   hasEngines: boolean;
   /** What firing the stage does, from its action kinds ("separate · deploy chute"); empty when unknown. */
   actions: string;
+  /**
+   * What the stage burns: the stage groups of the engines it ignites ("Meridian M-3"), from the vessel's vehicle
+   * definition (stageBurnLabel); null when unknown or when the stage lights no engine. The active tile is titled
+   * with it (the stage's own label names the event that started the burn, "M-3 separation").
+   */
+  burnName: string | null;
+}
+
+/**
+ * What a stage burns: the labels of the stage groups (VehicleDef.stageGroups) of the engines its igniteEngines
+ * actions light, e.g. "Meridian M-3" or "Heron descent stage". Null when the active vessel's vehicle definition
+ * is unknown or the stage ignites no engine. StageInfo index i is VehicleDef.stages[i] (the sim reports the
+ * whole stack, fired stages included).
+ */
+export function stageBurnLabel(s: SimSnapshot, defs: DefLibrary, index: number): string | null {
+  const v = activeVesselOf(s);
+  const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
+  const stage = vehicle?.stages[index];
+  if (!vehicle || !stage) return null;
+  const groups: string[] = [];
+  for (const a of stage.actions) {
+    if (a.kind !== 'igniteEngines') continue;
+    for (const id of a.parts) {
+      const g = vehicle.parts.find((p) => p.id === id)?.stageGroup;
+      if (g !== undefined && !groups.includes(g)) groups.push(g);
+    }
+  }
+  if (groups.length === 0) return null;
+  return groups.map((g) => vehicle.stageGroups.find((x) => x.id === g)?.label ?? g).join(' + ');
 }
 
 /** Words for the action kinds of a stage (the second line of an engine-less next-stage tile). */
@@ -359,7 +421,8 @@ export interface StagesView {
   deltaVTotal: string;
 }
 
-export function describeStages(s: SimSnapshot): StagesView {
+/** `defs` names what the stages burn (StageTileView.burnName); without it burnName is null. */
+export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
   const st = s.staging;
   // The active stage: the latest fired stage the sim still reports numbers for (the owner of the running engines).
   let active = -1;
@@ -385,6 +448,7 @@ export function describeStages(s: SimSnapshot): StagesView {
       propellant: info.propellantFraction,
       hasEngines,
       actions: stageActionText(info.actionKinds),
+      burnName: defs ? stageBurnLabel(s, defs, i) : null,
     };
   });
   return { tiles, active, lockout: st.lockout, nextStage: st.nextStage, deltaVTotal: formatDeltaV(s.readouts.deltaVTotal) };

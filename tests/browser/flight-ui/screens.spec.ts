@@ -16,15 +16,41 @@ import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, s
  */
 const SCENES: [string, string][] = [
   ['pad', 'target=moon'],
-  // A powered ascent: throttle and g load in the readouts (lab decoration; the FakeSim coasts).
-  ['ascent', 'flight=0.86,2.35'],
+  // Each scene carries the lab's coherent flight state (mission time, a powered climb, an entry whose q, height,
+  // heating and sink match its g, a predicted impact only where the vessel comes down, the gear down after the
+  // gear stage).
+  ['ascent', ''],
   ['lowOrbit', 'node=1'],
   ['translunar', ''],
-  ['lunarOrbit', 'predicted=impact'],
+  ['lunarOrbit', ''],
   ['lunarSurface', ''],
-  ['reentry', 'predicted=entry'],
+  ['reentry', ''],
   ['chutes', ''],
 ];
+
+/**
+ * Stills of the real renderer (the integration package's flight views, 2560 x 1440, no HUD of their own) shown
+ * behind the HUD in place of the lab backdrop, each with the FakeSim scene that matches it.
+ */
+const REAL_STILLS: [string, string, string][] = [
+  ['ascent', '', '/out/screens/integration/budget-ascent-10-40-km.png'],
+  ['lowOrbit', 'node=1', '/out/screens/integration/budget-leo.png'],
+  ['lunarSurface', '', '/out/screens/integration/budget-lunar-descent.png'],
+  ['reentry', '', '/out/screens/integration/budget-reentry.png'],
+];
+const repoPath = (url: string): string => path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...url.split('/').filter(Boolean));
+
+/**
+ * The flight state reads as one: the mission clock runs (only the pad before lift-off reads T+ 00:00:00), and no
+ * text on screen is a debug word of the lab.
+ */
+async function expectCoherentState(page: Page, scene: string): Promise<void> {
+  const met = (await page.locator('.hud .clock .met').textContent())!.replace(/\s/g, ' ');
+  if (scene === 'pad') expect(met, 'pad MET').toMatch(/^T\+ 00:00:00$/);
+  else expect(met, `${scene}: the mission clock runs`).not.toMatch(/^T\+ 00:00:0\d$/);
+  const text = await page.locator('.hud').evaluate((e) => (e as HTMLElement).innerText);
+  expect(text, `${scene}: no lab words on screen`).not.toMatch(/\blab\b|decoration/i);
+}
 
 /** The cockpit package's seat view in low orbit (16:9), shown behind the interior layout. */
 const CABIN_STILL_URL = '/out/screens/cockpit/perf-1440p-leo-seat.png';
@@ -184,6 +210,17 @@ for (const [w, h, tag] of [
           console.log(`HUD coverage ${scene}: ${(c * 100).toFixed(1)} %`);
           expect(c, `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
           await expectTextFloor(page, scene);
+          await expectCoherentState(page, scene);
+        }
+      });
+    }
+    for (const [scene, extra, still] of REAL_STILLS) {
+      test(`scene ${scene} over the real renderer`, async ({ page, pageLog }) => {
+        test.skip(!fs.existsSync(repoPath(still)), `needs ${repoPath(still)} (integration package screenshots)`);
+        await shoot(page, pageLog, `/labs/flight-ui/?scene=${scene}${extra ? `&${extra}` : ''}&still=${encodeURIComponent(still)}`, `real-${scene}-${tag}`);
+        if (tag === '720p') {
+          expect(await hudCoverage(page), `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
+          await expectTextFloor(page, `${scene} over the real renderer`);
         }
       });
     }
@@ -191,7 +228,13 @@ for (const [w, h, tag] of [
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&node=1&target=moon&attitude=24,-14,25', `attitude-lowOrbit-${tag}`);
     });
     test('high-g entry: g tube in its red zone, g-dose line, lift-vector marker, retrograde off the nose', async ({ page, pageLog }) => {
-      await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&predicted=entry&flight=0,11.2&dose=6.4&lift=35&attitude=-8,10,-18', `entry-highg-${tag}`);
+      // The instrument never moves when the dose appears: the g tube sits where it sits in the plain entry.
+      await openPage(page, '/labs/flight-ui/?scene=reentry');
+      await page.evaluate(() => window.__test!.waitFrames(10));
+      const tubeBefore = (await page.locator('.hud .gauge.g .tube').boundingBox())!;
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&flight=0,11.2&dose=6.4&lift=35&attitude=-8,10,-18', `entry-highg-${tag}`);
+      const tubeAfter = (await page.locator('.hud .gauge.g .tube').boundingBox())!;
+      for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(tubeAfter[k] - tubeBefore[k]), `g tube ${k}`).toBeLessThanOrEqual(0.5);
       // The dose has its own labelled line inside the gauges panel: 6.4 of the 15 g s limit.
       const line = page.locator('.hud .gauges .doseline');
       await expect(line).toBeVisible();
@@ -205,7 +248,7 @@ for (const [w, h, tag] of [
       if (tag === '720p') await expectTextFloor(page, 'entry-highg');
     });
     test('retrograde held on the nose under chutes', async ({ page, pageLog }) => {
-      await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes&flight=0,7.4', `retrograde-hold-${tag}`);
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes', `retrograde-hold-${tag}`);
     });
     test('cockpit view', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&view=cockpit', `cockpit-lowOrbit-${tag}`);
@@ -214,7 +257,8 @@ for (const [w, h, tag] of [
       // A still of the real cabin behind the interior layout: the cockpit's own seat-view screenshot.
       test.skip(!fs.existsSync(CABIN_STILL), `needs ${CABIN_STILL} (tests/browser/cockpit perf spec)`);
       // The dev server's root is the repository, so the still is served from its own path.
-      await shoot(page, pageLog, `/labs/flight-ui/?scene=lowOrbit&view=cockpit&cabin=${encodeURIComponent(CABIN_STILL_URL)}`, `cockpit-cabin-lowOrbit-${tag}`);
+      // The lab's clock and attitude set to the still's state (its own clocks read 00:00:05, its ADI roll -90 deg).
+      await shoot(page, pageLog, `/labs/flight-ui/?scene=lowOrbit&view=cockpit&met=5&attitude=0,0,-90&still=${encodeURIComponent(CABIN_STILL_URL)}`, `cockpit-cabin-lowOrbit-${tag}`);
       if (tag === '720p') await expectTextFloor(page, 'cockpit over the cabin');
     });
     test('map view', async ({ page, pageLog }) => {
@@ -231,7 +275,7 @@ for (const [w, h, tag] of [
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarSurface&terrainPending=1', `terrain-pending-${tag}`);
     });
     test('MFD pages', async ({ page, pageLog }) => {
-      await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarOrbit&mfd=1&predicted=impact&node=1', `mfd-pages-${tag}`, 10);
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarOrbit&mfd=1&node=1', `mfd-pages-${tag}`, 10);
     });
     test('MFD pages, landed 400 m from the target (no ground track: north-up scope)', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarSurface&mfd=1&targetOffset=400,30', `mfd-pages-hover-${tag}`, 10);
@@ -243,8 +287,8 @@ test.describe('flight-ui over a near-white backdrop (720p)', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
   for (const [scene, extra] of [
     ['pad', 'target=moon'],
-    ['ascent', 'flight=0.86,2.35'],
-    ['reentry', 'predicted=entry'],
+    ['ascent', ''],
+    ['reentry', ''],
     ['lunarSurface', ''],
   ] as const) {
     test(`scene ${scene}: every label keeps 4.5 : 1 against its panel, no scene edge prints through a plate, the HUD stays in its budget`, async ({ page, pageLog }) => {
@@ -263,10 +307,11 @@ test.describe('flight-ui over a near-white backdrop (720p)', () => {
 
 test.describe('flight-ui stage stack (720p)', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
-  test('the burning stage has its own tile with live delta-v, TWR, burn time and propellant', async ({ page, pageLog }) => {
+  test('the burning stage has its own tile with live delta-v, TWR, burn time and propellant, named for what burns', async ({ page, pageLog }) => {
     for (const [scene, extra, number] of [
-      ['ascent', 'flight=0.86,2.35', '1'],
+      ['ascent', '', '1'],
       ['lunarOrbit', '', '5'],
+      ['lunarSurface', '', '5'],
     ] as const) {
       await openPage(page, `/labs/flight-ui/?scene=${scene}${extra ? `&${extra}` : ''}`);
       await page.evaluate(() => window.__test!.waitFrames(10));
@@ -286,9 +331,15 @@ test.describe('flight-ui stage stack (720p)', () => {
       const a = (await tile.boundingBox())!;
       const n = (await page.locator('.hud .stages .tile.next').boundingBox())!;
       expect(a.y).toBeGreaterThan(n.y + n.height - 1);
-      // The MFD staging strip shows the same stage.
+      // Titled with what burns: the stage group whose propellant drains in the resources panel (one group in use),
+      // not the event that lit it.
+      const title = (await tile.locator('.name').textContent())!;
+      expect(title).not.toBe(info.label);
+      const drained = await page.locator('.hud .res .rrow .rn').allTextContents();
+      expect(drained).toEqual([title]);
+      // The MFD staging strip shows the same stage by the same name.
       const rows = await page.evaluate(() => window.__flightUi!.mfdRows('staging'));
-      expect(rows.find((r) => r.label === 'Active stage')!.value).toContain(info.label);
+      expect(rows.find((r) => r.label === 'Active stage')!.value).toBe(`${number} · ${title}`);
       expect(rows.find((r) => r.label === 'Stage Δv')!.value).not.toBe('—');
       await expectNoErrors(page, pageLog);
     }
@@ -297,10 +348,10 @@ test.describe('flight-ui stage stack (720p)', () => {
 
 test.describe('flight-ui MFD pages at 512 x 384, 1 : 1', () => {
   test.use({ viewport: { width: 1600, height: 840 } });
-  test('lunar orbit with a node and a predicted impact', async ({ page, pageLog }) => {
-    await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarOrbit&mfd=native&predicted=impact&node=1', 'mfd-pages-native', 10);
+  test('lunar orbit with a node', async ({ page, pageLog }) => {
+    await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarOrbit&mfd=native&node=1', 'mfd-pages-native', 10);
   });
-  test('reentry', async ({ page, pageLog }) => {
-    await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&mfd=native&predicted=entry', 'mfd-pages-native-reentry', 10);
+  test('reentry (predicted impact inside the recovery zone)', async ({ page, pageLog }) => {
+    await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&mfd=native', 'mfd-pages-native-reentry', 10);
   });
 });

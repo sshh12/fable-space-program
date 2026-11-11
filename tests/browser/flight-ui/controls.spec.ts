@@ -175,6 +175,9 @@ test.describe('flight-ui controls', () => {
     await page.evaluate(() => window.__test!.waitFrames(5));
     await expect(toast.locator('.count')).toHaveText('');
     expect((await state(page)).warp.index).toBe(3);
+    // The picture shows the toast at rest, not inside its fade-in.
+    await toast.evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)));
+    await page.evaluate(() => window.__test!.waitFrames(2));
     await saveScreenshot(page, 'flight-ui', 'warp-refused');
     // A second refused press (a later frame) counts.
     await page.keyboard.press('Period');
@@ -360,7 +363,8 @@ test.describe('flight-ui controls', () => {
       const n0 = await page.evaluate(() => window.__test!.waitFrames(1).then(() => window.__flightUi!.hudTiming().textUpdates));
       await page.waitForFunction((n) => window.__flightUi!.hudTiming().textUpdates > n, n0);
       const mfd = await page.evaluate(() => window.__flightUi!.mfdSection('landing')!);
-      const mfdRows = mfd.rows.map((r) => [r.label, r.value]);
+      // The MFD adds the zone light as a row of its own (the HUD shows it as a light under its rows).
+      const mfdRows = mfd.rows.filter((r) => r.label !== 'Zone').map((r) => [r.label, r.value]);
       const hud = (await page.evaluate(() => window.__flightUi!.hudLandingRows()))!;
       if (expanded) {
         await expect(page.locator('.hud .lt .rows')).toBeVisible();
@@ -384,7 +388,11 @@ test.describe('flight-ui controls', () => {
       // Sitting on the target (lunarSurface) the bearing reads "on target".
       expect(hud[1]![1]).toBe(lt.distance < 0.5 ? 'on target' : `${String(Math.round(((lt.bearingDeg % 360) + 360) % 360) % 360).padStart(3, '0')}°`);
       if (query.includes('impact')) expect(hud[4]![0]).toBe('Impact miss');
-      if (query.includes('entry')) expect(hud[4]![0]).toBe('Entry point miss');
+      if (query.includes('entry')) {
+        // An entry-interface prediction alone says nothing about the splash point: no zone light.
+        expect(hud[4]![0]).toBe('Entry interface');
+        await expect(page.locator('.hud .lt .zone')).toBeHidden();
+      }
       if (query === 'scene=lunarOrbit') expect(await page.locator('.hud .lt .pname').textContent()).toBe('Tranquility Base');
       await expectNoErrors(page, pageLog);
     }

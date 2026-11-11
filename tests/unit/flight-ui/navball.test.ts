@@ -4,6 +4,8 @@ import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { BALL_RADIUS_FRACTION, ballDirectionHorizon, ballTextureUv, markerInstances, pitchHeadingOf, projectMarker } from '@/ui';
+import { HUD_BALL_LIP, HUD_BALL_RADIUS_FRACTION } from '@/ui/navball/navballMath';
+import { LABEL_FONT_PX, NUMERAL_HEADINGS, NUMERAL_PITCHES } from '@/ui/navball/navballTexture';
 
 /** VES -> horizon (ENU) for navball angles: heading clockwise from north, roll right positive. */
 function attitude(pitchDeg: number, headingDeg: number, rollDeg: number): Quat {
@@ -129,5 +131,20 @@ describe('navball marker projection', () => {
     // Limb fade: a marker barely in front is faint.
     expect(inst.find((m) => m.name === 'normal')!.alpha).toBeLessThan(0.8);
     expect(p.alpha).toBe(1);
+  });
+});
+
+describe('navball lettering size', () => {
+  it('heading labels and pitch numerals reach the HUD text floor on the 720p instrument', () => {
+    // The HUD ball at 1280 x 720: a 24.5u canvas (u = 7.2 px), the window 0.84 of it, the ball 1 / 0.94 larger.
+    const ballRadiusPx = ((24.5 * 7.2) / 2) * (HUD_BALL_RADIUS_FRACTION / HUD_BALL_LIP);
+    // Cap height on the ball where a label faces the viewer: about 0.7 em of the font, as an angle of the
+    // 1024-texel-high equirectangular texture (pi per 1024 texels), times the ball radius.
+    const capPx = (fontPx: number): number => ((0.7 * fontPx) / 1024) * Math.PI * ballRadiusPx;
+    // The HUD's 10 px type has 7 px capitals: no label on the ball is smaller.
+    for (const size of Object.values(LABEL_FONT_PX)) expect(capPx(size)).toBeGreaterThanOrEqual(7);
+    // Numerals sit on the 20 / 40 / 60 degree lines only, between the meridians (room for the larger figures).
+    expect([...NUMERAL_PITCHES]).toEqual([20, 40, 60]);
+    expect([...NUMERAL_HEADINGS].every((h) => h % 30 === 15)).toBe(true);
   });
 });

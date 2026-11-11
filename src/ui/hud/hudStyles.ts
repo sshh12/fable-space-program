@@ -60,6 +60,45 @@ export const HUD_CSS = /* css */ `
   box-shadow: var(--lit), var(--edge), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.4) rgba(0, 0, 0, 0.28);
 }
 .hud .panel { padding: calc(var(--u) * 0.5) calc(var(--u) * 0.95); contain: layout style; }
+/*
+ * The interface's two materials. Flight readouts are panes of the cockpit displays' black glass (the MFD pages:
+ * near-black face, a header strip with the title as the active tab - accent text over an accent underline - and a
+ * status edge on the left in the colour of the panel's state). The bottom cluster is one instrument housing in the
+ * navball bezel's machined gunmetal (SAS panel, gauges), with black-glass windows for its read-outs. Secondary
+ * readouts (resources, the stage list) keep the plain plate.
+ */
+.hud .lcol .panel, .hud .tc .alt {
+  background: linear-gradient(180deg, rgba(11, 17, 26, 0.985), rgba(5, 8, 13, 0.975) 2.2em);
+  border-color: rgba(120, 150, 190, 0.3);
+}
+.hud .lcol .panel { position: relative; --st: rgba(85, 212, 255, 0.5); }
+.hud .lcol .panel::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: calc(var(--u) * 0.34); border-radius: calc(var(--u) * 0.8) 0 0 calc(var(--u) * 0.8); background: var(--st); }
+.hud .lcol .panel[data-st="good"] { --st: var(--good); }
+.hud .lcol .panel[data-st="caution"] { --st: var(--caution); }
+.hud .lcol .panel[data-st="warning"] { --st: var(--warning); }
+.hud .lcol .panel > .ptitle, .hud .tc .alt > .ptitle {
+  margin: calc(var(--u) * -0.5) calc(var(--u) * -0.95) calc(var(--u) * 0.4);
+  padding: calc(var(--u) * 0.34) calc(var(--u) * 0.95) calc(var(--u) * 0.32);
+  background: rgba(16, 26, 38, 0.95);
+  border-bottom: 1px solid rgba(120, 150, 190, 0.26);
+  border-radius: calc(var(--u) * 0.8) calc(var(--u) * 0.8) 0 0;
+}
+.hud .tc .alt > .ptitle { margin: calc(var(--u) * -0.4) calc(var(--u) * -1) calc(var(--u) * 0.3); }
+.hud .lcol .panel > .ptitle > span:first-child, .hud .tc .alt > .ptitle > span:first-child { color: var(--accent); position: relative; }
+.hud .lcol .panel > .ptitle > span:first-child::after, .hud .tc .alt > .ptitle > span:first-child::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(var(--u) * -0.34); height: max(1.5px, calc(var(--u) * 0.22)); background: var(--accent); border-radius: 1px; }
+/* Gunmetal housing of the bottom cluster: lit from above like the bezel (bright top chamfer, dark lower edge). */
+.hud .bottom .sas, .hud .bottom .gauges {
+  background: linear-gradient(180deg, #3a434f 0%, #29303a 0.5em, #1d232a 55%, #13171c 100%);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(225, 235, 248, 0.07), inset -1px 0 0 rgba(0, 0, 0, 0.35), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.4) rgba(0, 0, 0, 0.35);
+}
+.hud .bottom .speed, .hud .nbchips > div {
+  background: linear-gradient(180deg, rgba(11, 17, 26, 0.99), rgba(4, 7, 11, 0.99));
+  border: 1px solid rgba(0, 0, 0, 0.75);
+  box-shadow: 0 0 0 calc(var(--u) * 0.2) #2b323b, 0 0 0 calc(var(--u) * 0.2 + 1px) rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.hud .bottom .sas button { background: linear-gradient(180deg, #252c35, #171b21); border-color: rgba(0, 0, 0, 0.7); box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.16); }
+.hud .bottom .sas button:hover { background: linear-gradient(180deg, #2c4a5e, #1b2d3a); border-color: rgba(120, 200, 255, 0.45); }
 .hud .ptitle {
   display: flex;
   align-items: baseline;
@@ -156,7 +195,8 @@ export const HUD_CSS = /* css */ `
 .hud .clock .wf .factor { font-size: 1.05em; font-weight: 700; letter-spacing: 0.02em; }
 .hud .clock .ut { font-size: 0.82em; color: var(--label); height: 1.25em; contain: size layout style; }
 .hud .warp { display: flex; align-items: center; gap: calc(var(--u) * 0.6); margin-top: calc(var(--u) * 0.4); }
-.hud .warp button { padding: 0 calc(var(--u) * 0.55); line-height: 1.3; font-weight: 700; }
+.hud .warp button { padding: 0 calc(var(--u) * 0.4); height: 1.45em; display: flex; align-items: center; }
+.hud .warp button svg.step { width: 1em; height: 1em; display: block; }
 /* Chevrons are polygons of one SVG (no clip-path per chevron: fewer paint chunks to layerize). */
 .hud .chev { flex: 1; height: calc(var(--u) * 1.1); display: block; }
 .hud .chev polygon { fill: rgba(150, 175, 210, 0.26); }
@@ -305,7 +345,7 @@ export const HUD_CSS = /* css */ `
  * above the instrument, clear of the bezel and never changing width with the value.
  */
 .hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 29); margin-bottom: calc(var(--u) * -0.3); }
-.hud .nbchips > div { background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); box-shadow: var(--edge); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
+.hud .nbchips > div { border-radius: calc(var(--u) * 0.5); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
 .hud .nbchips .pr { width: calc(var(--u) * 10.9); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.55); font-size: 0.8em; }
 .hud .nbchips .pr .lbl { font-size: 0.96em; letter-spacing: 0.05em; }
 .hud .nbchips .pr b { font-weight: 600; }
@@ -351,6 +391,8 @@ export const HUD_CSS = /* css */ `
 .hud .gauges .doseline { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; display: grid; grid-template-columns: auto minmax(calc(var(--u) * 2.5), 1fr) auto; column-gap: calc(var(--u) * 0.6); align-items: center; margin-top: calc(var(--u) * 0.1); padding-top: calc(var(--u) * 0.35); border-top: 1px solid rgba(170, 198, 235, 0.14); height: calc(1.3em + var(--u) * 0.35); contain: size layout style; }
 .hud .gauges .doseline .bar { height: calc(var(--u) * 0.55); }
 .hud .gauges .doseline .dv { font-size: 0.86em; font-weight: 600; white-space: nowrap; }
+/* No dose yet: the line keeps its place, its reading dim. */
+.hud .gauges .doseline.nil .dv { color: var(--label); font-weight: 500; }
 
 .hud .node { position: relative; width: calc(var(--u) * 22); border-color: rgba(79, 141, 255, 0.6); }
 .hud .node .ptitle { color: #9fc0ff; }
@@ -362,8 +404,13 @@ export const HUD_CSS = /* css */ `
 /* ---------------------------------------------------------------- left panels */
 .hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.8); align-items: baseline; height: 1.34em; contain: size layout style; }
 .hud .orbit .apsis .sub { text-align: right; min-width: 4.2em; font-size: 0.8em; }
-.hud .orbit .apsis.wide .val { grid-column: 2 / 4; }
-.hud .orbit .apsis.wide .sub { display: none; }
+/* A periapsis below the surface (long value, no time): both rows put the time after the label and the value at
+   the panel's edge, so Ap and Pe keep one right-aligned value column. */
+.hud .orbit.wide .apsis { grid-template-columns: auto auto 1fr; }
+.hud .orbit.wide .apsis > * { grid-row: 1; }
+.hud .orbit.wide .apsis .lbl { grid-column: 1; }
+.hud .orbit.wide .apsis .sub { grid-column: 2; text-align: left; min-width: 0; }
+.hud .orbit.wide .apsis .val { grid-column: 3; }
 .hud .ptitle .pright { display: flex; align-items: baseline; gap: 0.6em; }
 .hud .ptitle .tag { font-weight: 700; letter-spacing: 0.08em; }
 /* Atmosphere: three cells on one strip (in its own panel, under the orbit rows in an ascent, or in the entry panel). */
@@ -396,9 +443,22 @@ export const HUD_CSS = /* css */ `
 .hud .pad .targets button.on { background: rgba(255, 91, 214, 0.24); border-color: rgba(255, 91, 214, 0.8); }
 
 /* ---------------------------------------------------------------- centre */
-.hud .failed { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; background: rgba(40, 6, 8, 0.96); border: 1px solid rgba(255, 98, 98, 0.75); border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 2) calc(var(--u) * 5); box-shadow: var(--edge), 0 0 calc(var(--u) * 6) rgba(255, 60, 60, 0.25); }
+/*
+ * Mission failed: a modal outcome. The flight panels are dimmed and inert (no pointer events) behind it; the clock
+ * stays readable; the banner offers the app shell's next steps.
+ */
+.hud.failed-state .lcol > :not(.clock), .hud.failed-state .rcol, .hud.failed-state .bottom, .hud.failed-state .tc, .hud.failed-state .tr { opacity: 0.3; filter: saturate(0.35); }
+.hud.failed-state .lcol [data-hud-interactive], .hud.failed-state .rcol [data-hud-interactive], .hud.failed-state .bottom [data-hud-interactive], .hud.failed-state .tc [data-hud-interactive], .hud.failed-state .tr [data-hud-interactive] { pointer-events: none; }
+.hud.failed-state .clock .warp { opacity: 0.3; }
+.hud.failed-state .clock .warp button { pointer-events: none; }
+.hud .failed { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; width: calc(var(--u) * 62); background: linear-gradient(180deg, rgba(46, 8, 10, 0.98), rgba(26, 5, 7, 0.98)); border: 1px solid rgba(255, 98, 98, 0.75); border-top: calc(var(--u) * 0.45) solid var(--warning); border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 2.2) calc(var(--u) * 4) calc(var(--u) * 2.4); box-shadow: var(--edge), 0 0 calc(var(--u) * 6) rgba(255, 60, 60, 0.25), 0 calc(var(--u) * 2) calc(var(--u) * 8) rgba(0, 0, 0, 0.6); }
 .hud .failed h2 { margin: 0; font-size: 2.4em; letter-spacing: 0.18em; color: var(--warning); font-weight: 700; }
-.hud .failed p { margin: calc(var(--u) * 0.8) 0 0; font-size: 1.05em; color: #ffd5d5; }
+.hud .failed p { margin: calc(var(--u) * 0.9) 0 0; font-size: 1.05em; line-height: 1.35; color: #ffd5d5; }
+.hud .failed .actions { display: flex; justify-content: center; gap: calc(var(--u) * 1.2); margin-top: calc(var(--u) * 2); }
+.hud .failed .actions button { font-size: 1em; padding: calc(var(--u) * 0.55) calc(var(--u) * 1.8); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 190, 190, 0.45); color: #fff1f1; display: inline-flex; align-items: center; gap: 0.6em; }
+.hud .failed .actions button:first-child { background: rgba(255, 98, 98, 0.22); border-color: rgba(255, 120, 120, 0.85); }
+.hud .failed .actions button:hover { background: rgba(255, 120, 120, 0.32); }
+.hud .failed .note { margin-top: calc(var(--u) * 1.4); font-size: 0.86em; color: #f0b9b9; letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* ---------------------------------------------------------------- key help */
 /* A modal sheet: opaque, and the flight panels are taken off screen while it is open (nothing ghosts through). */

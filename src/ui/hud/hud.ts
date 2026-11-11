@@ -63,6 +63,7 @@ import {
   orbitPhase,
   RADAR_ALTITUDE_SWITCH,
   summarizeResources,
+  zoneStatus,
   type AltitudeMode,
   type StageTileView,
 } from '../model';
@@ -95,6 +96,21 @@ export interface HudOptions {
   keyFor?: (action: ButtonAction) => string | null;
   /** Commands for target selection on the pad; when absent the pad panel only displays the target. */
   commands?: () => PlayerCommands | null;
+  /**
+   * What the player can do once the mission has failed (revert to launch, restart the scenario, quit to the
+   * menu...), offered as buttons on the mission-failed banner. The app shell supplies them; without any the
+   * banner says that the flight controls are off.
+   */
+  failureActions?: readonly HudFailureAction[];
+}
+
+/** A next step offered on the mission-failed banner. */
+export interface HudFailureAction {
+  label: string;
+  /** Key cap shown on the button (the app binds the key itself). */
+  key?: string;
+  title?: string;
+  run: () => void;
 }
 
 export interface HudImpl extends Hud {
@@ -129,6 +145,9 @@ const HEATING_FLUX = 1000;
 
 /** Share of the fatal g-dose from which the dose bar turns red (amber below). */
 const DOSE_WARNING = 2 / 3;
+
+/** G load from which the g-dose line holds its place outside the atmosphere (a powered burn). */
+const DOSE_SLOT_G = 0.5;
 
 const SAS_NAMES: Record<SasMode, string> = {
   stability: 'Stability',
@@ -179,6 +198,10 @@ function keyCap(label: string, cls = 'kbd', title?: string): HTMLSpanElement {
   const glyph = GLYPH_CAPS.has(label);
   return el('span', glyph ? `${cls} glyph` : cls, [text], title ? { title } : named ? { title: label } : {});
 }
+
+/** Warp step buttons: chevrons pointing back (slower) and forward (faster). */
+const WARP_STEP_DOWN = { stroke: 'M15,5L8,12L15,19', width: 3.4 };
+const WARP_STEP_UP = { stroke: 'M9,5L16,12L9,19', width: 3.4 };
 
 /** Horizontal speed: a level arrow (SVG, never a font glyph). */
 const HORIZONTAL_ICON = { stroke: 'M3.5,12H19.5 M14.5,7L19.5,12L14.5,17', width: 2.6 };
@@ -310,9 +333,10 @@ export function createHud(opts: HudOptions): HudImpl {
     el('div', 'metrow', [el('span', 'met', [met.node]), el('span', 'wf', [el('span', 'rails', [railsLabel.node]), el('b', 'factor', [warpFactor.node])])]),
     el('div', 'ut', [ut.node]),
     el('div', 'warp', [
-      hudButton(['‹'], 'warpdown', 'Slower time warp (,)', () => dispatch('warpDown')),
+      // Step arrows are drawn chevrons at the label's cap height (a font's angle quote is a 3 px speck at 720p).
+      hudButton([svgIcon(WARP_STEP_DOWN, { className: 'step' })], 'warpdown', 'Slower time warp (,)', () => dispatch('warpDown')),
       chevSvg,
-      hudButton(['›'], 'warpup', 'Faster time warp (.)', () => dispatch('warpUp')),
+      hudButton([svgIcon(WARP_STEP_UP, { className: 'step' })], 'warpup', 'Faster time warp (.)', () => dispatch('warpUp')),
     ]),
     warpLimitEl,
   ]);
@@ -373,8 +397,6 @@ export function createHud(opts: HudOptions): HudImpl {
   };
   const peRow = apsis('Periapsis', orbit.pe, orbit.peT);
   const peTone = new ToneSlot(peRow.valueEl);
-  // A periapsis below the surface has no time to it: its value takes the time column as well.
-  const peWide = classFlag(peRow.root, 'wide');
   const orbitBody = new TextSlot('');
   // A suborbital path is said once, in the title (amber); its inclination and period are not shown (a path that
   // meets the surface has no period to fly).
@@ -393,6 +415,9 @@ export function createHud(opts: HudOptions): HudImpl {
     orbitAtmSlot,
   ]);
   const orbitShow = hiddenFlag(orbitPanel);
+  // A periapsis below the surface has no time to it and a long value: both apsis rows then put their time after
+  // the label and their value at the panel's edge, so Ap and Pe keep one right-aligned value column.
+  const apsisWide = classFlag(orbitPanel, 'wide');
 
   // Atmospheric flight rows: in their own panel during an ascent, folded into the entry panel while it shows.
   const atm = { q: new TextSlot(), mach: new TextSlot(), aoa: new TextSlot() };
@@ -497,6 +522,11 @@ export function createHud(opts: HudOptions): HudImpl {
   const padTargetsShow = hiddenFlag(padTargets);
 
   const lcol = el('div', 'lcol', [clock, padPanel, orbitPanel, ltPanel, atmPanel, entryPanel]);
+  // The status edge of each flight panel (left, in the colour of its state; hudStyles.ts).
+  const clockSt = new AttrSlot(clock, 'data-st');
+  const orbitSt = new AttrSlot(orbitPanel, 'data-st');
+  const ltSt = new AttrSlot(ltPanel, 'data-st');
+  const entrySt = new AttrSlot(entryPanel, 'data-st');
 
   // ---------------------------------------------------------------------------------- right column
   // Stage stack, top to bottom: the later stages as one list of one-line rows (highest number on top), the next
@@ -578,6 +608,7 @@ export function createHud(opts: HudOptions): HudImpl {
     title: "Crew g-dose: g-seconds above the crew's tolerance, as a share of the fatal limit (it recovers below the amber zone)",
   });
   const doseShow = hiddenFlag(doseLine);
+  const doseNil = classFlag(doseLine, 'nil');
   const gauges = el('div', 'panel gauges', [thr.root, gG.root, doseLine]);
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
@@ -592,9 +623,17 @@ export function createHud(opts: HudOptions): HudImpl {
   const bottom = el('div', 'bottom', [sasPanel, nbwrap, rightStack]);
 
   // ---------------------------------------------------------------------------------------- centre
+  // Mission failed: a modal outcome over the dimmed, inert flight panels (the clock stays), with the next steps the
+  // app shell offers (HudOptions.failureActions).
   const failReason = new TextSlot('');
-  const failed = el('div', 'failed', [el('h2', '', ['MISSION FAILED']), el('p', '', [failReason.node])]);
+  const failActions = (opts.failureActions ?? []).map((a) => hudButton([el('b', '', [a.label]), ...(a.key ? [keyCap(a.key)] : [])], 'failact', a.title ?? a.label, () => a.run()));
+  const failed = el('div', 'failed', [
+    el('h2', '', ['MISSION FAILED']),
+    el('p', '', [failReason.node]),
+    ...(failActions.length > 0 ? [el('div', 'actions', failActions)] : [el('div', 'note', ['Flight controls are off'])]),
+  ]);
   const failedShow = hiddenFlag(failed);
+  const failedClass = classFlag(root, 'failed-state');
 
   // --------------------------------------------------------------------------------------- key help
   const groups = new Map<string, HudKeyHelpEntry[]>();
@@ -788,12 +827,15 @@ export function createHud(opts: HudOptions): HudImpl {
     let meta: TextSlot | null = null;
     let fill: FillSlot | null = null;
     let barTone: Flag | null = null;
-    const head: HTMLElement[] = [el('span', 'sn', [t.number]), el('div', 'name', [t.label])];
+    // The next tile names what firing it does (the stage's label: "M-3 separation"); the active tile names what is
+    // burning (the stage group of its engines: "Meridian M-3"), with the event that lit it in its tooltip.
+    const title = role === 'active' ? (t.burnName ?? t.label) : t.label;
+    const head: HTMLElement[] = [el('span', 'sn', [t.number]), el('div', 'name', [title])];
     if (role === 'active') head.push(el('span', 'act', ['ACTIVE'], { title: 'Active stage: its engines are running or armed' }));
     else if (!locked) head.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
     let line2: HTMLElement;
     if (locked) {
-      line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['after last stage'])]);
+      line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['staging interlock'])]);
     } else {
       meta = new TextSlot('');
       line2 = el('div', 'l2', [...(t.hasEngines ? [el('span', 'dv', [dv.node])] : []), el('span', 'meta', [meta.node])]);
@@ -805,11 +847,14 @@ export function createHud(opts: HudOptions): HudImpl {
       barTone = classFlag(b.root, 'caution');
       mainParts.push(b.root);
     }
-    const tile = el('div', `tile ${role}`, [el('div', 'ico', [svgIcon(locked ? LOCK_ICON : STAGE_ICONS[stageIconFor(t.icon)])]), el('div', 'main', mainParts)]);
+    // The burning stage shows an engine (what runs), whatever event icon its stage carries.
+    const icon = locked ? LOCK_ICON : STAGE_ICONS[stageIconFor(role === 'active' && t.hasEngines ? 'engine' : t.icon)];
+    const tile = el('div', `tile ${role}`, [el('div', 'ico', [svgIcon(icon)]), el('div', 'main', mainParts)]);
+    if (role === 'active') tile.title = `Burning since stage ${t.number}: ${t.label}`;
     if (role === 'next') {
       if (locked) tile.classList.add('locked');
       tile.setAttribute(INTERACTIVE_ATTR, '');
-      tile.title = locked ? 'Staging is locked for a moment after the last stage' : `Fire this stage (${keyFor('stage') ?? 'Space'})`;
+      tile.title = locked ? 'Staging interlock: the sim holds the next stage for a moment' : `Fire this stage (${keyFor('stage') ?? 'Space'})`;
       tile.addEventListener('pointerdown', (e) => e.preventDefault());
       tile.addEventListener('click', () => {
         if (!tile.classList.contains('locked')) dispatch('stage');
@@ -819,12 +864,12 @@ export function createHud(opts: HudOptions): HudImpl {
   }
 
   function updateStages(s: SimSnapshot): void {
-    const st = describeStages(s);
+    const st = describeStages(s, defs);
     const remaining = st.tiles.filter((t) => !t.fired);
     const next = remaining.find((t) => t.next) ?? null;
     const later = remaining.filter((t) => t !== next);
     const active = st.active >= 0 ? st.tiles[st.active]! : null;
-    const tileKey = (t: StageTileView): string => `${t.index}:${t.label}:${t.icon}:${t.actionKinds.join(',')}:${t.hasEngines ? 1 : 0}:${t.propellant !== null ? 1 : 0}`;
+    const tileKey = (t: StageTileView): string => `${t.index}:${t.label}:${t.burnName}:${t.icon}:${t.actionKinds.join(',')}:${t.hasEngines ? 1 : 0}:${t.propellant !== null ? 1 : 0}`;
     const key = `${later.map(tileKey).join('|')}#${next ? tileKey(next) : '-'}#${active ? tileKey(active) : '-'}#${st.lockout ? 1 : 0}`;
     if (key !== stageKey) {
       stageKey = key;
@@ -972,7 +1017,17 @@ export function createHud(opts: HudOptions): HudImpl {
     nodeImminent.set(tBurn !== null && tBurn >= 0 && tBurn < 10);
     noticeShow.set(s.terrain.pending && r.altitudeRadar < RADAR_ALTITUDE_SWITCH);
     failedShow.set(s.mission.failed);
-    doseShow.set(r.gDose > 0);
+    failedClass.set(s.mission.failed);
+    // The g-dose line holds its place wherever a dose can build up (in the air, or under a real acceleration), so
+    // the tubes above it never jump when the first dose appears; it reads a dim 0 % until then.
+    doseShow.set(r.gDose > 0 || (!landed && (inAtmosphere(s, defs) || r.gLoad >= DOSE_SLOT_G)));
+    doseNil.set(r.gDose <= 0);
+
+    // Status edges: the clock amber while warp is capped, the orbit amber / red with its periapsis, the entry panel
+    // amber while heating and red past a redline.
+    clockSt.set(w.maxIndex < WARP_LEVELS.length - 1 && w.limitedBy ? 'caution' : '');
+    orbitSt.set(phase.periapsisTone === 'normal' ? '' : phase.periapsisTone);
+    entrySt.set((r.ablatorFraction !== null && ablatorTone(r.ablatorFraction) === 'warning') || r.maxTempFraction > 0.85 ? 'warning' : heating ? 'caution' : '');
 
     // Warp chevrons.
     for (let i = 0; i < chevrons.length; i++) {
@@ -1057,7 +1112,7 @@ export function createHud(opts: HudOptions): HudImpl {
       orbit.pe.set(o.periapsis);
       const below = s.readouts.periapsisAltitude < 0;
       orbit.peT.set(below ? '' : o.periapsisTime);
-      peWide.set(below);
+      apsisWide.set(below);
       peTone.set(phase.periapsisTone === 'normal' ? '' : phase.periapsisTone);
       subTagShow.set(phase.suborbital);
       closedRowsShow.set(!below);
@@ -1112,13 +1167,17 @@ export function createHud(opts: HudOptions): HudImpl {
         ltLine.set(`${lt.distance} · ${lt.bearing}`);
         ltCurrentRows = rows.slice(0, 2);
       }
-      // Recovery zone: inside is the go state (green); outside matters once the descent is committed.
-      const zone = lt.zoneRadius !== null;
-      const committed = show.ltExpanded && (r.chuteEnvelope !== null || lt.predicted !== null);
-      zoneShow.set(zone && (lt.insideZone || committed));
-      zoneText.set(lt.insideZone ? 'INSIDE ZONE' : 'OUTSIDE ZONE');
-      zoneSub.set(lt.zoneRadius !== null ? `r ${lt.zoneRadius}` : '');
-      zoneTone.set(lt.insideZone ? 'good' : 'caution');
+      // Recovery zone: lit only once something says where the vessel comes down (an impact prediction, or the
+      // sub-point when landed or under chutes); an entry-interface prediction alone lights nothing (zoneStatus).
+      const zone = show.ltExpanded ? zoneStatus(s, defs) : null;
+      zoneShow.set(zone !== null);
+      ltSt.set(zone ? (zone.inside ? 'good' : 'caution') : '');
+      if (zone) {
+        zoneText.set(zone.inside ? 'INSIDE ZONE' : 'OUTSIDE ZONE');
+        zoneSub.set(lt.zoneRadius !== null ? `r ${lt.zoneRadius}` : '');
+        zoneTone.set(zone.inside ? 'good' : 'caution');
+        zoneEl.title = zone.basis === 'impact' ? 'From the predicted impact point' : 'From the point under the vessel';
+      }
     } else ltCurrentRows = null;
 
     // Pad: target and launch opportunity.
@@ -1147,8 +1206,8 @@ export function createHud(opts: HudOptions): HudImpl {
     gG.value.set(f.gLoad);
     const gt = gTone(r.gLoad);
     gTextTone.set(gt === 'normal' ? '' : gt);
-    if (r.gDose > 0) {
-      const f = r.gDoseLimit > 0 ? Math.min(1, r.gDose / r.gDoseLimit) : 0;
+    {
+      const f = r.gDoseLimit > 0 ? Math.min(1, Math.max(0, r.gDose) / r.gDoseLimit) : 0;
       doseBar.fill.set(f);
       doseValue.set(formatPercent(f));
       doseTone.set(f >= DOSE_WARNING ? 'warning' : 'caution');

@@ -23,7 +23,7 @@ import type { MarkerIconName } from '../icons';
 import { ATLAS_LAYOUT, ATLAS_SIZE, drawMarkerAtlas, type AtlasEntry } from './markerAtlas';
 import { BALL_RADIUS_FRACTION, BALL_TEXTURE_SIZE, limbFade, MARKER_HALF_SIZE } from './navballMath';
 import { NAVBALL_WGSL } from './navballShader';
-import { buildMipChain, drawBallTexture } from './navballTexture';
+import { buildMipChain, drawBallTextures } from './navballTexture';
 
 export const NAVBALL_TEXTURE_SIZE = 512;
 export const NAVBALL_FORMAT: GPUTextureFormat = 'rgba8unorm';
@@ -98,16 +98,24 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
   const device = gpu.device;
   const module = device.createShaderModule({ label: 'ui.navball', code: NAVBALL_WGSL });
 
-  // Ball texture (equirectangular, full mip chain drawn on the CPU once).
-  const ballLevels = buildMipChain(drawBallTexture());
-  const ballTex = device.createTexture({
-    label: 'ui.navball.ballTexture',
-    size: BALL_TEXTURE_SIZE,
-    mipLevelCount: ballLevels.length,
-    format: 'rgba8unorm-srgb',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-  });
-  ballLevels.forEach((c, mipLevel) => device.queue.copyExternalImageToTexture({ source: c }, { texture: ballTex, mipLevel }, [c.width, c.height]));
+  // Ball textures (equirectangular, full mip chains drawn on the CPU once): the painted ball and the same ball
+  // with its lettering; the shader shows the lettering per label (navballShader.ts).
+  const ballTextures = drawBallTextures();
+  const upload = (canvas: OffscreenCanvas, label: string): GPUTexture => {
+    const levels = buildMipChain(canvas);
+    const tex = device.createTexture({
+      label,
+      size: BALL_TEXTURE_SIZE,
+      mipLevelCount: levels.length,
+      format: 'rgba8unorm-srgb',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    levels.forEach((c, mipLevel) => device.queue.copyExternalImageToTexture({ source: c }, { texture: tex, mipLevel }, [c.width, c.height]));
+    return tex;
+  };
+  const ballTex = upload(ballTextures.base, 'ui.navball.ballTexture');
+  const labelTex = upload(ballTextures.labelled, 'ui.navball.ballTexture.labelled');
+  const labelLayout = ballTextures.layout;
 
   const atlasLevels = drawMarkerAtlas();
   const atlasTex = device.createTexture({
@@ -147,11 +155,12 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
       { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({ label: 'ui.navball', bindGroupLayouts: [layout] });
 
-  const BALL_BYTES = 64;
+  const BALL_BYTES = 80;
   const MARKER_BYTES = 16 + MAX_MARKERS * 32;
   const markerBuf = device.createBuffer({ label: 'ui.navball.markers', size: MARKER_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const markerData = new ArrayBuffer(MARKER_BYTES);
@@ -177,6 +186,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
         { binding: 2, resource: sampler },
         { binding: 3, resource: { buffer: markerBuf } },
         { binding: 4, resource: atlasTex.createView() },
+        { binding: 5, resource: labelTex.createView() },
       ],
     });
     return { buf, bind, data: new Float32Array(BALL_BYTES / 4), valid: false };
@@ -280,9 +290,13 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     b[13] = sizePx;
     b[14] = look;
     b[15] = lip;
+    b[16] = labelLayout.headingHalfW;
+    b[17] = labelLayout.headingHalfH;
+    b[18] = labelLayout.numeralHalfW;
+    b[19] = labelLayout.numeralHalfH;
     const d = slot.data;
     let same = slot.valid;
-    for (let i = 0; same && i < 16; i++) same = d[i] === b[i];
+    for (let i = 0; same && i < BALL_BYTES / 4; i++) same = d[i] === b[i];
     if (!same) {
       d.set(b);
       device.queue.writeBuffer(slot.buf, 0, d);
@@ -329,6 +343,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     dispose() {
       target.destroy();
       ballTex.destroy();
+      labelTex.destroy();
       atlasTex.destroy();
       shared.buf.destroy();
       hudSlot.buf.destroy();

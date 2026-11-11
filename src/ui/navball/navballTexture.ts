@@ -1,18 +1,23 @@
 /**
  * Procedural navball texture, drawn once with Canvas 2D into an equirectangular 2048 x 1024 image
- * (u = heading / 360, north at u = 0; v = (90 - pitch) / 180) plus its full mip chain:
- *   - sky (pitch > 0) blue and ground brown hemispheres with a soft gradient toward the poles,
- *   - a bold horizon line with heading ticks every 5 / 10 / 30 deg and labels every 30 deg (N, 030, 060, E ...)
- *     just above it,
- *   - meridians every 30 deg (cardinal ones heavier) and the pitch ladder every 10 deg (heavier every 30 deg),
- *     both stopping at the pole rings,
- *   - pitch numerals centred on the ladder lines in the open between the meridians, 15 deg from every heading
- *     label: +-20 to +-60 on four columns (45, 135, 225, 315 deg), +-70 on two; none at +-10 (the first
- *     line off the horizon) and none at +-80, so the pole regions stay clean,
- *   - zenith and nadir marks that are larger than the reticle hub drawn over them: a bold ring at 80 deg with
- *     four inward ticks and a cap from 87.5 deg, so the pole frames the reticle when the nose is on it.
+ * (u = heading / 360, north at u = 0; v = (90 - pitch) / 180) plus its full mip chain, in two versions:
+ *
+ *   base     the painted ball without any lettering:
+ *              - sky (pitch > 0) blue and ground brown hemispheres with a soft gradient toward the poles,
+ *              - a bold horizon line with heading ticks every 5 / 10 / 30 deg,
+ *              - meridians every 30 deg (cardinal ones heavier) and the pitch ladder every 10 deg (heavier every
+ *                30 deg), both stopping at the pole rings,
+ *              - zenith and nadir marks larger than the reticle hub drawn over them: a bold ring at 80 deg with
+ *                four inward ticks and a cap from 87.5 deg, so the pole frames the reticle when the nose is on it;
+ *   labelled the base with its lettering: heading labels every 30 deg just above the horizon (N, 030, 060, E ...)
+ *              and pitch numerals centred on the ladder lines in the open between the meridians (NUMERAL_HEADINGS,
+ *              NUMERAL_PITCHES: 20, 40 and 60 deg each side, never next to the poles).
+ *
  * Every label is pre-stretched by 1 / cos(latitude), so it reads undistorted on the sphere, and is drawn over a
  * halo of the local background colour that knocks the grid out behind it (a line never runs through a glyph).
+ * The shader shows `labelled` where a label is visible and `base` where it is faded, deciding per label (from
+ * the label's anchor and extent, `LabelLayout`), so a numeral near the bezel's lip dims as a whole and the lines
+ * under it come back: a glyph is never cut in half and never fades into a blurred copy of itself.
  */
 import { BALL_TEXTURE_SIZE } from './navballMath';
 
@@ -31,6 +36,30 @@ export const BALL_COLORS = {
 export const POLE_RING_DEG = 80;
 export const POLE_CAP_DEG = 87.5;
 
+/** Heading labels: every HEADING_LABEL_STEP deg of heading, centred at this pitch (deg) above the horizon. */
+export const HEADING_LABEL_STEP = 30;
+export const HEADING_LABEL_PITCH = 7.2;
+/** Pitch numerals: columns at these headings (between the meridians), on these ladder lines (both signs). */
+export const NUMERAL_HEADINGS = [45, 135, 225, 315] as const;
+export const NUMERAL_PITCHES = [20, 40, 60] as const;
+
+/**
+ * Font sizes on the 1024-texel-high texture (px). A label's cap height on the HUD ball at 720p is about
+ * 0.7 x size / 1024 x pi x the ball radius in px (navball.test.ts keeps it at or above the HUD's 10 px type).
+ */
+export const LABEL_FONT_PX = { heading: 56, cardinal: 68, numeral: 54 } as const;
+
+/**
+ * Half-extents of the labels on the sphere (radians, as true angles: east along the latitude circle, north along
+ * the meridian), glyph plus halo: the shader fades a label as a whole by where its farthest corner lies.
+ */
+export interface LabelLayout {
+  headingHalfW: number;
+  headingHalfH: number;
+  numeralHalfW: number;
+  numeralHalfH: number;
+}
+
 const rgb = (c: readonly number[], a = 1): string => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 /** Background colour of the texture at a pitch (the hemisphere gradients). */
@@ -40,9 +69,20 @@ function background(pitch: number): number[] {
   return [0, 1, 2].map((i) => Math.round(a[i]! + (b[i]! - a[i]!) * t));
 }
 
-export function drawBallTexture(width = BALL_TEXTURE_SIZE[0], height = BALL_TEXTURE_SIZE[1]): OffscreenCanvas {
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d') as Ctx;
+const headingName = (h: number): string => ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' })[h] ?? String(h).padStart(3, '0');
+const numeralText = (p: number): string => (p > 0 ? String(p) : `−${-p}`);
+
+export interface BallTextures {
+  /** The painted ball without lettering. */
+  base: OffscreenCanvas;
+  /** The same ball with its heading labels and pitch numerals. */
+  labelled: OffscreenCanvas;
+  layout: LabelLayout;
+}
+
+export function drawBallTextures(width = BALL_TEXTURE_SIZE[0], height = BALL_TEXTURE_SIZE[1]): BallTextures {
+  const base = new OffscreenCanvas(width, height);
+  const ctx = base.getContext('2d') as Ctx;
   const W = width;
   const H = height;
   const yOf = (pitch: number): number => ((90 - pitch) / 180) * H;
@@ -69,37 +109,6 @@ export function drawBallTexture(width = BALL_TEXTURE_SIZE[0], height = BALL_TEXT
   const vline = (heading: number, p0: number, p1: number, thickness: number, color: string): void => {
     ctx.fillStyle = color;
     for (const dx of [0, -W, W]) ctx.fillRect(xOf(heading) + dx - thickness / 2, yOf(p1), thickness, yOf(p0) - yOf(p1));
-  };
-
-  /**
-   * Text centred at (heading, pitch), stretched horizontally by 1 / cos(pitch), over a halo of the background
-   * colour (`halo` px wide) that clears the grid behind it. Wraps across the seam.
-   */
-  const label = (text: string, heading: number, pitch: number, px: number, color: string, weight = 600, halo = 9): void => {
-    const stretch = Math.min(9, 1 / Math.max(0.11, cosd(pitch)));
-    ctx.save();
-    ctx.font = `${weight} ${Math.round(px * k)}px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const w = ctx.measureText(text).width * stretch;
-    const bg = rgb(background(pitch));
-    for (const dx of [0, -W, W]) {
-      const x = xOf(heading) + dx;
-      if (x + w / 2 + halo * stretch < 0 || x - w / 2 - halo * stretch > W) continue;
-      ctx.save();
-      ctx.translate(x, yOf(pitch));
-      ctx.scale(stretch, 1);
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = bg;
-      ctx.lineWidth = halo * k;
-      ctx.strokeText(text, 0, 0);
-      ctx.fillStyle = color;
-      ctx.shadowColor = 'rgba(0,0,0,0.3)';
-      ctx.shadowBlur = 2 * k;
-      ctx.fillText(text, 0, 0);
-      ctx.restore();
-    }
-    ctx.restore();
   };
 
   // Pitch ladder: full latitude circles every 10 deg up to 70, heavier every 30 deg.
@@ -131,21 +140,6 @@ export function drawBallTexture(width = BALL_TEXTURE_SIZE[0], height = BALL_TEXT
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     for (const dx of [0, -W, W]) ctx.fillRect(xOf(h) + dx - 1.5 * k, yOf(0) - len, 3 * k, 2 * len);
   }
-  // Heading labels just above the horizon.
-  const headingName = (h: number): string => ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' })[h] ?? String(h).padStart(3, '0');
-  for (let h = 0; h < 360; h += 30) {
-    const cardinal = h % 90 === 0;
-    label(headingName(h), h, 6.6, cardinal ? 56 : 42, 'rgba(255,255,255,0.98)', cardinal ? 700 : 600, 10);
-  }
-  // Pitch numerals on the ladder lines between the meridians (45 deg off the cardinal headings).
-  for (const h of [45, 135, 225, 315]) {
-    for (let p = -70; p <= 70; p += 10) {
-      if (Math.abs(p) < 20) continue;
-      if (Math.abs(p) === 70 && h !== 45 && h !== 225) continue;
-      const text = p > 0 ? String(p) : `−${-p}`;
-      label(text, h, p, 40, p > 0 ? 'rgba(255,255,255,0.97)' : 'rgba(255,238,218,0.95)', 600, 11);
-    }
-  }
   // Poles: a bold ring with four inward ticks on the cardinal meridians, and a cap.
   const pole = (sign: 1 | -1, ring: string, cap: string, capEdge: string): void => {
     const pr = sign * POLE_RING_DEG;
@@ -159,7 +153,69 @@ export function drawBallTexture(width = BALL_TEXTURE_SIZE[0], height = BALL_TEXT
   };
   pole(1, 'rgba(255,255,255,0.96)', 'rgba(255,255,255,0.96)', 'rgba(255,255,255,1)');
   pole(-1, 'rgba(255,226,190,0.92)', 'rgba(26,13,4,0.97)', 'rgba(255,226,190,0.95)');
-  return canvas;
+
+  // The labelled version: the base with its lettering.
+  const labelled = new OffscreenCanvas(width, height);
+  const lc = labelled.getContext('2d') as Ctx;
+  lc.drawImage(base, 0, 0);
+  /** Largest glyph width (px, unstretched) and cap height of each label kind, for the layout. */
+  const extent = { heading: { w: 0, h: 0, halo: 0 }, numeral: { w: 0, h: 0, halo: 0 } };
+
+  /**
+   * Text centred at (heading, pitch), stretched horizontally by 1 / cos(pitch), over a halo of the background
+   * colour (`halo` px wide) that clears the grid behind it. Wraps across the seam.
+   */
+  const label = (kind: 'heading' | 'numeral', text: string, heading: number, pitch: number, px: number, color: string, weight: number, halo: number): void => {
+    const stretch = Math.min(9, 1 / Math.max(0.11, cosd(pitch)));
+    lc.save();
+    lc.font = `${weight} ${Math.round(px * k)}px ${FONT}`;
+    lc.textAlign = 'center';
+    lc.textBaseline = 'middle';
+    const m = lc.measureText(text);
+    const e = extent[kind];
+    e.w = Math.max(e.w, m.width);
+    // Twice the larger of the glyph's reach above and below the anchor ('middle' baseline): a conservative box.
+    e.h = Math.max(e.h, 2 * Math.max(m.actualBoundingBoxAscent || 0.4 * px * k, m.actualBoundingBoxDescent || 0.4 * px * k));
+    e.halo = Math.max(e.halo, halo * k);
+    const w = m.width * stretch;
+    const bg = rgb(background(pitch));
+    for (const dx of [0, -W, W]) {
+      const x = xOf(heading) + dx;
+      if (x + w / 2 + halo * stretch < 0 || x - w / 2 - halo * stretch > W) continue;
+      lc.save();
+      lc.translate(x, yOf(pitch));
+      lc.scale(stretch, 1);
+      lc.lineJoin = 'round';
+      lc.strokeStyle = bg;
+      lc.lineWidth = halo * k;
+      lc.strokeText(text, 0, 0);
+      lc.fillStyle = color;
+      lc.shadowColor = 'rgba(0,0,0,0.3)';
+      lc.shadowBlur = 2 * k;
+      lc.fillText(text, 0, 0);
+      lc.restore();
+    }
+    lc.restore();
+  };
+
+  // Heading labels just above the horizon.
+  for (let h = 0; h < 360; h += HEADING_LABEL_STEP) {
+    const cardinal = h % 90 === 0;
+    label('heading', headingName(h), h, HEADING_LABEL_PITCH, cardinal ? LABEL_FONT_PX.cardinal : LABEL_FONT_PX.heading, 'rgba(255,255,255,0.98)', cardinal ? 700 : 600, 10);
+  }
+  // Pitch numerals on the ladder lines between the meridians.
+  for (const h of NUMERAL_HEADINGS) {
+    for (const a of NUMERAL_PITCHES) {
+      for (const p of [a, -a]) label('numeral', numeralText(p), h, p, LABEL_FONT_PX.numeral, p > 0 ? 'rgba(255,255,255,0.97)' : 'rgba(255,238,218,0.95)', 600, 11);
+    }
+  }
+
+  // Texels to radians: the texture spans 2 pi in u over W texels and pi in v over H texels.
+  const radPerTexel = Math.PI / H;
+  const half = (e: { w: number; h: number; halo: number }): [number, number] => [((e.w / 2 + e.halo / 2) * 2 * Math.PI) / W, (e.h / 2 + e.halo / 2) * radPerTexel];
+  const [headingHalfW, headingHalfH] = half(extent.heading);
+  const [numeralHalfW, numeralHalfH] = half(extent.numeral);
+  return { base, labelled, layout: { headingHalfW, headingHalfH, numeralHalfW, numeralHalfH } };
 }
 
 /** Mip chain of a canvas by successive high-quality halving (level 0 = the input). */

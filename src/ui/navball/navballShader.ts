@@ -3,18 +3,30 @@
  * rotated by qVesselToHorizon, then the markers and, last, the fixed vessel reticle as premultiplied icon quads
  * clipped to the ball's visible disc. Output is sRGB-encoded, premultiplied by coverage (alpha = coverage).
  *
+ * The ball is painted from two versions of one texture (navballTexture.ts): `base` without lettering and
+ * `labelled` with its heading labels and pitch numerals. Each pixel finds the label anchor it belongs to (the
+ * labels lie on a fixed grid, NUMERAL_* / HEADING_LABEL_*), works out where that label's farthest corner lies on
+ * the ball, and shows the lettering only while the whole label is clear of the window's edge: a label dims as a
+ * whole as it approaches the bezel's lip (or the limb of the shared texture) and the lines under it come back.
+ * Lines, ticks and the pole marks are paint on the ball: they run crisply under the lip.
+ *
  * Two looks (Ball.params.z):
  *   0  the shared 512 texture ('ui.navball'): soft shading only, no highlight. The cockpit lights this image
  *      itself as the albedo of its instrument ball, so nothing view-dependent is baked in.
  *   1  the HUD instrument: a strongly rounded sphere (wrap-diffuse key light from the upper left with a dark
  *      terminator side, limb darkening, a contact shadow under the bezel's lip), a faint graded window
- *      reflection on its varnish, a faint Fresnel rim and the bank sky pointer. Label ink (the white markings)
- *      is darkened less than the painted background, so numerals on the shaded side keep their contrast, and it
- *      fades into the background toward the lip, where the sphere foreshortens it, and is gone at the lip
- *      itself. Markers fade out as their centre passes under the lip (no icon slivers at the window's edge).
+ *      reflection on its varnish, a faint Fresnel rim and the bank sky pointer. Ink (the white markings) is
+ *      darkened less than the painted background, so numerals on the shaded side keep their contrast. Markers keep
+ *      full strength until their centre reaches the lip and are gone within a degree or two beyond it.
  * Ball.params.w is the lip: the part of the ball's radius that is drawn (1 for the shared texture; the HUD's
  * bezel covers the outer rim).
  */
+import { HEADING_LABEL_PITCH, HEADING_LABEL_STEP, NUMERAL_HEADINGS, NUMERAL_PITCHES } from './navballTexture';
+
+const NUMERAL_STEP = NUMERAL_PITCHES[1] - NUMERAL_PITCHES[0];
+const NUMERAL_COLUMN_STEP = NUMERAL_HEADINGS[1] - NUMERAL_HEADINGS[0];
+const f = (x: number): string => x.toFixed(6);
+
 export const NAVBALL_WGSL = /* wgsl */ `
 struct Ball {
   // Rows of the VES -> horizon rotation matrix.
@@ -23,6 +35,8 @@ struct Ball {
   r2: vec4f,
   // x: ball radius fraction, y: target size in px, z: look (0 shared texture, 1 HUD instrument), w: lip
   params: vec4f,
+  // Label half-extents on the sphere, radians: heading label (east, north), pitch numeral (east, north).
+  labels: vec4f,
 };
 
 struct Marker {
@@ -42,9 +56,19 @@ struct Markers {
 @group(0) @binding(2) var ballSamp: sampler;
 @group(0) @binding(3) var<uniform> markers: Markers;
 @group(0) @binding(4) var atlasTex: texture_2d<f32>;
+@group(0) @binding(5) var labelTex: texture_2d<f32>;
 
 const TAU: f32 = 6.283185307179586;
 const PI: f32 = 3.141592653589793;
+const DEG: f32 = 0.017453292519943295;
+// Label grid of navballTexture.ts (degrees).
+const HEADING_STEP: f32 = ${f(HEADING_LABEL_STEP)};
+const HEADING_PITCH: f32 = ${f(HEADING_LABEL_PITCH)};
+const NUMERAL_COLUMN0: f32 = ${f(NUMERAL_HEADINGS[0])};
+const NUMERAL_COLUMN_STEP: f32 = ${f(NUMERAL_COLUMN_STEP)};
+const NUMERAL_FIRST: f32 = ${f(NUMERAL_PITCHES[0])};
+const NUMERAL_STEP: f32 = ${f(NUMERAL_STEP)};
+const NUMERAL_LAST: f32 = ${f(NUMERAL_PITCHES[NUMERAL_PITCHES.length - 1]!)};
 
 fn toSrgb(c: vec3f) -> vec3f {
   let lo = c * 12.92;
@@ -65,6 +89,51 @@ fn vsBall(@builtin(vertex_index) i: u32) -> VsOut {
   // Normalised ball coordinates: unit disc = ball, +y up.
   o.p = xy / ball.params.x;
   return o;
+}
+
+/** A horizon-frame (ENU) direction in VES: the transpose of the VES -> horizon rotation. */
+fn toVes(d: vec3f) -> vec3f {
+  return d.x * ball.r0.xyz + d.y * ball.r1.xyz + d.z * ball.r2.xyz;
+}
+
+/**
+ * Visibility of the lettering at a pixel showing heading hDeg / pitch pDeg: the label this pixel belongs to
+ * (nearest anchor of the label grid) is shown while its farthest corner lies inside edge - 0.02 of the window and
+ * faded out as a whole over the 0.06 before that, so it is never cut by the lip; a label on the far hemisphere
+ * is off. Every pixel of one label computes the same value.
+ */
+fn labelVisibility(hDeg: f32, pDeg: f32, edge: f32) -> f32 {
+  var ah: f32;
+  var ap: f32;
+  var halfW: f32;
+  var halfH: f32;
+  // The heading labels' band ends midway between their top and the bottom of the first numeral row.
+  let split = 0.5 * (HEADING_PITCH + ball.labels.y / DEG + NUMERAL_FIRST - ball.labels.w / DEG);
+  if (abs(pDeg - HEADING_PITCH) < split - HEADING_PITCH) {
+    ah = round(hDeg / HEADING_STEP) * HEADING_STEP;
+    ap = HEADING_PITCH;
+    halfW = ball.labels.x;
+    halfH = ball.labels.y;
+  } else {
+    ah = NUMERAL_COLUMN0 + round((hDeg - NUMERAL_COLUMN0) / NUMERAL_COLUMN_STEP) * NUMERAL_COLUMN_STEP;
+    let mag = clamp(NUMERAL_FIRST + round((abs(pDeg) - NUMERAL_FIRST) / NUMERAL_STEP) * NUMERAL_STEP, NUMERAL_FIRST, NUMERAL_LAST);
+    ap = sign(pDeg) * mag;
+    halfW = ball.labels.z;
+    halfH = ball.labels.w;
+  }
+  let h = ah * DEG;
+  let p = ap * DEG;
+  let a = toVes(vec3f(cos(p) * sin(h), cos(p) * cos(h), sin(p)));
+  if (a.y <= 0.0) {
+    return 0.0;
+  }
+  // East and north unit tangents at the anchor, in VES; their screen components push the label's corners out.
+  let e = toVes(vec3f(cos(h), -sin(h), 0.0));
+  let n = toVes(vec3f(-sin(p) * sin(h), -sin(p) * cos(h), cos(p)));
+  let ra = length(a.xz);
+  let dir = select(vec2f(1.0, 0.0), a.xz / ra, ra > 1e-5);
+  let reach = ra + halfW * abs(dot(e.xz, dir)) + halfH * abs(dot(n.xz, dir));
+  return 1.0 - smoothstep(edge - 0.08, edge - 0.02, reach);
 }
 
 /**
@@ -119,7 +188,11 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
   let u = select(u1, u2, useSecond);
   let gu = select(g1, g2, useSecond);
   let gv = vec2f(dpdx(v), dpdy(v));
-  let albedo = textureSampleGrad(ballTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x), vec2f(gu.y, gv.y)).rgb;
+  let base = textureSampleGrad(ballTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x), vec2f(gu.y, gv.y)).rgb;
+  let lettered = textureSampleGrad(labelTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x), vec2f(gu.y, gv.y)).rgb;
+  // Lettering per label, never per pixel: both versions are identical away from the labels.
+  let hDeg = fract(lon / TAU) * 360.0;
+  let albedo = mix(base, lettered, labelVisibility(hDeg, pitch / DEG, lip));
 
   let n = vec3f(p.x, p.y, z) / max(1.0, r);
   let L = normalize(vec3f(-0.42, 0.58, 0.7));
@@ -131,14 +204,7 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
     let limb = 1.0 - 0.36 * pow(1.0 - z, 2.2);
     lit = albedo * diffuse * limb;
   } else {
-    // The painted background without its markings: a coarse mip of the same texture (the ink is sparse).
-    let bg = textureSampleGrad(ballTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x) * 12.0, vec2f(gu.y, gv.y) * 12.0).rgb;
     let ink = smoothstep(0.18, 0.55, min(albedo.r, min(albedo.g, albedo.b)));
-    // Markings fade into the paint where the sphere foreshortens them, and are gone before the lip: a numeral
-    // never ends cut in half by the bezel's edge (the outer pitch ring pole-on lies right at the lip).
-    let lipFade = 1.0 - smoothstep(lip - 0.075, lip - 0.012, r);
-    let inkVisible = mix(0.3, 1.0, smoothstep(0.3, 0.52, z)) * lipFade;
-    let paint = mix(bg, albedo, inkVisible);
     // Wrap diffuse with a dark terminator side, limb darkening, contact shadow under the lip.
     let wrap = clamp((ndl + 0.3) / 1.3, 0.0, 1.0);
     let diffuse = 0.3 + 0.86 * wrap * wrap * (3.0 - 2.0 * wrap);
@@ -149,7 +215,7 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
     let shadeInk = 0.5 + 0.5 * shade;
     let fresnel = pow(1.0 - z, 5.0);
     let reflection = windowReflection(p, r, lip);
-    lit = paint * mix(shade, shadeInk, ink * inkVisible) + vec3f(0.62, 0.68, 0.74) * (reflection * 0.17) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
+    lit = albedo * mix(shade, shadeInk, ink) + vec3f(0.62, 0.68, 0.74) * (reflection * 0.17) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
 
     // Bank sky pointer: a white triangle on the rim pointing out at the bezel's roll scale, toward the zenith
     // as projected on the ball (rides with the horizon; fades out with the nose near the vertical, where bank
@@ -194,13 +260,13 @@ fn vsMarker(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) ->
   o.pos = vec4f(bp * ball.params.x, 0.0, 1.0);
   let t = c * 0.5 + 0.5;
   o.uv = vec2f(mix(m.uv.x, m.uv.z, t.x), mix(m.uv.w, m.uv.y, t.y));
-  // Behind a bezel lip (the HUD instrument) a marker whose centre is in the window is drawn at full strength (its
-  // outer edge may pass under the lip, as paint on a real ball does); one whose centre passes under the lip fades
-  // out within a few degrees, so no sliver of a hidden icon is left at the edge of the window. The shared texture
-  // (lip 1) keeps the limb fade of its alpha only.
+  // Behind a bezel lip (the HUD instrument) a marker is paint on the ball: full strength while its centre is in
+  // the window (its outer edge passes under the lip), gone within about two degrees of rotation once the centre
+  // is under it (so no sliver of a hidden icon stays at the edge). The shared texture (lip 1) keeps the limb
+  // fade of its alpha only.
   var lipFade = 1.0;
   if (ball.params.w < 0.999) {
-    lipFade = 1.0 - smoothstep(ball.params.w - 0.05, ball.params.w + 0.02, length(m.pos.xy));
+    lipFade = 1.0 - smoothstep(ball.params.w - 0.003, ball.params.w + 0.012, length(m.pos.xy));
   }
   o.alpha = m.pos.w * lipFade;
   o.bp = bp;
