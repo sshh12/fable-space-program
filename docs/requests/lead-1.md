@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit bc3e291)
 From: lead (data change of requests ocean-5 / ocean-6: eight swell components in data/defs/bodies/earth.json)
 Owner path: src/core/defs/loader.test.ts (shared-code maintainer)
 Blocking: no        (the mission and the ocean's specs do not depend on it; `npx vitest run src/core/defs` is red until it is done)
@@ -24,3 +24,8 @@ Line 27: hold the count to what the consumers accept instead of a fixed number, 
 
 (or `toBe(8)` if a pinned count is preferred). Must NOT change: the unit-length check of every `dir` on the next
 line, anything else in the test, the data itself (lead-owned).
+
+## Resolution
+
+Done as suggested (`bc3e291`): the count is held to `> 0` and `<= 8` (MAX_SWELL of the ocean renderer); the unit-length
+check of every `dir` and the rest of the test are unchanged. `npx vitest run src/core/defs`: 8 of 8.
