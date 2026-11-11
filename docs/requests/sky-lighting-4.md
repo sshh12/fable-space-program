@@ -39,3 +39,14 @@ sky package reads the files exactly as the manifest describes them and its specs
 luminance at Sagittarius, Carina, Crux, Cygnus and Cassiopeia: the windows are 60 px at a 60 deg field, so
 an added nebula changes them by well under their tolerance).
 The sky package needs no code change: it re-shoots `orion-closeup` and `crux-centaurus` when the data lands.
+
+Added 2026-11-11, round 2 (same owner, same bake step): the faint stars that live in the cube look smeared at the
+1440p target towards the corners of a 90 deg frame and in the 24 deg Orion view (artifact critic of round 1:
+radial / tangential lag-1 autocorrelation 0.68 / 0.47 in the top-left corner of
+`out/screens/sky/perf-1440p-leo-horizon-night.png`). A rectilinear frame magnifies the sky radially towards its
+corners (a 1440p pixel there is 0.022 deg radially against the 0.044 deg texel of the baked 2048 level), so a
+star that is one texel of the cube becomes a radially stretched blob whatever reconstruction filter the sky
+uses; only point sources stay round. If the bake can, carry the catalogue (`stars.f32`) to about V 9 (Tycho-2:
+some 230,000 more stars, 9 MB at 40 B per star) and take those stars out of the cube as it already does for the
+catalogue to V 6.5; the sky draws them as point images with the photometric PSF and needs no code change (the
+star count comes from the manifest; the instanced pass costs about 0.004 ms per 10,000 stars).
