@@ -71,6 +71,8 @@ export interface OceanDebug {
   setDebugView(view: keyof typeof OCEAN_DEBUG_VIEWS): void;
   /** Scale the refraction offset (1 = the data). Debug hook for the refraction check. */
   setRefractionScale(scale: number): void;
+  /** Switch the direct specular of brdf_water (sun glint) off to isolate it in tests; true restores it. */
+  setDirectSpecular(on: boolean): void;
   /** Reversed-Z values of 'scene.depthOpaque' (this frame's opaque depth: the seabed inside fadeStart) at render pixels. */
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;
   /** Heights of the displaced surface (what the vertex shader draws, unfiltered) at body-fixed unit directions. */
@@ -119,6 +121,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let chopScale = 1;
   let debugView = 0;
   let refractionScale = 1;
+  let directSpecular = true;
+  let lastFrame: FrameContext | null = null;
   let depthReadLayout: GPUBindGroupLayout;
   let depthReadPipeline: GPUComputePipeline;
   let brdfKey = '';
@@ -164,10 +168,10 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const id = frame?.bodies[i]?.id;
       list.push(id ? (bodies.get(id)?.tunables ?? null) : null);
     }
-    const key = list.map((t) => t?.bodyId ?? '-').join(',');
+    const key = `${list.map((t) => t?.bodyId ?? '-').join(',')}:${directSpecular}`;
     if (key === brdfKey) return;
     brdfKey = key;
-    ctx.shaders.register('brdf_water', buildWaterBrdfWgsl(list));
+    ctx.shaders.register('brdf_water', buildWaterBrdfWgsl(list, { directSpecular }));
   };
 
   const oceanGroup = (fft: OceanFft): GPUBindGroup => {
@@ -205,6 +209,11 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     },
     setRefractionScale(scale) {
       refractionScale = scale;
+    },
+    setDirectSpecular(on) {
+      directSpecular = on;
+      brdfKey = '';
+      registerBrdf(lastFrame);
     },
     async readOpaqueDepth(pixels) {
       const n = Math.max(pixels.length, 1);
@@ -488,6 +497,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     prepare(frame) {
       if (disposed) return;
       coreOfFrame.frameBindGroup = frame.frameBindGroup;
+      lastFrame = frame;
       registerBrdf(frame);
       lastUt = frame.snapshot.ut;
       // The ocean body: the nearest non-star body, when it has an ocean.

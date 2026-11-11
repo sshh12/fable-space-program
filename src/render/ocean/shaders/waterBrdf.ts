@@ -43,7 +43,7 @@ export const whitecapCoverage = (windSpeed: number): number => Math.min(0.2, 3.8
  * WGSL of the chunk with the per-body constants of the frame body list `bodies` (index = frame body index;
  * null = no ocean).
  */
-export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[]): string {
+export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], options: { directSpecular?: boolean } = {}): string {
   const rows: string[] = [];
   for (let i = 0; i < MAX_BODIES; i++) {
     const t = bodies[i] ?? null;
@@ -56,6 +56,8 @@ export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[]): s
 // envProbeCube, envSh9 (set 'env'). See the module comment for the meaning of the Surface fields.
 const WATER_IOR = 1.34;
 const WATER_GGX_KAPPA = ${GGX_KAPPA};
+// 1 = normal; 0 isolates the direct specular for tests (debug hook of the ocean feature).
+const WATER_DIRECT_SPECULAR = ${options.directSpecular === false ? '0.0' : '1.0'};
 // Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, 0, 0, 0).
 const WATER_BODY = array<vec4f, ${MAX_BODIES * 2}>(${rows.join(', ')});
 
@@ -205,7 +207,7 @@ fn brdfWaterDirect(s: Surface, l: vec3f) -> vec3f {
     let NoV = max(dot(s.n, s.v), 1e-4);
     let a = sqrt(sq(waterAlpha(s)) + sq(s.lightAlpha));
     let fr = 0.02 + 0.98 * pow5(1.0 - saturate(dot(l, h)));
-    spec = D_GGX(saturate(dot(s.n, h)), a) * V_SmithGGXCorrelated(NoV, NoL, a) * fr * NoL;
+    spec = D_GGX(saturate(dot(s.n, h)), a) * V_SmithGGXCorrelated(NoV, NoL, a) * fr * NoL * WATER_DIRECT_SPECULAR;
   }
   let body = waterBodyDirect(s, l).total;
   let c = waterFoamCoverage(s);

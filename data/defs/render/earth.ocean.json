@@ -25,7 +25,7 @@
     "foamSigma": 3.0,
     "foamRampSigma": 0.8,
     "foamAlbedo": 0.72,
-    "shoreFoamDepthM": 1.6,
+    "shoreFoamDepthM": 0.8,
     "refractionDistortion": 1.0,
     "chromaticOffset": 0.012,
     "vesselDampingHullRadii": 3,

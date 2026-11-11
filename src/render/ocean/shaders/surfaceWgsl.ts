@@ -234,7 +234,11 @@ struct FsOut {
   // Foam: Jacobian folding (whitecaps), shore (shallow water lapping with the swell), wake around hulls.
   let dynDepth = seaDepth + in.height;
   var shore = 0.0;
-  if (seaDepth < OCEAN_DEEP * 0.5) { shore = (1.0 - smoothstep(0.0, oceanU.shore.x, dynDepth)) * (0.55 + 0.45 * shoreNoise) * detail; }
+  if (seaDepth < OCEAN_DEEP * 0.5) {
+    // Swash: foam where the water running up the shore is shallow, broken into lace, thickest at the waterline.
+    let swash = 1.0 - smoothstep(0.0, oceanU.shore.x, dynDepth);
+    shore = smoothstep(1.0 - swash, 1.0 - swash + 0.25, 0.5 * laceN + 0.5 * shoreNoise) * swash * detail;
+  }
   var wake = 0.0;
   if ((oceanU.counts.w & 1u) != 0u) {
     let wuv = (in.planeF - oceanU.wake.xy) * oceanU.wake.w + 0.5;
@@ -335,37 +339,53 @@ struct FsOut {
 
   // ---- refraction of the real seabed (near field only): replaces the modelled bottom term of the body colour.
   if (detail > 0.0 && !sheet && dOpaque > 0.0) {
+    // March the refracted ray through the depth copy (8 steps, denser near the surface) to the first opaque
+    // surface behind the water: a submerged object or the seabed seen through the waves, no screen-space ghosts.
     let tdir = refract(-s.v, s.n, 1.0 / WATER_IOR);
-    let cosT = max(dot(tdir, -s.up), 0.2);
-    let hc = clamp(column, 0.0, 30.0);
-    let pB = posRel + tdir * (hc / cosT);
-    let pu = projectToUv(pB);
-    let off = (pu.xy - uv) * oceanU.shore.y * detail;
-    var uvR = uv + off;
     let size = frame.renderSize.xy;
-    let pxR = vec2i(clamp(uvR * size, vec2f(0.0), size - 1.0));
-    let dR = textureLoad(sceneDepthOpaqueTex, pxR, 0);
-    var colR = column;
-    if (pu.w > 0.0) { colR = oceanColumnDepth(uvR, dR, dist); }
-    if (pu.w <= 0.0 || colR >= OCEAN_DEEP * 0.5) {
-      uvR = uv;
-      colR = column;
+    let cosT = max(dot(tdir, -s.up), 0.15);
+    let reach = min(max(column, 0.0) / cosT, 40.0) * 1.25 + 0.05;
+    // Path length in the water to what the refracted ray meets (refined between the last two steps).
+    var tHit = min(max(column, 0.0) / cosT, 40.0);
+    var hitUv = uv;
+    var tPrev = 0.0;
+    for (var i = 1u; i <= 8u; i++) {
+      let t = reach * sq(f32(i) / 8.0);
+      let q = posRel + tdir * t;
+      let pu = projectToUv(q);
+      if (pu.w <= 0.0) { break; }
+      let px = vec2i(clamp(pu.xy * size, vec2f(0.0), size - 1.0));
+      let d = textureLoad(sceneDepthOpaqueTex, px, 0);
+      if (d <= 0.0) { break; }
+      if (pu.z <= d) {
+        let behind = length(positionFromDepth(pu.xy, d));
+        if (behind >= dist - 0.05) {
+          // The opaque surface lies between the last two samples; take the point of the ray at its eye distance.
+          let qPrev = posRel + tdir * tPrev;
+          let f = saturate((behind - length(qPrev)) / max(length(q) - length(qPrev), 1e-4));
+          tHit = mix(tPrev, t, f);
+          hitUv = projectToUv(posRel + tdir * tHit).xy;
+        }
+        break;
+      }
+      tPrev = t;
     }
-    if (colR < OCEAN_DEEP * 0.5) {
-      let ch = oceanU.shore.z * saturate(1.0 - colR / 6.0);
-      let seabed = vec3f(
+    let uvR = uv + (hitUv - uv) * (oceanU.shore.y * detail);
+    let dR = textureLoad(sceneDepthOpaqueTex, vec2i(clamp(uvR * size, vec2f(0.0), size - 1.0)), 0);
+    if (dR > 0.0 && length(positionFromDepth(uvR, dR)) >= dist - 0.05) {
+      let hitDepth = tHit * cosT;
+      let ch = oceanU.shore.z * saturate(1.0 - hitDepth / 6.0);
+      let seen = vec3f(
         textureSampleLevel(sceneColorTex, linearClamp, uv + (uvR - uv) * (1.0 - ch), 0.0).r,
         textureSampleLevel(sceneColorTex, linearClamp, uvR, 0.0).g,
         textureSampleLevel(sceneColorTex, linearClamp, uv + (uvR - uv) * (1.0 + ch), 0.0).b) / max(frame.exposure.x, 1e-30);
-      let pS = positionFromDepth(uvR, dR);
-      let pathV = max(distance(posRel, pS), 1e-3);
       var so = s;
-      so.param = encodeWaterDepth(max(colR, 0.0));
+      so.param = encodeWaterDepth(hitDepth);
       let o = waterOptics(so);
       let NoV = max(dot(s.n, s.v), 1e-4);
       let tr = (1.0 - waterFresnel(max(muS, 0.0))) * (1.0 - waterFresnel(NoV)) / 0.9604;
-      let att = waterRrsOf(o, vec3f(0.0), waterRefractedCos(max(muS, 0.05)), clamp(max(colR, 0.0) / pathV, 0.05, 1.0)).bottomAttenuation * tr;
-      lit += (seabed * att - bottomFar) * (detail * (1.0 - waterFoamCoverage(s)));
+      let att = waterRrsOf(o, vec3f(0.0), waterRefractedCos(max(muS, 0.05)), cosT).bottomAttenuation * tr;
+      lit += (seen * att - bottomFar) * (detail * (1.0 - waterFoamCoverage(s)));
     }
   }
 
