@@ -59,7 +59,7 @@ export interface JetShape {
   coreLength: number;
   shearLength: number;
   afterLength: number;
-  /** Extent of everything brighter than 0.05 % of the exit column brightness: along the axis and radially, m. */
+  /** Extent of everything brighter than the visible fraction of the exit column brightness: along the axis and radially, m. */
   visibleLength: number;
   visibleRadius: number;
 }
@@ -95,6 +95,9 @@ export function jetBoundaryRadius(shape: JetShape, exitRadius: number, x: number
   return inviscid + shape.mixSlope * (xc - shape.mixDev * (1 - Math.exp(-xc / shape.mixDev)));
 }
 
+/** Default cut-off of the visible extent: fraction of the exit column brightness. */
+export const DEFAULT_VISIBLE_FRACTION = 5e-4;
+
 /** Slope of the cone that holds the bulk of the gas of a widely expanding jet (the rest is a thin halo out to the boundary). */
 export const BULK_SLOPE = 0.8;
 
@@ -115,9 +118,12 @@ function columnBrightness(shape: JetShape, re: number, x: number, exponent: numb
 /**
  * Shape of one jet. `throttle` (0..1) scales chamber and exit pressure; `ambientPressure` in Pa (0 in
  * vacuum). `lengthRadius` is the radius the emission lengths scale with (a merged cluster jet: the radius
- * of one nozzle times sqrt(nozzle count); default: the exit radius).
+ * of one nozzle times sqrt(nozzle count); default: the exit radius). `visibleFraction` is the fraction of
+ * the exit column brightness below which the jet counts as invisible (the renderer derives it from the
+ * exposure, so that a faint vacuum plume is not cut off in a dark-adapted frame).
  */
-export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: number, ambientPressure: number, lengthRadius = nozzle.exitRadius): JetShape {
+export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: number, ambientPressure: number, options: { lengthRadius?: number; visibleFraction?: number } = {}): JetShape {
+  const lengthRadius = options.lengthRadius ?? nozzle.exitRadius;
   const g = look.gamma;
   const re = nozzle.exitRadius;
   const thr = Math.min(1, Math.max(throttle, 0.02));
@@ -125,7 +131,7 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   const eta = Math.min(1e6, (nozzle.exitPressure * thr) / pa);
   const exitMach = Math.max(1.05, machFromPressureRatio(nozzle.chamberPressure / nozzle.exitPressure, g));
   const jetMach = Math.max(1.05, machFromPressureRatio((nozzle.chamberPressure * thr) / pa, g));
-  const theta = Math.min(THETA_MAX, Math.max(THETA_MIN, prandtlMeyer(jetMach, g) - prandtlMeyer(exitMach, g) + look.nozzleHalfAngleDeg * DEG));
+  const theta = Math.min(Math.min(THETA_MAX, look.maxExpansionDeg * DEG), Math.max(THETA_MIN, prandtlMeyer(jetMach, g) - prandtlMeyer(exitMach, g) + look.nozzleHalfAngleDeg * DEG));
   const tanTheta = Math.tan(theta);
   let lExp: number;
   if (theta < -0.5 * DEG) {
@@ -170,7 +176,7 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
 
   // Visible extent. Core: where the side-on column brightness has fallen to EPS of its exit value;
   // afterburning terms: three e-folding lengths while there is air to burn with.
-  const EPS = 5e-4;
+  const EPS = Math.min(5e-3, Math.max(1e-7, options.visibleFraction ?? DEFAULT_VISIBLE_FRACTION));
   const exponent = look.core.densityExponent;
   let lo = 0;
   let hi = 8 * coreLength;

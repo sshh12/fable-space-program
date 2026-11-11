@@ -115,6 +115,8 @@ export class LabSim implements Sim {
   radarAltitude: number | null = null;
   /** Throttle lever shown in the readouts. */
   throttle = 0;
+  /** Downward acceleration applied to every vessel's velocity, m/s^2 (vessels of a ballistic scene fall freely). */
+  freeFall = 0;
   private readonly fake: Sim;
   private pending: SimEvent[] = [];
 
@@ -153,6 +155,7 @@ export class LabSim implements Sim {
     this.fake.advance(dt);
     this.time += dt;
     for (const v of this.vessels) {
+      if (this.freeFall > 0) v.velEnu = { x: v.velEnu.x, y: v.velEnu.y, z: v.velEnu.z - this.freeFall * dt };
       v.enu = v3.addScaled(v.enu, v.velEnu, dt);
       v.age += dt;
       if (v3.lenSq(v.w) > 0) v.qVesToEnu = quat.normalize(quat.mul(v.qVesToEnu, quat.fromRotVec(v3.scale(v.w, dt))));
@@ -169,6 +172,18 @@ export class LabSim implements Sim {
   /** Queue an event for the next snapshot. */
   emit(event: SimEvent): void {
     this.pending.push(event);
+  }
+  /** ROOT-frame position of a site-frame point, now. */
+  enuToRoot(enu: Vec3): Vec3 {
+    const f = this.siteFrame(this.fake.peek());
+    return v3.add(f.origin, v3.add(v3.add(v3.scale(f.east, enu.x), v3.scale(f.north, enu.y)), v3.scale(f.up, enu.z)));
+  }
+  /** Patch one module state of a part of a vessel (as setModuleStateForLab does on a part list). */
+  setModule(vessel: LabVessel, instanceId: string, moduleIndex: number, patch: Record<string, unknown>): void {
+    const part = vessel.parts.find((p) => p.instanceId === instanceId);
+    const module = part?.modules[moduleIndex];
+    if (!module) throw new Error(`LabSim: no module ${moduleIndex} on part "${instanceId}"`);
+    Object.assign(module, patch);
   }
   get ut(): number {
     return this.fake.peek().ut;

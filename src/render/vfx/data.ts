@@ -20,6 +20,8 @@ export interface PlumeLookDef {
   gamma: number;
   /** Wall angle of the nozzle at its exit, deg (added to the Prandtl-Meyer turn at the lip). */
   nozzleHalfAngleDeg: number;
+  /** Largest expansion half-angle of the luminous jet, deg (85 for gas; less where particles carry the light). */
+  maxExpansionDeg: number;
   core: {
     color: Vec3Tuple;
     /** Luminance of the jet seen side-on through the exit diameter at full throttle, cd/m^2. */
@@ -194,6 +196,7 @@ type Schema = string | { [key: string]: Schema };
 const LOOK: Schema = {
   gamma: 'p',
   nozzleHalfAngleDeg: 'n',
+  maxExpansionDeg: 'p',
   core: { color: 'c', luminance: 'n', lengthRe: 'p', vacuumLengthRe: 'p', radius: 'p', densityExponent: 'p' },
   diamonds: { color: 'c', gain: 'n', cells: 'p' },
   shear: { color: 'c', luminance: 'n', lengthRe: 'p' },

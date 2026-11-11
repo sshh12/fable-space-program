@@ -4,6 +4,7 @@
     "plume.methalox-booster": {
       "gamma": 1.2,
       "nozzleHalfAngleDeg": 3,
+      "maxExpansionDeg": 85,
       "core": { "color": [0.66, 0.62, 1.0], "luminance": 230000, "lengthRe": 46, "radius": 0.5, "densityExponent": 1.0, "vacuumLengthRe": 11 },
       "diamonds": { "color": [1.0, 0.86, 0.9], "gain": 4.0, "cells": 6.5 },
       "shear": { "color": [1.0, 0.4, 0.1], "luminance": 60000, "lengthRe": 60 },
@@ -19,6 +20,7 @@
     "plume.hydrolox-vacuum": {
       "gamma": 1.26,
       "nozzleHalfAngleDeg": 4,
+      "maxExpansionDeg": 85,
       "core": { "color": [0.62, 0.78, 1.0], "luminance": 60000, "lengthRe": 30, "radius": 0.55, "densityExponent": 1.0, "vacuumLengthRe": 7 },
       "diamonds": { "color": [0.95, 0.97, 1.0], "gain": 2.4, "cells": 5.5 },
       "shear": { "color": [1.0, 0.78, 0.66], "luminance": 14000, "lengthRe": 60 },
@@ -34,6 +36,7 @@
     "plume.methalox-lander": {
       "gamma": 1.22,
       "nozzleHalfAngleDeg": 4,
+      "maxExpansionDeg": 85,
       "core": { "color": [0.6, 0.66, 1.0], "luminance": 26000, "lengthRe": 26, "radius": 0.5, "densityExponent": 1.0, "vacuumLengthRe": 5 },
       "diamonds": { "color": [1.0, 0.9, 0.92], "gain": 2.6, "cells": 5.5 },
       "shear": { "color": [1.0, 0.5, 0.2], "luminance": 30000, "lengthRe": 70 },
@@ -49,7 +52,8 @@
     "plume.solid": {
       "gamma": 1.18,
       "nozzleHalfAngleDeg": 12,
-      "core": { "color": [1.0, 0.86, 0.62], "luminance": 1500000, "lengthRe": 36, "radius": 0.8, "densityExponent": 0.8, "vacuumLengthRe": 26 },
+      "maxExpansionDeg": 30,
+      "core": { "color": [1.0, 0.86, 0.62], "luminance": 1500000, "lengthRe": 36, "radius": 0.7, "densityExponent": 1.0, "vacuumLengthRe": 30 },
       "diamonds": { "color": [1.0, 0.95, 0.85], "gain": 0.8, "cells": 4 },
       "shear": { "color": [1.0, 0.7, 0.35], "luminance": 500000, "lengthRe": 70 },
       "afterburn": { "color": [1.0, 0.62, 0.28], "luminance": 220000, "lengthRe": 110 },
@@ -64,6 +68,7 @@
     "plume.rcs": {
       "gamma": 1.25,
       "nozzleHalfAngleDeg": 12,
+      "maxExpansionDeg": 55,
       "core": { "color": [1.0, 0.88, 0.76], "luminance": 42000, "lengthRe": 22, "radius": 0.7, "densityExponent": 1.0, "vacuumLengthRe": 9 },
       "diamonds": { "color": [1.0, 0.95, 0.9], "gain": 1.5, "cells": 4 },
       "shear": { "color": [1.0, 0.6, 0.3], "luminance": 15000, "lengthRe": 30 },
@@ -145,13 +150,13 @@
     "maxSpawnPerFrame": 16384,
     "dust": {
       "maxHeightRe": 45,
-      "rate": 52000,
-      "speed": [35, 900],
-      "elevationDeg": [0.6, 7],
-      "life": [0.35, 1.6],
-      "size": [0.05, 0.22],
-      "albedo": [0.5, 0.48, 0.45],
-      "opacity": 0.16
+      "rate": 70000,
+      "speed": [30, 800],
+      "elevationDeg": [0.4, 6],
+      "life": [0.3, 1.3],
+      "size": [0.02, 0.07],
+      "albedo": [0.62, 0.6, 0.57],
+      "opacity": 0.3
     },
     "ice": { "liftoffCount": 2600, "stagingCount": 900, "sheddingRate": 420, "sheddingTime": 9, "size": [0.02, 0.09], "life": [3, 9], "speed": [0.3, 3.5], "albedo": [0.92, 0.95, 1.0] },
     "gas": { "count": 1400, "speed": [25, 240], "size": [0.3, 1.1], "life": [0.35, 1.1], "color": [0.86, 0.88, 0.92], "opacity": 0.2 },

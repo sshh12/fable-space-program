@@ -157,6 +157,10 @@ fn jetAdd(a: JetOut, b: JetOut, w: f32) -> JetOut {
 /// one merged jet downstream of the merge distance.
 fn plumeField(inst: PlumeInstance, p: vec3f, n: vec4f, n2: vec4f) -> JetOut {
   var o = jetZero();
+  // Everything fades to nothing at the bounding cone and at the far end of the box (no visible cut).
+  let bound = inst.extra.x + inst.extra.y * max(p.x, 0.0);
+  let window = (1.0 - smoothstep(0.72, 1.0, length(p.yz) / bound)) * (1.0 - smoothstep(0.8, 1.0, p.x / inst.origin.w));
+  if (window <= 0.0) { return o; }
   let xm = inst.merged0.x;
   let w = smoothstep(xm, 2.0 * xm, p.x);
   if (w < 0.999) {
@@ -175,6 +179,9 @@ fn plumeField(inst: PlumeInstance, p: vec3f, n: vec4f, n2: vec4f) -> JetOut {
     let lens = vec4f(inst.merged2.y, inst.merged2.z, 1e9, 0.0);
     o = jetAdd(o, jetSample(inst, vec3f(0.0), vec3f(1.0, 0.0, 0.0), inst.merged0.y, inst.merged1, cells, lens, inst.merged0.w * inst.merged0.z / (2.0 * inst.light.w), p, n, n2), w);
   }
+  o.e *= window;
+  o.s *= window;
+  o.sc *= window;
   return o;
 }
 `;

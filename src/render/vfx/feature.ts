@@ -6,10 +6,13 @@
  * canopies), preTransparent (half-resolution volumes), drawTransparent (composite, foam, lines, particles).
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
-import { quat, v3, type Vec3 } from '@/core/math';
+import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
 import { G, PROBE_FOCUS, VfxCommon } from './common';
 import { loadVfxData, type VfxData } from './data';
+import { EffectDirector } from './director';
+import { EffectDomain, type DomainFrame } from './domain';
+import { ParticleSystem } from './particles';
 import { plumeLightIntensity } from './plumeModel';
 import { PlumeRenderer, type PlacedCluster, type PlumeSlice } from './plumes';
 import { VolumePass, type VolumeItem } from './volumes';
@@ -47,13 +50,24 @@ export interface VfxDebug {
   lights(): LocalLight[];
   /** Density slice of a drawn cluster (see PlumeRenderer.slice). */
   plumeSlice(instance: number, nozzle: number, x0: number, x1: number, rMax: number, width?: number, height?: number): Promise<PlumeSlice>;
+  /** The whole particle pool (PARTICLE_FLOATS floats per particle). */
+  readParticles(): Promise<Float32Array>;
   /** Counters of the last frame. */
   stats(): Record<string, number>;
+  /** Kind of the effect domain ('surface' | 'space'), null before the first frame. */
+  domainKind(): string | null;
 }
 
 export interface VfxFeature extends RenderFeature {
   readonly debug: VfxDebug;
 }
+
+interface LightCandidate {
+  light: LocalLight;
+  power: number;
+}
+
+const lum = (c: Vec3Tuple): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
 /**
  * The vfx feature. `ctx` is optional: the feature receives its RenderContext in `init` (pass
@@ -65,12 +79,17 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let common: VfxCommon;
   let plumes: PlumeRenderer;
   let volumes: VolumePass;
+  let particles: ParticleSystem;
+  let director: EffectDirector;
+  const domain = new EffectDomain();
 
   let effectTime = 0;
   let noiseTime = 0;
   let lastFrame: FrameContext | null = null;
+  let lastRenderSize = '';
   let placed: PlacedCluster[] = [];
   let myLights: LocalLight[] = [];
+  let dom: DomainFrame | null = null;
   const stats: Record<string, number> = {};
 
   const placeCluster = (frame: FrameContext, cluster: PlumeCluster): PlacedCluster | null => {
@@ -94,14 +113,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     };
   };
 
-  const registerLights = (frame: FrameContext): void => {
-    myLights = [];
+  const plumeLights = (candidates: LightCandidate[]): void => {
     const L = data.lights;
-    const candidates: { light: LocalLight; power: number }[] = [];
     for (const pc of placed) {
       const c = pc.cluster;
       const intensity = plumeLightIntensity(c.look, c.thrust);
-      const power = 0.2126 * intensity[0] + 0.7152 * intensity[1] + 0.0722 * intensity[2];
+      const power = lum(intensity);
       if (power < L.minIntensity) continue;
       let reMax = 0;
       let core = 0;
@@ -121,12 +138,6 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         },
       });
     }
-    candidates.sort((a, b) => b.power - a.power);
-    for (const c of candidates.slice(0, L.maxLights)) {
-      if (frame.lights.length >= 16) break;
-      frame.lights.push(c.light);
-      myLights.push(c.light);
-    }
   };
 
   const feature: VfxFeature = {
@@ -139,6 +150,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       common = new VfxCommon(c, { skipAtmosphere: options.debugSkipAtmosphere === true });
       plumes = new PlumeRenderer(c, common);
       volumes = new VolumePass(c, common);
+      particles = new ParticleSystem(c, common, data.particles.pool, data.particles.maxSpawnPerFrame);
+      director = new EffectDirector(c.defs, data);
     },
 
     prepare(frame) {
@@ -147,6 +160,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       const simDt = Math.min(0.1, Math.max(0, snap.ut - frame.prevSnapshot.ut));
       effectTime += simDt;
       if (frame.animate) noiseTime += simDt;
+      const candidates: LightCandidate[] = [];
 
       // ---- plume clusters of every vessel with something burning
       placed = [];
@@ -162,16 +176,96 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           if (burning) break;
         }
         if (!burning) continue;
-        for (const cluster of gatherPlumeClusters(ctx.defs, data, vessel)) {
+        for (const cluster of gatherPlumeClusters(ctx.defs, data, vessel, frame.exposure)) {
           const pc = placeCluster(frame, cluster);
           if (pc) placed.push(pc);
         }
       }
       plumes.update(placed, noiseTime);
-      registerLights(frame);
+      plumeLights(candidates);
+
+      // ---- effect domain, director, particles
+      const g = common.globals;
+      const focus = snap.vessels.find((v) => v.id === snap.activeVesselId) ?? snap.vessels[0];
+      const renderSize = frame.renderSize.join('x');
+      const depthUsable = frame.frameIndex > 0 && renderSize === lastRenderSize;
+      lastRenderSize = renderSize;
+      if (focus) {
+        dom = domain.update(ctx.defs, snap, focus, simDt);
+        if (dom.reset) {
+          particles.clear();
+          director.reset();
+        } else if (dom.rebase) {
+          const rb = dom.rebase;
+          director.rebase((p) => ({
+            x: rb.A[0] * p.x + rb.A[1] * p.y + rb.A[2] * p.z + rb.a.x,
+            y: rb.A[3] * p.x + rb.A[4] * p.y + rb.A[5] * p.z + rb.a.y,
+            z: rb.A[6] * p.x + rb.A[7] * p.y + rb.A[8] * p.z + rb.a.z,
+          }));
+        }
+        const d = dom;
+        const out = director.update(frame, d, placed, effectTime, simDt);
+        for (const e of out.emitters) particles.emit(e);
+        particles.prepare(frame, effectTime, d.rebase, depthUsable);
+
+        const originRel = v3.sub(d.originRoot, frame.camera.positionRoot);
+        const ax = quat.rotate(d.q, v3.unitX());
+        const ay = quat.rotate(d.q, v3.unitY());
+        const az = quat.rotate(d.q, v3.unitZ());
+        const bodyDef = ctx.defs.bodies[d.state.bodyId]!;
+        const surface = d.state.kind === 'surface';
+        // Air at the origin from the air at the focus vessel (isothermal layer between the two).
+        let density = 0;
+        let scaleHeight = 7000;
+        if (surface && bodyDef.atmosphere && focus.aero.airDensity > 0) {
+          scaleHeight = (bodyDef.atmosphere.gasConstant * Math.max(focus.aero.temperature, 50)) / Math.max(d.gravity, 0.1);
+          const hv = v3.len(focus.r) - bodyDef.radius;
+          density = focus.aero.airDensity * Math.exp(Math.min(20, Math.max(-20, (hv - d.altitude) / scaleHeight)));
+        }
+        g.set([originRel.x, originRel.y, originRel.z, density], G.domOrigin);
+        g.set([ax.x, ax.y, ax.z, d.gravity], G.domX);
+        g.set([ay.x, ay.y, ay.z, scaleHeight], G.domY);
+        g.set([az.x, az.y, az.z, surface ? 1 : 0], G.domZ);
+        g.set([d.up.x, d.up.y, d.up.z, out.ground ?? -1e30], G.domUp);
+        let prevOrigin: Vec3;
+        let pq = d.q;
+        if (surface) {
+          const pose = frame.bodyPose(d.state.bodyId);
+          prevOrigin = v3.add(pose.prevCenterRelCam, quat.rotate(pose.prevQFixedToRoot, d.state.origin));
+          pq = pose.prevQFixedToRoot;
+        } else {
+          prevOrigin = v3.sub(v3.addScaled(d.originRoot, d.velocityRoot, -simDt), frame.prevCamera.positionRoot);
+        }
+        const px = quat.rotate(pq, v3.unitX());
+        const py = quat.rotate(pq, v3.unitY());
+        const pz = quat.rotate(pq, v3.unitZ());
+        g.set([prevOrigin.x, prevOrigin.y, prevOrigin.z, out.water ?? -1e30], G.domPrevOrigin);
+        g.set([px.x, px.y, px.z, 0], G.domPrevX);
+        g.set([py.x, py.y, py.z, 0], G.domPrevY);
+        g.set([pz.x, pz.y, pz.z, 0], G.domPrevZ);
+        const sunDom = quat.rotateInv(d.q, frame.sun.dirRoot);
+        g.set([sunDom.x, sunDom.y, sunDom.z, 0], G.sunDom);
+        g.set([0, 0, 0, 0], G.windDom);
+
+        // Flashes (pyrotechnics, explosions) as point lights.
+        for (const f of director.flashes) {
+          const k = Math.exp(-(effectTime - f.start) / f.time);
+          const intensity: Vec3Tuple = [f.color[0] * f.intensity * k, f.color[1] * f.intensity * k, f.color[2] * f.intensity * k];
+          candidates.push({ power: lum(intensity), light: { kind: 'point', posRelCam: v3.add(originRel, quat.rotate(d.q, f.pos)), intensity, range: f.range } });
+        }
+        stats.ground = out.ground ?? NaN;
+      }
+
+      // ---- lights: the strongest first, never more than the frame can hold
+      myLights = [];
+      candidates.sort((a, b) => b.power - a.power);
+      for (const c of candidates.slice(0, data.lights.maxLights)) {
+        if (frame.lights.length >= 16 || c.power < data.lights.minIntensity) break;
+        frame.lights.push(c.light);
+        myLights.push(c.light);
+      }
 
       // ---- globals
-      const g = common.globals;
       g[G.time] = effectTime;
       g[G.time + 1] = simDt;
       g[G.time + 2] = noiseTime;
@@ -181,17 +275,23 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       g[G.half + 1] = hh;
       g[G.half + 2] = 1 / hw;
       g[G.half + 3] = 1 / hh;
+      g[G.misc] = frame.frameIndex & 1;
+      g[G.misc + 1] = depthUsable ? 1 : 0;
       const active = frame.vesselPose(snap.activeVesselId);
       common.setProbe(PROBE_FOCUS, active ? active.originRelCam : v3.zero());
       common.upload();
 
       stats.plumeInstances = plumes.instanceCount;
       stats.lights = myLights.length;
+      stats.particles = particles.alive;
+      stats.spawned = particles.spawnedTotal;
       ctx.perf.counter('vfx.plumes', plumes.instanceCount);
+      ctx.perf.counter('vfx.particles', particles.alive);
     },
 
     compute(frame, encoder) {
       common.runProbes(frame, encoder);
+      particles.compute(frame, encoder);
     },
 
     preTransparent(frame, encoder) {
@@ -206,6 +306,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
 
     drawTransparent(_frame, pass) {
       volumes.draw(pass);
+      particles.draw(pass);
     },
 
     isIdle: () => true,
@@ -213,6 +314,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     dispose() {
       plumes.dispose();
       volumes.dispose();
+      particles.dispose();
       common.dispose();
     },
 
@@ -244,7 +346,9 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         if (!lastFrame) throw new Error('vfx: nothing has been rendered yet');
         return plumes.slice(lastFrame.frameBindGroup, instance, nozzle, x0, x1, rMax, width, height);
       },
+      readParticles: () => particles.read(),
       stats: () => ({ ...stats }),
+      domainKind: () => dom?.state.kind ?? null,
     },
   };
   return feature;

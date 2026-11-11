@@ -8,7 +8,7 @@ import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { quat, v3, type Vec3 } from '@/core/math';
 import type { PlumeLookDef, VfxData } from './data';
-import { engineEmissionState, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
+import { DEFAULT_VISIBLE_FRACTION, engineEmissionState, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
 
 /** Jets marched per cluster volume (larger groups are split). */
 export const MAX_CLUSTER_NOZZLES = 12;
@@ -74,7 +74,7 @@ function gimbal(v: Vec3, gx: number, gz: number): Vec3 {
   return { x: v.x - gz * v.y, y: v.y - gx * v.z + gz * v.x, z: v.z + gx * v.y };
 }
 
-function finishCluster(c: PlumeCluster, geometry: NozzleGeometry): void {
+function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFraction: number): void {
   const n = c.nozzles.length;
   let centre = v3.zero();
   let axis = v3.zero();
@@ -128,7 +128,7 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry): void {
     c.mergeDistance = Math.max(2 * reMax, xm);
     const exitRadius = ringRadius + reMax;
     const throttle = c.nozzles.reduce((s, nz) => s + Math.max(nz.throttle, 0.12 * nz.residual), 0) / n;
-    const shape = jetShape(c.look, { ...geometry, exitRadius }, throttle, c.ambientPressure, reMax * Math.sqrt(n));
+    const shape = jetShape(c.look, { ...geometry, exitRadius }, throttle, c.ambientPressure, { lengthRadius: reMax * Math.sqrt(n), visibleFraction });
     // The merged jet carries what the n jets carry: n re^2 = scale x R^2.
     c.merged = { shape, exitRadius, scale: (n * reMax * reMax) / (exitRadius * exitRadius) };
     length = Math.max(length, shape.visibleLength);
@@ -169,7 +169,9 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry): void {
 }
 
 /** All exhaust jets of one vessel: engine clusters first, then firing RCS thrusters. */
-export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: VesselSnapshot): PlumeCluster[] {
+export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: VesselSnapshot, exposure = 0): PlumeCluster[] {
+  // What is visible depends on the exposure: 0.002 in the pre-exposed image is the cut-off.
+  const fractionOf = (look: PlumeLookDef): number => (exposure > 0 ? 0.002 / (exposure * Math.max(look.core.luminance, 1)) : DEFAULT_VISIBLE_FRACTION);
   const out: PlumeCluster[] = [];
   const open = new Map<string, { cluster: PlumeCluster; geometry: NozzleGeometry; chunk: number }>();
   const rcs: { cluster: PlumeCluster; geometry: NozzleGeometry; level: number }[] = [];
@@ -193,7 +195,7 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
           let entry = open.get(groupKey);
           if (!entry || entry.cluster.nozzles.length >= MAX_CLUSTER_NOZZLES) {
             const chunk = entry ? entry.chunk + 1 : 0;
-            if (entry) finishCluster(entry.cluster, entry.geometry);
+            if (entry) finishCluster(entry.cluster, entry.geometry, fractionOf(look));
             const cluster: PlumeCluster = {
               key: `${vessel.id}|${groupKey}|${chunk}`,
               kind: 'engine',
@@ -224,7 +226,7 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
             posVes: partToVes(part, gimbal(v3.fromTuple(nd.pos), g[0], g[1])),
             dirVes: v3.normalize(quat.rotate(part.localRot, gimbal(v3.fromTuple(nd.dir), g[0], g[1]))),
             exitRadius: geometry.exitRadius,
-            shape: jetShape(look, geometry, drawThrottle, state.ambientPressure),
+            shape: jetShape(look, geometry, drawThrottle, state.ambientPressure, { visibleFraction: fractionOf(look) }),
             throttle: es.throttle,
             front: es.front,
             flash: es.flash,
@@ -256,7 +258,7 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
                 posVes: partToVes(part, v3.fromTuple(td.pos)),
                 dirVes: v3.normalize(quat.rotate(part.localRot, v3.fromTuple(td.dir))),
                 exitRadius: geometry.exitRadius,
-                shape: jetShape(rcsLook, geometry, level, vessel.aero.pressure),
+                shape: jetShape(rcsLook, geometry, level, vessel.aero.pressure, { visibleFraction: fractionOf(rcsLook) }),
                 throttle: level,
                 front: 1e9,
                 flash: 0,
@@ -283,10 +285,10 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
       }
     }
   }
-  for (const entry of open.values()) finishCluster(entry.cluster, entry.geometry);
+  for (const entry of open.values()) finishCluster(entry.cluster, entry.geometry, fractionOf(entry.cluster.look));
   rcs.sort((a, b) => b.level - a.level);
   for (const r of rcs.slice(0, MAX_RCS_PER_VESSEL)) {
-    finishCluster(r.cluster, r.geometry);
+    finishCluster(r.cluster, r.geometry, fractionOf(rcsLook));
     out.push(r.cluster);
   }
   return out;
