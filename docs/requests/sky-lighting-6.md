@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 81a26d0)
 From: sky-lighting
 Owner path: tools/bake/moon (`albedo.py`: colour of the Moon's albedo tiles and of `globals/albedo-lowres.png`), data/defs/bodies/moon.json (`render.meanColor`)
 Blocking: no
@@ -34,3 +34,22 @@ Earth-Moon system's inner part, where the far image is used), about (0.133, 0.12
 Must not change: the albedo's luminance and normalisation (30 deg incidence, the Hapke inversion depends on
 it), tile layout and formats. The sky package needs no change: it re-runs `impostor.spec.ts` and re-shoots
 `pbr-spheres-lunar-surface` when the data lands.
+
+## Resolution
+
+Done (`81a26d0`), both parts; **lead-owned data changed** (`data/defs/bodies/moon.json`, recorded in
+`docs/handoff/core-support.md`):
+1. `tools/bake/moon/colour.py` (a step after `albedo.py`; it records itself as `layers.albedo.colour` in the
+   manifest, so it runs once per bake): every texel keeps its luminance; its chroma (colour / luminance) is
+   scaled about the map's area-weighted mean chroma (1.045, 0.991, 0.958) by k = 0.202, the largest factor for
+   which the bluest surface (0.1 percentile bound) still has red >= green >= blue; the rest is clamped. Applied
+   to all 131,070 albedo tiles (levels 0-7, WebP q95) and `globals/albedo-lowres.png`; the manifest's
+   contentHash changed (597c5d666b132450), so tile URLs are fresh. Linear colour now: landing site (0.0648,
+   0.0630, 0.0630) (was 0.0595, 0.0630, 0.0704), Imbrium (0.0764, 0.0708, 0.0679), highland 12 S 5 E (0.1336,
+   0.1255, 0.1205), Tycho (0.2445, 0.2363, 0.2333); no texel out of order by more than 1/255; global mean
+   (0.149, 0.1413, 0.1365): luminance unchanged.
+2. `render.meanColor` of the Moon = the near-side mean of the corrected map, (0.1332, 0.1263, 0.1221) (was
+   (0.12, 0.115, 0.105)): the far image is no longer 14 % dimmer than the geometry it turns into. Planetshine
+   takes only the hue from it (its level is the geometric albedo, unchanged).
+Re-run `impostor.spec.ts` ("crescent Moon") and re-shoot `pbr-spheres-lunar-surface`. The terrain package may
+raise its `imagerySaturation` of the Moon again (NOTICE-core-3).
