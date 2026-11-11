@@ -64,9 +64,11 @@ export const SUNLIT_HIGHLIGHT_MAX_EV = 0.5;
 export const SUNLIT_VISIBILITY_MIN = 0.05;
 export const SUNLIT_VISIBILITY_FULL = 0.3;
 /**
- * Interior metering (request cockpit-5). A dim cabin is displayed dim: the target is this many EV darker
- * than the log-average alone asks for when the near log-mean is at or below INTERIOR_NIGHT_LOW cd/m^2,
- * not at all from INTERIOR_NIGHT_HIGH up (floods and displays against daylight through the windows).
+ * Interior metering (requests cockpit-5 and -6). A dim cabin IN THE DARK is displayed dim: the target is
+ * this many EV darker than the log-average alone asks for when the near log-mean is at or below
+ * INTERIOR_NIGHT_LOW cd/m^2, not at all from INTERIOR_NIGHT_HIGH up, and in proportion to the part of the
+ * solar disc that is hidden at the camera (the Earth's shadow, the pad at night). A cabin that is as dim
+ * by day, behind small windows, keeps the plain log-average: the level alone cannot tell the two apart.
  */
 export const INTERIOR_NIGHT_KEY_EV = 1.5;
 export const INTERIOR_NIGHT_LOW = 4;
@@ -74,10 +76,10 @@ export const INTERIOR_NIGHT_HIGH = 64;
 /**
  * The 99th percentile of the cabin is kept below this multiple of mid-grey (exterior: HIGHLIGHT_CAP), but
  * the highlights may stop the camera down by at most INTERIOR_HIGHLIGHT_MAX_EV: the cabin stays readable,
- * two to three stops under mid-grey, when the sun falls into it.
+ * a stop to two under mid-grey, when the sun falls into it.
  */
 export const INTERIOR_HIGHLIGHT_CAP = 48;
-export const INTERIOR_HIGHLIGHT_MAX_EV = 1.75;
+export const INTERIOR_HIGHLIGHT_MAX_EV = 1.25;
 /** Adaptation speed, EV per second: fast when the scene gets brighter, slower when it gets darker. */
 export const ADAPT_UP = 2.5;
 export const ADAPT_DOWN = 0.8;
@@ -196,7 +198,7 @@ const smooth = (a: number, b: number, x: number): number => {
  * LOG-AVERAGE over everything above the luminance floor: a sun patch that comes through a window is several
  * hundred times brighter than the cabin it falls into, and an arithmetic mean would expose for the patch
  * and leave the cabin black (docs/requests/cockpit-3.md). On top of the log-average (docs/requests/
- * cockpit-5.md): a dim cabin gets a darker key (night is displayed as night), and the cabin's highlights
+ * cockpit-5.md, cockpit-6.md): a dim cabin out of the sun gets a darker key (night is displayed as night), and the cabin's highlights
  * count with a cap twelve times looser than outside and a bound on how far they may stop the camera down,
  * so that the cabin is exposed between its shade and its sun patch, as a photograph taken inside is. The
  * windows are farther than the range and blow out.
@@ -251,7 +253,8 @@ export function meterExposure(m: MeterInput): MeterResult {
     const evMean = ev100ForMidGrey(interior ? stats.logMean : stats.mean);
     evHistogram = evMean - exposureCompensationCurve(evMean);
     if (interior) {
-      const keyEv = INTERIOR_NIGHT_KEY_EV * (1 - smooth(Math.log2(INTERIOR_NIGHT_LOW), Math.log2(INTERIOR_NIGHT_HIGH), Math.log2(stats.logMean)));
+      const dark = m.sunIlluminance > 0 ? 1 - Math.max(0, Math.min(1, m.sunVisibility)) : 1;
+      const keyEv = INTERIOR_NIGHT_KEY_EV * (1 - smooth(Math.log2(INTERIOR_NIGHT_LOW), Math.log2(INTERIOR_NIGHT_HIGH), Math.log2(stats.logMean))) * dark;
       const evBase = evHistogram + keyEv;
       const evHigh = Math.log2(stats.p99 / (INTERIOR_HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
       evHistogram = Math.min(Math.max(evBase, evHigh), evBase + INTERIOR_HIGHLIGHT_MAX_EV);

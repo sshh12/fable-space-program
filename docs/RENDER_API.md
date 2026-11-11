@@ -739,15 +739,16 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
-  (request `cockpit-3`), with two terms on top (request `cockpit-5`): a night key (the target is
-  `INTERIOR_NIGHT_KEY_EV` = 1.5 EV darker when the near log-mean is at or below 4 cd/m^2, not at all from
-  64 cd/m^2 up, smoothly in between: a cabin lit by its floods and displays is displayed dim) and a bounded
-  highlight term (the 99th percentile of the near histogram is kept below `INTERIOR_HIGHLIGHT_CAP` = 48 x
-  mid-grey, but it may raise the target by at most `INTERIOR_HIGHLIGHT_MAX_EV` = 1.75 EV above the
-  log-average target). So sunlit hardware up to 48 x mid-grey keeps its surface, a sun patch several
-  hundred times brighter than the cabin stops the camera down by 1.75 EV and still blows out, the shaded
-  cabin sits two to three stops under mid-grey, and the windows (farther than 8 m) blow out. Exterior and
-  map metering do not know these terms.
+  (request `cockpit-3`), with two terms on top (requests `cockpit-5`, `cockpit-6`): a night key (the target
+  is `INTERIOR_NIGHT_KEY_EV` = 1.5 EV darker when the near log-mean is at or below 4 cd/m^2, not at all
+  from 64 cd/m^2 up, smoothly in between, times the hidden part of the solar disc at the camera,
+  `1 - sunVisibility`: a cabin lit by its floods and displays in the Earth's shadow or at night is
+  displayed dim, a cabin that is as dim by day behind small windows is not) and a bounded highlight term
+  (the 99th percentile of the near histogram is kept below `INTERIOR_HIGHLIGHT_CAP` = 48 x mid-grey, but it
+  may raise the target by at most `INTERIOR_HIGHLIGHT_MAX_EV` = 1.25 EV above the log-average target). So
+  sunlit hardware up to 48 x mid-grey keeps its surface, a sun patch several hundred times brighter than
+  the cabin stops the camera down by 1.25 EV and still blows out, the shaded cabin sits a stop to two under
+  mid-grey, and the windows (farther than 8 m) blow out. Exterior and map metering do not know these terms.
 - **The meter sees what is lit, not what emits** (request `vfx-4`). The histogram is taken before the
   transparent pass: terrain, water, clouds, hulls and whatever a plume LIGHTS are in it; the flame, the
   splash crown and the fireball are not, whether they stand in front of geometry or of the sky. And while
@@ -1155,7 +1156,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
 | The exposure histogram is taken before the transparent pass (frame graph step 8b); under the sun the target is bounded at sunny 16 + `SUNLIT_HIGHLIGHT_MAX_EV` (0.5) for metered pixels and emitter hints alike | `vfx-4` | vfx (flames, splashes, fireballs no longer stop the camera down; send a hint for an emitter in front of geometry if the camera should react); every bright daylight frame (cloud decks, snow, a white hull filling the frame: up to 0.65 EV brighter than before); night scenes unchanged | A transparent that was metered because it stood in front of geometry is not any more: add a hint where that was relied on |
 | Dark floor `EV_DARK_FLOOR` -3 -> -6, `EV_MIN` -3 -> -7; dark adaptation below EV -3 at `ADAPT_DARK` = 0.12 EV/s (`DARK_ADAPT_EV`); the tone curve's toe is linear and hue-preserving below 4 stops under mid-grey (`TOE_GAIN`, `displayLinear`) | `sky-lighting-3` | every view with nothing lit in it (the night sky, deep space, the night side from orbit); every pixel darker than 3 stops under mid-grey in every package (deep shadow, unlit sides: lifted, e.g. 3.4 -> 8.9 of 255 at 5 stops under) | None in code. Specs that pinned the floor at -3 or the level of deep shadow must be re-measured; a frame with nothing lit takes 25 s longer to reach its darkest exposure |
-| Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin at night is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.75 EV darker than before |
+| Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5`, `cockpit-6` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin out of the sun is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.25 EV darker than before |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
 | Cloth looks the sun shadow up with the normal turned to the sun; planetshine is multiplied by the baked AO (RT0.a) | `cockpit-1`, `cockpit-2` | cockpit, vehicle-pad (canopies, blankets), anything that bakes AO into RT0.a | None. Surfaces with baked AO below 1 receive that much less planetshine |
 | `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |
