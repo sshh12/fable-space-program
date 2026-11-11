@@ -1,18 +1,24 @@
 /**
- * Application entry point (lead-owned). Boot order:
+ * Application entry point. Boot order:
  *   1. install window.__test (error capture starts before anything can fail)
- *   2. acquire the high-performance WebGPU adapter and device, configure the canvas
- *   3. load the data-driven definitions
- *   4. run the frame loop
- * Subsystems (simulation, renderer features, HUD, audio) are attached here by the integration pass through
- * the contracts in src/core/contracts; this file must never reach into a subsystem's internals.
+ *   2. acquire the high-performance WebGPU adapter and device
+ *   3. load the data-driven definitions and pick the scenario (?scenario=, default: the definitions' mission)
+ *   4. build the game (game.ts): height authority and simulation, renderer with every feature, input, HUD,
+ *      map view, cameras, audio; wait for the pad terrain, the features' start-up and the sound assets
+ *   5. run the frame loop; window.__test.ready resolves after the first frames are presented
+ * Every subsystem is attached through its contract (src/core/contracts); see docs/handoff/app-integration-v1.md.
  */
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
-import { acquireGpu, GpuUnavailableError } from '@/core/gpu/device';
+import { acquireGpu } from '@/core/gpu/device';
 import { installTestApi } from '@/core/testing/testApi';
+import { createGame } from './game';
+import { readSettings, resolveScenario } from './settings';
+import { installGameTestHooks } from './testHooks';
 
-const testApi = installTestApi({ kind: 'app', name: 'main', scenarioId: null });
+const query = new URLSearchParams(location.search);
+const settings = readSettings(query);
+const testApi = installTestApi({ kind: 'app', name: 'main', scenarioId: settings.scenarioId });
 
 function showFatal(message: string): void {
   const box = document.getElementById('fatal');
@@ -23,52 +29,33 @@ function showFatal(message: string): void {
 
 async function boot(): Promise<void> {
   const canvas = document.getElementById('viewport') as HTMLCanvasElement;
+  const uiRoot = document.getElementById('ui-root') as HTMLElement;
   const gpu = await acquireGpu({ onError: testApi.reportError });
   testApi.setAdapter(gpu.report);
 
-  const context = canvas.getContext('webgpu');
-  if (!context) throw new GpuUnavailableError('Could not create a WebGPU canvas context.');
-  context.configure({ device: gpu.device, format: gpu.canvasFormat, alphaMode: 'opaque' });
-
-  const resize = (): void => {
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, Math.min(gpu.device.limits.maxTextureDimension2D, Math.round(canvas.clientWidth * dpr)));
-    const h = Math.max(1, Math.min(gpu.device.limits.maxTextureDimension2D, Math.round(canvas.clientHeight * dpr)));
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
-  };
-  new ResizeObserver(resize).observe(canvas);
-  resize();
-
   const defs = await loadDefs(fetchDefSource('/defs'));
   document.documentElement.dataset['bodies'] = Object.keys(defs.bodies).sort().join(',');
+  const scenarioId = resolveScenario(defs, settings.scenarioId);
+  document.documentElement.dataset['scenario'] = scenarioId;
 
-  const frame = (): void => {
-    const encoder = gpu.device.createCommandEncoder({ label: 'frame' });
-    const pass = encoder.beginRenderPass({
-      label: 'clear',
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: { r: 0.012, g: 0.016, b: 0.027, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-    pass.end();
-    gpu.device.queue.submit([encoder.finish()]);
-    testApi.frameDone();
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-  await testApi.api.waitFrames(2);
+  const game = await createGame({
+    canvas,
+    uiRoot,
+    gpu,
+    defs,
+    scenarioId,
+    settings,
+    reportError: testApi.reportError,
+    onFrameDone: () => testApi.frameDone(),
+    onFatal: showFatal,
+  });
+  installGameTestHooks(testApi, game);
+  canvas.focus();
+  await testApi.api.waitFrames(3);
 }
 
 boot().then(
-  () => testApi.markReady(true),
+  () => testApi.markReady(testApi.api.errors.length === 0),
   (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     testApi.reportError(message);

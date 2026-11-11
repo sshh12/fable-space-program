@@ -1,0 +1,330 @@
+/**
+ * The game: every subsystem attached through its contract and driven by one frame loop, exactly as
+ * ARCHITECTURE section 5 draws a frame:
+ *
+ *   input  = inputSystem.sample()
+ *   map    = mapView.update(lastSnapshot, lastCamera, sim.commands, input.pointer, cssSize)   (map view only)
+ *   ctl    = controller.update(input, lastSnapshot, sim.commands, realDt, { view, pointerCaptured: map.consumed })
+ *   cockpit.cyclePage(i) for each 'mfdCycle:i'
+ *   sim.setControls(ctl); sim.advance(realDt, onControlTick)          (the test pilot acts in the control ticks)
+ *   snapshot = sim.snapshot()
+ *   view   = viewManager.update(snapshot, cameraInput(input, map), realDt, input.pressed)   (camera, observers, listener)
+ *   hud.update(snapshot, camera, realDt)                               (also renders the navball texture)
+ *   audio.update({ snapshot, listener, realDt, warpFactor, paused })
+ *   renderer.render(snapshot, camera, observers, realDt)
+ *
+ * The snapshot is the only thing that flows from the simulation to presentation; ControlInputs and
+ * PlayerCommands are the only things that flow back. This file never reaches into a subsystem's internals.
+ */
+import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
+import type { DefLibrary } from '@/core/contracts/defs';
+import type { CameraState, ViewMode } from '@/core/contracts/render';
+import type { SimSnapshot } from '@/core/contracts/sim';
+import type { MapUpdateResult } from '@/core/contracts/ui';
+import type { GpuHandle } from '@/core/gpu/device';
+import { createAudioEngine, type FableAudioEngine } from '@/audio';
+import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, type ViewFrame, type ViewManager } from '@/camera';
+import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel, type FlightController, type InputSystem } from '@/input';
+import { createRenderer, type CoreRenderer } from '@/render/core';
+import { createSim, type SimWorld } from '@/sim';
+import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { createHud, createMfdPainter, createNavballRenderer, type HudImpl, type NavballRendererImpl } from '@/ui';
+import { createGameFeatures, type GameFeatures } from './features';
+import { createPilotDriver, type PilotDriver } from './pilot';
+import type { AppSettings } from './settings';
+import { createStatusLine } from './statusLine';
+import { createFrameTimings, type FrameTimings } from './timing';
+
+/** Longest frame step handed to the simulation and the presentation, s (ARCHITECTURE 5). */
+export const MAX_FRAME_SECONDS = 0.1;
+/** Frames between two hand-overs of the HUD's panel boxes to the map view (its labels keep clear of them). */
+const OBSTACLE_INTERVAL = 10;
+/** The flight HUD's panels: the selectors of its own coverage check (request map-view-5). */
+const HUD_OBSTACLE_SELECTOR = '.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .nbchips > div, .hud .toast, .hud .ball';
+
+const NO_MAP: MapUpdateResult = { consumed: false };
+
+export interface GameDeps {
+  canvas: HTMLCanvasElement;
+  uiRoot: HTMLElement;
+  gpu: GpuHandle;
+  defs: DefLibrary;
+  scenarioId: string;
+  settings: AppSettings;
+  /** Error sink (window.__test.errors and the console). */
+  reportError: (message: string) => void;
+  /** Called once per presented frame after the GPU work is submitted. */
+  onFrameDone: () => void;
+  /** A frame threw: the loop has stopped; show the message. */
+  onFatal: (message: string) => void;
+}
+
+export interface Game {
+  readonly defs: DefLibrary;
+  readonly scenarioId: string;
+  readonly sim: SimWorld;
+  readonly terrain: TerrainAuthority;
+  readonly renderer: CoreRenderer;
+  readonly features: GameFeatures;
+  readonly views: ViewManager;
+  readonly hud: HudImpl;
+  readonly navball: NavballRendererImpl;
+  readonly input: InputSystem;
+  readonly controller: FlightController;
+  readonly audio: FableAudioEngine;
+  readonly pilot: PilotDriver;
+  readonly timings: FrameTimings;
+  /** Latest presented snapshot and camera. */
+  snapshot(): SimSnapshot;
+  camera(): CameraState;
+  readonly paused: boolean;
+  setPaused(paused: boolean): void;
+  /** Fixed 1/60 s frame steps and the renderer's deterministic mode (frozen presentation noise). */
+  setDeterministic(on: boolean): void;
+  /** The test sink of `window.__test.setControls`: throttle moves the lever, the axes are held like keys. */
+  setTestControls(partial: Partial<ControlInputs>): void;
+  setView(mode: ViewMode): boolean;
+  setCameraOrbit(yaw: number, pitch: number, distance: number): void;
+  /** Frames presented since the loop started. */
+  readonly frames: number;
+  /** True while the stage stack has been touched and the mission is neither failed nor over (beforeunload guard). */
+  inFlight(): boolean;
+  stop(): void;
+}
+
+export async function createGame(deps: GameDeps): Promise<Game> {
+  const { canvas, uiRoot, gpu, defs, scenarioId, settings, reportError } = deps;
+
+  // ------------------------------------------------------------------------- simulation and height authority
+  const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
+  const sim = createSim(defs, scenarioId, { terrain });
+
+  // --------------------------------------------------------------------------------------------- renderer
+  const renderer = await createRenderer(canvas, gpu, defs, {
+    onError: reportError,
+    perfFeatures: settings.perfFeatures,
+    quality: settings.renderScale !== null ? { renderScaleMin: settings.renderScale, renderScaleMax: settings.renderScale } : {},
+    governor: settings.governorOff ? { qualityMin: 1 } : {},
+  });
+  const ctx = renderer.context;
+  const fit = (): void => {
+    const dpr = window.devicePixelRatio || 1;
+    const max = gpu.device.limits.maxTextureDimension2D;
+    renderer.resize(Math.max(1, Math.min(max, Math.round(canvas.clientWidth * dpr))), Math.max(1, Math.min(max, Math.round(canvas.clientHeight * dpr))));
+  };
+  fit();
+  const resizeObserver = new ResizeObserver(fit);
+  resizeObserver.observe(canvas);
+
+  // The navball texture: the HUD renders it every update; the cockpit's instrument shows the same texture.
+  const navball = createNavballRenderer(gpu, { perf: ctx.perf });
+  ctx.resources.publish('ui.navball', navball.view);
+  const mfdPainter = createMfdPainter();
+
+  // ------------------------------------------------------------------------------------- input and HUD
+  const input = createInputSystem(canvas, { captureKeyboard: settings.captureKeyboard });
+  const keyFor = (action: ButtonAction): string | null => {
+    const b = DEFAULT_BINDINGS.find((x) => x.kind === 'button' && x.action === action && !x.requiresKeyboardLock);
+    return b ? keyLabel(b.code) : null;
+  };
+  const startKind = sim.scenario.start.kind;
+  const hud = createHud({
+    defs,
+    gpu,
+    navball,
+    dispatch: (a) => input.trigger(a),
+    requestKeyboardCapture: () => void input.requestKeyboardCapture(),
+    keyHelp: keyHelpEntries(input.bindings),
+    keyFor,
+    commands: () => sim.commands,
+    // A failed mission: start the scenario again from its beginning (a fresh simulation; nothing is edited).
+    failureActions: [{ label: startKind === 'pad' ? 'Revert to launch' : 'Restart scenario', title: 'Start this scenario again from its beginning', run: () => location.reload() }],
+  });
+  hud.mount(uiRoot);
+  hud.setVisible(settings.hud);
+  hud.setKeyboardLocked(input.keyboardLocked);
+  const unsubscribeLock = input.onKeyboardLockChange((locked) => hud.setKeyboardLocked(locked));
+  const controller = createFlightController({ notify: (m) => hud.notify(m) });
+  const status = createStatusLine(uiRoot);
+
+  // ------------------------------------------------------------------------------------ cameras and views
+  const views = createViewManager([createChaseRig({ defs, terrain }), createCockpitRig({ defs }), createMapRig({ defs })], { defs, terrain, initialMode: settings.view });
+  const mapper = createCameraInputMapper();
+
+  // ------------------------------------------------------------------------------------- render features
+  const features = createGameFeatures({ ctx, gpu, defs, terrain, navball, mfdPainter, uiRoot });
+
+  // ------------------------------------------------------------------------------------------------ audio
+  const audio = createAudioEngine({ onError: reportError });
+  if (settings.mute) audio.setMasterVolume(0);
+  // Every real gesture resumes the context (cheap while it runs; it is also when a lost device comes back).
+  const resumeAudio = (): void => void audio.resume();
+  window.addEventListener('keydown', resumeAudio, true);
+  window.addEventListener('pointerdown', resumeAudio, true);
+
+  // Features initialise (shader compiles, data loads) while the sound assets decode and the pad terrain loads.
+  const featureInit = (async () => {
+    for (const f of features.list) await renderer.addFeature(f);
+  })();
+  await Promise.all([featureInit, audio.init(defs, '/assets/audio'), sim.ready]);
+
+  // ------------------------------------------------------------------------------------------ frame state
+  const pilot = createPilotDriver(defs, sim);
+  const timings = createFrameTimings();
+  let snapshot = sim.snapshot();
+  let view: ViewFrame = views.update(snapshot, { yaw: 0, pitch: 0, zoom: 1 }, 0);
+  let paused = false;
+  let deterministic = false;
+  let frames = 0;
+  let running = true;
+  let last = performance.now();
+  /** Axes held through the test API (like held keys); undefined = the keyboard's value. */
+  const testAxes: Partial<Pick<ControlInputs, 'pitch' | 'yaw' | 'roll' | 'translate'>> = {};
+
+  const inFlight = (): boolean => !snapshot.mission.failed && (snapshot.scenario.startKind !== 'pad' || snapshot.staging.nextStage > 0);
+  const removeGuard = installUnloadGuard(inFlight);
+
+  const setPaused = (p: boolean): void => {
+    if (p === paused) return;
+    paused = p;
+    hud.notify(p ? 'Paused' : 'Resumed');
+  };
+
+  const hudObstacles = (): { x: number; y: number; width: number; height: number }[] => {
+    const out: { x: number; y: number; width: number; height: number }[] = [];
+    const origin = canvas.getBoundingClientRect();
+    for (const e of hud.root.querySelectorAll(HUD_OBSTACLE_SELECTOR)) {
+      if (e.getClientRects().length === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+      const r = e.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left - origin.left, y: r.top - origin.top, width: r.width, height: r.height });
+    }
+    return out;
+  };
+
+  const frame = (now: number): void => {
+    const realDt = deterministic ? 1 / 60 : Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - last) / 1000));
+    last = now;
+    timings.begin();
+
+    // Input, then the map view sees the pointer against the frame that is on screen.
+    const f = input.sample();
+    if (f.ui.has('ui:keyHelp')) hud.toggleKeyHelp();
+    if (f.pressed.has('toggleHud')) hud.setVisible(!hud.visible);
+    if (f.pressed.has('pause')) setPaused(!paused);
+    timings.mark('input');
+    const mapActive = view.camera.kind === 'map';
+    features.map.setActive(mapActive);
+    const map = mapActive ? features.map.update(snapshot, view.camera, sim.commands, f.pointer, [canvas.clientWidth, canvas.clientHeight]) : NO_MAP;
+    if (mapActive && frames % OBSTACLE_INTERVAL === 0) features.map.setObstacles(hudObstacles());
+    timings.mark('map');
+
+    // Controls: the keyboard (and the test API's held axes) unless the test pilot flies; nothing while paused.
+    if (!paused && !pilot.engaged) {
+      const ctl = controller.update(f, snapshot, sim.commands, realDt, { view: view.camera.kind, pointerCaptured: map.consumed });
+      sim.setControls({
+        ...ctl,
+        pitch: testAxes.pitch ?? ctl.pitch,
+        yaw: testAxes.yaw ?? ctl.yaw,
+        roll: testAxes.roll ?? ctl.roll,
+        translate: testAxes.translate ?? ctl.translate,
+      });
+    }
+    for (const a of f.pressed) if (a.startsWith('mfdCycle:')) features.cockpitControls.cyclePage(Number(a.slice('mfdCycle:'.length)));
+    timings.mark('controls');
+
+    if (!paused) sim.advance(realDt, pilot.onControlTick);
+    snapshot = sim.snapshot();
+    if (pilot.afterFrame().finished) {
+      // Back to the keyboard: the lever starts where the pilot left the throttle.
+      controller.setThrottle(snapshot.appliedControls.throttle);
+      const p = pilot.pilot;
+      hud.notify(p?.failure ? `Test pilot gave up: ${p.failure}` : 'Test pilot finished');
+    }
+    timings.mark('sim');
+
+    view = views.update(snapshot, mapper.map(f, realDt, { pointerConsumed: map.consumed, ...(map.focus ? { focus: map.focus } : {}) }), realDt, f.pressed);
+    timings.mark('views');
+    hud.update(snapshot, view.camera, realDt);
+    status.update({ paused, pilotPhase: pilot.engaged ? (pilot.pilot?.phase ?? null) : null, hudVisible: hud.visible });
+    timings.mark('hud');
+    audio.update({ snapshot, listener: view.listener, realDt, warpFactor: snapshot.warp.factor, paused });
+    timings.mark('audio');
+    renderer.render(snapshot, view.camera, view.observers, realDt);
+    timings.mark('render');
+    timings.end();
+    frames++;
+    deps.onFrameDone();
+  };
+
+  const loop = (now: number): void => {
+    if (!running) return;
+    try {
+      frame(now);
+    } catch (e) {
+      running = false;
+      const message = `frame: ${e instanceof Error ? e.message : String(e)}`;
+      reportError(message);
+      deps.onFatal(message);
+      return;
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+
+  if (settings.pilot) pilot.start();
+
+  return {
+    defs,
+    scenarioId,
+    sim,
+    terrain,
+    renderer,
+    features,
+    views,
+    hud,
+    navball,
+    input,
+    controller,
+    audio,
+    pilot,
+    timings,
+    snapshot: () => snapshot,
+    camera: () => view.camera,
+    get paused() {
+      return paused;
+    },
+    setPaused,
+    setDeterministic(on) {
+      deterministic = on;
+      renderer.setDeterministic(on);
+    },
+    setTestControls(partial) {
+      if (partial.throttle !== undefined) controller.setThrottle(Math.min(1, Math.max(0, partial.throttle)));
+      if (partial.pitch !== undefined) testAxes.pitch = partial.pitch;
+      if (partial.yaw !== undefined) testAxes.yaw = partial.yaw;
+      if (partial.roll !== undefined) testAxes.roll = partial.roll;
+      if (partial.translate !== undefined) testAxes.translate = { ...partial.translate };
+    },
+    setView: (mode) => views.setMode(mode, snapshot),
+    setCameraOrbit(yaw, pitch, distance) {
+      const rig = views.rig(views.mode) as { setOrbit?: (az: number, el: number, d: number) => void } | undefined;
+      rig?.setOrbit?.(yaw, pitch, distance);
+    },
+    get frames() {
+      return frames;
+    },
+    inFlight,
+    stop() {
+      running = false;
+      removeGuard();
+      unsubscribeLock();
+      resizeObserver.disconnect();
+      window.removeEventListener('keydown', resumeAudio, true);
+      window.removeEventListener('pointerdown', resumeAudio, true);
+      input.dispose();
+      hud.dispose();
+      audio.dispose();
+      renderer.dispose();
+    },
+  };
+}
