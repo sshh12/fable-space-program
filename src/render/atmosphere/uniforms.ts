@@ -44,7 +44,8 @@ const FIELDS = [
   ['cloudPhase', 'vec4f', 'forward g, backward g, lobe mix, sun reach of the cone samples (m)'],
   ['cloudMarch', 'vec4f', 'step factor (step = distance x factor), min step (m), max step (m), angle of a half-resolution pixel (rad)'],
   ['cloudWind', 'vec4f', 'xyz = noise shear per metre of altitude (noise frame), w = scroll of the detail noise (m)'],
-  ['shadowFilter', 'vec4f', 'x = smallest footprint (m) of the density lookups of the cloud shadow map: what one screen pixel covers under the camera; z = rounds of the incremental refresh (1, 2 or 4: a 16th, 32nd or 64th of the texels per frame)'],
+  ['shadowFilter', 'vec4f', 'x = smallest footprint (m) of the density lookups of the cloud shadow map: what one screen pixel covers under the camera; y = extent of the map along v as a share of its extent along u; z = rounds of the incremental refresh (1 or 2: a 16th or a 32nd of the texels per frame); w = how many times longer than wide a texel is on the ground'],
+  ['shadowBlur', 'vec4f', 'filter of the map the render core reads: x, y = half width of its tent along u, v (texels)'],
   ['cloudJitter', 'vec4f', 'xy = offset of the half-resolution cloud rays inside their pixel this frame (pixels, +-0.5), z = offset of the step phase of this march (0..1, golden-ratio sequence), w = march index'],
   ['tile', 'vec4f', 'full-resolution march of a small shell: xy = render-target pixel of texel (0, 0) of the tile targets, zw = size of the marched rectangle (px)'],
 ] as const satisfies readonly (readonly [string, FieldType, string])[];

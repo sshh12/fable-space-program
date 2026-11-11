@@ -731,7 +731,9 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           let qe = 2.0 * r * muS * reach + reach * reach;
           let endR = r + qe / (sqrt(max(r * r + qe, 1.0)) + r);
           let endPos = posL + sunDir * reach;
-          tau += atmoCloudTauAt(endPos, bi, normalize(endPos - frame.bodies[bi].center.xyz), endR, muS, 1.0);
+          // (Read blurred, more so where a texel of the map is drawn out along the ground: the shadow of one
+          // cloud on another is a gradient, not the map's lattice.)
+          tau += atmoCloudTauAt(endPos, bi, normalize(endPos - frame.bodies[bi].center.xyz), endR, muS, 1.0 + 0.5 * clamp(atmo.shadowFilter.w - 1.0, 0.0, 3.0));
           let e = frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, r, muS) * vis;
           // The slope of the cloud at the sample: the gradient of the density from three more samples
           // (along the sun and two directions across it). It gives the cosine at which the sunlight meets
@@ -1106,7 +1108,9 @@ ${
   let bi = u32(atmo.bodies.z);
   let he = atmo.shadowOrigin.w;
   let texel = 2.0 * he / f32(n);
-  let qm = ((vec2f(pix) + 0.5) / f32(n) * 2.0 - 1.0) * he;
+  // (The map is narrower along v than along u by shadowFilter.y: see CloudSystem.placeShadow.)
+  let vScale = atmo.shadowFilter.y;
+  let qm = ((vec2f(pix) + 0.5) / f32(n) * 2.0 - 1.0) * vec2f(he, he * vScale);
   let dir = atmo.shadowL.xyz;
   let p0 = atmo.shadowOrigin.xyz + atmo.shadowU.xyz * qm.x + atmo.shadowV.xyz * qm.y;
   let pc = p0 - frame.bodies[bi].center.xyz;
@@ -1154,7 +1158,12 @@ ${
     let q = cloudNoiseVec(bi, pos);
     // (Band-limited to what the screen resolves and to what the steps can carry: a map finer than the
     // pixels that read it, or than its own sampling along the line, would alias.)
-    let fp = max(max(texel, atmo.shadowFilter.x), 0.3 * ds);
+    // (Where a texel is still drawn out along the ground under a low sun - near the ground, where the
+    // layer's height takes most of the map's extent along v - the density is read as wide as the texel is
+    // long there, up to four times: a cloud edge sharp from one texel row to the next would be a comb.)
+    // (And under any low sun it is read a few texels wide: the shadow of every cloudlet is then not a
+    // hairline drawn out along the sun's azimuth, but part of a broad shadow with a soft edge.)
+    let fp = max(max(texel * clamp(atmo.shadowFilter.w, 1.0, 4.0), atmo.shadowFilter.x), 0.3 * ds);
     let col = cloudColumnAt(bi, pos, q, fp, h - 0.5 * ds * atmo.shadowV.w);
     let den = cloudDensityAt(col, h, q, fp, 0);
     if (den.sigma > 0.0) {
@@ -1170,7 +1179,7 @@ ${
   }
   // (Clear: no extinction. The front distance of such a texel only matters when a lookup interpolates it
   // with a cloudy neighbour: the top of the layer stands in for it, which keeps that blend smooth.)
-  o.core = vec4f(0.0, sTop, 0.0, 1.0);
+  o.core = vec4f(0.0, sTop / vScale, 0.0, 1.0);
   if (!found) { return o; }
   tau = min(tau, 400.0);
   // What reaches the ground in a cloud's shadow: the diffusely transmitted light (two-stream), and what the
@@ -1180,13 +1189,74 @@ ${
   let direct = exp(-tau);
   let total = min(direct + (1.0 - direct) * (1.0 / (1.0 + kd * tau) + CLOUD_FILL), 1.0);
   let tauGround = -log(max(total, 1e-9));
-  o.core = vec4f(tauGround, sFront, tauGround / max(sFront - sBack, 50.0), tau / max(tauGround, 1e-6));
+  // (The beam's optical depth as the map hands it on is capped where a texel is drawn out along the
+  // ground: a beam that goes from all to nothing inside one interpolated texel draws the texel lattice as
+  // saw teeth. A cap of 2.5 leaves a shadow's core 8 % of the beam and lets its edge fall off over the texel.)
+  let beamCap = mix(2.5, 400.0, 1.0 - smoothstep(1.5, 4.0, atmo.shadowFilter.w));
+  // (Distances along the line in the render core's units: its projection axis is cross(u, v) with v
+  // longer than unit by 1 / vScale.)
+  o.core = vec4f(tauGround, sFront / vScale, tauGround * vScale / max(sFront - sBack, 50.0), max(min(tau, beamCap) / max(tauGround, 1e-6), 1.0));
   let scale = min(tau, 60.0) / max(tau, 1e-6);
   o.moments = vec4f(tau * scale, m1 * scale, m2 * scale, 1.0);
   return o;
 }
 `;
 }
+
+/**
+ * The map the render core reads ('clouds.shadowMap'), filtered from the marched one. Bindings (group 1):
+ * 0 = AtmoU, 1 = the marched map (r, g, b, a as cloudShadowFsWgsl writes them).
+ *
+ * The core interpolates one bilinear tap and takes exp() of what it reads. A map that goes from no cloud
+ * to an optical depth of tens within one texel therefore draws the texel lattice: the edge of a shadow
+ * lies where the interpolated depth crosses about one, a fraction of a texel from the cloudy texel, and
+ * follows the hyperbolas of the bilinear weights (staircases from orbit, combs and saw teeth under a low
+ * sun, where a texel is drawn out along the ground). Here every texel becomes the mean TRANSMITTANCE over a
+ * tent around it (beam and total separately: the shadow's penumbra, which is what a sun of finite size and
+ * the light scattered forward around a cloud give), wider across the sun's azimuth when the sun is low.
+ * Neighbouring texels then differ little and the core's interpolation of them is smooth. The depth
+ * channels follow: the front distance and the cloud's depth along the line are the means over the cloudy
+ * taps, weighted by their optical depth, and b = r / depth again, so that `clamp((g - s) b, 0, r)` still
+ * gives the whole r below the cloud and a share of it inside.
+ */
+export const CLOUD_SHADOW_FILTER_FS_WGSL = /* wgsl */ `
+${ATMO_UNIFORM_WGSL}
+@group(1) @binding(0) var<uniform> atmo: AtmoU;
+@group(1) @binding(1) var rawTex: texture_2d<f32>;
+
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let p = vec2i(in.position.xy);
+  let n = i32(atmo.shadowShift.w);
+  let hu = i32(atmo.shadowBlur.x);
+  let hv = i32(atmo.shadowBlur.y);
+  var wSum = 0.0;
+  var total = 0.0;
+  var beam = 0.0;
+  var wCloud = 0.0;
+  var front = 0.0;
+  var depth = 0.0;
+  for (var dy = -hv; dy <= hv; dy++) {
+    for (var dx = -hu; dx <= hu; dx++) {
+      let w = (1.0 - f32(abs(dx)) / f32(hu + 1)) * (1.0 - f32(abs(dy)) / f32(hv + 1));
+      let m = textureLoad(rawTex, clamp(p + vec2i(dx, dy), vec2i(0), vec2i(n - 1)), 0);
+      wSum += w;
+      total += w * exp(-m.r);
+      beam += w * exp(-m.r * max(m.a, 1.0));
+      if (m.r > 1e-6 && m.b > 0.0) {
+        let wc = w * m.r;
+        wCloud += wc;
+        front += wc * m.g;
+        depth += wc * (m.r / m.b);
+      }
+    }
+  }
+  let own = textureLoad(rawTex, p, 0);
+  let r = -log(max(total / wSum, 1e-9));
+  if (r < 1e-6 || wCloud <= 0.0) { return vec4f(0.0, own.g, 0.0, 1.0); }
+  let a = max(-log(max(beam / wSum, 1e-30)) / r, 1.0);
+  return vec4f(r, front / wCloud, r / max(depth / wCloud, 1.0), a);
+}
+`;
 
 /** Writes the scratch targets of the shifted shadow pass back into the maps. Bindings (group 1): 0, 1 = scratch. */
 export const CLOUD_SHADOW_BLIT_FS_WGSL = /* wgsl */ `

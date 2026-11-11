@@ -38,7 +38,8 @@ fn atmoCloudTauAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32, lod: f32) ->
   let he = atmo.shadowOrigin.w;
   if (he > 0.0) {
     let rel = pos - atmo.shadowOrigin.xyz;
-    let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz)) / he;
+    // (The map is narrower along v than along u by shadowFilter.y.)
+    let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz) / atmo.shadowFilter.y) / he;
     let edge = 1.0 - max(abs(q.x), abs(q.y));
     if (edge > 0.0) {
       let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, lod);
