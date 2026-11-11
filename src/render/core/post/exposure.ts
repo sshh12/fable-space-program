@@ -94,6 +94,20 @@ export function histogramStats(h: ArrayLike<number>, sampleCount: number, litRan
 /** "Keeps night dark and day bright": bright scenes are rendered above mid-grey, dim ones below. */
 export const exposureCompensationCurve = (evMean: number): number => Math.max(-1, Math.min(0.8, (evMean - 4) * 0.08));
 
+/**
+ * A bright emitter drawn over SKY pixels (depth 0), which the histogram never sees: an engine plume, a reentry
+ * trail or a fireball against space or the night sky. Features report it per frame through
+ * `coreOf(ctx).addEmissiveHint` (docs/requests/vfx-1.md).
+ */
+export interface EmissiveHint {
+  /** Representative luminance of its visible part, cd/m^2. */
+  luminance: number;
+  /** Fraction of the frame it covers over pixels with no geometry behind it, 0..1. */
+  coverage: number;
+}
+/** Emitter coverage from which the prior exposes fully for the emitter (below it: in proportion). */
+export const EMISSIVE_FULL = 0.01;
+
 export interface MeterInput {
   /** Histogram of all lit geometry and of geometry within INTERIOR_RANGE. */
   histogram: ArrayLike<number>;
@@ -109,6 +123,8 @@ export interface MeterInput {
   /** CameraState.exposureCompensation (EV, positive = brighter image) and CameraState.minEv100. */
   exposureCompensation: number;
   minEv100: number | null;
+  /** Emitters over sky pixels this frame (exterior and map views; an interior view meters its cabin). */
+  emissive?: readonly EmissiveHint[];
 }
 
 export interface MeterResult {
@@ -134,16 +150,42 @@ const smooth = (a: number, b: number, x: number): number => {
  * hundred times brighter than the cabin it falls into, and an arithmetic mean would expose for the patch
  * and leave the cabin black. With the log-average the cabin stays readable and the patch (like the windows,
  * which are farther than the range) blows out, as in a photograph taken inside (docs/requests/cockpit-3.md).
+ *
+ * Emitters over the sky (`emissive`) are not in the histogram, which holds geometry only. In an exterior or
+ * map view they are added to it as if they were lit pixels of their luminance and coverage (so a plume is
+ * metered alike in front of the ground and in front of space), and they raise the prior: an emitter that
+ * covers EMISSIVE_FULL of the frame is exposed so that it stays below the highlight cap, a smaller one in
+ * proportion. Without that a trail or a fireball against a night sky is rendered at the dark-adapted
+ * exposure, saturates and blooms over the whole frame.
  */
 export function meterExposure(m: MeterInput): MeterResult {
   const interior = m.kind === 'interior';
-  const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(m.histogram, m.sampleCount);
+  let histogram = m.histogram;
+  let emitterCoverage = 0;
+  let emitterLuminance = 0;
+  if (!interior && m.emissive && m.emissive.length > 0) {
+    const h = Float64Array.from(m.histogram);
+    for (const e of m.emissive) {
+      if (!(e.luminance >= LUMINANCE_FLOOR) || !(e.coverage > 0)) continue;
+      const coverage = Math.min(1, e.coverage);
+      h[luminanceBin(e.luminance)] = h[luminanceBin(e.luminance)]! + coverage * m.sampleCount;
+      emitterCoverage += coverage;
+      emitterLuminance = Math.max(emitterLuminance, e.luminance);
+    }
+    histogram = h;
+  }
+  const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(histogram, m.sampleCount);
   const all = interior ? histogramStats(m.histogram, m.sampleCount) : stats;
 
-  // Photometric prior: sunny-16 scaled by the sun's visibility when something lit is in view, else the dark floor.
+  // Photometric prior: sunny-16 scaled by the sun's visibility when something lit is in view, else the dark
+  // floor; raised towards the exposure that keeps an emitter under the highlight cap, by its coverage.
   const somethingLit = m.litObjectInView || all.litFraction > LIT_PRESENT;
   const evSun = sunny16Ev(m.sunIlluminance * m.sunVisibility);
-  const evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
+  let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
+  if (emitterCoverage > 0) {
+    const evEmitter = Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
+    if (evEmitter > evPrior) evPrior += (evEmitter - evPrior) * smooth(LIT_PRESENT, EMISSIVE_FULL, emitterCoverage);
+  }
 
   let evHistogram = evPrior;
   let w = 0;

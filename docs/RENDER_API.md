@@ -484,6 +484,9 @@ px with 15 px); the terminator at 6 deg from 1000 km, 0.18 / 0.41 px (before: a 
 Cascades (ARCHITECTURE 10.1): radii 12 m, 60 m, 300 m, 1.5 km, 8 km, 40 km, 200 km, 1500 km around the
 camera (texel = 2 r / 2048 along u; along v the same or finer, see above), a `depth32float` 2048^2 x 8 array.
 
+- **Interior camera.** Cascade 0 is anchored to the vessel the camera is inside and is 6 m in radius
+  instead of 12 m (`INTERIOR_CASCADE_RADIUS`; 0.59 cm texels): sun patches through the windows are judged
+  from 0.4 to 1 m away. Receivers farther than 6 m (seen through a window) use the 60 m cascade.
 - **Anchoring.** Each cascade is captured in the body-fixed frame of the nearest body (cascade 0 in the
   active vessel's frame for an interior camera): light basis, extents and a texel-snapped centre are stored
   in anchor coordinates. `ShadowCascadeView.viewProj` and `shadow.uniforms` are re-derived EVERY frame in
@@ -647,6 +650,7 @@ interface CoreApi {
   fullscreenPipeline(desc): Tracked<GPURenderPipeline>;
   createTarget(label, format, scale, usage?): ManagedTarget;   // follows the internal resolution
   setCloudShadowParams(params): void;         // section 7
+  addEmissiveHint(luminance, coverage): void; // exposure: a bright emitter over sky pixels (section 13)
   createTextureChecked(desc): GPUTexture;     // out-of-memory error scope; use for every large allocation
 }
 ```
@@ -733,7 +737,18 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range and
   without the highlight cap (request `cockpit-3`): a sun patch on a panel, several hundred times brighter
   than the cabin, moves the exposure by less than a stop, so the cabin stays readable and the patch and the
-  windows blow out. Exterior and map metering are unchanged. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
+  windows blow out. Exterior and map metering are unchanged.
+- **Emitters over the sky** (request `vfx-1`). The histogram holds geometry only, so a plume, a reentry
+  trail or a fireball in front of space or the night sky is invisible to the meter. A feature that draws
+  one calls `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
+  `luminance` = representative luminance of its visible part (cd/m^2), `coverage` = fraction of the frame
+  it covers where NO geometry is behind it (the part in front of geometry is metered already). In exterior
+  and map views the hint is added to the histogram as lit pixels of that luminance and coverage, and it
+  raises the photometric prior towards the exposure that keeps the emitter below 4 x mid-grey: fully from
+  1 % coverage (`EMISSIVE_FULL`), in proportion below, not at all under 0.02 %. So a trail across a night
+  sky is exposed for the trail, RCS puffs on a lander in shadow stop the camera down part of the way, and
+  in daylight a plume over the sky counts exactly like the same plume over the ground. Hints apply to the
+  next frame's metering; adaptation speeds are unchanged. An interior view ignores them. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
 - TAA / TAAU: Halton(2, 3) jitter of 8 samples (8 / scale^2 when upscaling, at most 32) in `frame.proj`;
   the resolve runs at display resolution (jitter-aware 3 x 3 reconstruction, closest-depth velocity,
   5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
@@ -1044,6 +1059,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
+| `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
 | Cloth looks the sun shadow up with the normal turned to the sun; planetshine is multiplied by the baked AO (RT0.a) | `cockpit-1`, `cockpit-2` | cockpit, vehicle-pad (canopies, blankets), anything that bakes AO into RT0.a | None. Surfaces with baked AO below 1 receive that much less planetshine |
 | `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |

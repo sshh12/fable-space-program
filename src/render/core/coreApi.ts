@@ -53,6 +53,15 @@ export interface CoreApi {
   setCloudShadowParams(params: Partial<CloudShadowParams>): void;
   /** Checked allocation: out-of-memory is reported through window.__test.errors instead of an uncaptured error. */
   createTextureChecked(desc: GPUTextureDescriptor): GPUTexture;
+  /**
+   * Tell the exposure meter about a bright emitter that is drawn over SKY pixels this frame (a plume, a
+   * reentry trail or a fireball against space: the meter's histogram holds geometry only and cannot see
+   * it). Call from `prepare`, every frame the emitter is in view; several calls add up. `luminance` is the
+   * representative luminance of its visible part in cd/m^2 (not pre-exposed), `coverage` the fraction of the
+   * frame it covers where there is no geometry behind it (where there is, the meter sees it already).
+   * Rule: docs/RENDER_API.md section 13.
+   */
+  addEmissiveHint(luminance: number, coverage: number): void;
 }
 
 const registry = new WeakMap<RenderContext, CoreApi>();

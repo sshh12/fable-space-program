@@ -243,6 +243,15 @@ describe('cascade planning', () => {
     expect(plan[0]!.anchor).toEqual({ kind: 'vessel', id: 'capsule' });
     expect(plan[0]!.everyFrame).toBe(true);
     expect(plan[1]!.anchor.kind).toBe('body');
+    // Inside, cascade 0 is 6 m (0.59 cm texels on a 2048 map) instead of 12 m; the others are unchanged, and
+    // so is cascade 0 of an exterior camera next to the same vessel.
+    expect(plan[0]!.radius).toBe(6);
+    expect(plan[0]!.farDistance).toBe(6);
+    expect(plan[1]!.radius).toBe(60);
+    expect(plan[1]!.everyFrame).toBe(true);
+    const outside = planCascades(input(0, [earthAt(200e3)], [vessel]));
+    expect(outside[0]!.radius).toBe(12);
+    expect(outside[0]!.anchor.kind).toBe('body');
   });
 
   it('drops cascades that reach nothing in low orbit and adds a whole-body cascade for ground beyond 1500 km', () => {

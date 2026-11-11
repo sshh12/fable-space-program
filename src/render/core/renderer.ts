@@ -29,7 +29,7 @@ import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
 import { Perf } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
-import { EV_DARK_FLOOR, exposureFromEv100 } from './post/exposure';
+import { EV_DARK_FLOOR, exposureFromEv100, type EmissiveHint } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
 import { Tonemap } from './post/tonemap';
@@ -234,6 +234,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
 
   const managed: { make: () => void; target: { texture: GPUTexture; view: GPUTextureView; size: [number, number]; version: number; alive: boolean } }[] = [];
   let cloudShadow: CloudShadowParams = { near: null, far: null };
+  /** Emitters over sky pixels reported by the features in `prepare` (CoreApi.addEmissiveHint), for the next metering. */
+  let emissiveHints: EmissiveHint[] = [];
   let targets: Targets | null = null;
 
   const fullscreenPipeline = (desc: FullscreenPipelineDesc): ReturnType<CoreApi['fullscreenPipeline']> =>
@@ -282,6 +284,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     setCloudShadowParams(p) {
       cloudShadow = { ...cloudShadow, ...p };
+    },
+    addEmissiveHint(luminance, coverage) {
+      if (Number.isFinite(luminance) && Number.isFinite(coverage) && luminance > 0 && coverage > 0) emissiveHints.push({ luminance, coverage });
     },
     createTextureChecked: (desc) => createTextureChecked(device, desc, reportError),
   };
@@ -525,7 +530,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       kind: camera.kind,
       exposureCompensation: camera.exposureCompensation,
       minEv100: camera.minEv100,
+      // What the features reported in the previous frame's prepare (this frame's hooks have not run yet).
+      emissive: emissiveHints,
     });
+    emissiveHints = [];
     if (evOverride !== null) ev100 = evOverride;
     else if (!evInitialised) ev100 = metering.targetEv100;
     else ev100 = meter.adapt(ev100, metering.targetEv100, Math.min(realDt, 0.1));

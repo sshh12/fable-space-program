@@ -134,6 +134,47 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeLessThan(0.4);
   });
 
+  it('an emitter over the sky sets the exposure by its coverage (request vfx-1)', () => {
+    // Night, nothing lit in view: the dark-adapted floor.
+    const empty = new Uint32Array(HISTOGRAM_BINS);
+    const night = { sunVisibility: 0, litObjectInView: false };
+    expect(meter(empty, night).targetEv100).toBe(EV_DARK_FLOOR);
+    // A reentry trail of 26,000 cd/m^2 over 2 % of the frame: exposed so that it stays under 4 x mid-grey.
+    const trail = meter(empty, { ...night, emissive: [{ luminance: 26000, coverage: 0.02 }] });
+    const shown = 26000 * exposureFromEv100(trail.targetEv100);
+    expect(shown).toBeGreaterThan(0.3);
+    expect(shown).toBeLessThanOrEqual(4 * 0.18 * 1.05);
+    // RCS jets over 0.1 % of the frame move it part of the way; a speck (0.01 %) leaves the floor alone.
+    const jets = meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.001 }] }).targetEv100;
+    expect(jets).toBeGreaterThan(EV_DARK_FLOOR + 0.3);
+    expect(jets).toBeLessThan(trail.targetEv100 - 3);
+    expect(meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.0001 }] }).targetEv100).toBe(EV_DARK_FLOOR);
+    // More coverage never exposes brighter, and several hints add up.
+    let last = -Infinity;
+    for (const c of [0.0005, 0.002, 0.005, 0.01, 0.05]) {
+      const ev = meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: c }] }).targetEv100;
+      expect(ev).toBeGreaterThanOrEqual(last);
+      last = ev;
+    }
+    expect(meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.005 }, { luminance: 22000, coverage: 0.005 }] }).targetEv100).toBeCloseTo(
+      meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.01 }] }).targetEv100,
+      9,
+    );
+    // Daylight: an emitter dimmer than the sunlit scene changes nothing; it counts like lit geometry of
+    // its luminance, so a plume over the sky is metered as the same plume over the ground is.
+    const day = new Uint32Array(HISTOGRAM_BINS);
+    fill(day, 2000, 6000, 0.6 * N);
+    const base = meter(day).targetEv100;
+    expect(meter(day, { emissive: [{ luminance: 3000, coverage: 0.03 }] }).targetEv100).toBeCloseTo(base, 1);
+    const overGround = new Uint32Array(day);
+    overGround[luminanceBin(200000)] = overGround[luminanceBin(200000)]! + 0.03 * N;
+    expect(meter(day, { emissive: [{ luminance: 200000, coverage: 0.03 }] }).targetEv100).toBeCloseTo(meter(overGround).targetEv100, 6);
+    // An interior view meters its cabin and ignores emitters outside.
+    const cabin = new Uint32Array(HISTOGRAM_BINS);
+    fill(cabin, 20, 45, 0.6 * N);
+    expect(meter(cabin, { histogramNear: cabin, kind: 'interior', emissive: [{ luminance: 1e6, coverage: 0.1 }] }).targetEv100).toBe(meter(cabin, { histogramNear: cabin, kind: 'interior' }).targetEv100);
+  });
+
   it('interior metering keeps the cabin readable when a sun patch falls into it (request cockpit-3)', () => {
     // 95 % of the near pixels are cabin at 20-45 cd/m^2, 5 % are a sun patch on a panel at 14,000-20,000.
     const near = new Uint32Array(HISTOGRAM_BINS);

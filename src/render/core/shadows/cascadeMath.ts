@@ -18,6 +18,14 @@ export const CASCADE_RADII: readonly number[] = [12, 60, 300, 1500, 8000, 40000,
 export const MAX_CASCADES = 8;
 /** Cascades below this index are always re-rendered every frame. */
 export const ALWAYS_EVERY_FRAME = 2;
+/**
+ * Radius (m) of cascade 0 when it is anchored to the vessel the camera is inside. A cabin and the room for
+ * its shadows fit in 6 m, and the eye is 0.4 to 1 m from the surfaces the sun patches fall on: half the
+ * radius of the exterior cascade halves the texel (0.59 cm) and with it the smallest penumbra and the
+ * grain of its filter (docs/requests/cockpit-4.md). Casters towards the sun are caught at any distance
+ * (the depth range is pancaked); receivers farther than this (seen through a window) use cascade 1.
+ */
+export const INTERIOR_CASCADE_RADIUS = 6;
 /** Upper bound on cascades re-rendered every frame (GPU cost guard). */
 export const MAX_EVERY_FRAME = 4;
 /** Staggered cascades are re-captured early when the sun has moved this much in the anchor frame (rad). */
@@ -302,9 +310,11 @@ export function planCascades(input: PlanInput): DesiredCascade[] {
 
   const cam: DesiredCascade[] = [];
   let everyFrameCount = 0;
+  const interiorVessel = input.insideVesselId !== null && input.vessels.some((v) => v.id === input.insideVesselId);
+  const radiusOf = (i: number): number => (i === 0 && interiorVessel ? INTERIOR_CASCADE_RADIUS : CASCADE_RADII[i]!);
   for (let i = 0; i < CASCADE_RADII.length; i++) {
-    const r = CASCADE_RADII[i]!;
-    const prevR = i > 0 ? CASCADE_RADII[i - 1]! : 0;
+    const r = radiusOf(i);
+    const prevR = i > 0 ? radiusOf(i - 1) : 0;
     const reachesGround = r > hMin;
     let holdsVessel = false;
     let needsEveryFrame = i < ALWAYS_EVERY_FRAME;
@@ -324,7 +334,7 @@ export function planCascades(input: PlanInput): DesiredCascade[] {
     if (!active) continue;
     const everyFrame = needsEveryFrame && everyFrameCount < MAX_EVERY_FRAME;
     if (everyFrame) everyFrameCount++;
-    const vesselAnchored = i === 0 && input.insideVesselId !== null && input.vessels.some((v) => v.id === input.insideVesselId);
+    const vesselAnchored = i === 0 && interiorVessel;
     cam.push({
       key: `cam:${i}`,
       fit: 'camera',
