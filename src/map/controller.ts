@@ -1483,12 +1483,12 @@ export class MapController implements MapView {
     }
 
     // ---- icons and labels of what is left; a count badge on the upper-right corner of each cluster's icon. An
-    // event folded into a cluster (an impact or atmosphere entry on a body drawn as an icon, a node) keeps its
-    // label, set beside the cluster's icon.
+    // arrival folded into a cluster (an impact or atmosphere entry on a body drawn as an icon) keeps its label,
+    // set beside the cluster's icon; everything else folded is listed by the cluster's tooltip.
     for (let i = 0; i < n; i++) {
       const p = pts[i]!;
       if (p.others < 0) {
-        if (p.priority >= 7.5 && p.label.length > 0) {
+        if (p.kind === 'm' && (p.shape === ICON.impact || p.shape === ICON.entry) && p.label.length > 0) {
           const r = pts[rep[find(i)]!]!;
           const side = this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
           addLabel(r.x, r.y, r.clear, p.label, p.priority - 0.5, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);

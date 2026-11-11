@@ -191,7 +191,7 @@ async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' 
         const W = s.patches.current[0]!.conic.W;
         const r = norm(active.r);
         const t = norm({ x: W.y * r.z - W.z * r.y, y: W.z * r.x - W.x * r.z, z: W.x * r.y - W.y * r.x });
-        const v = norm({ x: 0.75 * W.x + 0.45 * t.x - 0.45 * r.x, y: 0.75 * W.y + 0.45 * t.y - 0.45 * r.y, z: 0.75 * W.z + 0.45 * t.z - 0.45 * r.z });
+        const v = norm({ x: 0.75 * W.x + 0.6 * t.x + 0.2 * r.x, y: 0.75 * W.y + 0.6 * t.y + 0.2 * r.y, z: 0.75 * W.z + 0.6 * t.z + 0.2 * r.z });
         yaw = Math.atan2(v.y, v.x);
         pitch = Math.asin(v.z);
       } else if (d === 'sun') {

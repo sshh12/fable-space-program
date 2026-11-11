@@ -30,3 +30,6 @@ In the integration lab (and the app shell when its map mode is wired), while the
    check). `mountHud` in `tests/browser/map-view/real-planet.spec.ts` is a working reference.
 3. Not to change: the HUD's MANEUVER panel shows the burn EXECUTION figures and the map's node panel EDITS the
    node (hand-off, "Integration"); no duplication needs removing.
+4. For flight-ui to decide (src/ui/format.ts `formatLength`): now that HUD and map share a frame, the HUD
+   writes "180.0 Mm" where the map writes "180 000 km" (`out/screens/map-view/real-hud-translunar.png`). The
+   map uses grouped km (asked for by its round-0 visual list); the same unit in both would read better.

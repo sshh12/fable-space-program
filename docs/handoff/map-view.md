@@ -73,8 +73,10 @@ CSS px, `panelNudge(comp, sign, factor)`), `HANDLES`, `dragDelta`, `modifierFact
 - The panel stops key events in the bubble phase; the input layer must ignore editable targets and report
   `overUi` over DOM UI (`docs/requests/map-view-1.md`, resolved by flight-ui in 264d8ac).
 - HUD panels: pass their rectangles (CSS px of the canvas) to `view.setObstacles([...])` whenever the HUD
-  layout changes (the map lab passes its own text boxes). Map labels, the node panel and tooltips then keep
-  clear of them. Panel ownership: the map's node panel EDITS the selected node (components, total, time,
+  layout changes (the map lab passes its own text boxes; `mountHud` in `tests/browser/map-view/real-planet.spec.ts`
+  passes the flight HUD's `.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn,
+  .hud .more, .hud .nbchips > div, .hud .toast, .hud .ball` boxes, request map-view-5). Map labels, the node
+  panel and tooltips then keep clear of them. Panel ownership: the map's node panel EDITS the selected node (components, total, time,
   orbit steps, delete); the HUD's MANEUVER panel shows the burn EXECUTION figures (delta-v remaining, burn time,
   burn start). The map panel and labels use the interface's shared type and palette (`src/core/ui/theme.ts`,
   request map-view-4, resolved; `src/map/theme.ts` adds only the map's own label weight and opaque fills).
@@ -94,16 +96,26 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   so the bound holds for the distance to the polyline, not only to the chord line. Pieces touching the near
   plane use the angle of the 3-D sagitta. Pieces outside the frustum stay single chords; whole off-screen
   ellipses are skipped. A patch with `nuEnd - nuStart >= 2 pi` is one ellipse; its node sits at
-  `nuEnd mod 2 pi`. With time ahead a patch fades toward a lighter tint of its own hue at alpha 0.5
-  (`FADE_FLOOR`, `FADE_TINT`), so far laps stay readable; the current trajectory beyond the first node is dimmed.
+  `nuEnd mod 2 pi`. With time ahead a patch fades in alpha alone toward 0.72 (`FADE_FLOOR`; the hue is kept, so
+  far laps stay the saturated colour of their patch); the current trajectory beyond the first node is dimmed.
+- Coincident patches are drawn once (`SceneBuilder.suppressCoincident`): a 1.5 px occupancy bitmap of what is
+  drawn, in priority order (the current trajectory up to the first node, then the planned patches in time
+  order, then the current trajectory after the first node); a later segment that runs within about 3 px of
+  drawn cells for three quarters of its on-screen length is hidden (`VertexArrays.cover`; it stays clickable and
+  a node still slides along it), short flickering runs are evened out (`cleanCover`). A node with no delta-v
+  shows one orbit, not interleaved dashes.
 - Lines are cut in float64 where they pass behind the eye (`VertexArrays.appendLine`, `CLIP_DEPTH_REL`): a
   vertex counts as in front when its depth exceeds 1e-5 of its distance, and a segment crossing that depth
   gets a new end there. Every segment the GPU draws has both ends safely in front after the float32 narrowing
   (the old GPU clip at the 5 cm near plane could not be resolved for points 1e8 m away and threw mirrored
   chords across the screen). Each line has a dark casing (1.25 px, 0.6 alpha) that keeps it legible over a lit
-  planet; a whole ellipse is joined across its seam (two trailing join-only vertices, `LineRecord.seam`), so
-  no end cap shows there. Dashes are 12 on / 8 off, phase anchored at the node end, carried per vertex as a
-  phase plus the segment's screen length (exact in float32 however long the line).
+  planet, drawn in a pass of its own before all line cores (a line crossing another never cuts it); a whole
+  ellipse is joined across its seam (two trailing join-only vertices, `LineRecord.seam`), so no end cap shows
+  there. Dashes are fixed to the path: every vertex of a planned patch carries its arc length from the node in
+  metres (Simpson over the conic parameter, cached per vertex parameter while the patch is unchanged), every
+  segment the octave n = floor(log2(20 px x metres per px at its depth)); the fragment shader draws the 12 on /
+  8 off patterns of world period 2^n and 2^(n+1) m and cross-fades them by its own depth (like mip levels), so
+  dashes never slide when the camera turns, zooms or follows the vessel and stay about 20 px long near and far.
 - Lines are relative to the patch body's current position, or (toggle) at intercept: every ENCOUNTER (a run
   of consecutive patches about one body in one list) is drawn around the body's ROOT position at that
   encounter's SOI entry, derived exactly from the preceding patch as `prev.bodyPosAtEnd + r(prev.nuEnd) -
@@ -113,37 +125,61 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   "(planned encounter)"). The run the vessel is in now and the root body are never anchored.
 - Radial patches (`conic.p === 0`, sim-orbits convention) are drawn as a straight, non-interactive segment.
 - Other vessels (`conicFromState`, 0.45 alpha): full ellipse, or to the surface for suborbital ones, or to
-  the SOI boundary for open ones. Debris are dots; a debris orbit (0.2 alpha) is drawn only for the hovered
-  debris or with `setDebrisOrbits(true)` (the perf load case; the hovered one is drawn like a vessel orbit).
-  Bodies' orbits (`BodySnapshot.orbit`, attractors only), SOI silhouettes seen from outside (nothing from
-  inside: a great circle read as a second orbit). Tolerances: other vessels' and the hovered debris' orbits
-  0.9 px, debris orbits drawn in bulk 1.5 px (20 % alpha), zone rings the trajectories' 0.29 px.
-- Bodies: a ring icon under 6 px diameter; a name label while the projected radius is under 40 px (priority
-  above markers). Vessels: an arrowhead oriented along the velocity on screen (the active vessel white).
+  the SOI boundary for open ones; left out while under 60 px across (`ORBIT_MIN_SPAN_PX`) unless hovered.
+  Debris are dots (drawn under the label plates); a debris orbit (0.2 alpha) is drawn only for the hovered
+  debris or with `setDebrisOrbits(true)` (the perf load case). The hovered vessel or debris is ringed and its
+  orbit drawn in the hover colour, 2 px. Bodies' orbits (`BodySnapshot.orbit`, attractors only), SOI
+  silhouettes seen from outside (nothing from inside: a great circle read as a second orbit). Tolerances: other
+  vessels' and the hovered debris' orbits 0.9 px, debris orbits drawn in bulk 1.5 px (20 % alpha), zone rings
+  and silhouettes the trajectories' 0.29 px.
+- Bodies: while the projected radius is under 12 px (`BODY_ICON_MAX_RADIUS_PX`) a body is a shaded disc icon
+  above every line (at least 5.5 px; its mean albedo colour from `BodyDef.render.meanColor`, lit from its sun
+  with the terminator, a light rim on the night edge, a dark casing) that owns its icon cluster; from 12 px
+  the renderer's disc carries a silhouette ring (`limb:<body>`, 1.25 px, no casing; strong on the night side
+  where the planet is as black as space, 28 % of that on the lit side), so a line behind a night limb never
+  ends in mid-air. Names (under 40 px radius) in tracked capitals without a plate. Vessels: an elongated
+  chevron with a deep tail notch along the velocity on screen (the active vessel 9.5 px in its trajectory's
+  cyan, others 7 px grey).
 - Surface targets in the body-fixed frame (rotate with the body): landing pin, launch-site pad, recovery zones
   as circles of their radius on the sphere; shown once the body is >= 18 px in radius, labels from 70 px.
 - Markers: SDF icons at float64 positions with distinct glyphs (Ap ring with an up chevron, Pe with a down
-  chevron, SOI entry / exit arrows in / out, impact, entry, closest approach, AN/DN diamond), labels "value +
-  time-to" (Ap/Pe altitude, AN/DN relative inclination, SOI enter/exit with body, impact lat/lon and miss to
-  the landing target when `readouts.landingTarget.predicted` matches, entry speed, closest-approach
-  separation). Impact and entry points also drawn on the ground (the ground twin is left out within 12 px of
-  its marker). Apsis and AN/DN markers are left out on a patch under 40 px across.
-- Clutter: icons closer than 11 px collapse into one (a speck-sized body wins, then the active vessel, then the
-  label priority) with a "+n" badge; the hover tooltip lists the members ("n objects here", debris counted).
-  Unselected nodes are 5.5 px discs (a dashed ring when behind a body). Labels: HUD type family (Bahnschrift,
-  13 px semibold, proportional with tabular digits; atlas in gpu/glyphAtlas.ts) on a dark backing plate that
-  masks any line under it; placed at the first free one of 16 candidates (8 beside the anchor, 8 further out
-  with a leader line), ordered by the side of the anchor's own line: the normal of its screen tangent (marker
-  and node times looked up on the patch line, the vessel's heading) turned away from its body, outer side
-  first, the two along the line last. Free = clear of icons and gizmo arms, other labels, the node panel, the
-  tooltip, badges and `setObstacles` rectangles; a label with no free candidate is hidden. Hover tooltip with
-  all details (entry: speed, flight-path angle, vacuum periapsis, lat/lon, miss), placed in the quadrant
-  (then further out) that covers neither the panel, nor a handle, nor other UI; labels then keep clear of it.
-  No tooltip for the selected node or its handles.
+  chevron, SOI entry / exit arrows in / out, impact, entry, closest approach, AN/DN diamond), outline glyphs
+  filled with an opaque dark interior (the line a marker sits on stops at it); Ap/Pe in the colour of their
+  own patch line (current cyan, planned yellow...). Labels "value + time-to" (Ap/Pe altitude, AN/DN relative
+  inclination, SOI enter/exit with body, impact lat/lon and miss to the landing target when
+  `readouts.landingTarget.predicted` matches, entry speed, closest-approach separation), first line tinted
+  with the marker's colour. Impact and entry points also drawn on the ground (the ground twin is left out
+  within 12 px of its marker). A patch in another body's frame than the one before it starts with a small
+  entry tick (`<list>/<i>/start`; left out within 12 px of the SOI marker). Apsis and AN/DN markers are left
+  out on a patch under 40 px across. The apsis the active vessel sits at (within 11 px) is printed as the
+  vessel label's second line ("Pe 200.0 km  now") instead of folding into a "+1".
+- Visibility is binary: an icon, label and plate are drawn at full strength while the anchor is in front and
+  not behind a body (hidden < 0.5), else not at all (an unselected node behind a body keeps a dashed ring at
+  0.6). Only lines fade over the 1.5 px limb ramp.
+- Clutter: icons closer than 11 px (from the edge of a body icon) collapse into one (a body icon wins, then
+  the active vessel, then the label priority) with a "+n" badge on the icon's upper-right corner; impact and
+  atmosphere-entry labels of folded members are still placed beside the cluster's icon; the hover tooltip lists
+  the members ("n objects here", debris counted). Unselected nodes are 5.5 px discs. Labels: HUD type family
+  (Bahnschrift 13 px semibold, proportional digits; atlas in gpu/glyphAtlas.ts) on an opaque plate (0.95);
+  placed at the cheapest free one of 16 candidates (8 beside the anchor, 8 further out): rank by the side of
+  the anchor's own line (the normal of its screen tangent turned away from its body, outer side first), plus
+  the drawn trajectory weight the plate would cover (`LineGrid`, 8 px cells, built every draw list), plus a
+  penalty when another marker's icon is nearer to the plate than its own anchor; the search stops when no later
+  candidate can be cheaper. Free = clear of icons and gizmo arms, other labels, the node panel, the tooltip,
+  badges and `setObstacles` rectangles; a label with no free candidate is hidden. A leader ties a label to its
+  icon when the plate is more than 11 px from the icon's edge or sits diagonally off a small icon. The selected
+  node has no label (its panel names it). Hover tooltip with all details, placed in the quadrant (then further
+  out) that covers neither the panel, nor a handle, nor other UI, and keeps 6 px from the trajectories; labels
+  then keep clear of it. No tooltip for the selected node or its handles.
+- Time to an event is written in the HUD's countdown notation everywhere (labels, tooltips, the panel's In
+  field): "T− 1:32:00", "T− 3d 18:51", "T+ 0:12", "now".
 - Occlusion: per fragment (lines) and per item (icons, CPU f64) against every body sphere and ghost, with a
-  1.5 px soft edge at the limb; lines lying on a surface (zone rings) are tested against the sphere shrunk by
-  their chords' deepest point plus 1e-4 R (a radial allowance: the same at the limb as at the disc centre).
-  Bodies occlude with `BodyDef.radius` (lines are visible through the thin atmosphere glow above it).
+  1.5 px soft edge at the limb; lines lying on a surface (zone rings, silhouettes) are tested against the
+  sphere shrunk by their chords' deepest point plus 1e-4 R and cut at the limb (no arc along the horizon at
+  partial strength). A body with an atmosphere hides every point above its visible limb with that limb: the
+  height where the grazing Rayleigh optical depth falls to 0.03 (`visibleAtmosphereHeight`, about 51 km for the
+  Earth), so a line behind the planet ends where the glow ends; points inside that shell are tested against
+  the solid sphere (the glow is translucent).
 
 Editing (all through `PlayerCommands`):
 - Click on a current/planned trajectory: `addNode(ut)` at the clicked point, ut from the true anomaly via
@@ -160,13 +196,16 @@ Editing (all through `PlayerCommands`):
   over a handle: 0.1 m/s per step (times the modifiers).
 - Dragging the node body slides it along its pre-node conic in time (nearest point on the drawn polyline,
   revolution closest to the previous time, never before now + 1 s).
-- Panel (DOM, 236 px wide, opaque, HUD type and palette; placed at the best of eight places around the node
-  just outside the gizmo: least drawn line covered (lineGrid.ts, a 14 px occupancy grid of the drawn segments,
-  trajectories weighted highest), never over a handle, other UI or the body centre, not toward the body, the
-  side kept during a drag; docked top-right while the node is off screen): Prograde /
-  Normal / Radial each between its two axis glyphs as nudge buttons (1 m/s, Shift 0.1, Ctrl 10),
-  Total (rescales the burn keeping its direction; a zero burn becomes prograde), In (time to the node:
-  "1h 30m", "T-90s", "1:02:03", "2d4h", plain seconds) and UT (seconds since J2000). A typed value is applied
+- Panel (DOM, 248 px wide, opaque, HUD type and palette; placed at the best of eight places around the node
+  just outside the gizmo: least drawn line covered (lineGrid.ts, the 12 px occupancy grid of the drawn
+  segments, trajectories weighted highest), never over a handle, other UI or the body centre, not toward the
+  body, the side kept during a drag; docked top-right while the node is off screen): Prograde /
+  Normal / Radial each between its two axis glyphs as 24 px nudge buttons (1 m/s, Shift 0.1, Ctrl 10),
+  Total (rescales the burn keeping its direction; a zero burn becomes prograde), In (time to the node in the
+  HUD's countdown "T− 1:32:00.5"; typed also as "1h 30m", "T-90s", "1:02:03", "2d 03:04:05", plain seconds)
+  and UT (calendar time "2028-03-03 20:51:40" UTC as the HUD clock writes it, J2000 = 2000-01-01 12:00
+  treated as UTC; typed in the same form, or seconds since J2000). Every field is editable; the hint is two
+  lines ("Drag a handle · Wheel 0.1 m/s" / "Shift fine · Ctrl coarse"). A typed value is applied
   ONCE, on Enter or when the field loses focus (unchanged text sends nothing); Escape restores the node's
   value and sends nothing; text that does not parse or is refused (a time not in the future, a negative
   total) shows the node's value again. Buttons: -1 orbit (disabled when it would be in the past), +1 orbit
@@ -217,8 +256,9 @@ body (and for surface targets: body at least 18 px).
 
 ## Acceptance: measured
 
-65 unit tests (7 files incl. boundaries) and 19 functional browser specs pass (2026-11-10, 23.5 s). The 2
-perf specs: GPU passes; CPU passes for the overview and fails for the Earth close-up in the last run (below).
+101 unit tests (10 files incl. boundaries) and 27 functional browser specs pass (2026-11-11, round 2). The 2
+perf specs pass on the quiet machine (round 2: overview CPU p99 0.480 ms, close-up 0.4999 ms; table in
+"Visual close-out, round 2"). The rows below are the original acceptance runs of 2026-11-10.
 
 | Criterion | Result |
 |---|---|
@@ -244,8 +284,8 @@ perf specs: GPU passes; CPU passes for the overview and fails for the Earth clos
 | Browser: 200 km .. 1e9 m without jitter | static camera: consecutive-frame max diff 0 at 2e5, 2e6, 2e7, 2e8, 1e9 m. Moving: the sim steps between frames and the camera follows the vessel from 100 km (low Earth orbit and lunar orbit, 8 steps each); the vessel icon matches an independent f64 projection to 1e-6 px and the rendered line next to it keeps its offset to 0.001 px (Earth) / 0.000 px (Moon), limit 0.08 px. A float32 ROOT path would move by 0.19 px frame to frame in lunar orbit (computed for the same steps), so the spec tells the two apart there |
 | Browser: synthetic chain, at-intercept, every marker kind, both nodes | all via describe(); at intercept the impact lies on the ghost Moon, one ghost |
 | Browser: panel fields show their whole text | `scrollWidth <= clientWidth` for all six fields in the three synthetic close-ups (multi-day times) |
-| Overlay GPU < 0.1 ms (8 patches, 20 debris) | met: p99 <= 0.013 ms in every run (table below) |
-| Overlay CPU < 0.5 ms per frame | overview met in the last run (p99 0.475 ms); Earth close-up NOT met, p99 0.560 ms. Provisional: measured with other agents' bakes loading the machine (table below) |
+| Overlay GPU < 0.1 ms (8 patches, 20 debris) | met: p99 <= 0.013 ms in every run (round 2: 0.009-0.015 ms) |
+| Overlay CPU < 0.5 ms per frame | round 2, 3-7 % load: overview p99 0.480 ms, Earth close-up p99 0.4999 ms (met, the close-up at the line); under the other agents' load the p99 has missed in earlier runs (tables below) |
 
 ### Overlay cost
 
@@ -314,10 +354,9 @@ show through less; the label cache also keys on the landing-target prediction (t
 
 ## Known limits
 
-- CPU budget: see "Visual close-out, round 1" for the current numbers. The perf spec passed in a quiet window
-  (overview p99 0.445 ms, close-up 0.475 ms) and failed in loaded ones; the pre-session code measured side by
-  side sits only 0.03-0.1 ms lower at p99, so the line is load-sensitive for both. A quiet-machine re-measure
-  decides it (PACKAGE_RULES 16).
+- CPU budget: see "Visual close-out, round 2" for the current numbers: both lines pass on a quiet machine
+  (3-7 % load), the close-up exactly at the line (p99 0.4999 ms). Under the other agents' load the p99 grows
+  past 0.5 ms (rounds 1 and 2 alike); the next levers are in "Visual close-out, round 2".
 - Perspective: seen straight down from close range a low orbit lies just behind the limb (at 24,000 km the
   silhouette in the plane of the Earth's centre is at 237 km altitude), so a 200 km orbit seen exactly from
   above at that distance is drawn only as the 1.5 px soft edge and cannot be clicked; tilt the view or zoom
@@ -326,16 +365,24 @@ show through less; the label cache also keys on the landing-target prediction (t
   their body's true position, the encounter around the body where it was at the entry, so the jump is the
   body's motion during the encounter (as in KSP). Ghost bodies occlude like real ones. Double-clicking a
   ghost focuses the real body.
-- Occlusion uses the reference spheres (`BodyDef.radius`): terrain relief (up to ~10 km) is ignored, the
-  atmosphere glow above the radius does not hide lines behind it, and lines on a surface rely on the computed
-  radial chord slack (under half a pixel at the limb).
+- Occlusion uses the reference spheres (`BodyDef.radius`) and, above the atmosphere, the visible limb: terrain
+  relief (up to ~10 km) is ignored, and lines on a surface rely on the computed radial chord slack (under half
+  a pixel at the limb). The silhouette ring is drawn at the solid radius (on the night side the glow is
+  absent; on the lit side the ring is faint and lies just inside the renderer's glow).
 - Labels: hidden labels are only reachable through the hover tooltip; clustered icons through the cluster
-  tooltip. Bodies have no tooltip of their own. A label may still sit on a line other than its own (its plate
-  masks the line there).
+  tooltip. Bodies have no tooltip of their own. A label still lands on a line when every candidate around its
+  icon covers one (it prefers the one covering least; the opaque plate masks the line there).
 - The node frame is approximate when a node can only be found from the patch after it (no marker and no
   patch ending at it); the gizmo and drags still work in that frame.
-- Dashes are laid out in screen length from the node end, so far from the node they still slide a little
-  along the line while the camera turns (near the node they stay put).
+- Dashes cross-fade between two octaves of world period by depth: at a depth half-way between octaves a stretch
+  shows both patterns at partial strength (a static frame can show it); zooming changes which pattern
+  dominates, never where a dash sits on the path.
+- Map icons are placed by geometry and are not moved off HUD panels: an icon (the vessel, the Moon) can lie
+  under the navball or a HUD panel; its label is then hidden or placed elsewhere (labels, the node panel and
+  tooltips do keep clear of `setObstacles` rectangles).
+- The flight HUD writes distances above 10,000 km in Mm ("180.0 Mm"), the map in grouped km ("180 000 km");
+  they now share a frame (`real-hud-translunar.png`). The map kept km as the round-0 list asked; making the
+  two agree is a choice for flight-ui (noted in `docs/requests/map-view-5.md`).
 - The synthetic scene is static; editing is exercised against the FakeSim (single-body patches).
 - The panel's time field is frozen while it has focus (typing is not overwritten), so with the sim running
   the shown "In" value ages until the field is left.
@@ -356,6 +403,12 @@ show through less; the label cache also keys on the landing-target prediction (t
 
 - `docs/requests/map-view-4.md` (src/core, src/ui/hud/hudStyles.ts): the HUD's font stack and palette as
   shared constants. Resolved by core-support (d3134ab): `src/core/ui/theme.ts`; src/map imports it.
+- `docs/requests/map-view-5.md` (labs/integration and the app shell's map mode; core-support), open, not
+  blocking: mount the map with the flight HUD in map mode and pass the HUD panel rectangles to
+  `setObstacles`. Workaround in map-view's own spec (`mountHud` in `real-planet.spec.ts`).
+- `docs/requests/map-view-6.md` (atmosphere-clouds, terrain-render, sky-lighting), open, not blocking: the
+  planet under the map at map distances (cloud texel blocks and grey tops, sea speckle, the Moon's limb smear,
+  no stars in the map camera); routed from the round-1 photo critic's finding 5.
 
 No contract was changed; no open requests against map-view paths exist.
 
@@ -367,9 +420,14 @@ behind the limb and its gizmo at full strength, asserted by pixel), `synthetic-e
 debris orbit drawn), `hover-impact-details.png`, `hover-add-maneuver.png`, `hover-debris-orbit.png`,
 `zone-near-limb.png` (a recovery zone 82 degrees off the sub-camera point), `accept-*.png` (acceptance
 steps, including `accept-panel.png` and `accept-follow-lowOrbit.png` / `accept-follow-lunarOrbit.png` from
-the moving-camera spec), and over the REAL renderer (the map feature mounted into the integration lab by
-`real-planet.spec.ts`): `real-lowOrbit.png`, `real-lowOrbit-dayside.png`, `real-lowOrbit-node.png`,
-`real-translunar.png`, `real-lunarOrbit.png`.
+the moving-camera spec), `dpr2-lowOrbit-node.png` and `dpr2-synthetic-moon.png` (1920 x 1080 CSS px at device
+pixel ratio 2: the glyph atlas, icons and lines at 2x), and over the REAL renderer (the map feature mounted
+into the integration lab by `real-planet.spec.ts`, `view.update` driven with the CSS size as the app does):
+`real-lowOrbit.png` (with a pixel check that the night limb stands out from the sky), `real-lowOrbit-dayside.png`,
+`real-lowOrbit-node.png`, `real-translunar.png`, `real-lunarOrbit.png`, and the frame the player sees, the map
+with the real flight HUD (`createHud` from src/ui, panel rectangles as obstacles, node panel asserted clear of
+every HUD panel): `real-hud-lowOrbit-node-720p.png`, `real-hud-lowOrbit-node-4k.png` (device pixel ratio 2),
+`real-hud-translunar.png`, `real-hud-lunarOrbit.png`.
 
 ## Changes by the lead between the waves (2026-11-10)
 
@@ -472,3 +530,62 @@ Photo lens about 7: the map now reads over the real planet (cased lines, plates,
 is drawn; the lab backdrop is still a flat shaded sphere in most pictures and the dashes still crawl.
 Artifact lens about 7.5: the blocker and the gizmo, tooltip, panel and pile-up defects are gone at their
 causes; the CPU p99 line is not reliably met under load.
+
+## Visual close-out, round 2 (2026-11-11)
+
+Work lists: `out/qa/wave2/map-view.r1.photo.json` (photo 6/10) and `out/qa/wave2/map-view.r1.artifact.json`
+(artifact 6.5/10). Commits efe7c86, 6efb18b, 0f01eda and the close-out commit. Each item was changed at its
+cause, the pictures regenerated and looked at (crops at 4-5x), next to `out/qa/ref/earth-orbit-clouds/limb-panorama.jpg`,
+`airglow-red-yellow.jpg` and `moon-surface/earthrise-a17.jpg` for the night limb. New unit tests:
+`tests/unit/map-view/visualQa2.test.ts` (12); new browser pictures: `real-hud-*`, `dpr2-*`.
+
+| Item (photo P / artifact A) | What was done | Evidence |
+|---|---|---|
+| P1, A3 (major): night side as black as space, orbits end in mid-air | Every body whose disc the renderer draws gets a silhouette ring (`addLimbLine`: the solid sphere's outline, 1.25 px, no casing, alpha per vertex from the sun: full on the night side, 28 % on the lit side; tested against the sphere shrunk by its chord depth so the body never hides it). Below 12 px the body is a shaded disc icon. Browser check: on the night stretch the limb pixel is >= 20/255 above the sky 8 px out | `real-lowOrbit.png`, `real-lunarOrbit.png`, `real-hud-lunarOrbit.png`; unit test (ring strong at night, faint by day, never self-hidden) |
+| P2, A4 (major): the pad label a 35-40 % ghost over the lit planet | Visibility is binary: icon, plate and label at full strength while hidden < 0.5, else nothing (the soft weight drove their alpha); surface targets no longer fade with body size either | `real-lowOrbit-dayside.png` (the pad 3-5 px inside the limb is now simply absent), `real-lowOrbit.png` (pad label full strength); unit test: no icon, plate or text with partial alpha over 96 views |
+| P3 (major): the map never shown with the HUD, no 4K picture | `real-planet.spec.ts` mounts the real flight HUD (`createHud`, updated every frame with the map camera), hands its panel rectangles and the navball box to `setObstacles`, drives `view.update` with the CSS size, and asserts the node panel clear of every HUD panel; 720p (low orbit with a node, translunar, lunar orbit) and 1920 x 1080 at device pixel ratio 2. The app / integration-lab wiring is request map-view-5 | `real-hud-lowOrbit-node-720p.png`, `real-hud-lowOrbit-node-4k.png`, `real-hud-translunar.png`, `real-hud-lunarOrbit.png`, `dpr2-*.png` |
+| P4 (major): Earth buried at the overview, badge between icons, a label 37 px from its marker, the mission in 250 px | Bodies under 12 px radius are shaded disc icons (mean albedo colour, terminator from the sun, rim, casing) drawn above every line and owning their cluster (reach from the disc edge); badges sit on the icon's upper-right corner; the impact and entry labels of folded members stay beside the cluster; scored label placement with a penalty for a nearer foreign icon, leaders past 11 px or on a diagonal; other vessels' orbits under 60 px across left out; the lab's overview at 820,000 km (the Moon's orbit fills the height) | `scene-synthetic.png`, `synthetic-chain.png`, `synthetic-8-patches.png`; unit tests (the Earth's disc the only icon on it, lit toward the sun, badge on the corner; small orbits left out) |
+| P5 (major, not this package): clouds, sea speckle, the Moon's limb, no stars | Request map-view-6 to atmosphere-clouds, terrain-render and sky-lighting with the critic's coordinates and references; `real-planet.spec.ts` stays the acceptance view | `docs/requests/map-view-6.md` |
+| A1, P7 (major / minor): coincident patches interleave (zig-zag, barber pole, candy stripe), muddy colours, dashes slide | (1) Coincident patches drawn once (`suppressCoincident`: occupancy bitmap in priority order; hidden stretches stay clickable; flicker evened out). (2) All casings drawn before all cores (two pipelines). (3) Dashes fixed to the path: arc length in metres from the node (Simpson, cached per vertex parameter), world periods per octave of depth, two octaves cross-faded per fragment: no sliding when the camera turns, zooms or follows, about 20 px near and far. (4) Fade by alpha alone to 0.72, the hue kept | `accept-node-added.png` (zero delta-v: one orbit, cyan to the node, yellow dashes after it), `synthetic-earth.png`, `hover-debris-orbit.png`, `synthetic-8-patches.png`; unit tests (zero-delta-v node: no stretch drawn twice; the dash coordinate of a world point unchanged within 2e-4 over camera yaws 0.30-0.90) |
+| A2, P8 (major / minor): debris dots inside label text, see-through plates | Plates opaque (0.95); debris dots drawn in a layer under the plates (dots, plates and leaders, icons, gizmo, then text) | `synthetic-earth.png`, `hover-debris-orbit.png`; unit test (every debris icon precedes every plate) |
+| A5, P10 (major / minor): the two Ap labels read crosswise; the current Pe always folded into "+1" | Ap / Pe icons in their own patch's colour (current cyan, planned yellow), each label's first line tinted with its marker's colour; diagonal placements get a short leader; the apsis the active vessel sits at is printed as the vessel label's second line | `accept-panel.png`, `lowOrbit-node.png` ("Fake vessel / Pe 200.0 km now"); unit test |
+| A6 (minor): labels on lines, the Node 1 plate over the orbit beside the node | Candidates scored by the trajectory weight they cover (`LineGrid`, every draw list); the selected node has no label (its panel beside it names it) | `synthetic-moon-intercept.png`, `accept-panel.png` |
+| A7 (minor): the vessel name 20 px off its glyph, stacked on "Earth" | The same leader rule; the active vessel's label at priority 8.5 in its trajectory colour | `real-translunar.png`, `scene-translunar.png` |
+| A8 (minor): outline markers show the line through them | Ring, diamond, pad and handle glyphs have an opaque dark interior | `synthetic-moon-intercept.png`, `accept-occlusion.png` (the zone ring stops at the pad square) |
+| A9, P6 (minor): the vessel looks like a mouse pointer | Elongated chevron (length : width 1.6) with a deep tail notch, 9.5 px, in the trajectory's cyan with a dark outline; other vessels 7 px grey | every picture with a vessel, e.g. `accept-zoom-200km.png`; unit test (nose along the projected velocity) |
+| A10, P9 (minor): a notch at the zone ring's seam, a pale arc along the horizon, the centre dot half outside, the ring through the pad | Casings in their own pass (no casing over a core); lines lying on a surface are cut at the limb (steep ramp) instead of drawn at partial strength along it; zone centre icons binary; filled pad interior | `zone-near-limb.png`, `real-lowOrbit-dayside.png`, `accept-occlusion.png` |
+| A11, P9 (minor): lines run 3 px into the atmosphere rim | Occluders carry a visible-limb radius (grazing Rayleigh optical depth 0.03: 51 km for the Earth): points above that shell are hidden by it, points inside it by the solid sphere only | `real-lowOrbit-dayside.png`; unit test (behind the glow hidden, inside the shell visible) |
+| A12, P12 (minor): the hovered debris not highlighted; the tooltip border on the trajectory | The hovered vessel or debris is ringed and its orbit drawn in the hover colour at 2 px; tooltip candidates cost the trajectories under them and within 6 px of their edges | `hover-debris-orbit.png`, `hover-impact-details.png`; unit tests |
+| P11 (minor): panel finish | UT as the HUD clock's calendar time (typed back in that form), time to the node in the HUD's countdown, one notation for time-to everywhere ("T− 1:32:00"), two balanced hint lines, 24 px axis buttons. Total and In are editable fields (Total rescales the burn, In sets the time), so they stay boxed | `lowOrbit-node.png`, `accept-panel.png`; unit tests (formats round-trip) |
+| P13 (minor): flat type hierarchy, holes around "1", a bare patch start | Body names in tracked capitals without a plate; the active vessel's label in its trajectory colour; proportional digits in labels (the panel keeps tabular ones); a small entry tick where a patch starts in another body's frame | `scene-synthetic.png`, `synthetic-moon-intercept.png` |
+
+Not fixed, or only in part:
+- P5: the planet's own rendering at map distances belongs to other packages (request map-view-6).
+- P3: the app and the integration lab do not mount the map yet (request map-view-5); the composed frame
+  exists only in map-view's spec. Map icons are not moved off HUD panels (an icon under the navball stays there).
+- A1: no browser frame sequence of a moving camera was recorded; the path-fixed dash coordinate is checked in a
+  unit test (arc length at fixed world points over camera rotation), and the shader reads it per vertex.
+- The HUD's Mm and the map's km now meet in one frame (noted in request map-view-5).
+
+### Overlay cost (perf spec under the GPU lock; whole-machine load sampled before and after)
+
+| Run | Load | Overview CPU p50 / p99 | Close-up CPU p50 / p99 | GPU p99 (ov / cu) |
+|---|---|---|---|---|
+| first round-2 build | 2 % | 0.295 / 0.505 | 0.340 / 0.605 | 0.010 / 0.011 ms |
+| + arc cache, clipped coincidence pass | 2 % | 0.290 / **0.480** | 0.325 / 0.555 | 0.010 / 0.015 ms |
+| final (unrolled lookups, 12 px label grid, packed cluster radii) | 3-7 % | 0.230 / **0.480** | 0.245 / **0.4999** | 0.010 / 0.009 ms |
+
+Both lines pass on the quiet machine, the close-up exactly at the line. Node, same process, 900 frames with an
+orbiting camera (scene + draw list): round-1 code 0.102 / 0.076 ms per frame (close-up / overview), final code
+0.148 / 0.109 ms. What the extra time buys: the coincidence pass (about 0.02 ms in the close-up, where the four
+nearly identical laps of the load case really do lie on each other), the silhouette rings, the label grid
+every frame, the arc lengths (cached; about 0.003 ms once warm). The overview distance of the perf spec is pinned
+at 1.15e9 m (the lab's own default overview is closer now). Next levers if the line must hold under load: the
+round-1 sampler's exact error per resampled piece (pieceError + resample are a quarter of the close-up), and a
+dilated bitmap for the coincidence test.
+
+### Tests
+
+Unit: 94 in 9 files plus boundaries (101 with the boundaries test's 7) (new `visualQa2.test.ts`, formats extended). Browser (functional): 27
+specs (new: the HUD composition at 720p and 4K, two device-pixel-ratio-2 lab pictures, the night-limb pixel
+check). Perf: 2 (above).
