@@ -110,17 +110,18 @@ test.describe('vehicle and launch complex in the integrated game', () => {
   });
 
   test('the lander on the real lunar surface, seen from the ground beside it', async ({ page }) => {
-    // Stand on the terrain a few metres from the landed vessel, at eye height, and look at it.
-    const views: { name: string; east: number; north: number; height: number; sun: [number, number]; fov: number }[] = [
-      { name: 'game-moon-lander-landed', east: 13, north: -9, height: 2.2, sun: [120, 24], fov: 50 },
-      { name: 'game-moon-lander-low-sun', east: -10, north: -12, height: 1.6, sun: [250, 8], fov: 50 },
-      { name: 'game-moon-lander-foot-pad', east: 6.5, north: -5.5, height: 0.7, sun: [120, 24], fov: 38 },
+    // Stand on the terrain a few metres from the landed vessel, at eye height, and look at a point im metres
+    // above the ground under it (the lander stands on its deployed legs: request vehicle-pad-5).
+    const views: { name: string; east: number; north: number; height: number; aim: number; sun: [number, number]; fov: number }[] = [
+      { name: 'game-moon-lander-landed', east: 13, north: -9, height: 2.2, aim: 4.3, sun: [120, 24], fov: 50 },
+      { name: 'game-moon-lander-low-sun', east: -10, north: -12, height: 1.6, aim: 4.3, sun: [250, 8], fov: 50 },
+      { name: 'game-moon-lander-foot-pad', east: 6.5, north: -5.5, height: 0.7, aim: 0.4, sun: [120, 24], fov: 38 },
     ];
     for (const v of views) {
       const loaded = await open(page, `scene=lunarSurface&fov=${v.fov}`);
       test.skip(!loaded.includes('vehicle') || !loaded.includes('terrain'), 'needs the terrain and vehicle packages in the integration lab');
       await page.evaluate(
-        async ([east, north, height, az, el]) => {
+        async ([east, north, height, aim, az, el]) => {
           const lab = (window as Lab).__integration!;
           const snap = lab.app.snapshot();
           const vessel = snap.vessels.find((x) => x.id === snap.activeVesselId)!;
@@ -140,9 +141,10 @@ test.describe('vehicle and launch complex in the integrated game', () => {
           const at = { bodyId: body.id, latDeg: lat + north! / (radius * rad), lonDeg: lon + east! / (radius * rad * Math.cos(lat * rad)), alt: 0 };
           at.alt = (await lab.groundHeight(at.bodyId, at.latDeg, at.lonDeg)) + height!;
           lab.setSun({ bodyId: body.id, latDeg: lat, lonDeg: lon, alt: 0 }, az!, el!);
-          lab.watchVesselFrom(at);
+          const under = await lab.groundHeight(body.id, lat, lon);
+          lab.lookFromTo(at, { bodyId: body.id, latDeg: lat, lonDeg: lon, alt: under + aim! });
         },
-        [v.east, v.north, v.height, v.sun[0], v.sun[1]] as const,
+        [v.east, v.north, v.height, v.aim, v.sun[0], v.sun[1]] as const,
       );
       // (Half the frame is the black lunar sky.)
       await save(page, v.name, 0.06);
