@@ -5,6 +5,7 @@
  *
  *  - Structures are BODY-FIXED shadow casters (drawn into every cascade of their body). An articulated arm
  *    is submitted as a MOVING caster while it swings, so a staggered cascade never holds a stale arm.
+ *    Long, low structures (pipe runs) cast only into the cascades that can resolve their shadow.
  *  - Swing arms and the tail service mast retract when a vessel standing on the pad lights its engines (or
  *    when no vessel stands there); the crew access arm follows the same rule.
  *  - At night the lamp lenses glow and the nearest lamps are registered as local lights.
@@ -16,7 +17,7 @@ import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
 import './site';
-import { generateStructure, type SiteState, type SiteVisual } from './site/types';
+import { NEAR_SHADOW_TEXEL, generateStructure, type SiteState, type SiteVisual } from './site/types';
 
 export interface SiteFeatureOptions {
   /**
@@ -76,6 +77,8 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   let ctx: RenderContext;
   let defs: DefLibrary;
   let batch: MeshBatch;
+  /** Items whose shadow is drawn in the near cascades only. */
+  let nearBatch: MeshBatch;
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
   const stats: SiteStats = { sites: 0, instances: 0, triangles: 0, shadowTriangles: 0, movingInstances: 0, lights: 0, updateMs: 0 };
@@ -149,6 +152,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       ctx = c;
       defs = c.defs;
       batch = coreOf(c).meshes.createBatch('site');
+      nearBatch = coreOf(c).meshes.createBatch('site-near');
       for (const site of Object.values(defs.sites)) sites.push(buildSite(site));
     },
 
@@ -159,6 +163,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const dt = Number.isFinite(lastUt) ? Math.max(0, Math.min(60, snapshot.ut - lastUt)) : 0;
       lastUt = snapshot.ut;
       batch.begin(frame);
+      nearBatch.begin(frame);
       stats.sites = 0;
       stats.instances = 0;
       stats.movingInstances = 0;
@@ -204,7 +209,8 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               };
               if (opts?.castShadow === false) inst.castShadow = false;
               if (opts?.emissive !== undefined) inst.emissiveScale = opts.emissive;
-              batch.add(handle, inst);
+              if (opts?.grime) inst.soot = opts.grime;
+              (opts?.nearShadowOnly ? nearBatch : batch).add(handle, inst);
               stats.instances++;
               if (opts?.moving) stats.movingInstances++;
             },
@@ -220,6 +226,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
         }
       }
       batch.finish();
+      nearBatch.finish();
       // The lamps nearest to the camera's reach become local lights.
       lamps.sort((a, b) => a.d - b.d);
       stats.lights = 0;
@@ -234,20 +241,23 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
 
     drawGBuffer(_frame, pass) {
       batch.drawGBuffer(pass);
-      stats.triangles = batch.stats.triangles;
+      nearBatch.drawGBuffer(pass);
+      stats.triangles = batch.stats.triangles + nearBatch.stats.triangles;
     },
 
     drawShadow(_frame, pass, cascade: ShadowCascadeView) {
       // The batch draws body-fixed instances into every cascade and the moving ones only where
       // `cascade.everyFrame` is true.
       batch.drawShadow(pass, cascade);
-      stats.shadowTriangles = batch.stats.shadowTriangles;
+      if (cascade.texelSize <= NEAR_SHADOW_TEXEL) nearBatch.drawShadow(pass, cascade);
+      stats.shadowTriangles = batch.stats.shadowTriangles + nearBatch.stats.shadowTriangles;
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
 
     dispose() {
       batch.destroy();
+      nearBatch.destroy();
       for (const rt of sites) for (const pl of rt.placed) for (const h of Object.values(pl.handles)) h.destroy();
       sites.length = 0;
     },

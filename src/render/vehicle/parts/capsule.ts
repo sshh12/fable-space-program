@@ -12,10 +12,10 @@
  */
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import type { Vec3Tuple } from '@/core/math';
-import { decalAspect, decalUv } from '../decals';
+import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, dot3, norm3, scale3, sub3, xf } from '../geom/builder';
-import { DEG, Profile, TAU, bolt, box, frustum, lathe, patchVertex, rod, zipLoops, boltCircle } from '../geom/prims';
-import { materialDef, uTilesPerMetre, type MatId } from '../materials';
+import { DEG, Profile, TAU, bolt, box, frustum, lathe, patchVertex, rod, zipLoops, boltCircle, type LatheRegion } from '../geom/prims';
+import { materialDef, type MatId } from '../materials';
 import { buildModel, hash01, thruster } from './common';
 import type { PartModel } from './types';
 import { mouldLine, shellRadius, shieldContour } from './mouldline';
@@ -138,6 +138,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
   const ml = mouldLine(defs, P.str('mouldLine'));
+  const sheet = decalSheetOf(defs);
   const shellMat = P.str('backShell', 'tile-white') as MatId;
   const shieldMat = P.str('heatShield', 'ablator') as MatId;
   const frameW = P.num('windowFrame', 0.022);
@@ -162,8 +163,17 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       seam = phi;
     }
   }
-  const tiles = uTilesPerMetre(shellMat);
-  const ru = Math.max(1, Math.round(TAU * rB * tiles)) / (TAU * tiles);
+  // Back-shell tiles are laid in courses round the cone: every course holds a whole number of tiles of the
+  // same width, so the tiles do not narrow toward the apex, and each course is offset against its neighbours.
+  const tileSize = P.num('tileSize', 0.18);
+  const courses = Math.max(1, Math.round(((yT - yB) * slope) / tileSize));
+  const tilesIn: number[] = [];
+  const coursePhase: number[] = [];
+  for (let c = 0; c < courses; c++) {
+    const yMid = yB + ((yT - yB) * (c + 0.5)) / courses;
+    tilesIn.push(Math.max(3, Math.round((TAU * shellRadius(ml, yMid)) / tileSize)));
+    coursePhase.push(Math.floor(hash01(c, 41) * 8) * tileSize + (c % 2) * 0.5 * tileSize + (hash01(c, 43) - 0.5) * 0.3 * tileSize);
+  }
   const rcsDef = def.modules.find((m) => m.type === 'rcs');
 
   /** Scorch weight of the back shell: streaks that start at the shoulder and thin out toward the apex. */
@@ -184,52 +194,102 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     return 1 - 0.62 * Math.pow(t, 1.4) * (1 - streak);
   };
 
-  const skin = (b: MeshBuilder, glass: MeshBuilder | null): void => {
+  /** Azimuth grid shared by the heat shield and the back shell of one LOD (their rims meet vertex for vertex). */
+  const azimuths = (b: MeshBuilder): { N: number; dphi: number; phiOf: (i: number) => number; phis: number[] } => {
     const N = b.pick(144, 72, 24);
-    const M = b.pick(48, 24, 6);
     const dphi = TAU / N;
-    const yOf = (j: number): number => yB + ((yT - yB) * j) / M;
     const phiOf = (i: number): number => seam + i * dphi;
     const phis: number[] = [];
     for (let i = 0; i <= N; i++) phis.push(phiOf(i));
+    return { N, dphi, phiOf, phis };
+  };
 
+  /** Far LOD: the glazing as dark patches of the back shell, and the azimuth grid with lines on their edges. */
+  const farGlazing = (): LatheRegion[] =>
+    openings.map((o) => {
+      const half = (o.hatch ? ml.hatch.window.radius : o.hw) / shellRadius(ml, o.C[1]);
+      const hy = (o.hatch ? ml.hatch.window.radius : o.hh) / slope;
+      return { phi0: o.phi - half, phi1: o.phi + half, y0: o.C[1] - hy, y1: o.C[1] + hy, mat: 'glass' as MatId, span: ['c0', 'c1'] as [string, string] };
+    });
+  const farPhis = (): number[] => {
+    const N = 24;
+    const phis: number[] = [];
+    for (let i = 0; i <= N; i++) phis.push((i / N) * TAU);
+    for (const r of farGlazing()) {
+      for (const bound of [r.phi0, r.phi1]) {
+        let best = 1;
+        for (let i = 1; i < N; i++) if (Math.abs(phis[i]! - bound) < Math.abs(phis[best]! - bound)) best = i;
+        phis[best] = bound;
+      }
+    }
+    return phis.sort((a, c) => a - c);
+  };
+
+  /** Heat shield: apex to the maximum diameter, on the azimuth grid of the back shell. */
+  const shield = (b: MeshBuilder): void => {
+    const phis = b.lod === 2 ? farPhis() : azimuths(b).phis;
     b.mat(shieldMat).masks(0, 1, 1, 0);
     b.begin(false, 'capsule-skin');
-    // ---- heat shield: apex to the maximum diameter, same azimuth grid as the cone
     const sc = shieldContour(ml, b.pick(4, 2, 1));
     const sp = Profile.at(sc[0]![0], sc[0]![1]);
     sp.pts[0]!.hard = false;
     for (let i = 1; i < sc.length; i++) sp.to(sc[i]![0], sc[i]![1]);
     lathe(b, sp, { phis, join: true, mask: (_y, phi, r, m) => void (m.soot = shieldChar(phi, r)) });
+    if (b.lod === 0) {
+      // Compression pads where the shield sat on the adapter.
+      b.mat('steel-dark').masks(0.2, 1, 1, 0);
+      const padR = rB - 0.09;
+      const sy = shieldContour(ml, 4).reduce((best, p) => (Math.abs(p[0] - padR) < Math.abs(best[0] - padR) ? p : best));
+      for (let i = 0; i < 6; i++) {
+        const phi = (i / 6) * TAU + 0.2;
+        b.at(xf.mul(xf.translate(sy[0] * Math.sin(phi), sy[1] - 0.004, sy[0] * Math.cos(phi)), xf.rotX(Math.PI)), () => frustum(b, 0.06, 0.055, 0, 0.012, 16, 'pad'));
+      }
+    }
+  };
+
+  const skin = (b: MeshBuilder, glass: MeshBuilder | null): void => {
+    const { N, dphi, phiOf, phis } = azimuths(b);
+    // Sub-rows per tile course.
+    const sub = b.pick(3, 2, 1);
+    const M = courses * sub;
+    const yOf = (j: number): number => yB + ((yT - yB) * j) / M;
 
     // ---- back shell cone as a grid with the opening blocks left out
-    b.mat(shellMat);
+    b.mat(shellMat).masks(0, 1, 1, 0);
+    b.begin(false, 'capsule-skin');
     const vid = new Map<number, number>();
-    const coneVertex = (phi: number, y: number, uPhi = phi): number => {
+    const coneVertex = (phi: number, y: number, u: number, v: number): number => {
       const r = shellRadius(ml, y);
       const s = Math.sin(phi);
       const c = Math.cos(phi);
-      const idx = b.v(r * s, y, r * c, s / slope, k / slope, c / slope, c, 0, -s, (uPhi - seam) * ru, (y - yB) * slope);
+      const idx = b.v(r * s, y, r * c, s / slope, k / slope, c / slope, c, 0, -s, u, v);
       b.setMask(idx, 0, 1, scorch(phi, y), 0);
       return idx;
     };
-    const grid = (i: number, j: number): number => {
-      const key = j * (N + 1) + i;
+    /** Grid vertex (i, j) as a vertex of tile course c (rows between two courses exist once per course). */
+    const grid = (i: number, j: number, c: number): number => {
+      const key = (c * (M + 1) + j) * (N + 1) + i;
       let v = vid.get(key);
       if (v === undefined) {
-        v = coneVertex(phiOf(i), yOf(j));
+        v = coneVertex(phiOf(i), yOf(j), (i / N) * tilesIn[c]! * tileSize + coursePhase[c]!, (c + (j - c * sub) / sub) * tileSize);
         vid.set(key, v);
       }
       return v;
     };
-    /** Vertex at an opening-plane position (a, b) projected onto the shell. */
-    const shellVertex = (o: Opening, a: number, bb: number): number => {
-      const p = projectToShell(ml, o, a, bb);
+    /** Texture coordinates round an opening: the close-out tiles are laid square to the opening. */
+    const planarUv = (o: Opening, p: Vec3Tuple): [number, number] => {
+      const rel = sub3(p, o.C);
+      return [dot3(rel, o.T) + 0.31 * tileSize, dot3(rel, o.S) + 0.47 * tileSize];
+    };
+    const shellPoint = (o: Opening, p: Vec3Tuple): number => {
       let phi = Math.atan2(p[0], p[2]);
       while (phi < seam) phi += TAU;
       while (phi >= seam + TAU) phi -= TAU;
-      return coneVertex(phi, p[1]);
+      const [u, v] = planarUv(o, p);
+      return coneVertex(phi, p[1], u, v);
     };
+    /** Vertex at an opening-plane position (a, b) projected onto the shell. */
+    const shellVertex = (o: Opening, a: number, bb: number): number => shellPoint(o, projectToShell(ml, o, a, bb));
 
     const owner = new Int16Array(N * M).fill(-1);
     const blocks: { o: Opening; i0: number; i1: number; j0: number; j1: number }[] = [];
@@ -265,9 +325,10 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       });
     }
     for (let j = 0; j < M; j++) {
+      const c = Math.floor(j / sub);
       for (let i = 0; i < N; i++) {
         if (owner[j * N + i] !== -1) continue;
-        b.quad(grid(i, j), grid(i + 1, j), grid(i + 1, j + 1), grid(i, j + 1));
+        b.quad(grid(i, j, c), grid(i + 1, j, c), grid(i + 1, j + 1, c), grid(i, j + 1, c));
       }
     }
 
@@ -278,9 +339,13 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       const border: number[] = [];
       const ang: number[] = [];
       const pushB = (i: number, j: number): void => {
-        const v = grid(i, j);
-        const rel = sub3(b.position(v), o.C);
-        border.push(v);
+        // The block's own copy of the grid vertex (same position, close-out texture coordinates).
+        const s = Math.sin(phiOf(i));
+        const c = Math.cos(phiOf(i));
+        const r = shellRadius(ml, yOf(j));
+        const p: Vec3Tuple = [r * s, yOf(j), r * c];
+        const rel = sub3(p, o.C);
+        border.push(shellPoint(o, p));
         ang.push(Math.atan2(dot3(rel, o.S), dot3(rel, o.T)));
       };
       for (let i = blk.i0; i <= blk.i1; i++) pushB(i, blk.j0);
@@ -463,8 +528,8 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const placard = (b: MeshBuilder, name: string, azDeg: number, y: number, height: number): void => {
     const phi = azDeg * DEG;
     const r0 = shellRadius(ml, y);
-    const width = height * decalAspect(name);
-    const [u0, v0, u1, v1] = decalUv(name);
+    const width = height * sheet.aspect(name);
+    const [u0, v0, u1, v1] = sheet.uv(name);
     const nu = Math.max(2, Math.round(width / 0.09));
     b.mat('decal').masks(0, 1, 0, 0);
     b.begin(false, 'placard');
@@ -523,7 +588,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
           // Exit on the blister face the jet leaves through, lifted clear of the tiles.
           const dn = norm3(d);
           const side = sub3(dn, scale3(nrm, dot3(dn, nrm)));
-          const exit = add3(add3(base, scale3(nrm, 0.045)), scale3(norm3(side), 0.19));
+          const exit = add3(add3(base, scale3(nrm, 0.036)), scale3(norm3(side), 0.19));
           thruster(b, exit, norm3(add3(scale3(norm3(side), 0.92), scale3(nrm, 0.38))), 0.032, 0.1);
         }
       }
@@ -542,10 +607,10 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       const hatch = openings.find((o) => o.hatch)!;
       b.mat('alu-machined').masks(0.3, 1, 0.3, 0);
       for (const sa of [-1, 1]) {
-        const p0 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), -0.3, 0.05);
-        const p1 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), 0.3, 0.05);
+        const p0 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), -0.3, 0.045);
+        const p1 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), 0.3, 0.045);
         rod(b, p0, p1, 0.012, 8, 'handrail');
-        for (const p of [p0, p1]) rod(b, add3(p, scale3(hatch.N, -0.055)), p, 0.01, 8, 'handrail');
+        for (const p of [p0, p1]) rod(b, add3(p, scale3(hatch.N, -0.05)), p, 0.01, 8, 'handrail');
       }
       b.mat('steel-brushed');
       const uphi = 90 * DEG + 0.35;
@@ -557,13 +622,6 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         b.mat('steel-dark');
         for (const sx of [-0.08, 0.08]) b.at(xf.translate(sx, 0.018, 0), () => frustum(b, 0.035, 0.03, 0, 0.02, 12, 'port'));
       });
-      b.mat('steel-dark').masks(0.2, 1, 1, 0);
-      const padR = rB - 0.09;
-      const sy = shieldContour(ml, 4).reduce((best, p) => (Math.abs(p[0] - padR) < Math.abs(best[0] - padR) ? p : best));
-      for (let i = 0; i < 6; i++) {
-        const phi = (i / 6) * TAU + 0.2;
-        b.at(xf.mul(xf.translate(sy[0] * Math.sin(phi), sy[1] - 0.004, sy[0] * Math.cos(phi)), xf.rotX(Math.PI)), () => frustum(b, 0.06, 0.055, 0, 0.012, 16, 'pad'));
-      }
       b.mat('steel-bare').masks(0.2, 1, 0.3, 0);
       for (const o of openings) {
         if (o.hatch) continue;
@@ -594,14 +652,10 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     if (b.lod < 2) {
       skin(b, g);
     } else {
-      // Far LOD: a closed shell with dark patches where the glazing is.
-      const N = 24;
-      b.mat(shieldMat).masks(0, 1, 1, 0);
-      const sc = shieldContour(ml, 1);
-      const p = Profile.at(sc[0]![0], sc[0]![1]);
-      p.pts[0]!.hard = false;
-      for (let i = 1; i < sc.length; i++) p.to(sc[i]![0], sc[i]![1]);
-      p.hard().mat(shellMat).mark('c0');
+      // Far LOD: the back shell as one surface of revolution with dark patches where the glazing is (its rim
+      // meets the far LOD of the heat shield).
+      b.mat(shellMat).masks(0, 1, 1, 0);
+      const p = Profile.at(rB, yB).mark('c0');
       const ys = new Set<number>([yT]);
       for (const o of openings) {
         ys.add(o.C[1] - (o.hatch ? ml.hatch.window.radius : o.hh) / slope);
@@ -610,27 +664,15 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       for (const y of [...ys].sort((a, c) => a - c)) p.to(shellRadius(ml, y), y);
       p.hard().mark('c1');
       p.corner(rTun, yTop).corner(0, yTop);
-      const regions = openings.map((o) => {
-        const half = (o.hatch ? ml.hatch.window.radius : o.hw) / shellRadius(ml, o.C[1]);
-        const hy = (o.hatch ? ml.hatch.window.radius : o.hh) / slope;
-        return { phi0: o.phi - half, phi1: o.phi + half, y0: o.C[1] - hy, y1: o.C[1] + hy, mat: 'glass' as MatId, span: ['c0', 'c1'] as [string, string] };
-      });
-      const phis: number[] = [];
-      for (let i = 0; i <= N; i++) phis.push((i / N) * TAU);
-      for (const r of regions) {
-        for (const bound of [r.phi0, r.phi1]) {
-          let best = 1;
-          for (let i = 1; i < N; i++) if (Math.abs(phis[i]! - bound) < Math.abs(phis[best]! - bound)) best = i;
-          phis[best] = bound;
-        }
-      }
-      phis.sort((a, c) => a - c);
-      lathe(b, p, { phis, regions, tag: 'capsule-skin', mask: (y, phi, r, m) => void (m.soot = y <= yB + 1e-6 ? shieldChar(phi, r) : scorch(phi, y)) });
+      lathe(b, p, { phis: farPhis(), regions: farGlazing(), closed: false, tag: 'capsule-skin', mask: (y, phi, _r, m) => void (m.soot = scorch(phi, y)) });
     }
     fittings(b);
   });
   // The far LOD of the glass model is empty (the body carries dark patches there).
   const glass = buildFrom(`${def.id}.glass`, glassLods.map((g) => g.build()));
+  // The heat shield is a model of its own: it is drawn at the temperature of the ablating surface, which the
+  // structure behind it never reaches.
+  const shieldModel = buildModel(`${def.id}.shield`, shield);
   const lamp = buildModel(`${def.id}.lamp`, (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
     b.at(xf.along(lampPos.p, add3(lampPos.p, lampPos.n)), () => {
@@ -643,10 +685,13 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
 
   const lightIndex = def.modules.findIndex((m) => m.type === 'light');
   const lightDef = def.modules[lightIndex];
+  const shieldIndex = def.modules.findIndex((m) => m.type === 'heatShield');
   const pose = (input: PoseInput, emit: PoseSink): void => {
     emit('body', null, null);
-    emit('glass', null, null, { castShadow: false });
-    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false });
+    const hs = input.modules[shieldIndex];
+    emit('shield', null, null, { temperature: hs && hs.type === 'heatShield' ? hs.surfaceTemp : 0 });
+    emit('glass', null, null, { castShadow: false, cold: true });
+    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     if (!lightDef || lightDef.type !== 'light' || input.anim.lamp <= 0) return [];
@@ -654,7 +699,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const p = add3(lampPos.p, scale3(lampPos.n, 0.6));
     return [{ pos: p, intensity: [cd, cd * 0.97, cd * 0.9], range: 40 }];
   };
-  return { models: { body, glass, lamp }, pose, lights };
+  return { models: { body, shield: shieldModel, glass, lamp }, pose, lights };
 };
 
 /** Luminous intensity (cd) of a lamp from its `lumens` and `beamDeg` parameters. */

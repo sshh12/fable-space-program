@@ -7,18 +7,20 @@
  * fittings seen inside the interstage after separation.
  */
 import type { Vec3Tuple } from '@/core/math';
+import { decalSheetOf } from '../decals';
 import { MeshBuilder, polar, xf } from '../geom/builder';
 import { DEG, Profile, TAU, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, buildModel, decalRegion, hash01, parseList, raceway, regionBounds, regionHeights, seams, sootRamp, stringers, umbilicalPlate, ventPort } from './common';
-import { Params, staticPose, type PartGenerator } from './types';
+import { accessDoor, band, bandRegion, buildModel, decalRegion, hash01, noise2, parseList, raceway, regionBounds, regionHeights, seams, stringers, umbilicalPlate, ventPort } from './common';
+import { Params, staticPose, type PartGenerator, type PartModel, type PoseInput, type PoseSink } from './types';
 
 const mat = (id: string, where: string): MatId => {
   if (!isMatId(id)) throw new Error(`${where}: unknown material "${id}"`);
   return id;
 };
 
-export const stageTank: PartGenerator = ({ def, params }) => {
+export const stageTank: PartGenerator = ({ def, params, defs }) => {
+  const sheet = decalSheetOf(defs);
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
   const R = def.bounds.radius;
@@ -66,13 +68,34 @@ export const stageTank: PartGenerator = ({ def, params }) => {
     regionsFull.push(r);
     regionsBands.push(r);
   }
-  for (const e of parseList(P.str('decals', ''))) regionsFull.push(decalRegion(e.name, R, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['skin0', 'skin1']));
+  for (const e of parseList(P.str('decals', ''))) regionsFull.push(decalRegion(sheet, e.name, R, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['skin0', 'skin1']));
 
   const engineNodes = def.attachNodes.filter((n) => n.id.startsWith('engine'));
+  /**
+   * Frost weight of the skin: the barrels of the cryogenic tanks, with a frost line a hand's breadth above
+   * and below each tank (the domes inside the skirts chill the skin a little past the weld).
+   */
   const frostAt = (y: number): number => {
     let w = 0;
-    for (const t of tanks) w = Math.max(w, Math.min(1, (y - t.y0 + 0.1) / 0.5, (t.y1 + 0.1 - y) / 0.5));
+    for (const t of tanks) w = Math.max(w, Math.min(1, (y - t.y0 + 0.12) / 0.14, (t.y1 + 0.12 - y) / 0.14));
     return Math.max(0, w) * frostW;
+  };
+  /**
+   * Rime is not an even coat: it grows in patches a metre or two across, thinner where the sun and the wind
+   * work on it, and it is scored by narrow vertical tracks where slabs have let go and slid.
+   */
+  const frostPatch = (y: number, phi: number): number => {
+    const patches = 0.5 + 0.75 * noise2((phi * R) / 2.1, y / 2.6, 61) + 0.3 * noise2((phi * R) / 0.7, y / 1.3, 63) - 0.2;
+    const track = hash01(Math.round((phi / TAU) * 144), 67) < 0.14 ? 0.35 + 0.5 * noise2(y / 3.3, phi * 5, 69) : 1;
+    return Math.max(0.12, Math.min(1, patches)) * track;
+  };
+  /** Soot of the base flow on the aft skin: heavy at the base, licking upward in streaks. */
+  const sootAt = (y: number, phi: number): number => {
+    const t = Math.max(0, 1 - y / sootTop);
+    if (t <= 0) return 0.04;
+    const streak = 0.5 + 0.5 * noise2((phi * R) / 0.55, y / 4.5, 71);
+    const reach = Math.pow(t, 0.45 + 1.4 * (1 - streak));
+    return Math.min(1, 0.04 + 0.96 * reach * (0.7 + 0.3 * streak));
   };
 
   const shell = (b: MeshBuilder): void => {
@@ -86,8 +109,14 @@ export const stageTank: PartGenerator = ({ def, params }) => {
       if (b.lod < 2) {
         const n = Math.max(1, Math.round((t.y1 - t.y0) / ringStep));
         for (let i = 1; i < n; i++) ys.add(t.y0 + ((t.y1 - t.y0) * i) / n);
-        ys.add(Math.min(t.y0 + 0.5, t.y1));
-        ys.add(Math.max(t.y1 - 0.5, t.y0));
+        // Frost lines at both ends of a frosting tank, and rings a metre apart for the patches of rime.
+        if (frostW > 0) {
+          for (const dy of [-0.12, 0.02]) {
+            ys.add(Math.max(0, t.y0 + dy));
+            ys.add(Math.min(H, t.y1 - dy));
+          }
+          for (let y = Math.ceil(t.y0 + 0.5); y < t.y1 - 0.5; y += 1) ys.add(y);
+        }
       }
     }
     if (b.lod < 2) for (let y = 1; y < Math.min(sootTop, H); y += 1) ys.add(y);
@@ -138,9 +167,8 @@ export const stageTank: PartGenerator = ({ def, params }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        // Frost is patchy: thinner where the barrel panels differ, never a uniform coat.
-        m.frost = outer ? frostAt(y) * (0.72 + 0.28 * hash01(Math.round(y * 2.3), Math.round(_phi * 9))) : 0;
-        m.soot = outer ? 0.12 + 0.88 * sootRamp(y, 0, sootTop) : y < aftTop + 1 ? 0.6 : 0;
+        m.frost = outer ? frostAt(y) * frostPatch(y, _phi) : 0;
+        m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;
       },
@@ -324,9 +352,81 @@ export const stageTank: PartGenerator = ({ def, params }) => {
     }
   };
 
+  /**
+   * The rime itself, on tanks that frost heavily: a matte white layer a few millimetres proud of the barrel,
+   * in patches whose outlines follow the contour of a smooth thickness field (marching squares over the
+   * skin's own azimuth grid, so the layer is an exact offset of the faceted skin). Drawn with a dithered
+   * fade that follows the frost amount: paint and markings show through thin frost, and the layer
+   * thins and goes as the vehicle climbs.
+   */
+  const rime = (b: MeshBuilder): void => {
+    // Never fewer segments than the skin at any LOD: a coarser layer would dip under the skin's facets.
+    const segs = b.pick(144, 64, 64);
+    const phis = phisWith(segs, regionBounds(regionsFull));
+    const rowStep = b.pick(0.5, 1, 2.5);
+    const proud = 0.006;
+    const Rr = R + proud;
+    const thickness = (phi: number, y: number): number => {
+      let inTank = -1;
+      for (const t of tanks) inTank = Math.max(inTank, Math.min(y - t.y0 + 0.1, t.y1 + 0.1 - y));
+      if (inTank <= 0) return -1;
+      // The layer exists where the rime is thickest: a little over half of the barrel, in patches.
+      return Math.min(frostPatch(y, phi) - 0.72, inTank * 4);
+    };
+    b.mat('frost').masks(0, 1, 0, 0);
+    b.begin(false, 'rime');
+    interface P {
+      p: Vec3Tuple;
+      phi: number;
+      y: number;
+    }
+    const at = (phi: number, y: number): P => ({ p: polar(Rr, phi, y), phi, y });
+    const cross = (a: P, c: P, fa: number, fc: number): P => {
+      // Kept a little away from the corners: a crossing on a corner would make a triangle without area.
+      const t = Math.min(0.96, Math.max(0.04, fa / (fa - fc)));
+      return { p: [a.p[0] + (c.p[0] - a.p[0]) * t, a.p[1] + (c.p[1] - a.p[1]) * t, a.p[2] + (c.p[2] - a.p[2]) * t], phi: a.phi + (c.phi - a.phi) * t, y: a.y + (c.y - a.y) * t };
+    };
+    const vertex = (q: P): number => {
+      const s = Math.sin(q.phi);
+      const c = Math.cos(q.phi);
+      return b.v(q.p[0], q.p[1], q.p[2], s, 0, c, c, 0, -s, q.phi * R, q.y);
+    };
+    for (const t of tanks) {
+      const rows = Math.max(1, Math.round((t.y1 - t.y0 + 0.2) / rowStep));
+      const yOf = (j: number): number => t.y0 - 0.1 + ((t.y1 - t.y0 + 0.2) * j) / rows;
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i + 1 < phis.length; i++) {
+          const corners = [at(phis[i]!, yOf(j)), at(phis[i + 1]!, yOf(j)), at(phis[i + 1]!, yOf(j + 1)), at(phis[i]!, yOf(j + 1))];
+          const f = corners.map((q) => thickness(q.phi, q.y));
+          if (f.every((x) => x <= 0)) continue;
+          // The part of the cell where the layer exists: corners inside, and the crossings on its edges.
+          const poly: P[] = [];
+          for (let k = 0; k < 4; k++) {
+            const n = (k + 1) % 4;
+            if (f[k]! > 0) poly.push(corners[k]!);
+            if (f[k]! > 0 !== f[n]! > 0) poly.push(cross(corners[k]!, corners[n]!, f[k]!, f[n]!));
+          }
+          if (poly.length < 3) continue;
+          const ids = poly.map(vertex);
+          for (let k = 1; k + 1 < ids.length; k++) b.tri(ids[0]!, ids[k]!, ids[k + 1]!);
+        }
+      }
+    }
+  };
+
   const body = buildModel(`${def.id}.body`, (b) => {
     shell(b);
     detail(b);
   });
-  return { models: { body }, pose: staticPose };
+  const models: Record<string, PartModel> = { body };
+  if (frostW < P.num('rimeFrom', 0.5)) return { models, pose: staticPose };
+  models['frost'] = buildModel(`${def.id}.rime`, rime);
+  const cover = P.num('rimeCover', 0.72);
+  const pose = (input: PoseInput, emit: PoseSink): void => {
+    emit('body', null, null);
+    // The last tenth of the frost is the thin film on the paint (the skin's frost weights), not this layer.
+    const k = Math.min(1, (input.anim.frost - 0.12) / 0.6);
+    if (k > 0) emit('frost', null, null, { fade: cover * k, castShadow: false, cold: true });
+  };
+  return { models, pose };
 };

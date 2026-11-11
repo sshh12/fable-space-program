@@ -2,7 +2,9 @@
  * Ocean lab: the ocean feature on the LabPlanet backdrop (which implements the terrain side of the near-field
  * hand-over), under the lab sky, with props for the shoreline, refraction and splashdown scenes.
  *
- *   ?preset=midday|sunset|overcast|alt500|alt10k|alt100k|leo|shore|splash|night|refraction   (default midday)
+ *   ?preset=midday|sunset|overcast|alt500|alt3k|alt10k|alt30k|alt100k|leo|shore|shoreAlong|splash|night|refraction
+ *           (default midday)
+ *   &stray=1      stray water-material fragments inside fadeStart (the terrain defect of request terrain-render-cs-1)
  *   &ocean=0      without the ocean feature (the far water alone, default brdf_water)
  *   &near=0       the ocean feature with its near field forced off (deferred far water only)
  *   &chop=<s>     scale of the FFT chop (debug; 1 = data)
@@ -41,10 +43,14 @@ export const PRESETS: Record<string, OceanPreset> = {
   sunset: { sun: [268, 2.5], camera: { alt: 2, heading: 268, pitch: -2.5 } },
   overcast: { sun: [40, 35], overcast: true, camera: { alt: 2, heading: 200, pitch: -7 } },
   alt500: { sun: [10, 48], camera: { alt: 500, heading: 10, pitch: -28 }, ev: 15 },
+  alt3k: { sun: [12, 50], camera: { alt: 3000, heading: 12, pitch: -32 }, ev: 15 },
   alt10k: { sun: [15, 50], camera: { alt: 10000, heading: 15, pitch: -40 }, ev: 15 },
+  alt30k: { sun: [18, 48], camera: { alt: 30000, heading: 18, pitch: -38 }, ev: 15 },
   alt100k: { sun: [20, 30], camera: { alt: 100000, heading: 20, pitch: -24, fov: 55 }, ev: 15 },
   leo: { sun: [0, 58], camera: { alt: 400000, heading: 0, pitch: -55, fov: 60 }, ev: 15 },
   shore: { sun: [150, 38], beach: true, camera: { north: 215, alt: 3.5, heading: 4, pitch: -7 } },
+  // Standing in the shallows 30 m off the waterline, looking along the shore: shelf water from 0 to 3 m deep.
+  shoreAlong: { sun: [150, 38], beach: true, camera: { north: 335, east: -160, alt: 4, heading: 78, pitch: -6 } },
   splash: { sun: [140, 36], floating: true, markers: markerLine(14, 6, 1.6, 3.2), camera: { north: -2, east: -6, alt: 3.2, heading: 32, pitch: -9 } },
   night: { sun: [300, -32], moon: [110, 24], camera: { alt: 2, heading: 110, pitch: -4 }, ev: -1.5 },
   refraction: { sun: [160, 58], beach: true, submerged: true, camera: { north: 300, east: 0, alt: 2.5, heading: 0, pitch: -16 } },
@@ -238,6 +244,7 @@ async function boot(): Promise<void> {
   lab.applyPreset(presetName);
   if (keepCamera) app.camera.spec = camBefore;
   if (query.get('near') === '0') ocean?.debug.forceNearFieldOff(true);
+  if (query.get('stray') === '1') props.strayWater = true;
   const chop = Number(query.get('chop') ?? '');
   if (Number.isFinite(chop) && query.has('chop')) ocean?.debug.setChopScale(chop);
 

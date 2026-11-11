@@ -1,29 +1,33 @@
 /**
- * Bakes the decal atlas public/assets/vehicle/decals.png from the layout in src/render/vehicle/decals.ts.
+ * Bakes the decal atlas public/assets/vehicle/decals.png from the decal sheet of the definition library
+ * (section DECAL_SECTION of src/render/vehicle/decals.ts, i.e. data/defs/visuals/parts/livery.json): the
+ * list of markings, their texts and colours are data; this tool only knows how each STYLE is drawn.
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx tsx tools/vehicle/bake-decals.ts
  *
  * The atlas is drawn on a 2D canvas in the installed Chrome (headless, via Playwright) so that the
- * lettering is properly anti-aliased type; no network, no API key. Everything is fictional livery: the
- * MERIDIAN / KESTREL / HERON word marks, a roundel, a flag of no real nation, stencilled tank and hazard
- * markings. Every decal is opaque: its background is the paint of the surface it goes on.
+ * lettering is properly anti-aliased type; no network, no API key. Every decal is opaque: its background
+ * is the paint of the surface it goes on. The livery must stay fictional (no real agency, company or
+ * national mark).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
-import { DECALS, DECAL_ATLAS_SIZE, decalLayout } from '../../src/render/vehicle/decals';
+import { fsDefSource } from '../../src/core/defs/fsSource';
+import { loadDefs } from '../../src/core/defs/loader';
+import { decalSheetOf, type DecalRect, type DecalSpec } from '../../src/render/vehicle/decals';
 
 const out = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public', 'assets', 'vehicle', 'decals.png');
 
 /** Runs in the page: draws every decal into the canvas. */
-function paint(args: { size: number; decals: typeof DECALS; layout: ReturnType<typeof decalLayout> }): string {
+function paint(args: { size: number; decals: DecalSpec[]; layout: Record<string, DecalRect> }): string {
   const { size, decals, layout } = args;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const g = canvas.getContext('2d')!;
-  g.fillStyle = '#e7e7e4';
+  g.fillStyle = '#808080';
   g.fillRect(0, 0, size, size);
   const font = (px: number, weight = 700, stretch = 'condensed'): string => `${weight} ${stretch} ${px}px Bahnschrift, "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
 
@@ -125,15 +129,17 @@ function paint(args: { size: number; decals: typeof DECALS; layout: ReturnType<t
         break;
       }
       case 'flag': {
-        // A flag of no nation: deep blue field, a white band low across it, a gold sun-and-horizon disc.
+        // A flag of no nation: a field, a band low across it, ground under the band, a sun-and-horizon disc
+        // (colours: field, band, ground, sun, outline).
+        const [field, bandColour, ground, sun, outline] = [d.colors?.[0] ?? d.fg, d.colors?.[1] ?? d.bg, d.colors?.[2] ?? d.fg, d.colors?.[3] ?? d.bg, d.colors?.[4] ?? d.fg];
         const m = r.h * 0.035;
-        g.fillStyle = '#17325f';
+        g.fillStyle = field;
         g.fillRect(r.x + m, r.y + m, r.w - 2 * m, r.h - 2 * m);
-        g.fillStyle = '#ecece8';
+        g.fillStyle = bandColour;
         g.fillRect(r.x + m, r.y + r.h * 0.62, r.w - 2 * m, r.h * 0.1);
-        g.fillStyle = '#1f8a7a';
+        g.fillStyle = ground;
         g.fillRect(r.x + m, r.y + r.h * 0.72, r.w - 2 * m, r.h * 0.28 - m);
-        g.fillStyle = '#e2b53a';
+        g.fillStyle = sun;
         g.beginPath();
         g.arc(r.x + r.w * 0.34, r.y + r.h * 0.62, r.h * 0.2, Math.PI, 0);
         g.closePath();
@@ -143,22 +149,23 @@ function paint(args: { size: number; decals: typeof DECALS; layout: ReturnType<t
           g.beginPath();
           g.moveTo(r.x + r.w * 0.34 + Math.cos(a) * r.h * 0.25, r.y + r.h * 0.62 + Math.sin(a) * r.h * 0.25);
           g.lineTo(r.x + r.w * 0.34 + Math.cos(a) * r.h * 0.36, r.y + r.h * 0.62 + Math.sin(a) * r.h * 0.36);
-          g.strokeStyle = '#e2b53a';
+          g.strokeStyle = sun;
           g.lineWidth = r.h * 0.03;
           g.stroke();
         }
-        g.strokeStyle = '#0d1d38';
+        g.strokeStyle = outline;
         g.lineWidth = Math.max(2, r.h * 0.012);
         g.strokeRect(r.x + m, r.y + m, r.w - 2 * m, r.h - 2 * m);
         break;
       }
       case 'roundel': {
+        // Disc in the marking colour with an orbit, a meridian and a star (colours: lines, star).
         const R = r.h * 0.45;
         g.fillStyle = d.fg;
         g.beginPath();
         g.arc(cx, cy, R, 0, Math.PI * 2);
         g.fill();
-        g.strokeStyle = '#ecece8';
+        g.strokeStyle = d.colors?.[0] ?? d.bg;
         g.lineWidth = R * 0.07;
         g.beginPath();
         g.arc(cx, cy, R * 0.86, 0, Math.PI * 2);
@@ -170,7 +177,7 @@ function paint(args: { size: number; decals: typeof DECALS; layout: ReturnType<t
         g.beginPath();
         g.ellipse(cx, cy, R * 0.2, R * 0.62, 0, 0, Math.PI * 2);
         g.stroke();
-        g.fillStyle = '#e2b53a';
+        g.fillStyle = d.colors?.[1] ?? d.bg;
         g.beginPath();
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
@@ -204,6 +211,7 @@ function paint(args: { size: number; decals: typeof DECALS; layout: ReturnType<t
 }
 
 async function main(): Promise<void> {
+  const sheet = decalSheetOf(await loadDefs(fsDefSource()));
   const browser = await chromium.launch({ channel: process.env.E2E_CHANNEL ?? 'chrome', headless: true });
   try {
     const page = await browser.newPage();
@@ -211,11 +219,11 @@ async function main(): Promise<void> {
     // tsx keeps function names with a helper that does not exist in the page.
     await page.addScriptTag({ content: 'globalThis.__name = (f) => f;' });
     await page.evaluate(() => document.fonts.ready);
-    const url = await page.evaluate(paint, { size: DECAL_ATLAS_SIZE, decals: DECALS, layout: decalLayout() });
+    const url = await page.evaluate(paint, { size: sheet.def.size, decals: sheet.def.decals, layout: { ...sheet.layout } });
     const png = Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, png);
-    console.log(`decals.png ${DECAL_ATLAS_SIZE}x${DECAL_ATLAS_SIZE} ${(png.length / 1024).toFixed(0)} KiB, ${DECALS.length} decals -> ${out}`);
+    console.log(`decals.png ${sheet.def.size}x${sheet.def.size} ${(png.length / 1024).toFixed(0)} KiB, ${sheet.def.decals.length} decals -> ${out}`);
   } finally {
     await browser.close();
   }

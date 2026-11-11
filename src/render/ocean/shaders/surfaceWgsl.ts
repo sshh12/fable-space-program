@@ -6,7 +6,8 @@
  * footprint-filtered variance, refraction of the seabed from 'scene.colorCopy' / 'scene.depthOpaque' with a
  * chromatic offset in the shallows, foam (Jacobian folding, shore, wake). The hand-over (ARCHITECTURE 10.2):
  * detail, refraction and depth-based foam fade to zero by fadeStart; between fadeStart and fadeEnd the
- * surface is the flat sea-level sheet shaded from the G-buffer's own inputs, opacity falling from 1 to 0.
+ * surface is the flat sea-level sheet with the radiance brdf_water gave the sheet's own G-buffer inputs in the
+ * deferred pass (read from 'scene.colorCopy'), opacity falling from 1 to 0.
  */
 import { LOD_RANGE, MORPH_FRACTION, PATCH_CELLS } from '../nearField';
 
@@ -35,10 +36,21 @@ const OCEAN_MORPH = ${MORPH_FRACTION.toFixed(4)};
 const OCEAN_PATCH_CELLS = ${PATCH_CELLS.toFixed(1)};
 const OCEAN_DEEP = 10000.0;
 const OCEAN_FOAM_WEIGHT = vec4f(1.0, 0.85, 0.45, 0.0);
+const OCEAN_FOAM_NORM = 2.3;
+// The band is evaluated by the forward pass out to this multiple of fadeStart, beyond it read from the deferred pass.
+const OCEAN_BAND_EVAL = 1.05;
+// Weights of the cascades' normalised convergence in the foam lace (cascade 1 breaks whitecap crests up).
+const OCEAN_LACE_WEIGHT = vec4f(0.0, 0.4, 0.45, 0.55);
+// A cascade filtered beyond this mip keeps under 0.1 % of its slope variance (filteredSlopeFraction): its slopes
+// are not sampled (their variance is unresolved, in the GGX lobe), its foam is the statistical coverage.
+const OCEAN_LOD_CUT = 4.5;
+// Below this the vertical march finds the seabed under a water point; deeper water changes neither the TMA
+// attenuation (every band at full strength from about 15 m) nor the shore foam.
+const OCEAN_VERTICAL_REACH = 24.0;
 
 /// Vertical water depth (m, below sea level) of the opaque surface seen at screen uv 'uv' with reversed depth
 /// 'd' along the ray of a water point at eye distance 'waterDist'; OCEAN_DEEP where it says nothing (sky,
-/// or an object in front of the water).
+/// or an object in front of the water). This is the depth where the VIEW RAY meets the bed (the refraction path).
 fn oceanColumnDepth(uv: vec2f, d: f32, waterDist: f32) -> f32 {
   if (d <= 0.0) { return OCEAN_DEEP; }
   let p = positionFromDepth(uv, d);
@@ -50,8 +62,38 @@ fn oceanColumnDepth(uv: vec2f, d: f32, waterDist: f32) -> f32 {
   return oceanU.misc.x - alt;
 }
 
-/// The same for a camera-relative position (vertex stage).
-fn oceanColumnDepthAt(posRel: vec3f) -> f32 {
+/// Water depth (m) of the seabed straight BELOW the sea-level point 'posRel' (camera-relative, ROOT; 'up' its unit
+/// up), independent of the view: the vertical is marched down through the depth copy to where it passes behind the
+/// stored seabed (for a shelf that only rises or falls the bed under a water point is in view), refined between the
+/// last two steps. 'alongRay' is the depth where the view ray meets the bed (exact for a level bed): used when the
+/// vertical leaves the frame. OCEAN_DEEP when the bed is deeper than OCEAN_VERTICAL_REACH below the point.
+fn oceanDepthBelow(posRel: vec3f, up: vec3f, alongRay: f32) -> f32 {
+  if (alongRay > 2.5 * OCEAN_VERTICAL_REACH) { return OCEAN_DEEP; }
+  let size = frame.renderSize.xy;
+  var tPrev = 0.0;
+  var gapPrev = 0.0;
+  for (var i = 0u; i <= 8u; i++) {
+    let t = OCEAN_VERTICAL_REACH * sq(f32(i) / 8.0);
+    let q = posRel - up * t;
+    let pu = projectToUv(q);
+    if (pu.w <= 0.0 || any(pu.xy < vec2f(0.0)) || any(pu.xy > vec2f(1.0))) { return alongRay; }
+    let px = vec2i(clamp(pu.xy * size, vec2f(0.0), size - 1.0));
+    let d = textureLoad(sceneDepthOpaqueTex, px, 0);
+    if (d <= 0.0) { return alongRay; }
+    // Eye distance of the stored surface along this point's ray minus the point's own: > 0 while above the bed.
+    let gap = length(positionFromDepth((vec2f(px) + 0.5) / size, d)) - length(q);
+    if (gap <= 0.0) {
+      if (i == 0u) { return 0.0; }
+      return mix(tPrev, t, saturate(gapPrev / max(gapPrev - gap, 1e-4)));
+    }
+    tPrev = t;
+    gapPrev = gap;
+  }
+  return OCEAN_DEEP;
+}
+
+/// The seabed depth under a camera-relative sea-level position (vertex stage).
+fn oceanColumnDepthAt(posRel: vec3f, up: vec3f) -> f32 {
   let pu = projectToUv(posRel);
   if (pu.w <= 0.0) { return OCEAN_DEEP; }
   let size = vec2f(textureDimensions(sceneDepthOpaqueTex));
@@ -59,7 +101,8 @@ fn oceanColumnDepthAt(posRel: vec3f) -> f32 {
   // Only the seabed (terrain) tells the depth of the water; an object in the water does not.
   let id = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
   if (id != MATERIAL_TERRAIN && id != MATERIAL_REGOLITH) { return OCEAN_DEEP; }
-  return oceanColumnDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0), length(posRel));
+  let along = oceanColumnDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0), length(posRel));
+  return oceanDepthBelow(posRel, up, along);
 }
 
 /// Cloud transmittance towards the sun (the placement documented in RENDER_API section 7).
@@ -117,7 +160,7 @@ struct VsOut {
   let delta0 = oceanSphereOffset(p);
   let up0 = oceanUpAt(delta0);
   var h = OCEAN_DEEP;
-  if (detail > 0.0) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(delta0)); }
+  if (detail > 0.0) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(delta0), oceanRot(up0)); }
   let amp = oceanAmplitudes(p, h);
   let sp = oceanSurfaceFrom(p, delta0, up0, fw, detail, amp, false);
   let lift = oceanU.fade.w * (1.0 - detail);
@@ -161,18 +204,43 @@ struct FsOut {
   let bi = i32(oceanU.refRel.w);
   let b = frame.bodies[bi];
 
-  // What the G-buffer holds under this pixel: the far sheet (between fadeStart and fadeEnd), else the seabed.
+  // What the G-buffer holds under this pixel. Between fadeStart and fadeEnd: the terrain's far sheet, already lit
+  // by the deferred pass with this same brdf_water from the same inputs (the surface here is that flat sheet,
+  // detail is zero): the forward surface takes exactly that radiance from the copy instead of evaluating it again,
+  // and its opacity falls to 0 over the identical pixel underneath. Not next to fadeStart, though: there the
+  // core's screen-space terms of the deferred pass (AO, 1.5 % of the distance wide) see the depth step down to the
+  // seabed inside fadeStart and darken the sheet by up to 17 %; over OCEAN_BAND_EVAL x fadeStart the forward pass
+  // evaluates brdf_water itself from the sheet's G-buffer inputs (below), which is what the deferred pass would
+  // give without that step.
   let gm = textureLoad(gbufferMaterialTex, pix, 0);
   let gId = u32(gm.b * 255.0 + 0.5);
+  let sheet = gId == MATERIAL_WATER && dist >= fadeStart;
+  if (sheet && dist >= fadeStart * OCEAN_BAND_EVAL) {
+    var ob: FsOut;
+    ob.color = vec4f(writeHdr(textureLoad(sceneColorTex, pix, 0).rgb) * opacity, opacity);
+    ob.velocity = velocityFromClip(in.currClip, in.prevClip);
+    return ob;
+  }
+  // Inside fadeStart the terrain has discarded its sheet: the G-buffer holds the seabed, an object, or nothing.
+  // A WATER fragment found there anyway is not this surface (a misplaced sheet fragment, request
+  // terrain-render-cs-1) and tells nothing about the bottom: the pixel keeps its waves as open, deep water.
   let ga = textureLoad(gbufferAlbedoTex, pix, 0);
-  let sheet = gId == MATERIAL_WATER;
+  let strayWater = gId == MATERIAL_WATER && !sheet;
   let dOpaque = textureLoad(sceneDepthOpaqueTex, pix, 0);
-  // Water column above the opaque surface under the pixel (refraction path). Only the seabed (terrain) is a
-  // depth of WATER for shore foam and the TMA attenuation; an object in the water is not.
+  // Water column along the view ray to the opaque surface under the pixel (the refraction path). Only the seabed
+  // (terrain) is a depth of WATER for shore foam and the TMA attenuation, and that depth is the one straight
+  // below the water point (view-independent); an object in the water is not the bottom.
   let seabed = gId == MATERIAL_TERRAIN || gId == MATERIAL_REGOLITH;
   var column = OCEAN_DEEP;
-  if (!sheet) { column = oceanColumnDepth(uv, dOpaque, dist); }
-  let seaDepth = select(OCEAN_DEEP, column, seabed);
+  if (!strayWater && !sheet) { column = oceanColumnDepth(uv, dOpaque, dist); }
+  let deltaF = oceanSphereOffset(in.planeF);
+  let upF = oceanUpAt(deltaF);
+  let upR = oceanRot(upF);
+  var seaDepth = OCEAN_DEEP;
+  if (seabed) {
+    seaDepth = column;
+    if (detail > 0.0) { seaDepth = oceanDepthBelow(posRel - upR * in.height, upR, column); }
+  }
 
   // Resolved wave slopes: FFT cascades (anisotropic, footprint-filtered), swell, ripples.
   let amp = oceanAmplitudes(in.plane0, seaDepth) * detail;
@@ -183,35 +251,57 @@ struct FsOut {
   var resolved = 0.0;
   var foamJ = 0.0;
   var lace = 0.0;
-  var shoreNoise = 0.0;
+  // Variance of the lace (in units of its full-resolution variance per cascade) that the footprint averages away,
+  // and the share of the whitecap cascades whose foam this pixel resolves.
+  var laceLost = 0.0;
+  var foamResolved = 0.0;
+  var shoreNoise = 0.5;
   for (var c = 0u; c < OCEAN_CASCADES; c++) {
     let cs = oceanU.cascades[c];
+    let laceW = OCEAN_LACE_WEIGHT[c];
     // The hardware keeps about the minor axis of the footprint (4:1 anisotropy here): what it averages away is
-    // unresolved. A cascade filtered away entirely at this footprint is not sampled at all.
+    // unresolved. A cascade filtered beyond OCEAN_LOD_CUT is not sampled at all; it fades out over the mip before.
     let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * cs.geom.y, 1e-6));
-    if (amp[c] == 0.0 || lod > 7.5) { continue; }
+    let keep = 1.0 - smoothstep(OCEAN_LOD_CUT - 1.0, OCEAN_LOD_CUT, lod);
+    // Foam of a cascade counts as resolved up to two mips before the cut; beyond, its mean is the statistical coverage.
+    let foamKeep = (1.0 - smoothstep(OCEAN_LOD_CUT - 2.0, OCEAN_LOD_CUT, lod)) * detail;
+    foamResolved += foamKeep * OCEAN_FOAM_WEIGHT[c];
+    if (amp[c] == 0.0 || keep <= 0.0) {
+      laceLost += laceW * laceW;
+      continue;
+    }
+    let ff = oceanFilteredFraction(c, lod);
+    laceLost += laceW * laceW * (1.0 - ff * keep * keep);
+    let a = amp[c] * keep;
     let uvc = oceanCascadeUv(c, in.plane0);
     let gx = dpx * cs.geom.y;
     let gy = dpy * cs.geom.y;
     let der = textureSampleGrad(oceanDeriv, oceanSampler, uvc, c, gx, gy);
-    sx += der.x * amp[c];
-    sy += der.y * amp[c];
-    jxx += der.z * amp[c];
-    jyy += der.w * amp[c];
-    // Lace: the short cascades' convergence (-div D, normalised by its spread) breaks foam into bubbles and streaks.
-    if (c >= 2u) { lace += -(der.z + der.w) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4) * select(0.45, 0.55, c == 3u); }
-    resolved += oceanFilteredFraction(c, lod) * cs.stats.x * sq(amp[c]);
-    if (c < 3u) {
+    sx += der.x * a;
+    sy += der.y * a;
+    jxx += der.z * a;
+    jyy += der.w * a;
+    // Lace: the shorter cascades' convergence (-div D, normalised by its spread) breaks foam into bubbles and
+    // streaks; cascade 1 (3-13 m) also cuts the long whitecap crests of cascade 0 into breaking-crest lengths.
+    if (c >= 1u) { lace += -(der.z + der.w) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4) * laceW * keep; }
+    resolved += ff * cs.stats.x * sq(a);
+    if (c < 3u && foamKeep > 0.0) {
       let fm = textureSampleGrad(oceanFoam, oceanSampler, uvc, c, gx, gy);
       // Whitecaps belong to the breaking chop: the long cascades carry them, the capillary cascade none.
-      foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * OCEAN_FOAM_WEIGHT[c]);
-      // Lace: the shortest foam cascade's Jacobian, normalised by its spread, gives foam its bubbly breakup.
-      if (c == 2u) { shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0); }
+      foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * foamKeep * OCEAN_FOAM_WEIGHT[c]);
+      // The shortest foam cascade's Jacobian, normalised by its spread, breaks the swash foam up.
+      if (c == 2u) { shoreNoise = mix(0.5, saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0), foamKeep); }
     }
   }
-  // Coverage follows the folding density; inside it the lace decides which bubbles are white.
+  // Coverage follows the folding density; inside it the lace decides which bubbles are white. Where the footprint
+  // averages the lace away the threshold widens by its lost spread, so the coverage becomes the expected (partial)
+  // coverage of the pixel instead of a hard-edged blob.
   let laceN = saturate(0.5 + 0.3 * lace);
-  foamJ = smoothstep(1.0 - foamJ * 1.15 - 0.08, 1.0 - foamJ * 1.15 + 0.08, laceN) * min(foamJ * 3.0, 1.0);
+  let hw = 0.08 + 0.6 * sqrt(laceLost);
+  foamJ = smoothstep(1.0 - foamJ * 1.15 - hw, 1.0 - foamJ * 1.15 + hw, laceN) * min(foamJ * 3.0, 1.0);
+  // Where the whitecap cascades are not resolved (far, or fading towards fadeStart) their foam is the statistical
+  // coverage of brdf_water (Monahan), which the resolved foam is calibrated to on average.
+  foamJ = 1.0 - (1.0 - foamJ) * (1.0 - oceanU.shore.w * (1.0 - foamResolved / OCEAN_FOAM_NORM));
   // Capillary detail: the finest cascade again, compressed and rotated, carrying the slope variance that the
   // JONSWAP cascades do not (Cox-Munk counts the capillaries); resolved only where a pixel is that small.
   {
@@ -220,19 +310,19 @@ struct FsOut {
       let lay = oceanU.detail[k];
       let sc = lay.x * c3.geom.y;
       let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * sc, 1e-6));
-      if (amp[3] == 0.0 || lod > 7.5) { continue; }
+      let keep = 1.0 - smoothstep(OCEAN_LOD_CUT - 1.0, OCEAN_LOD_CUT, lod);
+      if (amp[3] == 0.0 || keep <= 0.0) { continue; }
+      let a = lay.w * amp[3] * keep;
       let rot = mat2x2f(lay.y, lay.z, -lay.z, lay.y);
       let org = select(oceanU.detailOrigin.xy, oceanU.detailOrigin.zw, k == 1u);
       let uvd = org + (rot * in.plane0) * sc;
       let der = textureSampleGrad(oceanDeriv, oceanSampler, uvd, 3, (rot * dpx) * sc, (rot * dpy) * sc);
-      let slope = transpose(rot) * der.xy * (lay.w * amp[3]);
+      let slope = transpose(rot) * der.xy * a;
       sx += slope.x;
       sy += slope.y;
-      resolved += oceanFilteredFraction(3u, lod) * c3.stats.x * sq(lay.w * amp[3]);
+      resolved += oceanFilteredFraction(3u, lod) * c3.stats.x * sq(a);
     }
   }
-  let deltaF = oceanSphereOffset(in.planeF);
-  let upF = oceanUpAt(deltaF);
   let sw = oceanSwellEval(deltaF, upF, fpMaj, false);
   let rp = oceanRipples(in.planeF, false) * detail;
   let e = oceanU.axisE.xyz;
@@ -264,11 +354,12 @@ struct FsOut {
   s.viewDist = dist;
   s.v = -posRel / max(dist, 1e-6);
   s.n = oceanRot(nFixed);
-  s.up = oceanRot(upF);
+  s.up = upR;
   s.ao = 1.0;
+  // The coverage above is complete (resolved where resolved, statistical elsewhere): weight 1 against brdf_water's own.
   s.metallic = foamRes;
   s.clearcoat = 0.0;
-  s.clearcoatRoughness = max(detail, wake);
+  s.clearcoatRoughness = 1.0;
   s.anisotropy = 0.0;
   s.t = vec3f(1.0, 0.0, 0.0);
   s.lightAlpha = 0.0;
@@ -278,10 +369,11 @@ struct FsOut {
   waterFieldValue = textureSampleLevel(oceanField, linearClamp, (in.planeF - oceanU.field.xy) * oceanU.field.w + 0.5, 0.0).r;
   s.altitude = oceanU.misc.x + in.height;
   s.roughness = clamp(resolved / oceanU.wind.y, 0.0, 1.0);
-  // Imagery colour: the sheet's (band) or the seabed's (near field: the terrain draws it with its albedo layer).
-  s.albedo = select(vec3f(0.0), ga.rgb, sheet || seabed);
+  // Imagery colour: the sheet's (band), the seabed's (the terrain draws it with its albedo layer) or that of a stray
+  // water fragment.
+  s.albedo = select(vec3f(0.0), ga.rgb, sheet || strayWater || seabed);
   if (sheet) {
-    // Between fadeStart and fadeEnd: exactly the deferred pixel's inputs (detail is zero here).
+    // The band next to fadeStart: exactly the deferred pixel's inputs (detail is zero here).
     s.param = gm.a;
     s.roughness = gm.r;
     s.n = octDecode(textureLoad(gbufferNormalTex, pix, 0).xy);
@@ -299,7 +391,7 @@ struct FsOut {
   // The seabed contributes only where light can make the round trip through the column: beyond about
   // 6 / (2 kappa_min) metres (about 95 m of clear ocean) it is invisible, and refraction is skipped.
   let kMin = min(min(frame.bodies[bi].ocean.r, frame.bodies[bi].ocean.g), frame.bodies[bi].ocean.b);
-  let seeBottom = detail > 0.02 && !sheet && dOpaque > 0.0 && column * kMin < 3.0;
+  let seeBottom = detail > 0.02 && !strayWater && dOpaque > 0.0 && column * kMin < 3.0;
   var sunEff = vec3f(0.0);
   let vis = sunVisibility(posRel, sunDir);
   if (vis > 0.0) {
@@ -398,15 +490,23 @@ struct FsOut {
       }
       tPrev = t;
     }
-    // Nothing met on screen: what the refracted ray sees is not in the frame. Over the seabed the modelled bottom
-    // term (the seabed's own albedo) stays; under an object in the water, where the march ended is used.
-    if (!found && !seabed) {
+    // How far the screen-space result is trusted over the modelled bottom term: fully for a hit well inside the
+    // march and the frame, fading to the model as the hit nears the end of the march or the frame border, so
+    // neighbouring pixels never switch between the two looks. Nothing met on screen (what the refracted ray sees
+    // is not in the frame): over the seabed the modelled bottom (the seabed's own albedo) stays; under an object in
+    // the water, where the march ended is used.
+    var conf = 0.0;
+    if (found) {
+      let edge = min(min(hitUv.x, 1.0 - hitUv.x), min(hitUv.y, 1.0 - hitUv.y));
+      conf = saturate(edge * 25.0) * (1.0 - smoothstep(0.6, 1.0, tHit / reach));
+    } else if (!seabed) {
       hitUv = lastUv;
       tHit = tLast;
+      conf = 1.0;
     }
     let uvR = uv + (hitUv - uv) * (oceanU.shore.y * detail);
     let dR = textureLoad(sceneDepthOpaqueTex, vec2i(clamp(uvR * size, vec2f(0.0), size - 1.0)), 0);
-    if ((found || !seabed) && dR > 0.0 && length(positionFromDepth(uvR, dR)) >= dist - 0.05) {
+    if (conf > 0.0 && dR > 0.0 && length(positionFromDepth(uvR, dR)) >= dist - 0.05) {
       let hitDepth = tHit * cosT;
       let ch = oceanU.shore.z * saturate(1.0 - hitDepth / 6.0);
       let seen = vec3f(
@@ -419,7 +519,7 @@ struct FsOut {
       let NoV = max(dot(s.n, s.v), 1e-4);
       let tr = (1.0 - waterFresnel(max(muS, 0.0))) * (1.0 - waterFresnel(NoV)) / 0.9604;
       let att = waterRrsOf(o, vec3f(0.0), waterRefractedCos(max(muS, 0.05)), cosT).bottomAttenuation * tr;
-      lit += (seen * att - bottomFar) * (detail * (1.0 - waterFoamCoverage(s)));
+      lit += (seen * att - bottomFar) * (conf * detail * (1.0 - waterFoamCoverage(s)));
     }
   }
 

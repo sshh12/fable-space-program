@@ -7,11 +7,14 @@
  *  - mated attach interfaces along the stack meet within 5 mm, with no interpenetration above 5 mm;
  *  - the capsule follows the shared mould line and cuts its openings where the shared file puts them
  *    (the file is read here; no dimension of it is repeated);
+ *  - nothing under a fairing or boost cover reaches through it, and the escape system's cover stays outside
+ *    the mould line of the capsule it covers;
  *  - triangle budgets of the full stack.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CapsuleMouldLineDef, DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { PartSnapshot } from '@/core/contracts/sim';
+import type { BuiltMesh } from '@/render/vehicle/geom/builder';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { getSection, loadDefs } from '@/core/defs/loader';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
@@ -98,7 +101,7 @@ describe('part visuals', () => {
   });
 
   it('open components are only sheets and bands, never structure', () => {
-    const allowed = new Set(['band', 'frame', 'weld', 'corrugation', 'hatband', 'throat-ring', 'lip-ring', 'boot', 'sep-joint', 'clamp-band', 'strap', 'skirt-band', 'case-band', 'nozzle-band', 'core-band', 'foil', 'well', 'sleeve', 'pad-foil', 'capsule-skin', 'capsule-reveal', 'capsule-door', 'pane', 'placard']);
+    const allowed = new Set(['band', 'frame', 'weld', 'corrugation', 'hatband', 'throat-ring', 'lip-ring', 'boot', 'sep-joint', 'clamp-band', 'strap', 'skirt-band', 'case-band', 'nozzle-band', 'core-band', 'foil', 'well', 'sleeve', 'pad-foil', 'capsule-skin', 'capsule-reveal', 'capsule-door', 'pane', 'placard', 'rime']);
     for (const id of Object.keys(defs.parts)) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         for (const lod of model.lods) lod.meta.tags.forEach((tag, c) => lod.meta.closed[c] === 0 && expect(allowed.has(tag), `${id}.${name}: open component "${tag}"`).toBe(true));
@@ -206,6 +209,79 @@ describe('part visuals', () => {
     }
   });
 
+  it('nothing under a fairing or boost cover reaches through it', () => {
+    let covers = 0;
+    const rows: string[] = [];
+    const problems: string[] = [];
+    for (const vehicle of Object.values(defs.vehicles)) {
+      // The launch configuration: legs stowed, everything attached.
+      const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
+      const inVes = (p: PartSnapshot): PosedGeometry => {
+        const def = defs.parts[p.def]!;
+        return transformGeometry(posedPart(visualOf(p.def), { def, modules: p.modules }, 0), [p.localPos.x, p.localPos.y, p.localPos.z], [p.localRot.x, p.localRot.y, p.localRot.z, p.localRot.w]);
+      };
+      for (const cover of parts) {
+        const def = defs.parts[cover.def]!;
+        const fairing = def.modules.find((m) => m.type === 'fairing');
+        if (!fairing || fairing.type !== 'fairing') continue;
+        const shielded = parts.filter((q) => q !== cover && (fairing.shields.includes(q.instanceId) || fairing.shields.includes(q.def)));
+        if (shielded.length === 0) continue;
+        covers++;
+        // Inner envelope of the cover: the smallest radius of its wall, frames and fittings in every centimetre of
+        // height (plates across the axis are not part of the wall). Heights without a vertex ring lie on a
+        // straight piece of wall between two rings.
+        const g = inVes(cover);
+        const axisX = cover.localPos.x;
+        const axisZ = cover.localPos.z;
+        const env = new Map<number, number>();
+        for (let i = 0; i < g.positions.length; i += 3) {
+          const r = Math.hypot(g.positions[i]! - axisX, g.positions[i + 2]! - axisZ);
+          if (r < 0.3 * def.bounds.radius) continue;
+          const k = Math.round(g.positions[i + 1]! * 100);
+          if (r < (env.get(k) ?? Infinity)) env.set(k, r);
+        }
+        const keys = [...env.keys()].sort((a, c) => a - c);
+        const inner = (y: number): number | null => {
+          const k = Math.round(y * 100);
+          if (k <= keys[0]! || k >= keys[keys.length - 1]!) return null;
+          let lo = keys[0]!;
+          let hi = keys[keys.length - 1]!;
+          for (const q of keys) {
+            if (q <= k && q > lo) lo = q;
+            if (q >= k && q < hi) hi = q;
+          }
+          // Within a centimetre of a ring: the ring itself and its neighbours; otherwise the wall between two rings.
+          const a = env.get(lo)!;
+          const c = env.get(hi)!;
+          return hi === lo ? a : Math.min(a + ((c - a) * (k - lo)) / (hi - lo), k - lo <= 1 ? a : Infinity, hi - k <= 1 ? c : Infinity);
+        };
+        for (const q of shielded) {
+          const s = inVes(q);
+          let worst = Infinity;
+          let at = '';
+          let checked = 0;
+          for (let i = 0; i < s.positions.length; i += 3) {
+            const y = s.positions[i + 1]!;
+            const lim = inner(y);
+            if (lim === null) continue;
+            const r = Math.hypot(s.positions[i]! - axisX, s.positions[i + 2]! - axisZ);
+            checked++;
+            if (lim - r < worst) {
+              worst = lim - r;
+              at = `r ${r.toFixed(3)} at y ${y.toFixed(3)} under ${lim.toFixed(3)}`;
+            }
+          }
+          rows.push(`${cover.instanceId} over ${q.instanceId}: ${checked} vertices, least clearance ${(worst * 1000).toFixed(1)} mm (${at})`);
+          if (checked < 100) problems.push(`${cover.instanceId} over ${q.instanceId}: only ${checked} vertices under the cover`);
+          if (worst < 0.003) problems.push(`${q.instanceId} reaches through ${cover.instanceId}: ${at}`);
+        }
+      }
+    }
+    console.log(rows.join('\n'));
+    expect(problems).toEqual([]);
+    expect(covers).toBeGreaterThanOrEqual(1);
+  });
+
   it('triangle budgets: full stack LOD0 between 1.0 and 1.6 million, LOD2 under 60 k', () => {
     for (const vehicleId of Object.keys(defs.vehicles)) {
       const totals = [0, 0, 0];
@@ -264,6 +340,31 @@ function distToSegment(r: number, y: number, a: [number, number], b: [number, nu
   return Math.hypot(r - a[0] - dx * t, y - a[1] - dy * t);
 }
 
+/**
+ * The heat shield and the back shell of a capsule as one mesh: they are two models (the shield is drawn at its
+ * own temperature) whose rims meet vertex for vertex.
+ */
+function capsuleShell(visual: PartVisual, lod = 0): Pick<BuiltMesh, 'positions' | 'indices' | 'meta'> {
+  const meshes = ['shield', 'body'].map((name) => visual.models[name]!.lods[lod]!);
+  const positions = new Float32Array(meshes.reduce((n, m) => n + m.positions.length, 0));
+  const indices = new Uint32Array(meshes.reduce((n, m) => n + m.indices.length, 0));
+  const triComponent = new Uint16Array(indices.length / 3);
+  const tags: string[] = [];
+  const closed: number[] = [];
+  let vp = 0;
+  let ip = 0;
+  for (const m of meshes) {
+    positions.set(m.positions, vp * 3);
+    for (let k = 0; k < m.indices.length; k++) indices[ip + k] = m.indices[k]! + vp;
+    for (let t = 0; t < m.indices.length / 3; t++) triComponent[ip / 3 + t] = m.meta.triComponent[t]! + tags.length;
+    tags.push(...m.meta.tags);
+    closed.push(...m.meta.closed);
+    vp += m.positions.length / 3;
+    ip += m.indices.length;
+  }
+  return { positions, indices, meta: { triComponent, tags, closed: Uint8Array.from(closed) } };
+}
+
 describe('capsule exterior and the shared mould line', () => {
   const capsules = (): { def: PartDef; ml: CapsuleMouldLineDef }[] =>
     Object.values(defs.parts)
@@ -291,7 +392,7 @@ describe('capsule exterior and the shared mould line', () => {
     const list = capsules();
     expect(list.length).toBeGreaterThan(0);
     for (const { def, ml } of list) {
-      const mesh = visualOf(def.id).models['body']!.lods[0]!;
+      const mesh = capsuleShell(visualOf(def.id));
       const R = ml.heatShield.radiusOfCurvature;
       const centreY = ml.heatShield.apexY + R;
       const shield = ml.profile.filter((p) => p[1] <= ml.heatShield.maxDiameterY + 1e-9);
@@ -366,7 +467,7 @@ describe('capsule exterior and the shared mould line', () => {
   it('windows and hatch are cut at the azimuth, height and size of the shared file within 2 mm', () => {
     for (const { def, ml } of capsules()) {
       const visual = visualOf(def.id);
-      const mesh = visual.models['body']!.lods[0]!;
+      const mesh = capsuleShell(visual);
       const ids = weld(mesh.positions);
       const P = mesh.positions;
       // Boundary edges of the mould-line skin: edges used by exactly one of its triangles.
@@ -482,5 +583,68 @@ describe('capsule exterior and the shared mould line', () => {
       expect(deepest).toBeGreaterThanOrEqual(ml.wallThickness);
       expect(deepest).toBeLessThanOrEqual(ml.wallThickness + 0.06);
     }
+  });
+
+  it('the heat shield is a model of its own, drawn at the temperature of the ablating surface; glazing and lamps stay cold', () => {
+    for (const { def } of capsules()) {
+      const visual = visualOf(def.id);
+      expect(Object.keys(visual.models)).toEqual(expect.arrayContaining(['body', 'shield', 'glass', 'lamp']));
+      const index = def.modules.findIndex((m) => m.type === 'heatShield');
+      expect(index).toBeGreaterThanOrEqual(0);
+      const modules = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!)).find((p) => p.def === def.id)!.modules.map((m) => (m.type === 'heatShield' ? { ...m, surfaceTemp: 2750 } : m));
+      const seen = new Map<string, { temperature: number | undefined; cold: boolean }>();
+      visual.pose({ def, modules, panel: null, anim: { nozzleTemp: 0, soot: 0, frost: 0, clamp: 0, antenna: 0, lamp: 1 } }, (name, _pos, _rot, opts) => void seen.set(name, { temperature: opts?.temperature, cold: opts?.cold === true }));
+      expect(seen.get('shield')).toEqual({ temperature: 2750, cold: false });
+      // The back shell follows the part's own skin temperature (no item temperature of its own).
+      expect(seen.get('body')).toEqual({ temperature: undefined, cold: false });
+      expect(seen.get('glass')!.cold).toBe(true);
+      expect(seen.get('lamp')!.cold).toBe(true);
+      // The shield model holds the whole heat shield and nothing of the back shell.
+      for (const lod of visual.models['shield']!.lods) {
+        expect(lod.bounds.max[1], 'shield top').toBeLessThanOrEqual(0.02 + defs.parts[def.id]!.attachNodes.find((n) => n.id === 'bottom')!.pos[1]);
+        expect(lod.indices.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('the escape system\'s boost cover stays outside the mould line of the capsule under it', () => {
+    let covers = 0;
+    for (const vehicle of Object.values(defs.vehicles)) {
+      const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
+      for (const les of parts) {
+        const def = defs.parts[les.def]!;
+        if (def.visual?.generator !== 'les.tower') continue;
+        const key = String(def.visual.params['mouldLine']);
+        const ml = getSection<CapsuleMouldLineDef>(defs, key);
+        const capsule = parts.find((q) => defs.parts[q.def]!.visual?.generator === 'capsule.mouldline' && String(defs.parts[q.def]!.visual!.params['mouldLine']) === key)!;
+        expect(capsule, `${les.instanceId}: capsule under the cover`).toBeDefined();
+        covers++;
+        // The capsule's outer radius at a height, straight from the file's profile.
+        const shell = ml.profile.filter((q) => q[1] >= ml.heatShield.maxDiameterY - 1e-9);
+        const mould = (y: number): number => {
+          for (let i = 0; i + 1 < shell.length; i++) {
+            const a = shell[i]!;
+            const c = shell[i + 1]!;
+            if (y <= c[1]) return a[0] + ((c[0] - a[0]) * (y - a[1])) / Math.max(1e-9, c[1] - a[1]);
+          }
+          return shell[shell.length - 1]![0];
+        };
+        const g = posedPart(visualOf(les.def), { def, modules: les.modules }, 0);
+        const dy = les.localPos.y - capsule.localPos.y;
+        let worst = Infinity;
+        let checked = 0;
+        for (let i = 0; i < g.positions.length; i += 3) {
+          const y = g.positions[i + 1]! + dy;
+          if (y < ml.heatShield.maxDiameterY + 0.005 || y > ml.apexTunnel.yTop - 0.005) continue;
+          const r = Math.hypot(g.positions[i]! + les.localPos.x - capsule.localPos.x, g.positions[i + 2]! + les.localPos.z - capsule.localPos.z);
+          worst = Math.min(worst, r - mould(y));
+          checked++;
+        }
+        console.log(`${les.instanceId}: ${checked} cover vertices beside the capsule, nearest ${(worst * 1000).toFixed(1)} mm outside its mould line`);
+        expect(checked).toBeGreaterThan(1000);
+        expect(worst).toBeGreaterThanOrEqual(0.01);
+      }
+    }
+    expect(covers).toBeGreaterThanOrEqual(1);
   });
 });

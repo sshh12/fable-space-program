@@ -168,8 +168,20 @@ export interface PatchSelectionInput {
   maxDistance: number;
   /** Vertical margin of the wave field (amplitude bound), m. */
   waveMargin: number;
+  /** Sea-level radius, m: patches wholly beyond the horizon (crests included) are not drawn. Omitted = no horizon cull. */
+  seaRadius?: number;
   /** Optional culling of a patch box (plane coords corner + size, z range) against the view; true = visible. */
   visible?: (x0: number, y0: number, size: number, zMin: number, zMax: number) => boolean;
+}
+
+/**
+ * Horizontal distance (m) beyond which no point of a sea surface with crests up to `waveMargin` can be seen from
+ * `camH` above sea level on a sphere of radius `seaRadius`: the camera's horizon distance plus a crest's.
+ */
+export function horizonDistance(camH: number, waveMargin: number, seaRadius: number): number {
+  // Conservative: the camera's own term is taken from a trough below it (camH + waveMargin above the surface).
+  const h = Math.max(camH, 0) + waveMargin;
+  return Math.sqrt(h * (2 * seaRadius + h)) + Math.sqrt(waveMargin * (2 * seaRadius + waveMargin));
 }
 
 function boxDistance(x0: number, y0: number, size: number, zMin: number, zMax: number, cx: number, cy: number, cz: number): number {
@@ -191,17 +203,20 @@ export function selectPatches(inp: PatchSelectionInput, out: SurfacePatch[] = []
   const zMin = -waveMargin;
   const zMax = waveMargin;
   const half = ROOT_SIZE / 2;
+  const horizon = inp.seaRadius ? horizonDistance(camH, waveMargin, inp.seaRadius) : Infinity;
   const visit = (x0: number, y0: number, level: number): boolean => {
     const size = nodeSize(level);
     const dist = boxDistance(x0, y0, size, zMin, zMax, camX, camY, camH);
     if (dist > maxDistance) return true; // nothing to draw here, and the parent need not cover it
     if (dist > lodRange(level)) return false; // the parent must cover this area
+    if (boxDistance(x0, y0, size, 0, 0, camX, camY, 0) > horizon) return true; // below the horizon
     if (inp.visible && !inp.visible(x0, y0, size, zMin, zMax)) return true;
     const cell = size / (2 * PATCH_CELLS);
     const emitQuadrant = (qx: number, qy: number): void => {
       const qx0 = x0 + qx * size * 0.5;
       const qy0 = y0 + qy * size * 0.5;
       if (boxDistance(qx0, qy0, size * 0.5, zMin, zMax, camX, camY, camH) > maxDistance) return;
+      if (boxDistance(qx0, qy0, size * 0.5, 0, 0, camX, camY, 0) > horizon) return;
       out.push({ x0: qx0, y0: qy0, level, cell });
     };
     if (level === 0 || boxDistance(x0, y0, size, zMin, zMax, camX, camY, camH) > lodRange(level - 1)) {

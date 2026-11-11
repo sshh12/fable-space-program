@@ -12,10 +12,10 @@
 import type { PartDef } from '@/core/contracts/defs';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { MeshBuilder, add3, cross3, dot3, len3, lerp3, norm3, polar, scale3, sub3, xf } from '../geom/builder';
-import { DEG, Profile, TAU, ball, beam, box, frustum, lathe, radialFrame, ringSolid, rod } from '../geom/prims';
+import { DEG, Profile, TAU, ball, beam, box, frustum, lathe, pipe, radialFrame, ringSolid, rod } from '../geom/prims';
 import type { MatId } from '../materials';
 import { lampCandela } from './capsule';
-import { band, buildModel, hash01, thruster } from './common';
+import { band, buildModel, curvedPanel, hash01, thruster } from './common';
 import { Params, type PartGenerator, type PartLight, type PoseInput, type PoseSink } from './types';
 
 /** Quaternion (x, y, z, w) of the frame whose +Y is `dir` and whose +X is as close to `hint` as possible. */
@@ -331,7 +331,7 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
 
   const pose = (input: PoseInput, emit: PoseSink): void => {
     emit('body', null, null);
-    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false });
+    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
@@ -400,14 +400,27 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
       for (let i = 0; i < 4; i++) {
         const phi = ((i + 0.5) / 4) * TAU;
         if (Math.abs(((phi - antennaPhi + Math.PI * 3) % TAU) - Math.PI) < 0.3) continue;
-        b.at(radialFrame(skinR + 0.022, phi, H * 0.52), () => {
-          box(b, H * 0.42, 0.02, 0.95, [0, 0.01, 0], 'radiator');
-          if (b.lod === 0) {
-            b.mat('alu-machined');
-            for (const sz of [-0.49, 0.49]) box(b, H * 0.42 + 0.03, 0.03, 0.025, [0, 0.012, sz], 'radiator-frame');
-            b.mat('paint-white');
+        // Radiator panel standing off the foil: a face sheet that follows the hull, the coolant tubes showing
+        // through it as ribs, headers at both ends with their feed lines into the hull, an edge frame.
+        const rs = skinR + 0.022;
+        const rh = H * 0.42;
+        const rw = 0.95;
+        const ry = H * 0.52;
+        curvedPanel(b, rs, phi, ry, rw, rh, 0.028, 'radiator', 0);
+        if (b.lod === 0) {
+          for (let k = 0; k < 9; k++) curvedPanel(b, rs + 0.028, phi + ((k - 4) * 0.1) / rs, ry, 0.024, rh - 0.18, 0.006, 'radiator-tube', 0.002);
+          b.mat('alu-machined');
+          for (const s of [-1, 1]) {
+            curvedPanel(b, rs + 0.028, phi, ry + s * (rh / 2 - 0.045), rw - 0.05, 0.05, 0.016, 'radiator-header', 0.002);
+            curvedPanel(b, rs, phi + (s * (rw / 2 + 0.012)) / rs, ry, 0.024, rh + 0.02, 0.036, 'radiator-frame', 0);
           }
-        });
+          b.mat('steel-brushed');
+          for (const s of [-1, 1]) {
+            const y = ry + s * (rh / 2 - 0.045);
+            pipe(b, [polar(rs + 0.05, phi + 0.36 / rs, y), polar(rs + 0.05, phi + (rw / 2 + 0.09) / rs, y), polar(skinR - 0.03, phi + (rw / 2 + 0.09) / rs, y)], 0.012, 0.03, { segs: 6, tag: 'radiator-line' });
+          }
+          b.mat('paint-white');
+        }
       }
     }
     // ---- decks, mating rings, engine well and mount
@@ -504,7 +517,7 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
     };
     emit('antenna', antennaHinge, swing(out(antennaPhi), 112 * DEG * t));
     emit('platform', platformHinge, swing(out(ladderPhi), -90 * DEG * t));
-    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false });
+    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
@@ -536,6 +549,28 @@ export function legPose(leg: { hinge: number[]; footDeployed: number[]; footStow
   const dir = scale3(d, 1 / l);
   const length = Math.max(0.3, l - Math.max(0, compression));
   return { hinge, foot: add3(hinge, scale3(dir, length)), dir, length };
+}
+
+const BROKEN_SPLAY = 16 * DEG;
+const BROKEN_KNEE = 38 * DEG;
+
+/**
+ * Pose of a leg whose primary strut has failed: the upper tube swings `BROKEN_SPLAY` toward the horizontal
+ * about the hinge, the piston leaves it at a knee of `BROKEN_KNEE` and still reaches the ground near where
+ * the foot stood.
+ */
+export function brokenLegPose(lp: LegPose, upperLen: number, lowerLen: number): { upperDir: Vec3Tuple; lowerDir: Vec3Tuple; knee: Vec3Tuple; foot: Vec3Tuple; padUp: Vec3Tuple } {
+  const phi = Math.atan2(lp.hinge[0], lp.hinge[2]);
+  const er: Vec3Tuple = [Math.sin(phi), 0, Math.cos(phi)];
+  // Angle of the strut below the horizontal in the leg's radial plane.
+  const th0 = Math.atan2(-lp.dir[1], dot3(lp.dir, er));
+  const at = (th: number): Vec3Tuple => [er[0] * Math.cos(th), -Math.sin(th), er[2] * Math.cos(th)];
+  const upperDir = at(th0 - BROKEN_SPLAY);
+  const lowerDir = at(th0 - BROKEN_SPLAY + BROKEN_KNEE);
+  const knee = add3(lp.hinge, scale3(upperDir, upperLen - 0.25));
+  const foot = add3(knee, scale3(lowerDir, lowerLen - 0.1));
+  const tilt = 14 * DEG;
+  return { upperDir, lowerDir, knee, foot, padUp: [er[0] * Math.sin(tilt), Math.cos(tilt), er[2] * Math.sin(tilt)] };
 }
 
 export const landerLegs: PartGenerator = ({ def, params }) => {
@@ -682,10 +717,22 @@ export const landerLegs: PartGenerator = ({ def, params }) => {
       const lp = legPose(leg, state ? state.deploy : 0, state ? (state.compression[i] ?? 0) : 0);
       const phi = Math.atan2(lp.hinge[0], lp.hinge[2]);
       const tan: Vec3Tuple = [Math.cos(phi), 0, -Math.sin(phi)];
-      emit('upper', lp.hinge, quatAlong(lp.dir, tan));
-      emit('lower', lp.foot, quatAlong(scale3(lp.dir, -1), tan));
-      emit('pad', lp.foot, [0, Math.sin(phi / 2), 0, Math.cos(phi / 2)]);
-      const c = add3(lp.hinge, scale3(lp.dir, collar));
+      let upperDir = lp.dir;
+      if (state && state.broken[i] === true && state.deploy > 0.5) {
+        // A broken leg: the primary strut has let go at the crush core. The upper tube, still held by the
+        // secondary struts, has splayed outward; the piston has pulled out of it and stands kinked on its
+        // foot pad, which lies tilted on the ground.
+        const br = brokenLegPose(lp, upperLen, lowerLen);
+        upperDir = br.upperDir;
+        emit('upper', lp.hinge, quatAlong(br.upperDir, tan));
+        emit('lower', br.foot, quatAlong(scale3(br.lowerDir, -1), tan));
+        emit('pad', br.foot, quatAlong(br.padUp, tan));
+      } else {
+        emit('upper', lp.hinge, quatAlong(lp.dir, tan));
+        emit('lower', lp.foot, quatAlong(scale3(lp.dir, -1), tan));
+        emit('pad', lp.foot, [0, Math.sin(phi / 2), 0, Math.cos(phi / 2)]);
+      }
+      const c = add3(lp.hinge, scale3(upperDir, collar));
       for (const a of anchors(i)) {
         const d = norm3(sub3(c, a));
         emit('braceUpper', a, quatAlong(d, tan));

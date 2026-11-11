@@ -10,10 +10,11 @@
  */
 import type { PartDef } from '@/core/contracts/defs';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
+import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, norm3, polar, scale3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, arcPath, beam, bolt, boltRing, bottle, box, extrude, frustum, lathe, phisWith, pipe, radialFrame, rectPoly, ringSolid, rod, tube, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, stringers, thruster, umbilicalPlate } from './common';
+import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, stringers, surfaceFrame, thruster, umbilicalPlate, type Surface } from './common';
 import { mouldLine, shieldY } from './mouldline';
 import { Params, staticPose, type PartGenerator, type PoseInput, type PoseSink } from './types';
 
@@ -27,12 +28,12 @@ const nodeRadius = (def: PartDef, id: string, fallback: number): number => {
   return n ? n.size / 2 : fallback;
 };
 
-/** Louvred vent on a cylinder / cone wall. */
-function louvre(b: MeshBuilder, r: number, phi: number, y: number, w: number, h: number, tilt = 0): void {
+/** Louvred vent on a cylinder / cone wall: the frame leans with the wall. */
+function louvre(b: MeshBuilder, s: Surface, phi: number, y: number, w: number, h: number): void {
   if (b.lod === 2) return;
   const prev = b.material;
-  b.at(xf.mul(radialFrame(r - 0.006, phi, y), xf.rotZ(tilt)), () => {
-    // Local +Y = outward, +X = up, +Z = tangential.
+  b.at(surfaceFrame(s, phi, y, -0.006), () => {
+    // Local +Y = outward normal, +X = up the wall, +Z = tangential.
     b.mat('steel-brushed');
     box(b, h + 0.06, 0.018, w + 0.06, [0, 0.009, 0], 'vent-frame');
     b.mat('steel-dark');
@@ -49,7 +50,8 @@ function louvre(b: MeshBuilder, r: number, phi: number, y: number, w: number, h:
   b.mat(prev);
 }
 
-export const stageInterstage: PartGenerator = ({ def, params }) => {
+export const stageInterstage: PartGenerator = ({ def, params, defs }) => {
+  const sheet = decalSheetOf(defs);
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
   const Rb = nodeRadius(def, 'bottom', def.bounds.radius);
@@ -63,7 +65,7 @@ export const stageInterstage: PartGenerator = ({ def, params }) => {
 
   const regions: LatheRegion[] = [];
   for (const e of parseList(P.str('bands', ''))) regions.push(bandRegion(mat(e.name, where), e.n[0]!, e.n[1]!, e.n[2]!, e.n[3]!, ['skin0', 'skin1']));
-  for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(e.name, rAt(e.n[1]!), e.n[0]!, e.n[1]!, e.n[2]! / slope, e.flags.includes('rot'), ['skin0', 'skin1']));
+  for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(sheet, e.name, rAt(e.n[1]!), e.n[0]!, e.n[1]!, e.n[2]! / slope, e.flags.includes('rot'), ['skin0', 'skin1']));
 
   const body = buildModel(`${def.id}.body`, (b) => {
     const segs = b.pick(144, 64, 20);
@@ -132,10 +134,10 @@ export const stageInterstage: PartGenerator = ({ def, params }) => {
     // ---- vents, doors, umbilical, separation springs and pyro line
     const vents = P.num('vents', 8);
     b.masks(0.2, 1, 0.3, 0);
-    for (let i = 0; i < vents; i++) louvre(b, rAt(H * 0.42), (i / vents) * TAU + P.num('ventPhase', 22.5) * DEG, H * 0.42, 0.5, 0.26, Math.atan2(Rb - Rt, H));
+    for (let i = 0; i < vents; i++) louvre(b, rAt, (i / vents) * TAU + P.num('ventPhase', 22.5) * DEG, H * 0.42, 0.5, 0.26);
     b.mat(skin);
-    for (const e of parseList(P.str('doors', ''))) accessDoor(b, rAt(e.n[1]!), e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!);
-    for (const e of parseList(P.str('umbilicals', ''))) if (b.lod < 2) umbilicalPlate(b, rAt(e.n[1]!), e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!, e.n[4] ?? 4);
+    for (const e of parseList(P.str('doors', ''))) accessDoor(b, rAt, e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!);
+    for (const e of parseList(P.str('umbilicals', ''))) if (b.lod < 2) umbilicalPlate(b, rAt, e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!, e.n[4] ?? 4);
     if (b.lod === 0) {
       const springs = P.num('springs', 8);
       for (let i = 0; i < springs; i++) {
@@ -213,7 +215,7 @@ export const stageRing: PartGenerator = ({ def, params, defs }) => {
     // Separation fittings: bolt catchers / spring housings around the top.
     for (let i = 0; i < fittings; i++) {
       const phi = ((i + 0.5) / fittings) * TAU;
-      b.at(radialFrame(rAt(H - 0.12) - 0.005, phi, H - 0.12), () => {
+      b.at(surfaceFrame(rAt, phi, H - 0.12, -0.005), () => {
         b.mat('steel-dark').masks(0.3, 1, 0.3, 0);
         box(b, 0.16 * fs, 0.07 * fs, 0.14 * fs, [0, 0.035 * fs, 0], 'fitting');
         if (b.lod === 0) {
@@ -227,7 +229,7 @@ export const stageRing: PartGenerator = ({ def, params, defs }) => {
       b.mat('steel-bare').masks(0.3, 1, 0.3, 0);
       boltRing(b, rAt(0.05) + 0.012, 0.05, Math.round((TAU * Rb) / 0.18), 0.011, 0.008);
     }
-    for (const e of parseList(P.str('umbilicals', ''))) umbilicalPlate(b, rAt(e.n[1]!), e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!, e.n[4] ?? 4);
+    for (const e of parseList(P.str('umbilicals', ''))) umbilicalPlate(b, rAt, e.n[0]! * DEG, e.n[1]!, e.n[2]!, e.n[3]!, e.n[4] ?? 4);
   });
   return { models: { body }, pose: staticPose };
 };
@@ -293,7 +295,7 @@ export const motorPack: PartGenerator = ({ def, params }) => {
       }
     }
   });
-  return { models: { body }, pose: staticPose };
+  return { models: { body }, pose: staticPose, sootSeconds: P.num('sootSeconds', 2) };
 };
 
 export const rcsPod: PartGenerator = ({ def, params }) => {

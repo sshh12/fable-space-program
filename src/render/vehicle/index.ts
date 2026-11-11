@@ -11,4 +11,4 @@ export { generateStructure, registerSiteGenerator, siteGeneratorIds, type SiteGe
 export { generatePart, generatorIds, hasGenerator, registerGenerator, NEUTRAL_ANIM } from './parts';
 export type { GenContext, PartAnim, PartGenerator, PartLight, PartModel, PartVisual, PoseInput, PoseOpts, PoseSink } from './parts';
 export { MATERIAL_IDS, materialDef, materialTextureFiles, type MatId } from './materials';
-export { DECALS, DECAL_ATLAS_SIZE, decalLayout, decalUv } from './decals';
+export { DECAL_SECTION, createDecalSheet, decalSheetOf, layoutDecals, type DecalSheet, type DecalSheetDef, type DecalSpec } from './decals';

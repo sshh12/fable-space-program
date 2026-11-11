@@ -45,6 +45,10 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
   const bellMat = P.str('bell', 'nozzle-wall') as MatId;
   const extMat = P.str('extension', 'nozzle-ext') as MatId;
   const bands = P.num('bands', 7);
+  // Seconds of full-throttle firing that soot the engine completely (0 = it burns clean). The soot of the
+  // engine's own exhaust settles inside the chamber and bell only; the outside stays bare metal.
+  const sootSeconds = P.num('sootSeconds', 60);
+  const innerSoot = sootSeconds > 0 ? 1 : 0;
 
   // Stations (x = distance below the mount).
   const xI = 0.1 + 0.11 * L; // injector face
@@ -98,6 +102,16 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
   };
 
   /** Bell wall between contour indices i0..i1 as a closed band; `capTop` closes onto the axis as the chamber. */
+  const rInAt = (c: Contour, x: number): number => {
+    for (let i = 0; i + 1 < c.x.length; i++) {
+      if (x <= c.x[i + 1]!) {
+        const t = (x - c.x[i]!) / (c.x[i + 1]! - c.x[i]!);
+        return c.rin[i]! + (c.rin[i + 1]! - c.rin[i]!) * Math.max(0, Math.min(1, t));
+      }
+    }
+    return c.rin[c.rin.length - 1]!;
+  };
+
   const wallBand = (b: MeshBuilder, c: Contour, i0: number, i1: number, outer: (i: number) => MatId, inner: MatId, segs: number, top: boolean): void => {
     let p: Profile;
     if (top) {
@@ -127,7 +141,16 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
       p.hard().mat('steel-dark');
       p.corner(c.rin[i0]!, -c.x[i0]!).close();
     }
-    lathe(b, p, { segs, tag: 'bell' });
+    lathe(b, p, {
+      segs,
+      tag: 'bell',
+      // The gas side (injector face, chamber and bell wall) takes the soot; the outside takes none.
+      mask: (y, _phi, r, m) => {
+        const x = -y;
+        const gasSide = x >= c.x[i0]! - 1e-6 && r < (rInAt(c, x) + rOutAt(c, x)) / 2;
+        m.soot = gasSide ? innerSoot : 0;
+      },
+    });
   };
 
   const bellSegs = (b: MeshBuilder): number => b.pick(80, 36, 14);
@@ -158,13 +181,13 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     const c = contour(b);
     const [iA] = split(c);
     const segs = bellSegs(b);
-    b.mat(bellMat).masks(0.05, 1, 0.5, 0);
+    b.mat(bellMat).masks(0.05, 1, 0, 0);
     const xJ = c.x[iA]!;
     // Chamber jacket is plain alloy down to the throat, channel wall below.
     wallBand(b, c, 0, iA, (i) => (c.x[i]! < xT - conv * 0.4 ? 'inconel' : bellMat), 'copper', segs, true);
 
     // ---- mount, gimbal block and bearing
-    b.mat('steel-dark').masks(0.2, 0.9, 0.2, 0);
+    b.mat('steel-dark').masks(0.2, 0.9, 0, 0);
     frustum(b, mountR, mountR, -0.05 * s - 0.01, 0, b.pick(40, 20, 10), 'mount');
     if (b.lod < 2) {
       frustum(b, 0.17 * s, 0.2 * s, -(xI - 0.75 * c.rout[0]!) - 0.02, -0.05 * s, b.pick(24, 12, 8), 'gimbal');
@@ -177,7 +200,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
 
     // ---- stiffener hat bands, throat jacket ring, manifolds
     if (b.lod < 2) {
-      b.mat('steel-dark').masks(0.15, 1, 0.6, 0);
+      b.mat('steel-dark').masks(0.15, 1, 0, 0);
       const nBands = b.pick(bands, Math.ceil(bands / 2), 0);
       for (let k = 0; k < nBands; k++) {
         const x = xT + Lb * (0.06 + (hotFrom - 0.1) * ((k + 0.5) / nBands));
@@ -185,12 +208,12 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         band(b, rOutAt(c, x), -x, 0.035 * s + 0.01, 0.014 * s + 0.004, segs, 'hatband');
       }
       band(b, rOutAt(c, xT), -xT, 0.09 * s, 0.03 * s, segs, 'throat-ring');
-      b.mat('inconel').masks(0.1, 1, 0.5, 0);
+      b.mat('inconel').masks(0.1, 1, 0, 0);
       // Coolant inlet manifold at the joint to the extension, collector under the injector.
       torus(b, rOutAt(c, xJ - 0.05 * s) + 0.035 * s, 0.045 * s, -(xJ - 0.06 * s), segs, b.pick(10, 6, 4), 'manifold');
       torus(b, c.rout[0]! + 0.03 * s, 0.04 * s, -(xI + 0.03), b.pick(48, 24, 10), b.pick(10, 6, 4), 'manifold');
       if (b.lod === 0) {
-        b.mat('steel-bare').masks(0.25, 1, 0.5, 0);
+        b.mat('steel-bare').masks(0.25, 1, 0, 0);
         const rj = rOutAt(c, xJ) + 0.012 * s;
         for (let i = 0; i < 48; i++) {
           const phi = (i / 48) * TAU;
@@ -213,7 +236,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         b.at(xf.translate(...polar(pumpR, phi, -pumpTop)), () => {
           // Stacked housings: inlet, inducer, volute, turbine, preburner.
           const H = pumpLen;
-          b.mat('alu-cast').masks(0.1, 0.9, 0.2, 0);
+          b.mat('alu-cast').masks(0.1, 0.9, 0, 0);
           const p = Profile.at(0, 0)
             .corner(r * 0.55, 0)
             .corner(r * 0.55, -0.1 * H)
@@ -242,7 +265,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         const side = polar(pumpR - r * 0.95 * 0.3, phi, -(pumpTop + 0.37 * pumpLen));
         const tangent = polar(1, phi + Math.PI / 2, 0);
         const out: Vec3Tuple = [side[0] + tangent[0] * r * 1.25, side[1], side[2] + tangent[2] * r * 1.25];
-        b.mat(k === 0 ? 'steel-brushed' : 'inconel').masks(0.1, 0.95, 0.3, 0);
+        b.mat(k === 0 ? 'steel-brushed' : 'inconel').masks(0.1, 0.95, 0, 0);
         pipe(b, [side, out, [out[0] * 0.55, -(xI - 0.02), out[2] * 0.55], polar(c.rout[0]! * 0.7, phi + 0.9, -(xI - 0.35 * c.rout[0]!))], 0.055 * s, 0.14 * s, { segs: b.pick(12, 8, 6), tag: 'duct' });
         // Hot-gas duct from the turbine to the injector.
         const tb = polar(pumpR - r * 0.3, phi, -(pumpTop + 0.75 * pumpLen));
@@ -252,7 +275,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         const inR = r * 0.5;
         const top0 = polar(pumpR, phi, -pumpTop);
         const top1 = polar(Math.min(pumpR * 1.05, def.bounds.radius - inR - 0.02), phi, -0.02 - 0.4 * inR);
-        b.mat('steel-bare').masks(0.1, 1, 0.1, 0.4);
+        b.mat('steel-bare').masks(0.1, 1, 0, 0.4);
         const n = b.pick(28, 10, 4);
         const path: Vec3Tuple[] = [];
         for (let i = 0; i <= n; i++) path.push([top0[0] + ((top1[0] - top0[0]) * i) / n, top0[1] + ((top1[1] - top0[1]) * i) / n, top0[2] + ((top1[2] - top0[2]) * i) / n]);
@@ -260,7 +283,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
       }
       // Regenerative coolant feed: from the second pump (or the collector) down the bell to the inlet manifold.
       const phiF = (pumps > 1 ? Math.PI : 0) + 62 * DEG;
-      b.mat('steel-brushed').masks(0.1, 1, 0.4, 0);
+      b.mat('steel-brushed').masks(0.1, 1, 0, 0);
       const feed: Vec3Tuple[] = [polar(c.rout[0]! + 0.09 * s, phiF, -(xI + 0.1 * Lc))];
       for (const f of [0.5, 0.8, 0.95]) {
         const x = xI + (xJ - xI) * f;
@@ -276,7 +299,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         const low = polar(rOutAt(c, xT - conv * 0.5) + 0.05 * s, phi, -(xT - conv * 0.5));
         const high = polar(mountR * 0.92, phi, -0.04 * s - 0.03);
         const mid: Vec3Tuple = [low[0] + (high[0] - low[0]) * 0.55, low[1] + (high[1] - low[1]) * 0.55, low[2] + (high[2] - low[2]) * 0.55];
-        b.mat('steel-dark').masks(0.2, 0.95, 0.2, 0);
+        b.mat('steel-dark').masks(0.2, 0.95, 0, 0);
         rod(b, high, mid, 0.05 * s, b.pick(14, 8, 6), 'actuator');
         b.mat('steel-bare');
         rod(b, mid, low, 0.026 * s, b.pick(12, 8, 6), 'actuator-rod');
@@ -290,7 +313,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
 
     // ---- small lines, igniter, harness and sensor boxes
     if (b.lod === 0) {
-      b.mat('steel-bare').masks(0.1, 1, 0.3, 0.3);
+      b.mat('steel-bare').masks(0.1, 1, 0, 0.3);
       for (let k = 0; k < 5; k++) {
         const phi0 = (k / 5) * TAU + 0.4;
         const x0 = xI + Lc * (0.2 + 0.15 * k);
@@ -300,7 +323,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         pts.push(polar(rOutAt(c, xe) + 0.03 * s, phi0 + 1.6 + 0.3 * k, -xe));
         pipe(b, pts, 0.009 * s + 0.003, 0.05 * s, { segs: 6, tag: 'line' });
       }
-      b.mat('rubber').masks(0, 1, 0.2, 0);
+      b.mat('rubber').masks(0, 1, 0, 0);
       const hp: Vec3Tuple[] = [];
       for (let i = 0; i <= 30; i++) {
         const t = i / 30;
@@ -308,7 +331,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
         hp.push(polar(Math.max(rOutAt(c, x), c.rout[0]!) + 0.04 * s, 4.2 + 0.5 * Math.sin(t * 5), -x));
       }
       tube(b, hp, 0.012 * s + 0.004, { segs: 6, tag: 'harness' });
-      b.mat('alu-machined').masks(0.2, 1, 0.2, 0);
+      b.mat('alu-machined').masks(0.2, 1, 0, 0);
       for (const [phi, x] of [
         [4.25, xI + Lc * 0.6],
         [1.1, xT - conv * 0.2],
@@ -345,10 +368,10 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     const i0 = which === 0 ? iA : iB;
     const i1 = which === 0 ? iB : c.x.length - 1;
     const segs = bellSegs(b);
-    b.mat(extMat).masks(0.05, 1, 1, 0);
+    b.mat(extMat).masks(0.05, 1, 0, 0);
     wallBand(b, c, i0, i1, () => extMat, extMat, segs, false);
     if (b.lod < 2) {
-      b.mat('steel-dark').masks(0.1, 1, 1, 0);
+      b.mat('steel-dark').masks(0.1, 1, 0, 0);
       const x = (c.x[i0]! + c.x[i1]!) / 2;
       band(b, rOutAt(c, x), -x, 0.03 * s + 0.008, 0.012 * s + 0.003, segs, 'hatband');
       if (which === 1) band(b, rOutAt(c, c.x[i1]! - 0.02 * s), -(c.x[i1]! - 0.02 * s), 0.03 * s + 0.008, 0.012 * s + 0.004, segs, 'lip-ring');
@@ -382,5 +405,5 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     emit('hotA', null, rot, { temperature: glow > 0 ? 260 + (glow - 260) * 0.8 : 0 });
     emit('hotB', null, rot, { temperature: glow });
   };
-  return { models, pose };
+  return { models, pose, sootSeconds };
 };

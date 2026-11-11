@@ -57,6 +57,10 @@ export interface PoseInput {
 export interface PoseOpts {
   /** Temperature of this item, K (the feature uses the larger of this and the part's skin temperature). */
   temperature?: number;
+  /** This item never glows with heat, whatever the part's temperature (glazing, lamp lenses). */
+  cold?: boolean;
+  /** Dithered coverage 0..1 of this item (1 = solid): layers that thin out, such as rime on a tank. */
+  fade?: number;
   castShadow?: boolean;
   /** Multiplier on the material's emissive luminance (lamps). */
   emissive?: number;
@@ -82,6 +86,11 @@ export interface PartVisual {
   pose(input: PoseInput, emit: PoseSink): void;
   /** Local lights of the part for a state (floodlights when the lamp is on). */
   lights?(input: PoseInput): PartLight[];
+  /**
+   * Seconds of full-throttle firing after which the part's engine has sooted it (and the stage it is
+   * mounted on) completely. Absent or 0: the part has no engine, or one that burns clean.
+   */
+  sootSeconds?: number;
 }
 
 export type PartGenerator = (ctx: GenContext) => PartVisual;

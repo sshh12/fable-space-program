@@ -67,21 +67,23 @@ const SPECS = {
   grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' } },
   // ---- composites, insulation, thermal protection
   carbon: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.18, tile: [0.25, 0.25], tex: { a: 'carbon_albedo', n: 'carbon_n', o: 'carbon_orm' } },
-  'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
-  /** The same foam where it has darkened in the sun (older closeouts, the windward side). */
-  'foam-aged': { color: [0.8, 0.7, 0.6], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
-  'foam-white': { color: [1, 1, 1], metallic: 0, roughness: 0.82, tile: [2.4, 2.4], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
-  'foam-white-b': { color: [0.93, 0.92, 0.9], metallic: 0, roughness: 0.86, tile: [2.4, 2.4], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
+  'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
+  /** The same foam where it is hand-sprayed over structure (intertanks, close-outs): darker and browner. */
+  'foam-aged': { color: [0.8, 0.7, 0.6], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
+  'foam-white': { color: [1, 1, 1], metallic: 0, roughness: 0.82, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
+  'foam-white-b': { color: [0.93, 0.92, 0.9], metallic: 0, roughness: 0.86, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
   cork: { color: [1, 1, 1], metallic: 0, roughness: 0.94, tile: [0.7, 0.7], tex: { a: 'cork_albedo', n: 'cork_n', o: 'cork_orm' } },
   ablator: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [1.2, 1.2], tex: { a: 'ablator_albedo', n: 'ablator_n', o: 'ablator_orm' } },
-  'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [0.72, 0.72], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
-  'tile-black': { color: [0.07, 0.07, 0.075], metallic: 0, roughness: 0.55, tile: [0.72, 0.72], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
-  'mli-gold': { color: [0.95, 0.66, 0.2], metallic: 0.8, roughness: 0.4, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-silver': { color: [0.88, 0.89, 0.9], metallic: 0.85, roughness: 0.38, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
+  'tile-black': { color: [0.07, 0.07, 0.075], metallic: 0, roughness: 0.55, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
+  'mli-gold': { color: [0.95, 0.66, 0.2], metallic: 0.85, roughness: 0.4, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-silver': { color: [0.88, 0.89, 0.9], metallic: 0.9, roughness: 0.38, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   'mli-black': { color: [0.025, 0.025, 0.028], metallic: 0, roughness: 0.5, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.42, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
+  /** Rime on a cryogenic tank: matte, faintly blue white with a lumpy surface (no clear coat under it shows). */
+  frost: { color: [0.9, 0.93, 0.97], metallic: 0, roughness: 0.84, tile: [1.6, 1.6], tex: { n: 'foam_n', o: 'foam_orm' } },
   rubber: { color: [0.02, 0.02, 0.022], metallic: 0, roughness: 0.82, tile: [0.3, 0.3], tex: { n: 'cast_n' } },
   /** Carbon-phenolic solid-motor nozzles and throat inserts. */
   phenolic: { color: [0.035, 0.03, 0.028], metallic: 0, roughness: 0.7, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
@@ -91,10 +93,10 @@ const SPECS = {
   /** Red obstruction light on masts. */
   'lamp-red': { color: [0.35, 0.02, 0.02], metallic: 0, roughness: 0.3, emissive: [1, 0.06, 0.03] },
   // ---- launch complex
-  concrete: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [9, 9], tex: { a: 'concrete_albedo', n: 'concrete_n', o: 'concrete_orm' }, shading: 'terrain' },
-  'concrete-wall': { color: [0.92, 0.92, 0.9], metallic: 0, roughness: 0.9, tile: [9, 9], tex: { a: 'concrete_albedo', n: 'concrete_n', o: 'concrete_orm' } },
+  concrete: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [18, 18], tex: { a: 'concrete_albedo', n: 'concrete_n', o: 'concrete_orm' }, shading: 'terrain' },
+  'concrete-wall': { color: [0.92, 0.92, 0.9], metallic: 0, roughness: 0.9, tile: [18, 18], tex: { a: 'concrete_albedo', n: 'concrete_n', o: 'concrete_orm' } },
   /** Refractory brick lining of the flame trench and deflector. */
-  refractory: { color: [0.36, 0.25, 0.19], metallic: 0, roughness: 0.92, tile: [1.6, 1.6], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
+  refractory: { color: [0.36, 0.25, 0.19], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   gravel: { color: [1, 1, 1], metallic: 0, roughness: 0.95, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
   // ---- decal atlas (UVs are atlas coordinates)
   decal: { color: [1, 1, 1], metallic: 0, roughness: 0.46, clearcoat: 1, clearcoatRoughness: 0.14, tile: [0, 0], tex: { a: 'decals' } },

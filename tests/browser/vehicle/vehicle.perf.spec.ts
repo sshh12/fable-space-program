@@ -5,7 +5,7 @@
  *   of timestamp queries), CPU instance update of the vessel feature < 0.3 ms.
  * Attribution mode (each hook in its own pass), governor off, a ballast of about 7 ms so the GPU runs at the
  * clock of a real frame (render-core hand-off 4.1). A second view from the tower at 15 m, where most of
- * the frame is LOD 0 geometry, is held to the same budgets.
+ * the frame is LOD 0 geometry, is held to the same budgets. Each figure is the median of three windows.
  */
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, saveScreenshot, test, waitIdle, withGpuLock } from '../harness';
@@ -37,8 +37,9 @@ const VIEWS = {
 };
 
 /**
- * Three windows of 240 frames; the least disturbed one counts (the GPU is shared with other agents'
- * browser tests, and concurrent work can only add time to a pass).
+ * Three windows of 240 frames. The MEDIAN window counts, per budget line (a single quiet window proves
+ * little, a single disturbed one - the GPU is shared with other agents' browser tests - should not fail the
+ * run); all three are printed.
  */
 async function measure(page: Page): Promise<Row & { windows: string }> {
   const rows: Row[] = [];
@@ -77,14 +78,18 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
       }, w === 0),
     );
   }
-  const cost = (r: Row): number => r.vehicleGbuffer + r.vehicleShadow + r.siteGbuffer + r.siteShadow;
-  const best = rows.reduce((b, r) => (cost(r) < cost(b) ? r : b), rows[0]!);
-  // The CPU figure is the quietest window's too: another agent's job on the same cores only adds time.
-  const update = rows.reduce((b, r) => (r.updateP50 < b.updateP50 ? r : b), rows[0]!);
+  const median = (f: (r: Row) => number): number => rows.map(f).sort((a, b) => a - b)[1]!;
   return {
-    ...best,
-    updateP50: update.updateP50,
-    updateP95: update.updateP95,
+    ...rows[1]!,
+    vehicleGbuffer: median((r) => r.vehicleGbuffer),
+    vehicleShadow: median((r) => r.vehicleShadow),
+    siteGbuffer: median((r) => r.siteGbuffer),
+    siteShadow: median((r) => r.siteShadow),
+    ballast: median((r) => r.ballast),
+    frameP99: median((r) => r.frameP99),
+    updateP50: median((r) => r.updateP50),
+    updateP95: median((r) => r.updateP95),
+    siteUpdateP50: median((r) => r.siteUpdateP50),
     windows: rows.map((r) => `${r.vehicleGbuffer.toFixed(3)}/${r.vehicleShadow.toFixed(3)}/${(r.siteGbuffer + r.siteShadow).toFixed(3)}/${r.updateP50.toFixed(3)}`).join(' '),
   };
 }
@@ -130,6 +135,9 @@ test('vehicle and site budgets at 1440p with the full stack on the pad', async (
       expect(r.vehicleShadow).toBeLessThan(0.4);
       expect(r.siteGbuffer + r.siteShadow).toBeLessThan(0.5);
       expect(r.updateP50).toBeLessThan(0.3);
+      // Shadows are cast by the parts' coarser LODs: well under the stack's LOD 0 triangles per frame.
+      expect(r.shadowTriangles).toBeGreaterThan(0);
+      expect(r.shadowTriangles).toBeLessThan(700_000);
     }
   });
 });

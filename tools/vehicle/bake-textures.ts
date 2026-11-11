@@ -153,43 +153,65 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Spray-on foam insulation, tile 2.4 m: popcorn skin over irregular spray lumps. Nothing in it is larger
-  // than a few decimetres: a bigger feature would show the tile repeat on a 9 m tank (the large-scale tone
-  // differences are separate materials on the mesh).
+  // Spray-on foam insulation, tile 9.6 m: popcorn skin over irregular spray lumps, the faint ribbing of the
+  // spray passes round the tank, and tone that drifts over metres (foam darkens with age and sun, and no two
+  // spray sessions match): soft mottling plus a few irregular hand-sprayed close-out patches. One tile is
+  // more than a third of a 9 m tank's girth, so no feature is seen twice at a glance.
   foam() {
-    const S = 1024;
+    const S = 2048;
+    const T = 9.6;
     const lump = (u: number, v: number): number => {
-      const c = worley(u + 0.02 * fbm(u, v, 16, 16, 2, 80), v, 22, 26, 81, 1);
+      const c = worley(u + 0.005 * fbm(u, v, 64, 64, 2, 80), v, 88, 104, 81, 1);
       return 1 - smooth(0.0, 0.75, c.f1);
     };
+    // Spray passes: bands about 0.45 m high whose edges wander.
+    const pass = (u: number, v: number): number => {
+      const w = v * 21 + 0.35 * fbm(u, v, 5, 3, 3, 89);
+      const f = w - Math.floor(w);
+      return smooth(0.0, 0.12, f) * (1 - smooth(0.8, 1.0, f));
+    };
     const h = Field.from(S, S, (u, v) => {
-      const pop = 1 - smooth(0.0, 0.55, worley(u, v, 120, 120, 82).f1);
-      return 0.0035 * pop + 0.006 * fbm(u, v, 20, 20, 3, 83) + 0.009 * lump(u, v);
+      const pop = 1 - smooth(0.0, 0.55, worley(u, v, 480, 480, 82).f1);
+      return 0.0032 * pop + 0.006 * fbm(u, v, 80, 80, 3, 83) + 0.009 * lump(u, v) + 0.004 * pass(u, v) + 0.012 * fbm(u, v, 9, 9, 2, 84);
     });
-    save('foam_n', normalMap(h, 2.4, 0.9));
+    save('foam_n', normalMap(h, T, 0.9));
     const ao = cavity(h, 3, 160);
     save(
       'foam_orm',
-      orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 30, 30, 2, 85)), 1]),
+      orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 120, 120, 2, 85)), 1]),
     );
+    // Close-out patches: irregular blobs one to two metres across, in a fifth of the cells of a coarse lattice.
+    const patch = (u: number, v: number): { k: number; tone: number } => {
+      // Cells 2.4 m wide and 1.4 m high: a close-out is sprayed along a flange or a line, not round a point.
+      const c = worley(u + 0.05 * (fbm(u, v, 10, 10, 3, 90) - 0.5), v + 0.03 * (fbm(u, v, 14, 14, 3, 91) - 0.5), 4, 7, 92, 0.8);
+      if (c.id > 0.16) return { k: 0, tone: 0 };
+      const edge = 0.3 + 0.28 * (fbm(u, v, 22, 22, 4, 93) - 0.5);
+      return { k: smooth(edge, edge - 0.16, c.f1), tone: c.id2 };
+    };
+    const tone = (u: number, v: number): number => {
+      // Age mottling over metres, a slow drift along the tank, the passes.
+      const age = fbm(u, v, 3, 3, 4, 86) - 0.5;
+      const drift = fbm(u, v, 1, 2, 2, 87) - 0.5;
+      return 1 + 0.2 * age + 0.1 * drift - 0.035 * (1 - pass(u, v));
+    };
     const fresh = rgb(216, 150, 78);
-    const aged = rgb(178, 106, 50);
-    const pale = rgb(226, 172, 104);
+    const aged = rgb(170, 100, 48);
+    const pale = rgb(228, 176, 108);
     const colour = (u: number, v: number, x: number, y: number): [number, number, number] => {
-      const age = smooth(0.25, 0.8, fbm(u, v, 12, 12, 5, 86));
-      const patch = smooth(0.7, 0.78, fbm(u, v, 18, 18, 3, 87));
-      let c = lerp3(fresh, aged, age * 0.5);
-      c = lerp3(c, pale, patch * 0.3);
-      return tint(c, (0.86 + 0.14 * fbm(u, v, 110, 110, 2, 88)) * (0.74 + 0.26 * ao.at(x, y)));
+      const t = tone(u, v);
+      let c = lerp3(fresh, aged, clamp(0.3 + 1.6 * (1 - t)));
+      const pt = patch(u, v);
+      if (pt.k > 0) c = lerp3(c, pt.tone > 0.5 ? pale : aged, pt.k * (0.22 + 0.24 * Math.abs(pt.tone - 0.5)));
+      return tint(c, (0.87 + 0.13 * fbm(u, v, 440, 440, 2, 88)) * (0.74 + 0.26 * ao.at(x, y)));
     };
     save('foam_albedo', Image.from(S, S, colour));
-    // The same foam under a white top coat: the relief stays, the colour is a slightly yellowed off-white.
+    // The same foam under a white top coat: the relief stays, the colour is an off-white that has yellowed unevenly.
     save(
       'foamwhite_albedo',
       Image.from(S, S, (u, v, x, y) => {
-        const yellow = smooth(0.35, 0.8, fbm(u, v, 12, 12, 5, 86));
-        const c = lerp3(rgb(232, 230, 222), rgb(222, 213, 190), yellow * 0.5);
-        return tint(c, (0.94 + 0.06 * fbm(u, v, 110, 110, 2, 88)) * (0.84 + 0.16 * ao.at(x, y)));
+        const yellow = clamp(0.35 + 1.8 * (1 - tone(u, v)));
+        const c = lerp3(rgb(232, 230, 222), rgb(220, 210, 186), yellow * 0.6);
+        return tint(c, (0.94 + 0.06 * fbm(u, v, 440, 440, 2, 88)) * (0.84 + 0.16 * ao.at(x, y)));
       }),
     );
   },
@@ -255,71 +277,132 @@ const recipes: Record<string, () => void> = {
     save('ablator_orm', orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 40, 40, 2, 106)), 1]));
   },
 
-  // Ceramic tiles, tile 0.72 m: 4 x 4 pillowed tiles with gaps and per-tile shade.
+  // Ceramic tiles, tile 1.44 m: 8 x 8 pillowed tiles in a running bond (every second row is offset by half
+  // a tile), each with its own shade; a few are replacements (cleaner, brighter) or have yellowed; gaps vary
+  // in width and some carry a gap filler that stands a little proud; a part number is printed in one corner.
   tile() {
-    const S = 1024;
-    const N = 4;
-    const cellOf = (u: number, v: number): { e: number; id: number; fu: number; fv: number } => {
-      const i = Math.floor(u * N);
+    const S = 2048;
+    const N = 8;
+    interface Cell {
+      e: number;
+      eu: number;
+      ev: number;
+      id: number;
+      kind: number;
+      fu: number;
+      fv: number;
+      i: number;
+      j: number;
+    }
+    const cellOf = (u: number, v: number): Cell => {
       const j = Math.floor(v * N);
-      const fu = u * N - i;
+      const uu = u * N + (mod(j, 2) === 1 ? 0.5 : 0);
+      const i = Math.floor(uu);
+      const fu = uu - i;
       const fv = v * N - j;
-      return { e: Math.min(fu, 1 - fu, fv, 1 - fv), id: hash(i, j, 111), fu, fv };
+      const ii = mod(i, N);
+      const eu = Math.min(fu, 1 - fu);
+      const ev = Math.min(fv, 1 - fv);
+      return { e: Math.min(eu, ev), eu, ev, id: hash(ii, j, 111), kind: hash(ii, j, 114), fu, fv, i: ii, j };
     };
+    // Half gap width per tile edge, in tile units (2 to 5 mm of 180 mm).
+    const gapOf = (c: Cell): number => 0.007 + 0.009 * hash(c.i, c.j, 115);
+    // A filler strip sits in the gap under some tiles.
+    const filler = (c: Cell): number => (hash(c.i, c.j, 116) < 0.22 && c.fv < 0.5 ? smooth(gapOf(c) * 0.75, gapOf(c) * 0.3, c.ev) * smooth(0.02, 0.06, c.eu) : 0);
     const h = Field.from(S, S, (u, v) => {
       const c = cellOf(u, v);
-      const pillow = Math.pow(Math.sin(Math.PI * c.fu) * Math.sin(Math.PI * c.fv), 0.35);
-      return 0.0012 * pillow - 0.002 * smooth(0.012, 0.004, c.e) + 0.0003 * fbm(u, v, 80, 80, 2, 112) + (c.id - 0.5) * 0.0008;
+      const pillow = Math.pow(Math.sin(Math.PI * c.fu) * Math.sin(Math.PI * c.fv), 0.3);
+      const g = gapOf(c);
+      return 0.0011 * pillow - 0.0024 * smooth(g, g * 0.4, c.e) + 0.0026 * filler(c) + 0.00028 * fbm(u, v, 160, 160, 2, 112) + (c.id - 0.5) * 0.0011;
     });
-    save('tile_n', normalMap(h, 0.72));
+    save('tile_n', normalMap(h, 1.44));
     const ao = cavity(h, 3, 220);
+    const mark = (c: Cell): number => {
+      // Part number: a few short strokes near one corner (about 25 x 6 mm).
+      const x = (c.fu - 0.1) / 0.14;
+      const y = (c.fv - 0.1) / 0.035;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
+      const k = Math.floor(x * 7);
+      return hash(k + c.i * 13, c.j, 117) < 0.72 && Math.abs(y - 0.5) < 0.42 && x * 7 - k < 0.62 ? 0.5 : 0;
+    };
     save(
       'tile_albedo',
       Image.from(S, S, (u, v, x, y) => {
         const c = cellOf(u, v);
-        const gap = smooth(0.012, 0.004, c.e);
-        const shade = 0.9 + 0.08 * c.id + 0.04 * fbm(u, v, 20, 20, 3, 113);
-        const edgeWear = 1 - 0.06 * smooth(0.06, 0.015, c.e);
-        const k = mix(shade * edgeWear, 0.7, gap) * (0.94 + 0.06 * ao.at(x, y));
-        return [k * 0.925, k * 0.925, k * 0.91];
+        const g = gapOf(c);
+        const gap = smooth(g, g * 0.45, c.e);
+        // Shade: most tiles within a few percent of each other, replacements brighter, a few toasted.
+        let shade = 0.86 + 0.09 * c.id;
+        let warm = 0.012;
+        if (c.kind < 0.07) shade = 0.985;
+        else if (c.kind > 0.88) {
+          shade -= 0.07;
+          warm = 0.04;
+        }
+        shade *= 0.965 + 0.07 * fbm(u, v, 40, 40, 3, 113);
+        // Densified edge: a slightly darker rim.
+        shade *= 1 - 0.07 * smooth(0.07, 0.02, c.e);
+        shade *= 1 - mark(c) * 0.5;
+        let k = mix(shade, 0.36, gap);
+        k = mix(k, 0.78, filler(c));
+        k *= 0.93 + 0.07 * ao.at(x, y);
+        return [k * (0.925 + warm), k * 0.925, k * (0.915 - warm)];
       }),
     );
     save(
       'tile_orm',
       orm(S, S, (u, v, x, y) => {
         const c = cellOf(u, v);
-        return [ao.at(x, y), clamp(0.82 + 0.14 * c.id + 0.2 * smooth(0.02, 0.008, c.e)), 1];
+        const g = gapOf(c);
+        return [ao.at(x, y), clamp(0.8 + 0.16 * c.id + 0.2 * smooth(g * 1.6, g * 0.6, c.e)), 1];
       }),
     );
   },
 
-  // Multi-layer insulation foil, tile 1.1 m: a crumpled film is flat facets meeting in sharp creases. The
-  // height is a sum of warped triangle waves (each one a family of folds), so the surface is continuous and
-  // the facets tilt by a few degrees; folds mostly run along u (the pull direction).
+  // Multi-layer insulation foil, tile 1.1 m. A crumpled film is small flat facets that meet in sharp creases:
+  // every facet is a little mirror with its own tilt, which is what makes the blanket glitter in hard light
+  // and gives it a broken, streaky sheen from afar. The normal map is built from the facets directly: two
+  // scales of facets (about 4 and 10 cm; the film is pulled along u, so they tilt more across it), the
+  // blanket's shallow billows between its stitch lines, and the creases themselves as fine grooves. The
+  // tilts stay within a few degrees: larger ones flip a facet between the sky and the ground and the
+  // blanket breaks up into black and white speckle at any distance where a facet is a pixel.
   mli() {
     const S = 1024;
     const T = 1.1;
-    const tri = (x: number): number => Math.abs(2 * (x - Math.floor(x)) - 1);
-    // [cycles along u, cycles along v, facet slope]
-    const folds: [number, number, number][] = [
-      [1, 4, 0.1], [-2, 6, 0.1], [1, -9, 0.09], [3, 11, 0.08], [-1, 14, 0.08], [2, -19, 0.07], [5, 3, 0.05],
-      [-4, 7, 0.06], [7, -5, 0.04], [0, 25, 0.06], [3, -31, 0.05], [-6, 21, 0.05], [11, 9, 0.035], [-2, 43, 0.04],
-    ];
-    const h = Field.from(S, S, (u, v) => {
-      let sum = 0.012 * fbm(u, v, 2, 3, 2, 125);
-      for (let k = 0; k < folds.length; k++) {
-        const [m, n, slope] = folds[k]!;
-        const amp = (0.55 * slope * T) / (2 * Math.hypot(m, n));
-        const bend = 0.9 * (fbm(u, v, 3, 3, 2, 130 + k) - 0.5);
-        // Folds die out and start again: each family is strong in some places and absent in others.
-        const reach = smooth(0.3, 0.62, fbm(u, v, 3, 4, 2, 150 + k));
-        sum += amp * reach * tri(u * m + v * n + hash(k, 7, 123) + bend);
-      }
-      return sum + 0.00025 * ridged(u, v, 30, 70, 2, 126);
-    });
-    save('mli_n', normalMap(h, T));
-    const ao = cavity(h, 4, 250);
-    save('mli_orm', orm(S, S, (u, v, x, y) => [clamp(0.72 + 0.28 * ao.at(x, y)), clamp(0.84 + 0.16 * fbm(u, v, 24, 24, 2, 127)), 1]));
+    const fine = (u: number, v: number) => worley(u + 0.006 * (fbm(u, v, 40, 40, 2, 121) - 0.5), v, 20, 34, 122, 1);
+    const coarse = (u: number, v: number) => worley(u, v + 0.01 * (fbm(u, v, 20, 20, 2, 123) - 0.5), 8, 13, 124, 1);
+    // Slopes (dh/du, dh/dv in metres per metre) of the facet a texel lies on.
+    const facet = (u: number, v: number): [number, number, number] => {
+      const a = fine(u, v);
+      const c = coarse(u, v);
+      const sx = 0.05 * (a.id - 0.5) + 0.05 * (c.id - 0.5);
+      const sy = 0.15 * (a.id2 - 0.5) + 0.14 * (c.id2 - 0.5);
+      // Distance to the nearest crease, in fine cells.
+      const edge = Math.min(a.f2 - a.f1, (c.f2 - c.f1) * 2.2);
+      return [sx, sy, edge];
+    };
+    const billow = Field.from(S, S, (u, v) => 0.012 * fbm(u, v, 2, 3, 3, 125) + 0.004 * fbm(u, v, 9, 14, 2, 126));
+    const crease = Field.from(S, S, (u, v) => -0.0007 * smooth(0.07, 0.0, facet(u, v)[2]));
+    const scale = S / T / 2;
+    save(
+      'mli_n',
+      Image.from(S, S, (u, v, x, y) => {
+        const [sx, sy] = facet(u, v);
+        const dx = sx + (billow.at(x + 1, y) - billow.at(x - 1, y) + crease.at(x + 1, y) - crease.at(x - 1, y)) * scale;
+        const dy = sy + (billow.at(x, y + 1) - billow.at(x, y - 1) + crease.at(x, y + 1) - crease.at(x, y - 1)) * scale;
+        const l = Math.hypot(dx, dy, 1);
+        return [0.5 - (0.5 * dx) / l, 0.5 - (0.5 * dy) / l, 0.5 + 0.5 / l];
+      }),
+    );
+    save(
+      'mli_orm',
+      orm(S, S, (u, v) => {
+        const [, , edge] = facet(u, v);
+        const k = smooth(0.0, 0.12, edge);
+        // Creases are scuffed and shaded; the facets between them are clean film.
+        return [clamp(0.62 + 0.38 * k), clamp(1 - 0.3 * k + 0.08 * (fbm(u, v, 60, 60, 2, 127) - 0.5)), 1];
+      }),
+    );
   },
 
   // Hot-dip galvanised steel, tile 0.8 m: zinc spangle.
@@ -368,37 +451,43 @@ const recipes: Record<string, () => void> = {
     save('grate_orm', orm(S, S, (u, v) => [clamp(0.25 + 0.75 * bar(u, v)), 0.9, bar(u, v)]));
   },
 
-  // Cast-in-place concrete apron, tile 9 m: 4.5 m slabs, joints, stains, hairline cracks, tyre marks.
+  // Cast-in-place concrete, tile 18 m: sixteen 4.5 m slabs, each poured and finished on its own (tone, trowel
+  // direction, mottling), joints, a few hairline cracks. Nothing in it is a distinct stain: stains and
+  // weathering larger than a slab are the mesh's grime weights, so no two bays of the apron look alike.
   concrete() {
-    const S = 1024;
+    const S = 2048;
+    const N = 4;
     const joint = (u: number, v: number): number => {
-      const a = Math.abs(mod(u * 2, 1) - 0.5);
-      const b = Math.abs(mod(v * 2, 1) - 0.5);
-      return smooth(0.497, 0.4995, Math.max(a, b));
+      const a = Math.abs(mod(u * N, 1) - 0.5);
+      const b = Math.abs(mod(v * N, 1) - 0.5);
+      return smooth(0.4975, 0.4995, Math.max(a, b));
     };
     const crack = (u: number, v: number): number => {
       // Hairline cracks: thin, and only where a low-frequency mask lets them through.
-      const c = worley(u + 0.02 * fbm(u, v, 8, 8, 2, 151), v + 0.02 * fbm(u, v, 8, 8, 2, 150), 4, 4, 152, 1);
-      return smooth(0.004, 0.0008, c.f2 - c.f1) * smooth(0.6, 0.72, fbm(u, v, 3, 3, 2, 153)) * 0.7;
+      const c = worley(u + 0.01 * fbm(u, v, 16, 16, 2, 151), v + 0.01 * fbm(u, v, 16, 16, 2, 150), 7, 7, 152, 1);
+      return smooth(0.0035, 0.0007, c.f2 - c.f1) * smooth(0.62, 0.74, fbm(u, v, 5, 5, 2, 153)) * 0.7;
     };
-    const h = Field.from(S, S, (u, v) => 0.004 * fbm(u, v, 120, 120, 3, 154) + 0.02 * fbm(u, v, 4, 4, 3, 155) - 0.02 * joint(u, v) - 0.008 * crack(u, v));
-    save('concrete_n', normalMap(h, 9, 0.8));
+    const h = Field.from(S, S, (u, v) => 0.004 * fbm(u, v, 240, 240, 3, 154) + 0.02 * fbm(u, v, 8, 8, 3, 155) - 0.02 * joint(u, v) - 0.008 * crack(u, v));
+    save('concrete_n', normalMap(h, 18, 0.8));
     const ao = cavity(h, 2, 60);
     save(
       'concrete_albedo',
       Image.from(S, S, (u, v, x, y) => {
-        const slab = hash(Math.floor(u * 2), Math.floor(v * 2), 156);
-        let k = 0.5 + 0.05 * slab + 0.1 * fbm(u, v, 6, 6, 5, 157) + 0.06 * fbm(u, v, 200, 200, 2, 158);
-        const stain = smooth(0.6, 0.85, fbm(u, v, 4, 7, 5, 159));
-        k *= 1 - 0.2 * stain;
-        const tyre = smooth(0.8, 0.95, fbm(u, v, 2, 40, 3, 160)) * smooth(0.4, 0.7, fbm(u, v, 2, 2, 2, 161));
-        k *= 1 - 0.3 * tyre;
+        const si = Math.floor(u * N);
+        const sj = Math.floor(v * N);
+        const slab = hash(si, sj, 156);
+        // Each slab: its own tone, a broom finish along one of the two axes, soft mottling of its own.
+        const broom = hash(si, sj, 163) < 0.5 ? fbm(u, v, 12, 700, 2, 164) : fbm(u, v, 700, 12, 2, 165);
+        let k = 0.47 + 0.075 * slab + 0.07 * fbm(u + slab * 0.37, v + slab * 0.11, 14, 14, 4, 157) + 0.05 * fbm(u, v, 400, 400, 2, 158) + 0.035 * (broom - 0.5);
+        // Edges of a slab are a little darker where water stands in the joint.
+        const edge = Math.max(Math.abs(mod(u * N, 1) - 0.5), Math.abs(mod(v * N, 1) - 0.5));
+        k *= 1 - 0.06 * smooth(0.44, 0.5, edge);
         k = mix(k, 0.13, Math.max(joint(u, v), crack(u, v) * 0.8));
         k *= 0.85 + 0.15 * ao.at(x, y);
         return [k * 1.0, k * 0.985, k * 0.95];
       }),
     );
-    save('concrete_orm', orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.86 + 0.14 * fbm(u, v, 50, 50, 2, 162)), 1]));
+    save('concrete_orm', orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.86 + 0.14 * fbm(u, v, 100, 100, 2, 162)), 1]));
   },
 
   // Quilted insulation blanket, tile 0.8 m: 0.2 m diamonds, stitched seams, cloth weave.

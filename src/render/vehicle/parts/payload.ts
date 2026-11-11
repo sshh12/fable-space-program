@@ -8,10 +8,11 @@
  * shields, truss tower, escape motor with the canted nozzles of the part's engine module, nose cone.
  */
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
+import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, norm3, polar, scale3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, ball, beam, bolt, boltCircle, box, frustum, lathe, phisWith, radialFrame, ringSolid, rod, uniformPhis, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, ventPort } from './common';
+import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, surfaceFrame, ventPort } from './common';
 import { mouldLine, shellRadius } from './mouldline';
 import { Params, staticPose, type PartGenerator, type PartModel, type PoseInput, type PoseSink } from './types';
 
@@ -20,7 +21,8 @@ const mat = (id: string, where: string): MatId => {
   return id;
 };
 
-export const fairingPetals: PartGenerator = ({ def, params }) => {
+export const fairingPetals: PartGenerator = ({ def, params, defs }) => {
+  const sheet = decalSheetOf(defs);
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
   const mod = def.modules.find((m) => m.type === 'fairing');
@@ -49,7 +51,7 @@ export const fairingPetals: PartGenerator = ({ def, params }) => {
     buildModel(`${def.id}.panel${variant}`, (b) => {
       const regions: LatheRegion[] = [];
       for (const e of parseList(P.str(`bands${variant}`, ''))) regions.push(bandRegion(mat(e.name, where), e.n[0]!, e.n[1]!, e.n[2]!, e.n[3]!, ['skin0', 'skin1']));
-      if (b.lod < 2) for (const e of parseList(P.str(`decals${variant}`, ''))) regions.push(decalRegion(e.name, R, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['skin0', 'skin1']));
+      if (b.lod < 2) for (const e of parseList(P.str(`decals${variant}`, ''))) regions.push(decalRegion(sheet, e.name, R, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['skin0', 'skin1']));
       const segs = b.pick(40, 18, 6);
       const ns = b.pick(12, 6, 3);
       const p = Profile.at(R - wall, 0).mat('alu-machined');
@@ -131,9 +133,10 @@ export const fairingPetals: PartGenerator = ({ def, params }) => {
         }
       }
       if (b.lod === 0) {
-        // Pneumatic thrusters / hinge fittings at the base, and the vent and access door on the outside.
+        // Pneumatic thrusters / hinge fittings at the base (flat against the wall: the payload adapter stands
+        // 0.1 m inside it), and the vent and access door on the outside.
         b.mat('steel-dark').masks(0.3, 0.8, 0.2, 0);
-        for (const f of [0.25, 0.75]) b.at(xf.mul(xf.translate(...polar(R - wall - 0.1, sector * f, 0.2)), xf.rotY(sector * f)), () => box(b, 0.22, 0.2, 0.14, [0, 0, 0], 'hinge-fitting'));
+        for (const f of [0.25, 0.75]) b.at(xf.mul(xf.translate(...polar(R - wall - 0.044, sector * f, 0.2)), xf.rotY(sector * f)), () => box(b, 0.22, 0.2, 0.09, [0, 0, 0], 'hinge-fitting'));
         b.mat('steel-bare').masks(0.3, 1, 0.2, 0);
         for (const edge of [gap + 0.018, sector - gap - 0.018]) for (let i = 0; i < 24; i++) b.at(radialFrame(R + 0.011, edge, 0.3 + ((yS - 0.5) * i) / 23), () => bolt(b, 0.009, 0.005));
       }
@@ -156,6 +159,7 @@ export const fairingPetals: PartGenerator = ({ def, params }) => {
 };
 
 export const lesTower: PartGenerator = ({ def, params, defs }) => {
+  const sheet = decalSheetOf(defs);
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
   const ml = mouldLine(defs, P.str('mouldLine'));
@@ -183,6 +187,8 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
 
   /** Inner radius of the cover at capsule height y. */
   const rIn = (yc: number): number => Math.max(shellRadius(ml, yc) + clear, apexR);
+  /** Outer surface of the cover at a height in the part frame. */
+  const coverOuter = (y: number): number => rIn(y + yCap) + cw;
 
   const body = buildModel(`${def.id}.body`, (b) => {
     const segs = b.pick(120, 56, 20);
@@ -190,7 +196,7 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
     // inside, round the skirt and up the outside
     const yBot = toLes(ml.heatShield.maxDiameterY);
     const regions: LatheRegion[] = [];
-    if (b.lod < 2) for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(e.name, shellRadius(ml, e.n[1]! + yCap) + clear + cw, e.n[0]!, e.n[1]!, e.n[2]! / coneSlope, false, ['skin0', 'skin1']));
+    if (b.lod < 2) for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(sheet, e.name, shellRadius(ml, e.n[1]! + yCap) + clear + cw, e.n[0]!, e.n[1]!, e.n[2]! / coneSlope, false, ['skin0', 'skin1']));
     const n = b.pick(14, 7, 3);
     const ys: number[] = [];
     for (let i = 0; i <= n; i++) ys.push(ml.heatShield.maxDiameterY + ((ml.cone.yTop - ml.heatShield.maxDiameterY) * i) / n);
@@ -228,16 +234,23 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
       },
     });
     if (b.lod < 2) {
-      // Hatch access panel and its window port over the capsule hatch, vents, skirt band.
+      // Hatch access panel over the capsule hatch (it follows the cone of the cover), its window port in a
+      // bezel, vents, skirt band.
       const hy = toLes(ml.hatch.y);
-      const hr = rIn(ml.hatch.y) + cw;
+      const hphi = ml.hatch.azimuthDeg * DEG;
       b.mat(coverMat).masks(0.2, 1, 0.5, 0);
-      accessDoor(b, hr, ml.hatch.azimuthDeg * DEG, hy, ml.hatch.width + 0.14, ml.hatch.height + 0.14);
-      b.mat('glass').masks(0, 1, 0.4, 0);
-      b.at(radialFrame(hr + 0.01, ml.hatch.azimuthDeg * DEG, hy), () => frustum(b, ml.hatch.window.radius, ml.hatch.window.radius, 0, 0.006, b.pick(24, 12, 6), 'port'));
+      accessDoor(b, coverOuter, hphi, hy, ml.hatch.width + 0.14, ml.hatch.height + 0.14);
+      const wr = ml.hatch.window.radius;
+      b.at(surfaceFrame(coverOuter, hphi, hy, 0.012), () => {
+        // The pane is flat; the bezel takes up the few millimetres by which the curved panel falls away under it.
+        b.mat('glass').masks(0, 1, 0.4, 0);
+        frustum(b, wr, wr, -0.006, 0.004, b.pick(24, 12, 6), 'port');
+        b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
+        ringSolid(b, wr - 0.002, wr + 0.022, -0.008, 0.009, b.pick(24, 12, 6), 'port-bezel');
+      });
       b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
-      band(b, rIn(ml.heatShield.maxDiameterY) + cw, yBot + 0.06, 0.08, 0.01, segs, 'skirt-band');
-      for (const az of [60, 300]) ventPort(b, rIn(ml.heatShield.maxDiameterY + 0.6) + cw, az * DEG, toLes(ml.heatShield.maxDiameterY + 0.6), 0.04, 0.05);
+      band(b, coverOuter(yBot + 0.06), yBot + 0.06, 0.08, 0.01, segs, 'skirt-band');
+      for (const az of [60, 300]) ventPort(b, coverOuter, az * DEG, toLes(ml.heatShield.maxDiameterY + 0.6), 0.04, 0.05);
     }
 
     // ---- tower: four legs, ring frames and cross bracing
@@ -290,7 +303,7 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
     mp.corner(0.014, tip - 0.1).to(0.01, tip - 0.01).to(0, tip);
     const caseRegions: LatheRegion[] = [];
     if (b.lod < 2) {
-      for (const e of parseList(P.str('motorDecals', ''))) caseRegions.push(decalRegion(e.name, caseR, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['case0', 'case1']));
+      for (const e of parseList(P.str('motorDecals', ''))) caseRegions.push(decalRegion(sheet, e.name, caseR, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['case0', 'case1']));
       for (const e of parseList(P.str('motorBands', ''))) caseRegions.push(bandRegion(mat(e.name, where), e.n[0]!, e.n[1]!, e.n[2]!, e.n[3]!, ['case0', 'case1']));
     }
     mp.splitAtY('case0', 'case1', regionHeights(caseRegions));
@@ -335,5 +348,5 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
       b.at(xf.translate(0, tip - 0.1, 0), () => ball(b, 0.022, 0, 10, 6, 0.022, 'probe'));
     }
   });
-  return { models: { body }, pose: staticPose };
+  return { models: { body }, pose: staticPose, sootSeconds: P.num('sootSeconds', 3) };
 };

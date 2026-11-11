@@ -9,8 +9,12 @@
  *  - History the snapshot does not carry (nozzle temperature after a burn, soot from firing, frost that
  *    sheds after lift-off, arm retraction) is kept per part instance and survives staging, because part
  *    instance ids do.
- *  - Every vessel instance is a MOVING shadow caster: it is submitted only to cascades that are re-rendered
- *    every frame (ARCHITECTURE 10.1). `stats.staggeredSubmissions` counts violations and stays 0.
+ *  - Every vessel instance is a MOVING shadow caster: it is drawn only into cascades that are re-rendered
+ *    every frame (ARCHITECTURE 10.1). `stats.staggeredSubmissions` counts the staggered cascades into which
+ *    a shadow draw of this feature put any triangle (measured on the mesh batches), and stays 0.
+ *  - Shadows are cast by coarser copies of the models: a shadow map cannot show what LOD 0 adds (fasteners,
+ *    millimetre steps), so the cascades with fine texels draw every part's LOD 1 and the coarse ones its
+ *    LOD 2, whatever LOD the camera sees. That keeps the shadow passes to a fraction of the stack's triangles.
  *  - A vessel that the simulation removes as expired is dither-faded over a second instead of popping.
  */
 import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
@@ -39,10 +43,10 @@ export interface VesselVisualStats {
   /** Triangles submitted to the G-buffer / to shadow cascades in the last frame. */
   triangles: number;
   shadowTriangles: number;
-  /** drawShadow calls for staggered cascades (nothing is submitted) and for every-frame cascades. */
+  /** drawShadow calls for staggered cascades and for every-frame cascades since the feature started. */
   staggeredCascades: number;
   everyFrameCascades: number;
-  /** Moving casters submitted to a staggered cascade: must stay 0. */
+  /** Staggered cascades into which a shadow draw of this feature put triangles (measured): must stay 0. */
   staggeredSubmissions: number;
   ghosts: number;
   lights: number;
@@ -58,9 +62,25 @@ export interface VesselVisualFeature extends RenderFeature {
   anim(vesselId: string, instanceId: string): PartAnim;
 }
 
+/** The models of one part visual: what the camera sees, and the two shadow casters of each model. */
+interface PartModels {
+  visual: PartVisual;
+  handles: Record<string, ModelHandle>;
+  /** LOD 1 and LOD 2 of each model as single-LOD models (drawn only into shadow cascades). */
+  fineCasters: Record<string, ModelHandle>;
+  coarseCasters: Record<string, ModelHandle>;
+}
+
+/**
+ * Shadow cascades with texels up to this size (m) are drawn from the parts' LOD 1 (the 12 m and 60 m
+ * cascades, 1 to 6 cm texels), coarser ones from LOD 2 (0.3 m texels and up).
+ */
+const FINE_CASTER_TEXEL = 0.1;
+
 interface PartEntry {
   instanceId: string;
   def: PartDef;
+  models: PartModels;
   visual: PartVisual;
   handles: Record<string, ModelHandle>;
   anim: PartAnim;
@@ -121,7 +141,10 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   let ctx: RenderContext;
   let defs: DefLibrary;
   let batch: MeshBatch;
-  const visuals = new Map<string, { visual: PartVisual; handles: Record<string, ModelHandle> }>();
+  /** Shadow casters for the fine and for the coarse every-frame cascades (never drawn into the G-buffer). */
+  let fineBatch: MeshBatch;
+  let coarseBatch: MeshBatch;
+  const visuals = new Map<string, PartModels>();
   const anims = new Map<string, PartAnim>();
   const plans = new Map<string, VesselPlan>();
   const enginesOn = new Map<string, Map<string, string[]>>();
@@ -141,7 +164,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     updateMs: 0,
   };
 
-  const visualOf = (defId: string): { visual: PartVisual; handles: Record<string, ModelHandle> } | null => {
+  const visualOf = (defId: string): PartModels | null => {
     const hit = visuals.get(defId);
     if (hit) return hit;
     const def = defs.parts[defId];
@@ -154,9 +177,16 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     }
     const visual = generatePart(defs, def);
     const handles: Record<string, ModelHandle> = {};
+    const fineCasters: Record<string, ModelHandle> = {};
+    const coarseCasters: Record<string, ModelHandle> = {};
     const meshes = coreOf(ctx).meshes;
-    for (const [name, model] of Object.entries(visual.models)) handles[name] = meshes.createModel(model, model.lodPixels ? { lodPixels: model.lodPixels } : {});
-    const entry = { visual, handles };
+    for (const [name, model] of Object.entries(visual.models)) {
+      handles[name] = meshes.createModel(model, model.lodPixels ? { lodPixels: model.lodPixels } : {});
+      const last = model.lods.length - 1;
+      fineCasters[name] = meshes.createModel({ name: `${model.name}.caster1`, lods: [model.lods[Math.min(1, last)]!], materials: model.materials });
+      coarseCasters[name] = meshes.createModel({ name: `${model.name}.caster2`, lods: [model.lods[last]!], materials: model.materials });
+    }
+    const entry: PartModels = { visual, handles, fineCasters, coarseCasters };
     visuals.set(defId, entry);
     return entry;
   };
@@ -204,7 +234,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const anim = animOf(root, part.instanceId);
       const engineAnims = (children.get(base) ?? []).map((id) => animOf(root, id));
       const panel = match ? Number(match[1]) : null;
-      entries.push({ instanceId: part.instanceId, def, visual: v.visual, handles: v.handles, anim, engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
+      entries.push({ instanceId: part.instanceId, def, models: v, visual: v.visual, handles: v.handles, anim, engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
     }
     return { key: planKey(vessel.parts), entries };
   };
@@ -258,7 +288,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     e.seen = true;
     if (hasEngine) {
       a.nozzleTemp = stepNozzleTemp(a.nozzleTemp, firing, throttle, dt);
-      if (firing) a.soot = Math.min(1, a.soot + (dt * (0.4 + 0.6 * throttle)) / 60);
+      if (firing && e.visual.sootSeconds) a.soot = Math.min(1, a.soot + (dt * (0.4 + 0.6 * throttle)) / e.visual.sootSeconds);
     }
     for (const ea of e.engineAnims) if (ea.soot > a.soot) a.soot = ea.soot;
     // Aerodynamic heating scorches the skin for good.
@@ -298,6 +328,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const identityRot = localRot.w === 1 || localRot.w === -1;
       e.visual.pose(e.input, (model, pos, rot, opts?: PoseOpts) => {
         if (model === 'glass' && !showGlass) return;
+        const itemFade = opts?.fade === undefined ? fade : fade * opts.fade;
+        if (itemFade <= 0.01) return;
         const handle = e.handles[model];
         if (!handle) throw new Error(`vehicle: part "${e.def.id}" posed an unknown model "${model}"`);
         let p: Vec3 = localPos;
@@ -318,15 +350,21 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
           prevOriginRelCam: v3.add(parent.prevOriginRelCam, quat.rotate(parent.prevQ, p)),
           prevQ: q ? quat.mul(parent.prevQ, q) : parent.prevQ,
           bodyFixed: false,
-          temperature: Math.max(part.tempSkin, opts?.temperature ?? 0),
+          temperature: opts?.cold ? 0 : Math.max(part.tempSkin, opts?.temperature ?? 0),
           soot: opts?.soot ?? a.soot,
           frost: opts?.frost ?? Math.max(0, a.frost),
-          fade,
+          fade: itemFade,
         };
-        if (opts?.castShadow === false) inst.castShadow = false;
         if (opts?.emissive !== undefined) inst.emissiveScale = opts.emissive;
         if (opts?.scale) inst.scale = opts.scale;
+        // The camera's copy casts nothing; the same instance is added to the two caster batches.
+        inst.castShadow = false;
         batch.add(handle, inst);
+        if (opts?.castShadow !== false) {
+          inst.castShadow = true;
+          fineBatch.add(e.models.fineCasters[model]!, inst);
+          coarseBatch.add(e.models.coarseCasters[model]!, inst);
+        }
         stats.instances++;
       });
       if (live && a.lamp > 0.01 && e.visual.lights && lightBudget.n < maxLights) {
@@ -365,6 +403,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       ctx = c;
       defs = c.defs;
       batch = coreOf(c).meshes.createBatch('vehicle');
+      fineBatch = coreOf(c).meshes.createBatch('vehicle-casters-fine');
+      coarseBatch = coreOf(c).meshes.createBatch('vehicle-casters-coarse');
       // Generate the models of every part a vehicle definition uses, so staging never builds geometry.
       for (const vehicle of Object.values(defs.vehicles)) for (const p of vehicle.parts) visualOf(p.def);
     },
@@ -376,8 +416,11 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const dt = Number.isFinite(lastUt) ? Math.max(0, Math.min(3600, snapshot.ut - lastUt)) : 0;
       lastUt = snapshot.ut;
       batch.begin(frame);
+      fineBatch.begin(frame);
+      coarseBatch.begin(frame);
       stats.instances = 0;
       stats.vessels = 0;
+      stats.shadowTriangles = 0;
       lightBudget.n = 0;
       collectGhosts(frame, snapshot);
       const alive = new Set<string>();
@@ -408,6 +451,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       }
       for (const id of plans.keys()) if (!alive.has(id) && !ghosts.some((g) => g.vessel.id === id)) plans.delete(id);
       batch.finish();
+      fineBatch.finish();
+      coarseBatch.finish();
       stats.ghosts = ghosts.length;
       stats.lights = lightBudget.n;
       ctx.perf.cpuEnd('vehicle.instances');
@@ -422,21 +467,27 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     },
 
     drawShadow(_frame, pass, cascade: ShadowCascadeView) {
-      if (!cascade.everyFrame) {
-        // Staggered cascades hold body-fixed casters only: a vessel never draws here.
+      // Every instance is a moving caster, which the mesh batch keeps out of staggered cascades. The draw is
+      // issued for every cascade and what it put there is measured, so the counter below is evidence.
+      const casters = cascade.texelSize <= FINE_CASTER_TEXEL ? fineBatch : coarseBatch;
+      const before = casters.stats.shadowTriangles;
+      casters.drawShadow(pass, cascade);
+      const drawn = casters.stats.shadowTriangles - before;
+      if (cascade.everyFrame) stats.everyFrameCascades++;
+      else {
         stats.staggeredCascades++;
-        return;
+        if (drawn > 0) stats.staggeredSubmissions++;
       }
-      stats.everyFrameCascades++;
-      batch.drawShadow(pass, cascade);
-      stats.shadowTriangles = batch.stats.shadowTriangles;
+      stats.shadowTriangles += drawn;
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
 
     dispose() {
       batch.destroy();
-      for (const v of visuals.values()) for (const h of Object.values(v.handles)) h.destroy();
+      fineBatch.destroy();
+      coarseBatch.destroy();
+      for (const v of visuals.values()) for (const h of [...Object.values(v.handles), ...Object.values(v.fineCasters), ...Object.values(v.coarseCasters)]) h.destroy();
       visuals.clear();
       plans.clear();
     },

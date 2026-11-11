@@ -2,6 +2,7 @@
  * The near-field hand-over (ARCHITECTURE 10.2) against the LabPlanet, which implements the terrain side of the
  * rule (sheet discarded inside fadeStart, seabed at the depth the sheet encodes, with the sheet's albedo):
  *  - inside fadeStart 'scene.depthOpaque' holds the seabed, and a submerged object is refracted;
+ *  - stray water-material fragments inside fadeStart (a terrain defect) leave the waves as they are;
  *  - at fadeStart the forward pixel equals the deferred pixel of the same flat surface within 2 %;
  *  - across the band the image is the cross-fade of two equal images (A/B and a slow dolly show no line);
  *  - beyond fadeEnd nothing is drawn (bit-identical to the deferred-only image);
@@ -133,6 +134,73 @@ test('inside fadeStart the depth copy holds the seabed; a submerged object is re
   expect(refracted.n).toBeGreaterThan(300);
   expect(straight.n).toBeGreaterThan(300);
   expect(shift > 1.5 || both / either < 0.85).toBe(true);
+  await expectNoErrors(page, pageLog);
+});
+
+test('stray water fragments inside fadeStart (a terrain defect) leave the waves intact', async ({ page, pageLog }) => {
+  // The integrated app's terrain leaves WATER-material fragments at the seabed's altitude inside fadeStart (request
+  // terrain-render-cs-1). They must not turn the forward water into the flat band: the waves, their detail and
+  // the brightness stay what they are over the real seabed.
+  await openPage(page, LAB);
+  await assertDiscreteGpu(page);
+  // 120 m up looking 15 deg down: the view rays reach the stray annulus (150 m deep, 200 m - 4 km out) before the
+  // seabed (200 m deep) over most of the frame.
+  await page.evaluate(() => window.__ocean!.setCamera({ alt: 120, heading: 20, pitch: -15 }));
+  await freeze(page);
+  await waitIdle(page, 8);
+  const measure = async (): Promise<{ altitudes: number[]; energy: number; mean: number; n: number }> =>
+    page.evaluate(async () => {
+      const lab = window.__ocean!;
+      const fc = lab.app.renderer.frameContext!;
+      const [w, h] = fc.renderSize;
+      const img = await window.__lab!.renderer.readHdrPixels('hdr');
+      const L = (x: number, y: number): number => {
+        const o = (y * img.width + x) * 4;
+        return 0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!;
+      };
+      // Detail: mean squared luminance gradient relative to the mean, over sea seen 300 m - 3.5 km away (inside
+      // the stray annulus, 200 m - 4 km).
+      let e = 0;
+      let m = 0;
+      let n = 0;
+      const depthPx: [number, number][] = [];
+      for (let y = 2; y < h - 2; y += 2) {
+        for (let x = 2; x < w - 2; x += 2) {
+          const hit = lab.seaHit(x, y);
+          if (!hit || hit.dist < 300 || hit.dist > 3500) continue;
+          const c = L(x, y);
+          e += (L(x + 1, y) - c) ** 2 + (L(x, y + 1) - c) ** 2;
+          m += c;
+          n++;
+          if (n % 997 === 0 && depthPx.length < 24) depthPx.push([x, y]);
+        }
+      }
+      // What the G-buffer holds there: the altitude of the opaque depth copy (seabed -200 m, stray fragments -150 m).
+      const d = await lab.ocean!.debug.readOpaqueDepth(depthPx);
+      const fwd = { x: -fc.view[2]!, y: -fc.view[6]!, z: -fc.view[10]! };
+      const altitudes = depthPx.map(([x, y], i) => {
+        const ray = lab.seaHit(x, y)!.ray;
+        return lab.altitudeAlong(x, y, 0.05 / d[i]! / (ray.x * fwd.x + ray.y * fwd.y + ray.z * fwd.z));
+      });
+      return { altitudes, energy: e / n / (m / n) ** 2, mean: m / n, n };
+    });
+  const base = await measure();
+  await page.evaluate(() => (window.__ocean!.props.strayWater = true));
+  await waitIdle(page, 6);
+  const stray = await measure();
+  await saveScreenshot(page, 'ocean', 'handover-stray-water');
+  await page.evaluate(() => (window.__ocean!.props.strayWater = false));
+  console.log(`stray water: G-buffer altitude ${stray.altitudes.map((a) => a.toFixed(1)).join(' ')} (seabed alone ${base.altitudes.map((a) => a.toFixed(1)).join(' ')})`);
+  console.log(`relative detail ${stray.energy.toExponential(3)} vs ${base.energy.toExponential(3)} (ratio ${(stray.energy / base.energy).toFixed(3)}), mean ${stray.mean.toFixed(4)} vs ${base.mean.toFixed(4)} over ${base.n} px`);
+  expect(base.altitudes.length).toBeGreaterThan(10);
+  for (const a of base.altitudes) expect(a).toBeLessThan(-190);
+  // Where the rays reach 150 m deep within 4 km the G-buffer holds the stray fragments; farther out still the seabed.
+  const onStray = stray.altitudes.filter((a) => Math.abs(a + 150) < 2).length;
+  for (const a of stray.altitudes) expect(Math.abs(a + 150) < 2 || a < -190).toBe(true);
+  expect(onStray).toBeGreaterThan(stray.altitudes.length / 2);
+  expect(stray.energy / base.energy).toBeGreaterThan(0.85);
+  expect(stray.energy / base.energy).toBeLessThan(1.15);
+  expect(Math.abs(stray.mean / base.mean - 1)).toBeLessThan(0.05);
   await expectNoErrors(page, pageLog);
 });
 

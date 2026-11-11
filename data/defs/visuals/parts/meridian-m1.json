@@ -11,7 +11,7 @@
     "dome": "foam-white",
     "ringSpacing": 2.5,
     "seamsPerRing": 6,
-    "frost": 0.62,
+    "frost": 1,
     "sootTop": 9,
     "baseShieldY": 0.3,
     "domeAft": 1,

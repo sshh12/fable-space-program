@@ -4,8 +4,9 @@
  *  - A scripted staging sequence through the whole stage stack with public.ts `splitForStage` (the lab sim's
  *    `fireStage`): after every stage each separated piece is its own vessel and is drawn as its full model
  *    (the instance count of the whole scene does not drop), and expired debris fades out and is released.
- *  - Shadows: the vessel is a moving caster, so it is never submitted to a staggered cascade (counter), and
- *    the swing arms of the launch complex are moving casters only while they swing.
+ *  - Shadows: the vessel is a moving caster, so nothing of it is drawn into a staggered cascade (measured:
+ *    triangles the vessel's shadow draws put into staggered cascades), and the swing arms of the launch
+ *    complex are moving casters only while they swing.
  */
 import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, test } from '../harness';
 import { openLab, shot } from './lab';
@@ -114,7 +115,8 @@ test.describe('vehicle staging and shadows', () => {
       const retracted = { vehicle: { ...lab.vehicle.stats }, site: { ...site.stats }, state: { ...site.state('ka-lae-lc1')! } };
       return { atRest, retracted, movingMax, frames };
     });
-    // The core offered staggered cascades to the feature, and the feature submitted nothing to them.
+    // The core offered staggered cascades to the feature; the feature issued its shadow draw for each of them
+    // and the draw put no triangle there (measured on the mesh batch: `staggeredSubmissions`).
     expect(res.atRest.vehicle.staggeredCascades).toBeGreaterThan(0);
     expect(res.atRest.vehicle.everyFrameCascades).toBeGreaterThan(0);
     expect(res.atRest.vehicle.shadowTriangles).toBeGreaterThan(0);

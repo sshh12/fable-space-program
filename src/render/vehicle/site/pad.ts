@@ -4,13 +4,13 @@
  * pipe runs and floodlight towers.
  */
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
-import { decalUv } from '../decals';
+import { decalSheetOf, type DecalSheet } from '../decals';
 import { MeshBuilder, xf } from '../geom/builder';
 import { DEG, TAU, beam, bolt, box, extrude, frustum, pipe, ringSolid, rod, zipLoops } from '../geom/prims';
 import type { MatId } from '../materials';
-import { buildModel } from '../parts/common';
+import { buildModel, noise2 } from '../parts/common';
 import type { PartLight } from '../parts/types';
-import { flatSite, numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
+import { flatSite, lowSite, numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
 
 /** Extrude a polygon given in the (z, y) plane along X between x0 and x1. */
 export function extrudeZY(b: MeshBuilder, poly: [number, number][], x0: number, x1: number, tag: string): void {
@@ -25,8 +25,8 @@ export function extrudeXY(b: MeshBuilder, poly: [number, number][], z0: number, 
 }
 
 /** Flat marking on the ground from the decal atlas: a quad with corners a -> b -> c -> d counter-clockwise seen from above. */
-export function groundDecal(b: MeshBuilder, name: string, centre: Vec3Tuple, width: number, depth: number, yawDeg = 0, repeat = 1): void {
-  const [u0, v0, u1, v1] = decalUv(name);
+export function groundDecal(b: MeshBuilder, sheet: DecalSheet, name: string, centre: Vec3Tuple, width: number, depth: number, yawDeg = 0, repeat = 1): void {
+  const [u0, v0, u1, v1] = sheet.uv(name);
   const c = Math.cos(yawDeg * DEG);
   const s = Math.sin(yawDeg * DEG);
   // Local frame: right = (c, 0, -s) ("east" turned by yaw), up-on-page = (-s, 0, -c) ("north").
@@ -132,16 +132,73 @@ export function handrail(b: MeshBuilder, pts: Vec3Tuple[], height = 1.1, spacing
   b.mat(prev);
 }
 
+/**
+ * Ground slab between (x0, z0) and (x1, z1): the top is a grid whose vertices carry a grime weight (stains
+ * and weathering larger than a texture tile, so no two bays of the slab look alike), the edge is a skirt
+ * down to `yBottom`. An open sheet: the underside is in the ground.
+ */
+export function groundSlab(b: MeshBuilder, x0: number, x1: number, z0: number, z1: number, yTop: number, yBottom: number, step: number, grime: (x: number, z: number) => number, tag: string): void {
+  b.begin(false, tag);
+  const nx = Math.max(1, Math.round((x1 - x0) / step));
+  const nz = Math.max(1, Math.round((z1 - z0) / step));
+  const ids: number[][] = [];
+  for (let j = 0; j <= nz; j++) {
+    const row: number[] = [];
+    for (let i = 0; i <= nx; i++) {
+      const x = x0 + ((x1 - x0) * i) / nx;
+      const z = z0 + ((z1 - z0) * j) / nz;
+      // Tangent +X, bitangent = N x T = -Z: v runs toward -Z.
+      const v = b.v(x, yTop, z, 0, 1, 0, 1, 0, 0, x, -z);
+      b.setMask(v, 0, 1, grime(x, z), 0);
+      row.push(v);
+    }
+    ids.push(row);
+  }
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) b.quad(ids[j]![i]!, ids[j + 1]![i]!, ids[j + 1]![i + 1]!, ids[j]![i + 1]!);
+  // Skirt: one quad per side, facing outward.
+  const side = (ax: number, az: number, bx: number, bz: number): void => {
+    const l = Math.hypot(bx - ax, bz - az);
+    const tx = (bx - ax) / l;
+    const tz = (bz - az) / l;
+    // Outward normal = T x up.
+    const nxx = -tz;
+    const nzz = tx;
+    const w = grime((ax + bx) / 2, (az + bz) / 2);
+    const q = [b.v(ax, yBottom, az, nxx, 0, nzz, tx, 0, tz, 0, 0), b.v(bx, yBottom, bz, nxx, 0, nzz, tx, 0, tz, l, 0), b.v(bx, yTop, bz, nxx, 0, nzz, tx, 0, tz, l, yTop - yBottom), b.v(ax, yTop, az, nxx, 0, nzz, tx, 0, tz, 0, yTop - yBottom)];
+    for (const v of q) b.setMask(v, 0, 1, w, 0);
+    b.quad(q[0]!, q[1]!, q[2]!, q[3]!);
+  };
+  side(x1, z0, x0, z0);
+  side(x0, z0, x0, z1);
+  side(x0, z1, x1, z1);
+  side(x1, z1, x1, z0);
+}
+
 // --------------------------------------------------------------------------------------------- apron
 
-export const padApron: SiteGenerator = ({ params }) => {
+export const padApron: SiteGenerator = ({ params, defs }) => {
+  const sheet = decalSheetOf(defs);
   const hx = numParam(params, 'halfX', 62);
   const hz = numParam(params, 'halfZ', 62);
   const gap = numParam(params, 'trenchHalfWidth', 7.8);
   const t = numParam(params, 'thickness', 0.3);
+  // Markings are content of the site: the structure file names the decals (none = unmarked concrete).
+  const hazard = strParam(params, 'hazardDecal', '');
+  const sign = strParam(params, 'signDecal', '');
+  /**
+   * Grime of the apron: weathering in patches tens of metres across, rain streaks toward the trench, and the
+   * blast staining of earlier launches beside the trench near the mount.
+   */
+  const grime = (x: number, z: number): number => {
+    const patches = 0.32 * noise2(x / 17, z / 17, 3) + 0.18 * noise2(x / 5.3, z / 5.3, 5);
+    const d = Math.abs(x) - gap;
+    const blast = 0.5 * Math.exp(-Math.max(0, d) / 7) * Math.exp(-((z / 34) ** 2)) * (0.55 + 0.45 * noise2(x / 3.1, z / 9, 9));
+    return Math.min(0.85, Math.max(0, patches - 0.12) + blast);
+  };
   const body = buildModel('pad.apron', (b) => {
-    b.mat('concrete').masks(0, 1, 0.6, 0);
-    for (const sx of [-1, 1]) box(b, hx - gap, t + 0.4, 2 * hz, [sx * (gap + (hx - gap) / 2), (t - 0.4) / 2, 0], 'apron');
+    b.mat('concrete').masks(0, 1, 0, 0);
+    const step = b.pick(3.1, 6.2, 20);
+    for (const sx of [-1, 1]) groundSlab(b, sx > 0 ? gap : -hx, sx > 0 ? hx : -gap, -hz, hz, t, -0.4, step, grime, 'apron');
     if (b.lod === 2) return;
     // Painted edge lines, hazard stripes along the trench, pad designation.
     b.mat('paint-yellow').masks(0.2, 1, 0.5, 0);
@@ -150,8 +207,11 @@ export const padApron: SiteGenerator = ({ params }) => {
       for (const sz of [-1, 1]) box(b, hx - gap - 6, 0.012, 0.2, [sx * (gap + (hx - gap) / 2), t + 0.006, sz * (hz - 3)], 'line');
     }
     b.mat('decal-ground').masks(0, 1, 0.5, 0);
-    for (const sx of [-1, 1]) groundDecal(b, 'hazard', [sx * (gap + 0.9), t + 0.008, 0], 2 * hz - 8, 0.9, 90, Math.round((2 * hz - 8) / 7.2));
-    groundDecal(b, 'lc1', [-(gap + (hx - gap) * 0.55), t + 0.008, hz * 0.55], 17, 8.9, 0);
+    if (hazard) for (const sx of [-1, 1]) groundDecal(b, sheet, hazard, [sx * (gap + 0.9), t + 0.008, 0], 2 * hz - 8, 0.9, 90, Math.round((2 * hz - 8) / (0.9 * sheet.aspect(hazard))));
+    if (sign) {
+      const depth = numParam(params, 'signDepth', 8.9);
+      groundDecal(b, sheet, sign, [-(gap + (hx - gap) * 0.55), t + 0.008, hz * 0.55], depth * sheet.aspect(sign), depth, 0);
+    }
   });
   return { models: { body }, pose: flatSite };
 };
@@ -393,12 +453,21 @@ export const padCrawlerway: SiteGenerator = ({ params }) => {
   const track = numParam(params, 'trackWidth', 12);
   const median = numParam(params, 'median', 14);
   const body = buildModel('pad.crawlerway', (b) => {
-    // Runs along the model's Z axis (its "north").
-    b.mat('gravel').masks(0, 1, 0.3, 0);
-    for (const s of [-1, 1]) box(b, track, 0.6, length, [s * (median / 2 + track / 2), -0.06, 0], 'track');
-    b.mat('concrete').masks(0, 1, 0.3, 0);
-    box(b, median, 0.55, length, [0, -0.1, 0], 'median');
-    for (const s of [-1, 1]) box(b, 1.2, 0.7, length, [s * (median / 2 + track + 0.6), -0.05, 0], 'kerb');
+    // Runs along the model's Z axis (its "north"). The tracks are river rock pressed down by the crawler's
+    // treads: darker lanes where the treads run, lighter rock thrown up between and beside them.
+    const step = b.pick(3, 6, 30);
+    const half = length / 2;
+    const lanes = (x: number, z: number): number => {
+      const off = Math.abs(Math.abs(x) - (median / 2 + track / 2));
+      const tread = Math.exp(-(((off - track * 0.22) / (track * 0.16)) ** 2));
+      return Math.min(0.8, 0.1 + 0.34 * tread * (0.7 + 0.3 * noise2(x / 2.3, z / 11, 21)) + 0.22 * noise2(x / 9, z / 23, 23));
+    };
+    b.mat('gravel').masks(0, 1, 0, 0);
+    for (const s of [-1, 1]) groundSlab(b, s > 0 ? median / 2 : -median / 2 - track, s > 0 ? median / 2 + track : -median / 2, -half, half, 0.24, -0.36, step, lanes, 'track');
+    b.mat('concrete').masks(0, 1, 0, 0);
+    const worn = (x: number, z: number): number => Math.max(0, 0.34 * noise2(x / 13, z / 19, 27) + 0.16 * noise2(x / 4.1, z / 6.3, 29) - 0.1);
+    groundSlab(b, -median / 2, median / 2, -half, half, 0.175, -0.375, step, worn, 'median');
+    for (const s of [-1, 1]) groundSlab(b, s > 0 ? median / 2 + track : -median / 2 - track - 1.2, s > 0 ? median / 2 + track + 1.2 : -median / 2 - track, -half, half, 0.3, -0.4, b.pick(6, 12, 60), worn, 'kerb');
   });
   return { models: { body }, pose: flatSite };
 };
@@ -443,7 +512,7 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
       for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + 0.07, -0.06, 0.06, 16, 'flange'));
     }
   });
-  return { models: { body }, pose: flatSite };
+  return { models: { body }, pose: lowSite };
 };
 
 // ---------------------------------------------------------------------------------------- floodlight
@@ -454,23 +523,27 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
   const range = numParam(params, 'range', 260);
   const tilt = numParam(params, 'tiltDeg', 24) * DEG;
   const lampC: Vec3Tuple = [0, H - 1.2, -0.9];
+  // The lattice is under a pixel from across the pad: heavier members in the middle LOD, a solid mast beyond.
+  const lodPixels = [numParam(params, 'lod1Pixels', 400), numParam(params, 'lod2Pixels', 120)];
   const body = buildModel('pad.floodlight', (b) => {
     b.mat('galvanised').masks(0.2, 1, 0.2, 0);
     // Tapered lattice mast: four legs, ring frames, bracing.
     const r0 = 1.3;
     const r1 = 0.45;
-    const bays = b.pick(8, 8, 2);
+    const bays = b.pick(8, 4, 2);
     const node = (k: number, l: number): Vec3Tuple => {
       const t = l / bays;
       const r = r0 + (r1 - r0) * t;
       const phi = ((k + 0.5) / 4) * TAU;
       return [r * Math.sin(phi) * Math.SQRT2, (H - 2.2) * t, r * Math.cos(phi) * Math.SQRT2];
     };
-    for (let k = 0; k < 4; k++) {
-      rod(b, node(k, 0), node(k, bays), 0.07, b.pick(8, 6, 4), 'leg');
-      if (b.lod === 2) continue;
-      for (let l = 1; l <= bays; l++) rod(b, node(k, l), node((k + 1) % 4, l), 0.035, b.pick(6, 5, 4), 'ring');
-      for (let l = 0; l < bays; l++) rod(b, node(k, l), node((k + 1) % 4, l + 1), 0.03, b.pick(6, 5, 4), 'brace');
+    if (b.lod === 2) frustum(b, r0 * 0.62, r1 * 0.75, 0, H - 2.2, 4, 'mast-solid');
+    else {
+      for (let k = 0; k < 4; k++) {
+        rod(b, node(k, 0), node(k, bays), b.pick(0.07, 0.17, 0), b.pick(8, 5, 4), 'leg');
+        for (let l = 1; l <= bays; l++) rod(b, node(k, l), node((k + 1) % 4, l), b.pick(0.035, 0.1, 0), b.pick(6, 4, 4), 'ring');
+        for (let l = 0; l < bays; l++) rod(b, node(k, l), node((k + 1) % 4, l + 1), b.pick(0.03, 0.09, 0), b.pick(6, 4, 4), 'brace');
+      }
     }
     b.mat('concrete-wall');
     box(b, 3.6, 0.7, 3.6, [0, 0.1, 0], 'footing');
@@ -481,7 +554,7 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       b.mat('steel-dark');
       box(b, 4.4, 2.3, 0.35, [0, 0, 0.12], 'bank');
     });
-  });
+  }, lodPixels);
   const lamps = buildModel('pad.floodlight.lamps', (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
     b.at(xf.mul(xf.translate(lampC[0], lampC[1], lampC[2]), xf.rotX(-tilt)), () => {

@@ -115,6 +115,46 @@ function beachMesh(size: number, cells: number, height: (x: number, y: number) =
   return { positions: pos, normals: nrm, tangents: tan, uvs: uv, indices: new Uint32Array(idx), groups: [{ material: 0, start: 0, count: idx.length }], bounds: { min: [-size / 2, -size / 2, -14], max: [size / 2, size / 2, 6] } };
 }
 
+/**
+ * Flat annulus in the site's ENU plane (z = 0 at its own origin), inner / outer radius in m: the stray water
+ * fragments of the hand-over check (a terrain defect seen in the integrated app: sheet fragments left inside
+ * fadeStart at the seabed's altitude, request terrain-render-cs-1).
+ */
+function annulusMesh(inner: number, outer: number, rings: number, segments: number): MeshData {
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const tan: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= rings; i++) {
+    const r = inner * (outer / inner) ** (i / rings);
+    for (let s = 0; s <= segments; s++) {
+      const a = (s / segments) * Math.PI * 2;
+      pos.push(r * Math.cos(a), r * Math.sin(a), 0);
+      nrm.push(0, 0, 1);
+      tan.push(1, 0, 0, 1);
+      uv.push(r * Math.cos(a) / 100, r * Math.sin(a) / 100);
+    }
+  }
+  for (let i = 0; i < rings; i++) {
+    for (let s = 0; s < segments; s++) {
+      const a = i * (segments + 1) + s;
+      const b = a + segments + 1;
+      // Counter-clockwise seen from above (+Z): radial first, then around.
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  return {
+    positions: new Float32Array(pos),
+    normals: new Float32Array(nrm),
+    tangents: new Float32Array(tan),
+    uvs: new Float32Array(uv),
+    indices: new Uint32Array(idx),
+    groups: [{ material: 0, start: 0, count: idx.length }],
+    bounds: { min: [-outer, -outer, -1], max: [outer, outer, 1] },
+  };
+}
+
 /** Value noise for the beach relief and the sand texture (deterministic). */
 function noise2(x: number, y: number, seed: number, period = 0): number {
   const h = (a0: number, b0: number): number => {
@@ -167,6 +207,11 @@ export interface LabProps extends RenderFeature {
   markers: { east: number; north: number }[];
   /** Plane of the marker line, for specs: body-fixed centres of the markers drawn in the last frame. */
   lastMarkerDirs: Vec3[];
+  /**
+   * Stray WATER-material fragments inside fadeStart: an annulus of water material 150 m below sea level, 200 m to
+   * 4 km around the site (in front of the LabPlanet seabed at 200 m), as a defective terrain would leave them.
+   */
+  strayWater: boolean;
 }
 
 export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): LabProps {
@@ -176,6 +221,7 @@ export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): L
   let capsule: ModelHandle;
   let ball: ModelHandle;
   let marker: ModelHandle;
+  let stray: ModelHandle;
   const props: LabProps = {
     id: 'lab-props',
     order: -10,
@@ -184,6 +230,7 @@ export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): L
     submergedAt: { east: 0, north: 318, depth: 1.25 },
     markers: [],
     lastMarkerDirs: [],
+    strayWater: false,
     init(c) {
       ctx = c;
       const meshes = coreOf(c).meshes;
@@ -201,6 +248,8 @@ export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): L
       });
       ball = meshes.createModel({ name: 'lab-ball', lods: [sphereMesh(0.8, 48, 24)], materials: [{ name: 'yellow', shading: 'standard', baseColor: [0.75, 0.55, 0.05], metallic: 0, roughness: 0.4 }] });
       marker = meshes.createModel({ name: 'lab-marker', lods: [sphereMesh(0.1, 24, 12)], materials: [{ name: 'orange', shading: 'standard', baseColor: [0.9, 0.22, 0.03], metallic: 0, roughness: 0.35 }] });
+      // Imagery-like deep-ocean colour, as the sheet would carry it.
+      stray = meshes.createModel({ name: 'lab-stray-water', lods: [annulusMesh(200, 4000, 48, 256)], materials: [{ name: 'stray-sheet', shading: 'water', baseColor: [0.02, 0.05, 0.09], metallic: 0, roughness: 0.02 }] });
     },
     prepare(frame: FrameContext) {
       batch.begin(frame);
@@ -209,6 +258,7 @@ export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): L
       const def = defs.bodies[site.bodyId]!;
       const sitePose = enuPose(site, body, def.radius);
       if (props.beach) batch.add(beach, instanceInFrame(sitePose, { x: 0, y: 250, z: 0 }, null, { bodyFixed: true }));
+      if (props.strayWater) batch.add(stray, instanceInFrame(sitePose, { x: 0, y: 0, z: -150 }, null, { bodyFixed: true }));
       if (props.submerged) {
         const d = offsetDir(site, props.submergedAt.east, props.submergedAt.north, def.radius);
         batch.add(ball, instanceInFrame(bodyPoseParent(body), v3.scale(d, def.radius - props.submergedAt.depth), null, { bodyFixed: true }));

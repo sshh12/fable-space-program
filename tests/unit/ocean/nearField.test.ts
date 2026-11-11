@@ -12,6 +12,7 @@ import {
   ChartKeeper,
   chartCoords,
   chartDir,
+  horizonDistance,
   LOD_RANGE,
   lodRange,
   MORPH_FRACTION,
@@ -124,6 +125,29 @@ describe('ocean CDLOD surface patches', () => {
       }
     });
   }
+
+  it('culls patches beyond the horizon (crests included) and keeps every point that can be seen', () => {
+    for (const camH of [2, 3, 60, 500]) {
+      const margin = 2.2;
+      const all = selectPatches({ camX: 17.5, camY: -3.25, camH, maxDistance: 30000, waveMargin: margin });
+      const culled = selectPatches({ camX: 17.5, camY: -3.25, camH, maxDistance: 30000, waveMargin: margin, seaRadius: R });
+      const horizon = horizonDistance(camH, margin, R);
+      // A crest at the margin height just at the horizon distance is still above the camera's horizon ray.
+      expect(horizon).toBeGreaterThan(Math.sqrt(2 * R * camH) + Math.sqrt(2 * R * margin));
+      for (let i = 0; i < 3000; i++) {
+        const r = Math.min(horizon, 29990) * Math.sqrt((i + 0.5) / 3000) * 0.999;
+        const a = i * 2.39996323;
+        expect(covering(culled, 17.5 + r * Math.cos(a), -3.25 + r * Math.sin(a)).length).toBe(1);
+      }
+      for (const p of culled) {
+        const size = p.cell * PATCH_CELLS;
+        const dx = Math.max(p.x0 - 17.5, 0, 17.5 - (p.x0 + size));
+        const dy = Math.max(p.y0 + 3.25, 0, -3.25 - (p.y0 + size));
+        expect(Math.hypot(dx, dy)).toBeLessThanOrEqual(horizon);
+      }
+      if (camH < 20) expect(culled.length).toBeLessThan(all.length);
+    }
+  });
 
   it('is crack-free: every level-l vertex lies inside the unmorphed zone of level l + 1 at the level border', () => {
     // The farthest point of a selected level-l node must lie where level l + 1 has not started to morph.

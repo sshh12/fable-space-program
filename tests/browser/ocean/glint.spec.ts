@@ -16,6 +16,9 @@ interface GlintPx {
   y: number;
   g: number;
   tanBeta: number;
+  /** Facet slope that mirrors the sun into the pixel, along local east and north (tan, signed). */
+  se: number;
+  sn: number;
 }
 
 /** Per-pixel glint (luminance with specular minus without) and the facet slope that mirrors the sun into the pixel. */
@@ -42,31 +45,63 @@ async function glintImage(page: Page, step: number): Promise<{ px: GlintPx[]; w:
     const sun = fc.sun.dirRoot;
     const snap = lab.app.snapshot();
     const body = snap.bodies.find((x) => x.id === lab.site.bodyId)!;
-    const out: { x: number; y: number; tanBeta: number }[] = [];
+    const qz = body.qFixedToRoot;
+    // Rotate a body-fixed vector to ROOT axes (q v q*).
+    const rot = (v: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+      const tx = 2 * (qz.y * v.z - qz.z * v.y);
+      const ty = 2 * (qz.z * v.x - qz.x * v.z);
+      const tz = 2 * (qz.x * v.y - qz.y * v.x);
+      return { x: v.x + qz.w * tx + (qz.y * tz - qz.z * ty), y: v.y + qz.w * ty + (qz.z * tx - qz.x * tz), z: v.z + qz.w * tz + (qz.x * ty - qz.y * tx) };
+    };
+    const dot = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number => a.x * b.x + a.y * b.y + a.z * b.z;
+    const out: { x: number; y: number; tanBeta: number; se: number; sn: number }[] = [];
     for (let y = 0; y < h; y += st) {
       for (let x = 0; x < w; x += st) {
         const hit = lab.seaHit(x, y);
         if (!hit) continue;
-        const qz = body.qFixedToRoot;
-        // Rotate the body-fixed normal to ROOT axes (q v q*).
         const v = hit.dirFixed;
-        const tx = 2 * (qz.y * v.z - qz.z * v.y);
-        const ty = 2 * (qz.z * v.x - qz.x * v.z);
-        const tz = 2 * (qz.x * v.y - qz.y * v.x);
-        const n = { x: v.x + qz.w * tx + (qz.y * tz - qz.z * ty), y: v.y + qz.w * ty + (qz.z * tx - qz.x * tz), z: v.z + qz.w * tz + (qz.x * ty - qz.y * tx) };
+        const n = rot(v);
+        // Local east = z x up, north = up x east (body-fixed), in ROOT axes.
+        const el = Math.hypot(v.x, v.y);
+        const e = rot({ x: -v.y / el, y: v.x / el, z: 0 });
+        const nn = { x: n.y * e.z - n.z * e.y, y: n.z * e.x - n.x * e.z, z: n.x * e.y - n.y * e.x };
         const view = { x: -hit.ray.x, y: -hit.ray.y, z: -hit.ray.z };
-        const hx = view.x + sun.x;
-        const hy = view.y + sun.y;
-        const hz = view.z + sun.z;
-        const hl = Math.hypot(hx, hy, hz);
-        const c = (hx * n.x + hy * n.y + hz * n.z) / hl;
-        out.push({ x, y, tanBeta: Math.sqrt(Math.max(0, 1 - c * c)) / c });
+        const hv = { x: view.x + sun.x, y: view.y + sun.y, z: view.z + sun.z };
+        const hl = Math.hypot(hv.x, hv.y, hv.z);
+        const c = dot(hv, n) / hl;
+        // The facet whose normal is the half vector: its slope is -(h . e) / (h . n) along east (height rises against the tilt).
+        out.push({ x, y, tanBeta: Math.sqrt(Math.max(0, 1 - c * c)) / c, se: -dot(hv, e) / dot(hv, n), sn: -dot(hv, nn) / dot(hv, n) });
       }
     }
     return { w, h, out };
   }, step);
   const px = geo.out.map((p) => ({ ...p, g: a.l[p.y * a.w + p.x]! - b.l[p.y * b.w + p.x]! }));
   return { px, w: geo.w, h: geo.h };
+}
+
+/** Peak (-b / 2c) of the least-squares fit g = a + b_e s_e + b_n s_n + c (s_e^2 + s_n^2). */
+function paraboloidPeak(ps: GlintPx[]): [number, number] {
+  const m = Array.from({ length: 4 }, () => new Array<number>(5).fill(0));
+  for (const p of ps) {
+    const row = [1, p.se, p.sn, p.se * p.se + p.sn * p.sn];
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) m[i]![j]! += row[i]! * row[j]!;
+      m[i]![4]! += row[i]! * p.g;
+    }
+  }
+  // Gaussian elimination with partial pivoting.
+  for (let c = 0; c < 4; c++) {
+    let piv = c;
+    for (let r = c + 1; r < 4; r++) if (Math.abs(m[r]![c]!) > Math.abs(m[piv]![c]!)) piv = r;
+    [m[c], m[piv]] = [m[piv]!, m[c]!];
+    for (let r = 0; r < 4; r++) {
+      if (r === c) continue;
+      const f = m[r]![c]! / m[c]![c]!;
+      for (let k = c; k < 5; k++) m[r]![k]! -= f * m[c]![k]!;
+    }
+  }
+  const x = m.map((r, i) => r[4]! / r[i]!);
+  return [-x[1]! / (2 * x[3]!), -x[2]! / (2 * x[3]!)];
 }
 
 test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk width (within 20 %)', async ({ page, pageLog }) => {
@@ -105,14 +140,27 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
       break;
     }
   }
-  console.log(`LEO glint: peak at tan(beta) ${peak.tanBeta.toFixed(4)} (px ${peak.x},${peak.y}); half maximum at tan(beta) ${half.toFixed(4)}, Cox-Munk ${expectedHalf.toFixed(4)} (sigma^2 ${st.coxMunk.toFixed(4)}); ratio ${(half / expectedHalf).toFixed(3)}`);
+  console.log(`LEO glint: brightest pixel at tan(beta) ${peak.tanBeta.toFixed(4)} (px ${peak.x},${peak.y}); half maximum at tan(beta) ${half.toFixed(4)}, Cox-Munk ${expectedHalf.toFixed(4)} (sigma^2 ${st.coxMunk.toFixed(4)}); ratio ${(half / expectedHalf).toFixed(3)}`);
   console.log('profile:', prof.slice(0, 40).map((p) => `${p.t.toFixed(3)}:${p.g.toExponential(2)}`).join(' '));
-  // At the mirror point: the radially averaged glint peaks there. (The brightest single pixel lies wherever the
-  // planet-fixed roughness field happens to be calmest near the mirror point, within a few hundredths.)
-  const profPeak = prof.filter((p) => p.n >= 20).reduce((m, p) => (p.g > m.g ? p : m));
-  console.log(`radial profile peak at tan(beta) ${profPeak.t.toFixed(3)}`);
-  expect(profPeak.t).toBeLessThan(0.03);
-  expect(peak.tanBeta).toBeLessThan(0.06);
+  // At the mirror point, in facet-slope space (east, north), over discs the image covers completely (every sector
+  // of every ring sampled, so the disc itself is centred):
+  //  - the glint's centroid lies at zero slope (an offset glint pulls it by about offset x <s^2> / sigma^2);
+  //  - the peak of the least-squares paraboloid g = a + b.s + c |s|^2 fitted to the glint, -b / 2c, is the
+  //    location itself (unbiased, unlike the centroid, which the disc's own symmetry pulls towards zero).
+  for (const R of [0.08, 0.12, 0.16]) {
+    const inDisc = px.filter((p) => Math.hypot(p.se, p.sn) < R);
+    const cells = new Set(inDisc.map((p) => `${Math.floor((Math.hypot(p.se, p.sn) / R) * 4)}:${Math.floor(((Math.atan2(p.sn, p.se) + Math.PI) / (2 * Math.PI)) * 16)}`));
+    const sum = inDisc.reduce((s, p) => s + p.g, 0);
+    const ce = inDisc.reduce((s, p) => s + p.g * p.se, 0) / sum;
+    const cn = inDisc.reduce((s, p) => s + p.g * p.sn, 0) / sum;
+    const peakAt = paraboloidPeak(inDisc);
+    console.log(
+      `slope-space glint over |s| < ${R}: centroid (${ce.toFixed(4)}, ${cn.toFixed(4)}) |c| ${Math.hypot(ce, cn).toFixed(4)}; fitted peak (${peakAt[0].toFixed(4)}, ${peakAt[1].toFixed(4)}) |p| ${Math.hypot(...peakAt).toFixed(4)}; ${inDisc.length} samples, ${cells.size}/64 cells`,
+    );
+    expect(cells.size).toBe(64);
+    expect(Math.hypot(ce, cn)).toBeLessThan(0.02);
+    if (R >= 0.12) expect(Math.hypot(...peakAt)).toBeLessThan(0.03);
+  }
   expect(half / expectedHalf).toBeGreaterThan(0.8);
   expect(half / expectedHalf).toBeLessThan(1.2);
   // Broad: a sizeable part of the image glints (not a handful of sparkles).

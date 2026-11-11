@@ -1,14 +1,15 @@
 /**
  * Reviewed screenshots of the ocean (out/screens/ocean): open ocean at 2 m in midday sun, at sunset with a
- * low sun path, under overcast probe lighting, from 500 m, 10 km, 100 km and LEO with glint, a shoreline with
- * refraction and foam, the splashdown zone with a floating capsule-sized object, night under moonlight.
- * Every image is asserted to be a real image with no HDR overflow or NaN.
+ * low sun path, under overcast probe lighting, from 500 m, 3 km, 10 km, 30 km, 100 km and LEO with glint, a
+ * shoreline with refraction and foam (from the beach and along it close to the water), the splashdown zone with a
+ * floating capsule-sized object, night under moonlight. Every image is asserted to be a real image with no HDR
+ * overflow or NaN.
  */
 import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
 test.describe.configure({ timeout: 600_000 });
 
-const ALL = ['midday', 'sunset', 'overcast', 'alt500', 'alt10k', 'alt100k', 'leo', 'shore', 'refraction', 'splash', 'night'];
+const ALL = ['midday', 'sunset', 'overcast', 'alt500', 'alt3k', 'alt10k', 'alt30k', 'alt100k', 'leo', 'shore', 'shoreAlong', 'refraction', 'splash', 'night'];
 const only = process.env.OCEAN_PRESETS?.split(',').filter(Boolean);
 
 for (const preset of only ?? ALL) {

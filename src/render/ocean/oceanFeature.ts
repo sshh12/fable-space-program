@@ -169,7 +169,13 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   const field = { chart: null as OceanChart | null, bodyId: '', cx: 0, cy: 0, extent: 0, bake: false };
   let readbackLayout: GPUBindGroupLayout;
   let readbackPipeline: Tracked<GPUComputePipeline>;
-  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number } | null = null;
+  /**
+   * The near field of this frame. `near` = some water lies within fadeStart of the camera: only then do the FFT,
+   * the forward surface and the reactive mask run. From higher up every water pixel is in the band, where the
+   * forward surface would only repeat the deferred sheet's radiance (surfaceWgsl.ts), so nothing is drawn.
+   */
+  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number; near: boolean } | null = null;
+  let wasNear = false;
   let lastUt = 0;
   let lastWetSlots = 0;
   const swellNow: PreparedSwell = { count: 0, dirK: new Float32Array(MAX_SWELL * 4), ampPhase: new Float32Array(MAX_SWELL * 4) };
@@ -590,18 +596,17 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       nearField = forcedOff ? { bodyIndex: -1, fadeStart: t?.fadeStart ?? 0, fadeEnd: t?.fadeEnd ?? 0 } : nearFieldValue(bi, body !== null, camAboveSea, t?.fadeStart ?? 0, t?.fadeEnd ?? 0);
       device.queue.writeBuffer(nearFieldBuffer, 0, packNearField(nearField, nearFieldData));
 
-      const wasActive = active !== null;
       if (nearField.bodyIndex < 0 || !pose || !body || !t) {
         // Wetness is published for vessels at the water even without a near field (the mesh system applies it at any distance).
         if (body && t && pose) vessels.update(frame, t, t.seaRadius - t.radius, pose.id, null, null);
         else vessels.clearWetness();
         lastWetSlots = vessels.wetSlots;
-        if (wasActive) for (const b of bodies.values()) b.fft?.reset();
+        if (wasNear) for (const b of bodies.values()) b.fft?.reset();
+        wasNear = false;
         active = null;
         patchCount = 0;
         return;
       }
-      if (!wasActive) body.fft?.reset();
 
       // Chart and reference point (float64).
       const nadir = v3.normalize(pose.cameraFixed);
@@ -633,6 +638,11 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const cm = coxMunkVariance(t.windSpeed);
       const fftVar = body.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0);
       const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
+      // Water within fadeStart of the camera (the nearest water point is the nadir, at most waveBound above sea level).
+      const near = camAboveSea - waveBound < t.fadeStart;
+      // A new FFT history (no stale previous frame or foam) whenever the waves start being drawn again.
+      if (near && !wasNear) body.fft?.reset();
+      wasNear = near;
       const tau = frac(ut / t.repeatPeriod);
       reactiveValue = t.taaReactive * reactiveScale;
       // Field texture: covers fadeEnd plus a margin around the reference; re-centred when the reference has
@@ -711,9 +721,10 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       packOceanUniforms(data, uniformF, uniformU);
       device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-      // Surface patches out to fadeEnd, culled against the view.
+      // Surface patches out to fadeEnd, culled against the view and the horizon.
       const visible = makeVisible(frame, chart, ref, (v) => quat.rotate(q, v), refRel);
-      selectPatches({ camX: ref.x, camY: ref.y, camH: camAboveSea, maxDistance: t.fadeEnd, waveMargin: waveBound, visible }, patches);
+      if (near) selectPatches({ camX: ref.x, camY: ref.y, camH: camAboveSea, maxDistance: t.fadeEnd, waveMargin: waveBound, seaRadius: t.seaRadius, visible }, patches);
+      else patches.length = 0;
       patchCount = Math.min(patches.length, MAX_PATCHES);
       if (patches.length > MAX_PATCHES) coreOf(ctx).reportError(`ocean: ${patches.length} surface patches exceed the instance buffer (${MAX_PATCHES})`);
       for (let i = 0; i < patchCount; i++) {
@@ -725,7 +736,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       }
       if (patchCount > 0) device.queue.writeBuffer(patchBuffer, 0, patchData, 0, patchCount * 4);
       ctx.perf.counter('ocean.patches', patchCount);
-      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea };
+      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea, near };
       const fft = ensureFft(body);
       ctx.resources.publish('ocean.displacement', fft.dispView);
       ctx.resources.publish('ocean.derivatives', fft.derivView);
@@ -734,6 +745,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     compute(_frame, encoder) {
       const a = active;
       if (!a) return;
+      // The splash wake accumulates whenever a vessel is at the water; the waves only when they are drawn.
+      vessels.updateWake(encoder, a.vf, a.dt, ctx.perf.gpuPass('ocean.wake') as GPUComputePassTimestampWrites | undefined);
+      if (!a.near) return;
       const fft = ensureFft(a.body);
       fft.update(encoder, a.tau, a.dt, ctx.perf.gpuPass('ocean.fft') as GPUComputePassTimestampWrites | undefined);
       if (field.bake) {
@@ -750,7 +764,6 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         pass.draw(3);
         pass.end();
       }
-      vessels.updateWake(encoder, a.vf, a.dt, ctx.perf.gpuPass('ocean.wake') as GPUComputePassTimestampWrites | undefined);
     },
 
     drawWater(_frame, pass) {

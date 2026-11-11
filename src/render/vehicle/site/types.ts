@@ -33,7 +33,17 @@ export interface SiteItemOpts {
   /** True while the item is moving relative to the ground (drawn as a moving shadow caster). */
   moving?: boolean;
   castShadow?: boolean;
+  /**
+   * Cast a sun shadow only into the cascades fine enough to resolve it (texel under `NEAR_SHADOW_TEXEL`):
+   * low pipe runs and other long, thin structures whose shadow is a line on the ground beside them.
+   */
+  nearShadowOnly?: boolean;
+  /** 0..1 multiplier on the model's vertex grime weights (weathering, blast staining; default 0). */
+  grime?: number;
 }
+
+/** Coarsest shadow-map texel (m) in which a `nearShadowOnly` item is still drawn: the 300 m cascade. */
+export const NEAR_SHADOW_TEXEL = 0.35;
 
 export type SiteSink = (model: string, pos: Vec3Tuple | null, rot: QuatTuple | null, opts?: SiteItemOpts) => void;
 
@@ -81,8 +91,11 @@ export function strParam(p: StructureParams, key: string, fallback: string): str
 export const staticSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null);
 
 /**
- * Static structure that casts no sun shadow: slabs flush with the ground, thin wires, low pipe runs. Their
- * shadows are below what the cascades resolve at the distances they are seen from, and they would be a
- * fifth of the complex's caster triangles.
+ * Static structure that casts no sun shadow: slabs flush with the ground and thin wires. Their shadows are
+ * below what the cascades resolve, and a slab as large as the apron would fill every near cascade. The
+ * vertex grime weights of the model (stains, weathering) are shown in full.
  */
-export const flatSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null, { castShadow: false });
+export const flatSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null, { castShadow: false, grime: 1 });
+
+/** Static structure that is close to the ground and thin: its shadow is drawn in the near cascades only. */
+export const lowSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null, { nearShadowOnly: true });
