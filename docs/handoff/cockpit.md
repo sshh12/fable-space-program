@@ -154,10 +154,12 @@ closeup-mfd, closeup-fdai, closeup-switches, chase-window, perf-1440p-leo-seat.
    unshadowed: a cabin flood would light the hull's outside and the scene around the vessel, and the cabin
    behind every fixture. They are area lights evaluated by the cockpit's own shader and written as emission
    (cabin pixels only). Exterior lights of the vessel remain the vessel visuals' business.
-2. **Fabric uses the standard BRDF**, not `MATERIAL_ID.cloth`: the cloth model's wrap term lights back faces
-   through occluders (request cockpit-1).
-3. **Interior pixels write ao = 0** to kill the core's environment ambient, which is outside light; and
-   planetshine is added unshadowed by the core (request cockpit-2), so a little of it reaches the cabin.
+2. **The blankets use the standard BRDF**; cushions, webbing, velcro, pouches and shades use
+   `MATERIAL_ID.cloth`. After the cockpit-1 fix (cloth shadowed on both sides) the blankets in cloth shading
+   still show bright speckled lines along the bay edges where a blanket meets a frame in the sunlit pad scene,
+   so they stay standard.
+3. **Interior pixels write ao = 0** to kill the core's environment ambient and (since cockpit-2) its
+   planetshine, both outside light; the cockpit computes the light that comes in through the windows itself.
 4. **Triangle count**: lod0 is 106 k triangles, not about 400 k: every part listed in the brief is modelled,
    and the budget is left to other packages; density is set where the camera is (console, couches, hatch).
 5. **Texel density** is read as "at least 1.5 display texels per screen pixel from the seat" (the display
@@ -168,18 +170,18 @@ closeup-mfd, closeup-fdai, closeup-switches, chase-window, perf-1440p-leo-seat.
    moved along the local normal by the wall thickness. The geometry test checks this against the file.
 7. **LOD switch** is a hard switch with hysteresis (no dithered cross-fade: a dither would disable early
    depth testing and the switch happens outside, beyond 6 m, where the interior is mostly hidden by glass).
-8. **Exposure**: the brief's "cabin readable when the windows blow out" needs interior metering on a robust
-   statistic; asked for in cockpit-3 (open, blocking). Until then the lab's sunlit shots are metered on the
-   sun patch.
+8. **Exposure**: "cabin readable when the windows blow out" comes from the core's interior metering, which
+   now uses the log-average of the near histogram (cockpit-3). In `leo-sun-patch-console` the cabin is
+   mid-grey while the sun patch and the windows blow out.
 9. **Lab stand-ins**: the lab has its own sky composite and probe (`labs/cockpit/sky.ts`), a hull stand-in
    (`hull.ts`) and a shock-layer glow for entry; the integrated app uses the real sky, vessel visuals and vfx.
 
 ## 5. Requests
 
-- cockpit-1 (open, non-blocking): cloth wrap lighting leaks through occluders (`chunksLighting.ts`).
-- cockpit-2 (open, non-blocking): planetshine reaches pixels with ao = 0 (`deferred.ts`).
-- cockpit-3 (open, blocking for the readability item): interior metering on the log-average / a percentile
-  band (`exposure.ts`).
+- cockpit-1 (resolved, 113438e): cloth shadowed on both sides. Fabrics other than the blankets moved back to
+  cloth shading (see deviation 2).
+- cockpit-2 (resolved, 113438e): planetshine gated by the baked occlusion.
+- cockpit-3 (resolved, 113438e): interior metering by the log-average.
 - cockpit-4 (open, non-blocking): coarse static speckle along sun-patch edges from the 12-tap rotated PCSS at
   the minimum kernel in the interior cascade (`chunksLighting.ts`).
 
@@ -189,8 +191,8 @@ closeup-mfd, closeup-fdai, closeup-switches, chase-window, perf-1440p-leo-seat.
   regular quilt pattern, uniform fabric colours, simple hand controllers, no crew, no loose cables, straps
   or stowage. Detail is procedural (paint, brushed metal, quilt, weave, webbing, velcro, knurl, rubber,
   cast); there are no baked textures or photogrammetry.
-- Sunlit views are metered on the sun patch (cockpit-3), so the cabin is too dark in `leo` and the close-ups
-  of the FDAI and switches look underexposed; night and entry views are right.
+- The lower console and the switch row are in the console's own shadow in the `leo` scene, so the switch
+  close-up is dark (correctly exposed for the cabin, but little light reaches that face).
 - Sun-patch edges show the core's shadow-filter speckle in close-ups (cockpit-4).
 - The window's light on cabin surfaces uses one radiance per window (the probe about the window axis over
   about 1.5 sr), not the per-pixel view through the window; the glass reflection keeps the exact per-ray
