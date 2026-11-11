@@ -59,6 +59,8 @@ export interface TerrainDebug {
   setStreamDelay(ms: number): void;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
+  /** READY tiles of a level, nearest to a point first (at most `limit`). */
+  readyTiles(bodyId: string, level: number, latDeg: number, lonDeg: number, limit: number): TileKey[];
   /** Deepest READY tile containing a point, or null. */
   readyTileAt(bodyId: string, latDeg: number, lonDeg: number, maxLevel?: number): TileKey | null;
   /** Read back a READY tile's GPU data: 65 x 65 heights; and for tiles with image data the albedo (sRGB bytes, rgba) and aux (rg) texels. */
@@ -159,6 +161,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let initialised = false;
   let overflowReported = false;
   let fastFadeUntil = -1;
+  // Seconds of rendered frames: the clock of the fade-ins. (FrameContext.realTime stands still while a
+  // deterministic screenshot is taken; a tile that arrives then must still relax.)
+  let clock = 0;
   let selectMs = 0;
   const casterScratch: DrawItem[] = [];
 
@@ -349,7 +354,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       if (!cut) b.velFixed = v3.scale(d, 1 / dt);
     }
     b.prevCamFixed = v3.clone(cam);
-    if (cut) fastFadeUntil = frame.realTime + FAST_FADE_WINDOW;
+    if (cut) fastFadeUntil = clock + FAST_FADE_WINDOW;
     b.cap = warpLevelCap(b.tree.faceSize, b.speed, terrain.maxRenderLevel);
 
     const targetK = lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad);
@@ -379,7 +384,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const frustum = frustumOf(frame, pose);
     const base: SelectParams = {
       frameIndex,
-      time: frame.realTime,
+      time: clock,
       observers: obs,
       K: b.K,
       window,
@@ -387,7 +392,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       maxLevel: terrain.maxRenderLevel,
       frustum,
       occluderRadius: occluder,
-      fadeSeconds: cut ? 0 : frame.realTime < fastFadeUntil ? FAST_FADE_SECONDS : FADE_SECONDS,
+      fadeSeconds: cut ? 0 : clock < fastFadeUntil ? FAST_FADE_SECONDS : FADE_SECONDS,
       prefetch: 0,
     };
     b.tree.select(base);
@@ -424,8 +429,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   };
 
   /** Records and instance lists of a body's camera selection; body uniform. */
-  const buildBody = (b: BodyState, frame: FrameContext, pose: BodyPose): void => {
-    const time = frame.realTime;
+  const buildBody = (b: BodyState, _frame: FrameContext, pose: BodyPose): void => {
+    const time = clock;
     const items = b.tree.items;
     const sea = b.seaLevel;
     const list = (water: boolean, quads: boolean): [number, number] => {
@@ -578,7 +583,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
             depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater' },
           });
         });
-      gbufferPipeline = gbuffer('terrain.gbuffer', TERRAIN_GBUFFER_WGSL);
+      gbufferPipeline = gbuffer('terrain.gbuffer', TERRAIN_GBUFFER_WGSL.replace('OCEAN_NEAR_FIELD_BINDINGS', nearField.wgsl));
       waterPipeline = gbuffer('terrain.water', TERRAIN_WATER_WGSL.replace('OCEAN_NEAR_FIELD_BINDINGS', nearField.wgsl));
       shadowPipeline = core.shaders.tracked(() => {
         const module = ctx.shaders.createModule('terrain.shadow', TERRAIN_SHADOW_WGSL);
@@ -620,6 +625,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     prepare(frame: FrameContext) {
       if (!initialised) return;
       frameIndex = frame.frameIndex;
+      clock += frame.realDt;
       recordCount = 0;
       recordsUploaded = 0;
       instanceCount = 0;
@@ -721,7 +727,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       casterScratch.length = 0;
       b.tree.selectCasters(frameIndex, targetLevel, inside, casterScratch);
       if (casterScratch.length === 0) return;
-      const time = frame.realTime;
+      const time = clock;
       const fullStart = instanceCount;
       for (const it of casterScratch) {
         if (it.quadrant >= 0) continue;
@@ -773,6 +779,20 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),
+      readyTiles(bodyId, level, latDeg, lonDeg, limit) {
+        const b = bodies.find((x) => x.id === bodyId);
+        if (!b) return [];
+        const dir = latLonToDir(latDeg * DEG, lonDeg * DEG);
+        const found: { key: TileKey; d: number }[] = [];
+        for (const n of b.tree.allNodes()) {
+          if (n.level !== level || n.state !== TILE_READY) continue;
+          found.push({ key: n.key, d: Math.hypot(n.frame.cHat.x - dir.x, n.frame.cHat.y - dir.y, n.frame.cHat.z - dir.z) });
+        }
+        return found
+          .sort((p, q) => p.d - q.d)
+          .slice(0, limit)
+          .map((f) => f.key);
+      },
       readyTileAt(bodyId, latDeg, lonDeg, maxLevel = 99) {
         const b = bodies.find((x) => x.id === bodyId);
         if (!b) return null;

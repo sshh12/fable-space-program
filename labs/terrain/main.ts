@@ -18,7 +18,9 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { Sim } from '@/core/contracts/sim';
-import { dirToLatLon, latLonToDir } from '@/core/geo/cubeSphere';
+import { layerHasTile, TILE_LAYER } from '@/core/contracts/terrain';
+import { dirToLatLon, latLonToDir, tilePath, tileUvToDir, type TileKey } from '@/core/geo/cubeSphere';
+import { decodeTileFile } from '@/core/geo/tileCodec';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3 } from '@/core/math';
 import { createLabApp, type LabApp } from '@/render/core/lab';
@@ -39,6 +41,41 @@ export interface TerrainLab {
   ballast(): number;
   /** Copy the canvas (as presented this frame) into a 2-D canvas of the given size and return its RGBA bytes. Call right after renderFrame(). */
   grab(width: number, height: number): Uint8ClampedArray;
+  /**
+   * Reference decode of a tile's image data by paths the renderer does not use: the albedo through an
+   * <img> element and a 2-D canvas (sRGB bytes), the water mask and land cover through tileCodec.
+   */
+  referenceTile(bodyId: string, key: TileKey): Promise<{ albedo: Uint8ClampedArray; watermask: Uint8Array | null; landcover: Uint8Array | null }>;
+  /**
+   * Compare GPU vertex heights of READY tiles of the body's deepest render level around a point with the
+   * height authority's collision surface at the same vertices: `samples` vertices spread over the tiles.
+   */
+  surfaceMatch(bodyId: string, latDeg: number, lonDeg: number, samples: number): Promise<{ tiles: number; samples: number; maxAbs: number; rms: number }>;
+  /** Altitude above the reference radius (m) of whatever 'scene.depth' holds at a pixel of the internal render target (NaN = sky). */
+  probeAltitude(bodyId: string, px: number, py: number): Promise<number>;
+  /**
+   * Fly a scripted camera path over a point with the loop stopped, one rendered frame per step (waiting
+   * for the next animation frame in between, so streaming runs in real time): the height falls (or rises)
+   * exponentially from `from` to `to`. Returns the mean absolute difference (8-bit levels, RGB) between
+   * consecutive frames at `grab` resolution, and the streaming queue per frame.
+   */
+  flyPath(spec: PathSpec): Promise<{ diffs: number[]; queue: number[]; deepest: number[] }>;
+}
+
+export interface PathSpec {
+  bodyId: string;
+  latDeg: number;
+  lonDeg: number;
+  /** Heights above the ground (agl) or above the datum, m. */
+  from: number;
+  to: number;
+  agl: boolean;
+  headingDeg: number;
+  /** Pitch at the start and at the end (deg, negative = down), interpolated with the logarithm of the height. */
+  pitchFromDeg: number;
+  pitchToDeg: number;
+  frames: number;
+  grab: [number, number];
 }
 
 declare global {
@@ -81,6 +118,7 @@ async function boot(): Promise<void> {
     },
   });
   const ctx = app.renderer.context;
+  const tileSource = createFetchTileSource(ctx.tilesUrl);
   for (const [key, value] of query) {
     const m = /^p\.([\w-]+)\.(\w+)$/.exec(key);
     const surface = m ? ctx.defs.bodies[m[1]!]?.render.surface : undefined;
@@ -89,7 +127,7 @@ async function boot(): Promise<void> {
   terrain = createTerrainFeature(
     ctx,
     async () => {
-      provider = await createTerrainProvider(ctx.defs, createFetchTileSource(ctx.tilesUrl));
+      provider = await createTerrainProvider(ctx.defs, tileSource);
       return provider;
     },
     { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0' },
@@ -136,6 +174,102 @@ async function boot(): Promise<void> {
         return c2d.getImageData(0, 0, width, height).data;
       };
     })(),
+    async referenceTile(bodyId, key) {
+      const tileset = ctx.defs.bodies[bodyId]!.terrain!.tileset;
+      const manifest = await tileSource.manifest(tileset);
+      const albedoLayer = manifest.layers[TILE_LAYER.albedo]!;
+      const url = `${ctx.tilesUrl}/${tilePath(tileset, TILE_LAYER.albedo, key, albedoLayer.ext)}?v=${encodeURIComponent(manifest.contentHash)}`;
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const c2d = c.getContext('2d', { willReadFrequently: true })!;
+      c2d.drawImage(img, 0, 0);
+      const albedo = c2d.getImageData(0, 0, c.width, c.height).data;
+      const u8 = async (layer: string): Promise<Uint8Array | null> => {
+        const lm = manifest.layers[layer];
+        if (!lm || !layerHasTile(lm, key)) return null;
+        const bytes = await tileSource.tile(tileset, layer, key);
+        if (!bytes) return null;
+        const t = await decodeTileFile(bytes);
+        return t.kind === 'u8' ? t.data : null;
+      };
+      return { albedo, watermask: await u8(TILE_LAYER.watermask), landcover: await u8(TILE_LAYER.landcover) };
+    },
+    async surfaceMatch(bodyId, latDeg, lonDeg, samples) {
+      const level = ctx.defs.bodies[bodyId]!.terrain!.maxRenderLevel;
+      const keys = terrain.debug.readyTiles(bodyId, level, latDeg, lonDeg, 24);
+      if (keys.length === 0) return { tiles: 0, samples: 0, maxAbs: NaN, rms: NaN };
+      await provider.ensureLoaded(bodyId, latLonToDir(latDeg * DEG, lonDeg * DEG), 400, 'lab:surface-match');
+      const per = Math.ceil(samples / keys.length);
+      let maxAbs = 0;
+      let sum = 0;
+      let count = 0;
+      for (const [t, key] of keys.entries()) {
+        const { heights } = await terrain.debug.readTile(bodyId, key);
+        for (let s = 0; s < per && count < samples; s++) {
+          // A fixed pseudo-random spread over the 65 x 65 vertices of each tile.
+          const i = (s * 37 + t * 11) % 65;
+          const j = (s * 53 + t * 29 + Math.floor(s / 65)) % 65;
+          const gpu = heights[j * 65 + i]!;
+          const cpu = provider.heightAt(bodyId, tileUvToDir(key, i / 64, j / 64));
+          const d = Math.abs(gpu - cpu);
+          maxAbs = Math.max(maxAbs, d);
+          sum += d * d;
+          count++;
+        }
+      }
+      return { tiles: keys.length, samples: count, maxAbs, rms: Math.sqrt(sum / count) };
+    },
+    async probeAltitude(bodyId, px, py) {
+      const depth = await app.renderer.readDepth();
+      const d = depth.data[py * depth.width + px]!;
+      if (!(d > 0)) return NaN;
+      const cam = app.cameraState();
+      const snap = app.snapshot();
+      const body = snap.bodies.find((b) => b.id === bodyId)!;
+      const tanY = Math.tan(cam.fovY / 2);
+      const tanX = (tanY * depth.width) / depth.height;
+      const ndcX = ((px + 0.5) / depth.width) * 2 - 1;
+      const ndcY = 1 - ((py + 0.5) / depth.height) * 2;
+      const viewZ = 0.05 / d;
+      const pView = { x: ndcX * tanX * viewZ, y: ndcY * tanY * viewZ, z: -viewZ };
+      const pRoot = v3.add(cam.positionRoot, quat.rotate(cam.qViewToRoot, pView));
+      return v3.dist(pRoot, body.rRoot) - ctx.defs.bodies[bodyId]!.radius;
+    },
+    async flyPath(spec) {
+      const ground = spec.agl ? await lab.groundHeight(spec.bodyId, spec.latDeg, spec.lonDeg) : 0;
+      const [w, h] = spec.grab;
+      const diffs: number[] = [];
+      const queue: number[] = [];
+      const deepest: number[] = [];
+      let prev: Uint8ClampedArray | null = null;
+      app.setLoop(false);
+      try {
+        for (let f = 0; f < spec.frames; f++) {
+          const t = f / Math.max(1, spec.frames - 1);
+          const height = spec.from * (spec.to / spec.from) ** t;
+          app.camera.spec = { type: 'surface', bodyId: spec.bodyId, latDeg: spec.latDeg, lonDeg: spec.lonDeg, alt: ground + height, headingDeg: spec.headingDeg, pitchDeg: spec.pitchFromDeg + (spec.pitchToDeg - spec.pitchFromDeg) * t };
+          app.renderFrame(1 / 60);
+          const now = lab.grab(w, h).slice();
+          if (prev) {
+            let sum = 0;
+            for (let i = 0; i < now.length; i += 4) sum += Math.abs(now[i]! - prev[i]!) + Math.abs(now[i + 1]! - prev[i + 1]!) + Math.abs(now[i + 2]! - prev[i + 2]!);
+            diffs.push(sum / (w * h * 3));
+          }
+          prev = now;
+          const st = terrain.debug.stats();
+          queue.push(st.stream.queued + st.stream.loading + st.stream.uploading);
+          deepest.push(st.bodies[spec.bodyId]?.deepestLevel ?? 0);
+          await new Promise(requestAnimationFrame);
+        }
+      } finally {
+        app.setLoop(true);
+      }
+      return { diffs, queue, deepest };
+    },
   };
   window.__terrain = lab;
 

@@ -444,6 +444,7 @@ export const TERRAIN_GBUFFER_WGSL = /* wgsl */ `
 #include "gbuffer"
 ${TERRAIN_COMMON_WGSL}
 ${SURFACE_BINDINGS_WGSL}
+OCEAN_NEAR_FIELD_BINDINGS
 ${VARYINGS_WGSL}
 ${SURFACE_FUNCTIONS_WGSL}
 ${DETAIL_WGSL}
@@ -473,9 +474,13 @@ ${DETAIL_WGSL}
   let hasOcean = body.misc.y > 0.5;
 
   // ---- water written by the terrain: lakes and rivers at any distance; near sea level only while the
-  // mask still decides the coastline (the threshold slides to "never" as the geometry takes over).
+  // mask still decides the coastline (the threshold slides to "never" as the geometry takes over), and
+  // never inside the ocean's near field, where the sea bed and the shore are ordinary terrain under the
+  // forward water surface.
+  let dist = length(in.pos);
   if (hasOcean) {
-    let influence = maskInfluence(t, k, s.imageLevel);
+    var influence = maskInfluence(t, k, s.imageLevel);
+    if (oceanNearField.bodyIndex == i32(body.p0.w) && dist < oceanNearField.fadeStart) { influence = 0.0; }
     let coastal = 1.0 - smoothstep(2.0, 6.0, above);
     let threshold = mix(0.5, mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {
@@ -485,7 +490,6 @@ ${DETAIL_WGSL}
   }
 
   // ---- land
-  let dist = length(in.pos);
   let pixelAngle = 2.0 * frame.cameraUp.w * frame.renderSize.w;
   let footprint = max(dist * pixelAngle, 1e-4);
   let cb = classBlend(t, uv, k);
