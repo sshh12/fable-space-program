@@ -231,8 +231,12 @@ export class TileStreamer {
     if (!job || job.id !== msg.id) return;
     slot.job = null;
     this.jobs.delete(job.id);
-    // A bake flagged incomplete is drawn all the same and counted: see docs/requests/terrain-render-1.md.
-    if (!msg.complete) this.s.incompleteBakes++;
+    // prepareTile loads everything a bake reads, so an incomplete bake is a defect of the height authority
+    // (docs/requests/terrain-render-1.md was one): report it with the tile key, and count it.
+    if (!msg.complete) {
+      this.s.incompleteBakes++;
+      coreOf(this.ctx).reportError(`terrain tile ${job.body.id} ${job.node.key.face}/${job.node.key.level}/${job.node.key.x}/${job.node.key.y}: baked on incomplete data`);
+    }
     this.bakeSum += msg.bakeMs;
     this.imageSum += msg.imageMs;
     this.s.jobs++;

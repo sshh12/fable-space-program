@@ -11,6 +11,7 @@
  *   nearfield=<start>,<end> publish 'ocean.nearField' for the camera's body
  *   workers=<n>             tile workers (default 6 in the lab)   delay=<ms> artificial streaming delay
  *   rocks=0                 no rock field                          ballast=<iterations> GPU ballast pass
+ *   morph=0                 geomorphing and fade-ins off (control experiment of the pop detector)
  *   hud=0                   no text overlay
  *   p.<body>.<key>=<n>      override a tunable of data/defs/render/<body>.surface.json (A/B comparisons)
  *
@@ -56,11 +57,27 @@ export interface TerrainLab {
   /**
    * Fly a scripted camera path over a point with the loop stopped, one rendered frame per step (waiting
    * for the next animation frame in between, so streaming runs in real time): the height falls (or rises)
-   * exponentially from `from` to `to`. Returns the mean absolute difference (8-bit levels, RGB) between
-   * consecutive frames at `grab` resolution, and the streaming queue per frame.
+   * exponentially from `from` to `to`.
+   *
+   * Every frame is taken from the canvas as presented (after the temporal filter and the tonemapper, at
+   * half the canvas resolution) and compared with the previous one pixel by pixel (mean of the RGB
+   * differences, 8-bit levels). Returned: the mean absolute difference per frame over the whole image, and
+   * per frame and block of a 16 x 9 grid (`blocks`, frames x 144), plus the streaming queue and the deepest
+   * level per frame. (Read back before the temporal filter, every high-contrast edge hops a whole pixel at
+   * a time and drowns the measurement: the horizon alone changes its block by 3-5 levels every few frames.)
    */
-  flyPath(spec: PathSpec): Promise<{ diffs: number[]; queue: number[]; deepest: number[] }>;
+  flyPath(spec: PathSpec): Promise<PathResult>;
 }
+
+export interface PathResult {
+  diffs: number[];
+  /** Mean absolute difference of each block, frame by frame (row-major, PATH_BLOCKS[0] x PATH_BLOCKS[1] per frame). */
+  blocks: number[];
+  queue: number[];
+  deepest: number[];
+}
+
+export const PATH_BLOCKS: [number, number] = [16, 9];
 
 export interface PathSpec {
   bodyId: string;
@@ -75,7 +92,6 @@ export interface PathSpec {
   pitchFromDeg: number;
   pitchToDeg: number;
   frames: number;
-  grab: [number, number];
 }
 
 declare global {
@@ -134,6 +150,7 @@ async function boot(): Promise<void> {
   );
   await app.renderer.addFeature(terrain);
   if (query.has('delay')) terrain.debug.setStreamDelay(Number(query.get('delay')));
+  if (query.get('morph') === '0') terrain.debug.setMorphEnabled(false);
 
   const cameraBody = (): string => {
     const s = app.camera.spec;
@@ -241,11 +258,16 @@ async function boot(): Promise<void> {
     },
     async flyPath(spec) {
       const ground = spec.agl ? await lab.groundHeight(spec.bodyId, spec.latDeg, spec.lonDeg) : 0;
-      const [w, h] = spec.grab;
       const diffs: number[] = [];
+      const blocks: number[] = [];
       const queue: number[] = [];
       const deepest: number[] = [];
+      const [bx, by] = PATH_BLOCKS;
+      const w = canvas.width >> 1;
+      const h = canvas.height >> 1;
       let prev: Uint8ClampedArray | null = null;
+      const sums = new Float64Array(bx * by);
+      const counts = new Float64Array(bx * by);
       app.setLoop(false);
       try {
         for (let f = 0; f < spec.frames; f++) {
@@ -255,9 +277,22 @@ async function boot(): Promise<void> {
           app.renderFrame(1 / 60);
           const now = lab.grab(w, h).slice();
           if (prev) {
-            let sum = 0;
-            for (let i = 0; i < now.length; i += 4) sum += Math.abs(now[i]! - prev[i]!) + Math.abs(now[i + 1]! - prev[i + 1]!) + Math.abs(now[i + 2]! - prev[i + 2]!);
-            diffs.push(sum / (w * h * 3));
+            sums.fill(0);
+            counts.fill(0);
+            let total = 0;
+            for (let y = 0; y < h; y++) {
+              const row = Math.min(by - 1, Math.floor((y * by) / h)) * bx;
+              for (let x = 0; x < w; x++) {
+                const o = (y * w + x) * 4;
+                const d = (Math.abs(now[o]! - prev[o]!) + Math.abs(now[o + 1]! - prev[o + 1]!) + Math.abs(now[o + 2]! - prev[o + 2]!)) / 3;
+                const b = row + Math.min(bx - 1, Math.floor((x * bx) / w));
+                sums[b] = sums[b]! + d;
+                counts[b] = counts[b]! + 1;
+                total += d;
+              }
+            }
+            diffs.push(total / (w * h));
+            for (let b = 0; b < bx * by; b++) blocks.push(Math.round((sums[b]! / counts[b]!) * 1000) / 1000);
           }
           prev = now;
           const st = terrain.debug.stats();
@@ -268,7 +303,7 @@ async function boot(): Promise<void> {
       } finally {
         app.setLoop(true);
       }
-      return { diffs, queue, deepest };
+      return { diffs, blocks, queue, deepest };
     },
   };
   window.__terrain = lab;

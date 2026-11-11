@@ -57,6 +57,11 @@ export interface TerrainDebug {
   stats(): { stream: StreamStats; bodies: Record<string, TerrainBodyStats>; records: number; instances: number; selectMs: number; rocks: { instances: number; chunks: number; triangles: number } };
   /** Delay every tile by `ms` between the worker and the upload (tests of late streaming). */
   setStreamDelay(ms: number): void;
+  /**
+   * Switch geomorphing and fade-ins off (tiles then pop in and out): the control experiment that shows the
+   * pop detector of the browser specs is not blind. Never used by the app.
+   */
+  setMorphEnabled(on: boolean): void;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
   /** READY tiles of a level, nearest to a point first (at most `limit`). */
@@ -164,6 +169,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   // Seconds of rendered frames: the clock of the fade-ins. (FrameContext.realTime stands still while a
   // deterministic screenshot is taken; a tile that arrives then must still relax.)
   let clock = 0;
+  let morphEnabled = true;
   let selectMs = 0;
   const casterScratch: DrawItem[] = [];
 
@@ -191,7 +197,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const q = mat3.mulVec(b.prevRot, n.origin);
     let force = 0;
     let invRange = 0;
-    if (n.level > 0) {
+    if (n.level > 0 && morphEnabled) {
       const age = time - n.activatedAt;
       const fade = n.fadeSeconds > 0 && age < n.fadeSeconds ? 1 - smooth01(age / n.fadeSeconds) : 0;
       force = Math.max(fade, capMorph(n.level, b.cap));
@@ -392,7 +398,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       maxLevel: terrain.maxRenderLevel,
       frustum,
       occluderRadius: occluder,
-      fadeSeconds: cut ? 0 : clock < fastFadeUntil ? FAST_FADE_SECONDS : FADE_SECONDS,
+      fadeSeconds: cut || !morphEnabled ? 0 : clock < fastFadeUntil ? FAST_FADE_SECONDS : FADE_SECONDS,
       prefetch: 0,
     };
     b.tree.select(base);
@@ -776,6 +782,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setStreamDelay(ms: number) {
         streamer.setDelay(ms);
+      },
+      setMorphEnabled(on: boolean) {
+        morphEnabled = on;
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),
