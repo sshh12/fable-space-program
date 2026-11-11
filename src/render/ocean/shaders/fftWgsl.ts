@@ -42,7 +42,8 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
   // Phase 2 pi frac(m tau): exact in float32 because m is an integer and tau < 1.
   let ph = 6.283185307179586 * fract(omegaIndex[o] * fp.time.x);
   let e = vec2f(cos(ph), sin(ph));
-  let H = cmul(s.xy, e) + cmul(s.zw, vec2f(e.x, -e.y));
+  // h0(k) e^{-i omega t}: the mode h0(k) travels along +k (downwind for the wind-aligned half of the spectrum).
+  let H = cmul(s.xy, vec2f(e.x, -e.y)) + cmul(s.zw, e);
   let dk = 6.283185307179586 / fp.lengths[c];
   let kx = fi(i) * dk;
   let ky = fi(j) * dk;

@@ -73,6 +73,7 @@ export interface OceanDebug {
   setRefractionScale(scale: number): void;
   /** Switch the direct specular of brdf_water (sun glint) off to isolate it in tests; true restores it. */
   setDirectSpecular(on: boolean): void;
+
   /** Reversed-Z values of 'scene.depthOpaque' (this frame's opaque depth: the seabed inside fadeStart) at render pixels. */
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;
   /** Heights of the displaced surface (what the vertex shader draws, unfiltered) at body-fixed unit directions. */

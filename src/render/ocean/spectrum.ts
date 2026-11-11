@@ -177,6 +177,7 @@ export function buildCascadeSpectrum(cascade: number, band: CascadeBand, p: Spec
   let sVar = 0;
   let wSum = 0;
   let wE = 0;
+
   const filt = new Array<number>(CASCADE_MIPS).fill(0);
   const texel = band.length / n;
   for (let j = 0; j < n; j++) {
@@ -205,6 +206,7 @@ export function buildCascadeSpectrum(cascade: number, band: CascadeBand, p: Spec
       sVar += k * k * e;
       wSum += e;
       wE += e * omega;
+
       for (let l = 0; l < CASCADE_MIPS; l++) {
         const w = texel * 2 ** l;
         filt[l]! += k * k * e * (sinc((kx * w) / 2) * sinc((ky * w) / 2)) ** 2;

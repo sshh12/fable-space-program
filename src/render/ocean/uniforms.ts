@@ -77,6 +77,7 @@ export interface OceanFrameData {
   chopScale: number;
   /** Debug view: 0 = normal shading; see OCEAN_DEBUG_VIEWS. */
   debugView: number;
+
   /** Capillary detail layers: compression, rotation (rad), slope amplitude, origin (texture coordinates mod 1). */
   detail: { scale: number; angle: number; amplitude: number; origin: [number, number] }[];
 }
@@ -144,5 +145,6 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
     v4(l.scale, Math.cos(l.angle), Math.sin(l.angle), l.amplitude);
   }
   v4(d.detail[0]!.origin[0], d.detail[0]!.origin[1], d.detail[1]!.origin[0], d.detail[1]!.origin[1]);
+
   if (o !== OCEAN_UNIFORM_VEC4 * 4) throw new Error(`ocean: uniform packing wrote ${o / 4} vec4, expected ${OCEAN_UNIFORM_VEC4}`);
 }

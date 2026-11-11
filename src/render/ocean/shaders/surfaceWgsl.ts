@@ -433,6 +433,8 @@ struct FsOut {
 
   var o: FsOut;
   o.color = vec4f(writeHdr(lit * frame.exposure.x) * opacity, opacity);
+  // Motion vectors of the surface itself (water particle motion, swell, body rotation, camera). The evolving
+  // wave pattern has no single motion vector (dispersive, many directions): TAA treats it like any change.
   o.velocity = velocityFromClip(in.currClip, in.prevClip);
   return o;
 }
