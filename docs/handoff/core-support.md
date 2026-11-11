@@ -20,13 +20,18 @@ Differences between my brief and what I was told to do at start (the task wins):
 
 | Request | From | Against | Result | One line |
 |---|---|---|---|---|
-| (none yet) | | | | |
+| `ocean-1` | ocean | contracts/render.ts, render core | resolved `b812ec4` | `'gbuffer.albedo'` / `'gbuffer.normal'` / `'gbuffer.material'` (live RT0-RT2, readable from `drawWater` on) and binding set `gbuffer`: the forward water band can shade with the deferred sheet's inputs |
+| `ocean-2` | ocean | render core lab (LabPlanet) | resolved `9debd1f` | Inside `'ocean.nearField'.fadeStart` the LabPlanet seabed follows the sheet (`seabedDepth: 'sheet'`, new default: sheet depth and map colour); a number keeps the fixed sand floor |
+| `ocean-3` | ocean | contracts/render.ts, render core | resolved `9debd1f` | `'ocean.wetness'` (uniform, 400 bytes, up to 8 vessels at the water) and binding set `oceanWetness`; two differences from the request: `plane.w` is an influence radius and slots are not tied to vessel indices. The mesh system applies the wet line itself |
 
 ## 2. API and contract changes made in wave 2
 
 | Change | Where | Affects | Migration |
 |---|---|---|---|
-| (none yet) | | | |
+| `SharedResourceMap`: `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'` (the live RT0 / RT1 / RT2 views of this frame; valid from deferred lighting on; never in a bind group set inside `drawGBuffer`); `SceneBindingSet` `'gbuffer'` | `contracts/render.ts`, `src/render/core/{resources,renderer,sceneBindings}.ts` | ocean (uses it); anyone after lighting | None (additive) |
+| `SharedResourceMap['ocean.wetness']: GPUBuffer`, `OCEAN_WETNESS_SLOTS` (8), `OCEAN_WETNESS_BYTES` (400); `SceneBindingSet` `'oceanWetness'`; the mesh system's G-buffer shader reads it (`hullWetness`): wetness 1 below a slot's wet line within its radius, max with `MeshInstance.wetness` | `contracts/render.ts`, `src/render/core/{resources,sceneBindings}.ts`, `src/render/core/mesh/meshSystem.ts` (`createMeshSystem` takes `resources`; batch bind group has binding 2) | ocean (publishes), vehicle-pad (hulls get a wet line with no change) | None; with the default buffer mesh output is bit-identical |
+| `LabPlanetOptions.seabedDepth?: number \| 'sheet'`, default `'sheet'` (was a number, default 30) | `src/render/core/lab/labPlanet.ts`; `labs/render-core` `?seabed=<m>` | ocean lab; any lab with a near field over the LabPlanet | Pass `seabedDepth: 30` for the old fixed sand floor |
+| `Sampler.resample(...)`, `SampledCurve.c / s / maxError / initial`, `MapStats.reuse`; scene lines carry 10-12 % more vertices | `src/map/{sampler,scene,controller}.ts` | the lead's app shell (none of it is contract) | None |
 
 ## 3. Wave-1 numbers re-measured on the quiet machine (Job 2)
 
@@ -82,6 +87,11 @@ Filled in as features land.
 
 ## 6. Journal
 
+- 17:30. Requests `ocean-1`, `ocean-2`, `ocean-3` answered (all blocking; table in section 1). Render-core
+  functional suite re-run after each change (23 specs + the new wet-line and seabed specs). RENDER_API has
+  section 17 (five recipes) and section 18 (wave-2 change list) from this point on.
+- 17:10-17:17. Job 2 measurements on the quiet machine (section 3). Two misses: the map-view close-up CPU
+  line (fixed, commit `1be550f`) and the terrain bake budget at level 13 and deeper (open).
 - 2026-11-10, start. Read PROMPT, ARCHITECTURE, PACKAGE_RULES, requests README, RENDER_API, the render
   contract, lead-baseline and the wave-1 hand-offs of the five packages I own (measured / not met / known
   limits / requests sections). Waiter started on the eight marker files. Machine idle (39 GB free, no slot
