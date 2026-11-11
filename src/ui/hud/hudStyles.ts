@@ -390,7 +390,7 @@ export const HUD_CSS = /* css */ `
 .hud .brow { display: grid; grid-template-columns: auto minmax(0, 1fr) 2.9em; gap: calc(var(--u) * 0.8); align-items: center; height: 1.34em; contain: size layout style; }
 .hud .brow .bar { height: calc(var(--u) * 0.6); }
 .hud .brow .bv { font-weight: 600; text-align: right; white-space: nowrap; }
-.hud .pad .padhint { font-size: 0.8em; color: var(--label); white-space: nowrap; height: 1.4em; }
+.hud .pad .padhint { font-size: 0.8em; color: var(--label); line-height: 1.25; margin: calc(var(--u) * 0.1) 0 calc(var(--u) * 0.25); }
 .hud .pad .targets { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 0.4); }
 .hud .pad .targets button { font-size: 1.15em; letter-spacing: 0.03em; text-transform: none; padding: 0 calc(var(--u) * 0.7); color: var(--text); }
 .hud .pad .targets button.on { background: rgba(255, 91, 214, 0.24); border-color: rgba(255, 91, 214, 0.8); }

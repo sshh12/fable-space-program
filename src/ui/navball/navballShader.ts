@@ -200,7 +200,7 @@ fn vsMarker(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) ->
   // (lip 1) keeps the limb fade of its alpha only.
   var lipFade = 1.0;
   if (ball.params.w < 0.999) {
-    lipFade = 1.0 - smoothstep(ball.params.w - 0.03, ball.params.w + 0.045, length(m.pos.xy));
+    lipFade = 1.0 - smoothstep(ball.params.w - 0.05, ball.params.w + 0.02, length(m.pos.xy));
   }
   o.alpha = m.pos.w * lipFade;
   o.bp = bp;

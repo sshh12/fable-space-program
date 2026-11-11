@@ -472,7 +472,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const padNameEl = el('span', 'pname', [pad.target.node]);
   const padNameShow = hiddenFlag(padNameEl);
   // Without a target the panel says what the buttons are for (it would otherwise be a title and a button).
-  const padHint = el('div', 'padhint', ['No target · pick a body for its launch window']);
+  const padHint = el('div', 'padhint', ['No target: pick a body for its launch window']);
   const padHintShow = hiddenFlag(padHint);
   // Title row: "LAUNCH" and the target: the body buttons (the chosen one lit) or, without them, its name.
   const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), padHint, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });

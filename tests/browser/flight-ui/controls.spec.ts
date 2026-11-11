@@ -432,6 +432,17 @@ test.describe('flight-ui controls', () => {
       expect(b.bottom).toBeLessThanOrEqual(next.y + next.height + 0.5);
     }
     await expect(page.locator('.hud .stagewrap .more')).toHaveText(/^Δv .* total$/);
+    // Without a target the launch panel says what its body buttons are for; the words stay inside the plate.
+    await expect(page.locator('.hud .pad .padhint')).toBeVisible();
+    const hintFits = await page.evaluate(() => {
+      const hint = document.querySelector('.hud .pad .padhint')!;
+      const range = document.createRange();
+      range.selectNodeContents(hint);
+      const t = range.getBoundingClientRect();
+      const p = document.querySelector('.hud .pad')!.getBoundingClientRect();
+      return t.left >= p.left && t.right <= p.right && t.bottom <= p.bottom;
+    });
+    expect(hintFits, 'launch-panel hint inside its plate').toBe(true);
     // Engine-less stages say nothing about engines: one-line rows, and the next stage's line names its actions.
     await expect(page.locator('.hud .stages')).not.toContainText('no engines');
     // Every stage name of the mission vehicle reads in full, and the number column and icon stay inside their tile.
