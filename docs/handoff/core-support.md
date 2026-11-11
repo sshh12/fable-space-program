@@ -287,3 +287,14 @@ copy is replaced by `#include "cloud_shadow"`.
   means too and reports it). New check (c) at the landing site under an 8 degree sun. Check (f) looks at
   the vehicle's sunlit side. The dark quadrilaterals of pass 1's remark on (d) are tree stands and
   windbreaks in the Sentinel-2 source (level-12 tiles looked at). Waiting for terrain-render's marker.
+- 09:18. terrain-render's marker: all eight packages done. Final run of the integration suite on the final
+  code: 24 of 25 (the cabin check: `cockpit-cs-1`); numbers in `out/core-support/final-int.log`.
+- 09:26 on: the visual close-out of wave 2 started (`out/qa/wave2/*.md`); the feature packages, and fixers
+  for flight-ui and map-view (who now edit `src/ui` and `src/map`), are working again and file requests.
+  The budget run that was in flight was disturbed by their edits and is to be repeated at the end.
+  Answered so far, blocking first: `cockpit-5` (0dbebd3) and its correction `cockpit-6` (9997263): interior
+  night key out of the sun, bounded highlight term; `sky-lighting-3` and `vfx-4` (5d3e0ee): dark floor at
+  EV -6 with slow dark adaptation, a linear hue-preserving toe under the tone curve, the exposure histogram
+  before the transparent pass, the target bounded at sunny 16 + 0.5 EV under the sun; `vehicle-pad-1`
+  (ad38ab3): soot and frost broken up in texture space, the clear coat covered. Open and non-blocking at
+  10:22: `map-view-4`, `ocean-6`, `sky-lighting-4`, `-5`, `-6`, `vehicle-pad-2`, `-4`, `vfx-5`, `-6`.
