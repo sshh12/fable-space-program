@@ -13,7 +13,7 @@ import { GLYPH_WGSL, ICON_WGSL, LINE_WGSL, MAX_OCCLUDERS } from './shaders';
 const UNIFORM_BYTES = 64 + 3 * 16 + MAX_OCCLUDERS * 16 + MAX_OCCLUDERS * 4;
 const BODIES_F32 = 28;
 const VIS_F32 = BODIES_F32 + 4 * MAX_OCCLUDERS;
-/** LinePoint in shaders.ts: pos, phase, color, flags, seglen, slack, phase2, octave, two pad words. */
+/** LinePoint in shaders.ts: pos, phase, color, flags, seglen, slack, modexp, cut0, cut1, dz. */
 const POINT_WORDS = 12;
 const ICON_BYTES = 36;
 const GLYPH_BYTES = 32;
@@ -218,17 +218,19 @@ export class OverlayRenderer {
         pf[o + 2] = verts.vz[s]!;
         const len = verts.len[s]!;
         if (l.dashed) {
-          // arc length from the node modulo the world periods of the segment's octave and the next (scene.ts)
-          const n = verts.oct[s]!;
-          const p1 = Math.pow(2, n);
-          pf[o + 3] = len - Math.floor(len / p1) * p1;
-          pf[o + 8] = len - Math.floor(len / (2 * p1)) * (2 * p1);
-          pf[o + 9] = n;
+          // the dash coordinate modulo a power of two two octaves above the segment's coarsest dash period
+          // (scene.ts): the shader picks its octave per cell from it (shaders.ts dashOctave)
+          const e = Math.max(verts.oct[s]!, s + 1 < end ? verts.oct[s + 1]! : -Infinity) + 2;
+          const m = Math.pow(2, e);
+          pf[o + 3] = len - Math.floor(len / m) * m;
+          pf[o + 8] = e;
         } else {
           pf[o + 3] = len - Math.floor(len / period) * period;
           pf[o + 8] = 0;
-          pf[o + 9] = 0;
         }
+        pf[o + 9] = verts.cut0[s]!;
+        pf[o + 10] = verts.cut1[s]!;
+        pf[o + 11] = verts.dz[s]!;
         // Fade with time ahead: alpha alone falls toward FADE_FLOOR, the hue is kept (constants.ts).
         const alpha = (a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * verts.fade[s]!) + 0.5) | 0;
         pu[o + 4] = (base | (alpha << 24)) >>> 0;

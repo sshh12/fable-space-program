@@ -24,6 +24,7 @@ import {
   CLIP_DEPTH_REL,
   COINCIDENT_PX,
   COLORS,
+  DASH_ALIGN_PX,
   DASH_PERIOD_PX,
   DEBRIS_CHORD_TOLERANCE_PX,
   FAINT_CHORD_TOLERANCE_PX,
@@ -50,6 +51,8 @@ import { FAINT_MAX_TURN, Sampler, type SampledCurve } from './sampler';
 const TWO_PI = 2 * Math.PI;
 /** Time tolerance (s) when matching a planned patch to the current patch it continues. */
 const UT_EPS = 1e-3;
+/** Dash alignment (alignDashes) only between lines within 15 degrees of parallel on screen, running the same way. */
+const ALIGN_MIN_COS = Math.cos((15 * Math.PI) / 180);
 
 /**
  * Breakpoints of a sampled line, kept from build to build under the line's id. While the conic keeps its
@@ -274,6 +277,19 @@ export class VertexArrays {
    * suppressCoincident). It stays a segment for hit-testing and node sliding (`seg` is unchanged).
    */
   cover = new Uint8Array(0);
+  /**
+   * Part of the segment to the next vertex that lies on a higher-priority line and is not drawn, as screen
+   * parameters [cut0, cut1] along it (cut1 <= cut0: none; below 0 / above 1: hidden up to that end, its cap
+   * included). A segment hidden over its whole length has `cover` set instead.
+   */
+  cut0 = new Float64Array(0);
+  cut1 = new Float64Array(0);
+  /**
+   * Dashed lines: the depth (m) the dash octave is chosen from (shaders.ts dashOctave): the vertex's own depth,
+   * or beside an earlier dashed patch whose phase it takes (SceneBuilder.alignDashes) that patch's depth there,
+   * so both choose the same octave in every cell.
+   */
+  dz = new Float64Array(0);
 
   reserve(extra: number): void {
     const need = this.n + extra;
@@ -304,6 +320,9 @@ export class VertexArrays {
     this.seg = grow8(this.seg);
     this.join = grow8(this.join);
     this.cover = grow8(this.cover);
+    this.cut0 = grow(this.cut0);
+    this.cut1 = grow(this.cut1);
+    this.dz = grow(this.dz);
     this.capacity = cap;
   }
 
@@ -404,6 +423,8 @@ export class VertexArrays {
     const fade = this.fade;
     const join = this.join;
     const cover = this.cover;
+    const cut0 = this.cut0;
+    const cut1 = this.cut1;
     for (let q = start; q < j; q++) {
       tt[q] = NaN;
       alpha[q] = 1;
@@ -411,6 +432,9 @@ export class VertexArrays {
       seg[q] = 0;
       join[q] = 0;
       cover[q] = 0;
+      cut0[q] = 0;
+      cut1[q] = 0;
+      this.dz[q] = -vz[q]!;
       if (front[q] !== 1) {
         len[q] = L;
         continue;
@@ -569,9 +593,21 @@ export class SceneBuilder {
   /** Per body: visible-limb radius and icon colour (from the definitions; computed once). */
   private readonly bodyStyles = new Map<string, { radius: number; vis: number; tint: Rgba }>();
   /** Occupancy bitmap of the coincidence test (suppressCoincident), reused; the cells marked in the last build. */
-  private occ = new Uint8Array(0);
+  private occ = new Int32Array(0);
   private marked = new Int32Array(4096);
   private nMarked = 0;
+  /** Dash alignment grid (alignDashes): vertex index + 1 of the dashed segment through each cell; the cells set. */
+  private own = new Int32Array(0);
+  private owned = new Int32Array(4096);
+  private nOwned = 0;
+  /** Per-vertex dash offset of the line being aligned and whether it was measured there. */
+  private delta = new Float64Array(256);
+  private zr = new Float64Array(256);
+  private known = new Uint8Array(256);
+  private readonly cutT = new Float64Array(2);
+  /** Hidden intervals of one run of a line in screen length (cleanCover): [a, b] pairs, and the run's lengths. */
+  private spans = new Float64Array(64);
+  private runLen = new Float64Array(256);
   private readonly clipT = new Float64Array(2);
   private readonly dash = new Float64Array(5);
   /** Arc length from the node at each vertex parameter of a dashed line, by line id (dashAlongPath). */
@@ -1217,11 +1253,10 @@ export class SceneBuilder {
    * Lay the dash pattern of a planned patch out along the path itself. Every vertex carries its arc length from
    * the patch start (the node) in metres, integrated exactly from the conic (Simpson over the sampling
    * parameter, so it does not depend on where the sampler put the vertices), and every segment the octave of
-   * its world dash period: floor(log2(DASH_PERIOD_PX x metres per pixel at the segment's depth)). The GPU draws
-   * the patterns of that octave and the next one, each fixed to the path, and cross-fades between them by the
-   * depth of the fragment (as a texture blends its mip levels): the dashes never slide along the path when the
-   * camera turns, zooms or follows the vessel, and stay close to DASH_PERIOD_PX on screen on a near stretch and
-   * a far one alike.
+   * its world dash period: floor(log2(DASH_PERIOD_PX x metres per pixel at the vertex's depth)). The GPU picks
+   * the octave per period-long cell of the path (shaders.ts dashOctave), so every pixel is dash or gap, the dashes
+   * never slide along the path when the camera turns, zooms or follows the vessel, and stay between half and all
+   * of DASH_PERIOD_PX on screen on a near stretch and a far one alike.
    */
   private dashAlongPath(scene: MapScene, rec: LineRecord): void {
     const proj = scene.proj;
@@ -1288,12 +1323,13 @@ export class SceneBuilder {
    * Patches lying on one another are drawn once: a fine occupancy bitmap (COINCIDENT_PX / 2 cells over the
    * screen box of the trajectories) holds what has been drawn, in priority order: the current trajectory up to
    * the first node (the path the vessel is on), then the planned patches in time order, then the current
-   * trajectory after the first node (the path it leaves). A segment of a later line that runs within about
-   * COINCIDENT_PX of drawn cells for most of its on-screen length is not drawn, so coincident laps read as one
-   * stroke and a node with little delta-v shows one orbit, not interleaved dashes. The segment is only hidden
-   * (VertexArrays.cover): it can still be clicked and a node still slides along it. Segments are clipped to the
-   * box before they are walked (a chord far off screen costs nothing), and only the marked cells are cleared
-   * for the next build.
+   * trajectory after the first node (the path it leaves). The stretch of a later line that runs within about
+   * COINCIDENT_PX of drawn cells is not drawn (per sub-span: a segment that is covered only in part is cut where
+   * it leaves the corridor, VertexArrays.cut0 / cut1), so coincident laps read as one stroke, a node with little
+   * delta-v shows one orbit, and two legs converging into one point merge instead of interleaving their dashes.
+   * A hidden stretch can still be clicked and a node still slides along it. A dashed patch running beside an
+   * earlier dashed one takes its dash phase (alignDashes). Segments are clipped to the box before they are
+   * walked (a chord far off screen costs nothing), and only the marked cells are cleared for the next build.
    */
   private suppressCoincident(scene: MapScene, firstNodeUt: number): void {
     const lines = scene.lines;
@@ -1301,13 +1337,20 @@ export class SceneBuilder {
     // clear what the previous build marked
     for (let q = 0; q < this.nMarked; q++) occ0[this.marked[q]!] = 0;
     this.nMarked = 0;
+    const own0 = this.own;
+    for (let q = 0; q < this.nOwned; q++) own0[this.owned[q]!] = 0;
+    this.nOwned = 0;
     let planned = 0;
     for (const l of lines) if (l.kind === 'planned') planned++;
     if (planned === 0) return;
     const v = this.verts;
     const W = scene.proj.width;
     const H = scene.proj.height;
-    const cs = (COINCIDENT_PX / 2) * scene.proj.pxScale;
+    // cells of the corridor half-width: the drawn segment nearest to a point within it marks a cell of the
+    // point's 3 x 3 neighbourhood
+    const thr = COINCIDENT_PX * scene.proj.pxScale;
+    const thr2 = thr * thr;
+    const cs = thr;
     const inv = 1 / cs;
     // screen box of the trajectories' drawn vertices, clipped to the screen
     let x0 = Infinity;
@@ -1335,11 +1378,12 @@ export class SceneBuilder {
     const rows = Math.ceil((y1 - y0) * inv);
     const n = cols * rows;
     if (n > 4e6) return;
-    if (this.occ.length < n) this.occ = new Uint8Array(Math.ceil(n * 1.25));
+    if (this.occ.length < n) this.occ = new Int32Array(Math.ceil(n * 1.25));
     const occ = this.occ;
     const clip = this.clipT;
     // the part of segment i inside the box [x0, x1] x [y0, y1] (Liang-Barsky), as parameters clip[0..1]
     const clipSeg = (ax: number, ay: number, dx: number, dy: number): boolean => clipToBox(ax, ay, dx, dy, x0, y0, x1, y1, clip);
+    // the cells along drawn segment i hold i + 1 (two steps per cell, so no cell the segment crosses is skipped)
     const mark = (i: number): void => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
@@ -1348,8 +1392,7 @@ export class SceneBuilder {
       if (!clipSeg(ax, ay, dx, dy)) return;
       const t0 = clip[0]!;
       const t1 = clip[1]!;
-      // one step per 2 cells: a skipped cell is still within the 3 x 3 neighbourhood the test looks at
-      const steps = Math.max(1, Math.ceil((Math.sqrt(dx * dx + dy * dy) * (t1 - t0)) / (2 * cs)));
+      const steps = Math.max(1, Math.ceil((2 * Math.sqrt(dx * dx + dy * dy) * (t1 - t0)) / cs));
       let gx = (ax + dx * t0 - x0) * inv;
       let gy = (ay + dy * t0 - y0) * inv;
       const sx = (dx * (t1 - t0) * inv) / steps;
@@ -1360,7 +1403,6 @@ export class SceneBuilder {
         if (ci < 0 || cj < 0 || ci >= cols || cj >= rows) continue;
         const c = cj * cols + ci;
         if (occ[c] === 0) {
-          occ[c] = 1;
           if (this.nMarked >= this.marked.length) {
             const grown = new Int32Array(this.marked.length * 2);
             grown.set(this.marked);
@@ -1368,42 +1410,112 @@ export class SceneBuilder {
           }
           this.marked[this.nMarked++] = c;
         }
+        occ[c] = i + 1;
       }
     };
-    // any drawn cell in the 3 x 3 neighbourhood (unrolled; at the box edge a read wraps into the next row or
-    // falls outside the array, which only concerns points in the off-screen padding)
-    const near = (gx: number, gy: number): boolean => {
-      const c = (gy | 0) * cols + (gx | 0);
-      const u = c - cols;
-      const d = c + cols;
-      return occ[u - 1] === 1 || occ[u] === 1 || occ[u + 1] === 1 || occ[c - 1] === 1 || occ[c] === 1 || occ[c + 1] === 1 || occ[d - 1] === 1 || occ[d] === 1 || occ[d + 1] === 1;
+    // a drawn segment within the corridor half-width of screen point (px, py), at grid position (gx, gy):
+    // the exact distance to the segments the 3 x 3 neighbourhood holds
+    const near = (gx: number, gy: number, px: number, py: number): boolean => {
+      const ci = gx | 0;
+      const cj = gy | 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const j = cj + dj;
+        if (j < 0 || j >= rows) continue;
+        const row = j * cols;
+        for (let di = -1; di <= 1; di++) {
+          const i = ci + di;
+          if (i < 0 || i >= cols) continue;
+          const o = occ[row + i]!;
+          if (o === 0) continue;
+          const a = o - 1;
+          const ax = v.sx[a]!;
+          const ay = v.sy[a]!;
+          const dx = v.sx[a + 1]! - ax;
+          const dy = v.sy[a + 1]! - ay;
+          const d2 = dx * dx + dy * dy;
+          const t = d2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / d2)) : 0;
+          const ex = ax + dx * t - px;
+          const ey = ay + dy * t - py;
+          if (ex * ex + ey * ey <= thr2) return true;
+        }
+      }
+      return false;
     };
-    // three quarters of the segment's on-screen part within a cell of drawn cells (a sample per 3 cells, the
-    // middle first: most segments are decided by one or two lookups)
-    const covered = (i: number): boolean => {
+    // The covered part of segment i: its on-screen part is walked a sample per cell; the stretch from the first
+    // to the last sample next to drawn cells is hidden (0: none, 1: the whole segment, 2: [cut[0], cut[1]], with
+    // -1 / 2 for "up to that end").
+    const cut = this.cutT;
+    const coveredSpan = (i: number): number => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const dx = v.sx[i + 1]! - ax;
       const dy = v.sy[i + 1]! - ay;
-      if (!clipSeg(ax, ay, dx, dy)) return false;
+      if (!clipSeg(ax, ay, dx, dy)) return 0;
       const t0 = clip[0]!;
       const t1 = clip[1]!;
-      const gx0 = (ax + dx * t0 - x0) * inv;
-      const gy0 = (ay + dy * t0 - y0) * inv;
-      const gdx = dx * (t1 - t0) * inv;
-      const gdy = dy * (t1 - t0) * inv;
-      if (!near(gx0 + gdx * 0.5, gy0 + gdy * 0.5)) return false;
-      const cells = Math.sqrt(gdx * gdx + gdy * gdy);
-      // a short segment (most of them): its two ends decide
-      if (cells <= 6) return near(gx0, gy0) && near(gx0 + gdx, gy0 + gdy);
-      const steps = Math.min(256, Math.max(2, Math.ceil(cells / 3)));
-      const allowed = 0.25 * (steps + 1);
-      let miss = 0;
-      for (let s = 0; s <= steps; s++) {
-        if (!near(gx0 + (gdx * s) / steps, gy0 + (gdy * s) / steps) && ++miss > allowed) return false;
+      // a sample per half corridor width
+      const px0 = ax + dx * t0;
+      const py0 = ay + dy * t0;
+      const pdx = dx * (t1 - t0);
+      const pdy = dy * (t1 - t0);
+      const steps = Math.min(512, Math.max(1, Math.ceil((2 * Math.sqrt(pdx * pdx + pdy * pdy)) / cs)));
+      const sx = pdx / steps;
+      const sy = pdy / steps;
+      let first = -1;
+      let last = -1;
+      let px = px0;
+      let py = py0;
+      for (let q = 0; q <= steps; q++, px += sx, py += sy) {
+        if (near((px - x0) * inv, (py - y0) * inv, px, py)) {
+          if (first < 0) first = q;
+          last = q;
+        }
       }
-      return true;
+      if (first < 0) return 0;
+      if (first === 0 && last === steps) return 1;
+      const dt = (t1 - t0) / steps;
+      cut[0] = first === 0 ? -1 : t0 + (first - 0.5) * dt;
+      cut[1] = last === steps ? 2 : t0 + (last + 0.5) * dt;
+      return 2;
     };
+    // Dash alignment grid: the drawn segments of the dashed lines placed so far, by vertex index + 1, in cells of
+    // DASH_ALIGN_PX / 2 (the 3 x 3 neighbourhood of a point reaches DASH_ALIGN_PX).
+    const ac = (DASH_ALIGN_PX / 2) * scene.proj.pxScale;
+    const ainv = 1 / ac;
+    const acols = Math.ceil((x1 - x0) * ainv) + 1;
+    const arows = Math.ceil((y1 - y0) * ainv) + 1;
+    if (this.own.length < acols * arows) this.own = new Int32Array(Math.ceil(acols * arows * 1.25));
+    const own = this.own;
+    const markOwn = (i: number): void => {
+      const ax = v.sx[i]!;
+      const ay = v.sy[i]!;
+      const dx = v.sx[i + 1]! - ax;
+      const dy = v.sy[i + 1]! - ay;
+      if (!clipSeg(ax, ay, dx, dy)) return;
+      const t0 = clip[0]!;
+      const t1 = clip[1]!;
+      const steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) * (t1 - t0) * ainv));
+      let gx = (ax + dx * t0 - x0) * ainv;
+      let gy = (ay + dy * t0 - y0) * ainv;
+      const sx = (dx * (t1 - t0) * ainv) / steps;
+      const sy = (dy * (t1 - t0) * ainv) / steps;
+      for (let s = 0; s <= steps; s++, gx += sx, gy += sy) {
+        const ci = gx | 0;
+        const cj = gy | 0;
+        if (ci < 0 || cj < 0 || ci >= acols || cj >= arows) continue;
+        const c = cj * acols + ci;
+        if (own[c] === 0) {
+          if (this.nOwned >= this.owned.length) {
+            const grown = new Int32Array(this.owned.length * 2);
+            grown.set(this.owned);
+            this.owned = grown;
+          }
+          this.owned[this.nOwned++] = c;
+        }
+        own[c] = i + 1;
+      }
+    };
+    const periodPx = DASH_PERIOD_PX * scene.proj.pxScale;
     // 1. the current trajectory up to the first node: drawn as it is, and the reference for everything else
     for (const l of lines) {
       if (l.kind !== 'current') continue;
@@ -1418,14 +1530,161 @@ export class SceneBuilder {
         for (let i = l.start; i < end; i++) {
           if (v.seg[i] !== 1) continue;
           if (pass === 1 && !(v.t[i + 1]! > firstNodeUt)) continue;
-          if (covered(i)) {
-            v.cover[i] = 1;
-            any = true;
+          const c = coveredSpan(i);
+          if (c === 1) v.cover[i] = 1;
+          else if (c === 2) {
+            v.cut0[i] = cut[0]!;
+            v.cut1[i] = cut[1]!;
+          }
+          if (c !== 0) any = true;
+        }
+        if (any) this.cleanCover(l, periodPx);
+        if (pass === 0) {
+          if (l.dashed) this.alignDashes(scene, l, own, acols, arows, x0, y0, ainv);
+          for (let i = l.start; i < end; i++) {
+            if (v.seg[i] !== 1 || v.cover[i] === 1) continue;
+            mark(i);
+            if (l.dashed) markOwn(i);
           }
         }
-        if (any) this.cleanCover(l, (DASH_PERIOD_PX * scene.proj.pxScale) | 0);
-        if (pass === 0) for (let i = l.start; i < end; i++) if (v.seg[i] === 1 && v.cover[i] === 0) mark(i);
       }
+    }
+  }
+
+  /**
+   * A dashed patch that runs beside an earlier-drawn dashed patch (within DASH_ALIGN_PX on screen, within 15
+   * degrees of parallel and the same way) takes that patch's dash phase there: its dash coordinate becomes the
+   * earlier patch's coordinate at the nearest point on screen. Two legs a few pixels apart then show their dashes
+   * side by side instead of interleaved. Legs that are near only in projection (one far behind the other) are
+   * matched on screen too, so while the view turns their offset follows the parallax and the dashes of the later
+   * one creep beside the earlier one's; dashes of a patch alone stay fixed to the path. The offset is measured at
+   * every vertex beside such a patch and interpolated along the arc between those stretches (held beyond the
+   * first and last), so the pattern stays continuous.
+   */
+  private alignDashes(scene: MapScene, l: LineRecord, own: Int32Array, cols: number, rows: number, x0: number, y0: number, inv: number): void {
+    const v = this.verts;
+    const n = l.count;
+    if (this.delta.length < n) {
+      this.delta = new Float64Array(2 * n);
+      this.zr = new Float64Array(2 * n);
+      this.known = new Uint8Array(2 * n);
+    }
+    const delta = this.delta;
+    const zr = this.zr;
+    const known = this.known;
+    const reach = DASH_ALIGN_PX * scene.proj.pxScale;
+    const reach2 = reach * reach;
+    const lo = l.start;
+    const hi = l.start + n;
+    let nKnown = 0;
+    for (let j = lo; j < hi; j++) {
+      known[j - lo] = 0;
+      if (v.front[j] !== 1 || !((j < hi - 1 && v.seg[j] === 1) || (j > lo && v.seg[j - 1] === 1))) continue;
+      const px = v.sx[j]!;
+      const py = v.sy[j]!;
+      // this line's screen direction at the vertex
+      const ja = j > lo && v.front[j - 1] === 1 ? j - 1 : j;
+      const jb = j < hi - 1 && v.front[j + 1] === 1 ? j + 1 : j;
+      if (ja === jb) continue;
+      let tx = v.sx[jb]! - v.sx[ja]!;
+      let ty = v.sy[jb]! - v.sy[ja]!;
+      const tl = Math.hypot(tx, ty);
+      if (!(tl > 0)) continue;
+      tx /= tl;
+      ty /= tl;
+      const gi = ((px - x0) * inv) | 0;
+      const gj = ((py - y0) * inv) | 0;
+      let best = reach2;
+      let bestSeg = -1;
+      let bestS = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const cj = gj + dj;
+        if (cj < 0 || cj >= rows) continue;
+        for (let di = -1; di <= 1; di++) {
+          const ci = gi + di;
+          if (ci < 0 || ci >= cols) continue;
+          const a = own[cj * cols + ci]! - 1;
+          if (a < 0 || a === bestSeg) continue;
+          const ax = v.sx[a]!;
+          const ay = v.sy[a]!;
+          const dx = v.sx[a + 1]! - ax;
+          const dy = v.sy[a + 1]! - ay;
+          const d2 = dx * dx + dy * dy;
+          if (!(d2 > 0)) continue;
+          // parallel and in the same direction (a crossing or an opposite leg keeps its own phase)
+          if ((dx * tx + dy * ty) / Math.sqrt(d2) < ALIGN_MIN_COS) continue;
+          const s = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / d2));
+          const ex = ax + dx * s - px;
+          const ey = ay + dy * s - py;
+          const e2 = ex * ex + ey * ey;
+          if (e2 < best) {
+            best = e2;
+            bestSeg = a;
+            bestS = s;
+          }
+        }
+      }
+      if (bestSeg < 0) continue;
+      // the earlier patch's dash coordinate at that point: linear in the segment's 3-D parameter, which the
+      // screen parameter maps to through the depths of its ends (as the GPU interpolates it)
+      const a = bestSeg;
+      const wa = -v.vz[a]!;
+      const wb = -v.vz[a + 1]!;
+      const t = (bestS * wa) / Math.max((1 - bestS) * wb + bestS * wa, 1e-300);
+      delta[j - lo] = v.len[a]! + (v.len[a + 1]! - v.len[a]!) * t - v.len[j]!;
+      zr[j - lo] = (v.dz[a]! + (v.dz[a + 1]! - v.dz[a]!) * t) / -v.vz[j]!;
+      known[j - lo] = 1;
+      nKnown++;
+    }
+    if (nKnown === 0) return;
+    // An offset matters only modulo the coarsest dash cell in use where it was measured (a whole number of cells
+    // moves no dash): each measured offset is brought within half that modulus of the one before (the shift
+    // carries on to the later ones), then interpolated along the arc in between, held beyond the first and the
+    // last. Where that would still stretch or squeeze the dashes by more than half, the offset steps once,
+    // midway, so the dash coordinate always runs forward.
+    let oct = -Infinity;
+    for (let q = 0; q < n; q++) if (known[q] === 1 && v.oct[lo + q]! > oct) oct = v.oct[lo + q]!;
+    const M = Math.pow(2, oct + 2);
+    let prev = -1;
+    let shift = 0;
+    for (let q = 0; q < n; q++) {
+      if (known[q] !== 1) continue;
+      delta[q] = delta[q]! + shift;
+      if (prev < 0) {
+        for (let r = 0; r < q; r++) {
+          delta[r] = delta[q]!;
+          zr[r] = zr[q]!;
+        }
+      } else {
+        const m = Math.round((delta[q]! - delta[prev]!) / M);
+        if (m !== 0) {
+          delta[q] = delta[q]! - m * M;
+          shift -= m * M;
+        }
+        if (q > prev + 1) {
+          const a0 = v.len[lo + prev]!;
+          const span = v.len[lo + q]! - a0;
+          const diff = delta[q]! - delta[prev]!;
+          const smooth = span > 0 && Math.abs(diff) <= 0.5 * span;
+          for (let r = prev + 1; r < q; r++) {
+            const f = span > 0 ? (v.len[lo + r]! - a0) / span : 0;
+            delta[r] = smooth ? delta[prev]! + diff * f : f < 0.5 ? delta[prev]! : delta[q]!;
+            zr[r] = zr[prev]! + (zr[q]! - zr[prev]!) * f;
+          }
+        }
+      }
+      prev = q;
+    }
+    for (let r = prev + 1; r < n; r++) {
+      delta[r] = delta[prev]!;
+      zr[r] = zr[prev]!;
+    }
+    const k = (DASH_PERIOD_PX * scene.proj.pxScale) / scene.proj.focal;
+    for (let q = 0; q < n; q++) {
+      const j = lo + q;
+      v.len[j] = v.len[j]! + delta[q]!;
+      v.dz[j] = -v.vz[j]! * zr[q]!;
+      v.oct[j] = Math.floor(Math.log2(Math.max(1e-3, k * v.dz[j]!)));
     }
   }
 
@@ -1485,32 +1744,110 @@ export class SceneBuilder {
 
   /**
    * Hidden stretches of a line (suppressCoincident) without flicker along it: where two lines drift apart
-   * slowly the test flips from segment to segment. A visible run shorter than two dash periods between hidden
-   * ones is hidden too, a hidden run shorter than one period between visible ones is shown (screen length).
+   * slowly the corridor test flips on and off. Per run of drawn segments, the hidden parts are intervals of
+   * screen length along the line: a visible gap shorter than two dash periods between hidden intervals is
+   * hidden too, then a hidden interval shorter than one period with visible line on both sides is shown. The
+   * result is written back per segment (whole: `cover`; in part: cut0 / cut1).
    */
   private cleanCover(l: LineRecord, periodPx: number): void {
     const v = this.verts;
     const end = l.start + l.count - 1;
-    for (let pass = 0; pass < 2; pass++) {
-      const target = pass === 0 ? 0 : 1; // pass 0: short visible runs; pass 1: short hidden runs
-      const limit = pass === 0 ? 2 * periodPx : periodPx;
-      let i = l.start;
-      while (i < end) {
-        if (v.seg[i] !== 1 || v.cover[i] !== target) {
-          i++;
-          continue;
-        }
-        const runStart = i;
-        let len = 0;
-        while (i < end && v.seg[i] === 1 && v.cover[i] === target) {
-          const ex = v.sx[i + 1]! - v.sx[i]!;
-          const ey = v.sy[i + 1]! - v.sy[i]!;
-          len += Math.sqrt(ex * ex + ey * ey);
-          i++;
-        }
-        const before = runStart > l.start && v.seg[runStart - 1] === 1 && v.cover[runStart - 1] !== target;
-        const after = i < end && v.seg[i] === 1 && v.cover[i] !== target;
-        if (before && after && len < limit) for (let q = runStart; q < i; q++) v.cover[q] = 1 - target;
+    let i = l.start;
+    while (i < end) {
+      if (v.seg[i] !== 1) {
+        i++;
+        continue;
+      }
+      const runStart = i;
+      while (i < end && v.seg[i] === 1) i++;
+      this.cleanRun(runStart, i, periodPx);
+    }
+  }
+
+  /** cleanCover for the drawn segments [a, b) of one line. */
+  private cleanRun(a: number, b: number, periodPx: number): void {
+    const v = this.verts;
+    const m = b - a;
+    if (this.runLen.length < m + 1) this.runLen = new Float64Array(2 * (m + 1));
+    if (this.spans.length < 2 * m + 2) this.spans = new Float64Array(4 * m + 4);
+    const S = this.runLen;
+    const iv = this.spans;
+    // cumulative screen length and the hidden intervals (merged where they touch)
+    S[0] = 0;
+    let n = 0;
+    for (let q = 0; q < m; q++) {
+      const i = a + q;
+      const len = Math.hypot(v.sx[i + 1]! - v.sx[i]!, v.sy[i + 1]! - v.sy[i]!);
+      S[q + 1] = S[q]! + len;
+      let h0 = 0;
+      let h1 = 0;
+      if (v.cover[i] === 1) h1 = len;
+      else if (v.cut1[i]! > v.cut0[i]!) {
+        h0 = Math.max(0, v.cut0[i]!) * len;
+        h1 = Math.min(1, v.cut1[i]!) * len;
+      } else continue;
+      const x0 = S[q]! + h0;
+      const x1 = S[q]! + h1;
+      if (n > 0 && x0 <= iv[2 * n - 1]! + 1e-6) iv[2 * n - 1] = Math.max(iv[2 * n - 1]!, x1);
+      else {
+        iv[2 * n] = x0;
+        iv[2 * n + 1] = x1;
+        n++;
+      }
+    }
+    if (n === 0) return;
+    const total = S[m]!;
+    // short visible gaps between hidden intervals are hidden
+    let k = 0;
+    for (let q = 1; q < n; q++) {
+      if (iv[2 * q]! - iv[2 * k + 1]! < 2 * periodPx) iv[2 * k + 1] = iv[2 * q + 1]!;
+      else {
+        k++;
+        iv[2 * k] = iv[2 * q]!;
+        iv[2 * k + 1] = iv[2 * q + 1]!;
+      }
+    }
+    n = k + 1;
+    // short hidden intervals with visible line on both sides are shown
+    k = 0;
+    for (let q = 0; q < n; q++) {
+      const x0 = iv[2 * q]!;
+      const x1 = iv[2 * q + 1]!;
+      if (x1 - x0 < periodPx && x0 > 1e-6 && x1 < total - 1e-6) continue;
+      iv[2 * k] = x0;
+      iv[2 * k + 1] = x1;
+      k++;
+    }
+    n = k;
+    // write back per segment
+    let p = 0;
+    for (let q = 0; q < m; q++) {
+      const i = a + q;
+      const s0 = S[q]!;
+      const s1 = S[q + 1]!;
+      v.cover[i] = 0;
+      v.cut0[i] = 0;
+      v.cut1[i] = 0;
+      while (p < n && iv[2 * p + 1]! <= s0 + 1e-9) p++;
+      let h0 = Infinity;
+      let h1 = -Infinity;
+      for (let r = p; r < n && iv[2 * r]! < s1 - 1e-9; r++) {
+        h0 = Math.min(h0, Math.max(s0, iv[2 * r]!));
+        h1 = Math.max(h1, Math.min(s1, iv[2 * r + 1]!));
+      }
+      const len = s1 - s0;
+      if (!(len > 0)) {
+        // a zero-length segment (its end cap is all that shows): hidden inside a hidden interval
+        for (let r = 0; r < n; r++) if (iv[2 * r]! <= s0 && s0 <= iv[2 * r + 1]!) v.cover[i] = 1;
+        continue;
+      }
+      if (!(h1 > h0)) continue;
+      const startHidden = h0 <= s0 + 1e-6;
+      const endHidden = h1 >= s1 - 1e-6;
+      if (startHidden && endHidden) v.cover[i] = 1;
+      else {
+        v.cut0[i] = startHidden ? -1 : (h0 - s0) / len;
+        v.cut1[i] = endHidden ? 2 : (h1 - s0) / len;
       }
     }
   }

@@ -73,16 +73,16 @@ export const LINE_WGSL = /* wgsl */ `
 ${COMMON}
 struct LinePoint {
   pos: vec3f,
-  phase: f32,    // dashed: arc length from the node (m) modulo the world dash period 2^octave
+  phase: f32,    // dashed: dash coordinate (m, see scene.ts dashAlongPath) modulo 2^modexp
   color: u32,
   flags: u32,    // bit 0: the segment to the next point is drawn; bit 1: dashed; bit 2: the segment to the next point
                  // is a join neighbour only (seam of a closed ring); bit 3: no casing; bits 16-31: width * 64 (device px)
-  seglen: f32,   // dashed: arc length of the segment to the next point (m)
+  seglen: f32,   // dashed: dash coordinate span of the segment to the next point (m)
   slack: f32,    // radial allowance below a body surface (m), see occlusion()
-  phase2: f32,   // dashed: arc length modulo the next octave's period 2^(octave + 1)
-  octave: f32,   // dashed: log2 of the segment's world dash period (m)
-  pad0: f32,
-  pad1: f32,
+  modexp: f32,   // dashed: log2 of the modulus of phase (two octaves above the segment's coarsest dash period)
+  cut0: f32,     // the segment to the next point is hidden on screen parameter [cut0, cut1] (a stretch lying on an
+  cut1: f32,     // earlier-drawn trajectory, scene.ts suppressCoincident); cut1 <= cut0: nothing hidden
+  dz: f32,       // dashed: depth (m) the dash octave is chosen from (scene.ts VertexArrays.dz)
 };
 @group(0) @binding(1) var<storage, read> pts: array<LinePoint>;
 
@@ -96,6 +96,7 @@ struct LineOut {
   @location(5) @interpolate(flat) cb: vec4f,
   @location(6) @interpolate(flat) misc: vec4f,
   @location(7) @interpolate(flat) misc2: vec4f,
+  @location(8) @interpolate(flat) misc3: vec4f,
 };
 
 fn toScreen(p: vec3f) -> vec2f {
@@ -145,7 +146,8 @@ fn vsLine(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
   o.cb = unpackColor(B.color);
   let flags = select(0.0, 1.0, hasPrev) + select(0.0, 2.0, hasNext) + select(0.0, 4.0, (A.flags & 2u) != 0u) + select(0.0, 8.0, (A.flags & 8u) != 0u);
   o.misc = vec4f(hw, A.phase, A.seglen, flags);
-  o.misc2 = vec4f(A.slack, A.phase2, A.octave, 0.0);
+  o.misc2 = vec4f(A.slack, A.modexp, A.cut0, A.cut1);
+  o.misc3 = vec4f(A.dz, B.dz, 0.0, 0.0);
   return o;
 }
 
@@ -156,6 +158,27 @@ fn dashCoverage(L: f32, P: f32, mpp: f32, casing: f32) -> vec2f {
   let m = L - floor(L / P) * P;
   let sd = select(min(m - on, P - m), -min(m, on - m), m <= on) / mpp;
   return vec2f(clamp(0.5 - sd, 0.0, 1.0), clamp(casing + 0.5 - sd, 0.0, 1.0));
+}
+
+// Octave of the dash pattern at arc coordinate s (m, modulo 2^modexp) of a segment with arc span seglen whose
+// ends lie at depths za, zb; t = this fragment's parameter along it (3-D, perspective-correct).
+// The world period 2^k m of octave k is the largest one at most DASH_PERIOD_PX on screen, judged at the CENTRE
+// of the octave's own cell (the period-long stretch [j 2^k, (j + 1) 2^k) of the path that holds s), not at the
+// fragment: every fragment of a cell makes the same choice, and cells of two octaves meet only at multiples of
+// the coarser period, where both patterns begin a dash. So the pattern is binary (dash or gap, never two
+// patterns blended at partial strength) and still fixed to the path; zooming moves the octave step from cell
+// to cell.
+fn dashOctave(s: f32, seglen: f32, t: f32, za: f32, zb: f32, focal: f32) -> f32 {
+  let zf = max(mix(za, zb, t), 1e-3);
+  let nf = floor(log2(U.style.y * zf / focal));
+  for (var k = nf + 1.0; k >= nf; k -= 1.0) {
+    let P = exp2(k);
+    let centre = 0.5 * P - (s - floor(s / P) * P);
+    let tc = select(t, t + centre / seglen, seglen > 0.0);
+    let zc = max(mix(za, zb, tc), 1e-3);
+    if (log2(U.style.y * zc / focal) >= k) { return k; }
+  }
+  return nf - 1.0;
 }
 
 fn segDist(p: vec2f, a: vec2f, b: vec2f) -> f32 {
@@ -186,17 +209,22 @@ fn lineCoverage(i: LineOut) -> vec4f {
   let t = s * wa / max((1.0 - s) * wb + s * wa, 1e-30);
   let P = mix(i.aw.xyz, i.bw.xyz, t);
   if ((flags & 4u) != 0u) {
-    // Dashes fixed to the path: the patterns of the segment's octave and the next one (world periods 2^n and
-    // 2^(n+1) m), cross-faded by where this fragment's depth puts DASH_PERIOD_PX between them.
+    // Dashes fixed to the path, one octave per cell (dashOctave): binary, never blended.
     let mpp = max(-P.z, 1e-3) / U.params.y;
-    let n = i.misc2.z;
-    let f = smoothstep(0.2, 0.8, clamp(log2(U.style.y * mpp) - n, 0.0, 1.0));
-    let arc = t * i.misc.z;
-    let a = dashCoverage(i.misc.y + arc, exp2(n), mpp, casing);
-    let b = dashCoverage(i.misc2.y + arc, exp2(n + 1.0), mpp, casing);
-    let dc = mix(a, b, f);
+    let sArc = i.misc.y + t * i.misc.z;
+    let k = dashOctave(sArc, i.misc.z, t, i.misc3.x, i.misc3.y, U.params.y);
+    let dc = dashCoverage(sArc, exp2(k), mpp, casing);
     cov *= dc.x;
     cas *= dc.y;
+  }
+  // A stretch lying on an earlier-drawn trajectory is hidden (anti-aliased flat ends, like a dash end).
+  let c0 = i.misc2.z;
+  let c1 = i.misc2.w;
+  if (c1 > c0) {
+    let lpx = sqrt(l2);
+    let inside = min(s - c0, c1 - s) * lpx;
+    cov *= clamp(0.5 - inside, 0.0, 1.0);
+    cas *= clamp(casing + 0.5 - inside, 0.0, 1.0);
   }
   if (cas <= 0.0) { return vec4f(-1.0); }
   var w = occlusion(P, i.misc2.x);

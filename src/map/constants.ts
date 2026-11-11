@@ -67,17 +67,26 @@ export const SURFACE_SLACK_MARGIN = 1e-4;
  */
 export const VISIBLE_LIMB_OPTICAL_DEPTH = 0.03;
 /**
- * Dashes of patches downstream of a maneuver node: period and lit length on screen. The pattern is laid out
- * along the path itself (arc length in metres from the node, period a power of two of metres chosen from the
- * line's depth on screen), so it stays on the path while the camera turns and changes only at octave steps.
+ * Dashes of patches downstream of a maneuver node: the longest period on screen and the lit fraction of it. The
+ * pattern is laid out along the path itself (arc length in metres from the node; the period is the largest
+ * power of two of metres that is at most DASH_PERIOD_PX on screen, chosen per period-long cell of the path), so
+ * it stays on the path while the camera turns, the period on screen lies between half and all of DASH_PERIOD_PX,
+ * and every pixel is either dash or gap (shaders.ts dashOctave).
  */
-export const DASH_PERIOD_PX = 20;
-export const DASH_ON_PX = 12;
+export const DASH_PERIOD_PX = 26;
+export const DASH_ON_PX = 15.6;
 /**
- * Patches that run within this distance of an earlier-drawn, higher-priority patch (planned over current, nearer
- * in time over later) are not drawn there: coincident laps read as one stroke instead of interleaved dashes.
+ * Patches whose centre line runs within this distance (1.5 line widths: the cores would touch) of an
+ * earlier-drawn, higher-priority patch (planned over current, nearer in time over later) are not drawn there:
+ * coincident laps read as one stroke instead of interleaved dashes, and a leg converging into another merges into
+ * it where it enters the corridor (exact distance to the drawn segments, per sub-span of a segment).
  */
-export const COINCIDENT_PX = 3;
+export const COINCIDENT_PX = 3.75;
+/**
+ * A dashed patch within this distance of an earlier-drawn dashed patch, running the same way, takes that patch's
+ * dash phase there (scene.ts alignDashes): two legs side by side show their dashes side by side.
+ */
+export const DASH_ALIGN_PX = 12;
 
 /** Hit-testing tolerance for every interactive element. */
 export const HIT_TOLERANCE_PX = 10;
@@ -190,7 +199,8 @@ const hex = (h: string, a = 1): Rgba => {
 
 export const COLORS = {
   current: [hex('#4fc3f7'), hex('#ffb74d'), hex('#ba8cf2'), hex('#81c784')] as readonly Rgba[],
-  planned: [hex('#ffd166'), hex('#ff8a65'), hex('#f48fb1'), hex('#c5e1a5')] as readonly Rgba[],
+  /** Planned patches along the chain: yellow, orange, magenta, lime (clearly apart where two legs run side by side). */
+  planned: [hex('#ffd166'), hex('#ff7a3d'), hex('#ee66e0'), hex('#a9e35e')] as readonly Rgba[],
   vesselOrbit: hex('#b8c4d6', 0.45),
   debrisOrbit: hex('#7d879a', 0.2),
   /** Orbit of the hovered vessel or debris. */
