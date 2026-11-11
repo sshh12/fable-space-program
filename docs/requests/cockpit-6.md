@@ -29,7 +29,8 @@ In the interior branch of `meterExposure` only:
    night, the cabin under its floods is displayed dim; by day it is not.
 2. `INTERIOR_HIGHLIGHT_MAX_EV` 1.75 -> 1.25: with (1) gone by day this leaves the sunlit-cabin views about
    1.25 EV under the log-average when a sun patch or a sunlit frame is in view, which is where the cabin
-   still reads (I checked 1.75 without the night key by eye in the same scenes: the couches and the far
-   wall are lost).
+   still reads (an estimate from the two frames named above, where the cabin sits about 3 EV under: half a
+   stop more light than 1.75 would leave is what the couches and the far wall need; I will re-shoot and
+   report if it is still too dark).
 
 Nothing else changes; the constants stay exported.
