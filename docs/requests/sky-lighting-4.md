@@ -49,4 +49,5 @@ star that is one texel of the cube becomes a radially stretched blob whatever re
 uses; only point sources stay round. If the bake can, carry the catalogue (`stars.f32`) to about V 9 (Tycho-2:
 some 230,000 more stars, 9 MB at 40 B per star) and take those stars out of the cube as it already does for the
 catalogue to V 6.5; the sky draws them as point images with the photometric PSF and needs no code change (the
-star count comes from the manifest; the instanced pass costs about 0.004 ms per 10,000 stars).
+star count comes from the manifest; the whole background pass, 8,920 stars and the Milky Way, is 0.014 ms p99 at
+1440p today, so the star budget has room; the count would be measured when the data lands).
