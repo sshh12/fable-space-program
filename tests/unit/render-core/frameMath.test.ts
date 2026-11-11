@@ -23,7 +23,7 @@ import {
 } from '@/render/core/frame/math';
 import { FRAME_UNIFORM_FLOATS, OFFSET, octEncodeUnit } from '@/render/core/frame/uniforms';
 import { expandIncludes } from '@/render/core/shaders/library';
-import { FRAME_WGSL } from '@/render/core/shaders/chunksFrame';
+import { FRAME_WGSL, SHADOW_SOFTNESS_MAX_M, SHADOW_SOFTNESS_MIN_M, decodeShadowSoftness, encodeShadowSoftness } from '@/render/core/shaders/chunksFrame';
 import { f16ToF32, f32ToF16, generateBlueNoise } from '@/render/core/util/gpu';
 
 let defs: DefLibrary;
@@ -275,6 +275,18 @@ describe('shader library and utilities', () => {
     };
     for (const d of [{ x: 0, y: 0, z: -1 }, { x: 0.3, y: -0.8, z: 0.2 }, { x: -0.1, y: 0.2, z: -0.97 }, { x: 1, y: 0, z: 0 }, { x: -0.5, y: -0.5, z: -0.7 }]) {
       expect(v3.dot(decode(octEncodeUnit(d)), v3.normalize(d))).toBeCloseTo(1, 12);
+    }
+  });
+  it('encodes the shadow softness of terrain pixels (RT4.a) in 5.6 % steps from 1.6 cm to 16 km, 0 = none (request terrain-render-4)', () => {
+    expect(encodeShadowSoftness(0)).toBe(0);
+    expect(encodeShadowSoftness(0.01)).toBe(0);
+    expect(decodeShadowSoftness(0)).toBe(0);
+    expect(decodeShadowSoftness(encodeShadowSoftness(SHADOW_SOFTNESS_MIN_M))).toBeCloseTo(SHADOW_SOFTNESS_MIN_M, 9);
+    expect(decodeShadowSoftness(encodeShadowSoftness(1e9))).toBeCloseTo(SHADOW_SOFTNESS_MAX_M, 6);
+    for (const r of [0.02, 0.1, 1, 7.5, 120, 950, 4000]) {
+      const e = encodeShadowSoftness(r);
+      expect(Math.round(e * 255)).toBe(e * 255); // on the 8-bit grid
+      expect(Math.abs(Math.log(decodeShadowSoftness(e) / r))).toBeLessThan(0.028);
     }
   });
   it('converts half floats both ways', () => {

@@ -219,7 +219,11 @@ fn envIrradiance(n: vec3f) -> vec3f {
     // it faces. Every other material is dark through its BRDF on faces turned away (the lookup returns 1).
     var nShadow = s.n;
     if (s.materialId == MATERIAL_CLOTH && dot(s.n, sunDir) < 0.0) { nShadow = -s.n; }
-    let shadow = sampleSunShadow(pos, nShadow, pix) * aoc.y;
+    // Terrain and regolith may ask for a wider filter in RT4.a (request terrain-render-4): the shadow of a
+    // coarse terrain mesh on itself is softened to the size of its caster quads.
+    var soft = 0.0;
+    if (s.materialId == MATERIAL_TERRAIN || s.materialId == MATERIAL_REGOLITH) { soft = decodeShadowSoftness(g.clearcoatRoughness); }
+    let shadow = sampleSunShadowSoft(pos, nShadow, pix, soft) * aoc.y;
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
       lit += brdfDirect(s, sunDir) * sunE * shadow;

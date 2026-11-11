@@ -7,6 +7,7 @@
  *                               picks a spot on the root body from which the moon stands 35 deg high)
  *   &sun=az,el                  pin the sun at this azimuth / elevation (deg) at the site
  *   &planet=0                   no LabPlanet;  &stand=0  no stand;  &stand=dense  slab + dense LOD spheres only
+ *   &soft=<m>                   shadow softness of the slab (PbrMaterialDef.shadowSoftness, request terrain-render-4)
  *   &tris=<n>                   add dense spheres (130k triangles each, two LODs) up to n triangles
  *   &maps=tileset|ocean         LabPlanet albedo: the baked albedoLowRes maps, or open ocean everywhere
  *   &seabed=<m>                 LabPlanet: fixed sand seabed that deep inside 'ocean.nearField' (default: as deep as the sheet)
@@ -131,7 +132,7 @@ async function boot(): Promise<void> {
         list.push(createLabPlanetFeature({ maps, ...(query.has('seabed') ? { seabedDepth: Number(query.get('seabed')) } : {}) }));
       }
       if (query.get('stand') !== '0') {
-        stand = createStandFeature({ site, defs, heavyTriangles: Number(query.get('tris') ?? 0) || undefined, vesselSizedObject: query.get('stack') !== '0', denseOnly: query.get('stand') === 'dense' });
+        stand = createStandFeature({ site, defs, heavyTriangles: Number(query.get('tris') ?? 0) || undefined, vesselSizedObject: query.get('stack') !== '0', denseOnly: query.get('stand') === 'dense', slabShadowSoftness: Number(query.get('soft') ?? 0) || undefined });
         list.push(stand);
       }
       probes = createProbes(query, site, defs, sim.peek());

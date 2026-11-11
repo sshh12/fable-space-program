@@ -467,3 +467,103 @@ test('a body-fixed ridge on a Moon-sized LabPlanet casts a visible shadow at the
   for (let i = 1; i < ratios.length; i++) expect(Math.abs(ratios[i]! - ratios[i - 1]!)).toBeLessThan(0.1);
   await expectNoErrors(page, pageLog);
 });
+
+/**
+ * Luminance (green of the HDR target, mean of 3 x 3 pixels) of ground points of the slab, normalised by the
+ * sunlit slab 1 m east of the first point. The tower (1 x 1 x 8 m at x -7.5..-6.5, y -4.5..-3.5) with the sun
+ * due south at 45 deg casts its shadow northwards; its east edge is the line x = -6.5.
+ */
+async function slabProfile(page: Page, xs: number[], y: number): Promise<number[]> {
+  return page.evaluate(
+    async ({ xs: list, y: yy }) => {
+      const lab = window.__lab!;
+      await window.__test!.waitFrames(8);
+      const img = await lab.renderer.readHdrPixels('hdr');
+      const at = (x: number): number => {
+        const p = window.__rc!.projectSitePoint([x, yy, 0])!;
+        let s = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += img.data[((Math.round(p.y) + dy) * img.width + Math.round(p.x) + dx) * 4 + 1]!;
+        return s / 9;
+      };
+      const lit = at(list[list.length - 1]! + 1);
+      return list.map((x) => at(x) / lit);
+    },
+    { xs, y },
+  );
+}
+
+test('a terrain surface can ask for a wider shadow filter in RT4.a (request terrain-render-4)', async ({ page, pageLog }) => {
+  const xs = [-7.0, -6.7, -6.6, -6.55, -6.5, -6.45, -6.4, -6.3];
+  const shoot = async (soft: number): Promise<number[]> => {
+    await openPage(page, `/labs/render-core/?sun=180,45&hud=0&paused=1&ev=14.6${soft ? `&soft=${soft}` : ''}`);
+    await assertDiscreteGpu(page);
+    await page.evaluate(() => {
+      window.__test!.setDeterministic(true);
+      window.__lab!.renderer.setJitter(false);
+      window.__rc!.lookAt([-6.5, -1, 0], 0, 89.9, 5);
+    });
+    await waitIdle(page, 20);
+    return slabProfile(page, xs, -1);
+  };
+  const hard = await shoot(0);
+  await saveScreenshot(page, 'render-core', 'shadows-soft-terrain-off');
+  const soft = await shoot(0.1);
+  await saveScreenshot(page, 'render-core', 'shadows-soft-terrain-0.1m');
+  console.log(`tower shadow edge on the slab (x ${xs.join(', ')}): default ${hard.map((v) => v.toFixed(2)).join(' ')}; shadowSoftness 0.1 m ${soft.map((v) => v.toFixed(2)).join(' ')}`);
+  // Default: the edge is a few centimetres wide (the penumbra of a caster 3 m away).
+  expect(hard[2]!).toBeLessThan(0.1);
+  expect(hard[6]!).toBeGreaterThan(0.9);
+  // 0.1 m: the same edge spread over +-0.1 m, monotonic, full shadow and full light beyond.
+  expect(soft[0]!).toBeLessThan(0.1);
+  expect(soft[7]!).toBeGreaterThan(0.9);
+  expect(soft[3]!).toBeGreaterThan(0.1);
+  expect(soft[3]!).toBeLessThan(0.45);
+  expect(soft[5]!).toBeGreaterThan(0.55);
+  expect(soft[5]!).toBeLessThan(0.9);
+  for (let i = 1; i < xs.length; i++) expect(soft[i]!).toBeGreaterThan(soft[i - 1]! - 0.03);
+  await expectNoErrors(page, pageLog);
+});
+
+test('a shadow edge at arm\'s length is smooth: the kernel stops turning per pixel where a texel covers many pixels (request cockpit-10)', async ({ page, pageLog }) => {
+  // 0.35 m above the slab, looking down at the east edge of the tower's shadow: one 1.2 cm texel of the
+  // finest cascade covers about 20 pixels. Deterministic noise, no jitter: what one frame shows.
+  await openPage(page, '/labs/render-core/?sun=180,45&hud=0&paused=1&ev=14.6');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+    window.__rc!.lookAt([-6.5, -1, 0], 0, 89.9, 0.35);
+  });
+  await waitIdle(page, 20);
+  await saveScreenshot(page, 'render-core', 'shadows-edge-arms-length');
+  const r = await page.evaluate(async () => {
+    const lab = window.__lab!;
+    await window.__test!.waitFrames(8);
+    const img = await lab.renderer.readHdrPixels('hdr');
+    const p0 = window.__rc!.projectSitePoint([-6.5, -1, 0])!;
+    const p1 = window.__rc!.projectSitePoint([-6.5, -0.9, 0])!;
+    // The edge runs north-south: along a screen column inside the penumbra the true value is constant, so
+    // what varies from row to row is filter noise. Coefficient of variation per column, over 160 rows.
+    const pxPerM = Math.hypot(p1.x - p0.x, p1.y - p0.y) / 0.1;
+    const cvs: number[] = [];
+    const means: number[] = [];
+    for (let dx = -24; dx <= 24; dx += 4) {
+      const x = Math.round(p0.x + dx);
+      const col: number[] = [];
+      for (let dy = -80; dy < 80; dy++) col.push(img.data[((Math.round(p0.y) + dy) * img.width + x) * 4 + 1]!);
+      const m = col.reduce((a, b) => a + b, 0) / col.length;
+      const sd = Math.sqrt(col.reduce((a, b) => a + (b - m) ** 2, 0) / col.length);
+      means.push(m);
+      if (m > 0) cvs.push(sd / m);
+    }
+    return { pxPerM, cvs, means };
+  });
+  const worst = Math.max(...r.cvs);
+  const span = Math.max(...r.means) / Math.max(Math.min(...r.means), 1e-9);
+  console.log(`edge at arm's length: ${(r.pxPerM / 100).toFixed(1)} px per cm; row-to-row variation along the edge per column ${r.cvs.map((v) => v.toFixed(3)).join(' ')} (worst ${worst.toFixed(3)}); lit / shadowed across the band ${span.toFixed(1)}`);
+  // The band crosses the edge (shadow to light) ...
+  expect(span).toBeGreaterThan(3);
+  // ... and along it the image is smooth: no stipple.
+  expect(worst).toBeLessThan(0.03);
+  await expectNoErrors(page, pageLog);
+});

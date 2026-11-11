@@ -234,7 +234,7 @@ when a chunk they included is registered again (call `.get()` each frame to obta
 | `brdf_water` (overridable) | `brdfWaterDirect`, `brdfWaterAmbient`, `waterAlpha`, `waterBodyColor` | `brdf` |
 | `eclipse` | `discVisibleFraction(rs, ro, d)`, `sunVisibility(posRelCam, sunDir)` | - |
 | `atmosphere_common` | `altitudeAt`, `transmittanceUvFromRMu` / `rMuFromTransmittanceUv`, `skyIrradianceUvFromRMuS` / `rMuSFromSkyIrradianceUv`, `skyViewUv`, `aerialSliceToDistance` / `aerialDistanceToSlice`, `atmosphereSunTransmittance(lut, bodyIndex, r, mu)` | - |
-| `shadows` | `ShadowUniforms`, `sampleSunShadow(posRelCam, n, pixel)`, `shadowCascadeIndex(posRelCam)` | `shadowCascades`, `shadowU` (binding set `shadow`) |
+| `shadows` | `ShadowUniforms`, `sampleSunShadow(posRelCam, n, pixel)`, `sampleSunShadowSoft(posRelCam, n, pixel, softRadiusM)`, `shadowCascadeIndex(posRelCam)` | `shadowCascades`, `shadowU` (binding set `shadow`) |
 | `shadow_pass` | `ShadowPassUniforms`, `shadowPass` at `@group(1) @binding(0)` | - |
 | `cloud_shadow` | `cloudLight(pos, bodyIndex, up, r, sunDir) -> vec2f`: what the clouds leave of the sun's illuminance at a camera-relative point, x = the share in the direct beam, y = the share that arrives at all (beam + diffusely through the cloud; y - x is white light from the cloud base) (near map, depth-resolved; coverage map beyond). `cloudShadow(...) -> f32` = its y, for a shader that lights with one factor on the sun. What the deferred lighting uses; use it in every forward-lit shader instead of sampling `'clouds.shadowMap'` yourself | `cloudShadowMapTex`, `cloudCoverageMapTex` (binding set `cloudShadow`) |
 | `transparency` | `applyAtmosphere(uv, distance, colour, alpha)` | `aerialPerspectiveTex`, `cloudsScreenTex`, `cloudsDepthTex` (binding set `transparency`) |
@@ -334,8 +334,13 @@ return o;
 
 Material parameter (RT2.a) per id: standard and terrain = wetness; regolith = crater freshness; water =
 `encodeWaterDepth(depth)`; cloth = translucency; display = brightness (the emitted colour itself goes to
-RT5). RT4 is read for `MATERIAL_STANDARD` only; every other material writes the neutral value that
-`gbufferPack` sets.
+RT5). RT4 is read for `MATERIAL_STANDARD` (tangent, anisotropy, clear coat) and, for `MATERIAL_TERRAIN` /
+`MATERIAL_REGOLITH`, its b and a channels: RT4.b is free for the terrain's own BRDF chunk (the terrain
+package writes the share of the sun that relief below the mesh keeps off the pixel there), RT4.a is the
+smallest sun-shadow filter radius, `encodeShadowSoftness(radiusM)` (0 = none; 1.6 cm .. 16 km in 5.6 %
+steps; `decodeShadowSoftness`; TS twins in `@/render/core`; request `terrain-render-4`). Every other material
+writes the neutral value that `gbufferPack` sets. The mesh system writes RT4.a from
+`PbrMaterialDef.shadowSoftness` for terrain and regolith materials.
 
 `MATERIAL_DISPLAY` is an emitter behind a glass front. Write the image at FULL brightness to RT5 (cd/m^2
 x exposure, as any emissive), the brightness 0..1 to RT2.a, the off-state colour of the panel to RT0 and
@@ -479,6 +484,22 @@ radius follows the blocker distance and the true solar angular size (min 1.5, ma
 bias (0.7 texel x sin of the incidence angle) plus an exact receiver-plane depth bias per tap (so grazing
 light, e.g. the terminator in a 1.9 km whole-body cascade, neither shows acne nor loses low relief). Returns
 1 where no cascade covers the point, on faces turned away from the sun, and with the default resources.
+
+The kernel turns per pixel (blue noise) so that its banding becomes noise the TAA averages. Where one shadow
+texel covers several pixels (a receiver at arm's length: the well of a window seen from the cabin, a hull
+seen from 2 m) that noise is coarser than the TAA hides, so the turning fades out between 2 and 8 pixels per
+texel (`SHADOW_SPIN_FULL`, `SHADOW_SPIN_NONE`, the finer texel axis against the pixel footprint at the
+receiver's distance) and the fixed pattern of bilinear comparisons is smooth (request `cockpit-10`:
+row-to-row variation along an edge 0.35 m from the camera 0.08 -> 0.008). Receivers with fewer than 2
+pixels per texel (every view of the ground from more than a few metres) are unchanged.
+
+`sampleSunShadowSoft(posRelCam, n, pixel, softRadius)` is the same lookup with a smallest filter radius in
+metres on the receiver (across the light; times NoL along it, where a metre of map covers 1 / NoL metres of
+ground), up to the 12-texel maximum; `sampleSunShadow` is it with 0. The deferred pass uses it for
+`MATERIAL_TERRAIN` and `MATERIAL_REGOLITH` with `decodeShadowSoftness(RT4.a)` (request `terrain-render-4`):
+terrain whose shadow is cast by its own coarse mesh writes the size of its caster quads there and the
+polygonal outline of a crater's shadow is softened to that size. It softens every shadow on that pixel, a
+vessel's included: write 0 where such shadows fall (near the camera).
 
 **Low sun.** At a sun elevation e one shadow texel covers 1 / sin(e) texels of ground along the light
 (4 at 14 deg, 10 at 6 deg), so a one-texel step of a shadow edge is that long on the ground. Two things
@@ -1227,6 +1248,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Sun-shadow lookup: the kernel stops turning per pixel where a texel covers 2 to 8 pixels or more (`SHADOW_SPIN_FULL` / `_NONE`); `sampleSunShadowSoft(..., softRadius)`; terrain and regolith pixels take a smallest filter radius from RT4.a (`encodeShadowSoftness` / `decodeShadowSoftness`, `SHADOW_SOFTNESS_MIN_M` / `_MAX_M`), the mesh system writes it from `PbrMaterialDef.shadowSoftness`; sections 6 and 8 | `cockpit-10`, `terrain-render-4` | cockpit (window wells at arm's length), vehicle-pad (a hull seen from a metre or two), terrain (writes RT4.a) | None: receivers seen at under 2 pixels per texel and terrain that leaves RT4.a at 0 are unchanged. Close-up shadow edges are smooth instead of stippled |
 | `LocalLight.kind` gained `'spot'` (`dirRelCam`, `cone`) and every light an optional `radius`; `LightUniform` gained `shape: vec4f` (xy = octahedral beam axis of a spot, z = cos inner, w = cos outer), `intensity.a` = source radius, `endKind.w` = 2 for a spot whose `endKind.xyz` is its own position; chunk `local_lights` with `localLightSample(i, posRelCam, n)`; the frame uniform buffer is 3024 bytes (was 2768; `lights` is the last member, no other offset moved), section 7 | `vfx-5`, `vehicle-pad-2` | vehicle-pad (floodlights and landing lamps as spots), vfx (plume and fireball lights with the flame's size); ocean and vfx (their forward copies of the light loop) | None for existing callers: a light without `radius` and kind point / capsule is lit exactly as before. WGSL that includes `frame` gets the new struct automatically; a forward light loop that wants spots and radii calls `localLightSample()` (a copy that reads `posRange` / `endKind` itself sees a spot as a point light of its axial intensity and ignores the radius: switch to the function) |
 | Planetshine is occluded per pixel by every other non-star body (`shineVisibility(pos, sh)` in chunk `eclipse`; `ShineLight.dir.w` = shining body's frame index, `illuminance.a` = its angular radius; CPU: `shineVisibleFraction`, `planetshineAt(..., max, visibleFrom?)`, `ShineLight.angularRadius?`), section 7 | `sky-lighting-8` | every package lit by the deferred pass at night: a vessel in low orbit is no longer lit by a Moon behind the Earth; ocean (its forward copy of the loop) | None in code. A forward shader that copies the planetshine loop multiplies each light by `shineVisibility(pos, sh)` to match the deferred result |
 | Tone curve: AgX joins the linear toe over five stops (`TOE_START_STOPS` -3 -> -1, `TOE_FULL_STOPS` -4 -> -6; the join's middle, `TOE_GAIN` and the toe below -6 stops unchanged), section 13 | `sky-lighting-7` | every package: smooth gradients that crossed 17-21 of 255 (glare, terminators, twilight skies, shaded hulls) lose the contour there | None in code. Greys between 1 and 6 stops under mid-grey move by up to 1.8 of 255 (-3 stops 29.5 instead of 31, -4 stops 15.4 instead of 16.5); a dim colour inside the join is a little less saturated than AgX alone made it |

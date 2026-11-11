@@ -8,7 +8,7 @@ export { createSceneBindings, type SceneBindings, type SceneBindingSet } from '.
 export type { CoreShaderLibrary, Tracked } from './shaders/library';
 export type { CoreSharedResources } from './resources';
 export { SHADOW_UNIFORM_BYTES } from './resources';
-export { BLUE_NOISE_SIZE, BODY_FLAG, MAX_BODIES, MAX_LIGHTS, SHINE_PER_RECEIVER, SHINE_RECEIVERS } from './shaders/chunksFrame';
+export { BLUE_NOISE_SIZE, BODY_FLAG, MAX_BODIES, MAX_LIGHTS, SHADOW_SOFTNESS_MAX_M, SHADOW_SOFTNESS_MIN_M, SHINE_PER_RECEIVER, SHINE_RECEIVERS, decodeShadowSoftness, encodeShadowSoftness } from './shaders/chunksFrame';
 export { SHADOW_MAX_CASCADES } from './shaders/chunksLighting';
 export { BODY_UNIFORM_FLOATS, FRAME_UNIFORM_FLOATS, OFFSET as FRAME_UNIFORM_OFFSET, type CloudShadowFar, type CloudShadowNear, type CloudShadowParams } from './frame/uniforms';
 export {

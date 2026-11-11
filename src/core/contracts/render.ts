@@ -179,6 +179,12 @@ export interface PbrMaterialDef {
   anisotropy?: number;
   /** 0..1 thin-surface translucency (shading 'cloth' only; stored in RT2.a). */
   translucency?: number;
+  /**
+   * Smallest sun-shadow filter radius on this surface, m (shading 'terrain' and 'regolith' only; stored in
+   * G-buffer RT4.a with `encodeShadowSoftness`; request terrain-render-4). Absent or 0 = the default lookup.
+   * Softens every shadow falling on the surface, a vessel's included: for coarse ground seen from afar.
+   */
+  shadowSoftness?: number;
   doubleSided?: boolean;
   /** Texture URLs (public/assets/**) or ids of procedural textures registered with the render core. */
   textures?: { baseColor?: string; normal?: string; orm?: string; emissive?: string };

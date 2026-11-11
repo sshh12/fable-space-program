@@ -489,6 +489,9 @@ const SHADOW_SEARCH = 6.0;
 const SHADOW_STRETCH_MAX = 4.0;
 /// Slope by which a blocker must stand clear of the receiver plane to count for the widened part of the kernel.
 const SHADOW_CONE = 0.3;
+/// Pixels per shadow texel at the receiver below which the kernel turns per pixel, and above which it is fixed.
+const SHADOW_SPIN_FULL = 2.0;
+const SHADOW_SPIN_NONE = 8.0;
 
 fn shadowVogel(i: u32, n: u32, phi: f32) -> vec2f {
   let r = sqrt((f32(i) + 0.5) / f32(n));
@@ -507,7 +510,18 @@ fn shadowVogel(i: u32, n: u32, phi: f32) -> vec2f {
 /// elevation) texels long on the ground, and a kernel that is only 1.5 texels wide across the light leaves
 /// those steps standing as teeth (14 deg sun) or as a comb at the shadow tip (6 deg). Every-frame cascades
 /// keep the round map-space minimum, so the thin shadows of nearby hardware stay crisp.
-fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
+///
+/// The kernel's rotation (per pixel, from blue noise) turns the filter's banding into noise that the TAA
+/// averages. Where a shadow texel covers several pixels (a receiver at arm's length from the camera: the
+/// well of a window seen from the cabin) that noise is coarser than the TAA can hide, so the rotation fades
+/// out between SHADOW_SPIN_FULL and SHADOW_SPIN_NONE pixels per texel: the fixed pattern of bilinear
+/// comparisons is smooth there (request cockpit-10).
+///
+/// 'softRadius' (m on the receiver, 0 = none) is a smallest filter radius requested by the receiver's
+/// G-buffer (request terrain-render-4: terrain whose shadow is cast by its own coarse mesh): the kernel is at
+/// least that wide across the light and that wide times NoL along it (one metre of map covers 1 / NoL
+/// metres of receiver there), up to SHADOW_MAX_KERNEL texels.
+fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f, softRadius: f32) -> f32 {
   let cas = shadowU.cascades[i];
   let texel = vec2f(cas.params.x, cas.params.w);
   let texelMax = max(texel.x, texel.y);
@@ -534,8 +548,13 @@ fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
   let minAcross0 = SHADOW_MIN_KERNEL * length(acrossDir * texel);
   var minAcross = minAcross0;
   if (staggered) { minAcross = max(minAcross0, min(minAlong / max(NoL, 1e-3), minAcross0 * SHADOW_STRETCH_MAX)); }
-  let phi = noise.x * TWO_PI;
-  let search = max(SHADOW_SEARCH * texelMax, minAcross);
+  // Pixels per texel at the receiver (the finer texel axis against the pixel footprint at that distance).
+  let pixelM = length(p) * 2.0 * frame.cameraUp.w * frame.renderSize.w;
+  let perTexel = min(texel.x, texel.y) / max(pixelM, 1e-9);
+  let phi = noise.x * TWO_PI * (1.0 - smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel));
+  let softAcross = softRadius;
+  let softAlong = softRadius * NoL;
+  let search = max(max(SHADOW_SEARCH * texelMax, minAcross), min(softAcross, SHADOW_MAX_KERNEL * texelMax));
   var blockerSum = 0.0;
   var blockers = 0.0;
   for (var k = 0u; k < 8u; k++) {
@@ -548,8 +567,8 @@ fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
   let blockerDist = max(zr - blockerSum / blockers, 0.0) * zRange;
   let penumbra = blockerDist * shadowU.settings.x * 0.5;
   let largest = SHADOW_MAX_KERNEL * texelMax;
-  let rAlong = min(max(penumbra, minAlong), largest);
-  let rAcross = min(max(penumbra, minAcross), largest);
+  let rAlong = min(max(max(penumbra, minAlong), softAlong), largest);
+  let rAcross = min(max(max(penumbra, minAcross), softAcross), largest);
   var lit = 0.0;
   for (var k = 0u; k < 12u; k++) {
     let dk = shadowVogel(k, 12u, phi + 1.3);
@@ -567,6 +586,11 @@ fn shadowSampleCascade(i: u32, p: vec3f, n: vec3f, noise: vec4f) -> f32 {
 /// sun shadow cascades. 'pixel' seeds the blue-noise rotation and the cross-cascade dither.
 /// Returns 1 where no cascade covers the point and with the default (empty) resources.
 fn sampleSunShadow(posRelCam: vec3f, n: vec3f, pixel: vec2u) -> f32 {
+  return sampleSunShadowSoft(posRelCam, n, pixel, 0.0);
+}
+/// sampleSunShadow with a smallest filter radius on the receiver, m (0 = sampleSunShadow exactly): what the
+/// deferred pass uses for MATERIAL_TERRAIN / MATERIAL_REGOLITH with decodeShadowSoftness(RT4.a).
+fn sampleSunShadowSoft(posRelCam: vec3f, n: vec3f, pixel: vec2u, softRadius: f32) -> f32 {
   let noise = blueNoise(pixel);
   let count = min(shadowU.count.x, SHADOW_MAX_CASCADES);
   for (var i = 0u; i < count; i++) {
@@ -576,7 +600,7 @@ fn sampleSunShadow(posRelCam: vec3f, n: vec3f, pixel: vec2u) -> f32 {
     if (edge <= 0.0 || c.z <= 0.0 || c.z >= 1.0) { continue; }
     let fade = saturate(edge * 10.0) * saturate((1.0 - c.z) * 20.0) * cas.params.z;
     if (fade < 1.0 && noise.b >= fade) { continue; }   // dithered cross-fade into the next cascade
-    return shadowSampleCascade(i, posRelCam, n, noise);
+    return shadowSampleCascade(i, posRelCam, n, noise, softRadius);
   }
   return 1.0;
 }

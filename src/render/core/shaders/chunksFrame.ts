@@ -14,6 +14,22 @@ export const BLUE_NOISE_SIZE = 64;
 
 export const BODY_FLAG = { star: 1, atmosphere: 2, ocean: 4, hapke: 8, terrain: 16 } as const;
 
+/** Range of the shadow softness of terrain pixels (RT4.a, request terrain-render-4), m. */
+export const SHADOW_SOFTNESS_MIN_M = 1 / 64;
+export const SHADOW_SOFTNESS_MAX_M = 16384;
+const SOFTNESS_STOPS = Math.log2(SHADOW_SOFTNESS_MAX_M / SHADOW_SOFTNESS_MIN_M);
+/** CPU twin of the WGSL `encodeShadowSoftness`: radius (m) -> RT4.a value (0..1, on the 8-bit grid). */
+export function encodeShadowSoftness(radiusM: number): number {
+  if (!(radiusM >= SHADOW_SOFTNESS_MIN_M)) return 0;
+  const x = Math.min(Math.max(Math.log2(radiusM / SHADOW_SOFTNESS_MIN_M) / SOFTNESS_STOPS, 0), 1);
+  return (1 + Math.round(x * 254)) / 255;
+}
+/** CPU twin of the WGSL `decodeShadowSoftness`. */
+export function decodeShadowSoftness(enc: number): number {
+  const k = Math.round(enc * 255);
+  return k < 1 ? 0 : SHADOW_SOFTNESS_MIN_M * 2 ** (((k - 1) / 254) * SOFTNESS_STOPS);
+}
+
 export const FRAME_WGSL = /* wgsl */ `
 const PI = 3.14159265358979;
 const TWO_PI = 6.28318530717959;
@@ -284,6 +300,20 @@ fn decodeTangentAngle(n: vec3f, enc: f32) -> vec3f {
 /// Water depth (m) <-> RT2.a for MATERIAL_WATER.
 fn encodeWaterDepth(depth: f32) -> f32 { return sqrt(clamp(depth / WATER_DEPTH_ENCODE_MAX, 0.0, 1.0)); }
 fn decodeWaterDepth(enc: f32) -> f32 { return enc * enc * WATER_DEPTH_ENCODE_MAX; }
+
+/// Smallest sun-shadow filter radius on the receiver (m) <-> RT4.a for MATERIAL_TERRAIN / MATERIAL_REGOLITH
+/// (request terrain-render-4): 0 = none (the default lookup); otherwise ${SHADOW_SOFTNESS_MIN_M} m .. ${SHADOW_SOFTNESS_MAX_M} m in
+/// 254 logarithmic steps (5.6 % each). Radii under the minimum encode as 0.
+fn encodeShadowSoftness(radiusM: f32) -> f32 {
+  if (radiusM < ${SHADOW_SOFTNESS_MIN_M}) { return 0.0; }
+  let x = clamp(log2(radiusM / ${SHADOW_SOFTNESS_MIN_M}) / ${Math.log2(SHADOW_SOFTNESS_MAX_M / SHADOW_SOFTNESS_MIN_M).toFixed(1)}, 0.0, 1.0);
+  return (1.0 + round(x * 254.0)) / 255.0;
+}
+fn decodeShadowSoftness(enc: f32) -> f32 {
+  let k = round(enc * 255.0);
+  if (k < 0.5) { return 0.0; }
+  return ${SHADOW_SOFTNESS_MIN_M} * exp2((k - 1.0) / 254.0 * ${Math.log2(SHADOW_SOFTNESS_MAX_M / SHADOW_SOFTNESS_MIN_M).toFixed(1)});
+}
 
 /// Fragment output of every drawGBuffer pipeline (targets in this order).
 struct GBufferOut {

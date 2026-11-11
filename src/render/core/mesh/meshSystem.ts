@@ -55,7 +55,7 @@ struct Material {
   baseColor: vec4f,   // rgb, a = metallic
   params: vec4f,      // roughness, shading id, material parameter, anisotropy
   emissive: vec4f,    // rgb cd/m^2, a = clearcoat
-  misc: vec4f,        // clearcoat roughness, unused, uv scale
+  misc: vec4f,        // clearcoat roughness, shadow softness (m; terrain and regolith), uv scale
 }
 @group(2) @binding(0) var<uniform> material: Material;
 @group(2) @binding(1) var baseColorTex: texture_2d<f32>;
@@ -225,6 +225,8 @@ fn blackbody(T: f32) -> vec3f {
   if (shading == MATERIAL_STANDARD) {
     let Ta = normalize(T - n * dot(T, n));
     o.extra = gbufferExtra(n, Ta, material.params.w * coat, material.emissive.a * coat, material.misc.x);
+  } else if (shading == MATERIAL_TERRAIN || shading == MATERIAL_REGOLITH) {
+    o.extra.a = encodeShadowSoftness(material.misc.y);
   }
   return o;
 }
@@ -551,7 +553,7 @@ export function createMeshSystem(args: {
         u.set([def.roughness, MATERIAL_ID[def.shading], param, def.anisotropy ?? 0], 4);
         const e = def.emissive ?? [0, 0, 0];
         u.set([e[0], e[1], e[2], def.clearcoat ?? 0], 8);
-        u.set([def.clearcoatRoughness ?? 0.1, 0, def.uvScale?.[0] ?? 1, def.uvScale?.[1] ?? 1], 12);
+        u.set([def.clearcoatRoughness ?? 0.1, def.shadowSoftness ?? 0, def.uvScale?.[0] ?? 1, def.uvScale?.[1] ?? 1], 12);
         const buffer = device.createBuffer({ label: `mesh.material.${def.name}`, size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         device.queue.writeBuffer(buffer, 0, u);
         const t = def.textures ?? {};

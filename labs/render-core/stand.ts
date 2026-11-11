@@ -21,6 +21,8 @@ export interface StandOptions {
   denseOnly?: boolean;
   /** Size of the slab, m. */
   slabSize?: number;
+  /** PbrMaterialDef.shadowSoftness of the slab (m; request terrain-render-4). Default: none. */
+  slabShadowSoftness?: number;
   id?: string;
 }
 
@@ -108,7 +110,7 @@ export function createStandFeature(options: StandOptions): StandFeature {
       const size = options.slabSize ?? 80;
 
       // Ground slab: terrain shading (Lambert + low GGX), top face at z = 0.
-      placed.push({ model: model('slab', boxMesh(size, size, 1), { name: 'slab', shading: 'terrain', baseColor: [0.32, 0.31, 0.3], roughness: 0.9, metallic: 0 }), pos: [0, 0, -0.5], rot: null });
+      placed.push({ model: model('slab', boxMesh(size, size, 1), { name: 'slab', shading: 'terrain', baseColor: [0.32, 0.31, 0.3], roughness: 0.9, metallic: 0, ...(options.slabShadowSoftness ? { shadowSoftness: options.slabShadowSoftness } : {}) }), pos: [0, 0, -0.5], rot: null });
       if (options.denseOnly) {
         addDense(Math.max(options.heavyTriangles ?? 0, 1));
         return;
