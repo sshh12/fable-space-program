@@ -96,9 +96,9 @@ interface CockpitLabApi {
   paintedText(): (PaintRecord | null)[];
   /**
    * The GPU occlusion bake against the CPU reference (occlusionAt) at `count` full-detail vertices spread
-   * over the mesh: per channel (ao, flood, windows, displays) the mean and largest absolute difference.
+   * over the mesh: per channel (ao, all floods, each window, each display, each flood) the mean and largest absolute difference.
    */
-  occlusionCheck(count: number): Promise<{ vertices: number; mean: number; max: number; meanAo: number }>;
+  occlusionCheck(count: number): Promise<{ vertices: number; values: number; mean: number; p995: number; max: number; flips: number; meanAo: number }>;
   /** GPU ballast iterations per pixel (0 = off). */
   setBallast(iterations: number): void;
   debug(): { navballDefault: boolean; mfdDefault: boolean; exposure: ReturnType<typeof window.__lab extends undefined ? never : NonNullable<typeof window.__lab>['renderer']['exposureInfo']> };
@@ -421,21 +421,30 @@ async function boot(): Promise<void> {
       let max = 0;
       let n = 0;
       let aoSum = 0;
+      const diffs: number[] = [];
       for (let k = 0; k < count; k++) {
         const i = lod0.start + Math.floor(((k + 0.5) / count) * lod0.count);
         const { p, n: nrm } = bakeVertex(model, i);
         const cpu = occlusionAt(model, model.bvh, sources, p, nrm, i);
-        const gpu = unpackOcclusion(words, i, model.windows.length, model.displays.length);
-        const pairs: [number, number][] = [[cpu.ao, gpu.ao], [cpu.flood, gpu.flood], ...cpu.windows.map((x, j): [number, number] => [x, gpu.windows[j]!]), ...cpu.displays.map((x, j): [number, number] => [x, gpu.displays[j]!])];
+        const gpu = unpackOcclusion(words, i, model.windows.length, model.displays.length, model.floods.length);
+        const pairs: [number, number][] = [
+          [cpu.ao, gpu.ao],
+          [cpu.flood, gpu.flood],
+          ...cpu.windows.map((x, j): [number, number] => [x, gpu.windows[j]!]),
+          ...cpu.displays.map((x, j): [number, number] => [x, gpu.displays[j]!]),
+          ...cpu.floods.map((x, j): [number, number] => [x, gpu.floods[j]!]),
+        ];
         for (const [a, b] of pairs) {
           const d = Math.abs(a - b);
+          diffs.push(d);
           sum += d;
           max = Math.max(max, d);
           n++;
         }
         aoSum += gpu.ao;
       }
-      return { vertices: count, mean: sum / n, max, meanAo: aoSum / count };
+      diffs.sort((x, y) => x - y);
+      return { vertices: count, values: n, mean: sum / n, p995: diffs[Math.min(diffs.length - 1, Math.floor(diffs.length * 0.995))] ?? 0, max, flips: diffs.filter((d) => d > 0.5).length, meanAo: aoSum / count };
     },
     setBallast(n) {
       ballast.iterations = n;

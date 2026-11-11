@@ -12,6 +12,7 @@ import { DEG, v3, type Vec3 } from '@/core/math';
 import type { SeatLayoutDef } from '../layout';
 import { frameAt, local, type Attr, type Frame } from '../mesh';
 import { FLAG_OVERLAY, seatFrames, seatPoint, type CabinContext, type SeatFrame } from './context';
+import { upholsteryHeight } from './quilt';
 
 /** Frame at p whose normal faces the occupant (+L); x = -R so that (x, y = U, n = L) is right-handed. */
 export const faceL = (p: Vec3, s: SeatFrame): Frame => frameAt(p, v3.neg(s.R), s.U);
@@ -47,20 +48,66 @@ export function couchPoints(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef)
 
 /**
  * Upholstered pad over a rectangle of a frame (half sizes hx, hy, thickness `thick` along f.n): a squircle
- * outline, a crowned (or dished) top panel, the cover rolling over a foam edge into a vertical side panel,
- * and a piping cord sewn into the seam between them. One closed surface: s runs around the outline, t from
- * the top's centre over the roll and down the side.
+ * top panel, crowned or dished, the cover rolling over a foam edge into a vertical side panel, and a piping
+ * cord sewn into the seam between them. One sheet, meshed on a regular grid of its UNFOLDED cover: the
+ * surface coordinates are metric and planar on the top panel and run on by arc length over the roll and
+ * down the side, so the fabric's weave has one thread pitch everywhere and follows the panel's cut.
+ * `sewn`: the cover is stitched down across the pad every UPHOLSTERY.pitch (channels); the mesh carries the
+ * channels' relief and the shader shades it per pixel (cabin/quilt.ts).
  */
-function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number } = {}): void {
+function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number; sewn?: boolean } = {}): void {
   const full = ctx.detail === 0;
   const dish = opts.dish ?? 0;
   const roll = Math.min(thick * 0.6, hx * 0.4, hy * 0.4);
   const ax = hx - roll;
   const ay = hy - roll;
   const p = 5;
-  // Squircle outline of the top panel and its outward normal in the frame's plane.
-  const outline = (s: number): [number, number, number, number] => {
-    const a = s * 2 * Math.PI;
+  const arc = (Math.PI / 2) * roll;
+  const side = Math.max(0, thick - roll);
+  const reach = arc + side;
+  /** Point of the pad for unfolded cover coordinates (x, y), and the same without the channels' relief. */
+  const at = (x: number, y: number): { p: Vec3; base: Vec3; uv: [number, number] } => {
+    const rho = (Math.abs(x / ax) ** p + Math.abs(y / ay) ** p) ** (1 / p);
+    if (rho <= 1) {
+      const crown = 1 - dish * 0.5 * (1 - rho * rho);
+      // Channels fade out toward the edge of the top panel, where the cover is pulled over the roll.
+      const relief = opts.sewn ? upholsteryHeight(y) * Math.min(1, (1 - rho) * Math.min(ax, ay) / 0.025) : 0;
+      return { p: local(f, x, y, thick * crown + relief), base: local(f, x, y, thick * crown), uv: [x, y] };
+    }
+    // Beyond the top panel: its edge point along the ray from the centre, the outline's normal there, and
+    // how far the cover has run past the edge.
+    const ex = x / rho;
+    const ey = y / rho;
+    const gx = (Math.sign(ex) * Math.abs(ex / ax) ** (p - 1)) / ax;
+    const gy = (Math.sign(ey) * Math.abs(ey / ay) ** (p - 1)) / ay;
+    const gl = Math.hypot(gx, gy) || 1;
+    const nx = gx / gl;
+    const ny = gy / gl;
+    const d = Math.min(reach, Math.hypot(x - ex, y - ey));
+    let q: Vec3;
+    if (d <= arc) {
+      const phi = d / roll;
+      q = local(f, ex + nx * roll * Math.sin(phi), ey + ny * roll * Math.sin(phi), thick - roll + roll * Math.cos(phi));
+    } else q = local(f, ex + nx * roll, ey + ny * roll, Math.max(0, side - (d - arc)));
+    return { p: q, base: q, uv: [x, y] };
+  };
+  // Grid over the unfolded cover: the top panel plus the roll and the side all round.
+  const step = full ? 0.018 : 0.07;
+  const lines = (half: number): number[] => {
+    const n = Math.max(2, Math.round((2 * half) / step));
+    const out = full ? [-half - reach, -half - arc * 0.9, -half - arc * 0.45] : [-half - reach];
+    for (let i = 0; i <= n; i++) out.push(-half + (2 * half * i) / n);
+    out.push(...(full ? [half + arc * 0.45, half + arc * 0.9, half + reach] : [half + reach]));
+    return out;
+  };
+  const X = lines(ax);
+  const Y = lines(ay);
+  ctx.b.surface(X.length - 1, Y.length - 1, (i, j) => at(X[i]!, Y[j]!), attr);
+  if (!full) return;
+  // Piping cord in the seam between the top panel and the side panel.
+  const path: Vec3[] = [];
+  for (let i = 0; i <= 48; i++) {
+    const a = (i / 48) * 2 * Math.PI;
     const c = Math.cos(a);
     const sn = Math.sin(a);
     const x = ax * Math.sign(c) * Math.abs(c) ** (2 / p);
@@ -68,48 +115,9 @@ function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: num
     const gx = (Math.sign(x) * Math.abs(x / ax) ** (p - 1)) / ax;
     const gy = (Math.sign(y) * Math.abs(y / ay) ** (p - 1)) / ay;
     const gl = Math.hypot(gx, gy) || 1;
-    return [x, y, gx / gl, gy / gl];
-  };
-  const tTop = 0.55;
-  const tRoll = 0.88;
-  const at = (s: number, t: number): Vec3 => {
-    const [x, y, nx, ny] = outline(s);
-    if (t <= tTop) {
-      const rho = t / tTop;
-      const px = x * rho;
-      const py = y * rho;
-      const crown = 1 - dish * 0.5 * (1 - rho * rho);
-      return local(f, px, py, thick * crown);
-    }
-    if (t <= tRoll) {
-      const phi = ((t - tTop) / (tRoll - tTop)) * (Math.PI / 2);
-      return local(f, x + nx * roll * Math.sin(phi), y + ny * roll * Math.sin(phi), thick - roll + roll * Math.cos(phi));
-    }
-    const k = (t - tRoll) / (1 - tRoll);
-    return local(f, x + nx * roll, y + ny * roll, (thick - roll) * (1 - k));
-  };
-  const ns = full ? 72 : 16;
-  const nt = full ? 22 : 7;
-  // Normals by central differences (away from the top's centre, where the outline collapses).
-  const normalAt = (s: number, t: number): Vec3 => {
-    const h = 1e-3;
-    const tt = Math.max(t, 0.03);
-    const ds = v3.sub(at(s + h, tt), at(s - h, tt));
-    const dt = v3.sub(at(s, Math.min(1, tt + h)), at(s, Math.max(0, tt - h)));
-    return v3.normalize(v3.cross(dt, ds));
-  };
-  ctx.b.patch(at, ns, nt, attr, {
-    normalAt,
-    aoAt: (_s, t) => (t > tRoll ? 0.75 : 1),
-  });
-  if (!full) return;
-  // Piping cord in the seam between the top panel and the side panel.
-  const path: Vec3[] = [];
-  for (let i = 0; i <= 64; i++) {
-    const [x, y, nx, ny] = outline(i / 64);
-    path.push(local(f, x + nx * roll * 0.72, y + ny * roll * 0.72, thick - roll + roll * 0.7));
+    path.push(local(f, x + (gx / gl) * roll * 0.72, y + (gy / gl) * roll * 0.72, thick - roll + roll * 0.7));
   }
-  ctx.b.tube(path, Math.min(0.0028, roll * 0.25), 6, attr);
+  ctx.b.tube(path, Math.min(0.0028, roll * 0.25), 6, ctx.m('cushion'));
 }
 
 /** Rigid pan under a cushion: a thin chamfered plate. */
@@ -127,12 +135,13 @@ export function buildCouches(ctx: CabinContext): void {
     const pts = couchPoints(ctx, s, cfg);
     const hw = cfg.halfWidth;
     const cush = ctx.m('cushion');
+    const sewn = ctx.m('cushionSewn');
     const backPlane = -c.backOffset;
     // ---- headrest (centre and two wings)
     const hr = c.headrest;
     const headF = faceL(seatPoint(s, 0, 0.06, backPlane - 0.012), s);
     if (d < 2) cushion(ctx, headF, hr.width / 2, hr.height / 2, hr.depth, cush, { dish: 0.4 });
-    pan(ctx, { ...headF, o: local(headF, 0, 0, -0.002) }, hr.width / 2 + 0.008, hr.height / 2 + 0.008, c.pan);
+    pan(ctx, { ...headF, o: local(headF, 0, 0, -0.002) }, hr.width / 2 + 0.005, hr.height / 2 + 0.005, c.pan);
     if (d === 0) {
       for (const side of [-1, 1]) {
         const wing = rotateAboutY(faceL(seatPoint(s, side * (hr.width / 2 + 0.03), 0.06, backPlane + 0.01), s), -side * 35 * DEG);
@@ -144,8 +153,8 @@ export function buildCouches(ctx: CabinContext): void {
     const backBot = c.hipU + 0.03;
     const backF = faceL(seatPoint(s, 0, (backTop + backBot) / 2, backPlane - 0.008), s);
     const backHy = (backTop - backBot) / 2;
-    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, cush, { dish: 0.25 });
-    pan(ctx, { ...backF, o: local(backF, 0, 0, -0.002) }, hw + 0.008, backHy + 0.02, c.pan);
+    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, sewn, { dish: 0.25, sewn: true });
+    pan(ctx, { ...backF, o: local(backF, 0, 0, -0.002) }, hw + 0.006, backHy + 0.006, c.pan);
     if (d === 0) {
       for (const side of [-1, 1]) cushion(ctx, faceL(local(backF, side * (hw - 0.02), 0, 0.004), s), 0.03, backHy - 0.02, c.cushion + 0.025, cush);
     }
@@ -162,13 +171,13 @@ export function buildCouches(ctx: CabinContext): void {
     const thighFs: Frame = { o: v3.addScaled(tMid, thighNn, -0.012), x: v3.cross(thighY, thighNn), y: thighY, n: thighNn };
     const tl = v3.dist(pts.hip, pts.knee) / 2;
     const legHw = cfg.legHalfWidth;
-    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.02, c.cushion * 0.8, cush);
-    pan(ctx, { ...thighFs, o: local(thighFs, 0, 0, -0.002) }, legHw + 0.008, tl, c.pan);
+    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.03, c.cushion * 0.8, sewn, { sewn: true });
+    pan(ctx, { ...thighFs, o: local(thighFs, 0, 0, -0.002) }, legHw + 0.005, tl - 0.025, c.pan);
     const sMid = v3.lerp(pts.knee, pts.foot, 0.5);
     const shinF: Frame = { o: v3.addScaled(sMid, pts.shinN, -0.012), x: s.R, y: pts.shin, n: pts.shinN };
     const sl = cfg.shinLength / 2;
-    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.02, c.cushion * 0.7, cush);
-    pan(ctx, { ...shinF, o: local(shinF, 0, 0, -0.002) }, legHw, sl, c.pan);
+    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.03, c.cushion * 0.7, sewn, { sewn: true });
+    pan(ctx, { ...shinF, o: local(shinF, 0, 0, -0.002) }, legHw - 0.005, sl - 0.025, c.pan);
     if (d === 0) {
       // Heel cups and toe strap at the foot end.
       for (const side of [-1, 1]) {
@@ -191,6 +200,12 @@ export function buildCouches(ctx: CabinContext): void {
           rail,
           { caps: true },
         );
+      }
+    }
+    if (d < 2) {
+      for (const [at, n, half] of [[pts.hip, pts.thighN, legHw], [pts.knee, pts.thighN, legHw], [pts.foot, pts.shinN, legHw - 0.01]] as [Vec3, Vec3, number][]) {
+        const c0 = v3.addScaled(v3.addScaled(at, n, -0.03), s.R, -(half + 0.02));
+        b.cylinder(c0, s.R, 0.011, 2 * (half + 0.02), d === 0 ? 10 : 6, rail, { caps: 'none' });
       }
     }
     const headCross = [seatPoint(s, -(hw + 0.02), 0.1, backPlane - 0.045), seatPoint(s, hw + 0.02, 0.1, backPlane - 0.045)];
@@ -287,9 +302,9 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   }
   strap([v3.addScaled(pts.hip, pts.thighN, c.cushion * 0.9), local(backF, 0, -backHy + 0.05, lift + 0.002)], 0.04);
   const bf = faceL(buckle, s);
-  b.cylinder(buckle, backF.n, 0.035, 0.012, 24, ctx.m('steel'));
-  b.cylinder(v3.addScaled(buckle, backF.n, 0.012), backF.n, 0.024, 0.006, 20, ctx.m('anodized'));
-  b.box({ ...bf, o: local(bf, 0, 0, 0.02) }, 0.016, 0.004, 0.003, 0.001, ctx.m('warning'));
+  b.lathe(buckle, backF.n, [[0.03, 0], [0.03, 0.007], [0.027, 0.01], [0.019, 0.0105]], 28, ctx.m('steel'));
+  b.lathe(v3.addScaled(buckle, backF.n, 0.0105), backF.n, [[0.019, 0], [0.019, 0.006], [0.016, 0.008], [0, 0.0082]], 24, ctx.m('knob'));
+  b.box({ ...bf, o: local(bf, 0, 0, 0.0195) }, 0.011, 0.0022, 0.0012, 0.0005, ctx.m('warning'));
   // Adjusters on the shoulder straps.
   for (const side of [-1, 1]) b.box(faceL(local(backF, side * 0.08, -backHy * 0.1, lift + 0.004), s), 0.026, 0.012, 0.004, 0.002, ctx.m('steel'));
 }

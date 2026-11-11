@@ -150,7 +150,7 @@ function loopArea(pts: Vec3[]): number {
 
 export function buildWindows(ctx: CabinContext): void {
   const w = ctx.layout.windows;
-  const count = ctx.detail === 0 ? 64 : 24;
+  const count = ctx.detail === 0 ? 128 : 32;
   for (const o of openingsOf(ctx.mould).filter((x) => x.kind === 'window')) {
     const g = geomOf(ctx, o);
     const base = o.outline(count);
@@ -205,7 +205,7 @@ export function buildHatch(ctx: CabinContext): void {
   const hatch = openings.find((x) => x.kind === 'hatch')!;
   const win = openings.find((x) => x.kind === 'hatchWindow')!;
   const g = geomOf(ctx, hatch);
-  const count = ctx.detail === 0 ? 72 : 28;
+  const count = ctx.detail === 0 ? 128 : 32;
   const base = hatch.outline(count);
   const b = ctx.b;
   const T = h.thickness;
@@ -215,8 +215,9 @@ export function buildHatch(ctx: CabinContext): void {
   const ringSeal = loop3(g, offsetLoop(base, 0.014), 0.004);
   ringBetween(ctx, ring0, ringSeal, seal, () => g.inward, tangentOf(ring0));
   const land = loop3(g, offsetLoop(base, 0.05), 0.006);
-  ringBetween(ctx, ringSeal, land, ctx.m('aluminium'), () => g.inward, tangentOf(ringSeal));
-  ringBetween(ctx, land, loop3(g, offsetLoop(base, 0.056), 0), ctx.m('aluminium', { ao: 0.8 }), (i) => v3.normalize(v3.reject(v3.sub(land[i]!, g.frame.centreInner), g.inward)), tangentOf(land));
+  // The seal land: a machined, painted flange (a satin surface: it must not read as a slit of light).
+  ringBetween(ctx, ringSeal, land, ctx.m('hatch'), () => g.inward, tangentOf(ringSeal));
+  ringBetween(ctx, land, loop3(g, offsetLoop(base, 0.056), 0), ctx.m('hatch', { ao: 0.8 }), (i) => v3.normalize(v3.reject(v3.sub(land[i]!, g.frame.centreInner), g.inward)), tangentOf(land));
 
   // ---- door: edge wall from the opening outline (inset by the seal gap) to a planar inner face at depth T
   const doorLoop = offsetLoop(base, -0.004);
@@ -225,6 +226,12 @@ export function buildHatch(ctx: CabinContext): void {
   const toC = (pts: Vec3[]) => (i: number): Vec3 => v3.normalize(v3.reject(v3.sub(pts[i]!, g.frame.centreInner), g.inward));
   const doorMat = ctx.m('hatch');
   ringBetween(ctx, edge0, edge1, doorMat, toC(edge0), tangentOf(edge0));
+  // The door's seal: a rubber bulb between its edge and the frame's land. Nothing of the outside shows
+  // around the door, and the closed shell the sun cascades see has no slit.
+  const bulbTop = loop3(g, offsetLoop(base, -0.002), 0.0055);
+  const bulb = ctx.m('seal', { ao: 0.7 });
+  ringBetween(ctx, edge0.map((p) => v3.addScaled(p, g.inward, 0.002)), bulbTop, bulb, (i) => v3.normalize(v3.add(g.inward, toC(edge0)(i))), tangentOf(edge0));
+  ringBetween(ctx, bulbTop, loop3(g, offsetLoop(base, 0.003), 0.003), bulb, (i) => v3.normalize(v3.add(g.inward, toC(edge0)(i))), tangentOf(edge0));
   const rimOuter = loop3(g, offsetLoop(doorLoop, -0.006), planarDepths(g, offsetLoop(doorLoop, -0.006), T));
   ringBetween(ctx, edge1, rimOuter, doorMat, (i) => v3.normalize(v3.add(toC(edge1)(i), g.inward)), tangentOf(edge1));
   const face = g.plane(T);
@@ -274,30 +281,91 @@ export function buildHatch(ctx: CabinContext): void {
     }
   }
   if (ctx.detail > 0) return;
-  // Gearbox below the window (toward the floor), handle on its shaft.
+  // Gearbox below the window (toward the floor): a ribbed housing with a cover plate, and the pump handle
+  // on its shaft: a forged arm with a hub, cranked away from the door, and a grip.
   const side = h.handleSide;
   const gbF = offsetFrame(face, 0, -hh * 0.62, 0.02);
   b.box(gbF, 0.085, 0.05, 0.022, 0.006, ctx.m('anodized'));
+  b.box(offsetFrame(gbF, 0, 0, 0.0235), 0.07, 0.036, 0.0015, 0.001, ctx.m('hatch'));
+  for (const [x, y] of [[-0.06, -0.028], [0.06, -0.028], [-0.06, 0.028], [0.06, 0.028]] as [number, number][]) b.cylinder(local(gbF, x, y, 0.025), face.n, 0.004, 0.003, 6, ctx.m('steel'), { caps: 'top' });
   const shaft = local(gbF, 0, 0, 0.022);
-  b.cylinder(shaft, face.n, 0.022, 0.012, 20, ctx.m('steel'));
-  const handleEnd = local(gbF, side * 0.2, 0.05, 0.034);
-  b.tube([local(gbF, 0, 0, 0.03), v3.lerp(local(gbF, 0, 0, 0.03), handleEnd, 0.5), handleEnd], 0.011, 10, ctx.m('caution'), { caps: true });
-  b.cylinder(v3.addScaled(handleEnd, face.n, -0.005), face.n, 0.016, 0.1, 14, ctx.m('rubber'), { caps: 'both' });
+  b.cylinder(shaft, face.n, 0.024, 0.014, 24, ctx.m('steel'), { caps: 'top' });
+  b.lathe(local(gbF, 0, 0, 0.036), face.n, [[0.019, 0], [0.019, 0.01], [0.015, 0.014], [0, 0.0145]], 20, ctx.m('caution', { flags: FLAG_EDGE }));
+  const armDir = v3.normalize(localDirOf(gbF, side * 0.2, 0.05));
+  const armF = frameAt(local(gbF, 0, 0, 0.041), armDir, v3.cross(face.n, armDir));
+  const armLen = Math.hypot(0.2, 0.05);
+  b.box(offsetFrame(armF, armLen * 0.5, 0, 0), armLen * 0.5, 0.011, 0.0045, 0.002, ctx.m('caution'));
+  const handleEnd = local(armF, armLen, 0, 0);
+  b.cylinder(v3.addScaled(handleEnd, face.n, -0.004), face.n, 0.009, 0.022, 12, ctx.m('steel'), { caps: 'both' });
+  b.lathe(v3.addScaled(handleEnd, face.n, 0.016), face.n, [[0.0, 0], [0.014, 0.002], [0.0165, 0.012], [0.0165, 0.078], [0.019, 0.084], [0.019, 0.09], [0.012, 0.096], [0, 0.097]], 16, ctx.m('rubber'));
   ctx.labelQuad(gbF, 0, -0.068, 0.15, 0.014, 'HATCH  ◄ OPEN   CLOSE ►', 'hatch', { color: 1 });
   ctx.labelQuad(offsetFrame(face, 0, hh * 0.85, 0), 0, 0, 0.26, 0.016, 'SIDE HATCH  ·  EQUALIZE BEFORE OPENING', 'hatch', { color: 1, style: { box: true } });
-  // Latches around the edge and rods to the gearbox.
+  // The latch drive: one rod running round the door inside the rim (in the pocket, clear of the window),
+  // carried in guide blocks; the gearbox turns it through a crank link. Every latch sits on the rim over
+  // the rod: a housing with a bellcrank link down to the rod and a hook that reaches over the door's edge
+  // onto a striker post standing on the frame.
   const latches = h.latches;
   const steel = ctx.m('steel');
+  const rodLoop = offsetLoop(doorLoop, -(rimW + 0.022));
+  const rodH = T - pocket + 0.012;
+  const rodPts = rodLoop.map(([u, v]) => local(g.plane(rodH), u, v));
+  b.tube([...rodPts, rodPts[0]!, rodPts[1]!], 0.0042, 8, steel);
+  const guides = Math.max(8, Math.round(rodLoop.length / 9));
+  for (let i = 0; i < guides; i++) {
+    const k = Math.round(((i + 0.5) / guides) * rodLoop.length) % rodLoop.length;
+    const [u, v] = rodLoop[k]!;
+    const [u1, v1] = rodLoop[(k + 1) % rodLoop.length]!;
+    const gf = frameAt(local(g.plane(T - pocket), u, v, 0.008), v3.normalize(localDirOf(face, u1 - u, v1 - v)), v3.normalize(localDirOf(face, -(v1 - v), u1 - u)));
+    b.box(gf, 0.009, 0.011, 0.008, 0.002, ctx.m('anodized'));
+  }
+  // Crank link from the gearbox to the rod.
+  {
+    const from = local(gbF, -side * 0.06, -0.03, 0.0);
+    const [u, v] = rodLoop.reduce((best, p) => (Math.hypot(p[0] - -side * 0.06, p[1] - (-hh * 0.62 - 0.07)) < Math.hypot(best[0] - -side * 0.06, best[1] - (-hh * 0.62 - 0.07)) ? p : best));
+    b.tube([from, local(g.plane(rodH), u, v)], 0.005, 8, steel, { caps: true });
+  }
+  const rimLoop = offsetLoop(doorLoop, -0.026);
+  const outerLoop = offsetLoop(base, 0.03);
   for (let i = 0; i < latches; i++) {
-    const k = Math.round((i / latches) * doorLoop.length) % doorLoop.length;
-    const [u, v] = offsetLoop(doorLoop, -0.03)[k]!;
-    const lf = frameAt(local(face, u, v, 0.008), v3.normalize(localDirOf(face, u, v)), v3.normalize(localDirOf(face, -v, u)));
-    b.box(lf, 0.016, 0.012, 0.008, 0.002, ctx.m('anodized'));
-    if (Math.abs(v) < hh * 0.9 || Math.abs(u) < hw * 0.9) {
-      const from = local(gbF, 0, 0, 0.012);
-      const to = local(face, u * 0.92, v * 0.92, 0.012);
-      b.tube([from, v3.lerp(from, to, 0.5), to], 0.0035, 6, steel);
+    const k = Math.round(((i + 0.5) / latches) * doorLoop.length) % doorLoop.length;
+    const [u, v] = rimLoop[k]!;
+    const [un, vn] = doorLoop[k]!;
+    // Outward across the rim (from the door's centre line toward its edge) and along the edge.
+    const outDir = v3.normalize(localDirOf(face, un - u, vn - v));
+    const alongDir = v3.cross(face.n, outDir);
+    const lf = frameAt(local(face, u, v, 0.009), outDir, alongDir);
+    b.box(lf, 0.019, 0.015, 0.009, 0.002, ctx.m('anodized'));
+    b.cylinder(local(lf, -0.006, 0, 0.009), face.n, 0.0055, 0.004, 10, steel, { caps: 'top' });
+    // Hook: an arm over the door's edge, its tip turned down onto the striker. (The door is a flat plug in a
+    // conical wall: at its sides the rim lies almost flush with the frame, at the top and the bottom it
+    // stands several centimetres proud; the hook's drop and the striker's height follow.)
+    const tip = local(lf, 0.058, 0, 0.004);
+    const [uo, vo] = outerLoop[k]!;
+    let under = g.at(uo, vo, 0);
+    for (let s = 0; s <= 2.5; s += 0.05) {
+      const p = g.at(un + (uo - un) * s, vn + (vo - vn) * s, 0);
+      if (Math.abs(v3.dot(v3.sub(p, tip), outDir)) < Math.abs(v3.dot(v3.sub(under, tip), outDir))) under = p;
     }
+    const room = v3.dot(v3.sub(tip, under), g.inward);
+    const drop = Math.max(0.003, Math.min(0.022, room - 0.012));
+    b.box(offsetFrame(lf, 0.036, 0, 0.004), 0.024, 0.006, 0.004, 0.0015, steel);
+    b.box(frameAt(v3.addScaled(tip, face.n, -drop / 2), outDir, alongDir), 0.004, 0.006, drop / 2, 0.0015, steel);
+    // Striker post on the frame's land, with its roller.
+    const top = v3.addScaled(tip, face.n, -drop - 0.002);
+    // The post's foot: the point of the frame (10 mm off the wall, following its curve) under the hook's tip.
+    let post = g.at(uo, vo, 0.01);
+    for (let s = 0; s <= 2.5; s += 0.05) {
+      const p = g.at(un + (uo - un) * s, vn + (vo - vn) * s, 0.01);
+      if (Math.abs(v3.dot(v3.sub(p, top), outDir)) < Math.abs(v3.dot(v3.sub(post, top), outDir))) post = p;
+    }
+    const ph = v3.dot(v3.sub(top, post), g.inward);
+    if (ph > 0.01) {
+      b.box(frameAt(v3.addScaled(post, g.inward, ph / 2), outDir, alongDir), 0.008, 0.011, ph / 2, 0.002, ctx.m('hatch'));
+      b.cylinder(v3.addScaled(v3.addScaled(post, g.inward, ph + 0.004), alongDir, -0.012), alongDir, 0.005, 0.024, 10, steel, { caps: 'both' });
+    }
+    // Bellcrank link from the housing down to the drive rod.
+    const [ur, vr] = rodLoop[k]!;
+    b.tube([local(lf, -0.016, 0, 0.004), local(g.plane(rodH), ur, vr)], 0.003, 6, steel);
   }
   // Hinges on the +u side.
   for (const v of [-hh * 0.6, hh * 0.6]) {
@@ -306,8 +374,12 @@ export function buildHatch(ctx: CabinContext): void {
   }
   // Pressure-equalisation valve.
   const pev = offsetFrame(face, -side * hw * 0.7, hh * 0.55, 0);
-  b.cylinder(local(pev, 0, 0, 0), face.n, 0.025, 0.018, 18, ctx.m('anodized'));
-  b.box(offsetFrame(pev, 0, 0, 0.024), 0.035, 0.007, 0.006, 0.002, ctx.m('warning'));
+  // A flanged valve body with a T handle on a stem.
+  b.lathe(pev.o, face.n, [[0.03, 0], [0.03, 0.004], [0.024, 0.006], [0.024, 0.017], [0.02, 0.02], [0.009, 0.02]], 24, ctx.m('anodized', { flags: FLAG_EDGE }));
+  for (let k = 0; k < 6; k++) b.cylinder(local(pev, Math.cos((k * Math.PI) / 3) * 0.027, Math.sin((k * Math.PI) / 3) * 0.027, 0.004), face.n, 0.0024, 0.002, 6, steel, { caps: 'top' });
+  b.cylinder(local(pev, 0, 0, 0.02), face.n, 0.006, 0.014, 12, steel);
+  b.cylinder(local(pev, -0.034, 0, 0.034), pev.x, 0.0065, 0.068, 12, ctx.m('warning'), { caps: 'both' });
+  b.lathe(local(pev, 0, 0, 0.027), face.n, [[0.0, 0], [0.011, 0.001], [0.011, 0.013], [0.0, 0.014]], 14, ctx.m('warning'));
   ctx.labelQuad(pev, 0, -0.04, 0.06, 0.01, 'PEV', 'hatch', { color: 1 });
   // Counterbalance strut from the frame to the door.
   const s0 = g.at(-side * (hatch.width / 2 + 0.06), -hatch.height * 0.3, 0.015);

@@ -11,7 +11,7 @@ import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DefError } from '@/core/defs/loader';
 import { quat, v3 } from '@/core/math';
 import { createCockpitControls } from '@/render/cockpit/controls';
-import { bindingState, controlStates, digitMask, instrumentSource, readoutText, updateMemory, type InstrumentMemory, type InstrumentSource } from '@/render/cockpit/instruments';
+import { bindingState, controlStates, digitMask, instrumentSource, RATE_FULL_SCALE, readoutText, updateMemory, type InstrumentMemory, type InstrumentSource } from '@/render/cockpit/instruments';
 import { validateLayout, type AlarmsDef, type CockpitLayoutDef, type ReadoutDef } from '@/render/cockpit/layout';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { buildMfdPage, describeFlight, describeOrbit, formatMet, landingTargetRows, describeLandingTarget, MFD_PAGES } from '@/ui';
@@ -183,6 +183,35 @@ describe('seven-segment readouts', () => {
   });
 });
 
+describe('attitude indicator rate needles', () => {
+  it('slides each needle along its scale with the body rate about its axis and stops at full scale', async () => {
+    const model = await testModel();
+    const needles = model.controls.filter((c) => c.kind === 'needle');
+    expect(needles.map((c) => c.key).sort()).toEqual(['fdai:pitch', 'fdai:roll', 'fdai:yaw']);
+    const s0 = snapshot('lowOrbit', 4);
+    const withRate = (w: { x: number; y: number; z: number }): InstrumentSource => {
+      const s = { ...s0, vessels: s0.vessels.map((v) => (v.id === s0.activeVesselId ? { ...v, w } : v)) };
+      return instrumentSource(s, s.vessels.find((v) => v.id === s.activeVesselId)!);
+    };
+    const run = (w: { x: number; y: number; z: number }) => {
+      const st = controlStates(model.controls, withRate(w), defs, model.layout.alarms, 0, { lastStageUt: null }, () => ({ R: v3.unitX(), U: v3.unitY(), L: v3.unitZ() }), () => [0, 0, 0]);
+      return Object.fromEntries(needles.map((c) => [c.key, v3.dot(st[c.index - 1]!.offset, c.axis)]));
+    };
+    const rest = run(v3.zero());
+    for (const k of Object.keys(rest)) expect(rest[k]).toBeCloseTo(0, 9);
+    // Half scale about the roll axis (VES +Y) moves the roll needle alone, by half its travel.
+    const half = run({ x: 0, y: RATE_FULL_SCALE / 2, z: 0 });
+    const travel = needles.find((c) => c.key === 'fdai:roll')!.travel!;
+    expect(half['fdai:roll']).toBeCloseTo(travel / 2, 9);
+    expect(half['fdai:pitch']).toBeCloseTo(0, 9);
+    expect(half['fdai:yaw']).toBeCloseTo(0, 9);
+    // Beyond full scale the needle rests on its stop.
+    const fast = run({ x: -10 * RATE_FULL_SCALE, y: 0, z: 3 * RATE_FULL_SCALE });
+    expect(fast['fdai:pitch']).toBeCloseTo(-travel, 9);
+    expect(fast['fdai:yaw']).toBeCloseTo(travel, 9);
+  });
+});
+
 describe('MFD content and the HUD', () => {
   it('shows the HUD strings on the flight, orbit and landing pages (one formatter)', () => {
     for (const [scene, fired] of [['ascent', 1], ['lowOrbit', 4], ['lunarSurface', 6]] as const) {
@@ -198,8 +227,15 @@ describe('MFD content and the HUD', () => {
       expect(rows['G load']).toBe(f.gLoad);
       const o = describeOrbit(s);
       const orbit = Object.fromEntries(buildMfdPage('orbit', s, defs).rows.map((r) => [r.label, r.value]));
-      expect(orbit.Apoapsis).toBe(o.apoapsis);
-      expect(orbit.Periapsis).toBe(o.periapsis);
+      // In flight the page shows the formatter's strings; standing on the ground it shows a dash instead of
+      // an orbit (flight-ui, visual round 1).
+      if (scene === 'lunarSurface') {
+        expect(['—', o.apoapsis]).toContain(orbit.Apoapsis);
+        expect(['—', o.periapsis]).toContain(orbit.Periapsis);
+      } else {
+        expect(orbit.Apoapsis).toBe(o.apoapsis);
+        expect(orbit.Periapsis).toBe(o.periapsis);
+      }
       const lt = describeLandingTarget(s);
       const landing = buildMfdPage('landing', s, defs);
       if (lt) expect(landing.section!.rows.map((r) => [r.label, r.value])).toEqual(landingTargetRows(lt));

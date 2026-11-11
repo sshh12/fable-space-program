@@ -56,13 +56,21 @@ export function paintLabelAtlas(labels: readonly LabelAlloc[]): OffscreenCanvas 
       ctx.restore();
       continue;
     }
+    if (l.text === '#LINE') {
+      // A solid rule (group lines of the panel nomenclature).
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x, y, w, h);
+      ctx.restore();
+      continue;
+    }
     ctx.fillStyle = '#fff';
     const lines = l.text.split('\n');
     // Two-line legends for lamp lenses whose text is wider than tall allows.
     const words = l.text.split(' ');
     const twoLines = lines.length === 1 && words.length >= 2 && w / h < l.text.length * 0.42 && h > 18;
     const rows = twoLines ? [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')] : lines;
-    const px = (h / rows.length) * (l.style.box ? 0.62 : 0.78);
+    // Lens legends share one cap height: that of a two-row legend, a single row centred.
+    const px = (h / (l.style.lens ? 2 : rows.length)) * (l.style.box ? 0.62 : 0.78);
     ctx.font = `${l.style.weight} ${Math.max(6, Math.round(px))}px ${FONT}`;
     (ctx as unknown as { fontStretch?: string }).fontStretch = 'semi-condensed';
     ctx.textBaseline = 'middle';

@@ -551,6 +551,29 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       ctx.device.queue.writeBuffer(gm.cabin, 0, gm.cabinData);
       if (tunnel > 0.001) ctx.device.queue.writeBuffer(tunnelBuffer, 0, new Float32Array([tunnel, frame.displaySize[0] / frame.displaySize[1], tn.maxDarken, 0]));
 
+      // ---- the lit cabin seen from outside: its light spills through the panes onto the window wells and the
+      // hull around them (a local light in each well; the cabin itself is lit by the cockpit's own shader).
+      if (!inside && lightsOn && sources.lampFlux > 0) {
+        const rho = model.layout.lighting.cabinAlbedo;
+        const area = model.layout.lighting.cabinArea;
+        // Mean cabin luminance under the lamps (integrating sphere), and what a pane sends outward.
+        const cabinL = ((sources.lampFlux / area) * (1 + rho / (1 - rho)) * rho) / Math.PI;
+        const T = glassTransmittance(model);
+        const tint = model.floods[0]?.color ?? [1, 1, 1];
+        const r = mat3.fromQuat(q);
+        for (const w of model.windows) {
+          if (frame.lights.length >= 16) break;
+          const p = v3.addScaled(w.centre, w.inward, -model.mould.wallThickness * 0.45);
+          const I = cabinL * w.area;
+          frame.lights.push({
+            kind: 'point',
+            posRelCam: { x: r[0] * p.x + r[1] * p.y + r[2] * p.z + origin.x, y: r[3] * p.x + r[4] * p.y + r[5] * p.z + origin.y, z: r[6] * p.x + r[7] * p.y + r[8] * p.z + origin.z },
+            intensity: [I * T[0] * tint[0], I * T[1] * tint[1], I * T[2] * tint[2]],
+            range: 0.7,
+          });
+        }
+      }
+
       // ---- bind group (rebuilt when a shared resource is re-published)
       const nv = ctx.resources.version('ui.navball');
       const ver = scene.version() + nv * 7919 + ctx.resources.version('ui.mfd') * 104729;
@@ -883,13 +906,31 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   }
   {
     const f = nb.frame;
+    // A domed cover glass (a cap of a sphere over the window): its image of the cabin slides and stretches
+    // as the eye moves, which a flat pane's does not.
     const c = v3.addScaled(f.o, f.n, R + 0.004);
-    const pts: Vec3[] = [];
-    for (let i = 0; i < 32; i++) {
-      const a = (i / 32) * 2 * Math.PI;
-      pts.push(v3.add(c, v3.add(v3.scale(f.x, Math.cos(a) * R * 1.12), v3.scale(f.y, Math.sin(a) * R * 1.12))));
+    const rim = R * 1.12;
+    const Rc = rim * 3.2;
+    const zRim = Math.sqrt(Rc * Rc - rim * rim);
+    const rings = 5;
+    const segs = 36;
+    const vert = (k: number, i: number): number[] => {
+      const r = (rim * k) / rings;
+      const a = (i / segs) * 2 * Math.PI;
+      const z = Math.sqrt(Rc * Rc - r * r);
+      const radial = v3.add(v3.scale(f.x, Math.cos(a)), v3.scale(f.y, Math.sin(a)));
+      const p = v3.add(c, v3.add(v3.scale(radial, r), v3.scale(f.n, z - zRim)));
+      const n = v3.normalize(v3.add(v3.scale(radial, r), v3.scale(f.n, z)));
+      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, panes.length, 1];
+    };
+    const firstV = gv.length / PANE_FLOATS;
+    for (let k = 0; k < rings; k++) {
+      for (let i = 0; i < segs; i++) {
+        gv.push(...vert(k, i), ...vert(k + 1, i), ...vert(k + 1, i + 1));
+        if (k > 0) gv.push(...vert(k, i), ...vert(k + 1, i + 1), ...vert(k, i + 1));
+      }
     }
-    pushPane(c, pts, f.n, f.x, f.y);
+    panes.push({ first: firstV, count: gv.length / PANE_FLOATS - firstV, centre: c });
   }
   const glass = buffer(device, `cockpit.${id}.glass`, new Float32Array(gv), GPUBufferUsage.VERTEX);
 
@@ -1067,8 +1108,10 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
   const lc = L.lighting.legendColor;
   at(CABIN.legend, [lc[0] * L.lighting.legendLuminance, lc[1] * L.lighting.legendLuminance, lc[2] * L.lighting.legendLuminance, f.time]);
   const pl = L.lighting.plasmaLuminance * Math.max(0, f.plasma) ** 1.5;
-  const pc = L.lighting.plasmaColor;
-  at(CABIN.plasma, [pc[0] * pl, pc[1] * pl, pc[2] * pl, f.plasma]);
+  // The shock layer's glow wanders between the layout's orange and a pink (nitrogen and oxygen lines).
+  const pink = 0.3 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 1.7 * f.time));
+  const pc = [L.lighting.plasmaColor[0] * (1 - pink) + 1.0 * pink, L.lighting.plasmaColor[1] * (1 - pink) + 0.42 * pink, L.lighting.plasmaColor[2] * (1 - pink) + 0.62 * pink];
+  at(CABIN.plasma, [pc[0]! * pl, pc[1]! * pl, pc[2]! * pl, f.plasma]);
   at(CABIN.display, [L.lighting.displayLuminance, L.lighting.displayMinBrightness, L.lighting.displayFullAmbient, L.displays.pixelStructure[0]]);
   const windows = gm.model.windows.length;
   const polys = Math.min(MAX_CABIN_POLYS, f.sources.length);
@@ -1102,8 +1145,11 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
     // A window's share of the entry plasma: the shock layer streams and flickers (a few to some fifteen
     // hertz), each window sees its own part of it.
     const t = f.time;
+    // A window's well: its depth (outer mould line to the bezel's inner edge) over the opening's mean width.
+    const ap = P.kind === 0 ? gm.model.windows[P.index]?.aperture : undefined;
+    const wellRatio = ap ? ap.innerDepth / Math.sqrt(4 * ap.hw * ap.hh) : 0;
     const share = P.kind === 0 ? 0.62 + 0.14 * Math.sin(2 * Math.PI * 4.1 * t + 0.6 * k) + 0.14 * Math.sin(2 * Math.PI * 7.3 * t + 1.7 * k) + 0.1 * Math.sin(2 * Math.PI * 11.9 * t + 2.9 * k) : 0;
-    d.set([c[0]!.x, c[0]!.y, c[0]!.z, P.kind, c[1]!.x, c[1]!.y, c[1]!.z, P.index, c[2]!.x, c[2]!.y, c[2]!.z, share, c[3]!.x, c[3]!.y, c[3]!.z, 0], o);
+    d.set([c[0]!.x, c[0]!.y, c[0]!.z, P.kind, c[1]!.x, c[1]!.y, c[1]!.z, P.index, c[2]!.x, c[2]!.y, c[2]!.z, share, c[3]!.x, c[3]!.y, c[3]!.z, wellRatio], o);
     const nn = dirRoot(P.normal);
     d.set([P.radiance[0], P.radiance[1], P.radiance[2], P.area, nn.x, nn.y, nn.z, P.on ? 1 : 0], o + 16);
   }

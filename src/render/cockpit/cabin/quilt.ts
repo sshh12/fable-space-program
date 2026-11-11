@@ -17,6 +17,22 @@ export const QUILT = {
   power: 0.62,
 } as const;
 
+/** Channelled upholstery of the couch pads: the cover stitched down across the pad at this pitch. */
+export const UPHOLSTERY = {
+  /** Distance between two rows of stitching, m. */
+  pitch: 0.105,
+  /** Height of a channel's crown above its seams, m. */
+  height: 0.0045,
+  power: 0.7,
+} as const;
+
+/** Height (m) of the channels' relief at the pad's surface coordinate y (m) across the channels. */
+export function upholsteryHeight(y: number): number {
+  const a = y / UPHOLSTERY.pitch;
+  const f = a - Math.floor(a) - 0.5;
+  return UPHOLSTERY.height * Math.max(0, Math.cos(Math.PI * f)) ** UPHOLSTERY.power;
+}
+
 /** Height (m) of the quilt's relief at quilt coordinates q: 0 on the seams, QUILT.height on a cell's crown. */
 export function quiltHeight(qx: number, qy: number): number {
   const ax = (qx + qy) * Math.SQRT1_2;

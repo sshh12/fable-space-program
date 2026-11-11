@@ -11,6 +11,7 @@ import { FLAG_ENCLOSURE, FLAG_OVERLAY, seatFrames } from '@/render/cockpit/cabin
 import { castCabinRay } from '@/render/cockpit/lighting';
 import { insideDistance } from '@/render/cockpit/mould';
 import { occlusionAt, occlusionSources, type OccSources } from '@/render/cockpit/occlusion';
+import { probeDirection, probeFaceMatrix, PROBE_FACES } from '@/render/cockpit/probe';
 import { sunEnters, sunMapLayout, sunTileUniform } from '@/render/cockpit/sunmap';
 import { testModel } from './helpers';
 
@@ -111,6 +112,73 @@ describe('occlusion bake', () => {
       expect(x).toBeGreaterThanOrEqual(0);
       expect(x).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('cabin probe', () => {
+  it('renders every cube face with the axes its texels are read back with', () => {
+    const c = { x: 0.1, y: 1.3, z: -0.2 };
+    for (let face = 0; face < 6; face++) {
+      const m = probeFaceMatrix(face, c, 0.03, 8);
+      const clip = (p: Vec3): [number, number, number, number] => [0, 1, 2, 3].map((r) => m[r]! * p.x + m[4 + r]! * p.y + m[8 + r]! * p.z + m[12 + r]!) as [number, number, number, number];
+      for (const [u, v] of [[0.5, 0.5], [0.1, 0.2], [0.9, 0.7], [0.3, 0.95]] as const) {
+        const d = probeDirection(face, u, v);
+        const [x, y, z, w] = clip(v3.addScaled(c, d, 1.7));
+        expect(w).toBeGreaterThan(0);
+        // Texel (u, v), v down from the top, is where the point along its direction is drawn.
+        expect(x / w).toBeCloseTo(2 * u - 1, 6);
+        expect(y / w).toBeCloseTo(1 - 2 * v, 6);
+        expect(z / w).toBeGreaterThan(0);
+        expect(z / w).toBeLessThan(1);
+      }
+      // The face looks along its own axis: a point one metre along it is one metre in front of the camera.
+      expect(clip(v3.add(c, PROBE_FACES[face]!.f))[3]).toBeCloseTo(1, 6);
+    }
+    // The probe's centre lies in the open cabin: nothing within a hand's breadth of it.
+    const seats = seatFrames(model.mould);
+    const centre = seats.reduce((s, x) => v3.add(s, v3.scale(v3.addScaled(x.eye, x.L, 0.28), 1 / seats.length)), v3.zero());
+    for (let k = 0; k < 200; k++) {
+      const z = 1 - (2 * (k + 0.5)) / 200;
+      const r = Math.sqrt(1 - z * z);
+      const h = bvhRay(model.bvh, centre, { x: r * Math.cos(k * 2.4), y: z, z: r * Math.sin(k * 2.4) }, 1e-4, 10, false);
+      if (h) expect(h.t).toBeGreaterThan(0.08);
+    }
+  });
+});
+
+describe('the cabin is closed', () => {
+  it('lets no ray out of the cabin except through a window pane', () => {
+    // Rays from the cabin's middle and from each seat's eye in directions spread over the sphere: every one
+    // hits the interior, or leaves through the opening of a window (its pane is glass, drawn separately).
+    // The side hatch's seam, the tunnel and the floor's edge are shut.
+    const eyes = [...seatFrames(model.mould).map((s) => v3.addScaled(s.eye, s.L, 0.05)), { x: 0, y: 1.5, z: 0 }];
+    let escaped = 0;
+    let leaks = 0;
+    const N = 6000;
+    for (const o of eyes) {
+      for (let k = 0; k < N; k++) {
+        const z = 1 - (2 * (k + 0.5)) / N;
+        const r = Math.sqrt(1 - z * z);
+        const a = k * 2.399963;
+        const d = { x: r * Math.cos(a), y: z, z: r * Math.sin(a) };
+        if (bvhRay(model.bvh, o, d, 1e-4, 20, true)) continue;
+        escaped++;
+        // Through which window? The ray must cross a window's inner pane inside its outline.
+        const through = model.windows.some((w) => {
+          const pane = w.panes[w.panes.length - 1]!;
+          const den = v3.dot(d, pane.frame.n);
+          if (Math.abs(den) < 1e-9) return false;
+          const t = v3.dot(v3.sub(pane.frame.o, o), pane.frame.n) / den;
+          if (t <= 0) return false;
+          const h = v3.sub(v3.addScaled(o, d, t), pane.frame.o);
+          const reach = Math.max(...pane.outline.map((p) => v3.dist(p, pane.frame.o)));
+          return v3.len(h) <= reach;
+        });
+        if (!through) leaks++;
+      }
+    }
+    expect(escaped).toBeGreaterThan(0);
+    expect(leaks).toBe(0);
   });
 });
 

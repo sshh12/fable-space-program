@@ -23,6 +23,11 @@ export const VERTEX_STRIDE = 48;
 export const FLAG_LABEL = 1;
 /** Vertex flag: a chamfer or bevel along an edge (where paint wears through first). */
 export const FLAG_EDGE = 2;
+/**
+ * A chamfer's second surface coordinate runs 0 .. EDGE_SPAN across it whatever its width, so the shader
+ * knows where on the chamfer a pixel lies (paint wears through along its middle first).
+ */
+export const EDGE_SPAN = 0.01;
 
 export interface Attr {
   /** Material index into the layout's material list. */
@@ -373,10 +378,11 @@ export class MeshBuilder {
   /** Quad strip p0..p3 with one normal, wound to face `n`. */
   strip(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, n: Vec3, t: Vec3, a: Attr): void {
     const face = v3.cross(v3.sub(p1, p0), v3.sub(p3, p0));
+    const edge = ((a.flags ?? 0) & FLAG_EDGE) !== 0;
     const i0 = this.vertex(p0, n, t, [0, 0], a);
     const i1 = this.vertex(p1, n, t, [v3.dist(p0, p1), 0], a);
-    const i2 = this.vertex(p2, n, t, [v3.dist(p0, p1), v3.dist(p1, p2)], a);
-    const i3 = this.vertex(p3, n, t, [0, v3.dist(p0, p3)], a);
+    const i2 = this.vertex(p2, n, t, [v3.dist(p0, p1), edge ? EDGE_SPAN : v3.dist(p1, p2)], a);
+    const i3 = this.vertex(p3, n, t, [0, edge ? EDGE_SPAN : v3.dist(p0, p3)], a);
     if (v3.dot(face, n) >= 0) this.quad(i0, i1, i2, i3);
     else this.quad(i0, i3, i2, i1);
   }
@@ -384,9 +390,11 @@ export class MeshBuilder {
   triFacing(pa: Vec3, pb: Vec3, pc: Vec3, n: Vec3, a: Attr): void {
     const face = v3.cross(v3.sub(pb, pa), v3.sub(pc, pa));
     const t = v3.normalize(v3.sub(pb, pa));
-    const ia = this.vertex(pa, n, t, [0, 0], a);
-    const ib = this.vertex(pb, n, t, [v3.dist(pa, pb), 0], a);
-    const ic = this.vertex(pc, n, t, [0, v3.dist(pa, pc)], a);
+    // A chamfered corner: the middle of the chamfer everywhere (corners wear first).
+    const mid = ((a.flags ?? 0) & FLAG_EDGE) !== 0 ? EDGE_SPAN / 2 : null;
+    const ia = this.vertex(pa, n, t, [0, mid ?? 0], a);
+    const ib = this.vertex(pb, n, t, [v3.dist(pa, pb), mid ?? 0], a);
+    const ic = this.vertex(pc, n, t, [0, mid ?? v3.dist(pa, pc)], a);
     if (v3.dot(face, n) >= 0) this.tri(ia, ib, ic);
     else this.tri(ia, ic, ib);
   }
@@ -440,14 +448,16 @@ export class MeshBuilder {
       const bevelAttr: Attr = { ...front, flags: (front.flags ?? 0) | FLAG_EDGE };
       const ring = (loop: [number, number][], sign: number): void => {
         const base = this.vertexCount;
+        let s = 0;
         for (let i = 0; i <= loop.length; i++) {
           const k = i % loop.length;
           const [x, y] = loop[k]!;
+          if (i > 0) s += Math.hypot(x - loop[(i - 1) % loop.length]![0], y - loop[(i - 1) % loop.length]![1]);
           const [nx, ny] = outN(loop, k, sign);
           const nn = v3.normalize(localDir(f, nx, ny, 1));
           const tt = localDir(f, -ny, nx, 0);
-          this.vertex(local(f, x, y, depth - bevel), nn, tt, [i, 0], bevelAttr);
-          this.vertex(local(f, x - nx * bevel, y - ny * bevel, depth), nn, tt, [i, bevel], bevelAttr);
+          this.vertex(local(f, x, y, depth - bevel), nn, tt, [s, 0], bevelAttr);
+          this.vertex(local(f, x - nx * bevel, y - ny * bevel, depth), nn, tt, [s, EDGE_SPAN], bevelAttr);
         }
         for (let i = 0; i < loop.length; i++) {
           const a0 = base + i * 2;

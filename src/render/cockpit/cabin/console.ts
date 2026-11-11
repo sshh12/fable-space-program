@@ -10,9 +10,9 @@
  */
 import { DEG, v3, type Vec3 } from '@/core/math';
 import type { ConsoleSectionDef, LampDef, ReadoutDef, RotaryDef, SwitchDef } from '../layout';
-import { FLAG_EDGE, frameAt, local, offsetFrame, tiltFrame, type Attr, type Frame } from '../mesh';
+import { EDGE_SPAN, FLAG_EDGE, frameAt, local, localDir, offsetFrame, tiltFrame, type Attr, type Frame } from '../mesh';
 import { insideDistance } from '../mould';
-import { FLAG_EMISSIVE, FLAG_SEGMENT, seatFrames, type CabinContext } from './context';
+import { FLAG_EMISSIVE, FLAG_OVERLAY, FLAG_SEGMENT, seatFrames, type CabinContext } from './context';
 
 export interface SectionFrame {
   def: ConsoleSectionDef;
@@ -62,59 +62,83 @@ function fitInside(ctx: CabinContext, p: Vec3, toward: Vec3): Vec3 {
   return v3.lerp(p, toward, hi);
 }
 
+/** Footprint of a part mounted on the console, in console coordinates (x across, u up the panel). */
+export interface Footprint {
+  x0: number;
+  x1: number;
+  u0: number;
+  u1: number;
+}
+
 /**
- * The console section slabs: face polygon clipped to the wall (corners cut where the cone closes in), a
- * chamfered edge, and a body that runs back toward the wall as far as it fits.
+ * Grid lines between a and b: even spacing `step`, plus the given exact lines (a mounted part's outline and
+ * a line just off it), the even ones that fall too close to an exact one dropped.
  */
-function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
+function gridLines(a: number, b: number, step: number, exact: number[]): number[] {
+  const ex = exact.filter((v) => v > a + 0.008 && v < b - 0.008).sort((p, q) => p - q).filter((v, i, arr) => i === 0 || v - arr[i - 1]! > 0.003);
+  const n = Math.max(1, Math.round((b - a) / step));
+  const out: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const v = a + ((b - a) * i) / n;
+    if (i === 0 || i === n || ex.every((e) => Math.abs(e - v) > step * 0.4)) out.push(v);
+  }
+  return [...out, ...ex].sort((p, q) => p - q);
+}
+
+/**
+ * The console section slabs: face clipped to the wall (corners cut where the cone closes in), a chamfered
+ * edge, and a body that runs back toward the wall as far as it fits.
+ *
+ * The face is a regular grid (the baked occlusion lives on its vertices), with grid lines laid along the
+ * outline of every large part mounted on it and again a few millimetres off: the contact shadow of a bezel
+ * or a housing is then a band of even width that follows the part, the same for identical parts, instead
+ * of whatever a mesh that knows nothing of the parts interpolates.
+ */
+function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[]): void {
   const b = ctx.b;
   const [x0, x1] = sec.def.x;
   const [u0, u1] = sec.def.u;
   const f = sec.frame;
   const depth = sec.def.depth ?? ctx.layout.console.depth;
   const pt = (x: number, u: number, c = 0): Vec3 => local(f, x, u - sec.uHinge, c);
-  // Corners of the face, each pulled toward the section centre if the wall is in the way; edges are
-  // sampled so a corner that is cut becomes two points.
   const centre = pt((x0 + x1) / 2, (u0 + u1) / 2);
-  const rect: [number, number][] = [[x0, u0], [x1, u0], [x1, u1], [x0, u1]];
-  const poly: Vec3[] = [];
-  for (let i = 0; i < 4; i++) {
-    const [ax, au] = rect[i]!;
-    const [bx, bu] = rect[(i + 1) % 4]!;
-    // Edges sampled finely enough for the occlusion bake at full detail.
-    const segs = Math.max(6, Math.min(48, Math.ceil(Math.hypot((bx - ax) * 1, bu - au) / ctx.b.maxEdge)));
-    for (let k = 0; k < segs; k++) {
-      const t = k / segs;
-      const p = pt(ax + (bx - ax) * t, au + (bu - au) * t);
-      poly.push(fitInside(ctx, p, centre));
-    }
-  }
+  const fine = ctx.detail === 0;
+  const step = fine ? 0.014 : 0.2;
+  const mine = fine ? parts.filter((p) => p.x1 > x0 && p.x0 < x1 && p.u1 > u0 && p.u0 < u1) : [];
+  const X = gridLines(x0, x1, step, mine.flatMap((p) => [p.x0 - 0.008, p.x0 - 0.002, p.x1 + 0.002, p.x1 + 0.008]));
+  const U = gridLines(u0, u1, step, mine.flatMap((p) => [p.u0 - 0.008, p.u0 - 0.002, p.u1 + 0.002, p.u1 + 0.008]));
+  const nx = X.length - 1;
+  const nu = U.length - 1;
   const panelMat = ctx.m('panel');
   const n = f.n;
   const ch = 0.006;
-  // Face (fan from the centre), chamfer ring, side walls back to the body depth.
   const shrinkTo = (p: Vec3, d: number): Vec3 => v3.add(p, v3.scale(v3.normalize(v3.sub(centre, p)), d));
-  const faceLoop = poly.map((p) => shrinkTo(p, ch));
-  // Face: concentric rings from the centre out to the loop (subdivided like the other flat faces).
+  // Every grid point is pulled toward the section's centre where the wall is in the way; the border row is
+  // the outline (chamfered: the face ends `ch` inside it).
   b.part();
-  const reach = Math.max(...faceLoop.map((p) => v3.dist(p, centre)));
-  const rings = Math.max(1, Math.min(24, Math.ceil(reach / ctx.b.maxEdge)));
-  const ci = b.vertex(centre, n, f.x, [0, 0], panelMat);
   const first = b.vertexCount;
-  for (let r = 1; r <= rings; r++) {
-    for (const p of faceLoop) {
-      const q = v3.lerp(centre, p, r / rings);
+  const outlineAt = (i: number, j: number): Vec3 => fitInside(ctx, pt(X[i]!, U[j]!), centre);
+  for (let j = 0; j <= nu; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const border = i === 0 || j === 0 || i === nx || j === nu;
+      const q = border ? shrinkTo(outlineAt(i, j), ch) : outlineAt(i, j);
       const d = v3.sub(q, centre);
       b.vertex(q, n, f.x, [v3.dot(d, f.x), v3.dot(d, f.y)], panelMat);
     }
   }
-  const nl = faceLoop.length;
-  for (let i = 0; i < nl; i++) b.tri(ci, first + i, first + ((i + 1) % nl));
-  for (let r = 1; r < rings; r++) {
-    const a0 = first + (r - 1) * nl;
-    const a1 = first + r * nl;
-    for (let i = 0; i < nl; i++) b.quad(a0 + i, a1 + i, a1 + ((i + 1) % nl), a0 + ((i + 1) % nl));
+  for (let j = 0; j < nu; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = first + j * (nx + 1) + i;
+      b.quad(k, k + 1, k + nx + 2, k + nx + 1);
+    }
   }
+  // The outline, counter-clockwise seen from the crew.
+  const poly: Vec3[] = [];
+  for (let i = 0; i < nx; i++) poly.push(outlineAt(i, 0));
+  for (let j = 0; j < nu; j++) poly.push(outlineAt(nx, j));
+  for (let i = nx; i > 0; i--) poly.push(outlineAt(i, nu));
+  for (let j = nu; j > 0; j--) poly.push(outlineAt(0, j));
+  const faceLoop = poly.map((p) => shrinkTo(p, ch));
   const chamferBack = poly.map((p) => v3.addScaled(p, n, -ch));
   ringLoops(ctx, faceLoop, chamferBack, ctx.m('panel', { flags: FLAG_EDGE }), (i) => v3.normalize(v3.add(n, v3.normalize(v3.sub(poly[i]!, centre)))));
   // Quarter-turn fasteners at the panel's corners (where the corner is not cut by the wall).
@@ -136,23 +160,27 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
   for (let i = 0; i < backLoop.length; i++) b.tri(bci, bfirst + ((i + 1) % backLoop.length), bfirst + i);
 }
 
-/** Quarter-turn panel fastener: dimpled cup washer, slotted stud head. */
-function fastener(ctx: CabinContext, f: Frame): void {
+/** Quarter-turn panel fastener: dimpled cup washer, slotted stud head (an overlay: it does not bury the panel's vertices). */
+function fastener(ctx: CabinContext, f: Frame, scale = 1): void {
   const b = ctx.b;
-  b.lathe(f.o, f.n, [[0.0062, 0], [0.0062, 0.0006], [0.0052, 0.0011], [0.0046, 0.0009]], 20, ctx.m('steel'), { ref: f.x });
-  b.lathe(local(f, 0, 0, 0.0009), f.n, [[0.0042, 0], [0.0042, 0.0007], [0.0034, 0.0012], [0.0, 0.0013]], 20, ctx.m('steel', { flags: FLAG_EDGE }), { ref: f.x });
-  b.box(offsetFrame(f, 0, 0, 0.0021), 0.0036, 0.00045, 0.0002, 0.00005, ctx.m('cavity'));
+  const s = scale;
+  b.lathe(f.o, f.n, [[0.0062 * s, 0], [0.0062 * s, 0.0006 * s], [0.0052 * s, 0.0011 * s], [0.0046 * s, 0.0009 * s]], 20, ctx.m('steel', { flags: FLAG_OVERLAY }), { ref: f.x });
+  b.lathe(local(f, 0, 0, 0.0009 * s), f.n, [[0.0042 * s, 0], [0.0042 * s, 0.0007 * s], [0.0034 * s, 0.0012 * s], [0.0, 0.0013 * s]], 20, ctx.m('steel', { flags: FLAG_EDGE | FLAG_OVERLAY }), { ref: f.x });
+  b.box(offsetFrame(f, 0, 0, 0.0021 * s), 0.0036 * s, 0.00045 * s, 0.0002 * s, 0.00005 * s, ctx.m('cavity', { flags: FLAG_OVERLAY }));
 }
 
 function ringLoops(ctx: CabinContext, a: Vec3[], c: Vec3[], attr: Attr, normal: (i: number) => Vec3): void {
   const b = ctx.b;
   const n = a.length;
   const base = b.vertexCount;
+  const edge = ((attr.flags ?? 0) & FLAG_EDGE) !== 0;
+  let s = 0;
   for (let i = 0; i <= n; i++) {
     const k = i % n;
+    if (i > 0) s += v3.dist(a[k]!, a[(k - 1 + n) % n]!);
     const t = v3.normalize(v3.sub(a[(k + 1) % n]!, a[k]!));
-    b.vertex(a[k]!, normal(k), t, [i * 0.02, 0], attr);
-    b.vertex(c[k]!, normal(k), t, [i * 0.02, v3.dist(a[k]!, c[k]!)], attr);
+    b.vertex(a[k]!, normal(k), t, [s, 0], attr);
+    b.vertex(c[k]!, normal(k), t, [s, edge ? EDGE_SPAN : v3.dist(a[k]!, c[k]!)], attr);
   }
   for (let i = 0; i < n; i++) {
     const q = base + i * 2;
@@ -160,18 +188,44 @@ function ringLoops(ctx: CabinContext, a: Vec3[], c: Vec3[], attr: Attr, normal: 
   }
 }
 
+/** Half sizes of a seven-segment readout's housing (width, height). */
+function readoutHalf(dh: number, ro: ReadoutDef): [number, number] {
+  const dw = dh * 0.58;
+  const total = ro.digits * dw + (ro.digits - 1) * dh * 0.22 + (ro.colons ?? []).length * dh * 0.28;
+  return [total / 2 + 0.008, dh / 2 + 0.006];
+}
+
 export function buildConsole(ctx: CabinContext): void {
   const sections = sectionFrames(ctx);
-  for (const s of sections) sectionSlab(ctx, s);
   const con = ctx.layout.console;
+  // Footprints of the large parts: the panels' meshes follow their outlines (sectionSlab).
+  const rect = (x: number, u: number, hx: number, hu: number): Footprint => ({ x0: x - hx, x1: x + hx, u0: u - hu, u1: u + hu });
+  const ann = con.annunciator;
+  const parts: Footprint[] = [
+    ...con.displays.map((d) => rect(d.x, d.u, d.activeWidth / 2 + d.border, d.activeHeight / 2 + d.border * 0.8)),
+    rect(con.navball.x, con.navball.u, con.navball.housing / 2, con.navball.housing / 2),
+    rect(ann.x, ann.u, (ann.columns * ann.cell[0]) / 2 + 0.006, (Math.ceil(ann.lamps.length / ann.columns) * ann.cell[1]) / 2 + 0.006),
+    ...con.masterAlarms.map((m) => rect(m.x, m.u, m.size / 2 + 0.005, m.size / 2 + 0.005)),
+    ...con.readouts.map((r) => rect(r.x, r.u, ...readoutHalf(r.digitHeight, r.readout))),
+  ];
+  for (const s of sections) sectionSlab(ctx, s, parts);
   const at = (x: number, u: number): Frame => consoleFrameAt(ctx, sections, x, u);
+  if (ctx.detail < 2) consoleJoints(ctx, sections);
   con.displays.forEach((d, i) => displayBezel(ctx, at(d.x, d.u), d.activeWidth, d.activeHeight, d.border, d.keys, i));
   fdai(ctx, at(con.navball.x, con.navball.u), con.navball.ballRadius, con.navball.housing);
   if (ctx.detail === 2) return;
   annunciator(ctx, at(con.annunciator.x, con.annunciator.u), con.annunciator.columns, con.annunciator.cell, con.annunciator.lamps);
   con.masterAlarms.forEach((ma, i) => masterAlarm(ctx, at(ma.x, ma.u), ma.size, i));
   if (ctx.detail > 0) return;
-  for (const row of con.switchRows) row.switches.forEach((sw, i) => toggleSwitch(ctx, at(row.x + i * row.pitch, row.u), sw, `console:${row.x}:${row.u}:${i}`));
+  for (const row of con.switchRows) {
+    row.switches.forEach((sw, i) => toggleSwitch(ctx, at(row.x + i * row.pitch, row.u), sw, `console:${row.x}:${row.u}:${i}`));
+    // Wicket guards between neighbouring switches (and at the ends of the row): a hand that brushes the
+    // row meets the wickets, not the levers.
+    for (let i = 0; i <= row.switches.length; i++) wicket(ctx, at(row.x + (i - 0.5) * row.pitch, row.u));
+    // A group line under the row's name labels.
+    const f = at(row.x + ((row.switches.length - 1) * row.pitch) / 2, row.u);
+    ctx.labelQuad(f, 0, 0.0325, row.switches.length * row.pitch, 0.0012, '#LINE', 'panel', { color: 4 });
+  }
   for (const r of con.rotaries) rotary(ctx, at(r.x, r.u), r.radius, r.selector, `rot:${r.x}:${r.u}`);
   for (const r of con.readouts) readout(ctx, at(r.x, r.u), r.digitHeight, r.readout, `ro:${r.x}:${r.u}`);
   for (const l of con.lamps) singleLamp(ctx, at(l.x, l.u), l.size, l.lamp, `lamp:${l.x}:${l.u}`);
@@ -188,8 +242,49 @@ export function buildConsole(ctx: CabinContext): void {
   }
 }
 
-function fitInsideAlong(ctx: CabinContext, from: Vec3, to: Vec3): Vec3 {
-  const need = ctx.def.wallThickness + 0.004;
+/** Wicket guard: a U of round bar standing across the row beside a switch. */
+function wicket(ctx: CabinContext, f: Frame): void {
+  const r = 0.0011;
+  const h = 0.019;
+  const half = 0.0125;
+  const pts = [local(f, 0, -half, -0.001), local(f, 0, -half, h - 0.004), local(f, 0, -half + 0.004, h), local(f, 0, half - 0.004, h), local(f, 0, half, h - 0.004), local(f, 0, half, -0.001)];
+  ctx.b.tube(pts, r, 6, ctx.m('aluminium'));
+}
+
+/**
+ * What makes the sections one console: a close-out bead along the hinge line of every tilted section (no
+ * slit to look through between two panels), cover strips with fasteners over the butt joints of the main
+ * band, and end brackets to the pressure wall.
+ */
+function consoleJoints(ctx: CabinContext, sections: SectionFrame[]): void {
+  const b = ctx.b;
+  const body = ctx.m('consoleBody');
+  const flat = sections.filter((s) => !s.def.tiltDeg);
+  for (const s of sections) {
+    if (!s.def.tiltDeg) continue;
+    const f = s.frame;
+    const mid = local(f, (s.def.x[0] + s.def.x[1]) / 2, 0, -0.011);
+    const p0 = fitInsideAlong(ctx, mid, local(f, s.def.x[0] + 0.004, 0, -0.011), 0.016);
+    const p1 = fitInsideAlong(ctx, mid, local(f, s.def.x[1] - 0.004, 0, -0.011), 0.016);
+    b.cylinder(p0, v3.sub(p1, p0), 0.0125, v3.dist(p0, p1), ctx.detail === 0 ? 14 : 8, body, { caps: 'both', ref: f.n });
+  }
+  if (ctx.detail > 0) return;
+  // Butt joints between coplanar neighbours.
+  for (const a of flat) {
+    for (const c of flat) {
+      if (Math.abs(a.def.x[1] - c.def.x[0]) > 1e-6 || (a.def.offset ?? 0) !== (c.def.offset ?? 0)) continue;
+      const u0 = Math.max(a.def.u[0], c.def.u[0]) + 0.01;
+      const u1 = Math.min(a.def.u[1], c.def.u[1]) - 0.01;
+      const f = offsetFrame(a.frame, a.def.x[1], (u0 + u1) / 2 - a.uHinge, 0);
+      b.box(offsetFrame(f, 0, 0, 0.001), 0.0075, (u1 - u0) / 2, 0.001, 0.0006, ctx.m('anodized', { flags: FLAG_OVERLAY }));
+      const n = Math.max(2, Math.round((u1 - u0) / 0.085));
+      for (let k = 0; k <= n; k++) fastener(ctx, offsetFrame(f, 0, -(u1 - u0) / 2 + 0.012 + ((u1 - u0 - 0.024) * k) / n, 0.002), 0.5);
+    }
+  }
+}
+
+function fitInsideAlong(ctx: CabinContext, from: Vec3, to: Vec3, margin = 0.004): Vec3 {
+  const need = ctx.def.wallThickness + margin;
   let lo = 0;
   let hi = 1;
   if (insideDistance(ctx.def, to) >= need) return to;
@@ -223,13 +318,15 @@ function displayBezel(ctx: CabinContext, f: Frame, w: number, h: number, border:
   const screen = offsetFrame(f, 0, 0, depth - recess);
   ctx.displays[index] = { index, frame: screen, width: w, height: h };
   if (ctx.detail > 0) return;
-  // Soft keys: `keys` per side, with a dimple and a legend tick.
+  // Page keys along the top border, one above each page tab of the screen (the painter lays its tabs over
+  // the left `tabSpan` of the width, one per page), each with a raised index bar.
   const key = ctx.m('keycap');
-  for (const side of [-1, 1]) {
-    for (let k = 0; k < keys; k++) {
-      const v = h / 2 - ((k + 0.5) * h) / keys;
-      b.box(offsetFrame(f, side * (w / 2 + border / 2), v, depth + 0.003), 0.0085, 0.0062, 0.003, 0.0015, key);
-    }
+  const tabW = (w * ctx.layout.displays.tabSpan) / keys;
+  for (let k = 0; k < keys; k++) {
+    const x = -w / 2 + (k + 0.5) * tabW;
+    const kf = offsetFrame(f, x, h / 2 + border * 0.4, depth + 0.003);
+    b.box(kf, Math.min(0.0095, tabW * 0.4), 0.0058, 0.003, 0.0015, key);
+    b.box(offsetFrame(kf, 0, 0, 0.0033), Math.min(0.004, tabW * 0.18), 0.0006, 0.0003, 0.0001, ctx.m('pointer'));
   }
   // Brightness rocker and power key on the lower border.
   b.box(offsetFrame(f, w / 2 - 0.02, -h / 2 - border * 0.4, depth + 0.003), 0.012, 0.005, 0.003, 0.0015, key);
@@ -237,7 +334,7 @@ function displayBezel(ctx: CabinContext, f: Frame, w: number, h: number, border:
   ctx.labelQuad(offsetFrame(f, 0, -h / 2 - border * 0.4, depth), 0, 0, 0.05, 0.008, `MFD ${index + 1}`, 'bezel', { color: 0, backlit: true });
   ctx.labelQuad(offsetFrame(f, w / 2 - 0.02, -h / 2 - border * 0.4 + 0.0085, depth), 0, 0, 0.03, 0.005, 'BRT', 'bezel', { color: 4, backlit: true });
   for (const [x, y] of [[-outerW + 0.006, outerH - 0.006], [outerW - 0.006, outerH - 0.006], [-outerW + 0.006, -outerH + 0.006], [outerW - 0.006, -outerH + 0.006]] as [number, number][]) {
-    b.cylinder(local(f, x, y, depth), f.n, 0.0025, 0.0012, 8, ctx.m('steel'), { caps: 'top' });
+    fastener(ctx, offsetFrame(f, x, y, depth), 0.55);
   }
 }
 
@@ -269,9 +366,35 @@ function fdai(ctx: CabinContext, f: Frame, ballR: number, housing: number): void
   const face = offsetFrame(f, 0, 0, depth);
   ctx.labelRing(face, holeR + 0.001, holeR + 0.015, '#ROLL', 'bezel', { color: 0, backlit: true, lift: 0.0003 });
   for (const [x, y] of [[-hs + 0.008, hs - 0.008], [hs - 0.008, hs - 0.008], [-hs + 0.008, -hs + 0.008], [hs - 0.008, -hs + 0.008]] as [number, number][]) {
-    b.cylinder(local(face, x, y, 0), f.n, 0.003, 0.0012, 8, ctx.m('steel'), { caps: 'top' });
+    fastener(ctx, offsetFrame(face, x, y, 0), 0.6);
   }
-  ctx.labelQuad(face, 0, -hs + 0.006, 0.05, 0.007, 'FDAI', 'bezel', { color: 0, backlit: true });
+  ctx.labelQuad(face, -hs + 0.016, -hs + 0.006, 0.026, 0.006, 'FDAI', 'bezel', { color: 0, backlit: true });
+  // Retaining ring of the cover glass: a machined, anodised ring standing off the bezel around the window.
+  b.lathe(face.o, f.n, [[holeR + 0.0055, 0], [holeR + 0.0055, 0.0022], [holeR + 0.0035, 0.0034], [holeR + 0.0008, 0.0034], [holeR, 0.002], [holeR, -0.003]], 64, ctx.m('anodized'), { ref: f.x });
+  // Rate needles on the three outer scales (roll above, pitch at the right, yaw below): each slides along
+  // its slot with the body rate about its axis, centred at rest.
+  const scales: { key: string; rate: number; o: [number, number]; along: [number, number] }[] = [
+    { key: 'roll', rate: 1, o: [0, hs - 0.0125], along: [1, 0] },
+    { key: 'pitch', rate: 0, o: [hs - 0.0125, 0], along: [0, 1] },
+    { key: 'yaw', rate: 2, o: [0, -hs + 0.0125], along: [1, 0] },
+  ];
+  const travel = 0.016;
+  for (const sc of scales) {
+    const sf = offsetFrame(face, sc.o[0], sc.o[1], 0);
+    const lx = sc.along[0] ? travel + 0.004 : 0.0028;
+    const ly = sc.along[0] ? 0.0028 : travel + 0.004;
+    // Slot (a dark recess printed with its scale), centre mark and end marks.
+    b.box(offsetFrame(sf, 0, 0, 0.0002), lx, ly, 0.0002, 0.0001, ctx.m('cavity', { flags: FLAG_OVERLAY }));
+    for (const t of [-1, -0.5, 0, 0.5, 1]) {
+      const mx = sc.along[0] * t * travel;
+      const my = sc.along[1] * t * travel;
+      const side = t === 0 ? 0.0052 : 0.0042;
+      b.box(offsetFrame(sf, mx + sc.along[1] * side, my + sc.along[0] * side, 0.0003), sc.along[0] ? 0.0003 : 0.0012, sc.along[0] ? 0.0012 : 0.0003, 0.0002, 0.00005, ctx.m('pointer', { flags: FLAG_OVERLAY }));
+    }
+    const axis = localDir(face, sc.along[0], sc.along[1], 0);
+    const c = ctx.control(`fdai:${sc.key}`, () => ({ kind: 'needle', pivot: sf.o, axis, binding: 'none', fixed: sc.rate, travel }));
+    b.box(offsetFrame(sf, 0, 0, 0.0009), sc.along[0] ? 0.0006 : 0.0026, sc.along[0] ? 0.0026 : 0.0006, 0.0005, 0.0002, ctx.m('caution', { ctl: c.index }));
+  }
 }
 
 function lampControl(ctx: CabinContext, key: string, f: Frame, lamp: LampDef) {
@@ -301,7 +424,7 @@ function lens(ctx: CabinContext, f: Frame, hx: number, hy: number, lamp: LampDef
     ctx.b.box(offsetFrame(f, 0, 0, -0.002), hx, hy, 0.002, 0.0005, ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE }));
     return;
   }
-  const rect = ctx.label(lamp.label, hy * 2 * 0.95, hx * 2 * 0.95, { weight: 700 });
+  const rect = ctx.label(lamp.label, hy * 2 * 0.95, hx * 2 * 0.95, { weight: 700, lens: true });
   const lensAttr = ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE, ink: 4, label: { rect, origin: [-hx, -hy], size: [hx * 2, hy * 2] } });
   ctx.b.box(offsetFrame(f, 0, 0, -0.002), hx, hy, 0.002, 0.0006, ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE }), { frontAttr: lensAttr });
 }
@@ -322,19 +445,23 @@ export function toggleSwitch(ctx: CabinContext, f: Frame, sw: SwitchDef, key: st
   const b = ctx.b;
   const throwDeg = 28;
   // Keyed lock washer with its anti-rotation tab, hex nut, threaded bushing.
-  b.cylinder(local(f, 0, 0, 0), f.n, 0.0085, 0.0007, 20, ctx.m('steel'), { caps: 'top' });
-  b.box(offsetFrame(f, 0, 0.0095, 0.00035), 0.0016, 0.0022, 0.00035, 0.0001, ctx.m('steel'));
-  b.lathe(local(f, 0, 0, 0.0007), f.n, [[0.0072, 0], [0.0072, 0.0026], [0.0062, 0.0032], [0.0046, 0.0032]], 6, ctx.m('steel'), { ref: f.x });
-  b.cylinder(local(f, 0, 0, 0.0032), f.n, 0.0046, 0.0042, 16, ctx.m('steel', { flags: FLAG_EDGE }), { caps: 'top' });
+  // (Overlays: the mount hardware lies on the panel and does not bury the panel's baked occlusion.)
+  const mount = ctx.m('steel', { flags: FLAG_OVERLAY });
+  b.cylinder(local(f, 0, 0, 0), f.n, 0.0085, 0.0007, 20, mount, { caps: 'top' });
+  b.box(offsetFrame(f, 0, 0.0095, 0.00035), 0.0016, 0.0022, 0.00035, 0.0001, mount);
+  b.lathe(local(f, 0, 0, 0.0007), f.n, [[0.0072, 0], [0.0072, 0.0026], [0.0062, 0.0032], [0.0046, 0.0032]], 6, mount, { ref: f.x });
+  b.cylinder(local(f, 0, 0, 0.0032), f.n, 0.0046, 0.0042, 16, ctx.m('steel', { flags: FLAG_EDGE | FLAG_OVERLAY }), { caps: 'top' });
   const pivot = local(f, 0, 0, 0.0074);
   // Lever along +n at rest; a rotation by +a about +x tips it toward -y, so "up" (position 0) is -throw.
-  const c = ctx.control(key, () => ({ kind: 'toggle', pivot, axis: f.x, binding: sw.binding, angles: [-throwDeg * DEG, throwDeg * DEG] }));
+  const c = ctx.control(key, () => ({ kind: 'toggle', pivot, axis: f.x, binding: sw.binding, angles: [-throwDeg * DEG, throwDeg * DEG], fixed: sw.fixed }));
   // Bat-handle lever: a tapered chrome shank swelling into a rounded tip.
   b.lathe(pivot, f.n, [[0.0, -0.0004], [0.0017, 0], [0.0019, 0.008], [0.0024, 0.017], [0.0031, 0.0215], [0.0029, 0.0235], [0.0018, 0.0248], [0.0, 0.0252]], 14, ctx.m('steel', { ctl: c.index }), { ref: f.x });
   const labelMat = panelMat;
-  ctx.labelQuad(f, 0, 0.024, 0.034, 0.0065, sw.label, labelMat, { color: panelMat === 'panel' ? 0 : 1, backlit: panelMat === 'panel' });
-  if (sw.up) ctx.labelQuad(f, 0.0125, 0.0105, 0.014, 0.0045, sw.up, labelMat, { color: panelMat === 'panel' ? 4 : 1, style: { align: 'left' } });
-  if (sw.down) ctx.labelQuad(f, 0.0125, -0.0105, 0.014, 0.0045, sw.down, labelMat, { color: panelMat === 'panel' ? 4 : 1, style: { align: 'left' } });
+  // Nomenclature: the switch's name on top, the position legends above and below the lever's throw (the
+  // lower one beyond where the lever's tip lies over the panel when the crew look down on it).
+  ctx.labelQuad(f, 0, 0.0275, 0.036, 0.0062, sw.label, labelMat, { color: panelMat === 'panel' ? 0 : 1, backlit: panelMat === 'panel' });
+  if (sw.up) ctx.labelQuad(f, 0, 0.0175, 0.03, 0.0044, sw.up, labelMat, { color: panelMat === 'panel' ? 4 : 1 });
+  if (sw.down) ctx.labelQuad(f, 0, -0.0345, 0.03, 0.0044, sw.down, labelMat, { color: panelMat === 'panel' ? 4 : 1 });
   if (sw.kind === 'guarded') {
     // U-shaped guard hinged below the switch: open (swung down) while the switch is on.
     const hinge = local(f, 0, -0.012, 0.004);

@@ -164,10 +164,24 @@ export function buildFixtures(ctx: CabinContext): void {
   for (const run of runs) {
     const pts: Vec3[] = [];
     const steps = Math.ceil(Math.abs(run.az[1] - run.az[0]) / 4);
-    for (let k = 0; k <= steps; k++) {
-      const az = run.az[0] + ((run.az[1] - run.az[0]) * k) / steps;
-      pts.push(wallPoint(ctx, az * DEG, run.y + 0.006 * Math.sin(k * 1.7), run.inset));
+    // Between its clamps (every third step) the bundle hangs a little slack, away from the wall; at both
+    // ends it turns into the wall through a grommet with a connector backshell.
+    const dAz = (run.az[1] - run.az[0]) / steps;
+    for (const end of [0, 1]) {
+      const az = run.az[end]! - (end === 0 ? 1 : -1) * dAz * 0.9;
+      const wf = wallFrame(ctx, az, run.y, 0.004);
+      // (The backshell stands straight out of the wall; the bundle bends away above it.)
+      b.cylinder(wf.o, wf.n, run.r * 3.2, 0.004, 14, ctx.m('aluminium'), { caps: 'top' });
+      b.cylinder(v3.addScaled(wf.o, wf.n, 0.004), wf.n, run.r * 2.3, 0.024, 12, ctx.m('anodized'), { radius1: run.r * 1.9, caps: 'top' });
+      for (let k = 0; k < 4; k++) b.cylinder(local(wf, Math.cos(k * 1.5708 + 0.785) * run.r * 2.6, Math.sin(k * 1.5708 + 0.785) * run.r * 2.6, 0.004), wf.n, 0.0022, 0.0015, 6, ctx.m('steel'), { caps: 'top' });
     }
+    pts.push(wallPoint(ctx, (run.az[0] - dAz * 0.9) * DEG, run.y, 0.012), wallPoint(ctx, (run.az[0] - dAz * 0.45) * DEG, run.y, run.inset * 0.6));
+    for (let k = 0; k <= steps; k++) {
+      const az = run.az[0] + dAz * k;
+      const slack = Math.sin((Math.PI * ((k + 1) % 3)) / 3);
+      pts.push(wallPoint(ctx, az * DEG, run.y + 0.006 * Math.sin(k * 1.7), run.inset + 0.009 * slack));
+    }
+    pts.push(wallPoint(ctx, (run.az[1] + dAz * 0.45) * DEG, run.y, run.inset * 0.6), wallPoint(ctx, (run.az[1] + dAz * 0.9) * DEG, run.y, 0.012));
     for (const off of [-0.6, 0.6]) {
       b.tube(pts.map((p) => v3.addScaled(p, { x: 0, y: 1, z: 0 }, off * run.r * 1.4)), run.r * 0.7, 8, ctx.m(run.mat));
     }

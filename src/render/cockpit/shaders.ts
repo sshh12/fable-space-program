@@ -23,9 +23,10 @@
  * 2 materials, 3 label atlas, 4 MFD array, 5 navball image, 6 ambient pass output, 7 cabin sun map,
  * 8 / 9 detail texture arrays, 10.. the scene sets env, atmosphereLuts, transparency.
  */
-import { QUILT } from './cabin/quilt';
+import { QUILT, UPHOLSTERY } from './cabin/quilt';
 import { MAX_DISPLAYS, MAX_FLOODS, MAX_WINDOWS } from './layout';
 import { MAX_CABIN_POLYS } from './lighting';
+import { EDGE_SPAN } from './mesh';
 
 export const CONTROL_FLOATS = 24;
 /** vec4s of one occlusion record as the shaders unpack it (occlusion.ts: 24 bytes per vertex). */
@@ -259,7 +260,7 @@ struct Material {
   e: vec4f,           // colour under worn paint (linear), its metallic
 }
 struct CabinPoly {
-  p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f,  // corners, camera-relative ROOT axes (m); p0.w = kind, p1.w = display layer / window / flood index, p2.w = windows: share of the entry plasma this window sees
+  p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f,  // corners, camera-relative ROOT axes (m); p0.w = kind, p1.w = display layer / window / flood index, p2.w = windows: share of the entry plasma this window sees, p3.w = windows: depth of the well over its width
   radiance: vec4f,                             // rgb cd/m^2 (NOT pre-exposed; windows: glass transmittance), w = area (m^2)
   normal: vec4f,                               // xyz = emitting / outward normal (ROOT), w = 1 when the source is on
 }
@@ -381,9 +382,17 @@ fn cabinLight(pos: vec3f, n: vec3f, occIn: Occ, sunScale: vec3f) -> vec3f {
     if (P.normal.w < 0.5) { continue; }
     let kind = u32(P.p0.w);
     let toP = P.p0.xyz - pos;
+    var well = 1.0;
     if (kind == POLY_WINDOW) {
       // Light from outside enters through the window's inner side: the receiver must be inside.
       if (dot(toP, P.normal.xyz) < 0.0) { continue; }
+      // The outside is seen through the window's well (the hull's thickness and the bezel, p3.w = its depth
+      // over its width): from a direction far off the window's axis the well's own walls fill the opening,
+      // not the sky. A surface beside the window on the same wall gets none of its light.
+      let d = normalize(pos - (P.p0.xyz + P.p2.xyz) * 0.5);
+      let ca = max(-dot(d, P.normal.xyz), 0.0);
+      well = saturate(1.0 - P.p3.w * sqrt(max(1.0 - ca * ca, 0.0)) / max(ca, 1e-3));
+      if (well <= 0.0) { continue; }
     } else if (dot(toP, P.normal.xyz) > 0.0) {
       // Emitters light only the side they face.
       continue;
@@ -412,7 +421,7 @@ fn cabinLight(pos: vec3f, n: vec3f, occIn: Occ, sunScale: vec3f) -> vec3f {
     } else {
       L = P.radiance.rgb;
     }
-    diffuse += L * (PI * ff) * vis;
+    diffuse += L * (PI * ff) * (vis * well);
   }
   return diffuse;
 }
@@ -505,9 +514,13 @@ fn apertureVisibility(p: vec3f, i: u32) -> vec2f {
     let c = a0.xyz + n * select(0.0, a3.w, k == 1u);
     let dist = dot(p - c, n);
     if (dist <= 0.0) {
-      // Outside the hull, no sun from this window; within the prism (the panes, the bezel's tunnel) only
-      // the outer end clips the light.
+      // Outside the hull, no sun from this window. Between the two ends only the outer end clips the light,
+      // and only for what stands in the opening itself (the panes, the bezel's tunnel): the wall and what
+      // lies on it beside the opening is behind the hull, however the sun grazes.
       if (k == 0u) { return vec2f(0.0); }
+      let pu = vec2f(dot(p - a0.xyz, a2.xyz), dot(p - a0.xyz, a3.xyz));
+      let pq = abs(pu) - (halfSize - vec2f(rc));
+      if (length(max(pq, vec2f(0.0))) + min(max(pq.x, pq.y), 0.0) - rc > 0.006) { return vec2f(0.0); }
       continue;
     }
     let t = dist / cosI;
@@ -761,11 +774,14 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
     d.cavity = mix(1.0, tN.z, strength);
     d.albedo *= mix(1.0, tM.r * 2.0, strength);
     d.rough += (tM.g - 0.5) * strength;
-    // Paint wears through along an edge in runs: a slow variation along the edge decides where a run is worn
-    // (mat.d.y of the edge's length), the fine mask frays the ends of each run into chips.
+    // Paint wears through along the middle of a chamfer (uv.y runs 0 .. EDGE_SPAN across it), in runs: a
+    // slow variation along the edge decides where a run is worn (mat.d.y of the edge's length), the fine
+    // mask frays the line and the ends of each run into chips.
     if (edge && mat.d.y > 0.0) {
-      let run = valueNoise3(vec3f(uv.x * 14.0 + f32(seed) * 3.7, f32(seed) * 0.37, 0.5), 51);
-      d.wear = smoothstep(1.0 - mat.d.y - 0.06, 1.0 - mat.d.y + 0.06, run + (tM.b - 0.5) * 0.3);
+      let run = valueNoise3(vec3f(uv.x * 11.0 + f32(seed) * 3.7, f32(seed) * 0.37, 0.5), 51);
+      let worn = smoothstep(1.0 - mat.d.y - 0.1, 1.0 - mat.d.y + 0.1, run * 0.8 + 0.1 + (tM.b - 0.5) * 0.25);
+      let across = 1.0 - abs(2.0 * uv.y / ${EDGE_SPAN} - 1.0);
+      d.wear = smoothstep(0.5, 0.72, across * (0.45 + 0.75 * worn) + (tM.b - 0.5) * 0.3) * worn;
     }
     d.grime = tM.a;
   }
@@ -781,7 +797,7 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
       // Gradient of the pillow height (m) in cell coordinates. The crease at the seam is as sharp as the
       // pixel footprint resolves (fwIn = cells per pixel): from afar the cloth dives into the seam more
       // gently, so a crease narrower than a pixel does not sparkle.
-      let soft = clamp(fwIn * 2.5, 0.03, 0.6);
+      let soft = clamp(fwIn * 9.0, 0.04, 0.8);
       var ga = -(QUILT_HEIGHT * fill * QUILT_POWER * PI) * ce * sin(PI * f) / (cos(PI * f) + vec2f(soft));
       // Distance to the nearest seam (cells) and which pair of seams it belongs to.
       let sd = vec2f(0.5) - abs(f);
@@ -794,7 +810,7 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
       let pucker = 0.00045 * exp(-seamM / 0.008) * aaFade(1.0 / 0.011, fw);
       let gp = pucker * pk * cos(along * pk + ph);
       ga += select(vec2f(gp, 0.0), vec2f(0.0, gp), sd.x < sd.y);
-      let lim = 1.5 * QUILT_CELL;
+      let lim = 1.2 * QUILT_CELL;
       ga = clamp(ga, vec2f(-lim), vec2f(lim));
       // Chain rule to the screen: cells -> uv0 (a rotation) -> pixels.
       let gq = vec2f(ga.x + ga.y, ga.x - ga.y) * 0.7071;
@@ -810,6 +826,20 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
       // Dust gathers a little in the grooves, handling polishes the crowns.
       d.grime = max(d.grime * 0.6, groove * 0.5);
       d.rough -= 0.05 * ce;
+    }
+    case 4u: { // channelled upholstery: the cover stitched down across the pad every ${UPHOLSTERY.pitch} m
+      let a = uvIn.y / ${UPHOLSTERY.pitch};
+      let f = fract(a) - 0.5;
+      let ce = pow(max(cos(PI * f), 1e-4), ${UPHOLSTERY.power});
+      let soft = clamp(fwIn / ${UPHOLSTERY.pitch} * 2.5, 0.03, 0.6);
+      // Slope of the channel's height across the pad (m per m), bounded at the seam's crease.
+      let g = clamp(-(${UPHOLSTERY.height} * ${UPHOLSTERY.power} * PI / ${UPHOLSTERY.pitch}) * ce * sin(PI * f) / (cos(PI * f) + soft), -1.2, 1.2);
+      d.dh = vec2f(g * dxIn.y, g * dyIn.y) * aaFade(1.0 / ${UPHOLSTERY.pitch}, fw * 0.5);
+      let seamM = (0.5 - abs(f)) * ${UPHOLSTERY.pitch};
+      let groove = 1.0 - smoothstep(0.0012, 0.004, seamM);
+      d.cavity *= mix(1.0, 0.6, groove);
+      let thread = (1.0 - smoothstep(0.0005, 0.001, seamM)) * step(0.4, fract(uvIn.x / 0.004)) * aaFade(250.0, fw);
+      d.albedo *= 1.0 + 0.5 * thread;
     }
     case 2u: { // ribbed duct: ribs along the tube
       let r = sin(uv.x * 260.0) * aaFade(41.0, fw);
@@ -855,8 +885,9 @@ struct Shaded {
   param: f32,
   anisotropy: f32,
   clearcoat: f32,
-  /// Luminance toward the eye (cd/m^2, not pre-exposed) and the share of it that is cabin light reflected
-  /// diffusely (the probe's bounce light: without the sun's own reflection and what the surface emits).
+  /// Luminance toward the eye (cd/m^2, not pre-exposed) and the share of it that is reflected light (the
+  /// probe's bounce light: everything but what the surface emits itself, whose light reaches the cabin as
+  /// polygon sources).
   luminance: vec3f,
   bounceShare: f32,
   ink: f32,
@@ -1036,7 +1067,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   o.anisotropy = mat.b.z;
   o.clearcoat = mat.b.w;
   o.luminance = reflected + sunLit + emissive;
-  o.bounceShare = saturate(luminance(reflected) / max(luminance(o.luminance), 1e-6));
+  o.bounceShare = saturate(luminance(reflected + sunLit) / max(luminance(o.luminance), 1e-6));
   o.ink = ink;
   return o;
 }
@@ -1461,9 +1492,10 @@ ${CUBE_DIR_WGSL}
 
 /**
  * The probe's bounce light as irradiance: nine spherical-harmonic coefficients (rgb, lux) of the luminance
- * of the probe's reflecting surfaces (rgb x alpha: emitters and the sun's own reflection are left out, they
- * reach surfaces as polygon sources), convolved with the cosine lobe, written behind the ambient pass's
- * output. Group 0: the probe's level 0 as an array, the cabin's ambient buffer, the cabin uniform.
+ * of the probe's reflecting surfaces (emitters are left out, they reach surfaces as polygon sources; sunlit
+ * surfaces are in: the sun patches' bounce), convolved with the cosine lobe, written behind the ambient
+ * pass's output. Group 0: the probe's bounce map (probe.ts: block means of rgb x alpha, six faces), the
+ * cabin's ambient buffer, the pass's parameters.
  */
 export const PROBE_SH_WGSL = /* wgsl */ `
 @group(0) @binding(0) var src: texture_2d_array<f32>;
@@ -1489,7 +1521,7 @@ var<workgroup> acc: array<array<vec3f, 9>, 64>;
     let q = uv * 2.0 - 1.0;
     // Solid angle of the texel.
     let w = 4.0 / (f32(size * size) * pow(1.0 + dot(q, q), 1.5));
-    let L = c.rgb * (c.a * w);
+    let L = c.rgb * w;
     s[0] += L * 0.282095;
     s[1] += L * (0.488603 * d.y);
     s[2] += L * (0.488603 * d.z);

@@ -3,9 +3,8 @@
  * sources of this frame in the capsule part frame.
  *
  *  - windows: the inner pane outline as an area-equivalent quad, outward normal, glass transmittance;
- *  - sun patches: for every window the sun shines into, the window quad projected along the sun onto the
- *    surface its centre ray hits (a ray against the interior's BVH), glowing with that surface's reflected
- *    sunlight rho E cos / pi (rho from the surface's material);
+ *  - (the sunlight a patch on a panel or a couch throws back into the cabin is not a polygon: the cabin
+ *    probe sees the lit surfaces themselves, whatever their shape, and its bounce light carries them);
  *  - floodlights (lens strips, luminance = flux / (pi area)) and displays (their image's mean is read on the
  *    GPU from the last mip).
  * Pure: unit-tested without a GPU.
@@ -116,26 +115,11 @@ export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn
   let sunFlux = 0;
   if (sun && sun.illuminance > 0) {
     const s = sun.dirPart;
-    const into = v3.neg(s);
     const tMean = (T[0] + T[1] + T[2]) / 3;
     quads.forEach((q) => {
       const cosW = v3.dot(q.outward, s);
       if (cosW <= 0.01) return;
       sunFlux += sun.illuminance * tMean * cosW * q.area;
-      const hit = castCabinRay(model, v3.addScaled(q.centre, into, 0.01), into);
-      if (!hit || polys.length >= MAX_CABIN_POLYS) return;
-      const p = v3.addScaled(q.centre, into, 0.01 + hit.t);
-      let n = hit.n;
-      if (v3.dot(n, s) < 0) n = v3.neg(n);
-      const cosR = v3.dot(n, s);
-      if (cosR <= 0.01) return;
-      // Corners projected along the sun onto the plane of the centre's hit.
-      const corners = q.corners.map((c) => {
-        const t = v3.dot(v3.sub(p, c), n) / v3.dot(into, n);
-        return v3.addScaled(c, into, t);
-      }) as [Vec3, Vec3, Vec3, Vec3];
-      const L = (hit.albedo * sun.illuminance * tMean * cosR) / Math.PI;
-      polys.push({ kind: POLY_PATCH, corners, normal: n, radiance: [L * sun.color[0], L * sun.color[1], L * sun.color[2]], area: (q.area * cosW) / cosR, on: true, index: 0 });
     });
   }
   let lampFlux = 0;

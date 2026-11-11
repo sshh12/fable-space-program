@@ -11,7 +11,7 @@ import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
 import type { MfdPage } from '@/core/contracts/ui';
 import { DefError, getSection, listSections } from '@/core/defs/loader';
 
-export type MaterialDetail = 'none' | 'paint' | 'brushed' | 'quilt' | 'weave' | 'webbing' | 'velcro' | 'ribbed' | 'knurl' | 'rubber' | 'cast';
+export type MaterialDetail = 'none' | 'paint' | 'brushed' | 'quilt' | 'weave' | 'upholstery' | 'webbing' | 'velcro' | 'ribbed' | 'knurl' | 'rubber' | 'cast';
 
 export interface CockpitMaterialDef {
   shading: 'standard' | 'cloth';
@@ -37,11 +37,12 @@ export interface CockpitMaterialDef {
 }
 
 /** Detail texture layer (by name in public/assets/cockpit/detail.json) and procedural pattern of each kind. */
-export const DETAIL_KINDS: Record<Exclude<MaterialDetail, 'none'>, { layer: string; pattern: 0 | 1 | 2 | 3 }> = {
+export const DETAIL_KINDS: Record<Exclude<MaterialDetail, 'none'>, { layer: string; pattern: 0 | 1 | 2 | 3 | 4 }> = {
   paint: { layer: 'paint', pattern: 0 },
   brushed: { layer: 'brushed', pattern: 0 },
   quilt: { layer: 'nomex', pattern: 1 },
   weave: { layer: 'fabric', pattern: 0 },
+  upholstery: { layer: 'fabric', pattern: 4 },
   webbing: { layer: 'webbing', pattern: 0 },
   velcro: { layer: 'velcro', pattern: 0 },
   ribbed: { layer: 'rubber', pattern: 2 },
@@ -97,6 +98,8 @@ export interface SwitchDef {
   /** Position labels top / bottom. */
   up?: string;
   down?: string;
+  /** Position (0 = up, 1 = down) of a switch whose binding is 'none'. */
+  fixed?: number;
 }
 
 export interface RotaryDef {
@@ -286,6 +289,11 @@ export interface DisplaysDef {
   pages: MfdPage[];
   /** Screen pixels per display texel at which the RGB stripe structure starts and is fully resolved. */
   pixelStructure: [number, number];
+  /**
+   * Share of the screen width over which the MFD painter lays its page tabs (left-aligned, one per page):
+   * the bezel's page keys sit above them. Mirrors the tab row of src/ui/mfd/mfdPainter.ts.
+   */
+  tabSpan: number;
 }
 
 /** Occlusion bake (occlusion.ts) and the cabin's own sun shadow map (sunmap.ts). */
@@ -370,6 +378,7 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   if (!(cg.reflectance >= 0 && cg.reflectance <= 1) || !(cg.roughness >= 0 && cg.roughness <= 1)) fail('windows.coverGlass: reflectance and roughness in 0..1');
   const [p0, p1] = l.displays.pixelStructure;
   if (!(p0 > 0 && p1 > p0)) fail('displays.pixelStructure: two increasing positive values');
+  if (!(l.displays.tabSpan > 0.2 && l.displays.tabSpan <= 1)) fail('displays.tabSpan: the share of the screen width the page tabs span, in (0.2, 1]');
 }
 
 /** Occlusion slots per vertex (occlusion.ts): windows including the hatch window, and displays. */

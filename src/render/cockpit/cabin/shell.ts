@@ -261,7 +261,7 @@ export function buildShell(ctx: CabinContext): Region[] {
   const sh = layout.shell;
   const detail = ctx.detail;
   const surface = innerSurface(ctx);
-  const regions = openingRegions(ctx, detail === 0 ? 96 : 48, surface);
+  const regions = openingRegions(ctx, detail === 0 ? 128 : 48, surface);
   // The wall, the tunnel and the floor bound the cabin: the sun's way in is the windows' apertures.
   const structure = ctx.m('structure', { flags: FLAG_ENCLOSURE });
   const yFloor = m.floorY;
@@ -480,9 +480,9 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
   const inset = Math.min(0.03, roll * 1.1);
   if (Math.min(W, H) > 0.1) {
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) studs.push([sx * (W / 2 - inset), sy * (H / 2 - inset)]);
-    const nx = Math.floor(W / 0.2);
+    const nx = Math.floor(W / 0.26);
     for (let k = 1; k < nx; k++) for (const sy of [-1, 1]) studs.push([-W / 2 + (W * k) / nx, sy * (H / 2 - inset)]);
-    const ny = Math.floor(H / 0.2);
+    const ny = Math.floor(H / 0.26);
     for (let k = 1; k < ny; k++) for (const sx of [-1, 1]) studs.push([sx * (W / 2 - inset), -H / 2 + (H * k) / ny]);
   }
   const edge = (d: number): number => (d >= roll ? 1 : Math.sqrt(Math.max(0, 1 - (1 - d / roll) ** 2)));
@@ -506,7 +506,7 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
     return { p: wallPoint(ctx, a, y, thick + relief + lift), base: wallPoint(ctx, a, y, thick + lift), uv: plain ? [xm, ym] : q };
   };
   // Grid: fine rows over the rolled rim, an even grid inside.
-  const step = detail === 0 ? 0.02 : detail === 1 ? 0.07 : 0.14;
+  const step = detail === 0 ? 0.016 : detail === 1 ? 0.07 : 0.14;
   const rim = detail === 0 ? [0, 0.22, 0.55, 1] : [0, 1];
   const axis = (L: number): number[] => {
     const n = Math.max(1, Math.round((L - 2 * roll) / step));
@@ -524,7 +524,7 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
   if (detail > 0) return;
 
   // Press studs: a domed metal cap on the cloth (overlay: the cloth under it is not buried in the bake).
-  const stud = ctx.m('steel', { flags: FLAG_OVERLAY });
+  const stud = ctx.m('stud', { flags: FLAG_OVERLAY });
   const frameOn = (xm: number, ym: number): { o: Vec3; n: Vec3 } => {
     const t = 0.5 + ym / H;
     const y = y0 + (y1 - y0) * t;
@@ -533,7 +533,7 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
   };
   for (const [sx, sy] of studs) {
     const f = frameOn(sx, sy);
-    b.lathe(v3.addScaled(f.o, f.n, -0.0005), f.n, [[0.0058, 0], [0.0054, 0.0012], [0.0036, 0.002], [0, 0.0023]], 8, stud);
+    b.lathe(v3.addScaled(f.o, f.n, -0.0005), f.n, [[0.0058, 0], [0.005, 0.0016], [0, 0.0023]], 7, stud);
   }
   // Hook-and-loop squares where the crew park loose items: a small grid sewn on a plain liner panel,
   // square to the bay, each square a pad standing a millimetre and a half off the cloth.

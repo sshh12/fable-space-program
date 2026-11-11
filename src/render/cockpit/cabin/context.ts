@@ -12,7 +12,7 @@ import { mouldOf, type Mould } from '../mould';
 /** Detail level of a build pass: 0 = inside (full), 1 = outside near, 2 = outside far. */
 export type Detail = 0 | 1 | 2;
 
-export type ControlKind = 'toggle' | 'guard' | 'rotary' | 'lamp' | 'digit' | 'rhc' | 'thc' | 'throttle' | 'flood';
+export type ControlKind = 'toggle' | 'guard' | 'rotary' | 'lamp' | 'digit' | 'rhc' | 'thc' | 'throttle' | 'flood' | 'needle';
 
 export interface ControlMeta {
   /** 1-based index written to the vertices (0 = static geometry). */
@@ -33,8 +33,10 @@ export interface ControlMeta {
   seat?: string;
   /** Floodlight index (kind 'flood'). */
   flood?: number;
-  /** Fixed position for controls whose binding is 'none'. */
+  /** Fixed position for controls whose binding is 'none'; a rate needle: the body axis it shows (0 pitch, 1 roll, 2 yaw). */
   fixed?: number;
+  /** Rate needle: travel along `axis` at full scale, m. */
+  travel?: number;
 }
 
 export interface DisplayMeta {
@@ -114,6 +116,8 @@ export interface LabelStyle {
   box?: boolean;
   /** Stripe pattern instead of text (hazard placards). */
   stripes?: boolean;
+  /** Legend of a lamp lens: the cap height of a two-row legend whether it has one row or two. */
+  lens?: boolean;
 }
 
 /** Label palette (index -> linear colour) shared with the shader. */
@@ -144,8 +148,9 @@ export class CabinContext {
   readonly couches: CouchMeta[] = [];
   readonly labels: LabelAlloc[] = [];
   private readonly labelByKey = new Map<string, LabelAlloc>();
-  private shelfX = 0;
-  private shelfY = 0;
+  // The atlas is sampled with a repeating anisotropic sampler: every label keeps clear of the borders.
+  private shelfX = 3;
+  private shelfY = 3;
   private shelfH = 0;
   detail: Detail = 0;
 
@@ -176,15 +181,15 @@ export class CabinContext {
 
   /** Allocate (or reuse) a label in the atlas; returns its normalised atlas rectangle. */
   label(text: string, heightM: number, widthM: number, style: Partial<LabelStyle> = {}): [number, number, number, number] {
-    const st: LabelStyle = { weight: style.weight ?? 600, align: style.align ?? 'center', box: style.box, stripes: style.stripes };
+    const st: LabelStyle = { weight: style.weight ?? 600, align: style.align ?? 'center', box: style.box, stripes: style.stripes, lens: style.lens };
     const hPx = Math.max(12, Math.round(heightM * ATLAS_PX_PER_M));
     const wPx = Math.max(12, Math.round(widthM * ATLAS_PX_PER_M));
-    const key = `${text}|${hPx}|${wPx}|${st.weight}|${st.align}|${st.box ? 1 : 0}|${st.stripes ? 1 : 0}`;
+    const key = `${text}|${hPx}|${wPx}|${st.weight}|${st.align}|${st.box ? 1 : 0}|${st.stripes ? 1 : 0}|${st.lens ? 1 : 0}`;
     let a = this.labelByKey.get(key);
     if (!a) {
-      const pad = 2;
+      const pad = 3;
       if (this.shelfX + wPx + pad > ATLAS_WIDTH) {
-        this.shelfX = 0;
+        this.shelfX = pad;
         this.shelfY += this.shelfH + pad;
         this.shelfH = 0;
       }

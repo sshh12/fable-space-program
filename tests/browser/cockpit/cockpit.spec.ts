@@ -16,11 +16,11 @@ test.use({ viewport: { width: 1280, height: 720 } });
 
 const PAGES = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'] as const;
 // MFD header geometry of the shared painter (src/ui/mfd/mfdPainter.ts) at 1024 x 768: header height
-// round(0.085 h), six tabs over 0.62 w, the active tab underlined in the accent colour just above the rule.
+// round(0.085 h), six tabs over 0.66 w, the active tab underlined in the accent colour just above the rule.
 const W = 1024;
 const H = 768;
 const HH = Math.round(H * 0.085);
-const TAB_W = (W * 0.62) / PAGES.length;
+const TAB_W = (W * 0.66) / PAGES.length;
 const UNDERLINE_Y = HH - 2;
 
 async function open(page: Page, query: string): Promise<void> {
@@ -186,9 +186,14 @@ test('the GPU occlusion bake matches the CPU reference', async ({ page, pageLog 
   test.setTimeout(240_000);
   await open(page, 'scene=leo');
   const r = await page.evaluate(() => window.__cockpit!.occlusionCheck(300));
-  // Same rays, same BVH: differences come from float rounding at grazing hits and the 8-bit storage.
+  // Same rays, same BVH: differences come from float rounding at grazing hits and the 8-bit storage. A
+  // source a vertex sees edge-on has a single sample with a vanishing kernel weight left, and whether that
+  // one ray is blocked may differ between float32 and float64: such a channel flips whole (it carries no
+  // light either way). So: the mean, the 99.5th percentile, and at most a handful of flips.
+  console.log(`occlusion bake: mean |GPU - CPU| ${r.mean.toFixed(5)}, p99.5 ${r.p995.toFixed(4)}, max ${r.max.toFixed(3)}, flips ${r.flips} of ${r.values}`);
   expect(r.mean, 'mean |GPU - CPU| over every channel').toBeLessThan(0.01);
-  expect(r.max, 'largest |GPU - CPU|').toBeLessThan(0.2);
+  expect(r.p995, '99.5th percentile of |GPU - CPU|').toBeLessThan(0.2);
+  expect(r.flips / r.values, 'share of channels that differ by more than a half').toBeLessThan(0.003);
   expect(r.meanAo, 'the bake is not empty').toBeGreaterThan(0.3);
   await expectNoErrors(page, pageLog);
 });

@@ -178,6 +178,9 @@ export function digitMask(ro: ReadoutDef, text: string, i: number): number {
   return m;
 }
 
+/** Body rate (rad/s) at which an attitude indicator's rate needle reaches the end of its scale: 5 deg/s. */
+export const RATE_FULL_SCALE = (5 * Math.PI) / 180;
+
 export interface ControlState {
   rot: Quat;
   offset: Vec3;
@@ -258,6 +261,13 @@ export function controlStates(
       }
       case 'throttle': {
         st.rot = quat.fromAxisAngle(ctl.axis, -c.throttle * 55 * (Math.PI / 180));
+        break;
+      }
+      case 'needle': {
+        // Body rate about the needle's axis (VES: x pitch, y roll, z yaw), full scale at RATE_FULL_SCALE.
+        const w = src.vessel.w;
+        const rate = [w.x, w.y, w.z][ctl.fixed ?? 0] ?? 0;
+        st.offset = v3.scale(ctl.axis, Math.max(-1, Math.min(1, rate / RATE_FULL_SCALE)) * (ctl.travel ?? 0));
         break;
       }
       case 'flood': {

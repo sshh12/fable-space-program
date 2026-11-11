@@ -6,8 +6,9 @@
  * Attribution mode (?perf=features: every hook of the feature in its own timed pass 'cockpit.shadow' (summed
  * over the cascades drawn in a frame), 'cockpit.gbuffer', 'cockpit.transparent', 'cockpit.overlay'; the
  * display upload and mip passes are 'cockpit.mfdUpload' (the canvas drawn into mip 0 included), the per-frame
- * cabin light pass 'cockpit.ambient' and the cabin's own sun map 'cockpit.sunMap', both counted with the
- * interior), qualityScale 1, renderScale 1, governor off. As in
+ * cabin light pass 'cockpit.ambient', the cabin's own sun map 'cockpit.sunMap' and the cabin probe
+ * ('cockpit.probe', its six faces, and 'cockpit.probeFilter', its mips and the bounce coefficients), all
+ * counted with the interior), qualityScale 1, renderScale 1, governor off. As in
  * core.perf.spec.ts the GPU is kept as busy as a game frame by a ~7 ms ballast pass; the idle numbers are
  * logged for the record. Scene: low orbit from the commander's seat looking at the console and the forward
  * windows (sunlit cabin, both forward panes and the display cover glasses in view, the 12 m vessel cascade
@@ -35,7 +36,7 @@ async function measure(page: Page, frames: number): Promise<{ gpu: Stats; cpu: {
   }, frames);
 }
 
-function summary(s: Stats): { interior: number; shadowP99: number; shadowMean: number; gbuffer: number; ambient: number; sunMap: number; glass: number; overlay: number; uploadMean: number; uploadP99: number; total: number } {
+function summary(s: Stats): { interior: number; shadowP99: number; shadowMean: number; gbuffer: number; ambient: number; sunMap: number; probe: number; glass: number; overlay: number; uploadMean: number; uploadP99: number; total: number } {
   const g = (k: string): { p50: number; p99: number; mean: number } => s[k] ?? { p50: 0, p99: 0, mean: 0 };
   const gbuffer = g('cockpit.gbuffer').p99;
   const shadow = g('cockpit.shadow');
@@ -44,8 +45,9 @@ function summary(s: Stats): { interior: number; shadowP99: number; shadowMean: n
   const upload = g('cockpit.mfdUpload');
   const ambient = g('cockpit.ambient').p99;
   const sunMap = g('cockpit.sunMap').p99;
-  const interior = gbuffer + shadow.p99 + ambient + sunMap;
-  return { interior, shadowP99: shadow.p99, shadowMean: shadow.mean, gbuffer, ambient, sunMap, glass, overlay, uploadMean: upload.mean, uploadP99: upload.p99, total: interior + glass + overlay + upload.mean };
+  const probe = g('cockpit.probe').p99 + g('cockpit.probeFilter').p99;
+  const interior = gbuffer + shadow.p99 + ambient + sunMap + probe;
+  return { interior, shadowP99: shadow.p99, shadowMean: shadow.mean, gbuffer, ambient, sunMap, probe, glass, overlay, uploadMean: upload.mean, uploadP99: upload.p99, total: interior + glass + overlay + upload.mean };
 }
 
 const fmt = (x: number): string => x.toFixed(4);
@@ -66,7 +68,7 @@ test('cockpit interior, glass and displays within their budget at 1440p', async 
     const idle = await measure(page, 330);
     const si = summary(idle.gpu);
     console.log(
-      `idle GPU (ms): interior p99 ${fmt(si.interior)} (gbuffer ${fmt(si.gbuffer)}, shadow ${fmt(si.shadowP99)}, ambient ${fmt(si.ambient)}, sun map ${fmt(si.sunMap)}), glass p99 ${fmt(si.glass)}, uploads mean ${fmt(si.uploadMean)}, total ${fmt(si.total)}`,
+      `idle GPU (ms): interior p99 ${fmt(si.interior)} (gbuffer ${fmt(si.gbuffer)}, shadow ${fmt(si.shadowP99)}, ambient ${fmt(si.ambient)}, sun map ${fmt(si.sunMap)}, probe ${fmt(si.probe)}), glass p99 ${fmt(si.glass)}, uploads mean ${fmt(si.uploadMean)}, total ${fmt(si.total)}`,
     );
 
     // Calibrate the ballast while it runs, then hold about 7 ms of other GPU work per frame.
@@ -85,12 +87,12 @@ test('cockpit interior, glass and displays within their budget at 1440p', async 
     const cpuPerFrame = busy.cpu.cpuMs / Math.max(1, busy.cpu.frames);
     const paintsPerFrame = busy.cpu.paints / Math.max(1, busy.cpu.frames);
     console.log(
-      `busy GPU (ballast ${burn.toFixed(2)} ms) (ms): interior p99 ${fmt(s.interior)} (gbuffer ${fmt(s.gbuffer)}, shadow p99 ${fmt(s.shadowP99)} mean ${fmt(s.shadowMean)}, ambient ${fmt(s.ambient)}, sun map ${fmt(s.sunMap)}), glass p99 ${fmt(s.glass)}, overlay p99 ${fmt(s.overlay)}, uploads mean ${fmt(s.uploadMean)} (p99 ${fmt(s.uploadP99)}), total ${fmt(s.total)}`,
+      `busy GPU (ballast ${burn.toFixed(2)} ms) (ms): interior p99 ${fmt(s.interior)} (gbuffer ${fmt(s.gbuffer)}, shadow p99 ${fmt(s.shadowP99)} mean ${fmt(s.shadowMean)}, ambient ${fmt(s.ambient)}, sun map ${fmt(s.sunMap)}, probe ${fmt(s.probe)}), glass p99 ${fmt(s.glass)}, overlay p99 ${fmt(s.overlay)}, uploads mean ${fmt(s.uploadMean)} (p99 ${fmt(s.uploadP99)}), total ${fmt(s.total)}`,
     );
     for (const [k, v] of Object.entries(busy.gpu)) if (k.startsWith('cockpit')) console.log(`  ${k}: p50 ${fmt(v.p50)} p99 ${fmt(v.p99)} mean ${fmt(v.mean)}`);
     console.log(`CPU (ms/frame): display paint+upload+mips ${fmt(cpuPerFrame)} (${paintsPerFrame.toFixed(3)} paints/frame), prepare ${fmt(busy.prepareMs)}`);
     expect(burn, 'ballast held').toBeGreaterThan(5);
-    expect(s.interior, 'interior G-buffer + shadow + ambient + sun map p99').toBeLessThan(0.8);
+    expect(s.interior, 'interior G-buffer + shadow + ambient + sun map + probe p99').toBeLessThan(0.8);
     expect(s.glass, 'glass p99').toBeLessThan(0.2);
     expect(s.uploadMean, 'display uploads GPU, mean per frame').toBeLessThan(0.2);
     expect(cpuPerFrame, 'display uploads CPU, mean per frame').toBeLessThan(0.4);

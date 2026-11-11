@@ -57,14 +57,30 @@ export function probeDirection(face: number, u: number, v: number): Vec3 {
   return v3.normalize(v3.add(f, v3.add(v3.scale(r, 2 * u - 1), v3.scale(up, 1 - 2 * v))));
 }
 
-/** Atlas -> cube level 0 (group 0: the atlas, the level to write). */
+/** Texels of a cube face per texel of the bounce map (one work group of the copy pass). */
+export const PROBE_BOUNCE_BLOCK = 8;
+
+/**
+ * Atlas -> cube level 0, and the bounce map: per 8 x 8 block of a face the mean luminance of its reflecting
+ * surfaces (rgb x alpha, summed by the work group that copies the block), which the coefficient pass
+ * integrates. Group 0: the atlas, the level to write, the bounce map.
+ */
 const PROBE_COPY_WGSL = /* wgsl */ `
 @group(0) @binding(0) var atlas: texture_2d<f32>;
 @group(0) @binding(1) var dst: texture_storage_2d_array<rgba16float, write>;
-@compute @workgroup_size(8, 8, 1) fn main(@builtin(global_invocation_id) id: vec3u) {
+@group(0) @binding(2) var bounce: texture_storage_2d_array<rgba16float, write>;
+var<workgroup> part: array<vec3f, ${PROBE_BOUNCE_BLOCK * PROBE_BOUNCE_BLOCK}>;
+@compute @workgroup_size(${PROBE_BOUNCE_BLOCK}, ${PROBE_BOUNCE_BLOCK}, 1) fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wg: vec3u) {
   let size = textureDimensions(dst);
-  if (id.x >= size.x || id.y >= size.y) { return; }
-  textureStore(dst, id.xy, id.z, textureLoad(atlas, vec2u((id.z % 3u) * size.x + id.x, (id.z / 3u) * size.y + id.y), 0));
+  let c = textureLoad(atlas, vec2u((id.z % 3u) * size.x + id.x, (id.z / 3u) * size.y + id.y), 0);
+  textureStore(dst, id.xy, id.z, c);
+  part[li] = c.rgb * c.a;
+  workgroupBarrier();
+  if (li == 0u) {
+    var sum = vec3f(0.0);
+    for (var k = 0u; k < ${PROBE_BOUNCE_BLOCK * PROBE_BOUNCE_BLOCK}u; k++) { sum += part[k]; }
+    textureStore(bounce, wg.xy, wg.z, vec4f(sum / ${PROBE_BOUNCE_BLOCK * PROBE_BOUNCE_BLOCK}.0, 1.0));
+  }
 }
 `;
 
@@ -89,6 +105,7 @@ export class CabinProbe {
   readonly blackView: GPUTextureView;
   readonly faceLayout: GPUBindGroupLayout;
   private readonly black: GPUTexture;
+  private readonly bounce: GPUTexture;
   private readonly atlas: GPUTexture;
   private readonly atlasView: GPUTextureView;
   private readonly depth: GPUTexture;
@@ -111,6 +128,7 @@ export class CabinProbe {
     createModule: (label: string, code: string) => GPUShaderModule,
     createTexture: (desc: GPUTextureDescriptor) => GPUTexture,
   ) {
+    if (size % PROBE_BOUNCE_BLOCK !== 0) throw new Error(`cockpit probe: face size ${size} is not a multiple of ${PROBE_BOUNCE_BLOCK}`);
     this.size = size;
     // Down to 4 x 4 faces: below that a level says no more than the coefficients do.
     this.levels = Math.max(1, Math.round(Math.log2(size)) - 1);
@@ -124,6 +142,12 @@ export class CabinProbe {
     this.view = this.cube.createView({ dimension: 'cube' });
     this.black = createTexture({ label: 'cockpit.probe.black', format: PROBE_FORMAT, size: [1, 1, 6], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     this.blackView = this.black.createView({ dimension: 'cube' });
+    this.bounce = createTexture({
+      label: 'cockpit.probe.bounce',
+      format: PROBE_FORMAT,
+      size: [size / PROBE_BOUNCE_BLOCK, size / PROBE_BOUNCE_BLOCK, 6],
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+    });
     this.atlas = createTexture({ label: 'cockpit.probe.atlas', format: PROBE_FORMAT, size: [3 * size, 2 * size], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
     this.atlasView = this.atlas.createView();
     this.depth = createTexture({ label: 'cockpit.probe.depth', format: PROBE_DEPTH_FORMAT, size: [3 * size, 2 * size], usage: GPUTextureUsage.RENDER_ATTACHMENT });
@@ -144,6 +168,7 @@ export class CabinProbe {
       entries: [
         { binding: 0, resource: this.atlasView },
         { binding: 1, resource: level(0, '2d-array') },
+        { binding: 2, resource: this.bounce.createView({ dimension: '2d-array' }) },
       ],
     });
     this.mipPipe = device.createComputePipeline({ label: 'cockpit.probe.mips', layout: 'auto', compute: { module: createModule('cockpit.probe.mips', PROBE_MIPS_WGSL), entryPoint: 'main' } });
@@ -182,8 +207,7 @@ export class CabinProbe {
       label: 'cockpit.probe.sh',
       layout: this.shLayout,
       entries: [
-        // Level 0: there a texel is either a reflecting surface or an emitter (its alpha).
-        { binding: 0, resource: this.cube.createView({ dimension: '2d-array', baseMipLevel: 0, mipLevelCount: 1 }) },
+        { binding: 0, resource: this.bounce.createView({ dimension: '2d-array' }) },
         { binding: 1, resource: { buffer: ambient, size: AMBIENT_VEC4S * 16 } },
         { binding: 2, resource: { buffer: this.params } },
       ],
@@ -243,6 +267,7 @@ export class CabinProbe {
   dispose(): void {
     this.cube.destroy();
     this.black.destroy();
+    this.bounce.destroy();
     this.atlas.destroy();
     this.depth.destroy();
     this.faces.destroy();

@@ -125,8 +125,10 @@ export function openingFrame(m: Mould, azDeg: number, y: number): { t: Vec3; g: 
 
 /**
  * Outline of a rounded rectangle (width along u, height along v, corner radius) as `count` points in (u, v),
- * counter-clockwise seen from inside the cabin looking out... (from +n looking inward it is clockwise).
- * Points are spaced by arc length so straight edges and corners are sampled evenly.
+ * counter-clockwise seen from inside the cabin looking out... (from +n looking inward it is clockwise),
+ * starting at the middle of the +u edge. Points are spent where the outline curves: half of them on the four
+ * corner arcs (an arc of 16 chords at 128 points: a machined radius, not a polygon), the rest along the
+ * straight edges in proportion to their lengths.
  */
 export function roundedRectOutline(width: number, height: number, cornerRadius: number, count: number): [number, number][] {
   const hw = width / 2;
@@ -134,30 +136,42 @@ export function roundedRectOutline(width: number, height: number, cornerRadius: 
   const rc = Math.max(0, Math.min(cornerRadius, hw, hh));
   const sx = hw - rc;
   const sy = hh - rc;
-  const perimeter = 4 * sx + 4 * sy + 2 * Math.PI * rc;
+  // Chords per corner, per vertical edge (even: the outline starts at its middle) and per horizontal edge.
+  const straight = sx > 1e-9 || sy > 1e-9;
+  let nc = rc > 1e-9 ? Math.max(1, straight ? Math.round(count / 8) : Math.floor(count / 4)) : 0;
+  let rest = count - 4 * nc;
+  let mv = 0;
+  let mh = 0;
+  const split = (): void => {
+    const half = rest / 2;
+    mv = sy > 1e-9 ? Math.max(2, 2 * Math.round((half * sy) / (sx + sy) / 2)) : 0;
+    mh = sx > 1e-9 ? Math.max(1, Math.round(half - mv)) : 0;
+    if (sx <= 1e-9) mv = Math.max(2, 2 * Math.round(half / 2));
+  };
+  split();
+  // Whatever rounding left over goes to (or comes from) the corners.
+  while (2 * mv + 2 * mh + 4 * nc > count && nc > 1) nc--;
+  rest = count - 4 * nc;
+  split();
   const out: [number, number][] = [];
-  // Start at the middle of the right edge and go counter-clockwise in (u, v).
-  const segs: { len: number; at: (s: number) => [number, number] }[] = [
-    { len: sy, at: (s) => [hw, s] },
-    { len: (Math.PI / 2) * rc, at: (s) => { const a = s / Math.max(rc, 1e-9); return [sx + rc * Math.cos(a), sy + rc * Math.sin(a)]; } },
-    { len: 2 * sx, at: (s) => [sx - s, hh] },
-    { len: (Math.PI / 2) * rc, at: (s) => { const a = Math.PI / 2 + s / Math.max(rc, 1e-9); return [-sx + rc * Math.cos(a), sy + rc * Math.sin(a)]; } },
-    { len: 2 * sy, at: (s) => [-hw, sy - s] },
-    { len: (Math.PI / 2) * rc, at: (s) => { const a = Math.PI + s / Math.max(rc, 1e-9); return [-sx + rc * Math.cos(a), -sy + rc * Math.sin(a)]; } },
-    { len: 2 * sx, at: (s) => [-sx + s, -hh] },
-    { len: (Math.PI / 2) * rc, at: (s) => { const a = 1.5 * Math.PI + s / Math.max(rc, 1e-9); return [sx + rc * Math.cos(a), -sy + rc * Math.sin(a)]; } },
-    { len: sy, at: (s) => [hw, -sy + s] },
-  ];
-  for (let i = 0; i < count; i++) {
-    let s = (i / count) * perimeter;
-    for (const seg of segs) {
-      if (s <= seg.len + 1e-12 || seg === segs[segs.length - 1]) {
-        out.push(seg.at(Math.min(s, seg.len)));
-        break;
-      }
-      s -= seg.len;
+  const line = (x0: number, y0: number, x1: number, y1: number, n: number): void => {
+    for (let i = 0; i < n; i++) out.push([x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
+  };
+  const arc = (cx: number, cy: number, a0: number): void => {
+    for (let i = 0; i < nc; i++) {
+      const a = a0 + ((Math.PI / 2) * i) / nc;
+      out.push([cx + rc * Math.cos(a), cy + rc * Math.sin(a)]);
     }
-  }
+  };
+  line(hw, 0, hw, sy, mv / 2);
+  arc(sx, sy, 0);
+  line(sx, hh, -sx, hh, mh);
+  arc(-sx, sy, Math.PI / 2);
+  line(-hw, sy, -hw, -sy, mv);
+  arc(-sx, -sy, Math.PI);
+  line(-sx, -hh, sx, -hh, mh);
+  arc(sx, -sy, 1.5 * Math.PI);
+  line(hw, -sy, hw, 0, mv / 2);
   return out;
 }
 
