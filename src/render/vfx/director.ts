@@ -370,12 +370,14 @@ export class EffectDirector {
           axis: pf.axis,
           radius,
           vel: vd.vel,
-          speed: [P.gas.speed[0], Math.max(P.gas.speed[0], S.puffSpeed * (1 + scale))],
-          speedExponent: 1.5,
-          polar: [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
+          // A thin sheet of gas leaves the separation plane radially, fast, and is gone in a third of a second:
+          // nothing of it may stand around the vehicle as a cloud.
+          speed: P.gas.speed,
+          speedExponent: 1,
+          polar: [Math.PI / 2 - 0.1, Math.PI / 2 + 0.1],
           life: P.gas.life,
           size: P.gas.size,
-          growth: 0.35 * S.puffSpeed,
+          growth: S.puffSpeed,
           color: P.gas.color,
           opacity: P.gas.opacity,
           count: Math.round(P.gas.count * scale),
