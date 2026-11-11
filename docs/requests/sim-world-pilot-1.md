@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit c2e2ed3)
 From: sim-world-pilot
 Owner path: src/core/contracts/defs.ts (ScenarioDef), src/core/defs/loader.ts (validateLibrary)
 Blocking: no        (the mission acceptance run starts from the pad with full tanks; this is about the QA / lab starts)
@@ -47,3 +47,29 @@ amounts to the start vessel before it is placed (mass properties, the heat shiel
 `tools/sim/captureScenarios.ts` records them from the nominal flight into the eight `qa-*` files, and
 `tests/unit/sim-world/scenario.test.ts` asserts the start masses against the mission's milestone records.
 Until then the QA scenarios keep full tanks (stated in docs/handoff/sim-world-pilot.md).
+
+## Resolution
+Added as requested (core-support, commit c2e2ed3).
+
+- `src/core/contracts/defs.ts`: `ScenarioDef.resources?: Record<string, Record<ResourceId, number>>`, with
+  the meaning you wrote: part instance id (`VehicleDef.parts[].id`) -> resource id -> kg at the start;
+  overrides the vehicle's amounts for what is listed; entries of parts that `stagesAlreadyFired` has dropped
+  are ignored by whoever applies it.
+- `src/core/defs/loader.ts`, `validateLibrary`, scenario loop. When the field is present: it is an object;
+  every key is a part instance id of the scenario's vehicle; every value is an object; every resource id is
+  one the part's definition holds (`PartDef.resources`); every amount is a finite number with
+  `0 <= kg <= capacity * (1 + 1e-6)`. Otherwise a `DefError` whose message starts with the scenario file
+  (`scenarios/<id>.json: resources: ...`). An empty object is valid. The check runs for dropped parts too:
+  an entry must name a real part and resource of the vehicle even when the stage that carries it is gone.
+- Test: `src/core/defs/loader.test.ts`, "validates the resource amounts a scenario starts with" (absent,
+  valid, zero, the capacity plus a rounding error, and nine rejections).
+
+Unchanged: scenario files without the field (all nine in the tree load as before; `lunar-direct` needs no
+edit); nothing else in the contracts; the FakeSim ignores the field.
+
+Verified: `npm run typecheck` clean, `npx vitest run` 88 files / 924 tests (your `tests/unit/sim-world`
+included, as they stood at 20:13).
+
+To re-run on your side once `captureScenarios` has written the amounts: `npx vitest run src/core/defs
+tests/unit/sim-world`; a captured amount above the capacity by more than 1e-6 of it is rejected at load
+time with the part and resource named.

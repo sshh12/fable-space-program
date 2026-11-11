@@ -19,7 +19,7 @@ Differences between my brief and what I was told at start (the task wins):
 
 ## 1. Requests
 
-Twenty requests so far; none against my paths is open. Details under `## Resolution` in each file.
+Fifteen requests so far; none against my paths is open. Details under `## Resolution` in each file.
 
 | Request | Blocking | Against | Result | One line |
 |---|---|---|---|---|
@@ -36,6 +36,7 @@ Twenty requests so far; none against my paths is open. Details under `## Resolut
 | `terrain-render-2` | yes | tools/bake/earth, Earth height tiles | resolved `b8ea6a7` | Needles (up to 1,135 m) in the regional Earth heights removed: despike pass in the bake, repair of the stored tiles, verifier check. Manifest contentHash `ab20fdfc579d4015` |
 | `terrain-render-3` | no | Earth night layer | **declined** | The 1.2 km blocks are the instrument footprint in the published source; `nightMinMip: 2` is the smooth filter. Alternatives inside terrain-render given |
 | `sky-lighting-1` | no | TAA resolve | **declined** | Energy loss of sub-pixel bright geometry and the jitter-cycle ripple need a redesign of the resolve (a linear blend for still pixels was tried: it creates energy at saturated sources). Recorded for the lead, section 7 |
+| `sim-world-pilot-1` | no | contracts/defs.ts, defs loader | resolved `c2e2ed3` | `ScenarioDef.resources` (part instance id -> resource id -> kg at the start), validated by the loader against the scenario's vehicle and the parts' capacities |
 | `sky-lighting-2` | no | ARCHITECTURE 17 (lead) | **declined, Escalate: lead** | Raising the sky VRAM line to 0.15 GB for the 2048 Milky Way cube is the lead's decision; the 1024 default keeps the line |
 
 ## 2. API and contract changes made in wave 2
@@ -45,6 +46,8 @@ feature authors.
 
 | Change | Where | Affects | Migration |
 |---|---|---|---|
+| `ScenarioDef.resources?: Record<partInstanceId, Record<ResourceId, kg>>`; `validateLibrary` checks it (part of the vehicle, resource the part holds, 0 <= kg <= capacity x (1 + 1e-6)) | `contracts/defs.ts`, `defs/loader.ts` | sim-world-pilot (applies it in `createSim`), the `qa-*` scenarios | None: files without the field load as before. The FakeSim ignores it |
+| `FakeSimOptions.location` (stand the 'pad' / 'ascent' scenes anywhere), `FAKE_SIM_DEFAULT_UT` | `src/core/fakes/fakeSim.ts` | labs | None |
 | `SharedResourceMap`: `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'`; `SceneBindingSet` `'gbuffer'` | `contracts/render.ts`, `src/render/core/{resources,renderer,sceneBindings}.ts` | ocean; anyone after lighting | None. Never in a bind group set inside `drawGBuffer` |
 | `SharedResourceMap['ocean.wetness']`, `OCEAN_WETNESS_SLOTS` (8), `OCEAN_WETNESS_BYTES` (400); set `'oceanWetness'`; mesh G-buffer shader applies the wet line (`hullWetness`) | `contracts/render.ts`, `resources.ts`, `sceneBindings.ts`, `mesh/meshSystem.ts` (`createMeshSystem` takes `resources`; batch bind group binding 2) | ocean (publishes), vehicle-pad | None |
 | `SharedResourceMap['post.reactive']`; `RenderFeature.requires` accepts `'post.reactive'`; TAA binding 5; `PostInputs.exposureRatio / reactive` | `contracts/render.ts`, `renderer.ts`, `post/postProcess.ts`, `resources.ts` | ocean, later vfx | None |
