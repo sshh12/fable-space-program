@@ -421,3 +421,11 @@ action, SAS or staging change. No other open request targets flight-ui paths. No
 - Note 2 of section 6: `NavballRenderer.view` is documented as sRGB-encoded, premultiplied colour.
 
 Full list: `docs/handoff/lead-baseline.md`.
+
+## Visual close-out, round 1 (in progress)
+
+Work list: `out/qa/wave2/flight-ui.md` (19 items). Status while the work runs (a successor continues from here):
+all 19 items have code changes committed (HUD plates, centring grid, tape gauges, vertical-speed icon, datum
+altimeter, stage tiles and lock state, navball texture / shading / bezel / reticle / marker clipping, MFD page
+layouts, help sheet, SAS key corners, zone status row, phase-aware orbit panel). Screenshots and perf are being
+re-run; the final section below replaces this one.

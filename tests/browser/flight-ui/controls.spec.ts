@@ -412,6 +412,19 @@ test.describe('flight-ui controls', () => {
       expect(b.bottom).toBeLessThanOrEqual(next.y + next.height + 0.5);
     }
     await expect(page.locator('.hud .stagewrap .more')).toHaveText(/^Δv .* total$/);
+    // Every stage name of the mission vehicle reads in full, and the number column and icon stay inside their tile.
+    const names = await page.locator('.hud .stages .tile .name').evaluateAll((els) => els.map((e) => ({ text: e.textContent, over: e.scrollWidth - e.clientWidth })));
+    for (const n of names) expect(n.over, `stage name "${n.text}" is cut`).toBeLessThanOrEqual(0);
+    const parts = await tiles.evaluateAll((els) =>
+      els.map((t) => {
+        const r = t.getBoundingClientRect();
+        return [...t.querySelectorAll('.sn, .ico')].map((c) => {
+          const b = c.getBoundingClientRect();
+          return b.left >= r.left - 0.5 && b.right <= r.right + 0.5 && b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5;
+        });
+      }),
+    );
+    for (const p of parts) expect(p.every(Boolean)).toBe(true);
 
     // Lunar surface: no target can be picked (Earth is the root, the Moon is underfoot) -> no launch panel; the
     // terrain-loading notice sits under the altimeter, clear of every panel.
@@ -426,6 +439,17 @@ test.describe('flight-ui controls', () => {
       expect(overlap, `notice overlaps ${p.cls}`).toBe(false);
     }
     await expectNoErrors(page, pageLog);
+  });
+
+  test('the navball stays on the screen centre line with and without a maneuver node, in the flight and map views', async ({ page, pageLog }) => {
+    for (const query of ['scene=lowOrbit', 'scene=lowOrbit&node=1', 'scene=lowOrbit&view=map&node=1', 'scene=lowOrbit&view=map', 'scene=pad']) {
+      await open(page, query);
+      await page.evaluate(() => window.__test!.waitFrames(5));
+      const vw = page.viewportSize()!.width;
+      const ball = (await page.locator('.hud .ball').boundingBox())!;
+      expect(Math.abs(ball.x + ball.width / 2 - vw / 2), query).toBeLessThanOrEqual(1);
+      await expectNoErrors(page, pageLog);
+    }
   });
 
   test('pointer captured by the map: Shift drags never move the throttle', async ({ page, pageLog }) => {
