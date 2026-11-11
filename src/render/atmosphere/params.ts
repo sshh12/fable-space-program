@@ -78,7 +78,7 @@ export interface CloudParams {
   stepMinM: number;
   stepMaxM: number;
   // --- shadows
-  /** Half width of the near shadow map at ground level, m; it grows with the camera altitude by `shadowAltitudeGain`. */
+  /** Half width of the near shadow map at ground level, m; from above the layer it grows by `shadowAltitudeGain` per metre of distance to the point of the cloud base the camera looks at (the map's centre). */
   shadowHalfExtentM: number;
   shadowAltitudeGain: number;
   shadowMapSize: number;
@@ -136,7 +136,7 @@ const DEFAULTS: Omit<CloudParams, 'bottomAltitude' | 'topAltitude' | 'coverageMa
   stepMinM: 40,
   stepMaxM: 600,
   shadowHalfExtentM: 30000,
-  shadowAltitudeGain: 2.5,
+  shadowAltitudeGain: 0.75,
   shadowMapSize: 1024,
   shadowSteps: 16,
   farShadowOpticalDepth: 2,

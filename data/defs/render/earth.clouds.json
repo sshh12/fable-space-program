@@ -40,7 +40,7 @@
     "stepMinM": 40,
     "stepMaxM": 600,
     "shadowHalfExtentM": 30000,
-    "shadowAltitudeGain": 2.5,
+    "shadowAltitudeGain": 0.75,
     "shadowMapSize": 1024,
     "shadowSteps": 16,
     "farShadowOpticalDepth": 2,

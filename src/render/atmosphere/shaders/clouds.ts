@@ -87,7 +87,10 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
   let lon = atan2(dfix.y, dfix.x) + atmo.noiseRot.z;
   let uv = vec2f(lon / TWO_PI + 0.5, clamp(acos(clamp(dfix.z, -1.0, 1.0)) / PI, 0.0005, 0.9995));
   let texel = TWO_PI * frame.bodies[bi].center.w / atmo.noiseRot.w;
-  let m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, log2(max(footprint / texel, 1.0)));
+  // (One level above the footprint's own once the pixel is larger than the map's texels: the smallest
+  // feature of the map is then two pixels across, not one. A one-pixel gap in a cloud system, seen through
+  // a jittered ray, is a dot that flickers.)
+  let m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, log2(max(2.0 * footprint / texel, 1.0)));
   let c = m.r;
   let ct = m.g * 12750.0;
   let zb = atmo.cloudShell.z;
@@ -535,7 +538,8 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
   var steps = 0.0;
   var haveLight = false;
   var lastLight = vec3f(0.0);
-  var inCloud = false;   // the march is inside a cloud: stratified half steps from its surface
+  var inCloud = false;   // the march is inside a cloud: stratified steps from its surface
+  var halfSteps = false; // ... a cloud with a surface (resolved shapes): half steps
   var misses = 0;        // samples in a row that found nothing while inside
   var sClear = 0.0;      // last position known to be clear
   var sPrevEnd = -1.0e30;
@@ -556,21 +560,77 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
       if (!low) { m *= 3.0; }
       // Past the budget the steps lengthen, a quarter more with each: the ray still reaches its end.
       m *= 1.0 + 0.25 * max(steps - budget, 0.0);
-      var dt = clamp((ray.t0 + s) * atmo.cloudMarch.x * m, atmo.cloudMarch.y, atmo.cloudMarch.z * m);
-      if (inCloud) { dt *= 0.5; }
+      // (From far away a pixel is wider than the whole layer is deep: a step a third of its footprint is
+      // all the depth it can show.)
+      var dt = clamp((ray.t0 + s) * atmo.cloudMarch.x * m, atmo.cloudMarch.y, max(atmo.cloudMarch.z, 0.3 * (ray.t0 + s) * pixelAngle) * m);
+      if (inCloud && halfSteps) { dt *= 0.5; }
       dt = min(dt, max(sEnd - s, 1.0));
       // In clear air the sample sits at the pixel's own phase of the step (a thin cloud is met by some
       // marches of the pixel and missed by others, in proportion to its depth); inside a cloud the steps
       // are counted from its surface and sampled at their middle: the same picture from every march.
-      var ss = s + dt * xi;
-      if (inCloud) { ss = s + 0.5 * dt; }
+      var ph = xi;
+      if (inCloud) { ph = 0.5; }
+      var ss = s + dt * ph;
       steps += 1.0;
       let footprint = (ray.t0 + ss) * pixelAngle;
       let pos = d * (ray.t0 + ss);
       let q = cloudNoiseVec(bi, pos);
       let hS = atmoRayAltitude(ray, ss);
-      let col = cloudColumnAt(bi, pos, q, footprint, hS - 0.5 * abs(atmoRayAltitude(ray, s + dt) - atmoRayAltitude(ray, s)));
-      let den = cloudDensityAt(col, hS, q, footprint, detailEye);
+      let hA = atmoRayAltitude(ray, s);
+      let hB = atmoRayAltitude(ray, s + dt);
+      let col = cloudColumnAt(bi, pos, q, footprint, min(hA, hB));
+      var den = cloudDensityAt(col, hS, q, footprint, detailEye);
+      // A step that crosses much of a layer's depth (the long steps of a far pixel) does not point-sample
+      // the layers: each of the two (the low layer, the upper body) is sampled twice inside the part of its
+      // own altitude range that the step covers, and counts with that part's share of the step. A layer
+      // thinner than the step is then neither missed nor counted for the whole step, whatever the phase.
+      let longStep = abs(hB - hA) > 500.0;
+      var sLit = 0.0;   // where a long step is lit: one mean free path below where it enters the cloud
+      if (longStep) {
+        let hLo = min(hA, hB);
+        let hHi = max(hA, hB);
+        var sum = 0.0;
+        var share = 0.0;
+        var hEntry = hB;
+        var found = false;
+        var any = den;
+        for (var part = 0; part < 2; part++) {
+          var a0 = max(hLo, atmo.cloudShell.z);
+          var a1 = min(hHi, col.lowTop);
+          if (part == 1) {
+            a0 = max(hLo, max(col.upBase - 200.0, col.lowTop));
+            a1 = min(hHi, col.upTop);
+            if (col.amtUp <= 0.0) { a1 = a0; }
+          } else if (col.cLow <= 0.004) {
+            a1 = a0;
+          }
+          if (a1 <= a0 + 1.0) { continue; }
+          for (var j = 0; j < 2; j++) {
+            let hj = mix(a0, a1, 0.25 + 0.5 * f32(j));
+            let sj = s + dt * (hj - hA) / (hB - hA);
+            let dj = cloudDensityAt(col, hj, cloudNoiseVec(bi, d * (ray.t0 + sj)), footprint, detailEye);
+            if (dj.sigma > 0.0) {
+              sum += dj.sigma * dj.frac * 0.5 * (a1 - a0) / (hHi - hLo);
+              share = max(share, dj.frac);
+              // (The part met first along the ray: the highest when the ray descends.)
+              let edge = select(a0, a1, hB < hA);
+              if (!found || (hB < hA && edge > hEntry) || (hB >= hA && edge < hEntry)) {
+                hEntry = edge;
+                any = dj;
+              }
+              found = true;
+            }
+          }
+        }
+        den = any;
+        den.sigma = 0.0;
+        if (found) {
+          den.frac = share;
+          den.sigma = sum / share;
+          let sEntry = s + dt * saturate((hEntry - hA) / (hB - hA));
+          sLit = sEntry + min(1.0 / max(any.sigma, 1e-5), 0.5 * (s + dt - sEntry));
+        }
+      }
       if (den.sigma <= 0.0) {
         sClear = ss;
         if (inCloud) {
@@ -586,16 +646,21 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
         // bisection (to a sixteenth of the step), and the march goes on from there. What the cloud returns
         // comes from its first mean free paths: steps that start on the surface split that layer the same
         // way for every ray.
-        var lo = sClear;
-        var hi = ss;
-        for (var i = 0; i < 4; i++) {
-          let sm = 0.5 * (lo + hi);
-          let dm = cloudDensityAt(col, atmoRayAltitude(ray, sm), cloudNoiseVec(bi, d * (ray.t0 + sm)), footprint, 1);
-          if (dm.sigma > 0.0) { hi = sm; } else { lo = sm; }
-        }
+        // (A field that is only a fraction of the footprint has an upper and a lower edge, which are found
+        // the same way, but nothing that half steps would see better: whole steps from there.)
         inCloud = true;
-        s = max(hi - 0.02 * dt, sClear);
-        if (steps < budget) { continue; }
+        halfSteps = den.layer < 0.9;
+        if (!longStep) {
+          var lo = sClear;
+          var hi = ss;
+          for (var i = 0; i < 4; i++) {
+            let sm = 0.5 * (lo + hi);
+            let dm = cloudDensityAt(col, atmoRayAltitude(ray, sm), cloudNoiseVec(bi, d * (ray.t0 + sm)), footprint, 1);
+            if (dm.sigma > 0.0) { hi = sm; } else { lo = sm; }
+          }
+          s = max(hi - 0.02 * dt, sClear);
+          if (steps < budget) { continue; }
+        }
       }
       let sIn = s;
       s += dt;
@@ -605,7 +670,8 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
       let seg = exp(-x);
       var meanDepth = 0.5 - x / 12.0;
       if (x > 0.05) { meanDepth = 1.0 / x - seg / (1.0 - seg); }
-      let sl = sIn + dt * meanDepth;
+      var sl = sIn + dt * meanDepth;
+      if (longStep) { sl = sLit; }
       let hl = atmoRayAltitude(ray, sl);
       let posL = d * (ray.t0 + sl);
       let ql = cloudNoiseVec(bi, posL);
@@ -645,7 +711,9 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
           // sun, beside it under a low one).
           var tauAway = 0.0;
           var aPrev = 0.0;
-          for (var j = 0; j < 3; j++) {
+          var awayCount = 3;
+          if (den.layer > 0.98) { awayCount = 0; }
+          for (var j = 0; j < awayCount; j++) {
             let aNext = reach * CLOUD_AWAY[j];
             let am = 0.5 * (aPrev + aNext);
             let qq = am * am - 2.0 * r * muS * am;
@@ -772,19 +840,23 @@ ${
   fine
     ? `  let hp = vec2i(in.position.xy) + vec2i(atmo.tile.xy);
   let sceneZ = viewZFromDepth(textureLoad(sceneDepthTex, hp, 0));
-  let bn = blueNoise(vec2u(hp)).y;
   var rgb = vec3f(0.0);
   var a = 0.0;
   var front = 3.0e38;
   var back = 0.0;
   var wSum = 0.0;
   var tSum = 0.0;
-  for (var k = 0; k < 4; k++) {
-    let rayDir = viewRay((vec2f(hp) + 0.5 + CLOUD_SUB[k]) * frame.renderSize.zw);
+  // (Four rays; two when the governor has lowered the quality scale.)
+  var count = 4;
+  if (atmo.cloudLight.w < 0.85) { count = 2; }
+  for (var k = 0; k < count; k++) {
+    let rayDir = viewRay((vec2f(hp) + 0.5 + CLOUD_SUB[k * (4 / count)]) * frame.renderSize.zw);
     let len = length(rayDir);
-    let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, fract(bn + f32(k) * 0.61803398875), 0.5 * atmo.cloudMarch.w);
-    rgb += ray.color.rgb * 0.25;
-    a += ray.color.a * 0.25;
+    // (Step phases stratified over the rays of the pixel, the same in every pixel: no temporal filter
+    // stands behind this path to average a per-pixel phase away.)
+    let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, (f32(k) + 0.5) / f32(count), 0.5 * atmo.cloudMarch.w);
+    rgb += ray.color.rgb / f32(count);
+    a += ray.color.a / f32(count);
     if (ray.geom.b < 1.0e37) {
       let w = 1.0 - ray.color.a;
       front = min(front, ray.geom.r);

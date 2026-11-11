@@ -25,7 +25,7 @@ interface ComputeStage {
 export interface TableInputs {
   /** The feature's uniform buffer (group 1, binding 0 of every pass). */
   uniforms: GPUBuffer;
-  /** Cloud shadow map and coverage map for the sun term of the aerial volume (neutral textures when there are no clouds). */
+  /** Cloud shadow moments and coverage map for the sun term of the aerial volume and the clouds of the sky-view table (neutral textures when there are no clouds). */
   shadowMap: GPUTextureView;
   coverageMap: GPUTextureView;
 }
@@ -93,7 +93,7 @@ export class AtmosphereTables {
       transmittance: stage('atmosphere.transmittance', TRANSMITTANCE_COMPUTE_WGSL, [uniform, storage(1, '2d-array')]),
       multiScatter: stage('atmosphere.multiScatter', MULTISCATTER_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), storage(2, '2d-array')]),
       irradiance: stage('atmosphere.irradiance', SKY_IRRADIANCE_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d-array')]),
-      skyView: stage('atmosphere.skyView', SKY_VIEW_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d')]),
+      skyView: stage('atmosphere.skyView', SKY_VIEW_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d'), sampled(4, '2d'), sampled(5, '2d-array')]),
       aerial: stage('atmosphere.aerial', AERIAL_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), sampled(3, '2d'), sampled(4, '2d'), storage(5, '3d')]),
     };
   }
@@ -163,7 +163,7 @@ export class AtmosphereTables {
       transmittance: [u, { binding: 1, resource: t }],
       multiScatter: [u, { binding: 1, resource: t }, { binding: 2, resource: m }],
       irradiance: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: this.irradianceView! }],
-      skyView: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: this.skyViewView }],
+      skyView: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: this.skyViewView }, { binding: 4, resource: i.coverageMap }, { binding: 5, resource: this.irradianceView! }],
       aerial: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: i.shadowMap }, { binding: 4, resource: i.coverageMap }, { binding: 5, resource: this.aerialView }],
     };
     s.group = this.device.createBindGroup({ label: `atmosphere.${name}`, layout: s.layout, entries: entries[name] });

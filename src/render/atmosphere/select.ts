@@ -131,11 +131,19 @@ export function selectMarchBodies(layers: readonly AtmosphereLayer[], bodies: re
  * rectangle instead of at half resolution (see marchFsWgsl): a planet seen from afar, where one
  * half-resolution texel spans more than the atmosphere is deep.
  */
-export const FINE_TILE_SIZE = 512;
+export const FINE_TILE_SIZE = 1024;
 
-/** Whether a full-resolution scissor rectangle [x, y, w, h] is marched in the full-resolution tile. */
-export function fitsFineTile(scissor: readonly [number, number, number, number]): boolean {
-  return scissor[2] > 0 && scissor[3] > 0 && scissor[2] <= FINE_TILE_SIZE && scissor[3] <= FINE_TILE_SIZE;
+/** A half-resolution texel coarser than this share of the shell's depth cannot carry the shell: the tile is used. */
+export const FINE_TEXEL_SHARE = 0.2;
+
+/**
+ * Whether a full-resolution scissor rectangle [x, y, w, h] is marched in the full-resolution tile: it has
+ * to fit, and one half-resolution texel on the nearest marched body (`texelM`, m) has to be coarse against
+ * the depth of that body's atmosphere (`shellDepthM`, m). A shell that half resolution resolves is left to
+ * it, whatever its size on the screen.
+ */
+export function fitsFineTile(scissor: readonly [number, number, number, number], texelM = Infinity, shellDepthM = 0): boolean {
+  return scissor[2] > 0 && scissor[3] > 0 && scissor[2] <= FINE_TILE_SIZE && scissor[3] <= FINE_TILE_SIZE && texelM > FINE_TEXEL_SHARE * shellDepthM;
 }
 
 /** Pixel scissor rectangle [x, y, w, h] (y down) of an NDC rectangle on a target, grown by `margin` px. */

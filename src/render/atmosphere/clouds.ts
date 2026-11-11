@@ -8,7 +8,7 @@ import type { BodyDef } from '@/core/contracts/defs';
 import type { BodyPose, FrameContext, RenderContext } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { DEG, mat3, quat, v3, type Vec3 } from '@/core/math';
-import { coreOf, f16ToF32, readTexturePixels, taaJitter, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { cameraBasis, coreOf, f16ToF32, readTexturePixels, taaJitter, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
 import { resolveCloudParams, type CloudParams } from './params';
 import type { MarchBody } from './select';
 import { FINE_TILE_SIZE, scissorOf } from './select';
@@ -253,7 +253,7 @@ export class CloudSystem {
     this.depth = this.core.createTarget(`${id}.cloud.depth`, 'rg32float', 0.5);
     this.geoms = [0, 1].map((i) => this.core.createTarget(`${id}.cloud.geom${i}`, 'rgba32float', 0.5, RT | GPUTextureUsage.COPY_SRC)) as [ManagedTarget, ManagedTarget];
     this.histories = [0, 1].map((i) => this.core.createTarget(`${id}.cloud.history${i}`, 'rgba16float', 0.5)) as [ManagedTarget, ManagedTarget];
-    const tile = (label: string, format: GPUTextureFormat): GPUTexture => this.core.createTextureChecked({ label, format, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: RT });
+    const tile = (label: string, format: GPUTextureFormat): GPUTexture => this.core.createTextureChecked({ label, format, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: RT | GPUTextureUsage.COPY_SRC });
     this.fineColor = tile(`${id}.cloud.fine`, 'rgba16float');
     this.fineGeom = tile(`${id}.cloud.fineGeom`, 'rgba32float');
     this.fineColorTexView = this.fineColor.createView();
@@ -760,10 +760,23 @@ export class CloudSystem {
     const q = pose.qFixedToRoot;
     const camFixed = pose.cameraFixed;
     const upFixed = v3.normalize(camFixed);
-    // Centre the map under the camera, at the cloud base (or at the camera when it is below that).
-    const centreFixed = v3.scale(upFixed, R + Math.min(pose.cameraAltitude, params.bottomAltitude));
+    // Centre the map under the camera, at the cloud base (or at the camera when it is below that). From
+    // above the layer: where the view axis meets the cloud base (the point of the base nearest to the axis
+    // when it passes over the limb), so that the map's texels are spent on what the frame shows.
+    let centreFixed = v3.scale(upFixed, R + Math.min(pose.cameraAltitude, params.bottomAltitude));
+    let reach = Math.max(pose.cameraAltitude - params.topAltitude, 0);
+    if (pose.cameraAltitude > params.topAltitude) {
+      const forward = quat.rotate(quat.conj(q), cameraBasis(frame.camera).forward);
+      const rs = R + params.bottomAltitude;
+      const b = v3.dot(camFixed, forward);
+      const disc = b * b - (v3.lenSq(camFixed) - rs * rs);
+      const along = disc > 0 && -b - Math.sqrt(disc) > 0 ? -b - Math.sqrt(disc) : Math.max(-b, 0);
+      centreFixed = v3.scale(v3.normalize(v3.addScaled(camFixed, forward, along)), rs);
+      reach = Math.max(v3.dist(camFixed, centreFixed) - (params.topAltitude - params.bottomAltitude), 0);
+    }
 
-    const target = Math.min(params.shadowHalfExtentM + params.shadowAltitudeGain * Math.max(pose.cameraAltitude - params.topAltitude, 0), SHADOW_MAX_HALF_EXTENT);
+    // (Wide enough for the pixels around the centre: the extent grows with the distance to it.)
+    const target = Math.min(params.shadowHalfExtentM + params.shadowAltitudeGain * reach, SHADOW_MAX_HALF_EXTENT);
     let full = !this.shadowValid || this.anchorBody !== def.id || !this.anchorFixed;
     if (this.shadowHalfExtent <= 0 || Math.abs(Math.log2(target / this.shadowHalfExtent)) > 0.4) {
       // Extents in steps of sqrt(2) with hysteresis: the texel size changes rarely, and then everything is re-marched.
@@ -1054,6 +1067,19 @@ export class CloudSystem {
     for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
     const geometry = new Float32Array(await readTexturePixels(this.device, this.geoms[this.cur]!.texture, rect, 16));
     return { width, height, radiance, geometry };
+  }
+
+  /**
+   * Read a rectangle of the tile targets of the full-resolution march back (tests and diagnosis), row 0
+   * first: `radiance` and `geometry` as in `readBuffers`. Tile texel (0, 0) is the render-target pixel
+   * `atmo.tile.xy` (the origin of the scissor rectangle that `AtmosphereDebug.selection()` reports).
+   */
+  async readFineBuffers(rect: { x: number; y: number; width: number; height: number }): Promise<{ width: number; height: number; radiance: Float32Array; geometry: Float32Array }> {
+    const half = new Uint16Array(await readTexturePixels(this.device, this.fineColor, rect, 8));
+    const radiance = new Float32Array(half.length);
+    for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
+    const geometry = new Float32Array(await readTexturePixels(this.device, this.fineGeom, rect, 16));
+    return { width: rect.width, height: rect.height, radiance, geometry };
   }
 
   /** Tunables of the body whose clouds are being drawn. */

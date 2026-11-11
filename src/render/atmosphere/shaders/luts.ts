@@ -187,12 +187,22 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-/** Bindings: 1 = transmittance, 2 = multi-scattering (texture_2d_array), 3 = output (texture_storage_2d rgba16float). */
+/**
+ * Bindings: 1 = transmittance, 2 = multi-scattering (texture_2d_array), 3 = output (texture_storage_2d
+ * rgba16float), 4 = cloud coverage map, 5 = sky irradiance (texture_2d_array).
+ *
+ * The table is what water and the environment probe reflect. Seen from under the cloud layer, the clouds
+ * are part of that sky: each direction above the horizon takes the cover of the coverage map where it
+ * meets the cloud base (more of it at a slant: clouds have sides) and, for that share, the radiance of a
+ * cloud base instead of the clear sky behind it. A sea under an overcast reflects grey, not blue.
+ */
 export const SKY_VIEW_COMPUTE_WGSL = /* wgsl */ `
 ${HEADER}
 @group(1) @binding(1) var transLut: texture_2d_array<f32>;
 @group(1) @binding(2) var msLut: texture_2d_array<f32>;
 @group(1) @binding(3) var outTex: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(4) var atmoCoverageTex: texture_2d<f32>;
+@group(1) @binding(5) var irradianceLut: texture_2d_array<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -212,8 +222,40 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   let nrm = cross(up, e);
   let d = normalize(cos(l) * (cos(az) * e + sin(az) * nrm) + sin(l) * up);
   let path = atmoIntegrate(transLut, msLut, bi, layer, d, atmoRay(bi, d), i32(atmo.steps.z));
+  var L = path.L;
+  var a = dot(path.T, vec3f(1.0 / 3.0));
+  let h0 = frame.bodies[bi].sunDir.w;
+  let mu = dot(d, up);
+  if (atmo.bodies.z == i32(bi) && atmo.cloudShell.x > 0.0 && h0 < atmo.cloudShell.z && mu > 0.0) {
+    let rb = frame.bodies[bi].center.w;
+    let tc = atmoRaySphere(frame.bodies[bi].cameraUp.w, h0 - atmo.cloudShell.z, mu, atmo.cloudShell.x).y;
+    if (tc > 0.0) {
+      let pos = d * tc;
+      let upC = normalize(pos - frame.bodies[bi].center.xyz);
+      let dfix = normalize(rootToFixed(bi, pos - frame.bodies[bi].center.xyz));
+      let lon = atan2(dfix.y, dfix.x) + atmo.noiseRot.z;
+      let uvC = vec2f(lon / TWO_PI + 0.5, clamp(acos(clamp(dfix.z, -1.0, 1.0)) / PI, 0.0005, 0.9995));
+      // (One texel of the table is about three degrees: the map is read at that size.)
+      let texel = TWO_PI * rb / atmo.noiseRot.w;
+      let c = textureSampleLevel(atmoCoverageTex, linearRepeat, uvC, log2(max(0.05 * tc / texel, 1.0))).r;
+      // The low layer's cover as the density model has it on average (fair-weather fields included).
+      let cover = saturate(c * atmo.cloudLow.w + atmo.cloudLow2.x * 0.375 * (1.0 - smoothstep(0.0, 0.3, c)));
+      let share = 1.0 - pow(1.0 - min(cover, 0.98), 1.0 / max(dot(d, upC), 0.2));
+      // A cloud base: what the column passes of the sun's light, and half the sky's from its sides.
+      let muS = dot(upC, sunDir);
+      let tau = atmo.cloudLow.y * 0.6 * atmo.cloudLow.x * mix(0.45, 1.0, cover);
+      let rc = rb + atmo.cloudShell.z;
+      let sun = frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rc, muS) * (atmoHorizonVisibility(rc, rb, muS) * saturate(muS) * (1.0 / (1.0 + atmo.cloudLight.y * tau) + 0.08));
+      let sky = textureSampleLevel(irradianceLut, linearClamp, skyIrradianceUvFromRMuS(rc, muS, rb, frame.bodies[bi].prevCenter.w), layer + atmo.layers.z, 0.0).rgb;
+      let base = (sun + 0.5 * sky) / PI;
+      // (The air in front of the cloud: what the path to it has not let through is the clear sky's light.)
+      let front = exp(-atmoMedium(bi, 0.5 * (h0 + atmo.cloudShell.z)).ext * tc);
+      L = L * (vec3f(1.0) - share * front) + base * (share * front);
+      a *= 1.0 - share;
+    }
+  }
   // rgb = sky luminance (cd/m^2); a = mean transmittance of the path (to space, or to the reference sphere).
-  textureStore(outTex, id.xy, vec4f(path.L, dot(path.T, vec3f(1.0 / 3.0))));
+  textureStore(outTex, id.xy, vec4f(L, a));
 }
 `;
 

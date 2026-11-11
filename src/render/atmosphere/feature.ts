@@ -345,7 +345,8 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       // The shells of the selected bodies bound everything the composite hook draws. A rectangle that fits
       // into the tile is marched at full resolution there.
       fullScissor = selection.bounds ? scissorOf(selection.bounds, rw, rh, 2) : [0, 0, 0, 0];
-      fine = active && opts.fineTile !== false && fitsFineTile(fullScissor);
+      const texelOnBody = b0 ? (Math.max(b0.distance - bodyDef(frame, b0.bodyIndex).radius, 0) * 2 * tanY) / halfH : 0;
+      fine = active && opts.fineTile !== false && fitsFineTile(fullScissor, texelOnBody, b0 ? bodyDef(frame, b0.bodyIndex).render.atmosphere!.topAltitude : 0);
       u.set('tile', fullScissor[0], fullScissor[1], fullScissor[2], fullScissor[3]);
       if (cloudBodyIndex < 0) u.set('misc', 1, 0, frame.animate ? 1 : 0, 1);
       device.queue.writeBuffer(uniformBuffer, 0, u.buffer);
