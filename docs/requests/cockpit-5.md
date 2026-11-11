@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 0dbebd3)
 From: cockpit
 Owner path: src/render/core/post/exposure.ts (`meterExposure`, interior branch); docs/RENDER_API.md section 13
 Blocking: yes (visual QA wave 2, cockpit items 6, 9 and 12: "night is displayed brighter than noon", "everything inside the sun patch is one flat white"; both critics name interior metering as the cause and ask for a core change instead of a per-shot `ec`)
@@ -55,3 +55,38 @@ camera's `exposureCompensation` and `minEv100` keep working on top.
 
 Workaround in my paths until this is answered: none that is right (a per-shot `ec` in the lab is what the
 critics rejected); the cockpit's screenshots are taken with the lab's default exposure meanwhile.
+
+## Resolution
+Implemented as asked, in `meterExposure` for `kind === 'interior'` only (commit 0dbebd3). Exterior and map
+metering are byte-for-byte what they were.
+
+- `INTERIOR_NIGHT_KEY_EV` = 1.5, between `INTERIOR_NIGHT_LOW` = 4 and `INTERIOR_NIGHT_HIGH` = 64 cd/m^2 of
+  the near log-mean: `keyEv = 1.5 x (1 - smoothstep(log2 4, log2 64, log2 logMean))`.
+- `INTERIOR_HIGHLIGHT_CAP` = 48, `INTERIOR_HIGHLIGHT_MAX_EV` = 1.75:
+  `evBase = evMean - exposureCompensationCurve(evMean) + keyEv`,
+  `evHigh = log2(p99 / (48 x 0.18 x 1.2))`, `evHistogram = min(max(evBase, evHigh), evBase + 1.75)`,
+  with `p99` and `logMean` of the whole near histogram.
+- All five constants are exported from `src/render/core/post/exposure.ts`. `exposureCompensation` and
+  `minEv100` act on top as before. RENDER_API section 13 and the table of section 18 say the same.
+
+What it gives (unit tests `tests/unit/render-core/exposureGovernor.test.ts`, "interior metering: night key
+and bounded highlights"): a cabin at 1.5-6 cd/m^2 is displayed at 0.04-0.09 (mid-grey 0.18), less than half
+the level of the same cabin at 120-330 cd/m^2; sunlit hardware 150 times the cabin (5 % of the near pixels)
+is held at 48 x mid-grey and the cabin about a stop and a half under mid-grey; a sun patch 600 times the
+cabin stops the camera down by the full 1.75 EV, the cabin stays above 0.03, and the patch still clips
+(17,000 cd/m^2 against a cabin of 30 is nine stops: no single exposure holds both; the bound is yours).
+Highlights up to 48 x mid-grey, and a handful of pixels under the 99th percentile, move nothing. The test of
+request cockpit-3 now expects the bounded stop-down instead of "less than a stop".
+
+(c) The tone curve. It is AgX: the shoulder already desaturates towards white instead of clipping channel
+by channel. Measured with the CPU port of the pass (`displayLinear` in `src/render/core/post/tonemap.ts`,
+new with request sky-lighting-3): an orange of 1.6 : 0.8 : 0.2 in scene-linear shows as 183, 142, 76 at one
+stop over mid-grey, 211, 175, 110 at two, 233, 204, 146 at three, 246, 227, 180 at four, 253, 241, 209 at
+five and 255, 249, 229 at six; from about 6.5 stops over mid-grey it is white. So a window keeps a hue
+while its radiance is within about four stops of the level the cabin is metered at and is a pale cream one
+or two stops further; beyond that it is white whatever the core does. Keeping the plasma within about four
+stops of the cabin by your own means is the right plan; nothing in the curve was changed for it.
+
+Not re-run by me: `tests/browser/cockpit` could not start while this was verified (your working tree was
+mid-edit: "sunmap.ts does not provide an export named 'sunMapTransform'"). Run it when your tree compiles;
+the core's own `tests/browser/render-core/exposure.spec.ts` passes.
