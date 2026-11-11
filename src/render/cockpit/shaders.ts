@@ -519,17 +519,15 @@ fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   let texelsPerRad = f32(textureDimensions(cabinProbe).x) / 1.5708;
   let lod = clamp(max(cabinProbeLod(roughness), log2(max(fp * texelsPerRad, 1e-3)) + 0.5), 0.0, f32(textureNumLevels(cabinProbe)) - 1.0);
   let dir = normalize(cabinProbeDir(p, d));
-  if (lod < 1.5) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
+  if (lod < 2.5) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
   // The coarse mips are a few texels per face: a single bilinear lookup draws a bright window there as a
-  // blocky lozenge on a flat glossy panel. Four lookups half a texel apart (of that mip) round it off.
+  // blocky lozenge on a flat glossy panel. Two lookups half a texel apart (of that mip) across the diagonal
+  // of the texel grid round it off.
   let t = normalize(cross(dir, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
   let b = cross(dir, t);
   let a = 0.5 * exp2(lod) / texelsPerRad;
-  var s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb;
-  s += textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb;
-  s += textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
-  s += textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
-  return s * (0.25 * cabin.probe.w);
+  let s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
+  return s * (0.5 * cabin.probe.w);
 }
 /// Radians per pixel swept by a reflected direction r (screen derivatives; uniform control flow only).
 fn reflectionFootprint(r: vec3f) -> f32 { return max(length(dpdx(r)), length(dpdy(r))); }
@@ -639,8 +637,8 @@ const SUN_PENUMBRA_MAX = 0.006;
 /// millimetre per texel, so an occluder's edge stays straight on a receiver the light only grazes. The
 /// receiver's plane is known analytically (ng and the tile's axes), so taps over a sloped receiver compare
 /// at the receiver's own depth. PCSS: a blocker search, then a grid of bilinear comparisons (6 x 6 to
-/// 16 x 16, at most a texel and a half apart) over the penumbra the nearest blocker and the solar diameter
-/// give.
+/// 8 x 8, a texel and a half apart where that suffices) over the penumbra the nearest blocker and the solar
+/// diameter give.
 fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   let tu = cabin.sunTiles[3u * wi];
   let tv = cabin.sunTiles[3u * wi + 1u];
@@ -682,10 +680,11 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   // (On a receiver the light only grazes, one texel of the map spans many pixels along the light: the floor
   // grows to four texels there, so a caster's rasterised edge does not show as teeth.)
   let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, texelM * (1.5 + 2.5 * sinL * sinL), SUN_PENUMBRA_MAX);
-  // Bilinear comparisons on a grid over the penumbra, never further apart than a texel and a half (wide
-  // penumbrae take more taps): a smooth ramp across the edge, no stacked copies of it.
+  // Bilinear comparisons on a grid over the penumbra, a texel and a half apart (wide penumbrae take more taps,
+  // up to 8 x 8; beyond that the spacing grows, over a ramp already several millimetres wide): a smooth
+  // ramp across the edge, no stacked copies of it.
   let penUv = vec2f(pen) / mPerUv;
-  let nAx = u32(clamp(ceil(2.0 * max(penUv.x, penUv.y) * size / 1.5), 6.0, 16.0));
+  let nAx = u32(clamp(ceil(2.0 * max(penUv.x, penUv.y) * size / 1.5), 6.0, 8.0));
   let stepUv = 2.0 * penUv / f32(nAx);
   let mid = 0.5 * f32(nAx - 1u);
   var lit = 0.0;
@@ -1191,12 +1190,13 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
 /// The interior's G-buffer record. Its light is complete in the emission (RT5); the core's deferred pass must
 /// add nothing to it. Ambient occlusion 0 removes the core's ambient, planetshine and probe; the core's sun
 /// is held off by the closed shell in its cascades (SHADOW_WGSL). What the cascades cannot resolve (a
-/// receiver a few millimetres inside the shell, the filter's noise at its edge) must not show either, so the
-/// record is a black, rough, one-sided standard surface: no diffuse response, a faint broad specular at most,
-/// and never the cloth path, whose shadow lookup turns the normal toward the sun and so steps out of the
-/// shell (it lit the rims of the blankets).
+/// receiver a few millimetres inside the shell, the filter's noise at its edge), and the local lights other
+/// features register outside the hull (a plume's, request app-integration-5), must not show either, so the
+/// record is a black, fully rough METAL: no diffuse response and a Fresnel reflectance of 0 (Schlick with
+/// f0 = 0: about 1/1000 of a dielectric's specular, none at all head-on), and never the cloth path, whose
+/// shadow lookup turns the normal toward the sun and so steps out of the shell (it lit the blankets' rims).
 fn pack(in: VOut, s: Shaded, decal: bool) -> GBufferOut {
-  var o = gbufferPack(vec3f(0.0), 0.0, s.n, 1.0, 0.0, MATERIAL_STANDARD, 0.0,
+  var o = gbufferPack(vec3f(0.0), 0.0, s.n, 1.0, 1.0, MATERIAL_STANDARD, 0.0,
                       velocityFromClip(in.currClip, in.prevClip), s.luminance * frame.exposure.x);
   o.extra = gbufferExtra(s.n, s.t, 0.0, 0.0, 0.08);
   if (decal) {
@@ -1401,7 +1401,7 @@ fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3
   let sunVis = cabinSun(in.part, nP, false);
   emissive += albedo / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
   // (A black, rough record: the light is all in the emission, as for the rest of the interior; see pack.)
-  return gbufferPack(vec3f(0.0), 0.0, n, 1.0, 0.0, MATERIAL_STANDARD, 0.0, velocityFromClip(in.currClip, in.prevClip), emissive * frame.exposure.x);
+  return gbufferPack(vec3f(0.0), 0.0, n, 1.0, 1.0, MATERIAL_STANDARD, 0.0, velocityFromClip(in.currClip, in.prevClip), emissive * frame.exposure.x);
 }
 `;
 

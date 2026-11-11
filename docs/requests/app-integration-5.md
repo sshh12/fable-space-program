@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (the cockpit's part, commit in this round's close-out; the core's optional mask was not needed)
 From: app-integration-v1
 Owner path: src/render/cockpit (how the interior takes local lights) and src/render/core (deferred local lights; shared-code maintainer)
 Blocking: no
@@ -30,3 +30,17 @@ skips lights the cockpit has not registered itself (the cabin then takes outside
 window model, as it already does for the sun), or the core gives `LocalLight` an optional flag/mask that the
 cockpit's interior material excludes. Must not change: the plume lighting the hull, the pad and the ground; the
 cockpit's own cabin lights and the light it lets in through the windows.
+
+## Resolution
+
+The cockpit's part, in `src/render/cockpit/shaders.ts` (`pack` and the attitude ball's record): the cabin's light is
+complete in the emission it writes (RT5), and its G-buffer record is now built so that the core's deferred pass
+adds nothing to it whatever lights it runs: albedo 0, metallic 1, roughness 1, ambient occlusion 0, material
+standard (never cloth). Diffuse response 0; specular with f0 = 0, i.e. Schlick's `(1 - LoH)^5` alone under a fully
+rough lobe: about 1/1000 of a dielectric's specular at the usual angles and none head-on. For the 5e8 cd capsule
+light 110 m below the cabin in your probe (about 4e4 lux) that is of the order of 1 cd/m^2 on a cabin at
+10-30 cd/m^2, where the old record (painted albedos, 0.04 Fresnel) gave hundreds. Light from outside still
+enters only through the cockpit's own window model (the sun through the apertures and the cabin sun map, the
+sky / Earth / plume through each window's prism from the environment probe), as the request asks. Nothing of
+the plume lighting the hull, the pad or the ground changes. A core-side mask on `LocalLight` is therefore not
+needed for the interior; re-shoot `/labs/integration/?scene=ascent&throttle=1` with `sitInCockpit(0, 0)`.

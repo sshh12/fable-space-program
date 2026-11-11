@@ -81,9 +81,11 @@ shared mould line `visuals/shared/kestrel-mouldline.json`):
   (surface coordinates metric and planar on the top panel, by arc length over the roll and the side: one
   thread pitch everywhere), back, thigh and shin pads stitched down in channels (`UPHOLSTERY`), piping cord,
   head rest with wings, arm rests, pans ending at their pads, side rails, hinge tubes at hip, knee and foot,
-  struts, pallets, five-point harness in natural webbing with a rotary buckle. Commander and pilot: a
+  struts, pallets, five-point harness in natural webbing (a 1.6 mm band laid ON the pads: resampled every 6 mm
+  onto the highest surface under it, bridging the channels) with adjusters and a metal rotary buckle. Commander and pilot: a
   sculpted rotation controller, a translation controller, a throttle.
-- Console: five sections whose faces are meshed on a regular 1.4 cm grid with lines along the outline of
+- Console: five sections, each a closed body running back to the wall, the lowest with a skirt closing the
+  space under the console; their faces are meshed on a regular 1.4 cm grid with lines along the outline of
   every large mounted part (so the baked contact shadow of a bezel is an even band), close-out beads along
   the hinge lines of the tilted sections, cover strips with fasteners over the butt joints, three MFD bezels
   with six page keys above the screen's page tabs, the attitude indicator (retaining ring, domed cover
@@ -91,8 +93,9 @@ shared mould line `visuals/shared/kestrel-mouldline.json`):
   master alarms, 31 toggle switches in five groups (keyed washer, hex nut, bushing, bright bat-handle lever;
   wicket guards between them; name above, position legends above and below the lever's throw; group lines),
   rotary selectors, seven-segment readouts, lamps. Wall panels with breakers, flood lights, hand holds,
-  lockers, ducts, cable bundles (slack between clamps, grommet and backshell at both ends), extinguisher,
-  flight-data-file pouch.
+  lockers, ducts (32 sides), cable bundles (slack between clamps, grommet and backshell at both ends),
+  extinguisher, flight-data-file pouch, two soft stowage bags strapped to the upper wall, an entry checklist
+  card on hook-and-loop.
 - Labels (174 placards, 2048^2 atlas painted at init, sampled anisotropically) are decals drawn after the
   interior with their ink as coverage into RT0 and RT5 only; every label is right-reading from the side it
   faces. Lamp-lens legends share one cap height.
@@ -137,9 +140,9 @@ apertures, 3 that times the sun map, 4 probe reflection, 5 polygon sources, 6 bo
   - past the interior's occluders: the cabin's sun map (`sunmap.ts`), 2048^2, one **tile per window the sun
     enters**, fitted to the cross-section of that window's beam: 0.2-0.6 mm texels. Casters: the drawn detail
     level without the enclosure (wall, floor, tunnel, bezel tunnels, blankets), slope-scaled depth bias;
-    receivers: analytic receiver plane, blocker search (penumbra from the NEAREST blocker), 6 x 6 to 16 x 16
-    bilinear comparisons never more than 1.5 texels apart over a penumbra of at most 6 mm, at least four texels
-    on a receiver the light grazes. Soft goods under a sun that only skims them are shaded by their own relief.
+    receivers: analytic receiver plane, blocker search (penumbra from the NEAREST blocker), 6 x 6 to 8 x 8
+    bilinear comparisons 1.5 texels apart where that suffices over a penumbra of at most 6 mm, at least four
+    texels on a receiver the light grazes. Soft goods under a sun that only skims them are shaded by their own relief.
   - **covered windows**: a window another part of the vessel covers (a part whose visual params.windowPorts
     lists window ids: the launch escape system's boost cover) lets no sky, sun or glow in until that part is
     gone (coveredWindows, CockpitFrameStats.covered).
@@ -264,25 +267,29 @@ world-chase-window-night.
 
 ## 6. Known weaknesses (honest)
 
-- **Not film-grade.** The cabin now reads as a built, lit, soft-and-hard interior in the real-world frames,
-  but: the detail layers are still the procedural bake (no photographed or generated PBR sets; none of the
-  50 USD budget spent); there is no crew, no stowage bags, tape or loose items; hard parts are still boxes
-  with chamfers; the console has no side cheeks or back cover.
-- **Two artefacts whose cause was not found** (section 7, items 7 and 13): a bright broken line along the
-  side hatch door's upper-right edge in the lab's hatch view, and thin ragged bright lines at the rims of
-  the blankets nearest the forward windows.
-- **Entry**: in the integrated scene the windows are black during entry (cockpit-9); the cabin's own part
-  (flickering, per-window, hue-wandering window light mixing with the floods) is in.
-- **No lamp casts a sharp shadow**: flood and window visibility is baked per vertex (each lamp its own
-  channel now), so the console overhang, couches and frames shade softly, a hatch rod or a switch lever
-  does not. Shadow maps for the floods were not built (cost against the 0.8 ms line).
-- **A sun patch still clips** in a cabin that Earth light fills (it is 7 stops over the cabin; the meter
-  stops down 1.25 EV at most); its edges are clean and the surface reads at its border.
-- **Window wells**: the stipple of item 15 is the exterior's surface under the core's cascade filter
-  (cockpit-10).
+- **Not film-grade.** The cabin reads as a built, lit, soft-and-hard interior, but the detail layers are still
+  the procedural bake (no photographed or generated PBR sets; none of the 50 USD budget spent); no crew; the
+  stowage is two soft bags and a checklist card (no tape, loose items or document pouches beyond the flight
+  data file); hard parts are boxes with chamfers; ring frames, close-outs and lockers carry little breakup.
+- **No lamp casts a sharp shadow**: flood and window visibility is baked per vertex; the floods are beams now
+  (pools of light, darker walls), but a switch lever, a guard or a hatch rod throws no shadow of its own.
+  Shadow maps for the floods were not built (cost against the 0.8 ms line).
+- **Range**: an interior camera cannot hold a sunlit patch or a sunlit landscape and the cabin in one
+  exposure. The core's meter now stops down up to 3 EV for bright areas of a few per cent (cockpit-12, part 1);
+  a sun patch on the console still clips (the direct sun is 6-7 stops over an Earth-lit cabin), and the noon
+  sky through a window clips (the sky is not lit geometry, the interior meter cannot weigh it). Leaning to the
+  window the Earth is exposed correctly and the frame goes dark, as in a photograph.
+- **Entry**: the panes show the vfx sheath (cockpit-9); its glow is bright and lights the whole cabin pink
+  through the probe's bounce, so the floods do not dominate during peak heating. The cabin's entry light is
+  the layout's value until vfx publishes 'vfx.plasmaWindow' (cockpit-13).
+- **Window wells** at grazing sun: the core's fix (cockpit-10) smooths the cascade's grain where a texel
+  covers several pixels; at the hatch window and the lunar side window some grain remains on the exterior's
+  well faces.
+- **Lunar view**: the side window's axis points 32 degrees up and its well is deep: looking toward the horizon
+  the well's far wall fills the upper part of the opening; the ground below is blown out (as in AS11-36-5390).
 - Perf: the display CPU line sits at its limit (section 3).
 - Baked visibility is at the controls' rest pose; the probe is the lod1 interior at 128^2 (reflections in
-  flat glass are soft, about 0.7 degrees per texel).
+  flat glass are soft, about 0.7 degrees per texel; coarse mips are sampled twice, a half texel apart).
 
 ## 7. Visual close-out, round 1 (2026-11-11)
 

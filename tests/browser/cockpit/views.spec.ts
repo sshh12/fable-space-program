@@ -45,7 +45,9 @@ const shots: { name: string; url: string; dark?: boolean; dir?: string }[] = [
   // The side hatch from low between the pilot's and the specialist's couches (it lies beyond the crew's feet).
   { name: 'hatch-mechanism', url: 'scene=leo&at=0.36,0.8,-0.75&aim=hatchDoor&fov=75' },
   { name: 'closeup-mfd', url: 'scene=leo&aim=mfd0&fov=24' },
-  { name: 'closeup-fdai', url: 'scene=leo&aim=fdai&fov=22' },
+  // The attitude indicator under its integral lighting and the floods, out of the sun (the sun patch on the
+  // display beside it makes the meter stop the cabin down: the instrument would be shown in the dark).
+  { name: 'closeup-fdai', url: 'scene=night&aim=fdai&fov=22' },
   { name: 'closeup-switches', url: 'scene=leo&aim=switches&fov=26' },
   // Looking in from outside: in the Earth's shadow with the floods on, and along the sun's way in by day.
   { name: 'chase-window-night', url: 'scene=night&view=chase&window=fwd-left&distance=0.7&fov=45', dark: true, dir: LAB },
