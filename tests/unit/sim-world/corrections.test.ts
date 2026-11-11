@@ -81,6 +81,15 @@ describe('trans-Earth corrections', () => {
     const a = arrival(f.sim.peek());
     expect(Math.abs(a.perigee - PERIGEE)).toBeLessThan(2500);
     expect(a.miss).toBeLessThan(a.zone.radius);
+    // The entry point the pilot's splash prediction starts from is the one the landing panel shows
+    // (readouts.landingTarget.predicted): both are the atmosphere-entry marker of the current trajectory.
+    const s = f.sim.peek();
+    const shown = s.readouts.landingTarget!.predicted!;
+    const used = predictSplash(s.patches.current, s.bodies.find((b) => b.id === 'earth')!, defs.bodies['earth']!.radius, entryDownRange)!;
+    expect(shown.kind).toBe('entry');
+    expect(used.entryLatitude).toBe(shown.latitude);
+    expect(used.entryLongitude).toBe(shown.longitude);
+    expect(used.entryUt).toBe(shown.ut);
     // The capsule is let go where the pilot meant to (2 500 km, at most twenty seconds of flight early).
     const alt = f.sim.peek().readouts.altitudeAsl;
     expect(alt).toBeLessThan(2.8e6);
