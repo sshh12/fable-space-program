@@ -215,8 +215,10 @@ for (const v of [
   // from above, the black night side below; nothing may light the spheres from under the horizon (round 1: the
   // core's planetshine had no occlusion test, request sky-lighting-8).
   { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8&night=1', sun: null, moon: { elevationDeg: -40, azimuthDeg: 30, fromCamera: true } as Place },
-  // The same with the Moon (gibbous, opposite the sun) 35 deg above the horizon, ahead and to the right.
-  { name: 'pbr-spheres-leo-night-moonlit', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8&night=1', sun: null, moon: { elevationDeg: 35, azimuthDeg: 40, fromCamera: true } as Place },
+  // The same with the Moon (gibbous, opposite the sun) 35 deg above the horizon to the camera's right, just out of the
+  // frame; the camera looks up (the lab's stand-in planet takes no moonlight, the probe's Earth does: the limb is kept
+  // out of the frame).
+  { name: 'pbr-spheres-leo-night-moonlit', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,-22,8&night=1', sun: null, moon: { elevationDeg: 35, azimuthDeg: 75, fromCamera: true } as Place },
   // At the mission's landing site, 1907.8 m below the Moon's reference radius, resting on the ground (origin 3 m up).
   { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8&valt=-1904.8&ground=-1907.8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as Place, moon: null },
 ]) {
@@ -251,6 +253,12 @@ for (const v of [
         let lo = 0;
         let nl = 0;
         let bottomMax = 0;
+        let topMax = 0;
+        // Quadrants: upper-right (towards the risen Moon) and lower-left (away from it).
+        let ur = 0;
+        let nur = 0;
+        let ll = 0;
+        let nll = 0;
         for (let y = Math.floor(cy - rPx); y <= Math.ceil(cy + rPx); y++) {
           for (let x = Math.floor(cx - rPx); x <= Math.ceil(cx + rPx); x++) {
             const dx = x - cx;
@@ -261,16 +269,27 @@ for (const v of [
             if (dy < 0) {
               up += l;
               nu++;
+              topMax = Math.max(topMax, l);
             } else {
               lo += l;
               nl++;
             }
             if (dy > 0.4 * rPx) bottomMax = Math.max(bottomMax, l);
+            if (dx > 0 && dy < 0) {
+              ur += l;
+              nur++;
+            }
+            if (dx < 0 && dy > 0) {
+              ll += l;
+              nll++;
+            }
           }
         }
-        return { name, upper: up / Math.max(nu, 1), lower: lo / Math.max(nl, 1), bottomMax };
+        return { name, upper: up / Math.max(nu, 1), lower: lo / Math.max(nl, 1), bottomMax, topMax, ur: ur / Math.max(nur, 1), ll: ll / Math.max(nll, 1) };
       });
-      console.log(`${v.name}: ${spheres.map((s) => `${s.name} upper ${s.upper.toFixed(1)} lower ${s.lower.toFixed(1)} bottom max ${s.bottomMax.toFixed(0)}`).join('; ')}`);
+      console.log(
+        `${v.name}: ${spheres.map((s) => `${s.name} upper ${s.upper.toFixed(1)} lower ${s.lower.toFixed(1)} upper-right ${s.ur.toFixed(1)} lower-left ${s.ll.toFixed(1)} top max ${s.topMax.toFixed(0)} bottom max ${s.bottomMax.toFixed(0)}`).join('; ')}`,
+      );
       const white = spheres[0]!;
       if (v.moon.elevationDeg < 0) {
         // Moon set: no light from under the horizon. The white sphere is no brighter below than above, and nothing on
@@ -278,8 +297,10 @@ for (const v of [
         expect(white.lower).toBeLessThanOrEqual(1.1 * white.upper + 1);
         for (const s of spheres.filter((q) => q.name === 'black' || q.name === 'chrome')) expect(s.bottomMax).toBeLessThan(8);
       } else {
-        // Moon up: the white sphere is moonlit from above.
-        expect(white.upper).toBeGreaterThan(1.5 * white.lower);
+        // Moon up, ahead and to the right: the white sphere is moonlit on that side (its underside sees the moonlit
+        // Earth, a fifth of that), and the chrome sphere mirrors the Moon in its upper half.
+        expect(white.ur).toBeGreaterThan(1.5 * white.ll);
+        expect(spheres[3]!.topMax).toBeGreaterThan(150);
       }
     }
     await expectNoErrors(page, pageLog);

@@ -112,10 +112,10 @@ test('the sun disc subtends 0.533 deg, darkens towards the limb per channel and 
   expect(r.rimRatio).toBeLessThan(0.8);
   expect(Math.abs(r.rimRatio / r.rimModel - 1)).toBeLessThan(0.03);
   expect(r.maxCh).toBeLessThan(60_000);
-  // Through a "solar filter": EV100 32 puts the disc centre near mid-grey, below the shoulder of the tone curve (at EV
-  // 30.4 it sat at 208/255 and the shoulder flattened the profile to 0.89 at 0.9 R), so the limb darkening and its
+  // Through a "solar filter": EV100 33 puts the disc centre at about mid-grey, below the shoulder of the tone curve (at
+  // EV 30.4 it sat at 208/255 and the shoulder flattened the profile to 0.89 at 0.9 R), so the limb darkening and its
   // reddening towards the limb (u is largest in blue) show in the display image as in a white-light photograph.
-  await page.evaluate(() => window.__lab!.renderer.setExposureOverride(32));
+  await page.evaluate(() => window.__lab!.renderer.setExposureOverride(33));
   await page.evaluate(() => window.__test!.waitFrames(60));
   const shot = await saveScreenshot(page, 'sky', 'sun-disc-limb-darkening-filter');
   const c = await page.evaluate(() => ({ ...window.__sky!.projectDir(window.__lab!.renderer.frameContext!.sun.dirRoot)!, rPx: window.__lab!.renderer.frameContext!.sun.angularRadius / ((2 * Math.tan(window.__lab!.renderer.frameContext!.camera.fovY / 2)) / window.__lab!.renderer.frameContext!.renderSize[1]) }));
@@ -140,7 +140,7 @@ test('the sun disc subtends 0.533 deg, darkens towards the limb per channel and 
   const r90 = ring(0.88, 0.92);
   const r98 = ring(0.97, 0.99);
   console.log(
-    `through the filter (EV 32), display-linear: centre ${Y(centre).toFixed(3)}, 0.9 R / centre ${(Y(r90) / Y(centre)).toFixed(3)}, 0.98 R / centre ${(Y(r98) / Y(centre)).toFixed(3)}; R/B centre ${(centre[0] / centre[2]).toFixed(3)}, at 0.98 R ${(r98[0] / r98[2]).toFixed(3)} (white-light photographs: about 0.66 at 0.9 R, 0.5 at 0.98 R, warmer at the limb)`,
+    `through the filter (EV 33), display-linear: centre ${Y(centre).toFixed(3)}, 0.9 R / centre ${(Y(r90) / Y(centre)).toFixed(3)}, 0.98 R / centre ${(Y(r98) / Y(centre)).toFixed(3)}; R/B centre ${(centre[0] / centre[2]).toFixed(3)}, at 0.98 R ${(r98[0] / r98[2]).toFixed(3)} (white-light photographs: about 0.66 at 0.9 R, 0.5 at 0.98 R, warmer at the limb)`,
   );
   // The centre sits in the mid-tones, the limb is clearly darker and warmer than the centre.
   expect(Y(centre)).toBeGreaterThan(0.08);
