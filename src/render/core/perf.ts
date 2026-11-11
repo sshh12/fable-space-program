@@ -95,6 +95,11 @@ export class Perf implements PerfRecorder {
   private over33 = 0;
   private newestGpuMs: number | null = null;
   private inFlight = 0;
+  /**
+   * The caller brackets its whole frame with a 'frame' zone (request app-integration-1). That zone is still
+   * open when `resolve` runs inside `renderer.render()`, so its time enters the CPU window when it closes.
+   */
+  private frameZoneUsed = false;
 
   constructor(
     private readonly device: GPUDevice,
@@ -165,6 +170,7 @@ export class Perf implements PerfRecorder {
   }
 
   cpuBegin(name: string): void {
+    if (name === 'frame') this.frameZoneUsed = true;
     this.cpuOpen.set(name, performance.now());
   }
 
@@ -172,7 +178,9 @@ export class Perf implements PerfRecorder {
     const t0 = this.cpuOpen.get(name);
     if (t0 === undefined) return;
     this.cpuOpen.delete(name);
-    this.cpuFrame.set(name, (this.cpuFrame.get(name) ?? 0) + performance.now() - t0);
+    const d = performance.now() - t0;
+    this.cpuFrame.set(name, (this.cpuFrame.get(name) ?? 0) + d);
+    if (name === 'frame') this.cpu.push(d);
   }
 
   counter(name: string, value: number): void {
@@ -182,8 +190,9 @@ export class Perf implements PerfRecorder {
   /** Encode the query resolve at the end of the frame's command encoder. */
   resolve(encoder: GPUCommandEncoder): (() => void) | null {
     const cpu = this.cpuFrame;
-    const frameCpu = cpu.get('frame') ?? cpu.get('core.render') ?? 0;
-    this.cpu.push(frameCpu);
+    // The frame CPU time: the caller's 'frame' zone when it uses one (pushed by cpuEnd, the zone is open
+    // here), else the renderer's own time.
+    if (!this.frameZoneUsed) this.cpu.push(cpu.get('core.render') ?? 0);
     if (!this.querySet || !this.resolveBuffer || this.names.length === 0 || this.inFlight > 4) {
       this.accumulateCpuOnly(cpu);
       return null;
