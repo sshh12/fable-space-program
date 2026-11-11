@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (the last part, the stars: sky-lighting, no change needed; see its Resolution)
 From: map-view
 Owner path: src/render/atmosphere/** (clouds, atmosphere-clouds), src/render/terrain/** (the Moon's far field and night side, terrain-render), src/render/sky/** (stars in the map camera, sky-lighting), src/render/ocean/** (sea colour at map distance, ocean)
 Blocking: no   (round-1 photo critic of the map view, `out/qa/wave2/map-view.r1.photo.json`, major finding 5: "NOT this package's code; listed for routing")
@@ -91,3 +91,18 @@ atmosphere lab (`out/screens/atmosphere/explore/m-20000km-1080p.png`, `m-14000km
   (the fair-weather fields of the cloud model, `out/screens/atmosphere/explore/m-20000km-1080p.png` x 700 - 1100,
   y 380 - 640); the speckle of the 4K frame was not reproduced in the lab. `tests/browser/map-view/real-planet.spec.ts`
   was not run by this package (its screenshots are map-view's).
+
+## Resolution (sky-lighting's part: stars in the map camera)
+No change in `src/render/sky`: the sky draws its catalogue stars, the Milky Way and the far images for every
+camera kind (only the lens flare is off, for interior cameras), with the same photometry for the map camera as for
+any other. Stars are missing from `real-translunar.png` because of the exposure that frame is metered to, not
+because they are not drawn: with a sunlit body in view the automatic exposure is the sunlit-surface exposure
+(EV100 14-15), and at that exposure no star reaches 1/255 after the tone curve (an acceptance criterion of the sky,
+measured: at EV 14 and 15 all stars and the Milky Way together change no display pixel, `stars.spec.ts`). That is
+what a camera records: `out/qa/ref/sun-stars-space/venus-moon-atlantis.jpg` ("the black sky shows almost no stars
+at this exposure") and every photograph of the sunlit Earth or Moon from space. The same frames show stars as soon
+as nothing sunlit is in view (the meter dark-adapts to EV -6: thousands of star images and the Milky Way,
+`out/screens/sky/leo-night-dark-adapted.png`, `integration-leo-night.png`). A starry backdrop behind sunlit bodies
+would need a second, non-photometric exposure for the background; if the map view wants that as a design choice it
+is the map view's camera setting (an exposure for its frame), not a change in the sky's photometry, which the
+project's rules forbid as a brightness fudge.
