@@ -2,9 +2,10 @@
 
 Owner paths: `src/render/vehicle/**`, `data/defs/visuals/parts/**`, `data/defs/sites/ka-lae-lc1.structures.json`,
 `public/assets/vehicle/**`, `tools/vehicle/**`, `labs/vehicle/**`, `tests/browser/vehicle/**`,
-`tests/unit/vehicle/**`. Nothing outside these paths was changed; no request was filed.
+`tests/unit/vehicle/**`. Nothing outside these paths was changed. Requests: section 7.
 
-State: built, reviewed, and the review's findings fixed (section 8). Last measured 2026-11-10 on this machine.
+State: built, reviewed, fixed, and reworked once after the first visual critique (section 9, "Visual
+close-out, round 1", 2026-11-11). Sections 1 to 7 describe the package as it is now.
 
 ## 1. What exists
 
@@ -12,22 +13,22 @@ Everything is generated in code at start-up from the part and site definitions; 
 
 | Piece | Where |
 |---|---|
-| Geometry kernel: mesh builder with components, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
-| Material library (39 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
-| Decal sheet (content: names, texts, colours, sizes of every marking) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts` and baked by `tools/vehicle/bake-decals.ts` |
+| Geometry kernel: mesh builder with components and position-based re-masking, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
+| Material library (62 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
+| Decal sheet (content: names, texts, colours, sizes of every marking; `foil: true` for markings painted on metal film) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts`, baked by `tools/vehicle/bake-decals.ts` into `decals.png` and `decals_orm.png` |
 | 14 part generators, registry | `src/render/vehicle/parts/**` |
 | 25 part visual files (parameters only) | `data/defs/visuals/parts/<partId>.json` |
-| 12 launch-complex generators, registry | `src/render/vehicle/site/**` |
-| Launch complex layout (25 structures, with the names of their markings) | `data/defs/sites/ka-lae-lc1.structures.json` |
-| Vessel feature (id `vehicle`) and site feature (id `site`) | `src/render/vehicle/{vesselFeature,siteFeature}.ts` |
-| Texture bakes (procedural, CPU), decal bake, model report | `tools/vehicle/{texlib,bake-textures,bake-decals,model-report}.ts` |
+| 13 launch-complex generators, registry | `src/render/vehicle/site/**` (`ground.ts` is new: earthworks) |
+| Launch complex layout (26 structures, with the names of their markings) | `data/defs/sites/ka-lae-lc1.structures.json` |
+| Vessel feature (id `vehicle`) and site feature (id `site`), LOD selection | `src/render/vehicle/{vesselFeature,siteFeature,lod}.ts` |
+| Texture bakes (procedural, CPU), decal bake, model report, site ground report | `tools/vehicle/{texlib,bake-textures,bake-decals,model-report,site-ground}.ts` |
 | Lab | `labs/vehicle/` (`/labs/vehicle/`) |
 
 Part generator ids: `stage.tank`, `engine.liquid`, `stage.interstage`, `stage.ring`, `motor.pack`, `rcs.pod`,
 `pad.clamp`, `capsule.mouldline`, `capsule.apexCover`, `lander.descent`, `lander.ascent`, `lander.legs`,
 `fairing.petals`, `les.tower`. Site generator ids: `pad.apron`, `pad.flameTrench`, `pad.launchMount`,
 `pad.umbilicalTower`, `pad.lightningMast`, `pad.catenary`, `pad.waterTower`, `pad.pipeRun`, `pad.tankFarm`,
-`pad.crawlerway`, `pad.building`, `pad.floodlight`.
+`pad.crawlerway`, `pad.building`, `pad.floodlight`, `pad.groundworks`.
 
 ## 2. Public API (`import ... from '@/render/vehicle'`)
 
@@ -35,197 +36,234 @@ Part generator ids: `stage.tank`, `engine.liquid`, `stage.interstage`, `stage.ri
 createVesselVisualFeature(options?: { exteriorGlass?: boolean; fadeSeconds?: number; maxLights?: number }): VesselVisualFeature
 interface VesselVisualFeature extends RenderFeature {       // id 'vehicle'
   readonly stats: { vessels; instances; triangles; shadowTriangles; staggeredCascades; everyFrameCascades;
-                    staggeredSubmissions; ghosts; lights; updateMs };
+                    staggeredSubmissions; ghosts; lights; fading; updateMs };
   partVisual(defId: string): PartVisual | undefined;
   anim(vesselId: string, instanceId: string): PartAnim;     // { nozzleTemp, soot, frost, clamp, antenna, lamp }
 }
-createSiteFeature(options?: { padElevation?: (site: LaunchSiteDef) => number; maxLights?: number; drawDistance?: number }): SiteFeature
+createSiteFeature(options?: { padElevation?: (site: LaunchSiteDef) => number;
+                              groundHeight?: (site: LaunchSiteDef, east: number, north: number) => number;
+                              maxLights?: number; drawDistance?: number }): SiteFeature
 interface SiteFeature extends RenderFeature {               // id 'site'
-  readonly stats: { sites; instances; triangles; shadowTriangles; movingInstances; lights; updateMs };
+  readonly stats: { sites; instances; triangles; shadowTriangles; fading; movingInstances; lights; updateMs };
   state(siteId: string): SiteState | undefined;             // { night, arms, crewArm }, each 0..1
   override(siteId: string, patch: Partial<SiteState> | null): void;   // pins a state at once (pictures); null releases
 }
 generatePart(defs, partDef): PartVisual          registerGenerator(id, generator)        generatorIds()
 generateStructure(defs, site, model, params): SiteVisual   registerSiteGenerator(id, g)   siteGeneratorIds()
 materialDef(id): PbrMaterialDef   MATERIAL_IDS   materialTextureFiles()
-DECAL_SECTION   decalSheetOf(defs): DecalSheet   createDecalSheet(def)   layoutDecals(def)     // sheet.uv(name), .aspect(name), .has(name)
+DECAL_SECTION   decalSheetOf(defs): DecalSheet   createDecalSheet(def)   layoutDecals(def)     // sheet.uv(name), .aspect(name), .has(name), .foil(name)
 nozzleEquilibrium(throttle): K     stepNozzleTemp(T, firing, throttle, dt): K
+legPose(leg, deploy, compression): LegPose      // foot joint of a landing leg (the sim's own rule)
+shieldGlowLuminance(T): cd/m^2                  // hottest point of an ablating heat shield (see below)
 ```
 
-Integration: put both features in the app's feature list after the terrain (`createSiteFeature({ padElevation })`
-needs the pad surface height when the site's elevation is `'terrain'`). Both use only `src/core` and the public
-API of `src/render/core` (mesh system). The vessel feature reads `SimSnapshot.vessels[].parts` and module states
-only: engine throttle and gimbal (nozzle temperature model, glow of the radiative extension), heat shield
-`surfaceTemp` (glow of the ablating face) and `ablatorFraction` (char), legs (`deploy`, `compression`,
-`broken`), lights, antenna, fairing panel ids (`<id>#panel<k>`), clamps, and the part's `tempSkin`. A vessel
-that disappears from the snapshot fades out over `fadeSeconds` as a ghost.
+Integration: put both features in the app's feature list after the terrain. `createSiteFeature()` without
+options stands every structure on the pad plane at `location.padElevation`, which is right for this site: the
+baked terrain is flat to 2 cm out to `pad.flatRadius` (450 m; `npx tsx tools/vehicle/site-ground.ts radial`).
+A site on unflattened ground passes `groundHeight` (each structure then stands at the height of the ground
+under its own origin) and, when its elevation is `'terrain'`, `padElevation`. Both features use only `src/core`
+and the public API of `src/render/core` (mesh system). The vessel feature reads `SimSnapshot.vessels[].parts`
+and module states only: engine throttle and gimbal (nozzle temperature model, glow of the radiative
+extension), heat shield `surfaceTemp` (the shield's glow) and `ablatorFraction` (char), legs (`deploy`,
+`compression`, `broken`), lights, antenna, fairing panel ids (`<id>#panel<k>`), clamps, and the part's
+`tempSkin`. A vessel that disappears from the snapshot fades out over `fadeSeconds` as a ghost.
 
-What a generator returns (`PartVisual`): named models with 3 LODs each, a `pose` that emits them for the part's
-module state, optional `lights`, and `sootSeconds` (seconds of full-throttle firing that soot the engine and the
-stage it is mounted on; absent or 0 for a part without an engine or one that burns clean). Per emitted item
-(`PoseOpts`): `temperature` (K; the feature takes the larger of this and the part's skin temperature), `cold`
-(never glows: glazing, lamp lenses, rime), `fade` (dithered coverage, for layers that thin out), `castShadow`,
-`emissive`, `soot`, `frost`, `scale`.
+What a generator returns (`PartVisual`): named models with 3 LODs each (a wire has 4), a `pose` that emits them
+for the part's module state, optional `lights(input)` (lamps when on, the spill of a glowing heat shield; a
+light may be a line with `end`), and `sootSeconds`. Per emitted item (`PoseOpts`): `temperature`, `cold`,
+`fade` (dithered coverage: used only for a vessel that fades out), `castShadow`, `emissive`, `soot`, `frost`,
+`scale`. A site item (`SiteItemOpts`): `emissive`, `moving`, `castShadow`, `grime`, and the shadow classes
+`nearShadowOnly`, `fineShadowOnly`, `shadowProxy` (below).
 
-Shadows. Every vessel instance is a moving caster. The camera's copies cast nothing; the same instances are
-added to two caster batches built from the parts' LOD 1 and LOD 2 (single-LOD models). A cascade with texels up
-to 0.1 m (the 12 m and 60 m cascades) is drawn from LOD 1, a coarser one from LOD 2. `drawShadow` issues the
-draw for every cascade and counts, from the batch's own triangle counter, the staggered cascades into which the
-draw put any triangle: `stats.staggeredSubmissions`, which stays 0 because the mesh batch keeps non-body-fixed
-groups out of staggered cascades. The site's structures are body-fixed casters; swing arms, the crew arm and
-the tail service mast are moving casters while they swing; pipe runs cast only into cascades with texels up to
-0.35 m (`NEAR_SHADOW_TEXEL`; a second batch); apron, crawlerway and catenary wires cast nothing.
+LOD. Every LOD of a model is a single-LOD model of the mesh system and the features pick which to draw
+(`lod.ts`): by projected diameter with 12 % hysteresis, and a switch is a 0.25 s cross-fade in time (the coarser
+LOD solid, the finer dithering in or out); in deterministic captures it is immediate. Nothing is left
+half-dithered by where the camera stands (`stats.fading` is 0 at rest; `screens.spec.ts`, LOD dolly test).
+Switch sizes: engines 110 / 30 px, stages 700 / 110 px, tower 900 / 260, masts 520 / 170, default 220 / 60.
+
+Shadows. Every vessel instance is a moving caster; the camera's copies cast nothing, LOD 1 casts into cascades
+with texels up to 0.1 m and the last LOD into coarser ones (`stats.staggeredSubmissions` stays 0). Site: an
+ordinary structure casts from LOD 1 when it is drawn at LOD 0 (shadow-only batch); `fineShadowOnly` items
+(lattice members, stairs, rails, swing arms, pipe runs, floodlight and lightning masts) cast only into cascades
+with texels up to 0.1 m (`FINE_SHADOW_TEXEL`), and each has a `shadowProxy` item (a solid slender stand-in,
+never drawn) that casts into the coarser cascades, pipe-run stand-ins only up to 0.35 m; gratings, ground
+slabs, earthworks and wires cast nothing. Swing arms, the crew arm and the tail service mast are moving casters
+while they swing.
 
 Conventions: part frame +Y nose, +X starboard, +Z dorsal; azimuth from +Z toward +X. Structure frame +Y up,
-+X east, +Z south at heading 0. UVs are in metres; materials tile per metre. Fittings on a surface of
-revolution (doors, umbilical plates, vents, louvres) are built with `surfaceFrame` / `curvedPanel` of
-`parts/common.ts`, which follow a cone as well as a cylinder.
++X east, +Z south at heading 0. UVs are in metres (u round a part, v along it: the mesh shader's soot and frost
+break-up relies on that); materials tile per metre; the heat shield's UVs are 0..1 across 1.04 shield diameters
+(planar). Fittings on a surface of revolution are built with `surfaceFrame` / `curvedPanel` of `parts/common.ts`.
 
 Content rule: the package's source names no marking, vehicle, part or site. Markings are named by the visual
-files (`decals`, `placards`, ...) and by the structure parameters (`signs`, `signDecal`, `hazardDecal`,
-`labels`, `sphereLabel`, `bulletLabel`, `crewArmSign`); a structure without those parameters is unmarked. A
-second vehicle or site adds entries to `livery.json` and re-bakes the atlas. `looks.test.ts` scans the source
-for marking texts and for part, vehicle and site ids.
+files (`decals`, `placards`, `hazardDecal`, ...) and by the structure parameters; `looks.test.ts` scans the
+source for marking texts and for part, vehicle and site ids.
 
 ## 3. How to run and verify
 
 ```
 npm run typecheck:paths -- src/render/vehicle labs/vehicle tests/browser/vehicle tests/unit/vehicle tools/vehicle
 node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render/vehicle tests/unit/vehicle src/core/defs tools/dev/boundaries.test.ts
-node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle --project=functional
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle --project=functional   # about 12 min; run screens / staging / game separately if a 10 min limit applies
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle --project=perf
-node tools/dev/heavy.mjs --class=bake -- npx tsx tools/vehicle/bake-textures.ts [recipe ...]     # about 30 s for all
+node tools/dev/heavy.mjs --class=bake -- npx tsx tools/vehicle/bake-textures.ts [recipe ...]     # about 40 s for all
 node tools/dev/heavy.mjs --class=gpu  -- npx tsx tools/vehicle/bake-decals.ts                    # canvas text in Chrome
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/model-report.ts [partId ...]      # triangle counts, mesh checks
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts [radial]           # terrain under every structure
 ```
 
-Lab query (`/labs/vehicle/?...`): `scene=pad|lowOrbit|lunarSurface`, `stage=<n>` (stages already fired),
-`stages=<n>&coast=<s>&hold=1` (fire n more, drift, freeze), `focus=<text>` and `solo=1` (aim at / show alone
-the vessel whose id or part instance id contains the text), `eye=x,y,z&at=x,y,z` (vessel frame, nose up),
-`sun=az,el` or `sunv=x,y,z`, `env=`, `planet=0`, `glass=0`, `site=0`, `ballast=<iterations>`, `hud=0`.
-`window.__veh = { app, sim, vehicle, site, env, setSun, setView }`; `sim.fireStage()` uses public.ts
-`splitForStage`; `sim.setAll(type, patch)` patches module states (`heatShield.surfaceTemp`, `legs.broken`, ...);
-`vehicle.anim(vesselId, instanceId)` is the presentation state (soot, frost). `tests/browser/vehicle/adhoc.spec.ts`
-(skipped unless `VEH_ADHOC` is set) takes ad-hoc screenshots.
+Browser specs: `screens.spec.ts` (9 tests, 80 views in the vehicle lab, live captures: jitter and noise
+running, 72 frames of temporal accumulation), `staging.spec.ts`, `game.spec.ts` (the integration lab on the real
+terrain, sky and exposure: 9 pad views, 4 flight views, 3 lunar ground views, and the terrain-to-pad-plane gap
+under every structure), `vehicle.perf.spec.ts`, `adhoc.spec.ts` (`VEH_ADHOC`). Pictures: `out/screens/vehicle/`
+(`game-*` are the integrated game).
 
-## 4. Acceptance, measured (2026-11-10, this machine, other agents' jobs running)
+Lab query (`/labs/vehicle/?...`): `scene=pad|lowOrbit|lunarSurface`, `stage=<n>`, `stages=<n>&coast=<s>&hold=1`,
+`focus=<text>`, `solo=1`, `eye=x,y,z&at=x,y,z` (vessel frame, nose up; on the pad x = south, z = west),
+`sun=az,el` or `sunv=x,y,z`, `env=`, `planet=0`, `glass=0`, `site=0`, `ballast=<iterations>`, `hud=0`.
+`window.__veh = { app, sim, vehicle, site, env, setSun, setView }`. On a surface the lab draws only the body
+underfoot and places a vessel on legs by its foot pads; separated pieces get the relative motion they have in
+flight.
+
+## 4. Acceptance, measured (2026-11-11, this machine, other agents' GPU and CPU jobs running throughout)
 
 | Criterion | Result |
 |---|---|
-| Every part def has a generator and a visual file | 25 of 25 (`parts.test.ts`) |
-| Meshes: unit normals, consistent tangents, no degenerate triangles, closed components watertight, none inside-out | pass for every model and LOD of the parts and of the complex |
-| Bounds within 5 % of `PartDef.bounds` | pass (legs tested deployed; escape system 2.130 m against 2.05 m, 3.9 %) |
+| Every part def has a generator and a visual file | 25 of 25 |
+| Meshes: unit normals, orthonormal tangents, no degenerate triangles, closed components watertight, none inside-out | pass for every model and LOD of the parts and of the complex (42 unit tests in 5 files with the boundary test) |
+| Bounds within 5 % of `PartDef.bounds` | pass (feedlines, blisters and clamp keepers were sized to this limit) |
 | Mated attach interfaces meet within 5 mm | 33 interfaces, gap 0 to 1.24 mm, no overlap |
-| Capsule skin on the shared mould line within 2 mm; openings at the file's azimuth / y / size | 1.46 mm worst; openings exact (the test reads the file) |
-| Nothing under a fairing or boost cover reaches through it (new) | boost cover over the capsule: least clearance 25.5 mm; cover 102.5 mm outside the capsule's mould line; payload fairing over its eight parts: least 19.7 mm (payload adapter) |
-| Triangles, full stack | LOD0 1,123,110 (1.0 to 1.6 M), LOD1 272,028, LOD2 28,780 (< 60 k) |
-| Launch complex triangles (all models) | LOD0 160,162, LOD1 53,382, LOD2 7,038 |
-| No vessel caster in a staggered cascade | 766 staggered cascades drawn for, 0 received a triangle (measured on the batch, `staging.spec.ts`) |
-| Staging sequence with `splitForStage` | all 10 stages; 13 vessels at the end; 120 instances before and after every split; expired debris fades in 70 frames |
-| Vehicle G-buffer < 0.8 ms | 0.020 ms (stack filling the view), 0.063 ms (from the tower at 15 m) |
-| Vehicle shadows < 0.4 ms | 0.225 ms, 0.252 ms (204,432 and 382,924 shadow triangles per frame; before the caster LODs 863,308 and 1,911,856) |
-| Site G-buffer + shadow < 0.5 ms | 0.304 ms, 0.100 ms |
-| CPU instance update < 0.3 ms | 0.175 ms p50, 0.285 to 0.305 ms p95 (site 0.04 ms) |
-| `expectNoErrors` | in every browser test |
+| Capsule skin on the shared mould line within 2 mm; openings at the file's azimuth / y / size | pass (the test reads the file) |
+| Nothing under a fairing or boost cover reaches through it | boost cover over the capsule: least clearance 25.5 mm; fairing over the descent stage 156 mm |
+| Triangles, full stack | LOD0 1,245,846 (1.0 to 1.6 M), LOD1 298,770, LOD2 28,764 (< 60 k) |
+| Launch complex triangles (all models) | LOD0 279,252, LOD1 75,318, LOD2 8,900 |
+| No vessel caster in a staggered cascade | 0 staggered submissions (`staging.spec.ts`) |
+| Staging sequence with `splitForStage` | all 10 stages; separated pieces are full models and clear the stack |
+| LOD: nothing left dithered | dolly of 12 distances from 7 to 360 m: 273 cross-fades started, 0 items fading 60 frames after each stop |
+| Terrain under the site | largest terrain-to-pad-plane gap under the 26 structures: see `game.spec.ts` output (0.02 m by `site-ground.ts`) |
+| Vehicle G-buffer < 0.8 ms | 0.019 ms (stack filling the view), 0.075 ms (tower at 15 m), p99 |
+| Vehicle shadows < 0.4 ms | 0.015 ms (tower), 0.007 to 0.24 ms (fill; windows 0.008 / 1.149 / 0.237), p99 |
+| Site G-buffer + shadow < 0.5 ms | fill 0.09 ms p99. Tower view: p50 0.03 + 0.05 ms, **p99 0.4 to 1.7 ms: not met in the runs taken** (see below) |
+| CPU instance update < 0.3 ms | 0.250 ms p50, 0.36 to 0.44 ms p95 (site 0.12 ms) |
+| `expectNoErrors` | in every vehicle-lab test |
 
-Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.93 ms, p99 of timestamp queries, the MEDIAN
-of three 240-frame windows per budget line, under `withGpuLock`; the three windows of each view are printed by
-the spec (fill: shadow 0.006 / 0.225 / 0.229, site 0.303 / 0.305 / 0.303; tower: shadow 0.253 / 0.252 / 0.251,
-site 0.100 / 0.099 / 0.338). Two other agents' perf jobs held GPU slots during the run, so the figures are
-provisional in the sense of PACKAGE_RULES rule 16. Unit run: 50 tests in 6 files (this package's four files,
-`src/core/defs` and the boundary test). Browser: 10 functional tests (8 screenshot tests with 56 views, staging,
-shadows), 1 perf test.
-Screenshots are in `out/screens/vehicle/`.
+Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.94 ms, p99 of timestamp queries, median of
+three 240-frame windows, under `withGpuLock`. The site's shadow line in the tower view failed the 0.5 ms
+assertion in both runs taken (1.74 and 1.62 ms p99), with two to three other agents' browser jobs on the GPU. A
+probe of the same view (per cascade, 240 frames each) gave for the site's shadow passes p50 0.055 ms and p99
+0.4 to 1.0 ms with all cascades, p50 0.025 / p99 1.0 ms for the 12 m cascade alone and the same for the 60 m
+cascade, and 0.004 ms / 0.001 ms p99 for the 300 m and 1500 m cascades, which draw the same casters: the
+1 ms events are in passes that are only 25 microseconds long at the median and appear in the vehicle's line as
+well (fill view, 1.149 ms in one window). I read them as time slices lost to other GPU clients, not as
+workload, but could not confirm that on a quiet machine; the lead should re-measure (PACKAGE_RULES 16). What
+was done about the workload: the site casts from LOD 1 (shadow triangles per frame in the tower view 508,320
+before, 310,084 after), gratings and earthworks cast nothing.
 
-Generated assets: 45 MB in 41 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
+Generated assets: 89.9 MB in 63 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
 money was spent: every texture and decal is baked procedurally. No Modal app was touched.
 
 ## 5. Deviations from the brief (wave-1 reality and decisions)
 
-1. The structures file was rewritten, not extended. The capsule hatch is at azimuth 180 and the vehicle
-   stands with its ventral side east (`padAzimuthDeg` 90), so the umbilical tower and crew arm are on the
-   EAST side of the pad at `[27, 0, 0]`, not where the wave-1 placeholder file had a tower.
-2. `createVesselVisualFeature` and `createSiteFeature` take options, not a context (the core hands the context
-   to `init`), as every wave-1 feature does.
-3. Capsule heat-shield dome: the generator uses the sphere of the file's `radiusOfCurvature` through the
-   file's dome samples. It is within 1.46 mm of that surface; the raw sample polyline itself is up to 4.56 mm
-   from it (chords of a coarse polyline), so the test compares against the analytic surface, not the chords.
+1. The structures file was rewritten, not extended (tower and crew arm on the EAST side of the pad).
+2. `createVesselVisualFeature` and `createSiteFeature` take options, not a context.
+3. Capsule heat-shield dome: the sphere of the file's `radiusOfCurvature` through the file's dome samples.
 4. Bounds test: radius within 5 % of `bounds.radius`; `yMin` / `yMax` within 5 % of max(radius, height).
-   Interface test: vertical probes at 0.9 to 0.995 of the smaller node radius on 24 azimuths; no overlap
-   above 5 mm anywhere, gap at most 5 mm on a ring with at least 90 % coverage.
-5. The mesh system has no alpha-tested or transparent materials. Decals are opaque atlas rectangles cut into
-   the lathe grid (their background is the paint under them). Window panes are an opaque, single-sided
-   `glass` model, hidden when the camera is inside the vessel or with `exteriorGlass: false` (for the
-   cockpit package's own glazing). The rime on a frosting tank is a layer drawn with the instance's dithered
-   fade (the mesh shader's own frost term cannot take the clear coat off the paint under it, and on white
-   paint it changes the picture by a level or two).
-6. Flat slabs (apron, crawlerway) and the catenary wires cast no sun shadow; pipe runs cast into the near
-   cascades only. With everything in every cascade the site's shadow pass was 0.38 to 0.6 ms p99.
+5. The mesh system has no alpha-tested or transparent materials (request 4). Decals are opaque atlas
+   rectangles cut into the lathe grid; window panes are an opaque, single-sided `glass` model; bar gratings are
+   real bars at LOD 0 and open frames at LOD 1.
+6. LOD selection is done by the features, not by the mesh system's size band (section 2).
 7. `SiteFeature.override` pins a state immediately; the swing animation is driven by the vessel on the pad.
-8. In the lab the pad surface is the reference sphere (`padElevation: () => 0`, the lab planet has no relief)
-   and the sky, probe and ambient are the lab's analytic stand-ins, not the atmosphere package's.
-9. The decal sheet lives at `data/defs/visuals/parts/livery.json` because that directory is this package's
-   only owned place under `data/defs/visuals`; it holds the site's markings as well as the vehicle's.
-10. Lattice structures (lightning masts, floodlight masts, the tower's bracing) and the catenary wires use
-    their own `lodPixels` and LODs with members thick enough to hold a pixel, then a solid slender silhouette;
-    the wires are not drawn at all beyond the distance where they would be a row of dots.
+8. In the vehicle lab the pad surface is the reference sphere and the sky, probe and ambient are the lab's
+   analytic stand-ins. The hardware is judged for play in `game.spec.ts`.
+9. The decal sheet lives at `data/defs/visuals/parts/livery.json`.
+10. A wire cannot be drawn with sub-pixel coverage: it is four gauges (true, 0.22, 0.7, 2.2 m), each used
+    where it is one to three pixels wide.
+11. Floodlight banks register a vertical line light in front of the vehicle (where their beams land), not a
+    light at the lenses: the core has no spot lights (request 2).
+12. The heat shield's glow is compressed against a black body (`shieldGlowLuminance`): sunlit white at 1,900 K,
+    eight times that at 3,100 K, so the face keeps its gradient instead of burning out to a flat disc.
 
 ## 6. Known weaknesses (stated plainly)
 
-- "Photoreal" is still not reached everywhere, and none of it has been judged under the real atmosphere and
-  terrain: two attempts to take pictures in the integration lab from this package's ad-hoc spec gave black
-  frames and were dropped; the lab lighting (analytic sky) is flat. Weakest: the hold-down clamps (plausible,
-  not engineered), rainbirds and deluge headers (simple shapes), the umbilical swing arms (truss, walkway and
-  lines, but no hoses or cables to the vehicle), the foil of the lander under a low sun from 10 m and more
-  (facets of 4 to 10 cm read as a light and dark mosaic, right for a mirror film under a black sky but
-  noisy), the tile tones of the capsule (about one tile in eight is tan, a little strong).
-- The glow of the heat shield is one temperature over the whole face (one instance), so the disc is a flat
-  colour; at the simulation's 3,100 K it saturates. The back shell glows as one surface at the part's skin
-  temperature when that gets hot.
-- The rime layer is drawn with dithered coverage. Converged it reads as a translucent white layer; in motion
-  it relies on the TAA like every other dithered fade. Its patch outlines are polygons at the skin's grid
-  (0.2 m by 0.5 m at LOD 0).
-- Shadows are cast by LOD 1 / LOD 2: what only LOD 0 has (small lines, fasteners, the capsule's bolts) casts
-  no shadow. The vessel's shadow pass did not get faster in proportion to its triangles (0.27 to 0.23 ms for
-  a quarter of them), so its time is not triangle-bound; the margin to 0.4 ms is about 40 %.
-- The site's shadow pass rose from 0.05 to 0.27 ms p99 in the view that holds the whole complex (pipe-run
-  shadows and 50 % more site triangles); still inside the 0.5 ms line with the G-buffer.
-- CPU instance update is 0.175 ms p50 (0.115 before the caster batches); p95 touches 0.3 ms on this loaded
-  machine.
-- Stippled dots appear on parts that sit inside a LOD cross-fade band in a still picture (for example the
-  bell extensions in `engines-clean.png`) and on some shadow edges: the render core's dither, not resolved in
-  the frozen frames the specs shoot.
-- A broken leg is posed in the part's own frame (strut splayed 16 degrees, knee of 38 degrees, foot near the
-  nominal ground): the feature does not know the terrain, so the foot is not planted on the real surface.
+- Night: no local light casts a shadow (request 2). The vehicle is lit top to bottom and is the brightest thing
+  on the pad, the tower carries work lights, but the tower and masts throw no shadows across the apron, there
+  are no beams in the haze, and the lander's legs cast no shadow in its landing lights.
+- The site's shadow line in the tower view was above its budget at p99 in every run taken under load (section 4).
+- Glass is opaque: no inner panes, no cabin behind the windows from outside (the cockpit package's glazing
+  replaces the panes when `exteriorGlass` is false).
+- The capsule's markings are atlas rectangles in the film's colour: closer than before, still a faintly visible
+  patch at grazing light (no tile seams under the lettering).
+- Stages seen whole from 40 m are still mostly clean barrels: the 5 % bounds criterion limits anything that
+  stands off the skin to 0.22 m (M-1, M-2) and 0.16 m (M-3), so feedlines are 0.15 m lines and blisters are low.
+- Fairing petals and the cork shoulder are plain; the escape motor has a manifold and nozzle rings but no
+  fluting. Tower joints have gusset plates but no bolt groups; weathering of the steelwork is vertex grime.
+- No perimeter fence, camera towers, parked vehicles or vegetation dressing on the site; the perimeter road is
+  a regular twelve-sided loop.
+- Vent fog and falling ice at lift-off are the effects package's; this package exposes no anchor points for
+  them yet.
+- A broken leg is posed in the part's own frame: the feature does not know the terrain.
 - Soot, frost amount and nozzle heat are presentation models inside the feature, not simulation outputs.
-- Site lights are capped at 8 per frame (vessel 4) of the core's 16; with more lamps in view the nearest win.
-- Not tested: more than one site, a site whose elevation comes from terrain, vehicles other than the one
-  defined, behaviour at very low frame rates.
-- The deluge main's pipe run passes through the small support building (it reads as a valve house; it was
-  not designed as one).
-
-Screenshots looked at in their final state in this session: boost-cover hatch, crew arm (two views), support
-building, capsule in space, capsule windows, apron (low and from above), site overview at noon, site at
-800 m, tank farm, frost before launch (tank and frost line), aft and engines sooted, M-2 foam on the pad,
-lander deployed, MLI close-up, ascent stage, hot heat shield, broken leg. Produced by the passing run but not
-opened: the night views, the pad from 300 m and from the tower, the stage views in space other than the
-ascent stage, the staging frames, the fairing and escape-motor views, the perf frames.
+- Site lights are capped at 8 per frame (vessel 4) of the core's 16.
+- Not tested: more than one site, a site on unflattened ground (`groundHeight` is implemented, not exercised),
+  vehicles other than the one defined.
 
 ## 7. Requests
 
-None filed. No open request in `docs/requests` is against these paths (`ocean-3`, resolved, says this package
-needs no change).
+| File | To | State | What |
+|---|---|---|---|
+| `docs/requests/vehicle-pad-1.md` | render core, mesh shader | resolved (ad38ab3) | clear coat under soot and frost, texture-space break-up of both, frost and soot colours. Used: frost and soot are plain vertex weights on the skin now |
+| `docs/requests/vehicle-pad-2.md` | render core, contracts | open | spot lights, shadowed local lights |
+| `docs/requests/vehicle-pad-3.md` | terrain render | open (the terrain package is drawing a site ground plan from the structures' footprint parameters as of this writing) | site ground as graded earthwork instead of a concrete disc |
+| `docs/requests/vehicle-pad-4.md` | render core, contracts | open | alpha-cutout materials |
 
-## 8. Review findings and what was done
+No open request in `docs/requests` is against these paths.
 
-| Finding | What was done |
-|---|---|
-| Boost cover: hatch panel a flat plate through the cone, capsule fittings through the cover; interstage door and plate skewed | `accessDoor`, `umbilicalPlate`, `ventPort`, louvres and ring fittings are built on the surface (`surfaceFrame`, `curvedPanel`); cover clearance 105 mm (data), capsule thrusters and handrails lowered; two new unit tests (cover clearance for every fairing module, cover outside the capsule's mould line). The first of them found a real clash of the fairing's hinge fittings with the payload adapter (61 mm), fixed |
-| Reentry glow ignored the shield's surface temperature and lit the whole capsule | `shield` is a model of its own at `heatShield.surfaceTemp`; back shell at the part's skin temperature; glass and lamps `cold`; unit test and A / B screenshots |
-| Decal list and site signs hard-coded | decal sheet in `data/defs/visuals/parts/livery.json`; structures name their markings; source scan test |
-| Crew arm and buildings were boxes | crew arm: box truss, ribbed tunnel with windows, white room with frames, porthole, egress door and landing, roof rail, bellows hood and seal, air duct, slewing drive, kingpost and stays; buildings: precast panels, plinth, parapet and coping, roll-up doors with jambs, slats and bollards, personnel door with canopy, windows, gutters and downpipes, conduits, transformer, air handlers with fans and ducts, stacks, wall lights; tank farm: finned vaporisers, pump sets, racks, ladders, valves; tower: H-section columns, I-beams, guard rails on every level, elevator shaft framing and doors, stair stringers |
-| Photoreal specifics | M-2: one foam with metre-scale tone drift, spray-pass ribbing and soft close-out patches (9.6 m tile), no alternating rings; MLI: facet-built normal map, close-up re-shot with the sun behind the camera; capsule: tiles in courses of equal width (no narrowing), 64 tiles with tone, replacements, gap fillers and part numbers; ascent-stage radiators with tubes, headers, frame and feed lines; M-3 one foam; concrete: 16 unique slabs per tile and grime weights on a tessellated apron and crawlerway; lattice LODs; pipe-run shadows |
-| Frost and soot invisible or wrong | rime layer and frost line on heavily frosting tanks; soot inside engines only, all or nothing, none for hydrolox engines (`sootSeconds` 0 in data), streaked soot on the aft skin; A / B views with a pixel-difference assertion |
-| Broken leg drawn intact | `brokenLegPose`; unit test and A / B views |
-| Counter that could not fail; report counted as a test | `staggeredSubmissions` is measured from the batch's triangle counter; the report is `tools/vehicle/model-report.ts` |
-| Perf: best-of-three, 0.86 to 1.9 M shadow triangles | median of three windows; shadows from LOD 1 / LOD 2 (0.2 to 0.38 M triangles) |
+## 8. First review: findings and what was done
+
+Boost cover and cone fittings follow the surface; heat shield as its own model; decal sheet and site markings
+as data; crew arm, white room, buildings and tank farm hardware; soot inside engines only; broken leg pose;
+measured staggered-cascade counter; perf spec on the median window. (Details in the history of this file.)
+
+## 9. Visual close-out, round 1 (2026-11-11)
+
+Work list: `out/qa/wave2/vehicle-pad.md` (25 items; photo 4/10, artifact 4/10). Every picture named below is in
+`out/screens/vehicle/`, taken live (not with frozen noise).
+
+| # | Item | What was done | Shows in |
+|---|---|---|---|
+| 1 | Complex does not sit on the ground (blocker) | Measured first: the terrain is flat to 2 cm across the site; the floating look was a concrete disc with a circular rim, slabs with bare edges and nothing between the structures. New `pad.groundworks`: a graded field of compacted stone round the hardstand with an irregular outline and a shoulder that slopes 0.75 m below grade (it covers the terrain's disc), stone pads under the tank farms, water tower and support building, asphalt service roads with stone shoulders and edge lines (perimeter loop, spurs to both farms, the pad and west along the crawlerway), earth berms between the farms and the pad with gaps where the pipe runs pass. `groundHeight` option for sites on unflattened ground. Request 3 to the terrain. Integration views and a terrain-gap assertion added | `game-pad-noon-300m`, `game-site-aerial`, `game-site-tank-farm-low`, `game-site-crawlerway-low`, `site-aerial`, `site-tank-farm-berm` |
+| 2 | Capsule reads as a tiled kiln (blocker) | New back shell: tiles closed out with aluminised tape (metal film, faint thin-film tint, joints in the normal / occlusion / roughness maps only, under 10 % in albedo, vent plugs, wrinkles), smooth taped close-out panels round every opening that end on course joints with a fastener row, anodised retainers, forward bay in gore panels with taped joints and two fastener rings, white apex cover, shoulder seal band, thruster fairings instead of black boxes, mirror tape on the panel joints, markings painted on the film (`decal-foil` with an ORM atlas) | `stage-capsule-space`, `capsule-windows`, `capsule-hatch` |
+| 3 | Lander insulation is static (blocker) | New blanket texture (pillows, long warped creases; the crinkle is in the roughness, not in the normal map), amber film albedo that deepens in the folds, roughness 0.43 to 0.5; blanket geometry with stand-off buttons, sag over decimetres, finite-slope edges, tape strips on the joints, black panels between the tank lobes | `lander-deployed`, `lander-deployed-sun-5`, `lander-deployed-sun-40`, `lander-mli-closeup`, `game-moon-lander-landed` |
+| 4 | Frost is dithered cut-outs (blocker) | The rime shell is gone. Frost is a weight on the skin from frost line to frost line (heavier low on a tank, thinner over markings) that the mesh shader (request 1) turns into a matte white coat breaking up in vertical streaks; it thins by itself after lift-off. Nothing is dithered | `frost-prelaunch`, `frost-line-prelaunch`, `pad-swing-arm-umbilical` |
+| 5 | Launch mount dressed with primitives (blocker) | Deck in steel plate with rust and scorch, refractory ring, hatches, drains, cable trays, hydraulic unit and lines; ring main, risers and six flanged goose-neck rainbirds with fan nozzles and braces; stair tower with stringers, grating treads, landings, rails and bracing; clamps as boxed weldments with ribs, cheeks, blast shield, cylinder, keeper plates and decal hazard stripes; service mast hood, hoses and couplings; swing-arm hoses (frosted cryogenic ones), couplings and drip trays | `pad-engine-section`, `pad-hold-down-clamp`, `pad-mount-deck`, `pad-swing-arm-umbilical`, `game-pad-mount-deck` |
+| 6 | Dither stipple near LOD switches | LOD selection moved into the features: hysteresis and a 0.25 s timed cross-fade; engine and stage switches moved away from the hero distances; live captures. Dolly test | every engine view; `screens.spec.ts` LOD dolly |
+| 7 | Stages are plain tubes | Feedlines on brackets with bellows, a second cable tray, blister fairings, framed aft-skirt interiors, bottles / avionics / harness on the forward dome, foam without repeating patches (5 cm ribbing, streaks), smoother white foam, irregular quilt. Limited by the 5 % bounds criterion (section 6) | `stage-m1-space`, `stage-m2-space`, `stage-m3-space`, `interstage-interior`, `closeup-foam` |
+| 8 | Night lighting | Floodlight banks as line lights on the vehicle, work lights on every tower level, lander and capsule lamps in front of their lenses with short reach, larger lamp housings. Shadows and beams need request 2 | `site-pad-night`, `site-overview-night`, `game-pad-night`, `lander-lights` |
+| 9 | Glowing shield is one flat colour | Glow as an emissive map (stagnation point off centre, hot windward shoulder, bright seams and streaks, dull lee side) scaled with the surface temperature; three rim lights spill onto the back shell | `capsule-entry-hot-shield`, `capsule-entry-peak-heating` |
+| 10 | Shield and back shell do not look flown | Shield textures are one planar picture (blocks, not rings and wedges); a charred set (ash, streaks from the stagnation point, spall pits, burnt seams) replaces it once char passes a fifth; back-shell scorch as continuous streaks, heavy windward and at the shoulder | `capsule-heat-shield-pristine`, `capsule-heat-shield-charred`, `capsule-charred-back-shell` |
+| 11 | Engines from aft | Gas side in heat-stained nickel (copper only above the throat), ringed extensions in two sheet tints, desaturated heat tint, grey boots | `stage-m1-aft-space`, `stage-m2-aft-space`, `engines-clean` |
+| 12 | Soot is polished grey metal | One continuous soot field (reaches higher on the lee side) applied to the skin and to everything on it (`MeshBuilder.remask`); matte and streaked through request 1 | `aft-sooted`, `engines-sooted` |
+| 13 | Model railway set | Earthworks of item 1; sphere tanks in plate courses with weld lands and gore welds; pipe runs end in sleeves. Not done: fence, camera towers, vehicles | `site-overview-noon`, `site-tank-farm`, `site-far-800m`, `game-site-aerial` |
+| 14 | Shadows of thin structure | Shadow classes (section 2): lattices cast into the fine cascades only, solid stand-ins into the coarse ones; gratings cast nothing; live captures | `site-mast-shadows-low-sun`, `site-apron`, `pad-stack-300m` |
+| 15 | Thin geometry breaks into dots | Wires in four gauges that never drop out; fasteners made flush; stage LOD 0 only within about 45 m | `site-wires-from-mast-foot`, `pad-stack-tower-15m-up`, `site-overview-noon`, `game-pad-tower-from-ground` |
+| 16 | Markings broken by geometry | Stringers leave marking panels smooth; decal roughness matched to the paint and the paint's waviness reduced; white-room battens stop at the sign and the porthole; larger placards | `stage-m2-aft-space`, `stage-m1-space`, `site-crew-arm-white-room` |
+| 17 | Grating is an opaque slab | Real bearing bars at LOD 0, open frames at LOD 1, no shadow (request 4 for cut-out materials) | `pad-stack-tower-15m-up`, `pad-stack-tower-15m` |
+| 18 | Brushed steel banding | Texture rebuilt from 129,000 finite scratches on a 1.6 m tile (normal map uses its range) | `closeup-brushed-steel`, `stage-m3-space` |
+| 19 | Lander hovers in the lab | The lab places a vessel on legs by its foot pads; unit and picture checks | `lander-foot-pad`, `lander-ground-contact`, `game-moon-lander-foot-pad` |
+| 20 | Windows and hatch seal | Deeper panes, rounder corners, one anodised retainer design, flat hatch frame. Not done: inner panes, cabin glow (opaque glass) | `capsule-windows`, `capsule-hatch` |
+| 21 | Top of the stack | Lighter cork, escape motor manifold, nozzle flanges and exit rings, white apex cover. Petals unchanged | `les-motor-closeup`, `les`, `fairing-petal-outside` |
+| 22 | Tower and crew arm flat | Gusset plates, treaded stairs, per-member weathering with scorch toward the vehicle, cable stays, galvanised steel as a grey patina | `site-crew-arm`, `site-crew-arm-from-tower`, `pad-stack-tower-15m` |
+| 23 | Clipping and loose ends | Pipe runs end at the valve house wall in sleeves; stays are cables; shoulders on every slab edge (item 1); separated pieces clear the stack | `site-support-building`, `staging-03` to `staging-10` |
+| 24 | Broken leg hard to tell | Tube swung 30 degrees, piston hanging kinked to the ground, pad tilted 27 degrees, crushed core and torn tube mouth as a model of its own | `lander-leg-broken` |
+| 25 | Views cannot show the hardware in play | `game.spec.ts`: 16 views in the integration lab; the lab draws only the body underfoot (no black Moon) | `game-*` |
+
+Seen while checking, from the list: the slab on the descent stage in `staging-07` and the petal against the
+stack in `staging-03` were not investigated separately; with separated pieces now moving clear, `staging-03`
+shows the petals away from the stack.
+
+Not fixed, and why: shadowed and aimed local lights, beams (request 2, open); cut-out gratings at distance
+(request 4, open; geometric substitute in place); inner window panes (needs transparency); fence, camera
+towers and parked vehicles (not started: the earthworks and the mount took the time); bolt groups at tower
+joints; fairing petal detail; vent-fog anchor points for the effects package.
+
+Perf after the round: section 4.

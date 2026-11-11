@@ -8,6 +8,9 @@
  *    Long, low structures (pipe runs) cast only into the cascades that can resolve their shadow; lattice
  *    members cast only into the fine cascades, and a solid stand-in of each lattice casts into the coarse
  *    ones, so the shadow of a mast is a lattice near the camera and a continuous band beyond.
+ *  - A structure drawn at LOD 0 casts its shadow from LOD 1 (a shadow map cannot show bolts, treads and
+ *    handles, and the every-frame cascades are re-rendered with every caster of the site in them): the
+ *    camera's copy casts nothing and a caster copy goes into a shadow-only batch.
  *  - Swing arms and the tail service mast retract when a vessel standing on the pad lights its engines (or
  *    when no vessel stands there); the crew access arm follows the same rule.
  *  - At night the lamp lenses glow and the nearest lamps are registered as local lights.
@@ -98,6 +101,8 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   let ctx: RenderContext;
   let defs: DefLibrary;
   let batch: MeshBatch;
+  /** Shadow casters of the structures in `batch` (never drawn into the G-buffer). */
+  let casterBatch: MeshBatch;
   /** Items whose shadow is drawn in the near cascades only. */
   let nearBatch: MeshBatch;
   /** Items whose shadow is drawn in the fine cascades only, and the stand-ins that cast into the coarse ones. */
@@ -186,6 +191,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       ctx = c;
       defs = c.defs;
       batch = coreOf(c).meshes.createBatch('site');
+      casterBatch = coreOf(c).meshes.createBatch('site-casters');
       nearBatch = coreOf(c).meshes.createBatch('site-near');
       fineBatch = coreOf(c).meshes.createBatch('site-fine');
       proxyBatch = coreOf(c).meshes.createBatch('site-shadow-proxies');
@@ -201,6 +207,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       lastUt = snapshot.ut;
       lodSelector.begin(frame);
       batch.begin(frame);
+      casterBatch.begin(frame);
       nearBatch.begin(frame);
       fineBatch.begin(frame);
       proxyBatch.begin(frame);
@@ -257,7 +264,14 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               const target = opts?.shadowProxy ? (opts.nearShadowOnly ? proxyNearBatch : proxyBatch) : opts?.fineShadowOnly ? fineBatch : opts?.nearShadowOnly ? nearBatch : batch;
               const h0 = lods[0]!;
               const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius), pl.models.lodPixels[model]!, lods.length);
+              // An ordinary structure casts from a coarser copy; the thin-structure classes cast what is drawn.
+              const proxied = target === batch && inst.castShadow !== false;
+              if (proxied) inst.castShadow = false;
               target.add(lods[draw.solid]!, inst);
+              if (proxied) {
+                inst.castShadow = true;
+                casterBatch.add(lods[Math.min(Math.max(draw.solid, 1), lods.length - 1)]!, inst);
+              }
               if (draw.fading >= 0) stats.fading++;
               if (draw.fading >= 0 && draw.fade > 0.01) {
                 // The LOD that dithers in or out casts nothing: the solid one carries the shadow.
@@ -281,6 +295,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
         }
       }
       batch.finish();
+      casterBatch.finish();
       nearBatch.finish();
       fineBatch.finish();
       proxyBatch.finish();
@@ -309,20 +324,21 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     drawShadow(_frame, pass, cascade: ShadowCascadeView) {
       // The batch draws body-fixed instances into every cascade and the moving ones only where
       // `cascade.everyFrame` is true.
-      batch.drawShadow(pass, cascade);
+      casterBatch.drawShadow(pass, cascade);
       if (cascade.texelSize <= NEAR_SHADOW_TEXEL) nearBatch.drawShadow(pass, cascade);
       if (cascade.texelSize <= FINE_SHADOW_TEXEL) fineBatch.drawShadow(pass, cascade);
       else {
         proxyBatch.drawShadow(pass, cascade);
         if (cascade.texelSize <= NEAR_SHADOW_TEXEL) proxyNearBatch.drawShadow(pass, cascade);
       }
-      stats.shadowTriangles = batch.stats.shadowTriangles + nearBatch.stats.shadowTriangles + fineBatch.stats.shadowTriangles + proxyBatch.stats.shadowTriangles + proxyNearBatch.stats.shadowTriangles;
+      stats.shadowTriangles = casterBatch.stats.shadowTriangles + nearBatch.stats.shadowTriangles + fineBatch.stats.shadowTriangles + proxyBatch.stats.shadowTriangles + proxyNearBatch.stats.shadowTriangles;
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
 
     dispose() {
       batch.destroy();
+      casterBatch.destroy();
       nearBatch.destroy();
       fineBatch.destroy();
       proxyBatch.destroy();

@@ -95,8 +95,6 @@ const SPECS = {
   'tape-silver': { color: [0.9, 0.91, 0.92], metallic: 1, roughness: 0.24, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   /** Amber polyimide tape (blanket seams of the lander). */
   'tape-kapton': { color: [0.78, 0.47, 0.12], metallic: 0.7, roughness: 0.36, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
-  'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
-  'tile-black': { color: [0.07, 0.07, 0.075], metallic: 0, roughness: 0.55, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   'mli-gold': { color: [1, 1, 1], metallic: 0.88, roughness: 0.5, anisotropy: -0.4, tile: [1.2, 1.2], tex: { a: 'mligold_albedo', n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   'mli-silver': { color: [0.86, 0.87, 0.88], metallic: 0.92, roughness: 0.43, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   'mli-black': { color: [0.03, 0.03, 0.033], metallic: 0, roughness: 0.46, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },

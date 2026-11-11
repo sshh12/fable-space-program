@@ -31,7 +31,7 @@ test('ad-hoc vehicle lab screenshots', async ({ page }) => {
     // Live, like the acceptance views: jitter and noise run and the temporal anti-aliasing converges.
     await waitIdle(page, Number(process.env.VEH_FRAMES ?? 72));
     const s = await saveScreenshot(page, 'vehicle', `adhoc-${name}`);
-    const stats = await page.evaluate(() => ({ ...window.__veh!.vehicle.stats, ev: window.__lab!.renderer.exposureInfo().ev100 }));
+    const stats = await page.evaluate(() => ({ ...window.__veh!.vehicle.stats, site: window.__veh!.site ? { ...window.__veh!.site.stats } : null, ev: window.__lab!.renderer.exposureInfo().ev100 }));
     console.log(`[${name}] ${s.file} mean ${s.stats.meanLuma.toFixed(1)} ${JSON.stringify(stats)}`);
   }
 });

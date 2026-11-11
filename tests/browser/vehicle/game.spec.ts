@@ -98,7 +98,7 @@ test.describe('vehicle and launch complex in the integrated game', () => {
   test('the stack, the lander and the capsule in flight', async ({ page }) => {
     const views: { name: string; query: string; minNonBlack: number }[] = [
       { name: 'game-orbit-stack', query: 'scene=lowOrbit&orbit=35,12,48&fov=40', minNonBlack: 0.2 },
-      { name: 'game-orbit-capsule', query: 'scene=lowOrbit&stage=8&orbit=140,18,9&fov=40', minNonBlack: 0.2 },
+      { name: 'game-orbit-capsule', query: 'scene=lowOrbit&stage=8&orbit=35,14,9&fov=40', minNonBlack: 0.2 },
       { name: 'game-orbit-lander', query: 'scene=lunarOrbit&stage=5&orbit=40,10,22&fov=40', minNonBlack: 0.05 },
       { name: 'game-reentry', query: 'scene=reentry&orbit=160,10,16&fov=40', minNonBlack: 0.2 },
     ];
