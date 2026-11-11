@@ -485,6 +485,12 @@ export interface LocalLight {
    * in the cosine to 0 at `outer`. Default [0, PI / 4].
    */
   cone?: [inner: number, outer: number];
+  /**
+   * Spot only (request vehicle-pad-2): the light casts shadows. The core gives the SPOT_SHADOW_MAX (2) brightest
+   * such spots at the camera a perspective shadow map each, rendered every frame from the core mesh system's
+   * casters (vehicles, site structures: mesh batches with castShadow); the others stay unshadowed.
+   */
+  castShadow?: boolean;
 }
 
 /**

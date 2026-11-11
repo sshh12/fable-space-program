@@ -57,7 +57,7 @@ export interface PointLightProbe {
   at: [number, number];
   radius?: number;
   range?: number;
-  spot?: { dir: [number, number, number]; cone: [number, number] };
+  spot?: { dir: [number, number, number]; cone: [number, number]; castShadow?: boolean };
 }
 
 /** Setters of the `inputs` probe: constant lighting inputs published through SharedResources (null = back to the default). */
@@ -986,7 +986,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
             intensity: [light.intensity, light.intensity, light.intensity],
             range: light.range ?? light.height * 4,
             ...(light.radius !== undefined ? { radius: light.radius } : {}),
-            ...(light.spot ? { dirRelCam: quat.rotate(pose.q, v3.fromTuple(light.spot.dir)), cone: light.spot.cone } : {}),
+            ...(light.spot ? { dirRelCam: quat.rotate(pose.q, v3.fromTuple(light.spot.dir)), cone: light.spot.cone, ...(light.spot.castShadow ? { castShadow: true } : {}) } : {}),
           });
         }
       },

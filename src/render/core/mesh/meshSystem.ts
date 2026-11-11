@@ -8,7 +8,7 @@
  * Bind groups of the shadow pipeline:   0 frame, 1 core shadow pass (cascade matrix), 2 batch.
  */
 import { MATERIAL_ID, OCEAN_WETNESS_SLOTS, RENDER_FORMATS, type FrameContext, type MeshData, type ModelData, type PbrMaterialDef, type ShadowCascadeView, type SharedResources } from '@/core/contracts/render';
-import { mat3, quat, v3, type Quat, type Vec3, type Vec3Tuple } from '@/core/math';
+import { mat3, quat, v3, type Mat4, type Quat, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
 import { createBufferChecked, f32ToF16 } from '../util/gpu';
 import type { ProceduralTexture, TextureManager, TextureRef } from './textures';
@@ -377,6 +377,11 @@ export interface MeshBatch {
   drawGBuffer(pass: GPURenderPassEncoder): void;
   /** Call from `drawShadow`: draws body-fixed casters always and moving casters only when `cascade.everyFrame`. */
   drawShadow(pass: GPURenderPassEncoder, cascade: ShadowCascadeView): void;
+  /**
+   * Every caster inside a perspective frustum (a spot light's shadow map; the core calls it for every batch,
+   * request vehicle-pad-2). Group 1 (the shadow pass uniform) is bound by the caller.
+   */
+  drawSpotShadow(pass: GPURenderPassEncoder, viewProj: Mat4, frameIndex: number): void;
   /** Instances and triangles submitted to the G-buffer in the last frame. */
   readonly stats: { instances: number; triangles: number; shadowTriangles: number };
   destroy(): void;
@@ -387,6 +392,8 @@ export interface MeshSystem {
   /** Register a procedural texture that PbrMaterialDef.textures can name by id. */
   registerProceduralTexture(id: string, texture: ProceduralTexture): void;
   createBatch(label: string): MeshBatch;
+  /** Draw every live batch's casters into a spot-light shadow map (the core's own pass; request vehicle-pad-2). */
+  drawSpotShadows(pass: GPURenderPassEncoder, viewProj: Mat4, frameIndex: number): void;
   /** True when no texture is still loading. */
   isIdle(): boolean;
 }
@@ -597,7 +604,12 @@ export function createMeshSystem(args: {
   };
 
   let nextModelUid = 1;
+  /** Every live batch: the core draws them all into the spot-light shadow maps (request vehicle-pad-2). */
+  const batches = new Set<MeshBatch>();
   const system: MeshSystem = {
+    drawSpotShadows(pass, viewProj, frameIndex) {
+      for (const b of batches) b.drawSpotShadow(pass, viewProj, frameIndex);
+    },
     registerProceduralTexture: (id, texture) => textures.registerProcedural(id, texture),
     isIdle: () => textures.pendingLoads() === 0,
 
@@ -844,25 +856,64 @@ export function createMeshSystem(args: {
         },
 
         drawShadow(pass, cascade) {
-          if (!bindGroup || stats.instances === 0) return;
           const m = cascade.viewProj;
           // Clip units per metre along u and along v (they differ in a cascade fitted to its receivers).
           const scaleU = Math.hypot(m[0]!, m[4]!, m[8]!);
           const scaleV = Math.hypot(m[1]!, m[5]!, m[9]!);
+          drawCasters(pass, (g) => g.bodyFixed || cascade.everyFrame, (g, k) => {
+            const o = k * 4;
+            const r = g.spheres[o + 3]!;
+            if (r < 0.5 * cascade.texelSize) return false;
+            const x = g.spheres[o]!;
+            const y = g.spheres[o + 1]!;
+            const z = g.spheres[o + 2]!;
+            return Math.abs(m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) < 1 + r * scaleU && Math.abs(m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) < 1 + r * scaleV;
+          });
+        },
+
+        drawSpotShadow(pass, viewProj, frameIndex) {
+          // Only a batch filled this frame (a feature that was switched off keeps last frame's instances).
+          if (!frame || frame.frameIndex !== frameIndex) return;
+          // A perspective frustum (request vehicle-pad-2): every caster whose bounding sphere is inside its six planes.
+          const m = viewProj;
+          const planes: number[][] = [];
+          const row = (i: number): number[] => [m[i]!, m[4 + i]!, m[8 + i]!, m[12 + i]!];
+          const r0 = row(0);
+          const r1 = row(1);
+          const r2 = row(2);
+          const r3 = row(3);
+          for (const p of [r3.map((v, i) => v + r0[i]!), r3.map((v, i) => v - r0[i]!), r3.map((v, i) => v + r1[i]!), r3.map((v, i) => v - r1[i]!), r2, r3.map((v, i) => v - r2[i]!)]) {
+            const l = Math.hypot(p[0]!, p[1]!, p[2]!) || 1;
+            planes.push(p.map((v) => v / l));
+          }
+          drawCasters(pass, () => true, (g, k) => {
+            const o = k * 4;
+            const x = g.spheres[o]!;
+            const y = g.spheres[o + 1]!;
+            const z = g.spheres[o + 2]!;
+            const r = g.spheres[o + 3]!;
+            for (const p of planes) if (p[0]! * x + p[1]! * y + p[2]! * z + p[3]! < -r) return false;
+            return true;
+          });
+        },
+
+        destroy() {
+          batches.delete(batch);
+          buffer?.destroy();
+          buffer = null;
+          bindGroup = null;
+          groups.clear();
+        },
+      };
+
+      /** Draw the shadow casters of the groups `useGroup` accepts that `visibleIn` keeps (castShadow flag first). */
+      const drawCasters = (pass: GPURenderPassEncoder, useGroup: (g: Group) => boolean, visibleIn: (g: Group, k: number) => boolean): void => {
+          if (!bindGroup || stats.instances === 0) return;
           let pipelineSet = false;
           for (const g of groups.values()) {
-            if (g.count === 0 || !(g.bodyFixed || cascade.everyFrame)) continue;
+            if (g.count === 0 || !useGroup(g)) continue;
             const lod = g.model.lods[g.lod]!;
-            const visible = (k: number): boolean => {
-              if (!(g.flags[k]! & 2)) return false;
-              const o = k * 4;
-              const r = g.spheres[o + 3]!;
-              if (r < 0.5 * cascade.texelSize) return false;
-              const x = g.spheres[o]!;
-              const y = g.spheres[o + 1]!;
-              const z = g.spheres[o + 2]!;
-              return Math.abs(m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) < 1 + r * scaleU && Math.abs(m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) < 1 + r * scaleV;
-            };
+            const visible = (k: number): boolean => (g.flags[k]! & 2) !== 0 && visibleIn(g, k);
             let bound = false;
             let i = 0;
             while (i < g.count) {
@@ -905,15 +956,8 @@ export function createMeshSystem(args: {
               i = j;
             }
           }
-        },
-
-        destroy() {
-          buffer?.destroy();
-          buffer = null;
-          bindGroup = null;
-          groups.clear();
-        },
       };
+      batches.add(batch);
       return batch;
     },
   };

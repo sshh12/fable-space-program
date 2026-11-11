@@ -3,7 +3,7 @@
  * (offsets below are in 4-byte units) and is documented in docs/RENDER_API.md.
  */
 import type { BodyDef, DefLibrary } from '@/core/contracts/defs';
-import type { BodyPose, FrameContext } from '@/core/contracts/render';
+import type { BodyPose, FrameContext, LocalLight } from '@/core/contracts/render';
 import { quat, v3, type Vec3 } from '@/core/math';
 import { BODY_FLAG, MAX_BODIES, MAX_LIGHTS, SHINE_PER_RECEIVER, SHINE_RECEIVERS } from '../shaders/chunksFrame';
 import type { Projection, ShineLight } from './math';
@@ -88,6 +88,8 @@ export interface FrameUniformExtras {
   cloudShadow: CloudShadowParams;
   /** Planetshine per receiver: index = frame body index, last = free space at the camera. */
   shine: ShineLight[][];
+  /** Spot lights that have a shadow map this frame, and its index (request vehicle-pad-2). */
+  spotShadowIndex?: ReadonlyMap<LocalLight, number>;
   defs: DefLibrary;
   near: number;
 }
@@ -225,7 +227,9 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
     const o = OFFSET.lights + i * LIGHT_UNIFORM_FLOATS;
     put3(f, o, l.posRelCam, l.range);
     // A spot keeps its position in endKind.xyz: a shader with its own copy of the old loop sees a point light.
-    put3(f, o + 4, l.kind === 'capsule' ? (l.endRelCam ?? l.posRelCam) : l.posRelCam, l.kind === 'capsule' ? 1 : l.kind === 'spot' ? 2 : 0);
+    // endKind.w: 0 point, 1 capsule, 2 spot, 3 + k a spot with shadow map k (request vehicle-pad-2).
+    const shadowMap = x.spotShadowIndex?.get(l);
+    put3(f, o + 4, l.kind === 'capsule' ? (l.endRelCam ?? l.posRelCam) : l.posRelCam, l.kind === 'capsule' ? 1 : l.kind === 'spot' ? (shadowMap !== undefined ? 3 + shadowMap : 2) : 0);
     f.set([l.intensity[0], l.intensity[1], l.intensity[2], Math.max(l.radius ?? 0, 0)], o + 8);
     const [inner, outer] = l.cone ?? [0, Math.PI / 4];
     const cosOuter = Math.cos(Math.min(Math.max(outer, 1e-4), Math.PI));

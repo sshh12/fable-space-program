@@ -8,6 +8,7 @@ import { RENDER_FORMATS, type RenderContext } from '@/core/contracts/render';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { createSceneBindings, type SceneBindings } from '../sceneBindings';
 import { MAX_BODIES } from '../shaders/chunksFrame';
+import { SPOT_SHADOW_MAX, SPOT_SHADOW_SIZE } from '../shadows/spotShadows';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
 import { f32ToF16 } from '../util/gpu';
 
@@ -80,6 +81,27 @@ ${bindings}
 @group(2) @binding(5) var aoTex: texture_2d<f32>;        // half resolution: r = ambient occlusion, g = contact shadow
 @group(2) @binding(6) var aoDepthTex: texture_2d<f32>;   // half resolution: the reversed-Z depth the AO was computed at
 @group(2) @binding(7) var hapkeLut: texture_2d<f32>;
+// Shadow maps of spot lights (request vehicle-pad-2): a light whose endKind.w is 3 + k has map k.
+struct SpotShadowU { viewProj: array<mat4x4f, ${SPOT_SHADOW_MAX}>, params: array<vec4f, ${SPOT_SHADOW_MAX}> }   // params: tan(half fov), near, far
+@group(3) @binding(0) var spotShadowTex: texture_depth_2d_array;
+@group(3) @binding(1) var<uniform> spotShadowU: SpotShadowU;
+/// Visibility (0..1) of spot light map k at a camera-relative point with unit normal n, distance d from the light:
+/// normal offset of 1.5 texels at that distance, 3 x 3 bilinear PCF. Outside the map: 1.
+fn spotShadow(k: u32, pos: vec3f, n: vec3f, d: f32) -> f32 {
+  let texel = 2.0 * d * spotShadowU.params[k].x / ${SPOT_SHADOW_SIZE}.0;
+  let c = spotShadowU.viewProj[k] * vec4f(pos + n * (1.5 * texel), 1.0);
+  if (c.w <= 0.0) { return 1.0; }
+  let ndc = c.xyz / c.w;
+  if (abs(ndc.x) >= 1.0 || abs(ndc.y) >= 1.0 || ndc.z >= 1.0) { return 1.0; }
+  let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+  var s = 0.0;
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+      s += textureSampleCompareLevel(spotShadowTex, shadowCompare, uv + vec2f(f32(x), f32(y)) / ${SPOT_SHADOW_SIZE}.0, i32(k), ndc.z);
+    }
+  }
+  return s / 9.0;
+}
 #include "brdf_terrain"
 #include "brdf_regolith"
 #include "brdf_water"
@@ -298,7 +320,12 @@ fn envIrradiance(n: vec3f) -> vec3f {
   // ---- local lights (point, capsule and spot; source radius; chunk local_lights)
   for (var i = 0u; i < min(frame.counts.y, MAX_LIGHTS); i++) {
     let ll = localLightSample(i, pos, s.n);
-    if (ll.w > 0.0) { lit += brdfDirect(s, ll.xyz) * frame.lights[i].intensity.rgb * ll.w; }
+    if (ll.w > 0.0) {
+      var vis = 1.0;
+      let kind = frame.lights[i].endKind.w;
+      if (kind > 2.5) { vis = spotShadow(u32(round(kind - 3.0)), pos, s.n, distance(frame.lights[i].posRange.xyz, pos)); }
+      lit += brdfDirect(s, ll.xyz) * frame.lights[i].intensity.rgb * (ll.w * vis);
+    }
   }
 
   // ---- map-view fill light (declared ambient, unshadowed)
@@ -324,6 +351,8 @@ export class DeferredLighting {
   private readonly gbufferLayout: GPUBindGroupLayout;
   private readonly pipeline: Tracked<GPURenderPipeline>;
   private readonly hapkeView: GPUTextureView;
+  private readonly spotLayout: GPUBindGroupLayout;
+  private spotGroup: GPUBindGroup | null = null;
   private sceneGroup: GPUBindGroup | null = null;
   private sceneVersion = -1;
   private gbufferGroup: GPUBindGroup | null = null;
@@ -358,11 +387,18 @@ export class DeferredLighting {
     device.queue.writeTexture({ texture: tex }, lut, { bytesPerRow: 512 }, [256, MAX_BODIES]);
     this.hapkeView = tex.createView();
 
+    this.spotLayout = device.createBindGroupLayout({
+      label: 'lighting.spotShadows',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
     this.pipeline = shaders.tracked(() => {
       const module = shaders.createModule('core.lighting', LIGHTING_FS(this.bindings.wgsl));
       return device.createRenderPipeline({
         label: 'core.lighting',
-        layout: device.createPipelineLayout({ label: 'core.lighting', bindGroupLayouts: [ctx.frameBindGroupLayout, this.sceneLayout, this.gbufferLayout] }),
+        layout: device.createPipelineLayout({ label: 'core.lighting', bindGroupLayouts: [ctx.frameBindGroupLayout, this.sceneLayout, this.gbufferLayout, this.spotLayout] }),
         vertex: { module, entryPoint: 'fullscreenVs' },
         fragment: { module, entryPoint: 'fs', targets: [{ format: RENDER_FORMATS.hdr }] },
         primitive: { topology: 'triangle-list' },
@@ -370,6 +406,11 @@ export class DeferredLighting {
         depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'less' },
       });
     });
+  }
+
+  /** The spot-light shadow maps and their uniform (src/render/core/shadows/spotShadows.ts). */
+  setSpotShadows(view: GPUTextureView, uniform: GPUBuffer): void {
+    this.spotGroup = this.ctx.device.createBindGroup({ label: 'lighting.spotShadows', layout: this.spotLayout, entries: [{ binding: 0, resource: view }, { binding: 1, resource: { buffer: uniform } }] });
   }
 
   setInputs(inputs: LightingInputs): void {
@@ -383,7 +424,7 @@ export class DeferredLighting {
   }
 
   draw(pass: GPURenderPassEncoder): void {
-    if (!this.inputs) return;
+    if (!this.inputs || !this.spotGroup) return;
     const device = this.ctx.device;
     const v = this.bindings.version();
     if (!this.sceneGroup || v !== this.sceneVersion) {
@@ -401,6 +442,7 @@ export class DeferredLighting {
     pass.setPipeline(this.pipeline.get());
     pass.setBindGroup(1, this.sceneGroup);
     pass.setBindGroup(2, this.gbufferGroup);
+    pass.setBindGroup(3, this.spotGroup);
     pass.draw(3);
   }
 }

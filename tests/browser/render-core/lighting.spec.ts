@@ -522,3 +522,44 @@ test('planetshine is hidden by the bodies in between: the Moon under a 200 km or
   expect(set.cdm2).toBeLessThan(0.05 * up.cdm2);
   await expectNoErrors(page, pageLog);
 });
+
+test('a spot light with castShadow casts the shadows of mesh casters; without it the ground under them is lit (request vehicle-pad-2)', async ({ page, pageLog }) => {
+  // Night (the sun 30 deg under the horizon), a 2e6 cd spot 6 m above the floating bar (4 x 0.3 x 0.3 m at
+  // (2, -5, 3)) pointing down, cone 25 / 35 deg: the bar's shadow on the slab is 0.6 m wide under it.
+  await openPage(page, '/labs/render-core/?sun=180,-30&hud=0&paused=1&ev=4&probe=inputs');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+    // From the east, low: the ground under the bar is seen below it (a view from above would see the bar).
+    window.__rc!.lookAt([2, -5, 0], 90, 20, 8);
+  });
+  const measure = async (castShadow: boolean): Promise<{ under: number; beside: number; maps: number }> => {
+    await page.evaluate((cs) => {
+      window.__rc!.probes.inputs.setPointLight({ intensity: 2e6, height: 6, at: [2, -5], range: 30, spot: { dir: [0, 0, -1], cone: [(25 * Math.PI) / 180, (35 * Math.PI) / 180], castShadow: cs } });
+    }, castShadow);
+    await waitIdle(page, 8);
+    return page.evaluate(async () => {
+      await window.__test!.waitFrames(6);
+      const lum = async (p: [number, number, number]): Promise<number> => {
+        const px = window.__rc!.projectSitePoint(p)!;
+        const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(px.x) - 2, y: Math.round(px.y) - 2, width: 5, height: 5 });
+        let s = 0;
+        for (let i = 0; i < 25; i++) s += 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+        return s / 25;
+      };
+      return { under: await lum([2, -5, 0]), beside: await lum([2, -3.6, 0]), maps: window.__test!.perf()!.counters.spotShadows ?? -1 };
+    });
+  };
+  const open = await measure(false);
+  const shadowed = await measure(true);
+  await saveScreenshot(page, 'render-core', 'lighting-spot-shadow');
+  await page.evaluate(() => window.__rc!.probes.inputs.setPointLight(null));
+  console.log(`spot light over the floating bar: without castShadow under ${open.under.toFixed(4)} / beside ${open.beside.toFixed(4)} (${open.maps} maps); with castShadow under ${shadowed.under.toFixed(4)} / beside ${shadowed.beside.toFixed(4)} (${shadowed.maps} maps)`);
+  expect(open.maps).toBe(0);
+  expect(shadowed.maps).toBe(1);
+  expect(open.under).toBeGreaterThan(0.5 * open.beside);
+  expect(shadowed.under).toBeLessThan(0.1 * shadowed.beside);
+  expect(shadowed.beside).toBeGreaterThan(0.9 * open.beside);
+  await expectNoErrors(page, pageLog);
+});

@@ -38,6 +38,7 @@ import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
 import { ATMOSPHERE_COMMON_WGSL, BRDF_REGOLITH_WGSL, BRDF_TERRAIN_WGSL, BRDF_WATER_WGSL, BRDF_WGSL, CLOUD_SHADOW_WGSL, ECLIPSE_WGSL, LOCAL_LIGHTS_WGSL, SHADOWS_WGSL, TRANSPARENCY_WGSL, UPSAMPLE_WGSL } from './shaders/chunksLighting';
 import { createShaderLibrary, type CoreShaderLibrary } from './shaders/library';
+import { SpotShadows, pickShadowedSpots } from './shadows/spotShadows';
 import { ShadowSystem } from './shadows/shadowSystem';
 import { createTextureChecked, f16ToF32, generateBlueNoise, MipGenerator, readTexturePixels } from './util/gpu';
 
@@ -242,6 +243,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
 
   const mips = new MipGenerator(device);
   const shadows = new ShadowSystem(device, resources, quality.shadowResolution, reportError);
+  // Shadow maps of up to SPOT_SHADOW_MAX spot lights with castShadow (request vehicle-pad-2).
+  const spotShadows = new SpotShadows(device, shadows.passLayout, reportError);
   const textures = new TextureManager(device, ctx.assetsUrl, reportError, mips);
   const meshes = createMeshSystem({ device, shaders, frameLayout: frameBindGroupLayout, shadowPassLayout: shadows.passLayout, textures, resources, reportError });
 
@@ -533,6 +536,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     if (!lighting) {
       snapshotBodyIds.push(...snapshot.bodies.slice(0, MAX_BODIES).map((b) => b.id));
       lighting = new DeferredLighting(ctx, shaders, defs, snapshotBodyIds);
+      lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
     }
 
     // Governor and dynamic resolution (off while deterministic).
@@ -644,7 +648,11 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const near = nearestBody(camera.positionRoot, snapshot, defs);
     // Free space at the camera: every body that is far enough for the far-field formula (others fade out).
     shine.push(planetshineAt(camera.positionRoot, near && near.altitude < 0.5 * near.def.radius ? near.body.id : null, snapshot, defs));
+    // Spot lights that get a shadow map this frame (after prepare: the features have registered their lights).
+    const spotPasses = spotShadows.update(pickShadowedSpots(frame.lights));
+    const spotShadowIndex = new Map(spotPasses.map((p) => [p.light, p.index] as const));
     packFrameUniforms(frameF32, frameU32, frame, {
+      spotShadowIndex,
       projection,
       prevEyeOffset,
       basis,
@@ -693,6 +701,20 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
         attribution,
       );
     }
+    // 2a. spot-light shadow maps: the core mesh system's casters (request vehicle-pad-2)
+    for (const sp of spotPasses) {
+      const pass = encoder.beginRenderPass({
+        label: `shadow.spot${sp.index}`,
+        colorAttachments: [],
+        depthStencilAttachment: { view: sp.attachment, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+        timestampWrites: perf.gpuPass('core.spotShadows'),
+      });
+      pass.setBindGroup(0, frameBindGroup);
+      pass.setBindGroup(1, sp.bindGroup);
+      meshes.drawSpotShadows(pass, sp.viewProj, frameIndex);
+      pass.end();
+    }
+    perf.counter('spotShadows', spotPasses.length);
     perf.counter('shadowCascades', shadows.current().length);
     perf.counter('shadowCascadesRendered', shadowTargets.length);
 
