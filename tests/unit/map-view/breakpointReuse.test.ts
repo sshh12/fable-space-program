@@ -139,6 +139,7 @@ describe('breakpoint re-use in the scene builder', () => {
   it('a turning view is drawn from kept breakpoints and stays within tolerance on every frame', () => {
     const map = new MapController(defs);
     map.setActive(true);
+    map.setDebrisOrbits(true); // the load case: every debris orbit drawn
     const fresh = new MapController(defs);
     fresh.setActive(true);
     const focus = earthOf(snapshot);
@@ -161,6 +162,7 @@ describe('breakpoint re-use in the scene builder', () => {
         // What the same frame costs without anything kept: a controller that never saw the previous frame.
         const cold = new MapController(defs);
         cold.setActive(true);
+        cold.setDebrisOrbits(true);
         cold.frame(snapshot, cam, CSS);
         evalsFresh += cold.stats().lines.reduce((a, l) => a + l.evaluations, 0);
       }
@@ -174,6 +176,7 @@ describe('breakpoint re-use in the scene builder', () => {
   it('zooming in and back out neither leaves the tolerance nor piles up vertices', () => {
     const map = new MapController(defs);
     map.setActive(true);
+    map.setDebrisOrbits(true); // the load case: every debris orbit drawn
     const focus = earthOf(snapshot);
     const distances: number[] = [];
     for (let i = 0; i <= 60; i++) distances.push(9e7 * 0.95 ** i);
@@ -190,6 +193,7 @@ describe('breakpoint re-use in the scene builder', () => {
     vertices = sceneError(map.currentScene!).vertices;
     const cold = new MapController(defs);
     cold.setActive(true);
+    cold.setDebrisOrbits(true);
     cold.frame(snapshot, orbitCamera(focus, 0.4, 0.5, 9e7), CSS);
     const coldVertices = sceneError(cold.currentScene!).vertices;
     expect(vertices).toBeLessThan(1.5 * coldVertices);
@@ -198,6 +202,7 @@ describe('breakpoint re-use in the scene builder', () => {
   it('vessels moving along their orbits keep their breakpoints (a whole revolution may start anywhere)', () => {
     const map = new MapController(defs);
     map.setActive(true);
+    map.setDebrisOrbits(true); // the load case: every debris orbit drawn
     const focus = earthOf(snapshot);
     const cam = orbitCamera(focus, 0.4, 0.5, 9e7);
     map.frame(snapshot, cam, CSS);
@@ -242,6 +247,7 @@ describe('breakpoint re-use in the scene builder', () => {
   it('a line whose conic changes shape is sampled afresh', () => {
     const map = new MapController(defs);
     map.setActive(true);
+    map.setDebrisOrbits(true); // the load case: every debris orbit drawn
     const focus = earthOf(snapshot);
     map.frame(snapshot, orbitCamera(focus, 0.4, 0.5, 9e7), CSS);
     const lines = map.stats().lines.length;

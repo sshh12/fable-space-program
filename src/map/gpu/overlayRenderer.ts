@@ -4,8 +4,8 @@
  * to camera-relative float32 only here, as the last step.
  */
 import type { ShaderLibrary } from '@/core/contracts/render';
-import { COLORS, DASH_ON_PX, DASH_PERIOD_PX, OCCLUSION_FADE_PX, type Rgba } from '../constants';
-import type { DrawList, IconInstance, TextRun } from '../drawList';
+import { CASING_PX, COLORS, DASH_ON_PX, DASH_PERIOD_PX, FADE_FLOOR, FADE_TINT, OCCLUSION_FADE_PX, type Rgba } from '../constants';
+import { isBlank, type DrawList, type IconInstance, type TextRun } from '../drawList';
 import { GlyphAtlas } from './glyphAtlas';
 import { GLYPH_WGSL, ICON_WGSL, LINE_WGSL, MAX_OCCLUDERS } from './shaders';
 
@@ -160,10 +160,11 @@ export class OverlayRenderer {
     f[21] = proj.focal;
     f[22] = proj.near;
     f[23] = nOcc;
+    const period = DASH_PERIOD_PX * k;
     f[24] = OCCLUSION_FADE_PX * k;
-    f[25] = DASH_PERIOD_PX * k;
+    f[25] = period;
     f[26] = DASH_ON_PX * k;
-    f[27] = 0;
+    f[27] = CASING_PX * k;
     for (let i = 0; i < nOcc; i++) {
       const o = scene.occluders[i]!;
       f[28 + 4 * i] = o.x;
@@ -181,21 +182,26 @@ export class OverlayRenderer {
     const pf = this.pointF32;
     const pu = this.pointU32;
     let j = 0;
+    const q = (x: number): number => Math.max(0, Math.min(255, Math.round(x * 255)));
     for (const l of scene.lines) {
-      const dashed = l.dashed ? 2 : 0;
-      const rgb = packColor(l.color, 0);
-      const a255 = l.color[3] * 255;
-      for (let i = 0; i < l.count; i++) {
-        const s = l.start + i;
+      const style = (l.dashed ? 2 : 0) | (Math.min(65535, Math.round(l.width * 64)) << 16);
+      const [r, g, b, a] = l.color;
+      const end = l.start + l.count;
+      for (let s = l.start; s < end; s++) {
         const o = j * POINT_WORDS;
         pf[o] = verts.vx[s]!;
         pf[o + 1] = verts.vy[s]!;
         pf[o + 2] = verts.vz[s]!;
-        pf[o + 3] = verts.len[s]!;
-        const alpha = Math.max(0, Math.min(255, Math.round(a255 * verts.alpha[s]!)));
-        pu[o + 4] = (rgb | (alpha << 24)) >>> 0;
-        pu[o + 5] = (i < l.count - 1 ? 1 : 0) | dashed;
-        pf[o + 6] = l.width;
+        const len = verts.len[s]!;
+        pf[o + 3] = len - Math.floor(len / period) * period;
+        // Fade with time ahead: toward a lighter tint of the line's own hue at a lower alpha (constants.ts).
+        const fade = verts.fade[s]!;
+        const tint = FADE_TINT * fade;
+        const alpha = a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * fade);
+        pu[o + 4] = (q(r + (1 - r) * tint) | (q(g + (1 - g) * tint) << 8) | (q(b + (1 - b) * tint) << 16) | (q(alpha) << 24)) >>> 0;
+        const drawn = verts.seg[s] === 1;
+        pu[o + 5] = (style | (drawn ? 1 : 0)) >>> 0;
+        pf[o + 6] = drawn ? verts.len[s + 1]! - len : 0;
         pf[o + 7] = l.occlusionSlack;
         j++;
       }
@@ -297,14 +303,17 @@ export class OverlayRenderer {
     const color = packColor(run.color, halo ? 0 : run.alpha);
     const haloColor = packColor(COLORS.halo, halo ? run.alpha : 0);
     const text = run.text;
+    let pen = 0;
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);
-      if (code === 32) continue;
       const cell = atlas.cell(code);
+      const x = x0 + Math.round(pen);
+      pen += cell.advance;
+      if (isBlank(code)) continue;
       const o = g * (GLYPH_BYTES / 4);
-      f[o] = x0 + Math.round(i * atlas.metrics.advance);
+      f[o] = x;
       f[o + 1] = y0;
-      f[o + 2] = atlas.cellW;
+      f[o + 2] = cell.w;
       f[o + 3] = atlas.cellH;
       f[o + 4] = cell.u;
       f[o + 5] = cell.v;

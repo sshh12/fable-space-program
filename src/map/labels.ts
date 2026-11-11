@@ -132,11 +132,22 @@ export interface LabelBox {
   width: number;
   height: number;
   priority: number;
-  /** Resolved top-left corner, or null when no position was free. */
+  /** Resolved top-left corner (valid when placed). */
   x: number;
   y: number;
   placed: boolean;
+  /** Placed on the outer ring of candidates, away from its anchor: it gets a leader line. */
+  far: boolean;
 }
+
+/** Cost of a screen rectangle (device px) for a label: how much drawn line it covers (0 = none). */
+export type RectCost = (x0: number, y0: number, x1: number, y1: number) => number;
+
+/** Score of one unit of line cost against the far-ring penalty (a far label beats crossing a line). */
+const LINE_COST_WEIGHT = 10;
+const FAR_PENALTY = 6;
+/** The outer ring of candidates lies this many device px (per CSS px) further out. */
+export const FAR_RING_PX = 22;
 
 /** An axis-aligned screen rectangle (device px) that labels must keep clear of, e.g. a DOM panel. */
 export interface BlockedRect {
@@ -154,10 +165,12 @@ const ensureRects = (n: number): void => {
 const order: number[] = [];
 
 /**
- * Greedy de-cluttering: labels are placed in priority order at the first of eight candidate positions
- * around their anchor that overlaps neither an earlier label, nor any icon, nor a blocked rectangle (the
- * node panel); labels with no free position are hidden (their icon stays and the hover tooltip still shows
- * the details).
+ * Greedy de-cluttering: labels are placed in priority order at the best of sixteen candidate positions around
+ * their anchor (eight beside it, eight on an outer ring `farRing` further out, which get a leader line). A
+ * candidate must overlap neither an earlier label, nor any icon, nor a blocked rectangle (node panel, tooltip,
+ * HUD panels), and lie inside the viewport. Among those the one covering the least drawn line (`cost`) wins,
+ * then the inner ring, then the candidate order. Labels with no free position are hidden (their icon stays and
+ * the hover tooltip still shows the details).
  */
 export function declutter(
   labels: readonly LabelBox[],
@@ -165,6 +178,8 @@ export function declutter(
   viewport: { width: number; height: number },
   gap: number,
   blocked: readonly BlockedRect[] = [],
+  cost: RectCost | null = null,
+  farRing = 0,
 ): void {
   // Fixed obstacles first (icons, blocked rectangles), then the labels as they are placed.
   const nFixed = icons.length + blocked.length;
@@ -189,68 +204,84 @@ export function declutter(
   order.sort((a, b) => labels[b]!.priority - labels[a]!.priority || a - b);
   const W = viewport.width;
   const H = viewport.height;
+  const rings = farRing > 0 ? 2 : 1;
   for (const i of order) {
     const l = labels[i]!;
     l.placed = false;
-    const d = l.clear + gap;
-    const e = d * 0.75;
-    for (let c = 0; c < 8; c++) {
-      let x: number;
-      let y: number;
-      switch (c) {
-        case 0:
-          x = l.ax + d;
-          y = l.ay - l.height / 2;
-          break;
-        case 1:
-          x = l.ax - d - l.width;
-          y = l.ay - l.height / 2;
-          break;
-        case 2:
-          x = l.ax - l.width / 2;
-          y = l.ay - d - l.height;
-          break;
-        case 3:
-          x = l.ax - l.width / 2;
-          y = l.ay + d;
-          break;
-        case 4:
-          x = l.ax + e;
-          y = l.ay - e - l.height;
-          break;
-        case 5:
-          x = l.ax + e;
-          y = l.ay + e;
-          break;
-        case 6:
-          x = l.ax - e - l.width;
-          y = l.ay - e - l.height;
-          break;
-        default:
-          x = l.ax - e - l.width;
-          y = l.ay + e;
-      }
-      const x1 = x + l.width;
-      const y1 = y + l.height;
-      if (x < 0 || y < 0 || x1 > W || y1 > H) continue;
-      let free = true;
-      for (let k = 0; k < n; k++) {
-        const o = 4 * k;
-        if (x < rects[o + 2]! && rects[o]! < x1 && y < rects[o + 3]! && rects[o + 1]! < y1) {
-          free = false;
-          break;
+    l.far = false;
+    let best = Infinity;
+    let bx = 0;
+    let by = 0;
+    for (let ring = 0; ring < rings && best >= 0.1; ring++) {
+      const d = l.clear + gap + ring * farRing;
+      const e = d * 0.75;
+      for (let c = 0; c < 8; c++) {
+        let x: number;
+        let y: number;
+        switch (c) {
+          case 0:
+            x = l.ax + d;
+            y = l.ay - l.height / 2;
+            break;
+          case 1:
+            x = l.ax - d - l.width;
+            y = l.ay - l.height / 2;
+            break;
+          case 2:
+            x = l.ax - l.width / 2;
+            y = l.ay - d - l.height;
+            break;
+          case 3:
+            x = l.ax - l.width / 2;
+            y = l.ay + d;
+            break;
+          case 4:
+            x = l.ax + e;
+            y = l.ay - e - l.height;
+            break;
+          case 5:
+            x = l.ax + e;
+            y = l.ay + e;
+            break;
+          case 6:
+            x = l.ax - e - l.width;
+            y = l.ay - e - l.height;
+            break;
+          default:
+            x = l.ax - e - l.width;
+            y = l.ay + e;
+        }
+        const x1 = x + l.width;
+        const y1 = y + l.height;
+        if (x < 0 || y < 0 || x1 > W || y1 > H) continue;
+        let free = true;
+        for (let k = 0; k < n; k++) {
+          const o = 4 * k;
+          if (x < rects[o + 2]! && rects[o]! < x1 && y < rects[o + 3]! && rects[o + 1]! < y1) {
+            free = false;
+            break;
+          }
+        }
+        if (!free) continue;
+        const score = (cost ? cost(x, y, x1, y1) * LINE_COST_WEIGHT : 0) + ring * FAR_PENALTY + c * 0.01;
+        if (score < best) {
+          best = score;
+          bx = x;
+          by = y;
+          l.far = ring > 0;
+          // The first free inner candidate that crosses no line cannot be beaten.
+          if (score < 0.1) break;
         }
       }
-      if (!free) continue;
-      l.x = Math.round(x);
-      l.y = Math.round(y);
-      l.placed = true;
-      rects[4 * n] = x;
-      rects[4 * n + 1] = y;
-      rects[4 * n + 2] = x1;
-      rects[4 * n + 3] = y1;
-      n++;
-      break;
     }
+    if (best === Infinity) continue;
+    l.x = Math.round(bx);
+    l.y = Math.round(by);
+    l.placed = true;
+    rects[4 * n] = bx;
+    rects[4 * n + 1] = by;
+    rects[4 * n + 2] = bx + l.width;
+    rects[4 * n + 3] = by + l.height;
+    n++;
   }
 }

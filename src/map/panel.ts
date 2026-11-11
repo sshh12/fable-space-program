@@ -1,37 +1,66 @@
 /**
- * The numeric maneuver-node panel: the three delta-v components, the total (rescales the burn, keeping its
- * direction), the node time as UT and as time from now ("1h 02m 03.4s", "T-90s", "1:30"), +/- one orbit,
- * delete, and previous/next node. A small DOM element positioned next to the selected node; all state
- * lives in the controller (panelState / panelSetValue / panelAction).
+ * The numeric maneuver-node panel, in the flight HUD's type and panel style (theme.ts): the three delta-v
+ * components, each between the two axis glyphs of the gizmo as nudge buttons (1 m/s per click, Shift 0.1,
+ * Ctrl 10), the total (rescales the burn, keeping its direction), the node time as time from now ("1h 02m
+ * 03.4s", "T-90s", "1:30") and as UT, +/- one orbit, delete, and previous/next node. A DOM element placed by the
+ * controller (off the trajectory and the gizmo); all state lives in the controller (panelState /
+ * panelSetValue / panelNudge / panelAction). The panel is opaque: nothing shows through behind its fields.
  *
  * Typing: Enter or leaving the field applies the value once; Escape restores the node's value. A field
  * whose text is unchanged sends nothing. Key events typed into the panel are stopped at the panel so
  * window-level key bindings never see them.
  */
-import type { MapController, PanelField, PanelState } from './controller';
+import type { DvComponent, MapController, PanelField, PanelState } from './controller';
 import { formatDuration, formatDurationField, parseDuration, parseNumber } from './format';
+import { HUD, MAP_FONT_FAMILY } from './theme';
+
+/** Axis glyphs of the gizmo handles (gpu/shaders.ts shapes 14-19) as inline SVG, 14 px. */
+const GLYPH: Record<string, string> = {
+  prograde: '<circle cx="7" cy="7" r="3.6"/><circle cx="7" cy="7" r="0.9" fill="currentColor"/><path d="M1 7h2.4M10.6 7H13M7 1v2.4"/>',
+  retrograde: '<circle cx="7" cy="7" r="3.6"/><path d="M5.2 5.2l3.6 3.6M8.8 5.2l-3.6 3.6M7 1v2.4M3.4 10.6L2 12M10.6 10.6L12 12"/>',
+  normal: '<path d="M7 1.6l5.2 9H1.8z"/><circle cx="7" cy="7.6" r="0.9" fill="currentColor"/>',
+  antinormal: '<path d="M7 12.4l5.2-9H1.8z"/><path d="M7 6.4v-3M7 6.4l-3.4 2M7 6.4l3.4 2"/>',
+  radialOut: '<circle cx="7" cy="7" r="3"/><path d="M2.4 2.4l1.6 1.6M11.6 2.4L10 4M2.4 11.6L4 10M11.6 11.6L10 10"/>',
+  radialIn: '<circle cx="7" cy="7" r="3"/><circle cx="7" cy="7" r="0.8" fill="currentColor"/><path d="M5.3 5.3l.9.9M8.7 5.3l-.9.9M5.3 8.7l.9-.9M8.7 8.7l-.9-.9"/>',
+};
+const svg = (name: string): string => `<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GLYPH[name]}</svg>`;
+const ICONS = {
+  minusOrbit: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M11.5 7A4.5 4.5 0 1 1 7 2.5"/><path d="M7 0.8L9 2.6 7 4.4"/></svg>',
+  plusOrbit: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 7A4.5 4.5 0 1 0 7 2.5"/><path d="M7 0.8L5 2.6 7 4.4"/></svg>',
+  delete: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.8h9M5.6 3.8V2.4h2.8v1.4M3.6 3.8l.6 7.8h5.6l.6-7.8M5.8 5.8v4M8.2 5.8v4"/></svg>',
+};
 
 const STYLE = `
-.fable-map-panel { position: absolute; z-index: 20; width: 232px; padding: 8px 10px 9px; box-sizing: border-box;
-  background: rgba(10, 15, 22, 0.94); border: 1px solid rgba(80, 104, 136, 0.9); border-radius: 6px;
-  font: 12px/1.35 Consolas, 'Cascadia Mono', ui-monospace, monospace; color: #e8eef7; user-select: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); }
-.fable-map-panel .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; color: #38d9e8; }
-.fable-map-panel .row { display: grid; grid-template-columns: 72px 1fr 28px; align-items: center; gap: 4px; margin: 3px 0; }
-.fable-map-panel .row span.u { color: #8b97a9; }
-.fable-map-panel .row.pro span.k { color: #d7e85a; } .fable-map-panel .row.nrm span.k { color: #e35cf5; }
-.fable-map-panel .row.rad span.k { color: #47c8ff; } .fable-map-panel .row.tot span.k, .fable-map-panel .row.time span.k { color: #aab6c8; }
-.fable-map-panel .row.tot { margin-bottom: 7px; }
-.fable-map-panel .row .wide { grid-column: 2 / 4; }
-.fable-map-panel input { width: 100%; box-sizing: border-box; background: #05080d; color: #e8eef7; border: 1px solid #34465e;
-  border-radius: 3px; padding: 2px 4px; font: inherit; text-align: right; }
-.fable-map-panel input:focus { outline: none; border-color: #38d9e8; }
-.fable-map-panel .btns { display: flex; gap: 5px; margin-top: 7px; }
-.fable-map-panel button { flex: 1; background: #142030; color: #e8eef7; border: 1px solid #3a4e68; border-radius: 3px;
-  padding: 3px 0; font: inherit; cursor: pointer; }
-.fable-map-panel button:hover:not(:disabled) { background: #1d3048; border-color: #38d9e8; }
-.fable-map-panel button:disabled { opacity: 0.4; cursor: default; }
-.fable-map-panel .hdr button { flex: 0 0 22px; padding: 0; }
+.fable-map-panel { position: absolute; z-index: 20; width: 236px; padding: 9px 10px 8px; box-sizing: border-box;
+  background: ${HUD.panel}; border: 1px solid ${HUD.line}; border-radius: 7px;
+  font: 600 13px/1.25 ${MAP_FONT_FAMILY}; font-variant-numeric: tabular-nums; color: ${HUD.text}; user-select: none;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45); }
+.fable-map-panel * { box-sizing: border-box; }
+.fable-map-panel .hdr { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.fable-map-panel .cap { font-size: 10px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: ${HUD.label}; }
+.fable-map-panel .hdr .cap { flex: 1; }
+.fable-map-panel .hdr .title { color: ${HUD.accent}; letter-spacing: 0.04em; }
+.fable-map-panel .row { display: grid; grid-template-columns: 62px 20px 1fr 20px 24px; align-items: center; gap: 3px; margin: 3px 0; }
+.fable-map-panel .row .cap { display: flex; align-items: center; gap: 4px; }
+.fable-map-panel .row .u { font-size: 11px; font-weight: 500; color: ${HUD.dim}; }
+.fable-map-panel .row.pro .k { color: #d7e85a; } .fable-map-panel .row.nrm .k { color: #e35cf5; } .fable-map-panel .row.rad .k { color: #47c8ff; }
+.fable-map-panel .row .span3 { grid-column: 2 / 5; }
+.fable-map-panel .row .span4 { grid-column: 2 / 6; }
+.fable-map-panel .sep { height: 1px; background: ${HUD.line}; margin: 6px 0 5px; }
+.fable-map-panel input { width: 100%; min-width: 0; background: ${HUD.field}; color: ${HUD.text}; border: 1px solid ${HUD.fieldEdge};
+  border-radius: 3px; padding: 2px 4px; font: inherit; text-align: right; font-variant-numeric: tabular-nums; }
+.fable-map-panel input:focus { outline: none; border-color: ${HUD.accent}; }
+.fable-map-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 22px; padding: 0;
+  background: #121b27; color: ${HUD.text}; border: 1px solid ${HUD.fieldEdge}; border-radius: 3px; font: inherit; font-size: 11px;
+  letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+.fable-map-panel button:hover:not(:disabled) { background: #1a2738; border-color: ${HUD.accent}; }
+.fable-map-panel button:disabled { opacity: 0.35; cursor: default; }
+.fable-map-panel .row button { width: 20px; height: 20px; color: inherit; }
+.fable-map-panel .row.pro button { color: #d7e85a; } .fable-map-panel .row.nrm button { color: #e35cf5; } .fable-map-panel .row.rad button { color: #47c8ff; }
+.fable-map-panel .hdr button { flex: 0 0 22px; font-size: 14px; }
+.fable-map-panel .btns { display: grid; grid-template-columns: 1fr 1fr 34px; gap: 5px; margin-top: 8px; }
+.fable-map-panel .btns [data-action="delete"] { color: ${HUD.warning}; }
+.fable-map-panel .hint { margin-top: 6px; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; color: ${HUD.dim}; text-align: center; }
 `;
 
 const FIELDS: readonly PanelField[] = ['prograde', 'normal', 'radial', 'total', 'ut', 'timeTo'];
@@ -68,15 +97,22 @@ export class NodePanel {
     el.style.display = 'none';
     const input = (field: PanelField, title: string, cls = ''): string =>
       `<input data-field="${field}"${cls ? ` class="${cls}"` : ''} inputmode="decimal" spellcheck="false" autocomplete="off" title="${title}">`;
+    const axisRow = (cls: string, comp: DvComponent, caption: string, minus: string, plus: string): string =>
+      `<div class="row ${cls}"><span class="cap k">${caption}</span>` +
+      `<button data-nudge="${comp}:-1" title="${caption}: -1 m/s (Shift 0.1, Ctrl 10)">${svg(minus)}</button>` +
+      `${input(comp, `${caption} delta-v, m/s`)}` +
+      `<button data-nudge="${comp}:1" title="${caption}: +1 m/s (Shift 0.1, Ctrl 10)">${svg(plus)}</button><span class="u">m/s</span></div>`;
     el.innerHTML = `
-      <div class="hdr"><button data-action="previous" title="Previous node">&lsaquo;</button><span class="title"></span><button data-action="next" title="Next node">&rsaquo;</button></div>
-      <div class="row pro"><span class="k">Prograde</span>${input('prograde', 'Prograde delta-v, m/s')}<span class="u">m/s</span></div>
-      <div class="row nrm"><span class="k">Normal</span>${input('normal', 'Normal delta-v, m/s')}<span class="u">m/s</span></div>
-      <div class="row rad"><span class="k">Radial</span>${input('radial', 'Radial delta-v, m/s')}<span class="u">m/s</span></div>
-      <div class="row tot"><span class="k">Total Δv</span>${input('total', 'Total delta-v, m/s: rescales the burn, keeping its direction')}<span class="u">m/s</span></div>
-      <div class="row time"><span class="k">In</span>${input('timeTo', 'Time to the node: 1h 02m 03s, 1:02:03, 90 (seconds)', 'wide')}</div>
-      <div class="row time"><span class="k">UT</span>${input('ut', 'Node time, s since J2000')}<span class="u">s</span></div>
-      <div class="btns"><button data-action="minusOrbit" title="One orbit earlier">-1 orbit</button><button data-action="plusOrbit" title="One orbit later">+1 orbit</button><button data-action="delete" title="Delete node">Delete</button></div>`;
+      <div class="hdr"><button data-action="previous" title="Previous node">&lsaquo;</button><span class="cap">Maneuver <span class="title"></span></span><button data-action="next" title="Next node">&rsaquo;</button></div>
+      ${axisRow('pro', 'prograde', 'Prograde', 'retrograde', 'prograde')}
+      ${axisRow('nrm', 'normal', 'Normal', 'antinormal', 'normal')}
+      ${axisRow('rad', 'radial', 'Radial', 'radialIn', 'radialOut')}
+      <div class="row tot"><span class="cap">Total Δv</span>${input('total', 'Total delta-v, m/s: rescales the burn, keeping its direction', 'span3')}<span class="u">m/s</span></div>
+      <div class="sep"></div>
+      <div class="row time"><span class="cap">In</span>${input('timeTo', 'Time to the node: 1h 02m 03s, 1:02:03, 90 (seconds)', 'span4')}</div>
+      <div class="row time"><span class="cap">UT</span>${input('ut', 'Node time, s since J2000', 'span3')}<span class="u">s</span></div>
+      <div class="btns"><button data-action="minusOrbit" title="One orbit earlier">${ICONS.minusOrbit}<span>&minus;1 orbit</span></button><button data-action="plusOrbit" title="One orbit later"><span>+1 orbit</span>${ICONS.plusOrbit}</button><button data-action="delete" title="Delete node">${ICONS.delete}</button></div>
+      <div class="hint">Drag a handle · Shift fine · Ctrl coarse · Wheel 0.1</div>`;
     root.appendChild(el);
     this.element = el;
     const q = <T extends Element>(sel: string): T => el.querySelector(sel) as T;
@@ -94,6 +130,14 @@ export class NodePanel {
         e.preventDefault();
         e.stopPropagation();
         this.controller.panelAction(name as keyof NodePanel['buttons']);
+      });
+    }
+    for (const b of el.querySelectorAll<HTMLButtonElement>('button[data-nudge]')) {
+      const [comp, sign] = b.dataset['nudge']!.split(':') as [DvComponent, string];
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.controller.panelNudge(comp, sign === '1' ? 1 : -1, e.shiftKey ? 0.1 : e.ctrlKey ? 10 : 1);
       });
     }
     for (const field of FIELDS) {

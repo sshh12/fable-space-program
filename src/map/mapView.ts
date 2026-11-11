@@ -14,7 +14,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature } from '@/core/contracts/render';
 import type { MapView } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
-import { defaultTextMetrics, MapController, type MapStats } from './controller';
+import { defaultTextMetrics, MapController, type MapStats, type ScreenRect } from './controller';
 import { OverlayRenderer, type OverlayCounts } from './gpu/overlayRenderer';
 import { NodePanel } from './panel';
 
@@ -33,6 +33,14 @@ export interface MapViewApi extends MapView {
   /** Toggle: draw encounter patches around their body's position at intercept (Patch.bodyPosAtEnd). */
   setDrawAtIntercept(on: boolean): void;
   readonly drawAtIntercept: boolean;
+  /** Toggle: draw every debris orbit (default off: debris are dots, the hovered one shows its orbit). */
+  setDebrisOrbits(on: boolean): void;
+  readonly debrisOrbits: boolean;
+  /**
+   * Screen areas (CSS px of the canvas) that other UI covers, e.g. the HUD panels. Map labels, the node panel
+   * and tooltips keep clear of them. Call again whenever the HUD layout changes; [] clears them.
+   */
+  setObstacles(rects: readonly ScreenRect[]): void;
   readonly isActive: boolean;
   readonly selectedNodeId: string | null;
   selectNode(id: string | null): void;
@@ -117,6 +125,11 @@ export function createMapView(gpu: GpuHandle, defs: DefLibrary, opts: MapViewOpt
     get drawAtIntercept() {
       return controller.drawAtIntercept;
     },
+    setDebrisOrbits: (on) => controller.setDebrisOrbits(on),
+    get debrisOrbits() {
+      return controller.debrisOrbitsShown;
+    },
+    setObstacles: (rects) => controller.setObstacles(rects),
     get isActive() {
       return controller.isActive;
     },

@@ -5,6 +5,12 @@
  *
  * Every edit goes through PlayerCommands (addNode / setNode / removeNode / setTarget). The map never
  * predicts a trajectory: the edited plan comes back as patches in the next snapshot.
+ *
+ * The draw list keeps the overview readable: icons closer than CLUSTER_PX collapse into one with a count badge
+ * (a body always wins, so a marker never hides the planet it orbits), every label sits on a backing plate and
+ * is placed off the drawn lines where it can be (lineGrid.ts) with a leader when it had to move further out,
+ * the node panel and the tooltip are placed off the trajectory, the gizmo and each other, and the selected
+ * node's gizmo is always drawn at full strength.
  */
 import type { PlayerCommands, PointerState } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -13,39 +19,53 @@ import type { ManeuverNode, Patch, SimSnapshot } from '@/core/contracts/sim';
 import type { MapElementInfo, MapUpdateResult, MapView } from '@/core/contracts/ui';
 import { utAtTrueAnomaly } from './anomalyTime';
 import {
+  ARM_ALPHA,
+  ARM_WIDTH_PX,
+  BODY_CLUSTER_MAX_RADIUS_PX,
+  BODY_LABEL_MAX_RADIUS_PX,
   CLICK_SLOP_PX,
+  CLUSTER_PX,
   COARSE_FACTOR,
   COLORS,
   DOUBLE_CLICK_MS,
   DV_PER_PX,
   FINE_FACTOR,
+  GRID_CELL_PX,
   HANDLE_DISTANCE_PX,
-  HANDLE_MIN_FORESHORTEN,
   HANDLE_RADIUS_PX,
   HANDLE_TRAVEL_PX,
   HIT_TOLERANCE_PX,
   LABEL_GAP_PX,
   LABEL_LINE_PX,
+  LEADER_WIDTH_PX,
+  MARKER_MIN_PATCH_PX,
   MARKER_RADIUS_PX,
   NODE_RADIUS_PX,
+  NODE_SMALL_RADIUS_PX,
+  OCCLUSION_FADE_PX,
+  PANEL_GAP_PX,
   PANEL_HEIGHT_PX,
-  PANEL_OFFSET_X_PX,
-  PANEL_OFFSET_Y_PX,
   PANEL_WIDTH_PX,
+  PLATE_PAD_X_PX,
+  PLATE_PAD_Y_PX,
   RAMP_DOUBLING_S,
   RAMP_MAX_RATE,
   RAMP_START_RATE,
+  SURFACE_TWIN_MIN_PX,
   TARGET_LABEL_BODY_PX,
   TARGET_MIN_BODY_PX,
+  TOOLTIP_OFFSET_PX,
   WHEEL_DV,
   type Rgba,
 } from './constants';
-import { ICON, type DrawList, type IconId, type IconInstance, type TextMetricsLike, type TextRun } from './drawList';
+import { ICON, measureText, type DrawList, type IconId, type IconInstance, type TextMetricsLike, type TextRun } from './drawList';
 import { formatDistance, formatDuration, formatDv, formatTimeTo } from './format';
-import { declutter, markerLabels, type BlockedRect, type LabelBox } from './labels';
+import { layoutGizmo } from './gizmo';
+import { declutter, FAR_RING_PX, markerLabels, type BlockedRect, type LabelBox } from './labels';
+import { LineGrid } from './lineGrid';
 import { occlusionWeight } from './occlusion';
 import { closestParam2D } from './sampler';
-import { SceneBuilder, type LineRecord, type MapScene, type MarkerShape, type NodeItem } from './scene';
+import { SceneBuilder, type LineRecord, type MapScene, type MarkerItem, type MarkerShape, type NodeItem } from './scene';
 
 export type DvComponent = keyof ManeuverNode['dv'];
 export type HandleName = 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radialOut' | 'radialIn';
@@ -131,7 +151,7 @@ export interface PanelState {
   /** Period of the conic the node sits on (null when open): enables the +/- orbit buttons. */
   period: number | null;
   canMinusOrbit: boolean;
-  /** Screen anchor (CSS px) next to the node, already clamped into the viewport. */
+  /** Top-left corner (CSS px), placed off the trajectory, the gizmo and the body, inside the viewport. */
   x: number;
   y: number;
 }
@@ -142,10 +162,18 @@ export interface PanelState {
  */
 export type PanelField = 'prograde' | 'normal' | 'radial' | 'total' | 'ut' | 'timeTo';
 
+/** A screen rectangle in CSS px (x, y = top-left corner). */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface MapControllerOptions {
   /** Milliseconds clock (default: performance.now when available). */
   now?: () => number;
-  /** Monospace text metrics in device px at pxScale 1 (default: 12 px Consolas-like). */
+  /** Text metrics in device px (default: an approximation of the HUD face at 13 px). */
   textMetrics?: (pxScale: number) => TextMetricsLike;
 }
 
@@ -160,8 +188,43 @@ export interface MapStats {
   reuse: { resampled: number; fresh: number };
 }
 
-/** Metrics of the 12 px monospace label font without an atlas (vitest); the atlas reports the real ones. */
-export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({ advance: 6.6 * pxScale, lineHeight: LABEL_LINE_PX * pxScale });
+/**
+ * Advances of the 13 px semibold HUD face (Bahnschrift) without an atlas (vitest); the atlas reports the real
+ * ones in the browser. Digits are tabular.
+ */
+export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({
+  lineHeight: LABEL_LINE_PX * pxScale,
+  advance: (c) => pxScale * (c === 32 ? 3.2 : c === 0x202f ? 1.9 : c >= 48 && c <= 57 ? 7.2 : c >= 65 && c <= 90 ? 7.6 : c >= 97 && c <= 122 ? 6.6 : 5),
+});
+
+/** One icon-with-label candidate of the draw list (bodies, vessels, markers, unselected nodes). */
+interface PointEntry {
+  /** Hover key: `b:<bodyId>`, `v:<vesselId>`, `m:<markerId>`, `n:<nodeId>`. */
+  key: string;
+  x: number;
+  y: number;
+  /** Icon radius, device px (0 = no icon: a body large enough to be seen). */
+  r: number;
+  shape: IconId;
+  color: Rgba;
+  alpha: number;
+  rot: number;
+  priority: number;
+  label: string[];
+  labelColor: Rgba;
+  labelAlpha: number;
+  clear: number;
+  /** Takes part in clustering. */
+  cluster: boolean;
+  /** Preference as a cluster's representative: a body, then the active vessel, then the label priority. */
+  rank: number;
+  /** A debris dot: folds into clusters silently (counted in the tooltip, not in the badge). */
+  debris: boolean;
+  /** One line for a cluster tooltip. */
+  summary: string;
+  /** Members of its cluster besides itself (representative), or -1 when it is folded into another. */
+  others: number;
+}
 
 interface LabelEntry {
   box: LabelBox;
@@ -170,9 +233,12 @@ interface LabelEntry {
   alpha: number;
 }
 
+const rectsOverlap = (a: BlockedRect, b: BlockedRect): number => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+
 export class MapController implements MapView {
   private active = false;
   private atIntercept = false;
+  private debrisOrbits = false;
   private readonly builder: SceneBuilder;
   private scene: MapScene | null = null;
   private sceneCssSize: [number, number] = [0, 0];
@@ -190,12 +256,19 @@ export class MapController implements MapView {
   private panelHovered = false;
   /** CSS px size of the node panel (reported by the DOM panel once it is shown). */
   private panelSize: [number, number] = [PANEL_WIDTH_PX, PANEL_HEIGHT_PX];
+  /** Panel placement of the last draw list (CSS px) and the candidate side it took (kept during drags). */
+  private panelAt: { x: number; y: number } | null = null;
+  private panelSide = -1;
+  /** Screen areas other UI covers (CSS px): labels, the panel and the tooltip keep clear of them. */
+  private obstacles: BlockedRect[] = [];
+  /** Tooltip of each hover key in a cluster: a count line, then the members' summaries, representative first. */
+  private readonly clusters = new Map<string, string[]>();
+  private readonly grid = new LineGrid();
   private consumed = false;
   private lastDraw: DrawList | null = null;
   private readonly now: () => number;
   private readonly metrics: (pxScale: number) => TextMetricsLike;
   private readonly sortedNodes: ManeuverNode[] = [];
-  private readonly blocked: BlockedRect[] = [{ x0: 0, y0: 0, x1: 0, y1: 0 }];
 
   constructor(
     private readonly defs: DefLibrary,
@@ -232,6 +305,23 @@ export class MapController implements MapView {
 
   get drawAtIntercept(): boolean {
     return this.atIntercept;
+  }
+
+  /** Draw every debris orbit (default off: debris are dots and the hovered one shows its orbit). */
+  setDebrisOrbits(on: boolean): void {
+    if (this.debrisOrbits !== on) {
+      this.debrisOrbits = on;
+      this.scene = null;
+    }
+  }
+
+  get debrisOrbitsShown(): boolean {
+    return this.debrisOrbits;
+  }
+
+  /** Screen areas covered by other UI (CSS px), e.g. the HUD panels: map labels, the panel and tooltips avoid them. */
+  setObstacles(rects: readonly ScreenRect[]): void {
+    this.obstacles = rects.map((r) => ({ x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height }));
   }
 
   get selectedNodeId(): string | null {
@@ -358,7 +448,7 @@ export class MapController implements MapView {
     const node = s.nodes.find((n) => n.id === this.selected);
     if (!node) return null;
     const item = scene.nodes.find((n) => n.id === this.selected);
-    const at = this.panelPlacement(scene, item);
+    const at = this.panelAt ?? this.dockedPanel(scene);
     const period = item?.loc.patch.conic.period ?? null;
     const sorted = this.nodesByTime(s);
     return {
@@ -400,6 +490,13 @@ export class MapController implements MapView {
     }
   }
 
+  /** Nudge one component of the selected node by `sign` x 1 m/s x `factor` (the panel's axis-glyph buttons). */
+  panelNudge(comp: DvComponent, sign: 1 | -1, factor: number): boolean {
+    const st = this.panelState();
+    if (!st || !this.commands) return false;
+    return this.commands.setNode(st.nodeId, { dv: { [comp]: st.dv[comp] + sign * factor } }).ok;
+  }
+
   panelAction(action: 'plusOrbit' | 'minusOrbit' | 'delete' | 'next' | 'previous'): boolean {
     const st = this.panelState();
     if (!st || !this.commands) return false;
@@ -422,6 +519,11 @@ export class MapController implements MapView {
 
   // ---------------------------------------------------------------------------------- scenes
 
+  /** The vessel whose orbit is drawn because the pointer is on it (debris orbits are otherwise hidden). */
+  private highlightVessel(): string | null {
+    return this.hover?.type === 'vessel' ? this.hover.id : null;
+  }
+
   /**
    * The scene for a snapshot/camera pair: the cached one when it is what was drawn (same objects or same
    * camera pose and time), else a fresh build. `cssSize` is the display size in CSS px.
@@ -431,18 +533,21 @@ export class MapController implements MapView {
     const w = Math.round(cssSize[0] * k);
     const h = Math.round(cssSize[1] * k);
     const s = this.scene;
+    const highlight = this.highlightVessel();
     if (
       s &&
       s.proj.width === w &&
       s.proj.height === h &&
       s.options.atIntercept === this.atIntercept &&
+      s.options.debrisOrbits === this.debrisOrbits &&
+      s.options.highlightVesselId === highlight &&
       (s.snapshot === snapshot || sameTime(s.snapshot, snapshot)) &&
       (s.camera === camera || sameCamera(s.camera, camera))
     ) {
       return s;
     }
     this.pxScale = k;
-    this.scene = this.builder.build(snapshot, camera, { width: w, height: h, pxScale: k }, { atIntercept: this.atIntercept });
+    this.scene = this.builder.build(snapshot, camera, { width: w, height: h, pxScale: k }, { atIntercept: this.atIntercept, debrisOrbits: this.debrisOrbits, highlightVesselId: highlight });
     return this.scene;
   }
 
@@ -475,14 +580,16 @@ export class MapController implements MapView {
 
   // ---------------------------------------------------------------------------- interaction
 
+  /** Handle positions of a node's gizmo (device px): the axis layout of gizmo.ts, the dragged handle moved out. */
   handleLayout(n: NodeItem, scene: MapScene): HandleLayout[] {
     const k = scene.proj.pxScale;
     const drag = this.drag?.type === 'handle' && this.drag.nodeId === n.id ? this.drag : null;
+    const axes = layoutGizmo([n.axes.prograde, n.axes.normal, n.axes.radial]);
     return HANDLES.map((h) => {
-      const axis = h.comp === 'prograde' ? n.axes.prograde : h.comp === 'normal' ? n.axes.normal : n.axes.radial;
+      const axis = h.comp === 'prograde' ? axes[0] : h.comp === 'normal' ? axes[1] : axes[2];
       const dx = axis.dx * h.sign;
       const dy = axis.dy * h.sign;
-      let dist = HANDLE_DISTANCE_PX * Math.max(axis.extent, HANDLE_MIN_FORESHORTEN);
+      let dist = HANDLE_DISTANCE_PX * axis.reach;
       if (drag && drag.handle === h.name) dist += Math.max(-dist + NODE_RADIUS_PX + 4, Math.min(HANDLE_TRAVEL_PX, drag.travel));
       return { name: h.name, comp: h.comp, sign: h.sign, dx, dy, x: n.x + dx * dist * k, y: n.y + dy * dist * k };
     });
@@ -504,7 +611,7 @@ export class MapController implements MapView {
     const edge = (x: number, y: number, r: number): number => Math.max(0, Math.hypot(x - px, y - py) - r * k);
     const sel = this.selected ? scene.nodes.find((n) => n.id === this.selected) : undefined;
     if (sel && sel.front) for (const h of this.handleLayout(sel, scene)) consider({ type: 'handle', d: edge(h.x, h.y, HANDLE_RADIUS_PX), handle: h, node: sel });
-    for (const n of scene.nodes) if (n.front && n.hidden < 0.5) consider({ type: 'node', d: edge(n.x, n.y, NODE_RADIUS_PX), node: n });
+    for (const n of scene.nodes) if (n.front && (n.hidden < 0.5 || n.id === this.selected)) consider({ type: 'node', d: edge(n.x, n.y, n.id === this.selected ? NODE_RADIUS_PX : NODE_SMALL_RADIUS_PX + 1), node: n });
     for (const v of scene.vessels) if (v.front && v.hidden < 0.5) consider({ type: 'vessel', d: edge(v.x, v.y, v.active ? 7 : 4), id: v.vesselId });
     if (withMarkers) {
       for (const m of scene.markers) {
@@ -537,11 +644,11 @@ export class MapController implements MapView {
     let bestI = -1;
     let bestT = 0;
     for (let i = line.start; i < line.start + line.count - 1; i++) {
+      if (v.seg[i] !== 1) continue;
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const bx = v.sx[i + 1]!;
       const by = v.sy[i + 1]!;
-      if (!Number.isFinite(ax) || !Number.isFinite(bx)) continue;
       // cheap reject
       if (Math.min(ax, bx) - tol > px || Math.max(ax, bx) + tol < px || Math.min(ay, by) - tol > py || Math.max(ay, by) + tol < py) continue;
       const t = closestParam2D(px, py, ax, ay, bx, by);
@@ -560,7 +667,7 @@ export class MapController implements MapView {
       y: v.vy[bestI]! + (v.vy[bestI + 1]! - v.vy[bestI]!) * bestT,
       z: v.vz[bestI]! + (v.vz[bestI + 1]! - v.vz[bestI]!) * bestT,
     };
-    if (occlusionWeight(p, scene.occluders, scene.proj.focal, 6 * scene.proj.pxScale) >= 0.5) return null;
+    if (occlusionWeight(p, scene.occluders, scene.proj.focal, OCCLUSION_FADE_PX * scene.proj.pxScale) >= 0.5) return null;
     return { type: 'line', d: bestD, line, u: bestU };
   }
 
@@ -570,11 +677,11 @@ export class MapController implements MapView {
     let bestD = Infinity;
     let bestU: number | null = null;
     for (let i = line.start; i < line.start + line.count - 1; i++) {
+      if (v.seg[i] !== 1) continue;
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const bx = v.sx[i + 1]!;
       const by = v.sy[i + 1]!;
-      if (!Number.isFinite(ax) || !Number.isFinite(bx)) continue;
       const t = closestParam2D(px, py, ax, ay, bx, by);
       const d = Math.hypot(px - (ax + (bx - ax) * t), py - (ay + (by - ay) * t));
       if (d < bestD) {
@@ -729,166 +836,450 @@ export class MapController implements MapView {
     return 0;
   }
 
-  /** Where the node panel goes (CSS px): beside the node, clear of the gizmo, clamped into the viewport. */
-  private panelPlacement(scene: MapScene, item: NodeItem | undefined): { x: number; y: number } {
+  private cssSize(scene: MapScene): [number, number] {
     const k = scene.proj.pxScale;
-    const [w, h] = this.sceneCssSize[0] > 0 ? this.sceneCssSize : [scene.proj.width / k, scene.proj.height / k];
+    return this.sceneCssSize[0] > 0 ? this.sceneCssSize : [scene.proj.width / k, scene.proj.height / k];
+  }
+
+  /** The panel's place when its node is off screen: the top-right corner. */
+  private dockedPanel(scene: MapScene): { x: number; y: number } {
+    const [w] = this.cssSize(scene);
+    return { x: Math.max(8, w - this.panelSize[0] - 16), y: 24 };
+  }
+
+  /**
+   * Where the node panel goes (CSS px): the best of eight places around the node, just outside the gizmo,
+   * clamped into the viewport. A place is penalised for every drawn line it covers (the trajectory downstream of
+   * the node is what changes while the player drags), for covering a handle or the gizmo, other UI or the
+   * body's centre, and for lying toward the body; changing sides costs a little, and during a drag the side is
+   * kept so the panel does not jump.
+   */
+  private placePanel(scene: MapScene, sel: NodeItem | undefined, handles: readonly HandleLayout[], obstacles: readonly BlockedRect[]): { x: number; y: number } {
+    if (!sel) {
+      this.panelSide = -1;
+      return this.dockedPanel(scene);
+    }
+    const k = scene.proj.pxScale;
+    const [W, H] = this.cssSize(scene);
     const [pw, ph] = this.panelSize;
-    let x = item && item.front ? item.x / k + PANEL_OFFSET_X_PX : w - pw - 16;
-    let y = item && item.front ? item.y / k + PANEL_OFFSET_Y_PX : 24;
-    x = Math.max(8, Math.min(w - pw - 8, x));
-    y = Math.max(8, Math.min(h - ph - 8, y));
-    return { x, y };
+    const nx = sel.x / k;
+    const ny = sel.y / k;
+    const G = PANEL_GAP_PX;
+    const D = G * 0.72;
+    const raw: [number, number][] = [
+      [nx + G, ny - ph / 2],
+      [nx - G - pw, ny - ph / 2],
+      [nx + D, ny + D],
+      [nx + D, ny - D - ph],
+      [nx - D - pw, ny + D],
+      [nx - D - pw, ny - D - ph],
+      [nx - pw / 2, ny + G],
+      [nx - pw / 2, ny - G - ph],
+    ];
+    const body = scene.bodies.find((b) => !b.ghost && b.bodyId === sel.loc.patch.bodyId);
+    const bx = body && body.front ? body.x / k : NaN;
+    const by = body && body.front ? body.y / k : NaN;
+    const toBody = Math.hypot(bx - nx, by - ny);
+    let best = Infinity;
+    let pick = 0;
+    let at: [number, number] = [8, 8];
+    const dragging = this.drag !== null && this.panelSide >= 0;
+    for (let c = 0; c < raw.length; c++) {
+      if (dragging && c !== this.panelSide) continue;
+      const x = Math.max(8, Math.min(W - pw - 8, raw[c]![0]));
+      const y = Math.max(8, Math.min(H - ph - 8, raw[c]![1]));
+      const r: BlockedRect = { x0: x * k, y0: y * k, x1: (x + pw) * k, y1: (y + ph) * k };
+      let score = this.grid.cost(r.x0, r.y0, r.x1, r.y1);
+      // the gizmo (a disc around the node) and every handle must stay uncovered
+      const cx = Math.max(x, Math.min(nx, x + pw));
+      const cy = Math.max(y, Math.min(ny, y + ph));
+      const inGizmo = G - 4 - Math.hypot(cx - nx, cy - ny);
+      if (inGizmo > 0) score += 1e4 + 100 * inGizmo;
+      for (const h of handles) {
+        const hx = h.x / k;
+        const hy = h.y / k;
+        if (hx > x - HANDLE_RADIUS_PX - 4 && hx < x + pw + HANDLE_RADIUS_PX + 4 && hy > y - HANDLE_RADIUS_PX - 4 && hy < y + ph + HANDLE_RADIUS_PX + 4) score += 1e4;
+      }
+      for (const o of obstacles) score += (5000 * rectsOverlap(r, o)) / (pw * ph * k * k);
+      if (toBody > 1) {
+        if (bx > x && bx < x + pw && by > y && by < y + ph) score += 300;
+        const ux = x + pw / 2 - nx;
+        const uy = y + ph / 2 - ny;
+        score += (40 * (ux * (bx - nx) + uy * (by - ny))) / (Math.hypot(ux, uy) * toBody + 1e-9);
+      }
+      if (c !== this.panelSide) score += 25;
+      if (score < best) {
+        best = score;
+        pick = c;
+        at = [x, y];
+      }
+    }
+    this.panelSide = pick;
+    return { x: at[0], y: at[1] };
   }
 
   private buildDrawList(scene: MapScene): DrawList {
-    const k = scene.proj.pxScale;
+    const proj = scene.proj;
+    const k = proj.pxScale;
     const tm = this.metrics(k);
+    const s = scene.snapshot;
     const icons: IconInstance[] = [];
+    const gizmo: IconInstance[] = [];
     const top: IconInstance[] = [];
     const texts: TextRun[] = [];
     const topTexts: TextRun[] = [];
-    const s = scene.snapshot;
     const labels: LabelEntry[] = [];
     const boxes: LabelBox[] = [];
     const clearIcons: { x: number; y: number; r: number }[] = [];
-    const visible = (x: number, y: number, front: boolean): boolean => front && scene.proj.onScreen(x, y, 24 * k);
+    const onScreen = (x: number, y: number, front: boolean): boolean => front && proj.onScreen(x, y, 24 * k);
+    const padX = PLATE_PAD_X_PX * k;
+    const padY = PLATE_PAD_Y_PX * k;
     const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number): void => {
       if (lines.length === 0 || alpha < 0.05) return;
-      let chars = 0;
-      for (const l of lines) if (l.length > chars) chars = l.length;
-      const box: LabelBox = { ax, ay, clear, width: chars * tm.advance, height: lines.length * tm.lineHeight, priority, x: 0, y: 0, placed: false };
+      let width = 0;
+      for (const l of lines) width = Math.max(width, measureText(tm, l));
+      const box: LabelBox = { ax, ay, clear, width: width + 2 * padX, height: lines.length * tm.lineHeight + 2 * padY, priority, x: 0, y: 0, placed: false, far: false };
       boxes.push(box);
       labels.push({ box, lines, color, alpha });
     };
-    const icon = (x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rot = 0, list = icons): void => {
-      if (alpha < 0.01) return;
-      list.push({ x, y, hx: r * k, hy: r * k, rot, shape, color, alpha });
-      clearIcons.push({ x, y, r: r * k * 0.9 });
-    };
+    this.grid.build(scene, GRID_CELL_PX * k);
 
-    // Surface targets, once their body is big enough on screen to place them meaningfully.
+    // ---- other UI (HUD panels) the map keeps clear of
+    const rects: BlockedRect[] = this.obstacles.map((o) => ({ x0: o.x0 * k, y0: o.y0 * k, x1: o.x1 * k, y1: o.y1 * k }));
+
+    // ---- the selected node: gizmo layout, then the node panel placed off it and off the trajectory
+    const selNode = this.selected ? s.nodes.find((n) => n.id === this.selected) : undefined;
+    const sel = selNode ? scene.nodes.find((n) => n.id === selNode.id) : undefined;
+    const selShown = sel !== undefined && onScreen(sel.x, sel.y, sel.front);
+    const handles = selShown ? this.handleLayout(sel, scene) : [];
+    let panel: BlockedRect | null = null;
+    this.panelAt = null;
+    if (selNode) {
+      const at = this.placePanel(scene, selShown ? sel : undefined, handles, rects);
+      this.panelAt = at;
+      panel = { x0: at.x * k, y0: at.y * k, x1: (at.x + this.panelSize[0]) * k, y1: (at.y + this.panelSize[1]) * k };
+      rects.push(panel);
+    }
+    const underPanel = (x: number, y: number): boolean => panel !== null && x > panel.x0 && x < panel.x1 && y > panel.y0 && y < panel.y1;
+
+    // ---- point entries: bodies, vessels, markers, unselected nodes
+    const pts: PointEntry[] = [];
+    const entry = (e: Omit<PointEntry, 'others'>): void => {
+      if (!underPanel(e.x, e.y)) pts.push({ ...e, others: 0 });
+    };
+    for (const b of scene.bodies) {
+      if (!onScreen(b.x, b.y, b.front)) continue;
+      const a = 1 - b.hidden;
+      if (a < 0.05) continue;
+      const named = b.radiusPx < BODY_LABEL_MAX_RADIUS_PX * k;
+      if (!b.small && !named && !b.ghost) continue;
+      const r = b.small ? 6 * k : 0;
+      entry({
+        key: `b:${b.bodyId}`,
+        x: b.x,
+        y: b.y,
+        r,
+        shape: ICON.bodyRing,
+        color: b.ghost ? COLORS.ghost : COLORS.body,
+        alpha: a,
+        rot: 0,
+        priority: b.ghost ? 2 : 9.5,
+        label: [b.label],
+        labelColor: b.ghost ? COLORS.textDim : COLORS.text,
+        labelAlpha: a,
+        clear: Math.max(r, b.radiusPx + 2 * k),
+        // A body takes part while it is a speck: what sits on it then folds into it instead of hiding it.
+        cluster: b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k,
+        rank: 1000,
+        debris: false,
+        summary: b.label,
+      });
+    }
+    for (const v of scene.vessels) {
+      if (!onScreen(v.x, v.y, v.front)) continue;
+      const a = 1 - v.hidden;
+      if (v.debris) {
+        // Debris are dots (their orbit is drawn on hover); labels may pass over them.
+        entry({ key: `v:${v.vesselId}`, x: v.x, y: v.y, r: 3 * k, shape: ICON.debris, color: COLORS.debris, alpha: a, rot: 0, priority: 0, label: [], labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank: 0, debris: true, summary: v.name });
+        continue;
+      }
+      const r = (v.active ? 7.5 : 6) * k;
+      entry({
+        key: `v:${v.vesselId}`,
+        x: v.x,
+        y: v.y,
+        r,
+        shape: ICON.vessel,
+        color: v.active ? COLORS.vessel : COLORS.otherVessel,
+        alpha: v.active ? a : a * 0.85,
+        rot: v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX),
+        priority: v.active ? 5 : 1,
+        label: [v.name],
+        labelColor: COLORS.text,
+        labelAlpha: v.active ? a : a * 0.85,
+        clear: r,
+        cluster: true,
+        rank: v.active ? 500 : 1,
+        debris: false,
+        summary: v.name,
+      });
+    }
+    const lineById = new Map<string, LineRecord>();
+    for (const l of scene.lines) if (l.patchKey) lineById.set(l.id, l);
+    const markerById = new Map<string, MarkerItem>();
+    for (const m of scene.markers) markerById.set(m.id, m);
+    for (const m of scene.markers) {
+      if (!onScreen(m.x, m.y, m.front)) continue;
+      const a = 1 - m.hidden;
+      if (a < 0.01) continue;
+      // Apsis and node-line markers of a patch a few pixels across say nothing and bury its body.
+      if (m.kind === 'apoapsis' || m.kind === 'periapsis' || m.kind === 'ascendingNode' || m.kind === 'descendingNode') {
+        const line = lineById.get(`${m.patchKey.list}/${m.patchKey.index}`);
+        if (line && line.span < MARKER_MIN_PATCH_PX * k) continue;
+      }
+      const surface = m.kind === 'impactSurface' || m.kind === 'entrySurface';
+      if (surface) {
+        const parent = markerById.get(m.id.slice(0, -'/surface'.length));
+        if (parent && parent.front && parent.hidden < 0.5 && Math.hypot(parent.x - m.x, parent.y - m.y) < SURFACE_TWIN_MIN_PX * k) continue;
+      }
+      const r = (surface ? 5 : MARKER_RADIUS_PX) * k;
+      entry({
+        key: `m:${m.id}`,
+        x: m.x,
+        y: m.y,
+        r,
+        shape: shapeIcon(m.shape),
+        color: m.color,
+        alpha: a,
+        rot: 0,
+        priority: m.priority,
+        label: m.label,
+        labelColor: COLORS.text,
+        labelAlpha: a,
+        clear: r,
+        cluster: true,
+        rank: m.priority,
+        debris: false,
+        summary: m.label[0] ?? m.details[0] ?? m.kind,
+      });
+    }
+    const sortedNodes = this.nodesByTime(s);
+    const nodeLabel = (n: NodeItem): string[] => {
+      const node = n.loc.node;
+      const idx = sortedNodes.findIndex((x) => x.id === n.id);
+      return [`Node ${idx + 1}  Δv ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`, formatTimeTo(node.ut - s.ut)];
+    };
+    for (const n of scene.nodes) {
+      if (n.id === this.selected || !onScreen(n.x, n.y, n.front)) continue;
+      const a = Math.max(0.35, 1 - n.hidden);
+      const label = nodeLabel(n);
+      entry({
+        key: `n:${n.id}`,
+        x: n.x,
+        y: n.y,
+        r: NODE_SMALL_RADIUS_PX * k,
+        shape: n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node,
+        color: COLORS.node,
+        alpha: a,
+        rot: 0,
+        priority: 9,
+        label,
+        labelColor: COLORS.text,
+        labelAlpha: a,
+        clear: NODE_SMALL_RADIUS_PX * k,
+        cluster: true,
+        rank: 9,
+        debris: false,
+        summary: label[0]!,
+      });
+    }
+
+    // ---- clusters: icons closer than CLUSTER_PX collapse into one (a body wins, else the highest priority)
+    this.clusters.clear();
+    const n = pts.length;
+    const parent = new Int32Array(n);
+    for (let i = 0; i < n; i++) parent[i] = i;
+    const find = (i: number): number => {
+      while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!;
+      return i;
+    };
+    const reach = CLUSTER_PX * k;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i]!;
+      if (!a.cluster) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = pts[j]!;
+        if (b.cluster && Math.abs(a.x - b.x) < reach && Math.abs(a.y - b.y) < reach && Math.hypot(a.x - b.x, a.y - b.y) < reach) parent[find(j)] = find(i);
+      }
+    }
+    const groups = new Map<number, number[]>();
+    for (let i = 0; i < n; i++) {
+      if (!pts[i]!.cluster) continue;
+      const r = find(i);
+      let g = groups.get(r);
+      if (!g) groups.set(r, (g = []));
+      g.push(i);
+    }
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      let rep = g[0]!;
+      for (const i of g) if (pts[i]!.rank > pts[rep]!.rank) rep = i;
+      const summaries = [`${g.length} objects here`, pts[rep]!.summary];
+      let debris = 0;
+      for (const i of g) {
+        if (i === rep) continue;
+        pts[i]!.others = -1;
+        if (pts[i]!.debris) debris++;
+        else summaries.push(pts[i]!.summary);
+      }
+      if (debris > 0) summaries.push(`${debris} debris`);
+      pts[rep]!.others = g.length - 1 - debris;
+      for (const i of g) this.clusters.set(pts[i]!.key, summaries);
+    }
+
+    // ---- icons and labels of what is left; a count badge on each cluster
+    for (const p of pts) {
+      if (p.others < 0) continue;
+      if (p.r > 0 && p.alpha >= 0.01) {
+        icons.push({ x: p.x, y: p.y, hx: p.r, hy: p.r, rot: p.rot, shape: p.shape, color: p.color, alpha: p.alpha });
+        if (!p.debris) clearIcons.push({ x: p.x, y: p.y, r: p.r * 0.95 });
+      }
+      if (p.others > 0) {
+        const text = `+${p.others}`;
+        const w = measureText(tm, text) + 6 * k;
+        const h = tm.lineHeight - 2 * k;
+        const bx = p.x + Math.max(p.r, 3 * k) + 2 * k;
+        const by = p.y - Math.max(p.r, 3 * k) - h + 4 * k;
+        icons.push({ x: bx + w / 2, y: by + h / 2, hx: w / 2, hy: h / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
+        texts.push({ x: bx + 3 * k, y: by - 1 * k, text, color: COLORS.node, alpha: 1 });
+        rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
+      }
+      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha);
+    }
+
+    // ---- surface targets, once their body is big enough on screen to place them meaningfully
     for (const t of scene.targets) {
-      if (!visible(t.x, t.y, t.front)) continue;
+      if (!onScreen(t.x, t.y, t.front) || underPanel(t.x, t.y)) continue;
       const rPx = this.bodyRadiusCss(scene, t.target.bodyId);
       if (rPx < TARGET_MIN_BODY_PX) continue;
       const a = (1 - t.hidden) * Math.min(1, (rPx - TARGET_MIN_BODY_PX) / 10);
+      if (a < 0.01) continue;
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
-      const r = t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5;
-      icon(t.x, t.shape === 'pin' ? t.y - 9 * k : t.y, r, shape, t.color, a);
-      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r * k, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.textDim, a);
+      const r = (t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5) * k;
+      const y = t.shape === 'pin' ? t.y - 9 * k : t.y;
+      icons.push({ x: t.x, y, hx: r, hy: r, rot: 0, shape, color: t.color, alpha: a });
+      clearIcons.push({ x: t.x, y, r: r * 0.9 });
+      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.text, a);
     }
-    // Small bodies (icon + label) and ghost bodies.
-    for (const b of scene.bodies) {
-      if (!visible(b.x, b.y, b.front)) continue;
-      const a = 1 - b.hidden;
-      if (b.small) {
-        icon(b.x, b.y, 6, ICON.bodyRing, b.ghost ? COLORS.ghost : COLORS.body, a);
-        addLabel(b.x, b.y, 6 * k, [b.label], b.ghost ? 2 : 4, COLORS.text, a);
-      } else if (b.ghost) {
-        addLabel(b.x, b.y - b.radiusPx, 4 * k, [b.label], 2, COLORS.textDim, a);
-      }
-    }
-    // Vessels.
-    for (const v of scene.vessels) {
-      if (!visible(v.x, v.y, v.front)) continue;
-      const a = 1 - v.hidden;
-      if (v.active) {
-        icon(v.x, v.y, 7, ICON.vessel, COLORS.vessel, a);
-        addLabel(v.x, v.y, 7 * k, [v.name], 5, COLORS.text, a);
-      } else if (v.debris) {
-        // Debris dots stay out of the label-avoidance set: labels may pass over them.
-        if (a >= 0.01) icons.push({ x: v.x, y: v.y, hx: 3 * k, hy: 3 * k, rot: 0, shape: ICON.debris, color: COLORS.debris, alpha: a });
-      } else {
-        icon(v.x, v.y, 5.5, ICON.vessel, COLORS.otherVessel, a * 0.85);
-        addLabel(v.x, v.y, 5.5 * k, [v.name], 1, COLORS.textDim, a);
-      }
-    }
-    // Markers.
-    for (const m of scene.markers) {
-      if (!visible(m.x, m.y, m.front)) continue;
-      const a = 1 - m.hidden;
-      icon(m.x, m.y, m.shape === 'surfacePoint' ? 5 : MARKER_RADIUS_PX, shapeIcon(m.shape), m.color, a);
-      addLabel(m.x, m.y, MARKER_RADIUS_PX * k, m.label, m.priority, COLORS.text, a);
-    }
-    // Nodes (+ gizmo of the selected one).
-    const sortedNodes = this.nodesByTime(s);
-    let selectedItem: NodeItem | undefined;
-    for (const n of scene.nodes) {
-      if (n.id === this.selected) selectedItem = n;
-      if (!visible(n.x, n.y, n.front)) continue;
-      const a = Math.max(0.35, 1 - n.hidden);
-      const node = n.loc.node;
-      const total = Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial);
-      const isSel = n.id === this.selected;
-      if (isSel) {
-        for (const h of this.handleLayout(n, scene)) {
-          const def = HANDLES.find((x) => x.name === h.name)!;
-          const len = Math.hypot(h.x - n.x, h.y - n.y);
-          if (len > (NODE_RADIUS_PX + HANDLE_RADIUS_PX) * k) {
-            const r0 = NODE_RADIUS_PX * k;
-            const r1 = len - HANDLE_RADIUS_PX * k;
-            const cx = n.x + h.dx * (r0 + r1) * 0.5;
-            const cy = n.y + h.dy * (r0 + r1) * 0.5;
-            icons.push({ x: cx, y: cy, hx: (r1 - r0) / 2, hy: 0.75 * k, rot: Math.atan2(h.dy, h.dx), shape: ICON.bar, color: def.color, alpha: 0.55 * a });
-          }
-          const hovered = this.hover?.type === 'handle' && this.hover.handle === h.name;
-          const dragging = this.drag?.type === 'handle' && this.drag.handle === h.name;
-          icon(h.x, h.y, HANDLE_RADIUS_PX * (hovered || dragging ? 1.15 : 1), def.icon, def.color, a);
+
+    // ---- the selected node: an interface control, always on top at full strength. That it lies behind a
+    // body shows on the node icon alone (a dashed ring).
+    if (sel && selShown && selNode) {
+      for (const h of handles) {
+        const def = HANDLES.find((x) => x.name === h.name)!;
+        const len = Math.hypot(h.x - sel.x, h.y - sel.y);
+        if (len > (NODE_RADIUS_PX + HANDLE_RADIUS_PX) * k) {
+          const r0 = NODE_RADIUS_PX * k;
+          const r1 = len - HANDLE_RADIUS_PX * k;
+          gizmo.push({ x: sel.x + h.dx * (r0 + r1) * 0.5, y: sel.y + h.dy * (r0 + r1) * 0.5, hx: (r1 - r0) / 2, hy: (ARM_WIDTH_PX / 2) * k, rot: Math.atan2(h.dy, h.dx), shape: ICON.bar, color: def.color, alpha: ARM_ALPHA });
         }
       }
-      icon(n.x, n.y, NODE_RADIUS_PX * (isSel ? 1.1 : 1), ICON.node, COLORS.node, a);
-      const idx = sortedNodes.findIndex((x) => x.id === n.id);
-      addLabel(n.x, n.y, (isSel ? HANDLE_DISTANCE_PX * 0.5 : NODE_RADIUS_PX) * k, [`Node ${idx + 1}  Δv ${formatDv(total)}`, formatTimeTo(node.ut - s.ut)], 9, COLORS.text, a);
+      for (const h of handles) {
+        const def = HANDLES.find((x) => x.name === h.name)!;
+        const hot = (this.hover?.type === 'handle' && this.hover.handle === h.name) || (this.drag?.type === 'handle' && this.drag.handle === h.name);
+        gizmo.push({ x: h.x, y: h.y, hx: HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, hy: HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, rot: 0, shape: def.icon, color: def.color, alpha: 1 });
+        clearIcons.push({ x: h.x, y: h.y, r: HANDLE_RADIUS_PX * k });
+      }
+      const r = NODE_RADIUS_PX * 1.1 * k;
+      gizmo.push({ x: sel.x, y: sel.y, hx: r, hy: r, rot: 0, shape: sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, color: COLORS.node, alpha: 1 });
+      clearIcons.push({ x: sel.x, y: sel.y, r });
+      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1);
     }
-    // Add-maneuver preview where the pointer hovers a trajectory.
+
+    // ---- add-maneuver preview where the pointer hovers a trajectory
     const hv = this.hover;
     if (hv?.type === 'line' && this.hoverPos && !this.drag && this.commands) {
       const line = scene.lines.find((l) => l.id === hv.lineId);
       const p = line ? this.pointAt(scene, line, hv.u) : null;
       if (line && p && line.curve && line.patch) {
-        icon(p.x, p.y, NODE_RADIUS_PX, ICON.addGhost, COLORS.hover, 0.9);
+        const r = NODE_RADIUS_PX * k;
+        gizmo.push({ x: p.x, y: p.y, hx: r, hy: r, rot: 0, shape: ICON.addGhost, color: COLORS.hover, alpha: 0.9 });
+        clearIcons.push({ x: p.x, y: p.y, r });
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
-        addLabel(p.x, p.y, NODE_RADIUS_PX * k, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
+        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
       }
     }
 
-    // De-clutter (labels keep clear of icons and of the node panel) and emit labels.
-    let blocked: BlockedRect[] = [];
-    if (this.selected && s.nodes.some((n) => n.id === this.selected)) {
-      const at = this.panelPlacement(scene, selectedItem);
-      const r = this.blocked[0]!;
-      r.x0 = at.x * k;
-      r.y0 = at.y * k;
-      r.x1 = (at.x + this.panelSize[0]) * k;
-      r.y1 = (at.y + this.panelSize[1]) * k;
-      blocked = this.blocked;
-    }
-    declutter(boxes, clearIcons, scene.proj, LABEL_GAP_PX * k, blocked);
-    for (const l of labels) {
-      if (!l.box.placed) continue;
-      for (let i = 0; i < l.lines.length; i++) {
-        texts.push({ x: l.box.x, y: l.box.y + i * tm.lineHeight, text: l.lines[i]!, color: i === 0 ? l.color : COLORS.textDim, alpha: l.alpha });
-      }
-    }
-
-    // Hover tooltip with details (markers, nodes, bodies).
+    // ---- hover tooltip: in the quadrant around the pointer that covers neither the panel, nor a handle, nor
+    // other UI; labels then keep clear of it (none is cut through)
     const tip = this.tooltipLines(scene);
     if (tip && this.hoverPos) {
-      let chars = 0;
-      for (const t of tip) if (t.length > chars) chars = t.length;
-      const width = chars * tm.advance + 16 * k;
+      let tw = 0;
+      for (const t of tip) tw = Math.max(tw, measureText(tm, t));
+      const width = tw + 16 * k;
       const height = tip.length * tm.lineHeight + 10 * k;
-      let x = this.hoverPos.x + 18 * k;
-      let y = this.hoverPos.y + 18 * k;
-      if (x + width > scene.proj.width) x = this.hoverPos.x - 18 * k - width;
-      if (y + height > scene.proj.height) y = this.hoverPos.y - 18 * k - height;
-      x = Math.round(Math.max(0, x));
-      y = Math.round(Math.max(0, y));
-      top.push({ x: x + width / 2, y: y + height / 2, hx: width / 2, hy: height / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
-      tip.forEach((line, i) => topTexts.push({ x: x + 8 * k, y: y + 5 * k + i * tm.lineHeight, text: line, color: i === 0 ? COLORS.text : COLORS.textDim, alpha: 1 }));
+      const off = TOOLTIP_OFFSET_PX * k;
+      const hx = this.hoverPos.x;
+      const hy = this.hoverPos.y;
+      let best = Infinity;
+      let tx = 0;
+      let ty = 0;
+      // The four quadrants beside the pointer, then further out (past a gizmo the pointer is inside of).
+      for (const reach of [off, off + 40 * k, off + 80 * k]) {
+        for (const [qx, qy] of [
+          [hx + reach, hy + off],
+          [hx - reach - width, hy + off],
+          [hx + reach, hy - off - height],
+          [hx - reach - width, hy - off - height],
+          [hx + off, hy + reach],
+          [hx - off - width, hy - reach - height],
+        ] as const) {
+          const x = Math.round(Math.max(0, Math.min(proj.width - width, qx)));
+          const y = Math.round(Math.max(0, Math.min(proj.height - height, qy)));
+          const r: BlockedRect = { x0: x, y0: y, x1: x + width, y1: y + height };
+          // clamping that moved the box over the pointer counts against it
+          let cover = hx > x - 4 * k && hx < x + width + 4 * k && hy > y - 4 * k && hy < y + height + 4 * k ? 1e6 : 0;
+          for (const o of rects) cover += rectsOverlap(r, o);
+          for (const h of handles) cover += rectsOverlap(r, { x0: h.x - 12 * k, y0: h.y - 12 * k, x1: h.x + 12 * k, y1: h.y + 12 * k });
+          if (cover < best) {
+            best = cover;
+            tx = x;
+            ty = y;
+          }
+        }
+        if (best === 0) break;
+      }
+      top.push({ x: tx + width / 2, y: ty + height / 2, hx: width / 2, hy: height / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
+      tip.forEach((line, i) => topTexts.push({ x: tx + 8 * k, y: ty + 5 * k + i * tm.lineHeight, text: line, color: i === 0 ? COLORS.text : COLORS.textDim, alpha: 1 }));
+      rects.push({ x0: tx, y0: ty, x1: tx + width, y1: ty + height });
     }
-    return { scene, icons: [icons, top], texts: [texts, topTexts] };
+
+    // ---- de-clutter: labels keep clear of icons, of each other and of every blocked rectangle, and off the lines
+    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, (x0, y0, x1, y1) => this.grid.cost(x0, y0, x1, y1), FAR_RING_PX * k);
+    const plates: IconInstance[] = [];
+    for (const l of labels) {
+      const b = l.box;
+      if (!b.placed) continue;
+      plates.push({ x: b.x + b.width / 2, y: b.y + b.height / 2, hx: b.width / 2, hy: b.height / 2, rot: 0, shape: ICON.plate, color: COLORS.plate, alpha: l.alpha });
+      if (b.far) {
+        // Leader from the anchor's edge to the nearest point of the plate.
+        const nx = Math.max(b.x, Math.min(b.ax, b.x + b.width));
+        const ny = Math.max(b.y, Math.min(b.ay, b.y + b.height));
+        const dx = nx - b.ax;
+        const dy = ny - b.ay;
+        const d = Math.hypot(dx, dy);
+        const r0 = b.clear + 2 * k;
+        if (d > r0 + 2 * k) {
+          const ux = dx / d;
+          const uy = dy / d;
+          plates.push({ x: b.ax + ux * (r0 + d) * 0.5, y: b.ay + uy * (r0 + d) * 0.5, hx: (d - r0) / 2, hy: (LEADER_WIDTH_PX / 2) * k, rot: Math.atan2(uy, ux), shape: ICON.bar, color: COLORS.leader, alpha: l.alpha });
+        }
+      }
+      for (let i = 0; i < l.lines.length; i++) {
+        texts.push({ x: b.x + padX, y: b.y + padY + i * tm.lineHeight, text: l.lines[i]!, color: i === 0 ? l.color : COLORS.textDim, alpha: l.alpha });
+      }
+    }
+    return { scene, icons: [[...plates, ...icons, ...gizmo], top], texts: [texts, topTexts] };
   }
 
   private pointAt(scene: MapScene, line: LineRecord, u: number): { x: number; y: number } | null {
@@ -906,24 +1297,31 @@ export class MapController implements MapView {
     return null;
   }
 
+  /**
+   * Tooltip of what the pointer is on. None for the selected node and its handles (the panel shows those
+   * values); a list of the members when the element is part of an icon cluster.
+   */
   private tooltipLines(scene: MapScene): string[] | null {
     const h = this.hover;
     if (!h) return null;
     const s = scene.snapshot;
+    if ((h.type === 'node' || h.type === 'handle') && h.nodeId === this.selected) return null;
+    const key = h.type === 'marker' ? `m:${h.id}` : h.type === 'node' ? `n:${h.nodeId}` : h.type === 'vessel' ? `v:${h.id}` : h.type === 'body' ? `b:${h.id}` : null;
+    const cluster = key ? this.clusters.get(key) : undefined;
+    if (cluster) return cluster;
     if (h.type === 'marker') return scene.markers.find((m) => m.id === h.id)?.details ?? null;
     if (h.type === 'node' || h.type === 'handle') {
       const node = s.nodes.find((n) => n.id === h.nodeId);
       if (!node) return null;
-      const lines = [
+      return [
         'Maneuver node',
         `Prograde ${formatDv(node.dv.prograde)}`,
-        `Normal   ${formatDv(node.dv.normal)}`,
-        `Radial   ${formatDv(node.dv.radial)}`,
-        `Total    ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`,
+        `Normal ${formatDv(node.dv.normal)}`,
+        `Radial ${formatDv(node.dv.radial)}`,
+        `Total ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`,
         `In ${formatDuration(node.ut - s.ut)}`,
+        'Click to edit',
       ];
-      if (h.type === 'handle') lines.splice(1, 0, `Drag: ${h.handle} (Shift fine, Ctrl coarse)`);
-      return lines;
     }
     if (h.type === 'vessel') {
       const v = s.vessels.find((x) => x.id === h.id);
@@ -955,12 +1353,16 @@ function toHover(h: Hit): Hover {
 
 function shapeIcon(s: MarkerShape): IconId {
   switch (s) {
-    case 'apsis':
-      return ICON.apsis;
+    case 'apoapsis':
+      return ICON.apoapsis;
+    case 'periapsis':
+      return ICON.periapsis;
     case 'inclination':
       return ICON.inclination;
-    case 'soi':
-      return ICON.soi;
+    case 'soiEnter':
+      return ICON.soiEnter;
+    case 'soiExit':
+      return ICON.soiExit;
     case 'impact':
       return ICON.impact;
     case 'entry':

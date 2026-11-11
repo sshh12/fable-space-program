@@ -20,15 +20,17 @@ import { ViewConic } from './conicCurve';
 import {
   AFTER_NODE_DIM,
   CHORD_TOLERANCE_PX,
+  CLIP_DEPTH_REL,
   COLORS,
   FAINT_CHORD_TOLERANCE_PX,
-  FADE_FLOOR,
   FAINT_LINE_WIDTH_PX,
   LINE_WIDTH_PX,
   MAX_POINTS_PER_CURVE,
   OCCLUSION_FADE_PX,
   SMALL_OBJECT_PX,
+  SURFACE_SLACK_MARGIN,
   TARGET_MIN_BODY_PX,
+  ZONE_LINE_WIDTH_PX,
   type Rgba,
 } from './constants';
 import { locateNode, type NodeLocation, type PatchKey, type PatchList } from './nodes';
@@ -103,12 +105,15 @@ export interface LineRecord {
   patch?: Patch;
   /** Vertices on screen and in front of the eye (for tests and the lab statistics). */
   visibleVertices: number;
+  /** Larger side of the screen bounding box of the vertices in front of the eye, device px. */
+  span: number;
   capped: boolean;
   /** Curve evaluations the sampler spent on this line this frame. */
   evaluations: number;
   /**
-   * Depth (m) below a body surface that still counts as on it in the occlusion test: non-zero for lines
-   * lying on a body (recovery zones), whose chords dip below the sphere between vertices.
+   * Radial depth (m) below a body surface that still counts as on it in the occlusion test: non-zero for
+   * lines lying on a body (recovery zones), whose chords dip below the sphere between vertices. The line is
+   * tested against the sphere shrunk by this much, so the allowance does not grow toward the limb.
    */
   occlusionSlack: number;
 }
@@ -117,9 +122,11 @@ export interface LineRecord {
 export type PatchCurveLine = LineRecord & { curve: ViewConic };
 
 export type MarkerShape =
-  | 'apsis'
+  | 'apoapsis'
+  | 'periapsis'
   | 'inclination'
-  | 'soi'
+  | 'soiEnter'
+  | 'soiExit'
   | 'impact'
   | 'entry'
   | 'closest'
@@ -183,6 +190,9 @@ export interface VesselItem extends PointItem {
   name: string;
   active: boolean;
   debris: boolean;
+  /** Screen direction of the velocity relative to the vessel's body (unit; 0, 0 when it points at the eye). */
+  dirX: number;
+  dirY: number;
 }
 
 export interface TargetItem extends PointItem {
@@ -214,10 +224,16 @@ export class VertexArrays {
   u = new Float64Array(0);
   /** UT at the vertex (NaN when not meaningful). */
   t = new Float64Array(0);
-  /** Cumulative screen length along the polyline, device px. */
+  /** Cumulative screen length along the polyline over its drawn segments, device px (the dash phase). */
   len = new Float64Array(0);
-  /** Per-vertex alpha multiplier (time fade). */
+  /** Per-vertex alpha multiplier (dimming after the first node). */
   alpha = new Float64Array(0);
+  /** Fade with time ahead, 0 (now) .. 1 (far future): lowers alpha toward FADE_FLOOR and tints toward white. */
+  fade = new Float64Array(0);
+  /** 1 when the vertex lies in front of the eye (CLIP_DEPTH_REL); sx / sy are NaN otherwise. */
+  front = new Uint8Array(0);
+  /** 1 when the segment from this vertex to the next one is drawn (both ends in front, not the line's end). */
+  seg = new Uint8Array(0);
 
   reserve(extra: number): void {
     const need = this.n + extra;
@@ -225,6 +241,11 @@ export class VertexArrays {
     const cap = Math.max(need, Math.ceil(this.capacity * 1.5), 4096);
     const grow = (a: Float64Array): Float64Array<ArrayBuffer> => {
       const b = new Float64Array(cap);
+      b.set(a.subarray(0, this.n));
+      return b;
+    };
+    const grow8 = (a: Uint8Array): Uint8Array<ArrayBuffer> => {
+      const b = new Uint8Array(cap);
       b.set(a.subarray(0, this.n));
       return b;
     };
@@ -237,7 +258,54 @@ export class VertexArrays {
     this.t = grow(this.t);
     this.len = grow(this.len);
     this.alpha = grow(this.alpha);
+    this.fade = grow(this.fade);
+    this.front = grow8(this.front);
+    this.seg = grow8(this.seg);
     this.capacity = cap;
+  }
+
+  /**
+   * Append one vertex of the line that starts at `lineStart`, cutting the line where it passes behind the eye:
+   * when this vertex and the previous one lie on different sides of the clip depth (CLIP_DEPTH_REL), a vertex
+   * is inserted at that depth on the chord between them, in float64. The caller reserves two slots.
+   */
+  push(proj: Projector, lineStart: number, x: number, y: number, z: number, u: number): void {
+    const r = Math.sqrt(x * x + y * y + z * z);
+    const depth = -z;
+    const front = depth > Math.max(2 * proj.near, CLIP_DEPTH_REL * r);
+    const k = this.n - 1;
+    if (k >= lineStart && (this.front[k] === 1) !== front) {
+      const px = this.vx[k]!;
+      const py = this.vy[k]!;
+      const pz = this.vz[k]!;
+      const rp = Math.sqrt(px * px + py * py + pz * pz);
+      const dp = -pz;
+      const cut = Math.max(2 * proj.near, CLIP_DEPTH_REL * Math.max(r, rp));
+      const t = Math.min(1, Math.max(0, (dp - cut) / (dp - depth)));
+      this.write(proj, px + (x - px) * t, py + (y - py) * t, pz + (z - pz) * t, this.u[k]! + (u - this.u[k]!) * t, true);
+    }
+    this.write(proj, x, y, z, u, front);
+  }
+
+  private write(proj: Projector, x: number, y: number, z: number, u: number, front: boolean): void {
+    const j = this.n++;
+    this.vx[j] = x;
+    this.vy[j] = y;
+    this.vz[j] = z;
+    this.u[j] = u;
+    this.t[j] = NaN;
+    this.alpha[j] = 1;
+    this.fade[j] = 0;
+    this.front[j] = front ? 1 : 0;
+    this.seg[j] = 0;
+    if (front) {
+      const s = proj.focal / -z;
+      this.sx[j] = proj.cx + x * s;
+      this.sy[j] = proj.cy - y * s;
+    } else {
+      this.sx[j] = NaN;
+      this.sy[j] = NaN;
+    }
   }
 }
 
@@ -247,6 +315,10 @@ export interface SceneOptions {
    * the preceding patch's Patch.bodyPosAtEnd) instead of the body's current position.
    */
   atIntercept: boolean;
+  /** Draw the orbits of all debris (default off: debris are dots, their orbit shows on hover). */
+  debrisOrbits: boolean;
+  /** A vessel whose orbit is drawn even when it is debris (the hovered one), or null. */
+  highlightVesselId: string | null;
 }
 
 export interface MapScene {
@@ -281,12 +353,12 @@ interface BodyInfo {
 }
 
 const MARKER_STYLE: Record<MarkerKind, { shape: MarkerShape; color: Rgba; priority: number }> = {
-  apoapsis: { shape: 'apsis', color: COLORS.apsis, priority: 6 },
-  periapsis: { shape: 'apsis', color: COLORS.apsis, priority: 6 },
+  apoapsis: { shape: 'apoapsis', color: COLORS.apsis, priority: 6 },
+  periapsis: { shape: 'periapsis', color: COLORS.apsis, priority: 6 },
   ascendingNode: { shape: 'inclination', color: COLORS.inclination, priority: 3 },
   descendingNode: { shape: 'inclination', color: COLORS.inclination, priority: 3 },
-  soiEnter: { shape: 'soi', color: COLORS.soiMarker, priority: 5 },
-  soiExit: { shape: 'soi', color: COLORS.soiMarker, priority: 5 },
+  soiEnter: { shape: 'soiEnter', color: COLORS.soiMarker, priority: 5 },
+  soiExit: { shape: 'soiExit', color: COLORS.soiMarker, priority: 5 },
   impact: { shape: 'impact', color: COLORS.impact, priority: 8 },
   atmosphereEntry: { shape: 'entry', color: COLORS.entry, priority: 8 },
   closestApproach: { shape: 'closest', color: COLORS.closest, priority: 4 },
@@ -404,10 +476,11 @@ export class SceneBuilder {
     for (const g of scene.ghosts) {
       const b = bodies.get(g.bodyId);
       if (!b || !(b.radius > 0)) continue;
-      this.addSphereOutline(scene, `ghost:${g.id}`, 'ghostBody', proj.toView(g.pos), b.radius, COLORS.ghost, FAINT_LINE_WIDTH_PX, b.orbit);
+      this.addSphereOutline(scene, `ghost:${g.id}`, 'ghostBody', proj.toView(g.pos), b.radius, COLORS.ghost, FAINT_LINE_WIDTH_PX);
     }
     for (const v of snapshot.vessels) {
       if (v.id === snapshot.activeVesselId) continue;
+      if (!v.controllable && !options.debrisOrbits && v.id !== options.highlightVesselId) continue;
       this.addVesselOrbit(scene, v, bodies, snapshot.ut);
     }
     for (const t of snapshot.surfaceTargets) {
@@ -527,7 +600,10 @@ export class SceneBuilder {
       scene.bodies.push(this.bodyItem(scene, g.id, g.bodyId, b.name, g.pos, b.radius, true, pxScale, `${b.name} (${g.plannedOnly ? 'planned encounter' : 'encounter'})`));
     }
     for (const v of snapshot.vessels) {
-      const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view: proj.toView(v.rRoot), vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable };
+      const view = proj.toView(v.rRoot);
+      const speed = v3.len(v.v);
+      const heading = speed > 0 ? this.axisScreen(scene, view, v3.scale(v.v, 1 / speed)) : { dx: 0, dy: 0, extent: 0 };
+      const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view, vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable, dirX: heading.extent > 0 ? heading.dx : 0, dirY: heading.extent > 0 ? heading.dy : 0 };
       this.place(scene, item);
       scene.vessels.push(item);
     }
@@ -722,40 +798,47 @@ export class SceneBuilder {
 
   private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): PatchCurveLine | null {
     const proj = scene.proj;
-    const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit' || kind === 'recoveryZone';
+    const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit';
     const s = this.sampleLine(id, curve, u0, u1, proj, faint);
     if (s.count < 2) return null;
     const verts = this.verts;
-    verts.reserve(s.count);
+    verts.reserve(2 * s.count);
     const start = verts.n;
-    let len = 0;
-    let visible = 0;
-    const w = proj.width;
-    const h = proj.height;
-    for (let i = 0; i < s.count; i++) {
-      const j = start + i;
-      verts.vx[j] = s.vx[i]!;
-      verts.vy[j] = s.vy[i]!;
-      verts.vz[j] = s.vz[i]!;
-      const sx = s.sx[i]!;
-      const sy = s.sy[i]!;
-      verts.sx[j] = sx;
-      verts.sy[j] = sy;
-      verts.u[j] = s.u[i]!;
-      verts.t[j] = NaN;
-      verts.alpha[j] = 1;
-      if (i > 0) {
-        const dx = sx - verts.sx[j - 1]!;
-        const dy = sy - verts.sy[j - 1]!;
-        if (dx === dx && dy === dy) len += Math.sqrt(dx * dx + dy * dy);
-      }
-      verts.len[j] = len;
-      if (sx >= 0 && sy >= 0 && sx <= w && sy <= h) visible++;
-    }
-    verts.n = start + s.count;
-    const rec: PatchCurveLine = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
+    for (let i = 0; i < s.count; i++) verts.push(proj, start, s.vx[i]!, s.vy[i]!, s.vz[i]!, s.u[i]!);
+    const rec: PatchCurveLine = { kind, id, start, count: verts.n - start, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: 0, span: 0, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
+    this.finishLine(proj, rec);
     scene.lines.push(rec);
     return rec;
+  }
+
+  /**
+   * Drawn segments (both ends in front of the eye), the cumulative screen length along them (dash phase, from
+   * the line's first vertex: the node end of a planned patch), the visible vertex count and the screen span.
+   */
+  private finishLine(proj: Projector, rec: LineRecord): void {
+    const v = this.verts;
+    const end = rec.start + rec.count;
+    let len = 0;
+    let visible = 0;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let j = rec.start; j < end; j++) {
+      if (j > rec.start && v.seg[j - 1] === 1) len += Math.hypot(v.sx[j]! - v.sx[j - 1]!, v.sy[j]! - v.sy[j - 1]!);
+      v.len[j] = len;
+      if (j + 1 < end && v.front[j] === 1 && v.front[j + 1] === 1) v.seg[j] = 1;
+      if (v.front[j] !== 1) continue;
+      const sx = v.sx[j]!;
+      const sy = v.sy[j]!;
+      if (proj.onScreen(sx, sy)) visible++;
+      if (sx < x0) x0 = sx;
+      if (sx > x1) x1 = sx;
+      if (sy < y0) y0 = sy;
+      if (sy > y1) y1 = sy;
+    }
+    rec.visibleVertices = visible;
+    rec.span = x1 >= x0 ? Math.max(x1 - x0, y1 - y0) : 0;
   }
 
   /**
@@ -907,9 +990,8 @@ export class SceneBuilder {
       const t = kepler ? p.tStart + (curve.meanAnomaly(verts.u[j]!) - m0) / meanMotion : p.tStart + (timeSincePeriapsis(c, curve.uToNu(verts.u[j]!)) - tspStart);
       verts.t[j] = t;
       const ahead = t > now ? t - now : 0;
-      let a = FADE_FLOOR + (1 - FADE_FLOOR) * Math.exp(-ahead / tau);
-      if (t > dimAfterUt) a *= AFTER_NODE_DIM;
-      verts.alpha[j] = a;
+      verts.fade[j] = 1 - Math.exp(-ahead / tau);
+      verts.alpha[j] = t > dimAfterUt ? AFTER_NODE_DIM : 1;
     }
   }
 
@@ -932,28 +1014,15 @@ export class SceneBuilder {
     if (!(r1 - r0 > 1)) return;
     const proj = scene.proj;
     const verts = this.verts;
-    verts.reserve(2);
+    verts.reserve(4);
     const start = verts.n;
-    let len = 0;
-    let visible = 0;
-    [r0, r1].forEach((r, i) => {
-      const j = start + i;
+    for (const r of [r0, r1]) {
       const v = proj.toView(v3.addScaled(origin, dir, r));
-      const s = proj.projectView(v);
-      verts.vx[j] = v.x;
-      verts.vy[j] = v.y;
-      verts.vz[j] = v.z;
-      verts.sx[j] = s.x;
-      verts.sy[j] = s.y;
-      verts.u[j] = r;
-      verts.t[j] = NaN;
-      verts.alpha[j] = 1;
-      if (i > 0 && s.front && Number.isFinite(verts.sx[j - 1]!)) len += Math.hypot(s.x - verts.sx[j - 1]!, s.y - verts.sy[j - 1]!);
-      verts.len[j] = len;
-      if (s.front && proj.onScreen(s.x, s.y)) visible++;
-    });
-    verts.n = start + 2;
-    scene.lines.push({ kind: list, id: `${list}/${index}`, start, count: 2, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: visible, capped: false, evaluations: 0, occlusionSlack: 0 });
+      verts.push(proj, start, v.x, v.y, v.z, r);
+    }
+    const rec: LineRecord = { kind: list, id: `${list}/${index}`, start, count: verts.n - start, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: 0, span: 0, capped: false, evaluations: 0, occlusionSlack: 0 };
+    this.finishLine(proj, rec);
+    scene.lines.push(rec);
   }
 
   /** Orbit of another vessel from its state (cached while the state and time are unchanged). */
@@ -1001,30 +1070,20 @@ export class SceneBuilder {
     this.addConicLine(scene, `vessel:${v.id}`, debris ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, debris ? COLORS.debrisOrbit : COLORS.vesselOrbit, FAINT_LINE_WIDTH_PX, false);
   }
 
-  /** SOI sphere: its silhouette from outside, the great circle in the body's orbit plane from inside. */
+  /**
+   * SOI sphere: its silhouette, seen from outside. From inside there is no silhouette and nothing is drawn (a
+   * great circle through the body would read as a second orbit beside the body's own).
+   */
   private addSoiLine(scene: MapScene, b: BodyInfo): void {
     const c = scene.proj.toView(b.pos);
     const L = Math.hypot(c.x, c.y, c.z);
-    const R = b.soi!;
-    if (L > R * 1.0001) {
-      this.addSphereOutline(scene, `soi:${b.id}`, 'soi', c, R, COLORS.soi, FAINT_LINE_WIDTH_PX, null);
-    } else if (b.orbit) {
-      const P = scene.proj.rotate(b.orbit.P);
-      const Q = scene.proj.rotate(b.orbit.Q);
-      const curve = this.nextCurve().setCircle(c, P, Q, R);
-      this.addCurve(scene, `soi:${b.id}`, 'soi', curve, 0, TWO_PI, COLORS.soi, FAINT_LINE_WIDTH_PX, false);
-    }
+    if (L > b.soi! * 1.0001) this.addSphereOutline(scene, `soi:${b.id}`, 'soi', c, b.soi!, COLORS.soi, FAINT_LINE_WIDTH_PX);
   }
 
-  /** Silhouette circle of a sphere seen from the eye (falls back to the orbit plane when the eye is inside). */
-  private addSphereOutline(scene: MapScene, id: string, kind: LineKind, c: Vec3, R: number, color: Rgba, widthPx: number, orbit: ConicElements | null): void {
+  /** Silhouette circle of a sphere seen from the eye (nothing when the eye is inside it). */
+  private addSphereOutline(scene: MapScene, id: string, kind: LineKind, c: Vec3, R: number, color: Rgba, widthPx: number): void {
     const L = Math.hypot(c.x, c.y, c.z);
-    if (!(L > R)) {
-      if (!orbit) return;
-      const curve = this.nextCurve().setCircle(c, scene.proj.rotate(orbit.P), scene.proj.rotate(orbit.Q), R);
-      this.addCurve(scene, id, kind, curve, 0, TWO_PI, color, widthPx, false);
-      return;
-    }
+    if (!(L > R)) return;
     const k = 1 - (R * R) / (L * L);
     const centre = v3.scale(c, k);
     const radius = R * Math.sqrt(k);
@@ -1052,18 +1111,20 @@ export class SceneBuilder {
     const centreRoot = v3.add(b.pos, v3.scale(n, b.radius * Math.cos(rho)));
     const proj = scene.proj;
     const curve = this.nextCurve().setCircle(proj.toView(centreRoot, this.tmpV), proj.rotate(e), proj.rotate(no), b.radius * Math.sin(rho));
-    const rec = this.addCurve(scene, `zone:${t.id}`, 'recoveryZone', curve, 0, TWO_PI, COLORS.recovery, FAINT_LINE_WIDTH_PX + 0.5, false);
+    const rec = this.addCurve(scene, `zone:${t.id}`, 'recoveryZone', curve, 0, TWO_PI, COLORS.recovery, ZONE_LINE_WIDTH_PX, false);
     if (!rec) return;
-    // The chords cut below the sphere between vertices: their deepest point is the occlusion slack.
+    // The chords cut below the sphere between vertices: the line is tested against the sphere shrunk by the
+    // deepest chord midpoint (a radial allowance, the same at the limb as at the centre of the disc).
     const v = this.verts;
     let depth = 0;
     for (let i = rec.start; i < rec.start + rec.count - 1; i++) {
+      if (v.seg[i] !== 1) continue;
       const mx = (v.vx[i]! + v.vx[i + 1]!) / 2 - c.x;
       const my = (v.vy[i]! + v.vy[i + 1]!) / 2 - c.y;
       const mz = (v.vz[i]! + v.vz[i + 1]!) / 2 - c.z;
       depth = Math.max(depth, b.radius - Math.sqrt(mx * mx + my * my + mz * mz));
     }
-    rec.occlusionSlack = depth + 1e-3 * b.radius;
+    rec.occlusionSlack = depth + SURFACE_SLACK_MARGIN * b.radius;
   }
 }
 

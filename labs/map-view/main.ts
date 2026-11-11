@@ -7,6 +7,8 @@
  *
  * Query: ?scene=<FakeScene|synthetic> &paused=1 &intercept=1 &perf=1 &yaw=&pitch=&dist= (radians, metres)
  *        &quiet=1 (no lab text) &spin=<rad per frame> (camera orbits continuously: full rebuild every frame)
+ *        &debris=1 (draw every debris orbit; perf=1 implies it)
+ * The lab's text boxes are passed to the map as obstacles (MapViewApi.setObstacles), as the HUD panels would be.
  * window.__mapLab: stats(), perf(), resetPerf(), setIntercept(on), setFocus(f), step(dt), results(), view.
  */
 import type { PlayerCommands } from '@/core/contracts/controls';
@@ -114,6 +116,8 @@ async function boot(): Promise<void> {
   await feature.init(renderContext as RenderContext);
   view.setActive(true);
   if (params.get('intercept') === '1') view.setDrawAtIntercept(true);
+  // The load case of the perf spec draws every debris orbit (normally only the hovered one is drawn).
+  if (params.get('debris') === '1' || perfScene) view.setDebrisOrbits(true);
   interceptBox.checked = view.drawAtIntercept;
   interceptBox.addEventListener('change', () => view.setDrawAtIntercept(interceptBox.checked));
 
@@ -165,6 +169,16 @@ async function boot(): Promise<void> {
     (document.getElementById('toggles') as HTMLDivElement).style.display = 'none';
   }
   const spin = Number(params.get('spin') ?? 0);
+  // The lab's own text boxes stand in for the HUD panels: map labels, the node panel and tooltips avoid them.
+  const toggles = document.getElementById('toggles') as HTMLDivElement;
+  const obstacles = (): void => {
+    const rects = [info, toggles]
+      .filter((e) => e.style.display !== 'none')
+      .map((e) => e.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ x: r.left, y: r.top, width: r.width, height: r.height }));
+    view.setObstacles(rects);
+  };
   const cpu: number[] = [];
   const results: MapUpdateResult[] = [];
   testApi.extend({
@@ -281,6 +295,8 @@ async function boot(): Promise<void> {
       `map-view lab  scene ${sceneName}${paused ? ' (paused)' : ''}   camera ${(d / 1e3).toFixed(0)} km from ${cam.focus.vesselId ?? cam.focus.bodyId}\n` +
       `lines ${st.lines.length}  markers ${st.markers}  nodes ${st.nodes}  map cpu ${(tUpdate + tPrepare + tDraw).toFixed(2)} ms   ` +
       `drag empty space: rotate   wheel: zoom   click orbit: add node   double-click: focus`;
+    // The info box has its size once its text is set: hand it to the map (again every half second).
+    if (frameIndex <= 2 || frameIndex % 30 === 0) obstacles();
     testApi.frameDone();
     requestAnimationFrame(frame);
   };

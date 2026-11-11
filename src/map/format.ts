@@ -1,14 +1,32 @@
-/** Number formatting for map labels and tooltips (ASCII plus the degree and delta signs of the glyph atlas). */
+/**
+ * Number formatting for map labels and tooltips (ASCII plus the few symbols of the glyph atlas). Large numbers
+ * are grouped in threes with a narrow no-break space, as in the HUD.
+ */
 
 const RAD = 180 / Math.PI;
+/** Narrow no-break space: thousands separator. */
+export const GROUP = ' ';
 
+/** Fixed-point number with its integer part grouped in threes. */
+export function formatGrouped(x: number, decimals = 0): string {
+  const s = Math.abs(x).toFixed(decimals);
+  const dot = s.indexOf('.');
+  const int = dot < 0 ? s : s.slice(0, dot);
+  let out = '';
+  for (let i = 0; i < int.length; i++) {
+    if (i > 0 && (int.length - i) % 3 === 0) out += GROUP;
+    out += int[i];
+  }
+  return `${x < 0 && Number(s) !== 0 ? '-' : ''}${out}${dot < 0 ? '' : s.slice(dot)}`;
+}
+
+/** Distance: metres below 10 km, km with one decimal below 10,000 km, whole grouped km above (never Mm). */
 export function formatDistance(m: number): string {
   const a = Math.abs(m);
   if (!Number.isFinite(m)) return '--';
-  if (a < 1e4) return `${m.toFixed(0)} m`;
-  if (a < 1e6) return `${(m / 1e3).toFixed(1)} km`;
-  if (a < 1e8) return `${(m / 1e3).toFixed(0)} km`;
-  return `${(m / 1e6).toFixed(1)} Mm`;
+  if (a < 1e4) return `${formatGrouped(m)} m`;
+  if (a < 1e7) return `${formatGrouped(m / 1e3, 1)} km`;
+  return `${formatGrouped(m / 1e3)} km`;
 }
 
 export function formatSpeed(v: number): string {
@@ -40,8 +58,9 @@ export function formatDuration(s: number): string {
   return `${sign}${m}m ${p2(sec)}s`;
 }
 
-/** Time relative to now: "T-3m 04s" before the event, "T+12s" after it. */
+/** Time relative to now: "T-3m 04s" before the event, "T+12s" after it, "now" within a second. */
 export function formatTimeTo(dt: number): string {
+  if (Math.abs(dt) < 1) return 'now';
   return dt >= 0 ? `T-${formatDuration(dt)}` : `T+${formatDuration(-dt)}`;
 }
 
@@ -115,5 +134,5 @@ export function formatLatLon(lat: number, lon: number): string {
 export const LABEL_CHARSET = (() => {
   let s = '';
   for (let c = 32; c < 127; c++) s += String.fromCharCode(c);
-  return `${s}°Δ±·→`;
+  return `${s}°Δ±·→ `;
 })();

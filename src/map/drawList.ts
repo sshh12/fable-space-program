@@ -7,9 +7,9 @@ import type { MapScene } from './scene';
 
 /** Icon shapes understood by the icon shader (gpu/shaders.ts keeps the same numbering). */
 export const ICON = {
-  apsis: 0,
+  apoapsis: 0,
   inclination: 1,
-  soi: 2,
+  soiEnter: 2,
   impact: 3,
   entry: 4,
   closest: 5,
@@ -30,6 +30,10 @@ export const ICON = {
   bar: 20,
   roundRect: 21,
   addGhost: 22,
+  plate: 23,
+  periapsis: 24,
+  soiExit: 25,
+  nodeHidden: 26,
 } as const;
 export type IconId = (typeof ICON)[keyof typeof ICON];
 
@@ -62,8 +66,19 @@ export interface DrawList {
   texts: [TextRun[], TextRun[]];
 }
 
-/** Monospace text metrics in device px (the atlas supplies the real ones in the browser). */
+/** Text metrics in device px (the glyph atlas supplies the real ones in the browser). */
 export interface TextMetricsLike {
-  advance: number;
+  /** Pen advance of a UTF-16 code unit. */
+  advance(code: number): number;
   lineHeight: number;
 }
+
+/** Width of a single-line string in device px (sum of the advances, as the renderer lays it out). */
+export function measureText(m: TextMetricsLike, text: string): number {
+  let w = 0;
+  for (let i = 0; i < text.length; i++) w += m.advance(text.charCodeAt(i));
+  return w;
+}
+
+/** Whitespace code units the renderer advances over without drawing a glyph. */
+export const isBlank = (code: number): boolean => code === 32 || code === 0x202f || code === 0x2009;

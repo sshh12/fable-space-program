@@ -2,12 +2,17 @@
  * WGSL of the map overlay: three pipelines sharing one uniform block.
  *  - lines: instanced screen-space quads per polyline segment, analytic anti-aliased capsules whose union
  *    gives round joins without double blending (a fragment belongs to the nearest of the segment and its
- *    two neighbours), dashes along screen arc length, near-plane clipping in the vertex shader, and
- *    per-fragment analytic sphere occlusion with a soft fade at the limb (the twin of occlusion.ts).
+ *    two neighbours), a dark casing on both sides, dashes along screen arc length (phase per vertex plus the
+ *    segment's own screen length, so the phase stays exact in float32 however long the line), and
+ *    per-fragment analytic sphere occlusion with a short soft fade at the limb (the twin of occlusion.ts).
+ *    Lines arrive cut in float64 where they pass behind the eye (scene.ts, VertexArrays.push): every drawn
+ *    segment has both ends safely in front, so the vertex stage never clips.
  *  - icons: signed-distance shapes evaluated per fragment (crisp at any size, dark outline for contrast).
- *  - glyphs: 1:1 texel copies from a Canvas-2D-rasterised monospace atlas (fill + halo channels).
+ *  - glyphs: 1:1 texel copies from a Canvas-2D-rasterised atlas (fill + halo channels).
  * Output is premultiplied, display-referred colour into the LDR target after tonemapping.
  */
+
+import { CASING_ALPHA } from '../constants';
 
 export const MAX_OCCLUDERS = 16;
 
@@ -16,12 +21,13 @@ struct Uniforms {
   proj: mat4x4f,
   viewport: vec4f,   // width, height, 1/width, 1/height (device px)
   params: vec4f,     // pxScale, focal px, near plane, occluder count
-  style: vec4f,      // occlusion fade px, dash period px, dash on px, unused
+  style: vec4f,      // occlusion fade px, dash period px, dash on px, casing width px
   bodies: array<vec4f, ${MAX_OCCLUDERS}>, // view-space centre, radius
 };
 @group(0) @binding(0) var<uniform> U: Uniforms;
 
-// slack: extra depth (m) below a body surface that still counts as on it (lines drawn on a surface).
+// slack: radial depth (m) below a body surface that still counts as on it (lines lying on a surface); such
+// points are tested against the sphere shrunk by it. Twin of occlusionWeight() in occlusion.ts.
 fn occlusion(p: vec3f, slack: f32) -> f32 {
   let tp = length(p);
   if (tp <= 0.0) { return 0.0; }
@@ -31,19 +37,17 @@ fn occlusion(p: vec3f, slack: f32) -> f32 {
   for (var i = 0u; i < n; i++) {
     let b = U.bodies[i];
     let c = b.xyz;
-    let R = b.w;
     let L = length(c);
-    if (L <= R) { continue; }
+    if (L <= b.w) { continue; }
     let tc = dot(dir, c);
     if (tc <= 0.0) { continue; }
+    let R = b.w - slack;
     let dperp = length(cross(dir, c));
-    let theta = atan2(dperp, tc);
-    let alpha = asin(R / L);
-    if (theta >= alpha) { continue; }
-    let t1 = tc - sqrt(max(0.0, (R - dperp) * (R + dperp)));
-    let tol = max(1e-3 * R, 4e-7 * L);
-    if (tp <= t1 + tol + slack) { continue; }
-    let inside = (alpha - theta) * U.params.y;
+    if (dperp >= R) { continue; }
+    let t1 = tc - sqrt((R - dperp) * (R + dperp));
+    let tol = select(max(1e-3 * b.w, 4e-7 * L), 0.0, slack > 0.0);
+    if (tp <= t1 + tol) { continue; }
+    let inside = (asin(R / L) - atan2(dperp, tc)) * U.params.y;
     let s = clamp(inside / U.style.x, 0.0, 1.0);
     w = max(w, s * s * (3.0 - 2.0 * s));
   }
@@ -59,11 +63,11 @@ export const LINE_WGSL = /* wgsl */ `
 ${COMMON}
 struct LinePoint {
   pos: vec3f,
-  len: f32,
+  phase: f32,    // screen length from the line start, modulo the dash period (device px)
   color: u32,
-  flags: u32,
-  width: f32,
-  slack: f32,
+  flags: u32,    // bit 0: the segment to the next point is drawn; bit 1: dashed; bits 16-31: width * 64 (device px)
+  seglen: f32,   // screen length of the segment to the next point (device px)
+  slack: f32,    // radial allowance below a body surface (m), see occlusion()
 };
 @group(0) @binding(1) var<storage, read> pts: array<LinePoint>;
 
@@ -96,50 +100,24 @@ fn vsLine(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
   let A = pts[ii];
   if ((A.flags & 1u) == 0u) { return o; }
   let B = pts[ii + 1u];
-  let near = U.params.z;
-  var pa = A.pos;
-  var pb = B.pos;
-  var la = A.len;
-  var lb = B.len;
-  var ca = unpackColor(A.color);
-  var cb = unpackColor(B.color);
-  let wa0 = -pa.z;
-  let wb0 = -pb.z;
-  if (wa0 < near && wb0 < near) { return o; }
-  var hasPrev = ii > 0u && (pts[ii - 1u].flags & 1u) != 0u;
-  var hasNext = ii + 2u < n && (B.flags & 1u) != 0u;
-  if (wa0 < near) {
-    let t = (near - wa0) / (wb0 - wa0);
-    pa = mix(pa, pb, t);
-    la = mix(la, lb, t);
-    ca = mix(ca, cb, t);
-    hasPrev = false;
-  }
-  if (wb0 < near) {
-    let t = (near - wb0) / (wa0 - wb0);
-    pb = mix(pb, pa, t);
-    lb = mix(lb, la, t);
-    cb = mix(cb, ca, t);
-    hasNext = false;
-  }
+  let pa = A.pos;
+  let pb = B.pos;
+  // The CPU cut the line in front of the eye (both ends of a drawn segment are well past the near plane).
+  if (min(-pa.z, -pb.z) < U.params.z) { return o; }
+  let hasPrev = ii > 0u && (pts[ii - 1u].flags & 1u) != 0u;
+  let hasNext = ii + 2u < n && (B.flags & 1u) != 0u;
   let sa = toScreen(pa);
   let sb = toScreen(pb);
   var sp = vec2f(0.0);
   var sn = vec2f(0.0);
-  if (hasPrev) {
-    let P = pts[ii - 1u].pos;
-    if (-P.z < near) { hasPrev = false; } else { sp = toScreen(P); }
-  }
-  if (hasNext) {
-    let N = pts[ii + 2u].pos;
-    if (-N.z < near) { hasNext = false; } else { sn = toScreen(N); }
-  }
-  let hw = A.width * 0.5;
+  if (hasPrev) { sp = toScreen(pts[ii - 1u].pos); }
+  if (hasNext) { sn = toScreen(pts[ii + 2u].pos); }
+  let hw = f32(A.flags >> 16u) / 128.0;
   let d = sb - sa;
   let L = length(d);
   let dir = select(vec2f(1.0, 0.0), d / L, L > 1e-4);
   let nrm = vec2f(-dir.y, dir.x);
-  let ext = hw + 1.5;
+  let ext = hw + U.style.w + 1.5;
   let c = CORNERS[vi];
   let base = select(sa - dir * ext, sb + dir * ext, c.x > 0.5);
   let corner = base + nrm * ext * c.y;
@@ -148,10 +126,10 @@ fn vsLine(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
   o.nb = vec4f(sp, sn);
   o.aw = vec4f(pa, -pa.z);
   o.bw = vec4f(pb, -pb.z);
-  o.ca = ca;
-  o.cb = cb;
+  o.ca = unpackColor(A.color);
+  o.cb = unpackColor(B.color);
   let flags = select(0.0, 1.0, hasPrev) + select(0.0, 2.0, hasNext) + select(0.0, 4.0, (A.flags & 2u) != 0u);
-  o.misc = vec4f(hw, la, lb, flags);
+  o.misc = vec4f(hw, A.phase, A.seglen, flags);
   o.misc2 = vec4f(A.slack, 0.0, 0.0, 0.0);
   return o;
 }
@@ -179,24 +157,30 @@ fn fsLine(i: LineOut) -> @location(0) vec4f {
   if ((flags & 2u) != 0u) {
     if (segDist(p, sb, i.nb.zw) < d) { discard; }
   }
+  let casing = U.style.w;
   var cov = clamp(i.misc.x + 0.5 - d, 0.0, 1.0);
+  var cas = clamp(i.misc.x + casing + 0.5 - d, 0.0, 1.0);
   if ((flags & 4u) != 0u) {
-    let L = mix(i.misc.y, i.misc.z, s);
+    // Signed distance along the line to the nearest dash (negative inside it); the casing follows the dash.
+    let L = i.misc.y + s * i.misc.z;
     let period = U.style.y;
     let on = U.style.z;
     let m = L - floor(L / period) * period;
-    cov *= clamp(min(m, on - m) + 0.5, 0.0, 1.0);
+    let sd = select(min(m - on, period - m), -min(m, on - m), m <= on);
+    cov *= clamp(0.5 - sd, 0.0, 1.0);
+    cas *= clamp(casing + 0.5 - sd, 0.0, 1.0);
   }
-  if (cov <= 0.0) { discard; }
+  if (cas <= 0.0) { discard; }
   let wa = i.aw.w;
   let wb = i.bw.w;
   let t = s * wa / max((1.0 - s) * wb + s * wa, 1e-30);
   let P = mix(i.aw.xyz, i.bw.xyz, t);
-  let occ = occlusion(P, i.misc2.x);
+  let vis = 1.0 - occlusion(P, i.misc2.x);
   let col = mix(i.ca, i.cb, s);
-  let a = col.a * cov * (1.0 - occ);
-  if (a <= 0.0) { discard; }
-  return vec4f(col.rgb * a, a);
+  let a = col.a * cov * vis;
+  let ac = ${CASING_ALPHA.toFixed(3)} * col.a * cas * vis * (1.0 - a);
+  if (a + ac <= 0.0) { discard; }
+  return vec4f(col.rgb * a + vec3f(0.004, 0.006, 0.01) * ac, a + ac);
 }
 `;
 
@@ -257,20 +241,45 @@ fn sdTri(p0: vec2f, R: f32) -> f32 {
 }
 fn rot2(p: vec2f, a: f32) -> vec2f { let c = cos(a); let s = sin(a); return vec2f(c * p.x - s * p.y, s * p.x + c * p.y); }
 
-// Returns (distance to the shape, 1 = draw as a dark-filled cut-out hole / 0 = solid)
+// Chevron (two strokes meeting at the apex) pointing up (y down on screen), apex at (0, -k), arms down to (+-k, 0).
+fn sdChevron(p: vec2f, k: f32, w: f32) -> f32 {
+  return min(sdSeg(p, vec2f(-k, k * 0.45), vec2f(0.0, -k * 0.55), w), sdSeg(p, vec2f(k, k * 0.45), vec2f(0.0, -k * 0.55), w));
+}
+// Arrow along +x from a to b with a solid head at b.
+fn sdArrow(p: vec2f, a: f32, b: f32, head: f32, w: f32) -> f32 {
+  let shaft = sdSeg(p, vec2f(a, 0.0), vec2f(b - head * 0.8, 0.0), w);
+  let tip = sdTri(vec2f(p.y, -(p.x - b + head * 0.55)), head);
+  return min(shaft, tip);
+}
+
+// Returns (distance to the shape, mode): 0 = solid with a dark halo, 1 = panel with an edge, 2 = plain fill.
 fn shapeSd(shape: u32, p: vec2f, h: vec2f, px: f32) -> vec2f {
   let r = h.x;
   let w = 1.6 * px;
   switch (shape) {
-    case 0u: { // apsis: ring + centre dot
-      return vec2f(min(sdRing(p, r * 0.78, w), sdCircle(p, r * 0.26)), 0.0);
+    case 0u: { // apoapsis: ring with an up chevron
+      return vec2f(min(sdRing(p, r * 0.82, w), sdChevron(p + vec2f(0.0, r * 0.08), r * 0.4, w * 1.1)), 0.0);
+    }
+    case 24u: { // periapsis: ring with a down chevron
+      return vec2f(min(sdRing(p, r * 0.82, w), sdChevron(vec2f(p.x, -p.y) + vec2f(0.0, r * 0.08), r * 0.4, w * 1.1)), 0.0);
     }
     case 1u: { // inclination: diamond outline
       let q = abs(p);
       return vec2f(abs((q.x + q.y) * 0.7071 - r * 0.62) - w * 0.5, 0.0);
     }
-    case 2u: { // soi: double ring
-      return vec2f(min(sdRing(p, r * 0.85, w), sdRing(p, r * 0.42, w)), 0.0);
+    case 2u: { // SOI entry: ring with an arrow coming in from the left to the centre
+      return vec2f(min(sdRing(p, r * 0.8, w), sdArrow(p, -r * 1.25, r * 0.12, r * 0.42, w)), 0.0);
+    }
+    case 25u: { // SOI exit: ring with an arrow from the centre out to the right
+      return vec2f(min(sdRing(p, r * 0.8, w), sdArrow(p, -r * 0.1, r * 1.3, r * 0.42, w)), 0.0);
+    }
+    case 26u: { // maneuver node behind a body: dashed ring with a dot
+      let a = atan2(p.y, p.x) * 1.2732395; // 8 dashes per turn
+      let gap = (abs(fract(a) - 0.5) - 0.28) * 0.7853982 * r * 0.78;
+      return vec2f(min(max(sdRing(p, r * 0.78, w * 1.15), gap), sdCircle(p, r * 0.22)), 0.0);
+    }
+    case 23u: { // label plate
+      return vec2f(sdBox(p, h, 3.0 * px), 2.0);
     }
     case 3u: { // impact: X inside a ring
       let a = r * 0.45;
@@ -305,8 +314,9 @@ fn shapeSd(shape: u32, p: vec2f, h: vec2f, px: f32) -> vec2f {
     case 10u, 12u: { // zone centre / debris
       return vec2f(sdCircle(p, r * 0.8), 0.0);
     }
-    case 11u: { // vessel: ring with a bright core
-      return vec2f(min(sdRing(p, r * 0.75, w), sdCircle(p, r * 0.32)), 0.0);
+    case 11u: { // vessel: solid arrowhead pointing along +x (the icon is rotated to the velocity on screen)
+      let tri = sdTri(vec2f(p.y, -(p.x + r * 0.1)), r * 1.05);
+      return vec2f(max(tri, -sdCircle(p + vec2f(r * 1.05, 0.0), r * 0.62)), 0.0);
     }
     case 13u: { // body ring
       return vec2f(sdRing(p, r * 0.8, w), 0.0);
@@ -373,6 +383,12 @@ fn fsIcon(i: IconOut) -> @location(0) vec4f {
   let r = shapeSd(i.shape, i.local, i.half, px);
   let d = r.x;
   let cov = clamp(0.5 - d, 0.0, 1.0);
+  if (r.y > 1.5) {
+    // Label plate: plain fill.
+    let a = i.color.a * cov;
+    if (a <= 0.0) { discard; }
+    return vec4f(i.color.rgb * a, a);
+  }
   if (r.y > 0.5) {
     // Panel: filled background plus a 1 px edge.
     let edge = clamp(0.5 - abs(d + 0.5 * px), 0.0, 1.0);
