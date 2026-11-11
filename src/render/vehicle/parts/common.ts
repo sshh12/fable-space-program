@@ -4,7 +4,7 @@
  */
 import type { Vec3Tuple } from '@/core/math';
 import type { DecalSheet } from '../decals';
-import { MeshBuilder, cross3, unifyMaterials, xf, type Xf } from '../geom/builder';
+import { MeshBuilder, cross3, dot3, norm3, scale3, sub3, unifyMaterials, xf, type Xf } from '../geom/builder';
 import { DEG, Profile, TAU, around, bolt, box, extrude, frustum, lathe, radialFrame, rectPoly, uniformPhis, type LatheRegion } from '../geom/prims';
 import type { MatId } from '../materials';
 import type { PartModel } from './types';
@@ -56,11 +56,15 @@ export function regionHeights(regions: LatheRegion[]): number[] {
   return [...out].sort((a, b) => a - b);
 }
 
-/** External hat stringers on a cylinder or cone between two heights. */
-export function stringers(b: MeshBuilder, r0: number, y0: number, r1: number, y1: number, count: number, width: number, depth: number, phase = 0): void {
+/**
+ * External hat stringers on a cylinder or cone between two heights. `skip` leaves out the stringers at the
+ * azimuths it accepts (a marking is painted on a smooth doubler panel between stringers, never across them).
+ */
+export function stringers(b: MeshBuilder, r0: number, y0: number, r1: number, y1: number, count: number, width: number, depth: number, phase = 0, skip?: (phi: number) => boolean): void {
   const hat = rectPoly(width / 2, depth / 2, Math.min(width, depth) * 0.25);
   for (let i = 0; i < count; i++) {
     const phi = phase + (i / count) * TAU;
+    if (skip?.(phi)) continue;
     const s = Math.sin(phi);
     const c = Math.cos(phi);
     const a: Vec3Tuple = [(r0 + depth * 0.45) * s, y0, (r0 + depth * 0.45) * c];
@@ -215,10 +219,10 @@ export function ventPort(b: MeshBuilder, s: Surface, phi: number, y: number, rad
   b.mat(prev);
 }
 
-/** Access door: a thin raised panel that follows the skin, with fasteners round its edge. */
+/** Access door: a thin raised panel that follows the skin, with flush fasteners round its edge. */
 export function accessDoor(b: MeshBuilder, s: Surface, phi: number, y: number, w: number, h: number): void {
   if (b.lod === 2) return;
-  const proud = 0.012;
+  const proud = 0.007;
   curvedPanel(b, s, phi, y, w, h, proud, 'door');
   if (b.lod !== 0) return;
   const prev = b.material;
@@ -228,8 +232,8 @@ export function accessDoor(b: MeshBuilder, s: Surface, phi: number, y: number, w
   const on = (up: number, across: number): Xf => surfaceFrame(s, phi + across / r, y + up / l, proud);
   const nx = Math.max(2, Math.round(h / 0.14));
   const nz = Math.max(2, Math.round(w / 0.14));
-  for (let i = 0; i <= nx; i++) for (const sz of [-1, 1]) b.at(on(-h / 2 + 0.03 + ((h - 0.06) * i) / nx, sz * (w / 2 - 0.03)), () => bolt(b, 0.008, 0.004));
-  for (let i = 1; i < nz; i++) for (const sx of [-1, 1]) b.at(on(sx * (h / 2 - 0.03), -w / 2 + 0.03 + ((w - 0.06) * i) / nz), () => bolt(b, 0.008, 0.004));
+  for (let i = 0; i <= nx; i++) for (const sz of [-1, 1]) b.at(on(-h / 2 + 0.03 + ((h - 0.06) * i) / nx, sz * (w / 2 - 0.03)), () => bolt(b, 0.007, 0.0015));
+  for (let i = 1; i < nz; i++) for (const sx of [-1, 1]) b.at(on(sx * (h / 2 - 0.03), -w / 2 + 0.03 + ((w - 0.06) * i) / nz), () => bolt(b, 0.007, 0.0015));
   b.mat(prev);
 }
 
@@ -286,6 +290,63 @@ export function parseList(text: string): { name: string; n: number[]; flags: str
     out.push({ name, n, flags });
   }
   return out;
+}
+
+/**
+ * Blister fairing in the current frame: +X along the airflow (blunt nose toward +X, a tail 1.7 times as
+ * long toward -X), +Y out of the skin, +Z across it. `len` and `wid` are the footprint of the nose half,
+ * `hgt` the height. A watertight half teardrop that stands on the plane y = 0.
+ */
+export function blister(b: MeshBuilder, len: number, wid: number, hgt: number): void {
+  const nt = b.pick(8, 5, 3);
+  const np = b.pick(24, 14, 8);
+  const ax = (c: number): number => (len / 2) * (c < 0 ? 1.7 : 1);
+  const local: { p: Vec3Tuple; n: Vec3Tuple }[] = [];
+  const ids: number[] = [];
+  const emit = (p: Vec3Tuple, n: Vec3Tuple, t: Vec3Tuple, u: number, v: number): number => {
+    const tt = norm3(sub3(t, scale3(n, dot3(t, n))));
+    const i = b.vt(p, n, tt, u, v);
+    ids.push(i);
+    local.push({ p, n });
+    return ids.length - 1;
+  };
+  const tri = (a: number, c: number, d: number): void => {
+    // Wound to face the vertex normals (decided in the fairing's own frame).
+    const pa = local[a]!.p;
+    const face = cross3(sub3(local[c]!.p, pa), sub3(local[d]!.p, pa));
+    const ref: Vec3Tuple = [local[a]!.n[0] + local[c]!.n[0] + local[d]!.n[0], local[a]!.n[1] + local[c]!.n[1] + local[d]!.n[1], local[a]!.n[2] + local[c]!.n[2] + local[d]!.n[2]];
+    if (dot3(face, ref) >= 0) b.tri(ids[a]!, ids[c]!, ids[d]!);
+    else b.tri(ids[a]!, ids[d]!, ids[c]!);
+  };
+  b.begin(true, 'blister');
+  const pole = emit([0, hgt, 0], [0, 1, 0], [1, 0, 0], 0, 0);
+  const rings: number[][] = [];
+  for (let i = 1; i <= nt; i++) {
+    const th = ((Math.PI / 2) * i) / nt;
+    const row: number[] = [];
+    for (let j = 0; j <= np; j++) {
+      const ps = (j / np) * TAU;
+      const c = Math.cos(ps);
+      const s = Math.sin(ps);
+      const p: Vec3Tuple = [ax(c) * Math.sin(th) * c, hgt * Math.cos(th), (wid / 2) * Math.sin(th) * s];
+      const n = norm3([p[0] / (ax(c) * ax(c)), p[1] / (hgt * hgt) + 1e-9, p[2] / ((wid / 2) * (wid / 2))]);
+      row.push(emit(p, n, [-s, 0, c], (j / np) * (len + wid), th * hgt));
+    }
+    rings.push(row);
+  }
+  for (let j = 0; j < np; j++) tri(pole, rings[0]![j]!, rings[0]![j + 1]!);
+  for (let i = 0; i + 1 < rings.length; i++) {
+    for (let j = 0; j < np; j++) {
+      tri(rings[i]![j]!, rings[i + 1]![j]!, rings[i + 1]![j + 1]!);
+      tri(rings[i]![j]!, rings[i + 1]![j + 1]!, rings[i]![j + 1]!);
+    }
+  }
+  // Base: the footprint, facing the skin.
+  const base = rings[rings.length - 1]!;
+  const centre = emit([-0.18 * len, 0, 0], [0, -1, 0], [1, 0, 0], 0, 0);
+  const rim: number[] = [];
+  for (let j = 0; j <= np; j++) rim.push(emit(local[base[j]!]!.p, [0, -1, 0], [1, 0, 0], local[base[j]!]!.p[0], local[base[j]!]!.p[2]));
+  for (let j = 0; j < np; j++) tri(centre, rim[j]!, rim[j + 1]!);
 }
 
 /** Small deterministic hash in [0, 1) for placing detail. */

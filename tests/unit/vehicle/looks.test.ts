@@ -4,7 +4,7 @@
  *    of the definition library is named in the package's source;
  *  - engines take soot inside only, and only all or nothing (no half-sooted metal); an engine that burns
  *    clean takes none and soots nothing;
- *  - a tank that frosts heavily carries a rime layer that thins with the frost amount and is gone without it;
+ *  - a tank that frosts heavily carries a continuous rime coat, solid while loaded, gone after lift-off;
  *  - a broken landing leg is posed broken.
  */
 import fs from 'node:fs';
@@ -145,7 +145,7 @@ describe('soot, frost and damage', () => {
     expect(sooting).toBeLessThan(engines);
   });
 
-  it('a heavily frosting tank carries a rime layer that thins with the frost and is gone without it', () => {
+  it('a heavily frosting tank carries a continuous rime coat that is solid while it is loaded and lets go after lift-off', () => {
     let rimed = 0;
     for (const def of Object.values(defs.parts)) {
       if (def.visual?.generator !== 'stage.tank') continue;
@@ -157,42 +157,59 @@ describe('soot, frost and damage', () => {
         continue;
       }
       rimed++;
+      // Loaded on the pad the coat is SOLID (no dithered coverage in any still view); it is drawn with partial
+      // coverage only while it lets go, and not at all once the frost has gone.
       const full = names(1).find((x) => x.model === 'frost')!;
-      const half = names(0.5).find((x) => x.model === 'frost')!;
-      expect(full.opts!.fade!).toBeGreaterThan(0.5);
-      expect(full.opts!.fade!).toBeLessThanOrEqual(1);
-      expect(half.opts!.fade!).toBeLessThan(full.opts!.fade!);
-      expect(half.opts!.fade!).toBeGreaterThan(0);
+      expect(full.opts!.fade).toBe(1);
+      expect(names(0.6).find((x) => x.model === 'frost')!.opts!.fade).toBe(1);
       expect(full.opts!.castShadow).toBe(false);
+      expect(full.opts!.frost).toBe(1);
+      const going = names(0.4).find((x) => x.model === 'frost')!;
+      expect(going.opts!.fade!).toBeGreaterThan(0);
+      expect(going.opts!.fade!).toBeLessThan(1);
+      expect(names(0.3).some((x) => x.model === 'frost')).toBe(false);
       expect(names(0).some((x) => x.model === 'frost')).toBe(false);
-      expect(names(0.05).some((x) => x.model === 'frost')).toBe(false);
-      // The layer lies on the tank barrels, a few millimetres proud of the skin, and covers part of them.
-      const mesh = v.models['frost']!.lods[0]!;
-      let rMin = Infinity;
-      let rMax = 0;
-      for (let i = 0; i < mesh.positions.length; i += 3) {
-        const r = Math.hypot(mesh.positions[i]!, mesh.positions[i + 2]!);
-        rMin = Math.min(rMin, r);
-        rMax = Math.max(rMax, r);
+      // The coat lies on the tank barrels, at most 2 cm proud of the skin, and covers ALL of them: frost
+      // line to frost line, with no patch outlines.
+      const tanks = (def.resources ?? []).filter((r) => r.tankHeight > 1);
+      for (const mesh of v.models['frost']!.lods) {
+        let rMin = Infinity;
+        let rMax = 0;
+        for (let i = 0; i < mesh.positions.length; i += 3) {
+          const r = Math.hypot(mesh.positions[i]!, mesh.positions[i + 2]!);
+          rMin = Math.min(rMin, r);
+          rMax = Math.max(rMax, r);
+        }
+        expect(rMax).toBeLessThanOrEqual(def.bounds.radius + 0.021);
+        expect(rMin).toBeGreaterThan(def.bounds.radius - 0.001);
+        const area = 2 * Math.PI * def.bounds.radius * tanks.reduce((s, r) => s + r.tankHeight, 0);
+        let covered = 0;
+        const P = mesh.positions;
+        for (let t = 0; t < mesh.indices.length; t += 3) {
+          const [a, b, c] = [mesh.indices[t]! * 3, mesh.indices[t + 1]! * 3, mesh.indices[t + 2]! * 3];
+          const ux = P[b]! - P[a]!;
+          const uy = P[b + 1]! - P[a + 1]!;
+          const uz = P[b + 2]! - P[a + 2]!;
+          const vx = P[c]! - P[a]!;
+          const vy = P[c + 1]! - P[a + 1]!;
+          const vz = P[c + 2]! - P[a + 2]!;
+          covered += 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+        }
+        // (A faceted cylinder has a little less area than the round one; the coat reaches 10 cm past each dome weld.)
+        expect(covered / area, `${def.id}: share of the barrels under rime`).toBeGreaterThan(0.97);
+        expect(covered / area).toBeLessThan(1.06);
       }
-      expect(rMax).toBeLessThanOrEqual(def.bounds.radius + 0.01);
-      expect(rMin).toBeGreaterThan(def.bounds.radius - 0.01);
-      const tankHeight = (def.resources ?? []).filter((r) => r.tankHeight > 1).reduce((s, r) => s + r.tankHeight, 0);
-      const area = 2 * Math.PI * def.bounds.radius * tankHeight;
-      let covered = 0;
-      const P = mesh.positions;
-      for (let t = 0; t < mesh.indices.length; t += 3) {
-        const [a, b, c] = [mesh.indices[t]! * 3, mesh.indices[t + 1]! * 3, mesh.indices[t + 2]! * 3];
-        const ux = P[b]! - P[a]!;
-        const uy = P[b + 1]! - P[a + 1]!;
-        const uz = P[b + 2]! - P[a + 2]!;
-        const vx = P[c]! - P[a]!;
-        const vy = P[c + 1]! - P[a + 1]!;
-        const vz = P[c + 2]! - P[a + 2]!;
-        covered += 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+      // Markings under the coat keep their atlas cells (sharp edges) in a matte material, whitened part of the way.
+      const lod0 = v.models['frost']!.lods[0]!;
+      const frosted = lod0.materialIds.indexOf('decal-frosted');
+      if (String(def.visual!.params['decals'] ?? '') !== '') expect(frosted).toBeGreaterThanOrEqual(0);
+      for (const g of lod0.groups) {
+        const marked = g.material === frosted;
+        for (let k = g.start; k < g.start + g.count; k++) {
+          const w = lod0.masks![lod0.indices[k]! * 4 + 3]! / 255;
+          if (marked) expect(w).toBeGreaterThan(0.3);
+        }
       }
-      expect(covered / area, `${def.id}: share of the barrels under rime`).toBeGreaterThan(0.3);
-      expect(covered / area).toBeLessThan(0.8);
     }
     expect(rimed).toBeGreaterThanOrEqual(1);
   });

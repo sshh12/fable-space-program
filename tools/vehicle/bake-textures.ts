@@ -31,7 +31,9 @@ const recipes: Record<string, () => void> = {
   // Painted metal, tile 0.6 m: orange peel of the sprayed coat, faint waviness, handling scuffs.
   paint() {
     const S = 512;
-    const h = Field.from(S, S, (u, v) => 0.00009 * fbm(u, v, 96, 96, 2, 11) + 0.00016 * fbm(u, v, 12, 12, 3, 12));
+    // (The decimetre-scale waviness is kept faint: a sprayed and cured aerospace coat is level, and markings,
+    // which cannot carry this map, must not show as rectangles with a straighter highlight.)
+    const h = Field.from(S, S, (u, v) => 0.00009 * fbm(u, v, 96, 96, 2, 11) + 0.00006 * fbm(u, v, 12, 12, 3, 12));
     save('paint_n', normalMap(h, 0.6));
     save(
       'paint_orm',
@@ -234,6 +236,27 @@ const recipes: Record<string, () => void> = {
         return tint(c, (0.96 + 0.04 * fbm(u, v, 440, 440, 2, 88)) * (0.9 + 0.1 * ao.at(x, y)));
       }),
     );
+  },
+
+  // Rime on a cryogenic tank, tile 4.8 m: a granular white coat, runnels down the tank where melt water and
+  // sliding slabs have scored it, lumps where it has built up, and long streaks where it is thin and the
+  // skin's colour greys it.
+  frost() {
+    const S = 1024;
+    const runnel = (u: number, v: number): number => Math.pow(ridged(u + 0.01 * fbm(u, v, 6, 6, 2, 601), v, 46, 2, 3, 602, 0.5), 2);
+    const thin = (u: number, v: number): number => smooth(0.52, 0.72, fbm(u + 0.008 * fbm(u, v, 8, 8, 2, 603), v, 30, 1.5, 3, 604));
+    const h = Field.from(S, S, (u, v) => 0.0006 * fbm(u, v, 300, 300, 2, 605) + 0.002 * fbm(u, v, 40, 40, 3, 606) - 0.0022 * runnel(u, v) - 0.0018 * thin(u, v) + 0.004 * fbm(u, v, 7, 7, 3, 607));
+    save('frost_n', normalMap(h, 4.8, 1));
+    const ao = cavity(h, 3, 500);
+    save(
+      'frost_albedo',
+      Image.from(S, S, (u, v, x, y) => {
+        const t = thin(u, v);
+        const k = (0.93 + 0.04 * fbm(u, v, 9, 9, 3, 608) + 0.02 * fbm(u, v, 200, 200, 1, 609)) * (1 - 0.055 * t - 0.03 * runnel(u, v)) * (0.93 + 0.07 * ao.at(x, y));
+        return [k * 0.975, k * 0.99, k * 1.0];
+      }),
+    );
+    save('frost_orm', orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 120, 120, 2, 610) - 0.08 * thin(u, v)), 1]));
   },
 
   // Cork ablative sheet, tile 0.7 m: pressed granules.
@@ -776,10 +799,13 @@ const recipes: Record<string, () => void> = {
   // Quilted insulation blanket, tile 0.8 m: 0.2 m diamonds, stitched seams, cloth weave.
   quilt() {
     const S = 512;
-    const h = Field.from(S, S, (u, v) => {
+    const h = Field.from(S, S, (u0, v0) => {
+      // The stitch lines wander: a hand-sewn blanket is not a printed lattice, and its pillows differ in loft.
+      const u = u0 + 0.012 * (fbm(u0, v0, 5, 5, 3, 173) - 0.5);
+      const v = v0 + 0.012 * (fbm(u0, v0, 5, 5, 3, 174) - 0.5);
       const a = Math.abs(Math.sin(Math.PI * (u + v) * 4));
       const b = Math.abs(Math.sin(Math.PI * (u - v) * 4));
-      const pillow = Math.pow(a * b, 0.45);
+      const pillow = Math.pow(a * b, 0.45) * (0.6 + 0.8 * fbm(u0, v0, 8, 8, 2, 175));
       const weave = Math.sin(u * S * 0.9) * Math.sin(v * S * 0.9);
       return 0.012 * pillow + 0.00025 * weave + 0.002 * fbm(u, v, 12, 12, 3, 171);
     });

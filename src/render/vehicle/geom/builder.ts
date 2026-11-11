@@ -308,6 +308,26 @@ export class MeshBuilder {
     M[i * 4 + 3] = Math.round(clamp01(frost) * 255);
   }
 
+  /**
+   * Re-evaluate the masks of every vertex from index `from` on: `fn` gets the (transformed) position and the
+   * vertex's mask values 0..1 and edits them in place. For weathering that is a function of where a vertex
+   * is (soot of the base flow, frost on a tank), applied across everything a generator has emitted, so that
+   * a strap, a door or a cable tray on a sooted skin is as sooted as the skin under it.
+   */
+  remask(from: number, fn: (p: Vec3Tuple, m: { wear: number; ao: number; soot: number; frost: number }) => void): void {
+    const M = this.mk;
+    const P = this.p.a;
+    const m = { wear: 0, ao: 0, soot: 0, frost: 0 };
+    for (let i = Math.max(0, from); i < this.count; i++) {
+      m.wear = M[i * 4]! / 255;
+      m.ao = M[i * 4 + 1]! / 255;
+      m.soot = M[i * 4 + 2]! / 255;
+      m.frost = M[i * 4 + 3]! / 255;
+      fn([P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!], m);
+      this.setMask(i, m.wear, m.ao, m.soot, m.frost);
+    }
+  }
+
   tri(a: number, b: number, c: number): void {
     const cur = this.current;
     if (!cur) throw new Error('MeshBuilder: no material selected');
