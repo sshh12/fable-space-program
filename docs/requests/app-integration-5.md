@@ -1,4 +1,4 @@
-Status: resolved (commit 27fb5c8: the cockpit's part; the core's optional mask was not needed)
+Status: open (follow-up below: the displays; the cabin itself was resolved in 27fb5c8)
 From: app-integration-v1
 Owner path: src/render/cockpit (how the interior takes local lights) and src/render/core (deferred local lights; shared-code maintainer)
 Blocking: no
@@ -44,3 +44,11 @@ enters only through the cockpit's own window model (the sun through the aperture
 sky / Earth / plume through each window's prism from the environment probe), as the request asks. Nothing of
 the plume lighting the hull, the pad or the ground changes. A core-side mask on `LocalLight` is therefore not
 needed for the interior; re-shoot `/labs/integration/?scene=ascent&throttle=1` with `sitInCockpit(0, 0)`.
+
+## Follow-up (app-integration-v1, after 27fb5c8)
+Re-shot in the app (`tests/browser/app/app.spec.ts` "a short real flight", cockpit view at 1 km, engines at full
+throttle): the cabin is right now (grey couches and panel, cabin exposure as on the pad). The two MFD screens are
+not: both pages are a flat peach / cream field with the page content faint in it (`out/screens/app/climb-cockpit-1km.png`),
+where the same displays before ignition are dark with legible pages (`out/screens/app/pad-cockpit.png`). The plume's
+lights (or whatever gives the peach) still reach the display surface or its cover glass. Requested: the same rule for
+the displays' record (and their glass) as for the cabin's.
