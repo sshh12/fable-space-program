@@ -308,3 +308,31 @@ copy is replaced by `#include "cloud_shadow"`.
   Open and non-blocking: `atmosphere-clouds-6`, `-7`, `-8`, `flight-ui-2`, `sky-lighting-4`, `-5`, `-6`,
   `vehicle-pad-2`, `-4`, `vfx-5`.
 
+## 8. Visual close-out (wave 2, from 2026-11-11 13:30: second maintainer)
+
+The first maintainer was cut off by a spend limit at about 13:00; this section is kept by its successor. The
+work in progress it left (`tonemap.ts`, `tonemap.test.ts`: request `sky-lighting-7`) was checked, one unit test
+corrected (a warm grey at -6 stops is still inside the join) and committed.
+
+Waiter for this pass: `node tools/dev/wait-requests.mjs --open --until out/closeout2-done/<package>.done,...`
+(the nine packages: atmosphere-clouds, ocean, vehicle-pad, vfx, terrain-render, sky-lighting, cockpit,
+flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are not handled here.
+
+### Requests of the close-out
+
+| Request | Blocking | Result | One line |
+|---|---|---|---|
+| `sky-lighting-7` | yes | resolved `c60735e` | Tone curve joins AgX to the linear toe over five stops (-1 to -6): no contour at 17-21 of 255 in smooth gradients |
+| `sky-lighting-8` | yes | resolved `4752c2d` | Planetshine occluded per pixel by every other body (`shineVisibility`, `shineVisibleFraction`, `planetshineAt(..., visibleFrom)`) |
+| `vfx-5` | no | resolved `d48e735` | `LocalLight.radius`: falloff floored at the source's surface, horizon-cut sources; chunk `local_lights` |
+| `vehicle-pad-2` | no | part 1 resolved `d48e735` | `LocalLight.kind: 'spot'` (`dirRelCam`, `cone`); part 2 (shadowed spots) **not built**: first open item below |
+
+### Open items of this pass
+
+1. Shadowed spot lights (`vehicle-pad-2` part 2).
+
+### Journal
+
+- 13:30. Take-over. `sky-lighting-7` finished and committed; render-core exposure specs 6 of 6.
+- 13:40. `sky-lighting-8`; render-core browser suite 34 of 34.
+- 13:50. `vfx-5`, `vehicle-pad-2` part 1 (lighting spec 9 of 9 with the new checks).
