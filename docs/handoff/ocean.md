@@ -23,6 +23,7 @@ src/render/ocean/shaders/waves.ts    chunk "ocean_waves": chart, swell, cascades
 src/render/ocean/shaders/waterBrdf.ts  the "brdf_water" override (shared shading function)
 src/render/ocean/shaders/surfaceWgsl.ts  forward surface (vertex + fragment) and the readback compute
 src/render/ocean/shaders/reactiveWgsl.ts  TAA reactive mask of the near-field water ('post.reactive')
+src/render/ocean/shaders/fieldWgsl.ts  bake of the roughness field into a texture over the near field
 src/render/ocean/shaders/fftWgsl.ts  FFT compute shaders
 data/defs/render/earth.ocean.json    tunables (section 7)
 labs/ocean/                          lab: main.ts (presets, window.__ocean), labSky.ts, labSim.ts, props.ts, ballast.ts
@@ -69,7 +70,8 @@ The debug hooks are for labs and specs; the app never needs them.
 | `'ocean.derivatives'` | same shape: x = dh/dx, y = dh/dy, z = dDx/dx, w = dDy/dy. Jacobian J = (1 + z)(1 + w) - (displacement.w)^2. |
 | `'ocean.wetness'` | `OceanWetness` (request ocean-3): slots 0..count-1 are the vessels at the water, active first; `plane.xyz` = camera-relative point of the PHYSICS swell (`physicsWaterHeight`) under the vessel origin, `plane.w` = boundingRadius + 2 m, `normal.xyz` = swell normal there, `normal.w` = wet line above the plane (highest water level reached on the hull, dries at `wetLineDryingRateMps`, a splash raises it to the bounding radius), `params` = (waterSubmersion, seconds since the last splash / water touchdown or -1, 0.05 m chop bound, drying rate). The core mesh system applies it to every standard / terrain fragment (no vehicle change needed). Published even without a near field. |
 
-The `brdf_water` chunk is replaced in `init` (and re-registered when the frame body list changes).
+The `brdf_water` chunk is replaced in `init` (and re-registered when the frame body list changes); the
+forward pass includes its variant `"ocean_water_forward"` (identical but for the roughness-field source).
 
 ## 3. The shared water shading (`brdf_water`)
 
@@ -83,7 +85,12 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
   lightAlpha^2. KAPPA gives the GGX lobe the half-maximum width of the Gaussian Cox-Munk slope distribution
   (the brief's "angular width within 20 %"); its peak is 1/KAPPA^2 = 0.60 of the Gaussian's. `m(p)` is a
   planet-fixed mesoscale wind variability (log amplitude `windVariability`) times calm slick bands
-  (`slickStrength`), giving the glint from altitude its structure.
+  (`slickStrength`), giving the glint from altitude its structure (gradient noise with Perlin's edge
+  gradients, `WATER_FIELD_WGSL`). The deferred path evaluates it per pixel (once per point); the forward
+  pass reads it from a 1024^2 r16float texture baked over the near field (80 km, planet-fixed texels on the
+  chart, re-baked when the reference moves 1.9 km, the chart or the body changes), through a forward variant
+  of the chunk (`"ocean_water_forward"`, same code but the field). Evaluated per pixel it cost the forward
+  pass 0.15-0.22 ms at 1440p; the texture's bilinear error is below 0.5 % of the slick contrast.
 - **Surface fields for MATERIAL_WATER** (what the far sheet writes leaves the extras 0): `roughness` = the
   FRACTION of the Cox-Munk slope variance the shading normal already carries (0 for the flat sheet: full lobe;
   near the camera about 0.9: glitter), `albedo` = imagery colour, `param` = `encodeWaterDepth(depth)`,
@@ -217,12 +224,12 @@ concurrently (up to three GPU slots busy).
 | Beyond fadeEnd nothing is drawn | 9,857 / 9,857 sampled pixels bit-identical to the deferred-only frame | handover.spec |
 | Climb 2 m -> 400 km, no ring or pop (frozen time) | 150 log-spaced steps: largest step / local median 1.56 (at 99 km, deferred only); fade radii on screen in 59 steps, worst ring ratio 1.19 (change at the radii vs around them) | handover.spec |
 | Feature removed: the far water alone unchanged | `?ocean=0`: 16,188 sampled sea pixels, 0 holes (depth and colour present everywhere) | handover.spec |
-| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | isolated exactly (A - B with the direct specular off): peak at facet tan(beta) 0.012; half maximum at tan(beta) 0.167 against 0.164 for sigma^2 = 0.0388 (ratio 1.02) | glint.spec |
-| 2 m: a glitter path toward the sun, same function | glint centroid 643.7 px vs the sun's 640.0 px; coefficient of variation 2.06 (sparkles); 3.4 % of the energy off the path | glint.spec |
+| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | isolated exactly (A - B with the direct specular off): radially averaged glint peaks at facet tan(beta) 0.025 (brightest pixel 0.038, where the roughness field is calmest); half maximum at tan(beta) 0.188 against 0.164 for sigma^2 = 0.0388 (ratio 1.15; 1.02-1.09 with the earlier noise realisation of the field) | glint.spec |
+| 2 m: a glitter path toward the sun, same function | glint centroid 643.5 px vs the sun's 640.0 px; coefficient of variation 2.18 (sparkles); 3.3 % of the energy off the path | glint.spec |
 | Sun on the horizon: no pixel above HDR_MAX, nanPixels 0 | elevations +0.4, 0, -0.3 deg at EV 13 and 4: max 56,131 (saturating glint at EV 4), NaN 0 | glint.spec |
 | No swimming when the camera translates | the surface at 64 planet-fixed points from two camera positions 3 km apart: worst 0.38-0.53 mm (2.2 m height spread); 25 steps 250 m away and back: frame bit-identical | stability.spec |
 | Triplanar blend zones not visible | not applicable: a single planet-fixed chart replaces triplanar sampling (section 9.1) - no blend zones exist | - |
-| Correct motion vectors | TAA output / single-frame gradient energy, camera flying 5 m/s and turning 3 deg/s over a frozen sea: 0.68 of the still camera (terrain with the core's mesh motion vectors: 0.81; this water with its motion vectors zeroed: 0.40). Animated sea with the reactive mask 0.89-0.92 of the still camera, without it 0.41-0.44 | stability.spec |
+| Correct motion vectors | TAA output / single-frame gradient energy, camera flying 5 m/s and turning 3 deg/s over a frozen sea: 0.68 of the still camera (terrain with the core's mesh motion vectors: 0.81; this water with its motion vectors zeroed: 0.40). Animated sea with the reactive mask 0.89-0.94 of the still camera, without it 0.41-0.44 | stability.spec |
 | Reviewed screenshots | `out/screens/ocean/{midday,sunset,overcast,alt500,alt10k,alt100k,leo,shore,refraction,splash,night}.png` (section 10) | screens.spec |
 | Unit tests: float64 phase preparation, spectrum high-pass, near-field uniform | 20 tests (2000 points worldwide out to 30 km within 1 mm and a naive float32 evaluation off by > 10 cm; high-pass zero at >= 25 m on every grid mode; band partition; realised variance within 10 % of the integral; activation by altitude and the 16-byte layout; chart round trip; CDLOD coverage exactly once out to fadeEnd and the crack-free condition) + boundaries | tests/unit/ocean |
 | `expectNoErrors` | in every spec | all |
@@ -235,16 +242,21 @@ the GPU runs at a real frame's clock; three 240-frame windows per scene, the lea
 
 | Scene | ocean total | FFT | water pass (p99 / p50) | line |
 |---|---|---|---|---|
-| splashdown (3 m, capsule, wake) | 0.666 | 0.282 | 0.609 / 0.333 | 0.9 |
-| coast, 60 m above the shelf | 0.755 | 0.056 | 0.698 / 0.381 | 0.8 (pad) |
-| 10 km above the sea | 0.615 | 0.277 | 0.546 / 0.284 | 0.3 (ascent) |
+| splashdown (3 m, capsule, wake) | 0.699 | 0.238 | 0.630 / 0.359 | 0.9 |
+| coast, 60 m above the shelf | 0.764 | 0.277 | 0.697 / 0.414 | 0.8 (pad) |
+| 10 km above the sea | 0.610 | 0.058 | 0.545 / 0.305 | 0.3 (ascent) |
 | LEO (near field inactive) | 0.000 | 0 | 0 | 0.1 |
 
-Measured with other agents' browser jobs on the GPU at the same time (`tools/dev/heavy.mjs --status` showed
-three GPU slots busy); p99 is about twice p50 in every window, so the p99 values are provisional. The
-brief's "near pass under 0.6 ms" is missed by 0.009 ms at p99 at splashdown (p50 0.33 ms). The 10 km scene
-exceeds the 0.3 ms ascent line: during ascent the camera is above the near field within ~2 minutes, but
-between 0 and 30 km the near field is active and costs about what the 10 km row shows.
+Also in the ocean total: the reactive mask pass 0.009-0.010 ms, the wake 0.004 ms. A same-page breakdown
+without ballast at splashdown (p50, three rounds, quiet FFT 0.054 ms): water pass 0.357 ms; it was 0.58 ms
+with the roughness field evaluated per pixel (now baked) and 0.50 ms with the chop off.
+
+Measured with other agents' GPU jobs running at the same time (terrain, atmosphere and vfx perf runs in
+the other two GPU slots): the same FFT dispatch measures 0.054 ms in a quiet window and 0.24-0.34 ms in a
+contended one, and p99 is 1.7-2 x p50, so the p99 values are upper bounds. The perf spec FAILS the brief's
+"near pass under 0.6 ms" by 0.03 ms at p99 at splashdown (p50 0.36 ms); the ocean lines (0.9 splashdown,
+0.8 pad) hold. The 10 km scene exceeds the 0.3 ms ascent line: between 0 and 30 km altitude the near field
+is active and costs about what that row shows (the ascent passes through it in about two minutes).
 
 ## 9. Deviations from the brief (and why)
 
@@ -304,8 +316,9 @@ spheres on the physics height), `night` (moon path), `markers-*`, `handover-*`, 
 - **Underwater views** (eye below the surface) are not handled: the surface is drawn from above only.
 - **TMA** uses the seabed under the pixel / vertex from the depth copy: vertices off screen use the nearest
   edge pixel. The swell is never depth-attenuated (it is the physics surface).
-- **Perf margins are thin** at splashdown (near pass p99 at the 0.6 ms line); next steps if needed: a cheaper
-  shadow lookup for water pixels far from casters, fewer capillary samples at grazing angles.
+- **Perf margins are thin** at splashdown (near pass p99 0.63 ms against the 0.6 ms line under concurrent
+  GPU load, p50 0.36 ms); next steps if needed: a cheaper shadow lookup for water pixels far from casters,
+  fewer capillary samples at grazing angles, the chop's vertex work (0.08 ms).
 - **Lab props** (beach, capsule-sized cone, markers) are test geometry, not game assets.
 - Body colour constants per body are embedded in the chunk text; the chunk is re-registered (pipelines
   rebuilt once) when the frame body list changes.
