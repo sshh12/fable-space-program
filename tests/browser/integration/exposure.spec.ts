@@ -71,26 +71,28 @@ test('the sun entering a dark-adapted frame saturates at HDR_MAX without NaN, an
   // Look away from the sun, at a direction with nothing lit in view, until the eye is dark adapted.
   let dark: Exposure | null = null;
   let start = 0;
+  const tried: string[] = [];
   for (const offset of [120, 150, 95, 170]) {
-    await page.evaluate((o) => window.__integration!.lookNearSun(o), offset);
+    await page.evaluate((o) => window.__integration!.lookNearSun(o, 400), offset);
     const e = await exposure(page, 420);
+    tried.push(`${offset} deg from the sun: EV100 ${e.ev100.toFixed(2)}, lit ${(100 * e.litFraction).toFixed(3)} %`);
     if (e.litFraction < 0.005 && e.ev100 < 3) {
       dark = e;
       start = offset;
       break;
     }
   }
-  expect(dark, 'a dark-adapted view exists').not.toBeNull();
+  expect(dark, `a dark-adapted view exists (${tried.join('; ')})`).not.toBeNull();
   // Turn towards the sun, 3 degrees per step, a few frames per step.
   let worstNan = 0;
   let peak = 0;
   for (let offset = start; offset >= 0; offset -= 3) {
-    await page.evaluate((o) => window.__integration!.lookNearSun(o), offset);
+    await page.evaluate((o) => window.__integration!.lookNearSun(o, 400), offset);
     const e = await exposure(page, 3);
     worstNan = Math.max(worstNan, e.hdr.nanPixels, e.resolved.nanPixels);
     peak = Math.max(peak, e.hdr.maxLuminance, e.resolved.maxLuminance);
   }
-  await page.evaluate(() => window.__integration!.lookNearSun(0));
+  await page.evaluate(() => window.__integration!.lookNearSun(0, 400));
   const atSun = await exposure(page, 6);
   await save(page, 'exposure-sun-enters-dark-frame');
   const settled = await exposure(page, 500);

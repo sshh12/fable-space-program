@@ -76,8 +76,9 @@ export interface IntegrationLab {
   /** Pin the sun at azimuth / elevation (deg) as seen from a body-fixed point, or release it with null. */
   setSun(site: Site | null, azDeg?: number, elDeg?: number): void;
   /**
-   * Stay `distance` metres from the active vessel on the side away from the sun and look at a direction
-   * `offsetDeg` away from the sun (0 = straight at it), turning about the vessel's orbit normal.
+   * Stay `distance` metres from the active vessel, off to the side of the sun line (along the axis the
+   * view turns about, so the vessel never enters the frame and never covers the sun), and look at a
+   * direction `offsetDeg` away from the sun (0 = straight at it), turning about the vessel's orbit normal.
    */
   lookNearSun(offsetDeg: number, distance?: number): void;
   /**
@@ -459,7 +460,7 @@ async function boot(): Promise<void> {
         let axis = v3.cross(v.r, v.v);
         axis = v3.lenSq(axis) > 0 ? v3.normalize(v3.reject(axis, sun)) : v3.anyOrthogonal(sun);
         const dir = quat.rotate(quat.fromAxisAngle(axis, offsetDeg * DEG), sun);
-        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(v.rRoot, sun, -distance), qViewToRoot: lookRotation(dir, axis) };
+        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(v.rRoot, axis, distance), qViewToRoot: lookRotation(dir, axis) };
       });
     },
     project(bodyId, latDeg, lonDeg, alt) {
