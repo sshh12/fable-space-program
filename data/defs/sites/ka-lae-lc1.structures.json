@@ -18,10 +18,11 @@
   {"model":"pad.crawlerway","offsetEnu":[-228,0,0],"headingDeg":90,"params":{"length":330,"trackWidth":12,"median":14}},
   {"model":"pad.building","offsetEnu":[-150,-62,0],"headingDeg":0,"params":{"sizeX":32,"sizeZ":14,"height":7,"signDecal":"spaceport"}},
   {"model":"pad.building","offsetEnu":[-24,38,0],"headingDeg":90,"params":{"sizeX":12,"sizeZ":8,"height":4.5}},
-  {"model":"pad.floodlight","offsetEnu":[40,69.3,0],"headingDeg":210,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[80,0,0],"headingDeg":270,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[40,-69.3,0],"headingDeg":330,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-40,-69.3,0],"headingDeg":30,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-80,0,0],"headingDeg":90,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-40,69.3,0],"headingDeg":150,"params":{"height":34,"candela":700000,"range":260,"tiltDeg":24}}
+  {"model":"pad.floodlight","offsetEnu":[40,69.3,0],"headingDeg":210,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[80,0,0],"headingDeg":270,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[40,-69.3,0],"headingDeg":330,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-40,-69.3,0],"headingDeg":30,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-80,0,0],"headingDeg":90,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-40,69.3,0],"headingDeg":150,"params":{"height":34,"candela":700000,"range":120,"tiltDeg":24}},
+  {"model":"pad.groundworks","offsetEnu":[0,0,0],"headingDeg":0,"params":{"radius":165,"lobes":0.06,"innerRadius":40,"pads":"-260,190,62;-300,-160,62;-120,-110,24;-150,62,30","roads":"-205.0,-0.0>-177.5,102.5>-102.5,177.5>-0.0,205.0>102.5,177.5>177.5,102.5>205.0,0.0>177.5,-102.5>102.5,-177.5>0.0,-205.0>-102.5,-177.5>-177.5,-102.5>-205.0,-0.0@7;-165.5,121>-219.6,160.5@6;-180.9,-96.5>-255.9,-136.5@6;-198,-53>-420,-53@7;205,0>64,0@7","berms":"-260,190,60,-14,20,3.2;-260,190,60,44,86,3.2;-300,-160,60,-78,-36,3.2;-300,-160,60,-10,22,3.2"}}
 ]

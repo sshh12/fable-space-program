@@ -75,8 +75,10 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'pad-stack-300m', query: `${PAD}&eye=200,-99,220&at=0,-58,0&fov=30` },
       { name: 'pad-stack-tower-15m', query: `${PAD}&eye=5,-62,-19.5&at=0,-55,0&fov=72` },
       { name: 'pad-stack-tower-15m-up', query: `${PAD}&eye=4,-30,-19.5&at=0,-8,0&fov=72` },
-      { name: 'pad-engine-section', query: `${PAD}&eye=10.5,-99.6,-6&at=0,-98.7,0&fov=50` },
-      { name: 'pad-hold-down-clamp', query: `${PAD}&eye=8.5,-99.4,8.2&at=4.2,-98.4,4.2&fov=45` },
+      { name: 'pad-engine-section', query: `${PAD}&eye=11.5,-98.9,-7.5&at=0,-98.7,0&fov=50` },
+      { name: 'pad-hold-down-clamp', query: `${PAD}&eye=7.2,-98.9,9.6&at=4.0,-98.3,4.0&fov=45` },
+      { name: 'pad-mount-deck', query: 'scene=pad&sun=140,48&eye=17,-90,-13&at=0,-97,0&fov=55' },
+      { name: 'pad-swing-arm-umbilical', query: 'scene=pad&sun=160,45&eye=9.5,-59.5,-7&at=3.5,-60,-1&fov=45' },
     ]);
     const stats = await page.evaluate(() => ({ ...window.__veh!.vehicle.stats }));
     expect(stats.vessels).toBe(1);
@@ -93,6 +95,12 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'site-support-building', query: `${PAD}&eye=-20,-114,40&at=-38,-117,24&fov=50` },
       { name: 'site-apron', query: `${PAD}&eye=-45,-108,70&at=-25,-118,25&fov=55` },
       { name: 'site-far-800m', query: 'scene=pad&sun=175,68&eye=500,-20,600&at=-40,-100,-20&fov=42' },
+      // Thin structure and its shadows: the masts' shadows across the apron under a low sun, the lattice and
+      // the wires against the sky, the complex from the air (earthworks, roads, berms).
+      { name: 'site-mast-shadows-low-sun', query: 'scene=pad&sun=250,14&eye=150,-60,190&at=-20,-116,0&fov=45' },
+      { name: 'site-wires-from-mast-foot', query: 'scene=pad&sun=175,60&eye=-95,-112,14&at=-30,10,-30&fov=60' },
+      { name: 'site-aerial', query: 'scene=pad&sun=160,55&eye=330,180,420&at=-90,-118,0&fov=42' },
+      { name: 'site-tank-farm-berm', query: 'scene=pad&sun=175,60&eye=-175,-108,125&at=-262,-114,192&fov=50' },
       { name: 'site-overview-night', query: 'scene=pad&sun=290,-28&env=night&eye=250,-15,330&at=-40,-112,-20&fov=42', minNonBlack: 0.02 },
       { name: 'site-pad-night', query: 'scene=pad&sun=290,-28&env=night&eye=120,-100,150&at=0,-70,0&fov=40', minNonBlack: 0.02 },
     ]);
@@ -120,6 +128,10 @@ test.describe('vehicle and pad screenshots', () => {
     const shots = await take(page, pageLog, [
       { name: 'lander-stowed', query: `${MOON}&stage=5&eye=13,-2.5,10&at=0,-4.4,0&fov=45`, minNonBlack: 0.2 },
       { name: 'lander-deployed', query: `${MOON}&stage=6&eye=14,-3,11&at=0,-4.8,0&fov=45`, minNonBlack: 0.2 },
+      // The insulation under a grazing and under a high sun (the landing view, and the foil's worst case).
+      { name: 'lander-deployed-sun-5', query: 'scene=lunarSurface&sun=110,5&stage=6&eye=14,-3,11&at=0,-4.8,0&fov=45', minNonBlack: 0.1 },
+      { name: 'lander-deployed-sun-40', query: 'scene=lunarSurface&sun=110,40&stage=6&eye=14,-3,11&at=0,-4.8,0&fov=45', minNonBlack: 0.2 },
+      { name: 'lander-ground-contact', query: `${MOON}&stage=6&eye=9.5,-8.55,2.5&at=0,-8.6,0&fov=40`, minNonBlack: 0.2 },
       // Sun behind the camera: the foil's highlight runs down the tank lobe as a streak broken up by the crinkle.
       { name: 'lander-mli-closeup', query: 'scene=lunarSurface&sun=290,22&stage=6&eye=1.9,-5.9,5.3&at=0.3,-6.3,2.9&fov=40', minNonBlack: 0.2 },
       { name: 'lander-foot-pad', query: `${MOON}&stage=6&eye=6.7,-7.9,7.1&at=4.8,-8.75,4.8&fov=40`, minNonBlack: 0.2 },
@@ -176,6 +188,8 @@ test.describe('vehicle and pad screenshots', () => {
       // Entry: the ablating face at 1900 K with the structure behind it cool, as the simulation reports it.
       { name: 'capsule-entry-cold', query: entry, minNonBlack: 0.05 },
       { name: 'capsule-entry-hot-shield', query: entry, setup: () => void window.__veh!.sim.setAll('heatShield', { surfaceTemp: 1900 }), minNonBlack: 0.05 },
+      // Peak heating as the simulation holds it (the ablation temperature), the face already charring, seen face on.
+      { name: 'capsule-entry-peak-heating', query: shield, setup: () => void window.__veh!.sim.setAll('heatShield', { surfaceTemp: 3100, ablatorFraction: 0.9 }), minNonBlack: 0.05 },
       { name: 'capsule-windows', query: `${SPACE}&stage=8&sunv=0.4,0.5,0.8&eye=0.25,2.7,3.5&at=0,1.45,1.0&fov=36`, minNonBlack: 0.2 },
       { name: 'capsule-hatch', query: `${SPACE}&stage=8&sunv=0.9,0.35,-0.25&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, minNonBlack: 0.2 },
     ]);
@@ -195,4 +209,37 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'les-boost-cover-profile', query: 'scene=pad&site=0&sun=110,45&eye=0.5,1.2,-7.5&at=0,1.0,0&fov=38' },
     ]);
   });
+
+  test('no part is left half-dithered by where the camera stands: LOD switches are over within a moment', async ({ page, pageLog }) => {
+    // The engine section and the pad from a dolly of distances that crosses every LOD switch of the engines,
+    // the stages and the lattice structures. At each stop, after the picture has settled, nothing is drawn
+    // with partial coverage (a cross-fade lasts a quarter of a second, then exactly one LOD is drawn).
+    await openLab(page, `${PAD}&eye=9,-99.4,8&at=0,-98,0&fov=50`);
+    await assertDiscreteGpu(page);
+    const fading: number[] = [];
+    let crossFades = 0;
+    for (const d of [7, 9.5, 13, 18, 26, 37, 52, 75, 110, 160, 240, 360]) {
+      const during = await page.evaluate(async (dist) => {
+        const lab = window.__veh!;
+        lab.setView([dist * 0.72, -98 + dist * 0.1, dist * 0.68], [0, -92, 0]);
+        // The frames right after the move: cross-fades may run.
+        let most = 0;
+        for (let k = 0; k < 6; k++) {
+          await window.__test!.waitFrames(1);
+          most = Math.max(most, lab.vehicle.stats.fading + lab.site!.stats.fading);
+        }
+        return most;
+      }, d);
+      crossFades += during;
+      await page.evaluate(() => window.__test!.waitFrames(60));
+      fading.push(await page.evaluate(() => window.__veh!.vehicle.stats.fading + window.__veh!.site!.stats.fading));
+    }
+    console.log(`LOD dolly: items cross-fading right after each move ${crossFades} in total, still fading after 60 frames ${JSON.stringify(fading)}`);
+    // The dolly did cross switches (so the check above is not vacuous) ...
+    expect(crossFades).toBeGreaterThan(10);
+    // ... and at every stop the fades had finished.
+    expect(Math.max(...fading)).toBe(0);
+    await expectNoErrors(page, pageLog);
+  });
 });
+

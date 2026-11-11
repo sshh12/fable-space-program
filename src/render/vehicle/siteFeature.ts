@@ -39,6 +39,8 @@ export interface SiteStats {
   instances: number;
   triangles: number;
   shadowTriangles: number;
+  /** Items drawn with partial (dithered) coverage in the last frame (LOD cross-fades in progress). */
+  fading: number;
   /** Instances submitted as moving casters in the last frame (arms in motion). */
   movingInstances: number;
   lights: number;
@@ -99,7 +101,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
   const lodSelector = new LodSelector();
-  const stats: SiteStats = { sites: 0, instances: 0, triangles: 0, shadowTriangles: 0, movingInstances: 0, lights: 0, updateMs: 0 };
+  const stats: SiteStats = { sites: 0, instances: 0, triangles: 0, shadowTriangles: 0, fading: 0, movingInstances: 0, lights: 0, updateMs: 0 };
 
   const elevationOf = (site: LaunchSiteDef): number => {
     if (options.padElevation) return options.padElevation(site);
@@ -195,6 +197,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       proxyNearBatch.begin(frame);
       stats.sites = 0;
       stats.instances = 0;
+      stats.fading = 0;
       stats.movingInstances = 0;
       const lamps: { pos: Vec3; end: Vec3 | null; intensity: [number, number, number]; range: number; d: number }[] = [];
       for (const rt of sites) {
@@ -245,6 +248,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               const h0 = lods[0]!;
               const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius), pl.models.lodPixels[model]!, lods.length);
               target.add(lods[draw.solid]!, inst);
+              if (draw.fading >= 0) stats.fading++;
               if (draw.fading >= 0 && draw.fade > 0.01) {
                 // The LOD that dithers in or out casts nothing: the solid one carries the shadow.
                 inst.fade = draw.fade;

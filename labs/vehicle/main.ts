@@ -193,8 +193,19 @@ async function boot(): Promise<void> {
       // On the ground the lab planet is a plain of weathered lava and scrub (one colour): the backdrop of the
       // pad, not a terrain. In space it shows the low-resolution albedo maps.
       const ground = { width: 2, height: 1, data: new Uint8Array([122, 108, 92, 255, 122, 108, 92, 255]) };
-      if (flag('planet', true)) list.push(createLabPlanetFeature(placeKind === 'pad' || (placeKind === 'ground' && scene !== 'lunarSurface') ? { maps: { [defs.rootBodyId]: ground } } : {}));
       const place = s.placement;
+      // On a surface only the body underfoot is drawn: with the sun pinned for a picture the other bodies
+      // stand wherever that leaves them (a new moon would hang in the day sky as a black disc, in front of a
+      // sky that has no depth).
+      const underfoot = place.kind === 'pad' ? defs.sites[place.siteId]!.bodyId : place.kind === 'ground' ? place.bodyId : null;
+      if (flag('planet', true)) {
+        list.push(
+          createLabPlanetFeature({
+            ...(underfoot ? { bodies: [underfoot] } : {}),
+            ...(placeKind === 'pad' || (placeKind === 'ground' && scene !== 'lunarSurface') ? { maps: { [defs.rootBodyId]: ground } } : {}),
+          }),
+        );
+      }
       if (place.kind === 'ground' && flag('slab', true)) list.push(createSlabFeature(s, place));
       if (site) list.push(site);
       list.push(vehicle);

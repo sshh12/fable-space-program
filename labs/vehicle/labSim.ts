@@ -46,6 +46,13 @@ export type SunSpec =
   /** Direction in the vessel frame (VES axes). */
   | { kind: 'vessel'; dir: [number, number, number]; focus?: string };
 
+/** Stable number in [0, 1) from a vessel id (which way a piece on the axis drifts off it). */
+function hash01(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 100000) / 100000;
+}
+
 export class VehicleLabSim implements Sim {
   readonly defs: DefLibrary;
   private readonly fake: Sim;
@@ -170,9 +177,26 @@ export class VehicleLabSim implements Sim {
     const shift = v3.sub(base, main.vessel.r);
     res.vessel.r = v3.add(res.vessel.r, shift);
     this.list[0] = { vessel: res.vessel, parts: adopt(res.vessel), t0: this.t };
+    const centreOf = (vessel: Vessel, parts: PartSnapshot[]): Vec3 => {
+      let c = v3.zero();
+      for (const p of parts) c = v3.add(c, p.localPos);
+      return v3.add(vessel.r, v3.scale(c, 1 / Math.max(1, parts.length)));
+    };
+    const mainCentre = centreOf(res.vessel, this.list[0].parts);
     for (const s of res.spawned) {
       s.r = v3.add(s.r, shift);
-      this.list.push({ vessel: s, parts: adopt(s), t0: this.t });
+      const parts = adopt(s);
+      // The lab's stack does not accelerate, so what it drops would hang beside it and be run through by the
+      // next stage. A piece that leaves therefore gets the relative motion it has in flight: jettisoned
+      // hardware ahead of the stack (escape tower, fairing petals) is thrown forward and aside, spent
+      // hardware behind it falls back and drifts off the axis.
+      const c = v3.sub(centreOf(s, parts), mainCentre);
+      const side = Math.hypot(c.x, c.z);
+      const az = hash01(s.id) * 2 * Math.PI;
+      const out = side > 0.3 ? v3.new(c.x / side, 0, c.z / side) : v3.new(Math.sin(az), 0, Math.cos(az));
+      const ahead = c.y > 0;
+      s.v = v3.add(s.v, v3.add(v3.scale(out, ahead ? 7 : 2.5), v3.new(0, ahead ? 16 : -7, 0)));
+      this.list.push({ vessel: s, parts, t0: this.t });
     }
     this.stage = index + 1;
     return { stage: index, spawned: res.spawned.map((s) => s.id) };

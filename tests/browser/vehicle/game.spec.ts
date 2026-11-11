@@ -21,7 +21,8 @@ interface Site {
 type Lab = Window & { __integration?: IntegrationLab };
 
 async function open(page: Page, query: string): Promise<string[]> {
-  await openPage(page, `/labs/integration/?hud=0&governor=off&${query}`, { timeoutMs: 180_000 });
+  // (The cockpit package draws nothing in an outside view and is left out.)
+  await openPage(page, `/labs/integration/?hud=0&governor=off&without=cockpit&${query}`, { timeoutMs: 180_000 });
   await assertDiscreteGpu(page);
   return page.evaluate(() => (window as Lab).__integration!.loaded as string[]);
 }
@@ -99,14 +100,51 @@ test.describe('vehicle and launch complex in the integrated game', () => {
       { name: 'game-orbit-stack', query: 'scene=lowOrbit&orbit=35,12,48&fov=40', minNonBlack: 0.2 },
       { name: 'game-orbit-capsule', query: 'scene=lowOrbit&stage=8&orbit=140,18,9&fov=40', minNonBlack: 0.2 },
       { name: 'game-orbit-lander', query: 'scene=lunarOrbit&stage=5&orbit=40,10,22&fov=40', minNonBlack: 0.05 },
-      { name: 'game-moon-lander-landed', query: 'scene=lunarSurface&orbit=35,6,19&fov=45', minNonBlack: 0.2 },
-      { name: 'game-moon-lander-low-sun', query: 'scene=lunarSurface&orbit=215,4,14&fov=45', minNonBlack: 0.2 },
       { name: 'game-reentry', query: 'scene=reentry&orbit=160,10,16&fov=40', minNonBlack: 0.2 },
     ];
     for (const v of views) {
       const loaded = await open(page, v.query);
       test.skip(!loaded.includes('vehicle'), 'needs the vehicle package in the integration lab');
       await save(page, v.name, v.minNonBlack);
+    }
+  });
+
+  test('the lander on the real lunar surface, seen from the ground beside it', async ({ page }) => {
+    // Stand on the terrain a few metres from the landed vessel, at eye height, and look at it.
+    const views: { name: string; east: number; north: number; height: number; sun: [number, number]; fov: number }[] = [
+      { name: 'game-moon-lander-landed', east: 13, north: -9, height: 2.2, sun: [120, 24], fov: 50 },
+      { name: 'game-moon-lander-low-sun', east: -10, north: -12, height: 1.6, sun: [250, 8], fov: 50 },
+      { name: 'game-moon-lander-foot-pad', east: 6.5, north: -5.5, height: 0.7, sun: [120, 24], fov: 38 },
+    ];
+    for (const v of views) {
+      const loaded = await open(page, `scene=lunarSurface&fov=${v.fov}`);
+      test.skip(!loaded.includes('vehicle') || !loaded.includes('terrain'), 'needs the terrain and vehicle packages in the integration lab');
+      await page.evaluate(
+        async ([east, north, height, az, el]) => {
+          const lab = (window as Lab).__integration!;
+          const snap = lab.app.snapshot();
+          const vessel = snap.vessels.find((x) => x.id === snap.activeVesselId)!;
+          const body = snap.bodies.find((x) => x.id === vessel.bodyId)!;
+          const radius = lab.app.defs.bodies[body.id]!.radius;
+          // Vessel position in the body-fixed frame (rotate by the conjugate of qFixedToRoot).
+          const q = body.qFixedToRoot;
+          const r = vessel.r;
+          const tx = 2 * (-q.y * r.z + q.z * r.y);
+          const ty = 2 * (-q.z * r.x + q.x * r.z);
+          const tz = 2 * (-q.x * r.y + q.y * r.x);
+          const f = { x: r.x + q.w * tx + (-q.y * tz + q.z * ty), y: r.y + q.w * ty + (-q.z * tx + q.x * tz), z: r.z + q.w * tz + (-q.x * ty + q.y * tx) };
+          const len = Math.hypot(f.x, f.y, f.z);
+          const rad = Math.PI / 180;
+          const lat = Math.asin(f.z / len) / rad;
+          const lon = Math.atan2(f.y, f.x) / rad;
+          const at = { bodyId: body.id, latDeg: lat + north! / (radius * rad), lonDeg: lon + east! / (radius * rad * Math.cos(lat * rad)), alt: 0 };
+          at.alt = (await lab.groundHeight(at.bodyId, at.latDeg, at.lonDeg)) + height!;
+          lab.setSun({ bodyId: body.id, latDeg: lat, lonDeg: lon, alt: 0 }, az!, el!);
+          lab.watchVesselFrom(at);
+        },
+        [v.east, v.north, v.height, v.sun[0], v.sun[1]] as const,
+      );
+      await save(page, v.name, 0.2);
     }
   });
 });

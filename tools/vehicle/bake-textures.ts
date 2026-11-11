@@ -238,9 +238,8 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Rime on a cryogenic tank, tile 4.8 m: a granular white coat, runnels down the tank where melt water and
-  // sliding slabs have scored it, lumps where it has built up, and long streaks where it is thin and the
-  // skin's colour greys it.
+  // Rime on cryogenic lines and hoses, tile 4.8 m: a granular white coat, runnels where melt water has
+  // scored it, lumps where it has built up, and streaks where it is thin and the metal under it greys it.
   frost() {
     const S = 1024;
     const runnel = (u: number, v: number): number => Math.pow(ridged(u + 0.01 * fbm(u, v, 6, 6, 2, 601), v, 46, 2, 3, 602, 0.5), 2);

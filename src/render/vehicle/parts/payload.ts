@@ -340,8 +340,20 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
           .to(re * 0.3, nozLen * 0.17)
           .to(0, nozLen * 0.2);
         lathe(b, q, { segs: b.pick(28, 14, 8), tag: 'nozzle' });
-        if (b.lod < 2) band(b, re * 0.72, nozLen * 0.57, 0.03, 0.008, b.pick(28, 14, 8), 'nozzle-band');
+        if (b.lod < 2) {
+          band(b, re * 0.72, nozLen * 0.57, 0.03, 0.008, b.pick(28, 14, 8), 'nozzle-band');
+          // Exit ring of the nozzle and the bolted flange that holds it in the motor's aft closure.
+          b.mat('steel-bare').masks(0.3, 1, 0.8, 0);
+          band(b, re + 0.001, nozLen - 0.025, 0.04, 0.007, b.pick(28, 14, 8), 'nozzle-band');
+          ringSolid(b, re * 0.6, re * 0.88, -0.02, 0.02, b.pick(24, 12, 8), 'nozzle-flange');
+        }
       });
+    }
+    if (b.lod < 2 && engine.nozzles.length > 1) {
+      // Aft closure manifold: the forged ring the canted nozzles are bolted into, round the motor case.
+      const yM = engine.nozzles.reduce((sum, nz) => sum + nz.pos[1]! - (nz.dir[1]! / Math.hypot(nz.dir[0]!, nz.dir[1]!, nz.dir[2]!)) * nozLen, 0) / engine.nozzles.length;
+      b.mat('steel-dark').masks(0.2, 1, 0.9, 0);
+      ringSolid(b, caseR - 0.01, caseR + 0.07, yM - 0.09, yM + 0.09, b.pick(48, 24, 12), 'manifold');
     }
     if (b.lod === 0) {
       b.mat('steel-bare').masks(0.3, 1, 0.9, 0);

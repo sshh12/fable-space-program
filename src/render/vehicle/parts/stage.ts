@@ -8,8 +8,8 @@
  * lines, pressurant bottles, avionics shelf) seen inside the interstage after separation.
  *
  * Weathering is a function of where a vertex is: soot of the base flow (heavy at the base, reaching higher
- * on the lee side, in streaks) is applied to the skin and to everything that stands on it; a tank that
- * frosts heavily carries a rime coat (model 'frost') from frost line to frost line while it is loaded.
+ * on the lee side, in streaks) is applied to the skin and to everything that stands on it; the barrels of
+ * the cryogenic tanks carry frost weights from frost line to frost line.
  */
 import type { Vec3Tuple } from '@/core/math';
 import { decalSheetOf } from '../decals';
@@ -17,7 +17,7 @@ import { MeshBuilder, add3, polar, scale3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, ball, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, rod, torus, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
 import { accessDoor, band, bandRegion, blister, buildModel, decalRegion, noise2, parseList, raceway, regionBounds, regionHeights, seams, stringers, umbilicalPlate, ventPort } from './common';
-import { Params, staticPose, type PartGenerator, type PartModel, type PoseInput, type PoseSink } from './types';
+import { Params, staticPose, type PartGenerator } from './types';
 
 const mat = (id: string, where: string): MatId => {
   if (!isMatId(id)) throw new Error(`${where}: unknown material "${id}"`);
@@ -97,8 +97,10 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     return Math.max(0, w) * frostW;
   };
   /**
-   * The thin film of frost on the skin itself (the mesh shader's frost term): a continuous coat that is a
-   * little heavier low on a tank and varies softly in long vertical streaks.
+   * Frost weight of a loaded tank's skin between its frost lines (the mesh shader turns the weight into a
+   * matte white coat that breaks up into vertical streaks where it is thin): heavier low on a tank, varying
+   * softly round it, so that some of the barrel is solid white and some shows the paint in runs where slabs
+   * have slid off. It thins out by itself as the frost amount falls after lift-off.
    */
   const frostFilm = (y: number, phi: number): number => {
     let low = 0;
@@ -189,7 +191,8 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        m.frost = outer ? frostAt(y) * frostFilm(y, _phi) : 0;
+        // Frost lies thinner on a marking (dark paint warms in the sun): it shows through in streaks.
+        m.frost = outer ? frostAt(y) * frostFilm(y, _phi) * (markedAt(_phi, y, y) ? 0.62 : 1) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;
@@ -465,48 +468,6 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     });
   };
 
-  /**
-   * The rime on a loaded tank that frosts heavily: a continuous matte white coat over each barrel from
-   * frost line to frost line, on the skin's own azimuth grid (an exact offset of the faceted skin), a few
-   * millimetres thick, heavier toward the bottom of the tank and over the weld lands. It ends in a feather
-   * edge on the skin at both frost lines. Markings lie under it with sharp edges and less contrast: their
-   * cells carry the same atlas rectangles in a matte material whose frost weight whitens them part of the way.
-   */
-  const rime = (b: MeshBuilder): void => {
-    const segs = b.pick(144, 64, 20);
-    const regions = (b.lod === 2 ? [] : decalRegions).map((r) => ({ ...r, mat: 'decal-frosted' as MatId, span: ['rime0', 'rime1'] as [string, string] }));
-    for (const t of tanks) {
-      const y0 = t.y0 - 0.1;
-      const y1 = t.y1 + 0.1;
-      const n = Math.max(1, Math.round((t.y1 - t.y0) / ringStep));
-      const thick = (y: number): number => 0.005 + 0.008 * Math.pow(Math.max(0, 1 - (y - t.y0) / Math.max(2, (t.y1 - t.y0) * 0.35)), 1.5);
-      const p = Profile.at(R + 0.0006, y0).mark('rime0');
-      p.pts[0]!.hard = false;
-      p.to(R + thick(y0 + 0.14), y0 + 0.14);
-      if (b.lod < 2) {
-        // Rime builds up on the weld lands between the barrel rings.
-        for (let i = 1; i < n; i++) {
-          const yw = t.y0 + ((t.y1 - t.y0) * i) / n;
-          p.to(R + thick(yw - 0.09), yw - 0.09).to(R + thick(yw) + 0.006, yw - 0.03).to(R + thick(yw) + 0.006, yw + 0.03).to(R + thick(yw + 0.09), yw + 0.09);
-        }
-      }
-      p.to(R + thick(y1 - 0.14), y1 - 0.14).to(R + 0.0006, y1).mark('rime1');
-      const inTank = regions.filter((r) => r.y0 > y0 + 0.15 && r.y1 < y1 - 0.15);
-      p.splitAtY('rime0', 'rime1', regionHeights(inTank));
-      b.mat('frost').masks(0, 1, 0, 0);
-      lathe(b, p, {
-        phis: phisWith(segs, regionBounds(regionsFull)),
-        regions: inTank,
-        closed: false,
-        tag: 'rime',
-        // The coat is frost through and through; over a marking it lets 55 % of the paint's contrast through.
-        mask: (y: number, phi: number, _r: number, m: MaskOut) => {
-          m.frost = inTank.some((r) => y >= r.y0 - 1e-6 && y <= r.y1 + 1e-6 && phi >= r.phi0 - 1e-6 && phi <= r.phi1 + 1e-6) ? 0.45 : 0;
-        },
-      });
-    }
-  };
-
   // A stage is tens of metres long: LOD 0 (fasteners, weld seams, straps) only within about 45 m.
   const body = buildModel(
     `${def.id}.body`,
@@ -516,15 +477,5 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     },
     [700, 110],
   );
-  const models: Record<string, PartModel> = { body };
-  if (frostW < P.num('rimeFrom', 0.5)) return { models, pose: staticPose };
-  models['frost'] = buildModel(`${def.id}.rime`, rime, [700, 110]);
-  const pose = (input: PoseInput, emit: PoseSink): void => {
-    emit('body', null, null);
-    // The coat is solid while the tank is loaded. After lift-off the frost amount decays; the coat lets go
-    // over a couple of seconds as it passes 0.4 (the only time it is drawn with partial, dithered coverage).
-    const k = Math.min(1, Math.max(0, (input.anim.frost - 0.35) / 0.1));
-    if (k > 0) emit('frost', null, null, { fade: k, frost: 1, soot: 0, castShadow: false, cold: true });
-  };
-  return { models, pose };
+  return { models: { body }, pose: staticPose };
 };

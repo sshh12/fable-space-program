@@ -104,10 +104,8 @@ const SPECS = {
   /** Flexible heat-shield boot of an engine: aluminised cloth gone grey with heat and handling. */
   boot: { color: [0.3, 0.295, 0.28], metallic: 0, roughness: 0.84, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.42, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
-  /** Rime on a cryogenic tank: matte, faintly blue white with a lumpy surface (no clear coat under it shows). */
+  /** Rime on cryogenic lines and hoses: a matte, granular white sleeve (tank skins frost through the mesh shader's frost term). */
   frost: { color: [1, 1, 1], metallic: 0, roughness: 0.88, tile: [4.8, 4.8], tex: { a: 'frost_albedo', n: 'frost_n', o: 'frost_orm' } },
-  /** A marking under the rime: the decal atlas without the paint's gloss (its frost weight whitens it). */
-  'decal-frosted': { color: [1, 1, 1], metallic: 0, roughness: 0.84, tile: [0, 0], tex: { a: 'decals' } },
   rubber: { color: [0.02, 0.02, 0.022], metallic: 0, roughness: 0.82, tile: [0.3, 0.3], tex: { n: 'cast_n' } },
   /** Carbon-phenolic solid-motor nozzles and throat inserts. */
   phenolic: { color: [0.035, 0.03, 0.028], metallic: 0, roughness: 0.7, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },

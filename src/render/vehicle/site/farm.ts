@@ -8,7 +8,7 @@
 import type { Vec3Tuple } from '@/core/math';
 import { decalSheetOf, type DecalSheet } from '../decals';
 import { MeshBuilder, polar, xf } from '../geom/builder';
-import { Profile, TAU, ball, bottle, box, extrude, frustum, iSection, lathe, phisWith, pipe, ringSolid, rod, section, torus, type LatheRegion } from '../geom/prims';
+import { Profile, TAU, ball, bottle, box, extrude, frustum, iSection, lathe, phisWith, pipe, ringSolid, rod, section, torus, tube, type LatheRegion } from '../geom/prims';
 import { band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights } from '../parts/common';
 import type { PartLight } from '../parts/types';
 import { handrail } from './pad';
@@ -25,6 +25,8 @@ function sphereTank(b: MeshBuilder, sheet: DecalSheet, radius: number, centreY: 
     const a = -Math.PI / 2 + (Math.PI * i) / n;
     if (i === Math.round(n * 0.38)) p.mark('s0');
     if (i === Math.round(n * 0.62)) p.mark('s1');
+    // The shell is welded from courses of gore plates: alternate courses have aged to a slightly different sheen.
+    p.mat(Math.floor((i * 6) / n) % 2 === 0 ? 'paint-white' : 'paint-white-b');
     p.to(radius * Math.cos(a), centreY + radius * Math.sin(a));
   }
   p.to(0, centreY + radius);
@@ -36,6 +38,28 @@ function sphereTank(b: MeshBuilder, sheet: DecalSheet, radius: number, centreY: 
   p.splitAtY('s0', 's1', regionHeights(regions));
   lathe(b, p, { phis: phisWith(b.pick(72, 36, 14), regionBounds(regions)), regions, tag: 'sphere' });
   if (b.lod === 2) return;
+  // Weld lands between the plate courses, and the meridian welds of the gores (heavier in the middle LOD).
+  b.mat('paint-white-b').masks(0.25, 1, 0.3, 0.5);
+  for (let c = 1; c < 6; c++) {
+    const a = -Math.PI / 2 + (Math.PI * c) / 6;
+    const w = 0.02;
+    const land = Profile.at((radius - 0.002) * Math.cos(a - w), centreY + (radius - 0.002) * Math.sin(a - w))
+      .to((radius + 0.012) * Math.cos(a - w * 0.5), centreY + (radius + 0.012) * Math.sin(a - w * 0.5))
+      .to((radius + 0.012) * Math.cos(a + w * 0.5), centreY + (radius + 0.012) * Math.sin(a + w * 0.5))
+      .to((radius - 0.002) * Math.cos(a + w), centreY + (radius - 0.002) * Math.sin(a + w));
+    land.pts[0]!.hard = false;
+    lathe(b, land, { segs: b.pick(72, 36, 14), closed: false, tag: 'band' });
+  }
+  const gores = 16;
+  for (let g = 0; g < gores; g++) {
+    const phi = ((g + 0.5) / gores) * TAU;
+    const pts: Vec3Tuple[] = [];
+    for (let i = 0; i <= 14; i++) {
+      const a = -Math.PI / 2 + 0.22 + ((Math.PI - 0.44) * i) / 14;
+      pts.push(polar((radius + 0.004) * Math.cos(a), phi, centreY + (radius + 0.004) * Math.sin(a)));
+    }
+    tube(b, pts, b.pick(0.02, 0.05, 0.05), { segs: 4, tag: 'seam' });
+  }
   // Legs tangent to the equator, bracing, top dome fitting and the stair up the side.
   b.mat('paint-grey').masks(0.2, 1, 0.3, 0);
   const rl = radius * 0.94;

@@ -54,6 +54,11 @@ export interface VesselVisualStats {
   staggeredSubmissions: number;
   ghosts: number;
   lights: number;
+  /**
+   * Items drawn with partial (dithered) coverage in the last frame: LOD cross-fades in progress and vessels
+   * fading out. 0 whenever the camera and the vessels have been still for a moment.
+   */
+  fading: number;
   /** CPU time of the last instance update, ms. */
   updateMs: number;
 }
@@ -169,6 +174,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     staggeredSubmissions: 0,
     ghosts: 0,
     lights: 0,
+    fading: 0,
     updateMs: 0,
   };
 
@@ -376,6 +382,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         const scale = opts?.scale ? Math.max(Math.abs(opts.scale[0]), Math.abs(opts.scale[1]), Math.abs(opts.scale[2])) : 1;
         const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius, scale), e.models.lodPixels[model]!, lods.length);
         batch.add(lods[draw.solid]!, inst);
+        if (itemFade < 1 || draw.fading >= 0) stats.fading++;
         if (draw.fading >= 0 && draw.fade > 0.01) {
           inst.fade = itemFade * draw.fade;
           batch.add(lods[draw.fading]!, inst);
@@ -441,6 +448,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       fineBatch.begin(frame);
       coarseBatch.begin(frame);
       stats.instances = 0;
+      stats.fading = 0;
       stats.vessels = 0;
       stats.shadowTriangles = 0;
       lightBudget.n = 0;
