@@ -818,6 +818,17 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   which encodes it in the `compute` hook, away from the core's copies) with `?governor=off&scale=1` so
   quality and resolution stay at 1. Calibrate any synthetic load while it is running, not on the idle
   GPU (`governor.perf.spec.ts`: a 40-iteration burst on the idle GPU read up to 6 times too slow).
+- **A long pass disturbs what is encoded after it.** With the ballast first in the frame, the first compute
+  pass behind it (the ocean's wake step, the sky's probe step) read about 0.23 ms too long in one frame out
+  of four: 0.25 ms instead of 0.01-0.03, which is that pass's p99. Nothing placed in between took the time
+  instead (an empty pass, a small draw, a second short burn, a small compute pass), and without the ballast
+  the same passes show no such frames. When the features you measure have compute passes, encode the
+  ballast LAST: `labs/integration/ballast.ts` draws it in the overlay hook (in attribution mode its own
+  pass after the tone map) with a blend that keeps the canvas.
+- **Report the median over several windows of each window's p99** (six windows of 240 frames in
+  `tests/browser/integration/budget.perf.spec.ts`, as the ocean, atmosphere and vfx specs do). Another
+  process's work on the GPU (a second browser, the compositor) adds a hitch of 1-2 ms to every pass of a
+  frame; one such frame in a window of 240 IS that window's p99.
 - `renderer.passStats()` gives p50 / p99 / mean per pass name; a pass that does not run in a frame counts
   as 0, so `mean` is the amortised cost (staggered shadow cascades).
 - `core.copies` is not a pass: it is the time of the core's texture copies (depth -> `'scene.depthOpaque'`,
@@ -867,6 +878,16 @@ vessel=<id|active>&offset=x,y,z[&look=x,y,z]        relative to a vessel, VES fr
 orbit=<yawDeg>,<pitchDeg>,<distance>[&target=vessel:<id>|body:<id>|site:<body>,<lat>,<lon>,<alt>]
 fov=<deg>  kind=interior|external|map  ec=<EV>  minev=<EV100>  fill=<fraction>
 ```
+
+The FakeSim behind a lab (`createFakeSim(defs, options)` in `src/core/fakes/fakeSim.ts`; pass it as `sim`)
+takes, besides `scene`: `parts` + `stageLabels` + `vehicleId` (the real vehicle from the vessel facade:
+`vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired }))`; without `vehicleId` the
+vessel belongs to no vehicle and features that look the vehicle up, such as the cockpit, draw nothing),
+`location` (put a surface scene elsewhere), `altitude` (start of 'ascent' / 'chutes') and `ground`
+(`{ height, originHeight, clearance? }`: the real ground under a surface scene, so that the vessel stands on
+the baked terrain and `readouts.altitudeRadar` is measured from it; without it the scene stands on the
+reference sphere, which suits the LabPlanet only). `labs/integration/main.ts` (`surfacePlace`) shows the
+terrain lookup. Under parachutes the capsule hangs nose up.
 
 Default: orbit the active vessel at three bounding radii. `window.__test.setCameraOrbit(yaw, pitch,
 distance)` orbits the current target; `app.camera.spec = { type: 'free', positionRoot, qViewToRoot }`
@@ -1078,6 +1099,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| FakeSim: `FakeSimOptions.vehicleId`, `ground`, `altitude`; `location` applies to every surface scene; the 'chutes' scene flies nose up (was nose down) | found by the budget pictures | every lab that flies real parts on the FakeSim | None for the options (additive). A lab that relied on the capsule being upside down under its canopies sees it upright |
 | Exposure target: a lit area brighter than the prior takes over from 2 % of the frame instead of 10 % (`LIT_FULL_BRIGHT`) | `vfx-3` | vfx (night launch, fireballs), anything bright in a dark frame (lights on the lunar night side, city lights) | None. Such frames are exposed for the bright area sooner: darker surroundings, no white-out |
 | `'clouds.depth'` is rg32float: r = where the cloud begins along the pixel's ray, g = where it ends (was r32float, one mean distance with a +-10 % band); `applyAtmosphere` attenuates by `smoothstep(r, g, distance)` | `atmosphere-clouds-1` | atmosphere (publisher), every transparent (through `applyAtmosphere`, no change), sky (tests `r < 3.0e38` only) | Publisher: write both distances; a texture that carries r alone gives a step at r. Readers that sampled the key themselves: r is now the BEGIN of the cloud, not its mean distance |
 | `'clouds.shadowMap'` is depth-resolved (r, g, b as in section 7); new chunk `cloud_shadow` with the lookup the deferred lighting uses | `atmosphere-clouds-3` | atmosphere (publisher: nothing to change, the map already carries g and b); cockpit and ocean (their forward shaders sample the map themselves) | A publisher of a single-channel map casts no near shadow any more: write g and b. Forward-lit shaders: `#include "cloud_shadow"` and call `cloudShadow()` instead of an own copy of the r-only lookup, or surfaces above a deck stay in its shade |

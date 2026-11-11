@@ -12,10 +12,10 @@
  * is in the picture (stack and plume, cabin, plasma sheath). Every picture is saved and looked at.
  *
  * Method (docs/handoff/render-core.md 4.1): an RTX 5090 with only part of the game's frame to render clocks
- * down and every pass reads 2-5 times too long, so a ballast pass (feature lab-heavy) fills the frame up to
- * about 9 ms of GPU work; its own time is excluded from every sum. Timestamp queries of single frames are
- * disturbed by whatever else uses the GPU (another browser, the compositor): one hitch of 2 ms in a window
- * of 240 frames IS that window's p99. Each number is therefore the MEDIAN over six windows of 240 frames of
+ * down and every pass reads 2-5 times too long, so a ballast pass (feature lab-ballast, encoded last in the
+ * frame: labs/integration/ballast.ts says why) fills the frame up to about 9 ms of GPU work; its own time is
+ * excluded from every sum. Timestamp queries of single frames are disturbed by whatever else uses the GPU
+ * (another browser, the compositor): one hitch of 2 ms in a window of 240 frames IS that window's p99. Each number is therefore the MEDIAN over six windows of 240 frames of
  * the window's p99 (the way the ocean, atmosphere and vfx specs measure their own lines); the largest
  * window is kept in the JSON.
  *
@@ -151,7 +151,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
           await window.__test!.waitFrames(90);
           window.__test!.resetPerf();
           await window.__test!.waitFrames(60);
-          return (window.__lab!.renderer.passStats()['lab-heavy.burn']?.p50 ?? 0) / 400;
+          return (window.__lab!.renderer.passStats()['lab-ballast.overlay']?.p50 ?? 0) / 400;
         });
         expect(perIteration).toBeGreaterThan(0);
         await page.evaluate((n) => window.__integration!.setBallast(n), Math.round((9 - Math.min(base, 3)) / perIteration));
@@ -218,7 +218,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
           typical: median(perWindow.map((w) => w.typical)) + UI_MEASURED_MS,
           p50WithBallast: median(m.windows.map((w) => w.gpuP50)),
         },
-        ballastMs: (passes['lab-heavy.burn']?.p50 ?? 0) + (passes['lab-heavy.tail']?.p50 ?? 0),
+        ballastMs: passes['lab-ballast.overlay']?.p50 ?? 0,
         passes,
         qualityScale: Math.min(...m.windows.map((w) => w.qualityScale)),
         renderScale: Math.min(...m.windows.map((w) => w.renderScale)),

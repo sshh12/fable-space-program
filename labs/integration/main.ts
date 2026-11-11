@@ -19,7 +19,7 @@
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
  *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
- *   &ballast=1                  add the render-core lab's ballast pass (feature lab-heavy, off until
+ *   &ballast=1                  add a ballast pass at the end of the frame (feature lab-ballast, off until
  *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
  * orbit=, vessel=, fov=, ev=, perf=features, scale=, governor=off, deterministic=1, paused=1).
@@ -42,6 +42,7 @@ import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from 
 import { createFetchTileSource, createTerrainProvider } from '@/terrain';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
 import { createProbes } from '../render-core/probes';
+import { createEndBallast } from './ballast';
 import { sunAtSite, withSunOverride, type Site, type SunOverride } from '../render-core/world';
 import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, realVesselParts, type FeaturePackage } from './features';
 
@@ -58,7 +59,7 @@ export interface IntegrationLab {
   handles: Record<string, unknown>;
   /** Package of each registered wave-2 feature id. */
   packageOf: Record<string, FeaturePackage>;
-  /** Iterations of the ballast pass per pixel (?ballast=1; 0 = off). Its GPU time is pass 'lab-heavy.burn'. */
+  /** Iterations of the ballast pass per pixel (?ballast=1; 0 = off). Its GPU time is pass 'lab-ballast.overlay'. */
   setBallast(iterations: number): void;
   /** 'real' when the Sim of src/sim drives the page. */
   simKind: 'fake' | 'real';
@@ -353,13 +354,17 @@ async function boot(): Promise<void> {
   const built = buildFeatures(imported.modules, { defs, sim, ctx, gpu: app.gpu, terrain, navball, mfdPainter: createMfdPainter(), query });
   problems.push(...built.problems);
   // Ballast for perf runs: with only some features present the GPU has too little to do and clocks down,
-  // which inflates every pass time (docs/handoff/render-core.md 4.1).
+  // which inflates every pass time (docs/handoff/render-core.md 4.1). Encoded last in the frame (ballast.ts).
   const firstSite = Object.values(defs.sites)[0];
-  const probeNames = [query.get('ballast') === '1' ? 'heavy' : '', (query.get('probe') ?? '').split(',').includes('casters') ? 'casters' : ''].filter(Boolean);
-  const ballast = probeNames.length > 0 ? createProbes(new URLSearchParams(`probe=${probeNames.join(',')}&heavy=0`), { bodyId: firstSite?.bodyId ?? defs.rootBodyId, latDeg: firstSite?.location.latDeg ?? 0, lonDeg: firstSite?.location.lonDeg ?? 0, alt: 0 }, defs, app.snapshot()) : null;
-  if (ballast) {
-    ballast.attach(app);
-    for (const f of ballast.features) await app.renderer.addFeature(f);
+  const endBallast = query.get('ballast') === '1' ? createEndBallast() : null;
+  if (endBallast) await app.renderer.addFeature(endBallast.feature);
+  // The render-core lab's probe that logs the cascades handed to drawShadow.
+  const probes = (query.get('probe') ?? '').split(',').includes('casters')
+    ? createProbes(new URLSearchParams('probe=casters'), { bodyId: firstSite?.bodyId ?? defs.rootBodyId, latDeg: firstSite?.location.latDeg ?? 0, lonDeg: firstSite?.location.lonDeg ?? 0, alt: 0 }, defs, app.snapshot())
+    : null;
+  if (probes) {
+    probes.attach(app);
+    for (const f of probes.features) await app.renderer.addFeature(f);
   }
 
   // Register the features one at a time and watch the error list while each one initialises, compiles its
@@ -495,7 +500,7 @@ async function boot(): Promise<void> {
     handles: built.handles,
     packageOf: built.packageOf,
     setBallast(iterations) {
-      ballast?.setHeavy(iterations);
+      endBallast?.setIterations(iterations);
     },
     simKind,
     terrain,
@@ -643,8 +648,8 @@ async function boot(): Promise<void> {
     setEnabled(pkg, on) {
       for (const f of built.features) if (built.packageOf[f.id] === pkg) guards.get(f.id)?.setEnabled(on);
     },
-    cascadeLog: () => ballast?.cascadeLog() ?? [],
-    clearCascadeLog: () => ballast?.clearCascadeLog(),
+    cascadeLog: () => probes?.cascadeLog() ?? [],
+    clearCascadeLog: () => probes?.clearCascadeLog(),
     release() {
       follow = null;
     },

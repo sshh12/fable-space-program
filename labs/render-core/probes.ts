@@ -943,7 +943,11 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         pass.end();
         // An empty pass of this feature right behind it: in one frame out of five about 0.23 ms of the burn is
         // still in flight at its end timestamp and is charged to whatever is encoded next (measured on the copy
-        // that used to follow, then on the G-buffer pass). Here it is charged to the ballast itself.
+        // that used to follow, then on the G-buffer pass). The empty pass keeps it away from the core's copies
+        // and render passes. It does NOT keep it away from a feature's compute pass: measured per frame in the
+        // integration lab, the first compute pass after this one still read about 0.23 ms too long in one frame
+        // out of four, whatever was placed in between. A run that measures features with compute passes puts
+        // its ballast at the end of the frame instead (labs/integration/ballast.ts).
         encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-heavy.tail') }).end();
       },
     });
