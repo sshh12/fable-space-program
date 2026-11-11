@@ -48,6 +48,35 @@ export async function createRealTerrain(defs: DefLibrary, opts: RealTerrainOptio
   return createTerrainProvider(defs, source, opts.cacheBytes !== undefined ? { cacheBytes: opts.cacheBytes } : {});
 }
 
+/**
+ * A tile source whose answers arrive late and out of step with the simulation: every read is held back by
+ * a few turns of the event loop, every eighth by a timer. Deterministic pattern (a counter, no clock).
+ */
+export function delayedSource(source: TileSource): TileSource & { reads: number } {
+  let count = 0;
+  const hold = async (): Promise<void> => {
+    const n = ++count;
+    for (let i = 0; i < 1 + (n % 4); i++) await new Promise<void>((resolve) => setImmediate(resolve));
+    if (n % 8 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 3));
+  };
+  const wrapped = {
+    reads: 0,
+    manifest: (tileset: string) => source.manifest(tileset),
+    tile: async (tileset: string, layer: string, key: Parameters<TileSource['tile']>[2]) => {
+      const data = await source.tile(tileset, layer, key);
+      wrapped.reads++;
+      await hold();
+      return data;
+    },
+    file: async (tileset: string, relPath: string) => {
+      const data = await source.file(tileset, relPath);
+      await hold();
+      return data;
+    },
+  };
+  return wrapped;
+}
+
 export interface RealWorld {
   defs: DefLibrary;
   terrain: TerrainProvider;

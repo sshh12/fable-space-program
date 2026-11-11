@@ -161,6 +161,14 @@ export abstract class PilotCore {
     return this.s.milestones.some((m) => m.id === id);
   }
 
+  /**
+   * Milestone `id` is recorded - or, in a scenario whose rule list does not have it (the QA starts carry no
+   * mission milestones), the pilot's own judgement `otherwise` holds.
+   */
+  protected reached(id: string, otherwise: boolean): boolean {
+    return this.scenario.milestones.some((m) => m.id === id) ? this.hasMilestone(id) : otherwise;
+  }
+
   protected node(id: string): ManeuverNode | undefined {
     return this.s.nodes.find((n) => n.id === id);
   }

@@ -32,6 +32,8 @@ export interface CorridorResult {
   entrySpeed: number;
   entryFlightPathDeg: number;
   onWater: boolean;
+  /** Why the mission failed (crew lost, capsule destroyed), null otherwise. */
+  failure: string | null;
 }
 
 /** Semi-major axis of the return ellipse (apogee near the Moon's distance), m. */
@@ -99,6 +101,8 @@ export async function flyEntry(defs: DefLibrary, terrain: TerrainProvider, perig
   const entry = first.patches.current.flatMap((p) => p.markers).find((m) => m.kind === 'atmosphereEntry');
   let rcsAtDrogues = NaN;
   let escaped = false;
+  let peakG = 0;
+  let peakDose = 0;
   const run = await runHeadless(sim, pilot, {
     maxSimTime: 3 * 3600,
     until: (s) => {
@@ -107,6 +111,8 @@ export async function flyEntry(defs: DefLibrary, terrain: TerrainProvider, perig
       return escaped;
     },
     onTick: (s) => {
+      if (s.readouts.gLoad > peakG) peakG = s.readouts.gLoad;
+      if (s.readouts.gDose > peakDose) peakDose = s.readouts.gDose;
       const d = s.milestones.find((m) => m.id === 'DROGUES');
       if (d && Number.isNaN(rcsAtDrogues)) rcsAtDrogues = d.data['rcsFraction'] ?? NaN;
     },
@@ -136,14 +142,15 @@ export async function flyEntry(defs: DefLibrary, terrain: TerrainProvider, perig
     outcome,
     downRangeKm: downRange,
     flightTime,
-    peakG: d['peakG'] ?? last.readouts.gLoad,
-    gDose: d['peakGDose'] ?? last.readouts.gDose,
+    peakG: Math.max(peakG, splash?.data['peakG'] ?? 0),
+    gDose: Math.max(peakDose, splash?.data['peakGDose'] ?? 0),
     ablatorLeft: last.readouts.ablatorFraction ?? d['ablatorFraction'] ?? NaN,
     rcsLeftAtDrogues: rcsAtDrogues,
     splashSpeed: d['touchdownVerticalSpeed'] ?? NaN,
     entrySpeed: entry?.value ?? NaN,
     entryFlightPathDeg: (entry?.flightPathAngle ?? NaN) * RAD,
     onWater: (d['surfaceWater'] ?? 0) === 1,
+    failure: last.mission.failed ? last.mission.failureReason : null,
   };
 }
 
@@ -170,7 +177,7 @@ if (invokedDirectly) {
   console.log('perigee km | outcome  | down-range km | flight s | peak g | g-dose | ablator left | RCS left at drogues | splash m/s | entry km/s | FPA deg');
   for (const r of res) {
     console.log(
-      `${r.perigeeKm.toFixed(0).padStart(10)} | ${r.outcome.padEnd(8)} | ${r.downRangeKm.toFixed(0).padStart(13)} | ${r.flightTime.toFixed(0).padStart(8)} | ${r.peakG.toFixed(2).padStart(6)} | ${r.gDose.toFixed(2).padStart(6)} | ${(r.ablatorLeft * 100).toFixed(1).padStart(11)}% | ${(r.rcsLeftAtDrogues * 100).toFixed(1).padStart(18)}% | ${r.splashSpeed.toFixed(2).padStart(10)} | ${(r.entrySpeed / 1000).toFixed(3).padStart(10)} | ${r.entryFlightPathDeg.toFixed(2)}`,
+      `${r.perigeeKm.toFixed(0).padStart(10)} | ${r.outcome.padEnd(8)} | ${r.downRangeKm.toFixed(0).padStart(13)} | ${r.flightTime.toFixed(0).padStart(8)} | ${r.peakG.toFixed(2).padStart(6)} | ${r.gDose.toFixed(2).padStart(6)} | ${(r.ablatorLeft * 100).toFixed(1).padStart(11)}% | ${(r.rcsLeftAtDrogues * 100).toFixed(1).padStart(18)}% | ${r.splashSpeed.toFixed(2).padStart(10)} | ${(r.entrySpeed / 1000).toFixed(3).padStart(10)} | ${r.entryFlightPathDeg.toFixed(2)}${r.failure ? ` | ${r.failure}` : ''}`,
     );
   }
 }

@@ -478,7 +478,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
       this.note(`second stage dropped with ${((f ?? 0) * 100).toFixed(1)} % propellant`);
       return;
     }
-    if (this.s.staging.nextStage >= 4 && this.hasMilestone('EARTH_ORBIT')) {
+    if (this.s.staging.nextStage >= 4 && this.reached('EARTH_ORBIT', this.rd.periapsisAltitude > 150000)) {
       this.ensureRcs(true);
       this.waitUntil = this.ut + (this.rd.period ?? 5400) + 120;
       this.go('parkingCoast', 86400, `parking orbit ${(this.rd.periapsisAltitude / 1000).toFixed(1)} x ${(this.rd.apoapsisAltitude / 1000).toFixed(1)} km, plane ${((this.rd.targetRelativeInclination ?? 0) * RAD).toFixed(3)} deg off the target's`);
@@ -1322,6 +1322,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     const alt = this.rd.altitudeAsl;
     // Corrections after leaving the Moon, at 150 000 km and at 50 000 km; then the capsule goes its own way.
     const gates = [Infinity, 150e6, 50e6];
+    // (Taking over on the way home, e.g. from a QA start: a minute to settle before the first correction.)
+    if (Number.isNaN(this.waitUntil)) this.waitUntil = this.ut + 60;
     if (this.correctionIndex < gates.length) {
       if (alt > gates[this.correctionIndex]! || (this.correctionIndex === 0 && !this.warpUntil(this.waitUntil))) {
         this.coastDown(gates[this.correctionIndex]!);
@@ -1515,8 +1517,12 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     this.go('splashdown', 1800);
   }
 
+  private restingSince = NaN;
   private splashdown(): void {
-    if (this.hasMilestone('SPLASHDOWN')) {
+    const resting = this.v.situation === 'splashed' || this.v.situation === 'landed';
+    if (!resting) this.restingSince = NaN;
+    else if (Number.isNaN(this.restingSince)) this.restingSince = this.ut;
+    if (this.reached('SPLASHDOWN', resting && this.ut - this.restingSince >= 30)) {
       this.report['splashLatitudeDeg'] = this.rd.latitude * RAD;
       this.report['splashLongitudeDeg'] = this.rd.longitude * RAD;
       this.note(`splashdown at ${(this.rd.latitude * RAD).toFixed(2)} deg, ${(this.rd.longitude * RAD).toFixed(2)} deg`);

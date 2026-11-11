@@ -59,6 +59,8 @@ export interface RunContext {
   stats: RunStats;
   /** Longest physics step in the last `seconds` of simulation time, ms (needs `clock`). */
   recentMaxStepMs(seconds: number): number;
+  /** Wall time of every physics step in the last `seconds` of simulation time, oldest first, ms (needs `clock`). */
+  recentStepMs(seconds: number): Float32Array;
 }
 
 export interface RunOptions {
@@ -212,6 +214,14 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
         if (ringMs[k]! > m) m = ringMs[k]!;
       }
       return m;
+    },
+    recentStepMs: (seconds: number): Float32Array => {
+      if (!ringMs || !ringUt) return new Float32Array(0);
+      let n = 0;
+      while (n < ringCount && ringUt[(ringHead - 1 - n + STEP_RING) % STEP_RING]! >= lastUt - seconds) n++;
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) out[n - 1 - i] = ringMs[(ringHead - 1 - i + STEP_RING) % STEP_RING]!;
+      return out;
     },
   };
   const issued: LoggedCommand[] = [];
