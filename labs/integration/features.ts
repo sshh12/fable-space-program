@@ -51,6 +51,8 @@ export interface BuiltFeatures {
   features: RenderFeature[];
   /** Packages that contributed at least one feature. */
   loaded: FeaturePackage[];
+  /** Package of every feature id (the budget table of ARCHITECTURE 17.1 is kept per package). */
+  packageOf: Record<string, FeaturePackage>;
   /** Whatever each factory returned (debug handles, controls), keyed `<package>.<export>`. */
   handles: Record<string, unknown>;
   /** Missing exports, thrown errors, unexpected return shapes: `<package>: <what>`. */
@@ -118,7 +120,7 @@ export async function importPackages(wanted: readonly FeaturePackage[]): Promise
 
 /** Build the features of the imported packages. */
 export function buildFeatures(modules: Partial<Record<FeaturePackage, Module>>, env: FeatureEnv): BuiltFeatures {
-  const out: BuiltFeatures = { features: [], loaded: [], handles: {}, problems: [] };
+  const out: BuiltFeatures = { features: [], loaded: [], packageOf: {}, handles: {}, problems: [] };
   for (const p of FEATURE_PACKAGES) {
     const mod = modules[p];
     if (!mod) continue;
@@ -136,6 +138,7 @@ export function buildFeatures(modules: Partial<Record<FeaturePackage, Module>>, 
         const features = featuresOf(result);
         if (features.length === 0) out.problems.push(`${p}: ${call.name} returned no RenderFeature`);
         out.features.push(...features);
+        for (const feature of features) out.packageOf[feature.id] = p;
         built += features.length;
       } catch (e) {
         out.problems.push(`${p}: ${call.name} threw: ${e instanceof Error ? e.message : String(e)}`);

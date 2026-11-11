@@ -8,13 +8,15 @@
  *   &planet=0                   no LabPlanet backdrop (it is added when the terrain feature is not loaded)
  *   &sim=real&scenario=<id>     the real Sim of src/sim when it exists (default: FakeSim, ?scene=<FakeScene>)
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
+ *   &ballast=1                  add the render-core lab's ballast pass (feature lab-heavy, off until
+ *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
  * orbit=, vessel=, fov=, ev=, perf=features, scale=, governor=off, deterministic=1, paused=1).
  *
  * Specs drive the page through window.__lab (the LabApp) and window.__integration (this file's handle).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { RenderFeature } from '@/core/contracts/render';
+import type { RenderContext, RenderFeature } from '@/core/contracts/render';
 import type { Sim, SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
@@ -26,6 +28,7 @@ import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createFetchTileSource, createTerrainProvider } from '@/terrain';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
+import { createProbes } from '../render-core/probes';
 import { sunAtSite, withSunOverride, type Site, type SunOverride } from '../render-core/world';
 import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, type FeaturePackage } from './features';
 
@@ -34,10 +37,16 @@ export interface IntegrationLab {
   /** Packages whose entry point exists in the tree / that are registered in this page. */
   available: FeaturePackage[];
   loaded: FeaturePackage[];
-  /** Factories that were missing or threw, features whose init failed: one line each. */
+  /** Factories that were missing or threw, features that were switched off: one line each. */
   problems: string[];
+  /** Features switched off because they reported errors while starting up, with those errors. */
+  quarantined: { pkg: FeaturePackage; featureId: string; errors: string[] }[];
   /** What each factory returned, keyed `<package>.<export>` (debug handles of the features). */
   handles: Record<string, unknown>;
+  /** Package of each registered wave-2 feature id. */
+  packageOf: Record<string, FeaturePackage>;
+  /** Iterations of the ballast pass per pixel (?ballast=1; 0 = off). Its GPU time is pass 'lab-heavy.burn'. */
+  setBallast(iterations: number): void;
   /** 'real' when the Sim of src/sim drives the page. */
   simKind: 'fake' | 'real';
   terrain: TerrainProvider;
@@ -76,6 +85,44 @@ function wantedPackages(): FeaturePackage[] {
   const base = !f || f === 'all' ? [...FEATURE_PACKAGES] : f === 'none' ? [] : list(f);
   const without = new Set(list(query.get('without')));
   return base.filter((p) => !without.has(p));
+}
+
+const HOOKS = ['prepare', 'compute', 'drawShadow', 'drawGBuffer', 'drawWater', 'drawBackground', 'compositeAtmosphere', 'preTransparent', 'drawTransparent', 'drawOverlay'] as const;
+
+/**
+ * The same feature behind a switch: it has exactly the hooks of `inner` (the core decides from their
+ * presence which passes exist), forwards them while enabled, and switches itself off, telling `onThrow`,
+ * when one of them throws.
+ */
+function guardFeature(inner: RenderFeature, onThrow: (message: string) => void): { feature: RenderFeature; disable(): void } {
+  let enabled = true;
+  const feature: Record<string, unknown> = {
+    id: inner.id,
+    init: (c: RenderContext) => inner.init(c),
+    isIdle: () => !enabled || (inner.isIdle?.() ?? true),
+    dispose: () => inner.dispose?.(),
+  };
+  if (inner.order !== undefined) feature['order'] = inner.order;
+  if (inner.requires !== undefined) feature['requires'] = inner.requires;
+  for (const hook of HOOKS) {
+    const fn = inner[hook] as ((...args: unknown[]) => void) | undefined;
+    if (typeof fn !== 'function') continue;
+    feature[hook] = (...args: unknown[]): void => {
+      if (!enabled) return;
+      try {
+        fn.apply(inner, args);
+      } catch (e) {
+        enabled = false;
+        onThrow(`${hook} threw: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+  }
+  return {
+    feature: feature as unknown as RenderFeature,
+    disable() {
+      enabled = false;
+    },
+  };
 }
 
 async function boot(): Promise<void> {
@@ -119,21 +166,53 @@ async function boot(): Promise<void> {
   const ctx = app.renderer.context;
 
   // The navball texture the cockpit instrument shows (the HUD renders it in the app).
-  const navball = createNavballRenderer(app.gpu, { perf: ctx.perf });
+  // (No perf recorder: it is encoded outside the frame graph here; its budget line is proven by hud.perf.spec.)
+  const navball = createNavballRenderer(app.gpu);
   ctx.resources.publish('ui.navball', navball.view);
 
   const built = buildFeatures(imported.modules, { defs, sim, ctx, gpu: app.gpu, terrain, navball, mfdPainter: createMfdPainter(), query });
   problems.push(...built.problems);
-  const loaded: FeaturePackage[] = [];
-  for (const f of built.features) {
+  // Ballast for perf runs: with only some features present the GPU has too little to do and clocks down,
+  // which inflates every pass time (docs/handoff/render-core.md 4.1).
+  const firstSite = Object.values(defs.sites)[0];
+  const ballast = query.get('ballast') === '1' ? createProbes(new URLSearchParams('probe=heavy&heavy=0'), { bodyId: firstSite?.bodyId ?? defs.rootBodyId, latDeg: firstSite?.location.latDeg ?? 0, lonDeg: firstSite?.location.lonDeg ?? 0, alt: 0 }, defs, app.snapshot()) : null;
+  if (ballast) {
+    ballast.attach(app);
+    for (const f of ballast.features) await app.renderer.addFeature(f);
+  }
+
+  // Register the features one at a time and watch the error list while each one initialises, compiles its
+  // shaders and renders its first frames. A feature that reports an error (or throws in a hook) is switched
+  // off and its errors move to `problems`: a package that is still being written must not take the page,
+  // and the checks of the other packages, down with it.
+  const errors = app.testApi.api.errors;
+  const quarantined: IntegrationLab['quarantined'] = [];
+  const quarantine = (featureId: string, messages: string[]): void => {
+    const pkg = built.packageOf[featureId]!;
+    quarantined.push({ pkg, featureId, errors: messages });
+    problems.push(`${pkg}: feature ${featureId} was switched off after ${messages.length} error(s): ${messages[0]}`);
+  };
+  const compiled = async (): Promise<void> => {
+    for (let i = 0; i < 200 && app.renderer.core.shaders.pendingCompilations() > 0; i++) await app.testApi.api.waitFrames(3);
+  };
+  for (const inner of built.features) {
+    const before = errors.length;
+    const g = guardFeature(inner, (message) => quarantine(inner.id, [message]));
     try {
-      await app.renderer.addFeature(f);
+      await app.renderer.addFeature(g.feature);
     } catch (e) {
-      problems.push(`feature ${f.id}: init failed: ${e instanceof Error ? e.message : String(e)}`);
+      g.disable();
+      quarantine(inner.id, [`init failed: ${e instanceof Error ? e.message : String(e)}`]);
+    }
+    await compiled();
+    await app.testApi.api.waitFrames(4);
+    if (errors.length > before) {
+      g.disable();
+      quarantine(inner.id, errors.splice(before));
     }
   }
-  const ids = new Set(app.renderer.featureOrder());
-  for (const p of built.loaded) if (built.features.some((f) => ids.has(f.id))) loaded.push(p);
+  const bad = new Set(quarantined.map((q) => q.pkg));
+  const loaded = built.loaded.filter((p) => !bad.has(p));
 
   // ----------------------------------------------------------------------------------------- camera
   let follow: ((snapshot: SimSnapshot) => void) | null = null;
@@ -169,7 +248,12 @@ async function boot(): Promise<void> {
     available: availablePackages(),
     loaded,
     problems,
+    quarantined,
     handles: built.handles,
+    packageOf: built.packageOf,
+    setBallast(iterations) {
+      ballast?.setHeavy(iterations);
+    },
     simKind,
     terrain,
     surface(bodyId, latDeg, lonDeg, alt, headingDeg, pitchDeg) {
@@ -222,7 +306,7 @@ async function boot(): Promise<void> {
       const c = app.cameraState();
       info.textContent =
         `integration lab   sim ${simKind}   features ${loaded.join(', ') || 'none'}${imported.modules.terrain ? '' : '   (LabPlanet backdrop)'}\n` +
-        `not in the tree: ${FEATURE_PACKAGES.filter((x) => !lab.available.includes(x)).join(', ') || 'none'}   problems ${problems.length}\n` +
+        `not in the tree: ${FEATURE_PACKAGES.filter((x) => !lab.available.includes(x)).join(', ') || 'none'}   switched off: ${quarantined.map((q) => q.featureId).join(', ') || 'none'}   problems ${problems.length}\n` +
         `gpu ${p.gpu.p50.toFixed(2)} ms (p99 ${p.gpu.p99.toFixed(2)})   cpu ${p.cpu.p50.toFixed(2)} ms   quality ${p.qualityScale.toFixed(2)}   scale ${p.renderScale.toFixed(2)}   EV100 ${e.ev100.toFixed(2)}\n` +
         `camera ${c.kind}  fov ${(c.fovY / DEG).toFixed(0)} deg`;
     }, 250);

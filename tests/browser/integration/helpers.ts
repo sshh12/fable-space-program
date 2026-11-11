@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page, TestType } from '@playwright/test';
 import { PNG } from 'pngjs';
-import { assertDiscreteGpu, openPage, saveScreenshot, waitIdle } from '../harness';
+import { assertDiscreteGpu, expect, openPage, saveScreenshot, waitIdle, type PageLog } from '../harness';
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
@@ -28,6 +28,8 @@ export interface LabInfo {
   available: FeaturePackage[];
   loaded: FeaturePackage[];
   problems: string[];
+  /** Features the lab switched off because they reported errors while starting up. */
+  quarantined: { pkg: FeaturePackage; featureId: string; errors: string[] }[];
   simKind: 'fake' | 'real';
   featureIds: string[];
 }
@@ -38,8 +40,20 @@ export async function openIntegration(page: Page, query: string, opts: { timeout
   await assertDiscreteGpu(page);
   return page.evaluate(() => {
     const lab = window.__integration!;
-    return { available: lab.available, loaded: lab.loaded, problems: lab.problems, simKind: lab.simKind, featureIds: lab.app.renderer.featureOrder() };
+    return { available: lab.available, loaded: lab.loaded, problems: lab.problems, quarantined: lab.quarantined, simKind: lab.simKind, featureIds: lab.app.renderer.featureOrder() };
   });
+}
+
+/**
+ * expectNoErrors for the integration lab: window.__test.errors must be empty, and the console may hold
+ * nothing but the errors of features the lab switched off (those are reported through `info.problems`).
+ */
+export async function expectClean(page: Page, log: PageLog, info: LabInfo): Promise<void> {
+  expect(await page.evaluate(() => window.__test!.errors), 'window.__test.errors').toEqual([]);
+  const excused = info.quarantined.flatMap((q) => q.errors);
+  const ignored = [/favicon/i, /powerPreference option is currently ignored/];
+  const real = log.messages.filter((m) => !ignored.some((re) => re.test(m)) && !excused.some((e) => m.includes(e.slice(0, 80))));
+  expect(real, 'console errors and warnings of features that are switched on').toEqual([]);
 }
 
 /** Has the owner of a render package delivered (hand-off note or done marker present)? */

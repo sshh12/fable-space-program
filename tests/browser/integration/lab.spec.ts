@@ -2,8 +2,8 @@
  * The integration lab itself: it boots with whichever render packages are in the tree, a missing package is
  * simply absent, and a package whose owner has delivered must load without a problem.
  */
-import { expect, expectNoErrors, test } from '../harness';
-import { delivered, freeze, openIntegration, record, save, settle, type FeaturePackage } from './helpers';
+import { expect, test } from '../harness';
+import { delivered, expectClean, freeze, openIntegration, record, save, settle, type FeaturePackage } from './helpers';
 
 test.describe.configure({ timeout: 600_000 });
 
@@ -11,7 +11,7 @@ test('the lab loads every package that is in the tree; delivered packages build 
   const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
   console.log(`integration lab: in the tree [${info.available.join(', ')}], loaded [${info.loaded.join(', ')}], features [${info.featureIds.join(', ')}]`);
   for (const p of info.problems) console.log(`  problem: ${p}`);
-  record('lab', { available: info.available, loaded: info.loaded, problems: info.problems, featureIds: info.featureIds });
+  record('lab', { available: info.available, loaded: info.loaded, problems: info.problems, quarantined: info.quarantined, featureIds: info.featureIds });
 
   // A package whose owner has handed off must be loaded, and none of the recorded problems may be its.
   const all: FeaturePackage[] = ['terrain', 'vehicle', 'cockpit', 'ocean', 'sky', 'atmosphere', 'vfx'];
@@ -27,7 +27,7 @@ test('the lab loads every package that is in the tree; delivered packages build 
   await settle(page);
   const shot = await save(page, 'lab-low-orbit');
   expect(shot.width).toBe(1280);
-  await expectNoErrors(page, pageLog);
+  await expectClean(page, pageLog, info);
 });
 
 test('a package can be left out: ?without= removes its features and nothing else', async ({ page, pageLog }) => {
@@ -37,5 +37,5 @@ test('a package can be left out: ?without= removes its features and nothing else
   const fewer = await openIntegration(page, `scene=lowOrbit&hud=0&without=${drop}`);
   expect(fewer.loaded).toEqual(all.loaded.filter((p) => p !== drop));
   expect(fewer.featureIds.length).toBeLessThan(all.featureIds.length + (drop === 'terrain' ? 1 : 0));
-  await expectNoErrors(page, pageLog);
+  await expectClean(page, pageLog, fewer);
 });
