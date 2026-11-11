@@ -118,6 +118,8 @@ test('inside fadeStart the depth copy holds the seabed; a submerged object is re
     return { n, cx: cx / Math.max(n, 1), cy: cy / Math.max(n, 1), mask };
   };
   const refracted = await objectImage();
+  // The object is back in the scene: let the frame converge before the picture is taken.
+  await waitIdle(page, 30);
   await saveScreenshot(page, 'ocean', 'handover-refraction');
   await page.evaluate(() => window.__ocean!.ocean!.debug.setRefractionScale(0));
   const straight = await objectImage();
@@ -251,6 +253,37 @@ test('at fadeStart the forward pixel equals the deferred pixel; across the band 
   expect(beyondCount).toBeGreaterThan(200);
   expect(identical).toBe(beyondCount);
 
+  // The same from 500 m up, where fadeStart lies two degrees below the horizon (a grazing view of the hand-over).
+  await page.evaluate(() => window.__ocean!.setCamera({ alt: 500, heading: 20, pitch: -3, fov: 30 }));
+  await waitIdle(page, 12);
+  const C = await grab(page, 2);
+  await page.evaluate(() => window.__ocean!.ocean!.debug.forceNearFieldOff(true));
+  await waitIdle(page, 6);
+  const D = await grab(page, 2);
+  await page.evaluate(() => window.__ocean!.ocean!.debug.forceNearFieldOff(false));
+  const low = (lo: number, hi: number): { n: number; worst: number; mean: number } => {
+    let n = 0;
+    let worst = 0;
+    let sum = 0;
+    C.dist.forEach((d, i) => {
+      if (d < lo || d > hi) return;
+      const r = Math.abs(C.lum[i]! - D.lum[i]!) / Math.max(D.lum[i]!, 1e-9);
+      n++;
+      sum += r;
+      worst = Math.max(worst, r);
+    });
+    return { n, worst, mean: n ? sum / n : 0 };
+  };
+  const lowStart = low(nf.fadeStart - 300, nf.fadeStart - 5);
+  const lowBand = low(nf.fadeStart, nf.fadeEnd);
+  console.log(`from 500 m: just inside fadeStart: ${JSON.stringify(lowStart)}; band: ${JSON.stringify(lowBand)}`);
+  expect(lowStart.n).toBeGreaterThan(50);
+  expect(lowStart.worst).toBeLessThan(0.02);
+  expect(lowBand.n).toBeGreaterThan(200);
+  expect(lowBand.worst).toBeLessThan(0.02);
+  await page.evaluate(() => window.__ocean!.setCamera({ alt: 6000, heading: 20, pitch: -22, fov: 60 }));
+  await waitIdle(page, 6);
+
   // Slow dolly with frozen time: frame differences must not peak at the fade radii (no line).
   const ringStats: { start: number; end: number; elsewhere: number }[] = [];
   let prev = A;
@@ -287,6 +320,9 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
   // Per fade radius R: the mean frame change on the ring (|d / R - 1| < 0.04) and in the bands just inside and just
   // outside it (0.04 - 0.15). A ring is a change concentrated ON the radius; the bands on both sides cancel the
   // smooth gradient of the change with distance (finer structure resolved nearer the camera moves more per step).
+  // Luminance is taken as displayed: everything above the display's white (1 in the pre-exposed target) is white.
+  // The sun's glitter is single facets at up to the sun's own radiance, thousands of times the sea around them;
+  // unclipped, a handful of them would outweigh every other change in the frame.
   const diffs: { alt: number; mean: number; radii: { ring: number; inner: number; outer: number }[] }[] = [];
   let prev: number[] | null = null;
   for (let k = 0; k < steps; k++) {
@@ -297,10 +333,12 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
       const img = await window.__lab!.renderer.readHdrPixels('hdr');
       const lum: number[] = [];
       const dist: number[] = [];
-      for (let y = 4; y < img.height; y += 8)
-        for (let x = 4; x < img.width; x += 8) {
+      // (Every fourth pixel: near the horizon a fade radius covers few rows, and the sea has texture; a coarser
+      // grid leaves the ring's mean change to a few dozen samples.)
+      for (let y = 2; y < img.height; y += 4)
+        for (let x = 2; x < img.width; x += 4) {
           const o = (y * img.width + x) * 4;
-          lum.push(0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!);
+          lum.push(Math.min(0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!, 1));
           dist.push(window.__ocean!.seaHit(x, y)?.dist ?? -1);
         }
       return { lum, dist };
@@ -322,7 +360,7 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
           }
         });
       }
-      const m = (a: number[]): number => (a[1]! > 20 ? a[0]! / a[1]! : 0);
+      const m = (a: number[]): number => (a[1]! > 150 ? a[0]! / a[1]! : 0);
       diffs.push({ alt, mean: s / cur.lum.length, radii: acc.map((a) => ({ ring: m(a.ring), inner: m(a.inner), outer: m(a.outer) })) });
     }
     prev = cur.lum;

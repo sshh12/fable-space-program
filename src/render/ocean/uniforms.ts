@@ -3,6 +3,7 @@
  * planet-scale quantity is reduced here (phases modulo 2 pi, cascade origins modulo the patch length,
  * positions relative to the camera) so the shaders only ever add small numbers.
  */
+import { FOAM_LEVELS, type FoamLevelFrame } from './foamMap';
 import { MAX_RIPPLES, MAX_VESSELS, OCEAN_UNIFORM_VEC4 } from './shaders/waves';
 import { MAX_SWELL, type PreparedSwell } from './swell';
 import { CASCADE_COUNT, CASCADE_MIPS, type CascadeSpectrum } from './spectrum';
@@ -17,6 +18,9 @@ export interface OceanVesselZone {
   dampRadius: number;
   strength: number;
   wobble: number;
+  /** Bounding radius of the hull (m) and the height of the vessel origin above the physics water (m). */
+  boundingRadius: number;
+  height: number;
 }
 
 export interface OceanRippleSource {
@@ -53,10 +57,10 @@ export interface OceanFrameData {
   tauPrev: number;
   repeatPeriod: number;
   dt: number;
-  foamDecay: number;
-  foamThreshold: number;
-  foamGain: number;
-  foamAlbedo: number;
+  /** Reactive-mask value inside the sun's glitter path. */
+  glintReactive: number;
+  /** Slope variance left to the lobe below every wave layer (the shortest capillaries). */
+  unresolvedFloor: number;
   shoreFoamDepth: number;
   refractionDistortion: number;
   chromaticOffset: number;
@@ -88,6 +92,13 @@ export interface OceanFrameData {
   field: { x: number; y: number; extent: number };
   /** Long-wave normals layer: its spectrum and, per copy, the rotation (rad) and origin (texture coordinates mod 1). */
   long: { spectrum: CascadeSpectrum; copies: { angle: number; origin: [number, number] }[] };
+  /** Share of the residual foam's density that shows; albedo of the thinnest lace relative to fresh foam. */
+  foamResidualDensity: number;
+  foamLaceAlbedo: number;
+  /** Surf: depth where the swell breaks (m), bore phase per sqrt(m) of depth, bores per repeat period. */
+  surf: { breakDepth: number; phasePerSqrtDepth: number; boresPerPeriod: number };
+  /** The foam map's levels this frame. */
+  foamLevels: readonly FoamLevelFrame[];
 }
 
 /** Write OceanUniforms into `f` (Float32Array of OCEAN_UNIFORM_VEC4 * 4) / `u` (Uint32Array view of the same buffer). */
@@ -111,7 +122,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   v4(d.fadeStart, d.fadeEnd, d.detailRadius, d.bandLift);
   v4(d.windSpeed, d.coxMunk, d.subVariance, d.choppiness);
   v4(d.tau, d.tauPrev, d.repeatPeriod, d.dt);
-  v4(d.foamDecay, d.foamThreshold, d.foamGain, d.foamAlbedo);
+  v4(d.glintReactive, d.unresolvedFloor, 0, 0);
   v4(d.shoreFoamDepth, d.refractionDistortion, d.chromaticOffset, d.whitecaps);
   u[o] = d.swell.count;
   u[o + 1] = Math.min(d.vessels.length, MAX_VESSELS);
@@ -135,7 +146,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
     const z = d.vessels[i];
     if (z) {
       v4(z.x, z.y, z.hullRadius, z.dampRadius);
-      v4(z.strength, z.wobble, 0, 0);
+      v4(z.strength, z.wobble, z.boundingRadius, z.height);
     } else {
       v4(0, 0, 0, 0);
       v4(0, 0, 0, 0);
@@ -158,6 +169,13 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   const [c0, c1] = d.long.copies;
   v4(Math.cos(c0!.angle), Math.sin(c0!.angle), Math.cos(c1!.angle), Math.sin(c1!.angle));
   v4(c0!.origin[0], c0!.origin[1], c1!.origin[0], c1!.origin[1]);
+  v4(d.foamResidualDensity, d.foamLaceAlbedo, 0, 0);
+  v4(d.surf.breakDepth, d.surf.phasePerSqrtDepth, d.surf.boresPerPeriod, 0);
+  for (let l = 0; l < FOAM_LEVELS; l++) {
+    const lv = d.foamLevels[l];
+    if (lv) v4(lv.x, lv.y, lv.texel, lv.valid ? 1 : 0);
+    else v4(0, 0, 1, 0);
+  }
 
   if (o !== OCEAN_UNIFORM_VEC4 * 4) throw new Error(`ocean: uniform packing wrote ${o / 4} vec4, expected ${OCEAN_UNIFORM_VEC4}`);
 }

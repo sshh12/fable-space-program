@@ -5,6 +5,7 @@
 import type { BodyDef, OceanDef, OceanRenderDef } from '@/core/contracts/defs';
 import type { SwellComponent } from '@/core/geo/oceanSwell';
 import { DEG, type Vec3Tuple } from '@/core/math';
+import { fieldAt, fieldMean } from './fieldModel';
 
 export interface OceanTunables {
   bodyId: string;
@@ -43,12 +44,32 @@ export interface OceanTunables {
   detailFadeFraction: number;
   /** 0..1: how strongly the imagery colour tints the deep-water colour. */
   imageryTint: number;
+  /** Decay rates (1/s) of the breaker's own foam and of the foam it leaves behind (foamMap.ts). */
   foamDecay: number;
-  /** Foam where a cascade's Jacobian falls more than foamSigma of its standard deviations below 1, full over foamRampSigma more. */
+  foamResidualDecay: number;
+  /** A wave breaks where the breaking criterion exceeds foamSigma of its standard deviations, fully over foamRampSigma more. */
   foamSigma: number;
   foamRampSigma: number;
+  /**
+   * Foam of a texel without history (scrolled in, or a level starting): old foam of density foamOldDensity where
+   * the criterion is within foamOldDrop sigmas below the threshold.
+   */
+  foamOldDrop: number;
+  foamOldDensity: number;
+  /** Albedo of fresh foam, and of the thinnest lace relative to it. */
   foamAlbedo: number;
+  foamLaceAlbedo: number;
+  /** Share of the residual foam's density that shows (the lace it thins out into). */
+  foamResidualDensity: number;
   shoreFoamDepth: number;
+  /**
+   * Surf: the swell breaks where the water is shallower than surfBreakDepth (m); bores follow each other every
+   * surfPeriod (s; rounded so that a whole number fits the repeat period) and travel at sqrt(g h) over a bed of
+   * slope surfBedSlope (which sets how many are between the break line and the shore).
+   */
+  surfBreakDepth: number;
+  surfPeriod: number;
+  surfBedSlope: number;
   refractionDistortion: number;
   chromaticOffset: number;
   vesselDampingHullRadii: number;
@@ -68,6 +89,13 @@ export interface OceanTunables {
   /** Gusts ("cat's paws", 0.3-1.5 km): log amplitude of the slope variance; calm filaments (~150 m wide): depth 0..1. */
   gustVariability: number;
   filamentStrength: number;
+  /**
+   * Side of a glitter facet (m): a pixel whose footprint holds N = area / size^2 facets shows a Poisson number of
+   * them mirroring the sun (brdf_water). About the size of the wavelets that carry a sun image.
+   */
+  glintFacetSize: number;
+  /** Reactive-mask value inside the sun's glitter path (sparkles are new every few frames). */
+  glintReactive: number;
   /**
    * Largest reactive-mask value for the temporal resolve ('post.reactive', RENDER_API section 18), reached where
    * the shortest wave the pixel resolves changes its phase by much more than 0.1 rad per frame.
@@ -133,10 +161,18 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     detailFadeFraction: need(file, p, 'detailFadeFraction', (v) => v > 0 && v < 1),
     imageryTint: need(file, p, 'imageryTint', fraction),
     foamDecay: need(file, p, 'foamDecayPerS', positive),
+    foamResidualDecay: need(file, p, 'foamResidualDecayPerS', positive),
     foamSigma: need(file, p, 'foamSigma', positive),
     foamRampSigma: need(file, p, 'foamRampSigma', positive),
+    foamOldDrop: need(file, p, 'foamOldDropSigma', (v) => v >= 0),
+    foamOldDensity: need(file, p, 'foamOldDensity', fraction),
     foamAlbedo: need(file, p, 'foamAlbedo', fraction),
+    foamLaceAlbedo: need(file, p, 'foamLaceAlbedo', fraction),
+    foamResidualDensity: need(file, p, 'foamResidualDensity', fraction),
     shoreFoamDepth: need(file, p, 'shoreFoamDepthM', positive),
+    surfBreakDepth: need(file, p, 'surfBreakDepthM', positive),
+    surfPeriod: need(file, p, 'surfPeriodS', positive),
+    surfBedSlope: need(file, p, 'surfBedSlope', positive),
     refractionDistortion: need(file, p, 'refractionDistortion', (v) => v >= 0),
     chromaticOffset: need(file, p, 'chromaticOffset', (v) => v >= 0),
     vesselDampingHullRadii: need(file, p, 'vesselDampingHullRadii', positive),
@@ -152,8 +188,20 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     slickStrength: need(file, p, 'slickStrength', fraction),
     gustVariability: need(file, p, 'gustVariability', (v) => v >= 0 && v < 1),
     filamentStrength: need(file, p, 'filamentStrength', fraction),
+    glintFacetSize: need(file, p, 'glintFacetSizeM', positive),
+    glintReactive: need(file, p, 'glintReactive', fraction),
     taaReactive: need(file, p, 'taaReactive', fraction),
   };
+}
+
+/**
+ * The roughness field of a body's sea as brdf_water shades it (fieldModel.ts): a function of the body-fixed unit
+ * direction of a sea point and the footprint (m) it is seen with, mean 1. The local Cox-Munk slope variance is
+ * coxMunkVariance(windSpeed) x this.
+ */
+export function oceanRoughnessField(t: OceanTunables): (dirFixed: { x: number; y: number; z: number }, footprint: number) => number {
+  const mean = fieldMean(t);
+  return (dirFixed, footprint) => fieldAt(dirFixed, t.seaRadius, t.windDir, t, mean, footprint);
 }
 
 /** Cox-Munk mean square slope (both axes summed) for a U10 wind speed: 0.003 + 0.00512 U. */

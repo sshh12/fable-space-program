@@ -1,8 +1,8 @@
 /**
  * Compute shaders of the Tessendorf FFT: time evolution of the layer spectra (the four cascades and the long-wave
  * normals layer; phases exact through the quantised dispersion), two 256-point radix-2 passes per layer (rows,
- * then columns + assembly into the displacement / derivative / foam texture arrays), and the mip chain of those
- * arrays.
+ * then columns + assembly into the displacement / derivative texture arrays), and the mip chain of those arrays.
+ * (Foam is not made here: it comes from the combined surface, in the camera-centred foam map, foamMap.ts.)
  *
  * Packing: four complex inverse FFTs per cascade carry eight real fields, two per transform
  * (IFFT(A + iB) = a + ib for Hermitian A, B):
@@ -11,17 +11,14 @@
  * y = north of the chart. Outputs per cascade layer:
  *   'ocean.displacement'  rgba16float: Dx, h, Dy, dDx/dy   (m)
  *   'ocean.derivatives'   rgba16float: dh/dx, dh/dy, dDx/dx, dDy/dy
- *   foam (internal)       rgba16float: r = foam 0..1 (Jacobian folding with temporal decay), g = Jacobian
  */
 import { FFT_LAYERS, FFT_SIZE } from '../spectrum';
 
 export const FFT_SPECTRUM_WGSL = /* wgsl */ `
 struct FftParams {
-  time: vec4f,      // x = tau = frac(t / T), y = choppiness, z = dt (s), w = foam decay (1/s)
-  foam: vec4f,      // x = foam threshold below J = 1 in standard deviations of the cascade's Jacobian, y = ramp width (same unit)
+  time: vec4f,      // x = tau = frac(t / T), y = choppiness, zw = 0
   lengths: vec4f,   // patch length of layers 0..3 (m)
-  sigmaJ: vec4f,    // standard deviation of the Jacobian of layers 0..3
-  layer4: vec4f,    // x = patch length, y = Jacobian spread of layer 4 (the long-wave layer), z = mask of the layers updated this frame
+  layer4: vec4f,    // x = patch length of layer 4 (the long-wave layer), y = 0, z = mask of the layers updated this frame
 }
 fn layerActive(c: u32) -> bool { return ((u32(fp.layer4.z) >> c) & 1u) != 0u; }
 @group(0) @binding(0) var<uniform> fp: FftParams;
@@ -81,9 +78,7 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
 const FFT_PARAMS = /* wgsl */ `
 struct FftParams {
   time: vec4f,
-  foam: vec4f,
   lengths: vec4f,
-  sigmaJ: vec4f,
   layer4: vec4f,
 }
 fn layerActive(c: u32) -> bool { return ((u32(fp.layer4.z) >> c) & 1u) != 0u; }
@@ -154,8 +149,6 @@ ${FFT_PARAMS}
 @group(0) @binding(3) var<storage, read_write> work: array<vec2f>;
 @group(0) @binding(4) var dispOut: texture_storage_2d_array<rgba16float, write>;
 @group(0) @binding(5) var derivOut: texture_storage_2d_array<rgba16float, write>;
-@group(0) @binding(6) var foamOut: texture_storage_2d_array<rgba16float, write>;
-@group(0) @binding(7) var foamPrev: texture_2d_array<f32>;
 ${FFT_CORE}
 @compute @workgroup_size(${FFT_SIZE / 2}, 1, 1)
 fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: vec3u) {
@@ -171,7 +164,6 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
     }
   }
   fftWorkgroup(t);
-  let decay = exp(-fp.time.w * fp.time.z);
   for (var k = 0u; k < 2u; k++) {
     let j = t * 2u + k;
     let p0 = buf[j];
@@ -181,26 +173,18 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
     let texel = vec2i(i32(col), i32(j));
     textureStore(dispOut, texel, c, vec4f(p0.x, p1.x, p0.y, p1.y));
     textureStore(derivOut, texel, c, vec4f(p2.x, p2.y, p3.x, p3.y));
-    // Jacobian of the horizontal map x -> x + D: folding (J < threshold) breeds foam, which then decays.
-    let J = (1.0 + p3.x) * (1.0 + p3.y) - p1.y * p1.y;
-    let sj = select(fp.layer4.y, fp.sigmaJ[min(c, 3u)], c < 4u);
-    let fresh = saturate(((1.0 - fp.foam.x * sj) - J) / max(fp.foam.y * sj, 1e-6));
-    let old = textureLoad(foamPrev, texel, c, 0).r * decay;
-    textureStore(foamOut, texel, c, vec4f(max(old, fresh), J, 0.0, 1.0));
   }
 }
 `;
 
-/** 2 x 2 box downsample of three cascade arrays from mip l - 1 to mip l. */
+/** 2 x 2 box downsample of the two cascade arrays from mip l - 1 to mip l. */
 export const FFT_MIP_WGSL = /* wgsl */ `
 ${FFT_PARAMS}
-@group(0) @binding(6) var<uniform> fp: FftParams;
+@group(0) @binding(4) var<uniform> fp: FftParams;
 @group(0) @binding(0) var srcA: texture_2d_array<f32>;
 @group(0) @binding(1) var srcB: texture_2d_array<f32>;
-@group(0) @binding(2) var srcC: texture_2d_array<f32>;
-@group(0) @binding(3) var dstA: texture_storage_2d_array<rgba16float, write>;
-@group(0) @binding(4) var dstB: texture_storage_2d_array<rgba16float, write>;
-@group(0) @binding(5) var dstC: texture_storage_2d_array<rgba16float, write>;
+@group(0) @binding(2) var dstA: texture_storage_2d_array<rgba16float, write>;
+@group(0) @binding(3) var dstB: texture_storage_2d_array<rgba16float, write>;
 @compute @workgroup_size(8, 8, 1)
 fn mip(@builtin(global_invocation_id) id: vec3u) {
   let size = textureDimensions(dstA);
@@ -209,15 +193,12 @@ fn mip(@builtin(global_invocation_id) id: vec3u) {
   let p = vec2i(id.xy) * 2;
   var a = vec4f(0.0);
   var b = vec4f(0.0);
-  var c = vec4f(0.0);
   for (var k = 0; k < 4; k++) {
     let q = p + vec2i(k & 1, k >> 1);
     a += textureLoad(srcA, q, layer, 0);
     b += textureLoad(srcB, q, layer, 0);
-    c += textureLoad(srcC, q, layer, 0);
   }
   textureStore(dstA, vec2i(id.xy), layer, a * 0.25);
   textureStore(dstB, vec2i(id.xy), layer, b * 0.25);
-  textureStore(dstC, vec2i(id.xy), layer, c * 0.25);
 }
 `;

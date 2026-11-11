@@ -1,7 +1,8 @@
 /**
  * Sun glint from one function (brdf_water):
  *  - from LEO (far water, deferred) the specular highlight is a broad patch at the mirror point whose angular
- *    width matches the Cox-Munk slope variance for the wind speed within 20 %;
+ *    width matches the Cox-Munk slope variance for the wind speed within 20 % (the variance of the water the glint
+ *    lies on: the wind speed's value x the mean of the sea's roughness field over the glint);
  *  - at 2 m (near field, forward) it is a glitter path of sparkles toward the sun;
  *  - with the sun on the horizon no pixel exceeds HDR_MAX and none is NaN.
  * The glint is isolated exactly: image with the direct specular minus the same frame without it.
@@ -111,13 +112,50 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
     window.__test!.setPaused(true);
     window.__test!.setDeterministic(true);
     window.__lab!.renderer.setJitter(false);
+    // The glint is the difference of two frames (with and without the direct specular): one exposure for both.
+    window.__lab!.renderer.setExposureOverride(14);
   });
   await waitIdle(page, 12);
   await saveScreenshot(page, 'ocean', 'glint-leo');
   const { px } = await glintImage(page, 3);
   const st = await page.evaluate(() => window.__ocean!.ocean!.debug.state());
-  const sigma = Math.sqrt(st.coxMunk);
+  // The slope variance of the water the glint lies on: Cox-Munk for the wind speed x the roughness field there
+  // (calmer and rougher regions of the sea, mean 1 over the planet; averaged over the glint's own area, as the
+  // footprint of a pixel from this height sees it).
+  const local = await page.evaluate(() => {
+    const lab = window.__ocean!;
+    const fc = lab.app.renderer.frameContext!;
+    const [w, h] = fc.renderSize;
+    const sun = fc.sun.dirRoot;
+    const body = lab.app.snapshot().bodies.find((x) => x.id === lab.site.bodyId)!;
+    const q = body.qFixedToRoot;
+    const rot = (v: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+      const tx = 2 * (q.y * v.z - q.z * v.y);
+      const ty = 2 * (q.z * v.x - q.x * v.z);
+      const tz = 2 * (q.x * v.y - q.y * v.x);
+      return { x: v.x + q.w * tx + (q.y * tz - q.z * ty), y: v.y + q.w * ty + (q.z * tx - q.x * tz), z: v.z + q.w * tz + (q.x * ty - q.y * tx) };
+    };
+    const pixelAngle = (2 * Math.tan(lab.app.cameraState().fovY / 2)) / h;
+    let sum = 0;
+    let n = 0;
+    for (let y = 0; y < h; y += 6) {
+      for (let x = 0; x < w; x += 6) {
+        const hit = lab.seaHit(x, y);
+        if (!hit) continue;
+        const up = rot(hit.dirFixed);
+        const hv = { x: sun.x - hit.ray.x, y: sun.y - hit.ray.y, z: sun.z - hit.ray.z };
+        const c = (hv.x * up.x + hv.y * up.y + hv.z * up.z) / Math.hypot(hv.x, hv.y, hv.z);
+        // Inside the half-maximum radius of the Cox-Munk lobe (tan beta below 0.16).
+        if (Math.sqrt(Math.max(0, 1 - c * c)) / c > 0.16) continue;
+        sum += lab.roughness(hit.dirFixed, hit.dist * pixelAngle);
+        n++;
+      }
+    }
+    return { mean: sum / n, n };
+  });
+  const sigma = Math.sqrt(st.coxMunk * local.mean);
   const expectedHalf = sigma * Math.sqrt(Math.LN2);
+  console.log(`roughness field over the glint: mean ${local.mean.toFixed(3)} (${local.n} samples)`);
   // Radial profile of the glint in facet-slope space.
   const bins = new Map<number, { s: number; n: number }>();
   const bw = 0.01;
@@ -130,7 +168,11 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
   }
   const prof = [...bins.entries()].sort((a, b) => a[0] - b[0]).map(([k, e]) => ({ t: (k + 0.5) * bw, g: e.s / e.n, n: e.n }));
   const peak = px.reduce((m, p) => (p.g > m.g ? p : m), px[0]!);
-  const g0 = prof[0]!.g;
+  // The top of the lobe: the mean glint within tan(beta) 0.04, a quarter of the half-maximum radius (the Gaussian
+  // lobe is within 4 % of its peak there), so that one slick or one rough patch lying on the mirror point itself
+  // does not set the level the half maximum is measured against.
+  const top = px.filter((p) => p.tanBeta < 0.04);
+  const g0 = top.reduce((s, p) => s + p.g, 0) / top.length;
   let half = NaN;
   for (let i = 1; i < prof.length; i++) {
     if (prof[i]!.g <= g0 / 2) {
@@ -140,7 +182,7 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
       break;
     }
   }
-  console.log(`LEO glint: brightest pixel at tan(beta) ${peak.tanBeta.toFixed(4)} (px ${peak.x},${peak.y}); half maximum at tan(beta) ${half.toFixed(4)}, Cox-Munk ${expectedHalf.toFixed(4)} (sigma^2 ${st.coxMunk.toFixed(4)}); ratio ${(half / expectedHalf).toFixed(3)}`);
+  console.log(`LEO glint: brightest pixel at tan(beta) ${peak.tanBeta.toFixed(4)} (px ${peak.x},${peak.y}); half maximum at tan(beta) ${half.toFixed(4)}, Cox-Munk ${expectedHalf.toFixed(4)} (sigma^2 ${st.coxMunk.toFixed(4)} x ${local.mean.toFixed(3)}); ratio ${(half / expectedHalf).toFixed(3)}`);
   console.log('profile:', prof.slice(0, 40).map((p) => `${p.t.toFixed(3)}:${p.g.toExponential(2)}`).join(' '));
   // At the mirror point, in facet-slope space (east, north), over discs the image covers completely (every sector
   // of every ring sampled, so the disc itself is centred):
@@ -176,6 +218,7 @@ test('at 2 m the glint is a glitter path of sparkles toward the sun; HDR_MAX and
     window.__test!.setPaused(true);
     window.__test!.setDeterministic(true);
     window.__lab!.renderer.setJitter(false);
+    window.__lab!.renderer.setExposureOverride(13);
     window.__ocean!.setSun([268, 6]);
   });
   await waitIdle(page, 12);

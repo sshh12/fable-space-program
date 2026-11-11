@@ -49,7 +49,7 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
         const ps = window.__lab!.renderer.passStats();
         const perf = window.__test!.perf()!;
         const p99 = (n: string): number => ps[n]?.p99 ?? 0;
-        const separate = ['ocean.fft', 'ocean.wake', 'ocean.reactive', 'ocean.fieldBake'];
+        const separate = ['ocean.fft', 'ocean.foam', 'ocean.wake', 'ocean.reactive', 'ocean.fieldBake'];
         const water = Object.entries(ps).filter(([n]) => n.startsWith('ocean.') && !separate.includes(n));
         const ocean = Object.entries(ps).filter(([n]) => n.startsWith('ocean.'));
         return {

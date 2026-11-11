@@ -43,14 +43,23 @@ test('moving the camera away and back reproduces the frame; TAA keeps the detail
   await waitIdle(page, 6);
   const grab = async (): Promise<Float32Array> =>
     Float32Array.from(await page.evaluate(async () => Array.from((await window.__lab!.renderer.readHdrPixels('hdr')).data)));
+  // Walk the camera 250 m away in 25 steps (the patch selection, morphs, the chart reference and the windows of
+  // the foam map all change) and back.
+  const roundTrip = async (): Promise<void> => {
+    for (let k = 1; k <= 25; k++) {
+      await page.evaluate((n) => window.__ocean!.setCamera({ east: n * 10, alt: 2 + n * 4, heading: 12, pitch: -9 }), k);
+      await page.evaluate(() => window.__test!.waitFrames(1));
+    }
+    await page.evaluate(() => window.__ocean!.setCamera({ alt: 2, heading: 12, pitch: -9 }));
+    await page.evaluate(() => window.__test!.waitFrames(3));
+  };
+  // Whitecaps carry a history (what a breaker left behind), which belongs to the texels of the foam map's windows:
+  // with time frozen, a texel that leaves a window and returns starts again from the state without history. A first
+  // round trip puts every texel in that state (no foam history from before the freeze is left); the second must
+  // then reproduce the frame exactly.
+  await roundTrip();
   const a = await grab();
-  // Walk the camera 250 m away in 25 steps (the patch selection, morphs and the chart reference all change) and back.
-  for (let k = 1; k <= 25; k++) {
-    await page.evaluate((n) => window.__ocean!.setCamera({ east: n * 10, alt: 2 + n * 4, heading: 12, pitch: -9 }), k);
-    await page.evaluate(() => window.__test!.waitFrames(1));
-  }
-  await page.evaluate(() => window.__ocean!.setCamera({ alt: 2, heading: 12, pitch: -9 }));
-  await page.evaluate(() => window.__test!.waitFrames(3));
+  await roundTrip();
   const b = await grab();
   let worst = 0;
   let sum = 0;

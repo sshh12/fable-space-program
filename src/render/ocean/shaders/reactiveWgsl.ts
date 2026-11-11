@@ -13,6 +13,9 @@
  *  - shortest resolved wavelength = 2 x footprint, its deep-water angular frequency (gravity from the ripple
  *    dispersion of this body, with the capillary term), its phase change over this frame's sim dt;
  *  - value = taaReactive x (1 - exp(-phase / 0.1 rad)) x the wave-detail fade towards fadeStart.
+ * Inside the sun's glitter path the image is sparkles that are new every few frames (brdf_water draws them per
+ * sea-anchored cell about 14 times a second): there the value rises to glintReactive, by how far the facet that
+ * would mirror the sun into the pixel lies inside the Cox-Munk slope distribution.
  * With time frozen (dt = 0) the value is 0, so a still sea keeps the full history.
  */
 export const REACTIVE_WGSL = (sceneBindings: string): string => /* wgsl */ `
@@ -43,7 +46,13 @@ ${sceneBindings}
   let g = oceanU.rippleParams.w * oceanU.rippleParams.w / max(oceanU.rippleParams.x, 1e-6);
   let omega = sqrt(g * k + 7.4e-5 * k * k * k);
   let phase = omega * oceanU.time.w;
-  let r = oceanU.misc.w * detail * (1.0 - exp(-phase / 0.1));
+  var r = oceanU.misc.w * detail * (1.0 - exp(-phase / 0.1));
+  if (oceanU.time.w > 0.0) {
+    // Slope of the facet that mirrors the sun into this pixel, against the sea's slope distribution.
+    let hv = normalize(frame.bodies[i32(oceanU.refRel.w)].sunDir.xyz - p / max(dist, 1e-6));
+    let ch = max(dot(hv, up), 1e-3);
+    r = max(r, oceanU.glint.x * exp(-(1.0 - ch * ch) / (ch * ch) / (3.0 * oceanU.wind.y)));
+  }
   if (r <= 0.0) { discard; }
   return vec4f(r);
 }

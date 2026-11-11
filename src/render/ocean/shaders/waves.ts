@@ -15,12 +15,13 @@
  * cascade texture coordinates are plane coordinates / L plus the float64-reduced fraction of the reference.
  */
 import { MAX_SWELL } from '../swell';
+import { FOAM_LEVELS } from '../foamMap';
 import { CASCADE_COUNT, CASCADE_MIPS, LONG_LAYER } from '../spectrum';
 
 export const MAX_VESSELS = 8;
 export const MAX_RIPPLES = 8;
 /** Number of vec4 in OceanUniforms (see packOceanUniforms). */
-export const OCEAN_UNIFORM_VEC4 = 86;
+export const OCEAN_UNIFORM_VEC4 = 91;
 export const OCEAN_UNIFORM_BYTES = OCEAN_UNIFORM_VEC4 * 16;
 
 export const OCEAN_WAVES_WGSL = /* wgsl */ `
@@ -40,7 +41,7 @@ struct OceanCascade {
 }
 struct OceanVessel {
   a: vec4f,       // xy = plane offset of the vessel from the reference point (m), z = radius of full damping (m), w = radius where the chop is back (m)
-  b: vec4f,       // x = damping strength 0..1, y = waterline wobble bound (m), zw = 0
+  b: vec4f,       // x = damping strength 0..1, y = waterline wobble bound (m), z = bounding radius of the hull (m), w = height of the vessel origin above the physics water (m)
 }
 struct OceanUniforms {
   cHat: vec4f,          // xyz = unit body-fixed direction of the reference point, w = sea-level radius R (m)
@@ -53,7 +54,7 @@ struct OceanUniforms {
   fade: vec4f,          // x = fadeStart, y = fadeEnd, z = radius of complete wave detail, w = lift of the flat band surface (m)
   wind: vec4f,          // x = U10 (m/s), y = Cox-Munk mean square slope, z = slope variance below the finest cascade, w = choppiness (already in the textures)
   time: vec4f,          // x = tau = frac(t / T), y = tau of the previous frame, z = T (s), w = dt (s)
-  foam: vec4f,          // x = decay (1/s), y = Jacobian threshold, z = gain, w = foam albedo
+  glint: vec4f,         // x = reactive-mask value inside the sun's glitter path, y = slope variance left to the lobe below every wave layer, zw = 0
   shore: vec4f,         // x = shore foam depth (m), y = refraction distortion, z = chromatic offset, w = statistical whitecap coverage
   counts: vec4u,        // x = swell components, y = vessels, z = ripples, w = flags (bit 0 = wake texture valid, bits 8..11 = debug view, bits 16..20 = wave layers updated this frame)
   wake: vec4f,          // xy = plane offset of the wake texture centre from the reference point, z = extent (m), w = 1 / extent
@@ -72,6 +73,11 @@ struct OceanUniforms {
   long: OceanCascade,        // geom = (L, 1 / L, 0, 0), filt0 / filt1, stats = (slope variance, height RMS, band mean omega, 0)
   longRot: vec4f,            // xy = (cos, sin) of copy 0's rotation, zw = copy 1's
   longOrigin: vec4f,         // xy / zw = texture coordinates of the reference point for copy 0 / 1, modulo 1
+  foam: vec4f,               // x = share of the residual foam's density that shows, y = albedo of the thinnest lace relative to fresh foam, zw = 0
+  surf: vec4f,               // x = depth where the swell breaks (m), y = bore phase per sqrt(m) of depth, z = bores per repeat period, w = 0
+  // Foam map levels (foamMap.ts): xy = plane offset of the centre of texel (0, 0) from the reference point (m),
+  // z = texel (m), w = 1 when the level holds foam this frame.
+  foamLevel: array<vec4f, ${FOAM_LEVELS}>,
 }
 
 fn oceanRot(v: vec3f) -> vec3f { return oceanU.rot0.xyz * v.x + oceanU.rot1.xyz * v.y + oceanU.rot2.xyz * v.z; }
@@ -103,6 +109,13 @@ struct OceanSwellSample {
 /// The shared swell at sphere offset 'delta' (body-fixed, m) and unit up 'up'. prev = evaluate one frame earlier.
 /// 'filterWidth' (m) band-limits each component (0 = exact, the physics surface). Mirrors oceanSwellHeight.
 fn oceanSwellEval(delta: vec3f, up: vec3f, filterWidth: f32, prev: bool) -> OceanSwellSample {
+  return oceanSwellEvalAlong(delta, up, filterWidth, vec4f(0.0), prev);
+}
+/// The same with an anisotropic band limit: 'stretch.xyz' = unit horizontal direction (body-fixed) along which the
+/// filter is 'stretch.w' (m) wide instead of 'filterWidth' (a pixel's footprint on the sea is long along the view).
+/// A component is filtered with the width along its own direction of travel, exp(-(k w)^2 / 2): under 1 % of a
+/// wave two filter widths long is left, so nothing near the sampling limit survives to alias.
+fn oceanSwellEvalAlong(delta: vec3f, up: vec3f, filterWidth: f32, stretch: vec4f, prev: bool) -> OceanSwellSample {
   var o: OceanSwellSample;
   o.height = 0.0;
   o.grad = vec3f(0.0);
@@ -118,15 +131,17 @@ fn oceanSwellEval(delta: vec3f, up: vec3f, filterWidth: f32, prev: bool) -> Ocea
     let w = smoothstep(0.15, 0.5, sinAng);
     if (w == 0.0) { continue; }
     let ph = oceanWrapPhase(select(ap.y, ap.w, prev) + dk.w * dd);
-    let band = exp(-0.125 * sq(dk.w * filterWidth));
+    // d(phase)/d(surface position) = k (d - (d . n) n): the component's wavevector on the sphere.
+    let kt = dk.xyz - up * dot(dk.xyz, up);
+    let dir = kt / max(length(kt), 1e-6);
+    let al = abs(dot(dir, stretch.xyz));
+    let fwd = sqrt(sq(stretch.w * al) + sq(filterWidth) * (1.0 - al * al));
+    let band = exp(-0.5 * sq(dk.w * fwd));
     let a = ap.x * w * band;
     let c = cos(ph);
     let s = sin(ph);
     o.height += a * c;
-    // d(phase)/d(surface position) = k (d - (d . n) n): the component's wavevector on the sphere.
-    let kt = dk.xyz - up * dot(dk.xyz, up);
     o.grad += -a * dk.w * s * kt;
-    let dir = kt / max(length(kt), 1e-6);
     o.disp += -a * s * vec2f(dot(dir, oceanU.axisE.xyz), dot(dir, oceanU.axisF.xyz));
     o.variance += 0.5 * sq(a * dk.w * sinAng);
   }

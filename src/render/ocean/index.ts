@@ -3,6 +3,6 @@
  * helpers the hand-off documents.
  */
 export { createOceanFeature, OCEAN_FEATURE_ID, type OceanDebug, type OceanFeature, type OceanSurfaceSample } from './oceanFeature';
-export { coxMunkVariance, GGX_KAPPA, oceanTunables, type OceanTunables } from './params';
+export { coxMunkVariance, GGX_KAPPA, oceanRoughnessField, oceanTunables, type OceanTunables } from './params';
 export { nearFieldValue, packNearField, type OceanNearFieldValue } from './nearField';
 export { physicsWaterHeight } from './vessels';

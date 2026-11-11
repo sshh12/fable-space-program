@@ -239,7 +239,7 @@ export class OceanVessels {
       // Fully damped at the water, fading out as an entering vessel is still higher than its damping reach.
       const strength = 1 - smooth(hull, reach, w.height);
       // The whole zone of `reach` is damped (the waterline follows the swell there); the chop returns over two more hull radii.
-      zones.push({ x: xy.x - ref.x, y: xy.y - ref.y, hullRadius: reach, dampRadius: reach + 2 * hull, strength, wobble: 0.05 });
+      zones.push({ x: xy.x - ref.x, y: xy.y - ref.y, hullRadius: reach, dampRadius: reach + 2 * hull, strength, wobble: 0.05, boundingRadius: hull, height: w.height });
     }
     for (const r of this.ripples) ripples.push({ x: r.x - ref.x, y: r.y - ref.y, age: s.ut - r.ut0, amplitude: r.amplitude });
 

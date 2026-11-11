@@ -2,7 +2,7 @@
  * Ocean lab: the ocean feature on the LabPlanet backdrop (which implements the terrain side of the near-field
  * hand-over), under the lab sky, with props for the shoreline, refraction and splashdown scenes.
  *
- *   ?preset=midday|sunset|overcast|alt500|alt3k|alt10k|alt30k|alt100k|leo|shore|shoreAlong|splash|night|refraction
+ *   ?preset=midday|sunset|overcast|down150|alt500|alt3k|alt10k|alt30k|alt100k|leo|shore|shoreAlong|coast60|splash|night|refraction
  *           (default midday)
  *   &stray=1      stray water-material fragments inside fadeStart (the terrain defect of request terrain-render-cs-1)
  *   &ocean=0      without the ocean feature (the far water alone, default brdf_water)
@@ -14,7 +14,7 @@ import type { RenderFeature } from '@/core/contracts/render';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, type LabApp, type LabCameraSpec } from '@/render/core/lab';
-import { createOceanFeature, type OceanFeature } from '@/render/ocean';
+import { createOceanFeature, oceanRoughnessField, oceanTunables, type OceanFeature } from '@/render/ocean';
 import { createBallastFeature, type Ballast } from './ballast';
 import { createLabSkyFeature, type LabSky } from './labSky';
 import { offsetDir, OceanLabWorld, waterHeight, type LabSite } from './labSim';
@@ -36,21 +36,26 @@ export interface OceanPreset {
 const markerLine = (north0: number, count: number, step: number, east = 0): { east: number; north: number }[] =>
   Array.from({ length: count }, (_, i) => ({ east: east + (i - (count - 1) / 2) * 1.4, north: north0 + i * step }));
 
-// Orbital and high views are exposed like a real camera in sunlight (sunny 16, EV 15): with no clouds or land in
-// the lab the meter would otherwise expose the dark sea to mid-grey.
+// Every daylight view is exposed by the renderer's meter, as the game's camera would expose it (`ev` only where a
+// preset needs a fixed exposure: the night view, which the meter of a moonlit sea alone would turn into day).
 export const PRESETS: Record<string, OceanPreset> = {
   midday: { sun: [12, 62], camera: { alt: 2, heading: 12, pitch: -9 } },
   sunset: { sun: [268, 2.5], camera: { alt: 2, heading: 268, pitch: -2.5 } },
   overcast: { sun: [40, 35], overcast: true, camera: { alt: 2, heading: 200, pitch: -7 } },
-  alt500: { sun: [10, 48], camera: { alt: 500, heading: 10, pitch: -28 }, ev: 15 },
-  alt3k: { sun: [12, 50], camera: { alt: 3000, heading: 12, pitch: -32 }, ev: 15 },
-  alt10k: { sun: [15, 50], camera: { alt: 10000, heading: 15, pitch: -40 }, ev: 15 },
-  alt30k: { sun: [18, 48], camera: { alt: 30000, heading: 18, pitch: -38 }, ev: 15 },
-  alt100k: { sun: [20, 30], camera: { alt: 100000, heading: 20, pitch: -24, fov: 55 }, ev: 15 },
-  leo: { sun: [0, 58], camera: { alt: 400000, heading: 0, pitch: -55, fov: 60 }, ev: 15 },
+  // Straight down from 150 m: whitecaps and wave pattern as a parachute camera sees them (the sun low enough to
+  // keep its glitter out of the frame).
+  down150: { sun: [180, 30], camera: { alt: 150, heading: 0, pitch: -89.9 } },
+  alt500: { sun: [10, 48], camera: { alt: 500, heading: 10, pitch: -28 } },
+  alt3k: { sun: [12, 50], camera: { alt: 3000, heading: 12, pitch: -32 } },
+  alt10k: { sun: [15, 50], camera: { alt: 10000, heading: 15, pitch: -40 } },
+  alt30k: { sun: [18, 48], camera: { alt: 30000, heading: 18, pitch: -38 } },
+  alt100k: { sun: [20, 30], camera: { alt: 100000, heading: 20, pitch: -24, fov: 55 } },
+  leo: { sun: [0, 58], camera: { alt: 400000, heading: 0, pitch: -55, fov: 60 } },
   shore: { sun: [150, 38], beach: true, camera: { north: 215, alt: 3.5, heading: 4, pitch: -7 } },
   // Standing in the shallows 30 m off the waterline, looking along the shore: shelf water from 0 to 3 m deep.
   shoreAlong: { sun: [150, 38], beach: true, camera: { north: 335, east: -160, alt: 4, heading: 78, pitch: -6 } },
+  // 60 m above the coast, looking along the shore: the shelf from the waterline to deep water, and the surf.
+  coast60: { sun: [150, 38], beach: true, camera: { north: 120, alt: 60, heading: 70, pitch: -8 } },
   splash: { sun: [140, 36], floating: true, markers: markerLine(14, 6, 1.6, 3.2), camera: { north: -2, east: -6, alt: 3.2, heading: 32, pitch: -9 } },
   night: { sun: [300, -32], moon: [110, 24], camera: { alt: 2, heading: 110, pitch: -4 }, ev: -1.5 },
   refraction: { sun: [160, 58], beach: true, submerged: true, camera: { north: 300, east: 0, alt: 2.5, heading: 0, pitch: -16 } },
@@ -85,6 +90,11 @@ export interface OceanLab {
   dirAlong(x: number, y: number, t: number): Vec3;
   /** Render pixel (x, y) of a body-fixed point (m from the body centre), or null behind the camera. */
   project(posFixed: Vec3): { x: number; y: number; dist: number } | null;
+  /**
+   * The roughness field of the site body's sea (the factor on the Cox-Munk slope variance, mean 1) at a body-fixed
+   * unit direction, seen with `footprint` metres.
+   */
+  roughness(dirFixed: Vec3, footprint: number): number;
 }
 
 declare global {
@@ -144,6 +154,7 @@ async function boot(): Promise<void> {
   };
   const lab: OceanLab = {
     seaHit: unset,
+    roughness: unset,
     altitudeAlong: unset,
     dirAlong: unset,
     project: unset,
@@ -238,6 +249,9 @@ async function boot(): Promise<void> {
     const tx = ty * (w / h);
     return { x: ((v.x / -v.z / tx + 1) / 2) * w - 0.5, y: ((1 - v.y / -v.z / ty) / 2) * h - 0.5, dist: v3.len(rel) };
   };
+  const tunables = oceanTunables(app.defs.bodies[site.bodyId]!);
+  const field = tunables ? oceanRoughnessField(tunables) : null;
+  lab.roughness = (dirFixed, footprint) => (field ? field(dirFixed, footprint) : 1);
   window.__ocean = lab;
   const keepCamera = query.has('body') || query.has('orbit') || query.has('vessel');
   const camBefore = app.camera.spec;
@@ -253,7 +267,7 @@ async function boot(): Promise<void> {
     const nf = ocean?.debug.nearField();
     info.textContent =
       `ocean lab - preset ${lab.preset}   ut ${s.ut.toFixed(2)}\n` +
-      (st ? `near field ${nf!.bodyIndex >= 0 ? 'on' : 'off'}   patches ${st.patches}   camera ${st.cameraHeight.toFixed(1)} m above the sea\n` : 'ocean feature off\n') +
+      (st ? `near field ${nf!.bodyIndex >= 0 ? 'on' : 'off'}   patches ${st.patches}   camera ${Number.isFinite(st.cameraHeight) ? `${st.cameraHeight.toFixed(1)} m above the sea` : 'not above a sea'}\n` : 'ocean feature off\n') +
       `exposure EV ${app.renderer.exposureInfo().ev100.toFixed(2)}`;
     void v3;
   });
