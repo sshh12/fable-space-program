@@ -72,6 +72,11 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'scene.depthHalf': tex2d('sceneDepthHalf', 'rg32float', [0, 0]),
     'scene.colorCopy': tex2d('sceneColorCopy', 'rgba16float', [0, 0, 0, 1]),
     'scene.colorCopyTransparent': tex2d('sceneColorCopyTransparent', 'rgba16float', [0, 0, 0, 1]),
+    // Before the first frame (and for a consumer without a renderer behind it): all zero. The normal default is
+    // a float format like the real target (rg16float); both bind as texture_2d<f32>.
+    'gbuffer.albedo': tex2d('gbufferAlbedo', 'rgba8unorm-srgb', [0, 0, 0, 0]),
+    'gbuffer.normal': tex2d('gbufferNormal', 'rgba16float', [0, 0, 0, 0]),
+    'gbuffer.material': tex2d('gbufferMaterial', 'rgba8unorm', [0, 0, 0, 0]),
     'shadow.cascades': depthDefault('shadowCascades', 1, true, 1),
     // count = 0: sampleSunShadow returns 1.
     'shadow.uniforms': uniform('shadowUniforms', new Float32Array(SHADOW_UNIFORM_BYTES / 4)),

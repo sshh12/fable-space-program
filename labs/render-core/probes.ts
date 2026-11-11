@@ -24,6 +24,12 @@ import type { LabApp } from '@/render/core/lab';
 import { sitePoseOf, type Site } from './world';
 
 export const MARKER = { size: 16, y: 8, x: (k: number): number => 8 + 24 * k };
+/**
+ * G-buffer inputs the hooks probe writes at marker 8 (a water surface): linear albedo, baked AO, normal
+ * (normalised by the shader), perceptual roughness, metallic and the water-depth parameter (encoded value).
+ * Markers 9-11 read them back in drawWater through 'gbuffer.albedo' / 'gbuffer.material' / 'gbuffer.normal'.
+ */
+export const GBUFFER_PROBE = { albedo: [0.25, 0.5, 0.75], ao: 0.5, normal: [0.3, -0.5, 0.8], roughness: 0.6, metallic: 0.2, param: 0.4 } as const;
 /** Depth written by the hooks probe at marker 0: changes every frame so stale copies are detected. */
 export const markerDepth = (frameIndex: number): number => 0.25 + 0.5 * ((frameIndex * 0.37) % 1);
 
@@ -151,6 +157,11 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     let halfGroup: GPUBindGroup | null = null;
     let halfVersion = -1;
     let halfLayout: GPUBindGroupLayout;
+    // The G-buffer set lives in a group of its own: it may never be set inside drawGBuffer.
+    let gbufB: SceneBindings;
+    let gbufLayout: GPUBindGroupLayout;
+    let gbufGroup: GPUBindGroup | null = null;
+    let gbufVersion = -1;
     const P: Record<string, Tracked<GPURenderPipeline>> = {};
     const PRELUDE = (b: string): string => /* wgsl */ `
       ${b}
@@ -217,6 +228,41 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
           targets: [hdrTarget, { format: RENDER_FORMATS.gbufferVelocity }],
           depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater-equal' },
         });
+        // Marker 8 (G-buffer): a surface with known inputs (GBUFFER_PROBE), for the 'gbuffer.*' resources.
+        P.gbufferKnown = core.fullscreenPipeline({
+          label: 'lab-hooks.gbufferKnown',
+          layouts: depthLayouts,
+          fragment: /* wgsl */ `#include "gbuffer"
+            ${pre}
+            struct O { @location(0) a: vec4f, @location(1) n: vec2f, @location(2) m: vec4f, @location(3) v: vec2f, @location(4) e: vec4f, @location(5) em: vec4f, @builtin(frag_depth) d: f32 }
+            @fragment fn fs(in: FullscreenOut) -> O {
+              let g = gbufferPack(vec3f(${GBUFFER_PROBE.albedo.join(', ')}), ${GBUFFER_PROBE.ao}, normalize(vec3f(${GBUFFER_PROBE.normal.join(', ')})), ${GBUFFER_PROBE.roughness}, ${GBUFFER_PROBE.metallic}, MATERIAL_WATER, ${GBUFFER_PROBE.param}, vec2f(0.0), vec3f(0.0));
+              return O(g.albedo, g.normal, g.material, g.velocity, g.extra, g.emissive, 0.5);
+            }`,
+          targets: [RENDER_FORMATS.gbufferAlbedo, RENDER_FORMATS.gbufferNormal, RENDER_FORMATS.gbufferMaterial, RENDER_FORMATS.gbufferVelocity, RENDER_FORMATS.gbufferExtra, RENDER_FORMATS.hdr].map((format) => ({ format })),
+          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'always' },
+        });
+        // Markers 9, 10, 11 (drawWater): 'gbuffer.albedo' (linear rgb), 'gbuffer.material' (roughness, id, parameter)
+        // and the decoded 'gbuffer.normal' at marker 8, read through the 'gbuffer' binding set.
+        gbufB = core.createSceneBindings(1, 0, ['gbuffer']);
+        gbufLayout = c.device.createBindGroupLayout({ entries: gbufB.layoutEntries });
+        const gbufferRead = (label: string, value: string): Tracked<GPURenderPipeline> =>
+          core.fullscreenPipeline({
+            label: `lab-hooks.${label}`,
+            layouts: [gbufLayout],
+            fragment: /* wgsl */ `#include "gbuffer"
+              ${gbufB.wgsl}
+              struct O { @location(0) c: vec4f, @location(1) v: vec2f, @builtin(frag_depth) d: f32 }
+              @fragment fn fs(in: FullscreenOut) -> O {
+                let at = vec2i(${MARKER.x(8) + MARKER.size / 2}, ${MARKER.y + MARKER.size / 2});
+                return O(vec4f(${value}, 1.0), vec2f(0.0), 1.0);
+              }`,
+            targets: [hdrTarget, { format: RENDER_FORMATS.gbufferVelocity }],
+            depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater-equal' },
+          });
+        P.waterAlbedo = gbufferRead('waterAlbedo', 'textureLoad(gbufferAlbedoTex, at, 0).rgb');
+        P.waterMaterial = gbufferRead('waterMaterial', 'vec3f(textureLoad(gbufferMaterialTex, at, 0).r, textureLoad(gbufferMaterialTex, at, 0).b * 255.0, decodeWaterDepth(textureLoad(gbufferMaterialTex, at, 0).a))');
+        P.waterNormal = gbufferRead('waterNormal', 'octDecode(textureLoad(gbufferNormalTex, at, 0).xy) * 0.5 + 0.5');
         // Background marker: 7 where depth == 0 only.
         P.background = core.fullscreenPipeline({
           label: 'lab-hooks.background',
@@ -295,6 +341,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         pass.setBindGroup(1, group());
         scissorMarker(pass, 0);
         pass.draw(3);
+        pass.setPipeline(P.gbufferKnown!.get());
+        scissorMarker(pass, 8);
+        pass.draw(3);
         fullRect(pass, frame);
       },
       drawWater(frame, pass) {
@@ -302,6 +351,17 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         pass.setBindGroup(1, group());
         scissorMarker(pass, 1);
         pass.draw(3);
+        const v = gbufB.version();
+        if (!gbufGroup || v !== gbufVersion) {
+          gbufVersion = v;
+          gbufGroup = ctx.device.createBindGroup({ layout: gbufLayout, entries: gbufB.entries() });
+        }
+        pass.setBindGroup(1, gbufGroup);
+        (['waterAlbedo', 'waterMaterial', 'waterNormal'] as const).forEach((name, i) => {
+          pass.setPipeline(P[name]!.get());
+          scissorMarker(pass, 9 + i);
+          pass.draw(3);
+        });
         fullRect(pass, frame);
       },
       drawBackground(frame, pass) {

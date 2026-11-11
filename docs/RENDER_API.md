@@ -15,7 +15,7 @@ import { createLabApp, createLabPlanetFeature } from '@/render/core/lab';
 Contents: 1 Quick start · 2 Frame graph and hook rules · 3 Bind groups · 4 Frame uniforms (group 0) ·
 5 Shader library and chunks · 6 G-buffer · 7 Lighting inputs (what to publish) · 8 Sun shadows ·
 9 Transparents · 10 Mesh system · 11 Utilities (`coreOf`) · 12 Photometric conventions · 13 Exposure,
-TAA, governor · 14 Perf and attribution · 15 Lab app · 16 Checklist
+TAA, governor · 14 Perf and attribution · 15 Lab app · 16 Checklist · 17 Recipes · 18 Changes in wave 2
 
 ---
 
@@ -64,7 +64,7 @@ core-owned pass the core has already called `pass.setBindGroup(0, frame.frameBin
 | 3a | copy | core | depth -> `'scene.depthOpaque'` |
 | 4 | AO, contact shadows, deferred lighting | core | Writes the HDR target (`rgba16float`): lit colour + RT5 emissive, through `writeHdr`. |
 | 4a | copy | core | HDR -> `'scene.colorCopy'`, only if a registered feature lists it in `requires`. |
-| 5 | forward water | `drawWater(frame, pass)` | Colour: target 0 = HDR (blending allowed), target 1 = RT3 velocity. Depth writable, compare `greater-equal`. Sample the seabed from `'scene.depthOpaque'` and `'scene.colorCopy'`. The pass is skipped when no feature has `drawWater`. |
+| 5 | forward water | `drawWater(frame, pass)` | Colour: target 0 = HDR (blending allowed), target 1 = RT3 velocity. Depth writable, compare `greater-equal`. Sample the seabed from `'scene.depthOpaque'` and `'scene.colorCopy'`; the G-buffer inputs of the pixel underneath (far sheet or seabed) from `'gbuffer.albedo'` / `'gbuffer.normal'` / `'gbuffer.material'` (section 6). The pass is skipped when no feature has `drawWater`. |
 | 5a | copy | core | depth -> `'scene.depth'`; 2 x 2 min/max -> `'scene.depthHalf'` (`rg32float`, r = farthest = min, g = nearest = max) |
 | 6 | background | `drawBackground(frame, pass)` | Colour: HDR. Depth read-only; use compare `equal` with clip z = 0 so only sky pixels (depth == 0) are written. |
 | 7 | atmosphere + clouds | `compositeAtmosphere(frame, encoder, hdrTarget)` | Your own passes; the last one blends into `hdrTarget` (loadOp `load`). May sample `'scene.depth'`, `'scene.depthHalf'`. Publish `'atmosphere.aerialPerspective'`, `'clouds.screen'`, `'clouds.depth'`. |
@@ -85,6 +85,10 @@ Rules that hold everywhere:
   from `drawBackground` on; in `prepare` / `compute` they hold the previous frame.
 - Colour copies exist only when some registered feature has `requires: ['scene.colorCopy']` (or
   `'scene.colorCopyTransparent'`); otherwise the key returns a 1 x 1 black default.
+- `'gbuffer.albedo'`, `'gbuffer.normal'` and `'gbuffer.material'` are the live RT0 / RT1 / RT2 of this frame
+  (no copy). They may be read in every hook from `drawWater` on, where they are not attachments. **Never set
+  a bind group that contains them inside `drawGBuffer`** (also not one that no draw uses): keep them in a
+  bind group of their own.
 - Pipelines must match the attachment formats of the pass exactly (all six targets in `drawGBuffer`, two in
   `drawWater`, one elsewhere) and the depth format `depth32float`.
 - If you change the scissor rect or viewport inside a core-owned pass, restore the full target before
@@ -340,6 +344,26 @@ relative to normal incidence). Do not pre-multiply the brightness into RT5.
 
 Emissive: luminance in cd/m^2 times `frame.exposure.x`. Velocity of sky pixels stays 0 (TAA reprojects
 depth-0 pixels by camera rotation).
+
+**Reading the G-buffer back** (hooks from `drawWater` on; added in wave 2 for request `ocean-1`). The keys
+`'gbuffer.albedo'` (RT0; the target is sRGB, so a read returns linear colour; a = baked AO),
+`'gbuffer.normal'` (RT1) and `'gbuffer.material'` (RT2) hold this frame's G-buffer at render resolution;
+binding set `gbuffer` (section 11) declares `gbufferAlbedoTex`, `gbufferNormalTex`, `gbufferMaterialTex`.
+Read with `textureLoad(tex, vec2i(fragCoord.xy), 0)` and decode with this chunk:
+
+```wgsl
+let m = textureLoad(gbufferMaterialTex, px, 0);              // roughness, metallic, id / 255, parameter
+let id = u32(m.b * 255.0 + 0.5);                             // MATERIAL_WATER where the far sheet is underneath
+let n = octDecode(textureLoad(gbufferNormalTex, px, 0).xy);  // unit normal, ROOT axes
+let albedo = textureLoad(gbufferAlbedoTex, px, 0).rgb;       // linear; for water: the imagery colour
+let depth = decodeWaterDepth(m.a);                           // metres, MATERIAL_WATER only
+```
+
+Or all at once: `gbufferUnpack(albedoTexel, normalTexel, materialTexel, vec4f(0.0, 0.5, 0.0, 0.0))` (RT4 is
+not published: pass the neutral value). Inside `'ocean.nearField'.fadeStart` the far sheet is discarded, so
+the three targets hold the seabed (terrain or regolith material) there and the sheet outside it. RT3
+(velocity) is an attachment of the water pass, RT4 and RT5 are consumed by lighting: none of them is
+published. Before the first frame the keys return 1 x 1 zero textures.
 
 Far water (terrain): `MATERIAL_WATER`, albedo = imagery colour, roughness = resolved roughness (0 = none),
 param = `encodeWaterDepth(depth)`, normal = the sea surface normal. Honour `'ocean.nearField'`
@@ -631,6 +655,7 @@ changes. Sets and the names they declare:
 | `env` | `envProbeCube: texture_cube<f32>`, `envSh9: EnvSh9` (`struct EnvSh9 { c: array<vec4f, 9> }`) |
 | `cloudShadow` | `cloudShadowMapTex`, `cloudCoverageMapTex: texture_2d<f32>` |
 | `oceanNearField` | `oceanNearField: OceanNearField` |
+| `gbuffer` | `gbufferAlbedoTex`, `gbufferNormalTex`, `gbufferMaterialTex: texture_2d<f32>` (`textureLoad`; never in a group set inside `drawGBuffer`) |
 
 Visibility of the entries is fragment + compute (uniform buffers also vertex).
 
@@ -817,7 +842,187 @@ Specs follow `tests/browser/shell/lab-template.spec.ts`: `openPage`, `assertDisc
 - [ ] Positions camera-relative from float64; `prev*` relative to the previous eye; RT3 velocity written.
 - [ ] G-buffer through `gbufferPack`; emissive pre-exposed; correct `MATERIAL_ID` and parameter.
 - [ ] Every HDR write through `writeHdr`; transparents through `applyAtmosphere`.
-- [ ] Samples copies (`scene.*`), never live attachments; bind groups rebuilt on `resources.version` change.
+- [ ] Samples copies (`scene.*`), never live attachments; bind groups rebuilt on `resources.version` change;
+      `gbuffer.*` only from `drawWater` on, in a bind group that is never set inside `drawGBuffer`.
 - [ ] `drawShadow`: body-fixed casters in every cascade of their body, moving casters only when `cascade.everyFrame`.
 - [ ] Scales work with `frame.qualityScale`; no noise animation when `!frame.animate`; `isIdle()` reports loading.
 - [ ] Lab page with `createLabApp`, spec with screenshots you looked at, perf spec under `withGpuLock` in attribution mode.
+
+---
+
+## 17. Recipes
+
+Answers to the questions that come up in `docs/requests/`. Each recipe is what the lab probes and specs of
+the core do themselves (`labs/render-core/probes.ts`, `tests/browser/render-core/framegraph.spec.ts`), so it
+is tested code, not a sketch.
+
+### 17.1 Composite a half-resolution volume (plume, smoke, plasma, fog)
+
+March in `preTransparent` into your own half-resolution target against `'scene.depthHalf'`, composite in
+`drawTransparent` with the depth-aware upsample and `applyAtmosphere`.
+
+```ts
+init(c) {
+  ctx = c; core = coreOf(c);
+  target = core.createTarget('my-vfx.half', 'rgba16float', 0.5);        // follows the internal resolution
+  transp = core.createSceneBindings(1, 4, ['transparency']);             // aerial perspective + cloud occlusion
+  marchLayout = c.device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } } ] });   // scene.depthHalf
+  compLayout = c.device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },         // scene.depthHalf
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },                      // your half-res target
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },                      // scene.depth
+    ...transp.layoutEntries ] });
+  march = core.fullscreenPipeline({ label: 'my-vfx.march', layouts: [marchLayout], targets: [{ format: 'rgba16float' }], fragment: MARCH_WGSL });
+  comp = core.fullscreenPipeline({ label: 'my-vfx.composite', layouts: [compLayout], fragment: COMPOSITE_WGSL,
+    targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } }],
+    depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' } });
+},
+preTransparent(frame, encoder) {
+  const v = target.version + ctx.resources.version('scene.depthHalf') + ctx.resources.version('scene.depth') + transp.version();
+  if (v !== version) { version = v; /* rebuild marchGroup and compGroup from target.view and ctx.resources.get(...) */ }
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store' }],
+    timestampWrites: ctx.perf.gpuPass('my-vfx.march') });               // every pass of yours gets a timestamp
+  pass.setBindGroup(0, frame.frameBindGroup);
+  pass.setPipeline(march.get()); pass.setBindGroup(1, marchGroup); pass.draw(3);
+  pass.end();
+},
+drawTransparent(_frame, pass) { pass.setPipeline(comp.get()); pass.setBindGroup(1, compGroup); pass.draw(3); },
+```
+
+```wgsl
+// MARCH_WGSL (frame and fullscreen chunks are included for you)
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let ray = viewRay(in.uv); let len = length(ray); let dir = ray / len;
+  let tScene = viewZFromDepth(textureLoad(depthHalfTex, vec2i(in.position.xy), 0).r) * len;   // .r = FARTHEST of the 2 x 2 block
+  let steps = max(4, i32(f32(BASE_STEPS) * frame.exposure.z));                                // exposure.z = qualityScale
+  // ... march from the volume's entry to min(exit, tScene); accumulate PREMULTIPLIED, PRE-EXPOSED colour and alpha
+  return vec4f(writeHdr(colour), alpha);
+}
+// COMPOSITE_WGSL
+#include "upsample"
+#include "transparency"
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let d = textureLoad(depthTex, vec2i(in.position.xy), 0);
+  let v = upsampleDepthAware(volTex, depthHalfTex, in.uv, d, false);    // false: the source was marched to depthHalf.r
+  let c = applyAtmosphere(in.uv, distanceToVolumeCentre, v.rgb, v.a);   // or per march sample for a volume that is large against the atmosphere
+  return vec4f(writeHdr(c.rgb), c.a);
+}
+```
+
+Rules: never write the HDR target in `preTransparent`; the composite pipeline has `depthWriteEnabled: false`
+and blends `one, one-minus-src-alpha`; a draw that covers only part of the screen restores the scissor
+before returning. Complete example: the `volume` probe.
+
+### 17.2 Read the seabed, and the far sheet's inputs, in `drawWater`
+
+`requires: ['scene.colorCopy']` on the feature. Two bind groups: the scene copies may be bound anywhere,
+the G-buffer set only from `drawWater` on, so it gets a group of its own.
+
+```ts
+sceneB = core.createSceneBindings(1, 1, ['sceneDepthOpaque', 'sceneColor', 'oceanNearField']);   // group 1, after your uniform at binding 0
+gbufB  = core.createSceneBindings(2, 0, ['gbuffer']);                                            // group 2: never set inside drawGBuffer
+// layouts from sceneB.layoutEntries / gbufB.layoutEntries; rebuild a bind group when its version() changes
+```
+
+```wgsl
+#include "gbuffer"
+// + sceneB.wgsl and gbufB.wgsl
+let px = vec2i(in.position.xy);
+let dBed = textureLoad(sceneDepthOpaqueTex, px, 0);                  // reversed-Z depth of what is under the water
+let bed = positionFromDepth(uv, dBed);                               // camera-relative, m (uv = fragCoord / renderSize)
+let column = length(bed) - length(surfacePosRelCam);                 // water path along the view ray, m
+let litBed = textureLoad(sceneColorTex, px, 0).rgb;                  // lit, pre-exposed: refract by offsetting px
+let m = textureLoad(gbufferMaterialTex, px, 0);
+if (u32(m.b * 255.0 + 0.5) == MATERIAL_WATER) {                      // the far sheet is underneath (outside fadeStart)
+  let imagery = textureLoad(gbufferAlbedoTex, px, 0).rgb;            // s.albedo of the deferred pixel
+  let encodedDepth = m.a;                                            // s.param of the deferred pixel
+  let nSheet = octDecode(textureLoad(gbufferNormalTex, px, 0).xy);   // its normal; m.r = its roughness
+  // fill Surface with exactly these and call brdfWaterDirect / brdfWaterAmbient: the same radiance as the deferred pixel
+}
+```
+
+Inside `oceanNearField.fadeStart` the sheet is discarded by the terrain renderer, so `gbuffer.*` and the
+copies hold the seabed there (its material id is terrain or regolith). When the refracted `px` is offset,
+re-test the depth at the offset pixel (a refracted ray must not pick up something in front of the surface).
+
+### 17.3 Cast a moving shadow (vessel, debris, canopy)
+
+With the mesh system: `batch.add(model, { ..., bodyFixed: false })` and call `batch.drawShadow(pass, cascade)`
+from your `drawShadow`; the batch skips cascades that are not re-rendered every frame. By hand:
+
+```ts
+drawShadow(frame, pass, cascade) {
+  if (!cascade.everyFrame) return;                                   // a staggered cascade holds body-fixed casters only
+  // cull against cascade.viewProj (float64): |clip.x|, |clip.y| <= 1 + margin; skip casters under half of cascade.texelSize
+  pass.setPipeline(shadowPipeline);                                  // groups 0 (frame) and 1 (cascade) are already bound
+  pass.setBindGroup(2, instances); pass.draw(...);
+}
+```
+
+Pipeline: depth-only `depth32float`, `depthCompare: 'less'`, `depthWriteEnabled: true`,
+`primitive: { unclippedDepth: true, cullMode: 'none' }`, `depthBias: 2, depthBiasSlopeScale: 1.5`; layout
+group 0 = `ctx.frameBindGroupLayout`, group 1 = `coreOf(ctx).shadowPassLayout`; vertex shader
+`#include "shadow_pass"` and `return shadowPass.viewProj * vec4f(posRelCam, 1.0);`. A caster that is static
+in a body frame (pad structures, rocks) is the opposite case: `bodyFixed: true`, drawn into EVERY cascade
+whose `anchor` is its body, including `fit: 'body'` ones. To receive the shadow in a forward shader: binding
+set `shadow`, `#include "shadows"`, `sampleSunShadow(posRelCam, n, vec2u(fragCoord.xy))`.
+
+### 17.4 Publish and consume a shared resource
+
+```ts
+// publisher (init, and again whenever the texture is re-created)
+ctx.resources.publish('atmosphere.skyViewLut', lutTexture.createView());   // same object again = no version bump
+// consumer: through a binding set where one exists ...
+const b = coreOf(ctx).createSceneBindings(1, 0, ['atmosphereLuts']);
+if (b.version() !== seen) { seen = b.version(); group = ctx.device.createBindGroup({ layout, entries: b.entries() }); }
+// ... or directly
+const view = ctx.resources.get('ui.navball');                              // always usable: the default until published
+if (ctx.resources.version('ui.navball') !== seenNavball) { /* rebuild the bind group */ }
+```
+
+- A key means what its comment in `src/core/contracts/render.ts` says (format, units, validity). Publish
+  views, not textures; keep the texture alive for as long as the view is published.
+- Never cache a `get()` result across frames without watching `version()`: targets that follow the internal
+  resolution (`scene.*`, `gbuffer.*`, anything from `createTarget`) are replaced when the governor changes it.
+- Per-frame CPU parameters are not resources: cloud-shadow placement goes through
+  `coreOf(ctx).setCloudShadowParams({ near, far })` in `prepare`, every frame.
+- A value that only your package and its lab read does not need a key. A new key is a contract change: file
+  a request with the format, the units, who publishes and the neutral default.
+- The publisher of a key that the core reads during lighting (`atmosphere.*`, `env.*`, `clouds.shadowMap`,
+  `clouds.coverageMap`) must have this frame's content in it before the lighting pass: update it in
+  `compute`, not later.
+
+### 17.5 Scale with `qualityScale`
+
+`frame.qualityScale` (CPU) and `frame.exposure.z` (WGSL) are the same number, 0.5..1; it is 1 in
+deterministic mode and with `?governor=off`.
+
+```ts
+prepare(frame) { particleCount = Math.max(MIN_PARTICLES, Math.round(maxParticles * frame.qualityScale)); }
+```
+
+```wgsl
+let steps = max(MIN_STEPS, i32(f32(BASE_STEPS) * frame.exposure.z));
+let dt = (tEnd - tStart) / f32(steps);          // the same integral with fewer, longer steps: jitter the start with blueNoise
+```
+
+- Scale sample counts (march steps, particles, taps), never the result: the image must converge to the same
+  picture at every scale, only noisier or softer. Keep a floor under which the effect breaks.
+- Do not branch on a threshold of the scale (a switch pops when the governor crosses it); a count that
+  changes by one step per frame is hidden by TAA.
+- Budgets of ARCHITECTURE 17.1 are stated at scale 1: perf specs run with `?governor=off&scale=1`. The core's
+  own passes (AO, lighting, TAA, bloom) do not scale; only when the scale has reached 0.5 does the core lower
+  the internal resolution.
+
+---
+
+## 18. Changes in wave 2
+
+Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
+
+| Change | Request | Affects | Migration |
+|---|---|---|---|
+| `SharedResourceMap` keys `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'` (live RT0 / RT1 / RT2, readable from `drawWater` on) and binding set `gbuffer` (section 6, section 11) | `ocean-1` | ocean (band between `fadeStart` and `fadeEnd`); anyone who wants the material under a pixel after lighting | None. Do not put the set into a bind group that is set inside `drawGBuffer` |

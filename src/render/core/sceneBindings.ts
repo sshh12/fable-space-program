@@ -17,7 +17,8 @@ export type SceneBindingSet =
   | 'atmosphereLuts'
   | 'env'
   | 'cloudShadow'
-  | 'oceanNearField';
+  | 'oceanNearField'
+  | 'gbuffer';
 
 interface Slot {
   key: SharedResourceKey;
@@ -70,6 +71,15 @@ const SETS: Record<SceneBindingSet, { prelude?: string; slots: Slot[] }> = {
   oceanNearField: {
     prelude: 'struct OceanNearField { bodyIndex: i32, fadeStart: f32, fadeEnd: f32, reserved: f32 }',
     slots: [{ key: 'ocean.nearField', decl: 'var<uniform> oceanNearField: OceanNearField;', layout: { buffer: { type: 'uniform' } }, buffer: true }],
+  },
+  // RT0 / RT1 / RT2 of this frame. Never put this set into a group that is set inside drawGBuffer (the
+  // textures are that pass's attachments); use a group of its own for the passes from drawWater on.
+  gbuffer: {
+    slots: [
+      { key: 'gbuffer.albedo', decl: 'var gbufferAlbedoTex: texture_2d<f32>;', layout: tex('float') },
+      { key: 'gbuffer.normal', decl: 'var gbufferNormalTex: texture_2d<f32>;', layout: tex('float') },
+      { key: 'gbuffer.material', decl: 'var gbufferMaterialTex: texture_2d<f32>;', layout: tex('float') },
+    ],
   },
 };
 

@@ -349,6 +349,11 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     resources.publish('scene.depthOpaque', views.depthOpaque);
     resources.publish('scene.depth', views.depthCopy);
     resources.publish('scene.depthHalf', views.depthHalf);
+    // The G-buffer targets no later pass attaches, read-only for features from drawWater on (the forward
+    // water reads the far sheet's inputs here). RT3 is an attachment of the water pass and is not published.
+    resources.publish('gbuffer.albedo', views.albedo);
+    resources.publish('gbuffer.normal', views.normal);
+    resources.publish('gbuffer.material', views.material);
     resources.reset('scene.colorCopy');
     resources.reset('scene.colorCopyTransparent');
     for (const m of managed) m.make();

@@ -13,15 +13,27 @@ async function readMarkers(page: import('@playwright/test').Page): Promise<numbe
     const lab = window.__lab!;
     lab.setLoop(false);
     lab.renderFrame();
-    const px = await lab.renderer.readHdrPixels('hdr', { x: 0, y: 0, width: 256, height: 32 });
+    const px = await lab.renderer.readHdrPixels('hdr', { x: 0, y: 0, width: 320, height: 32 });
     lab.setLoop(true);
     const out: number[][] = [];
-    for (let k = 0; k < 8; k++) {
-      const o = (16 * 256 + 8 + 24 * k + 8) * 4;
+    for (let k = 0; k < 12; k++) {
+      const o = (16 * 320 + 8 + 24 * k + 8) * 4;
       out.push([px.data[o]!, px.data[o + 1]!, px.data[o + 2]!]);
     }
     return out;
   });
+}
+
+/** Markers 9-11 against the inputs the hooks probe wrote at marker 8 (labs/render-core/probes.ts, GBUFFER_PROBE). */
+function expectGBufferMarkers(m: number[][]): void {
+  const G = { albedo: [0.25, 0.5, 0.75], normal: [0.3, -0.5, 0.8], roughness: 0.6, param: 0.4 };
+  // RT0 is 8-bit sRGB: a linear value comes back within one code (0.004 at 0.25, 0.008 at 0.75).
+  for (let i = 0; i < 3; i++) expect(Math.abs(m[9]![i]! - G.albedo[i]!), `albedo channel ${i}`).toBeLessThan(0.008);
+  expect(m[10]![0]).toBeCloseTo(G.roughness, 2);
+  expect(m[10]![1]).toBeCloseTo(3, 3); // MATERIAL_ID.water
+  expect(m[10]![2]).toBeCloseTo(200 * G.param * G.param, 0); // decodeWaterDepth(0.4) = 32 m
+  const len = Math.hypot(...G.normal);
+  for (let i = 0; i < 3; i++) expect(Math.abs(m[11]![i]! - (0.5 + (0.5 * G.normal[i]!) / len)), `normal component ${i}`).toBeLessThan(0.002);
 }
 
 test('hooks run in ascending order then registration order, in frame-graph sequence', async ({ page, pageLog }) => {
@@ -78,10 +90,29 @@ test('every hook has the attachments of the table and the scene copies hold this
     expect(m[5]![0]).toBeLessThan(0.01);
     // Marker 6: a transparent fragment in front of the sky passes the depth test.
     expect(m[6]).toEqual([9, 9, 9]);
+    // Markers 9-11 (drawWater): the G-buffer inputs of marker 8, read through 'gbuffer.albedo' (linear
+    // colour out of the sRGB target), 'gbuffer.material' (roughness, material id, decoded water depth) and
+    // 'gbuffer.normal' (decoded), which are not attachments of the water pass.
+    expectGBufferMarkers(m);
   }
   // The colour copies exist because the probe requires them.
   const copies = await page.evaluate(() => [window.__lab!.renderer.resources.isDefault('scene.colorCopy'), window.__lab!.renderer.resources.isDefault('scene.colorCopyTransparent')]);
   expect(copies).toEqual([false, false]);
+  // The G-buffer resources are the live targets: published (not the defaults), and re-published with the
+  // new targets when the render resolution changes.
+  const before = await page.evaluate(() => {
+    const r = window.__lab!.renderer.resources;
+    return { isDefault: [r.isDefault('gbuffer.albedo'), r.isDefault('gbuffer.normal'), r.isDefault('gbuffer.material')], version: r.version('gbuffer.albedo') };
+  });
+  expect(before.isDefault).toEqual([false, false, false]);
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.waitForFunction(() => window.__lab!.renderer.frameContext?.renderSize[0] === 1000);
+  await page.evaluate(() => window.__test!.waitFrames(3));
+  expect(await page.evaluate(() => window.__lab!.renderer.resources.version('gbuffer.albedo'))).toBeGreaterThan(before.version);
+  expectGBufferMarkers(await readMarkers(page));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForFunction(() => window.__lab!.renderer.frameContext?.renderSize[0] === 1280);
+  await page.evaluate(() => window.__test!.waitFrames(3));
   // Marker 7 (drawOverlay): pure green in the LDR canvas, untouched by tonemapping.
   const shot = await saveScreenshot(page, 'render-core', 'framegraph-markers');
   const png = PNG.sync.read(shot.buffer);

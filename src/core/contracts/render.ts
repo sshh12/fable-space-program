@@ -281,6 +281,26 @@ export interface SharedResourceMap {
    */
   'scene.colorCopy': GPUTextureView;
   'scene.colorCopyTransparent': GPUTextureView;
+  /**
+   * Three G-buffer targets of THIS frame at render resolution, read-only, as the live views (no copy is made:
+   * they are attachments of the G-buffer pass and of no later pass):
+   *  - 'gbuffer.albedo': RT0 (rgba8unorm-srgb, so a read returns LINEAR colour); a = baked AO / cavity.
+   *  - 'gbuffer.normal': RT1, octahedral world normal (`octDecode` of the gbuffer chunk).
+   *  - 'gbuffer.material': RT2, r = perceptual roughness, g = metallic, b = material id / 255, a = material
+   *    parameter (MATERIAL_PARAM; `decodeWaterDepth` for MATERIAL_ID.water).
+   * Valid from deferred lighting to the end of the frame: in drawWater, drawBackground, compositeAtmosphere,
+   * preTransparent and drawTransparent. In prepare / compute / drawShadow they still hold the previous frame.
+   * NEVER set a bind group that contains them inside drawGBuffer: they are that pass's attachments and WebGPU
+   * rejects the pass, even when no draw uses the group. Read with textureLoad at the fragment's pixel.
+   * What they hold for water (ARCHITECTURE section 10.2): outside 'ocean.nearField'.fadeStart the far sheet
+   * (MATERIAL_ID.water, imagery colour in albedo, encoded depth in material.a, sea-surface normal); inside
+   * it the sheet is discarded, so they hold the seabed. This is how the forward water pass shades the band
+   * between fadeStart and fadeEnd with exactly the inputs the deferred sheet had.
+   * Re-published when the internal resolution changes. Default: 1 x 1, all zero.
+   */
+  'gbuffer.albedo': GPUTextureView;
+  'gbuffer.normal': GPUTextureView;
+  'gbuffer.material': GPUTextureView;
   /** Sun shadow cascade array + its uniform buffer (per-frame world-to-shadow matrices, splits). */
   'shadow.cascades': GPUTextureView;
   'shadow.uniforms': GPUBuffer;
@@ -505,7 +525,9 @@ export interface RenderFeature {
   /**
    * Forward water after deferred lighting. Colour targets: HDR (blending allowed) and RT3 velocity; the
    * depth attachment is writable (compare 'greater-equal'). Sample the seabed from 'scene.depthOpaque' and
-   * 'scene.colorCopy', never from the live targets.
+   * 'scene.colorCopy', never from the live targets. The G-buffer inputs of the pixel underneath (the far
+   * sheet's imagery colour, encoded depth, normal and roughness, or the seabed's) are readable through
+   * 'gbuffer.albedo' / 'gbuffer.normal' / 'gbuffer.material', which are not attachments of this pass.
    */
   drawWater?(frame: FrameContext, pass: GPURenderPassEncoder): void;
   /** Sky background where depth == 0 (stars, star disc, distant bodies). HDR target; depth read-only, compare 'equal'. */
