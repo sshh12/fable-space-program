@@ -520,7 +520,13 @@ Not fixed / limits, plainly:
 - Pre-existing out-of-path typecheck errors in `src/render/cockpit` (sunmap work of the cockpit package) are
   not flight-ui's.
 
-Requests filed: none (everything was inside flight-ui paths). Open requests against flight-ui paths: none.
+Requests filed: none (everything was inside flight-ui paths). Open request naming a flight-ui path:
+`map-view-4` (shared UI tokens; owner paths a new `src/core` module, maintained by core-support, and
+`src/ui/hud/hudStyles.ts`). The HUD side is a one-line change once the core module exists: build the `.hud`
+CSS variables from its constants. Until then note that round 1 changed the HUD tokens the map copies:
+`--bg` rgba(17, 24, 34, 0.86) (top of the plate gradient rgba(22, 30, 42, 0.87)), `--bg-strong`
+rgba(12, 17, 25, 0.94), `--line` rgba(170, 198, 235, 0.26), `--label` #aebccf, `--dim` #8492a7, `--warning`
+#ff6a6a (font stack, `--text`, `--accent`, `--good`, `--caution` unchanged).
 
 Perf (measured 2026-11-11 under the machine-wide GPU lock through the gate, other agents' jobs running;
 2560 x 1440; method of section 4): HUD whole main-thread cost **0.14 ms** per frame (low orbit with a node)
