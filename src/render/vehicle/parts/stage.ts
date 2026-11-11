@@ -192,7 +192,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
         // Frost lies thinner on a marking (dark paint warms in the sun): it shows through in streaks.
-        m.frost = outer ? frostAt(y) * frostFilm(y, _phi) * (markedAt(_phi, y, y) ? 0.62 : 1) : 0;
+        m.frost = outer ? frostAt(y) * frostFilm(y, _phi) * (markedAt(_phi, y, y) ? 0.45 : 1) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;

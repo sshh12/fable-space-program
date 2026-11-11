@@ -665,6 +665,10 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
       if (b.lod < 2) box(b, w, 0.16, 0.26, [0, height - radius - 0.08, z], 'cross-head');
     }
     if (b.lod === 2) return;
+    // Both ends of a run meet something (a tank farm's manifold, a valve house wall): each pipe ends in a
+    // sleeve collar there instead of a sawn-off tube.
+    b.mat('steel-dark');
+    for (let i = 0; i < count; i++) for (const z of [-0.12, -length + 0.12]) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, z), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius - 0.01, radius + 0.13, -0.12, 0.12, b.pick(16, 10, 6), 'sleeve'));
     if (b.lod === 0) {
       b.mat('steel-bare');
       for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + 0.07, -0.06, 0.06, 16, 'flange'));

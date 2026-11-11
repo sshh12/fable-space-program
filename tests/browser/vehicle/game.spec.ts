@@ -144,7 +144,34 @@ test.describe('vehicle and launch complex in the integrated game', () => {
         },
         [v.east, v.north, v.height, v.sun[0], v.sun[1]] as const,
       );
-      await save(page, v.name, 0.2);
+      // (Half the frame is the black lunar sky.)
+      await save(page, v.name, 0.06);
     }
+  });
+
+  test('the terrain under every structure of a site is at the height the structure stands at', async ({ page }) => {
+    const loaded = await open(page, 'scene=pad');
+    test.skip(!loaded.includes('terrain'), 'needs the terrain package in the integration lab');
+    // The site feature stands every structure on the pad plane. That is right only where the terrain is
+    // flattened to the pad's elevation: measured here on the baked terrain at every structure's origin.
+    const gaps = await page.evaluate(async () => {
+      const lab = (window as Lab).__integration!;
+      const out: { model: string; gap: number }[] = [];
+      for (const site of Object.values(lab.app.defs.sites)) {
+        const body = lab.app.defs.bodies[site.bodyId]!;
+        const rad = Math.PI / 180;
+        const padAlt = typeof site.location.padElevation === 'number' ? site.location.padElevation : await lab.groundHeight(site.bodyId, site.location.latDeg, site.location.lonDeg);
+        for (const s of site.structures) {
+          const lat = site.location.latDeg + s.offsetEnu[1] / (body.radius * rad);
+          const lon = site.location.lonDeg + s.offsetEnu[0] / (body.radius * rad * Math.cos(site.location.latDeg * rad));
+          out.push({ model: s.model, gap: (await lab.groundHeight(site.bodyId, lat, lon)) - padAlt });
+        }
+      }
+      return out;
+    });
+    const worst = gaps.reduce((a, g) => (Math.abs(g.gap) > Math.abs(a.gap) ? g : a));
+    console.log(`site ground: ${gaps.length} structures, largest terrain-to-pad-plane gap ${worst.gap.toFixed(3)} m (${worst.model})`);
+    // Slabs and footings reach 0.3 m and more below their plane; the terrain may not fall away by that much.
+    expect(Math.abs(worst.gap)).toBeLessThan(0.15);
   });
 });

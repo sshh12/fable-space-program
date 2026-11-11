@@ -191,7 +191,11 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const up = Math.min(1, Math.max(0, 1 - (y - yB) / (yT - yB)));
     const wind = 0.5 + 0.5 * Math.cos(phi - windPhi);
     const streak = 0.5 + 0.22 * Math.sin(7 * phi + 1.3) + 0.16 * Math.sin(19 * phi + 4.1 + 2.5 * up) + 0.12 * Math.sin(43 * phi + 2.2 - 4 * up);
-    return Math.min(1, (0.16 + 0.6 * wind) * (0.3 + 0.7 * Math.pow(up, 1.2)) * (0.45 + 1.1 * streak) + 0.55 * Math.pow(up, 7));
+    const raw = (0.16 + 0.6 * wind) * (0.3 + 0.7 * Math.pow(up, 1.2)) * (0.45 + 1.1 * streak) + 0.55 * Math.pow(up, 7);
+    // Pushed toward soot or no soot: the streaks are drawn by this function, continuous across the tile
+    // courses (whose texture coordinates are not, so the shader's own break-up may only fray their edges).
+    const t = Math.max(0, Math.min(1, (raw - 0.3) / 0.4));
+    return t * t * (3 - 2 * t);
   };
 
   /** Azimuth grid shared by the heat shield and the back shell of one LOD (their rims meet vertex for vertex). */

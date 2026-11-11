@@ -69,7 +69,8 @@ const SPECS = {
   /** The same wall with a broad, faint oxide tint: stiffener rings and weld lands of an extension. */
   'nozzle-ext-b': { color: [0.26, 0.24, 0.225], metallic: 0.85, roughness: 0.44, tile: [0.4, 0.4], tex: { n: 'cast_n', o: 'cast_orm' } },
   copper: { color: [0.86, 0.5, 0.33], metallic: 1, roughness: 0.38, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
-  galvanised: { color: [1, 1, 1], metallic: 0.9, roughness: 0.52, tile: [0.8, 0.8], tex: { a: 'galv_albedo', n: 'galv_n', o: 'galv_orm' } },
+  /** Hot-dip galvanised steel after a few years outdoors: the zinc has gone to a dull grey patina, more oxide than metal. */
+  galvanised: { color: [1, 1, 1], metallic: 0.45, roughness: 0.6, tile: [0.8, 0.8], tex: { a: 'galv_albedo', n: 'galv_n', o: 'galv_orm' } },
   grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' } },
   // ---- composites, insulation, thermal protection
   carbon: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.18, tile: [0.25, 0.25], tex: { a: 'carbon_albedo', n: 'carbon_n', o: 'carbon_orm' } },

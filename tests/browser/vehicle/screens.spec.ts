@@ -78,7 +78,7 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'pad-engine-section', query: `${PAD}&eye=11.5,-98.9,-7.5&at=0,-98.7,0&fov=50` },
       { name: 'pad-hold-down-clamp', query: `${PAD}&eye=7.2,-98.9,9.6&at=4.0,-98.3,4.0&fov=45` },
       { name: 'pad-mount-deck', query: 'scene=pad&sun=140,48&eye=17,-90,-13&at=0,-97,0&fov=55' },
-      { name: 'pad-swing-arm-umbilical', query: 'scene=pad&sun=160,45&eye=9.5,-59.5,-7&at=3.5,-60,-1&fov=45' },
+      { name: 'pad-swing-arm-umbilical', query: 'scene=pad&sun=160,45&eye=7.5,-77.2,-11.5&at=0.8,-78.6,-5.2&fov=45' },
     ]);
     const stats = await page.evaluate(() => ({ ...window.__veh!.vehicle.stats }));
     expect(stats.vessels).toBe(1);
@@ -100,7 +100,7 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'site-mast-shadows-low-sun', query: 'scene=pad&sun=250,14&eye=150,-60,190&at=-20,-116,0&fov=45' },
       { name: 'site-wires-from-mast-foot', query: 'scene=pad&sun=175,60&eye=-95,-112,14&at=-30,10,-30&fov=60' },
       { name: 'site-aerial', query: 'scene=pad&sun=160,55&eye=330,180,420&at=-90,-118,0&fov=42' },
-      { name: 'site-tank-farm-berm', query: 'scene=pad&sun=175,60&eye=-175,-108,125&at=-262,-114,192&fov=50' },
+      { name: 'site-tank-farm-berm', query: 'scene=pad&sun=175,60&eye=118,-109,170&at=192,-115,262&fov=50' },
       { name: 'site-overview-night', query: 'scene=pad&sun=290,-28&env=night&eye=250,-15,330&at=-40,-112,-20&fov=42', minNonBlack: 0.02 },
       { name: 'site-pad-night', query: 'scene=pad&sun=290,-28&env=night&eye=120,-100,150&at=0,-70,0&fov=40', minNonBlack: 0.02 },
     ]);

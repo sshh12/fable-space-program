@@ -28,6 +28,13 @@ export interface SiteFeatureOptions {
    * a site whose elevation is 'terrain' needs this resolver, e.g. from the terrain provider).
    */
   padElevation?: (site: LaunchSiteDef) => number;
+  /**
+   * Ground height above the reference radius at a point `east`, `north` metres from a site's pad centre
+   * (e.g. from the terrain provider). With it every structure stands at the height of the ground under its
+   * own origin; without it all stand on the pad plane, which is right wherever the terrain is flattened to
+   * the pad's elevation across the site (`LaunchSiteDef.pad.flatRadius`).
+   */
+  groundHeight?: (site: LaunchSiteDef, east: number, north: number) => number;
   /** Most local lights registered per frame (default 8 of the core's 16). */
   maxLights?: number;
   /** Camera distance beyond which a site is not drawn, m (default 80 km). */
@@ -116,7 +123,8 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     let east = v3.cross({ x: 0, y: 0, z: 1 }, up);
     east = v3.lenSq(east) < 1e-12 ? { x: 0, y: 1, z: 0 } : v3.normalize(east);
     const north = v3.cross(up, east);
-    const centre = v3.scale(up, body.radius + elevationOf(site));
+    const padHeight = elevationOf(site);
+    const centre = v3.scale(up, body.radius + padHeight);
     const meshes = coreOf(ctx).meshes;
     const cache = new Map<string, StructureModels>();
     const placed: Placed[] = site.structures.map((s) => {
@@ -137,7 +145,9 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       // Model +X = east turned clockwise by the heading, +Y = up, +Z = -(the heading direction).
       const x = v3.sub(v3.scale(east, Math.cos(h)), v3.scale(north, Math.sin(h)));
       const z = v3.neg(v3.add(v3.scale(east, Math.sin(h)), v3.scale(north, Math.cos(h))));
-      const origin = v3.add(v3.add(v3.add(centre, v3.scale(east, s.offsetEnu[0])), v3.scale(north, s.offsetEnu[1])), v3.scale(up, s.offsetEnu[2]));
+      // On the ground under its own origin (structures on the pad's hardstand share the pad plane).
+      const lift = options.groundHeight ? options.groundHeight(site, s.offsetEnu[0], s.offsetEnu[1]) - padHeight : 0;
+      const origin = v3.add(v3.add(v3.add(centre, v3.scale(east, s.offsetEnu[0])), v3.scale(north, s.offsetEnu[1])), v3.scale(up, s.offsetEnu[2] + lift));
       return { visual: entry.visual, models: entry, lodStates: [], origin, q: quat.fromBasis(x, up, z) };
     });
     return { site, centre, up, east, north, placed, state: { night: 0, arms: 1, crewArm: 1 }, target: { arms: 1, crewArm: 1 }, seen: false, override: null };

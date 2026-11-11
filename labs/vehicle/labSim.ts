@@ -195,7 +195,7 @@ export class VehicleLabSim implements Sim {
       const az = hash01(s.id) * 2 * Math.PI;
       const out = side > 0.3 ? v3.new(c.x / side, 0, c.z / side) : v3.new(Math.sin(az), 0, Math.cos(az));
       const ahead = c.y > 0;
-      s.v = v3.add(s.v, v3.add(v3.scale(out, ahead ? 7 : 2.5), v3.new(0, ahead ? 16 : -7, 0)));
+      s.v = v3.add(s.v, v3.add(v3.scale(out, ahead ? 4.5 : 2), v3.new(0, ahead ? 6 : -5, 0)));
       this.list.push({ vessel: s, parts, t0: this.t });
     }
     this.stage = index + 1;
