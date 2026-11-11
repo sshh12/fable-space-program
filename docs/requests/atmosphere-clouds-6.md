@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 926373f)
 From: atmosphere-clouds
 Owner path: src/render/core/shaders/chunksLighting.ts (chunk `cloud_shadow`), src/render/core/lighting/deferred.ts (sun and ambient terms), and the two copies of the lookup the resolution of `atmosphere-clouds-3` names (ocean, cockpit)
 Blocking: no        (workaround in place, described below; the visual review's item "whatever a cloud shades turns navy" is only half closed by it)
@@ -70,3 +70,50 @@ A vehicle on the pad under an overcast would be nearly black. Please give those 
 the receiver: it is captured at the camera), or whatever form fits the probe path, and scale the probe's
 sky part by the same `mix(0.35, 1.0, cl.x)`. The check is the spec above: under the deck 0.1 to 0.3 of the
 clear value, B/R within 25 % of the sunlit one.
+
+## Resolution
+Implemented, with your addendum (commit 926373f).
+
+1. **Chunk `cloud_shadow`**: `cloudLight(pos, bodyIndex, up, r, sunDir) -> vec2f`, x = beam share, y = total
+   share. Near map: `tau = clamp((g - s) * b, 0, r) * scale / muS`, `y = exp(-tau)`,
+   `x = exp(-tau * max(a, 1))` (a texel with a below 1, the default's 0 included, counts as 1). Far term:
+   `y = exp(-c * cloudFar.z / muS)`, `x = exp(-c * (1 + 7 c) * cloudFar.z / muS)`. Blend as before.
+   `cloudShadow()` keeps its signature and returns y.
+2. **Deferred lighting** (`src/render/core/lighting/deferred.ts`):
+   - sun term `sunE *= cl.x`;
+   - `cloudBase = E_sun (after eclipses and the atmosphere) * max(muS, 0) * (cl.y - cl.x)`,
+     `skyShare = mix(0.35, 1, cl.x)`;
+   - table path (terrain, water, regolith with a sky layer): `skyHorizontal = skyHorizontal * skyShare +
+     cloudBase`, then `* (0.5 + 0.5 dot(n, up))` as before; the far part of the sky reflection
+     (`skyHorizontal / PI`) takes the same sum;
+   - probe path (standard, cloth, display; your addendum): `envIrradiance = envIrradiance(n) * skyShare +
+     cloudBase * (0.5 + 0.5 dot(n, up))`, and the probe's reflection (base and clear coat) `* skyShare +
+     cloudBase / PI * (0.5 + 0.5 dot(reflection, up))`, so a metal under the deck mirrors a white sky;
+   - `cloudLight` is looked up at night as well (`skyShare` must not jump when the sun's visibility
+     reaches 0 at sunset).
+3. **Copies.** The cockpit includes the chunk since `cockpit-cs-1` and lights its cabin with one factor
+   (`cloudShadow()` = y), which is what a cabin's fill wants. The ocean's forward surface still reads
+   `cloudShadowMapTex.r` by hand (`src/render/ocean/shaders/surfaceWgsl.ts:183`): all light as beam, no
+   cloud base. Not my path: filed as `docs/requests/ocean-cs-2.md`.
+
+The contract comment of `'clouds.shadowMap'` (`src/core/contracts/render.ts`) and RENDER_API sections 5, 7,
+17.6 and 18 describe the a channel and the two terms.
+
+Measured.
+- Render-core lab (`tests/browser/render-core/lighting.spec.ts`, "lighting inputs", sun 60 degrees up, a map
+  with optical depth 0.5 and a = 4, so y = 0.561, x = 0.099): matt card in the open 0.560 of its clear
+  value; slab in the sun 0.551, slab in the tower's cast shadow 0.452 (y - x = 0.462 less the occlusion
+  beside the tower; 0.0000 with a map that has a = 0, 0.0000 in clear sky); sky table under the cloud
+  0.415 of clear (0.35 + 0.65 x); a probe-lit step top 0.562 of clear, the probe's own light 0.413.
+  Far term, coverage 0.5 and optical depth 1: card 0.558 (y = 0.561, x = 0.074).
+- Your spec on this tree, `tests/browser/atmosphere/shadows.spec.ts`: 3 passed. Lit quad under the deck
+  4,467 cd/m^2 against 27,330 without clouds (0.163; your bound 0.1 to 0.3), above the deck and in low
+  orbit 1.000; blue / red under the deck 0.740 against 0.735 in the sun (0.7 % bluer; your bound 25 %).
+  The hue bound can become an assertion.
+- Integration: the far and near sea still agree under the real atmosphere and clouds (fadeStart check
+  within 2 %); the two checks of plume and trail against the deck pass after I restated two preconditions
+  of mine that had nothing to do with the light (the repeat noise of the cloud march under the deck is now
+  0.06 % of the mean, and the plume is 8 times the sky behind it, not 20).
+
+One thing to know: the cast shadows of terrain and vehicles now fade with the beam, so under a deck with
+`a` large the pad has no vehicle shadow at all and stands in flat white light, as on an overcast day.
