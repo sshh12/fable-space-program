@@ -107,6 +107,14 @@ export const INTERIOR_BRIGHT_HOPELESS_EV = 3;
  */
 export const INTERIOR_WINDOW_FROM = 0.1;
 export const INTERIOR_WINDOW_FULL = 0.4;
+/**
+ * The sun in the frame, seen from space (request sky-lighting-10). The histogram holds lit geometry only, so a
+ * frame that is mostly night side with the sun and its lit limb arc over the sky pixels was exposed for the
+ * night side, the arc burned white and the sun's glare flooded the frame. A camera exposes such a frame for
+ * the light it looks into: the target is at least sunny 16 of the sun's illuminance at the camera after the
+ * air on the way (the limb's air at sunrise: a few per cent), less this margin. Exterior views only.
+ */
+export const SUN_IN_FRAME_MARGIN_EV = 1;
 /** Adaptation speed, EV per second: fast when the scene gets brighter, slower when it gets darker. */
 export const ADAPT_UP = 2.5;
 export const ADAPT_DOWN = 0.8;
@@ -201,6 +209,11 @@ export interface MeterInput {
   minEv100: number | null;
   /** Emitters over sky pixels this frame (exterior and map views; an interior view meters its cabin). */
   emissive?: readonly EmissiveHint[];
+  /**
+   * Illuminance (lux) of the sun at the camera AFTER the air it crosses, when its disc is in the frame and the
+   * camera is above every atmosphere (request sky-lighting-10); absent otherwise. See SUN_IN_FRAME_MARGIN_EV.
+   */
+  sunInFrame?: number;
 }
 
 export interface MeterResult {
@@ -347,6 +360,9 @@ export function meterExposure(m: MeterInput): MeterResult {
       if (evOutside > ev) ev += (evOutside - ev) * outsideWeight;
     }
   }
+
+  // The sun in the frame from space (request sky-lighting-10).
+  if (m.kind === 'external' && m.sunInFrame !== undefined && m.sunInFrame > 0) ev = Math.max(ev, sunny16Ev(m.sunInFrame) - SUN_IN_FRAME_MARGIN_EV);
 
   ev -= m.exposureCompensation;
   ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));

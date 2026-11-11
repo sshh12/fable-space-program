@@ -22,6 +22,7 @@ import {
   LUMINANCE_FLOOR,
   luminanceBin,
   SUNLIT_HIGHLIGHT_MAX_EV,
+  SUN_IN_FRAME_MARGIN_EV,
   meterExposure,
   sunny16Ev,
   type MeterInput,
@@ -132,6 +133,32 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     expect(Math.abs(m.targetEv100 - sunny16Ev(SUN))).toBeLessThan(0.5);
     // Even with no lit pixel resolved at all the prior holds as long as a lit body is in view.
     expect(meter(new Uint32Array(HISTOGRAM_BINS)).targetEv100).toBeCloseTo(sunny16Ev(SUN), 6);
+  });
+
+  it('the sun just over the limb from orbit: exposed for the light it sends through the air, not for the night side (request sky-lighting-10)', () => {
+    // 60 % of the frame is night side (airglow, city lights: 0.02-0.3 cd/m^2), 2 % the lit limb arc at a
+    // few thousand cd/m^2; the sun's disc is in the frame, its light at the camera 3 % of the full sun.
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, 0.02, 0.3, 0.6 * N);
+    fill(h, 1500, 4000, 0.02 * N);
+    // (The renderer meters a camera in space with the sun's illuminance after the air on the way.)
+    const attenuated = 0.03 * SUN;
+    const now = meter(h, { sunIlluminance: attenuated, sunInFrame: attenuated });
+    expect(Math.abs(now.targetEv100 - sunny16Ev(attenuated))).toBeLessThan(1);
+    expect(now.targetEv100).toBeGreaterThanOrEqual(sunny16Ev(attenuated) - SUN_IN_FRAME_MARGIN_EV - 1e-9);
+    // When the lit arc is light over sky pixels (not in the histogram) the night side alone is metered: the
+    // floor holds the exposure where the sun's light puts it; without it the frame is exposed for the night.
+    const night = new Uint32Array(HISTOGRAM_BINS);
+    fill(night, 0.02, 0.3, 0.6 * N);
+    const nightOnly = meter(night, { sunIlluminance: attenuated, sunInFrame: attenuated });
+    const without = meter(night, { sunIlluminance: attenuated });
+    expect(Math.abs(nightOnly.targetEv100 - sunny16Ev(attenuated))).toBeLessThanOrEqual(1 + 1e-9);
+    expect(without.targetEv100).toBeLessThan(nightOnly.targetEv100 - 3);
+    // Only for exterior views, and never darker than the rule asks for when the frame itself is brighter.
+    expect(meter(h, { sunInFrame: attenuated, kind: 'map' }).targetEv100).toBe(meter(h, { kind: 'map' }).targetEv100);
+    const day = new Uint32Array(HISTOGRAM_BINS);
+    fill(day, 2000, 6000, 0.6 * N);
+    expect(meter(day, { sunInFrame: SUN }).targetEv100).toBeCloseTo(Math.max(meter(day).targetEv100, sunny16Ev(SUN) - SUN_IN_FRAME_MARGIN_EV), 9);
   });
 
   it('a fully dark frame reaches the dark-adapted floor', () => {

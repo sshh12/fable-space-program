@@ -21,7 +21,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import type { GpuHandle } from '@/core/gpu/device';
 import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
 import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget } from './coreApi';
-import { buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
+import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
 import { FRAME_UNIFORM_FLOATS, packFrameUniforms, type CloudShadowParams } from './frame/uniforms';
 import { AmbientOcclusion } from './lighting/ao';
 import { DeferredLighting } from './lighting/deferred';
@@ -500,6 +500,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     return false;
   };
 
+  /** True when the point is outside the atmosphere shell of every body (in space). */
+  const aboveEveryAtmosphere = (point: { x: number; y: number; z: number }, snapshot: SimSnapshot, d: DefLibrary): boolean => {
+    for (const b of snapshot.bodies) {
+      const def = d.bodies[b.id];
+      if (def?.render.atmosphere && v3.dist(point, b.rRoot) < def.radius + def.render.atmosphere.topAltitude) return false;
+    }
+    return true;
+  };
+
   const sunInView = (camera: CameraState, dir: { x: number; y: number; z: number }, angularRadius: number, aspect: number): boolean => {
     const basis = cameraBasis(camera);
     const z = v3.dot(dir, basis.forward);
@@ -550,11 +559,24 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const sunVisibility = sunVisibilityAt(camera.positionRoot, snapshot, defs, sun);
 
     // Exposure: meter (histogram from a few frames ago), adapt, or take the override.
+    const sunDiscInView = sunVisibility > 0 && sunInView(camera, sun.dirRoot, sun.angularRadius, rw / rh);
+    // A camera in space meters with the sun's illuminance AFTER the air between it and the sun (request
+    // sky-lighting-10: just over the limb that air leaves a few per cent; what is near the camera is lit by
+    // the same light); with the disc in the frame that light is also a floor of the exposure. A camera inside
+    // an atmosphere keeps the unattenuated value (its scene is lit through other air than its own line of sight).
+    let sunAtCamera = sun.illuminance;
+    let sunInFrame: number | undefined;
+    if (aboveEveryAtmosphere(camera.positionRoot, snapshot, defs)) {
+      const t = atmosphereTransmittanceAlong(camera.positionRoot, sun.dirRoot, snapshot, defs);
+      sunAtCamera = sun.illuminance * (0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]);
+      if (sunDiscInView) sunInFrame = sunAtCamera * sunVisibility;
+    }
     const metering = meter.evaluate({
-      sunIlluminance: sun.illuminance,
+      sunIlluminance: sunAtCamera,
       sunVisibility,
       // The solar disc itself counts: a camera pointed at the unoccluded sun stops down to the daylight exposure.
-      litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || (sunVisibility > 0 && sunInView(camera, sun.dirRoot, sun.angularRadius, rw / rh)),
+      litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || sunDiscInView,
+      ...(sunInFrame !== undefined ? { sunInFrame } : {}),
       kind: camera.kind,
       exposureCompensation: camera.exposureCompensation,
       minEv100: camera.minEv100,

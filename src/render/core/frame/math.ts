@@ -171,6 +171,55 @@ export function sunVisibilityAt(point: Vec3, snapshot: SimSnapshot, defs: DefLib
   return vis;
 }
 
+/**
+ * Transmittance per channel (linear sRGB) of the atmospheres of the snapshot's bodies along the ray from a
+ * ROOT-frame point in the unit direction `dir` to infinity (request sky-lighting-10: the sun seen through the
+ * limb's air): Rayleigh, Mie (scattering + absorption) and the ozone tent of each body's
+ * `render.atmosphere`, integrated numerically through its shell with samples crowded towards the ray's closest
+ * approach (where a grazing ray meets the dense air). A ray that meets a body's reference sphere gives 0.
+ * The GPU's transmittance tables hold the same model; this is the CPU twin for the camera's own position.
+ */
+export function atmosphereTransmittanceAlong(point: Vec3, dir: Vec3, snapshot: SimSnapshot, defs: DefLibrary): [number, number, number] {
+  const tau: [number, number, number] = [0, 0, 0];
+  for (const b of snapshot.bodies) {
+    const def = defs.bodies[b.id];
+    const atm = def?.render.atmosphere;
+    if (!def || !atm) continue;
+    const R = def.radius;
+    const top = R + atm.topAltitude;
+    const o = v3.sub(point, b.rRoot);
+    const bb = v3.dot(o, dir);
+    const oo = v3.dot(o, o);
+    // The solid body in the way: no light.
+    const dg = bb * bb - (oo - R * R);
+    if (dg > 0 && -bb - Math.sqrt(dg) > 0) return [0, 0, 0];
+    const disc = bb * bb - (oo - top * top);
+    if (disc <= 0) continue;
+    const t1 = -bb + Math.sqrt(disc);
+    if (t1 <= 0) continue;
+    const t0 = Math.max(0, -bb - Math.sqrt(disc));
+    const tm = Math.min(Math.max(-bb, t0), t1);
+    const sample = (t: number, dt: number): void => {
+      const p = v3.addScaled(o, dir, t);
+      const h = v3.len(p) - R;
+      const dR = Math.exp(-h / atm.rayleighScaleHeight) * dt;
+      const dM = Math.exp(-h / atm.mieScaleHeight) * (atm.mieScattering + atm.mieAbsorption) * dt;
+      const dO = Math.max(0, 1 - Math.abs(h - atm.ozoneCenterAltitude) / atm.ozoneHalfWidth) * dt;
+      for (let c = 0; c < 3; c++) tau[c]! += atm.rayleighScattering[c]! * dR + dM + atm.ozoneAbsorption[c]! * dO;
+    };
+    // Two segments from the closest approach outwards, t = tm +- L u^2 (dt = 2 L u du): dense near tm.
+    const N = 128;
+    for (const [L, sgn] of [[tm - t0, -1], [t1 - tm, 1]] as const) {
+      if (L <= 0) continue;
+      for (let i = 0; i < N; i++) {
+        const u = (i + 0.5) / N;
+        sample(tm + sgn * L * u * u, (2 * L * u) / N);
+      }
+    }
+  }
+  return [Math.exp(-tau[0]), Math.exp(-tau[1]), Math.exp(-tau[2])];
+}
+
 /** Phase function of a Lambert sphere, 1 at full phase (alpha = 0), 0 at new (alpha = pi). */
 export const lambertSpherePhase = (alpha: number): number => (Math.sin(alpha) + (Math.PI - alpha) * Math.cos(alpha)) / Math.PI;
 

@@ -8,6 +8,7 @@ import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { mat4, quat, v3, type Vec3 } from '@/core/math';
 import {
+  atmosphereTransmittanceAlong,
   buildBodyPoses,
   buildProjection,
   buildVesselPoses,
@@ -181,6 +182,35 @@ describe('sun, eclipses and planetshine', () => {
     expect(dark ? dark.illuminance[1] : 0).toBeLessThan(0.01);
     // Close to the body the far-field formula is switched off (the environment probe carries the light).
     expect(planetshineAt(v3.addScaled(earth.rRoot, earth.sunDir, 1.5 * 6371e3), null, snap, defs).some((s) => s.bodyId === earth.id)).toBe(false);
+  });
+  it('integrates the transmittance of the air along a ray: the zenith from space, a grazing ray through the limb, the ground in the way (request sky-lighting-10)', () => {
+    const earth = snap.bodies.find((b) => b.id === defs.rootBodyId)!;
+    const R = defs.bodies[earth.id]!.radius;
+    const atm = defs.bodies[earth.id]!.render.atmosphere!;
+    const up = v3.normalize(v3.cross(earth.sunDir, { x: 0.3, y: 0.5, z: 0.8 }));
+    // Straight up from the ground: tau = beta_R H_R + (beta_M + alpha_M) H_M + ozone x half width (the tent's area).
+    const ground = v3.addScaled(earth.rRoot, up, R + 1);
+    const t = atmosphereTransmittanceAlong(ground, up, snap, defs);
+    for (let c = 0; c < 3; c++) {
+      const tau = atm.rayleighScattering[c]! * atm.rayleighScaleHeight * Math.exp(-1 / atm.rayleighScaleHeight) + (atm.mieScattering + atm.mieAbsorption) * atm.mieScaleHeight + atm.ozoneAbsorption[c]! * atm.ozoneHalfWidth;
+      expect(t[c]).toBeCloseTo(Math.exp(-tau), 3);
+    }
+    // From a 200 km orbit along the same line outwards: no air in the way.
+    expect(atmosphereTransmittanceAlong(v3.addScaled(earth.rRoot, up, R + 200e3), up, snap, defs)).toEqual([1, 1, 1]);
+    // Grazing: from 200 km, a ray whose closest approach is 10 km up (the sun just over the limb): a few per
+    // cent in green, red > green > blue.
+    const side = v3.normalize(v3.cross(up, earth.sunDir));
+    const cam = v3.addScaled(earth.rRoot, up, R + 200e3);
+    // The closest approach P makes a right angle at P: cos(angle up..P) = (R + 10 km) / (R + 200 km).
+    const th = Math.acos((R + 10e3) / (R + 200e3));
+    const tangent = v3.addScaled(earth.rRoot, v3.add(v3.scale(up, Math.cos(th)), v3.scale(side, Math.sin(th))), R + 10e3);
+    const graze = atmosphereTransmittanceAlong(cam, v3.normalize(v3.sub(tangent, cam)), snap, defs);
+    expect(graze[1]).toBeGreaterThan(0.005);
+    expect(graze[1]).toBeLessThan(0.08);
+    expect(graze[0]).toBeGreaterThan(graze[1]);
+    expect(graze[1]).toBeGreaterThan(graze[2]);
+    // Through the ground: nothing.
+    expect(atmosphereTransmittanceAlong(cam, v3.neg(up), snap, defs)).toEqual([0, 0, 0]);
   });
   it('hides a shining body behind the others: the Moon under a 200 km orbit\'s horizon lights nothing (request sky-lighting-8)', () => {
     const earth = snap.bodies.find((b) => b.id === defs.rootBodyId)!;
