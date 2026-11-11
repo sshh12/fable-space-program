@@ -325,6 +325,17 @@ test('(c) at the landing site under a low sun the lander casts its shadow on the
   await freeze(page);
   await settle(page, 60);
   await save(page, 'shadows-landing-site-low-sun');
+  // The landed lander stands on its deployed legs, its foot pads on the ground (request vehicle-pad-5).
+  const stand = await page.evaluate(() => {
+    const s = window.__integration!.app.snapshot();
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    const legs = v.parts.flatMap((p) => p.modules).filter((m) => m.type === 'legs') as { deploy: number }[];
+    return { deploy: legs.map((m) => m.deploy), radar: s.readouts.altitudeRadar };
+  });
+  console.log(`(c) landing site: legs deployed ${stand.deploy.join(', ')}, radar altitude of the lowest point ${stand.radar.toFixed(3)} m`);
+  expect(stand.deploy.length, 'legs modules on the lander').toBeGreaterThan(0);
+  for (const d of stand.deploy) expect(d).toBe(1);
+  expect(Math.abs(stand.radar)).toBeLessThan(0.05);
   // Ground points 20 m from the lander: down-sun (in its shadow, which is 60 m long at this elevation) and
   // across the sun line on either side (in the sun).
   const offset = (bearingDeg: number, metres: number): { latDeg: number; lonDeg: number } => ({

@@ -138,6 +138,18 @@ describe('FakeSim', () => {
     expect(createFakeSim(defs, { scene: 'lowOrbit' }).snapshot().vessels[0]!.vehicleId).toBe('');
   });
 
+  it('can start with the legs deployed (a landed lander, request vehicle-pad-5); toggleLegs works from there', () => {
+    const parts = [{ id: 'p0', def: 'x', localPos: { x: 0, y: 0, z: 0 }, localRot: { x: 0, y: 0, z: 0, w: 1 }, modules: [{ type: 'legs', deploy: 0, compression: 0 }] }] as unknown as NonNullable<Parameters<typeof createFakeSim>[1]['parts']>;
+    const deployOf = (sim: ReturnType<typeof createFakeSim>): number => (sim.snapshot().vessels[0]!.parts[0]!.modules[0] as { deploy: number }).deploy;
+    const landed = createFakeSim(defs, { scene: 'lunarSurface', parts, legsDeployed: true });
+    expect(deployOf(landed)).toBe(1);
+    expect(landed.snapshot().readouts.legsDeployed).toBe(true);
+    landed.commands.toggleLegs();
+    expect(deployOf(landed)).toBe(0);
+    // The default is stowed, as before.
+    expect(deployOf(createFakeSim(defs, { scene: 'lunarSurface', parts }))).toBe(0);
+  });
+
   it('the surface scenes can be placed away from the site', () => {
     const sim = createFakeSim(defs, { scene: 'ascent', location: { latDeg: -42.5, lonDeg: 101.25 } });
     const s = sim.snapshot();

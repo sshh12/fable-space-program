@@ -70,6 +70,11 @@ export interface FakeSimOptions {
   ground?: { height: number; originHeight: number; clearance?: number };
   /** Stage labels for the staging stack (default: a generic 4-entry stack). */
   stageLabels?: string[];
+  /**
+   * Landing legs of the active vessel deployed from the start (default false: stowed, as at launch). A landed
+   * scene stands on them (request vehicle-pad-5); `toggleLegs` works from there as usual.
+   */
+  legsDeployed?: boolean;
 }
 
 const OBLIQUITY = 23.4392911 * DEG;
@@ -166,6 +171,7 @@ export class FakeSim implements Sim {
     if (opts.location && this.spec.kind === 'surface') this.spec = { ...this.spec, latDeg: opts.location.latDeg, lonDeg: opts.location.lonDeg };
     if (opts.altitude !== undefined && this.spec.kind === 'surface') this.spec = { ...this.spec, altitude: opts.altitude };
     this.ground = opts.ground ?? null;
+    this.legsDeployed = opts.legsDeployed ?? false;
     this.siteDir = latLonToDir((this.spec.latDeg ?? 0) * DEG, (this.spec.lonDeg ?? 0) * DEG);
     this.orbitPhase0 = 0.6;
     this.navballMode = this.spec.kind === 'orbit' ? 'orbit' : 'surface';

@@ -12,6 +12,7 @@
  *   &at=lat,lon                 FakeSim: put a surface scene here instead of at its own place (pad, ascent: the
  *                               site; lunarSurface: the scenario's landing target; chutes: the first recovery zone)
  *   &hover=<m>                  FakeSim, lunarSurface: the lander's feet this high above the ground (default 0)
+ *   &legs=0                     FakeSim, lunarSurface: legs stowed (default: deployed, the lander stands on its pads)
  *   &start=<m>                  FakeSim, ascent and chutes: altitude of the vessel at the start (default 9,000 / 2,500)
  *   &roll=<deg>                 turn the active vessel about its long axis as the renderer sees it (the FakeSim
  *                               flies dorsal side up; 180 = windows towards the body below)
@@ -169,15 +170,19 @@ export interface IntegrationLab {
   release(): void;
 }
 
-/** Lowest and highest point of a stack of upright parts along +Y, m from the vessel origin (stowed legs end at their hinge). */
-function stackExtent(defs: DefLibrary, parts: readonly PartSnapshot[]): { yMin: number; yMax: number } | null {
+/**
+ * Lowest and highest point of a stack of upright parts along +Y, m from the vessel origin (stowed legs end at
+ * their hinge; deployed ones at the part's lowest point). `legsDeployed` overrides the legs' own state.
+ */
+function stackExtent(defs: DefLibrary, parts: readonly PartSnapshot[], legsDeployed?: boolean): { yMin: number; yMax: number } | null {
   let yMin = Infinity;
   let yMax = -Infinity;
   for (const p of parts) {
     const def = defs.parts[p.def];
     if (!def) continue;
     const legs = p.modules.find((m) => m.type === 'legs');
-    const low = legs && legs.type === 'legs' && legs.deploy < 0.5 ? 0 : def.bounds.yMin;
+    const deployed = legsDeployed ?? (legs?.type === 'legs' && legs.deploy >= 0.5);
+    const low = legs && legs.type === 'legs' && !deployed ? 0 : def.bounds.yMin;
     yMin = Math.min(yMin, p.localPos.y + low);
     yMax = Math.max(yMax, p.localPos.y + def.bounds.yMax);
   }
@@ -193,6 +198,7 @@ async function surfacePlace(
   terrain: TerrainProvider,
   scene: FakeScene,
   parts: readonly PartSnapshot[] | null,
+  legsDeployed: boolean,
 ): Promise<{ location: { latDeg: number; lonDeg: number }; ground?: { height: number; originHeight: number; clearance: number } } | null> {
   const site = Object.values(defs.sites)[0];
   const landing = Object.values(defs.scenarios).find((s) => s.suggestedLanding)?.suggestedLanding;
@@ -208,7 +214,7 @@ async function surfacePlace(
   if (!place) return null;
   const at = query.get('at')?.split(',').map(Number);
   const location = at && at.length === 2 && at.every(Number.isFinite) ? { latDeg: at[0]!, lonDeg: at[1]! } : { latDeg: place.latDeg, lonDeg: place.lonDeg };
-  const extent = parts ? stackExtent(defs, parts) : null;
+  const extent = parts ? stackExtent(defs, parts, legsDeployed) : null;
   if (!extent) return { location };
   const dir = latLonToDir(location.latDeg * DEG, location.lonDeg * DEG);
   await terrain.ensureLoaded(place.bodyId, dir, 50, 'integration-lab');
@@ -358,9 +364,12 @@ async function boot(): Promise<void> {
     const stage = query.get('stage');
     const vehicleId = query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '';
     const real = stage === 'none' ? null : await realVesselParts(defs, vehicleId, stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
-    const place = await surfacePlace(defs, terrain, scene, real?.parts ?? null);
+    // A landed lander stands on its legs (request vehicle-pad-5); &legs=0 keeps them stowed.
+    const legsDeployed = scene === 'lunarSurface' && query.get('legs') !== '0';
+    const place = await surfacePlace(defs, terrain, scene, real?.parts ?? null, legsDeployed);
     inner = createFakeSim(defs, {
       scene,
+      legsDeployed,
       // The vessel carries the vehicle's id with its parts: the cockpit finds its layout and the vessel
       // visuals their engine children through it.
       ...(real ? { parts: real.parts, stageLabels: real.stageLabels, vehicleId } : {}),
