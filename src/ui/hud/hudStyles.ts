@@ -149,8 +149,8 @@ export const HUD_CSS = /* css */ `
 .hud .rcol { position: absolute; right: var(--gap); top: calc(var(--gap) + var(--u) * 4.4); width: var(--rcol); display: flex; flex-direction: column; gap: calc(var(--u) * 0.8); align-items: stretch; max-height: calc(100% - var(--u) * 8); }
 
 /* ---------------------------------------------------------------- clock + warp */
-.hud .clock .metrow { display: flex; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 1.78em; contain: size layout style; }
-.hud .clock .met { font-size: 1.4em; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+.hud .clock .metrow { display: flex; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 1.66em; contain: size layout style; }
+.hud .clock .met { font-size: 1.32em; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
 .hud .clock .wf { display: flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
 .hud .clock .wf .rails { font-size: 0.78em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--label); font-weight: 600; }
 .hud .clock .wf .factor { font-size: 1.05em; font-weight: 700; letter-spacing: 0.02em; }
@@ -167,6 +167,7 @@ export const HUD_CSS = /* css */ `
 
 /* ---------------------------------------------------------------- altitude */
 .hud .alt { min-width: calc(var(--u) * 19.5); text-align: center; padding: calc(var(--u) * 0.4) calc(var(--u) * 1.2); cursor: pointer; }
+.hud .alt .ptitle { letter-spacing: 0.06em; }
 .hud .alt .val.big { display: block; text-align: center; height: 1.22em; contain: size layout style; }
 .hud .alt .vs { display: flex; align-items: center; justify-content: center; gap: 0.4em; font-size: 0.86em; color: var(--label); height: 1.3em; contain: size layout style; }
 .hud .alt .vs b { color: var(--text); font-weight: 600; }
@@ -249,7 +250,7 @@ export const HUD_CSS = /* css */ `
 .hud .tile.next.locked .lockline { display: flex; align-items: center; gap: 0.45em; font-size: 0.8em; color: var(--caution); white-space: nowrap; }
 .hud .tile.next.locked .lockline b { font-weight: 700; letter-spacing: 0.1em; }
 .hud .tile.next.locked .lockline span { color: #f1dcb5; }
-.hud .tile.compact { gap: calc(var(--u) * 0.6); height: calc(var(--u) * 1.88); padding: 0; }
+.hud .tile.compact { gap: calc(var(--u) * 0.6); height: calc(var(--u) * 1.8); padding: 0; }
 .hud .tile.compact + .tile.compact { border-top: 1px solid rgba(170, 198, 235, 0.11); }
 .hud .tile.compact .sn { font-size: 0.78em; }
 .hud .tile.compact .ico { width: calc(var(--u) * 1.8); height: calc(var(--u) * 1.8); background: none; color: #c3d0df; }
@@ -301,9 +302,9 @@ export const HUD_CSS = /* css */ `
  * The ball's read-outs: pitch, heading (over the bezel's top index) and roll in fixed-width windows on one row
  * above the instrument, clear of the bezel and never changing width with the value.
  */
-.hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 30); margin-bottom: calc(var(--u) * -0.3); }
+.hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 29); margin-bottom: calc(var(--u) * -0.3); }
 .hud .nbchips > div { background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); box-shadow: var(--edge); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
-.hud .nbchips .pr { width: calc(var(--u) * 11.4); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.6); font-size: 0.8em; }
+.hud .nbchips .pr { width: calc(var(--u) * 10.9); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.55); font-size: 0.77em; }
 .hud .nbchips .pr .lbl { font-size: 0.92em; }
 .hud .nbchips .pr b { font-weight: 600; }
 .hud .nbchips .pitch { justify-self: start; }
@@ -315,7 +316,7 @@ export const HUD_CSS = /* css */ `
  * index - redrawn only when the element is resized. The bezel canvas is larger than the ball's box so its soft
  * drop shadow fades out inside it.
  */
-.hud .ball { position: relative; width: calc(var(--u) * 25); height: calc(var(--u) * 25); contain: size layout style; }
+.hud .ball { position: relative; width: calc(var(--u) * 24.5); height: calc(var(--u) * 24.5); contain: size layout style; }
 .hud .ball canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .hud .ball canvas.bezel { inset: -14%; width: 128%; height: 128%; }
 

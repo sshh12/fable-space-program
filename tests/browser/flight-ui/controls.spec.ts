@@ -376,9 +376,11 @@ test.describe('flight-ui controls', () => {
       expect(mfd.heading).toContain(name!);
       const s = await state(page);
       const lt = s.readouts.landingTarget!;
-      // The numbers are the readout's: distance in km to the shown precision, bearing to the degree.
-      const km = Number(hud[0]![1]!.replace(/[ \s]/g, '').replace('km', ''));
-      if (hud[0]![1]!.endsWith('km')) expect(Math.abs(km * 1000 - lt.distance)).toBeLessThan(100);
+      // The numbers are the readout's: distance in km to the shown precision (half its last digit), bearing to
+      // the degree.
+      const kmText = hud[0]![1]!.replace(/[ \s]/g, '').replace('km', '');
+      const decimals = kmText.includes('.') ? kmText.split('.')[1]!.length : 0;
+      if (hud[0]![1]!.endsWith('km')) expect(Math.abs(Number(kmText) * 1000 - lt.distance)).toBeLessThanOrEqual(500 * Math.pow(10, -decimals) + 1);
       expect(hud[1]![1]).toBe(`${String(Math.round(((lt.bearingDeg % 360) + 360) % 360) % 360).padStart(3, '0')}°`);
       if (query.includes('impact')) expect(hud[4]![0]).toBe('Impact miss');
       if (query.includes('entry')) expect(hud[4]![0]).toBe('Entry point miss');
