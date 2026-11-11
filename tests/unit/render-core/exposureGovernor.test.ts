@@ -10,6 +10,9 @@ import {
   exposureFromEv100,
   HISTOGRAM_BINS,
   histogramStats,
+  INTERIOR_HIGHLIGHT_CAP,
+  INTERIOR_HIGHLIGHT_MAX_EV,
+  INTERIOR_NIGHT_KEY_EV,
   LUMINANCE_FLOOR,
   luminanceBin,
   meterExposure,
@@ -214,13 +217,15 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     fill(cabin, 20, 45, 0.6 * N);
     const withPatch = meter(near, { histogramNear: near, kind: 'interior' });
     const without = meter(cabin, { histogramNear: cabin, kind: 'interior' });
-    // The patch moves the exposure by less than a stop, and the cabin stays near mid-grey ...
-    expect(withPatch.targetEv100 - without.targetEv100).toBeLessThan(1);
-    expect(withPatch.targetEv100 - without.targetEv100).toBeGreaterThan(0);
+    // The patch stops the camera down, but by a bounded amount (request cockpit-5: at most
+    // INTERIOR_HIGHLIGHT_MAX_EV above the cabin's own target), so the cabin stays readable, two to three
+    // stops under mid-grey as in a photograph taken inside with sun in the frame ...
+    expect(withPatch.targetEv100 - without.targetEv100).toBeGreaterThan(1);
+    expect(withPatch.targetEv100 - without.targetEv100).toBeLessThanOrEqual(INTERIOR_HIGHLIGHT_MAX_EV + 0.3);
     const cabinAt = 30 * exposureFromEv100(withPatch.targetEv100);
-    expect(cabinAt).toBeGreaterThan(0.08);
-    expect(cabinAt).toBeLessThan(0.3);
-    // ... while the patch blows out (far above white).
+    expect(cabinAt).toBeGreaterThan(0.03);
+    expect(cabinAt).toBeLessThan(0.1);
+    // ... while a patch 600 times brighter than the cabin still blows out (far above white).
     expect(17000 * exposureFromEv100(withPatch.targetEv100)).toBeGreaterThan(20);
     // The statistic is the log-average of the whole near histogram: dark corners count too.
     const stats = histogramStats(near, N, Infinity);
@@ -233,6 +238,79 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     const flat = new Uint32Array(HISTOGRAM_BINS);
     flat[luminanceBin(30)] = 0.6 * N;
     expect(histogramStats(flat, N, Infinity).logMean).toBeCloseTo(histogramStats(flat, N).mean, 6);
+  });
+});
+
+describe('interior metering: night key and bounded highlights (request cockpit-5)', () => {
+  const cabinAt = (lo: number, hi: number, share = 0.6): Uint32Array => {
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, lo, hi, share * N);
+    return h;
+  };
+  const interior = (near: Uint32Array): ReturnType<typeof meterExposure> => meter(near, { histogramNear: near, kind: 'interior' });
+  const shown = (luminance: number, ev: number): number => luminance * exposureFromEv100(ev);
+
+  it('a cabin lit by its floods and displays alone is displayed dim, a daylit one at mid-grey', () => {
+    // Night pass: log-mean about 3 cd/m^2. Noon on the pad: about 200 cd/m^2.
+    const night = cabinAt(1.5, 6);
+    const noon = cabinAt(120, 330);
+    const nightLevel = shown(histogramStats(night, N, Infinity).logMean, interior(night).targetEv100);
+    const noonLevel = shown(histogramStats(noon, N, Infinity).logMean, interior(noon).targetEv100);
+    // The full key at and below 4 cd/m^2: INTERIOR_NIGHT_KEY_EV under what the log-average alone gives.
+    expect(INTERIOR_NIGHT_KEY_EV).toBe(1.5);
+    expect(nightLevel).toBeLessThan(0.5 * noonLevel);
+    expect(nightLevel).toBeGreaterThan(0.04);
+    expect(nightLevel).toBeLessThan(0.09);
+    expect(noonLevel).toBeGreaterThan(0.15);
+    // No key from 64 cd/m^2 up, the whole of it at 4 cd/m^2 and below, monotonic in between.
+    let last = Infinity;
+    for (const l of [2, 4, 8, 16, 32, 64, 128]) {
+      const h = new Uint32Array(HISTOGRAM_BINS);
+      h[luminanceBin(l)] = 0.6 * N;
+      const level = shown(binLuminance(luminanceBin(l)), interior(h).targetEv100);
+      const plain = 0.18 * 2 ** exposureCompensationCurve(ev100ForMidGrey(binLuminance(luminanceBin(l))));
+      const key = Math.log2(plain / level);
+      // (The bins are an eighth of a stop wide: the bin that holds 4 cd/m^2 is centred a little above it.)
+      if (l <= 4) expect(key).toBeCloseTo(INTERIOR_NIGHT_KEY_EV, 2);
+      if (l >= 64) expect(key).toBeCloseTo(0, 2);
+      expect(key).toBeLessThanOrEqual(last + 1e-9);
+      last = key;
+    }
+  });
+
+  it('highlights of the cabin weigh in, by a bounded amount', () => {
+    const cabin = cabinAt(20, 45);
+    const base = interior(cabin).targetEv100;
+    // Sunlit hardware next to a window, 150 times the cabin (5 % of the near pixels): kept under
+    // INTERIOR_HIGHLIGHT_CAP x mid-grey, the cabin about a stop and a half under mid-grey.
+    const lit = new Uint32Array(cabin);
+    fill(lit, 4000, 5000, 0.05 * 0.6 * N);
+    const withLit = interior(lit).targetEv100;
+    const p99 = histogramStats(lit, N, Infinity).p99;
+    expect(shown(p99, withLit)).toBeLessThanOrEqual(INTERIOR_HIGHLIGHT_CAP * 0.18 * 1.001);
+    // (Against the cabin alone the target moves by the highlight term plus what the bright pixels add to
+    // the log-average itself, about a third of a stop here.)
+    expect(withLit - base).toBeGreaterThan(1);
+    expect(withLit - base).toBeLessThan(INTERIOR_HIGHLIGHT_MAX_EV + 0.5);
+    expect(shown(30, withLit)).toBeGreaterThan(0.04);
+    // A sun patch 600 times the cabin: the bound holds, the cabin stays readable.
+    const patch = new Uint32Array(cabin);
+    fill(patch, 14000, 20000, 0.05 * 0.6 * N);
+    const withPatch = interior(patch).targetEv100;
+    expect(withPatch - base).toBeGreaterThan(INTERIOR_HIGHLIGHT_MAX_EV - 0.01);
+    expect(withPatch - base).toBeLessThan(INTERIOR_HIGHLIGHT_MAX_EV + 0.8);
+    expect(shown(30, withPatch)).toBeGreaterThan(0.03);
+    // Highlights up to 48 times mid-grey need no protection: 30 times the cabin moves the target only by
+    // what it adds to the log-average.
+    const mild = new Uint32Array(cabin);
+    fill(mild, 800, 1100, 0.05 * 0.6 * N);
+    expect(interior(mild).targetEv100 - base).toBeLessThan(0.2);
+    // A handful of bright pixels (0.5 % of the near pixels) is below the 99th percentile: nothing moves.
+    const speck = new Uint32Array(cabin);
+    fill(speck, 14000, 20000, 0.005 * 0.6 * N);
+    expect(interior(speck).targetEv100 - base).toBeLessThan(0.1);
+    // Exterior metering does not know these rules.
+    expect(meter(lit, { kind: 'external' }).targetEv100).toBe(meter(lit, { kind: 'map' }).targetEv100);
   });
 });
 

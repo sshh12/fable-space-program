@@ -736,10 +736,16 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   unoccluded solar disc itself is in view; EV -3, the dark-adapted floor, otherwise);
   between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
-  geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range and
-  without the highlight cap (request `cockpit-3`): a sun patch on a panel, several hundred times brighter
-  than the cabin, moves the exposure by less than a stop, so the cabin stays readable and the patch and the
-  windows blow out. Exterior and map metering are unchanged.
+  geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
+  (request `cockpit-3`), with two terms on top (request `cockpit-5`): a night key (the target is
+  `INTERIOR_NIGHT_KEY_EV` = 1.5 EV darker when the near log-mean is at or below 4 cd/m^2, not at all from
+  64 cd/m^2 up, smoothly in between: a cabin lit by its floods and displays is displayed dim) and a bounded
+  highlight term (the 99th percentile of the near histogram is kept below `INTERIOR_HIGHLIGHT_CAP` = 48 x
+  mid-grey, but it may raise the target by at most `INTERIOR_HIGHLIGHT_MAX_EV` = 1.75 EV above the
+  log-average target). So sunlit hardware up to 48 x mid-grey keeps its surface, a sun patch several
+  hundred times brighter than the cabin stops the camera down by 1.75 EV and still blows out, the shaded
+  cabin sits two to three stops under mid-grey, and the windows (farther than 8 m) blow out. Exterior and
+  map metering do not know these terms.
 - **Emitters over the sky** (request `vfx-1`). The histogram holds geometry only, so a plume, a reentry
   trail or a fireball in front of space or the night sky is invisible to the meter. A feature that draws
   one calls `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
@@ -1129,6 +1135,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
+| Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin at night is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.75 EV darker than before |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
 | Cloth looks the sun shadow up with the normal turned to the sun; planetshine is multiplied by the baked AO (RT0.a) | `cockpit-1`, `cockpit-2` | cockpit, vehicle-pad (canopies, blankets), anything that bakes AO into RT0.a | None. Surfaces with baked AO below 1 receive that much less planetshine |
 | `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |
