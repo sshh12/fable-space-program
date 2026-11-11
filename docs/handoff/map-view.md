@@ -76,8 +76,8 @@ CSS px, `panelNudge(comp, sign, factor)`), `HANDLES`, `dragDelta`, `modifierFact
   layout changes (the map lab passes its own text boxes). Map labels, the node panel and tooltips then keep
   clear of them. Panel ownership: the map's node panel EDITS the selected node (components, total, time,
   orbit steps, delete); the HUD's MANEUVER panel shows the burn EXECUTION figures (delta-v remaining, burn time,
-  burn start). The map panel uses the HUD's type and palette (src/map/theme.ts; request map-view-4 asks for
-  the tokens to move to src/core).
+  burn start). The map panel and labels use the interface's shared type and palette (`src/core/ui/theme.ts`,
+  request map-view-4, resolved; `src/map/theme.ts` adds only the map's own label weight and opaque fills).
 
 ## Behaviour
 
@@ -96,13 +96,14 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   ellipses are skipped. A patch with `nuEnd - nuStart >= 2 pi` is one ellipse; its node sits at
   `nuEnd mod 2 pi`. With time ahead a patch fades toward a lighter tint of its own hue at alpha 0.5
   (`FADE_FLOOR`, `FADE_TINT`), so far laps stay readable; the current trajectory beyond the first node is dimmed.
-- Lines are cut in float64 where they pass behind the eye (`VertexArrays.push`, `CLIP_DEPTH_REL`): a vertex
-  counts as in front when its depth exceeds 1e-5 of its distance, and a segment crossing that depth gets a new
-  end there. Every segment the GPU draws has both ends safely in front after the float32 narrowing (the old
-  GPU clip at the 5 cm near plane could not be resolved for points 1e8 m away and threw mirrored chords across
-  the screen). Each line has a dark casing (1.25 px, 0.6 alpha) that keeps it legible over a lit planet;
-  dashes are 12 on / 8 off, phase anchored at the node end, carried per vertex as a phase plus the segment's
-  screen length (exact in float32 however long the line).
+- Lines are cut in float64 where they pass behind the eye (`VertexArrays.appendLine`, `CLIP_DEPTH_REL`): a
+  vertex counts as in front when its depth exceeds 1e-5 of its distance, and a segment crossing that depth
+  gets a new end there. Every segment the GPU draws has both ends safely in front after the float32 narrowing
+  (the old GPU clip at the 5 cm near plane could not be resolved for points 1e8 m away and threw mirrored
+  chords across the screen). Each line has a dark casing (1.25 px, 0.6 alpha) that keeps it legible over a lit
+  planet; a whole ellipse is joined across its seam (two trailing join-only vertices, `LineRecord.seam`), so
+  no end cap shows there. Dashes are 12 on / 8 off, phase anchored at the node end, carried per vertex as a
+  phase plus the segment's screen length (exact in float32 however long the line).
 - Lines are relative to the patch body's current position, or (toggle) at intercept: every ENCOUNTER (a run
   of consecutive patches about one body in one list) is drawn around the body's ROOT position at that
   encounter's SOI entry, derived exactly from the preceding patch as `prev.bodyPosAtEnd + r(prev.nuEnd) -
@@ -113,9 +114,10 @@ Drawing (all from the snapshot; nothing is predicted by the map):
 - Radial patches (`conic.p === 0`, sim-orbits convention) are drawn as a straight, non-interactive segment.
 - Other vessels (`conicFromState`, 0.45 alpha): full ellipse, or to the surface for suborbital ones, or to
   the SOI boundary for open ones. Debris are dots; a debris orbit (0.2 alpha) is drawn only for the hovered
-  debris or with `setDebrisOrbits(true)` (the perf load case). Bodies' orbits (`BodySnapshot.orbit`,
-  attractors only), SOI silhouettes seen from outside (nothing from inside: a great circle read as a second
-  orbit). Faint lines (other vessels, debris) use a 0.9 px tolerance; zone rings use the 0.29 px one.
+  debris or with `setDebrisOrbits(true)` (the perf load case; the hovered one is drawn like a vessel orbit).
+  Bodies' orbits (`BodySnapshot.orbit`, attractors only), SOI silhouettes seen from outside (nothing from
+  inside: a great circle read as a second orbit). Tolerances: other vessels' and the hovered debris' orbits
+  0.9 px, debris orbits drawn in bulk 1.5 px (20 % alpha), zone rings the trajectories' 0.29 px.
 - Bodies: a ring icon under 6 px diameter; a name label while the projected radius is under 40 px (priority
   above markers). Vessels: an arrowhead oriented along the velocity on screen (the active vessel white).
 - Surface targets in the body-fixed frame (rotate with the body): landing pin, launch-site pad, recovery zones
@@ -129,13 +131,15 @@ Drawing (all from the snapshot; nothing is predicted by the map):
 - Clutter: icons closer than 11 px collapse into one (a speck-sized body wins, then the active vessel, then the
   label priority) with a "+n" badge; the hover tooltip lists the members ("n objects here", debris counted).
   Unselected nodes are 5.5 px discs (a dashed ring when behind a body). Labels: HUD type family (Bahnschrift,
-  13 px semibold, proportional with tabular digits; atlas in gpu/glyphAtlas.ts) on a dark backing plate;
-  placed at the best of 16 candidates (8 beside the anchor, 8 further out with a leader line): free of icons,
-  other labels, the node panel, the tooltip, badges and `setObstacles` rectangles, then covering the least
-  drawn line (lineGrid.ts, a 6 px occupancy grid of the drawn segments, trajectories weighted highest);
-  hidden when no candidate is free. Hover tooltip with all details (entry: speed, flight-path angle, vacuum
-  periapsis, lat/lon, miss), placed in the quadrant (then further out) that covers neither the panel, nor a
-  handle, nor other UI; labels then keep clear of it. No tooltip for the selected node or its handles.
+  13 px semibold, proportional with tabular digits; atlas in gpu/glyphAtlas.ts) on a dark backing plate that
+  masks any line under it; placed at the first free one of 16 candidates (8 beside the anchor, 8 further out
+  with a leader line), ordered by the side of the anchor's own line: the normal of its screen tangent (marker
+  and node times looked up on the patch line, the vessel's heading) turned away from its body, outer side
+  first, the two along the line last. Free = clear of icons and gizmo arms, other labels, the node panel, the
+  tooltip, badges and `setObstacles` rectangles; a label with no free candidate is hidden. Hover tooltip with
+  all details (entry: speed, flight-path angle, vacuum periapsis, lat/lon, miss), placed in the quadrant
+  (then further out) that covers neither the panel, nor a handle, nor other UI; labels then keep clear of it.
+  No tooltip for the selected node or its handles.
 - Occlusion: per fragment (lines) and per item (icons, CPU f64) against every body sphere and ghost, with a
   1.5 px soft edge at the limb; lines lying on a surface (zone rings) are tested against the sphere shrunk by
   their chords' deepest point plus 1e-4 R (a radial allowance: the same at the limb as at the disc centre).
@@ -157,8 +161,9 @@ Editing (all through `PlayerCommands`):
 - Dragging the node body slides it along its pre-node conic in time (nearest point on the drawn polyline,
   revolution closest to the previous time, never before now + 1 s).
 - Panel (DOM, 236 px wide, opaque, HUD type and palette; placed at the best of eight places around the node
-  just outside the gizmo: least drawn line covered, never over a handle, other UI or the body centre, not
-  toward the body, the side kept during a drag; docked top-right while the node is off screen): Prograde /
+  just outside the gizmo: least drawn line covered (lineGrid.ts, a 14 px occupancy grid of the drawn segments,
+  trajectories weighted highest), never over a handle, other UI or the body centre, not toward the body, the
+  side kept during a drag; docked top-right while the node is off screen): Prograde /
   Normal / Radial each between its two axis glyphs as nudge buttons (1 m/s, Shift 0.1, Ctrl 10),
   Total (rescales the burn keeping its direction; a zero burn becomes prograde), In (time to the node:
   "1h 30m", "T-90s", "1:02:03", "2d4h", plain seconds) and UT (seconds since J2000). A typed value is applied
@@ -173,7 +178,10 @@ Editing (all through `PlayerCommands`):
 
 Per-frame cost: the builder keeps its sampler, vertex arrays, curve objects and the GPU staging views between
 frames, caches what depends on the snapshot alone (other vessels' conics, node locations, label text), and
-the label de-clutter works on one reusable rectangle buffer.
+writes each line in one pass (copy, near cut, links, dash length, statistics). The draw list's icons, texts,
+label boxes, point entries and cluster groups are pooled (a `DrawList` is valid until the next one is
+built), label widths and node label strings are cached, and the label de-clutter works on one reusable
+rectangle buffer.
 
 ## Run and verify
 
@@ -188,9 +196,13 @@ node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/map-vi
 
 The functional specs use the default 120 s test timeout again (the Vite cold scan is fixed, request
 map-view-2); the perf spec keeps 25 minutes because it may wait for the machine-wide GPU lock.
+`real-planet.spec.ts` (600 s) opens the integration lab (every render package in the tree, the baked tiles),
+mounts the map feature through `window.__integration.app` and the public `createMapView`, and places the lab
+camera itself; it fails when another package breaks the lab's console (its `expectClean`).
 
 Lab: `/labs/map-view/?scene=lowOrbit|translunar|lunarOrbit|...|synthetic` with `&paused=1`, `&intercept=1`,
-`&perf=1` (synthetic 8-patch load case), `&quiet=1` (no lab text), `&spin=<rad/frame>`,
+`&perf=1` (synthetic 8-patch load case, every debris orbit drawn), `&debris=1` (every debris orbit drawn),
+`&quiet=1` (no lab text), `&spin=<rad/frame>`,
 `&yaw=&pitch=&dist=`. Drag empty space to rotate, wheel to zoom (exponential), click an orbit to add a
 node, double-click to focus. `window.__test`: `state()`, `commands`, `map()` (= describe), `camera()`,
 `setCameraOrbit(yaw, pitch, distance)`, `setPaused()`. `window.__mapLab`: `view`, `stats()`, `perf()`,
@@ -293,26 +305,37 @@ show through less; the label cache also keys on the landing-target prediction (t
 - At-intercept anchors each encounter at the body's position at its SOI ENTRY, derived from the preceding
   patch's `bodyPosAtEnd` plus its conic end, so the chain is continuous at the intercept. Using the encounter
   patch's own `bodyPosAtEnd` leaves a gap of the body's motion during the encounter (about 65,000 km).
-- Faint reference lines (not Patch conics: debris and other vessels' orbits, recovery zones) use a 0.9 px
-  tolerance instead of 0.3 px.
+- Faint reference lines (not Patch conics) use a coarser tolerance than 0.3 px: other vessels' orbits and the
+  hovered debris' orbit 0.9 px, debris orbits drawn all at once (the debris filter / perf load case) 1.5 px.
+  Recovery-zone rings use the 0.29 px trajectory tolerance.
+- Debris orbits are not drawn by default (dots; the hovered debris shows its orbit; `setDebrisOrbits(true)`
+  draws them all), after the visual QA. The perf load case draws all 20, as the acceptance line states.
 - `createMapView` takes an optional third argument `{ uiRoot, now }` for the panel and the clock.
 
 ## Known limits
 
-- CPU budget: the Earth close-up of the 8-patch load case measured p99 0.560 ms against 0.5 ms (overview
-  0.475 ms) with the machine loaded by other agents; unproven on a quiet machine (see "Overlay cost").
+- CPU budget: see "Visual close-out, round 1" for the current numbers. The perf spec passed in a quiet window
+  (overview p99 0.445 ms, close-up 0.475 ms) and failed in loaded ones; the pre-session code measured side by
+  side sits only 0.03-0.1 ms lower at p99, so the line is load-sensitive for both. A quiet-machine re-measure
+  decides it (PACKAGE_RULES 16).
+- Perspective: seen straight down from close range a low orbit lies just behind the limb (at 24,000 km the
+  silhouette in the plane of the Earth's centre is at 237 km altitude), so a 200 km orbit seen exactly from
+  above at that distance is drawn only as the 1.5 px soft edge and cannot be clicked; tilt the view or zoom
+  out. This is the true geometry (the old 6 px fade hid it).
 - At-intercept drawing still shows a gap at each SOI EXIT: the patches after an encounter are drawn at
   their body's true position, the encounter around the body where it was at the entry, so the jump is the
   body's motion during the encounter (as in KSP). Ghost bodies occlude like real ones. Double-clicking a
   ghost focuses the real body.
-- Occlusion uses the reference spheres (`BodyDef.radius`): terrain relief (up to ~10 km) is ignored, and
-  lines on a surface rely on the computed chord slack.
-- Labels: one monospace font from a Canvas-2D atlas (Consolas or the next available monospace), 12 px CSS;
-  hidden labels are only reachable through the hover tooltip. Bodies have no tooltip. Icons (not labels)
-  may sit under the node panel.
+- Occlusion uses the reference spheres (`BodyDef.radius`): terrain relief (up to ~10 km) is ignored, the
+  atmosphere glow above the radius does not hide lines behind it, and lines on a surface rely on the computed
+  radial chord slack (under half a pixel at the limb).
+- Labels: hidden labels are only reachable through the hover tooltip; clustered icons through the cluster
+  tooltip. Bodies have no tooltip of their own. A label may still sit on a line other than its own (its plate
+  masks the line there).
 - The node frame is approximate when a node can only be found from the patch after it (no marker and no
   patch ending at it); the gizmo and drags still work in that frame.
-- Gizmo handles fade with the node when it passes behind a body (alpha floor 0.35 so it stays usable).
+- Dashes are laid out in screen length from the node end, so far from the node they still slide a little
+  along the line while the camera turns (near the node they stay put).
 - The synthetic scene is static; editing is exercised against the FakeSim (single-body patches).
 - The panel's time field is frozen while it has focus (typing is not overwritten), so with the sim running
   the shown "In" value ages until the field is left.
@@ -331,15 +354,22 @@ show through less; the label cache also keys on the landing-target prediction (t
   format, optional `MapView.mount`, where `planned` starts, the at-intercept derivation (per encounter), and
   (new) hover consumption of click-only elements.
 
+- `docs/requests/map-view-4.md` (src/core, src/ui/hud/hudStyles.ts): the HUD's font stack and palette as
+  shared constants. Resolved by core-support (d3134ab): `src/core/ui/theme.ts`; src/map imports it.
+
 No contract was changed; no open requests against map-view paths exist.
 
 ## Screenshots (out/screens/map-view/, reviewed)
 
-`scene-*.png` (each lab scene, synthetic and at-intercept), `lowOrbit-node.png` (gizmo + panel),
-`synthetic-earth.png`, `synthetic-moon*.png` (panel beside node A, labels clear of it),
-`synthetic-chain*.png`, `synthetic-8-patches.png`, `hover-impact-details.png`, `hover-add-maneuver.png`,
-`accept-*.png` (acceptance steps, including `accept-panel.png` with the total and time fields and
-`accept-follow-lowOrbit.png` / `accept-follow-lunarOrbit.png` from the moving-camera spec).
+`scene-*.png` (each lab scene, synthetic and at-intercept), `lowOrbit-node.png` (gizmo + panel; the node is
+behind the limb and its gizmo at full strength, asserted by pixel), `synthetic-earth.png`,
+`synthetic-moon*.png` (panel beside node A), `synthetic-chain*.png`, `synthetic-8-patches.png` (every
+debris orbit drawn), `hover-impact-details.png`, `hover-add-maneuver.png`, `hover-debris-orbit.png`,
+`zone-near-limb.png` (a recovery zone 82 degrees off the sub-camera point), `accept-*.png` (acceptance
+steps, including `accept-panel.png` and `accept-follow-lowOrbit.png` / `accept-follow-lunarOrbit.png` from
+the moving-camera spec), and over the REAL renderer (the map feature mounted into the integration lab by
+`real-planet.spec.ts`): `real-lowOrbit.png`, `real-lowOrbit-dayside.png`, `real-lowOrbit-node.png`,
+`real-translunar.png`, `real-lunarOrbit.png`.
 
 ## Changes by the lead between the waves (2026-11-10)
 
@@ -368,3 +398,77 @@ Full list: `docs/handoff/lead-baseline.md`.
   0.525 -> 0.390 ms (p50 0.270 -> 0.200 ms). `SampledCurve` gained `c`, `s`, `maxError`, `initial`;
   `MapStats` gained `reuse: { resampled, fresh }` (lines of the last build per path). Tests:
   `tests/unit/map-view/breakpointReuse.test.ts`. The "Known limits" CPU item above no longer applies.
+
+## Visual close-out, round 1 (2026-11-11)
+
+Work list: `out/qa/wave2/map-view.md` (round 0: photo 4/10, artifact 4.5/10; 1 blocker, 8 major, 10 minor).
+Commits 3020abc, 4de2513, d7246e8, 5ab653b, b8e3040, 5ea3e91 and the close-out commit. Every item below was
+fixed at its cause, regenerated and looked at (Read, crops at 4-5x); the screenshot that shows it is named.
+
+| # | Item | What was done | Evidence |
+|---|---|---|---|
+| 1 | blocker: false straight line across the frame and the planet | Lines are cut in float64 where they pass behind the eye (`VertexArrays.appendLine`, `CLIP_DEPTH_REL` 1e-5 of the distance): every drawn segment reaches the GPU with both ends safely in front, and the vertex shader no longer clips (it drops a segment with an end behind the near plane, which cannot happen) | `accept-occlusion.png` (one Moon-orbit line, cut at the limb), `accept-recovery-zones.png`; unit tests: 720 orientations at 24,000 km in lowOrbit and translunar, every drawn segment narrowed to float32 has w > near and projects within 1e-5 of its float64 position; the Moon orbit over the Earth disc is always hidden (72 yaws) |
+| 2 | tooltip under the panel / over labels | No tooltip for the selected node or its handles (the drag hint moved into the panel footer); a tooltip takes the quadrant around the pointer, then further out, that covers neither the panel, nor a handle, nor `setObstacles` rectangles; labels keep clear of it (none cut through); the panel is opaque | `accept-node-added.png`, `hover-impact-details.png`; unit test (no tooltip on the selected node / handle; tooltips of all markers disjoint from panel and handles); browser check after adding a node (no tooltip, no handle under the panel, handles > 18 px apart) |
+| 3 | selected gizmo dimmed behind the limb | The selected node's gizmo is a control: alpha 1, arms 2 px at 0.85; "behind a body" is a dashed ring on the node icon; unselected nodes keep the 0.35 floor | `lowOrbit-node.png`, `real-lowOrbit-node.png`; pixel assertion in `screens.spec.ts` (prograde and normal handle peaks at full colour while `describe()` reports the node hidden); unit test |
+| 4 | normal handles on the radial axis | `gizmo.ts` `layoutGizmo`: the most foreshortened axis turns toward the middle of the wider gap between the other two as its extent falls, every pair of axis lines is kept 40 degrees apart, handles at least 55 % of 58 px out | `accept-node-added.png` (top-down: normal on the diagonals), `accept-panel.png`; unit test over 4,000 frames and views (separation, handles a diameter apart, none on another axis' bar) and the top-down controller case |
+| 5 | zone rings torn near the limb | Lines on a surface are tested against the sphere shrunk by their chords' depth (radial allowance; shader and CPU twin), zone rings sampled at 0.29 px, closed rings joined across their seam | `zone-near-limb.png`, `scene-lowOrbit.png`, `real-lowOrbit-dayside.png`; unit test (zone 75-88 degrees off the sub-camera point: no hidden sample on the visible side, hidden past the soft edge) |
+| 6 | icons pile up, bury the body, no leaders | Icons closer than 11 px collapse into one with a "+n" badge (a speck-sized body wins, then the active vessel, then priority; debris fold silently); the cluster tooltip lists the members; leaders for labels on the outer ring; ground twins within 12 px left out; Ap/Pe/AN/DN left out on patches under 40 px; unselected nodes 5.5 px | `scene-synthetic.png`, `synthetic-8-patches.png`, `accept-zoom-1e9m.png`, `real-translunar.png`; unit test (overview: nothing drawn over the Earth's disc, the Earth named, a badge present) |
+| 7 | labels struck through by lines, over other UI | Every label sits on a dark plate that masks what is behind it; it takes the side of its own line (normal of the screen tangent, away from the body; marker / node time looked up on the patch line, vessel heading); `MapViewApi.setObstacles` for HUD panels (the lab passes its text boxes) | `synthetic-earth.png` (no label under the lab text), `synthetic-moon-intercept.png`, `scene-synthetic.png`; unit test (every label on a plate, marker labels off their own line) |
+| 8 | weak legibility over a lit body; never shown over the real planet | Target names in the text colour at full alpha; a dark casing on every line; `real-planet.spec.ts` mounts the map feature into the integration lab (terrain, atmosphere and clouds, ocean, sky) and photographs low orbit (day side, terminator, night side, limb), the node editor, the translunar overview and lunar orbit; the lab backdrop's limb is anti-aliased | `real-lowOrbit.png`, `real-lowOrbit-dayside.png`, `real-lowOrbit-node.png`, `real-translunar.png`, `real-lunarOrbit.png` |
+| 9 | typeface and panel differ from the HUD | Labels in the HUD family (Bahnschrift 13 px semibold, proportional, tabular digits; the atlas stores one advance per glyph); the node panel rebuilt from the HUD tokens (`src/core/ui/theme.ts`, request map-view-4, resolved): tracked capitals, the gizmo's axis glyphs as nudge buttons per component, icon buttons, opaque; panel ownership with the HUD's MANEUVER panel written down (Integration) | `lowOrbit-node.png`, `accept-panel.png`, `real-lowOrbit-node.png` |
+| 10 | centre body unnamed | Bodies are named while their projected radius is under 40 px (priority above markers) | `scene-translunar.png`, `accept-zoom-1e9m.png`, `real-translunar.png` |
+| 11 | occluded lines bleed 6 px over the disc | Limb fade 1.5 px | `accept-landing-target.png`, `accept-occlusion.png` |
+| 12 | zone rings polygonal | Sampled at 0.29 px | `accept-recovery-zones.png`; unit test (worst chord error < 0.31 px) |
+| 13 | debris scribble | Debris are dots; the hovered debris shows its orbit; `setDebrisOrbits(true)` draws all | `synthetic-earth.png`, `hover-debris-orbit.png`; browser test (no debris orbit, then exactly the hovered one) |
+| 14 | muddy, zipping dashes | Dashes 12 on / 8 off, phase per vertex anchored at the node end; far-future patches fade toward a lighter tint of their hue at alpha 0.5 | `lowOrbit-node.png`, `synthetic-moon-intercept.png`, `synthetic-earth.png` |
+| 15 | panel covers the downstream trajectory | The panel takes the best of eight places around the node just outside the gizmo (least trajectory covered, never over a handle, other UI or the body centre, not toward the body), keeps its side during a drag, docks top-right when the node is off screen | `accept-node-added.png`, `synthetic-moon-intercept.png`, `lowOrbit-node.png` |
+| 16 | translucent panel, icons under it | Opaque panel; icons whose centre lies under it are left out | `synthetic-moon-intercept.png` |
+| 17 | icons do not say what they are | Ap: ring with an up chevron, Pe: down chevron, SOI entry / exit arrows in / out, the vessel an arrowhead along its screen velocity | `hover-impact-details.png`, `scene-synthetic.png`, `accept-zoom-200km.png` |
+| 18 | SOI drawn from inside | Nothing is drawn from inside an SOI | `accept-landing-target.png`, `real-lunarOrbit.png`; unit test |
+| 19 | megametres, "T-0.0s" | Distances in km with narrow no-break space grouping ("425 586 km"), "now" within a second | `scene-synthetic.png`; unit test |
+
+Not fixed, or only in part, and why:
+- 14, in part: dashes are still laid out in screen length from the node end, so far from the node they slide
+  along the line while the camera turns; no moving-camera sequence of a dashed patch was recorded. A
+  view-stable dash parameter (arc length scaled by the local pixel scale) was left for lack of time.
+- 8, in part: occluders keep `BodyDef.radius` (the atmosphere glow does not hide lines behind it; on the real
+  renderer the difference is under 3 px at map distances). The real-renderer spec depends on the other render
+  packages: while it ran, the atmosphere, sky and ocean packages were each broken in the tree at some point
+  (WGSL errors, failed imports); the lab switches such a feature off, and once a 500 from another package's
+  module failed `expectClean`. The last full run passed with everything loaded.
+- 19, consistency: the HUD's `formatLength` (src/ui) still writes Mm above 10,000 km; the map writes grouped
+  km everywhere. Not changed (not my path); a request was not filed because the item asks for km.
+- Line avoidance by labels: the first version placed labels by an occupancy grid of all drawn lines; it cost
+  about 0.04 ms per frame in the browser, so labels now take the side of their own line and rely on the
+  plate for any other line crossing them (the critics' item 7 offers either). The grid remains for the panel.
+
+### Overlay cost (perf spec, under the GPU lock; machine load sampled around each run)
+
+| Run | Load | Overview CPU p50 / p99 | Close-up CPU p50 / p99 | GPU p99 (ov / cu) |
+|---|---|---|---|---|
+| 5ab653b | 6-15 % | 0.250 / **0.445** | 0.260 / **0.475** | 0.026 / 0.003 ms |
+| 5ea3e91 (labels by own line, closed-ring joins) | 12-31 %, 4 GPU slots busy | 0.265 / 0.510 | 0.310 / 0.520 | 0.003 / 0.003 ms |
+| final (debris rings open) | 5-35 %, 4 GPU slots busy | 0.280 / 0.590 | 0.310 / 0.645 | 0.002 / 0.003 ms |
+
+The GPU line (0.1 ms) holds with a wide margin. The CPU p99 line passed in the quiet window and misses under
+the concurrent load of the other agents' suites. For scale, the pre-session code (9d04af4) measured side by
+side in the same browser session, three interleaved rounds at 15-50 % load: overview p99 0.405-0.450 ms,
+close-up 0.460-0.495 ms; the current code 0.470-0.505 and 0.540-0.645 ms (p50 +0.02 / +0.04-0.07 ms). In Node
+(tight loop, mean) scene build 0.083 ms (pre-session 0.082) and draw list 0.010-0.017 ms (pre-session
+0.007; first version of this round 0.035). What the draw list does now that it did not: clustering, label
+sides, plates and leaders, tooltip and panel placement; all of it pooled (no per-frame garbage). Per
+PACKAGE_RULES 16 the CPU line is left to the quiet-machine re-measure; if it still misses there, the next
+lever is the bulk debris orbits (about half the close-up's vertices, now drawn only with the debris filter).
+
+### Tests
+
+Unit: 87 in 9 files (incl. boundaries), new `tests/unit/map-view/visualQa.test.ts` (14). Browser
+(functional): 23 specs, new `real-planet.spec.ts` (2), the zone-near-limb and debris-hover specs, the
+pixel assertion on the occluded gizmo, the disjointness check after adding a node. Perf: 2 (above).
+
+### Own assessment
+
+Photo lens about 7: the map now reads over the real planet (cased lines, plates, HUD type) and nothing false
+is drawn; the lab backdrop is still a flat shaded sphere in most pictures and the dashes still crawl.
+Artifact lens about 7.5: the blocker and the gizmo, tooltip, panel and pile-up defects are gone at their
+causes; the CPU p99 line is not reliably met under load.

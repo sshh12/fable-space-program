@@ -926,7 +926,8 @@ export class SceneBuilder {
     const s = this.sampleLine(id, curve, u0, u1, proj, tolerance);
     if (s.count < 2) return null;
     const out = this.span;
-    const closed = curve.kind === 'E' && Math.abs(u1 - u0 - TWO_PI) <= REUSE_PARAM_EPS;
+    // (bulk debris rings at 20 % alpha are left open: a cap there does not show)
+    const closed = kind !== 'debrisOrbit' && curve.kind === 'E' && Math.abs(u1 - u0 - TWO_PI) <= REUSE_PARAM_EPS;
     this.verts.appendLine(proj, s.count, s.vx, s.vy, s.vz, s.u, out, closed);
     const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, seam: out.seam, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
     scene.lines.push(rec);
