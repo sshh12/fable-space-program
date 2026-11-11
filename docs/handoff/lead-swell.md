@@ -1,7 +1,6 @@
 # Lead: eight-component physics swell (requests ocean-5 / ocean-6)
 
-Status: IN PROGRESS. Data changed, mission passes on the new sea, golden re-recorded; reproduction run, unit
-tests and the ocean's swell spec pending (see "Checks" for what is done).
+Status: DONE (data commit 9d48042; ocean-5 and ocean-6 resolved; lead-1 resolved by the maintainer in bc3e291).
 
 ## What changed
 
@@ -93,11 +92,15 @@ inside the Central Pacific zone (1,126-1,235 km from its centre).
 |---|---|
 | `node tools/dev/heavy.mjs --class=cpu -- npm run test:mission` on the new sea, before re-recording | 30 of 31 pass; the one failure is the golden step count / hash (593,636 vs 593,612), as expected |
 | `MISSION_UPDATE_GOLDEN=1 npm run test:mission -- tests/mission/full-mission.test.ts` (gated) | passes; golden 3f3a131cdd88eba7, 593,636 steps, tiles unchanged |
+| `npm run test:mission` again (gated) | 5 files, 31 of 31 pass, 77.8 s; pilot = replay (3,628 late tile reads) = golden 3f3a131cdd88eba7 |
+| `npx vitest run tests/unit/ocean tests/unit/sim-vessel/landing-water.test.ts tests/unit/sim-world/surface.test.ts src/core/defs/loader.test.ts` (gated) | 49 of 50: everything that floats the capsule on the swell or feeds the renderer passes (ocean spectrum, long-wave layer gain in (0, 1), Cox-Munk room, far-wave bank; "rides the shared swell"; splashdown and three minutes afloat from qa-drogues); the one failure was the loader test's pinned count of 4 (request lead-1, fixed by the maintainer in bc3e291: 8 of 8 since) |
+| `npx playwright test tests/browser/ocean/swell.spec.ts --project=functional` (gated) | 3 of 3: readback worst 0.019 mm from `oceanSwellHeight` (FFT rms 0.10-0.12 m); damping zone worst 3.9 / 2.8 / 3.0 cm (limit 5 cm), outside rms 0.10-0.13 m; rasterised surface worst 0.020 mm chop off, 5.5 mm chop on |
 
 ## Open items
 
-- `src/core/defs/loader.test.ts` pins `earth.ocean.swell.length` to 4: request `docs/requests/lead-1.md` to the
-  shared-code maintainer (not blocking: the data is valid, every consumer takes up to 8).
+- The ocean's visual critique items 5 and 15 (no wind-sea heights, swell lattice 300 m - 15 km) can be re-judged:
+  the drawn heights are now these eight components. Screens: `npx playwright test tests/browser/ocean/screens.spec.ts
+  --project=functional` (through the gate) or `/labs/ocean/?preset=alt3k|alt10k|midday|splash`.
 - `docs/handoff/sim-world-pilot.md` still quotes the old golden hash `df7f7684eabc0028` and "floating at 9.0 deg
   after 30 s" (its mission-log section); the numbers on the new sea are the ones above. That hand-off belongs to
   sim-world-pilot and is left for its next owner to refresh.

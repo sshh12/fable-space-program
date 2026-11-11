@@ -1,4 +1,4 @@
-Status: accepted (lead decision: option 1, the data; option 2 declined; see ocean-5)
+Status: resolved (commit 9d48042; option 1, the data; option 2 declined)
 From: ocean
 Owner path: data/defs/bodies/earth.json (`ocean.swell`), and the ocean brief's rule that the swell is the only wave HEIGHT longer than 25 m (lead)
 Blocking: no        (the visual critique's items 5 and 15 cannot be closed without it; everything else in the package can)
@@ -79,3 +79,12 @@ with the mission re-check. Option 2 (render-only long-wave heights away from ves
 drawn sea differ from the surface the physics knows, against ARCHITECTURE 10.2. The ocean needs no code change; its
 swell-agreement spec compares against whatever the data holds. Items 5 and 15 of the ocean critique are closed by
 the data change.
+
+## Resolution (lead, commit 9d48042)
+
+Option 1 done: eight physics swell components in `data/defs/bodies/earth.json` (wavelengths 200-32 m, a NW swell
+system of three toward 125-164 deg and a wind sea of five around `windDirDeg` 60 at 21-101 deg, `a ~ lambda^0.75`,
+variance 0.18 m^2, Hs 1.70 m, steepness at most 0.0175, phases spread over 0..2 pi). Table and measurements in
+ocean-5's resolution and `docs/handoff/lead-swell.md`. Splashdown on the new sea: 7.82 m/s, crew alive, 7.5 deg
+after 30 s, 14.9 deg at most; mission golden `3f3a131cdd88eba7`; the ocean's swell spec passes 3 of 3 (damping zone
+worst 3.9 cm). Items 5 and 15 of the ocean critique can now be re-judged against the drawn heights.
