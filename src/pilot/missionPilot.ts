@@ -56,6 +56,8 @@ const GATE_HEIGHT = 130;
 const GATE_SINK = -5;
 /** Fraction of the available deceleration the braking burn is started at. */
 const BRAKING_IGNITION_FRACTION = 0.9;
+/** Radar altitude below which the braking burn is flown at 1x (the landing site streams in and is seen in real time), m. */
+const BRAKING_WARP_FLOOR = 4000;
 /**
  * Nominal ground distance from the entry point of the predicted trajectory (top of the atmosphere) to
  * splashdown for a 45 km vacuum perigee flown on the lift-vector rule, m, as a function of the compass
@@ -955,7 +957,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
       this.warpFor(timeToIgnition - 120);
       return;
     }
-    if (this.s.warp.index !== 0) this.cmd.setWarpLevel(0);
+    // The last two minutes to the ignition point, turning to the braking attitude (physics warp until the last seconds).
+    this.waitWarp(timeToIgnition > 10);
     this.flyAccel(cmd.accel, false);
     if (frac >= BRAKING_IGNITION_FRACTION) {
       this.markDv('descent');
@@ -964,7 +967,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
   }
 
   private braking(): void {
-    this.cruiseWarp(false);
+    // Pacing only: the high part of the burn at physics warp, the last kilometres over the ground in real time.
+    this.cruiseWarp(this.rd.altitudeRadar > BRAKING_WARP_FLOOR);
     const ls = this.landingState();
     const cmd = brakingGuidance(ls, GATE_HEIGHT, GATE_SINK);
     this.flyAccel(cmd.accel, true);

@@ -202,6 +202,12 @@ export abstract class PilotCore {
   }
   private lastWarpUt = -Infinity;
 
+  /** Leave any rails warp and wait at physics warp (`on`) or in real time: pacing of a wait that must be integrated. */
+  protected waitWarp(on: boolean): void {
+    const want = on && this.physicsWarp ? MAX_PHYSICS_WARP_INDEX : 0;
+    if (this.s.warp.index !== want) this.cmd.setWarpLevel(want);
+  }
+
   /** Physics warp for long integrated phases (pacing only). */
   protected cruiseWarp(on: boolean): void {
     const want = on && this.physicsWarp ? MAX_PHYSICS_WARP_INDEX : 0;
@@ -355,6 +361,8 @@ export abstract class PilotCore {
         const err = marker ? Math.acos(Math.max(-1, Math.min(1, marker.y))) : Math.PI;
         const rate = v3.len(this.v.w);
         const tts = nb.timeToBurnStart ?? node.ut - s.simUt;
+        // Pacing only: the slew and the wait for the ignition time at physics warp, the last seconds in real time.
+        this.cruiseWarp(tts > 6);
         if (err < 1.0 * DEG && rate < 0.3 * DEG) {
           if (Number.isNaN(m.alignedSince)) m.alignedSince = s.simUt;
         } else m.alignedSince = NaN;
