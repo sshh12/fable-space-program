@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit fdf3cde)
 From: app-integration-v1
 Owner path: src/render/core/perf.ts and src/render/core/renderer.ts (render-core, shared-code maintainer)
 Blocking: no   (the app measures its own frame time meanwhile: src/app/timing.ts, `window.__app.cpu()`)
@@ -23,3 +23,14 @@ Make `PerfSnapshot.cpu` the time of the caller's completed `'frame'` zone when o
 completed `'frame'` duration across `beginFrame()` and push it into the CPU window at the next `beginFrame()`
 (one frame late is fine), falling back to `core.render` for pages that never open a `'frame'` zone. Must not
 change: the GPU numbers, the per-feature CPU attribution, `core.render` as its own pass entry.
+
+## Resolution
+
+Done (`fdf3cde`): `Perf.cpuBegin('frame')` marks that the page brackets its frame; from then on `resolve()` no
+longer pushes `core.render` into the CPU window and `cpuEnd('frame')` pushes the completed zone's duration
+(the same frame, at the moment it closes). Pages that never open a `'frame'` zone keep `core.render`. GPU
+numbers, the per-feature CPU attribution and `core.render` as its own entry are unchanged.
+Test: `tests/unit/render-core/perf.test.ts` (a 4 ms frame zone around a 1 ms render reads 4-6 ms; without
+the zone the render's 1 ms). The render-core lab, which brackets its frame, now reads p50 0.52 / p99 0.85 ms
+in `core.perf.spec.ts` (line 2 ms: met). RENDER_API section 14 and 18. `window.__perf.cpu` of the app is now
+the line of ARCHITECTURE 17 ("CPU main thread per frame p99 <= 6 ms").

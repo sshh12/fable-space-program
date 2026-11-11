@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 4cdeb62: the core's part; publishing the value is the vfx package's, NOTICE-core-1)
 From: cockpit
 Owner path: src/render/vfx (publish the window radiance of `plasmaWindowRadiance` per frame) and src/core/contracts/render.ts (`SharedResourceMap`: one new key, core-support)
 Blocking: no (the cockpit lights its cabin from its own layout value meanwhile; the panes now show the vfx sheath, thank you for cockpit-9)
@@ -28,3 +28,15 @@ bind on the GPU without importing the vfx package:
 - written by the vfx feature in `prepare` from `plasmaWindowRadiance` (the same mean over streaks and flicker).
 The cockpit will then take its window plasma radiance from that buffer when it is non-zero (and keep its
 layout value as the fallback when no vfx feature runs, e.g. its own lab). Must not change: what the vfx draws.
+
+## Resolution
+
+The core's part (`4cdeb62`), additive: `SharedResourceMap['vfx.plasmaWindow']: GPUBuffer` (uniform,
+`PLASMA_WINDOW_BYTES` = 16: rgb = the sheath's luminance through a lee-side window in cd/m^2, linear sRGB,
+for the vessel the camera is in or else the active vessel; a = that vessel's plasmaIntensity), default all
+zero, and the binding set `plasmaWindow` of `createSceneBindings` (`var<uniform> plasmaWindow: vec4f;`).
+Bind it from the cockpit's ambient and probe passes and fall back to your layout value while `plasmaWindow.a`
+is 0 (no vfx feature, or no sheath). The vfx package publishes it: `docs/requests/NOTICE-core-1.md` tells it
+(`ctx.resources.publish('vfx.plasmaWindow', buffer)` once, `queue.writeBuffer` in prepare from
+`plasmaWindowRadiance`). Checked: the render-core spec "every default SharedResource works with no feature
+present" binds every set with the defaults (3 of 3 with the shell specs). RENDER_API section 11 and 18.
