@@ -265,7 +265,7 @@ fn glow(T: f32) -> vec3f {
   let V = -rel / dist;
   let probe = vfxProbes[0];
   var lit = p.aux.x;
-  if (kind != KIND_SPARK && ((id.x + frame.counts.z) & 3u) == 0u) {
+  if (kind != KIND_SPARK && ((id.x + u32(vfx.misc.x)) & 3u) == 0u) {
     let s = sampleSunShadow(rel, frame.sunDir.xyz, vec2u(id.x & 63u, (id.x >> 6u) & 63u));
     lit = mix(lit, s, 0.5);
   }

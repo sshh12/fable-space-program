@@ -3,7 +3,8 @@
  *
  *   /labs/vfx/?scene=<name>&...      scenes: labs/vfx/scenes.ts
  *   common parameters: night=1 | sun=<elevation deg>, ev=<EV100>, paused=1, hud=0, overcast=<m>, haze=<m>,
- *   noatmo=1 (compile the vfx shaders without applyAtmosphere), perf=features, scale=1, governor=off
+ *   noatmo=1 (compile the vfx shaders without applyAtmosphere), hide=<part def ids> (no stand-in geometry
+ *   for them), ballast=<iterations> (GPU ballast pass), perf=features, scale=1, governor=off
  *
  * window.__vfx is the handle for specs: deterministic stepping, camera placement, scene controls and the
  * debug interface of the feature.
@@ -13,7 +14,7 @@ import { DEG, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createVfxFeature, type VfxFeature } from '@/render/vfx';
 import { LabSim, utForSunElevation } from './labSim';
-import { createLabProps, createLabSky, type LabProps, type LabSky } from './props';
+import { createLabBallast, createLabProps, createLabSky, type LabBallast, type LabProps, type LabSky } from './props';
 import { sceneFor, type SceneCamera, type SceneDef, type SceneSetup } from './scenes';
 
 export interface VfxLab {
@@ -22,6 +23,7 @@ export interface VfxLab {
   feature: VfxFeature;
   props: LabProps;
   sky: LabSky;
+  ballast: LabBallast;
   scene: SceneSetup;
   camera: SceneCamera;
   /** Advance the lab by `frames` frames of 1/60 s (the animation loop is stopped meanwhile), then pause. */
@@ -34,6 +36,14 @@ export interface VfxLab {
   setCamera(c: Partial<SceneCamera>): void;
   /** Site-frame (east, north, up) position of a vessel. */
   vesselEnu(id: string): Vec3;
+  /**
+   * Stop the animation loop and render exactly `frames` frames of 1/60 s, advancing the sim (`advance` true)
+   * or not. The loop stays stopped (for exact readbacks); `resume()` starts it again.
+   */
+  renderExact(frames: number, advance: boolean): Promise<void>;
+  resume(): void;
+  /** Pixel of the internal render target that a site-frame point projects to (null behind the camera) and its distance from the eye. */
+  project(enu: Vec3): { x: number; y: number; distance: number } | null;
 }
 
 declare global {
@@ -60,6 +70,7 @@ async function boot(): Promise<void> {
   let props!: LabProps;
   let sky!: LabSky;
   let camera!: SceneCamera;
+  const ballast = createLabBallast(Number(query.get('ballast') ?? 0));
 
   const app = await createLabApp({
     canvas,
@@ -78,10 +89,10 @@ async function boot(): Promise<void> {
       for (const id of Object.keys(defs.bodies)) maps[id] = 'none';
       if (scene.ground === 'land') maps[scene.site.bodyId] = groundMap([0.2, 0.17, 0.13]);
       if (scene.ground === 'water') maps[scene.site.bodyId] = groundMap([0.012, 0.035, 0.085]);
-      props = createLabProps(sim, defs, { pad: scene.pad ?? null });
+      props = createLabProps(sim, defs, { pad: scene.pad ?? null, hideParts: (query.get('hide') ?? '').split(',').filter(Boolean) });
       sky = createLabSky(sim, defs);
       feature = createVfxFeature(null, { debugSkipAtmosphere: query.get('noatmo') === '1' });
-      return [createLabPlanetFeature({ maps }), props.feature, sky.feature, feature];
+      return [ballast.feature, createLabPlanetFeature({ maps }), props.feature, sky.feature, feature];
     },
   });
   if (!query.has('ev') && scene.ev !== undefined && scene.ev !== null) app.renderer.setExposureOverride(scene.ev);
@@ -120,6 +131,7 @@ async function boot(): Promise<void> {
     feature,
     props,
     sky,
+    ballast,
     scene: setup,
     camera,
     async step(frames) {
@@ -146,6 +158,34 @@ async function boot(): Promise<void> {
       placeCamera();
     },
     vesselEnu: (id) => v3.clone(sim.vessel(id).enu),
+    async renderExact(frames, advance) {
+      app.setLoop(false);
+      app.setPaused(!advance);
+      for (let i = 0; i < frames; i++) {
+        app.renderFrame(1 / 60);
+        if (i % 16 === 15) await device.queue.onSubmittedWorkDone();
+      }
+      app.setPaused(true);
+      await device.queue.onSubmittedWorkDone();
+    },
+    resume() {
+      app.setLoop(true);
+    },
+    project(enu) {
+      const fc = app.renderer.frameContext;
+      if (!fc) return null;
+      const f = sim.siteFrame(app.snapshot());
+      const rel = v3.sub(v3.add(f.origin, v3.add(v3.add(v3.scale(f.east, enu.x), v3.scale(f.north, enu.y)), v3.scale(f.up, enu.z))), fc.camera.positionRoot);
+      const m = fc.projUnjittered;
+      const vw = fc.view;
+      const vx = vw[0]! * rel.x + vw[4]! * rel.y + vw[8]! * rel.z;
+      const vy = vw[1]! * rel.x + vw[5]! * rel.y + vw[9]! * rel.z;
+      const vz = vw[2]! * rel.x + vw[6]! * rel.y + vw[10]! * rel.z;
+      if (vz >= -0.05) return null;
+      const ndcX = (m[0]! * vx) / -vz;
+      const ndcY = (m[5]! * vy) / -vz;
+      return { x: (ndcX * 0.5 + 0.5) * fc.renderSize[0], y: (0.5 - ndcY * 0.5) * fc.renderSize[1], distance: v3.len(rel) };
+    },
   };
   window.__vfx = lab;
   await app.testApi.api.waitFrames(2);

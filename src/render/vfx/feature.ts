@@ -96,6 +96,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   const domain = new EffectDomain();
 
   let effectTime = 0;
+  /** Frames in which simulated time advanced (schedules staggered work independently of the frame index). */
+  let stepCount = 0;
   let noiseTime = 0;
   let lastFrame: FrameContext | null = null;
   let lastRenderSize = '';
@@ -306,7 +308,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       g[G.half + 1] = hh;
       g[G.half + 2] = 1 / hw;
       g[G.half + 3] = 1 / hh;
-      g[G.misc] = frame.frameIndex & 1;
+      if (simDt > 0) stepCount = (stepCount + 1) % 4096;
+      g[G.misc] = stepCount;
       g[G.misc + 1] = depthUsable ? 1 : 0;
       const active = frame.vesselPose(snap.activeVesselId);
       common.setProbe(PROBE_FOCUS, active ? active.originRelCam : v3.zero());
@@ -357,6 +360,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       foam.draw(pass);
       chutes.drawLines(pass);
       particles.draw(pass);
+      if (volumes.hasImage || particles.alive > 0 || foam.count > 0 || chutes.canopyCount > 0) volumes.drawCeiling(pass);
     },
 
     isIdle: () => true,

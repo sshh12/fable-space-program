@@ -114,6 +114,7 @@ export class VolumePass {
   private groups: { emit: GPUBindGroup; combined: GPUBindGroup } | null = null;
   private groupVersion = -1;
   private result: 'none' | 'emit' | 'combined' = 'none';
+  private readonly ceiling: Tracked<GPURenderPipeline>;
   /** Volumes drawn in the last frame. */
   drawn = 0;
 
@@ -135,6 +136,32 @@ export class VolumePass {
       depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
     });
     this.composite.get();
+    // Blending adds to what is already in the HDR target, and the sum of two values below HDR_MAX can exceed
+    // it. A fullscreen 'min' blend against HDR_MAX after the feature's last transparent draw restores the limit.
+    this.ceiling = core.fullscreenPipeline({
+      label: 'vfx.ceiling',
+      fragment: /* wgsl */ `@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f { return vec4f(HDR_MAX, HDR_MAX, HDR_MAX, 1.0); }`,
+      targets: [
+        {
+          format: RENDER_FORMATS.hdr,
+          blend: { color: { operation: 'min', srcFactor: 'one', dstFactor: 'one' }, alpha: { operation: 'min', srcFactor: 'one', dstFactor: 'one' } },
+          writeMask: GPUColorWrite.RED | GPUColorWrite.GREEN | GPUColorWrite.BLUE,
+        },
+      ],
+      depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+    });
+    this.ceiling.get();
+  }
+
+  /** Clamp the HDR target to HDR_MAX (after the last blended draw of the feature). */
+  drawCeiling(pass: GPURenderPassEncoder): void {
+    pass.setPipeline(this.ceiling.get());
+    pass.draw(3);
+  }
+
+  /** True when the half-resolution image holds something this frame. */
+  get hasImage(): boolean {
+    return this.result !== 'none';
   }
 
   /** Size of the half-resolution targets in this frame (valid from prepare on). */

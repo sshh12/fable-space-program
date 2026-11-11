@@ -52,7 +52,7 @@ struct VfxGlobals {
   domPrevZ: vec4f,
   sunDom: vec4f,        // xyz = unit direction to the sun in domain axes
   windDom: vec4f,       // xyz = velocity of the air in domain axes (m/s)
-  misc: vec4f,          // x = frame parity for dithering, y = 1 when the scene depth copy holds a usable previous frame
+  misc: vec4f,          // x = count of frames in which simulated time advanced (staggered work), y = 1 when the scene depth copy holds a usable previous frame
   reserved0: vec4f,
   reserved1: vec4f,
 }

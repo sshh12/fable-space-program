@@ -474,3 +474,72 @@ export function createLabSky(sim: LabSim, defs: DefLibrary): LabSky {
     },
   };
 }
+
+// ------------------------------------------------------------------------------------------- ballast
+
+export interface LabBallast {
+  feature: RenderFeature;
+  /** Iterations of the burn per pixel (0 = off). */
+  set(iterations: number): void;
+  iterations(): number;
+}
+
+/**
+ * A deliberately expensive fullscreen pass, encoded in the compute hook, so that perf specs measure the vfx
+ * passes with the GPU as busy as in the game's frame (an idle RTX 5090 clocks down and reads 2-5 times too
+ * slow; docs/handoff/render-core.md 4.1). Followed by an empty pass that takes the tail of the burn.
+ */
+export function createLabBallast(initial = 0): LabBallast {
+  let ctx: RenderContext;
+  let pipeline: Tracked<GPURenderPipeline>;
+  let target: ManagedTarget;
+  let uniform: GPUBuffer;
+  let group: GPUBindGroup;
+  let iterations = initial;
+  const feature: RenderFeature = {
+    id: 'lab-ballast',
+    order: -90,
+    init(c) {
+      ctx = c;
+      const core = coreOf(c);
+      target = core.createTarget('lab-ballast.scratch', 'rgba16float', 1);
+      uniform = c.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      const layout = c.device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
+      group = c.device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: uniform } }] });
+      pipeline = core.fullscreenPipeline({
+        label: 'lab-ballast.burn',
+        layouts: [layout],
+        fragment: /* wgsl */ `struct BallastU { v: vec4f }
+          @group(1) @binding(0) var<uniform> ballast: BallastU;
+          @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+            let steps = i32(ballast.v.x);
+            var a = vec3f(in.uv, 0.5);
+            for (var i = 0; i < steps; i++) { a = fract(sin(a.yzx * 12.9898 + a.zxy * 78.233 + f32(i)) * 43758.5453); }
+            return vec4f(a, 1.0);
+          }`,
+        targets: [{ format: 'rgba16float' }],
+      });
+      pipeline.get();
+    },
+    prepare() {
+      ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([iterations, 0, 0, 0]));
+    },
+    compute(frame, encoder) {
+      if (iterations <= 0) return;
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-ballast.burn') as GPURenderPassTimestampWrites | undefined });
+      pass.setBindGroup(0, frame.frameBindGroup);
+      pass.setPipeline(pipeline.get());
+      pass.setBindGroup(1, group);
+      pass.draw(3);
+      pass.end();
+      encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'load', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-ballast.tail') as GPURenderPassTimestampWrites | undefined }).end();
+    },
+  };
+  return {
+    feature,
+    set(n) {
+      iterations = n;
+    },
+    iterations: () => iterations,
+  };
+}
