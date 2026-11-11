@@ -186,6 +186,8 @@ export const AFTER_NODE_DIM = 0.45;
 
 /** Label text (HUD type family, theme.ts). */
 export const FONT_PX = 13;
+/** Least advance of the narrow no-break space (digit groups, unit gap), in em: the gap the HUD's DOM text shows. */
+export const NARROW_SPACE_EM = 0.25;
 export const LABEL_LINE_PX = 15;
 export const LABEL_GAP_PX = 8;
 

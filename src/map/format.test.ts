@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDurationField, formatTimeTo, formatUtDate, parseDuration, parseNumber, parseUtDate } from './format';
+import { formatDurationField, formatTimeTo, formatUtDate, parseDuration, parseNumber, parseUtDate, shortSiteName } from './format';
 
 describe('panel field parsing', () => {
   it('reads durations in seconds, clock form and unit form, with an optional T- or "in" prefix', () => {
@@ -37,7 +37,17 @@ describe('panel field parsing', () => {
     expect(formatTimeTo(5400)).toBe('T− 1:30:00');
     expect(formatTimeTo(3 * 86400 + 18 * 3600 + 51 * 60 + 7)).toBe('T− 3d 18:51');
     expect(formatTimeTo(-12)).toBe('T+ 0:12');
-    expect(formatTimeTo(0.4)).toBe('now');
+    // within the last second the HUD's countdown reads "T− 0:00" (src/ui/format.ts formatCountdown), so does the map
+    expect(formatTimeTo(0.4)).toBe('T− 0:00');
+    expect(formatTimeTo(-0.4)).toBe('T+ 0:00');
+  });
+
+  it('abbreviates a long site name for a label with no room for it', () => {
+    expect(shortSiteName('Ka Lae Pacific Spaceport, Launch Complex 1')).toBe('Ka Lae LC-1');
+    expect(shortSiteName('Cape Canaveral Space Force Station, Space Launch Complex 40')).toBe('Cape Canaveral SLC-40');
+    expect(shortSiteName('Somewhere Spaceport, Kennedy Space Center')).toBe('Somewhere Spaceport KSC');
+    expect(shortSiteName('Central Pacific')).toBe('Central Pacific');
+    expect(shortSiteName('Tranquility Base')).toBe('Tranquility Base');
   });
 
   it('shows and reads the node time as calendar time in the HUD clock format (UTC, J2000 = 2000-01-01 12:00)', () => {

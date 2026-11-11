@@ -6,7 +6,7 @@
  * Two channels: R = glyph coverage, G = coverage of a thin dark halo that separates the letters from whatever
  * is behind them.
  */
-import { FONT_PX, LABEL_LINE_PX } from '../constants';
+import { FONT_PX, LABEL_LINE_PX, NARROW_SPACE_EM } from '../constants';
 import type { TextMetricsLike } from '../drawList';
 import { LABEL_CHARSET } from '../format';
 import { MAP_FONT_FAMILY, MAP_FONT_WEIGHT } from '../theme';
@@ -41,7 +41,10 @@ export class GlyphAtlas {
     probe.font = font;
     const chars = [...LABEL_CHARSET];
     const own = chars.map((ch) => probe.measureText(ch).width);
-    const advances = own;
+    // The narrow no-break space (digit groups, before a unit) at least NARROW_SPACE_EM: the face's own one is
+    // under 2 px at 720p and, with the pen snapped to whole pixels, collapsed into the digits ("1839.1km"); the
+    // flight HUD's DOM text shows about a quarter em there.
+    const advances = own.map((w, i) => (chars[i] === ' ' ? Math.max(w, NARROW_SPACE_EM * fontPx) : w));
     const lineHeight = Math.round(LABEL_LINE_PX * pxScale);
     this.margin = Math.ceil(2 * pxScale);
     this.cellH = lineHeight + 2 * this.margin;
@@ -72,7 +75,9 @@ export class GlyphAtlas {
       ctx.fillStyle = '#fff';
       ctx.strokeStyle = '#fff';
       ctx.lineJoin = 'round';
-      ctx.lineWidth = 2.4 * pxScale;
+      // 1.6 px of halo around each letter: enough to cut a 1.5 px line that still passes under a plate-less body
+      // name (the placement keeps names off the lines where it can)
+      ctx.lineWidth = 3.2 * pxScale;
       chars.forEach((ch, i) => {
         const c = cells[i]!;
         const gx = c.u + this.margin;

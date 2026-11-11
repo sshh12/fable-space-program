@@ -30,6 +30,8 @@ import { LabPointer } from './pointerInput';
 
 const params = new URLSearchParams(location.search);
 const sceneName = params.get('scene') ?? 'lowOrbit';
+/** Name the lab shows for the FakeSim's active vessel (the synthetic scene's mission name). */
+const LAB_VESSEL_NAME = 'Kestrel';
 const testApi = installTestApi({ kind: 'lab', name: 'map-view', scenarioId: sceneName === 'synthetic' ? 'synthetic' : `fake-${sceneName}` });
 
 interface LabSim {
@@ -96,7 +98,11 @@ async function boot(): Promise<void> {
     sim = staticSim(createSyntheticFixture(defs, { correctionNodes: perfScene ? 3 : 0 }).snapshot);
   } else {
     const fake: Sim = createFakeSim(defs, { scene: sceneName as FakeScene });
-    sim = { snapshot: () => fake.snapshot(), advance: (dt) => fake.advance(dt), commands: fake.commands };
+    // The lab presents the FakeSim's craft under the mission name of the synthetic scene ("Kestrel"): the FakeSim
+    // calls it "Fake vessel", which next to a finished interface reads as placeholder text (request map-view-7
+    // asks for a FakeSim option so the integration lab can do the same).
+    const named = (s: SimSnapshot): SimSnapshot => ({ ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, name: LAB_VESSEL_NAME } : v)) });
+    sim = { snapshot: () => named(fake.snapshot()), advance: (dt) => fake.advance(dt), commands: fake.commands };
   }
 
   // Shader library for the feature: compile errors go to window.__test.errors.

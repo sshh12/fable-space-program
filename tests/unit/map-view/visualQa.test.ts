@@ -469,7 +469,7 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
 });
 
 describe("formats (item 19; round 3: the HUD's units)", () => {
-  it("lengths in the flight HUD's units (src/ui/format.ts formatLength): one quantity, one unit in a frame; 'now' within a second", () => {
+  it("lengths in the flight HUD's units (src/ui/format.ts formatLength): one quantity, one unit in a frame; the HUD's 'T− 0:00' within a second", () => {
     const n = ' ';
     expect(formatDistance(8450)).toBe(`8${n}450${n}m`);
     expect(formatDistance(22_700)).toBe(`22.70${n}km`);
@@ -481,8 +481,9 @@ describe("formats (item 19; round 3: the HUD's units)", () => {
     expect(formatDistance(35.786e6, 'apsis')).toBe(`35.79${n}Mm`);
     expect(formatDistance(358_176_000)).toBe(`358.2${n}Mm`);
     expect(formatDistance(-1500, 'altitude')).toBe(`−1${n}500${n}m`);
-    expect(formatTimeTo(0.4)).toBe('now');
-    expect(formatTimeTo(-0.4)).toBe('now');
+    // the HUD's countdown within the last second (round 5: no "now" beside the HUD's "T− 0:00")
+    expect(formatTimeTo(0.4)).toBe('T− 0:00');
+    expect(formatTimeTo(-0.4)).toBe('T+ 0:00');
     expect(formatTimeTo(90)).toBe('T− 1:30');
   });
 });

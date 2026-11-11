@@ -69,6 +69,27 @@ export function formatDuration(s: number): string {
   return `${sign}${m}m ${p2(sec)}s`;
 }
 
+/**
+ * Short form of a long place name, for a label that finds no room in full: "<place>, <facility> <number>" becomes
+ * the place's first two words and the facility's initials with its number ("Ka Lae Pacific Spaceport, Launch
+ * Complex 1" -> "Ka Lae LC-1"), a facility without a number keeps its initials alone; a name without a comma
+ * keeps its first two words when it has more than three. Shorter names come back unchanged.
+ */
+export function shortSiteName(name: string): string {
+  const parts = name.split(/,\s*/).filter((p) => p.length > 0);
+  if (parts.length < 2) {
+    const w = name.split(/\s+/).filter((x) => x.length > 0);
+    return w.length > 3 ? w.slice(0, 2).join(' ') : name;
+  }
+  const place = parts[0]!.split(/\s+/).filter((x) => x.length > 0).slice(0, 2).join(' ');
+  const words = parts[parts.length - 1]!.split(/\s+/).filter((x) => x.length > 0);
+  const last = words[words.length - 1] ?? '';
+  const num = words.length > 1 && /\d/.test(last) ? words.pop()! : null;
+  const initials = words.map((w) => w[0]!.toUpperCase()).join('');
+  const short = num ? `${place} ${initials}-${num}` : `${place} ${initials}`;
+  return short.length < name.length ? short : name;
+}
+
 /** Minus sign and no-break space of the HUD's countdowns ("T− 44:10"). */
 export const MINUS = '−';
 export const NBSP = ' ';
@@ -89,10 +110,10 @@ export function formatClock(s: number): string {
 
 /**
  * Time relative to now, in the HUD's countdown notation (one notation for labels, tooltips and the panel):
- * "T− 3d 18:51" / "T− 1:32:00" / "T− 0:09" before the event, "T+ 0:12" after it, "now" within a second.
+ * "T− 3d 18:51" / "T− 1:32:00" / "T− 0:09" before the event (also "T− 0:00" within its last second, as the HUD's
+ * formatCountdown writes it), "T+ 0:12" after it.
  */
 export function formatTimeTo(dt: number): string {
-  if (Math.abs(dt) < 1) return 'now';
   return dt >= 0 ? `T${MINUS}${NBSP}${formatClock(dt)}` : `T+${NBSP}${formatClock(-dt)}`;
 }
 

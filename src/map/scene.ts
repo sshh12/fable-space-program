@@ -213,6 +213,8 @@ export interface BodyItem extends PointItem {
   tint: Rgba;
   /** The body emits its own light (a star): its icon is not shaded. */
   star: boolean;
+  /** Projected radius of its sphere of influence, device px (Infinity: none, or the eye is inside it). */
+  soiPx: number;
 }
 
 export interface VesselItem extends PointItem {
@@ -1011,6 +1013,7 @@ export class SceneBuilder {
       sunZ: sun ? sun.z : 0,
       tint: b.tint,
       star: b.star,
+      soiPx: b.soi && b.soi > 0 && L > b.soi ? Math.tan(Math.min(Math.asin(b.soi / L), 1.5)) * proj.focal : Infinity,
     };
     const depth = -view.z;
     if (depth > proj.near) {

@@ -414,8 +414,8 @@ fn shapeSd(shape: u32, p: vec2f, h: vec2f, px: f32) -> vec3f {
     case 11u: { // vessel: elongated chevron with a deep tail notch, nose along +x (rotated to the velocity on screen)
       return vec3f(sdQuad(p, vec2f(r, 0.0), vec2f(-0.78 * r, 0.56 * r), vec2f(-0.34 * r, 0.0), vec2f(-0.78 * r, -0.56 * r)), 0.0, NONE);
     }
-    case 13u: { // body ring (a ghost of a body at intercept)
-      return vec3f(sdRing(p, r * 0.8, w), 0.0, NONE);
+    case 13u: { // body ring (a ghost of a body at intercept), with the dark interior of the other outline glyphs
+      return vec3f(sdRing(p, r * 0.8, w), 0.0, sdCircle(p, r * 0.8));
     }
     case 14u: { // prograde: ring, dot, three legs (left, right, up)
       let ring = sdRing(p, r * 0.55, w);

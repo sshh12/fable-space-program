@@ -128,7 +128,7 @@ describe('interface scale follows the flight HUD (min(1vh, 0.5625vw) relative to
 });
 
 describe('nothing is anchored under the HUD', () => {
-  it('a vessel or surface target under a HUD panel has no icon and no label set beside the panel', () => {
+  it('a surface target under a HUD panel has no icon and no label set beside the panel; the active vessel keeps both', () => {
     const s = createFakeSim(defs, { scene: 'lowOrbit' }).snapshot();
     const earth = s.bodies.find((b) => b.id === s.vessels[0]!.bodyId)!;
     const map = new MapController(defs);
@@ -139,10 +139,15 @@ describe('nothing is anchored under the HUD', () => {
     const v = map.currentScene!.vessels.find((x) => x.active)!;
     expect(list.texts[0].some((t) => t.text === name)).toBe(true);
     expect(list.icons[0].some((i) => i.shape === ICON.vessel)).toBe(true);
-    map.setObstacles([{ x: v.x - 30, y: v.y - 20, width: 60, height: 40 }]);
+    // Round 5 (photo critic): the player's own craft is never dropped by the map's own rules. Under a HUD panel
+    // its chevron is still drawn (the panel covers what it covers) and its label is set clear of the panel.
+    const ob = { x: v.x - 30, y: v.y - 20, width: 60, height: 40 };
+    map.setObstacles([ob]);
     list = map.frame(s, cam, [1280, 720])!;
-    expect(list.texts[0].some((t) => t.text === name)).toBe(false);
-    expect(list.icons[0].some((i) => i.shape === ICON.vessel)).toBe(false);
+    expect(list.icons[0].some((i) => i.shape === ICON.vessel && Math.abs(i.x - v.x) < 0.5 && Math.abs(i.y - v.y) < 0.5)).toBe(true);
+    const label = list.texts[0].find((t) => t.text === name);
+    expect(label).toBeDefined();
+    expect(label!.x >= ob.x + ob.width || label!.y >= ob.y + ob.height || label!.y + 12 <= ob.y || label!.x + 30 <= ob.x).toBe(true);
     // the surface targets too
     const targets = map.currentScene!.targets.filter((t) => t.front && t.hidden < 0.5 && t.x > 0 && t.x < 1280 && t.y > 0 && t.y < 720);
     expect(targets.length).toBeGreaterThan(0);

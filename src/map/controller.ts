@@ -33,6 +33,7 @@ import {
   DOUBLE_CLICK_MS,
   DV_PER_PX,
   FINE_FACTOR,
+  FONT_PX,
   GRID_CELL_PX,
   HANDLE_DISTANCE_PX,
   HANDLE_RADIUS_PX,
@@ -44,6 +45,7 @@ import {
   LEADER_WIDTH_PX,
   MARKER_MIN_PATCH_PX,
   MARKER_RADIUS_PX,
+  NARROW_SPACE_EM,
   NODE_RADIUS_PX,
   NODE_SMALL_RADIUS_PX,
   OCCLUSION_FADE_PX,
@@ -65,7 +67,7 @@ import {
   type Rgba,
 } from './constants';
 import { ICON, measureText, type DrawList, type IconId, type IconInstance, type TextMetricsLike, type TextRun } from './drawList';
-import { formatDistance, formatDv, formatTimeTo } from './format';
+import { formatDistance, formatDv, formatTimeTo, shortSiteName } from './format';
 import { layoutGizmo } from './gizmo';
 import { declutter, FAR_RING_PX, markerLabels, type BlockedRect, type ClearDisc, type LabelBox } from './labels';
 import { LineGrid } from './lineGrid';
@@ -203,7 +205,7 @@ export interface MapStats {
  */
 export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({
   lineHeight: LABEL_LINE_PX * pxScale,
-  advance: (c) => pxScale * (c === 32 ? 3.2 : c === 0x202f ? 1.9 : c >= 48 && c <= 57 ? 7.2 : c >= 65 && c <= 90 ? 7.6 : c >= 97 && c <= 122 ? 6.6 : 5),
+  advance: (c) => pxScale * (c === 32 ? 3.2 : c === 0x202f ? NARROW_SPACE_EM * FONT_PX : c >= 48 && c <= 57 ? 7.2 : c >= 65 && c <= 90 ? 7.6 : c >= 97 && c <= 122 ? 6.6 : 5),
 });
 
 /** A cluster of icons: the members' summaries (representative first) and how many debris folded in. */
@@ -246,6 +248,11 @@ interface PointEntry {
   clear: number;
   /** Takes part in clustering. */
   cluster: boolean;
+  /**
+   * Cluster reach of its own beyond CLUSTER_PX (device px, centre distance; 0 = none): an encounter ghost whose
+   * sphere of influence is small on screen takes in everything inside it (the encounter reads as one marker).
+   */
+  reach: number;
   /** Preference as a cluster's representative: a body, then the active vessel, then the label priority. */
   rank: number;
   /** A debris dot: folds into clusters silently (counted in the tooltip, not in the badge), drawn under the plates. */
@@ -261,6 +268,8 @@ interface PointEntry {
 interface LabelEntry {
   box: LabelBox;
   lines: string[];
+  /** Short form (drawn when the box was placed short), or null. */
+  shortLines: string[] | null;
   color: Rgba;
   style: LabelStyle;
 }
@@ -278,6 +287,10 @@ function labelTint(c: Rgba): Rgba {
 }
 
 const NO_LINES: string[] = [];
+/** Cluster representative rank of the active vessel (a body ranks 1000, markers by their label priority). */
+const ACTIVE_RANK = 500;
+/** An encounter ghost whose sphere of influence is drawn smaller than this (interface px) folds the encounter in. */
+const ENCOUNTER_SOI_PX = 64;
 /** Count badges "+1" .. "+31" (no per-frame strings). */
 const BADGES = Array.from({ length: 32 }, (_, i) => `+${i}`);
 
@@ -345,6 +358,8 @@ export class MapController implements MapView {
     px: new Float64Array(64),
     py: new Float64Array(64),
     pr: new Float64Array(64),
+    pb: new Float64Array(64),
+    ps: new Float64Array(64),
     pi: new Int32Array(64),
     groups: [] as ClusterGroup[],
     stamp: 0,
@@ -365,6 +380,10 @@ export class MapController implements MapView {
   private readonly vesselLines = new Map<string, string[]>();
   /** Upper-case body names, by name. */
   private readonly bodyNames = new Map<string, string[]>();
+  /** Place of each label (by key) in the last draw list: labels keep it while it stays free (labels.ts declutter). */
+  private readonly labelMemory = new Map<string, number>();
+  /** Short forms of long names (surface targets), by name. */
+  private readonly shortNames = new Map<string, string[] | null>();
   /** Hover tooltip of the last draw list (CSS px), for tests. */
   private tooltip: ScreenRect | null = null;
   private consumed = false;
@@ -1183,13 +1202,15 @@ export class MapController implements MapView {
       if (w === undefined) this.widths.set(text, (w = measureText(tm, text)));
       return w;
     };
-    const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, style: LabelStyle, nx = 0, ny = 0): void => {
+    const addLabel = (key: string, ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, style: LabelStyle, nx = 0, ny = 0, shortLines: string[] | null = null): void => {
       if (lines.length === 0) return;
       const tracking = style === 'body' ? bodyTracking : 0;
       let width = 0;
       for (const l of lines) width = Math.max(width, widthOf(l) + tracking * Math.max(0, l.length - 1));
+      let alt = 0;
+      if (shortLines) for (const l of shortLines) alt = Math.max(alt, widthOf(l) + tracking * Math.max(0, l.length - 1));
       let e = pool.entries[pool.nBoxes];
-      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false, nx: 0, ny: 0 }, lines, color, style }));
+      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false, nx: 0, ny: 0, key, altWidth: 0, short: false }, lines, shortLines, color, style }));
       pool.nBoxes++;
       const box = e.box;
       box.ax = ax;
@@ -1202,7 +1223,11 @@ export class MapController implements MapView {
       box.far = false;
       box.nx = nx;
       box.ny = ny;
+      box.key = key;
+      box.altWidth = shortLines ? alt + 2 * padX : 0;
+      box.short = false;
       e.lines = lines;
+      e.shortLines = shortLines;
       e.color = color;
       e.style = style;
       boxes.push(box);
@@ -1251,7 +1276,7 @@ export class MapController implements MapView {
     pool.nPoints = 0;
     const point = (kind: PointKind, id: string, bodyId: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
       let e = pool.points[pool.nPoints];
-      if (!e) pool.points.push((e = { kind, id, bodyId, tx: 0, ty: 0, x, y, r, shape, color, alpha, rot: 0, aux: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelStyle: 'plate', clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
+      if (!e) pool.points.push((e = { kind, id, bodyId, tx: 0, ty: 0, x, y, r, shape, color, alpha, rot: 0, aux: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelStyle: 'plate', clear: 0, cluster: true, reach: 0, rank, debris: false, summary, others: 0, group: null }));
       e.kind = kind;
       e.id = id;
       e.bodyId = bodyId;
@@ -1271,6 +1296,7 @@ export class MapController implements MapView {
       e.labelStyle = 'plate';
       e.clear = r;
       e.cluster = true;
+      e.reach = 0;
       e.rank = rank;
       e.debris = false;
       e.summary = summary;
@@ -1279,7 +1305,27 @@ export class MapController implements MapView {
       return e;
     };
     const commit = (e: PointEntry): void => {
-      if (underPanel(e.x, e.y) || underUi(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y, e.r))) return;
+      if (underPanel(e.x, e.y)) return;
+      // The player's own craft is never dropped for other UI: its chevron shows at the panel's edge and its label
+      // is set clear of the panel. Everything else under a HUD panel is covered there.
+      if (!(e.kind === 'v' && e.rank === ACTIVE_RANK) && underUi(e.x, e.y)) return;
+      if (e.rank < 1000 && underSelected(e.x, e.y, e.r)) {
+        // A marker the selected node's disc would cover moves just clear of it along its own line (it stays in
+        // view next to the node, on its trajectory); one without a line there is left out.
+        const tl = Math.hypot(e.tx, e.ty);
+        if (e.kind !== 'm' || !(tl > 0)) return;
+        const ux = e.tx / tl;
+        const uy = e.ty / tl;
+        const dx = e.x - selX;
+        const dy = e.y - selY;
+        const along = dx * ux + dy * uy;
+        const sgn = along >= 0 ? 1 : -1;
+        const R = selR + e.r + k;
+        const b = sgn * along;
+        const t = -b + Math.sqrt(Math.max(0, b * b - (dx * dx + dy * dy - R * R)));
+        e.x += sgn * ux * t;
+        e.y += sgn * uy * t;
+      }
       pool.nPoints++;
       pts.push(e);
     };
@@ -1317,7 +1363,37 @@ export class MapController implements MapView {
       e.clear = Math.max(r, b.radiusPx + 2 * k);
       // A body takes part while it is an icon: what sits on it then folds into it instead of hiding it.
       e.cluster = b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k && r > 0;
+      // An encounter ghost whose sphere of influence is small on screen is the whole encounter: the markers and
+      // nodes inside that circle fold into it ("Moon (encounter) +5", the members in its tooltip).
+      if (b.ghost && e.cluster && b.soiPx < ENCOUNTER_SOI_PX * k) e.reach = b.soiPx + 2 * k;
       commit(e);
+    }
+    // A body off screen (or behind the eye) whose sphere of influence is drawn on screen: a chevron at the frame's
+    // edge toward it, with its name, so the arc entering the frame says what it is and where the body lies.
+    for (const b of scene.bodies) {
+      if (b.ghost || (b.front && proj.onScreen(b.x, b.y, 0))) continue;
+      const soi = scene.lines.find((l) => l.kind === 'soi' && l.id.length === 4 + b.bodyId.length && l.id.endsWith(b.bodyId));
+      if (!soi || soi.visibleVertices === 0) continue;
+      // direction on screen from the frame's centre toward the body (through the eye when it is behind it)
+      const vz = b.view.z;
+      let dx = b.view.x * (vz < 0 ? 1 : -1);
+      let dy = -b.view.y * (vz < 0 ? 1 : -1);
+      const dl = Math.hypot(dx, dy);
+      if (!(dl > 0)) continue;
+      dx /= dl;
+      dy /= dl;
+      const inset = 16 * k;
+      const hw = proj.width / 2 - inset;
+      const hh = proj.height / 2 - inset;
+      const t = Math.min(Math.abs(dx) > 1e-9 ? hw / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-9 ? hh / Math.abs(dy) : Infinity);
+      const ex = proj.width / 2 + dx * t;
+      const ey = proj.height / 2 + dy * t;
+      if (underUi(ex, ey) || underPanel(ex, ey)) continue;
+      this.icon(icons, ex, ey, 6.5 * k, 6.5 * k, Math.atan2(dy, dx), ICON.vessel, COLORS.body, 0.9);
+      this.clear(ex, ey, 6.5 * k, true);
+      let name = this.bodyNames.get(b.label);
+      if (!name) this.bodyNames.set(b.label, (name = [b.label.toUpperCase()]));
+      addLabel(`edge:${b.bodyId}`, ex, ey, 6.5 * k, name, 9.4, COLORS.body, 'body', -dx, -dy);
     }
     let activeEntry: PointEntry | null = null;
     let activeVessel: VesselItem | null = null;
@@ -1333,7 +1409,7 @@ export class MapController implements MapView {
         continue;
       }
       const r = (v.active ? 9.5 : 7) * k;
-      const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? 1 : 0.9, v.active ? 500 : 1, v.name);
+      const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? 1 : 0.9, v.active ? ACTIVE_RANK : 1, v.name);
       e.rot = v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX);
       e.tx = v.dirX;
       e.ty = v.dirY;
@@ -1432,7 +1508,6 @@ export class MapController implements MapView {
       return i;
     };
     const reach = CLUSTER_PX * k;
-    const reach2 = reach * reach;
     // positions of the clustering entries, packed (the pair loop runs on typed arrays)
     if (pool.px.length < n) {
       pool.px = new Float64Array(2 * n);
@@ -1442,9 +1517,17 @@ export class MapController implements MapView {
     const qx = pool.px;
     const qy = pool.py;
     const qi = pool.pi;
-    if (pool.pr.length < qx.length) pool.pr = new Float64Array(qx.length);
-    // a body icon is larger than the others: its cluster reaches to its edge
+    if (pool.pr.length < qx.length) {
+      pool.pr = new Float64Array(qx.length);
+      pool.pb = new Float64Array(qx.length);
+      pool.ps = new Float64Array(qx.length);
+    }
+    // Two icons collapse when their centres are closer than CLUSTER_PX (from the edge of a body icon), or their
+    // glyphs would touch (radii plus a pixel), or one is an encounter ghost reaching over the other.
     const qr = pool.pr;
+    const qb = pool.pb;
+    const qs = pool.ps;
+    const touch = k;
     let m = 0;
     for (let i = 0; i < n; i++) {
       const p = pts[i]!;
@@ -1452,19 +1535,22 @@ export class MapController implements MapView {
       qx[m] = p.x;
       qy[m] = p.y;
       qi[m] = i;
-      qr[m] = p.shape === ICON.bodyDisc ? p.r : 0;
+      qr[m] = p.r;
+      qb[m] = p.shape === ICON.bodyDisc ? p.r : 0;
+      qs[m] = p.reach;
       m++;
     }
     for (let a = 0; a < m; a++) {
       const ax = qx[a]!;
       const ay = qy[a]!;
       const ra = qr[a]!;
+      const ba = qb[a]!;
+      const sa = qs[a]!;
       for (let b = a + 1; b < m; b++) {
         const dx = ax - qx[b]!;
         const dy = ay - qy[b]!;
-        const rb = qr[b]!;
-        const lim = reach + ra + rb;
-        if (dx * dx + dy * dy < (ra + rb > 0 ? lim * lim : reach2)) {
+        const lim = Math.max(reach + ba + qb[b]!, ra + qr[b]! + touch, sa, qs[b]!);
+        if (dx * dx + dy * dy < lim * lim) {
           const r0 = find(qi[a]!);
           const r1 = find(qi[b]!);
           if (r0 !== r1) parent[r1] = r0;
@@ -1515,7 +1601,7 @@ export class MapController implements MapView {
         if (p.kind === 'm' && (p.shape === ICON.impact || p.shape === ICON.entry) && p.label.length > 0) {
           const r = pts[rep[find(i)]!]!;
           const side = this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
-          addLabel(r.x, r.y, r.clear, p.label, p.priority - 0.5, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
+          addLabel(p.id, r.x, r.y, r.clear, p.label, p.priority - 0.5, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
         }
         continue;
       }
@@ -1528,16 +1614,51 @@ export class MapController implements MapView {
         const text = BADGES[p.others] ?? `+${p.others}`;
         const w = widthOf(text) + 6 * k;
         const h = tm.lineHeight - 2 * k;
-        // its lower-left corner 2 px inside the icon's bounding box: it sits on the icon it counts for
+        // On a corner of the icon it counts for (its inner corner 2 px inside the icon's bounding box): the
+        // upper-right one unless that covers another icon or other UI, then the corner clearest of them, so the
+        // badge is always nearer its own icon than any other.
         const corner = Math.max(p.r, 3 * k);
-        const bx = p.x + corner - 2 * k;
-        const by = p.y - corner - h + 2 * k;
+        let bx = 0;
+        let by = 0;
+        let bestScore = Infinity;
+        for (let c = 0; c < 4; c++) {
+          const sx = c === 0 || c === 2 ? 1 : -1;
+          const sy = c < 2 ? -1 : 1;
+          const x0 = sx > 0 ? p.x + corner - 2 * k : p.x - corner + 2 * k - w;
+          const y0 = sy < 0 ? p.y - corner - h + 2 * k : p.y + corner - 2 * k;
+          let score = c;
+          for (let q = 0; q < n; q++) {
+            const o = pts[q]!;
+            if (o === p || o.others < 0 || o.debris || !(o.r > 0)) continue;
+            const ex = Math.max(x0 - o.x, 0, o.x - (x0 + w));
+            const ey = Math.max(y0 - o.y, 0, o.y - (y0 + h));
+            if (ex * ex + ey * ey < (o.r + k) ** 2) score += 100;
+          }
+          for (const o of rects) if (x0 < o.x1 && o.x0 < x0 + w && y0 < o.y1 && o.y0 < y0 + h) score += 100;
+          // the selected node's gizmo is drawn later on top: keep off its handles and its disc
+          for (const hd of handles) {
+            const ex = Math.max(x0 - hd.x, 0, hd.x - (x0 + w));
+            const ey = Math.max(y0 - hd.y, 0, hd.y - (y0 + h));
+            if (ex * ex + ey * ey < (HANDLE_RADIUS_PX * k + k) ** 2) score += 100;
+          }
+          if (selShown) {
+            const ex = Math.max(x0 - selX, 0, selX - (x0 + w));
+            const ey = Math.max(y0 - selY, 0, selY - (y0 + h));
+            if (ex * ex + ey * ey < (selR + k) ** 2) score += 100;
+          }
+          if (x0 < 0 || y0 < 0 || x0 + w > proj.width || y0 + h > proj.height) score += 50;
+          if (score < bestScore) {
+            bestScore = score;
+            bx = x0;
+            by = y0;
+          }
+        }
         this.icon(icons, bx + w / 2, by + h / 2, w / 2, h / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
         this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
         rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
       }
       const side = p.kind === 'b' ? null : this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
-      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
+      addLabel(p.id, p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- surface targets, once their body is big enough on screen to place them meaningfully
@@ -1547,10 +1668,23 @@ export class MapController implements MapView {
       if (rPx < TARGET_MIN_BODY_PX) continue;
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
       const r = (t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5) * k;
+      // A mark on the ground is drawn on the visible disc or not at all: its whole glyph inside the limb (a zone
+      // centre half over black space read as floating beside the planet). The pin's head may stand above it.
+      if (t.shape !== 'pin') {
+        const body = scene.bodies.find((b) => !b.ghost && b.bodyId === t.target.bodyId);
+        if (body && body.front && Math.hypot(t.x - body.x, t.y - body.y) + r > body.radiusPx) continue;
+      }
       const y = t.shape === 'pin' ? t.y - 9 * k : t.y;
       this.icon(icons, t.x, y, r, r, 0, shape, t.color, 1);
       this.clear(t.x, y, r * 0.9, true);
-      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r, oneLine(t.target.name), t.target.kind === 'landing' ? 7 : 1, labelTint(t.color), 'plate');
+      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') {
+        let short = this.shortNames.get(t.target.name);
+        if (short === undefined) {
+          const s1 = shortSiteName(t.target.name);
+          this.shortNames.set(t.target.name, (short = s1 !== t.target.name ? [s1] : null));
+        }
+        addLabel(t.id, t.x, y, r, oneLine(t.target.name), t.target.kind === 'landing' ? 7 : 1, labelTint(t.color), 'plate', 0, 0, short);
+      }
     }
 
     // ---- the selected node: an interface control, always on top at full strength. That it lies behind a
@@ -1592,7 +1726,7 @@ export class MapController implements MapView {
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
         this.tangentAt(scene, line.patchKey!.list, line.patchKey!.index, ut);
         const side = this.labelSide(scene, line.patch.bodyId, p.x, p.y, this.tangent.x, this.tangent.y);
-        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 'plate', side ? side.x : 0, side ? side.y : 0);
+        addLabel('add-maneuver', p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 'plate', side ? side.x : 0, side ? side.y : 0);
       }
     }
 
@@ -1646,7 +1780,8 @@ export class MapController implements MapView {
     }
 
     // ---- de-clutter: labels keep clear of icons, of each other and of every blocked rectangle, and off the lines
-    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, FAR_RING_PX * k, this.grid);
+    if (this.labelMemory.size > 512) this.labelMemory.clear();
+    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, FAR_RING_PX * k, this.grid, this.labelMemory, k);
     const leaderGap = LEADER_GAP_PX * k;
     for (const l of labels) {
       const b = l.box;
@@ -1669,8 +1804,9 @@ export class MapController implements MapView {
         this.icon(plates, b.ax + ux * (r0 + d) * 0.5, b.ay + uy * (r0 + d) * 0.5, (d - r0) / 2, (LEADER_WIDTH_PX / 2) * k, Math.atan2(uy, ux), ICON.bar, COLORS.leader, 1);
       }
       const tracking = body ? bodyTracking : 0;
-      for (let i = 0; i < l.lines.length; i++) {
-        this.text(texts, b.x + padX, b.y + padY + i * tm.lineHeight, l.lines[i]!, i === 0 ? l.color : COLORS.textDim, 1, tracking);
+      const shown = b.short && l.shortLines ? l.shortLines : l.lines;
+      for (let i = 0; i < shown.length; i++) {
+        this.text(texts, b.x + padX, b.y + padY + i * tm.lineHeight, shown[i]!, i === 0 ? l.color : COLORS.textDim, 1, tracking);
       }
     }
     for (const o of dots) all.push(o);
