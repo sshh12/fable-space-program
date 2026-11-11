@@ -202,6 +202,8 @@ export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({
 interface ClusterGroup {
   summaries: string[];
   debris: number;
+  /** Draw list the group belongs to (group objects are reused). */
+  stamp: number;
 }
 
 /** What a point entry stands for (hover type): body, vessel, marker, node. */
@@ -307,7 +309,11 @@ export class MapController implements MapView {
     parent: new Int32Array(64),
     size: new Int32Array(64),
     rep: new Int32Array(64),
-    groups: [] as (ClusterGroup | undefined)[],
+    px: new Float64Array(64),
+    py: new Float64Array(64),
+    pi: new Int32Array(64),
+    groups: [] as ClusterGroup[],
+    stamp: 0,
     /** icons, gizmo, top layer, plates, and layer 0 in drawing order (plates, icons, gizmo) */
     icons0: [] as IconInstance[],
     gizmo: [] as IconInstance[],
@@ -1249,15 +1255,35 @@ export class MapController implements MapView {
     };
     const reach = CLUSTER_PX * k;
     const reach2 = reach * reach;
+    // positions of the clustering entries, packed (the pair loop runs on typed arrays)
+    if (pool.px.length < n) {
+      pool.px = new Float64Array(2 * n);
+      pool.py = new Float64Array(2 * n);
+      pool.pi = new Int32Array(2 * n);
+    }
+    const qx = pool.px;
+    const qy = pool.py;
+    const qi = pool.pi;
+    let m = 0;
     for (let i = 0; i < n; i++) {
-      const a = pts[i]!;
-      if (!a.cluster) continue;
-      for (let j = i + 1; j < n; j++) {
-        const b = pts[j]!;
-        if (!b.cluster) continue;
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        if (dx * dx + dy * dy < reach2) parent[find(j)] = find(i);
+      const p = pts[i]!;
+      if (!p.cluster) continue;
+      qx[m] = p.x;
+      qy[m] = p.y;
+      qi[m] = i;
+      m++;
+    }
+    for (let a = 0; a < m; a++) {
+      const ax = qx[a]!;
+      const ay = qy[a]!;
+      for (let b = a + 1; b < m; b++) {
+        const dx = ax - qx[b]!;
+        const dy = ay - qy[b]!;
+        if (dx * dx + dy * dy < reach2) {
+          const ra = find(qi[a]!);
+          const rb = find(qi[b]!);
+          if (ra !== rb) parent[rb] = ra;
+        }
       }
     }
     for (let i = 0; i < n; i++) {
@@ -1266,17 +1292,23 @@ export class MapController implements MapView {
       size[r]!++;
       if (pts[i]!.rank > pts[rep[r]!]!.rank) rep[r] = i;
     }
+    // group objects by root index, reused from list to list (a stamp marks this list's)
     const groups = pool.groups;
-    groups.length = n;
-    for (let i = 0; i < n; i++) groups[i] = undefined;
+    while (groups.length < n) groups.push({ summaries: [], debris: 0, stamp: -1 });
+    const stamp = ++pool.stamp;
     for (let i = 0; i < n; i++) {
       const p = pts[i]!;
       if (!p.cluster) continue;
       const r = find(i);
       if (size[r]! < 2) continue;
       const repI = rep[r]!;
-      let g = groups[r];
-      if (!g) groups[r] = g = { summaries: [pts[repI]!.summary], debris: 0 };
+      const g = groups[r]!;
+      if (g.stamp !== stamp) {
+        g.stamp = stamp;
+        g.summaries.length = 0;
+        g.summaries.push(pts[repI]!.summary);
+        g.debris = 0;
+      }
       if (i !== repI) {
         p.others = -1;
         if (p.debris) g.debris++;
@@ -1285,8 +1317,8 @@ export class MapController implements MapView {
       p.group = g;
     }
     for (let i = 0; i < n; i++) {
-      const g = groups[i];
-      if (g) pts[rep[i]!]!.others = size[i]! - 1 - g.debris;
+      const g = groups[i]!;
+      if (g.stamp === stamp && parent[i] === i) pts[rep[i]!]!.others = size[i]! - 1 - g.debris;
     }
 
     // ---- icons and labels of what is left; a count badge on each cluster
