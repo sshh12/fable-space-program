@@ -145,11 +145,11 @@ export function buildFixtures(ctx: CabinContext): void {
     const pathAz = [side * 118, side * 112, side * 100, side * 78, side * 62];
     const ys = [0.27, 0.45, 0.72, 0.98, 1.12];
     const pts = pathAz.map((az, i) => wallPoint(ctx, az * DEG, ys[i]!, 0.075));
-    b.tube(pts, 0.032, 16, ctx.m('duct'), { caps: false });
+    b.tube(pts, 0.032, 32, ctx.m('duct'), { caps: false });
     const end = pts[pts.length - 1]!;
     const dir = v3.normalize(v3.sub(end, pts[pts.length - 2]!));
-    b.cylinder(end, dir, 0.04, 0.03, 18, ctx.m('closeout'), { radius1: 0.05 });
-    b.disc(frameAt(v3.addScaled(end, dir, 0.03), v3.anyOrthogonal(dir), v3.cross(dir, v3.anyOrthogonal(dir))), 0.048, 0.0, 18, ctx.m('grille'), { flip: v3.dot(v3.cross(v3.anyOrthogonal(dir), v3.cross(dir, v3.anyOrthogonal(dir))), dir) < 0 });
+    b.cylinder(end, dir, 0.04, 0.03, 32, ctx.m('closeout'), { radius1: 0.05 });
+    b.disc(frameAt(v3.addScaled(end, dir, 0.03), v3.anyOrthogonal(dir), v3.cross(dir, v3.anyOrthogonal(dir))), 0.048, 0.0, 32, ctx.m('grille'), { flip: v3.dot(v3.cross(v3.anyOrthogonal(dir), v3.cross(dir, v3.anyOrthogonal(dir))), dir) < 0 });
   }
 
   // ---- cable runs: bundles along ring frames to the console, with clamps
@@ -183,9 +183,9 @@ export function buildFixtures(ctx: CabinContext): void {
     }
     pts.push(wallPoint(ctx, (run.az[1] + dAz * 0.45) * DEG, run.y, run.inset * 0.6), wallPoint(ctx, (run.az[1] + dAz * 0.9) * DEG, run.y, 0.012));
     for (const off of [-0.6, 0.6]) {
-      b.tube(pts.map((p) => v3.addScaled(p, { x: 0, y: 1, z: 0 }, off * run.r * 1.4)), run.r * 0.7, 8, ctx.m(run.mat));
+      b.tube(pts.map((p) => v3.addScaled(p, { x: 0, y: 1, z: 0 }, off * run.r * 1.4)), run.r * 0.7, 12, ctx.m(run.mat));
     }
-    b.tube(pts, run.r, 10, ctx.m(run.mat));
+    b.tube(pts, run.r, 16, ctx.m(run.mat));
     for (let k = 1; k < steps; k += 3) {
       const az = run.az[0] + ((run.az[1] - run.az[0]) * k) / steps;
       const wf = wallFrame(ctx, az, run.y, run.inset);
@@ -207,6 +207,58 @@ export function buildFixtures(ctx: CabinContext): void {
   b.box(offsetFrame(fdf, 0, 0.11, 0.002), 0.105, 0.012, 0.004, 0.003, ctx.m('velcro', { flags: FLAG_OVERLAY }));
   ctx.labelQuad(fdf, 0, -0.03, 0.12, 0.016, 'FLIGHT DATA FILE', 'pouch', { color: 1 });
   // (The hook-and-loop squares on the blankets are part of the blankets: cabin/shell.ts.)
+
+  // ---- stowage: soft bags strapped to the upper wall, a checklist card on hook-and-loop by the commander
+  const bags: [number, number, number, number, string, string][] = [
+    [-112, 1.72, 0.27, 0.2, 'webbingOrange', 'CREW PREF KIT'],
+    [112, 1.72, 0.27, 0.2, 'webbing', 'WET WIPES'],
+    [-60, 1.64, 0.22, 0.17, 'webbing', 'HEADSETS'],
+    [60, 1.64, 0.22, 0.17, 'webbingOrange', 'IFM KIT'],
+  ];
+  for (const [az, y, w, h, strapMat, label] of bags) stowageBag(ctx, az, y, w, h, strapMat, label);
+  const card = wallFrame(ctx, -150, 1.6, plateInset(ctx, -150, 1.6, 0.16, 0.22, 0.004) + 0.004);
+  const cf = { ...card, x: v3.normalize(v3.add(card.x, v3.scale(card.y, 0.06))), y: v3.normalize(v3.add(card.y, v3.scale(card.x, -0.06))) };
+  b.box(offsetFrame(cf, 0, 0.0, -0.0025), 0.075, 0.1, 0.0015, 0.0006, ctx.m('velcro', { flags: FLAG_OVERLAY }));
+  b.box(offsetFrame(cf, 0, 0, -0.0006), 0.08, 0.108, 0.0006, 0.0002, ctx.m('card'));
+  ctx.labelQuad(cf, 0, 0.088, 0.13, 0.012, 'ENTRY CHECKLIST', 'card', { color: 1 });
+  ctx.labelQuad(cf, 0, 0.068, 0.13, 0.007, 'CM/SM SEP  -  ATT HOLD', 'card', { color: 1 });
+  ctx.labelQuad(cf, 0, 0.054, 0.13, 0.007, 'EI -15 MIN  ·  DROGUE ARM', 'card', { color: 1 });
+  ctx.labelQuad(cf, 0, 0.04, 0.13, 0.007, 'G LIMIT 8  ·  RCS CMD', 'card', { color: 1 });
+}
+
+/**
+ * A soft stowage bag on the wall: a padded fabric box whose front bulges, held by two webbing straps that run
+ * round it to the wall with a cam buckle each, a name tag on hook-and-loop.
+ */
+function stowageBag(ctx: CabinContext, az: number, y: number, w: number, h: number, strapMat: string, label: string): void {
+  const b = ctx.b;
+  const depth = 0.085;
+  const inset = plateInset(ctx, az, y, w, h, depth) + depth;
+  const f = wallFrame(ctx, az, y, inset);
+  // Body: the back half square to the wall, the front a rounder, softer half that bulges a little.
+  b.box(offsetFrame(f, 0, 0, -depth * 0.75), w / 2, h / 2, depth * 0.25, 0.012, ctx.m('pouch', { ao: 0.8 }));
+  b.box(offsetFrame(f, 0, 0, -depth * 0.32), w / 2 - 0.004, h / 2 - 0.004, depth * 0.32, 0.03, ctx.m('pouch'));
+  // Zip along the top seam.
+  b.box(offsetFrame(f, 0, h / 2 - 0.006, -depth * 0.35), w / 2 - 0.02, 0.0035, 0.004, 0.0015, ctx.m('cableBlack'));
+  for (const s of [-1, 1]) {
+    const x = s * w * 0.28;
+    // The strap over the front and back to the wall above and below the bag.
+    b.box(offsetFrame(f, x, 0, 0.0012), 0.0125, h / 2 - 0.012, 0.0012, 0.0006, ctx.m(strapMat, { flags: FLAG_OVERLAY }));
+    for (const sy of [-1, 1]) {
+      const top = local(f, x, sy * (h / 2 - 0.012), 0.0012);
+      const atWall = fitWall(ctx, local(f, x, sy * (h / 2 + 0.03), -depth), v3.neg(f.n));
+      // (Ends a few millimetres off the wall: the strap's own thickness must not reach into it.)
+      const wallEnd = v3.addScaled(atWall, v3.normalize(v3.sub(top, atWall)), 0.004);
+      const dir = v3.normalize(v3.sub(wallEnd, top));
+      const side = v3.normalize(v3.cross(dir, f.n));
+      const ff = frameAt(v3.lerp(top, wallEnd, 0.5), side, dir);
+      b.box(ff, 0.0125, v3.dist(top, wallEnd) / 2, 0.0012, 0.0006, ctx.m(strapMat));
+    }
+    // Cam buckle on the front.
+    b.box(offsetFrame(f, x, -h * 0.18, 0.004), 0.016, 0.011, 0.0028, 0.0012, ctx.m('aluminium'));
+  }
+  b.box(offsetFrame(f, 0, h * 0.12, 0.0015), w * 0.16, 0.016, 0.0015, 0.0008, ctx.m('velcro', { flags: FLAG_OVERLAY }));
+  ctx.labelQuad(offsetFrame(f, 0, h * 0.12, 0.003), 0, 0, w * 0.3, 0.012, label, 'pouch', { color: 1 });
 }
 
 /** Move a frame along `dir` until the box [-hx, hx] x [-hy, hy] x [z0, z1] around it clears the wall by 3 mm. */

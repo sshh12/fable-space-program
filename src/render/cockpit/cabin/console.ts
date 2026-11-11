@@ -46,7 +46,8 @@ export function consoleFrameAt(ctx: CabinContext, sections: SectionFrame[], x: n
   return offsetFrame(sec.frame, x, u - sec.uHinge, 0);
 }
 
-const MARGIN = 0.012;
+/** How far the console stays off the inner wall: clear of the insulation blankets' pillows (16 mm and their quilting). */
+const MARGIN = 0.032;
 
 /** Shrink a corner point toward `toward` until it is MARGIN inside the inner wall. */
 function fitInside(ctx: CabinContext, p: Vec3, toward: Vec3): Vec3 {
@@ -87,14 +88,15 @@ function gridLines(a: number, b: number, step: number, exact: number[]): number[
 
 /**
  * The console section slabs: face clipped to the wall (corners cut where the cone closes in), a chamfered
- * edge, and a body that runs back toward the wall as far as it fits.
+ * edge, and a closed body that runs back to the wall (the layout's depth reaches it): side cheeks and a back
+ * cover, so nothing of the cabin shows under or behind the console.
  *
  * The face is a regular grid (the baked occlusion lives on its vertices), with grid lines laid along the
  * outline of every large part mounted on it and again a few millimetres off: the contact shadow of a bezel
  * or a housing is then a band of even width that follows the part, the same for identical parts, instead
  * of whatever a mesh that knows nothing of the parts interpolates.
  */
-function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[]): void {
+function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[], skirt = false): void {
   const b = ctx.b;
   const [x0, x1] = sec.def.x;
   const [u0, u1] = sec.def.u;
@@ -158,6 +160,25 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[]): 
   const bfirst = b.vertexCount;
   for (const p of backLoop) b.vertex(p, v3.neg(n), f.x, [0, 0], ctx.m('consoleBody', { ao: 0.5 }));
   for (let i = 0; i < backLoop.length; i++) b.tri(bci, bfirst + ((i + 1) % backLoop.length), bfirst + i);
+  // The lowest section closes the space under the console: a skirt from its lower edge, down and back to the
+  // wall (a close-out panel with a row of fasteners), so the eye does not run on under the console.
+  if (skirt) {
+    const down = v3.normalize(v3.add(v3.scale(f.y, -0.75), v3.scale(n, -0.65)));
+    const top: Vec3[] = [];
+    for (let i = 0; i <= nx; i++) top.push(v3.addScaled(outlineAt(i, 0), n, -ch));
+    const bottom = top.map((p) => fitInside(ctx, v3.addScaled(p, down, 0.7), p));
+    const skirtMat = ctx.m('panel', { ao: 0.7 });
+    const sn = v3.normalize(v3.cross(down, f.x));
+    const first2 = b.vertexCount;
+    for (let i = 0; i <= nx; i++) {
+      b.vertex(top[i]!, sn, f.x, [X[i]!, 0], skirtMat);
+      b.vertex(bottom[i]!, sn, f.x, [X[i]!, v3.dist(top[i]!, bottom[i]!)], skirtMat);
+    }
+    for (let i = 0; i < nx; i++) b.quad(first2 + 2 * i, first2 + 2 * i + 1, first2 + 2 * i + 3, first2 + 2 * i + 2);
+    if (ctx.detail === 0) {
+      for (let i = 1; i < nx; i += 4) fastener(ctx, frameAt(v3.lerp(top[i]!, bottom[i]!, 0.06), f.x, v3.neg(down)), 0.8);
+    }
+  }
 }
 
 /** Quarter-turn panel fastener: dimpled cup washer, slotted stud head (an overlay: it does not bury the panel's vertices). */
@@ -208,7 +229,8 @@ export function buildConsole(ctx: CabinContext): void {
     ...con.masterAlarms.map((m) => rect(m.x, m.u, m.size / 2 + 0.005, m.size / 2 + 0.005)),
     ...con.readouts.map((r) => rect(r.x, r.u, ...readoutHalf(r.digitHeight, r.readout))),
   ];
-  for (const s of sections) sectionSlab(ctx, s, parts);
+  const lowest = sections.reduce((a, s) => (s.def.u[0] < a.def.u[0] ? s : a), sections[0]!);
+  for (const s of sections) sectionSlab(ctx, s, parts, s === lowest);
   const at = (x: number, u: number): Frame => consoleFrameAt(ctx, sections, x, u);
   if (ctx.detail < 2) consoleJoints(ctx, sections);
   con.displays.forEach((d, i) => displayBezel(ctx, at(d.x, d.u), d.activeWidth, d.activeHeight, d.border, d.keys, i));
@@ -411,7 +433,8 @@ function annunciator(ctx: CabinContext, f: Frame, columns: number, cell: [number
   lamps.forEach((lamp, i) => {
     const c = i % columns;
     const r = Math.floor(i / columns);
-    const lf = offsetFrame(f, -W / 2 + (c + 0.5) * cw, H / 2 - (r + 0.5) * chh, 0.016);
+    // Each lens cap stands 1 mm proud of the housing's face (16 mm): never coplanar with it.
+    const lf = offsetFrame(f, -W / 2 + (c + 0.5) * cw, H / 2 - (r + 0.5) * chh, 0.017);
     lens(ctx, lf, cw / 2 - 0.0015, chh / 2 - 0.0015, lamp, `ann:${i}`);
   });
   ctx.labelQuad(offsetFrame(f, 0, H / 2 + 0.012, 0), 0, 0, 0.12, 0.008, 'CAUTION & WARNING', 'panel', { color: 0, backlit: true });
@@ -459,9 +482,11 @@ export function toggleSwitch(ctx: CabinContext, f: Frame, sw: SwitchDef, key: st
   const labelMat = panelMat;
   // Nomenclature: the switch's name on top, the position legends above and below the lever's throw (the
   // lower one beyond where the lever's tip lies over the panel when the crew look down on it).
-  ctx.labelQuad(f, 0, 0.0275, 0.036, 0.0062, sw.label, labelMat, { color: panelMat === 'panel' ? 0 : 1, backlit: panelMat === 'panel' });
-  if (sw.up) ctx.labelQuad(f, 0, 0.0175, 0.03, 0.0044, sw.up, labelMat, { color: panelMat === 'panel' ? 4 : 1 });
-  if (sw.down) ctx.labelQuad(f, 0, -0.0345, 0.03, 0.0044, sw.down, labelMat, { color: panelMat === 'panel' ? 4 : 1 });
+  // One ink and one back-light for all nomenclature (name and positions), as on a real engraved panel.
+  const ink = { color: panelMat === 'panel' ? 0 : 1, backlit: panelMat === 'panel' };
+  ctx.labelQuad(f, 0, 0.0275, 0.036, 0.0062, sw.label, labelMat, ink);
+  if (sw.up) ctx.labelQuad(f, 0, 0.0175, 0.03, 0.0048, sw.up, labelMat, ink);
+  if (sw.down) ctx.labelQuad(f, 0, -0.0345, 0.03, 0.0048, sw.down, labelMat, ink);
   if (sw.kind === 'guarded') {
     // U-shaped guard hinged below the switch: open (swung down) while the switch is on.
     const hinge = local(f, 0, -0.012, 0.004);
@@ -488,7 +513,7 @@ function rotary(ctx: CabinContext, f: Frame, radius: number, sel: RotaryDef, key
   sel.positions.forEach((p, i) => {
     const a = angles[i]!;
     const r = radius * 1.35 + 0.009;
-    ctx.labelQuad(f, -Math.sin(a) * r, Math.cos(a) * r, 0.02, 0.0045, p, 'panel', { color: 4, backlit: true });
+    ctx.labelQuad(f, -Math.sin(a) * r, Math.cos(a) * r, 0.02, 0.0045, p, 'panel', { color: 0, backlit: true });
   });
   ctx.labelQuad(f, 0, -radius * 1.35 - 0.008, 0.04, 0.0058, sel.label, 'panel', { color: 0, backlit: true });
 }

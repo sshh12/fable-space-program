@@ -41,6 +41,26 @@ export interface SunInput {
   color: [number, number, number];
 }
 
+/**
+ * Which of the cabin's windows another part of the vessel covers (true = covered), from the parts' visual
+ * definitions: a part whose visual `params.windowPorts` lists window ids (a JSON list, or a "a;b" string) is
+ * a cover over the capsule (the launch escape system's boost cover); every window it does not list is shut
+ * by it (no sky, no sun, no entry glow comes in). Once the covering part is gone from the vessel (jettisoned)
+ * the window is open again. Pure.
+ */
+export function coveredWindows(windowIds: readonly string[], partDefs: readonly string[], defs: { parts: Record<string, { visual: { params: Record<string, unknown> } | null } | undefined> }): boolean[] {
+  const covered = windowIds.map(() => false);
+  for (const id of partDefs) {
+    const ports = defs.parts[id]?.visual?.params?.['windowPorts'];
+    if (ports === undefined) continue;
+    const list = Array.isArray(ports) ? ports.map(String) : typeof ports === 'string' ? ports.split(';').map((s) => s.trim()) : [];
+    windowIds.forEach((w, i) => {
+      if (!list.includes(w)) covered[i] = true;
+    });
+  }
+  return covered;
+}
+
 /** Area-equivalent quad of a window's inner pane in its own plane. */
 export function windowQuad(w: WindowMeta): { corners: [Vec3, Vec3, Vec3, Vec3]; area: number; centre: Vec3; outward: Vec3 } {
   const pane = w.panes[w.panes.length - 1]!;
@@ -107,16 +127,18 @@ export interface CabinSources {
  * The polygon sources of one frame (part frame). Windows always come first (the shader uses the first
  * `windows.length` polygons for the inter-reflection term).
  */
-export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn: boolean): CabinSources {
+export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn: boolean, covered: readonly boolean[] = []): CabinSources {
   const polys: CabinPoly[] = [];
   const T = glassTransmittance(model);
   const quads = model.windows.map((w) => windowQuad(w));
-  quads.forEach((q, i) => polys.push({ kind: POLY_WINDOW, corners: q.corners, normal: q.outward, radiance: T, area: q.area, on: true, index: i }));
+  // A covered window (coveredWindows) lets nothing in: dark, off, no sun.
+  quads.forEach((q, i) => polys.push({ kind: POLY_WINDOW, corners: q.corners, normal: q.outward, radiance: covered[i] ? [0, 0, 0] : T, area: q.area, on: !covered[i], index: i }));
   let sunFlux = 0;
   if (sun && sun.illuminance > 0) {
     const s = sun.dirPart;
     const tMean = (T[0] + T[1] + T[2]) / 3;
-    quads.forEach((q) => {
+    quads.forEach((q, i) => {
+      if (covered[i]) return;
       const cosW = v3.dot(q.outward, s);
       if (cosW <= 0.01) return;
       sunFlux += sun.illuminance * tMean * cosW * q.area;

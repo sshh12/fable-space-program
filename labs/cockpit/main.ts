@@ -233,7 +233,9 @@ async function boot(): Promise<void> {
     features: (defs) => {
       const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
       const { layout, mould } = loadCockpitLayout(defs, vehicle.cockpit!);
-      return [createLabPlanetFeature(), createLabSkyFeature(defs), createLabHullFeature(() => buildLabHull(layout, mould), vehicle.cameras.cockpit.part)];
+      // (&hull=0: without the exterior stand-in, for diagnostics: what the cabin alone shows.)
+      const hull = params.get('hull') === '0' ? [] : [createLabHullFeature(() => buildLabHull(layout, mould), vehicle.cameras.cockpit.part)];
+      return [createLabPlanetFeature(), createLabSkyFeature(defs), ...hull];
     },
   });
   const defs = app.defs;
@@ -270,6 +272,7 @@ async function boot(): Promise<void> {
   feature = created.feature;
   const controls = created.controls;
   await app.renderer.addFeature(feature);
+  if (params.has('dbg')) feature.setDebugView(Number(params.get('dbg')));
   const ballast = createBallastFeature(Number(params.get('ballast') ?? 0));
   if (params.has('ballast')) await app.renderer.addFeature(ballast);
   const model = feature.model(vehicle.cockpit!)!;

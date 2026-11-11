@@ -234,7 +234,9 @@ export function buildHatch(ctx: CabinContext): void {
   const bulbTop = loop3(g, offsetLoop(base, -0.002), 0.0055);
   const bulb = ctx.m('seal', { ao: 0.7 });
   ringBetween(ctx, edge0.map((p) => v3.addScaled(p, g.inward, 0.002)), bulbTop, bulb, (i) => v3.normalize(v3.add(g.inward, toC(edge0)(i))), tangentOf(edge0));
-  ringBetween(ctx, bulbTop, loop3(g, offsetLoop(base, 0.003), 0.003), bulb, (i) => v3.normalize(v3.add(g.inward, toC(edge0)(i))), tangentOf(edge0));
+  // (The bulb ends half a millimetre inside the frame's rubber seal, which rises 4 mm over its 14 mm width:
+  // no slit between them.)
+  ringBetween(ctx, bulbTop, loop3(g, offsetLoop(base, 0.003), 0.0004), bulb, (i) => v3.normalize(v3.add(g.inward, toC(edge0)(i))), tangentOf(edge0));
   const rimOuter = loop3(g, offsetLoop(doorLoop, -0.006), planarDepths(g, offsetLoop(doorLoop, -0.006), T));
   ringBetween(ctx, edge1, rimOuter, doorMat, (i) => v3.normalize(v3.add(toC(edge1)(i), g.inward)), tangentOf(edge1));
   const face = g.plane(T);
@@ -255,7 +257,22 @@ export function buildHatch(ctx: CabinContext): void {
     holeLoop.push([Math.cos(a) * (wr + 0.035), Math.sin(a) * (wr + 0.035)]);
   }
   const floorF = g.plane(T - pocket);
-  ringBetween(ctx, pocketLoop.map(([u, v]) => local(floorF, u, v)), holeLoop.map(([u, v]) => local(floorF, u, v)), ctx.m('hatch', { ao: 0.7 }), () => g.inward, (i) => v3.normalize(localDirOf(floorF, -pocketLoop[i]![1], pocketLoop[i]![0])));
+  // In rings a few centimetres apart (the light baked per vertex then falls off smoothly over the floor, not
+  // in streaks along long radial quads).
+  const floorRings = ctx.detail === 0 ? 7 : 1;
+  for (let k = 0; k < floorRings; k++) {
+    const ring = (t: number): Vec3[] => pocketLoop.map(([u, v], i) => local(floorF, u + (holeLoop[i]![0] - u) * t, v + (holeLoop[i]![1] - v) * t));
+    ringBetween(ctx, ring(k / floorRings), ring((k + 1) / floorRings), ctx.m('hatch', { ao: 0.7 }), () => g.inward, (i) => v3.normalize(localDirOf(floorF, -pocketLoop[i]![1], pocketLoop[i]![0])));
+  }
+  // The door's outer skin, half a millimetre inside the wall: from under the frame's seal to under the
+  // window's bezel. The door is a closed body, so no joint of its inner side (the seal round its edge, the
+  // pocket floor against the window's bezel) can open a slit onto the outside.
+  const skinLoop = offsetLoop(base, 0.005);
+  const skinHole: Loop = skinLoop.map(([u, v]) => {
+    const a = Math.atan2(v, u);
+    return [Math.cos(a) * (wr + 0.02), Math.sin(a) * (wr + 0.02)];
+  });
+  ringBetween(ctx, loop3(g, skinLoop, 0.0005), loop3(g, skinHole, 0.0005), ctx.m('hatch', { ao: 0.3 }), () => g.inward, tangentOf(loop3(g, skinLoop, 0.0005)));
 
   // ---- window through the door: tunnel from the wall to the pocket floor, bezel ring, panes
   const wg = geomOf(ctx, win);

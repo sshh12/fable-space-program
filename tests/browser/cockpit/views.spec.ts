@@ -23,29 +23,33 @@ async function settle(page: Page, frames = 60): Promise<void> {
   await page.evaluate((n) => window.__test!.waitFrames(n), frames);
 }
 
-// Every view is taken at the exposure the renderer meters (no per-shot compensation). These frames show the
-// cabin over the lab's stand-ins for everything outside it: functional evidence. The acceptance pictures
-// over the real world are world.spec.ts (out/screens/cockpit/world-*.png).
-const shots: { name: string; url: string; dark?: boolean }[] = [
-  { name: 'pad-noon-forward-window', url: 'scene=pad' },
+// Every view is taken at the exposure the renderer meters (no per-shot compensation). The cockpit lab has
+// stand-ins for everything outside the cabin: the views whose picture depends on what is outside are
+// functional evidence only and go to out/screens/cockpit/lab/; the reviewed pictures are the cabin-only
+// views here (close-ups, the look back, the hatch) and the views over the real world of world.spec.ts
+// (out/screens/cockpit/world-*.png).
+const LAB = 'cockpit/lab';
+const shots: { name: string; url: string; dark?: boolean; dir?: string }[] = [
+  { name: 'pad-noon-forward-window', url: 'scene=pad', dir: LAB },
   // The window's axis turned toward the horizon ahead: Earth below, the limb and black space above.
-  { name: 'leo-earth-side-window', url: 'scene=leo-earth', dark: true },
-  { name: 'leo-sun-patch-console', url: 'scene=leo' },
-  { name: 'night-displays-floods', url: 'scene=night', dark: true },
-  { name: 'reentry-plasma', url: 'scene=reentry', dark: true },
+  { name: 'leo-earth-side-window', url: 'scene=leo-earth', dark: true, dir: LAB },
+  { name: 'leo-sun-patch-console', url: 'scene=leo', dir: LAB },
+  { name: 'night-displays-floods', url: 'scene=night', dark: true, dir: LAB },
+  { name: 'reentry-plasma', url: 'scene=reentry', dark: true, dir: LAB },
   // Head over the commander's left shoulder, level with the side window: the sunlit ground and the
   // horizon against the black sky (the capsule stands upright, so the window looks out above the horizon).
-  { name: 'moon-horizon', url: 'scene=moon&eye=-0.05,-0.12,0.04&aim=horizonL&fov=60', dark: true },
-  // From the commander's seat, head raised, looking round at the other couches and down to the hatch.
-  { name: 'look-back-couches-hatch', url: 'scene=leo&eye=0.2,-0.35,0.4&aim=hatchDoor&fov=80' },
+  { name: 'moon-horizon', url: 'scene=moon&eye=-0.05,-0.12,0.04&aim=horizonL&fov=60', dark: true, dir: LAB },
+  // From the commander's seat, head raised, looking round at the other couches and down to the hatch, the
+  // floods on.
+  { name: 'look-back-couches-hatch', url: 'scene=leo&eye=0.2,-0.35,0.4&aim=hatchDoor&fov=80&lights=1' },
   // The side hatch from low between the pilot's and the specialist's couches (it lies beyond the crew's feet).
   { name: 'hatch-mechanism', url: 'scene=leo&at=0.36,0.8,-0.75&aim=hatchDoor&fov=75' },
   { name: 'closeup-mfd', url: 'scene=leo&aim=mfd0&fov=24' },
   { name: 'closeup-fdai', url: 'scene=leo&aim=fdai&fov=22' },
   { name: 'closeup-switches', url: 'scene=leo&aim=switches&fov=26' },
   // Looking in from outside: in the Earth's shadow with the floods on, and along the sun's way in by day.
-  { name: 'chase-window-night', url: 'scene=night&view=chase&window=fwd-left&distance=0.7&fov=45', dark: true },
-  { name: 'chase-window-sun', url: 'scene=leo&view=chase&window=side-right&target=mfd0&distance=1.2&fov=40' },
+  { name: 'chase-window-night', url: 'scene=night&view=chase&window=fwd-left&distance=0.7&fov=45', dark: true, dir: LAB },
+  { name: 'chase-window-sun', url: 'scene=leo&view=chase&window=side-right&target=mfd0&distance=1.2&fov=40', dir: LAB },
 ];
 
 for (const s of shots) {
@@ -54,7 +58,7 @@ for (const s of shots) {
     await openPage(page, `/labs/cockpit/?${s.url}`, { timeoutMs: 120_000 });
     await assertDiscreteGpu(page);
     await settle(page);
-    const shot = await saveScreenshot(page, 'cockpit', s.name);
+    const shot = await saveScreenshot(page, s.dir ?? 'cockpit', s.name);
     assertRealImage(shot.stats, s.name, s.dark ? { minNonBlack: 0.05, minStd: 3, minBuckets: 20 } : {});
     const st = await page.evaluate(() => window.__cockpit!.stats());
     expect(st.active).toBe(true);

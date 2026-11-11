@@ -234,7 +234,7 @@ export function buildCouches(ctx: CabinContext): void {
       }
     }
     if (cfg.controllers && d === 0) handControllers(ctx, s, cfg);
-    if (d === 0) harness(ctx, s, cfg, backF, backHy, pts);
+    if (d === 0) harness(ctx, s, cfg, backF, backHy);
   }
   if (d < 2) pallet(ctx, seats);
 }
@@ -276,37 +276,100 @@ function pallet(ctx: CabinContext, seats: SeatFrame[]): void {
   }
 }
 
-/** Five-point harness lying on an empty couch: shoulder straps, lap belts, crotch strap and rotary buckle. */
-function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Frame, backHy: number, pts: CouchPoints): void {
+/**
+ * Height of an upholstered pad's surface (cushion(): squircle top panel, crowned or dished, channels, the
+ * roll over its edge) over its frame's plane at frame coordinates (x, y); 0 beyond its footprint.
+ */
+function padHeight(x: number, y: number, hx: number, hy: number, thick: number, dish: number, sewn: boolean): number {
+  const roll = Math.min(thick * 0.6, hx * 0.4, hy * 0.4);
+  const ax = hx - roll;
+  const ay = hy - roll;
+  const p = 5;
+  const rho = (Math.abs(x / ax) ** p + Math.abs(y / ay) ** p) ** (1 / p);
+  if (rho <= 1) {
+    const crown = 1 - dish * 0.5 * (1 - rho * rho);
+    const relief = sewn ? upholsteryHeight(y) * Math.min(1, ((1 - rho) * Math.min(ax, ay)) / 0.025) : 0;
+    return thick * crown + Math.max(relief, 0);
+  }
+  const d = Math.hypot(x - x / rho, y - y / rho);
+  return d < roll ? thick - roll + Math.sqrt(roll * roll - d * d) : 0;
+}
+
+/**
+ * Five-point harness lying on an empty couch: shoulder straps, lap belts, crotch strap and a metal rotary
+ * buckle. The webbing is a band 1.6 mm thick with rounded edges that lies ON the pads: every few millimetres
+ * along its path it is set on the highest surface under it (back cushion, bolsters) plus a little slack, so
+ * the crowned and channelled pads never show through it, and it bridges their grooves as webbing does.
+ */
+function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Frame, backHy: number): void {
   const c = ctx.layout.couches;
+  const hw = cfg.halfWidth;
   const web = ctx.m('webbing', { flags: FLAG_OVERLAY });
   const b = ctx.b;
-  const lift = c.cushion + 0.004;
-  const buckle = local(backF, 0, -backHy + 0.1, lift + 0.006);
-  const strap = (pathPts: Vec3[], w: number): void => {
-    for (let i = 0; i + 1 < pathPts.length; i++) {
-      const a = pathPts[i]!;
-      const q = pathPts[i + 1]!;
-      const dir = v3.normalize(v3.sub(q, a));
-      const side = v3.normalize(v3.cross(backF.n, dir));
-      const p0 = v3.addScaled(a, side, -w / 2);
-      const p1 = v3.addScaled(a, side, w / 2);
-      const p2 = v3.addScaled(q, side, w / 2);
-      const p3 = v3.addScaled(q, side, -w / 2);
-      b.strip(p0, p1, p2, p3, backF.n, dir, web);
+  const thickW = 0.0016;
+  // The surface under the webbing, over the back frame's plane.
+  const under = (x: number, y: number): number =>
+    Math.max(
+      padHeight(x, y, hw - 0.035, backHy, c.cushion, 0.25, true),
+      ...[-1, 1].map((side) => 0.004 + padHeight(x - side * (hw - 0.02), y, 0.03, backHy - 0.02, c.cushion + 0.025, 0, false)),
+    );
+  /** A strap along a polyline of (x, y) frame coordinates: resampled every 6 mm, laid on the pads. */
+  const strap = (path: [number, number][], w: number, minLift = 0): void => {
+    const xy: [number, number][] = [];
+    for (let i = 0; i + 1 < path.length; i++) {
+      const [x0, y0] = path[i]!;
+      const [x1, y1] = path[i + 1]!;
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 0.006));
+      for (let k = 0; k < n; k++) xy.push([x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n]);
     }
+    xy.push(path[path.length - 1]!);
+    // Height under the band (its middle and both edges), then the band bridges: a running maximum over
+    // about two centimetres.
+    const raw = xy.map(([x, y], i) => {
+      const [xa, ya] = xy[Math.max(0, i - 1)]!;
+      const [xb, yb] = xy[Math.min(xy.length - 1, i + 1)]!;
+      const l = Math.hypot(xb - xa, yb - ya) || 1;
+      const sx = (-(yb - ya) / l) * (w / 2);
+      const sy = ((xb - xa) / l) * (w / 2);
+      return Math.max(under(x, y), under(x + sx, y + sy), under(x - sx, y - sy), minLift);
+    });
+    const h = raw.map((_, i) => Math.max(...raw.slice(Math.max(0, i - 2), i + 3)) + 0.0018);
+    const at = (i: number, j: number): { p: Vec3; uv: [number, number] } => {
+      const [x, y] = xy[i]!;
+      const [xa, ya] = xy[Math.max(0, i - 1)]!;
+      const [xb, yb] = xy[Math.min(xy.length - 1, i + 1)]!;
+      const l = Math.hypot(xb - xa, yb - ya) || 1;
+      const sx = -(yb - ya) / l;
+      const sy = (xb - xa) / l;
+      // Cross-section: bottom of the left edge, top left, top right, bottom of the right edge.
+      const across = [-0.5, -0.47, 0.47, 0.5][j]! * w;
+      const up = j === 0 || j === 3 ? 0 : thickW;
+      return { p: local(backF, x + sx * across, y + sy * across, h[i]! + up), uv: [i * 0.006, across + w / 2] };
+    };
+    b.surface(xy.length - 1, 3, at, web);
   };
+  const yb = -backHy;
   for (const side of [-1, 1]) {
-    strap([local(backF, side * 0.1, backHy + 0.02, 0.01), local(backF, side * 0.1, backHy - 0.02, lift), local(backF, side * 0.07, -backHy * 0.2, lift), local(backF, side * 0.02, -backHy + 0.12, lift + 0.003)], 0.045);
-    strap([local(backF, side * (cfg.halfWidth - 0.01), -backHy - 0.02, lift - 0.01), local(backF, side * 0.12, -backHy + 0.06, lift), local(backF, side * 0.03, -backHy + 0.09, lift + 0.003)], 0.045);
+    strap([[side * 0.1, backHy + 0.02], [side * 0.1, backHy - 0.02], [side * 0.07, -backHy * 0.2], [side * 0.02, yb + 0.12]], 0.045, 0.01);
+    strap([[side * (hw - 0.01), yb - 0.02], [side * 0.12, yb + 0.06], [side * 0.03, yb + 0.09]], 0.045);
   }
-  strap([v3.addScaled(pts.hip, pts.thighN, c.cushion * 0.9), local(backF, 0, -backHy + 0.05, lift + 0.002)], 0.04);
+  strap([[0, yb - 0.035], [0, yb + 0.05]], 0.04, c.cushion * 0.9);
+  // Rotary buckle: a brushed steel body with the four tongues' slots, a turning knob, a red release tab.
+  const buckle = local(backF, 0, yb + 0.1, Math.max(under(0, yb + 0.1), under(0.03, yb + 0.1), under(-0.03, yb + 0.1)) + 0.0035);
   const bf = faceL(buckle, s);
-  b.lathe(buckle, backF.n, [[0.03, 0], [0.03, 0.007], [0.027, 0.01], [0.019, 0.0105]], 28, ctx.m('steel'));
-  b.lathe(v3.addScaled(buckle, backF.n, 0.0105), backF.n, [[0.019, 0], [0.019, 0.006], [0.016, 0.008], [0, 0.0082]], 24, ctx.m('knob'));
-  b.box({ ...bf, o: local(bf, 0, 0, 0.0195) }, 0.011, 0.0022, 0.0012, 0.0005, ctx.m('warning'));
-  // Adjusters on the shoulder straps.
-  for (const side of [-1, 1]) b.box(faceL(local(backF, side * 0.08, -backHy * 0.1, lift + 0.004), s), 0.026, 0.012, 0.004, 0.002, ctx.m('steel'));
+  b.lathe(buckle, backF.n, [[0.031, 0], [0.031, 0.006], [0.028, 0.009], [0.021, 0.0095]], 32, ctx.m('steel'));
+  for (const k of [0, 1, 2, 3]) {
+    const a = (k / 4) * 2 * Math.PI + Math.PI / 4;
+    b.box({ ...bf, o: local(bf, Math.cos(a) * 0.029, Math.sin(a) * 0.029, 0.004) }, 0.006, 0.006, 0.0022, 0.001, ctx.m('aluminium'));
+  }
+  b.lathe(v3.addScaled(buckle, backF.n, 0.0095), backF.n, [[0.02, 0], [0.02, 0.005], [0.017, 0.007], [0, 0.0074]], 28, ctx.m('aluminium'), { ref: bf.x });
+  b.box({ ...bf, o: local(bf, 0, 0.012, 0.0172) }, 0.006, 0.0035, 0.0012, 0.0005, ctx.m('warning'));
+  // Adjusters on the shoulder straps: a buckle frame round the band.
+  for (const side of [-1, 1]) {
+    const x = side * 0.083;
+    const y = -backHy * 0.1;
+    b.box(faceL(local(backF, x, y, under(x, y) + 0.004), s), 0.028, 0.011, 0.0028, 0.0014, ctx.m('steel'));
+  }
 }
 
 /** Rubber bellows boot over a controller's gimbal: a cone of folds from rBottom to rTop over `height`. */

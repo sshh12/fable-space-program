@@ -55,9 +55,9 @@ export const sunEnters = (inward: Vec3, sunPart: Vec3): boolean => v3.dot(inward
  * to the outer end of its aperture seen along the sun; depth over the sphere (centre, radius) that holds
  * the interior. Null when the sun enters no window.
  */
-export function sunMapLayout(sunPart: Vec3, apertures: readonly ApertureMeta[], centre: Vec3, radius: number): SunMapLayout | null {
+export function sunMapLayout(sunPart: Vec3, apertures: readonly ApertureMeta[], centre: Vec3, radius: number, covered: readonly boolean[] = []): SunMapLayout | null {
   const l = v3.neg(v3.normalize(sunPart));
-  const lit = apertures.map((a, i) => ({ a, i })).filter(({ a }) => sunEnters(a.inward, sunPart)).slice(0, MAX_WINDOWS);
+  const lit = apertures.map((a, i) => ({ a, i })).filter(({ a, i }) => !covered[i] && sunEnters(a.inward, sunPart)).slice(0, MAX_WINDOWS);
   if (lit.length === 0) return null;
   const perSide = Math.ceil(Math.sqrt(lit.length));
   const k = 1 / (2 * radius);

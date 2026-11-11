@@ -43,6 +43,7 @@
     "cableGrey": { "shading": "standard", "albedo": [0.3, 0.31, 0.32], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.6, "grime": 0.4, "variation": 0.1 },
     "extinguisher": { "shading": "standard", "albedo": [0.48, 0.045, 0.03], "roughness": 0.32, "detail": "paint", "detailStrength": 0.6, "clearcoat": 0.6, "wear": { "amount": 0.4, "albedo": [0.5, 0.51, 0.5], "metallic": 0.85 }, "grime": 0.3, "variation": 0.05 },
     "pouch": { "shading": "cloth", "albedo": [0.52, 0.5, 0.43], "roughness": 0.85, "detail": "weave", "detailStrength": 1.0, "grime": 0.6, "variation": 0.1 },
+    "card": { "shading": "standard", "albedo": [0.74, 0.73, 0.68], "roughness": 0.85, "detail": "paint", "detailStrength": 0.3, "grime": 0.3, "variation": 0.05 },
     "velcro": { "shading": "cloth", "albedo": [0.6, 0.58, 0.52], "roughness": 0.95, "detail": "velcro", "detailStrength": 1.0, "grime": 0.7, "variation": 0.1 }
   },
   "shell": {
@@ -69,12 +70,12 @@
   },
   "console": {
     "distance": 0.55,
-    "depth": 0.16,
+    "depth": 0.6,
     "sections": [
       { "id": "left", "x": [-0.8, -0.27], "u": [-0.17, 0.22] },
       { "id": "centre", "x": [-0.27, 0.27], "u": [-0.17, 0.17] },
       { "id": "right", "x": [0.27, 0.8], "u": [-0.17, 0.22] },
-      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14, "depth": 0.07 },
+      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14, "depth": 0.6 },
       { "id": "lower", "x": [-0.78, 0.78], "u": [-0.36, -0.17], "tiltDeg": -30 }
     ],
     "displays": [
@@ -243,8 +244,8 @@
     "legendColor": [1.0, 0.93, 0.8],
     "cabinAlbedo": 0.5,
     "cabinArea": 29,
-    "plasmaLuminance": 320,
-    "plasmaColor": [1.0, 0.42, 0.24]
+    "plasmaLuminance": 50,
+    "plasmaColor": [1.0, 0.56, 0.72]
   },
   "experience": {
     "tunnel": { "onsetG": 6, "fullG": 11, "tau": 2.5, "maxDarken": 0.85 },

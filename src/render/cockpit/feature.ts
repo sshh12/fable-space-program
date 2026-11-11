@@ -31,7 +31,7 @@ import { MfdDisplays } from './displays';
 import { controlStates, instrumentSource, updateMemory, type ControlState, type InstrumentMemory } from './instruments';
 import { cockpitLayouts, DETAIL_KINDS, MAX_WINDOWS } from './layout';
 import { CabinProbe, PROBE_DEPTH_FORMAT, PROBE_FORMAT } from './probe';
-import { cabinSources, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
+import { cabinSources, coveredWindows, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 import { insideDistance, mouldOf } from './mould';
 import { bakeOcclusion, OCC_STRIDE, occlusionAt, occlusionSources, type VertexOcclusion } from './occlusion';
@@ -85,6 +85,8 @@ export interface CockpitFrameStats {
   patches: number;
   /** Whether the sun reaches the cabin this frame (the cabin sun map was rendered). */
   sunLit: boolean;
+  /** Windows another part of the vessel covers this frame (they let nothing in). */
+  covered: string[];
   tunnel: number;
   vibration: number;
   displayBrightness: number;
@@ -101,6 +103,12 @@ export interface CockpitFeature extends RenderFeature {
   controlStates(): readonly ControlState[];
   /** The baked occlusion stream of a layout (tests read it back). */
   occlusion(layout: string): GPUBuffer | undefined;
+  /**
+   * Diagnostic view of the interior (0 = the picture): 1 material ids, 2 the sun through the window
+   * apertures, 3 that times the cabin sun map, 4 probe reflection, 5 direct light of the polygon sources,
+   * 6 bounce light, 7 sunlight, 8 emission, 9 face normals, 10 baked ambient occlusion, 11 albedo.
+   */
+  setDebugView(view: number): void;
 }
 
 interface GpuModel {
@@ -203,7 +211,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let prevVib: Vec3 = v3.zero();
   let lastLod: LodName | null = null;
   let lastStates: ControlState[] = [];
-  const st: CockpitFrameStats = { active: false, layout: null, vesselId: null, vesselActive: false, lod: null, inside: false, triangles: 0, shadowTriangles: 0, polys: 0, patches: 0, sunLit: false, tunnel: 0, vibration: 0, displayBrightness: 0, prepareMs: 0 };
+  let debugView = 0;
+  const st: CockpitFrameStats = { active: false, layout: null, vesselId: null, vesselActive: false, lod: null, inside: false, triangles: 0, shadowTriangles: 0, polys: 0, patches: 0, sunLit: false, covered: [], tunnel: 0, vibration: 0, displayBrightness: 0, prepareMs: 0 };
 
   const pick = (frame: FrameContext): { gm: GpuModel; vessel: VesselSnapshot; part: PartSnapshot; vehicle: VehicleDef } | null => {
     const s = frame.snapshot;
@@ -233,6 +242,9 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     occlusion: (id) => models.get(id)?.occlusion,
     stats: () => ({ ...st }),
     controlStates: () => lastStates,
+    setDebugView(view) {
+      debugView = view;
+    },
 
     async init(c) {
       ctx = c;
@@ -504,11 +516,18 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const sunVis = frame.sun.illuminance > 0 ? sunVisibilityAt(vesselPos, frame.snapshot, defs) : 0;
       const sunPart = quat.rotateInv(q, frame.sun.dirRoot);
       const lightsOn = src.active && frame.snapshot.readouts.lightsOn;
-      const sources = cabinSources(model, sunVis > 0 ? { dirPart: sunPart, illuminance: frame.sun.illuminance * sunVis, color: frame.sun.color } : null, lightsOn);
+      // Windows another part of this vessel covers (the boost cover on the pad): they let nothing in.
+      const covered = coveredWindows(
+        model.windows.map((w) => w.id),
+        vessel.parts.filter((x) => x.instanceId !== part.instanceId).map((x) => x.def),
+        defs as unknown as Parameters<typeof coveredWindows>[2],
+      );
+      st.covered = model.windows.filter((_, i) => covered[i]).map((w) => w.id);
+      const sources = cabinSources(model, sunVis > 0 ? { dirPart: sunPart, illuminance: frame.sun.illuminance * sunVis, color: frame.sun.color } : null, lightsOn, covered);
       st.polys = sources.polys.length;
       st.patches = sources.polys.filter((x) => x.kind === 1).length;
-      // The sun reaches the cabin when it shines and some window faces it: then the cabin's sun map is drawn.
-      const sun = sunVis > 0 ? sunMapLayout(sunPart, model.windows.map((w) => w.aperture), gm.sunCentre, gm.sunRadius) : null;
+      // The sun reaches the cabin when it shines and some open window faces it: then the cabin's sun map is drawn.
+      const sun = sunVis > 0 ? sunMapLayout(sunPart, model.windows.map((w) => w.aperture), gm.sunCentre, gm.sunRadius, covered) : null;
       const sunLit = sun !== null;
       st.sunLit = sunLit;
       const near = nearestBody(vesselPos, frame.snapshot, defs);
@@ -547,6 +566,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         time: clock,
         camPart,
         inside,
+        debugView,
+        covered,
       });
       ctx.device.queue.writeBuffer(gm.cabin, 0, gm.cabinData);
       if (tunnel > 0.001) ctx.device.queue.writeBuffer(tunnelBuffer, 0, new Float32Array([tunnel, frame.displaySize[0] / frame.displaySize[1], tn.maxDarken, 0]));
@@ -870,8 +891,8 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   // Glass: every window pane, the display cover glasses and the attitude indicator's cover glass.
   const gv: number[] = [];
   const panes: { first: number; count: number; centre: Vec3 }[] = [];
-  // Last vertex attribute: (pane index, reflectance relative to bare glass): 1 for the windows and the
-  // attitude indicator, the coated cover glass's for the displays.
+  // Last vertex attribute: (window index + 1 on a window's cabin-side pane, else 0; reflectance relative to
+  // bare glass): 1 for the windows and the attitude indicator, the coated cover glass's for the displays.
   const fan = (out: number[], centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, index: number, reflectance: number): void => {
     const uvOf = (p: Vec3): [number, number] => [v3.dot(v3.sub(p, centre), ux), v3.dot(v3.sub(p, centre), uy)];
     for (let i = 0; i < outline.length; i++) {
@@ -881,9 +902,9 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
       }
     }
   };
-  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, reflectance = 1): void => {
+  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, reflectance = 1, tag = 0): void => {
     const firstV = gv.length / PANE_FLOATS;
-    fan(gv, centre, outline, n, ux, uy, panes.length, reflectance);
+    fan(gv, centre, outline, n, ux, uy, tag, reflectance);
     panes.push({ first: firstV, count: gv.length / PANE_FLOATS - firstV, centre });
   };
   // The window openings for the cabin probe: each window's cabin-side pane, tagged with the window's index.
@@ -891,7 +912,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   model.windows.forEach((w, wi) => {
     w.panes.forEach((pane, k) => {
       const centre = pane.outline.reduce((s, p) => v3.add(s, v3.scale(p, 1 / pane.outline.length)), v3.zero());
-      pushPane(centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y);
+      pushPane(centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y, 1, k === w.panes.length - 1 ? wi + 1 : 0);
       if (k === w.panes.length - 1) fan(pw, centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y, wi, 1);
     });
   });
@@ -921,7 +942,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
       const radial = v3.add(v3.scale(f.x, Math.cos(a)), v3.scale(f.y, Math.sin(a)));
       const p = v3.add(c, v3.add(v3.scale(radial, r), v3.scale(f.n, z - zRim)));
       const n = v3.normalize(v3.add(v3.scale(radial, r), v3.scale(f.n, z)));
-      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, panes.length, 0.95];
+      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, 0, 0.95];
     };
     const firstV = gv.length / PANE_FLOATS;
     for (let k = 0; k < rings; k++) {
@@ -1087,6 +1108,9 @@ interface CabinFrameInput {
   time: number;
   camPart: Vec3;
   inside: boolean;
+  debugView: number;
+  /** Per window: covered by another part of the vessel (lets nothing in). */
+  covered: readonly boolean[];
 }
 
 function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
@@ -1108,9 +1132,10 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
   const lc = L.lighting.legendColor;
   at(CABIN.legend, [lc[0] * L.lighting.legendLuminance, lc[1] * L.lighting.legendLuminance, lc[2] * L.lighting.legendLuminance, f.time]);
   const pl = L.lighting.plasmaLuminance * Math.max(0, f.plasma) ** 1.5;
-  // The shock layer's glow wanders between the layout's orange and a pink (nitrogen and oxygen lines).
-  const pink = 0.3 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 1.7 * f.time));
-  const pc = [L.lighting.plasmaColor[0] * (1 - pink) + 1.0 * pink, L.lighting.plasmaColor[1] * (1 - pink) + 0.42 * pink, L.lighting.plasmaColor[2] * (1 - pink) + 0.62 * pink];
+  // The shock layer's glow wanders between the layout's lavender-pink and a salmon (the air's nitrogen and
+  // oxygen lines against the ablator's sodium and carbon).
+  const salmon = 0.35 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 1.7 * f.time));
+  const pc = [L.lighting.plasmaColor[0] * (1 - salmon) + 1.0 * salmon, L.lighting.plasmaColor[1] * (1 - salmon) + 0.5 * salmon, L.lighting.plasmaColor[2] * (1 - salmon) + 0.4 * salmon];
   at(CABIN.plasma, [pc[0]! * pl, pc[1]! * pl, pc[2]! * pl, f.plasma]);
   at(CABIN.display, [L.lighting.displayLuminance, L.lighting.displayMinBrightness, L.lighting.displayFullAmbient, L.displays.pixelStructure[0]]);
   const windows = gm.model.windows.length;
@@ -1131,10 +1156,14 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
   at(CABIN.misc, [(T[0] + T[1] + T[2]) / 3, L.windows.dust, L.windows.scratches, L.windows.ior]);
   at(CABIN.tint, [per[0]!, per[1]!, per[2]!, 0]);
   at(CABIN.view, [f.camPart.x, f.camPart.y, f.camPart.z, f.inside ? 1 : 0]);
-  at(CABIN.glare, [L.windows.coverGlass.reflectance, L.windows.coverGlass.roughness, L.displays.pixelStructure[1], 0]);
+  at(CABIN.glare, [L.windows.coverGlass.reflectance, L.windows.coverGlass.roughness, L.displays.pixelStructure[1], f.debugView]);
   at(CABIN.ballOcc, gm.ballOcc);
   at(CABIN.glassSun, [T[0], T[1], T[2], n]);
   at(CABIN.apertures, gm.apertures);
+  // A covered window's aperture is shut (half height 0: the shaders skip it).
+  f.covered.forEach((c, i) => {
+    if (c) d[CABIN.apertures * 4 + 16 * i + 7] = 0;
+  });
   const r = mat3.fromQuat(f.q);
   const toRoot = (p: Vec3): Vec3 => ({ x: r[0] * p.x + r[1] * p.y + r[2] * p.z + f.origin.x, y: r[3] * p.x + r[4] * p.y + r[5] * p.z + f.origin.y, z: r[6] * p.x + r[7] * p.y + r[8] * p.z + f.origin.z });
   const dirRoot = (p: Vec3): Vec3 => ({ x: r[0] * p.x + r[1] * p.y + r[2] * p.z, y: r[3] * p.x + r[4] * p.y + r[5] * p.z, z: r[6] * p.x + r[7] * p.y + r[8] * p.z });

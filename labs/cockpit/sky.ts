@@ -109,15 +109,9 @@ struct LabPlasma { v: vec4f }   // rgb = shock-layer radiance (cd/m^2), w = inte
   let depth = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
   if (depth > 0.0 && length(positionFromDepth(in.uv, depth)) < 30.0) { return Out(vec4f(0.0)); }
   let r = march(in.uv, depth);
-  // Stand-in for the vfx shock layer seen through the windows during entry: a glowing sheath with streaks
-  // streaming past (the real one is the vfx package's plasma volume).
-  var glow = vec3f(0.0);
-  if (plasma.v.w > 0.0) {
-    let d = normalize(viewRay(in.uv));
-    let streak = 0.6 + 0.4 * valueNoise3(vec3f(d * 18.0 + vec3f(0.0, frame.time.x * 9.0, 0.0)), 7) + 0.3 * valueNoise3(vec3f(d * 70.0 + vec3f(0.0, frame.time.x * 31.0, 0.0)), 8);
-    glow = plasma.v.rgb * streak;
-  }
-  return Out(vec4f(writeHdr((r[1] + glow) * frame.exposure.x), 0.0));
+  // (The shock layer seen from inside during entry is drawn on the cabin's own panes by the cockpit, as in
+  // the integrated scene: the stand-in sky adds nothing for it.)
+  return Out(vec4f(writeHdr(r[1] * frame.exposure.x), 0.0));
 }
 `;
 
@@ -342,9 +336,7 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
     prepare(frame) {
       updateProbe(frame);
       const v = frame.snapshot.vessels.find((x) => x.id === frame.snapshot.activeVesselId);
-      const k = v?.aero.plasmaIntensity ?? 0;
-      const L = 25000 * Math.max(0, k) ** 1.5;
-      ctx.device.queue.writeBuffer(plasmaBuf, 0, new Float32Array([L, L * 0.42, L * 0.24, k]));
+      ctx.device.queue.writeBuffer(plasmaBuf, 0, new Float32Array([0, 0, 0, v?.aero.plasmaIntensity ?? 0]));
     },
     drawBackground(_frame, pass) {
       pass.setPipeline(sun.get());
