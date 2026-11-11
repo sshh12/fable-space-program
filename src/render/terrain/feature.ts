@@ -16,9 +16,10 @@ import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap, type ReliefFloor } from './lod';
 import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
-import { buildRecordConstants, resolveOwners, type PadDisc, type RecordContext } from './records';
+import { buildRecordConstants, type PadDisc, type RecordContext } from './records';
 import { RockRenderer } from './rocks';
-import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN_SHADOW_WGSL } from './shaders/common';
+import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN_SHADOW_WGSL, TILE_FRAME_BYTES, TILE_FRAME_FLOATS } from './shaders/common';
+import { REGOLITH_BRDF_WGSL } from './shaders/regolith';
 import { MATERIAL_UNIFORM_FLOATS, TERRAIN_GBUFFER_WGSL, TERRAIN_WATER_WGSL } from './shaders/surface';
 import { TileStreamer, type StreamBody, type StreamerOptions, type StreamStats } from './streamer';
 import type { BoundSphere } from './tileMath';
@@ -36,6 +37,13 @@ export interface TerrainFeatureOptions {
   preloadLevel?: number;
   /** Draw the rock field (default true). */
   rocks?: boolean;
+  /**
+   * Leave the rock draws to the companion feature `TerrainFeature.rocks` (default false: the terrain feature
+   * draws them in its own hooks). Performance attribution times every feature's hooks in passes of their
+   * own, so a lab that adds the companion gets the rocks' G-buffer and shadow cost as measured lines
+   * (`<id>-rocks.gbuffer`, `<id>-rocks.shadow`).
+   */
+  rocksSeparate?: boolean;
 }
 
 export interface TerrainBodyStats {
@@ -59,7 +67,25 @@ export interface TerrainDebug {
    * selectMs = CPU time of the frame's LOD selection (every body, what is drawn); prefetchMs = time of the
    * request-only passes that ran in the same frame (two frames in eight: 2 s ahead, predicted impact).
    */
-  stats(): { stream: StreamStats; bodies: Record<string, TerrainBodyStats>; records: number; instances: number; selectMs: number; prefetchMs: number; rocks: { instances: number; chunks: number; triangles: number } };
+  stats(): {
+    stream: StreamStats;
+    bodies: Record<string, TerrainBodyStats>;
+    records: number;
+    instances: number;
+    selectMs: number;
+    prefetchMs: number;
+    /**
+     * Main-thread time of the last frame, ms: `hooks` = everything the feature did (prepare and every draw
+     * hook); its parts: `stream` (requests, dispatch, uploads; `upload` of it is the tile uploads), `build`
+     * (records, instance lists, uniforms), `rocks` (rock lists of prepare and of the shadow hooks), `shadow`
+     * (caster walks and draws of the terrain), `gbuffer`. `hooks - upload` is what the budget line
+     * "quadtree + cascades" covers; uploads have their own line.
+     */
+    cpu: { hooks: number; stream: number; upload: number; build: number; rocks: number; shadow: number; gbuffer: number };
+    /** Bytes of the detail material arrays of every body. */
+    materialBytes: number;
+    rocks: { instances: number; chunks: number; triangles: number };
+  };
   /** Delay every tile by `ms` between the worker and the upload (tests of late streaming). */
   setStreamDelay(ms: number): void;
   /**
@@ -83,6 +109,8 @@ export interface TerrainDebug {
 
 export interface TerrainFeature extends RenderFeature {
   readonly debug: TerrainDebug;
+  /** With `rocksSeparate`: the feature that draws the rock field (add it after this one); else null. */
+  readonly rocks: RenderFeature | null;
 }
 
 interface BodyState {
@@ -116,6 +144,9 @@ interface BodyState {
   speed: number;
   velFixed: Vec3;
   cap: number;
+  /** Per level, for this frame: the morph floor of the warp cap and 1 / range(level). */
+  capMorph: Float32Array;
+  invRange: Float32Array;
   K: number;
   pinNear: boolean | null;
   observers: LodObserverFixed[];
@@ -123,7 +154,6 @@ interface BodyState {
   stats: TerrainBodyStats;
 }
 
-const MAX_RECORDS = 6144;
 const MAX_INSTANCES = 1 << 16;
 /** The second selection pass (prefetch) runs every this many frames. */
 const PREFETCH_EVERY = 8;
@@ -167,11 +197,19 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let instanceBuffer: GPUBuffer;
   let tileSampler: GPUSampler;
   let noiseView: GPUTextureView;
-  const records = new Float32Array(MAX_RECORDS * RECORD_FLOATS);
-  const recordsI = new Int32Array(records.buffer);
+  // A resident tile has one slot in both record buffers: its layer in the height pool. The constants go up
+  // once, when the tile is first drawn; the two camera-dependent rows of the tiles in use go up every frame.
+  let slots = 0;
+  let records: Float32Array<ArrayBuffer>;
+  let tileFrames: Float32Array<ArrayBuffer>;
+  let tileFrameBuffer: GPUBuffer;
+  let recordDirty: [number, number] = [Infinity, -1];
+  let frameDirty: [number, number] = [Infinity, -1];
+  let recordsUsed = 0;
   const instances = new Uint32Array(MAX_INSTANCES);
-  let recordCount = 0;
-  let recordsUploaded = 0;
+  // Scratch lists of buildBody: whole tiles, quadrants, and the same for the sea sheet.
+  const listScratch = [new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2)];
+  const listCount = [0, 0, 0, 0];
   let instanceCount = 0;
   let frameIndex = 0;
   let initialised = false;
@@ -184,7 +222,13 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let rocksEnabled = true;
   let selectMs = 0;
   let prefetchMs = 0;
+  const cpu = { hooks: 0, stream: 0, upload: 0, build: 0, rocks: 0, shadow: 0, gbuffer: 0 };
+  // Time of the frame's prepare and of all its draw hooks so far, ms.
+  let prepareMs = 0;
+  let drawMs = 0;
   const casterScratch: DrawItem[] = [];
+  const cascadeA = new Float64Array(9);
+  const cascadeB = new Float64Array(3);
 
   const reportOverflow = (what: string): void => {
     if (overflowReported) return;
@@ -192,41 +236,43 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     coreOf(ctx).reportError(`terrain: ${what} buffer is full; some tiles are not drawn this frame`);
   };
 
-  /** Record index of a tile for this frame (records are written once per frame per tile). */
+  /** Record slot of a tile, with its camera-dependent rows written for this frame (once per frame per tile). */
   const recordOf = (b: BodyState, n: TileNode, time: number): number => {
-    if (n.recordFrame === frameIndex) return n.recordIndex;
-    if (recordCount >= MAX_RECORDS) {
-      reportOverflow('tile record');
-      return -1;
-    }
+    const slot = n.heightLayer;
+    if (n.recordFrame === frameIndex) return slot;
     if (!n.constants) {
-      resolveOwners(n, b.stream.albedoLayer, b.stream.nightLayer);
       n.constants = buildRecordConstants(n, b.recordCtx);
+      records.set(n.constants, slot * RECORD_FLOATS);
+      if (slot < recordDirty[0]) recordDirty[0] = slot;
+      if (slot > recordDirty[1]) recordDirty[1] = slot;
     }
-    const idx = recordCount++;
-    const o = idx * RECORD_FLOATS;
-    records.set(n.constants, o);
-    const p = mat3.mulVec(b.rot, n.origin);
-    const q = mat3.mulVec(b.prevRot, n.origin);
     let force = 0;
     let invRange = 0;
     if (n.level > 0 && morphEnabled) {
       const age = time - n.activatedAt;
       const fade = n.fadeSeconds > 0 && age < n.fadeSeconds ? 1 - smooth01(age / n.fadeSeconds) : 0;
-      force = Math.max(fade, capMorph(n.level, b.cap));
-      invRange = 1 / levelRange(n.level, b.K, b.tree.faceSize, b.relief);
+      force = Math.max(fade, b.capMorph[n.level]!);
+      invRange = b.invRange[n.level]!;
     }
-    records[o] = p.x + b.centre.x;
-    records[o + 1] = p.y + b.centre.y;
-    records[o + 2] = p.z + b.centre.z;
-    records[o + 3] = force;
-    records[o + 4] = q.x + b.prevCentre.x;
-    records[o + 5] = q.y + b.prevCentre.y;
-    records[o + 6] = q.z + b.prevCentre.z;
-    records[o + 7] = invRange;
-    n.recordIndex = idx;
+    const m = b.rot;
+    const q = b.prevRot;
+    const g = n.origin;
+    const f = tileFrames;
+    const o = slot * TILE_FRAME_FLOATS;
+    f[o] = m[0] * g.x + m[1] * g.y + m[2] * g.z + b.centre.x;
+    f[o + 1] = m[3] * g.x + m[4] * g.y + m[5] * g.z + b.centre.y;
+    f[o + 2] = m[6] * g.x + m[7] * g.y + m[8] * g.z + b.centre.z;
+    f[o + 3] = force;
+    f[o + 4] = q[0] * g.x + q[1] * g.y + q[2] * g.z + b.prevCentre.x;
+    f[o + 5] = q[3] * g.x + q[4] * g.y + q[5] * g.z + b.prevCentre.y;
+    f[o + 6] = q[6] * g.x + q[7] * g.y + q[8] * g.z + b.prevCentre.z;
+    f[o + 7] = invRange;
+    if (slot < frameDirty[0]) frameDirty[0] = slot;
+    if (slot > frameDirty[1]) frameDirty[1] = slot;
+    n.recordIndex = slot;
     n.recordFrame = frameIndex;
-    return idx;
+    recordsUsed++;
+    return slot;
   };
 
   const pushInstance = (record: number, quadrant: number): void => {
@@ -237,10 +283,15 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     instances[instanceCount++] = record | ((quadrant + 1) << 20);
   };
 
+  /** Send the rows written since the last call: one contiguous range of each buffer. */
   const uploadRecords = (): void => {
-    if (recordCount > recordsUploaded) {
-      device.queue.writeBuffer(recordBuffer, recordsUploaded * RECORD_BYTES, records, recordsUploaded * RECORD_FLOATS, (recordCount - recordsUploaded) * RECORD_FLOATS);
-      recordsUploaded = recordCount;
+    if (recordDirty[1] >= recordDirty[0]) {
+      device.queue.writeBuffer(recordBuffer, recordDirty[0] * RECORD_BYTES, records, recordDirty[0] * RECORD_FLOATS, (recordDirty[1] - recordDirty[0] + 1) * RECORD_FLOATS);
+      recordDirty = [Infinity, -1];
+    }
+    if (frameDirty[1] >= frameDirty[0]) {
+      device.queue.writeBuffer(tileFrameBuffer, frameDirty[0] * TILE_FRAME_BYTES, tileFrames, frameDirty[0] * TILE_FRAME_FLOATS, (frameDirty[1] - frameDirty[0] + 1) * TILE_FRAME_FLOATS);
+      frameDirty = [Infinity, -1];
     }
   };
 
@@ -268,7 +319,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const nightSource = surface.nightLights ? manifest.layers[TILE_LAYER.night] : undefined;
     const nightLayer = nightSource ? { ...nightSource, globalMaxLevel: Math.max(0, nightSource.globalMaxLevel - Math.round(params.nightMinMip)), coverage: {} } : undefined;
     const stream: StreamBody = { id: def.id, tileset: terrain.tileset, tree, albedoLayer, nightLayer };
-    const recordCtx: RecordContext = { tree, detailScales: [params.detailScale0M, params.detailScale1M, params.detailScale2M], orbitalWavelength: params.orbitalWavelengthM, pads, albedoLayer };
+    const recordCtx: RecordContext = { tree, detailScales: [params.detailScale0M, params.detailScale1M, params.detailScale2M, params.detailScale3M], orbitalWavelength: params.orbitalWavelengthM, pads, albedoLayer, nightLayer };
     const materialData = buildMaterialUniform(set, params);
     const materialBuffer = device.createBuffer({ label: `terrain.material.${def.id}`, size: MATERIAL_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(materialBuffer, 0, materialData);
@@ -281,6 +332,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         { binding: 1, resource: { buffer: recordBuffer } },
         { binding: 2, resource: { buffer: instanceBuffer } },
         { binding: 3, resource: streamer.heights.view },
+        { binding: 4, resource: { buffer: tileFrameBuffer } },
       ],
     });
     const zero: [number, number] = [0, 0];
@@ -313,6 +365,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       speed: 0,
       velFixed: v3.zero(),
       cap: terrain.maxRenderLevel + 1,
+      capMorph: new Float32Array(terrain.maxRenderLevel + 2),
+      invRange: new Float32Array(terrain.maxRenderLevel + 2),
       K: 0,
       pinNear: null,
       observers: [],
@@ -334,10 +388,12 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           { binding: 2, resource: streamer.aux.view },
           { binding: 3, resource: streamer.night.view },
           { binding: 4, resource: tileSampler },
-          { binding: 5, resource: b.set.viewA },
-          { binding: 6, resource: b.set.viewB },
-          { binding: 7, resource: noiseView },
-          { binding: 8, resource: { buffer: b.materialBuffer } },
+          { binding: 5, resource: b.set.viewNearA },
+          { binding: 6, resource: b.set.viewNearB },
+          { binding: 7, resource: b.set.viewWideA },
+          { binding: 8, resource: b.set.viewWideB },
+          { binding: 9, resource: noiseView },
+          { binding: 10, resource: { buffer: b.materialBuffer } },
           ...nearField.entries(),
         ],
       });
@@ -385,6 +441,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
 
     const targetK = lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad);
     b.K = b.K === 0 || cut ? targetK : b.K + (targetK - b.K) * (1 - Math.exp(-dt / 0.25));
+    for (let level = 1; level < b.invRange.length; level++) {
+      b.invRange[level] = 1 / levelRange(level, b.K, b.tree.faceSize, b.relief);
+      b.capMorph[level] = capMorph(level, b.cap);
+    }
 
     // Observers: the camera first, then the frame's LOD observers that are not the camera itself.
     const obs: LodObserverFixed[] = [{ pos: cam, r: camR, dir: camDir, bias: 0, vessel: false }];
@@ -470,24 +530,36 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const time = clock;
     const items = b.tree.items;
     const sea = b.seaLevel;
-    const list = (water: boolean, quads: boolean): [number, number] => {
-      const start = instanceCount;
-      for (const it of items) {
-        if (!it.visible || it.quadrant >= 0 !== quads) continue;
-        if (water && !(it.node.hMin < sea)) continue;
-        const rec = recordOf(b, it.node, time);
-        if (rec >= 0) pushInstance(rec, it.quadrant);
-      }
-      return [start, instanceCount - start];
-    };
-    // Records of selected tiles outside the view are still written: shadow cascades draw them.
-    for (const it of items) recordOf(b, it.node, time);
-    b.lists.full = list(false, false);
-    b.lists.quad = list(false, true);
-    if (b.hasOcean) {
-      b.lists.waterFull = list(true, false);
-      b.lists.waterQuad = list(true, true);
+    const ocean = b.hasOcean;
+    listCount.fill(0);
+    let visible = 0;
+    let deepest = 0;
+    // One pass: the record of every selected tile (those outside the view too: shadow cascades draw them),
+    // and the four lists of what is in view.
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]!;
+      const n = it.node;
+      const rec = recordOf(b, n, time);
+      if (n.level > deepest) deepest = n.level;
+      if (!it.visible) continue;
+      visible++;
+      const word = rec | ((it.quadrant + 1) << 20);
+      const k = it.quadrant >= 0 ? 1 : 0;
+      listScratch[k]![listCount[k]!++] = word;
+      if (ocean && n.hMin < sea) listScratch[k + 2]![listCount[k + 2]!++] = word;
     }
+    const lists: [number, number][] = [];
+    for (let k = 0; k < 4; k++) {
+      const count = Math.min(listCount[k]!, MAX_INSTANCES - instanceCount);
+      if (count < listCount[k]!) reportOverflow('tile instance');
+      instances.set(listScratch[k]!.subarray(0, count), instanceCount);
+      lists.push([instanceCount, count]);
+      instanceCount += count;
+    }
+    b.lists.full = lists[0]!;
+    b.lists.quad = lists[1]!;
+    b.lists.waterFull = lists[2]!;
+    b.lists.waterQuad = lists[3]!;
 
     const u = b.uniformData;
     u.fill(0);
@@ -500,8 +572,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const p = b.params;
     const w = morphWindow(b.K);
     u.set([b.def.radius, sea, b.observers.length, b.bodyIndex], 40);
-    u.set([w.m0, 1 / (w.m1 - w.m0), 0, 0], 44);
-    u.set([1 / p.detailScale0M, 1 / p.detailScale1M, 1 / p.detailScale2M, p.detailFadeDistanceM], 48);
+    u.set([w.m0, 1 / (w.m1 - w.m0), p.detailFadeDistanceM, 0], 44);
+    u.set([1 / p.detailScale0M, 1 / p.detailScale1M, 1 / p.detailScale2M, 1 / p.detailScale3M], 48);
     u.set([p.orbitalWavelengthM, p.orbitalAlbedoStrength, p.orbitalReliefStrength, p.orbitalOctaves], 52);
     u.set([p.nightLuminance, p.nightOnCos, p.nightOffCos, b.stream.nightLayer ? 1 : 0], 56);
     u.set([b.def.render.surface!.brdf === 'hapke' ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.hasOcean ? 1 : 0, b.tree.faceSize, p.nightClusterM], 60);
@@ -511,12 +583,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
 
     const s = b.stats;
     s.selected = items.length;
-    s.visible = 0;
-    s.deepestLevel = 0;
-    for (const it of items) {
-      if (it.visible) s.visible++;
-      if (it.node.level > s.deepestLevel) s.deepestLevel = it.node.level;
-    }
+    s.visible = visible;
+    s.deepestLevel = deepest;
     s.waterTiles = b.lists.waterFull[1] + b.lists.waterQuad[1];
     s.casters = 0;
     s.cap = b.cap;
@@ -539,7 +607,50 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     }
   };
 
-  const activeBodies = (): BodyState[] => bodies.filter((b) => b.frameIndex === frameIndex);
+  const active: BodyState[] = [];
+
+  /** The body whose ground a shadow cascade holds. */
+  const cascadeBody = (frame: FrameContext, cascade: ShadowCascadeView): BodyState | undefined => {
+    if (cascade.anchor.kind === 'body') return active.find((b) => b.id === cascade.anchor.id);
+    // A vessel-anchored cascade is re-rendered every frame, so the ground under the vessel may be in it.
+    let target: BodyState | undefined;
+    let best = Infinity;
+    for (const b of active) {
+      const alt = frame.bodies[b.bodyIndex]!.cameraAltitude;
+      if (alt < best) {
+        best = alt;
+        target = b;
+      }
+    }
+    return target;
+  };
+
+  const rocksSeparate = options.rocksSeparate === true && options.rocks !== false;
+  const rocksFeature: RenderFeature | null = rocksSeparate
+    ? {
+        id: `${options.id ?? 'terrain'}-rocks`,
+        order: (options.order ?? -50) + 1,
+        // The rock field belongs to the terrain feature, which builds it in its own init and prepare.
+        init() {},
+        drawGBuffer(_frame, pass) {
+          if (!initialised) return;
+          const t0 = performance.now();
+          rocks?.drawGBuffer(pass);
+          const dt = performance.now() - t0;
+          cpu.rocks += dt;
+          drawMs += dt;
+        },
+        drawShadow(frame, pass, cascade: ShadowCascadeView) {
+          if (!initialised) return;
+          const t0 = performance.now();
+          const b = cascadeBody(frame, cascade);
+          if (b) rocks?.drawShadow(pass, cascade, b.id);
+          const dt = performance.now() - t0;
+          cpu.rocks += dt;
+          drawMs += dt;
+        },
+      }
+    : null;
 
   const feature: TerrainFeature = {
     id: options.id ?? 'terrain',
@@ -556,6 +667,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const source = createFetchTileSource(ctx.tilesUrl);
       const defs: DefLibrary = ctx.defs;
       const candidates = Object.values(defs.bodies).filter((d) => d.terrain && d.render.surface && (!baked || baked.includes(d.terrain.tileset)));
+      // Regolith surfaces are lit by this package's version of the regolith BRDF (shaders/regolith.ts).
+      if (candidates.some((d) => d.render.surface!.brdf === 'hapke')) ctx.shaders.register('brdf_regolith', REGOLITH_BRDF_WGSL);
 
       streamer = new TileStreamer(
         ctx,
@@ -563,7 +676,11 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         candidates.map((d) => d.id),
         options.streamer,
       );
-      recordBuffer = device.createBuffer({ label: 'terrain.records', size: MAX_RECORDS * RECORD_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      slots = streamer.options.tileLayers;
+      records = new Float32Array(slots * RECORD_FLOATS);
+      tileFrames = new Float32Array(slots * TILE_FRAME_FLOATS);
+      recordBuffer = device.createBuffer({ label: 'terrain.records', size: slots * RECORD_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      tileFrameBuffer = device.createBuffer({ label: 'terrain.tileFrames', size: slots * TILE_FRAME_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       instanceBuffer = device.createBuffer({ label: 'terrain.instances', size: MAX_INSTANCES * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       fullMesh = createGridMesh(device, GRID_QUADS, 'terrain.grid');
       quadMesh = createGridMesh(device, GRID_QUADS / 2, 'terrain.gridQuadrant');
@@ -578,9 +695,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           { binding: 1, visibility: VF, buffer: { type: 'read-only-storage' } },
           { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
           { binding: 3, visibility: GPUShaderStage.VERTEX, texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' } },
+          { binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         ],
       });
-      nearField = core.createSceneBindings(3, 9, ['oceanNearField']);
+      nearField = core.createSceneBindings(3, 11, ['oceanNearField']);
       const F = GPUShaderStage.FRAGMENT;
       const arr = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: F, texture: { sampleType: 'float', viewDimension: '2d-array' } });
       surfaceLayout = device.createBindGroupLayout({
@@ -593,8 +711,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           { binding: 4, visibility: F, sampler: { type: 'filtering' } },
           arr(5),
           arr(6),
-          { binding: 7, visibility: F, texture: { sampleType: 'float', viewDimension: '3d' } },
-          { binding: 8, visibility: F, buffer: { type: 'uniform' } },
+          arr(7),
+          arr(8),
+          { binding: 9, visibility: F, texture: { sampleType: 'float', viewDimension: '3d' } },
+          { binding: 10, visibility: F, buffer: { type: 'uniform' } },
           ...nearField.layoutEntries,
         ],
       });
@@ -662,13 +782,13 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
 
     prepare(frame: FrameContext) {
       if (!initialised) return;
+      const t0 = performance.now();
       frameIndex = frame.frameIndex;
       clock += frame.realDt;
-      recordCount = 0;
-      recordsUploaded = 0;
+      recordsUsed = 0;
       instanceCount = 0;
-      const t0 = performance.now();
       prefetchMs = 0;
+      active.length = 0;
       ctx.perf.cpuBegin('terrain.select');
       for (const b of bodies) {
         const bodyIndex = frame.bodies.findIndex((p) => p.id === b.id);
@@ -680,24 +800,37 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         b.prevRot = mat3.fromQuat(pose.prevQFixedToRoot);
         b.centre = pose.centerRelCam;
         b.prevCentre = pose.prevCenterRelCam;
+        active.push(b);
         selectBody(b, frame, pose);
       }
       ctx.perf.cpuEnd('terrain.select');
-      selectMs = performance.now() - t0 - prefetchMs;
+      const t1 = performance.now();
+      selectMs = t1 - t0 - prefetchMs;
       ctx.perf.cpuBegin('terrain.stream');
       streamer.update(frameIndex);
       ctx.perf.cpuEnd('terrain.stream');
-      for (const b of activeBodies()) buildBody(b, frame, frame.bodies[b.bodyIndex]!);
+      const t2 = performance.now();
+      for (const b of active) buildBody(b, frame, frame.bodies[b.bodyIndex]!);
       uploadRecords();
       if (instanceCount > 0) device.queue.writeBuffer(instanceBuffer, 0, instances, 0, instanceCount);
-      rocks?.prepare(frame, rocksEnabled ? activeBodies().map((b) => ({ id: b.id, bodyIndex: b.bodyIndex, observers: b.observers })) : []);
+      const t3 = performance.now();
+      rocks?.prepare(frame, rocksEnabled ? active.map((b) => ({ id: b.id, bodyIndex: b.bodyIndex, observers: b.observers })) : []);
       ctx.perf.counter('terrain.tiles', bodies.reduce((a, b) => a + b.stats.visible, 0));
       ctx.perf.counter('terrain.queue', streamer.stats().queued + streamer.stats().loading);
+      const t4 = performance.now();
+      cpu.stream = t2 - t1;
+      cpu.upload = streamer.stats().lastUploadMs;
+      cpu.build = t3 - t2;
+      cpu.rocks = t4 - t3;
+      cpu.shadow = 0;
+      cpu.gbuffer = 0;
+      prepareMs = t4 - t0;
+      drawMs = 0;
     },
 
     drawGBuffer(_frame, pass) {
       if (!initialised) return;
-      const active = activeBodies();
+      const t0 = performance.now();
       pass.setBindGroup(1, emptyGroup);
       // The sea-level sheet first: the seabed under it then fails the depth test.
       let pipelineSet = false;
@@ -720,31 +853,21 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         pass.setBindGroup(3, surfaceGroupOf(b));
         drawLists(pass, l.full, l.quad);
       }
-      rocks?.drawGBuffer(pass);
+      if (!rocksSeparate) rocks?.drawGBuffer(pass);
+      const dt = performance.now() - t0;
+      cpu.gbuffer += dt;
+      drawMs += dt;
     },
 
     drawShadow(frame, pass, cascade: ShadowCascadeView) {
       if (!initialised) return;
-      const active = activeBodies();
-      let target: BodyState | undefined;
-      if (cascade.anchor.kind === 'body') target = active.find((b) => b.id === cascade.anchor.id);
-      else {
-        // A vessel-anchored cascade is re-rendered every frame, so the ground under the vessel may be in it.
-        let best = Infinity;
-        for (const b of active) {
-          const alt = frame.bodies[b.bodyIndex]!.cameraAltitude;
-          if (alt < best) {
-            best = alt;
-            target = b;
-          }
-        }
-      }
-      if (!target) return;
-      const b = target;
+      const t0 = performance.now();
+      const b = cascadeBody(frame, cascade);
+      if (!b) return;
       // Cascade clip coordinates of a body-fixed point: clip_r = A_r . p + B_r (orthographic, w = 1).
       const m = cascade.viewProj;
-      const A = new Float64Array(9);
-      const B = new Float64Array(3);
+      const A = cascadeA;
+      const B = cascadeB;
       for (let r = 0; r < 3; r++) {
         for (let j = 0; j < 3; j++) A[r * 3 + j] = m[r]! * b.rot[j]! + m[4 + r]! * b.rot[3 + j]! + m[8 + r]! * b.rot[6 + j]!;
         B[r] = m[r]! * b.centre.x + m[4 + r]! * b.centre.y + m[8 + r]! * b.centre.z + m[12 + r]!;
@@ -762,28 +885,33 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const targetLevel = Math.max(0, Math.min(capMaxLevel(b.cap, b.def.terrain!.maxRenderLevel), Math.ceil(Math.log2(b.tree.faceSize / quadsWanted))));
       casterScratch.length = 0;
       b.tree.selectCasters(frameIndex, targetLevel, inside, casterScratch);
-      if (casterScratch.length === 0) return;
-      const time = clock;
-      const fullStart = instanceCount;
-      for (const it of casterScratch) {
-        if (it.quadrant >= 0) continue;
-        const rec = recordOf(b, it.node, time);
-        if (rec >= 0) pushInstance(rec, -1);
+      if (casterScratch.length > 0) {
+        const time = clock;
+        const fullStart = instanceCount;
+        for (const it of casterScratch) {
+          if (it.quadrant >= 0) continue;
+          pushInstance(recordOf(b, it.node, time), -1);
+        }
+        const quadStart = instanceCount;
+        for (const it of casterScratch) {
+          if (it.quadrant < 0) continue;
+          pushInstance(recordOf(b, it.node, time), it.quadrant);
+        }
+        const end = instanceCount;
+        uploadRecords();
+        if (end > fullStart) device.queue.writeBuffer(instanceBuffer, fullStart * 4, instances, fullStart, end - fullStart);
+        b.stats.casters += end - fullStart;
+        pass.setPipeline(shadowPipeline.get());
+        pass.setBindGroup(2, b.tileGroup);
+        drawLists(pass, [fullStart, quadStart - fullStart], [quadStart, end - quadStart]);
       }
-      const quadStart = instanceCount;
-      for (const it of casterScratch) {
-        if (it.quadrant < 0) continue;
-        const rec = recordOf(b, it.node, time);
-        if (rec >= 0) pushInstance(rec, it.quadrant);
+      const t1 = performance.now();
+      cpu.shadow += t1 - t0;
+      if (!rocksSeparate && casterScratch.length > 0) {
+        rocks?.drawShadow(pass, cascade, b.id);
+        cpu.rocks += performance.now() - t1;
       }
-      const end = instanceCount;
-      uploadRecords();
-      if (end > fullStart) device.queue.writeBuffer(instanceBuffer, fullStart * 4, instances, fullStart, end - fullStart);
-      b.stats.casters += end - fullStart;
-      pass.setPipeline(shadowPipeline.get());
-      pass.setBindGroup(2, b.tileGroup);
-      drawLists(pass, [fullStart, quadStart - fullStart], [quadStart, end - quadStart]);
-      rocks?.drawShadow(pass, cascade, b.id);
+      drawMs += performance.now() - t0;
     },
 
     isIdle() {
@@ -793,6 +921,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       // A tile still relaxing from its fade-in changes the image.
       return bodies.every((b) => b.frameIndex !== frameIndex || b.tree.fading === 0);
     },
+
+    rocks: rocksFeature,
 
     dispose() {
       streamer?.dispose();
@@ -804,10 +934,12 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         return {
           stream: streamer.stats(),
           bodies: Object.fromEntries(bodies.map((b) => [b.id, { ...b.stats }])),
-          records: recordCount,
+          records: recordsUsed,
           instances: instanceCount,
           selectMs,
           prefetchMs,
+          cpu: { ...cpu, hooks: prepareMs + drawMs },
+          materialBytes: bodies.reduce((a, b) => a + b.set.bytes, 0),
           rocks: rocks ? rocks.stats() : { instances: 0, chunks: 0, triangles: 0 },
         };
       },

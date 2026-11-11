@@ -40,6 +40,8 @@ export interface TerrainLab {
   setNearField(v: { bodyId: string; fadeStart: number; fadeEnd: number } | null): void;
   setBallast(iterations: number): void;
   ballast(): number;
+  /** Latitude and longitude (deg, body-fixed) of the point of a body under the camera. */
+  cameraSubPoint(bodyId: string): { latDeg: number; lonDeg: number };
   /** Copy the canvas (as presented this frame) into a 2-D canvas of the given size and return its RGBA bytes. Call right after renderFrame(). */
   grab(width: number, height: number): Uint8ClampedArray;
   /**
@@ -146,9 +148,11 @@ async function boot(): Promise<void> {
       provider = await createTerrainProvider(ctx.defs, tileSource);
       return provider;
     },
-    { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0' },
+    // With performance attribution the rocks are a feature of their own, so their passes are timed alone.
+    { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0', rocksSeparate: query.get('perf') === 'features' },
   );
   await app.renderer.addFeature(terrain);
+  if (terrain.rocks) await app.renderer.addFeature(terrain.rocks);
   if (query.has('delay')) terrain.debug.setStreamDelay(Number(query.get('delay')));
   if (query.get('morph') === '0') terrain.debug.setMorphEnabled(false);
 
@@ -178,6 +182,11 @@ async function boot(): Promise<void> {
     setNearField: (v) => nearField.set(v),
     setBallast: (n) => ballast.set(n),
     ballast: () => ballast.get(),
+    cameraSubPoint(bodyId) {
+      const b = app.snapshot().bodies.find((x) => x.id === bodyId)!;
+      const ll = dirToLatLon(quat.rotateInv(b.qFixedToRoot, v3.sub(app.cameraState().positionRoot, b.rRoot)));
+      return { latDeg: ll.lat / DEG, lonDeg: ll.lon / DEG };
+    },
     grab: (() => {
       let scratch: HTMLCanvasElement | null = null;
       return (width: number, height: number): Uint8ClampedArray => {

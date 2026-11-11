@@ -1,67 +1,332 @@
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "id": "earth-volcanic-coast",
-  "size": 512,
+  "nearSize": 1024,
+  "wideSize": 512,
+  "scalesM": [
+    2.0,
+    14.0,
+    110.0,
+    900.0
+  ],
   "materials": [
     {
       "id": "pahoehoe",
-      "albedoHeight": "pahoehoe.ah.webp",
-      "normalRoughAo": "pahoehoe.nra.webp",
-      "meanAlbedo": [
-        0.06596,
-        0.0609,
-        0.0591
-      ],
-      "meanRoughness": 0.8132,
-      "heightGain": 0.357
+      "layers": [
+        {
+          "albedoHeight": "pahoehoe-near.ah.webp",
+          "normalRoughAo": "pahoehoe-near.nra.webp",
+          "meanAlbedo": [
+            0.06199,
+            0.05803,
+            0.05532
+          ],
+          "meanRoughness": 0.72,
+          "reliefM": 0.02765,
+          "meanHeight": 0.3999
+        },
+        {
+          "albedoHeight": "pahoehoe-mid.ah.webp",
+          "normalRoughAo": "pahoehoe-mid.nra.webp",
+          "meanAlbedo": [
+            0.06187,
+            0.05823,
+            0.05492
+          ],
+          "meanRoughness": 0.72,
+          "reliefM": 0.14742,
+          "meanHeight": 0.6305
+        },
+        {
+          "albedoHeight": "pahoehoe-far.ah.webp",
+          "normalRoughAo": "pahoehoe-far.nra.webp",
+          "meanAlbedo": [
+            0.06171,
+            0.05821,
+            0.05507
+          ],
+          "meanRoughness": 0.72,
+          "reliefM": 0.6269,
+          "meanHeight": 0.4311
+        },
+        {
+          "albedoHeight": "pahoehoe-aerial.ah.webp",
+          "normalRoughAo": "pahoehoe-aerial.nra.webp",
+          "meanAlbedo": [
+            0.06179,
+            0.05822,
+            0.05482
+          ],
+          "meanRoughness": 0.72,
+          "reliefM": 2.98672,
+          "meanHeight": 0.5874
+        }
+      ]
     },
     {
       "id": "aa",
-      "albedoHeight": "aa.ah.webp",
-      "normalRoughAo": "aa.nra.webp",
-      "meanAlbedo": [
-        0.03404,
-        0.02837,
-        0.02569
-      ],
-      "meanRoughness": 0.9134,
-      "heightGain": 0.2807
+      "layers": [
+        {
+          "albedoHeight": "aa-near.ah.webp",
+          "normalRoughAo": "aa-near.nra.webp",
+          "meanAlbedo": [
+            0.03986,
+            0.03396,
+            0.03056
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.04602,
+          "meanHeight": 0.5411
+        },
+        {
+          "albedoHeight": "aa-mid.ah.webp",
+          "normalRoughAo": "aa-mid.nra.webp",
+          "meanAlbedo": [
+            0.03964,
+            0.03412,
+            0.03022
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.28577,
+          "meanHeight": 0.4963
+        },
+        {
+          "albedoHeight": "aa-far.ah.webp",
+          "normalRoughAo": "aa-far.nra.webp",
+          "meanAlbedo": [
+            0.03992,
+            0.03411,
+            0.03004
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.79623,
+          "meanHeight": 0.5078
+        },
+        {
+          "albedoHeight": "aa-aerial.ah.webp",
+          "normalRoughAo": "aa-aerial.nra.webp",
+          "meanAlbedo": [
+            0.03985,
+            0.03415,
+            0.03009
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 3.0654,
+          "meanHeight": 0.3651
+        }
+      ]
     },
     {
       "id": "black-sand",
-      "albedoHeight": "black-sand.ah.webp",
-      "normalRoughAo": "black-sand.nra.webp",
-      "meanAlbedo": [
-        0.05761,
-        0.05594,
-        0.05208
-      ],
-      "meanRoughness": 0.89,
-      "heightGain": 0.0824
+      "layers": [
+        {
+          "albedoHeight": "black-sand-near.ah.webp",
+          "normalRoughAo": "black-sand-near.nra.webp",
+          "meanAlbedo": [
+            0.05181,
+            0.05004,
+            0.0486
+          ],
+          "meanRoughness": 0.8784,
+          "reliefM": 0.01358,
+          "meanHeight": 0.1728
+        },
+        {
+          "albedoHeight": "black-sand-mid.ah.webp",
+          "normalRoughAo": "black-sand-mid.nra.webp",
+          "meanAlbedo": [
+            0.05163,
+            0.05007,
+            0.04861
+          ],
+          "meanRoughness": 0.8784,
+          "reliefM": 0.06757,
+          "meanHeight": 0.2712
+        },
+        {
+          "albedoHeight": "black-sand-far.ah.webp",
+          "normalRoughAo": "black-sand-far.nra.webp",
+          "meanAlbedo": [
+            0.05204,
+            0.05014,
+            0.04762
+          ],
+          "meanRoughness": 0.8784,
+          "reliefM": 0.1967,
+          "meanHeight": 0.5173
+        },
+        {
+          "albedoHeight": "black-sand-aerial.ah.webp",
+          "normalRoughAo": "black-sand-aerial.nra.webp",
+          "meanAlbedo": [
+            0.05168,
+            0.05028,
+            0.04803
+          ],
+          "meanRoughness": 0.8784,
+          "reliefM": 0.72753,
+          "meanHeight": 0.5596
+        }
+      ]
     },
     {
       "id": "scrub-soil",
-      "albedoHeight": "scrub-soil.ah.webp",
-      "normalRoughAo": "scrub-soil.nra.webp",
-      "meanAlbedo": [
-        0.15362,
-        0.10688,
-        0.07243
-      ],
-      "meanRoughness": 0.9208,
-      "heightGain": 0.2288
+      "layers": [
+        {
+          "albedoHeight": "scrub-soil-near.ah.webp",
+          "normalRoughAo": "scrub-soil-near.nra.webp",
+          "meanAlbedo": [
+            0.14966,
+            0.10495,
+            0.07351
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.01557,
+          "meanHeight": 0.4683
+        },
+        {
+          "albedoHeight": "scrub-soil-mid.ah.webp",
+          "normalRoughAo": "scrub-soil-mid.nra.webp",
+          "meanAlbedo": [
+            0.14969,
+            0.10522,
+            0.07255
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.07805,
+          "meanHeight": 0.5015
+        },
+        {
+          "albedoHeight": "scrub-soil-far.ah.webp",
+          "normalRoughAo": "scrub-soil-far.nra.webp",
+          "meanAlbedo": [
+            0.14906,
+            0.10548,
+            0.07244
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 0.31275,
+          "meanHeight": 0.5837
+        },
+        {
+          "albedoHeight": "scrub-soil-aerial.ah.webp",
+          "normalRoughAo": "scrub-soil-aerial.nra.webp",
+          "meanAlbedo": [
+            0.14866,
+            0.10545,
+            0.07328
+          ],
+          "meanRoughness": 0.9216,
+          "reliefM": 1.35713,
+          "meanHeight": 0.5523
+        }
+      ]
+    },
+    {
+      "id": "pasture",
+      "layers": [
+        {
+          "albedoHeight": "pasture-near.ah.webp",
+          "normalRoughAo": "pasture-near.nra.webp",
+          "meanAlbedo": [
+            0.07595,
+            0.09404,
+            0.04165
+          ],
+          "meanRoughness": 0.902,
+          "reliefM": 0.0166,
+          "meanHeight": 0.546
+        },
+        {
+          "albedoHeight": "pasture-mid.ah.webp",
+          "normalRoughAo": "pasture-mid.nra.webp",
+          "meanAlbedo": [
+            0.07491,
+            0.09535,
+            0.03971
+          ],
+          "meanRoughness": 0.902,
+          "reliefM": 0.0779,
+          "meanHeight": 0.5414
+        },
+        {
+          "albedoHeight": "pasture-far.ah.webp",
+          "normalRoughAo": "pasture-far.nra.webp",
+          "meanAlbedo": [
+            0.07476,
+            0.09551,
+            0.03971
+          ],
+          "meanRoughness": 0.902,
+          "reliefM": 0.25854,
+          "meanHeight": 0.6152
+        },
+        {
+          "albedoHeight": "pasture-aerial.ah.webp",
+          "normalRoughAo": "pasture-aerial.nra.webp",
+          "meanAlbedo": [
+            0.07478,
+            0.09539,
+            0.03996
+          ],
+          "meanRoughness": 0.902,
+          "reliefM": 0.84535,
+          "meanHeight": 0.5854
+        }
+      ]
     },
     {
       "id": "concrete-apron",
-      "albedoHeight": "concrete-apron.ah.webp",
-      "normalRoughAo": "concrete-apron.nra.webp",
-      "meanAlbedo": [
-        0.2812,
-        0.27085,
-        0.25655
-      ],
-      "meanRoughness": 0.8909,
-      "heightGain": 0.0165
+      "layers": [
+        {
+          "albedoHeight": "concrete-apron-near.ah.webp",
+          "normalRoughAo": "concrete-apron-near.nra.webp",
+          "meanAlbedo": [
+            0.29986,
+            0.29273,
+            0.27587
+          ],
+          "meanRoughness": 0.86,
+          "reliefM": 0.00163,
+          "meanHeight": 0.6789
+        },
+        {
+          "albedoHeight": "concrete-apron-mid.ah.webp",
+          "normalRoughAo": "concrete-apron-mid.nra.webp",
+          "meanAlbedo": [
+            0.29981,
+            0.29295,
+            0.27577
+          ],
+          "meanRoughness": 0.86,
+          "reliefM": 0.00706,
+          "meanHeight": 0.7183
+        },
+        {
+          "albedoHeight": "concrete-apron-far.ah.webp",
+          "normalRoughAo": "concrete-apron-far.nra.webp",
+          "meanAlbedo": [
+            0.29976,
+            0.29289,
+            0.2756
+          ],
+          "meanRoughness": 0.86,
+          "reliefM": 0.01501,
+          "meanHeight": 0.6908
+        },
+        {
+          "albedoHeight": "concrete-apron-aerial.ah.webp",
+          "normalRoughAo": "concrete-apron-aerial.nra.webp",
+          "meanAlbedo": [
+            0.29982,
+            0.29291,
+            0.27553
+          ],
+          "meanRoughness": 0.86,
+          "reliefM": 0.0459,
+          "meanHeight": 0.5721
+        }
+      ]
     }
   ],
   "classWeights": {
@@ -79,20 +344,23 @@
       "black-sand": 1.0
     },
     "sparseScrub": {
-      "scrub-soil": 0.65,
-      "pahoehoe": 0.35
+      "scrub-soil": 0.7,
+      "pahoehoe": 0.3
     },
     "grass": {
-      "scrub-soil": 1.0
+      "pasture": 0.8,
+      "scrub-soil": 0.2
     },
     "shrub": {
-      "scrub-soil": 1.0
+      "pasture": 0.55,
+      "scrub-soil": 0.45
     },
     "trees": {
-      "scrub-soil": 1.0
+      "pasture": 1.0
     },
     "crop": {
-      "scrub-soil": 1.0
+      "pasture": 0.7,
+      "scrub-soil": 0.3
     },
     "builtUp": {
       "concrete-apron": 0.6,
@@ -102,7 +370,7 @@
       "scrub-soil": 1.0
     },
     "wetland": {
-      "scrub-soil": 1.0
+      "pasture": 1.0
     }
   },
   "classOrbital": {
@@ -157,19 +425,55 @@
   },
   "channelGain": {
     "aa": 0.6,
-    "scrub-soil": -0.4,
-    "black-sand": -0.3
+    "scrub-soil": -0.3,
+    "black-sand": -0.3,
+    "pasture": -0.5
   },
   "slopeGain": {
     "aa": 0.8,
     "pahoehoe": 0.2,
     "black-sand": -1.0,
-    "scrub-soil": -0.5
+    "scrub-soil": -0.3,
+    "pasture": -0.6
   },
   "noiseGain": {
     "aa": 0.5,
-    "pahoehoe": -0.5
+    "pahoehoe": -0.5,
+    "scrub-soil": 0.35,
+    "pasture": -0.35
   },
   "apronMaterial": "concrete-apron",
-  "rockMaterial": "aa"
+  "rockMaterial": "aa",
+  "albedoGain": {
+    "pahoehoe": [
+      0.0,
+      -3.0,
+      0.0
+    ],
+    "aa": [
+      0.0,
+      -3.0,
+      0.0
+    ],
+    "black-sand": [
+      0.0,
+      -2.0,
+      0.0
+    ],
+    "scrub-soil": [
+      0.0,
+      1.5,
+      -1.5
+    ],
+    "pasture": [
+      0.0,
+      0.0,
+      5.0
+    ]
+  },
+  "hexBlend": [
+    6.0,
+    -6.0
+  ],
+  "terrainRelief": 0.25
 }

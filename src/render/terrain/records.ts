@@ -1,13 +1,13 @@
 /**
- * Per-tile instance records (the CPU side of `TileRecord` in shaders/common.ts): the constant rows are
- * built once when a tile is first drawn, the two camera-dependent rows are written every frame.
+ * Per-tile records (the CPU side of `TileRecord` in shaders/common.ts): the constants of a resident tile,
+ * built once when it is first drawn. What changes with the camera is `TileFrame`, written by the feature.
  */
 import { COVERAGE_BLEND_TILES, layerHasTile, type TileLayerManifest } from '@/core/contracts/terrain';
 import { dirToFaceSt, type FaceId } from '@/core/geo/cubeSphere';
 import type { Vec3 } from '@/core/math';
 import { NIGHT_DARK, type BodyQuadtree, type TileNode } from './quadtree';
 import { RECORD_FLOATS } from './shaders/common';
-import { NOISE_PERIOD } from './shaders/surface';
+import { HEX_PERIOD, NOISE_PERIOD } from './shaders/surface';
 import { frameDir, snapDirection } from './tileMath';
 
 
@@ -19,13 +19,15 @@ export interface PadDisc {
 
 export interface RecordContext {
   tree: BodyQuadtree;
-  /** Tiling lengths of the three detail scales, m. */
-  detailScales: readonly [number, number, number];
+  /** Tiling lengths of the four detail scales, m. */
+  detailScales: readonly [number, number, number, number];
   /** Base wavelength of the orbital noise, m. */
   orbitalWavelength: number;
   pads: readonly PadDisc[];
   /** Imagery (albedo) layer of the body's tile set. */
   albedoLayer: TileLayerManifest;
+  /** Night-light layer as the renderer reads it, when the body shows night lights. */
+  nightLayer: TileLayerManifest | undefined;
 }
 
 const mod = (x: number, p: number): number => ((x % p) + p) % p;
@@ -118,8 +120,9 @@ function uvInto(n: TileNode, owner: TileNode, out: Float32Array, o: number): voi
 }
 
 /**
- * Constant rows of the record of a READY tile whose ancestors are READY. Rows 0 and 1 (camera-dependent)
- * are left zero.
+ * The record of a READY tile whose ancestors are READY. Image owners of the tile and of its parent are
+ * resolved here when they are not yet known: a parent that has never been drawn itself (a camera cut onto
+ * resident tiles draws the children first) must still be the image the morph blends towards.
  */
 export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Array {
   const f = new Float32Array(RECORD_FLOATS);
@@ -127,38 +130,41 @@ export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Ar
   const tree = ctx.tree;
   const fr = n.frame;
   const parent = n.parent ?? n;
+  if (n.imageOwner === null) resolveOwners(n, ctx.albedoLayer, ctx.nightLayer);
+  if (parent.imageOwner === null) resolveOwners(parent, ctx.albedoLayer, ctx.nightLayer);
   const size = tree.faceSize / 2 ** n.level;
-  // rows 2..4: frame
-  f.set([fr.cHat.x, fr.cHat.y, fr.cHat.z, n.h0], 8);
-  f.set([fr.a.x, fr.a.y, fr.a.z, 0.015 * size + 0.1], 12);
-  f.set([fr.b.x, fr.b.y, fr.b.z, n.level], 16);
-  // row 5: layers
-  i.set([n.heightLayer, parent.heightLayer, n.normalLayer, parent.normalLayer], 20);
-  // row 6: images
+  // rows 0..2: frame
+  f.set([fr.cHat.x, fr.cHat.y, fr.cHat.z, n.h0], 0);
+  f.set([fr.a.x, fr.a.y, fr.a.z, 0.015 * size + 0.1], 4);
+  f.set([fr.b.x, fr.b.y, fr.b.z, n.level], 8);
+  // row 3: layers
+  i.set([n.heightLayer, parent.heightLayer, n.normalLayer, parent.normalLayer], 12);
+  // row 4: images
   const io = n.imageOwner!;
-  const pio = parent.imageOwner ?? io;
+  const pio = parent.imageOwner!;
   const no = n.nightOwner;
-  const pno = parent.nightOwner ?? no;
+  const pno = parent.nightOwner;
   const nightLayer = (o: TileNode | null): number => (o && o.nightLayer >= 0 ? o.nightLayer : -1);
-  i.set([io.imageLayer, pio.imageLayer, nightLayer(no), nightLayer(pno)], 24);
-  // row 7: parent uv, slope scales
-  f.set([(n.key.x & 1) * 0.5, (n.key.y & 1) * 0.5, n.slopeScale, parent.slopeScale], 28);
-  if (n.level === 0) f.set([0, 0], 28);
-  // rows 8..11: image and night uv transforms
-  uvInto(n, io, f, 32);
-  uvInto(n, pio, f, 36);
-  if (no) uvInto(n, no, f, 40);
-  if (pno) uvInto(n, pno, f, 44);
-  // rows 12..15: planet-fixed tiling origins and the imagery level at the corners
+  i.set([io.imageLayer, pio.imageLayer, nightLayer(no), nightLayer(pno)], 16);
+  // row 5: parent uv, slope scales
+  f.set([(n.key.x & 1) * 0.5, (n.key.y & 1) * 0.5, n.slopeScale, parent.slopeScale], 20);
+  if (n.level === 0) f.set([0, 0], 20);
+  // rows 6..9: image and night uv transforms
+  uvInto(n, io, f, 24);
+  uvInto(n, pio, f, 28);
+  if (no) uvInto(n, no, f, 32);
+  if (pno) uvInto(n, pno, f, 36);
+  // rows 10..13: planet-fixed tiling origins and the imagery level at the corners. The detail origins are
+  // kept modulo HEX_PERIOD tiling lengths: the hexagon pattern that breaks the repetition has that period.
   const o = n.origin;
   const corner = (u: number, v: number): number => imageryLevelAt(ctx.albedoLayer, frameDir(fr, u, v));
-  const s = ctx.detailScales;
-  f.set([mod(o.x, s[0]), mod(o.y, s[0]), mod(o.z, s[0]), corner(0, 0)], 48);
-  f.set([mod(o.x, s[1]), mod(o.y, s[1]), mod(o.z, s[1]), corner(1, 0)], 52);
-  f.set([mod(o.x, s[2]), mod(o.y, s[2]), mod(o.z, s[2]), corner(0, 1)], 56);
+  const s = ctx.detailScales.map((x) => x * HEX_PERIOD) as [number, number, number, number];
+  f.set([mod(o.x, s[0]), mod(o.y, s[0]), mod(o.z, s[0]), corner(0, 0)], 40);
+  f.set([mod(o.x, s[1]), mod(o.y, s[1]), mod(o.z, s[1]), corner(1, 0)], 44);
+  f.set([mod(o.x, s[2]), mod(o.y, s[2]), mod(o.z, s[2]), corner(0, 1)], 48);
   const w = ctx.orbitalWavelength;
-  f.set([mod(o.x / w, NOISE_PERIOD), mod(o.y / w, NOISE_PERIOD), mod(o.z / w, NOISE_PERIOD), corner(1, 1)], 60);
-  // row 16: nearest launch-pad apron
+  f.set([mod(o.x / w, NOISE_PERIOD), mod(o.y / w, NOISE_PERIOD), mod(o.z / w, NOISE_PERIOD), corner(1, 1)], 52);
+  // row 14: nearest launch-pad apron
   let best: PadDisc | null = null;
   let bestD = Infinity;
   for (const p of ctx.pads) {
@@ -168,12 +174,19 @@ export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Ar
       bestD = d;
     }
   }
-  if (best) f.set([best.centre.x - o.x, best.centre.y - o.y, best.centre.z - o.z, best.radius], 64);
-  // row 17: flags
+  if (best) f.set([best.centre.x - o.x, best.centre.y - o.y, best.centre.z - o.z, best.radius], 56);
+  // row 15: flags
   const [slideU, slideV] = snapDirection(n.key.face);
-  i[68] = (pio !== io ? 1 : 0) | (nightLayer(pno) !== nightLayer(no) || pno !== no ? 2 : 0) | (slideU > 0 ? 4 : 0) | (slideV > 0 ? 8 : 0);
+  i[60] = (pio !== io ? 1 : 0) | (nightLayer(pno) !== nightLayer(no) || pno !== no ? 2 : 0) | (slideU > 0 ? 4 : 0) | (slideV > 0 ? 8 : 0);
+  // row 16: tiling origin of the fourth detail scale
+  f.set([mod(o.x, s[3]), mod(o.y, s[3]), mod(o.z, s[3]), 0], 64);
   return f;
 }
+
+/** Bit of the record's flag word: the parent samples another image than the tile (the morph blends the two). */
+export const RECORD_FLAG_PARENT_IMAGE = 1;
+/** Float index of the flag word in a record. */
+export const RECORD_FLAGS_AT = 60;
 
 /** Layer value for "this tile's night image is dark". Re-exported for the streamer. */
 export { NIGHT_DARK };

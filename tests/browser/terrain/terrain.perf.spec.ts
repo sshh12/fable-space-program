@@ -9,26 +9,34 @@ test.use({ viewport: { width: 2560, height: 1440 } });
  *   terrain G-buffer incl. far water sheet   1.5 (pad, ascent, LEO), 1.8 (lunar descent)      p99
  *   terrain shadow casting                   0.5 (pad, ascent), 0.4 (LEO), 0.6 (lunar)        amortised mean
  *   rocks, G-buffer + shadow                 0.15 (pad), 0.3 (lunar descent)
- * and of section 17: quadtree selection under 1 ms of CPU, uploads within 8 tiles / 2 ms per frame, no
- * frame over 33 ms in steady flight, about 1.1 GB of terrain pools.
+ * and of section 17: main-thread time of the feature ("quadtree + cascades") under 1 ms, uploads within 8
+ * tiles / 2 ms per frame, no frame over 33 ms in steady flight, about 1.1 GB of terrain pools.
  *
  * Method (render-core hand-off 4.1): attribution mode (every feature hook in its own pass), governor off,
  * and a ballast pass of about 7 ms so the GPU runs at its working clock; the idle-GPU numbers are logged
- * for the record. Terrain and rocks share one feature (one hook), so every view is measured without the
- * rock field and, where rocks exist, with it: the rocks' line is the difference.
+ * for the record. With attribution on, the lab adds the rock field as a feature of its own
+ * (TerrainFeatureOptions.rocksSeparate), so the rocks' line is measured directly from its two passes.
  *
- * Other agents' browsers use the same GPU while this runs (the GPU lock only keeps other PERF specs away),
- * and their work lands in our timestamps: two measurements of the same scene differed by up to 0.4 ms.
- * Contention only ever adds time, so each configuration is measured in three interleaved rounds and the
- * smallest p99 / mean is taken.
+ * Other agents' browsers use the same GPU and the same cores while this runs (the GPU lock only keeps other
+ * PERF specs away), and their work lands in our timestamps: two measurements of the same scene differed by
+ * up to 0.4 ms. Contention only ever adds time, so each view is measured in three rounds and the smallest
+ * p99 / mean of each line is taken.
+ *
+ * The CPU line: `cpu.hooks` of the feature's debug statistics is everything the terrain does on the main
+ * thread in a frame (prepare and every draw hook, rocks included); the tile uploads of the frame have their
+ * own budget line and are subtracted. The 99th percentile over 200 frames is asserted.
  */
 
 interface Measured {
   gbuffer: number;
   shadow: number;
+  rocksGbuffer: number;
+  rocksShadow: number;
   ballast: number;
   selectP99: number;
-  selectMax: number;
+  hooksP99: number;
+  hooksMedian: number;
+  parts: { stream: number; build: number; rocks: number; shadow: number; gbuffer: number };
   cpuP99: number;
   quality: number;
   scale: number;
@@ -40,20 +48,34 @@ async function measure(page: Page, frames: number): Promise<Measured> {
     await window.__test!.waitFrames(90);
     window.__test!.resetPerf();
     const select: number[] = [];
+    const hooks: number[] = [];
+    const parts = { stream: 0, build: 0, rocks: 0, shadow: 0, gbuffer: 0 };
     for (let i = 0; i < n; i++) {
       await window.__test!.waitFrames(1);
-      select.push(t.debug.stats().selectMs);
+      const st = t.debug.stats();
+      select.push(st.selectMs);
+      hooks.push(st.cpu.hooks - st.cpu.upload);
+      parts.stream += (st.cpu.stream - st.cpu.upload) / n;
+      parts.build += st.cpu.build / n;
+      parts.rocks += st.cpu.rocks / n;
+      parts.shadow += st.cpu.shadow / n;
+      parts.gbuffer += st.cpu.gbuffer / n;
     }
     select.sort((a, b) => a - b);
+    hooks.sort((a, b) => a - b);
     const passes = window.__lab!.renderer.passStats();
     const perf = window.__test!.perf()!;
     return {
       gbuffer: passes['terrain.gbuffer']?.p99 ?? 0,
       shadow: passes['terrain.shadow']?.mean ?? 0,
+      rocksGbuffer: passes['terrain-rocks.gbuffer']?.p99 ?? 0,
+      rocksShadow: passes['terrain-rocks.shadow']?.mean ?? 0,
       ballast: passes['lab-ballast.burn']?.p50 ?? 0,
       selectP99: select[Math.floor(select.length * 0.99)]!,
-      selectMax: select[select.length - 1]!,
-      cpuP99: perf.features.terrain?.cpuMs ?? 0,
+      hooksP99: hooks[Math.floor(hooks.length * 0.99)]!,
+      hooksMedian: hooks[hooks.length >> 1]!,
+      parts,
+      cpuP99: (perf.features.terrain?.cpuMs ?? 0) + (perf.features['terrain-rocks']?.cpuMs ?? 0),
       quality: perf.qualityScale,
       scale: perf.renderScale,
     };
@@ -77,11 +99,16 @@ interface PerfView {
   name: string;
   body: 'earth' | 'moon';
   query: Record<string, string | number>;
+  /** rocks: the budget of the rock field where the view must hold rocks; null where it holds none. */
   budget: { gbuffer: number; shadow: number; rocks: number | null };
 }
 
 const VIEWS: PerfView[] = [
-  { name: 'pad', body: 'earth', query: { body: 'earth', lat: PAD.lat - 0.0009, lon: PAD.lon, agl: 1.7, heading: 60, pitch: -4, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: 0.15 } },
+  { name: 'pad', body: 'earth', query: { body: 'earth', lat: PAD.lat - 0.0009, lon: PAD.lon, agl: 1.7, heading: 60, pitch: -4, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
+  // The pad itself holds no rocks (none inside the flattened disc): the rock line of the pad checkpoint is
+  // measured at eye height on the stony ground 1 km south-west of it, the nearest place where the height
+  // authority's rock field is dense (4,800 rocks within 250 m, 890 of them collidable).
+  { name: 'shore rocks', body: 'earth', query: { body: 'earth', lat: 18.981197, lon: -155.609964, agl: 1.7, heading: 200, pitch: -8, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: 0.15 } },
   { name: '10 km', body: 'earth', query: { body: 'earth', lat: PAD.lat, lon: PAD.lon, alt: 10e3, heading: 340, pitch: -25, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
   { name: 'LEO', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 250e3, heading: 20, pitch: -40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
   { name: 'lunar orbit', body: 'moon', query: { body: 'moon', lat: 1.5, lon: 21.5, alt: 100e3, heading: 80, pitch: -30, sun: '92,10' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: null } },
@@ -89,48 +116,63 @@ const VIEWS: PerfView[] = [
 ];
 
 for (const v of VIEWS) {
-  test(`terrain GPU budget at 1440p: ${v.name}`, async ({ page, pageLog }) => {
+  test(`terrain GPU and CPU budget at 1440p: ${v.name}`, async ({ page, pageLog }) => {
     test.setTimeout(30 * 60_000);
     await withGpuLock(async () => {
       await openLab(page, { scene: v.body === 'moon' ? 'lunarOrbit' : 'lowOrbit', paused: 1, perf: 'features', scale: 1, governor: 'off', ...v.query });
       await settle(page, 30);
       const size = await page.evaluate(() => window.__lab!.renderer.frameContext!.renderSize);
       expect(size).toEqual([2560, 1440]);
-      await page.evaluate(() => window.__terrain!.debug.setRocksEnabled(false));
       const idle = await measure(page, 200);
       await calibrateBallast(page, 7);
-      const best = (a: Measured | null, b: Measured): Measured =>
-        a === null ? b : { ...b, gbuffer: Math.min(a.gbuffer, b.gbuffer), shadow: Math.min(a.shadow, b.shadow), selectP99: Math.min(a.selectP99, b.selectP99), selectMax: Math.min(a.selectMax, b.selectMax), cpuP99: Math.min(a.cpuP99, b.cpuP99) };
-      let bareBest: Measured | null = null;
-      let fullBest: Measured | null = null;
+      let best: Measured | null = null;
       for (let round = 0; round < 3; round++) {
-        await page.evaluate(() => window.__terrain!.debug.setRocksEnabled(false));
-        bareBest = best(bareBest, await measure(page, 200));
-        await page.evaluate(() => window.__terrain!.debug.setRocksEnabled(true));
-        await settle(page, 30);
-        fullBest = best(fullBest, await measure(page, 200));
+        const m = await measure(page, 200);
+        best =
+          best === null
+            ? m
+            : {
+                ...m,
+                gbuffer: Math.min(best.gbuffer, m.gbuffer),
+                shadow: Math.min(best.shadow, m.shadow),
+                rocksGbuffer: Math.min(best.rocksGbuffer, m.rocksGbuffer),
+                rocksShadow: Math.min(best.rocksShadow, m.rocksShadow),
+                selectP99: Math.min(best.selectP99, m.selectP99),
+                hooksP99: Math.min(best.hooksP99, m.hooksP99),
+                hooksMedian: Math.min(best.hooksMedian, m.hooksMedian),
+                parts: m.hooksP99 < best.hooksP99 ? m.parts : best.parts,
+                cpuP99: Math.min(best.cpuP99, m.cpuP99),
+              };
       }
-      const bare = bareBest!;
-      const full = fullBest!;
+      const m = best!;
       const st = await terrainStats(page);
       const b = st.bodies[v.body]!;
-      const rocks = Math.max(0, full.gbuffer - bare.gbuffer) + Math.max(0, full.shadow - bare.shadow);
+      const rocks = m.rocksGbuffer + m.rocksShadow;
+      const part = (x: number): string => x.toFixed(3);
       console.log(
-        `${v.name}: terrain G-buffer p99 ${bare.gbuffer.toFixed(3)} ms (budget ${v.budget.gbuffer}), shadows amortised ${bare.shadow.toFixed(3)} ms (budget ${v.budget.shadow}), ` +
-          `rocks ${rocks.toFixed(3)} ms${v.budget.rocks === null ? '' : ` (budget ${v.budget.rocks})`} [${st.rocks.instances} instances, ${st.rocks.triangles} triangles]; ` +
-          `with an idle GPU: G-buffer ${idle.gbuffer.toFixed(3)}, shadows ${idle.shadow.toFixed(3)}; ballast ${bare.ballast.toFixed(1)} ms; ` +
+        `${v.name}: terrain G-buffer p99 ${m.gbuffer.toFixed(3)} ms (budget ${v.budget.gbuffer}), shadows amortised ${m.shadow.toFixed(3)} ms (budget ${v.budget.shadow}), ` +
+          `rocks ${rocks.toFixed(3)} ms = G-buffer p99 ${m.rocksGbuffer.toFixed(3)} + shadows amortised ${m.rocksShadow.toFixed(3)}${v.budget.rocks === null ? '' : ` (budget ${v.budget.rocks})`} [${st.rocks.instances} instances, ${st.rocks.triangles} triangles]; ` +
+          `with an idle GPU: G-buffer ${idle.gbuffer.toFixed(3)}, shadows ${idle.shadow.toFixed(3)}; ballast ${m.ballast.toFixed(1)} ms; ` +
           `${b.visible}/${b.selected} tiles, level ${b.deepestLevel}, ${b.waterTiles} water, ${b.casters} casters; ` +
-          `selection CPU p99 ${full.selectP99.toFixed(3)} ms (max ${full.selectMax.toFixed(3)}), terrain hooks CPU p99 ${full.cpuP99.toFixed(3)} ms`,
+          `main thread without uploads: p99 ${m.hooksP99.toFixed(3)} ms, median ${m.hooksMedian.toFixed(3)} (budget 1; selection p99 ${m.selectP99.toFixed(3)}; mean parts: streaming ${part(m.parts.stream)}, records and lists ${part(m.parts.build)}, ` +
+          `rocks ${part(m.parts.rocks)}, shadow hooks ${part(m.parts.shadow)}, G-buffer hook ${part(m.parts.gbuffer)}); the renderer's own figure for the hooks: p99 ${m.cpuP99.toFixed(3)} ms; ` +
+          `detail material arrays ${(st.materialBytes / 2 ** 20).toFixed(0)} MiB`,
       );
       await shot(page, `perf-${v.name.replace(/ /g, '-')}`);
-      expect(bare.ballast).toBeGreaterThan(5);
-      expect(full.quality).toBe(1);
-      expect(full.scale).toBe(1);
-      expect(bare.gbuffer).toBeGreaterThan(0);
-      expect(bare.gbuffer).toBeLessThanOrEqual(v.budget.gbuffer);
-      expect(bare.shadow).toBeLessThanOrEqual(v.budget.shadow);
-      if (v.budget.rocks !== null) expect(rocks).toBeLessThanOrEqual(v.budget.rocks);
-      expect(full.selectP99).toBeLessThan(1);
+      expect(m.ballast).toBeGreaterThan(5);
+      expect(m.quality).toBe(1);
+      expect(m.scale).toBe(1);
+      expect(m.gbuffer).toBeGreaterThan(0);
+      expect(m.gbuffer).toBeLessThanOrEqual(v.budget.gbuffer);
+      expect(m.shadow).toBeLessThanOrEqual(v.budget.shadow);
+      if (v.budget.rocks !== null) {
+        // The line is only worth something where there are rocks to draw.
+        expect(st.rocks.instances).toBeGreaterThan(100);
+        expect(m.rocksGbuffer).toBeGreaterThan(0);
+        expect(rocks).toBeLessThanOrEqual(v.budget.rocks);
+      }
+      expect(m.selectP99).toBeLessThan(1);
+      expect(m.hooksP99, 'main-thread time of the terrain feature without tile uploads, p99').toBeLessThan(1);
       await expectNoErrors(page, pageLog);
     });
   });
@@ -225,27 +267,46 @@ test('a 60 s descent at 1440p: no frame over 33 ms, uploads within budget, pools
     expect(r.selectP99).toBeLessThan(1);
     expect(r.totalP99).toBeLessThan(1.5);
     expect(r.maxUploadTiles).toBeLessThanOrEqual(8);
-    // The budget is 8 tiles or 2 ms: the loop stops before the tile that would pass 2 ms by its running
-    // estimate, so the 99th percentile sits at the budget; a single slow copy can still land above it.
-    expect(r.uploadMsP99).toBeLessThan(2.5);
+    // The budget is 8 tiles or 2 ms. The loop stops before the tile that would pass 2 ms by its running
+    // estimate (with a margin), and never uploads less than one tile: the 99th percentile is held to the
+    // budget; a single frame may overshoot when one copy is slow (a first use of a layer, a busy GPU
+    // process), tolerated up to three budgets, and no frame of the descent may exceed 33 ms because of it.
+    expect(r.uploadMsP99).toBeLessThanOrEqual(2);
+    expect(r.maxUploadMs).toBeLessThan(6);
     expect(r.poolBytes / 2 ** 30).toBeLessThan(1.15);
     expect(r.uploaded).toBeGreaterThan(200);
     await expectNoErrors(page, pageLog);
   });
 });
 
-test('50x warp in a 200 km orbit for 60 s: the tile queue stays bounded and no frame exceeds 33 ms', async ({ page, pageLog }) => {
-  test.setTimeout(30 * 60_000);
-  await withGpuLock(async () => {
-    // The lab camera rides with the vessel and looks down past it at the ground track.
-    await openLab(page, { scene: 'lowOrbit', perf: 'features', scale: 1, governor: 'off', vessel: 'active', offset: '0,0,40', look: '0,0,-1000', sun: '105,40' });
-    await settle(page, 30);
-    await calibrateBallast(page, 7);
-    const r = await page.evaluate(async () => {
+interface WarpResult {
+  ok: boolean;
+  factor: number;
+  frames: number;
+  over33: number;
+  maxDelta: number;
+  maxQueue: number;
+  meanQueue: number;
+  minLevel: number;
+  maxLevel: number;
+  minVisible: number;
+  cap: number;
+  capMin: number;
+  speed: number;
+  uploaded: number;
+  cancelled: number;
+  evicted: number;
+}
+
+/** Fly `seconds` at a warp level with the sun kept 40 degrees above the ground under the camera. */
+async function flyWarp(page: Page, level: number, seconds: number): Promise<WarpResult> {
+  return page.evaluate(
+    async ([level, seconds]) => {
       const lab = window.__lab!;
       const t = window.__terrain!;
-      // WARP_LEVELS[6] = 50.
-      const res = window.__test!.commands!.setWarpLevel(6);
+      const daylight = (): void => t.setSun({ kind: 'site', bodyId: 'earth', ...t.cameraSubPoint('earth'), azDeg: 105, elDeg: 40 });
+      const res = window.__test!.commands!.setWarpLevel(level!);
+      lab.onFrame(daylight);
       await window.__test!.waitFrames(300);
       const factor = lab.snapshot().warp.factor;
       let last = -1;
@@ -257,9 +318,12 @@ test('50x warp in a 200 km orbit for 60 s: the tile queue stays bounded and no f
       let queueSum = 0;
       let minLevel = 99;
       let maxLevel = 0;
+      let minVisible = Infinity;
+      let capMin = Infinity;
       const before = t.debug.stats().stream;
       await new Promise<void>((resolve) => {
         lab.onFrame(() => {
+          daylight();
           const now = performance.now();
           if (t0 < 0) t0 = now;
           if (last >= 0) {
@@ -270,17 +334,21 @@ test('50x warp in a 200 km orbit for 60 s: the tile queue stays bounded and no f
           }
           last = now;
           const st = t.debug.stats();
+          const e = st.bodies.earth!;
           const q = st.stream.queued + st.stream.loading + st.stream.uploading;
           maxQueue = Math.max(maxQueue, q);
           queueSum += q;
-          minLevel = Math.min(minLevel, st.bodies.earth!.deepestLevel);
-          maxLevel = Math.max(maxLevel, st.bodies.earth!.deepestLevel);
-          if (now - t0 >= 60_000) {
+          minLevel = Math.min(minLevel, e.deepestLevel);
+          maxLevel = Math.max(maxLevel, e.deepestLevel);
+          minVisible = Math.min(minVisible, e.visible);
+          capMin = Math.min(capMin, e.cap);
+          if (now - t0 >= seconds! * 1000) {
             lab.onFrame(null);
             resolve();
           }
         });
       });
+      daylight();
       const after = t.debug.stats();
       return {
         ok: res.ok,
@@ -292,23 +360,59 @@ test('50x warp in a 200 km orbit for 60 s: the tile queue stays bounded and no f
         meanQueue: queueSum / Math.max(1, frames),
         minLevel,
         maxLevel,
+        minVisible,
         cap: after.bodies.earth!.cap,
+        capMin,
         speed: after.bodies.earth!.groundSpeed,
         uploaded: after.stream.uploadedTotal - before.uploadedTotal,
         cancelled: after.stream.cancelledTotal - before.cancelledTotal,
         evicted: after.stream.evictedTotal - before.evictedTotal,
       };
-    });
-    console.log(
-      `warp ${r.factor}x at 200 km: ground speed ${(r.speed / 1000).toFixed(0)} km per wall second, level cap ${r.cap.toFixed(2)} (deepest level drawn ${r.minLevel}..${r.maxLevel}); ` +
-        `${r.frames} frames in 60 s, ${r.over33} over 33 ms (largest ${r.maxDelta.toFixed(1)} ms); tile queue at most ${r.maxQueue}, mean ${r.meanQueue.toFixed(1)}; ` +
-        `${r.uploaded} tiles uploaded, ${r.cancelled} requests cancelled, ${r.evicted} evicted`,
-    );
-    await shot(page, 'warp-50x-low-orbit');
+    },
+    [level, seconds] as const,
+  );
+}
+
+const describeWarp = (r: WarpResult): string =>
+  `warp ${r.factor}x at 200 km: ground speed ${(r.speed / 1000).toFixed(0)} km per wall second, level cap ${r.cap.toFixed(2)} (deepest level drawn ${r.minLevel}..${r.maxLevel}), at least ${r.minVisible} tiles in view; ` +
+  `${r.frames} frames, ${r.over33} over 33 ms (largest ${r.maxDelta.toFixed(1)} ms); tile queue at most ${r.maxQueue}, mean ${r.meanQueue.toFixed(1)}; ` +
+  `${r.uploaded} tiles uploaded, ${r.cancelled} requests cancelled, ${r.evicted} evicted`;
+
+test('time warp in a 200 km orbit: at 5x and 10x tiles stream with a bounded queue; at 50x for 60 s the queue stays bounded and no frame exceeds 33 ms', async ({ page, pageLog }) => {
+  test.setTimeout(30 * 60_000);
+  await withGpuLock(async () => {
+    // The lab camera rides with the vessel and looks down past it at the ground track; the sun is kept over
+    // the ground under it (an orbit at 50x crosses into the night within the minute otherwise).
+    await openLab(page, { scene: 'lowOrbit', perf: 'features', scale: 1, governor: 'off', vessel: 'active', offset: '0,0,40', look: '0,0,-1000', sun: '105,40' });
+    await settle(page, 30);
+    await calibrateBallast(page, 7);
+    // WARP_LEVELS = [1, 2, 3, 4, 5, 10, 50, ...].
+    for (const [level, factor] of [
+      [4, 5],
+      [5, 10],
+    ] as const) {
+      const r = await flyWarp(page, level, 20);
+      console.log(describeWarp(r));
+      await shot(page, `warp-${factor}x-low-orbit`);
+      expect(r.ok).toBe(true);
+      expect(r.factor).toBe(factor);
+      expect(r.over33).toBe(0);
+      expect(r.minVisible).toBeGreaterThan(0);
+      // Here the cap leaves levels to stream as the ground passes: the queue is in use and stays small.
+      expect(r.uploaded).toBeGreaterThan(0);
+      expect(r.maxQueue).toBeLessThan(120);
+      expect(r.maxLevel).toBeLessThanOrEqual(Math.ceil(r.cap));
+    }
+    const r = await flyWarp(page, 6, 60);
+    console.log(describeWarp(r));
+    const s = await shot(page, 'warp-50x-low-orbit');
     expect(r.ok).toBe(true);
     expect(r.factor).toBe(50);
     expect(r.frames).toBeGreaterThan(3000);
     expect(r.over33).toBe(0);
+    // Something is drawn in every frame, and the picture taken at the end is the day side.
+    expect(r.minVisible).toBeGreaterThan(0);
+    expect(s.stats.meanLuma).toBeGreaterThan(20);
     // Bounded: far below the few hundred tiles a full selection holds, and it does not grow over the minute.
     expect(r.maxQueue).toBeLessThan(120);
     // The cap is what bounds it: log2(faceSize / (speed x 2 s)).

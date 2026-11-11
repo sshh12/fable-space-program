@@ -1,18 +1,22 @@
 {
   "brdf": "hapke",
-  "hapke": { "b0": 1.8, "hS": 0.065, "bP": 0.25, "cP": 0.3 },
+  "hapke": {
+    "b0": 1.8,
+    "hS": 0.065,
+    "bP": 0.25,
+    "cP": 0.3
+  },
   "materialSet": "lunar-regolith",
   "nightLights": false,
   "params": {
-    "detailFadeDistanceM": 3000,
-    "detailScale0M": 0.67,
-    "detailScale1M": 4.7,
-    "detailScale2M": 33,
-    "detailBias1": 1.0,
-    "detailBias2": 4.0,
+    "detailFadeDistanceM": 90000,
+    "detailScale0M": 2.0,
+    "detailScale1M": 14.0,
+    "detailScale2M": 110.0,
+    "detailScale3M": 900,
     "detailAlbedoStrength": 1.0,
     "detailNormalStrength": 1.0,
-    "detailHeightContrast": 5,
+    "detailHeightContrast": 20,
     "detailAoStrength": 0.8,
     "detailChroma": 0.3,
     "macroNoiseWavelengthM": 120,
@@ -39,12 +43,13 @@
     "deepWaterSrgbB": 0,
     "deepWaterDepthM": 0,
     "apronRadiusM": 0,
-    "apronEdgeM": 1,
+    "apronEdgeM": 1.0,
+    "apronShoulderM": 0.0,
     "lakeDepthM": 0,
     "shoreWetnessHeightM": 1,
     "rockRangeM": 250,
     "rockMinPixels": 3,
-    "rockAlbedoScale": 1.35,
+    "rockAlbedoScale": 1.05,
     "rockRoughness": 0.9
   }
 }

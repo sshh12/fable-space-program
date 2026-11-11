@@ -76,6 +76,8 @@ interface PathCase {
   pitchTo: number;
   sun: string;
   fov?: number;
+  /** The path must cross a change of the deepest level drawn (else it tests no LOD transition). */
+  levelChange?: boolean;
 }
 
 const rate = 0.005;
@@ -84,8 +86,10 @@ const framesFor = (from: number, to: number): number => Math.ceil(Math.log(from 
 const CASES: PathCase[] = [
   { name: 'earth-descent', body: 'earth', lat: PAD.lat, lon: PAD.lon - 0.003, from: 400e3, to: 2, agl: true, heading: 20, pitchFrom: -75, pitchTo: -12, sun: '105,31' },
   { name: 'moon-descent', body: 'moon', ...LUNAR_SITE, from: 400e3, to: 2, agl: true, heading: 280, pitchFrom: -75, pitchTo: -12, sun: '92,11' },
-  // Towards the terminator region, through the hand-over from the whole-body cascade to the camera cascades.
-  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 1_500e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,18', fov: 40 },
+  // Towards the terminator region under a low sun (8 degrees: long shadows), through the hand-over from the
+  // whole-body shadow cascade to the camera-fitted cascades (they join at about 1,500 km) and through the
+  // first level change below the relief floor (level 3 to 4 at about 1,000 km with this field of view).
+  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 800e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,8', fov: 40, levelChange: true },
 ];
 
 async function fly(page: Page, c: PathCase): Promise<PathResult> {
@@ -137,6 +141,10 @@ for (const c of CASES) {
       // The profile along the path (every 60th frame), for the record.
       console.log(`  profile: ${r.diffs.filter((_, i) => i % 60 === 0).map((d) => d.toFixed(2)).join(' ')}`);
       await shot(page, `pops-${c.name}${delay ? '-delayed' : ''}-end`);
+      // The path exercises what it is there for: levels change along it.
+      const levels = new Set(r.deepest);
+      console.log(`  deepest level along the path: ${Math.min(...levels)}..${Math.max(...levels)}, first change at frame ${r.deepest.findIndex((l) => l !== r.deepest[0])} of ${r.deepest.length}`);
+      expect(levels.size, 'distinct deepest levels along the path').toBeGreaterThan(c.levelChange ? 1 : 3);
       expect(a.max, 'largest whole-frame difference').toBeLessThan(ABS_LIMIT);
       expect(a.spikes.length, 'single-frame block spikes').toBe(0);
       await expectNoErrors(page, pageLog);

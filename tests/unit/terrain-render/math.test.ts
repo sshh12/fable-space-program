@@ -10,7 +10,7 @@ import { capMaxLevel, capMorph, fadeMorph, levelRange, lodK, LOD_K_MIN, morphFac
 import { buildNoiseVolume, NOISE_SIZE } from '@/render/terrain/materials';
 import { borderSource, buildNightImage, NIGHT_SIZE } from '@/render/terrain/nightImage';
 import { coverageWeight, imageryLevelAt } from '@/render/terrain/records';
-import { buildRockMesh, ROCK_LODS, ROCK_RADIUS_MAX, ROCK_RADIUS_MIN, ROCK_VARIANTS } from '@/render/terrain/rockMesh';
+import { buildRockMesh, clipPolyhedron, ROCK_CHIP, ROCK_CLASSES, ROCK_LODS, ROCK_REACH, ROCK_TOP, ROCK_VARIANTS, rockPlanes } from '@/render/terrain/rockMesh';
 import { angleToFootprint, frameDir, shellBoundSphere, shellDistance, tileFrame, tileLocalF32 } from '@/render/terrain/tileMath';
 
 const R_EARTH = 6_371_000;
@@ -233,21 +233,77 @@ describe('meshes', () => {
     }
   });
 
-  it('rock meshes enclose the unit cap, share a silhouette across levels of detail and have unit normals', () => {
+  it('rock meshes are closed polyhedra around the unit cap, wound outwards, in bounds, with unit normals', () => {
+    const bound = Math.hypot(ROCK_REACH / Math.cos(Math.PI / 8), ROCK_TOP) + ROCK_CHIP;
     for (let variant = 0; variant < ROCK_VARIANTS; variant++) {
+      // Every half-space leaves the unit ball inside: the polyhedron encloses the collision cap.
+      for (const pl of rockPlanes(variant).slice(0, -1)) expect(pl.d / Math.hypot(...pl.n)).toBeGreaterThanOrEqual(1);
       const counts: number[] = [];
       for (let lod = 0; lod < ROCK_LODS; lod++) {
         const m = buildRockMesh(variant, lod);
         counts.push(m.indices.length / 3);
+        let lowest = Infinity;
         for (let i = 0; i < m.vertices.length; i += 6) {
           const r = Math.hypot(m.vertices[i]!, m.vertices[i + 1]!, m.vertices[i + 2]!);
-          expect(r).toBeGreaterThanOrEqual(ROCK_RADIUS_MIN - 1e-5);
-          expect(r).toBeLessThanOrEqual(ROCK_RADIUS_MAX + 1e-5);
+          expect(r).toBeGreaterThanOrEqual(1 - 1e-5);
+          expect(r).toBeLessThanOrEqual(bound);
           expect(Math.hypot(m.vertices[i + 3]!, m.vertices[i + 4]!, m.vertices[i + 5]!)).toBeCloseTo(1, 4);
+          lowest = Math.min(lowest, m.vertices[i + 2]!);
         }
+        // The sides reach into the ground.
+        expect(lowest).toBeLessThan(-0.5);
+        // Outward winding, and no open edge above the buried rim (positions are shared between faces).
+        const key = (v: number): string => `${Math.round(m.vertices[v * 6]! * 1e4)},${Math.round(m.vertices[v * 6 + 1]! * 1e4)},${Math.round(m.vertices[v * 6 + 2]! * 1e4)}`;
+        const edges = new Map<string, { count: number; z: number }>();
+        for (let t = 0; t < m.indices.length; t += 3) {
+          const [a, b, c] = [m.indices[t]!, m.indices[t + 1]!, m.indices[t + 2]!];
+          const P = (v: number): [number, number, number] => [m.vertices[v * 6]!, m.vertices[v * 6 + 1]!, m.vertices[v * 6 + 2]!];
+          const [pa, pb, pc] = [P(a), P(b), P(c)];
+          const ux = pb[0] - pa[0];
+          const uy = pb[1] - pa[1];
+          const uz = pb[2] - pa[2];
+          const vx = pc[0] - pa[0];
+          const vy = pc[1] - pa[1];
+          const vz = pc[2] - pa[2];
+          const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+          expect(n[0]! * (pa[0] + pb[0] + pc[0]) + n[1]! * (pa[1] + pb[1] + pc[1]) + n[2]! * (pa[2] + pb[2] + pc[2])).toBeGreaterThan(0);
+          for (const [p, q] of [[a, b], [b, c], [c, a]] as const) {
+            const k = [key(p), key(q)].sort().join('|');
+            const e = edges.get(k) ?? { count: 0, z: Math.max(m.vertices[p * 6 + 2]!, m.vertices[q * 6 + 2]!) };
+            e.count++;
+            edges.set(k, e);
+          }
+        }
+        for (const e of edges.values()) if (e.z > -0.6) expect(e.count).toBe(2);
       }
-      expect(counts).toEqual([1280, 320, 80]);
+      expect(counts[0]!).toBeGreaterThan(counts[1]!);
+      expect(counts[1]!).toBeGreaterThan(counts[2]!);
+      expect(counts[2]!).toBeLessThanOrEqual(140);
+      expect(counts[0]!).toBeLessThanOrEqual(9000);
     }
+  });
+
+  it('rock shapes come in classes: upright-sided blocks, slabs and wedges, and many-faced boulders', () => {
+    for (let variant = 0; variant < ROCK_VARIANTS; variant++) {
+      const planes = rockPlanes(variant);
+      const faces = clipPolyhedron(planes).filter((f) => f.plane.n[2] > -0.95);
+      const upright = faces.filter((f) => Math.abs(f.plane.n[2]) < 0.25 && f.plane.d < ROCK_REACH - 1e-9).length;
+      const cls = variant % ROCK_CLASSES;
+      if (cls === 3) expect(faces.length).toBeGreaterThanOrEqual(12);
+      else expect(upright).toBeGreaterThanOrEqual(3);
+      // A wedge's top face is steep; a slab's is nearly level.
+      const top = faces.filter((f) => f.plane.d < 1.05 && f.plane.n[2] > 0.7).map((f) => Math.acos(f.plane.n[2]));
+      if (cls === 2) expect(Math.max(...top)).toBeGreaterThan(0.4);
+      if (cls === 1) expect(Math.min(...top)).toBeLessThan(0.16);
+    }
+    // No two variants are the same solid.
+    const signature = (v: number): string => {
+      const m = buildRockMesh(v, 2);
+      return Array.from(m.vertices.subarray(0, 36))
+        .map((x) => x.toFixed(3))
+        .join(',');
+    };
+    expect(new Set(Array.from({ length: ROCK_VARIANTS }, (_, v) => signature(v))).size).toBe(ROCK_VARIANTS);
   });
 
   it('the noise volume is periodic, centred and uses its range', () => {

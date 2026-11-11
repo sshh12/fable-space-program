@@ -7,26 +7,37 @@ import type { RenderContext } from '@/core/contracts/render';
 import { LANDCOVER_CLASS } from '@/core/contracts/terrain';
 import { hash4, hashToUnit } from '@/core/math';
 import { coreOf, mipCount } from '@/render/core';
-import { MATERIAL_UNIFORM_FLOATS, MAX_CLASSES, MAX_MATERIALS, NOISE_GRADIENT_RANGE, NOISE_PERIOD } from './shaders/surface';
+import { DETAIL_SCALES, MATERIAL_UNIFORM_FLOATS, MAX_CLASSES, MAX_MATERIALS, NOISE_GRADIENT_RANGE, NOISE_PERIOD } from './shaders/surface';
 import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
+
+/** One texture layer of a material: its content at one detail scale. */
+export interface MaterialLayerManifest {
+  /** RGBA image: rgb = sRGB albedo, a = height (0..1 over `reliefM`). */
+  albedoHeight: string;
+  /** RGBA image: rg = tangent-space normal xy (0.5 = flat; true slopes at the layer's ground size), b = perceptual roughness, a = ambient occlusion. */
+  normalRoughAo: string;
+  /** Mean linear albedo of the albedo image as decoded (the imagery is multiplied by albedo / mean). */
+  meanAlbedo: [number, number, number];
+  meanRoughness: number;
+  /** Height range of the height channel, m (the height blend between materials works in metres). */
+  reliefM: number;
+  /** Mean of the height channel, 0..1 (heights are measured from it). */
+  meanHeight: number;
+}
 
 /** public/assets/terrain/{set}/set.json (written by tools/terrain/gen_materials.py). */
 export interface MaterialSetManifest {
-  formatVersion: 1;
+  formatVersion: 2;
   id: string;
-  /** Edge of every texture layer, texels. */
-  size: number;
+  /** Edge of the near layers and of the mid / far / aerial layers, texels. */
+  nearSize: number;
+  wideSize: number;
+  /** Ground size the near, mid, far and aerial layers were made for, m (the tunables detailScale0M..3M tile them). */
+  scalesM: [number, number, number, number];
   materials: {
     id: string;
-    /** RGBA image: rgb = sRGB albedo, a = height (0..1). */
-    albedoHeight: string;
-    /** RGBA image: rg = tangent-space normal xy (0.5 = flat), b = perceptual roughness, a = ambient occlusion. */
-    normalRoughAo: string;
-    /** Mean linear albedo of the albedo layer (the imagery is multiplied by albedo / mean). */
-    meanAlbedo: [number, number, number];
-    meanRoughness: number;
-    /** Relative relief of the height layer in the height blend between materials. */
-    heightGain: number;
+    /** Near, mid, far and aerial layer: different content, each of the sizes its scale shows. */
+    layers: [MaterialLayerManifest, MaterialLayerManifest, MaterialLayerManifest, MaterialLayerManifest];
   }[];
   /** Material weights per land-cover class name (keys of LANDCOVER_CLASS); "unknown" is the default row. */
   classWeights: Record<string, Record<string, number>>;
@@ -38,9 +49,27 @@ export interface MaterialSetManifest {
   slopeGain: Record<string, number>;
   /** Weight added per unit of macro noise (-1..1). */
   noiseGain: Record<string, number>;
+  /**
+   * Weight added by the colour of the imagery: per unit of darkness (1 = black, 0 = albedo 0.12 or more), of
+   * saturation (0 below 0.25, 1 above 0.6 of (max - min) / max) and of greenness ((g - max(r, b)) / max).
+   */
+  albedoGain: Record<string, [number, number, number]>;
+  /**
+   * The hexagon pattern that hides the repetition blends three copies of a layer; a copy's weight is
+   * multiplied by 2^(hexBlend[0] x height above the layer's mean) and 2^(hexBlend[1] x depth below it)
+   * (heights 0..1). [6, -6]: the higher surface wins (stones stay whole, gaps give way); [8, 8]: whatever
+   * stands out from the mean wins (stones and pits stay whole).
+   */
+  hexBlend: [number, number];
+  /**
+   * Share (0..1) of the relief of the far and aerial layers that the terrain's own normal map replaces once
+   * it resolves their sizes: 1 where the layers hold what the height function also holds (craters), near 0
+   * where they hold what it does not (bushes, tussocks).
+   */
+  terrainRelief: number;
   /** Material of launch-pad aprons, or null. */
   apronMaterial: string | null;
-  /** Material whose textures the rock meshes carry. */
+  /** Material whose near layer the rock meshes carry. */
   rockMaterial: string;
 }
 
@@ -50,8 +79,7 @@ export const SURFACE_PARAM_KEYS = [
   'detailScale0M',
   'detailScale1M',
   'detailScale2M',
-  'detailBias1',
-  'detailBias2',
+  'detailScale3M',
   'detailAlbedoStrength',
   'detailNormalStrength',
   'detailHeightContrast',
@@ -82,6 +110,7 @@ export const SURFACE_PARAM_KEYS = [
   'deepWaterDepthM',
   'apronRadiusM',
   'apronEdgeM',
+  'apronShoulderM',
   'lakeDepthM',
   'shoreWetnessHeightM',
   'rockRangeM',
@@ -104,13 +133,19 @@ export function readSurfaceParams(bodyId: string, surface: SurfaceRenderDef): Su
 
 export interface MaterialSet {
   manifest: MaterialSetManifest;
-  /** rgba8unorm-srgb array: albedo + height. */
-  albedoHeight: GPUTexture;
-  /** rgba8unorm array: normal xy, roughness, AO. */
-  normalRoughAo: GPUTexture;
-  viewA: GPUTextureView;
-  viewB: GPUTextureView;
+  /** Near layers (layer = material): rgba8unorm-srgb albedo + height, rgba8unorm normal xy + roughness + AO. */
+  nearA: GPUTexture;
+  nearB: GPUTexture;
+  /** Mid, far and aerial layers (layer = 3 x material + scale - 1). */
+  wideA: GPUTexture;
+  wideB: GPUTexture;
+  viewNearA: GPUTextureView;
+  viewNearB: GPUTextureView;
+  viewWideA: GPUTextureView;
+  viewWideB: GPUTextureView;
   index: Map<string, number>;
+  /** Bytes of the four arrays with their mip chains. */
+  bytes: number;
 }
 
 export async function loadMaterialSet(ctx: RenderContext, setId: string): Promise<MaterialSet> {
@@ -118,34 +153,49 @@ export async function loadMaterialSet(ctx: RenderContext, setId: string): Promis
   const res = await fetch(`${base}/set.json`);
   if (!res.ok) throw new Error(`terrain material set "${setId}": set.json HTTP ${res.status}`);
   const manifest = (await res.json()) as MaterialSetManifest;
-  if (manifest.formatVersion !== 1 || !Array.isArray(manifest.materials) || manifest.materials.length === 0) throw new Error(`terrain material set "${setId}": bad set.json`);
+  if (manifest.formatVersion !== 2 || !Array.isArray(manifest.materials) || manifest.materials.length === 0) throw new Error(`terrain material set "${setId}": bad set.json (formatVersion 2 expected)`);
   if (manifest.materials.length > MAX_MATERIALS) throw new Error(`terrain material set "${setId}": ${manifest.materials.length} materials, at most ${MAX_MATERIALS}`);
+  if (manifest.materials.some((m) => m.layers.length !== DETAIL_SCALES)) throw new Error(`terrain material set "${setId}": every material needs ${DETAIL_SCALES} layers`);
+  if (!Array.isArray(manifest.hexBlend) || manifest.hexBlend.length !== 2 || typeof manifest.terrainRelief !== 'number') throw new Error(`terrain material set "${setId}": set.json lacks hexBlend or terrainRelief`);
   const core = coreOf(ctx);
-  const size = manifest.size;
-  const layers = manifest.materials.length;
+  const count = manifest.materials.length;
   const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT;
-  const mk = (label: string, format: GPUTextureFormat): GPUTexture =>
-    core.createTextureChecked({ label, format, size: [size, size, layers], mipLevelCount: mipCount(size, size), usage });
-  const albedoHeight = mk(`terrain.detailA.${setId}`, 'rgba8unorm-srgb');
-  const normalRoughAo = mk(`terrain.detailB.${setId}`, 'rgba8unorm');
+  let bytes = 0;
+  const mk = (label: string, format: GPUTextureFormat, size: number, layers: number): GPUTexture => {
+    bytes += Math.round((size * size * layers * 4 * 4) / 3);
+    return core.createTextureChecked({ label, format, size: [size, size, layers], mipLevelCount: mipCount(size, size), usage });
+  };
+  const nearA = mk(`terrain.detailA.${setId}`, 'rgba8unorm-srgb', manifest.nearSize, count);
+  const nearB = mk(`terrain.detailB.${setId}`, 'rgba8unorm', manifest.nearSize, count);
+  const wide = DETAIL_SCALES - 1;
+  const wideA = mk(`terrain.detailWideA.${setId}`, 'rgba8unorm-srgb', manifest.wideSize, count * wide);
+  const wideB = mk(`terrain.detailWideB.${setId}`, 'rgba8unorm', manifest.wideSize, count * wide);
   const load = async (file: string, texture: GPUTexture, layer: number): Promise<void> => {
     const r = await fetch(`${base}/${file}`);
     if (!r.ok) throw new Error(`terrain material set "${setId}": ${file} HTTP ${r.status}`);
     const bitmap = await createImageBitmap(await r.blob(), IMAGE_DECODE_OPTIONS);
-    if (bitmap.width !== size || bitmap.height !== size) throw new Error(`terrain material set "${setId}": ${file} is ${bitmap.width} x ${bitmap.height}, expected ${size}`);
-    ctx.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture, origin: [0, 0, layer], premultipliedAlpha: false }, [size, size]);
+    if (bitmap.width !== texture.width || bitmap.height !== texture.height) throw new Error(`terrain material set "${setId}": ${file} is ${bitmap.width} x ${bitmap.height}, expected ${texture.width}`);
+    ctx.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture, origin: [0, 0, layer], premultipliedAlpha: false }, [texture.width, texture.height]);
     bitmap.close();
   };
-  await Promise.all(manifest.materials.flatMap((m, i) => [load(m.albedoHeight, albedoHeight, i), load(m.normalRoughAo, normalRoughAo, i)]));
-  core.mips.generate(albedoHeight);
-  core.mips.generate(normalRoughAo);
+  await Promise.all(
+    manifest.materials.flatMap((m, i) =>
+      m.layers.flatMap((l, s) => (s === 0 ? [load(l.albedoHeight, nearA, i), load(l.normalRoughAo, nearB, i)] : [load(l.albedoHeight, wideA, wide * i + s - 1), load(l.normalRoughAo, wideB, wide * i + s - 1)])),
+    ),
+  );
+  for (const t of [nearA, nearB, wideA, wideB]) core.mips.generate(t);
   return {
     manifest,
-    albedoHeight,
-    normalRoughAo,
-    viewA: albedoHeight.createView({ dimension: '2d-array' }),
-    viewB: normalRoughAo.createView({ dimension: '2d-array' }),
+    nearA,
+    nearB,
+    wideA,
+    wideB,
+    viewNearA: nearA.createView({ dimension: '2d-array' }),
+    viewNearB: nearB.createView({ dimension: '2d-array' }),
+    viewWideA: wideA.createView({ dimension: '2d-array' }),
+    viewWideB: wideB.createView({ dimension: '2d-array' }),
     index: new Map(manifest.materials.map((m, i) => [m.id, i])),
+    bytes,
   };
 }
 
@@ -172,23 +222,26 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams): Float3
     f[orbBase + c * 4 + 1] = orb[1];
   }
   let o = orbBase + MAX_CLASSES * 4;
-  m.materials.forEach((mt, i) => f.set([mt.meanAlbedo[0], mt.meanAlbedo[1], mt.meanAlbedo[2], mt.meanRoughness], o + i * 4));
-  o += MAX_MATERIALS * 4;
+  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanAlbedo[0], l.meanAlbedo[1], l.meanAlbedo[2], l.reliefM], o + (i * DETAIL_SCALES + s) * 4)));
+  o += MAX_MATERIALS * DETAIL_SCALES * 4;
+  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => (f[o + (i * DETAIL_SCALES + s) * 4] = l.meanHeight)));
+  o += MAX_MATERIALS * DETAIL_SCALES * 4;
   const gains = (table: Record<string, number>, at: number): void => {
     for (const [id, value] of Object.entries(table)) f[at + idx(id)] = value;
   };
   gains(m.channelGain, o);
   gains(m.slopeGain, o + 8);
   gains(m.noiseGain, o + 16);
-  m.materials.forEach((mt, i) => (f[o + 24 + i] = mt.heightGain));
-  o += 32;
+  for (const [id, g] of Object.entries(m.albedoGain)) g.forEach((value, feature) => (f[o + 24 + feature * 8 + idx(id)] = value));
+  o += 48;
   // The macro noise shares the orbital lattice, so its wavelength is the base wavelength over an integer.
   const macroRatio = Math.max(1, Math.round(p.orbitalWavelengthM / p.macroNoiseWavelengthM));
   f.set([p.slopeLo, p.slopeHi, m.apronMaterial ? idx(m.apronMaterial) : -1, m.materials.length], o);
   f.set([p.detailAlbedoStrength, p.detailNormalStrength, p.detailHeightContrast, p.orbitalWavelengthM / macroRatio], o + 4);
   f.set([p.baseRoughness, p.toksvigGain, p.apronEdgeM, p.lakeDepthM], o + 8);
   f.set([p.shoreWetnessHeightM, p.freshAlbedoBoost, p.detailAoStrength, p.detailChroma], o + 12);
-  f.set([0, p.detailBias1, p.detailBias2, 0], o + 16);
+  f.set([p.detailScale0M / m.nearSize, p.detailScale1M / m.wideSize, p.detailScale2M / m.wideSize, p.detailScale3M / m.wideSize], o + 16);
+  f.set([m.hexBlend[0], m.hexBlend[1], m.terrainRelief, Math.max(p.apronShoulderM, 1e-3)], o + 20);
   return f;
 }
 

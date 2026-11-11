@@ -344,8 +344,9 @@ export class TileStreamer {
     let count = 0;
     let i = 0;
     // At least one tile per frame; after that, stop before the tile that would take the frame over the
-    // time budget, judging by the mean cost of a tile so far.
-    while (i < this.arrived.length && count < o.uploadTiles && (count === 0 || performance.now() - t0 + this.tileUploadMs + this.mipMs < o.uploadMs)) {
+    // time budget, judging by the running cost of a tile and of the frame's mip passes with a margin of a
+    // quarter (the estimates lean towards the expensive frames, and still one copy in a hundred is slower).
+    while (i < this.arrived.length && count < o.uploadTiles && (count === 0 || performance.now() - t0 + 1.25 * (this.tileUploadMs + this.mipMs) < o.uploadMs)) {
       const a = this.arrived[i]!;
       if (a.at > t0) {
         i++;
