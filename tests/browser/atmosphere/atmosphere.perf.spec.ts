@@ -30,15 +30,19 @@ interface Row {
   frame: number;
 }
 
-/** Three windows of 200 frames; the least disturbed one counts (concurrent GPU work can only add time). */
+/**
+ * Five windows of 160 frames. The GPU is shared with other agents' browser tests (the GPU lock serialises
+ * perf specs only) and concurrent work can only add time to a pass, so each of the two lines takes its
+ * least disturbed window.
+ */
 async function measure(page: Page): Promise<Row & { windows: string }> {
   const rows: Row[] = [];
-  for (let w = 0; w < 3; w++) {
+  for (let w = 0; w < 5; w++) {
     rows.push(
       await page.evaluate(async (first) => {
         await window.__test!.waitFrames(first ? 60 : 8);
         window.__test!.resetPerf();
-        await window.__test!.waitFrames(200);
+        await window.__test!.waitFrames(160);
         const ps = window.__atmo!.app.renderer.passStats();
         const perf = window.__test!.perf()!;
         const mine = Object.entries(ps).filter(([n]) => n.startsWith('atmosphere.'));
@@ -56,7 +60,9 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
       }, w === 0),
     );
   }
-  const best = rows.reduce((b, r) => (r.atmosphere + r.clouds < b.atmosphere + b.clouds ? r : b), rows[0]!);
+  const bestAtm = rows.reduce((b, r) => (r.atmosphere < b.atmosphere ? r : b), rows[0]!);
+  const bestClouds = rows.reduce((b, r) => (r.clouds < b.clouds ? r : b), rows[0]!);
+  const best: Row = { ...bestAtm, clouds: bestClouds.clouds, cloudsP50: bestClouds.cloudsP50 };
   return { ...best, windows: rows.map((r) => `${r.atmosphere.toFixed(3)}/${r.clouds.toFixed(3)}`).join(' ') };
 }
 

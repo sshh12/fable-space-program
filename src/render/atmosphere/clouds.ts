@@ -104,6 +104,15 @@ export function channelStd(data: Float32Array, channels: number, channel: number
   return Math.sqrt(Math.max(s2 / n - mean * mean, 0));
 }
 
+/**
+ * The clock the clouds move by: simulation time, but never more than `maxRate` times faster than real time
+ * (under time warp the weather does not race), and never backwards. `lastUt` = null on the first frame.
+ */
+export function advanceCloudClock(cloudTime: number, lastUt: number | null, ut: number, realDt: number, maxRate: number): number {
+  if (lastUt === null) return ut;
+  return cloudTime + Math.max(0, Math.min(ut - lastUt, realDt * maxRate));
+}
+
 export class CloudSystem {
   private readonly ctx: RenderContext;
   private readonly core: CoreApi;
@@ -154,6 +163,7 @@ export class CloudSystem {
   private bodyId: string | null = null;
   private current: CloudParams | null = null;
   private cloudTime = 0;
+  private lonOffset = 0;
   private lastUt: number | null = null;
   private lastMarchFrame = -10;
   private lastTargetKey = '';
@@ -524,8 +534,7 @@ export class CloudSystem {
     const pose = frame.bodies[body.bodyIndex]!;
 
     // Clouds live in simulation time, but never run more than maxTimeRate times faster than real time.
-    if (this.lastUt === null) this.cloudTime = ut;
-    else this.cloudTime += Math.min(ut - this.lastUt, frame.realDt * params.maxTimeRate);
+    this.cloudTime = advanceCloudClock(this.cloudTime, this.lastUt, ut, frame.realDt, params.maxTimeRate);
     this.lastUt = ut;
 
     if (this.bodyId !== def.id) {
@@ -544,6 +553,7 @@ export class CloudSystem {
     const coverageAngle = mod((params.coverageDriftMps / R) * this.cloudTime, 2 * Math.PI);
     const noiseAngle = mod(((params.coverageDriftMps + params.noiseDriftMps) / R) * this.cloudTime, 2 * Math.PI);
     const lonOffset = -coverageAngle;
+    this.lonOffset = lonOffset;
     const cosN = Math.cos(noiseAngle);
     const sinN = Math.sin(noiseAngle);
     // Camera in the noise frame (body-fixed axes turned by the drift), float64, then modulo each tile.
@@ -568,7 +578,7 @@ export class CloudSystem {
     u.set('cloudHigh', params.highThicknessMinM, params.highThicknessMaxM, params.highExtinctionMin, params.highExtinctionMax);
     u.set('cloudHigh2', params.highCoverageStart, params.highCoverageFull, params.deepCoverageStart, params.deepCoverageFull);
     u.set('cloudDeep', params.deepExtinction, params.groundAlbedo, params.ambientScale, params.multiScatterGain);
-    u.set('cloudLight', params.diffuseScatter, 0.75 * (1 - params.diffusionG), params.topReliefM, 1 / Math.min(Math.max(frame.qualityScale, 0.25), 1));
+    u.set('cloudLight', params.diffuseScatter, 0.75 * (1 - params.diffusionG), params.topReliefM, frame.qualityScale);
     u.set('cloudPhase', params.phaseG1, params.phaseG2, params.phaseMix, params.sunReachM);
     const halfH = Math.ceil(frame.renderSize[1] / 2);
     u.set('cloudMarch', params.stepFactor, params.stepMinM, params.stepMaxM, (2 * Math.tan(frame.camera.fovY / 2)) / halfH);
@@ -667,6 +677,14 @@ export class CloudSystem {
   /** Placement of the near shadow map this frame (null when it is off), for tests and labs. */
   shadowPlacement(): CloudShadowPlacement | null {
     return this.placement;
+  }
+
+  /**
+   * Longitude offset of the coverage map this frame, rad: the clouds over geographic longitude L are those of
+   * the map at longitude L + offset (the map drifts east with the wind).
+   */
+  coverageLongitudeOffset(): number {
+    return this.lonOffset;
   }
 
   /** Simulation-time clock of the clouds, s. */

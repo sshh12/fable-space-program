@@ -24,6 +24,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3 } from '@/core/math';
 import { createAtmosphereFeature, type AtmosphereFeature, type CoverageImage } from '@/render/atmosphere';
+import { cameraBasis } from '@/render/core';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp, type LabCameraSpec } from '@/render/core/lab';
 import { createLabHeavy, createLabQuads, createLabReliefFeature, createLabSkyFeature, createLabVolume, type LabHeavy, type LabQuad, type LabQuads, type LabVolume } from './probes';
 import { sunAtSite, withSunOverride, type Site, type SunOverride } from './world';
@@ -55,11 +56,17 @@ export interface AtmosphereLab {
   setQuads(q: LabQuad[]): void;
   /**
    * Luminance (cd/m^2, linear sRGB) of render-target pixels: the pre-exposed HDR target divided by the
-   * exposure of the frame. `rect` in render pixels (default: the centre pixel).
+   * exposure of the frame. `rect` in render pixels (default: the centre pixel). `target`: 'hdr' = the scene
+   * before temporal anti-aliasing (default), 'resolved' = after it (what goes to the tone mapper).
    */
-  readLuminance(rect?: { x: number; y: number; width: number; height: number }): Promise<{ width: number; height: number; data: Float32Array }>;
+  readLuminance(rect?: { x: number; y: number; width: number; height: number }, target?: 'hdr' | 'resolved'): Promise<{ width: number; height: number; data: Float32Array }>;
   /** Mean luminance (rgb) over a small square around a render-target pixel. */
   probe(x: number, y: number, half?: number): Promise<[number, number, number]>;
+  /**
+   * Where the view ray through a render-target pixel first meets the sphere `altitude` metres above the
+   * reference radius of the root body: geographic position and distance from the eye (null: it misses).
+   */
+  surfacePoint(x: number, y: number, altitude: number): { latDeg: number; lonDeg: number; distance: number } | null;
 }
 
 declare global {
@@ -175,6 +182,7 @@ async function boot(): Promise<void> {
   });
 
   const lab: AtmosphereLab = {
+    surfacePoint: () => null,
     app,
     site,
     feature,
@@ -204,10 +212,10 @@ async function boot(): Promise<void> {
     setQuads(q) {
       quads.set(q);
     },
-    async readLuminance(rect) {
+    async readLuminance(rect, target = 'hdr') {
       const f = app.renderer.frameContext!;
       const r = rect ?? { x: f.renderSize[0] >> 1, y: f.renderSize[1] >> 1, width: 1, height: 1 };
-      const px = await app.renderer.readHdrPixels('hdr', r);
+      const px = await app.renderer.readHdrPixels(target, r);
       const e = app.renderer.exposureInfo().exposure;
       const data = new Float32Array(px.data.length);
       for (let i = 0; i < data.length; i++) data[i] = (i & 3) === 3 ? px.data[i]! : px.data[i]! / e;
@@ -224,6 +232,24 @@ async function boot(): Promise<void> {
       for (let i = 0; i < w * h; i++) for (let c = 0; c < 3; c++) s[c]! += px.data[i * 4 + c]! / (w * h);
       return s;
     },
+  };
+  lab.surfacePoint = (x, y, altitude) => {
+    const f = app.renderer.frameContext!;
+    const body = f.bodies.find((b) => b.id === site.bodyId)!;
+    const basis = cameraBasis(f.camera);
+    const tanY = Math.tan(f.camera.fovY / 2);
+    const tanX = (tanY * f.renderSize[0]) / f.renderSize[1];
+    const nx = ((x + 0.5) / f.renderSize[0]) * 2 - 1;
+    const ny = 1 - ((y + 0.5) / f.renderSize[1]) * 2;
+    const d = v3.normalize(v3.add(basis.forward, v3.add(v3.scale(basis.right, nx * tanX), v3.scale(basis.up, ny * tanY))));
+    const r = app.defs.bodies[site.bodyId]!.radius + altitude;
+    const b = v3.dot(d, body.centerRelCam);
+    const disc = b * b - (v3.lenSq(body.centerRelCam) - r * r);
+    if (disc < 0 || b - Math.sqrt(disc) <= 0) return null;
+    const t = b - Math.sqrt(disc);
+    const fixed = quat.rotate(quat.conj(body.qFixedToRoot), v3.sub(v3.scale(d, t), body.centerRelCam));
+    const n = v3.normalize(fixed);
+    return { latDeg: Math.asin(n.z) / DEG, lonDeg: Math.atan2(n.y, n.x) / DEG, distance: t };
   };
   window.__atmo = lab;
 

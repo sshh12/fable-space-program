@@ -4,7 +4,7 @@ import type { BodyPose } from '@/core/contracts/render';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { quat } from '@/core/math';
-import { channelStd, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
+import { advanceCloudClock, channelStd, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
 import { CLOUD_PARAM_KEYS, resolveCloudParams } from '@/render/atmosphere/params';
 import { distanceToTop, hitsGround, luminanceOf, mediumAt, multiScatter, opticalDepth, referenceAtmosphere, skyRadiance, transmittanceToTop } from '@/render/atmosphere/reference';
 import { atmosphereLayers, scissorOf, selectMarchBodies, sphereScreenBounds, type ViewFrustum } from '@/render/atmosphere/select';
@@ -133,6 +133,28 @@ describe('body selection', () => {
     expect(scissorOf([-1, -1, 1, 1], 640, 360, 2)).toEqual([0, 0, 640, 360]);
     const s = scissorOf([-0.1, -0.2, 0.1, 0.2], 1000, 500, 2);
     expect(s).toEqual([448, 198, 104, 104]);
+  });
+});
+
+describe('cloud clock', () => {
+  it('follows simulation time at 1x, is rate-limited under time warp, never runs backwards', () => {
+    // First frame: the clock starts at the simulation time.
+    expect(advanceCloudClock(0, null, 5000, 1 / 60, 4)).toBe(5000);
+    // Real time: one frame of simulation time.
+    expect(advanceCloudClock(5000, 5000, 5000 + 1 / 60, 1 / 60, 4)).toBeCloseTo(5000 + 1 / 60, 9);
+    // Warp x1000: 16.7 s of simulation in one frame, the clouds get 4 frames' worth.
+    expect(advanceCloudClock(5000, 5000, 5000 + 1000 / 60, 1 / 60, 4)).toBeCloseTo(5000 + 4 / 60, 9);
+    // A minute of warp x100000 moves the weather by four minutes, not by ten weeks.
+    let t = 0;
+    let ut = 0;
+    for (let i = 0; i < 3600; i++) {
+      t = advanceCloudClock(t, ut, ut + 100000 / 60, 1 / 60, 4);
+      ut += 100000 / 60;
+    }
+    expect(t).toBeCloseTo(240, 6);
+    // Paused, or a jump back in time (quickload): the clouds stand still.
+    expect(advanceCloudClock(77, 5000, 5000, 1 / 60, 4)).toBe(77);
+    expect(advanceCloudClock(77, 5000, 100, 1 / 60, 4)).toBe(77);
   });
 });
 

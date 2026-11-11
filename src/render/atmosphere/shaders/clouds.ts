@@ -393,8 +393,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   // makes it fit, separately for the low shell (two thirds of the budget) and the smooth shell above it
   // (one third, steps three times longer): the near field keeps its share of the detail either way.
   let budget = max(atmo.steps.w, 12.0);
-  // (The governor's quality scale lengthens every step as well: cloudLight.w = 1 / qualityScale.)
-  var coarsen = vec2f(atmo.cloudLight.w);
+  var coarsen = vec2f(1.0);
   for (var i = 0; i < 4; i++) {
     var need = vec2f(0.0);
     for (var k = 0; k < 4; k++) {
@@ -402,7 +401,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
       let b = ray.t0 + spans.span[k].y;
       if (spans.kind[k] == 1) { need.x += cloudStepCount(a, b, coarsen.x); } else if (spans.kind[k] == 2) { need.y += cloudStepCount(a, b, coarsen.y); }
     }
-    coarsen = max(vec2f(atmo.cloudLight.w), vec2f(need.x / (budget * 0.667), need.y / budget));
+    coarsen = max(vec2f(1.0), vec2f(need.x / (budget * 0.667), need.y / budget));
   }
   // Step phase: blue noise while frames accumulate; the middle of the step when noise is frozen.
   let xi = 0.5 + (blueNoise(vec2u(hp)).y - 0.5) * atmo.misc.z;
@@ -414,6 +413,11 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   let gain = atmo.cloudDeep.w;
   let phase = vec3f(cloudPhase(cosTheta, 1.0), cloudPhase(cosTheta, gain) * gain, cloudPhase(cosTheta, gain * gain) * gain * gain);
   let kd = atmo.cloudLight.y;
+  // Share of the cloud in a pixel that successive slabs may add with the light of the last slab that was lit, before
+  // the march looks towards the sun again: 4 % at full quality, up to 10 % when the governor has lowered the
+  // quality scale (cloudLight.w). The march itself (steps, shapes, opacity) does not change with the
+  // quality scale, only how often it is lit.
+  let reuseBelow = mix(0.10, 0.04, saturate((atmo.cloudLight.w - 0.7) / 0.3));
 
   var st: CloudStack;
   st.cover = 0.0;
@@ -426,6 +430,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   var steps = 0.0;
   var haveLight = false;
   var lastLight = vec3f(0.0);
+  var reused = 0.0;
   for (var k = 0; k < 4; k++) {
     var s = spans.span[k].x;
     let sEnd = spans.span[k].y;
@@ -584,9 +589,14 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
       let vis = atmoSunVisibility(posL, sunDir, bi).x;
       var J = vec3f(0.0);
       // A slab that adds next to nothing to the pixel (deep inside a cloud already entered, or one more layer
-      // of a thin veil) takes the light of the slab before it instead of marching towards the sun again.
-      let reuse = haveLight && st.T * (1.0 - seg) * den.frac < 0.03;
+      // of a thin veil) takes the light of the last slab that was lit instead of marching towards the sun
+      // again - until the slabs lit that way add up to the share above.
+      // (Share of the cloudy part of the pixel: a field that covers a fifth of it is lit as carefully as an
+      // overcast.)
+      let share = st.T * (1.0 - seg);
+      let reuse = haveLight && reused + share < reuseBelow;
       if (reuse) {
+        reused += share;
         J = lastLight;
       } else if (vis > 0.0) {
         // Optical depth towards the sun: six cone samples through the same column, then the far term.
@@ -621,6 +631,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
         J += (sky / (1.0 + kd * den.above) + groundE * (atmo.cloudDeep.y / (1.0 + kd * den.below))) * (atmo.cloudDeep.z * 0.5 / PI);
         lastLight = J;
         haveLight = true;
+        reused = 0.0;
       }
 
       let before = st.cover * (1.0 - st.T);

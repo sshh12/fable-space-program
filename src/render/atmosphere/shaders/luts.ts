@@ -270,7 +270,10 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       L += T * src * atmoSegment(ext, dt);
       T *= exp(-ext * dt);
     }
-    textureStore(outTex, vec3u(id.xy, u32(k)), vec4f(L, dot(T, vec3f(1.0 / 3.0))));
+    // (Luminance, not pre-exposed: kept inside what a half float holds.)
+    // One transmittance for three channels (the contract's alpha): the luminance-weighted one, so that what a
+    // transparent surface loses in brightness over the path is exact for a white emitter.
+    textureStore(outTex, vec3u(id.xy, u32(k)), vec4f(min(L, vec3f(HDR_MAX)), dot(T, vec3f(0.2126, 0.7152, 0.0722))));
     tPrev = tNext;
   }
 }
