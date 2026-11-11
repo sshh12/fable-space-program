@@ -1,4 +1,4 @@
-Status: open (lead decision: approved; to be done in the order below)
+Status: resolved (commit 3e69d76; the volume is yours to publish)
 From: atmosphere-clouds
 Owner path: `'atmosphere.aerialPerspective'` in src/core/contracts/render.ts; chunk `transparency` (`applyAtmosphere`) in src/render/core/shaders/chunksLighting.ts
 Blocking: no
@@ -67,3 +67,28 @@ every distance). The binding conflict is handled by ordering, not by a second ch
    in the same commit; tell vfx, sky and vehicle in a NOTICE.
 3. **atmosphere-clouds** (its fixer): publish the volume from the existing compute pass; its "50 km" spec and
    tests/browser/integration/clouds.spec.ts assert each channel within 5 %.
+
+## Resolution (core part, after the lead decision)
+
+Done (`3e69d76`) as the lead wrote it, with one difference in the order: step 1 (cockpit-cs-2) was not needed.
+The cockpit restructured its bind group since the first answer: its own bindings are 0-10 and the scene sets
+follow from 11 (`CABIN_SCENE_BINDING`) with `transparency` as the LAST set and nothing after it; every other
+user (vfx, sky, the labs) places the sets through `createSceneBindings` with nothing fixed after them. A slot
+added at the end of the `transparency` set therefore moves nothing; `tests/browser/integration/lab.spec.ts`
+(every package built and initialised) passes, 3 of 3.
+
+- Contract key `'atmosphere.aerialTransmittance'`: 32 x 32 x 32 `rgba16float`, same slice mapping as
+  `'atmosphere.aerialPerspective'`; rgb = transmittance of the path from the eye to the froxel per channel;
+  **a = 1 when you publish it** (the mark); default rgb 1, a 0 (not published).
+- Binding set `transparency`: `aerialTransmittanceTex: texture_3d<f32>` added LAST.
+- `applyAtmosphere` (signature unchanged): `trans = 1 + (select(vec3(ap.a), apT.rgb, apT.a > 0.5) - 1) x
+  nearFade`. Until you publish, the mean of `'atmosphere.aerialPerspective'.a` is used as before (so nothing
+  changes the day this lands); neutral with the defaults.
+- Test: `tests/browser/render-core/framegraph.spec.ts`, "applyAtmosphere takes the per-channel transmittance":
+  a band of radiance 2 at 40 m: defaults 2 / 2 / 2; mean 0.7 alone 1.4 / 1.4 / 1.4; per channel 0.9 / 0.75 /
+  0.5 gives 1.8 / 1.5 / 1.0; back to the defaults 2 / 2 / 2. Lab: `?probe=cloud`, `__rc.probes.setAerial()`.
+- RENDER_API sections 11 (binding sets, chunk) and 18; NOTICE-core-2 to vfx, sky, vehicle and cockpit.
+
+Your step: publish the volume (a = 1) from the existing compute pass; your "50 km" spec and
+`tests/browser/integration/clouds.spec.ts` then compare each channel (I change the integration spec to the
+per-channel comparison when your volume is in).
