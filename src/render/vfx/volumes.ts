@@ -46,9 +46,22 @@ const COMPOSITE_WGSL = /* wgsl */ `
 #include "vfx_common"
 #include "upsample"
 @group(2) @binding(0) var volumeTex: texture_2d<f32>;
+@group(2) @binding(1) var momentTex: texture_2d<f32>;
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let d = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
-  let v = upsampleDepthAware(volumeTex, sceneDepthHalfTex, in.uv, d, false);
+  var v = upsampleDepthAware(volumeTex, sceneDepthHalfTex, in.uv, d, false);
+  // Along the edge of a hull the half-resolution depth is the hull's in one pixel and the background's in the
+  // next: a volume that lies BEHIND the hull would be drawn over its edge (scallops at a separation, steps
+  // beside a thruster). The image knows how far away what it shows is: what lies behind this pixel's own
+  // surface is not drawn on it.
+  if (d > 0.0) {
+    let m = textureSampleLevel(momentTex, linearClamp, in.uv, 0.0).rg;
+    if (m.g > 1e-3) {
+      let surface = viewZFromDepth(d) * length(viewRay(in.uv));
+      // (Only what is clearly behind: a volume that hugs the ground is as far away as the ground is.)
+      v *= 1.0 - smoothstep(1.1, 1.35, exp2(m.r / m.g) / surface);
+    }
+  }
   return vec4f(writeHdr(v.rgb), saturate(v.a));
 }
 `;
@@ -149,7 +162,13 @@ export class VolumePass {
     this.combined = core.createTarget('vfx.volume.combined', 'rgba16float', 0.5);
     this.combinedMoment = core.createTarget('vfx.volume.combinedMoment', 'rg16float', 0.5);
     this.empty = core.createTextureChecked({ label: 'vfx.volume.empty', format: 'rgba16float', size: [1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }).createView();
-    this.compositeLayout = ctx.device.createBindGroupLayout({ label: 'vfx.composite', entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }] });
+    this.compositeLayout = ctx.device.createBindGroupLayout({
+      label: 'vfx.composite',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      ],
+    });
     this.composite = core.fullscreenPipeline({
       label: 'vfx.composite',
       fragment: COMPOSITE_WGSL,
@@ -235,11 +254,12 @@ export class VolumePass {
   /** drawTransparent: blend the half-resolution image into the HDR target. */
   draw(pass: GPURenderPassEncoder): void {
     if (this.result === 'none') return;
-    const v = this.emit.version + this.combined.version;
+    const v = this.emit.version + this.combined.version + this.moment.version + this.combinedMoment.version;
     if (!this.groups || v !== this.groupVersion) {
       this.groupVersion = v;
-      const mk = (view: GPUTextureView): GPUBindGroup => this.ctx.device.createBindGroup({ label: 'vfx.composite', layout: this.compositeLayout, entries: [{ binding: 0, resource: view }] });
-      this.groups = { emit: mk(this.emit.view), combined: mk(this.combined.view) };
+      const mk = (view: GPUTextureView, moment: GPUTextureView): GPUBindGroup =>
+        this.ctx.device.createBindGroup({ label: 'vfx.composite', layout: this.compositeLayout, entries: [{ binding: 0, resource: view }, { binding: 1, resource: moment }] });
+      this.groups = { emit: mk(this.emit.view, this.moment.view), combined: mk(this.combined.view, this.combinedMoment.view) };
     }
     pass.setPipeline(this.composite.get());
     pass.setBindGroup(1, this.common.bindGroup());

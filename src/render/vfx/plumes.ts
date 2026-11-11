@@ -219,7 +219,7 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
     if (tip > 0.0) {
       let rf = g.rb * (1.0 + 0.55 * big * grow);
       let body = 1.0 - smoothstep(0.4 * rf, 1.12 * rf, rr);
-      let begin = smoothstep(1.5 * re, 9.0 * re, xc);
+      let begin = smoothstep(4.0 * re, 16.0 * re, xc);
       let cool = mix(vec3f(1.0), vec3f(1.0, 0.6, 0.3), saturate(1.25 * s));
       let tex = mix(1.0, (0.45 + 1.1 * n3.b) * (0.6 + 0.8 * n.g) * (0.75 + 0.5 * n2.b), min(1.0, grow + turb));
       // The middle of the flame is the hottest and brightest (white-yellow); its skin is the colour of the look.

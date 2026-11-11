@@ -104,13 +104,17 @@ test('integrated plume luminance rises monotonically with throttle; the plume li
     await page.evaluate(() => window.__vfx!.renderExact(3, false));
     const sum = (await hdrSummary(page)).sum;
     const info = await page.evaluate(() => {
+      // The light of a cluster is spread along its flame: lines of light (capsules) whose intensities add up
+      // to the efficacy of the look times the thrust.
       const lights = window.__vfx!.feature.debug.lights();
-      const l = lights[0];
-      return { thrust: window.__test!.state()!.vessels[0]!.thrust, light: l ? 0.2126 * l.intensity[0] + 0.7152 * l.intensity[1] + 0.0722 * l.intensity[2] : 0, kind: l?.kind ?? 'none', count: lights.length };
+      let light = 0;
+      for (const l of lights) light += 0.2126 * l.intensity[0] + 0.7152 * l.intensity[1] + 0.0722 * l.intensity[2];
+      return { thrust: window.__test!.state()!.vessels[0]!.thrust, light, kind: lights.every((l) => l.kind === 'capsule') ? 'capsule' : 'mixed', count: lights.length };
     });
     rows.push({ throttle, sum, thrust: info.thrust, light: info.light });
     if (throttle > 0) {
-      expect(info.count).toBe(1);
+      expect(info.count).toBeGreaterThanOrEqual(1);
+      expect(info.count).toBeLessThanOrEqual(3);
       expect(info.kind).toBe('capsule');
     } else expect(info.count).toBe(0);
   }

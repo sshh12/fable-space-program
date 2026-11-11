@@ -7,7 +7,7 @@
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
-import { coreOf } from '@/render/core';
+import { coreOf, sunVisibilityAt } from '@/render/core';
 import { ChuteSystem } from './chutes';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
 import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
@@ -128,36 +128,22 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let dom: DomainFrame | null = null;
   const stats: Record<string, number> = {};
 
-  /**
-   * Illuminance of the star at the camera (lux): zero behind a body, fading through twilight (a few degrees
-   * either side of the limb).
-   */
-  const sunAtCamera = (frame: FrameContext): number => {
-    let visible = 1;
-    for (const body of frame.snapshot.bodies) {
-      const def = ctx.defs.bodies[body.id];
-      if (!def || body.id === frame.sun.bodyId) continue;
-      const c = frame.bodyPose(body.id).centerRelCam;
-      const dist = v3.len(c);
-      if (dist < 1) continue;
-      const fromCentre = Math.acos(Math.max(-1, Math.min(1, v3.dot(c, frame.sun.dirRoot) / dist)));
-      const limb = Math.asin(Math.min(1, def.radius / dist));
-      const t = Math.max(0, Math.min(1, (fromCentre - limb + 0.1) / 0.15));
-      visible = Math.min(visible, t * t * (3 - 2 * t));
-    }
-    return frame.sun.illuminance * visible;
-  };
+  /** Illuminance of the star at the camera (lux): what is left of it behind the bodies (the core's own measure). */
+  const sunAtCamera = (frame: FrameContext): number => frame.sun.illuminance * sunVisibilityAt(frame.camera.positionRoot, frame.snapshot, ctx.defs);
 
   /**
-   * The largest luminance the meter is told about for a flame: by day a sunlit grey surface (the flame leaves
-   * the exposure where the sun puts it and clips), with the sun down a tenth of that (the camera opens up
-   * for what the flame lights and the flame itself clips by many stops, as in every night launch photograph).
+   * How much of daylight there is at the camera, 0 (night) .. 1 (the sun lights the scene), and the largest
+   * luminance the meter is told about for a flame: with the sun down a few stops under a sunlit surface (the
+   * camera opens up for what the flame lights and the flame itself clips by many stops, as in every night
+   * launch photograph), towards day a sunlit grey surface. By day itself nothing is reported at all: the sun
+   * sets the exposure, and an emitter that enters the frame must not move it.
    */
-  const flameCap = (frame: FrameContext): number => {
+  const daylight = (frame: FrameContext): number => {
     const lux = Math.max(sunAtCamera(frame), 1e-3);
     const t = Math.max(0, Math.min(1, Math.log(lux / NIGHT_LUX) / Math.log(DAYLIGHT_LUX / NIGHT_LUX)));
-    return NIGHT_WHITE * (DAYLIGHT_WHITE / NIGHT_WHITE) ** (t * t * (3 - 2 * t));
+    return t * t * (3 - 2 * t);
   };
+  const flameCap = (day: number): number => NIGHT_WHITE * (DAYLIGHT_WHITE / NIGHT_WHITE) ** day;
 
   /**
    * Tell the exposure meter about an emitter (it meters lit geometry; what a volume emits is not for it to
@@ -178,14 +164,16 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     // the glare of a small bright thing spreads over a few pixels around it; nothing is wider than the frame.
     const px = (2 * d) / (m[5]! * frame.renderSize[1]);
     // A flame is meant to clip: the meter is asked to hold it three stops over its white, not under it.
-    let luminance = Math.min(h.luminance / 2 ** (h.clipStops ?? 3), h.cap ?? flameCap(frame));
+    const day = daylight(frame);
+    if (day >= 1) return;
+    let luminance = Math.min(h.luminance / 2 ** (h.clipStops ?? 3), h.cap ?? flameCap(day));
     if (h.a < 0.5 * px) luminance *= h.a / (0.5 * px);
     if (h.b < 0.5 * px) luminance *= h.b / (0.5 * px);
     const reach = d * Math.hypot(1 / m[0]!, 1 / m[5]!);
     const a = Math.min(Math.max(h.a, 2 * px), reach);
     const b = Math.min(Math.max(h.b, 2 * px), reach);
     const frameSolidAngle = 4 / (m[0]! * m[5]!);
-    const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle);
+    const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle) * (1 - day);
     if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
   };
 

@@ -19,7 +19,7 @@ const CAMERAS = [
 ];
 
 interface Probe {
-  /** Plume signal 5 m and 20 m below the nozzle exits, cd/m^2 (NaN: the point is outside the frame). */
+  /** Plume signal 12 m and 30 m below the nozzle exits, cd/m^2 (NaN: the point is outside the frame). */
   near: number;
   far: number;
   /** The same points with the engines off (smoke, sky or ground). */
@@ -55,21 +55,22 @@ for (const night of [false, true]) {
           };
           engines(1);
           await lab.renderExact(3, false);
-          const on = [await read(5), await read(20)];
+          const on = [await read(12), await read(30)];
           const ev100 = renderer.exposureInfo().ev100;
           engines(0);
           await lab.renderExact(3, false);
-          const off = [await read(5), await read(20)];
+          const off = [await read(12), await read(30)];
           engines(1);
           await lab.renderExact(1, false);
           lab.resume();
           return { near: on[0]! - off[0]!, far: on[1]! - off[1]!, nearOff: off[0]!, farOff: off[1]!, nozzleHeight: nozzle.z, ev100 };
         }, cam.follow);
-        rows.push(`T+${T}: nozzles ${probe.nozzleHeight.toFixed(0)} m up, EV100 ${probe.ev100.toFixed(1)}; 5 m below ${probe.near.toFixed(0)} (off ${probe.nearOff.toFixed(0)}), 20 m below ${probe.far.toFixed(0)} (off ${probe.farOff.toFixed(0)}) cd/m^2`);
-        // Right under the vehicle the jets are seen at every moment.
-        expect(probe.near, `T+${T}: 5 m below the nozzles`).toBeGreaterThan(VISIBLE);
-        // 20 m further down they are behind the launch mount until the vehicle has cleared it.
-        if (T >= 4) expect(probe.far, `T+${T}: 20 m below the nozzles`).toBeGreaterThan(VISIBLE);
+        rows.push(`T+${T}: nozzles ${probe.nozzleHeight.toFixed(0)} m up, EV100 ${probe.ev100.toFixed(1)}; 12 m below ${probe.near.toFixed(0)} (off ${probe.nearOff.toFixed(0)}), 30 m below ${probe.far.toFixed(0)} (off ${probe.farOff.toFixed(0)}) cd/m^2`);
+        // Under the vehicle the flame is seen at every moment (the first metres below the nozzles are the
+        // translucent core of the jets with its Mach discs, dim by day by design: the probe is in the flame).
+        expect(probe.near, `T+${T}: 12 m below the nozzles`).toBeGreaterThan(VISIBLE);
+        // Further down it is behind the launch mount until the vehicle has cleared it.
+        if (T >= 4) expect(probe.far, `T+${T}: 30 m below the nozzles`).toBeGreaterThan(VISIBLE);
         if (T === 2 || T === 6) {
           await waitIdle(page, 30);
           await saveScreenshot(page, 'vfx/liftoff-probe', `${cam.file}-${night ? 'night' : 'day'}-T${T}`);
