@@ -7,7 +7,10 @@
  */
 import type { LineKind, MapScene } from './scene';
 
-/** Weight of a line kind (0 = not an obstacle). */
+/**
+ * Weight of a line kind (0 = not an obstacle: the faint SOI, ghost and debris lines may pass under a label's
+ * plate; leaving them out also keeps the grid cheap with every debris orbit drawn).
+ */
 export function lineWeight(kind: LineKind): number {
   switch (kind) {
     case 'current':
@@ -20,7 +23,7 @@ export function lineWeight(kind: LineKind): number {
     case 'soi':
     case 'ghostBody':
     case 'debrisOrbit':
-      return 1;
+      return 0;
   }
 }
 
@@ -85,25 +88,38 @@ export class LineGrid {
   }
 
   private segment(ax: number, ay: number, bx: number, by: number, width: number, height: number, weight: number): void {
+    // wholly on one side of the screen: nothing to mark
+    if ((ax < 0 && bx < 0) || (ay < 0 && by < 0) || (ax > width && bx > width) || (ay > height && by > height)) return;
     const dx = bx - ax;
     const dy = by - ay;
     this.t0 = 0;
     this.t1 = 1;
-    if (!this.clip(-dx, ax) || !this.clip(dx, width - ax) || !this.clip(-dy, ay) || !this.clip(dy, height - ay)) return;
+    // clip only what crosses the screen edge (most drawn segments lie inside it)
+    const inside = ax >= 0 && ay >= 0 && ax <= width && ay <= height && bx >= 0 && by >= 0 && bx <= width && by <= height;
+    if (!inside && (!this.clip(-dx, ax) || !this.clip(dx, width - ax) || !this.clip(-dy, ay) || !this.clip(dy, height - ay))) return;
     const t0 = this.t0;
     const t1 = this.t1;
     const x0 = ax + dx * t0;
     const y0 = ay + dy * t0;
-    const len = Math.hypot(dx, dy) * (t1 - t0);
-    const c = this.cell;
-    const steps = Math.max(1, Math.ceil((2 * len) / c));
-    const sx = (dx * (t1 - t0)) / steps;
-    const sy = (dy * (t1 - t0)) / steps;
+    const len = Math.sqrt(dx * dx + dy * dy) * (t1 - t0);
+    const inv = 1 / this.cell;
+    const steps = Math.max(1, Math.ceil(len * inv));
+    // walk in cell units (the clipped segment lies inside the screen: indices stay in range)
+    let gx = x0 * inv;
+    let gy = y0 * inv;
+    const sx = (dx * (t1 - t0) * inv) / steps;
+    const sy = (dy * (t1 - t0) * inv) / steps;
+    const cols = this.cols;
+    const maxI = cols - 1;
+    const maxJ = this.rows - 1;
+    const w = this.w;
     for (let s = 0; s <= steps; s++) {
-      const i = Math.min(this.cols - 1, Math.max(0, Math.floor((x0 + sx * s) / c)));
-      const j = Math.min(this.rows - 1, Math.max(0, Math.floor((y0 + sy * s) / c)));
-      const k = j * this.cols + i;
-      if (this.w[k]! < weight) this.w[k] = weight;
+      const i = gx < maxI ? gx | 0 : maxI;
+      const j = gy < maxJ ? gy | 0 : maxJ;
+      const k = j * cols + i;
+      if (w[k]! < weight) w[k] = weight;
+      gx += sx;
+      gy += sy;
     }
   }
 }

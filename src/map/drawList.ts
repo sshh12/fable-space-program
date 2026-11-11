@@ -59,6 +59,10 @@ export interface TextRun {
   alpha: number;
 }
 
+/**
+ * One frame's overlay. Its arrays and icon / text objects are pooled by the controller: a draw list is valid
+ * until the next one is built (the renderer uploads it in the same prepare()).
+ */
 export interface DrawList {
   scene: MapScene;
   /** Layer 0: everything; layer 1: hover tooltip on top of everything. */

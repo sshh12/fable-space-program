@@ -15,7 +15,7 @@ import { conicFromState, conicPosition, conicTrueAnomaly, conicVelocity, type Co
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { ViewConic } from '@/map/conicCurve';
-import { CHORD_ERROR_PX, CHORD_TOLERANCE_PX, FAINT_CHORD_TOLERANCE_PX } from '@/map/constants';
+import { CHORD_ERROR_PX, CHORD_TOLERANCE_PX, DEBRIS_CHORD_TOLERANCE_PX, FAINT_CHORD_TOLERANCE_PX } from '@/map/constants';
 import { MapController } from '@/map/controller';
 import { Projector, type Viewport } from '@/map/projection';
 import { pointSegmentDistance2D, Sampler } from '@/map/sampler';
@@ -26,7 +26,8 @@ import { createSyntheticFixture } from '@/map/testing/syntheticSnapshots';
 const MU = 3.986004418e14;
 const VIEWPORT: Viewport = { width: 1280, height: 720, pxScale: 1 };
 const CSS: [number, number] = [1280, 720];
-const FAINT_KINDS = new Set(['debrisOrbit', 'vesselOrbit', 'recoveryZone']);
+/** Faint lines (0.9 px); bulk debris orbits use 1.5 px, zone rings the trajectory tolerance. */
+const FAINT_KINDS = new Set(['vesselOrbit']);
 
 function conic(rp: number, e: number, tilt = 0.4, spin = 0.7): ConicElements {
   const q = quat.mul(quat.fromAxisAngle({ x: 0, y: 0, z: 1 }, spin), quat.fromAxisAngle({ x: 1, y: 0, z: 0 }, tilt));
@@ -67,7 +68,7 @@ function sceneError(scene: MapScene): { worst: number; line: string; vertices: n
   for (const l of scene.lines) {
     if (!l.curve) continue;
     vertices += l.count;
-    const limit = FAINT_KINDS.has(l.kind) ? FAINT_CHORD_TOLERANCE_PX + 0.01 : CHORD_ERROR_PX;
+    const limit = l.kind === 'debrisOrbit' ? DEBRIS_CHORD_TOLERANCE_PX + 0.01 : FAINT_KINDS.has(l.kind) ? FAINT_CHORD_TOLERANCE_PX + 0.01 : CHORD_ERROR_PX;
     const err = chordError(l.curve, scene.proj, scene.verts.u, scene.verts.sx, scene.verts.sy, l.start, l.count) / limit;
     if (err > worst) {
       worst = err;

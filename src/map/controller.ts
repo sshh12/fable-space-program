@@ -198,9 +198,19 @@ export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({
 });
 
 /** One icon-with-label candidate of the draw list (bodies, vessels, markers, unselected nodes). */
+/** A cluster of icons: the members' summaries (representative first) and how many debris folded in. */
+interface ClusterGroup {
+  summaries: string[];
+  debris: number;
+}
+
+/** What a point entry stands for (hover type): body, vessel, marker, node. */
+type PointKind = 'b' | 'v' | 'm' | 'n';
+
 interface PointEntry {
-  /** Hover key: `b:<bodyId>`, `v:<vesselId>`, `m:<markerId>`, `n:<nodeId>`. */
-  key: string;
+  /** Hover identity: kind and the body / vessel / marker / node id. */
+  kind: PointKind;
+  id: string;
   x: number;
   y: number;
   /** Icon radius, device px (0 = no icon: a body large enough to be seen). */
@@ -222,6 +232,8 @@ interface PointEntry {
   debris: boolean;
   /** One line for a cluster tooltip. */
   summary: string;
+  /** Its cluster (the members' summaries for the tooltip), or null. */
+  group: ClusterGroup | null;
   /** Members of its cluster besides itself (representative), or -1 when it is folded into another. */
   others: number;
 }
@@ -231,6 +243,16 @@ interface LabelEntry {
   lines: string[];
   color: Rgba;
   alpha: number;
+}
+
+const NO_LINES: string[] = [];
+/** Count badges "+1" .. "+31" (no per-frame strings). */
+const BADGES = Array.from({ length: 32 }, (_, i) => `+${i}`);
+
+/** The drawn line of patch `index` of a list (null when it is not drawn). */
+function patchLine(scene: MapScene, list: 'current' | 'planned', index: number): LineRecord | null {
+  for (const l of scene.lines) if (l.patchKey && l.patchKey.list === list && l.patchKey.index === index) return l;
+  return null;
 }
 
 const rectsOverlap = (a: BlockedRect, b: BlockedRect): number => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
@@ -261,9 +283,43 @@ export class MapController implements MapView {
   private panelSide = -1;
   /** Screen areas other UI covers (CSS px): labels, the panel and the tooltip keep clear of them. */
   private obstacles: BlockedRect[] = [];
-  /** Tooltip of each hover key in a cluster: a count line, then the members' summaries, representative first. */
-  private readonly clusters = new Map<string, string[]>();
+  /** Measured label widths (device px) by text, for the pixel scale `widthScale`. */
+  private readonly widths = new Map<string, number>();
+  private widthScale = 0;
+  /** One-line label arrays of bodies and vessels, by text (kept: no per-frame arrays). */
+  private readonly oneLine = new Map<string, string[]>();
+  /** Label text of each node, kept while the node object and the time are unchanged. */
+  private readonly nodeLabels = new Map<string, { node: ManeuverNode; ut: number; idx: number; text: string[] }>();
   private readonly grid = new LineGrid();
+  /** Objects and arrays of the draw list, reused from list to list (no per-frame garbage). */
+  private readonly pool = {
+    icons: [] as IconInstance[],
+    nIcons: 0,
+    texts: [] as TextRun[],
+    nTexts: 0,
+    discs: [] as { x: number; y: number; r: number }[],
+    nDiscs: 0,
+    entries: [] as LabelEntry[],
+    nBoxes: 0,
+    points: [] as PointEntry[],
+    nPoints: 0,
+    pts: [] as PointEntry[],
+    parent: new Int32Array(64),
+    size: new Int32Array(64),
+    rep: new Int32Array(64),
+    groups: [] as (ClusterGroup | undefined)[],
+    /** icons, gizmo, top layer, plates, and layer 0 in drawing order (plates, icons, gizmo) */
+    icons0: [] as IconInstance[],
+    gizmo: [] as IconInstance[],
+    top: [] as IconInstance[],
+    plates: [] as IconInstance[],
+    all: [] as IconInstance[],
+    texts0: [] as TextRun[],
+    topTexts: [] as TextRun[],
+    labels: [] as LabelEntry[],
+    boxes: [] as LabelBox[],
+    clearIcons: [] as { x: number; y: number; r: number }[],
+  };
   /** Hover tooltip of the last draw list (CSS px), for tests. */
   private tooltip: ScreenRect | null = null;
   private consumed = false;
@@ -925,29 +981,106 @@ export class MapController implements MapView {
     return { x: at[0], y: at[1] };
   }
 
+  /** Pooled icon of the draw list being built (valid until the next draw list). */
+  private icon(list: IconInstance[], x: number, y: number, hx: number, hy: number, rot: number, shape: IconId, color: Rgba, alpha: number): void {
+    const p = this.pool;
+    let o = p.icons[p.nIcons];
+    if (!o) p.icons.push((o = { x, y, hx, hy, rot, shape, color, alpha }));
+    p.nIcons++;
+    o.x = x;
+    o.y = y;
+    o.hx = hx;
+    o.hy = hy;
+    o.rot = rot;
+    o.shape = shape;
+    o.color = color;
+    o.alpha = alpha;
+    list.push(o);
+  }
+
+  private text(list: TextRun[], x: number, y: number, text: string, color: Rgba, alpha: number): void {
+    const p = this.pool;
+    let o = p.texts[p.nTexts];
+    if (!o) p.texts.push((o = { x, y, text, color, alpha }));
+    p.nTexts++;
+    o.x = x;
+    o.y = y;
+    o.text = text;
+    o.color = color;
+    o.alpha = alpha;
+    list.push(o);
+  }
+
+  /** A disc labels keep clear of (pooled). */
+  private clear(x: number, y: number, r: number): void {
+    const p = this.pool;
+    let o = p.discs[p.nDiscs];
+    if (!o) p.discs.push((o = { x, y, r }));
+    p.nDiscs++;
+    o.x = x;
+    o.y = y;
+    o.r = r;
+    p.clearIcons.push(o);
+  }
+
+  /**
+   * The draw list of a scene. Its arrays and the icon and text objects in them are pooled: a draw list is valid
+   * until the next one is built (the renderer uploads it in the same prepare()).
+   */
   private buildDrawList(scene: MapScene): DrawList {
     const proj = scene.proj;
     const k = proj.pxScale;
     const tm = this.metrics(k);
     const s = scene.snapshot;
-    const icons: IconInstance[] = [];
-    const gizmo: IconInstance[] = [];
-    const top: IconInstance[] = [];
-    const texts: TextRun[] = [];
-    const topTexts: TextRun[] = [];
-    const labels: LabelEntry[] = [];
-    const boxes: LabelBox[] = [];
-    const clearIcons: { x: number; y: number; r: number }[] = [];
+    const pool = this.pool;
+    pool.nIcons = 0;
+    pool.nTexts = 0;
+    pool.nDiscs = 0;
+    pool.nBoxes = 0;
+    const { icons0: icons, gizmo, top, plates, all, texts0: texts, topTexts } = pool;
+    for (const l of [icons, gizmo, top, plates, all]) l.length = 0;
+    texts.length = 0;
+    topTexts.length = 0;
+    const labels = pool.labels;
+    labels.length = 0;
+    const boxes = pool.boxes;
+    boxes.length = 0;
+    const clearIcons = pool.clearIcons;
+    clearIcons.length = 0;
     const onScreen = (x: number, y: number, front: boolean): boolean => front && proj.onScreen(x, y, 24 * k);
     const padX = PLATE_PAD_X_PX * k;
     const padY = PLATE_PAD_Y_PX * k;
+    // label widths by text (the strings come from caches, so the same ones recur frame after frame)
+    if (this.widthScale !== k || this.widths.size > 1024) {
+      this.widths.clear();
+      this.widthScale = k;
+    }
+    const widthOf = (text: string): number => {
+      let w = this.widths.get(text);
+      if (w === undefined) this.widths.set(text, (w = measureText(tm, text)));
+      return w;
+    };
     const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number): void => {
       if (lines.length === 0 || alpha < 0.05) return;
       let width = 0;
-      for (const l of lines) width = Math.max(width, measureText(tm, l));
-      const box: LabelBox = { ax, ay, clear, width: width + 2 * padX, height: lines.length * tm.lineHeight + 2 * padY, priority, x: 0, y: 0, placed: false, far: false };
+      for (const l of lines) width = Math.max(width, widthOf(l));
+      let e = pool.entries[pool.nBoxes];
+      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false }, lines, color, alpha }));
+      pool.nBoxes++;
+      const box = e.box;
+      box.ax = ax;
+      box.ay = ay;
+      box.clear = clear;
+      box.width = width + 2 * padX;
+      box.height = lines.length * tm.lineHeight + 2 * padY;
+      box.priority = priority;
+      box.placed = false;
+      box.far = false;
+      e.lines = lines;
+      e.color = color;
+      e.alpha = alpha;
       boxes.push(box);
-      labels.push({ box, lines, color, alpha });
+      labels.push(e);
     };
     this.grid.build(scene, GRID_CELL_PX * k);
 
@@ -971,12 +1104,50 @@ export class MapController implements MapView {
     // Icons the selected node's disc covers are left out (their tooltip is unreachable there anyway).
     const selX = selShown ? sel.x : NaN;
     const selY = selShown ? sel.y : NaN;
-    const underSelected = (x: number, y: number): boolean => Math.hypot(x - selX, y - selY) < (NODE_RADIUS_PX + 3) * k;
+    const selR2 = ((NODE_RADIUS_PX + 3) * k) ** 2;
+    const underSelected = (x: number, y: number): boolean => selShown && (x - selX) ** 2 + (y - selY) ** 2 < selR2;
 
-    // ---- point entries: bodies, vessels, markers, unselected nodes
-    const pts: PointEntry[] = [];
-    const entry = (e: Omit<PointEntry, 'others'>): void => {
-      if (!underPanel(e.x, e.y) && (e.rank >= 1000 || !underSelected(e.x, e.y))) pts.push({ ...e, others: 0 });
+    // ---- point entries: bodies, vessels, markers, unselected nodes (pooled objects, no per-frame strings)
+    const pts = pool.pts;
+    pts.length = 0;
+    pool.nPoints = 0;
+    const point = (kind: PointKind, id: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
+      let e = pool.points[pool.nPoints];
+      if (!e) pool.points.push((e = { kind, id, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
+      e.kind = kind;
+      e.id = id;
+      e.x = x;
+      e.y = y;
+      e.r = r;
+      e.shape = shape;
+      e.color = color;
+      e.alpha = alpha;
+      e.rot = 0;
+      e.priority = 0;
+      e.label = NO_LINES;
+      e.labelColor = COLORS.text;
+      e.labelAlpha = 0;
+      e.clear = r;
+      e.cluster = true;
+      e.rank = rank;
+      e.debris = false;
+      e.summary = summary;
+      e.others = 0;
+      e.group = null;
+      return e;
+    };
+    const commit = (e: PointEntry): void => {
+      if (underPanel(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y))) return;
+      pool.nPoints++;
+      pts.push(e);
+    };
+    const oneLine = (text: string): string[] => {
+      let l = this.oneLine.get(text);
+      if (!l) {
+        if (this.oneLine.size > 512) this.oneLine.clear();
+        this.oneLine.set(text, (l = [text]));
+      }
+      return l;
     };
     for (const b of scene.bodies) {
       if (!onScreen(b.x, b.y, b.front)) continue;
@@ -985,184 +1156,154 @@ export class MapController implements MapView {
       const named = b.radiusPx < BODY_LABEL_MAX_RADIUS_PX * k;
       if (!b.small && !named && !b.ghost) continue;
       const r = b.small ? 6 * k : 0;
-      entry({
-        key: `b:${b.bodyId}`,
-        x: b.x,
-        y: b.y,
-        r,
-        shape: ICON.bodyRing,
-        color: b.ghost ? COLORS.ghost : COLORS.body,
-        alpha: a,
-        rot: 0,
-        priority: b.ghost ? 2 : 9.5,
-        label: [b.label],
-        labelColor: b.ghost ? COLORS.textDim : COLORS.text,
-        labelAlpha: a,
-        clear: Math.max(r, b.radiusPx + 2 * k),
-        // A body takes part while it is a speck: what sits on it then folds into it instead of hiding it.
-        cluster: b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k,
-        rank: 1000,
-        debris: false,
-        summary: b.label,
-      });
+      const e = point('b', b.bodyId, b.x, b.y, r, ICON.bodyRing, b.ghost ? COLORS.ghost : COLORS.body, a, 1000, b.label);
+      e.priority = b.ghost ? 2 : 9.5;
+      e.label = oneLine(b.label);
+      e.labelColor = b.ghost ? COLORS.textDim : COLORS.text;
+      e.labelAlpha = a;
+      e.clear = Math.max(r, b.radiusPx + 2 * k);
+      // A body takes part while it is a speck: what sits on it then folds into it instead of hiding it.
+      e.cluster = b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k;
+      commit(e);
     }
     for (const v of scene.vessels) {
       if (!onScreen(v.x, v.y, v.front)) continue;
       const a = 1 - v.hidden;
       if (v.debris) {
         // Debris are dots (their orbit is drawn on hover); labels may pass over them.
-        entry({ key: `v:${v.vesselId}`, x: v.x, y: v.y, r: 3 * k, shape: ICON.debris, color: COLORS.debris, alpha: a, rot: 0, priority: 0, label: [], labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank: 0, debris: true, summary: v.name });
+        const e = point('v', v.vesselId, v.x, v.y, 3 * k, ICON.debris, COLORS.debris, a, 0, v.name);
+        e.clear = 0;
+        e.debris = true;
+        commit(e);
         continue;
       }
       const r = (v.active ? 7.5 : 6) * k;
-      entry({
-        key: `v:${v.vesselId}`,
-        x: v.x,
-        y: v.y,
-        r,
-        shape: ICON.vessel,
-        color: v.active ? COLORS.vessel : COLORS.otherVessel,
-        alpha: v.active ? a : a * 0.85,
-        rot: v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX),
-        priority: v.active ? 5 : 1,
-        label: [v.name],
-        labelColor: COLORS.text,
-        labelAlpha: v.active ? a : a * 0.85,
-        clear: r,
-        cluster: true,
-        rank: v.active ? 500 : 1,
-        debris: false,
-        summary: v.name,
-      });
+      const e = point('v', v.vesselId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? a : a * 0.85, v.active ? 500 : 1, v.name);
+      e.rot = v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX);
+      e.priority = v.active ? 5 : 1;
+      e.label = oneLine(v.name);
+      e.labelAlpha = e.alpha;
+      commit(e);
     }
-    const lineById = new Map<string, LineRecord>();
-    for (const l of scene.lines) if (l.patchKey) lineById.set(l.id, l);
-    const markerById = new Map<string, MarkerItem>();
-    for (const m of scene.markers) markerById.set(m.id, m);
     for (const m of scene.markers) {
       if (!onScreen(m.x, m.y, m.front)) continue;
       const a = 1 - m.hidden;
       if (a < 0.01) continue;
       // Apsis and node-line markers of a patch a few pixels across say nothing and bury its body.
       if (m.kind === 'apoapsis' || m.kind === 'periapsis' || m.kind === 'ascendingNode' || m.kind === 'descendingNode') {
-        const line = lineById.get(`${m.patchKey.list}/${m.patchKey.index}`);
+        const line = patchLine(scene, m.patchKey.list, m.patchKey.index);
         if (line && line.span < MARKER_MIN_PATCH_PX * k) continue;
       }
       const surface = m.kind === 'impactSurface' || m.kind === 'entrySurface';
       if (surface) {
-        const parent = markerById.get(m.id.slice(0, -'/surface'.length));
-        if (parent && parent.front && parent.hidden < 0.5 && Math.hypot(parent.x - m.x, parent.y - m.y) < SURFACE_TWIN_MIN_PX * k) continue;
+        const parent = m.parent;
+        if (parent && parent.front && parent.hidden < 0.5 && (parent.x - m.x) ** 2 + (parent.y - m.y) ** 2 < (SURFACE_TWIN_MIN_PX * k) ** 2) continue;
       }
       const r = (surface ? 5 : MARKER_RADIUS_PX) * k;
-      entry({
-        key: `m:${m.id}`,
-        x: m.x,
-        y: m.y,
-        r,
-        shape: shapeIcon(m.shape),
-        color: m.color,
-        alpha: a,
-        rot: 0,
-        priority: m.priority,
-        label: m.label,
-        labelColor: COLORS.text,
-        labelAlpha: a,
-        clear: r,
-        cluster: true,
-        rank: m.priority,
-        debris: false,
-        summary: m.label[0] ?? m.details[0] ?? m.kind,
-      });
+      const e = point('m', m.id, m.x, m.y, r, shapeIcon(m.shape), m.color, a, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
+      e.priority = m.priority;
+      e.label = m.label;
+      e.labelAlpha = a;
+      commit(e);
     }
     const sortedNodes = this.nodesByTime(s);
     const nodeLabel = (n: NodeItem): string[] => {
       const node = n.loc.node;
       const idx = sortedNodes.findIndex((x) => x.id === n.id);
-      return [`Node ${idx + 1}  Δv ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`, formatTimeTo(node.ut - s.ut)];
+      const c = this.nodeLabels.get(node.id);
+      if (c && c.node === node && c.ut === s.ut && c.idx === idx) return c.text;
+      const text = [`Node ${idx + 1}  Δv ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`, formatTimeTo(node.ut - s.ut)];
+      this.nodeLabels.set(node.id, { node, ut: s.ut, idx, text });
+      if (this.nodeLabels.size > 2 * s.nodes.length + 8) this.nodeLabels.clear();
+      return text;
     };
     for (const n of scene.nodes) {
       if (n.id === this.selected || !onScreen(n.x, n.y, n.front)) continue;
       const a = Math.max(0.35, 1 - n.hidden);
       const label = nodeLabel(n);
-      entry({
-        key: `n:${n.id}`,
-        x: n.x,
-        y: n.y,
-        r: NODE_SMALL_RADIUS_PX * k,
-        shape: n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node,
-        color: COLORS.node,
-        alpha: a,
-        rot: 0,
-        priority: 9,
-        label,
-        labelColor: COLORS.text,
-        labelAlpha: a,
-        clear: NODE_SMALL_RADIUS_PX * k,
-        cluster: true,
-        rank: 9,
-        debris: false,
-        summary: label[0]!,
-      });
+      const e = point('n', n.id, n.x, n.y, NODE_SMALL_RADIUS_PX * k, n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, a, 9, label[0]!);
+      e.priority = 9;
+      e.label = label;
+      e.labelAlpha = a;
+      commit(e);
     }
 
     // ---- clusters: icons closer than CLUSTER_PX collapse into one (a body wins, else the highest priority)
-    this.clusters.clear();
     const n = pts.length;
-    const parent = new Int32Array(n);
-    for (let i = 0; i < n; i++) parent[i] = i;
+    if (pool.parent.length < n) {
+      pool.parent = new Int32Array(2 * n);
+      pool.size = new Int32Array(2 * n);
+      pool.rep = new Int32Array(2 * n);
+    }
+    const parent = pool.parent;
+    const size = pool.size;
+    const rep = pool.rep;
+    for (let i = 0; i < n; i++) {
+      parent[i] = i;
+      size[i] = 0;
+      rep[i] = i;
+    }
     const find = (i: number): number => {
       while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!;
       return i;
     };
     const reach = CLUSTER_PX * k;
+    const reach2 = reach * reach;
     for (let i = 0; i < n; i++) {
       const a = pts[i]!;
       if (!a.cluster) continue;
       for (let j = i + 1; j < n; j++) {
         const b = pts[j]!;
-        if (b.cluster && Math.abs(a.x - b.x) < reach && Math.abs(a.y - b.y) < reach && Math.hypot(a.x - b.x, a.y - b.y) < reach) parent[find(j)] = find(i);
+        if (!b.cluster) continue;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        if (dx * dx + dy * dy < reach2) parent[find(j)] = find(i);
       }
     }
-    const groups = new Map<number, number[]>();
     for (let i = 0; i < n; i++) {
       if (!pts[i]!.cluster) continue;
       const r = find(i);
-      let g = groups.get(r);
-      if (!g) groups.set(r, (g = []));
-      g.push(i);
+      size[r]!++;
+      if (pts[i]!.rank > pts[rep[r]!]!.rank) rep[r] = i;
     }
-    for (const g of groups.values()) {
-      if (g.length < 2) continue;
-      let rep = g[0]!;
-      for (const i of g) if (pts[i]!.rank > pts[rep]!.rank) rep = i;
-      const summaries = [`${g.length} objects here`, pts[rep]!.summary];
-      let debris = 0;
-      for (const i of g) {
-        if (i === rep) continue;
-        pts[i]!.others = -1;
-        if (pts[i]!.debris) debris++;
-        else summaries.push(pts[i]!.summary);
+    const groups = pool.groups;
+    groups.length = n;
+    for (let i = 0; i < n; i++) groups[i] = undefined;
+    for (let i = 0; i < n; i++) {
+      const p = pts[i]!;
+      if (!p.cluster) continue;
+      const r = find(i);
+      if (size[r]! < 2) continue;
+      const repI = rep[r]!;
+      let g = groups[r];
+      if (!g) groups[r] = g = { summaries: [pts[repI]!.summary], debris: 0 };
+      if (i !== repI) {
+        p.others = -1;
+        if (p.debris) g.debris++;
+        else g.summaries.push(p.summary);
       }
-      if (debris > 0) summaries.push(`${debris} debris`);
-      pts[rep]!.others = g.length - 1 - debris;
-      for (const i of g) this.clusters.set(pts[i]!.key, summaries);
+      p.group = g;
+    }
+    for (let i = 0; i < n; i++) {
+      const g = groups[i];
+      if (g) pts[rep[i]!]!.others = size[i]! - 1 - g.debris;
     }
 
     // ---- icons and labels of what is left; a count badge on each cluster
     for (const p of pts) {
       if (p.others < 0) continue;
       if (p.r > 0 && p.alpha >= 0.01) {
-        icons.push({ x: p.x, y: p.y, hx: p.r, hy: p.r, rot: p.rot, shape: p.shape, color: p.color, alpha: p.alpha });
-        if (!p.debris) clearIcons.push({ x: p.x, y: p.y, r: p.r * 0.95 });
+        this.icon(icons, p.x, p.y, p.r, p.r, p.rot, p.shape, p.color, p.alpha);
+        if (!p.debris) this.clear(p.x, p.y, p.r * 0.95);
       }
       if (p.others > 0) {
-        const text = `+${p.others}`;
-        const w = measureText(tm, text) + 6 * k;
+        const text = BADGES[p.others] ?? `+${p.others}`;
+        const w = widthOf(text) + 6 * k;
         const h = tm.lineHeight - 2 * k;
         const bx = p.x + Math.max(p.r, 3 * k) + 2 * k;
         const by = p.y - Math.max(p.r, 3 * k) - h + 4 * k;
-        icons.push({ x: bx + w / 2, y: by + h / 2, hx: w / 2, hy: h / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
-        texts.push({ x: bx + 3 * k, y: by - 1 * k, text, color: COLORS.node, alpha: 1 });
+        this.icon(icons, bx + w / 2, by + h / 2, w / 2, h / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
+        this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
         rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
       }
       addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha);
@@ -1178,8 +1319,8 @@ export class MapController implements MapView {
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
       const r = (t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5) * k;
       const y = t.shape === 'pin' ? t.y - 9 * k : t.y;
-      icons.push({ x: t.x, y, hx: r, hy: r, rot: 0, shape, color: t.color, alpha: a });
-      clearIcons.push({ x: t.x, y, r: r * 0.9 });
+      this.icon(icons, t.x, y, r, r, 0, shape, t.color, a);
+      this.clear(t.x, y, r * 0.9);
       if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.text, a);
     }
 
@@ -1192,20 +1333,20 @@ export class MapController implements MapView {
         if (len > (NODE_RADIUS_PX + HANDLE_RADIUS_PX) * k) {
           const r0 = NODE_RADIUS_PX * k;
           const r1 = len - HANDLE_RADIUS_PX * k;
-          gizmo.push({ x: sel.x + h.dx * (r0 + r1) * 0.5, y: sel.y + h.dy * (r0 + r1) * 0.5, hx: (r1 - r0) / 2, hy: (ARM_WIDTH_PX / 2) * k, rot: Math.atan2(h.dy, h.dx), shape: ICON.bar, color: def.color, alpha: ARM_ALPHA });
+          this.icon(gizmo, sel.x + h.dx * (r0 + r1) * 0.5, sel.y + h.dy * (r0 + r1) * 0.5, (r1 - r0) / 2, (ARM_WIDTH_PX / 2) * k, Math.atan2(h.dy, h.dx), ICON.bar, def.color, ARM_ALPHA);
           // labels keep off the arm too (a chain of small discs along it)
-          for (let d = r0 + 6 * k; d < r1; d += 8 * k) clearIcons.push({ x: sel.x + h.dx * d, y: sel.y + h.dy * d, r: 3 * k });
+          for (let d = r0 + 6 * k; d < r1; d += 8 * k) this.clear(sel.x + h.dx * d, sel.y + h.dy * d, 3 * k);
         }
       }
       for (const h of handles) {
         const def = HANDLES.find((x) => x.name === h.name)!;
         const hot = (this.hover?.type === 'handle' && this.hover.handle === h.name) || (this.drag?.type === 'handle' && this.drag.handle === h.name);
-        gizmo.push({ x: h.x, y: h.y, hx: HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, hy: HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, rot: 0, shape: def.icon, color: def.color, alpha: 1 });
-        clearIcons.push({ x: h.x, y: h.y, r: HANDLE_RADIUS_PX * k });
+        this.icon(gizmo, h.x, h.y, HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, 0, def.icon, def.color, 1);
+        this.clear(h.x, h.y, HANDLE_RADIUS_PX * k);
       }
       const r = NODE_RADIUS_PX * 1.1 * k;
-      gizmo.push({ x: sel.x, y: sel.y, hx: r, hy: r, rot: 0, shape: sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, color: COLORS.node, alpha: 1 });
-      clearIcons.push({ x: sel.x, y: sel.y, r });
+      this.icon(gizmo, sel.x, sel.y, r, r, 0, sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, 1);
+      this.clear(sel.x, sel.y, r);
       addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1);
     }
 
@@ -1216,8 +1357,8 @@ export class MapController implements MapView {
       const p = line ? this.pointAt(scene, line, hv.u) : null;
       if (line && p && line.curve && line.patch) {
         const r = NODE_RADIUS_PX * k;
-        gizmo.push({ x: p.x, y: p.y, hx: r, hy: r, rot: 0, shape: ICON.addGhost, color: COLORS.hover, alpha: 0.9 });
-        clearIcons.push({ x: p.x, y: p.y, r });
+        this.icon(gizmo, p.x, p.y, r, r, 0, ICON.addGhost, COLORS.hover, 0.9);
+        this.clear(p.x, p.y, r);
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
         addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
       }
@@ -1264,18 +1405,17 @@ export class MapController implements MapView {
         if (best === 0) break;
       }
       this.tooltip = { x: tx / k, y: ty / k, width: width / k, height: height / k };
-      top.push({ x: tx + width / 2, y: ty + height / 2, hx: width / 2, hy: height / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
-      tip.forEach((line, i) => topTexts.push({ x: tx + 8 * k, y: ty + 5 * k + i * tm.lineHeight, text: line, color: i === 0 ? COLORS.text : COLORS.textDim, alpha: 1 }));
+      this.icon(top, tx + width / 2, ty + height / 2, width / 2, height / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
+      tip.forEach((line, i) => this.text(topTexts, tx + 8 * k, ty + 5 * k + i * tm.lineHeight, line, i === 0 ? COLORS.text : COLORS.textDim, 1));
       rects.push({ x0: tx, y0: ty, x1: tx + width, y1: ty + height });
     }
 
     // ---- de-clutter: labels keep clear of icons, of each other and of every blocked rectangle, and off the lines
     declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, (x0, y0, x1, y1) => this.grid.cost(x0, y0, x1, y1), FAR_RING_PX * k);
-    const plates: IconInstance[] = [];
     for (const l of labels) {
       const b = l.box;
       if (!b.placed) continue;
-      plates.push({ x: b.x + b.width / 2, y: b.y + b.height / 2, hx: b.width / 2, hy: b.height / 2, rot: 0, shape: ICON.plate, color: COLORS.plate, alpha: l.alpha });
+      this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, COLORS.plate, l.alpha);
       if (b.far) {
         // Leader from the anchor's edge to the nearest point of the plate.
         const nx = Math.max(b.x, Math.min(b.ax, b.x + b.width));
@@ -1287,14 +1427,17 @@ export class MapController implements MapView {
         if (d > r0 + 2 * k) {
           const ux = dx / d;
           const uy = dy / d;
-          plates.push({ x: b.ax + ux * (r0 + d) * 0.5, y: b.ay + uy * (r0 + d) * 0.5, hx: (d - r0) / 2, hy: (LEADER_WIDTH_PX / 2) * k, rot: Math.atan2(uy, ux), shape: ICON.bar, color: COLORS.leader, alpha: l.alpha });
+          this.icon(plates, b.ax + ux * (r0 + d) * 0.5, b.ay + uy * (r0 + d) * 0.5, (d - r0) / 2, (LEADER_WIDTH_PX / 2) * k, Math.atan2(uy, ux), ICON.bar, COLORS.leader, l.alpha);
         }
       }
       for (let i = 0; i < l.lines.length; i++) {
-        texts.push({ x: b.x + padX, y: b.y + padY + i * tm.lineHeight, text: l.lines[i]!, color: i === 0 ? l.color : COLORS.textDim, alpha: l.alpha });
+        this.text(texts, b.x + padX, b.y + padY + i * tm.lineHeight, l.lines[i]!, i === 0 ? l.color : COLORS.textDim, l.alpha);
       }
     }
-    return { scene, icons: [[...plates, ...icons, ...gizmo], top], texts: [texts, topTexts] };
+    for (const o of plates) all.push(o);
+    for (const o of icons) all.push(o);
+    for (const o of gizmo) all.push(o);
+    return { scene, icons: [all, top], texts: [texts, topTexts] };
   }
 
   private pointAt(scene: MapScene, line: LineRecord, u: number): { x: number; y: number } | null {
@@ -1321,9 +1464,15 @@ export class MapController implements MapView {
     if (!h) return null;
     const s = scene.snapshot;
     if ((h.type === 'node' || h.type === 'handle') && h.nodeId === this.selected) return null;
-    const key = h.type === 'marker' ? `m:${h.id}` : h.type === 'node' ? `n:${h.nodeId}` : h.type === 'vessel' ? `v:${h.id}` : h.type === 'body' ? `b:${h.id}` : null;
-    const cluster = key ? this.clusters.get(key) : undefined;
-    if (cluster) return cluster;
+    const kind: PointKind | null = h.type === 'marker' ? 'm' : h.type === 'node' ? 'n' : h.type === 'vessel' ? 'v' : h.type === 'body' ? 'b' : null;
+    const id = h.type === 'node' || h.type === 'handle' ? h.nodeId : h.type === 'line' ? '' : h.id;
+    let cluster: ClusterGroup | null = null;
+    if (kind) for (const p of this.pool.pts) if (p.kind === kind && p.id === id) cluster = p.group;
+    if (cluster) {
+      const lines = [`${cluster.summaries.length + cluster.debris} objects here`, ...cluster.summaries];
+      if (cluster.debris > 0) lines.push(`${cluster.debris} debris`);
+      return lines;
+    }
     if (h.type === 'marker') return scene.markers.find((m) => m.id === h.id)?.details ?? null;
     if (h.type === 'node' || h.type === 'handle') {
       const node = s.nodes.find((n) => n.id === h.nodeId);

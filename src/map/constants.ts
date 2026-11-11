@@ -12,10 +12,16 @@ export const CHORD_ERROR_PX = 0.3;
  */
 export const CHORD_TOLERANCE_PX = 0.29;
 /**
- * Bound for the faint reference lines that are not predicted patches (debris and other vessels' orbits,
- * recovery-zone circles): 1.5 px wide at 20-45 % alpha, where under a pixel of chord error is invisible.
+ * Bound for the faint reference lines that are not predicted patches (other vessels' orbits, the hovered
+ * debris' orbit): 1.5 px wide at 45 % alpha, where under a pixel of chord error is invisible. Recovery-zone
+ * rings, drawn bright on the body, use CHORD_TOLERANCE_PX.
  */
 export const FAINT_CHORD_TOLERANCE_PX = 0.9;
+/**
+ * Debris orbits drawn all at once (the debris filter, setDebrisOrbits): 1.5 px wide at 20 % alpha. The hovered
+ * debris' orbit is drawn as a vessel orbit (0.9 px, 45 % alpha).
+ */
+export const DEBRIS_CHORD_TOLERANCE_PX = 1.5;
 /** Hard cap on the vertices of one sampled conic. */
 export const MAX_POINTS_PER_CURVE = 2048;
 /**
@@ -88,7 +94,7 @@ export const MARKER_MIN_PATCH_PX = 40;
 export const SURFACE_TWIN_MIN_PX = 12;
 export const NODE_SMALL_RADIUS_PX = 5.5;
 /** Line occupancy grid cell for label and panel placement. */
-export const GRID_CELL_PX = 6;
+export const GRID_CELL_PX = 10;
 /** Label plate padding (horizontal, vertical) and leader line width. */
 export const PLATE_PAD_X_PX = 4;
 export const PLATE_PAD_Y_PX = 1;

@@ -182,10 +182,14 @@ export class OverlayRenderer {
     const pf = this.pointF32;
     const pu = this.pointU32;
     let j = 0;
-    const q = (x: number): number => Math.max(0, Math.min(255, Math.round(x * 255)));
     for (const l of scene.lines) {
       const style = (l.dashed ? 2 : 0) | (Math.min(65535, Math.round(l.width * 64)) << 16);
-      const [r, g, b, a] = l.color;
+      // colour in 0..255; the fade toward white works on these
+      const r = l.color[0] * 255;
+      const g = l.color[1] * 255;
+      const b = l.color[2] * 255;
+      const a = l.color[3] * 255;
+      const base = packColor(l.color, 0);
       const end = l.start + l.count;
       for (let s = l.start; s < end; s++) {
         const o = j * POINT_WORDS;
@@ -196,9 +200,14 @@ export class OverlayRenderer {
         pf[o + 3] = len - Math.floor(len / period) * period;
         // Fade with time ahead: toward a lighter tint of the line's own hue at a lower alpha (constants.ts).
         const fade = verts.fade[s]!;
-        const tint = FADE_TINT * fade;
-        const alpha = a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * fade);
-        pu[o + 4] = (q(r + (1 - r) * tint) | (q(g + (1 - g) * tint) << 8) | (q(b + (1 - b) * tint) << 16) | (q(alpha) << 24)) >>> 0;
+        const alpha = (a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * fade) + 0.5) | 0;
+        if (fade > 0) {
+          const tint = FADE_TINT * fade;
+          const cr = (r + (255 - r) * tint + 0.5) | 0;
+          const cg = (g + (255 - g) * tint + 0.5) | 0;
+          const cb = (b + (255 - b) * tint + 0.5) | 0;
+          pu[o + 4] = (cr | (cg << 8) | (cb << 16) | (alpha << 24)) >>> 0;
+        } else pu[o + 4] = (base | (alpha << 24)) >>> 0;
         const drawn = verts.seg[s] === 1;
         pu[o + 5] = (style | (drawn ? 1 : 0)) >>> 0;
         pf[o + 6] = drawn ? verts.len[s + 1]! - len : 0;

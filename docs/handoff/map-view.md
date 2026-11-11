@@ -24,6 +24,10 @@ interface MapViewHandle { view: MapViewApi; feature: RenderFeature }   // featur
 interface MapViewApi extends MapView {            // MapView = setActive / update / describe (contracts/ui.ts)
   setDrawAtIntercept(on: boolean): void;          // encounter patches at the body's position at intercept
   readonly drawAtIntercept: boolean;
+  setDebrisOrbits(on: boolean): void;             // draw every debris orbit (default off: dots, orbit on hover)
+  readonly debrisOrbits: boolean;
+  setObstacles(rects: readonly ScreenRect[]): void; // HUD panels etc. (CSS px {x, y, width, height}): labels,
+                                                  // the node panel and tooltips keep clear of them
   readonly isActive: boolean;
   readonly selectedNodeId: string | null;
   selectNode(id: string | null): void;            // e.g. after the HUD creates a node
@@ -35,8 +39,9 @@ interface MapViewApi extends MapView {            // MapView = setActive / updat
 }
 ```
 
-Also exported: `MapController` (all CPU logic, runs in vitest), `HANDLES`, `dragDelta`, `modifierFactor`,
-`Projector`, `utAtTrueAnomaly`, `forwardTime`, `locateNode`, `nodeFrame`. Test data:
+Also exported: `MapController` (all CPU logic, runs in vitest; `tooltipRect` = the last draw list's tooltip in
+CSS px, `panelNudge(comp, sign, factor)`), `HANDLES`, `dragDelta`, `modifierFactor`, `layoutGizmo`,
+`GIZMO_MIN_SEPARATION`, `ScreenRect`, `Projector`, `utAtTrueAnomaly`, `forwardTime`, `locateNode`, `nodeFrame`. Test data:
 `src/map/testing/syntheticSnapshots.ts` (`createSyntheticFixture(defs, { ut?, correctionNodes? })`,
 `createSyntheticSnapshot`), `src/map/testing/camera.ts` (`lookAtCamera`, `orbitCamera`, `mapCamera`),
 `src/map/testing/kepler.ts` (fixture-only propagation).
@@ -67,6 +72,12 @@ Also exported: `MapController` (all CPU logic, runs in vitest), `HANDLES`, `drag
   after 500 ms without a second click (`DOUBLE_CLICK_MS`, the Windows default double-click time).
 - The panel stops key events in the bubble phase; the input layer must ignore editable targets and report
   `overUi` over DOM UI (`docs/requests/map-view-1.md`, resolved by flight-ui in 264d8ac).
+- HUD panels: pass their rectangles (CSS px of the canvas) to `view.setObstacles([...])` whenever the HUD
+  layout changes (the map lab passes its own text boxes). Map labels, the node panel and tooltips then keep
+  clear of them. Panel ownership: the map's node panel EDITS the selected node (components, total, time,
+  orbit steps, delete); the HUD's MANEUVER panel shows the burn EXECUTION figures (delta-v remaining, burn time,
+  burn start). The map panel uses the HUD's type and palette (src/map/theme.ts; request map-view-4 asks for
+  the tokens to move to src/core).
 
 ## Behaviour
 
@@ -83,7 +94,15 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   so the bound holds for the distance to the polyline, not only to the chord line. Pieces touching the near
   plane use the angle of the 3-D sagitta. Pieces outside the frustum stay single chords; whole off-screen
   ellipses are skipped. A patch with `nuEnd - nuStart >= 2 pi` is one ellipse; its node sits at
-  `nuEnd mod 2 pi`. Alpha fades with time ahead; the current trajectory beyond the first node is dimmed.
+  `nuEnd mod 2 pi`. With time ahead a patch fades toward a lighter tint of its own hue at alpha 0.5
+  (`FADE_FLOOR`, `FADE_TINT`), so far laps stay readable; the current trajectory beyond the first node is dimmed.
+- Lines are cut in float64 where they pass behind the eye (`VertexArrays.push`, `CLIP_DEPTH_REL`): a vertex
+  counts as in front when its depth exceeds 1e-5 of its distance, and a segment crossing that depth gets a new
+  end there. Every segment the GPU draws has both ends safely in front after the float32 narrowing (the old
+  GPU clip at the 5 cm near plane could not be resolved for points 1e8 m away and threw mirrored chords across
+  the screen). Each line has a dark casing (1.25 px, 0.6 alpha) that keeps it legible over a lit planet;
+  dashes are 12 on / 8 off, phase anchored at the node end, carried per vertex as a phase plus the segment's
+  screen length (exact in float32 however long the line).
 - Lines are relative to the patch body's current position, or (toggle) at intercept: every ENCOUNTER (a run
   of consecutive patches about one body in one list) is drawn around the body's ROOT position at that
   encounter's SOI entry, derived exactly from the preceding patch as `prev.bodyPosAtEnd + r(prev.nuEnd) -
@@ -92,35 +111,55 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   anchor. Ghost ids: `<body>@intercept`, then `<body>@intercept#2`, ... (labelled "(encounter)" or
   "(planned encounter)"). The run the vessel is in now and the root body are never anchored.
 - Radial patches (`conic.p === 0`, sim-orbits convention) are drawn as a straight, non-interactive segment.
-- Other vessels (`conicFromState`, 0.45 alpha) and debris (0.2 alpha): full ellipse, or to the surface for
-  suborbital ones, or to the SOI boundary for open ones. Bodies' orbits (`BodySnapshot.orbit`, attractors
-  only), SOI silhouettes (orbit-plane great circle when the eye is inside the SOI). Faint lines use a 0.9 px
-  tolerance.
-- Body icons + labels when the projected diameter is under 6 px; vessel icons always (active and controllable
-  vessels labelled, debris as dots).
+- Other vessels (`conicFromState`, 0.45 alpha): full ellipse, or to the surface for suborbital ones, or to
+  the SOI boundary for open ones. Debris are dots; a debris orbit (0.2 alpha) is drawn only for the hovered
+  debris or with `setDebrisOrbits(true)` (the perf load case). Bodies' orbits (`BodySnapshot.orbit`,
+  attractors only), SOI silhouettes seen from outside (nothing from inside: a great circle read as a second
+  orbit). Faint lines (other vessels, debris) use a 0.9 px tolerance; zone rings use the 0.29 px one.
+- Bodies: a ring icon under 6 px diameter; a name label while the projected radius is under 40 px (priority
+  above markers). Vessels: an arrowhead oriented along the velocity on screen (the active vessel white).
 - Surface targets in the body-fixed frame (rotate with the body): landing pin, launch-site pad, recovery zones
   as circles of their radius on the sphere; shown once the body is >= 18 px in radius, labels from 70 px.
-- Markers: SDF icons at float64 positions, labels "value + time-to" (Ap/Pe altitude, AN/DN relative
-  inclination, SOI enter/exit with body, impact lat/lon and miss to the landing target when
-  `readouts.landingTarget.predicted` matches, entry speed, closest-approach separation), greedy label
-  de-cluttering (8 candidate positions; labels keep clear of icons and of the node panel; hidden when no
-  position is free), hover tooltip with all details (entry: speed, flight-path angle, vacuum periapsis,
-  lat/lon, miss). Impact and entry points also drawn on the ground.
+- Markers: SDF icons at float64 positions with distinct glyphs (Ap ring with an up chevron, Pe with a down
+  chevron, SOI entry / exit arrows in / out, impact, entry, closest approach, AN/DN diamond), labels "value +
+  time-to" (Ap/Pe altitude, AN/DN relative inclination, SOI enter/exit with body, impact lat/lon and miss to
+  the landing target when `readouts.landingTarget.predicted` matches, entry speed, closest-approach
+  separation). Impact and entry points also drawn on the ground (the ground twin is left out within 12 px of
+  its marker). Apsis and AN/DN markers are left out on a patch under 40 px across.
+- Clutter: icons closer than 11 px collapse into one (a speck-sized body wins, then the active vessel, then the
+  label priority) with a "+n" badge; the hover tooltip lists the members ("n objects here", debris counted).
+  Unselected nodes are 5.5 px discs (a dashed ring when behind a body). Labels: HUD type family (Bahnschrift,
+  13 px semibold, proportional with tabular digits; atlas in gpu/glyphAtlas.ts) on a dark backing plate;
+  placed at the best of 16 candidates (8 beside the anchor, 8 further out with a leader line): free of icons,
+  other labels, the node panel, the tooltip, badges and `setObstacles` rectangles, then covering the least
+  drawn line (lineGrid.ts, a 6 px occupancy grid of the drawn segments, trajectories weighted highest);
+  hidden when no candidate is free. Hover tooltip with all details (entry: speed, flight-path angle, vacuum
+  periapsis, lat/lon, miss), placed in the quadrant (then further out) that covers neither the panel, nor a
+  handle, nor other UI; labels then keep clear of it. No tooltip for the selected node or its handles.
 - Occlusion: per fragment (lines) and per item (icons, CPU f64) against every body sphere and ghost, with a
-  6 px soft fade at the limb; lines lying on a surface carry an exact depth slack for their chords.
+  1.5 px soft edge at the limb; lines lying on a surface (zone rings) are tested against the sphere shrunk by
+  their chords' deepest point plus 1e-4 R (a radial allowance: the same at the limb as at the disc centre).
+  Bodies occlude with `BodyDef.radius` (lines are visible through the thin atmosphere glow above it).
 
 Editing (all through `PlayerCommands`):
 - Click on a current/planned trajectory: `addNode(ut)` at the clicked point, ut from the true anomaly via
   `timeSincePeriapsis` on the first pass after the patch start (the drawn lap); the new node is selected.
   Occluded parts of a trajectory are not clickable. Hover shows an "Add maneuver T-..." preview.
-- Gizmo on the selected node: prograde/retrograde, normal/antinormal, radial out/in handles along the node
-  frame's projected axes (foreshortened, at least 38 % of 58 px). Drag: `dv += sign * (d . handleDir) / 10`
+- Gizmo on the selected node, always at full strength (arms 2 px at 0.85 alpha; a node behind a body shows a
+  dashed ring): prograde/retrograde, normal/antinormal, radial out/in handles along the node frame's projected
+  axes, laid out by `layoutGizmo` (gizmo.ts): the most foreshortened axis turns toward the middle of the wider
+  gap between the other two as its extent falls (seen from above the orbit the normal axis points at the eye
+  and would lie on the radial line), all axis lines are kept 40 degrees apart, every handle at least 55 % of
+  58 px out. Drag: `dv += sign * (d . handleDir) / 10`
   m/s per CSS px, Shift x0.1, Ctrl x10 (per frame, so modifiers may change mid-drag); past 120 px of travel
   the handle sits at its end stop and a rate ramp adds `2 * 2^(t/0.75 s)` m/s per second (max 500). Wheel
   over a handle: 0.1 m/s per step (times the modifiers).
 - Dragging the node body slides it along its pre-node conic in time (nearest point on the drawn polyline,
   revolution closest to the previous time, never before now + 1 s).
-- Panel (DOM, 232 px wide, placed beside the node and clamped into the viewport): Prograde / Normal / Radial,
+- Panel (DOM, 236 px wide, opaque, HUD type and palette; placed at the best of eight places around the node
+  just outside the gizmo: least drawn line covered, never over a handle, other UI or the body centre, not
+  toward the body, the side kept during a drag; docked top-right while the node is off screen): Prograde /
+  Normal / Radial each between its two axis glyphs as nudge buttons (1 m/s, Shift 0.1, Ctrl 10),
   Total (rescales the burn keeping its direction; a zero burn becomes prograde), In (time to the node:
   "1h 30m", "T-90s", "1:02:03", "2d4h", plain seconds) and UT (seconds since J2000). A typed value is applied
   ONCE, on Enter or when the field loses focus (unchanged text sends nothing); Escape restores the node's

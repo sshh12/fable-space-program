@@ -22,6 +22,7 @@ import {
   CHORD_TOLERANCE_PX,
   CLIP_DEPTH_REL,
   COLORS,
+  DEBRIS_CHORD_TOLERANCE_PX,
   FAINT_CHORD_TOLERANCE_PX,
   FAINT_LINE_WIDTH_PX,
   LINE_WIDTH_PX,
@@ -158,6 +159,8 @@ export interface MarkerItem extends PointItem {
   label: string[];
   details: string[];
   priority: number;
+  /** For a ground point (impactSurface / entrySurface): the trajectory marker it belongs to. */
+  parent?: MarkerItem;
 }
 
 export interface NodeItem extends PointItem {
@@ -265,48 +268,127 @@ export class VertexArrays {
   }
 
   /**
-   * Append one vertex of the line that starts at `lineStart`, cutting the line where it passes behind the eye:
-   * when this vertex and the previous one lie on different sides of the clip depth (CLIP_DEPTH_REL), a vertex
-   * is inserted at that depth on the chord between them, in float64. The caller reserves two slots.
+   * Append a line of `count` view-space vertices in one pass, cutting it where it passes behind the eye: a
+   * vertex is in front when its depth exceeds CLIP_DEPTH_REL of its distance (and twice the near plane); where
+   * consecutive vertices lie on different sides, a vertex is inserted at that depth on the chord between them,
+   * in float64. Also fills the drawn-segment flags, the cumulative screen length along drawn segments (the dash
+   * phase, from the line's first vertex: the node end of a planned patch), and `out` with the line's vertex
+   * range, its visible vertex count and the larger side of its screen bounding box.
    */
-  push(proj: Projector, lineStart: number, x: number, y: number, z: number, u: number): void {
-    const r = Math.sqrt(x * x + y * y + z * z);
-    const depth = -z;
-    const front = depth > Math.max(2 * proj.near, CLIP_DEPTH_REL * r);
-    const k = this.n - 1;
-    if (k >= lineStart && (this.front[k] === 1) !== front) {
-      const px = this.vx[k]!;
-      const py = this.vy[k]!;
-      const pz = this.vz[k]!;
-      const rp = Math.sqrt(px * px + py * py + pz * pz);
-      const dp = -pz;
-      const cut = Math.max(2 * proj.near, CLIP_DEPTH_REL * Math.max(r, rp));
-      const t = Math.min(1, Math.max(0, (dp - cut) / (dp - depth)));
-      this.write(proj, px + (x - px) * t, py + (y - py) * t, pz + (z - pz) * t, this.u[k]! + (u - this.u[k]!) * t, true);
+  appendLine(proj: Projector, count: number, xs: ArrayLike<number>, ys: ArrayLike<number>, zs: ArrayLike<number>, us: ArrayLike<number>, out: LineSpan): void {
+    this.reserve(2 * count);
+    const vx = this.vx;
+    const vy = this.vy;
+    const vz = this.vz;
+    const sx = this.sx;
+    const sy = this.sy;
+    const uu = this.u;
+    const front = this.front;
+    const seg = this.seg;
+    const len = this.len;
+    const near2 = 2 * proj.near;
+    const focal = proj.focal;
+    const cx = proj.cx;
+    const cy = proj.cy;
+    const W = proj.width;
+    const H = proj.height;
+    const start = this.n;
+    let j = start;
+    let L = 0;
+    let visible = 0;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    let prevFront = false;
+    for (let i = 0; i < count; i++) {
+      const x = xs[i]!;
+      const y = ys[i]!;
+      const z = zs[i]!;
+      const u = us[i]!;
+      const depth = -z;
+      // |x| + |y| + |z| bounds the distance from above: most vertices pass without a square root
+      const f = depth > near2 && (depth > CLIP_DEPTH_REL * (Math.abs(x) + Math.abs(y) + depth) || depth > CLIP_DEPTH_REL * Math.sqrt(x * x + y * y + z * z));
+      if (i > 0 && f !== prevFront) {
+        // the cut vertex: on the chord, at the clip depth (float64), in front
+        const k = j - 1;
+        const px = vx[k]!;
+        const py = vy[k]!;
+        const pz = vz[k]!;
+        const rp = Math.sqrt(px * px + py * py + pz * pz);
+        const cut = Math.max(near2, CLIP_DEPTH_REL * Math.max(Math.sqrt(x * x + y * y + z * z), rp));
+        const s = Math.min(1, Math.max(0, (-pz - cut) / (-pz - depth)));
+        const qx = px + (x - px) * s;
+        const qy = py + (y - py) * s;
+        const qz = pz + (z - pz) * s;
+        vx[j] = qx;
+        vy[j] = qy;
+        vz[j] = qz;
+        uu[j] = uu[k]! + (u - uu[k]!) * s;
+        const m = focal / -qz;
+        sx[j] = cx + qx * m;
+        sy[j] = cy - qy * m;
+        front[j] = 1;
+        j++;
+      }
+      vx[j] = x;
+      vy[j] = y;
+      vz[j] = z;
+      uu[j] = u;
+      front[j] = f ? 1 : 0;
+      if (f) {
+        const m = focal / -z;
+        sx[j] = cx + x * m;
+        sy[j] = cy - y * m;
+      } else {
+        sx[j] = NaN;
+        sy[j] = NaN;
+      }
+      j++;
+      prevFront = f;
     }
-    this.write(proj, x, y, z, u, front);
+    // links, dash length, statistics (one pass over what was written)
+    const tt = this.t;
+    const alpha = this.alpha;
+    const fade = this.fade;
+    for (let q = start; q < j; q++) {
+      tt[q] = NaN;
+      alpha[q] = 1;
+      fade[q] = 0;
+      seg[q] = 0;
+      if (front[q] !== 1) {
+        len[q] = L;
+        continue;
+      }
+      const px = sx[q]!;
+      const py = sy[q]!;
+      if (q > start && front[q - 1] === 1) {
+        seg[q - 1] = 1;
+        const dx = px - sx[q - 1]!;
+        const dy = py - sy[q - 1]!;
+        L += Math.sqrt(dx * dx + dy * dy);
+      }
+      len[q] = L;
+      if (px >= 0 && py >= 0 && px <= W && py <= H) visible++;
+      if (px < x0) x0 = px;
+      if (px > x1) x1 = px;
+      if (py < y0) y0 = py;
+      if (py > y1) y1 = py;
+    }
+    this.n = j;
+    out.start = start;
+    out.count = j - start;
+    out.visible = visible;
+    out.span = x1 >= x0 ? Math.max(x1 - x0, y1 - y0) : 0;
   }
+}
 
-  private write(proj: Projector, x: number, y: number, z: number, u: number, front: boolean): void {
-    const j = this.n++;
-    this.vx[j] = x;
-    this.vy[j] = y;
-    this.vz[j] = z;
-    this.u[j] = u;
-    this.t[j] = NaN;
-    this.alpha[j] = 1;
-    this.fade[j] = 0;
-    this.front[j] = front ? 1 : 0;
-    this.seg[j] = 0;
-    if (front) {
-      const s = proj.focal / -z;
-      this.sx[j] = proj.cx + x * s;
-      this.sy[j] = proj.cy - y * s;
-    } else {
-      this.sx[j] = NaN;
-      this.sy[j] = NaN;
-    }
-  }
+/** Vertex range and screen statistics of a line appended by VertexArrays.appendLine. */
+export interface LineSpan {
+  start: number;
+  count: number;
+  visible: number;
+  span: number;
 }
 
 export interface SceneOptions {
@@ -395,6 +477,7 @@ interface NodeCache {
 export class SceneBuilder {
   private readonly sampler = new Sampler();
   private readonly verts = new VertexArrays();
+  private readonly span: LineSpan = { start: 0, count: 0, visible: 0, span: 0 };
   private readonly tmpV: Vec3 = { x: 0, y: 0, z: 0 };
   /** Curve objects, reused by index every build. */
   private readonly curves: ViewConic[] = [];
@@ -555,6 +638,7 @@ export class SceneBuilder {
               const rootS = v3.addScaled(b.pos, quat.rotate(b.q, dirFixed), b.radius);
               const kind = m.kind === 'impact' ? ('impactSurface' as const) : ('entrySurface' as const);
               const sItem = this.markerItem(scene, `${id}/surface`, rootS, kind, m, patchKey, 'surfacePoint', style.color, 2);
+              sItem.parent = item;
               labelOf(sItem);
               scene.markers.push(sItem);
             }
@@ -601,8 +685,9 @@ export class SceneBuilder {
     }
     for (const v of snapshot.vessels) {
       const view = proj.toView(v.rRoot);
-      const speed = v3.len(v.v);
-      const heading = speed > 0 ? this.axisScreen(scene, view, v3.scale(v.v, 1 / speed)) : { dx: 0, dy: 0, extent: 0 };
+      // Debris are dots: only vessels drawn as arrowheads need their heading on screen.
+      const speed = v.controllable ? v3.len(v.v) : 0;
+      const heading = speed > 0 ? this.axisScreen(scene, view, v3.scale(v.v, 1 / speed)) : NO_HEADING;
       const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view, vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable, dirX: heading.extent > 0 ? heading.dx : 0, dirY: heading.extent > 0 ? heading.dy : 0 };
       this.place(scene, item);
       scene.vessels.push(item);
@@ -798,56 +883,23 @@ export class SceneBuilder {
 
   private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): PatchCurveLine | null {
     const proj = scene.proj;
-    const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit';
-    const s = this.sampleLine(id, curve, u0, u1, proj, faint);
+    const tolerance = kind === 'debrisOrbit' ? DEBRIS_CHORD_TOLERANCE_PX : kind === 'vesselOrbit' ? FAINT_CHORD_TOLERANCE_PX : CHORD_TOLERANCE_PX;
+    const s = this.sampleLine(id, curve, u0, u1, proj, tolerance);
     if (s.count < 2) return null;
-    const verts = this.verts;
-    verts.reserve(2 * s.count);
-    const start = verts.n;
-    for (let i = 0; i < s.count; i++) verts.push(proj, start, s.vx[i]!, s.vy[i]!, s.vz[i]!, s.u[i]!);
-    const rec: PatchCurveLine = { kind, id, start, count: verts.n - start, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: 0, span: 0, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
-    this.finishLine(proj, rec);
+    const out = this.span;
+    this.verts.appendLine(proj, s.count, s.vx, s.vy, s.vz, s.u, out);
+    const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
     scene.lines.push(rec);
     return rec;
-  }
-
-  /**
-   * Drawn segments (both ends in front of the eye), the cumulative screen length along them (dash phase, from
-   * the line's first vertex: the node end of a planned patch), the visible vertex count and the screen span.
-   */
-  private finishLine(proj: Projector, rec: LineRecord): void {
-    const v = this.verts;
-    const end = rec.start + rec.count;
-    let len = 0;
-    let visible = 0;
-    let x0 = Infinity;
-    let y0 = Infinity;
-    let x1 = -Infinity;
-    let y1 = -Infinity;
-    for (let j = rec.start; j < end; j++) {
-      if (j > rec.start && v.seg[j - 1] === 1) len += Math.hypot(v.sx[j]! - v.sx[j - 1]!, v.sy[j]! - v.sy[j - 1]!);
-      v.len[j] = len;
-      if (j + 1 < end && v.front[j] === 1 && v.front[j + 1] === 1) v.seg[j] = 1;
-      if (v.front[j] !== 1) continue;
-      const sx = v.sx[j]!;
-      const sy = v.sy[j]!;
-      if (proj.onScreen(sx, sy)) visible++;
-      if (sx < x0) x0 = sx;
-      if (sx > x1) x1 = sx;
-      if (sy < y0) y0 = sy;
-      if (sy > y1) y1 = sy;
-    }
-    rec.visibleVertices = visible;
-    rec.span = x1 >= x0 ? Math.max(x1 - x0, y1 - y0) : 0;
   }
 
   /**
    * Sample line `id` over [u0, u1]: from the breakpoints kept for it when they still apply and every piece
    * verifies (BreakpointCache), else afresh. The result is within the line's tolerance either way.
    */
-  private sampleLine(id: string, curve: ViewConic, u0: number, u1: number, proj: Projector, faint: boolean): SampledCurve {
+  private sampleLine(id: string, curve: ViewConic, u0: number, u1: number, proj: Projector, tolerance: number): SampledCurve {
     const sampler = this.sampler;
-    const tolerance = faint ? FAINT_CHORD_TOLERANCE_PX : CHORD_TOLERANCE_PX;
+    const faint = tolerance > CHORD_TOLERANCE_PX;
     let entry = this.breakpoints.get(id);
     if (entry && !entry.stale && entry.tolerance === tolerance && entry.kind === curve.kind && sameShape(entry.e, curve)) {
       const n = this.fitBreakpoints(entry, curve, u0, u1);
@@ -1013,16 +1065,11 @@ export class SceneBuilder {
     const r1 = Math.max(...finite);
     if (!(r1 - r0 > 1)) return;
     const proj = scene.proj;
-    const verts = this.verts;
-    verts.reserve(4);
-    const start = verts.n;
-    for (const r of [r0, r1]) {
-      const v = proj.toView(v3.addScaled(origin, dir, r));
-      verts.push(proj, start, v.x, v.y, v.z, r);
-    }
-    const rec: LineRecord = { kind: list, id: `${list}/${index}`, start, count: verts.n - start, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: 0, span: 0, capped: false, evaluations: 0, occlusionSlack: 0 };
-    this.finishLine(proj, rec);
-    scene.lines.push(rec);
+    const a = proj.toView(v3.addScaled(origin, dir, r0));
+    const b = proj.toView(v3.addScaled(origin, dir, r1));
+    const out = this.span;
+    this.verts.appendLine(proj, 2, [a.x, b.x], [a.y, b.y], [a.z, b.z], [r0, r1], out);
+    scene.lines.push({ kind: list, id: `${list}/${index}`, start: out.start, count: out.count, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: out.visible, span: out.span, capped: false, evaluations: 0, occlusionSlack: 0 });
   }
 
   /** Orbit of another vessel from its state (cached while the state and time are unchanged). */
@@ -1066,8 +1113,9 @@ export class SceneBuilder {
       nu1 = cross === null ? lim : Math.min(cross, lim);
       if (!(nu1 > nu0)) return;
     }
-    const debris = !v.controllable;
-    this.addConicLine(scene, `vessel:${v.id}`, debris ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, debris ? COLORS.debrisOrbit : COLORS.vesselOrbit, FAINT_LINE_WIDTH_PX, false);
+    // Debris drawn in bulk (setDebrisOrbits) are faint and coarser; the hovered one is drawn like a vessel's orbit.
+    const bulk = !v.controllable && v.id !== scene.options.highlightVesselId;
+    this.addConicLine(scene, `vessel:${v.id}`, bulk ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, bulk ? COLORS.debrisOrbit : COLORS.vesselOrbit, FAINT_LINE_WIDTH_PX, false);
   }
 
   /**
@@ -1129,6 +1177,7 @@ export class SceneBuilder {
 }
 
 const ORIGIN: Vec3 = { x: 0, y: 0, z: 0 };
+const NO_HEADING: AxisScreen = { dx: 0, dy: 0, extent: 0 };
 
 /** Do breakpoints made for eccentricity `e` still apply to `curve` (same parameter kind assumed)? */
 function sameShape(e: number, curve: ViewConic): boolean {
