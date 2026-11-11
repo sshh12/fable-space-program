@@ -9,7 +9,11 @@
 /** Font stack of every interface text (Bahnschrift on Windows, DIN Alternate on macOS). Numerals are tabular. */
 export const UI_FONT_FAMILY = "Bahnschrift, 'DIN Alternate', 'Segoe UI', system-ui, sans-serif";
 
-/** CSS colours. `panel` and `panelStrong` are the plates' fills (near-opaque, with their alpha). */
+/**
+ * CSS colours. `panel` and `panelStrong` are the plates' fills with their alpha: 0.97 and 0.985, so that a
+ * hard edge of the scene behind a plate (sunlit ground against black sky) survives as a step of 8 levels
+ * at most, not as a line across a row of text (request flight-ui-2; they were 0.86 and 0.94).
+ */
 export const UI_COLORS = {
   /** Values and primary text. */
   text: '#eef4fb',
@@ -23,6 +27,6 @@ export const UI_COLORS = {
   warning: '#ff6a6a',
   /** Hairlines and plate borders. */
   line: 'rgba(170, 198, 235, 0.26)',
-  panel: 'rgba(17, 24, 34, 0.86)',
-  panelStrong: 'rgba(12, 17, 25, 0.94)',
+  panel: 'rgba(17, 24, 34, 0.97)',
+  panelStrong: 'rgba(12, 17, 25, 0.985)',
 } as const;

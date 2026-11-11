@@ -30,8 +30,8 @@ describe('interface theme shared by the HUD and the map (request map-view-4)', (
       caution: '#ffbb4d',
       warning: '#ff6a6a',
       line: 'rgba(170, 198, 235, 0.26)',
-      panel: 'rgba(17, 24, 34, 0.86)',
-      panelStrong: 'rgba(12, 17, 25, 0.94)',
+      panel: 'rgba(17, 24, 34, 0.97)',
+      panelStrong: 'rgba(12, 17, 25, 0.985)',
     });
   });
 });

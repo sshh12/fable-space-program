@@ -556,4 +556,7 @@ ball as the HUD.
   `--bg-strong`) and its `font-family` from them; the generated stylesheet is byte-identical to the one
   before the change. The map view (`src/map`, which may not import `src/ui`) reads the same module.
   Test: `tests/unit/flight-ui/theme.test.ts`.
+- **Plate opacity** (request `flight-ui-2`). `UI_COLORS.panel` is `rgba(17, 24, 34, 0.97)` (was 0.86) and
+  `UI_COLORS.panelStrong` `rgba(12, 17, 25, 0.985)` (was 0.94): a white-to-black edge of the scene behind
+  a plate leaves a step of 8 levels at most. `--bg` and `--bg-strong` follow; `--bg-top` is the HUD's own.
 
