@@ -339,10 +339,32 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
 | `cockpit-13` | no | core part resolved `4cdeb62` | `'vfx.plasmaWindow'` key, default, binding set `plasmaWindow`; vfx publishes (NOTICE-core-1) |
 | `atmosphere-clouds-4` | no | core part resolved `3e69d76` (lead decision) | `'atmosphere.aerialTransmittance'`, last in the `transparency` set; `applyAtmosphere` per channel when published (NOTICE-core-2) |
 | `sky-lighting-10` | no | resolved `7e953e8` | Camera in space: meter's sun illuminance after the air (`atmosphereTransmittanceAlong`); sun in the frame = exposure floor |
+| `map-view-7` | no | resolved `ecc9238` | `FakeSimOptions.vesselName`; the integration lab names the vessel after its vehicle |
+| `map-view-5` | no | labs/integration part resolved `298f785` | `&map=1&flighthud=1`: the map view and the flight HUD mounted as the app mounts them; `mapCamera()` |
+| `terrain-render-6` | no | resolved `1581cf9` | `LaunchSiteDef.pad.shape`: exactly flat core and areas, a share of the relief elsewhere, ragged blends. **Lead-owned data changed: `data/defs/sites/ka-lae-lc1.json`** |
+| `atmosphere-clouds-8` | no | **declined** | Cloud map re-bake: the real-time source snapshot is not cached (a re-download moves every cloud mid close-out); cloud-top source needs an Earthdata login |
+| `vehicle-pad-2` part 2 | no | resolved `1426e0d` | `LocalLight.castShadow`: perspective maps for the 2 brightest spots, all mesh batches cast, deferred PCF |
+| `sky-lighting-6` | no | resolved `81a26d0` | Moon albedo colour constrained (`tools/bake/moon/colour.py`, all 131,070 tiles); **Moon `meanColor` changed (lead-owned)** |
+| `sky-lighting-4` | no | Clouds' colour done `81a26d0`; nebulae **declined** | `tools/bake/sky/clouds_colour.py`; nebulae need licensed imagery, placement, photometry, star removal |
+| `terrain-render-5` | no | **declined** (tint fixed by `sky-lighting-6`) | Strip steps are in the WAC detail of levels 6-7; needs the WAC + SVS sources again (7 GB) and the detail step re-run |
 
-### Open items of this pass
+### Lead-owned data changed in this pass
 
-1. Shadowed spot lights (`vehicle-pad-2` part 2).
+- `data/defs/sites/ka-lae-lc1.json`: `pad.shape` (request `terrain-render-6`): core 115 + 40 m, relief share
+  0.25, five areas, ragged edges. `flatRadius` / `blendRadius` unchanged.
+- `data/defs/bodies/moon.json`: `render.meanColor` (0.12, 0.115, 0.105) -> (0.1332, 0.1263, 0.1221), the
+  near-side mean of the colour-constrained albedo map (request `sky-lighting-6`).
+
+### Open items of this pass (for the lead)
+
+1. Milky Way nebulae (`sky-lighting-4`): a bake of licensed photographic sources into the cube.
+2. Moon strip equalisation (`terrain-render-5`): re-run `albedo.py` detail with per-strip gain / offset; keep
+   the WAC and SVS sources (7 GB) for it. Then re-run `colour.py` (it is idempotent per bake).
+3. Cloud map (`atmosphere-clouds-8`): keep the raw composite with the bake; an optical-depth index for channel 0,
+   an Earthdata token for an L3 cloud-top source for channel 1.
+4. `cockpit-12` part 2 (a longer shoulder for interior frames) declined: the tone curve is one transform for
+   every camera; a local-exposure pass would be the way, a design of its own.
+5. The resolve and sub-pixel bright sources (`sky-lighting-1`, from the first maintainer): unchanged.
 
 ### Journal
 
@@ -357,3 +379,7 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
   cockpit-cs-2 step of the lead's plan was not needed: the cockpit's own bindings are below the scene sets
   since its restructure; integration lab spec 3 of 3), NOTICE-core-2, `sky-lighting-10` (integration exposure
   specs unchanged: vehicle in space 15.09, crescent 15.07).
+- 14:45-15:40. `map-view-7`, `map-view-5` (lab part), `terrain-render-6` (terrain-core unit suite 89 of 89, sim
+  suites 212 of 212; looked at from 1.8 m), `atmosphere-clouds-8` declined, `sky-lighting-6` (bake: 131,070
+  tiles recoloured in 10 min), `sky-lighting-4` (Clouds), `terrain-render-5` declined, `vehicle-pad-2` part 2
+  (render-core lighting / mesh / shadows specs 22 of 22), NOTICE-core-3.
