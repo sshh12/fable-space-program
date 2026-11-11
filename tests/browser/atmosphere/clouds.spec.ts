@@ -32,23 +32,43 @@ test.describe('clouds', () => {
     await page.evaluate(() => window.__atmo!.viewFromSpace(66371000, 30, 25));
     await settle(page, 40);
     await shot(page, 'clouds-orbit-vs-map');
-    // Opacity of the cloud buffer at a grid of pixels, with the geographic position each one looks at
-    // (the sphere 3 km above the reference radius: inside the layer).
+    // Opacity of the cloud buffer the frame shows at a grid of pixels, with the geographic position each one
+    // looks at (the sphere 3 km above the reference radius: inside the layer). A disc this small is drawn
+    // from the full-resolution tile march (select.ts); the half-resolution buffers are then only what the
+    // transparents read, and the opacity they hold is printed beside it.
     const samples = await page.evaluate(async () => {
       const lab = window.__atmo!;
-      const b = await lab.feature.debug.clouds()!.readBuffers();
-      const out: { lat: number; lon: number; opacity: number }[] = [];
-      for (let y = 2; y < b.height; y += 3) {
-        for (let x = 2; x < b.width; x += 3) {
+      const clouds = lab.feature.debug.clouds()!;
+      const sel = lab.feature.debug.selection();
+      const half = await clouds.readBuffers();
+      // Opacity of render-target pixel (x, y) in the half-resolution buffer and in the one shown.
+      const halfAt = (x: number, y: number): number => 1 - half.radiance[(Math.floor(y / 2) * half.width + Math.floor(x / 2)) * 4 + 3]!;
+      let shownAt = halfAt;
+      if (sel.fine && sel.scissor) {
+        const [sx, sy, sw, sh] = sel.scissor;
+        const tile = await clouds.readFineBuffers({ x: 0, y: 0, width: sw, height: sh });
+        shownAt = (x, y) => {
+          const tx = Math.floor(x) - sx;
+          const ty = Math.floor(y) - sy;
+          if (tx < 0 || ty < 0 || tx >= sw || ty >= sh) return 0;
+          return 1 - tile.radiance[(ty * tile.width + tx) * 4 + 3]!;
+        };
+      }
+      const out: { lat: number; lon: number; opacity: number; halfOpacity: number }[] = [];
+      for (let y = 2; y < half.height; y += 3) {
+        for (let x = 2; x < half.width; x += 3) {
           const p = lab.surfacePoint(x * 2 + 0.5, y * 2 + 0.5, 3000);
           if (!p) continue;
           // Leave the limb out: there a pixel spans hundreds of kilometres of map.
           const q = lab.surfacePoint(x * 2 + 8.5, y * 2 + 0.5, 3000);
           if (!q || Math.abs(q.distance - p.distance) > 250000) continue;
-          out.push({ lat: p.latDeg, lon: p.lonDeg, opacity: 1 - b.radiance[(y * b.width + x) * 4 + 3]! });
+          // (The shown buffer over the 2 x 2 pixels of the half-resolution texel the map's footprint is
+          // measured for.)
+          const shown = (shownAt(x * 2, y * 2) + shownAt(x * 2 + 1, y * 2) + shownAt(x * 2, y * 2 + 1) + shownAt(x * 2 + 1, y * 2 + 1)) / 4;
+          out.push({ lat: p.latDeg, lon: p.lonDeg, opacity: shown, halfOpacity: halfAt(x * 2, y * 2) });
         }
       }
-      return { samples: out, offsetDeg: (lab.feature.debug.clouds()!.coverageLongitudeOffset() * 180) / Math.PI };
+      return { samples: out, fine: sel.fine, offsetDeg: (clouds.coverageLongitudeOffset() * 180) / Math.PI };
     });
     expect(samples.samples.length).toBeGreaterThan(1000);
     const png = PNG.sync.read(fs.readFileSync(path.resolve('data/tiles/earth/globals/cloudCoverage.png')));
@@ -86,7 +106,7 @@ test.describe('clouds', () => {
       const inBin = pairs.filter((p) => p.c >= lo && p.c < bins[i + 1]!);
       return { lo, n: inBin.length, opacity: inBin.length ? mean(inBin.map((p) => p.o)) : NaN };
     });
-    console.log(`${pairs.length} pixels: correlation of cloud opacity with map coverage ${corr.toFixed(3)}; mean coverage ${mc.toFixed(3)}, mean opacity ${mo.toFixed(3)}; map drift ${samples.offsetDeg.toFixed(2)} deg`);
+    console.log(`${pairs.length} pixels (${samples.fine ? 'full-resolution tile' : 'half resolution'}): correlation of cloud opacity with map coverage ${corr.toFixed(3)}; mean coverage ${mc.toFixed(3)}, mean opacity ${mo.toFixed(3)} (half-resolution buffer for transparents ${mean(samples.samples.map((s) => s.halfOpacity)).toFixed(3)}); map drift ${samples.offsetDeg.toFixed(2)} deg`);
     console.log(`opacity by map coverage: ${binned.map((b) => `${b.lo.toFixed(1)}+: ${b.opacity.toFixed(2)} (${b.n})`).join(', ')}`);
     expect(corr).toBeGreaterThan(0.8);
     // Clear map: only the thin fair-weather fields the model adds. Overcast map: opaque.

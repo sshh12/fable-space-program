@@ -6,12 +6,14 @@ shadows for the deferred lighting, and the buffers every transparent draws throu
 Per-body data only; a frame with no atmosphere in view runs no pass of this package and publishes neutral
 buffers.
 
-This is the state after the review fixes (section 10 lists what the review found and what was done).
-Two things are NOT met and are stated first:
+This is the state after visual fix round 1 (section 11: every item of the round-0 visual critique, what
+was done, what was not and why, measured numbers). Sections 1 - 10 describe the package; where round 1
+changed them they say so. Two things are NOT met and are stated first:
 
-- **The clouds are not photoreal.** They are better than at the first hand-off (section 9 says where and
-  where not), but cumulus from the ground still read as modelled shapes, and a cloud sea from just above as
-  dunes with creases.
+- **The clouds are not yet photoreal in every view.** Cumulus from the pad, a cloud sea from above, the
+  day side from low orbit and the low-sun views now read as clouds (section 11), but a deck seen from just
+  under its base is smooth painted lobes, cloud seen into a setting sun is one warm tan, and from orbit
+  the fields are popcorn of one size with soft edges and soft shadows.
 - **The atmosphere budget line could not be confirmed as a p99.** Its medians are 0.36 - 0.59 ms (budget
   0.8 / 0.9); the p99 of the median window was inside the budget in 15 of 16 rows of the last run and at
   0.93 ms in one, and in an earlier run on a loaded machine three rows read 1.3 - 4.1 ms. The excess is
@@ -26,6 +28,7 @@ src/render/atmosphere/feature.ts        createAtmosphereFeature: the RenderFeatu
 src/render/atmosphere/tables.ts         AtmosphereTables: transmittance, multi-scattering, sky irradiance, sky view, aerial volume (compute)
 src/render/atmosphere/clouds.ts         CloudSystem: noise, coverage map, shadow map, quarter-area march + temporal resolve, tile march, cloud clock
 src/render/atmosphere/select.ts         which bodies are marched, with how many samples, in which screen rectangle; FINE_TILE_SIZE
+src/render/atmosphere/airglow.ts        airglow layers of an atmosphere definition (validated), airglowTop
 src/render/atmosphere/params.ts         cloud tunables (validated: unknown keys and out-of-range values are reported)
 src/render/atmosphere/uniforms.ts       one field table -> WGSL struct AtmoU + CPU writer
 src/render/atmosphere/math.ts           CPU mirrors of the table parameterisations, stable altitude, ray / shell geometry (float32-faithful)
@@ -36,10 +39,10 @@ src/render/atmosphere/shaders/march.ts  chunk "atmosphere_cloud_shadow", marchFs
 src/render/atmosphere/shaders/clouds.ts chunk "atmosphere_cloud_density", cloudMarchFsWgsl(fine), resolve, cloudShadowFsWgsl(inPlace), blit, noise
 data/defs/render/earth.atmosphere.json, earth.clouds.json    tunables (section 6)
 labs/atmosphere/                        lab (query parameters in main.ts; window.__atmo)
-tests/unit/atmosphere/                  math.test.ts, model.test.ts (35 tests)
-tests/browser/atmosphere/               sky, screens, transparents, clouds, smallshell, shadows, sampling, tunables, eclipse specs;
-                                        atmosphere.perf.spec.ts; explore.spec.ts (tuning tool, skipped)
-docs/requests/atmosphere-clouds-1.md ... -5.md   (section 8)
+tests/unit/atmosphere/                  math.test.ts, model.test.ts, airglow.test.ts (40 tests)
+tests/browser/atmosphere/               sky, screens, transparents, clouds, cloudlight, smallshell, shadows, sampling, tunables,
+                                        eclipse, native (1440p animated) specs; atmosphere.perf.spec.ts; explore.spec.ts (tuning tool, skipped)
+docs/requests/atmosphere-clouds-1.md ... -9.md   (section 8)
 ```
 
 ## 2. Public API
@@ -67,7 +70,7 @@ Published every frame (`prepare`), neutral when nothing is in range:
 | `atmosphere.aerialPerspective` | 32^3 rgba16float; rgb = in-scatter in cd/m^2 (clamped to HDR_MAX), a = LUMINANCE-weighted transmittance |
 | `clouds.screen` | half resolution, rgb = pre-exposed premultiplied radiance, a = transmittance (the view never changes: stable for bind groups) |
 | `clouds.depth` | r32float, see section 7 for what the value is; 3.0e38 = none |
-| `clouds.shadowMap` | rgba32float 1024^2: r = optical depth of the layer along the sun line, g = distance along the projection direction `L = cross(axisU, axisV)` at which the cloud begins on the sun side (clear texels: the top of the layer), b = mean extinction behind that point. A receiver at distance s has `tau = clamp((g - s) b, 0, r)`: the core's chunk `cloud_shadow` reads it that way since core-support commit b5dceb7 |
+| `clouds.shadowMap` | rgba32float 1024^2: r = optical depth of the layer as the ground sees it (beam + diffuse transmission, request 6), g = distance along the projection direction `L = cross(axisU, axisV)` at which the cloud begins on the sun side (clear texels: the top of the layer), b = mean extinction behind that point, a = optical depth of the direct beam divided by r. A receiver at distance s has `tau = clamp((g - s) b, 0, r)` (core chunk `cloud_shadow` / `cloudLight`). Since round 1 this is the marched map FILTERED for the core's single bilinear tap (mean transmittance over a tent, section 11 item 3), and `axisV` is longer than unit by the factor by which the map is narrower along v under a low sun (the core's lookup needs no change) |
 | `clouds.coverageMap` | the body's coverage map (rg8unorm with mips) |
 
 `coreOf(ctx).setCloudShadowParams({ near, far })` is called in `prepare` every frame (null terms when off).
@@ -121,9 +124,15 @@ Shader chunks registered at init: `"atmosphere_model"`, `"atmosphere_cloud_shado
   starts again. While the camera is within about 150 km of the cloud tops (footprint under 150 - 600 m) the
   rays of successive marches go through different points of the pixel (the frame's TAA sequence, also in
   deterministic mode): edges are averaged instead of stair-stepped.
-- **Shadow map.** Sun-aligned orthographic (elevation clamped to 4 deg, off below -2 deg), body-fixed
-  anchor, origin in whole texels, one texel in 16 re-marched per frame IN PLACE; in a frame in which the
-  origin moves, into a scratch target and back with a blit pass (both timed). Density is read no finer than
+- **Shadow map.** Sun-aligned orthographic (elevation clamped to 3 deg, off below -2 deg), body-fixed
+  anchor, origin in whole texels, one texel in 16 (32 under a low sun) re-marched per frame IN PLACE; in a
+  frame in which the origin moves, into a scratch target and back with a blit pass (both timed). Under a
+  low sun the map is narrower along v (its texels are about square on the ground). A full re-march uses
+  the same step count as the incremental refresh. The core reads a filtered copy (`cloudShadowFilter`,
+  timed): every texel the mean transmittance over a tent of 3 x 3 texels, 7 x 3 under a low sun.
+- **Airglow.** Optically thin Gaussian emission layers per body (`AtmosphereRenderDef.airglow`), integrated
+  along every eye ray of the march (8 samples per crossing of a layer); in front of the ray's lowest point
+  it is in front of everything, beyond it it is attenuated by the whole path and by clouds in front. Density is read no finer than
   1.5 half-resolution pixels under the camera: from far away the map is as smooth as the screen needs.
 - **Cloud clock.** `advanceCloudClock`: simulation time, at most `maxTimeRate` x real time, never backwards.
 
@@ -289,7 +298,15 @@ units), new `lowThinDensity` 0.2 and `lowDensityVariation` 1.0.
 - `atmosphere-clouds-5` (open, to the ocean owner): commit 4ca98ab of this package contains the deletion of
   `tests/browser/ocean/diag.spec.ts`, staged by someone else and swept in by a commit without pathspec.
   Every commit since is made with `git commit -- <owned paths>`.
-- No open request against this package's paths.
+- `atmosphere-clouds-6` (**resolved**, core-support 926373f): the deferred lighting splits the sun under a
+  cloud into beam and cloud-base light (`cloudLight`), and takes a reduced sky as ambient. The ocean's own
+  copy of the lookup is `ocean-cs-2` (open, ocean owner).
+- `atmosphere-clouds-7` (**resolved**, core-support 1523877): bloom as a glare spread function.
+- `atmosphere-clouds-8` (open, bake-earth): a coverage map with dynamic range inside weather systems and a
+  cloud-top channel independent of the coverage.
+- `atmosphere-clouds-9` (**resolved**, core-support edfd096): `AtmosphereRenderDef.airglow`.
+- Against this package: `sky-lighting-9` (airglow) **resolved** in round 1; `map-view-6` (clouds of the map
+  view at 14,000 - 24,000 km) answered for the clouds in round 1 (section 11), still open for the stars.
 
 ## 9. Known weaknesses
 
