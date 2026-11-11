@@ -403,7 +403,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
           const radius = l.radius ?? 0;
           if (l.dir) {
             const dirRelCam = v3.normalize(quat.rotate(parent.q, quat.rotate(localRot, v3.fromTuple(l.dir))));
-            frame.lights.push({ kind: 'spot', posRelCam, dirRelCam, cone: l.cone ?? [0, Math.PI / 4], intensity: l.intensity, range: l.range, radius });
+            frame.lights.push({ kind: 'spot', posRelCam, dirRelCam, cone: l.cone ?? [0, Math.PI / 4], intensity: l.intensity, range: l.range, radius, ...(l.castShadow ? { castShadow: true } : {}) });
           } else frame.lights.push({ kind: 'point', posRelCam, intensity: l.intensity, range: l.range, radius });
           lightBudget.n++;
         }

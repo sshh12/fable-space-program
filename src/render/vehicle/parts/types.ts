@@ -87,6 +87,8 @@ export interface PartLight {
   cone?: [number, number];
   /** Radius of the emitting face, m (a lamp bank, a lens). */
   radius?: number;
+  /** A spot that casts shadows (the core shadows the two brightest at the camera). */
+  castShadow?: boolean;
 }
 
 export interface PartVisual {

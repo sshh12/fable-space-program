@@ -420,7 +420,7 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
     return lampAz.map((phi) => {
       const p = lampAt(phi);
       const dir = norm3(polar(Math.sin(25 * DEG), phi, -Math.cos(25 * DEG)));
-      return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [20 * DEG, 36 * DEG] as [number, number], radius: 0.09, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
+      return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [20 * DEG, 36 * DEG] as [number, number], radius: 0.09, castShadow: true, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
     });
   };
   return { models: { body, lamp }, pose, lights };
@@ -570,7 +570,8 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
   const platform = buildModel(`${def.id}.platform`, (b) => {
     const len = P.num('platformLength', 0.85);
     const wid = P.num('platformWidth', 0.8);
-    b.mat('grating').masks(0.3, 1, 0.3, 0);
+    // (A plain plate: a cut-out material would put this model on the per-material shadow path in every cascade.)
+    b.mat('galvanised').masks(0.3, 1, 0.3, 0);
     box(b, wid, len, 0.03, [0, -len / 2 - 0.03, 0.03], 'platform');
     if (b.lod < 2) {
       b.mat('alu-machined');

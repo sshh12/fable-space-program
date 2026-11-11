@@ -766,6 +766,9 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       dir: [to[0] / tl, to[1] / tl, to[2] / tl],
       cone: [numParam(params, 'innerDeg', 24) * DEG, numParam(params, 'outerDeg', 44) * DEG],
       radius: 1.2,
+      // The core shadows the two brightest at the camera: the tower, the vehicle and the masts throw shadows
+      // across the apron and onto one another.
+      castShadow: true,
       intensity: [candela, candela * 0.98, candela * 0.94],
       range,
     },

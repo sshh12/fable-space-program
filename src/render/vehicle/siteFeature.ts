@@ -220,7 +220,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       stats.instances = 0;
       stats.fading = 0;
       stats.movingInstances = 0;
-      const lamps: { pos: Vec3; end: Vec3 | null; dir: Vec3 | null; cone: [number, number] | null; radius: number; intensity: [number, number, number]; range: number; d: number }[] = [];
+      const lamps: { pos: Vec3; end: Vec3 | null; dir: Vec3 | null; cone: [number, number] | null; radius: number; castShadow: boolean; intensity: [number, number, number]; range: number; d: number }[] = [];
       for (const rt of sites) {
         const pose = frame.bodies.find((b) => b.id === rt.site.bodyId);
         if (!pose) continue;
@@ -294,7 +294,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               const rel = toCam(l.pos);
               const end = l.end ? toCam(l.end) : null;
               const dir = l.dir ? v3.normalize(quat.rotate(parent.q, quat.rotate(pl.q, v3.fromTuple(l.dir)))) : null;
-              lamps.push({ pos: rel, end, dir, cone: l.cone ?? null, radius: l.radius ?? 0, intensity: [l.intensity[0] * st.night, l.intensity[1] * st.night, l.intensity[2] * st.night], range: l.range, d: Math.min(v3.len(rel), end ? v3.len(end) : Infinity) - l.range });
+              lamps.push({ pos: rel, end, dir, cone: l.cone ?? null, radius: l.radius ?? 0, castShadow: !!l.castShadow, intensity: [l.intensity[0] * st.night, l.intensity[1] * st.night, l.intensity[2] * st.night], range: l.range, d: Math.min(v3.len(rel), end ? v3.len(end) : Infinity) - l.range });
             }
           }
         }
@@ -312,7 +312,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       for (const l of lamps) {
         if (stats.lights >= maxLights || frame.lights.length >= 16) break;
         if (l.end) frame.lights.push({ kind: 'capsule', posRelCam: l.pos, endRelCam: l.end, intensity: l.intensity, range: l.range, radius: l.radius });
-        else if (l.dir) frame.lights.push({ kind: 'spot', posRelCam: l.pos, dirRelCam: l.dir, cone: l.cone ?? [0, Math.PI / 4], intensity: l.intensity, range: l.range, radius: l.radius });
+        else if (l.dir) frame.lights.push({ kind: 'spot', posRelCam: l.pos, dirRelCam: l.dir, cone: l.cone ?? [0, Math.PI / 4], intensity: l.intensity, range: l.range, radius: l.radius, ...(l.castShadow ? { castShadow: true } : {}) });
         else frame.lights.push({ kind: 'point', posRelCam: l.pos, intensity: l.intensity, range: l.range, radius: l.radius });
         stats.lights++;
       }
