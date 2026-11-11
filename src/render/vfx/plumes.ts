@@ -143,9 +143,17 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   if (lens.w > 0.001) {
     let rp = farv.w;
     let dq = (p - (pos + dir * (0.5 * rp))) / rp;
-    let q2 = dot(dq, dq) * (1.0 + 1.1 * (n.r - 0.5) + 0.6 * (n3.g - 0.5));
+    // Its turbulence is its own and the same in every direction, in coordinates that grow with it: lumps and
+    // wisps, never the rays of the streak or striation noise (which depend on the direction from the nozzle).
+    var np = vec4f(0.5);
+    var np2 = vec4f(0.5);
+    if (fp >= 0.0) {
+      np = vfxNoiseLod(dq * 0.9 + vec3f(0.41, 0.17, 0.83) + vec3f(0.37 * vary.x), fp / rp * 0.9);
+      np2 = vfxNoiseLod(dq * 2.3 + vec3f(0.13, 0.59, 0.27), fp / rp * 2.3);
+    }
+    let q2 = dot(dq, dq) * (1.0 + 1.2 * (np.r - 0.5) + 0.5 * (np2.g - 0.5));
     if (q2 < 7.0) {
-      let wisp = (0.3 + 1.4 * n.g) * (0.55 + 0.9 * n2.b);
+      let wisp = (0.35 + 1.3 * np.g) * (0.6 + 0.8 * np2.b);
       o.e = inst.flashColor.rgb * (lens.w * (0.565 / re) * pow(re / rp, 2.5) * exp(-q2) * wisp);
     }
   }
@@ -182,11 +190,19 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   let disc = cells.y * decay * ((tail + 0.7 * lead) * diamond + 1.5 * plate);
   // An over- or under-expanded jet is dim where it leaves the nozzle and lights up at the first shock.
   let ramp = mix(1.0, 0.3 + 0.7 * smoothstep(0.0, 0.75, u), cells.y);
+  // What the eye sees of the cells: the first two or three, bright, within a few tens of exit radii of the
+  // nozzle, where the gas is dense and hot. Further down the shocks still stand in the gas (the density above
+  // keeps every cell) but the mixing layer has eaten into the core and the gas radiates little: a cell that
+  // lies hundreds of exit radii out (a jet that balloons at altitude) is not a second plume with a bright
+  // face, and a jet whose first shock is that far out is not dark all the way to it.
+  let near = 1.0 - smoothstep(16.0 * re, 40.0 * re, xc);
+  let seen = near * exp(-max(u - 0.75, 0.0) / 1.6);
+  let rampSeen = mix(1.0, 0.55 + 0.45 * smoothstep(0.0, 0.75, u), cells.y * (1.0 - smoothstep(16.0 * re, 40.0 * re, 0.75 * cells.x)));
   // Close to the nozzle the gas is as dense and hot as at the exit whatever the ambient pressure; further
   // out a jet that expands into (near) vacuum radiates only a fraction of that.
   let thin = mix(1.0, inst.extra.z, 1.0 - exp(-xc / inst.extra.w));
-  let eColumn = inst.coreColor.rgb * (k * thin * dens * coreProfile * axial * ramp * mix(1.0, 0.5 + n.g, turb))
-      + inst.diamondColor.rgb * (k * thin * dens * axial * disc * inst.diamondColor.w);
+  let eColumn = inst.coreColor.rgb * (k * thin * dens * coreProfile * axial * rampSeen * mix(1.0, 0.5 + n.g, turb))
+      + inst.diamondColor.rgb * (k * thin * dens * axial * disc * seen * inst.diamondColor.w);
   o.gas = g.dil * g.edge;
   o.core = sq(re / rBulk) * coreProfile * (ramp + disc * inst.diamondColor.w);
 
@@ -256,6 +272,10 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   let chord = (sqrt(max(rs * rs - g.r * g.r + b * b, 0.0)) - b) / sl;
   let meanExt = inst.smoke.w * k * mix((1.0 - halo) * 0.4 * sq(re / rBulk) + halo * spread, dFar, far) * along;
   o.scs = o.sc * exp(-meanExt * chord);
+  // The sky lights a dense column from all round, but its middle and its far side see little of it: the light
+  // that reaches a sample from the sky falls with the optical depth of the column it is in (an occlusion of the
+  // ambient term). An opaque smoke trail has a lit and a shaded side, not an even cream.
+  o.sc *= 0.3 + 0.7 * exp(-meanExt * rs);
   let cooled = 1.0 - exp(-2.0 * xc * inst.glowColor.w);
   // (In a free expansion the particulates cool by radiation alone and nothing burns after them: their glow goes with the density.)
   // (They cool faster and faster: beyond two cooling lengths nothing of the glow is left in the smoke.)

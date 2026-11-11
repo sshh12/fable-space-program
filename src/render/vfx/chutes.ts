@@ -132,19 +132,21 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   // wider than a pixel, the pattern is its own mean (stripes that blend, not single saturated pixels).
   let du = fwidth(v.coord.y);
   let dw = fwidth(v.coord.z);
-  var tape = max(1.0 - smoothstep(0.02, 0.05 + du, min(u, 1.0 - u)), 1.0 - smoothstep(0.03, 0.09 + dw, min(w, 1.0 - w)));
+  // The gore stripes are the pattern; the radial tapes are a faint line along the seams and the hems of the
+  // rings a few per cent of albedo (a photograph shows smooth stripes with a fine grid, not a quilt of bricks).
+  var tape = max(0.4 * (1.0 - smoothstep(0.02, 0.05 + du, min(u, 1.0 - u))), 0.1 * (1.0 - smoothstep(0.03, 0.09 + dw, min(w, 1.0 - w))));
   var mean = vec3f(0.0);
   let np = u32(style.band.a);
   for (var k = 0u; k < np; k++) { mean += style.colors[u32(style.pattern[k])].rgb; }
   albedo = mix(albedo, mean / f32(np), smoothstep(0.3, 0.9, du));
-  tape = mix(tape, 0.22, smoothstep(0.25, 0.8, max(du, dw)));
-  albedo = mix(albedo, style.band.rgb, tape * 0.8);
+  tape = mix(tape, 0.08, smoothstep(0.25, 0.8, max(du, dw)));
+  albedo = mix(albedo, style.band.rgb, tape);
   // The canopy mesh is wound clockwise seen from outside: front-facing fragments are the inside of the cloth.
   let outside = !front;
   var n = normalize(v.n);
   if (!outside) { n = -n; }
   // Cloth is a little rougher and denser under the tapes; fine pleats run along the gores.
-  let pleat = sin(u * TWO_PI * 7.0) * 0.05 * (1.0 - tape);
+  let pleat = sin(u * TWO_PI * 7.0) * 0.02 * (1.0 - tape);
   let translucency = style.params.w * (1.0 - 0.55 * tape);
   // The canopy is a lantern: sunlight that came in through the cloth on the sunny side fills the cavity and
   // shines out through every surface turned away from the sun (the deferred pass only knows the first pass
@@ -458,7 +460,7 @@ export class ChuteSystem {
             // by their radius plus what the cloth moves (pillowing, breathing, and the flutter of a slack skirt).
             const t = Math.min(1, Math.max(0, (state.inflation - 0.02) / 0.38));
             const slack = 1 - 0.75 * t * t * (3 - 2 * t);
-            const alpha = clusterAngle(style, md.count, rp * (1.1 + 0.22 * slack), md.lineLength) * (1 + 0.03 * Math.sin(effectTime * 0.5 + k * 1.3));
+            const alpha = clusterAngle(style, md.count, rp * (1.22 + 0.25 * slack), md.lineLength) * (1 + 0.03 * Math.sin(effectTime * 0.5 + k * 1.3));
             const place = (f: typeof cur): { origin: Vec3; X: Vec3; Y: Vec3; Z: Vec3; confluence: Vec3 } => {
               const lateral = v3.add(v3.scale(f.e1, Math.cos(psi)), v3.scale(f.e2, Math.sin(psi)));
               const Y = v3.normalize(v3.add(v3.scale(f.c, Math.cos(alpha)), v3.scale(lateral, Math.sin(alpha))));
@@ -616,14 +618,23 @@ export class ChuteSystem {
         const th = (g / gores) * 2 * Math.PI;
         const at = v3.add(p.origin, v3.add(v3.scale(p.X, Math.cos(th) * mouth), v3.scale(p.Z, Math.sin(th) * mouth)));
         if (p.slackDown) {
-          // Slack: nothing holds the lines together any more. Each hangs from its own point of the skirt, by its
-          // own length, trailing behind the falling cloth and swinging a little.
-          const len = p.suspension * (0.4 + 0.45 * (0.5 + 0.5 * Math.sin(g * 1.7 + 9 * p.seed)));
+          // Slack: the lines still meet at the confluence (the riser was cut below it), but nothing pulls them
+          // straight. Each runs from its point of the skirt to the confluence in a loose curve of its own, sagging
+          // and bowed sideways by a different amount, and the bundle trails the falling cloth and swings.
+          const h = (k: number): number => 0.5 + 0.5 * Math.sin(g * (1.7 + 0.37 * k) + (9 + 3 * k) * p.seed + k);
           const sway = effectTime * 1.3 + g * 2.3 + 11 * p.seed;
-          const mid = v3.add(v3.addScaled(at, p.slackDown, 0.5 * len), v3.add(v3.scale(p.X, 0.07 * p.suspension * Math.sin(sway)), v3.scale(p.Y, -0.12 * len)));
-          const end = v3.add(v3.addScaled(mid, p.slackDown, 0.5 * len), v3.add(v3.scale(p.Z, 0.06 * p.suspension * Math.cos(0.7 * sway)), v3.scale(p.Y, -0.1 * len)));
-          addLine(at, mid, s.def.lineWidth, p.fade, lineColor);
-          addLine(mid, end, s.def.lineWidth, p.fade, lineColor);
+          const span = v3.sub(p.confluence, at);
+          const len = v3.len(span);
+          const side = v3.normalize(v3.add(v3.scale(p.X, Math.cos(th + 1.3 * h(1))), v3.scale(p.Z, Math.sin(th + 1.3 * h(1)))));
+          const bow = len * (0.12 + 0.28 * h(2));
+          const ctrl = v3.add(v3.addScaled(v3.addScaled(at, span, 0.45 + 0.2 * h(3)), side, bow * (0.6 + 0.4 * Math.sin(sway))), v3.scale(p.slackDown, 0.25 * bow));
+          const curve = (u: number): Vec3 => v3.add(v3.add(v3.scale(at, (1 - u) * (1 - u)), v3.scale(ctrl, 2 * u * (1 - u))), v3.scale(p.confluence, u * u));
+          let prevPt = at;
+          for (let k = 1; k <= 4; k++) {
+            const pt = curve(k / 4);
+            addLine(prevPt, pt, s.def.lineWidth, p.fade, lineColor);
+            prevPt = pt;
+          }
         } else addLine(p.confluence, at, s.def.lineWidth, p.fade, lineColor);
       }
       if (p.attach) addLine(p.attach, p.confluence, s.def.lineWidth * 3, p.fade, lineColor);

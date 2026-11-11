@@ -216,5 +216,5 @@ export function clusterAngle(style: CanopyStyleDef, count: number, radius: numbe
   if (count <= 1) return 0;
   const spacing = 2 * radius * style.clusterGap;
   const circumradius = spacing / (2 * Math.sin(Math.PI / count));
-  return Math.asin(Math.min(0.6, circumradius / Math.max(lineLength, 1e-3)));
+  return Math.asin(Math.min(0.8, circumradius / Math.max(lineLength, 1e-3)));
 }

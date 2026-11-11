@@ -398,7 +398,8 @@ export class EffectDirector {
           color: [1, 1, 1],
           opacity: 1,
           aux: P.sparks.temperature,
-          count: Math.round(P.sparks.count * 0.4 * scale),
+          // (Pyrotechnic bolts throw a few sparks, not a shower.)
+          count: Math.round(P.sparks.count * 0.15 * scale),
           seed: seed + 1,
         });
         if (ev.type === 'decoupled') {

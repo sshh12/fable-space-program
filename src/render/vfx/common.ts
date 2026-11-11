@@ -192,14 +192,18 @@ fn vfxLocalLights(pos: vec3f) -> vec3f {
   for (var i = 0u; i < min(frame.counts.y, MAX_LIGHTS); i++) {
     let L = frame.lights[i];
     var toL = L.posRange.xyz - pos;
-    if (L.endKind.w > 0.5) {
+    // (Kind 1 is a line; a spot keeps its position in endKind.xyz and is a point of its axial intensity here.)
+    if (L.endKind.w > 0.5 && L.endKind.w < 1.5) {
       let ab = L.endKind.xyz - L.posRange.xyz;
       let t = saturate(dot(pos - L.posRange.xyz, ab) / max(dot(ab, ab), 1e-6));
       toL = L.posRange.xyz + ab * t - pos;
     }
     let d2 = dot(toL, toL);
     let range2 = L.posRange.w * L.posRange.w;
-    if (d2 < range2) { e += L.intensity.rgb * (sq(saturate(1.0 - sq(d2 / range2))) / max(d2, 1.0)); }
+    // A source with a radius (a flame, a fireball) lights what is inside or next to it with the illuminance at
+    // its own surface, I / R^2, not with a point's 1 / d^2 that burns out within a metre of it.
+    let r2 = max(L.intensity.a * L.intensity.a, 1.0);
+    if (d2 < range2) { e += L.intensity.rgb * (sq(saturate(1.0 - sq(d2 / range2))) / max(d2, r2)); }
   }
   return e;
 }

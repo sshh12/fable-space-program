@@ -82,7 +82,15 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     if (length(hit.xz) < rMax) { lift = clamp(hit.y, -4.0, 4.0); }
   }
   let steps = max(6.0, floor(S.misc.x * vfx.time.w + 0.5));
-  let dt = (R.t1 - R.t0) / steps;
+  // The sheet reaches hundreds of metres (grains thrown at hundreds of metres per second fly that far in
+  // vacuum) but is dense only near the jet: the stretches grow exponentially with the distance from the point
+  // of the ray nearest to the foot of the jet.
+  let rdh = R.rd.xz;
+  let tc = clamp(-dot(R.ro.xz, rdh) / max(dot(rdh, rdh), 1e-6), R.t0, R.t1);
+  let dc = length(R.ro.xz + rdh * tc);
+  let d0 = max(0.5 * r0, 0.3 * dc);
+  let w0 = sign(R.t0 - tc) * log(1.0 + abs(R.t0 - tc) / d0);
+  let w1 = sign(R.t1 - tc) * log(1.0 + abs(R.t1 - tc) / d0);
   let jitter = blueNoise(vec2u(in.pos.xy)).r;
   let probe = vfxProbes[0];
   let dW = normalize(ray);
@@ -98,7 +106,10 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   var tsum = 0.0;
   for (var i = 0.0; i < steps; i += 1.0) {
     // One stretch of the ray; the dust in it is integrated over the height in closed form.
-    let ta = R.t0 + i * dt;
+    let wa = mix(w0, w1, i / steps);
+    let wb = mix(w0, w1, (i + 1.0) / steps);
+    let ta = tc + sign(wa) * d0 * (exp(abs(wa)) - 1.0);
+    let dt = tc + sign(wb) * d0 * (exp(abs(wb)) - 1.0) - ta;
     let tm = ta + jitter * dt;
     let p = R.ro + R.rd * tm;
     let r = length(p.xz);
@@ -117,7 +128,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let lod = max(tm * fp, 0.3 * dt) / r0;
     let s1 = vfxNoiseLod(vec3f(ang * 5.3, 0.22 * (r - S.shape.w) / r0 + seed), lod * 0.5);
     let s2 = vfxNoiseLod(vec3f(ang * 19.0, 0.7 * (r - 1.6 * S.shape.w) / r0 + seed * 3.1), lod * 1.8);
-    let streak = (0.55 + 0.9 * s1.g) * (0.7 + 0.6 * s2.b);
+    let streak = (0.7 + 0.6 * s1.g) * (0.8 + 0.4 * s2.b);
     let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * (r0 / max(r, r0)) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
     let tau = amount * streak * column;
     let stepT = exp(-tau);

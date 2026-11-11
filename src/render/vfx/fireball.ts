@@ -36,6 +36,8 @@ interface Fireball {
   lobes: { dir: Vec3; reach: number }[];
   /** Strength of the white flash of its first frames: the first burst flashes, those that follow it inside its fire much less. */
   flash: number;
+  /** Its radius over that of the explosion it belongs to: its turbulence has the explosion's size, not its own. */
+  noiseScale: number;
 }
 
 /** A burning piece thrown out by an explosion. */
@@ -48,6 +50,8 @@ interface Fragment {
   burn: number;
   radius: number;
   seed: number;
+  /** Drag coefficient of the piece (1/m): a light panel slows within a second and falls in a curve, a heavy one flies on. */
+  drag: number;
 }
 
 /** What a fragment leaves in the air this frame (for the trail system). */
@@ -72,7 +76,7 @@ struct FireballInst {
   color: vec4f,    // rgb = fire colour x luminance (cd/m^2), w = march steps
   smoke: vec4f,    // rgb = smoke albedo, w = noise scroll (m)
   axis: vec4f,     // xyz = unit axis along which the cloud is drawn out (ROOT axes), w = how much there is to make soot of (0 in vacuum .. 1)
-  stretch: vec4f,  // x = how much the cloud is drawn out along the axis (1 = a ball), y = strength of the white flash of its first frames
+  stretch: vec4f,  // x = how much the cloud is drawn out along the axis (1 = a ball), y = strength of the white flash of its first frames, z = scale of its turbulence (its radius over that of the explosion it belongs to)
   lobes: array<vec4f, ${FIREBALL_LOBES}>,   // xyz = unit direction of a lobe (ROOT axes), w = its reach in radii (0 = none)
 }
 @group(2) @binding(0) var<storage, read> fireballs: array<FireballInst, ${MAX_FIREBALLS}>;
@@ -134,6 +138,7 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
   let flash = I.stretch.y * exp(-I.smoke.w * 0.25 / 0.045);
   let fireLum = luminance(I.color.rgb);
   let air = I.axis.w;
+  let ns = select(1.0, I.stretch.z, I.stretch.z > 0.0);
   var L = vec3f(0.0);
   var T = 1.0;
   var wsum = 0.0;
@@ -145,16 +150,17 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
     q -= I.axis.xyz * (dot(q, I.axis.xyz) * squeeze);
     if (dot(q, q) > sq(I.state.w)) { continue; }
     // The whole shape is bent by slow noise: no straight jets, no round ball.
-    let bend = vfxNoiseLod(q * 0.21 + seed * 1.7, dt / R * 0.2);
+    let bend = vfxNoiseLod(q * (0.21 * ns) + seed * 1.7, dt / R * 0.2 * ns);
     q += (vec3f(bend.r, bend.a, bend.g) - 0.5) * (2.0 * ${WARP});
     let f = fireballField(I, q);
     if (f > ${BALL_BOUND}) { continue; }
     // Detail finer than a pixel of this pass is left out; what is left goes down to a fiftieth of the radius.
-    let foot = max(dt, pixel * t) / R;
-    let n = vfxNoiseLod(q * 0.45 + seed + boil, foot * 0.2);
-    let n2 = vfxNoiseLod(q * 1.3 + seed * 3.1 + boil * 2.0, foot * 0.6);
-    let n3 = vfxNoiseLod(q * 3.3 + seed * 5.3 + boil * 3.0, foot * 1.6);
-    let n4 = vfxNoiseLod(q * 8.7 + seed * 7.9 + boil * 4.0, foot * 4.3);
+    let foot = max(dt, pixel * t) / R * ns;
+    let qn = q * ns;
+    let n = vfxNoiseLod(qn * 0.45 + seed + boil, foot * 0.2);
+    let n2 = vfxNoiseLod(qn * 1.3 + seed * 3.1 + boil * 2.0, foot * 0.6);
+    let n3 = vfxNoiseLod(qn * 3.3 + seed * 5.3 + boil * 3.0, foot * 1.6);
+    let n4 = vfxNoiseLod(qn * 8.7 + seed * 7.9 + boil * 4.0, foot * 4.3);
     // A boiling surface with a hard edge: billows on billows (the rounded cells of the Perlin-Worley channel
     // at four scales, each a little over half the size of the last: cauliflower down to what the pass can
     // show, no cellular facets), and it ends at 1.55 whatever the noise does. The edge is sharp: a few
@@ -167,16 +173,20 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
     // its surface. Hot gas shines by its temperature (white, yellow, orange, dull red); gas that has cooled
     // is soot: black-brown, opaque, wrapped around the fire from the first moment, so that the fire shows
     // through cracks.
-    let cellsT = (0.3 + 1.4 * n.r) * (0.5 + 1.0 * n2.g) * (0.72 + 0.56 * n3.g);
+    // The temperature is a smooth field: the heat profile of the ball, rolled about by the large eddies and
+    // only a little by the small ones. (A product of several noise octaves raised to a high power lights
+    // isolated cells: a ball of glitter.) The young ball is hot right through and clips; as it cools the
+    // fire withdraws into rolling folds and the cracks between soot.
+    let turbT = (0.62 + 0.76 * n.r) * (0.82 + 0.36 * n2.g) * (0.93 + 0.14 * n3.g);
     // (A later burst inside the fire of the first is a yellow-orange bulge, not a second white-hot ball.)
-    let temp = 0.85 * pow(heat, 0.55) * saturate(1.3 - surface * mix(0.5, 1.25, 1.0 - heat)) * cellsT * (1.0 + 2.5 * flash) * mix(0.82, 1.0, I.stretch.y);
-    // (What glows faintly is soot to the eye: below about half the temperature scale the gas is dark smoke
-    // with, at most, a dull red glow in its folds; the fire is what shows through the cracks.)
-    let glowT = smoothstep(0.3, 1.0, temp);
+    let temp = 0.9 * pow(heat, 0.55) * saturate(1.35 - surface * mix(0.45, 1.25, 1.0 - heat)) * turbT * (1.0 + 2.5 * flash) * mix(0.82, 1.0, I.stretch.y);
+    // (What glows faintly is soot to the eye: below about a quarter of the temperature scale the gas is dark
+    // smoke with, at most, a dull red glow in its folds; the fire is what shows through the cracks.)
+    let glowT = smoothstep(0.22, 0.95, temp);
     var hue = mix(vec3f(1.0, 0.1, 0.012), vec3f(1.0, 0.42, 0.07), smoothstep(0.3, 0.55, temp));
     hue = mix(hue, vec3f(1.0, 0.78, 0.36), smoothstep(0.6, 0.9, temp));
     hue = mix(hue, vec3f(1.0, 0.98, 0.9), smoothstep(0.95, 1.3, temp));
-    let fire = hue * (fireLum * glowT * glowT * glowT * glowT * (1.0 + 6.0 * flash));
+    let fire = hue * (fireLum * glowT * glowT * (1.0 + 6.0 * flash));
     let soot = air * (1.0 - smoothstep(0.3, 0.6, temp)) * (0.5 + 1.0 * n2.g);
     let sigmaHot = 2.2 * glowT;
     // (Soot is there from the start, but while the ball is young and hot right through it is a little of it:
@@ -188,10 +198,10 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
     // side), soft-edged: the shadow of a billow on the next is a gradient over a few hundredths of a radius.
     let sunQ = frame.sunDir.xyz;
     let pa = q + sunQ * 0.1;
-    let na = vfxNoiseLod(pa * 0.45 + seed + boil, foot * 0.2);
-    let na2 = vfxNoiseLod(pa * 1.3 + seed * 3.1 + boil * 2.0, foot * 0.6);
+    let na = vfxNoiseLod(pa * (0.45 * ns) + seed + boil, foot * 0.2);
+    let na2 = vfxNoiseLod(pa * (1.3 * ns) + seed * 3.1 + boil * 2.0, foot * 0.6);
     let pb = q + sunQ * 0.33;
-    let nb = vfxNoiseLod(pb * 0.45 + seed + boil, foot * 0.2);
+    let nb = vfxNoiseLod(pb * (0.45 * ns) + seed + boil, foot * 0.2);
     let occA = 1.0 - smoothstep(0.64, 0.84, fireballField(I, pa) + (na.g - 0.5) * 0.62 + (na2.g - 0.5) * 0.3);
     let occB = 1.0 - smoothstep(0.62, 0.9, fireballField(I, pb) + (nb.g - 0.5) * 0.62);
     let shade = exp(-(1.6 * occA + 1.8 * occB)) * (0.2 + 0.8 * saturate(0.5 + 0.5 * dot(normalize(q + vec3f(1e-4)), sunQ)));
@@ -266,7 +276,7 @@ export class FireballRenderer {
       // In air the cloud stands on the ground side of nothing: later bursts come from the upper half-space as often as not.
       // They break out of the side of the first ball: near enough to merge with it, far enough to change its outline.
       const dir = randomDir(rand(seed, 11 + i), rand(seed, 31 + i));
-      const offset = v3.scale(dir, radius * (0.25 + 0.3 * rand(seed, 51 + i)));
+      const offset = v3.scale(dir, radius * (0.15 + 0.3 * rand(seed, 51 + i)));
       this.pending.push({
         at: effectTime + 0.12 + 0.75 * rand(seed, 71 + i) * (1 + i * 0.35),
         scale: 0.5 + 0.25 * rand(seed, 91 + i),
@@ -288,6 +298,7 @@ export class FireballRenderer {
         burn: E.fragmentBurn[0] + (E.fragmentBurn[1] - E.fragmentBurn[0]) * rand(seed, 171 + i),
         radius: radius * (0.002 + 0.003 * rand(seed, 191 + i)),
         seed: seed + i,
+        drag: 0.003 * Math.pow(12, rand(seed, 211 + i)),
       });
     }
     if (this.fragments.length > 4 * MAX_FIREBALLS) this.fragments.splice(0, this.fragments.length - 4 * MAX_FIREBALLS);
@@ -306,7 +317,9 @@ export class FireballRenderer {
     }
     const seed = s.seed >>> 0;
     const lobes: Fireball['lobes'] = [];
-    const count = 3 + Math.floor(rand(seed, 1) * (FIREBALL_LOBES - 2));
+    // (A later, smaller burst inside the first is a bulge of its fire: no tongues of its own, which would give
+    // a small ball a square or cross-shaped outline.)
+    const count = scale >= 1 ? 3 + Math.floor(rand(seed, 1) * (FIREBALL_LOBES - 2)) : 0;
     for (let i = 0; i < count; i++) {
       let dir = randomDir(rand(seed, 201 + i), rand(seed, 221 + i));
       // No lobe straight down into the ground.
@@ -322,6 +335,7 @@ export class FireballRenderer {
       seed: (s.seed % 997) / 997,
       lobes,
       flash: scale >= 1 ? 1 : 0.2,
+      noiseScale: Math.min(1, scale),
     });
   }
 
@@ -398,7 +412,7 @@ export class FireballRenderer {
       D.set([E.color[0] * E.luminance, E.color[1] * E.luminance, E.color[2] * E.luminance, E.steps], o + 8);
       D.set([E.smokeAlbedo[0], E.smokeAlbedo[1], E.smokeAlbedo[2], age * 4], o + 12);
       D.set([axis.x, axis.y, axis.z, air > 0.01 ? Math.sqrt(air) : 0.15], o + 16);
-      D.set([stretch, b.flash, 0, 0], o + 20);
+      D.set([stretch, b.flash, b.noiseScale, 0], o + 20);
       for (let k = 0; k < FIREBALL_LOBES; k++) {
         const lobe = b.lobes[k];
         if (lobe) {
@@ -409,7 +423,8 @@ export class FireballRenderer {
       this.distances.push(v3.len(rel));
       if (heat > 0.05) this.hints.push({ rel, a: 0.8 * radius, b: 0.8 * radius, luminance: 0.5 * E.luminance * heat * heat });
       const power = E.lightEfficacy * E.luminance * heat * heat * Math.PI * radius * radius;
-      if (power > 1) this.lights.push({ power, light: { kind: 'point', posRelCam: rel, intensity: [E.color[0] * power, E.color[1] * power, E.color[2] * power], range: Math.min(20000, 60 * radius) } });
+      // (A sphere of fire: what stands inside or beside it is lit by its surface, not by a point at its centre.)
+      if (power > 1) this.lights.push({ power, light: { kind: 'point', posRelCam: rel, intensity: [E.color[0] * power, E.color[1] * power, E.color[2] * power], range: Math.min(20000, 60 * radius), radius: 0.8 * radius } });
     });
     if (this.balls.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.balls.length * INST_FLOATS);
 
@@ -418,7 +433,7 @@ export class FireballRenderer {
     for (const f of this.fragments) {
       const age = effectTime - f.born;
       if (dom.state.kind === 'surface') f.vel = v3.addScaled(f.vel, dom.up, -dom.gravity * dt);
-      f.vel = v3.scale(f.vel, 1 / (1 + 0.004 * air * v3.len(f.vel) * dt));
+      f.vel = v3.scale(f.vel, 1 / (1 + f.drag * air * v3.len(f.vel) * dt));
       f.pos = v3.addScaled(f.pos, f.vel, dt);
       if (floor !== null && v3.dot(dom.up, f.pos) < floor) {
         f.burn = Math.min(f.burn, age);
@@ -431,7 +446,7 @@ export class FireballRenderer {
       if (dom.state.kind === 'surface' && air > 0.001) {
         this.trails.push({ key: f.key, bodyId: dom.state.bodyId, rel, radius: f.radius, smoke: E.fragmentSmoke * Math.sqrt(air) * (0.4 + 0.6 * burning), glow: E.fragmentGlow * burning, color: E.color });
       }
-      const n = Math.floor(dt * 240 * burning * frame.qualityScale + rand(f.seed, Math.floor(effectTime * 60)));
+      const n = Math.floor(dt * 70 * burning * frame.qualityScale + rand(f.seed, Math.floor(effectTime * 60)));
       if (n > 0) {
         emitters.push({
           kind: 'spark',
@@ -443,7 +458,7 @@ export class FireballRenderer {
           sweep: v3.scale(f.vel, dt),
           speed: [1, 14],
           polar: [0, Math.PI],
-          life: [0.3, 1.1],
+          life: [0.2, 0.7],
           size: P.sparks.size,
           color: [1, 1, 1],
           opacity: 1,

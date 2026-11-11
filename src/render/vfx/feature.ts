@@ -89,7 +89,13 @@ const GLARE_FRAME_SHARE = 0.08;
 const THRUSTER_LIGHT_RE = 40;
 /** The plume light starts this many exit radii downstream of the nozzles. */
 const LIGHT_START_RE = 6;
-/** Lines of light along the luminous length of a plume: [share of the intensity, end of the line as a fraction of the length]. */
+/**
+ * Lines of light along the luminous length of a plume: [share of the intensity, end of the line as a fraction
+ * of the length]. Every line is a tube as wide as the flame there (LocalLight.radius): the hull just above
+ * the nozzles takes the illuminance of the flame's surface, a smooth warm gradient, not the burnt-out spot of
+ * a point a metre away, and the walls that face away from the axis still see the part of the flame beside
+ * them (the rim of the aft end in a night launch, all the way up).
+ */
 const LIGHT_SEGMENTS: [number, number][] = [
   [0.04, 0.1],
   [0.26, 0.4],
@@ -268,6 +274,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       const cut = Math.min(1, Math.max(0, (start + length - end) / length));
       const range = (p: number): number => Math.min(L.maxRange, Math.sqrt(p / L.rangeIlluminance));
       const scaled = (k: number): Vec3Tuple => [total[0] * k, total[1] * k, total[2] * k];
+      // Radius of the flame along the line: the cluster of nozzles plus a couple of exit radii at its start,
+      // widening with the flame (a tenth of the distance down it), never wider than the plume's bound.
+      let spread = 0;
+      for (const p of pc.nozzlePos) spread = Math.max(spread, Math.hypot(p.y, p.z));
+      // (A thruster's puff is a cone a third as wide as it is long: its light lights the hull round the port with a gradient.)
+      const flameRadius = (x: number): number => (c.kind === 'rcs' ? 0.35 * length : Math.min(Math.max(c.radius, 2 * reMax), spread + 2 * reMax + 0.1 * Math.max(x, 0)));
       if (end > start + 0.5) {
         const span = end - start;
         let from = 0;
@@ -276,12 +288,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           const k = share * (1 - cut);
           // (A cluster too weak to be worth several lights keeps one line with all of its intensity.)
           if (power < 50 * L.minIntensity) {
-            candidates.push({ power: power * (1 - cut), light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, end), intensity: scaled(1 - cut), range: range(power) } });
+            candidates.push({ power: power * (1 - cut), light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, end), intensity: scaled(1 - cut), range: range(power), radius: flameRadius(start + 0.3 * span) } });
             break;
           }
           candidates.push({
             power: power * k,
-            light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + from * span), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + to * span), intensity: scaled(k), range: range(power) },
+            light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + from * span), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + to * span), intensity: scaled(k), range: range(power), radius: flameRadius(start + from * span) },
           });
           from = to;
         }
@@ -291,8 +303,6 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         const height = Math.min(GROUND_LIGHT_MAX_HEIGHT, Math.max(3 * reMax, GROUND_LIGHT_HEIGHT * cut * length));
         const k = (cut * GROUND_LIGHT_SHARE) / GROUND_LIGHT_POINTS;
         // The ring: horizontal, wider than the cluster of nozzles, its first point on the side of the cluster's own Y axis.
-        let spread = 0;
-        for (const p of pc.nozzlePos) spread = Math.max(spread, Math.hypot(p.y, p.z));
         const ring = Math.max(GROUND_LIGHT_RING * height, spread + 4 * reMax);
         let e1 = v3.reject(pc.axisY, up);
         if (v3.len(e1) < 0.1) e1 = v3.reject(pc.axisZ, up);
@@ -302,7 +312,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         for (let i = 0; i < GROUND_LIGHT_POINTS; i++) {
           const a = (2 * Math.PI * i) / GROUND_LIGHT_POINTS;
           const at = v3.addScaled(v3.addScaled(centre, e1, ring * Math.cos(a)), e2, ring * Math.sin(a));
-          candidates.push({ power: power * k, light: { kind: 'point', posRelCam: at, intensity: scaled(k), range: range(power) } });
+          // (Each point is the flame spread over the ground and the cloud it lights: as wide as it is high.)
+          candidates.push({ power: power * k, light: { kind: 'point', posRelCam: at, intensity: scaled(k), range: range(power), radius: 0.8 * height } });
         }
       }
     }

@@ -39,7 +39,8 @@ test.describe('vfx lab ad-hoc shots', () => {
       const own = shot.url.startsWith('/labs/vfx/');
       await openPage(page, own ? `${shot.url}${shot.url.includes('?') ? '&' : '?'}paused=1&hud=0` : shot.url);
       await assertDiscreteGpu(page);
-      if (own) await page.evaluate(() => window.__test!.setDeterministic(true));
+      // (As the matrix: deterministic, with the blue-noise offset cycling under the temporal filter.)
+      if (own) await page.evaluate(() => window.__lab!.setDeterministic(true, { cycleNoise: true }));
       if (shot.runTo !== undefined && shot.url.startsWith('/labs/vfx/')) await page.evaluate((t) => window.__vfx!.runTo(t), shot.runTo);
       if (shot.eval) {
         const result: unknown = await page.evaluate(shot.eval);

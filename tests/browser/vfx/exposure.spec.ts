@@ -62,7 +62,9 @@ test('the sky keeps its value through the splash sequence (within 5 % once the c
   // Just before the impact (2.05 s of lab time), then +0.1, +0.4, +1, +1.8 and +2.5 s.
   for (const t of [1.9, 2.15, 2.45, 3.05, 3.85, 4.55]) {
     await page.evaluate((x) => window.__vfx!.runTo(x), t);
-    await waitIdle(page, 60);
+    // (The first picture is the reference: the meter is given time to settle on the scene before the impact,
+    // so that the step measured is the impact and not how far the meter had come since the page opened.)
+    await waitIdle(page, t === 1.9 ? 240 : 60);
     rows.push({ t, ...(await patch(page, sky)) });
   }
   console.log(`splash: sky (pre-exposed) ${rows.map((r) => `${r.t} s: ${r.value.toFixed(4)} at EV ${r.ev100.toFixed(2)}`).join(', ')}`);

@@ -150,12 +150,15 @@ export function plasmaLuminance(data: VfxData['reentry'], heatFlux: number, inte
 export function plasmaWindowRadiance(data: VfxData['reentry'], heatFlux: number, intensity: number, speed: number): { luminance: number; color: Vec3Tuple } {
   const k = Math.min(1, Math.max(0, intensity));
   if (k < data.minIntensity) return { luminance: 0, color: plasmaColor(data, speed) };
-  // The shader at x = 1 shoulder radius: a ray from the hull crosses the whole Gaussian sheath (width 0.132
-  // radii there, emission 0.9 x 0.26 per radius), whose glow has fallen most of the way to the wake's
-  // (smoothstep from -0.3 to 1.2 radii: 0.951 of the way), 1/34 of an e-folding length of the wake behind.
-  const across = 0.9 * 0.26 * Math.sqrt(Math.PI) * 0.132;
-  const gain = 1 - 0.951 * (1 - data.wakeGain);
-  const fade = Math.exp(-1 / (data.wakeLengthRadii * (0.3 + 0.7 * k)));
+  // The shader at x = 1 shoulder radius: a ray from the hull crosses the skirt once (a Gaussian shell at
+  // Rw = (0.28 + 0.8 e^(-1/1.3)) 1.012 = 0.659 radii, width 0.14 Rw + 0.04 = 0.132 radii, emission 0.9 x 0.3
+  // per radius, e^-1 of its strength at the shoulder, as hot as the lee shoulder: 0.3 + 2.4 x 0.05^2), whose
+  // glow has fallen most of the way to the wake's (smoothstep from -0.3 to 1.6 radii: 0.764 of the way) and
+  // along the wake by 0.75 e^-0.5 plus a quarter at 1/34 of its e-folding length.
+  const wS = 0.14 * (0.28 + 0.8 * Math.exp(-1 / 1.3)) * 1.012 + 0.04;
+  const across = 0.9 * 0.3 * Math.sqrt(Math.PI) * wS * Math.exp(-1) * (0.3 + 2.4 * 0.05 * 0.05);
+  const gain = 1 - 0.764 * (1 - data.wakeGain);
+  const fade = 0.75 * Math.exp(-0.5) + 0.25 * Math.exp(-1 / (data.wakeLengthRadii * (0.3 + 0.7 * k)));
   const c = plasmaColor(data, speed);
   const cl = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   return { luminance: plasmaLuminance(data, heatFlux, k) * cl * across * gain * fade, color: [c[0] / cl, c[1] / cl, c[2] / cl] };
@@ -267,19 +270,15 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
   let steps = max(10.0, floor(I.windZ.w * vfx.time.w + 0.5));
   let jitter = blueNoise(vec2u(in.pos.xy)).b;
   let seed = vec3f(I.params.z, I.params.z * 1.7, I.params.z * 0.3);
-  let hot = vec3f(luminance(I.color.rgb)) * vec3f(1.35, 1.25, 1.15);
+  let hot = vec3f(luminance(I.color.rgb)) * vec3f(1.3, 1.22, 1.12);
   let fp = 2.0 * frame.cameraUp.w * vfx.half.w;      // footprint of a pixel per metre of distance
   let ph = fract(vec2f(I.flow.x, I.flow.x + 0.5));
   let wa = 1.0 - abs(2.0 * ph.x - 1.0);
   // Is the eye in the vessel itself (a cabin camera)? Then the hull and the cabin stop every ray but those
-  // that leave through a window, and those see the layer and the sheath streaming past right outside it:
-  // nothing is left out around the eye.
+  // that leave through a window, and those see the layer and the sheath streaming past right outside it.
   let inBody = select(0.0, 1.0, plasmaBody(I, R.ro).sd < 0.0);
-  // Is the eye inside the tube of the wake (within the sheath and its skirt)?
-  let eyeX = max(R.ro.x, 0.0);
-  let eyeTube = Rb * (0.5 + 0.5 * exp(-eyeX / (1.5 * Rb))) * (1.0 + 0.02 * eyeX / Rb) + 2.0 * (0.12 * Rb + 0.012 * eyeX);
-  let eyeInside = (1.0 - smoothstep(1.0, 2.5, length(R.ro.yz) / eyeTube)) * step(0.0, R.ro.x) * (1.0 - inBody);
   let wakeGain = I.flow.y;
+  let a = I.bodyAxis.xyz;
   var L = vec3f(0.0);
   var wsum = 0.0;
   var tsum = 0.0;
@@ -293,17 +292,19 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
     if (B.sd <= 0.0) { continue; }
     var j = vec3f(0.0);
     // How far round to the windward side this point lies, from a point inside the body (smooth across the
-    // shoulder, where the wall normal of the proxy jumps): 1 at the stagnation point, about 0.4 at the
-    // shoulder, 0 in the lee.
-    let m = normalize(p - I.bodyAxis.xyz * (0.4 * Rb));
+    // shoulder, where the wall normal of the proxy jumps): 1 at the stagnation point, about 0.6 at the
+    // windward shoulder of a capsule flying at its trim angle, near 0 at the lee shoulder and behind.
+    let m = normalize(p - a * (0.4 * Rb));
     let e = saturate(-m.x);
-    // Shock layer: the gas between the bow shock and the wall glows through its whole depth, a little more
-    // right behind the shock. It is thin and white-hot at the stagnation point and thickens and reddens
-    // towards the shoulder, where it leaves the body as the sheath of the wake. Its turbulence is carried
-    // along the wall by the flow (two phases of a flow map, cross-faded): at the stagnation point, where
-    // the flow stands still, it only boils; streaks form where the gas runs fast. No pole, no pattern.
-    let delta = d0s * (1.0 + 2.2 * (1.0 - e)) * (0.65 + 0.35 * k);
-    if (B.sd < 1.3 * delta + 0.9 * Rb && e > 0.0) {
+    // Shock layer: the gas between the bow shock and the wall. Its glow is concentrated where the flow
+    // stagnates (density and temperature are highest there: a few hundredths of a radius from the wall, it
+    // falls off as e^3 round the face), and it fades out smoothly with the distance from the wall over the
+    // standoff, thicker towards the shoulder. Seen face-on it is brightest in the middle (no rim ring); from
+    // the side a compact clipped head whose glare the bloom carries. Its turbulence is carried along the
+    // wall by the flow (two phases of a flow map, cross-faded): at the stagnation point, where the flow
+    // stands still, it only boils; streaks form where the gas runs fast.
+    let delta = d0s * (1.0 + 2.0 * (1.0 - e)) * (0.65 + 0.35 * k);
+    if (B.sd < 6.0 * delta + 1.6 * Rb && e > 0.0) {
       let v = vec3f(1.0, 0.0, 0.0) - m * m.x;
       let adv = 1.6 * Rb;
       let qa = p - v * (ph.x * adv);
@@ -311,55 +312,60 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let lod = max(t * fp, 0.5 * dt) * 1.2 / Rb;
       let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.6)) * (1.2 / Rb) + seed, lod);
       let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.6)) * (1.2 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
-      let tex = 1.0 + 0.7 * (mix(nb.g, na.g, wa) - 0.5) + 0.5 * (mix(nb.r, na.r, wa) - 0.5);
-      let fill = smoothstep(1.3 * delta, 0.85 * delta, B.sd) * (0.6 + 0.4 * exp(-sq((B.sd - 0.9 * delta) / (0.35 * delta))));
-      let face = pow(e, 1.2);
+      let stream = 1.0 - e;
+      let tex = 1.0 + (0.35 + 0.6 * stream) * (mix(nb.g, na.g, wa) - 0.5) + (0.25 + 0.5 * stream) * (mix(nb.r, na.r, wa) - 0.5);
+      let face = e * e * e;
+      let layer = exp(-B.sd / delta) / delta;
       let heat = saturate(e * e * (0.35 + 0.65 * k));
-      j += mix(I.color.rgb, hot, heat) * (fill * face * tex * (0.55 + 0.45 * k) / delta);
-      // The hot gas ahead of and around the layer: a soft envelope that reaches a third of a radius out and
-      // wraps the shoulder (what a camera sees as the glare around the head).
-      let reach = max(B.sd - delta, 0.0);
-      j += I.color.rgb * (0.012 * (0.3 + 0.7 * k) * exp(-reach / (0.2 * Rb)) * saturate(0.25 + 0.75 * e) / (0.2 * Rb));
+      j += mix(I.color.rgb, hot, heat) * (face * layer * tex * (0.55 + 0.45 * k));
+      // The hot gas around the head: a faint envelope that reaches a third of a radius out and wraps the
+      // windward shoulder (what the eye sees as the haze round the glare).
+      j += I.color.rgb * (0.02 * (0.3 + 0.7 * k) * exp(-B.sd / (0.3 * Rb)) * (0.15 + 0.85 * e * e) / (0.3 * Rb));
     }
-    // Behind the shoulder: the layer leaves the wall as a sheath that necks down behind the body, the wake
-    // core lights up where it closes, and both stream away, cooling: the gas expands round the shoulder and
-    // its glow falls to a fraction of the layer's within a radius or two (wakeGain), in the colour of the
-    // gas, then deep orange and dull red far down the wake (where the trail takes over).
+    // Behind the shoulder: the gas leaves the wall as a skirt that is hot where the windward shoulder was hot,
+    // necks down behind the body into a filled wake (brighter on its axis than at its edge), and streams away
+    // narrowing, dimming and cooling: its glow falls to a twentieth of the layer's within a radius or two
+    // (wakeGain) and by as much again within a few body lengths, its colour runs from white-hot through the
+    // colour of the gas and orange to dull red, where the trail takes over.
     let xw = p.x;
     if (xw > -0.5 * Rb) {
       let rw = length(p.yz);
       let xs = max(xw, 0.0);
-      let Rw = Rb * (0.5 + 0.5 * exp(-xs / (1.5 * Rb))) * (1.0 + 0.02 * xs / Rb);
-      // The gas is drawn out along the flow into filaments far longer than they are wide (the film from a
-      // capsule's window is a field of streaks). In the thin sheath they are a pattern round the axis, which
-      // the eye sees directly: streamers and, finer, hairlines (two sets, by angle about the axis, drawn out
-      // along it and streaming at different speeds, band-limited to the pixel). The filled core is lumpy in
-      // all three directions; a ray through it averages most of that away. What the march cannot resolve
-      // is left out (it averages to 1), not turned into grain.
-      let foot = max(t * fp, 0.4 * dt) / Rb;
-      let st = vfxNoiseLod(vec3f((xw - I.params.x) * 0.03, p.y * 1.3, p.z * 1.3) / Rb + seed, foot * 1.3);
-      let around = p.yz / max(rw, 1e-3);
-      let footA = t * fp / max(rw, 0.05 * Rb);
-      let sa = vfxNoiseLod(vec3f((xw - I.params.x * 1.3) * 0.035 / Rb, around.x * 1.7, around.y * 1.7) + seed * 2.3, footA * 1.7);
-      let sb = vfxNoiseLod(vec3f((xw - I.params.x * 2.1) * 0.09 / Rb, around.x * 5.5, around.y * 5.5) + seed * 3.7, footA * 5.5);
-      let lines = (0.2 + 1.6 * sa.r) * (0.35 + 1.3 * sb.a);
-      let lumps = 0.4 + 1.2 * st.r;
-      let wS = 0.12 * Rb + 0.012 * xs;
-      let sheath = exp(-sq((rw - Rw) / wS)) * smoothstep(-0.4 * Rb, 0.3 * Rb, xw);
-      let core = exp(-sq(rw / (0.6 * Rw))) * smoothstep(0.5 * Rb, 2.5 * Rb, xw);
-      let fade = exp(-xs / wakeLen) * (1.0 - smoothstep(0.7, 1.0, xs / boxLen));
-      let warm = exp(-xs / (0.4 * wakeLen));
-      var tint = mix(vec3f(1.0, 0.3, 0.1) * luminance(I.color.rgb) * 1.3, I.color.rgb, warm);
-      tint = mix(tint, hot, saturate(0.3 * warm * warm * k * sheath * (1.0 - smoothstep(0.0, 1.5 * Rb, xs))));
-      // Cooling round the shoulder: the sheath leaves the body as bright as the layer it comes from.
-      let gain = mix(1.0, wakeGain, smoothstep(-0.3 * Rb, 1.2 * Rb, xw));
-      // A camera that rides inside the wake sees the sheath where it leaves the body; the gas within a few
-      // radii of the camera itself, on whatever side, is left out, or it would be a veil over the frame.
-      let aroundEye = eyeInside * (1.0 - smoothstep(2.0 * Rb, 7.0 * Rb, t));
-      j += tint * ((0.9 * sheath * lines + 1.1 * core * lumps) * fade * gain * (1.0 - aroundEye) * (0.26 / Rb));
+      let Rw = Rb * (0.28 + 0.8 * exp(-xs / (1.3 * Rb))) * (1.0 + 0.012 * xs / Rb);
+      // The skirt where it leaves the shoulder: as hot as the shoulder at that azimuth.
+      let radial = p - a * dot(p, a);
+      let sh = radial * (Rb / max(length(radial), 1e-4));
+      let msh = normalize(sh - a * (0.4 * Rb));
+      let eSh = saturate(-msh.x);
+      let skirtHeat = 0.3 + 2.4 * eSh * eSh;
+      let shell = exp(-xs / Rb);
+      let wS = 0.14 * Rw + 0.04 * Rb;
+      let skirt = exp(-sq((rw - Rw) / wS)) * smoothstep(-0.45 * Rb, 0.2 * Rb, xw) * shell * skirtHeat;
+      let core = exp(-sq(rw / (0.62 * Rw))) * smoothstep(0.2 * Rb, 1.6 * Rb, xw);
+      // Streamers: the gas is drawn out along the flow into filaments far longer than they are wide, at three
+      // scales, in coordinates that shrink with the wake (they converge with it), pushed sideways by a slow
+      // warp (they kink), and of very different brightness; what the march cannot resolve is left out (it
+      // averages to 1), not turned into grain.
+      let foot = max(t * fp, 0.4 * dt);
+      let kink = vfxNoiseLod(vec3f((xw - I.params.x * 0.5) * 0.045 / Rb, 0.31, 0.77) + seed * 1.9, foot * 0.045 / Rb);
+      let yz = (p.yz + (vec2f(kink.r, kink.g) - 0.5) * (0.5 * Rw)) / Rw;
+      let s1 = vfxNoiseLod(vec3f((xw - I.params.x) * 0.05 / Rb, yz.x * 1.6, yz.y * 1.6) + seed * 2.3, foot * 1.6 / Rw);
+      let s2 = vfxNoiseLod(vec3f((xw - I.params.x * 1.4) * 0.11 / Rb, yz.x * 4.1, yz.y * 4.1) + seed * 3.7, foot * 4.1 / Rw);
+      let s3 = vfxNoiseLod(vec3f((xw - I.params.x * 2.1) * 0.23 / Rb, yz.x * 9.5, yz.y * 9.5) + seed * 5.1, foot * 9.5 / Rw);
+      let lines = (0.15 + 2.4 * s1.r * s1.r) * (0.45 + 1.1 * s2.a) * (0.7 + 0.6 * s3.g);
+      let cool = xs / (6.0 * Rb);
+      var tint = mix(I.color.rgb, vec3f(1.0, 0.38, 0.15) * luminance(I.color.rgb) * 1.25, smoothstep(0.15, 1.0, cool));
+      tint = mix(tint, vec3f(1.0, 0.22, 0.07) * luminance(I.color.rgb) * 1.1, smoothstep(1.0, 3.0, cool));
+      // (White-hot only where it leaves the shoulder, and in the middle more than at the edge.)
+      tint = mix(tint, hot, saturate(0.45 * k * (1.0 - smoothstep(0.0, 1.4 * Rb, xs)) * (0.4 + 0.6 * exp(-sq(rw / Rw)))));
+      // (The skirt keeps the glow of the layer round the shoulder a little longer than the wake core: it is the
+      // gas that has just left it, and what wraps the back shell's rim.)
+      let along = (0.75 * exp(-xs / (2.0 * Rb)) + 0.25 * exp(-xs / wakeLen)) * (1.0 - smoothstep(0.75, 1.0, xs / boxLen));
+      let gSkirt = mix(1.0, wakeGain, smoothstep(-0.3 * Rb, 1.6 * Rb, xw));
+      let gCore = mix(1.0, wakeGain, smoothstep(-0.3 * Rb, 1.0 * Rb, xw));
+      j += tint * ((0.9 * skirt * gSkirt + core * gCore) * lines * along * (0.3 / Rb));
     }
-    // Only what touches the lens is left out (a camera riding in the wake looks down a streaming sheath; one
-    // in the cabin has the hull between it and the gas).
+    // Only what touches the lens is left out (one in the cabin has the hull between it and the gas).
     let c = j * (I.color.w * dt * max(smoothstep(0.3 * Rb, 2.0 * Rb, t), inBody));
 
     let lw = luminance(c) + 1e-12;
@@ -450,15 +456,17 @@ export class PlasmaRenderer {
       D.set([noiseTime / FLOW_CYCLE, R.wakeGain, 0, 0], o + 32);
       this.placed.push({ originRelCam: origin, distance: v3.len(origin) });
 
-      // The glow lights the vessel and its cabin: a point light just ahead of the windward face.
+      // The glow lights the vessel and its cabin: a sphere of glowing gas just ahead of the windward face, as
+      // wide as the shield (LocalLight.radius), so that the rim of the back shell, which faces away from its
+      // centre, still sees the part of it beside the shoulder and glows orange there.
       const power = R.light.efficacy * luminance * Math.PI * proxy.radius * proxy.radius * flicker;
-      const at = v3.addScaled(origin, wind, -(sag + 2 * standoff + 0.5 * proxy.radius));
+      const at = v3.addScaled(origin, wind, -(sag + 2 * standoff + 0.3 * proxy.radius));
       const lum = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
-      this.lights.push({ power: power * lum, light: { kind: 'point', posRelCam: at, intensity: [color[0] * power, color[1] * power, color[2] * power], range: R.light.range } });
-      // ... and the wake behind it lights the back shell: a second light where the sheath closes.
-      const rear = 0.5 * power * (0.2 + 0.8 * intensity);
+      this.lights.push({ power: power * lum, light: { kind: 'point', posRelCam: at, intensity: [color[0] * power, color[1] * power, color[2] * power], range: R.light.range, radius: 1.1 * proxy.radius } });
+      // ... and the skirt and the wake behind it light the back shell: a second, dimmer and redder light where they close.
+      const rear = 0.15 * power * (0.2 + 0.8 * intensity);
       const behind = v3.addScaled(origin, wind, proxy.afterLength + 1.2 * proxy.radius);
-      this.lights.push({ power: rear * lum, light: { kind: 'point', posRelCam: behind, intensity: [color[0] * rear, color[1] * rear, color[2] * rear], range: R.light.range } });
+      this.lights.push({ power: rear * lum, light: { kind: 'point', posRelCam: behind, intensity: [color[0] * rear, color[1] * rear * 0.7, color[2] * rear * 0.5], range: R.light.range, radius: 1.3 * proxy.radius } });
     }
     if (this.placed.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.placed.length * INST_FLOATS);
   }

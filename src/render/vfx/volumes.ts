@@ -66,6 +66,42 @@ const COMPOSITE_WGSL = /* wgsl */ `
 }
 `;
 
+/**
+ * A small depth-aware filter over the half-resolution image before it is composited: every volume is marched
+ * with one jittered offset per half-resolution pixel, and what is left of that jitter after the march is a
+ * sand-grain stipple on rims and in thin gas that the temporal filter does not take out (it lies inside the
+ * neighbourhood it clamps to). Gas is smooth at the scale of a pixel in every photograph. A 3 x 3 binomial
+ * kernel whose taps are weighted by how close their scene depth is to the centre's: across the edge of a hull
+ * nothing is mixed.
+ */
+const DENOISE_WGSL = /* wgsl */ `
+#include "vfx_common"
+@group(2) @binding(0) var volumeTex: texture_2d<f32>;
+@group(2) @binding(1) var momentTex: texture_2d<f32>;
+fn denoiseZ(p: vec2i) -> f32 {
+  let d = textureLoad(sceneDepthHalfTex, p, 0).r;
+  return select(1e7, clamp(viewZFromDepth(d), 1e-3, 1e7), d > 0.0);
+}
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let size = vec2i(textureDimensions(volumeTex)) - 1;
+  let dsize = vec2i(textureDimensions(sceneDepthHalfTex)) - 1;
+  let c = vec2i(in.position.xy);
+  let zc = denoiseZ(min(c, dsize));
+  var sum = vec4f(0.0);
+  var wsum = 0.0;
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+      let p = clamp(c + vec2i(x, y), vec2i(0), size);
+      let z = denoiseZ(min(p, dsize));
+      let w = f32((2 - abs(x)) * (2 - abs(y))) * exp(-6.0 * abs(log2(z / zc)));
+      sum += textureLoad(volumeTex, p, 0) * w;
+      wsum += w;
+    }
+  }
+  return sum / wsum;
+}
+`;
+
 /** WGSL chunk "vfx_volume": the box proxy and the two outputs shared by the analytic volumes. */
 const VOLUME_WGSL = /* wgsl */ `
 const VOLUME_CUBE = array<u32, 36>(0u, 2u, 3u, 0u, 3u, 1u, 4u, 5u, 7u, 4u, 7u, 6u, 0u, 1u, 5u, 0u, 5u, 4u, 2u, 6u, 7u, 2u, 7u, 3u, 0u, 4u, 6u, 0u, 6u, 2u, 1u, 3u, 7u, 1u, 7u, 5u);
@@ -140,11 +176,14 @@ export class VolumePass {
   readonly moment: ManagedTarget;
   readonly combined: ManagedTarget;
   readonly combinedMoment: ManagedTarget;
+  /** The image after the depth-aware filter (what is composited and what the particles read). */
+  readonly filtered: ManagedTarget;
+  private readonly denoise: Tracked<GPURenderPipeline>;
   /** 1 x 1 stand-in for the image and its distances in frames without volumes. */
   private readonly empty: GPUTextureView;
   private readonly compositeLayout: GPUBindGroupLayout;
   private readonly composite: Tracked<GPURenderPipeline>;
-  private groups: { emit: GPUBindGroup; combined: GPUBindGroup } | null = null;
+  private groups: { emit: GPUBindGroup; combined: GPUBindGroup; filteredEmit: GPUBindGroup; filteredCombined: GPUBindGroup } | null = null;
   private groupVersion = -1;
   private result: 'none' | 'emit' | 'combined' = 'none';
   private readonly ceiling: Tracked<GPURenderPipeline>;
@@ -161,6 +200,7 @@ export class VolumePass {
     this.moment = core.createTarget('vfx.volume.moment', 'rg16float', 0.5);
     this.combined = core.createTarget('vfx.volume.combined', 'rgba16float', 0.5);
     this.combinedMoment = core.createTarget('vfx.volume.combinedMoment', 'rg16float', 0.5);
+    this.filtered = core.createTarget('vfx.volume.filtered', 'rgba16float', 0.5);
     this.empty = core.createTextureChecked({ label: 'vfx.volume.empty', format: 'rgba16float', size: [1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }).createView();
     this.compositeLayout = ctx.device.createBindGroupLayout({
       label: 'vfx.composite',
@@ -177,6 +217,8 @@ export class VolumePass {
       depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
     });
     this.composite.get();
+    this.denoise = core.fullscreenPipeline({ label: 'vfx.volume.denoise', fragment: DENOISE_WGSL, layouts: [common.layout, this.compositeLayout], targets: [{ format: 'rgba16float' }] });
+    this.denoise.get();
     // Blending adds to what is already in the HDR target, and the sum of two values below HDR_MAX can exceed
     // it. A fullscreen 'min' blend against HDR_MAX after the feature's last transparent draw restores the limit.
     this.ceiling = core.fullscreenPipeline({
@@ -210,8 +252,8 @@ export class VolumePass {
    * g = weight), for what is drawn after it (particles). Valid after `run`; `version` changes when a view does.
    */
   get image(): { color: GPUTextureView; moment: GPUTextureView; version: number } {
-    if (this.result === 'combined') return { color: this.combined.view, moment: this.combinedMoment.view, version: 4 * (this.combined.version + this.combinedMoment.version) + 1 };
-    if (this.result === 'emit') return { color: this.emit.view, moment: this.moment.view, version: 4 * (this.emit.version + this.moment.version) + 2 };
+    if (this.result === 'combined') return { color: this.filtered.view, moment: this.combinedMoment.view, version: 4 * (this.filtered.version + this.combinedMoment.version) + 1 };
+    if (this.result === 'emit') return { color: this.filtered.view, moment: this.moment.view, version: 4 * (this.filtered.version + this.moment.version) + 2 };
     return { color: this.empty, moment: this.empty, version: 0 };
   }
 
@@ -249,21 +291,43 @@ export class VolumePass {
     } else {
       this.result = 'emit';
     }
+    const groups = this.bindGroups();
+    const pass = encoder.beginRenderPass({
+      label: 'vfx.volume.denoise',
+      colorAttachments: [{ view: this.filtered.view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+      timestampWrites: this.ctx.perf.gpuPass('vfx.volume.denoise') as GPURenderPassTimestampWrites | undefined,
+    });
+    pass.setPipeline(this.denoise.get());
+    pass.setBindGroup(0, frame.frameBindGroup);
+    pass.setBindGroup(1, this.common.bindGroup());
+    pass.setBindGroup(2, this.result === 'emit' ? groups.emit : groups.combined);
+    pass.draw(3);
+    pass.end();
+  }
+
+  private bindGroups(): NonNullable<VolumePass['groups']> {
+    const v = this.emit.version + this.combined.version + this.moment.version + this.combinedMoment.version + this.filtered.version;
+    if (!this.groups || v !== this.groupVersion) {
+      this.groupVersion = v;
+      const mk = (view: GPUTextureView, moment: GPUTextureView): GPUBindGroup =>
+        this.ctx.device.createBindGroup({ label: 'vfx.composite', layout: this.compositeLayout, entries: [{ binding: 0, resource: view }, { binding: 1, resource: moment }] });
+      this.groups = {
+        emit: mk(this.emit.view, this.moment.view),
+        combined: mk(this.combined.view, this.combinedMoment.view),
+        filteredEmit: mk(this.filtered.view, this.moment.view),
+        filteredCombined: mk(this.filtered.view, this.combinedMoment.view),
+      };
+    }
+    return this.groups;
   }
 
   /** drawTransparent: blend the half-resolution image into the HDR target. */
   draw(pass: GPURenderPassEncoder): void {
     if (this.result === 'none') return;
-    const v = this.emit.version + this.combined.version + this.moment.version + this.combinedMoment.version;
-    if (!this.groups || v !== this.groupVersion) {
-      this.groupVersion = v;
-      const mk = (view: GPUTextureView, moment: GPUTextureView): GPUBindGroup =>
-        this.ctx.device.createBindGroup({ label: 'vfx.composite', layout: this.compositeLayout, entries: [{ binding: 0, resource: view }, { binding: 1, resource: moment }] });
-      this.groups = { emit: mk(this.emit.view, this.moment.view), combined: mk(this.combined.view, this.combinedMoment.view) };
-    }
+    const groups = this.bindGroups();
     pass.setPipeline(this.composite.get());
     pass.setBindGroup(1, this.common.bindGroup());
-    pass.setBindGroup(2, this.result === 'emit' ? this.groups.emit : this.groups.combined);
+    pass.setBindGroup(2, this.result === 'emit' ? groups.filteredEmit : groups.filteredCombined);
     pass.draw(3);
   }
 
@@ -272,5 +336,6 @@ export class VolumePass {
     this.moment.destroy();
     this.combined.destroy();
     this.combinedMoment.destroy();
+    this.filtered.destroy();
   }
 }

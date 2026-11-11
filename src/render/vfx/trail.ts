@@ -195,7 +195,7 @@ struct FOut {
   tau0 *= smoothstep(0.0, 1.0, (s.taper.w - fromNewest) / max(6.0 * radius, 1e-3) - 0.6 * n.a);
   // Beads: the brightness of a glowing trail varies along it on the scale of a kilometre, however thin it is drawn.
   let bead = vfxNoiseLod(s.noise.xyz * 0.37 + (closest - s.a.xyz) * (1.0 / 1300.0), pixelMid / 1300.0);
-  glowLum *= 0.45 + 1.1 * bead.r;
+  glowLum *= 0.25 + 1.5 * bead.r;
   // The head of a trail seen from so far that the glowing body and its wake are smaller than a pixel: their
   // light is not lost, it is in this pixel (a point that clips and blooms at the front of the line).
   glowLum *= 1.0 + s.taper.z * 2.0 * smoothstep(0.3, 1.5, pixelMid / max(s.taper.z, 1e-3)) * exp(-fromNewest / max(4.0 * pixelMid, 1e-3)) * step(1.0, s.albedoA.w + s.albedoB.w);
@@ -378,7 +378,7 @@ export class TrailSystem {
       if (f.smoke <= 0 && f.glow <= 0) continue;
       this.feed(
         this.trail(f.key, f.bodyId, 2 * f.radius),
-        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.1 * D.expansionSpeed, diffusivity: 0.08 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.09, glowColor: f.color },
+        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.02 * D.expansionSpeed, diffusivity: 0.025 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.09, glowColor: f.color },
         effectTime,
       );
       fed.add(f.key);
@@ -415,14 +415,18 @@ export class TrailSystem {
         const albedo: Vec3Tuple = total > 1e-9 ? ([0, 1, 2].map((i) => (D.smokeAlbedo[i]! * s + D.contrailAlbedo[i]! * c) / total) as Vec3Tuple) : D.smokeAlbedo;
         return { radius: trailRadius(D, n, age), tau: total, glow: g, albedo };
       });
-      // The glowing part as the exposure meter should see it: area of the tubes across the line of sight.
+      // The glowing part as the exposure meter should see it: area of the tubes across the line of sight, of
+      // the hot head only (the faint train is meant to be seen as faint: were it counted, a night frame would
+      // be exposed until the whole train sat at the meter's white).
+      let maxGlow = 0;
+      for (const st of state) maxGlow = Math.max(maxGlow, st.glow);
       let area = 0;
       let lumArea = 0;
       let lengthAcross = 0;
       let centre = v3.zero();
       for (let i = 0; i + 1 < list.length; i++) {
         const glow = 0.5 * (state[i]!.glow + state[i + 1]!.glow);
-        if (glow < 1) continue;
+        if (glow < Math.max(1, 0.25 * maxGlow)) continue;
         const mid = v3.scale(v3.add(rel[i]!, rel[i + 1]!), 0.5);
         const seg = v3.sub(rel[i + 1]!, rel[i]!);
         const across = v3.len(v3.reject(seg, v3.normalize(mid)));

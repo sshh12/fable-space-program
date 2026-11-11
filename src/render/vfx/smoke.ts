@@ -407,8 +407,10 @@ struct MarchOut {
       // or two. Inside the cloud the noise can not open a hole (a gap shows more cloud, never the ground);
       // thin gas at the fringe stays a haze that fades out smoothly.
       let field = cover + (billow - 0.5) * (2.0 * su.smokeAlbedo.w) * (1.0 - 0.45 * cover);
-      hard = smoothstep(0.4, 0.6, field);
-      sigma = raw * (3.0 * hard + 0.6 * cover * (1.0 - hard));
+      hard = smoothstep(0.3, 0.6, field);
+      // (Where the billows dip, dense gas keeps a floor of its density: a gap between billows shows more cloud,
+      // grey in its own shade, never a dark hole down to the ground.)
+      sigma = raw * (3.0 * hard + (0.6 + 1.2 * smoothstep(0.5, 1.0, cover)) * cover * (1.0 - hard));
       noiseQ = q;
       noiseFoot = foot;
       fine = 6.0;
@@ -431,7 +433,9 @@ struct MarchOut {
       // inside the cloud as well as from what reaches it directly.
       let toL = plumeLightPoint(p) - p;
       let dl2 = max(dot(toL, toL), 25.0);
-      let plume = su.lightColor.rgb * ((lt.g + 0.6 * pow(lt.g, 0.3) + 0.12 * pow(lt.g, 0.08)) / (dl2 * PI));
+      // (What is scattered about inside the cloud reaches round its billows, but not through the whole of it:
+      // the side of the cloud away from the flame stays dark brown, as in every night-launch photograph.)
+      let plume = su.lightColor.rgb * ((lt.g + 0.35 * pow(lt.g, 0.4)) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;

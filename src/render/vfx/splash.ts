@@ -92,21 +92,29 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let rho = rho0 / (1.0 + 0.9 * (n0.r - 0.5) + 0.45 * (n1.g - 0.5) + 0.2 * (n2.r - 0.5));
   let edge = 1.0 - smoothstep(0.62, 1.0, rho);
   if (edge <= 0.0) { discard; }
-  // White foam: a ragged ring of churned water that runs outwards, and a mottled patch inside it that breaks
-  // up into streaks and islands as it ages. Under and around it the water is full of air: pale turquoise,
-  // smooth, fading within seconds.
-  let ring = exp(-sq((rho - 0.72) / 0.16)) * (1.0 - age) * (0.35 + 1.1 * n1.g);
-  let body = 0.5 * n1.g + 0.3 * n2.b + 0.2 * n0.g + 0.3 * (1.0 - rho);
-  let patches = smoothstep(0.36 + 0.5 * age, 0.56 + 0.45 * age, body);
-  let white = saturate(0.85 * max(ring, patches)) * edge;
-  let air = (1.0 - smoothstep(0.35, 1.0, rho)) * (1.0 - smoothstep(0.05, 0.45, age)) * edge;
+  // White foam: churned water in the middle while it is fresh, and from the first seconds a lace of thin
+  // filaments (the ridges of two octaves of noise, drawn out by the drift into streaks) that thins out as the
+  // bubbles burst. Where the filaments are finer than the pixel they are their average cover, not a white
+  // sheet. Under and around it the water is full of air: a faint pale-green tint that fades within seconds.
+  let drift = vec3f(1.0, 0.0, 0.0) - up * up.x;
+  let hs = hz + drift * (dot(hz, drift) * 0.6);
+  let n3 = vfxNoiseLod(hs * 0.62 + vec3f(F.state.z * 5.0), fpx * 0.62);
+  let n4 = vfxNoiseLod(hs * 1.7 + vec3f(F.state.z * 9.0), fpx * 1.7);
+  let seen3 = 1.0 - smoothstep(0.15, 0.5, fpx * 0.62);
+  let seen4 = 1.0 - smoothstep(0.15, 0.5, fpx * 1.7);
+  let ridge3 = mix(0.3, smoothstep(0.82, 0.97, 1.0 - abs(2.0 * n3.g - 1.0)), seen3);
+  let ridge4 = mix(0.25, smoothstep(0.8, 0.97, 1.0 - abs(2.0 * n4.r - 1.0)), seen4);
+  let lace = max(ridge3, 0.8 * ridge4) * (0.4 + 0.9 * n1.g) * (1.0 - 0.6 * age);
+  let churn = (1.0 - smoothstep(0.0, 0.55, rho)) * (1.0 - smoothstep(0.02, 0.3, age)) * (0.5 + 0.7 * n2.b);
+  let white = saturate(max(0.9 * lace, churn)) * edge;
+  let air = (1.0 - smoothstep(0.2, 0.9, rho)) * (1.0 - smoothstep(0.05, 0.4, age)) * edge * 0.6;
   let fadeOut = 1.0 - smoothstep(0.6, 1.0, age);
   let band_ = 1.0 - smoothstep(0.7 * band, band, abs(h));
   let a = saturate(max(white, 0.7 * air) * F.state.y * fadeOut) * band_;
   if (a < 0.003) { discard; }
   let probe = vfxProbes[0];
   let E = (probe.sun.rgb * saturate(dot(probe.up.xyz, frame.sunDir.xyz)) + vfxProbeAmbient(0u)) * (1.0 / PI);
-  let tint = mix(vec3f(0.22, 0.55, 0.56), foamU.albedo.rgb, saturate(white / max(max(white, 0.7 * air), 1e-4)));
+  let tint = mix(vec3f(0.2, 0.42, 0.42), foamU.albedo.rgb, saturate(white / max(max(white, 0.7 * air), 1e-4)));
   let c = vfxAtmosphere(uv, length(rel), tint * E * frame.exposure.x * a, a);
   return vec4f(writeHdr(c.rgb), saturate(c.a));
 }

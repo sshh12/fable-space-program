@@ -297,7 +297,8 @@ fn glow(T: f32) -> vec3f {
     if (kind == KIND_ICE || kind == KIND_CHIP) {
       // Tumbling facets flash in the sun.
       let glint = pow(saturate(sin(p.seed * 91.0 + p.age * (9.0 + 30.0 * p.seed))), 24.0);
-      lum += probe.sun.rgb * (lit * glint * select(0.5, 2.5, kind == KIND_ICE));
+      // (A chip of a vehicle is dull, painted or charred: a faint glint now and then, not a star.)
+      lum += probe.sun.rgb * (lit * glint * select(0.12, 2.5, kind == KIND_ICE));
     }
     if (kind == KIND_DROPLET) {
       // White water: as bright as the sheet it was torn from (a sunlit white surface), and every drop is a lens
@@ -347,7 +348,7 @@ struct VOut {
   let kind = p.kind;
   // Streak length = relative speed x exposure time: long for the fast, fine stuff, none for puffs.
   var stretch = 1.0;
-  if (kind == KIND_DUST) { stretch = 3.0; }
+  if (kind == KIND_DUST) { stretch = 1.5; }
   if (kind == KIND_DROPLET) { stretch = 2.0; }
   if (kind == KIND_GAS || kind == KIND_MIST) { stretch = 0.0; }
   if (kind == KIND_ICE || kind == KIND_CHIP) { stretch = 0.35; }
@@ -360,15 +361,22 @@ struct VOut {
   var radius = p.size;
   var alpha = p.lum.a;
   // (The floor itself differs from particle to particle by a third, so that a cloud of specks is not a row of equal dots.)
-  let minR = (0.7 + 0.45 * p.seed) * pixel;
-  if (radius < minR) { alpha *= pow(radius / minR, 1.5); radius = minR; }
+  var minR = (0.7 + 0.45 * p.seed) * pixel;
+  // Drops, ice and chips smaller than the pixel are not dots: a photograph shows a swarm of them as a soft,
+  // grainless haze of spray. Each is spread over a few pixels with its light conserved (alpha by area), so
+  // that only the few large pieces read as pieces.
+  let thing = kind == KIND_DROPLET || kind == KIND_ICE || kind == KIND_CHIP;
+  if (thing) { minR = (1.6 + 1.6 * p.seed) * pixel; }
+  if (radius < minR) { alpha *= pow(radius / minR, select(1.5, 2.0, thing)); radius = minR; }
   // A particle that fills the view fades out (the eye is inside the cloud).
   alpha *= saturate(2.0 - radius / (220.0 * pixel));
-  let halfLen = min(speed * pu.flags.y * 0.5 * stretch, 150.0 * radius + 4.0);
+  // The streak is the path during the shutter, behind the particle (never ahead of it, and never longer than
+  // the path it has flown since it was born).
+  let halfLen = min(min(speed * pu.flags.y, speed * p.age) * 0.5 * stretch, 150.0 * radius + 4.0);
   // The same light spread over a longer streak is dimmer.
   alpha *= radius / (radius + 0.25 * halfLen);
   let q = vec2f(f32(vi & 1u) * 2.0 - 1.0, f32((vi >> 1u) & 1u) * 2.0 - 1.0);
-  let world = c + axis * (q.x * (halfLen + radius)) + side * (q.y * radius);
+  let world = c - axis * halfLen + axis * (q.x * (halfLen + radius)) + side * (q.y * radius);
   o.clip = frame.viewProj * vec4f(world, 1.0);
   o.local = vec2f(q.x * (halfLen + radius) / radius, q.y);
   o.half = halfLen / radius;
