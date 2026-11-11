@@ -10,7 +10,7 @@ import { DEG, TAU, beam, bolt, boltCircle, bottle, box, extrude, frustum, pipe, 
 import type { MatId } from '../materials';
 import { buildModel, noise2 } from '../parts/common';
 import type { PartLight } from '../parts/types';
-import { flatSite, lowSite, numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
+import { flatSite, numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
 
 /** Extrude a polygon given in the (z, y) plane along X between x0 and x1. */
 export function extrudeZY(b: MeshBuilder, poly: [number, number][], x0: number, x1: number, tag: string): void {
@@ -142,6 +142,40 @@ export function stairFlight(b: MeshBuilder, from: Vec3Tuple, to: Vec3Tuple, widt
       b.at(xf.along(off(c, -width / 2 + 0.03), off(c, width / 2 - 0.03), [0, 1, 0]), () => box(b, 0.03, width - 0.06, 0.27, [0, (width - 0.06) / 2, 0], 'tread'));
     }
     for (const s of [-1, 1]) handrail(b, [off(from, (s * width) / 2), off(to, (s * width) / 2)], 1.0, 1.3);
+  }
+  b.mat(prev);
+}
+
+/**
+ * Open bar grating in the plane y, centred at (cx, cz), `sx` by `sz`: bearing bars on edge along X (or Z),
+ * cross bars, and a banding bar round the panel. LOD 0 has every bearing bar (60 mm pitch); LOD 1 keeps the
+ * banding and the cross bars, so the panel stays open; the far LOD has none of it. The sky and the structure
+ * above show through it from below, as through the real thing (an opaque textured plate does not).
+ */
+export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, sx: number, sz: number, alongX = true): void {
+  if (b.lod === 2) return;
+  const prev = b.material;
+  b.mat('galvanised');
+  const d = 0.035;
+  for (const s of [-1, 1]) {
+    box(b, sx, d, 0.012, [cx, y, cz + s * (sz / 2 - 0.006)], 'grating');
+    box(b, 0.012, d, sz - 0.024, [cx + s * (sx / 2 - 0.006), y, cz], 'grating');
+  }
+  const L = alongX ? sx : sz;
+  const W = alongX ? sz : sx;
+  const nc = Math.max(1, Math.round(L / b.pick(0.6, 1.2, 1.2)));
+  for (let i = 1; i < nc; i++) {
+    const t = -L / 2 + (L * i) / nc;
+    if (alongX) box(b, 0.022, d * 0.6, W - 0.024, [cx + t, y - d * 0.15, cz], 'grating');
+    else box(b, W - 0.024, d * 0.6, 0.022, [cx, y - d * 0.15, cz + t], 'grating');
+  }
+  if (b.lod === 0) {
+    const nb = Math.max(2, Math.round(W / 0.06));
+    for (let i = 1; i < nb; i++) {
+      const t = -W / 2 + (W * i) / nb;
+      if (alongX) box(b, L - 0.024, d, 0.008, [cx, y, cz + t], 'grating');
+      else box(b, 0.008, d, L - 0.024, [cx + t, y, cz], 'grating');
+    }
   }
   b.mat(prev);
 }
@@ -604,8 +638,9 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
   const height = numParam(params, 'height', 1.6);
   const material = strParam(params, 'material', 'steel-brushed') as MatId;
   const loopEvery = numParam(params, 'loopEvery', 70);
+  const pitchOf = (r: number): number => r * 2 + 0.35;
   const body = buildModel('pad.pipeRun', (b) => {
-    const pitch = radius * 2 + 0.35;
+    const pitch = pitchOf(radius);
     // Along the model's -Z ("north") from the origin, with expansion loops.
     for (let i = 0; i < count; i++) {
       const x = (i - (count - 1) / 2) * pitch;
@@ -635,7 +670,19 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
       for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + 0.07, -0.06, 0.06, 16, 'flange'));
     }
   });
-  return { models: { body }, pose: lowSite };
+  // The run's own shadow is resolved only close to the camera. In the next cascade a solid bar the width of
+  // the pipe bundle casts for it: a clean continuous line beside the run, not the crumbs of its supports.
+  const shadow = buildModel('pad.pipeRun.shadow', (b) => {
+    b.mat('galvanised');
+    box(b, count * pitchOf(radius), radius * 2, length, [0, height, -length / 2], 'shadow-proxy');
+  });
+  return {
+    models: { body, shadow },
+    pose: (_state, emit) => {
+      emit('body', null, null, { fineShadowOnly: true });
+      emit('shadow', null, null, { shadowProxy: true, nearShadowOnly: true });
+    },
+  };
 };
 
 // ---------------------------------------------------------------------------------------- floodlight
@@ -684,11 +731,26 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) box(b, 0.85, 0.85, 0.06, [(i - 1.5) * 1.05, (j - 0.5) * 1.05, -0.08], 'lens');
     });
   });
-  const lights: PartLight[] = [{ pos: [0, H - 1.5, -4], intensity: [candela, candela * 0.97, candela * 0.9], range }];
+  // Stand-in that casts the mast's shadow where the cascades cannot resolve its members.
+  const shadow = buildModel('pad.floodlight.shadow', (b) => {
+    b.mat('galvanised');
+    frustum(b, 0.55, 0.3, 0, H - 2.2, 4, 'shadow-proxy');
+    box(b, 3.6, 2.0, 0.3, [lampC[0], lampC[1], lampC[2]], 'shadow-proxy');
+  });
+  // The bank is a battery of searchlights aimed at the vehicle, which stands `aimDistance` in front of it.
+  // An omni light at the lenses would light the ground under the mast and leave the vehicle dim, so the
+  // bank's light is registered where its beams land: a vertical line light a few metres in front of the
+  // vehicle on the bank's side, from above the launch mount to `beamTop`. The vehicle is lit top to bottom
+  // and is the brightest thing on the pad; the apron gets what spills past it.
+  const aim = numParam(params, 'aimDistance', 80);
+  const standoff = numParam(params, 'beamStandoff', 15);
+  const z = -(aim - standoff);
+  const lights: PartLight[] = [{ pos: [0, numParam(params, 'beamBottom', 32), z], end: [0, numParam(params, 'beamTop', 104), z], intensity: [candela, candela * 0.98, candela * 0.94], range }];
   return {
-    models: { body, lamps },
+    models: { body, lamps, shadow },
     pose: (state, emit) => {
-      emit('body', null, null);
+      emit('body', null, null, { fineShadowOnly: true });
+      emit('shadow', null, null, { shadowProxy: true });
       emit('lamps', null, null, { emissive: state.night, castShadow: false });
     },
     lights,

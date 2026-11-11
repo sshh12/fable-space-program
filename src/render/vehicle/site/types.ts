@@ -38,12 +38,28 @@ export interface SiteItemOpts {
    * low pipe runs and other long, thin structures whose shadow is a line on the ground beside them.
    */
   nearShadowOnly?: boolean;
+  /**
+   * Cast a sun shadow only into the FINE cascades (texel under `FINE_SHADOW_TEXEL`): lattice members,
+   * stairs, rails. In a coarser cascade a member thinner than a texel is a row of dots; there the structure's
+   * `shadowProxy` item casts instead.
+   */
+  fineShadowOnly?: boolean;
+  /**
+   * The item is not drawn at all; it only casts the sun shadow of a thin structure into the cascades too
+   * coarse to resolve its members (texel over `FINE_SHADOW_TEXEL`): a solid, slender stand-in, so that the
+   * shadow of a mast or a pipe run stays a continuous band at any distance instead of breaking up or
+   * dropping out.
+   */
+  shadowProxy?: boolean;
   /** 0..1 multiplier on the model's vertex grime weights (weathering, blast staining; default 0). */
   grime?: number;
 }
 
 /** Coarsest shadow-map texel (m) in which a `nearShadowOnly` item is still drawn: the 300 m cascade. */
 export const NEAR_SHADOW_TEXEL = 0.35;
+
+/** Coarsest shadow-map texel (m) that still resolves lattice members: the 12 m and 60 m cascades. */
+export const FINE_SHADOW_TEXEL = 0.1;
 
 export type SiteSink = (model: string, pos: Vec3Tuple | null, rot: QuatTuple | null, opts?: SiteItemOpts) => void;
 

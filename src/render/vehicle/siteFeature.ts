@@ -5,7 +5,9 @@
  *
  *  - Structures are BODY-FIXED shadow casters (drawn into every cascade of their body). An articulated arm
  *    is submitted as a MOVING caster while it swings, so a staggered cascade never holds a stale arm.
- *    Long, low structures (pipe runs) cast only into the cascades that can resolve their shadow.
+ *    Long, low structures (pipe runs) cast only into the cascades that can resolve their shadow; lattice
+ *    members cast only into the fine cascades, and a solid stand-in of each lattice casts into the coarse
+ *    ones, so the shadow of a mast is a lattice near the camera and a continuous band beyond.
  *  - Swing arms and the tail service mast retract when a vessel standing on the pad lights its engines (or
  *    when no vessel stands there); the crew access arm follows the same rule.
  *  - At night the lamp lenses glow and the nearest lamps are registered as local lights.
@@ -18,7 +20,7 @@ import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import './site';
-import { NEAR_SHADOW_TEXEL, generateStructure, type SiteState, type SiteVisual } from './site/types';
+import { FINE_SHADOW_TEXEL, NEAR_SHADOW_TEXEL, generateStructure, type SiteState, type SiteVisual } from './site/types';
 
 export interface SiteFeatureOptions {
   /**
@@ -89,6 +91,11 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   let batch: MeshBatch;
   /** Items whose shadow is drawn in the near cascades only. */
   let nearBatch: MeshBatch;
+  /** Items whose shadow is drawn in the fine cascades only, and the stand-ins that cast into the coarse ones. */
+  let fineBatch: MeshBatch;
+  let proxyBatch: MeshBatch;
+  /** Stand-ins of low, thin structures: cast only into the coarse cascades that can still resolve them. */
+  let proxyNearBatch: MeshBatch;
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
   const lodSelector = new LodSelector();
@@ -168,6 +175,9 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       defs = c.defs;
       batch = coreOf(c).meshes.createBatch('site');
       nearBatch = coreOf(c).meshes.createBatch('site-near');
+      fineBatch = coreOf(c).meshes.createBatch('site-fine');
+      proxyBatch = coreOf(c).meshes.createBatch('site-shadow-proxies');
+      proxyNearBatch = coreOf(c).meshes.createBatch('site-shadow-proxies-near');
       for (const site of Object.values(defs.sites)) sites.push(buildSite(site));
     },
 
@@ -180,10 +190,13 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       lodSelector.begin(frame);
       batch.begin(frame);
       nearBatch.begin(frame);
+      fineBatch.begin(frame);
+      proxyBatch.begin(frame);
+      proxyNearBatch.begin(frame);
       stats.sites = 0;
       stats.instances = 0;
       stats.movingInstances = 0;
-      const lamps: { pos: Vec3; intensity: [number, number, number]; range: number; d: number }[] = [];
+      const lamps: { pos: Vec3; end: Vec3 | null; intensity: [number, number, number]; range: number; d: number }[] = [];
       for (const rt of sites) {
         const pose = frame.bodies.find((b) => b.id === rt.site.bodyId);
         if (!pose) continue;
@@ -228,7 +241,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               if (opts?.castShadow === false) inst.castShadow = false;
               if (opts?.emissive !== undefined) inst.emissiveScale = opts.emissive;
               if (opts?.grime) inst.soot = opts.grime;
-              const target = opts?.nearShadowOnly ? nearBatch : batch;
+              const target = opts?.shadowProxy ? (opts.nearShadowOnly ? proxyNearBatch : proxyBatch) : opts?.fineShadowOnly ? fineBatch : opts?.nearShadowOnly ? nearBatch : batch;
               const h0 = lods[0]!;
               const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius), pl.models.lodPixels[model]!, lods.length);
               target.add(lods[draw.solid]!, inst);
@@ -245,21 +258,26 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
           );
           if (st.night > 0.05 && pl.visual.lights) {
             for (const l of pl.visual.lights) {
-              const pFixed = v3.add(pl.origin, quat.rotate(pl.q, v3.fromTuple(l.pos)));
-              const rel = v3.add(parent.originRelCam, quat.rotate(parent.q, pFixed));
-              lamps.push({ pos: rel, intensity: [l.intensity[0] * st.night, l.intensity[1] * st.night, l.intensity[2] * st.night], range: l.range, d: v3.len(rel) - l.range });
+              const toCam = (p: readonly [number, number, number]): Vec3 => v3.add(parent.originRelCam, quat.rotate(parent.q, v3.add(pl.origin, quat.rotate(pl.q, v3.fromTuple(p)))));
+              const rel = toCam(l.pos);
+              const end = l.end ? toCam(l.end) : null;
+              lamps.push({ pos: rel, end, intensity: [l.intensity[0] * st.night, l.intensity[1] * st.night, l.intensity[2] * st.night], range: l.range, d: Math.min(v3.len(rel), end ? v3.len(end) : Infinity) - l.range });
             }
           }
         }
       }
       batch.finish();
       nearBatch.finish();
+      fineBatch.finish();
+      proxyBatch.finish();
+      proxyNearBatch.finish();
       // The lamps nearest to the camera's reach become local lights.
       lamps.sort((a, b) => a.d - b.d);
       stats.lights = 0;
       for (const l of lamps) {
         if (stats.lights >= maxLights || frame.lights.length >= 16) break;
-        frame.lights.push({ kind: 'point', posRelCam: l.pos, intensity: l.intensity, range: l.range });
+        if (l.end) frame.lights.push({ kind: 'capsule', posRelCam: l.pos, endRelCam: l.end, intensity: l.intensity, range: l.range });
+        else frame.lights.push({ kind: 'point', posRelCam: l.pos, intensity: l.intensity, range: l.range });
         stats.lights++;
       }
       ctx.perf.cpuEnd('site.instances');
@@ -267,9 +285,11 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     },
 
     drawGBuffer(_frame, pass) {
+      // (The shadow stand-ins are never drawn here.)
       batch.drawGBuffer(pass);
       nearBatch.drawGBuffer(pass);
-      stats.triangles = batch.stats.triangles + nearBatch.stats.triangles;
+      fineBatch.drawGBuffer(pass);
+      stats.triangles = batch.stats.triangles + nearBatch.stats.triangles + fineBatch.stats.triangles;
     },
 
     drawShadow(_frame, pass, cascade: ShadowCascadeView) {
@@ -277,7 +297,12 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       // `cascade.everyFrame` is true.
       batch.drawShadow(pass, cascade);
       if (cascade.texelSize <= NEAR_SHADOW_TEXEL) nearBatch.drawShadow(pass, cascade);
-      stats.shadowTriangles = batch.stats.shadowTriangles + nearBatch.stats.shadowTriangles;
+      if (cascade.texelSize <= FINE_SHADOW_TEXEL) fineBatch.drawShadow(pass, cascade);
+      else {
+        proxyBatch.drawShadow(pass, cascade);
+        if (cascade.texelSize <= NEAR_SHADOW_TEXEL) proxyNearBatch.drawShadow(pass, cascade);
+      }
+      stats.shadowTriangles = batch.stats.shadowTriangles + nearBatch.stats.shadowTriangles + fineBatch.stats.shadowTriangles + proxyBatch.stats.shadowTriangles + proxyNearBatch.stats.shadowTriangles;
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
@@ -285,6 +310,9 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     dispose() {
       batch.destroy();
       nearBatch.destroy();
+      fineBatch.destroy();
+      proxyBatch.destroy();
+      proxyNearBatch.destroy();
       const done = new Set<StructureModels>();
       for (const rt of sites) {
         for (const pl of rt.placed) {

@@ -72,7 +72,7 @@ const REST: SiteState = { night: 0, arms: 0, crewArm: 0 };
 const all = (): boolean => true;
 
 describe('launch complex structures', () => {
-  it('every structure of every site has a generator and three LODs of every model', () => {
+  it('every structure of every site has a generator and at least three LODs of every model', () => {
     expect(visuals.length).toBeGreaterThanOrEqual(15);
     const known = new Set(siteGeneratorIds());
     for (const s of visuals) {
@@ -81,7 +81,8 @@ describe('launch complex structures', () => {
       expect(names.length).toBeGreaterThan(0);
       for (const name of names) {
         const m = s.visual.models[name]!;
-        expect(m.lods.length, `${s.model}.${name}`).toBe(3);
+        // Three LODs; a wire has a fourth gauge so that it holds a pixel out to where its masts fade.
+        expect(m.lods.length, `${s.model}.${name}`).toBeGreaterThanOrEqual(3);
         for (const mat of m.materials) expect(isMatId(mat.name), `${s.model}.${name} material ${mat.name}`).toBe(true);
         const tris = m.lods.map((l) => l.indices.length / 3);
         expect(tris[0]!, `${s.model}.${name}`).toBeGreaterThan(0);

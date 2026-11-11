@@ -76,6 +76,8 @@ export type PoseSink = (model: string, pos: Vec3Tuple | null, rot: QuatTuple | n
 export interface PartLight {
   /** Position in the part frame, m. */
   pos: Vec3Tuple;
+  /** Second end point of a line light (a bank of lamps, a beam's lit column); absent = a point light. */
+  end?: Vec3Tuple;
   /** Linear-sRGB colour times luminous intensity, cd. */
   intensity: Vec3Tuple;
   range: number;
