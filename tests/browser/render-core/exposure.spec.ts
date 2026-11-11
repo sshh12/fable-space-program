@@ -307,7 +307,7 @@ test('overflow: sun disc and a mirror ball at the dark-adapted floor never produ
   await expectNoErrors(page, pageLog);
 });
 
-test('the canvas is the display transform of the resolved image: AgX above three stops under mid-grey, the linear toe below four', async ({ page, pageLog }) => {
+test('the canvas is the display transform of the resolved image: AgX above one stop under mid-grey, the linear toe below six, the join between', async ({ page, pageLog }) => {
   // The LabPlanet from low orbit with no bloom to speak of and a still camera: the canvas pixel must be what
   // the CPU port of the tonemap pass makes of the resolved HDR pixel, at the daylight exposure and four to
   // seven stops under it (where the toe decides: request sky-lighting-3).
@@ -353,7 +353,7 @@ test('the canvas is the display transform of the resolved image: AgX above three
     // One level of dither on each side, and the sharpening's and the bloom's last per cent.
     expect(p(0.5)).toBeLessThan(1.0);
     expect(p(0.99)).toBeLessThan(2.5);
-    if (stopsUnder >= 5.5) expect(inToe, 'smooth pixels more than four stops under mid-grey (the linear toe)').toBeGreaterThan(2000);
+    if (stopsUnder >= 5.5) expect(inToe, 'smooth pixels more than four stops under mid-grey (the lower half of the join and the linear toe: requests sky-lighting-3, -7)').toBeGreaterThan(2000);
   }
   for (const row of rows) console.log(row);
   await page.evaluate(() => window.__lab!.renderer.setExposureOverride(null));

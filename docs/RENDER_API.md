@@ -838,12 +838,17 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   6 levels for a frame 720 pixels high, one more for every doubling (`bloomLevelCount`, `bloomWeights` in
   `src/render/core/post/postProcess.ts`), and the profile at 1440 is the one at 720 within 2 levels of
   255. The energy a source hands to the bloom is unchanged (4 % of it, conserved through the chain).
-- The tonemapper is AgX with a linear toe (request `sky-lighting-3`): from 3 stops under mid-grey upwards the
-  image is AgX alone (mid-grey at 117 of 255, 3 stops under it at 31); from 4 stops under it downwards
-  display-linear = `TOE_GAIN` (0.48) x scene-linear on the colour as a whole, so a dim colour keeps its hue
-  and a smooth falloff has no foot (a grey at -5 / -6 / -7 / -8 stops shows as 8.9 / 4.4 / 2.2 / 1.1 of 255;
-  the sigmoid alone gave 3.4 / 0.8 / 0.2 / 0.1 and turned a warm grey rust-brown on the way); a smoothstep
-  in stops of scene luminance between the two. Bright saturated colours desaturate towards white over the
+- The tonemapper is AgX with a linear toe (requests `sky-lighting-3`, `sky-lighting-7`): from 1 stop under
+  mid-grey upwards the image is AgX alone (mid-grey at 117 of 255, 1 stop under it at 84); from 6 stops
+  under it downwards display-linear = `TOE_GAIN` (0.48) x scene-linear on the colour as a whole, so a dim
+  colour keeps its hue and a smooth falloff has no foot (a grey at -4 / -5 / -6 / -7 / -8 stops shows as
+  15.4 / 8.3 / 4.4 / 2.2 / 1.1 of 255; the sigmoid alone gave 13 / 3.4 / 0.8 / 0.2 / 0.1 and turned a warm
+  grey rust-brown on the way); a smoothstep in stops of scene luminance over the five stops between
+  (`TOE_START_STOPS` -1, `TOE_FULL_STOPS` -6). The join is that wide because AgX's log-log slope there is
+  1.5-1.9 and the toe's is 1: joined over one stop, every smooth gradient (a glare, a terminator, a
+  twilight sky) lost 40 % of its display contrast within half a stop at 21 -> 16.5 of 255 and showed a
+  contour there. Now the slope changes by at most 0.12 per quarter stop; no grey moved by more than 1.8 of
+  255. Bright saturated colours desaturate towards white over the
   last four stops and are white from about 6.5 stops over mid-grey (an orange 1.6 : 0.8 : 0.2 shows as
   233, 204, 146 at +3 stops, 253, 241, 209 at +5). `displayLinear()` in `src/render/core/post/tonemap.ts`
   is the same arithmetic on the CPU; `tests/browser/render-core/exposure.spec.ts` holds the canvas to it.
@@ -1213,6 +1218,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Tone curve: AgX joins the linear toe over five stops (`TOE_START_STOPS` -3 -> -1, `TOE_FULL_STOPS` -4 -> -6; the join's middle, `TOE_GAIN` and the toe below -6 stops unchanged), section 13 | `sky-lighting-7` | every package: smooth gradients that crossed 17-21 of 255 (glare, terminators, twilight skies, shaded hulls) lose the contour there | None in code. Greys between 1 and 6 stops under mid-grey move by up to 1.8 of 255 (-3 stops 29.5 instead of 31, -4 stops 15.4 instead of 16.5); a dim colour inside the join is a little less saturated than AgX alone made it |
 | FakeSim: `FakeSimOptions.vehicleId`, `ground`, `altitude`; `location` applies to every surface scene; the 'chutes' scene flies nose up (was nose down) | found by the budget pictures | every lab that flies real parts on the FakeSim | None for the options (additive). A lab that relied on the capsule being upside down under its canopies sees it upright |
 | Exposure target: a lit area brighter than the prior takes over from 2 % of the frame instead of 10 % (`LIT_FULL_BRIGHT`) | `vfx-3` | vfx (night launch, fireballs), anything bright in a dark frame (lights on the lunar night side, city lights) | None. Such frames are exposed for the bright area sooner: darker surroundings, no white-out |
 | `'clouds.depth'` is rg32float: r = where the cloud begins along the pixel's ray, g = where it ends (was r32float, one mean distance with a +-10 % band); `applyAtmosphere` attenuates by `smoothstep(r, g, distance)` | `atmosphere-clouds-1` | atmosphere (publisher), every transparent (through `applyAtmosphere`, no change), sky (tests `r < 3.0e38` only) | Publisher: write both distances; a texture that carries r alone gives a step at r. Readers that sampled the key themselves: r is now the BEGIN of the cloud, not its mean distance |

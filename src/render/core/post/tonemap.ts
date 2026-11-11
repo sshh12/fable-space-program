@@ -48,9 +48,16 @@ export function agxDisplayLinear(c: Rgb): [number, number, number] {
  * times between 3.5 and 6 stops under mid-grey, and it does so per channel: a warm grey turns rust-brown
  * as it dims). Between the two, by the scene's luminance, a smoothstep in stops. TOE_GAIN is what AgX gives
  * a grey in the middle of that span, so the two branches cross there and the blend stays monotonic.
+ *
+ * The span is five stops wide (request sky-lighting-7). AgX's log-log slope at the join is 1.5 to 1.9 and
+ * the toe's is 1: joined over one stop (-3 to -4, as first built) the display contrast of every smooth
+ * gradient fell by 40 % within half a stop, always at the same display level (21 -> 16.5 of 255), and a
+ * glare, a terminator or a twilight sky that crossed that level showed a contour there. Over five stops the
+ * slope changes by 0.12 per quarter stop at most. The middle of the span, and with it TOE_GAIN and the
+ * toe's line, are where they were (-3.5 stops); a grey moves by 1.8 of 255 at most.
  */
-export const TOE_START_STOPS = -3;
-export const TOE_FULL_STOPS = -4;
+export const TOE_START_STOPS = -1;
+export const TOE_FULL_STOPS = -6;
 const TOE_MID_GREY = 0.18;
 const toeJoin = TOE_MID_GREY * 2 ** (0.5 * (TOE_START_STOPS + TOE_FULL_STOPS));
 export const TOE_GAIN = agxDisplayLinear([toeJoin, toeJoin, toeJoin])[1] / toeJoin;
