@@ -99,6 +99,8 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFractio
     const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
     length = Math.max(length, along + nz.shape.visibleLength * cosA + nz.shape.visibleRadius * sinA);
     radius = Math.max(radius, lateral + nz.shape.visibleLength * sinA + nz.shape.visibleRadius);
+    // The start-up flash reaches 3.2 of its widths (see the bounding cone below).
+    if (nz.flash > 0.01) radius = Math.max(radius, lateral + 3.2 * (1.3 * jetBulkRadius(nz.shape, nz.exitRadius, 30 * nz.exitRadius) + nz.exitRadius));
     xMin = Math.min(xMin, along - 0.6 * nz.exitRadius - nz.shape.visibleRadius * sinA);
     ringRadius = Math.max(ringRadius, lateral);
     divergence = Math.max(divergence, sinA);
@@ -148,16 +150,18 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFractio
       const cosA = Math.max(0.2, Math.min(1, v3.dot(nz.dirVes, c.axisVes)));
       const xi = Math.max(0, (x - along) / cosA);
       const rb = jetBoundaryRadius(nz.shape, nz.exitRadius, xi);
-      const core = 2.6 * c.look.core.radius * jetBulkRadius(nz.shape, nz.exitRadius, xi);
+      const core = 2.3 * c.look.core.radius * jetBulkRadius(nz.shape, nz.exitRadius, xi);
       const burn = nz.shape.oxygen > 0.002 ? 1.9 * rb + nz.exitRadius : 0;
-      r = Math.max(r, lateral + xi * Math.sqrt(1 - cosA * cosA) + Math.max(core, burn, 1.5 * nz.exitRadius));
+      // The start-up flash is a Gaussian ball of width 1.3 bulk radii + re: 3.2 widths hold all of it.
+      const flash = nz.flash > 0.01 && xi < 30 * nz.exitRadius ? 3.2 * (1.3 * jetBulkRadius(nz.shape, nz.exitRadius, xi) + nz.exitRadius) : 0;
+      r = Math.max(r, lateral + xi * Math.sqrt(1 - cosA * cosA) + Math.max(core, burn, flash, 1.5 * nz.exitRadius));
     }
     if (c.merged) {
       const m = c.merged;
       const rb = jetBoundaryRadius(m.shape, m.exitRadius, x);
-      r = Math.max(r, 2.6 * c.look.core.radius * jetBulkRadius(m.shape, m.exitRadius, x), m.shape.oxygen > 0.002 ? 1.9 * rb + reMax : 0);
+      r = Math.max(r, 2.3 * c.look.core.radius * jetBulkRadius(m.shape, m.exitRadius, x), m.shape.oxygen > 0.002 ? 1.9 * rb + reMax : 0);
     }
-    return Math.min(r, radius);
+    return r;
   };
   c.coneR0 = need(0) * 1.05;
   let slope = 0;

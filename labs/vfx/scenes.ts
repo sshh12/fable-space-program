@@ -174,9 +174,14 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
           const tLift = tIgnite + 3;
           let ignited = false;
           let released = false;
+          // Specs switch the engines off and on again with the scene paused (controls.engines) to measure what
+          // of the picture is the plume.
+          let burning = true;
+          let last = { throttle: 0, ignitionAge: -1 };
           const script: LabScript = (s, t) => {
             const age = t - tIgnite;
             const thr = age > 0 ? 1 - Math.exp(-age / 1.2) : 0;
+            last = { throttle: thr, ignitionAge: age > 0 ? age : -1 };
             const tl = Math.max(0, t - tLift);
             // a = g (1.3 / (1 - 0.0036 t) - 1): the mass falls by 0.36 % per second.
             const z = tl > 0 ? 9.81 * ((1.3 / 0.0036) * (tl + (1 / 0.0036 - tl) * Math.log(1 - 0.0036 * tl)) - 0.5 * tl * tl) : 0;
@@ -186,7 +191,7 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
             const air = labAtmosphere(s.site.alt + z);
             v.aero = { ...stillAir(air.pressure, air.density, air.temperature), q: 0.5 * air.density * vz * vz, mach: vz / 340 };
             v.situation = tl > 0 ? 'flying' : 'prelaunch';
-            s.setEngines(v, boosterDef, { throttle: thr, ignitionAge: age > 0 ? age : -1 });
+            s.setEngines(v, boosterDef, burning ? last : { throttle: 0, shutdownAge: 60 });
             s.throttle = age > 0 ? 1 : 0;
             s.radarAltitude = earth.clampHeight + z;
             if (age > 0 && !ignited) {
@@ -202,7 +207,13 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
           sim.radarAltitude = earth.clampHeight;
           return {
             script,
-            camera: { target: { x: 0, y: 0, z: 62 }, yawDeg: num(q, 'yaw', 152), pitchDeg: num(q, 'pitch', 1.5), distance: num(q, 'dist', 430), fovDeg: num(q, 'fov', 38) },
+            controls: {
+              engines: (on: number) => {
+                burning = on > 0;
+                sim.setEngines(v, boosterDef, burning ? last : { throttle: 0, shutdownAge: 60 });
+              },
+            },
+            camera: { target: { x: 0, y: 0, z: num(q, 'tz', 62) }, yawDeg: num(q, 'yaw', 152), pitchDeg: num(q, 'pitch', 1.5), distance: num(q, 'dist', 430), fovDeg: num(q, 'fov', 38) },
           };
         },
       };
@@ -595,7 +606,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
             s.radarAltitude = Math.max(0, bottom);
           };
           script(sim, 0, 0);
-          return { script, camera: { target: { x: 0, y: 0, z: 3 }, yawDeg: num(q, 'yaw', 205), pitchDeg: num(q, 'pitch', 7), distance: num(q, 'dist', 38), fovDeg: num(q, 'fov', 50) } };
+          return { script, camera: { target: { x: 0, y: 0, z: num(q, 'tz', 3) }, yawDeg: num(q, 'yaw', 205), pitchDeg: num(q, 'pitch', 7), distance: num(q, 'dist', 38), fovDeg: num(q, 'fov', 50) } };
         },
       };
     }

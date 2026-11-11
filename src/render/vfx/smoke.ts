@@ -1,18 +1,29 @@
 /**
  * Pad smoke and steam: a density volume anchored to a launch site, advected in compute through an analytic
- * flow (the jet from the vehicle hits the pad, runs out as a wall jet focused along the flame trench, slows,
- * rises on its own heat and drifts with the wind) plus curl-noise turbulence, lit by the sun (a light volume
- * holds the optical depth towards it) and by the plume, eroded with detail noise in the march.
+ * flow, lit by the sun (a light volume holds the transmittance towards it) and by the plume, eroded with
+ * detail noise in the march.
+ *
+ * The flow: the jets of the vehicle run down to the pad as a free jet that carries no smoke of its own and
+ * draws the air around it in (entrainment); where it meets the ground it runs out as a wall jet focused
+ * along the flame trench, slows, rises on its own heat once it has slowed and drifts with the wind. While
+ * the vehicle stands over the trench, smoke and steam come out at the far end of the trench, not at the
+ * mount; as it climbs, its jet spreads over the open pad and the source moves under it. So the cloud forms
+ * from the wall jet outwards and rises around the jet, never through it.
  *
  * Grid: rgba16float, r = extinction of exhaust smoke (1/m), g = extinction of deluge steam (1/m), b = heat
  * 0..1. The cells are 3.75 m at the pad and grow outwards and upwards (x = S a / (1 - c |a|)), so the same
- * 160 x 96 x 160 cells resolve the mount and still hold a cloud 1.8 km across.
+ * 160 x 96 x 160 cells resolve the mount and still hold a cloud 1.8 km across. Only the box of cells that
+ * the cloud has reached is simulated.
  *
- * The march also places the emitters drawn before it (plumes, fireballs) inside the smoke: it accumulates
- * the smoke in front of and behind their mean distance separately and composes the three layers.
+ * The march runs at a QUARTER of the internal resolution, inside the screen rectangle of the cloud, so its
+ * cost does not follow the screen coverage of the cloud; a second pass brings it to the half-resolution
+ * volume image with depth-aware weights and composes it with the emitters drawn before it (plumes,
+ * fireballs): the march accumulates the smoke in front of and behind their mean distance separately. Each
+ * quarter-resolution ray keeps two results, cut at the nearest and at the farthest scene depth of its 2 x 2
+ * block of half-resolution pixels, so a mast or a hull edge in front of the cloud is not painted over.
  */
 import type { LaunchSiteDef } from '@/core/contracts/defs';
-import type { FrameContext, RenderContext } from '@/core/contracts/render';
+import { RENDER_FORMATS, type FrameContext, type RenderContext } from '@/core/contracts/render';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { ManagedTarget, Tracked } from '@/render/core';
@@ -22,7 +33,10 @@ import type { VfxData } from './data';
 import type { PlacedCluster } from './plumes';
 import type { VolumeCombiner } from './volumes';
 
-const U_FLOATS = 72;
+const U_FLOATS = 96;
+/** Float offsets into SmokeU that are written outside `update`. */
+const U_EMITTERS = 47;
+const U_BOX = 88;
 
 const GRID_WGSL = /* wgsl */ `
 struct SmokeU {
@@ -34,16 +48,22 @@ struct SmokeU {
   source: vec4f,      // xyz = where the jet meets the pad, site frame (east, up, north), w = height of the nozzles above the pad (m)
   rate: vec4f,        // x = smoke source (m^2 of extinction cross-section per second), y = steam source, z = source radius (m), w = trench focus now
   trench: vec4f,      // xy = unit direction of the flame trench (east, north), z = trench length (m), w = unused
-  flow: vec4f,        // jet speed at the source (m/s), jet radius (m), buoyant rise at heat 1 (m/s), cooling (1/s)
+  flow: vec4f,        // wall-jet speed at the source (m/s), wall-jet radius (m), buoyant rise at heat 1 (m/s), cooling (1/s)
   flow2: vec4f,       // turbulence, dissipation (1/s), wind east, wind north (m/s)
   sunSite: vec4f,     // xyz = unit direction to the sun in the site frame (east, up, north), w = dt (s)
-  lightPos: vec4f,    // xyz = plume light in the site frame, w = 1 when emitters were drawn this frame
-  lightColor: vec4f,  // rgb = plume light intensity (cd)
+  lightA: vec4f,      // xyz = near end of the plume light (a segment along the jet) in the site frame, w = 1 when emitters were drawn this frame
+  lightColor: vec4f,  // rgb = plume light intensity (cd), w = strength of the cloud's shadow on the ground 0..1
   smokeAlbedo: vec4f, // rgb, w = erosion amount
   steamAlbedo: vec4f, // rgb, w = erosion noise scale (1/m)
   misc: vec4f,        // x = 1: clear the grid, y = time (s)
   glow: vec4f,        // rgb = colour x luminance of gas fresh from the plume (cd/m^2)
   cloud: vec4f,       // a cylinder that holds the cloud: xy = centre (east, north), z = radius (m), w = height (m)
+  jetTop: vec4f,      // xyz = where the jets leave the vehicle, site frame, w = radius of the jet there (m)
+  jetDir: vec4f,      // xyz = unit direction of the jet (site frame), w = its length down to the pad (m)
+  jetFlow: vec4f,     // x = gas speed in the jet (m/s), y = entrainment coefficient, z = spread (m of radius per m), w = strength 0..1
+  lightB: vec4f,      // xyz = far end of the plume light, site frame
+  box: vec4f,         // xyz = first cell of the simulated box (advection), w = unused
+  boxLight: vec4f,    // xyz = first cell of the box in the light volume
 }
 fn smokeToUvw(p: vec3f) -> vec3f {
   let S = su.axisE.w;
@@ -56,6 +76,12 @@ fn smokeFromUvw(u: vec3f) -> vec3f {
   let b = u.z * 2.0 - 1.0;
   return vec3f(su.axisE.w * a / (1.0 - su.axisU.w * abs(a)), su.axisN.w * u.y / (1.0 - su.grid.x * u.y), su.axisE.w * b / (1.0 - su.axisU.w * abs(b)));
 }
+/// Nearest point of the plume light (the segment lightA..lightB) to 'p'.
+fn plumeLightPoint(p: vec3f) -> vec3f {
+  let ab = su.lightB.xyz - su.lightA.xyz;
+  let t = saturate(dot(p - su.lightA.xyz, ab) / max(dot(ab, ab), 1e-3));
+  return su.lightA.xyz + ab * t;
+}
 `;
 
 const COMPUTE_WGSL = /* wgsl */ `
@@ -64,6 +90,28 @@ ${GRID_WGSL}
 @group(2) @binding(0) var<uniform> su: SmokeU;
 @group(2) @binding(1) var src: texture_3d<f32>;
 @group(2) @binding(2) var dst: texture_storage_3d<rgba16float, write>;
+
+struct JetAt {
+  core: f32,      // 1 inside the jet .. 0 outside
+  column: f32,    // 1 between the nozzles and the pad
+  radial: vec3f,  // from the axis to the point (m)
+  dist: f32,      // distance from the axis (m)
+  radius: f32,    // radius of the jet at this station (m)
+}
+/// Where 'p' (site frame) lies relative to the free jet between the vehicle and the pad.
+fn jetAt(p: vec3f) -> JetAt {
+  var j: JetAt;
+  let q = p - su.jetTop.xyz;
+  let along = dot(q, su.jetDir.xyz);
+  j.radial = q - su.jetDir.xyz * along;
+  j.dist = length(j.radial);
+  let r0 = max(su.jetTop.w, 0.5);
+  j.radius = r0 + su.jetFlow.z * max(along, 0.0);
+  let L = su.jetDir.w;
+  j.column = smoothstep(-1.5 * r0, 0.0, along) * (1.0 - smoothstep(L, L + 4.0, along)) * su.jetFlow.w * step(1.0, L);
+  j.core = (1.0 - smoothstep(0.75 * j.radius, 1.35 * j.radius, j.dist)) * j.column;
+  return j;
+}
 
 /// The analytic flow at a point of the site frame (east, up, north), m/s. 'heat' = heat of the gas there.
 fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
@@ -77,9 +125,17 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let r0 = su.flow.y;
   let delta = 5.0 + 0.14 * r;
   let U = su.origin.w * su.flow.x * (r0 / (r + r0)) * w * exp(-p.y / delta);
-  var v = vec3f(rh.x * U, U * 0.22 * (p.y / delta), rh.y * U);
-  // Hot gas rises; the wind takes over where the jet has died.
-  v.y += su.flow.z * heat * (0.35 + 0.65 * saturate(p.y / 25.0));
+  var v = vec3f(rh.x * U, U * 0.14 * (p.y / delta), rh.y * U);
+  // The free jet above it: straight down inside (stagnating at the pad), and the air around is drawn in.
+  let j = jetAt(p);
+  let stagnation = saturate(p.y / (1.2 * j.radius));
+  v += su.jetDir.xyz * (su.jetFlow.x * j.core * stagnation);
+  let inflow = su.jetFlow.y * su.jetFlow.x * j.column * (1.0 - j.core) * (j.radius / max(j.dist, j.radius));
+  v -= j.radial * (inflow / max(j.dist, 0.5));
+  // Hot gas rises where the jets do not hold it down and once the wall jet has let go of it; the wind takes
+  // over where the wall jet has died.
+  let held = j.column * (1.0 - smoothstep(1.5 * j.radius, 6.0 * j.radius, j.dist));
+  v.y += su.flow.z * heat * (0.35 + 0.65 * saturate(p.y / 25.0)) * (1.0 - held) * (1.0 - 0.85 * saturate(U / 10.0));
   let windShare = (0.3 + 0.7 * saturate(p.y / 120.0)) * (1.0 - saturate(U / 8.0));
   v += vec3f(su.flow2.z, 0.0, su.flow2.w) * windShare;
   // Turbulence: two octaves of divergence-free noise that drift up with the cloud, stronger where the gas is fast.
@@ -90,12 +146,13 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let q0 = p * 0.0042 + vec3f(0.0, -t * 0.012, 0.0);
   let q1 = p * 0.0137 + vec3f(t * 0.008, -t * 0.03, 0.0);
   let c = 0.5 * (vfxCurl(q0 + h) + vfxCurl(q0 - h)) + 0.275 * (vfxCurl(q1 + h) + vfxCurl(q1 - h));
-  v += c.xzy * (su.flow2.x * (2.5 + 0.12 * length(v))) * vec3f(1.0, 0.6 + 0.4 * saturate(p.y / 20.0), 1.0);
+  v += c.xzy * (su.flow2.x * (2.0 + 0.07 * min(length(v), 60.0)) * (1.0 - 0.8 * held)) * vec3f(1.0, 0.6 + 0.4 * saturate(p.y / 20.0), 1.0);
   return v;
 }
 
-@compute @workgroup_size(4, 4, 4) fn advect(@builtin(global_invocation_id) id: vec3u) {
+@compute @workgroup_size(4, 4, 4) fn advect(@builtin(global_invocation_id) gid: vec3u) {
   let dims = textureDimensions(dst);
+  let id = gid + vec3u(su.box.xyz);
   if (any(id >= dims)) { return; }
   if (su.misc.x > 0.5) { textureStore(dst, id, vec4f(0.0)); return; }
   let uvw = (vec3f(id) + 0.5) / vec3f(dims);
@@ -111,18 +168,24 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   s.r *= exp(-diss * dt);
   s.g *= exp(-diss * 3.0 * dt);
   s.b *= exp(-su.flow.w * dt);
-  // Sources at the foot of the plume: smoke where the jet comes out of the trench, steam from the deluge around it.
+  // Sources: where the exhaust and the deluge steam come out of the trench (its far end while the jet goes
+  // down the duct, the foot of the jet once it spreads over the open pad), close to the ground.
   let R = su.rate.z;
-  let H = 5.0;
-  let out = su.source.xz + su.trench.xy * (su.trench.z * 0.5 * su.rate.w);
+  let H = 2.5;
+  let out = su.source.xz + su.trench.xy * (su.trench.z * su.rate.w);
   let dSmoke = p.xz - out;
   let gSmoke = exp(-dot(dSmoke, dSmoke) / (R * R)) * exp(-p.y / H) / (PI * R * R * H);
-  let Rw = 2.2 * R;
-  let dSteam = p.xz - mix(su.source.xz, out, 0.5);
+  let Rw = 1.5 * R;
+  let dSteam = p.xz - mix(su.source.xz, out, 0.8);
   let gSteam = exp(-dot(dSteam, dSteam) / (Rw * Rw)) * exp(-p.y / (1.6 * H)) / (PI * Rw * Rw * 1.6 * H);
-  s.r += su.rate.x * dt * gSmoke;
-  s.g += su.rate.y * dt * gSteam;
+  // The jet itself is clear, fast gas: nothing condenses in it and what strays into it is torn apart.
+  let core = jetAt(p).core;
+  s.r += su.rate.x * dt * gSmoke * (1.0 - core);
+  s.g += su.rate.y * dt * gSteam * (1.0 - core);
   s.b = max(s.b, saturate((su.rate.x * gSmoke + 0.6 * su.rate.y * gSteam) * 40.0));
+  let clear = exp(-10.0 * core * dt);
+  s.r *= clear;
+  s.g *= clear;
   textureStore(dst, id, max(s, vec4f(0.0)));
 }
 
@@ -134,9 +197,11 @@ fn sigmaAt(p: vec3f) -> f32 {
 
 /// Light volume: r = transmittance towards the sun, g = towards the plume light, b = occupancy (largest
 /// density within reach of the march's displacement), a = exp(-0.3 x sun optical depth) for the wide octaves.
-@compute @workgroup_size(4, 4, 4) fn light(@builtin(global_invocation_id) id: vec3u) {
+@compute @workgroup_size(4, 4, 4) fn light(@builtin(global_invocation_id) gid: vec3u) {
   let dims = textureDimensions(dst);
+  let id = gid + vec3u(su.boxLight.xyz);
   if (any(id >= dims)) { return; }
+  if (su.misc.x > 0.5) { textureStore(dst, id, vec4f(1.0, 1.0, 0.0, 1.0)); return; }
   let p = smokeFromUvw((vec3f(id) + 0.5) / vec3f(dims));
   var tau = 0.0;
   var step = 5.0;
@@ -146,20 +211,29 @@ fn sigmaAt(p: vec3f) -> f32 {
     tau += sigmaAt(q) * step;
     step *= 1.7;
   }
-  // Towards the plume light: steps that start below the cell size and grow, so that the nearby gas (which
-  // decides the local shading) is resolved and the result varies smoothly from cell to cell.
-  let toL = su.lightPos.xyz - p;
-  let distL = length(toL);
-  let dirL = toL / max(distL, 1.0);
-  var tauL = 0.0;
-  var hL = 2.5;
-  var tL = 0.0;
-  for (var i = 0; i < 9; i++) {
-    let h = min(hL, distL - tL);
-    if (h <= 0.0) { break; }
-    tauL += sigmaAt(p + dirL * (tL + 0.5 * h)) * h;
-    tL += h;
-    hL *= 1.65;
+  // Towards the plume light, a line: once to its nearest point and once to a point near its upper end (the
+  // top of a cloud is lit by the jet above it even where the way to the nearest point runs through the cloud).
+  // Steps start below the cell size and grow, so that the nearby gas (which decides the local shading) is
+  // resolved and the result varies smoothly from cell to cell. Stored relative to the nearest point's distance.
+  let nearL = plumeLightPoint(p);
+  let dNear2 = max(dot(nearL - p, nearL - p), 25.0);
+  var lit = 0.0;
+  for (var k = 0; k < 2; k++) {
+    let aim = select(mix(su.lightA.xyz, su.lightB.xyz, 0.12), nearL, k == 0);
+    let toL = aim - p;
+    let distL = length(toL);
+    let dirL = toL / max(distL, 1.0);
+    var tauL = 0.0;
+    var hL = 2.5;
+    var tL = 0.0;
+    for (var i = 0; i < 9; i++) {
+      let h = min(hL, distL - tL);
+      if (h <= 0.0) { break; }
+      tauL += sigmaAt(p + dirL * (tL + 0.5 * h)) * h;
+      tL += h;
+      hL *= 1.65;
+    }
+    lit += 0.5 * exp(-tauL) * dNear2 / max(distL * distL, 25.0);
   }
   // Occupancy: the largest density within the reach of the march's noise displacement. The march looks for
   // gas in this (dilated, smooth) field: testing the density itself would cut the displaced billows off along
@@ -176,7 +250,7 @@ fn sigmaAt(p: vec3f) -> f32 {
   }
   // Stored as transmittances: the march interpolates them between cells, and a linearly interpolated
   // optical depth put through exp() turns the surface of a dense cloud into terraces along the cell faces.
-  textureStore(dst, id, vec4f(exp(-tau), exp(-tauL), occ, exp(-0.3 * tau)));
+  textureStore(dst, id, vec4f(exp(-tau), lit, occ, exp(-0.3 * tau)));
 }
 `;
 
@@ -186,22 +260,51 @@ ${GRID_WGSL}
 @group(2) @binding(0) var<uniform> su: SmokeU;
 @group(2) @binding(1) var densityTex: texture_3d<f32>;
 @group(2) @binding(2) var lightTex: texture_3d<f32>;
-@group(2) @binding(3) var emitTex: texture_2d<f32>;
-@group(2) @binding(4) var momentTex: texture_2d<f32>;
+@group(2) @binding(3) var momentTex: texture_2d<f32>;
 
-@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+struct MarchOut {
+  @location(0) frontNear: vec4f,   // rgb = smoke in front of the emitters (premultiplied, pre-exposed), a = its transmittance; cut at the nearer depth
+  @location(1) backNear: vec4f,    // the smoke behind the emitters, same cut
+  @location(2) frontFar: vec4f,    // both again, cut at the farther depth
+  @location(3) backFar: vec4f,
+  @location(4) aux: vec4f,         // r, g = log2 of the two cut depths (m along the view axis), b = log2 of the mean distance of the smoke in front (m)
+}
+
+@fragment fn fs(in: FullscreenOut) -> MarchOut {
   let pix = vec2i(in.position.xy);
-  var E = vec4f(0.0);
-  var tE = 3.0e38;
-  if (su.lightPos.w > 0.5) {
-    E = textureLoad(emitTex, pix, 0);
-    let m = textureLoad(momentTex, pix, 0);
-    if (m.g > 1e-4) { tE = exp2(m.r / m.g); }
+  // The 2 x 2 half-resolution pixels of this ray: the nearest and the farthest of their depths, their emitters.
+  let hsize = vec2i(textureDimensions(sceneDepthHalfTex));
+  var dNear = 0.0;
+  var dFar = 1.0;
+  var mr = 0.0;
+  var mg = 0.0;
+  for (var k = 0; k < 4; k++) {
+    let ip = min(pix * 2 + vec2i(k & 1, k >> 1), hsize - 1);
+    let d = textureLoad(sceneDepthHalfTex, ip, 0).r;
+    dNear = max(dNear, d);
+    dFar = min(dFar, d);
+    if (su.lightA.w > 0.5) {
+      let m = textureLoad(momentTex, ip, 0);
+      mr += m.r;
+      mg += m.g;
+    }
   }
+  var tE = 3.0e38;
+  if (mg > 1e-4) { tE = exp2(mr / mg); }
+  let zNear = min(viewZFromDepth(dNear), 1.0e7);
+  let zFar = min(viewZFromDepth(dFar), 1.0e7);
+  var out: MarchOut;
+  out.frontNear = vec4f(0.0, 0.0, 0.0, 1.0);
+  out.backNear = vec4f(0.0, 0.0, 0.0, 1.0);
+  out.frontFar = vec4f(0.0, 0.0, 0.0, 1.0);
+  out.backFar = vec4f(0.0, 0.0, 0.0, 1.0);
+  out.aux = vec4f(log2(zNear), log2(zFar), 0.0, 0.0);
+
   let ray = viewRay(in.uv);
   let rayLen = length(ray);
   let dW = ray / rayLen;
-  let tScene = viewZFromDepth(textureLoad(sceneDepthHalfTex, pix, 0).r) * rayLen;
+  let tCut = zNear * rayLen;
+  let tScene = zFar * rayLen;
   let o = su.origin.xyz;
   let ro = -vec3f(dot(o, su.axisE.xyz), dot(o, su.axisU.xyz), dot(o, su.axisN.xyz));
   var rd = vec3f(dot(dW, su.axisE.xyz), dot(dW, su.axisU.xyz), dot(dW, su.axisN.xyz));
@@ -218,14 +321,14 @@ ${GRID_WGSL}
   let qa = dot(rd.xz, rd.xz);
   let qb = dot(oc, rd.xz);
   let disc = qb * qb - qa * (dot(oc, oc) - su.cloud.z * su.cloud.z);
-  if (disc <= 0.0) { return E; }
+  if (disc <= 0.0) { return out; }
   let sq_ = sqrt(disc);
   t0 = max(t0, (-qb - sq_) / qa);
   t1 = min(t1, (-qb + sq_) / qa);
   let ty = (vec2f(0.0, su.cloud.w) - ro.y) / rd.y;
   t0 = max(t0, min(ty.x, ty.y));
   t1 = min(t1, max(ty.x, ty.y));
-  if (t1 <= t0) { return E; }
+  if (t1 <= t0) { return out; }
 
   // Steps grow gently with the distance from the point of the ray nearest to the pad, like the cells of the grid.
   let tc = clamp(-dot(ro, rd), t0, t1);
@@ -252,15 +355,20 @@ ${GRID_WGSL}
   var Lb = vec3f(0.0); var Tb = 1.0;     // smoke behind them
   var slabL = vec3f(0.0); var slabT = 1.0; var slabW = 0.0; var slabD = 0.0;
   var back = false;
+  var cut = false;
   var slabCount = 0;
+  var dSum = 0.0;                        // opacity-weighted distance of the smoke in front
+  var dWeight = 0.0;
   // Coarse steps through empty air; where gas is found the march backs up one step and goes on with steps a
   // quarter as long, so that the first metres of a dense cloud (which are all that is seen of it) are resolved.
+  // Deep inside, where most of the light is gone, the steps lengthen again.
   var t = t0 + (d0 + abs(t0 - tc)) * dw * jitter;
   var fine = 0.0;
   let maxIter = i32(steps * 2.5);
   for (var i = 0; i < maxIter && t < t1; i++) {
     let base = (d0 + abs(t - tc)) * dw;
-    let dt = base * select(1.0, 0.25, fine > 0.0);
+    let deep = 1.0 + 2.0 * (1.0 - smoothstep(0.05, 0.4, Tf * Tb));
+    let dt = base * select(1.0, 0.25 * deep, fine > 0.0);
     let p = ro + rd * (t + 0.5 * dt);
     let uvw = smokeToUvw(p);
     var sigma = textureSampleLevel(lightTex, linearClamp, uvw, 0.0).b;
@@ -270,6 +378,7 @@ ${GRID_WGSL}
       continue;
     }
     var cell = vec4f(0.0);
+    var warp = vec3f(0.0);
     if (sigma > 1e-5) {
       // Billows: the density is looked up at a position displaced by two octaves of noise that ride up with
       // the cloud (lumpy edges however smooth the advected field is), then thin gas is eroded.
@@ -277,7 +386,7 @@ ${GRID_WGSL}
       let n = vfxNoiseLod(q, dt * scale);
       let n2 = vfxNoiseLod(q * 3.1 + vec3f(0.37, 0.11, 0.73), dt * scale * 3.1);
       let amp = 0.3 / scale;
-      let warp = (vec3f(n.r, n.a, n.g) - 0.5) * (2.0 * amp) + (vec3f(n2.r, n2.a, n2.g) - 0.5) * (0.6 * amp);
+      warp = (vec3f(n.r, n.a, n.g) - 0.5) * (2.0 * amp) + (vec3f(n2.r, n2.a, n2.g) - 0.5) * (0.6 * amp);
       cell = textureSampleLevel(densityTex, linearClamp, smokeToUvw(p + warp), 0.0);
       sigma = cell.r + cell.g;
       let cover = saturate(sigma / 0.03);
@@ -288,14 +397,17 @@ ${GRID_WGSL}
       fine -= 1.0;
     }
     if (sigma > 1e-5) {
-      let lt = textureSampleLevel(lightTex, linearClamp, smokeToUvw(p), 0.0);
+      // The light is looked up where the density was: the shading follows the billows, not the cells.
+      let lt = textureSampleLevel(lightTex, linearClamp, smokeToUvw(p + warp), 0.0);
       let albedo = (su.smokeAlbedo.rgb * cell.r + su.steamAlbedo.rgb * cell.g) / max(cell.r + cell.g, 1e-6);
       // Sun: single scattering plus two wide octaves standing in for multiple scattering.
       let wide = pow(lt.a, 0.0833);
       let sun = sunE * (phase * lt.r + 1.5 * lt.a + 1.1 * wide) * (1.0 / (4.0 * PI));
-      let toL = su.lightPos.xyz - p;
+      // Plume: the jet is a line of light; gas next to it glows from the light that has been scattered about
+      // inside the cloud as well as from what reaches it directly.
+      let toL = plumeLightPoint(p) - p;
       let dl2 = max(dot(toL, toL), 25.0);
-      let plume = su.lightColor.rgb * ((lt.g + 0.5 * pow(lt.g, 0.3)) / (dl2 * PI));
+      let plume = su.lightColor.rgb * ((lt.g + 0.6 * pow(lt.g, 0.3) + 0.12 * pow(lt.g, 0.08)) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
       // Gas fresh from the plume still glows.
       let h2 = cell.b * cell.b;
@@ -309,24 +421,136 @@ ${GRID_WGSL}
     }
     t += dt;
     slabCount++;
-    // A slab ends every eighth step, where the ray passes the emitters, and at the end.
+    // A slab ends every eighth step, where the ray passes the emitters or the nearer cut depth, and at the end.
     let last = t >= t1 || i + 1 >= maxIter;
     let crossing = !back && t >= tE;
-    if (last || crossing || slabCount >= 8) {
+    let cutting = !cut && t >= tCut;
+    if (last || crossing || cutting || slabCount >= 8) {
       if (slabW > 0.0) {
-        let c = vfxAtmosphere(in.uv, slabD / slabW, slabL, 1.0 - slabT);
-        if (back) { Lb += Tb * c.rgb; Tb *= 1.0 - c.a; } else { Lf += Tf * c.rgb; Tf *= 1.0 - c.a; }
+        let dist = slabD / slabW;
+        let c = vfxAtmosphere(in.uv, dist, slabL, 1.0 - slabT);
+        if (back) { Lb += Tb * c.rgb; Tb *= 1.0 - c.a; }
+        else { dSum += Tf * c.a * dist; dWeight += Tf * c.a; Lf += Tf * c.rgb; Tf *= 1.0 - c.a; }
       }
       slabL = vec3f(0.0); slabT = 1.0; slabW = 0.0; slabD = 0.0; slabCount = 0;
+      if (cutting) {
+        cut = true;
+        out.frontNear = vec4f(writeHdr(Lf), Tf);
+        out.backNear = vec4f(writeHdr(Lb), Tb);
+      }
       if (crossing) { back = true; }
     }
     if (Tf * Tb < 0.003) { break; }
   }
-  let TE = 1.0 - E.a;
-  let rgb = Lf + Tf * (E.rgb + TE * Lb);
-  return vec4f(writeHdr(rgb), saturate(1.0 - Tf * TE * Tb));
+  out.frontFar = vec4f(writeHdr(Lf), Tf);
+  out.backFar = vec4f(writeHdr(Lb), Tb);
+  if (!cut) {
+    out.frontNear = out.frontFar;
+    out.backNear = out.backFar;
+  }
+  out.aux.b = log2(max(dSum / max(dWeight, 1e-6), 1e-3));
+  return out;
 }
 `;
+
+const COMBINE_WGSL = /* wgsl */ `
+#include "vfx_common"
+${GRID_WGSL}
+@group(2) @binding(0) var<uniform> su: SmokeU;
+@group(2) @binding(1) var emitTex: texture_2d<f32>;
+@group(2) @binding(2) var momentTex: texture_2d<f32>;
+@group(2) @binding(3) var frontNearTex: texture_2d<f32>;
+@group(2) @binding(4) var backNearTex: texture_2d<f32>;
+@group(2) @binding(5) var frontFarTex: texture_2d<f32>;
+@group(2) @binding(6) var backFarTex: texture_2d<f32>;
+@group(2) @binding(7) var auxTex: texture_2d<f32>;
+
+struct CombineOut {
+  @location(0) color: vec4f,    // the half-resolution volume image: premultiplied pre-exposed radiance, a = opacity
+  @location(1) moment: vec4f,   // r = weight x log2(distance), g = weight, of what the image shows
+}
+
+@fragment fn fs(in: FullscreenOut) -> CombineOut {
+  let pix = vec2i(in.position.xy);
+  var E = vec4f(0.0);
+  var m = vec2f(0.0);
+  if (su.lightA.w > 0.5) {
+    E = textureLoad(emitTex, pix, 0);
+    m = textureLoad(momentTex, pix, 0).rg;
+  }
+  // The four nearest rays of the quarter-resolution march, each with its two depth cuts: weighted by the
+  // bilinear weight and by how well the cut matches the depth this pixel was meant to be marched to.
+  let z = min(viewZFromDepth(textureLoad(sceneDepthHalfTex, pix, 0).r), 1.0e7);
+  let size = vec2i(textureDimensions(auxTex));
+  let st = in.uv * vec2f(size) - 0.5;
+  let base = floor(st);
+  let f = st - base;
+  var F = vec4f(0.0);
+  var B = vec4f(0.0);
+  var dLog = 0.0;
+  var wsum = 0.0;
+  var bestF = vec4f(0.0, 0.0, 0.0, 1.0);
+  var bestB = vec4f(0.0, 0.0, 0.0, 1.0);
+  var bestLog = 0.0;
+  var bestDiff = 3.0e38;
+  for (var k = 0; k < 4; k++) {
+    let o = vec2i(k & 1, k >> 1);
+    let ip = clamp(vec2i(base) + o, vec2i(0), size - 1);
+    let a = textureLoad(auxTex, ip, 0);
+    let zn = exp2(a.r);
+    let zf = exp2(a.g);
+    let diffN = min(abs(zn - z) / max(min(zn, z), 1e-3), 1000.0);
+    let diffF = min(abs(zf - z) / max(min(zf, z), 1e-3), 1000.0);
+    let near = diffN < diffF;
+    let diff = min(diffN, diffF);
+    var fr: vec4f;
+    var bk: vec4f;
+    if (near) { fr = textureLoad(frontNearTex, ip, 0); bk = textureLoad(backNearTex, ip, 0); }
+    else { fr = textureLoad(frontFarTex, ip, 0); bk = textureLoad(backFarTex, ip, 0); }
+    let bil = select(1.0 - f.x, f.x, o.x == 1) * select(1.0 - f.y, f.y, o.y == 1);
+    // Depth steps of a few per cent are the slope of the ground under the cloud, not an edge: only a real
+    // discontinuity may take a ray's weight away, or the cloud is drawn in blocks of quarter-resolution pixels.
+    let w = (bil + 0.01) / (1.0 + sq(diff * 12.0));
+    F += fr * w;
+    B += bk * w;
+    dLog += a.b * w;
+    wsum += w;
+    if (diff < bestDiff) { bestDiff = diff; bestF = fr; bestB = bk; bestLog = a.b; }
+  }
+  if (wsum < 1e-4) { F = bestF; B = bestB; dLog = bestLog; }
+  else { F /= wsum; B /= wsum; dLog /= wsum; }
+  let TE = 1.0 - E.a;
+  var out: CombineOut;
+  out.color = vec4f(writeHdr(F.rgb + F.a * (E.rgb + TE * B.rgb)), saturate(1.0 - F.a * TE * B.a));
+  let ws = 1.0 - F.a;
+  out.moment = vec4f(ws * dLog + F.a * m.r, ws + F.a * m.g, 0.0, 0.0);
+  return out;
+}
+`;
+
+/** The cloud's shadow on whatever stands under it: opaque pixels are darkened by the sun's share of their light. */
+const SHADOW_WGSL = /* wgsl */ `
+#include "vfx_common"
+${GRID_WGSL}
+@group(2) @binding(0) var<uniform> su: SmokeU;
+@group(2) @binding(1) var lightTex: texture_3d<f32>;
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  let d = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
+  let rel = positionFromDepth(in.uv, d) - su.origin.xyz;
+  let p = vec3f(dot(rel, su.axisE.xyz), dot(rel, su.axisU.xyz), dot(rel, su.axisN.xyz));
+  if (abs(p.x) > su.grid.y || abs(p.z) > su.grid.y || p.y > su.grid.z || p.y < -40.0) { discard; }
+  let T = textureSampleLevel(lightTex, linearClamp, smokeToUvw(vec3f(p.x, max(p.y, 0.5), p.z)), 0.0).r;
+  let probe = vfxProbes[${PROBE_PAD}];
+  let direct = probe.sun.rgb * max(su.sunSite.y, 0.03);
+  let share = direct / max(direct + vfxProbeAmbient(${PROBE_PAD}u), vec3f(1e-6));
+  return vec4f(saturate3(vec3f(1.0) - share * ((1.0 - T) * su.lightColor.w)), 1.0);
+}
+`;
+
+interface CellBox {
+  lo: [number, number, number];
+  hi: [number, number, number];
+}
 
 export class SmokeSystem implements VolumeCombiner {
   private readonly device: GPUDevice;
@@ -336,13 +560,21 @@ export class SmokeSystem implements VolumeCombiner {
   private readonly lightTex: GPUTexture;
   private readonly computeLayout: GPUBindGroupLayout;
   private readonly marchLayout: GPUBindGroupLayout;
+  private readonly combineLayout: GPUBindGroupLayout;
+  private readonly shadowLayout: GPUBindGroupLayout;
   private readonly advectPipeline: GPUComputePipeline;
   private readonly lightPipeline: GPUComputePipeline;
   private readonly marchPipeline: Tracked<GPURenderPipeline>;
+  private readonly combinePipeline: Tracked<GPURenderPipeline>;
+  private readonly shadowPipeline: Tracked<GPURenderPipeline>;
   private readonly advectGroups: [GPUBindGroup, GPUBindGroup];
   private readonly lightGroups: [GPUBindGroup, GPUBindGroup];
+  private readonly shadowGroup: GPUBindGroup;
+  /** Quarter-resolution results of the march: smoke in front of / behind the emitters at the two depth cuts, and the cuts. */
+  private readonly quarter: [ManagedTarget, ManagedTarget, ManagedTarget, ManagedTarget, ManagedTarget];
   private marchGroups: [GPUBindGroup, GPUBindGroup] | null = null;
-  private marchVersion = -1;
+  private combineGroup: GPUBindGroup | null = null;
+  private groupVersion = -1;
   private readonly dims: Vec3Tuple;
   /** Index of the density texture that holds the current state. */
   private cur = 0;
@@ -354,8 +586,15 @@ export class SmokeSystem implements VolumeCombiner {
   private stepped = false;
   /** Advection steps taken: the light volume is refreshed on every second one. */
   private stepIndex = 0;
+  /** Cells the cloud has reached since the grid was cleared (multiples of 8; only these are simulated). */
+  private box: CellBox | null = null;
+  /** Screen rectangle of the cloud in pixels of the quarter-resolution targets (null: not on screen). */
+  private rect: [number, number, number, number] | null = null;
+  private sunUp = false;
   /** Total source this frame (m^2/s) for diagnostics. */
   sourceRate = 0;
+  /** Share of the grid's cells that is simulated (diagnostics). */
+  boxShare = 0;
 
   constructor(
     private readonly ctx: RenderContext,
@@ -364,17 +603,26 @@ export class SmokeSystem implements VolumeCombiner {
   ) {
     const device = (this.device = ctx.device);
     const S = data.padSmoke;
+    const core = common.core;
     this.dims = S.grid;
     this.uniform = device.createBuffer({ label: 'vfx.smoke', size: U_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const mk = (label: string, size: Vec3Tuple): GPUTexture =>
-      common.core.createTextureChecked({ label, format: 'rgba16float', dimension: '3d', size, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
+      core.createTextureChecked({ label, format: 'rgba16float', dimension: '3d', size, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
     this.density = [mk('vfx.smoke.a', S.grid), mk('vfx.smoke.b', S.grid)];
     this.lightTex = mk('vfx.smoke.light', [Math.ceil(S.grid[0] / 2), Math.ceil(S.grid[1] / 2), Math.ceil(S.grid[2] / 2)]);
+    this.quarter = [
+      core.createTarget('vfx.smoke.frontNear', 'rgba16float', 0.25),
+      core.createTarget('vfx.smoke.backNear', 'rgba16float', 0.25),
+      core.createTarget('vfx.smoke.frontFar', 'rgba16float', 0.25),
+      core.createTarget('vfx.smoke.backFar', 'rgba16float', 0.25),
+      core.createTarget('vfx.smoke.aux', 'rgba16float', 0.25),
+    ];
+    const tex3d: GPUBindGroupLayoutEntry['texture'] = { sampleType: 'float', viewDimension: '3d' };
     this.computeLayout = device.createBindGroupLayout({
       label: 'vfx.smoke.compute',
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float', viewDimension: '3d' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: tex3d },
         { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba16float', viewDimension: '3d' } },
       ],
     });
@@ -382,10 +630,23 @@ export class SmokeSystem implements VolumeCombiner {
       label: 'vfx.smoke.march',
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '3d' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '3d' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: tex3d },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: tex3d },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      ],
+    });
+    this.combineLayout = device.createBindGroupLayout({
+      label: 'vfx.smoke.combine',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        ...[1, 2, 3, 4, 5, 6, 7].map((binding): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } })),
+      ],
+    });
+    this.shadowLayout = device.createBindGroupLayout({
+      label: 'vfx.smoke.shadow',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: tex3d },
       ],
     });
     const module = ctx.shaders.createModule('vfx.smoke.compute', COMPUTE_WGSL);
@@ -399,8 +660,21 @@ export class SmokeSystem implements VolumeCombiner {
     // advectGroups[k]: read texture k, write the other; lightGroups[k]: read texture k, write the light volume.
     this.advectGroups = [group(views[0]!, views[1]!), group(views[1]!, views[0]!)];
     this.lightGroups = [group(views[0]!, lightView), group(views[1]!, lightView)];
-    this.marchPipeline = common.core.fullscreenPipeline({ label: 'vfx.smoke.march', fragment: MARCH_WGSL, layouts: [common.layout, this.marchLayout], targets: [{ format: 'rgba16float' }] });
+    this.shadowGroup = device.createBindGroup({ label: 'vfx.smoke.shadow', layout: this.shadowLayout, entries: [{ binding: 0, resource: { buffer: this.uniform } }, { binding: 1, resource: lightView }] });
+    const rgba: GPUColorTargetState = { format: 'rgba16float' };
+    this.marchPipeline = core.fullscreenPipeline({ label: 'vfx.smoke.march', fragment: MARCH_WGSL, layouts: [common.layout, this.marchLayout], targets: [rgba, rgba, rgba, rgba, rgba] });
+    this.combinePipeline = core.fullscreenPipeline({ label: 'vfx.smoke.combine', fragment: COMBINE_WGSL, layouts: [common.layout, this.combineLayout], targets: [rgba, { format: 'rg16float' }] });
+    // Multiplies what is in the HDR target: geometry pixels only (the fullscreen triangle lies at the far plane).
+    this.shadowPipeline = core.fullscreenPipeline({
+      label: 'vfx.smoke.shadow',
+      fragment: SHADOW_WGSL,
+      layouts: [common.layout, this.shadowLayout],
+      targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'zero', dstFactor: 'src' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }],
+      depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'less' },
+    });
     this.marchPipeline.get();
+    this.combinePipeline.get();
+    this.shadowPipeline.get();
   }
 
   active(): boolean {
@@ -421,6 +695,7 @@ export class SmokeSystem implements VolumeCombiner {
     const defs = this.ctx.defs;
     const snap = frame.snapshot;
     this.stepped = false;
+    this.rect = null;
 
     // Nearest site to anything that burns, on a body of this frame.
     let best: { site: LaunchSiteDef; origin: Vec3; east: Vec3; north: Vec3; up: Vec3 } | null = null;
@@ -453,11 +728,16 @@ export class SmokeSystem implements VolumeCombiner {
     let foot = v3.zero();
     let nozzleHeight = 0;
     let weight = 0;
-    let light: { pos: Vec3; intensity: Vec3Tuple; power: number } | null = null;
+    let top = v3.zero();
+    let dir = v3.zero();
+    let jetRadius = 0;
+    let jetLength = 0;
+    let light: { a: Vec3; b: Vec3; intensity: Vec3Tuple; power: number } | null = null;
     const toSite = (rel: Vec3): Vec3 => {
       const d = v3.sub(rel, best.origin);
       return { x: v3.dot(d, best.east), y: v3.dot(d, best.up), z: v3.dot(d, best.north) };
     };
+    const dirToSite = (d: Vec3): Vec3 => ({ x: v3.dot(d, best.east), y: v3.dot(d, best.up), z: v3.dot(d, best.north) });
     for (const pc of clusters) {
       const c = pc.cluster;
       if (c.kind !== 'engine' || c.look.ground.smoke <= 0) continue;
@@ -469,20 +749,36 @@ export class SmokeSystem implements VolumeCombiner {
       if (reach <= 0) continue;
       const hit = toSite(v3.addScaled(pc.originRelCam, pc.axisX, h));
       const w = c.massFlow * reach * c.look.ground.smoke;
+      let reMax = 0;
+      let core = 0;
+      for (const nz of c.nozzles) {
+        reMax = Math.max(reMax, nz.exitRadius);
+        core = Math.max(core, nz.shape.coreLength);
+      }
+      if (c.merged) core = Math.max(core, c.merged.shape.coreLength);
       smoke += w;
       foot = v3.addScaled(foot, hit, w);
+      top = v3.addScaled(top, p, w);
+      dir = v3.addScaled(dir, dirToSite(pc.axisX), w);
+      jetRadius += (c.merged?.exitRadius ?? reMax) * w;
+      jetLength += h * w;
       nozzleHeight += p.y * w;
       weight += w;
       strength = Math.max(strength, reach * Math.min(1, c.massFlow / 2000 + 0.25));
       const li = c.look.light;
       const power = li.efficacy * c.thrust;
       if (!light || power > light.power) {
-        const lp = toSite(v3.addScaled(pc.originRelCam, pc.axisX, Math.min(h * 0.6, 40)));
-        light = { pos: lp, intensity: [li.color[0] * power, li.color[1] * power, li.color[2] * power], power };
+        const a = toSite(v3.addScaled(pc.originRelCam, pc.axisX, reMax));
+        const b = toSite(v3.addScaled(pc.originRelCam, pc.axisX, Math.min(h, reMax + 1.2 * core)));
+        light = { a, b, intensity: [li.color[0] * power, li.color[1] * power, li.color[2] * power], power };
       }
     }
     if (weight > 0) {
       foot = v3.scale(foot, 1 / weight);
+      top = v3.scale(top, 1 / weight);
+      dir = v3.normalize(dir);
+      jetRadius /= weight;
+      jetLength /= weight;
       nozzleHeight /= weight;
       if (effectTime - this.lastSource > S.linger) this.firstSource = effectTime;
       this.lastSource = effectTime;
@@ -504,22 +800,25 @@ export class SmokeSystem implements VolumeCombiner {
     const wh = S.wind.headingDeg * DEG;
     const horizontalScale = (S.centerCell * S.grid[0]) / 2;
     const verticalScale = S.bottomCell * S.grid[1];
+    const warpH = 1 - horizontalScale / S.halfExtent;
+    const warpV = 1 - verticalScale / S.height;
     const sun = toSite(v3.add(best.origin, frame.sun.dirRoot));
+    this.sunUp = sun.y > 0;
     this.sourceRate = smoke * S.smoke.yield;
     const u = this.u;
     u.set([best.origin.x, best.origin.y, best.origin.z, weight > 0 ? strength : 0], 0);
     u.set([best.east.x, best.east.y, best.east.z, horizontalScale], 4);
-    u.set([best.up.x, best.up.y, best.up.z, 1 - horizontalScale / S.halfExtent], 8);
+    u.set([best.up.x, best.up.y, best.up.z, warpH], 8);
     u.set([best.north.x, best.north.y, best.north.z, verticalScale], 12);
-    u.set([1 - verticalScale / S.height, S.halfExtent, S.height, S.steps], 16);
+    u.set([warpV, S.halfExtent, S.height, S.steps], 16);
     u.set([foot.x, 0, foot.z, nozzleHeight], 20);
     u.set([smoke * S.smoke.yield, smoke * S.steam.yield * deluge, S.jetRadius, focus], 24);
     u.set([Math.sin(th), Math.cos(th), S.trenchLength, 0], 28);
     u.set([S.jetSpeed, S.jetRadius, S.buoyancy, S.cooling], 32);
     u.set([S.turbulence, S.dissipation, Math.sin(wh) * S.wind.speed, Math.cos(wh) * S.wind.speed], 36);
     u.set([sun.x, sun.y, sun.z, dt], 40);
-    u.set([light?.pos.x ?? 0, light?.pos.y ?? 30, light?.pos.z ?? 0, 0], 44);
-    u.set([light?.intensity[0] ?? 0, light?.intensity[1] ?? 0, light?.intensity[2] ?? 0, 0], 48);
+    u.set([light?.a.x ?? 0, light?.a.y ?? 30, light?.a.z ?? 0, 0], 44);
+    u.set([light?.intensity[0] ?? 0, light?.intensity[1] ?? 0, light?.intensity[2] ?? 0, S.groundShadow], 48);
     u.set([...S.smoke.albedo, S.erosion], 52);
     u.set([...S.steam.albedo, S.erosionScale], 56);
     u.set([this.needsClear ? 1 : 0, effectTime, 0, 0], 60);
@@ -529,38 +828,108 @@ export class SmokeSystem implements VolumeCombiner {
     const drift = S.wind.speed * Math.max(0, age - 10) * 0.6;
     const radius = Math.min(S.halfExtent, 90 + Math.sqrt(2 * S.jetSpeed * S.jetRadius * Math.min(age, 60)) * 1.25 + drift + 1.5 * Math.max(0, age - 60));
     const height = Math.min(S.height, 60 + (S.buoyancy + 4) * Math.min(age, 40) + 2 * Math.max(0, age - 40));
-    u.set([foot.x * (weight > 0 ? 1 : 0) + Math.sin(wh) * drift, foot.z * (weight > 0 ? 1 : 0) + Math.cos(wh) * drift, radius, height], 68);
+    const cx = foot.x * (weight > 0 ? 1 : 0) + Math.sin(wh) * drift;
+    const cz = foot.z * (weight > 0 ? 1 : 0) + Math.cos(wh) * drift;
+    u.set([cx, cz, radius, height], 68);
+    u.set([top.x, top.y, top.z, jetRadius], 72);
+    u.set([dir.x, dir.y, dir.z, weight > 0 ? jetLength : 0], 76);
+    u.set([S.jet.speed, S.jet.entrainment, S.jet.spread, weight > 0 ? strength : 0], 80);
+    u.set([light?.b.x ?? 0, light?.b.y ?? 0, light?.b.z ?? 0, 0], 84);
+
+    // The box of cells the cloud has reached (it only grows until the grid is cleared).
+    if (this.needsClear) this.box = null;
+    const cellU = (x: number): number => (0.5 + (0.5 * x) / (horizontalScale + warpH * Math.abs(x))) * S.grid[0];
+    const cellW = (z: number): number => (0.5 + (0.5 * z) / (horizontalScale + warpH * Math.abs(z))) * S.grid[2];
+    const cellV = (y: number): number => (y / (verticalScale + warpV * y)) * S.grid[1];
+    const snap8 = (lo: number, hi: number, n: number): [number, number] => [Math.max(0, Math.floor((lo - 3) / 8) * 8), Math.min(Math.ceil(n / 8) * 8, Math.ceil((hi + 3) / 8) * 8)];
+    const bx = snap8(cellU(Math.max(-S.halfExtent, cx - radius)), cellU(Math.min(S.halfExtent, cx + radius)), S.grid[0]);
+    const by = snap8(0, cellV(height), S.grid[1]);
+    const bz = snap8(cellW(Math.max(-S.halfExtent, cz - radius)), cellW(Math.min(S.halfExtent, cz + radius)), S.grid[2]);
+    const prev = this.box;
+    this.box = prev
+      ? { lo: [Math.min(prev.lo[0], bx[0]), Math.min(prev.lo[1], by[0]), Math.min(prev.lo[2], bz[0])], hi: [Math.max(prev.hi[0], bx[1]), Math.max(prev.hi[1], by[1]), Math.max(prev.hi[2], bz[1])] }
+      : { lo: [bx[0], by[0], bz[0]], hi: [bx[1], by[1], bz[1]] };
+    const b = this.box;
+    // While clearing, the whole grid is written.
+    const lo = this.needsClear ? [0, 0, 0] : b.lo;
+    u.set([lo[0]!, lo[1]!, lo[2]!, 0], U_BOX);
+    u.set([lo[0]! / 2, lo[1]! / 2, lo[2]! / 2, 0], U_BOX + 4);
+    this.boxShare = ((b.hi[0] - b.lo[0]) * (b.hi[1] - b.lo[1]) * (b.hi[2] - b.lo[2])) / (S.grid[0] * S.grid[1] * S.grid[2]);
     this.device.queue.writeBuffer(this.uniform, 0, u);
     this.stepped = dt > 0 || this.needsClear;
+
+    // Screen rectangle of the cylinder that holds the cloud, in pixels of the quarter-resolution targets.
+    const [qw, qh] = this.quarter[0].size;
+    const vw = frame.view;
+    const m = frame.projUnjittered;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    let behind = false;
+    for (let k = 0; k < 8; k++) {
+      const px = cx + (k & 1 ? radius : -radius);
+      const py = k & 2 ? height : 0;
+      const pz = cz + (k & 4 ? radius : -radius);
+      const rel = v3.add(best.origin, v3.add(v3.add(v3.scale(best.east, px), v3.scale(best.up, py)), v3.scale(best.north, pz)));
+      const vx = vw[0]! * rel.x + vw[4]! * rel.y + vw[8]! * rel.z;
+      const vy = vw[1]! * rel.x + vw[5]! * rel.y + vw[9]! * rel.z;
+      const vz = vw[2]! * rel.x + vw[6]! * rel.y + vw[10]! * rel.z;
+      if (vz > -0.5) {
+        behind = true;
+        break;
+      }
+      const sx = ((m[0]! * vx) / -vz) * 0.5 + 0.5;
+      const sy = 0.5 - ((m[5]! * vy) / -vz) * 0.5;
+      x0 = Math.min(x0, sx);
+      x1 = Math.max(x1, sx);
+      y0 = Math.min(y0, sy);
+      y1 = Math.max(y1, sy);
+    }
+    if (behind) this.rect = [0, 0, qw, qh];
+    else {
+      const rx0 = Math.max(0, Math.floor(x0 * qw) - 2);
+      const ry0 = Math.max(0, Math.floor(y0 * qh) - 2);
+      const rx1 = Math.min(qw, Math.ceil(x1 * qw) + 2);
+      const ry1 = Math.min(qh, Math.ceil(y1 * qh) + 2);
+      this.rect = rx1 > rx0 && ry1 > ry0 ? [rx0, ry0, rx1 - rx0, ry1 - ry0] : null;
+    }
     return best.origin;
   }
 
   /** compute hook: one advection step and the light volume. */
   compute(frame: FrameContext, encoder: GPUCommandEncoder): void {
-    if (!this.isActive || !this.stepped) return;
-    if (this.needsClear) this.stepIndex = 0;
+    if (!this.isActive || !this.stepped || !this.box) return;
+    const clearing = this.needsClear;
+    if (clearing) this.stepIndex = 0;
     this.needsClear = false;
     const pass = encoder.beginComputePass({ label: 'vfx.smoke', timestampWrites: this.ctx.perf.gpuPass('vfx.smoke.sim') as GPUComputePassTimestampWrites | undefined });
     pass.setBindGroup(0, frame.frameBindGroup);
     pass.setBindGroup(1, this.common.bindGroup());
+    const groups = (lo: number, hi: number, cell: number): number => Math.ceil((hi - lo) / cell / 4);
+    const b: CellBox = clearing ? { lo: [0, 0, 0], hi: [this.dims[0], this.dims[1], this.dims[2]] } : this.box;
     pass.setPipeline(this.advectPipeline);
-    pass.setBindGroup(2, this.advectGroups[this.cur]!);
-    pass.dispatchWorkgroups(Math.ceil(this.dims[0] / 4), Math.ceil(this.dims[1] / 4), Math.ceil(this.dims[2] / 4));
-    this.cur = 1 - this.cur;
-    // The light volume (optical depths and occupancy) changes slowly: every second step is enough.
+    // Clearing writes both textures (the box that is simulated afterwards never reads beyond what was cleared).
+    for (let k = 0; k < (clearing ? 2 : 1); k++) {
+      pass.setBindGroup(2, this.advectGroups[this.cur]!);
+      pass.dispatchWorkgroups(groups(b.lo[0], b.hi[0], 1), groups(b.lo[1], b.hi[1], 1), groups(b.lo[2], b.hi[2], 1));
+      this.cur = 1 - this.cur;
+    }
+    // The light volume (transmittances and occupancy) changes slowly: every second step is enough.
     if ((this.stepIndex++ & 1) === 0) {
       pass.setPipeline(this.lightPipeline);
       pass.setBindGroup(2, this.lightGroups[this.cur]!);
-      pass.dispatchWorkgroups(Math.ceil(this.dims[0] / 8), Math.ceil(this.dims[1] / 8), Math.ceil(this.dims[2] / 8));
+      pass.dispatchWorkgroups(groups(b.lo[0], b.hi[0], 2), groups(b.lo[1], b.hi[1], 2), groups(b.lo[2], b.hi[2], 2));
     }
     pass.end();
   }
 
-  /** The march: smoke composed with the emitters into `target`. */
-  run(frame: FrameContext, encoder: GPUCommandEncoder, emit: ManagedTarget, moment: ManagedTarget, target: ManagedTarget, haveEmitters: boolean): void {
-    const v = emit.version + moment.version;
-    if (!this.marchGroups || v !== this.marchVersion) {
-      this.marchVersion = v;
+  /** The march at quarter resolution, then the smoke composed with the emitters into `target` / `targetMoment`. */
+  run(frame: FrameContext, encoder: GPUCommandEncoder, emit: ManagedTarget, moment: ManagedTarget, target: ManagedTarget, targetMoment: ManagedTarget, haveEmitters: boolean): void {
+    const q = this.quarter;
+    const v = emit.version + moment.version + q[0].version;
+    if (!this.marchGroups || !this.combineGroup || v !== this.groupVersion) {
+      this.groupVersion = v;
       const lightView = this.lightTex.createView();
       const mk = (k: number): GPUBindGroup =>
         this.device.createBindGroup({
@@ -570,29 +939,68 @@ export class SmokeSystem implements VolumeCombiner {
             { binding: 0, resource: { buffer: this.uniform } },
             { binding: 1, resource: this.density[k]!.createView() },
             { binding: 2, resource: lightView },
-            { binding: 3, resource: emit.view },
-            { binding: 4, resource: moment.view },
+            { binding: 3, resource: moment.view },
           ],
         });
       this.marchGroups = [mk(0), mk(1)];
+      this.combineGroup = this.device.createBindGroup({
+        label: 'vfx.smoke.combine',
+        layout: this.combineLayout,
+        entries: [{ binding: 0, resource: { buffer: this.uniform } }, { binding: 1, resource: emit.view }, { binding: 2, resource: moment.view }, ...q.map((t, i) => ({ binding: 3 + i, resource: t.view }))],
+      });
     }
     // The flag "emitters were drawn" is only known now: one float of the uniform.
-    this.device.queue.writeBuffer(this.uniform, 47 * 4, new Float32Array([haveEmitters ? 1 : 0]));
-    const pass = encoder.beginRenderPass({
+    this.device.queue.writeBuffer(this.uniform, U_EMITTERS * 4, new Float32Array([haveEmitters ? 1 : 0]));
+    const none = { r: 0, g: 0, b: 0, a: 1 };
+    const march = encoder.beginRenderPass({
       label: 'vfx.smoke.march',
-      colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+      colorAttachments: [
+        ...q.slice(0, 4).map((t) => ({ view: t.view, loadOp: 'clear' as const, storeOp: 'store' as const, clearValue: none })),
+        { view: q[4].view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+      ],
       timestampWrites: this.ctx.perf.gpuPass('vfx.smoke.march') as GPURenderPassTimestampWrites | undefined,
     });
-    pass.setBindGroup(0, frame.frameBindGroup);
+    if (this.rect) {
+      const [qw, qh] = q[0].size;
+      // The rectangle was measured in prepare; the targets may have been resized since.
+      const x = Math.min(this.rect[0], qw - 1);
+      const y = Math.min(this.rect[1], qh - 1);
+      march.setScissorRect(x, y, Math.max(1, Math.min(this.rect[2], qw - x)), Math.max(1, Math.min(this.rect[3], qh - y)));
+      march.setBindGroup(0, frame.frameBindGroup);
+      march.setBindGroup(1, this.common.bindGroup());
+      march.setBindGroup(2, this.marchGroups[this.cur]!);
+      march.setPipeline(this.marchPipeline.get());
+      march.draw(3);
+    }
+    march.end();
+    const combine = encoder.beginRenderPass({
+      label: 'vfx.smoke.combine',
+      colorAttachments: [
+        { view: target.view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+        { view: targetMoment.view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+      ],
+      timestampWrites: this.ctx.perf.gpuPass('vfx.smoke.combine') as GPURenderPassTimestampWrites | undefined,
+    });
+    combine.setBindGroup(0, frame.frameBindGroup);
+    combine.setBindGroup(1, this.common.bindGroup());
+    combine.setBindGroup(2, this.combineGroup);
+    combine.setPipeline(this.combinePipeline.get());
+    combine.draw(3);
+    combine.end();
+  }
+
+  /** drawTransparent, before the volume image: the cloud's shadow on the opaque scene (by day). */
+  drawGroundShadow(pass: GPURenderPassEncoder): void {
+    if (!this.isActive || !this.sunUp || this.data.padSmoke.groundShadow <= 0) return;
+    pass.setPipeline(this.shadowPipeline.get());
     pass.setBindGroup(1, this.common.bindGroup());
-    pass.setBindGroup(2, this.marchGroups[this.cur]!);
-    pass.setPipeline(this.marchPipeline.get());
+    pass.setBindGroup(2, this.shadowGroup);
     pass.draw(3);
-    pass.end();
   }
 
   dispose(): void {
     for (const t of this.density) t.destroy();
+    for (const t of this.quarter) t.destroy();
     this.lightTex.destroy();
     this.uniform.destroy();
   }

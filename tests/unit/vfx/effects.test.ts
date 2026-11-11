@@ -12,7 +12,8 @@ import { v3 } from '@/core/math/vec3';
 import { loadVfxData, type VfxData } from '@/render/vfx';
 import { buildCanopyMesh, buildProfileTable, canopyProfile, canopyRadius, clusterAngle, PANEL_COLS, PANEL_ROWS, PROFILE_LEVELS, PROFILE_SAMPLES, profileLevelCoord, profileLevelInflation } from '@/render/vfx/canopyModel';
 import { applyRebase, EffectDomain, SURFACE_REBASE } from '@/render/vfx/domain';
-import { plasmaColor, reentryProxy } from '@/render/vfx/plasma';
+import { capHeight, plasmaColor, plasmaLuminance, reentryProxy } from '@/render/vfx/plasma';
+import { crownHeight } from '@/render/vfx/splash';
 import { contrailFactor, trailRadius, trailState, type TrailNode } from '@/render/vfx/trail';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 
@@ -115,20 +116,75 @@ describe('trails', () => {
   });
 });
 
+describe('splash crown and fragment trails', () => {
+  it('the rim of the crown flies a ballistic arc: up on the impact, back at the water after 2 v / g', () => {
+    const v = 11;
+    const g = 9.81;
+    expect(crownHeight(v, g, 0)).toBe(0);
+    expect(crownHeight(v, g, v / g)).toBeCloseTo((v * v) / (2 * g), 9);
+    expect(crownHeight(v, g, (2 * v) / g)).toBeCloseTo(0, 9);
+    expect(crownHeight(v, g, (3 * v) / g)).toBe(0);
+  });
+  it('a node with its own diffusivity spreads by it (the thin smoke of a fragment stays thin)', () => {
+    const D = data.trail;
+    const node: TrailNode = { pos: v3.zero(), born: 0, radius0: 1, spread: 0, smoke0: 1, contrail0: 0, glow0: 0, glowLife: 1, glowColor: [0, 0, 0] };
+    const thin: TrailNode = { ...node, diffusivity: 0.08 * D.diffusivity };
+    expect(trailRadius(D, node, 4) - 1).toBeCloseTo(Math.sqrt(16 * D.diffusivity), 9);
+    expect(trailRadius(D, thin, 4) - 1).toBeCloseTo(Math.sqrt(16 * 0.08 * D.diffusivity), 9);
+    expect(trailRadius(D, thin, 4)).toBeLessThan(0.5 * trailRadius(D, node, 4));
+  });
+});
+
 describe('reentry proxy and colour', () => {
-  it('the capsule alone: its own radius and length, the nose radius of its heat shield', () => {
+  it('the capsule alone: the shape of its heat shield and back shell, wherever the wind comes from', () => {
     const vehicleId = Object.keys(defs.vehicles)[0]!;
     const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 10 }));
     const base = createFakeSim(defs, { scene: 'reentry' }).peek().vessels[0]!;
     const vessel: VesselSnapshot = { ...base, parts };
     const proxy = reentryProxy(defs, vessel, { x: 0, y: 1, z: 0 });
     const capsule = defs.parts[parts[0]!.def]!;
-    expect(proxy.radius).toBeCloseTo(capsule.bounds.radius, 6);
-    expect(proxy.halfLength).toBeCloseTo((capsule.bounds.yMax - capsule.bounds.yMin) / 2, 6);
-    expect(proxy.centreVes.y).toBeCloseTo((capsule.bounds.yMax + capsule.bounds.yMin) / 2, 6);
-    let nose = 0;
-    for (const s of capsule.thermal.surfaces) nose = Math.max(nose, s.noseRadius);
-    expect(proxy.noseRadius).toBeCloseTo(capsule.visual?.reentryShape?.noseRadius ?? nose, 6);
+    const shape = capsule.visual!.reentryShape!;
+    expect(proxy.shaped).toBe(true);
+    expect(proxy.radius).toBeCloseTo(shape.baseRadius, 6);
+    expect(proxy.noseRadius).toBeCloseTo(shape.noseRadius, 6);
+    // The axis runs from the heat shield (the part's -Y face) to the apex; the shoulder plane lies one cap
+    // height above the lowest point of the shield.
+    const up = quat.rotate(parts[0]!.localRot, v3.unitY());
+    expect(v3.dot(proxy.axisVes, up)).toBeCloseTo(1, 6);
+    const sag = capHeight(shape.noseRadius, shape.baseRadius);
+    expect(sag).toBeGreaterThan(0.3);
+    expect(sag).toBeLessThan(0.6);
+    const shoulder = v3.addScaled(parts[0]!.localPos, up, capsule.bounds.yMin + sag);
+    expect(v3.dist(proxy.centreVes, shoulder)).toBeLessThan(1e-6);
+    expect(proxy.afterLength).toBeGreaterThanOrEqual(shape.length - sag - 1e-6);
+    // Flying apex first it is the same body: the shield is where the part says it is, not where the wind is.
+    const backwards = reentryProxy(defs, vessel, { x: 0, y: -1, z: 0 });
+    expect(v3.dot(backwards.axisVes, up)).toBeCloseTo(1, 6);
+    expect(v3.dist(backwards.centreVes, shoulder)).toBeLessThan(1e-6);
+  });
+  it('a vessel without a reentry shape: the cylinder of its bounds with a cap turned into the wind', () => {
+    const vehicleId = Object.keys(defs.vehicles)[0]!;
+    const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 10 })).filter((p) => !defs.parts[p.def]!.visual?.reentryShape);
+    const base = createFakeSim(defs, { scene: 'reentry' }).peek().vessels[0]!;
+    const all = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 2 })).filter((p) => !defs.parts[p.def]!.visual?.reentryShape);
+    const vessel: VesselSnapshot = { ...base, parts: parts.length > 0 ? parts : all };
+    for (const dir of [1, -1]) {
+      const proxy = reentryProxy(defs, vessel, { x: 0, y: dir, z: 0 });
+      expect(proxy.shaped).toBe(false);
+      expect(proxy.axisVes.y).toBe(dir);
+      expect(proxy.tipRadius).toBe(proxy.radius);
+      expect(proxy.noseRadius).toBeGreaterThan(proxy.radius);
+      expect(proxy.afterLength).toBeGreaterThan(0);
+    }
+  });
+  it('the shock layer brightens steeply with the heat flux', () => {
+    const R = data.reentry;
+    const low = plasmaLuminance(R, 0.3 * R.referenceFlux, 0.3);
+    const high = plasmaLuminance(R, R.referenceFlux, 1);
+    expect(high).toBeCloseTo(R.luminance, 6);
+    // More than two stops between plasma 0.3 and 1.0 at proportional flux.
+    expect(high / low).toBeGreaterThan(4);
+    expect(plasmaLuminance(R, 0, 0)).toBe(0);
   });
   it('orange when slow, pink in between, white-violet at lunar-return speed', () => {
     const R = data.reentry;

@@ -10,6 +10,7 @@ import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { VfxData } from './data';
 import { EffectDomain, type DomainFrame } from './domain';
+import type { DustSheetSpawn } from './dust';
 import type { EmitterDesc } from './particles';
 import type { PlacedCluster } from './plumes';
 
@@ -30,6 +31,8 @@ export interface FireballSpawn {
   vel: Vec3;
   energy: number;
   seed: number;
+  /** An explosion proper: followed by smaller fireballs and burning fragments (a part that burns up is a single ball). */
+  secondaries: boolean;
 }
 
 export interface SplashSpawn {
@@ -44,6 +47,8 @@ export interface DirectorOutput {
   emitters: EmitterDesc[];
   fireballs: FireballSpawn[];
   splashes: SplashSpawn[];
+  /** Sheets of dust where jets work loose ground in (near) vacuum. */
+  dustSheets: DustSheetSpawn[];
   /** Ground and water level in the domain as dot(up, p); null = unknown / none. */
   ground: number | null;
   water: number | null;
@@ -97,9 +102,10 @@ export class EffectDirector {
     return n;
   }
 
-  update(frame: FrameContext, dom: DomainFrame, clusters: PlacedCluster[], effectTime: number, dt: number): DirectorOutput {
+  /** `air` = air density at the domain origin relative to sea level (0 = vacuum). */
+  update(frame: FrameContext, dom: DomainFrame, clusters: PlacedCluster[], effectTime: number, dt: number, air = 0): DirectorOutput {
     const snap = frame.snapshot;
-    const out: DirectorOutput = { emitters: [], fireballs: [], splashes: [], ground: null, water: null, onPad: false };
+    const out: DirectorOutput = { emitters: [], fireballs: [], splashes: [], dustSheets: [], ground: null, water: null, onPad: false };
     const data = this.data;
     const P = data.particles;
     const up = dom.up;
@@ -171,9 +177,13 @@ export class EffectDirector {
         const reach = P.dust.maxHeightRe * reEff;
         const f = throttle > 0.01 ? Math.max(0, 1 - h / reach) ** 2 : 0;
         if (f <= 0) continue;
-        const n = this.take(`dust|${c.key}`, P.dust.rate * f * c.look.ground.dust * Math.min(1.5, Math.sqrt(c.thrust / 5e4)) * frame.qualityScale, dt);
-        if (n <= 0) continue;
+        const work = f * c.look.ground.dust * Math.min(1.5, Math.sqrt(c.thrust / 5e4));
         const hit = v3.addScaled(origin, axis, h);
+        // Without air the grains fly ballistic: a sheet along the ground. In air the same grains billow (the particles do that).
+        const thin = Math.max(0, 1 - air / 0.02);
+        if (thin > 0) out.dustSheets.push({ pos: hit, innerRadius: 0.35 * h + 1.5 * reEff, strength: Math.min(1, work) * thin, seed: hashSeed('sheet', c.key) });
+        const n = this.take(`dust|${c.key}`, P.dust.rate * work * frame.qualityScale, dt);
+        if (n <= 0) continue;
         out.emitters.push({
           kind: 'dust',
           shape: 'ring',
@@ -446,7 +456,7 @@ export class EffectDirector {
         const B = this.data.explosion.partBurst;
         const hot = ev.cause === 'overheat' || ev.cause === 'explosion';
         this.burst(out, pos, vd.vel, Math.round(B.sparks * (hot ? 1 : 0.35)), B.debris, 1, seed);
-        if (ev.cause === 'overheat') out.fireballs.push({ pos, vel: vd.vel, energy: B.energy, seed });
+        if (ev.cause === 'overheat') out.fireballs.push({ pos, vel: vd.vel, energy: B.energy, seed, secondaries: false });
         break;
       }
       case 'explosion': {
@@ -454,7 +464,7 @@ export class EffectDirector {
         const vd = vessel && vesselDom(vessel);
         const vel = vd ? vd.vel : v3.zero();
         const k = Math.cbrt(Math.max(ev.energy, 1) / this.data.explosion.partBurst.energy);
-        out.fireballs.push({ pos, vel, energy: ev.energy, seed });
+        out.fireballs.push({ pos, vel, energy: ev.energy, seed, secondaries: true });
         this.burst(out, pos, vel, Math.round(P.sparks.count * Math.min(6, k)), Math.round(P.debris.count * Math.min(6, k)), Math.min(4, 0.6 + 0.4 * k), seed + 7);
         const E = this.data.explosion;
         this.flashes.push({ pos, start: effectTime, time: E.flashTime, intensity: E.flashEfficacy * ev.energy, color: E.color, range: 4000 });

@@ -14,6 +14,7 @@ import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
 import { loadVfxData, type VfxData } from './data';
 import { EffectDirector } from './director';
 import { applyRebase, EffectDomain, type DomainFrame } from './domain';
+import { DustSheetRenderer } from './dust';
 import { FireballRenderer } from './fireball';
 import { ParticleSystem } from './particles';
 import { PlasmaRenderer } from './plasma';
@@ -75,6 +76,8 @@ interface LightCandidate {
 }
 
 const lum = (c: Vec3Tuple): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+/** Luminance of a sunlit grey surface, cd/m^2: what a daylight exposure is set for. */
+const DAYLIGHT_WHITE = 12000;
 
 /**
  * The vfx feature. `ctx` is optional: the feature receives its RenderContext in `init` (pass
@@ -92,6 +95,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let trails: TrailSystem;
   let plasma: PlasmaRenderer;
   let fireballs: FireballRenderer;
+  let dust: DustSheetRenderer;
   let chutes: ChuteSystem;
   let foam: FoamRenderer;
   const domain = new EffectDomain();
@@ -122,18 +126,19 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const m = frame.projUnjittered;
     const size = Math.max(h.a, h.b) / d;
     if (vz >= 0 || Math.abs((m[0]! * vx) / -vz) > 1 + m[0]! * size || Math.abs((m[5]! * vy) / -vz) > 1 + m[5]! * size) return;
+    let overBody = false;
     for (const body of frame.snapshot.bodies) {
       const def = ctx.defs.bodies[body.id];
       if (!def) continue;
       const c = frame.bodyPose(body.id).centerRelCam;
       const along = v3.dot(c, dir);
-      if (along > 0 && v3.lenSq(v3.addScaled(c, dir, -along)) < def.radius * def.radius) return;
+      if (along > 0 && v3.lenSq(v3.addScaled(c, dir, -along)) < def.radius * def.radius) overBody = true;
     }
     // As the image shows it: a streak thinner than a pixel is drawn a pixel wide and that much dimmer, and
     // the glare of a small bright thing spreads over a few pixels around it; nothing is wider than the frame.
     const px = (2 * d) / (m[5]! * frame.renderSize[1]);
     // A flame is meant to clip: the meter is asked to hold it three stops over its white, not under it.
-    let luminance = h.luminance / 8;
+    let luminance = Math.min(h.luminance / 2 ** (h.clipStops ?? 3), h.cap ?? Infinity);
     if (h.a < 0.5 * px) luminance *= h.a / (0.5 * px);
     if (h.b < 0.5 * px) luminance *= h.b / (0.5 * px);
     const reach = d * Math.hypot(1 / m[0]!, 1 / m[5]!);
@@ -141,6 +146,10 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const b = Math.min(Math.max(h.b, 2 * px), reach);
     const frameSolidAngle = 4 / (m[0]! * m[5]!);
     const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle);
+    // An emitter in front of a body lights pixels the meter sees anyway (what it lights is in the histogram),
+    // unless it is too small for those to count: under half a per cent of the frame the meter goes by its
+    // prior, and the hint is what raises that (request vfx-3).
+    if (overBody && coverage >= 0.005) return;
     if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
   };
 
@@ -161,7 +170,10 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const rel = v3.addScaled(pc.originRelCam, pc.axisX, 0.5 * length);
     const along = v3.dot(pc.axisX, v3.normalize(rel));
     const luminance = 0.35 * throttle * c.look.core.luminance * (1 + (c.look.core.vacuumGain - 1) * shape.vacuum);
-    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance };
+    // A thruster puff is a faint cone, not a flame: it is held at the meter's white so that its shape survives.
+    // An engine flame is held three stops over the meter's white, and never reported brighter than a sunlit
+    // white surface: by day the plume leaves the exposure where the sun puts it and clips.
+    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance, clipStops: c.kind === 'rcs' ? 0 : 3, cap: c.kind === 'rcs' ? undefined : DAYLIGHT_WHITE };
   };
 
   const placeCluster = (frame: FrameContext, cluster: PlumeCluster): PlacedCluster | null => {
@@ -228,6 +240,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       trails = new TrailSystem(c, common, data);
       plasma = new PlasmaRenderer(c, common, data);
       fireballs = new FireballRenderer(c, common, data);
+      dust = new DustSheetRenderer(c, common, data);
       chutes = new ChuteSystem(c, common, data);
       foam = new FoamRenderer(c, common, data);
     },
@@ -262,14 +275,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       plumes.update(placed, noiseTime);
       plumeLights(candidates);
       common.setProbe(PROBE_PAD, smoke.update(frame, placed, effectTime, simDt));
-      trails.update(frame, placed, effectTime);
       plasma.update(frame, effectTime, noiseTime);
       candidates.push(...plasma.lights);
       for (const pc of placed) {
         const h = plumeHint(pc);
         if (h) emissiveHint(frame, h);
       }
-      for (const h of trails.hints) emissiveHint(frame, h);
       for (const h of plasma.hints) emissiveHint(frame, h);
 
       // ---- effect domain, director, particles
@@ -294,19 +305,6 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           foam.rebase(rb);
         }
         const d = dom;
-        const out = director.update(frame, d, placed, effectTime, simDt);
-        for (const e of out.emitters) particles.emit(e);
-        for (const f of out.fireballs) fireballs.spawn(f, effectTime);
-        for (const sp of out.splashes) foam.spawn(sp, effectTime);
-        foam.update(frame, effectTime);
-        const floorLevel = out.water !== null || out.ground !== null ? Math.max(out.water ?? -1e30, out.ground ?? -1e30) : null;
-        for (const e of chutes.update(frame, d, effectTime, simDt, floorLevel)) particles.emit(e);
-        particles.prepare(frame, effectTime, d.rebase, depthUsable);
-
-        const originRel = v3.sub(d.originRoot, frame.camera.positionRoot);
-        const ax = quat.rotate(d.q, v3.unitX());
-        const ay = quat.rotate(d.q, v3.unitY());
-        const az = quat.rotate(d.q, v3.unitZ());
         const bodyDef = ctx.defs.bodies[d.state.bodyId]!;
         const surface = d.state.kind === 'surface';
         // Air at the origin from the air at the focus vessel (isothermal layer between the two).
@@ -317,6 +315,21 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           const hv = v3.len(focus.r) - bodyDef.radius;
           density = focus.aero.airDensity * Math.exp(Math.min(20, Math.max(-20, (hv - d.altitude) / scaleHeight)));
         }
+        const out = director.update(frame, d, placed, effectTime, simDt, density / 1.2);
+        dust.update(frame, d, out.dustSheets, noiseTime);
+        for (const e of out.emitters) particles.emit(e);
+        for (const f of out.fireballs) fireballs.spawn(f, effectTime, d.up, Math.min(1, density / 1.2));
+        for (const sp of out.splashes) foam.spawn(sp, effectTime);
+        foam.update(frame, d, effectTime);
+        const floorLevel = out.water !== null || out.ground !== null ? Math.max(out.water ?? -1e30, out.ground ?? -1e30) : null;
+        for (const e of chutes.update(frame, d, effectTime, simDt, floorLevel)) particles.emit(e);
+        for (const e of fireballs.update(frame, d, effectTime, simDt, density, floorLevel)) particles.emit(e);
+        particles.prepare(frame, effectTime, d.rebase, depthUsable);
+
+        const originRel = v3.sub(d.originRoot, frame.camera.positionRoot);
+        const ax = quat.rotate(d.q, v3.unitX());
+        const ay = quat.rotate(d.q, v3.unitY());
+        const az = quat.rotate(d.q, v3.unitZ());
         g.set([originRel.x, originRel.y, originRel.z, density], G.domOrigin);
         g.set([ax.x, ax.y, ax.z, d.gravity], G.domX);
         g.set([ay.x, ay.y, ay.z, scaleHeight], G.domY);
@@ -348,11 +361,13 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           const intensity: Vec3Tuple = [f.color[0] * f.intensity * k, f.color[1] * f.intensity * k, f.color[2] * f.intensity * k];
           candidates.push({ power: lum(intensity), light: { kind: 'point', posRelCam: v3.add(originRel, quat.rotate(d.q, f.pos)), intensity, range: f.range } });
         }
-        fireballs.update(frame, d, effectTime, simDt, density);
         candidates.push(...fireballs.lights);
         for (const h of fireballs.hints) emissiveHint(frame, h);
         stats.ground = out.ground ?? NaN;
-      }
+      } else dust.clear();
+      // Trails last: they also take what the burning fragments of this frame leave behind.
+      trails.update(frame, placed, effectTime, focus ? fireballs.trails : []);
+      for (const h of trails.hints) emissiveHint(frame, h);
 
       // ---- lights: the strongest first, never more than the frame can hold
       myLights = [];
@@ -388,9 +403,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       stats.trailSegments = trails.segments;
       stats.plasma = plasma.count;
       stats.fireballs = fireballs.count;
+      stats.dustSheets = dust.count;
       stats.canopies = chutes.canopyCount;
       stats.foam = foam.count;
+      stats.crowns = foam.crownCount;
       stats.smokeSource = smoke.sourceRate;
+      stats.smokeBox = smoke.active() ? smoke.boxShare : 0;
       ctx.perf.counter('vfx.plumes', plumes.instanceCount);
       ctx.perf.counter('vfx.particles', particles.alive);
     },
@@ -415,16 +433,17 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         const index = i;
         items.push({ distance: plumes.distance(i), draw: (pass) => plumes.draw(pass, index) });
       }
-      items.push(...trails.items(), ...plasma.items(), ...fireballs.items());
+      items.push(...trails.items(), ...plasma.items(), ...fireballs.items(), ...dust.items(), ...foam.items());
       volumes.run(frame, encoder, items, smoke);
       stats.volumes = volumes.drawn;
     },
 
     drawTransparent(_frame, pass) {
+      smoke.drawGroundShadow(pass);
       volumes.draw(pass);
       foam.draw(pass);
       chutes.drawLines(pass);
-      particles.draw(pass);
+      particles.draw(pass, volumes.image);
       if (volumes.hasImage || particles.alive > 0 || foam.count > 0 || chutes.canopyCount > 0) volumes.drawCeiling(pass);
     },
 
@@ -438,6 +457,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       trails.dispose();
       plasma.dispose();
       fireballs.dispose();
+      dust.dispose();
       chutes.dispose();
       foam.dispose();
       common.dispose();

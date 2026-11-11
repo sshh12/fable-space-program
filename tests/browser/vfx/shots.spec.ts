@@ -10,6 +10,9 @@ import { assertDiscreteGpu, expectNoErrors, openPage, saveScreenshot, test, wait
  *   VFX_SHOTS=out/shots.json node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vfx/shots.spec.ts --project=functional
  *
  * Images land in out/screens/vfx/dev/<name>.png. Width / height of the viewport: optional "size": [w, h].
+ * "live": true takes the picture with the noise animated and the temporal filter running on it (what the game
+ * shows) instead of the frozen, deterministic frame. A url that does not start with /labs/vfx/ is opened as
+ * it is (another lab, e.g. /labs/integration/?scene=reentry&orbit=150,12,22): "runTo" does not apply there.
  */
 interface Shot {
   name: string;
@@ -18,6 +21,7 @@ interface Shot {
   eval?: string;
   settle?: number;
   size?: [number, number];
+  live?: boolean;
 }
 
 const file = process.env.VFX_SHOTS;
@@ -32,9 +36,12 @@ test.describe('vfx lab ad-hoc shots', () => {
       await openPage(page, `${shot.url}${shot.url.includes('?') ? '&' : '?'}paused=1&hud=0`);
       await assertDiscreteGpu(page);
       await page.evaluate(() => window.__test!.setDeterministic(true));
-      if (shot.runTo !== undefined) await page.evaluate((t) => window.__vfx!.runTo(t), shot.runTo);
+      if (shot.runTo !== undefined && shot.url.startsWith('/labs/vfx/')) await page.evaluate((t) => window.__vfx!.runTo(t), shot.runTo);
       if (shot.eval) await page.evaluate(shot.eval);
-      await waitIdle(page, shot.settle ?? 40);
+      if (shot.live) {
+        await page.evaluate(() => window.__test!.setDeterministic(false));
+        await page.evaluate((n) => window.__test!.waitFrames(n), shot.settle ?? 90);
+      } else await waitIdle(page, shot.settle ?? 40);
       await saveScreenshot(page, 'vfx/dev', shot.name);
       await expectNoErrors(page, pageLog);
     });

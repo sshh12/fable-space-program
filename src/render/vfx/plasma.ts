@@ -1,12 +1,17 @@
 /**
- * Reentry plasma: the bow-shock layer wrapped around the windward side of a vessel and the streaked wake
- * behind it, marched at half resolution in a box aligned with the air flow.
+ * Reentry plasma: the bow-shock layer wrapped around the windward side of a vessel, the sheath of glowing
+ * gas that leaves its shoulder and the streaked wake it closes into, marched at half resolution in a box
+ * aligned with the air flow.
  *
- * The vessel is represented by a shape proxy (pure function `reentryProxy`): a rounded cylinder about the
- * vessel's long axis, from PartVisualDef.reentryShape of its windward part when present, else from the
- * parts' bounds. The shock stands off the wall by `standoff x nose radius` at the stagnation point and
- * further where the wall turns away from the flow. Emission follows heatFlux^0.75, the colour runs from
- * orange through pink to white-violet with the air speed, and the whole flickers at 8 - 30 Hz.
+ * The vessel is represented by a shape proxy (pure function `reentryProxy`): a blunt body of revolution, a
+ * spherical cap of the nose radius on a tapering afterbody. It comes from PartVisualDef.reentryShape of the
+ * windward part when present (a capsule: heat shield, shoulder, back shell), else from the parts' bounds (a
+ * cylinder with a shallow cap turned into the wind). The shock stands off the wall by `standoff x nose
+ * radius` at the stagnation point and further where the wall turns away from the flow; the gas in the layer
+ * streams from the stagnation point outwards along the wall, and its streaks move with it. Emission follows
+ * the heat flux, the colour runs from orange through pink to white-violet with the air speed, and the whole
+ * flickers at 8 - 30 Hz. `plasmaIntensity` shapes it: a faint rim of orange at 0.3, a white-hot cap with a
+ * long streaming wake at 1.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, LocalLight, RenderContext } from '@/core/contracts/render';
@@ -18,31 +23,41 @@ import type { VfxData } from './data';
 import { createVolumePipeline, type EmitterHint, type VolumeItem } from './volumes';
 
 export const MAX_PLASMA = 4;
-const INST_FLOATS = 32;
+const INST_FLOATS = 36;
+/** Seconds one cycle of the flow maps of the shock layer takes. */
+const FLOW_CYCLE = 0.4;
 
 export interface ReentryProxy {
-  /** Centre of the proxy and its unit long axis, vessel frame. */
+  /** Centre of the shoulder plane (where the windward cap meets the afterbody) and the unit axis from the cap towards the lee end, vessel frame. */
   centreVes: Vec3;
   axisVes: Vec3;
-  /** Radius and half length of the rounded cylinder, radius of its edges, m. */
+  /** Radius at the shoulder, nose radius of the windward cap, length and end radius of the afterbody, m. */
   radius: number;
-  halfLength: number;
-  rounding: number;
-  /** Nose radius of the windward face, m. */
   noseRadius: number;
+  afterLength: number;
+  tipRadius: number;
+  /** True when the windward part carries a PartVisualDef.reentryShape. */
+  shaped: boolean;
+}
+
+/** Height of a spherical cap of radius `nose` over a base of radius `base`. */
+export function capHeight(nose: number, base: number): number {
+  return nose > base ? nose - Math.sqrt(nose * nose - base * base) : base;
 }
 
 /**
  * Shape proxy of a vessel for the shock layer. `windVes` = unit direction the air flows in, vessel frame.
- * The windward part is the one that reaches furthest upstream; its reentryShape (or its thermal nose radius,
- * or its bounds) gives the nose radius.
+ * The windward part is the one that reaches furthest upstream. With a reentryShape the proxy is that shape
+ * (its blunt face is the part's thermal surface with an explicit normal, else its -Y end), lengthened to
+ * hold the rest of the vessel; without one it is the cylinder of the parts' bounds about the vessel's long
+ * axis with a cap of the windward part's thermal nose radius turned into the wind.
  */
 export function reentryProxy(defs: DefLibrary, vessel: VesselSnapshot, windVes: Vec3): ReentryProxy {
   let yMin = Infinity;
   let yMax = -Infinity;
   let radius = 0.3;
-  let nose = 0;
   let upstream = Infinity;
+  let lead: { part: VesselSnapshot['parts'][number]; axis: Vec3 } | null = null;
   for (const part of vessel.parts) {
     const def = defs.parts[part.def];
     if (!def) continue;
@@ -56,25 +71,58 @@ export function reentryProxy(defs: DefLibrary, vessel: VesselSnapshot, windVes: 
       const reach = v3.dot(p, windVes) - def.bounds.radius * Math.sqrt(Math.max(0, 1 - v3.dot(axis, windVes) ** 2));
       if (reach < upstream) {
         upstream = reach;
-        const shape = def.visual?.reentryShape;
-        let thermal = 0;
-        for (const s of def.thermal.surfaces) thermal = Math.max(thermal, s.noseRadius);
-        nose = shape ? shape.noseRadius : thermal > 0 ? thermal : def.bounds.radius;
+        lead = { part, axis };
       }
     }
   }
-  if (!Number.isFinite(yMin)) {
+  if (!Number.isFinite(yMin) || !lead) {
     yMin = -vessel.boundingRadius;
     yMax = vessel.boundingRadius;
   }
-  const halfLength = Math.max(0.5 * (yMax - yMin), 0.2);
+  const leadDef = lead ? defs.parts[lead.part.def] : undefined;
+  const shape = leadDef?.visual?.reentryShape;
+  if (lead && leadDef && shape) {
+    // The blunt face: the thermal surface with an explicit normal (the heat shield), else the part's -Y end.
+    let faceY = -1;
+    for (const s of leadDef.thermal.surfaces) if (Array.isArray(s.normal) && Math.abs(s.normal[1]) > 0.5) faceY = Math.sign(s.normal[1]);
+    const axisVes = v3.scale(lead.axis, -faceY);
+    const base = shape.baseRadius;
+    const nose = Math.max(shape.noseRadius, base);
+    const sag = capHeight(nose, base);
+    const apex = v3.addScaled(lead.part.localPos, lead.axis, faceY < 0 ? leadDef.bounds.yMin : leadDef.bounds.yMax);
+    const centreVes = v3.addScaled(apex, axisVes, sag);
+    // What else the vessel carries behind the shield lengthens and widens the afterbody.
+    let after = Math.max(shape.length - sag, 0.1);
+    let tip = 0.2 * base;
+    for (const part of vessel.parts) {
+      const def = defs.parts[part.def];
+      if (!def || part === lead.part) continue;
+      const axis = quat.rotate(part.localRot, v3.unitY());
+      for (const y of [def.bounds.yMin, def.bounds.yMax]) {
+        const along = v3.dot(v3.sub(v3.addScaled(part.localPos, axis, y), centreVes), axisVes);
+        if (along > after) {
+          after = along;
+          tip = Math.max(tip, def.bounds.radius);
+        }
+      }
+    }
+    return { centreVes, axisVes, radius: base, noseRadius: nose, afterLength: after, tipRadius: tip, shaped: true };
+  }
+  let thermal = 0;
+  if (leadDef) for (const s of leadDef.thermal.surfaces) thermal = Math.max(thermal, s.noseRadius);
+  const nose = Math.max(thermal > 0 ? thermal : 2.5 * radius, 1.02 * radius);
+  const sag = capHeight(nose, radius);
+  const down = windVes.y >= 0 ? 1 : -1;
+  const axisVes = { x: 0, y: down, z: 0 };
+  const length = Math.max(yMax - yMin, 0.4);
   return {
-    centreVes: { x: 0, y: 0.5 * (yMin + yMax), z: 0 },
-    axisVes: v3.unitY(),
+    centreVes: { x: 0, y: (down > 0 ? yMin : yMax) + down * Math.min(sag, 0.5 * length), z: 0 },
+    axisVes,
     radius,
-    halfLength,
-    rounding: Math.min(0.25 * radius, 0.5 * halfLength),
-    noseRadius: Math.max(nose, 0.5 * radius),
+    noseRadius: nose,
+    afterLength: Math.max(length - Math.min(sag, 0.5 * length), 0.1),
+    tipRadius: radius,
+    shaped: false,
   };
 }
 
@@ -85,6 +133,12 @@ export function plasmaColor(data: VfxData['reentry'], speed: number): Vec3Tuple 
   const mix = (a: Vec3Tuple, b: Vec3Tuple, t: number): Vec3Tuple => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   if (speed <= s1) return mix(c0, c1, Math.min(1, Math.max(0, (speed - s0) / (s1 - s0))));
   return mix(c1, c2, Math.min(1, (speed - s1) / (s2 - s1)));
+}
+
+/** Luminance (cd/m^2) of the shock layer for a stagnation heat flux (W/m^2) and plasma intensity 0..1. */
+export function plasmaLuminance(data: VfxData['reentry'], heatFlux: number, intensity: number): number {
+  const flux = Math.max(heatFlux, intensity * data.referenceFlux * 0.05);
+  return data.luminance * Math.pow(flux / data.referenceFlux, data.fluxExponent) * Math.min(1, intensity / Math.max(data.minIntensity * 2, 1e-3));
 }
 
 /** Smooth value noise in [-1, 1] for the flicker. */
@@ -100,14 +154,15 @@ const WGSL = /* wgsl */ `
 #include "vfx_common"
 #include "vfx_volume"
 struct PlasmaInst {
-  origin: vec4f,    // xyz = centre of the body proxy relative to the camera, w = length of the box downstream (m)
+  origin: vec4f,    // xyz = centre of the proxy's shoulder plane relative to the camera, w = length of the box downstream (m)
   windX: vec4f,     // xyz = unit direction of the air flow (ROOT axes), w = radius of the box (m)
   windY: vec4f,     // xyz, w = start of the box upstream (m, negative)
   windZ: vec4f,     // xyz, w = march steps
-  bodyAxis: vec4f,  // xyz = long axis of the proxy in the wind frame, w = radius (m)
-  bodyDim: vec4f,   // x = half length, y = edge rounding radius, z = shock standoff at the stagnation point (m), w = wake length (m)
+  bodyAxis: vec4f,  // xyz = axis of the proxy in the wind frame (windward cap -> lee end), w = shoulder radius (m)
+  bodyDim: vec4f,   // x = nose radius of the cap (m), y = length of the afterbody (m), z = radius of its lee end (m), w = shock standoff at the stagnation point (m)
   color: vec4f,     // rgb = colour x luminance (cd/m^2), w = flicker gain
-  params: vec4f,    // x = noise scroll (m), y = whiteness 0..1, z = seed, w = unused
+  params: vec4f,    // x = scroll of the wake streaks (m), y = intensity 0..1, z = seed, w = e-folding length of the wake (m)
+  flow: vec4f,      // x = phase of the flow maps of the shock layer (cycles), y, z, w unused
 }
 @group(2) @binding(0) var<storage, read> plasmaInst: array<PlasmaInst, ${MAX_PLASMA}>;
 
@@ -120,26 +175,82 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   return o;
 }
 
+struct BodyAt {
+  sd: f32,     // distance to the wall (m, negative inside)
+  n: vec3f,    // unit direction away from the wall (wind frame)
+}
+/// The blunt body of revolution at 'p' (wind frame, origin at the centre of the shoulder plane): a spherical
+/// cap on the windward side of the plane, a frustum on the lee side.
+fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
+  let a = I.bodyAxis.xyz;
+  let Rb = I.bodyAxis.w;
+  let Rn = I.bodyDim.x;
+  let hh = 0.5 * I.bodyDim.y;
+  let Rt = I.bodyDim.z;
+  let h = dot(p, a);
+  let radial = p - a * h;
+  let rho = length(radial);
+  let rdir = radial / max(rho, 1e-4);
+  var o: BodyAt;
+  // Cap: the nearest point of the sphere when that lies on the cap, else the rim.
+  let cz = sqrt(max(Rn * Rn - Rb * Rb, 0.0));
+  let toC = p - a * cz;
+  let lc = max(length(toC), 1e-4);
+  var dCap: f32;
+  var nCap: vec3f;
+  if (h <= 0.0 && Rn * rho <= Rb * lc) {
+    dCap = lc - Rn;
+    nCap = toC / lc;
+  } else {
+    // On the lee side of the plane the cap ends in the disc that the afterbody stands on.
+    let e = vec2f(max(rho - Rb, 0.0), h);
+    dCap = length(e);
+    nCap = normalize(rdir * e.x + a * e.y + a * 1e-5);
+  }
+  // Afterbody: a capped cone from (Rb, 0) to (Rt, 2 hh).
+  let q = vec2f(rho, h - hh);
+  let k1 = vec2f(Rt, hh);
+  let k2 = vec2f(Rt - Rb, 2.0 * hh);
+  let ca = vec2f(q.x - min(q.x, select(Rt, Rb, q.y < 0.0)), abs(q.y) - hh);
+  let cb = q - k1 + k2 * clamp(dot(k1 - q, k2) / dot(k2, k2), 0.0, 1.0);
+  let inside = cb.x < 0.0 && ca.y < 0.0;
+  let da = dot(ca, ca);
+  let db = dot(cb, cb);
+  let dF = select(1.0, -1.0, inside) * sqrt(min(da, db));
+  if (dCap < dF) {
+    o.sd = dCap;
+    o.n = nCap;
+  } else {
+    o.sd = dF;
+    let e = select(cb, vec2f(ca.x, ca.y * sign(q.y)), da < db);
+    o.n = normalize(rdir * e.x + a * e.y + rdir * 1e-5);
+  }
+  return o;
+}
+
 @fragment fn fs(in: VOut) -> VolumeOut {
   let I = plasmaInst[in.inst];
   let R = volumeRay(in.pos, I.origin.xyz, I.windX.xyz, I.windY.xyz, I.windZ.xyz, vec3f(I.windY.w, -I.windX.w, -I.windX.w), vec3f(I.origin.w, I.windX.w, I.windX.w));
   if (R.t1 <= R.t0) { return volumeNone(); }
   let Rb = I.bodyAxis.w;
-  let a = I.bodyAxis.xyz;
-  let hl = I.bodyDim.x;
-  let rr = I.bodyDim.y;
-  let d0s = I.bodyDim.z;
-  let wakeLen = I.bodyDim.w;
-  let tc = -dot(R.ro, R.rd);
+  let d0s = I.bodyDim.w;
+  let k = I.params.y;
+  let wakeLen = I.params.w;
+  let boxLen = I.origin.w;
+  let tc = clamp(-dot(R.ro, R.rd), R.t0, R.t1);
   let dc = length(R.ro + R.rd * tc);
-  let d0 = max(0.25 * Rb, 0.3 * dc);
+  let d0 = max(0.12 * Rb, 0.3 * dc);
   let s0 = R.t0 - tc;
   let s1 = R.t1 - tc;
   let w0 = sign(s0) * log(1.0 + abs(s0) / d0);
   let w1 = sign(s1) * log(1.0 + abs(s1) / d0);
   let steps = max(10.0, floor(I.windZ.w * vfx.time.w + 0.5));
   let jitter = blueNoise(vec2u(in.pos.xy)).b;
-  let hot = mix(I.color.rgb, vec3f(luminance(I.color.rgb)) * vec3f(1.0, 0.97, 1.05), 0.6);
+  let seed = vec3f(I.params.z, I.params.z * 1.7, I.params.z * 0.3);
+  let hot = vec3f(luminance(I.color.rgb)) * vec3f(1.0, 0.96, 1.05);
+  let fp = 2.0 * frame.cameraUp.w * vfx.half.w;      // footprint of a pixel per metre of distance
+  let ph = fract(vec2f(I.flow.x, I.flow.x + 0.5));
+  let wa = 1.0 - abs(2.0 * ph.x - 1.0);
   var L = vec3f(0.0);
   var wsum = 0.0;
   var tsum = 0.0;
@@ -149,42 +260,56 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let t = tc + sign(w) * d0 * (ew - 1.0);
     let dt = d0 * ew * (w1 - w0) / steps;
     let p = R.ro + R.rd * t;
-    // Rounded cylinder about the body axis: signed distance and outward normal.
-    let h = dot(p, a);
-    let radial = p - a * h;
-    let rho = length(radial);
-    let rdir = radial / max(rho, 1e-4);
-    let q = vec2f(rho - (Rb - rr), abs(h) - (hl - rr));
-    let m = max(q, vec2f(0.0));
-    let sd = min(max(q.x, q.y), 0.0) + length(m) - rr;
-    if (sd <= 0.0) { continue; }
-    var nrm = select(a * sign(h), rdir, q.x > q.y);
-    if (m.x + m.y > 0.0) { nrm = normalize(rdir * m.x + a * (sign(h) * m.y)); }
-    let e = saturate(-nrm.x);
+    let B = plasmaBody(I, p);
+    if (B.sd <= 0.0) { continue; }
     var j = vec3f(0.0);
     // Shock layer on the windward side: a bright front at the standoff distance, glowing gas behind it.
-    let delta = d0s * (1.0 + 1.6 * (1.0 - e));
-    if (sd < 1.5 * delta && e > 0.12) {
-      let n = vfxNoiseLod(p * (0.6 / Rb) - vec3f(I.params.x * 0.4 / Rb, 0.0, 0.0) + vec3f(I.params.z), dt * 0.6 / Rb);
-      let layer = smoothstep(1.25 * delta, 0.9 * delta, sd);
-      let front = exp(-sq((sd - 0.95 * delta) / (0.2 * delta)));
-      let k = (0.16 * layer + 1.0 * front) * pow(smoothstep(0.12, 1.0, e), 1.4) * (0.7 + 0.6 * n.g);
-      j += mix(I.color.rgb, hot, e * e) * (k / d0s);
+    // The gas runs from the stagnation point outwards along the wall, and its streaks are drawn out along
+    // that flow and carried by it (two phases of a flow map, cross-faded).
+    let e = saturate(-B.n.x);
+    let delta = d0s * (1.0 + 1.6 * (1.0 - e)) * (0.65 + 0.35 * k);
+    if (B.sd < 1.7 * delta && e > 0.04) {
+      var v = vec3f(1.0, 0.0, 0.0) - B.n * B.n.x;
+      let vm = length(v);
+      v = v / max(vm, 0.05);
+      let adv = 1.8 * Rb * vm;
+      let qa = p - v * (ph.x * adv);
+      let qb = p - v * (ph.y * adv);
+      let lod = t * fp * 1.5 / Rb;
+      let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.72)) * (1.5 / Rb) + seed, lod);
+      let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.72)) * (1.5 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
+      let n = mix(nb.g, na.g, wa);
+      let n2 = mix(nb.b, na.b, wa);
+      let layer = smoothstep(1.35 * delta, 0.85 * delta, B.sd);
+      let front = exp(-sq((B.sd - 0.95 * delta) / (0.3 * delta)));
+      let streak = (0.25 + 2.6 * n * n) * (0.55 + 0.9 * n2);
+      let face = pow(smoothstep(0.04, 1.0, e), 1.3);
+      let kA = (0.22 * layer * (0.3 + 0.7 * k) + front) * face * streak;
+      j += mix(I.color.rgb, hot, saturate(e * e * (0.25 + 0.75 * k))) * (kA / d0s);
     }
-    // Wake: the layer spills over the shoulder into a sheath that necks down behind the body, then a long streaked core.
+    // Behind the shoulder: the layer leaves the wall as a sheath that necks down behind the body, the wake
+    // core lights up where it closes, and both stream away in streaks.
     let xw = p.x;
-    if (xw > -0.6 * Rb) {
+    if (xw > -0.5 * Rb) {
       let rw = length(p.yz);
-      let Rw = Rb * (0.45 + 0.55 * exp(-max(xw, 0.0) / (1.3 * Rb))) * (1.0 + 0.03 * max(xw, 0.0) / Rb);
-      let st = vfxNoiseLod(vec3f((xw - I.params.x) * 0.05, p.y * 0.55, p.z * 0.55) / Rb + vec3f(I.params.z), dt * 0.55 / Rb);
-      let st2 = vfxNoiseLod(vec3f((xw - I.params.x * 1.6) * 0.16, p.y * 1.7, p.z * 1.7) / Rb + vec3f(I.params.z * 2.3), dt * 1.7 / Rb);
-      let streak = (0.1 + 2.2 * st.g * st.g) * (0.35 + 1.3 * st2.b);
-      let sheath = exp(-sq((rw - Rw) / (0.18 * Rw)));
-      let core = exp(-sq(rw / (0.6 * Rw)));
-      let fade = smoothstep(-0.6 * Rb, 0.6 * Rb, xw) * exp(-max(xw, 0.0) / wakeLen);
-      j += I.color.rgb * ((0.55 * sheath + 0.2 * core) * fade * streak * (0.12 / Rb));
+      let xs = max(xw, 0.0);
+      let Rw = Rb * (0.5 + 0.5 * exp(-xs / (1.5 * Rb))) * (1.0 + 0.02 * xs / Rb);
+      // Band-limited to the pixel and to the step: what the march cannot resolve along the ray is left out
+      // (far down the wake the steps are long), not turned into grain.
+      let foot = max(t * fp, 0.4 * dt) / Rb;
+      let st = vfxNoiseLod(vec3f((xw - I.params.x) * 0.06, p.y * 0.6, p.z * 0.6) / Rb + seed, foot * 0.6);
+      let st2 = vfxNoiseLod(vec3f((xw - I.params.x * 1.9) * 0.2, p.y * 2.1, p.z * 2.1) / Rb + seed * 2.3, foot * 2.1);
+      let streak = (0.06 + 2.6 * st.g * st.g) * (0.3 + 1.4 * st2.b);
+      let wS = 0.1 * Rb + 0.03 * xs;
+      let sheath = exp(-sq((rw - Rw) / wS)) * smoothstep(-0.4 * Rb, 0.3 * Rb, xw);
+      let core = exp(-sq(rw / (0.55 * Rw))) * smoothstep(0.8 * Rb, 3.0 * Rb, xw);
+      let base = 0.1 * exp(-sq(rw / Rw)) * smoothstep(0.0, Rb, xw);
+      let fade = exp(-xs / wakeLen) * (1.0 - smoothstep(0.7, 1.0, xs / boxLen));
+      j += mix(I.color.rgb, hot, 0.5 * k * core) * ((0.6 * sheath + (0.25 + 0.6 * k) * core + base) * fade * streak * (0.08 + 0.92 * k) * (0.16 / Rb));
     }
-    let c = j * (I.color.w * dt);
+    // Glowing gas right at the lens would be a veil over the whole frame (a camera riding in the wake):
+    // what lies within a few body radii of the eye is left out.
+    let c = j * (I.color.w * dt * smoothstep(1.0 * Rb, 6.0 * Rb, t));
     let lw = luminance(c) + 1e-12;
     L += c;
     wsum += lw;
@@ -245,30 +370,36 @@ export class PlasmaRenderer {
       const wz = v3.cross(wind, wy);
       const axisRoot = quat.rotate(pose.q, proxy.axisVes);
       const axisWind = { x: v3.dot(axisRoot, wind), y: v3.dot(axisRoot, wy), z: v3.dot(axisRoot, wz) };
-      const flux = Math.max(vessel.aero.heatFlux, vessel.aero.plasmaIntensity * R.referenceFlux * 0.05);
-      const luminance = R.luminance * Math.pow(flux / R.referenceFlux, R.fluxExponent) * Math.min(1, vessel.aero.plasmaIntensity / Math.max(R.minIntensity * 2, 1e-3));
+      const intensity = Math.min(1, Math.max(0, vessel.aero.plasmaIntensity));
+      const luminance = plasmaLuminance(R, vessel.aero.heatFlux, intensity);
       const color = plasmaColor(R, speed);
       const seed = hashU32(vessel.id.length * 131 + vessel.id.charCodeAt(0)) % 64;
       const flicker = 1 + R.flicker.amount * (0.6 * flickerNoise(effectTime * R.flicker.lowHz, seed) + 0.4 * flickerNoise(effectTime * R.flicker.highHz, seed + 11));
-      const extent = Math.hypot(proxy.radius, proxy.halfLength);
+      const sag = capHeight(proxy.noseRadius, proxy.radius);
+      const extent = Math.hypot(proxy.radius, Math.max(proxy.afterLength, sag));
       const standoff = R.standoff * proxy.noseRadius;
-      const wakeLength = R.wakeLengthRadii * proxy.radius;
+      const wakeLength = R.wakeLengthRadii * proxy.radius * (0.3 + 0.7 * intensity);
+      const boxLength = proxy.afterLength + 2.5 * wakeLength;
+      // The sheath is Rw + 3 wS wide at the far end (see the shader).
+      const boxRadius = 1.15 * Math.max(extent + 5 * standoff, 0.5 * proxy.radius * (1 + (0.02 * boxLength) / proxy.radius) + 3 * (0.1 * proxy.radius + 0.03 * boxLength));
       this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance });
       const o = this.placed.length * INST_FLOATS;
-      D.set([origin.x, origin.y, origin.z, extent + 3 * wakeLength], o);
-      D.set([wind.x, wind.y, wind.z, 2.2 * extent + 4 * standoff], o + 4);
-      D.set([wy.x, wy.y, wy.z, -(extent + 5 * standoff)], o + 8);
+      D.set([origin.x, origin.y, origin.z, boxLength], o);
+      D.set([wind.x, wind.y, wind.z, boxRadius], o + 4);
+      D.set([wy.x, wy.y, wy.z, -(extent + 6 * standoff)], o + 8);
       D.set([wz.x, wz.y, wz.z, R.steps], o + 12);
       D.set([axisWind.x, axisWind.y, axisWind.z, proxy.radius], o + 16);
-      D.set([proxy.halfLength, proxy.rounding, standoff, wakeLength], o + 20);
+      D.set([proxy.noseRadius, proxy.afterLength, proxy.tipRadius, standoff], o + 20);
       D.set([color[0] * luminance, color[1] * luminance, color[2] * luminance, flicker], o + 24);
-      const period = 16 * proxy.radius;
-      D.set([(noiseTime * Math.min(speed, 900)) % period, Math.min(1, speed / R.colorSpeeds[2]), seed / 64, 0], o + 28);
+      // The streaks of the wake stream away at a speed the eye can follow (the gas itself is far faster).
+      const period = 64 * proxy.radius;
+      D.set([(noiseTime * R.streakSpeed) % period, intensity, seed / 64, wakeLength], o + 28);
+      D.set([noiseTime / FLOW_CYCLE, 0, 0, 0], o + 32);
       this.placed.push({ originRelCam: origin, distance: v3.len(origin) });
 
       // The glow lights the vessel and its cabin: a point light just ahead of the windward face.
       const power = R.light.efficacy * luminance * Math.PI * proxy.radius * proxy.radius * flicker;
-      const at = v3.addScaled(origin, wind, -(extent + standoff));
+      const at = v3.addScaled(origin, wind, -(sag + 2 * standoff + 0.5 * proxy.radius));
       this.lights.push({ power: power * (0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]), light: { kind: 'point', posRelCam: at, intensity: [color[0] * power, color[1] * power, color[2] * power], range: R.light.range } });
     }
     if (this.placed.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.placed.length * INST_FLOATS);

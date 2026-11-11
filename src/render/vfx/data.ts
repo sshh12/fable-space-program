@@ -29,8 +29,13 @@ export interface PlumeLookDef {
     /** e-folding length of the core emission in the atmosphere / in vacuum, exit radii. */
     lengthRe: number;
     vacuumLengthRe: number;
-    /** Core luminance in vacuum as a fraction of `luminance` (thin gas radiates little; blended by the vacuum factor). */
+    /**
+     * Core luminance far from the nozzle in vacuum as a fraction of `luminance` (thin gas radiates little;
+     * blended by the vacuum factor), and the distance from the exit over which it falls to that, exit radii:
+     * at the exit the gas is as dense and bright as at sea level.
+     */
     vacuumGain: number;
+    vacuumCoreRe: number;
     /** Radius of the luminous core as a fraction of the jet boundary. */
     radius: number;
     /** Emission ~ (relative gas density)^exponent. */
@@ -42,8 +47,13 @@ export interface PlumeLookDef {
   shear: { color: Vec3Tuple; luminance: number; lengthRe: number };
   /** Turbulent flame brush downstream of the potential core (needs ambient air). */
   afterburn: { color: Vec3Tuple; luminance: number; lengthRe: number };
-  /** Particulates: optical depth across the exit diameter (extinction, and the part that scatters sunlight). */
-  smoke: { extinction: number; albedo: Vec3Tuple; sunScatter: number };
+  /**
+   * Particulates: optical depth across the exit diameter (extinction, and the part that scatters sunlight),
+   * the share of them spread over the whole cross-section of the jet out to its boundary (the rest follows the
+   * core: a condensing thruster puff is a filled cone, the soot of a booster a core), and their e-folding
+   * length along the jet in exit radii.
+   */
+  smoke: { extinction: number; albedo: Vec3Tuple; sunScatter: number; halo: number; lengthRe: number };
   /** Turbulent break-up: feature size in exit radii, convection speed m/s, strength 0..1. */
   noise: { scaleRe: number; speed: number; amount: number };
   ignition: { frontSpeed: number; flash: number; flashColor: Vec3Tuple; flashTime: number };
@@ -67,8 +77,9 @@ export interface CanopyStyleDef {
   goreLengthRatio: number;
   /** Part of ParachuteDef.lineLength taken by the suspension lines (the rest is the riser). */
   suspensionFraction: number;
-  /** Suspension line diameter, m. */
+  /** Suspension line diameter, m, and the colour of the cord. */
   lineWidth: number;
+  lineColor: Vec3Tuple;
   colors: Vec3Tuple[];
   /** Index into `colors` per gore, repeated around the canopy. */
   pattern: number[];
@@ -92,6 +103,8 @@ export interface VfxData {
     nodeInterval: number;
     nodeMinSpacing: number;
     initialRadiusRe: number;
+    /** Length over which an exhaust trail fades in behind the plume, in its initial radii. */
+    taperRadii: number;
     expansionSpeed: number;
     expansionTime: number;
     diffusivity: number;
@@ -122,6 +135,10 @@ export interface VfxData {
     trenchFocus: number;
     trenchLength: number;
     buoyancy: number;
+    /** The free jet between the vehicle and the pad: gas speed (m/s), entrainment coefficient, radius gained per metre. */
+    jet: { speed: number; entrainment: number; spread: number };
+    /** Strength 0..1 of the cloud's shadow on the opaque scene under it. */
+    groundShadow: number;
     cooling: number;
     turbulence: number;
     wind: { headingDeg: number; speed: number };
@@ -141,7 +158,26 @@ export interface VfxData {
   particles: {
     pool: number;
     maxSpawnPerFrame: number;
-    dust: { maxHeightRe: number; rate: number; speed: Range; elevationDeg: Range; life: Range; size: Range; albedo: Vec3Tuple; opacity: number };
+    dust: {
+      maxHeightRe: number;
+      rate: number;
+      speed: Range;
+      elevationDeg: Range;
+      life: Range;
+      size: Range;
+      albedo: Vec3Tuple;
+      opacity: number;
+      /**
+       * The sheet of dust between the grains (vacuum only): optical depth seen from above at the edge of the
+       * scoured spot at full strength, its reach (at least so many metres, and so many inner radii), the speed its streaks stream
+       * outwards at (m/s) and the stretches marched per ray.
+       */
+      sheetDepth: number;
+      sheetMinReach: number;
+      sheetReachRadii: number;
+      sheetSpeed: number;
+      sheetSteps: number;
+    };
     ice: { liftoffCount: number; stagingCount: number; sheddingRate: number; sheddingTime: number; size: Range; life: Range; speed: Range; albedo: Vec3Tuple };
     gas: { count: number; speed: Range; size: Range; life: Range; color: Vec3Tuple; opacity: number };
     sparks: { count: number; speed: Range; size: Range; life: Range; temperature: Range };
@@ -158,6 +194,8 @@ export interface VfxData {
     fluxExponent: number;
     minIntensity: number;
     wakeLengthRadii: number;
+    /** Speed at which the streaks of the wake stream away, m/s (what the eye can follow; the gas is far faster). */
+    streakSpeed: number;
     colorSpeeds: Vec3Tuple;
     colors: [Vec3Tuple, Vec3Tuple, Vec3Tuple];
     flicker: { lowHz: number; highHz: number; amount: number };
@@ -179,6 +217,15 @@ export interface VfxData {
     color: Vec3Tuple;
     smokeAlbedo: Vec3Tuple;
     partBurst: { energy: number; sparks: number; debris: number };
+    /** An explosion event: smaller fireballs that follow the first, burning fragments it throws out. */
+    secondaries: number;
+    fragments: number;
+    /** Seconds a fragment burns, the smoke it leaves (optical depth across its trail at birth) and the glow of that trail (cd/m^2). */
+    fragmentBurn: Range;
+    /** Speed of the fastest fragments in units of the speed at which the fireball grows. */
+    fragmentSpeed: number;
+    fragmentSmoke: number;
+    fragmentGlow: number;
     steps: number;
   };
   parachutes: {
@@ -187,7 +234,22 @@ export interface VfxData {
     cutDrift: { fadeTime: number; collapseTime: number; sinkSpeed: number };
     shred: { time: number; pieces: number };
   };
-  splash: { crownSpeedFactor: number; crownAngleDeg: Range; minSpeed: number; foamRadiusFactor: number; foamTime: number; foamAlbedo: Vec3Tuple };
+  splash: {
+    crownSpeedFactor: number;
+    crownAngleDeg: Range;
+    minSpeed: number;
+    foamRadiusFactor: number;
+    foamTime: number;
+    foamAlbedo: Vec3Tuple;
+    /** Half height of the band of water levels around the entry level in which the foam follows the surface (swell), m. */
+    foamSwell: number;
+    /**
+     * The crown sheet: its rim rises at `rise` x the droplet speed; its foot spreads by `spread` body radii;
+     * `thickness` in body radii at the foot; optical depth across the sheet at the foot; how far it tears
+     * apart by the time it has fallen back (0..1); march steps.
+     */
+    crown: { albedo: Vec3Tuple; rise: number; spread: number; thickness: number; opticalDepth: number; breakup: number; steps: number };
+  };
 }
 
 // ------------------------------------------------------------------------------------------- schema
@@ -204,11 +266,11 @@ const LOOK: Schema = {
   gamma: 'p',
   nozzleHalfAngleDeg: 'n',
   maxExpansionDeg: 'p',
-  core: { color: 'c', luminance: 'n', lengthRe: 'p', vacuumLengthRe: 'p', vacuumGain: 'u', radius: 'p', densityExponent: 'p' },
+  core: { color: 'c', luminance: 'n', lengthRe: 'p', vacuumLengthRe: 'p', vacuumGain: 'u', vacuumCoreRe: 'p', radius: 'p', densityExponent: 'p' },
   diamonds: { color: 'c', gain: 'n', cells: 'p' },
   shear: { color: 'c', luminance: 'n', lengthRe: 'p' },
   afterburn: { color: 'c', luminance: 'n', lengthRe: 'p' },
-  smoke: { extinction: 'n', albedo: 'c', sunScatter: 'n' },
+  smoke: { extinction: 'n', albedo: 'c', sunScatter: 'n', halo: 'u', lengthRe: 'p' },
   noise: { scaleRe: 'p', speed: 'n', amount: 'u' },
   ignition: { frontSpeed: 'p', flash: 'n', flashColor: 'c', flashTime: 'p' },
   shutdown: { fadeTime: 'p' },
@@ -225,6 +287,7 @@ const CANOPY: Schema = {
   goreLengthRatio: 'p',
   suspensionFraction: 'u',
   lineWidth: 'p',
+  lineColor: 'c',
   colors: 'cs',
   pattern: 'is',
   bandColor: 'c',
@@ -244,6 +307,7 @@ const ROOT: Schema = {
     nodeInterval: 'p',
     nodeMinSpacing: 'p',
     initialRadiusRe: 'p',
+    taperRadii: 'p',
     expansionSpeed: 'n',
     expansionTime: 'p',
     diffusivity: 'p',
@@ -274,6 +338,8 @@ const ROOT: Schema = {
     trenchFocus: 'u',
     trenchLength: 'p',
     buoyancy: 'n',
+    jet: { speed: 'p', entrainment: 'n', spread: 'n' },
+    groundShadow: 'u',
     cooling: 'p',
     turbulence: 'n',
     wind: { headingDeg: 'n', speed: 'n' },
@@ -290,7 +356,7 @@ const ROOT: Schema = {
   particles: {
     pool: 'i',
     maxSpawnPerFrame: 'i',
-    dust: { maxHeightRe: 'p', rate: 'n', speed: 'r', elevationDeg: 'r', life: 'r', size: 'r', albedo: 'c', opacity: 'u' },
+    dust: { maxHeightRe: 'p', rate: 'n', speed: 'r', elevationDeg: 'r', life: 'r', size: 'r', albedo: 'c', opacity: 'u', sheetDepth: 'n', sheetMinReach: 'p', sheetReachRadii: 'p', sheetSpeed: 'n', sheetSteps: 'i' },
     ice: { liftoffCount: 'n', stagingCount: 'n', sheddingRate: 'n', sheddingTime: 'p', size: 'r', life: 'r', speed: 'r', albedo: 'c' },
     gas: { count: 'n', speed: 'r', size: 'r', life: 'r', color: 'c', opacity: 'u' },
     sparks: { count: 'n', speed: 'r', size: 'r', life: 'r', temperature: 'r' },
@@ -307,6 +373,7 @@ const ROOT: Schema = {
     fluxExponent: 'p',
     minIntensity: 'u',
     wakeLengthRadii: 'p',
+    streakSpeed: 'n',
     colorSpeeds: 'n3',
     colors: 'cs',
     flicker: { lowHz: 'p', highHz: 'p', amount: 'u' },
@@ -327,10 +394,25 @@ const ROOT: Schema = {
     color: 'c',
     smokeAlbedo: 'c',
     partBurst: { energy: 'p', sparks: 'n', debris: 'n' },
+    secondaries: 'n',
+    fragments: 'n',
+    fragmentBurn: 'r',
+    fragmentSpeed: 'p',
+    fragmentSmoke: 'n',
+    fragmentGlow: 'n',
     steps: 'i',
   },
   parachutes: { drogue: CANOPY, main: CANOPY, cutDrift: { fadeTime: 'p', collapseTime: 'p', sinkSpeed: 'n' }, shred: { time: 'p', pieces: 'n' } },
-  splash: { crownSpeedFactor: 'p', crownAngleDeg: 'r', minSpeed: 'n', foamRadiusFactor: 'p', foamTime: 'p', foamAlbedo: 'c' },
+  splash: {
+    crownSpeedFactor: 'p',
+    crownAngleDeg: 'r',
+    minSpeed: 'n',
+    foamRadiusFactor: 'p',
+    foamTime: 'p',
+    foamAlbedo: 'c',
+    foamSwell: 'p',
+    crown: { albedo: 'c', rise: 'p', spread: 'n', thickness: 'p', opticalDepth: 'n', breakup: 'u', steps: 'i' },
+  },
 };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

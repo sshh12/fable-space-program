@@ -23,6 +23,10 @@ interface Shot {
   t?: number;
   /** Put the camera on the far side from the sun (canopies seen against the light). */
   backlit?: boolean;
+  /** Aim the camera at the burning nozzles of this vessel plus an offset in the site frame (east, north, up; m): a chase view. */
+  aim?: { vessel: string; offset: [number, number, number] };
+  /** Put the camera side-on to the first so many metres of this vessel's plume. */
+  frame?: { vessel: string; length: number };
 }
 
 async function shoot(page: Page, sheet: string, shot: Shot): Promise<Buffer> {
@@ -35,6 +39,15 @@ async function shoot(page: Page, sheet: string, shot: Shot): Promise<Buffer> {
     });
   }
   if (shot.t !== undefined) await page.evaluate((x) => window.__vfx!.runTo(x), shot.t);
+  if (shot.aim) {
+    await page.evaluate((aim) => {
+      const lab = window.__vfx!;
+      const n = lab.nozzleEnu(aim.vessel);
+      const base = lab.camera.follow ? lab.vesselEnu(lab.camera.follow) : { x: 0, y: 0, z: 0 };
+      lab.setCamera({ target: { x: n.x - base.x + aim.offset[0], y: n.y - base.y + aim.offset[1], z: n.z - base.z + aim.offset[2] } });
+    }, shot.aim);
+  }
+  if (shot.frame) await page.evaluate((f) => window.__vfx!.framePlume(f.vessel, f.length), shot.frame);
   await waitIdle(page, 40);
   const dir = path.join(repoRoot, 'out', 'screens', 'vfx', sheet);
   fs.mkdirSync(dir, { recursive: true });
@@ -83,7 +96,7 @@ sheetTest(
   2,
   ALTITUDES.flatMap(([label, q]) => [
     { name: `${label}-les`, query: `scene=engine&engine=kestrel-les&span=190&${q}` },
-    { name: `${label}-retro`, query: `scene=engine&engine=meridian-m1-retro-motors&span=150&hide=meridian-m1-retro-motors&${q}` },
+    { name: `${label}-retro`, query: `scene=engine&engine=meridian-m1-retro-motors&hide=meridian-m1-retro-motors&${q}`, frame: { vessel: 'engine', length: 26 } },
   ]),
 );
 
@@ -95,6 +108,28 @@ sheetTest('liftoff', 'lift-off at T+0, T+3 s, T+10 s by day (left) and at night 
   { name: 't3-night', query: 'scene=pad&night=1', t: 7.0 },
   { name: 't10-day', query: 'scene=pad', t: 14.0 },
   { name: 't10-night', query: 'scene=pad&night=1', t: 14.0 },
+]);
+
+// ---- the same lift-off from a chase camera 150 m away that follows the engines (left: day, right: night)
+sheetTest('liftoff-chase', 'lift-off from a chase camera at 150 m: T+0, T+3 s, T+6 s, T+10 s by day (left) and at night (right)', 2, [
+  { name: 't0-day', query: 'scene=pad&dist=150&pitch=4', t: 4.0, aim: { vessel: 'stack', offset: [0, 0, -8] } },
+  { name: 't0-night', query: 'scene=pad&dist=150&pitch=4&night=1', t: 4.0, aim: { vessel: 'stack', offset: [0, 0, -8] } },
+  { name: 't3-day', query: 'scene=pad&dist=150&pitch=4', t: 7.0, aim: { vessel: 'stack', offset: [0, 0, -14] } },
+  { name: 't3-night', query: 'scene=pad&dist=150&pitch=4&night=1', t: 7.0, aim: { vessel: 'stack', offset: [0, 0, -14] } },
+  { name: 't6-day', query: 'scene=pad&dist=150&pitch=4', t: 10.0, aim: { vessel: 'stack', offset: [0, 0, -20] } },
+  { name: 't6-night', query: 'scene=pad&dist=150&pitch=4&night=1', t: 10.0, aim: { vessel: 'stack', offset: [0, 0, -20] } },
+  { name: 't10-day', query: 'scene=pad&dist=150&pitch=4', t: 14.0, aim: { vessel: 'stack', offset: [0, 0, -30] } },
+  { name: 't10-night', query: 'scene=pad&dist=150&pitch=4&night=1', t: 14.0, aim: { vessel: 'stack', offset: [0, 0, -30] } },
+]);
+
+// ---- engine plumes from chase distances of 45 to 110 m
+sheetTest('plumes-close', 'plumes close up: booster at 45 m and 110 m (T+10 s), ascent at 12 km from 90 m, six vacuum engines from 60 m, staging from 70 m (separation, retro motors)', 2, [
+  { name: 'booster-45m', query: 'scene=pad&dist=45&pitch=-4&fov=50', t: 14.0, aim: { vessel: 'stack', offset: [0, 0, -14] } },
+  { name: 'booster-110m', query: 'scene=pad&dist=110&pitch=2&fov=45', t: 14.0, aim: { vessel: 'stack', offset: [0, 0, -30] } },
+  { name: 'ascent-12km-90m', query: 'scene=ascent&altkm=12&speed=420&pad=0&dist=90', t: 3, aim: { vessel: 'stack', offset: [-12, 0, -30] } },
+  { name: 'vacuum-60m', query: 'scene=vacuum&dist=60', t: 6.3 },
+  { name: 'staging-separation-70m', query: 'scene=staging&dist=70', t: 2.56 },
+  { name: 'staging-retro-70m', query: 'scene=staging&dist=70', t: 2.9 },
 ]);
 
 sheetTest('ascent', 'ascent chase views at 2, 12, 30 and 60 km', 2, [
@@ -116,13 +151,17 @@ sheetTest('lunar', 'lander above lunar ground: 30 m by day and with the sun down
   { name: '30m-night', query: 'scene=lunar&h=30&night=1', t: 6 },
   { name: '10m-day', query: 'scene=lunar&h=10', t: 6 },
   { name: '3m-night', query: 'scene=lunar&h=3&night=1', t: 6 },
+  { name: '30m-day-close', query: 'scene=lunar&h=30&dist=38&pitch=10', t: 6 },
+  { name: '5m-day-close', query: 'scene=lunar&h=5&dist=30&pitch=14', t: 6 },
 ]);
 
-sheetTest('rcs', 'RCS firings: a translation pulse and all thrusters, sunlit and in shadow', 2, [
+sheetTest('rcs', 'RCS firings from 26 m (a pulse, all thrusters) and from 12 m, sunlit (left) and in shadow (right)', 2, [
   { name: 'pulse-sun', query: 'scene=rcs', t: 1 },
-  { name: 'all-sun', query: 'scene=rcs&all=1', t: 1 },
   { name: 'pulse-shadow', query: 'scene=rcs&sun=-20', t: 1 },
+  { name: 'all-sun', query: 'scene=rcs&all=1', t: 1 },
   { name: 'all-shadow', query: 'scene=rcs&all=1&sun=-20', t: 1 },
+  { name: 'all-sun-12m', query: 'scene=rcs&all=1&dist=12', t: 1 },
+  { name: 'all-shadow-12m', query: 'scene=rcs&all=1&dist=12&sun=-20', t: 1 },
 ]);
 
 sheetTest('staging', 'staging: burn, ullage motors, retro motors and gas puffs at separation, coast, second-stage ignition', 2, [
@@ -143,6 +182,15 @@ sheetTest('reentry', 'reentry from the chase camera at plasmaIntensity 0.3 and 1
   { name: 'trail-50km-night', query: 'scene=reentry&plasma=1&far=1&night=1', t: 20 },
 ]);
 
+sheetTest('reentry-views', 'reentry at plasmaIntensity 1.0 (left) and 0.3 (right): from the front, from behind (the camera rides in the wake), close from the side', 2, [
+  { name: 'front-1.0', query: 'scene=reentry&plasma=1&yaw=70&pitch=10&dist=18', t: 8 },
+  { name: 'front-0.3', query: 'scene=reentry&plasma=0.3&yaw=70&pitch=10&dist=18', t: 8 },
+  { name: 'behind-1.0', query: 'scene=reentry&plasma=1&yaw=265&pitch=8&dist=16', t: 8 },
+  { name: 'behind-0.3', query: 'scene=reentry&plasma=0.3&yaw=265&pitch=8&dist=16', t: 8 },
+  { name: 'side-close-1.0', query: 'scene=reentry&plasma=1&yaw=170&pitch=6&dist=11', t: 8 },
+  { name: 'side-close-0.3', query: 'scene=reentry&plasma=0.3&yaw=170&pitch=6&dist=11', t: 8 },
+]);
+
 sheetTest('chutes', 'drogues reefed and full; three mains at each reefing stage (8 %, 30 %, full) against the light, and full with the sun behind the camera', 2, [
   { name: 'drogues-reefed', query: 'scene=chutes&chute=drogue&inflation=0.4' },
   { name: 'drogues-full', query: 'scene=chutes&chute=drogue&inflation=1' },
@@ -152,13 +200,17 @@ sheetTest('chutes', 'drogues reefed and full; three mains at each reefing stage 
   { name: 'mains-full-frontlit', query: 'scene=chutes&chute=main&inflation=1' },
 ]);
 
-sheetTest('splash', 'splashdown: just before, at impact (+0.1 s), +0.4 s, +1 s, +2.5 s, +5 s (mains cut away)', 2, [
+sheetTest('splash', 'splashdown: just before, at impact (+0.1 s), +0.4 s, +1 s, +1.8 s, +2.5 s, +5 s (mains cut away), and +0.4 s / +1 s from 20 m', 2, [
   { name: 'before', query: 'scene=splash', t: 1.9 },
   { name: 'impact-0.1s', query: 'scene=splash', t: 2.15 },
   { name: 'impact-0.4s', query: 'scene=splash', t: 2.45 },
   { name: 'impact-1s', query: 'scene=splash', t: 3.05 },
+  { name: 'impact-1.8s', query: 'scene=splash', t: 3.85 },
   { name: 'impact-2.5s', query: 'scene=splash', t: 4.55 },
   { name: 'impact-5s', query: 'scene=splash', t: 7.05 },
+  { name: 'cut-away-6s', query: 'scene=splash&dist=120&tz=30&pitch=2', t: 8.05 },
+  { name: 'close-0.4s', query: 'scene=splash&dist=20', t: 2.45 },
+  { name: 'close-1s', query: 'scene=splash&dist=20', t: 3.05 },
 ]);
 
 sheetTest('explosion', 'explosion: +0.03 s, +0.2 s, +0.6 s, +1.5 s, +3.5 s, +7 s by day; +0.2 s and +1.5 s at night', 2, [
@@ -170,4 +222,6 @@ sheetTest('explosion', 'explosion: +0.03 s, +0.2 s, +0.6 s, +1.5 s, +3.5 s, +7 s
   { name: 'day-7s', query: 'scene=explosion', t: 8 },
   { name: 'night-0.2s', query: 'scene=explosion&night=1', t: 1.2 },
   { name: 'night-1.5s', query: 'scene=explosion&night=1', t: 2.5 },
+  { name: 'close-0.6s', query: 'scene=explosion&dist=350', t: 1.6 },
+  { name: 'close-2.5s', query: 'scene=explosion&dist=350', t: 3.5 },
 ]);

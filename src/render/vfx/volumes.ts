@@ -22,6 +22,10 @@ export interface EmitterHint {
   a: number;
   b: number;
   luminance: number;
+  /** Stops over the meter's white the emitter is meant to sit at (default 3: a flame clips; 0: a faint glow keeps its shape). */
+  clipStops?: number;
+  /** Largest luminance the meter is told about, cd/m^2 (a flame in daylight must not stop the camera down below the daylight exposure). */
+  cap?: number;
 }
 
 export interface VolumeItem {
@@ -34,8 +38,8 @@ export interface VolumeItem {
 export interface VolumeCombiner {
   /** True when it has something to draw this frame. */
   active(): boolean;
-  /** Render into `target` reading the emitter colour and moment targets. */
-  run(frame: FrameContext, encoder: GPUCommandEncoder, emit: ManagedTarget, moment: ManagedTarget, target: ManagedTarget, haveEmitters: boolean): void;
+  /** Render into `target` (the image) and `targetMoment` (its distances) reading the emitter colour and moment targets. */
+  run(frame: FrameContext, encoder: GPUCommandEncoder, emit: ManagedTarget, moment: ManagedTarget, target: ManagedTarget, targetMoment: ManagedTarget, haveEmitters: boolean): void;
 }
 
 const COMPOSITE_WGSL = /* wgsl */ `
@@ -122,6 +126,9 @@ export class VolumePass {
   readonly emit: ManagedTarget;
   readonly moment: ManagedTarget;
   readonly combined: ManagedTarget;
+  readonly combinedMoment: ManagedTarget;
+  /** 1 x 1 stand-in for the image and its distances in frames without volumes. */
+  private readonly empty: GPUTextureView;
   private readonly compositeLayout: GPUBindGroupLayout;
   private readonly composite: Tracked<GPURenderPipeline>;
   private groups: { emit: GPUBindGroup; combined: GPUBindGroup } | null = null;
@@ -140,6 +147,8 @@ export class VolumePass {
     this.emit = core.createTarget('vfx.volume.emit', 'rgba16float', 0.5);
     this.moment = core.createTarget('vfx.volume.moment', 'rg16float', 0.5);
     this.combined = core.createTarget('vfx.volume.combined', 'rgba16float', 0.5);
+    this.combinedMoment = core.createTarget('vfx.volume.combinedMoment', 'rg16float', 0.5);
+    this.empty = core.createTextureChecked({ label: 'vfx.volume.empty', format: 'rgba16float', size: [1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }).createView();
     this.compositeLayout = ctx.device.createBindGroupLayout({ label: 'vfx.composite', entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }] });
     this.composite = core.fullscreenPipeline({
       label: 'vfx.composite',
@@ -177,6 +186,16 @@ export class VolumePass {
     return this.result !== 'none';
   }
 
+  /**
+   * The half-resolution image of this frame and the distances of what it shows (r = weight x log2(distance),
+   * g = weight), for what is drawn after it (particles). Valid after `run`; `version` changes when a view does.
+   */
+  get image(): { color: GPUTextureView; moment: GPUTextureView; version: number } {
+    if (this.result === 'combined') return { color: this.combined.view, moment: this.combinedMoment.view, version: 4 * (this.combined.version + this.combinedMoment.version) + 1 };
+    if (this.result === 'emit') return { color: this.emit.view, moment: this.moment.view, version: 4 * (this.emit.version + this.moment.version) + 2 };
+    return { color: this.empty, moment: this.empty, version: 0 };
+  }
+
   /** Size of the half-resolution targets in this frame (valid from prepare on). */
   get size(): [number, number] {
     return this.emit.size;
@@ -206,7 +225,7 @@ export class VolumePass {
       pass.end();
     }
     if (combine) {
-      combiner.run(frame, encoder, this.emit, this.moment, this.combined, items.length > 0);
+      combiner.run(frame, encoder, this.emit, this.moment, this.combined, this.combinedMoment, items.length > 0);
       this.result = 'combined';
     } else {
       this.result = 'emit';
@@ -232,5 +251,6 @@ export class VolumePass {
     this.emit.destroy();
     this.moment.destroy();
     this.combined.destroy();
+    this.combinedMoment.destroy();
   }
 }

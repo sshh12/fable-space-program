@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 import { expect, expectNoErrors, pngDiff, test } from '../harness';
 import { openLab, runAndSettle } from './helpers';
 
@@ -156,6 +157,19 @@ test('plume volumes are hidden by this frame\'s geometry: a fast occluder shows 
   await expectNoErrors(page, pageLog);
 });
 
+/** Pixel with the largest single-channel difference between two screenshots of the same size. */
+function largestDifference(a: Buffer, b: Buffer): { x: number; y: number; diff: number } {
+  const pa = PNG.sync.read(a);
+  const pb = PNG.sync.read(b);
+  let best = { x: 0, y: 0, diff: 0 };
+  for (let i = 0; i < pa.data.length; i++) {
+    if ((i & 3) === 3) continue;
+    const d = Math.abs(pa.data[i]! - pb.data[i]!);
+    if (d > best.diff) best = { x: (i >> 2) % pa.width, y: Math.floor((i >> 2) / pa.width), diff: d };
+  }
+  return best;
+}
+
 test('half-resolution volumes are temporally stable under a static camera', async ({ page, pageLog }) => {
   // Live noise (not deterministic), effect clock stopped: what changes from frame to frame is march jitter only.
   for (const [name, query, t] of [
@@ -174,15 +188,18 @@ test('half-resolution volumes are temporally stable under a static camera', asyn
     let mean = 0;
     let max = 0;
     let differing = 0;
+    let where = { x: 0, y: 0, diff: 0 };
     for (let i = 1; i < shots.length; i++) {
       const d = pngDiff(shots[i - 1]!, shots[i]!);
       mean = Math.max(mean, d.meanAbsDiff);
       max = Math.max(max, d.maxAbsDiff);
       differing = Math.max(differing, d.differingFraction);
+      const w = largestDifference(shots[i - 1]!, shots[i]!);
+      if (w.diff > where.diff) where = w;
     }
-    console.log(`${name}: frame-to-frame difference with a static camera: mean ${mean.toFixed(3)} / 255, max ${max} / 255, ${(differing * 100).toFixed(1)} % of the channels differ`);
-    expect(mean).toBeLessThan(0.6);
-    expect(max).toBeLessThan(72);
+    console.log(`${name}: frame-to-frame difference with a static camera: mean ${mean.toFixed(3)} / 255, max ${max} / 255 (at pixel ${where.x}, ${where.y}), ${(differing * 100).toFixed(1)} % of the channels differ`);
+    expect(mean).toBeLessThan(0.5);
+    expect(max).toBeLessThan(60);
     await expectNoErrors(page, pageLog);
   }
 });

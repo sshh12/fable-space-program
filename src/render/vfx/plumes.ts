@@ -14,7 +14,7 @@ export const MAX_PLUME_NOZZLES = 256;
 const INSTANCE_FLOATS = 64;
 const NOZZLE_FLOATS = 24;
 /** March steps of an engine cluster and of an RCS jet at quality 1. */
-export const PLUME_STEPS = 40;
+export const PLUME_STEPS = 30;
 export const RCS_STEPS = 14;
 
 /** A cluster placed in the frame: origin and axes camera-relative in ROOT axes. */
@@ -48,8 +48,8 @@ struct PlumeInstance {
   merged0: vec4f,      // x = distance where the jets merge (1e30 = never), y = merged exit radius, z = merged emission scale, w = merged throttle
   merged1: vec4f,      // merged jet: tan(theta), Lexp, mixing slope, mixing development length
   merged2: vec4f,      // merged jet: core, shear and afterburn e-folding lengths (m), oxygen factor
-  light: vec4f,        // x = light probe index, y = unused, z = unused, w = largest exit radius (m)
-  extra: vec4f,        // x, y = bounding cone about +X: radius = x + y * distance along X
+  light: vec4f,        // x = light probe index, y = share of the particulates spread over the whole jet (the rest follows the core), z = their decay along the jet (1/m), w = largest exit radius (m)
+  extra: vec4f,        // x, y = bounding cone about +X: radius = x + y * distance along X; z = core emission far from the nozzle as a fraction of that at the exit (thin gas radiates little), w = distance over which it gets there (m)
 }
 struct PlumeNozzle {
   posRe: vec4f,        // xyz = exit centre in the cluster frame, w = exit radius (m)
@@ -57,7 +57,7 @@ struct PlumeNozzle {
   shape: vec4f,        // tan(theta), Lexp (m), mixing slope, mixing development length (m)
   cells: vec4f,        // shock-cell spacing (m), cell amplitude 0..1, core e-folding length (m), oxygen factor 0..1
   lens: vec4f,         // shear length (m), afterburn length (m), start-up front distance (m), start-up flash gain
-  misc: vec4f,         // x = seed, y = residual flame 0..1
+  misc: vec4f,         // x = seed, y = residual flame 0..1, z = shift of the shock cells (cell lengths), w = flicker gain
 }
 
 struct JetGeom {
@@ -95,13 +95,17 @@ fn jetZero() -> JetOut { return JetOut(vec3f(0.0), 0.0, vec3f(0.0), 0.0, 0.0); }
 
 /// One jet. 'n' / 'n2' = coarse and fine noise samples (0..1 per channel; 0.5 = no turbulence).
 /// 'k0' = throttle / (2 re of one nozzle) x scale.
-fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f, cells: vec4f, lens: vec4f, k0: f32, p: vec3f, n: vec4f, n2: vec4f) -> JetOut {
+/// 'vary' = x: shift of the shock cells in cell lengths, y = flicker gain (each nozzle has its own).
+fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f, cells: vec4f, lens: vec4f, vary: vec2f, k0: f32, p: vec3f, n: vec4f, n2: vec4f) -> JetOut {
   let g = jetGeom(pos, dir, re, shape, p);
-  if (g.x < -0.4 * re || g.r > 1.8 * g.rb + 2.0 * re) { return jetZero(); }
   let xc = max(g.x, 0.0);
+  // Nothing of a jet is seen beyond 1.8 boundary radii + 2 re, except the start-up flash while it lasts
+  // (a Gaussian ball 1.3 bulk radii + re wide: 3.2 widths hold it, as the bounding cone does).
+  let flashReach = select(0.0, 3.2 * (1.3 * min(g.rb, 2.0 * re + BULK_SLOPE * xc) + re), lens.w > 0.01);
+  if (g.x < -0.4 * re || g.r > max(1.8 * g.rb + 2.0 * re, flashReach)) { return jetZero(); }
   let inlet = smoothstep(-0.4 * re, 0.3 * re, g.x);
   let front = 1.0 - smoothstep(lens.z - 2.0 * re, lens.z + 2.0 * re, g.x);
-  let k = k0 * inlet * front;
+  let k = k0 * inlet * front * vary.y;
   // Turbulence grows downstream of the nozzle: ragged edges and filaments.
   let turb = saturate(xc / (10.0 * re)) * inst.noise.y;
   let rr = g.r * (1.0 + ((n.r - 0.5) * 1.1 + (n2.b - 0.5) * 0.5) * turb);
@@ -116,7 +120,7 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   let axial = exp(-xc / cells.z);
   // Shock cells: a Mach disc at u = 0.75 + k (u = distance in cell lengths), a bright diamond tapering
   // behind it, and the converging shocks brightening the core just ahead of the next disc.
-  let u = xc / cells.x + (n.a - 0.5) * turb * 0.7;
+  let u = max(xc / cells.x - vary.x, 0.0) + (n.a - 0.5) * turb * 0.7;
   let decay = exp(-max(u - 0.75, 0.0) / inst.shearColor.w);
   let sc = fract(u - 0.75);
   let lead = smoothstep(0.8, 1.0, sc);
@@ -125,9 +129,12 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   let disc = cells.y * decay * (tail + 0.7 * lead) * exp(-sq(g.r / env));
   // An over- or under-expanded jet is dim where it leaves the nozzle and lights up at the first shock.
   let ramp = mix(1.0, 0.3 + 0.7 * smoothstep(0.0, 0.75, u), cells.y);
+  // Close to the nozzle the gas is as dense and hot as at the exit whatever the ambient pressure; further
+  // out a jet that expands into (near) vacuum radiates only a fraction of that.
+  let thin = mix(1.0, inst.extra.z, 1.0 - exp(-xc / inst.extra.w));
   var o: JetOut;
-  o.e = inst.coreColor.rgb * (k * dens * coreProfile * axial * ramp * mix(1.0, 0.5 + n.g, turb))
-      + inst.diamondColor.rgb * (k * dens * axial * disc * inst.diamondColor.w);
+  o.e = inst.coreColor.rgb * (k * thin * dens * coreProfile * axial * ramp * mix(1.0, 0.5 + n.g, turb))
+      + inst.diamondColor.rgb * (k * thin * dens * axial * disc * inst.diamondColor.w);
   o.gas = g.dil * g.edge;
   o.core = sq(re / rBulk) * coreProfile * (ramp + disc * inst.diamondColor.w);
 
@@ -140,10 +147,15 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
     let brush = exp(-sq(rr / (0.8 * g.rb))) * smoothstep(0.0, 0.25 * lens.y, xc) * exp(-xc / lens.y);
     o.e += inst.afterColor.rgb * (k * ox * brush * sqrt(g.dil) * fil);
   }
-  // Start-up flash at the nozzle.
-  o.e += inst.flashColor.rgb * (lens.w * k0 * inlet * exp(-xc / (8.0 * re)) * exp(-sq(g.r / (1.3 * g.rb + re))));
-  // Particulates: extinction and sunlight scattering follow the gas density (bulk and halo).
-  let part = k * (0.8 * sq(re / rBulk) * exp(-sq(rr / (1.3 * cr))) + 0.2 * g.dil * g.edge) * mix(1.0, 0.3 + 1.4 * n.g, turb);
+  // Start-up flash at the nozzle: a ball of burning propellant no wider than the gas has had time to spread
+  // (the bounding cone is sized for 3.2 of these widths) and no longer than the start-up front has run.
+  o.e += inst.flashColor.rgb * (lens.w * k0 * inlet * front * exp(-xc / (8.0 * re)) * exp(-sq(g.r / (1.3 * rBulk + re))));
+  // Particulates: extinction and sunlight scattering follow the gas density (bulk and halo) and thin out along the jet.
+  let halo = inst.light.y;
+  // (The boundary the halo ends at is as ragged as the turbulence makes it: a straight edge is a nozzle's, not a cloud's.)
+  let sig = 0.05 * re + 0.6 * g.mixing + 0.12 * max(g.rb - re, 0.0);
+  let ragged = 1.0 - smoothstep(g.rb - 1.5 * sig, g.rb + 1.5 * sig, rr);
+  let part = k * ((1.0 - halo) * sq(re / rBulk) * exp(-sq(rr / (1.3 * cr))) + halo * g.dil * ragged) * mix(1.0, 0.3 + 1.4 * n.g, turb) * exp(-xc * inst.light.z);
   o.s = inst.smoke.w * part;
   o.sc = inst.smoke.rgb * part;
   return o;
@@ -169,15 +181,22 @@ fn plumeField(inst: PlumeInstance, p: vec3f, n: vec4f, n2: vec4f) -> JetOut {
     for (var i = 0u; i < count; i++) {
       let nz = plumeNozzles[first + i];
       if (nz.dirThr.w <= 0.0) { continue; }
+      // Most samples lie outside most jets: a cone that holds this jet's reach (its boundary never grows faster
+      // than its lip angle plus the mixing slope) rejects them before any of the jet's shape is worked out.
+      let dq = p - nz.posRe.xyz;
+      let along = dot(dq, nz.dirThr.xyz);
+      var reach = 3.8 * nz.posRe.w + 1.8 * (max(nz.shape.x, 0.0) + nz.shape.z) * max(along, 0.0);
+      if (nz.lens.w > 0.01) { reach = max(reach, 3.2 * (1.3 * (2.0 * nz.posRe.w + BULK_SLOPE * max(along, 0.0)) + nz.posRe.w)); }
+      if (along < -0.4 * nz.posRe.w || dot(dq, dq) - along * along > reach * reach) { continue; }
       // Neighbouring jets flicker independently: odd seeds swap the two Perlin channels.
       let nn = select(n, n.agbr, (u32(nz.misc.x) & 1u) == 1u);
-      o = jetAdd(o, jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.dirThr.w / (2.0 * nz.posRe.w), p, nn, n2), 1.0 - w);
+      o = jetAdd(o, jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.misc.zw, nz.dirThr.w / (2.0 * nz.posRe.w), p, nn, n2), 1.0 - w);
     }
   }
   if (w > 0.001) {
     let cells = vec4f(1.0, 0.0, inst.merged2.x, inst.merged2.w);
     let lens = vec4f(inst.merged2.y, inst.merged2.z, 1e9, 0.0);
-    o = jetAdd(o, jetSample(inst, vec3f(0.0), vec3f(1.0, 0.0, 0.0), inst.merged0.y, inst.merged1, cells, lens, inst.merged0.w * inst.merged0.z / (2.0 * inst.light.w), p, n, n2), w);
+    o = jetAdd(o, jetSample(inst, vec3f(0.0), vec3f(1.0, 0.0, 0.0), inst.merged0.y, inst.merged1, cells, lens, vec2f(0.0, 1.0), inst.merged0.w * inst.merged0.z / (2.0 * inst.light.w), p, n, n2), w);
   }
   o.e *= window;
   o.s *= window;
@@ -193,6 +212,9 @@ const MARCH_WGSL = /* wgsl */ `
 ${PLUME_FIELD_WGSL}
 
 const CUBE_IDX = array<u32, 36>(0u, 2u, 3u, 0u, 3u, 1u, 4u, 5u, 7u, 4u, 7u, 6u, 0u, 1u, 5u, 0u, 5u, 4u, 2u, 6u, 7u, 2u, 7u, 3u, 0u, 4u, 6u, 0u, 6u, 2u, 1u, 3u, 7u, 1u, 7u, 5u);
+
+/// Noise coordinates are compressed along the jet: eddies become streaks about three times as long as wide.
+const STREAK = vec3f(0.34, 1.0, 1.0);
 
 struct VOut {
   @builtin(position) pos: vec4f,
@@ -277,8 +299,10 @@ struct FOut {
     let t = tc + sign(w) * d0 * (ew - 1.0);
     let dt = d0 * ew * (w1 - w0) / steps;
     let p = ro + rd * t;
-    let n = vfxNoiseLod((p - scroll) * inst.noise.x, dt * inst.noise.x);
-    let n2 = vfxNoiseLod((p - scroll * 1.7) * (inst.noise.x * 2.9) + vec3f(0.37, 0.11, 0.73), dt * inst.noise.x * 2.9);
+    // Turbulent structure is drawn out along the flow; the footprint is a fraction of the step (the jitter
+    // and the temporal filter take care of what that leaves under-sampled along the ray).
+    let n = vfxNoiseLod((p - scroll) * (inst.noise.x * STREAK), dt * inst.noise.x * 0.3);
+    let n2 = vfxNoiseLod((p - scroll * 1.7) * (inst.noise.x * 2.9 * STREAK) + vec3f(0.37, 0.11, 0.73), dt * inst.noise.x * 0.6);
     let f = plumeField(inst, p, n, n2);
     let od = f.s * dt;
     let stepT = exp(-od);
@@ -292,6 +316,15 @@ struct FOut {
     if (T < 0.004) { break; }
   }
   let tMean = clamp(tsum / max(wsum, 1e-20), t0, t1);
+  // Fine structure: two more octaves of streaks, looked up where the light of this ray comes from on average
+  // (they ride with the gas, and are finer than the march could resolve along the ray).
+  let pm = ro + rd * tMean;
+  let fineScale = inst.noise.x * 6.5;
+  let pixel = 2.0 * tMean * frame.cameraUp.w * vfx.half.w;
+  let d1 = vfxNoiseLod((pm - scroll * 2.3) * (fineScale * STREAK) + vec3f(0.61, 0.23, 0.05), pixel * fineScale);
+  let d2 = vfxNoiseLod((pm - scroll * 3.1) * (fineScale * 2.7 * STREAK) + vec3f(0.13, 0.77, 0.41), pixel * fineScale * 2.7);
+  let grown = saturate(max(pm.x, 0.0) / (5.0 * inst.light.w)) * inst.noise.y;
+  L *= mix(1.0, (0.45 + 1.1 * d1.g) * (0.6 + 0.8 * d2.b), min(1.0, 1.5 * grown));
   let rgb = min(L * frame.exposure.x, vec3f(HDR_MAX * 0.25));
   let c = vfxAtmosphere(uv, tMean, rgb, 1.0 - T);
   out.color = vec4f(writeHdr(c.rgb), saturate(c.a));
@@ -319,7 +352,7 @@ ${PLUME_FIELD_WGSL}
     var perp = cross(nz.dirThr.xyz, vec3f(0.0, 0.0, 1.0));
     if (dot(perp, perp) < 1e-6) { perp = cross(nz.dirThr.xyz, vec3f(0.0, 1.0, 0.0)); }
     let p = nz.posRe.xyz + nz.dirThr.xyz * x + normalize(perp) * r;
-    f = jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.dirThr.w / (2.0 * nz.posRe.w), p, vec4f(0.5), vec4f(0.5));
+    f = jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.misc.zw, nz.dirThr.w / (2.0 * nz.posRe.w), p, vec4f(0.5), vec4f(0.5));
   } else {
     f = plumeField(inst, vec3f(x, r, 0.0), vec4f(0.5), vec4f(0.5));
   }
@@ -409,7 +442,8 @@ export class PlumeRenderer {
       put(I, o + 8, pc.axisY.x, pc.axisY.y, pc.axisY.z, c.xMin);
       put(I, o + 12, pc.axisZ.x, pc.axisZ.y, pc.axisZ.z, c.nozzles.length);
       const fl = look.core.luminance;
-      const cl = fl * (1 + (look.core.vacuumGain - 1) * (c.nozzles[0]?.shape.vacuum ?? 0));
+      const cl = fl;
+      const vacuum = c.nozzles[0]?.shape.vacuum ?? 0;
       put(I, o + 16, look.core.color[0] * cl, look.core.color[1] * cl, look.core.color[2] * cl, look.core.radius);
       put(I, o + 20, look.diamonds.color[0] * cl, look.diamonds.color[1] * cl, look.diamonds.color[2] * cl, look.diamonds.gain);
       const sl = look.shear.luminance;
@@ -432,8 +466,8 @@ export class PlumeRenderer {
         put(I, o + 48, 0, 1, 0, 1);
         put(I, o + 52, 1, 1, 1, 0);
       }
-      put(I, o + 56, pc.probe, 0, 0, reMax);
-      put(I, o + 60, c.coneR0, c.coneSlope, 0, 0);
+      put(I, o + 56, pc.probe, look.smoke.halo, 1 / (look.smoke.lengthRe * reMax), reMax);
+      put(I, o + 60, c.coneR0, c.coneSlope, 1 + (look.core.vacuumGain - 1) * vacuum, look.core.vacuumCoreRe * reMax);
       for (let k = 0; k < c.nozzles.length; k++) {
         const nz = c.nozzles[k]!;
         const p = pc.nozzlePos[k]!;
@@ -445,7 +479,11 @@ export class PlumeRenderer {
         shapeVec(N, q + 8, nz.shape);
         put(N, q + 12, nz.shape.shockSpacing, nz.shape.cellAmp, nz.shape.coreLength, nz.shape.oxygen);
         put(N, q + 16, nz.shape.shearLength, nz.shape.afterLength, nz.front, nz.flash);
-        put(N, q + 20, nz.seed, nz.residual, 0, 0);
+        // Every nozzle has its own cells and its own flicker: engines never run alike to the per cent.
+        const hs = (nz.seed * 0.6180339887) % 1;
+        const cellShift = 0.3 * hs + 0.035 * Math.sin(noiseTime * (17 + (nz.seed % 7) * 2.3) + nz.seed);
+        const flicker = 1 + 0.07 * Math.sin(noiseTime * (29 + (nz.seed % 11) * 3.1) + nz.seed * 1.7) + 0.04 * Math.sin(noiseTime * (83 + (nz.seed % 5) * 7.3) + nz.seed * 0.9);
+        put(N, q + 20, nz.seed, nz.residual, cellShift, flicker);
         ni++;
       }
       this.placed.push(pc);

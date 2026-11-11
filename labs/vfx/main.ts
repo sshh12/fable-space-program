@@ -10,7 +10,7 @@
  * debug interface of the feature.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import { DEG, v3, type Vec3, type Vec3Tuple } from '@/core/math';
+import { DEG, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createVfxFeature, type VfxFeature } from '@/render/vfx';
 import { LabSim, utForSunElevation } from './labSim';
@@ -36,6 +36,15 @@ export interface VfxLab {
   setCamera(c: Partial<SceneCamera>): void;
   /** Site-frame (east, north, up) position of a vessel. */
   vesselEnu(id: string): Vec3;
+  /** Site-frame position of the middle of a vessel's burning nozzle exits (of its origin when nothing burns). */
+  nozzleEnu(id: string): Vec3;
+  /** Mean unit exhaust direction of a vessel's burning nozzles in the site frame (down when nothing burns). */
+  plumeAxisEnu(id: string): Vec3;
+  /**
+   * Put the camera side-on to the first `length` metres of a vessel's plume, far enough away for them to
+   * fill `fill` of the frame's height (the camera no longer follows the vessel).
+   */
+  framePlume(id: string, length: number, fill?: number): void;
   /**
    * Stop the animation loop and render exactly `frames` frames of 1/60 s, advancing the sim (`advance` true)
    * or not. The loop stays stopped (for exact readbacks); `resume()` starts it again.
@@ -160,6 +169,46 @@ async function boot(): Promise<void> {
       placeCamera();
     },
     vesselEnu: (id) => v3.clone(sim.vessel(id).enu),
+    nozzleEnu(id) {
+      const v = sim.vessel(id);
+      let sum = v3.zero();
+      let n = 0;
+      for (const e of sim.engines(v)) {
+        if (e.state.throttleActual <= 0) continue;
+        for (const nz of e.def.nozzles) {
+          const inVessel = v3.add(quat.rotate(e.part.localRot, v3.fromTuple(nz.pos)), e.part.localPos);
+          sum = v3.add(sum, v3.add(v.enu, quat.rotate(v.qVesToEnu, inVessel)));
+          n++;
+        }
+      }
+      return n > 0 ? v3.scale(sum, 1 / n) : v3.clone(v.enu);
+    },
+    plumeAxisEnu(id) {
+      const v = sim.vessel(id);
+      let sum = v3.zero();
+      for (const e of sim.engines(v)) {
+        if (e.state.throttleActual <= 0) continue;
+        for (const nz of e.def.nozzles) sum = v3.add(sum, quat.rotate(v.qVesToEnu, quat.rotate(e.part.localRot, v3.fromTuple(nz.dir))));
+      }
+      return v3.lenSq(sum) > 1e-9 ? v3.normalize(sum) : { x: 0, y: 0, z: -1 };
+    },
+    framePlume(id, length, fill = 0.8) {
+      const from = lab.nozzleEnu(id);
+      const axis = lab.plumeAxisEnu(id);
+      let side = v3.cross(axis, { x: 0, y: 0, z: 1 });
+      side = v3.lenSq(side) < 1e-6 ? { x: Math.sin(camera.yawDeg * DEG), y: Math.cos(camera.yawDeg * DEG), z: 0 } : v3.normalize(side);
+      // Of the two sides, the one the camera is on already.
+      const out = { x: Math.sin(camera.yawDeg * DEG), y: Math.cos(camera.yawDeg * DEG), z: 0 };
+      if (v3.dot(side, out) < 0) side = v3.neg(side);
+      const fov = (camera.fovDeg ?? 45) * DEG;
+      lab.setCamera({
+        follow: undefined,
+        target: v3.addScaled(from, axis, 0.5 * length),
+        yawDeg: Math.atan2(side.x, side.y) / DEG,
+        pitchDeg: Math.asin(Math.max(-1, Math.min(1, side.z))) / DEG,
+        distance: (0.5 * length) / Math.tan(fov / 2) / fill,
+      });
+    },
     async renderExact(frames, advance) {
       app.setLoop(false);
       app.setPaused(!advance);

@@ -4,8 +4,10 @@
  * A trail is a polyline of nodes fixed in the body frame (the air co-rotates with the body, and nothing
  * blows: the tube only widens by its initial momentum and by diffusion, and thins as it widens). Each
  * segment is a tube with a Gaussian cross-section whose optical depth along a view ray has a closed form,
- * so there is no march and no noise: one box per segment in the half-resolution volume pass, cut at the
- * planes it shares with its neighbours.
+ * so there is no march: one box per segment in the half-resolution volume pass, cut at the planes it shares
+ * with its neighbours. Towards its newest end a trail thins out to nothing over its taper length (what is
+ * drawn there is the plume or the wake itself), and a tube the eye stands in is not drawn: seen from inside,
+ * a tube of uniform gas is a flat veil over the whole frame.
  *
  *  - exhaust smoke: grey, short-lived, strongest low in the atmosphere;
  *  - condensation: white and persistent where the air is cold and dense enough (upper troposphere);
@@ -17,10 +19,11 @@ import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { Tracked } from '@/render/core';
 import type { VfxCommon } from './common';
 import type { VfxData } from './data';
+import type { FragmentTrail } from './fireball';
 import type { PlacedCluster } from './plumes';
 import type { EmitterHint, VolumeItem } from './volumes';
 
-const SEG_FLOATS = 32;
+const SEG_FLOATS = 36;
 const CHUNK = 8;
 
 export interface TrailNode {
@@ -31,6 +34,8 @@ export interface TrailNode {
   radius0: number;
   /** Speed of the initial spreading, m/s (exhaust momentum; small for a wake). */
   spread: number;
+  /** Diffusivity of this node's gas, m^2/s (default: the trail data's). */
+  diffusivity?: number;
   /** Optical depth across the diameter at birth: exhaust smoke and condensation. */
   smoke0: number;
   contrail0: number;
@@ -47,6 +52,8 @@ export interface Trail {
   /** The moving end at the vehicle. */
   head: TrailNode | null;
   lastEmit: number;
+  /** Length over which the trail fades in from its newest end, m. */
+  taper: number;
 }
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -56,7 +63,7 @@ const smooth = (a: number, b: number, x: number): number => {
 
 /** Radius of a node at `age` seconds: initial momentum, then diffusion. */
 export function trailRadius(data: VfxData['trail'], node: TrailNode, age: number): number {
-  return node.radius0 + node.spread * data.expansionTime * (1 - Math.exp(-age / data.expansionTime)) + Math.sqrt(4 * data.diffusivity * Math.max(age, 0));
+  return node.radius0 + node.spread * data.expansionTime * (1 - Math.exp(-age / data.expansionTime)) + Math.sqrt(4 * (node.diffusivity ?? data.diffusivity) * Math.max(age, 0));
 }
 
 /** Optical depths across the diameter and glow of a node at `age`: [smoke, condensation, glow luminance]. */
@@ -85,6 +92,7 @@ struct TrailSeg {
   albedoB: vec4f,    // rgb, w = glow at B
   noise: vec4f,      // xyz = noise coordinate of node A, w = noise scale (1/m)
   glow: vec4f,       // rgb = glow colour, w = noise amount
+  taper: vec4f,      // x, y = distance of A and of B from the newest end of the trail along it (m), z = taper length (m), w = unused
 }
 @group(2) @binding(0) var<storage, read> trailSegs: array<TrailSeg>;
 
@@ -161,8 +169,14 @@ struct FOut {
   let tMid = clamp(tm, ta, tb);
   let along = saturate(dot(d * tMid - s.a.xyz, ux) / len);
   var radius = mix(s.a.w, s.b.w, along);
-  var tau0 = mix(s.na.w, s.nb.w, along);
-  var glowLum = mix(s.albedoA.w, s.albedoB.w, along);
+  // Thinning out towards the newest end, and gone where the eye is inside the tube (within a few radii of
+  // its axis, anywhere along this stretch of it).
+  let eyeAlong = -dot(s.a.xyz, ux);
+  let eyeNear = length(aPerp) / max(radius, 1e-3);
+  let eyeBy = smoothstep(-30.0 * radius, -10.0 * radius, eyeAlong) * (1.0 - smoothstep(len + 10.0 * radius, len + 30.0 * radius, eyeAlong));
+  let show = smoothstep(0.0, 1.0, mix(s.taper.x, s.taper.y, along) / max(s.taper.z, 1e-3)) * mix(1.0, smoothstep(1.2, 3.0, eyeNear), eyeBy);
+  var tau0 = mix(s.na.w, s.nb.w, along) * show;
+  var glowLum = mix(s.albedoA.w, s.albedoB.w, along) * show;
   let albedo = mix(s.albedoA.rgb, s.albedoB.rgb, along);
   // Turbulent structure fixed in the air: it modulates the radius and the amount.
   let closest = d * tMid;
@@ -246,7 +260,7 @@ export class TrailSystem {
     this.pipeline.get();
   }
 
-  private trail(key: string, bodyId: string): Trail {
+  private trail(key: string, bodyId: string, taper: number): Trail {
     let t = this.trails.get(key);
     if (!t || t.bodyId !== bodyId) {
       if (!t && this.trails.size >= this.data.trail.maxTrails) {
@@ -255,9 +269,10 @@ export class TrailSystem {
         for (const x of this.trails.values()) if (!oldest || x.lastEmit < oldest.lastEmit) oldest = x;
         if (oldest) this.trails.delete(oldest.key);
       }
-      t = { key, bodyId, nodes: [], head: null, lastEmit: -1e9 };
+      t = { key, bodyId, nodes: [], head: null, lastEmit: -1e9, taper };
       this.trails.set(key, t);
     }
+    t.taper = taper;
     return t;
   }
 
@@ -276,8 +291,8 @@ export class TrailSystem {
     t.head = node;
   }
 
-  /** Feed the trails from this frame's plume clusters and reentering vessels, age them, and pack the segments. */
-  update(frame: FrameContext, clusters: PlacedCluster[], effectTime: number): void {
+  /** Feed the trails from this frame's plume clusters, reentering vessels and burning fragments, age them, and pack the segments. */
+  update(frame: FrameContext, clusters: PlacedCluster[], effectTime: number, fragments: readonly FragmentTrail[] = []): void {
     const D = this.data.trail;
     const R = this.data.reentry;
     const snap: SimSnapshot = frame.snapshot;
@@ -305,7 +320,7 @@ export class TrailSystem {
       const contrail = D.contrailOpticalDepth * c.look.trail.contrail * throttle * contrailFactor(D, vessel.aero.temperature, c.ambientPressure);
       if (smoke + contrail < 0.01) continue;
       const at = v3.addScaled(pc.originRelCam, pc.axisX, Math.min(c.length * 0.5, 30 * reEff));
-      this.feed(this.trail(c.key, vessel.bodyId), { pos: toFixed(vessel.bodyId, at), born: effectTime, radius0: D.initialRadiusRe * reEff, spread: D.expansionSpeed, smoke0: smoke, contrail0: contrail, glow0: 0, glowLife: 1, glowColor: [0, 0, 0] }, effectTime);
+      this.feed(this.trail(c.key, vessel.bodyId, D.taperRadii * D.initialRadiusRe * reEff), { pos: toFixed(vessel.bodyId, at), born: effectTime, radius0: D.initialRadiusRe * reEff, spread: D.expansionSpeed, smoke0: smoke, contrail0: contrail, glow0: 0, glowLife: 1, glowColor: [0, 0, 0] }, effectTime);
       fed.add(c.key);
     }
 
@@ -317,16 +332,27 @@ export class TrailSystem {
       if (!pose || speed < 500) continue;
       let radius = 0.5;
       for (const p of vessel.parts) radius = Math.max(radius, this.ctx.defs.parts[p.def]?.bounds.radius ?? 0);
-      const at = v3.addScaled(pose.originRelCam, vessel.aero.airVelocity, (-3 * radius) / speed);
+      // The trail starts at the vessel and fades in over the length of the wake volume, which is what is seen there.
+      const at = v3.addScaled(pose.originRelCam, vessel.aero.airVelocity, (-0.5 * radius) / speed);
       const k = smooth(R.colorSpeeds[0], R.colorSpeeds[2], speed);
       const color: Vec3Tuple = [0, 1, 2].map((i) => R.colors[0][i]! + (R.colors[2][i]! - R.colors[0][i]!) * k) as Vec3Tuple;
       const key = `reentry|${vessel.id}`;
       this.feed(
-        this.trail(key, vessel.bodyId),
+        this.trail(key, vessel.bodyId, R.wakeLengthRadii * radius * (0.3 + 0.7 * Math.min(1, plasma))),
         { pos: toFixed(vessel.bodyId, at), born: effectTime, radius0: R.trail.radiusScale * radius, spread: 0.1 * D.expansionSpeed, smoke0: R.trail.smoke * plasma, contrail0: 0, glow0: R.trail.luminance * Math.pow(plasma, R.fluxExponent), glowLife: R.trail.lifetime, glowColor: color },
         effectTime,
       );
       fed.add(key);
+    }
+
+    for (const f of fragments) {
+      if (f.smoke <= 0 && f.glow <= 0) continue;
+      this.feed(
+        this.trail(f.key, f.bodyId, 2 * f.radius),
+        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.1 * D.expansionSpeed, diffusivity: 0.08 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.22, glowColor: f.color },
+        effectTime,
+      );
+      fed.add(f.key);
     }
 
     // Age: drop nodes that no longer show, and trails with nothing left.
@@ -382,6 +408,9 @@ export class TrailSystem {
         const a = Math.max(0.5 * lengthAcross, 1e-3);
         this.hints.push({ rel: v3.scale(centre, 1 / area), a, b: area / (Math.PI * a), luminance: lumArea / area });
       }
+      // Distance of every node from the newest end, along the trail.
+      const fromEnd = new Array<number>(list.length).fill(0);
+      for (let i = list.length - 2; i >= 0; i--) fromEnd[i] = fromEnd[i + 1]! + v3.dist(rel[i]!, rel[i + 1]!);
       const reverse = v3.lenSq(rel[0]!) < v3.lenSq(rel[rel.length - 1]!);
       const first = count;
       for (let k = 0; k + 1 < list.length && count < this.maxSegs; k++) {
@@ -401,8 +430,9 @@ export class TrailSystem {
         const frac = (x: number): number => x * scale - Math.floor(x * scale);
         S.set([frac(nodeA.pos.x), frac(nodeA.pos.y), frac(nodeA.pos.z), scale], o + 24);
         const gc = nodeA.glow0 > 0 ? nodeA.glowColor : list[i + 1]!.glowColor;
-        // A glowing wake is smooth gas, not a billowing cloud.
-        S.set([gc[0], gc[1], gc[2], nodeA.glow0 > 0 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
+        // A wake that glows for seconds is smooth gas, not a billowing cloud.
+        S.set([gc[0], gc[1], gc[2], nodeA.glow0 > 0 && nodeA.glowLife > 2 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
+        S.set([fromEnd[i]!, fromEnd[i + 1]!, t.taper, 0], o + 32);
         count++;
       }
       for (let c0 = first; c0 < count; c0 += CHUNK) {

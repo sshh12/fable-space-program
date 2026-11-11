@@ -64,13 +64,19 @@ fn canopyPoint(I: CanopyInst, s: f32, gc: f32) -> vec3f {
   let taut = smoothstep(0.02, 0.4, infl);
   var r = pr.x * R;
   var y = pr.y * R;
-  // Pillowing between the radial tapes, breathing of the whole canopy, flutter of the skirt (more when slack).
+  // Pillowing between the radial tapes; a canopy that is not filled hangs in pleats, gore by gore.
   r *= 1.0 + (0.02 + 0.035 * taut) * sin(PI * u);
-  r *= 1.0 + 0.012 * gain * sin(time * 1.9 + seed * 6.28);
   let slack = 1.0 - 0.75 * taut;
+  let pleat = (abs(sin(PI * u)) - 0.637) * select(-1.0, 1.0, (u32(floor(gc)) & 1u) == 0u);
+  r *= 1.0 + slack * 0.2 * pleat * (0.35 + 0.65 * s);
+  // Breathing of the whole canopy (two slow beats), flutter of the skirt (more when slack) and cloth waves
+  // that travel down the gores and round the canopy.
+  r *= 1.0 + gain * (0.03 * sin(time * 1.9 + seed * 6.28) + 0.014 * sin(time * 3.3 + seed * 2.1));
   let wave = 0.6 * sin(theta * 5.0 + time * 7.0 + seed * 17.0) + 0.4 * sin(theta * 9.0 - time * 11.0 + seed * 5.0);
-  r *= 1.0 + gain * slack * 0.1 * s * s * wave;
-  y += gain * slack * 0.06 * R * s * s * sin(theta * 3.0 + time * 5.0 + seed * 3.0);
+  r *= 1.0 + gain * (0.03 + 0.1 * slack) * s * s * wave;
+  let ripple = 0.6 * sin(s * 15.0 - time * 9.0 + theta * 3.0 + seed * 11.0) + 0.4 * sin(s * 26.0 + time * 13.0 - theta * 7.0 + seed * 5.0);
+  r *= 1.0 + gain * (0.011 + 0.03 * slack) * (0.25 + 0.75 * s) * ripple;
+  y += gain * (0.012 + 0.06 * slack) * R * s * s * sin(theta * 3.0 + time * 5.0 + seed * 3.0);
   var p = vec3f(cos(theta) * r, y, sin(theta) * r);
   // A streaming canopy whips sideways, most at its free end.
   let whip = (1.0 - smoothstep(0.0, 0.08, infl)) * gain * 0.22 * R * pr.y;
@@ -244,6 +250,8 @@ interface CanopyPlacement {
   fade: number;
   seed: number;
   flutter: number;
+  /** A canopy that has been cut away: unit direction its loose lines hang in (ROOT axes). */
+  slackDown?: Vec3;
   /** For the hand-over to a drifting canopy: velocity in domain axes, and who it belongs to. */
   velDom: Vec3;
   owner: { vesselId: string; partId: string; module: number };
@@ -548,8 +556,13 @@ export class ChuteSystem {
         prevX: X,
         prevY: Y,
         prevZ: Z,
-        confluence: v3.addScaled(v3.addScaled(origin, Y, -0.45 * p.suspension), quat.rotate(dom.q, dom.up), -0.45 * p.suspension),
+        // The lines carry nothing any more: they hang from the skirt in a loose bundle that swings a little.
+        confluence: v3.add(
+          v3.addScaled(v3.addScaled(origin, Y, -0.2 * p.suspension), quat.rotate(dom.q, dom.up), -0.7 * p.suspension),
+          v3.scale(X, 0.12 * p.suspension * Math.sin(0.9 * age + 7 * p.seed)),
+        ),
         attach: null,
+        slackDown: v3.neg(quat.rotate(dom.q, dom.up)),
         shred: d.mode === 'failed' ? Math.min(0.92, 0.25 + 0.7 * (age / S.time)) : 0,
         fade: 1 - Math.min(1, Math.max(0, (age - 0.7 * C.fadeTime) / (0.3 * C.fadeTime))),
         flutter: d.down ? 0.15 : 2.2,
@@ -582,13 +595,19 @@ export class ChuteSystem {
       // Lines: one per gore from the confluence to the skirt, and the riser.
       const prof = this.profile(p.style, p.inflation);
       const mouth = prof.r[PROFILE_SAMPLES - 1]! * p.radius;
-      const lineColor = [0.78, 0.76, 0.7];
+      const lineColor = s.def.lineColor;
       const gores = s.def.gores;
-      const step = p.shred > 0 ? 2 : 1;
+      const step = p.shred > 0 || p.slackDown ? 2 : 1;
       for (let g = 0; g < gores; g += step) {
         const th = (g / gores) * 2 * Math.PI;
         const at = v3.add(p.origin, v3.add(v3.scale(p.X, Math.cos(th) * mouth), v3.scale(p.Z, Math.sin(th) * mouth)));
-        addLine(p.confluence, at, s.def.lineWidth, p.fade, lineColor);
+        if (p.slackDown) {
+          // Slack: each line sags below the straight way from the skirt to the bundle, each by its own amount.
+          const sag = 0.2 * p.suspension * (0.55 + 0.45 * Math.sin(g * 1.7 + 9 * p.seed));
+          const mid = v3.addScaled(v3.lerp(at, p.confluence, 0.55), p.slackDown, sag);
+          addLine(at, mid, s.def.lineWidth, p.fade, lineColor);
+          addLine(mid, p.confluence, s.def.lineWidth, p.fade, lineColor);
+        } else addLine(p.confluence, at, s.def.lineWidth, p.fade, lineColor);
       }
       if (p.attach) addLine(p.attach, p.confluence, s.def.lineWidth * 3, p.fade, lineColor);
     }

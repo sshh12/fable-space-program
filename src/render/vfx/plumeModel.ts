@@ -95,6 +95,9 @@ export function jetBoundaryRadius(shape: JetShape, exitRadius: number, x: number
   return inviscid + shape.mixSlope * (xc - shape.mixDev * (1 - Math.exp(-xc / shape.mixDev)));
 }
 
+/** Luminance of a sunlit column of particulates per unit of scattering optical depth: 128,000 lx / 4 pi, cd/m^2. */
+export const SUN_SCATTER_LUMINANCE = 128000 / (4 * Math.PI);
+
 /** Default cut-off of the visible extent: fraction of the exit column brightness. */
 export const DEFAULT_VISIBLE_FRACTION = 5e-4;
 
@@ -109,10 +112,15 @@ export function jetBulkRadius(shape: JetShape, exitRadius: number, x: number): n
   return Math.min(jetBoundaryRadius(shape, exitRadius, x), 2 * exitRadius + BULK_SLOPE * Math.max(x, 0));
 }
 
-/** Relative column brightness of the core seen side-on at x (1 at the exit plane). */
-function columnBrightness(shape: JetShape, re: number, x: number, exponent: number): number {
+/**
+ * Relative column brightness of the core seen side-on at x (1 at the exit plane). `farGain` / `nearLength`:
+ * what the thin gas far from the nozzle radiates relative to the gas at the exit, and the distance over
+ * which the emission falls to that (the vacuum gain of the look; 1 at sea level).
+ */
+function columnBrightness(shape: JetShape, re: number, x: number, exponent: number, farGain: number, nearLength: number): number {
   const rb = jetBulkRadius(shape, re, x);
-  return Math.pow(re / rb, 2 * exponent - 1) * Math.exp(-x / shape.coreLength);
+  const thin = 1 + (farGain - 1) * (1 - Math.exp(-x / nearLength));
+  return Math.pow(re / rb, 2 * exponent - 1) * Math.exp(-x / shape.coreLength) * thin;
 }
 
 /**
@@ -178,13 +186,20 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   // afterburning terms: three e-folding lengths while there is air to burn with.
   const EPS = Math.min(5e-3, Math.max(1e-7, options.visibleFraction ?? DEFAULT_VISIBLE_FRACTION));
   const exponent = look.core.densityExponent;
+  const farGain = 1 + (look.core.vacuumGain - 1) * vacuum;
+  const nearLength = look.core.vacuumCoreRe * re;
+  // What is seen of a jet is its glowing core or, for a smoky one, its particulates in sunlight (taken at
+  // full sun: the extent is a bound), whichever is brighter relative to the exit brightness of the core.
+  const smokeGain = (look.smoke.sunScatter * SUN_SCATTER_LUMINANCE) / Math.max(look.core.luminance, 1);
+  const smokeAt = (x: number): number => smokeGain * (re / jetBulkRadius(shape, re, x)) * Math.exp(-x / (look.smoke.lengthRe * re));
+  const brightness = (x: number): number => Math.max(columnBrightness(shape, re, x, exponent, farGain, nearLength), smokeAt(x));
   let lo = 0;
-  let hi = 8 * coreLength;
-  if (columnBrightness(shape, re, hi, exponent) > EPS) lo = hi;
+  let hi = Math.max(8 * coreLength, smokeGain > EPS ? 4 * look.smoke.lengthRe * re : 0);
+  if (brightness(hi) > EPS) lo = hi;
   else {
     for (let i = 0; i < 40; i++) {
       const mid = 0.5 * (lo + hi);
-      if (columnBrightness(shape, re, mid, exponent) > EPS) lo = mid;
+      if (brightness(mid) > EPS) lo = mid;
       else hi = mid;
     }
   }
@@ -194,11 +209,14 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   for (let i = 1; i <= 24; i++) {
     const x = (shape.visibleLength * i) / 24;
     const rb = jetBoundaryRadius(shape, re, x);
-    const b = columnBrightness(shape, re, x, exponent);
+    const b = brightness(x);
     // Gaussian core of width core.radius x bulk radius: radius where it has dropped to EPS of the exit brightness.
     const core = b > EPS ? look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(b / EPS)) : 0;
     const shear = x < burn ? rb * 1.5 : 0;
-    radius = Math.max(radius, core, shear);
+    // Particulates: a core 1.3 times as wide as the glow, or the whole cross-section of the jet.
+    const s = smokeAt(x);
+    const smoke = s > EPS ? (look.smoke.halo > 0.5 ? 1.1 * rb : 1.3 * look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(s / EPS))) : 0;
+    radius = Math.max(radius, core, shear, smoke);
   }
   shape.visibleRadius = radius;
   return shape;

@@ -266,8 +266,10 @@ fn glow(T: f32) -> vec3f {
   let probe = vfxProbes[0];
   var lit = p.aux.x;
   if (kind != KIND_SPARK && ((id.x + u32(vfx.misc.x)) & 3u) == 0u) {
+    // One jittered shadow tap every fourth step, smoothed over about a quarter of a second: a particle at
+    // the edge of a shadow fades across it and does not flicker with the jitter.
     let s = sampleSunShadow(rel, frame.sunDir.xyz, vec2u(id.x & 63u, (id.x >> 6u) & 63u));
-    lit = mix(lit, s, 0.5);
+    lit = mix(lit, s, 0.22);
   }
   p.aux.x = lit;
   let fade = smoothstep(0.0, 0.06 * p.life + 0.01, p.age) * (1.0 - smoothstep(0.65 * p.life, p.life, p.age));
@@ -303,6 +305,8 @@ const RENDER_WGSL = /* wgsl */ `
 ${PARTICLE_WGSL}
 @group(2) @binding(0) var<uniform> pu: ParticleU;
 @group(2) @binding(1) var<storage, read> particles: array<Particle>;
+@group(2) @binding(2) var volumeTex: texture_2d<f32>;        // the half-resolution volume image: a = opacity
+@group(2) @binding(3) var volumeMomentTex: texture_2d<f32>;  // r = weight x log2(distance), g = weight
 
 struct VOut {
   @builtin(position) clip: vec4f,
@@ -331,16 +335,18 @@ struct VOut {
   // Streak length = relative speed x exposure time: long for the fast, fine stuff, none for puffs.
   var stretch = 1.0;
   if (kind == KIND_DUST) { stretch = 3.0; }
+  if (kind == KIND_DROPLET) { stretch = 2.0; }
   if (kind == KIND_GAS || kind == KIND_MIST) { stretch = 0.0; }
   if (kind == KIND_ICE || kind == KIND_CHIP) { stretch = 0.35; }
   var axis = frame.cameraRight.xyz;
   if (speed > 1e-3) { axis = vperp / speed; }
   let side = normalize(cross(V, axis));
-  // Never thinner than about a pixel: widen and dim instead.
+  // Never smaller than a pixel across: widen and dim instead (a dot smaller than the pixel grid is there in
+  // one jittered frame and gone in the next, and the temporal filter turns that into flicker).
   let pixel = viewZ / pu.flags.w;
   var radius = p.size;
   var alpha = p.lum.a;
-  let minR = 0.65 * pixel;
+  let minR = 1.0 * pixel;
   if (radius < minR) { alpha *= pow(radius / minR, 1.5); radius = minR; }
   // A particle that fills the view fades out (the eye is inside the cloud).
   alpha *= saturate(2.0 - radius / (220.0 * pixel));
@@ -361,14 +367,33 @@ struct VOut {
   let r = length(vec2f(max(abs(in.local.x) - in.half, 0.0), in.local.y));
   if (r >= 1.0) { discard; }
   let kind = in.info.z;
-  var fall = 1.0 - smoothstep(0.55, 1.0, r);
+  var fall = 1.0 - smoothstep(0.3, 1.0, r);
   if (kind == KIND_GAS || kind == KIND_MIST) { fall = exp(-3.5 * r * r) * (1.0 - smoothstep(0.7, 1.0, r)); }
+  if (kind == KIND_DUST || kind == KIND_DROPLET) {
+    // A soft streak: no edge across it, and it thins out towards both ends.
+    let u = in.local.x / (in.half + 1.0);
+    let ends = 1.0 - u * u;
+    fall = exp(-3.2 * in.local.y * in.local.y) * (1.0 - smoothstep(0.75, 1.0, abs(in.local.y))) * ends * ends;
+  }
   let sceneZ = viewZFromDepth(textureLoad(sceneDepthTex, vec2i(in.clip.xy), 0));
   let soft = saturate((sceneZ - in.info.w) / in.info.y);
-  let a = in.lum.a * fall * soft;
   let uv = in.clip.xy * frame.renderSize.zw;
+  // The half-resolution volumes are in the image already. A particle behind what they show is hidden by
+  // their opacity, and where they glow in front of it, it must not cover that glow.
+  let vol = textureSampleLevel(volumeTex, linearClamp, uv, 0.0);
+  let mom = textureSampleLevel(volumeMomentTex, linearClamp, uv, 0.0).rg;
+  var seen = 1.0;
+  var under = 0.0;
+  if (mom.g > 1e-3) {
+    let tv = exp2(mom.r / mom.g);
+    let behind = smoothstep(0.9 * tv, 1.1 * tv + 0.5, in.info.x);
+    let glow = luminance(vol.rgb);
+    seen = 1.0 - behind * saturate(vol.a);
+    under = behind * glow / (glow + 0.5);
+  }
+  let a = in.lum.a * fall * soft * seen;
   // Glowing particles add light and hide nothing.
-  let cover = select(a, 0.0, kind == KIND_SPARK);
+  let cover = select(a * (1.0 - under), 0.0, kind == KIND_SPARK);
   let c = vfxAtmosphere(uv, in.info.x, in.lum.rgb * a, cover);
   return vec4f(writeHdr(c.rgb), saturate(c.a));
 }
@@ -385,7 +410,9 @@ export class ParticleSystem {
   private readonly emitterData = new Float32Array(MAX_EMITTERS * EMITTER_FLOATS);
   private readonly emitterBuffer: GPUBuffer;
   private readonly computeGroup: GPUBindGroup;
-  private readonly renderGroup: GPUBindGroup;
+  private readonly renderLayout: GPUBindGroupLayout;
+  private renderGroup: GPUBindGroup | null = null;
+  private renderVersion = -1;
   private readonly emitPipeline: GPUComputePipeline;
   private readonly simPipeline: GPUComputePipeline;
   private readonly renderPipeline: Tracked<GPURenderPipeline>;
@@ -393,9 +420,11 @@ export class ParticleSystem {
   private cursor = 0;
   private spawnNow = 0;
   private live = 0;
-  /** Births by time: [effect time, count]; the live window is what was born within the longest lifetime. */
+  /**
+   * Births in ring order: [effect time by which all of them are dead, count]. The live window reaches back
+   * to the oldest batch that can still hold a living particle.
+   */
   private births: [number, number][] = [];
-  private readonly maxLife = 40;
   private needsClear = false;
   /** Particles spawned in total (diagnostics). */
   spawnedTotal = 0;
@@ -419,13 +448,15 @@ export class ParticleSystem {
         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
       ],
     });
-    const renderLayout = device.createBindGroupLayout({
+    const renderLayout = (this.renderLayout = device.createBindGroupLayout({
       label: 'vfx.particles.render',
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       ],
-    });
+    }));
     this.computeGroup = device.createBindGroup({
       label: 'vfx.particles.compute',
       layout: computeLayout,
@@ -435,7 +466,6 @@ export class ParticleSystem {
         { binding: 2, resource: { buffer: this.buffer } },
       ],
     });
-    this.renderGroup = device.createBindGroup({ label: 'vfx.particles.render', layout: renderLayout, entries: [{ binding: 0, resource: { buffer: this.simBuffer } }, { binding: 1, resource: { buffer: this.buffer } }] });
     const computeModule = ctx.shaders.createModule('vfx.particles.compute', COMPUTE_WGSL);
     const pipelineLayout = device.createPipelineLayout({ label: 'vfx.particles.compute', bindGroupLayouts: [ctx.frameBindGroupLayout, common.layout, computeLayout] });
     this.emitPipeline = device.createComputePipeline({ label: 'vfx.particles.emit', layout: pipelineLayout, compute: { module: computeModule, entryPoint: 'emit' } });
@@ -471,7 +501,7 @@ export class ParticleSystem {
     this.cursor = 0;
   }
 
-  /** Upper bound of living particles. */
+  /** Size of the live window of the ring: an upper bound of the living particles (`read()` counts them exactly). */
   get alive(): number {
     return this.live;
   }
@@ -481,6 +511,7 @@ export class ParticleSystem {
     const E = this.emitterData;
     let total = 0;
     let count = 0;
+    let expiry = 0;
     for (const e of this.queue) {
       const n = Math.min(Math.floor(e.count), this.maxSpawn - total);
       if (n <= 0) break;
@@ -496,15 +527,16 @@ export class ParticleSystem {
       E.set([e.seed >>> 0, e.speedExponent ?? 1, e.aux?.[0] ?? 0, e.aux?.[1] ?? 0], o + 32);
       total += n;
       count++;
+      expiry = Math.max(expiry, effectTime + e.life[1] + 0.1);
     }
     this.queue = [];
     this.spawnNow = total;
     this.spawnedTotal += total;
     if (count > 0) this.device.queue.writeBuffer(this.emitterBuffer, 0, E, 0, count * EMITTER_FLOATS);
 
-    // Live window: everything born within the longest lifetime, plus this frame's births.
-    if (total > 0) this.births.push([effectTime, total]);
-    while (this.births.length > 0 && effectTime - this.births[0]![0] > this.maxLife) this.births.shift();
+    // Live window: from the oldest batch that may still hold a living particle to this frame's births.
+    if (total > 0) this.births.push([expiry, total]);
+    while (this.births.length > 0 && effectTime > this.births[0]![0]) this.births.shift();
     let live = 0;
     for (const b of this.births) live += b[1];
     this.live = Math.min(this.pool, live);
@@ -561,9 +593,17 @@ export class ParticleSystem {
     pass.end();
   }
 
-  /** drawTransparent: one instanced draw of the live window. */
-  draw(pass: GPURenderPassEncoder): void {
+  /** drawTransparent: one instanced draw of the live window, after (and aware of) the half-resolution volume image. */
+  draw(pass: GPURenderPassEncoder, image: { color: GPUTextureView; moment: GPUTextureView; version: number }): void {
     if (this.live === 0) return;
+    if (!this.renderGroup || image.version !== this.renderVersion) {
+      this.renderVersion = image.version;
+      this.renderGroup = this.device.createBindGroup({
+        label: 'vfx.particles.render',
+        layout: this.renderLayout,
+        entries: [{ binding: 0, resource: { buffer: this.simBuffer } }, { binding: 1, resource: { buffer: this.buffer } }, { binding: 2, resource: image.color }, { binding: 3, resource: image.moment }],
+      });
+    }
     pass.setPipeline(this.renderPipeline.get());
     pass.setBindGroup(1, this.common.bindGroup());
     pass.setBindGroup(2, this.renderGroup);
