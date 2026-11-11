@@ -212,8 +212,6 @@ export function buildFixtures(ctx: CabinContext): void {
   const bags: [number, number, number, number, string, string][] = [
     [-112, 1.72, 0.27, 0.2, 'webbingOrange', 'CREW PREF KIT'],
     [112, 1.72, 0.27, 0.2, 'webbing', 'WET WIPES'],
-    [-60, 1.64, 0.22, 0.17, 'webbing', 'HEADSETS'],
-    [60, 1.64, 0.22, 0.17, 'webbingOrange', 'IFM KIT'],
   ];
   for (const [az, y, w, h, strapMat, label] of bags) stowageBag(ctx, az, y, w, h, strapMat, label);
   const card = wallFrame(ctx, -150, 1.6, plateInset(ctx, -150, 1.6, 0.16, 0.22, 0.004) + 0.004);

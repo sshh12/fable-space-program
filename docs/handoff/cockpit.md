@@ -6,8 +6,8 @@ the physical attitude indicator, the window glass, the cabin light and the crew-
 Owned paths: `src/render/cockpit/**`, `data/defs/visuals/cockpits/**`, `labs/cockpit/**`,
 `tests/browser/cockpit/**`, `tests/unit/cockpit/**`, `tools/cockpit/**`, `public/assets/cockpit/**`, this file.
 
-State: built, reviewed, fixed, then reworked in visual round 1 (section 7: what the critics listed and what
-was done about each item, what is still open). Sections 1-6 describe the package as it is now.
+State: built, reviewed, fixed, reworked in visual rounds 1 and 2 (sections 7 and 8: what the critics listed and
+what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
 
 ## 1. API
 
@@ -118,10 +118,15 @@ cover glass.
 
 ### Light (`lighting.ts`, `occlusion.ts`, `sunmap.ts`, `probe.ts`, `shaders.ts`)
 
-Every interior pixel is lit by the cockpit's shader and written as emission; the G-buffer gets ambient
-occlusion 0. In the core's every-frame cascades the interior is a moving caster drawn as a closed shell
-(lod2 plus the window openings plugged at the inner wall, blown up 3 % about the cabin's centre so that it
-holds every full-detail surface), so the core's sun never reaches the cabin.
+Every interior pixel is lit by the cockpit's shader and written as emission. The G-buffer record is a black,
+rough, standard surface with ambient occlusion 0 (never the cloth path: its shadow lookup turns the normal
+toward the sun and stepped out of the shell, which lit the blankets' rims), so the core's deferred pass adds
+nothing even where its cascades cannot resolve the shell. In the core's every-frame cascades the interior is a
+moving caster drawn as a closed shell (lod2 plus the window openings plugged at the inner wall, blown up 3 %
+about the cabin's centre so that it holds every full-detail surface), so the core's sun never reaches the cabin.
+Debug views: eature.setDebugView(n) / cockpit lab &dbg=n (1 material ids, 2 the sun through the
+apertures, 3 that times the sun map, 4 probe reflection, 5 polygon sources, 6 bounce, 7 sunlight, 8 emission,
+9 face normals, 10 baked AO, 11 albedo); &hull=0 drops the lab's exterior stand-in.
 
 - **Sun.** The core's BRDFs x sun illuminance at the vessel (eclipses, atmosphere, the core's depth-resolved
   cloud shadow, chunk `cloud_shadow`) x the glazing's transmittance x visibility:
@@ -132,8 +137,12 @@ holds every full-detail surface), so the core's sun never reaches the cabin.
   - past the interior's occluders: the cabin's sun map (`sunmap.ts`), 2048^2, one **tile per window the sun
     enters**, fitted to the cross-section of that window's beam: 0.2-0.6 mm texels. Casters: the drawn detail
     level without the enclosure (wall, floor, tunnel, bezel tunnels, blankets), slope-scaled depth bias;
-    receivers: analytic receiver plane, blocker search, 6 x 6 bilinear comparisons over a penumbra of at
-    most 6 mm. Soft goods under a sun that only skims them are shaded by their own relief (a fade).
+    receivers: analytic receiver plane, blocker search (penumbra from the NEAREST blocker), 6 x 6 to 16 x 16
+    bilinear comparisons never more than 1.5 texels apart over a penumbra of at most 6 mm, at least four texels
+    on a receiver the light grazes. Soft goods under a sun that only skims them are shaded by their own relief.
+  - **covered windows**: a window another part of the vessel covers (a part whose visual params.windowPorts
+    lists window ids: the launch escape system's boost cover) lets no sky, sun or glow in until that part is
+    gone (coveredWindows, CockpitFrameStats.covered).
 - **Sources as polygons**: up to 24 Lambertian area lights per pixel (vector form factor): the windows
   (probe radiance about the window axis, seen only within the cone the window's well leaves open, plus the
   window's flickering share of the entry plasma), six floods (`lightsOn`), three displays; each times the
@@ -242,10 +251,15 @@ world-chase-window-night.
   (from a tenth to four tenths of the frame): leaning to the window, the Earth is exposed as from outside.
 - **cockpit-8** (integration lab, resolved cae38b8): the vehicle is created without its opaque outer panes
   when the cockpit is loaded.
-- **cockpit-9** (vfx, OPEN): the entry plasma is not visible from a camera inside the vessel; the cabin is
-  lit by a glow nobody sees (`world-reentry-plasma.png`).
-- **cockpit-10** (core, OPEN): grain of the cascade filter on the window wells (the exterior's geometry) seen
-  through the glass at arm's length.
+- **cockpit-9** (vfx): the sheath is drawn for a camera inside the vessel since c3568bf (the request file was
+  still marked open when this was written); the cockpit draws nothing of the outside itself.
+- **cockpit-10** (core, resolved c417fb0): the cascade filter's grain on the window wells at arm's length.
+- **cockpit-11** (vehicle-pad, resolved 9a5339a): boost cover ports over the hatch window and the commander's
+  forward window, declared as `params.windowPorts`; dark lining. The cockpit reads the ports (covered windows).
+- **cockpit-12** (core, OPEN): interior camera: a highlight bound that grows with the sunlit share and a
+  longer shoulder, so sun patches and Earth-filled windows keep texture.
+- **cockpit-13** (vfx + contract, OPEN): publish the sheath's window radiance as a shared GPU resource, so the
+  cabin's entry light (today the layout's `plasmaLuminance` / `plasmaColor`) matches the panes by construction.
 - cockpit-cs-1 (against the cockpit, resolved 77e2f72): the cabin's cloud shadow through the core's chunk.
 
 ## 6. Known weaknesses (honest)

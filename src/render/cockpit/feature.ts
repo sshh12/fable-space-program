@@ -251,8 +251,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const device = c.device;
       const core = coreOf(c);
       core.shaders.register('cockpit_cabin', CABIN_CHUNK);
-      scene = createSceneBindings(c, 1, CABIN_SCENE_BINDING, ['env', 'atmosphereLuts', 'transparency']);
-      ambientScene = createSceneBindings(c, 1, AMBIENT_SCENE_BINDING, ['env', 'atmosphereLuts', 'cloudShadow']);
+      scene = createSceneBindings(c, 1, CABIN_SCENE_BINDING, ['env', 'atmosphereLuts', 'transparency', 'plasmaWindow']);
+      ambientScene = createSceneBindings(c, 1, AMBIENT_SCENE_BINDING, ['env', 'atmosphereLuts', 'cloudShadow', 'plasmaWindow']);
       ambientBuf = device.createBuffer({ label: 'cockpit.ambient', size: AMBIENT_VEC4S * 16, usage: GPUBufferUsage.STORAGE });
       ambientLayout = device.createBindGroupLayout({
         label: 'cockpit.ambient',
@@ -582,17 +582,17 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         const T = glassTransmittance(model);
         const tint = model.floods[0]?.color ?? [1, 1, 1];
         const r = mat3.fromQuat(q);
-        for (const w of model.windows) {
-          if (frame.lights.length >= 16) break;
-          const p = v3.addScaled(w.centre, w.inward, -model.mould.wallThickness * 0.45);
+        const rel = (p: Vec3): Vec3 => ({ x: r[0] * p.x + r[1] * p.y + r[2] * p.z + origin.x, y: r[3] * p.x + r[4] * p.y + r[5] * p.z + origin.y, z: r[6] * p.x + r[7] * p.y + r[8] * p.z + origin.z });
+        model.windows.forEach((w, i) => {
+          if (covered[i] || frame.lights.length >= 15) return;
           const I = cabinL * w.area;
-          frame.lights.push({
-            kind: 'point',
-            posRelCam: { x: r[0] * p.x + r[1] * p.y + r[2] * p.z + origin.x, y: r[3] * p.x + r[4] * p.y + r[5] * p.z + origin.y, z: r[6] * p.x + r[7] * p.y + r[8] * p.z + origin.z },
-            intensity: [I * T[0] * tint[0], I * T[1] * tint[1], I * T[2] * tint[2]],
-            range: 0.7,
-          });
-        }
+          // In the well: its walls. Then a weaker point a hand's width outside the pane: the glow on the hull
+          // plate round the window, falling off over a metre, so the lit window sits in a silhouette.
+          const pWell = v3.addScaled(w.centre, w.inward, -model.mould.wallThickness * 0.45);
+          frame.lights.push({ kind: 'point', posRelCam: rel(pWell), intensity: [I * T[0] * tint[0], I * T[1] * tint[1], I * T[2] * tint[2]], range: 0.7 });
+          const pOut = v3.addScaled(w.centre, w.inward, -(model.mould.wallThickness + 0.09));
+          frame.lights.push({ kind: 'point', posRelCam: rel(pOut), intensity: [0.35 * I * T[0] * tint[0], 0.35 * I * T[1] * tint[1], 0.35 * I * T[2] * tint[2]], range: 1.4 });
+        });
       }
 
       // ---- bind group (rebuilt when a shared resource is re-published)
@@ -891,8 +891,8 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   // Glass: every window pane, the display cover glasses and the attitude indicator's cover glass.
   const gv: number[] = [];
   const panes: { first: number; count: number; centre: Vec3 }[] = [];
-  // Last vertex attribute: (window index + 1 on a window's cabin-side pane, else 0; reflectance relative to
-  // bare glass): 1 for the windows and the attitude indicator, the coated cover glass's for the displays.
+  // Last vertex attribute: (pane index, reflectance relative to bare glass): 1 for the windows and the
+  // attitude indicator, the coated cover glass's for the displays.
   const fan = (out: number[], centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, index: number, reflectance: number): void => {
     const uvOf = (p: Vec3): [number, number] => [v3.dot(v3.sub(p, centre), ux), v3.dot(v3.sub(p, centre), uy)];
     for (let i = 0; i < outline.length; i++) {
@@ -902,9 +902,9 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
       }
     }
   };
-  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, reflectance = 1, tag = 0): void => {
+  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, reflectance = 1): void => {
     const firstV = gv.length / PANE_FLOATS;
-    fan(gv, centre, outline, n, ux, uy, tag, reflectance);
+    fan(gv, centre, outline, n, ux, uy, panes.length, reflectance);
     panes.push({ first: firstV, count: gv.length / PANE_FLOATS - firstV, centre });
   };
   // The window openings for the cabin probe: each window's cabin-side pane, tagged with the window's index.
@@ -912,7 +912,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   model.windows.forEach((w, wi) => {
     w.panes.forEach((pane, k) => {
       const centre = pane.outline.reduce((s, p) => v3.add(s, v3.scale(p, 1 / pane.outline.length)), v3.zero());
-      pushPane(centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y, 1, k === w.panes.length - 1 ? wi + 1 : 0);
+      pushPane(centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y);
       if (k === w.panes.length - 1) fan(pw, centre, pane.outline, pane.frame.n, pane.frame.x, pane.frame.y, wi, 1);
     });
   });
@@ -942,7 +942,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
       const radial = v3.add(v3.scale(f.x, Math.cos(a)), v3.scale(f.y, Math.sin(a)));
       const p = v3.add(c, v3.add(v3.scale(radial, r), v3.scale(f.n, z - zRim)));
       const n = v3.normalize(v3.add(v3.scale(radial, r), v3.scale(f.n, z)));
-      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, 0, 0.95];
+      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, panes.length, 0.95];
     };
     const firstV = gv.length / PANE_FLOATS;
     for (let k = 0; k < rings; k++) {

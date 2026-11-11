@@ -8,12 +8,12 @@ import { v3, type Vec3 } from '@/core/math';
 import { bvhRay } from '@/render/cockpit/bvh';
 import { meshPositions, sunRange, type CockpitModel } from '@/render/cockpit/build';
 import { FLAG_ENCLOSURE, FLAG_OVERLAY, seatFrames } from '@/render/cockpit/cabin/context';
-import { castCabinRay } from '@/render/cockpit/lighting';
+import { cabinSources, castCabinRay, coveredWindows } from '@/render/cockpit/lighting';
 import { insideDistance } from '@/render/cockpit/mould';
 import { occlusionAt, occlusionSources, type OccSources } from '@/render/cockpit/occlusion';
 import { probeDirection, probeFaceMatrix, PROBE_FACES } from '@/render/cockpit/probe';
 import { sunEnters, sunMapLayout, sunTileUniform } from '@/render/cockpit/sunmap';
-import { testModel } from './helpers';
+import { testDefs, testModel } from './helpers';
 
 let model: CockpitModel;
 let sources: OccSources;
@@ -281,5 +281,32 @@ describe('sun patches', () => {
     const expected = 0.2126 * floor.albedo[0] + 0.7152 * floor.albedo[1] + 0.0722 * floor.albedo[2];
     expect(hit.albedo).toBeCloseTo(expected, 6);
     expect(Math.abs(hit.n.y)).toBeGreaterThan(0.99);
+  });
+});
+
+describe('covered windows', () => {
+  it("take the boost cover's ports from its visual params: every other window is shut while the cover is on", async () => {
+    const defs = await testDefs();
+    const ids = model.windows.map((w) => w.id);
+    const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit === 'kestrel')!;
+    const parts = vehicle.parts.map((p) => p.def);
+    const lib = defs as unknown as Parameters<typeof coveredWindows>[2];
+    const withCover = coveredWindows(ids, parts, lib);
+    const ports = defs.parts['kestrel-les']!.visual!.params['windowPorts'] as unknown as string[];
+    expect(Array.isArray(ports)).toBe(true);
+    ids.forEach((id, i) => expect(withCover[i], id).toBe(!ports.includes(id)));
+    expect(withCover.some((c) => c)).toBe(true);
+    // Once the tower and its cover are gone every window sees out again.
+    expect(coveredWindows(ids, parts.filter((p) => p !== 'kestrel-les'), lib).every((c) => !c)).toBe(true);
+    // A covered window is a dark source that is off and lets no sun in.
+    const src = cabinSources(model, { dirPart: v3.normalize({ x: 0.1, y: 0.9, z: 0.4 }), illuminance: 1e5, color: [1, 1, 1] }, false, withCover);
+    src.polys.filter((p) => p.kind === 0).forEach((p) => {
+      if (withCover[p.index]) {
+        expect(p.on).toBe(false);
+        expect(p.radiance).toEqual([0, 0, 0]);
+      }
+    });
+    const open = cabinSources(model, { dirPart: v3.normalize({ x: 0.1, y: 0.9, z: 0.4 }), illuminance: 1e5, color: [1, 1, 1] }, false);
+    expect(src.sunFlux).toBeLessThanOrEqual(open.sunFlux);
   });
 });

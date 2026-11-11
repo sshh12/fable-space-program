@@ -43,6 +43,7 @@
     "cableGrey": { "shading": "standard", "albedo": [0.3, 0.31, 0.32], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.6, "grime": 0.4, "variation": 0.1 },
     "extinguisher": { "shading": "standard", "albedo": [0.48, 0.045, 0.03], "roughness": 0.32, "detail": "paint", "detailStrength": 0.6, "clearcoat": 0.6, "wear": { "amount": 0.4, "albedo": [0.5, 0.51, 0.5], "metallic": 0.85 }, "grime": 0.3, "variation": 0.05 },
     "pouch": { "shading": "cloth", "albedo": [0.52, 0.5, 0.43], "roughness": 0.85, "detail": "weave", "detailStrength": 1.0, "grime": 0.6, "variation": 0.1 },
+    "satinSteel": { "shading": "standard", "albedo": [0.5, 0.5, 0.48], "roughness": 0.55, "metallic": 1, "detail": "cast", "detailStrength": 0.4, "grime": 0.4, "variation": 0.05 },
     "card": { "shading": "standard", "albedo": [0.74, 0.73, 0.68], "roughness": 0.85, "detail": "paint", "detailStrength": 0.3, "grime": 0.3, "variation": 0.05 },
     "velcro": { "shading": "cloth", "albedo": [0.6, 0.58, 0.52], "roughness": 0.95, "detail": "velcro", "detailStrength": 1.0, "grime": 0.7, "variation": 0.1 }
   },

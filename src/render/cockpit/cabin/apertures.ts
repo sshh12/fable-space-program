@@ -325,11 +325,12 @@ export function buildHatch(ctx: CabinContext): void {
   // the rod: a housing with a bellcrank link down to the rod and a hook that reaches over the door's edge
   // onto a striker post standing on the frame.
   const latches = h.latches;
-  const steel = ctx.m('steel');
+  // (Satin, bead-blasted steel: a polished rod this thin mirrors the window as a line of light.)
+  const steel = ctx.m('satinSteel');
   const rodLoop = offsetLoop(doorLoop, -(rimW + 0.022));
   const rodH = T - pocket + 0.012;
   const rodPts = rodLoop.map(([u, v]) => local(g.plane(rodH), u, v));
-  b.tube([...rodPts, rodPts[0]!, rodPts[1]!], 0.0042, 8, steel);
+  b.tube([...rodPts, rodPts[0]!, rodPts[1]!], 0.0042, 12, steel);
   const guides = Math.max(8, Math.round(rodLoop.length / 9));
   for (let i = 0; i < guides; i++) {
     const k = Math.round(((i + 0.5) / guides) * rodLoop.length) % rodLoop.length;

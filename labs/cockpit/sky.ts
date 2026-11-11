@@ -16,6 +16,7 @@ import type { AtmosphereRenderDef, DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { v3, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, f32ToF16, type SceneBindings, type Tracked } from '@/render/core';
+import { loadCockpitLayout } from '@/render/cockpit/layout';
 
 const COMPOSITE_FS = (bindings: string): string => /* wgsl */ `
 #include "noise"
@@ -109,9 +110,16 @@ struct LabPlasma { v: vec4f }   // rgb = shock-layer radiance (cd/m^2), w = inte
   let depth = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
   if (depth > 0.0 && length(positionFromDepth(in.uv, depth)) < 30.0) { return Out(vec4f(0.0)); }
   let r = march(in.uv, depth);
-  // (The shock layer seen from inside during entry is drawn on the cabin's own panes by the cockpit, as in
-  // the integrated scene: the stand-in sky adds nothing for it.)
-  return Out(vec4f(writeHdr(r[1] * frame.exposure.x), 0.0));
+  // Stand-in for the vfx shock layer seen through the windows during entry (the lab has no vfx feature): a
+  // lavender-pink sheath at the cockpit layout's window plasma luminance, crossed by fine streaks.
+  var glow = vec3f(0.0);
+  if (plasma.v.w > 0.0) {
+    let d = normalize(viewRay(in.uv));
+    let field = valueNoise3(vec3f(d * 3.0 + vec3f(0.0, frame.time.x * 0.8, 0.0)), 7);
+    let streak = pow(valueNoise3(vec3f(d.x * 160.0, d.y * 6.0 - frame.time.x * 9.0, d.z * 160.0), 8), 4.0);
+    glow = plasma.v.rgb * (0.55 + 0.6 * field + 1.4 * streak);
+  }
+  return Out(vec4f(writeHdr((r[1] + glow) * frame.exposure.x), 0.0));
 }
 `;
 
@@ -233,6 +241,11 @@ function cubeDir(face: number, u: number, v: number): Vec3 {
 }
 
 export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refreshProbe(): void } {
+  // The window plasma of the cockpit layout (luminance at full intensity, colour) for the stand-in glow.
+  const cockpitId = Object.values(defs.vehicles).find((x) => x.cockpit)?.cockpit;
+  const lighting = cockpitId ? loadCockpitLayout(defs, cockpitId).layout.lighting : null;
+  const plasmaL = lighting?.plasmaLuminance ?? 0;
+  const plasmaC = lighting?.plasmaColor ?? [1, 1, 1];
   let ctx: RenderContext;
   let mul: Tracked<GPURenderPipeline>;
   let add: Tracked<GPURenderPipeline>;
@@ -336,7 +349,9 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
     prepare(frame) {
       updateProbe(frame);
       const v = frame.snapshot.vessels.find((x) => x.id === frame.snapshot.activeVesselId);
-      ctx.device.queue.writeBuffer(plasmaBuf, 0, new Float32Array([0, 0, 0, v?.aero.plasmaIntensity ?? 0]));
+      const k = Math.max(0, v?.aero.plasmaIntensity ?? 0);
+      const L = plasmaL * k ** 1.5;
+      ctx.device.queue.writeBuffer(plasmaBuf, 0, new Float32Array([L * plasmaC[0]!, L * plasmaC[1]!, L * plasmaC[2]!, k]));
     },
     drawBackground(_frame, pass) {
       pass.setPipeline(sun.get());

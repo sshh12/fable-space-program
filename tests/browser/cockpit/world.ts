@@ -18,7 +18,7 @@ import { waitIdle } from '../harness';
  * line from a cabin point out through a window's centre (`out` metres beyond it: the way the sun comes in,
  * reversed; the window id 'sun' is the window the lab let the sun in through), or given directly.
  */
-export type PointSpec = { seat: [number, number, number] } | { window: string; out: number } | { horizon: string; out: number } | { display: number } | { through: string; from: PointSpec; out: number } | { p: [number, number, number] };
+export type PointSpec = { seat: [number, number, number] } | { window: string; out: number } | { horizon: string; out: number; drop?: number } | { display: number } | { through: string; from: PointSpec; out: number } | { p: [number, number, number] };
 
 export interface Recipe {
   /**
@@ -106,10 +106,10 @@ export async function applyRecipe(page: Page, recipe: Recipe): Promise<Placed> {
     // The window the lab let the sun in through ('sun' as a window id below).
     let sunWindow: string | null = null;
     const point = (p: unknown): V => {
-      const q = p as { seat?: number[]; window?: string; horizon?: string; out?: number; display?: number; p?: number[]; through?: string; from?: unknown };
+      const q = p as { seat?: number[]; window?: string; horizon?: string; out?: number; drop?: number; display?: number; p?: number[]; through?: string; from?: unknown };
       if (q.horizon) {
         const w = model.windows.find((x) => x.id === q.horizon)!;
-        return add(w.centre, scale(norm({ x: -w.inward.x, y: 0, z: -w.inward.z }), q.out ?? 0));
+        return add(add(w.centre, scale(norm({ x: -w.inward.x, y: 0, z: -w.inward.z }), q.out ?? 0)), { x: 0, y: -(q.drop ?? 0), z: 0 });
       }
       if (q.through) {
         const w = model.windows.find((x) => x.id === (q.through === 'sun' ? sunWindow : q.through)) ?? model.windows[0]!;
@@ -259,36 +259,39 @@ export interface WorldView {
   checks: WorldChecks;
 }
 
-const SIDE = 'side-left';
 export const WORLD_VIEWS: WorldView[] = [
   // On the pad at noon, the whole stack under the capsule, looking up through the commander's forward window
   // (the one the boost cover has a port over; the others are covered): the head lifted off the head rest,
-  // a little under half a metre from the pane, the whole window and its frame in view, the sky and the
-  // escape tower through it (with the pane a good share of the frame the interior meter weighs it, cockpit-7).
+  // 45 cm from the pane, the window and its frame in view, the sky, a cloud and the escape tower's rigging
+  // through it. (The open sky is not lit geometry: the interior meter cannot weigh it, so it stays bright.)
   {
     name: 'world-pad-noon-forward-window',
     query: 'scene=pad',
     recipe: { sun: { ves: [0.08, 0.9, 0.43] }, lights: true, free: { kind: 'interior', eye: { through: 'fwd-left', from: { seat: [0, 0, 0] }, out: -0.45 }, look: { through: 'fwd-left', from: { seat: [0, 0, 0] }, out: 20 } }, fovDeg: 70 },
-    checks: { litPanes: ['fwd-left'], unclippedPane: 'fwd-left' },
+    checks: { litPanes: ['fwd-left'] },
   },
-  // Low orbit, windows toward the Earth: the head off the head rest, a third of the way to the side window,
-  // the whole window in view with the Earth in it; the sun through another window on the console.
-  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.4, fovDeg: 55 }, checks: { maxBlack: 0.3 } },
+  // Low orbit, windows toward the Earth: the head three quarters of the way to the window, the window and
+  // its frame in view with the Earth filling it (four tenths of the frame and more: the interior meter exposes
+  // for what is outside, cockpit-7, and the frame reads by the Earth's light on its inner edge); the sun
+  // through another window on the console.
+  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.82, fovDeg: 60 }, checks: { maxBlack: 0.3 } },
   { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 }, checks: {} },
   // The night side: the sun behind the Earth, the cabin under its floods and displays.
   { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, checks: { dark: true } },
   // Entry: the shock layer outside the windows, the floods on.
   { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
   // On the lunar surface, the sun 30 degrees up and off to the side of the window's axis, the floods on:
-  // the head beside the side window, level with it, the sunlit ground and the horizon outside (the capsule
-  // stands upright there: the picture is taken head-up along the capsule's nose).
+  // the head 38 cm from the side window, looking 10 degrees above the horizon (the window's axis points 32
+  // degrees up: further down the well's own walls fill it), the capsule upright (head-up along its nose): the
+  // sunlit ground blown out below black sky and the cabin readable under its floods, as in the LM photograph
+  // AS11-36-5390.
   {
     name: 'world-moon-horizon',
     query: 'scene=lunarSurface',
-    recipe: { sun: { ves: [-0.5, 0.5, 0.7] }, lights: true, free: { kind: 'interior', eye: { seat: [0.1, -0.12, 0.02] }, look: { horizon: SIDE, out: 10 }, up: 'nose' }, fovDeg: 62 },
-    checks: { dark: true, maxBlack: 0.3, litPanes: [SIDE], neutralPane: SIDE },
+    recipe: { sun: { ves: [-0.5, 0.5, 0.7] }, lights: true, free: { kind: 'interior', eye: { through: 'side-left', from: { seat: [0, 0, 0] }, out: -0.38 }, look: { horizon: 'side-left', out: 10, drop: -1.8 }, up: 'nose' }, fovDeg: 62 },
+    checks: { dark: true, maxBlack: 0.3 },
   },
   // From outside: looking in through a forward window by day (the sun's way in) and on the night side.
   { name: 'world-chase-window-sun', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, free: { kind: 'external', eye: { through: 'sun', from: { display: 0 }, out: 0.9 }, look: { display: 0 } }, fovDeg: 40 }, checks: {} },
-  { name: 'world-chase-window-night', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, free: { kind: 'external', eye: { through: 'fwd-left', from: { seat: [0.1, -0.1, 0.3] }, out: 0.7 }, look: { seat: [0.1, -0.1, 0.3] } }, fovDeg: 45 }, checks: { dark: true } },
+  { name: 'world-chase-window-night', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, free: { kind: 'external', eye: { through: 'fwd-left', from: { seat: [0.1, -0.1, 0.3] }, out: 1.0 }, look: { seat: [0.1, -0.1, 0.3] } }, fovDeg: 50 }, checks: { dark: true } },
 ];

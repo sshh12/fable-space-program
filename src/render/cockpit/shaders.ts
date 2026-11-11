@@ -323,13 +323,20 @@ fn polyVector(pos: vec3f, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
   return V;
 }
 
+/// The entry plasma a window sees (cd/m^2) at its flickering share (0.62 on average): the vfx package's
+/// sheath when it publishes it ('vfx.plasmaWindow', request cockpit-13: the mean over its streaks), else the
+/// cockpit layout's own value (cabin.plasma).
+fn windowPlasma(share: f32) -> vec3f {
+  return select(cabin.plasma.rgb * share, plasmaWindow.rgb * (share / 0.62), plasmaWindow.a > 0.0);
+}
+
 /// Radiance coming in through a window along direction d (ROOT): the environment probe plus this window's
 /// share of the shock layer's glow (plasmaShare; the share flickers and differs from window to window).
 fn windowRadiance(d: vec3f, solidAngle: f32, trans: vec3f, plasmaShare: f32) -> vec3f {
   let mips = f32(textureNumLevels(envProbeCube)) - 1.0;
   // Mip whose texel spans the solid angle the window subtends (64^2 faces: one texel ~ 2.4e-4 sr).
   let mip = clamp(0.5 * log2(max(solidAngle, 1e-6) / 2.4e-4), 0.0, mips);
-  return (textureSampleLevel(envProbeCube, linearClamp, d, mip).rgb + cabin.plasma.rgb * plasmaShare) * trans;
+  return (textureSampleLevel(envProbeCube, linearClamp, d, mip).rgb + windowPlasma(plasmaShare)) * trans;
 }
 
 /// Transmittance of the atmosphere along the sun ray at the vessel (1 outside atmospheres).
@@ -457,7 +464,11 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     } else if (kind == POLY_PATCH) {
       L = P.radiance.rgb * sunScale;
     } else {
-      L = P.radiance.rgb;
+      // A flood's reflector gathers its light into a beam about the lens normal (half-power at about 55
+      // degrees, nothing beyond 75): pools of light where it is aimed, darker walls beside and behind it.
+      // The same flux: what the beam leaves out is in the beam.
+      let c = dot(normalize(pos - (P.p0.xyz + P.p2.xyz) * 0.5), P.normal.xyz);
+      L = P.radiance.rgb * (1.6 * smoothstep(0.26, 0.82, c));
     }
     diffuse += L * (PI * ff) * vis;
   }
@@ -507,7 +518,18 @@ fn cabinProbeAt(p: vec3f, d: vec3f, roughness: f32) -> vec3f {
 fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   let texelsPerRad = f32(textureDimensions(cabinProbe).x) / 1.5708;
   let lod = clamp(max(cabinProbeLod(roughness), log2(max(fp * texelsPerRad, 1e-3)) + 0.5), 0.0, f32(textureNumLevels(cabinProbe)) - 1.0);
-  return textureSampleLevel(cabinProbe, linearClamp, cabinProbeDir(p, d), lod).rgb * cabin.probe.w;
+  let dir = normalize(cabinProbeDir(p, d));
+  if (lod < 1.5) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
+  // The coarse mips are a few texels per face: a single bilinear lookup draws a bright window there as a
+  // blocky lozenge on a flat glossy panel. Four lookups half a texel apart (of that mip) round it off.
+  let t = normalize(cross(dir, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
+  let b = cross(dir, t);
+  let a = 0.5 * exp2(lod) / texelsPerRad;
+  var s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb;
+  s += textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb;
+  s += textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
+  s += textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
+  return s * (0.25 * cabin.probe.w);
 }
 /// Radians per pixel swept by a reflected direction r (screen derivatives; uniform control flow only).
 fn reflectionFootprint(r: vec3f) -> f32 { return max(length(dpdx(r)), length(dpdy(r))); }
@@ -657,7 +679,9 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   // Penumbra radius (m): the distance to the NEAREST blocker found x the sun's angular radius (where the
   // shadow of a near part meets that of a far one, the edge being filtered belongs to the near part), at
   // least a texel and a half.
-  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, 1.5 * texelM, SUN_PENUMBRA_MAX);
+  // (On a receiver the light only grazes, one texel of the map spans many pixels along the light: the floor
+  // grows to four texels there, so a caster's rasterised edge does not show as teeth.)
+  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, texelM * (1.5 + 2.5 * sinL * sinL), SUN_PENUMBRA_MAX);
   // Bilinear comparisons on a grid over the penumbra, never further apart than a texel and a half (wide
   // penumbrae take more taps): a smooth ramp across the edge, no stacked copies of it.
   let penUv = vec2f(pen) / mPerUv;
@@ -1490,41 +1514,6 @@ fn grime(uv: vec2f) -> f32 {
 
 struct GlassOut { transmit: vec3f, add: vec3f }
 
-/// The entry shock layer as the crew see it through window wi (cd/m^2 before the glazing; p part frame on
-/// the pane). The vfx package's plasma volume is not drawn for a camera inside the vessel (request
-/// cockpit-9), so the cockpit draws the layer the cabin is lit by on its own panes: a lavender-pink sheath
-/// boiling slowly, crossed by fine streaks streaming from the heat shield toward the apex, with a hot,
-/// nearly white core along the pane's aft edge (Orion EFT-1 side-window frames). Its mean over the pane is
-/// the window's plasma radiance that lights the cabin (cabin.plasma x the window's flickering share), so
-/// the pane and the light it throws agree.
-fn shockLayer(p: vec3f, wi: u32) -> vec3f {
-  if (cabin.plasma.w <= 0.0) { return vec3f(0.0); }
-  let a0 = cabin.apertures[4u * wi];
-  let a1 = cabin.apertures[4u * wi + 1u];
-  let a2 = cabin.apertures[4u * wi + 2u];
-  let a3 = cabin.apertures[4u * wi + 3u];
-  if (a1.w <= 0.0) { return vec3f(0.0); }
-  let toward = select(-1.0, 1.0, a3.y >= 0.0);
-  let along = dot(p - a0.xyz, a3.xyz) * toward;
-  let across = dot(p - a0.xyz, a2.xyz);
-  let s = along / max(a1.w, 1e-3);
-  let w = across / max(a0.w, 1e-3);
-  let t = cabin.legend.w;
-  let seed = f32(wi) * 3.7;
-  let share = cabin.polys[min(wi, MAX_CABIN_POLYS - 1u)].p2.w;
-  let field = valueNoise3(vec3f(w * 1.3 + seed, s * 1.1 - t * 0.8, t * 0.3), 61);
-  // Filaments: narrow across the flow, long along it, streaming downstream.
-  let f1 = valueNoise3(vec3f(across * 240.0 + seed, along * 5.0 - t * 30.0, seed), 62);
-  let f2 = valueNoise3(vec3f(across * 820.0 + seed, along * 11.0 - t * 64.0, seed + 5.0), 63);
-  let streak = 2.2 * pow(f1, 4.0) + 1.6 * pow(f2, 6.0);
-  // The hot core where the layer comes off the shield (the pane's aft edge), flaring with the field.
-  let core = exp(-max(s + 1.0, 0.0) * 2.6) * (0.6 + 0.8 * field);
-  let pink = cabin.plasma.rgb;
-  let salmon = pink * vec3f(1.0, 0.78, 0.55);
-  let white = vec3f(luminance(pink)) * vec3f(1.05, 0.97, 0.8);
-  // (Means: field 0.75, streaks about 0.55, core about 0.25 x 3: normalised to about 1.)
-  return share * (pink * (0.45 + 0.6 * field) + salmon * streak * 0.6 + white * core * 2.2) * 0.62;
-}
 
 fn glass(in: VOut) -> GlassOut {
   let n = normalize(in.n);              // points into the cabin
@@ -1575,13 +1564,6 @@ fn glass(in: VOut) -> GlassOut {
     let grazing = 1.0 / max(sunN, 0.15);
     add += cabinSunIlluminance(amb) * g * hg * grazing * 0.004;
   }
-  // During entry: the shock layer behind the window, through all its panes (added once, on the cabin-side
-  // pane, the last of the window's glass to be drawn).
-  if (fromInside && in.info.x > 0.5) {
-    let F0n = sq((cabin.misc.w - 1.0) / (cabin.misc.w + 1.0));
-    let Tall = cabin.glassSun.rgb * pow((1.0 - F) / (1.0 - F0n), 2.0 * cabin.glassSun.w);
-    add += shockLayer(in.part, u32(in.info.x + 0.5) - 1u) * Tall;
-  }
   var o: GlassOut;
   o.transmit = T;
   o.add = add;
@@ -1622,7 +1604,7 @@ struct VOut { @builtin(position) clip: vec4f, @location(0) part: vec3f, @locatio
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
   let d = dirRoot(normalize(in.part - cabin.probe.xyz));
   let P = cabin.polys[min(in.window, MAX_CABIN_POLYS - 1u)];
-  let L = (textureSampleLevel(envProbeCube, linearClamp, d, 0.0).rgb + cabin.plasma.rgb * P.p2.w) * P.radiance.rgb;
+  let L = (textureSampleLevel(envProbeCube, linearClamp, d, 0.0).rgb + windowPlasma(P.p2.w)) * P.radiance.rgb;
   return vec4f(min(L / cabin.probe.w, vec3f(60000.0)), 0.0);
 }
 `;
