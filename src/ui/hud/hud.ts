@@ -127,6 +127,9 @@ const LT_ROWS = 5;
 /** Heat flux above which the vessel counts as heating (W/m^2): the entry panel shows, the orbit panel leaves. */
 const HEATING_FLUX = 1000;
 
+/** Share of the fatal g-dose from which the dose bar turns red (amber below). */
+const DOSE_WARNING = 2 / 3;
+
 const SAS_NAMES: Record<SasMode, string> = {
   stability: 'Stability',
   prograde: 'Prograde',
@@ -139,10 +142,11 @@ const SAS_NAMES: Record<SasMode, string> = {
 };
 
 /**
- * Punctuation key caps are named (a "." or "," cap is a 2 px speck at 720p); brackets keep their glyph, enlarged.
+ * Punctuation key caps are named (a "." or "," cap is a 2 px speck at 720p); brackets and arrow keys keep their
+ * glyph, enlarged.
  */
 const NAMED_CAPS: Record<string, string> = { '.': 'Period', ',': 'Comma', '/': 'Slash', '`': 'Backquote', '-': 'Minus', '=': 'Equals', ';': 'Semicolon', "'": 'Quote', '\\': 'Backslash' };
-const GLYPH_CAPS = new Set(['[', ']']);
+const GLYPH_CAPS = new Set(['[', ']', '←', '→', '↑', '↓']);
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOAST_SECONDS = 4.5;
@@ -199,10 +203,10 @@ function trendIcon(): { el: SVGSVGElement; set(t: VerticalTrend): void } {
 
 /**
  * A tape gauge: value, numerals beside a tube whose colour layer is fixed to the scale (revealed by the fill),
- * ticks, an optional limit mark, a slot under the tube (the g-dose bar) and a caption. The four parts are grid
- * items of the gauges panel, so paired gauges share their rows.
+ * ticks, an optional limit mark and a caption. The three parts are placed on the rows of the gauges panel's
+ * grid (the gauge's class picks its column), so paired gauges share their rows.
  */
-function tapeGauge(cls: string, caption: string, nums: [string, number][], ticks: number, limit: number | null, under: HTMLElement | null): { root: HTMLElement; value: TextSlot; valueEl: HTMLElement; fill: RevealSlot } {
+function tapeGauge(cls: string, caption: string, nums: [string, number][], ticks: number, limit: number | null): { root: HTMLElement; value: TextSlot; valueEl: HTMLElement; fill: RevealSlot } {
   const value = new TextSlot('');
   const layer = el('i');
   const win = el('div', 'win', [layer]);
@@ -210,7 +214,7 @@ function tapeGauge(cls: string, caption: string, nums: [string, number][], ticks
   if (limit !== null) tube.append(el('div', 'limit', [], { style: `bottom:calc(${(limit * 100).toFixed(3)}% - 1px)` }));
   const numsEl = el('div', 'nums', nums.map(([t, f]) => el('span', '', [t], { style: `bottom:${(f * 100).toFixed(3)}%` })));
   const valueEl = el('span', 'gv', [value.node]);
-  const root = el('div', `gauge ${cls}`, [valueEl, el('div', 'scale', [numsEl, tube]), el('div', 'dose', under ? [under] : []), el('span', 'gl', [caption])]);
+  const root = el('div', `gauge ${cls}`, [valueEl, el('div', 'scale', [numsEl, tube]), el('span', 'gl', [caption])]);
   return { root, value, valueEl, fill: new RevealSlot(win, layer) };
 }
 
@@ -369,6 +373,8 @@ export function createHud(opts: HudOptions): HudImpl {
   };
   const peRow = apsis('Periapsis', orbit.pe, orbit.peT);
   const peTone = new ToneSlot(peRow.valueEl);
+  // A periapsis below the surface has no time to it: its value takes the time column as well.
+  const peWide = classFlag(peRow.root, 'wide');
   const orbitBody = new TextSlot('');
   // A suborbital path is said once, in the title (amber); its inclination and period are not shown (a path that
   // meets the surface has no period to fly).
@@ -465,8 +471,11 @@ export function createHud(opts: HudOptions): HudImpl {
   const azShow = hiddenFlag(azRow.root);
   const padNameEl = el('span', 'pname', [pad.target.node]);
   const padNameShow = hiddenFlag(padNameEl);
+  // Without a target the panel says what the buttons are for (it would otherwise be a title and a button).
+  const padHint = el('div', 'padhint', ['No target · pick a body for its launch window']);
+  const padHintShow = hiddenFlag(padHint);
   // Title row: "LAUNCH" and the target: the body buttons (the chosen one lit) or, without them, its name.
-  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
+  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), padHint, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
   const padShow = hiddenFlag(padPanel);
   const targetButtons = new Map<string, { btn: HTMLButtonElement; on: Flag; show: Flag }>();
   const commands = opts.commands;
@@ -496,6 +505,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const stagesEl = el('div', 'stages');
   const stagesMore = new TextSlot('');
   const stagesMoreEl = el('div', 'more', [stagesMore.node]);
+  const stagesMoreShow = hiddenFlag(stagesMoreEl);
   const resGroupsEl = el('div', 'groups');
   const resPanel = el('div', 'panel res', [el('div', 'ptitle', [el('span', '', ['Resources'])]), resGroupsEl], { 'data-show': 'external' });
   const resShow = hiddenFlag(resPanel);
@@ -555,20 +565,20 @@ export function createHud(opts: HudOptions): HudImpl {
   const ball = el('div', 'ball', [ballCanvas, bezelCanvas]);
   const nbwrap = el('div', 'nbwrap bc', [speedPanel, chips, ball], { 'data-show': 'external map' });
 
-  const doseBar = bar('caution');
-  const doseShow = new Flag((on) => (doseBar.root.style.visibility = on ? 'visible' : 'hidden'));
-  const thr = tapeGauge('thr', 'THROTTLE', [['0', 0], ['50', 0.5], ['100', 1]], 10, null, null);
-  const gG = tapeGauge(
-    'g',
-    'G LOAD',
-    [['0', 0], ['4', 4 / G_SCALE.full], ['8', 8 / G_SCALE.full], ['12', 1]],
-    G_SCALE.full,
-    G_SCALE.limit / G_SCALE.full,
-    doseBar.root,
-  );
+  const thr = tapeGauge('thr', 'THROTTLE', [['0', 0], ['50', 0.5], ['100', 1]], 10, null);
+  const gG = tapeGauge('g', 'G LOAD', [['0', 0], ['4', 4 / G_SCALE.full], ['8', 8 / G_SCALE.full], ['12', 1]], G_SCALE.full, G_SCALE.limit / G_SCALE.full);
   const gTextTone = new ToneSlot(gG.valueEl);
   gG.root.title = `G load: green to ${G_SCALE.caution} g, amber to the ${G_SCALE.limit} g limit (above it the crew's g-dose builds up)`;
-  const gauges = el('div', 'panel gauges', [thr.root, gG.root]);
+  // The crew's g-dose, while there is one: a labelled bar across the panel under both captions (its share of the
+  // fatal limit; amber, red from DOSE_WARNING), so the bar never stands unexplained under the g tube.
+  const doseValue = new TextSlot('');
+  const doseBar = bar();
+  const doseTone = new ToneSlot(doseBar.root);
+  const doseLine = el('div', 'doseline', [el('span', 'lbl', ['G dose']), doseBar.root, el('span', 'dv', [doseValue.node])], {
+    title: "Crew g-dose: g-seconds above the crew's tolerance, as a share of the fatal limit (it recovers below the amber zone)",
+  });
+  const doseShow = hiddenFlag(doseLine);
+  const gauges = el('div', 'panel gauges', [thr.root, gG.root, doseLine]);
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
   const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', ['Maneuver'])]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root, row('Burn start', node.start).root], {
@@ -850,6 +860,9 @@ export function createHud(opts: HudOptions): HudImpl {
         slot.barTone?.set(t.propellant < 0.1);
       }
     }
+    // The total only while something can still burn: with only chutes or separations left it would read "Δv 0".
+    const canBurn = active !== null || remaining.some((t) => t.hasEngines);
+    stagesMoreShow.set(canBurn || remaining.length === 0);
     stagesMore.set(remaining.length === 0 && !active ? 'No stages left' : `Δv ${st.deltaVTotal} total`);
   }
 
@@ -939,7 +952,8 @@ export function createHud(opts: HudOptions): HudImpl {
     atmRowsShow.set(inAir || showEntry);
     entryShow.set(showEntry);
     fluxShow.set(heating);
-    ablShow.set(r.ablatorFraction !== null);
+    // The heat shield matters while it heats up, or once it is in its last margin.
+    ablShow.set(r.ablatorFraction !== null && (heating || ablatorTone(r.ablatorFraction) === 'warning'));
     liftShow.set(r.liftVectorUp !== null);
     chuteShow.set(chuteRelevant);
     ltShow.set(r.landingTarget !== null);
@@ -949,6 +963,7 @@ export function createHud(opts: HudOptions): HudImpl {
     padShow.set(showPad);
     padTargetsShow.set(targetButtonsShown > 0);
     padNameShow.set(targetButtonsShown === 0);
+    padHintShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
     relIncShow.set(r.targetRelativeInclination !== null);
     crossShow.set(r.launchWindow !== null);
     azShow.set(r.launchWindow !== null);
@@ -987,7 +1002,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const lt = r.landingTarget;
     const st = s.staging;
     const activeStage = describeActiveStage(s);
-    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
     textClock += dt;
     const due = textClock >= TEXT_PERIOD - 1e-4;
     if (forceText || due || sig !== lastSig) {
@@ -1042,6 +1057,7 @@ export function createHud(opts: HudOptions): HudImpl {
       orbit.pe.set(o.periapsis);
       const below = s.readouts.periapsisAltitude < 0;
       orbit.peT.set(below ? '' : o.periapsisTime);
+      peWide.set(below);
       peTone.set(phase.periapsisTone === 'normal' ? '' : phase.periapsisTone);
       subTagShow.set(phase.suborbital);
       closedRowsShow.set(!below);
@@ -1131,7 +1147,12 @@ export function createHud(opts: HudOptions): HudImpl {
     gG.value.set(f.gLoad);
     const gt = gTone(r.gLoad);
     gTextTone.set(gt === 'normal' ? '' : gt);
-    if (r.gDose > 0) doseBar.fill.set(r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0);
+    if (r.gDose > 0) {
+      const f = r.gDoseLimit > 0 ? Math.min(1, r.gDose / r.gDoseLimit) : 0;
+      doseBar.fill.set(f);
+      doseValue.set(formatPercent(f));
+      doseTone.set(f >= DOSE_WARNING ? 'warning' : 'caution');
+    }
 
     // Node burn.
     const nbv = describeNodeBurn(s);

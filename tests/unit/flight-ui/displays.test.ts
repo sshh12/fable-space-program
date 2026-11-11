@@ -125,7 +125,8 @@ describe('display models', () => {
       expect(view.name).toBe('Tranquility Base');
       expect(view.kindLabel).toBe('Landing target');
       expect(view.distance).toBe(formatLength(lt.distance));
-      expect(view.bearing).toBe(formatBearing(lt.bearingDeg));
+      // Landed on the target the bearing is "on target", not a compass bearing to a point under the vessel.
+      expect(view.bearing).toBe(lt.distance < 0.5 ? 'on target' : formatBearing(lt.bearingDeg));
       expect(view.predicted).toBeNull();
       const rows = landingTargetRows(view);
       // Rows without data collapse: stationary on the surface there is neither a ground track nor a prediction.
@@ -507,6 +508,50 @@ describe('round-2 display rules', () => {
     expect(landingTargetExpanded(predicted, defs)).toBe(true);
     const descent = { ...orbit, readouts: { ...orbit.readouts, verticalSpeed: -12, periapsisAltitude: -40_000 } };
     expect(landingTargetExpanded(descent, defs)).toBe(true);
+  });
+
+  it('reads "on target" only when the vessel sits on the landing target', () => {
+    const s = snap('lunarOrbit');
+    const lt = s.readouts.landingTarget!;
+    const at = (distance: number): string => describeLandingTarget({ ...s, readouts: { ...s.readouts, landingTarget: { ...lt, distance, bearingDeg: 87 } } })!.bearing;
+    expect(at(0.3)).toBe('on target');
+    expect(at(0.6)).toBe('087°');
+    expect(at(400)).toBe('087°');
+  });
+
+  it('draws few resources as full-height tank gauges on the systems page, many as bars', () => {
+    const g = globalThis as unknown as { Path2D?: unknown };
+    g.Path2D ??= class {};
+    const paintSystems = (s: SimSnapshot): { texts: string[]; tallest: number } => {
+      const texts: string[] = [];
+      let tallest = 0;
+      const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+        get(t, prop) {
+          if (prop in t) return t[prop];
+          if (prop === 'measureText') return (x: string) => ({ width: x.length * 10 });
+          if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => ({ addColorStop: () => undefined });
+          if (prop === 'fillText') return (x: string) => void texts.push(x);
+          // Every fill but the page background (the whole canvas).
+          if (prop === 'fillRect') return (_x: number, _y: number, _w: number, hh: number) => void (hh < 768 && (tallest = Math.max(tallest, hh)));
+          return () => undefined;
+        },
+        set(t, prop, value) {
+          t[prop] = value;
+          return true;
+        },
+      }) as unknown as OffscreenCanvasRenderingContext2D;
+      createMfdPainter().paint(ctx, 1024, 768, 'systems', s, defs);
+      return { texts, tallest };
+    };
+    // Entry: the capsule's ablator alone is one tank gauge filling the column's height.
+    const sim = createFakeSim(defs, { scene: 'reentry', parts: labVehicleParts(defs, { capsule: 0.8 }, ['capsule']) });
+    const capsule = paintSystems(tagLabVehicle(sim.snapshot()));
+    expect(capsule.texts).toEqual(expect.arrayContaining(['CAPSULE', 'ABLATOR', `80${NBSP}%`]));
+    // The tallest fill is the tank's track above the low zone (90 % of the tube).
+    expect(capsule.tallest, 'tank track height').toBeGreaterThan(768 * 0.4);
+    // The full stack on the pad (more than six resources): bars, no tall tank.
+    const pad = paintSystems(snap('pad'));
+    expect(pad.tallest).toBeLessThan(768 * 0.2);
   });
 
   it('balances the key-help columns by height', () => {

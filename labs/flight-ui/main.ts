@@ -26,6 +26,8 @@
  *                              markers and read-outs moved to match (markers off the nose, a real roll)
  *   dose=<g s>                 lab decoration: the crew's g-dose (the bar under the g tube)
  *   lift=<bankDeg>             lab decoration: a capsule lift-vector marker 30 deg off the nose, banked (0 = up)
+ *   cabin=<url>                a still image (the cockpit package's render of the cabin from the seat) shown in
+ *                              place of the lab backdrop, to judge the interior HUD layout over a real cabin
  *
  * The FakeSim gives every stage the same engine numbers; the lab replaces them with the mission vehicle's
  * stage table (data/defs/vehicles/meridian-lunar.json: icons, action kinds, which stages carry engines) and
@@ -339,6 +341,16 @@ async function boot(): Promise<void> {
     commands: () => sim.commands,
   });
   hud.mount(uiRoot);
+  const cabinUrl = params.get('cabin');
+  if (cabinUrl) {
+    // Over the backdrop canvas, under the HUD.
+    const img = document.createElement('img');
+    img.id = 'cabin';
+    img.alt = '';
+    img.src = cabinUrl;
+    uiRoot.before(img);
+    await img.decode();
+  }
   notifySink.fn = (m) => hud.notify(m);
   hud.setKeyboardLocked(input.keyboardLocked);
   input.onKeyboardLockChange((locked) => hud.setKeyboardLocked(locked));

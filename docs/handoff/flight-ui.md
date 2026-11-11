@@ -214,7 +214,8 @@ stageActionText(actionKinds): string;                             // "separate �
 summarizeResources(groups): { inUse: { id; label; fraction; amount; detail }[]; full: string[] };  // HUD resource panel
 const ABLATOR_REDLINE = 0.3; ablatorTone(f): 'good' | 'warning';  // one ablator rule for HUD and MFD (low is bad)
 const G_SCALE = { caution: 6, limit: 10, full: 12 }; gTone(g);    // one g scale for the HUD gauge and the MFD pages
-describeLandingTarget (LandingTargetView incl. `tracked`), landingTargetRows (rows without data collapse), isPredictionRow(label),
+describeLandingTarget (LandingTargetView incl. `tracked`; bearing "on target" within ON_TARGET_DISTANCE = 0.5 m),
+landingTargetRows (rows without data collapse), isPredictionRow(label),
 landingScope(view): { east; north; trackDeg: number | null },
 TREND_ICONS (up / down / level), drawIcon(ctx, icon, x, y, size, color, outline?, box?, outlineWidth = 2.4),
 describeOrbit, describeStages, describeResources, describeWarp, describeNodeBurn, describePad,
@@ -328,6 +329,14 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
   "FULL …" line ("ALL FULL" on the pad); bottom = SAS panel, speed, a chip row above the bezel (PITCH, heading
   over the top index, ROLL: fixed-width windows that never touch the instrument), the 24.5u ball, the throttle /
   g tape gauges (flat-topped fill, numerals 0.78 em), node panel.
+  Round-3 changes: the crew g-dose is a labelled line across the gauge panel ("G DOSE", bar, share of the fatal
+  limit; amber, red from two thirds), shown only while a dose exists; the heat-shield row of the entry panel shows
+  while heating or below the redline (not under chutes); the "Δv … total" header is hidden while nothing left can
+  burn (only chutes / separations); the launch panel says "No target · pick a body for its launch window" while
+  no target is set; a suborbital periapsis (no time to it) takes the time column too; arrow-key caps keep their
+  glyph, enlarged; every visible text is at least 10 px at 720p and fits its box (asserted). Navball instrument:
+  label ink is gone just before the lip (no numeral cut in half by the bezel), and a marker whose centre passes
+  under the lip fades out within a few degrees (no icon slivers at the window's edge).
 - **HUD main-thread cost**: a changed text node costs a style / layout / paint / layerization pass (about 1 ms
   on this page), far more than the JavaScript formatting it. So the numeric readouts refresh at `HUD_TEXT_HZ`
   (10 Hz), all in one frame; the navball, the throttle and g gauges (composited transforms), every indicator
@@ -354,7 +363,8 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
   "ALTITUDE EXAGGERATED ×13" for the 100 km lunar orbit) so Ap and Pe are apart, apsis diamonds labelled with
   their altitudes, the body with its night side and terminator from the sun direction, its name in the caption;
   landed, the page is one status line (body, "Landed · no orbit") over a large body graphic; SYS has the vehicle
-  rows and resource bars that fill the column; STG a summary strip of the active stage (the next engine stage
+  rows and the resources: up to six as full-height tank gauges side by side under their stage group's name
+  (late in a mission), more as bars that fill the column; STG a summary strip of the active stage (the next engine stage
   before the first ignition) and the whole stack, active stage first (number, icon, name, delta-v / TWR / burn
   or what an engine-less stage does, propellant bar, lock state; tiles grow when few stages remain); ENT the
   entry rows, g / dose / ablator / skin-temperature bar gauges with scales, zones, redlines (10 g, the dose limit,
@@ -423,7 +433,9 @@ shown 1 : 1), `help=1`, `ballast=<iterations>` (perf: GPU ballast), `orbit=<yawD
 `flight=<throttle>,<gLoad>` (a powered flight: throttle, thrust and g in the readouts), `backdrop=bright` (the
 HUD-legibility worst case: a near-white cloud deck / regolith and a pale sky), `attitude=<yaw>,<pitch>,<roll>`
 (the vessel turned by this offset in its own frame, degrees: markers off the nose and a real roll), `dose=<g s>`
-(the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose). The lab replaces the
+(the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose), `cabin=<url>` (a still
+of the cockpit package's seat-view render shown in place of the backdrop: the interior layout over a real
+cabin). The lab replaces the
 FakeSim's generic stage numbers with the mission vehicle's stage table (icons and action kinds of
 meridian-lunar.json, engine stages with plausible delta-v / TWR / burn, gear / chute / jettison stages without
 engines), reported the way the sim reports them: the fired stage that owns the running engines keeps live
@@ -438,11 +450,14 @@ Screenshots (all reviewed by eye): `out/screens/flight-ui/<scene>-720p.png` and 
 FakeSim scenes, plus `cockpit-lowOrbit`, `map-lowOrbit`, `keyhelp`, `failed`, `terrain-pending`, `mfd-pages`,
 `mfd-pages-hover` (landed 400 m from the target: no ground track) (all at both sizes),
 `attitude-lowOrbit` (markers off the nose, 25 deg roll against the sky pointer), `entry-highg` (11.2 g in the red
-zone, the g-dose bar, the lift-vector marker), `retrograde-hold` (retrograde on the nose under chutes) (all at
-both sizes), `bright-<pad|ascent|reentry|lunarSurface>-720p` (near-white backdrop: label contrast, plate
+zone, the g-dose line, the lift-vector marker), `retrograde-hold` (retrograde on the nose under chutes),
+`cockpit-cabin-lowOrbit` (the interior layout over the cockpit package's seat-view render
+`out/screens/cockpit/perf-1440p-leo-seat.png`; skipped with a message when that file is absent) (all at both
+sizes), `bright-<pad|ascent|reentry|lunarSurface>-720p` (near-white backdrop: label contrast, plate
 uniformity and the coverage budget asserted), `mfd-pages-native` and `mfd-pages-native-reentry` (512 x 384 at
 1 : 1), `prograde-hold`, `warp-refused`, `extra-rig`, `stage-lockout`. The 720p scene tests log and assert the
-HUD's coverage of the frame (<= 20 %); a stage-stack test checks the active stage's tile against the snapshot.
+HUD's coverage of the frame (<= 20 %) and that no visible HUD text is smaller than 10 px or wider than its box;
+a stage-stack test checks the active stage's tile against the snapshot.
 
 ## 4. Acceptance criteria and measured results
 

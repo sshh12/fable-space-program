@@ -11,7 +11,8 @@
  *        of throttle / g / horizontal / vertical boxes;
  *   ORB  the conic around the body (its own colour), with the altitude exaggerated for low orbits so Ap and Pe
  *        stay apart; rows on the left;
- *   SYS  vehicle rows and large resource bars;
+ *   SYS  vehicle rows and the resources: full-height tank gauges while there are few (up to six), large bars
+ *        grouped by stage group otherwise;
  *   STG  a next-stage summary strip and the whole remaining stack;
  *   ENT  entry rows, g / dose / ablator / temperature gauges with scales, zones, redlines and readouts, and the
  *        landing-target rows;
@@ -1031,6 +1032,11 @@ function paintSystems(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
   const x = f.pad * 2.5 + leftW;
   const w = f.w - x - f.pad;
   const groups = describeResources(s, defs);
+  const nBars = groups.reduce((a, g) => a + g.bars.length, 0);
+  if (nBars > 0 && nBars <= TANK_LAYOUT_MAX) {
+    paintTanks(ctx, f, groups, x, w);
+    return;
+  }
   // The resource blocks take the column's whole height (bars grow when there are few of them).
   const lines = 0.9 + groups.reduce((acc, g) => acc + 1.2 + g.bars.length * 1.25, 0);
   const lh = Math.min(f.h * 0.14, (f.bottom - f.top) / Math.max(1, lines));
@@ -1045,11 +1051,67 @@ function paintSystems(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
       setFont(ctx, 500, px(f, 0.032));
       text(ctx, b.name, x + lh * 0.2, y + lh * 0.3, 'left', 'middle', LABEL, w * 0.6);
       setFont(ctx, 700, px(f, 0.034));
-      text(ctx, b.amount, x + w, y + lh * 0.3, 'right', 'middle', b.fraction < 0.1 ? COLORS.caution : COLORS.normal);
-      bar(ctx, x + lh * 0.2, y + lh * 0.62, w - lh * 0.2, lh * 0.32, b.fraction, b.fraction < 0.1 ? COLORS.caution : COLORS.good);
+      text(ctx, b.amount, x + w, y + lh * 0.3, 'right', 'middle', b.fraction < RESOURCE_LOW ? COLORS.caution : COLORS.normal);
+      bar(ctx, x + lh * 0.2, y + lh * 0.62, w - lh * 0.2, lh * 0.32, b.fraction, b.fraction < RESOURCE_LOW ? COLORS.caution : COLORS.good);
       y += lh * 1.25;
     }
     y += lh * 0.3;
+  }
+}
+
+/** Up to this many resources the systems page draws them as full-height tank gauges side by side. */
+const TANK_LAYOUT_MAX = 6;
+
+/** Below this fraction a resource reads amber (the HUD's resource bars use the same threshold). */
+const RESOURCE_LOW = 0.1;
+
+/**
+ * Few resources (late in a mission: a lander, a capsule): one tall tank gauge per resource, grouped under the
+ * stage group's name, so the column is filled by instruments instead of a few bars over an empty panel.
+ */
+function paintTanks(ctx: Ctx, f: Frame, groups: ReturnType<typeof describeResources>, x: number, w: number): void {
+  const nBars = groups.reduce((a, g) => a + g.bars.length, 0);
+  sectionHeading(ctx, f, 'Resources', x, f.top + f.h * 0.03, w);
+  const gap = w * 0.08;
+  const slot = (w - gap * (groups.length - 1)) / nBars;
+  // Group name, then the readout over each tube; scale numerals at the tube's left, the name under it.
+  const groupY = f.top + f.h * 0.095;
+  const tubeTop = groupY + f.h * 0.1;
+  const tubeBottom = f.bottom - f.h * 0.065;
+  const bw = Math.min(slot * 0.34, f.h * 0.12);
+  let gx = x;
+  for (const g of groups) {
+    const gw = slot * g.bars.length;
+    setFont(ctx, 700, px(f, 0.032));
+    text(ctx, g.label.toUpperCase(), gx + gw / 2, groupY, 'center', 'middle', '#c9d5e4', gw);
+    ctx.strokeStyle = RULE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(gx + slot * 0.12, groupY + f.h * 0.03);
+    ctx.lineTo(gx + gw - slot * 0.12, groupY + f.h * 0.03);
+    ctx.stroke();
+    g.bars.forEach((b, i) => {
+      const cx = gx + slot * (i + 0.5) + bw * 0.25;
+      const low = b.fraction < RESOURCE_LOW;
+      drawBarGauge(ctx, f, cx - bw / 2, tubeTop, bw, tubeBottom - tubeTop, {
+        label: b.name.toUpperCase(),
+        value: b.amount,
+        frac: b.fraction,
+        zones: [
+          [RESOURCE_LOW, COLORS.caution],
+          [1, COLORS.good],
+        ],
+        redline: null,
+        ticks: [
+          [0, '0'],
+          [0.5, '50'],
+          [1, '100'],
+        ],
+        tone: low ? 'caution' : 'normal',
+        lowIsBad: true,
+      });
+    });
+    gx += gw + gap;
   }
 }
 

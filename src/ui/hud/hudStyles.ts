@@ -127,7 +127,7 @@ export const HUD_CSS = /* css */ `
   color: var(--text);
   white-space: nowrap;
 }
-/* Bracket keys keep their glyph, enlarged and centred; other punctuation keys are named ("Period"). */
+/* Bracket and arrow keys keep their glyph, enlarged and centred; other punctuation keys are named ("Period"). */
 .hud .kbd.glyph { font-size: 1.05em; font-weight: 700; padding: 0 0.35em; line-height: 1.12; }
 
 /* Bars: a track and a fill scaled with transform (no layout per frame); the tone colours the whole fill. */
@@ -239,11 +239,11 @@ export const HUD_CSS = /* css */ `
 .hud .tile.next .ico { background: rgba(85, 212, 255, 0.2); color: var(--accent); }
 .hud .tile.next:hover { background: rgba(14, 44, 64, 0.98); }
 .hud .tile .hint { flex: none; font-size: 0.78em; font-weight: 700; color: var(--accent); }
-.hud .tile .hint .kbd { font-size: 0.95em; }
+.hud .tile .hint .kbd { font-size: 1em; }
 .hud .tile.active { border-color: rgba(95, 227, 154, 0.7); background: rgba(9, 30, 22, 0.97); box-shadow: 0 0 0 1px rgba(95, 227, 154, 0.2), var(--edge); }
 .hud .tile.active .sn { color: var(--good); }
 .hud .tile.active .ico { background: rgba(95, 227, 154, 0.18); color: var(--good); }
-.hud .tile.active .act { flex: none; font-size: 0.74em; font-weight: 700; color: var(--good); letter-spacing: 0.06em; border: 1px solid rgba(95, 227, 154, 0.55); border-radius: 0.3em; padding: 0 0.35em; line-height: 1.35; }
+.hud .tile.active .act { flex: none; font-size: 0.78em; font-weight: 700; color: var(--good); letter-spacing: 0.06em; border: 1px solid rgba(95, 227, 154, 0.55); border-radius: 0.3em; padding: 0 0.35em; line-height: 1.35; }
 /* Locked: an amber, dimmed tile with a padlock plate and the reason at label size. */
 .hud .tile.next.locked { border-color: rgba(255, 187, 77, 0.85); background: repeating-linear-gradient(135deg, rgba(52, 36, 10, 0.97) 0, rgba(52, 36, 10, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 1.8)); box-shadow: 0 0 0 1px rgba(255, 187, 77, 0.25), var(--edge); cursor: not-allowed; }
 .hud .tile.next.locked .sn { color: var(--caution); }
@@ -306,8 +306,8 @@ export const HUD_CSS = /* css */ `
  */
 .hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 29); margin-bottom: calc(var(--u) * -0.3); }
 .hud .nbchips > div { background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); box-shadow: var(--edge); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
-.hud .nbchips .pr { width: calc(var(--u) * 10.9); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.55); font-size: 0.77em; }
-.hud .nbchips .pr .lbl { font-size: 0.92em; }
+.hud .nbchips .pr { width: calc(var(--u) * 10.9); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.55); font-size: 0.8em; }
+.hud .nbchips .pr .lbl { font-size: 0.96em; letter-spacing: 0.05em; }
 .hud .nbchips .pr b { font-weight: 600; }
 .hud .nbchips .pitch { justify-self: start; }
 .hud .nbchips .roll { justify-self: end; }
@@ -329,10 +329,12 @@ export const HUD_CSS = /* css */ `
  * no layout or paint per frame). The fill has a flat top with a thin lighter line. Both gauges share one grid,
  * so tops, bottoms and values line up.
  */
-.hud .gauges { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto auto auto; grid-auto-flow: column; column-gap: calc(var(--u) * 1); row-gap: calc(var(--u) * 0.35); justify-items: center; padding: calc(var(--u) * 0.55) calc(var(--u) * 0.8) calc(var(--u) * 0.5) calc(var(--u) * 0.6); }
+.hud .gauges { display: grid; grid-template-columns: auto auto; column-gap: calc(var(--u) * 1); row-gap: calc(var(--u) * 0.35); justify-items: center; padding: calc(var(--u) * 0.55) calc(var(--u) * 0.8) calc(var(--u) * 0.5) calc(var(--u) * 0.6); }
 .hud .gauge { display: contents; }
-.hud .gauge .gv { font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 6.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
-.hud .gauge .scale { position: relative; display: flex; gap: calc(var(--u) * 0.45); align-items: stretch; margin-top: calc(var(--u) * 0.45); }
+.hud .gauge.thr > * { grid-column: 1; }
+.hud .gauge.g > * { grid-column: 2; }
+.hud .gauge .gv { grid-row: 1; font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 6.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
+.hud .gauge .scale { grid-row: 2; position: relative; display: flex; gap: calc(var(--u) * 0.45); align-items: stretch; margin-top: calc(var(--u) * 0.45); }
 .hud .gauge .nums { position: relative; width: calc(var(--u) * 2.8); height: calc(var(--u) * 9.5); font-size: 0.78em; font-weight: 600; color: var(--label); }
 .hud .gauge .nums span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
 .hud .gauge .tube { position: relative; width: calc(var(--u) * 2.3); height: calc(var(--u) * 9.5); border-radius: calc(var(--u) * 0.3); background: rgba(6, 9, 14, 0.94); border: 1px solid var(--line); overflow: hidden; box-shadow: inset 0 calc(var(--u) * 0.25) calc(var(--u) * 0.6) rgba(0, 0, 0, 0.6); }
@@ -344,9 +346,11 @@ export const HUD_CSS = /* css */ `
 .hud .gauge.g .track, .hud .gauge.g .win > i { background: linear-gradient(to top, #3cc97f 0%, #66e3a0 50%, #ffbb4d 50%, #ffc766 83.333%, #ff5a5a 83.333%, #ff7a7a 100%); }
 .hud .gauge .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0, transparent calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n))); }
 .hud .gauge .limit { position: absolute; left: -1px; right: -1px; height: 2px; background: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
-.hud .gauge .gl { font-size: 0.78em; letter-spacing: 0.08em; color: var(--label); font-weight: 600; white-space: nowrap; }
-.hud .gauge .dose { width: calc(var(--u) * 5.2); height: calc(var(--u) * 0.6); }
-.hud .gauge .dose .bar { height: calc(var(--u) * 0.45); }
+.hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.08em; color: var(--label); font-weight: 600; white-space: nowrap; }
+/* The crew's g-dose (only while there is one): label, bar and share of the fatal limit across the panel. */
+.hud .gauges .doseline { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; display: grid; grid-template-columns: auto minmax(calc(var(--u) * 2.5), 1fr) auto; column-gap: calc(var(--u) * 0.6); align-items: center; margin-top: calc(var(--u) * 0.1); padding-top: calc(var(--u) * 0.35); border-top: 1px solid rgba(170, 198, 235, 0.14); height: calc(1.3em + var(--u) * 0.35); contain: size layout style; }
+.hud .gauges .doseline .bar { height: calc(var(--u) * 0.55); }
+.hud .gauges .doseline .dv { font-size: 0.86em; font-weight: 600; white-space: nowrap; }
 
 .hud .node { position: relative; width: calc(var(--u) * 22); border-color: rgba(79, 141, 255, 0.6); }
 .hud .node .ptitle { color: #9fc0ff; }
@@ -358,6 +362,8 @@ export const HUD_CSS = /* css */ `
 /* ---------------------------------------------------------------- left panels */
 .hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.8); align-items: baseline; height: 1.34em; contain: size layout style; }
 .hud .orbit .apsis .sub { text-align: right; min-width: 4.2em; font-size: 0.8em; }
+.hud .orbit .apsis.wide .val { grid-column: 2 / 4; }
+.hud .orbit .apsis.wide .sub { display: none; }
 .hud .ptitle .pright { display: flex; align-items: baseline; gap: 0.6em; }
 .hud .ptitle .tag { font-weight: 700; letter-spacing: 0.08em; }
 /* Atmosphere: three cells on one strip (in its own panel, under the orbit rows in an ascent, or in the entry panel). */
@@ -369,8 +375,9 @@ export const HUD_CSS = /* css */ `
 .hud .lt .tname { font-size: 1.05em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.1em; }
 .hud .lt .tname .pname { font-size: 1em; }
 .hud .lt .ltline { font-size: 0.86em; font-weight: 600; color: var(--label); height: 1.3em; contain: size layout style; }
+.hud .lt .rows .row { gap: calc(var(--u) * 0.6); }
 .hud .lt .rows .val { font-size: 0.92em; }
-.hud .lt .rows .lbl { letter-spacing: 0.03em; }
+.hud .lt .rows .lbl { letter-spacing: 0.01em; }
 .hud .lt .pred { margin-top: calc(var(--u) * 0.3); padding-top: calc(var(--u) * 0.35); border-top: 1px solid var(--line); height: calc(1.34em + var(--u) * 0.35 + 1px); }
 .hud .lt .zone { margin-top: calc(var(--u) * 0.45); padding: calc(var(--u) * 0.3) calc(var(--u) * 0.8); border-radius: calc(var(--u) * 0.6); display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.6); font-size: 0.9em; }
 .hud .lt .zone.t-good { background: rgba(95, 227, 154, 0.14); border: 1px solid rgba(95, 227, 154, 0.55); }
@@ -383,6 +390,7 @@ export const HUD_CSS = /* css */ `
 .hud .brow { display: grid; grid-template-columns: auto minmax(0, 1fr) 2.9em; gap: calc(var(--u) * 0.8); align-items: center; height: 1.34em; contain: size layout style; }
 .hud .brow .bar { height: calc(var(--u) * 0.6); }
 .hud .brow .bv { font-weight: 600; text-align: right; white-space: nowrap; }
+.hud .pad .padhint { font-size: 0.8em; color: var(--label); white-space: nowrap; height: 1.4em; }
 .hud .pad .targets { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 0.4); }
 .hud .pad .targets button { font-size: 1.15em; letter-spacing: 0.03em; text-transform: none; padding: 0 calc(var(--u) * 0.7); color: var(--text); }
 .hud .pad .targets button.on { background: rgba(255, 91, 214, 0.24); border-color: rgba(255, 91, 214, 0.8); }
@@ -406,5 +414,7 @@ export const HUD_CSS = /* css */ `
 .hud .help .group h3 { margin: 0 0 calc(var(--u) * 0.5); font-size: 0.78em; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
 .hud .help .item { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * 1); padding: calc(var(--u) * 0.18) 0; font-size: 0.86em; border-bottom: 1px solid rgba(160, 190, 230, 0.08); }
 .hud .help .item .keys { display: flex; gap: 0.3em; flex-wrap: wrap; justify-content: flex-end; }
+.hud .help .item .kbd { font-size: 0.9em; }
+.hud .help .item .kbd.glyph { font-size: 1.12em; }
 .hud .help .item .kbd.locked { border-color: rgba(255, 187, 77, 0.6); color: #ffe2b0; }
 `;

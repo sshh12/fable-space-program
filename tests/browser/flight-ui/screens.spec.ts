@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, type PageLog } from '../harness';
@@ -22,6 +25,10 @@ const SCENES: [string, string][] = [
   ['reentry', 'predicted=entry'],
   ['chutes', ''],
 ];
+
+/** The cockpit package's seat view in low orbit (16:9), shown behind the interior layout. */
+const CABIN_STILL_URL = '/out/screens/cockpit/perf-1440p-leo-seat.png';
+const CABIN_STILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...CABIN_STILL_URL.split('/').filter(Boolean));
 
 /** Largest share of a 16:9 frame the HUD may cover in an external view (plates, tiles, chips and the ball). */
 const COVERAGE_BUDGET = 0.2;
@@ -102,6 +109,43 @@ async function hudCoverage(page: Page): Promise<number> {
   });
 }
 
+/** Smallest text the HUD shows at 1280 x 720 (px): the hand-off's floor for anything that carries a value or a key. */
+const TEXT_FLOOR_PX = 10;
+
+/**
+ * Every visible element of the HUD that holds text of its own, with its computed font size and whether that
+ * text fits its box (a fixed-width read-out window or a contained line must not overflow).
+ */
+async function hudTexts(page: Page): Promise<{ text: string; size: number; overflow: number }[]> {
+  return page.evaluate(() => {
+    const out: { text: string; size: number; overflow: number }[] = [];
+    for (const e of document.querySelectorAll('.hud *')) {
+      if (!(e instanceof HTMLElement) || e.getClientRects().length === 0) continue;
+      const own = [...e.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent ?? '').join('').trim();
+      if (!own) continue;
+      const cs = getComputedStyle(e);
+      if (cs.visibility === 'hidden') continue;
+      // Text wider than its box: measured on the text itself (a range), against the element's content box.
+      const range = document.createRange();
+      range.selectNodeContents(e);
+      const t = range.getBoundingClientRect();
+      const b = e.getBoundingClientRect();
+      const overflow = Math.max(0, b.left - t.left, t.right - b.right);
+      out.push({ text: own, size: parseFloat(cs.fontSize), overflow });
+    }
+    return out;
+  });
+}
+
+async function expectTextFloor(page: Page, what: string): Promise<void> {
+  const texts = await hudTexts(page);
+  expect(texts.length, `${what}: HUD texts`).toBeGreaterThan(10);
+  for (const t of texts) {
+    expect(t.size, `${what}: font size of "${t.text}"`).toBeGreaterThanOrEqual(TEXT_FLOOR_PX - 0.05);
+    expect(t.overflow, `${what}: "${t.text}" overflows its box (px)`).toBeLessThanOrEqual(1);
+  }
+}
+
 /**
  * Fill of every visible plate along a column of its padding (no text there), below the plate's lit top
  * gradient: the spread in 8-bit levels of the brightest channel. A scene edge behind a plate shows up as spread.
@@ -139,14 +183,26 @@ for (const [w, h, tag] of [
           const c = await hudCoverage(page);
           console.log(`HUD coverage ${scene}: ${(c * 100).toFixed(1)} %`);
           expect(c, `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
+          await expectTextFloor(page, scene);
         }
       });
     }
     test('markers off the nose and a 25 degree roll (normal, radial, anti-target, maneuver)', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&node=1&target=moon&attitude=24,-14,25', `attitude-lowOrbit-${tag}`);
     });
-    test('high-g entry: g tube in its red zone, g-dose bar, lift-vector marker, retrograde off the nose', async ({ page, pageLog }) => {
+    test('high-g entry: g tube in its red zone, g-dose line, lift-vector marker, retrograde off the nose', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&predicted=entry&flight=0,11.2&dose=6.4&lift=35&attitude=-8,10,-18', `entry-highg-${tag}`);
+      // The dose has its own labelled line inside the gauges panel: 6.4 of the 15 g s limit.
+      const line = page.locator('.hud .gauges .doseline');
+      await expect(line).toBeVisible();
+      await expect(line.locator('.lbl')).toHaveText(/g dose/i);
+      await expect(line.locator('.dv')).toHaveText(/^43\s%$/);
+      const lb = (await line.boundingBox())!;
+      const pb = (await page.locator('.hud .gauges').boundingBox())!;
+      expect(lb.x).toBeGreaterThanOrEqual(pb.x);
+      expect(lb.x + lb.width).toBeLessThanOrEqual(pb.x + pb.width + 0.5);
+      expect(lb.y + lb.height).toBeLessThanOrEqual(pb.y + pb.height + 0.5);
+      if (tag === '720p') await expectTextFloor(page, 'entry-highg');
     });
     test('retrograde held on the nose under chutes', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes&flight=0,7.4', `retrograde-hold-${tag}`);
@@ -154,11 +210,19 @@ for (const [w, h, tag] of [
     test('cockpit view', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&view=cockpit', `cockpit-lowOrbit-${tag}`);
     });
+    test('cockpit view over the cabin (the cockpit package render of the seat view in low orbit)', async ({ page, pageLog }) => {
+      // A still of the real cabin behind the interior layout: the cockpit's own seat-view screenshot.
+      test.skip(!fs.existsSync(CABIN_STILL), `needs ${CABIN_STILL} (tests/browser/cockpit perf spec)`);
+      // The dev server's root is the repository, so the still is served from its own path.
+      await shoot(page, pageLog, `/labs/flight-ui/?scene=lowOrbit&view=cockpit&cabin=${encodeURIComponent(CABIN_STILL_URL)}`, `cockpit-cabin-lowOrbit-${tag}`);
+      if (tag === '720p') await expectTextFloor(page, 'cockpit over the cabin');
+    });
     test('map view', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&view=map&node=1', `map-lowOrbit-${tag}`);
     });
     test('key help overlay', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=pad&help=1', `keyhelp-${tag}`);
+      if (tag === '720p') await expectTextFloor(page, 'key help');
     });
     test('mission failed banner', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&failed=1', `failed-${tag}`);

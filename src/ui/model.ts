@@ -118,6 +118,7 @@ export interface LandingTargetView {
   /** "Landing target" or "Recovery zone". */
   kindLabel: string;
   distance: string;
+  /** Compass bearing "087°", or "on target" within ON_TARGET_DISTANCE. */
   bearing: string;
   /** "12.3 km ahead" / "4.5 km behind" / "on track"; "no ground track" below 0.1 m/s over the ground. */
   downRange: string;
@@ -139,6 +140,12 @@ export interface LandingTargetView {
   raw: { distance: number; downRange: number; crossRange: number; bearingDeg: number; missDistance: number | null; missBearingDeg: number | null };
 }
 
+/**
+ * Within this distance (m) of the target the vessel is on it: the bearing reads "on target" (a compass bearing
+ * to a point under the vessel is noise), the same threshold as a range reading "on track".
+ */
+export const ON_TARGET_DISTANCE = 0.5;
+
 export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null {
   const lt = s.readouts.landingTarget;
   if (!lt) return null;
@@ -153,7 +160,7 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
     name,
     kindLabel: isZone ? 'Recovery zone' : 'Landing target',
     distance: formatDistance(lt.distance),
-    bearing: formatBearing(lt.bearingDeg),
+    bearing: lt.distance < ON_TARGET_DISTANCE ? 'on target' : formatBearing(lt.bearingDeg),
     downRange: tracked ? formatSignedRange(lt.downRange, 'ahead', 'behind') : 'no ground track',
     crossRange: tracked ? formatSignedRange(lt.crossRange, 'right', 'left') : 'no ground track',
     tracked,

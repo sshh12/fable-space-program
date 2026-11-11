@@ -170,9 +170,23 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
   });
 }
 
-/** The FakeSim reports vehicleId ''; the lab tags its snapshots with the lab vehicle. */
+/**
+ * The FakeSim reports vehicleId ''; the lab tags its snapshots with the lab vehicle. The FakeSim also reports a
+ * heat shield only in its plasma scenes; the lab vehicle always carries one, so its ablator is reported as the
+ * sim reports it (readouts.ablatorFraction null only for a vessel without a heat shield) and the MFD entry page
+ * agrees with the systems page in every scene.
+ */
 export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
-  return { ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Lab Meridian' } : v)) };
+  const active = s.vessels.find((v) => v.id === s.activeVesselId);
+  let ablator = s.readouts.ablatorFraction;
+  if (ablator === null && active) {
+    for (const p of active.parts) for (const m of p.modules) if (m.type === 'heatShield') ablator = m.ablatorFraction;
+  }
+  return {
+    ...s,
+    vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Lab Meridian' } : v)),
+    readouts: ablator === s.readouts.ablatorFraction ? s.readouts : { ...s.readouts, ablatorFraction: ablator },
+  };
 }
 
 /** Cylinders (yMin, yMax, radius, dark band 0/1) of the given part snapshots for the lab backdrop. */
