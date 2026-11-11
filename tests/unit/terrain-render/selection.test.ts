@@ -123,5 +123,23 @@ describe('CDLOD selection', () => {
       const s = it.node.sphere;
       expect(s.cx * obs[0]!.dir.x + s.cy * obs[0]!.dir.y + s.cz * obs[0]!.dir.z).toBeGreaterThan(0);
     }
+    // Horizon culling is conservative: every point that the eye can see over the occluder sphere lies in a
+    // tile that is marked visible. Sample directions on a grid around the sub-point.
+    const rOcc = R - 9130;
+    const horizon = Math.acos(rOcc / obs[0]!.r);
+    const visibleNodes = new Set(visible.map((it) => (it.quadrant < 0 ? it.node : tree.childrenOf(it.node)[it.quadrant]!)));
+    let checked = 0;
+    for (const it of tree.items) {
+      const region = it.quadrant < 0 ? it.node : tree.childrenOf(it.node)[it.quadrant]!;
+      const c = region.frame.cHat;
+      const angle = Math.acos(Math.min(1, c.x * obs[0]!.dir.x + c.y * obs[0]!.dir.y + c.z * obs[0]!.dir.z));
+      // The tile centre at its lowest possible height is above the horizon and inside the view cone.
+      const inCone = angle < 0.5 && Math.atan2(Math.sin(angle) * (R + region.hMin), obs[0]!.r - Math.cos(angle) * (R + region.hMin)) < Math.PI / 4.2;
+      if (inCone && angle < horizon + Math.acos(rOcc / (R + region.hMin)) - 1e-6) {
+        expect(visibleNodes.has(region), `tile L${region.level} at ${angle.toFixed(4)} rad is visible`).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
   });
 });

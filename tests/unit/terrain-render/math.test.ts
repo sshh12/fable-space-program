@@ -10,7 +10,7 @@ import { capMaxLevel, capMorph, fadeMorph, levelRange, lodK, LOD_K_MIN, morphFac
 import { buildNoiseVolume, NOISE_SIZE } from '@/render/terrain/materials';
 import { coverageWeight, imageryLevelAt } from '@/render/terrain/records';
 import { buildRockMesh, ROCK_LODS, ROCK_RADIUS_MAX, ROCK_RADIUS_MIN, ROCK_VARIANTS } from '@/render/terrain/rockMesh';
-import { angleToFootprint, frameDir, patchBelowHorizon, shellBoundSphere, shellDistance, tileFrame, tileLocalF32 } from '@/render/terrain/tileMath';
+import { angleToFootprint, frameDir, shellBoundSphere, shellDistance, tileFrame, tileLocalF32 } from '@/render/terrain/tileMath';
 
 const R_EARTH = 6_371_000;
 
@@ -166,20 +166,6 @@ describe('tile geometry', () => {
         for (const r of [R_EARTH - 100, R_EARTH + 3000]) expect(Math.hypot(p.x * r - s.cx, p.y * r - s.cy, p.z * r - s.cz)).toBeLessThanOrEqual(s.r);
       }
     }
-  });
-
-  it('horizon culling hides the far side and keeps what the eye can see', () => {
-    const eyeDir = faceStToDir(0, 0, 0);
-    const eye = { x: eyeDir.x * (R_EARTH + 400e3), y: eyeDir.y * (R_EARTH + 400e3), z: eyeDir.z * (R_EARTH + 400e3) };
-    const e2 = eye.x * eye.x + eye.y * eye.y + eye.z * eye.z;
-    const under = tileFrame({ face: 0, level: 4, x: 8, y: 8 });
-    const far = tileFrame({ face: 1, level: 4, x: 8, y: 8 });
-    const limb = tileFrame({ face: 2, level: 4, x: 4, y: 8 });
-    expect(patchBelowHorizon(under, eye, e2, R_EARTH - 100, R_EARTH + 100)).toBe(false);
-    expect(patchBelowHorizon(far, eye, e2, R_EARTH - 100, R_EARTH + 100)).toBe(true);
-    // A tile 63-69 degrees from the sub-point is hidden at sea level, but a (hypothetical) 3000 km mountain on it is not.
-    expect(patchBelowHorizon(limb, eye, e2, R_EARTH - 100, R_EARTH + 100)).toBe(true);
-    expect(patchBelowHorizon(limb, eye, e2, R_EARTH - 100, R_EARTH + 3000e3)).toBe(false);
   });
 });
 

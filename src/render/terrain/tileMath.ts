@@ -1,7 +1,7 @@
 /**
  * Float64 geometry of cube-sphere tiles for the renderer: the tile frame of the stable vertex formula
- * (rendering-design 2.3), exact distances from an observer to a tile's shell patch, bounding spheres and
- * horizon tests. Pure maths, no GPU: unit-tested in Node.
+ * (rendering-design 2.3), exact distances from an observer to a tile's shell patch and bounding spheres.
+ * Pure maths, no GPU: unit-tested in Node.
  *
  * A tile's VOLUME is its shell patch: every point r * d with d a direction inside the tile's footprint
  * (a spherical quadrilateral bounded by four great-circle arcs, because tile edges are straight lines in
@@ -136,35 +136,6 @@ export function shellBoundSphere(fr: TileFrame, r1: number, r2: number): BoundSp
   const half = angleBetween(fr.corners[0], fr.corners[2]) * 0.5;
   r += r2 * (1 - Math.cos(half)) * 0.5;
   return { cx, cy, cz, r: r * 1.001 };
-}
-
-/**
- * Is the point `p` (body-fixed, m) hidden from `eye` by the sphere of radius `rOcc` about the body centre?
- * (Cesium's occluder test: beyond the tangent plane of the horizon and inside the horizon cone.)
- */
-export function pointBelowHorizon(eye: Vec3, eyeLenSq: number, rOcc: number, px: number, py: number, pz: number): boolean {
-  const vh = eyeLenSq - rOcc * rOcc;
-  if (vh <= 0) return false;
-  const vx = px - eye.x;
-  const vy = py - eye.y;
-  const vz = pz - eye.z;
-  const vtDotVc = -(vx * eye.x + vy * eye.y + vz * eye.z);
-  return vtDotVc > vh && (vtDotVc * vtDotVc) / (vx * vx + vy * vy + vz * vz) > vh;
-}
-
-/** True when the whole shell patch up to radius `r2` is below the horizon of the occluder sphere. */
-export function patchBelowHorizon(fr: TileFrame, eye: Vec3, eyeLenSq: number, rOcc: number, r2: number): boolean {
-  if (eyeLenSq <= rOcc * rOcc) return false;
-  // The eye above the patch always sees it.
-  const el = Math.sqrt(eyeLenSq);
-  if (angleToFootprint(fr, { x: eye.x / el, y: eye.y / el, z: eye.z / el }) === 0) return false;
-  for (let j = 0; j <= 2; j++) {
-    for (let i = 0; i <= 2; i++) {
-      const d = frameDir(fr, i * 0.5, j * 0.5);
-      if (!pointBelowHorizon(eye, eyeLenSq, rOcc, d.x * r2, d.y * r2, d.z * r2)) return false;
-    }
-  }
-  return true;
 }
 
 /**

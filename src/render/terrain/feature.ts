@@ -30,9 +30,10 @@ export interface TerrainFeatureOptions {
   id?: string;
   order?: number;
   streamer?: Partial<StreamerOptions>;
-  /** Always-resident levels: `pinLevelNear` for a body the camera is within 16 radii of, `pinLevelFar` otherwise. */
-  pinLevelNear?: number;
-  pinLevelFar?: number;
+  /** Levels 0..pinLevel of every body are always resident (default 2). */
+  pinLevel?: number;
+  /** Levels up to this one are loaded ahead for a body the camera is within 16 radii of (default 3). */
+  preloadLevel?: number;
   /** Draw the rock field (default true). */
   rocks?: boolean;
 }
@@ -62,6 +63,8 @@ export interface TerrainDebug {
    * pop detector of the browser specs is not blind. Never used by the app.
    */
   setMorphEnabled(on: boolean): void;
+  /** Draw the rock field or not (performance attribution: the rocks' share is the difference). */
+  setRocksEnabled(on: boolean): void;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
   /** READY tiles of a level, nearest to a point first (at most `limit`). */
@@ -117,7 +120,7 @@ interface BodyState {
 const MAX_RECORDS = 6144;
 const MAX_INSTANCES = 1 << 16;
 /** The second selection pass (prefetch) runs every this many frames. */
-const PREFETCH_EVERY = 4;
+const PREFETCH_EVERY = 8;
 /** Fade-in used for a few seconds after a camera cut, s (there is no continuity to protect right after a cut). */
 const FAST_FADE_SECONDS = 0.12;
 const FAST_FADE_WINDOW = 3;
@@ -137,8 +140,8 @@ const mat3Columns = (m: Readonly<Mat3>, out: Float32Array, o: number): void => {
 
 export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory: TerrainProviderFactory, options: TerrainFeatureOptions = {}): TerrainFeature {
   const device = ctx.device;
-  const pinNear = options.pinLevelNear ?? 3;
-  const pinFar = options.pinLevelFar ?? 2;
+  const pinLevel = options.pinLevel ?? 2;
+  const preloadLevel = options.preloadLevel ?? 3;
   const bodies: BodyState[] = [];
   let streamer: TileStreamer;
   let provider: TerrainAuthority;
@@ -170,6 +173,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   // deterministic screenshot is taken; a tile that arrives then must still relax.)
   let clock = 0;
   let morphEnabled = true;
+  let rocksEnabled = true;
   let selectMs = 0;
   const casterScratch: DrawItem[] = [];
 
@@ -378,11 +382,12 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     }
     b.observers = obs;
 
-    // Always-resident levels follow the camera's distance (ARCHITECTURE 7.3; see the hand-off for the far level).
+    // Coarse levels: 0..pinLevel always resident; one more level is loaded ahead once the camera is near
+    // the body (within 16 radii), so that a cut to anywhere on it starts from 64 tiles per face.
     const near = pose.cameraAltitude < 16 * b.def.radius;
     if (b.pinNear !== near) {
       b.pinNear = near;
-      streamer.setPinLevel(b.stream, near ? pinNear : pinFar);
+      streamer.setResidentLevels(b.stream, pinLevel, near ? preloadLevel : pinLevel);
     }
 
     const window = morphWindow(b.K);
@@ -411,7 +416,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         const r = v3.len(ahead);
         b.tree.select({ ...base, observers: [{ pos: ahead, r, dir: v3.scale(ahead, 1 / r), bias: 0, vessel: false }], frustum: { eye: ahead, planes: frustum.planes }, prefetch: 0.3 });
       }
-    } else if (frameIndex % PREFETCH_EVERY === 2) {
+    } else if (frameIndex % PREFETCH_EVERY === 4) {
       const impact = frame.snapshot.patches.current.flatMap((p) => p.markers).find((m) => m.kind === 'impact' && m.bodyId === b.id && m.latitude !== undefined && m.longitude !== undefined);
       if (impact) {
         const dir = latLonToDir(impact.latitude!, impact.longitude!);
@@ -610,7 +615,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         const b = await createBody(def, manifest);
         bodies.push(b);
         streamer.addBody(b.stream);
-        streamer.setPinLevel(b.stream, 0);
+        streamer.setResidentLevels(b.stream, 0, 0);
       }
       if (options.rocks !== false) rocks = new RockRenderer(ctx, provider, bodies.map((b) => ({ id: b.id, def: b.def, params: b.params, set: b.set, albedoAt: b.albedoAt })));
 
@@ -657,10 +662,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       for (const b of activeBodies()) buildBody(b, frame, frame.bodies[b.bodyIndex]!);
       uploadRecords();
       if (instanceCount > 0) device.queue.writeBuffer(instanceBuffer, 0, instances, 0, instanceCount);
-      rocks?.prepare(
-        frame,
-        activeBodies().map((b) => ({ id: b.id, bodyIndex: b.bodyIndex, observers: b.observers })),
-      );
+      rocks?.prepare(frame, rocksEnabled ? activeBodies().map((b) => ({ id: b.id, bodyIndex: b.bodyIndex, observers: b.observers })) : []);
       ctx.perf.counter('terrain.tiles', bodies.reduce((a, b) => a + b.stats.visible, 0));
       ctx.perf.counter('terrain.queue', streamer.stats().queued + streamer.stats().loading);
     },
@@ -785,6 +787,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setMorphEnabled(on: boolean) {
         morphEnabled = on;
+      },
+      setRocksEnabled(on: boolean) {
+        rocksEnabled = on;
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),

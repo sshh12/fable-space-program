@@ -44,9 +44,9 @@ export interface StreamerOptions {
 
 export const DEFAULT_STREAMER_OPTIONS: StreamerOptions = {
   workers: Math.max(1, Math.min(8, (globalThis.navigator?.hardwareConcurrency ?? 4) - 2)),
-  tileLayers: 1536,
-  imageLayers: 896,
-  nightLayers: 640,
+  tileLayers: 1280,
+  imageLayers: 1024,
+  nightLayers: 512,
   uploadTiles: 8,
   uploadMs: 2,
   workerCacheBytes: 96 * 1024 * 1024,
@@ -90,6 +90,8 @@ export interface StreamStats {
   /** Largest number of tiles and milliseconds spent on uploads in one frame. */
   maxUploadTiles: number;
   maxUploadMs: number;
+  /** 99th percentile of the upload time over the last 512 frames that uploaded something, ms. */
+  uploadMsP99: number;
   lastUploadMs: number;
   /** Mean worker times of completed jobs, ms. */
   bakeMs: number;
@@ -134,12 +136,19 @@ export class TileStreamer {
     incompleteBakes: 0,
     maxUploadTiles: 0,
     maxUploadMs: 0,
+    uploadMsP99: 0,
     lastUploadMs: 0,
     bakeMs: 0,
     imageMs: 0,
     jobs: 0,
     poolBytes: 0,
   };
+  /** Running mean of the main-thread cost of uploading one tile, ms. */
+  private tileUploadMs = 0.3;
+  /** Running estimate of the cost of encoding and submitting the mip passes of a frame's uploads, ms. */
+  private mipMs = 0.4;
+  private readonly uploadTimes = new Float32Array(512);
+  private uploadTimeCount = 0;
   private bakeSum = 0;
   private imageSum = 0;
 
@@ -189,16 +198,27 @@ export class TileStreamer {
     this.delayMs = ms;
   }
 
-  /** Pin levels 0..level of a body (always resident) and request what is missing; deeper pins are released. */
-  setPinLevel(body: StreamBody, level: number): void {
+  /**
+   * Levels 0..pinLevel of a body are always resident (never evicted); levels up to `preloadLevel` are
+   * loaded now as well and then kept like any other tile (evicted only when a pool is full and they have
+   * not been touched for a while).
+   */
+  setResidentLevels(body: StreamBody, pinLevel: number, preloadLevel: number): void {
     const visit = (n: TileNode): void => {
-      const pin = n.level <= level;
-      if (pin && !n.pinned) {
+      const pin = n.level <= pinLevel;
+      if (n.state === TILE_EMPTY && !n.failed) {
+        // Pinned while it loads, so that the request is neither cancelled nor dropped on arrival.
         n.pinned = true;
-        if (n.state === TILE_EMPTY) this.enqueue(n, body, 1e9 - n.level * 1e6);
-      } else if (!pin && n.pinned) n.pinned = false;
-      if (n.level < level) for (const c of body.tree.childrenOf(n)) visit(c);
-      else if (n.children) for (const c of n.children) if (c.pinned) visit(c);
+        n.preload = !pin;
+        this.enqueue(n, body, 1e9 - n.level * 1e6);
+      } else if (n.state === TILE_READY) {
+        n.pinned = pin;
+        n.preload = false;
+      } else if (pin) {
+        n.pinned = true;
+        n.preload = false;
+      }
+      if (n.level < Math.max(pinLevel, preloadLevel)) for (const c of body.tree.childrenOf(n)) visit(c);
     };
     for (const root of body.tree.roots) visit(root);
   }
@@ -315,7 +335,9 @@ export class TileStreamer {
     const fresh = { normals: [] as number[], albedo: [] as number[], aux: [] as number[], night: [] as number[] };
     let count = 0;
     let i = 0;
-    while (i < this.arrived.length && count < o.uploadTiles && (count === 0 || performance.now() - t0 < o.uploadMs)) {
+    // At least one tile per frame; after that, stop before the tile that would take the frame over the
+    // time budget, judging by the mean cost of a tile so far.
+    while (i < this.arrived.length && count < o.uploadTiles && (count === 0 || performance.now() - t0 + this.tileUploadMs + this.mipMs < o.uploadMs)) {
       const a = this.arrived[i]!;
       if (a.at > t0) {
         i++;
@@ -376,11 +398,16 @@ export class TileStreamer {
       n.nightOwner = null;
       n.state = TILE_READY;
       n.lastTouched = Math.max(n.lastTouched, this.frame);
+      if (n.preload) {
+        n.preload = false;
+        n.pinned = false;
+      }
       if (n.parent) n.parent.readyChildren++;
       this.readyCount++;
       this.s.uploadedTotal++;
       count++;
     }
+    const tMips = performance.now();
     if (count > 0) {
       const encoder = device.createCommandEncoder({ label: 'terrain.upload' });
       this.mips.generate(encoder, this.normals, fresh.normals);
@@ -390,7 +417,20 @@ export class TileStreamer {
       device.queue.submit([encoder.finish()]);
     }
     const ms = performance.now() - t0;
+    if (count > 0) {
+      const mips = performance.now() - tMips;
+      // Running estimates, leaning towards the expensive frames (a budget is about the worst ones).
+      const perTile = (tMips - t0) / count;
+      this.tileUploadMs += (perTile - this.tileUploadMs) * (perTile > this.tileUploadMs ? 0.5 : 0.05);
+      this.mipMs += (mips - this.mipMs) * (mips > this.mipMs ? 0.5 : 0.05);
+    }
     this.s.lastUploadMs = ms;
+    if (count > 0) {
+      this.uploadTimes[this.uploadTimeCount++ % this.uploadTimes.length] = ms;
+      const n = Math.min(this.uploadTimeCount, this.uploadTimes.length);
+      const sorted = Array.from(this.uploadTimes.subarray(0, n)).sort((p, q) => p - q);
+      this.s.uploadMsP99 = sorted[Math.min(n - 1, Math.floor(n * 0.99))]!;
+    }
     if (count > this.s.maxUploadTiles) this.s.maxUploadTiles = count;
     if (ms > this.s.maxUploadMs) this.s.maxUploadMs = ms;
   }

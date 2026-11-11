@@ -7,7 +7,7 @@
 import type { FaceId, TileKey } from '@/core/geo/cubeSphere';
 import type { Vec3 } from '@/core/math';
 import { capMaxLevel, levelRange, type MorphWindow } from './lod';
-import { frameDir, patchBelowHorizon, shellBoundSphere, tileFrame, tileId, type BoundSphere, type TileFrame } from './tileMath';
+import { frameDir, shellBoundSphere, tileFrame, tileId, type BoundSphere, type TileFrame } from './tileMath';
 
 export const TILE_EMPTY = 0;
 export const TILE_QUEUED = 1;
@@ -27,6 +27,8 @@ export class TileNode {
   hMin: number;
   hMax: number;
   sphere: BoundSphere;
+  /** Largest angle between the tile's centre direction and a point of its footprint, rad. */
+  readonly angularRadius: number;
 
   state: TileState = TILE_EMPTY;
   /** Layers in the shared pools (-1 = none). `imageLayer` indexes the albedo and the aux array alike. */
@@ -52,6 +54,8 @@ export class TileNode {
   pinned = false;
   /** A worker failed on this tile: it is not requested again (the error has been reported). */
   failed = false;
+  /** Requested by a preload of coarse levels: pinned only until it has been uploaded. */
+  preload = false;
 
   /** Frame bookkeeping. */
   lastTouched = -1;
@@ -81,6 +85,9 @@ export class TileNode {
     this.hMin = hMin;
     this.hMax = hMax;
     this.sphere = shellBoundSphere(this.frame, radius + hMin, radius + hMax);
+    let cosMin = 1;
+    for (const c of this.frame.corners) cosMin = Math.min(cosMin, c.x * this.frame.cHat.x + c.y * this.frame.cHat.y + c.z * this.frame.cHat.z);
+    this.angularRadius = Math.acos(Math.min(1, cosMin));
   }
 
   get level(): number {
@@ -232,8 +239,13 @@ export class BodyQuadtree {
     const fr = n.frame;
     const r1 = this.radius + n.hMin;
     const r2 = this.radius + n.hMax;
-    for (const o of this.p.observers) {
-      const dc = Math.hypot(s.cx - o.pos.x, s.cy - o.pos.y, s.cz - o.pos.z);
+    const observers = this.p.observers;
+    for (let i = 0; i < observers.length; i++) {
+      const o = observers[i]!;
+      const ox = s.cx - o.pos.x;
+      const oy = s.cy - o.pos.y;
+      const oz = s.cz - o.pos.z;
+      const dc = Math.sqrt(ox * ox + oy * oy + oz * oz);
       const lower = dc - s.r - o.bias;
       if (lower >= best || lower >= limit) {
         // Cannot beat the best so far, or is beyond the range that matters: the sphere bound is enough.
@@ -249,7 +261,11 @@ export class BodyQuadtree {
   private nearVessel(n: TileNode): boolean {
     const s = n.sphere;
     for (const o of this.p.observers) {
-      if (o.vessel && Math.hypot(s.cx - o.pos.x, s.cy - o.pos.y, s.cz - o.pos.z) - s.r < 2000) return true;
+      if (!o.vessel) continue;
+      const ox = s.cx - o.pos.x;
+      const oy = s.cy - o.pos.y;
+      const oz = s.cz - o.pos.z;
+      if (Math.sqrt(ox * ox + oy * oy + oz * oz) - s.r < 2000) return true;
     }
     return false;
   }
@@ -265,7 +281,8 @@ export class BodyQuadtree {
     const size = this.faceSize / 2 ** n.level;
     const guard = GUARD_TILES * size;
     let cls: 0 | 1 | 2 = 0;
-    for (const pl of f.planes) {
+    for (let i = 0; i < 4; i++) {
+      const pl = f.planes[i]!;
       const dist = pl.x * x + pl.y * y + pl.z * z;
       if (dist < -s.r) {
         if (dist < -(s.r + guard) && d > NEAR_KEEP_TILES * size) return 2;
@@ -275,16 +292,26 @@ export class BodyQuadtree {
     return cls;
   }
 
-  private belowHorizon(n: TileNode, d: number): boolean {
-    const p = this.p;
-    if (p.occluderRadius <= 0 || !p.frustum) return false;
-    const eye = p.frustum.eye;
-    const e2 = eye.x * eye.x + eye.y * eye.y + eye.z * eye.z;
-    const vh2 = e2 - p.occluderRadius * p.occluderRadius;
-    // Nothing nearer than the horizon of the occluder can be hidden by it.
-    if (vh2 <= 0 || d * d < vh2) return false;
-    return patchBelowHorizon(n.frame, eye, e2, p.occluderRadius, this.radius + n.hMax);
+  /**
+   * Is the whole tile hidden behind the occluder sphere? A point at radius r and angle a from the eye's
+   * direction is visible iff a <= acos(Ro / rEye) + acos(Ro / r); every point of the tile is at least
+   * (angle to the tile centre - angular radius) away and at most at radius R + hMax. Conservative and a
+   * handful of operations per tile.
+   */
+  private belowHorizon(n: TileNode, _d: number): boolean {
+    if (this.horizonEye <= 0 || n.level < 2) return false;
+    const c = n.frame.cHat;
+    const e = this.eyeDir;
+    const cos = c.x * e.x + c.y * e.y + c.z * e.z;
+    const angle = Math.acos(cos > 1 ? 1 : cos < -1 ? -1 : cos) - n.angularRadius;
+    if (angle <= this.horizonEye) return false;
+    const ratio = this.p.occluderRadius / (this.radius + n.hMax);
+    return angle > this.horizonEye + (ratio >= 1 ? 0 : Math.acos(ratio));
   }
+
+  /** Angle from the eye's direction to its horizon on the occluder sphere (0 = no horizon culling) and that direction. */
+  private horizonEye = 0;
+  private eyeDir: Vec3 = { x: 0, y: 0, z: 1 };
 
   /**
    * Camera selection. Fills `items` and appends to `wanted`. Only READY tiles are drawn; a missing or
@@ -292,6 +319,15 @@ export class BodyQuadtree {
    */
   select(params: SelectParams): void {
     this.p = params;
+    this.horizonEye = 0;
+    if (params.frustum && params.occluderRadius > 0) {
+      const eye = params.frustum.eye;
+      const r = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z);
+      if (r > params.occluderRadius) {
+        this.horizonEye = Math.acos(params.occluderRadius / r);
+        this.eyeDir = { x: eye.x / r, y: eye.y / r, z: eye.z / r };
+      }
+    }
     if (params.prefetch === 0) {
       this.items.length = 0;
       this.fading = 0;
@@ -435,7 +471,7 @@ function shellDistanceRaw(fr: TileFrame, p: Vec3, rEye: number, r1: number, r2: 
     let qx = p.x - s * mi.x;
     let qy = p.y - s * mi.y;
     let qz = p.z - s * mi.z;
-    const ql = Math.hypot(qx, qy, qz);
+    const ql = Math.sqrt(qx * qx + qy * qy + qz * qz);
     let ang = -1;
     if (ql > 1e-12) {
       qx /= ql;
@@ -447,8 +483,8 @@ function shellDistanceRaw(fr: TileFrame, p: Vec3, rEye: number, r1: number, r2: 
       if (t1 >= 0 && t2 >= 0) ang = Math.asin(Math.min(1, -s));
     }
     if (ang < 0) {
-      const ca = Math.hypot(p.x - A.x, p.y - A.y, p.z - A.z);
-      const cb = Math.hypot(p.x - B.x, p.y - B.y, p.z - B.z);
+      const ca = Math.sqrt((p.x - A.x) * (p.x - A.x) + (p.y - A.y) * (p.y - A.y) + (p.z - A.z) * (p.z - A.z));
+      const cb = Math.sqrt((p.x - B.x) * (p.x - B.x) + (p.y - B.y) * (p.y - B.y) + (p.z - B.z) * (p.z - B.z));
       const ch = Math.min(ca, cb);
       ang = ch >= 2 ? Math.PI : 2 * Math.asin(ch / 2);
     }

@@ -194,6 +194,14 @@ interface Chunk {
   /** Offset of the chunk's rocks in the GPU rock buffer and its slot in the per-frame chunk buffer. */
   base: number;
   slot: number;
+  /**
+   * Rocks are stored by variant, largest first within a variant: variantStart[v] .. variantStart[v + 1] are
+   * the rocks of variant v. A size threshold therefore selects a prefix of each variant's range.
+   */
+  variantStart: Int32Array;
+  /** Distance from the camera to the nearest point of the chunk this frame, and to its centre, m. */
+  near: number;
+  far: number;
 }
 
 interface RockBody {
@@ -216,7 +224,9 @@ interface RockBody {
   prevRot: Mat3;
   prevCentre: Vec3;
   rangePerRadius: number;
-  minRadius: number;
+  /** Chunks in range of the observers (rebuilt when an observer has moved a quarter of a chunk). */
+  wanted: Chunk[];
+  scanned: Vec3[];
 }
 
 interface MeshBuffers {
@@ -366,7 +376,8 @@ export class RockRenderer {
         prevRot: mat3.identity(),
         prevCentre: v3.zero(),
         rangePerRadius: 0,
-        minRadius: 0,
+        wanted: [],
+        scanned: [],
       });
     }
   }
@@ -376,16 +387,21 @@ export class RockRenderer {
   private buildChunk(b: RockBody, c: Chunk, minRadius: number): void {
     const id = b.info.id;
     const R = b.info.def.radius;
-    const found = this.provider.rocksNear(id, c.centre, c.reach * 1.05, minRadius);
+    const found = this.provider.rocksNear(id, c.centre, c.reach * 1.05, minRadius).filter((rock) => {
+      const tile = dirToTile(rock.dir, b.chunkLevel).key;
+      return tile.face === c.key.face && tile.x === c.key.x && tile.y === c.key.y;
+    });
+    // By variant, largest first: a size threshold then selects a prefix of each variant.
+    found.sort((p, q) => (p.variant % ROCK_VARIANTS) - (q.variant % ROCK_VARIANTS) || q.radius - p.radius);
     const out = new Float32Array(found.length * ROCK_FLOATS);
-    let n = 0;
     const collideRadius = 0.25;
     const band = b.chunkSize / 2 ** (b.info.def.terrain!.maxRenderLevel - b.chunkLevel) / 32;
     const tint = b.info.albedoAt(c.centre);
     const scale = b.info.params.rockAlbedoScale;
-    for (const rock of found) {
-      const tile = dirToTile(rock.dir, b.chunkLevel).key;
-      if (tile.face !== c.key.face || tile.x !== c.key.x || tile.y !== c.key.y) continue;
+    c.variantStart.fill(found.length);
+    found.forEach((rock, n) => {
+      const variant = rock.variant % ROCK_VARIANTS;
+      for (let v = variant; v >= 0 && c.variantStart[v]! > n; v--) c.variantStart[v] = n;
       const u1 = hashToUnit(hash4(rock.seed, 1, 0, 0));
       const u2 = hashToUnit(hash4(rock.seed, 2, 0, 0));
       const u3 = hashToUnit(hash4(rock.seed, 3, 0, 0));
@@ -415,15 +431,14 @@ export class RockRenderer {
       out[o + 10] = u1 * 7;
       // Elongated along one horizontal axis (never narrower than the collision cap).
       out[o + 11] = 1 + 0.5 * hashToUnit(hash4(rock.seed, 4, 0, 0));
-      out[o + 15] = rock.variant % ROCK_VARIANTS;
       const shade = scale * (0.85 + 0.3 * u3);
       out[o + 12] = Math.min(1, tint[0] * shade);
       out[o + 13] = Math.min(1, tint[1] * shade);
       out[o + 14] = Math.min(1, tint[2] * shade);
-      n++;
-    }
+      out[o + 15] = variant;
+    });
     c.data = out;
-    c.count = n;
+    c.count = found.length;
     c.minRadius = minRadius;
     c.built = true;
     this.dirty = true;
@@ -432,6 +447,84 @@ export class RockRenderer {
   /** Ground height above the reference radius under a direction, m (coarse: for range decisions only). */
   private groundHeight(b: RockBody, dir: Vec3): number {
     return this.provider.heightAt(b.info.id, dir, 20);
+  }
+
+  /** The chunks within range of the observers that are near the ground (and the data loads they need). */
+  private scanChunks(b: RockBody, observers: readonly LodObserverFixed[]): void {
+    const range = b.info.params.rockRangeM;
+    const R = b.info.def.radius;
+    b.wanted.length = 0;
+    b.scanned = observers.map((o) => o.pos);
+    const seen = new Set<number>();
+    observers.forEach((o, oi) => {
+      if (oi >= 4) return;
+      const ground = this.groundHeight(b, o.dir);
+      if (o.r - R - ground > range) return;
+      // Height data for the rock queries around this observer (pinned under its own slot).
+      const loaded = b.loaded[oi];
+      const groundPos = v3.scale(o.dir, R + ground);
+      if (!b.loading[oi] && (!loaded || v3.dist(loaded.centre, groundPos) > 0.5 * range)) {
+        b.loading[oi] = true;
+        this.pending++;
+        const radius = 2 * range;
+        this.provider.ensureLoaded(b.info.id, o.dir, radius, `terrain-render:rocks:${oi}`).then(
+          () => {
+            b.loaded[oi] = { centre: groundPos, radius };
+            b.loading[oi] = false;
+            b.scanned = [];
+            this.pending--;
+          },
+          (e: unknown) => {
+            b.loading[oi] = false;
+            this.pending--;
+            coreOf(this.ctx).reportError(`terrain rocks: ${e instanceof Error ? e.message : String(e)}`);
+          },
+        );
+      }
+      if (!loaded) return;
+      // Sample the tangent plane on a grid finer than the chunks; the tile under each sample is a chunk.
+      const east = v3.normalize(v3.cross(Math.abs(o.dir.z) < 0.99 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 }, o.dir));
+      const north = v3.cross(o.dir, east);
+      const step = 0.5 * b.chunkSize;
+      const steps = Math.ceil((range + b.chunkSize) / step);
+      for (let j = -steps; j <= steps; j++) {
+        for (let i = -steps; i <= steps; i++) {
+          if (Math.hypot(i, j) * step > range + 2 * b.chunkSize) continue;
+          const dir = v3.normalize(v3.add(v3.scale(o.dir, R), v3.add(v3.scale(east, i * step), v3.scale(north, j * step))));
+          const key = dirToTile(dir, b.chunkLevel).key;
+          const id = tileId(key.face, key.level, key.x, key.y);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          let c = b.chunks.get(id);
+          if (!c) {
+            const slot = this.freeSlots.pop();
+            if (slot === undefined) continue;
+            const centre = tileUvToDir(key, 0.5, 0.5);
+            c = {
+              key,
+              id,
+              centre,
+              origin: v3.scale(centre, R + this.groundHeight(b, centre)),
+              reach: 0.75 * b.chunkSize * 1.3,
+              data: new Float32Array(0),
+              count: 0,
+              minRadius: Infinity,
+              built: false,
+              lastUsed: -1,
+              base: 0,
+              slot,
+              variantStart: new Int32Array(ROCK_VARIANTS + 1),
+              near: 0,
+              far: 0,
+            };
+            b.chunks.set(id, c);
+          }
+          // Only inside the disc whose height data is resident.
+          if (v3.dist(c.origin, loaded.centre) + c.reach > loaded.radius) continue;
+          b.wanted.push(c);
+        }
+      }
+    });
   }
 
   prepare(frame: FrameContext, active: { id: string; bodyIndex: number; observers: readonly LodObserverFixed[] }[]): void {
@@ -454,95 +547,63 @@ export class RockRenderer {
       b.prevCentre = pose.prevCenterRelCam;
       b.rangePerRadius = 2 / (Math.max(p.rockMinPixels, 0.5) * pixelAngle);
       const range = p.rockRangeM;
-      const R = b.info.def.radius;
 
-      // Chunks within range of observers that are near the ground.
-      const wanted: { c: Chunk; need: number }[] = [];
-      a.observers.forEach((o, oi) => {
-        if (oi >= 4) return;
-        const ground = this.groundHeight(b, o.dir);
-        const height = o.r - R - ground;
-        if (height > range) return;
-        // Height data for the rock queries around this observer (pinned under its own slot).
-        const loaded = b.loaded[oi];
-        const groundPos = v3.scale(o.dir, R + ground);
-        if (!b.loading[oi] && (!loaded || v3.dist(loaded.centre, groundPos) > 0.5 * range)) {
-          b.loading[oi] = true;
-          this.pending++;
-          const radius = 2 * range;
-          this.provider.ensureLoaded(b.info.id, o.dir, radius, `terrain-render:rocks:${oi}`).then(
-            () => {
-              b.loaded[oi] = { centre: groundPos, radius };
-              b.loading[oi] = false;
-              this.pending--;
-            },
-            (e: unknown) => {
-              b.loading[oi] = false;
-              this.pending--;
-              coreOf(this.ctx).reportError(`terrain rocks: ${e instanceof Error ? e.message : String(e)}`);
-            },
-          );
+      // Which chunks are in range changes slowly: scan again when an observer has moved a quarter chunk.
+      const moved = b.scanned.length !== a.observers.length || a.observers.some((o, i) => v3.dist(o.pos, b.scanned[i]!) > 0.25 * b.chunkSize);
+      if (moved) this.scanChunks(b, a.observers);
+      if (b.wanted.length === 0) continue;
+
+      // Distances of this frame, and the chunks to build or refine (nearest first, within the time budget).
+      let refine: Chunk[] | null = null;
+      for (const c of b.wanted) {
+        let near = Infinity;
+        for (const o of a.observers) {
+          const d = Math.max(0, v3.dist(c.origin, o.pos) - c.reach);
+          if (d < near) near = d;
         }
-        if (!loaded) return;
-        // Sample the tangent plane on a grid finer than the chunks; the tile under each sample is a chunk.
-        const east = v3.normalize(v3.cross(Math.abs(o.dir.z) < 0.99 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 }, o.dir));
-        const north = v3.cross(o.dir, east);
-        const step = 0.5 * b.chunkSize;
-        const steps = Math.ceil(range / step);
-        for (let j = -steps; j <= steps; j++) {
-          for (let i = -steps; i <= steps; i++) {
-            if (Math.hypot(i, j) * step > range + b.chunkSize) continue;
-            const dir = v3.normalize(v3.add(v3.scale(o.dir, R), v3.add(v3.scale(east, i * step), v3.scale(north, j * step))));
-            const key = dirToTile(dir, b.chunkLevel).key;
-            const id = tileId(key.face, key.level, key.x, key.y);
-            let c = b.chunks.get(id);
-            if (!c) {
-              const slot = this.freeSlots.pop();
-              if (slot === undefined) continue;
-              const centre = tileUvToDir(key, 0.5, 0.5);
-              c = { key, id, centre, origin: v3.scale(centre, R + this.groundHeight(b, centre)), reach: 0.75 * b.chunkSize * 1.3, data: new Float32Array(0), count: 0, minRadius: Infinity, built: false, lastUsed: -1, base: 0, slot };
-              b.chunks.set(id, c);
-            }
-            if (c.lastUsed === this.frameIndex) continue;
-            c.lastUsed = this.frameIndex;
-            // Only inside the disc whose height data is resident.
-            if (v3.dist(c.origin, loaded.centre) + c.reach > loaded.radius) continue;
-            const dist = Math.max(0, v3.dist(c.origin, o.pos) - c.reach);
-            if (dist > range) continue;
-            wanted.push({ c, need: dist / b.rangePerRadius });
+        c.near = near;
+        c.lastUsed = near <= range ? this.frameIndex : c.lastUsed;
+        if (near > range) continue;
+        const need = near / b.rangePerRadius;
+        if (!c.built || c.minRadius > need * 1.05 + 1e-6) (refine ??= []).push(c);
+      }
+      if (refine) {
+        refine.sort((x, y) => x.near - y.near);
+        for (const c of refine) {
+          if (performance.now() - t0 > BUILD_BUDGET_MS) {
+            this.unbuilt++;
+            continue;
           }
+          // Well below what is needed now, so that the chunk is not rebuilt for every metre of approach.
+          this.buildChunk(b, c, (c.near / b.rangePerRadius) * 0.6);
         }
-      });
-      // Build or refine chunks, nearest first, within the time budget.
-      wanted.sort((x, y) => x.need - y.need);
-      for (const w of wanted) {
-        const c = w.c;
-        if (c.built && c.minRadius <= w.need * 1.05 + 1e-6) continue;
-        if (performance.now() - t0 > BUILD_BUDGET_MS) {
-          this.unbuilt++;
-          continue;
-        }
-        this.buildChunk(b, c, Math.max(0, w.need * 0.7));
       }
       // Forget chunks that have not been in range for a while.
       if (this.frameIndex % 120 === 0) {
         for (const [id, c] of b.chunks) {
-          if (c.lastUsed < this.frameIndex - 600) {
+          if (c.lastUsed < this.frameIndex - 600 && !b.wanted.includes(c)) {
             b.chunks.delete(id);
             this.freeSlots.push(c.slot);
             if (c.built) this.dirty = true;
           }
         }
       }
-      b.active = wanted.length > 0;
-      if (!b.active) continue;
+      b.active = true;
 
-      // Chunk origins of this frame.
-      for (const w of wanted) {
-        const c = w.c;
+      // Chunk origins of this frame, relative to the camera.
+      for (const c of b.wanted) {
+        if (c.lastUsed !== this.frameIndex) continue;
         const pc = mat3.mulVec(b.rot, c.origin);
         const qc = mat3.mulVec(b.prevRot, c.origin);
-        this.chunkData.set([pc.x + b.centre.x, pc.y + b.centre.y, pc.z + b.centre.z, 0, qc.x + b.prevCentre.x, qc.y + b.prevCentre.y, qc.z + b.prevCentre.z, 0], c.slot * 8);
+        const o = c.slot * 8;
+        const d = this.chunkData;
+        d[o] = pc.x + b.centre.x;
+        d[o + 1] = pc.y + b.centre.y;
+        d[o + 2] = pc.z + b.centre.z;
+        d[o + 4] = qc.x + b.prevCentre.x;
+        d[o + 5] = qc.y + b.prevCentre.y;
+        d[o + 6] = qc.z + b.prevCentre.z;
+        c.far = Math.hypot(d[o]!, d[o + 1]!, d[o + 2]!);
       }
     }
     if (this.dirty) this.packRocks();
@@ -589,32 +650,45 @@ export class RockRenderer {
     if (n > 0) this.device.queue.writeBuffer(this.rockBuffer, 0, this.rockData, 0, n * ROCK_FLOATS);
   }
 
+  /**
+   * Instance lists of the G-buffer pass, per (variant, level of detail). A rock is in while it can cover
+   * rockMinPixels: within a chunk that is a prefix of each variant's rocks (largest first), found with
+   * the chunk's nearest distance; the vertex shader applies the exact per-rock range and scale.
+   */
   private buildDraws(b: RockBody, pixelAngle: number): void {
     for (const bucket of this.buckets) bucket.length = 0;
-    const camOrigin = b.centre;
     const range = b.info.params.rockRangeM;
-    for (const c of b.chunks.values()) {
-      if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex) continue;
-      const co = mat3.mulVec(b.rot, c.origin);
-      const ox = co.x + camOrigin.x;
-      const oy = co.y + camOrigin.y;
-      const oz = co.z + camOrigin.z;
+    for (const c of b.wanted) {
+      if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex || c.near >= range) continue;
       const d = c.data;
-      for (let i = 0; i < c.count; i++) {
-        const o = i * ROCK_FLOATS;
-        // Rock position relative to the camera; the rotation of the small local offset is applied exactly in the shader.
-        const lx = d[o]!;
-        const ly = d[o + 1]!;
-        const lz = d[o + 2]!;
-        const px = ox + b.rot[0] * lx + b.rot[1] * ly + b.rot[2] * lz;
-        const py = oy + b.rot[3] * lx + b.rot[4] * ly + b.rot[5] * lz;
-        const pz = oz + b.rot[6] * lx + b.rot[7] * ly + b.rot[8] * lz;
-        const dist = Math.hypot(px, py, pz);
-        const radius = d[o + 3]!;
-        if (dist >= Math.min(radius * b.rangePerRadius, range)) continue;
-        const pixels = (2 * radius) / (Math.max(dist, 0.05) * pixelAngle);
-        const lod = pixels > 90 ? 0 : pixels > 22 ? 1 : 2;
-        this.buckets[d[o + 15]! * ROCK_LODS + lod]!.push(c.base + i);
+      const minRadius = c.near / b.rangePerRadius;
+      // The camera in the chunk's own (body-fixed) axes: a rock's distance is then three subtractions.
+      const slotBase = c.slot * 8;
+      const ox = -this.chunkData[slotBase]!;
+      const oy = -this.chunkData[slotBase + 1]!;
+      const oz = -this.chunkData[slotBase + 2]!;
+      const cx = b.rot[0] * ox + b.rot[3] * oy + b.rot[6] * oz;
+      const cy = b.rot[1] * ox + b.rot[4] * oy + b.rot[7] * oz;
+      const cz = b.rot[2] * ox + b.rot[5] * oy + b.rot[8] * oz;
+      const rpr2 = b.rangePerRadius * b.rangePerRadius;
+      const range2 = range * range;
+      // Squared size thresholds of the levels of detail: (pixels)^2 = 4 r^2 / (d^2 pixelAngle^2).
+      const k = 4 / (pixelAngle * pixelAngle);
+      for (let v = 0; v < ROCK_VARIANTS; v++) {
+        const end = c.variantStart[v + 1]!;
+        for (let i = c.variantStart[v]!; i < end; i++) {
+          const o = i * ROCK_FLOATS;
+          const radius = d[o + 3]!;
+          if (radius < minRadius) break;
+          const dx = d[o]! - cx;
+          const dy = d[o + 1]! - cy;
+          const dz = d[o + 2]! - cz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          const r2 = radius * radius;
+          if (d2 >= r2 * rpr2 || d2 >= range2) continue;
+          const pixels2 = (k * r2) / (d2 > 0.0025 ? d2 : 0.0025);
+          this.buckets[v * ROCK_LODS + (pixels2 > 8100 ? 0 : pixels2 > 484 ? 1 : 2)]!.push(c.base + i);
+        }
       }
     }
     for (let k = 0; k < this.buckets.length; k++) {
@@ -654,38 +728,44 @@ export class RockRenderer {
     const b = this.bodies.find((x) => x.info.id === bodyId);
     if (!b || !b.active) return;
     const m = cascade.viewProj;
-    const minRadius = 0.5 * cascade.texelSize;
+    // A rock smaller than half a texel leaves no mark in the map.
+    const texelRadius = 0.5 * cascade.texelSize;
     const range = b.info.params.rockRangeM;
+    const ndcPerMetre = 1 / (cascade.texelSize * 1024);
     const start0 = this.instanceCount;
-    const ranges: number[] = [];
-    // One list per variant, the coarsest mesh that still has the silhouette at this texel size.
     for (const bucket of this.buckets) bucket.length = 0;
-    for (const c of b.chunks.values()) {
-      if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex) continue;
-      const co = mat3.mulVec(b.rot, c.origin);
-      const ox = co.x + b.centre.x;
-      const oy = co.y + b.centre.y;
-      const oz = co.z + b.centre.z;
+    for (const c of b.wanted) {
+      if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex || c.near >= range) continue;
+      // The chunk against the cascade's rectangle (its casters reach a little beyond its own footprint).
+      const o = c.slot * 8;
+      const px = this.chunkData[o]!;
+      const py = this.chunkData[o + 1]!;
+      const pz = this.chunkData[o + 2]!;
+      const margin = 1 + (c.reach + 4) * ndcPerMetre;
+      if (Math.abs(m[0]! * px + m[4]! * py + m[8]! * pz + m[12]!) > margin || Math.abs(m[1]! * px + m[5]! * py + m[9]! * pz + m[13]!) > margin) continue;
+      const minRadius = Math.max(texelRadius, c.near / b.rangePerRadius);
       const d = c.data;
-      for (let i = 0; i < c.count; i++) {
-        const o = i * ROCK_FLOATS;
-        const radius = d[o + 3]!;
-        if (radius < minRadius) continue;
-        const lx = d[o]!;
-        const ly = d[o + 1]!;
-        const lz = d[o + 2]!;
-        const px = ox + b.rot[0] * lx + b.rot[1] * ly + b.rot[2] * lz;
-        const py = oy + b.rot[3] * lx + b.rot[4] * ly + b.rot[5] * lz;
-        const pz = oz + b.rot[6] * lx + b.rot[7] * ly + b.rot[8] * lz;
-        if (Math.hypot(px, py, pz) >= Math.min(radius * b.rangePerRadius, range)) continue;
-        const cx = m[0]! * px + m[4]! * py + m[8]! * pz + m[12]!;
-        const cy = m[1]! * px + m[5]! * py + m[9]! * pz + m[13]!;
-        const margin = 1 + (2 * radius) / (cascade.texelSize * 1024);
-        if (Math.abs(cx) > margin || Math.abs(cy) > margin) continue;
-        const lod = radius > 24 * cascade.texelSize ? 1 : 2;
-        this.buckets[d[o + 15]! * ROCK_LODS + lod]!.push(c.base + i);
+      const cx = -(b.rot[0] * px + b.rot[3] * py + b.rot[6] * pz);
+      const cy = -(b.rot[1] * px + b.rot[4] * py + b.rot[7] * pz);
+      const cz = -(b.rot[2] * px + b.rot[5] * py + b.rot[8] * pz);
+      const rpr2 = b.rangePerRadius * b.rangePerRadius;
+      for (let v = 0; v < ROCK_VARIANTS; v++) {
+        const end = c.variantStart[v + 1]!;
+        for (let i = c.variantStart[v]!; i < end; i++) {
+          const o2 = i * ROCK_FLOATS;
+          const radius = d[o2 + 3]!;
+          if (radius < minRadius) break;
+          // Only rocks that are drawn cast: the same range test as the G-buffer list.
+          const dx = d[o2]! - cx;
+          const dy = d[o2 + 1]! - cy;
+          const dz = d[o2 + 2]! - cz;
+          if (dx * dx + dy * dy + dz * dz >= radius * radius * rpr2) continue;
+          // The coarsest mesh that still has the silhouette at this texel size.
+          this.buckets[v * ROCK_LODS + (radius > 24 * cascade.texelSize ? 1 : 2)]!.push(c.base + i);
+        }
       }
     }
+    const ranges: number[] = [];
     for (let k = 0; k < this.buckets.length; k++) {
       const bucket = this.buckets[k]!;
       const count = Math.min(bucket.length, MAX_ROCK_INSTANCES - this.instanceCount);
