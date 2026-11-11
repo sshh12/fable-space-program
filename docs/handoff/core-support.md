@@ -298,3 +298,13 @@ copy is replaced by `#include "cloud_shadow"`.
   before the transparent pass, the target bounded at sunny 16 + 0.5 EV under the sun; `vehicle-pad-1`
   (ad38ab3): soot and frost broken up in texture space, the clear coat covered. Open and non-blocking at
   10:22: `map-view-4`, `ocean-6`, `sky-lighting-4`, `-5`, `-6`, `vehicle-pad-2`, `-4`, `vfx-5`, `-6`.
+- 11:20. Answered since: `ocean-6` (declined, escalated to the lead with `ocean-5`: swell data or the
+  long-wave rule), `map-view-4` (d3134ab, `src/core/ui/theme.ts`), `vfx-6` (f52f358, `setDeterministic(on,
+  { cycleNoise })`), `cockpit-7` (703b7c3, blocking: interior metering weighs what fills the frame through
+  the windows; the requester's evidence view holds 5 % of Earth, not a fifth, and does not change; with the
+  eye at the window the Earth is exposed: `exposure-window-leaning.png`), `cockpit-8` (cae38b8, blocking:
+  the lab creates the vehicle with `exteriorGlass: false` when the cockpit is loaded; RENDER_API 17.7 for
+  the app shell). `cockpit-cs-1` was resolved by the cockpit (77e2f72); the cabin check is to be re-run.
+  Open and non-blocking: `atmosphere-clouds-6`, `-7`, `-8`, `flight-ui-2`, `sky-lighting-4`, `-5`, `-6`,
+  `vehicle-pad-2`, `-4`, `vfx-5`.
+
