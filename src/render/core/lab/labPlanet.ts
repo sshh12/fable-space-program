@@ -4,8 +4,11 @@
  *
  * Albedo comes from the tile set's `albedoLowRes` global map when it exists (else BodyDef.render.meanColor).
  * On bodies with an ocean, ocean-coloured texels become MATERIAL_ID.water with an encoded depth, and the
- * feature honours 'ocean.nearField' the way the real terrain will: where the eye distance is below
- * fadeStart the water is not drawn and a seabed sphere 30 m below sea level is drawn instead.
+ * feature honours 'ocean.nearField' the way the real terrain does: where the eye distance is below
+ * fadeStart the water sheet is not drawn and the seabed is drawn instead. By default that seabed describes
+ * the same water as the sheet it replaces (request ocean-2): it lies as deep as the sheet's encoded depth at
+ * that pixel and carries the map colour the sheet would have written, so a forward water pass that reads
+ * depth and imagery colour from the seabed sees the inputs the deferred sheet had just outside fadeStart.
  */
 import { MATERIAL_ID, RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
@@ -26,8 +29,13 @@ export interface LabPlanetOptions {
    */
   maps?: Record<string, 'tileset' | 'none' | { width: number; height: number; data: Uint8Array<ArrayBuffer> }>;
   defaultMap?: 'tileset' | 'none';
-  /** Depth of the seabed sphere below sea level, m. */
-  seabedDepth?: number;
+  /**
+   * The seabed drawn inside 'ocean.nearField'.fadeStart. 'sheet' (default): as deep as the water sheet's
+   * encoded depth at the pixel (4 m on turquoise shelves .. WATER_DEPTH_ENCODE_MAX in the open ocean), with
+   * the map colour as albedo. A number: a sphere that many metres below sea level with a fixed sand albedo
+   * (a visible bottom for refraction and shallow-water shots).
+   */
+  seabedDepth?: number | 'sheet';
   /** Feature id (default 'lab-planet') and order. */
   id?: string;
   order?: number;
@@ -38,7 +46,7 @@ const FS = /* wgsl */ `
 struct LabPlanet {
   // x = frame body index, y = 1 when an albedo map is bound, z = 1 when the body has an ocean, w = surface material id
   info: vec4f,
-  // x = seabed depth below sea level (m), y = albedo map width (texels)
+  // x = seabed depth below sea level (m; negative = as deep as the sheet encodes, with the map colour), y = albedo map width (texels)
   params: vec4f,
   // Motion of a body-fixed point since the previous frame: prev = p + dM * p + t (previous-eye-relative).
   dm0: vec4f,
@@ -101,21 +109,25 @@ fn hitSphere(d: vec3f, up: vec3f, r0: f32, h: f32, rs: f32) -> f32 {
   let lum = luminance(albedo);
   let oceanColoured = planet.info.z > 0.5 && planet.info.y > 0.5 && albedo.b > albedo.r * 1.2 && albedo.b >= albedo.g * 0.9 && lum < 0.2;
   if (oceanColoured) {
+    // Darker water is deeper: turquoise shelves a few metres, open ocean beyond the encodable range.
+    let sheetParam = encodeWaterDepth(mix(4.0, 400.0, saturate((0.12 - lum) / 0.09)));
     if (oceanNearField.bodyIndex == i32(bi) && t < oceanNearField.fadeStart) {
-      // Inside the ocean's near field the far water is not drawn: show the seabed for the forward pass to refract.
-      let ts = hitSphere(d, up, r0, h + planet.params.x, R - planet.params.x);
+      // Inside the ocean's near field the far water is not drawn: show the seabed for the forward pass to
+      // refract. 'sheet' mode: the depth the sheet encodes here and the sheet's colour; else a fixed sand floor.
+      let fromSheet = planet.params.x < 0.0;
+      let depth = select(planet.params.x, decodeWaterDepth(sheetParam), fromSheet);
+      let ts = hitSphere(d, up, r0, h + depth, R - depth);
       if (ts < 0.0) { discard; }
       t = ts;
       p = d * t;
       n = normalize(p - b.center.xyz);
-      albedo = vec3f(0.26, 0.23, 0.18);
+      if (!fromSheet) { albedo = vec3f(0.26, 0.23, 0.18); }
       materialId = MATERIAL_TERRAIN;
       param = 1.0;
     } else {
       materialId = MATERIAL_WATER;
       roughness = 0.0;
-      // Darker water is deeper: turquoise shelves a few metres, open ocean beyond the encodable range.
-      param = encodeWaterDepth(mix(4.0, 400.0, saturate((0.12 - lum) / 0.09)));
+      param = sheetParam;
     }
   }
 
@@ -151,7 +163,8 @@ export function createLabPlanetFeature(options: LabPlanetOptions = {}): RenderFe
   let layout: GPUBindGroupLayout;
   const entries = new Map<string, PlanetEntry>();
   let pending = 0;
-  const seabedDepth = options.seabedDepth ?? 30;
+  const seabed = options.seabedDepth ?? 'sheet';
+  const seabedDepth = seabed === 'sheet' ? -1 : Math.max(0, seabed);
 
   // The server's listing of baked tile sets (/tiles/index.json): a tile set that is not there is skipped
   // without requesting its manifest, because Chrome logs a 404 as a console error.

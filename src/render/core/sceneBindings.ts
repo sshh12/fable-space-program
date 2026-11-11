@@ -4,7 +4,7 @@
  * helper: it yields the WGSL declarations (with the names the core chunks expect), the layout entries and
  * the bind group entries, and a version that changes when any underlying resource is re-published.
  */
-import type { RenderContext, SharedResourceKey } from '@/core/contracts/render';
+import { OCEAN_WETNESS_SLOTS, type RenderContext, type SharedResourceKey } from '@/core/contracts/render';
 
 export type SceneBindingSet =
   | 'shadow'
@@ -18,6 +18,7 @@ export type SceneBindingSet =
   | 'env'
   | 'cloudShadow'
   | 'oceanNearField'
+  | 'oceanWetness'
   | 'gbuffer';
 
 interface Slot {
@@ -71,6 +72,12 @@ const SETS: Record<SceneBindingSet, { prelude?: string; slots: Slot[] }> = {
   oceanNearField: {
     prelude: 'struct OceanNearField { bodyIndex: i32, fadeStart: f32, fadeEnd: f32, reserved: f32 }',
     slots: [{ key: 'ocean.nearField', decl: 'var<uniform> oceanNearField: OceanNearField;', layout: { buffer: { type: 'uniform' } }, buffer: true }],
+  },
+  // Layout and meaning: the 'ocean.wetness' comment in src/core/contracts/render.ts.
+  oceanWetness: {
+    prelude: `struct OceanVesselWater { plane: vec4f, normal: vec4f, params: vec4f }
+struct OceanWetness { count: vec4u, vessels: array<OceanVesselWater, ${OCEAN_WETNESS_SLOTS}> }`,
+    slots: [{ key: 'ocean.wetness', decl: 'var<uniform> oceanWetness: OceanWetness;', layout: { buffer: { type: 'uniform' } }, buffer: true }],
   },
   // RT0 / RT1 / RT2 of this frame. Never put this set into a group that is set inside drawGBuffer (the
   // textures are that pass's attachments); use a group of its own for the passes from drawWater on.

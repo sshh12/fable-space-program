@@ -61,49 +61,104 @@ test('mesh system: procedural and URL textures (with mips), LOD pick by projecte
   await expectNoErrors(page, pageLog);
 });
 
-test("LabPlanet: ocean-coloured texels are water, and inside 'ocean.nearField' the seabed is drawn 30 m below instead", async ({ page, pageLog }) => {
-  // 100 m above open ocean, looking straight down.
-  await openPage(page, '/labs/render-core/?stand=0&maps=ocean&probe=inputs&body=earth&lat=0&lon=0&alt=100&pitch=-90&hud=0&paused=1&ev=14&sun=120,50&site=0,0');
+for (const mode of ['sheet', 'fixed'] as const) {
+  test(`LabPlanet: ocean-coloured texels are water, and inside 'ocean.nearField' the seabed is drawn instead (${mode === 'sheet' ? 'as deep and as coloured as the sheet it replaces' : 'fixed sand floor 30 m down'})`, async ({ page, pageLog }) => {
+    // 100 m above open ocean, looking straight down.
+    await openPage(page, `/labs/render-core/?stand=0&maps=ocean&probe=inputs&body=earth&lat=0&lon=0&alt=100&pitch=-90&hud=0&paused=1&ev=14&sun=120,50&site=0,0${mode === 'fixed' ? '&seabed=30' : ''}`);
+    await assertDiscreteGpu(page);
+    await page.evaluate(() => {
+      window.__test!.setDeterministic(true);
+      window.__lab!.renderer.setJitter(false);
+    });
+    await waitIdle(page, 10);
+    const probe = (): Promise<{ centreZ: number; cornerZ: number; centre: number[]; corner: number[] }> =>
+      page.evaluate(async () => {
+        const lab = window.__lab!;
+        await window.__test!.waitFrames(4);
+        const d = await lab.renderer.readDepth();
+        const img = await lab.renderer.readHdrPixels('hdr');
+        const z = (x: number, y: number): number => 0.05 / d.data[y * d.width + x]!;
+        const c = (x: number, y: number): number[] => [0, 1, 2].map((k) => img.data[(y * img.width + x) * 4 + k]!);
+        const cx = d.width >> 1;
+        const cy = d.height >> 1;
+        return { centreZ: z(cx, cy), cornerZ: z(8, 8), centre: c(cx, cy), corner: c(8, 8) };
+      });
+    const water = await probe();
+    expect(water.centreZ).toBeGreaterThan(99.5);
+    expect(water.centreZ).toBeLessThan(100.5);
+    // Water: dark, blue-dominant body colour plus a little sky-less specular.
+    expect(water.centre[2]).toBeGreaterThan(water.centre[0]!);
+    if (mode === 'sheet') await saveScreenshot(page, 'render-core', 'labplanet-water');
+
+    // The ocean feature claims everything within 120 m of the eye: the centre (100 m) becomes seabed, the
+    // corner of the view (about 154 m away) stays the far water sheet.
+    await page.evaluate(() => window.__rc!.probes.inputs.setNearField({ fadeStart: 120, fadeEnd: 400 }));
+    const near = await probe();
+    expect(near.cornerZ).toBeCloseTo(water.cornerZ, 2);
+    expect(near.corner[2]).toBeCloseTo(water.corner[2]!, 4);
+    if (mode === 'sheet') {
+      // The ocean map is dark (deep) water: the sheet encodes the full 200 m (WATER_DEPTH_ENCODE_MAX), so
+      // the seabed that replaces it lies 200 m below the surface and carries the map's blue as its albedo.
+      expect(near.centreZ).toBeGreaterThan(299.5);
+      expect(near.centreZ).toBeLessThan(300.5);
+      expect(near.centre[2]).toBeGreaterThan(2 * near.centre[0]!);
+      await saveScreenshot(page, 'render-core', 'labplanet-near-field-seabed');
+    } else {
+      expect(near.centreZ).toBeGreaterThan(129.5);
+      expect(near.centreZ).toBeLessThan(130.5);
+      // Sand-coloured terrain, far brighter than the water was and red >= blue.
+      expect(near.centre[0]).toBeGreaterThan(3 * water.centre[0]!);
+      expect(near.centre[0]).toBeGreaterThan(near.centre[2]!);
+      await saveScreenshot(page, 'render-core', 'labplanet-near-field-sand');
+    }
+
+    await page.evaluate(() => window.__rc!.probes.inputs.setNearField(null));
+    const back = await probe();
+    expect(back.centreZ).toBeCloseTo(water.centreZ, 2);
+    await expectNoErrors(page, pageLog);
+  });
+}
+
+test("mesh system: 'ocean.wetness' wets a hull below its wet line and nothing above it or outside the slot's radius", async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?probe=inputs&sun=100,40&hud=0&paused=1&ev=14');
   await assertDiscreteGpu(page);
   await page.evaluate(() => {
     window.__test!.setDeterministic(true);
     window.__lab!.renderer.setJitter(false);
+    // The tower (1 x 1 x 8 m at x = -7, y = -4) seen from the east: its sunlit +x face.
+    window.__rc!.lookAt([-7, -4, 4], 90, 5, 22);
   });
   await waitIdle(page, 10);
-  const probe = (): Promise<{ centreZ: number; cornerZ: number; centre: number[]; corner: number[] }> =>
+  // Luminance of the tower face at 2 m (below the 3 m wet line), 5 m (above it, inside the slot's 6 m
+  // radius) and 7.5 m (outside the radius), and of a point of the slab far from the slot.
+  const sample = (): Promise<number[]> =>
     page.evaluate(async () => {
-      const lab = window.__lab!;
       await window.__test!.waitFrames(4);
-      const d = await lab.renderer.readDepth();
-      const img = await lab.renderer.readHdrPixels('hdr');
-      const z = (x: number, y: number): number => 0.05 / d.data[y * d.width + x]!;
-      const c = (x: number, y: number): number[] => [0, 1, 2].map((k) => img.data[(y * img.width + x) * 4 + k]!);
-      const cx = d.width >> 1;
-      const cy = d.height >> 1;
-      return { centreZ: z(cx, cy), cornerZ: z(8, 8), centre: c(cx, cy), corner: c(8, 8) };
+      const out: number[] = [];
+      for (const p of [[-6.5, -4, 2], [-6.5, -4, 5], [-6.5, -4, 7.5], [-9, 5, 0]] as [number, number, number][]) {
+        const px = window.__rc!.projectSitePoint(p)!;
+        const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(px.x) - 1, y: Math.round(px.y) - 1, width: 3, height: 3 });
+        let sum = 0;
+        for (let i = 0; i < 9; i++) sum += 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+        out.push(sum / 9);
+      }
+      return out;
     });
-  const water = await probe();
-  expect(water.centreZ).toBeGreaterThan(99.5);
-  expect(water.centreZ).toBeLessThan(100.5);
-  // Water: dark, blue-dominant body colour plus a little sky-less specular.
-  expect(water.centre[2]).toBeGreaterThan(water.centre[0]!);
-  await saveScreenshot(page, 'render-core', 'labplanet-water');
-
-  // The ocean feature claims everything within 120 m of the eye: the centre (100 m) becomes seabed 30 m
-  // lower, the corner of the view (about 154 m away) stays the far water sheet.
-  await page.evaluate(() => window.__rc!.probes.inputs.setNearField({ fadeStart: 120, fadeEnd: 400 }));
-  const near = await probe();
-  expect(near.centreZ).toBeGreaterThan(129.5);
-  expect(near.centreZ).toBeLessThan(130.5);
-  expect(near.cornerZ).toBeCloseTo(water.cornerZ, 2);
-  expect(near.corner[2]).toBeCloseTo(water.corner[2]!, 4);
-  // Seabed: sand-coloured terrain, far brighter than the water was and red >= blue.
-  expect(near.centre[0]).toBeGreaterThan(3 * water.centre[0]!);
-  expect(near.centre[0]).toBeGreaterThan(near.centre[2]!);
-  await saveScreenshot(page, 'render-core', 'labplanet-near-field-seabed');
-
-  await page.evaluate(() => window.__rc!.probes.inputs.setNearField(null));
-  const back = await probe();
-  expect(back.centreZ).toBeCloseTo(water.centreZ, 2);
+  const dry = await sample();
+  for (const v of dry) expect(v).toBeGreaterThan(0.01);
+  await page.evaluate(() => window.__rc!.probes.inputs.setOceanWetness({ at: [-7, -4, 0], radius: 6, wetLine: 3 }));
+  const wet = await sample();
+  await saveScreenshot(page, 'render-core', 'mesh-wet-line');
+  console.log(`wet line: below ${(wet[0]! / dry[0]!).toFixed(3)}, above ${(wet[1]! / dry[1]!).toFixed(4)}, outside the radius ${(wet[2]! / dry[2]!).toFixed(4)}, slab ${(wet[3]! / dry[3]!).toFixed(4)} of the dry luminance`);
+  // Below the line the surface is wet: a non-metal darkens to about 0.6 of its dry diffuse colour.
+  expect(wet[0]! / dry[0]!).toBeGreaterThan(0.5);
+  expect(wet[0]! / dry[0]!).toBeLessThan(0.75);
+  // Above the line, outside the radius and away from the slot nothing changes.
+  expect(wet[1]).toBe(dry[1]);
+  expect(wet[2]).toBe(dry[2]);
+  expect(wet[3]).toBe(dry[3]);
+  // The default resource (no vessel at the water) restores the dry image exactly.
+  await page.evaluate(() => window.__rc!.probes.inputs.setOceanWetness(null));
+  expect(await sample()).toEqual(dry);
   await expectNoErrors(page, pageLog);
 });

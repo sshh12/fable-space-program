@@ -7,7 +7,7 @@
  * Bind groups of the G-buffer pipeline: 0 frame, 1 batch (instances), 2 material.
  * Bind groups of the shadow pipeline:   0 frame, 1 core shadow pass (cascade matrix), 2 batch.
  */
-import { MATERIAL_ID, RENDER_FORMATS, type FrameContext, type MeshData, type ModelData, type PbrMaterialDef, type ShadowCascadeView } from '@/core/contracts/render';
+import { MATERIAL_ID, OCEAN_WETNESS_SLOTS, RENDER_FORMATS, type FrameContext, type MeshData, type ModelData, type PbrMaterialDef, type ShadowCascadeView, type SharedResources } from '@/core/contracts/render';
 import { mat3, quat, v3, type Quat, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
 import { createBufferChecked, f32ToF16 } from '../util/gpu';
@@ -46,6 +46,10 @@ const GBUFFER_SHADER = /* wgsl */ `
 ${INSTANCE_WGSL}
 @group(1) @binding(0) var<storage, read> instances: array<MeshInstance>;
 @group(1) @binding(1) var blackbodyLut: texture_2d<f32>;
+// 'ocean.wetness' (src/core/contracts/render.ts): the water at the vessels that float or are entering it.
+struct OceanVesselWater { plane: vec4f, normal: vec4f, params: vec4f }
+struct OceanWetness { count: vec4u, vessels: array<OceanVesselWater, ${OCEAN_WETNESS_SLOTS}> }
+@group(1) @binding(2) var<uniform> oceanWetness: OceanWetness;
 struct Material {
   baseColor: vec4f,   // rgb, a = metallic
   params: vec4f,      // roughness, shading id, material parameter, anisotropy
@@ -75,6 +79,7 @@ struct VOut {
   @location(4) currClip: vec4f,
   @location(5) prevClip: vec4f,
   @location(6) @interpolate(flat) inst: u32,
+  @location(7) pos: vec3f,           // camera-relative position (ROOT axes, m)
 }
 @vertex fn vs(v: VIn) -> VOut {
   let I = instances[v.inst];
@@ -91,7 +96,23 @@ struct VOut {
   o.uv = v.uv * material.misc.zw;
   o.masks = v.masks;
   o.inst = v.inst;
+  o.pos = p;
   return o;
+}
+
+/// Wetness (0..1) of a surface point from 'ocean.wetness': 1 below the highest level the water has reached on
+/// the hull of a vessel at the water (its wet line, 2 cm soft edge), 0 above it and away from any such vessel.
+fn hullWetness(p: vec3f) -> f32 {
+  var wet = 0.0;
+  let n = min(oceanWetness.count.x, ${OCEAN_WETNESS_SLOTS}u);
+  for (var i = 0u; i < n; i++) {
+    let w = oceanWetness.vessels[i];
+    let rel = p - w.plane.xyz;
+    if (dot(rel, rel) < w.plane.w * w.plane.w) {
+      wet = max(wet, 1.0 - smoothstep(w.normal.w - 0.02, w.normal.w + 0.02, dot(rel, w.normal.xyz)));
+    }
+  }
+  return wet;
 }
 
 /// Black-body emission (cd/m^2, linear sRGB) from the 256-entry table: T = 500 .. 5000 K.
@@ -144,7 +165,7 @@ fn blackbody(T: f32) -> vec3f {
     albedo = mix(albedo, vec3f(0.86, 0.89, 0.93), frost);
     roughness = mix(roughness, 0.62, frost);
     metallic *= 1.0 - frost;
-    param = max(param, I.params.w);
+    param = max(param, max(I.params.w, hullWetness(v.pos)));
   } else if (shading == MATERIAL_DISPLAY) {
     // RT2.a of a display is its brightness; the deferred pass scales the emitted image (RT5) by it.
     param = saturate(param * I.params2.w);
@@ -372,15 +393,18 @@ export function createMeshSystem(args: {
   frameLayout: GPUBindGroupLayout;
   shadowPassLayout: GPUBindGroupLayout;
   textures: TextureManager;
+  /** For 'ocean.wetness' (the wet line on hulls). */
+  resources: SharedResources;
   reportError: (m: string) => void;
 }): MeshSystem {
-  const { device, shaders, frameLayout, shadowPassLayout, textures, reportError } = args;
+  const { device, shaders, frameLayout, shadowPassLayout, textures, resources, reportError } = args;
 
   const batchLayout = device.createBindGroupLayout({
     label: 'mesh.batch',
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     ],
   });
   const materialLayout = device.createBindGroupLayout({
@@ -531,6 +555,7 @@ export function createMeshSystem(args: {
       let buffer: GPUBuffer | null = null;
       let capacity = 0;
       let bindGroup: GPUBindGroup | null = null;
+      let boundWetness = -1;
       let upload = new Float32Array(INSTANCE_FLOATS * 64);
       let frame: FrameContext | null = null;
       let pxScale = 1;
@@ -646,16 +671,21 @@ export function createMeshSystem(args: {
           if (total === 0) return;
           if (upload.length < total * INSTANCE_FLOATS) upload = new Float32Array(Math.max(total * INSTANCE_FLOATS, upload.length * 2));
           for (const g of groups.values()) upload.set(g.data.subarray(0, g.count * INSTANCE_FLOATS), g.first * INSTANCE_FLOATS);
-          if (!buffer || capacity < total) {
-            buffer?.destroy();
-            capacity = Math.max(64, 2 ** Math.ceil(Math.log2(total)));
-            buffer = createBufferChecked(device, { label: `mesh.batch.${label}`, size: capacity * INSTANCE_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }, reportError);
+          const wetnessVersion = resources.version('ocean.wetness');
+          if (!buffer || capacity < total || wetnessVersion !== boundWetness) {
+            if (!buffer || capacity < total) {
+              buffer?.destroy();
+              capacity = Math.max(64, 2 ** Math.ceil(Math.log2(total)));
+              buffer = createBufferChecked(device, { label: `mesh.batch.${label}`, size: capacity * INSTANCE_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }, reportError);
+            }
+            boundWetness = wetnessVersion;
             bindGroup = device.createBindGroup({
               label: `mesh.batch.${label}`,
               layout: batchLayout,
               entries: [
                 { binding: 0, resource: { buffer } },
                 { binding: 1, resource: bbView },
+                { binding: 2, resource: { buffer: resources.get('ocean.wetness') } },
               ],
             });
           }

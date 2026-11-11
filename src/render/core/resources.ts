@@ -2,7 +2,7 @@
  * SharedResources registry with a neutral default for every key, so that every feature (and the core's own
  * lighting) works when nobody has published anything.
  */
-import type { SharedResourceKey, SharedResourceMap, SharedResources } from '@/core/contracts/render';
+import { OCEAN_WETNESS_BYTES, type SharedResourceKey, type SharedResourceMap, type SharedResources } from '@/core/contracts/render';
 import { SHADOW_MAX_CASCADES } from './shaders/chunksLighting';
 import { createSolidTexture } from './util/gpu';
 
@@ -65,6 +65,8 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'ocean.displacement': texArray('oceanDisplacement', 'rgba16float', [0, 0, 0, 0]),
     'ocean.derivatives': texArray('oceanDerivatives', 'rgba16float', [0, 0, 1, 0]),
     'ocean.nearField': uniform('oceanNearField', new Uint8Array(nearField)),
+    // count 0: no vessel at the water.
+    'ocean.wetness': uniform('oceanWetness', new Uint8Array(OCEAN_WETNESS_BYTES)),
     'ui.navball': tex2d('navball', 'rgba8unorm', [0, 0, 0, 1]),
     'ui.mfd': texArray('mfd', 'rgba8unorm', [0, 0, 0, 1]),
     'scene.depthOpaque': depthDefault('sceneDepthOpaque', 1, false, 0),

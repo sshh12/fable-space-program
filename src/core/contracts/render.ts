@@ -66,6 +66,10 @@ export const HDR_MAX = 60000;
  */
 export const WATER_DEPTH_ENCODE_MAX = 200;
 
+/** Vessel slots and byte size of the 'ocean.wetness' uniform buffer (count vec4u + slots x 3 vec4f). */
+export const OCEAN_WETNESS_SLOTS = 8;
+export const OCEAN_WETNESS_BYTES = 16 + OCEAN_WETNESS_SLOTS * 48;
+
 /** Values written to G-buffer RT2.b (times 1/255). */
 export const MATERIAL_ID = {
   standard: 0,
@@ -254,6 +258,33 @@ export interface SharedResourceMap {
    * falling to 0 at fadeEnd, and with displacement, refraction and shore foam already zero at fadeStart.
    */
   'ocean.nearField': GPUBuffer;
+  /**
+   * Water at the vessels that float or are entering it, for hull shading (wet line, darkening below the
+   * waterline). Uniform buffer of OCEAN_WETNESS_BYTES, published by the ocean feature and refreshed every
+   * frame in prepare / compute. WGSL (binding set 'oceanWetness' of the render core declares both structs
+   * and `oceanWetness`):
+   *
+   *   struct OceanVesselWater {
+   *     plane: vec4f,   // xyz = point of the physics swell surface (oceanSwellHeight) under the vessel origin,
+   *                     //       camera-relative, ROOT axes, m; w = radius (m) of the sphere about that point
+   *                     //       inside which the slot applies (the vessel's bounding radius plus a margin);
+   *                     //       0 = unused slot
+   *     normal: vec4f,  // xyz = unit normal of the swell surface there (ROOT axes, pointing up); w = wet line:
+   *                     //       highest level the water has reached on the hull above that plane, m (dries
+   *                     //       back towards the current waterline)
+   *     params: vec4f,  // x = waterSubmersion 0..1 of the vessel (snapshot), y = seconds since its last splash /
+   *                     //       touchdown on water (-1 = none), z = amplitude bound of the render-only chop at
+   *                     //       the hull (m), w = drying rate of the wet line (m/s)
+   *   }
+   *   struct OceanWetness { count: vec4u, vessels: array<OceanVesselWater, 8> }   // count.x = slots in use
+   *
+   * Slots 0 .. count.x - 1 are in use, the active vessel first when it is at the water; at most
+   * OCEAN_WETNESS_SLOTS vessels. A consumer does not need a vessel index: a surface point p (camera-relative)
+   * belongs to slot i when length(p - plane.xyz) < plane.w, its height above the water is
+   * dot(p - plane.xyz, normal.xyz), and it is wet when that height is below normal.w.
+   * Default: count 0, every slot unused.
+   */
+  'ocean.wetness': GPUBuffer;
   /** 512^2 rgba8 navball render (also used by the cockpit instrument). */
   'ui.navball': GPUTextureView;
   /** Array texture of cockpit multi-function displays. */

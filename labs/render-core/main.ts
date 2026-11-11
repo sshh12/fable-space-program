@@ -9,6 +9,7 @@
  *   &planet=0                   no LabPlanet;  &stand=0  no stand;  &stand=dense  slab + dense LOD spheres only
  *   &tris=<n>                   add dense spheres (130k triangles each, two LODs) up to n triangles
  *   &maps=tileset|ocean         LabPlanet albedo: the baked albedoLowRes maps, or open ocean everywhere
+ *   &seabed=<m>                 LabPlanet: fixed sand seabed that deep inside 'ocean.nearField' (default: as deep as the sheet)
  *   &probe=<name>[,<name>...]   extra lab features (see probes.ts)
  * plus every camera / renderer parameter of createLabApp. Specs drive the rest through window.__lab and
  * window.__rc (this page's own handle).
@@ -126,7 +127,8 @@ async function boot(): Promise<void> {
             for (const b of Object.values(defs.bodies)) if (b.ocean) maps[b.id] = { width: 2, height: 1, data: new Uint8Array([28, 52, 84, 255, 28, 52, 84, 255]) };
           }
         }
-        list.push(createLabPlanetFeature({ maps }));
+        // ?seabed=<m>: a fixed sand floor that deep inside 'ocean.nearField' (default: the floor follows the water sheet).
+        list.push(createLabPlanetFeature({ maps, ...(query.has('seabed') ? { seabedDepth: Number(query.get('seabed')) } : {}) }));
       }
       if (query.get('stand') !== '0') {
         stand = createStandFeature({ site, defs, heavyTriangles: Number(query.get('tris') ?? 0) || undefined, vesselSizedObject: query.get('stack') !== '0', denseOnly: query.get('stand') === 'dense' });

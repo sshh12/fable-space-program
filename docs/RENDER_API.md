@@ -615,6 +615,12 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
 - Culling: view frustum per instance for the G-buffer; cascade footprint and half-texel size for shadows.
 - Specular anti-aliasing: Kaplanyan-Hill roughness widening from the screen-space normal derivatives.
 - Wear / soot / frost / wetness are applied for `standard` and `terrain` shading.
+- **Wet line.** The mesh system reads `'ocean.wetness'` (published by the ocean feature: the physics swell
+  plane, an influence radius and the wet line for up to 8 vessels at the water). A `standard` / `terrain`
+  fragment within `plane.w` of a slot's plane point whose height above the plane is below the wet line
+  (`normal.w`, 2 cm soft edge) gets wetness 1, combined by max with `MeshInstance.wetness`. Nothing to do in
+  the vehicle package: a hull drawn through a `MeshBatch` shows its wet line as soon as the ocean publishes
+  the buffer. With the default buffer (count 0) the output is unchanged bit for bit.
 - One batch = one storage buffer and a handful of draw calls per (model, LOD, caster class, material).
   Use one batch per feature (or per logical group); `begin` / `finish` every frame.
 
@@ -655,6 +661,7 @@ changes. Sets and the names they declare:
 | `env` | `envProbeCube: texture_cube<f32>`, `envSh9: EnvSh9` (`struct EnvSh9 { c: array<vec4f, 9> }`) |
 | `cloudShadow` | `cloudShadowMapTex`, `cloudCoverageMapTex: texture_2d<f32>` |
 | `oceanNearField` | `oceanNearField: OceanNearField` |
+| `oceanWetness` | `oceanWetness: OceanWetness` (`struct OceanVesselWater { plane, normal, params: vec4f }`, `struct OceanWetness { count: vec4u, vessels: array<OceanVesselWater, 8> }`; meaning in the `'ocean.wetness'` contract comment) |
 | `gbuffer` | `gbufferAlbedoTex`, `gbufferNormalTex`, `gbufferMaterialTex: texture_2d<f32>` (`textureLoad`; never in a group set inside `drawGBuffer`) |
 
 Visibility of the entries is fragment + compute (uniform buffers also vertex).
@@ -827,8 +834,11 @@ places it programmatically. Mouse drag looks / orbits, the wheel zooms.
 with exact depth and velocity: `MATERIAL_REGOLITH` on Hapke bodies, `MATERIAL_TERRAIN` otherwise, albedo
 from the tile set's `albedoLowRes` map when it exists (`maps: { [bodyId]: 'tileset' | 'none' | image }`,
 `defaultMap`); on ocean bodies ocean-coloured texels become `MATERIAL_WATER` with an encoded depth, and
-inside `'ocean.nearField'.fadeStart` the water is replaced by a seabed sphere 30 m below. No relief: a
-backdrop for labs, never used by the app.
+inside `'ocean.nearField'.fadeStart` the water sheet is replaced by the seabed. `seabedDepth: 'sheet'`
+(default since request `ocean-2`): the seabed lies as deep as the sheet's encoded depth at that pixel (4 m on
+turquoise shelves .. 200 m in open ocean) and carries the map colour the sheet would have written, so it
+describes the same water as the sheet just outside `fadeStart`. `seabedDepth: <metres>`: a fixed sand floor
+(the render-core lab: `?seabed=30`). No relief: a backdrop for labs, never used by the app.
 
 Specs follow `tests/browser/shell/lab-template.spec.ts`: `openPage`, `assertDiscreteGpu`,
 `window.__test.setDeterministic(true)` + `waitIdle` before screenshots, `expectNoErrors`.
@@ -1025,4 +1035,6 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |
+| LabPlanet: inside `'ocean.nearField'.fadeStart` the seabed follows the sheet (`seabedDepth: 'sheet'`, new default): sheet depth and map colour instead of a 30 m sand floor | `ocean-2` | ocean lab and specs; any lab that publishes a near field over the LabPlanet | A lab that relied on the fixed floor passes `seabedDepth: 30` |
 | `SharedResourceMap` keys `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'` (live RT0 / RT1 / RT2, readable from `drawWater` on) and binding set `gbuffer` (section 6, section 11) | `ocean-1` | ocean (band between `fadeStart` and `fadeEnd`); anyone who wants the material under a pixel after lighting | None. Do not put the set into a bind group that is set inside `drawGBuffer` |

@@ -15,7 +15,7 @@
  * x = 8 + 24 k .. 24 + 24 k, y = 8 .. 24.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
+import { OCEAN_WETNESS_BYTES, RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { dirToLatLon } from '@/core/geo/cubeSphere';
 import { quat, v3, type Vec3 } from '@/core/math';
@@ -63,6 +63,12 @@ export interface LightingInputsProbe {
   setPointLight(v: { intensity: number; height: number; at: [number, number] } | null): void;
   /** 'ocean.nearField' for the site's body (what the ocean feature will publish). */
   setNearField(v: { fadeStart: number; fadeEnd: number } | null): void;
+  /**
+   * 'ocean.wetness' with one slot: a level water plane through the site-frame point `at` (m), applying within
+   * `radius` of it, whose wet line stands `wetLine` metres above the plane (what the ocean feature publishes
+   * for a floating vessel).
+   */
+  setOceanWetness(v: { at: [number, number, number]; radius: number; wetLine: number } | null): void;
 }
 
 export interface Probes {
@@ -734,12 +740,16 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     setCloudNear: () => undefined,
     setPointLight: () => undefined,
     setNearField: () => undefined,
+    setOceanWetness: () => undefined,
   };
   if (names.has('inputs')) {
     let ctx: RenderContext;
     let cloudFar: { coverage: number; opticalDepth: number } | null = null;
     let cloudNear: { opticalDepth: number } | null = null;
     let light: { intensity: number; height: number; at: [number, number] } | null = null;
+    let wetness: { at: [number, number, number]; radius: number; wetLine: number } | null = null;
+    let wetnessBuffer: GPUBuffer | null = null;
+    const wetnessData = new ArrayBuffer(OCEAN_WETNESS_BYTES);
     const solid = (format: 'rgba16float' | 'r16float' | 'r8unorm', value: number[], opts: { layers?: number } = {}): GPUTexture => createSolidTexture(ctx.device, 'lab-inputs', format, value, opts);
     features.push({
       id: 'lab-inputs',
@@ -794,11 +804,28 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
           c.device.queue.writeBuffer(b, 0, data);
           c.resources.publish('ocean.nearField', b);
         };
+        inputs.setOceanWetness = (v) => {
+          wetness = v;
+          if (!v) {
+            app?.renderer.resources.reset('ocean.wetness');
+            return;
+          }
+          wetnessBuffer ??= c.device.createBuffer({ label: 'lab-inputs.oceanWetness', size: OCEAN_WETNESS_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          c.resources.publish('ocean.wetness', wetnessBuffer);
+        };
       },
       prepare(frame) {
         const core = coreOf(ctx);
         const bodyIndex = frame.bodies.findIndex((b) => b.id === site.bodyId);
         const pose = sitePoseOf(site, frame, defs);
+        if (wetness && wetnessBuffer) {
+          // Slot 0: the plane point and its normal are camera-relative, so they are rewritten every frame.
+          const at = v3.add(pose.originRelCam, quat.rotate(pose.q, v3.fromTuple(wetness.at)));
+          const up = quat.rotate(pose.q, { x: 0, y: 0, z: 1 });
+          new Uint32Array(wetnessData, 0, 4).set([1, 0, 0, 0]);
+          new Float32Array(wetnessData, 16, 12).set([at.x, at.y, at.z, wetness.radius, up.x, up.y, up.z, wetness.wetLine, 1, 0, 0, 0.01]);
+          ctx.device.queue.writeBuffer(wetnessBuffer, 0, wetnessData);
+        }
         core.setCloudShadowParams({
           far: cloudFar ? { bodyIndex, layerRadius: defs.bodies[site.bodyId]!.radius + 5000, opticalDepth: cloudFar.opticalDepth, longitudeOffset: 0 } : null,
           // A 200 m wide map centred on the site, aligned with east / north.

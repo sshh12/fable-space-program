@@ -230,7 +230,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const mips = new MipGenerator(device);
   const shadows = new ShadowSystem(device, resources, quality.shadowResolution, reportError);
   const textures = new TextureManager(device, ctx.assetsUrl, reportError, mips);
-  const meshes = createMeshSystem({ device, shaders, frameLayout: frameBindGroupLayout, shadowPassLayout: shadows.passLayout, textures, reportError });
+  const meshes = createMeshSystem({ device, shaders, frameLayout: frameBindGroupLayout, shadowPassLayout: shadows.passLayout, textures, resources, reportError });
 
   const managed: { make: () => void; target: { texture: GPUTexture; view: GPUTextureView; size: [number, number]; version: number; alive: boolean } }[] = [];
   let cloudShadow: CloudShadowParams = { near: null, far: null };
