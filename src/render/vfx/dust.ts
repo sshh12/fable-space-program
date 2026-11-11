@@ -102,7 +102,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let tm = ta + jitter * dt;
     let p = R.ro + R.rd * tm;
     let r = length(p.xz);
-    if (r > rMax || r < 0.4 * r0) { continue; }
+    if (r > rMax) { continue; }
     let H = max(r, r0) * S.shape.y;
     let ha = max(R.ro.y + R.rd.y * ta - lift, 0.0);
     let hb = max(R.ro.y + R.rd.y * (ta + dt) - lift, 0.0);
@@ -111,18 +111,20 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     if (abs(x) > 1e-3) { mean = (1.0 - exp(-x)) / x; }
     let column = exp(-ha / H) / H * dt * mean;
     if (column < 1e-5) { continue; }
-    // Streaks: narrow in angle, long along the radius, streaming outwards.
+    // A continuous sheet, not a fan of rays: its streaks are fine, three to one at most, they break along the
+    // radius and stream outwards. Under the jet the ground is scoured and the haze is thinner, never absent.
     let ang = p.xz / max(r, 1e-3);
     let lod = max(tm * fp, 0.3 * dt) / r0;
-    let s1 = vfxNoiseLod(vec3f(ang * 2.9, 0.05 * (r - S.shape.w) / r0 + seed), lod * 0.3);
-    let s2 = vfxNoiseLod(vec3f(ang * 10.3, 0.17 * (r - 1.6 * S.shape.w) / r0 + seed * 3.1), lod * 0.9);
-    let streak = (0.1 + 2.4 * s1.g * s1.g) * (0.25 + 1.5 * s2.b);
-    let amount = S.shape.z * smoothstep(0.55 * r0, 1.25 * r0, r) * (r0 / max(r, r0)) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
+    let s1 = vfxNoiseLod(vec3f(ang * 5.3, 0.22 * (r - S.shape.w) / r0 + seed), lod * 0.5);
+    let s2 = vfxNoiseLod(vec3f(ang * 19.0, 0.7 * (r - 1.6 * S.shape.w) / r0 + seed * 3.1), lod * 1.8);
+    let streak = (0.55 + 0.9 * s1.g) * (0.7 + 0.6 * s2.b);
+    let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * (r0 / max(r, r0)) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
     let tau = amount * streak * column;
     let stepT = exp(-tau);
     let rel = f.origin + f.X * p.x + f.Y * p.y + f.Z * p.z;
     let lit = sampleSunShadow(rel, frame.sunDir.xyz, vec2u(in.pos.xy));
-    let J = S.look.rgb * ((probe.sun.rgb * (lit * phase) + vfxLocalLights(rel)) * (1.0 / (4.0 * PI)) + amb * (1.0 / PI) * 0.25);
+    // Dust this fine and this thick sends back about what the ground under it does, and more towards a low sun.
+    let J = S.look.rgb * ((probe.sun.rgb * (lit * (0.6 + 0.4 * phase)) + vfxLocalLights(rel)) * (1.0 / (2.0 * PI)) + amb * (1.0 / PI) * 0.25);
     let c = J * (1.0 - stepT);
     let lw = T * luminance(c) + 1e-12;
     L += T * c;
@@ -170,7 +172,7 @@ export class DustSheetRenderer {
         const outer = Math.max(P.sheetMinReach, P.sheetReachRadii * s.innerRadius);
         const o = i * INST_FLOATS;
         D.set([s.pos.x, s.pos.y, s.pos.z, s.innerRadius], o);
-        D.set([outer, tanE, P.sheetDepth * s.strength, (noiseTime * P.sheetSpeed) % (400 * s.innerRadius)], o + 4);
+        D.set([outer, tanE, P.sheetDepth * Math.pow(s.strength, 1.6), (noiseTime * P.sheetSpeed) % (400 * s.innerRadius)], o + 4);
         D.set([P.albedo[0], P.albedo[1], P.albedo[2], (s.seed % 211) / 211], o + 8);
         D.set([P.sheetSteps, Math.max(2, 5 * outer * tanE), 0, 0], o + 12);
         this.distances.push(v3.len(v3.add(originRel, quat.rotate(dom.q, s.pos))));

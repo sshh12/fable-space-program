@@ -68,7 +68,7 @@ fn canopyPoint(I: CanopyInst, s: f32, gc: f32) -> vec3f {
   r *= 1.0 + (0.02 + 0.035 * taut) * sin(PI * u);
   let slack = 1.0 - 0.75 * taut;
   let pleat = (abs(sin(PI * u)) - 0.637) * select(-1.0, 1.0, (u32(floor(gc)) & 1u) == 0u);
-  r *= 1.0 + slack * 0.2 * pleat * (0.35 + 0.65 * s);
+  r *= 1.0 + slack * 0.42 * pleat * (0.35 + 0.65 * s);
   // Breathing of the whole canopy (two slow beats), flutter of the skirt (more when slack) and cloth waves
   // that travel down the gores and round the canopy.
   r *= 1.0 + gain * (0.03 * sin(time * 1.9 + seed * 6.28) + 0.014 * sin(time * 3.3 + seed * 2.1));
@@ -128,8 +128,16 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   let w = fract(v.coord.z);
   let ci = u32(style.pattern[u32(gore) % u32(style.band.a)]);
   var albedo = style.colors[ci].rgb;
-  // Radial tapes along the gore seams, hems at the ring edges.
-  let tape = max(1.0 - smoothstep(0.02, 0.05, min(u, 1.0 - u)), 1.0 - smoothstep(0.03, 0.09, min(w, 1.0 - w)));
+  // Radial tapes along the gore seams, hems at the ring edges. From far away, where a gore or a ring is no
+  // wider than a pixel, the pattern is its own mean (stripes that blend, not single saturated pixels).
+  let du = fwidth(v.coord.y);
+  let dw = fwidth(v.coord.z);
+  var tape = max(1.0 - smoothstep(0.02, 0.05 + du, min(u, 1.0 - u)), 1.0 - smoothstep(0.03, 0.09 + dw, min(w, 1.0 - w)));
+  var mean = vec3f(0.0);
+  let np = u32(style.band.a);
+  for (var k = 0u; k < np; k++) { mean += style.colors[u32(style.pattern[k])].rgb; }
+  albedo = mix(albedo, mean / f32(np), smoothstep(0.3, 0.9, du));
+  tape = mix(tape, 0.22, smoothstep(0.25, 0.8, max(du, dw)));
   albedo = mix(albedo, style.band.rgb, tape * 0.8);
   // The canopy mesh is wound clockwise seen from outside: front-facing fragments are the inside of the cloth.
   let outside = !front;
@@ -156,7 +164,7 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   else { g = T * (saturate(-NoL) * forward + 0.8 * saturate(NoL)); }
   // Light that crossed the cloth takes its colour.
   let tint = albedo * mix(vec3f(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3), 0.6);
-  let filled = 0.35 + 0.65 * smoothstep(0.02, 0.5, I.axisX.w);
+  let filled = 0.85 + 0.15 * smoothstep(0.02, 0.5, I.axisX.w);
   let cavity = tint * sun * (g * filled / PI);
   return gbufferPack(albedo * ((1.0 + pleat) * (1.0 - 0.5 * T)), 1.0, n, style.params.z, 0.0, MATERIAL_CLOTH, 0.0, velocityFromClip(v.currClip, v.prevClip), cavity * frame.exposure.x);
 }
@@ -202,9 +210,11 @@ struct VOut {
   var o: VOut;
   o.clip = frame.viewProj * vec4f(p + side * (sideSign * half), 1.0);
   o.across = sideSign;
-  // Lit like a thin cylinder of cord: half of it faces the sun whatever the view.
+  // Lit like a thin cylinder of cord: the eye sees the half that faces it, and the sun lights as much of that
+  // half as it faces too (all of it with the sun behind the eye, none of it against the light).
   let probe = vfxProbes[0];
-  let lum = L.color.rgb * (probe.sun.rgb * (0.5 / PI) + vfxProbeAmbient(0u) * (1.0 / PI) + vfxLocalLights(p) * (0.5 / PI));
+  let sunSide = saturate(0.5 - 0.5 * dot(normalize(p), frame.sunDir.xyz));
+  let lum = L.color.rgb * (probe.sun.rgb * (sunSide / PI) + vfxProbeAmbient(0u) * (0.6 / PI) + vfxLocalLights(p) * (0.5 / PI));
   o.color = vec4f(lum * frame.exposure.x, L.color.a * min(1.0, 0.5 * L.a.w / half));
   o.dist = length(p);
   return o;
@@ -444,7 +454,11 @@ export class ChuteSystem {
             const key = `${vessel.id}|${part.instanceId}|${mi}|${k}`;
             const seed = ((k * 37 + mi * 11) % 97) / 97;
             const psi = (2 * Math.PI * k) / md.count + 0.08 * Math.sin(effectTime * 0.35 + k * 2.1);
-            const alpha = clusterAngle(style, md.count, rp, md.lineLength) * (1 + 0.05 * Math.sin(effectTime * 0.5 + k * 1.3));
+            // The canopies of a cluster lean on each other and never pass through each other: they stand apart
+            // by their radius plus what the cloth moves (pillowing, breathing, and the flutter of a slack skirt).
+            const t = Math.min(1, Math.max(0, (state.inflation - 0.02) / 0.38));
+            const slack = 1 - 0.75 * t * t * (3 - 2 * t);
+            const alpha = clusterAngle(style, md.count, rp * (1.1 + 0.22 * slack), md.lineLength) * (1 + 0.03 * Math.sin(effectTime * 0.5 + k * 1.3));
             const place = (f: typeof cur): { origin: Vec3; X: Vec3; Y: Vec3; Z: Vec3; confluence: Vec3 } => {
               const lateral = v3.add(v3.scale(f.e1, Math.cos(psi)), v3.scale(f.e2, Math.sin(psi)));
               const Y = v3.normalize(v3.add(v3.scale(f.c, Math.cos(alpha)), v3.scale(lateral, Math.sin(alpha))));
@@ -523,9 +537,9 @@ export class ChuteSystem {
       if (surface && !d.down) {
         const target = v3.scale(dom.up, -C.sinkSpeed * (d.mode === 'failed' ? 2.5 : 1));
         d.vel = v3.add(d.vel, v3.scale(v3.sub(target, d.vel), 1 - Math.exp(-dt / 1.2)));
-        // Tip over about a horizontal axis.
+        // Tip over about a horizontal axis: the released canopy keels over within a second or two and streams.
         const axis = v3.normalize(v3.cross(dom.up, v3.lenSq(v3.reject(d.X, dom.up)) > 1e-6 ? d.X : d.Z));
-        const rot = quat.fromAxisAngle(axis, 0.12 * dt * Math.min(1, age));
+        const rot = quat.fromAxisAngle(axis, v3.dot(d.Y, dom.up) > 0.2 ? 0.9 * dt * Math.min(1, 2 * age) : 0);
         d.X = quat.rotate(rot, d.X);
         d.Y = quat.rotate(rot, d.Y);
         d.Z = quat.rotate(rot, d.Z);
@@ -542,7 +556,7 @@ export class ChuteSystem {
       const Y = quat.rotate(dom.q, d.Y);
       const Z = quat.rotate(dom.q, d.Z);
       const collapse = Math.exp(-age / C.collapseTime);
-      const inflation = d.mode === 'failed' ? Math.max(0.004, d.inflation0 * Math.exp(-age / (0.3 * S.time))) : Math.max(0.05, d.inflation0 * collapse);
+      const inflation = d.mode === 'failed' ? Math.max(0.004, d.inflation0 * Math.exp(-age / (0.3 * S.time))) : Math.max(0.03, d.inflation0 * collapse);
       // One frame ago: it has moved with the domain and by its own velocity, the eye by prevEyeOffset.
       const prevOrigin = v3.sub(v3.addScaled(origin, v3.add(dom.velocityRoot, quat.rotate(dom.q, d.vel)), -dt), frame.prevEyeOffset);
       drawn.push({
@@ -565,7 +579,7 @@ export class ChuteSystem {
         slackDown: v3.neg(quat.rotate(dom.q, dom.up)),
         shred: d.mode === 'failed' ? Math.min(0.92, 0.25 + 0.7 * (age / S.time)) : 0,
         fade: 1 - Math.min(1, Math.max(0, (age - 0.7 * C.fadeTime) / (0.3 * C.fadeTime))),
-        flutter: d.down ? 0.15 : 2.2,
+        flutter: d.down ? 0.15 : 3.2,
       });
     }
 
@@ -602,11 +616,14 @@ export class ChuteSystem {
         const th = (g / gores) * 2 * Math.PI;
         const at = v3.add(p.origin, v3.add(v3.scale(p.X, Math.cos(th) * mouth), v3.scale(p.Z, Math.sin(th) * mouth)));
         if (p.slackDown) {
-          // Slack: each line sags below the straight way from the skirt to the bundle, each by its own amount.
-          const sag = 0.2 * p.suspension * (0.55 + 0.45 * Math.sin(g * 1.7 + 9 * p.seed));
-          const mid = v3.addScaled(v3.lerp(at, p.confluence, 0.55), p.slackDown, sag);
+          // Slack: nothing holds the lines together any more. Each hangs from its own point of the skirt, by its
+          // own length, trailing behind the falling cloth and swinging a little.
+          const len = p.suspension * (0.4 + 0.45 * (0.5 + 0.5 * Math.sin(g * 1.7 + 9 * p.seed)));
+          const sway = effectTime * 1.3 + g * 2.3 + 11 * p.seed;
+          const mid = v3.add(v3.addScaled(at, p.slackDown, 0.5 * len), v3.add(v3.scale(p.X, 0.07 * p.suspension * Math.sin(sway)), v3.scale(p.Y, -0.12 * len)));
+          const end = v3.add(v3.addScaled(mid, p.slackDown, 0.5 * len), v3.add(v3.scale(p.Z, 0.06 * p.suspension * Math.cos(0.7 * sway)), v3.scale(p.Y, -0.1 * len)));
           addLine(at, mid, s.def.lineWidth, p.fade, lineColor);
-          addLine(mid, p.confluence, s.def.lineWidth, p.fade, lineColor);
+          addLine(mid, end, s.def.lineWidth, p.fade, lineColor);
         } else addLine(p.confluence, at, s.def.lineWidth, p.fade, lineColor);
       }
       if (p.attach) addLine(p.attach, p.confluence, s.def.lineWidth * 3, p.fade, lineColor);

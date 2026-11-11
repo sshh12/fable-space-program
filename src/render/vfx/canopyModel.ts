@@ -81,15 +81,20 @@ export function canopyProfile(style: CanopyStyleDef, inflation: number): CanopyP
   }
   const lc = crownLength(b);
   const ls = Math.max(cloth - lc, 1e-4);
-  // Skirt: r = a - (a - mouth) t^2, y = -h t; h from the remaining cloth length.
-  const mouth = a * (0.62 + (0.96 - 0.62) * smooth(0.3, 1, f));
+  // Skirt: r = a - (a - mouth) g(t), y = -h t; h from the remaining cloth length. A full canopy curves in to
+  // its mouth at the hem (g = t^2); a reefed one is a swollen crown on a long, nearly straight tube of
+  // gathered cloth that ends in a small OPEN mouth (g = 1 - (1 - t)^4: the cloth comes in right under the
+  // crown and then hangs).
+  const mouth = a * (0.72 + (0.96 - 0.72) * smooth(0.3, 1, f));
+  const reef = 1 - smooth(0.12, 0.45, f);
+  const g = (t: number): number => t * t + (1 - (1 - t) ** 4 - t * t) * reef;
   const skirtLength = (h: number): number => {
     let len = 0;
     let pr = a;
     let py = 0;
     for (let i = 1; i <= N; i++) {
       const t = i / N;
-      const r = a - (a - mouth) * t * t;
+      const r = a - (a - mouth) * g(t);
       const y = -h * t;
       len += Math.hypot(r - pr, y - py);
       pr = r;
@@ -116,7 +121,7 @@ export function canopyProfile(style: CanopyStyleDef, inflation: number): CanopyP
   }
   for (let i = 1; i <= N; i++) {
     const t = i / N;
-    pr.push(a - (a - mouth) * t * t);
+    pr.push(a - (a - mouth) * g(t));
     py.push(h - h * t);
   }
   const cum: number[] = [0];
