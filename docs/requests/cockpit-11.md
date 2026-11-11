@@ -1,4 +1,4 @@
-Status: resolved (commit PENDING)
+Status: resolved (commit 9a5339a)
 From: cockpit
 Owner path: src/render/vehicle/parts/payload.ts (`les.tower`: the boost protective cover) and data/defs/visuals/parts/kestrel-les.json
 Blocking: yes (the brief's first acceptance view, "on the pad at noon looking up through the forward window", cannot show the world while the cover has no port there; visual QA round 1, cockpit, blocker / major in both lists)
