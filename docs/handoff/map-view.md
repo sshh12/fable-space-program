@@ -79,7 +79,7 @@ CSS px, `panelNudge(comp, sign, factor)`), `HANDLES`, `dragDelta`, `modifierFact
 - HUD panels: pass their rectangles (CSS px of the canvas) to `view.setObstacles([...])` whenever the HUD
   layout changes (the map lab passes its own text boxes; `mountHud` in `tests/browser/map-view/real-planet.spec.ts`
   passes the flight HUD's `.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn,
-  .hud .more, .hud .nbchips > div, .hud .toast, .hud .ball` boxes, request map-view-5). Map labels, the node
+  .hud .more, .hud .housing, .hud .prw, .hud .toast, .hud .ball` boxes, request map-view-5; the housing and the pitch / roll windows since flight-ui round 6, request flight-ui-3). Map labels, the node
   panel and tooltips then keep clear of them. Panel ownership: the map's node panel EDITS the selected node (components, total, time,
   orbit steps, delete); the HUD's MANEUVER panel shows the burn EXECUTION figures (delta-v remaining, burn time,
   burn start). The map panel and labels use the interface's shared type and palette (`src/core/ui/theme.ts`,

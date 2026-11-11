@@ -1,4 +1,4 @@
-Status: open
+Status: open (the map-view part is resolved, see the Resolution below; the app shell part stays with app-integration)
 From: flight-ui
 Owner path: tests/browser/map-view/real-planet.spec.ts (map-view), and the app shell's map obstacles (src/app, app-integration)
 Blocking: no
@@ -21,3 +21,10 @@ now uses `.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .
 Replace `.hud .nbchips > div` by `.hud .housing, .hud .prw` in the obstacle selectors (map-view's spec helper and
 the app shell's `setObstacles` call, if it copies map-view-5's list). Nothing else changes: `.hud .ball` and every
 other selector stay valid.
+
+## Resolution (map-view part)
+Done: `tests/browser/map-view/real-planet.spec.ts` `mountHud` hands the map `.hud .panel, .hud .later, .hud .tile:not(.compact),
+.hud .pill, .hud .helpbtn, .hud .more, .hud .housing, .hud .prw, .hud .toast, .hud .ball` as obstacles (the
+`.hud .nbchips > div` entry replaced), and the map-view hand-off (Integration) lists the same selectors for the app
+shell. The app shell's own `setObstacles` list (src/app, app-integration) is not map-view's path: that part stays
+with its owner. Nothing in `src/map` changes (it only reads the rectangles it is given).

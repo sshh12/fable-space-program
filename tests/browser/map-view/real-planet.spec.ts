@@ -58,7 +58,7 @@ async function mountHud(page: Page): Promise<void> {
     // The HUD's panels: the selectors of its own coverage check (tests/browser/flight-ui/screens.spec.ts).
     const rects = (): { x: number; y: number; width: number; height: number }[] => {
       const visible = (e: Element): boolean => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
-      const els = [...host.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .nbchips > div, .hud .toast, .hud .ball')].filter(visible);
+      const els = [...host.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .housing, .hud .prw, .hud .toast, .hud .ball')].filter(visible);
       return els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0).map((r) => ({ x: r.left, y: r.top, width: r.width, height: r.height }));
     };
     window.__realHud = { rects };
