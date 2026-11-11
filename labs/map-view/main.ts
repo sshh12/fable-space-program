@@ -97,12 +97,10 @@ async function boot(): Promise<void> {
   if (sceneName === 'synthetic') {
     sim = staticSim(createSyntheticFixture(defs, { correctionNodes: perfScene ? 3 : 0 }).snapshot);
   } else {
-    const fake: Sim = createFakeSim(defs, { scene: sceneName as FakeScene });
-    // The lab presents the FakeSim's craft under the mission name of the synthetic scene ("Kestrel"): the FakeSim
-    // calls it "Fake vessel", which next to a finished interface reads as placeholder text (request map-view-7
-    // asks for a FakeSim option so the integration lab can do the same).
-    const named = (s: SimSnapshot): SimSnapshot => ({ ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, name: LAB_VESSEL_NAME } : v)) });
-    sim = { snapshot: () => named(fake.snapshot()), advance: (dt) => fake.advance(dt), commands: fake.commands };
+    // The craft carries the mission name of the synthetic scene (the FakeSim's default "Fake vessel" read as
+    // placeholder text next to a finished interface; FakeSimOptions.vesselName, request map-view-7).
+    const fake: Sim = createFakeSim(defs, { scene: sceneName as FakeScene, vesselName: LAB_VESSEL_NAME });
+    sim = { snapshot: () => fake.snapshot(), advance: (dt) => fake.advance(dt), commands: fake.commands };
   }
 
   // Shader library for the feature: compile errors go to window.__test.errors.

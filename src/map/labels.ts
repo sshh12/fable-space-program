@@ -376,13 +376,30 @@ export function declutter(
     for (let form = 0; form < 2 && !found; form++) {
       const width = form === 0 ? l.width : l.altWidth;
       if (form === 1 && !(width > 0 && width < l.width)) break;
-      for (let ring = 0; ring < rings && best > ring * 8 - bonus; ring++) {
-        const d = l.clear + gap + ring * farRing;
-        const e = d * 0.75;
-        for (let r = 0; r < 8; r++) {
+      // the place the label had in the last draw list first (it gets the hysteresis bonus), then the others in
+      // rank order: a candidate costs at least its rank, so the search stops once none left can beat the best
+      let prevRing = -1;
+      let prevR = -1;
+      if (prevSlot >= 0 && ((prevSlot / 8) | 0) < rings) {
+        prevRing = (prevSlot / 8) | 0;
+        for (let r = 0; r < 8; r++) if (seq[r] === prevSlot % 8) prevR = r;
+      }
+      {
+        for (let step = prevR >= 0 ? -1 : 0; step < rings * 8; step++) {
+          let ring: number;
+          let r: number;
+          if (step < 0) {
+            ring = prevRing;
+            r = prevR;
+          } else {
+            ring = (step / 8) | 0;
+            r = step % 8;
+            if (ring === prevRing && r === prevR) continue;
+          }
           const rank = ring * 8 + r;
-          // a later candidate costs at least its rank (less the hysteresis bonus): none left can beat the best
-          if (best <= rank - bonus) break;
+          if (step >= 0 && best <= rank) break;
+          const d = l.clear + gap + ring * farRing;
+          const e = d * 0.75;
           const c = seq[r]!;
           let x: number;
           let y: number;
@@ -422,6 +439,9 @@ export function declutter(
           const x1 = x + width;
           const y1 = y + l.height;
           if (x < 0 || y < 0 || x1 > W || y1 > H) continue;
+          const slot = ring * 8 + c;
+          let cost = rank - (slot === prevSlot ? bonus : 0);
+          if (cost >= best) continue;
           let free = true;
           for (let k = 0; k < n; k++) {
             const o = 4 * k;
@@ -431,18 +451,18 @@ export function declutter(
             }
           }
           if (!free) continue;
-          const slot = ring * 8 + c;
-          let cost = rank - (slot === prevSlot ? bonus : 0);
-          if (lines) cost += LINE_LEN_COST * lines.length(x - margin, y - margin, x1 + margin, y1 + margin);
           if (fd < neighbourReach) {
             const cx = (x + x1) / 2 - l.ax;
             const cy = (y + y1) / 2 - l.ay;
             const cl = Math.sqrt(cx * cx + cy * cy);
             if (cl > 0) cost += NEIGHBOUR_COST * Math.max(0, (cx * fx + cy * fy) / cl);
-            // the labels of two neighbouring anchors keep the anchors' order along both axes: a label level with
-            // the other marker, the other's level with this one, reads crosswise however short the leaders
+            // The labels of two neighbouring anchors keep the anchors' order: labels are read row by row, so one
+            // set beside its marker (or diagonally) keeps the vertical order, one above or below it the horizontal
+            // one. A label level with the other marker, the other's level with this one, reads crosswise however
+            // short the leaders.
             const mx = (x + x1) / 2;
             const my = (y + y1) / 2;
+            const vertical = c === 2 || c === 3;
             for (let k = 0; k < nLinks; k++) {
               const o = 4 * k;
               const ax = cents[o]!;
@@ -450,10 +470,11 @@ export function declutter(
               const dax = l.ax - ax;
               const day = l.ay - ay;
               if (dax * dax + day * day >= neighbourReach * neighbourReach) continue;
-              if (Math.abs(dax) > orderTol && dax * (mx - cents[o + 2]!) < 0) cost += ORDER_COST;
-              if (Math.abs(day) > orderTol && day * (my - cents[o + 3]!) < 0) cost += ORDER_COST;
+              if (vertical ? Math.abs(dax) > orderTol && dax * (mx - cents[o + 2]!) < 0 : Math.abs(day) > orderTol && day * (my - cents[o + 3]!) < 0) cost += ORDER_COST;
             }
           }
+          if (cost >= best) continue;
+          if (lines) cost += LINE_LEN_COST * lines.length(x - margin, y - margin, x1 + margin, y1 + margin);
           if (cost >= best) continue;
           // another marker's icon nearer to the plate than its own anchor: it would read as that marker's label
           const own = rectDist(l.ax, l.ay, x, y, x1, y1);

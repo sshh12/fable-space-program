@@ -235,7 +235,9 @@ export const COLORS = {
   textDim: hex('#aab6c8'),
   halo: hex('#05070b', 0.85),
   /** Backing plate of every label (opaque: nothing behind it reads through the text). */
-  plate: hex('#060a10', 0.95),
+  plate: hex('#060a10', 1),
+  /** Behind a body name: black like space (no visible plate there), it masks a line under the word. */
+  knockout: hex('#000000', 0.94),
   /** Interior of outline markers (rings, diamonds, the pad square): the line they sit on stops at the glyph. */
   iconFill: hex('#060a10', 1),
   leader: hex('#aab6c8', 0.55),

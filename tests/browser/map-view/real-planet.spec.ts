@@ -25,6 +25,7 @@ interface MapHandle {
   view: {
     setActive(on: boolean): void;
     selectNode(id: string | null): void;
+    readonly selectedNodeId: string | null;
     describe(): { kind: string; id: string; x: number; y: number; visible: boolean }[];
     setObstacles(rects: { x: number; y: number; width: number; height: number }[]): void;
     controller: { currentScene: SceneLike | null; tooltipRect: { x: number; y: number; width: number; height: number } | null };
@@ -282,6 +283,16 @@ test('real renderer, low Earth orbit: day side, limb, terminator, night side, zo
   });
   await orbitView(page, null, 'default', 2.4e7);
   await shoot(page, 'real-lowOrbit-node');
+  await expect(page.locator('[data-map-panel]')).toBeVisible();
+  // The acceptance step of the node panel (accept-panel.png over the lab's sphere) over the real planet: a small
+  // burn whose planned Ap sits beside the current one, the panel, the pad and a zone.
+  await page.evaluate(() => {
+    const app = window.__integration!.app;
+    const id = window.__realMap!.view.selectedNodeId!;
+    app.sim.commands.setNode(id, { dv: { prograde: 50, normal: 10, radial: 0 } });
+  });
+  await orbitView(page, null, 'default', 4e7);
+  await shoot(page, 'real-lowOrbit-panel');
   await expect(page.locator('[data-map-panel]')).toBeVisible();
   await expectClean(page, pageLog, info);
 });

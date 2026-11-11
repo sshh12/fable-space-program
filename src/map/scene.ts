@@ -292,6 +292,8 @@ export class VertexArrays {
    * so both choose the same octave in every cell.
    */
   dz = new Float64Array(0);
+  /** Cumulative screen length along the line over its drawn segments, device px (as `len` before dashing). */
+  slen = new Float64Array(0);
 
   reserve(extra: number): void {
     const need = this.n + extra;
@@ -325,6 +327,7 @@ export class VertexArrays {
     this.cut0 = grow(this.cut0);
     this.cut1 = grow(this.cut1);
     this.dz = grow(this.dz);
+    this.slen = grow(this.slen);
     this.capacity = cap;
   }
 
@@ -427,6 +430,7 @@ export class VertexArrays {
     const cover = this.cover;
     const cut0 = this.cut0;
     const cut1 = this.cut1;
+    const slen = this.slen;
     for (let q = start; q < j; q++) {
       tt[q] = NaN;
       alpha[q] = 1;
@@ -439,6 +443,7 @@ export class VertexArrays {
       this.dz[q] = -vz[q]!;
       if (front[q] !== 1) {
         len[q] = L;
+        slen[q] = L;
         continue;
       }
       const px = sx[q]!;
@@ -450,6 +455,7 @@ export class VertexArrays {
         L += Math.sqrt(dx * dx + dy * dy);
       }
       len[q] = L;
+      slen[q] = L;
       if (px >= 0 && py >= 0 && px <= W && py <= H) visible++;
       if (px < x0) x0 = px;
       if (px > x1) x1 = px;
@@ -1386,8 +1392,11 @@ export class SceneBuilder {
     const clip = this.clipT;
     // the part of segment i inside the box [x0, x1] x [y0, y1] (Liang-Barsky), as parameters clip[0..1]
     const clipSeg = (ax: number, ay: number, dx: number, dy: number): boolean => clipToBox(ax, ay, dx, dy, x0, y0, x1, y1, clip);
-    // the cells along drawn segment i hold i + 1 (two steps per cell, so no cell the segment crosses is skipped)
-    const mark = (i: number): void => {
+    // the cells along drawn segment i hold i + 1 (a step per cell: a cell crossed only at a corner may be skipped,
+    // its neighbours along the segment hold the same segment, which only blurs the corridor's edge there)
+    // `partner`: the segment also goes into the dash alignment grid (its cells are larger: a step per corridor
+    // cell skips none of them)
+    const mark = (i: number, partner: boolean): void => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const dx = v.sx[i + 1]! - ax;
@@ -1395,11 +1404,12 @@ export class SceneBuilder {
       if (!clipSeg(ax, ay, dx, dy)) return;
       const t0 = clip[0]!;
       const t1 = clip[1]!;
-      const steps = Math.max(1, Math.ceil((2 * Math.sqrt(dx * dx + dy * dy) * (t1 - t0)) / cs));
+      const steps = Math.max(1, Math.ceil((Math.sqrt(dx * dx + dy * dy) * (t1 - t0)) / cs));
       let gx = (ax + dx * t0 - x0) * inv;
       let gy = (ay + dy * t0 - y0) * inv;
       const sx = (dx * (t1 - t0) * inv) / steps;
       const sy = (dy * (t1 - t0) * inv) / steps;
+      const toOwn = cs * ainv;
       for (let s = 0; s <= steps; s++, gx += sx, gy += sy) {
         const ci = gx | 0;
         const cj = gy | 0;
@@ -1414,6 +1424,21 @@ export class SceneBuilder {
           this.marked[this.nMarked++] = c;
         }
         occ[c] = i + 1;
+        if (partner) {
+          const oi = (gx * toOwn) | 0;
+          const oj = (gy * toOwn) | 0;
+          if (oi >= acols || oj >= arows) continue;
+          const o = oj * acols + oi;
+          if (own[o] === 0) {
+            if (this.nOwned >= this.owned.length) {
+              const grown = new Int32Array(this.owned.length * 2);
+              grown.set(this.owned);
+              this.owned = grown;
+            }
+            this.owned[this.nOwned++] = o;
+          }
+          own[o] = i + 1;
+        }
       }
     };
     // a drawn segment within the corridor half-width of screen point (px, py), at grid position (gx, gy):
@@ -1448,6 +1473,24 @@ export class SceneBuilder {
     // to the last sample next to drawn cells is hidden (0: none, 1: the whole segment, 2: [cut[0], cut[1]], with
     // -1 / 2 for "up to that end").
     const cut = this.cutT;
+    // the segment being walked (clipped to the box): start and extent, and whether its point at f is near a line
+    let wx = 0;
+    let wy = 0;
+    let wdx = 0;
+    let wdy = 0;
+    // (the last point tested and its result: a segment's first sample is the previous segment's last one)
+    let lastX = NaN;
+    let lastY = NaN;
+    let lastNear = false;
+    const at = (f: number): boolean => {
+      const px = wx + wdx * f;
+      const py = wy + wdy * f;
+      if (Math.abs(px - lastX) < 1e-6 && Math.abs(py - lastY) < 1e-6) return lastNear;
+      lastX = px;
+      lastY = py;
+      lastNear = near((px - x0) * inv, (py - y0) * inv, px, py);
+      return lastNear;
+    };
     const coveredSpan = (i: number): number => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
@@ -1456,29 +1499,58 @@ export class SceneBuilder {
       if (!clipSeg(ax, ay, dx, dy)) return 0;
       const t0 = clip[0]!;
       const t1 = clip[1]!;
-      // a sample per half corridor width
-      const px0 = ax + dx * t0;
-      const py0 = ay + dy * t0;
-      const pdx = dx * (t1 - t0);
-      const pdy = dy * (t1 - t0);
-      const steps = Math.min(512, Math.max(1, Math.ceil((2 * Math.sqrt(pdx * pdx + pdy * pdy)) / cs)));
-      const sx = pdx / steps;
-      const sy = pdy / steps;
+      // A sample per three corridor widths (under half a dash period: a hidden stretch shorter than a period with
+      // line on both sides is shown again by cleanCover, so nothing a finer walk would find survives); the first
+      // and the last sample next to drawn line are searched from the two ends inward (a segment lying on another
+      // line costs two lookups, one far from any line a single pass), then each boundary is refined by bisection
+      // to about a pixel. A line crossing at a steep angle may slip between samples: it is not hidden anyway.
+      wx = ax + dx * t0;
+      wy = ay + dy * t0;
+      wdx = dx * (t1 - t0);
+      wdy = dy * (t1 - t0);
+      const len = Math.sqrt(wdx * wdx + wdy * wdy);
+      const steps = Math.min(512, Math.max(1, Math.ceil(len / (3 * cs))));
       let first = -1;
-      let last = -1;
-      let px = px0;
-      let py = py0;
-      for (let q = 0; q <= steps; q++, px += sx, py += sy) {
-        if (near((px - x0) * inv, (py - y0) * inv, px, py)) {
-          if (first < 0) first = q;
-          last = q;
+      for (let q = 0; q <= steps; q++) {
+        if (at(q / steps)) {
+          first = q;
+          break;
         }
       }
       if (first < 0) return 0;
+      let last = first;
+      for (let q = steps; q > first; q--) {
+        if (at(q / steps)) {
+          last = q;
+          break;
+        }
+      }
       if (first === 0 && last === steps) return 1;
-      const dt = (t1 - t0) / steps;
-      cut[0] = first === 0 ? -1 : t0 + (first - 0.5) * dt;
-      cut[1] = last === steps ? 2 : t0 + (last + 0.5) * dt;
+      const iters = Math.max(0, Math.ceil(Math.log2(len / steps / scene.proj.pxScale)));
+      let f0 = -1;
+      if (first > 0) {
+        let lo = (first - 1) / steps;
+        let hi = first / steps;
+        for (let k = 0; k < iters; k++) {
+          const mid = (lo + hi) / 2;
+          if (at(mid)) hi = mid;
+          else lo = mid;
+        }
+        f0 = (lo + hi) / 2;
+      }
+      let f1 = 2;
+      if (last < steps) {
+        let lo = last / steps;
+        let hi = (last + 1) / steps;
+        for (let k = 0; k < iters; k++) {
+          const mid = (lo + hi) / 2;
+          if (at(mid)) lo = mid;
+          else hi = mid;
+        }
+        f1 = (lo + hi) / 2;
+      }
+      cut[0] = f0 < 0 ? -1 : t0 + (t1 - t0) * f0;
+      cut[1] = f1 > 1 ? 2 : t0 + (t1 - t0) * f1;
       return 2;
     };
     // Dash alignment grid: the drawn segments of the dashed lines placed so far, by vertex index + 1, in cells of
@@ -1489,46 +1561,20 @@ export class SceneBuilder {
     const arows = Math.ceil((y1 - y0) * ainv) + 1;
     if (this.own.length < acols * arows) this.own = new Int32Array(Math.ceil(acols * arows * 1.25));
     const own = this.own;
-    const markOwn = (i: number): void => {
-      const ax = v.sx[i]!;
-      const ay = v.sy[i]!;
-      const dx = v.sx[i + 1]! - ax;
-      const dy = v.sy[i + 1]! - ay;
-      if (!clipSeg(ax, ay, dx, dy)) return;
-      const t0 = clip[0]!;
-      const t1 = clip[1]!;
-      const steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) * (t1 - t0) * ainv));
-      let gx = (ax + dx * t0 - x0) * ainv;
-      let gy = (ay + dy * t0 - y0) * ainv;
-      const sx = (dx * (t1 - t0) * ainv) / steps;
-      const sy = (dy * (t1 - t0) * ainv) / steps;
-      for (let s = 0; s <= steps; s++, gx += sx, gy += sy) {
-        const ci = gx | 0;
-        const cj = gy | 0;
-        if (ci < 0 || cj < 0 || ci >= acols || cj >= arows) continue;
-        const c = cj * acols + ci;
-        if (own[c] === 0) {
-          if (this.nOwned >= this.owned.length) {
-            const grown = new Int32Array(this.owned.length * 2);
-            grown.set(this.owned);
-            this.owned = grown;
-          }
-          this.owned[this.nOwned++] = c;
-        }
-        own[c] = i + 1;
-      }
-    };
     const periodPx = DASH_PERIOD_PX * scene.proj.pxScale;
     // 1. the current trajectory up to the first node: drawn as it is, and the reference for everything else
     for (const l of lines) {
       if (l.kind !== 'current') continue;
-      for (let i = l.start; i < l.start + l.count - 1; i++) if (v.seg[i] === 1 && !(v.t[i + 1]! > firstNodeUt)) mark(i);
+      for (let i = l.start; i < l.start + l.count - 1; i++) if (v.seg[i] === 1 && !(v.t[i + 1]! > firstNodeUt)) mark(i, false);
     }
     // 2. planned patches in time order, 3. the current trajectory after the first node
+    let plannedSeen = 0;
     for (let pass = 0; pass < 2; pass++) {
       for (const l of lines) {
         if (l.kind !== (pass === 0 ? 'planned' : 'current')) continue;
+        if (pass === 0) plannedSeen++;
         const end = l.start + l.count - 1;
+        lastX = NaN; // the grid has changed since the last line was walked
         let any = false;
         for (let i = l.start; i < end; i++) {
           if (v.seg[i] !== 1) continue;
@@ -1543,11 +1589,12 @@ export class SceneBuilder {
         }
         if (any) this.cleanCover(l, periodPx);
         if (pass === 0) {
-          if (l.dashed) this.alignDashes(scene, l, own, acols, arows, x0, y0, ainv);
+          // (the first dashed patch has nothing to align to; the last one is nobody's partner)
+          if (l.dashed && plannedSeen > 1) this.alignDashes(scene, l, own, acols, arows, x0, y0, ainv);
+          const partner = l.dashed && plannedSeen < planned;
           for (let i = l.start; i < end; i++) {
             if (v.seg[i] !== 1 || v.cover[i] === 1) continue;
-            mark(i);
-            if (l.dashed) markOwn(i);
+            mark(i, partner);
           }
         }
       }
@@ -1580,23 +1627,40 @@ export class SceneBuilder {
     const lo = l.start;
     const hi = l.start + n;
     let nKnown = 0;
+    let lastGx = -1e9;
+    let lastGy = -1e9;
+    let lastFound = false;
     for (let j = lo; j < hi; j++) {
       known[j - lo] = 0;
-      if (v.front[j] !== 1 || !((j < hi - 1 && v.seg[j] === 1) || (j > lo && v.seg[j - 1] === 1))) continue;
+      // a vertex between drawn segments that are not hidden whole (a hidden stretch lies on another line: its
+      // offset is interpolated like any other gap's)
+      const drawnBefore = j > lo && v.seg[j - 1] === 1 && v.cover[j - 1] === 0;
+      const drawnAfter = j < hi - 1 && v.seg[j] === 1 && v.cover[j] === 0;
+      if (v.front[j] !== 1 || !(drawnBefore || drawnAfter)) continue;
       const px = v.sx[j]!;
       const py = v.sy[j]!;
+      // outside the grid (off the box of the trajectories on screen): nothing to align to
+      const gx = (px - x0) * inv;
+      const gy = (py - y0) * inv;
+      if (!(gx > -1 && gy > -1 && gx < cols + 1 && gy < rows + 1)) continue;
+      // where the last probe found no partner, the next one waits half a grid cell along the line (short
+      // segments put many vertices in one cell); beside a partner every vertex is measured
+      if (!lastFound && Math.abs(gx - lastGx) < 0.5 && Math.abs(gy - lastGy) < 0.5) continue;
+      lastGx = gx;
+      lastGy = gy;
+      lastFound = false;
+      const gi = gx | 0;
+      const gj = gy | 0;
       // this line's screen direction at the vertex
       const ja = j > lo && v.front[j - 1] === 1 ? j - 1 : j;
       const jb = j < hi - 1 && v.front[j + 1] === 1 ? j + 1 : j;
       if (ja === jb) continue;
       let tx = v.sx[jb]! - v.sx[ja]!;
       let ty = v.sy[jb]! - v.sy[ja]!;
-      const tl = Math.hypot(tx, ty);
+      const tl = Math.sqrt(tx * tx + ty * ty);
       if (!(tl > 0)) continue;
       tx /= tl;
       ty /= tl;
-      const gi = ((px - x0) * inv) | 0;
-      const gj = ((py - y0) * inv) | 0;
       let best = reach2;
       let bestSeg = -1;
       let bestS = 0;
@@ -1638,6 +1702,7 @@ export class SceneBuilder {
       zr[j - lo] = (v.dz[a]! + (v.dz[a + 1]! - v.dz[a]!) * t) / -v.vz[j]!;
       known[j - lo] = 1;
       nKnown++;
+      lastFound = true;
     }
     if (nKnown === 0) return;
     // An offset matters only modulo the coarsest dash cell in use where it was measured (a whole number of cells
@@ -1780,7 +1845,7 @@ export class SceneBuilder {
     let n = 0;
     for (let q = 0; q < m; q++) {
       const i = a + q;
-      const len = Math.hypot(v.sx[i + 1]! - v.sx[i]!, v.sy[i + 1]! - v.sy[i]!);
+      const len = v.slen[i + 1]! - v.slen[i]!;
       S[q + 1] = S[q]! + len;
       let h0 = 0;
       let h1 = 0;
@@ -1986,6 +2051,10 @@ function arcLength(curve: ViewConic, u0: number, u1: number, f0: number, scratch
 function clipToBox(ax: number, ay: number, dx: number, dy: number, x0: number, y0: number, x1: number, y1: number, out: Float64Array): boolean {
   out[0] = 0;
   out[1] = 1;
+  // both ends inside (most segments): nothing to clip
+  const bx = ax + dx;
+  const by = ay + dy;
+  if (ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1 && bx >= x0 && bx <= x1 && by >= y0 && by <= y1) return true;
   return clipEdge(-dx, ax - x0, out) && clipEdge(dx, x1 - ax, out) && clipEdge(-dy, ay - y0, out) && clipEdge(dy, y1 - ay, out) && out[1]! > out[0]!;
 }
 

@@ -102,12 +102,21 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   ellipses are skipped. A patch with `nuEnd - nuStart >= 2 pi` is one ellipse; its node sits at
   `nuEnd mod 2 pi`. With time ahead a patch fades in alpha alone toward 0.72 (`FADE_FLOOR`; the hue is kept, so
   far laps stay the saturated colour of their patch); the current trajectory beyond the first node is dimmed.
-- Coincident patches are drawn once (`SceneBuilder.suppressCoincident`): a 1.5 px occupancy bitmap of what is
-  drawn, in priority order (the current trajectory up to the first node, then the planned patches in time
-  order, then the current trajectory after the first node); a later segment that runs within about 3 px of
-  drawn cells for three quarters of its on-screen length is hidden (`VertexArrays.cover`; it stays clickable and
-  a node still slides along it), short flickering runs are evened out (`cleanCover`). A node with no delta-v
-  shows one orbit, not interleaved dashes.
+- Coincident patches are drawn once (`SceneBuilder.suppressCoincident`), in priority order (the current
+  trajectory up to the first node, then the planned patches in time order, then the current trajectory after
+  the first node): the stretch of a later line whose centre runs within `COINCIDENT_PX` (3.75 px, 1.5 line
+  widths) of an earlier drawn segment is hidden, measured exactly (an occupancy grid of corridor-width cells holds
+  the drawn segment through each; the distance to it is computed) and per sub-span: a segment covered in part
+  keeps its screen-parameter range `cut0..cut1`, which the shader hides with anti-aliased flat ends
+  (`VertexArrays.cover` for a whole segment; hidden stretches stay clickable and a node still slides along them).
+  `cleanCover` evens out flicker in screen length (visible gaps under two dash periods hidden, hidden stretches
+  under one period with line on both sides shown, so a steep crossing is not cut). A node with no delta-v shows
+  one orbit; two legs converging into one point merge where they enter the corridor.
+- A dashed patch that runs beside an earlier dashed one (within `DASH_ALIGN_PX` 12 px on screen, within 15
+  degrees of parallel, the same way) takes its dash phase and its octave depth there (`alignDashes`: the offset
+  to the earlier patch's dash coordinate at the nearest point on screen, measured per vertex, interpolated along
+  the arc between such stretches modulo the coarsest dash cell, so the coordinate always runs forward): two legs
+  side by side show their dashes side by side.
 - Lines are cut in float64 where they pass behind the eye (`VertexArrays.appendLine`, `CLIP_DEPTH_REL`): a
   vertex counts as in front when its depth exceeds 1e-5 of its distance, and a segment crossing that depth
   gets a new end there. Every segment the GPU draws has both ends safely in front after the float32 narrowing
@@ -116,10 +125,13 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   planet, drawn in a pass of its own before all line cores (a line crossing another never cuts it); a whole
   ellipse is joined across its seam (two trailing join-only vertices, `LineRecord.seam`), so no end cap shows
   there. Dashes are fixed to the path: every vertex of a planned patch carries its arc length from the node in
-  metres (Simpson over the conic parameter, cached per vertex parameter while the patch is unchanged), every
-  segment the octave n = floor(log2(20 px x metres per px at its depth)); the fragment shader draws the 12 on /
-  8 off patterns of world period 2^n and 2^(n+1) m and cross-fades them by its own depth (like mip levels), so
-  dashes never slide when the camera turns, zooms or follows the vessel and stay about 20 px long near and far.
+  metres (Simpson over the conic parameter, cached per vertex parameter while the patch is unchanged). The
+  fragment shader (`dashOctave`) draws the pattern (60 % on) of world period 2^k m, k the largest octave whose
+  period is at most `DASH_PERIOD_PX` (26 px) on screen, judged at the centre of the octave's own period-long
+  cell of the path: every fragment of a cell makes the same choice, and cells of two octaves meet only at
+  multiples of the coarser period, where both patterns begin a dash. Every pixel is dash or gap (no cross-fade
+  of two patterns at partial strength), dashes never slide when the camera turns, zooms or follows the vessel
+  (zooming moves the octave step from cell to cell) and stay 13-26 px long near and far.
 - Lines are relative to the patch body's current position, or (toggle) at intercept: every ENCOUNTER (a run
   of consecutive patches about one body in one list) is drawn around the body's ROOT position at that
   encounter's SOI entry, derived exactly from the preceding patch as `prev.bodyPosAtEnd + r(prev.nuEnd) -
@@ -142,11 +154,15 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   with the terminator, a light rim on the night edge, a dark casing) that owns its icon cluster; from 12 px
   the renderer's disc carries a silhouette ring (`limb:<body>`, 1.25 px, no casing; strong on the night side
   where the planet is as black as space, 28 % of that on the lit side), so a line behind a night limb never
-  ends in mid-air. Names (under 40 px radius) in tracked capitals without a plate. Vessels: an elongated
+  ends in mid-air. Names (under 40 px radius) in tracked capitals with a black knockout behind them (invisible on
+  space, it masks a line the placement could not avoid). A body off screen (or behind the eye) whose SOI circle
+  is drawn on screen gets a chevron at the frame's edge toward it with its name. Vessels: an elongated
   chevron with a deep tail notch along the velocity on screen (the active vessel 9.5 px in its trajectory's
   cyan, others 7 px grey).
 - Surface targets in the body-fixed frame (rotate with the body): landing pin, launch-site pad, recovery zones
-  as circles of their radius on the sphere; shown once the body is >= 18 px in radius, labels from 70 px.
+  as circles of their radius on the sphere; shown once the body is >= 18 px in radius, labels from 70 px. A pad
+  or zone centre is drawn only with its whole glyph inside the visible disc. A long name that finds no room is
+  written short (`shortSiteName`: "Ka Lae Pacific Spaceport, Launch Complex 1" -> "Ka Lae LC-1").
 - Markers: SDF icons at float64 positions with distinct glyphs (Ap ring with an up chevron, Pe with a down
   chevron, SOI entry / exit arrows in / out, impact, entry, closest approach, AN/DN diamond), outline glyphs
   filled with an opaque dark interior (the line a marker sits on stops at it); Ap/Pe in the colour of their
@@ -154,7 +170,7 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   inclination, SOI enter/exit with body, impact lat/lon and miss to the landing target when
   `readouts.landingTarget.predicted` matches, entry speed, closest-approach separation), first line tinted
   with the marker's colour. Impact and entry points also drawn on the ground (the ground twin is left out
-  within 12 px of its marker). A patch in another body's frame than the one before it starts with a small
+  within 12 px of its marker; otherwise labelled "Impact point" / "Entry point"). A patch in another body's frame than the one before it starts with a small
   entry tick (`<list>/<i>/start`; left out within 12 px of the SOI marker). Apsis and AN/DN markers are left
   out on a patch under 40 px across. The apsis the active vessel sits at (within 11 px) is printed as the
   vessel label's second line ("Pe 200.0 km  now") instead of folding into a "+1". Lengths are written with
@@ -164,24 +180,36 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   not behind a body (hidden < 0.5), else not at all (an unselected node behind a body keeps a dashed ring at
   0.6). Only lines fade over the 1.5 px limb ramp. An anchor under other UI (a `setObstacles` rectangle: the
   navball, a HUD panel) gets neither icon nor label: the HUD covers it, and a label set beside the panel with a
-  leader into it pointed at nothing.
-- Clutter: icons closer than 11 px (from the edge of a body icon) collapse into one (a body icon wins, then
-  the active vessel, then the label priority) with a "+n" badge on the icon's upper-right corner; impact and
+  leader into it pointed at nothing. Exception: the active vessel keeps its chevron (the panel covers what it
+  covers) and its label is set clear of the panel. A marker the selected node's disc would cover moves just clear
+  of the disc along its own line instead of being left out.
+- Clutter: icons collapse into one when their centres are closer than 11 px (from the edge of a body icon) or
+  their glyphs would touch (a body icon wins, then the active vessel, then the label priority) with a "+n" badge
+  on the corner of its icon clearest of other icons, the gizmo and other UI (upper right when free). An
+  encounter ghost (at-intercept drawing) whose SOI is under 64 px on screen folds everything inside that circle
+  (the encounter reads as one marker, "Moon (encounter) +7", the members in its tooltip). Impact and
   atmosphere-entry labels of folded members are still placed beside the cluster's icon; the hover tooltip lists
   the members ("n objects here", debris counted). Unselected nodes are 5.5 px discs. Labels: HUD type family
-  (Bahnschrift 13 px semibold, proportional digits; atlas in gpu/glyphAtlas.ts) on an opaque plate (0.95);
-  placed at the cheapest free one of 16 candidates (8 beside the anchor, 8 further out): rank by the side of
-  the anchor's own line (the normal of its screen tangent turned away from its body, outer side first), plus
-  the drawn trajectory weight the plate would cover (`LineGrid`, 8 px cells, built every draw list), plus a
-  penalty when another marker's icon is nearer to the plate than its own anchor; the search stops when no later
-  candidate can be cheaper. Free = clear of icons and gizmo arms, other labels, the node panel, the tooltip,
-  badges and `setObstacles` rectangles; a label with no free candidate is hidden. A leader ties a label to its
-  icon when the plate is more than 11 px from the icon's edge or sits diagonally off a small icon. The selected
-  node has no label (its panel names it). Hover tooltip with all details, placed in the quadrant (then further
-  out) that covers neither the panel, nor a handle, nor other UI, and keeps 6 px from the trajectories; labels
-  then keep clear of it. No tooltip for the selected node or its handles.
+  (Bahnschrift 13 px semibold, proportional digits, the narrow no-break space at least 0.25 em; atlas in
+  gpu/glyphAtlas.ts, 1.6 px halo) on an opaque plate; placed at the cheapest free one of 16 candidates (8 beside
+  the anchor, 8 further out) by `labels.ts declutter`: rank by the side of the anchor's own line (the normal of
+  its screen tangent turned away from its body, outer side first; of two neighbouring markers on lines side by
+  side the inner one takes the inner side), plus the drawn line length the plate would cover, exactly
+  (`LineGrid.length`: per-cell segment lists, segments clipped to the plate; trajectories weigh 1 per px, zone
+  rings 0.6, reference orbits 0.5, SOI and ghost outlines 0.35: a trajectory across a label costs more than the
+  whole candidate ring), plus a cost for lying toward a neighbouring marker within 44 px and for reversing two
+  neighbours' order along either axis, plus a penalty when another marker's icon is nearer to the plate than its
+  own anchor or the connector crosses an icon, a gizmo handle or arm, or another label's connector, minus a
+  hysteresis bonus for the place the label (by key) had in the previous draw list. The remembered place is
+  tried first, then the others in rank order until none can be cheaper. Free = clear of icons and gizmo arms,
+  other labels, the node panel, the tooltip, badges and `setObstacles` rectangles; a label with no free place
+  tries its short form, else it is hidden. A leader ties a label to its icon when the plate is more than 11 px
+  from the icon's edge or sits diagonally off a small icon. The selected node has no label (its panel names it).
+  Hover tooltip with all details, placed in the quadrant (then further out) that covers neither the panel, nor a
+  handle, nor other UI, and keeps 6 px from the trajectories; labels then keep clear of it. No tooltip for the
+  selected node or its handles.
 - Time to an event is written in the HUD's countdown notation everywhere (labels, tooltips, the panel's In
-  field): "T− 1:32:00", "T− 3d 18:51", "T+ 0:12", "now".
+  field): "T− 1:32:00", "T− 3d 18:51", "T+ 0:12", and "T− 0:00" within the last second (as the HUD writes it).
 - Occlusion: per fragment (lines) and per item (icons, CPU f64) against every body sphere and ghost, with a
   1.5 px soft edge at the limb; lines lying on a surface (zone rings, silhouettes) are tested against the
   sphere shrunk by their chords' deepest point plus 1e-4 R and cut at the limb (no arc along the horizon at
@@ -384,9 +412,10 @@ show through less; the label cache also keys on the landing-target prediction (t
   icon covers one (it prefers the one covering least; the opaque plate masks the line there).
 - The node frame is approximate when a node can only be found from the patch after it (no marker and no
   patch ending at it); the gizmo and drags still work in that frame.
-- Dashes cross-fade between two octaves of world period by depth: at a depth half-way between octaves a stretch
-  shows both patterns at partial strength (a static frame can show it); zooming changes which pattern
-  dominates, never where a dash sits on the path.
+- Dashes switch octave per world cell: while zooming, a cell whose centre crosses the threshold changes from two
+  dashes to one (or back) at once, so the step runs along the line cell by cell; a static frame is always
+  binary. A dashed patch aligned to another one on screen (`alignDashes`) follows the parallax between the two
+  while the view turns (its dashes creep beside the other's); a patch alone keeps its dashes fixed to the path.
 - Map icons are placed by geometry and are not moved off HUD panels: an object under the navball or a HUD
   panel is simply covered (no icon, no label); the player turns the map camera to see it. The obstacle shapes
   are rectangles, so an icon in the corner of the navball's box (outside the round ball) is left out too.
@@ -414,7 +443,12 @@ show through less; the label cache also keys on the landing-target prediction (t
   shared constants. Resolved by core-support (d3134ab): `src/core/ui/theme.ts`; src/map imports it.
 - `docs/requests/map-view-5.md` (labs/integration and the app shell's map mode; core-support), open, not
   blocking: mount the map with the flight HUD in map mode and pass the HUD panel rectangles to
-  `setObstacles`. Workaround in map-view's own spec (`mountHud` in `real-planet.spec.ts`).
+  `setObstacles`. The app shell part is done (9469c2d: `src/app/features.ts`, `src/app/game.ts`); the
+  integration lab part is still open. Workaround in map-view's own spec (`mountHud` in `real-planet.spec.ts`).
+- `docs/requests/map-view-7.md` (src/core/fakes, labs/integration; core-support), round 5: the FakeSim's
+  "Fake vessel" read as placeholder text in every composed picture. Answered in code (ecc9238:
+  `FakeSimOptions.vesselName`; the integration lab names the craft after its vehicle); the map lab passes
+  "Kestrel", the synthetic scene's mission name.
 - `docs/requests/map-view-6.md` (atmosphere-clouds, terrain-render, sky-lighting), open, not blocking: the
   planet under the map at map distances (cloud texel blocks and grey tops, sea speckle, the Moon's limb smear,
   no stars in the map camera); routed from the round-1 photo critic's finding 5.

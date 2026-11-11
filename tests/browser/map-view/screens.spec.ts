@@ -26,6 +26,72 @@ for (const [name, query] of SCENES) {
   });
 }
 
+/**
+ * Dashes are binary (round-4 artifact critic, finding 1): along every planned patch of the overview, each pixel of
+ * the line's centre is either dash or gap. With the earlier cross-fade of two octaves most periods showed a
+ * dim half-dash of 4-7 px between the dashes. A run of mid-tone samples (a quarter to three quarters of the local
+ * dash peak) longer than 3 px is counted; anti-aliased dash ends give 1-2 px, a crossing line or a marker a few.
+ */
+test('dashes of the planned patches are binary at the overview (no half-dashes between them)', async ({ page, pageLog }) => {
+  await openLab(page, 'scene=synthetic&quiet=1');
+  await frames(page, 5);
+  const shot = { buffer: await page.screenshot() };
+  const lines = await page.evaluate(() => {
+    type Scene = { verts: { sx: Float64Array; sy: Float64Array; seg: Uint8Array; cover: Uint8Array; cut0: Float64Array; cut1: Float64Array }; lines: { id: string; kind: string; start: number; count: number }[] };
+    const sc = (window as unknown as { __mapLab: { view: { controller: { currentScene: Scene } } } }).__mapLab.view.controller.currentScene;
+    const v = sc.verts;
+    return sc.lines
+      .filter((l) => l.kind === 'planned')
+      .map((l) => {
+        const pts: [number, number][] = [];
+        for (let i = l.start; i < l.start + l.count - 1; i++) {
+          if (v.seg[i] !== 1 || v.cover[i] === 1) continue;
+          const ax = v.sx[i]!;
+          const ay = v.sy[i]!;
+          const dx = v.sx[i + 1]! - ax;
+          const dy = v.sy[i + 1]! - ay;
+          const n = Math.ceil(Math.hypot(dx, dy));
+          for (let q = 0; q < n; q++) {
+            const s = q / n;
+            if (v.cut1[i]! > v.cut0[i]! && s > v.cut0[i]! - 0.05 && s < v.cut1[i]! + 0.05) continue;
+            pts.push([ax + dx * s, ay + dy * s]);
+          }
+        }
+        return { id: l.id, pts };
+      });
+  });
+  const others = (await page.evaluate(() => window.__test!.map())).filter((e) => e.visible);
+  const png = PNG.sync.read(shot.buffer);
+  const val = (x: number, y: number): number => {
+    const o = (Math.round(y) * png.width + Math.round(x)) * 4;
+    return Math.max(png.data[o]!, png.data[o + 1]!, png.data[o + 2]!);
+  };
+  let samples = 0;
+  for (const l of lines) {
+    // samples away from icons and the screen edge
+    const pts = l.pts.filter(([x, y]) => x > 20 && y > 20 && x < png.width - 20 && y < png.height - 60 && others.every((e) => Math.hypot(e.x - x, e.y - y) > 16));
+    const vals = pts.map(([x, y]) => val(x, y));
+    let longRuns = 0;
+    let run = 0;
+    for (let i = 0; i < vals.length; i++) {
+      let peak = 0;
+      for (let j = Math.max(0, i - 30); j < Math.min(vals.length, i + 30); j++) peak = Math.max(peak, vals[j]!);
+      const f = peak > 0 ? vals[i]! / peak : 0;
+      const mid = f > 0.25 && f < 0.75;
+      if (mid) run++;
+      else {
+        if (run > 3) longRuns++;
+        run = 0;
+      }
+      samples++;
+    }
+    console.log(`[map-view dashes] ${l.id}: ${vals.length} samples, ${longRuns} mid-tone runs over 3 px`);
+    expect(longRuns, l.id).toBeLessThanOrEqual(2);
+  }
+  expect(samples).toBeGreaterThan(300);
+  await expectNoErrors(page, pageLog);
+});
+
 test('screenshot: low orbit with a planned burn, gizmo and panel', async ({ page, pageLog }) => {
   await openLab(page, 'scene=lowOrbit&paused=1');
   await page.evaluate(() => {

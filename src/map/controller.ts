@@ -1549,7 +1549,12 @@ export class MapController implements MapView {
       for (let b = a + 1; b < m; b++) {
         const dx = ax - qx[b]!;
         const dy = ay - qy[b]!;
-        const lim = Math.max(reach + ba + qb[b]!, ra + qr[b]! + touch, sa, qs[b]!);
+        let lim = reach + ba + qb[b]!;
+        const glyphs = ra + qr[b]! + touch;
+        if (glyphs > lim) lim = glyphs;
+        if (sa > lim) lim = sa;
+        const sb = qs[b]!;
+        if (sb > lim) lim = sb;
         if (dx * dx + dy * dy < lim * lim) {
           const r0 = find(qi[a]!);
           const r1 = find(qi[b]!);
@@ -1652,6 +1657,7 @@ export class MapController implements MapView {
             bx = x0;
             by = y0;
           }
+          if (bestScore === 0) break; // the upper-right corner is free: no other can be better
         }
         this.icon(icons, bx + w / 2, by + h / 2, w / 2, h / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
         this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
@@ -1787,7 +1793,9 @@ export class MapController implements MapView {
       const b = l.box;
       if (!b.placed) continue;
       const body = l.style === 'body';
-      if (!body) this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, COLORS.plate, 1);
+      // A body name has no visible plate (tracked capitals on the black of space) but a black knockout behind it:
+      // a line the placement could not avoid stops at the word instead of striking it through.
+      this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, body ? COLORS.knockout : COLORS.plate, 1);
       // A label set away from its icon is tied to it: a leader from the icon's edge to the nearest point of the
       // plate, when the plate is far from the icon or sits diagonally off a small one (only a corner near it:
       // two such labels side by side read crosswise without one).

@@ -190,8 +190,9 @@ export class LineGrid {
     const y0 = ay + dy * t0;
     const len = Math.sqrt(dx * dx + dy * dy) * (t1 - t0);
     const inv = 1 / this.cell;
-    // two steps per cell: no cell the segment crosses is skipped (its list must hold the segment)
-    const steps = Math.max(1, Math.ceil(2 * len * inv));
+    // a step per cell (a segment that crosses a cell only at its corner may be missing from that cell's list; a
+    // plate spans several cells, so it is charged for the segment through the neighbouring ones)
+    const steps = Math.max(1, Math.ceil(len * inv));
     // walk in cell units (the clipped segment lies inside the screen: indices stay in range)
     let gx = x0 * inv;
     let gy = y0 * inv;

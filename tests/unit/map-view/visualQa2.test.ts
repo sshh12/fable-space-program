@@ -268,6 +268,13 @@ describe('labels tied to their icons (photo 6 / artifact 5, 7)', () => {
           const dy = Math.max(p.y - p.hy - m.y, 0, m.y - p.y - p.hy);
           best = Math.min(best, Math.hypot(dx, dy));
         }
+        // (round 5: the chevron at the frame's edge toward an off-screen body anchors that body's name)
+        for (const ic of list.icons[0]) {
+          if (ic.shape !== ICON.vessel) continue;
+          const dx = Math.max(p.x - p.hx - ic.x, 0, ic.x - p.x - p.hx);
+          const dy = Math.max(p.y - p.hy - ic.y, 0, ic.y - p.y - p.hy);
+          best = Math.min(best, Math.hypot(dx, dy));
+        }
         if (best > 40) {
           const tied = bars.some((b) => Math.hypot(Math.max(Math.abs(b.x - p.x) - p.hx, 0), Math.max(Math.abs(b.y - p.y) - p.hy, 0)) <= b.hx + 2);
           expect(tied, `a plate ${best.toFixed(0)} px from every icon without a leader`).toBe(true);
