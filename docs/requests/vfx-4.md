@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 5d3e0ee)
 From: vfx
 Owner path: src/render/core/post/exposure.ts, src/render/core/post/exposureMeter.ts, src/render/core/renderer.ts (where the meter runs)
 Blocking: yes
@@ -53,3 +53,40 @@ than the prior takes over from 2 %: with (1) that area is the plume-lit ground, 
 Acceptance I will add on my side (`tests/browser/vfx/exposure.spec.ts`): the sky luminance of the pad scene
 changes by less than 0.5 EV between engines off and engines on by day; the sky's pixel value stays within
 +-5 % through the splash sequence.
+
+## Resolution
+Items 1 and 2 are in (commit 5d3e0ee); item 3 was not needed.
+
+**1. The meter sees what is lit.** `renderer.ts` builds the histogram right before `drawTransparent`
+(frame graph step 8b in RENDER_API section 2): opaque geometry, `drawWater`, the atmosphere and cloud
+composite are in it, nothing a feature draws in `drawTransparent` is. What a plume lights through the local
+lights is geometry and stays metered. Measured with a new lab probe (`?probe=flame`: an additive
+transparent of 2e7 cd/m^2 over 9 % of a frame of sunlit ground,
+`tests/browser/render-core/exposure.spec.ts`, "the meter sees what is lit"): exposure target 13.02 before
+and 13.02 with the flame, the flame at 254-255 of 255. With the histogram where it was, the same test moves
+the target by 2.55 EV even with item 2 in place.
+
+**2. Bounded under the sun.** `SUNLIT_HIGHLIGHT_MAX_EV` = 0.5: while the sun lights the scene the exterior
+histogram target (the mean term as well as the 99th percentile: a few per cent of the frame at a hundred
+times sunlit white move the mean by stops) and the emitter term of the prior may not exceed
+`sunny16Ev(illuminance x visibility) + 0.5`. "While the sun lights the scene" is a weight, not a switch:
+`smoothstep(0.05, 0.3, sunVisibility)` when something lit is in view, so the bound is whole from 30 % of the
+disc, absent under 5 % (a sliver over the limb, an eclipse, night), and comes in between. Interior metering
+does not know it.
+
+`addEmissiveHint` is unchanged in signature and rule; its comment and RENDER_API section 13 now say that a
+hint is the only way an emitter reaches the meter, in front of geometry or of the sky, and that by day a
+hint cannot raise the target beyond sunny 16 + 0.5 EV. So a hint for a flame in front of the pad by day is
+harmless (it clips, as you want), and at night it does what vfx-1 and vfx-3 specified: those tests pass
+unchanged (`exposureGovernor.test.ts`: "at night, in an eclipse and under a sliver of sun the protection is
+whole").
+
+Side effect you may meet in other packages' pictures: a daylight frame whose metered mean was brighter than
+sunlit white allows (a cloud deck, snow, a white hull filling the frame) used to be pulled down to about a
+third of white and is now shown at half to two thirds (up to 0.65 EV brighter). Dark-ground daylight scenes
+are metered as before (their target is below the bound), so a plume-lit patch that covers more than 1 % of
+such a frame can still stop the camera down from there to sunny 16 + 0.5 EV, and no further.
+
+Unit tests: "highlight protection is bounded while the sun lights the scene (request vfx-4)". Not re-run
+by me: `tests/browser/vfx` (your shaders were mid-edit while this was verified: `vfx.foam` did not
+compile). The render core's browser suite passes.
