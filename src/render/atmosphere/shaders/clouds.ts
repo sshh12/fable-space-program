@@ -19,14 +19,6 @@
  */
 import { ATMO_UNIFORM_WGSL } from '../uniforms';
 
-/** Half-resolution pixel marched in each of the four frames of the checkerboard cycle. */
-export const CLOUD_PHASE_OFFSETS: readonly (readonly [number, number])[] = [
-  [0, 0],
-  [1, 1],
-  [1, 0],
-  [0, 1],
-];
-
 /**
  * Needs from the includer: `atmo` (AtmoU), `atmoCoverageTex: texture_2d<f32>` (r = coverage, g = cloud
  * top / 12750 m), `cloudBaseNoise`, `cloudDetailNoise: texture_3d<f32>`, and chunk "atmosphere_model".
