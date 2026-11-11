@@ -249,8 +249,10 @@ export class EnvironmentProbe {
     return { ...this.state, albedoMaps: [...this.albedo.keys()] };
   }
 
-  readonly cube = (): GPUTexture => this.out;
-  readonly sh = (): GPUBuffer => this.shOut;
+  dispose(): void {
+    for (const t of [this.raw, this.probes, this.out]) t.destroy();
+    for (const b of [this.shSlots, this.shOut, this.stepBuf, this.probeBuf]) b.destroy();
+  }
 
   /** CPU part of one frame: pick the cycle step, upload the probe scene. */
   prepare(frame: FrameContext, defs: DefLibrary): boolean {

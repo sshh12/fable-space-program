@@ -118,6 +118,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   let skyGroup: GPUBindGroup;
   let blankCube: GPUTextureView;
   let milkyWay: GPUTextureView | null = null;
+  let milkyWayTex: GPUTexture | null = null;
   let backgroundPipeline: Tracked<GPURenderPipeline>;
   let starPipeline: Tracked<GPURenderPipeline>;
   let starBuffer: GPUBuffer | null = null;
@@ -207,6 +208,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
         device.queue.writeTexture({ texture: tex, mipLevel: l, origin: [0, 0, face] }, data, { offset, bytesPerRow: size * 4, rowsPerImage: size }, [size, size, 1]);
       }
     }
+    milkyWayTex = tex;
     milkyWay = tex.createView({ dimension: 'cube' });
     status.milkyWayLoaded = true;
     rebuildSkyGroup();
@@ -552,6 +554,13 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     },
 
     isIdle: () => pendingLoads === 0 && (!parts.probe || probe.isIdle()),
+
+    dispose() {
+      milkyWayTex?.destroy();
+      starBuffer?.destroy();
+      for (const b of [skyBuf, impostorBuf, flareBuf, flareState, visBuf]) b.destroy();
+      probe.dispose();
+    },
 
     status: () => ({ ...status }),
     stars: () => catalogue,

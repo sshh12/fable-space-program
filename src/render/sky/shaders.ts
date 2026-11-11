@@ -12,7 +12,7 @@
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
 import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA, STARBURST_MAX_ANGLE } from './flare';
-import { IMPOSTOR_FULL_PX, IMPOSTOR_NONE_PX, SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
+import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 
@@ -183,8 +183,6 @@ export const IMPOSTOR_WGSL = (bindings: string): string => /* wgsl */ `
 #include "transparency"
 ${bindings}
 ${CAP_WGSL}
-const IMPOSTOR_FULL_PX = ${f(IMPOSTOR_FULL_PX)};
-const IMPOSTOR_NONE_PX = ${f(IMPOSTOR_NONE_PX)};
 struct Impostor {
   centre: vec4f,     // xyz = body centre relative to the camera (ROOT, m), w = radius (m)
   flux: vec4f,       // rgb = illuminance at the camera (lux, colour x lux), a = weight w (1 below 3 px, 0 above 6 px)
