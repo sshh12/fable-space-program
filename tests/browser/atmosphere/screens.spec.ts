@@ -35,6 +35,8 @@ async function render(page: import('@playwright/test').Page, s: Scene): Promise<
       }
       window.__test!.setPaused(true);
       window.__test!.setDeterministic(true);
+      // (No cloud history from the scene before, cloud clock at zero: the capture repeats from run to run.)
+      lab.resetTemporal();
     },
     { s: { name: s.name, view: s.view, sun: s.sun, space: s.space, ev: s.ev }, pad: PAD },
   );

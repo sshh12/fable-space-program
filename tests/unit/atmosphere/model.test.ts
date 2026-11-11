@@ -79,6 +79,22 @@ describe('atmosphere and cloud definitions of the shipped bodies', () => {
     expect(fitsFineTile([10, 10, 0, 30])).toBe(false);
   });
 
+  it('... and only where a half-resolution texel is coarse against the depth of the atmosphere', () => {
+    // Earth from 60,000 km at 1440p (a 645 px disc, a half-resolution texel of 41 km against a 100 km shell): the tile.
+    expect(fitsFineTile([957, 397, 646, 646], 41_000, 100_000)).toBe(true);
+    // The same rectangle seen from so near that a texel is 5 km: half resolution carries the shell.
+    expect(fitsFineTile([957, 397, 646, 646], 5_000, 100_000)).toBe(false);
+    // The threshold is a fifth of the shell's depth.
+    expect(fitsFineTile([0, 0, 300, 300], 20_001, 100_000)).toBe(true);
+    expect(fitsFineTile([0, 0, 300, 300], 19_999, 100_000)).toBe(false);
+  });
+
+  it('the cloud clock follows simulation time, rate-limited and never backwards', () => {
+    expect(advanceCloudClock(10, 100, 101, 1 / 60, 4)).toBeCloseTo(10 + 4 / 60, 9);
+    expect(advanceCloudClock(10, 100, 99, 1 / 60, 4)).toBe(10);
+    expect(advanceCloudClock(0, null, 123, 1 / 60, 4)).toBe(123);
+  });
+
   it('atmosphere bodies are physically sensible', () => {
     for (const b of Object.values(defs.bodies)) {
       const a = b.render.atmosphere;

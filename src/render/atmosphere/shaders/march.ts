@@ -78,7 +78,7 @@ fn atmoCloudTauAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32, lod: f32) ->
 /// clouds around send into a shadow: 8 % of the sun's). The ground under an overcast is dim, not black.
 fn atmoCloudPass(tau: f32) -> vec2f {
   let direct = exp(-tau);
-  return vec2f(direct, direct + (1.0 - direct) * (1.0 / (1.0 + atmo.cloudLight.y * tau) + 0.08));
+  return vec2f(direct, min(direct + (1.0 - direct) * (1.0 / (1.0 + atmo.cloudLight.y * tau) + 0.08), 1.0));
 }
 
 /// Transmittance of the cloud layer between a point and the sun (direct beam; 1 = none).
@@ -335,9 +335,13 @@ ${
   // block). Where altitude decides it outright it does: a surface under the layer is behind every cloud
   // seen from above the layer, and in front of every cloud seen from under it.
   var behind = saturate((tNear + 0.5 * nearSpread - cloudGeom.r) / max(cloudGeom.g - cloudGeom.r, 1.0));
+  // From anywhere above the cloud base: a cloud that begins nearer than the surface is in front of it (the
+  // ray is under the base before it reaches the surface). Without this, a cloud end interpolated from a
+  // neighbouring texel whose surface lies further away would put part of the cloud behind this one: the
+  // near and the far candidate would then disagree, and the rows of a block with them.
   if (atmo.bodies.z >= 0 && atmo.bodies.z == atmo.bodies.x && hNear < atmo.cloudShell.z) {
     let h0 = frame.bodies[u32(atmo.bodies.x)].sunDir.w;
-    if (h0 > atmo.cloudShell.w) { behind = 1.0; } else if (h0 < atmo.cloudShell.z) { behind = 0.0; }
+    if (h0 < atmo.cloudShell.z) { behind = 0.0; } else if (cloudGeom.r < tNear) { behind = 1.0; }
   }
   let Lcn = min(Lc, Ln);
   let Tcn = max(Tc, Tn);

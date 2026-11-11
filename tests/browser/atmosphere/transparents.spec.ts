@@ -138,8 +138,8 @@ test.describe('transparents through applyAtmosphere', () => {
   });
 
   test('above a broken layer a quad is hidden behind the clouds and reappears in the gaps', async ({ page, pageLog }) => {
-    await openLab(page, `cover=0.2,3&relief=0&sky=0&ev=${EV}`);
-    await setScene(page, { ...PAD, alt: 2, headingDeg: 0, pitchDeg: 55, fovDeg: 70 }, { azDeg: 160, elDeg: 55 });
+    await openLab(page, `cover=0.4,3&relief=0&sky=0&ev=${EV}`);
+    await setScene(page, { ...PAD, alt: 2, headingDeg: 35, pitchDeg: 45, fovDeg: 70 }, { azDeg: 160, elDeg: 55 });
     await settle(page, 40);
     const found = await findCloudAndGap(page);
     expect(found.thick, 'a thick cloud in view').not.toBeNull();
@@ -259,10 +259,9 @@ test.describe('transparents through applyAtmosphere', () => {
     console.log(`from 400 km: quad 1 km up (cloud tops at 6 km) visibility ${below.toFixed(4)}; quad 150 km up ${above.toFixed(3)}; quad 15 km up ${justAbove.toFixed(3)}; cloud deck ${luminance(base!).toFixed(0)} cd/m^2`);
     expect(Math.abs(below)).toBeLessThan(0.02);
     expect(above).toBeGreaterThan(0.85);
-    // 15 km up, 9 km above the tops and 385 km from the eye: inside the +-10 % distance band over which
-    // applyAtmosphere fades a fragment into the cloud, so the contract cannot tell it from the cloud
-    // (request atmosphere-clouds-1). 'clouds.depth' is placed so that what is behind is hidden.
-    expect(justAbove).toBeLessThan(0.5);
+    // 15 km up, 9 km above the tops and 385 km from the eye: in front of the cloud, and seen, now that
+    // 'clouds.depth' carries where the cloud begins and ends (request atmosphere-clouds-1, resolved).
+    expect(justAbove).toBeGreaterThan(0.85);
     await expectNoErrors(page, pageLog);
   });
 

@@ -30,9 +30,13 @@ const CASES: Case[] = [
   { name: 'low orbit', up: 400_000, half: 60, cameraAlt: 400_500, pitchDeg: -80 },
 ];
 
+/** Blue over red of the lit quad of each case, in the order of the last `measure` call. */
+let hue: number[] = [];
+
 /** Luminance of the lit quad of each case (cd/m^2) on the page as it is. */
 async function measure(page: Page, screenshots: string | null): Promise<number[]> {
   const out: number[] = [];
+  hue = [];
   for (const c of CASES) {
     // The camera stands a little south of the quad and looks north and down at it.
     const back = (c.cameraAlt - c.up) / Math.tan((-c.pitchDeg * Math.PI) / 180);
@@ -56,6 +60,7 @@ async function measure(page: Page, screenshots: string | null): Promise<number[]
     expect(value!.y).toBeGreaterThan(0.2 * value!.size[1]);
     expect(value!.y).toBeLessThan(0.8 * value!.size[1]);
     out.push(luminance(value!.rgb));
+    hue.push(value!.rgb[2] / Math.max(value!.rgb[0], 1e-9));
   }
   return out;
 }
@@ -64,11 +69,14 @@ test.describe('cloud shadows on lit surfaces', () => {
   test.describe.configure({ mode: 'serial' });
   let overcast: number[] = [];
   let clear: number[] = [];
+  let overcastHue: number[] = [];
+  let clearHue: number[] = [];
 
   test('overcast deck (tops below 3.5 km)', async ({ page, pageLog }) => {
     test.setTimeout(240_000);
     await openLab(page, 'cover=1,2&sky=0&relief=0');
     overcast = await measure(page, 'shadow-lit-quad');
+    overcastHue = [...hue];
     await expectNoErrors(page, pageLog);
   });
 
@@ -76,15 +84,22 @@ test.describe('cloud shadows on lit surfaces', () => {
     test.setTimeout(240_000);
     await openLab(page, 'clouds=0&sky=0&relief=0');
     clear = await measure(page, null);
+    clearHue = [...hue];
     await expectNoErrors(page, pageLog);
   });
 
   test('a receiver is shaded only by the cloud between it and the sun', () => {
     test.skip(overcast.length !== CASES.length || clear.length !== CASES.length, 'needs the two render tests of this file (run the file as a whole)');
     CASES.forEach((c, i) => console.log(`[cloud shadow] lit quad ${c.name}: ${overcast[i]!.toFixed(0)} cd/m^2 under the overcast map, ${clear[i]!.toFixed(0)} without clouds (ratio ${(overcast[i]! / clear[i]!).toFixed(3)})`));
-    // Under the deck: the sun is gone, what is left is the light of the sky and of the cloud base.
+    // (The hue of the shade: blue over red under the deck against the sunlit value. It is recorded, not
+    // asserted: the deferred lighting adds the clear sky's blue ambient under cloud until request
+    // atmosphere-clouds-6 is answered; within 25 % of the sunlit value is the target.)
+    console.log(`[cloud shadow] lit quad under the deck: blue / red ${overcastHue[0]!.toFixed(3)} under the overcast, ${clearHue[0]!.toFixed(3)} in the sun (${((overcastHue[0]! / clearHue[0]! - 1) * 100).toFixed(1)} % bluer)`);
+    // Under the deck: the beam is gone, what is left is the light that the deck passes diffusely and the
+    // sky's (an overcast leaves a tenth to a third of the clear-sky illuminance, never a five-hundredth).
     expect(clear[0]!).toBeGreaterThan(5000);
-    expect(overcast[0]! / clear[0]!).toBeLessThan(0.5);
+    expect(overcast[0]! / clear[0]!).toBeLessThan(0.3);
+    expect(overcast[0]! / clear[0]!).toBeGreaterThan(0.1);
     // Above it, and in orbit: nothing between the surface and the sun.
     expect(overcast[1]! / clear[1]!).toBeGreaterThan(0.96);
     expect(overcast[1]! / clear[1]!).toBeLessThan(1.1);

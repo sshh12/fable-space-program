@@ -597,12 +597,12 @@ export class CloudSystem {
   // ------------------------------------------------------------------------------------------- per frame
 
   /**
-   * March steps of a cloud ray this frame: the quality setting times the square of the governor's quality
-   * scale (the clear-sky rays, which see nothing, are the ones that use the whole budget; the step rule is
-   * coarsened to fit it, shapes and opacity stay).
+   * March steps of a cloud ray this frame: the quality setting times the governor's quality scale (the
+   * long rays, towards the horizon and over a deck, are the ones that use the whole budget; the step rule
+   * is coarsened to fit it, shapes and opacity stay).
    */
   stepBudget(frame: FrameContext): number {
-    return Math.max(8, Math.round(this.ctx.quality.cloudSteps * frame.qualityScale * frame.qualityScale));
+    return Math.max(8, Math.round(this.ctx.quality.cloudSteps * frame.qualityScale));
   }
 
   /** Switch the cloud terms of the uniform block and of the deferred lighting off. */

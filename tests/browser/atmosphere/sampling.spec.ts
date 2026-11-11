@@ -19,13 +19,15 @@ interface View {
   view: LabView;
   /** Region of the unresolved layer, as fractions of the render target: x0, y0, x1, y1. */
   region: [number, number, number, number];
+  /** Everything below the horizon (sea, cloud shadows, clouds seen from above), same units. */
+  below: [number, number, number, number];
 }
 
 const SUN = { azDeg: 160, elDeg: 50 };
 const VIEWS: View[] = [
-  { name: 'ascent-10km-horizon', view: { ...PAD, alt: 10_000, headingDeg: 35, pitchDeg: 0, fovDeg: 60 }, region: [0.3, 0.5, 1.0, 0.63] },
-  { name: 'ascent-5km-horizon', view: { ...PAD, alt: 5_000, headingDeg: 35, pitchDeg: 0, fovDeg: 60 }, region: [0.0, 0.47, 1.0, 0.6] },
-  { name: 'low-orbit-limb', view: { ...PAD, alt: 400_000, headingDeg: 35, pitchDeg: -18, fovDeg: 60 }, region: [0.0, 0.5, 0.36, 0.85] },
+  { name: 'ascent-10km-horizon', view: { ...PAD, alt: 10_000, headingDeg: 35, pitchDeg: 0, fovDeg: 60 }, region: [0.3, 0.5, 1.0, 0.63], below: [0.0, 0.56, 1.0, 1.0] },
+  { name: 'ascent-5km-horizon', view: { ...PAD, alt: 5_000, headingDeg: 35, pitchDeg: 0, fovDeg: 60 }, region: [0.0, 0.47, 1.0, 0.6], below: [0.0, 0.53, 1.0, 1.0] },
+  { name: 'low-orbit-limb', view: { ...PAD, alt: 400_000, headingDeg: 35, pitchDeg: -18, fovDeg: 60 }, region: [0.0, 0.5, 0.36, 0.85], below: [0.0, 0.45, 1.0, 1.0] },
 ];
 
 interface Region {
@@ -74,6 +76,25 @@ function rowAmplitude(region: Region, period: number): number {
   return n > 0 ? (2 * Math.hypot(re, im)) / n / response : 0;
 }
 
+/**
+ * Share of the pixels of a region that stand out from the rows above AND below them in the same direction
+ * by more than 8 %: rows that alternate (the two depth candidates of a half-resolution block disagreeing
+ * about a cloud show as this).
+ */
+function alternatingShare(region: Region): number {
+  let n = 0;
+  for (let y = 1; y < region.height - 1; y++) {
+    for (let x = 0; x < region.width; x++) {
+      const a = region.lum[(y - 1) * region.width + x]!;
+      const b = region.lum[y * region.width + x]!;
+      const c = region.lum[(y + 1) * region.width + x]!;
+      const m = 0.5 * (a + c);
+      if (m > 1 && (b - a) * (b - c) > 0 && Math.abs(b - m) > 0.08 * m) n++;
+    }
+  }
+  return n / (region.width * Math.max(region.height - 2, 1));
+}
+
 test('unresolved cloud layers: a frozen step phase gives the accumulated picture, and no row lattice', async ({ page, pageLog }) => {
   test.setTimeout(300_000);
   await openLab(page, '');
@@ -88,11 +109,30 @@ test('unresolved cloud layers: a frozen step phase gives the accumulated picture
     await waitIdle(page, 64);
     await shot(page, `sampling-${v.name}`);
     const frozen = await readRegion(page, v.region);
+    const frozenBelow = await readRegion(page, v.below);
     // The same view with the noise running (time stays frozen: the clouds do not move), left to accumulate.
     await page.evaluate(() => window.__test!.setDeterministic(false));
     await waitIdle(page, 96);
     await shot(page, `sampling-${v.name}-animated`);
     const animated = await readRegion(page, v.region);
+    const animatedBelow = await readRegion(page, v.below);
+    const altFrozen = alternatingShare(frozenBelow);
+    const altAnimated = alternatingShare(animatedBelow);
+    const periods = [2, 3, 4, 5, 6, 8].map((p) => `${p}: ${(rowAmplitude(frozenBelow, p) * 100).toFixed(2)} / ${(rowAmplitude(animatedBelow, p) * 100).toFixed(2)}`);
+    console.log(
+      `[sampling] ${v.name}, below the horizon: pixels that alternate with the rows above and below ${(altFrozen * 100).toFixed(3)} % deterministic, ${(altAnimated * 100).toFixed(3)} % animated; ` +
+        `row periods (rows: % deterministic / animated) ${periods.join(', ')}`,
+    );
+    // The two modes show the same thing. From inside the atmosphere nothing below the horizon is as thin
+    // as a pixel row (sea, cloud shadows, clouds seen from above): rows that alternate there are the two
+    // depth candidates of a block disagreeing about a cloud. From orbit the cloud streets towards the limb
+    // ARE a pixel row or two deep, so only the agreement of the modes is asserted there.
+    if (Math.abs(altFrozen - altAnimated) > 0.003) failures.push(`${v.name}: ${(altFrozen * 100).toFixed(2)} % of the pixels below the horizon alternate row by row in the deterministic frame, ${(altAnimated * 100).toFixed(2)} % in the animated one`);
+    if (v.view.alt < 100_000) {
+      if (Math.max(altFrozen, altAnimated) > 0.008) failures.push(`${v.name}: ${(Math.max(altFrozen, altAnimated) * 100).toFixed(2)} % of the pixels below the horizon alternate row by row`);
+      const lowerP2 = Math.max(rowAmplitude(frozenBelow, 2), rowAmplitude(animatedBelow, 2));
+      if (lowerP2 > 0.004) failures.push(`${v.name}: the rows below the horizon alternate by ${(lowerP2 * 100).toFixed(2)} %`);
+    }
 
     let sum = 0;
     let diff = 0;

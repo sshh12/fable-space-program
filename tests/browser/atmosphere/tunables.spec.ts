@@ -68,13 +68,23 @@ for (const set of SETS) {
       }
       const buffers = await lab.feature.debug.clouds()!.readBuffers();
       let t = 0;
-      for (let i = 0; i < buffers.width * buffers.height; i++) t += buffers.radiance[i * 4 + 3]!;
-      return { bad, max, preExposedMax: max * exposure, white, tooBright, spikes, transmittance: t / (buffers.width * buffers.height), hdrMax: 60000 };
+      // Mean cloud transmittance of the frame, and of each of four bands from its top (far) to its bottom
+      // (near): an overcast is as opaque far away as near, whatever the step budget.
+      const bands = [0, 0, 0, 0];
+      for (let y = 0; y < buffers.height; y++) {
+        for (let x = 0; x < buffers.width; x++) {
+          const v = buffers.radiance[(y * buffers.width + x) * 4 + 3]!;
+          t += v;
+          bands[Math.min(3, Math.floor((4 * y) / buffers.height))]! += v / ((buffers.width * buffers.height) / 4);
+        }
+      }
+      return { bad, max, preExposedMax: max * exposure, white, tooBright, spikes, transmittance: t / (buffers.width * buffers.height), bands, hdrMax: 60000 };
     });
     console.log(
       `[tunables] ${set.name}: mean cloud transmittance ${r.transmittance.toFixed(4)}, brightest pixel ${r.max.toFixed(0)} cd/m^2 (a white surface in the sun: ${r.white.toFixed(0)}), ` +
-        `pixels above 1.5 x white ${r.tooBright}, isolated spikes ${r.spikes}, bad pixels ${r.bad}`,
+        `pixels above 1.5 x white ${r.tooBright}, isolated spikes ${r.spikes}, bad pixels ${r.bad}; transmittance by band, far to near: ${r.bands.map((b) => b.toFixed(4)).join(', ')}`,
     );
+    for (const b of r.bands) expect(b).toBeLessThan(0.08);
     expect(r.bad).toBe(0);
     expect(r.preExposedMax).toBeLessThanOrEqual(r.hdrMax * 1.001);
     expect(r.tooBright).toBe(0);

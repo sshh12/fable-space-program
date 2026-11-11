@@ -479,8 +479,9 @@ struct CloudRay {
 }
 
 /// One cloud ray: unit direction d, up to distance tScene from the eye; 'xi' = position of the sample
-/// inside each step (0..1), 'pixelAngle' = angle of the pixel the ray stands for (rad).
-fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> CloudRay {
+/// inside each step (0..1), 'pixelAngle' = angle of the pixel the ray stands for (rad), 'exact' = the ray's
+/// result is shown as it is (no temporal filter averages several of them).
+fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact: bool) -> CloudRay {
   var o: CloudRay;
   o.color = vec4f(0.0, 0.0, 0.0, 1.0);
   o.geom = vec3f(3.0e38);
@@ -522,10 +523,9 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
   let gain = atmo.cloudDeep.w;
   let phase = vec3f(cloudPhase(cosTheta, 1.0), cloudPhase(cosTheta, gain) * gain, cloudPhase(cosTheta, gain * gain) * gain * gain);
   let kd = atmo.cloudLight.y;
-  // Below 0.85 of quality scale the eye does without the finest octave of the erosion and the far cone
-  // samples are merged. Step sizes, thresholds and opacity are the same at every quality scale.
-  var detailEye = 2;
-  if (atmo.cloudLight.w < 0.85) { detailEye = 1; }
+  // (The quality scale lowers the step budget, and the ray count of the full-resolution path. Thresholds,
+  // erosion and lighting are the same at every quality scale.)
+  let detailEye = 2;
 
   var st: CloudStack;
   st.cover = 0.0;
@@ -584,7 +584,10 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
       // the layers: each of the two (the low layer, the upper body) is sampled twice inside the part of its
       // own altitude range that the step covers, and counts with that part's share of the step. A layer
       // thinner than the step is then neither missed nor counted for the whole step, whatever the phase.
-      let longStep = abs(hB - hA) > 500.0;
+      // (Every step of a field too far away to be resolved into shapes is taken this way: a point sample
+      // that meets a thin layer in one pixel row and misses it in the next is a dash on a far horizon, and a
+      // dot where no temporal filter stands behind the ray.)
+      let longStep = abs(hB - hA) > 500.0 || (footprint > select(1000.0, 650.0, exact) && abs(hB - hA) > 40.0);
       var sLit = 0.0;   // where a long step is lit: one mean free path below where it enters the cloud
       if (longStep) {
         let hLo = min(hA, hB);
@@ -704,7 +707,9 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
             let ds = cNext - cPrev;
             // (The near samples see the billows the eye sees: what shades one side of a bump and not the other.)
             let dj = cloudDensityAt(cloudColumnMix(col, colSun, saturate(cm / cFar)), hj, ql + sunNoise * cm, max(footprint, 0.3 * ds), select(0, 1, j < 3));
-            tau += dj.sigma * dj.frac * ds;
+            // (Through a field that covers a fraction of the footprint the beam passes between the clouds:
+            // the segment's mean transmittance, not that of the mean density.)
+            tau += -log(max(1.0 - dj.frac * (1.0 - exp(-dj.sigma * ds)), 1e-6));
             cPrev = cNext;
           }
           // And away from the sun, three samples: how much cloud lies behind the point (below it under a high
@@ -719,7 +724,7 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
             let qq = am * am - 2.0 * r * muS * am;
             let hj = hl + qq / (sqrt(max(r * r + qq, 1.0)) + r);
             let dj = cloudDensityAt(col, hj, ql - sunNoise * am, max(footprint, 0.3 * (aNext - aPrev)), 0);
-            tauAway += dj.sigma * dj.frac * (aNext - aPrev);
+            tauAway += -log(max(1.0 - dj.frac * (1.0 - exp(-dj.sigma * (aNext - aPrev))), 1e-6));
             aPrev = aNext;
           }
           // Beyond the reach: radius of the end point from the same stable form.
@@ -788,12 +793,13 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
           }
           // High orders: the two-stream field (see the header). The flux that feeds it is the sun's times the
           // cosine at the surface near the sample; deep inside, or where the surface faces away, it is the
-          // flux on the lit boundary at large: the sun's zenith cosine for a level layer, a half for a body
-          // with sides. Optical depths count across the layer, not along the beam.
-          let around = mix(0.5, mu0, den.flat);
+          // flux on the boundary at large: the sun's zenith cosine for a level layer, about a quarter for a
+          // body with sides (what a sphere intercepts, over its whole surface). Optical depths count across
+          // a layer, along the beam through a body.
+          let around = mix(0.3, mu0, den.flat);
           let deep = saturate((tau - 1.0) / 6.0);
           let muE = mix(cosS * atmoCloudPass(extra).y, around, deep * (1.0 - den.layer));
-          let across2 = mix(max(cosS, 0.3), around, deep);
+          let across2 = mix(max(cosS, 0.3), mix(1.0, mu0, den.flat), deep);
           let tauNear = tau * across2;
           let tauFar = mix(tauAway * across2, den.below, den.layer);
           let tt = kd * (tauNear + tauFar);
@@ -809,7 +815,9 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32) -> Cl
         let sky = textureSampleLevel(irradianceLut, linearClamp, skyUv, layerIndex + atmo.layers.z, 0.0).rgb;
         let groundE = (skyAll + frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rb, muS) * (max(muS, 0.0) * vis * (1.0 - 0.7 * saturate(col.cLow)))) * atmo.cloudDeep.y;
         let both = 1.0 + kd * (den.above + den.below);
-        J += (sky * ((1.0 + kd * den.below) / both) + groundE * ((1.0 + kd * den.above) / both)) * (atmo.cloudDeep.z / PI);
+        // (A cloud has sides: under a low sun they see the bright band of the horizon, which the irradiance
+        // on a level surface counts at a grazing cosine.)
+        J += (sky * ((1.0 + 0.6 * (1.0 - saturate(muS))) * (1.0 + kd * den.below) / both) + groundE * ((1.0 + kd * den.above) / both)) * (atmo.cloudDeep.z / PI);
         lastLight = J;
         haveLight = true;
       }
@@ -854,7 +862,7 @@ ${
     let len = length(rayDir);
     // (Step phases stratified over the rays of the pixel, the same in every pixel: no temporal filter
     // stands behind this path to average a per-pixel phase away.)
-    let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, (f32(k) + 0.5) / f32(count), 0.5 * atmo.cloudMarch.w);
+    let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, (f32(k) + 0.5) / f32(count), 0.5 * atmo.cloudMarch.w, true);
     rgb += ray.color.rgb / f32(count);
     a += ray.color.a / f32(count);
     if (ray.geom.b < 1.0e37) {
@@ -873,7 +881,7 @@ ${
   let len = length(rayDir);
   // Step phase: a blue-noise value of the pixel, advanced by the golden ratio with every march of the pixel.
   let xi = fract(blueNoise(vec2u(hp)).y + atmo.cloudJitter.z);
-  let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, xi, atmo.cloudMarch.w);
+  let ray = cloudMarchRay(bi, rayDir / len, sceneZ * len, xi, atmo.cloudMarch.w, false);
   o.color = vec4f(writeHdr(ray.color.rgb), ray.color.a);
   if (ray.geom.b < 1.0e37) { o.depth = vec4f(ray.geom, 0.0); }`
 }
@@ -983,14 +991,18 @@ const NO_CLOUD = vec3f(3.0e38, 3.0e38, 3.0e38);
       // it is applied in proportion to the motion of the pixel since the last frame and not at all to a
       // pixel that has not moved, whose history is its own march of a few frames ago.
       let motion = length((uvPrev - (vec2f(hp) + 0.5) * atmo.halfSize.zw) * atmo.halfSize.xy);
-      let slack = (hi - lo) * 0.08 + vec4f(1e-4);
-      let clamped = mix(hist, clamp(hist, lo - slack, hi + slack), saturate(motion * 4.0 - 0.1));
+      // (A pixel that stands still is still held to its neighbourhood, with a slack of half its range: a
+      // cloud that has left a part of the picture where there is none now does not stay behind as a trail.)
+      let slack = (hi - lo) * mix(0.5, 0.08, saturate(motion * 4.0 - 0.1)) + vec4f(1e-4);
+      let clamped = clamp(hist, lo - slack, hi + slack);
       let h4 = textureLoad(historyGeomTex, clamp(vec2i(uvPrev * atmo.halfSize.xy), vec2i(0), vec2i(atmo.halfSize.xy) - 1), 0);
       hg = h4.rgb;
       // How many marches the history stands for: all of them while the pixel is still, fewer the faster it
       // moves, none after a jump; never more than the light allows.
       let cut = saturate((motion - 8.0) / 8.0);
-      let kept = min(h4.a * (1.0 - saturate(motion * 2.0)) * (1.0 - cut), 1.0 / max(atmo.misc.w, 1e-3) - 1.0);
+      // (A pixel that moves keeps one march's worth of its reprojected history: it follows its newest march
+      // half way, which is what bounds the noise of a single march.)
+      let kept = min(max(h4.a * (1.0 - saturate(motion * 2.0)), min(h4.a, 1.0)) * (1.0 - cut), 1.0 / max(atmo.misc.w, 1e-3) - 1.0);
       if (isFresh) {
         color = mix(clamped, fresh, max(1.0 / (kept + 1.0), cut));
         count = min(kept + 1.0, atmo.misc.z);
@@ -1166,7 +1178,7 @@ ${
   // a sky with clouds is brighter and whiter than under a clear one).
   let kd = atmo.cloudLight.y;
   let direct = exp(-tau);
-  let total = direct + (1.0 - direct) * (1.0 / (1.0 + kd * tau) + CLOUD_FILL);
+  let total = min(direct + (1.0 - direct) * (1.0 / (1.0 + kd * tau) + CLOUD_FILL), 1.0);
   let tauGround = -log(max(total, 1e-9));
   o.core = vec4f(tauGround, sFront, tauGround / max(sFront - sBack, 50.0), tau / max(tauGround, 1e-6));
   let scale = min(tau, 60.0) / max(tau, 1e-6);

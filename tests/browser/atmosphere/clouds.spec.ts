@@ -218,7 +218,7 @@ test.describe('clouds', () => {
       { name: 'orbit', query: '', view: { ...PAD, alt: 400000, headingDeg: 60, pitchDeg: -35, fovDeg: 60 }, rect: { x0: 0, y0: 0.35, x1: 1, y1: 1 } },
     ];
     for (const s of scenes) {
-      const at = async (quality: number): Promise<{ mean: number; quality: number }> => {
+      const at = async (quality: number): Promise<{ mean: number; quality: number; grain: number }> => {
         // (Render scale pinned: the governor would lower the resolution next, which is not what is compared here.)
         await openLab(page, `${s.query}&relief=0&sky=0&ev=${EV}&scale=1&${quality === 1 ? 'governor=off' : `quality=${quality}`}`);
         await setScene(page, s.view, { azDeg: 160, elDeg: 50 });
@@ -229,14 +229,22 @@ test.describe('clouds', () => {
         await waitIdle(page, 120);
         const q = await page.evaluate(() => window.__atmo!.app.renderer.frameContext!.qualityScale);
         if (quality < 1) await shot(page, `clouds-quality-0.7-${s.name}`);
-        return { mean: mean(await frameLuminance(page, s.rect)), quality: q };
+        const lum = await frameLuminance(page, s.rect);
+        // Grain: how far a pixel stands out from the mean of its two neighbours in the row (the flat array
+        // wraps at the row ends, which a few thousand rows of pixels do not notice), relative to the mean.
+        let hp = 0;
+        for (let i = 1; i < lum.length - 1; i++) hp += Math.abs(lum[i]! - 0.5 * (lum[i - 1]! + lum[i + 1]!));
+        return { mean: mean(lum), quality: q, grain: hp / (lum.length - 2) / mean(lum) };
       };
       const full = await at(1);
       const low = await at(0.7);
       console.log(`${s.name}: mean luminance ${full.mean.toFixed(1)} cd/m^2 at quality ${full.quality.toFixed(2)}, ${low.mean.toFixed(1)} at ${low.quality.toFixed(2)} (${((low.mean / full.mean - 1) * 100).toFixed(2)} %)`);
       expect(full.quality).toBe(1);
       expect(low.quality).toBeCloseTo(0.7, 2);
+      console.log(`${s.name}: grain (mean departure of a pixel from its row neighbours) ${(full.grain * 100).toFixed(3)} % at quality 1, ${(low.grain * 100).toFixed(3)} % at 0.7`);
       expect(Math.abs(low.mean / full.mean - 1)).toBeLessThan(0.03);
+      // A lower quality scale may soften the clouds; it must not put a texture on them.
+      expect(low.grain).toBeLessThan(1.3 * full.grain + 0.001);
     }
     await expectNoErrors(page, pageLog);
   });

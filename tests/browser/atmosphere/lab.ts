@@ -37,11 +37,16 @@ export async function setScene(page: Page, view: LabView, sun: { azDeg: number; 
   );
 }
 
-/** Deterministic rendering, everything loaded, exposure settled, then `frames` more frames. */
+/**
+ * Deterministic rendering, everything loaded, exposure settled, then `frames` more frames. The clouds'
+ * temporal state starts again (no history, cloud clock at zero): what is captured afterwards depends on the
+ * scene and on `frames`, not on what the page showed before or on how long it took to load.
+ */
 export async function settle(page: Page, frames = 24): Promise<void> {
   await page.evaluate(() => {
     window.__test!.setPaused(true);
     window.__test!.setDeterministic(true);
+    window.__atmo!.resetTemporal();
   });
   await waitIdle(page, frames);
 }
