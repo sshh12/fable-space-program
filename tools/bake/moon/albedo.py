@@ -19,6 +19,10 @@ lighting is baked in (incidence 55-75 deg). It is de-shaded before use:
      Stored as uint8 (1..255 <-> 0.7..1.3, 128 = 1) for rows +-70 deg.
 Albedo = SVS_linear x detail, sRGB-encoded. Everything is sampled by direction with footprint-aware filters,
 so tiles are seamless across tile and cube edges.
+
+After a re-bake of the tiles, run `colour.py` (request sky-lighting-6): the SVS colour is stretched (maria bluer
+than green); that step keeps each texel's luminance and scales its chroma about the map's mean until the
+bluest surface has red >= green >= blue, and records itself in `layers.albedo.colour`.
 """
 from __future__ import annotations
 

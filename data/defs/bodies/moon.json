@@ -33,7 +33,7 @@
   "warpAltitudeLimits": [0, 5000, 10000, 25000, 60000, 500000, 3000000],
   "navballSwitchAltitude": 20000,
   "render": {
-    "meanColor": [0.12, 0.115, 0.105],
+    "meanColor": [0.1332, 0.1263, 0.1221],
     "geometricAlbedo": 0.12,
     "surface": { "$ref": "../render/moon.surface.json" },
     "atmosphere": null,
