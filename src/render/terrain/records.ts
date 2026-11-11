@@ -8,7 +8,7 @@ import type { Vec3 } from '@/core/math';
 import { NIGHT_DARK, type BodyQuadtree, type TileNode } from './quadtree';
 import { RECORD_FLOATS } from './shaders/common';
 import { NOISE_PERIOD } from './shaders/surface';
-import { frameDir } from './tileMath';
+import { frameDir, snapDirection } from './tileMath';
 
 
 export interface PadDisc {
@@ -170,7 +170,8 @@ export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Ar
   }
   if (best) f.set([best.centre.x - o.x, best.centre.y - o.y, best.centre.z - o.z, best.radius], 64);
   // row 17: flags
-  i[68] = (pio !== io ? 1 : 0) | (nightLayer(pno) !== nightLayer(no) || pno !== no ? 2 : 0);
+  const [slideU, slideV] = snapDirection(n.key.face);
+  i[68] = (pio !== io ? 1 : 0) | (nightLayer(pno) !== nightLayer(no) || pno !== no ? 2 : 0) | (slideU > 0 ? 4 : 0) | (slideV > 0 ? 8 : 0);
   return f;
 }
 

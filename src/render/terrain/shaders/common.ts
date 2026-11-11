@@ -44,7 +44,7 @@ struct TileRecord {
   detail2: vec4f,                // scale 2, w = imagery level at corner (0, 1)
   noise: vec4f,                  // xyz = tile origin / orbital base wavelength, modulo the noise period, w = imagery level at corner (1, 1)
   pad: vec4f,                    // xyz = nearest launch-pad centre relative to the tile origin (body-fixed, m), w = apron radius (0 = none)
-  flags: vec4i,                  // x = flags (1 = parent uses another image, 2 = parent uses another night image), yzw unused
+  flags: vec4i,                  // x = flags: 1 = parent uses another image, 2 = parent uses another night image, 4 / 8 = odd vertices slide up along u / v
   spare0: vec4f,
   spare1: vec4f,
 }
@@ -92,8 +92,10 @@ fn terrainVertex(grid: vec4u, instance: u32, sheet: bool) -> TerrainVertex {
   var g = vec2f(grid.xy);
   if (quad != 0u) { g += vec2f(f32((quad - 1u) & 1u), f32((quad - 1u) >> 1u)) * (GRID_QUADS * 0.5); }
   let hc = textureLoad(heightTex, vec2i(g), t.layers.x, 0).r;
-  // Odd vertices slide to their even neighbour, which is a vertex of the parent tile.
-  let snapped = g - fract(g * 0.5) * 2.0;
+  // Odd vertices slide to an even neighbour, which is a vertex of the parent tile; the direction is the
+  // same on both sides of every cube edge (tileMath.ts, snapDirection).
+  let slide = vec2f(select(-1.0, 1.0, (t.flags.x & 4) != 0), select(-1.0, 1.0, (t.flags.x & 8) != 0));
+  let snapped = g + fract(g * 0.5) * 2.0 * slide;
   let parentBase = vec2i(t.parentUv.xy * GRID_QUADS);
   let hp = textureLoad(heightTex, parentBase + vec2i(snapped) / 2, t.layers.y, 0).r;
 

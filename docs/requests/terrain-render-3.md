@@ -10,10 +10,11 @@ saturated (the level-7 tile over Milan has a mean of 104 / 255). From low orbit 
 blocks are 5-8 pixels wide and towns render as squares.
 
 ## Evidence
-`data/tiles/earth/night/4/7/126/74.webp` (Milan and the Po plain); enlarged 2 x with nearest filtering in
-`out/terrain/probe/night-milan-L7.png` (written by the snippet in this request's commit message; any image viewer
-shows the same blocks in the tile itself). Screenshot with the layer sampled at mip 0:
-the first version of `out/screens/terrain/earth-leo-nadir-night.png` (blocky town lights).
+`data/tiles/earth/night/4/7/126/74.webp` (Milan and the Po plain): open the tile in any image viewer and enlarge
+it; every lit spot is a square of about 4 x 4 texels (an enlarged copy was looked at as
+`out/terrain/probe/night-milan-L7.png`, not tracked). With the layer sampled at mip 0 the lab view
+`earth-leo-nadir-night` (tests/browser/terrain/views.ts; add `&p.earth.nightMinMip=0` to its URL) shows the towns
+as squares.
 
 ## Requested change
 Level-7 night tiles resampled from the 500 m Black Marble source with a smooth filter (bilinear or better, not

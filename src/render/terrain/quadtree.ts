@@ -340,13 +340,18 @@ export class BodyQuadtree {
       return;
     }
     const children = this.childrenOf(n);
+    // Quadrants the node draws itself (child beyond its range, not ready, or culled), and which of those
+    // can be seen (a quadrant whose child is outside the frustum or below the horizon cannot).
     let mask = 0;
+    let seen = 0;
     for (let q = 0; q < 4; q++) {
       const c = children[q]!;
       const dc = this.distance(c, childRange);
+      let visible = cls === 0;
       if (dc < childRange) {
         const ccls = this.frustumClass(c, dc);
-        if (ccls !== 2 && !this.belowHorizon(c, dc)) {
+        const hidden = this.belowHorizon(c, dc);
+        if (ccls !== 2 && !hidden) {
           if (c.state === TILE_READY) {
             if (settled) {
               this.visit(c, dc, ccls);
@@ -358,18 +363,18 @@ export class BodyQuadtree {
             this.want(c, (childRange / Math.max(dc, 0.05 * size)) * (this.nearVessel(c) ? 4 : 1), ccls);
           }
         }
+        if (ccls !== 0 || hidden) visible = false;
+      } else if (visible && emitting && p.frustum) {
+        // Beyond the children's range: the quadrant is drawn at this level; cull it by its own bounds.
+        visible = this.frustumClass(c, 0) === 0 && !this.belowHorizon(c, dc);
       }
       mask |= 1 << q;
+      if (visible) seen |= 1 << q;
     }
-    if (!emitting) return;
-    if (mask === 15) this.emit(n, -1, cls === 0);
+    if (!emitting || mask === 0) return;
+    if (mask === 15 && (seen === 15 || seen === 0)) this.emit(n, -1, seen === 15);
     else {
-      for (let q = 0; q < 4; q++) {
-        if ((mask & (1 << q)) === 0) continue;
-        const c = children[q]!;
-        const visible = cls === 0 && this.frustumClass(c, 0) === 0 && !this.belowHorizon(c, this.distance(c, Infinity));
-        this.emit(n, q, visible);
-      }
+      for (let q = 0; q < 4; q++) if ((mask & (1 << q)) !== 0) this.emit(n, q, (seen & (1 << q)) !== 0);
     }
   }
 

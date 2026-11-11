@@ -167,6 +167,18 @@ export function patchBelowHorizon(fr: TileFrame, eye: Vec3, eyeLenSq: number, rO
   return true;
 }
 
+/**
+ * Direction in which odd grid vertices slide when a tile morphs into its parent, per tile axis: +1 = to
+ * the next even vertex, -1 = to the previous one. Two tiles that meet along a cube edge run their grids in
+ * opposite directions there on some pairs of faces; if each slid its odd vertices "down its own index" the
+ * half-morphed edges would not coincide. So every tile slides them towards the NEGATIVE world axis the
+ * grid axis is parallel to on the cube: one rule for the whole cube, the same on both sides of every edge.
+ */
+export function snapDirection(face: FaceId): [number, number] {
+  const f = CUBE_FACES[face]!;
+  return [f.u[0] + f.u[1] + f.u[2] > 0 ? -1 : 1, f.v[0] + f.v[1] + f.v[2] > 0 ? -1 : 1];
+}
+
 /** Numeric key of a tile (unique per body): 3 bits face, 5 bits level, 20 bits x, 20 bits y. */
 export function tileId(face: FaceId, level: number, x: number, y: number): number {
   return ((face * 32 + level) * 1048576 + x) * 1048576 + y;
