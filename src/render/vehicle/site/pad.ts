@@ -151,7 +151,7 @@ export function stairFlight(b: MeshBuilder, from: Vec3Tuple, to: Vec3Tuple, widt
  * banding and the cross bars, so the panel stays open; the far LOD has none of it. The sky and the structure
  * above show through it from below, as through the real thing (an opaque textured plate does not).
  */
-export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, sx: number, sz: number, alongX = true): void {
+export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, sx: number, sz: number, alongX = true, coarse = false): void {
   if (b.lod === 2) return;
   const prev = b.material;
   b.mat('galvanised');
@@ -168,12 +168,16 @@ export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, 
     if (alongX) box(b, 0.022, d * 0.6, W - 0.024, [cx + t, y - d * 0.15, cz], 'grating');
     else box(b, W - 0.024, d * 0.6, 0.022, [cx, y - d * 0.15, cz + t], 'grating');
   }
-  if (b.lod === 0) {
-    const nb = Math.max(2, Math.round(W / 0.06));
+  // `coarse`: LOD 1 keeps bearing bars too, as heavier bars at 150 mm (a grating seen from 6 to 25 m: its
+  // 60 mm bars would be under a pixel apart and alias into glitter, its frame alone would read as no floor).
+  if (b.lod === 0 || coarse) {
+    const fine = b.lod === 0;
+    const nb = Math.max(2, Math.round(W / (fine ? 0.06 : 0.15)));
+    const t0 = fine ? 0.008 : 0.02;
     for (let i = 1; i < nb; i++) {
       const t = -W / 2 + (W * i) / nb;
-      if (alongX) box(b, L - 0.024, d, 0.008, [cx, y, cz + t], 'grating');
-      else box(b, 0.008, d, L - 0.024, [cx + t, y, cz], 'grating');
+      if (alongX) box(b, L - 0.024, d, t0, [cx, y, cz + t], 'grating');
+      else box(b, t0, d, L - 0.024, [cx + t, y, cz], 'grating');
     }
   }
   b.mat(prev);

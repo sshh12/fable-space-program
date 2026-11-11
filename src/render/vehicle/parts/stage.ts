@@ -105,7 +105,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
   const frostFilm = (y: number, phi: number): number => {
     let low = 0;
     for (const t of tanks) if (y >= t.y0 - 0.2 && y <= t.y1 + 0.2) low = 1 - Math.min(1, (y - t.y0) / Math.max(1, t.y1 - t.y0));
-    return Math.min(1, 0.62 + 0.22 * low + 0.3 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5));
+    return Math.min(1, 0.8 + 0.2 * low + 0.36 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5));
   };
   /** How high the soot of the base flow reaches at an azimuth: highest on the lee side. */
   const sootReach = (phi: number): number => sootTop * (0.7 + 0.75 * (0.5 + 0.5 * Math.cos(phi - sootLee)));
@@ -191,8 +191,9 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        // Frost lies thinner on a marking (dark paint warms in the sun): it shows through in streaks.
-        m.frost = outer ? frostAt(y) * frostFilm(y, _phi) * (markedAt(_phi, y, y) ? 0.45 : 1) : 0;
+        // Over a marking the coat is thin (a few streaks: the letters stay whole and at full contrast); it
+        // thickens raggedly over the cell round each one instead of cutting its letters into stripes.
+        m.frost = outer ? frostAt(y) * (markedAt(_phi, y, y) ? 0.27 : frostFilm(y, _phi)) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;

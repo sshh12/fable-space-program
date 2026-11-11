@@ -511,20 +511,55 @@ const recipes: Record<string, () => void> = {
   mli() {
     const S = 1024;
     const T = 1.2;
-    const warp = (u: number, v: number): [number, number] => [u + 0.05 * (fbm(u, v, 3, 3, 2, 121) - 0.5), v + 0.05 * (fbm(u, v, 3, 3, 2, 122) - 0.5)];
-    const creaseA = (u: number, v: number): number => {
-      const [wu, wv] = warp(u, v);
-      // Long folds mostly along v (the blanket hangs), a second family across them at a third of the strength.
-      return Math.pow(ridged(wu, wv, 7, 2, 3, 123, 0.45), 1.6) + 0.35 * Math.pow(ridged(wu, wv, 2, 6, 3, 124, 0.45), 1.8);
+    // The film is crumpled, not embossed: straight folds of finite length, each a ridge or a valley with flat
+    // flanks (a tent across it, tapering at its ends), laid over one another. Where folds cross, the flanks
+    // meet in more creases, so the surface is a mosaic of flat facets of every size between sharp crease
+    // lines, which is what turns a highlight into the long glints and dark folds of the photographs. Two
+    // families: long hanging folds of 25-70 cm mostly along v, and short ones of 8-25 cm in any direction.
+    const folds = new Field(S, S);
+    const crest = new Field(S, S);
+    const fold = (k: number, seed: number, lMin: number, lMax: number, wMin: number, wMax: number, aMin: number, aMax: number, hang: number): void => {
+      const r = (q: number): number => hash(k, q, seed);
+      const cu = r(1);
+      const cv = r(2);
+      const L = (lMin + (lMax - lMin) * r(3)) / T;
+      const w = (wMin + (wMax - wMin) * r(4)) / T;
+      const amp = (aMin + (aMax - aMin) * r(5)) * (r(6) < 0.55 ? 1 : -1);
+      const ang = r(7) < hang ? Math.PI / 2 + (r(8) - 0.5) * 0.9 : r(8) * Math.PI;
+      const du = Math.cos(ang);
+      const dv = Math.sin(ang);
+      const ext = L / 2 + w;
+      const x0 = Math.floor((cu - ext) * S);
+      const x1 = Math.ceil((cu + ext) * S);
+      const y0 = Math.floor((cv - ext) * S);
+      const y1 = Math.ceil((cv + ext) * S);
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const pu = (x + 0.5) / S - cu;
+          const pv = (y + 0.5) / S - cv;
+          const along = pu * du + pv * dv;
+          const across = -pu * dv + pv * du;
+          if (Math.abs(across) >= w || Math.abs(along) >= L / 2) continue;
+          const t = Math.abs(along) / (L / 2);
+          const env = 1 - t * t * t;
+          const i = mod(y, S) * S + mod(x, S);
+          folds.data[i] = folds.data[i]! + amp * env * (1 - Math.abs(across) / w);
+          if (amp > 0) crest.data[i] = Math.max(crest.data[i]!, env * smooth(0.25, 0, Math.abs(across) / w));
+        }
+      }
     };
-    const h = Field.from(S, S, (u, v) => 0.014 * fbm(u, v, 3, 3, 3, 125) + 0.0052 * creaseA(u, v) + 0.0009 * ridged(u, v, 22, 22, 2, 126));
+    for (let k = 0; k < 150; k++) fold(k, 131, 0.25, 0.7, 0.05, 0.13, 0.006, 0.015, 0.7);
+    for (let k = 0; k < 520; k++) fold(k, 132, 0.08, 0.25, 0.018, 0.05, 0.0012, 0.0034, 0.3);
+    // A broad sag between the stand-off buttons under it.
+    const h = Field.from(S, S, (u, v, x, y) => 0.006 * fbm(u, v, 3, 3, 2, 125) + folds.at(x, y));
+    const creaseA = (_u: number, _v: number, x: number, y: number): number => crest.at(x, y);
     save('mli_n', normalMap(h, T, 1));
     const ao = cavity(h, 6, 90);
     const [lo, hi] = h.range();
     save(
       'mli_orm',
       orm(S, S, (u, v, x, y) => {
-        const c = clamp(creaseA(u, v) * 0.9);
+        const c = clamp(creaseA(u, v, x, y) * 0.9);
         // Film between the folds is the smoothest; fold crests are scuffed; the unresolved crinkle varies by patch.
         return [clamp(0.72 + 0.28 * ao.at(x, y)), clamp(0.8 + 0.14 * c + 0.12 * (fbm(u, v, 10, 10, 3, 127) - 0.5)), 1];
       }),
@@ -535,7 +570,8 @@ const recipes: Record<string, () => void> = {
       'mligold_albedo',
       Image.from(S, S, (u, v, x, y) => {
         const t = clamp((h.at(x, y) - lo) / (hi - lo));
-        const c = lerp3(rgb(224, 128, 38), rgb(250, 190, 96), smooth(0.15, 0.85, t));
+        // (The film is one colour; its depth of tint varies only a little with how it lies.)
+        const c = lerp3(rgb(224, 128, 38), rgb(250, 190, 96), 0.3 + 0.4 * smooth(0.15, 0.85, t));
         return tint(c, (0.9 + 0.1 * fbm(u, v, 40, 40, 2, 128)) * (0.82 + 0.18 * ao.at(x, y)));
       }),
     );

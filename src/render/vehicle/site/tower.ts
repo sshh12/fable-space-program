@@ -482,7 +482,6 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
       b.mat('paint-grey').masks(0.2, 1, 0.5, 0);
       trussArm(b, length - 0.6, 2.2, 2.6, 2.4, 0.2);
       if (b.lod < 2) {
-        gratingPanel(b, -(length - 0.8) / 2, 0.12, 0, length - 0.8, 1.3, true);
         handrail(b, [[0, 0.14, 0.65], [-length + 0.8, 0.14, 0.65]], 1.05, 2.4);
         handrail(b, [[0, 0.14, -0.65], [-length + 0.8, 0.14, -0.65]], 1.05, 2.4);
         // Propellant lines along the arm, ending in the umbilical carrier that meets the vehicle's plate.
@@ -518,6 +517,24 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
       b.mat('steel-dark').masks(0.2, 1, 0.5, 0);
       frustum(b, 0.36, 0.36, -0.3, 2.9, b.pick(16, 10, 6), 'hinge');
     });
+  /**
+   * An arm's walkway floor, a model of its own so that it picks its LOD by its own bar pitch: every 60 mm bar
+   * only within a few metres, heavier bars at 150 mm out to about 25 m (at 1080p), then a plate of grating
+   * texture (a dark band from below, as a real walkway is at that distance).
+   */
+  const armGrating = (name: string, length: number): PartModel =>
+    buildModel(
+      name,
+      (b) => {
+        b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+        if (b.lod < 2) gratingPanel(b, -(length - 0.8) / 2, 0.12, 0, length - 0.8, 1.3, true, true);
+        else {
+          b.mat('grating');
+          box(b, length - 0.8, 0.03, 1.3, [-(length - 0.8) / 2, 0.12, 0], 'grating');
+        }
+      },
+      [numParam(params, 'gratingLod1Pixels', 2400), numParam(params, 'gratingLod2Pixels', 650)],
+    );
   /** Stand-in that casts an arm's shadow where the cascades cannot resolve its truss. */
   const armShadow = (name: string, length: number): PartModel =>
     buildModel(name, (b) => {
@@ -529,6 +546,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
   arms.forEach((a, i) => {
     models[`arm${i}`] = armModel(`pad.umbilicalTower.arm${i}`, dist - half - 0.5 - a.reach);
     models[`armShadow${i}`] = armShadow(`pad.umbilicalTower.armShadow${i}`, dist - half - 0.5 - a.reach);
+    models[`armGrating${i}`] = armGrating(`pad.umbilicalTower.armGrating${i}`, dist - half - 0.5 - a.reach);
   });
   models['crewArm'] = buildModel('pad.umbilicalTower.crewArm', (b) => crewArm(b, dist - half - 0.5 - crew.reach, -crewHingeZ, crewSign ? { sheet, name: crewSign } : null));
   models['lamps'] = buildModel('pad.umbilicalTower.lamps', (b) => {
@@ -557,6 +575,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
       arms.forEach((a, i) => {
         emit(`arm${i}`, [face, a.y - 1.45, hingeZ], yaw(-68 * DEG * t), { moving: moving.arms, fineShadowOnly: true });
         emit(`armShadow${i}`, [face, a.y - 1.45, hingeZ], yaw(-68 * DEG * t), { moving: moving.arms, shadowProxy: true });
+        emit(`armGrating${i}`, [face, a.y - 1.45, hingeZ], yaw(-68 * DEG * t), { moving: moving.arms, castShadow: false });
       });
       const c = state.crewArm * state.crewArm * (3 - 2 * state.crewArm);
       emit('crewArm', [face, crew.y - 1.3, crewHingeZ], yaw(78 * DEG * c), { moving: moving.crewArm });
