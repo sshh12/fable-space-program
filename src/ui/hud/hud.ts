@@ -699,7 +699,9 @@ export function createHud(opts: HudOptions): HudImpl {
             meta = new TextSlot('');
             const parts: HTMLElement[] = [];
             if (t.next) parts.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
-            parts.push(el('span', 'dv', [dv.node]), el('span', 'meta', [meta.node]));
+            // Stages without engines have no delta-v: the span leaves the line (no gap before "no engines").
+            if (t.hasEngines) parts.push(el('span', 'dv', [dv.node]));
+            parts.push(el('span', 'meta', [meta.node]));
             line2 = el('div', 'l2', parts);
           }
           const mainParts: HTMLElement[] = [line1, line2];

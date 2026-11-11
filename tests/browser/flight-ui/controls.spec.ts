@@ -328,7 +328,7 @@ test.describe('flight-ui controls', () => {
     await page.waitForFunction(() => window.__test!.camera()!.mode === 'lab-orbit-cam');
     expect((await page.evaluate(() => window.__test!.camera()!)).kind).toBe('external');
     await expect(page.locator('.hud')).toHaveAttribute('data-kind', 'external');
-    await expect(page.locator('.hud .ball canvas')).toBeVisible();
+    await expect(page.locator('.hud .ball canvas.ballgl')).toBeVisible();
     await saveScreenshot(page, 'flight-ui', 'extra-rig');
     await page.keyboard.press('KeyM');
     await page.waitForFunction(() => window.__test!.camera()!.kind === 'map');
@@ -353,7 +353,7 @@ test.describe('flight-ui controls', () => {
       // The text readouts refresh at 10 Hz: wait for a refresh of the paused snapshot.
       const n0 = await page.evaluate(() => window.__test!.waitFrames(1).then(() => window.__flightUi!.hudTiming().textUpdates));
       await page.waitForFunction((n) => window.__flightUi!.hudTiming().textUpdates > n, n0);
-      const dom = await page.locator('.hud .lt .rows .row').evaluateAll((rows) => rows.map((r) => [r.querySelector('.lbl')!.textContent!, r.querySelector('.val')!.textContent!]));
+      const dom = await page.locator('.hud .lt .rows .row').evaluateAll((rows) => rows.filter((r) => !(r as HTMLElement).hidden).map((r) => [r.querySelector('.lbl')!.textContent!, r.querySelector('.val')!.textContent!]));
       const mfd = await page.evaluate(() => window.__flightUi!.mfdSection('landing')!);
       expect(dom).toEqual(mfd.rows.map((r) => [r.label, r.value]));
       const name = await page.locator('.hud .lt .pname').textContent();
