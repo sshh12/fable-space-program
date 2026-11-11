@@ -83,6 +83,10 @@ hosting side esp when not in use. No need for alerts rn"
   thing the Hobby plan offers) into the smallest stage - the universe is persistent but an empty one needs
   no CPU - and state the wake-up time a first visitor sees and what, if anything, must still run on a
   timer. If true scale to zero is impossible for a component, say what its idle floor costs.
+- **Idle floor, relaxed** (later message, verbatim): "it doesn't have to be scale to complete zero, could be
+  down to like $30/mo ish if zero is very complex or hard for the hosted part". An idle cost of about $30 a
+  month is acceptable. Use true scale to zero only where it is simple and robust; do not buy it with
+  fragile wake-up machinery or a worse first-visit experience.
 - **No alerts for now**: do not build alert routing or ask for a webhook; keep the metrics and logs that the
   capacity report needs. Alerting is a later seam.
 
