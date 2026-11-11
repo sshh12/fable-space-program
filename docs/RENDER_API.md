@@ -547,9 +547,10 @@ return vec4f(writeHdr(c.rgb), c.a);        // blend: src one, dst one-minus-src-
   with `aerialSliceToDistance(s) = 50 m x (2^(s/2) - 1)` (texel centre of layer k is s = k + 0.5; 21 m to
   3277 km). rgb = in-scattered luminance from the eye to that distance in cd/m^2 (NOT pre-exposed),
   a = transmittance. Default (0, 0, 0, 1).
-- `'clouds.screen'` (a = transmittance through the clouds) and `'clouds.depth'` (metres to the cloud in
-  front of the pixel, 3.0e38 = none): a fragment farther than the cloud is multiplied by the cloud
-  transmittance, with a smooth transition between 0.9 and 1.1 times the cloud distance.
+- `'clouds.screen'` (a = transmittance through the clouds) and `'clouds.depth'` (rg32float, metres from the
+  eye: r = where the cloud in front of the pixel begins, g = where it ends or has become opaque; 3.0e38 =
+  none): a fragment is attenuated by the cloud's transmittance in proportion to how far into that span it
+  lies (`smoothstep(begin, end, distance)`): untouched in front of the cloud at any range, hidden behind it.
 - With the default resources `applyAtmosphere` returns its input bit-exactly.
 - Volumes: call it per march sample with the sample's distance, or once with the distance of the volume's
   centre when the volume is small against the atmosphere.
@@ -1072,6 +1073,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `'clouds.depth'` is rg32float: r = where the cloud begins along the pixel's ray, g = where it ends (was r32float, one mean distance with a +-10 % band); `applyAtmosphere` attenuates by `smoothstep(r, g, distance)` | `atmosphere-clouds-1` | atmosphere (publisher), every transparent (through `applyAtmosphere`, no change), sky (tests `r < 3.0e38` only) | Publisher: write both distances; a texture that carries r alone gives a step at r. Readers that sampled the key themselves: r is now the BEGIN of the cloud, not its mean distance |
 | `'clouds.shadowMap'` is depth-resolved (r, g, b as in section 7); new chunk `cloud_shadow` with the lookup the deferred lighting uses | `atmosphere-clouds-3` | atmosphere (publisher: nothing to change, the map already carries g and b); cockpit and ocean (their forward shaders sample the map themselves) | A publisher of a single-channel map casts no near shadow any more: write g and b. Forward-lit shaders: `#include "cloud_shadow"` and call `cloudShadow()` instead of an own copy of the r-only lookup, or surfaces above a deck stay in its shade |
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |

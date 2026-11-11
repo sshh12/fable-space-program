@@ -89,7 +89,11 @@ export interface Probes {
   clearCascadeLog(): void;
   /** Cascades in which a MOVING caster was asked to draw although the cascade is not every-frame (must stay empty). */
   movingCasterViolations(): number;
-  setCloudLayer(on: boolean): void;
+  /**
+   * The synthetic cloud of the transparency probe over the left half of the screen (transmittance 0.02):
+   * `true` = from 18 m to 22 m from the eye, or its span in metres; `false` = none.
+   */
+  setCloudLayer(on: boolean | { begin: number; end: number }): void;
   setVolume(on: boolean): void;
   /** Projected centre (render px) and radius (px) of the fog sphere in the last frame. */
   volumeScreen(): { x: number; y: number; radius: number } | null;
@@ -112,7 +116,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   let hookLogLast: string[] = [];
   const cascadeLog: CascadeLogEntry[] = [];
   let violations = 0;
-  let cloudLayer = false;
+  let cloudLayer: { begin: number; end: number } | null = null;
   let volumeOn = true;
   let volumeScreen: { x: number; y: number; radius: number } | null = null;
   let heavyIterations = Number(query.get('heavy') ?? 0);
@@ -596,7 +600,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     const uniforms: GPUBuffer[] = [];
     let screen: GPUTexture | null = null;
     let depth: GPUTexture | null = null;
-    let published = false;
+    let published: { begin: number; end: number } | null = null;
     features.push({
       id: 'lab-cloud',
       order: 20,
@@ -628,7 +632,8 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         }
       },
       compositeAtmosphere(frame) {
-        // Publish (or withdraw) a synthetic cloud layer: transmittance 0.02 at 20 m over the LEFT half of the screen.
+        // Publish (or withdraw) a synthetic cloud layer: transmittance 0.02 over the LEFT half of the screen,
+        // between `begin` and `end` metres from the eye.
         if (cloudLayer === published) return;
         published = cloudLayer;
         if (!cloudLayer) {
@@ -641,20 +646,21 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         screen?.destroy();
         depth?.destroy();
         screen = ctx.device.createTexture({ format: 'rgba16float', size: [w, h], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-        depth = ctx.device.createTexture({ format: 'r32float', size: [w, h], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+        depth = ctx.device.createTexture({ format: 'rg32float', size: [w, h], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
         const s = new Uint16Array(w * h * 4);
-        const d = new Float32Array(w * h);
+        const d = new Float32Array(w * h * 2);
         const one = 0x3c00;
         const t002 = 0x251f; // 0.02 as float16
         for (let y = 0; y < h; y++) {
           for (let x = 0; x < w; x++) {
             const left = x < w / 2;
             s[(y * w + x) * 4 + 3] = left ? t002 : one;
-            d[y * w + x] = left ? 20 : 3.0e38;
+            d[(y * w + x) * 2] = left ? cloudLayer.begin : 3.0e38;
+            d[(y * w + x) * 2 + 1] = left ? cloudLayer.end : 3.0e38;
           }
         }
         ctx.device.queue.writeTexture({ texture: screen }, s, { bytesPerRow: w * 8 }, [w, h]);
-        ctx.device.queue.writeTexture({ texture: depth }, d, { bytesPerRow: w * 4 }, [w, h]);
+        ctx.device.queue.writeTexture({ texture: depth }, d, { bytesPerRow: w * 8 }, [w, h]);
         ctx.resources.publish('clouds.screen', screen.createView());
         ctx.resources.publish('clouds.depth', depth.createView());
       },
@@ -1065,7 +1071,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     },
     movingCasterViolations: () => violations,
     setCloudLayer(on) {
-      cloudLayer = on;
+      cloudLayer = on === true ? { begin: 18, end: 22 } : on === false ? null : on;
     },
     setVolume(on) {
       volumeOn = on;

@@ -59,7 +59,7 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'clouds.shadowMap': tex2d('cloudShadowMap', 'r16float', [0]),
     'clouds.coverageMap': tex2d('cloudCoverageMap', 'r8unorm', [0]),
     'clouds.screen': tex2d('cloudsScreen', 'rgba16float', [0, 0, 0, 1]),
-    'clouds.depth': tex2d('cloudsDepth', 'r32float', [3.0e38]),
+    'clouds.depth': tex2d('cloudsDepth', 'rg32float', [3.0e38, 3.0e38]),
     'env.probeCube': createSolidTexture(device, 'default.envProbeCube', 'rgba16float', [0, 0, 0, 1], { layers: 6 }).createView({ dimension: 'cube' }),
     'env.sh9': uniform('envSh9', new Float32Array(36)),
     'ocean.displacement': texArray('oceanDisplacement', 'rgba16float', [0, 0, 0, 0]),

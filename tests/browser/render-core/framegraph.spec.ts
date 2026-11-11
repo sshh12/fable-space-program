@@ -178,10 +178,18 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
     lab.renderFrame();
     const clouded = await grab();
     const cloud = { farLeft: at(clouded, 0.3, row0), farRight: at(clouded, 0.7, row0), nearLeft: at(clouded, 0.3, row1), nearRight: at(clouded, 0.7, row1), background: at(clouded, 0.3, row0 - 20) };
+    // The far quad (40 m) halfway into a cloud that spans 30-50 m, and in front of one that begins at 60 m.
+    rc.probes.setCloudLayer({ begin: 30, end: 50 });
+    lab.renderFrame();
+    const inside = await grab();
+    rc.probes.setCloudLayer({ begin: 60, end: 80 });
+    lab.renderFrame();
+    const before = await grab();
+    const spans = { inside: at(inside, 0.3, row0), insideBackground: at(inside, 0.3, row0 - 20), inFront: at(before, 0.3, row0), nearInside: at(inside, 0.3, row1) };
     rc.probes.setCloudLayer(false);
     lab.renderer.setJitter(true);
     lab.setLoop(true);
-    return { towerMaxDiff, towerPixels, fogMaxDiff, neutral, cloud, screen };
+    return { towerMaxDiff, towerPixels, fogMaxDiff, neutral, cloud, spans, screen };
   });
   expect(r.towerPixels).toBeGreaterThan(4);
   expect(r.fogMaxDiff).toBeGreaterThan(0.05);
@@ -195,6 +203,11 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
   expect(r.cloud.farRight).toBe(2);
   expect(r.cloud.nearLeft).toBe(2);
   expect(r.cloud.nearRight).toBe(2);
+  // Halfway into the cloud's span (smoothstep(30, 50, 40) = 0.5): attenuated by 1 + (0.02 - 1) x 0.5 = 0.51.
+  expect(Math.abs(r.spans.inside - (2 * 0.51 + (1 - 0.51) * r.spans.insideBackground))).toBeLessThan(0.05);
+  // In front of the cloud, however close to it: untouched (request atmosphere-clouds-1).
+  expect(r.spans.inFront).toBe(2);
+  expect(r.spans.nearInside).toBe(2);
   await expectNoErrors(page, pageLog);
 });
 

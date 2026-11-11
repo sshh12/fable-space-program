@@ -245,9 +245,12 @@ export interface SharedResourceMap {
    */
   'clouds.screen': GPUTextureView;
   /**
-   * Half-resolution r32float: transmittance-weighted mean distance from the eye to the cloud in front of
-   * each pixel, metres (3.0e38 where there is none, which is also the default). Transparents farther than
-   * this are attenuated by 'clouds.screen'.a inside `applyAtmosphere()`.
+   * Half-resolution rg32float, metres from the eye along the pixel's ray: r = where the cloud in front of
+   * the pixel BEGINS, g = where it ENDS (or has become opaque). 3.0e38 in both where there is none, which
+   * is also the default. `applyAtmosphere()` attenuates a transparent fragment by 'clouds.screen'.a in
+   * proportion to how far into that span it lies: not at all in front of r, fully behind g (request
+   * atmosphere-clouds-1; a publisher that writes r alone gets a step at r). "r < 3.0e38" is the test for
+   * "a cloud covers this pixel".
    */
   'clouds.depth': GPUTextureView;
   /** 64^2 x 6 rgba16float prefiltered environment cube at the active vessel (luminance, cd/m^2). */

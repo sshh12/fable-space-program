@@ -581,8 +581,9 @@ export const TRANSPARENCY_WGSL = /* wgsl */ `
 
 /// Mandatory for everything drawn in drawTransparent. 'uv' = screen UV of the fragment, 'distance' = metres
 /// from the eye, 'colour' = pre-exposed PREMULTIPLIED radiance, 'alpha' = opacity. Adds the in-scatter in
-/// front of the fragment, applies the transmittance up to it, and attenuates fragments farther than the
-/// cloud in front of the pixel by the cloud transmittance (soft transition from 0.9 to 1.1 x cloud distance).
+/// front of the fragment, applies the transmittance up to it, and attenuates the fragment by the
+/// transmittance of the cloud in front of the pixel in proportion to how far into the cloud's span it lies
+/// ('clouds.depth': r = begin, g = end): untouched in front of the cloud, fully attenuated behind it.
 /// Exactly neutral with the default resources.
 fn applyAtmosphere(uv: vec2f, distance: f32, colour: vec3f, alpha: f32) -> vec4f {
   let slice = aerialDistanceToSlice(distance);
@@ -590,9 +591,10 @@ fn applyAtmosphere(uv: vec2f, distance: f32, colour: vec3f, alpha: f32) -> vec4f
   let nearFade = saturate(slice * 2.0);
   let trans = 1.0 + (ap.a - 1.0) * nearFade;
   let c = colour * trans + ap.rgb * (nearFade * frame.exposure.x * alpha);
-  let cloudDist = textureSampleLevel(cloudsDepthTex, linearClamp, uv, 0.0).r;
+  let span = textureSampleLevel(cloudsDepthTex, linearClamp, uv, 0.0).rg;
   let cloudTrans = textureSampleLevel(cloudsScreenTex, linearClamp, uv, 0.0).a;
-  let behind = smoothstep(0.9, 1.1, distance / max(cloudDist, 1e-3));
+  // (A span of no depth, or a publisher that wrote the begin alone, is a step at the begin.)
+  let behind = smoothstep(span.r, max(span.g, span.r * 1.0001), distance);
   let k = 1.0 + (cloudTrans - 1.0) * behind;
   return vec4f(c * k, alpha * k);
 }
