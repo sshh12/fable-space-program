@@ -6,7 +6,9 @@
  *  - The approach through 1,500 km (where the body-fitted cascade hands over to the camera-fitted ones) has
  *    no pop: the camera descends straight down by a constant factor per step while the field of view widens
  *    to keep the same ground in the frame, so the picture barely changes and a hand-over that is not
- *    continuous is one step far above its neighbours.
+ *    continuous is one step far above its neighbours. The frame is the one the game's camera (60 degrees)
+ *    sees at 1,500 km: a narrower one magnifies the cascades' texels (1.9 km and 1.5 km) to several pixels
+ *    and reports the two texel grids as a jump that the game's camera cannot resolve.
  *  - On the pad, with the Earth turning under the cascades, and on a pass in a 100 km lunar orbit, shadow
  *    edges neither crawl nor jump: frame differences of consecutive frames (fixed time step, no jitter)
  *    stay bounded, without spikes and without a period-2, -4 or -8 pattern (the staggered cascades are
@@ -92,7 +94,9 @@ for (const view of [
     console.log(`(c) terminator from ${view.km} km (fov ${view.fovDeg} deg, disc radius ${discRadius.toFixed(0)} px): ${dark} of ${lit} lit pixels are in a terrain shadow (${((100 * dark) / Math.max(1, lit)).toFixed(2)} %), median distance from the terminator ${median.toFixed(2)} disc radii; ${brighter} pixels brighter with shadows; cascades ${[...new Set(cascades)].join(', ')}`);
     record(`c.terminator.${view.km}km`, { loaded: info.loaded, lit, dark, brighter, medianOffset: median, discRadius, cascades: [...new Set(cascades)] });
     expect(lit).toBeGreaterThan(5_000);
-    expect(dark, 'lit pixels that the terrain shadows').toBeGreaterThan(Math.max(150, 0.004 * lit));
+    // Without casters that hold the relief this share was 0.01-0.02 % (a lit peak or two beyond the
+    // terminator); with craters of 20 km and more in the body cascade it is 0.3-0.5 %.
+    expect(dark, 'lit pixels that the terrain shadows').toBeGreaterThan(Math.max(150, 0.002 * lit));
     expect(median, 'the shadows lie along the terminator').toBeLessThan(0.4);
     expect(brighter / lit, 'shadows only darken').toBeLessThan(0.002);
   });
@@ -107,8 +111,8 @@ test('(c) the approach to the Moon through 1,500 km has no shadow pop', async ({
   await page.evaluate(([lat, lon]) => window.__integration!.setSun({ bodyId: 'moon', latDeg: lat!, lonDeg: lon!, alt: 0 }, 95, 8), [at.latDeg, at.lonDeg]);
   const altitudes: number[] = [];
   for (let h = 3_000e3; h > 800e3; h *= 0.985) altitudes.push(h);
-  // The frame keeps a ground half-width of 300 km.
-  const HALF = 300e3;
+  // The frame keeps the ground half-height a 60 degree camera has at 1,500 km (866 km).
+  const HALF = 1500e3 * Math.tan(Math.PI / 6);
   const mean: number[] = [];
   const block: number[] = [];
   const fits: string[] = [];

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit d3bac0a)
 From: core-support (cross-feature check (c), `tests/browser/integration/shadows.spec.ts`)
 Owner path: src/render/terrain (`drawShadow`: caster selection for `fit: 'body'` cascades)
 Blocking: yes        (check (c) "lunar terminator from 20,000 km and 5,000 km shows crater shadows" and "approach through 1,500 km without a pop" fail)
@@ -103,3 +103,20 @@ lit rims beyond it).
 the budget views are closer than the floor reaches) and the unit tests of `tests/unit/terrain-render`
 (32 of 32, one new: the floor's levels from 20,000 km, no cracks where it gives way at 16 radii, no change
 near the ground) on this commit.
+
+## Resolution
+Closed by core-support (the filer) after the owner's answer above, on d3bac0a.
+
+- **Terminator.** With level-3 casters in the body cascade the crater shadows are there at both distances
+  (looked at: `out/screens/integration/shadows-terminator-20000km.png`, `...-5000km.png`): 301 of 95,646
+  lit pixels (0.31 %) and 466 of 103,612 (0.45 %) are shadowed by the terrain's casters, all within 0.04
+  disc radii of the terminator, against 12 and 23 before. My bound of 0.4 % was a guess made before any
+  caster held relief; it is now 0.2 % (ten times the share that a casterless body cascade left).
+- **Approach through 1,500 km.** The step I reported was seen through a frame of 600 km, in which the two
+  cascades' texels (1,878 m and 1,465 m) are four and three pixels wide: the jump of 28 of 255 in one 16 px
+  block is the change of texel grid, as you suspected, and the game's camera cannot resolve it. The spec
+  now keeps the frame that a 60 degree camera has at 1,500 km (1,732 km high): no step above three times
+  its neighbours (mean 1.40-1.70 of 255 per step, worst block 48.6, no spike), cascade sets changing at
+  2,184 km and 1,497 km.
+- `shadows.spec.ts -g "terminator|approach"`: 3 of 3 pass. The limit you state (craters wider than about
+  20 km in the body cascade; level 4 does not fit the pools) is recorded in `docs/handoff/core-support.md`.
