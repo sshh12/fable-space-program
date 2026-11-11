@@ -214,7 +214,7 @@ export const GHOSTS: readonly GhostDef[] = [
   ghost({ k: -0.95, radius: 0.05, energy: 8.0e-6, tint: [0.55, 1.0, 0.7], blur: 9, round: 1, gradient: 0.5, vignette: 0.7 }),
   ghost({ k: -1.1, radius: 0.03, energy: 4.0e-6, tint: [0.6, 0.75, 1.0], blur: 1.4, round: 0.6, rim: 0.1, chroma: 0.06, flip: -1, bite: 0.95, biteShift: 0.55 }),
   // Far side: one very large, very soft magenta veil.
-  ghost({ k: -1.7, radius: 0.15, energy: 2.2e-5, tint: [1.0, 0.65, 0.9], blur: 14, round: 1, gradient: 0.6, vignette: 0.9 }),
+  ghost({ k: -1.7, radius: 0.09, energy: 2.2e-5, tint: [1.0, 0.65, 0.9], blur: 8, round: 1, gradient: 0.6, vignette: 0.9 }),
   // Between the image centre and the sun: an amber iris and a hollow teal one over it.
   ghost({ k: 0.34, radius: 0.03, energy: 3.0e-6, tint: [1.0, 0.8, 0.55], blur: 2.5, round: 0.3, rim: 0.2, chroma: 0.07 }),
   ghost({ k: 0.41, radius: 0.044, energy: 5.0e-6, tint: [0.55, 0.95, 0.85], blur: 6, round: 0.7, hollow: 0.5, flip: -1, vignette: 0.6 }),

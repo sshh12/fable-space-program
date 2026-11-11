@@ -1,17 +1,7 @@
-import type { Page } from "@playwright/test";
-import { PNG } from "pngjs";
-import {
-  assertRealImage,
-  expect,
-  saveScreenshot,
-  test,
-  waitIdle,
-} from "../harness";
-import {
-  expectClean,
-  openIntegration,
-  requireFeatures,
-} from "../integration/helpers";
+import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
+import { assertRealImage, expect, saveScreenshot, test, waitIdle } from '../harness';
+import { expectClean, openIntegration, requireFeatures } from '../integration/helpers';
 
 /**
  * The sky with the real Earth (request sky-lighting-5; both visual critics of round 1): the integration lab of
@@ -71,17 +61,7 @@ async function installHelpers(page: Page): Promise<void> {
       const r = norm(cross(f, upHint));
       const u = cross(r, f);
       const b = { x: -f.x, y: -f.y, z: -f.z };
-      const [m00, m10, m20, m01, m11, m21, m02, m12, m22] = [
-        r.x,
-        r.y,
-        r.z,
-        u.x,
-        u.y,
-        u.z,
-        b.x,
-        b.y,
-        b.z,
-      ];
+      const [m00, m10, m20, m01, m11, m21, m02, m12, m22] = [r.x, r.y, r.z, u.x, u.y, u.z, b.x, b.y, b.z];
       const tr = m00 + m11 + m22;
       if (tr > 0) {
         const s = Math.sqrt(tr + 1) * 2;
@@ -141,9 +121,7 @@ async function installHelpers(page: Page): Promise<void> {
       },
       /** The body-fixed point under the active vessel (a Site of the integration lab). */
       siteUnder() {
-        const f = (
-          w.__skyInt as { frame(): { up: V; bodyId: string; q: Q } }
-        ).frame();
+        const f = (w.__skyInt as { frame(): { up: V; bodyId: string; q: Q } }).frame();
         const d = rotate(conj(f.q), f.up);
         return {
           bodyId: f.bodyId,
@@ -155,10 +133,10 @@ async function installHelpers(page: Page): Promise<void> {
       look(pos: V, forward: V, up: V, fovDeg: number) {
         const lab = window.__lab!;
         cam = { q: lookQuat(forward, up), fovY: (fovDeg * Math.PI) / 180 };
-        lab.camera.settings.kind = "external";
+        lab.camera.settings.kind = 'external';
         lab.camera.settings.fovY = cam.fovY;
         lab.camera.spec = {
-          type: "free",
+          type: 'free',
           positionRoot: pos,
           qViewToRoot: cam.q,
         };
@@ -182,8 +160,7 @@ async function installHelpers(page: Page): Promise<void> {
 }
 
 /** Horizon dip (deg) of the vessel's body seen from the vessel. */
-const dipOf = (f: { radius: number; altitude: number }): number =>
-  (Math.acos(f.radius / (f.radius + f.altitude)) * 180) / Math.PI;
+const dipOf = (f: { radius: number; altitude: number }): number => (Math.acos(f.radius / (f.radius + f.altitude)) * 180) / Math.PI;
 
 async function settledExposure(page: Page): Promise<number> {
   await page.waitForFunction(
@@ -214,9 +191,7 @@ type SkyHandle = {
 };
 const flareState = (page: Page) =>
   page.evaluate(async () => {
-    const sky = window.__integration!.handles[
-      "sky.createSkyFeature"
-    ] as SkyHandle;
+    const sky = window.__integration!.handles['sky.createSkyFeature'] as SkyHandle;
     return { drawn: sky.status().flareDrawn, ...(await sky.readFlareState()) };
   });
 
@@ -224,12 +199,7 @@ const flareState = (page: Page) =>
  * Sun `aboveLimbDeg` over the limb, straight ahead; camera 40 m to the side of the vessel (it is out of the frame),
  * looking `belowSunDeg` under the sun with the horizon level.
  */
-async function sunOverLimb(
-  page: Page,
-  aboveLimbDeg: number,
-  belowSunDeg: number,
-  fovDeg: number,
-): Promise<{ dip: number }> {
+async function sunOverLimb(page: Page, aboveLimbDeg: number, belowSunDeg: number, fovDeg: number): Promise<{ dip: number }> {
   const f = await page.evaluate(() =>
     (
       window as unknown as {
@@ -273,9 +243,7 @@ async function sunOverLimb(
       const fr = h.frame();
       const sun = window.__lab!.renderer.frameContext!.sun.dirRoot;
       // The sun's direction tilted down by `below` degrees in the vertical plane through it.
-      const horiz = h.helpers.norm(
-        h.helpers.add(sun, fr.up, -h.helpers.dot(sun, fr.up)),
-      );
+      const horiz = h.helpers.norm(h.helpers.add(sun, fr.up, -h.helpers.dot(sun, fr.up)));
       const side = h.helpers.norm(h.helpers.cross(horiz, fr.up));
       const elSun = Math.asin(h.helpers.dot(sun, fr.up));
       const el = elSun - (below! * Math.PI) / 180;
@@ -296,17 +264,10 @@ async function sunOverLimb(
 }
 
 /** Rows and columns of a frame: the largest step of a row's (column's) mean against the mean of its neighbours. */
-function lineStructure(
-  png: PNG,
-  skip: (x: number, y: number) => boolean,
-): number {
+function lineStructure(png: PNG, skip: (x: number, y: number) => boolean): number {
   const luma = (x: number, y: number): number => {
     const i = (y * png.width + x) * 4;
-    return (
-      0.2126 * png.data[i]! +
-      0.7152 * png.data[i + 1]! +
-      0.0722 * png.data[i + 2]!
-    );
+    return 0.2126 * png.data[i]! + 0.7152 * png.data[i + 1]! + 0.0722 * png.data[i + 2]!;
   };
   const rows: number[] = [];
   for (let y = 0; y < png.height; y++) {
@@ -321,22 +282,15 @@ function lineStructure(
   }
   let worst = 0;
   for (let y = 1; y < rows.length - 1; y++) {
-    if (![rows[y - 1], rows[y], rows[y + 1]].every((v) => Number.isFinite(v)))
-      continue;
-    worst = Math.max(
-      worst,
-      Math.abs(rows[y]! - 0.5 * (rows[y - 1]! + rows[y + 1]!)),
-    );
+    if (![rows[y - 1], rows[y], rows[y + 1]].every((v) => Number.isFinite(v))) continue;
+    worst = Math.max(worst, Math.abs(rows[y]! - 0.5 * (rows[y - 1]! + rows[y + 1]!)));
   }
   return worst;
 }
 
-test("the sun over the real limb from low orbit: 6 deg above it, and rising through the atmosphere", async ({
-  page,
-  pageLog,
-}) => {
-  const info = await openIntegration(page, "scene=lowOrbit&hud=0");
-  requireFeatures(test, info, ["sky", "atmosphere", "terrain"]);
+test('the sun over the real limb from low orbit: 6 deg above it, and rising through the atmosphere', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
+  requireFeatures(test, info, ['sky', 'atmosphere', 'terrain']);
   await installHelpers(page);
   await page.evaluate(() => window.__lab!.setPaused(true));
 
@@ -346,7 +300,7 @@ test("the sun over the real limb from low orbit: 6 deg above it, and rising thro
   await settle(page, 150);
   const ev = await settledExposure(page);
   await settle(page, 60);
-  const shot = await saveScreenshot(page, "sky", "integration-sun-above-limb");
+  const shot = await saveScreenshot(page, 'sky', 'integration-sun-above-limb');
   const st = await flareState(page);
   const sunPx = await page.evaluate(() =>
     (
@@ -356,9 +310,9 @@ test("the sun over the real limb from low orbit: 6 deg above it, and rising thro
     ).__skyInt.project(window.__lab!.renderer.frameContext!.sun.dirRoot),
   );
   console.log(
-    `sun 6 deg above the limb (dip ${dip.toFixed(2)} deg): EV100 ${ev.toFixed(2)}, flare drawn ${st.drawn}, visible ${st.visible.toFixed(3)}, transmittance ${st.transmittance.map((t) => t.toFixed(3)).join(" / ")}, sun at ${sunPx ? `${sunPx.x.toFixed(0)}, ${sunPx.y.toFixed(0)}` : "-"}`,
+    `sun 6 deg above the limb (dip ${dip.toFixed(2)} deg): EV100 ${ev.toFixed(2)}, flare drawn ${st.drawn}, visible ${st.visible.toFixed(3)}, transmittance ${st.transmittance.map((t) => t.toFixed(3)).join(' / ')}, sun at ${sunPx ? `${sunPx.x.toFixed(0)}, ${sunPx.y.toFixed(0)}` : '-'}`,
   );
-  assertRealImage(shot.stats, "integration-sun-above-limb", {
+  assertRealImage(shot.stats, 'integration-sun-above-limb', {
     minNonBlack: 0.05,
     minStd: 5,
     minBuckets: 30,
@@ -367,12 +321,9 @@ test("the sun over the real limb from low orbit: 6 deg above it, and rising thro
   expect(st.visible).toBe(1);
   // No row / column structure further than 10 deg from the sun (the frame's 60 deg are 720 rows: 10 deg = 124 px).
   const png = PNG.sync.read(shot.buffer);
-  const near = (x: number, y: number): boolean =>
-    !!sunPx && Math.hypot(x - sunPx.x, y - sunPx.y) < 124;
+  const near = (x: number, y: number): boolean => !!sunPx && Math.hypot(x - sunPx.x, y - sunPx.y) < 124;
   const rowsStep = lineStructure(png, near);
-  console.log(
-    `largest row step against its neighbours further than 10 deg from the sun: ${rowsStep.toFixed(2)}/255`,
-  );
+  console.log(`largest row step against its neighbours further than 10 deg from the sun: ${rowsStep.toFixed(2)}/255`);
   expect(rowsStep).toBeLessThan(2);
 
   // (2) 0.3 deg above the limb: the sun seen through the air is dimmed and reddened, and so is its flare.
@@ -380,10 +331,10 @@ test("the sun over the real limb from low orbit: 6 deg above it, and rising thro
   await settle(page, 150);
   const ev2 = await settledExposure(page);
   await settle(page, 60);
-  await saveScreenshot(page, "sky", "integration-sun-at-limb");
+  await saveScreenshot(page, 'sky', 'integration-sun-at-limb');
   const st2 = await flareState(page);
   console.log(
-    `sun 0.3 deg above the limb: EV100 ${ev2.toFixed(2)}, flare drawn ${st2.drawn}, visible ${st2.visible.toFixed(3)}, transmittance ${st2.transmittance.map((t) => t.toFixed(3)).join(" / ")}`,
+    `sun 0.3 deg above the limb: EV100 ${ev2.toFixed(2)}, flare drawn ${st2.drawn}, visible ${st2.visible.toFixed(3)}, transmittance ${st2.transmittance.map((t) => t.toFixed(3)).join(' / ')}`,
   );
   expect(st2.drawn).toBe(true);
   expect(st2.transmittance[2]!).toBeLessThan(0.9 * st2.transmittance[0]!);
@@ -391,12 +342,9 @@ test("the sun over the real limb from low orbit: 6 deg above it, and rising thro
   await expectClean(page, pageLog, info);
 });
 
-test("the vehicle over the real Earth in daylight: lit from below by the probe, dark towards space", async ({
-  page,
-  pageLog,
-}) => {
-  const info = await openIntegration(page, "scene=lowOrbit&hud=0");
-  requireFeatures(test, info, ["sky", "atmosphere", "terrain", "vehicle"]);
+test('the vehicle over the real Earth in daylight: lit from below by the probe, dark towards space', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
+  requireFeatures(test, info, ['sky', 'atmosphere', 'terrain', 'vehicle']);
   await installHelpers(page);
   await page.evaluate(() => window.__lab!.setPaused(true));
   // Sun 40 deg up behind the camera's shoulder; the camera looks down at the vehicle with the Earth behind it.
@@ -419,11 +367,9 @@ test("the vehicle over the real Earth in daylight: lit from below by the probe, 
   await settle(page, 150);
   const ev = await settledExposure(page);
   await settle(page, 60);
-  const shot = await saveScreenshot(page, "sky", "integration-hull-over-earth");
-  console.log(
-    `vehicle over the Earth by day: EV100 ${ev.toFixed(2)}, mean level ${shot.stats.meanLuma.toFixed(1)}/255`,
-  );
-  assertRealImage(shot.stats, "integration-hull-over-earth", {
+  const shot = await saveScreenshot(page, 'sky', 'integration-hull-over-earth');
+  console.log(`vehicle over the Earth by day: EV100 ${ev.toFixed(2)}, mean level ${shot.stats.meanLuma.toFixed(1)}/255`);
+  assertRealImage(shot.stats, 'integration-hull-over-earth', {
     minNonBlack: 0.2,
     minStd: 10,
     minBuckets: 40,
@@ -431,13 +377,77 @@ test("the vehicle over the real Earth in daylight: lit from below by the probe, 
   await expectClean(page, pageLog, info);
 });
 
-for (const variant of ["moonless", "moonlit"] as const) {
-  test(`the night side of a low orbit (${variant}): the Milky Way above the real limb at the automatic exposure`, async ({
-    page,
-    pageLog,
-  }) => {
-    const info = await openIntegration(page, "scene=lowOrbit&hud=0");
-    requireFeatures(test, info, ["sky", "atmosphere", "terrain"]);
+test('the Earth of the real renderers against the Lambert law its far image hands over with (flux and colour, 16 and 48 px)', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=translunar&hud=0');
+  requireFeatures(test, info, ['sky', 'atmosphere', 'terrain']);
+  // Geometry alone (no far image, no stars, Milky Way or flare), fixed exposure, 2 deg field.
+  await page.evaluate(() => {
+    const sky = window.__integration!.handles['sky.createSkyFeature'] as { parts: Record<string, boolean> };
+    for (const p of ['stars', 'milkyWay', 'flare', 'impostors']) sky.parts[p] = false;
+    window.__lab!.setPaused(true);
+    window.__lab!.renderer.setExposureOverride(12);
+    window.__lab!.camera.settings.fovY = (2 * Math.PI) / 180;
+  });
+  const rows: string[] = [];
+  const ratios: number[] = [];
+  for (const diameterPx of [48, 16]) {
+    for (const phaseDeg of [20, 60, 100, 140]) {
+      const r = await page.evaluate(
+        async ([dPx, phase]) => {
+          const lab = window.__lab!;
+          const earth = lab.defs.bodies[lab.defs.rootBodyId]!;
+          const h0 = lab.renderer.frameContext!.renderSize[1];
+          const pxAngle = (2 * Math.tan(lab.camera.settings.fovY / 2)) / h0;
+          const distance = earth.radius / Math.sin((dPx! * pxAngle) / 2);
+          window.__integration!.viewBodyAtPhase(lab.defs.rootBodyId, phase!, distance);
+          await window.__test!.waitFrames(40);
+          const f = lab.renderer.frameContext!;
+          const [w, h] = f.renderSize;
+          const px = await lab.renderer.readHdrPixels('hdr');
+          const tanY = Math.tan(f.camera.fovY / 2);
+          const omega = ((2 * tanY * w) / h / w) * ((2 * tanY) / h);
+          const sum = [0, 0, 0];
+          const half = dPx! * 1.5;
+          for (let y = Math.max(0, Math.floor(h / 2 - half)); y < Math.min(h, Math.ceil(h / 2 + half)); y++) {
+            for (let x = Math.max(0, Math.floor(w / 2 - half)); x < Math.min(w, Math.ceil(w / 2 + half)); x++) {
+              const i = (y * w + x) * 4;
+              for (let c = 0; c < 3; c++) sum[c] = sum[c]! + (px.data[i + c]! * omega) / f.exposure;
+            }
+          }
+          // The Lambert sphere of the body's geometric albedo and mean colour (its far image's law).
+          const g = (phase! * Math.PI) / 180;
+          const phi = (Math.sin(g) + (Math.PI - g) * Math.cos(g)) / Math.PI;
+          const mc = earth.render.meanColor;
+          const lmc = 0.2126 * mc[0] + 0.7152 * mc[1] + 0.0722 * mc[2];
+          const sc = f.sun.color;
+          const k = earth.render.geometricAlbedo * f.sun.illuminance * (earth.radius / distance) ** 2 * phi;
+          const law = [0, 1, 2].map((c) => (k * sc[c]! * mc[c]!) / lmc);
+          return { sum, law };
+        },
+        [diameterPx, phaseDeg] as const,
+      );
+      const Y = (v: number[]): number => 0.2126 * v[0]! + 0.7152 * v[1]! + 0.0722 * v[2]!;
+      const ratio = Y(r.sum) / Y(r.law);
+      ratios.push(ratio);
+      rows.push(
+        `${diameterPx} px, phase ${phaseDeg} deg: geometry / Lambert law ${ratio.toFixed(3)}; chromaticity geometry R/G ${(r.sum[0]! / r.sum[1]!).toFixed(2)} B/G ${(r.sum[2]! / r.sum[1]!).toFixed(2)}, law R/G ${(r.law[0]! / r.law[1]!).toFixed(2)} B/G ${(r.law[2]! / r.law[1]!).toFixed(2)}`,
+      );
+      if (phaseDeg === 60) await saveScreenshot(page, 'sky', `integration-earth-geometry-${diameterPx}px-phase60`);
+    }
+  }
+  console.log(`the Earth of the real renderers (terrain, ocean, clouds, atmosphere) against its far image's law:\n${rows.join('\n')}`);
+  // A measurement for the hand-off (the critics ask for 15 %): here only that both describe the same body.
+  for (const q of ratios) {
+    expect(q).toBeGreaterThan(0.4);
+    expect(q).toBeLessThan(2.5);
+  }
+  await expectClean(page, pageLog, info);
+});
+
+for (const variant of ['moonless', 'moonlit'] as const) {
+  test(`the night side of a low orbit (${variant}): the Milky Way above the real limb at the automatic exposure`, async ({ page, pageLog }) => {
+    const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
+    requireFeatures(test, info, ['sky', 'atmosphere', 'terrain']);
     await installHelpers(page);
     await page.evaluate(() => window.__lab!.setPaused(true));
     // The Moon stays where the FakeSim has it; the sun is put deep in the vessel's shadow. Moonless: the sun 25 deg
@@ -458,17 +468,12 @@ for (const variant of ["moonless", "moonlit"] as const) {
       const s = window.__lab!.snapshot();
       const ves = s.vessels.find((x) => x.id === s.activeVesselId)!;
       const fr = h.frame();
-      const m = s.bodies.find((b) => b.id === "moon");
-      const md = m
-        ? h.helpers.norm(h.helpers.add(m.rRoot, ves.rRoot, -1))
-        : h.helpers.norm(h.helpers.cross(fr.up, { x: 0, y: 0, z: 1 }));
-      const horiz = h.helpers.norm(
-        h.helpers.add(md, fr.up, -h.helpers.dot(md, fr.up)),
-      );
+      const m = s.bodies.find((b) => b.id === 'moon');
+      const md = m ? h.helpers.norm(h.helpers.add(m.rRoot, ves.rRoot, -1)) : h.helpers.norm(h.helpers.cross(fr.up, { x: 0, y: 0, z: 1 }));
+      const horiz = h.helpers.norm(h.helpers.add(md, fr.up, -h.helpers.dot(md, fr.up)));
       const D = Math.PI / 180;
       const el = -25 * D;
-      const toward =
-        v === "moonless" ? horiz : { x: -horiz.x, y: -horiz.y, z: -horiz.z };
+      const toward = v === 'moonless' ? horiz : { x: -horiz.x, y: -horiz.y, z: -horiz.z };
       const sun = h.helpers.add(
         {
           x: toward.x * Math.cos(el),
@@ -480,21 +485,15 @@ for (const variant of ["moonless", "moonlit"] as const) {
       );
       // In the vessel's frame (VES axes): q rotates VES to ROOT.
       const q = ves.q;
-      window.__integration!.setSunInVesselFrame(
-        h.helpers.rotate({ x: -q.x, y: -q.y, z: -q.z, w: q.w }, sun),
-      );
+      window.__integration!.setSunInVesselFrame(h.helpers.rotate({ x: -q.x, y: -q.y, z: -q.z, w: q.w }, sun));
       return {
         elevation: (Math.asin(h.helpers.dot(md, fr.up)) * 180) / Math.PI,
         phase: (Math.acos(-h.helpers.dot(md, sun)) * 180) / Math.PI,
       };
     }, variant);
-    console.log(
-      `${variant}: the Moon ${moon.elevation.toFixed(1)} deg above the vessel's horizon, phase angle ${moon.phase.toFixed(0)} deg`,
-    );
-    if (variant === "moonlit" && moon.elevation < 2) {
-      console.log(
-        "the Moon is below the horizon in this scene: no moonlit view",
-      );
+    console.log(`${variant}: the Moon ${moon.elevation.toFixed(1)} deg above the vessel's horizon, phase angle ${moon.phase.toFixed(0)} deg`);
+    if (variant === 'moonlit' && moon.elevation < 2) {
+      console.log('the Moon is below the horizon in this scene: no moonlit view');
       return;
     }
     // The point of the galactic equator nearest the centre that stands 15 deg above the horizon, looked at from 40 m
@@ -536,9 +535,7 @@ for (const variant of ["moonless", "moonlit"] as const) {
         const score = Math.abs(el - 15) + 0.02 * Math.abs(t);
         if (score < best.score) best = { score, p, l: t, el };
       }
-      const horiz = h.helpers.norm(
-        h.helpers.add(best.p, fr.up, -h.helpers.dot(best.p, fr.up)),
-      );
+      const horiz = h.helpers.norm(h.helpers.add(best.p, fr.up, -h.helpers.dot(best.p, fr.up)));
       const side = h.helpers.norm(h.helpers.cross(horiz, fr.up));
       const el = 6 * D;
       h.look(
@@ -560,13 +557,7 @@ for (const variant of ["moonless", "moonlit"] as const) {
     await settle(page, 150);
     const ev = await settledExposure(page);
     await settle(page, 90);
-    const shot = await saveScreenshot(
-      page,
-      "sky",
-      variant === "moonless"
-        ? "integration-leo-night"
-        : "integration-leo-night-moonlit",
-    );
+    const shot = await saveScreenshot(page, 'sky', variant === 'moonless' ? 'integration-leo-night' : 'integration-leo-night-moonlit');
     const px = await page.evaluate(
       (d) =>
         (
@@ -580,21 +571,10 @@ for (const variant of ["moonless", "moonlit"] as const) {
     const windowMean = (cx: number, cy: number, r: number): number => {
       let s = 0;
       let n = 0;
-      for (
-        let y = Math.max(0, Math.round(cy - r));
-        y < Math.min(png.height, Math.round(cy + r));
-        y++
-      ) {
-        for (
-          let x = Math.max(0, Math.round(cx - r));
-          x < Math.min(png.width, Math.round(cx + r));
-          x++
-        ) {
+      for (let y = Math.max(0, Math.round(cy - r)); y < Math.min(png.height, Math.round(cy + r)); y++) {
+        for (let x = Math.max(0, Math.round(cx - r)); x < Math.min(png.width, Math.round(cx + r)); x++) {
           const i = (y * png.width + x) * 4;
-          s +=
-            0.2126 * png.data[i]! +
-            0.7152 * png.data[i + 1]! +
-            0.0722 * png.data[i + 2]!;
+          s += 0.2126 * png.data[i]! + 0.7152 * png.data[i + 1]! + 0.0722 * png.data[i + 2]!;
           n++;
         }
       }
@@ -602,10 +582,10 @@ for (const variant of ["moonless", "moonlit"] as const) {
     };
     const band = px ? windowMean(px.x, px.y, 30) : 0;
     console.log(
-      `LEO night (${variant}): EV100 ${ev.toFixed(2)}; galactic longitude ${target.longitude} deg at ${target.elevation.toFixed(1)} deg elevation, at pixel ${px ? `${px.x.toFixed(0)}, ${px.y.toFixed(0)}` : "-"}: mean ${band.toFixed(1)}/255 over 60 px`,
+      `LEO night (${variant}): EV100 ${ev.toFixed(2)}; galactic longitude ${target.longitude} deg at ${target.elevation.toFixed(1)} deg elevation, at pixel ${px ? `${px.x.toFixed(0)}, ${px.y.toFixed(0)}` : '-'}: mean ${band.toFixed(1)}/255 over 60 px`,
     );
     expect(px).not.toBeNull();
-    if (variant === "moonless") {
+    if (variant === 'moonless') {
       expect(ev).toBeLessThan(-4);
       expect(band).toBeGreaterThanOrEqual(12);
     }

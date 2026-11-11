@@ -138,10 +138,9 @@ interface FarBody {
   albedo: Vec3Tuple;
 }
 const smooth01 = (x: number): number => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const FLARE_TERMS = 1 + GHOSTS.length;
-/** FlareUniforms of FLARE_WGSL: count, sun, halo, rays, lines, the blades (2 vec4 each), the streaks (1 vec4 each), the ghosts (6 vec4 each). */
-const FLARE_HEAD_FLOATS = 20;
-const FLARE_GHOST_STRIDE = 24;
+/** FlareUniforms of FLARE_WGSL: count, sun, halo, rays, lines, sunUp, sunRt, the blades (2 vec4 each), the streaks (1 vec4 each), the ghosts (9 vec4 each). */
+const FLARE_HEAD_FLOATS = 28;
+const FLARE_GHOST_STRIDE = 36;
 const FLARE_FLOATS = FLARE_HEAD_FLOATS + BLADE_COUNT * 8 + STREAK_COUNT * 4 + GHOSTS.length * FLARE_GHOST_STRIDE;
 
 const luma = (c: Readonly<Vec3Tuple>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -202,6 +201,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   const flareData = new ArrayBuffer(FLARE_FLOATS * 4);
   let flareState: GPUBuffer;
   let flarePipeline: Tracked<GPURenderPipeline>;
+  let ghostPipeline: Tracked<GPURenderPipeline>;
   let visBindings: SceneBindings;
   let visSceneLayout: GPUBindGroupLayout;
   let visSceneGroup: GPUBindGroup | null = null;
@@ -481,14 +481,14 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       tanX,
       tanY,
     };
-    // Ghost bounds grow by 1.5 px: the jitter moves the profile on screen by up to half a pixel.
-    const [w, h] = frame.renderSize;
-    const mx = 3 / w;
-    const my = 3 / h;
+    // Ghost support cones and their bounds grow by 1.5 px: the jitter moves the profile on screen by up to half a pixel.
+    const margin = (1.5 * 2 * tanY) / frame.renderSize[1];
+    const mx = 3 / frame.renderSize[0];
+    const my = 3 / frame.renderSize[1];
     const u = new Uint32Array(flareData);
     const f = new Float32Array(flareData);
     f.fill(0);
-    u[0] = FLARE_TERMS;
+    u[0] = GHOSTS.length;
     const rs = frame.sun.angularRadius;
     const gf = ghostFrame(view, [sx, sy], rs);
     const lateral = ghostLateral(gf.offAxis);
@@ -497,6 +497,11 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     f.set([STARBURST.haloTint[0] * halo, STARBURST.haloTint[1] * halo, STARBURST.haloTint[2] * halo, 0], 8);
     f.set([STARBURST.rayKnee, STARBURST.rayEnergy * flareNorm.rays, STARBURST.rayDiscSigma * rs, STARBURST.streakEnergy * flareNorm.streaks], 12);
     f.set([STARBURST.fringeDepth, (2 * Math.PI) / STARBURST.fringePeriod, STARBURST.streakFan, 1 / STARBURST.fringeReach], 16);
+    // Azimuth basis about the sun (flare.ts tangentBasis): the camera's up projected perpendicular to the sun, and sun x up.
+    const sd = frame.sun.dirRoot;
+    const sunUp = v3.normalize(v3.sub(view.up, v3.scale(sd, v3.dot(view.up, sd))));
+    const sunRt = v3.cross(sd, sunUp);
+    f.set([sunUp.x, sunUp.y, sunUp.z, 0, sunRt.x, sunRt.y, sunRt.z, 0], 20);
     BLADES.forEach((b, i) => {
       const a = bladeAngle(i);
       // Blade i owns rays 2i (its first) and 2i + BLADE_COUNT.
@@ -508,7 +513,11 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       const gy = sy * g.k;
       const support = ghostSupport(g, rs);
       const blur = g.blur * rs;
-      const [x0, y0, x1, y1] = coneNdcBounds(view, ndcDirection(view, gx, gy), support);
+      // Centre direction and the image-plane basis at it (the CPU model's tangentBasis).
+      const c = ndcDirection(view, gx, gy);
+      const gu = v3.normalize(v3.sub(view.up, v3.scale(c, v3.dot(view.up, c))));
+      const gr = v3.cross(c, gu);
+      const [x0, y0, x1, y1] = coneNdcBounds(view, c, support);
       f.set(
         [
           ...[gx, gy, g.radius, g.flip],
@@ -516,6 +525,9 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
           ...[blur, g.round, g.rim, (g.gradient * lateral) / g.radius],
           ...[g.chroma * lateral, g.vignette * gf.offAxis * g.radius, GHOST_CLIP_RADIUS * g.radius + 2 * blur, support],
           ...[g.aspect, g.hollow, g.bite * g.radius, g.biteShift * g.radius],
+          ...[c.x, c.y, c.z, Math.cos(Math.min(Math.PI, support + margin))],
+          ...[gu.x, gu.y, gu.z, 0],
+          ...[gr.x, gr.y, gr.z, 0],
           ...[x0 - mx, y0 - my, x1 + mx, y1 + my],
         ],
         FLARE_HEAD_FLOATS + BLADE_COUNT * 8 + STREAK_COUNT * 4 + i * FLARE_GHOST_STRIDE,
@@ -641,17 +653,21 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
           { binding: 1, resource: { buffer: flareState } },
         ],
       });
-      flarePipeline = core.shaders.tracked(() => {
-        const module = core.shaders.createModule(`${id}.flare`, FLARE_WGSL(transBindings.wgsl));
-        return device.createRenderPipeline({
-          label: `${id}.flare`,
-          layout: device.createPipelineLayout({ bindGroupLayouts: [c.frameBindGroupLayout, transLayout, flareLayout] }),
-          vertex: { module, entryPoint: 'vs' },
-          fragment: { module, entryPoint: 'fs', targets: [{ format: RENDER_FORMATS.hdr, blend: PREMULTIPLIED }] },
-          primitive: { topology: 'triangle-strip' },
-          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+      // The starburst and the ghosts are two pipelines of one module: each fragment stage gets its own registers.
+      const flarePipelineOf = (part: 'Burst' | 'Ghost'): Tracked<GPURenderPipeline> =>
+        core.shaders.tracked(() => {
+          const module = core.shaders.createModule(`${id}.flare`, FLARE_WGSL(transBindings.wgsl));
+          return device.createRenderPipeline({
+            label: `${id}.flare${part}`,
+            layout: device.createPipelineLayout({ bindGroupLayouts: [c.frameBindGroupLayout, transLayout, flareLayout] }),
+            vertex: { module, entryPoint: `vs${part}` },
+            fragment: { module, entryPoint: `fs${part}`, targets: [{ format: RENDER_FORMATS.hdr, blend: PREMULTIPLIED }] },
+            primitive: { topology: 'triangle-strip' },
+            depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+          });
         });
-      });
+      flarePipeline = flarePipelineOf('Burst');
+      ghostPipeline = flarePipelineOf('Ghost');
       visBindings = createSceneBindings(c, 1, 0, ['sceneDepth', 'transparency', 'atmosphereLuts']);
       visSceneLayout = device.createBindGroupLayout({ label: `${id}.flareVisScene`, entries: visBindings.layoutEntries });
       visLayout = device.createBindGroupLayout({
@@ -677,7 +693,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
           compute: { module: core.shaders.createModule(`${id}.flareVis`, FLARE_VIS_CS(visBindings.wgsl)), entryPoint: 'main' },
         }),
       );
-      for (const p of [backgroundPipeline, starPipeline, impostorPipeline, flarePipeline]) p.get();
+      for (const p of [backgroundPipeline, starPipeline, impostorPipeline, flarePipeline, ghostPipeline]) p.get();
       visPipeline.get();
 
       probe = new EnvironmentProbe(c, id, blankCube);
@@ -741,7 +757,9 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       if (flareThisFrame) {
         pass.setPipeline(flarePipeline.get());
         pass.setBindGroup(2, flareGroup);
-        pass.draw(4, FLARE_TERMS);
+        pass.draw(4);
+        pass.setPipeline(ghostPipeline.get());
+        pass.draw(4, GHOSTS.length);
       }
     },
 
