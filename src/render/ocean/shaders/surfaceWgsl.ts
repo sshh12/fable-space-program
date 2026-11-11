@@ -54,6 +54,9 @@ fn oceanColumnDepthAt(posRel: vec3f) -> f32 {
   if (pu.w <= 0.0) { return OCEAN_DEEP; }
   let size = vec2f(textureDimensions(sceneDepthOpaqueTex));
   let px = vec2i(clamp(pu.xy * size, vec2f(0.0), size - 1.0));
+  // Only the seabed (terrain) tells the depth of the water; an object in the water does not.
+  let id = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
+  if (id != MATERIAL_TERRAIN && id != MATERIAL_REGOLITH) { return OCEAN_DEEP; }
   return oceanColumnDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0), length(posRel));
 }
 
@@ -160,11 +163,15 @@ struct FsOut {
   let ga = textureLoad(gbufferAlbedoTex, pix, 0);
   let sheet = gId == MATERIAL_WATER;
   let dOpaque = textureLoad(sceneDepthOpaqueTex, pix, 0);
+  // Water column above the opaque surface under the pixel (refraction path). Only the seabed (terrain) is a
+  // depth of WATER for shore foam and the TMA attenuation; an object in the water is not.
+  let seabed = gId == MATERIAL_TERRAIN || gId == MATERIAL_REGOLITH;
   var column = OCEAN_DEEP;
   if (!sheet) { column = oceanColumnDepth(uv, dOpaque, dist); }
+  let seaDepth = select(OCEAN_DEEP, column, seabed);
 
   // Resolved wave slopes: FFT cascades (anisotropic, footprint-filtered), swell, ripples.
-  let amp = oceanAmplitudes(in.plane0, column) * detail;
+  let amp = oceanAmplitudes(in.plane0, seaDepth) * detail;
   var sx = 0.0;
   var sy = 0.0;
   var jxx = 1.0;
@@ -225,9 +232,9 @@ struct FsOut {
   resolved += sw.variance * sq(detail);
 
   // Foam: Jacobian folding (whitecaps), shore (shallow water lapping with the swell), wake around hulls.
-  let dynDepth = column + in.height;
+  let dynDepth = seaDepth + in.height;
   var shore = 0.0;
-  if (column < OCEAN_DEEP * 0.5) { shore = (1.0 - smoothstep(0.0, oceanU.shore.x, dynDepth)) * (0.55 + 0.45 * shoreNoise) * detail; }
+  if (seaDepth < OCEAN_DEEP * 0.5) { shore = (1.0 - smoothstep(0.0, oceanU.shore.x, dynDepth)) * (0.55 + 0.45 * shoreNoise) * detail; }
   var wake = 0.0;
   if ((oceanU.counts.w & 1u) != 0u) {
     let wuv = (in.planeF - oceanU.wake.xy) * oceanU.wake.w + 0.5;
@@ -254,8 +261,7 @@ struct FsOut {
   s.altitude = oceanU.misc.x + in.height;
   s.roughness = clamp(resolved / oceanU.wind.y, 0.0, 1.0);
   // Imagery colour: the sheet's (band) or the seabed's (near field: the terrain draws it with its albedo layer).
-  let imageryLike = sheet || gId == MATERIAL_TERRAIN || gId == MATERIAL_REGOLITH;
-  s.albedo = select(vec3f(0.0), ga.rgb, imageryLike);
+  s.albedo = select(vec3f(0.0), ga.rgb, sheet || seabed);
   if (sheet) {
     // Between fadeStart and fadeEnd: exactly the deferred pixel's inputs (detail is zero here).
     s.param = gm.a;
@@ -263,7 +269,7 @@ struct FsOut {
     s.n = octDecode(textureLoad(gbufferNormalTex, pix, 0).xy);
   } else {
     // The G-buffer's encoded depth semantics: 8-bit encodeWaterDepth of the vertical depth.
-    s.param = round(encodeWaterDepth(max(column, 0.0)) * 255.0) / 255.0;
+    s.param = round(encodeWaterDepth(max(seaDepth, 0.0)) * 255.0) / 255.0;
   }
 
   // ---- lighting: the deferred pass's terms, through the same brdf_water

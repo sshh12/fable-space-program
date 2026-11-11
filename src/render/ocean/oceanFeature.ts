@@ -36,6 +36,15 @@ export const OCEAN_FEATURE_ID = 'ocean';
 /** Debug views of the near-field surface: one shading term each (lab diagnostics). */
 export const OCEAN_DEBUG_VIEWS = { none: 0, skyReflection: 1, body: 2, sunSpecular: 3, foam: 4, normal: 5, roughness: 6 } as const;
 const MAX_PATCHES = 4096;
+const DEPTH_READ_WGSL = /* wgsl */ `
+@group(0) @binding(0) var d: texture_depth_2d;
+@group(0) @binding(1) var<storage, read> px: array<vec2u>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= arrayLength(&px)) { return; }
+  out[id.x] = textureLoad(d, px[id.x], 0);
+}
+`;
 const GRID = PATCH_CELLS + 1;
 
 export interface OceanSurfaceSample {
@@ -60,6 +69,10 @@ export interface OceanDebug {
   setChopScale(scale: number): void;
   /** Show one shading term of the near field (OCEAN_DEBUG_VIEWS); 'none' = normal shading. */
   setDebugView(view: keyof typeof OCEAN_DEBUG_VIEWS): void;
+  /** Scale the refraction offset (1 = the data). Debug hook for the refraction check. */
+  setRefractionScale(scale: number): void;
+  /** Reversed-Z values of 'scene.depthOpaque' (this frame's opaque depth: the seabed inside fadeStart) at render pixels. */
+  readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;
   /** Heights of the displaced surface (what the vertex shader draws, unfiltered) at body-fixed unit directions. */
   sampleSurface(dirsFixed: readonly Vec3[]): Promise<{ ut: number; samples: OceanSurfaceSample[] }>;
   /** Spectrum statistics and frame state for tests and the hand-off. */
@@ -105,6 +118,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let forcedOff = false;
   let chopScale = 1;
   let debugView = 0;
+  let refractionScale = 1;
+  let depthReadLayout: GPUBindGroupLayout;
+  let depthReadPipeline: GPUComputePipeline;
   let brdfKey = '';
   let uniformBuffer: GPUBuffer;
   const uniformData = new ArrayBuffer(OCEAN_UNIFORM_BYTES);
@@ -186,6 +202,38 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     },
     setDebugView(view) {
       debugView = OCEAN_DEBUG_VIEWS[view];
+    },
+    setRefractionScale(scale) {
+      refractionScale = scale;
+    },
+    async readOpaqueDepth(pixels) {
+      const n = Math.max(pixels.length, 1);
+      const q = new Uint32Array(n * 2);
+      pixels.forEach(([x, y], i) => q.set([x, y], i * 2));
+      const qb = device.createBuffer({ size: q.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(qb, 0, q);
+      const out = device.createBuffer({ size: n * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+      const map = device.createBuffer({ size: n * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+      const group = device.createBindGroup({
+        layout: depthReadLayout,
+        entries: [
+          { binding: 0, resource: ctx.resources.get('scene.depthOpaque') },
+          { binding: 1, resource: { buffer: qb } },
+          { binding: 2, resource: { buffer: out } },
+        ],
+      });
+      const enc = device.createCommandEncoder({ label: 'ocean.depthRead' });
+      const pass = enc.beginComputePass();
+      pass.setPipeline(depthReadPipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(n / 64));
+      pass.end();
+      enc.copyBufferToBuffer(out, 0, map, 0, n * 4);
+      device.queue.submit([enc.finish()]);
+      await map.mapAsync(GPUMapMode.READ);
+      const r = Array.from(new Float32Array(map.getMappedRange().slice(0)));
+      for (const b of [qb, out, map]) b.destroy();
+      return r.slice(0, pixels.length);
     },
     async sampleSurface(dirsFixed) {
       const a = active;
@@ -364,8 +412,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       device.queue.writeBuffer(indexBuffer, 0, idx);
 
       scene = core.createSceneBindings(1, 0, ['shadow', 'atmosphereLuts', 'env', 'cloudShadow', 'sceneDepthOpaque', 'sceneColor', 'gbuffer']);
-      // The vertex stage reads the seabed depth (TMA attenuation, shore) from 'scene.depthOpaque'.
-      const entries = scene.layoutEntries.map((e) => (e.texture?.sampleType === 'depth' ? { ...e, visibility: e.visibility | GPUShaderStage.VERTEX } : e));
+      // The vertex stage reads the seabed depth (TMA attenuation) from 'scene.depthOpaque' and the G-buffer material.
+      const entries = scene.layoutEntries.map((e) => (e.texture ? { ...e, visibility: e.visibility | GPUShaderStage.VERTEX } : e));
       sceneLayout = device.createBindGroupLayout({ label: 'ocean.scene', entries });
       const F = GPUShaderStage.FRAGMENT;
       const V = GPUShaderStage.VERTEX;
@@ -413,6 +461,19 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           compute: { module: core.shaders.createModule('ocean.readback', READBACK_WGSL), entryPoint: 'readback' },
         }),
       );
+      depthReadLayout = device.createBindGroupLayout({
+        label: 'ocean.depthRead',
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'depth' } },
+          { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+          { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+        ],
+      });
+      depthReadPipeline = device.createComputePipeline({
+        label: 'ocean.depthRead',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [depthReadLayout] }),
+        compute: { module: c.shaders.createModule('ocean.depthRead', DEPTH_READ_WGSL), entryPoint: 'main' },
+      });
       // Build the FFT resources of every ocean body up front (no allocation or compile hitch at activation).
       for (const b of bodies.values()) ensureFft(b);
       const first = [...bodies.values()][0];
@@ -524,7 +585,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         foamGain: t.foamRampSigma,
         foamAlbedo: t.foamAlbedo,
         shoreFoamDepth: t.shoreFoamDepth,
-        refractionDistortion: t.refractionDistortion,
+        refractionDistortion: t.refractionDistortion * refractionScale,
         chromaticOffset: t.chromaticOffset,
         whitecaps: whitecapCoverage(t.windSpeed),
         swell: swellNow,

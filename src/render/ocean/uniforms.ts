@@ -12,6 +12,7 @@ export interface OceanVesselZone {
   /** Plane offset from the reference point, m. */
   x: number;
   y: number;
+  /** Radius of complete damping and the radius where the chop is back to full strength, m. */
   hullRadius: number;
   dampRadius: number;
   strength: number;

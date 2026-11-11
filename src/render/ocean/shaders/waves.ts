@@ -38,7 +38,7 @@ struct OceanCascade {
   stats: vec4f,   // x = slope variance, y = height RMS (m), z = band mean omega (rad/s, TMA), w = residual amplitude inside a vessel's damping zone
 }
 struct OceanVessel {
-  a: vec4f,       // xy = plane offset of the vessel from the reference point (m), z = hull radius (m), w = outer damping radius (m)
+  a: vec4f,       // xy = plane offset of the vessel from the reference point (m), z = radius of full damping (m), w = radius where the chop is back (m)
   b: vec4f,       // x = damping strength 0..1, y = waterline wobble bound (m), zw = 0
 }
 struct OceanUniforms {

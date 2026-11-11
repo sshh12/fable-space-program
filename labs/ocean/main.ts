@@ -10,7 +10,7 @@
  */
 import type { RenderFeature } from '@/core/contracts/render';
 import { createFakeSim } from '@/core/fakes/fakeSim';
-import { DEG, v3, type Vec3 } from '@/core/math';
+import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, type LabApp, type LabCameraSpec } from '@/render/core/lab';
 import { createOceanFeature, type OceanFeature } from '@/render/ocean';
 import { createLabSkyFeature, type LabSky } from './labSky';
@@ -65,6 +65,17 @@ export interface OceanLab {
   dirAt(east: number, north: number): Vec3;
   /** Physics water height above sea level there, at the snapshot time. */
   waterAt(east: number, north: number): number;
+  /**
+   * The unjittered view ray through render pixel (x, y) (centre) of the last frame, float64, and where it meets the
+   * sea-level sphere: eye distance (m), body-fixed unit direction of the hit, and the ray in ROOT axes.
+   */
+  seaHit(x: number, y: number): { dist: number; dirFixed: Vec3; ray: Vec3 } | null;
+  /** Height above sea level (m) of the point at eye distance t along the ray through pixel (x, y), float64. */
+  altitudeAlong(x: number, y: number, t: number): number;
+  /** Body-fixed unit direction of the point at eye distance t along the ray through pixel (x, y). */
+  dirAlong(x: number, y: number, t: number): Vec3;
+  /** Render pixel (x, y) of a body-fixed point (m from the body centre), or null behind the camera. */
+  project(posFixed: Vec3): { x: number; y: number; dist: number } | null;
 }
 
 declare global {
@@ -117,7 +128,14 @@ async function boot(): Promise<void> {
   });
 
   const ocean = holder.ocean;
+  const unset = (): never => {
+    throw new Error('ocean lab: not initialised');
+  };
   const lab: OceanLab = {
+    seaHit: unset,
+    altitudeAlong: unset,
+    dirAlong: unset,
+    project: unset,
     app,
     world,
     ocean,
@@ -150,6 +168,63 @@ async function boot(): Promise<void> {
     },
     dirAt: (east, north) => offsetDir(site, east, north, app.defs.bodies[site.bodyId]!.radius),
     waterAt: (east, north) => waterHeight(app.defs, site.bodyId, offsetDir(site, east, north, app.defs.bodies[site.bodyId]!.radius), app.snapshot().ut),
+  };
+  const rayOf = (x: number, y: number): Vec3 => {
+    const fc = app.renderer.frameContext!;
+    const cam = app.cameraState();
+    const [w, h] = fc.renderSize;
+    const ty = Math.tan(cam.fovY / 2);
+    const tx = ty * (w / h);
+    const ndcX = ((x + 0.5) / w) * 2 - 1;
+    const ndcY = 1 - ((y + 0.5) / h) * 2;
+    return v3.normalize(quat.rotate(cam.qViewToRoot, { x: ndcX * tx, y: ndcY * ty, z: -1 }));
+  };
+  const earthOf = (): { c: Vec3; q: ReturnType<typeof quat.identity>; R: number } => {
+    const b = app.snapshot().bodies.find((x) => x.id === site.bodyId)!;
+    const def = app.defs.bodies[site.bodyId]!;
+    return { c: b.rRoot, q: b.qFixedToRoot, R: def.radius + (def.ocean?.seaLevel ?? 0) };
+  };
+  lab.seaHit = (x, y) => {
+    const d = rayOf(x, y);
+    const e = earthOf();
+    const o = v3.sub(app.cameraState().positionRoot, e.c);
+    const b = v3.dot(o, d);
+    const r0 = v3.len(o);
+    const h = r0 - e.R;
+    const disc = b * b - (r0 * r0 - e.R * e.R);
+    if (disc < 0 || b > 0) return null;
+    // Cancellation-free near root: t = (r0^2 - R^2) / (-b + sqrt(disc)).
+    const t = (h * (r0 + e.R)) / (-b + Math.sqrt(disc));
+    const pFixed = quat.rotateInv(e.q, v3.addScaled(o, d, t));
+    return { dist: t, dirFixed: v3.normalize(pFixed), ray: d };
+  };
+  lab.altitudeAlong = (x, y, t) => {
+    const d = rayOf(x, y);
+    const e = earthOf();
+    const o = v3.sub(app.cameraState().positionRoot, e.c);
+    const r0 = v3.len(o);
+    const mu = v3.dot(o, d) / r0;
+    const r = Math.sqrt(r0 * r0 + 2 * r0 * mu * t + t * t);
+    // h0 + (2 r0 mu t + t^2) / (r + r0), stable for small heights.
+    return r0 - e.R + (2 * r0 * mu * t + t * t) / (r + r0);
+  };
+  lab.dirAlong = (x, y, t) => {
+    const d = rayOf(x, y);
+    const e = earthOf();
+    const o = v3.sub(app.cameraState().positionRoot, e.c);
+    return v3.normalize(quat.rotateInv(e.q, v3.addScaled(o, d, t)));
+  };
+  lab.project = (posFixed) => {
+    const fc = app.renderer.frameContext!;
+    const cam = app.cameraState();
+    const e = earthOf();
+    const rel = v3.sub(v3.add(e.c, quat.rotate(e.q, posFixed)), cam.positionRoot);
+    const v = quat.rotateInv(cam.qViewToRoot, rel);
+    if (v.z >= 0) return null;
+    const [w, h] = fc.renderSize;
+    const ty = Math.tan(cam.fovY / 2);
+    const tx = ty * (w / h);
+    return { x: ((v.x / -v.z / tx + 1) / 2) * w - 0.5, y: ((1 - v.y / -v.z / ty) / 2) * h - 0.5, dist: v3.len(rel) };
   };
   window.__ocean = lab;
   const keepCamera = query.has('body') || query.has('orbit') || query.has('vessel');
