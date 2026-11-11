@@ -4,19 +4,21 @@
  * wall thickness, windows and hatch are read from that section, and the openings are cut exactly there
  * (the cockpit interior frames the same openings from the same file).
  *
- * Models: 'body' (heat shield, back shell with real openings and their reveals, hatch door, RCS blisters,
- * parachute bay, markings), 'glass' (outer window panes: opaque dark glass facing outward only, drawn
- * without shadow so sunlight still enters the cabin), 'lamp' (exterior light lens).
+ * Models: 'body' (back shell of taped tiles with real openings, their close-out panels and reveals, hatch
+ * door, thruster fairings, forward bay, parachute bay, markings), 'shield' and 'shieldChar' (the ablative
+ * heat shield as built and after an entry; one of the two is drawn, with the entry glow as its emission),
+ * 'glass' (outer window panes: opaque dark glass facing outward only, drawn without shadow so sunlight still
+ * enters the cabin), 'lamp' (exterior light lens).
  *
  * 'capsule.apexCover': the jettisonable cover over the parachute bay.
  */
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import type { Vec3Tuple } from '@/core/math';
 import { decalSheetOf } from '../decals';
-import { MeshBuilder, add3, dot3, norm3, scale3, sub3, xf } from '../geom/builder';
-import { DEG, Profile, TAU, bolt, box, frustum, lathe, patchVertex, rod, zipLoops, boltCircle, type LatheRegion } from '../geom/prims';
+import { MeshBuilder, add3, dot3, lerp3, norm3, scale3, sub3, xf } from '../geom/builder';
+import { DEG, Profile, TAU, bolt, boltRing, box, extrude, frustum, lathe, patchVertex, rectPoly, rod, zipLoops, boltCircle, type LatheRegion } from '../geom/prims';
 import { materialDef, type MatId } from '../materials';
-import { buildModel, hash01, thruster } from './common';
+import { band, buildModel, hash01, seams, thruster } from './common';
 import type { PartModel } from './types';
 import { mouldLine, shellRadius, shieldContour } from './mouldline';
 import { Params, staticPose, type PartGenerator, type PartLight, type PoseInput, type PoseSink } from './types';
@@ -139,8 +141,12 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const P = new Params(params, where);
   const ml = mouldLine(defs, P.str('mouldLine'));
   const sheet = decalSheetOf(defs);
-  const shellMat = P.str('backShell', 'tile-white') as MatId;
+  const shellMat = P.str('backShell', 'shell-tape') as MatId;
+  const panelMat = P.str('closeOut', 'shell-panel') as MatId;
   const shieldMat = P.str('heatShield', 'ablator') as MatId;
+  const charMat = P.str('heatShieldCharred', 'ablator-char') as MatId;
+  /** Azimuth of the windward side in an entry (the side that scorches; +X of the heat shield's picture). */
+  const windPhi = P.num('windwardAzimuthDeg', 90) * DEG;
   const frameW = P.num('windowFrame', 0.022);
   const yB = ml.cone.yBottom;
   const yT = ml.cone.yTop;
@@ -176,22 +182,16 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   }
   const rcsDef = def.modules.find((m) => m.type === 'rcs');
 
-  /** Scorch weight of the back shell: streaks that start at the shoulder and thin out toward the apex. */
-  const scorch = (phi: number, y: number): number => {
-    const up = Math.max(0, 1 - (y - yB) / (yT - yB));
-    const streak = 0.45 + 0.55 * hash01(Math.floor((phi / TAU) * 90), 7);
-    return Math.min(1, 0.18 + 0.82 * Math.pow(up, 1.6) * streak);
-  };
-
   /**
-   * Char weight of the heat shield: even in the stagnation region, combed into radial streaks toward the
-   * shoulder where the flow ran outward (three widths of streak, fixed per azimuth).
+   * Scorch weight of the back shell after an entry: a band of soot round the shoulder, heavy on the windward
+   * side, thinning toward the apex in streaks that follow the flow up the cone. A smooth function of azimuth
+   * and height (the centimetre-scale break-up of soot is the mesh shader's).
    */
-  const shieldChar = (phi: number, r: number): number => {
-    const a = phi / TAU;
-    const streak = 0.5 * hash01(Math.floor(a * 18), 11) + 0.3 * hash01(Math.floor(a * 48), 12) + 0.2 * hash01(Math.floor(a * 144), 13);
-    const t = Math.min(1, r / rB);
-    return 1 - 0.62 * Math.pow(t, 1.4) * (1 - streak);
+  const scorch = (phi: number, y: number): number => {
+    const up = Math.min(1, Math.max(0, 1 - (y - yB) / (yT - yB)));
+    const wind = 0.5 + 0.5 * Math.cos(phi - windPhi);
+    const streak = 0.5 + 0.22 * Math.sin(7 * phi + 1.3) + 0.16 * Math.sin(19 * phi + 4.1 + 2.5 * up) + 0.12 * Math.sin(43 * phi + 2.2 - 4 * up);
+    return Math.min(1, (0.16 + 0.6 * wind) * (0.3 + 0.7 * Math.pow(up, 1.2)) * (0.45 + 1.1 * streak) + 0.55 * Math.pow(up, 7));
   };
 
   /** Azimuth grid shared by the heat shield and the back shell of one LOD (their rims meet vertex for vertex). */
@@ -225,16 +225,49 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     return phis.sort((a, c) => a - c);
   };
 
-  /** Heat shield: apex to the maximum diameter, on the azimuth grid of the back shell. */
-  const shield = (b: MeshBuilder): void => {
+  /**
+   * Heat shield: apex to the maximum diameter on the azimuth grid of the back shell (the rims meet vertex
+   * for vertex). The UVs are PLANAR: the shield's textures are one picture of the whole face across 1.04
+   * diameters (the `shield` recipe of the texture bake), with tangents along +X, so the blocks, the char
+   * streaks and the glow pattern lie where the picture has them and are not wound round the axis.
+   */
+  const shield = (b: MeshBuilder, mat: MatId): void => {
     const phis = b.lod === 2 ? farPhis() : azimuths(b).phis;
-    b.mat(shieldMat).masks(0, 1, 1, 0);
-    b.begin(false, 'capsule-skin');
+    const n = phis.length - 1;
     const sc = shieldContour(ml, b.pick(4, 2, 1));
-    const sp = Profile.at(sc[0]![0], sc[0]![1]);
-    sp.pts[0]!.hard = false;
-    for (let i = 1; i < sc.length; i++) sp.to(sc[i]![0], sc[i]![1]);
-    lathe(b, sp, { phis, join: true, mask: (_y, phi, r, m) => void (m.soot = shieldChar(phi, r)) });
+    const D = 2 * rB * 1.04;
+    b.mat(mat).masks(0, 1, 1, 0);
+    b.begin(false, 'capsule-skin');
+    const rings: number[][] = [];
+    for (let i = 0; i < sc.length; i++) {
+      const [r, y] = sc[i]!;
+      // Outward (downward) normal of the contour in the (r, y) half plane.
+      const a = sc[Math.max(0, i - 1)]!;
+      const c = sc[Math.min(sc.length - 1, i + 1)]!;
+      let nr = c[1] - a[1];
+      let ny = -(c[0] - a[0]);
+      const l = Math.hypot(nr, ny);
+      nr = r < 1e-7 ? 0 : nr / l;
+      ny = r < 1e-7 ? -1 : ny / l;
+      const row: number[] = [];
+      for (let j = 0; j <= n; j++) {
+        const s = Math.sin(phis[j]!);
+        const co = Math.cos(phis[j]!);
+        const N: Vec3Tuple = [nr * s, ny, nr * co];
+        const T = norm3(sub3([1, 0, 0], scale3(N, N[0])));
+        const x = r * s;
+        const z = r * co;
+        row.push(b.v(x, y, z, N[0], N[1], N[2], T[0], T[1], T[2], 0.5 + x / D, 0.5 + z / D));
+      }
+      rings.push(row);
+    }
+    for (let i = 0; i + 1 < rings.length; i++) {
+      const fan = sc[i]![0] < 1e-7;
+      for (let j = 0; j < n; j++) {
+        if (fan) b.tri(rings[i]![j]!, rings[i + 1]![j + 1]!, rings[i + 1]![j]!);
+        else b.quad(rings[i]![j]!, rings[i]![j + 1]!, rings[i + 1]![j + 1]!, rings[i + 1]![j]!);
+      }
+    }
     if (b.lod === 0) {
       // Compression pads where the shield sat on the adapter.
       b.mat('steel-dark').masks(0.2, 1, 1, 0);
@@ -312,8 +345,9 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         const rr = shellRadius(ml, o.C[1]);
         const i0 = Math.floor((pMin - margin / rr - seam) / dphi);
         const i1 = Math.ceil((pMax + margin / rr - seam) / dphi);
-        const j0 = Math.max(0, Math.floor(((yMin - margin / slope - yB) / (yT - yB)) * M));
-        const j1 = Math.min(M, Math.ceil(((yMax + margin / slope - yB) / (yT - yB)) * M));
+        // The close-out panel round an opening ends on tile course joints (whole courses, `sub` rows each).
+        const j0 = Math.max(0, Math.floor((((yMin - margin / slope - yB) / (yT - yB)) * M) / sub) * sub);
+        const j1 = Math.min(M, Math.ceil((((yMax + margin / slope - yB) / (yT - yB)) * M) / sub) * sub);
         if (i0 < 0 || i1 > N) throw new Error(`${where}: opening "${o.id}" crosses the grid seam`);
         for (let j = j0; j < j1; j++) {
           for (let i = i0; i < i1; i++) {
@@ -333,6 +367,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     }
 
     const reveals: { o: Opening; loop: LoopPoint[]; depth: number; mat: MatId }[] = [];
+    const fasteners: { p: Vec3Tuple; n: Vec3Tuple }[] = [];
     for (const blk of blocks) {
       const o = blk.o;
       // Border of the block, counter-clockwise seen from outside.
@@ -352,8 +387,10 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       for (let j = blk.j0 + 1; j <= blk.j1; j++) pushB(blk.i1, j);
       for (let i = blk.i1 - 1; i >= blk.i0; i--) pushB(i, blk.j1);
       for (let j = blk.j1 - 1; j > blk.j0; j--) pushB(blk.i0, j);
-      // Ring just outside the retainer frame, one vertex per border vertex along the same ray.
-      b.mat(shellMat);
+      // Close-out panel: a smooth taped panel from the block's edge to the retainer frame (the tile courses
+      // stop at the panel; no tile is cut on a slant). Its inner ring has one vertex per border vertex along
+      // the same ray.
+      b.mat(panelMat);
       const ring: number[] = border.map((_, n) => {
         const t = roundRectRay(ang[n]!, o.hw + frameW, o.hh + frameW, o.rho + frameW);
         return shellVertex(o, t * Math.cos(ang[n]!), t * Math.sin(ang[n]!));
@@ -363,9 +400,11 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         b.quad(border[n]!, border[m]!, ring[m]!, ring[n]!);
       }
       // Retainer frame between that ring and the opening edge.
-      const loop = roundRectLoop(o.hw, o.hh, o.rho, b.pick(0.03, 0.06, 0.1), b.pick(6, 3, 2));
+      // Fastener row just inside the panel's edge (built after the skin: a bolt is a component of its own).
+      if (b.lod === 0) for (let n = 0; n < border.length; n += 2) fasteners.push({ p: lerp3(b.position(border[n]!), b.position(ring[n]!), 0.2), n: o.N });
+      const loop = roundRectLoop(o.hw, o.hh, o.rho, b.pick(0.03, 0.06, 0.1), b.pick(10, 5, 2));
       const edge = loop.map((q) => shellVertex(o, q.a, q.b));
-      b.mat(o.hatch ? 'steel-dark' : 'alu-machined');
+      b.mat('anodised');
       zipLoops(
         b,
         ring,
@@ -376,8 +415,8 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       reveals.push({ o, loop, depth, mat: 'paint-black' });
     }
 
-    // ---- apex tunnel, its rim and the parachute bay deck
-    b.mat(shellMat).masks(0.05, 1, 0.2, 0);
+    // ---- forward bay (the apex tunnel: smooth gore panels), its rim and the parachute bay deck
+    b.mat(panelMat).masks(0.05, 1, 0.2, 0);
     const deckY = yTop - 0.13;
     const tp = Profile.at(ml.cone.radiusTop, yT)
       .to(rTun, yTop)
@@ -389,6 +428,9 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       .mat('blanket')
       .corner(0, deckY);
     lathe(b, tp, { phis, join: true });
+
+    b.mat('steel-bare').masks(0.2, 1, 0.3, 0);
+    for (const f of fasteners) b.at(xf.along(f.p, add3(f.p, f.n)), () => bolt(b, 0.004, 0.0018));
 
     // ---- reveals: the cut through the wall, down to the pressure shell
     for (const r of reveals) {
@@ -413,7 +455,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
 
       // ---- glass: windows get an outer pane; the hatch gets its door with a round window
       if (!o.hatch) {
-        if (glass) pane(glass, o, r.loop, 0.03);
+        if (glass) pane(glass, o, r.loop, 0.045);
       } else door(b, glass, o);
     }
   };
@@ -509,7 +551,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       const negS: Vec3Tuple = [-o.S[0], -o.S[1], -o.S[2]];
       /** Frame on the shell at (a, bb): +X tangential, +Y outward, +Z down the slope. */
       const on = (a: number, bb: number, lift = 0): ReturnType<typeof xf.fromAxes> => xf.fromAxes(projectToShell(ml, o, a, bb, lift), o.T, o.N, negS);
-      b.mat('steel-dark').masks(0.3, 1, 0.3, 0);
+      b.mat('anodised').masks(0.3, 1, 0.3, 0);
       for (const sb of [-0.26, 0.26]) b.at(on(o.hw + 0.004, sb, -0.004), () => box(b, 0.07, 0.03, 0.13, [0, 0.015, 0], 'hinge'));
       b.mat('alu-machined');
       b.at(on(-o.hw + 0.1, 0, 0), () => {
@@ -531,7 +573,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const width = height * sheet.aspect(name);
     const [u0, v0, u1, v1] = sheet.uv(name);
     const nu = Math.max(2, Math.round(width / 0.09));
-    b.mat('decal').masks(0, 1, 0, 0);
+    b.mat(sheet.foil(name) ? 'decal-foil' : 'decal').masks(0, 1, 0, 0);
     b.begin(false, 'placard');
     const rows: number[][] = [];
     for (let j = 0; j <= 2; j++) {
@@ -582,8 +624,13 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         const S: Vec3Tuple = [(-k * er[0]) / slope, 1 / slope, (-k * er[2]) / slope];
         const T: Vec3Tuple = [Math.cos(phi), 0, -Math.sin(phi)];
         const base: Vec3Tuple = [r * er[0], y, r * er[2]];
-        b.mat('steel-dark').masks(0.2, 1, 0.8, 0);
-        b.at(xf.fromAxes(add3(base, scale3(nrm, -0.01)), T, nrm, [-S[0], -S[1], -S[2]]), () => box(b, 0.3, 0.07, 0.3, [0, 0.035, 0], 'rcs-blister'));
+        // Thruster fairing: a chamfered taped doubler on the shell with a dark scarf plate the bells come through.
+        b.mat(panelMat).masks(0.1, 1, 0.9, 0);
+        b.at(xf.fromAxes(add3(base, scale3(nrm, -0.01)), T, nrm, [-S[0], -S[1], -S[2]]), () => {
+          extrude(b, rectPoly(0.17, 0.17, 0.06), 0, 0.05, false, 'rcs-blister');
+          b.mat('anodised');
+          extrude(b, rectPoly(0.125, 0.125, 0.045), 0.05, 0.066, false, 'rcs-blister');
+        });
         for (const d of c.dirs) {
           // Exit on the blister face the jet leaves through, lifted clear of the tiles.
           const dn = norm3(d);
@@ -595,7 +642,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     }
     if (b.lod === 0) {
       // ---- tape over the back-shell panel joints, handrails by the hatch, umbilical plate, compression pads
-      b.mat('blanket-silver').masks(0, 1, 0.5, 0);
+      b.mat('tape-silver').masks(0, 1, 0.5, 0);
       const joints = 8;
       for (let i = 0; i < joints; i++) {
         const phi = seam + ((i + 0.5) / joints) * TAU;
@@ -630,6 +677,28 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
           const p = projectToShell(ml, o, q.a, q.b);
           b.at(xf.along(p, add3(p, o.N)), () => bolt(b, 0.0045, 0.0025));
         }
+      }
+    }
+    // ---- shoulder seal between the heat shield and the back shell, and the forward bay's joints
+    {
+      const segs = b.pick(144, 72, 24);
+      const rs = (y: number, lift: number): number => shellRadius(ml, y) + lift;
+      b.mat('anodised').masks(0.15, 0.9, 1, 0);
+      const seal = Profile.at(rs(yB + 0.012, 0), yB + 0.012)
+        .to(rs(yB + 0.017, 0.005), yB + 0.017)
+        .to(rs(yB + 0.05, 0.005), yB + 0.05)
+        .to(rs(yB + 0.055, 0), yB + 0.055);
+      seal.pts[0]!.hard = false;
+      lathe(b, seal, { segs, closed: false, tag: 'band' });
+      band(b, rTun, yT + 0.014, 0.028, 0.004, segs);
+      band(b, rTun, yTop - 0.03, 0.024, 0.004, segs);
+      if (b.lod === 0) {
+        // Gore joints of the forward bay cover panels, taped, and the fasteners of its two rings.
+        b.mat('tape-silver').masks(0, 1, 0.3, 0);
+        seams(b, rTun, yT + 0.04, yTop - 0.05, 8, 0.03, 0.0015, seam);
+        b.mat('steel-bare').masks(0.2, 1, 0.3, 0);
+        boltRing(b, rTun, yT + 0.06, 32, 0.005, 0.003);
+        boltRing(b, rTun, yTop - 0.075, 32, 0.005, 0.003);
       }
     }
     // ---- markings
@@ -672,7 +741,8 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const glass = buildFrom(`${def.id}.glass`, glassLods.map((g) => g.build()));
   // The heat shield is a model of its own: it is drawn at the temperature of the ablating surface, which the
   // structure behind it never reaches.
-  const shieldModel = buildModel(`${def.id}.shield`, shield);
+  const shieldModel = buildModel(`${def.id}.shield`, (b) => shield(b, shieldMat));
+  const shieldCharModel = buildModel(`${def.id}.shieldChar`, (b) => shield(b, charMat));
   const lamp = buildModel(`${def.id}.lamp`, (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
     b.at(xf.along(lampPos.p, add3(lampPos.p, lampPos.n)), () => {
@@ -689,18 +759,57 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const pose = (input: PoseInput, emit: PoseSink): void => {
     emit('body', null, null);
     const hs = input.modules[shieldIndex];
-    emit('shield', null, null, { temperature: hs && hs.type === 'heatShield' ? hs.surfaceTemp : 0 });
+    const state = hs && hs.type === 'heatShield' ? hs : null;
+    // The shield as built, veiled by the first soot of an entry; once a fifth of the char depth is reached the
+    // charred face (the swap happens behind the glow of peak heating). The glow is the shield's emissive map
+    // times the luminance of its hottest point: the instance stays `cold` (no uniform black-body term).
+    const char = state ? shieldCharOf(state.ablatorFraction) : 0;
+    const glow = shieldGlowLuminance(state ? state.surfaceTemp : 0);
+    if (char > CHAR_SWAP) emit('shieldChar', null, null, { cold: true, emissive: glow, soot: 0 });
+    else emit('shield', null, null, { cold: true, emissive: glow, soot: char / CHAR_SWAP * 0.35 });
     emit('glass', null, null, { castShadow: false, cold: true });
     emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
-    if (!lightDef || lightDef.type !== 'light' || input.anim.lamp <= 0) return [];
-    const cd = lampCandela(lightDef.params);
-    const p = add3(lampPos.p, scale3(lampPos.n, 0.6));
-    return [{ pos: p, intensity: [cd, cd * 0.97, cd * 0.9], range: 40 }];
+    const out: PartLight[] = [];
+    if (lightDef && lightDef.type === 'light' && input.anim.lamp > 0) {
+      const cd = lampCandela(lightDef.params) * input.anim.lamp;
+      // In front of the lens, with a reach that ends well short of the far side of the hull.
+      out.push({ pos: add3(lampPos.p, scale3(lampPos.n, 1.2)), intensity: [cd, cd * 0.97, cd * 0.9], range: 14 });
+    }
+    // The glowing shock layer spills round the shoulder onto the back shell: three lights just outside the rim.
+    const hs = input.modules[shieldIndex];
+    const glow = shieldGlowLuminance(hs && hs.type === 'heatShield' ? hs.surfaceTemp : 0);
+    if (glow > 0) {
+      const cd = glow * Math.PI * rB * rB * 0.012;
+      for (let i = 0; i < 3; i++) {
+        const phi = windPhi + (i - 1) * 2.1;
+        const w = i === 1 ? 1 : 0.55;
+        out.push({ pos: [(rB + 0.45) * Math.sin(phi), yB - 0.1, (rB + 0.45) * Math.cos(phi)], intensity: [cd * w, cd * w * 0.42, cd * w * 0.1], range: 5.5 });
+      }
+    }
+    return out;
   };
-  return { models: { body, shield: shieldModel, glass, lamp }, pose, lights };
+  return { models: { body, shield: shieldModel, shieldChar: shieldCharModel, glass, lamp }, pose, lights };
 };
+
+/** Char depth 0..1 of an ablative shield from the fraction of its ablator that is left (the first 30 % char it fully). */
+export const shieldCharOf = (ablatorFraction: number): number => Math.max(0, Math.min(1, (1 - ablatorFraction) / 0.3));
+
+/** Char depth beyond which the charred face of the shield is drawn. */
+const CHAR_SWAP = 0.2;
+
+/**
+ * Luminance (cd/m^2) of the hottest point of an ablating shield at a surface temperature (K); the shield's
+ * emissive map scales it down across the face. Deliberately compressed against a black body (which is ten
+ * to a thousand times brighter than sunlit hardware at these temperatures and photographs as a flat white
+ * disc): about sunlit white at 1900 K, where the face reads orange, and eight times that at 3100 K, where
+ * the stagnation region burns out to white-yellow and the lee side stays orange.
+ */
+export function shieldGlowLuminance(T: number): number {
+  if (!(T > 750)) return 0;
+  return 2.6e4 * Math.pow((T - 600) / 1300, 3.2);
+}
 
 /** Luminous intensity (cd) of a lamp from its `lumens` and `beamDeg` parameters. */
 export function lampCandela(p: Record<string, number>): number {
@@ -724,7 +833,7 @@ export const capsuleApexCover: PartGenerator = ({ def, params }) => {
   const R = def.bounds.radius;
   const H = def.bounds.yMax;
   const seat = (def.attachNodes.find((n) => n.id === 'bottom')?.size ?? 2 * R) / 2;
-  const skinMat = P.str('skin', 'tile-white') as MatId;
+  const skinMat = P.str('skin', 'paint-white') as MatId;
   const body = buildModel(`${def.id}.body`, (b) => {
     b.mat(skinMat).masks(0.1, 1, 0.5, 0);
     const n = b.pick(8, 4, 2);

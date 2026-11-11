@@ -31,6 +31,12 @@ export interface DecalSpec {
   bg: string;
   /** Further colours of a 'flag' or 'roundel' (field, band, ground, emblem, outline), in the style's own order. */
   colors?: string[];
+  /**
+   * The marking is painted on bare metal film (a capsule's taped back shell), not on paint: `bg` is the film's
+   * colour, and the bake writes the film as metal and the ink as paint into the atlas's ORM map
+   * (decals_orm.png, material 'decal-foil').
+   */
+  foil?: boolean;
 }
 
 export interface DecalSheetDef {
@@ -57,6 +63,8 @@ export interface DecalSheet {
   uv(name: string): [number, number, number, number];
   /** Width / height of a decal. */
   aspect(name: string): number;
+  /** Is the decal painted on metal film (drawn with the 'decal-foil' material)? */
+  foil(name: string): boolean;
 }
 
 /** Shelf packing in list order (deterministic: the bake tool and the meshes share it). */
@@ -103,6 +111,7 @@ export function createDecalSheet(def: DecalSheetDef): DecalSheet {
       const r = rect(name);
       return r.w / r.h;
     },
+    foil: (name) => def.decals.find((d) => d.name === name)?.foil === true,
   };
 }
 

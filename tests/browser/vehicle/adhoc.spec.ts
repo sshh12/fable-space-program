@@ -22,14 +22,14 @@ test('ad-hoc vehicle lab screenshots', async ({ page }) => {
   test.setTimeout(Math.max(2, entries.length) * 45_000);
   for (const entry of entries) {
     const [name, query] = entry.split('|') as [string, string];
-    await page.goto(appUrl(`${LAB}?hud=0&${query}`));
+    await page.goto(appUrl(`${LAB}?hud=0&governor=off&${query}`));
     await page.waitForFunction(() => window.__veh !== undefined || (window.__test?.errors.length ?? 0) > 0, undefined, { timeout: 120_000 });
     const errors = await page.evaluate(() => window.__test!.errors);
     if (errors.length > 0) console.log(`[${name}] page errors:\n  ${errors.slice(0, 12).join('\n  ')}`);
     const script = process.env.VEH_EVAL;
     if (script) await page.evaluate(script);
-    await page.evaluate(() => window.__test!.setDeterministic(true));
-    await waitIdle(page, Number(process.env.VEH_FRAMES ?? 40));
+    // Live, like the acceptance views: jitter and noise run and the temporal anti-aliasing converges.
+    await waitIdle(page, Number(process.env.VEH_FRAMES ?? 72));
     const s = await saveScreenshot(page, 'vehicle', `adhoc-${name}`);
     const stats = await page.evaluate(() => ({ ...window.__veh!.vehicle.stats, ev: window.__lab!.renderer.exposureInfo().ev100 }));
     console.log(`[${name}] ${s.file} mean ${s.stats.meanLuma.toFixed(1)} ${JSON.stringify(stats)}`);

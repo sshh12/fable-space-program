@@ -12,6 +12,9 @@
  *  - Every vessel instance is a MOVING shadow caster: it is drawn only into cascades that are re-rendered
  *    every frame (ARCHITECTURE 10.1). `stats.staggeredSubmissions` counts the staggered cascades into which
  *    a shadow draw of this feature put any triangle (measured on the mesh batches), and stays 0.
+ *  - Every LOD of a model is a single-LOD model of its own and the feature picks which to draw (lod.ts):
+ *    by projected size with hysteresis, and a switch is a quarter-second cross-fade in time, so no part is
+ *    left half-dithered because of where the camera happens to stand.
  *  - Shadows are cast by coarser copies of the models: a shadow map cannot show what LOD 0 adds (fasteners,
  *    millimetre steps), so the cascades with fine texels draw every part's LOD 1 and the coarse ones its
  *    LOD 2, whatever LOD the camera sees. That keeps the shadow passes to a fraction of the stack's triangles.
@@ -22,6 +25,7 @@ import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } fr
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
+import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import { generatePart } from './parts';
 import { NEUTRAL_ANIM, type PartAnim, type PartVisual, type PoseInput, type PoseOpts } from './parts/types';
 
@@ -65,8 +69,11 @@ export interface VesselVisualFeature extends RenderFeature {
 /** The models of one part visual: what the camera sees, and the two shadow casters of each model. */
 interface PartModels {
   visual: PartVisual;
-  handles: Record<string, ModelHandle>;
-  /** LOD 1 and LOD 2 of each model as single-LOD models (drawn only into shadow cascades). */
+  /** Every LOD of each model as a single-LOD model (index = LOD). */
+  lods: Record<string, ModelHandle[]>;
+  /** Switch sizes of each model (projected diameter, px). */
+  lodPixels: Record<string, readonly number[]>;
+  /** The models drawn into the fine and into the coarse shadow cascades: LOD 1 and the last LOD. */
   fineCasters: Record<string, ModelHandle>;
   coarseCasters: Record<string, ModelHandle>;
 }
@@ -82,8 +89,9 @@ interface PartEntry {
   def: PartDef;
   models: PartModels;
   visual: PartVisual;
-  handles: Record<string, ModelHandle>;
   anim: PartAnim;
+  /** LOD state of each item the pose emits, in emit order. */
+  lodStates: LodState[];
   /** Anim states of the engines mounted on this part (their soot stains it). */
   engineAnims: PartAnim[];
   panel: number | null;
@@ -176,17 +184,19 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       return null;
     }
     const visual = generatePart(defs, def);
-    const handles: Record<string, ModelHandle> = {};
+    const lods: Record<string, ModelHandle[]> = {};
+    const lodPixels: Record<string, readonly number[]> = {};
     const fineCasters: Record<string, ModelHandle> = {};
     const coarseCasters: Record<string, ModelHandle> = {};
     const meshes = coreOf(ctx).meshes;
     for (const [name, model] of Object.entries(visual.models)) {
-      handles[name] = meshes.createModel(model, model.lodPixels ? { lodPixels: model.lodPixels } : {});
-      const last = model.lods.length - 1;
-      fineCasters[name] = meshes.createModel({ name: `${model.name}.caster1`, lods: [model.lods[Math.min(1, last)]!], materials: model.materials });
-      coarseCasters[name] = meshes.createModel({ name: `${model.name}.caster2`, lods: [model.lods[last]!], materials: model.materials });
+      const list = model.lods.map((mesh, i) => meshes.createModel({ name: `${model.name}.lod${i}`, lods: [mesh], materials: model.materials }));
+      lods[name] = list;
+      lodPixels[name] = model.lodPixels ?? DEFAULT_LOD_PIXELS;
+      fineCasters[name] = list[Math.min(1, list.length - 1)]!;
+      coarseCasters[name] = list[list.length - 1]!;
     }
-    const entry: PartModels = { visual, handles, fineCasters, coarseCasters };
+    const entry: PartModels = { visual, lods, lodPixels, fineCasters, coarseCasters };
     visuals.set(defId, entry);
     return entry;
   };
@@ -234,7 +244,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const anim = animOf(root, part.instanceId);
       const engineAnims = (children.get(base) ?? []).map((id) => animOf(root, id));
       const panel = match ? Number(match[1]) : null;
-      entries.push({ instanceId: part.instanceId, def, models: v, visual: v.visual, handles: v.handles, anim, engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
+      entries.push({ instanceId: part.instanceId, def, models: v, visual: v.visual, anim, lodStates: [], engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
     }
     return { key: planKey(vessel.parts), entries };
   };
@@ -309,6 +319,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
 
   const tmpPos: Vec3 = v3.zero();
   const lightBudget = { n: 0 };
+  const lodSelector = new LodSelector();
 
   const drawVessel = (frame: FrameContext, vessel: VesselSnapshot, plan: VesselPlan, parent: { originRelCam: Vec3; q: Quat; prevOriginRelCam: Vec3; prevQ: Quat }, fade: number, dt: number, live: boolean): void => {
     const showGlass = exteriorGlass && frame.camera.insideVesselId !== vessel.id;
@@ -326,12 +337,14 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const localPos = part.localPos;
       const localRot = part.localRot;
       const identityRot = localRot.w === 1 || localRot.w === -1;
+      let item = 0;
       e.visual.pose(e.input, (model, pos, rot, opts?: PoseOpts) => {
+        const state = (e.lodStates[item++] ??= newLodState());
         if (model === 'glass' && !showGlass) return;
         const itemFade = opts?.fade === undefined ? fade : fade * opts.fade;
         if (itemFade <= 0.01) return;
-        const handle = e.handles[model];
-        if (!handle) throw new Error(`vehicle: part "${e.def.id}" posed an unknown model "${model}"`);
+        const lods = e.models.lods[model];
+        if (!lods) throw new Error(`vehicle: part "${e.def.id}" posed an unknown model "${model}"`);
         let p: Vec3 = localPos;
         if (pos) {
           tmpPos.x = pos[0];
@@ -359,7 +372,15 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         if (opts?.scale) inst.scale = opts.scale;
         // The camera's copy casts nothing; the same instance is added to the two caster batches.
         inst.castShadow = false;
-        batch.add(handle, inst);
+        const h0 = lods[0]!;
+        const scale = opts?.scale ? Math.max(Math.abs(opts.scale[0]), Math.abs(opts.scale[1]), Math.abs(opts.scale[2])) : 1;
+        const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius, scale), e.models.lodPixels[model]!, lods.length);
+        batch.add(lods[draw.solid]!, inst);
+        if (draw.fading >= 0 && draw.fade > 0.01) {
+          inst.fade = itemFade * draw.fade;
+          batch.add(lods[draw.fading]!, inst);
+          inst.fade = itemFade;
+        }
         if (opts?.castShadow !== false) {
           inst.castShadow = true;
           fineBatch.add(e.models.fineCasters[model]!, inst);
@@ -367,11 +388,11 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         }
         stats.instances++;
       });
-      if (live && a.lamp > 0.01 && e.visual.lights && lightBudget.n < maxLights) {
+      if (live && e.visual.lights && lightBudget.n < maxLights) {
         for (const l of e.visual.lights(e.input)) {
           if (lightBudget.n >= maxLights) break;
           const pVes = v3.add(localPos, quat.rotate(localRot, v3.fromTuple(l.pos)));
-          frame.lights.push({ kind: 'point', posRelCam: v3.add(parent.originRelCam, quat.rotate(parent.q, pVes)), intensity: [l.intensity[0] * a.lamp, l.intensity[1] * a.lamp, l.intensity[2] * a.lamp], range: l.range });
+          frame.lights.push({ kind: 'point', posRelCam: v3.add(parent.originRelCam, quat.rotate(parent.q, pVes)), intensity: l.intensity, range: l.range });
           lightBudget.n++;
         }
       }
@@ -415,6 +436,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const snapshot = frame.snapshot;
       const dt = Number.isFinite(lastUt) ? Math.max(0, Math.min(3600, snapshot.ut - lastUt)) : 0;
       lastUt = snapshot.ut;
+      lodSelector.begin(frame);
       batch.begin(frame);
       fineBatch.begin(frame);
       coarseBatch.begin(frame);
@@ -487,7 +509,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       batch.destroy();
       fineBatch.destroy();
       coarseBatch.destroy();
-      for (const v of visuals.values()) for (const h of [...Object.values(v.handles), ...Object.values(v.fineCasters), ...Object.values(v.coarseCasters)]) h.destroy();
+      for (const v of visuals.values()) for (const list of Object.values(v.lods)) for (const h of list) h.destroy();
       visuals.clear();
       plans.clear();
     },

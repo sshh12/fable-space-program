@@ -1,5 +1,6 @@
 /**
- * Bakes the decal atlas public/assets/vehicle/decals.png from the decal sheet of the definition library
+ * Bakes the decal atlas public/assets/vehicle/decals.png (and its ORM map decals_orm.png, which marks the
+ * bare metal film round markings painted on foil) from the decal sheet of the definition library
  * (section DECAL_SECTION of src/render/vehicle/decals.ts, i.e. data/defs/visuals/parts/livery.json): the
  * list of markings, their texts and colours are data; this tool only knows how each STYLE is drawn.
  *
@@ -18,10 +19,12 @@ import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
 import { decalSheetOf, type DecalRect, type DecalSpec } from '../../src/render/vehicle/decals';
 
-const out = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public', 'assets', 'vehicle', 'decals.png');
+const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public', 'assets', 'vehicle');
+const out = path.join(outDir, 'decals.png');
+const outOrm = path.join(outDir, 'decals_orm.png');
 
 /** Runs in the page: draws every decal into the canvas. */
-function paint(args: { size: number; decals: DecalSpec[]; layout: Record<string, DecalRect> }): string {
+function paint(args: { size: number; decals: DecalSpec[]; layout: Record<string, DecalRect> }): { atlas: string; orm: string } {
   const { size, decals, layout } = args;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -207,7 +210,40 @@ function paint(args: { size: number; decals: DecalSpec[]; layout: Record<string,
     }
     g.restore();
   }
-  return canvas.toDataURL('image/png');
+  // ORM map (R = occlusion, G = roughness factor, B = metallic factor). Paint everywhere, except the bare
+  // film round the ink of a marking that is painted on foil: there the metallic factor is 1, and it falls
+  // to 0 across the anti-aliased edge of the ink.
+  const ormCanvas = document.createElement('canvas');
+  ormCanvas.width = size;
+  ormCanvas.height = size;
+  const o = ormCanvas.getContext('2d')!;
+  o.fillStyle = '#ffff00';
+  o.fillRect(0, 0, size, size);
+  const channel = (css: string): [number, number, number] => {
+    g.fillStyle = css;
+    const v = g.fillStyle as string;
+    return [parseInt(v.slice(1, 3), 16), parseInt(v.slice(3, 5), 16), parseInt(v.slice(5, 7), 16)];
+  };
+  for (const d of decals) {
+    if (!d.foil) continue;
+    const r = layout[d.name]!;
+    const x0 = Math.max(0, r.x - 6);
+    const y0 = Math.max(0, r.y - 6);
+    const w = Math.min(size - x0, r.w + 12);
+    const h = Math.min(size - y0, r.h + 12);
+    const src = g.getImageData(x0, y0, w, h);
+    const dst = o.createImageData(w, h);
+    const bg = channel(d.bg);
+    for (let i = 0; i < w * h; i++) {
+      const ink = Math.min(1, Math.max(Math.abs(src.data[i * 4]! - bg[0]), Math.abs(src.data[i * 4 + 1]! - bg[1]), Math.abs(src.data[i * 4 + 2]! - bg[2])) / 48);
+      dst.data[i * 4] = 255;
+      dst.data[i * 4 + 1] = 255;
+      dst.data[i * 4 + 2] = Math.round(255 * (1 - ink));
+      dst.data[i * 4 + 3] = 255;
+    }
+    o.putImageData(dst, x0, y0);
+  }
+  return { atlas: canvas.toDataURL('image/png'), orm: ormCanvas.toDataURL('image/png') };
 }
 
 async function main(): Promise<void> {
@@ -219,11 +255,13 @@ async function main(): Promise<void> {
     // tsx keeps function names with a helper that does not exist in the page.
     await page.addScriptTag({ content: 'globalThis.__name = (f) => f;' });
     await page.evaluate(() => document.fonts.ready);
-    const url = await page.evaluate(paint, { size: sheet.def.size, decals: sheet.def.decals, layout: { ...sheet.layout } });
-    const png = Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
-    fs.mkdirSync(path.dirname(out), { recursive: true });
-    fs.writeFileSync(out, png);
-    console.log(`decals.png ${sheet.def.size}x${sheet.def.size} ${(png.length / 1024).toFixed(0)} KiB, ${sheet.def.decals.length} decals -> ${out}`);
+    const urls = await page.evaluate(paint, { size: sheet.def.size, decals: sheet.def.decals, layout: { ...sheet.layout } });
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const [file, url] of [[out, urls.atlas], [outOrm, urls.orm]] as const) {
+      const png = Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
+      fs.writeFileSync(file, png);
+      console.log(`${path.basename(file)} ${sheet.def.size}x${sheet.def.size} ${(png.length / 1024).toFixed(0)} KiB, ${sheet.def.decals.length} decals -> ${file}`);
+    }
   } finally {
     await browser.close();
   }

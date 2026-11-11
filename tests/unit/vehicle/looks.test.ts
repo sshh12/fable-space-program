@@ -210,7 +210,11 @@ describe('soot, frost and damage', () => {
       const n = legsDef.legs.length;
       const intact = posed(v, def.id, withBroken(new Array<boolean>(n).fill(false)));
       const broken = posed(v, def.id, withBroken(legsDef.legs.map((_, i) => i === 0)));
-      expect(broken.length).toBe(intact.length);
+      // A broken leg shows one thing more: the crushed core spilling from the mouth of its upper tube.
+      expect(broken.filter((x) => x.model === 'crushed').length).toBe(1);
+      expect(intact.some((x) => x.model === 'crushed')).toBe(false);
+      const rest = broken.filter((x) => x.model !== 'crushed');
+      expect(rest.length).toBe(intact.length);
       // Items are emitted leg by leg: body, then per leg upper, lower, pad and the brace pairs.
       const perLeg = (intact.length - 1) / n;
       expect(Number.isInteger(perLeg)).toBe(true);
@@ -218,19 +222,21 @@ describe('soot, frost and damage', () => {
       for (let i = 1; i < intact.length; i++) {
         const leg = Math.floor((i - 1) / perLeg);
         if (leg === 0) continue;
-        expect(differs(intact[i]!, broken[i]!), `leg ${leg} item ${intact[i]!.model} moved`).toBe(false);
+        expect(differs(intact[i]!, rest[i]!), `leg ${leg} item ${intact[i]!.model} moved`).toBe(false);
       }
-      const moved = intact.slice(1, 1 + perLeg).filter((it, k) => differs(it, broken[1 + k]!)).map((it) => it.model);
+      const moved = intact.slice(1, 1 + perLeg).filter((it, k) => differs(it, rest[1 + k]!)).map((it) => it.model);
       expect(moved).toEqual(expect.arrayContaining(['upper', 'lower', 'pad']));
       // Geometry of the break.
       const lp = legPose(legsDef.legs[0]!, 1, 0);
       const br = brokenLegPose(lp, 2.7, 2.25);
       const cosKnee = br.upperDir[0] * br.lowerDir[0] + br.upperDir[1] * br.lowerDir[1] + br.upperDir[2] * br.lowerDir[2];
-      expect(Math.acos(cosKnee) * (180 / Math.PI)).toBeGreaterThan(25);
+      // The break reads at a glance: a knee of more than 35 degrees, the tube swung up by more than 25.
+      expect(Math.acos(cosKnee) * (180 / Math.PI)).toBeGreaterThan(35);
       const cosSplay = br.upperDir[0] * lp.dir[0] + br.upperDir[1] * lp.dir[1] + br.upperDir[2] * lp.dir[2];
-      expect(Math.acos(cosSplay) * (180 / Math.PI)).toBeGreaterThan(10);
-      expect(Math.abs(br.foot[1] - lp.foot[1])).toBeLessThan(0.5);
-      expect(Math.hypot(br.foot[0] - lp.foot[0], br.foot[2] - lp.foot[2])).toBeLessThan(1.2);
+      expect(Math.acos(cosSplay) * (180 / Math.PI)).toBeGreaterThan(25);
+      // The piston still stands at the height the foot stood at, within the reach of the leg.
+      expect(Math.abs(br.foot[1] - lp.foot[1])).toBeLessThan(0.25);
+      expect(Math.hypot(br.foot[0] - lp.foot[0], br.foot[2] - lp.foot[2])).toBeLessThan(1.6);
       checked++;
     }
     expect(checked).toBeGreaterThanOrEqual(1);

@@ -12,6 +12,7 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { enuAt } from '@/render/core/lab';
+import { legPose } from '@/render/vehicle';
 import { assembleVessel, setModuleStateForLab, splitForStage, vesselPartSnapshots, type Vessel } from '@/sim/vessel/public';
 
 export type LabPlace =
@@ -217,7 +218,19 @@ export class VehicleLabSim implements Sim {
       const def = this.defs.parts[p.def]!;
       const legs = p.modules.find((m) => m.type === 'legs');
       let low = def.bounds.yMin;
-      if (legs && legs.type === 'legs' && legs.deploy < 0.5) low = 0;
+      if (legs && legs.type === 'legs') {
+        // A vessel on legs stands on its foot pads: the contact point of every leg for its deployment and
+        // stroke, one contact radius below the foot joint (where the pad's underside is drawn).
+        const legsDef = def.modules.find((m) => m.type === 'legs');
+        if (legs.deploy < 0.5 || !legsDef || legsDef.type !== 'legs') low = 0;
+        else {
+          low = Infinity;
+          legsDef.legs.forEach((leg, i) => {
+            const contact = def.contactPoints?.[i]?.radius ?? def.contactPoints?.[0]?.radius ?? 0;
+            low = Math.min(low, legPose(leg, legs.deploy, legs.compression[i] ?? 0).foot[1] - contact);
+          });
+        }
+      }
       y = Math.min(y, p.localPos.y + low);
     }
     return Number.isFinite(y) ? y : 0;

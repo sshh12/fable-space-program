@@ -6,6 +6,7 @@
     { "name": "wordmark-dark", "w": 1000, "h": 140, "style": "word", "text": "MERIDIAN", "fg": "#e7e7e4", "bg": "#292929" },
     { "name": "kestrel", "w": 900, "h": 140, "style": "word", "text": "KESTREL", "fg": "#1c345d", "bg": "#e7e7e4" },
     { "name": "heron", "w": 700, "h": 140, "style": "word", "text": "HERON", "fg": "#1c345d", "bg": "#e7e7e4" },
+    { "name": "kestrel-foil", "w": 900, "h": 140, "style": "word", "text": "KESTREL", "fg": "#1c345d", "bg": "#b7c6ca", "foil": true },
     { "name": "spaceport", "w": 1400, "h": 150, "style": "sign", "text": "KA LAE PACIFIC SPACEPORT", "fg": "#e7e7e4", "bg": "#1c345d" },
     { "name": "lc1", "w": 420, "h": 220, "style": "sign", "text": "LC-1", "fg": "#e7e7e4", "bg": "#1c345d" },
     { "name": "flag", "w": 480, "h": 300, "style": "flag", "fg": "#1c345d", "bg": "#e7e7e4", "colors": ["#17325f", "#ecece8", "#1f8a7a", "#e2b53a", "#0d1d38"] },
@@ -28,6 +29,7 @@
     { "name": "rescue", "w": 520, "h": 150, "style": "arrow", "text": "RESCUE", "fg": "#292929", "bg": "#dcbd2f" },
     { "name": "hatch", "w": 420, "h": 90, "style": "label", "text": "HATCH RELEASE", "fg": "#c0321f", "bg": "#e7e7e4" },
     { "name": "hazard", "w": 768, "h": 96, "style": "hazard", "fg": "#292929", "bg": "#dcbd2f" },
+    { "name": "flag-foil", "w": 432, "h": 270, "style": "flag", "fg": "#1c345d", "bg": "#b7c6ca", "colors": ["#17325f", "#ecece8", "#1f8a7a", "#e2b53a", "#0d1d38"], "foil": true },
     { "name": "white", "w": 48, "h": 48, "style": "solid", "fg": "#e7e7e4", "bg": "#e7e7e4" },
     { "name": "yellow", "w": 48, "h": 48, "style": "solid", "fg": "#dcbd2f", "bg": "#dcbd2f" }
   ]

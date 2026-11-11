@@ -51,17 +51,23 @@ const SPECS = {
   /** Zinc-chromate style primer on internal structure. */
   primer: { color: [0.36, 0.42, 0.2], metallic: 0, roughness: 0.62, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   // ---- metals
-  'steel-brushed': { color: [0.6, 0.6, 0.59], metallic: 1, roughness: 0.34, anisotropy: -0.72, tile: [0.4, 0.4], tex: { n: 'brushed_n', o: 'brushed_orm' } },
-  'steel-bare': { color: [0.57, 0.57, 0.56], metallic: 1, roughness: 0.26, anisotropy: -0.35, tile: [0.4, 0.4], tex: { n: 'brushed_n', o: 'brushed_orm' } },
+  'steel-brushed': { color: [0.6, 0.6, 0.59], metallic: 1, roughness: 0.36, anisotropy: -0.6, tile: [1.6, 1.6], tex: { n: 'brushed_n', o: 'brushed_orm' } },
+  'steel-bare': { color: [0.57, 0.57, 0.56], metallic: 1, roughness: 0.3, anisotropy: -0.35, tile: [1.6, 1.6], tex: { n: 'brushed_n', o: 'brushed_orm' } },
   'steel-dark': { color: [0.19, 0.19, 0.2], metallic: 1, roughness: 0.5, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
-  'alu-machined': { color: [0.86, 0.87, 0.88], metallic: 1, roughness: 0.36, anisotropy: -0.3, tile: [0.4, 0.4], tex: { n: 'brushed_n', o: 'brushed_orm' } },
+  'alu-machined': { color: [0.86, 0.87, 0.88], metallic: 1, roughness: 0.38, anisotropy: -0.3, tile: [1.6, 1.6], tex: { n: 'brushed_n', o: 'brushed_orm' } },
+  /** Hard-anodised fittings (window retainers, latches): dark, satin, the same under any sky. */
+  anodised: { color: [0.11, 0.115, 0.125], metallic: 0.55, roughness: 0.5, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
   'alu-cast': { color: [0.62, 0.63, 0.64], metallic: 1, roughness: 0.55, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
   /** Nickel alloy with oxide heat tint: albedo map runs straw -> purple -> blue along v (v = 0 hot end). */
   inconel: { color: [1, 1, 1], metallic: 1, roughness: 0.42, tile: [0.5, 1], tex: { a: 'heat_albedo', n: 'tubewall_n', o: 'cast_orm' } },
   /** Brazed tube-wall / milled-channel nozzle: vertical channel ridges in the normal map. */
   'nozzle-wall': { color: [0.52, 0.5, 0.47], metallic: 1, roughness: 0.38, anisotropy: 0.4, tile: [0.25, 1], tex: { n: 'tubewall_n', o: 'cast_orm' } },
+  /** Gas side of a regeneratively cooled bell: the same channel wall, heat-stained dark nickel. */
+  'nozzle-hot': { color: [0.3, 0.285, 0.27], metallic: 0.9, roughness: 0.5, tile: [0.25, 1], tex: { n: 'tubewall_n', o: 'cast_orm' } },
   /** Radiatively cooled nozzle extension (niobium / carbon-carbon look). */
   'nozzle-ext': { color: [0.2, 0.19, 0.185], metallic: 0.85, roughness: 0.48, tile: [0.4, 0.4], tex: { n: 'cast_n', o: 'cast_orm' } },
+  /** The same wall with a broad, faint oxide tint: stiffener rings and weld lands of an extension. */
+  'nozzle-ext-b': { color: [0.26, 0.24, 0.225], metallic: 0.85, roughness: 0.44, tile: [0.4, 0.4], tex: { n: 'cast_n', o: 'cast_orm' } },
   copper: { color: [0.86, 0.5, 0.33], metallic: 1, roughness: 0.38, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
   galvanised: { color: [1, 1, 1], metallic: 0.9, roughness: 0.52, tile: [0.8, 0.8], tex: { a: 'galv_albedo', n: 'galv_n', o: 'galv_orm' } },
   grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' } },
@@ -70,15 +76,29 @@ const SPECS = {
   'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
   /** The same foam where it is hand-sprayed over structure (intertanks, close-outs): darker and browner. */
   'foam-aged': { color: [0.8, 0.7, 0.6], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
-  'foam-white': { color: [1, 1, 1], metallic: 0, roughness: 0.82, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
-  'foam-white-b': { color: [0.93, 0.92, 0.9], metallic: 0, roughness: 0.86, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
+  'foam-white': { color: [1, 1, 1], metallic: 0, roughness: 0.74, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foamfine_n', o: 'paint_orm' } },
+  'foam-white-b': { color: [0.93, 0.92, 0.9], metallic: 0, roughness: 0.8, tile: [9.6, 9.6], tex: { a: 'foamwhite_albedo', n: 'foamfine_n', o: 'paint_orm' } },
   cork: { color: [1, 1, 1], metallic: 0, roughness: 0.94, tile: [0.7, 0.7], tex: { a: 'cork_albedo', n: 'cork_n', o: 'cork_orm' } },
-  ablator: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [1.2, 1.2], tex: { a: 'ablator_albedo', n: 'ablator_n', o: 'ablator_orm' } },
+  /**
+   * Ablative heat shield: one picture of the whole face (UVs are 0..1 across 1.04 shield diameters, see the
+   * `shield` recipe of the texture bake). The emissive map is the entry glow, scaled per instance.
+   */
+  ablator: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [1, 1], tex: { a: 'shield_albedo', n: 'shield_n', o: 'shield_orm', e: 'shield_glow' }, emissive: [1, 1, 1] },
+  /** The same shield after an entry: charred, pitted, streaked from the stagnation point. */
+  'ablator-char': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [1, 1], tex: { a: 'shieldchar_albedo', n: 'shieldchar_n', o: 'shieldchar_orm', e: 'shield_glow' }, emissive: [1, 1, 1] },
+  /** Back-shell tiles closed out with aluminised polyimide tape: silver film with a faint thin-film tint. */
+  'shell-tape': { color: [1, 1, 1], metallic: 0.82, roughness: 0.4, tile: [1.44, 1.44], tex: { a: 'shell_albedo', n: 'shell_n', o: 'shell_orm' } },
+  /** Smooth taped close-out panels of the back shell (window surrounds, forward bay gores, thruster fairings). */
+  'shell-panel': { color: [0.83, 0.85, 0.87], metallic: 0.82, roughness: 0.34, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
+  /** Reflective tape strips over panel joints. */
+  'tape-silver': { color: [0.9, 0.91, 0.92], metallic: 1, roughness: 0.24, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
+  /** Amber polyimide tape (blanket seams of the lander). */
+  'tape-kapton': { color: [0.78, 0.47, 0.12], metallic: 0.7, roughness: 0.36, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   'tile-black': { color: [0.07, 0.07, 0.075], metallic: 0, roughness: 0.55, tile: [1.44, 1.44], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
-  'mli-gold': { color: [0.95, 0.66, 0.2], metallic: 0.85, roughness: 0.4, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-silver': { color: [0.88, 0.89, 0.9], metallic: 0.9, roughness: 0.38, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-black': { color: [0.025, 0.025, 0.028], metallic: 0, roughness: 0.5, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-gold': { color: [1, 1, 1], metallic: 0.88, roughness: 0.5, anisotropy: -0.4, tile: [1.2, 1.2], tex: { a: 'mligold_albedo', n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-silver': { color: [0.86, 0.87, 0.88], metallic: 0.92, roughness: 0.43, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-black': { color: [0.03, 0.03, 0.033], metallic: 0, roughness: 0.46, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.42, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
@@ -98,8 +118,15 @@ const SPECS = {
   /** Refractory brick lining of the flame trench and deflector. */
   refractory: { color: [0.36, 0.25, 0.19], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   gravel: { color: [1, 1, 1], metallic: 0, roughness: 0.95, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
+  /** Compacted crushed-stone fill of the graded area round the hardstand (the same stone, darker and dustier). */
+  'gravel-fill': { color: [0.74, 0.7, 0.66], metallic: 0, roughness: 0.96, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
+  asphalt: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [6, 6], tex: { a: 'asphalt_albedo', n: 'asphalt_n', o: 'asphalt_orm' }, shading: 'terrain' },
+  /** Painted steel deck plate of the launch mount and platforms. */
+  'deck-plate': { color: [1, 1, 1], metallic: 0, roughness: 0.78, tile: [7.2, 7.2], tex: { a: 'deck_albedo', n: 'deck_n', o: 'deck_orm' } },
   // ---- decal atlas (UVs are atlas coordinates)
-  decal: { color: [1, 1, 1], metallic: 0, roughness: 0.46, clearcoat: 1, clearcoatRoughness: 0.14, tile: [0, 0], tex: { a: 'decals' } },
+  decal: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.14, tile: [0, 0], tex: { a: 'decals' } },
+  /** Markings painted on metal film (a taped back shell): the atlas's ORM map says where the film is bare. */
+  'decal-foil': { color: [1, 1, 1], metallic: 0.82, roughness: 0.4, tile: [0, 0], tex: { a: 'decals', o: 'decals_orm' } },
   /** Markings painted on concrete (same atlas, matte, lit like the ground around them). */
   'decal-ground': { color: [1, 1, 1], metallic: 0, roughness: 0.88, tile: [0, 0], tex: { a: 'decals' }, shading: 'terrain' },
 } satisfies Record<string, Spec>;

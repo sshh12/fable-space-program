@@ -15,7 +15,7 @@ import { MeshBuilder, add3, cross3, dot3, len3, lerp3, norm3, polar, scale3, sub
 import { DEG, Profile, TAU, ball, beam, box, frustum, lathe, pipe, radialFrame, ringSolid, rod } from '../geom/prims';
 import type { MatId } from '../materials';
 import { lampCandela } from './capsule';
-import { band, buildModel, curvedPanel, hash01, thruster } from './common';
+import { band, buildModel, curvedPanel, hash01, noise2, thruster } from './common';
 import { Params, type PartGenerator, type PartLight, type PoseInput, type PoseSink } from './types';
 
 /** Quaternion (x, y, z, w) of the frame whose +Y is `dir` and whose +X is as close to `hint` as possible. */
@@ -54,53 +54,117 @@ export function quatAlong(dir: Vec3Tuple, hint: Vec3Tuple): QuatTuple {
 }
 
 /**
- * Foil blanket: a grid over (s, t) in [0, 1]^2 on a base surface, puffed out between its taped seams and
- * creased by a hash pattern. Normals come from the displaced positions; tangents run along s (around).
- * Open sheet (one component per call).
+ * Insulation blanket: a grid over (s, t) in [0, 1]^2 on a base surface, `sizeU` x `sizeV` metres. The film is
+ * loose: it stands off the structure by `puff`, is pulled down to it at stand-off buttons about every 0.36 m
+ * and along its taped edges, and sags and bulges between them over decimetres (so the silhouette of a
+ * wrapped tank is never a clean cylinder). Normals come from the displaced positions; tangents run along s.
+ * The normal map's creases ride on top of this; each panel samples its own part of the map.
+ * With `tape`, the panel's far edges (s = 1 and t = 1) carry a tape strip that laps onto its neighbours,
+ * and the buttons are modelled (LOD 0). Open sheet (one component per call).
  */
-function foil(b: MeshBuilder, nu: number, nv: number, base: (s: number, t: number) => { p: Vec3Tuple; n: Vec3Tuple }, sizeU: number, sizeV: number, seed: number, puff = 0.022): void {
+function foil(b: MeshBuilder, nu: number, nv: number, base: (s: number, t: number) => { p: Vec3Tuple; n: Vec3Tuple }, sizeU: number, sizeV: number, seed: number, puff = 0.03, tape: MatId | null = null): void {
+  const prev = b.material;
   b.begin(false, 'foil');
+  const bu = Math.max(1, Math.round(sizeU / 0.36));
+  const bv = Math.max(1, Math.round(sizeV / 0.36));
+  const u0 = hash01(seed, 91) * 1.2;
+  const v0 = hash01(seed, 92) * 1.2;
+  const lift = (s: number, t: number): number => {
+    const x = s * sizeU;
+    const y = t * sizeV;
+    const edge = Math.min(x, sizeU - x, y, sizeV - y);
+    // Rounded shoulder from the taped edge up to the pillow over 9 cm (finite slope at the edge).
+    const e = Math.min(1, edge / 0.09);
+    const shoulder = e * (2 - e);
+    // Dimple at the nearest stand-off button.
+    const ks = Math.round(s * bu);
+    const kt = Math.round(t * bv);
+    let pin = 1;
+    if (ks > 0 && ks < bu && kt > 0 && kt < bv) {
+      const d = Math.hypot(x - (ks / bu) * sizeU, y - (kt / bv) * sizeV);
+      pin = 1 - 0.8 * Math.exp(-(d * d) / (2 * 0.06 * 0.06));
+    }
+    const sag = (noise2(x / 0.32 + seed * 0.37, y / 0.32, 3) - 0.5) * 0.03 + (noise2(x / 0.12, y / 0.12 + seed * 0.21, 5) - 0.5) * 0.009;
+    return (puff * pin + sag) * shoulder;
+  };
+  const at = (s: number, t: number, extra = 0): Vec3Tuple => {
+    const q = base(s, t);
+    return add3(q.p, scale3(q.n, lift(s, t) + extra));
+  };
   const P: Vec3Tuple[][] = [];
   for (let j = 0; j <= nv; j++) {
     const row: Vec3Tuple[] = [];
-    for (let i = 0; i <= nu; i++) {
-      const s = i / nu;
-      const t = j / nv;
-      const q = base(s, t);
-      // Pillow between the seams, pinched to zero along the edges, plus small creases.
-      const pill = Math.pow(Math.max(0, Math.sin(Math.PI * s) * Math.sin(Math.PI * t)), 0.3);
-      const edge = i === 0 || j === 0 || i === nu || j === nv;
-      const crease = edge ? 0 : (hash01(i * 7 + seed, j * 13 + seed) - 0.5) * 0.012 + (hash01(Math.floor(i / 3) + seed, Math.floor(j / 2) + 5) - 0.5) * 0.014;
-      row.push(add3(q.p, scale3(q.n, puff * pill + crease)));
-    }
+    for (let i = 0; i <= nu; i++) row.push(at(i / nu, j / nv));
     P.push(row);
   }
   const ids: number[][] = [];
+  const frame = (i: number, j: number): { n: Vec3Tuple; t: Vec3Tuple; w: number } => {
+    const du = sub3(P[j]![Math.min(nu, i + 1)]!, P[j]![Math.max(0, i - 1)]!);
+    const dv = sub3(P[Math.min(nv, j + 1)]![i]!, P[Math.max(0, j - 1)]![i]!);
+    let n = cross3(du, dv);
+    const ref = base(i / nu, j / nv).n;
+    if (dot3(n, ref) < 0) n = scale3(n, -1);
+    n = norm3(n);
+    const t = norm3(sub3(du, scale3(n, dot3(du, n))));
+    // Handedness: v runs along dv.
+    return { n, t, w: dot3(cross3(n, t), dv) >= 0 ? 1 : -1 };
+  };
   for (let j = 0; j <= nv; j++) {
     const row: number[] = [];
     for (let i = 0; i <= nu; i++) {
-      const du = sub3(P[j]![Math.min(nu, i + 1)]!, P[j]![Math.max(0, i - 1)]!);
-      const dv = sub3(P[Math.min(nv, j + 1)]![i]!, P[Math.max(0, j - 1)]![i]!);
-      let n = cross3(du, dv);
-      const ref = base(i / nu, j / nv).n;
-      if (dot3(n, ref) < 0) n = scale3(n, -1);
-      n = norm3(n);
-      const t = norm3(sub3(du, scale3(n, dot3(du, n))));
-      // Handedness: v runs along dv.
-      const w = dot3(cross3(n, t), dv) >= 0 ? 1 : -1;
-      row.push(b.vt(P[j]![i]!, n, t, (i / nu) * sizeU, (j / nv) * sizeV, w));
+      const f = frame(i, j);
+      row.push(b.vt(P[j]![i]!, f.n, f.t, u0 + (i / nu) * sizeU, v0 + (j / nv) * sizeV, f.w));
     }
     ids.push(row);
   }
   // Wind the quads so that they face the base normal.
   const a = P[0]![0]!;
   const facing = dot3(cross3(sub3(P[0]![1]!, a), sub3(P[1]![0]!, a)), base(0, 0).n) >= 0;
-  for (let j = 0; j < nv; j++) {
-    for (let i = 0; i < nu; i++) {
-      if (facing) b.quad(ids[j]![i]!, ids[j]![i + 1]!, ids[j + 1]![i + 1]!, ids[j + 1]![i]!);
-      else b.quad(ids[j]![i]!, ids[j + 1]![i]!, ids[j + 1]![i + 1]!, ids[j]![i + 1]!);
+  const quad = (q0: number, q1: number, q2: number, q3: number): void => {
+    if (facing) b.quad(q0, q1, q2, q3);
+    else b.quad(q0, q3, q2, q1);
+  };
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) quad(ids[j]![i]!, ids[j]![i + 1]!, ids[j + 1]![i + 1]!, ids[j + 1]![i]!);
+  if (tape && b.lod < 2) {
+    // Tape over the joints to the next panels: a strip 4 cm wide, half on this panel, standing 2 mm proud.
+    b.mat(tape);
+    const strip = (n: number, point: (k: number, side: number) => { s: number; t: number }): void => {
+      let prevIn = -1;
+      let prevOut = -1;
+      for (let k = 0; k <= n; k++) {
+        const pi = point(k, 0);
+        const po = point(k, 1);
+        const q = base(Math.min(1, po.s), Math.min(1, po.t));
+        const along = sub3(at(Math.min(1, pi.s + 1e-3), pi.t), at(Math.max(0, pi.s - 1e-3), pi.t));
+        const tan = norm3(sub3(along, scale3(q.n, dot3(along, q.n))));
+        const vin = b.vt(at(pi.s, pi.t, 0.002), q.n, tan, pi.s * sizeU, pi.t * sizeV);
+        const vout = b.vt(add3(base(po.s, po.t).p, scale3(q.n, 0.002)), q.n, tan, po.s * sizeU, po.t * sizeV);
+        if (k > 0) {
+          // Wind the strip to face the base normal.
+          const pa = b.position(prevIn);
+          if (dot3(cross3(sub3(b.position(vin), pa), sub3(b.position(prevOut), pa)), q.n) >= 0) b.quad(prevIn, vin, vout, prevOut);
+          else b.quad(prevIn, prevOut, vout, vin);
+        }
+        prevIn = vin;
+        prevOut = vout;
+      }
+    };
+    const ws = 0.02 / sizeU;
+    const wt = 0.02 / sizeV;
+    strip(Math.max(2, Math.round(nv / 2)), (k, side) => ({ s: side === 0 ? 1 - ws : 1 + ws, t: k / Math.max(2, Math.round(nv / 2)) }));
+    strip(Math.max(2, Math.round(nu / 2)), (k, side) => ({ s: k / Math.max(2, Math.round(nu / 2)), t: side === 0 ? 1 - wt : 1 + wt }));
+    if (b.lod === 0) {
+      b.mat('alu-machined');
+      for (let kt = 1; kt < bv; kt++) {
+        for (let ks = 1; ks < bu; ks++) {
+          const q = base(ks / bu, kt / bv);
+          const p = at(ks / bu, kt / bv, -0.001);
+          b.at(xf.along(p, add3(p, q.n)), () => frustum(b, 0.013, 0.011, 0, 0.004, 8, 'button'));
+        }
+      }
     }
   }
+  b.mat(prev);
 }
 
 /** RCS clusters of a part: thrusters grouped by position. */
@@ -181,6 +245,7 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
   const y1 = H - 0.12;
   const gold = P.str('foil', 'mli-gold') as MatId;
   const silver = P.str('foilAlt', 'mli-silver') as MatId;
+  const dark = P.str('foilDark', 'mli-black') as MatId;
   const ladderPhi = P.num('ladderAzimuthDeg', 180) * DEG;
 
   /** Plan-view radius of the wrapped body at azimuth phi: the tank lobes over the core. */
@@ -224,7 +289,9 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
         for (let r = 0; r < rows; r++) {
           const ya = y0 + ((y1 - y0) * r) / rows;
           const yb = y0 + ((y1 - y0) * (r + 1)) / rows;
-          b.mat(m).masks(0, 1, 0.25 + 0.5 * (1 - r / rows), 0);
+          // Between the tank lobes the lower blanket is black polyimide (the bays that face the engine plume).
+          const pm = m === silver && r === 0 && rows > 1 ? dark : m;
+          b.mat(pm).masks(0, 1, 0.25 + 0.5 * (1 - r / rows), 0);
           const arc = ((p1 - p0) * (outline(p0) + outline(p1))) / 2;
           foil(
             b,
@@ -237,6 +304,8 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
             arc,
             yb - ya,
             seed++ * 31,
+            0.03,
+            pm === gold ? 'tape-kapton' : 'tape-silver',
           );
         }
       }
@@ -320,13 +389,22 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
         if (b.lod === 0) for (const sx of [-0.12, 0.12]) for (const sz of [-0.1, 0.1]) b.at(xf.translate(sx, 0.05, sz), () => frustum(b, 0.07, 0.085, 0, 0.03, 12, 'horn'));
       });
       b.mat('steel-dark');
-      for (const phi of lampAz) b.at(xf.mul(xf.translate(...lampAt(phi)), xf.rotX(Math.PI)), () => frustum(b, 0.075, 0.085, 0, 0.07, b.pick(16, 8, 6), 'lamp-body'));
+      // Landing lamps: a finned housing under the base ring with a deep reflector bowl round the lens.
+      for (const phi of lampAz) {
+        b.at(xf.mul(xf.translate(...lampAt(phi)), xf.rotX(Math.PI)), () => {
+          frustum(b, 0.085, 0.1, 0, 0.05, b.pick(16, 8, 6), 'lamp-body');
+          b.mat('alu-machined');
+          frustum(b, 0.1, 0.125, 0.05, 0.13, b.pick(16, 8, 6), 'lamp-bowl');
+          if (b.lod === 0) for (let i = 0; i < 4; i++) band(b, 0.092, 0.008 + i * 0.011, 0.005, 0.012, 16, 'band');
+          b.mat('steel-dark');
+        });
+      }
     }
   });
 
   const lamp = buildModel(`${def.id}.lamp`, (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
-    for (const phi of lampAz) b.at(xf.mul(xf.translate(...lampAt(phi)), xf.rotX(Math.PI)), () => frustum(b, 0.066, 0.06, 0.07, 0.078, b.pick(16, 8, 6), 'lens'));
+    for (const phi of lampAz) b.at(xf.mul(xf.translate(...lampAt(phi)), xf.rotX(Math.PI)), () => frustum(b, 0.086, 0.08, 0.075, 0.085, b.pick(16, 8, 6), 'lens'));
   });
 
   const pose = (input: PoseInput, emit: PoseSink): void => {
@@ -336,10 +414,13 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
-    const cd = lampCandela(m.params) / lampAz.length;
+    const cd = (lampCandela(m.params) / lampAz.length) * input.anim.lamp;
+    // A lamp looks down and outward. Its light is put 1.5 m out along that axis with a reach that ends on the
+    // ground in front of the lander: an omni light at the lens would light the hull behind it.
     return lampAz.map((phi) => {
       const p = lampAt(phi);
-      return { pos: [p[0] * 1.25, p[1] - 0.9, p[2] * 1.25] as Vec3Tuple, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 60 };
+      const out = polar(1, phi, 0);
+      return { pos: [p[0] + out[0] * 1.2, p[1] - 0.9, p[2] + out[2] * 1.2] as Vec3Tuple, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 16 };
     });
   };
   return { models: { body, lamp }, pose, lights };
@@ -391,7 +472,8 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
           arc,
           yb - ya,
           seed++ * 13,
-          0.02,
+          0.024,
+          'tape-silver',
         );
       }
     }
@@ -522,9 +604,9 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
-    const cd = lampCandela(m.params);
+    const cd = lampCandela(m.params) * input.anim.lamp;
     const dir = norm3(polar(1, ladderPhi + 0.42, -0.6));
-    return [{ pos: add3(lampAt, scale3(dir, 1.1)), intensity: [cd, cd * 0.97, cd * 0.9], range: 40 }];
+    return [{ pos: add3(lampAt, scale3(dir, 1.6)), intensity: [cd, cd * 0.97, cd * 0.9], range: 14 }];
   };
   return { models: { body, antenna, platform, lamp }, pose, lights };
 };
@@ -551,13 +633,14 @@ export function legPose(leg: { hinge: number[]; footDeployed: number[]; footStow
   return { hinge, foot: add3(hinge, scale3(dir, length)), dir, length };
 }
 
-const BROKEN_SPLAY = 16 * DEG;
-const BROKEN_KNEE = 38 * DEG;
+const BROKEN_SPLAY = 30 * DEG;
+const BROKEN_PAD_TILT = 27 * DEG;
 
 /**
- * Pose of a leg whose primary strut has failed: the upper tube swings `BROKEN_SPLAY` toward the horizontal
- * about the hinge, the piston leaves it at a knee of `BROKEN_KNEE` and still reaches the ground near where
- * the foot stood.
+ * Pose of a leg whose primary strut has failed at the crush core: the upper tube, still held by the
+ * secondary struts, has swung `BROKEN_SPLAY` up toward the horizontal about the hinge; the piston has torn
+ * out of it and hangs from the tube's mouth as a kinked strut that reaches down to the height at which the
+ * foot stood (so it stands on the ground the vessel rests on); the pad lies tilted on its rim.
  */
 export function brokenLegPose(lp: LegPose, upperLen: number, lowerLen: number): { upperDir: Vec3Tuple; lowerDir: Vec3Tuple; knee: Vec3Tuple; foot: Vec3Tuple; padUp: Vec3Tuple } {
   const phi = Math.atan2(lp.hinge[0], lp.hinge[2]);
@@ -566,11 +649,13 @@ export function brokenLegPose(lp: LegPose, upperLen: number, lowerLen: number): 
   const th0 = Math.atan2(-lp.dir[1], dot3(lp.dir, er));
   const at = (th: number): Vec3Tuple => [er[0] * Math.cos(th), -Math.sin(th), er[2] * Math.cos(th)];
   const upperDir = at(th0 - BROKEN_SPLAY);
-  const lowerDir = at(th0 - BROKEN_SPLAY + BROKEN_KNEE);
   const knee = add3(lp.hinge, scale3(upperDir, upperLen - 0.25));
-  const foot = add3(knee, scale3(lowerDir, lowerLen - 0.1));
-  const tilt = 14 * DEG;
-  return { upperDir, lowerDir, knee, foot, padUp: [er[0] * Math.sin(tilt), Math.cos(tilt), er[2] * Math.sin(tilt)] };
+  // The piston drops from the knee to the foot's old height, as steeply as its length allows.
+  const reach = lowerLen - 0.1;
+  const thLow = Math.asin(Math.max(-1, Math.min(1, (knee[1] - lp.foot[1]) / reach)));
+  const lowerDir = at(Math.max(thLow, th0 + 8 * DEG));
+  const foot = add3(knee, scale3(lowerDir, reach));
+  return { upperDir, lowerDir, knee, foot, padUp: [-er[0] * Math.sin(BROKEN_PAD_TILT), Math.cos(BROKEN_PAD_TILT), -er[2] * Math.sin(BROKEN_PAD_TILT)] };
 }
 
 export const landerLegs: PartGenerator = ({ def, params }) => {
@@ -697,6 +782,27 @@ export const landerLegs: PartGenerator = ({ def, params }) => {
     }
   });
 
+  // What a failed primary strut shows at its mouth: the crush-core cartridge, split open, with the crushed
+  // honeycomb spilling out of it. Origin at the knee, +Y along the piston toward the foot.
+  const crushed = buildModel(`${def.id}.crushed`, (b) => {
+    b.mat('alu-cast').masks(0.6, 0.8, 0.6, 0);
+    // Accordion of crushed cells: a zig-zag column that leans out of the tube's mouth.
+    const n = b.pick(9, 5, 2);
+    const p = Profile.at(0, -0.1);
+    p.corner(rUp * 0.9, -0.1);
+    for (let i = 1; i <= n; i++) p.corner(rUp * (i % 2 === 1 ? 1.5 - 0.05 * i : 0.85), -0.1 + (0.5 * i) / n);
+    p.corner(0, 0.4);
+    lathe(b, p, { segs: b.pick(14, 8, 6), tag: 'crushed-core' });
+    if (b.lod < 2) {
+      // The torn mouth of the upper tube: four petals bent outward.
+      b.mat('alu-machined').masks(0.7, 1, 0.4, 0);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * TAU + 0.4;
+        beam(b, polar(rUp, a, -0.12), polar(rUp * (2.1 + 0.5 * hash01(i, 77)), a + 0.25, 0.1 + 0.1 * hash01(i, 78)), 0.11, 0.012, [0, 1, 0], 'petal');
+      }
+    }
+  });
+
   // Secondary struts: tube from the body anchor (+Y toward the collar) and rod from the collar (+Y toward the anchor).
   const braceUpper = buildModel(`${def.id}.braceUpper`, (b) => {
     b.mat('alu-machined').masks(0.25, 1, 0.3, 0);
@@ -725,6 +831,7 @@ export const landerLegs: PartGenerator = ({ def, params }) => {
         const br = brokenLegPose(lp, upperLen, lowerLen);
         upperDir = br.upperDir;
         emit('upper', lp.hinge, quatAlong(br.upperDir, tan));
+        emit('crushed', br.knee, quatAlong(br.lowerDir, tan));
         emit('lower', br.foot, quatAlong(scale3(br.lowerDir, -1), tan));
         emit('pad', br.foot, quatAlong(br.padUp, tan));
       } else {
@@ -740,5 +847,5 @@ export const landerLegs: PartGenerator = ({ def, params }) => {
       }
     });
   };
-  return { models: { body, upper, lower, pad, braceUpper, braceLower }, pose };
+  return { models: { body, upper, lower, pad, crushed, braceUpper, braceLower }, pose };
 };

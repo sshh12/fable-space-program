@@ -11,6 +11,7 @@
  *    the mould line of the capsule it covers;
  *  - triangle budgets of the full stack.
  */
+import { shieldGlowLuminance } from '@/render/vehicle/parts/capsule';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CapsuleMouldLineDef, DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { PartSnapshot } from '@/core/contracts/sim';
@@ -585,24 +586,58 @@ describe('capsule exterior and the shared mould line', () => {
     }
   });
 
-  it('the heat shield is a model of its own, drawn at the temperature of the ablating surface; glazing and lamps stay cold', () => {
+  it('the heat shield is a model of its own whose glow follows the ablating surface and whose face chars; glazing and lamps stay cold', () => {
     for (const { def } of capsules()) {
       const visual = visualOf(def.id);
-      expect(Object.keys(visual.models)).toEqual(expect.arrayContaining(['body', 'shield', 'glass', 'lamp']));
+      expect(Object.keys(visual.models)).toEqual(expect.arrayContaining(['body', 'shield', 'shieldChar', 'glass', 'lamp']));
       const index = def.modules.findIndex((m) => m.type === 'heatShield');
       expect(index).toBeGreaterThanOrEqual(0);
-      const modules = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!)).find((p) => p.def === def.id)!.modules.map((m) => (m.type === 'heatShield' ? { ...m, surfaceTemp: 2750 } : m));
-      const seen = new Map<string, { temperature: number | undefined; cold: boolean }>();
-      visual.pose({ def, modules, panel: null, anim: { nozzleTemp: 0, soot: 0, frost: 0, clamp: 0, antenna: 0, lamp: 1 } }, (name, _pos, _rot, opts) => void seen.set(name, { temperature: opts?.temperature, cold: opts?.cold === true }));
-      expect(seen.get('shield')).toEqual({ temperature: 2750, cold: false });
+      const launch = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!)).find((p) => p.def === def.id)!.modules;
+      const pose = (patch: { surfaceTemp?: number; ablatorFraction?: number }) => {
+        const seen = new Map<string, { temperature: number | undefined; cold: boolean; emissive: number | undefined }>();
+        const modules = launch.map((m) => (m.type === 'heatShield' ? { ...m, ...patch } : m));
+        visual.pose({ def, modules, panel: null, anim: { nozzleTemp: 0, soot: 0, frost: 0, clamp: 0, antenna: 0, lamp: 1 } }, (name, _pos, _rot, opts) => void seen.set(name, { temperature: opts?.temperature, cold: opts?.cold === true, emissive: opts?.emissive }));
+        return seen;
+      };
+      // Cold: the shield as built, no emission at all (an emissive scale of exactly 0, not the default 1).
+      const cold = pose({});
+      expect(cold.get('shield')).toEqual({ temperature: undefined, cold: true, emissive: 0 });
+      expect(cold.has('shieldChar')).toBe(false);
+      // Hot: the glow is the shield's own emissive map scaled with the surface temperature (the instance has
+      // no uniform black-body term), brighter the hotter the surface; the structure behind it stays as it is.
+      const warm = pose({ surfaceTemp: 1900 });
+      const hot = pose({ surfaceTemp: 3100 });
+      expect(warm.get('shield')!.cold).toBe(true);
+      expect(warm.get('shield')!.emissive!).toBeGreaterThan(1e4);
+      expect(hot.get('shield')!.emissive!).toBeGreaterThan(4 * warm.get('shield')!.emissive!);
+      expect(shieldGlowLuminance(600)).toBe(0);
       // The back shell follows the part's own skin temperature (no item temperature of its own).
-      expect(seen.get('body')).toEqual({ temperature: undefined, cold: false });
-      expect(seen.get('glass')!.cold).toBe(true);
-      expect(seen.get('lamp')!.cold).toBe(true);
-      // The shield model holds the whole heat shield and nothing of the back shell.
-      for (const lod of visual.models['shield']!.lods) {
-        expect(lod.bounds.max[1], 'shield top').toBeLessThanOrEqual(0.02 + defs.parts[def.id]!.attachNodes.find((n) => n.id === 'bottom')!.pos[1]);
-        expect(lod.indices.length).toBeGreaterThan(0);
+      expect(hot.get('body')).toEqual({ temperature: undefined, cold: false, emissive: undefined });
+      expect(hot.get('glass')!.cold).toBe(true);
+      expect(hot.get('lamp')!.cold).toBe(true);
+      // Flown: the charred face replaces the face as built.
+      const flown = pose({ ablatorFraction: 0.6 });
+      expect(flown.has('shield')).toBe(false);
+      expect(flown.get('shieldChar')).toEqual({ temperature: undefined, cold: true, emissive: 0 });
+      // Both shield models hold the whole heat shield and nothing of the back shell, with planar texture
+      // coordinates inside the unit square (the shield's textures are one picture of the face).
+      for (const name of ['shield', 'shieldChar']) {
+        for (const lod of visual.models[name]!.lods) {
+          expect(lod.bounds.max[1], `${name} top`).toBeLessThanOrEqual(0.02 + defs.parts[def.id]!.attachNodes.find((n) => n.id === 'bottom')!.pos[1]);
+          expect(lod.indices.length).toBeGreaterThan(0);
+        }
+        const skin = visual.models[name]!.lods[0]!;
+        const pads = skin.meta.tags.indexOf('pad');
+        for (let t = 0; t < skin.indices.length / 3; t++) {
+          if (pads >= 0 && skin.meta.tags[skin.meta.triComponent[t]!] === 'pad') continue;
+          for (let c = 0; c < 3; c++) {
+            const v = skin.indices[t * 3 + c]!;
+            expect(skin.uvs[v * 2]!).toBeGreaterThan(0);
+            expect(skin.uvs[v * 2]!).toBeLessThan(1);
+            expect(skin.uvs[v * 2 + 1]!).toBeGreaterThan(0);
+            expect(skin.uvs[v * 2 + 1]!).toBeLessThan(1);
+          }
+        }
       }
     }
   });

@@ -2,10 +2,10 @@
   "generator": "capsule.mouldline",
   "params": {
     "mouldLine": "visuals/shared/kestrel-mouldline",
-    "backShell": "tile-white",
+    "backShell": "shell-tape",
     "heatShield": "ablator",
     "windowFrame": 0.022,
-    "placards": "kestrel@52,0.62,0.17;kestrel@232,0.62,0.17;flag@128,0.7,0.24;flag@308,0.7,0.24;rescue@180,0.47,0.11;hatch@148,1.2,0.045"
+    "placards": "kestrel-foil@52,0.62,0.17;kestrel-foil@232,0.62,0.17;flag-foil@128,0.7,0.24;flag-foil@308,0.7,0.24;rescue@180,0.47,0.11;hatch@148,1.2,0.045"
   },
   "reentryShape": {
     "noseRadius": 4.8,

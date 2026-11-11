@@ -16,6 +16,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
+import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import './site';
 import { NEAR_SHADOW_TEXEL, generateStructure, type SiteState, type SiteVisual } from './site/types';
 
@@ -50,9 +51,18 @@ export interface SiteFeature extends RenderFeature {
   override(siteId: string, patch: Partial<SiteState> | null): void;
 }
 
+/** The models of one structure visual: every LOD as a single-LOD model, and the switch sizes. */
+interface StructureModels {
+  visual: SiteVisual;
+  lods: Record<string, ModelHandle[]>;
+  lodPixels: Record<string, readonly number[]>;
+}
+
 interface Placed {
   visual: SiteVisual;
-  handles: Record<string, ModelHandle>;
+  models: StructureModels;
+  /** LOD state of each item the pose emits, in emit order. */
+  lodStates: LodState[];
   /** Origin and orientation in the body-fixed frame. */
   origin: Vec3;
   q: Quat;
@@ -81,6 +91,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   let nearBatch: MeshBatch;
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
+  const lodSelector = new LodSelector();
   const stats: SiteStats = { sites: 0, instances: 0, triangles: 0, shadowTriangles: 0, movingInstances: 0, lights: 0, updateMs: 0 };
 
   const elevationOf = (site: LaunchSiteDef): number => {
@@ -98,15 +109,19 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     const north = v3.cross(up, east);
     const centre = v3.scale(up, body.radius + elevationOf(site));
     const meshes = coreOf(ctx).meshes;
-    const cache = new Map<string, { visual: SiteVisual; handles: Record<string, ModelHandle> }>();
+    const cache = new Map<string, StructureModels>();
     const placed: Placed[] = site.structures.map((s) => {
       const key = `${s.model}|${JSON.stringify(s.params ?? {})}`;
       let entry = cache.get(key);
       if (!entry) {
         const visual = generateStructure(defs, site, s.model, s.params ?? {});
-        const handles: Record<string, ModelHandle> = {};
-        for (const [name, model] of Object.entries(visual.models)) handles[name] = meshes.createModel(model, model.lodPixels ? { lodPixels: model.lodPixels } : {});
-        entry = { visual, handles };
+        const lods: Record<string, ModelHandle[]> = {};
+        const lodPixels: Record<string, readonly number[]> = {};
+        for (const [name, model] of Object.entries(visual.models)) {
+          lods[name] = model.lods.map((mesh, i) => meshes.createModel({ name: `${model.name}.lod${i}`, lods: [mesh], materials: model.materials }));
+          lodPixels[name] = model.lodPixels ?? DEFAULT_LOD_PIXELS;
+        }
+        entry = { visual, lods, lodPixels };
         cache.set(key, entry);
       }
       const h = s.headingDeg * DEG;
@@ -114,7 +129,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const x = v3.sub(v3.scale(east, Math.cos(h)), v3.scale(north, Math.sin(h)));
       const z = v3.neg(v3.add(v3.scale(east, Math.sin(h)), v3.scale(north, Math.cos(h))));
       const origin = v3.add(v3.add(v3.add(centre, v3.scale(east, s.offsetEnu[0])), v3.scale(north, s.offsetEnu[1])), v3.scale(up, s.offsetEnu[2]));
-      return { visual: entry.visual, handles: entry.handles, origin, q: quat.fromBasis(x, up, z) };
+      return { visual: entry.visual, models: entry, lodStates: [], origin, q: quat.fromBasis(x, up, z) };
     });
     return { site, centre, up, east, north, placed, state: { night: 0, arms: 1, crewArm: 1 }, target: { arms: 1, crewArm: 1 }, seen: false, override: null };
   };
@@ -162,6 +177,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const snapshot = frame.snapshot;
       const dt = Number.isFinite(lastUt) ? Math.max(0, Math.min(60, snapshot.ut - lastUt)) : 0;
       lastUt = snapshot.ut;
+      lodSelector.begin(frame);
       batch.begin(frame);
       nearBatch.begin(frame);
       stats.sites = 0;
@@ -193,11 +209,13 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
         // ---- instances
         const parent = { originRelCam: pose.centerRelCam, q: pose.qFixedToRoot, prevOriginRelCam: pose.prevCenterRelCam, prevQ: pose.prevQFixedToRoot };
         for (const pl of rt.placed) {
+          let item = 0;
           pl.visual.pose(
             st,
             (model, pos, rot, opts) => {
-              const handle = pl.handles[model];
-              if (!handle) throw new Error(`site: structure posed an unknown model "${model}"`);
+              const state = (pl.lodStates[item++] ??= newLodState());
+              const lods = pl.models.lods[model];
+              if (!lods) throw new Error(`site: structure posed an unknown model "${model}"`);
               const p = pos ? v3.add(pl.origin, quat.rotate(pl.q, { x: pos[0], y: pos[1], z: pos[2] })) : pl.origin;
               const q = rot ? quat.mul(pl.q, { x: rot[0], y: rot[1], z: rot[2], w: rot[3] }) : pl.q;
               const inst: MeshInstance = {
@@ -210,7 +228,16 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               if (opts?.castShadow === false) inst.castShadow = false;
               if (opts?.emissive !== undefined) inst.emissiveScale = opts.emissive;
               if (opts?.grime) inst.soot = opts.grime;
-              (opts?.nearShadowOnly ? nearBatch : batch).add(handle, inst);
+              const target = opts?.nearShadowOnly ? nearBatch : batch;
+              const h0 = lods[0]!;
+              const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius), pl.models.lodPixels[model]!, lods.length);
+              target.add(lods[draw.solid]!, inst);
+              if (draw.fading >= 0 && draw.fade > 0.01) {
+                // The LOD that dithers in or out casts nothing: the solid one carries the shadow.
+                inst.fade = draw.fade;
+                inst.castShadow = false;
+                target.add(lods[draw.fading]!, inst);
+              }
               stats.instances++;
               if (opts?.moving) stats.movingInstances++;
             },
@@ -258,7 +285,14 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     dispose() {
       batch.destroy();
       nearBatch.destroy();
-      for (const rt of sites) for (const pl of rt.placed) for (const h of Object.values(pl.handles)) h.destroy();
+      const done = new Set<StructureModels>();
+      for (const rt of sites) {
+        for (const pl of rt.placed) {
+          if (done.has(pl.models)) continue;
+          done.add(pl.models);
+          for (const list of Object.values(pl.models.lods)) for (const h of list) h.destroy();
+        }
+      }
       sites.length = 0;
     },
   };
