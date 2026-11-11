@@ -8,6 +8,8 @@
  *   &planet=0                   no LabPlanet backdrop (it is added when the terrain feature is not loaded)
  *   &sim=real&scenario=<id>     the real Sim of src/sim when it exists (default: FakeSim, ?scene=<FakeScene>)
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
+ *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
+ *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
  *   &ballast=1                  add the render-core lab's ballast pass (feature lab-heavy, off until
  *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
@@ -16,14 +18,15 @@
  * Specs drive the page through window.__lab (the LabApp) and window.__integration (this file's handle).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { RenderContext, RenderFeature } from '@/core/contracts/render';
+import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import type { Sim, SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
-import { DEG, quat, v3, type Vec3 } from '@/core/math';
+import { DEG, mat4, quat, v3, type Vec3 } from '@/core/math';
+import { coreOf, type SceneBindings, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createFetchTileSource, createTerrainProvider } from '@/terrain';
@@ -67,6 +70,22 @@ export interface IntegrationLab {
   lookFromTo(from: Site, to: Site): void;
   /** Pin the sun at azimuth / elevation (deg) as seen from a body-fixed point, or release it with null. */
   setSun(site: Site | null, azDeg?: number, elDeg?: number): void;
+  /**
+   * Stay `distance` metres from the active vessel on the side away from the sun and look at a direction
+   * `offsetDeg` away from the sun (0 = straight at it), turning about the vessel's orbit normal.
+   */
+  lookNearSun(offsetDeg: number, distance?: number): void;
+  /** Render-target pixel of a body-fixed point (height above the reference radius) in the last frame; null when behind the camera. */
+  project(bodyId: string, latDeg: number, lonDeg: number, alt: number): { x: number; y: number; distance: number } | null;
+  /**
+   * Show a G-buffer target instead of the lit scene (a fullscreen pass of the lab at the end of
+   * drawTransparent writes it to the HDR target unexposed): 'albedo' = linear rgb, 'material' = roughness,
+   * material id, parameter. null = the normal image. Read it back with renderer.readHdrPixels('hdr').
+   */
+  showGBuffer(which: 'albedo' | 'material' | null): void;
+  /** Cascades handed to drawShadow since the last clear (?probe=casters). */
+  cascadeLog(): { frame: number; index: number; everyFrame: boolean; fit: string; anchor: string; texelSize: number }[];
+  clearCascadeLog(): void;
   /** Stop following (the camera keeps its last placement). */
   release(): void;
 }
@@ -94,7 +113,7 @@ const HOOKS = ['prepare', 'compute', 'drawShadow', 'drawGBuffer', 'drawWater', '
  * presence which passes exist), forwards them while enabled, and switches itself off, telling `onThrow`,
  * when one of them throws.
  */
-function guardFeature(inner: RenderFeature, onThrow: (message: string) => void): { feature: RenderFeature; disable(): void } {
+function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, castShadows = true): { feature: RenderFeature; disable(): void } {
   let enabled = true;
   const feature: Record<string, unknown> = {
     id: inner.id,
@@ -106,7 +125,7 @@ function guardFeature(inner: RenderFeature, onThrow: (message: string) => void):
   if (inner.requires !== undefined) feature['requires'] = inner.requires;
   for (const hook of HOOKS) {
     const fn = inner[hook] as ((...args: unknown[]) => void) | undefined;
-    if (typeof fn !== 'function') continue;
+    if (typeof fn !== 'function' || (hook === 'drawShadow' && !castShadows)) continue;
     feature[hook] = (...args: unknown[]): void => {
       if (!enabled) return;
       try {
@@ -123,6 +142,51 @@ function guardFeature(inner: RenderFeature, onThrow: (message: string) => void):
       enabled = false;
     },
   };
+}
+
+/** Fullscreen pass (order last in drawTransparent) that writes a G-buffer target to the HDR target when asked. */
+function createGBufferView(): { feature: RenderFeature; which: 'albedo' | 'material' | null } {
+  let ctx: RenderContext;
+  let bindings: SceneBindings;
+  let layout: GPUBindGroupLayout;
+  let group: GPUBindGroup | null = null;
+  let version = -1;
+  const pipelines: Partial<Record<'albedo' | 'material', Tracked<GPURenderPipeline>>> = {};
+  const view: { feature: RenderFeature; which: 'albedo' | 'material' | null } = {
+    which: null,
+    feature: {
+      id: 'lab-gbuffer-view',
+      order: 1e6,
+      init(c) {
+        ctx = c;
+        const core = coreOf(c);
+        bindings = core.createSceneBindings(1, 0, ['gbuffer']);
+        layout = c.device.createBindGroupLayout({ entries: bindings.layoutEntries });
+        const make = (label: string, value: string): Tracked<GPURenderPipeline> =>
+          core.fullscreenPipeline({
+            label: `lab-gbuffer-view.${label}`,
+            layouts: [layout],
+            fragment: `${bindings.wgsl}
+              @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f { let px = vec2i(in.position.xy); return vec4f(${value}, 1.0); }`,
+            targets: [{ format: RENDER_FORMATS.hdr }],
+            depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+          });
+        pipelines.albedo = make('albedo', 'textureLoad(gbufferAlbedoTex, px, 0).rgb');
+        pipelines.material = make('material', 'vec3f(textureLoad(gbufferMaterialTex, px, 0).r, textureLoad(gbufferMaterialTex, px, 0).b * 255.0, textureLoad(gbufferMaterialTex, px, 0).a)');
+      },
+      drawTransparent(_frame, pass) {
+        if (!view.which) return;
+        if (!group || bindings.version() !== version) {
+          version = bindings.version();
+          group = ctx.device.createBindGroup({ layout, entries: bindings.entries() });
+        }
+        pass.setPipeline(pipelines[view.which]!.get());
+        pass.setBindGroup(1, group);
+        pass.draw(3);
+      },
+    },
+  };
+  return view;
 }
 
 async function boot(): Promise<void> {
@@ -158,11 +222,7 @@ async function boot(): Promise<void> {
   }
   const sim = withSunOverride(inner, () => sunOverride);
 
-  // The LabPlanet stands in for the terrain when that package is not loaded.
-  const backdrop: RenderFeature[] = [];
-  if (!imported.modules.terrain && query.get('planet') !== '0') backdrop.push(createLabPlanetFeature({ defaultMap: 'tileset' }));
-
-  const app = await createLabApp({ canvas, name: 'integration', defs, sim, features: backdrop, autoReady: false });
+  const app = await createLabApp({ canvas, name: 'integration', defs, sim, features: [], autoReady: false });
   const ctx = app.renderer.context;
 
   // The navball texture the cockpit instrument shows (the HUD renders it in the app).
@@ -175,7 +235,8 @@ async function boot(): Promise<void> {
   // Ballast for perf runs: with only some features present the GPU has too little to do and clocks down,
   // which inflates every pass time (docs/handoff/render-core.md 4.1).
   const firstSite = Object.values(defs.sites)[0];
-  const ballast = query.get('ballast') === '1' ? createProbes(new URLSearchParams('probe=heavy&heavy=0'), { bodyId: firstSite?.bodyId ?? defs.rootBodyId, latDeg: firstSite?.location.latDeg ?? 0, lonDeg: firstSite?.location.lonDeg ?? 0, alt: 0 }, defs, app.snapshot()) : null;
+  const probeNames = [query.get('ballast') === '1' ? 'heavy' : '', (query.get('probe') ?? '').split(',').includes('casters') ? 'casters' : ''].filter(Boolean);
+  const ballast = probeNames.length > 0 ? createProbes(new URLSearchParams(`probe=${probeNames.join(',')}&heavy=0`), { bodyId: firstSite?.bodyId ?? defs.rootBodyId, latDeg: firstSite?.location.latDeg ?? 0, lonDeg: firstSite?.location.lonDeg ?? 0, alt: 0 }, defs, app.snapshot()) : null;
   if (ballast) {
     ballast.attach(app);
     for (const f of ballast.features) await app.renderer.addFeature(f);
@@ -186,6 +247,7 @@ async function boot(): Promise<void> {
   // off and its errors move to `problems`: a package that is still being written must not take the page,
   // and the checks of the other packages, down with it.
   const errors = app.testApi.api.errors;
+  const noShadow = new Set((query.get('noshadow') ?? '').split(','));
   const quarantined: IntegrationLab['quarantined'] = [];
   const quarantine = (featureId: string, messages: string[]): void => {
     const pkg = built.packageOf[featureId]!;
@@ -195,9 +257,11 @@ async function boot(): Promise<void> {
   const compiled = async (): Promise<void> => {
     for (let i = 0; i < 200 && app.renderer.core.shaders.pendingCompilations() > 0; i++) await app.testApi.api.waitFrames(3);
   };
+  const guards = new Map<string, { disable(): void }>();
   for (const inner of built.features) {
     const before = errors.length;
-    const g = guardFeature(inner, (message) => quarantine(inner.id, [message]));
+    const g = guardFeature(inner, (message) => quarantine(inner.id, [message]), !noShadow.has(built.packageOf[inner.id]!));
+    guards.set(inner.id, g);
     try {
       await app.renderer.addFeature(g.feature);
     } catch (e) {
@@ -211,8 +275,46 @@ async function boot(): Promise<void> {
       quarantine(inner.id, errors.splice(before));
     }
   }
-  const bad = new Set(quarantined.map((q) => q.pkg));
-  const loaded = built.loaded.filter((p) => !bad.has(p));
+  const loaded = built.loaded.filter((p) => !quarantined.some((q) => q.pkg === p));
+  // The LabPlanet stands in for the terrain when that package is absent or was switched off.
+  const backdrop = !loaded.includes('terrain') && query.get('planet') !== '0';
+  if (backdrop) await app.renderer.addFeature(createLabPlanetFeature({ defaultMap: 'tileset' }));
+  // Errors that arrive later (a feature that validates its data when its body comes into view, a pipeline
+  // compiled on first use) are attributed by name: a message that names a feature or its package switches
+  // that feature off and moves to `problems`; anything else stays in window.__test.errors and fails the spec.
+  // GPU errors of the frames a feature encoded before it was switched off arrive a few frames later and
+  // name nothing ("invalid due to a previous error"): for GRACE_FRAMES after a feature is switched off they
+  // are put down to it.
+  const GRACE_FRAMES = 30;
+  let seenErrors = errors.length;
+  let frames = 0;
+  let grace: { featureId: string; until: number } | null = quarantined.length > 0 ? { featureId: quarantined[quarantined.length - 1]!.featureId, until: GRACE_FRAMES } : null;
+  const watchErrors = (): void => {
+    frames++;
+    if (errors.length === seenErrors) return;
+    for (let i = errors.length - 1; i >= seenErrors; i--) {
+      const message = errors[i]!;
+      const named = built.features.find((f) => {
+        const names = [f.id, built.packageOf[f.id]!];
+        return names.some((n) => new RegExp(`(^|[^a-z0-9])${n}([^a-z0-9]|$)`, 'i').test(message));
+      });
+      const owner = named ?? (grace && frames <= grace.until ? built.features.find((f) => f.id === grace!.featureId) : undefined);
+      if (!owner) continue;
+      if (named) grace = { featureId: named.id, until: frames + GRACE_FRAMES };
+      errors.splice(i, 1);
+      guards.get(owner.id)?.disable();
+      const known = quarantined.find((q) => q.featureId === owner.id);
+      if (known) known.errors.push(message);
+      else quarantine(owner.id, [message]);
+      const at = loaded.indexOf(built.packageOf[owner.id]!);
+      if (at >= 0) loaded.splice(at, 1);
+    }
+    seenErrors = errors.length;
+  };
+
+  // A lab feature that can replace the lit image by a G-buffer target (read back by the image-decode check).
+  const gbufferView = createGBufferView();
+  await app.renderer.addFeature(gbufferView.feature);
 
   // ----------------------------------------------------------------------------------------- camera
   let follow: ((snapshot: SimSnapshot) => void) | null = null;
@@ -237,6 +339,7 @@ async function boot(): Promise<void> {
   };
 
   app.onFrame((snapshot) => {
+    watchErrors();
     follow?.(snapshot);
     const encoder = app.gpu.device.createCommandEncoder({ label: 'integration.navball' });
     navball.render(encoder, snapshot);
@@ -293,6 +396,31 @@ async function boot(): Promise<void> {
     setSun(site, azDeg = 120, elDeg = 40) {
       sunOverride = site ? sunAtSite(site, azDeg, elDeg) : null;
     },
+    lookNearSun(offsetDeg, distance = 60) {
+      place((snapshot) => {
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        if (!v) return;
+        const sun = bodyOf(snapshot, v.bodyId).sunDir;
+        let axis = v3.cross(v.r, v.v);
+        axis = v3.lenSq(axis) > 0 ? v3.normalize(v3.reject(axis, sun)) : v3.anyOrthogonal(sun);
+        const dir = quat.rotate(quat.fromAxisAngle(axis, offsetDeg * DEG), sun);
+        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(v.rRoot, sun, -distance), qViewToRoot: lookRotation(dir, axis) };
+      });
+    },
+    project(bodyId, latDeg, lonDeg, alt) {
+      const f = app.renderer.frameContext;
+      if (!f) return null;
+      const b = f.bodyPose(bodyId);
+      const p = v3.add(b.centerRelCam, quat.rotate(b.qFixedToRoot, v3.scale(latLonToDir(latDeg * DEG, lonDeg * DEG), defs.bodies[bodyId]!.radius + alt)));
+      const c = mat4.transformPoint(mat4.mul(f.projUnjittered, f.view), p);
+      if (c.w <= 0) return null;
+      return { x: (0.5 + (0.5 * c.x) / c.w) * f.renderSize[0], y: (0.5 - (0.5 * c.y) / c.w) * f.renderSize[1], distance: v3.len(p) };
+    },
+    showGBuffer(which) {
+      gbufferView.which = which;
+    },
+    cascadeLog: () => ballast?.cascadeLog() ?? [],
+    clearCascadeLog: () => ballast?.clearCascadeLog(),
     release() {
       follow = null;
     },
@@ -305,7 +433,7 @@ async function boot(): Promise<void> {
       const e = app.renderer.exposureInfo();
       const c = app.cameraState();
       info.textContent =
-        `integration lab   sim ${simKind}   features ${loaded.join(', ') || 'none'}${imported.modules.terrain ? '' : '   (LabPlanet backdrop)'}\n` +
+        `integration lab   sim ${simKind}   features ${loaded.join(', ') || 'none'}${backdrop ? '   (LabPlanet backdrop)' : ''}\n` +
         `not in the tree: ${FEATURE_PACKAGES.filter((x) => !lab.available.includes(x)).join(', ') || 'none'}   switched off: ${quarantined.map((q) => q.featureId).join(', ') || 'none'}   problems ${problems.length}\n` +
         `gpu ${p.gpu.p50.toFixed(2)} ms (p99 ${p.gpu.p99.toFixed(2)})   cpu ${p.cpu.p50.toFixed(2)} ms   quality ${p.qualityScale.toFixed(2)}   scale ${p.renderScale.toFixed(2)}   EV100 ${e.ev100.toFixed(2)}\n` +
         `camera ${c.kind}  fov ${(c.fovY / DEG).toFixed(0)} deg`;

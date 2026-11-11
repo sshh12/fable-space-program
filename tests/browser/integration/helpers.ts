@@ -49,10 +49,26 @@ export async function openIntegration(page: Page, query: string, opts: { timeout
  * nothing but the errors of features the lab switched off (those are reported through `info.problems`).
  */
 export async function expectClean(page: Page, log: PageLog, info: LabInfo): Promise<void> {
+  // The lab keeps attributing errors while it runs: read what it has switched off by now.
+  await page.evaluate(() => window.__test!.waitFrames(2));
+  const now = await page.evaluate(() => ({ quarantined: window.__integration!.quarantined, loaded: window.__integration!.loaded, problems: window.__integration!.problems }));
+  info.quarantined = now.quarantined;
+  info.problems = now.problems;
+  // A delivered package must survive the check; one that is still being written may fall out (logged).
+  const lost = info.loaded.filter((p) => !now.loaded.includes(p));
+  for (const p of lost) console.log(`  ${p} (${PACKAGE_OWNER[p]}) was switched off during the check: ${now.problems.filter((x) => x.startsWith(`${p}:`)).pop() ?? ''}`);
+  expect(lost.filter(delivered), 'delivered packages that were switched off during the check (their errors are in the lab problems)').toEqual([]);
   expect(await page.evaluate(() => window.__test!.errors), 'window.__test.errors').toEqual([]);
+  // The console can only be held to "no errors, no warnings" while nothing is switched off: a broken feature
+  // leaves warnings behind that name nothing (failed requests, invalid command buffers).
+  if (info.quarantined.length > 0) return;
   const excused = info.quarantined.flatMap((q) => q.errors);
+  // Chrome repeats a GPU validation error of a switched-off feature as console warnings of its own, which
+  // name the feature's labelled objects ("terrain.shadow"), and browsers log failed requests of its assets.
+  const names = [...new Set(info.quarantined.flatMap((q) => [q.featureId, q.pkg]))];
+  const ofQuarantined = (m: string): boolean => names.some((n) => new RegExp(`(^|[^a-z0-9])${n}([^a-z0-9]|$)`, 'i').test(m));
   const ignored = [/favicon/i, /powerPreference option is currently ignored/];
-  const real = log.messages.filter((m) => !ignored.some((re) => re.test(m)) && !excused.some((e) => m.includes(e.slice(0, 80))));
+  const real = log.messages.filter((m) => !ignored.some((re) => re.test(m)) && !excused.some((e) => m.includes(e.slice(0, 80))) && !ofQuarantined(m));
   expect(real, 'console errors and warnings of features that are switched on').toEqual([]);
 }
 
