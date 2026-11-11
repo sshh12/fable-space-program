@@ -136,11 +136,16 @@ const VIEWS: PerfView[] = [
   { name: 'earth 20,000 km', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 20_000e3, heading: 0, pitch: -89.9, fov: 40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
 ];
 
+/** TERRAIN_PERF_VIEWS=pad,kiawe limits the budget views; TERRAIN_QUERY="p.earth.reliefShadow=0" adds lab query parameters (A/B of a tunable's cost). */
+const perfOnly = process.env.TERRAIN_PERF_VIEWS?.split(',').filter(Boolean);
+const perfQuery = Object.fromEntries(new URLSearchParams(process.env.TERRAIN_QUERY ?? ''));
+
 for (const v of VIEWS) {
+  if (perfOnly && !perfOnly.includes(v.name)) continue;
   test(`terrain GPU and CPU budget at 1440p: ${v.name}`, async ({ page, pageLog }) => {
     test.setTimeout(30 * 60_000);
     await withGpuLock(async () => {
-      await openLab(page, { scene: v.body === 'moon' ? 'lunarOrbit' : 'lowOrbit', paused: 1, perf: 'features', scale: 1, governor: 'off', ...v.query });
+      await openLab(page, { scene: v.body === 'moon' ? 'lunarOrbit' : 'lowOrbit', paused: 1, perf: 'features', scale: 1, governor: 'off', ...v.query, ...perfQuery });
       await settle(page, 30);
       const size = await page.evaluate(() => window.__lab!.renderer.frameContext!.renderSize);
       expect(size).toEqual([2560, 1440]);

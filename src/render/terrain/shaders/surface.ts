@@ -992,13 +992,25 @@ ${DETAIL_WGSL}
   let classLattice = t.noise.xyz + in.local / body.orbital.x;
   let c0 = max(round(body.orbital.x / 45.0), 1.0);
   let c1 = max(round(body.orbital.x / 14.0), 1.0);
-  let cn0 = noiseAt(classLattice.zxy * c0 + vec3f(3.9, 5.2, 0.7));
-  let cn1 = noiseAt(classLattice * c1 + vec3f(7.3, 1.9, 4.4));
-  let cn2 = noiseAt(classLattice.yzx * (3.0 * c1) + vec3f(2.1, 8.7, 6.3));
-  // (Each octave only where the pixel resolves it: read unfiltered, a shorter one is per-pixel noise.)
-  let classWarp = (min(0.8 * classTexel, 12.0) * smoothstep(1.5, 3.0, 45.0 / footLong) * vec2f(cn0.a, clamp(0.5 * cn0.r, -1.0, 1.0)) +
-                   min(0.55 * classTexel, 5.6) * smoothstep(1.5, 3.0, 14.0 / footLong) * vec2f(cn1.a, clamp(0.5 * cn1.r, -1.0, 1.0)) +
-                   min(0.3 * classTexel, 1.9) * smoothstep(1.5, 3.0, 4.7 / footLong) * vec2f(cn2.a, clamp(0.5 * cn2.r, -1.0, 1.0))) / tileSize;
+  // (Each octave only where the pixel resolves it: read unfiltered, a shorter one is per-pixel noise. An
+  // octave that does not show is not read: from orbit none is.)
+  var classWarp = vec2f(0.0);
+  let wc0 = min(0.8 * classTexel, 12.0) * smoothstep(1.5, 3.0, 45.0 / footLong);
+  if (wc0 > 0.0) {
+    let cn0 = noiseAt(classLattice.zxy * c0 + vec3f(3.9, 5.2, 0.7));
+    classWarp += wc0 * vec2f(cn0.a, clamp(0.5 * cn0.r, -1.0, 1.0));
+    let wc1 = min(0.55 * classTexel, 5.6) * smoothstep(1.5, 3.0, 14.0 / footLong);
+    if (wc1 > 0.0) {
+      let cn1 = noiseAt(classLattice * c1 + vec3f(7.3, 1.9, 4.4));
+      classWarp += wc1 * vec2f(cn1.a, clamp(0.5 * cn1.r, -1.0, 1.0));
+      let wc2 = min(0.3 * classTexel, 1.9) * smoothstep(1.5, 3.0, 4.7 / footLong);
+      if (wc2 > 0.0) {
+        let cn2 = noiseAt(classLattice.yzx * (3.0 * c1) + vec3f(2.1, 8.7, 6.3));
+        classWarp += wc2 * vec2f(cn2.a, clamp(0.5 * cn2.r, -1.0, 1.0));
+      }
+    }
+  }
+  classWarp /= tileSize;
   let cb = classBlend(t, uv, k, warp + classWarp, smoothstep(3.0, 8.0, classTexel / footLong));
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 

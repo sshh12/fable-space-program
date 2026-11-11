@@ -104,6 +104,8 @@ const MAX_KINDS = 6;
 const BUILD_BUDGET_MS = 0.5;
 /** A chunk built while in view fades in over this many seconds. */
 const FADE_SECONDS = 0.5;
+/** The eye may move this far (m) before the G-buffer lists are built again (levels of detail are chosen by size on screen; the vertex shader applies range and growth exactly every frame). */
+const LIST_TOLERANCE_M = 0.02;
 /** Shading modes of the fragment shader, by shape. */
 const SHAPE_MODE: Record<CoverShape, number> = { tuft: 0, bush: 1, tree: 1, grove: 1, stone: 2 };
 
@@ -345,6 +347,8 @@ interface CoverBody {
   wind: Vec3;
   /** The camera in the body-fixed frame, this frame. */
   eye: Vec3;
+  /** The G-buffer lists of the last build: what they were built from (signature of the listed chunks, eye, pixel scale) and where they lie in the instance buffer. */
+  list: { sig: number; eye: Vec3; pixelAngle: number; start: number; count: number; triangles: number } | null;
 }
 
 /** Land-cover classes of a body's deepest baked level around the camera, decoded on the main thread. */
@@ -461,6 +465,8 @@ export class CoverRenderer {
   private readonly uniformData = new Float32Array(28 + MAX_KINDS * 4);
   private readonly freeSlots: number[] = Array.from({ length: MAX_CHUNKS }, (_, i) => MAX_CHUNKS - 1 - i);
   private instanceCount = 0;
+  /** The CPU copy of the instance lists differs from the GPU's in [0, instanceCount) this frame. */
+  private instancesDirty = false;
   private triangles = 0;
   /** Records in use at the front of the record buffer (chunks are appended; holes are closed by compact()). */
   private used = 0;
@@ -595,6 +601,7 @@ export class CoverRenderer {
         empty: true,
         wind: { x: 1, y: 0, z: 0 },
         eye: v3.zero(),
+        list: null,
       });
     }
   }
@@ -911,6 +918,7 @@ export class CoverRenderer {
         }
       }
     }
+    this.instancesDirty = false;
     for (const b of this.bodies) {
       if (!b.active) continue;
       this.buildDraws(b, pixelAngle);
@@ -928,7 +936,7 @@ export class CoverRenderer {
     }
     if (any) {
       this.device.queue.writeBuffer(this.chunkBuffer, 0, this.chunkData);
-      if (this.instanceCount > 0) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
+      if (this.instanceCount > 0 && this.instancesDirty) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
     }
   }
 
@@ -975,14 +983,20 @@ export class CoverRenderer {
    * middle of the chunk further out.
    */
   private buildDraws(b: CoverBody, pixelAngle: number): void {
-    this.bucketCount.fill(0);
     const lean = b.info.cover.windLean;
+    // First the chunk rows (every frame: they are relative to the camera) and which chunks are listed, with a
+    // signature of everything the lists are built from apart from the eye. The lists themselves are kept
+    // between frames while that signature, the pixel scale and the eye (within LIST_TOLERANCE_M) stay: a
+    // camera that stands still (on the pad before lift-off) costs the rows only, not some hundred thousand
+    // instance indices sorted into buckets and uploaded again.
+    let sig = 0x811c9dc5;
+    const mix = (x: number): void => {
+      sig = Math.imul(sig ^ (x | 0), 0x01000193);
+    };
     for (const tier of b.tiers) {
-      const base = tier.shape * COVER_VARIANTS * COVER_LODS;
       for (const c of tier.wanted) {
         c.listed = false;
         if (!c.built || c.base < 0 || c.count === 0 || c.lastUsed !== this.frameIndex) continue;
-        // The chunk's rows (also for chunks out of view: shadow cascades hold them).
         const g = c.origin;
         const m = b.rot;
         const q = b.prevRot;
@@ -1005,8 +1019,32 @@ export class CoverRenderer {
         const minRadius = c.near / tier.rangePerRadius;
         if (c.maxRadius < minRadius) continue;
         c.listed = true;
-        for (let v = 0; v < COVER_VARIANTS; v++) c.listEnd[v] = CoverRenderer.prefixEnd(c.radii, c.variantStart[v]!, c.variantStart[v + 1]!, minRadius);
-        if (!c.visible) continue;
+        mix(c.slot);
+        mix(c.base);
+        mix(c.visible ? 1 : 0);
+        for (let v = 0; v < COVER_VARIANTS; v++) {
+          c.listEnd[v] = CoverRenderer.prefixEnd(c.radii, c.variantStart[v]!, c.variantStart[v + 1]!, minRadius);
+          mix(c.listEnd[v]!);
+        }
+      }
+    }
+    const kept = b.list;
+    if (kept && kept.sig === sig && kept.pixelAngle === pixelAngle && kept.start === this.instanceCount && v3.dist(kept.eye, b.eye) < LIST_TOLERANCE_M) {
+      // The instance buffer still holds these lists (shadow lists are appended after them).
+      this.instanceCount += kept.count;
+      this.triangles += kept.triangles;
+      b.empty = kept.count === 0 && !b.tiers.some((t) => t.wanted.some((c) => c.listed));
+      return;
+    }
+    this.instancesDirty = true;
+    const start = this.instanceCount;
+    const trianglesBefore = this.triangles;
+    this.bucketCount.fill(0);
+    for (const tier of b.tiers) {
+      const base = tier.shape * COVER_VARIANTS * COVER_LODS;
+      for (const c of tier.wanted) {
+        if (!c.listed || !c.visible) continue;
+        const g = c.origin;
         // An instance spans 110 pixels (finest mesh) or 28 (middle) where its radius is this share of its distance.
         const fineShare = 55 * pixelAngle;
         const middleShare = 14 * pixelAngle;
@@ -1052,6 +1090,7 @@ export class CoverRenderer {
       if (count > 0) b.empty = false;
       this.triangles += (count * this.meshes[k]!.indexCount) / 3;
     }
+    b.list = { sig, eye: { ...b.eye }, pixelAngle, start, count: this.instanceCount - start, triangles: this.triangles - trianglesBefore };
     // A body with listed chunks out of view still casts.
     if (b.empty) b.empty = !b.tiers.some((t) => t.wanted.some((c) => c.listed));
   }
