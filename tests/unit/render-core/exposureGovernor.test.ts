@@ -15,6 +15,7 @@ import {
   histogramStats,
   INTERIOR_HIGHLIGHT_CAP,
   INTERIOR_HIGHLIGHT_MAX_EV,
+  INTERIOR_BRIGHT_MAX_EV,
   INTERIOR_NIGHT_KEY_EV,
   INTERIOR_WINDOW_FROM,
   INTERIOR_WINDOW_FULL,
@@ -25,6 +26,7 @@ import {
   sunny16Ev,
   type MeterInput,
 } from '@/render/core/post/exposure';
+import { displayLinear, srgbEncode } from '@/render/core/post/tonemap';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorState } from '@/render/core/post/governor';
 
 const SUN = 128000;
@@ -405,7 +407,8 @@ describe('interior metering: night key and bounded highlights (request cockpit-5
     // the log-average itself, about a third of a stop here.)
     expect(INTERIOR_HIGHLIGHT_MAX_EV).toBe(1.25);
     expect(withLit - base).toBeGreaterThan(0.6);
-    expect(withLit - base).toBeLessThan(INTERIOR_HIGHLIGHT_MAX_EV + 0.5);
+    // (3 % of the frame at 100 times the cabin is a bright area of request cockpit-12: a little more.)
+    expect(withLit - base).toBeLessThan(INTERIOR_BRIGHT_MAX_EV);
     expect(shown(30, withLit)).toBeGreaterThan(0.05);
     // A sun patch 600 times the cabin: the bound holds, the cabin stays readable.
     const patch = new Uint32Array(cabin);
@@ -536,6 +539,44 @@ describe('Hapke inversion table and black-body table', () => {
   });
 });
 
+describe('interior metering: bright areas of a few per cent of the frame (request cockpit-12)', () => {
+  const level = (luminance: number, ev: number): number => 255 * srgbEncode(displayLinear([luminance * exposureFromEv100(ev), luminance * exposureFromEv100(ev), luminance * exposureFromEv100(ev)])[1]);
+  it('a 5 % sun patch 6 EV over the cabin is brought into the shoulder; the cabin stays readable', () => {
+    // Cabin at 30 cd/m^2 over 95 % of the frame, a patch on the console at 64 x that over 5 %.
+    const cabin = new Uint32Array(HISTOGRAM_BINS);
+    cabin[luminanceBin(30)] = 0.95 * N;
+    const withPatch = Uint32Array.from(cabin);
+    withPatch[luminanceBin(30 * 64)] = 0.05 * N;
+    const r = meter(withPatch, { histogramNear: withPatch, kind: 'interior' });
+    const base = meter(cabin, { histogramNear: cabin, kind: 'interior' });
+    const patchLevel = level(30 * 64, r.targetEv100);
+    const cabinLevel = level(30, r.targetEv100);
+    console.log(
+      `[cockpit-12] 5 % patch at +6 EV: stop-down ${(r.targetEv100 - base.targetEv100).toFixed(2)} EV against the cabin alone; patch ${patchLevel.toFixed(0)} / 255, cabin ${cabinLevel.toFixed(0)} / 255 (cabin alone ${level(30, base.targetEv100).toFixed(0)}; the patch at the cabin's own exposure ${level(30 * 64, base.targetEv100).toFixed(0)})`,
+    );
+    // In the shoulder (texture and hue kept), not at 255 ...
+    expect(patchLevel).toBeLessThan(246);
+    expect(patchLevel).toBeGreaterThan(200);
+    // ... and the cabin readable, a stop or two under its own exposure.
+    expect(cabinLevel).toBeGreaterThan(40);
+    expect(r.targetEv100 - base.targetEv100).toBeLessThanOrEqual(INTERIOR_BRIGHT_MAX_EV + 0.3);
+    // Under a per cent of the frame the rule is off.
+    const speck = Uint32Array.from(cabin);
+    speck[luminanceBin(30 * 64)] = 0.005 * N;
+    const plain = Uint32Array.from(cabin);
+    expect(meter(speck, { histogramNear: speck, kind: 'interior' }).targetEv100 - meter(plain, { histogramNear: plain, kind: 'interior' }).targetEv100).toBeLessThan(0.1);
+  });
+  it('highlights that would blow out whatever the stop-down (1,000 times the cabin) leave the cabin alone', () => {
+    const cabin = new Uint32Array(HISTOGRAM_BINS);
+    cabin[luminanceBin(30)] = 0.95 * N;
+    const sun = Uint32Array.from(cabin);
+    sun[luminanceBin(30 * 1000)] = 0.05 * N;
+    const r = meter(sun, { histogramNear: sun, kind: 'interior' });
+    const base = meter(cabin, { histogramNear: cabin, kind: 'interior' });
+    expect(r.targetEv100 - base.targetEv100).toBeLessThanOrEqual(INTERIOR_HIGHLIGHT_MAX_EV + 0.5);
+  });
+});
+
 describe('interior metering: what fills the frame through the windows (request cockpit-7)', () => {
   /** A cabin by day (20-120 cd/m^2 over `cabin` of the frame) and lit geometry beyond it over `far` of the frame. */
   const view = (cabin: number, far: number, farLo = 2000, farHi = 9000): { all: Uint32Array; near: Uint32Array } => {
@@ -548,18 +589,31 @@ describe('interior metering: what fills the frame through the windows (request c
   const interior = (v: { all: Uint32Array; near: Uint32Array }, over: Partial<MeterInput> = {}): ReturnType<typeof meterExposure> => meter(v.all, { histogramNear: v.near, kind: 'interior', ...over });
   const shown = (luminance: number, ev: number): number => luminance * exposureFromEv100(ev);
 
-  it('the seat view is metered on the cabin alone: windows under a tenth of the frame change nothing', () => {
+  it('the seat view: windows under a tenth of the frame do not weigh as the outside, but a bright Earth in them is brought into the shoulder (request cockpit-12)', () => {
     expect(INTERIOR_WINDOW_FROM).toBe(0.1);
     expect(INTERIOR_WINDOW_FULL).toBe(0.4);
     const alone = interior(view(0.9, 0));
+    // Under a per cent of the frame nothing moves.
+    expect(interior(view(0.9, 0.005)).targetEv100).toBe(alone.targetEv100);
+    let last = alone.targetEv100;
     for (const far of [0.02, 0.05, 0.08, 0.1]) {
       const r = interior(view(0.9, far));
-      expect(r.targetEv100).toBe(alone.targetEv100);
       expect(r.outsideWeight).toBe(0);
       expect(r.outsideFraction).toBeCloseTo(far, 3);
+      // The bright-area rule stops down, more for more window, by at most INTERIOR_BRIGHT_MAX_EV ...
+      expect(r.targetEv100).toBeGreaterThanOrEqual(last);
+      expect(r.targetEv100 - alone.targetEv100).toBeLessThanOrEqual(INTERIOR_BRIGHT_MAX_EV + 1e-9);
+      last = r.targetEv100;
     }
-    // The windows blow out there: sunlit cloud tops at 9,000 cd/m^2 are far above white.
-    expect(shown(9000, alone.targetEv100)).toBeGreaterThan(10);
+    // ... so that at 8 % the day side (2,000-9,000 cd/m^2, 40-180 times the cabin) comes 3 EV down into the
+    // shoulder (cloud tops at +4.8 EV over mid-grey instead of +7.8, land and ocean at +2.7) and the cabin
+    // goes to the dark tones, as in a photograph exposed for the window.
+    const eight = interior(view(0.9, 0.08)).targetEv100;
+    expect(eight - alone.targetEv100).toBeCloseTo(INTERIOR_BRIGHT_MAX_EV, 1);
+    expect(shown(9000, alone.targetEv100)).toBeGreaterThan(30);
+    expect(shown(9000, eight)).toBeLessThan(6);
+    expect(shown(2000, eight)).toBeLessThan(1.3);
+    expect(shown(histogramStats(view(0.9, 0).near, N, Infinity).logMean, eight)).toBeGreaterThan(0.02);
   });
 
   it('the Earth filling the frame through a window is exposed as an exterior camera exposes it; the cabin goes to a silhouette', () => {
@@ -595,8 +649,9 @@ describe('interior metering: what fills the frame through the windows (request c
     }
     const half = interior(view(0.5, 0.25));
     expect(half.outsideWeight).toBeCloseTo(0.5, 2);
-    const cabinOnly = interior(view(0.5, 0)).targetEv100;
-    expect(half.targetEv100).toBeCloseTo(cabinOnly + 0.5 * (half.evOutside - cabinOnly), 6);
+    // The cabin's own target (with the bright-area rule of request cockpit-12) moves half way to the outside's.
+    const cabinTarget = half.evPrior + (half.evHistogram - half.evPrior) * half.histogramWeight;
+    expect(half.targetEv100).toBeCloseTo(cabinTarget + 0.5 * (half.evOutside - cabinTarget), 6);
     expect(interior(view(0.5, 0.6)).targetEv100).toBeCloseTo(interior(view(0.5, 0.4)).targetEv100, 1);
   });
 

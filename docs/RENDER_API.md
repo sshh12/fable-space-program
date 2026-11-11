@@ -815,7 +815,19 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   may raise the target by at most `INTERIOR_HIGHLIGHT_MAX_EV` = 1.25 EV above the log-average target). So
   sunlit hardware up to 48 x mid-grey keeps its surface, a sun patch several hundred times brighter than
   the cabin stops the camera down by 1.25 EV and still blows out, the shaded cabin sits a stop to two under
-  mid-grey, and the windows (farther than 8 m) blow out. Exterior and map metering do not know these terms.
+  mid-grey. Exterior and map metering do not know these terms.
+- **Bright areas of a few per cent** (request `cockpit-12`). Lit pixels more than `INTERIOR_BRIGHT_RATIO`
+  = 16 times the cabin's log-mean, near (a sun patch on the console) or far (the Earth in a window), are
+  counted. As their share of the frame grows from `INTERIOR_BRIGHT_FROM` = 1 % to `INTERIOR_BRIGHT_FULL` =
+  8 %, the highlight cap tightens (log-linearly) from 48 to `INTERIOR_BRIGHT_CAP` = 12 x mid-grey, the 99th
+  percentile of every lit pixel takes part, and the bound grows from 1.25 to `INTERIOR_BRIGHT_MAX_EV` = 3 EV.
+  Only where that helps: when the bright area's median would still stand more than
+  `INTERIOR_BRIGHT_HOPELESS_EV` = 3 EV over the cap at the full rule (direct sun on white paint, a window
+  1,000 times the cabin) the extra stop-down fades out, since it would cost the cabin and save nothing.
+  Example (unit test): a cabin at 30 cd/m^2 with a 5 % patch 6 EV above it is stopped down 1.9 EV; the patch
+  shows at 235 / 255 (252 at the cabin's own exposure: flat white) and the cabin at 64 / 255 (125 alone).
+  The seat's view with 8 % of day-side Earth (40-180 times the cabin) is stopped down 3 EV: cloud tops at
+  +4.8 EV over mid-grey, land and ocean at +2.7, the cabin in the dark tones.
 - **What fills the frame through the windows** (request `cockpit-7`). The lit geometry beyond 8 m (the
   full histogram minus the near one: the Earth, the Moon, the pad) is metered by the exterior rule
   (arithmetic mean of its lit range to mid-grey with the compensation curve, `HIGHLIGHT_CAP` on its 99th
@@ -823,7 +835,7 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   weight `smoothstep(INTERIOR_WINDOW_FROM = 0.1, INTERIOR_WINDOW_FULL = 0.4, share of the frame)`; it never
   opens the exposure (a night side in the window leaves a lit cabin alone), and sky pixels count for
   nothing (they are in neither histogram). From the seat the windows are a few per cent of the frame and
-  the cabin is metered alone; with the eye at the window the Earth is exposed as from outside and the
+  the cabin is metered by the rules above (a bright Earth there brings the bright-area rule in); with the eye at the window the Earth is exposed as from outside and the
   window frame is a silhouette; between a tenth and four tenths the picture is in between (at a quarter of
   the frame the camera is half-way in EV: the cabin dark and the Earth still clipped), so aim views at one
   or the other. `exposureInfo()` reports `outsideFraction`, `evOutside` and `outsideWeight`. Lab:
@@ -1282,6 +1294,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | The exposure histogram is taken before the transparent pass (frame graph step 8b); under the sun the target is bounded at sunny 16 + `SUNLIT_HIGHLIGHT_MAX_EV` (0.5) for metered pixels and emitter hints alike | `vfx-4` | vfx (flames, splashes, fireballs no longer stop the camera down; send a hint for an emitter in front of geometry if the camera should react); every bright daylight frame (cloud decks, snow, a white hull filling the frame: up to 0.65 EV brighter than before); night scenes unchanged | A transparent that was metered because it stood in front of geometry is not any more: add a hint where that was relied on |
 | Dark floor `EV_DARK_FLOOR` -3 -> -6, `EV_MIN` -3 -> -7; dark adaptation below EV -3 at `ADAPT_DARK` = 0.12 EV/s (`DARK_ADAPT_EV`); the tone curve's toe is linear and hue-preserving below 4 stops under mid-grey (`TOE_GAIN`, `displayLinear`) | `sky-lighting-3` | every view with nothing lit in it (the night sky, deep space, the night side from orbit); every pixel darker than 3 stops under mid-grey in every package (deep shadow, unlit sides: lifted, e.g. 3.4 -> 8.9 of 255 at 5 stops under) | None in code. Specs that pinned the floor at -3 or the level of deep shadow must be re-measured; a frame with nothing lit takes 25 s longer to reach its darkest exposure |
 | Integration lab: the vehicle feature is created with `exteriorGlass: false` when the cockpit package is loaded (section 17.7); lab helper `lookInThroughWindow(distance, window)` | `cockpit-8` | cockpit, vehicle-pad; the author of `src/app` | None in the packages. In the lab the capsule windows are open to the cabin from outside when both are loaded |
+| Interior metering: bright areas over 1-8 % of the frame (16 x the cabin and more, near or far) tighten the highlight cap to 12 x mid-grey and loosen the bound to 3 EV, unless they would blow out anyway (`INTERIOR_BRIGHT_RATIO / _FROM / _FULL / _CAP / _MAX_EV / _HOPELESS_EV`), section 13 | `cockpit-12` | cockpit; anything with `CameraState.kind === 'interior'` | None under 1 % of the frame. A cabin with a sun patch or a bright window of a few per cent is displayed up to 3 EV darker, the patch or the window in the shoulder instead of flat white |
 | Interior metering: lit geometry beyond the cabin stops the exposure down from a tenth of the frame (`INTERIOR_WINDOW_FROM / FULL`), `MeterResult` and `exposureInfo()` gained `outsideFraction`, `evOutside`, `outsideWeight`, section 13 | `cockpit-7` | cockpit; anything with `CameraState.kind === 'interior'` | None below a tenth of the frame. An interior view in which the Earth, the Moon or the ground fill more than that through the windows is exposed darker, up to the exterior exposure at four tenths |
 | Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5`, `cockpit-6` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin out of the sun is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.25 EV darker than before |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |

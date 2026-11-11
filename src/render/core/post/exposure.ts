@@ -81,6 +81,23 @@ export const INTERIOR_NIGHT_HIGH = 64;
 export const INTERIOR_HIGHLIGHT_CAP = 48;
 export const INTERIOR_HIGHLIGHT_MAX_EV = 1.25;
 /**
+ * Bright areas in an interior view (request cockpit-12). Lit pixels more than INTERIOR_BRIGHT_RATIO times
+ * the cabin's log-mean, near (a sun patch on the console) or beyond INTERIOR_RANGE (the Earth in a window),
+ * are counted; as their share of the frame grows from INTERIOR_BRIGHT_FROM to INTERIOR_BRIGHT_FULL the
+ * highlight cap tightens from INTERIOR_HIGHLIGHT_CAP to INTERIOR_BRIGHT_CAP times mid-grey (log-linearly),
+ * the brightest of them all take part in it, and the bound on the stop-down grows from
+ * INTERIOR_HIGHLIGHT_MAX_EV to INTERIOR_BRIGHT_MAX_EV: a patch or a window of a few per cent of the frame
+ * is brought into the tone curve's shoulder, as a photographer bracketing for it would, and the cabin goes a
+ * stop or two darker. Under a per cent nothing changes.
+ */
+export const INTERIOR_BRIGHT_RATIO = 16;
+export const INTERIOR_BRIGHT_FROM = 0.01;
+export const INTERIOR_BRIGHT_FULL = 0.08;
+export const INTERIOR_BRIGHT_CAP = 12;
+export const INTERIOR_BRIGHT_MAX_EV = 3;
+/** Highlights still this far (EV) over the cap after the largest stop-down get none of it (smoothly from 0). */
+export const INTERIOR_BRIGHT_HOPELESS_EV = 3;
+/**
  * What fills the frame through the windows (request cockpit-7). The lit geometry BEYOND INTERIOR_RANGE (the
  * Earth, the Moon, the pad: `histogram` minus `histogramNear`) is metered as an exterior camera would meter
  * it, and stops the interior exposure down towards that value by a weight that goes from 0 at
@@ -281,6 +298,28 @@ export function meterExposure(m: MeterInput): MeterResult {
       const evBase = evHistogram + keyEv;
       const evHigh = Math.log2(stats.p99 / (INTERIOR_HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
       evHistogram = Math.min(Math.max(evBase, evHigh), evBase + INTERIOR_HIGHLIGHT_MAX_EV);
+      // Bright areas, near and far (request cockpit-12): their share of the frame tightens the cap and
+      // loosens the bound, and the 99th percentile of every lit pixel takes part. Only where that brings them
+      // into the shoulder: highlights that would still stand more than INTERIOR_BRIGHT_HOPELESS_EV over the
+      // cap blow out either way (direct sun on white paint, a window 1,000 times the cabin), and stopping down
+      // for them would only cost the cabin.
+      const brightFrom = luminanceBin(INTERIOR_BRIGHT_RATIO * stats.logMean) + 1;
+      let bright = 0;
+      for (let i = brightFrom; i < HISTOGRAM_BINS; i++) bright += m.histogram[i]!;
+      const s = smooth(INTERIOR_BRIGHT_FROM, INTERIOR_BRIGHT_FULL, bright / m.sampleCount);
+      if (s > 0) {
+        const cap = INTERIOR_HIGHLIGHT_CAP * (INTERIOR_BRIGHT_CAP / INTERIOR_HIGHLIGHT_CAP) ** s;
+        const p99 = Math.max(stats.p99, histogramStats(m.histogram, m.sampleCount, Infinity).p99);
+        const evBright = Math.log2(p99 / (cap * MID_GREY * EXPOSURE_K));
+        const bound = evBase + INTERIOR_HIGHLIGHT_MAX_EV + (INTERIOR_BRIGHT_MAX_EV - INTERIOR_HIGHLIGHT_MAX_EV) * s;
+        // Hopeless or not by the bright area's median against the strongest rule (cap INTERIOR_BRIGHT_CAP,
+        // bound INTERIOR_BRIGHT_MAX_EV): it does not depend on the share, so the target grows with the share.
+        const median = binLuminance(percentileBin(m.histogram, brightFrom, bright, 0.5));
+        const excess = Math.log2(median / (INTERIOR_BRIGHT_CAP * MID_GREY * EXPOSURE_K)) - (evBase + INTERIOR_BRIGHT_MAX_EV);
+        const useful = 1 - smooth(0, INTERIOR_BRIGHT_HOPELESS_EV, excess);
+        const evNew = Math.min(Math.max(evBase, evBright), bound);
+        if (evNew > evHistogram) evHistogram += (evNew - evHistogram) * useful;
+      }
     } else {
       // The bound holds for the mean as well as for the 99th percentile: a few per cent of the frame at a
       // hundred times sunlit white move the arithmetic mean by stops.
