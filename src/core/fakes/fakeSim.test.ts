@@ -136,6 +136,11 @@ describe('FakeSim', () => {
     expect(sim.snapshot().vessels[0]!.vehicleId).toBe(vehicleId);
     // The default stays "no vehicle": the placeholder vessel belongs to none.
     expect(createFakeSim(defs, { scene: 'lowOrbit' }).snapshot().vessels[0]!.vehicleId).toBe('');
+    // The vessel's name can be given (request map-view-7); its id stays.
+    const named = createFakeSim(defs, { scene: 'lowOrbit', vesselName: 'Kestrel' }).snapshot().vessels[0]!;
+    expect(named.name).toBe('Kestrel');
+    expect(named.id).toBe('fake-vessel');
+    expect(createFakeSim(defs, { scene: 'lowOrbit' }).snapshot().vessels[0]!.name).toBe('Fake vessel');
   });
 
   it('can start with the legs deployed (a landed lander, request vehicle-pad-5); toggleLegs works from there', () => {

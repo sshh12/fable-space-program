@@ -370,6 +370,8 @@ async function boot(): Promise<void> {
     inner = createFakeSim(defs, {
       scene,
       legsDeployed,
+      // The vessel is called what the real simulation calls it: its vehicle's name (request map-view-7).
+      ...(defs.vehicles[vehicleId] ? { vesselName: defs.vehicles[vehicleId]!.name } : {}),
       // The vessel carries the vehicle's id with its parts: the cockpit finds its layout and the vessel
       // visuals their engine children through it.
       ...(real ? { parts: real.parts, stageLabels: real.stageLabels, vehicleId } : {}),

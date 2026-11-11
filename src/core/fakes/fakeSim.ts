@@ -75,6 +75,8 @@ export interface FakeSimOptions {
    * scene stands on them (request vehicle-pad-5); `toggleLegs` works from there as usual.
    */
   legsDeployed?: boolean;
+  /** Name of the active vessel in the snapshot (request map-view-7; default 'Fake vessel'). The id stays 'fake-vessel'. */
+  vesselName?: string;
 }
 
 const OBLIQUITY = 23.4392911 * DEG;
@@ -131,6 +133,7 @@ export class FakeSim implements Sim {
   private rcsEnabled = false;
   private fineControl = false;
   private legsDeployed = false;
+  private readonly vesselName: string;
   private lightsOn = false;
   private navballMode: NavballMode;
   private warpIndex = 0;
@@ -172,6 +175,7 @@ export class FakeSim implements Sim {
     if (opts.altitude !== undefined && this.spec.kind === 'surface') this.spec = { ...this.spec, altitude: opts.altitude };
     this.ground = opts.ground ?? null;
     this.legsDeployed = opts.legsDeployed ?? false;
+    this.vesselName = opts.vesselName ?? 'Fake vessel';
     this.siteDir = latLonToDir((this.spec.latDeg ?? 0) * DEG, (this.spec.lonDeg ?? 0) * DEG);
     this.orbitPhase0 = 0.6;
     this.navballMode = this.spec.kind === 'orbit' ? 'orbit' : 'surface';
@@ -756,7 +760,7 @@ export class FakeSim implements Sim {
 
     const vessel: VesselSnapshot = {
       id: 'fake-vessel',
-      name: 'Fake vessel',
+      name: this.vesselName,
       vehicleId: this.scenario.vehicle,
       controllable: true,
       tier: 'full',
