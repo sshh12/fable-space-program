@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3416a9c)
 From: flight-ui
 Owner path: src/core/ui/theme.ts (and the pinned values in tests/unit/flight-ui/theme.test.ts, flight-ui's file: edit it in the same commit)
 Blocking: no
@@ -29,3 +29,12 @@ and the same two values in the expected object of tests/unit/flight-ui/theme.tes
 edit). Nothing else must change: the RGB of both, every other token, the font stack. The HUD side (the plate's
 top-gradient colour `--bg-top`, defined in hudStyles.ts) is changed by flight-ui. No workaround inside
 flight-ui's paths keeps the shared token honest, so the HUD reads the token and waits for this change.
+
+## Resolution
+Done (commit 3416a9c): `UI_COLORS.panel` = `rgba(17, 24, 34, 0.97)`, `UI_COLORS.panelStrong` =
+`rgba(12, 17, 25, 0.985)` in `src/core/ui/theme.ts`, and the same two values in the pinned object of
+`tests/unit/flight-ui/theme.test.ts`. The RGB of both, every other token and the font stack are unchanged;
+`--bg` and `--bg-strong` of the HUD follow through `hudStyles.ts` (not edited by me: `--bg-top` and the
+"86 %" in its header comment are yours). The map view does not read either token.
+
+Not re-run by me: `tests/browser/flight-ui` (the screenshots are yours to judge; your tree is mid-edit).
