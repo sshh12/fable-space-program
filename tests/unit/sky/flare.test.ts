@@ -6,20 +6,26 @@ import {
   FLARE_TOTAL_ENERGY,
   GHOSTS,
   HOOD_DEPTH,
+  RAY_REACH,
   SPIKE_COUNT,
+  SPIKE_LAMBDA,
   STARBURST,
+  STREAKS,
+  STREAK_COUNT,
   bladeAngle,
   coneNdcBounds,
   flareNormalisation,
   flareRadiance,
-  frameSolidAngle,
   ghostFrame,
+  ghostImage,
   ghostShape,
   ghostSupport,
   hoodTransmission,
   ndcDirection,
   rayProfile,
+  spikeAmplitude,
   spikeBlade,
+  streakProfile,
   type FlareView,
 } from '@/render/sky/flare';
 
@@ -94,9 +100,9 @@ describe('ghost quads: bounding boxes of their cones', () => {
         let inside = 0;
         for (let i = 0; i < 720; i++) {
           const phi = (i * Math.PI) / 360;
-          for (const ch of [-1, 0, 1]) {
-            expect(ghostShape(gh, f, edge * 1.0001 * Math.sin(phi), edge * 1.0001 * Math.cos(phi), ch)).toBe(0);
-            inside = Math.max(inside, ghostShape(gh, f, 0.5 * gh.radius * Math.sin(phi), 0.5 * gh.radius * Math.cos(phi), ch));
+          for (const blue of [false, true]) {
+            expect(ghostShape(gh, f, edge * 1.0001 * Math.sin(phi), edge * 1.0001 * Math.cos(phi), blue)).toBe(0);
+            inside = Math.max(inside, ghostShape(gh, f, 0.8 * gh.radius * Math.sin(phi), 0.8 * gh.radius * Math.cos(phi), blue));
           }
         }
         expect(inside).toBeGreaterThan(0);
@@ -140,76 +146,131 @@ describe('iris', () => {
   });
 });
 
+const lumaOf = (c: readonly number[]): number => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+
 describe('flare model over the whole sphere', () => {
-  it('stays under 1 % of the source, and every term integrates to its energy', () => {
+  it('stays under 1 % of the source, and the terms integrate to their energies', () => {
     expect(FLARE_TOTAL_ENERGY).toBeLessThan(0.01);
     expect(GHOSTS.reduce((s, g) => s + g.energy, 0)).toBeLessThan(0.00036);
-    // Integral over the sphere outside the disc of the on-axis model without the veil = core + skirt + rays + ghosts.
-    const veil = STARBURST.veilEnergy / frameSolidAngle(view.tanX, view.tanY);
+    // Luminance of the on-axis model integrated over the sphere outside the disc's 1.5 px rim. Rings in log steps;
+    // the azimuth step follows the narrowest streak (half its width).
     let sum = 0;
-    const nt = 700;
-    const np = 840;
+    const nt = 420;
     const la = Math.log(SUN_RADIUS + 1.5e-3);
     const lb = Math.log(Math.PI);
     for (let i = 0; i < nt; i++) {
       const th = Math.exp(la + ((i + 0.5) * (lb - la)) / nt);
+      const sigma = Math.hypot(STARBURST.rayDiscSigma * SUN_RADIUS, STARBURST.streakFan * th);
+      const np = th < RAY_REACH ? Math.min(4000, Math.max(336, Math.ceil((4 * Math.PI * th) / sigma))) : 8;
       let ring = 0;
-      for (let j = 0; j < np; j++) ring += flareRadiance(onAxis, aroundAxis(th, ((j + 0.5) * 2 * Math.PI) / np), 1e-3)[1] - veil;
+      for (let j = 0; j < np; j++) ring += lumaOf(flareRadiance(onAxis, aroundAxis(th, -Math.PI + ((j + 0.5) * 2 * Math.PI) / np), 1e-3));
       sum += ((ring * 2 * Math.PI) / np) * Math.sin(th) * ((th * (lb - la)) / nt);
     }
-    // The ring between the disc and its 1.5 px rim (excluded by the model) holds 1.3 % of the glare.
-    expect(sum / (FLARE_TOTAL_ENERGY - STARBURST.veilEnergy)).toBeGreaterThan(0.97);
-    expect(sum / (FLARE_TOTAL_ENERGY - STARBURST.veilEnergy)).toBeLessThan(1.005);
-    // The veil holds its energy inside the frame.
-    expect(veil * frameSolidAngle(view.tanX, view.tanY)).toBeCloseTo(STARBURST.veilEnergy, 12);
+    // The ring between the disc and its 1.5 px rim (excluded by the model) holds a few per cent of the rays; the red
+    // and blue rays are a little longer / shorter than the green ones the set is normalised with.
+    expect(sum / FLARE_TOTAL_ENERGY).toBeGreaterThan(0.93);
+    expect(sum / FLARE_TOTAL_ENERGY).toBeLessThan(1.03);
   });
 
-  it('the glare has no rim: between the rays it falls monotonically, never faster than theta^-3, to the far side of the frame', () => {
-    const between = (theta: number): number => {
-      // Half way between two rays, and with the ghosts of an on-axis sun (all on the sun) subtracted by going beyond them.
-      const phi = Math.PI / SPIKE_COUNT;
-      return flareRadiance(onAxis, aroundAxis(theta, phi), 1e-3)[1];
-    };
-    let prev = between(0.42);
-    for (let th = 0.43; th < 1.2; th += 0.01) {
-      const l = between(th);
-      expect(l).toBeGreaterThan(0);
-      expect(l).toBeLessThan(prev);
-      expect(l / prev).toBeGreaterThan((1 - 0.01 / th) ** 3);
-      prev = l;
-    }
-    // The tail is the theta^-2 skirt over the veil: a doubling of the angle takes off less than two stops.
-    expect(between(0.5) / between(1.0)).toBeLessThan(4);
-  });
-
-  it('a ray is a wedge: as wide as the disc at its base, wider further out, gone within ten degrees, strongest on the blade it belongs to', () => {
+  it('the halo has no rim: it falls monotonically to the far side of the sphere, never faster than theta^-3, in one tint', () => {
+    // Beyond the reach of the rays and of the ghosts of an on-axis sun only the halo is left.
+    const at = (theta: number): [number, number, number] => flareRadiance(onAxis, aroundAxis(theta, 0.3), 1e-3);
     const n = flareNormalisation(SUN_RADIUS);
-    const ray = (theta: number, dphi: number, j = 0): number => rayProfile(theta, (j * 2 * Math.PI) / SPIKE_COUNT + BLADES[spikeBlade(j)]!.angle + dphi, SUN_RADIUS, 1);
+    let prev = at(RAY_REACH + 0.01)[1];
+    for (let th = RAY_REACH + 0.02; th < 3.1; th += 0.01) {
+      const l = at(th);
+      expect(l[1]).toBeGreaterThan(0);
+      expect(l[1]).toBeLessThan(prev);
+      expect(l[1] / prev).toBeGreaterThan((1 - 0.01 / th) ** 3);
+      for (let c = 0; c < 3; c++) expect(l[c]! / (STARBURST.haloEnergy * n.halo * STARBURST.haloTint[c]!)).toBeCloseTo((1 + (th / STARBURST.haloAngle) ** 2) ** -1.5, 10);
+      prev = l[1];
+    }
+    // Level under the bloom's shoulder: within 4 deg of the sun the halo changes by under 12 %.
+    expect((1 + (0.07 / STARBURST.haloAngle) ** 2) ** -1.5).toBeGreaterThan(0.88);
+    // Violet-blue: blue above red above green, luminance 1.
+    expect(lumaOf(STARBURST.haloTint)).toBeCloseTo(1, 12);
+    expect(STARBURST.haloTint[2]).toBeGreaterThan(1.3 * STARBURST.haloTint[1]);
+    expect(STARBURST.haloTint[0]).toBeGreaterThan(STARBURST.haloTint[1]);
+  });
+
+  it('a ray is a thin wedge that ends: as wide as the disc at its base, wider further out, zero beyond its length, red at its tip', () => {
+    const angleOf = (j: number): number => (j * 2 * Math.PI) / SPIKE_COUNT + BLADES[spikeBlade(j)]!.angle;
+    const ray = (theta: number, dphi: number, j = 0, lambda = 1): number => rayProfile(theta, angleOf(j) + dphi, SUN_RADIUS, lambda);
     // Full width at half maximum across the ray at angle theta (rad).
-    const fwhm = (theta: number): number => {
-      const peak = ray(theta, 0);
+    const fwhm = (theta: number, j = 0): number => {
+      const peak = ray(theta, 0, j);
       let d = 0;
-      while (ray(theta, d / theta) > 0.5 * peak) d += 1e-5;
+      while (ray(theta, d / theta, j) > 0.5 * peak) d += 1e-5;
       return 2 * d;
     };
-    expect(fwhm(0.01)).toBeGreaterThan(SUN_RADIUS);
-    // 5 deg from the sun: at least the disc's diameter (the display check of the work list).
-    expect(fwhm(0.0873)).toBeGreaterThan(2 * SUN_RADIUS * 0.75);
-    expect(fwhm(0.0873)).toBeGreaterThan(1.5 * fwhm(0.02));
-    // The peak falls faster than theta^-3 beyond the knee.
-    expect(ray(0.12, 0) / ray(0.06, 0)).toBeLessThan(1 / 8);
-    // Beyond 10 deg a ray adds less than 3 % to the glare between the rays (under a display level at any exposure
-    // that does not burn the whole frame).
-    const glare = flareRadiance(onAxis, aroundAxis(0.175, Math.PI / SPIKE_COUNT), 1e-3)[1];
-    for (let j = 0; j < SPIKE_COUNT; j++) expect(STARBURST.rayEnergy * n.rays * ray(0.175, 0, j)).toBeLessThan(0.03 * glare);
-    // Blades differ: strength and length spread by more than 20 %.
-    const amps = BLADES.map((b) => b.amplitude);
-    const lens = BLADES.map((b) => b.length);
-    expect(Math.max(...amps) / Math.min(...amps)).toBeGreaterThan(1.4);
-    expect(Math.max(...lens) / Math.min(...lens)).toBeGreaterThan(1.4);
+    // (2 deg out: nearer the sun neighbouring rays run into each other.)
+    expect(fwhm(0.035)).toBeGreaterThan(SUN_RADIUS);
+    expect(fwhm(0.035)).toBeLessThan(1.5 * SUN_RADIUS);
+    expect(fwhm(0.2)).toBeGreaterThan(1.3 * fwhm(0.02));
+    // Thin: 11 deg from the sun the widest ray is under 1.5 deg across.
+    for (let j = 0; j < SPIKE_COUNT; j++) if (BLADES[spikeBlade(j)]!.length > 0.2) expect(fwhm(0.19, j)).toBeLessThan(0.026);
+    for (let j = 0; j < SPIKE_COUNT; j++) {
+      const len = BLADES[spikeBlade(j)]!.length;
+      // It ends exactly at its length (times the wavelength) without a step: the last half per cent is under 1e-5 of the base.
+      expect(ray(len * 1.0001, 0, j)).toBe(0);
+      expect(ray(len * 0.995, 0, j)).toBeGreaterThan(0);
+      expect(ray(len * 0.995, 0, j) / ray(0.02, 0, j)).toBeLessThan(1e-5);
+      // Red reaches further than green, green further than blue.
+      expect(ray(len * 0.97, 0, j, SPIKE_LAMBDA[0])).toBeGreaterThan(ray(len * 0.97, 0, j, 1));
+      expect(ray(len * 0.97, 0, j, SPIKE_LAMBDA[2])).toBe(0);
+      expect(len * SPIKE_LAMBDA[0]).toBeLessThanOrEqual(RAY_REACH);
+    }
+    expect(SPIKE_LAMBDA[0] / SPIKE_LAMBDA[2]).toBeGreaterThan(1.15);
+    // Colour fringes along a ray: red over blue swings by more than a factor 1.5 between 2 deg and half its length.
+    const long = BLADES.indexOf(BLADES.reduce((a, b) => (b.length > a.length ? b : a)));
+    let lo = Infinity;
+    let hi = 0;
+    for (let th = 0.035; th < 0.5 * BLADES[long]!.length; th += 0.001) {
+      const q = ray(th, 0, 2 * long, SPIKE_LAMBDA[0]) / ray(th, 0, 2 * long, SPIKE_LAMBDA[2]);
+      lo = Math.min(lo, q);
+      hi = Math.max(hi, q);
+    }
+    expect(hi / lo).toBeGreaterThan(1.5);
+    // Blades differ strongly: one pair more than twice as long as the median, one nearly missing; a blade's two rays differ.
+    const lens = BLADES.map((b) => b.length).sort((a, b) => a - b);
+    expect(lens[BLADE_COUNT - 1]! / lens[0]!).toBeGreaterThan(3);
+    expect(lens[BLADE_COUNT - 1]! / lens[3]!).toBeGreaterThan(1.7);
+    const amps = Array.from({ length: SPIKE_COUNT }, (_, j) => spikeAmplitude(j));
+    expect(Math.max(...amps) / Math.min(...amps)).toBeGreaterThan(5);
+    for (let b = 0; b < BLADE_COUNT; b++) {
+      expect(0.5 * (spikeAmplitude(2 * b) + spikeAmplitude(2 * b + BLADE_COUNT))).toBeCloseTo(BLADES[b]!.amplitude, 12);
+      expect(spikeAmplitude(2 * b) / spikeAmplitude(2 * b + BLADE_COUNT)).toBeCloseTo(BLADES[b]!.asymmetry, 12);
+    }
+    expect(Math.max(...BLADES.map((b) => Math.abs(b.angle)))).toBeGreaterThan(0.07);
   });
 
-  it('ghosts are dim iris images: none above an eighth of mid-grey at the exposure of a sunlit scene, blurred by at least a solar radius', () => {
+  it('streaks: one per azimuth cell, a few strong and long among many faint ones, continuous across the cells', () => {
+    expect(STREAKS).toHaveLength(STREAK_COUNT);
+    const cell = (2 * Math.PI) / STREAK_COUNT;
+    STREAKS.forEach((s, i) => {
+      expect(s.azimuth).toBeGreaterThan(-Math.PI + i * cell);
+      expect(s.azimuth).toBeLessThan(-Math.PI + (i + 1) * cell);
+      expect(s.length * SPIKE_LAMBDA[0]).toBeLessThanOrEqual(RAY_REACH);
+    });
+    const amps = STREAKS.map((s) => s.amplitude).sort((a, b) => a - b);
+    expect(amps[STREAK_COUNT >> 1]! / amps[STREAK_COUNT - 1]!).toBeLessThan(0.3);
+    const lens = STREAKS.map((s) => s.length).sort((a, b) => a - b);
+    expect(lens[STREAK_COUNT - 1]! / lens[STREAK_COUNT >> 1]!).toBeGreaterThan(2);
+    // A pixel visits three cells: stepping across a cell border changes the sum by under 1 % of the ring's peak
+    // (from 4 deg out, where a streak is narrower than a cell).
+    for (const theta of [0.07, 0.12, 0.25]) {
+      let peak = 0;
+      for (let i = 0; i < 7200; i++) peak = Math.max(peak, streakProfile(theta, -Math.PI + ((i + 0.5) * 2 * Math.PI) / 7200, SUN_RADIUS, 1));
+      expect(peak).toBeGreaterThan(0);
+      for (let i = 1; i < STREAK_COUNT; i++) {
+        const border = -Math.PI + i * cell;
+        expect(Math.abs(streakProfile(theta, border - 1e-9, SUN_RADIUS, 1) - streakProfile(theta, border + 1e-9, SUN_RADIUS, 1))).toBeLessThan(0.01 * peak);
+      }
+    }
+    expect(streakProfile(RAY_REACH, 0.1, SUN_RADIUS, 1)).toBe(0);
+  });
+
+  it('ghosts are dim iris images, no two alike: sharp and defocused, an oval, a ring, a crescent, a colour fringe on one side only', () => {
     const n = flareNormalisation(SUN_RADIUS);
     // EV100 14.4 (a sunlit Earth): mid-grey is 0.18 x 1.2 x 2^14.4 cd/m^2; the sun delivers 130,000 lux.
     const midGrey = 0.18 * 1.2 * 2 ** 14.4;
@@ -218,21 +279,41 @@ describe('flare model over the whole sphere', () => {
       expect(gh.blur).toBeGreaterThanOrEqual(1);
       let peak = 0;
       for (let k = 0; k < 4000; k++) {
-        const r = gh.radius * 1.3 * Math.sqrt((k + 0.5) / 4000);
+        const r = gh.radius * 1.6 * Math.sqrt((k + 0.5) / 4000);
         const phi = k * 2.39996323;
-        peak = Math.max(peak, ghostShape(gh, f, r * Math.sin(phi), r * Math.cos(phi), 0));
+        peak = Math.max(peak, ...ghostImage(gh, f, r * Math.sin(phi), r * Math.cos(phi)));
       }
       const luminance = 130_000 * gh.energy * n.ghosts[i]! * peak * Math.max(...gh.tint);
       expect(luminance).toBeLessThan(midGrey / 8);
     }
-    // Lateral colour: the red and the blue image are displaced to opposite sides along the axis-to-sun line.
-    const gh = GHOSTS[1]!;
-    const edge = (ch: number): number => {
+    // Edge softness (blur over apothem) spans far more than a factor 3; three ghosts are defocused blobs.
+    const soft = GHOSTS.map((g) => (g.blur * SUN_RADIUS) / g.radius).sort((a, b) => a - b);
+    expect(soft[soft.length - 1]! / soft[0]!).toBeGreaterThan(5);
+    expect(soft.filter((s) => s > 0.4).length).toBeGreaterThanOrEqual(3);
+    // No two share their shape parameters, and they are not evenly spaced on the axis.
+    const keys = new Set(GHOSTS.map((g) => [g.blur, g.round, g.rim, g.hollow, g.aspect, g.bite, g.flip].join('/')));
+    expect(keys.size).toBe(GHOSTS.length);
+    const ks = GHOSTS.map((g) => g.k).sort((a, b) => a - b);
+    const gaps = ks.slice(1).map((k, i) => k - ks[i]!);
+    expect(Math.max(...gaps) / Math.min(...gaps)).toBeGreaterThan(8);
+    // Lateral colour on one side only: along the axis the blue image ends where the others end on the side towards
+    // the image centre and reaches further out on the far side.
+    const gh = GHOSTS.find((g) => g.chroma > 0 && g.bite === 0 && g.hollow === 0)!;
+    const edge = (blue: boolean, sign: number): number => {
+      const ref = ghostShape(gh, f, 0, 0, blue);
       let t = 0;
-      while (ghostShape(gh, f, f.axis[0] * t, f.axis[1] * t, ch) > 0.5 * ghostShape(gh, f, 0, 0, ch)) t += gh.radius / 2000;
+      while (ghostShape(gh, f, sign * f.axis[0] * t, sign * f.axis[1] * t, blue) > 0.5 * ref) t += gh.radius / 4000;
       return t;
     };
-    expect((edge(-1) - edge(0)) * (edge(1) - edge(0))).toBeLessThan(0);
-    expect(Math.abs(edge(-1) - edge(1))).toBeGreaterThan(0.05 * gh.radius);
+    expect(edge(true, 1) - edge(false, 1)).toBeGreaterThan(1.2 * gh.chroma * gh.radius);
+    expect(Math.abs(edge(true, -1) - edge(false, -1))).toBeLessThan(0.35 * gh.chroma * gh.radius);
+    // The crescent: nothing at the centre of the cut, light on the far side of the ghost.
+    const cr = GHOSTS.find((g) => g.bite > 0)!;
+    expect(ghostShape(cr, f, f.axis[0] * cr.biteShift * cr.radius, f.axis[1] * cr.biteShift * cr.radius)).toBe(0);
+    expect(ghostShape(cr, f, -f.axis[0] * 0.75 * cr.radius, -f.axis[1] * 0.75 * cr.radius)).toBeGreaterThan(0.3);
+    // The ring: its centre is nearly empty.
+    const ring = GHOSTS.find((g) => g.hollow > 0.9)!;
+    const fr = ghostFrame(view, [0, 0], SUN_RADIUS);
+    expect(ghostShape(ring, fr, 0, 0) / ghostShape(ring, fr, 0.9 * ring.radius, 0)).toBeLessThan(0.15);
   });
 });

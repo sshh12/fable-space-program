@@ -15,7 +15,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import { STAR_RECORD_FLOATS, type SkyManifest } from '@/core/contracts/sky';
 import { mat4, quat, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
 import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type SceneBindings, type Tracked } from '@/render/core';
-import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, STARBURST, bladeAngle, coneNdcBounds, flareNormalisation, frameSolidAngle, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
+import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, SPIKE_COUNT, STARBURST, STREAKS, STREAK_COUNT, bladeAngle, coneNdcBounds, flareNormalisation, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, spikeAmplitude, type FlareView } from './flare';
 import {
   farBodyDiscIntegral,
   farBodyLuneSum,
@@ -139,8 +139,10 @@ interface FarBody {
 }
 const smooth01 = (x: number): number => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const FLARE_TERMS = 1 + GHOSTS.length;
-/** FlareUniforms of FLARE_WGSL: count, sun, glare, rays, the blades (2 vec4 each), the ghosts (5 vec4 each). */
-const FLARE_FLOATS = 16 + BLADE_COUNT * 8 + GHOSTS.length * 20;
+/** FlareUniforms of FLARE_WGSL: count, sun, halo, rays, lines, the blades (2 vec4 each), the streaks (1 vec4 each), the ghosts (6 vec4 each). */
+const FLARE_HEAD_FLOATS = 20;
+const FLARE_GHOST_STRIDE = 24;
+const FLARE_FLOATS = FLARE_HEAD_FLOATS + BLADE_COUNT * 8 + STREAK_COUNT * 4 + GHOSTS.length * FLARE_GHOST_STRIDE;
 
 const luma = (c: Readonly<Vec3Tuple>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
@@ -490,13 +492,17 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     const rs = frame.sun.angularRadius;
     const gf = ghostFrame(view, [sx, sy], rs);
     const lateral = ghostLateral(gf.offAxis);
-    f.set([hood, STARBURST.veilEnergy / frameSolidAngle(tanX, tanY), gf.axis[0], gf.axis[1]], 4);
-    f.set([STARBURST.coreAngle, STARBURST.coreEnergy * flareNorm.core, STARBURST.skirtAngle, STARBURST.skirtEnergy * flareNorm.skirt], 8);
-    f.set([STARBURST.rayKnee, STARBURST.rayEnergy * flareNorm.rays, STARBURST.rayDiscSigma * rs, 0], 12);
+    const halo = STARBURST.haloEnergy * flareNorm.halo;
+    f.set([hood, STARBURST.haloAngle, gf.axis[0], gf.axis[1]], 4);
+    f.set([STARBURST.haloTint[0] * halo, STARBURST.haloTint[1] * halo, STARBURST.haloTint[2] * halo, 0], 8);
+    f.set([STARBURST.rayKnee, STARBURST.rayEnergy * flareNorm.rays, STARBURST.rayDiscSigma * rs, STARBURST.streakEnergy * flareNorm.streaks], 12);
+    f.set([STARBURST.fringeDepth, (2 * Math.PI) / STARBURST.fringePeriod, STARBURST.streakFan, 1 / STARBURST.fringeReach], 16);
     BLADES.forEach((b, i) => {
       const a = bladeAngle(i);
-      f.set([Math.sin(a), Math.cos(a), b.angle, b.amplitude, b.length, b.fan, 0, 0], 16 + i * 8);
+      // Blade i owns rays 2i (its first) and 2i + BLADE_COUNT.
+      f.set([Math.sin(a), Math.cos(a), b.angle, 0, b.length, b.fan, spikeAmplitude(2 * i), spikeAmplitude((2 * i + BLADE_COUNT) % SPIKE_COUNT)], FLARE_HEAD_FLOATS + i * 8);
     });
+    STREAKS.forEach((st, i) => f.set([st.azimuth, st.amplitude, st.length, 0], FLARE_HEAD_FLOATS + BLADE_COUNT * 8 + i * 4));
     GHOSTS.forEach((g, i) => {
       const gx = sx * g.k;
       const gy = sy * g.k;
@@ -508,10 +514,11 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
           ...[gx, gy, g.radius, g.flip],
           ...[g.tint[0], g.tint[1], g.tint[2], g.energy * flareNorm.ghosts[i]!],
           ...[blur, g.round, g.rim, (g.gradient * lateral) / g.radius],
-          ...[g.chroma * g.radius * lateral, g.vignette * gf.offAxis * g.radius, GHOST_CLIP_RADIUS * g.radius + 2 * blur, support],
+          ...[g.chroma * lateral, g.vignette * gf.offAxis * g.radius, GHOST_CLIP_RADIUS * g.radius + 2 * blur, support],
+          ...[g.aspect, g.hollow, g.bite * g.radius, g.biteShift * g.radius],
           ...[x0 - mx, y0 - my, x1 + mx, y1 + my],
         ],
-        16 + BLADE_COUNT * 8 + i * 20,
+        FLARE_HEAD_FLOATS + BLADE_COUNT * 8 + STREAK_COUNT * 4 + i * FLARE_GHOST_STRIDE,
       );
     });
     device.queue.writeBuffer(flareBuf, 0, flareData);

@@ -11,7 +11,7 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, RAY_REACH, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
+import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, RAY_REACH, SPIKE_COUNT, SPIKE_LAMBDA, STREAK_COUNT } from './flare';
 import { IMPOSTOR_KERNEL_CUT, SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX, STAR_WING_ALPHA_PX, STAR_WING_FLOOR, STAR_WING_MAX_PX, STAR_WING_SHARE } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
@@ -439,16 +439,18 @@ fn bodyHides(d: vec3f) -> bool {
 
 /**
  * Lens flare in the transparent stage (flare.ts has the model and its CPU twin). Instance 0 = the starburst
- * around the sun, drawn over the whole frame: glare core + theta^-2 skirt + uniform veil, and the fourteen
- * diffraction rays of the 7-blade iris (as wide as the solar disc at the base, opening into fans, each blade
- * with its own strength, length, fan and angular error, a slight wavelength smear along the ray). Instances
- * 1.. = the ghosts: images of the iris (rounded heptagons turned like the rays) on the line from the sun
- * through the image centre, blurred by the solar disc, with lateral colour, an uneven fill and a cat's-eye
- * clip off axis, each on the screen-space bounding box of its cone. Every term's profile is normalised on the
- * CPU so its luminance integrates to its energy fraction x the illuminance at the lens; the sum is under 1 %.
- * The source is the sun's illuminance x the visible disc fraction, cloud and atmosphere transmittance
- * (FLARE_VIS_CS) x the lens hood's transmission for a sun outside the frame (flare.ts hoodTransmission).
- * Additive (alpha 0); applyAtmosphere at distance 0 is exactly neutral: the flare forms inside the lens.
+ * around the sun, drawn over the whole frame: the wide violet-blue halo that carries the bloom's glare on to
+ * the frame edge, the fourteen diffraction rays of the 7-blade iris (as wide as the solar disc at the base,
+ * narrow fans, each blade with its own strength, length, fan and angular error and two unequal rays; angles
+ * scale with the wavelength, so a ray shows colour fringes and ends red) and the lens's table of fine streaks
+ * between them (a pixel visits the streak of its azimuth cell and of the two cells beside it). Instances
+ * 1.. = the ghosts: images of the iris on the line from the sun through the image centre, no two alike (sharp
+ * or defocused, oval, hollow, cut to a cat's eye or to a crescent), each on the screen-space bounding box of
+ * its cone. Every term's profile is normalised on the CPU so its luminance integrates to its energy fraction
+ * x the illuminance at the lens; the sum is under 1 %. The source is the sun's illuminance x the visible disc
+ * fraction, cloud and atmosphere transmittance (FLARE_VIS_CS) x the lens hood's transmission for a sun
+ * outside the frame (flare.ts hoodTransmission). Additive (alpha 0). The flare forms inside the lens, at
+ * distance 0, where applyAtmosphere is exactly neutral: it is not called (three texture lookups a pixel).
  */
 export const FLARE_WGSL = (bindings: string): string => /* wgsl */ `
 #include "frame"
@@ -457,27 +459,31 @@ ${bindings}
 ${CAP_WGSL}
 const SPIKE_COUNT = ${SPIKE_COUNT};
 const BLADE_COUNT = ${BLADE_COUNT};
+const STREAK_COUNT = ${STREAK_COUNT};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
 const POLY_EQ_CIRCLE = ${f(POLY_EQ_CIRCLE)};
 const RAY_REACH = ${f(RAY_REACH)};
 struct FlareState { visible: vec4f, transmittance: vec4f }
 struct Blade {
-  dir: vec4f,     // x = sin, y = cos of the edge normal's angle in the image plane (from up towards right), z = its angular error (rad), w = ray amplitude
-  ray: vec4f,     // x = ray length scale (rad), y = fan (across width per radian from the sun)
+  dir: vec4f,     // x = sin, y = cos of the edge normal's angle in the image plane (from up towards right), z = its angular error (rad)
+  ray: vec4f,     // x = ray length (rad), y = fan (across width per radian from the sun), z = strength of its first ray, w = of its second
 }
 struct Ghost {
   pos: vec4f,     // xy = centre in NDC, z = apothem of the iris image (rad), w = +1 / -1 (inverted image)
   tint: vec4f,    // rgb = coating tint (luminance 1), a = energy fraction x normalisation (1/sr)
   shape: vec4f,   // x = edge blur (rad), y = roundness, z = rim, w = fill gradient per radian along the axis
-  extra: vec4f,   // x = lateral colour shift (rad), y = cat's-eye shift (rad), z = cat's-eye radius (rad), w = support (rad)
+  extra: vec4f,   // x = lateral colour of the blue image (fraction of the apothem), y = cat's-eye shift (rad), z = cat's-eye radius (rad), w = support (rad)
+  more: vec4f,    // x = stretch along the axis, y = hollow, z = radius of the crescent cut (rad; 0 = none), w = its centre along the axis (rad)
   quad: vec4f,    // NDC bounds: xy = min, zw = max
 }
 struct FlareUniforms {
   count: vec4u,
-  sun: vec4f,     // x = lens hood transmission, y = veil (energy / frame solid angle, 1/sr), zw = unit axis-to-sun direction in the image plane (right, up)
-  glare: vec4f,   // x = core angle (rad), y = core energy x normalisation, z = skirt angle (rad), w = skirt energy x normalisation
-  rays: vec4f,    // x = knee angle (rad), y = energy x normalisation, z = across sigma at the sun (rad)
+  sun: vec4f,     // x = lens hood transmission, y = halo angle (rad), zw = unit axis-to-sun direction in the image plane (right, up)
+  halo: vec4f,    // rgb = halo tint x energy x normalisation
+  rays: vec4f,    // x = knee angle (rad), y = ray energy x normalisation, z = across sigma at the sun (rad), w = streak energy x normalisation
+  lines: vec4f,   // x = fringe depth, y = 2 pi / fringe period (1/rad), z = streak fan, w = 1 / fringe reach (1/rad)
   blades: array<Blade, ${BLADE_COUNT}>,
+  streaks: array<vec4f, ${STREAK_COUNT}>,   // x = azimuth (rad), y = amplitude, z = length (rad)
   ghosts: array<Ghost, ${GHOSTS.length}>,
 }
 @group(2) @binding(0) var<uniform> flare: FlareUniforms;
@@ -503,20 +509,35 @@ fn ndcRay(n: vec2f) -> vec3f {
 }
 fn smooth01(x: f32) -> f32 { return smoothstep(0.0, 1.0, x); }
 
-/// One channel of a ghost at tangent-plane point q (rad; right, up) from its centre (flare.ts ghostShape):
-/// x = the image, y = distance measure of the iris image at q, z = distance from the cat's-eye centre.
-fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> vec3f {
+/// Light per unit length along a ray or streak of length 'len' at angle theta, per channel (flare.ts alongProfile).
+fn alongProfile(theta: f32, len: f32) -> vec3f {
+  let t = vec3f(theta) / SPIKE_LAMBDA;
+  let w = max(vec3f(1.0) - (t / len) * (t / len), vec3f(0.0));
+  let tk = t / flare.rays.x;
+  return w * w / (vec3f(1.0) + tk * tk) / SPIKE_LAMBDA;
+}
+
+/// A ghost at tangent-plane point p (rad; right, up) from its centre (flare.ts ghostShape); c = lateral colour of
+/// this image (0 for red and green, the ghost's for blue).
+fn ghostShape(gh: Ghost, p: vec2f, axis: vec2f, c: f32) -> f32 {
+  let R0 = gh.pos.z;
+  let R = R0 * (1.0 + c);
+  let s = gh.shape.x;
+  let q0 = p - axis * (c * R0);
+  let u = dot(q0, axis) / gh.more.x;
+  let v = dot(q0, vec2f(-axis.y, axis.x));
+  let q = axis * u + vec2f(-axis.y, axis.x) * v;
   var poly = -1.0e9;
   for (var b = 0; b < BLADE_COUNT; b++) { poly = max(poly, gh.pos.w * dot(q, flare.blades[b].dir.xy)); }
-  let R = gh.pos.z;
-  let s = gh.shape.x;
   let d = mix(poly, length(q) / POLY_EQ_CIRCLE, gh.shape.y);
   let mask = smooth01(0.5 - (d - R) / (2.0 * s));
-  let fill = 1.0 + gh.shape.z * (smooth01((d / R - 0.55) / 0.45) - 0.5);
-  let grad = max(0.0, 1.0 + gh.shape.w * dot(q, axis));
-  let dv = length(q + axis * gh.extra.y);
-  let clip = smooth01(0.5 - (dv - gh.extra.z) / (2.0 * s));
-  return vec3f(mask * fill * grad * clip, d, dv);
+  let rel = min(d / R, 1.0);
+  let fill = (1.0 + gh.shape.z * (smooth01((rel - 0.55) / 0.45) - 0.5)) * (1.0 - gh.more.y * (1.0 - rel * rel));
+  let grad = max(0.0, 1.0 + gh.shape.w * u);
+  let dv = length(q0 + axis * gh.extra.y);
+  var clip = smooth01(0.5 - (dv - gh.extra.z) / (2.0 * s));
+  if (gh.more.z > 0.0) { clip *= smooth01(0.5 + (length(q0 - axis * gh.more.w) - gh.more.z) / (2.0 * s)); }
+  return mask * fill * grad * clip;
 }
 
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
@@ -533,35 +554,44 @@ fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> vec3f {
   if (theta < frame.sunDir.w + 1.5 * 2.0 * frame.cameraUp.w * frame.renderSize.w) { discard; }
   var L = vec3f(0.0);
   if (in.index == 0u) {
-    // Glare: core + theta^-2 skirt + veil.
-    let xc = theta / flare.glare.x;
-    let xs = theta / flare.glare.z;
-    let vc = 1.0 + xc * xc;
-    let glare = flare.glare.y / (vc * sqrt(vc)) + flare.glare.w / (1.0 + xs * xs) + flare.sun.y;
-    var rays = vec3f(0.0);
+    let xh = theta / flare.sun.y;
+    let vh = 1.0 + xh * xh;
+    var lines = vec3f(0.0);
     if (theta < RAY_REACH) {
-      // Rays: azimuth about the sun in the image plane, from the camera's up towards its right.
+      // Azimuth about the sun in the image plane, from the camera's up towards its right.
       let toS = normalize(dir - s * dot(dir, s));
       let up = normalize(frame.cameraUp.xyz - s * dot(frame.cameraUp.xyz, s));
       let rt = cross(s, up);
       let phi = atan2(dot(toS, rt), dot(toS, up));
+      let w0 = flare.rays.z;
+      // Rays: the nearest of the fourteen. Rays 2b and 2b + BLADE_COUNT belong to blade b (both directions
+      // perpendicular to its edge); the even one is its first ray.
       let seg = TWO_PI / f32(SPIKE_COUNT);
       let j = round(phi / seg);
       let m = (i32(j) + SPIKE_COUNT) % SPIKE_COUNT;
-      // Rays 2b and 2b + BLADE_COUNT belong to blade b (both directions perpendicular to its edge).
-      let blade = flare.blades[select((m + BLADE_COUNT) % SPIKE_COUNT, m, (m & 1) == 0) / 2];
+      let first = (m & 1) == 0;
+      let blade = flare.blades[select((m + BLADE_COUNT) % SPIKE_COUNT, m, first) / 2];
       let across = theta * sin(phi - j * seg - blade.dir.z);
-      let w0 = flare.rays.z;
       let fan = blade.ray.y * theta;
-      let sigma = sqrt(w0 * w0 + fan * fan);
-      // Along: flat inside the knee, theta^-2 beyond, ending at the blade's length; angles scale with wavelength.
-      let t = vec3f(theta) / SPIKE_LAMBDA;
-      let tl = t / blade.ray.x;
-      let tk = t / flare.rays.x;
-      let along = exp(-tl * tl) / (vec3f(1.0) + tk * tk) / SPIKE_LAMBDA;
-      rays = flare.rays.y * blade.dir.w * along * (exp(-0.5 * across * across / (sigma * sigma)) / (2.5066282746 * sigma));
+      let sigma2 = w0 * w0 + fan * fan;
+      // Fringes: in step at the sun for every wavelength, apart further out, washed out beyond a few bands.
+      let xf = theta * flare.lines.w;
+      let fringe = vec3f(1.0) + (flare.lines.x * exp(-xf * xf)) * cos(vec3f(theta * flare.lines.y) / SPIKE_LAMBDA);
+      lines = (flare.rays.y * select(blade.ray.w, blade.ray.z, first) * exp(-0.5 * across * across / sigma2) / (2.5066282746 * sqrt(sigma2))) * alongProfile(theta, blade.ray.x) * fringe;
+      // Streaks: this azimuth cell's and its neighbours'.
+      let cell = TWO_PI / f32(STREAK_COUNT);
+      let ci = clamp(i32(floor((phi + PI) / cell)), 0, STREAK_COUNT - 1);
+      let sfan = flare.lines.z * theta;
+      let ss2 = w0 * w0 + sfan * sfan;
+      var streaks = vec3f(0.0);
+      for (var k = -1; k <= 1; k++) {
+        let sk = flare.streaks[(ci + k + STREAK_COUNT) % STREAK_COUNT];
+        let ac = theta * sin(phi - sk.x);
+        streaks += (sk.y * exp(-0.5 * ac * ac / ss2)) * alongProfile(theta, sk.z);
+      }
+      lines += streaks * (flare.rays.w / (2.5066282746 * sqrt(ss2)));
     }
-    L = source * (vec3f(glare) + rays);
+    L = source * (flare.halo.rgb / (vh * sqrt(vh)) + lines);
   } else {
     let gh = flare.ghosts[in.index - 1u];
     let c = ndcRay(gh.pos.xy);
@@ -574,19 +604,13 @@ fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> vec3f {
     var p = vec2f(0.0);
     if (tvl > 0.0) { p = vec2f(dot(tv, rtc), dot(tv, upc)) * (a / tvl); }
     let axis = flare.sun.zw;
-    // Lateral colour: the red and blue images are displaced along the axis-to-sun line. Well inside the iris image
-    // and the cat's-eye clip the three differ only by that shift of the fill: the green image stands for all
-    // (flare.ts ghostImage).
-    let green = ghostShape(gh, p, axis);
-    var img = vec3f(green.x);
-    if (green.y > gh.pos.z - gh.shape.x - gh.extra.x || green.z > gh.extra.z - gh.shape.x - gh.extra.x) {
-      let sh = axis * gh.extra.x;
-      img = vec3f(ghostShape(gh, p + sh, axis).x, green.x, ghostShape(gh, p - sh, axis).x);
-    }
-    L = source * gh.tint.rgb * gh.tint.a * img;
+    // Red and green share one image; the blue one is larger on the side away from the image centre.
+    let img = ghostShape(gh, p, axis, 0.0);
+    var blue = img;
+    if (gh.extra.x > 0.0) { blue = ghostShape(gh, p, axis, gh.extra.x); }
+    L = source * gh.tint.rgb * gh.tint.a * vec3f(img, img, blue);
   }
-  let c = applyAtmosphere(uv, 0.0, L * frame.exposure.x, 0.0);
-  return vec4f(capAdditive(c.rgb), 0.0);
+  return vec4f(capAdditive(L * frame.exposure.x), 0.0);
 }
 `;
 
