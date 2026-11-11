@@ -14,6 +14,8 @@ const HDR_MAX = 60000;
 
 interface Exposure {
   ev100: number;
+  /** Factor from luminance (cd/m^2) to the pre-exposed values of the HDR targets. */
+  exposure: number;
   sunny16: number;
   litFraction: number;
   hdr: { maxLuminance: number; nanPixels: number };
@@ -29,18 +31,23 @@ async function exposure(page: Page, frames: number): Promise<Exposure> {
     const sun = r.frameContext!.sun.illuminance;
     const hdr = await r.readHdrStats('hdr');
     const resolved = await r.readHdrStats('resolved');
-    return { ev100: e.ev100, sunny16: Math.log2(sun / (1.2 * Math.PI)), litFraction: e.litFraction, hdr, resolved };
+    return { ev100: e.ev100, exposure: e.exposure, sunny16: Math.log2(sun / (1.2 * Math.PI)), litFraction: e.litFraction, hdr, resolved };
   }, frames);
 }
 
 test('a sunlit vehicle against black space is exposed for sunlight, with every package present', async ({ page, pageLog }) => {
-  const info = await openIntegration(page, 'scene=translunar&orbit=30,15,90&hud=0');
+  const info = await openIntegration(page, 'scene=translunar&hud=0');
   requireFeatures(test, info, ['vehicle']);
+  // From the sunlit side, 45 m away: the white hull fills a tenth of the frame against black space.
+  await page.evaluate(() => window.__integration!.watchVesselFromSunSide(45, 35));
   const e = await exposure(page, 400);
   await save(page, 'exposure-vehicle-in-space');
-  console.log(`vehicle in space [${info.loaded.join(', ')}]: EV100 ${e.ev100.toFixed(2)} vs sunny 16 ${e.sunny16.toFixed(2)}, lit ${(100 * e.litFraction).toFixed(2)} %, nan ${e.hdr.nanPixels} / ${e.resolved.nanPixels}`);
+  console.log(`vehicle in space [${info.loaded.join(', ')}]: EV100 ${e.ev100.toFixed(2)} vs sunny 16 ${e.sunny16.toFixed(2)}, lit ${(100 * e.litFraction).toFixed(2)} %, brightest ${(e.hdr.maxLuminance / e.exposure).toFixed(0)} cd/m^2, nan ${e.hdr.nanPixels} / ${e.resolved.nanPixels}`);
   record('f.vehicleInSpace', { loaded: info.loaded, ...e });
   expect(Math.abs(e.ev100 - e.sunny16)).toBeLessThan(0.5);
+  // The sunlit hull is in the picture (a white surface in sunlight: thousands of cd/m^2), not its night side.
+  expect(e.hdr.maxLuminance / e.exposure, 'brightest pixel of the frame (cd/m^2)').toBeGreaterThan(5000);
+  expect(e.litFraction, 'share of the frame that holds lit geometry').toBeGreaterThan(0.005);
   expect(e.hdr.nanPixels).toBe(0);
   expect(e.resolved.nanPixels).toBe(0);
   expect(e.hdr.maxLuminance).toBeLessThanOrEqual(HDR_MAX * 1.0001);
