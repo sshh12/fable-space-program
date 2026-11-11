@@ -152,6 +152,20 @@ export interface AtmosphereRenderDef {
   ozoneCenterAltitude: number;
   ozoneHalfWidth: number;
   groundAlbedo: number;
+  /** Airglow layers (request atmosphere-clouds-9); absent = none. */
+  airglow?: AirglowLayerDef[];
+}
+
+/** One optically thin emitting layer of the upper atmosphere (airglow; request atmosphere-clouds-9). */
+export interface AirglowLayerDef {
+  /** Altitude of the emission peak above the reference radius, m. */
+  altitude: number;
+  /** Full width at half maximum of the (Gaussian) emission profile, m. */
+  thickness: number;
+  /** Luminance seen straight up from under the layer, cd/m^2. */
+  zenithLuminance: number;
+  /** Linear sRGB, any scale (the renderer normalises it to unit luminance). */
+  color: Vec3Tuple;
 }
 
 export interface CloudRenderDef {
