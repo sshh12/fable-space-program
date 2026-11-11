@@ -22,6 +22,8 @@
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
  *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
+ *   &map=1                      the map view, active while the camera kind is 'map' (window.__integration.mapCamera)
+ *   &flighthud=1                the flight HUD over the canvas (its panels are the map's obstacles)
  *   &ballast=1                  add a ballast pass at the end of the frame (feature lab-ballast, off until
  *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
@@ -32,6 +34,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import type { PartSnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { PointerState } from '@/core/contracts/controls';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -43,7 +46,8 @@ import { coreOf, type SceneBindings, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createFetchTileSource, createTerrainProvider } from '@/terrain';
-import { createMfdPainter, createNavballRenderer } from '@/ui';
+import { createHud, createMfdPainter, createNavballRenderer } from '@/ui';
+import { createMapView, type MapViewApi } from '@/map';
 import { createProbes } from '../render-core/probes';
 import { createEndBallast } from './ballast';
 import { sunAtSite, withSnapshotMap, withSunOverride, type Site, type SunOverride } from '../render-core/world';
@@ -66,6 +70,19 @@ export interface IntegrationLab {
   setBallast(iterations: number): void;
   /** 'real' when the Sim of src/sim drives the page. */
   simKind: 'fake' | 'real';
+  /**
+   * The map view (&map=1, request map-view-5), mounted as the app shell mounts it: active while the camera
+   * kind is 'map', updated every frame with the snapshot, the camera and the canvas size in CSS px; with the
+   * flight HUD (&flighthud=1) its panels are the map's obstacles. Null without &map=1.
+   */
+  map: MapViewApi | null;
+  /** Boxes (CSS px) of the flight HUD's panels and navball handed to the map as obstacles ([] without the HUD). */
+  hudRects(): { x: number; y: number; width: number; height: number }[];
+  /**
+   * Map camera: distance m from the centre of odyId (null = the active vessel's body) along the direction
+   * yaw / pitch (deg, ROOT axes), looking at it, 50 deg field of view, camera kind 'map'.
+   */
+  mapCamera(bodyId: string | null, yawDeg: number, pitchDeg: number, distance: number): void;
   terrain: TerrainProvider;
   /** Camera on a body: height above the REFERENCE radius (sea level on an ocean body), heading clockwise from north. */
   surface(bodyId: string, latDeg: number, lonDeg: number, alt: number, headingDeg: number, pitchDeg: number): void;
@@ -525,12 +542,56 @@ async function boot(): Promise<void> {
     return terrain.heightAt(bodyId, dir);
   };
 
-  app.onFrame((snapshot) => {
+  // The flight HUD over the canvas (&flighthud=1) and the map view (&map=1), as the app shell mounts them
+  // (request map-view-5): the HUD's panels are the map's obstacles, the map is active in map view only.
+  let hudRects = (): { x: number; y: number; width: number; height: number }[] => [];
+  let flightHud: ReturnType<typeof createHud> | null = null;
+  let hudHost: HTMLElement | null = null;
+  if (query.get('flighthud') === '1') {
+    flightHud = createHud({ defs, gpu: app.gpu, navball, dispatch: () => undefined, keyHelp: [] });
+    hudHost = document.createElement('div');
+    hudHost.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:10';
+    document.body.appendChild(hudHost);
+    flightHud.mount(hudHost);
+    flightHud.setVisible(true);
+    const host = hudHost;
+    hudRects = () => {
+      // The selectors of flight-ui's own coverage check (tests/browser/flight-ui/screens.spec.ts).
+      const visible = (e: Element): boolean => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+      const els = [...host.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .nbchips > div, .hud .toast, .hud .ball')].filter(visible);
+      return els.map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => ({ x: b.left, y: b.top, width: b.width, height: b.height }));
+    };
+  }
+  let mapView: MapViewApi | null = null;
+  if (query.get('map') === '1') {
+    const { view, feature } = createMapView(app.gpu, defs, hudHost ? { uiRoot: hudHost } : {});
+    await app.renderer.addFeature(feature);
+    mapView = view;
+  }
+  const pointerAtRest: PointerState = { x: -100, y: -100, dx: 0, dy: 0, buttons: 0, pressed: false, released: false, doubleClick: false, wheel: 0, shift: false, ctrl: false, alt: false, overUi: false };
+  let hudFrame = 0;
+
+  app.onFrame((snapshot, realDt) => {
     watchErrors();
     follow?.(snapshot);
-    const encoder = app.gpu.device.createCommandEncoder({ label: 'integration.navball' });
-    navball.render(encoder, snapshot);
-    app.gpu.device.queue.submit([encoder.finish()]);
+    if (mapView) {
+      // Before the camera is placed for the frame (the app's order: map, flight controller, camera rig).
+      const camera = app.cameraState();
+      mapView.setActive(camera.kind === 'map');
+      if (camera.kind === 'map') {
+        const r = canvas.getBoundingClientRect();
+        mapView.update(snapshot, camera, app.sim.commands, pointerAtRest, [r.width, r.height]);
+      }
+    }
+    if (flightHud) {
+      // The HUD renders the navball itself.
+      flightHud.update(snapshot, app.cameraState(), Math.min(0.1, realDt));
+      if (mapView && hudFrame++ % 10 === 0) mapView.setObstacles(hudRects());
+    } else {
+      const encoder = app.gpu.device.createCommandEncoder({ label: 'integration.navball' });
+      navball.render(encoder, snapshot);
+      app.gpu.device.queue.submit([encoder.finish()]);
+    }
   });
 
   /** Render-target pixel of a point given relative to the camera (ROOT axes). */
@@ -796,6 +857,22 @@ async function boot(): Promise<void> {
     clearCascadeLog: () => probes?.clearCascadeLog(),
     release() {
       follow = null;
+    },
+    map: mapView,
+    hudRects: () => hudRects(),
+    mapCamera(bodyId, yawDeg, pitchDeg, distance) {
+      follow = null;
+      const s = app.snapshot();
+      const active = s.vessels.find((v) => v.id === s.activeVesselId);
+      const body = s.bodies.find((b) => b.id === (bodyId ?? active?.bodyId ?? defs.rootBodyId));
+      if (!body) return;
+      const yaw = yawDeg * DEG;
+      const pitch = pitchDeg * DEG;
+      const out = { x: Math.cos(pitch) * Math.cos(yaw), y: Math.cos(pitch) * Math.sin(yaw), z: Math.sin(pitch) };
+      const up = Math.abs(out.z) > 0.99 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 };
+      app.camera.settings.kind = 'map';
+      app.camera.settings.fovY = 50 * DEG;
+      app.camera.spec = { type: 'free', positionRoot: v3.addScaled(body.rRoot, out, distance), qViewToRoot: lookRotation(v3.neg(out), up) };
     },
   };
   window.__integration = lab;

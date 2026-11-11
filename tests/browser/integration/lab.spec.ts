@@ -80,3 +80,44 @@ test('with the cockpit loaded the capsule windows belong to the cockpit: the cab
   await expectClean(page, pageLog, alone);
 });
 
+test('the map view is mounted as the app mounts it: active in map view only, its labels and node panel clear of the flight HUD (request map-view-5)', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lowOrbit&hud=0&map=1&flighthud=1');
+  // Flight view first: the map is mounted but inactive.
+  await settle(page, 6);
+  expect(await page.evaluate(() => window.__integration!.map!.isActive)).toBe(false);
+  // Map view of the Earth from 25,000 km, above the orbit plane.
+  await page.evaluate(() => window.__integration!.mapCamera(null, 30, 55, 2.5e7));
+  await settle(page, 20);
+  const r = await page.evaluate(() => {
+    const lab = window.__integration!;
+    const s = lab.map!.stats();
+    return { active: lab.map!.isActive, hud: lab.hudRects(), kind: lab.app.cameraState().kind, lines: s.lines.length, glyphs: s.glyphs };
+  });
+  await save(page, 'integration-map-lowOrbit-hud');
+  console.log(`map view in the integration lab: active ${r.active}, camera ${r.kind}, ${r.lines} lines, ${r.glyphs} glyphs, ${r.hud.length} HUD boxes as obstacles`);
+  expect(r.kind).toBe('map');
+  expect(r.active).toBe(true);
+  expect(r.lines).toBeGreaterThan(0);
+  expect(r.hud.length).toBeGreaterThan(3);
+  // The node panel, when shown, is clear of every HUD box.
+  const panel = await page.evaluate(() => {
+    const p = document.querySelector<HTMLElement>('[data-map-panel]');
+    if (!p || p.style.display === 'none') return null;
+    const b = p.getBoundingClientRect();
+    return { x: b.left, y: b.top, width: b.width, height: b.height };
+  });
+  if (panel) {
+    for (const h of r.hud) {
+      const ox = Math.min(panel.x + panel.width, h.x + h.width) - Math.max(panel.x, h.x);
+      const oy = Math.min(panel.y + panel.height, h.y + h.height) - Math.max(panel.y, h.y);
+      expect(ox > 1 && oy > 1, 'node panel over a HUD box').toBe(false);
+    }
+  }
+  // Back to the flight view: inactive again.
+  await page.evaluate(() => {
+    window.__integration!.app.camera.settings.kind = 'external';
+  });
+  await settle(page, 4);
+  expect(await page.evaluate(() => window.__integration!.map!.isActive)).toBe(false);
+  await expectClean(page, pageLog, info);
+});
