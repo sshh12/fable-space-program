@@ -16,21 +16,31 @@ test.use({ viewport: { width: 1600, height: 900 } });
 
 /**
  * A point of the cabin (part frame): relative to the commander's eye in the seat's axes (right, head-up,
- * forward), on a window's axis `out` metres outside its centre, the centre of a display, on the line from
- * a cabin point out through a window's centre (`out` metres beyond it: the way the sun comes in, reversed),
+ * forward), on a window's axis `out` metres outside its centre, `out` metres from a window's centre square
+ * to the capsule's long axis (the horizon when the capsule stands upright), the centre of a display, on the line from
+ * a cabin point out through a window's centre (`out` metres beyond it: the way the sun comes in, reversed;
+ * the window id 'sun' is the window the lab let the sun in through),
  * or given directly.
  */
-type PointSpec = { seat: [number, number, number] } | { window: string; out: number } | { display: number } | { through: string; from: PointSpec; out: number } | { p: [number, number, number] };
+type PointSpec = { seat: [number, number, number] } | { window: string; out: number } | { horizon: string; out: number } | { display: number } | { through: string; from: PointSpec; out: number } | { p: [number, number, number] };
 
 interface Recipe {
-  /** Sun: through a window onto a cabin point, a direction in the vessel frame, behind the body (night), or the scene's own. */
-  sun?: { onto: PointSpec } | { ves: [number, number, number] } | 'eclipse';
+  /**
+   * Sun: onto a cabin point through the window the lab finds (the one through which the sun then stands
+   * highest) or through a named window, a direction in the vessel frame, behind the body (night), or the
+   * scene's own.
+   */
+  sun?: { onto: PointSpec; through?: string } | { ves: [number, number, number] } | 'eclipse';
   lights?: boolean;
   /** Camera: the seat's own view turned by yaw / pitch, or a free camera. */
   seat?: { yaw: number; pitch: number };
   free?: { kind: 'interior' | 'external'; eye: PointSpec; look: PointSpec; up?: 'seat' | 'nose' };
-  /** Seat view aimed at the window through which the body below shows most (the lab picks it). */
-  windowBelow?: boolean;
+  /**
+   * The view aimed at the window through which the body below shows most (the lab picks it), the eye moved
+   * this share of the way from the seat to the window (0 = in the seat; leaning to the window the Earth
+   * fills the frame and the renderer's interior metering exposes for it, request cockpit-7).
+   */
+  windowBelow?: number;
   fovDeg: number;
 }
 
@@ -91,10 +101,16 @@ async function apply(page: Page, recipe: Recipe): Promise<{ ok: boolean; why: st
     const L = norm(t3(seatDef.lookDir));
     const U = norm(sub(t3(seatDef.upDir), scale(L, dot(t3(seatDef.upDir), L))));
     const R = cross(L, U);
+    // The window the lab let the sun in through ('sun' as a window id below).
+    let sunWindow: string | null = null;
     const point = (p: unknown): V => {
-      const q = p as { seat?: number[]; window?: string; out?: number; display?: number; p?: number[]; through?: string; from?: unknown };
+      const q = p as { seat?: number[]; window?: string; horizon?: string; out?: number; display?: number; p?: number[]; through?: string; from?: unknown };
+      if (q.horizon) {
+        const w = model.windows.find((x) => x.id === q.horizon)!;
+        return add(w.centre, scale(norm({ x: -w.inward.x, y: 0, z: -w.inward.z }), q.out ?? 0));
+      }
       if (q.through) {
-        const w = model.windows.find((x) => x.id === q.through)!;
+        const w = model.windows.find((x) => x.id === (q.through === 'sun' ? sunWindow : q.through)) ?? model.windows[0]!;
         return add(w.centre, scale(norm(sub(w.centre, point(q.from))), q.out ?? 0));
       }
       if (q.seat) return add(t3(seatDef.pos), add(add(scale(R, q.seat[0]!), scale(U, q.seat[1]!)), scale(L, q.seat[2]!)));
@@ -112,12 +128,17 @@ async function apply(page: Page, recipe: Recipe): Promise<{ ok: boolean; why: st
       const body = snap.bodies.find((b) => b.id === vessel.bodyId)!;
       lab.setSunInVesselFrame(norm(qrot(qinv(vessel.q as Q), sub(body.rRoot as V, vessel.rRoot as V))));
     } else if (r.sun && 'ves' in r.sun) lab.setSunInVesselFrame(norm(t3(r.sun.ves)));
-    else if (r.sun && 'onto' in r.sun) lab.sunThroughWindowOnto(point(r.sun.onto));
+    else if (r.sun && 'onto' in r.sun && r.sun.through) {
+      // Along the line from the cabin point out through that window's centre (part frame -> vessel frame).
+      const w = model.windows.find((x) => x.id === (r.sun as { through: string }).through)!;
+      lab.setSunInVesselFrame(norm(qrot(part.localRot as Q, sub(w.centre, point(r.sun.onto)))));
+      sunWindow = w.id;
+    } else if (r.sun && 'onto' in r.sun) sunWindow = lab.sunThroughWindowOnto(point(r.sun.onto))?.window ?? null;
     // ---- lights
     if (r.lights !== undefined && r.lights !== snap.readouts.lightsOn) app.sim.commands.toggleLights();
     // ---- camera
-    if (r.windowBelow) {
-      if (!lab.sitAtWindowBelow()) return { ok: false, why: 'no window toward the body below', layout: vehicle.cockpit ?? null };
+    if (r.windowBelow !== undefined) {
+      if (!lab.sitAtWindowBelow(r.windowBelow)) return { ok: false, why: 'no window toward the body below', layout: vehicle.cockpit ?? null };
     } else if (r.seat) {
       if (!lab.sitInCockpit(r.seat.yaw, r.seat.pitch)) return { ok: false, why: 'no cockpit seat', layout: vehicle.cockpit ?? null };
     } else if (r.free) {
@@ -156,19 +177,20 @@ const SIDE = 'side-left';
 const views: { name: string; query: string; recipe: Recipe; dark?: boolean }[] = [
   // On the pad at noon, the whole stack under the capsule, looking up through the forward windows.
   { name: 'world-pad-noon-forward-window', query: 'scene=pad', recipe: { sun: { ves: [0.08, 0.9, 0.43] }, lights: true, seat: { yaw: 18, pitch: 46 }, fovDeg: 70 } },
-  // Low orbit, windows toward the Earth: the head turned to the side window the Earth fills, exposed as the
-  // renderer meters the cabin; the sun through the opposite window on the console.
-  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: true, fovDeg: 55 } },
-  { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 } },
+  // Low orbit, windows toward the Earth: leaning to the window the Earth fills, exposed as the renderer
+  // meters it (the Earth, with the window's frame a silhouette); the sun through another window on the console.
+  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.85, fovDeg: 55 } },
+  { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 } },
   // The night side: the sun behind the Earth, the cabin under its floods and displays.
   { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, dark: true },
   // Entry: the shock layer outside the windows, the floods on.
   { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, dark: true },
   // On the lunar surface: the head at the side window, level with it, the horizon outside.
-  // (The capsule stands upright there: the picture is taken head-up along the capsule's nose.)
-  { name: 'world-moon-horizon', query: 'scene=lunarSurface', recipe: { free: { kind: 'interior', eye: { seat: [-0.02, -0.12, 0.05] }, look: { window: SIDE, out: 6 }, up: 'nose' }, fovDeg: 52 } },
+  // (The capsule stands upright there: the picture is taken head-up along the capsule's nose. The cabin is
+  // unlit and the renderer exposes for the sunlit ground: the window frame is a silhouette.)
+  { name: 'world-moon-horizon', query: 'scene=lunarSurface', recipe: { free: { kind: 'interior', eye: { seat: [-0.05, -0.12, 0.04] }, look: { horizon: SIDE, out: 10 }, up: 'nose' }, fovDeg: 60 }, dark: true },
   // From outside: looking in through a forward window by day (the sun's way in) and on the night side.
-  { name: 'world-chase-window-sun', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, free: { kind: 'external', eye: { through: 'side-right', from: { display: 0 }, out: 1.0 }, look: { display: 0 } }, fovDeg: 40 } },
+  { name: 'world-chase-window-sun', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, free: { kind: 'external', eye: { through: 'sun', from: { display: 0 }, out: 0.9 }, look: { display: 0 } }, fovDeg: 40 } },
   { name: 'world-chase-window-night', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, free: { kind: 'external', eye: { through: 'fwd-left', from: { seat: [0.1, -0.1, 0.3] }, out: 0.7 }, look: { seat: [0.1, -0.1, 0.3] } }, fovDeg: 45 }, dark: true },
 ];
 

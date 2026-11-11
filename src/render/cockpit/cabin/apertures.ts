@@ -84,8 +84,10 @@ function tangentOf(points: Vec3[]): (i: number) => Vec3 {
 
 /**
  * Bezel around an opening: tunnel wall, chamfered front face, outer side. Returns the panes it holds and
- * the depth of its inner edge's plane (from the inner wall's centre along the inward normal). The bezel
- * belongs to the enclosure: the sun sees it as the window's aperture (WindowMeta.aperture).
+ * the depth of its inner edge's plane (from the inner wall's centre along the inward normal). The bezel's
+ * tunnel belongs to the enclosure: the sun sees it as the window's aperture (WindowMeta.aperture). Its face
+ * and its outer side stand proud of the wall and cast into the cabin's sun map: a sun that grazes the wall
+ * beside the window is stopped by them.
  */
 function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, depth: number, mat: string, paneDepths: number[]): { panes: PaneMeta[]; edgeDepth: number } {
   const ch = Math.min(0.004, width * 0.2);
@@ -104,9 +106,10 @@ function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, dep
   const fromCentre = (pts: Vec3[]) => (i: number): Vec3 => v3.neg(toCentre(pts)(i));
   ringBetween(ctx, a0, a1, ctx.m(mat, { ao: 0.75, flags: FLAG_ENCLOSURE }), toCentre(a0), tangentOf(a0));
   ringBetween(ctx, a1, a1c, { ...attr, flags: FLAG_ENCLOSURE | FLAG_EDGE }, (i) => v3.normalize(v3.add(toCentre(a1)(i), g.inward)), tangentOf(a1));
-  ringBetween(ctx, a1c, b1c, attr, () => g.inward, tangentOf(a1c));
-  ringBetween(ctx, b1c, b1, { ...attr, flags: FLAG_ENCLOSURE | FLAG_EDGE }, (i) => v3.normalize(v3.add(fromCentre(b1)(i), g.inward)), tangentOf(b1c));
-  ringBetween(ctx, b1, b0, ctx.m(mat, { ao: 0.8, flags: FLAG_ENCLOSURE }), fromCentre(b1), tangentOf(b1));
+  const proud = ctx.m(mat);
+  ringBetween(ctx, a1c, b1c, proud, () => g.inward, tangentOf(a1c));
+  ringBetween(ctx, b1c, b1, { ...proud, flags: FLAG_EDGE }, (i) => v3.normalize(v3.add(fromCentre(b1)(i), g.inward)), tangentOf(b1c));
+  ringBetween(ctx, b1, b0, ctx.m(mat, { ao: 0.8 }), fromCentre(b1), tangentOf(b1));
   // Panes and their seals: a dark gasket ring where each pane meets the tunnel wall. Pane depths count from
   // the most inward point of the outline (the wall is concave seen from the cabin, so a planar pane must
   // clear the sagitta of the curved opening).

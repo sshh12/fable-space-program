@@ -502,7 +502,8 @@ fn apertureVisibility(p: vec3f, i: u32) -> vec2f {
   let ls = cabin.sunPart.xyz;
   let n = a1.xyz;
   let cosI = -dot(ls, n);
-  if (cosI <= 1e-3) { return vec2f(0.0); }
+  // A sun that only skims the window's plane does not get through its well (the hull's thickness).
+  if (cosI <= 0.03) { return vec2f(0.0); }
   let tanA = 0.5 * cabin.sunPart.w;
   let halfSize = vec2f(a0.w, a1.w);
   let rc = a2.w;
@@ -530,10 +531,12 @@ fn apertureVisibility(p: vec3f, i: u32) -> vec2f {
     let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - rc;
     var grad = vec2f(0.0, sign(uv.y));
     if (q.x > 0.0 && q.y > 0.0) { grad = sign(uv) * normalize(q); } else if (q.x > q.y) { grad = vec2f(sign(uv.x), 0.0); }
-    let r = t * tanA * length(vec2f(dot(grad, e2) / cosI, grad.x * e2.y - grad.y * e2.x));
+    // (Bounded: the penumbra of an edge a cabin's width away is under two centimetres; the stretch along a
+    // grazing sun must not turn the whole cabin into half shade.)
+    let r = min(t * tanA * length(vec2f(dot(grad, e2) / cosI, grad.x * e2.y - grad.y * e2.x)), 0.03);
     vis = min(vis, discFraction(d / max(r, 1e-5)));
   }
-  return vec2f(vis, cosI);
+  return vec2f(vis * smoothstep(0.03, 0.1, cosI), cosI);
 }
 
 /// The sun's light through the windows at p: rgb = the best window's disc fraction times its glazing's
@@ -625,7 +628,10 @@ fn cabinSun(p: vec3f, ngIn: vec3f, twoSided: bool) -> vec3f {
   if (NoL <= 0.0) { return vec3f(0.0); }
   let through = sunThroughWindows(p);
   if (max(through.r, max(through.g, through.b)) <= 0.0) { return vec3f(0.0); }
-  return through.rgb * sunMapVisibility(p, ng, NoL, u32(through.w + 0.5));
+  // Soft goods under a sun that only skims them: their own relief (pillows, folds), which is not in the
+  // sun map, shades them entirely.
+  let skim = select(1.0, smoothstep(0.03, 0.14, NoL), twoSided);
+  return through.rgb * (skim * sunMapVisibility(p, ng, NoL, u32(through.w + 0.5)));
 }
 
 /// Sun illuminance (lux, rgb) at the vessel through the atmosphere and the clouds (before the windows).
@@ -1113,16 +1119,26 @@ fn animated(pos: vec3f, ctl: vec2u) -> vec3f {
 }
 `;
 
-/** The interior in the core's sun cascades (bind group 2: the part transform rows, the controls). */
+/** How far the closed shell is blown up about the cabin's centre in the core's sun cascades. */
+export const SHADOW_SHELL_INFLATE = 1.03;
+
+/**
+ * The interior in the core's sun cascades (bind group 2: the head of the cabin uniform, the controls): the
+ * closed shell of the far detail level. That level is a coarse polygon of the cabin (chords a few
+ * millimetres inside the true wall), and the full-detail interior lies against the true wall: drawn as it
+ * is, the shell would leave slivers of the interior (blanket rims, the hatch's seal) outside itself, in the
+ * core's sun. So the shell is blown up a few per cent about the cabin's centre: it stays inside the hull's
+ * thickness and holds every interior surface.
+ */
 export const SHADOW_WGSL = /* wgsl */ `
 #include "frame"
 #include "shadow_pass"
-struct CabinXf { m0: vec4f, m1: vec4f, m2: vec4f }
+struct CabinXf { m0: vec4f, m1: vec4f, m2: vec4f, skip: array<vec4f, ${CABIN.probe - 3}>, probe: vec4f }
 @group(2) @binding(0) var<uniform> xf: CabinXf;
 @group(2) @binding(1) var<storage, read> controls: array<Control>;
 ${CASTER_COMMON}
 @vertex fn vs(@location(0) pos: vec3f, @location(6) ctl: vec2u) -> @builtin(position) vec4f {
-  let p = animated(pos, ctl);
+  let p = xf.probe.xyz + (animated(pos, ctl) - xf.probe.xyz) * ${SHADOW_SHELL_INFLATE};
   let w = vec3f(dot(xf.m0.xyz, p) + xf.m0.w, dot(xf.m1.xyz, p) + xf.m1.w, dot(xf.m2.xyz, p) + xf.m2.w);
   return shadowPass.viewProj * vec4f(w, 1.0);
 }
@@ -1393,7 +1409,10 @@ fn glass(in: VOut) -> GlassOut {
   let F0 = sq((cabin.misc.w - 1.0) / (cabin.misc.w + 1.0));
   let T = cabin.tint.rgb * sq((1.0 - F) / (1.0 - F0));
   let amb = cabinAmbient();
-  let coverGlass = in.info.y < 1.0;
+  // info.y: 1 = a window pane, 0.5 .. 1 = the glass of an instrument (bare, but small and curved: its image
+  // of the cabin is taken a little soft), below = a display's coated cover glass.
+  let coverGlass = in.info.y < 0.5;
+  let instrument = in.info.y < 1.0 && !coverGlass;
   var refl: vec3f;
   let nPart = normalize(in.nPart);
   let nvPart = select(-nPart, nPart, fromInside);
@@ -1403,6 +1422,8 @@ fn glass(in: VOut) -> GlassOut {
     // Anti-glare (etched) cover glass: the cabin through a lobe of the glass's roughness, so a lamp becomes
     // a soft glow instead of a sharp image over the data.
     refl = cabinProbeAt(in.part + nvPart * 0.002, reflect(-dirPart(v), nvPart), cabin.glare.y);
+  } else if (instrument) {
+    refl = cabinProbeAt(in.part + nvPart * 0.002, reflect(-dirPart(v), nvPart), 0.14);
   } else {
     // Bare glass mirrors the cabin; each pane is drawn where it is, so the two panes' images lie a little
     // apart (the doubled reflection of a real window).

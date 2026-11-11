@@ -921,7 +921,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
       const radial = v3.add(v3.scale(f.x, Math.cos(a)), v3.scale(f.y, Math.sin(a)));
       const p = v3.add(c, v3.add(v3.scale(radial, r), v3.scale(f.n, z - zRim)));
       const n = v3.normalize(v3.add(v3.scale(radial, r), v3.scale(f.n, z)));
-      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, panes.length, 1];
+      return [p.x, p.y, p.z, n.x, n.y, n.z, Math.cos(a) * r, Math.sin(a) * r, panes.length, 0.95];
     };
     const firstV = gv.length / PANE_FLOATS;
     for (let k = 0; k < rings; k++) {
@@ -973,7 +973,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
     label: `cockpit.${id}.shadow`,
     layout: shadowLayoutOf.get(ctx) ?? shadowLayoutFor(ctx),
     entries: [
-      { binding: 0, resource: { buffer: cabin, offset: 0, size: 48 } },
+      { binding: 0, resource: { buffer: cabin, offset: 0, size: (CABIN.probe + 1) * 16 } },
       { binding: 1, resource: { buffer: controls } },
     ],
   });

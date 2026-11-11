@@ -48,7 +48,7 @@ export interface SunMapLayout {
 }
 
 /** Whether the sun (unit direction to it, part frame) shines into a window with inward normal `inward`. */
-export const sunEnters = (inward: Vec3, sunPart: Vec3): boolean => v3.dot(inward, sunPart) < -0.005;
+export const sunEnters = (inward: Vec3, sunPart: Vec3): boolean => v3.dot(inward, sunPart) < -0.03;
 
 /**
  * The tiles for the unit direction to the sun `sunPart` (part frame): one per window the sun enters, fitted

@@ -228,10 +228,10 @@ describe('MFD content and the HUD', () => {
       const o = describeOrbit(s);
       const orbit = Object.fromEntries(buildMfdPage('orbit', s, defs).rows.map((r) => [r.label, r.value]));
       // In flight the page shows the formatter's strings; standing on the ground it shows a dash instead of
-      // an orbit (flight-ui, visual round 1).
+      // an orbit, or leaves the rows out (flight-ui, visual rounds 1 and 2).
       if (scene === 'lunarSurface') {
-        expect(['—', o.apoapsis]).toContain(orbit.Apoapsis);
-        expect(['—', o.periapsis]).toContain(orbit.Periapsis);
+        if (orbit.Apoapsis !== undefined) expect(['—', o.apoapsis]).toContain(orbit.Apoapsis);
+        if (orbit.Periapsis !== undefined) expect(['—', o.periapsis]).toContain(orbit.Periapsis);
       } else {
         expect(orbit.Apoapsis).toBe(o.apoapsis);
         expect(orbit.Periapsis).toBe(o.periapsis);
