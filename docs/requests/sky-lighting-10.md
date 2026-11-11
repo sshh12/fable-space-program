@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 7e953e8)
 From: sky-lighting
 Owner path: src/render/core/post/exposure.ts (the automatic exposure's target with the sun in view behind the limb's air)
 Blocking: no   (the evidence view of the sun rising over the real limb, round 2 of the sky's visual close-out)
@@ -34,3 +34,33 @@ Must not change: the dark floor and dark adaptation when the sun is not in view 
 package assert at EV -6), the interior metering, the crescent-Earth and vehicle-in-space cases of
 `tests/browser/integration/exposure.spec.ts`. Nothing in `src/render/sky` needs to change; the sky re-shoots
 `integration-sun-at-limb` when this lands.
+
+## Resolution
+
+Done (`7e953e8`), for a camera above every atmosphere (in space), exterior views:
+
+- Cause: the histogram holds lit geometry only. Your frame is 60 % night side (geometry, a few hundredths of a
+  cd/m^2) and the lit arc and the sun are light over sky pixels: the histogram saw the night side alone, took
+  full weight, and the prior (sunny 16) never had a say: EV100 5.7.
+- The meter's sun illuminance for a camera in space is now the sun's illuminance after the air between the
+  camera and the sun: `atmosphereTransmittanceAlong(point, dir, snapshot, defs)` (new, `@/render/core`: the
+  CPU twin of the transmittance tables, Rayleigh + Mie + ozone of each body's atmosphere definition,
+  integrated with samples crowded at the ray's closest approach), luminance-weighted. A ray grazing 10 km up
+  from 200 km gives 0.126 / 0.046 / 0.005 (your flare state reads 0.103 / 0.029 / 0.002 at 0.3 deg).
+- With the disc in the frame that illuminance is a floor: target >= sunny 16 of it minus
+  `SUN_IN_FRAME_MARGIN_EV` = 1 (`MeterInput.sunInFrame`). Your view: about EV100 9-10 instead of 5.7.
+- Unit tests (`tests/unit/render-core/exposureGovernor.test.ts`, "the sun just over the limb from orbit"):
+  night side 60 % + lit arc 2 % at 1,500-4,000 cd/m^2 + the sun at 3 %: within 1 EV of sunny 16 of the
+  attenuated light; the night side alone with the sun in the frame: at the floor (3+ EV darker than without
+  the rule); map views untouched. `frameMath.test.ts`: zenith transmittance against the closed form, grazing,
+  the ground in the way.
+- Unchanged, re-run: `tests/browser/integration/exposure.spec.ts` (vehicle in space EV100 15.09, crescent
+  Earth 15.07 against sunny 16 15.07-15.08, the sun into a dark-adapted frame, NaN 0) and the render-core
+  exposure specs: 9 of 9. Views with the sun clear of the air (transmittance 1), cameras inside an atmosphere
+  (the ground, a climb) and the dark floor without the sun in view are unchanged. Your 6 deg view: the
+  transmittance is 1 there, so the floor is sunny 16 - 1 = EV100 14.05; it read 12.65, so it comes about
+  1.4 EV darker (the sun in the frame from space is exposed for the sun's light).
+- I could not shoot your view: in the run at 14:42 your `integration.spec.ts` "real limb" test was skipped
+  because the sky feature was quarantined (`sky.flare` failed to compile: "Error while parsing WGSL: :381:7",
+  your work in progress). Re-shoot `integration-sun-at-limb` and `integration-sun-above-limb` when it builds.
+RENDER_API section 13 and section 18.
