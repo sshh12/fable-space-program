@@ -36,6 +36,7 @@ const FIELDS = [
   ['reprojT', 'vec4f', 'xyz = t'],
   ['cloudLow', 'vec4f', 'low layer: thickness (m), extinction (1 / m), edge softness, coverage gain of the map'],
   ['cloudLow2', 'vec4f', 'fair-weather coverage, mesoscale amplitude, detail erosion strength, detail fade footprint (m)'],
+  ['cloudLow3', 'vec4f', 'low layer: extinction factor of the thinnest cloud the map shows, mesoscale variation of the extinction (octaves, +-)'],
   ['cloudHigh', 'vec4f', 'high layer: thickness min, thickness max (m), extinction min, extinction max (1 / m)'],
   ['cloudHigh2', 'vec4f', 'coverage where the high layer starts, where it is full, where the column starts to fill, where it is full'],
   ['cloudDeep', 'vec4f', 'deep column extinction (1 / m), ground albedo for the bounce, ambient scale, multi-scatter octave gain'],
@@ -43,6 +44,8 @@ const FIELDS = [
   ['cloudPhase', 'vec4f', 'forward g, backward g, lobe mix, sun reach of the cone samples (m)'],
   ['cloudMarch', 'vec4f', 'step factor (step = distance x factor), min step (m), max step (m), angle of a half-resolution pixel (rad)'],
   ['cloudWind', 'vec4f', 'xyz = noise shear per metre of altitude (noise frame), w = scroll of the detail noise (m)'],
+  ['shadowFilter', 'vec4f', 'x = smallest footprint (m) of the density lookups of the cloud shadow map: what one screen pixel covers under the camera'],
+  ['cloudJitter', 'vec4f', 'xy = offset of the half-resolution cloud rays inside their pixel this frame (pixels, +-0.5)'],
   ['tile', 'vec4f', 'full-resolution march of a small shell: xy = render-target pixel of texel (0, 0) of the tile targets, zw = size of the marched rectangle (px)'],
 ] as const satisfies readonly (readonly [string, FieldType, string])[];
 

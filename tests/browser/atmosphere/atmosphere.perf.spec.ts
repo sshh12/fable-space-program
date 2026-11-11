@@ -4,6 +4,16 @@
  *   clouds (shadow map + march + resolve)                   1.3 at qualityScale 1, 0.9 at 0.7
  * Attribution mode, render scale pinned at 1, a ballast of about 7 ms so the GPU runs at the clock of a real
  * frame (render-core hand-off 4.1), everything under the machine-wide GPU lock.
+ *
+ * Every pass of the feature is timed, the history and shadow-map writes included (there is no copy outside
+ * a timed pass). Five windows of 160 frames per scene; the line that is asserted is the MEDIAN window's
+ * p99, and all five are printed. (The GPU lock serialises perf specs only: other agents' functional
+ * browser tests share the GPU and can add time to a window, never take any away. The lead re-measures on
+ * a quiet machine, PACKAGE_RULES 16.)
+ *
+ * Tuning: ATMO_PERF_SCENES=ground,pad limits the scenes (substring of the name), ATMO_PERF_QUALITY=1 the
+ * quality scales. ATMO_PERF_TAIL=1 adds the lab's empty pass behind the composite and prints what the
+ * timestamps charge to it (diagnosis of the composite's p99; it is not part of either line).
  */
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle, withGpuLock } from '../harness';
@@ -30,11 +40,9 @@ interface Row {
   frame: number;
 }
 
-/**
- * Five windows of 160 frames. The GPU is shared with other agents' browser tests (the GPU lock serialises
- * perf specs only) and concurrent work can only add time to a pass, so each of the two lines takes its
- * least disturbed window.
- */
+const median = (values: number[]): number => [...values].sort((a, b) => a - b)[values.length >> 1]!;
+
+/** Five windows of 160 frames; each of the two lines is the median of its five p99 values. */
 async function measure(page: Page): Promise<Row & { windows: string }> {
   const rows: Row[] = [];
   for (let w = 0; w < 5; w++) {
@@ -52,7 +60,9 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
           clouds: sum(true, 'p99'),
           atmosphereP50: sum(false, 'p50'),
           cloudsP50: sum(true, 'p50'),
-          passes: mine.map(([n, v]) => `${n.slice(11)} ${v.p50.toFixed(3)}/${v.p99.toFixed(3)}`).join(', '),
+          passes:
+            mine.map(([n, v]) => `${n.slice(11)} ${v.p50.toFixed(3)}/${v.p99.toFixed(3)}`).join(', ') +
+            (ps['lab-tail.composite'] ? `, [tail behind the composite ${ps['lab-tail.composite'].p50.toFixed(3)}/${ps['lab-tail.composite'].p99.toFixed(3)}]` : ''),
           ballast: ps['lab-heavy.burn']?.p50 ?? 0,
           quality: perf.qualityScale,
           frame: perf.gpu.p99,
@@ -60,10 +70,11 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
       }, w === 0),
     );
   }
-  const bestAtm = rows.reduce((b, r) => (r.atmosphere < b.atmosphere ? r : b), rows[0]!);
-  const bestClouds = rows.reduce((b, r) => (r.clouds < b.clouds ? r : b), rows[0]!);
-  const best: Row = { ...bestAtm, clouds: bestClouds.clouds, cloudsP50: bestClouds.cloudsP50 };
-  return { ...best, windows: rows.map((r) => `${r.atmosphere.toFixed(3)}/${r.clouds.toFixed(3)}`).join(' ') };
+  const atmosphere = median(rows.map((r) => r.atmosphere));
+  const clouds = median(rows.map((r) => r.clouds));
+  const mid = rows.find((r) => r.atmosphere === atmosphere)!;
+  const row: Row = { ...mid, clouds, cloudsP50: median(rows.map((r) => r.cloudsP50)) };
+  return { ...row, windows: rows.map((r) => `${r.atmosphere.toFixed(3)}/${r.clouds.toFixed(3)}`).join(' ') + (process.env.ATMO_PERF_TAIL === '1' ? `\n    all windows: ${rows.map((r) => r.passes).join('\n                 ')}` : '') };
 }
 
 async function place(page: Page, s: Scene): Promise<void> {
@@ -108,18 +119,24 @@ const DECK: Scene[] = [
   { name: 'above a deck', view: { ...PAD, alt: 6000, headingDeg: 40, pitchDeg: -8, fovDeg: 70 }, sun: { azDeg: 160, elDeg: 35 }, atmosphereMax: 0.9 },
 ];
 
-for (const quality of [1, 0.7]) {
+const only = (process.env.ATMO_PERF_SCENES ?? '').split(',').filter(Boolean);
+const wanted = (scenes: Scene[]): Scene[] => (only.length ? scenes.filter((s) => only.some((o) => s.name.includes(o))) : scenes);
+const qualities = process.env.ATMO_PERF_QUALITY ? [Number(process.env.ATMO_PERF_QUALITY)] : [1, 0.7];
+
+for (const quality of qualities) {
   test(`atmosphere and cloud GPU budget at 1440p, qualityScale ${quality}`, async ({ page, pageLog }) => {
     test.setTimeout(40 * 60_000);
     const cloudMax = quality === 1 ? 1.3 : 0.9;
     await withGpuLock(async () => {
       const results: { scene: Scene; row: Row & { windows: string } }[] = [];
-      for (const [query, scenes] of [
+      for (const [query, all] of [
         ['', REAL],
         ['cover=0.4,3', CUMULUS],
         ['cover=0.9,4', DECK],
       ] as const) {
-        const q = quality === 1 ? 'governor=off' : `quality=${quality}`;
+        const scenes = wanted(all);
+        if (scenes.length === 0) continue;
+        const q = (quality === 1 ? 'governor=off' : `quality=${quality}`) + (process.env.ATMO_PERF_TAIL === '1' ? '&tail=1' : '');
         await openPage(page, `/labs/atmosphere/?hud=0&perf=features&scale=1&${q}${query ? `&${query}` : ''}`);
         await assertDiscreteGpu(page);
         await waitIdle(page, 60);
@@ -129,7 +146,7 @@ for (const quality of [1, 0.7]) {
           await place(page, s);
           const row = await measure(page);
           results.push({ scene: s, row });
-          if (quality === 1) await saveScreenshot(page, 'atmosphere', `perf-${s.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-1440p`);
+          if (quality === 1 && only.length === 0) await saveScreenshot(page, 'atmosphere', `perf-${s.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-1440p`);
         }
       }
       for (const { scene, row } of results) {

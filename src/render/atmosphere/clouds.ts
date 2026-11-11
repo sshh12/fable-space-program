@@ -8,11 +8,11 @@ import type { BodyDef } from '@/core/contracts/defs';
 import type { BodyPose, FrameContext, RenderContext } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { DEG, mat3, quat, v3, type Vec3 } from '@/core/math';
-import { coreOf, f16ToF32, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { coreOf, f16ToF32, readTexturePixels, taaJitter, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
 import { resolveCloudParams, type CloudParams } from './params';
 import type { MarchBody } from './select';
 import { FINE_TILE_SIZE, scissorOf } from './select';
-import { CLOUD_DENSITY_WGSL, cloudMarchFsWgsl, CLOUD_NOISE_COMPUTE_WGSL, CLOUD_RESOLVE_FS_WGSL, CLOUD_SHADOW_FS_WGSL } from './shaders/clouds';
+import { CLOUD_DENSITY_WGSL, cloudMarchFsWgsl, CLOUD_NOISE_COMPUTE_WGSL, CLOUD_RESOLVE_FS_WGSL, CLOUD_SHADOW_BLIT_FS_WGSL, cloudShadowFsWgsl } from './shaders/clouds';
 import type { AtmoUniforms } from './uniforms';
 
 /** Equirectangular coverage map: row 0 = north, column 0 = longitude -180 deg; two bytes per texel (coverage, cloud top / 50 m). */
@@ -136,9 +136,10 @@ export class CloudSystem {
   private readonly quarterGeom: ManagedTarget;
   private readonly screen: ManagedTarget;
   private readonly depth: ManagedTarget;
-  private readonly historyColor: ManagedTarget;
-  private readonly geom: ManagedTarget;
-  private readonly historyGeom: ManagedTarget;
+  /** Radiance history and cloud geometry: two targets each, written and read in alternate frames (`cur`). */
+  private readonly histories: [ManagedTarget, ManagedTarget];
+  private readonly geoms: [ManagedTarget, ManagedTarget];
+  private cur = 0;
   private readonly fineColor: GPUTexture;
   private readonly fineGeom: GPUTexture;
   private readonly fineColorTexView: GPUTextureView;
@@ -154,14 +155,20 @@ export class CloudSystem {
   private readonly marchFineLayout: GPUBindGroupLayout;
   private readonly resolveLayout: GPUBindGroupLayout;
   private readonly shadowLayout: GPUBindGroupLayout;
+  private readonly shadowInPlaceLayout: GPUBindGroupLayout;
+  private readonly shadowBlitLayout: GPUBindGroupLayout;
   private readonly marchPipeline: Tracked<GPURenderPipeline>;
   private readonly marchFinePipeline: Tracked<GPURenderPipeline>;
   private readonly resolvePipeline: Tracked<GPURenderPipeline>;
   private readonly shadowPipeline: Tracked<GPURenderPipeline>;
+  private readonly shadowInPlacePipeline: Tracked<GPURenderPipeline>;
+  private readonly shadowBlitPipeline: Tracked<GPURenderPipeline>;
   private marchGroup: GPUBindGroup | null = null;
   private marchFineGroup: GPUBindGroup | null = null;
-  private resolveGroup: GPUBindGroup | null = null;
+  private resolveGroups: GPUBindGroup[] = [];
   private shadowGroup: GPUBindGroup | null = null;
+  private shadowInPlaceGroup: GPUBindGroup | null = null;
+  private shadowBlitGroup: GPUBindGroup | null = null;
   private groupKey = '';
   private resourceVersion = 0;
 
@@ -186,6 +193,9 @@ export class CloudSystem {
   private shadowIJ: [number, number] = [0, 0];
   private shadowValid = false;
   private shadowOn = false;
+  /** This frame re-marches the whole map / has moved its origin by whole texels. */
+  private shadowFull = false;
+  private shadowShifted = false;
   private placement: CloudShadowPlacement | null = null;
 
   constructor(
@@ -215,9 +225,8 @@ export class CloudSystem {
     this.quarterGeom = this.core.createTarget(`${id}.cloud.freshGeom`, 'rgba32float', 0.25);
     this.screen = this.core.createTarget(`${id}.cloud.screen`, 'rgba16float', 0.5, RT | GPUTextureUsage.COPY_SRC);
     this.depth = this.core.createTarget(`${id}.cloud.depth`, 'r32float', 0.5);
-    this.geom = this.core.createTarget(`${id}.cloud.geom`, 'rgba32float', 0.5, RT | GPUTextureUsage.COPY_SRC);
-    this.historyColor = this.core.createTarget(`${id}.cloud.history`, 'rgba16float', 0.5, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
-    this.historyGeom = this.core.createTarget(`${id}.cloud.historyGeom`, 'rgba32float', 0.5, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
+    this.geoms = [0, 1].map((i) => this.core.createTarget(`${id}.cloud.geom${i}`, 'rgba32float', 0.5, RT | GPUTextureUsage.COPY_SRC)) as [ManagedTarget, ManagedTarget];
+    this.histories = [0, 1].map((i) => this.core.createTarget(`${id}.cloud.history${i}`, 'rgba16float', 0.5)) as [ManagedTarget, ManagedTarget];
     const tile = (label: string, format: GPUTextureFormat): GPUTexture => this.core.createTextureChecked({ label, format, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: RT });
     this.fineColor = tile(`${id}.cloud.fine`, 'rgba16float');
     this.fineGeom = tile(`${id}.cloud.fineGeom`, 'rgba32float');
@@ -248,21 +257,36 @@ export class CloudSystem {
     });
     this.marchPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarch`, fragment: cloudMarchFsWgsl(false), layouts: [this.marchLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
     this.marchFinePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarchFine`, fragment: cloudMarchFsWgsl(true), layouts: [this.marchFineLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
-    this.resolvePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudResolve`, fragment: CLOUD_RESOLVE_FS_WGSL, layouts: [this.resolveLayout], targets: [{ format: 'rgba16float' }, { format: 'r32float' }, { format: 'rgba32float' }] });
-    this.shadowPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadow`, fragment: CLOUD_SHADOW_FS_WGSL, layouts: [this.shadowLayout], targets: [{ format: 'rgba32float' }] });
+    this.shadowInPlaceLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowInPlace`, entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d')] });
+    this.shadowBlitLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowBlit`, entries: [{ binding: 0, visibility: F, texture: { sampleType: 'unfilterable-float' } }] });
+    this.resolvePipeline = this.core.fullscreenPipeline({
+      label: `${id}.cloudResolve`,
+      fragment: CLOUD_RESOLVE_FS_WGSL,
+      layouts: [this.resolveLayout],
+      targets: [{ format: 'rgba16float' }, { format: 'r32float' }, { format: 'rgba32float' }, { format: 'rgba16float' }],
+    });
+    this.shadowPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadow`, fragment: cloudShadowFsWgsl(false), layouts: [this.shadowLayout], targets: [{ format: 'rgba32float' }] });
+    this.shadowInPlacePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadowInPlace`, fragment: cloudShadowFsWgsl(true), layouts: [this.shadowInPlaceLayout], targets: [{ format: 'rgba32float' }] });
+    this.shadowBlitPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadowBlit`, fragment: CLOUD_SHADOW_BLIT_FS_WGSL, layouts: [this.shadowBlitLayout], targets: [{ format: 'rgba32float' }] });
     this.marchPipeline.get();
     this.marchFinePipeline.get();
     this.resolvePipeline.get();
     this.shadowPipeline.get();
+    this.shadowInPlacePipeline.get();
+    this.shadowBlitPipeline.get();
 
     this.generateNoise().catch((e: unknown) => this.core.reportError(`${id}: cloud noise generation failed: ${e instanceof Error ? e.message : String(e)}`));
   }
 
   // ------------------------------------------------------------------------------------------ resources
 
-  /** Changes whenever a view handed out by this object was replaced. */
+  /** Changes whenever a view handed out by this object was replaced (target sizes, coverage, noise). */
   get version(): number {
-    return this.resourceVersion + this.screen.version + this.depth.version + this.geom.version;
+    return this.resourceVersion + this.screen.version + this.depth.version + this.geoms[0].version + this.geoms[1].version;
+  }
+  /** Which of the two geometry targets this frame writes: `geomView` alternates between two views with it. */
+  get parity(): number {
+    return this.cur;
   }
   get screenView(): GPUTextureView {
     return this.screen.view;
@@ -272,7 +296,7 @@ export class CloudSystem {
   }
   /** Half-resolution cloud geometry along each ray (begin, end, mean distance; 3.0e38 = none), for the atmosphere march. */
   get geomView(): GPUTextureView {
-    return this.geom.view;
+    return this.geoms[this.cur]!.view;
   }
   /** Tile targets of the full-resolution cloud march (radiance / transmittance, geometry), texel (0, 0) = `atmo.tile.xy`. */
   get fineColorView(): GPUTextureView {
@@ -295,9 +319,10 @@ export class CloudSystem {
       this.shadowScratch.destroy();
     }
     this.shadowSize = size;
-    const make = (label: string, usage: GPUTextureUsageFlags): GPUTexture => this.core.createTextureChecked({ label, format: 'rgba32float', size: [size, size], usage });
-    this.shadowTex = make(`${this.id}.cloudShadow`, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC);
-    this.shadowScratch = make(`${this.id}.cloudShadow.scratch`, GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
+    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+    const make = (label: string): GPUTexture => this.core.createTextureChecked({ label, format: 'rgba32float', size: [size, size], usage });
+    this.shadowTex = make(`${this.id}.cloudShadow`);
+    this.shadowScratch = make(`${this.id}.cloudShadow.scratch`);
     this.shadowTexView = this.shadowTex.createView();
     this.shadowScratchView = this.shadowScratch.createView();
     this.shadowValid = false;
@@ -514,9 +539,13 @@ export class CloudSystem {
 
   // ------------------------------------------------------------------------------------------- per frame
 
-  /** March steps of a cloud ray this frame. */
+  /**
+   * March steps of a cloud ray this frame: the quality setting times the square of the governor's quality
+   * scale (the clear-sky rays, which see nothing, are the ones that use the whole budget; the step rule is
+   * coarsened to fit it, shapes and opacity stay).
+   */
   stepBudget(frame: FrameContext): number {
-    return Math.max(8, Math.round(this.ctx.quality.cloudSteps * frame.qualityScale));
+    return Math.max(8, Math.round(this.ctx.quality.cloudSteps * frame.qualityScale * frame.qualityScale));
   }
 
   /** Switch the cloud terms of the uniform block and of the deferred lighting off. */
@@ -539,6 +568,7 @@ export class CloudSystem {
    */
   prepare(frame: FrameContext, u: AtmoUniforms, marched: readonly MarchBody[]): number {
     this.phase = frame.frameIndex & 3;
+    this.cur = frame.frameIndex & 1;
     const ut = frame.snapshot.ut;
     let picked: { body: MarchBody; def: BodyDef; params: CloudParams; entry: CoverageEntry } | null = null;
     for (const body of marched) {
@@ -600,6 +630,12 @@ export class CloudSystem {
     u.set('cloudShell', R + params.bottomAltitude, R + params.topAltitude, params.bottomAltitude, params.topAltitude);
     u.set('cloudLow', params.lowThicknessM, params.lowExtinction, params.lowEdgeSoftness, params.lowCoverageGain);
     u.set('cloudLow2', params.fairWeatherCoverage, params.mesoscaleAmplitude, params.detailErosion, params.detailFadeFootprintM);
+    u.set('cloudLow3', params.lowThinDensity, params.lowDensityVariation, 0, 0);
+    // Each half-resolution pixel is marched every fourth frame, through a different point of its area each
+    // time (the frame's own anti-aliasing sequence, which also runs while noise is frozen): the history
+    // averages them into an edge that is as wide as the pixel instead of a staircase.
+    const sub = taaJitter(frame.frameIndex >> 2, 8);
+    u.set('cloudJitter', sub[0], sub[1], 0, 0);
     u.set('cloudHigh', params.highThicknessMinM, params.highThicknessMaxM, params.highExtinctionMin, params.highExtinctionMax);
     u.set('cloudHigh2', params.highCoverageStart, params.highCoverageFull, params.deepCoverageStart, params.deepCoverageFull);
     u.set('cloudDeep', params.deepExtinction, params.groundAlbedo, params.ambientScale, params.multiScatterGain);
@@ -616,10 +652,10 @@ export class CloudSystem {
     u.set('reproj2', dm[6], dm[7], dm[8] - 1, 0);
     u.set('reprojT', t.x, t.y, t.z, 0);
 
-    const targetKey = `${this.screen.version}:${this.historyColor.version}:${this.quarterColor.version}`;
+    const targetKey = `${this.screen.version}:${this.histories[0].version}:${this.histories[1].version}:${this.quarterColor.version}`;
     this.historyValid = this.lastMarchFrame === frame.frameIndex - 1 && targetKey === this.lastTargetKey;
     this.lastTargetKey = targetKey;
-    u.set('misc', frame.exposure / this.lastExposure, this.historyValid ? 1 : 0, frame.animate ? 1 : 0, frame.animate ? 0.4 : 1);
+    u.set('misc', frame.exposure / this.lastExposure, this.historyValid ? 1 : 0, frame.animate ? 1 : 0, 0.35);
 
     // Cloud shadows for the deferred lighting, the atmosphere march and the clouds themselves.
     const far = { bodyIndex: body.bodyIndex, layerRadius: R + params.bottomAltitude + 0.5 * params.lowThicknessM, opticalDepth: params.farShadowOpticalDepth, longitudeOffset: lonOffset };
@@ -694,7 +730,12 @@ export class CloudSystem {
     u.set('shadowU', axisU.x, axisU.y, axisU.z, params.shadowSteps);
     u.set('shadowV', axisV.x, axisV.y, axisV.z, scale);
     u.set('shadowL', dir.x, dir.y, dir.z, full ? 0 : 1);
+    this.shadowFull = full;
+    this.shadowShifted = !full && (shift[0] !== 0 || shift[1] !== 0);
     u.set('shadowShift', shift[0], shift[1], frame.frameIndex & 15, n);
+    // What one half-resolution pixel covers on the ground under the camera, once and a half: the finest
+    // cloud shadow the frame can show.
+    u.set('shadowFilter', (1.5 * Math.max(pose.cameraAltitude, 0) * 2 * Math.tan(frame.camera.fovY / 2)) / Math.ceil(frame.renderSize[1] / 2), 0, 0, 0);
     this.shadowValid = true;
     return { bodyIndex, originRelCam, axisU, axisV, dir, halfExtent: he, opticalDepthScale: scale };
   }
@@ -722,7 +763,11 @@ export class CloudSystem {
       this.resourceVersion,
       this.quarterColor.version,
       this.screen.version,
-      this.historyColor.version,
+      this.depth.version,
+      this.histories[0].version,
+      this.histories[1].version,
+      this.geoms[0].version,
+      this.geoms[1].version,
       this.ctx.resources.version('scene.depthHalf'),
       this.ctx.resources.version('scene.depth'),
       this.ctx.resources.version('atmosphere.transmittanceLut'),
@@ -759,33 +804,47 @@ export class CloudSystem {
         { binding: 7, resource: this.ctx.resources.get('scene.depth') },
       ],
     });
-    this.resolveGroup = this.device.createBindGroup({
-      label: `${this.id}.cloudResolve`,
-      layout: this.resolveLayout,
-      entries: [u, { binding: 1, resource: this.quarterColor.view }, { binding: 2, resource: this.quarterGeom.view }, { binding: 3, resource: this.historyColor.view }, { binding: 4, resource: this.historyGeom.view }],
-    });
-    this.shadowGroup = this.device.createBindGroup({
-      label: `${this.id}.cloudShadow`,
-      layout: this.shadowLayout,
-      entries: [u, { binding: 1, resource: this.coverageNow }, { binding: 2, resource: this.baseNoise }, { binding: 3, resource: this.detailNoise }, { binding: 4, resource: this.shadowTexView }],
-    });
+    // The frame that writes history / geometry target i reads the other one.
+    this.resolveGroups = [0, 1].map((i) =>
+      this.device.createBindGroup({
+        label: `${this.id}.cloudResolve${i}`,
+        layout: this.resolveLayout,
+        entries: [u, { binding: 1, resource: this.quarterColor.view }, { binding: 2, resource: this.quarterGeom.view }, { binding: 3, resource: this.histories[1 - i]!.view }, { binding: 4, resource: this.geoms[1 - i]!.view }],
+      }),
+    );
+    const shadowInputs: GPUBindGroupEntry[] = [u, { binding: 1, resource: this.coverageNow }, { binding: 2, resource: this.baseNoise }, { binding: 3, resource: this.detailNoise }];
+    this.shadowGroup = this.device.createBindGroup({ label: `${this.id}.cloudShadow`, layout: this.shadowLayout, entries: [...shadowInputs, { binding: 4, resource: this.shadowTexView }] });
+    this.shadowInPlaceGroup = this.device.createBindGroup({ label: `${this.id}.cloudShadowInPlace`, layout: this.shadowInPlaceLayout, entries: shadowInputs });
+    this.shadowBlitGroup = this.device.createBindGroup({ label: `${this.id}.cloudShadowBlit`, layout: this.shadowBlitLayout, entries: [{ binding: 0, resource: this.shadowScratchView }] });
   }
 
-  /** Compute hook: refresh the near shadow map (a quarter of its texels, or all of them after a re-anchor). */
+  /**
+   * Compute hook: refresh the near shadow map (a sixteenth of its texels, or all of them after a re-anchor).
+   * While the map origin stands still the pass draws into the map itself; in a frame in which the origin
+   * has moved by whole texels it draws the shifted map into a scratch target and a second pass writes that
+   * back. Both passes are timed.
+   */
   compute(frame: FrameContext, encoder: GPUCommandEncoder, on: boolean): void {
     if (!on || !this.shadowOn) return;
     this.ensureGroups({ transmittance: this.ctx.resources.get('atmosphere.transmittanceLut'), irradiance: this.ctx.resources.get('atmosphere.skyIrradianceLut') });
-    const pass = encoder.beginRenderPass({
-      label: `${this.id}.cloudShadow`,
-      colorAttachments: [{ view: this.shadowScratchView, loadOp: 'clear', storeOp: 'store' }],
-      timestampWrites: this.ctx.perf.gpuPass(`${this.id}.cloudShadow`) as GPURenderPassTimestampWrites | undefined,
-    });
-    pass.setBindGroup(0, frame.frameBindGroup);
-    pass.setPipeline(this.shadowPipeline.get());
-    pass.setBindGroup(1, this.shadowGroup!);
-    pass.draw(3);
-    pass.end();
-    encoder.copyTextureToTexture({ texture: this.shadowScratch }, { texture: this.shadowTex }, [this.shadowSize, this.shadowSize]);
+    const draw = (label: string, view: GPUTextureView, loadOp: GPULoadOp, pipeline: GPURenderPipeline, group: GPUBindGroup): void => {
+      const pass = encoder.beginRenderPass({
+        label,
+        colorAttachments: [{ view, loadOp, storeOp: 'store' }],
+        timestampWrites: this.ctx.perf.gpuPass(label) as GPURenderPassTimestampWrites | undefined,
+      });
+      pass.setBindGroup(0, frame.frameBindGroup);
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(1, group);
+      pass.draw(3);
+      pass.end();
+    };
+    if (this.shadowShifted) {
+      draw(`${this.id}.cloudShadow`, this.shadowScratchView, 'clear', this.shadowPipeline.get(), this.shadowGroup!);
+      draw(`${this.id}.cloudShadowBlit`, this.shadowTexView, 'clear', this.shadowBlitPipeline.get(), this.shadowBlitGroup!);
+    } else {
+      draw(`${this.id}.cloudShadow`, this.shadowTexView, this.shadowFull ? 'clear' : 'load', this.shadowInPlacePipeline.get(), this.shadowInPlaceGroup!);
+    }
   }
 
   /** Cloud march (one pixel of every 2 x 2 block of the half-resolution buffers) and the temporal resolve. */
@@ -815,13 +874,14 @@ export class CloudSystem {
         colorAttachments: [
           { view: this.screen.view, clearValue: neutral, loadOp: 'clear', storeOp: 'store' },
           { view: this.depth.view, clearValue: none, loadOp: 'clear', storeOp: 'store' },
-          { view: this.geom.view, clearValue: none, loadOp: 'clear', storeOp: 'store' },
+          { view: this.geoms[this.cur]!.view, clearValue: none, loadOp: 'clear', storeOp: 'store' },
+          { view: this.histories[this.cur]!.view, clearValue: neutral, loadOp: 'clear', storeOp: 'store' },
         ],
         timestampWrites: this.ctx.perf.gpuPass(`${this.id}.cloudResolve`) as GPURenderPassTimestampWrites | undefined,
       });
       pass.setBindGroup(0, frame.frameBindGroup);
       pass.setPipeline(this.resolvePipeline.get());
-      pass.setBindGroup(1, this.resolveGroup!);
+      pass.setBindGroup(1, this.resolveGroups[this.cur]!);
       pass.setScissorRect(...scissorOf(bounds, this.screen.size[0], this.screen.size[1], 2));
       pass.draw(3);
       pass.end();
@@ -850,10 +910,8 @@ export class CloudSystem {
     pass.end();
   }
 
-  /** Keep this frame's cloud buffers as the history of the next one. */
-  endFrame(frame: FrameContext, encoder: GPUCommandEncoder): void {
-    encoder.copyTextureToTexture({ texture: this.screen.texture }, { texture: this.historyColor.texture }, this.screen.size);
-    encoder.copyTextureToTexture({ texture: this.geom.texture }, { texture: this.historyGeom.texture }, this.geom.size);
+  /** This frame's cloud buffers are the history of the next one (they were written to the alternate targets by the resolve). */
+  endFrame(frame: FrameContext): void {
     this.lastMarchFrame = frame.frameIndex;
     this.lastExposure = frame.exposure;
   }
@@ -869,7 +927,7 @@ export class CloudSystem {
     const half = new Uint16Array(await readTexturePixels(this.device, this.screen.texture, rect, 8));
     const radiance = new Float32Array(half.length);
     for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
-    const geometry = new Float32Array(await readTexturePixels(this.device, this.geom.texture, rect, 16));
+    const geometry = new Float32Array(await readTexturePixels(this.device, this.geoms[this.cur]!.texture, rect, 16));
     return { width, height, radiance, geometry };
   }
 
@@ -879,7 +937,7 @@ export class CloudSystem {
   }
 
   dispose(): void {
-    for (const t of [this.quarterColor, this.quarterGeom, this.screen, this.depth, this.geom, this.historyColor, this.historyGeom]) t.destroy();
+    for (const t of [this.quarterColor, this.quarterGeom, this.screen, this.depth, ...this.geoms, ...this.histories]) t.destroy();
     this.fineColor.destroy();
     this.fineGeom.destroy();
     this.shadowTex.destroy();

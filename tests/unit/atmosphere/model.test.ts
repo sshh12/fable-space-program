@@ -7,7 +7,7 @@ import { quat } from '@/core/math';
 import { advanceCloudClock, channelStd, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
 import { CLOUD_PARAM_KEYS, resolveCloudParams } from '@/render/atmosphere/params';
 import { distanceToTop, hitsGround, luminanceOf, mediumAt, multiScatter, opticalDepth, referenceAtmosphere, skyRadiance, transmittanceToTop } from '@/render/atmosphere/reference';
-import { atmosphereLayers, scissorOf, selectMarchBodies, sphereScreenBounds, type ViewFrustum } from '@/render/atmosphere/select';
+import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchBodies, sphereScreenBounds, type ViewFrustum } from '@/render/atmosphere/select';
 import { ATMO_UNIFORM_BYTES, ATMO_UNIFORM_WGSL, AtmoUniforms } from '@/render/atmosphere/uniforms';
 
 let defs: DefLibrary;
@@ -53,6 +53,32 @@ describe('atmosphere and cloud definitions of the shipped bodies', () => {
     expect(resolveCloudParams({ coverageMap: 'c', bottomAltitude: 5000, topAltitude: 4000, params: {} }).problems[0]).toMatch(/empty/);
   });
 
+  it('keeps tunables inside the range in which the model means something', () => {
+    const shell = { coverageMap: 'c', bottomAltitude: 1000, topAltitude: 9000 };
+    const defaults = resolveCloudParams({ ...shell, params: {} });
+    expect(defaults.problems).toEqual([]);
+    // A low layer deeper than the shell, billows deeper than the sheet they are carved into, an edge with no
+    // width, steps whose minimum exceeds their maximum: each is reported and replaced by its default.
+    const r = resolveCloudParams({ ...shell, params: { lowThicknessM: 20000, topReliefM: 5000, lowEdgeSoftness: 0, stepMinM: 900, stepMaxM: 300, phaseG1: 1.2 } });
+    expect(r.problems).toHaveLength(5);
+    for (const key of ['lowThicknessM', 'topReliefM', 'lowEdgeSoftness', 'stepMaxM', 'phaseG1'] as const) {
+      expect(r.problems.join(' '), key).toContain(`"${key}"`);
+      expect(r.params[key], key).toBe(defaults.params[key]);
+    }
+    // Values inside the range pass untouched.
+    const ok = resolveCloudParams({ ...shell, params: { lowThicknessM: 600, topReliefM: 0, lowEdgeSoftness: 0.6, detailErosion: 0.45 } });
+    expect(ok.problems).toEqual([]);
+    expect(ok.params.lowThicknessM).toBe(600);
+  });
+
+  it('marches a shell at full resolution only while its rectangle fits the tile', () => {
+    expect(fitsFineTile([100, 100, 46, 46])).toBe(true);
+    expect(fitsFineTile([0, 0, FINE_TILE_SIZE, FINE_TILE_SIZE])).toBe(true);
+    expect(fitsFineTile([0, 0, FINE_TILE_SIZE + 1, 40])).toBe(false);
+    expect(fitsFineTile([0, 0, 2560, 1440])).toBe(false);
+    expect(fitsFineTile([10, 10, 0, 30])).toBe(false);
+  });
+
   it('atmosphere bodies are physically sensible', () => {
     for (const b of Object.values(defs.bodies)) {
       const a = b.render.atmosphere;
@@ -65,6 +91,77 @@ describe('atmosphere and cloud definitions of the shipped bodies', () => {
       expect(a.groundAlbedo).toBeGreaterThan(0);
       expect(a.groundAlbedo).toBeLessThan(1);
     }
+  });
+
+  it("the root body's Rayleigh and ozone coefficients are those of the sRGB primaries, not of three wavelengths", () => {
+    // The renderer works in linear sRGB: a channel is a band, not a wavelength. For a thin layer the
+    // coefficient of a band is the average of the spectral coefficient weighted by the sunlight the band
+    // sees: sum(S c k) / sum(S c), with c = the colour-matching function of the primary (CIE 1931 2 degree
+    // observer through the XYZ -> sRGB matrix) and S = a 5,778 K black body. For ozone this matters a great
+    // deal: the red primary sits at 600-610 nm, on the peak of the Chappuis band, where ozone absorbs four
+    // times more than at the 680 nm of the usual three-wavelength table (0.650, 1.881, 0.085) x 1e-6. With
+    // the three-wavelength values the twilight zenith comes out purple (red above green).
+    const cmf: [number, number, number, number][] = [
+      [400, 0.0143, 0.0004, 0.0679], [410, 0.0435, 0.0012, 0.2074], [420, 0.1344, 0.004, 0.6456], [430, 0.2839, 0.0116, 1.3856],
+      [440, 0.3483, 0.023, 1.7471], [450, 0.3362, 0.038, 1.7721], [460, 0.2908, 0.06, 1.6692], [470, 0.1954, 0.091, 1.2876],
+      [480, 0.0956, 0.139, 0.813], [490, 0.032, 0.208, 0.4652], [500, 0.0049, 0.323, 0.272], [510, 0.0093, 0.503, 0.1582],
+      [520, 0.0633, 0.71, 0.0782], [530, 0.1655, 0.862, 0.0422], [540, 0.2904, 0.954, 0.0203], [550, 0.4334, 0.995, 0.0087],
+      [560, 0.5945, 0.995, 0.0039], [570, 0.7621, 0.952, 0.0021], [580, 0.9163, 0.87, 0.0017], [590, 1.0263, 0.757, 0.0011],
+      [600, 1.0622, 0.631, 0.0008], [610, 1.0026, 0.503, 0.0003], [620, 0.8544, 0.381, 0.0002], [630, 0.6424, 0.265, 0],
+      [640, 0.4479, 0.175, 0], [650, 0.2835, 0.107, 0], [660, 0.1649, 0.061, 0], [670, 0.0874, 0.032, 0], [680, 0.0468, 0.017, 0],
+      [690, 0.0227, 0.0082, 0], [700, 0.0114, 0.0041, 0],
+    ];
+    // Ozone absorption cross-section in the Chappuis band, 1e-21 cm^2 (Serdyuchenko et al. 2014, 293 K, rounded).
+    const o3Table: [number, number][] = [[400, 0.01], [420, 0.04], [440, 0.13], [460, 0.36], [480, 0.71], [500, 1.22], [520, 1.82], [540, 2.86], [560, 3.94], [575, 4.75], [590, 4.59], [603, 5.18], [620, 4.0], [640, 2.96], [660, 2.09], [680, 1.37], [700, 0.9]];
+    const o3 = (l: number): number => {
+      for (let i = 1; i < o3Table.length; i++) {
+        const [l1, v1] = o3Table[i]!;
+        const [l0, v0] = o3Table[i - 1]!;
+        if (l <= l1) return v0 + ((v1 - v0) * (l - l0)) / (l1 - l0);
+      }
+      return o3Table[o3Table.length - 1]![1];
+    };
+    const sun = (l: number): number => 1 / ((l * 1e-9) ** 5 * (Math.exp(1.4388e-2 / (l * 1e-9 * 5778)) - 1));
+    const toSrgb = [
+      [3.2406, -1.5372, -0.4986],
+      [-0.9689, 1.8758, 0.0415],
+      [0.0557, -0.204, 1.057],
+    ];
+    const weight = [0, 0, 0];
+    const rayleigh = [0, 0, 0];
+    const ozone = [0, 0, 0];
+    for (const [l, x, y, z] of cmf) {
+      for (let c = 0; c < 3; c++) {
+        const w = sun(l) * (toSrgb[c]![0]! * x + toSrgb[c]![1]! * y + toSrgb[c]![2]! * z);
+        weight[c]! += w;
+        // Rayleigh: 5.802e-6 / m at 680 nm, lambda^-4. Ozone: 1.881e-6 / m at 550 nm at the layer's peak.
+        rayleigh[c]! += w * 5.802e-6 * (680 / l) ** 4;
+        ozone[c]! += (w * 1.881e-6 * o3(l)) / o3(550);
+      }
+    }
+    const a = defs.bodies[defs.rootBodyId]!.render.atmosphere!;
+    for (let c = 0; c < 3; c++) {
+      const r = rayleigh[c]! / weight[c]!;
+      expect(a.rayleighScattering[c]! / r, `Rayleigh channel ${c}: band value ${r.toExponential(3)}`).toBeGreaterThan(0.95);
+      expect(a.rayleighScattering[c]! / r, `Rayleigh channel ${c}: band value ${r.toExponential(3)}`).toBeLessThan(1.05);
+    }
+    const oz = ozone.map((v, c) => v / weight[c]!);
+    // Green within 10 %; the blue band is not absorbed at all (its average comes out at zero within the
+    // accuracy of the tables). Red lies between the 680 nm value and the band average (2.7e-6): the band
+    // average holds for white sunlight, but the light of the twilight arch has been reddened by a thousand
+    // kilometres of air before the ozone absorbs from it, and what is left of its red band sits at the long
+    // end, where ozone absorbs least. One coefficient per channel cannot follow that; the value is the one at
+    // which both the pink of the arch and the blue of the twilight zenith hold (sky.spec.ts measures both).
+    const red680 = (1.881e-6 * o3(680)) / o3(550);
+    expect(oz[0]!, 'band average of the red primary').toBeGreaterThan(3 * red680);
+    expect(a.ozoneAbsorption[0]).toBeGreaterThan(red680);
+    expect(a.ozoneAbsorption[0]).toBeLessThan(oz[0]! * 1.05);
+    expect(a.ozoneAbsorption[1] / oz[1]!, `ozone green: band value ${oz[1]!.toExponential(3)}`).toBeGreaterThan(0.9);
+    expect(a.ozoneAbsorption[1] / oz[1]!).toBeLessThan(1.1);
+    expect(Math.abs(oz[2]!)).toBeLessThan(1e-7);
+    expect(a.ozoneAbsorption[2]).toBeLessThan(1e-7);
+    // Red is absorbed at least as much as green: what keeps the twilight zenith blue instead of purple.
+    expect(a.ozoneAbsorption[0]).toBeGreaterThanOrEqual(a.ozoneAbsorption[1]);
   });
 });
 
@@ -204,7 +301,8 @@ describe('reference atmosphere (float64 model)', () => {
     const body = Object.values(defs.bodies).find((b) => b.render.atmosphere)!;
     const a = referenceAtmosphere(body.radius, body.render.atmosphere!);
     const zenith = transmittanceToTop(a, 0, 1);
-    expect(zenith[0]).toBeGreaterThan(0.9);
+    // (Red band: Rayleigh 0.057 + aerosol 0.028 + ozone 0.041 of optical depth at the zenith.)
+    expect(zenith[0]).toBeGreaterThan(0.85);
     expect(zenith[2]).toBeGreaterThan(0.6);
     expect(zenith[0]).toBeGreaterThan(zenith[2]);
     const horizon = transmittanceToTop(a, 0, 0.02);

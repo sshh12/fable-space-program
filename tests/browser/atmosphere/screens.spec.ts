@@ -91,7 +91,10 @@ test.describe('acceptance screenshots', () => {
       async check(p) {
         const horizon = await p(0.3, 0.6);
         const high = await p(0.5, 0.03);
-        expect(horizon[0]).toBeGreaterThan(horizon[2] * 1.8);
+        // (Orange: with the Rayleigh coefficients of the sRGB primaries the red band loses more on the way
+        // than a 680 nm wavelength would; the ratio was 1.8 with the three-wavelength table.)
+        expect(horizon[0]).toBeGreaterThan(horizon[2] * 1.4);
+        expect(horizon[0]).toBeGreaterThan(horizon[1] * 1.15);
         expect(blue(high)).toBeGreaterThan(1.3);
       },
     },
@@ -101,6 +104,8 @@ test.describe('acceptance screenshots', () => {
       sun: { azDeg: 270, elDeg: -2.5 },
     },
     {
+      // The sun eclipsed by the planet itself, 40 degrees under the horizon (an eclipse by another body is
+      // rendered and measured in eclipse.spec.ts: pad-eclipse*.png).
       name: 'pad-night',
       view: { alt: 30, headingDeg: 90, pitchDeg: 25, fovDeg: 75 },
       sun: { azDeg: 270, elDeg: -40 },
@@ -134,7 +139,22 @@ test.describe('acceptance screenshots', () => {
   group('low orbit: day side, terminator, night-side limb glow', '', [
     { name: 'leo-day', view: { alt: 400000, headingDeg: 60, pitchDeg: -35, fovDeg: 60 }, sun: { azDeg: 160, elDeg: 50 }, ev: DAY_EV, frames: 60 },
     { name: 'leo-day-limb', view: { alt: 400000, headingDeg: 35, pitchDeg: -18, fovDeg: 60 }, sun: { azDeg: 160, elDeg: 50 }, ev: DAY_EV, frames: 60 },
-    { name: 'leo-terminator', view: { alt: 400000, headingDeg: 270, pitchDeg: -25, fovDeg: 60 }, sun: { azDeg: 270, elDeg: 4 }, ev: 13, frames: 60 },
+    {
+      // Along the terminator: the sun on the horizon to the left (west), the night to the right, the
+      // twilight band and the red-lit cloud tops across the middle of the frame.
+      name: 'leo-terminator',
+      view: { alt: 400000, headingDeg: 0, pitchDeg: -25, fovDeg: 60 },
+      sun: { azDeg: 270, elDeg: 0 },
+      ev: 11,
+      frames: 60,
+      async check(p) {
+        const day = luminance(await p(0.08, 0.75));
+        const night = luminance(await p(0.95, 0.75));
+        expect(day, 'the day side of the terminator').toBeGreaterThan(8 * Math.max(night, 1e-3));
+      },
+    },
+    // Towards the low sun from orbit: long shadows and the bright limb (the view the perf spec measures).
+    { name: 'leo-low-sun', view: { alt: 400000, headingDeg: 270, pitchDeg: -25, fovDeg: 60 }, sun: { azDeg: 270, elDeg: 4 }, ev: 13, frames: 60 },
     {
       name: 'leo-night-limb',
       view: { alt: 400000, headingDeg: 270, pitchDeg: -18, fovDeg: 60 },

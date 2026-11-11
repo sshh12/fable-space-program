@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test';
 import { luminanceOf, multiScatter, referenceAtmosphere, skyRadiance, transmittanceToTop } from '../../../src/render/atmosphere/reference';
 import { rMuFromTransmittanceUv } from '../../../src/render/atmosphere/math';
 import { expect, expectNoErrors, test } from '../harness';
-import { luminance, openLab, PAD, probe, setScene, settle } from './lab';
+import { decode, luminance, openLab, PAD, probe, setScene, settle, shot } from './lab';
 
 const RADIUS = 6371000;
 
@@ -140,9 +140,26 @@ test.describe('clear sky', () => {
     const above = await probe(page, 0.5, 0.05);
     console.log(`anti-twilight: shadow band ${luminance(shadow).toFixed(1)} cd/m^2 rgb ${shadow.map((v) => v.toFixed(1)).join(', ')}; arch rgb ${arch.map((v) => v.toFixed(1)).join(', ')}; above rgb ${above.map((v) => v.toFixed(1)).join(', ')}`);
     expect(luminance(arch)).toBeGreaterThan(luminance(shadow) * 1.3);
-    expect(arch[0]).toBeGreaterThan(arch[1] * 1.15);
+    expect(arch[0]).toBeGreaterThan(arch[1] * 1.1);
     expect(shadow[2]).toBeGreaterThan(shadow[0]);
     expect(above[2]).toBeGreaterThan(above[0]);
+    // The twilight sky high up is blue, not purple or grey: in the scene (red below green below blue) and on
+    // the screen, after the tone map (the display values of the same patch of the screenshot).
+    expect(above[0], 'twilight sky 40 degrees up: red against green, scene-linear').toBeLessThan(above[1] * 0.99);
+    expect(above[2]).toBeGreaterThan(above[1] * 1.5);
+    const png = decode((await shot(page, 'sky-anti-twilight')).buffer);
+    const display = [0, 0, 0];
+    let count = 0;
+    for (let y = Math.floor(png.height * 0.03); y < png.height * 0.08; y++) {
+      for (let x = Math.floor(png.width * 0.45); x < png.width * 0.55; x++) {
+        for (let c = 0; c < 3; c++) display[c]! += png.data[(y * png.width + x) * 4 + c]!;
+        count++;
+      }
+    }
+    console.log(`anti-twilight, on the screen: sky 40 degrees up rgb ${display.map((v) => (v / count).toFixed(1)).join(', ')} of 255`);
+    expect(display[2]!, 'twilight sky on the screen: blue against red').toBeGreaterThan(display[0]! * 1.25);
+    expect(display[2]!).toBeGreaterThan(display[1]! * 1.1);
+    expect(display[0]!, 'twilight sky on the screen: red is not above green (purple)').toBeLessThanOrEqual(display[1]! * 1.02);
     await expectNoErrors(page, pageLog);
   });
 

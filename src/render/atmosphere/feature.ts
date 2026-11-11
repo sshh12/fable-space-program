@@ -86,6 +86,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
   let marchGroup: GPUBindGroup | null = null;
   let compositeGroup: GPUBindGroup | null = null;
   let groupKey = '';
+  const groupCache = new Map<string, [GPUBindGroup, GPUBindGroup, GPUBindGroup, GPUBindGroup]>();
 
   // Full-resolution march of a small shell (see marchFsWgsl): tile targets and their own pipelines.
   let fineTargets: GPUTexture[] = [];
@@ -136,6 +137,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     const key = [
       tables.version,
       clouds?.version ?? -1,
+      clouds?.parity ?? 0,
       cloudsOn ? 1 : 0,
       ctx.resources.version('scene.depthHalf'),
       ctx.resources.version('scene.depth'),
@@ -143,6 +145,13 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     ].join(':');
     if (key === groupKey && marchGroup && compositeGroup) return;
     groupKey = key;
+    // (The cloud geometry alternates between two targets: two sets of groups are kept, one per parity.)
+    const cached = groupCache.get(key);
+    if (cached) {
+      [marchGroup, compositeGroup, marchFineGroup, compositeFineGroup] = cached;
+      return;
+    }
+    if (groupCache.size >= 2) groupCache.clear();
     marchGroup = device.createBindGroup({
       label: `${id}.march`,
       layout: marchLayout,
@@ -191,6 +200,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 2, resource: fineViews[1]! },
       ],
     });
+    groupCache.set(key, [marchGroup, compositeGroup, marchFineGroup, compositeFineGroup]);
   };
 
   const feature: AtmosphereFeature = {
@@ -406,7 +416,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
           }
           pass.end();
         }
-        if (cloudsOn) clouds!.endFrame(frame, encoder);
+        if (cloudsOn) clouds!.endFrame(frame);
         return;
       }
       {
@@ -437,7 +447,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         }
         pass.end();
       }
-      if (cloudsOn) clouds!.endFrame(frame, encoder);
+      if (cloudsOn) clouds!.endFrame(frame);
     },
 
     isIdle() {

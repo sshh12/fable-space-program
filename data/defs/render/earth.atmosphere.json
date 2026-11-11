@@ -1,9 +1,9 @@
 {
   "topAltitude": 100000,
   "rayleighScattering": [
-    0.000005802,
-    0.000013558,
-    0.0000331
+    0.000007101,
+    0.000013824,
+    0.000032476
   ],
   "rayleighScaleHeight": 8000,
   "mieScattering": 0.000021,
@@ -11,9 +11,9 @@
   "mieScaleHeight": 1200,
   "miePhaseG": 0.8,
   "ozoneAbsorption": [
-    0.0000018,
-    0.000001881,
-    1.3e-7
+    0.0000019,
+    0.000001721,
+    0
   ],
   "ozoneCenterAltitude": 25000,
   "ozoneHalfWidth": 15000,

@@ -16,6 +16,7 @@
  *   &hud=0                    no text overlay
  *   &quality=q                pin FrameContext.qualityScale at q (< 1) through the governor (not in deterministic mode)
  *   &heavy=N                  ballast pass of N iterations (perf specs: a GPU at the clock of a real frame)
+ *   &tail=1                   an empty timed pass behind the atmosphere composite ('lab-tail.composite', perf diagnosis)
  * plus every renderer parameter of createLabApp (scale, governor, perf, ev, fov, deterministic, paused).
  * Specs drive the rest through window.__lab and window.__atmo.
  */
@@ -25,9 +26,9 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3 } from '@/core/math';
 import { createAtmosphereFeature, type AtmosphereFeature, type CoverageImage } from '@/render/atmosphere';
-import { cameraBasis } from '@/render/core';
+import { cameraBasis, discVisibleFraction } from '@/render/core';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp, type LabCameraSpec } from '@/render/core/lab';
-import { createLabHeavy, createLabQuads, createLabReliefFeature, createLabSkyFeature, createLabVolume, type LabHeavy, type LabQuad, type LabQuads, type LabVolume } from './probes';
+import { createLabHeavy, createLabQuads, createLabReliefFeature, createLabSkyFeature, createLabTail, createLabVolume, type LabHeavy, type LabQuad, type LabQuads, type LabVolume } from './probes';
 import { sunAtSite, withSunOverride, type Site, type SunOverride } from './world';
 
 export interface AtmosphereLabView {
@@ -52,6 +53,13 @@ export interface AtmosphereLab {
   view(v: AtmosphereLabView): void;
   /** Pin the sun at azimuth / elevation (deg) as seen from a point of the root body (default: the site). */
   setSun(azDeg: number, elDeg: number, at?: { latDeg: number; lonDeg: number }): void;
+  /**
+   * A solar eclipse by another body: the camera goes to the point of the root body that has `bodyId` at its
+   * zenith, looking up at `pitchDeg`, and the sun is put behind that body as seen from there, `offsetDeg`
+   * away from its centre (0 = central eclipse). Returns the place and the share of the solar disc that
+   * stays visible from it.
+   */
+  viewEclipse(bodyId: string, offsetDeg: number, pitchDeg?: number, fovDeg?: number): { latDeg: number; lonDeg: number; visibleFraction: number };
   /** Camera `distance` metres from the centre of the root body, on the side given by sun-relative phase (0 = sub-solar, 180 = midnight). */
   viewFromSpace(distance: number, phaseDeg: number, fovDeg?: number): void;
   setQuads(q: LabQuad[]): void;
@@ -170,6 +178,7 @@ async function boot(): Promise<void> {
       volume = createLabVolume(site, defs);
       heavy = createLabHeavy(Number(query.get('heavy') ?? 0));
       list.push(quads.feature, volume.feature, heavy.feature);
+      if (query.get('tail') === '1') list.push(createLabTail());
       return list;
     },
     camera: (): LabCameraSpec => ({
@@ -210,6 +219,28 @@ async function boot(): Promise<void> {
       };
       place(app.snapshot());
       app.onFrame(place);
+    },
+    viewEclipse(bodyId, offsetDeg, pitchDeg = 60, fovDeg) {
+      const s = app.snapshot();
+      const root = s.bodies.find((b) => b.id === site.bodyId)!;
+      const other = s.bodies.find((b) => b.id === bodyId)!;
+      const star = s.bodies.find((b) => b.id === s.starId)!;
+      const rb = app.defs.bodies[site.bodyId]!.radius;
+      // The point under the other body, in the root body's fixed frame.
+      const toOther = v3.normalize(v3.sub(other.rRoot, root.rRoot));
+      const fixed = quat.rotate(quat.conj(root.qFixedToRoot), toOther);
+      const latDeg = Math.asin(fixed.z) / DEG;
+      const lonDeg = Math.atan2(fixed.y, fixed.x) / DEG;
+      const eye = v3.addScaled(root.rRoot, toOther, rb + 2);
+      // Direction from the eye to the other body, turned by the offset about an axis across it.
+      const dir = v3.normalize(v3.sub(other.rRoot, eye));
+      const axis = v3.normalize(v3.cross(dir, quat.rotate(root.qFixedToRoot, { x: 0, y: 0, z: 1 })));
+      const sunDir = quat.rotate(quat.fromAxisAngle(axis, offsetDeg * DEG), dir);
+      sunOverride = { dirRoot: () => sunDir };
+      lab.view({ latDeg, lonDeg, alt: 2, headingDeg: 0, pitchDeg, fovDeg });
+      const rs = Math.asin(app.defs.bodies[s.starId]!.radius / v3.dist(star.rRoot, root.rRoot));
+      const ro = Math.asin(app.defs.bodies[bodyId]!.radius / v3.dist(other.rRoot, eye));
+      return { latDeg, lonDeg, visibleFraction: discVisibleFraction(rs, ro, offsetDeg * DEG) };
     },
     setQuads(q) {
       quads.set(q);

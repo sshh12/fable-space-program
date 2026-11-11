@@ -4,11 +4,15 @@
  *   sky      photometric sun disc and a procedural star field in drawBackground, so that the attenuation
  *            and reddening of what lies behind the atmosphere can be judged
  *   relief   mountain-like relief meshes on the LabPlanet out to 150 km from the site (aerial perspective)
- *   quads    camera-facing emissive quads: transparent ones drawn in drawTransparent through
- *            applyAtmosphere(), opaque ones in the G-buffer (the reference the transparents must match)
+ *   quads    camera-facing quads: transparent emissive ones drawn in drawTransparent through
+ *            applyAtmosphere(), opaque emissive ones in the G-buffer (the reference the transparents must
+ *            match), and lit ones: a diffuse surface facing the sun in the G-buffer, shaded by the deferred
+ *            lighting (what a vehicle or a mountain top receives: sun x air x cloud shadow)
  *   volume   a half-resolution fog sphere marched in preTransparent and composited in drawTransparent
  *            through applyAtmosphere()
  *   heavy    a ballast pass that keeps the GPU as busy as a real frame while budgets are measured
+ *   tail     an empty timed pass right behind the atmosphere composite (perf diagnosis: whatever a timestamp
+ *            charges to the pass that FOLLOWS the composite shows up here instead of in a later feature)
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type MeshData, type RenderContext, type RenderFeature } from '@/core/contracts/render';
@@ -241,13 +245,16 @@ export function createLabReliefFeature(site: Site, defs: DefLibrary): RenderFeat
 
 export interface LabQuad {
   id: string;
-  /** 'transparent': drawTransparent through applyAtmosphere(); 'opaque': emissive G-buffer surface. */
-  kind: 'transparent' | 'opaque';
+  /**
+   * 'transparent': drawTransparent through applyAtmosphere(); 'opaque': emissive G-buffer surface;
+   * 'lit': diffuse G-buffer surface facing the sun, lit by the deferred lighting (`luminance` = its albedo).
+   */
+  kind: 'transparent' | 'opaque' | 'lit';
   /** Where: fixed to the view (NDC x, y and distance from the eye), or at a point of the site's ENU frame (m). */
   place: { type: 'view'; ndc: [number, number]; distance: number } | { type: 'site'; enu: [number, number, number] };
   /** Half size, m. */
   halfSize: number;
-  /** Emitted luminance, cd/m^2 (linear sRGB), and opacity (transparent quads). */
+  /** Emitted luminance, cd/m^2 (linear sRGB; the albedo of 'lit' quads), and opacity (transparent quads). */
   luminance: [number, number, number];
   alpha?: number;
 }
@@ -282,6 +289,7 @@ export function createLabQuads(site: Site, defs: DefLibrary): LabQuads {
   let core: CoreApi;
   let transparent: Tracked<GPURenderPipeline>;
   let opaque: Tracked<GPURenderPipeline>;
+  let lit: Tracked<GPURenderPipeline>;
   let quadLayout: GPUBindGroupLayout;
   let transpLayout: GPUBindGroupLayout;
   let transp: SceneBindings;
@@ -338,40 +346,45 @@ export function createLabQuads(site: Site, defs: DefLibrary): LabQuads {
           depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'greater-equal' },
         });
       });
-      opaque = core.shaders.tracked(() => {
-        const module = c.shaders.createModule(
-          'lab-quads.opaque',
-          /* wgsl */ `
+      const gbufferPipeline = (label: string, body: string): Tracked<GPURenderPipeline> =>
+        core.shaders.tracked(() => {
+          const module = c.shaders.createModule(
+            label,
+            /* wgsl */ `
           #include "frame"
           #include "gbuffer"
           ${QUAD_WGSL}
           @fragment fn fs(in: QuadV) -> GBufferOut {
-            // A black surface that only emits; its normal is turned away from the sun so that nothing lights it.
-            return gbufferPack(vec3f(0.0), 1.0, -frame.sunDir.xyz, 1.0, 0.0, MATERIAL_STANDARD, 0.0, vec2f(0.0), quad.colour.rgb * frame.exposure.x);
+            ${body}
           }`,
-        );
-        return device.createRenderPipeline({
-          label: 'lab-quads.opaque',
-          layout: device.createPipelineLayout({ bindGroupLayouts: [c.frameBindGroupLayout, quadLayout] }),
-          vertex: { module, entryPoint: 'vs' },
-          fragment: {
-            module,
-            entryPoint: 'fs',
-            targets: [
-              { format: RENDER_FORMATS.gbufferAlbedo },
-              { format: RENDER_FORMATS.gbufferNormal },
-              { format: RENDER_FORMATS.gbufferMaterial },
-              { format: RENDER_FORMATS.gbufferVelocity },
-              { format: RENDER_FORMATS.gbufferExtra },
-              { format: RENDER_FORMATS.hdr },
-            ],
-          },
-          primitive: { topology: 'triangle-list', cullMode: 'none' },
-          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater' },
+          );
+          return device.createRenderPipeline({
+            label,
+            layout: device.createPipelineLayout({ bindGroupLayouts: [c.frameBindGroupLayout, quadLayout] }),
+            vertex: { module, entryPoint: 'vs' },
+            fragment: {
+              module,
+              entryPoint: 'fs',
+              targets: [
+                { format: RENDER_FORMATS.gbufferAlbedo },
+                { format: RENDER_FORMATS.gbufferNormal },
+                { format: RENDER_FORMATS.gbufferMaterial },
+                { format: RENDER_FORMATS.gbufferVelocity },
+                { format: RENDER_FORMATS.gbufferExtra },
+                { format: RENDER_FORMATS.hdr },
+              ],
+            },
+            primitive: { topology: 'triangle-list', cullMode: 'none' },
+            depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater' },
+          });
         });
-      });
+      // A black surface that only emits; its normal is turned away from the sun so that nothing lights it.
+      opaque = gbufferPipeline('lab-quads.opaque', 'return gbufferPack(vec3f(0.0), 1.0, -frame.sunDir.xyz, 1.0, 0.0, MATERIAL_STANDARD, 0.0, vec2f(0.0), quad.colour.rgb * frame.exposure.x);');
+      // A rough diffuse surface (colour = albedo) whose normal points at the sun: lit by the deferred pass.
+      lit = gbufferPipeline('lab-quads.lit', 'return gbufferPack(quad.colour.rgb, 1.0, frame.sunDir.xyz, 1.0, 0.0, MATERIAL_STANDARD, 0.0, vec2f(0.0), vec3f(0.0));');
       transparent.get();
       opaque.get();
+      lit.get();
     },
     prepare(frame) {
       const device = ctx.device;
@@ -400,8 +413,8 @@ export function createLabQuads(site: Site, defs: DefLibrary): LabQuads {
     },
     drawGBuffer(_frame, pass) {
       quads.forEach((q, i) => {
-        if (q.kind !== 'opaque' || !slots[i]) return;
-        pass.setPipeline(opaque.get());
+        if (q.kind === 'transparent' || !slots[i]) return;
+        pass.setPipeline(q.kind === 'lit' ? lit.get() : opaque.get());
         pass.setBindGroup(1, slots[i].group);
         pass.draw(6);
       });
@@ -578,6 +591,30 @@ export function createLabVolume(site: Site, defs: DefLibrary): LabVolume {
       volume = v;
     },
     project: () => projected,
+  };
+}
+
+// ------------------------------------------------------------------------------------------------ tail
+
+/**
+ * An empty render pass on the HDR target, encoded in the compositeAtmosphere hook after the atmosphere
+ * feature (order 900), with its own timestamps ('lab-tail.composite'). GPU timestamps are taken when the
+ * command processor reaches them, not when the pixels of the draws before them have been shaded: the tail
+ * of a pass can be charged to the next one. This pass is that next one.
+ */
+export function createLabTail(): RenderFeature {
+  let ctx: RenderContext;
+  return {
+    id: 'lab-tail',
+    order: 900,
+    init(c) {
+      ctx = c;
+    },
+    compositeAtmosphere(_frame, encoder, hdrTarget) {
+      encoder
+        .beginRenderPass({ colorAttachments: [{ view: hdrTarget, loadOp: 'load', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-tail.composite') as GPURenderPassTimestampWrites | undefined })
+        .end();
+    },
   };
 }
 

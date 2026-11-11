@@ -10,9 +10,18 @@
  *   high layer  a stratiform sheet (altostratus, cirrus shield, anvil) under the map's cloud top, smooth
  *               and thin, its opacity growing with c;
  *   deep column the space between the two fills in where c approaches 1 (fronts, deep convection).
+ * The map's c is an opacity as much as a cover: the low layer's extinction grows with it and is mottled at
+ * the mesoscale (thin translucent cloud at the edge of a system, bright cores inside it).
  * Shape noise is sampled at the mip level of the pixel footprint. What the mip chain has averaged away is
  * accounted for analytically as a cloud FRACTION (the share of the footprint above the threshold), so the
  * same function gives resolved cumulus near the camera and the right partial cover from orbit and beyond.
+ * Past the mip level where next to nothing is left, the noise is replaced by its mean exactly (the last
+ * levels of a tiling texture, sampled by a pixel lattice, show the tile as a regular stipple).
+ *
+ * A march step that is long against the layers (grazing rays, the far field) does not point-sample them:
+ * every layer is integrated over the altitudes the step covers (overlap of the step with the low layer and
+ * the filled column, the analytic bell integral of the sheet), so that the result does not depend on where
+ * inside the step the sample happens to fall - a frozen step phase gives the picture the accumulated one has.
  *
  * Fractions along a ray are combined with maximum overlap (clouds are columns): the march tracks the
  * largest fraction met so far and the mean transmittance / radiance of that cloudy part of the footprint.
@@ -31,6 +40,7 @@ struct CloudColumn {
   highBase: f32,   // its bottom and top altitude (m)
   highTop: f32,
   deep: f32,       // fill of the column between the layers, 0..1
+  dens: f32,       // multiplier of the low layer's extinction (thin cloud where the map's opacity is low, mottled at the mesoscale)
 }
 
 struct CloudDensity {
@@ -39,7 +49,12 @@ struct CloudDensity {
   above: f32,      // optical depth scale of the cloud above the point (vertical), for the ambient terms
   below: f32,      // the same below the point
   relief: f32,     // depth (m) of the billows carved into the top of the sheet here (0 = a smooth sheet)
+  resolved: f32,   // share of the shape noise that the sample still sees (1 = shapes with surfaces, 0 = a cloud fraction)
 }
+
+/// Share of the shape noise kept at mip level 'lod': 1 while the mip chain still holds a pattern, 0 from
+/// the level at which its remaining texels would only show the period of the tile.
+fn cloudNoiseKeep(lod: f32) -> f32 { return 1.0 - smoothstep(4.0, 5.5, lod); }
 
 /// A camera-relative vector (ROOT axes) in the cloud noise frame: body-fixed axes turned about the spin
 /// axis by the wind drift. For positions: relative to the camera.
@@ -64,35 +79,62 @@ fn cloudNoiseFade(lod: f32) -> f32 {
 }
 
 /// What the coverage map and the large noise scales say about the column through a point. 'q' = the point
-/// in the noise frame relative to the camera, 'footprint' = size of the pixel there (m).
-fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32) -> CloudColumn {
+/// in the noise frame relative to the camera, 'footprint' = size of the pixel there (m), 'hLow' = the lowest
+/// altitude (m) the caller will ask this column about: above every cloud top the map allows there, the
+/// column is returned empty without the noise lookups (most steps of a ray through clear upper air).
+fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> CloudColumn {
   let dfix = normalize(rootToFixed(bi, pos - frame.bodies[bi].center.xyz));
   let lon = atan2(dfix.y, dfix.x) + atmo.noiseRot.z;
   let uv = vec2f(lon / TWO_PI + 0.5, clamp(acos(clamp(dfix.z, -1.0, 1.0)) / PI, 0.0005, 0.9995));
   let texel = TWO_PI * frame.bodies[bi].center.w / atmo.noiseRot.w;
-  let m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, log2(max(footprint / texel, 1.0)));
+  // (Never the finest level: the texels of the map are not the outlines of clouds. The mesoscale noise
+  // below gives the cover its edges, the wander of the sheet its own.)
+  let m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, max(log2(max(footprint / texel, 1.0)), 1.0));
   let c = m.r;
   let ct = m.g * 12750.0;
-  let nLarge = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseLarge.xyz + q) * atmo.noiseLarge.w, log2(max(footprint * atmo.noiseLarge.w * 128.0, 1.0))).b;
+  let zb = atmo.cloudShell.z;
+  let zt = atmo.cloudShell.w;
+  var col: CloudColumn;
+  col.highTop = clamp(ct, zb + 600.0, zt);
+  if (hLow >= col.highTop && hLow >= zb + atmo.cloudLow.x * 1.2) {
+    col.cLow = 0.0;
+    col.lowTop = zb + 0.4 * atmo.cloudLow.x;
+    col.cHigh = 0.0;
+    col.highBase = col.highTop - 200.0;
+    col.deep = 0.0;
+    col.dens = 1.0;
+    return col;
+  }
+  let large = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseLarge.xyz + q) * atmo.noiseLarge.w, log2(max(footprint * atmo.noiseLarge.w * 128.0, 1.0)));
+  let nLarge = large.b;
   let mesoLod = log2(max(footprint * atmo.noiseMeso.w * 128.0, 1.0));
-  let nMeso = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseMeso.xyz + q) * atmo.noiseMeso.w, mesoLod).g;
+  let meso = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseMeso.xyz + q) * atmo.noiseMeso.w, mesoLod);
+  let nMeso = meso.g;
   // Both modulations average out to nothing once the pixel is as large as their features: they are faded
   // to their means there instead of being sampled from the last few texels of a mip chain.
   let mesoKeep = 1.0 - smoothstep(0.03, 0.12, footprint * atmo.noiseMeso.w);
-  let largeKeep = 1.0 - smoothstep(0.03, 0.15, footprint * atmo.noiseLarge.w);
+  let largeKeep = 1.0 - smoothstep(0.015, 0.07, footprint * atmo.noiseLarge.w);
 
-  var col: CloudColumn;
-  // Fair-weather fields where the infrared map is clear, placed by the weather-scale noise.
-  let fair = atmo.cloudLow2.x * mix(0.375, smoothstep(0.45, 0.8, nLarge), largeKeep) * (1.0 - smoothstep(0.0, 0.3, c));
+  // Fair-weather fields where the infrared map is clear, placed by the weather-scale noise and broken into
+  // cells and streets by its finer octaves (a field seen from orbit is mottled, not a grey veil with an outline).
+  // (The cells are an eighth of the tile and smaller: they are gone, at their mean, long before the fields.)
+  let cellKeep = 1.0 - smoothstep(0.008, 0.035, footprint * atmo.noiseLarge.w);
+  let fair = atmo.cloudLow2.x * mix(0.375, smoothstep(0.45, 0.8, nLarge) * mix(0.62, 0.25 + 1.5 * large.a * large.g, cellKeep), largeKeep) * (1.0 - smoothstep(0.0, 0.3, c));
   let c0 = saturate(c * atmo.cloudLow.w + fair);
   // The mesoscale cells break the map's texels up without changing the mean.
   col.cLow = saturate(c0 + (nMeso - 0.5) * mesoKeep * atmo.cloudLow2.y * 4.0 * c0 * (1.0 - c0));
-  let zb = atmo.cloudShell.z;
-  let zt = atmo.cloudShell.w;
-  col.lowTop = min(zb + atmo.cloudLow.x * mix(0.5, 1.0, col.cLow) * (0.8 + 0.4 * mix(0.5, nMeso, mesoKeep)), zt);
-  col.cHigh = smoothstep(atmo.cloudHigh2.x, atmo.cloudHigh2.y, c);
+  // (The smooth channel: the cell channel has creases, and a deck top that follows it is faceted.)
+  col.lowTop = min(zb + atmo.cloudLow.x * mix(0.5, 1.0, col.cLow) * (0.8 + 0.4 * mix(0.5, meso.b, mesoKeep)), zt);
+  // The outline and the amount of the sheet wander with the weather-scale and mesoscale noise (where the
+  // map has cloud at all): veils with soft, irregular edges instead of the map's contour lines.
+  let wander = ((nLarge - 0.5) * 0.3 * largeKeep + (meso.b - 0.5) * 0.24 * mesoKeep) * smoothstep(0.02, 0.3, c);
+  col.cHigh = smoothstep(atmo.cloudHigh2.x, atmo.cloudHigh2.y, c + wander);
   col.deep = smoothstep(atmo.cloudHigh2.z, atmo.cloudHigh2.w, c);
-  col.highTop = clamp(ct, zb + 600.0, zt);
+  // Extinction of the low layer: fair-weather cumulus are dense whatever the map says; cloud the map
+  // itself shows is as thin as its opacity is low. Both are mottled at the mesoscale (a deck seen from
+  // orbit is not one shade of white).
+  let thin = mix(mix(atmo.cloudLow3.x, 1.0, smoothstep(0.0, 0.6, c)), 1.0, saturate(fair / max(c0, 1e-4)));
+  col.dens = thin * exp2(((meso.r - 0.5) * mesoKeep + (nLarge - 0.5) * 0.8 * largeKeep) * 2.0 * atmo.cloudLow3.y);
   col.highBase = max(col.highTop - mix(atmo.cloudHigh.x, atmo.cloudHigh.y, col.cHigh), min(col.lowTop, col.highTop - 200.0));
   return col;
 }
@@ -107,19 +149,21 @@ fn cloudBellIntegral(x: f32) -> f32 {
 /// 'footprint' = size of what the sample stands for (m); 'footprintTop' = the same measured along a level
 /// surface (the footprint divided by the sine of the angle at which the ray meets the layer: a cloud top
 /// seen at a shallow angle is stretched out along the line of sight, and its billows are filtered to that).
-/// 'detail' adds the small-scale erosion (skipped for light samples and beyond the detail fade footprint).
-fn cloudDensityAt(col: CloudColumn, h: f32, span: f32, q: vec3f, footprint: f32, footprintTop: f32, detail: bool) -> CloudDensity {
+/// 'detail': 0 = shapes only, 1 = with the small-scale erosion (faded out beyond the detail fade
+/// footprint), 2 = also its finer octave for clouds close to the eye.
+fn cloudDensityAt(col: CloudColumn, h: f32, span: f32, q: vec3f, footprint: f32, footprintTop: f32, detail: i32) -> CloudDensity {
   var out: CloudDensity;
   out.sigma = 0.0;
   out.frac = 1.0;
   out.above = 0.0;
   out.below = 0.0;
   out.relief = 0.0;
+  out.resolved = 0.0;
   let zb = atmo.cloudShell.z;
-  if (h <= zb || h >= atmo.cloudShell.w) { return out; }
-  let inLow = h < col.lowTop && col.cLow > 0.004;
+  if (h + span <= zb || h - span >= atmo.cloudShell.w) { return out; }
+  let inLow = h + span > zb && h - span < col.lowTop && col.cLow > 0.004;
   let inHigh = h + span > col.highBase && h - span < col.highTop && col.cHigh > 0.0;
-  let inDeep = col.deep > 0.0 && h >= col.lowTop && h <= col.highBase;
+  let inDeep = col.deep > 0.0 && h + span > col.lowTop && h - span < col.highBase;
   if (!(inLow || inHigh || inDeep)) { return out; }
 
   let pb = (atmo.noiseBase.xyz + q + atmo.cloudWind.xyz * (h - zb)) * atmo.noiseBase.w;
@@ -127,42 +171,59 @@ fn cloudDensityAt(col: CloudColumn, h: f32, span: f32, q: vec3f, footprint: f32,
   // field of shapes smaller than that is a smooth cloud fraction, not a lattice of dots.)
   let lodB = log2(max(footprint * atmo.noiseBase.w * 256.0, 1.0));
   let nb = textureSampleLevel(cloudBaseNoise, linearRepeat, pb, lodB);
-  let fade = cloudNoiseFade(lodB);
+  let keep = cloudNoiseKeep(lodB);
+  let nr = mix(0.5, nb.r, keep);
+  let fade = mix(1.0, cloudNoiseFade(lodB), keep);
+  out.resolved = 1.0 - fade;
 
   var sigmaLow = 0.0;
   var fracLow = 1.0;
   if (inLow) {
-    let hl = (h - zb) / (col.lowTop - zb);
+    let hl = saturate((h - zb) / (col.lowTop - zb));
     // Flat bases, domed tops: the gradient is 1 just above the base and falls towards the top.
     let g = saturate(hl * 14.0) * (1.0 - smoothstep(0.18, 1.0, hl));
     // Where the shapes are not resolved the covered share is that of the whole column, whatever the height
     // of the sample (maximum overlap), and the cloudy part has the mean density of a cloud.
     let gf = mix(g, 0.95, fade);
-    let thr = 1.0 - col.cLow;
-    let x = nb.r * gf - thr;
+    let soft = atmo.cloudLow.z;
+    // Detail erosion carves billows into the surface of resolved shapes: it moves the surface inwards by up
+    // to k in units of the shape noise (a hundred metres and more), most where the detail noise is high. The
+    // edge itself stays as sharp as the edge softness makes it: a displaced surface, not a wider haze.
+    var k = 0.0;
+    if (detail > 0) { k = atmo.cloudLow2.z * (1.0 - smoothstep(0.4 * atmo.cloudLow2.w, atmo.cloudLow2.w, footprint)) * (1.0 - fade); }
+    // (The erosion removes half its strength on average: the threshold is lowered by as much, so that the
+    // covered share stays the one the map gives.)
+    let thr = 1.0 - col.cLow - 0.5 * k;
+    let x = nr * gf - thr;
     // What the mip has averaged away varies inside the footprint with the spread sqrt(1 - kept^2) of the
     // whole (variances add): the share of the footprint above the threshold follows from it.
     let spread = sqrt(max(1.0 - (1.0 - fade) * (1.0 - fade), 0.0));
     fracLow = saturate(x / (spread * gf + 1e-3) + 0.5);
     if (fracLow > 0.0) {
-      let soft = atmo.cloudLow.z;
-      // (0.52 = mean of the height gradient: unresolved, the cloudy part is uniform over the layer's depth.)
-      var dl = mix(saturate((nb.r * g - thr) / soft), saturate(0.5 * (gf - thr) / soft) * 0.52, fade);
-      if (detail && dl > 0.0 && dl < 1.0) {
-        let k = atmo.cloudLow2.z * (1.0 - smoothstep(0.4 * atmo.cloudLow2.w, atmo.cloudLow2.w, footprint));
-        if (k > 0.0) {
-          let pd = (atmo.noiseDetail.xyz + q + vec3f(0.0, 0.0, atmo.cloudWind.w)) * atmo.noiseDetail.w;
-          let nd = textureSampleLevel(cloudDetailNoise, linearRepeat, pd, log2(max(footprint * atmo.noiseDetail.w * 32.0, 1.0)));
-          let fbm = nd.r * 0.625 + nd.g * 0.25 + nd.b * 0.125;
-          // Wispy at the base, billowing towards the top.
-          let e = k * mix(fbm, 1.0 - fbm, saturate(hl * 4.0));
-          dl = saturate((dl - e) / (1.0 - e));
+      var depth = nr * g - thr;
+      if (k > 0.0 && depth > 0.0 && depth < soft + k) {
+        let pd = (atmo.noiseDetail.xyz + q + vec3f(0.0, 0.0, atmo.cloudWind.w)) * atmo.noiseDetail.w;
+        let nd = textureSampleLevel(cloudDetailNoise, linearRepeat, pd, log2(max(footprint * atmo.noiseDetail.w * 32.0, 1.0)));
+        var fbm = nd.r * 0.625 + nd.g * 0.25 + nd.b * 0.125;
+        // A finer octave of the same texture for clouds close to the camera (their pixels are metres wide).
+        let fine = 1.0 - smoothstep(12.0, 40.0, footprint);
+        if (detail > 1 && fine > 0.0) {
+          let nf = textureSampleLevel(cloudDetailNoise, linearRepeat, pd * 4.3 + vec3f(0.31, 0.57, 0.83), log2(max(footprint * atmo.noiseDetail.w * 4.3 * 32.0, 1.0)));
+          fbm = saturate(fbm + (nf.r * 0.625 + nf.g * 0.25 + nf.b * 0.125 - 0.5) * 0.45 * fine);
         }
+        // Wispy at the base, billowing towards the top.
+        depth -= k * mix(fbm, 1.0 - fbm, saturate(hl * 4.0));
       }
+      let shape = saturate(depth / soft);
+      // (0.52 = mean of the height gradient: unresolved, the cloudy part is uniform over the layer's depth.)
+      let dl = mix(shape, saturate(0.5 * (gf - (1.0 - col.cLow)) / soft) * 0.52, fade);
+      // The part of the step that lies inside the layer (a point sample when the step is short).
+      var inside = 1.0;
+      if (span > 1.0) { inside = saturate((min(h + span, col.lowTop) - max(h - span, zb)) / (2.0 * span)); }
       // A little of the high-frequency cells in the cores keeps large clouds from being featureless.
-      sigmaLow = atmo.cloudLow.y * dl * mix(1.0, 0.75 + 0.5 * nb.a, 1.0 - fade);
-      out.above = sigmaLow * (col.lowTop - h) * 0.5;
-      out.below = sigmaLow * (h - zb) * 0.5;
+      sigmaLow = atmo.cloudLow.y * col.dens * dl * inside * mix(1.0, 0.75 + 0.5 * nb.a, 1.0 - fade);
+      out.above = sigmaLow * max(col.lowTop - h, 0.0) * 0.5;
+      out.below = sigmaLow * max(h - zb, 0.0) * 0.5;
     }
   }
   var sigmaOther = 0.0;
@@ -177,16 +238,19 @@ fn cloudDensityAt(col: CloudColumn, h: f32, span: f32, q: vec3f, footprint: f32,
     // They fade to their mean once the pixel is as large as they are.
     let streakKeep = 1.0 - smoothstep(0.03, 0.12, footprint * atmo.noiseBase.w * 0.31);
     let w = mix(0.5, textureSampleLevel(cloudBaseNoise, linearRepeat, pb * 0.31 + vec3f(0.37, 0.11, 0.73), max(lodB - 1.7, 0.0)).b, streakKeep);
-    var amount = col.cHigh * bell * saturate(mix(0.3, 1.0, col.cHigh) + (w - 0.5) * mix(1.4, 0.5, col.cHigh) + (nb.r - 0.5) * 0.35 * (1.0 - fade));
+    // (Smooth at both ends: where the streaks thin the sheet out it fades, it is not cut.)
+    let sv = saturate(mix(0.3, 1.0, col.cHigh) + (w - 0.5) * mix(1.4, 0.5, col.cHigh) + (nr - 0.5) * 0.35 * (1.0 - fade));
+    var amount = col.cHigh * bell * sv * sv * (3.0 - 2.0 * sv);
     // The top of a thick sheet is not flat: the shape noise carves billows into it (a cloud sea from above).
     // (Only where the billows are resolved: a point test against a surface has no place in a step that
     // integrates the whole sheet.)
     let lodTop = log2(max(footprintTop * atmo.noiseBase.w * 128.0, 1.0));
-    let relief = atmo.cloudLight.z * smoothstep(0.4, 0.9, col.cHigh) * (1.0 - cloudNoiseFade(lodTop));
+    // (Never deeper than most of the sheet itself: an overcast stays one, whatever the tunables.)
+    let relief = min(atmo.cloudLight.z, 0.6 * thickness) * smoothstep(0.4, 0.9, col.cHigh) * (1.0 - cloudNoiseFade(lodTop)) * cloudNoiseKeep(lodTop);
     if (relief > 1.0) {
       out.relief = relief;
       let nTop = textureSampleLevel(cloudBaseNoise, linearRepeat, pb, lodTop).r;
-      let topLocal = col.highTop - relief * (1.0 - nTop) * (0.6 + 0.8 * w);
+      let topLocal = col.highTop - relief * (1.0 - nTop) * (0.5 + 0.5 * w);
       amount *= saturate((topLocal - h) / max(0.15 * relief, 20.0));
     }
     // Extinction grows geometrically with the amount: a veil at the edge of a system, an opaque shield inside.
@@ -194,13 +258,15 @@ fn cloudDensityAt(col: CloudColumn, h: f32, span: f32, q: vec3f, footprint: f32,
     let s = ext * amount;
     sigmaOther += s;
     out.above += s * max(col.highTop - h, 0.0) * 0.5;
-    out.below += s * max(h - col.highBase, 0.0) * 0.5 + atmo.cloudDeep.x * col.deep * (col.highBase - col.lowTop);
+    out.below += s * max(h - col.highBase, 0.0) * 0.5 + atmo.cloudDeep.x * col.deep * max(col.highBase - col.lowTop, 0.0);
   }
   if (inDeep) {
-    let s = atmo.cloudDeep.x * col.deep * saturate(0.6 + (nb.r - 0.5) * (1.0 - fade));
+    var inside = 1.0;
+    if (span > 1.0) { inside = saturate((min(h + span, col.highBase) - max(h - span, col.lowTop)) / (2.0 * span)); }
+    let s = atmo.cloudDeep.x * mix(1.0, col.dens, 0.6) * col.deep * inside * saturate(0.6 + (nr - 0.5) * (1.0 - fade));
     sigmaOther += s;
-    out.above += s * (col.highTop - h);
-    out.below += s * (h - col.lowTop);
+    out.above += s * max(col.highTop - h, 0.0);
+    out.below += s * max(h - col.lowTop, 0.0);
   }
   out.sigma = sigmaLow * step(1e-6, fracLow) + sigmaOther;
   if (out.sigma > 0.0) { out.frac = (sigmaLow * fracLow + sigmaOther) / out.sigma; }
@@ -253,6 +319,15 @@ fn cloudSpans(ray: AtmoRay) -> CloudSpans {
   s.span[3] = vec2f(mid.y, top.y);
   s.kind[3] = 2;
   return s;
+}
+
+/// Bottom and top altitude (m) of the cloud that a point at altitude h of a column is in or nearest to: the
+/// low layer, the sheet above it, or both joined by a filled column.
+fn cloudSlab(col: CloudColumn, h: f32) -> vec2f {
+  let lowOn = col.cLow > 0.004;
+  if (col.deep > 0.0) { return vec2f(select(col.lowTop, atmo.cloudShell.z, lowOn), col.highTop); }
+  if (lowOn && (col.cHigh <= 0.0 || h < 0.5 * (col.lowTop + col.highBase))) { return vec2f(atmo.cloudShell.z, col.lowTop); }
+  return vec2f(col.highBase, col.highTop);
 }
 
 /// A column with its sheet raised by dz (m): the column a little further along a ray over a sloping top.
@@ -334,7 +409,7 @@ struct CloudMarchOut {
 
 const CLOUD_OFFSETS = array<vec2i, 4>(vec2i(0, 0), vec2i(1, 1), vec2i(1, 0), vec2i(0, 1));
 // Cumulative fractions of the sun reach at which the six cone samples end.
-const CLOUD_CONE = array<f32, 6>(0.04, 0.1, 0.2, 0.36, 0.62, 1.0);
+const CLOUD_CONE = array<f32, 6>(0.02, 0.06, 0.14, 0.3, 0.6, 1.0);
 
 fn cloudHg(c: f32, g: f32) -> f32 {
   let g2 = g * g;
@@ -371,7 +446,7 @@ ${
   let xi = 0.5;
   let pixelAngle = 0.5 * atmo.cloudMarch.w;`
     : `  let hp = min(vec2i(in.position.xy) * 2 + CLOUD_OFFSETS[atmo.layers.w], vec2i(atmo.halfSize.xy) - 1);
-  let rayDir = cloudViewRay((vec2f(hp) + 0.5) * atmo.halfSize.zw);
+  let rayDir = cloudViewRay((vec2f(hp) + 0.5 + atmo.cloudJitter.xy) * atmo.halfSize.zw);
   let sceneZ = viewZFromDepth(textureLoad(depthHalfTex, hp, 0).r);
   // Step phase: blue noise while frames accumulate; the middle of the step when noise is frozen.
   let xi = 0.5 + (blueNoise(vec2u(hp)).y - 0.5) * atmo.misc.z;
@@ -424,6 +499,11 @@ ${
   // quality scale (cloudLight.w). The march itself (steps, shapes, opacity) does not change with the
   // quality scale, only how often it is lit.
   let reuseBelow = mix(0.10, 0.04, saturate((atmo.cloudLight.w - 0.7) / 0.3));
+  // Below 0.85 the eye also does without the finest octave of the erosion. Step sizes, thresholds, the
+  // search for a cloud's surface and the light samples are the same at every quality scale: the clouds stay
+  // where they are, as opaque and as bright as they are.
+  var detailEye = 2;
+  if (atmo.cloudLight.w < 0.85) { detailEye = 1; }
 
   var st: CloudStack;
   st.cover = 0.0;
@@ -442,12 +522,13 @@ ${
     let sEnd = spans.span[k].y;
     let low = spans.kind[k] == 1;
     var sClear = s;       // last position known to be clear of cloud
-    var clearOut = 0.0;   // how far outside the sheet's altitudes the ray was there (m; 0 = unknown or inside them)
+    var hClear = 0.0;     // altitude of the ray there
+    var haveClear = false;
     var prevS = -1.0;     // where the previous sample read its column (< 0: none yet), and the sheet top there
     var prevTop = 0.0;
     var inside = false;   // the previous sample was in cloud
     var fine = false;     // ... in a cloud with a surface (marched with half steps)
-    while (s < sEnd && steps < budget && (st.T >= 0.004 || st.cover < 0.98)) {
+    while (s < sEnd && steps < budget + 12.0 && (st.T >= 0.004 || st.cover < 0.98)) {
       var dt = clamp((ray.t0 + s) * atmo.cloudMarch.x * coarsen.x, atmo.cloudMarch.y, atmo.cloudMarch.z * coarsen.x);
       if (!low) { dt = 3.0 * clamp((ray.t0 + s) * atmo.cloudMarch.x * coarsen.y, atmo.cloudMarch.y, atmo.cloudMarch.z * coarsen.y); }
       // Half steps while in a cloud with a surface.
@@ -460,13 +541,17 @@ ${
       // What one sample stands for: the pixel across the ray, the step along it. The noise is read at the
       // level of the larger of the two, so that a march coarser than the shapes (grazing rays, the far field)
       // sees them pre-filtered instead of sampling them at random: no streaks along the rows of a cloud deck
-      // seen at a shallow angle.
-      let footprint = max((ray.t0 + ss) * pixelAngle, 0.25 * dt);
+      // seen at a shallow angle. (The step of the rule, up to twice coarsened: what a lower step budget adds
+      // to the step up to there does not change the level, so that a deck seen from above has the same
+      // relief, and the same brightness, at every quality scale.)
+      var ruleDt = dt / clamp(coarsen.x, 1.0, 2.0);
+      if (!low) { ruleDt = dt / clamp(coarsen.y, 1.0, 2.0); }
+      let footprint = max((ray.t0 + ss) * pixelAngle, 0.25 * ruleDt);
       var q = cloudNoiseVec(bi, d * (ray.t0 + ss));
-      let col = cloudColumnAt(bi, d * (ray.t0 + ss), q, footprint);
       let span = 0.5 * abs(atmoRayAltitude(ray, sOut) - atmoRayAltitude(ray, sIn));
+      let col = cloudColumnAt(bi, d * (ray.t0 + ss), q, footprint, atmoRayAltitude(ray, ss) - span);
       let footprintTop = footprint / sqrt(clamp(2.0 * span / max(sOut - sIn, 1.0), 0.03, 1.0));
-      var den = cloudDensityAt(col, atmoRayAltitude(ray, ss), span, q, footprint, footprintTop, true);
+      var den = cloudDensityAt(col, atmoRayAltitude(ray, ss), span, q, footprint, footprintTop, detailEye);
       // The column is read once per step, at the sample. Its sheet top is carried to the other points of the
       // step (where the cloud begins, where it is lit) along its slope from the previous sample: a ray that
       // skims a rising cloud top meets it well before the sample, and a point lit as if it lay under the top
@@ -476,11 +561,11 @@ ${
       if (prevS >= 0.0 && sCol > prevS + 1.0) { topSlope = (col.highTop - prevTop) / (sCol - prevS); }
       prevS = sCol;
       prevTop = col.highTop;
+      let hS = atmoRayAltitude(ray, ss);
       if (den.sigma <= 0.0) {
         sClear = ss;
-        var bottomClear = col.highBase;
-        if (col.deep > 0.0) { bottomClear = col.lowTop; }
-        clearOut = max(max(atmoRayAltitude(ray, ss) - col.highTop, bottomClear - atmoRayAltitude(ray, ss)), 0.0);
+        hClear = hS;
+        haveClear = true;
         inside = false;
         fine = false;
         s = sOut;
@@ -488,28 +573,32 @@ ${
       }
       // Shapes with a surface: the low shell's cumulus, and the billowed top of a thick sheet wherever the
       // billows are resolved. Smooth sheets are integrated analytically over each step.
-      let shaped = low || den.relief > 1.0;
+      // (Low cloud that the sample no longer resolves is a fraction of the footprint, uniform over the depth
+      // of its layer: no surface to find, and nothing that half steps would see better.)
+      let shaped = (low && den.resolved > 0.5) || den.relief > 1.0;
+      // Vertical extent of the smooth cloud the step is in, and the slope of its top along the ray.
+      let slab = cloudSlab(col, hS);
+      var slabSlope = topSlope;
+      if (slab.y != col.highTop) { slabSlope = 0.0; }
       // Entering a cloud, the slabs are restarted where it begins. The light a dense cloud returns comes from
       // its first mean free paths, and one lighting sample per slab stands for it: slabs cut at fixed distances
       // from the eye would split that layer differently for every ray (contour bands, sand); slabs that start
       // on the cloud split it the same way for all of them.
       if (!inside && !shaped) {
-        // A smooth sheet: it begins where the ray crosses its top (or its bottom, from below): between the
+        // A smooth layer: it begins where the ray crosses its top (or its bottom, from below): between the
         // last clear sample and this one when both are known, the top taken as a straight line between them.
-        var bottom = col.highBase;
-        if (col.deep > 0.0) { bottom = col.lowTop; }
-        let hS = atmoRayAltitude(ray, ss);
-        let outNow = max(hS - col.highTop, bottom - hS);
+        let outNow = max(hS - slab.y, slab.x - hS);
+        let clearOut = max(hClear - slab.y, slab.x - hClear);
         var sEntry = sIn;
         var moved = false;
-        if (clearOut > 0.0 && outNow < 0.0 && ss > sClear + 1.0) {
+        if (haveClear && clearOut > 0.0 && outNow < 0.0 && ss > sClear + 1.0) {
           sEntry = sClear + (ss - sClear) * clearOut / (clearOut - outNow);
           moved = true;
         } else {
           let hA = atmoRayAltitude(ray, sIn);
           let hB = atmoRayAltitude(ray, sOut);
           if (abs(hB - hA) > 1.0) {
-            let enter = saturate(min((clamp(hA, bottom, col.highTop) - hA) / (hB - hA), (clamp(hB, bottom, col.highTop) - hA) / (hB - hA)));
+            let enter = saturate(min((clamp(hA, slab.x, slab.y) - hA) / (hB - hA), (clamp(hB, slab.x, slab.y) - hA) / (hB - hA)));
             if (enter > 0.0) {
               sEntry = sIn + (sOut - sIn) * enter;
               moved = true;
@@ -521,7 +610,7 @@ ${
           sOut = min(sIn + dt, sEnd);
           ss = 0.5 * (sIn + sOut);
           q = cloudNoiseVec(bi, d * (ray.t0 + ss));
-          let again = cloudDensityAt(cloudColumnRaised(col, topSlope * (ss - sCol)), atmoRayAltitude(ray, ss), 0.5 * abs(atmoRayAltitude(ray, sOut) - atmoRayAltitude(ray, sIn)), q, footprint, footprintTop, true);
+          let again = cloudDensityAt(cloudColumnRaised(col, topSlope * (ss - sCol)), atmoRayAltitude(ray, ss), 0.5 * abs(atmoRayAltitude(ray, sOut) - atmoRayAltitude(ray, sIn)), q, footprint, footprintTop, detailEye);
           if (again.sigma > 0.0) { den = again; }
         }
       }
@@ -536,14 +625,15 @@ ${
         for (var i = 0; i < 8; i++) {
           if (((hi - lo) * denHi.sigma < 0.4 && hi - lo < 0.06 * dt) || hi - lo < 3.0) { break; }
           let sm = 0.5 * (lo + hi);
-          let dm = cloudDensityAt(cloudColumnRaised(col, topSlope * (sm - sCol)), atmoRayAltitude(ray, sm), 0.0, cloudNoiseVec(bi, d * (ray.t0 + sm)), footprint, footprintTop, true);
+          // (Without the finest octave: it moves the surface by metres, and the slab that follows samples it.)
+          let dm = cloudDensityAt(cloudColumnRaised(col, topSlope * (sm - sCol)), atmoRayAltitude(ray, sm), 0.0, cloudNoiseVec(bi, d * (ray.t0 + sm)), footprint, footprintTop, 1);
           if (dm.sigma > 0.0) { hi = sm; denHi = dm; } else { lo = sm; }
         }
         sIn = hi;
         sOut = min(hi + 0.5 * dt, sEnd);
         ss = 0.5 * (sIn + sOut);
         q = cloudNoiseVec(bi, d * (ray.t0 + ss));
-        den = cloudDensityAt(cloudColumnRaised(col, topSlope * (ss - sCol)), atmoRayAltitude(ray, ss), 0.5 * span, q, footprint, footprintTop, true);
+        den = cloudDensityAt(cloudColumnRaised(col, topSlope * (ss - sCol)), atmoRayAltitude(ray, ss), 0.5 * span, q, footprint, footprintTop, detailEye);
         // A sliver thinner than the slab (the ray clips a bump and is out again by the middle of the slab):
         // what the bisection found stands for it, and the march goes on as in clear air, so that the next
         // cloud is entered at its own surface.
@@ -553,10 +643,11 @@ ${
         }
       }
       inside = !sliver;
-      fine = shaped && !sliver;
+      // (Half steps for the skin of the cloud, where its light comes from; whole steps once most of it is behind.)
+      fine = shaped && !sliver && st.T > 0.25;
       if (sliver) {
         sClear = ss;
-        clearOut = 0.0;
+        haveClear = false;
       }
       s = sOut;
       let dtCloud = max(sOut - sIn, 0.0);
@@ -575,9 +666,9 @@ ${
         let hA = atmoRayAltitude(ray, sIn);
         let hB = atmoRayAltitude(ray, sOut);
         if (abs(hB - hA) > 1.0) {
-          let top = col.highTop + topSlope * (sIn - sCol);
-          var bottom = col.highBase + topSlope * (sIn - sCol);
-          if (col.deep > 0.0) { bottom = col.lowTop; }
+          let top = slab.y + slabSlope * (sIn - sCol);
+          var bottom = slab.x;
+          if (slab.x == col.highBase) { bottom += slabSlope * (sIn - sCol); }
           let fa = (clamp(hA, bottom, top) - hA) / (hB - hA);
           let fb = (clamp(hB, bottom, top) - hA) / (hB - hA);
           sA = sIn + dtCloud * saturate(min(fa, fb));
@@ -615,7 +706,8 @@ ${
           let qq = 2.0 * r * muS * cm + cm * cm;
           let hj = hl + qq / (sqrt(max(r * r + qq, 1.0)) + r);
           let ds = cNext - cPrev;
-          tau += cloudDensityAt(colL, hj, 0.5 * ds * abs(muS), ql + sunNoise * cm, max(footprint, 0.5 * ds), max(footprintTop, 0.5 * ds), j < 2).sigma * ds;
+          // (The near samples see the billows the eye sees: what shades one side of a bump and not the other.)
+          tau += cloudDensityAt(colL, hj, 0.5 * ds * abs(muS), ql + sunNoise * cm, max(footprint, 0.25 * ds), max(footprintTop, 0.25 * ds), select(0, 1, j < 2)).sigma * ds;
           cPrev = cNext;
         }
         // Beyond the reach: radius of the end point from the same stable form, direction from the sum.
@@ -625,8 +717,10 @@ ${
         tau += -log(max(atmoCloudShadowAt(endPos, bi, normalize(endPos - frame.bodies[bi].center.xyz), endR, muS), 1e-6));
         let e = frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, r, muS) * vis;
         let lowOrders = phase.x * exp(-tau) + phase.y * exp(-tau * gain) + phase.z * exp(-tau * gain * gain);
-        // High orders: only where the cloud around the sample is thick enough to hold a diffuse field.
-        let thick = 1.0 - exp(-0.5 * (tau + den.above + den.below));
+        // High orders: what a layer of the optical depth around the sample returns of the light that enters
+        // it (two-stream reflectance): next to nothing for a veil, most of it for a deep cloud.
+        let around = kd * (tau + den.above + den.below);
+        let thick = around / (1.0 + around);
         let highOrders = atmo.cloudLight.x * thick * (0.4 + 0.6 * saturate(muS)) / (PI * (1.0 + kd * tau * max(muS, 0.15)));
         J = e * (lowOrders + highOrders);
       }
@@ -663,7 +757,9 @@ ${
  * Temporal checkerboard resolve to the half-resolution cloud buffers. Bindings (group 1): 0 = AtmoU,
  * 1 = fresh radiance (quarter area), 2 = fresh cloud geometry, 3 = history radiance, 4 = history geometry.
  * Targets: 0 = 'clouds.screen' (rgba16float), 1 = 'clouds.depth' (r32float), 2 = cloud geometry
- * (rgba32float: begin, end, mean distance), which the atmosphere march and the next frame's resolve read.
+ * (rgba32float: begin, end, mean distance), which the atmosphere march and the next frame's resolve read,
+ * 3 = the radiance again, into the history target of the next frame (the geometry and history targets
+ * alternate between two textures each; nothing is copied after the pass).
  *
  * 'clouds.depth' is what the render core's applyAtmosphere() compares a transparent fragment's distance d
  * with: it attenuates the fragment by the cloud transmittance over smoothstep(0.9, 1.1, d / depth). The
@@ -683,6 +779,7 @@ struct ResolveOut {
   @location(0) color: vec4f,
   @location(1) depth: vec4f,
   @location(2) geom: vec4f,
+  @location(3) history: vec4f,
 }
 
 const CLOUD_OFFSETS = array<vec2i, 4>(vec2i(0, 0), vec2i(1, 1), vec2i(1, 0), vec2i(0, 1));
@@ -758,13 +855,24 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
         color = mix(clamped, fresh, atmo.misc.w);
       } else {
         color = clamped;
+        // The geometry too is the pixel's own, of its march up to three frames ago, while it has not moved:
+        // the distance of a cloud decides how much air is drawn in front of it, and a distance borrowed
+        // from a neighbouring ray (which may have hit a cloud a hundred kilometres nearer) shows as blocks
+        // and bars wherever cloud layers are seen edge-on. With motion the estimate from this frame's
+        // samples takes over.
         let hg = textureLoad(historyGeomTex, vec2i(uvPrev * atmo.halfSize.xy), 0).rgb;
-        if (geomNow.b > 1.0e37 && hg.b < 1.0e37 && clamped.a < 0.999) { geom = hg; }
+        let still = motion < 0.15;
+        if (still) {
+          geom = hg;
+        } else if (geomNow.b > 1.0e37 && hg.b < 1.0e37 && clamped.a < 0.999) {
+          geom = hg;
+        }
       }
     }
   }
   var o: ResolveOut;
   o.color = vec4f(writeHdr(color.rgb), saturate(color.a));
+  o.history = o.color;
   if (o.color.a > 0.9995 || geom.b > 1.0e37) {
     o.geom = NO_CLOUD;
     o.depth = vec4f(3.0e38, 0.0, 0.0, 0.0);
@@ -784,13 +892,16 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
  *   g = distance along the line (from the map plane, towards the sun) where the cloud begins on the sun side,
  *   b = mean extinction along the line behind that point (1 / m).
  * A point at distance s along its line has  tau = clamp((g - s) b, 0, r)  between it and the sun.
- * A sixteenth of the texels is re-marched per frame; the others are copied from the previous frame at the
- * whole-texel shift of the origin. Bindings (group 1): 0 = AtmoU, 1 = coverage, 2 = base noise,
- * 3 = detail noise, 4 = previous map.
+ * A sixteenth of the texels is re-marched per frame. `inPlace` = true: the pass draws into the map itself
+ * and leaves the other texels as they are (the map has not moved, or all of it is re-marched). `inPlace` =
+ * false: the map origin has moved by whole texels; the pass draws into a scratch target, taking the other
+ * texels from the map at that shift (binding 4 = the map), and CLOUD_SHADOW_BLIT_FS_WGSL writes the scratch
+ * target back. Bindings (group 1): 0 = AtmoU, 1 = coverage, 2 = base noise, 3 = detail noise.
  */
-export const CLOUD_SHADOW_FS_WGSL = /* wgsl */ `
+export function cloudShadowFsWgsl(inPlace: boolean): string {
+  return /* wgsl */ `
 ${CLOUD_HEADER}
-@group(1) @binding(4) var prevTex: texture_2d<f32>;
+${inPlace ? '' : '@group(1) @binding(4) var prevTex: texture_2d<f32>;'}
 
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let pix = vec2i(in.position.xy);
@@ -800,8 +911,12 @@ ${CLOUD_HEADER}
   let order = array<i32, 16>(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
   let mine = order[(pix.x & 3) + 4 * (pix.y & 3)] == phase;
   if (!mine && atmo.shadowL.w > 0.5) {
-    let src = pix + vec2i(atmo.shadowShift.xy);
-    if (all(src >= vec2i(0)) && all(src < vec2i(n))) { return textureLoad(prevTex, src, 0); }
+${
+  inPlace
+    ? '    discard;'
+    : `    let src = pix + vec2i(atmo.shadowShift.xy);
+    if (all(src >= vec2i(0)) && all(src < vec2i(n))) { return textureLoad(prevTex, src, 0); }`
+}
   }
   let bi = u32(atmo.bodies.z);
   let he = atmo.shadowOrigin.w;
@@ -837,18 +952,31 @@ ${CLOUD_HEADER}
     let pos = p0 + dir * s;
     let h = length(pos - frame.bodies[bi].center.xyz) - rb;
     let q = cloudNoiseVec(bi, pos);
-    let col = cloudColumnAt(bi, pos, q, texel);
-    let den = cloudDensityAt(col, h, 0.5 * ds * atmo.shadowV.w, q, texel, texel, false);
+    // (Band-limited to what the screen resolves: a map finer than the pixels that read it would alias.)
+    let fp = max(texel, atmo.shadowFilter.x);
+    let col = cloudColumnAt(bi, pos, q, fp, h - 0.5 * ds * atmo.shadowV.w);
+    let den = cloudDensityAt(col, h, 0.5 * ds * atmo.shadowV.w, q, fp, fp, 0);
     if (den.sigma > 0.0) {
       cloudStackStep(&st, den.frac, exp(-den.sigma * ds), vec3f(0.0));
       if (!found) { sFront = s + 0.5 * ds; found = true; }
       sBack = s - 0.5 * ds;
     }
   }
-  if (!found) { return vec4f(0.0, sBot, 0.0, 1.0); }
+  // (Clear: no extinction. The front distance of such a texel only matters when a lookup interpolates it
+  // with a cloudy neighbour: the top of the layer stands in for it, which keeps that blend smooth.)
+  if (!found) { return vec4f(0.0, sTop, 0.0, 1.0); }
   // Transmittance of the texel's footprint (fractional cover included), expressed as an optical depth.
   let tau = min(-log(max(1.0 - st.cover * (1.0 - st.T), 1e-9)), 40.0);
   return vec4f(tau, sFront, tau / max(sFront - sBack, ds), 1.0);
+}
+`;
+}
+
+/** Writes the scratch target of the shifted shadow pass back into the map. Binding (group 1): 0 = scratch. */
+export const CLOUD_SHADOW_BLIT_FS_WGSL = /* wgsl */ `
+@group(1) @binding(0) var srcTex: texture_2d<f32>;
+@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+  return textureLoad(srcTex, vec2i(in.position.xy), 0);
 }
 `;
 

@@ -263,15 +263,28 @@ fn atmoBuildCdf(bi: u32, ray: AtmoRay, sA: f32, sB: f32) -> AtmoCdf {
   return cdf;
 }
 
-/// Distance along the path at cumulative fraction u in [0, 1].
-fn atmoInvCdf(cdf: ptr<function, AtmoCdf>, u: f32) -> f32 {
+/// Index of the knot interval that holds cumulative fraction u, searched forward from interval k0 (a
+/// lower bound: 0, or the interval of a smaller u - the samples of a march come in increasing order).
+fn atmoCdfInterval(cdf: ptr<function, AtmoCdf>, u: f32, k0: i32) -> i32 {
   let goal = u * (*cdf).c[ATMO_KNOTS];
-  var k = 0;
-  for (var i = 1; i < ATMO_KNOTS; i++) {
-    if ((*cdf).c[i] <= goal) { k = i; }
+  var k = k0;
+  for (var i = k0 + 1; i < ATMO_KNOTS; i++) {
+    if ((*cdf).c[i] > goal) { break; }
+    k = i;
   }
+  return k;
+}
+
+/// Distance along the path at cumulative fraction u in [0, 1], which lies in knot interval k.
+fn atmoCdfAt(cdf: ptr<function, AtmoCdf>, u: f32, k: i32) -> f32 {
+  let goal = u * (*cdf).c[ATMO_KNOTS];
   let f = (goal - (*cdf).c[k]) / max((*cdf).c[k + 1] - (*cdf).c[k], 1e-30);
   return mix((*cdf).s[k], (*cdf).s[k + 1], saturate(f));
+}
+
+/// Distance along the path at cumulative fraction u in [0, 1]; k0 = a lower bound of its knot interval.
+fn atmoInvCdf(cdf: ptr<function, AtmoCdf>, u: f32, k0: i32) -> f32 {
+  return atmoCdfAt(cdf, u, atmoCdfInterval(cdf, u, k0));
 }
 
 struct AtmoPath {
@@ -292,10 +305,14 @@ fn atmoIntegrate(trans: texture_2d_array<f32>, ms: texture_2d_array<f32>, bi: u3
   let othersA = atmoOtherVisibility(d * ray.t0, frame.bodies[bi].sunDir.xyz, bi);
   let othersB = atmoOtherVisibility(d * (ray.t0 + ray.len), frame.bodies[bi].sunDir.xyz, bi);
   var sPrev = 0.0;
+  var k = 0;   // knot interval in which the current stratum begins
   for (var i = 0; i < n; i++) {
+    let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n), k);
     var sNext = ray.len;
-    if (i < n - 1) { sNext = atmoInvCdf(&cdf, f32(i + 1) / f32(n)); }
-    let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n));
+    if (i < n - 1) {
+      k = atmoCdfInterval(&cdf, f32(i + 1) / f32(n), k);
+      sNext = atmoCdfAt(&cdf, f32(i + 1) / f32(n), k);
+    }
     let o = atmoSampleAt(trans, ms, bi, layer, d, ray, sm, phase, mix(othersA, othersB, sm / ray.len));
     let dt = sNext - sPrev;
     path.L += path.T * (o.direct + o.multi) * atmoSegment(o.ext, dt);

@@ -30,9 +30,16 @@ export interface CloudParams {
   fairWeatherCoverage: number;
   /** How strongly the mesoscale noise breaks the map's texels into cells (0..1). */
   mesoscaleAmplitude: number;
-  /** Strength of the detail erosion at cloud edges (0..1) and the pixel footprint (m) beyond which it is skipped. */
+  /**
+   * Strength of the detail erosion (how far it moves the surface of a cloud inwards, in units of the shape
+   * noise) and the pixel footprint (m) beyond which it is skipped.
+   */
   detailErosion: number;
   detailFadeFootprintM: number;
+  /** Extinction of the thinnest cloud the map shows, as a share of `lowExtinction` (the map's coverage is an opacity too). */
+  lowThinDensity: number;
+  /** Mesoscale variation of the low layer's extinction, in octaves either way (0 = uniform decks). */
+  lowDensityVariation: number;
 
   // --- high layer (altostratus / cirrus shield) and the deep column (nimbostratus, cumulonimbus)
   highThicknessMinM: number;
@@ -99,12 +106,14 @@ const DEFAULTS: Omit<CloudParams, 'bottomAltitude' | 'topAltitude' | 'coverageMa
   weatherScaleM: 350000,
   lowThicknessM: 1900,
   lowExtinction: 0.06,
-  lowEdgeSoftness: 0.18,
+  lowEdgeSoftness: 0.12,
   lowCoverageGain: 0.9,
   fairWeatherCoverage: 0.2,
   mesoscaleAmplitude: 0.8,
-  detailErosion: 0.35,
+  detailErosion: 0.24,
   detailFadeFootprintM: 400,
+  lowThinDensity: 0.2,
+  lowDensityVariation: 1.0,
   highThicknessMinM: 500,
   highThicknessMaxM: 2600,
   highExtinctionMin: 0.0004,
@@ -158,6 +167,42 @@ export function resolveCloudParams(def: CloudRenderDef): { params: CloudParams; 
     (out as unknown as Record<string, number>)[key] = value;
   }
   if (!(out.topAltitude > out.bottomAltitude) || out.bottomAltitude < 0) problems.push(`cloud shell ${out.bottomAltitude}..${out.topAltitude} m is empty`);
+  // Ranges outside which the model stops meaning anything (a threshold that never lets go, a sheet thicker
+  // than the shell, steps that cannot fit their budget): reported, and the default is used.
+  const range = (key: keyof typeof DEFAULTS, lo: number, hi: number): void => {
+    const v = out[key];
+    if (v < lo || v > hi) {
+      problems.push(`cloud parameter "${key}" = ${v} is outside ${lo}..${hi}`);
+      (out as unknown as Record<string, number>)[key] = DEFAULTS[key];
+    }
+  };
+  range('lowEdgeSoftness', 0.02, 1);
+  range('detailErosion', 0, 0.5);
+  range('lowCoverageGain', 0, 2);
+  range('fairWeatherCoverage', 0, 1);
+  range('mesoscaleAmplitude', 0, 1);
+  range('lowThinDensity', 0.01, 1);
+  range('lowDensityVariation', 0, 3);
+  range('lowExtinction', 1e-5, 1);
+  range('deepExtinction', 1e-5, 1);
+  range('highExtinctionMin', 1e-6, 1);
+  range('highExtinctionMax', out.highExtinctionMin, 1);
+  range('phaseG1', 0, 0.98);
+  range('phaseG2', -0.98, 0);
+  range('phaseMix', 0, 1);
+  range('multiScatterGain', 0, 1);
+  range('diffusionG', 0, 0.99);
+  range('stepFactor', 0.001, 0.2);
+  range('stepMinM', 5, 2000);
+  range('stepMaxM', out.stepMinM, 20000);
+  range('shadowSteps', 4, 64);
+  range('maxTimeRate', 0, 1000);
+  const depth = out.topAltitude - out.bottomAltitude;
+  range('lowThicknessM', 100, depth);
+  range('highThicknessMinM', 50, depth);
+  range('highThicknessMaxM', out.highThicknessMinM, depth);
+  range('topReliefM', 0, out.highThicknessMaxM);
+  for (const scale of ['baseNoiseScaleM', 'detailNoiseScaleM', 'mesoscaleScaleM', 'weatherScaleM', 'sunReachM', 'shadowHalfExtentM', 'detailFadeFootprintM'] as const) range(scale, 1, 1e8);
   if (out.shadowMapSize < 64 || out.shadowMapSize > 4096 || (out.shadowMapSize & (out.shadowMapSize - 1)) !== 0) {
     problems.push(`shadowMapSize ${out.shadowMapSize} must be a power of two in 64..4096`);
     out.shadowMapSize = DEFAULTS.shadowMapSize;

@@ -25,6 +25,22 @@ export const CLOUD_SHADOW_WGSL = /* wgsl */ `
 fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
   if (i32(bi) != atmo.bodies.z || r >= atmo.cloudShell.y) { return 1.0; }
   let m = max(muS, 0.05);
+  // The near map first: inside it (all but its outer eighth) the coverage map is not needed at all.
+  var nearT = 1.0;
+  var nearW = 0.0;
+  let he = atmo.shadowOrigin.w;
+  if (he > 0.0) {
+    let rel = pos - atmo.shadowOrigin.xyz;
+    let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz)) / he;
+    let edge = 1.0 - max(abs(q.x), abs(q.y));
+    if (edge > 0.0) {
+      let s = dot(rel, atmo.shadowL.xyz);
+      let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, 0.0);
+      nearT = exp(-clamp((b.g - s) * b.b, 0.0, b.r) * atmo.shadowV.w / m);
+      nearW = saturate(edge * 8.0);
+      if (nearW >= 1.0) { return nearT; }
+    }
+  }
   var farT = 1.0;
   if (atmo.far.w > 0.5 && r < atmo.far.x) {
     let sunDir = frame.bodies[bi].sunDir.xyz;
@@ -35,21 +51,11 @@ fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
     let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(dfix.z, -1.0, 1.0)) / PI);
     // Points well below the layer are under all of it (this is the deferred lighting's term on the ground);
     // inside the layer the term fades out towards the layer radius instead of switching.
-    farT = mix(1.0, exp(-textureSampleLevel(atmoCoverageTex, linearClamp, uv, 1.0).r * atmo.far.y / m), saturate((atmo.far.x - r) / 600.0));
+    // (Read at the size of the pixel that asks: from far away one pixel covers many texels of the map.)
+    let lod = max(log2(length(pos) * atmo.cloudMarch.w * atmo.noiseRot.w / (TWO_PI * frame.bodies[bi].center.w)), 1.0);
+    farT = mix(1.0, exp(-textureSampleLevel(atmoCoverageTex, linearClamp, uv, lod).r * atmo.far.y / m), saturate((atmo.far.x - r) / 600.0));
   }
-  let he = atmo.shadowOrigin.w;
-  if (he > 0.0) {
-    let rel = pos - atmo.shadowOrigin.xyz;
-    let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz)) / he;
-    let edge = 1.0 - max(abs(q.x), abs(q.y));
-    if (edge > 0.0) {
-      let s = dot(rel, atmo.shadowL.xyz);
-      let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, 0.0);
-      let tau = clamp((b.g - s) * b.b, 0.0, b.r) * atmo.shadowV.w;
-      return mix(farT, exp(-tau / m), saturate(edge * 8.0));
-    }
-  }
-  return farT;
+  return mix(farT, nearT, nearW);
 }
 
 /// The same for the point at distance s along the path of 'ray' (camera ray d); 1 for bodies without clouds.
@@ -209,17 +215,22 @@ ${
     let othersA = atmoOtherVisibility(d * ray.t0, frame.bodies[bi].sunDir.xyz, bi);
     let othersB = atmoOtherVisibility(d * (ray.t0 + sEnd), frame.bodies[bi].sunDir.xyz, bi);
     var sPrev = 0.0;
+    var kLo = 0;   // knot interval in which the current stratum begins
     for (var i = 0; i < n; i++) {
+      let kHere = kLo;
       var sNext = sEnd;
-      if (i < n - 1) { sNext = atmoInvCdf(&cdf, f32(i + 1) / f32(n)); }
+      if (i < n - 1) {
+        kLo = atmoCdfInterval(&cdf, f32(i + 1) / f32(n), kLo);
+        sNext = atmoCdfAt(&cdf, f32(i + 1) / f32(n), kLo);
+      }
       // The medium and the smooth part of the light are taken at the middle of the stratum: no noise in a
       // clear sky. Only the cloud shadow, which has edges, is looked up at a blue-noise position inside the
       // stratum (a different one for every sample: golden-ratio sequence), so shafts dither instead of band.
-      let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n));
+      let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n), kHere);
       let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, ray, sm, phase, mix(othersA, othersB, sm / sEnd));
       var src = o.direct + o.multi;
       if (bix == atmo.bodies.z) {
-        let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * atmo.misc.z + f32(i) * 0.61803398875)) / f32(n));
+        let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * atmo.misc.z + f32(i) * 0.61803398875)) / f32(n), kHere);
         src = o.direct * atmoCloudShadowOnRay(bi, d, ray, sj) + o.multi;
       }
       var segA = sPrev;
