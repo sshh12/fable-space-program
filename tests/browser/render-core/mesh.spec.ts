@@ -3,6 +3,9 @@ import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, te
 // The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
 test.describe.configure({ timeout: 600_000 });
 
+/** Centre of the layers probe's panel in the site's ENU frame, m (LAYERS_PANEL in labs/render-core/probes.ts). */
+const LAYERS_PANEL: [number, number, number] = [14, 8, 3.2];
+
 test('mesh system: procedural and URL textures (with mips), LOD pick by projected size with cross-fade', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?sun=180,60&hud=0&ev=15&paused=1');
   await assertDiscreteGpu(page);
@@ -160,5 +163,116 @@ test("mesh system: 'ocean.wetness' wets a hull below its wet line and nothing ab
   // The default resource (no vessel at the water) restores the dry image exactly.
   await page.evaluate(() => window.__rc!.probes.inputs.setOceanWetness(null));
   expect(await sample()).toEqual(dry);
+  await expectNoErrors(page, pageLog);
+});
+
+test('soot and frost lie on the paint: broken up in texture space, and the clear coat under them is covered (request vehicle-pad-1)', async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?probe=inputs,layers&sun=180,40&hud=0&paused=1&ev=13');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+  });
+  // The panel's sunlit south face from 9 m, square on: 4 m x 6 m of clear-coated grey paint.
+  const faceOn = (): Promise<void> => page.evaluate((c) => window.__rc!.lookAt(c, 180, 0, 9), LAYERS_PANEL);
+  /** Luminance of the pixels inside the face (a tenth in from its edges), row by row, of the HDR target. */
+  const face = (soot: number, frost: number): Promise<{ width: number; height: number; luma: number[] }> =>
+    page.evaluate(
+      async ([c, s, f]) => {
+        const rc = window.__rc!;
+        rc.probes.setLayers(s as number, f as number);
+        await window.__test!.waitFrames(4);
+        const [cx, cy, cz] = c as [number, number, number];
+        const corners = [[cx - 1.6, cy - 0.1, cz - 2.4], [cx + 1.6, cy - 0.1, cz + 2.4]].map((p) => rc.projectSitePoint(p as [number, number, number])!);
+        const x0 = Math.ceil(Math.min(corners[0]!.x, corners[1]!.x));
+        const x1 = Math.floor(Math.max(corners[0]!.x, corners[1]!.x));
+        const y0 = Math.ceil(Math.min(corners[0]!.y, corners[1]!.y));
+        const y1 = Math.floor(Math.max(corners[0]!.y, corners[1]!.y));
+        const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+        const luma: number[] = [];
+        for (let i = 0; i < img.width * img.height; i++) luma.push(0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!);
+        return { width: img.width, height: img.height, luma };
+      },
+      [LAYERS_PANEL, soot, frost] as const,
+    );
+  const mean = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
+  await faceOn();
+  await waitIdle(page, 10);
+  const clean = await face(0, 0);
+  expect(clean.width * clean.height, 'pixels of the face').toBeGreaterThan(40_000);
+  const level = mean(clean.luma);
+  // The clean paint is even: no pattern of its own.
+  expect(Math.max(...clean.luma) / Math.min(...clean.luma)).toBeLessThan(1.3);
+
+  // Full layers: the soot's brown-black (albedo 0.03 against 0.3) and the frost's white (0.95), even again.
+  const sooted = await face(1, 0);
+  const frosted = await face(0, 1);
+  // Half the weight: the layer is there in streaks and patches, not as a half-strength film.
+  const half = await face(0.5, 0);
+  await saveScreenshot(page, 'render-core', 'mesh-soot-half');
+  const halfFrost = await face(0, 0.5);
+  await saveScreenshot(page, 'render-core', 'mesh-frost-half');
+  const covered = half.luma.filter((v) => v < 0.5 * level).length / half.luma.length;
+  // Streaks run along v (up the panel): neighbours differ more across than along.
+  let across = 0;
+  let along = 0;
+  for (let y = 0; y + 1 < half.height; y++) {
+    for (let x = 0; x + 1 < half.width; x++) {
+      const v = half.luma[y * half.width + x]!;
+      across += Math.abs(half.luma[y * half.width + x + 1]! - v);
+      along += Math.abs(half.luma[(y + 1) * half.width + x]! - v);
+    }
+  }
+  // Back to none: the image is the clean one, value for value.
+  const again = await face(0, 0);
+
+  // The coat. No sun on the face (it stands in the north now), a uniform environment of 4,000 cd/m^2, and the
+  // face seen at 80 degrees from its normal: what reaches the eye is the coat's mirror image of the
+  // environment (Fresnel about 0.4 there) on the clean paint, and the rough layer alone under soot or frost.
+  await page.evaluate((c) => {
+    const rc = window.__rc!;
+    rc.setSun([0, 40]);
+    rc.probes.inputs.setEnvRadiance(4000);
+    rc.lookAt(c, 180 + 80, 0, 12);
+  }, LAYERS_PANEL);
+  await waitIdle(page, 10);
+  const grazing = (soot: number, frost: number): Promise<number> =>
+    page.evaluate(
+      async ([c, s, f]) => {
+        const rc = window.__rc!;
+        rc.probes.setLayers(s as number, f as number);
+        await window.__test!.waitFrames(4);
+        const [cx, cy, cz] = c as [number, number, number];
+        const p = rc.projectSitePoint([cx, cy - 0.1, cz])!;
+        const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(p.x) - 2, y: Math.round(p.y) - 30, width: 5, height: 60 });
+        let sum = 0;
+        for (let i = 0; i < img.width * img.height; i++) sum += 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+        return sum / (img.width * img.height) / window.__lab!.renderer.frameContext!.exposure;
+      },
+      [LAYERS_PANEL, soot, frost] as const,
+    );
+  const coatClean = await grazing(0, 0);
+  const coatSoot = await grazing(1, 0);
+  const coatFrost = await grazing(0, 1);
+  await page.evaluate(() => window.__rc!.probes.setLayers(0, 0));
+
+  console.log(
+    `soot and frost on clear-coated paint: full soot ${(mean(sooted.luma) / level).toFixed(3)}, full frost ${(mean(frosted.luma) / level).toFixed(2)} of the clean level; half soot: ${(100 * covered).toFixed(0)} % of the face under half the clean level, ` +
+      `mean ${(mean(half.luma) / level).toFixed(2)}, neighbour difference across / along the streaks ${(across / along).toFixed(2)}; half frost mean ${(mean(halfFrost.luma) / level).toFixed(2)}; ` +
+      `environment mirrored at 80 degrees: clean ${coatClean.toFixed(0)} cd/m^2, sooted ${coatSoot.toFixed(0)}, frosted ${coatFrost.toFixed(0)}`,
+  );
+  expect(mean(sooted.luma) / level).toBeLessThan(0.3);
+  expect(mean(frosted.luma) / level).toBeGreaterThan(2.3);
+  expect(Math.max(...sooted.luma) / Math.min(...sooted.luma)).toBeLessThan(1.3);
+  expect(covered, 'share of the face that half-weight soot covers').toBeGreaterThan(0.2);
+  expect(covered).toBeLessThan(0.8);
+  expect(half.luma.filter((v) => v > 0.85 * level).length / half.luma.length, 'share of the face left clean at half weight').toBeGreaterThan(0.1);
+  expect(across / along).toBeGreaterThan(1.5);
+  expect(mean(halfFrost.luma) / level).toBeGreaterThan(1.3);
+  expect(again.luma).toEqual(clean.luma);
+  // Under the layer there is no mirror: the clean coat reflects a thousand cd/m^2 and more of the 4,000.
+  expect(coatClean).toBeGreaterThan(900);
+  expect(coatSoot).toBeLessThan(0.35 * coatClean);
+  expect(coatFrost).toBeLessThan(0.75 * coatClean);
   await expectNoErrors(page, pageLog);
 });

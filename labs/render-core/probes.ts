@@ -12,6 +12,8 @@
  *   reactive a patch of per-pixel noise (0 or 2) that is new every frame and has no motion vector, and the
  *            'post.reactive' mask over its left half (setReactive)
  *   ridge    a 150 km body-fixed ridge on the moon-sized body (terminator shadow from far away)
+ *   layers   a clear-coated grey panel (4 m x 6 m, facing south at the site, UVs in metres, soot and frost
+ *            masks 1 everywhere) whose instance soot / frost are set with setLayers
  *   flame    an additive transparent rectangle over the middle of the frame (30 % x 30 %), in front of
  *            whatever is there, of a luminance set with setFlame (cd/m^2; 0 = off): an emitter over geometry
  *
@@ -105,7 +107,12 @@ export interface Probes {
   setReactive(value: number): void;
   /** Luminance (cd/m^2) of the flame probe's rectangle; 0 = not drawn. */
   setFlame(luminance: number): void;
+  /** Instance soot and frost (0..1) of the layers probe's panel. */
+  setLayers(soot: number, frost: number): void;
 }
+
+/** Centre of the layers probe's panel in the site's ENU frame (m); it is 4 m wide (east-west) and 6 m tall. */
+export const LAYERS_PANEL: [number, number, number] = [14, 8, 3.2];
 
 /** The flame probe's rectangle, as fractions of the render target: x, y, width, height. */
 export const FLAME_RECT = { x: 0.35, y: 0.35, width: 0.3, height: 0.3 };
@@ -125,6 +132,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   let violations = 0;
   let cloudLayer: { begin: number; end: number } | null = null;
   let flameLuminance = 0;
+  const layers = { soot: 0, frost: 0 };
   let volumeOn = true;
   let volumeScreen: { x: number; y: number; radius: number } | null = null;
   let heavyIterations = Number(query.get('heavy') ?? 0);
@@ -694,6 +702,39 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     });
   }
 
+  // ------------------------------------------------------------------------------------------ layers
+  if (names.has('layers')) {
+    let batch: MeshBatch;
+    let model: ModelHandle;
+    features.push({
+      id: 'lab-layers',
+      init(c) {
+        const meshes = coreOf(c).meshes;
+        batch = meshes.createBatch('lab-layers');
+        // 4 m (x, east) x 0.2 m (y, north) x 6 m (z, up); UVs in metres on the large faces, as on a vehicle skin.
+        const mesh = boxMesh(4, 0.2, 6);
+        for (let i = 0; i < mesh.uvs.length; i += 2) {
+          mesh.uvs[i] = mesh.uvs[i]! * 4;
+          mesh.uvs[i + 1] = mesh.uvs[i + 1]! * 6;
+        }
+        mesh.masks = new Uint8Array((mesh.positions.length / 3) * 4);
+        for (let v = 0; v < mesh.masks.length; v += 4) mesh.masks.set([0, 255, 255, 255], v);
+        model = meshes.createModel({ name: 'layers', lods: [mesh], materials: [{ name: 'layers', shading: 'standard', baseColor: [0.3, 0.3, 0.32], roughness: 0.3, metallic: 0, clearcoat: 1, clearcoatRoughness: 0.03 }] });
+      },
+      prepare(frame) {
+        batch.begin(frame);
+        batch.add(model, instanceInFrame(sitePoseOf(site, frame, defs), { x: LAYERS_PANEL[0], y: LAYERS_PANEL[1], z: LAYERS_PANEL[2] }, null, { bodyFixed: true, soot: layers.soot, frost: layers.frost }));
+        batch.finish();
+      },
+      drawGBuffer(_f, pass) {
+        batch.drawGBuffer(pass);
+      },
+      drawShadow(_f, pass, cascade) {
+        batch.drawShadow(pass, cascade);
+      },
+    });
+  }
+
   // ------------------------------------------------------------------------------------------- flame
   if (names.has('flame')) {
     let ctx: RenderContext;
@@ -1135,6 +1176,10 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     heavyIterations: () => heavyIterations,
     setFlame(luminance) {
       flameLuminance = Math.max(0, luminance);
+    },
+    setLayers(soot, frost) {
+      layers.soot = soot;
+      layers.frost = frost;
     },
   };
 }

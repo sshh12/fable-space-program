@@ -42,6 +42,7 @@ fn instancePos(m0: vec4f, m1: vec4f, m2: vec4f, p: vec3f) -> vec3f {
 
 const GBUFFER_SHADER = /* wgsl */ `
 #include "frame"
+#include "noise"
 #include "gbuffer"
 ${INSTANCE_WGSL}
 @group(1) @binding(0) var<storage, read> instances: array<MeshInstance>;
@@ -115,6 +116,28 @@ fn hullWetness(p: vec3f) -> f32 {
   return wet;
 }
 
+/// Value noise in [0, 1] over a 2-D lattice.
+fn latticeNoise2(p: vec2f, seed: i32) -> f32 {
+  let i = vec2i(floor(p));
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash2f(i, seed), hash2f(i + vec2i(1, 0), seed), u.x), mix(hash2f(i + vec2i(0, 1), seed), hash2f(i + vec2i(1, 1), seed), u.x), u.y);
+}
+/// A layer on a painted surface (soot, frost) from its weight w = instance value x vertex mask, broken up in
+/// texture space: 'uvm' is the mesh UV before the material's scale (metres on a vehicle: u round the part, v
+/// along it). The layer arrives as streaks and patches along v with a soft edge (cells 3 cm x 25 cm and an
+/// octave four times that), 0 at w = 0 and 1 at w = 1. Where a cell is smaller than a pixel the pattern
+/// gives way to its mean, so far away the layer is the plain blend again and does not shimmer.
+fn layerCoverage(w: f32, uvm: vec2f, seed: i32) -> f32 {
+  // (No early return on w: the derivatives below need uniform control flow.)
+  let p = uvm / vec2f(0.03, 0.25);
+  let footprint = max(fwidth(p.x), fwidth(p.y));
+  let fine = mix(latticeNoise2(p, seed), 0.5, smoothstep(0.5, 2.0, footprint));
+  let coarse = mix(latticeNoise2(p * 0.25, seed + 31), 0.5, smoothstep(0.5, 2.0, footprint * 0.25));
+  let g = 0.6 * fine + 0.4 * coarse;
+  return select(smoothstep(g - 0.18, g + 0.18, 1.35 * w - 0.17), 0.0, w <= 0.0);
+}
+
 /// Black-body emission (cd/m^2, linear sRGB) from the 256-entry table: T = 500 .. 5000 K.
 fn blackbody(T: f32) -> vec3f {
   let u = clamp((T - 500.0) / 4500.0, 0.0, 1.0) * 255.0;
@@ -151,12 +174,28 @@ fn blackbody(T: f32) -> vec3f {
   let shading = u32(material.params.y + 0.5);
   var param = material.params.z;
 
-  if (shading == MATERIAL_STANDARD || shading == MATERIAL_TERRAIN) {
-    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance.
-    let wear = v.masks.r * 0.6 * f32(shading == MATERIAL_STANDARD);
+  // What lies ON the paint (soot, frost) covers its clear coat and its brushed highlight: 1 = bare.
+  var coat = 1.0;
+  if (shading == MATERIAL_STANDARD) {
+    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance and arrive as
+    // streaks and patches in texture space (request vehicle-pad-1).
+    let wear = v.masks.r * 0.6;
     albedo = mix(albedo, vec3f(0.56, 0.57, 0.58), wear);
     metallic = mix(metallic, 1.0, wear);
     roughness = mix(roughness, 0.42, wear);
+    let uvm = v.uv / max(abs(material.misc.zw), vec2f(1e-6));
+    let soot = layerCoverage(saturate(I.params.y * v.masks.b), uvm, 7);
+    albedo = mix(albedo, vec3f(0.030, 0.024, 0.019), soot * 0.92);
+    roughness = mix(roughness, 0.92, soot);
+    metallic *= 1.0 - soot;
+    let frost = layerCoverage(saturate(I.params.z * v.masks.a), uvm, 19);
+    albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frost);
+    roughness = mix(roughness, 0.85, frost);
+    metallic *= 1.0 - frost;
+    coat = (1.0 - soot) * (1.0 - frost);
+    param = max(param, max(I.params.w, hullWetness(v.pos)));
+  } else if (shading == MATERIAL_TERRAIN) {
+    // Site structures: soot is grime and frost is rime, plain blends of the vertex masks.
     let soot = saturate(I.params.y * v.masks.b);
     albedo = mix(albedo, vec3f(0.018, 0.017, 0.016), soot * 0.92);
     roughness = mix(roughness, 0.9, soot);
@@ -185,7 +224,7 @@ fn blackbody(T: f32) -> vec3f {
                       velocityFromClip(v.currClip, v.prevClip), emissive * frame.exposure.x);
   if (shading == MATERIAL_STANDARD) {
     let Ta = normalize(T - n * dot(T, n));
-    o.extra = gbufferExtra(n, Ta, material.params.w, material.emissive.a, material.misc.x);
+    o.extra = gbufferExtra(n, Ta, material.params.w * coat, material.emissive.a * coat, material.misc.x);
   }
   return o;
 }

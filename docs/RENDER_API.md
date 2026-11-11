@@ -626,7 +626,15 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   complementary blue-noise dither patterns (TAA resolves the cross-fade); shadows use the dominant LOD.
 - Culling: view frustum per instance for the G-buffer; cascade footprint and half-texel size for shadows.
 - Specular anti-aliasing: Kaplanyan-Hill roughness widening from the screen-space normal derivatives.
-- Wear / soot / frost / wetness are applied for `standard` and `terrain` shading.
+- Wear / soot / frost / wetness are applied for `standard` and `terrain` shading. On `standard` materials
+  (request `vehicle-pad-1`) soot and frost lie ON the paint: the layer's weight (instance value x vertex
+  mask) is broken up in texture space, so it arrives as streaks and patches along v with a soft edge
+  (value noise of the mesh UV before `uvScale`, cells 3 cm in u and 25 cm in v plus an octave four times
+  that: author UVs in metres, u round the part and v along it; where a cell is smaller than a pixel the
+  pattern gives way to a plain blend), 0 at weight 0 and complete at weight 1; soot is brown-black
+  (0.030, 0.024, 0.019) at roughness 0.92, frost white (0.93, 0.95, 0.97) at roughness 0.85; and the clear
+  coat and the anisotropy written to RT4 are multiplied by `(1 - soot) x (1 - frost)`: a sooted or frosted
+  tank has no mirror on top. `terrain` shading keeps plain blends of the masks (grime on site structures).
 - **Wet line.** The mesh system reads `'ocean.wetness'` (published by the ocean feature: the physics swell
   plane, an influence radius and the wet line for up to 8 vessels at the water). A `standard` / `terrain`
   fragment within `plane.w` of a slot's plane point whose height above the plane is below the wet line
@@ -1154,6 +1162,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
+| Mesh G-buffer shader, `standard` shading: soot and frost broken up in texture space, new soot and frost colours and roughness, clear coat and anisotropy covered by them (section 10) | `vehicle-pad-1` | vehicle-pad (tank frost, engine-section soot); any `standard` instance with `soot` or `frost` above 0 | None for instances with both at 0 (bit-identical). A partly sooted or frosted `standard` surface looks different: streaks instead of a film, no gloss under the layer. `terrain` shading is unchanged |
 | The exposure histogram is taken before the transparent pass (frame graph step 8b); under the sun the target is bounded at sunny 16 + `SUNLIT_HIGHLIGHT_MAX_EV` (0.5) for metered pixels and emitter hints alike | `vfx-4` | vfx (flames, splashes, fireballs no longer stop the camera down; send a hint for an emitter in front of geometry if the camera should react); every bright daylight frame (cloud decks, snow, a white hull filling the frame: up to 0.65 EV brighter than before); night scenes unchanged | A transparent that was metered because it stood in front of geometry is not any more: add a hint where that was relied on |
 | Dark floor `EV_DARK_FLOOR` -3 -> -6, `EV_MIN` -3 -> -7; dark adaptation below EV -3 at `ADAPT_DARK` = 0.12 EV/s (`DARK_ADAPT_EV`); the tone curve's toe is linear and hue-preserving below 4 stops under mid-grey (`TOE_GAIN`, `displayLinear`) | `sky-lighting-3` | every view with nothing lit in it (the night sky, deep space, the night side from orbit); every pixel darker than 3 stops under mid-grey in every package (deep shadow, unlit sides: lifted, e.g. 3.4 -> 8.9 of 255 at 5 stops under) | None in code. Specs that pinned the floor at -3 or the level of deep shadow must be re-measured; a frame with nothing lit takes 25 s longer to reach its darkest exposure |
 | Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5`, `cockpit-6` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin out of the sun is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.25 EV darker than before |
