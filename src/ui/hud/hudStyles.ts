@@ -7,30 +7,32 @@
  * a light hairline, a dark outer ring and a lit top edge so its edge reads on bright and dark scenes alike.
  * Numerals are tabular.
  */
+import { UI_COLORS, UI_FONT_FAMILY } from '@/core/ui/theme';
+
 export const HUD_STYLE_ID = 'fable-hud-style';
 
 export const HUD_CSS = /* css */ `
 .hud {
   --u: min(1vh, 0.5625vw);
-  --bg: rgba(17, 24, 34, 0.86);
+  --bg: ${UI_COLORS.panel};
   --bg-top: rgba(22, 30, 42, 0.87);
-  --bg-strong: rgba(12, 17, 25, 0.94);
-  --line: rgba(170, 198, 235, 0.26);
+  --bg-strong: ${UI_COLORS.panelStrong};
+  --line: ${UI_COLORS.line};
   --edge: 0 0 0 1px rgba(0, 0, 0, 0.42);
   --lit: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --text: #eef4fb;
-  --label: #aebccf;
-  --dim: #8492a7;
-  --accent: #55d4ff;
-  --good: #5fe39a;
-  --caution: #ffbb4d;
-  --warning: #ff6a6a;
+  --text: ${UI_COLORS.text};
+  --label: ${UI_COLORS.label};
+  --dim: ${UI_COLORS.dim};
+  --accent: ${UI_COLORS.accent};
+  --good: ${UI_COLORS.good};
+  --caution: ${UI_COLORS.caution};
+  --warning: ${UI_COLORS.warning};
   --gap: calc(var(--u) * 1.8);
   position: absolute;
   inset: 0;
   pointer-events: none;
   overflow: hidden;
-  font-family: Bahnschrift, 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+  font-family: ${UI_FONT_FAMILY};
   font-size: calc(var(--u) * 1.95);
   line-height: 1.25;
   color: var(--text);

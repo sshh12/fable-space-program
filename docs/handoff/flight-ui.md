@@ -546,3 +546,14 @@ Own estimate after this round (honest, from the screenshots against the referenc
 artifact lens about 8. What still holds the photo lens back: the HUD is clean and readable but not yet
 distinctive (flat type, no per-panel art direction), and the MFD ADI is a 2-D drawing rather than the same
 ball as the HUD.
+
+## Changes in wave 2 (core-support)
+
+- **Shared interface theme** (request `map-view-4`). The HUD's font stack and palette live in
+  `src/core/ui/theme.ts` (`UI_FONT_FAMILY`, `UI_COLORS`: text, label, dim, accent, good, caution, warning,
+  line, panel, panelStrong; constants only, no DOM). `src/ui/hud/hudStyles.ts` builds its CSS variables
+  (`--text`, `--label`, `--dim`, `--accent`, `--good`, `--caution`, `--warning`, `--line`, `--bg`,
+  `--bg-strong`) and its `font-family` from them; the generated stylesheet is byte-identical to the one
+  before the change. The map view (`src/map`, which may not import `src/ui`) reads the same module.
+  Test: `tests/unit/flight-ui/theme.test.ts`.
+
