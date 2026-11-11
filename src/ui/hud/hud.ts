@@ -236,8 +236,11 @@ export function balanceColumns(heights: readonly number[], n: number): number[][
       best = assign.slice();
     }
   }
+  // Columns in the order of their first group, so the first group of the table opens the first column.
   const cols: number[][] = Array.from({ length: n }, () => []);
-  (best ?? heights.map(() => 0)).forEach((col, i) => cols[col]!.push(i));
+  const order: number[] = [];
+  for (const col of best ?? heights.map(() => 0)) if (!order.includes(col)) order.push(col);
+  (best ?? heights.map(() => 0)).forEach((col, i) => cols[order.indexOf(col)]!.push(i));
   return cols;
 }
 

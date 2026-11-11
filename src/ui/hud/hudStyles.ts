@@ -301,9 +301,9 @@ export const HUD_CSS = /* css */ `
  * The ball's read-outs: pitch, heading (over the bezel's top index) and roll in fixed-width windows on one row
  * above the instrument, clear of the bezel and never changing width with the value.
  */
-.hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 28); margin-bottom: calc(var(--u) * -0.3); }
+.hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 30); margin-bottom: calc(var(--u) * -0.3); }
 .hud .nbchips > div { background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); box-shadow: var(--edge); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
-.hud .nbchips .pr { width: calc(var(--u) * 10.2); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.6); font-size: 0.84em; }
+.hud .nbchips .pr { width: calc(var(--u) * 11.4); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.6); font-size: 0.8em; }
 .hud .nbchips .pr .lbl { font-size: 0.92em; }
 .hud .nbchips .pr b { font-weight: 600; }
 .hud .nbchips .pitch { justify-self: start; }
@@ -366,7 +366,8 @@ export const HUD_CSS = /* css */ `
 .hud .lt .tname { font-size: 1.05em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.1em; }
 .hud .lt .tname .pname { font-size: 1em; }
 .hud .lt .ltline { font-size: 0.86em; font-weight: 600; color: var(--label); height: 1.3em; contain: size layout style; }
-.hud .lt .rows .val { font-size: 0.94em; }
+.hud .lt .rows .val { font-size: 0.92em; }
+.hud .lt .rows .lbl { letter-spacing: 0.03em; }
 .hud .lt .pred { margin-top: calc(var(--u) * 0.3); padding-top: calc(var(--u) * 0.35); border-top: 1px solid var(--line); height: calc(1.34em + var(--u) * 0.35 + 1px); }
 .hud .lt .zone { margin-top: calc(var(--u) * 0.45); padding: calc(var(--u) * 0.3) calc(var(--u) * 0.8); border-radius: calc(var(--u) * 0.6); display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.6); font-size: 0.9em; }
 .hud .lt .zone.t-good { background: rgba(95, 227, 154, 0.14); border: 1px solid rgba(95, 227, 154, 0.55); }

@@ -516,6 +516,7 @@ describe('round-2 display rules', () => {
     const sums = cols.map((c) => c.reduce((a, i) => a + heights[i]!, 0));
     expect(cols.flat().sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     for (const c of cols) expect(c).toEqual([...c].sort((a, b) => a - b));
+    expect(cols[0]![0]).toBe(0);
     expect(Math.max(...sums) - Math.min(...sums)).toBeLessThanOrEqual(3);
   });
 });

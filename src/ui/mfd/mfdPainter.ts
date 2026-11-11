@@ -1075,10 +1075,10 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
   ];
   const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
   boxes.forEach(([label, b], i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, stripH, label, b.value, i < 3 && active ? 'good' : (b.tone ?? 'normal')));
-  // The stack fills the rest of the page; tiles grow (to a limit) when few stages remain.
+  // The stack fills the rest of the page: tiles grow when few stages remain (two stages take two thirds of it).
   const y0 = f.top + stripH + f.h * 0.03;
   const avail = f.bottom - y0;
-  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.2);
+  const th = avail / Math.max(3, tiles.length);
   const x = f.pad;
   const w = f.w - 2 * f.pad;
   tiles.forEach((t, i) => {
