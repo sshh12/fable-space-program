@@ -246,7 +246,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       let tau = atmo.cloudLow.y * 0.6 * atmo.cloudLow.x * mix(0.45, 1.0, cover);
       let rc = rb + atmo.cloudShell.z;
       let sun = frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rc, muS) * (atmoHorizonVisibility(rc, rb, muS) * saturate(muS) * (1.0 / (1.0 + atmo.cloudLight.y * tau) + 0.08));
-      let sky = textureSampleLevel(irradianceLut, linearClamp, skyIrradianceUvFromRMuS(rc, muS, rb, frame.bodies[bi].prevCenter.w), layer + atmo.layers.z, 0.0).rgb;
+      // (The table ends at a sun 11.5 deg under the horizon; deeper in the night its light fades on: see
+      // cloudTwilightFade.)
+      let sky = textureSampleLevel(irradianceLut, linearClamp, skyIrradianceUvFromRMuS(rc, muS, rb, frame.bodies[bi].prevCenter.w), layer + atmo.layers.z, 0.0).rgb * exp(min(muS + 0.2, 0.0) * 44.0);
       let base = (sun + 0.5 * sky) / PI;
       // (The air in front of the cloud: what the path to it has not let through is the clear sky's light.)
       let front = exp(-atmoMedium(bi, 0.5 * (h0 + atmo.cloudShell.z)).ext * tc);

@@ -177,9 +177,9 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
     // only a little by the small ones. (A product of several noise octaves raised to a high power lights
     // isolated cells: a ball of glitter.) The young ball is hot right through and clips; as it cools the
     // fire withdraws into rolling folds and the cracks between soot.
-    let turbT = (0.62 + 0.76 * n.r) * (0.82 + 0.36 * n2.g) * (0.93 + 0.14 * n3.g);
+    let turbT = (0.45 + 1.1 * n.r) * (0.75 + 0.5 * n2.g) * (0.92 + 0.16 * n3.g);
     // (A later burst inside the fire of the first is a yellow-orange bulge, not a second white-hot ball.)
-    let temp = 0.9 * pow(heat, 0.55) * saturate(1.35 - surface * mix(0.45, 1.25, 1.0 - heat)) * turbT * (1.0 + 2.5 * flash) * mix(0.82, 1.0, I.stretch.y);
+    let temp = 0.9 * pow(heat, 0.55) * saturate(1.35 - surface * mix(0.8, 1.4, 1.0 - heat)) * turbT * (1.0 + 2.5 * flash) * mix(0.82, 1.0, I.stretch.y);
     // (What glows faintly is soot to the eye: below about a quarter of the temperature scale the gas is dark
     // smoke with, at most, a dull red glow in its folds; the fire is what shows through the cracks.)
     let glowT = smoothstep(0.22, 0.95, temp);
@@ -191,7 +191,7 @@ fn fireballField(I: FireballInst, q: vec3f) -> f32 {
     let sigmaHot = 2.2 * glowT;
     // (Soot is there from the start, but while the ball is young and hot right through it is a little of it:
     // the first tenths of a second are fire; the dark folds take over as the heat goes.)
-    let sigmaSoot = 6.0 * max(soot * (0.2 + 0.8 * smoothstep(0.85, 0.35, heat)), smokeAmount * (0.3 + 1.4 * n.g * (0.5 + n2.b)));
+    let sigmaSoot = 6.0 * max(soot * (0.45 + 0.55 * smoothstep(0.85, 0.35, heat)), smokeAmount * (0.3 + 1.4 * n.g * (0.5 + n2.b)));
     let sigma = shape * (sigmaHot + sigmaSoot) / R;
     // Smoke shades itself: two more looks at the surface towards the sun, a tenth and a third of a radius
     // away (the near one with the billows of the second scale, so that each billow has a lit and a shaded
@@ -334,8 +334,8 @@ export class FireballRenderer {
       duration: Math.max(E.minDuration, E.durationPerCbrtJoule * k) * (0.55 + 0.45 * scale),
       seed: (s.seed % 997) / 997,
       lobes,
-      flash: scale >= 1 ? 1 : 0.2,
-      noiseScale: Math.min(1, scale),
+      flash: scale >= 1 ? 1 : 0,
+      noiseScale: Math.min(1, Math.sqrt(scale)),
     });
   }
 

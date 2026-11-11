@@ -216,6 +216,65 @@ test('the scripted test pilot flies inside the page through the controls', async
   await expectNoErrors(page, pageLog);
 });
 
+test('in low orbit: the map takes the pointer, a node is added and Shift-dragged, the throttle stays at 0', async ({ page, pageLog }) => {
+  // The QA scenario in the parking orbit (a state start: not a mission proof, recorded as such in the snapshot).
+  await openGame(page, '?capture=0&scenario=qa-leo');
+  await waitIdle(page, 8, BOOT_MS);
+  await shoot(page, 'leo-chase', { minNonBlack: 0.2 });
+  await viewKey(page, 'KeyC', 'interior');
+  await waitIdle(page, 60, BOOT_MS);
+  const e = await page.evaluate(() => window.__app!.exposure());
+  console.log(`leo cockpit: EV100 ${e.ev100.toFixed(2)} (target ${e.targetEv100.toFixed(2)}), sun visibility ${e.sunVisibility.toFixed(2)}, outside ${e.outsideFraction.toFixed(3)}`);
+  await shoot(page, 'leo-cockpit', { minNonBlack: 0.03 });
+  await viewKey(page, 'KeyC', 'external');
+  await viewKey(page, 'KeyM', 'map');
+  // Over the north pole, the parking orbit nearly face-on.
+  await page.evaluate(() => window.__test!.setCameraOrbit(0, 1.35, 2.2e7));
+  await page.evaluate(() => window.__test!.waitFrames(90));
+  await waitIdle(page, 8, BOOT_MS);
+  const marker = async (kind: string, id: string): Promise<{ x: number; y: number; visible: boolean }> => {
+    const e = (await page.evaluate(() => window.__test!.map())).find((x) => x.kind === kind && x.id === id);
+    if (!e) throw new Error(`no map element ${kind} ${id}`);
+    return e;
+  };
+  const ap = await marker('marker', 'current/0/apoapsis');
+  expect(ap.visible).toBe(true);
+  await page.mouse.click(ap.x, ap.y);
+  await page.waitForFunction(() => window.__test!.state()!.nodes.length === 1, undefined, { timeout: 10_000 });
+  await page.evaluate(() => window.__test!.waitFrames(4));
+  const id = (await page.evaluate(() => window.__test!.state()!)).nodes[0]!.id;
+  // Shift-drag on the prograde handle: the map owns the pointer, Shift is the editor's fine modifier, and the lever
+  // must not move (ARCHITECTURE 11 and 18.2).
+  const n = await marker('node', id);
+  const h = await marker('nodeHandle', `${id}/prograde`);
+  const l = Math.hypot(h.x - n.x, h.y - n.y);
+  const [ux, uy] = [(h.x - n.x) / l, (h.y - n.y) / l];
+  const before = (await page.evaluate(() => window.__test!.state()!)).nodes[0]!.dv.prograde;
+  await page.mouse.move(h.x, h.y);
+  await page.evaluate(() => window.__test!.waitFrames(2));
+  await page.keyboard.down('ShiftLeft');
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(h.x + ux * 10 * i, h.y + uy * 10 * i);
+    await page.evaluate(() => window.__test!.waitFrames(1));
+  }
+  await page.mouse.up();
+  await page.keyboard.up('ShiftLeft');
+  await page.evaluate(() => window.__test!.waitFrames(30));
+  const s = await page.evaluate(() => window.__test!.state()!);
+  const fine = s.nodes[0]!.dv.prograde - before;
+  console.log(`node ${id}: prograde +${fine.toFixed(3)} m/s from a 100 px Shift-drag; lever ${await page.evaluate(() => window.__app!.lever())}`);
+  expect(fine).toBeGreaterThan(0.5);
+  expect(fine).toBeLessThan(2);
+  expect(await page.evaluate(() => window.__app!.lever())).toBe(0);
+  expect(s.appliedControls.throttle).toBe(0);
+  expect(s.patches.planned.length).toBeGreaterThan(0);
+  await shoot(page, 'leo-map-node', { minNonBlack: 0.05 });
+  expect(s.scenario.startKind).toBe('state');
+  expect(s.cheatCounter).toBe(0);
+  await expectNoErrors(page, pageLog);
+});
+
 test('the first key press asks for fullscreen and the keyboard lock (game default)', async ({ page, pageLog }) => {
   await openGame(page, '');
   await press(page, 'KeyT');

@@ -78,6 +78,31 @@ fn cloudNoiseFade(lod: f32) -> f32 {
   return mix(table[i], table[min(i + 1u, 7u)], l - f32(i));
 }
 
+/// The coverage map at mip level 'level' through a cubic B-spline (four bilinear taps): continuous in value
+/// and slope across texels.
+fn cloudCoverageBspline(uv: vec2f, level: i32) -> vec4f {
+  let size = vec2f(textureDimensions(atmoCoverageTex, level));
+  let st = uv * size - 0.5;
+  let i = floor(st);
+  let f = st - i;
+  let f2 = f * f;
+  let f3 = f2 * f;
+  let w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  let w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  let w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+  let w3 = f3 / 6.0;
+  let g0 = w0 + w1;
+  let g1 = w2 + w3;
+  let h0 = (i - 0.5 + w1 / g0) / size;
+  let h1 = (i + 1.5 + w3 / g1) / size;
+  let lv = f32(level);
+  let a = textureSampleLevel(atmoCoverageTex, linearRepeat, vec2f(h0.x, h0.y), lv);
+  let b = textureSampleLevel(atmoCoverageTex, linearRepeat, vec2f(h1.x, h0.y), lv);
+  let c = textureSampleLevel(atmoCoverageTex, linearRepeat, vec2f(h0.x, h1.y), lv);
+  let d = textureSampleLevel(atmoCoverageTex, linearRepeat, vec2f(h1.x, h1.y), lv);
+  return g0.y * (g0.x * a + g1.x * b) + g1.y * (g0.x * c + g1.x * d);
+}
+
 /// What the coverage map and the large noise scales say about the column through a point. 'q' = the point
 /// in the noise frame relative to the camera, 'footprint' = size of the pixel there (m), 'hLow' = the lowest
 /// altitude (m) the caller will ask this column about: above every cloud top the map allows there, the
@@ -90,7 +115,20 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
   // (One level above the footprint's own once the pixel is larger than the map's texels: the smallest
   // feature of the map is then two pixels across, not one. A one-pixel gap in a cloud system, seen through
   // a jittered ray, is a dot that flickers.)
-  let m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, log2(max(2.0 * footprint / texel, 1.0)));
+  let lodMap = log2(max(2.0 * footprint / texel, 1.0));
+  var m = vec4f(0.0);
+  // (Where a pixel is a sizeable part of a texel, the bilinear interpolation of the map draws its lattice:
+  // a threshold of an interpolated cover follows the diamonds and stair steps of the bilinear weights. There
+  // the map is read through a cubic B-spline, which is smooth across texels.)
+  let smoothW = smoothstep(0.12, 0.3, footprint / texel);
+  if (smoothW < 1.0) { m = textureSampleLevel(atmoCoverageTex, linearRepeat, uv, lodMap); }
+  if (smoothW > 0.0) {
+    let top = f32(textureNumLevels(atmoCoverageTex) - 1);
+    let l0 = min(floor(lodMap), top);
+    var mc = cloudCoverageBspline(uv, i32(l0));
+    if (lodMap - l0 > 0.01 && l0 < top) { mc = mix(mc, cloudCoverageBspline(uv, i32(l0) + 1), saturate(lodMap - l0)); }
+    m = mix(m, mc, smoothW);
+  }
   let c = m.r;
   let ct = m.g * 12750.0;
   let zb = atmo.cloudShell.z;
@@ -364,6 +402,26 @@ struct CloudStack {
   cover: f32,
   T: f32,
   L: vec3f,
+}
+
+/// The sky irradiance table ends at a sun 11.5 deg under the horizon (mu_s = -0.2), and a lookup is clamped
+/// there: the light of a sky in nautical twilight. Deeper in the night it goes on fading, by about a decade
+/// per 3 deg of the sun's depression (photometry of twilight), instead of staying at that level all night.
+fn cloudTwilightFade(muS: f32) -> f32 { return exp(min(muS + 0.2, 0.0) * 44.0); }
+
+/// Irradiance (rgb, lux) that the airglow layers of the cloud body throw on a level surface under them. A
+/// thin emitting shell of zenith luminance L0 has the radiance L0 / cos(zenith angle) towards its horizon:
+/// 2 pi L0 over the hemisphere. (L0 of a layer = its peak emission per metre x sigma sqrt(2 pi).)
+fn cloudAirglowIrradiance() -> vec3f {
+  var geo = atmo.airglow0;
+  var c0 = atmo.airglow0C0.rgb;
+  var c1 = atmo.airglow0C1.rgb;
+  if (atmo.bodies.y == atmo.bodies.z && atmo.bodies.x != atmo.bodies.z) {
+    geo = atmo.airglow1;
+    c0 = atmo.airglow1C0.rgb;
+    c1 = atmo.airglow1C1.rgb;
+  }
+  return (c0 * max(geo.y, 0.0) + c1 * max(geo.w, 0.0)) * (TWO_PI * 2.5066283);
 }
 
 /// One march step through a layer of fraction 'frac' whose cloudy part has step transmittance 'seg' and
@@ -682,6 +740,7 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
       let r = rb + hl;
       let muS = dot(up, sunDir);
       var J = vec3f(0.0);
+      var dbgLow = vec3f(0.0); var dbgHigh = vec3f(0.0); // DEBUG-TERM
       // A step that adds next to nothing to the pixel (deep inside a cloud already entered) takes the light
       // of the step before it.
       let share = st.T * (1.0 - seg) * den.frac;
@@ -747,7 +806,10 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           // seen from orbit.)
           let massHere = saturate(col.cLow) * (col.lowTop - atmo.cloudShell.z) + col.amtUp * (col.upTop - col.lowTop);
           let massSun = saturate(colSun.cLow) * (colSun.lowTop - atmo.cloudShell.z) + colSun.amtUp * (colSun.upTop - colSun.lowTop);
-          let slope = clamp((massSun - massHere) / cFar, -1.5, 1.5);
+          // (Only where the slope is of the clouds' own relief: from far away the two columns are tens of
+          // kilometres apart, and their difference is the edge of a weather system, which it would emboss
+          // with a bright rim and a dark line.)
+          let slope = clamp((massSun - massHere) / cFar, -1.5, 1.5) * (1.0 - smoothstep(1500.0, 5000.0, footprint));
           var cosS = saturate((mu0 - slope * sqrt(max(1.0 - mu0 * mu0, 0.0))) / sqrt(1.0 + slope * slope));
           var cosV = muV;
           var facing = 1.0;   // how well the slope is known (0 inside a uniform core)
@@ -807,19 +869,24 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           let tt = kd * (tauNear + tauFar);
           let highOrders = atmo.cloudLight.x * muE * (1.0 + kd * tauFar) * tt / ((1.0 + tt) * (1.0 + tt) * PI);
           J = e * (lowOrders + highOrders);
+          dbgLow = e * lowOrders; dbgHigh = e * highOrders; // DEBUG-TERM
         }
         // Ambient: sky from above, the sunlit ground from below (what the clouds of the column leave of
         // it), each through the cloud in between.
         // (The sky as a surface in shade sees it: the half away from the sun, where the table has it. At
         // sunset that is the blue of the zenith and the far horizon, not the glow around the sun.)
+        // (Deep in the night the twilight sky has faded, and what lights the clouds is the airglow overhead.)
         let skyUv = skyIrradianceUvFromRMuS(r, muS, rb, rt);
-        let skyAll = textureSampleLevel(irradianceLut, linearClamp, skyUv, layerIndex, 0.0).rgb;
-        let sky = textureSampleLevel(irradianceLut, linearClamp, skyUv, layerIndex + atmo.layers.z, 0.0).rgb;
+        let night = cloudTwilightFade(muS);
+        let glowE = cloudAirglowIrradiance();
+        let skyAll = textureSampleLevel(irradianceLut, linearClamp, skyUv, layerIndex, 0.0).rgb * night + glowE;
+        let sky = textureSampleLevel(irradianceLut, linearClamp, skyUv, layerIndex + atmo.layers.z, 0.0).rgb * night + glowE;
         let groundE = (skyAll + frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rb, muS) * (max(muS, 0.0) * vis * (1.0 - 0.7 * saturate(col.cLow)))) * atmo.cloudDeep.y;
         let both = 1.0 + kd * (den.above + den.below);
         // (A cloud has sides: under a low sun they see the bright band of the horizon, which the irradiance
         // on a level surface counts at a grazing cosine.)
         J += (sky * ((1.0 + 0.6 * (1.0 - saturate(muS))) * (1.0 + kd * den.below) / both) + groundE * ((1.0 + kd * den.above) / both)) * (atmo.cloudDeep.z / PI);
+        { let dbg = i32(atmo.cloudLow3.z); if (dbg == 1) { J = dbgLow; } else if (dbg == 2) { J = dbgHigh; } else if (dbg == 3) { J = J - dbgLow - dbgHigh; } else if (dbg == 4) { J = vec3f(0.0); } } // DEBUG-TERM
         lastLight = J;
         haveLight = true;
       }

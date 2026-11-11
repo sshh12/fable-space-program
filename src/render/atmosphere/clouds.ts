@@ -703,7 +703,7 @@ export class CloudSystem {
     u.set('cloudShell', R + params.bottomAltitude, R + params.topAltitude, params.bottomAltitude, params.topAltitude);
     u.set('cloudLow', params.lowThicknessM, params.lowExtinction, params.lowEdgeSoftness, params.lowCoverageGain);
     u.set('cloudLow2', params.fairWeatherCoverage, params.mesoscaleAmplitude, params.detailErosion, params.detailFadeFootprintM);
-    u.set('cloudLow3', params.lowThinDensity, params.lowDensityVariation, 0, 0);
+    u.set('cloudLow3', params.lowThinDensity, params.lowDensityVariation, ((globalThis as unknown as { __cloudDebug?: number }).__cloudDebug ?? 0), 0); // DEBUG-TERM
     // Each half-resolution pixel is marched every fourth frame, through a different point of its area and at
     // a different step phase each time (a function of the march index alone, so it also runs while the
     // frame's noise is frozen): the resolve averages the marches of a pixel into an edge as wide as the

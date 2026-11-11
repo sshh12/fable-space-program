@@ -165,8 +165,8 @@
       "albedo": [0.62, 0.6, 0.57],
       "opacity": 0.2,
       "sheetDepth": 2.2,
-      "sheetMinReach": 400,
-      "sheetReachRadii": 120,
+      "sheetMinReach": 160,
+      "sheetReachRadii": 40,
       "sheetSpeed": 55,
       "sheetSteps": 14
     },
@@ -174,8 +174,8 @@
     "gas": { "count": 240, "speed": [140, 360], "size": [0.3, 0.9], "life": [0.12, 0.36], "color": [0.86, 0.88, 0.92], "opacity": 0.05 },
     "sparks": { "count": 180, "speed": [8, 70], "size": [0.015, 0.05], "life": [0.25, 1.2], "temperature": [1500, 2500] },
     "debris": { "count": 160, "speed": [4, 55], "size": [0.03, 0.9], "life": [4, 14], "albedo": [0.4, 0.4, 0.42] },
-    "spray": { "count": 2600, "mistCount": 160, "size": [0.004, 0.17], "mistSize": [0.6, 2.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.06 },
-    "ablation": { "rate": 1400, "speed": [15, 120], "size": [0.012, 0.04], "life": [0.25, 0.9], "temperature": [2200, 3400] }
+    "spray": { "count": 1800, "mistCount": 160, "size": [0.004, 0.17], "mistSize": [0.6, 2.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.06 },
+    "ablation": { "rate": 450, "speed": [15, 120], "size": [0.012, 0.04], "life": [0.25, 0.9], "temperature": [2200, 3400] }
   },
   "frost": { "resources": ["LOX", "LH2", "CH4"], "vibrationThrottle": 0.2 },
   "staging": {
@@ -197,7 +197,7 @@
     "colors": [[1.0, 0.42, 0.14], [1.0, 0.5, 0.62], [0.86, 0.82, 1.0]],
     "flicker": { "lowHz": 8, "highHz": 30, "amount": 0.22 },
     "light": { "efficacy": 0.14, "range": 80 },
-    "trail": { "luminance": 6000, "lifetime": 0.6, "radiusScale": 0.55, "smoke": 0.02, "trainLuminance": 90, "trainLifetime": 22 },
+    "trail": { "luminance": 6000, "lifetime": 0.6, "radiusScale": 0.25, "smoke": 0.02, "trainLuminance": 90, "trainLifetime": 22 },
     "steps": 32
   },
   "explosion": {

@@ -152,7 +152,9 @@ fn slotOf(i: u32) -> u32 { let n = u32(pu.flags.z); return (pu.counts.x + n - 1u
   // small pieces and a few large ones (equal steps of the logarithm, weighted towards the small end).
   let pick = rnd(seed, j, 10u);
   p.size = mix(e.life.z, e.life.w, pick);
-  if (e.misc.x == KIND_ICE || e.misc.x == KIND_CHIP || e.misc.x == KIND_DROPLET) { p.size = e.life.z * pow(e.life.w / max(e.life.z, 1e-6), pick * pick * pick); }
+  if (e.misc.x == KIND_ICE || e.misc.x == KIND_CHIP) { p.size = e.life.z * pow(e.life.w / max(e.life.z, 1e-6), pick * pick * pick); }
+  // (Spray even more so: the water is in the sheet and in a haze of fine drops; a large drop is a rare thing.)
+  if (e.misc.x == KIND_DROPLET) { p.size = e.life.z * pow(e.life.w / max(e.life.z, 1e-6), pow(pick, 5.0)); }
   p.growth = e.misc.y;
   p.kind = e.misc.x;
   p.seed = rnd(seed, j, 11u);

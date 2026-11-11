@@ -467,7 +467,8 @@ export class TrailSystem {
         const age = effectTime - 0.5 * (nodeA.born + list[i + 1]!.born);
         const hot = Math.exp(-age / Math.max(0.6 * nodeA.glowLife, 0.01));
         const old = nodeA.train0 ? 1 - Math.exp(-age / (0.25 * (nodeA.trainLife ?? 1))) : 0;
-        const gc: Vec3Tuple = [0, 1, 2].map((c) => (base[c]! + (1 - base[c]!) * 0.7 * hot) * (1 - old) + [1, 0.32, 0.12][c]! * old) as Vec3Tuple;
+        // (Only a little whiter at its newest end: it starts where the wake has already cooled to orange.)
+        const gc: Vec3Tuple = [0, 1, 2].map((c) => (base[c]! + (1 - base[c]!) * (nodeA.train0 ? 0.2 : 0.7) * hot) * (1 - old) + [1, 0.32, 0.12][c]! * old) as Vec3Tuple;
         // A wake that glows for seconds is smooth gas, not a billowing cloud.
         S.set([gc[0], gc[1], gc[2], nodeA.train0 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
         S.set([fromEnd[i]!, fromEnd[i + 1]!, t.taper, fromEnd[0]!], o + 32);

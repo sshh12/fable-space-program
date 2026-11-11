@@ -67,6 +67,9 @@ describe('formatters', () => {
     expect(n(formatLength(384_400_000))).toBe('384.4 Mm');
     expect(n(formatLength(-6_360_200))).toBe('−6 360 km');
     expect(n(formatLength(-6_360_200, 'apsis'))).toBe('−6 360.2 km');
+    // An apoapsis a few metres up (a hover, a lift-off) reads in metres, not "0.0 km".
+    expect(n(formatLength(16, 'apsis'))).toBe('16.0 m');
+    expect(n(formatLength(15_500, 'apsis'))).toBe('15.5 km');
     expect(n(formatLength(2e9))).toBe('200.0 Mm'.replace('200.0 Mm', '2 000.0 Mm'));
     expect(n(formatLength(2e10))).toBe('20.000 Gm');
   });
@@ -555,9 +558,11 @@ describe('round-2 display rules', () => {
     const o = describeOrbit({ ...s, readouts: r });
     expect([o.periapsisTime, o.period, o.apoapsisTime]).toEqual(['—', '—', '—']);
     // Climbing on a suborbital path (an ascent): the apoapsis is still ahead.
-    const up = describeOrbit({ ...s, readouts: { ...r, verticalSpeed: 300 } });
+    const up = describeOrbit({ ...s, readouts: { ...r, verticalSpeed: 300, timeToApoapsis: 40 } });
     expect(up.apoapsisTime).not.toBe('—');
     expect(up.periapsisTime).toBe('—');
+    // At rest just past the apoapsis (more than half a period to the next one): it comes down first.
+    expect(describeOrbit({ ...s, readouts: { ...r, verticalSpeed: 0, timeToApoapsis: 5000 } }).apoapsisTime).toBe('—');
   });
 
   it('opens the entry panel for an entry, not for the heating of an ascent', () => {

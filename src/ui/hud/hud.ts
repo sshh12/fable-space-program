@@ -603,17 +603,13 @@ export function createHud(opts: HudOptions): HudImpl {
   const gG = tapeGauge('g', 'G LOAD', [['0', 0], ['4', 4 / G_SCALE.full], ['8', 8 / G_SCALE.full], ['12', 1]], G_SCALE.full, G_SCALE.limit / G_SCALE.full);
   const gTextTone = new ToneSlot(gG.valueEl);
   gG.root.title = `G load: green to ${G_SCALE.caution} g, amber to the ${G_SCALE.limit} g limit (above it the crew's g-dose builds up)`;
-  // The crew's g-dose: a labelled bar across the panel under both captions (its share of the fatal limit; amber,
-  // red from DOSE_WARNING), so the bar never stands unexplained under the g tube. The line is always there (a dim
-  // 0 % without a dose), so the tubes above it never move when a flight phase brings the first dose.
-  const doseValue = new TextSlot('');
-  const doseBar = bar();
-  const doseTone = new ToneSlot(doseBar.root);
-  const doseLine = el('div', 'doseline', [el('span', 'lbl', ['G dose']), doseBar.root, el('span', 'dv', [doseValue.node])], {
-    title: "Crew g-dose: g-seconds above the crew's tolerance, as a share of the fatal limit (it recovers below the amber zone)",
-  });
-  const doseNil = classFlag(doseLine, 'nil');
-  const gauges = el('div', 'panel gauges br', [thr.root, gG.root, doseLine], { 'data-show': 'external map' });
+  // The crew's g-dose: a third tape beside the g tube (its share of the fatal limit: amber, red from DOSE_WARNING),
+  // always there (a dim 0 % without a dose), so nothing in the panel moves when a flight phase brings the first dose.
+  const dose = tapeGauge('dose', 'DOSE', [], 3, null);
+  dose.root.title = "Crew g-dose: g-seconds above the crew's tolerance, as a share of the fatal limit (it recovers below the amber zone)";
+  const doseTone = new ToneSlot(dose.valueEl);
+  const doseNil = classFlag(dose.root, 'nil');
+  const gauges = el('div', 'panel gauges br', [thr.root, gG.root, dose.root], { 'data-show': 'external map' });
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
   // Title row: 'Maneuver' and the countdown to the burn's start (amber in its last 10 s); then delta-v and burn time.
@@ -1227,9 +1223,9 @@ export function createHud(opts: HudOptions): HudImpl {
     gTextTone.set(gt === 'normal' ? '' : gt);
     {
       const f = r.gDoseLimit > 0 ? Math.min(1, Math.max(0, r.gDose) / r.gDoseLimit) : 0;
-      doseBar.fill.set(f);
-      doseValue.set(formatPercent(f));
-      doseTone.set(f >= DOSE_WARNING ? 'warning' : 'caution');
+      dose.fill.set(f);
+      dose.value.set(formatPercent(f));
+      doseTone.set(f >= DOSE_WARNING ? 'warning' : f > 0 ? 'caution' : '');
     }
 
     // Node burn.
