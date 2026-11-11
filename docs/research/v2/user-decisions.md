@@ -39,3 +39,32 @@ first-class design decision with numbers, not a default.
 
 A KSP-style ship builder and further KSP-like systems are expected later. Future-proof the part, vehicle and
 assembly model for them; do not build them.
+
+## Cost floor and scaling (2026-11-11, after reading the v2 design)
+
+The user accepted the v2 design ("This is fine") with one change, verbatim: "we need to be able to run with
+like 5 players at much less, like $50/mo and then scale from there. I have railway hobby for now but we can
+upgrade and scale as we need to but shouldn't need for small scale. With that you have permission to set
+everything up."
+
+What this means for the design:
+
+- **The always-on deployment must cost about $50 a month or less in total at about 5 concurrent players**,
+  everything included (simulation, persistence, static front end, tile delivery, the Railway plan fee).
+  The earlier "always in the split topology" base of $90-115 a month is rejected as the starting point.
+- **It must run on the Railway Hobby plan** as it stands today. Check the Hobby plan's real limits and
+  prices before relying on any feature (replicas, buckets, volumes, private networking, CDN, usage caps).
+- **Scale from there**: the same code and data must grow to the busy and front-page configurations by
+  configuration and deploys, not by a rewrite. Moving up may need the Pro plan and more spend; that is
+  acceptable when measured need arises, and the lead tells the user before upgrading the plan or raising
+  the standing spend. A short, announced freeze while the topology changes is acceptable; losing committed
+  state is not.
+- **Permission to set everything up is granted**: creating the Railway project `fable-space-program` and its
+  services, a dedicated Modal environment `fsp` (existing Modal apps stay untouched), deploy pipelines from
+  the GitHub repository, and the R&D spend for load-test rehearsals on Modal. Credentials stay out of
+  GitHub and the client.
+- Load tests still have to report measured limits honestly. A rehearsal that needs more than the Hobby
+  plan allows is run only after the lead has told the user what it will cost.
+
+The other defaults in OPEN_QUESTIONS_V2.md stand (sensor-camera view for craft without a cabin, second site
+in Oman with fallback, quick-comms only, no alert destination yet).
