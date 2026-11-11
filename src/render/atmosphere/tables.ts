@@ -125,7 +125,8 @@ export class AtmosphereTables {
         const make = (label: string, size: readonly [number, number]): GPUTexture => core.createTextureChecked({ label, format: FORMAT, size: [size[0], size[1], layers], usage: STORAGE });
         this.transmittance = make('atmosphere.transmittance', TRANSMITTANCE_LUT_SIZE);
         this.multiScatter = make('atmosphere.multiScatter', MULTISCATTER_LUT_SIZE);
-        this.irradiance = make('atmosphere.irradiance', SKY_IRRADIANCE_LUT_SIZE);
+        // (Twice the layers: the second half holds the irradiance of the sky away from the sun, see the compute shader.)
+        this.irradiance = core.createTextureChecked({ label: 'atmosphere.irradiance', format: FORMAT, size: [SKY_IRRADIANCE_LUT_SIZE[0], SKY_IRRADIANCE_LUT_SIZE[1], 2 * layers], usage: STORAGE });
         this.transmittanceView = this.transmittance.createView({ dimension: '2d-array' });
         this.multiScatterView = this.multiScatter.createView({ dimension: '2d-array' });
         this.irradianceView = this.irradiance.createView({ dimension: '2d-array' });
@@ -188,7 +189,7 @@ export class AtmosphereTables {
         run(pass, 'transmittance', TRANSMITTANCE_LUT_SIZE[0], TRANSMITTANCE_LUT_SIZE[1], this.layers);
         run(pass, 'multiScatter', MULTISCATTER_LUT_SIZE[0], MULTISCATTER_LUT_SIZE[1], this.layers);
       }
-      run(pass, 'irradiance', SKY_IRRADIANCE_LUT_SIZE[0], SKY_IRRADIANCE_LUT_SIZE[1], this.layers);
+      run(pass, 'irradiance', SKY_IRRADIANCE_LUT_SIZE[0], SKY_IRRADIANCE_LUT_SIZE[1], 2 * this.layers);
       pass.end();
       this.staticDirty = false;
       this.irradianceDirty = false;

@@ -136,9 +136,12 @@ const STEPS = 16;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= ${SKY_IRRADIANCE_LUT_SIZE[0]}u || id.y >= ${SKY_IRRADIANCE_LUT_SIZE[1]}u || i32(id.z) >= atmo.layers.z) { return; }
-  let bi = u32(atmo.lutBody[id.z]);
-  let layer = i32(id.z);
+  if (id.x >= ${SKY_IRRADIANCE_LUT_SIZE[0]}u || id.y >= ${SKY_IRRADIANCE_LUT_SIZE[1]}u || i32(id.z) >= 2 * atmo.layers.z) { return; }
+  // Layers 0 .. n - 1: the irradiance of the whole sky on a horizontal surface (the contract). Layers
+  // n .. 2n - 1: that of the half of the sky away from the sun, doubled: what lights a surface in shade.
+  let away = i32(id.z) >= atmo.layers.z;
+  let layer = i32(id.z) % atmo.layers.z;
+  let bi = u32(atmo.lutBody[layer]);
   let rb = frame.bodies[bi].center.w;
   let rt = frame.bodies[bi].prevCenter.w;
   let top = rt - rb;
@@ -153,6 +156,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let sinV = sqrt(max(1.0 - mu * mu, 0.0));
     let len = max(atmoRaySphere(r, h - top, mu, rt).y, 0.0);
     for (var b = 0; b < N_PHI; b++) {
+      if (away && b < N_PHI / 2) { continue; }
       let phi = PI * (f32(b) + 0.5) / f32(N_PHI);
       let nu = mu * muS + sinV * sinS * cos(phi);
       let phaseR = atmoPhaseR(nu);
@@ -179,7 +183,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       E += L * (mu * 2.0 * (1.0 / f32(N_MU)) * (PI / f32(N_PHI)));
     }
   }
-  textureStore(outTex, id.xy, id.z, vec4f(E * frame.sunIlluminance.rgb, 1.0));
+  textureStore(outTex, id.xy, id.z, vec4f(E * frame.sunIlluminance.rgb * select(1.0, 2.0, away), 1.0));
 }
 `;
 
