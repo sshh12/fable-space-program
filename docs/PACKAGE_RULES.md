@@ -3,6 +3,17 @@
 Binding for every package in `docs/WORK_PACKAGES.json`. The package brief adds scope and acceptance; where
 a brief is stricter, the brief wins.
 
+## Scope note (2026-11-11): the expansion section of PROMPT.txt
+
+`PROMPT.txt` gained a section headed `--- expansion ---` (whole solar system, a vehicle fleet, live
+multiplayer with docking and persistence, a menu, automatic graphics settings). It is being designed
+separately as a revision of the architecture and will be scheduled as later waves with their own briefs.
+
+- Wave-2 packages are built, reviewed and fixed against their brief and the ORIGINAL part of PROMPT.txt
+  only. Do not implement expansion features, and do not report their absence as a review finding.
+- Do not make choices that would block the expansion where the generic choice costs the same: no code that
+  assumes exactly two bodies, one vessel, one player, one launch pad or one vehicle. That was already rule 7.
+
 ## Before coding
 
 Read in full: `PROMPT.txt` (the user's requirement: binding, "don't cut corners"), `docs/ARCHITECTURE.md`
