@@ -65,7 +65,8 @@ struct LinePoint {
   pos: vec3f,
   phase: f32,    // screen length from the line start, modulo the dash period (device px)
   color: u32,
-  flags: u32,    // bit 0: the segment to the next point is drawn; bit 1: dashed; bits 16-31: width * 64 (device px)
+  flags: u32,    // bit 0: the segment to the next point is drawn; bit 1: dashed; bit 2: the segment to the next point
+                 // is a join neighbour only (seam of a closed ring); bits 16-31: width * 64 (device px)
   seglen: f32,   // screen length of the segment to the next point (device px)
   slack: f32,    // radial allowance below a body surface (m), see occlusion()
 };
@@ -104,8 +105,8 @@ fn vsLine(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
   let pb = B.pos;
   // The CPU cut the line in front of the eye (both ends of a drawn segment are well past the near plane).
   if (min(-pa.z, -pb.z) < U.params.z) { return o; }
-  let hasPrev = ii > 0u && (pts[ii - 1u].flags & 1u) != 0u;
-  let hasNext = ii + 2u < n && (B.flags & 1u) != 0u;
+  let hasPrev = ii > 0u && (pts[ii - 1u].flags & 5u) != 0u;
+  let hasNext = ii + 2u < n && (B.flags & 5u) != 0u;
   let sa = toScreen(pa);
   let sb = toScreen(pb);
   var sp = vec2f(0.0);

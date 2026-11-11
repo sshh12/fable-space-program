@@ -209,7 +209,7 @@ export class OverlayRenderer {
           pu[o + 4] = (cr | (cg << 8) | (cb << 16) | (alpha << 24)) >>> 0;
         } else pu[o + 4] = (base | (alpha << 24)) >>> 0;
         const drawn = verts.seg[s] === 1;
-        pu[o + 5] = (style | (drawn ? 1 : 0)) >>> 0;
+        pu[o + 5] = (style | (drawn ? 1 : 0) | (verts.join[s] === 1 ? 4 : 0)) >>> 0;
         pf[o + 6] = drawn ? verts.len[s + 1]! - len : 0;
         pf[o + 7] = l.occlusionSlack;
         j++;

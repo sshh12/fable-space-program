@@ -213,6 +213,8 @@ interface PointEntry {
   /** Hover identity: kind and the body / vessel / marker / node id. */
   kind: PointKind;
   id: string;
+  /** Body the point belongs to (its label goes to the side away from it on screen). */
+  bodyId: string;
   x: number;
   y: number;
   /** Icon radius, device px (0 = no icon: a body large enough to be seen). */
@@ -285,6 +287,7 @@ export class MapController implements MapView {
   private panelSide = -1;
   /** Screen areas other UI covers (CSS px): labels, the panel and the tooltip keep clear of them. */
   private obstacles: BlockedRect[] = [];
+  private readonly side = { x: 0, y: 0 };
   /** Measured label widths (device px) by text, for the pixel scale `widthScale`. */
   private readonly widths = new Map<string, number>();
   private widthScale = 0;
@@ -900,6 +903,27 @@ export class MapController implements MapView {
     return out.sort((a, b) => a.ut - b.ut);
   }
 
+  /** Unit screen direction from the nearest drawn place of body `bodyId` (itself or a ghost) to (x, y), or null. */
+  private outward(scene: MapScene, bodyId: string, x: number, y: number): { x: number; y: number } | null {
+    let best = Infinity;
+    let bx = 0;
+    let by = 0;
+    for (const b of scene.bodies) {
+      if (b.bodyId !== bodyId || !b.front) continue;
+      const d = (b.x - x) ** 2 + (b.y - y) ** 2;
+      if (d < best) {
+        best = d;
+        bx = b.x;
+        by = b.y;
+      }
+    }
+    if (!(best >= 1) || best === Infinity) return null;
+    const l = Math.sqrt(best);
+    this.side.x = (x - bx) / l;
+    this.side.y = (y - by) / l;
+    return this.side;
+  }
+
   private bodyRadiusCss(scene: MapScene, bodyId: string): number {
     for (const b of scene.bodies) if (!b.ghost && b.bodyId === bodyId) return b.radiusPx / scene.proj.pxScale;
     return 0;
@@ -1066,12 +1090,12 @@ export class MapController implements MapView {
       if (w === undefined) this.widths.set(text, (w = measureText(tm, text)));
       return w;
     };
-    const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number): void => {
+    const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number, nx = 0, ny = 0): void => {
       if (lines.length === 0 || alpha < 0.05) return;
       let width = 0;
       for (const l of lines) width = Math.max(width, widthOf(l));
       let e = pool.entries[pool.nBoxes];
-      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false }, lines, color, alpha }));
+      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false, nx: 0, ny: 0 }, lines, color, alpha }));
       pool.nBoxes++;
       const box = e.box;
       box.ax = ax;
@@ -1082,13 +1106,14 @@ export class MapController implements MapView {
       box.priority = priority;
       box.placed = false;
       box.far = false;
+      box.nx = nx;
+      box.ny = ny;
       e.lines = lines;
       e.color = color;
       e.alpha = alpha;
       boxes.push(box);
       labels.push(e);
     };
-    this.grid.build(scene, GRID_CELL_PX * k);
 
     // ---- other UI (HUD panels) the map keeps clear of
     const rects: BlockedRect[] = this.obstacles.map((o) => ({ x0: o.x0 * k, y0: o.y0 * k, x1: o.x1 * k, y1: o.y1 * k }));
@@ -1101,6 +1126,7 @@ export class MapController implements MapView {
     let panel: BlockedRect | null = null;
     this.panelAt = null;
     if (selNode) {
+      this.grid.build(scene, GRID_CELL_PX * k);
       const at = this.placePanel(scene, selShown ? sel : undefined, handles, rects);
       this.panelAt = at;
       panel = { x0: at.x * k, y0: at.y * k, x1: (at.x + this.panelSize[0]) * k, y1: (at.y + this.panelSize[1]) * k };
@@ -1117,11 +1143,12 @@ export class MapController implements MapView {
     const pts = pool.pts;
     pts.length = 0;
     pool.nPoints = 0;
-    const point = (kind: PointKind, id: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
+    const point = (kind: PointKind, id: string, bodyId: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
       let e = pool.points[pool.nPoints];
-      if (!e) pool.points.push((e = { kind, id, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
+      if (!e) pool.points.push((e = { kind, id, bodyId, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
       e.kind = kind;
       e.id = id;
+      e.bodyId = bodyId;
       e.x = x;
       e.y = y;
       e.r = r;
@@ -1162,7 +1189,7 @@ export class MapController implements MapView {
       const named = b.radiusPx < BODY_LABEL_MAX_RADIUS_PX * k;
       if (!b.small && !named && !b.ghost) continue;
       const r = b.small ? 6 * k : 0;
-      const e = point('b', b.bodyId, b.x, b.y, r, ICON.bodyRing, b.ghost ? COLORS.ghost : COLORS.body, a, 1000, b.label);
+      const e = point('b', b.bodyId, b.bodyId, b.x, b.y, r, ICON.bodyRing, b.ghost ? COLORS.ghost : COLORS.body, a, 1000, b.label);
       e.priority = b.ghost ? 2 : 9.5;
       e.label = oneLine(b.label);
       e.labelColor = b.ghost ? COLORS.textDim : COLORS.text;
@@ -1177,14 +1204,14 @@ export class MapController implements MapView {
       const a = 1 - v.hidden;
       if (v.debris) {
         // Debris are dots (their orbit is drawn on hover); labels may pass over them.
-        const e = point('v', v.vesselId, v.x, v.y, 3 * k, ICON.debris, COLORS.debris, a, 0, v.name);
+        const e = point('v', v.vesselId, v.bodyId, v.x, v.y, 3 * k, ICON.debris, COLORS.debris, a, 0, v.name);
         e.clear = 0;
         e.debris = true;
         commit(e);
         continue;
       }
       const r = (v.active ? 7.5 : 6) * k;
-      const e = point('v', v.vesselId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? a : a * 0.85, v.active ? 500 : 1, v.name);
+      const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? a : a * 0.85, v.active ? 500 : 1, v.name);
       e.rot = v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX);
       e.priority = v.active ? 5 : 1;
       e.label = oneLine(v.name);
@@ -1206,7 +1233,7 @@ export class MapController implements MapView {
         if (parent && parent.front && parent.hidden < 0.5 && (parent.x - m.x) ** 2 + (parent.y - m.y) ** 2 < (SURFACE_TWIN_MIN_PX * k) ** 2) continue;
       }
       const r = (surface ? 5 : MARKER_RADIUS_PX) * k;
-      const e = point('m', m.id, m.x, m.y, r, shapeIcon(m.shape), m.color, a, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
+      const e = point('m', m.id, m.marker.bodyId, m.x, m.y, r, shapeIcon(m.shape), m.color, a, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
       e.priority = m.priority;
       e.label = m.label;
       e.labelAlpha = a;
@@ -1227,7 +1254,7 @@ export class MapController implements MapView {
       if (n.id === this.selected || !onScreen(n.x, n.y, n.front)) continue;
       const a = Math.max(0.35, 1 - n.hidden);
       const label = nodeLabel(n);
-      const e = point('n', n.id, n.x, n.y, NODE_SMALL_RADIUS_PX * k, n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, a, 9, label[0]!);
+      const e = point('n', n.id, n.loc.patch.bodyId, n.x, n.y, NODE_SMALL_RADIUS_PX * k, n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, a, 9, label[0]!);
       e.priority = 9;
       e.label = label;
       e.labelAlpha = a;
@@ -1338,7 +1365,8 @@ export class MapController implements MapView {
         this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
         rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
       }
-      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha);
+      const side = p.kind === 'b' ? null : this.outward(scene, p.bodyId, p.x, p.y);
+      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha, side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- surface targets, once their body is big enough on screen to place them meaningfully
@@ -1379,7 +1407,8 @@ export class MapController implements MapView {
       const r = NODE_RADIUS_PX * 1.1 * k;
       this.icon(gizmo, sel.x, sel.y, r, r, 0, sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, 1);
       this.clear(sel.x, sel.y, r);
-      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1);
+      const side = this.outward(scene, sel.loc.patch.bodyId, sel.x, sel.y);
+      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- add-maneuver preview where the pointer hovers a trajectory
@@ -1392,7 +1421,8 @@ export class MapController implements MapView {
         this.icon(gizmo, p.x, p.y, r, r, 0, ICON.addGhost, COLORS.hover, 0.9);
         this.clear(p.x, p.y, r);
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
-        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1);
+        const side = this.outward(scene, line.patch.bodyId, p.x, p.y);
+        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
       }
     }
 
@@ -1443,7 +1473,7 @@ export class MapController implements MapView {
     }
 
     // ---- de-clutter: labels keep clear of icons, of each other and of every blocked rectangle, and off the lines
-    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, (x0, y0, x1, y1) => this.grid.cost(x0, y0, x1, y1), FAR_RING_PX * k);
+    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, FAR_RING_PX * k);
     for (const l of labels) {
       const b = l.box;
       if (!b.placed) continue;

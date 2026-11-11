@@ -415,7 +415,7 @@ describe('multi-revolution patches', () => {
     const orbit = s.patches.planned[1]!;
     const line = scene.lines.find((l) => l.id === 'planned/1')!;
     const nu0 = line.curve!.uToNu(scene.verts.u[line.start]!);
-    const nu1 = line.curve!.uToNu(scene.verts.u[line.start + line.count - 1]!);
+    const nu1 = line.curve!.uToNu(scene.verts.u[line.start + line.count - 1 - line.seam]!);
     expect(nu1 - nu0).toBeCloseTo(2 * Math.PI, 9);
     const nodeB = scene.nodes.find((n) => n.id === fx.nodeB.id)!;
     const expected = scene.proj.projectRoot(v3.add(orbit.bodyPosAtEnd, conicPosition(orbit.conic, orbit.nuEnd % (2 * Math.PI))));

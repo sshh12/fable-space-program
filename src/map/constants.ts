@@ -94,7 +94,7 @@ export const MARKER_MIN_PATCH_PX = 40;
 export const SURFACE_TWIN_MIN_PX = 12;
 export const NODE_SMALL_RADIUS_PX = 5.5;
 /** Line occupancy grid cell for label and panel placement. */
-export const GRID_CELL_PX = 10;
+export const GRID_CELL_PX = 14;
 /** Label plate padding (horizontal, vertical) and leader line width. */
 export const PLATE_PAD_X_PX = 4;
 export const PLATE_PAD_Y_PX = 1;

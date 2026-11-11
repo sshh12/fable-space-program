@@ -1,15 +1,16 @@
 /**
- * Coarse occupancy grid of the drawn lines on screen, so labels, the node panel and the tooltip can be placed
- * off the trajectories instead of on top of them. Each cell holds the largest weight of the lines through it
- * (trajectories weigh more than reference orbits); a rectangle's cost is the sum over the cells it covers.
- * Rebuilt every draw list from the scene's projected vertices: one pass over the drawn segments, clipped to
- * the screen, marking the cells along each at half-cell steps.
+ * Coarse occupancy grid of the drawn lines on screen, so the node panel can be placed off the trajectory it
+ * edits instead of on top of it. Each cell holds the largest weight of the lines through it (trajectories weigh
+ * more than reference orbits); a rectangle's cost is the sum over the cells it covers. Built for draw lists with
+ * a selected node, from the scene's projected vertices: one pass over the drawn segments, clipped to the
+ * screen, marking the cells along each at one step per cell. (Labels do not use it: they take the side of
+ * their own line away from its body and sit on a plate that masks any other line.)
  */
 import type { LineKind, MapScene } from './scene';
 
 /**
- * Weight of a line kind (0 = not an obstacle: the faint SOI, ghost and debris lines may pass under a label's
- * plate; leaving them out also keeps the grid cheap with every debris orbit drawn).
+ * Weight of a line kind (0 = not an obstacle: the faint SOI, ghost and debris lines may pass under the panel;
+ * leaving them out also keeps the grid cheap with every debris orbit drawn).
  */
 export function lineWeight(kind: LineKind): number {
   switch (kind) {

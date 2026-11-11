@@ -237,7 +237,8 @@ describe('breakpoint re-use in the scene builder', () => {
         const v = moved.vessels.find((x) => `vessel:${x.id}` === l.id)!;
         const p = scene.proj.projectRoot(v.rRoot);
         expect(Math.hypot(scene.verts.sx[l.start]! - p.x, scene.verts.sy[l.start]! - p.y)).toBeLessThan(1e-6);
-        expect(Math.hypot(scene.verts.sx[l.start + l.count - 1]! - p.x, scene.verts.sy[l.start + l.count - 1]! - p.y)).toBeLessThan(1e-6);
+        const last = l.start + l.count - 1 - l.seam;
+        expect(Math.hypot(scene.verts.sx[last]! - p.x, scene.verts.sy[last]! - p.y)).toBeLessThan(1e-6);
         for (let i = l.start + 1; i < l.start + l.count; i++) expect(scene.verts.u[i]!).toBeGreaterThan(scene.verts.u[i - 1]!);
       }
     }

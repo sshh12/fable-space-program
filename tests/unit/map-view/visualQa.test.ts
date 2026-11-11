@@ -370,7 +370,8 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
     return true;
   };
 
-  it('labels in the low-orbit and translunar views keep off the trajectories', () => {
+  it('every label sits on a plate, and a marker label beside its own trajectory, not on it', () => {
+    let checked = 0;
     for (const scene of ['lowOrbit', 'translunar'] as const) {
       const sim = createFakeSim(defs, { scene });
       const s0 = sim.snapshot();
@@ -383,19 +384,24 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
       const list = map.frame(s, lookAtCamera(v3.scale(W, dist), v3.zero(), (50 * Math.PI) / 180, v3.normalize(s.vessels[0]!.r)), CSS)!;
       const sc = map.currentScene!;
       const plates = list.icons[0].filter((i) => i.shape === ICON.plate);
-      expect(plates.length).toBeGreaterThan(1);
+      const plateOf = (t: { x: number; y: number }) => plates.find((p) => t.x + 1 > p.x - p.hx && t.x + 1 < p.x + p.hx && t.y + 1 > p.y - p.hy && t.y + 1 < p.y + p.hy);
+      // every text run of layer 0 except the count badges lies on a plate
+      for (const t of list.texts[0]) if (!/^\+\d+$/.test(t.text)) expect(plateOf(t), `plate under "${t.text}"`).toBeDefined();
       const v = sc.verts;
-      for (const p of plates) {
+      for (const m of sc.markers) {
+        const run = m.label[0] ? list.texts[0].find((t) => t.text === m.label[0]) : undefined;
+        if (!run) continue;
+        const p = plateOf(run)!;
         const r = { x0: p.x - p.hx + 1, y0: p.y - p.hy + 1, x1: p.x + p.hx - 1, y1: p.y + p.hy - 1 };
-        for (const line of sc.lines) {
-          if (line.kind !== 'current' && line.kind !== 'planned') continue;
-          for (let k = line.start; k < line.start + line.count - 1; k++) {
-            if (v.seg[k] !== 1) continue;
-            expect(segRect(v.sx[k]!, v.sy[k]!, v.sx[k + 1]!, v.sy[k + 1]!, r), `${scene}: a label plate at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) on ${line.id}`).toBe(false);
-          }
+        const line = sc.lines.find((l) => l.patchKey && l.patchKey.list === m.patchKey.list && l.patchKey.index === m.patchKey.index)!;
+        for (let k = line.start; k < line.start + line.count - 1; k++) {
+          if (v.seg[k] !== 1) continue;
+          expect(segRect(v.sx[k]!, v.sy[k]!, v.sx[k + 1]!, v.sy[k + 1]!, r), `${scene}: the label of ${m.id} on its own line ${line.id}`).toBe(false);
         }
+        checked++;
       }
     }
+    expect(checked).toBeGreaterThan(1);
   });
 
   it('at the Earth-Moon overview the Earth is named and nothing is drawn over its disc', () => {

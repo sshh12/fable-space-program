@@ -42,18 +42,6 @@ test('synthetic chain: every marker kind, both nodes, current-position and at-in
   expect(lines.filter((l) => l.id.startsWith('vessel:debris')).length).toBe(0);
   const shot = await saveScreenshot(page, 'map-view', 'synthetic-chain');
   assertRealImage(shot.stats, 'synthetic-chain', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
-  // (at the overview the debris sit in the Earth's cluster: the pointer picks the nearest one)
-  const debris = d.find((e) => e.kind === 'vessel' && e.id.startsWith('debris') && e.visible)!;
-  expect(debris).toBeDefined();
-  await page.mouse.move(debris.x, debris.y);
-  await frames(page, 3);
-  const hovered = (await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'));
-  expect(hovered).toHaveLength(1);
-  const picked = d.find((e) => `vessel:${e.id}` === hovered[0]!.id)!;
-  expect(Math.hypot(picked.x - debris.x, picked.y - debris.y)).toBeLessThan(14);
-  await page.mouse.move(5, 5);
-  await frames(page, 3);
-  expect((await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(0);
 
   // At intercept: the lunar patches move to the Moon's position at the SOI entry of their encounter (the
   // planned flyby starts inside the current encounter at node A, so both share one ghost).
@@ -76,6 +64,24 @@ test('synthetic chain: every marker kind, both nodes, current-position and at-in
   expect(Math.hypot(node1.x - ghost!.x, node1.y - ghost!.y)).toBeLessThan(40);
   const shot2 = await saveScreenshot(page, 'map-view', 'synthetic-chain-intercept');
   assertRealImage(shot2.stats, 'synthetic-chain-intercept', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
+  await expectNoErrors(page, pageLog);
+});
+
+test('debris are dots; the hovered one shows its orbit', async ({ page, pageLog }) => {
+  await openLab(page, 'scene=synthetic&dist=9e7&quiet=1');
+  const d = await describeMap(page);
+  expect((await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(0);
+  // a debris dot with nothing else near it (the pointer then picks it)
+  const lone = d.find((e) => e.kind === 'vessel' && e.id.startsWith('debris') && e.visible && d.every((o) => o === e || !o.visible || Math.hypot(o.x - e.x, o.y - e.y) > 14))!;
+  expect(lone).toBeDefined();
+  await page.mouse.move(lone.x, lone.y);
+  await frames(page, 3);
+  const hovered = (await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'));
+  expect(hovered.map((l) => l.id)).toEqual([`vessel:${lone.id}`]);
+  await saveScreenshot(page, 'map-view', 'hover-debris-orbit');
+  await page.mouse.move(5, 5);
+  await frames(page, 3);
+  expect((await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(0);
   await expectNoErrors(page, pageLog);
 });
 

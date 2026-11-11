@@ -104,6 +104,11 @@ export interface LineRecord {
   /** Set for trajectories of the active vessel. */
   patchKey?: PatchKey;
   patch?: Patch;
+  /**
+   * Trailing vertices that only close the seam of a whole ellipse (VertexArrays.appendLine): the ring itself
+   * ends at `start + count - 1 - seam`, on its first vertex.
+   */
+  seam: number;
   /** Vertices on screen and in front of the eye (for tests and the lab statistics). */
   visibleVertices: number;
   /** Larger side of the screen bounding box of the vertices in front of the eye, device px. */
@@ -190,6 +195,7 @@ export interface BodyItem extends PointItem {
 
 export interface VesselItem extends PointItem {
   vesselId: string;
+  bodyId: string;
   name: string;
   active: boolean;
   debris: boolean;
@@ -237,6 +243,11 @@ export class VertexArrays {
   front = new Uint8Array(0);
   /** 1 when the segment from this vertex to the next one is drawn (both ends in front, not the line's end). */
   seg = new Uint8Array(0);
+  /**
+   * 1 when the segment to the next vertex is not drawn but is the neighbour of a drawn one (the seam of a closed
+   * ring): the GPU joins the drawn segments there instead of capping them.
+   */
+  join = new Uint8Array(0);
 
   reserve(extra: number): void {
     const need = this.n + extra;
@@ -264,6 +275,7 @@ export class VertexArrays {
     this.fade = grow(this.fade);
     this.front = grow8(this.front);
     this.seg = grow8(this.seg);
+    this.join = grow8(this.join);
     this.capacity = cap;
   }
 
@@ -274,9 +286,16 @@ export class VertexArrays {
    * in float64. Also fills the drawn-segment flags, the cumulative screen length along drawn segments (the dash
    * phase, from the line's first vertex: the node end of a planned patch), and `out` with the line's vertex
    * range, its visible vertex count and the larger side of its screen bounding box.
+   *
+   * A `closed` line (a whole ellipse, its last vertex on its first) is written with its second and third
+   * vertices once more at the end; the first and the last segment then only serve as join neighbours, so every
+   * drawn segment, the ones at the seam included, has a neighbour on both sides (no end caps there).
    */
-  appendLine(proj: Projector, count: number, xs: ArrayLike<number>, ys: ArrayLike<number>, zs: ArrayLike<number>, us: ArrayLike<number>, out: LineSpan): void {
-    this.reserve(2 * count);
+  appendLine(proj: Projector, count: number, xs: ArrayLike<number>, ys: ArrayLike<number>, zs: ArrayLike<number>, us: ArrayLike<number>, out: LineSpan, closed = false): void {
+    const wrap = closed && count >= 4;
+    const total = wrap ? count + 2 : count;
+    const turn = wrap ? us[count - 1]! - us[0]! : 0;
+    this.reserve(2 * total);
     const vx = this.vx;
     const vy = this.vy;
     const vz = this.vz;
@@ -301,11 +320,14 @@ export class VertexArrays {
     let x1 = -Infinity;
     let y1 = -Infinity;
     let prevFront = false;
-    for (let i = 0; i < count; i++) {
-      const x = xs[i]!;
-      const y = ys[i]!;
-      const z = zs[i]!;
-      const u = us[i]!;
+    let ringEnd = start;
+    for (let i = 0; i < total; i++) {
+      // after the ring's last vertex: its 2nd and 3rd vertex again, one turn on in the parameter
+      const src = i < count ? i : i - count + 1;
+      const x = xs[src]!;
+      const y = ys[src]!;
+      const z = zs[src]!;
+      const u = us[src]! + (i < count ? 0 : turn);
       const depth = -z;
       // |x| + |y| + |z| bounds the distance from above: most vertices pass without a square root
       const f = depth > near2 && (depth > CLIP_DEPTH_REL * (Math.abs(x) + Math.abs(y) + depth) || depth > CLIP_DEPTH_REL * Math.sqrt(x * x + y * y + z * z));
@@ -346,16 +368,19 @@ export class VertexArrays {
       }
       j++;
       prevFront = f;
+      if (i === count - 1) ringEnd = j - 1;
     }
     // links, dash length, statistics (one pass over what was written)
     const tt = this.t;
     const alpha = this.alpha;
     const fade = this.fade;
+    const join = this.join;
     for (let q = start; q < j; q++) {
       tt[q] = NaN;
       alpha[q] = 1;
       fade[q] = 0;
       seg[q] = 0;
+      join[q] = 0;
       if (front[q] !== 1) {
         len[q] = L;
         continue;
@@ -375,10 +400,22 @@ export class VertexArrays {
       if (py < y0) y0 = py;
       if (py > y1) y1 = py;
     }
+    if (wrap) {
+      // the first and the last segment repeat the seam's pieces: join neighbours only
+      if (seg[start] === 1) {
+        seg[start] = 0;
+        join[start] = 1;
+      }
+      if (seg[j - 2] === 1) {
+        seg[j - 2] = 0;
+        join[j - 2] = 1;
+      }
+    }
     this.n = j;
     out.start = start;
     out.count = j - start;
     out.visible = visible;
+    out.seam = j - 1 - ringEnd;
     out.span = x1 >= x0 ? Math.max(x1 - x0, y1 - y0) : 0;
   }
 }
@@ -387,6 +424,8 @@ export class VertexArrays {
 export interface LineSpan {
   start: number;
   count: number;
+  /** Vertices after the ring's last one (seam of a closed line). */
+  seam: number;
   visible: number;
   span: number;
 }
@@ -477,7 +516,7 @@ interface NodeCache {
 export class SceneBuilder {
   private readonly sampler = new Sampler();
   private readonly verts = new VertexArrays();
-  private readonly span: LineSpan = { start: 0, count: 0, visible: 0, span: 0 };
+  private readonly span: LineSpan = { start: 0, count: 0, seam: 0, visible: 0, span: 0 };
   private readonly tmpV: Vec3 = { x: 0, y: 0, z: 0 };
   /** Curve objects, reused by index every build. */
   private readonly curves: ViewConic[] = [];
@@ -688,7 +727,7 @@ export class SceneBuilder {
       // Debris are dots: only vessels drawn as arrowheads need their heading on screen.
       const speed = v.controllable ? v3.len(v.v) : 0;
       const heading = speed > 0 ? this.axisScreen(scene, view, v3.scale(v.v, 1 / speed)) : NO_HEADING;
-      const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view, vesselId: v.id, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable, dirX: heading.extent > 0 ? heading.dx : 0, dirY: heading.extent > 0 ? heading.dy : 0 };
+      const item: VesselItem = { id: v.id, x: 0, y: 0, front: false, hidden: 1, view, vesselId: v.id, bodyId: v.bodyId, name: v.name, active: v.id === snapshot.activeVesselId, debris: !v.controllable, dirX: heading.extent > 0 ? heading.dx : 0, dirY: heading.extent > 0 ? heading.dy : 0 };
       this.place(scene, item);
       scene.vessels.push(item);
     }
@@ -887,8 +926,9 @@ export class SceneBuilder {
     const s = this.sampleLine(id, curve, u0, u1, proj, tolerance);
     if (s.count < 2) return null;
     const out = this.span;
-    this.verts.appendLine(proj, s.count, s.vx, s.vy, s.vz, s.u, out);
-    const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
+    const closed = curve.kind === 'E' && Math.abs(u1 - u0 - TWO_PI) <= REUSE_PARAM_EPS;
+    this.verts.appendLine(proj, s.count, s.vx, s.vy, s.vz, s.u, out, closed);
+    const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, seam: out.seam, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
     scene.lines.push(rec);
     return rec;
   }
@@ -1069,7 +1109,7 @@ export class SceneBuilder {
     const b = proj.toView(v3.addScaled(origin, dir, r1));
     const out = this.span;
     this.verts.appendLine(proj, 2, [a.x, b.x], [a.y, b.y], [a.z, b.z], [r0, r1], out);
-    scene.lines.push({ kind: list, id: `${list}/${index}`, start: out.start, count: out.count, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: out.visible, span: out.span, capped: false, evaluations: 0, occlusionSlack: 0 });
+    scene.lines.push({ kind: list, id: `${list}/${index}`, start: out.start, count: out.count, seam: out.seam, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: out.visible, span: out.span, capped: false, evaluations: 0, occlusionSlack: 0 });
   }
 
   /** Orbit of another vessel from its state (cached while the state and time are unchanged). */
