@@ -11,10 +11,11 @@ import type { AtmosphereSample, VesselEnvironment } from '@/core/contracts/simIn
 import { VACUUM } from '@/core/contracts/simInternal';
 import type { SurfaceKind, TerrainProvider } from '@/core/contracts/terrain';
 import { oceanSwellHeight } from '@/core/geo/oceanSwell';
-import type { Quat } from '@/core/math/quat';
+import { quat, type Quat } from '@/core/math/quat';
 import type { Vec3 } from '@/core/math/vec3';
 import { atmosphereFunction } from '../bodies/atmosphere';
 import type { BodyInfo, BodySystem } from '../bodies/bodySystem';
+import { primeMeridianAngle } from '../bodies/rotation';
 
 /** Altitude above which `surfaceKind` is decided from the band-limited surface instead of the collision surface, m. */
 const SURFACE_KIND_COLLISION_CEILING = 3000;
@@ -115,21 +116,32 @@ export class WorldEnv implements VesselEnvironment {
   }
 }
 
-/** Body orientation cache for one instant: orientation quaternions are evaluated once per body per time. */
+/**
+ * Body orientations for the world clock. The world keeps time as a base instant plus an offset (whole
+ * physics steps, or a presentation offset): at simulation epochs of 1e9 s a float64 `ut` resolves only
+ * 1.2e-7 s, which is 50 micrometres of ground travel at the Earth's equator. Evaluating the prime-meridian
+ * angle as W(base) + rate x offset keeps the rotation exactly uniform from step to step and from frame to
+ * frame (a landed vessel then moves uniformly at any display rate).
+ */
 export class OrientationCache {
-  private ut = NaN;
-  private readonly q = new Map<string, Quat>();
+  private baseUt = NaN;
+  private readonly wBase = new Map<string, number>();
   constructor(private readonly system: BodySystem) {}
-  at(bodyId: string, ut: number): Quat {
-    if (ut !== this.ut) {
-      this.q.clear();
-      this.ut = ut;
+
+  /** BCBF -> ROOT orientation of a body at `baseUt + offset`. */
+  at(bodyId: string, baseUt: number, offset: number): Quat {
+    const m = this.system.body(bodyId).rotation;
+    if (m.kind === 'none') return { x: 0, y: 0, z: 0, w: 1 };
+    if (baseUt !== this.baseUt) {
+      this.wBase.clear();
+      this.baseUt = baseUt;
     }
-    let q = this.q.get(bodyId);
-    if (!q) {
-      q = this.system.orientation(bodyId, ut);
-      this.q.set(bodyId, q);
+    let w = this.wBase.get(bodyId);
+    if (w === undefined) {
+      w = primeMeridianAngle(m, baseUt);
+      this.wBase.set(bodyId, w);
     }
-    return q;
+    const h = 0.5 * (w + m.rate * offset);
+    return quat.mul(m.qPole, { x: 0, y: 0, z: Math.sin(h), w: Math.cos(h) });
   }
 }

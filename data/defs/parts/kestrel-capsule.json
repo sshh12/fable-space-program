@@ -2,7 +2,7 @@
   "id": "kestrel-capsule",
   "name": "Kestrel crew capsule",
   "category": "command",
-  "dryMass": 4590,
+  "dryMass": 4640,
   "comOffset": [
     0,
     0.5,
@@ -57,7 +57,7 @@
     },
     {
       "resource": "Ablator",
-      "capacity": 200,
+      "capacity": 150,
       "tankBottomY": -0.45,
       "tankHeight": 0.12
     }

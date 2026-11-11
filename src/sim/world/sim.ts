@@ -269,6 +269,9 @@ class World implements SimWorld, MilestoneHost {
   private stepCount = 0;
   /** Presentation lag behind the sim state, s in [0, PHYSICS_DT). */
   private lag = 0;
+  /** The step time being computed, and its offset from the clock base (kept apart for precision). */
+  private splitUt = NaN;
+  private splitOffset = 0;
   private lastAdvanceOnRails = false;
   private railsWarpActive = false;
 
@@ -371,10 +374,19 @@ class World implements SimWorld, MilestoneHost {
     this.stateSerial++;
   }
 
+  /**
+   * BCBF -> ROOT orientation of a body at `ut`, evaluated as the orientation at the clock base plus the
+   * rotation over the offset: whole physics steps for the current time (exactly uniform from step to step).
+   */
+  private orientAt(bodyId: string, ut: number): Quat {
+    const offset = ut === this.ut ? this.stepsSinceBase * PHYSICS_DT : ut - this.utBase;
+    return this.orient.at(bodyId, this.utBase, offset);
+  }
+
   private envAt(e: Entry, ut: number): WorldEnv {
     const base = this.bases.get(e.bodyId)!;
     const r = e.vessel.r;
-    e.env.aim(base, ut, this.orient.at(e.bodyId, ut), Math.hypot(r.x, r.y, r.z) - base.info.radius);
+    e.env.aim(base, ut, this.orientAt(e.bodyId, ut), Math.hypot(r.x, r.y, r.z) - base.info.radius);
     return e.env;
   }
 
@@ -491,7 +503,7 @@ class World implements SimWorld, MilestoneHost {
     const e = this.active;
     const base = this.bases.get(e.bodyId)!;
     if (base.hasTerrain) {
-      const dirFixed = quat.rotateInv(this.orient.at(e.bodyId, this.ut), v3.normalize(e.vessel.r));
+      const dirFixed = quat.rotateInv(this.orientAt(e.bodyId, this.ut), v3.normalize(e.vessel.r));
       const alt = v3.len(e.vessel.r) - base.info.radius;
       if (sc.start.kind === 'pad') {
         const site = this.defs.sites[sc.site]!;
@@ -509,7 +521,7 @@ class World implements SimWorld, MilestoneHost {
       const a = this.active;
       const abase = this.bases.get(a.bodyId)!;
       if (abase.hasTerrain) {
-        const dirFixed = quat.rotateInv(this.orient.at(a.bodyId, this.ut), v3.normalize(a.vessel.r));
+        const dirFixed = quat.rotateInv(this.orientAt(a.bodyId, this.ut), v3.normalize(a.vessel.r));
         const radius = Math.max(8, structureOf(a.vessel).boundingRadius * 0.25 + 3);
         for (let guard = 0; guard < 4096; guard++) if (this.terrain.prewarmCollision(a.bodyId, dirFixed, radius, 4096) === 0) break;
       }
@@ -675,7 +687,8 @@ class World implements SimWorld, MilestoneHost {
       if (e === this.active) this.patchesDirty = true;
     }
     if (e.orbit !== null) {
-      const s = propagate(e.orbit, utNew);
+      // A step time is the clock base plus whole steps: propagate with the two apart (exact time of flight).
+      const s = utNew === this.splitUt ? propagate(e.orbit, this.utBase, this.splitOffset) : propagate(e.orbit, utNew);
       this.setFromCom(e, s.r, s.v);
     }
     return true;
@@ -711,7 +724,7 @@ class World implements SimWorld, MilestoneHost {
     this.pushEvent({ type: 'soiChange', ut, vesselId: e.vessel.id, fromBodyId: from, toBodyId: to });
     if (e !== this.active) return;
     const pred = this.soiPrediction && this.soiPrediction.from === from && this.soiPrediction.to === to ? this.soiPrediction.ut : null;
-    this.milestones.noteSoiChange(from, to, ut, pred);
+    this.milestones.noteSoiChange(from, to, this.info(to).parentId === from, ut, pred);
     this.soiPrediction = null;
     this.patchesDirty = true;
     const alt = v3.len(e.vessel.r) - this.info(to).radius;
@@ -800,8 +813,10 @@ class World implements SimWorld, MilestoneHost {
     if (this.stepsSinceControl % CONTROL_TICK_STEPS === 0) this.boundaryWork();
     const ut0 = this.ut;
     const dt = PHYSICS_DT;
-    this.stepsSinceBase++;
-    const utNew = this.utBase + this.stepsSinceBase * dt;
+    const stepNumber = this.stepsSinceBase + 1;
+    const utNew = this.utBase + stepNumber * dt;
+    this.splitUt = utNew;
+    this.splitOffset = stepNumber * dt;
     this.updateSasHold(this.active);
     let incomplete = false;
     for (let k = 0; k < this.entries.length; k++) {
@@ -816,6 +831,7 @@ class World implements SimWorld, MilestoneHost {
       }
     }
     if (incomplete) this.incompleteQueries++;
+    this.stepsSinceBase = stepNumber;
     this.ut = utNew;
     this.tick++;
     this.stepCount++;
@@ -972,7 +988,7 @@ class World implements SimWorld, MilestoneHost {
     if (e.removed) return;
     e.removed = true;
     const body = this.info(e.bodyId);
-    const dirFixed = quat.rotateInv(this.system.orientation(e.bodyId, ut), v3.normalize(e.vessel.r));
+    const dirFixed = quat.rotateInv(this.orientAt(e.bodyId, ut), v3.normalize(e.vessel.r));
     const site = this.defs.sites[this.scenario.site]!;
     const siteDir = dirFromLatLon(site.location.latDeg * DEG, site.location.lonDeg * DEG);
     this.fates.push({
@@ -1016,7 +1032,7 @@ class World implements SimWorld, MilestoneHost {
       let dirFixed: Vec3 | null = null;
       const maxElevation = base.def.terrain!.maxElevation;
       if (alt < Math.max(SLOW_ALTITUDE, maxElevation + LOW_RADAR_ALTITUDE + 100)) {
-        dirFixed = quat.rotateInv(this.orient.at(e.bodyId, this.ut), v3.scale(v.r, 1 / rl));
+        dirFixed = quat.rotateInv(this.orientAt(e.bodyId, this.ut), v3.scale(v.r, 1 / rl));
         if (v.hold !== null) {
           regime = true;
           radar = 0;
@@ -1053,7 +1069,7 @@ class World implements SimWorld, MilestoneHost {
     const horiz = v3.reject(g, up);
     const t = vz < -0.5 ? Math.min(20, radar / -vz) : 0;
     if (t <= 0 || v3.len(horiz) < 0.05) return dirFixed;
-    const ahead = quat.rotateInv(this.orient.at(e.bodyId, this.ut), v3.scale(horiz, t / base.info.radius));
+    const ahead = quat.rotateInv(this.orientAt(e.bodyId, this.ut), v3.scale(horiz, t / base.info.radius));
     return v3.normalize(v3.add(dirFixed, ahead));
   }
 
@@ -1074,7 +1090,10 @@ class World implements SimWorld, MilestoneHost {
       const v = a.vessel;
       const base = this.bases.get(a.bodyId)!;
       const rl = v3.len(v.r);
-      const alt = rl - base.info.radius;
+      // Altitude and vertical speed of the centre of mass (what the read-outs and the records show).
+      const com = this.comState(a);
+      const comRadius = v3.len(com.r);
+      const alt = comRadius - base.info.radius;
       // navball auto switch
       this.navballMode = navballModeAfter(this.navballMode, this.prevNavAltitude, alt, base.def.navballSwitchAltitude);
       this.prevNavAltitude = alt;
@@ -1107,7 +1126,7 @@ class World implements SimWorld, MilestoneHost {
         vesselId: v.id,
         bodyId: a.bodyId,
         altitude: alt,
-        verticalSpeed: v3.dot(v.v, up),
+        verticalSpeed: v3.dot(com.v, com.r) / comRadius,
         dynamicPressure: v.aero.q,
         engineBurning: anyEngineBurning(v),
         prelaunch: v.hold === 'clamps',
@@ -1424,7 +1443,8 @@ class World implements SimWorld, MilestoneHost {
     this.lag -= dtReal * factor;
     const maxSteps = MAX_STEPS_PER_FRAME_1X * factor;
     let n = 0;
-    while (this.lag < 0) {
+    // (A remainder within rounding of a whole step is no step: 8 x 1/120 s must cover 4 x 1/60 s.)
+    while (this.lag < -1e-12) {
       if (n >= maxSteps) {
         // Surplus is dropped (slow motion), never a bigger step.
         this.lag = 0;
@@ -1451,6 +1471,7 @@ class World implements SimWorld, MilestoneHost {
       this.lag += PHYSICS_DT;
       n++;
     }
+    if (this.lag < 0) this.lag = 0;
   }
 
   // --------------------------------------------------------------------------------------------- warp
@@ -1752,7 +1773,7 @@ class World implements SimWorld, MilestoneHost {
       return dv && v3.len(dv) > 1e-9 ? v3.normalize(dv) : null;
     }
     const base = this.bases.get(e.bodyId)!;
-    const qf = this.orient.at(e.bodyId, this.ut);
+    const qf = this.orientAt(e.bodyId, this.ut);
     const enu = enuBasis(qf, v.r);
     const vel = this.navballMode === 'surface' ? v3.sub(v.v, v3.cross(base.info.spin, v.r)) : v.v;
     const d = flightDirections(v.r, vel, enu);
@@ -2055,7 +2076,8 @@ class World implements SimWorld, MilestoneHost {
     const v = a.vessel;
     const env = this.envAt(a, this.ut);
     const base = this.bases.get(a.bodyId)!;
-    const o = computeOrbitalReadouts({ system: this.system, bodyId: a.bodyId, r: v.r, v: v.v, ut: this.ut });
+    const com = this.comState(a);
+    const o = computeOrbitalReadouts({ system: this.system, bodyId: a.bodyId, r: com.r, v: com.v, ut: this.ut });
     const vr = vesselReadouts(v, env);
     const data: Record<string, number> = {
       ut: this.ut,
@@ -2240,7 +2262,9 @@ class World implements SimWorld, MilestoneHost {
   private buildReadouts(a: Entry, env: WorldEnv): Readouts {
     const v = a.vessel;
     const base = this.bases.get(a.bodyId)!;
-    const orbital = computeOrbitalReadouts({ system: this.system, bodyId: a.bodyId, r: v.r, v: v.v, ut: this.ut, targetBodyId: this.targetBodyId, patches: this.patches });
+    // Orbital read-outs are those of the centre of mass (the point that follows the conic).
+    const com = this.comState(a);
+    const orbital = computeOrbitalReadouts({ system: this.system, bodyId: a.bodyId, r: com.r, v: com.v, ut: this.ut, targetBodyId: this.targetBodyId, patches: this.patches });
     const vr = vesselReadouts(v, env, this.stageInfos());
     const dirFixed = quat.rotateInv(env.qFixedToInertial, v3.normalize(v.r));
     let launchWindow: Readouts['launchWindow'] = null;
@@ -2276,7 +2300,11 @@ class World implements SimWorld, MilestoneHost {
     const alpha = 1 - lag / PHYSICS_DT;
     const bodies = this.system.buildBodySnapshots(utP);
     const bodyIndex = new Map<string, number>();
-    bodies.forEach((b, i) => bodyIndex.set(b.id, i));
+    bodies.forEach((b, i) => {
+      bodyIndex.set(b.id, i);
+      // Orientation on the world clock (base + offset): the same rotation the physics and landed vessels use.
+      b.qFixedToRoot = this.orient.at(b.id, this.utBase, this.stepsSinceBase * PHYSICS_DT - lag);
+    });
     const a = this.active;
     const vessels: VesselSnapshot[] = [];
     for (const e of this.entries) {
@@ -2294,7 +2322,7 @@ class World implements SimWorld, MilestoneHost {
         vRoot: v3.add(b.vRoot, v.v),
         sunVisibility: e.env.sunVisibility,
       });
-      if (lag > 0) this.present(e, snap, utP, alpha, b.rRoot, b.vRoot);
+      if (lag > 0) this.present(e, snap, utP, lag, alpha, b.rRoot, b.vRoot);
       vessels.push(snap);
     }
     if (this.wreck && a.removed) vessels.push(this.wreck);
@@ -2354,18 +2382,27 @@ class World implements SimWorld, MilestoneHost {
     };
   }
 
-  /** Place a vessel snapshot at the presentation time utP (alpha = fraction of the last step). */
-  private present(e: Entry, snap: VesselSnapshot, utP: number, alpha: number, bodyRoot: Vec3, bodyVel: Vec3): void {
+  /** Place a vessel snapshot at the presentation time utP = simUt - lag (alpha = fraction of the last step). */
+  private present(e: Entry, snap: VesselSnapshot, utP: number, lag: number, alpha: number, bodyRoot: Vec3, bodyVel: Vec3): void {
     const v = e.vessel;
     if (v.hold !== null && v.anchor) {
       // Landed vessels ride the body: evaluate exactly at the presentation time.
-      const qf = this.system.orientation(e.bodyId, utP);
+      const qf = this.orient.at(e.bodyId, this.utBase, this.stepsSinceBase * PHYSICS_DT - lag);
       const sp = this.info(e.bodyId).spin;
       snap.r = quat.rotate(qf, v.anchor.rFixed);
       snap.v = v3.cross(sp, snap.r);
       snap.q = quat.normalize(quat.mul(qf, v.anchor.qFixed));
     } else if (e.orbit !== null) {
-      const s = propagate(e.orbit, utP);
+      // On rails: the conic at the presentation time. For a vessel that is kept current every step this is
+      // taken back from the state at simUt over the (exactly known) lag along the conic's own acceleration
+      // (error below 1e-8 m); `ut` itself resolves only 1.2e-7 s at this epoch, a millimetre at orbital speed.
+      let s: { r: Vec3; v: Vec3 };
+      if (e.tier === 'full') {
+        const c = this.comState(e);
+        const rl = v3.len(c.r);
+        const g = v3.scale(c.r, -this.info(e.bodyId).mu / (rl * rl * rl));
+        s = { r: v3.add(v3.addScaled(c.r, c.v, -lag), v3.scale(g, 0.5 * lag * lag)), v: v3.addScaled(c.v, g, -lag) };
+      } else s = propagate(e.orbit, utP);
       if (e.tier === 'full' && e.prevValid) snap.q = quat.slerp(e.prevQ, v.q, alpha);
       const com = v.mp.com;
       snap.r = v3.sub(s.r, quat.rotate(snap.q, com));

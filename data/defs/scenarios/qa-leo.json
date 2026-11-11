@@ -1,0 +1,31 @@
+{
+  "id": "qa-leo",
+  "name": "QA: parking orbit (third stage and lander stack)",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938242599.0563315,
+  "start": {
+    "kind": "state",
+    "bodyId": "earth",
+    "r": [
+      -6541488.459919502,
+      -565339.8511658625,
+      302633.5215571416
+    ],
+    "v": [
+      461.0610274138544,
+      -7280.051244770133,
+      -2755.5866962181485
+    ],
+    "attitude": "prograde"
+  },
+  "stagesAlreadyFired": 4,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

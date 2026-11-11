@@ -210,10 +210,10 @@ describe('heating of a vessel', () => {
     expect(burned).toBeGreaterThan(0.1);
     expect(burned / expected).toBeGreaterThan(0.99);
     expect(burned / expected).toBeLessThan(1.01);
-    expect(ablator0).toBe(200);
+    expect(ablator0).toBe(150);
     const state = v.parts[0]!.modules.find((m) => m.type === 'heatShield');
     if (!state || state.type !== 'heatShield') throw new Error('no shield state');
-    expect(state.ablatorFraction).toBeCloseTo(v.parts[0]!.resources[1]! / 200, 9);
+    expect(state.ablatorFraction).toBeCloseTo(v.parts[0]!.resources[1]! / 150, 9);
     // Char surface near radiative equilibrium, substrate heated by 2 % of the flux only.
     const tEq = Math.pow(v.aero.heatFlux / (0.85 * STEFAN_BOLTZMANN), 0.25);
     expect(state.surfaceTemp / tEq).toBeGreaterThan(0.97);

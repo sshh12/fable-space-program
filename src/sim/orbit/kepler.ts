@@ -256,9 +256,13 @@ export function stumpff(psi: number): { c2: number; c3: number } {
 
 // ------------------------------------------------------------------------------------------ propagation
 
-/** Time of flight from the epoch reduced to (-period/2, period/2] for closed orbits. */
-function reducedDt(o: Orbit, t: number): number {
-  let dt = t - o.t0;
+/**
+ * Time of flight from the epoch reduced to (-period/2, period/2] for closed orbits. `offset` is added to
+ * t - t0: a caller that keeps time as a base instant plus a small offset passes them apart, so the time
+ * of flight keeps the offset's precision (at epochs of 1e9 s a float64 instant resolves only 1.2e-7 s).
+ */
+function reducedDt(o: Orbit, t: number, offset = 0): number {
+  let dt = t - o.t0 + offset;
   const P = o.period;
   if (P !== null) {
     dt %= P;
@@ -383,9 +387,9 @@ export function lagrangeCoefficients(o: Orbit, t: number): { f: number; g: numbe
   return { f, g, fdot, gdot, chi, r: rm };
 }
 
-/** State at time t written into outR / outV (allocation-free; for hot loops). */
-export function propagateInto(o: Orbit, t: number, outR: Vec3, outV: Vec3): void {
-  const dt = reducedDt(o, t);
+/** State at time t (+ offset, see reducedDt) written into outR / outV (allocation-free; for hot loops). */
+export function propagateInto(o: Orbit, t: number, outR: Vec3, outV: Vec3, offset = 0): void {
+  const dt = reducedDt(o, t, offset);
   const chi = solveUniversalAnomaly(o, dt);
   const chi2 = chi * chi;
   const psi = chi2 * o.alpha;
@@ -408,11 +412,14 @@ export function propagateInto(o: Orbit, t: number, outR: Vec3, outV: Vec3): void
   outV.z = fdot * r0.z + gdot * v0.z;
 }
 
-/** State at time t (BCI of the orbit's body). Always evaluated from the epoch state. */
-export function propagate(o: Orbit, t: number): StateVector {
+/**
+ * State at time t (BCI of the orbit's body). Always evaluated from the epoch state. With `offset` the
+ * state is that at t + offset, the two kept apart for precision (see reducedDt).
+ */
+export function propagate(o: Orbit, t: number, offset = 0): StateVector {
   const r = { x: 0, y: 0, z: 0 };
   const v = { x: 0, y: 0, z: 0 };
-  propagateInto(o, t, r, v);
+  propagateInto(o, t, r, v, offset);
   return { r, v };
 }
 

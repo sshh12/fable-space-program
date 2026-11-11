@@ -135,7 +135,7 @@ describe('public facade (no VesselEnvironment)', () => {
     expect(parts).toHaveLength(42);
     const cap = parts[0]!;
     expect(cap).toMatchObject({ instanceId: 'capsule', def: 'kestrel-capsule', shielded: true, maxTemp: 1400 });
-    expect(cap.resources).toEqual({ RCSProp: 150, Ablator: 200 });
+    expect(cap.resources).toEqual({ RCSProp: 150, Ablator: 150 });
     expect(cap.modules.map((m) => m.type)).toEqual(defs.parts['kestrel-capsule']!.modules.map((m) => m.type));
     expect(cap.modules[0]).toEqual({ type: 'command', crew: 3, crewAlive: true });
     expect(parts.find((p) => p.instanceId === 'descent-stage')!.shielded).toBe(true);

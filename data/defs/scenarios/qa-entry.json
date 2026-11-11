@@ -1,0 +1,31 @@
+{
+  "id": "qa-entry",
+  "name": "QA: capsule five minutes before the entry interface",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938919949.2359293,
+  "start": {
+    "kind": "state",
+    "bodyId": "earth",
+    "r": [
+      1752959.7198278252,
+      3281635.6751371315,
+      6179534.698370932
+    ],
+    "v": [
+      -4691.442621969898,
+      6848.428249878509,
+      -6330.424528068847
+    ],
+    "attitude": "retrograde"
+  },
+  "stagesAlreadyFired": 8,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

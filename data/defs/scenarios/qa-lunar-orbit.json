@@ -1,0 +1,31 @@
+{
+  "id": "qa-lunar-orbit",
+  "name": "QA: 100 km lunar orbit (lander stack)",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938524761.8437053,
+  "start": {
+    "kind": "state",
+    "bodyId": "moon",
+    "r": [
+      -522639.36877557234,
+      -1644813.8760435332,
+      -620793.1229186467
+    ],
+    "v": [
+      -1561.8546174010978,
+      371.90718368442396,
+      317.53118561472445
+    ],
+    "attitude": "prograde"
+  },
+  "stagesAlreadyFired": 5,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

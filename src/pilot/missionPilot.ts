@@ -56,15 +56,23 @@ const GATE_HEIGHT = 130;
 const GATE_SINK = -5;
 /** Fraction of the available deceleration the braking burn is started at. */
 const BRAKING_IGNITION_FRACTION = 0.9;
-/** Nominal ground distance from the entry point of the predicted trajectory (140 km) to splashdown, m. */
-export const ENTRY_DOWN_RANGE = 3280000;
+/**
+ * Nominal ground distance from the entry point of the predicted trajectory (top of the atmosphere) to
+ * splashdown for a 45 km vacuum perigee flown on the lift-vector rule, m, as a function of the compass
+ * heading of the entry track: calibrated with tools/sim/entryCorridor.ts (about 3 300 km eastbound, with
+ * the Earth's rotation, 2 900 km on a southbound track, less against the rotation; +/- 250 km with the
+ * perigee between 40 and 50 km).
+ */
+export function entryDownRange(heading: number): number {
+  return 2900000 + 400000 * Math.sin(heading);
+}
 /** Nominal trans-Earth injection delta-v the departure search starts from, and its limits, m/s. */
 const TEI_NOMINAL_DV = 900;
 const TEI_MIN_DV = 835;
 const TEI_MAX_DV = 1010;
 const TEI_MAX_REVOLUTIONS = 26;
 /** Out-of-plane tilt of the departure from the Moon that the lunar ascent sets up, degrees. */
-const RETURN_PLANE_TILT = 8;
+const RETURN_PLANE_TILT = 10;
 /** Time from lunar lift-off to the departure that the ascent plane is chosen for, s. */
 const DEPARTURE_DELAY = 18 * 3600;
 /** Weight of a metre per second against 25 km of splash miss in the first trans-Earth correction. */
@@ -1137,7 +1145,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     const R = this.rootDef.radius;
     // Eastward (prograde) returns count positive: the entry then flies with the Earth's rotation.
     const signedPerigee = (p.conic.W.z >= 0 ? 1 : -1) * periapsisRadius(p.conic);
-    const splash = predictSplash(patches, this.bodySnap(this.rootId), R, this.rootDef.atmosphere?.simTop ?? 0, this.s.simUt, ENTRY_DOWN_RANGE);
+    const splash = predictSplash(patches, this.bodySnap(this.rootId), R, this.rootDef.atmosphere?.simTop ?? 0, this.s.simUt, entryDownRange);
     const misses = splash ? zoneMisses(this.s.surfaceTargets, this.rootId, R, splash.latitude, splash.longitude) : [];
     return { signedPerigee, splash, misses };
   }
@@ -1148,23 +1156,9 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     return (info.signedPerigee - (this.rootDef.radius + RETURN_PERIGEE_ALTITUDE)) / 1000;
   }
 
-  /**
-   * How far the entry point of a return is from the ring of points one nominal down-range away from a
-   * zone centre: zero when some entry heading puts the splash on the centre. The heading is settled later
-   * (it is a cheap plane change far from the Earth); the injection only has to choose the arrival time.
-   */
-  private ringMisses(info: ReturnInfo): { zone: SurfaceTarget; miss: number; fraction: number }[] {
-    const R = this.rootDef.radius;
-    const out: { zone: SurfaceTarget; miss: number; fraction: number }[] = [];
-    if (!info.splash) return out;
-    const entry = dirFromLatLon(info.splash.entryLatitude, info.splash.entryLongitude);
-    for (const t of this.s.surfaceTargets) {
-      if (t.kind !== 'recovery' || t.bodyId !== this.rootId) continue;
-      const miss = Math.abs(arc(entry, dirFromLatLon(t.latitude, t.longitude)) * R - ENTRY_DOWN_RANGE);
-      out.push({ zone: t, miss, fraction: miss / t.radius });
-    }
-    out.sort((a, b) => a.fraction - b.fraction);
-    return out;
+  /** Distance of the predicted splash point of a return from the centre of every recovery zone, nearest (by fraction of the radius) first. */
+  private splashMisses(info: ReturnInfo): { zone: SurfaceTarget; miss: number; fraction: number }[] {
+    return info.misses.map((m) => ({ zone: m.zone, miss: m.distance, fraction: m.fraction }));
   }
 
   private lunarOrbitReturn(): void {
@@ -1186,7 +1180,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
       // 1. Where on the orbit: sweep the node round one revolution and bracket the perigee crossing.
       const samples = 30;
       let prev: { x: number; f: number } | null = null;
-      let bracket: { a: number; b: number } | null = null;
+      let bracket: { a: { x: number; f: number }; b: { x: number; f: number } } | null = null;
       let near = { x: t0, f: Infinity };
       for (let k = 0; k <= samples && !bracket; k++) {
         const x = t0 + (k * period) / samples;
@@ -1194,38 +1188,46 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
         const f = residual(yield { ut: x, prograde: TEI_NOMINAL_DV, normal: 0, radial: 0 });
         if (Number.isFinite(f)) {
           if (Math.abs(f) < Math.abs(near.f)) near = { x, f };
-          if (prev && prev.f * f <= 0 && Math.abs(prev.f) < 4e5 && Math.abs(f) < 4e5) bracket = { a: prev.x, b: x };
+          if (prev && prev.f * f <= 0 && Math.abs(prev.f) < 4e5 && Math.abs(f) < 4e5) bracket = { a: prev, b: { x, f } };
           prev = { x, f };
         } else prev = null;
       }
-      let base: NodeVars = { ut: bracket ? 0.5 * (bracket.a + bracket.b) : near.x, prograde: TEI_NOMINAL_DV, normal: 0, radial: 0 };
-      const solve = function* (from: NodeVars, iterations: number): Generator<NodeVars, NodeVars, SimSnapshot> {
-        const res = yield* solveRoot(from, { key: 'ut', residual, firstStep: 3, maxStep: period / 40, tolerance: 25, maxIterations: iterations }, budget);
-        return res.best;
+      let base: NodeVars = { ut: bracket ? 0.5 * (bracket.a.x + bracket.b.x) : near.x, prograde: TEI_NOMINAL_DV, normal: 0, radial: 0 };
+      const firstBracket = bracket;
+      // The node time that puts the perigee right for the candidate's delta-v (null: it did not converge).
+      const solve = function* (from: NodeVars, iterations: number, known?: typeof firstBracket): Generator<NodeVars, NodeVars | null, SimSnapshot> {
+        const res = yield* solveRoot(from, { key: 'ut', residual, firstStep: 3, maxStep: period / 40, tolerance: 25, maxIterations: iterations, ...(known ? { bracket: known } : {}) }, budget);
+        return res.cost <= 60 ? res.best : null;
       };
-      base = yield* solve(base, 10);
+      const first = yield* solve(base, 14, firstBracket);
+      if (!first) return null;
+      base = first;
       // 2. Which revolution: each one later brings the Earth round by a twelfth of a turn under the entry
       //    point. Take the first one that puts a zone within reach in daylight, else the nearest.
       let best: { vars: NodeVars; zone: SurfaceTarget; miss: number; fraction: number; rev: number; sun: number } | null = null;
       let from = base;
       const score = (x: { fraction: number; sun: number }): number => x.fraction + (x.sun > 2 * DEG ? 0 : 0.35);
-      for (let rev = 0; rev < TEI_MAX_REVOLUTIONS && budget.left > 60; rev++) {
-        const cand = yield* solve({ ...from, ut: from.ut + (rev === 0 ? 0 : period) }, 5);
+      for (let rev = 0; rev < TEI_MAX_REVOLUTIONS && budget.left > 70; rev++) {
+        const cand = rev === 0 ? from : yield* solve({ ...from, ut: from.ut + period }, 5);
+        if (!cand) {
+          from = { ...from, ut: from.ut + period };
+          continue;
+        }
         from = cand;
         budget.left--;
         const i = info(yield cand);
         if (!i || !i.splash) continue;
-        const m = self.ringMisses(i)[0];
+        const m = self.splashMisses(i)[0];
         if (!m) continue;
         const sun = sunElevation(self.bodySnap(self.rootId), self.s.simUt, m.zone.latitude, m.zone.longitude, i.splash.entryUt + 900);
         if (!best || score({ fraction: m.fraction, sun }) < score(best)) best = { vars: cand, zone: m.zone, miss: m.miss, fraction: m.fraction, rev, sun };
-        if (best.fraction < 0.12 && best.sun > 2 * DEG) break;
+        if (best.fraction < 0.3 && best.sun > 2 * DEG) break;
       }
       if (!best) return null;
       // 3. Trim the arrival time with the delta-v handle (the node time is re-solved for the perigee each time).
       const zone = best.zone;
       const ringMiss = (i: ReturnInfo | null): number => {
-        const m = i ? self.ringMisses(i).find((x) => x.zone.id === zone.id) : undefined;
+        const m = i ? self.splashMisses(i).find((x) => x.zone.id === zone.id) : undefined;
         return m ? m.miss : Infinity;
       };
       let cur = best.vars;
@@ -1233,10 +1235,11 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
       for (const step of [12, 4, 1.5]) {
         for (const dir of [1, -1]) {
           let moved = false;
-          while (budget.left > 12 && curMiss > 30000) {
+          while (budget.left > 20 && curMiss > 50000) {
             const trial: NodeVars = { ...cur, prograde: cur.prograde + dir * step };
             if (trial.prograde < TEI_MIN_DV || trial.prograde > TEI_MAX_DV) break;
-            const solved = yield* solve(trial, 5);
+            const solved = yield* solve(trial, 6);
+            if (!solved) break;
             budget.left--;
             const miss = ringMiss(info(yield solved));
             if (!(miss < curMiss)) break;
@@ -1259,8 +1262,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
         if (c && this.zone !== c.zone) {
           this.zone = c.zone;
           this.report['teiRevolutionsWaited'] = c.rev;
-          this.report['teiPlannedRingMiss'] = c.miss;
-          this.note(`return aimed at "${c.zone.name}": entry point ${(c.miss / 1000).toFixed(0)} km off the down-range ring round its centre, departure ${c.rev} revolution(s) on, Sun ${(c.sun * RAD).toFixed(0)} deg up there at arrival`);
+          this.report['teiPlannedSplashMiss'] = c.miss;
+          this.note(`return aimed at "${c.zone.name}": predicted splash ${(c.miss / 1000).toFixed(0)} km from its centre, departure ${c.rev} revolution(s) on, Sun ${(c.sun * RAD).toFixed(0)} deg up there at arrival`);
         }
         const i = this.returnInfo(s.patches.planned);
         if (!i) return 'the planned trajectory does not return to the Earth';
@@ -1299,7 +1302,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     if (!i) return { cost: 1e7, perigee: NaN, miss: NaN, residuals: null };
     const peErr = (i.signedPerigee - (R + RETURN_PERIGEE_ALTITUDE)) / 1000;
     if (!i.splash) return { cost: Math.abs(peErr) + 1e4, perigee: Math.abs(i.signedPerigee) - R, miss: NaN, residuals: null };
-    if (!this.zone) this.zone = this.ringMisses(i)[0]?.zone ?? i.misses[0]?.zone ?? null;
+    if (!this.zone) this.zone = i.misses[0]?.zone ?? null;
     let east = 0;
     let north = 0;
     let miss = 0;

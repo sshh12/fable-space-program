@@ -210,10 +210,10 @@ describe('mass properties', () => {
     expect(v.mp.mass).toBeCloseTo(5000, 6);
     const cap = defs.parts['kestrel-capsule']!;
     // Roll inertia: both parts are bodies of revolution about Y, the capsule dry mass is offset in z.
-    const capIy = 4590 * (1.75 * 1.75) / 2;
+    const capIy = 4640 * (1.75 * 1.75) / 2;
     expect(v.mp.i[1]).toBeGreaterThan(capIy);
     expect(v.mp.i[1]).toBeLessThan(capIy * 1.2);
-    expect(v.mp.com.z).toBeCloseTo((4590 * cap.comOffset[2]) / 5000, 9);
+    expect(v.mp.com.z).toBeCloseTo((4640 * cap.comOffset[2]) / 5000, 9);
     expect(v.mp.com.x).toBeCloseTo(0, 12);
     // Inverse really is the inverse.
     const I = v.mp.i;

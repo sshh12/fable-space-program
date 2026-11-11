@@ -75,6 +75,8 @@ interface RuleState {
 interface SoiEvent {
   from: string;
   to: string;
+  /** True when `to` is a child of `from` (an SOI was entered); false when the vessel left `from` for its parent. */
+  entered: boolean;
   ut: number;
   predictedUt: number | null;
 }
@@ -119,8 +121,8 @@ export class MilestoneEvaluator {
   noteStageFired(stageIndex: number): void {
     this.stagesSeen.add(stageIndex);
   }
-  noteSoiChange(from: string, to: string, ut: number, predictedUt: number | null): void {
-    this.soiEvents.push({ from, to, ut, predictedUt });
+  noteSoiChange(from: string, to: string, entered: boolean, ut: number, predictedUt: number | null): void {
+    this.soiEvents.push({ from, to, entered, ut, predictedUt });
   }
   noteChuteDeployed(mode: 'drogue' | 'main', data: Record<string, number>): void {
     this.chuteEvents.push({ mode, data });
@@ -225,7 +227,8 @@ export class MilestoneEvaluator {
         }
         case 'soiEnter':
         case 'soiExit': {
-          const ev = this.soiEvents.find((e) => (t.kind === 'soiEnter' ? e.to === t.bodyId : e.from === t.bodyId));
+          // Entering a body's SOI from its parent, or leaving it for the parent (entering a child is not an exit).
+          const ev = this.soiEvents.find((e) => (t.kind === 'soiEnter' ? e.entered && e.to === t.bodyId : !e.entered && e.from === t.bodyId));
           if (ev) {
             this.fire(r, host, ev.ut, {
               soiUt: ev.ut,

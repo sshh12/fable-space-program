@@ -25,9 +25,13 @@ export interface FlightOptions {
   launchDelay?: number;
   sloppy?: boolean;
   thrustScale?: number;
+  /** Override of the pilot's departure-plane tilt, degrees (experiments). */
+  tiltDeg?: number;
   quiet?: boolean;
   /** Observer at every control tick. */
   onTick?: (snapshot: SimSnapshot, sim: SimWorld) => void;
+  /** Told the pilot's phase at every control tick (before onTick). */
+  phaseProbe?: (phase: string) => void;
 }
 
 export interface FlightResult {
@@ -69,6 +73,7 @@ export async function flyMission(opts: FlightOptions = {}): Promise<FlightResult
   const pilotOptions: MissionPilotOptions = {};
   if (opts.launchDelay) pilotOptions.launchDelay = opts.launchDelay;
   if (opts.sloppy) pilotOptions.pitchProgramme = SLOPPY_PITCH_PROGRAMME;
+  if (opts.tiltDeg !== undefined) pilotOptions.returnPlaneTiltDeg = opts.tiltDeg;
   if (!opts.quiet) pilotOptions.onLog = (e) => console.log(`[${fmtMet(e.met)}] ${e.phase}: ${e.note}`);
   const pilot = createMissionPilot(defs, sim.scenario, pilotOptions);
   let seen = 0;
@@ -82,6 +87,7 @@ export async function flyMission(opts: FlightOptions = {}): Promise<FlightResult
         const m = s.milestones[seen++]!;
         if (!opts.quiet) console.log(`[${fmtMet(m.data['met'] ?? 0)}] MILESTONE ${m.id}`);
       }
+      opts.phaseProbe?.(pilot.phase);
       opts.onTick?.(s, sim);
     },
   });
@@ -111,6 +117,8 @@ if (invokedDirectly) {
   const ts = arg('thrust-scale');
   if (ts !== undefined) o.thrustScale = Number(ts);
   if (flag('sloppy')) o.sloppy = true;
+  const tilt = arg('tilt');
+  if (tilt !== undefined) o.tiltDeg = Number(tilt);
   if (flag('quiet')) o.quiet = true;
   const res = await flyMission(o);
   const r = res.run;

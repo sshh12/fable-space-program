@@ -1,0 +1,31 @@
+{
+  "id": "qa-drogues",
+  "name": "QA: capsule under drogues at 7 km over the recovery zone",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938920858.605988,
+  "start": {
+    "kind": "state",
+    "bodyId": "earth",
+    "r": [
+      -1106836.4067019552,
+      6051533.569502559,
+      1683069.9961867009
+    ],
+    "v": [
+      -432.52407941397433,
+      -165.74032899755662,
+      -40.47936840003683
+    ],
+    "attitude": "retrograde"
+  },
+  "stagesAlreadyFired": 9,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

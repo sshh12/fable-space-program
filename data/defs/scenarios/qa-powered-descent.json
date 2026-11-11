@@ -1,0 +1,31 @@
+{
+  "id": "qa-powered-descent",
+  "name": "QA: descent orbit, 15 km perilune up-range of the landing target",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938533590.3268073,
+  "start": {
+    "kind": "state",
+    "bodyId": "moon",
+    "r": [
+      -1649830.446526367,
+      490764.56321013207,
+      376603.0598290662
+    ],
+    "v": [
+      589.917073832719,
+      1477.906714857983,
+      546.2572313388193
+    ],
+    "attitude": "retrograde"
+  },
+  "stagesAlreadyFired": 6,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

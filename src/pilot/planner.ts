@@ -88,18 +88,13 @@ export interface RootSpec {
   maxStep: number;
   tolerance: number;
   maxIterations: number;
+  /** Two points already known to straddle the root (e.g. from a sweep); the solve then starts between them. */
+  bracket?: { a: { x: number; f: number }; b: { x: number; f: number } };
 }
 
 /** Secant iteration on one node variable, safeguarded by bisection once the root is bracketed. */
 export function* solveRoot(initial: NodeVars, spec: RootSpec, budget: Budget): Generator<NodeVars, SearchResult, SimSnapshot> {
   const at = (x: number): NodeVars => ({ ...initial, [spec.key]: x });
-  let x0 = initial[spec.key];
-  budget.left--;
-  let f0 = spec.residual(yield at(x0), at(x0));
-  let best = at(x0);
-  let bestAbs = Math.abs(f0);
-  if (bestAbs <= spec.tolerance || budget.left <= 0) return { best, cost: bestAbs };
-  let x1 = x0 + spec.firstStep;
   let lo: { x: number; f: number } | null = null;
   let hi: { x: number; f: number } | null = null;
   const note = (x: number, f: number): void => {
@@ -108,7 +103,26 @@ export function* solveRoot(initial: NodeVars, spec: RootSpec, budget: Budget): G
       if (!lo || Math.abs(f) < Math.abs(lo.f)) lo = { x, f };
     } else if (!hi || Math.abs(f) < Math.abs(hi.f)) hi = { x, f };
   };
+  let x0 = initial[spec.key];
+  if (spec.bracket) {
+    note(spec.bracket.a.x, spec.bracket.a.f);
+    note(spec.bracket.b.x, spec.bracket.b.f);
+    const a = spec.bracket.a;
+    const b = spec.bracket.b;
+    if (Number.isFinite(a.f) && Number.isFinite(b.f) && a.f !== b.f) x0 = a.x - (a.f * (b.x - a.x)) / (b.f - a.f);
+  }
+  budget.left--;
+  let f0 = spec.residual(yield at(x0), at(x0));
+  let best = at(x0);
+  let bestAbs = Number.isFinite(f0) ? Math.abs(f0) : Infinity;
+  if (bestAbs <= spec.tolerance || budget.left <= 0) return { best, cost: bestAbs };
   note(x0, f0);
+  let x1 = x0 + spec.firstStep;
+  {
+    const l = lo as { x: number; f: number } | null;
+    const h = hi as { x: number; f: number } | null;
+    if (l && h) x1 = 0.5 * (l.x + h.x);
+  }
   for (let i = 0; i < spec.maxIterations && budget.left > 0; i++) {
     budget.left--;
     const f1 = spec.residual(yield at(x1), at(x1));

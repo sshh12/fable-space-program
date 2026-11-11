@@ -1,0 +1,22 @@
+{
+  "id": "qa-lunar-surface",
+  "name": "QA: landed at the Tranquillity target",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938534815.3601075,
+  "start": {
+    "kind": "landed",
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999
+  },
+  "stagesAlreadyFired": 6,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

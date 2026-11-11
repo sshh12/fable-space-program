@@ -1,0 +1,31 @@
+{
+  "id": "qa-translunar",
+  "name": "QA: translunar coast (lander stack)",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae-lc1",
+  "startUt": 938274718.07316,
+  "start": {
+    "kind": "state",
+    "bodyId": "earth",
+    "r": [
+      -40839710.00713025,
+      -74183662.63495716,
+      -24535264.30341061
+    ],
+    "v": [
+      -502.7339037542356,
+      -2557.4269821527528,
+      -916.8745797143681
+    ],
+    "attitude": "prograde"
+  },
+  "stagesAlreadyFired": 5,
+  "target": "moon",
+  "suggestedLanding": {
+    "bodyId": "moon",
+    "latDeg": 0.661471,
+    "lonDeg": 23.435999,
+    "name": "Mare Tranquillitatis"
+  },
+  "milestones": []
+}

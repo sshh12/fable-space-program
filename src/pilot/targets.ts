@@ -89,12 +89,12 @@ export interface SplashPrediction {
 /**
  * Splash point of a predicted return to `body`: the point where the arriving conic comes down through
  * `entryAltitude` (the top of the atmosphere, where the map shows the atmosphereEntry marker), advanced by
- * `downRange` metres along the ground track there (the surface-relative velocity direction; the body's
+ * `downRange(heading)` metres along the ground track there (the surface-relative velocity direction; the body's
  * rotation during the descent is in that direction already to first order). For a trajectory whose
  * perigee is still above `entryAltitude` the perigee point takes the place of the entry point, so that the
  * prediction stays continuous while a correction is being dragged through the atmosphere's edge.
  */
-export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bodyRadius: number, entryAltitude: number, snapshotUt: number, downRange: number): SplashPrediction | null {
+export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bodyRadius: number, entryAltitude: number, snapshotUt: number, downRange: (heading: number) => number): SplashPrediction | null {
   let patch: Patch | undefined;
   for (const p of patches) {
     if (p.bodyId !== body.id) continue;
@@ -120,10 +120,11 @@ export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bod
   const trackFixed = quat.rotateInv(qf, v3.normalize(v3.reject(surf, up)));
   const entryDir = quat.rotateInv(qf, up);
   const entryLL = latLonOfDir(entryDir);
-  const splash = travel(entryDir, trackFixed, downRange / bodyRadius);
-  const ll = latLonOfDir(splash);
   const east = v3.normalize(v3.cross({ x: 0, y: 0, z: 1 }, entryDir));
   const north = v3.cross(entryDir, east);
+  const heading = Math.atan2(v3.dot(trackFixed, east), v3.dot(trackFixed, north));
+  const splash = travel(entryDir, trackFixed, downRange(heading) / bodyRadius);
+  const ll = latLonOfDir(splash);
   return {
     latitude: ll.latitude,
     longitude: ll.longitude,
@@ -131,7 +132,7 @@ export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bod
     entryLongitude: entryLL.longitude,
     entryUt: t,
     vacuumPerigeeAltitude: rp - bodyRadius,
-    heading: Math.atan2(v3.dot(trackFixed, east), v3.dot(trackFixed, north)),
+    heading,
   };
 }
 
