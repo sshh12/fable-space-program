@@ -62,7 +62,7 @@ export interface BladeDef {
 export const BLADES: readonly BladeDef[] = [
   { angle: 0.035, amplitude: 1.0, length: 0.27, fan: 0.018, asymmetry: 1.25 },
   { angle: -0.06, amplitude: 0.55, length: 0.17, fan: 0.028, asymmetry: 0.75 },
-  { angle: 0.085, amplitude: 1.45, length: 0.46, fan: 0.012, asymmetry: 1.35 },
+  { angle: 0.085, amplitude: 1.75, length: 0.62, fan: 0.012, asymmetry: 1.35 },
   { angle: -0.025, amplitude: 0.8, length: 0.22, fan: 0.022, asymmetry: 0.65 },
   { angle: 0.05, amplitude: 1.2, length: 0.31, fan: 0.016, asymmetry: 1.0 },
   { angle: -0.075, amplitude: 0.2, length: 0.12, fan: 0.03, asymmetry: 1.5 },
@@ -100,7 +100,7 @@ const normaliseTint = (c: Vec3Tuple): Vec3Tuple => {
 export const STARBURST: StarburstDef = {
   haloEnergy: 0.0025,
   haloAngle: 0.25,
-  haloTint: normaliseTint([0.97, 0.9, 1.5]),
+  haloTint: normaliseTint([0.95, 0.92, 1.22]),
   rayEnergy: 0.0027,
   rayKnee: 0.02,
   rayDiscSigma: 0.5,

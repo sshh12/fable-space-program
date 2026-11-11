@@ -28,6 +28,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, MeshData, RenderContext, RenderFeature } from '@/core/contracts/render';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -65,6 +66,12 @@ export interface SkyLab {
    * and `azimuthDeg` clockwise from north (or from the camera's horizontal view direction with fromCamera).
    */
   setSunForVessel(mode: 'night' | { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean } | null): void;
+  /**
+   * Move a body (not the star, not the vessel's own body) so that it stands at `elevationDeg` above the active vessel's
+   * horizon and `azimuthDeg` clockwise from north (or from the camera's horizontal view direction), at its own
+   * distance from the vessel's body; null puts it back where the sim has it. (The Moon risen or set for a low orbit.)
+   */
+  setBodyForVessel(bodyId: string, place: { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean } | null): void;
   /** Active vessel `h` m above its body's datum (null = the sim's position), over ground at `groundAltitude` m (default 0 = the datum). */
   setVesselAltitude(h: number | null, groundAltitude?: number): void;
   /** Camera at `position` (ROOT, default the ROOT origin) looking at RA / Dec (deg), north up. */
@@ -617,26 +624,31 @@ async function boot(): Promise<void> {
   });
   if (query.get('night') === '1') setSunForVessel('night');
 
+  /** Direction (ROOT) at `elevationDeg` / `azimuthDeg` in the active vessel's horizon frame ('night' = its nadir). */
+  function vesselSkyDir(s: SimSnapshot, mode: 'night' | { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean }): Vec3 | null {
+    const v = s.vessels.find((x) => x.id === s.activeVesselId);
+    if (!v) return null;
+    const body = s.bodies.find((b) => b.id === v.bodyId)!;
+    const up = v3.normalize(v3.sub(v.rRoot, body.rRoot));
+    if (mode === 'night') return v3.neg(up);
+    // Azimuth from north, or (fromCamera) from the camera's horizontal view direction, clockwise seen from above.
+    const ref = mode.fromCamera ? quat.rotate(app.cameraState().qViewToRoot, { x: 0, y: 0, z: -1 }) : { x: 0, y: 0, z: 1 };
+    const north0 = v3.reject(ref, up);
+    const north = v3.lenSq(north0) > 1e-12 ? v3.normalize(north0) : v3.normalize(v3.anyOrthogonal(up));
+    const east = v3.cross(north, up);
+    const az = mode.azimuthDeg * DEG;
+    const el = mode.elevationDeg * DEG;
+    return v3.normalize(v3.add(v3.scale(v3.add(v3.scale(north, Math.cos(az)), v3.scale(east, Math.sin(az))), Math.cos(el)), v3.scale(up, Math.sin(el))));
+  }
+
   function setSunForVessel(mode: 'night' | { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean } | null): void {
-    if (!mode) {
-      overrides.sunDir = null;
-      return;
-    }
-    overrides.sunDir = (s) => {
-      const v = s.vessels.find((x) => x.id === s.activeVesselId);
-      if (!v) return null;
-      const body = s.bodies.find((b) => b.id === v.bodyId)!;
-      const up = v3.normalize(v3.sub(v.rRoot, body.rRoot));
-      if (mode === 'night') return v3.neg(up);
-      // Azimuth from north, or (fromCamera) from the camera's horizontal view direction, clockwise seen from above.
-      const ref = mode.fromCamera ? quat.rotate(app.cameraState().qViewToRoot, { x: 0, y: 0, z: -1 }) : { x: 0, y: 0, z: 1 };
-      const north0 = v3.reject(ref, up);
-      const north = v3.lenSq(north0) > 1e-12 ? v3.normalize(north0) : v3.normalize(v3.anyOrthogonal(up));
-      const east = v3.cross(north, up);
-      const az = mode.azimuthDeg * DEG;
-      const el = mode.elevationDeg * DEG;
-      return v3.normalize(v3.add(v3.scale(v3.add(v3.scale(north, Math.cos(az)), v3.scale(east, Math.sin(az))), Math.cos(el)), v3.scale(up, Math.sin(el))));
-    };
+    overrides.sunDir = mode ? (s) => vesselSkyDir(s, mode) : null;
+  }
+
+  function setBodyForVessel(bodyId: string, place: { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean } | null): void {
+    const dirs = (overrides.bodyDirs ??= {});
+    if (place) dirs[bodyId] = (s) => vesselSkyDir(s, place);
+    else delete dirs[bodyId];
   }
 
   const lab: Omit<SkyLab, 'cpu'> = {
@@ -647,6 +659,7 @@ async function boot(): Promise<void> {
       overrides.sunDir = dir ? () => dir : null;
     },
     setSunForVessel,
+    setBodyForVessel,
     setVesselAltitude(h, groundAltitude = 0) {
       overrides.vesselAltitude = h;
       overrides.groundAltitude = groundAltitude;

@@ -17,6 +17,12 @@ export interface WorldOverrides {
    * readouts.altitudeRadar = max(0, vesselAltitude - groundAltitude). 0 = ground on the datum.
    */
   groundAltitude: number;
+  /**
+   * Bodies moved about the active vessel's body: for each body id a unit direction (ROOT) from the active vessel's
+   * body, or null to keep the sim's place. The body keeps its distance from that body (the Moon set or risen as
+   * seen from a vessel in low orbit without waiting for the sim's clock).
+   */
+  bodyDirs?: Record<string, (s: SimSnapshot) => Vec3 | null>;
 }
 
 export function withOverrides(inner: Sim, o: WorldOverrides): Sim {
@@ -47,6 +53,20 @@ export function withOverrides(inner: Sim, o: WorldOverrides): Sim {
         });
         out = { ...out, bodies };
       }
+    }
+    for (const [id, f] of Object.entries(o.bodyDirs ?? {})) {
+      const d = f(out);
+      const active = out.vessels.find((v) => v.id === out.activeVesselId);
+      const pivot = active && out.bodies.find((b) => b.id === active.bodyId);
+      const star = out.bodies.find((b) => b.id === out.starId);
+      if (!d || !pivot || !star || id === pivot.id || id === out.starId) continue;
+      const bodies: BodySnapshot[] = out.bodies.map((b) => {
+        if (b.id !== id) return b;
+        const rRoot = v3.addScaled(pivot.rRoot, v3.normalize(d), v3.dist(b.rRoot, pivot.rRoot));
+        const to = v3.sub(star.rRoot, rRoot);
+        return { ...b, rRoot, sunDir: v3.normalize(to), sunDistance: v3.len(to) };
+      });
+      out = { ...out, bodies };
     }
     return out;
   };
