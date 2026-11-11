@@ -483,3 +483,26 @@ describe('audio listener', () => {
     expect(buildAudioListener(defs, s, { ...fromChase, mode: 'pad-camera', focusVesselId: null }).attachedVesselId).toBeNull();
   });
 });
+
+describe('chase rig on a surface (request app-integration-3)', () => {
+  it('sees a vertical vessel standing on the pad from its starboard side, clear of the tower off its ventral side', () => {
+    const s = sim('pad').snap();
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    expect(v.situation).toBe('prelaunch');
+    const cam = createChaseRig({ defs }).update(s, IDLE, DT);
+    const eye = v3.normalize(rel(s, cam));
+    const starboard = quat.rotate(v.q, v3.unitX());
+    const ventral = quat.rotate(v.q, v3.new(0, 0, -1));
+    // 12 deg above the horizontal plane, on the starboard side: cos 12 deg of it along +X, nothing toward ventral.
+    expect(v3.dot(eye, starboard)).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
+    expect(Math.abs(v3.dot(eye, ventral))).toBeLessThan(0.02);
+  });
+
+  it('still faces the ventral side of a vertical vessel in flight', () => {
+    const s = sim('ascent').snap();
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    const cam = createChaseRig({ defs }).update(s, IDLE, DT);
+    const eye = v3.normalize(rel(s, cam));
+    expect(v3.dot(eye, quat.rotate(v.q, v3.new(0, 0, -1)))).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
+  });
+});

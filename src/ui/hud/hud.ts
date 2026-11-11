@@ -146,6 +146,9 @@ const HEATING_FLUX = 1000;
 /** Share of the fatal g-dose from which the dose bar turns red (amber below). */
 const DOSE_WARNING = 2 / 3;
 
+/** Longest list of full stage groups (characters, about two lines) the resources panel spells out. */
+const FULL_LINE_CHARS = 64;
+
 /** G load from which the g-dose line holds its place outside the atmosphere (a powered burn). */
 const DOSE_SLOT_G = 0.5;
 
@@ -919,15 +922,22 @@ export function createHud(opts: HudOptions): HudImpl {
       resKey = key;
       resGroupsEl.replaceChildren();
       resSlots = [];
-      // One line per group in use (its resource that runs out first), the full groups folded into one line.
+      // One line per group in use (its resource that runs out first: the group's name and share, the bar under
+      // them across the panel, so a long name reads in full), the full groups folded into one line: their names
+      // while they fit on it, else their count (the names in its tooltip).
       for (const g of sum.inUse) {
         const pb = bar();
         const pct = new TextSlot(g.amount);
-        const line = el('div', 'rrow', [el('span', 'rn', [g.label]), pb.root, el('span', 'rp', [pct.node])]);
+        const line = el('div', 'rrow', [el('span', 'rn', [g.label]), el('span', 'rp', [pct.node]), pb.root]);
         resGroupsEl.append(line);
         resSlots.push({ fill: pb.fill, pct, low: classFlag(pb.root, 'caution'), title: new AttrSlot(line, 'title') });
       }
-      if (sum.full.length > 0) resGroupsEl.append(el('div', sum.inUse.length > 0 ? 'full' : 'full only', [el('b', '', [sum.inUse.length > 0 ? 'Full' : 'All full']), ` ${sum.full.join(' · ')}`]));
+      if (sum.full.length > 0) {
+        const names = sum.full.join(' · ');
+        const listed = names.length <= FULL_LINE_CHARS;
+        const what = listed ? names : `${sum.full.length} stage groups`;
+        resGroupsEl.append(el('div', sum.inUse.length > 0 ? 'full' : 'full only', [el('b', '', [sum.inUse.length > 0 ? 'Full' : 'All full']), ` ${what}`], listed ? {} : { title: names }));
+      }
     }
     sum.inUse.forEach((g, i) => {
       const slot = resSlots[i];

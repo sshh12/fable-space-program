@@ -112,11 +112,15 @@ export function createChaseRig(opts: ChaseRigOptions): FlightCameraRig & { setOr
       // Start behind the previous view direction so the switch reads as one continuous move.
       dir = v3.neg(viewForward(from.qViewToRoot));
     } else {
-      // Behind the nose when it is not vertical, else facing the ventral side; slightly above the plane.
+      // Behind the nose when it is not vertical, else facing the ventral side; slightly above the plane. Standing
+      // on a surface (on the pad, landed) a vertical vessel is seen from its starboard side instead: a launch
+      // site's umbilical tower stands off the ventral side, and looking through its lattice hides the vehicle
+      // (request app-integration-3).
       const nose = quat.rotate(v.q, v3.unitY());
       const up = quat.rotate(frame, v3.unitZ());
       let h = v3.reject(v3.neg(nose), up);
-      if (v3.len(h) < 0.2) h = v3.reject(quat.rotate(v.q, v3.new(0, 0, -1)), up);
+      const standing = v.situation === 'prelaunch' || v.situation === 'landed';
+      if (v3.len(h) < 0.2) h = v3.reject(quat.rotate(v.q, standing ? v3.unitX() : v3.new(0, 0, -1)), up);
       if (v3.len(h) < 1e-6) h = quat.rotate(frame, v3.unitX());
       dir = v3.normalize(h);
     }

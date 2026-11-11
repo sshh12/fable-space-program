@@ -32,7 +32,7 @@ struct Frame {
   vq0: vec4f, vq1: vec4f, vq2: vec4f,  // rows of VES -> ROOT rotation
   vinfo: vec4f,                         // x cylinder count, y marker (map) 0/1, z height px, w radians per pixel
   bodies: array<Body, 3>,
-  cyl: array<Cyl, 8>,
+  cyl: array<Cyl, 10>,
 };
 @group(0) @binding(0) var<uniform> F: Frame;
 
@@ -98,13 +98,18 @@ fn stars(d: vec3f) -> vec3f {
     let bb = dot(oc, d);
     let c = h * (2.0 * R + h);
     let disc = bb * bb - c;
-    // Atmosphere rim seen from space.
+    // Atmosphere rim seen from space: a graded limb. The glow follows the lowest height the ray reaches (the
+    // camera's own height for a ray climbing away), so it is continuous across the local horizontal, falls off
+    // upward with the shrinking path through the shell, and the stars fade out behind it.
     if (b.color.w > 0.5 && h > 50000.0) {
-      let closest = length(oc - d * bb);
-      if (bb < 0.0 && closest > R * 0.995) {
-        let k = clamp(1.0 - (closest - R) / 90000.0, 0.0, 1.0);
-        let lit = clamp(dot(normalize(oc - d * bb), sun) * 1.5 + 0.4, 0.0, 1.0);
-        col += vec3f(0.3, 0.55, 1.0) * k * k * lit * 0.9;
+      let closest = select(length(oc), length(oc - d * bb), bb < 0.0);
+      if (closest > R * 0.995) {
+        let up = normalize(oc);
+        let el = max(dot(d, up), 0.0);
+        let k = clamp(1.0 - (closest - R) / 90000.0, 0.0, 1.0) * exp(-el / 0.08);
+        let lit = clamp(dot(normalize(select(oc, oc - d * bb, bb < 0.0)), sun) * 1.5 + 0.4, 0.0, 1.0);
+        let glow = k * k * lit;
+        col = col * (1.0 - clamp(glow * 1.6, 0.0, 1.0)) + vec3f(0.3, 0.55, 1.0) * glow * 0.9;
       }
     }
     if (disc <= 0.0 || bb >= 0.0) { continue; }
@@ -200,7 +205,7 @@ export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylind
   const device = gpu.device;
   const module = device.createShaderModule({ label: 'lab.backdrop', code: WGSL });
   const pipeline = device.createRenderPipeline({ label: 'lab.backdrop', layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: gpu.canvasFormat }] } });
-  const BYTES = (3 + 1 + 1 + 1 + 3 + 1) * 16 + 3 * 6 * 16 + 8 * 16;
+  const BYTES = (3 + 1 + 1 + 1 + 3 + 1) * 16 + 3 * 6 * 16 + 10 * 16;
   const buf = device.createBuffer({ label: 'lab.backdrop', size: BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: buf } }] });
   const data = new Float32Array(BYTES / 4);
@@ -246,7 +251,7 @@ export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylind
         put(rel.x, rel.y, rel.z, R, c[0], c[1], c[2], def.atmosphere ? 1 : 0, h, ph(camFixed.x), ph(camFixed.y), period);
         put(f[0], f[1], f[2], 0, f[3], f[4], f[5], 0, f[6], f[7], f[8], 0);
       }
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 10; i++) {
         const c = cyl[i];
         put(...(c ?? [0, 0, 0, 0]));
       }

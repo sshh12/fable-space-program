@@ -1200,12 +1200,30 @@ function paintTanks(ctx: Ctx, f: Frame, groups: ReturnType<typeof describeResour
   for (const g of groups) {
     const gw = slot * g.bars.length;
     setFont(ctx, 700, px(f, 0.032));
-    text(ctx, g.label.toUpperCase(), gx + gw / 2, groupY, 'center', 'middle', '#c9d5e4', gw);
+    // A group name wider than its tanks goes on two lines (never squeezed).
+    const name = g.label.toUpperCase();
+    const words = name.split(' ');
+    let lines = [name];
+    if (ctx.measureText(name).width > gw * 0.96 && words.length > 1) {
+      let best = 1;
+      let bestW = Infinity;
+      for (let i = 1; i < words.length; i++) {
+        const w = Math.max(ctx.measureText(words.slice(0, i).join(' ')).width, ctx.measureText(words.slice(i).join(' ')).width);
+        if (w < bestW) {
+          bestW = w;
+          best = i;
+        }
+      }
+      lines = [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+    }
+    const lh = f.h * 0.036;
+    lines.forEach((l, i) => text(ctx, l, gx + gw / 2, groupY + (i - (lines.length - 1) / 2) * lh, 'center', 'middle', '#c9d5e4', gw));
+    const ruleY = groupY + f.h * 0.03 + ((lines.length - 1) * lh) / 2;
     ctx.strokeStyle = RULE;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(gx + slot * 0.12, groupY + f.h * 0.03);
-    ctx.lineTo(gx + gw - slot * 0.12, groupY + f.h * 0.03);
+    ctx.moveTo(gx + slot * 0.12, ruleY);
+    ctx.lineTo(gx + gw - slot * 0.12, ruleY);
     ctx.stroke();
     g.bars.forEach((b, i) => {
       const cx = gx + slot * (i + 0.5) + bw * 0.25;

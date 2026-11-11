@@ -88,7 +88,7 @@ export const HUD_CSS = /* css */ `
 .hud .lcol .panel > .ptitle > span:first-child::after, .hud .tc .alt > .ptitle > span:first-child::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(var(--u) * -0.34); height: max(1.5px, calc(var(--u) * 0.22)); background: var(--accent); border-radius: 1px; }
 /* Gunmetal housing of the bottom cluster: lit from above like the bezel (bright top chamfer, dark lower edge). */
 .hud .bottom .sas, .hud .bottom .gauges {
-  background: linear-gradient(180deg, #3a434f 0%, #29303a 0.5em, #1d232a 55%, #13171c 100%);
+  background: linear-gradient(180deg, #3a434f 0, #2a313a 0.45em, #20262d 32%, #1c2228 100%);
   border: 1px solid rgba(0, 0, 0, 0.7);
   box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(225, 235, 248, 0.07), inset -1px 0 0 rgba(0, 0, 0, 0.35), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.4) rgba(0, 0, 0, 0.35);
 }
@@ -283,7 +283,10 @@ export const HUD_CSS = /* css */ `
 .hud .tile.active { border-color: rgba(95, 227, 154, 0.7); background: rgba(9, 30, 22, 0.97); box-shadow: 0 0 0 1px rgba(95, 227, 154, 0.2), var(--edge); }
 .hud .tile.active .sn { color: var(--good); }
 .hud .tile.active .ico { background: rgba(95, 227, 154, 0.18); color: var(--good); }
-.hud .tile.active .act { flex: none; font-size: 0.78em; font-weight: 700; color: var(--good); letter-spacing: 0.06em; border: 1px solid rgba(95, 227, 154, 0.55); border-radius: 0.3em; padding: 0 0.35em; line-height: 1.35; }
+.hud .tile.active .act { flex: none; margin-left: auto; font-size: 0.78em; font-weight: 700; color: var(--good); letter-spacing: 0.06em; border: 1px solid rgba(95, 227, 154, 0.55); border-radius: 0.3em; padding: 0 0.35em; line-height: 1.35; }
+/* The name of what burns is never cut: a long one ("Heron descent stage") sends the ACTIVE tag to a line of its own. */
+.hud .tile.active .l1 { flex-wrap: wrap; row-gap: calc(var(--u) * 0.15); }
+.hud .tile.active .name { flex: 1 0 auto; max-width: 100%; }
 /* Locked: an amber, dimmed tile with a padlock plate and the reason at label size. */
 .hud .tile.next.locked { border-color: rgba(255, 187, 77, 0.85); background: repeating-linear-gradient(135deg, rgba(52, 36, 10, 0.97) 0, rgba(52, 36, 10, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 1.8)); box-shadow: 0 0 0 1px rgba(255, 187, 77, 0.25), var(--edge); cursor: not-allowed; }
 .hud .tile.next.locked .sn { color: var(--caution); }
@@ -302,9 +305,10 @@ export const HUD_CSS = /* css */ `
 
 /* ---------------------------------------------------------------- resources */
 .hud .res { flex: none; }
-.hud .res .rrow { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--u) * 6) 3em; gap: calc(var(--u) * 0.7); align-items: center; font-size: 0.86em; height: 1.4em; contain: size layout style; }
+.hud .res .rrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 1.3em calc(var(--u) * 0.45); column-gap: calc(var(--u) * 0.7); row-gap: calc(var(--u) * 0.12); align-items: center; font-size: 0.86em; height: calc(1.3em + var(--u) * 0.75); contain: size layout style; }
 .hud .res .rrow .rn { color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud .res .rrow .rp { text-align: right; font-weight: 600; }
+.hud .res .rrow .bar { grid-column: 1 / -1; height: calc(var(--u) * 0.45); }
 /* The groups not in use, all full, on one line. */
 .hud .res .full { margin-top: calc(var(--u) * 0.4); padding-top: calc(var(--u) * 0.3); border-top: 1px solid rgba(170, 198, 235, 0.12); font-size: 0.8em; color: var(--label); line-height: 1.3; }
 .hud .res .full.only { margin-top: 0; padding-top: 0; border-top: 0; }

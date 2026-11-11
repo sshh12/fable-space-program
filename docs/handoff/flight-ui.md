@@ -186,7 +186,9 @@ interface HudOptions {
   keyHelp: readonly HudKeyHelpEntry[];                       // keyHelpEntries(input.bindings)
   keyFor?: (action: ButtonAction) => string | null;          // key caps on buttons / stage tile
   commands?: () => PlayerCommands | null;                    // target selection on the pad
+  failureActions?: readonly HudFailureAction[];              // next steps on the mission-failed banner (app shell)
 }
+interface HudFailureAction { label: string; key?: string; title?: string; run(): void }
 interface HudImpl extends Hud {
   readonly root: HTMLElement; readonly visible: boolean; readonly keyHelpOpen: boolean;
   setKeyboardLocked(locked: boolean): void; toggleKeyHelp(force?: boolean): void;
@@ -196,7 +198,9 @@ interface HudImpl extends Hud {
 }
 const HUD_TEXT_HZ = 10;                                             // refresh rate of the numeric text readouts
 
-function createMfdPainter(): MfdPainter & { build(page, snapshot, defs): MfdPageModel };
+function createMfdPainter(opts?: { bodyAlbedo?: (bodyId: string) => BodyAlbedoMap | null }): MfdPainter & { build(page, snapshot, defs): MfdPageModel };
+interface BodyAlbedoMap { width: number; height: number; data: Uint8ClampedArray }  // equirect, row 0 north, col 0 lon -180, sRGB RGBA
+                                                                   // (the tile set's globals.albedoLowRes, as the app loads it for its globe)
 function buildMfdPage(page: MfdPage, snapshot, defs): MfdPageModel;   // { title, rows, section?, status }
 const MFD_PAGES = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
 // shared display models and formatters (HUD and MFD render from these):
@@ -208,8 +212,13 @@ altitudeDatumName(s, defs): 'sea level' | 'datum';                // 'sea level'
 orbitPhase(s, defs): { show; suborbital; periapsisTone };         // phase-aware orbit readout (see HUD below)
 inAtmosphere(s, defs); isDescending(s, defs);                     // flight phase helpers
 landingTargetExpanded(s, defs): boolean;                          // the landing-target panel shows its rows (else one line)
-describeStages(s): { tiles (StageTileView incl. active, actions); active: number; lockout; nextStage; deltaVTotal };
+describeStages(s, defs?): { tiles (StageTileView incl. active, actions, burnName); active: number; lockout; nextStage; deltaVTotal };
                                                                    // active = the fired stage the sim still reports numbers for
+stageBurnLabel(s, defs, index): string | null;                    // what a stage burns: the stage-group labels of the engines its
+                                                                   // igniteEngines actions light ("Meridian M-3"); titles the active tile
+zoneStatus(s, defs): { inside; basis: 'impact' | 'position' } | null;  // recovery-zone light: from an impact prediction, or the
+                                                                   // sub-point landed / below TERMINAL_DESCENT_SPEED (250 m/s) descending
+                                                                   // through air; null in orbit and with only an entry-interface prediction
 stageActionText(actionKinds): string;                             // "separate · deploy chute"
 summarizeResources(groups): { inUse: { id; label; fraction; amount; detail }[]; full: string[] };  // HUD resource panel
 const ABLATOR_REDLINE = 0.3; ablatorTone(f): 'good' | 'warning';  // one ablator rule for HUD and MFD (low is bad)
@@ -433,9 +442,20 @@ shown 1 : 1), `help=1`, `ballast=<iterations>` (perf: GPU ballast), `orbit=<yawD
 `flight=<throttle>,<gLoad>` (a powered flight: throttle, thrust and g in the readouts), `backdrop=bright` (the
 HUD-legibility worst case: a near-white cloud deck / regolith and a pale sky), `attitude=<yaw>,<pitch>,<roll>`
 (the vessel turned by this offset in its own frame, degrees: markers off the nose and a real roll), `dose=<g s>`
-(the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose), `cabin=<url>` (a still
-of the cockpit package's seat-view render shown in place of the backdrop: the interior layout over a real
-cabin). The lab replaces the
+(the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose), `still=<url>` (also
+`cabin=`: a still of the real renderer - the integration package's flight views, the cockpit package's seat
+view - shown in place of the backdrop), `met=<s>` (the mission time to show, to match a still),
+`predicted=impact|entry|none`. Round 5: every scene carries one coherent flight state (`SETUP` in main.ts): a
+mission clock that runs (ascent T+ 00:01:10, low orbit 00:52, translunar 1d 02:21, lunar orbit 3d 04:25, landed
+4d 06:12, entry 8d 02:41, chutes 8d 02:52; the pad stays at 0 until the first stage fires; UT = launch + MET), a
+powered climb in the ascent (throttle 0.86, g from the active stage's TWR), an entry whose dynamic pressure,
+height (exponential atmosphere), stagnation heating (Sutton-Graves) and sink rate (1.3 deg flight-path angle)
+follow from its g load through a ballistic coefficient of 400 kg/m^2, 1 g under the mains, the lander's gear down
+once the gear stage has fired (no gear on the capsule alone), and predictions only where the vessel comes down
+(entry: the recovery zone 1 450 km ahead, the impact 1 425 km down-track; chutes: the impact under the vessel),
+every point placed on the sphere along the FakeSim's ground track and every miss measured from the target. The lab
+vehicle is the mission stack in six stage groups with the mission's ten stages and their engine ignitions. The
+lab replaces the
 FakeSim's generic stage numbers with the mission vehicle's stage table (icons and action kinds of
 meridian-lunar.json, engine stages with plausible delta-v / TWR / burn, gear / chute / jettison stages without
 engines), reported the way the sim reports them: the fired stage that owns the running engines keeps live
