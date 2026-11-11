@@ -13,6 +13,9 @@
  *    edges neither crawl nor jump: frame differences of consecutive frames (fixed time step, no jitter)
  *    stay bounded, without spikes and without a period-2, -4 or -8 pattern (the staggered cascades are
  *    re-rendered every 2nd, 4th or 8th frame).
+ *  - At the landing site under an 8 degree sun the lander's shadow lies on the baked ground where the sun
+ *    puts it (the ground 20 m down-sun is dark, the ground beside the lander is not), and the views the
+ *    descent shows towards the sun from 60 m, 600 m and 5 km are saved for review.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -308,5 +311,64 @@ test('(c) on a pass in a 100 km lunar orbit, shadow edges neither crawl nor jump
   // The vessel moves 27 m per frame, 100 km up: the ground point stays centred and the frame turns slowly.
   judge('lunar orbit pass', s, { mean: 0.02, block: 0.25 });
   record('c.stability.lunar orbit target', target);
+  await expectClean(page, pageLog, info);
+});
+
+test('(c) at the landing site under a low sun the lander casts its shadow on the real ground, and the craters theirs', async ({ page, pageLog }) => {
+  // The lander standing on the baked terrain at the scenario's landing target, the sun 8 degrees up in the
+  // east-south-east (the mission lands at 7 to 32 degrees): the cascades hold a moving caster and the relief.
+  const landing = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'scenarios', 'lunar-direct.json'), 'utf8')) as { suggestedLanding: { bodyId: string; latDeg: number; lonDeg: number } }).suggestedLanding;
+  const SUN_AZ = 100;
+  const SUN_EL = 8;
+  const info = await openIntegration(page, `scene=lunarSurface&hud=0&ev=12&governor=off&probe=casters&sun=${SUN_AZ},${SUN_EL}&sunsite=${landing.bodyId},${landing.latDeg},${landing.lonDeg}&orbit=40,12,45`);
+  requireFeatures(test, info, ['terrain', 'vehicle']);
+  await freeze(page);
+  await settle(page, 60);
+  await save(page, 'shadows-landing-site-low-sun');
+  // Ground points 20 m from the lander: down-sun (in its shadow, which is 60 m long at this elevation) and
+  // across the sun line on either side (in the sun).
+  const offset = (bearingDeg: number, metres: number): { latDeg: number; lonDeg: number } => ({
+    latDeg: landing.latDeg + ((metres * Math.cos((bearingDeg * Math.PI) / 180)) / MOON_RADIUS) * (180 / Math.PI),
+    lonDeg: landing.lonDeg + ((metres * Math.sin((bearingDeg * Math.PI) / 180)) / (MOON_RADIUS * Math.cos((landing.latDeg * Math.PI) / 180))) * (180 / Math.PI),
+  });
+  const sample = async (bearingDeg: number): Promise<number | null> =>
+    page.evaluate(
+      async ([lat, lon, body]) => {
+        const lab = window.__integration!;
+        const ground = await lab.groundHeight(body as string, lat as number, lon as number);
+        const p = lab.project(body as string, lat as number, lon as number, ground + 0.05);
+        const [W, H] = lab.app.renderer.frameContext!.renderSize;
+        if (!p || p.x < 4 || p.y < 4 || p.x > W - 5 || p.y > H - 5) return null;
+        const px = await lab.app.renderer.readHdrPixels('hdr', { x: Math.round(p.x) - 2, y: Math.round(p.y) - 2, width: 5, height: 5 });
+        let sum = 0;
+        for (let i = 0; i < 25; i++) sum += 0.2126 * px.data[i * 4]! + 0.7152 * px.data[i * 4 + 1]! + 0.0722 * px.data[i * 4 + 2]!;
+        return sum / 25 / lab.app.renderer.frameContext!.exposure;
+      },
+      [offset(bearingDeg, 20).latDeg, offset(bearingDeg, 20).lonDeg, landing.bodyId] as const,
+    );
+  const shadow = await sample(SUN_AZ + 180);
+  const sunlit = [await sample(SUN_AZ + 90), await sample(SUN_AZ - 90)].filter((v): v is number => v !== null);
+  expect(shadow, 'the point 20 m down-sun of the lander is in the picture').not.toBeNull();
+  expect(sunlit.length, 'points beside the lander are in the picture').toBeGreaterThan(0);
+  const lit = Math.max(...sunlit);
+  // The same ground from 60 m and 600 m up, looking towards the sun: the pictures the descent shows.
+  const cascades: string[] = [];
+  for (const [height, pitch, name] of [[60, -25, '60m'], [600, -30, '600m'], [5000, -20, '5km']] as const) {
+    await page.evaluate(([lat, lon, h, p]) => window.__integration!.aboveGround('moon', lat!, lon! - 0.002, h!, 80, p!), [landing.latDeg, landing.lonDeg, height, pitch]);
+    await settle(page, 60);
+    cascades.push(`${name}: ${await page.evaluate(() => {
+      const lab = window.__integration!;
+      const list = [...new Set(lab.cascadeLog().map((c) => `${c.index}:${c.fit}:${c.texelSize.toFixed(2)} m`))].sort().join(' | ');
+      lab.clearCascadeLog();
+      return list;
+    })}`);
+    await save(page, `shadows-landing-site-low-sun-${name}`);
+  }
+  console.log(`(c) landing site, sun ${SUN_EL} deg up: ground 20 m down-sun of the lander ${shadow!.toFixed(1)} cd/m^2, beside it ${sunlit.map((v) => v.toFixed(0)).join(' / ')} cd/m^2 (${(100 * (shadow! / lit)).toFixed(1)} %); cascades ${cascades.join('; ')}`);
+  record('c.landingSite', { loaded: info.loaded, landing, sunElevationDeg: SUN_EL, shadow, sunlit, cascades });
+  // A regolith plain under an 8 degree sun reflects some hundred cd/m^2; inside the lander's shadow only
+  // what the ground around and the lander itself throw back reaches it.
+  expect(lit, 'sunlit ground beside the lander (cd/m^2)').toBeGreaterThan(100);
+  expect(shadow! / lit, 'ground in the lander shadow against sunlit ground beside it').toBeLessThan(0.1);
   await expectClean(page, pageLog, info);
 });
