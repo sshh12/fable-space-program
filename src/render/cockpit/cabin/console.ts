@@ -239,7 +239,7 @@ function fdai(ctx: CabinContext, f: Frame, ballR: number, housing: number): void
   if (ctx.detail > 0) return;
   // Roll scale ring printed on the bezel face, fasteners, legend.
   const face = offsetFrame(f, 0, 0, depth);
-  ctx.labelQuad(face, 0, 0, holeR * 2 + 0.03, holeR * 2 + 0.03, '#ROLL', 'bezel', { color: 0, backlit: true, lift: 0.0003 });
+  ctx.labelRing(face, holeR + 0.001, holeR + 0.015, '#ROLL', 'bezel', { color: 0, backlit: true, lift: 0.0003 });
   for (const [x, y] of [[-hs + 0.008, hs - 0.008], [hs - 0.008, hs - 0.008], [-hs + 0.008, -hs + 0.008], [hs - 0.008, -hs + 0.008]] as [number, number][]) {
     b.cylinder(local(face, x, y, 0), f.n, 0.003, 0.0012, 8, ctx.m('steel'), { caps: 'top' });
   }
@@ -296,8 +296,8 @@ export function toggleSwitch(ctx: CabinContext, f: Frame, sw: SwitchDef, key: st
   b.cylinder(local(f, 0, 0, 0), f.n, 0.0072, 0.0035, 6, ctx.m('steel'));
   b.cylinder(local(f, 0, 0, 0.0035), f.n, 0.0046, 0.004, 12, ctx.m('steel'));
   const pivot = local(f, 0, 0, 0.007);
-  const c = ctx.control(key, () => ({ kind: 'toggle', pivot, axis: f.x, binding: sw.binding, angles: [throwDeg * DEG, -throwDeg * DEG] }));
-  // Lever along +n at rest (centre), rotated about +x by the control angle (+ = tip toward +y).
+  // Lever along +n at rest; a rotation by +a about +x tips it toward -y, so "up" (position 0) is -throw.
+  const c = ctx.control(key, () => ({ kind: 'toggle', pivot, axis: f.x, binding: sw.binding, angles: [-throwDeg * DEG, throwDeg * DEG] }));
   b.cylinder(pivot, f.n, 0.0018, 0.019, 8, ctx.m('steel', { ctl: c.index }), { radius1: 0.0028, caps: 'none' });
   b.lathe(local(f, 0, 0, 0.007 + 0.019), f.n, [[0.0028, 0], [0.0032, 0.002], [0.0026, 0.004], [0.0, 0.0045]], 10, ctx.m('steel', { ctl: c.index }));
   const labelMat = panelMat;

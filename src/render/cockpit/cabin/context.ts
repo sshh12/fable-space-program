@@ -205,6 +205,28 @@ export class CabinContext {
     bld.quad(i0, i1, i2, i3);
   }
 
+  /**
+   * A label printed on an annulus (r0..r1) around (0, 0) of frame f: the atlas image covers the square of
+   * side 2 r1, so dial scales can be printed around an opening without covering it.
+   */
+  labelRing(f: Frame, r0: number, r1: number, text: string, mat: string, opts: { color?: number; backlit?: boolean; lift?: number } = {}): void {
+    if (this.detail > 0) return;
+    const rect = this.label(text, 2 * r1, 2 * r1);
+    const attr = this.m(mat, { emit: opts.color ?? 0, flags: opts.backlit ? FLAG_BACKLIT : 0, label: { rect, origin: [-r1, -r1], size: [2 * r1, 2 * r1] } });
+    const lift = opts.lift ?? 0.0004;
+    const n = 64;
+    const base = this.b.vertexCount;
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * 2 * Math.PI;
+      for (const r of [r0, r1]) {
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        this.b.vertex(local(f, x, y, lift), f.n, f.x, [x, y], attr);
+      }
+    }
+    for (let i = 0; i < n; i++) this.b.quad(base + i * 2, base + i * 2 + 2, base + i * 2 + 3, base + i * 2 + 1);
+  }
+
   proxy(frame: Frame, half: [number, number, number], albedo: number): void {
     if (this.detail === 0) this.proxies.push({ frame, half, albedo });
   }

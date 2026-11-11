@@ -65,6 +65,7 @@ interface CockpitLabApi {
   geometry(): { triangles: Record<string, number>; controls: number; labels: number; windows: number; floods: number };
   set(opts: { g?: number; throttle?: number; lights?: boolean }): void;
   keysSeen(): string[];
+  debug(): { navballDefault: boolean; mfdDefault: boolean; exposure: ReturnType<typeof window.__lab extends undefined ? never : NonNullable<typeof window.__lab>['renderer']['exposureInfo']> };
 }
 declare global {
   interface Window {
@@ -305,6 +306,7 @@ async function boot(): Promise<void> {
       if (o.lights !== undefined && o.lights !== app.snapshot().readouts.lightsOn) app.sim.commands.toggleLights();
     },
     keysSeen: () => keys.slice(),
+    debug: () => ({ navballDefault: app.renderer.resources.isDefault('ui.navball'), mfdDefault: app.renderer.resources.isDefault('ui.mfd'), exposure: app.renderer.exposureInfo() }),
   };
   await app.testApi.api.waitFrames(3);
   app.testApi.markReady(app.testApi.api.errors.length === 0);
