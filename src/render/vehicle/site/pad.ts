@@ -147,15 +147,25 @@ export function stairFlight(b: MeshBuilder, from: Vec3Tuple, to: Vec3Tuple, widt
 
 /**
  * Open bar grating in the plane y, centred at (cx, cz), `sx` by `sz`: bearing bars on edge along X (or Z),
- * cross bars, and a banding bar round the panel. LOD 0 has every bearing bar (60 mm pitch); LOD 1 keeps the
- * banding and the cross bars, so the panel stays open; the far LOD has none of it. The sky and the structure
- * above show through it from below, as through the real thing (an opaque textured plate does not).
+ * cross bars, and a banding bar round the panel. LOD 0 has every bearing bar (60 mm pitch) as geometry. Beyond
+ * it the bars are a cut-out texture (`grating`: open where the steel is not, request vehicle-pad-4) on a thin
+ * plate, with the banding and the cross bars still as geometry at LOD 1; the far LOD is the plate alone. The
+ * sky and the structure above show through it from below at every distance, as through the real thing.
+ * `plate: false` leaves the far LOD empty and LOD 1 a bare frame (a panel too small to be seen from afar).
  */
-export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, sx: number, sz: number, alongX = true, coarse = false): void {
-  if (b.lod === 2) return;
+export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, sx: number, sz: number, alongX = true, plate = true): void {
+  if (b.lod === 2 && !plate) return;
   const prev = b.material;
-  b.mat('galvanised');
   const d = 0.035;
+  if (b.lod > 0 && plate) {
+    b.mat('grating');
+    box(b, sx - 0.02, 0.006, sz - 0.02, [cx, y + d / 2 - 0.004, cz], 'grating-plate');
+  }
+  if (b.lod === 2) {
+    b.mat(prev);
+    return;
+  }
+  b.mat('galvanised');
   for (const s of [-1, 1]) {
     box(b, sx, d, 0.012, [cx, y, cz + s * (sz / 2 - 0.006)], 'grating');
     box(b, 0.012, d, sz - 0.024, [cx + s * (sx / 2 - 0.006), y, cz], 'grating');
@@ -168,21 +178,16 @@ export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, 
     if (alongX) box(b, 0.022, d * 0.6, W - 0.024, [cx + t, y - d * 0.15, cz], 'grating');
     else box(b, W - 0.024, d * 0.6, 0.022, [cx, y - d * 0.15, cz + t], 'grating');
   }
-  // `coarse`: LOD 1 keeps bearing bars too, as heavier bars at 200 mm (a grating seen from 6 to 50 m: its
-  // 60 mm bars would be under a pixel apart and alias into glitter, its frame alone would read as no floor).
-  if (b.lod === 0 || coarse) {
-    const fine = b.lod === 0;
-    const nb = Math.max(2, Math.round(W / (fine ? 0.06 : 0.2)));
-    const t0 = fine ? 0.008 : 0.025;
+  if (b.lod === 0) {
+    const nb = Math.max(2, Math.round(W / 0.06));
     for (let i = 1; i < nb; i++) {
       const t = -W / 2 + (W * i) / nb;
-      if (alongX) box(b, L - 0.024, d, t0, [cx, y, cz + t], 'grating');
-      else box(b, t0, d, L - 0.024, [cx + t, y, cz], 'grating');
+      if (alongX) box(b, L - 0.024, d, 0.008, [cx, y, cz + t], 'grating');
+      else box(b, 0.008, d, L - 0.024, [cx + t, y, cz], 'grating');
     }
   }
   b.mat(prev);
 }
-
 /** Handrail along a polyline at height y: posts and two rails. */
 export function handrail(b: MeshBuilder, pts: Vec3Tuple[], height = 1.1, spacing = 2): void {
   if (b.lod === 2) return;

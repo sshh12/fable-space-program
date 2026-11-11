@@ -175,10 +175,18 @@ export class Image {
     }
     return img;
   }
+  /** Set the alpha channel from a function returning 0..1 (stored only when `withAlpha` is set on save). */
+  alpha(f: (u: number, v: number, x: number, y: number) => number): this {
+    for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) this.data[(y * this.w + x) * 4 + 3] = Math.round(clamp(f((x + 0.5) / this.w, (y + 0.5) / this.h, x, y)) * 255);
+    this.withAlpha = true;
+    return this;
+  }
+  withAlpha = false;
   save(file: string): number {
-    const png = new PNG({ width: this.w, height: this.h, colorType: 2, inputColorType: 6, inputHasAlpha: true });
+    const colorType = this.withAlpha ? 6 : 2;
+    const png = new PNG({ width: this.w, height: this.h, colorType, inputColorType: 6, inputHasAlpha: true });
     png.data = Buffer.from(this.data.buffer, this.data.byteOffset, this.data.byteLength);
-    const buf = PNG.sync.write(png, { colorType: 2, inputColorType: 6, inputHasAlpha: true, deflateLevel: 9 });
+    const buf = PNG.sync.write(png, { colorType, inputColorType: 6, inputHasAlpha: true, deflateLevel: 9 });
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, buf);
     return buf.length;

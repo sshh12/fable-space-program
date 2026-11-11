@@ -519,19 +519,15 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
     });
   /**
    * An arm's walkway floor, a model of its own so that it picks its LOD by its own bar pitch: every 60 mm bar
-   * only within a few metres, heavier bars at 200 mm out to about 50 m (at 720p), then a plate of grating
-   * texture (a dark band from below, as a real walkway is at that distance).
+   * as geometry only within a few metres (beyond, they are under a pixel apart and alias into glitter); then
+   * the cut-out grating plate with its frame, and the plate alone far away.
    */
   const armGrating = (name: string, length: number): PartModel =>
     buildModel(
       name,
       (b) => {
         b.mat('galvanised').masks(0.2, 1, 0.3, 0);
-        if (b.lod < 2) gratingPanel(b, -(length - 0.8) / 2, 0.12, 0, length - 0.8, 1.3, true, true);
-        else {
-          b.mat('grating');
-          box(b, length - 0.8, 0.03, 1.3, [-(length - 0.8) / 2, 0.12, 0], 'grating');
-        }
+        gratingPanel(b, -(length - 0.8) / 2, 0.12, 0, length - 0.8, 1.3, true);
       },
       [numParam(params, 'gratingLod1Pixels', 2400), numParam(params, 'gratingLod2Pixels', 300)],
     );

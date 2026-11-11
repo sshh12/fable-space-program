@@ -805,10 +805,12 @@ const recipes: Record<string, () => void> = {
     save('grate_n', normalMap(h, 0.5, 0.5));
     save(
       'grate_albedo',
+      // Alpha is the steel (1) and the opening (0): the material cuts the openings out (request vehicle-pad-4),
+      // so the sky and the structure show through the grating.
       Image.from(S, S, (u, v) => {
         const k = mix(0.045, 0.62 + 0.08 * fbm(u, v, 20, 20, 2, 141), bar(u, v));
         return [k * 0.97, k * 0.985, k];
-      }),
+      }).alpha((u, v) => bar(u, v)),
     );
     save('grate_orm', orm(S, S, (u, v) => [clamp(0.25 + 0.75 * bar(u, v)), 0.9, bar(u, v)]));
   },

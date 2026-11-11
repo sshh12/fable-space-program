@@ -27,6 +27,8 @@ interface Spec {
   emissive?: Vec3Tuple;
   doubleSided?: boolean;
   shading?: PbrMaterialDef['shading'];
+  /** Cut-out: texels whose base-colour alpha is under this are open (bar grating). */
+  alphaCutoff?: number;
 }
 
 const paint = (color: Vec3Tuple, roughness = 0.46, clearcoat = 1, clearcoatRoughness = 0.14): Spec => ({
@@ -71,7 +73,7 @@ const SPECS = {
   copper: { color: [0.86, 0.5, 0.33], metallic: 1, roughness: 0.38, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
   /** Hot-dip galvanised steel after a few years outdoors: the zinc has gone to a dull grey patina, more oxide than metal. */
   galvanised: { color: [1, 1, 1], metallic: 0.45, roughness: 0.6, tile: [0.8, 0.8], tex: { a: 'galv_albedo', n: 'galv_n', o: 'galv_orm' } },
-  grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' } },
+  grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' }, doubleSided: true, alphaCutoff: 0.5 },
   // ---- composites, insulation, thermal protection
   carbon: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.18, tile: [0.25, 0.25], tex: { a: 'carbon_albedo', n: 'carbon_n', o: 'carbon_orm' } },
   'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
@@ -161,6 +163,7 @@ export function materialDef(id: MatId): PbrMaterialDef {
     ...(s.clearcoat !== undefined ? { clearcoat: s.clearcoat, clearcoatRoughness: s.clearcoatRoughness ?? 0.1 } : {}),
     ...(s.anisotropy !== undefined ? { anisotropy: s.anisotropy } : {}),
     ...(s.doubleSided ? { doubleSided: true } : {}),
+    ...(s.alphaCutoff !== undefined ? { alphaCutoff: s.alphaCutoff } : {}),
     ...(s.tex
       ? {
           textures: {
