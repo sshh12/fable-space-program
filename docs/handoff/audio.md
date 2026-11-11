@@ -359,3 +359,15 @@ Listen-proof clips (10 s each, master output, `out/audio/*.wav`; spectrograms wi
   (default: the active vessel for external listeners; the `liftoff-pad` scene's pad camera passes null).
 
 Full list: `docs/handoff/lead-baseline.md`.
+
+## Changes in wave 2 (core-support)
+
+- **Attach range widened** (`data/defs/audio/mix.json`, `propagation.attach.maxDistance` 250 -> 3000 m; the
+  lead offered it in `lead-baseline.md` section 6). The faint structure-borne share of an external camera
+  attached to the vessel now lasts over the whole zoom range of the chase rig (the vehicle allows 3000 m):
+  full within 60 m of the bounding sphere, 0.76 at 1 km, 0.27 at 2 km, none from 3 km. A ground or free
+  camera still hears none (`AudioListener.attachedVesselId` is null there). Tests: `mapping.test.ts`
+  ("reach a chase camera over the whole zoom range of every vehicle"), `model.test.ts` (near / mid / beyond
+  the range). The browser suite is unchanged: 16 of 16, the 50 m -> 2 km criterion still holds (in air the
+  airborne path dominates). The "External structure-borne share" item of "Known limits" above is outdated
+  to that extent.

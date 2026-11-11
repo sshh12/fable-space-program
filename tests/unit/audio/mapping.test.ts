@@ -145,6 +145,18 @@ describe('structure-borne paths', () => {
     const m = attachFactor((prop().attach.fullDistance + prop().attach.maxDistance) / 2, prop());
     expect(m).toBeCloseTo(0.5, 9);
   });
+  it('reach a chase camera over the whole zoom range of every vehicle (vacuum is muffled, not mute)', async () => {
+    // Only a camera attached to the vessel receives this share (AudioListener.attachedVesselId), so the
+    // range follows the chase rigs: full at the default distance, still clearly there halfway out.
+    const defs = await loadDefs(fsDefSource());
+    const chase = Object.values(defs.vehicles).map((v) => v.cameras.chase);
+    expect(chase.length).toBeGreaterThan(0);
+    for (const c of chase) {
+      expect(attachFactor(c.defaultDistance, prop())).toBeGreaterThan(0.95);
+      expect(attachFactor(c.maxDistance / 2, prop())).toBeGreaterThan(0.25);
+      expect(attachFactor(c.maxDistance, prop())).toBeLessThan(0.05);
+    }
+  });
 });
 
 describe('thrust and lever -> level', () => {

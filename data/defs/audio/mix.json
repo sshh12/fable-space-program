@@ -84,7 +84,7 @@
     "attach": {
       "gainDb": -12,
       "fullDistance": 60,
-      "maxDistance": 250
+      "maxDistance": 3000
     },
     "events": {
       "bodyCutoffHz": 700,

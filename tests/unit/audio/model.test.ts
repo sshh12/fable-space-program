@@ -137,11 +137,15 @@ describe('two propagation paths', () => {
     expect(v.paths.body.cutoff).toBeLessThan(400);
   });
 
-  it('an external camera near the vessel hears a faint structure-borne share, a distant one none', () => {
+  it('an external camera near the vessel hears a faint structure-borne share, weaker with distance, none beyond the attach range', () => {
+    const range = cfg.mix.propagation.attach.maxDistance;
     const near = steady({ ...externalAt(40), pressure: 0 }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
-    const far = steady({ ...externalAt(3000), pressure: 0 }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
+    const mid = steady({ ...externalAt(range / 2), pressure: 0 }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
+    const far = steady({ ...externalAt(range + 200), pressure: 0 }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
     expect(near.paths.body.gain).toBeGreaterThan(0);
     expect(gainToDb(near.paths.body.gain)).toBeLessThan(-20);
+    expect(mid.paths.body.gain).toBeGreaterThan(0);
+    expect(mid.paths.body.gain).toBeLessThan(near.paths.body.gain);
     expect(far.paths.body.gain).toBe(0);
   });
 
