@@ -17,6 +17,15 @@ Way (item 12 of `out/qa/wave2/sky-lighting.md`).
 - `docs/handoff/bake-moon-sky.md` section 4.3: the cube is `milkyway_2020` x 0.5 + `hiptyc_2020` minus the
   catalogue stars.
 
+Added 2026-11-11 (same owner, same bake step): the Large Magellanic Cloud is magenta in the cube. Mean of
+3 x 3 texels of mip 4 at RA 80.9, Dec -69.75: stored (44.2, 35.1, 49.7), R/G 1.26 and B/G 1.42; the Small
+Cloud (18.4, 17.5, 23.4). The galactic centre is (42, 28, 19), the Crux band (57, 47, 40), the poles neutral.
+Since the display's toe became hue-preserving (request sky-lighting-3) the screen shows what the data holds:
+a purple cloud beside warm-grey star clouds (`out/screens/sky/pbr-spheres-leo-night.png`, upper left of the
+frame centre). The LMC's integrated colour is that of its stars (B-V about 0.5: a slightly warm white); green
+below both red and blue is not a colour starlight has. Please check whether the SVS Milky Way layer carries an
+H-alpha tint there and, if so, bring the two Clouds to R >= G >= B x 0.9 or the catalogue colour.
+
 ## Requested change
 Composite the handful of extended objects that the eye or a short exposure shows into the cube before the mip
 chain is built, from a freely licensed photographic source (public domain or CC BY / CC BY-SA with the

@@ -94,6 +94,36 @@ test('sky background, probe and flare within their GPU budget at 1440p', async (
     expect(s.probeMean).toBeLessThan(0.08);
     expect(s.flare).toBeLessThan(0.04);
     expect(s.total).toBeLessThan(0.2);
+
+    // The same view on the night side at the dark-adapted exposure (EV100 -6): every catalogue star is far above
+    // the display's black there, the bright ones with image radii of tens of pixels, and the Milky Way's detail
+    // layer is sampled over the whole sky half. No flare (the sun is behind the Earth).
+    await page.evaluate(() => {
+      window.__sky!.setSunForVessel('night');
+      window.__lab!.renderer.setExposureOverride(-6);
+    });
+    const nightStats = await measure(page, 330);
+    const night = summary(nightStats);
+    console.log(`night side at EV100 -6 (ms, ballast ${(nightStats['sky-lab-heavy.burn']?.p50 ?? 0).toFixed(1)} ms): background p99 ${night.background.toFixed(4)} (budget 0.08), probe mean ${night.probeMean.toFixed(4)}, transparent p99 ${(nightStats['sky.transparent']?.p99 ?? 0).toFixed(4)}`);
+    await saveScreenshot(page, 'sky', 'perf-1440p-leo-horizon-night');
+    expect(night.background).toBeLessThan(0.08);
+    expect(night.probeMean).toBeLessThan(0.08);
+
+    // The far image of the Moon (a dozen pixels across from here) in the middle of the frame, by day.
+    await page.evaluate(() => {
+      window.__sky!.setSunForVessel({ elevationDeg: -2, azimuthDeg: 0 });
+      window.__lab!.renderer.setExposureOverride(14);
+      window.__lab!.onFrame((snap) => {
+        const v = snap.vessels[0]!;
+        const moon = snap.bodies.find((b) => b.id !== v.bodyId && b.id !== snap.starId)!;
+        window.__sky!.lookFrom(v.rRoot, { x: moon.rRoot.x - v.rRoot.x, y: moon.rRoot.y - v.rRoot.y, z: moon.rRoot.z - v.rRoot.z }, { x: 0, y: 0, z: 1 }, 60);
+      });
+    });
+    const moonStats = await measure(page, 330);
+    const far = await page.evaluate(() => window.__sky!.sky!.impostors().map((i) => `${i.bodyId} ${i.diameterPx.toFixed(1)} px, lit ${i.litWidthPx.toFixed(1)} px, weight ${i.weight.toFixed(2)}`));
+    const flareOn = await page.evaluate(() => window.__sky!.sky!.status().flareDrawn);
+    console.log(`looking at the Moon (far images: ${far.join('; ') || 'none'}; flare ${flareOn ? 'drawn' : 'not drawn'}): transparent p99 ${(moonStats['sky.transparent']?.p99 ?? 0).toFixed(4)} ms, background p99 ${(moonStats['sky.background']?.p99 ?? 0).toFixed(4)} ms`);
+    expect((moonStats['sky.transparent']?.p99 ?? 0) + (moonStats['sky.flareVis']?.p99 ?? 0)).toBeLessThan(0.04);
     await expectNoErrors(page, pageLog);
   });
 });
