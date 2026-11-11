@@ -262,8 +262,8 @@ export class OceanVessels {
         const [cx, cy] = centre(p.x, p.y);
         const hull = Math.max(w.v.boundingRadius, 0.5) / texel;
         // A floating hull churns a ring of foam at its waterline in proportion to how much of it is wet.
-        const churn = Math.min(1, w.v.contact.waterSubmersion * 2) * Math.min(1, dt * 1.5);
-        if (churn > 0) out.wakeSources.push({ cx, cy, radius: hull * 0.95, ring: Math.max(1, hull * 0.25), amount: churn });
+        const churn = Math.min(1, w.v.contact.waterSubmersion * 2) * Math.min(1, dt * 0.6);
+        if (churn > 0) out.wakeSources.push({ cx, cy, radius: hull * 1.02, ring: Math.max(1, hull * 0.12), amount: churn });
       }
       for (const e of s.events) {
         if (!(e.type === 'splash' || (e.type === 'touchdown' && e.surface === 'water'))) continue;

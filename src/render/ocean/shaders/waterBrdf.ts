@@ -47,18 +47,20 @@ export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], op
   const rows: string[] = [];
   for (let i = 0; i < MAX_BODIES; i++) {
     const t = bodies[i] ?? null;
-    if (t) rows.push(`vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`, `vec4f(${f(t.foamAlbedo)}, 0.0, 0.0, 0.0)`);
+    if (t) rows.push(`vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`, `vec4f(${f(t.foamAlbedo)}, ${f(t.windDir)}, ${f(t.windVariability)}, ${f(t.slickStrength)})`);
     else rows.push('vec4f(0.002, 0.003, 0.0045, 0.0)', 'vec4f(0.7, 0.0, 0.0, 0.0)');
   }
   return /* wgsl */ `
 // OVERRIDABLE chunk "brdf_water", provided by the ocean package (src/render/ocean/shaders/waterBrdf.ts).
 // Needs in scope: chunks frame, gbuffer, brdf; skyViewLut, skyIrradianceLut (set 'atmosphereLuts'),
 // envProbeCube, envSh9 (set 'env'). See the module comment for the meaning of the Surface fields.
+#include "noise"
 const WATER_IOR = 1.34;
 const WATER_GGX_KAPPA = ${GGX_KAPPA};
 // 1 = normal; 0 isolates the direct specular for tests (debug hook of the ocean feature).
 const WATER_DIRECT_SPECULAR = ${options.directSpecular === false ? '0.0' : '1.0'};
-// Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, 0, 0, 0).
+// Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, wind direction (rad, compass, toward),
+// relative wind-speed variability, slick strength).
 const WATER_BODY = array<vec4f, ${MAX_BODIES * 2}>(${rows.join(', ')});
 
 fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bodyIndex, 0)) * 2u + k]; }
@@ -66,8 +68,34 @@ fn waterWind(s: Surface) -> f32 { return frame.bodies[max(s.bodyIndex, 0)].ocean
 fn waterCoxMunk(s: Surface) -> f32 { return 0.003 + 0.00512 * waterWind(s); }
 
 /// GGX alpha of the slopes the shading normal does not carry (without the light's own angular size).
+/// Planet-fixed variability of the unresolved slope variance (mean about 1): mesoscale wind-speed changes
+/// (tens of km) and surfactant slicks (calm bands along the wind, a few km wide, in patches), which give
+/// the glint seen from altitude its structure. A function of the body-fixed position only, so the deferred and
+/// the forward path agree, and the pattern is fixed to the sea.
+fn waterRoughnessField(s: Surface) -> f32 {
+  if (s.bodyIndex < 0) { return 1.0; }
+  let bi = u32(s.bodyIndex);
+  let b = frame.bodies[bi];
+  let p = rootToFixed(bi, s.pos - b.center.xyz);
+  let q = waterBodyParam(s, 1u);
+  let up = normalize(p);
+  var east = cross(vec3f(0.0, 0.0, 1.0), up);
+  if (dot(east, east) < 1e-10) { east = vec3f(1.0, 0.0, 0.0); }
+  east = normalize(east);
+  let north = cross(up, east);
+  let along = east * sin(q.y) + north * cos(q.y);
+  let across = cross(up, along);
+  // Wind: two octaves of smooth noise, 25-90 km.
+  let wind = gradientNoise3(p / 90000.0, 11) * 0.7 + gradientNoise3(p / 25000.0, 12) * 0.3;
+  // Slicks: broad calm bands stretched along the wind (about 30 km x 2.5 km), present in patches.
+  let sp = along * (dot(p, along) / 30000.0) + across * (dot(p, across) / 2500.0) + up * (dot(p, up) / 30000.0);
+  let streak = gradientNoise3(sp, 13) * 0.75 + gradientNoise3(sp * 2.1, 14) * 0.25;
+  let slick = smoothstep(0.15, 0.6, streak) * smoothstep(0.0, 0.5, gradientNoise3(p / 60000.0, 15));
+  return exp(q.z * wind) * (1.0 - q.w * slick);
+}
+
 fn waterAlpha(s: Surface) -> f32 {
-  let unresolved = waterCoxMunk(s) * clamp(1.0 - s.roughness, 0.0, 1.0);
+  let unresolved = waterCoxMunk(s) * waterRoughnessField(s) * clamp(1.0 - s.roughness, 0.0, 1.0);
   return sqrt(WATER_GGX_KAPPA * WATER_GGX_KAPPA * unresolved + 1e-6);
 }
 

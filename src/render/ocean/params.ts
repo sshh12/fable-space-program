@@ -56,6 +56,9 @@ export interface OceanTunables {
   capillaryScale: number;
   /** Slope variance left to the GGX lobe even where a pixel is a few millimetres (shortest capillaries). */
   unresolvedFloor: number;
+  /** Mesoscale variability of the slope variance (log amplitude) and the depth of slicks (0..1). */
+  windVariability: number;
+  slickStrength: number;
 }
 
 const need = (file: string, params: Record<string, number>, name: string, check: (v: number) => boolean = Number.isFinite): number => {
@@ -129,6 +132,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     wetLineDryingRate: need(file, p, 'wetLineDryingRateMps', positive),
     capillaryScale: need(file, p, 'capillaryScale', (v) => v > 1),
     unresolvedFloor: need(file, p, 'unresolvedSlopeVariance', (v) => v >= 0),
+    windVariability: need(file, p, 'windVariability', (v) => v >= 0 && v < 1),
+    slickStrength: need(file, p, 'slickStrength', fraction),
   };
 }
 

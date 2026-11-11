@@ -42,7 +42,7 @@ export const PRESETS: Record<string, OceanPreset> = {
   overcast: { sun: [40, 35], overcast: true, camera: { alt: 2, heading: 200, pitch: -7 } },
   alt500: { sun: [10, 48], camera: { alt: 500, heading: 10, pitch: -28 }, ev: 15 },
   alt10k: { sun: [15, 50], camera: { alt: 10000, heading: 15, pitch: -40 }, ev: 15 },
-  alt100k: { sun: [20, 55], camera: { alt: 100000, heading: 20, pitch: -52, fov: 55 }, ev: 15 },
+  alt100k: { sun: [20, 30], camera: { alt: 100000, heading: 20, pitch: -24, fov: 55 }, ev: 15 },
   leo: { sun: [0, 58], camera: { alt: 400000, heading: 0, pitch: -55, fov: 60 }, ev: 15 },
   shore: { sun: [150, 38], beach: true, camera: { north: 215, alt: 3.5, heading: 4, pitch: -7 } },
   splash: { sun: [140, 36], floating: true, markers: markerLine(14, 6, 1.6, 3.2), camera: { north: -2, east: -6, alt: 3.2, heading: 32, pitch: -9 } },

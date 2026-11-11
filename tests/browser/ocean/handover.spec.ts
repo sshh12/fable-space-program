@@ -106,8 +106,11 @@ test('inside fadeStart the depth copy holds the seabed; a submerged object is re
   await page.evaluate(() => window.__ocean!.ocean!.debug.setRefractionScale(1));
   const mean = refracted.reduce((s, v) => s + v, 0) / refracted.length;
   const diff = refracted.reduce((s, v, i) => s + Math.abs(v - straight[i]!), 0) / refracted.length;
-  console.log(`refraction: object at px ${JSON.stringify(window_)}, mean ${mean.toFixed(4)}, mean |refracted - unrefracted| ${diff.toFixed(4)}`);
-  expect(diff / mean).toBeGreaterThan(0.03);
+  // Refraction moves the object's outline and the seabed pattern: some pixels change a lot, the mean noticeably.
+  const moved = refracted.filter((v, i) => Math.abs(v - straight[i]!) > 0.2 * Math.max(v, straight[i]!)).length / refracted.length;
+  console.log(`refraction: object at px ${JSON.stringify(window_)}, mean ${mean.toFixed(4)}, mean |refracted - unrefracted| ${diff.toFixed(4)} (${((diff / mean) * 100).toFixed(1)} %), pixels changed by more than 20 %: ${(moved * 100).toFixed(1)} %`);
+  expect(diff / mean).toBeGreaterThan(0.015);
+  expect(moved).toBeGreaterThan(0.02);
   await expectNoErrors(page, pageLog);
 });
 

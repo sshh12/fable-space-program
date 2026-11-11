@@ -197,20 +197,19 @@ struct FsOut {
     sy += der.y * amp[c];
     jxx += der.z * amp[c];
     jyy += der.w * amp[c];
+    // Lace: the short cascades' convergence (-div D, normalised by its spread) breaks foam into bubbles and streaks.
+    if (c >= 2u) { lace += -(der.z + der.w) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4) * select(0.45, 0.55, c == 3u); }
     resolved += oceanFilteredFraction(c, lod) * cs.stats.x * sq(amp[c]);
     if (c < 3u) {
       let fm = textureSampleGrad(oceanFoam, oceanSampler, uvc, c, gx, gy);
       // Whitecaps belong to the breaking chop: the long cascades carry them, the capillary cascade none.
       foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * OCEAN_FOAM_WEIGHT[c]);
       // Lace: the shortest foam cascade's Jacobian, normalised by its spread, gives foam its bubbly breakup.
-      if (c == 2u) {
-        lace = (1.0 - fm.g) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4);
-        shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0);
-      }
+      if (c == 2u) { shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0); }
     }
   }
   // Coverage follows the folding density; inside it the lace decides which bubbles are white.
-  let laceN = saturate(0.5 + 0.25 * lace);
+  let laceN = saturate(0.5 + 0.3 * lace);
   foamJ = smoothstep(1.0 - foamJ * 1.15 - 0.08, 1.0 - foamJ * 1.15 + 0.08, laceN) * min(foamJ * 3.0, 1.0);
   // Capillary detail: the finest cascade again, compressed and rotated, carrying the slope variance that the
   // JONSWAP cascades do not (Cox-Munk counts the capillaries); resolved only where a pixel is that small.
@@ -253,7 +252,9 @@ struct FsOut {
   if ((oceanU.counts.w & 1u) != 0u) {
     let wuv = (in.planeF - oceanU.wake.xy) * oceanU.wake.w + 0.5;
     let edge = saturate(min(min(wuv.x, wuv.y), min(1.0 - wuv.x, 1.0 - wuv.y)) * 12.0);
-    wake = textureSampleLevel(oceanWake, linearClamp, wuv, 0.0).r * edge;
+    let w = textureSampleLevel(oceanWake, linearClamp, wuv, 0.0).r * edge;
+    // Wake foam is bubbly too: the same lace decides where the churned water is white.
+    wake = smoothstep(1.0 - w, 1.0 - w + 0.35, laceN) * min(w * 2.0, 1.0);
   }
   let foamRes = 1.0 - (1.0 - foamJ) * (1.0 - shore) * (1.0 - wake);
 

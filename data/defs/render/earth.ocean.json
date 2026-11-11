@@ -16,7 +16,7 @@
     "seed": 7,
     "nearFieldFadeStartM": 15000,
     "nearFieldFadeEndM": 30000,
-    "detailFadeFraction": 0.45,
+    "detailFadeFraction": 0.7,
     "backscatterR": 0.0021,
     "backscatterG": 0.003,
     "backscatterB": 0.0045,
@@ -36,6 +36,8 @@
     "rippleLifetimeS": 18,
     "wetLineDryingRateMps": 0.004,
     "capillaryScale": 4.2,
-    "unresolvedSlopeVariance": 0.0025
+    "unresolvedSlopeVariance": 0.0025,
+    "windVariability": 0.35,
+    "slickStrength": 0.35
   }
 }
