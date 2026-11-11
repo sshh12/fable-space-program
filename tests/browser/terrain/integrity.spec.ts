@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { expect, expectNoErrors, pngDiff, test } from '../harness';
 import { LUNAR_SITE, PAD, magentaFraction, openLab, settle, shot, terrainStats } from './util';
@@ -41,16 +42,21 @@ for (const site of [
       // While the tiles of the new position stream in (ancestors and skirts must cover everything) ...
       for (const frames of [2, 6, 20]) {
         await page.evaluate((n) => window.__test!.waitFrames(n), frames);
-        const mid = magentaFraction(await page.screenshot());
+        const capture = await page.screenshot();
+        const mid = magentaFraction(capture);
         worst = Math.max(worst, mid.count);
-        expect(mid.count, `magenta pixels while streaming at ${height} m`).toBe(0);
+        if (mid.count > 0) {
+          mkdirSync('out/screens/terrain', { recursive: true });
+          writeFileSync(`out/screens/terrain/holes-${site.body}-${height}-${frames}.png`, capture);
+        }
+        expect(mid.count, `magenta pixels while streaming at ${height} m, ${frames} frames after the move (${mid.box}; out/screens/terrain/holes-${site.body}-${height}-${frames}.png)`).toBe(0);
       }
       // ... and once everything has arrived and settled.
       await settle(page, 6);
       const s = await shot(page, `cracks-${site.body}-${height}`);
       const m = magentaFraction(s.buffer);
       worst = Math.max(worst, m.count);
-      expect(m.count, `magenta pixels at ${height} m`).toBe(0);
+      expect(m.count, `magenta pixels at ${height} m (${m.box}; out/screens/terrain/cracks-${site.body}-${height}.png)`).toBe(0);
       expect(s.stats.fractionNonBlack, `image at ${height} m`).toBeGreaterThan(0.3);
     }
     const st = await terrainStats(page);

@@ -101,7 +101,11 @@ fn terrainVertex(grid: vec4u, instance: u32, sheet: bool) -> TerrainVertex {
   let hp = textureLoad(heightTex, parentBase + vec2i(snapped) / 2, t.layers.y, 0).r;
 
   let sea = body.p0.y;
-  let pos0 = body.rot * tileLocal(g / GRID_QUADS, select(hc, sea, sheet), t) + t.originRelCam.xyz;
+  // The morph factor comes from the distance to the TERRAIN vertex, for the sheet too: the tiles were
+  // selected by their distance to the terrain, and over deep water the sea surface is kilometres nearer
+  // (a sheet morphing by its own distance would stay unmorphed next to coarser tiles and tear along
+  // tile edges).
+  let pos0 = body.rot * tileLocal(g / GRID_QUADS, hc, t) + t.originRelCam.xyz;
   var d = 3.0e38;
   let count = u32(body.p0.z);
   for (var i = 0u; i < count; i++) {
@@ -114,6 +118,9 @@ fn terrainVertex(grid: vec4u, instance: u32, sheet: bool) -> TerrainVertex {
   o.h = mix(hc, hp, k);
   o.uv = mix(g, snapped, k) / GRID_QUADS;
   var hs = select(o.h, sea, sheet);
+  // Skirts cover the height slack between a tile and its parent. The sheet keeps the same tall skirt: where
+  // the mask calls a coast land while the coarse mesh there still lies below sea level, the sea horizon
+  // would show a notch of sky; the skirt of the sheet tile behind closes it with water.
   if (grid.z != 0u) { hs -= t.a.w; }
   o.local = tileLocal(o.uv, hs, t);
   o.pos = body.rot * o.local + t.originRelCam.xyz;

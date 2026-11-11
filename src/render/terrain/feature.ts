@@ -55,7 +55,11 @@ export interface TerrainBodyStats {
 }
 
 export interface TerrainDebug {
-  stats(): { stream: StreamStats; bodies: Record<string, TerrainBodyStats>; records: number; instances: number; selectMs: number; rocks: { instances: number; chunks: number; triangles: number } };
+  /**
+   * selectMs = CPU time of the frame's LOD selection (every body, what is drawn); prefetchMs = time of the
+   * request-only passes that ran in the same frame (two frames in eight: 2 s ahead, predicted impact).
+   */
+  stats(): { stream: StreamStats; bodies: Record<string, TerrainBodyStats>; records: number; instances: number; selectMs: number; prefetchMs: number; rocks: { instances: number; chunks: number; triangles: number } };
   /** Delay every tile by `ms` between the worker and the upload (tests of late streaming). */
   setStreamDelay(ms: number): void;
   /**
@@ -175,6 +179,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let morphEnabled = true;
   let rocksEnabled = true;
   let selectMs = 0;
+  let prefetchMs = 0;
   const casterScratch: DrawItem[] = [];
 
   const reportOverflow = (what: string): void => {
@@ -243,7 +248,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const albedoAt = await loadLowResAlbedo(ctx.tilesUrl, manifest, def.render.meanColor);
     const albedoLayer = manifest.layers[TILE_LAYER.albedo];
     if (!albedoLayer) throw new Error(`tile set "${terrain.tileset}" has no albedo layer`);
-    const tree = new BodyQuadtree(def.radius, terrain.minElevation, terrain.maxElevation);
+    const tree = new BodyQuadtree(def.radius, terrain.minElevation, terrain.maxElevation, def.ocean ? def.ocean.seaLevel : null);
     const pads: PadDisc[] = [];
     for (const site of Object.values(ctx.defs.sites)) {
       if (site.bodyId !== def.id || params.apronRadiusM <= 0) continue;
@@ -416,6 +421,14 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
 
     // Predictive prefetch (request only): where the camera will be in two seconds, and the predicted
     // impact point of the active vessel on this body.
+    if (frameIndex % PREFETCH_EVERY !== 0 && frameIndex % PREFETCH_EVERY !== 4) return;
+    const tPrefetch = performance.now();
+    prefetchBody(b, frame, base, frustum, cut);
+    prefetchMs += performance.now() - tPrefetch;
+  };
+
+  const prefetchBody = (b: BodyState, frame: FrameContext, base: SelectParams, frustum: ViewFrustum, cut: boolean): void => {
+    const cam = base.observers[0]!.pos;
     if (frameIndex % PREFETCH_EVERY === 0 && !cut) {
       const ahead = v3.addScaled(cam, b.velFixed, 2);
       if (v3.dist(ahead, cam) > 1) {
@@ -648,6 +661,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       recordsUploaded = 0;
       instanceCount = 0;
       const t0 = performance.now();
+      prefetchMs = 0;
       ctx.perf.cpuBegin('terrain.select');
       for (const b of bodies) {
         const bodyIndex = frame.bodies.findIndex((p) => p.id === b.id);
@@ -662,7 +676,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         selectBody(b, frame, pose);
       }
       ctx.perf.cpuEnd('terrain.select');
-      selectMs = performance.now() - t0;
+      selectMs = performance.now() - t0 - prefetchMs;
       ctx.perf.cpuBegin('terrain.stream');
       streamer.update(frameIndex);
       ctx.perf.cpuEnd('terrain.stream');
@@ -786,6 +800,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           records: recordCount,
           instances: instanceCount,
           selectMs,
+          prefetchMs,
           rocks: rocks ? rocks.stats() : { instances: 0, chunks: 0, triangles: 0 },
         };
       },

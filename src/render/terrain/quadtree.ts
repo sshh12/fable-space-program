@@ -27,6 +27,14 @@ export class TileNode {
   hMin: number;
   hMax: number;
   sphere: BoundSphere;
+  /**
+   * Bound for visibility tests. On a body with a sea the far water sheet is drawn from the same tile at sea
+   * level: over deep water that is kilometres above the tile's own shell, and in view when the sea bed
+   * under it is not (a low camera looks over the sea, not into it).
+   */
+  cull: BoundSphere;
+  /** Largest height (m) of anything drawn from the tile: its terrain or the sea surface over it. */
+  cullTop: number;
   /** Largest angle between the tile's centre direction and a point of its footprint, rad. */
   readonly angularRadius: number;
 
@@ -79,12 +87,15 @@ export class TileNode {
     radius: number,
     hMin: number,
     hMax: number,
+    sheet: number | null = null,
   ) {
     this.id = tileId(key.face, key.level, key.x, key.y);
     this.frame = tileFrame(key);
     this.hMin = hMin;
     this.hMax = hMax;
     this.sphere = shellBoundSphere(this.frame, radius + hMin, radius + hMax);
+    this.cullTop = sheet !== null && hMax < sheet ? sheet : hMax;
+    this.cull = this.cullTop === hMax ? this.sphere : shellBoundSphere(this.frame, radius + hMin, radius + this.cullTop);
     let cosMin = 1;
     for (const c of this.frame.corners) cosMin = Math.min(cosMin, c.x * this.frame.cHat.x + c.y * this.frame.cHat.y + c.z * this.frame.cHat.z);
     this.angularRadius = Math.acos(Math.min(1, cosMin));
@@ -94,10 +105,13 @@ export class TileNode {
     return this.key.level;
   }
 
-  setBounds(radius: number, hMin: number, hMax: number): void {
+  /** `sheet` = height of the sea surface on a body with an ocean, else null. */
+  setBounds(radius: number, hMin: number, hMax: number, sheet: number | null = null): void {
     this.hMin = hMin;
     this.hMax = hMax;
     this.sphere = shellBoundSphere(this.frame, radius + hMin, radius + hMax);
+    this.cullTop = sheet !== null && hMax < sheet ? sheet : hMax;
+    this.cull = this.cullTop === hMax ? this.sphere : shellBoundSphere(this.frame, radius + hMin, radius + this.cullTop);
   }
 }
 
@@ -168,10 +182,12 @@ export class BodyQuadtree {
     readonly radius: number,
     readonly elevMin: number,
     readonly elevMax: number,
+    /** Height of the sea surface (m above the reference radius) on a body with an ocean, else null. */
+    readonly seaLevel: number | null = null,
   ) {
     this.faceSize = (Math.PI * radius) / 2;
     for (let face = 0; face < 6; face++) {
-      const n = new TileNode({ face: face as FaceId, level: 0, x: 0, y: 0 }, null, radius, elevMin, elevMax);
+      const n = new TileNode({ face: face as FaceId, level: 0, x: 0, y: 0 }, null, radius, elevMin, elevMax, seaLevel);
       this.nodes.set(n.id, n);
       this.roots.push(n);
     }
@@ -198,7 +214,7 @@ export class BodyQuadtree {
     const k = n.key;
     const d = this.heightSlack(k.level + 1);
     const mk = (q: number): TileNode => {
-      const c = new TileNode({ face: k.face, level: k.level + 1, x: 2 * k.x + (q & 1), y: 2 * k.y + (q >> 1) }, n, this.radius, n.hMin - d, n.hMax + d);
+      const c = new TileNode({ face: k.face, level: k.level + 1, x: 2 * k.x + (q & 1), y: 2 * k.y + (q >> 1) }, n, this.radius, n.hMin - d, n.hMax + d, this.seaLevel);
       this.nodes.set(c.id, c);
       return c;
     };
@@ -219,7 +235,7 @@ export class BodyQuadtree {
     const p = n.parent;
     const lo = p ? Math.min(hMin, Math.max(p.hMin, hMin - d)) : hMin;
     const hi = p ? Math.max(hMax, Math.min(p.hMax, hMax + d)) : hMax;
-    n.setBounds(this.radius, lo, hi);
+    n.setBounds(this.radius, lo, hi, this.seaLevel);
   }
 
   /** Drop the subtree below `n` from the node table (the caller has released their GPU layers). */
@@ -274,7 +290,7 @@ export class BodyQuadtree {
   private frustumClass(n: TileNode, d: number): 0 | 1 | 2 {
     const f = this.p.frustum;
     if (!f) return 0;
-    const s = n.sphere;
+    const s = n.cull;
     const x = s.cx - f.eye.x;
     const y = s.cy - f.eye.y;
     const z = s.cz - f.eye.z;
@@ -295,8 +311,8 @@ export class BodyQuadtree {
   /**
    * Is the whole tile hidden behind the occluder sphere? A point at radius r and angle a from the eye's
    * direction is visible iff a <= acos(Ro / rEye) + acos(Ro / r); every point of the tile is at least
-   * (angle to the tile centre - angular radius) away and at most at radius R + hMax. Conservative and a
-   * handful of operations per tile.
+   * (angle to the tile centre - angular radius) away and at most at radius R + cullTop (the terrain, or the
+   * sea surface over it). Conservative and a handful of operations per tile.
    */
   private belowHorizon(n: TileNode, _d: number): boolean {
     if (this.horizonEye <= 0 || n.level < 2) return false;
@@ -305,7 +321,7 @@ export class BodyQuadtree {
     const cos = c.x * e.x + c.y * e.y + c.z * e.z;
     const angle = Math.acos(cos > 1 ? 1 : cos < -1 ? -1 : cos) - n.angularRadius;
     if (angle <= this.horizonEye) return false;
-    const ratio = this.p.occluderRadius / (this.radius + n.hMax);
+    const ratio = this.p.occluderRadius / (this.radius + n.cullTop);
     return angle > this.horizonEye + (ratio >= 1 ? 0 : Math.acos(ratio));
   }
 

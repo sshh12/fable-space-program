@@ -159,6 +159,7 @@ test('a 60 s descent at 1440p: no frame over 33 ms, uploads within budget, pools
         let frames = 0;
         let maxSelect = 0;
         const selects: number[] = [];
+        const totals: number[] = [];
         let maxQueue = 0;
         const before = t.debug.stats().stream;
         await new Promise<void>((resolve) => {
@@ -178,6 +179,7 @@ test('a 60 s descent at 1440p: no frame over 33 ms, uploads within budget, pools
             const st = t.debug.stats();
             maxSelect = Math.max(maxSelect, st.selectMs);
             selects.push(st.selectMs);
+            totals.push(st.selectMs + st.prefetchMs);
             maxQueue = Math.max(maxQueue, st.stream.queued + st.stream.loading + st.stream.uploading);
             if (s >= 1) {
               lab.onFrame(null);
@@ -186,12 +188,15 @@ test('a 60 s descent at 1440p: no frame over 33 ms, uploads within budget, pools
           });
         });
         selects.sort((a, b) => a - b);
+        totals.sort((a, b) => a - b);
         const after = t.debug.stats();
         return {
           frames,
           over33,
           maxDelta,
           selectP99: selects[Math.floor(selects.length * 0.99)]!,
+          totalP99: totals[Math.floor(totals.length * 0.99)]!,
+          totalMedian: totals[Math.floor(totals.length * 0.5)]!,
           maxSelect,
           maxQueue,
           uploaded: after.stream.uploadedTotal - before.uploadedTotal,
@@ -207,13 +212,18 @@ test('a 60 s descent at 1440p: no frame over 33 ms, uploads within budget, pools
       [LUNAR_SITE.lat, LUNAR_SITE.lon] as const,
     );
     console.log(
-      `descent 60 km -> 30 m in 60 s: ${r.frames} frames, ${r.over33} over 33 ms (largest ${r.maxDelta.toFixed(1)} ms); selection CPU p99 ${r.selectP99.toFixed(3)} ms (max ${r.maxSelect.toFixed(3)}); ` +
+      `descent 60 km -> 30 m in 60 s: ${r.frames} frames, ${r.over33} over 33 ms (largest ${r.maxDelta.toFixed(1)} ms); selection CPU p99 ${r.selectP99.toFixed(3)} ms (max ${r.maxSelect.toFixed(3)}), with the request-only prefetch passes of two frames in eight: median ${r.totalMedian.toFixed(3)}, p99 ${r.totalP99.toFixed(3)} ms; ` +
         `${r.uploaded} tiles uploaded, at most ${r.maxUploadTiles} tiles in a frame, upload time p99 ${r.uploadMsP99.toFixed(2)} ms (largest ${r.maxUploadMs.toFixed(2)} ms); largest queue ${r.maxQueue}; deepest level ${r.deepest}; ${r.rocks} rocks at the end; ` +
         `terrain pools ${(r.poolBytes / 2 ** 20).toFixed(0)} MiB`,
     );
     expect(r.frames).toBeGreaterThan(3000);
     expect(r.over33).toBe(0);
+    // The budget line is the selection of what is drawn. Two frames in eight also run a request-only pass
+    // for the streamer (2 s ahead, predicted impact), a second traversal: those frames may reach 1.5 ms
+    // here (unfocused headless Chrome on a machine shared with other agents' jobs; the same traversal
+    // takes 0.13 ms in Node, tools/terrain/bench-select.ts).
     expect(r.selectP99).toBeLessThan(1);
+    expect(r.totalP99).toBeLessThan(1.5);
     expect(r.maxUploadTiles).toBeLessThanOrEqual(8);
     // The budget is 8 tiles or 2 ms: the loop stops before the tile that would pass 2 ms by its running
     // estimate, so the 99th percentile sits at the budget; a single slow copy can still land above it.

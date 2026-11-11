@@ -536,7 +536,14 @@ ${DETAIL_WGSL}
   // forward water surface.
   if (hasOcean) {
     var influence = maskInfluence(t, k, s.imageLevel);
-    if (oceanNearField.bodyIndex == i32(body.p0.w) && dist < oceanNearField.fadeStart) { influence = 0.0; }
+    if (oceanNearField.bodyIndex == i32(body.p0.w)) {
+      // What the near field replaces is the sea SURFACE on this pixel's ray. Below sea level that point is
+      // nearer than the fragment (a sea bed 5 km down is beyond fadeStart under a surface that is not).
+      let eyeAbove = dot(-in.pos, sphereRoot);
+      var surfaceDist = dist;
+      if (above < 0.0 && eyeAbove > -above) { surfaceDist = dist * (eyeAbove + above) / eyeAbove; }
+      if (surfaceDist < oceanNearField.fadeStart) { influence = 0.0; }
+    }
     let coastal = 1.0 - smoothstep(2.0, 6.0, above);
     let threshold = mix(0.5, mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {

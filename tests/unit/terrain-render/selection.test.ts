@@ -5,6 +5,7 @@
  * and the coarser one has not started morphing there.
  */
 import { describe, expect, it } from 'vitest';
+import { dirToTile } from '@/core/geo/cubeSphere';
 import type { Vec3 } from '@/core/math';
 import { levelRange, lodK, morphWindow } from '@/render/terrain/lod';
 import { BodyQuadtree, type LodObserverFixed, type SelectParams } from '@/render/terrain/quadtree';
@@ -96,6 +97,35 @@ describe('CDLOD selection', () => {
     tree.select({ ...base, frameIndex: 4, time: 0.4 });
     expect(tree.items.some((it) => it.node.level === 2)).toBe(true);
     expect(tree.items.filter((it) => it.node.level === 2).every((it) => it.node.activatedAt === 0.4)).toBe(true);
+  });
+
+  it('over deep water a tile is in view when the sea surface over it is: the far water sheet is drawn from the same tile', () => {
+    const sea = 0;
+    const ocean = new BodyQuadtree(R, -9130, 10790, sea);
+    const dry = new BodyQuadtree(R, -9130, 10790);
+    const eye = observer(3.1, 7.3, 200);
+    for (const tree of [ocean, dry]) {
+      // The level-9 tile under the camera, its sea bed 5.0 to 5.3 km down.
+      const n = tree.ensureNode(dirToTile(eye.dir, 9).key);
+      tree.applyBake(n, -5300, -5000);
+      // The point of the sea surface straight below the camera.
+      const surface = { x: eye.dir.x * R, y: eye.dir.y * R, z: eye.dir.z * R };
+      const inside = (b: { cx: number; cy: number; cz: number; r: number }): boolean => Math.hypot(surface.x - b.cx, surface.y - b.cy, surface.z - b.cz) <= b.r;
+      // The level-of-detail distance stays the distance to the terrain.
+      expect(n.hMax).toBeLessThan(-4900);
+      expect(inside(n.sphere)).toBe(false);
+      if (tree === ocean) {
+        expect(n.cullTop).toBe(sea);
+        expect(inside(n.cull)).toBe(true);
+      } else {
+        expect(n.cullTop).toBe(n.hMax);
+        expect(n.cull).toBe(n.sphere);
+      }
+    }
+    // Land above the sea keeps its own bounds.
+    const hill = ocean.childrenOf(ocean.roots[0]!)[0]!;
+    ocean.applyBake(hill, 20, 900);
+    expect(hill.cull).toBe(hill.sphere);
   });
 
   it('a prefetch pass only requests: tiles around the predicted position are wanted at reduced priority, nothing is drawn or activated', () => {
