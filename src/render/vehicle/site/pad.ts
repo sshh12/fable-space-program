@@ -65,12 +65,11 @@ export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: 
   for (const top of [true, false]) {
     const y = top ? y1 : y0;
     const ny = top ? 1 : -1;
-    // The top face may be decked in its own material; both faces are scorched round the opening.
+    // The top face may be decked in its own material (the bore below is scorched; the faces keep the
+    // plate's own weathering: a soot gradient across one fan of triangles would be drawn as parallel streaks).
     b.mat(top && topMat ? topMat : sideMat);
     const A = pts.map((p) => b.v(p.x, y, p.z, 0, ny, 0, 1, 0, 0, p.x, top ? -p.z : p.z, top ? 1 : -1));
-    b.soot = Math.max(soot0, 0.9);
     const B = hole.map((p) => b.v(p.x, y, p.z, 0, ny, 0, 1, 0, 0, p.x, top ? -p.z : p.z, top ? 1 : -1));
-    b.soot = soot0;
     zipLoops(
       b,
       A,

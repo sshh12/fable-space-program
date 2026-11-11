@@ -14,7 +14,7 @@ Everything is generated in code at start-up from the part and site definitions; 
 | Piece | Where |
 |---|---|
 | Geometry kernel: mesh builder with components and position-based re-masking, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
-| Material library (62 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
+| Material library (57 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
 | Decal sheet (content: names, texts, colours, sizes of every marking; `foil: true` for markings painted on metal film) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts`, baked by `tools/vehicle/bake-decals.ts` into `decals.png` and `decals_orm.png` |
 | 14 part generators, registry | `src/render/vehicle/parts/**` |
 | 25 part visual files (parameters only) | `data/defs/visuals/parts/<partId>.json` |
@@ -84,10 +84,11 @@ Switch sizes: engines 110 / 30 px, stages 700 / 110 px, tower 900 / 260, masts 5
 Shadows. Every vessel instance is a moving caster; the camera's copies cast nothing, LOD 1 casts into cascades
 with texels up to 0.1 m and the last LOD into coarser ones (`stats.staggeredSubmissions` stays 0). Site: an
 ordinary structure casts from LOD 1 when it is drawn at LOD 0 (shadow-only batch); `fineShadowOnly` items
-(lattice members, stairs, rails, swing arms, pipe runs, floodlight and lightning masts) cast only into cascades
-with texels up to 0.1 m (`FINE_SHADOW_TEXEL`), and each has a `shadowProxy` item (a solid slender stand-in,
-never drawn) that casts into the coarser cascades, pipe-run stand-ins only up to 0.35 m; gratings, ground
-slabs, earthworks and wires cast nothing. Swing arms, the crew arm and the tail service mast are moving casters
+(swing arms, pipe runs, floodlight and lightning masts) cast only into cascades with texels up to 0.1 m
+(`FINE_SHADOW_TEXEL`), and each has a `shadowProxy` item (a solid slender stand-in, never drawn) that casts
+into the coarser cascades, pipe-run stand-ins only up to 0.35 m; the tower's lattice casts into the fine
+cascades through a shadow-only model of its bracing (`shadowProxy` with `fineShadowOnly`); rails, treads,
+gusset plates, gratings, ground slabs, earthworks and wires cast nothing. Swing arms, the crew arm and the tail service mast are moving casters
 while they swing.
 
 Conventions: part frame +Y nose, +X starboard, +Z dorsal; azimuth from +Z toward +X. Structure frame +Y up,
@@ -112,8 +113,8 @@ node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/model-report.ts [
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts [radial]           # terrain under every structure
 ```
 
-Browser specs: `screens.spec.ts` (9 tests, 80 views in the vehicle lab, live captures: jitter and noise
-running, 72 frames of temporal accumulation), `staging.spec.ts`, `game.spec.ts` (the integration lab on the real
+Browser specs: `screens.spec.ts` (8 screenshot tests with 66 views in the vehicle lab, live captures: jitter
+and noise running, 72 frames of temporal accumulation; and the LOD dolly test), `staging.spec.ts`, `game.spec.ts` (the integration lab on the real
 terrain, sky and exposure: 9 pad views, 4 flight views, 3 lunar ground views, and the terrain-to-pad-plane gap
 under every structure), `vehicle.perf.spec.ts`, `adhoc.spec.ts` (`VEH_ADHOC`). Pictures: `out/screens/vehicle/`
 (`game-*` are the integrated game).
@@ -140,24 +141,33 @@ flight.
 | No vessel caster in a staggered cascade | 0 staggered submissions (`staging.spec.ts`) |
 | Staging sequence with `splitForStage` | all 10 stages; separated pieces are full models and clear the stack |
 | LOD: nothing left dithered | dolly of 12 distances from 7 to 360 m: 273 cross-fades started, 0 items fading 60 frames after each stop |
-| Terrain under the site | largest terrain-to-pad-plane gap under the 26 structures: see `game.spec.ts` output (0.02 m by `site-ground.ts`) |
-| Vehicle G-buffer < 0.8 ms | 0.019 ms (stack filling the view), 0.075 ms (tower at 15 m), p99 |
-| Vehicle shadows < 0.4 ms | 0.015 ms (tower), 0.007 to 0.24 ms (fill; windows 0.008 / 1.149 / 0.237), p99 |
-| Site G-buffer + shadow < 0.5 ms | fill 0.09 ms p99. Tower view: p50 0.03 + 0.05 ms, **p99 0.4 to 1.7 ms: not met in the runs taken** (see below) |
-| CPU instance update < 0.3 ms | 0.250 ms p50, 0.36 to 0.44 ms p95 (site 0.12 ms) |
+| Terrain under the site | largest terrain-to-pad-plane gap under the 26 structures 0.000 m in the integration lab (`game.spec.ts`), 0.02 m at 450 m by `site-ground.ts` |
+| Vehicle G-buffer < 0.8 ms | 0.017 ms (stack filling the view), 0.075 ms (tower at 15 m), p99; p50 0.015 / 0.066 |
+| Vehicle shadows < 0.4 ms | last run: 0.360 ms (fill; windows 0.360 / 0.363 / 0.358), 0.252 ms (tower; 0.252 / 0.380 / 0.251), p99; p50 0.007 / 0.014. **Two of the three runs of the final code failed this line in the fill view (1.075 and 2.230 ms p99)**, see below |
+| Site G-buffer + shadow < 0.5 ms | 0.077 + 0.019 ms (fill), 0.032 + 0.043 ms (tower), p99; p50 0.066 + 0.017 / 0.029 + 0.041 |
+| CPU instance update < 0.3 ms | 0.240 ms p50, 0.34 to 0.44 ms p95 (site 0.12 ms) |
 | `expectNoErrors` | in every vehicle-lab test |
 
-Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.94 ms, p99 of timestamp queries, median of
-three 240-frame windows, under `withGpuLock`. The site's shadow line in the tower view failed the 0.5 ms
-assertion in both runs taken (1.74 and 1.62 ms p99), with two to three other agents' browser jobs on the GPU. A
-probe of the same view (per cascade, 240 frames each) gave for the site's shadow passes p50 0.055 ms and p99
-0.4 to 1.0 ms with all cascades, p50 0.025 / p99 1.0 ms for the 12 m cascade alone and the same for the 60 m
-cascade, and 0.004 ms / 0.001 ms p99 for the 300 m and 1500 m cascades, which draw the same casters: the
-1 ms events are in passes that are only 25 microseconds long at the median and appear in the vehicle's line as
-well (fill view, 1.149 ms in one window). I read them as time slices lost to other GPU clients, not as
-workload, but could not confirm that on a quiet machine; the lead should re-measure (PACKAGE_RULES 16). What
-was done about the workload: the site casts from LOD 1 (shadow triangles per frame in the tower view 508,320
-before, 310,084 after), gratings and earthworks cast nothing.
+Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.96 ms, p99 of timestamp queries, median of
+three 240-frame windows, under `withGpuLock`, with two to three other agents' browser jobs on the GPU in
+every run. The spec was run six times in this round and passed once (the last run; figures above). What the
+failures were:
+
+- Runs 1 to 3: the site's shadow line in the tower view, 1.74 / 1.62 / 1.70 ms p99 against a median of
+  0.055 ms. A probe (same view, 240 frames per variant) put it in the two finest cascades and in one caster:
+  with the tower's lattice (rails, treads and gusset plates on 23 levels) left out of them the site's shadow
+  passes were 0.026 ms p50 and 0.028 to 0.038 ms p99; with it, 0.6 to 1.6 ms p99 at the same median. Fixed:
+  in the fine cascades the lattice now casts through its bracing alone (a shadow-only model), and ordinary
+  structures cast from LOD 1 (site shadow triangles per frame in the tower view 508,320 before, under 310,000
+  after). The site line has passed in every run since (0.07 to 0.10 ms).
+- Runs 4 and 5: with the site's passes short, the same kind of event (a pass of microseconds at the median
+  taking 1 to 2.4 ms in more than one frame in a hundred) showed in the vehicle's shadow line instead: fill
+  view 1.075 and 2.230 ms p99 (windows 2.301 / 0.797 / 1.075 and 2.352 / 2.230 / 0.623), tower 0.296 and
+  0.631 ms. Nothing in the vessel feature's shadow path changed between the runs in which this line passed
+  (runs 1 to 3: 0.007 to 0.30 ms) and these. I could not find a cause in the workload and take it for time lost
+  to other GPU clients in whichever shadow pass is running, but have not proven it: it needs the quiet machine
+  (PACKAGE_RULES 16). Even in the passing run the vehicle's shadow line in the fill view is 0.36 ms, 10 % under
+  its budget (0.225 ms in the first hand-off).
 
 Generated assets: 89.9 MB in 63 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
 money was spent: every texture and decal is baked procedurally. No Modal app was touched.
@@ -188,7 +198,7 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 - Night: no local light casts a shadow (request 2). The vehicle is lit top to bottom and is the brightest thing
   on the pad, the tower carries work lights, but the tower and masts throw no shadows across the apron, there
   are no beams in the haze, and the lander's legs cast no shadow in its landing lights.
-- The site's shadow line in the tower view was above its budget at p99 in every run taken under load (section 4).
+- Perf: the vehicle's shadow line failed its p99 budget in two of the last three runs under load and is within 10 % of it in the third (section 4).
 - Glass is opaque: no inner panes, no cabin behind the windows from outside (the cockpit package's glazing
   replaces the panes when `exteriorGlass` is false).
 - The capsule's markings are atlas rectangles in the film's colour: closer than before, still a faintly visible
@@ -244,7 +254,7 @@ Work list: `out/qa/wave2/vehicle-pad.md` (25 items; photo 4/10, artifact 4/10). 
 | 11 | Engines from aft | Gas side in heat-stained nickel (copper only above the throat), ringed extensions in two sheet tints, desaturated heat tint, grey boots | `stage-m1-aft-space`, `stage-m2-aft-space`, `engines-clean` |
 | 12 | Soot is polished grey metal | One continuous soot field (reaches higher on the lee side) applied to the skin and to everything on it (`MeshBuilder.remask`); matte and streaked through request 1 | `aft-sooted`, `engines-sooted` |
 | 13 | Model railway set | Earthworks of item 1; sphere tanks in plate courses with weld lands and gore welds; pipe runs end in sleeves. Not done: fence, camera towers, vehicles | `site-overview-noon`, `site-tank-farm`, `site-far-800m`, `game-site-aerial` |
-| 14 | Shadows of thin structure | Shadow classes (section 2): lattices cast into the fine cascades only, solid stand-ins into the coarse ones; gratings cast nothing; live captures | `site-mast-shadows-low-sun`, `site-apron`, `pad-stack-300m` |
+| 14 | Shadows of thin structure | Shadow classes (section 2): lattices cast into the fine cascades only, solid stand-ins into the coarse ones (a mast's shadow is a lattice near the camera and a continuous band beyond; it no longer drops out); gratings, rails and treads cast nothing; live captures | `site-mast-shadows-low-sun`, `site-apron`, `pad-stack-300m` |
 | 15 | Thin geometry breaks into dots | Wires in four gauges that never drop out; fasteners made flush; stage LOD 0 only within about 45 m | `site-wires-from-mast-foot`, `pad-stack-tower-15m-up`, `site-overview-noon`, `game-pad-tower-from-ground` |
 | 16 | Markings broken by geometry | Stringers leave marking panels smooth; decal roughness matched to the paint and the paint's waviness reduced; white-room battens stop at the sign and the porthole; larger placards | `stage-m2-aft-space`, `stage-m1-space`, `site-crew-arm-white-room` |
 | 17 | Grating is an opaque slab | Real bearing bars at LOD 0, open frames at LOD 1, no shadow (request 4 for cut-out materials) | `pad-stack-tower-15m-up`, `pad-stack-tower-15m` |
