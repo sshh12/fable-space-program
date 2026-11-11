@@ -19,7 +19,9 @@ export const MAX_PLUME_NOZZLES = 256;
 const INSTANCE_FLOATS = 84;
 const NOZZLE_FLOATS = 28;
 /** March steps of an engine cluster and of an RCS jet at quality 1. */
-export const PLUME_STEPS = 30;
+export const PLUME_STEPS = 28;
+/** A free expansion is smooth (no cells, no eddies): it is marched with this much fewer steps. */
+export const FAR_STEPS_SAVED = 0.5;
 export const RCS_STEPS = 14;
 /**
  * A plume that covers more of the frame than this is marched with fewer steps per ray (down to STEPS_FLOOR
@@ -169,7 +171,7 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   // core, the diamond of hot gas that tapers behind it between the reflected shocks, and the converging
   // shocks that brighten the core just ahead of the next disc. The cells of one nozzle end before the jets merge.
   let u = max(xc / cells.x - vary.x, 0.0) + (n.a - 0.5) * turb * 0.25;
-  let decay = exp(-max(u - 0.75, 0.0) / inst.shearColor.w) * (1.0 - smoothstep(0.55 * inst.merged0.x, 0.95 * inst.merged0.x, g.x));
+  let decay = exp(-max(u - 0.75, 0.0) / inst.shearColor.w) * (1.0 - smoothstep(0.5 * inst.merged0.x, 0.9 * inst.merged0.x, g.x));
   let sc = fract(u - 0.75);
   let on = step(0.75, u);
   let lead = smoothstep(0.8, 1.0, sc);
@@ -273,7 +275,10 @@ fn plumeField(inst: PlumeInstance, p: vec3f, n: vec4f, n2: vec4f, nS: vec4f, fp:
   let window = (1.0 - smoothstep(0.72, 1.0, length(p.yz) / bound)) * (1.0 - smoothstep(0.75, 1.0, length(p) / inst.origin.w));
   if (window <= 0.0) { return o; }
   let xm = inst.merged0.x;
-  let w = smoothstep(xm, 2.0 * xm, p.x);
+  let w = smoothstep(xm, 1.5 * xm, p.x);
+  // The jets of a cluster that merges are thin where they are still apart: their large eddies belong to the
+  // merged jet (and are looked up once there, not once per nozzle).
+  let fpN = select(fp, -1.0, xm < 1e20 && fp >= 0.0);
   if (w < 0.999) {
     let first = u32(inst.flashColor.w);
     let count = u32(inst.axisZ.w);
@@ -290,7 +295,7 @@ fn plumeField(inst: PlumeInstance, p: vec3f, n: vec4f, n2: vec4f, nS: vec4f, fp:
       }
       // Neighbouring jets flicker independently: odd seeds swap the two Perlin channels.
       let nn = select(n, n.agbr, (u32(nz.misc.x) & 1u) == 1u);
-      o = jetAdd(o, jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.misc.zw, nz.far, nz.dirThr.w / (2.0 * nz.posRe.w), p, nn, n2, nS, fp), 1.0 - w);
+      o = jetAdd(o, jetSample(inst, nz.posRe.xyz, nz.dirThr.xyz, nz.posRe.w, nz.shape, nz.cells, nz.lens, nz.misc.zw, nz.far, nz.dirThr.w / (2.0 * nz.posRe.w), p, nn, n2, nS, fpN), 1.0 - w);
     }
   }
   if (w > 0.001) {
@@ -405,8 +410,13 @@ struct FOut {
     let p = ro + rd * t;
     // Turbulent structure is drawn out along the flow; the footprint is a fraction of the step (the jitter
     // and the temporal filter take care of what that leaves under-sampled along the ray).
-    let n = vfxNoiseLod((p - scroll) * (inst.noise.x * STREAK), dt * inst.noise.x * 0.3);
-    let n2 = vfxNoiseLod((p - scroll * 1.7) * (inst.noise.x * 2.9 * STREAK) + vec3f(0.37, 0.11, 0.73), dt * inst.noise.x * 0.6);
+    // (A free expansion has no turbulence to look up: its two samples are spared.)
+    var n = vec4f(0.5);
+    var n2 = vec4f(0.5);
+    if (inst.noise.y > 0.08) {
+      n = vfxNoiseLod((p - scroll) * (inst.noise.x * STREAK), dt * inst.noise.x * 0.3);
+      n2 = vfxNoiseLod((p - scroll * 1.7) * (inst.noise.x * 2.9 * STREAK) + vec3f(0.37, 0.11, 0.73), dt * inst.noise.x * 0.6);
+    }
     // A free expansion has faint striations along its streamlines: noise that depends on the direction from the nozzles only.
     var nS = vec4f(0.5);
     if (inst.misc2.z > 0.5) { nS = vfxNoiseLod(normalize(p + vec3f(inst.light.w, 0.0, 0.0)) * 1.3 + vec3f(0.31, 0.57, 0.11), 0.0); }
@@ -577,7 +587,7 @@ export class PlumeRenderer {
       const thin = Math.min(1, Math.max(STEPS_FLOOR, Math.sqrt(STEPS_FULL_COVERAGE / Math.max(coverage, 1e-6))));
       // A free expansion has no turbulence to show (nothing to mix with): the noise fades with it.
       const far = c.nozzles[0]?.shape.far ?? 0;
-      put(I, o + 40, 1 / (feature * 4), look.noise.amount * (1 - 0.9 * far), (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - 0.3 * far) * thin));
+      put(I, o + 40, 1 / (feature * 4), look.noise.amount * (1 - 0.9 * far), (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - FAR_STEPS_SAVED * far) * thin));
       if (c.merged) {
         const m = c.merged;
         const thr = c.nozzles.reduce((s, nz) => s + Math.max(nz.throttle, 0.12 * nz.residual), 0) / c.nozzles.length;

@@ -148,7 +148,7 @@
     "smoke": { "albedo": [0.6, 0.55, 0.5], "yield": 5 },
     "steam": { "albedo": [0.96, 0.96, 0.97], "yield": 24 },
     "glow": { "color": [1.0, 0.42, 0.12], "luminance": 150000 },
-    "steps": 48,
+    "steps": 42,
     "erosion": 0.6,
     "erosionScale": 0.016
   },
@@ -168,7 +168,7 @@
       "sheetMinReach": 60,
       "sheetReachRadii": 14,
       "sheetSpeed": 55,
-      "sheetSteps": 14
+      "sheetSteps": 10
     },
     "ice": { "liftoffCount": 1400, "stagingCount": 320, "sheddingRate": 260, "sheddingTime": 9, "size": [0.015, 0.5], "life": [3, 9], "speed": [0.5, 9], "albedo": [0.92, 0.95, 1.0] },
     "gas": { "count": 240, "speed": [140, 360], "size": [0.3, 0.9], "life": [0.12, 0.36], "color": [0.86, 0.88, 0.92], "opacity": 0.05 },
