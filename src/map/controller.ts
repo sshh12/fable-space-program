@@ -213,8 +213,10 @@ interface PointEntry {
   /** Hover identity: kind and the body / vessel / marker / node id. */
   kind: PointKind;
   id: string;
-  /** Body the point belongs to (its label goes to the side away from it on screen). */
+  /** Body the point belongs to, and the screen tangent of its line there (0, 0 = none): its label goes beside the line, away from the body. */
   bodyId: string;
+  tx: number;
+  ty: number;
   x: number;
   y: number;
   /** Icon radius, device px (0 = no icon: a body large enough to be seen). */
@@ -288,6 +290,7 @@ export class MapController implements MapView {
   /** Screen areas other UI covers (CSS px): labels, the panel and the tooltip keep clear of them. */
   private obstacles: BlockedRect[] = [];
   private readonly side = { x: 0, y: 0 };
+  private readonly tangent = { x: 0, y: 0 };
   /** Measured label widths (device px) by text, for the pixel scale `widthScale`. */
   private readonly widths = new Map<string, number>();
   private widthScale = 0;
@@ -903,6 +906,45 @@ export class MapController implements MapView {
     return out.sort((a, b) => a.ut - b.ut);
   }
 
+  /**
+   * Preferred label side of a point on a line: the normal of the line's screen tangent (tx, ty) at it, turned
+   * away from body `bodyId`; with no tangent, the direction away from the body. Null when neither is known.
+   */
+  private labelSide(scene: MapScene, bodyId: string, x: number, y: number, tx: number, ty: number): { x: number; y: number } | null {
+    const away = this.outward(scene, bodyId, x, y);
+    const tl = Math.sqrt(tx * tx + ty * ty);
+    if (!(tl > 0)) return away;
+    let nx = -ty / tl;
+    let ny = tx / tl;
+    if (away && nx * away.x + ny * away.y < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    this.side.x = nx;
+    this.side.y = ny;
+    return this.side;
+  }
+
+  /** Screen tangent (unnormalised) of patch line `list/index` at time `ut` (its drawn segment there), or 0, 0. */
+  private tangentAt(scene: MapScene, list: 'current' | 'planned', index: number, ut: number): void {
+    this.tangent.x = 0;
+    this.tangent.y = 0;
+    const line = patchLine(scene, list, index);
+    if (!line || !(line.count > 1)) return;
+    const v = scene.verts;
+    let lo = line.start;
+    let hi = line.start + line.count - 1;
+    if (!(v.t[lo]! <= ut && ut <= v.t[hi]!)) return;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (v.t[mid]! <= ut) lo = mid;
+      else hi = mid;
+    }
+    if (v.seg[lo] !== 1) return;
+    this.tangent.x = v.sx[hi]! - v.sx[lo]!;
+    this.tangent.y = v.sy[hi]! - v.sy[lo]!;
+  }
+
   /** Unit screen direction from the nearest drawn place of body `bodyId` (itself or a ghost) to (x, y), or null. */
   private outward(scene: MapScene, bodyId: string, x: number, y: number): { x: number; y: number } | null {
     let best = Infinity;
@@ -1145,10 +1187,12 @@ export class MapController implements MapView {
     pool.nPoints = 0;
     const point = (kind: PointKind, id: string, bodyId: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
       let e = pool.points[pool.nPoints];
-      if (!e) pool.points.push((e = { kind, id, bodyId, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
+      if (!e) pool.points.push((e = { kind, id, bodyId, tx: 0, ty: 0, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
       e.kind = kind;
       e.id = id;
       e.bodyId = bodyId;
+      e.tx = 0;
+      e.ty = 0;
       e.x = x;
       e.y = y;
       e.r = r;
@@ -1213,6 +1257,8 @@ export class MapController implements MapView {
       const r = (v.active ? 7.5 : 6) * k;
       const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? a : a * 0.85, v.active ? 500 : 1, v.name);
       e.rot = v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX);
+      e.tx = v.dirX;
+      e.ty = v.dirY;
       e.priority = v.active ? 5 : 1;
       e.label = oneLine(v.name);
       e.labelAlpha = e.alpha;
@@ -1235,6 +1281,11 @@ export class MapController implements MapView {
       const r = (surface ? 5 : MARKER_RADIUS_PX) * k;
       const e = point('m', m.id, m.marker.bodyId, m.x, m.y, r, shapeIcon(m.shape), m.color, a, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
       e.priority = m.priority;
+      if (!surface) {
+        this.tangentAt(scene, m.patchKey.list, m.patchKey.index, m.marker.ut);
+        e.tx = this.tangent.x;
+        e.ty = this.tangent.y;
+      }
       e.label = m.label;
       e.labelAlpha = a;
       commit(e);
@@ -1256,6 +1307,9 @@ export class MapController implements MapView {
       const label = nodeLabel(n);
       const e = point('n', n.id, n.loc.patch.bodyId, n.x, n.y, NODE_SMALL_RADIUS_PX * k, n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, a, 9, label[0]!);
       e.priority = 9;
+      this.tangentAt(scene, n.loc.key.list, n.loc.key.index, n.loc.node.ut);
+      e.tx = this.tangent.x;
+      e.ty = this.tangent.y;
       e.label = label;
       e.labelAlpha = a;
       commit(e);
@@ -1365,7 +1419,7 @@ export class MapController implements MapView {
         this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
         rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
       }
-      const side = p.kind === 'b' ? null : this.outward(scene, p.bodyId, p.x, p.y);
+      const side = p.kind === 'b' ? null : this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
       addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha, side ? side.x : 0, side ? side.y : 0);
     }
 
@@ -1407,7 +1461,8 @@ export class MapController implements MapView {
       const r = NODE_RADIUS_PX * 1.1 * k;
       this.icon(gizmo, sel.x, sel.y, r, r, 0, sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, 1);
       this.clear(sel.x, sel.y, r);
-      const side = this.outward(scene, sel.loc.patch.bodyId, sel.x, sel.y);
+      this.tangentAt(scene, sel.loc.key.list, sel.loc.key.index, sel.loc.node.ut);
+      const side = this.labelSide(scene, sel.loc.patch.bodyId, sel.x, sel.y, this.tangent.x, this.tangent.y);
       addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
     }
 
@@ -1421,7 +1476,8 @@ export class MapController implements MapView {
         this.icon(gizmo, p.x, p.y, r, r, 0, ICON.addGhost, COLORS.hover, 0.9);
         this.clear(p.x, p.y, r);
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
-        const side = this.outward(scene, line.patch.bodyId, p.x, p.y);
+        this.tangentAt(scene, line.patchKey!.list, line.patchKey!.index, ut);
+        const side = this.labelSide(scene, line.patch.bodyId, p.x, p.y, this.tangent.x, this.tangent.y);
         addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
       }
     }
