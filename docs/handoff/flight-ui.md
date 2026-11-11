@@ -166,11 +166,14 @@ interface NavballRendererImpl extends NavballRenderer {      // view: 512 x 512 
   readonly lastMarkers: readonly MarkerInstance[];
   renderState(encoder, state: NavballState): void;            // render(encoder, snapshot) = renderState(encoder, snapshot.navball)
   renderTo(encoder, state, target: GPUTextureView, format: GPUTextureFormat, sizePx: number,
-           opts?: { radiusFraction?: number; instrument?: boolean }): void;   // HUD: HUD_BALL_RADIUS_FRACTION 0.84, instrument look
+           opts?: { radiusFraction?: number; lip?: number; instrument?: boolean }): void;
+           // HUD: radiusFraction HUD_BALL_RADIUS_FRACTION / HUD_BALL_LIP, lip HUD_BALL_LIP, instrument look
   dispose(): void;
 }
-const HUD_BALL_RADIUS_FRACTION = 0.84;                          // the outer ring of the HUD canvas carries the bezel
-function drawNavballBezel(ctx, sizePx, ballFraction): void;    // src/ui/navball/bezel.ts (static 2-D bezel, drawn on resize)
+const HUD_BALL_RADIUS_FRACTION = 0.84;                          // the bezel's window (inner edge) in the HUD ball canvas
+const HUD_BALL_LIP = 0.94;                                      // part of the ball's radius the window shows (the lip covers the rest)
+function drawNavballBezel(ctx, sizePx, windowFraction, outerFraction?): void;  // src/ui/navball/bezel.ts (static 2-D bezel on a
+                                                                // canvas 1.28 x the ball box: its round shadow fades out inside it)
 function projectMarker(dirVes: Vec3, sizePx: number): { sx; sy; px; py; visible; alpha };   // CPU = GPU placement
 function markerInstances(markers: NavballMarkers): MarkerInstance[];
 function ballDirectionHorizon(sx, sy, qVesselToHorizon): Vec3 | null;  function pitchHeadingOf(d): { pitchDeg; headingDeg };
@@ -203,6 +206,13 @@ describeFlight(s, mode?: 'auto' | 'asl' | 'radar'): FlightView;   // altitude (+
 altitudeSource(s, mode?): 'radar' | 'asl';  const RADAR_ALTITUDE_SWITCH = 2000;  isLanded(v): boolean;
 altitudeDatumName(s, defs): 'sea level' | 'datum';                // 'sea level' only on a body with an ocean (not the Moon)
 orbitPhase(s, defs): { show; suborbital; periapsisTone };         // phase-aware orbit readout (see HUD below)
+inAtmosphere(s, defs); isDescending(s, defs);                     // flight phase helpers
+landingTargetExpanded(s, defs): boolean;                          // the landing-target panel shows its rows (else one line)
+describeStages(s): { tiles (StageTileView incl. active, actions); active: number; lockout; nextStage; deltaVTotal };
+                                                                   // active = the fired stage the sim still reports numbers for
+stageActionText(actionKinds): string;                             // "separate · deploy chute"
+summarizeResources(groups): { inUse: { id; label; fraction; amount; detail }[]; full: string[] };  // HUD resource panel
+const ABLATOR_REDLINE = 0.3; ablatorTone(f): 'good' | 'warning';  // one ablator rule for HUD and MFD (low is bad)
 const G_SCALE = { caution: 6, limit: 10, full: 12 }; gTone(g);    // one g scale for the HUD gauge and the MFD pages
 describeLandingTarget (LandingTargetView incl. `tracked`), landingTargetRows (rows without data collapse), isPredictionRow(label),
 landingScope(view): { east; north; trackDeg: number | null },
@@ -216,7 +226,8 @@ formatHeatFlux / formatG / formatMach / formatMass / formatSignedRange / formatL
 Number formats that matter (one rule for HUD and MFD, chosen so that no unit or precision boundary sits where a
 value hovers in flight): current altitude in m below 50 km, then km with one decimal; apoapsis / periapsis
 always in km with one decimal (Mm from 10,000 km), so Ap and Pe share unit and precision and nothing changes
-form around the 100 km lunar parking orbit; distances m below 10 km; vertical speed "+12.3 m/s" / "−4.0 m/s" /
+form around the 100 km lunar parking orbit; distances m below 10 km, km with two decimals below 100 km, one below
+1,000 km and none from 1,000 km on (a recovery zone 6 126 km away); vertical speed "+12.3 m/s" / "−4.0 m/s" /
 "0.0 m/s" with the direction drawn as an SVG / Path2D chevron or level bar (never a font glyph); heading "087°"
 (compass, integer); pitch and roll one decimal.
 
@@ -231,22 +242,34 @@ form around the 100 km lunar parking orbit; distances m below 10 km; vertical sp
   pole-on). The ball shows the hemisphere in front of the nose orthographically: screen right = VES +X, up =
   VES +Z; a VES marker `d` sits at `(d.x, d.z)` when `d.y > 0` and fades toward the limb. Markers (all of
   `NavballMarkers`) are icons from a natively-drawn mip-mapped atlas (256 px cells), clipped to the ball's
-  silhouette; the orange vessel reticle is drawn LAST (on top, like an ADI's aircraft symbol) with an open
-  centre ring and a thin outline, so a marker held on the nose shows through it. Two looks: the shared texture
-  has soft shading only (the cockpit relights it as an albedo); the HUD canvas (`instrument: true`) has a
-  wrap-diffuse key light from the upper left with a dark terminator side, limb darkening to 0.4, a contact
-  shadow at the bezel, a curved window reflection on the varnish (annular sector, crisp radial edges, a frame
-  bar) and a faint Fresnel rim; the HUD's bezel (recessed gap, top-lit bevel, roll index ticks at 10 / 20 /
-  30 / 45 / 60 and every 30 deg, orange top index) is a static 2-D canvas over it. **Texture contents:
+  visible disc; the orange vessel reticle is drawn LAST (on top, like an ADI's aircraft symbol): two thin wings
+  with downward stubs and a centre dot, everything but the dot outside a radius of 12 icon units, beyond the
+  rays of a marker (ring 5, rays to 10.5), so a marker held on the nose shows whole around the dot. Two looks:
+  the shared texture has soft shading only (the cockpit relights it as an albedo); the HUD canvas
+  (`instrument: true`) draws the ball 1 / 0.94 larger than the bezel's window, whose lip covers the outer rim
+  (`HUD_BALL_LIP`: the window shows directions up to 70 deg off the nose, so heading labels and numerals
+  foreshortened to slivers at the limb are never shown), with a wrap-diffuse key light from the upper left and a
+  dark terminator side, limb darkening, a contact shadow under the lip, label ink shaded less than the painted
+  background (numerals on the dark side keep their contrast) and fading into the paint toward the lip, a faint
+  graded window reflection (peak 0.17, soft edges, in the outer band just inside the lip, off the numeral
+  diagonal), a faint Fresnel rim, and the bank **sky pointer**: a white triangle on the rim toward the zenith as
+  projected on the ball, which reads against the bezel's fixed roll scale (fades out with the nose within about
+  8 deg of the vertical, where bank is undefined). The HUD's bezel (recessed gap, top-lit bevel, roll scale at
+  10 / 20 / 30 / 45 / 60 and every 30 deg, orange top index) is a static 2-D canvas over it, larger than the
+  ball's box so its round drop shadow fades out inside it. **Texture contents:
   sRGB-encoded colour, premultiplied by coverage, alpha = coverage** (the cockpit should treat it as a
   premultiplied sRGB image). `render` and `renderTo` share one marker uniform buffer: within one submission,
   render both from the same state.
 - **HUD**: DOM + the navball canvas (and its static bezel canvas) over the WebGPU canvas; only interactive parts
   take pointer events (exactly the elements carrying `data-hud-interactive`, `INTERACTIVE_ATTR`). Layout by
   `camera.kind`: external = everything; interior = clock, warp, notifications, landing target, stage stack,
-  keyboard pill, help; map = clock, warp, altitude, orbit, landing target, node burn, navball + SAS. Plates are
-  86 % opaque with a light hairline, a dark outer ring and a lit top edge; secondary text `#aebccf` keeps >= 4.5 : 1
-  over a near-white backdrop (measured on screenshots by the spec). The bottom cluster is a `1fr auto 1fr` grid
+  keyboard pill, help; map = clock, warp, altitude, orbit, landing target, node burn, navball + SAS. **The frame
+  is for the scene: the HUD covers at most 20 % of a 16:9 frame in every external scene** (measured 15.5-19.9 %
+  at 720p, asserted by the screenshot spec from the layout: plates, tiles, chips and the bezel disc). Plates are
+  near-opaque (`UI_COLORS.panel`, alpha 0.97, request flight-ui-2) with a light hairline, a dark outer ring and
+  a lit top edge: a horizon behind a plate stays within 8 levels across it (asserted on the near-white backdrop);
+  secondary text `#aebccf` keeps >= 4.5 : 1 (asserted). Base type 1.85u (13.3 px at 720p), nothing under 0.76 em
+  (10 px). The bottom cluster is a `1fr auto 1fr` grid
   with the navball alone in the middle column: the ball stays on the centre line whatever appears beside it (node
   panel, gauges), asserted to 1 px with and without a node in the flight and map views. Panels: MET / UT / warp
   chevrons with the limit reason and warp buttons; altitude (auto: radar within 2 km of the ground in flight,
@@ -287,6 +310,24 @@ form around the 100 km lunar parking orbit; distances m below 10 km; vertical sp
   LOWERED the warp by itself, because refusals of the player's own warp requests come back as CommandResults
   that the flight controller reports; also milestones, SOI changes, crew loss, part loss, vessel switch, chute
   failure). Sizes derive from `min(1vh, 0.5625vw)`, so 1280 x 720 and 3840 x 2160 look identical.
+  Round-2 layout (supersedes the panel list above where they differ): clock = MET with the warp factor on one
+  line, UT, warp chevrons and the limit; orbit = Ap / Pe, inclination and period only while the periapsis is
+  above the surface (a suborbital path says so once, amber, in the title), the atmosphere strip (dyn. Q, Mach,
+  AoA as three cells) under it during an ascent, in the entry panel while that shows, else in its own panel;
+  the orbit panel also leaves while heating; landing target = one line (name, distance · bearing) until a
+  prediction, heating or a descent (`landingTargetExpanded`), then the full rows and the zone light; entry =
+  heat flux, heat shield and skin temperature as label / bar / value rows (each bar coloured by the zone of its
+  reading: the heat shield green, red only below the 30 % redline), lift vector, chute envelope (shown only while
+  coming down through air: the real sim reports an envelope whenever a chute stage remains); stage stack = the
+  later stages as one list of one-line rows (number, icon, name, delta-v of engine stages; nothing about engines
+  on the others), the next stage as a full tile (number, name, Space cap; delta-v / TWR / burn, or for an
+  engine-less stage what firing it does: "separate · deploy chute"), and at the bottom the **active stage**
+  (the fired stage the sim still reports numbers for: green, ACTIVE tag, live delta-v / TWR / burn and the
+  propellant strip); header "Δv … total" (the sim's total includes the active stage); resources = one bar per
+  stage group in use (its resource that runs out first; tooltip lists all) and the full groups folded into one
+  "FULL …" line ("ALL FULL" on the pad); bottom = SAS panel, speed, a chip row above the bezel (PITCH, heading
+  over the top index, ROLL: fixed-width windows that never touch the instrument), the 25u ball, the throttle /
+  g tape gauges (flat-topped fill, numerals 0.78 em), node panel.
 - **HUD main-thread cost**: a changed text node costs a style / layout / paint / layerization pass (about 1 ms
   on this page), far more than the JavaScript formatting it. So the numeric readouts refresh at `HUD_TEXT_HZ`
   (10 Hz), all in one frame; the navball, the throttle and g gauges (composited transforms), every indicator
@@ -300,19 +341,26 @@ form around the 100 km lunar parking orbit; distances m below 10 km; vertical sp
   publishes `navball.view` as `'ui.navball'`.
 - **MFD**: `paint(ctx, w, h, page, snapshot, defs)` draws a full page (header tabs with MET, the page's own
   layout, a SAS / RCS / warp / UT footer). Every page fills the canvas and its instrument dominates: FLT is a
-  primary flight display (ADI about 60 % of the page height with graded sky / ground, a pitch ladder every 5 deg
-  clipped to 0.8 r with numerals at both ends of every 10 deg line and none within 4 deg of the aircraft symbol,
-  a fixed bank scale outside the disc at 10 / 20 / 30 / 45 / 60 deg with the sky pointer riding against it, the
-  velocity vector from the prograde marker; speed and altitude tapes with pointer boxes holding the HUD's
-  strings, a log vertical-speed scale, a heading tape with the boxed heading, throttle / g / horizontal /
-  vertical boxes); ORB draws the conic around the body in the body's own colour (from `render.meanColor`), true
+  primary flight display (ADI about 60 % of the page height, sky and ground graded radially around the zenith and
+  nadir points so the disc is never one flat colour, zenith / nadir marks, a pitch ladder every 5 deg clipped to
+  0.8 r that continues over the poles, a rung drawn only where the clip leaves most of it, numerals upright at
+  both ends of every 10 deg line where they fit whole and none within 4 deg of the aircraft symbol, a fixed bank
+  scale outside the disc at 10 / 20 / 30 / 45 / 60 deg with the sky pointer riding against it, the velocity
+  vector from the prograde marker drawn over the aircraft symbol; speed and altitude tapes with pointer boxes
+  holding the HUD's strings, scale numerals only where whole (clear of the tape ends and the box), the speed
+  scale ending at zero (hatched below); a log vertical-speed scale with short ticks and the numerals after them;
+  a heading tape with the boxed heading and no label cut at its ends; throttle / g / horizontal / vertical boxes); ORB draws the conic around the body in the body's own colour (from `render.meanColor`), true
   to scale when that keeps the orbit clear of the body and otherwise with the altitude exaggerated (caption
   "ALTITUDE EXAGGERATED ×13" for the 100 km lunar orbit) so Ap and Pe are apart, apsis diamonds labelled with
-  their altitudes; Ap / Pe rows read "—" while landed; SYS has the vehicle rows and large resource bars; STG a
-  next-stage summary strip and the whole stack (number, icon, name, delta-v / TWR / burn or "no engines",
-  propellant bar, lock state); ENT the entry rows, g / dose / ablator / skin-temperature bar gauges with scales,
-  zones, redlines (10 g, the dose limit, 30 % ablator, 85 % temperature) and readouts (the ablator gauge only
-  when the vessel has one), and the landing-target rows; LND the landing rows and target rows beside a
+  their altitudes, the body with its night side and terminator from the sun direction, its name in the caption;
+  landed, the page is one status line (body, "Landed · no orbit") over a large body graphic; SYS has the vehicle
+  rows and resource bars that fill the column; STG a summary strip of the active stage (the next engine stage
+  before the first ignition) and the whole stack, active stage first (number, icon, name, delta-v / TWR / burn
+  or what an engine-less stage does, propellant bar, lock state; tiles grow when few stages remain); ENT the
+  entry rows, g / dose / ablator / skin-temperature bar gauges with scales, zones, redlines (10 g, the dose limit,
+  30 % ablator, 85 % temperature) and readouts (the ablator gauge only when the vessel has one; it is a
+  low-is-bad gauge, `GaugeSpec.lowIsBad`: the whole fill takes the colour of the zone its reading is in, green
+  above the redline, so a nominal reading shows no red), and the landing-target rows; LND the landing rows and target rows beside a
   full-height scope. All sizes scale with the canvas height (designed for 1024 x 768) and no text is smaller
   than 3 % of it (12 px at 512 x 384; unit-tested on every page of every scene at both sizes, and photographed
   1 : 1 at 512 x 384). The entry and landing pages carry `landingTargetRows()` verbatim; the flight and landing
@@ -373,9 +421,13 @@ Lab: `/labs/flight-ui/?scene=<FakeScene>` with `view=chase|cockpit|map`, `captur
 `terrainPending=1`, `lockout=1`, `guard=1`, `mfd=1` (the six MFD pages), `mfd=native` (the pages at 512 x 384,
 shown 1 : 1), `help=1`, `ballast=<iterations>` (perf: GPU ballast), `orbit=<yawDeg>,<pitchDeg>,<distance>`,
 `flight=<throttle>,<gLoad>` (a powered flight: throttle, thrust and g in the readouts), `backdrop=bright` (the
-HUD-legibility worst case: a near-white cloud deck / regolith and a pale sky). The lab replaces the FakeSim's
-generic stage numbers with the mission vehicle's stage table (icons and action kinds of meridian-lunar.json,
-engine stages with plausible delta-v / TWR / burn, gear / chute / jettison stages without engines). The lab adds a test vehicle (`labs/flight-ui/labVehicle.ts`: four stage
+HUD-legibility worst case: a near-white cloud deck / regolith and a pale sky), `attitude=<yaw>,<pitch>,<roll>`
+(the vessel turned by this offset in its own frame, degrees: markers off the nose and a real roll), `dose=<g s>`
+(the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose). The lab replaces the
+FakeSim's generic stage numbers with the mission vehicle's stage table (icons and action kinds of
+meridian-lunar.json, engine stages with plausible delta-v / TWR / burn, gear / chute / jettison stages without
+engines), reported the way the sim reports them: the fired stage that owns the running engines keeps live
+numbers (the active stage), other fired stages none, the total includes the active stage. The lab adds a test vehicle (`labs/flight-ui/labVehicle.ts`: four stage
 groups, resources, a command part with the mouldline seats) to the loaded library and tags FakeSim snapshots
 with it; `predicted`, `targetOffset`, `failed`, `terrainPending`, `lockout` are lab decorations of the snapshot
 (the FakeSim produces none of them; `targetOffset` follows the readout rule, down/cross-range 0 without a
@@ -385,8 +437,12 @@ tracer for judging cameras and HUD legibility; it is not shipped.
 Screenshots (all reviewed by eye): `out/screens/flight-ui/<scene>-720p.png` and `<scene>-4k.png` for all eight
 FakeSim scenes, plus `cockpit-lowOrbit`, `map-lowOrbit`, `keyhelp`, `failed`, `terrain-pending`, `mfd-pages`,
 `mfd-pages-hover` (landed 400 m from the target: no ground track) (all at both sizes),
-`bright-<pad|ascent|reentry|lunarSurface>-720p` (near-white backdrop, label contrast asserted), `mfd-pages-native`
-and `mfd-pages-native-reentry` (512 x 384 at 1 : 1), `prograde-hold`, `warp-refused`, `extra-rig`, `stage-lockout`.
+`attitude-lowOrbit` (markers off the nose, 25 deg roll against the sky pointer), `entry-highg` (11.2 g in the red
+zone, the g-dose bar, the lift-vector marker), `retrograde-hold` (retrograde on the nose under chutes) (all at
+both sizes), `bright-<pad|ascent|reentry|lunarSurface>-720p` (near-white backdrop: label contrast, plate
+uniformity and the coverage budget asserted), `mfd-pages-native` and `mfd-pages-native-reentry` (512 x 384 at
+1 : 1), `prograde-hold`, `warp-refused`, `extra-rig`, `stage-lockout`. The 720p scene tests log and assert the
+HUD's coverage of the frame (<= 20 %); a stage-stack test checks the active stage's tile against the snapshot.
 
 ## 4. Acceptance criteria and measured results
 
