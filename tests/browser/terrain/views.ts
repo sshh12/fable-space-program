@@ -35,11 +35,11 @@ export const VIEWS: View[] = [
   { name: 'earth-night-side', body: 'earth', cam: nadir(38, 12, 16_000e3), fov: 40, sun: { subsolar: [-38, -168] }, ev: 1 },
   { name: 'earth-40km', body: 'earth', cam: { type: 'surface', ...PAD, height: 40e3, agl: false, heading: 330, pitch: -35 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'earth-10km', body: 'earth', cam: { type: 'surface', ...PAD, height: 10e3, agl: false, heading: 340, pitch: -25 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-inland', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0009, lon: PAD.lon, height: 1.7, agl: true, heading: 2, pitch: 2 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-coast', body: 'earth', cam: { type: 'surface', lat: PAD.lat, lon: PAD.lon + 0.0009, height: 1.7, agl: true, heading: 62, pitch: -1 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'pad-inland', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 2, pitch: 2 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'pad-coast', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0002, lon: PAD.lon + 0.0004, height: 1.7, agl: true, heading: 62, pitch: -1 }, sun: { az: 105, el: 31, ...PAD } },
   // The ground around the pad at the distances a launch shows it: on the apron looking down, off the apron
   // at eye height, from 30 m, and from 1 km (the detail layers carry the texture, the imagery the colour).
-  { name: 'pad-apron-down', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0006, lon: PAD.lon + 0.0004, height: 1.7, agl: true, heading: 300, pitch: -30 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'pad-apron-down', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0003, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 300, pitch: -30 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-off-apron', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -12 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-ground-close', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -50 }, fov: 35, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-30m', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, height: 30, agl: true, heading: 40, pitch: -22 }, sun: { az: 105, el: 31, ...PAD } },

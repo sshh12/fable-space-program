@@ -6,8 +6,10 @@ detail, night lights, shore), the far water sheet with the hand-over to the ocea
 every cascade, and the rock field around the camera. Everything below was measured on the real baked tile
 sets (`earth`, content hash `ab20fdfc579d4015`; `moon`).
 
-This note is the state after the review fixes (section 10 lists every finding and what was done). Sections
-8 and 11 say plainly what was measured and what is still weak.
+This note is the state after the review fixes (section 10) and after round 1 of the visual close-out
+(section 12: every item of the two critics' lists, what was done, what was not, measured performance).
+Sections 1 to 7 describe the code as it is now; sections 8, 9 and 11 are the review-stage record and are
+superseded by section 12 where they differ.
 
 ## 1. Where things are
 
@@ -26,17 +28,20 @@ This note is the state after the review fixes (section 10 lists every finding an
 | `nightImage.ts` | night-light textures with a border from the neighbouring tiles (pure) |
 | `materials.ts` | surface tunables (`SURFACE_PARAM_KEYS`), material sets (`set.json` format 2), the noise volume, the material uniform |
 | `lowResAlbedo.ts` | CPU lookup of `globals/albedoLowRes` (rock tint) |
-| `rockMesh.ts`, `rocks.ts` | 12 rock shapes in 4 classes x 3 LODs, chunked instance lists, G-buffer and shadow draws |
+| `rockMesh.ts`, `rocks.ts` | 12 rock shapes in 4 classes x 3 LODs (welded, broken-rock meshes), chunked instance lists, G-buffer and shadow draws |
+| `sitePlan.ts` | the ground plan of a launch site from its structures: slabs, lane beds, gravel shoulder (pure; the twin of `siteGround` in the surface shader) |
+| `cover.ts`, `coverMesh.ts` | ground cover: tussocks, scrub, trees, stands of trees, loose stones, placed by land-cover class around the camera and drawn instanced with shadows |
 | `shaders/common.ts` | body uniform, `TileRecord` / `TileFrame`, the CDLOD vertex (`terrainVertex`), shadow pass |
 | `shaders/surface.ts` | sampling, water logic, night lights, detail materials, orbital detail, `TERRAIN_GBUFFER_WGSL`, `TERRAIN_WATER_WGSL` |
-| `shaders/regolith.ts` | this package's `brdf_regolith` chunk (section 3, "Regolith") |
+| `shaders/lighting.ts` | this package's `brdf_terrain` and `brdf_regolith` chunks (section 3, "Relief shadows", "Regolith") |
 | `data/defs/render/earth.surface.json`, `moon.surface.json` | every tunable (section 6) |
 | `public/assets/terrain/<set>/` | material sets: per material and scale `<id>-<near|mid|far|aerial>.ah.webp` (albedo + height) and `.nra.webp` (normal xy, roughness, AO), `set.json`; 26.4 MiB on disk, 187 MiB on the GPU |
 | `tools/terrain/photo_source.py` | source photographs of the Earth set from an image model (OpenAI key from `.env`, section 4) |
 | `tools/terrain/gen_materials.py` | builds both sets: Earth from the photographs, Moon synthesised |
 | `tools/terrain/bench-select.ts`, `probe-bake.ts`, `scan-spikes.ts` | selection benchmark in Node; evidence tools of requests 1 and 2 |
+| `tools/terrain/probe-site.ts`, `bench-height.ts` | land-cover classes and water mask around a point as numbers; cost of height queries (the ground cover's placements) |
 | `labs/terrain/` | the lab (section 7) |
-| `tests/unit/terrain-render/` | 38 unit tests: LOD maths, crack-freedom by a float64 twin of the vertex shader (`cdlodTwin.ts`), selection, relief floor, sea-surface bounds, coverage, meshes, night images, tile records, the hexagon pattern by a twin of its shader code (`hexTwin.ts`) |
+| `tests/unit/terrain-render/` | 44 unit tests (the site ground plan and the cover meshes in `cover.test.ts`): LOD maths, crack-freedom by a float64 twin of the vertex shader (`cdlodTwin.ts`), selection, relief floor, sea-surface bounds, coverage, meshes, night images, tile records, the hexagon pattern by a twin of its shader code (`hexTwin.ts`) |
 | `tests/browser/terrain/` | `smoke`, `views` (the reviewed screenshots), `integrated` (the pad surroundings in core-support's integration lab, with sky, atmosphere and ocean), `integrity`, `pops`, `terrain.perf` |
 
 ## 2. Public API (exact signatures)
@@ -56,11 +61,13 @@ interface TerrainFeatureOptions {
   pinLevel?: number;                    // levels 0..pinLevel always resident (default 2)
   preloadLevel?: number;                // loaded ahead for a body within 16 radii (default 3)
   rocks?: boolean;                      // default true
+  cover?: boolean;                      // default true: the ground cover
   rocksSeparate?: boolean;              // default false: see below
 }
 interface TerrainFeature extends RenderFeature {
   readonly debug: TerrainDebug;
   readonly rocks: RenderFeature | null; // with rocksSeparate: the feature that draws the rock field
+  readonly cover: RenderFeature | null; // with rocksSeparate: the feature that draws the ground cover
 }
 ```
 
@@ -73,12 +80,13 @@ fading.
 `rocksSeparate: true` leaves the rock draws to a companion feature (`terrain.rocks`, id `<id>-rocks`, add it
 after the terrain): with the renderer's performance attribution every feature's hooks are passes of their
 own, so the rocks' cost is measured directly (`terrain-rocks.gbuffer`, `terrain-rocks.shadow`). The app
-does not need it; the lab sets it with `perf=features`.
+does not need it; the lab sets it with `perf=features`. The ground cover is separated the same way
+(`terrain.cover`, id `<id>-cover`, passes `terrain-cover.gbuffer` / `.shadow`).
 
 `TerrainDebug` (tests and labs only): `stats()` (`stream: StreamStats`, per-body `TerrainBodyStats`, `records`,
 `instances`, `selectMs`, `prefetchMs`, `cpu` = main-thread ms of the last frame: `hooks` (everything), and its
-parts `stream`, `upload`, `build`, `rocks`, `shadow`, `gbuffer`; `materialBytes`, `rocks`), `setStreamDelay(ms)`,
-`setMorphEnabled(on)`, `setRocksEnabled(on)`, `provider()`, `readyTiles(body, level, lat, lon, limit)`,
+parts `stream`, `upload`, `build`, `rocks`, `cover`, `shadow`, `gbuffer`; `materialBytes`, `rocks`, `cover`), `setStreamDelay(ms)`,
+`setMorphEnabled(on)`, `setRocksEnabled(on)`, `setCoverEnabled(on)`, `provider()`, `readyTiles(body, level, lat, lon, limit)`,
 `readyTileAt(body, lat, lon, maxLevel?)`, `readTile(body, key) -> { heights, albedo, aux, normal }`, `bodies()`.
 
 Also exported: `DEFAULT_STREAMER_OPTIONS`, `SURFACE_PARAM_KEYS`, types `StreamerOptions`, `StreamStats`,
@@ -90,9 +98,14 @@ refines the ground under it), `frame.snapshot.patches.current[].markers` (kind `
 GPU `terrain.gbuffer`, `terrain.shadow`, `terrain.mipgen`; CPU `terrain.select`, `terrain.stream`; counters
 `terrain.tiles`, `terrain.queue`.
 
-Two things the feature does to shared state, both within what RENDER_API allows:
+Four things the feature does to shared state, within what RENDER_API allows (the last two are uses of
+G-buffer channels RENDER_API does not describe: they are named in request `terrain-render-4`):
 - It registers the shader chunk `brdf_regolith` (an override of the render core's default) when a body with
-  `brdf: 'hapke'` has terrain.
+  `brdf: 'hapke'` has terrain, and `brdf_terrain` when a body with another BRDF has (`shaders/lighting.ts`).
+- For `MATERIAL_TERRAIN` and `MATERIAL_REGOLITH` it writes into G-buffer RT4.b (clear-coat weight, unused by
+  these materials; the lighting pass hands it to every BRDF as `s.clearcoat`) the share of the sun that
+  relief below the mesh keeps off the pixel; its two BRDF chunks multiply the direct light by one minus it.
+  Any other writer of these materials leaves 0 there and gets the default behaviour exactly.
 - For `MATERIAL_REGOLITH` it writes into the G-buffer's metallic channel 2 x the RMS slope of the facets
   within the pixel (regolith has no metal). Any other writer of that material leaves 0 there and gets the
   default behaviour exactly.
@@ -185,12 +198,59 @@ shortened by up to a half, so the layers are sampled one mip level finer than th
 give. The relief of the far and aerial layers gives way where the tile's own normal map resolves their sizes
 by the share `terrainRelief` (Moon 1: craters are in the height function too; Earth 0.25: bushes are not).
 
-**Launch-pad apron.** A slab of the set's `apronMaterial` with its own absolute albedo on the flattened
-pad disc (`apronRadiusM`, at most the site's `flatRadius`). Its edge is a line one pixel wide at any
-distance; soil laps over the rim by up to `apronEdgeM` (band-limited noise fixed to the ground), the last
-metres of the slab are dirtier, and the ground within `apronShoulderM` of it is worn paler.
+**Ground colour.** Imagery is a picture, not an albedo map: the regional mosaic of the launch region is
+graded dark and saturated (median luminance 0.03, median saturation 0.8, lava fields included). Where the
+imagery is finer than the body-wide mosaic (`imageryCalibrationLevel`; -1 = everywhere) it keeps
+`imagerySaturation` of its saturation, and the ground takes the albedo of the material it is made of
+(`set.json` `anchorAlbedo`, default the material's mean) times the imagery's luminance relative to
+`imageryRefLuminance`, to the power `imageryContrast`, bounded to 0.6 .. 1.45: by the share `anchorNear` where
+a pixel is finer than the imagery, `anchorFar` where it is coarser. So lava is charcoal, dry grass olive and
+the concrete 3 to 4 times brighter than either, at every distance, and the imagery still decides where the
+ground is lighter or darker. Material weights: land-cover class, the bake's channel, slope (steep ground is
+clinker), macro noise, darkness and greenness of the imagery (`albedoGain`; its saturation is no longer
+used), and `shoreGain` on low, level ground at the water's edge (black sand). The class lookup is displaced
+by the same band-limited noise as the imagery and its weights are sharpened: a class boundary is a ragged
+line. A material keeps `chroma` of its texture's colour variation (rock is grey), and what stands above a
+layer's mean can be glossier (`gloss`: the crests of ropy lava).
 
-**Regolith.** `shaders/regolith.ts` replaces the core's `brdf_regolith`: the same Hapke function, but a
+**Launch site.** `sitePlan.ts` derives a ground plan from `LaunchSiteDef.structures` by the names of their
+footprint parameters (never by model id): `halfX`/`halfZ` and `sizeX`/`sizeZ` are concrete slabs (plus
+`apronMarginM`, rounded corners), `length` with `trackWidth` a gravel lane bed; a site without slabs gets
+one square of `apronRadiusM`. The material uniform holds up to 4 sites with 24 shapes; the fragment shader
+evaluates signed distances (`siteGround`, the twin of the TypeScript function the ground cover uses).
+Concrete has its own absolute albedo, a kerb one pixel wide at any distance, bays of `apronJointM` with
+box-filtered joints, a tone per bay, dirt along joints, stains, scorch towards the pad centre; around it a
+shoulder of compacted gravel (`gravelMaterial` layers with `gravelAlbedo*`, `apronShoulderM` wide, ragged
+outer edge, worn pale towards the kerb). Nothing of the ground cover stands on the plan.
+
+**Ground cover.** `cover.ts`: kinds of cover from `set.json` `cover` (Earth: `tussock`, `scrub`, `kiawe`,
+`stand`, `clinker`; the Moon has none). A kind lives in chunks (cube-sphere tiles of about its `chunkM`);
+a chunk scatters candidates by hash over its own tile for the densest class under it, keeps each with the
+density of its own class times a clumping noise fixed to the ground, never on a site's plan (and thinning
+out over the 12 m beside it), never below sea level + 0.6 m, and stands it on `heightAt(dir, lambdaMin =
+max(0.4, radius))` (0.003 ms per query, `bench-height.ts`). Land-cover classes come from the body's deepest
+`landcover` tiles, fetched and decoded on the main thread as chunks need them. Instances are stored by
+variant, largest first; the lists per (shape, variant, level of detail) are prefixes by size, split
+instance by instance in the chunks around the camera. An instance is drawn within radius x range-per-radius
+(`minPixels`), at most `rangeM`, grows from nothing over the outer 30 % and, for a kind with `nearM`, from
+0.7 `nearM` to `nearM` (stands of trees take over where single trees have shrunk away, 1.3 to 1.8 km).
+Chunks are built within 0.5 ms per frame, in view first; a chunk built in view fades in over 0.5 s;
+`isIdle()` waits for both. Records are appended to one GPU buffer (524,288 instances; holes are closed when
+its end is reached). Shadows: every cascade whose texel is at most the instance's diameter, from the
+coarsest mesh (the middle one from 24 texels). Meshes (`coverMesh.ts`): tussocks of 46 / 18 / 8 blades
+(nested levels); crowns of leaf clusters ("puffs": flattened octahedra, 230 / 60 / 14 per unit crown) whose
+normals lean away from the crown's middle, with fine gaps cut by noise when large on screen; four crowns on
+stems for a tree, eight without stems for a stand; loose stones are rock meshes without the banked foot.
+Grass bends with `windToDeg` / `windLean`; scrub and trees are turned downwind. Nothing of it collides.
+
+**Relief shadows.** The detail layers' height maps cast shadows: on the triplanar plane that carries most
+of a pixel, the copy of the hexagon pattern that dominates it is marched towards the sun (6 taps, 1.5 to 37
+texels, each from a coarser mip: a cone), for every detail scale that shows, while the sun stands lower
+than about 40 degrees over the terrain's own normal. What stands above the ray shadows the pixel
+(`reliefShadow` = strength). The result goes to RT4.b (section 2). The shade inside a tussock or a crown
+uses the same channel.
+
+**Regolith.** `shaders/lighting.ts` replaces the core's `brdf_regolith`: the same Hapke function, but a
 pixel is not switched off when its normal turns from the sun. With facet slopes normally distributed about
 the pixel's normal with RMS sigma (the G-buffer's metallic channel / 2, written by the terrain and rock
 shaders from the screen derivatives of the final normal), the lit fraction is Phi(mu0 / sigma) and the lit
@@ -198,7 +258,11 @@ facets' mean cosine of incidence is mu0 + sigma phi / Phi. Under a low sun a det
 between lit and black from pixel to pixel is then a grey of the right mean; resolved slopes (sigma near 0)
 keep their hard shadows. In addition the terrain shader lets the detail normals give way as the terrain's own
 normal reaches the terminator (cosine -0.02 to 0.1): without a sky nothing lights a slope the sun has set
-on, and normal-map relief would still light single pixels of it.
+on, and normal-map relief would still light single pixels of it. Regolith is rough at every size a pixel
+holds: sigma has a floor of 3 degrees. Its ambient term adds the light bounced off the sunlit ground (an
+airless body has no sky): the sun's illuminance on level ground times `bounceFlat` (0.10) for level ground in
+a shadow, rising with (1 - n . up) / 2 to `bounceDown` (0.45) for a face that looks straight down; constants
+of the chunk (`DEFAULT_REGOLITH_LIGHT`).
 
 **Night lights.** Read `nightMinMip` levels above the night layer's deepest level (Earth: level 5, 1.2 km
 texels: the source's cells are coarser than the layer's texels), from textures that carry one border texel
@@ -209,9 +273,13 @@ magnified, with a shoulder for saturated city centres and ground-fixed grain bel
 **Rocks.** Chunks of about 40 m (cube-sphere tiles) hold `rocksNear` of terrain-core sorted by shape and
 radius (never below `rockMinRadiusM`); a rock is drawn within `radius x rangePerRadius` (at most
 `rockRangeM`), grows in over the outer 30 % of its range, LOD by size on screen, tint from the
-low-resolution albedo map, the set's `rockMaterial` triplanar in the rock's own axes. Meshes: 12 convex
-polyhedra in 4 classes (blocks, slabs, wedges, boulders) with worn corners and edges; LOD 1 and 0 subdivide
-the faces (4 and 16 triangles per fan triangle) and chip them outwards. Instance lists are prefixes of each
+low-resolution albedo map (where the ground colour is anchored to its materials: from the rock material's
+own albedo), the set's `rockMaterial` triplanar in the rock's own axes, tiled at nine times the rock's
+radius. Meshes: a welded sphere of directions (1280 / 320 / 80 triangles) pushed out to one of 12 convex
+polyhedra in 4 classes (blocks, slabs, wedges, boulders), worn, then broken: scoops where pieces spalled off
+(the solid is not convex), a crack, ridged lumps, a foot that flares 8 % where soil is banked against it
+(vertex soil share; the shader colours it as soil, higher in the hollows of the face). The unit ball stays
+inside (the collision cap). Shading keeps 70 % of the face normal. Instance lists are prefixes of each
 chunk's rocks: only rocks large enough for a finer LOD, and the chunks within 80 m, are looked at one by one;
 the vertex shader applies range and scale exactly. The G-buffer lists are kept between frames until an
 observer has moved 2 cm, a chunk has changed or the pixel scale has; shadow lists are prefixes of the same
@@ -277,15 +345,18 @@ height range), `detailAoStrength`, `detailChroma`, `macroNoiseWavelengthM`, `bas
 `orbitalWavelengthM`, `orbitalOctaves`, `orbitalAlbedoStrength`, `orbitalReliefStrength`, `slopeLo`,
 `slopeHi`, `freshAlbedoBoost`, `nightLuminance`, `nightOnCos`, `nightOffCos`, `nightTintR/G/B`, `nightMinMip`,
 `nightClusterM`, `nightClusterStrength`, `deepWaterSrgbR/G/B`, `deepWaterDepthM`, `apronRadiusM`,
-`apronEdgeM`, `apronShoulderM`, `lakeDepthM`, `shoreWetnessHeightM`, `rockRangeM`, `rockMinPixels`,
-`rockMinRadiusM`, `rockAlbedoScale`, `rockRoughness`. A missing key is an error at init. The lab overrides
-any of them with `p.<body>.<key>=<n>`.
+`apronMarginM`, `apronJointM`, `apronShoulderM`, `gravelAlbedoR/G/B`, `imageryCalibrationLevel`,
+`imagerySaturation`, `imageryRefLuminance`, `imageryContrast`, `anchorNear`, `anchorFar`, `reliefShadow`,
+`shoreReachM`, `lakeDepthM`, `shoreWetnessHeightM`, `rockRangeM`, `rockMinPixels`, `rockMinRadiusM`,
+`rockAlbedoScale`, `rockRoughness`. A missing key is an error at init. The lab overrides any of them with
+`p.<body>.<key>=<n>`.
 
 Material sets (`set.json`, `formatVersion: 2`): `nearSize`, `wideSize`, `scalesM`, `materials[{ id,
 layers[4]{ albedoHeight, normalRoughAo, meanAlbedo, meanRoughness, reliefM, meanHeight } }]`, `classWeights`
 (land-cover class -> material weights), `classOrbital`, `channelGain`, `slopeGain`, `noiseGain`,
-`albedoGain` (per material: weight per unit of the imagery's darkness, saturation, greenness), `hexBlend`,
-`terrainRelief`, `apronMaterial`, `rockMaterial`. At most 8 materials. Rebuild:
+`albedoGain` (per material: weight per unit of the imagery's darkness, saturation, greenness), `shoreGain`,
+`gloss`, `anchorAlbedo`, `chroma`, `hexBlend`, `terrainRelief`, `cover` (kinds and densities per land-cover
+class, or null), `apronMaterial`, `gravelMaterial`, `rockMaterial`. At most 8 materials, 6 kinds of cover. Rebuild:
 `python -I tools/terrain/photo_source.py [--only <id>,...]` (only when a photograph is missing), then
 `node tools/dev/heavy.mjs --class=bake -- python -I tools/terrain/gen_materials.py [--set <name>] [--preview]`
 (4 min per set; `--manifest-only` rewrites the weights and gains of `set.json` and keeps the textures).
@@ -295,7 +366,7 @@ layers[4]{ albedoHeight, normalRoughAo, meanAlbedo, meanRoughness, reliefM, mean
 `/labs/terrain/?...` (dev server). Besides the lab app's own parameters (`scene=`, `body=`/`lat=`/`lon=`/
 `alt=`/`heading=`/`pitch=`, `orbit=`/`target=`, `fov=`, `ev=`, `perf=features`, `deterministic=1`):
 `agl=<m>`, `sun=<az>,<el>`, `subsolar=<lat>,<lon>`, `sky=<lux>`, `magenta=1`, `silhouette=<m>`,
-`nearfield=<start>,<end>`, `workers=<n>`, `delay=<ms>`, `rocks=0`, `morph=0`, `ballast=<iterations>`,
+`nearfield=<start>,<end>`, `workers=<n>`, `delay=<ms>`, `rocks=0`, `cover=0`, `morph=0`, `ballast=<iterations>`,
 `hud=0`, `p.<body>.<key>=<n>`. With `perf=features` the rocks are a feature of their own (section 2).
 `window.__terrain` (type `TerrainLab` in `labs/terrain/main.ts`) is the handle of the specs: `placeCamera`,
 `setSun`, `setNearField`, `grab`, `referenceTile`, `surfaceMatch`, `probeAltitude`, `flyPath`, `setBallast`,

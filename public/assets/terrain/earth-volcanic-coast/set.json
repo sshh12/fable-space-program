@@ -29,13 +29,13 @@
           "albedoHeight": "pahoehoe-mid.ah.webp",
           "normalRoughAo": "pahoehoe-mid.nra.webp",
           "meanAlbedo": [
-            0.06187,
-            0.05823,
-            0.05492
+            0.06164,
+            0.05826,
+            0.05499
           ],
           "meanRoughness": 0.72,
-          "reliefM": 0.14742,
-          "meanHeight": 0.6305
+          "reliefM": 0.1672,
+          "meanHeight": 0.7084
         },
         {
           "albedoHeight": "pahoehoe-far.ah.webp",
@@ -229,49 +229,49 @@
           "albedoHeight": "pasture-near.ah.webp",
           "normalRoughAo": "pasture-near.nra.webp",
           "meanAlbedo": [
-            0.07595,
-            0.09404,
-            0.04165
+            0.14965,
+            0.1312,
+            0.05592
           ],
           "meanRoughness": 0.902,
-          "reliefM": 0.0166,
-          "meanHeight": 0.546
+          "reliefM": 0.01644,
+          "meanHeight": 0.4873
         },
         {
           "albedoHeight": "pasture-mid.ah.webp",
           "normalRoughAo": "pasture-mid.nra.webp",
           "meanAlbedo": [
-            0.07491,
-            0.09535,
-            0.03971
+            0.14914,
+            0.13221,
+            0.05363
           ],
           "meanRoughness": 0.902,
-          "reliefM": 0.0779,
-          "meanHeight": 0.5414
+          "reliefM": 0.08431,
+          "meanHeight": 0.604
         },
         {
           "albedoHeight": "pasture-far.ah.webp",
           "normalRoughAo": "pasture-far.nra.webp",
           "meanAlbedo": [
-            0.07476,
-            0.09551,
-            0.03971
+            0.14927,
+            0.13247,
+            0.05273
           ],
           "meanRoughness": 0.902,
-          "reliefM": 0.25854,
-          "meanHeight": 0.6152
+          "reliefM": 0.22922,
+          "meanHeight": 0.6071
         },
         {
           "albedoHeight": "pasture-aerial.ah.webp",
           "normalRoughAo": "pasture-aerial.nra.webp",
           "meanAlbedo": [
-            0.07478,
-            0.09539,
-            0.03996
+            0.14892,
+            0.13241,
+            0.05315
           ],
           "meanRoughness": 0.902,
-          "reliefM": 0.84535,
-          "meanHeight": 0.5854
+          "reliefM": 0.68669,
+          "meanHeight": 0.629
         }
       ]
     },
@@ -384,7 +384,7 @@
     ],
     "bareRock": [
       0.1,
-      0.05
+      0.08
     ],
     "sand": [
       0.05,
@@ -415,8 +415,8 @@
       0.02
     ],
     "snowIce": [
-      0.02,
-      0.03
+      0.03,
+      0.08
     ],
     "wetland": [
       0.08,
@@ -442,8 +442,6 @@
     "scrub-soil": 0.35,
     "pasture": -0.35
   },
-  "apronMaterial": "concrete-apron",
-  "rockMaterial": "aa",
   "albedoGain": {
     "pahoehoe": [
       0.5,
@@ -471,11 +469,6 @@
       4.0
     ]
   },
-  "hexBlend": [
-    6.0,
-    -6.0
-  ],
-  "terrainRelief": 0.25,
   "shoreGain": {
     "black-sand": 3.0,
     "pasture": -2.0,
@@ -484,19 +477,30 @@
   "gloss": {
     "pahoehoe": 0.6
   },
-  "gravelMaterial": "black-sand",
   "anchorAlbedo": {
-    "pasture": [
-      0.15,
-      0.132,
-      0.05
-    ],
     "scrub-soil": [
       0.16,
       0.117,
       0.076
+    ],
+    "pasture": [
+      0.112,
+      0.1,
+      0.041
     ]
   },
+  "chroma": {
+    "pahoehoe": 0.25,
+    "aa": 0.3,
+    "black-sand": 0.3,
+    "concrete-apron": 0.5,
+    "scrub-soil": 0.8
+  },
+  "hexBlend": [
+    6.0,
+    -6.0
+  ],
+  "terrainRelief": 0.25,
   "cover": {
     "windToDeg": 235.0,
     "windLean": 0.35,
@@ -514,6 +518,7 @@
         ],
         "rangeM": 180.0,
         "minPixels": 3.5,
+        "nearM": 0.0,
         "chunkM": 16.0,
         "tint": [
           0.13,
@@ -541,6 +546,7 @@
         ],
         "rangeM": 700.0,
         "minPixels": 4.0,
+        "nearM": 0.0,
         "chunkM": 64.0,
         "tint": [
           0.05,
@@ -568,16 +574,45 @@
         ],
         "rangeM": 1800.0,
         "minPixels": 4.0,
+        "nearM": 0.0,
         "chunkM": 256.0,
         "tint": [
-          0.045,
-          0.062,
-          0.026
+          0.04,
+          0.053,
+          0.024
         ],
         "tintDry": [
+          0.07,
           0.075,
-          0.08,
-          0.04
+          0.038
+        ],
+        "clump": 0.5,
+        "clumpM": 120.0
+      },
+      {
+        "id": "stand",
+        "shape": "grove",
+        "radiusM": [
+          12.0,
+          24.0
+        ],
+        "heightPerRadius": [
+          0.26,
+          0.36
+        ],
+        "rangeM": 7000.0,
+        "minPixels": 4.0,
+        "nearM": 1800.0,
+        "chunkM": 512.0,
+        "tint": [
+          0.04,
+          0.053,
+          0.024
+        ],
+        "tintDry": [
+          0.07,
+          0.075,
+          0.038
         ],
         "clump": 0.5,
         "clumpM": 120.0
@@ -595,6 +630,7 @@
         ],
         "rangeM": 60.0,
         "minPixels": 4.0,
+        "nearM": 0.0,
         "chunkM": 16.0,
         "tint": [
           0.04,
@@ -634,12 +670,14 @@
       "shrub": {
         "tussock": 0.7,
         "scrub": 0.02,
-        "kiawe": 0.0015
+        "kiawe": 0.0015,
+        "stand": 0.0001
       },
       "trees": {
         "tussock": 0.45,
         "scrub": 0.012,
-        "kiawe": 0.011
+        "kiawe": 0.008,
+        "stand": 0.0007
       },
       "crop": {
         "tussock": 0.9
@@ -650,11 +688,7 @@
       }
     }
   },
-  "chroma": {
-    "pahoehoe": 0.25,
-    "aa": 0.3,
-    "black-sand": 0.3,
-    "concrete-apron": 0.5,
-    "scrub-soil": 0.8
-  }
+  "apronMaterial": "concrete-apron",
+  "gravelMaterial": "black-sand",
+  "rockMaterial": "aa"
 }

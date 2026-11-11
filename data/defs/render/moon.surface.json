@@ -28,7 +28,7 @@
     "orbitalReliefStrength": 1.0,
     "slopeLo": 0.3,
     "slopeHi": 0.7,
-    "freshAlbedoBoost": 0.22,
+    "freshAlbedoBoost": 0.14,
     "nightLuminance": 0,
     "nightOnCos": -0.1,
     "nightOffCos": 0.0,

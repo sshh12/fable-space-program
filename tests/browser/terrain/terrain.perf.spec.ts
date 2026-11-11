@@ -17,6 +17,10 @@ test.use({ viewport: { width: 2560, height: 1440 } });
  * for the record. With attribution on, the lab adds the rock field as a feature of its own
  * (TerrainFeatureOptions.rocksSeparate), so the rocks' line is measured directly from its two passes.
  *
+ * The ground cover (tussocks, scrub, trees, loose stones: added in the visual close-out, not in the table of
+ * 17.1) has no line of its own and gets none: its two passes (`terrain-cover.gbuffer`, `.shadow`) are added
+ * to the terrain's G-buffer and shadow lines, and the sums are held to the terrain's budgets.
+ *
  * Other agents' browsers use the same GPU and the same cores while this runs (the GPU lock only keeps other
  * PERF specs away), and their work lands in our timestamps: two measurements of the same scene differed by
  * up to 0.4 ms. Contention only ever adds time, so each view is measured in three rounds (up to three more
@@ -32,11 +36,13 @@ interface Measured {
   shadow: number;
   rocksGbuffer: number;
   rocksShadow: number;
+  coverGbuffer: number;
+  coverShadow: number;
   ballast: number;
   selectP99: number;
   hooksP99: number;
   hooksMedian: number;
-  parts: { stream: number; build: number; rocks: number; shadow: number; gbuffer: number };
+  parts: { stream: number; build: number; rocks: number; cover: number; shadow: number; gbuffer: number };
   cpuP99: number;
   quality: number;
   scale: number;
@@ -49,7 +55,7 @@ async function measure(page: Page, frames: number): Promise<Measured> {
     window.__test!.resetPerf();
     const select: number[] = [];
     const hooks: number[] = [];
-    const parts = { stream: 0, build: 0, rocks: 0, shadow: 0, gbuffer: 0 };
+    const parts = { stream: 0, build: 0, rocks: 0, cover: 0, shadow: 0, gbuffer: 0 };
     for (let i = 0; i < n; i++) {
       await window.__test!.waitFrames(1);
       const st = t.debug.stats();
@@ -58,6 +64,7 @@ async function measure(page: Page, frames: number): Promise<Measured> {
       parts.stream += (st.cpu.stream - st.cpu.upload) / n;
       parts.build += st.cpu.build / n;
       parts.rocks += st.cpu.rocks / n;
+      parts.cover += st.cpu.cover / n;
       parts.shadow += st.cpu.shadow / n;
       parts.gbuffer += st.cpu.gbuffer / n;
     }
@@ -70,12 +77,14 @@ async function measure(page: Page, frames: number): Promise<Measured> {
       shadow: passes['terrain.shadow']?.mean ?? 0,
       rocksGbuffer: passes['terrain-rocks.gbuffer']?.p99 ?? 0,
       rocksShadow: passes['terrain-rocks.shadow']?.mean ?? 0,
+      coverGbuffer: passes['terrain-cover.gbuffer']?.p99 ?? 0,
+      coverShadow: passes['terrain-cover.shadow']?.mean ?? 0,
       ballast: passes['lab-ballast.burn']?.p50 ?? 0,
       selectP99: select[Math.floor(select.length * 0.99)]!,
       hooksP99: hooks[Math.floor(hooks.length * 0.99)]!,
       hooksMedian: hooks[hooks.length >> 1]!,
       parts,
-      cpuP99: (perf.features.terrain?.cpuMs ?? 0) + (perf.features['terrain-rocks']?.cpuMs ?? 0),
+      cpuP99: (perf.features.terrain?.cpuMs ?? 0) + (perf.features['terrain-rocks']?.cpuMs ?? 0) + (perf.features['terrain-cover']?.cpuMs ?? 0),
       quality: perf.qualityScale,
       scale: perf.renderScale,
     };
@@ -101,15 +110,22 @@ interface PerfView {
   query: Record<string, string | number>;
   /** rocks: the budget of the rock field where the view must hold rocks; null where it holds none. */
   budget: { gbuffer: number; shadow: number; rocks: number | null };
+  /** The view must hold at least this many instances of ground cover (its cost is then in the terrain's lines). */
+  cover?: number;
 }
 
 const VIEWS: PerfView[] = [
-  { name: 'pad', body: 'earth', query: { body: 'earth', lat: PAD.lat - 0.0009, lon: PAD.lon, agl: 1.7, heading: 60, pitch: -4, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
+  { name: 'pad', body: 'earth', query: { body: 'earth', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, agl: 1.7, heading: 60, pitch: -4, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
   // The pad itself holds no rocks (none inside the flattened disc), so the 0.15 ms of the pad checkpoint
   // is met with nothing to draw. What rocks cost on Earth is measured at eye height on the broken, stony
   // ground 1 km south-west of the pad, the densest rock field near the site (every chunk in range holds
   // hundreds of rocks), and held to the line of the lunar descent.
   { name: 'stony ground', body: 'earth', query: { body: 'earth', lat: 18.981197, lon: -155.609964, agl: 1.7, heading: 200, pitch: -8, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: 0.3 } },
+  // Ground cover at its densest near the site: among the kiawe at eye height (tussocks, scrub and trees at
+  // every level of detail), and the same thickets from 120 m up, when the lift-off camera sees trees to 1.8 km
+  // and stands of them beyond.
+  { name: 'kiawe', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, agl: 1.7, heading: 70, pitch: -3, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000 },
+  { name: 'thickets 120 m', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, agl: 120, heading: 15, pitch: -24, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000 },
   { name: '10 km', body: 'earth', query: { body: 'earth', lat: PAD.lat, lon: PAD.lon, alt: 10e3, heading: 340, pitch: -25, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
   { name: 'LEO', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 250e3, heading: 20, pitch: -40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
   { name: 'lunar orbit', body: 'moon', query: { body: 'moon', lat: 1.5, lon: 21.5, alt: 100e3, heading: 80, pitch: -30, sun: '92,10' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: null } },
@@ -132,7 +148,7 @@ for (const v of VIEWS) {
       await calibrateBallast(page, 7);
       let best: Measured | null = null;
       const within = (m: Measured): boolean =>
-        m.gbuffer <= v.budget.gbuffer && m.shadow <= v.budget.shadow && (v.budget.rocks === null || m.rocksGbuffer + m.rocksShadow <= v.budget.rocks) && m.selectP99 < 1 && m.hooksP99 < 1;
+        m.gbuffer + m.coverGbuffer <= v.budget.gbuffer && m.shadow + m.coverShadow <= v.budget.shadow && (v.budget.rocks === null || m.rocksGbuffer + m.rocksShadow <= v.budget.rocks) && m.selectP99 < 1 && m.hooksP99 < 1;
       for (let round = 0; round < 6; round++) {
         if (round >= 3 && within(best!)) break;
         const m = await measure(page, 200);
@@ -145,6 +161,8 @@ for (const v of VIEWS) {
                 shadow: Math.min(best.shadow, m.shadow),
                 rocksGbuffer: Math.min(best.rocksGbuffer, m.rocksGbuffer),
                 rocksShadow: Math.min(best.rocksShadow, m.rocksShadow),
+                coverGbuffer: Math.min(best.coverGbuffer, m.coverGbuffer),
+                coverShadow: Math.min(best.coverShadow, m.coverShadow),
                 selectP99: Math.min(best.selectP99, m.selectP99),
                 hooksP99: Math.min(best.hooksP99, m.hooksP99),
                 hooksMedian: Math.min(best.hooksMedian, m.hooksMedian),
@@ -158,12 +176,13 @@ for (const v of VIEWS) {
       const rocks = m.rocksGbuffer + m.rocksShadow;
       const part = (x: number): string => x.toFixed(3);
       console.log(
-        `${v.name}: terrain G-buffer p99 ${m.gbuffer.toFixed(3)} ms (budget ${v.budget.gbuffer}), shadows amortised ${m.shadow.toFixed(3)} ms (budget ${v.budget.shadow}), ` +
+        `${v.name}: terrain G-buffer p99 ${m.gbuffer.toFixed(3)} ms + ground cover ${m.coverGbuffer.toFixed(3)} = ${(m.gbuffer + m.coverGbuffer).toFixed(3)} (budget ${v.budget.gbuffer}), ` +
+          `shadows amortised ${m.shadow.toFixed(3)} ms + ground cover ${m.coverShadow.toFixed(3)} = ${(m.shadow + m.coverShadow).toFixed(3)} (budget ${v.budget.shadow}) [cover: ${st.cover.instances} instances, ${st.cover.triangles} triangles], ` +
           `rocks ${rocks.toFixed(3)} ms = G-buffer p99 ${m.rocksGbuffer.toFixed(3)} + shadows amortised ${m.rocksShadow.toFixed(3)}${v.budget.rocks === null ? '' : ` (budget ${v.budget.rocks})`} [${st.rocks.instances} instances, ${st.rocks.triangles} triangles]; ` +
           `with an idle GPU: G-buffer ${idle.gbuffer.toFixed(3)}, shadows ${idle.shadow.toFixed(3)}; ballast ${m.ballast.toFixed(1)} ms; ` +
           `${b.visible}/${b.selected} tiles, level ${b.deepestLevel}, ${b.waterTiles} water, ${b.casters} casters; ` +
           `main thread without uploads: p99 ${m.hooksP99.toFixed(3)} ms, median ${m.hooksMedian.toFixed(3)} (budget 1; selection p99 ${m.selectP99.toFixed(3)}; mean parts: streaming ${part(m.parts.stream)}, records and lists ${part(m.parts.build)}, ` +
-          `rocks ${part(m.parts.rocks)}, shadow hooks ${part(m.parts.shadow)}, G-buffer hook ${part(m.parts.gbuffer)}); the renderer's own figure for the hooks: p99 ${m.cpuP99.toFixed(3)} ms; ` +
+          `rocks ${part(m.parts.rocks)}, ground cover ${part(m.parts.cover)}, shadow hooks ${part(m.parts.shadow)}, G-buffer hook ${part(m.parts.gbuffer)}); the renderer's own figure for the hooks: p99 ${m.cpuP99.toFixed(3)} ms; ` +
           `detail material arrays ${(st.materialBytes / 2 ** 20).toFixed(0)} MiB`,
       );
       await shot(page, `perf-${v.name.replace(/ /g, '-')}`);
@@ -171,8 +190,12 @@ for (const v of VIEWS) {
       expect(m.quality).toBe(1);
       expect(m.scale).toBe(1);
       expect(m.gbuffer).toBeGreaterThan(0);
-      expect(m.gbuffer).toBeLessThanOrEqual(v.budget.gbuffer);
-      expect(m.shadow).toBeLessThanOrEqual(v.budget.shadow);
+      expect(m.gbuffer + m.coverGbuffer, 'terrain G-buffer with the ground cover').toBeLessThanOrEqual(v.budget.gbuffer);
+      expect(m.shadow + m.coverShadow, 'terrain shadows with the ground cover').toBeLessThanOrEqual(v.budget.shadow);
+      if (v.cover !== undefined) {
+        expect(st.cover.instances).toBeGreaterThan(v.cover);
+        expect(m.coverGbuffer).toBeGreaterThan(0);
+      }
       if (v.budget.rocks !== null) {
         // The line is only worth something where there are rocks to draw.
         expect(st.rocks.instances).toBeGreaterThan(100);

@@ -1,6 +1,6 @@
 /**
  * Meshes of the ground cover (cover.ts): what stands up from the ground and is not in the height function.
- * Four shapes, COVER_VARIANTS variants of each, three levels of detail:
+ * Five shapes, COVER_VARIANTS variants of each, three levels of detail:
  *
  *  - `tuft`: a tussock of grass, blades that lean outwards and droop. The levels of detail are nested: the
  *    coarser ones keep the first blades of the finer ones and widen them, so a tussock changes level without
@@ -8,7 +8,9 @@
  *  - `bush`: a low, wind-shaped shrub: leaf clusters ("puffs", small flattened solids) scattered through a
  *    lumpy envelope that sits on the ground. The shader cuts fine gaps into them when they are near.
  *  - `tree`: a low spreading tree (kiawe): four such crowns on leaning stems.
- *  - `stone`: a loose stone, the rock meshes of rockMesh.ts (smaller than anything that collides).
+ *  - `grove`: a stand of such trees as one mesh, for the distances at which a single tree is a few pixels.
+ *  - `stone`: a loose stone, the rock meshes of rockMesh.ts without the soil at their foot (smaller than
+ *    anything that collides).
  *
  * Unit meshes: footprint radius 1, height 1, base on z = 0, +x downwind. Vertex: position, normal, and two
  * numbers the shader shades by: for plants the height above the base (0..1) and the part (grass: a random
@@ -21,7 +23,7 @@ import { buildRockMesh, ROCK_VERTEX_FLOATS } from './rockMesh';
 export const COVER_VERTEX_FLOATS = 8;
 export const COVER_LODS = 3;
 export const COVER_VARIANTS = 3;
-export const COVER_SHAPES = ['tuft', 'bush', 'tree', 'stone'] as const;
+export const COVER_SHAPES = ['tuft', 'bush', 'tree', 'grove', 'stone'] as const;
 export type CoverShape = (typeof COVER_SHAPES)[number];
 
 export interface CoverMeshData {
@@ -154,7 +156,7 @@ function buildTuft(variant: number, lod: number): CoverMeshData {
     const ring: number[] = [];
     for (let k = 0; k < 5; k++) {
       const a = (2 * Math.PI * k) / 5;
-      ring.push(b.vertex([0.55 * Math.cos(a), 0.55 * Math.sin(a), 0], [0.6 * Math.cos(a), 0.6 * Math.sin(a), 0.53], 0, 0.5));
+      ring.push(b.vertex([0.55 * Math.cos(a), 0.55 * Math.sin(a), 0], [0.6 * Math.cos(a), 0.6 * Math.sin(a), 0.8], 0, 0.5));
     }
     for (let k = 0; k < 5; k++) b.tri(top, ring[k]!, ring[(k + 1) % 5]!);
   }
@@ -162,8 +164,8 @@ function buildTuft(variant: number, lod: number): CoverMeshData {
 }
 
 /** Numbers of the puffs of a crown at the three levels of detail, and how much larger the fewer ones are. */
-const PUFFS = [120, 44, 14];
-const PUFF_SCALE = [1, 1.45, 2.3];
+const PUFFS = [230, 60, 14];
+const PUFF_SCALE = [0.72, 1.3, 2.3];
 
 const OCTA: P3[] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const OCTA_TRIS = [0, 2, 4, 2, 1, 4, 1, 3, 4, 3, 0, 4, 2, 0, 5, 1, 2, 5, 3, 1, 5, 0, 3, 5];
@@ -178,7 +180,7 @@ const OCTA_TRIS = [0, 2, 4, 2, 1, 4, 1, 3, 4, 3, 0, 4, 2, 0, 5, 1, 2, 5, 3, 1, 5
  */
 function crown(b: Builder, lod: number, share: number, seed: number, centre: P3, radius: number, height: number, grounded: boolean): void {
   const u = rng(seed);
-  const count = Math.max(4, Math.round(PUFFS[lod]! * share));
+  const count = Math.max(2, Math.round(PUFFS[lod]! * share));
   const scale = PUFF_SCALE[lod]!;
   const zMin = grounded ? -0.05 : -0.45;
   for (let k = 0; k < count; k++) {
@@ -308,13 +310,31 @@ function fitted(raw: (variant: number, lod: number) => Builder, variant: number,
   return b.data();
 }
 
+/** Eight crowns over a disc, without stems (nobody sees them from where a grove is drawn). */
+function rawGrove(variant: number, lod: number): Builder {
+  const b = new Builder();
+  const seed = 4000 + variant * 29;
+  const u = rng(seed);
+  for (let k = 0; k < 8; k++) {
+    const a = 2 * Math.PI * u();
+    const off = 0.85 * Math.sqrt(u());
+    const radius = 0.24 + 0.14 * u();
+    const centre: P3 = [off * Math.cos(a), off * Math.sin(a), 0.3 + 0.25 * u()];
+    // A grove is never large on screen: its finest level is the trees' coarsest build.
+    crown(b, lod === 2 ? 2 : 1, lod === 2 ? 0.14 : 0.12, seed + 37 * k, centre, radius, 0.55, false);
+  }
+  return b;
+}
+
 const buildBush = (variant: number, lod: number): CoverMeshData => fitted(rawBush, variant, lod);
+const buildGrove = (variant: number, lod: number): CoverMeshData => fitted(rawGrove, variant, lod);
 const buildTree = (variant: number, lod: number): CoverMeshData => fitted(rawTree, variant, lod);
 
-const STONE_ROCKS = [3, 7, 0];
+/** Blocks and wedges: clinker is angular. */
+const STONE_ROCKS = [0, 2, 6];
 
 function buildStone(variant: number, lod: number): CoverMeshData {
-  const m = buildRockMesh(STONE_ROCKS[variant % STONE_ROCKS.length]!, lod === 0 ? 1 : 2);
+  const m = buildRockMesh(STONE_ROCKS[variant % STONE_ROCKS.length]!, lod === 0 ? 1 : 2, false);
   if (ROCK_VERTEX_FLOATS !== COVER_VERTEX_FLOATS) throw new Error('cover: the rock vertex is not a cover vertex');
   return m;
 }
@@ -323,5 +343,6 @@ export function buildCoverMesh(shape: CoverShape, variant: number, lod: number):
   if (shape === 'tuft') return buildTuft(variant, lod);
   if (shape === 'bush') return buildBush(variant, lod);
   if (shape === 'tree') return buildTree(variant, lod);
+  if (shape === 'grove') return buildGrove(variant, lod);
   return buildStone(variant, lod);
 }

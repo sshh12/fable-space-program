@@ -129,10 +129,10 @@ struct RockVaryings {
 @fragment fn fs(in: RockVaryings) -> GBufferOut {
   let r = rocks[in.rock];
   let layer = i32(rockBody.p1.y);
-  // Triplanar rock texture in the rock's own axes (it turns with the rock), tiled at four times the rock's
+  // Triplanar rock texture in the rock's own axes (it turns with the rock), tiled at nine times the rock's
   // radius (never longer than the layer was made for): a hand-sized stone and a boulder both show grain,
-  // pits and a facet or two.
-  let p = (in.local + vec3f(r.misc.z)) / clamp(4.0 * r.pos.w, 0.3, rockBody.p1.z);
+  // pits and a facet or two, not a net of cracks.
+  let p = (in.local + vec3f(r.misc.z)) / clamp(9.0 * r.pos.w, 0.6, rockBody.p1.z);
   let dpx = dpdx(p);
   let dpy = dpdy(p);
   let nm = normalize(in.model);
@@ -158,22 +158,23 @@ struct RockVaryings {
     ao += w[axis] * b.a;
     relief += w[axis] * a.a;
   }
-  // The mesh is one smooth surface; what is left of its facets (a third of the face normal, from the
-  // position derivatives) keeps broken edges readable. Then the detail gradient (rock axes) perturbs it,
-  // more strongly than on the ground: a rock face is pitted and stepped.
+  // The mesh is one welded surface of a broken rock; most of the shading normal is the face normal (from the
+  // position derivatives): fracture faces are planes that meet in edges. The smooth vertex normal rounds
+  // them a little, and the detail gradient (rock axes) pits them.
   let nv = normalize(in.normal);
   var face = cross(dpdx(in.fixed), dpdy(in.fixed));
   let fl = length(face);
   if (fl > 0.0) { face /= fl; } else { face = nv; }
   if (dot(face, nv) < 0.0) { face = -face; }
-  let nf = normalize(mix(nv, face, 0.3));
-  var g = 1.6 * quatRotate(r.q, grad);
+  let nf = normalize(mix(nv, face, 0.7));
+  var g = quatRotate(r.q, grad);
   g -= nf * dot(g, nf);
   let up = quatRotate(r.q, vec3f(0.0, 0.0, 1.0));
   let soilTint = rockBody.p1.w * r.tint.rgb;
   let cavity = saturate(in.extra.y);
   // Fracture faces differ in tone; hollows are darker (dust and shade).
-  var albedo = r.tint.rgb * mix(vec3f(luminance(ratio)), ratio, 0.6) * mix(0.72, 1.0, cavity);
+  let tone = mix(vec3f(luminance(ratio)), ratio, 0.6);
+  var albedo = r.tint.rgb * mix(vec3f(1.0), tone, 0.6) * mix(0.72, 1.0, cavity);
   let id = u32(rockBody.p0.z);
   if (id == MATERIAL_REGOLITH) {
     // Level faces carry a film of the soil the rock sits in.
@@ -461,8 +462,13 @@ export class RockRenderer {
     const out = new Float32Array(found.length * ROCK_FLOATS);
     const collideRadius = 0.25;
     const band = b.chunkSize / 2 ** (b.info.def.terrain!.maxRenderLevel - b.chunkLevel) / 32;
-    const tint = b.info.albedoAt(c.centre);
-    const scale = b.info.params.rockAlbedoScale;
+    // Colour: the ground's own (the body's low-resolution albedo map) times the rock scale; where the ground
+    // takes its colour from its materials (the imagery there is a graded picture, not an albedo), the rock
+    // material's own albedo.
+    const anchored = b.info.params.anchorNear > 0.5;
+    const rockLayer = b.info.set.index.get(b.info.set.manifest.rockMaterial)!;
+    const tint = anchored ? b.info.set.manifest.materials[rockLayer]!.layers[0].meanAlbedo : b.info.albedoAt(c.centre);
+    const scale = anchored ? 1.5 * b.info.params.rockAlbedoScale : b.info.params.rockAlbedoScale;
     c.variantStart.fill(found.length);
     found.forEach((rock, n) => {
       const variant = shape(rock);
@@ -716,7 +722,7 @@ export class RockRenderer {
       const hapke = b.info.def.render.surface!.brdf === 'hapke';
       u.set([b.rangePerRadius, b.info.params.rockRangeM, hapke ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.bodyIndex], 24);
       const rockLayer = b.info.set.index.get(b.info.set.manifest.rockMaterial)!;
-      u.set([b.info.params.rockRoughness, rockLayer, b.info.params.detailScale0M, 1 / Math.max(b.info.params.rockAlbedoScale, 1e-3)], 28);
+      u.set([b.info.params.rockRoughness, rockLayer, b.info.params.detailScale0M, b.info.params.anchorNear > 0.5 ? 0.85 : 1 / Math.max(b.info.params.rockAlbedoScale, 1e-3)], 28);
       this.device.queue.writeBuffer(b.uniform, 0, u);
     }
     if (rebuild) {

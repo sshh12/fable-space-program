@@ -24,7 +24,7 @@ interface IntegratedView {
 }
 
 const VIEWS: IntegratedView[] = [
-  { name: 'apron-eye', lat: PAD.lat - 0.0009, lon: PAD.lon, alt: PAD_ELEVATION + 1.7, heading: 2, pitch: -6 },
+  { name: 'apron-eye', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, alt: PAD_ELEVATION + 1.7, heading: 2, pitch: -6 },
   { name: 'off-apron-eye', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, alt: PAD_ELEVATION + 1.7, heading: 20, pitch: -12 },
   { name: 'ground-close', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, alt: PAD_ELEVATION + 1.7, heading: 20, pitch: -50, fov: 35 },
   { name: '30m', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, alt: PAD_ELEVATION + 30, heading: 40, pitch: -22 },

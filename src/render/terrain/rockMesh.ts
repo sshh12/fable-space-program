@@ -153,7 +153,7 @@ export function clipPolyhedron(planes: Plane[]): Face[] {
 /** Largest outward displacement of the surface by its relief, and of its foot by the soil banked against it (unit rock). */
 export const ROCK_CHIP = 0.2;
 /** Share of a point's distance from the unit ball that wear removes: blocks, slabs, wedges; boulders. */
-export const ROCK_WEAR = [0.35, 0.6] as const;
+export const ROCK_WEAR = [0.2, 0.45] as const;
 /** Floats per vertex: position, normal, soil share (1 at the foot, 0 from a quarter of the height up), cavity (1 = open face, less in scoops and cracks). */
 export const ROCK_VERTEX_FLOATS = 8;
 
@@ -236,9 +236,10 @@ export function icosphere(level: number): { dirs: P3[]; tris: number[] } {
  * has spalled off (the solid is not convex), a crack, lumps and pits of three sizes. Nothing comes nearer
  * to the centre than the unit ball. The foot flares out a little: soil is banked against a rock that has
  * lain long (vertex soil share, for the shader to colour). Directions that would leave the solid through
- * its buried bottom end on the bottom's rim; the bottom itself is not drawn.
+ * its buried bottom end on the bottom's rim; the bottom itself is not drawn. `banked = false` leaves the
+ * foot as it is (a loose stone that lies on the ground, not in it).
  */
-export function buildRockMesh(variant: number, lod: number): RockMeshData {
+export function buildRockMesh(variant: number, lod: number, banked = true): RockMeshData {
   const all = rockPlanes(variant);
   const planes = all.slice(0, -1);
   const boulder = variant % ROCK_CLASSES === 3;
@@ -288,7 +289,7 @@ export function buildRockMesh(variant: number, lod: number): RockMeshData {
       }
       pos[i] = [rho * c, rho * s, -BURIED];
       rim[i] = true;
-      soil[i] = 1;
+      soil[i] = banked ? 1 : 0;
       cavity[i] = 1;
       continue;
     }
@@ -310,17 +311,18 @@ export function buildRockMesh(variant: number, lod: number): RockMeshData {
     // Lumps and pits: outwards only (the unit ball stays inside), finer ones on top.
     const coarse = chipNoise(d, seed, 1.9);
     const fine = chipNoise(d, seed + 7, 6.5);
-    off += ROCK_CHIP * (0.75 * coarse + 0.25 * fine) * (0.35 + 0.65 * exposed);
+    // (Ridged: the fine relief is of edges and steps, not of bumps.)
+    off += ROCK_CHIP * (0.6 * coarse + 0.4 * Math.abs(2 * fine - 0.55)) * (0.35 + 0.65 * exposed);
     open -= 0.7 * Math.max(0, 0.45 - fine);
     const r = 1 + Math.max(off, 1e-4);
     const p: P3 = [d[0] * r, d[1] * r, d[2] * r];
     // The foot: soil banked against the rock flares it out.
-    const foot = 1 - Math.min(1, Math.max(0, p[2] / 0.28));
-    const banked = foot * foot * Math.min(1, Math.max(0, (p[2] + 0.55) / 0.35));
-    p[0] *= 1 + 0.16 * banked;
-    p[1] *= 1 + 0.16 * banked;
+    const foot = banked ? 1 - Math.min(1, Math.max(0, p[2] / 0.28)) : 0;
+    const flare = foot * foot * Math.min(1, Math.max(0, (p[2] + 0.55) / 0.35));
+    p[0] *= 1 + 0.08 * flare;
+    p[1] *= 1 + 0.08 * flare;
     pos[i] = p;
-    soil[i] = p[2] <= 0 ? 1 : foot * foot * (3 - 2 * foot);
+    soil[i] = !banked ? 0 : p[2] <= 0 ? 1 : foot * foot * (3 - 2 * foot);
     cavity[i] = Math.min(1, Math.max(0.35, open));
   }
   const indices: number[] = [];

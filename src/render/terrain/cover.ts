@@ -40,6 +40,11 @@ export interface CoverKindDef {
   /** Largest distance at which the kind is drawn, m, and the size on screen (pixels across) below which an instance is not. */
   rangeM: number;
   minPixels: number;
+  /**
+   * Distance from which the kind is drawn, m (0 = from the eye): an instance grows from nothing between
+   * 0.7 of it and it. A stand of trees takes over where the single trees have shrunk away.
+   */
+  nearM: number;
   /** Edge of the chunks the kind lives in, m (about). */
   chunkM: number;
   /** Linear albedo, and the albedo the driest instances go to. */
@@ -91,23 +96,23 @@ export interface CoverObserver {
 
 const RECORD_FLOATS = 16;
 const CHUNK_FLOATS = 12;
-const MAX_RECORDS = 1 << 18;
+const MAX_RECORDS = 1 << 19;
 const MAX_CHUNKS = 4096;
-const MAX_INSTANCES = 1 << 18;
-const MAX_KINDS = 4;
+const MAX_INSTANCES = 1 << 19;
+const MAX_KINDS = 6;
 /** Chunk builds per frame are limited by time (ms). */
 const BUILD_BUDGET_MS = 0.5;
 /** A chunk built while in view fades in over this many seconds. */
 const FADE_SECONDS = 0.5;
 /** Shading modes of the fragment shader, by shape. */
-const SHAPE_MODE: Record<CoverShape, number> = { tuft: 0, bush: 1, tree: 1, stone: 2 };
+const SHAPE_MODE: Record<CoverShape, number> = { tuft: 0, bush: 1, tree: 1, grove: 1, stone: 2 };
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
   rot: mat3x3f,
   prevRot: mat3x3f,
   p0: vec4f,                       // material id, frame body index, unused
-  kinds: array<vec4f, ${MAX_KINDS}>, // per kind: largest range (m), range per metre of radius, shading mode (0 grass, 1 foliage, 2 stone), unused
+  kinds: array<vec4f, ${MAX_KINDS}>, // per kind: largest range (m), range per metre of radius, shading mode (0 grass, 1 foliage, 2 stone), distance it is drawn from (m)
 }
 struct CoverRecord {
   pos: vec4f,      // xyz = base point relative to the chunk origin (body-fixed, m), w = footprint radius (m)
@@ -141,7 +146,9 @@ fn coverVertex(position: vec3f, normal: vec3f, instance: u32) -> CoverVertex {
   let kind = coverBody.kinds[u32(r.misc.w)];
   let centre = coverBody.rot * r.pos.xyz + c.origin.xyz;
   let range = min(r.pos.w * kind.y, kind.x);
-  let grow = saturate((range - length(centre)) / (0.3 * range)) * c.origin.w;
+  let dist = length(centre);
+  var grow = saturate((range - dist) / (0.3 * range)) * c.origin.w;
+  if (kind.w > 0.0) { grow *= saturate((dist - 0.7 * kind.w) / (0.3 * kind.w)); }
   let scale = vec3f(r.pos.w, r.pos.w, r.misc.x);
   let local = position * scale * grow;
   var o: CoverVertex;
@@ -203,9 +210,9 @@ struct CoverVaryings {
   if (fl > 0.0) { face /= fl; } else { face = nv; }
   let up = normalize(in.up);
   let seed = r.misc.z;
-  // Two octaves of noise fixed to the ground, in metres: leaves and the gaps between them (cells of 20 and
-  // 7 cm), the grain of a stone (cells of 3 and 1 cm).
-  let cells = select(5.0, 34.0, mode > 1.5);
+  // Two octaves of noise fixed to the ground, in metres: leaves and the gaps between them (cells of 12 and
+  // 4 cm), the grain of a stone (cells of 3 and 1 cm).
+  let cells = select(8.0, 34.0, mode > 1.5);
   let q = in.fixed * cells + vec3f(seed * 37.0, seed * 11.0, seed * 5.0);
   let n1 = textureSampleLevel(coverNoise, linearRepeat, q / 16.0, 0.0);
   let n2 = textureSampleLevel(coverNoise, linearRepeat, q.zxy * (2.9 / 16.0) + vec3f(0.31, 0.57, 0.11), 0.0);
@@ -237,7 +244,7 @@ struct CoverVaryings {
       // is less than a pixel and the cluster is its mean); clusters deep in the crown are in its shade.
       let depth = saturate(in.extra.y);
       let holes = smoothstep(0.006, 0.02, r.pos.w / max(in.currClip.w, 1e-3));
-      if (lumps < mix(-2.0, -0.16, holes)) { discard; }
+      if (lumps < mix(-2.0, -0.07, holes)) { discard; }
       if (!front) { nv = -nv; }
       n = normalize(nv + (n1.rgb * 2.0 - 1.0) * 0.5);
       albedo *= (0.72 + 0.6 * saturate(lumps + 0.45)) * mix(0.6, 1.1, h) * mix(0.6, 1.0, depth);
@@ -454,7 +461,8 @@ export class CoverRenderer {
   private readonly freeSlots: number[] = Array.from({ length: MAX_CHUNKS }, (_, i) => MAX_CHUNKS - 1 - i);
   private instanceCount = 0;
   private triangles = 0;
-  private dirty = false;
+  /** Records in use at the front of the record buffer (chunks are appended; holes are closed by compact()). */
+  private used = 0;
   private overflow = false;
   private unbuilt = 0;
   private fading = 0;
@@ -659,12 +667,12 @@ export class CoverRenderer {
       // Axes: +Z up, turned so that +X points downwind (shrubs and trees are wind-shaped; grass and stones any way).
       const up = quat.fromTo({ x: 0, y: 0, z: 1 }, dir);
       let yaw = u3 * 2 * Math.PI;
-      if (kind.shape === 'bush' || kind.shape === 'tree') {
+      if (kind.shape === 'bush' || kind.shape === 'tree' || kind.shape === 'grove') {
         const tx = quat.rotate(up, { x: 1, y: 0, z: 0 });
         const ty = quat.rotate(up, { x: 0, y: 1, z: 0 });
         yaw = Math.atan2(v3.dot(b.wind, ty), v3.dot(b.wind, tx)) + (u3 - 0.5) * 0.9;
       }
-      const tilt = quat.fromAxisAngle({ x: 1, y: 0, z: 0 }, (u4 - 0.5) * 0.25);
+      const tilt = quat.fromAxisAngle({ x: 1, y: 0, z: 0 }, (u4 - 0.5) * (kind.shape === 'stone' ? 1.1 : 0.25));
       const q = quat.mul(up, quat.mul(quat.fromAxisAngle({ x: 0, y: 0, z: 1 }, yaw), tilt));
       // Stones sit a third in the ground; plants start a little below it (the ground under them is not flat).
       const sink = kind.shape === 'stone' ? 0 : 0.06 * tall;
@@ -698,8 +706,55 @@ export class CoverRenderer {
     c.maxRadius = found.reduce((m, f) => Math.max(m, f.radius), 0);
     c.built = true;
     c.born = this.clock;
-    this.dirty = true;
+    this.place(c);
     return true;
+  }
+
+  /** Give a built chunk its place in the GPU record buffer: appended, after closing the holes when the end is reached. */
+  private place(c: Chunk): void {
+    if (c.count === 0) {
+      c.base = 0;
+      return;
+    }
+    if (this.used + c.count > MAX_RECORDS) this.compact();
+    if (this.used + c.count > MAX_RECORDS) {
+      if (!this.overflow) {
+        this.overflow = true;
+        coreOf(this.ctx).reportError('terrain cover: instance buffer is full; some ground cover is missing');
+      }
+      c.base = -1;
+      return;
+    }
+    c.base = this.used;
+    this.recordData.set(c.data, this.used * RECORD_FLOATS);
+    this.device.queue.writeBuffer(this.recordBuffer, this.used * RECORD_FLOATS * 4, this.recordData, this.used * RECORD_FLOATS, c.count * RECORD_FLOATS);
+    this.used += c.count;
+  }
+
+  /** Drop every chunk that is out of range now and lay the others out again from the front of the buffer. */
+  private compact(): void {
+    let n = 0;
+    for (const b of this.bodies) {
+      for (const tier of b.tiers) {
+        for (const [id, c] of tier.chunks) {
+          if (c.lastUsed !== this.frameIndex && !tier.wanted.includes(c)) {
+            tier.chunks.delete(id);
+            this.freeSlots.push(c.slot);
+            continue;
+          }
+          if (!c.built || c.count === 0) continue;
+          if (n + c.count > MAX_RECORDS) {
+            c.base = -1;
+            continue;
+          }
+          c.base = n;
+          this.recordData.set(c.data, n * RECORD_FLOATS);
+          n += c.count;
+        }
+      }
+    }
+    this.used = n;
+    if (n > 0) this.device.queue.writeBuffer(this.recordBuffer, 0, this.recordData, 0, n * RECORD_FLOATS);
   }
 
   /** The chunks of a tier within range of the camera. */
@@ -821,7 +876,7 @@ export class CoverRenderer {
           const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           c.near = Math.max(0, d - c.reach);
           c.visible = false;
-          if (c.near > range) continue;
+          if (c.near > range || d + c.reach < 0.7 * tier.kind.nearM) continue;
           c.lastUsed = this.frameIndex;
           let inside = true;
           for (const pl of o.frustum.planes) {
@@ -842,20 +897,19 @@ export class CoverRenderer {
         }
       }
       this.unbuilt += b.land.pending;
-      // Forget chunks that have not been in range for a while.
+      // Forget chunks that have not been in range for a while (their records become a hole in the buffer,
+      // closed when its end is reached).
       if (this.frameIndex % 120 === 0) {
         for (const tier of b.tiers) {
           for (const [id, c] of tier.chunks) {
             if (c.lastUsed < this.frameIndex - 600 && !tier.wanted.includes(c)) {
               tier.chunks.delete(id);
               this.freeSlots.push(c.slot);
-              if (c.built) this.dirty = true;
             }
           }
         }
       }
     }
-    if (this.dirty) this.pack();
     for (const b of this.bodies) {
       if (!b.active) continue;
       this.buildDraws(b, pixelAngle);
@@ -868,38 +922,13 @@ export class CoverRenderer {
       u.set([m[0], m[3], m[6], 0, m[1], m[4], m[7], 0, m[2], m[5], m[8], 0], 0);
       u.set([pm[0], pm[3], pm[6], 0, pm[1], pm[4], pm[7], 0, pm[2], pm[5], pm[8], 0], 12);
       u.set([MATERIAL_ID.terrain, b.bodyIndex, 0, 0], 24);
-      for (const tier of b.tiers) u.set([tier.kind.rangeM, tier.rangePerRadius, SHAPE_MODE[tier.kind.shape], 0], 28 + tier.kindIndex * 4);
+      for (const tier of b.tiers) u.set([tier.kind.rangeM, tier.rangePerRadius, SHAPE_MODE[tier.kind.shape], tier.kind.nearM], 28 + tier.kindIndex * 4);
       this.device.queue.writeBuffer(b.uniform, 0, u);
     }
     if (any) {
       this.device.queue.writeBuffer(this.chunkBuffer, 0, this.chunkData);
       if (this.instanceCount > 0) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
     }
-  }
-
-  /** Lay every built chunk's instances out in the GPU record buffer. */
-  private pack(): void {
-    this.dirty = false;
-    let n = 0;
-    for (const b of this.bodies) {
-      for (const tier of b.tiers) {
-        for (const c of tier.chunks.values()) {
-          if (!c.built) continue;
-          if (n + c.count > MAX_RECORDS) {
-            if (!this.overflow) {
-              this.overflow = true;
-              coreOf(this.ctx).reportError('terrain cover: instance buffer is full; some ground cover is missing');
-            }
-            c.base = -1;
-            continue;
-          }
-          c.base = n;
-          this.recordData.set(c.data, n * RECORD_FLOATS);
-          n += c.count;
-        }
-      }
-    }
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuffer, 0, this.recordData, 0, n * RECORD_FLOATS);
   }
 
   private pushRange(bucket: number, from: number, to: number): void {

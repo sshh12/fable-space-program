@@ -234,8 +234,8 @@ describe('meshes', () => {
   });
 
   it('rock meshes are closed surfaces around the unit cap, wound outwards, in bounds, with unit normals', () => {
-    // The foot flares by up to 16 % where soil is banked against it.
-    const bound = Math.hypot((1.16 * ROCK_REACH) / Math.cos(Math.PI / 8), ROCK_TOP) + ROCK_CHIP;
+    // The foot flares by up to 8 % where soil is banked against it.
+    const bound = Math.hypot((1.08 * ROCK_REACH) / Math.cos(Math.PI / 8), ROCK_TOP) + ROCK_CHIP;
     const S = ROCK_VERTEX_FLOATS;
     for (let variant = 0; variant < ROCK_VARIANTS; variant++) {
       // Every half-space leaves the unit ball inside: the polyhedron encloses the collision cap.

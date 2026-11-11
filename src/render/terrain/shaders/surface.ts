@@ -267,12 +267,17 @@ fn waterAlbedo(imagery: vec3f, depth: f32) -> vec3f {
 
 /// The night image of a tile at lod (0 = one texel per pixel, negative = magnified). Magnified, a bilinear
 /// tap draws the texel grid as crosses and diamonds in the glow of a town: a cubic B-spline (four bilinear
-/// taps) takes over within one level.
-fn nightSample(tileUv: vec2f, layer: i32, lod: f32) -> f32 {
+/// taps) takes over within one level. Minified, the image is sampled with the footprint's own shape ('dx',
+/// 'dy' = screen derivatives of the tile uv of the night image): towards the limb a pixel is many times
+/// longer than wide, and a level chosen by its long axis alone smears every town into a streak.
+fn nightSample(tileUv: vec2f, layer: i32, lod: f32, dx: vec2f, dy: vec2f) -> f32 {
   // The texture holds the tile's image inside a border of one texel from the tiles around it.
   let size = f32(textureDimensions(nightTex).x);
   let uv = (tileUv * (size - 2.0) + 1.0) / size;
-  if (lod >= 0.0) { return textureSampleLevel(nightTex, tileSampler, uv, layer, lod).r; }
+  if (lod >= 0.0) {
+    let k = (size - 2.0) / size;
+    return textureSampleGrad(nightTex, tileSampler, uv, layer, dx * k, dy * k).r;
+  }
   let st = uv * size - 0.5;
   let i = floor(st);
   let f = st - i;
@@ -305,12 +310,12 @@ fn nightEmission(t: TileRecord, uv: vec2f, k: f32, dx: vec2f, dy: vec2f, sphere:
   // One channel, sRGB-encoded (the red of the night image).
   let texels = 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)) * 65536.0, 1e-12));
   let uvN = t.nightUv.xy + uv * t.nightUv.z;
-  var c = pow(nightSample(uvN, t.images.z, texels + log2(t.nightUv.z)), 2.2);
+  var c = pow(nightSample(uvN, t.images.z, texels + log2(t.nightUv.z), dx * t.nightUv.z, dy * t.nightUv.z), 2.2);
   if (k > 0.0 && (t.flags.x & 2) != 0) {
     var p = 0.0;
     if (t.images.w >= 0) {
       let uvP = t.parentNightUv.xy + uv * t.parentNightUv.z;
-      p = pow(nightSample(uvP, t.images.w, texels + log2(t.parentNightUv.z)), 2.2);
+      p = pow(nightSample(uvP, t.images.w, texels + log2(t.parentNightUv.z), dx * t.parentNightUv.z, dy * t.parentNightUv.z), 2.2);
     }
     c = mix(c, p, k);
   }
@@ -570,12 +575,12 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
     else { st = p.xy; dx = dpx.xy; dy = dpy.xy; au = vec3f(1.0, 0.0, 0.0); av = vec3f(0.0, 1.0, 0.0); }
     // Ground seen at a shallow angle has a footprint many times longer than wide. Past the sampler's 16
     // taps the filter would pick its level by the long axis, a mip level coarser for every doubling: the
-    // ground 50 m ahead of a standing eye loses its grain. The long axis is shortened by up to a half, so
-    // the level stays the short axis's up to a ratio of 32 (one level of undersampling along the line of
-    // sight, where the image is foreshortened most).
+    // ground 50 m ahead of a standing eye loses its grain. The long axis is shortened by up to a quarter, so
+    // the level stays the short axis's up to a ratio of 21 (less than half a level of undersampling along
+    // the line of sight; a half, as it was, combed the middle distance into streaks).
     let lx = dot(dx, dx);
     let ly = dot(dy, dy);
-    let shorten = clamp(16.0 * sqrt(max(min(lx, ly), 1e-24) / max(max(lx, ly), 1e-24)), 0.5, 1.0);
+    let shorten = clamp(16.0 * sqrt(max(min(lx, ly), 1e-24) / max(max(lx, ly), 1e-24)), 0.75, 1.0);
     if (lx > ly) { dx *= shorten; } else { dy *= shorten; }
     var sunP = vec3f(0.0);
     if (sun.w > 0.0 && wa >= wTop) {
@@ -891,7 +896,8 @@ ${DETAIL_WGSL}
   let tn = tileNormal(t, uv, s.slope);
   let velocity = velocityFromClip(in.currClip, in.prevClip);
   let sphereRoot = body.rot * tn.sphere;
-  let emissive = nightEmission(t, uv, k, dx, dy, tn.sphere, sphereRoot, footprint);
+  // (The grain of the lights fades by the long axis of the pixel's footprint on the ground.)
+  let emissive = nightEmission(t, uv, k, dx, dy, tn.sphere, sphereRoot, max(footprint, max(length(dlx), length(dly))));
   let sea = body.p0.y;
   let above = in.height - sea;
   let hasOcean = body.misc.y > 0.5;
@@ -930,7 +936,11 @@ ${DETAIL_WGSL}
     if (s.mask > threshold) {
       water = true;
       waterColour = waterAlbedo(s.albedo, max(-above, 0.0));
-      waterDepth = max(-above, 0.0) + mat.p2.w * saturate((s.mask - 0.5) * 2.0);
+      let offshore = saturate((s.mask - 0.5) * 2.0);
+      waterDepth = max(-above, 0.0) + mat.p2.w * offshore;
+      // A pond above sea level: the imagery there is the colour of its banks, not of water. Dark, wet margins,
+      // and the colour of deep water towards its middle.
+      if (body.deepWater.w > 0.0) { waterColour = mix(waterColour, mix(0.35 * waterColour, body.deepWater.rgb, offshore), 1.0 - coastal); }
     }
   }
 
@@ -1057,10 +1067,12 @@ ${DETAIL_WGSL}
     let cover = saturate((min(j + 0.5 * fp, vec2f(0.014)) - max(j - 0.5 * fp, vec2f(-0.014))) / fp);
     let joint = max(cover.x, cover.y);
     let hb = hexHash(vec2i(cell));
-    var tone = 0.9 + 0.2 * hb.x + 0.16 * smoothstep(0.9, 0.93, hb.y);
+    var tone = 0.86 + 0.28 * hb.x + 0.18 * smoothstep(0.88, 0.91, hb.y);
+    // Dirt gathers along the joints.
+    tone *= 1.0 - 0.14 * (1.0 - smoothstep(0.02, 0.25, min(j.x, j.y)));
     let stain = noiseAt(vec3f(slabQ.x / 13.0, slabQ.y / 2.1, 3.3)).a;
     let blotch = noiseAt(vec3f(slabQ.x / 5.3, slabQ.y / 4.7, 9.1)).a;
-    tone *= 1.0 - 0.2 * smoothstep(0.15, 0.7, stain) - 0.14 * smoothstep(0.2, 0.8, blotch);
+    tone *= 1.0 - 0.26 * smoothstep(0.1, 0.7, stain) - 0.18 * smoothstep(0.15, 0.8, blotch);
     let scorch = (1.0 - smoothstep(10.0, 46.0, length(slabQ))) * (0.75 + 0.25 * siteNoise.y);
     tone *= 1.0 - 0.5 * scorch;
     tone *= 1.0 + 0.1 * (1.0 - smoothstep(0.0, 0.3, -kerb));
@@ -1113,7 +1125,9 @@ ${DETAIL_WGSL}
     // (x 2), which the regolith BRDF of this package (shaders/lighting.ts) reads as the spread of the facets
     // within the pixel. Under a low sun a normal map that flips between lit and unlit from pixel to pixel
     // is then a grey of the right mean, not a pattern of black dots.
-    metallic = saturate(2.0 * sqrt(pixelVariance));
+    // (Regolith is rough at every size a pixel holds: a floor of 3 degrees keeps a slope that the sun grazes
+    // a grey of lit and shaded grains, not a blot.)
+    metallic = saturate(2.0 * sqrt(pixelVariance + 0.0027));
   }
   if (water) {
     return gbufferPack(waterColour, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(waterDepth), velocity, emissive);
@@ -1145,6 +1159,7 @@ ${SURFACE_FUNCTIONS_WGSL}
   let k = in.uvk.z;
   let dx = dpdx(uv);
   let dy = dpdy(uv);
+  let footLong = max(length(dpdx(in.local)), length(dpdy(in.local)));
   let s = sampleTile(t, uv, k, dx, dy, vec2f(0.0));
   // Inside the ocean's near field the forward pass draws the surface; depth and colour keep the seabed.
   if (oceanNearField.bodyIndex == i32(body.p0.w) && length(in.pos) < oceanNearField.fadeStart) { discard; }
@@ -1155,7 +1170,7 @@ ${SURFACE_FUNCTIONS_WGSL}
   let sphere = normalize(t.cHat.xyz + tileDelta(uv, t));
   let sphereRoot = body.rot * sphere;
   let depth = max(body.p0.y - in.height, 0.0);
-  let footprint = max(length(in.pos) * 2.0 * frame.cameraUp.w * frame.renderSize.w, 1e-4);
+  let footprint = max(max(length(in.pos) * 2.0 * frame.cameraUp.w * frame.renderSize.w, 1e-4), footLong);
   let emissive = nightEmission(t, uv, k, dx, dy, sphere, sphereRoot, footprint);
   return gbufferPack(waterAlbedo(s.albedo, depth), 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(depth), velocityFromClip(in.currClip, in.prevClip), emissive);
 }

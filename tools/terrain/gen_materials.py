@@ -139,13 +139,16 @@ def stamp(height: np.ndarray, cx: float, cy: float, radius: float, profile, exte
     np.add.at(height, (ys[:, None] % n, xs[None, :] % n), add)
 
 
-def crater_profile(depth: float, rim: float, sharp: float):
-    """Bowl with a raised rim: -depth at the centre, +rim at r = 1, falling off as r^-3 outside. sharp 0..1."""
+def crater_profile(depth: float, rim: float, fresh: float):
+    """A crater in a state of wear. Fresh (1): a parabolic bowl, -depth at the centre, up to a crest of +rim
+    at r = 1 that falls off as r^-3 outside. Worn (0): the same volume smoothed by its age: a rimless
+    Gaussian hollow with soft edges. Between: the mix. (No flat floor at any age: a small crater is a bowl.)"""
     def f(dx: np.ndarray, dy: np.ndarray) -> np.ndarray:
         x = np.sqrt(dx * dx + dy * dy)
-        inside = rim - (depth + rim) * (1.0 - np.clip(x, 0, 1) ** (2.0 + 2.0 * sharp))
-        outside = rim * np.maximum(x, 1.0) ** -3.0
-        return np.where(x < 1.0, inside, outside)
+        inside = rim - (depth + rim) * (1.0 - np.clip(x, 0, 1) ** 2.0)
+        sharp = np.where(x < 1.0, inside, rim * np.maximum(x, 1.0) ** -3.0)
+        soft = -depth * np.exp(-((x / 0.62) ** 2.0))
+        return fresh * sharp + (1.0 - fresh) * soft
     return f
 
 
@@ -324,7 +327,8 @@ PHOTO: dict[str, PhotoSpec] = {
     "aa": PhotoSpec((0.040, 0.034, 0.030), 0.92, 0.0, (0.50, 0.38, 0.15, 0.06), (0.7, 1.0, 0.8), ao_gain=1.5),
     "black-sand": PhotoSpec((0.052, 0.050, 0.048), 0.88, 0.0, (0.10, 0.08, 0.035, 0.015), (0.8, 0.6, 0.8)),
     "scrub-soil": PhotoSpec((0.150, 0.105, 0.072), 0.92, 0.0, (0.16, 0.13, 0.06, 0.03), (0.7, 1.0, 0.7)),
-    "pasture": PhotoSpec((0.075, 0.095, 0.040), 0.90, 0.0, (0.30, 0.14, 0.05, 0.02), (1.0, 0.8, 0.5), ao_gain=1.3),
+    # Dry bunch grass of a windswept coast: olive and straw (sRGB about 108, 102, 64), not a lawn.
+    "pasture": PhotoSpec((0.150, 0.132, 0.052), 0.90, 0.0, (0.30, 0.14, 0.05, 0.02), (1.0, 0.8, 0.5), ao_gain=1.3),
     "concrete": PhotoSpec((0.300, 0.292, 0.276), 0.86, 0.1, (0.035, 0.012, 0.004, 0.002), (1.0, 0.5, 0.15), ao_gain=0.6),
 }
 
@@ -390,11 +394,18 @@ def scatter_craters(h: np.ndarray, metres: float, seed: int, d_lo: float, d_hi: 
         covered += np.pi * d * d / 4
         picked.append(d)
     picked.sort(reverse=True)
+    # Craters come in clusters and leave stretches bare: positions are drawn with a density that varies over
+    # the tile (a low-frequency field), not evenly.
+    crowd = unit(spectral(n, seed + 991, 2.4, 1, 5)) * 0.5 + 0.5
     for d in picked:
         fresh = float(rng.uniform(0, 1) ** fresh_power)
-        depth = d * (0.03 + 0.16 * fresh)
-        rim = d * (0.003 + 0.022 * fresh)
-        cx, cy = rng.uniform(0, n), rng.uniform(0, n)
+        # Depth / diameter 0.2 when fresh down to 0.03 when worn out; a crest only on the fresh.
+        depth = d * (0.03 + 0.17 * fresh)
+        rim = d * 0.03 * fresh * fresh
+        for _ in range(8):
+            cx, cy = rng.uniform(0, n), rng.uniform(0, n)
+            if rng.uniform(0, 1) < 0.15 + 0.85 * crowd[int(cy) % n, int(cx) % n] ** 2:
+                break
         stamp(h, cx, cy, 0.5 * d * px, crater_profile(depth, rim, fresh), 2.5)
         if fresh > 0.45:
             stamp(fresh_field, cx, cy, 0.5 * d * px, lambda dx, dy, f=fresh: f * np.exp(-((np.maximum(np.sqrt(dx * dx + dy * dy), 0.9) - 0.9) / 0.6) ** 2), 2.5)
@@ -449,15 +460,18 @@ def crater_cover(d_lo: float, d_hi: float) -> float:
 
 
 def fine_regolith(scale: int, metres: float) -> Layer:
-    """Mature lunar soil. near: powder with grain, cm clods, pits and pebbles; mid: craterlets of 0.12-0.6 m,
-    clods and stones; far: craters of 1.2-30 m; aerial: craters of 8-250 m. Some are fresh and bright."""
+    """Mature lunar soil. near: powder with grain, cm clods, pits of 2.5-40 cm and pebbles; mid: craterlets of
+    0.12-3 m and clods; far: craters of 1-30 m; aerial: craters of 8-250 m. The size ranges of neighbouring
+    layers overlap, so that no distance shows craters of one size only; most craters are worn, a few fresh
+    and bright. From the mid layer up the relief is the craters' own, on level ground: no swell (a mare is a
+    plain), and no rescaling to a wanted slope (that turned the base into ripples)."""
     n = layer_size(scale)
     seed = 700 + scale * 37
     if scale == 0:
         h = regolith_base(n, metres, seed, 0.05, 0.25)
         grain = spectral(n, seed + 1, 1.2, 40, 500) * 0.0011 + spectral(n, seed + 2, 2.0, 6, 60) * 0.0035
         h += grain
-        scatter_craters(h, metres, seed + 3, 0.025, 0.14, 2.0 * crater_cover(0.025, 0.14), exponent=2.2, fresh_power=1.0)
+        scatter_craters(h, metres, seed + 3, 0.025, 0.4, 1.5 * crater_cover(0.025, 0.4), exponent=2.2, fresh_power=1.5)
         clods = scatter_lumps(h, metres, seed + 4, 0.012, 0.06, 0.10, 0.45, 0.2)
         stones = scatter_lumps(h, metres, seed + 5, 0.015, 0.09, 0.012, 0.6, 0.9)
         speck = unit(spectral(n, seed + 6, 0.6, 60, 500))
@@ -465,23 +479,23 @@ def fine_regolith(scale: int, metres: float) -> Layer:
         rough = 0.95 - 0.06 * stones
         return Layer(metres, h, albedo, rough, 1.2).scaled_to_slope(0.22).with_feature_height(n / 12)
     if scale == 1:
-        h = regolith_base(n, metres, seed, 0.03, 0.6)
-        h += spectral(n, seed + 1, 1.8, 20, 250) * 0.004
-        fresh = scatter_craters(h, metres, seed + 3, 0.12, 0.6, 1.5 * crater_cover(0.12, 0.6), exponent=2.0, fresh_power=1.6)
+        # Fine roughness only (a few millimetres); the forms are the craterlets'.
+        h = spectral(n, seed + 1, 1.8, 20, 250) * 0.003
+        fresh = scatter_craters(h, metres, seed + 3, 0.12, 3.0, 1.3 * crater_cover(0.12, 3.0), exponent=2.0, fresh_power=2.0)
         # Clods only: stones of this size are meshes of the rock field (a stone in a normal map is a decal that
         # is all lit or all black under a low sun, with no shadow on the ground).
         scatter_lumps(h, metres, seed + 4, 0.06, 0.14, 0.01, 0.3, 0.0)
         h = gauss(h, 0.6)
         mott = unit(spectral(n, seed + 6, 2.0, 2, 40))
         albedo = tint(GREY, n) * (0.95 + 0.10 * mott)[..., None] * (1.0 + 0.10 * fresh)[..., None]
-        return Layer(metres, h, albedo, np.full((n, n), 0.95), 1.0).scaled_to_slope(0.12).with_feature_height(n / 12)
-    d_lo, d_hi = ((1.2, 30.0), (8.0, 250.0))[scale - 2]
-    h = spectral(n, seed, 2.6, 1, 30) * (0.12, 0.9)[scale - 2]
-    fresh = scatter_craters(h, metres, seed + 3, d_lo, d_hi, crater_cover(d_lo, d_hi), exponent=2.0, fresh_power=3.0)
+        return Layer(metres, h, albedo, np.full((n, n), 0.95), 1.0).with_feature_height(n / 12)
+    d_lo, d_hi = ((1.0, 30.0), (8.0, 250.0))[scale - 2]
+    h = np.zeros((n, n))
+    fresh = scatter_craters(h, metres, seed + 3, d_lo, d_hi, 1.2 * crater_cover(d_lo, d_hi), exponent=2.0, fresh_power=2.5)
     h = gauss(h, 0.8)
     mott = unit(spectral(n, seed + 6, 2.2, 1, 24))
     albedo = tint(GREY, n) * (0.95 + 0.10 * mott)[..., None] * (1.0 + 0.16 * gauss(fresh, 1.0))[..., None]
-    return Layer(metres, h, albedo, np.full((n, n), 0.95), 0.8).scaled_to_slope((0.10, 0.07)[scale - 2]).with_feature_height(n / 12)
+    return Layer(metres, h, albedo, np.full((n, n), 0.95), 0.8).with_feature_height(n / 12)
 
 
 def blocky_ejecta(scale: int, metres: float) -> Layer:
@@ -489,8 +503,10 @@ def blocky_ejecta(scale: int, metres: float) -> Layer:
     n = layer_size(scale)
     seed = 800 + scale * 41
     lo, hi, cover = ((0.012, 0.16, 0.30), (0.08, 0.3, 0.16), (0.7, 2.0, 0.05), (6.0, 12.0, 0.01))[scale]
-    h = regolith_base(n, metres, seed, 0.06, 0.3 * (1, 4, 20, 160)[scale])
-    h += spectral(n, seed + 1, 1.4, 30, n // 2) * (0.0012, 0.006, 0.03, 0.2)[scale]
+    # Undulating soil under the fragments at the two near scales; from the far layer up the ground is
+    # level and the relief is the blocks' and the craters' own.
+    h = regolith_base(n, metres, seed, 0.06, 0.3 * (1, 4, 20, 160)[scale]) if scale < 2 else np.zeros((n, n))
+    h += spectral(n, seed + 1, 1.4, 30, n // 2) * (0.0012, 0.006, 0.01, 0.03)[scale]
     stones = scatter_lumps(h, metres, seed + 2, lo, hi, cover, 0.55, 1.0)
     if scale > 0:
         d_lo, d_hi = ((0.15, 0.7), (1.5, 12.0), (10.0, 120.0))[scale - 1]
@@ -501,6 +517,8 @@ def blocky_ejecta(scale: int, metres: float) -> Layer:
     rock = tint((0.150, 0.147, 0.140), n) * (0.85 + 0.35 * facet)[..., None]
     m = gauss(stones, 0.7)[..., None]
     albedo = base * (1 - m) + rock * m
+    # (The far and aerial layers have no undulating base that a rescaling could turn into ripples: the blocks'
+    # own slopes are scaled, which keeps a field of them from going black under a low sun.)
     return Layer(metres, h, albedo, 0.94 - 0.08 * gauss(stones, 0.7), 1.4).scaled_to_slope((0.32, 0.20, 0.12, 0.08)[scale]).with_feature_height(n / 12)
 
 
@@ -509,16 +527,24 @@ def compacted_soil(scale: int, metres: float) -> Layer:
     n = layer_size(scale)
     seed = 900 + scale * 43
     lo, hi, cover = ((0.01, 0.12, 0.45), (0.07, 0.3, 0.25), (0.6, 2.5, 0.16), (5.0, 20.0, 0.10))[scale]
-    h = regolith_base(n, metres, seed, 0.07, 0.3 * (1, 4, 20, 160)[scale])
-    h += spectral(n, seed + 1, 1.6, 30, n // 2) * (0.001, 0.005, 0.03, 0.2)[scale]
-    clods = scatter_lumps(h, metres, seed + 2, lo, hi, cover, 0.35, 0.15)
-    if scale >= 2:
-        d_lo, d_hi = ((1.5, 14.0), (10.0, 150.0))[scale - 2]
+    # A lumpy crust at the two near scales. Clods of metres do not exist: from the far layer up the slope
+    # soil is level ground with worn craters.
+    if scale < 2:
+        h = regolith_base(n, metres, seed, 0.07, 0.3 * (1, 4)[scale])
+        h += spectral(n, seed + 1, 1.6, 30, n // 2) * (0.001, 0.005)[scale]
+        clods = scatter_lumps(h, metres, seed + 2, lo, hi, cover, 0.35, 0.15)
+    else:
+        h = spectral(n, seed + 1, 1.6, 30, n // 2) * (0.01, 0.03)[scale - 2]
+        clods = np.zeros((n, n))
+        d_lo, d_hi = ((1.0, 14.0), (8.0, 150.0))[scale - 2]
         scatter_craters(h, metres, seed + 3, d_lo, d_hi, crater_cover(d_lo, d_hi), fresh_power=3.0)
     h = gauss(h, 0.5)
     fine = unit(spectral(n, seed + 4, 1.2, 24, n // 2))
     albedo = tint((0.108, 0.105, 0.099), n) * (0.93 + 0.14 * fine)[..., None] * (1.0 - 0.06 * gauss(clods, 1.0))[..., None]
-    return Layer(metres, h, albedo, np.full((n, n), 0.94), 1.1).scaled_to_slope((0.24, 0.15, 0.10, 0.07)[scale]).with_feature_height(n / 12)
+    layer = Layer(metres, h, albedo, np.full((n, n), 0.94), 1.1)
+    if scale < 2:
+        layer.scaled_to_slope((0.24, 0.15)[scale])
+    return layer.with_feature_height(n / 12)
 
 
 def boulder(scale: int, metres: float) -> Layer:
@@ -586,7 +612,7 @@ SETS = {
         "classOrbital": {
             "unknown": [0.06, 0.02],
             "water": [0.0, 0.0],
-            "bareRock": [0.10, 0.05],
+            "bareRock": [0.10, 0.08],
             "sand": [0.05, 0.03],
             "sparseScrub": [0.10, 0.03],
             "grass": [0.07, 0.02],
@@ -594,7 +620,7 @@ SETS = {
             "trees": [0.12, 0.04],
             "crop": [0.08, 0.01],
             "builtUp": [0.12, 0.02],
-            "snowIce": [0.02, 0.03],
+            "snowIce": [0.03, 0.08],
             "wetland": [0.08, 0.01],
         },
         "channelGain": {"aa": 0.6, "scrub-soil": -0.3, "black-sand": -0.3, "pasture": -0.5},
@@ -619,9 +645,9 @@ SETS = {
         # The crests of ropy lava are glassy.
         "gloss": {"pahoehoe": 0.6},
         # What the ground is where a material covers it (linear albedo), where that is not the mean of its
-        # photographs: the grass of this coast is dry and olive (sRGB about 96, 92, 52), not a lawn; its dry
-        # soil is grey-brown ash (about 112, 96, 78), not red earth.
-        "anchorAlbedo": {"pasture": [0.15, 0.132, 0.05], "scrub-soil": [0.16, 0.117, 0.076]},
+        # photographs: the dry soil of this coast is grey-brown ash (sRGB about 112, 96, 78), not red earth;
+        # its grassland with the shade between the tussocks is hardly brighter than the lava beside it.
+        "anchorAlbedo": {"scrub-soil": [0.16, 0.117, 0.076], "pasture": [0.112, 0.1, 0.041]},
         # Lava, cinder and concrete are grey: the rust and blue specks of their photographs stay faint.
         "chroma": {"pahoehoe": 0.25, "aa": 0.3, "black-sand": 0.3, "concrete-apron": 0.5, "scrub-soil": 0.8},
         # Stones, tufts and clinker stay whole where the hexagon pattern blends its copies; cracks and gaps give way.
@@ -635,13 +661,16 @@ SETS = {
             "windToDeg": 235.0,
             "windLean": 0.35,
             "kinds": [
-                {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "chunkM": 16.0,
+                {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.13, 0.125, 0.045], "tintDry": [0.26, 0.21, 0.09], "clump": 0.7, "clumpM": 9.0},
-                {"id": "scrub", "shape": "bush", "radiusM": [0.5, 1.7], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "chunkM": 64.0,
+                {"id": "scrub", "shape": "bush", "radiusM": [0.5, 1.7], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 64.0,
                  "tint": [0.05, 0.07, 0.028], "tintDry": [0.10, 0.095, 0.045], "clump": 0.6, "clumpM": 40.0},
-                {"id": "kiawe", "shape": "tree", "radiusM": [2.2, 4.8], "heightPerRadius": [0.75, 1.1], "rangeM": 1800.0, "minPixels": 4.0, "chunkM": 256.0,
-                 "tint": [0.045, 0.062, 0.026], "tintDry": [0.075, 0.08, 0.04], "clump": 0.5, "clumpM": 120.0},
-                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.6, 1.0], "rangeM": 60.0, "minPixels": 4.0, "chunkM": 16.0,
+                {"id": "kiawe", "shape": "tree", "radiusM": [2.2, 4.8], "heightPerRadius": [0.75, 1.1], "rangeM": 1800.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 256.0,
+                 "tint": [0.04, 0.053, 0.024], "tintDry": [0.07, 0.075, 0.038], "clump": 0.5, "clumpM": 120.0},
+                # Stands of kiawe as single meshes, from where the single trees have shrunk away out to 7 km.
+                {"id": "stand", "shape": "grove", "radiusM": [12.0, 24.0], "heightPerRadius": [0.26, 0.36], "rangeM": 7000.0, "minPixels": 4.0, "nearM": 1800.0, "chunkM": 512.0,
+                 "tint": [0.04, 0.053, 0.024], "tintDry": [0.07, 0.075, 0.038], "clump": 0.5, "clumpM": 120.0},
+                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.6, 1.0], "rangeM": 60.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.04, 0.036, 0.034], "tintDry": [0.06, 0.05, 0.044], "clump": 0.9, "clumpM": 7.0},
             ],
             "classDensity": {
@@ -650,8 +679,8 @@ SETS = {
                 "sand": {"clinker": 0.05},
                 "sparseScrub": {"tussock": 0.35, "scrub": 0.006, "clinker": 0.2},
                 "grass": {"tussock": 1.4, "scrub": 0.003},
-                "shrub": {"tussock": 0.7, "scrub": 0.02, "kiawe": 0.0015},
-                "trees": {"tussock": 0.45, "scrub": 0.012, "kiawe": 0.011},
+                "shrub": {"tussock": 0.7, "scrub": 0.02, "kiawe": 0.0015, "stand": 0.0001},
+                "trees": {"tussock": 0.45, "scrub": 0.012, "kiawe": 0.008, "stand": 0.0007},
                 "crop": {"tussock": 0.9},
                 "wetland": {"tussock": 1.0, "scrub": 0.004},
             },
