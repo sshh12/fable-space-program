@@ -286,3 +286,27 @@ towers and parked vehicles (not started: the earthworks and the mount took the t
 joints; fairing petal detail; vent-fog anchor points for the effects package.
 
 Perf after the round: section 4.
+
+### Round 1, continued (second agent, 2026-11-11 afternoon)
+
+The first agent's account hit a spend limit after part 7; its last uncommitted change (launch-mount plate faces
+keep the plate's own weathering) was committed as it was. What was done after that, by list item:
+
+| # | Item | What was done | Shows in |
+|---|---|---|---|
+| 3 | Lander insulation | Film texture rebuilt as crumpled film: straight folds of finite length (30-90 cm hanging folds mostly along the blanket, fewer gentle 10-30 cm ones), each a ridge or valley with flat flanks, so the surface is flat facets between sharp creases (the previous one was soft pillows that read as hammered copper); narrower amber tint range | `lander-mli-closeup`, `lander-deployed`, `lander-deployed-sun-5` |
+| 4 | Frost | Fuller coat on the barrels (weight 0.62 to 1, heavier low); over markings a veil (weight 0.38) that the core now draws as a haze instead of a few solid streaks (request 6), so the letters keep their edges and lose contrast instead of being cut into stripes | `frost-prelaunch`, `frost-line-prelaunch` |
+| 8 | Night lighting | Every lamp is a spot light at its lens (request 2 part 1): six banks aimed at the vehicle (1.2e7 cd, 24 / 44 degrees: the vehicle brightest, the apron round its base at about a third, the ground under the masts dark), the tower's lamps across at the vehicle, the landing lamps down at the touchdown area, the capsule lamp along its axis. Still no shadows (part 2) | `site-overview-night`, `site-pad-night`, `game-pad-night`, `lander-lights` |
+| 13 | Model railway set | Asphalt cracks are a few wandering sealed lines across and along the road (the polygon network read as cracked mud) | `game-site-tank-farm-low` |
+| 17 | Grating | Cut-out material (request 4): real bars only at LOD 0, a cut-out plate with frame beyond it, on walkways, tower floors and treads; the swing-arm walkways are models of their own that pick their LOD by their own bar pitch (their 60 mm bars aliased into glitter from 15 m) | `pad-stack-tower-15m`, `pad-stack-tower-15m-up` |
+| 19, 24 | Lander in the integration lab | The lunar scene had the legs stowed (request 5, resolved): re-shot standing on its pads | `game-moon-lander-landed`, `game-moon-lander-low-sun`, `game-moon-lander-foot-pad` |
+| - | Request cockpit-11 | Boost cover: real ports (cut through the wall, reveals, bezels, a pane model left out from inside) over the hatch window and the commander's forward window, sized from every seat's eye point and declared as `params.windowPorts`; dark lining inside | `les-boost-cover-port` (new), `les-boost-cover-hatch` |
+
+Spec changes: `les-boost-cover-port` added; `capsule-hatch` takes its sun at `0.85,0.45,-0.1` (the hatch faces the
+planet in the lab's attitude, and since the core's per-pixel occlusion by other bodies a sun 14 degrees toward it is
+eclipsed: the old view was black). Unit tests: a sight-line test for the cover's ports (`parts.test.ts`), and the
+open-component allow list names the cover, its reveals and panes (it is a shell with openings now, like the
+capsule skin).
+
+Not done in this part, and why: shadows of local lights (request 2 part 2, not built by the core); fence, camera
+towers, parked vehicles; bolt groups at tower joints; fairing petal detail; vent-fog anchors; inner window panes.

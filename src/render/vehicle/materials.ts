@@ -98,7 +98,7 @@ const SPECS = {
   /** Amber polyimide tape (blanket seams of the lander). */
   'tape-kapton': { color: [0.78, 0.47, 0.12], metallic: 0.7, roughness: 0.36, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   'mli-gold': { color: [1, 1, 1], metallic: 0.88, roughness: 0.5, anisotropy: -0.4, tile: [1.2, 1.2], tex: { a: 'mligold_albedo', n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-silver': { color: [0.86, 0.87, 0.88], metallic: 0.92, roughness: 0.43, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-silver': { color: [0.86, 0.87, 0.88], metallic: 0.92, roughness: 0.47, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mlisilver_n', o: 'mli_orm' }, doubleSided: true },
   'mli-black': { color: [0.03, 0.03, 0.033], metallic: 0, roughness: 0.46, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },

@@ -555,6 +555,9 @@ const recipes: Record<string, () => void> = {
     const h = Field.from(S, S, (u, v, x, y) => 0.006 * fbm(u, v, 3, 3, 2, 125) + folds.at(x, y));
     const creaseA = (_u: number, _v: number, x: number, y: number): number => crest.at(x, y);
     save('mli_n', normalMap(h, T, 1));
+    // The aluminised (silver) film is the same blanket laid flatter: at full slope its facets flip between the
+    // black sky and the sunlit ground and the panel turns into a black-and-white mosaic from a few metres.
+    save('mlisilver_n', normalMap(h, T, 0.45));
     const ao = cavity(h, 6, 90);
     const [lo, hi] = h.range();
     save(
