@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SkyManifest } from '@/core/contracts/sky';
 import { STAR_MAG0_ILLUMINANCE, STAR_RECORD_FLOATS } from '@/core/contracts/sky';
-import { decodeRgb9e5, faceFileBytes, faceMipLayout, parseStarCatalogue, validateSkyManifest } from '@/render/sky/skyData';
+import { decodeHalf, decodeRgb9e5, faceFileBytes, faceMipLayout, parseStarCatalogue, rgb9e5LuminanceHalf, validateSkyManifest } from '@/render/sky/skyData';
 import { cubeFaceUv, raDecToDir } from '@/render/sky/photometry';
 
 const skyDir = path.resolve(__dirname, '../../../data/sky');
@@ -22,6 +22,25 @@ describe('sky data layout', () => {
     // (1, 0.5, 0.25): exponent 16 (2^1 scale with bias 15, 9 bits), mantissas 256, 128, 64.
     const v = 256 | (128 << 9) | (64 << 18) | (16 << 27);
     expect(decodeRgb9e5(v >>> 0)).toEqual([1, 0.5, 0.25]);
+  });
+
+  it('the luminance detail layer: rgb9e5 texels to half-float luminance within the precision of a half', () => {
+    const texels = new Uint32Array([
+      256 | (128 << 9) | (64 << 18) | (16 << 27), // (1, 0.5, 0.25)
+      0,
+      511 | (511 << 9) | (511 << 18) | (31 << 27), // the largest value, 65408
+      1 | (0 << 9) | (0 << 18) | (0 << 27), // the smallest non-zero red, 2^-24
+      300 | (17 << 9) | (455 << 18) | (9 << 27),
+    ]);
+    const half = rgb9e5LuminanceHalf(texels);
+    for (let i = 0; i < texels.length; i++) {
+      const [r, g, b] = decodeRgb9e5(texels[i]!);
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const got = decodeHalf(half[i]!);
+      // 11 significant bits; below 2^-14 a half is denormal (absolute step 2^-24).
+      expect(Math.abs(got - l)).toBeLessThanOrEqual(Math.max(l * 2 ** -11, 2 ** -24));
+    }
+    expect(half[1]).toBe(0);
   });
 
   it('rejects manifests that break the contract', () => {

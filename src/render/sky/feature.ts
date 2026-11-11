@@ -13,13 +13,29 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { STAR_RECORD_FLOATS, type SkyManifest } from '@/core/contracts/sky';
-import { mat4, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
+import { mat4, quat, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
 import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type SceneBindings, type Tracked } from '@/render/core';
 import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, STARBURST, bladeAngle, coneNdcBounds, flareNormalisation, frameSolidAngle, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
-import { impostorSigmaPx, impostorWeight, IMPOSTOR_NONE_PX, lambertSphereIlluminance, pixelSolidAngle, STAR_PSF_SIGMA_PX, STAR_QUAD_SIGMAS } from './photometry';
+import {
+  farBodyDiscIntegral,
+  hapkeSingleScattering,
+  impostorKernelPx,
+  impostorLune,
+  impostorWeight,
+  impostorWingShare,
+  lambertPhase,
+  litWidthPx,
+  pixelSolidAngle,
+  starImageRadius,
+  starWing,
+  visibleFaceAlbedo,
+  STAR_PSF_SIGMA_PX,
+  STAR_QUAD_SIGMAS,
+  type FarBodyShading,
+} from './photometry';
 import { EnvironmentProbe, type ProbeState } from './probe';
 import { BACKGROUND_FS, FLARE_VIS_CS, FLARE_WGSL, IMPOSTOR_WGSL, STARS_WGSL } from './shaders';
-import { faceFileBytes, faceMipLayout, parseStarCatalogue, validateSkyManifest, type StarCatalogue } from './skyData';
+import { faceFileBytes, faceMipLayout, parseStarCatalogue, rgb9e5LuminanceHalf, validateSkyManifest, type StarCatalogue } from './skyData';
 
 export interface SkyParts {
   stars: boolean;
@@ -45,6 +61,12 @@ export interface SkyFeatureOptions extends Partial<SkyParts> {
    * 2048 costs 134 MB instead of 34 MB.
    */
   milkyWayFaceSize?: number;
+  /**
+   * Keep the next finer baked level as a luminance-only detail layer (r16float, default true): with the default
+   * face size the faint stars keep the baked 2048 resolution (their colour comes from the 1024 level) for 50 MB
+   * instead of the 100 MB of the full-colour level. No effect when the finest level is already uploaded.
+   */
+  milkyWayDetail?: boolean;
 }
 
 /** Default largest Milky Way face size in VRAM (texels): 0.088 deg per texel at the face centre. */
@@ -52,11 +74,13 @@ export const MILKY_WAY_FACE_SIZE = 1024;
 
 export interface ImpostorInfo {
   bodyId: string;
-  /** Projected diameter (render px), weight of the impostor against the geometry, illuminance at the camera (lux). */
+  /** Projected diameter (render px), weight of the far image against the geometry, illuminance at the camera (lux). */
   diameterPx: number;
   weight: number;
   illuminance: number;
-  sigmaPx: number;
+  /** Width of the sunlit part along the sun line (render px) and the sigma of the image's kernel (px). */
+  litWidthPx: number;
+  kernelPx: number;
 }
 
 export interface FlareStateInfo {
@@ -75,8 +99,9 @@ export interface SkyStatus {
   manifest: SkyManifest | null;
   starsLoaded: boolean;
   milkyWayLoaded: boolean;
-  /** Face size of the Milky Way cube in VRAM (texels; 0 until loaded). */
+  /** Face size of the Milky Way cube in VRAM (texels; 0 until loaded), and of its luminance detail layer (0 = none). */
   milkyWayFaceSize: number;
+  milkyWayDetailSize: number;
   error: string | null;
   /** Whether the flare was drawn in the last frame. */
   flareDrawn: boolean;
@@ -98,7 +123,17 @@ const ADDITIVE: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one', o
 const PREMULTIPLIED: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } };
 const SKY_UNIFORM_FLOATS = 20;
 const MAX_IMPOSTORS = 16;
-const IMPOSTOR_FLOATS = 4 + MAX_IMPOSTORS * 12;
+/** Floats per Impostor of IMPOSTOR_WGSL (9 vec4). */
+const IMPOSTOR_STRIDE = 36;
+const IMPOSTOR_FLOATS = 4 + MAX_IMPOSTORS * IMPOSTOR_STRIDE;
+interface FarBody {
+  shading: FarBodyShading;
+  /** Phase-integrated radiance of the disc per lux and unit radius^2 (rgb), for `phase` (rad) and `albedo`. */
+  reference: Vec3Tuple;
+  phase: number;
+  albedo: Vec3Tuple;
+}
+const smooth01 = (x: number): number => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const FLARE_TERMS = 1 + GHOSTS.length;
 /** FlareUniforms of FLARE_WGSL: count, sun, glare, rays, the blades (2 vec4 each), the ghosts (5 vec4 each). */
 const FLARE_FLOATS = 16 + BLADE_COUNT * 8 + GHOSTS.length * 20;
@@ -123,7 +158,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   let ctx: RenderContext;
   let defs: DefLibrary;
   let device: GPUDevice;
-  const status: SkyStatus = { manifest: null, starsLoaded: false, milkyWayLoaded: false, milkyWayFaceSize: 0, error: null, flareDrawn: false };
+  const status: SkyStatus = { manifest: null, starsLoaded: false, milkyWayLoaded: false, milkyWayFaceSize: 0, milkyWayDetailSize: 0, error: null, flareDrawn: false };
   let pendingLoads = 0;
   let catalogue: StarCatalogue | null = null;
 
@@ -135,6 +170,8 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   let blankCube: GPUTextureView;
   let milkyWay: GPUTextureView | null = null;
   let milkyWayTex: GPUTexture | null = null;
+  let milkyWayDetail: GPUTextureView | null = null;
+  let milkyWayDetailTex: GPUTexture | null = null;
   let backgroundPipeline: Tracked<GPURenderPipeline>;
   let starPipeline: Tracked<GPURenderPipeline>;
   let starBuffer: GPUBuffer | null = null;
@@ -150,6 +187,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   const impostorData = new ArrayBuffer(IMPOSTOR_FLOATS * 4);
   let impostorPipeline: Tracked<GPURenderPipeline>;
   let impostorList: ImpostorInfo[] = [];
+  const farBodies = new Map<string, FarBody>();
 
   // Flare.
   let flareLayout: GPUBindGroupLayout;
@@ -185,6 +223,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       entries: [
         { binding: 0, resource: { buffer: skyBuf } },
         { binding: 1, resource: milkyWay ?? blankCube },
+        { binding: 2, resource: milkyWayDetail ?? blankCube },
       ],
     });
   };
@@ -216,6 +255,11 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       mipLevelCount: mw.mipLevels - skip,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
+    // The level just finer than the colour chain is kept as luminance (r16float): half the bytes of its rgb9e5 texels.
+    const detailSize = skip > 0 && (options.milkyWayDetail ?? true) ? faceSize * 2 : 0;
+    const detail = detailSize
+      ? coreOf(ctx).createTextureChecked({ label: `${id}.milkyWayDetail`, format: 'r16float', size: [detailSize, detailSize, 6], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+      : null;
     const layout = faceMipLayout(mw.faceSize, mw.mipLevels);
     const bytes = faceFileBytes(mw.faceSize, mw.mipLevels);
     // One face at a time: 22 MB of transient memory instead of 134 MB.
@@ -228,11 +272,21 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
         const { offset, size } = layout[l]!;
         device.queue.writeTexture({ texture: tex, mipLevel: l - skip, origin: [0, 0, face] }, data, { offset, bytesPerRow: size * 4, rowsPerImage: size }, [size, size, 1]);
       }
+      if (detail) {
+        const { offset, size } = layout[skip - 1]!;
+        const half = rgb9e5LuminanceHalf(new Uint32Array(data, offset, size * size));
+        device.queue.writeTexture({ texture: detail, origin: [0, 0, face] }, half, { bytesPerRow: size * 2, rowsPerImage: size }, [size, size, 1]);
+      }
     }
     milkyWayTex = tex;
     milkyWay = tex.createView({ dimension: 'cube' });
     status.milkyWayLoaded = true;
     status.milkyWayFaceSize = faceSize;
+    if (detail) {
+      milkyWayDetailTex = detail;
+      milkyWayDetail = detail.createView({ dimension: 'cube' });
+      status.milkyWayDetailSize = detailSize;
+    }
     rebuildSkyGroup();
     probe.setMilkyWay(milkyWay, mw.luminanceScale, faceSize);
   }
@@ -260,8 +314,42 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       break;
     }
     if (!inside) d.set([0, 0, 1, 1], 8);
-    d.set([pixelSolidAngle(tanX, tanY, w, h), STAR_QUAD_SIGMAS * STAR_PSF_SIGMA_PX, (2 * tanY) / h, 0], 16);
+    // px.w: angle of a texel of the detail layer at a face centre (0 = no detail layer).
+    d.set([pixelSolidAngle(tanX, tanY, w, h), STAR_QUAD_SIGMAS * STAR_PSF_SIGMA_PX, (2 * tanY) / h, milkyWayDetail ? 2 / status.milkyWayDetailSize : 0], 16);
     device.queue.writeBuffer(skyBuf, 0, d);
+  };
+
+  /** Lambert albedo of a body's far image: 1.5 p gives the sphere the geometric albedo p (the render core's planetshine formula), coloured by meanColor. */
+  const lambertAlbedoOf = (bodyId: string): Vec3Tuple | null => {
+    const r = defs.bodies[bodyId]?.render;
+    if (!r) return null;
+    const l = Math.max(luma(r.meanColor), 1e-6);
+    return [(1.5 * r.geometricAlbedo * r.meanColor[0]) / l, (1.5 * r.geometricAlbedo * r.meanColor[1]) / l, (1.5 * r.geometricAlbedo * r.meanColor[2]) / l];
+  };
+
+  /**
+   * Photometric function of a body's far image and the phase-integrated radiance of its disc per lux and unit
+   * radius^2. A regolith body is rendered with its Hapke function and its albedo map: the far image uses the same
+   * function with the mean albedo of the face it shows (`albedo`: from the albedoLowRes map where one is loaded,
+   * else the body's mean colour); any other body is the Lambert sphere of its geometric albedo. The Hapke reference
+   * is a quadrature (1,152 evaluations), repeated only when the phase angle or the albedo has changed.
+   */
+  const farBodyOf = (bodyId: string, phase: number, albedo: Vec3Tuple | null): FarBody | null => {
+    const def = defs.bodies[bodyId];
+    const lambertAlbedo = lambertAlbedoOf(bodyId);
+    if (!def || !lambertAlbedo) return null;
+    const params = def.render.surface?.brdf === 'hapke' ? def.render.surface.hapke : undefined;
+    if (!params) {
+      const k = (2 / 3) * lambertPhase(phase);
+      return { shading: { lambertAlbedo, hapke: null }, reference: [lambertAlbedo[0] * k, lambertAlbedo[1] * k, lambertAlbedo[2] * k], phase, albedo: lambertAlbedo };
+    }
+    const a = albedo ?? def.render.meanColor;
+    const known = farBodies.get(bodyId);
+    if (known && Math.abs(known.phase - phase) < 1e-5 && Math.abs(known.albedo[0] - a[0]) + Math.abs(known.albedo[1] - a[1]) + Math.abs(known.albedo[2] - a[2]) < 1e-5) return known;
+    const shading: FarBodyShading = { lambertAlbedo, hapke: { w: [hapkeSingleScattering(a[0], params), hapkeSingleScattering(a[1], params), hapkeSingleScattering(a[2], params)], params } };
+    const far: FarBody = { shading, reference: farBodyDiscIntegral(shading, phase, 24, 16), phase, albedo: [a[0], a[1], a[2]] };
+    farBodies.set(bodyId, far);
+    return far;
   };
 
   const prepareImpostors = (frame: FrameContext, tanX: number, tanY: number, forward: { x: number; y: number; z: number }): void => {
@@ -270,12 +358,14 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     const f32 = new Float32Array(impostorData);
     f32.fill(0);
     if (!parts.impostors) return;
-    const [w, h] = frame.renderSize;
+    const [, h] = frame.renderSize;
     const pxAngle = (2 * tanY) / h;
-    const omegaAxis = pixelSolidAngle(tanX, tanY, w, h);
+    // The hand-over is decided in display pixels: dynamic resolution must not switch the representation.
+    const displayScale = frame.displaySize[1] / h;
     const s = frame.snapshot;
     const emission = defs.bodies[frame.sun.bodyId]?.emission;
     if (!emission) return;
+    const camUp = { x: frame.view[1]!, y: frame.view[5]!, z: frame.view[9]! };
     let n = 0;
     for (const pose of frame.bodies) {
       if (n >= MAX_IMPOSTORS) break;
@@ -290,8 +380,14 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       const cosOff = v3.dot(dir, forward);
       if (cosOff < 0.05) continue;
       const diameterPx = (2 * Math.asin(R / dist)) / (pxAngle * cosOff ** 1.5);
-      if (diameterPx >= IMPOSTOR_NONE_PX) continue;
-      const weight = impostorWeight(diameterPx);
+      const phase = v3.angle(snap.sunDir, v3.neg(dir));
+      const weight = impostorWeight(diameterPx * displayScale, phase);
+      if (weight <= 0) continue;
+      // The face the body shows: mean albedo of its sunlit, visible part (body-fixed directions to the camera and the sun).
+      const grid = probe.albedoGrid(pose.id);
+      const face = grid ? visibleFaceAlbedo(grid, quat.rotateInv(pose.qFixedToRoot, v3.neg(dir)), quat.rotateInv(pose.qFixedToRoot, snap.sunDir)) : null;
+      const far = farBodyOf(pose.id, phase, face);
+      if (!far) continue;
       // Sun at the body: illuminance, angular size, and eclipses by the other bodies.
       const eSun = emission.illuminance * (emission.refDistance / snap.sunDistance) ** 2;
       const rs = Math.asin(Math.min(1, emission.radius / snap.sunDistance));
@@ -303,16 +399,43 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
         const to = v3.sub(o.rRoot, snap.rRoot);
         vis *= discVisibleFraction(rs, Math.asin(Math.min(1, od.radius / v3.len(to))), v3.angle(to, snap.sunDir));
       }
-      const phase = v3.angle(snap.sunDir, v3.neg(dir));
-      const e = lambertSphereIlluminance(eSun, def.render.geometricAlbedo, R, dist, phase) * vis;
-      const mc = def.render.meanColor;
-      const l = Math.max(luma(mc), 1e-6);
-      const sigma = impostorSigmaPx(diameterPx);
-      const o = 4 + n * 12;
-      f32.set([pose.centerRelCam.x, pose.centerRelCam.y, pose.centerRelCam.z, R], o);
-      f32.set([(e * mc[0]) / l, (e * mc[1]) / l, (e * mc[2]) / l, weight], o + 4);
-      f32.set([sigma, Math.max(STAR_QUAD_SIGMAS * sigma, diameterPx / 2 + 1.5), dist - 1.5 * R, 1 / omegaAxis], o + 8);
-      impostorList.push({ bodyId: pose.id, diameterPx, weight, illuminance: e, sigmaPx: sigma });
+      const light: Vec3Tuple = [frame.sun.color[0] * eSun * vis, frame.sun.color[1] * eSun * vis, frame.sun.color[2] * eSun * vis];
+      const ref = far.reference;
+      const flux: Vec3Tuple = [light[0] * ref[0], light[1] * ref[1], light[2] * ref[2]];
+      const radiusPx = 0.5 * diameterPx;
+      // Illuminance at the camera (lux): the disc's radiance integral x its solid angle per unit radius^2.
+      const e = luma(flux) * Math.asin(R / dist) ** 2;
+      // Image plane at the body: x right, y up; the sun's direction in it orients the sample grid.
+      const up = v3.normalize(v3.sub(camUp, v3.scale(dir, v3.dot(camUp, dir))));
+      const right = v3.cross(dir, up);
+      const sx = v3.dot(snap.sunDir, right);
+      const sy = v3.dot(snap.sunDir, up);
+      const sl = Math.hypot(sx, sy);
+      const axis = sl > 1e-9 ? [sx / sl, sy / sl] : [1, 0];
+      const share = impostorWingShare(diameterPx);
+      const sigma = impostorKernelPx(diameterPx);
+      const lune = impostorLune(diameterPx, phase);
+      const wingRadius = share > 0 ? starImageRadius(luma(flux) * radiusPx * radiusPx * frame.exposure * weight, share) : 0;
+      const wing = share > 0 ? starWing(wingRadius, share) : { amp: 0, floor: 0 };
+      const hp = far.shading.hapke;
+      const albedo = hp ? hp.w : far.shading.lambertAlbedo;
+      const o = 4 + n * IMPOSTOR_STRIDE;
+      f32.set(
+        [
+          ...[pose.centerRelCam.x, pose.centerRelCam.y, pose.centerRelCam.z, R],
+          ...[axis[0]!, axis[1]!, phase, weight],
+          ...[light[0], light[1], light[2], hp ? 1 : 0],
+          ...[albedo[0], albedo[1], albedo[2], 0],
+          ...(hp ? [hp.params.b0, hp.params.hS, hp.params.bP, hp.params.cP] : [0, 1, 0, 0]),
+          ...[flux[0], flux[1], flux[2], share],
+          ...[radiusPx, Math.max(radiusPx + 3 * sigma + 1, wingRadius), dist - 1.5 * R, sigma],
+          // Over the geometry the image replaces the whole disc of a small body and only the sunlit part of a larger one.
+          ...[lune.rows, lune.cols, smooth01((diameterPx - 6) / 6), 0],
+          ...[wing.amp, wing.floor, wingRadius, 0],
+        ],
+        o,
+      );
+      impostorList.push({ bodyId: pose.id, diameterPx, weight, illuminance: e, litWidthPx: litWidthPx(diameterPx, phase), kernelPx: sigma });
       n++;
     }
     u32[0] = n;
@@ -426,6 +549,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
         entries: [
           { binding: 0, visibility: V | F, buffer: { type: 'uniform' } },
           { binding: 1, visibility: F, texture: { sampleType: 'float', viewDimension: 'cube' } },
+          { binding: 2, visibility: F, texture: { sampleType: 'float', viewDimension: 'cube' } },
         ],
       });
       skyBuf = device.createBuffer({ label: `${id}.sky`, size: SKY_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -602,6 +726,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
 
     dispose() {
       milkyWayTex?.destroy();
+      milkyWayDetailTex?.destroy();
       starBuffer?.destroy();
       for (const b of [skyBuf, impostorBuf, flareBuf, flareState, visBuf]) b.destroy();
       probe.dispose();

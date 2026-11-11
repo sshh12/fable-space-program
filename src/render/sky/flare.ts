@@ -45,13 +45,13 @@ export interface BladeDef {
 
 /** The seven blades of this iris (a fixed table: manufacturing spread of 20-30 % in strength and length). */
 export const BLADES: readonly BladeDef[] = [
-  { angle: 0.012, amplitude: 1.0, length: 0.068, fan: 0.042 },
-  { angle: -0.021, amplitude: 0.72, length: 0.06, fan: 0.056 },
-  { angle: 0.03, amplitude: 1.24, length: 0.078, fan: 0.038 },
-  { angle: -0.008, amplitude: 0.86, length: 0.07, fan: 0.05 },
-  { angle: 0.019, amplitude: 1.12, length: 0.074, fan: 0.045 },
-  { angle: -0.027, amplitude: 0.78, length: 0.052, fan: 0.06 },
-  { angle: 0.004, amplitude: 1.05, length: 0.066, fan: 0.041 },
+  { angle: 0.012, amplitude: 1.0, length: 0.065, fan: 0.042 },
+  { angle: -0.021, amplitude: 0.72, length: 0.058, fan: 0.056 },
+  { angle: 0.03, amplitude: 1.24, length: 0.074, fan: 0.038 },
+  { angle: -0.008, amplitude: 0.86, length: 0.067, fan: 0.05 },
+  { angle: 0.019, amplitude: 1.12, length: 0.07, fan: 0.045 },
+  { angle: -0.027, amplitude: 0.78, length: 0.05, fan: 0.06 },
+  { angle: 0.004, amplitude: 1.05, length: 0.063, fan: 0.041 },
 ];
 
 export interface StarburstDef {
@@ -73,10 +73,10 @@ export interface StarburstDef {
 export const STARBURST: StarburstDef = {
   coreEnergy: 0.0022,
   coreAngle: 0.012,
-  skirtEnergy: 0.0042,
+  skirtEnergy: 0.0037,
   skirtAngle: 0.02,
   veilEnergy: 0.0012,
-  rayEnergy: 0.0015,
+  rayEnergy: 0.002,
   rayKnee: 0.03,
   rayDiscSigma: 0.5,
 };
@@ -130,7 +130,7 @@ export const GHOSTS: readonly GhostDef[] = [
   { k: 0.55, radius: 0.044, energy: 5.0e-6, tint: normaliseTint([0.6, 0.95, 0.8]), blur: 2.2, round: 0.25, rim: -0.25, gradient: 0.35, chroma: 0.05, flip: -1, vignette: 0.6 },
   { k: 0.78, radius: 0.011, energy: 1.0e-6, tint: normaliseTint([0.9, 0.9, 1.0]), blur: 1.1, round: 0.35, rim: -0.4, gradient: 0.2, chroma: 0.12, flip: 1, vignette: 0.3 },
   { k: 1.42, radius: 0.07, energy: 7.0e-6, tint: normaliseTint([0.7, 0.6, 1.0]), blur: 3.0, round: 0.3, rim: 0.45, gradient: 0.4, chroma: 0.04, flip: -1, vignette: 0.8 },
-  { k: -2.3, radius: 0.3, energy: 6.0e-5, tint: normaliseTint([0.8, 0.9, 1.0]), blur: 8.0, round: 0.5, rim: 0.15, gradient: 0.5, chroma: 0.02, flip: 1, vignette: 1.0 },
+  { k: -2.3, radius: 0.3, energy: 4.0e-5, tint: normaliseTint([0.96, 0.98, 1.0]), blur: 8.0, round: 0.5, rim: 0.15, gradient: 0.5, chroma: 0.02, flip: 1, vignette: 1.0 },
 ];
 
 export const FLARE_TOTAL_ENERGY =

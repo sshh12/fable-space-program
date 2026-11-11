@@ -153,7 +153,13 @@ test('PSF photometry: the integrated luminance of an isolated star is illuminanc
       await window.__test!.waitFrames(6);
       const f = window.__lab!.renderer.frameContext!;
       const p = sky.projectDir(d)!;
-      const half = 5;
+      // The window holds the whole image: its wings reach out to where they fall under the floor (photometry.ts starImageRadius).
+      const [rw, rh] = f.renderSize;
+      const ty = Math.tan(f.camera.fovY / 2);
+      const fw = { x: -f.view[2]!, y: -f.view[6]!, z: -f.view[10]! };
+      const om = ((2 * ty * rw) / rh / rw) * ((2 * ty) / rh) * (d.x * fw.x + d.y * fw.y + d.z * fw.z) ** 3;
+      const radius = sky.cpu.starImageRadius((cat.records[o + 3]! / om) * f.exposure);
+      const half = Math.ceil(radius) + 2;
       const px = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(p.x) - half, y: Math.round(p.y) - half, width: 2 * half + 1, height: 2 * half + 1 });
       let sum = 0;
       for (let i = 0; i < px.data.length; i += 4) sum += 0.2126 * px.data[i]! + 0.7152 * px.data[i + 1]! + 0.0722 * px.data[i + 2]!;
@@ -164,9 +170,9 @@ test('PSF photometry: the integrated luminance of an isolated star is illuminanc
       const fwd = { x: -f.view[2]!, y: -f.view[6]!, z: -f.view[10]! };
       const c3 = (d.x * fwd.x + d.y * fwd.y + d.z * fwd.z) ** 3;
       const omega = ((2 * tanX) / w) * ((2 * tanY) / h) * c3;
-      return { lux: cat.records[o + 3]!, mag: cat.records[o + 7]!, sum, expected: (cat.records[o + 3]! / omega) * f.exposure, cosOff: Math.cbrt(c3) };
+      return { lux: cat.records[o + 3]!, mag: cat.records[o + 7]!, sum, expected: (cat.records[o + 3]! / omega) * f.exposure, cosOff: Math.cbrt(c3), radius };
     }, c);
-    console.log(`star ${c.star} (V ${r.mag.toFixed(2)}), off-axis cos ${r.cosOff.toFixed(4)}: integrated ${r.sum.toExponential(4)}, E / omega x exposure ${r.expected.toExponential(4)}, ratio ${(r.sum / r.expected).toFixed(4)}`);
+    console.log(`star ${c.star} (V ${r.mag.toFixed(2)}), off-axis cos ${r.cosOff.toFixed(4)}: integrated ${r.sum.toExponential(4)}, E / omega x exposure ${r.expected.toExponential(4)}, ratio ${(r.sum / r.expected).toFixed(4)} (image radius ${r.radius.toFixed(1)} px)`);
     expect(Math.abs(r.sum / r.expected - 1)).toBeLessThan(0.05);
   }
   await expectNoErrors(page, pageLog);
@@ -228,20 +234,48 @@ test('at the exposure of a sunlit Earth (EV100 14-15) no star exceeds 1/255; in 
   }
   await sky.close();
 
-  // Night: in Earth's shadow, nothing lit in view: the core's dark-adapted exposure.
+  // Night: in Earth's shadow, nothing lit in view: the core's dark-adapted exposure, reached by slow dark adaptation.
   await page.evaluate(() => window.__sky!.setSunForVessel('night'));
-  await page.waitForFunction(() => window.__lab!.renderer.exposureInfo().ev100 < -2.9, undefined, { timeout: 120_000 });
+  await page.waitForFunction(
+    () => {
+      const e = window.__lab!.renderer.exposureInfo();
+      return e.ev100 < 0 && Math.abs(e.ev100 - e.targetEv100) < 0.02;
+    },
+    undefined,
+    { timeout: 240_000 },
+  );
   await page.evaluate(() => window.__lab!.setDeterministic(true));
   const night = await page.evaluate(() => window.__lab!.renderer.exposureInfo().ev100);
   console.log(`Earth's shadow: EV100 ${night.toFixed(2)} (dark-adapted floor)`);
-  await saveScreenshot(page, 'sky', 'leo-night-dark-adapted');
+  expect(night).toBeLessThan(-5.5);
+  await page.evaluate(() => window.__test!.waitFrames(60));
+  const nightShot = PNG.sync.read((await saveScreenshot(page, 'sky', 'leo-night-dark-adapted')).buffer);
+  // The night sky as a picture, at the exposure the game reaches by itself: star images above 16/255 (local maxima).
+  {
+    const luma = (i: number): number => 0.2126 * nightShot.data[i * 4]! + 0.7152 * nightShot.data[i * 4 + 1]! + 0.0722 * nightShot.data[i * 4 + 2]!;
+    let images = 0;
+    let lifted = 0;
+    for (let y = 1; y < nightShot.height - 1; y++) {
+      for (let x = 1; x < nightShot.width - 1; x++) {
+        const i = y * nightShot.width + x;
+        const v = luma(i);
+        if (v > 8) lifted++;
+        if (v < 16) continue;
+        let isPeak = true;
+        for (let dy = -1; dy <= 1 && isPeak; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx !== 0 || dy !== 0) && luma(i + dy * nightShot.width + dx) > v) isPeak = false;
+        if (isPeak) images++;
+      }
+    }
+    console.log(`low orbit at night, automatic exposure: ${images} star images above 16/255, ${((lifted / (nightShot.width * nightShot.height)) * 100).toFixed(1)} % of the frame above 8/255`);
+    expect(images).toBeGreaterThan(1000);
+  }
   // The check of the 100 brightest is made 20,000 km up, still in the Earth's shadow (the night side then hides 1.5 %
   // of the sky, not a third), at the core's dark-adapted floor (pinned: the sunlit Moon in one of the views would
   // otherwise stop the exposure down for that view).
   await page.evaluate(() => {
     window.__sky!.setVesselAltitude(20e6);
-    window.__lab!.renderer.setExposureOverride(-3);
   });
+  await page.evaluate((e) => window.__lab!.renderer.setExposureOverride(e), night);
   const brightest = await page.evaluate(() => {
     const cat = window.__sky!.sky!.stars()!;
     return Array.from({ length: 100 }, (_, i) => ({ i, d: { x: cat.records[i * 8]!, y: cat.records[i * 8 + 1]!, z: cat.records[i * 8 + 2]! }, v: cat.records[i * 8 + 7]! }));
@@ -284,13 +318,14 @@ test('at the exposure of a sunlit Earth (EV100 14-15) no star exceeds 1/255; in 
   const values = [...seen.values()];
   console.log(`100 brightest stars: ${seen.size} in view (not behind the night Earth or the Moon) in at least one of ${views.length} views; faintest peak ${Math.min(...values)}/255, median ${values.sort((a, b) => a - b)[values.length >> 1]}/255`);
   expect(seen.size).toBeGreaterThanOrEqual(95);
-  for (const [k, peak] of seen) expect(peak, `star #${k} (V ${brightest[k]!.v.toFixed(2)})`).toBeGreaterThanOrEqual(24);
+  for (const [k, peak] of seen) expect(peak, `star #${k} (V ${brightest[k]!.v.toFixed(2)})`).toBeGreaterThanOrEqual(128);
 
   // The Milky Way at the dark-adapted exposure: faint but visible (stars off for the measurement).
   await page.evaluate(() => {
     window.__sky!.sky!.parts.stars = false;
   });
   const band: number[] = [];
+  const bandRgb: [number, number, number][] = [];
   for (const [ra, dec] of [
     [266.4, -28.9],
     [305, 40],
@@ -304,22 +339,49 @@ test('at the exposure of a sunlit Earth (EV100 14-15) no star exceeds 1/255; in 
     const png = await canvasPixels(page);
     let s = 0;
     let n = 0;
+    const c: [number, number, number] = [0, 0, 0];
     for (let y = 330; y < 390; y++) {
       for (let x = 610; x < 670; x++) {
         const o = (y * png.width + x) * 4;
         s += 0.2126 * png.data[o]! + 0.7152 * png.data[o + 1]! + 0.0722 * png.data[o + 2]!;
+        for (let k = 0; k < 3; k++) c[k] = c[k]! + png.data[o + k]!;
         n++;
       }
     }
     band.push(blocked ? NaN : s / n);
+    bandRgb.push([c[0] / n, c[1] / n, c[2] / n]);
   }
   console.log(`Milky Way at EV ${night.toFixed(1)} (8-bit mean): galactic centre ${band[0]?.toFixed(1)}, Cygnus ${band[1]?.toFixed(1)}, Crux ${band[2]?.toFixed(1)}, poles ${band[3]?.toFixed(1)} / ${band[4]?.toFixed(1)} (NaN = behind the Earth)`);
   const plane = band.slice(0, 3).filter((v) => Number.isFinite(v));
   const poles = band.slice(3).filter((v) => Number.isFinite(v));
   expect(plane.length).toBeGreaterThan(0);
   expect(poles.length).toBeGreaterThan(0);
-  expect(Math.max(...plane) - Math.max(...poles)).toBeGreaterThan(2);
-  expect(Math.max(...plane)).toBeLessThan(60);
+  // The Milky Way is the main feature of the night sky: every field of the plane in view at 12/255 or more (the
+  // galactic centre and Crux well above), the poles dark beside it.
+  for (const v of plane) expect(v).toBeGreaterThanOrEqual(12);
+  expect(Math.max(...plane)).toBeGreaterThan(25);
+  expect(Math.max(...plane)).toBeLessThan(140);
+  expect(Math.max(...plane) / Math.max(...poles)).toBeGreaterThan(3);
+  // Faint light keeps its hue: the band's channel ratios three stops under this exposure (where it sits deep in the
+  // display's toe) are within 20 % of the ratios here.
+  const field = band.findIndex((v) => Number.isFinite(v));
+  const [ra0, dec0] = [
+    [266.4, -28.9],
+    [305, 40],
+    [187, -61],
+  ][field]!;
+  await page.evaluate(([r, d]) => window.__sky!.lookAtRaDec(r!, d!, 20, window.__lab!.snapshot().vessels[0]!.rRoot), [ra0!, dec0!]);
+  await page.evaluate((e) => window.__lab!.renderer.setExposureOverride(e), night + 3);
+  await page.evaluate(() => window.__test!.waitFrames(60));
+  const dim = await canvasPixels(page);
+  const d: [number, number, number] = [0, 0, 0];
+  for (let y = 330; y < 390; y++) for (let x = 610; x < 670; x++) for (let k = 0; k < 3; k++) d[k] = d[k]! + dim.data[(y * dim.width + x) * 4 + k]! / 3600;
+  const here = bandRgb[field]!;
+  console.log(
+    `hue of the band: at EV ${night.toFixed(1)} (${here.map((v) => v.toFixed(1)).join(', ')}) R/G ${(here[0] / here[1]).toFixed(2)} R/B ${(here[0] / here[2]).toFixed(2)}; at EV ${(night + 3).toFixed(1)} (${d.map((v) => v.toFixed(1)).join(', ')}) R/G ${(d[0] / d[1]).toFixed(2)} R/B ${(d[0] / d[2]).toFixed(2)}`,
+  );
+  expect(Math.abs(d[0] / d[1] / (here[0] / here[1]) - 1)).toBeLessThan(0.2);
+  expect(Math.abs(d[0] / d[2] / (here[0] / here[2]) - 1)).toBeLessThan(0.2);
   await expectNoErrors(page, pageLog);
 });
 
@@ -349,7 +411,7 @@ test('stars do not influence auto-exposure', async ({ page, pageLog }) => {
 
 /**
  * What the feature writes is constant for a static camera (frame difference exactly 0 in the HDR target without
- * jitter: no animated noise outside an atmosphere). With the TAA jitter on, the resolved image of a sigma 0.7 px
+ * jitter: no animated noise outside an atmosphere). With the TAA jitter on, the resolved image of a sigma 1.0 px
  * PSF follows the 8-phase jitter cycle of the core's resolve (its 3 x 3 reconstruction is not an interpolator for
  * a point source); the amplitude is measured and bounded here, frames stepped synchronously.
  */
@@ -410,8 +472,9 @@ test('static camera: the star field is constant; through TAA it varies only with
   console.log(`HDR target, static camera, no jitter: max frame difference ${r.hdrMax}`);
   console.log(`resolved (TAA), ${r.pixels.toFixed(0)} star pixels above 0.05: consecutive frames differ by ${(r.mean * 100).toFixed(2)} % on average, ${(r.worst * 100).toFixed(1)} % at most; same jitter phase 8 frames apart: ${(r.period * 100).toFixed(2)} % at most`);
   expect(r.hdrMax).toBe(0);
-  expect(r.mean).toBeLessThan(0.03);
-  expect(r.worst).toBeLessThan(0.15);
-  expect(r.period).toBeLessThan(0.05);
+  // Measured with the 1.0 px core: 0.35 % / 3.1 % / 2.3 % (with the 0.7 px core it was 0.82 % / 7.5 % / 2.8 %).
+  expect(r.mean).toBeLessThan(0.01);
+  expect(r.worst).toBeLessThan(0.06);
+  expect(r.period).toBeLessThan(0.04);
   await expectNoErrors(page, pageLog);
 });

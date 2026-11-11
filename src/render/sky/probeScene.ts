@@ -8,7 +8,7 @@ import type { FrameContext } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { MAX_BODIES, discVisibleFraction, nearestBody, planetshineAt } from '@/render/core';
-import { cubeTexelDirection, cubeTexelSolidAngle, planetshineWeight, shBasis, SH_COSINE_LOBE } from './photometry';
+import { cubeTexelDirection, cubeTexelSolidAngle, hapkeBrdfMu0, hapkeSingleScattering, planetshineWeight, shBasis, SH_COSINE_LOBE, type HapkeParams } from './photometry';
 
 export interface ProbeBody {
   id: string;
@@ -123,6 +123,19 @@ export interface ReferenceBody {
   albedo: Vec3Tuple;
   /** Unit direction body -> star. */
   sunDir: Vec3;
+  /** Hapke parameters of a regolith body (its direct sunlight goes through the Hapke function); absent: Lambert. */
+  hapke?: HapkeParams;
+}
+
+/** Single-scattering albedo of a reference body's (constant) albedo, computed once per body. */
+const hapkeW = new WeakMap<ReferenceBody, Vec3Tuple>();
+function singleScattering(b: ReferenceBody): Vec3Tuple {
+  let w = hapkeW.get(b);
+  if (!w) {
+    w = [hapkeSingleScattering(b.albedo[0], b.hapke!), hapkeSingleScattering(b.albedo[1], b.hapke!), hapkeSingleScattering(b.albedo[2], b.hapke!)];
+    hapkeW.set(b, w);
+  }
+  return w;
 }
 export interface ReferenceScene {
   bodies: ReferenceBody[];
@@ -165,6 +178,14 @@ export function referenceRadiance(scene: ReferenceScene, d: Vec3): Vec3Tuple {
   });
   const e = muS > 0 ? vis * muS : 0;
   const out: Vec3Tuple = [0, 0, 0];
+  if (b.hapke) {
+    // Regolith: BRDF x mu0 of the Hapke function at this incidence, emission and phase angle (PROBE_FACE_CS probeHapke).
+    const w = singleScattering(b);
+    const muV = Math.max(-v3.dot(n, d), 1e-3);
+    const g = v3.angle(b.sunDir, v3.neg(d));
+    for (let c = 0; c < 3; c++) out[c] = scene.sunE[c]! * (muS > 0 ? vis * hapkeBrdfMu0(w[c]!, muS, muV, g, b.hapke) : 0) * b.weight + scene.background[c]! * (1 - b.weight);
+    return out;
+  }
   for (let c = 0; c < 3; c++) out[c] = ((scene.sunE[c]! * e * b.albedo[c]!) / Math.PI) * b.weight + scene.background[c]! * (1 - b.weight);
   return out;
 }

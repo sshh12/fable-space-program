@@ -12,7 +12,7 @@
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
 import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
-import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
+import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX, STAR_WING_ALPHA_PX, STAR_WING_FLOOR, STAR_WING_MAX_PX, STAR_WING_SHARE } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 
@@ -36,7 +36,7 @@ struct SkyUniforms {
   limb: vec4f,      // rgb = linear limb-darkening coefficients u, a = 1 / (pi sin^2 theta_sun)
   scint: vec4f,     // x = 1 when the camera is inside an atmosphere, y = camera altitude (m), z = scale height (m), w = (R + h) / H
   scintUp: vec4f,   // xyz = local vertical at the camera (ROOT), w = scintillation clock (s; frozen when frame.time.w == 0)
-  px: vec4f,        // x = solid angle of a pixel on the view axis (sr), y = star quad half size (px), z = pixel angle on the axis (rad), w = 0
+  px: vec4f,        // x = solid angle of a pixel on the view axis (sr), y = half size of a star's core quad (px), z = pixel angle on the axis (rad), w = texel angle of the Milky Way detail layer at a face centre (rad; 0 = none)
 }
 @group(1) @binding(0) var<uniform> sky: SkyUniforms;
 
@@ -95,6 +95,24 @@ export const BACKGROUND_FS = /* wgsl */ `
 #include "hash"
 ${SKY_COMMON_WGSL}
 @group(1) @binding(1) var milkyWay: texture_cube<f32>;
+@group(1) @binding(2) var milkyWayDetail: texture_cube<f32>;
+
+/// The Milky Way and the stars fainter than the catalogue: the colour cube (trilinear), and where a pixel is
+/// smaller than its texels the luminance of the next finer baked level with the colour cube's chromaticity
+/// (the 2 x 2 mean of the detail layer is the colour cube's luminance, so the two agree where they cross-fade).
+fn milkyWayRadiance(dir: vec3f) -> vec3f {
+  var c = textureSample(milkyWay, linearClamp, dir).rgb;
+  if (sky.px.w > 0.0) {
+    let pa = sky.px.z * pow(max(dot(dir, frame.cameraForward.xyz), 0.05), 1.5);
+    // 1 where a pixel is no larger than a detail texel, 0 where it is as large as a texel of the colour cube.
+    let w = saturate(1.0 - log2(pa / sky.px.w));
+    if (w > 0.0) {
+      let l = textureSampleLevel(milkyWayDetail, linearClamp, dir, 0.0).r;
+      c = mix(c, c * min(l / max(luminance(c), 1e-9), 8.0), w);
+    }
+  }
+  return c * sky.mw.x;
+}
 
 /// Solar disc of angular radius frame.sunDir.w with per-channel linear limb darkening; the edge is
 /// anti-aliased by the pixel footprint. A disc smaller than one pixel becomes a Gaussian of the same flux.
@@ -123,17 +141,26 @@ fn sunDisc(dir: vec3f) -> vec3f {
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let dir = normalize(viewRay(in.uv));
   var L = vec3f(0.0);
-  if (sky.mw.y > 0.5) { L += textureSample(milkyWay, linearClamp, dir).rgb * sky.mw.x; }
+  if (sky.mw.y > 0.5) { L += milkyWayRadiance(dir); }
   if (sky.mw.z > 0.5) { L += sunDisc(dir); }
   return vec4f(writeHdr(L * frame.exposure.x), 1.0);
 }
 `;
 
-/** Catalogue stars: 4-vertex triangle strips, one instance per star, at clip z = 0 (depth == 0 only). */
+/**
+ * Catalogue stars: 4-vertex triangle strips, one instance per star, at clip z = 0 (depth == 0 only). Each is the
+ * point-spread function of photometry.ts (Gaussian core + r^-3 wings, starPsf) times the star's flux; the quad
+ * reaches out to where the wings fall under STAR_WING_FLOOR at the frame's exposure, so only the bright stars of
+ * the moment get large quads.
+ */
 export const STARS_WGSL = /* wgsl */ `
 #include "frame"
 #include "hash"
 ${SKY_COMMON_WGSL}
+const WING_SHARE = ${f(STAR_WING_SHARE)};
+const WING_ALPHA2 = ${f(STAR_WING_ALPHA_PX * STAR_WING_ALPHA_PX)};
+const WING_FLOOR = ${f(STAR_WING_FLOOR)};
+const WING_MAX_PX = ${f(STAR_WING_MAX_PX)};
 struct StarIn {
   @location(0) dirLux: vec4f,       // unit direction (ROOT), illuminance at the observer (lux)
   @location(1) colourMag: vec4f,    // linear-sRGB colour with luminance 1, V magnitude
@@ -143,7 +170,8 @@ struct StarIn {
 struct StarOut {
   @builtin(position) pos: vec4f,
   @location(0) offsetPx: vec2f,                      // pixel offset from the projected (jittered) centre
-  @location(1) @interpolate(flat) peak: vec3f,       // pre-exposed peak luminance of the Gaussian
+  @location(1) @interpolate(flat) flux: vec3f,       // pre-exposed sum of the image's pixels (colour x illuminance / pixel solid angle x exposure)
+  @location(2) @interpolate(flat) wing: vec2f,       // amplitude and floor of the wings (photometry.ts starWing)
 }
 @vertex fn vs(in: StarIn) -> StarOut {
   var o: StarOut;
@@ -153,48 +181,96 @@ struct StarOut {
   if (clip.w <= 1e-6 || cosOff <= 0.0 || sky.mw.w < 0.5) {
     o.pos = vec4f(0.0, 0.0, -1.0, 1.0);
     o.offsetPx = vec2f(0.0);
-    o.peak = vec3f(0.0);
+    o.flux = vec3f(0.0);
+    o.wing = vec2f(0.0);
     return o;
   }
+  // Pixel solid angle along this direction (pinhole: on-axis value x cos^3).
+  let omega = sky.px.x * cosOff * cosOff * cosOff;
+  let p = in.dirLux.w / omega * frame.exposure.x;
+  // Image radius: where the wings fall under the floor (photometry.ts starImageRadius), from the unmodulated flux.
+  let q = pow(p * WING_SHARE / (TWO_PI * WING_ALPHA2 * WING_FLOOR), 2.0 / 3.0);
+  let R = clamp(sqrt(WING_ALPHA2 * max(q - 1.0, 0.0)), sky.px.y, WING_MAX_PX);
+  let qq = 1.0 + R * R / WING_ALPHA2;
+  let fl = pow(qq, -1.5);
+  o.wing = vec2f(WING_SHARE / (TWO_PI * WING_ALPHA2 * (1.0 - inverseSqrt(qq)) - PI * R * R * fl), fl);
   let corner = vec2f(f32(in.vi & 1u), f32(in.vi >> 1u)) * 2.0 - 1.0;
-  let off = corner * sky.px.y;
+  let off = corner * R;
   // Pixels -> NDC (y down in pixels, up in NDC). All four corners share clip.w, so offsetPx interpolates linearly.
   o.pos = vec4f(clip.xy + off * vec2f(2.0, -2.0) * frame.renderSize.zw * clip.w, 0.0, clip.w);
   o.offsetPx = off;
-  // Pixel solid angle along this direction (pinhole: on-axis value x cos^3), Gaussian normalisation 2 pi sigma^2.
-  let omega = sky.px.x * cosOff * cosOff * cosOff;
-  let e = in.dirLux.w * scintillation(dir, in.ii);
-  o.peak = in.colourMag.rgb * e / (omega * TWO_PI * STAR_SIGMA_PX * STAR_SIGMA_PX) * frame.exposure.x;
+  o.flux = in.colourMag.rgb * p * scintillation(dir, in.ii);
   return o;
 }
 @fragment fn fs(in: StarOut) -> @location(0) vec4f {
-  let g = exp(-0.5 * dot(in.offsetPx, in.offsetPx) / (STAR_SIGMA_PX * STAR_SIGMA_PX));
-  return vec4f(capAdditive(in.peak * g), 1.0);
+  let r2 = dot(in.offsetPx, in.offsetPx);
+  let core = (1.0 - WING_SHARE) * exp(-0.5 * r2 / (STAR_SIGMA_PX * STAR_SIGMA_PX)) / (TWO_PI * STAR_SIGMA_PX * STAR_SIGMA_PX);
+  let wing = in.wing.x * max(pow(1.0 + r2 / WING_ALPHA2, -1.5) - in.wing.y, 0.0);
+  return vec4f(capAdditive(in.flux * (core + wing)), 1.0);
 }
 `;
 
 /**
- * Distant bodies: a Gaussian blob of the body's phase-integrated flux (computed on the CPU, Lambert sphere),
- * drawn in the transparent stage so that it can replace the body's own geometry pixels: on a pixel whose
- * depth belongs to the body the blend is (1 - w) x geometry + w x impostor, elsewhere the blob is added.
+ * Distant bodies: the analytic far image of a sunlit sphere. The sunlit lune of the disc is sampled on a grid
+ * fixed to the body (photometry.ts impostorLune: latitude / longitude about the axis perpendicular to the
+ * sun-observer plane, so every sample is lit however thin the crescent), every sample shaded with the body's own
+ * photometric function (Lambert with the albedo of its geometric albedo, or its Hapke function) and spread with
+ * the point-spread function, so the image carries the phase shape (a crescent a few pixels across is an
+ * off-centre sliver), does not depend on the pixel grid or on the temporal resolve, and becomes a star-like
+ * point as the body shrinks. Its pixels are normalised (in the vertex stage) to add up to the body's
+ * phase-integrated flux. Drawn in the transparent stage so that it can replace the body's own geometry: on a
+ * pixel whose depth belongs to the body the blend is (1 - a) x geometry + image, a = weight x (the whole disc
+ * for a small body, its sunlit part for a larger one, so the night side keeps what the geometry shows there);
+ * elsewhere the image is added.
  */
 export const IMPOSTOR_WGSL = (bindings: string): string => /* wgsl */ `
 #include "frame"
 #include "transparency"
 ${bindings}
 ${CAP_WGSL}
+const WING_ALPHA2 = ${f(STAR_WING_ALPHA_PX * STAR_WING_ALPHA_PX)};
 struct Impostor {
-  centre: vec4f,     // xyz = body centre relative to the camera (ROOT, m), w = radius (m)
-  flux: vec4f,       // rgb = illuminance at the camera (lux, colour x lux), a = weight w (1 below 3 px, 0 above 6 px)
-  shape: vec4f,      // x = Gaussian sigma (px), y = quad half size (px), z = distance to the near side (m), w = 1 / pixel solid angle on the axis
+  centre: vec4f,   // xyz = body centre relative to the camera (ROOT, m), w = radius (m)
+  axis: vec4f,     // xy = unit direction of the sun in the image plane at the body (x right, y up), z = phase angle (rad), w = weight of the image
+  light: vec4f,    // rgb = sunlight at the body (colour x lux x eclipse), a = 1 for a Hapke surface
+  albedo: vec4f,   // rgb = Lambert albedo, or the Hapke single-scattering albedo
+  hapke: vec4f,    // b0, hS, bP, cP
+  flux: vec4f,     // rgb = phase-integrated radiance of the disc per unit radius^2 (the reference of the normalisation), a = share of the wings
+  shape: vec4f,    // x = radius (px), y = quad half size (px), z = distance to the near side (m), w = kernel sigma (px)
+  lune: vec4f,     // x = rows, y = samples of the equatorial row, z = 0 whole disc .. 1 sunlit part only (alpha over the geometry)
+  wing: vec4f,     // x = amplitude, y = floor, z = radius (px) of the wings (photometry.ts starWing)
 }
 struct Impostors { count: vec4u, list: array<Impostor, 16> }
 @group(2) @binding(0) var<uniform> impostors: Impostors;
 
+/// Hapke reflectance x mu0 (photometry.ts hapkeBrdfMu0; rendering-design 8.2).
+fn farHapke(w: vec3f, mu0: f32, mu: f32, g: f32, p: vec4f) -> vec3f {
+  let B = p.x / (1.0 + tan(g * 0.5) / p.y);
+  let cg = cos(g);
+  let P = 1.0 + p.z * cg + p.w * (1.5 * cg * cg - 0.5);
+  let gam = sqrt(vec3f(1.0) - w);
+  let H0 = (1.0 + 2.0 * mu0) / (vec3f(1.0) + 2.0 * mu0 * gam);
+  let H = (1.0 + 2.0 * mu) / (vec3f(1.0) + 2.0 * mu * gam);
+  return w / (4.0 * PI) * (mu0 / (mu0 + mu)) * ((1.0 + B) * P + H0 * H - 1.0);
+}
+/// Radiance (rgb) of the sample at latitude cosine a, longitude psi from the bright limb, times its area on the unit disc.
+fn farSample(im: Impostor, a: f32, psi: f32, cell: f32) -> vec3f {
+  let g = im.axis.z;
+  let mu = a * sin(psi);
+  let mu0 = a * sin(psi + g);
+  if (mu0 <= 0.0 || mu <= 0.0) { return vec3f(0.0); }
+  let dA = a * a * sin(psi) * cell;
+  if (im.light.a > 0.5) { return im.light.rgb * farHapke(im.albedo.rgb, mu0, mu, g, im.hapke) * dA; }
+  return im.light.rgb * im.albedo.rgb * (mu0 / PI * dA);
+}
+fn rowSamples(cols: f32, a: f32) -> i32 { return max(2, i32(ceil(cols * a))); }
+
 struct VOut {
   @builtin(position) pos: vec4f,
-  @location(0) offsetPx: vec2f,
+  @location(0) offsetPx: vec2f,                       // pixel offset from the projected centre (x right, y down)
   @location(1) @interpolate(flat) index: u32,
+  @location(2) @interpolate(flat) norm: f32,          // reference flux / grid flux
+  @location(3) @interpolate(flat) photocentre: f32,   // px from the centre along the sun's direction
 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   var o: VOut;
@@ -204,10 +280,33 @@ struct VOut {
   // Clip position of the near side of the body: its depth is what the geometry pixels of the body hold.
   let clip = frame.viewProj * vec4f(dir * im.shape.z, 1.0);
   o.index = ii;
+  o.norm = 0.0;
+  o.photocentre = 0.0;
   if (clip.w <= 0.0) {
     o.pos = vec4f(0.0, 0.0, -1.0, 1.0);
     o.offsetPx = vec2f(0.0);
     return o;
+  }
+  // What the grid adds up to, and where its light is centred (the same for all four vertices).
+  let rows = i32(im.lune.x);
+  let dBeta = PI / im.lune.x;
+  let span = PI - im.axis.z;
+  var sum = 0.0;
+  var cx = 0.0;
+  for (var j = 0; j < rows; j++) {
+    let a = cos(-0.5 * PI + (f32(j) + 0.5) * dBeta);
+    let nj = rowSamples(im.lune.y, a);
+    let dPsi = span / f32(nj);
+    for (var i = 0; i < nj; i++) {
+      let psi = (f32(i) + 0.5) * dPsi;
+      let l = luminance(farSample(im, a, psi, dPsi * dBeta));
+      sum += l;
+      cx += l * a * cos(psi);
+    }
+  }
+  if (sum > 0.0) {
+    o.norm = luminance(im.flux.rgb) / sum;
+    o.photocentre = im.shape.x * cx / sum;
   }
   let corner = vec2f(f32(vi & 1u), f32(vi >> 1u)) * 2.0 - 1.0;
   let off = corner * im.shape.y;
@@ -219,19 +318,57 @@ struct VOut {
   let im = impostors.list[in.index];
   let pix = vec2i(in.pos.xy);
   let uv = in.pos.xy * frame.renderSize.zw;
+  // This pixel in the sun-aligned image frame (x towards the sun), in radii.
+  let t = im.axis.xy;
+  let p = vec2f(in.offsetPx.x, -in.offsetPx.y);
+  let pp = vec2f(dot(p, t), dot(p, vec2f(-t.y, t.x))) / im.shape.x;
+  let sigma = im.shape.w / im.shape.x;
+  let s3 = 3.0 * sigma;
+  let rows = i32(im.lune.x);
+  let dBeta = PI / im.lune.x;
+  let span = PI - im.axis.z;
+  // Rows within 3 sigma of the pixel, and in each row the samples within 3 sigma.
+  let jLo = clamp(i32(floor((asin(clamp(pp.y - s3, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
+  let jHi = clamp(i32(ceil((asin(clamp(pp.y + s3, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
+  let k = 1.0 / (TWO_PI * sigma * sigma);
+  var core = vec3f(0.0);
+  var lit = 0.0;
+  for (var j = jLo; j <= jHi; j++) {
+    let beta = -0.5 * PI + (f32(j) + 0.5) * dBeta;
+    let a = cos(beta);
+    let cLo = (pp.x - s3) / a;
+    if (cLo > 1.0) { continue; }
+    let psiLo = acos(clamp((pp.x + s3) / a, -1.0, 1.0));
+    if (psiLo > span) { continue; }
+    let psiHi = acos(clamp(cLo, -1.0, 1.0));
+    let nj = rowSamples(im.lune.y, a);
+    let dPsi = span / f32(nj);
+    let iLo = clamp(i32(floor(psiLo / dPsi - 0.5)), 0, nj - 1);
+    let iHi = clamp(i32(ceil(psiHi / dPsi - 0.5)), 0, nj - 1);
+    let y = sin(beta);
+    for (var i = iLo; i <= iHi; i++) {
+      let psi = (f32(i) + 0.5) * dPsi;
+      let dq = pp - vec2f(a * cos(psi), y);
+      let g = k * exp(-0.5 * dot(dq, dq) / (sigma * sigma));
+      core += farSample(im, a, psi, dPsi * dBeta) * g;
+      lit += a * a * sin(psi) * dPsi * dBeta * g;
+    }
+  }
+  var lum = core * in.norm * (1.0 - im.flux.a);
+  // Wings of a point-like body: the star's, about the photocentre.
+  let dc = p - t * in.photocentre;
+  let r2 = dot(dc, dc);
+  if (im.flux.a > 0.0 && r2 < im.wing.z * im.wing.z) {
+    lum += im.flux.rgb * (im.shape.x * im.shape.x) * im.wing.x * (pow(1.0 + r2 / WING_ALPHA2, -1.5) - im.wing.y);
+  }
   // Does this pixel show the body's own geometry? (scene depth within the body's sphere)
   let depth = textureLoad(sceneDepthTex, pix, 0);
   var alpha = 0.0;
   if (depth > 0.0) {
-    let p = positionFromDepth(uv, depth);
-    if (distance(p, im.centre.xyz) < im.centre.w * 1.02 + 2e-6 * length(im.centre.xyz)) { alpha = im.flux.a; }
+    let pos = positionFromDepth(uv, depth);
+    if (distance(pos, im.centre.xyz) < im.centre.w * 1.02 + 2e-6 * length(im.centre.xyz)) { alpha = im.axis.w * mix(1.0, saturate(2.0 * lit), im.lune.z); }
   }
-  let dir = normalize(viewRay(uv));
-  let cosOff = max(dot(dir, frame.cameraForward.xyz), 1e-3);
-  let sigma = im.shape.x;
-  let g = exp(-0.5 * dot(in.offsetPx, in.offsetPx) / (sigma * sigma)) / (TWO_PI * sigma * sigma);
-  let lum = im.flux.rgb * g * im.shape.w / (cosOff * cosOff * cosOff);
-  let c = applyAtmosphere(uv, im.shape.z, lum * im.flux.a * frame.exposure.x, alpha);
+  let c = applyAtmosphere(uv, im.shape.z, lum * im.axis.w * frame.exposure.x, alpha);
   return vec4f(capAdditive(c.rgb), c.a);
 }
 `;
@@ -580,17 +717,22 @@ fn sunVisibleAt(p: vec3f, n: vec3f, selfIndex: u32, sunDir: vec3f) -> f32 {
   return vis;
 }
 
-/// Illuminance (lux, colour) on a horizontal surface element at radius r (normal n) of frame body bi:
-/// direct sun (eclipses, atmosphere transmittance) + sky irradiance table + planetshine. No cloud shadow.
-fn surfaceIlluminance(bi: u32, selfIndex: u32, p: vec3f, n: vec3f, r: f32) -> vec3f {
-  let b = frame.bodies[bi];
-  let sunDir = b.sunDir.xyz;
+/// Illuminance (lux, colour) of the direct sun on a surface facing it at radius r (normal n) of frame body bi:
+/// eclipses and the atmosphere's transmittance; zero below the horizon. No cloud shadow.
+fn sunDirect(bi: u32, selfIndex: u32, p: vec3f, n: vec3f, r: f32) -> vec3f {
+  let sunDir = frame.bodies[bi].sunDir.xyz;
   let muS = dot(n, sunDir);
-  var e = vec3f(0.0);
   let vis = sunVisibleAt(p, n, selfIndex, sunDir);
-  if (vis > 0.0 && muS > 0.0) {
-    e += frame.sunIlluminance.rgb * vis * muS * atmosphereSunTransmittance(transmittanceLut, bi, r, muS);
-  }
+  if (vis <= 0.0 || muS <= 0.0) { return vec3f(0.0); }
+  return frame.sunIlluminance.rgb * vis * atmosphereSunTransmittance(transmittanceLut, bi, r, muS);
+}
+
+/// Illuminance (lux, colour) on a horizontal surface element at radius r (normal n) of frame body bi from
+/// everything but the direct sun: sky irradiance table + planetshine.
+fn surfaceAmbient(bi: u32, n: vec3f, r: f32) -> vec3f {
+  let b = frame.bodies[bi];
+  let muS = dot(n, b.sunDir.xyz);
+  var e = vec3f(0.0);
   let layer = i32(b.fixedX.w);
   let rt = b.prevCenter.w;
   if (layer >= 0 && rt > b.center.w) {
@@ -611,8 +753,57 @@ fn viewTransmittance(bi: u32, d: vec3f, rp: f32, np: vec3f, probeR: f32, probeUp
   return min(tp / max(tc, vec3f(1e-6)), vec3f(1.0));
 }
 
-fn coverageAt(bi: u32, n: vec3f) -> f32 {
-  return textureSampleLevel(cloudCoverageMapTex, linearRepeat, equirectUv(bi, n, frame.cloudFar.w), 0.0).r;
+/// Cloud coverage averaged over the footprint of a probe texel on the cloud layer (radius rLayer) around unit
+/// normal n: 4 x 4 taps over a patch 'across' m wide and 'along' m long in the direction of 'view' projected on
+/// the layer (a texel's footprint grows with the distance and stretches towards the limb), each tap at the mip
+/// that matches the tap spacing where the map has mips. A single tap is a point sample of a 5 km map texel under
+/// a footprint of tens to hundreds of km: isolated white texels and a dashed limb in mirror reflections.
+fn coverageOver(bi: u32, n: vec3f, view: vec3f, rLayer: f32, across: f32, along: f32) -> f32 {
+  var ta = view - n * dot(view, n);
+  let tl = length(ta);
+  if (tl < 1e-4) {
+    ta = normalize(cross(n, select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(n.z) > 0.9)));
+  } else {
+    ta = ta / tl;
+  }
+  let tb = cross(n, ta);
+  let al = min(along, 0.6 * rLayer);
+  let mapW = f32(textureDimensions(cloudCoverageMapTex).x);
+  let lod = log2(max(0.25 * max(across, al) * mapW / (TWO_PI * rLayer), 1.0));
+  var sum = 0.0;
+  for (var j = 0; j < 4; j++) {
+    for (var i = 0; i < 4; i++) {
+      let o = (vec2f(f32(i), f32(j)) + vec2f(0.5)) * 0.25 - vec2f(0.5);
+      let m = normalize(n + (ta * (o.x * al) + tb * (o.y * across)) / rLayer);
+      sum += textureSampleLevel(cloudCoverageMapTex, linearRepeat, equirectUv(bi, m, frame.cloudFar.w), lod).r;
+    }
+  }
+  return sum / 16.0;
+}
+
+/// Hapke reflectance x mu0 of a regolith surface (photometry.ts hapkeBrdfMu0; rendering-design 8.2), p = (b0, hS, bP, cP).
+fn probeHapke(w: vec3f, mu0: f32, mu: f32, g: f32, p: vec4f) -> vec3f {
+  let B = p.x / (1.0 + tan(g * 0.5) / p.y);
+  let cg = cos(g);
+  let P = 1.0 + p.z * cg + p.w * (1.5 * cg * cg - 0.5);
+  let gam = sqrt(vec3f(1.0) - w);
+  let H0 = (1.0 + 2.0 * mu0) / (vec3f(1.0) + 2.0 * mu0 * gam);
+  let H = (1.0 + 2.0 * mu) / (vec3f(1.0) + 2.0 * mu * gam);
+  return w / (4.0 * PI) * (mu0 / (mu0 + mu)) * ((1.0 + B) * P + H0 * H - 1.0);
+}
+/// Single-scattering albedo for an albedo-map value: the maps are normalised to incidence 30 deg, emission 0,
+/// phase 30 deg (photometry.ts hapkeSingleScattering), bisection to 6e-5.
+fn probeHapkeW(albedo: vec3f, p: vec4f) -> vec3f {
+  let mu0 = 0.8660254;
+  var lo = vec3f(0.0);
+  var hi = vec3f(0.999999);
+  for (var k = 0; k < 14; k++) {
+    let mid = 0.5 * (lo + hi);
+    let below = PI * probeHapke(mid, mu0, 1.0, 0.5235988, p) / mu0 < albedo;
+    lo = select(lo, mid, below);
+    hi = select(mid, hi, below);
+  }
+  return 0.5 * (lo + hi);
 }
 fn cloudReflectance(tau: f32) -> f32 { return (1.0 - CLOUD_G) * tau / (2.0 + (1.0 - CLOUD_G) * tau); }
 
@@ -647,40 +838,49 @@ fn bodyRadiance(i: u32, d: vec3f, t: f32, texelAngle: f32) -> vec3f {
     let lod = log2(max(footprint * mapW / (TWO_PI * R), 1.0));
     albedo = albedoAt(slot, equirectUv(bi, n, 0.0), lod);
   }
-  let eGround = surfaceIlluminance(bi, i, p, n, R);
+  // Light on the ground: the direct sun (per unit area facing it) and everything else (on the horizontal).
+  let sunDir = b.sunDir.xyz;
+  let muS = dot(n, sunDir);
+  let muV = max(dot(n, -d), 1e-3);
+  var direct = sunDirect(bi, i, p, n, R);
+  let ambient = surfaceAmbient(bi, n, R);
   var L: vec3f;
   let clouds = i32(frame.cloudFar.x) == i32(bi) && frame.cloudFar.y > R;
+  let footprintAcross = t * texelAngle;
   if (clouds && probeR > frame.cloudFar.y) {
     // Seen from above the layer: cloud tops (two-stream reflectance) over the ground (adding method).
     let tc = sphereCross(d, pb.centre.xyz, frame.cloudFar.y, false);
     let q = d * tc;
     let nq = normalize(q - pb.centre.xyz);
-    let tau = coverageAt(bi, nq) * frame.cloudFar.z;
+    let tau = coverageOver(bi, nq, d, frame.cloudFar.y, tc * texelAngle, tc * texelAngle / max(dot(nq, -d), 0.05)) * frame.cloudFar.z;
     let rc = cloudReflectance(tau);
-    let eTop = surfaceIlluminance(bi, i, q, nq, frame.cloudFar.y);
+    let eTop = sunDirect(bi, i, q, nq, frame.cloudFar.y) * max(dot(nq, sunDir), 0.0) + surfaceAmbient(bi, nq, frame.cloudFar.y);
     let ground = (1.0 - rc) * (1.0 - rc) * albedo / (vec3f(1.0) - rc * albedo);
     L = viewTransmittance(bi, d, frame.cloudFar.y, nq, probeR, probeUp) * eTop * (rc / PI)
-      + viewTransmittance(bi, d, R, n, probeR, probeUp) * eGround * ground / PI;
+      + viewTransmittance(bi, d, R, n, probeR, probeUp) * (direct * max(muS, 0.0) + ambient) * ground / PI;
   } else {
-    var e = eGround;
     if (clouds) {
-      // Below the layer: the far cloud shadow of the render core, exp(-coverage tau / max(mu_s, 0.05)).
-      let sunDir = b.sunDir.xyz;
-      let muS = max(dot(n, sunDir), 0.05);
+      // Below the layer: the far cloud shadow of the render core, exp(-coverage tau / max(mu_s, 0.05)), over the
+      // texel's footprint on the ground. Only the direct sun is shadowed; sky light and planetshine pass (the sky
+      // table already holds the clouds' absence).
       let ts = sphereCross(sunDir, pb.centre.xyz - p, frame.cloudFar.y, true);
       let nq = normalize(p + sunDir * ts - pb.centre.xyz);
-      let shadow = exp(-coverageAt(bi, nq) * frame.cloudFar.z / muS);
-      // Only the direct sun is shadowed; sky light and planetshine pass (the sky table already holds the clouds' absence).
-      let vis = sunVisibleAt(p, n, i, sunDir);
-      let direct = frame.sunIlluminance.rgb * vis * max(dot(n, sunDir), 0.0) * atmosphereSunTransmittance(transmittanceLut, bi, R, dot(n, sunDir));
-      e = e - direct * (1.0 - shadow);
+      direct *= exp(-coverageOver(bi, nq, d, frame.cloudFar.y, footprintAcross, footprintAcross / max(muV, 0.05)) * frame.cloudFar.z / max(muS, 0.05));
     }
-    L = viewTransmittance(bi, d, R, n, probeR, probeUp) * e * albedo / PI;
+    var reflected = (direct * max(muS, 0.0) + ambient) * albedo / PI;
+    if ((bodyFlags(bi) & BODY_FLAG_HAPKE) != 0u) {
+      // A regolith body: the sun through its Hapke function, as its terrain is shaded (opposition surge towards the
+      // anti-solar point, no dark limb); the diffuse rest stays Lambert.
+      let g = acos(clamp(dot(sunDir, -d), -1.0, 1.0));
+      reflected = ambient * albedo / PI;
+      if (muS > 0.0) { reflected += direct * probeHapke(probeHapkeW(albedo, b.hapke), muS, muV, g, b.hapke); }
+    }
+    L = viewTransmittance(bi, d, R, n, probeR, probeUp) * reflected;
   }
   return L + skyInScatter(d);
 }
 
-fn missRadiance(d: vec3f) -> vec3f {
+fn missRadiance(d: vec3f, texelAngle: f32) -> vec3f {
   var L = skyInScatter(d);
   var T = vec3f(1.0);
   // Through the atmosphere of the body the probe is in (or above): the Milky Way is attenuated.
@@ -697,7 +897,7 @@ fn missRadiance(d: vec3f) -> vec3f {
       let tc = sphereCross(d, pb.centre.xyz, frame.cloudFar.y, true);
       let q = d * tc;
       let nq = normalize(q - pb.centre.xyz);
-      let tau = coverageAt(bi, nq) * frame.cloudFar.z;
+      let tau = coverageOver(bi, nq, d, frame.cloudFar.y, tc * texelAngle, tc * texelAngle / max(dot(d, nq), 0.05)) * frame.cloudFar.z;
       let muV = max(dot(d, nq), 0.02);
       let direct = exp(-tau / muV);
       let sunDir = b.sunDir.xyz;
@@ -730,9 +930,9 @@ fn missRadiance(d: vec3f) -> vec3f {
   if (hit >= 0) {
     // Bodies whose light the render core already adds as planetshine are scaled out (no double counting).
     let w = probe.bodies[u32(hit)].info.z;
-    L = bodyRadiance(u32(hit), d, best, texelAngle) * w + missRadiance(d) * (1.0 - w);
+    L = bodyRadiance(u32(hit), d, best, texelAngle) * w + missRadiance(d, texelAngle) * (1.0 - w);
   } else {
-    L = missRadiance(d);
+    L = missRadiance(d, texelAngle);
   }
   textureStore(outFace, vec2i(gid.xy), i32(step.a.x), vec4f(max(L, vec3f(0.0)), 1.0));
 }

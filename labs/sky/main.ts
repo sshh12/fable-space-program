@@ -11,12 +11,15 @@
  *   clouds=1            lab stand-in for the cloud renderer: publish the cloud coverage map of the first body with
  *                       clouds, switch on the far cloud term, and draw the layer as a thin translucent shell with
  *                       the probe's cloud model
+ *   cloudUnder=1        (with clouds=1) turn the cloud layer about the body's axis so that the cloudiest stretch of
+ *                       the active vessel's latitude lies under it (the vessel over a cloud field)
  *   valt=<m>            move the active vessel to this altitude above its body
  *   ground=<m>          (with valt) ground elevation under the vessel relative to the datum: the read-outs' radar
  *                       altitude follows, and a ground cap (regolith, or terrain on a body with an atmosphere) is
  *                       drawn there around the vessel (a landing site below the datum: the LabPlanet sphere is
  *                       above the camera then and not drawn)
  *   mwSize=<n>          largest Milky Way face size in VRAM (SkyFeatureOptions.milkyWayFaceSize; default 1024)
+ *   mwDetail=0          no luminance detail layer (SkyFeatureOptions.milkyWayDetail; default on)
  *   night=1             the star behind the vessel's body (vessel in its shadow)
  *   heavy=<n>           GPU ballast iterations (perf specs keep the GPU busy, RENDER_API section 14)
  *   hud=0               no text overlay
@@ -42,6 +45,8 @@ import {
   raDecToDir,
   referenceRadiance,
   shIrradiance,
+  starImageRadius,
+  starPsf,
   type FlareGeometry,
   type ReferenceScene,
   type SkyFeature,
@@ -82,6 +87,8 @@ export interface SkyLab {
     shIrradiance: typeof shIrradiance;
     flareRadiance: typeof flareRadiance;
     ndcDirection: typeof ndcDirection;
+    starImageRadius: typeof starImageRadius;
+    starPsf: typeof starPsf;
   };
 }
 
@@ -209,25 +216,60 @@ function groundCapMesh(rings = 80, segments = 128): MeshData {
   };
 }
 
+/** The albedoLowRes map of every body with a baked tile set, as pixels (sRGB, equirectangular, row 0 = north, column 0 = 180 W). */
+async function loadAlbedoPixels(defs: DefLibrary, tilesUrl: string): Promise<Map<string, ImageData>> {
+  const out = new Map<string, ImageData>();
+  const index = await fetch(`${tilesUrl}/index.json`, { cache: 'no-cache' });
+  if (!index.ok) return out;
+  const baked = ((await index.json()) as { tilesets: string[] }).tilesets;
+  for (const def of Object.values(defs.bodies)) {
+    if (def.emission || !def.terrain || !baked.includes(def.terrain.tileset)) continue;
+    const base = `${tilesUrl}/${def.terrain.tileset}`;
+    const g = ((await (await fetch(`${base}/manifest.json`)).json()) as TileManifest).globals?.albedoLowRes;
+    if (!g) continue;
+    const bitmap = await createImageBitmap(await (await fetch(`${base}/${g.path}`)).blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const c2d = canvas.getContext('2d')!;
+    c2d.drawImage(bitmap, 0, 0);
+    out.set(def.id, c2d.getImageData(0, 0, bitmap.width, bitmap.height));
+  }
+  return out;
+}
+
+/** Linear albedo of a map around the body-fixed unit direction `up`: the mean of 5 x 5 texels (a few km of ground). */
+function albedoAt(map: ImageData, up: Vec3): [number, number, number] {
+  const lin = (v: number): number => (v <= 0.04045 * 255 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const cx = Math.floor((Math.atan2(up.y, up.x) / (2 * Math.PI) + 0.5) * map.width);
+  const cy = Math.floor((0.5 - Math.asin(Math.max(-1, Math.min(1, up.z))) / Math.PI) * map.height);
+  const sum = [0, 0, 0];
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const x = (cx + dx + map.width) % map.width;
+      const y = Math.max(0, Math.min(map.height - 1, cy + dy));
+      for (let c = 0; c < 3; c++) sum[c] = sum[c]! + lin(map.data[(y * map.width + x) * 4 + c]!);
+    }
+  }
+  return [sum[0]! / 25, sum[1]! / 25, sum[2]! / 25];
+}
+
 /**
  * Ground under the active vessel at `overrides.groundAltitude` (with valt): a spherical cap of the body at that
- * elevation, body-fixed, regolith on an airless body (terrain on one with an atmosphere) of the body's mean
- * colour. Lab only: stands for the terrain renderer at a landing site below the datum.
+ * elevation, body-fixed, regolith on an airless body (terrain on one with an atmosphere), with the albedo the
+ * tile set's albedoLowRes map has at the site (what the terrain renderer shows there and what the probe uses;
+ * the body's mean colour without a baked map). Lab only: stands for the terrain renderer at a landing site
+ * below the datum.
  */
-function createGroundCapFeature(defs: DefLibrary): RenderFeature {
+function createGroundCapFeature(defs: DefLibrary, albedo: Map<string, ImageData>): RenderFeature {
   let batch: MeshBatch;
+  let meshes: ReturnType<typeof coreOf>['meshes'];
+  let mesh: MeshData;
   const models = new Map<string, ModelHandle>();
   return {
     id: 'sky-lab-ground',
     init(c) {
-      const meshes = coreOf(c).meshes;
+      meshes = coreOf(c).meshes;
       batch = meshes.createBatch('sky-lab-ground');
-      const mesh = groundCapMesh();
-      for (const b of Object.values(defs.bodies)) {
-        if (b.emission) continue;
-        const shading = b.render.atmosphere ? ('terrain' as const) : ('regolith' as const);
-        models.set(b.id, meshes.createModel({ name: `ground-${b.id}`, lods: [mesh], materials: [{ name: `ground-${b.id}`, shading, baseColor: [...b.render.meanColor], metallic: 0, roughness: 1 }] }));
-      }
+      mesh = groundCapMesh();
     },
     prepare(frame) {
       batch.begin(frame);
@@ -235,9 +277,17 @@ function createGroundCapFeature(defs: DefLibrary): RenderFeature {
       const v = s.vessels.find((x) => x.id === s.activeVesselId);
       const pose = v && frame.bodies.find((b) => b.id === v.bodyId);
       const body = v && s.bodies.find((b) => b.id === v.bodyId);
-      const model = v && models.get(v.bodyId);
-      if (v && pose && body && model && overrides.vesselAltitude !== null) {
+      if (v && pose && body && overrides.vesselAltitude !== null) {
         const up = v3.normalize(quat.rotateInv(body.qFixedToRoot, v3.sub(v.rRoot, body.rRoot)));
+        let model = models.get(v.bodyId);
+        if (!model) {
+          // Created at the first frame with a vessel: the cap takes the map's albedo at the place it stands for.
+          const def = defs.bodies[v.bodyId]!;
+          const map = albedo.get(v.bodyId);
+          const shading = def.render.atmosphere ? ('terrain' as const) : ('regolith' as const);
+          model = meshes.createModel({ name: `ground-${def.id}`, lods: [mesh], materials: [{ name: `ground-${def.id}`, shading, baseColor: map ? albedoAt(map, up) : [...def.render.meanColor], metallic: 0, roughness: 1 }] });
+          models.set(v.bodyId, model);
+        }
         const rg = defs.bodies[v.bodyId]!.radius + overrides.groundAltitude;
         const parent = { originRelCam: pose.centerRelCam, q: pose.qFixedToRoot, prevOriginRelCam: pose.prevCenterRelCam, prevQ: pose.prevQFixedToRoot };
         batch.add(model, instanceInFrame(parent, v3.scale(up, rg), quat.fromTo({ x: 0, y: 0, z: 1 }, up), { scale: rg, bodyFixed: true, castShadow: false }));
@@ -306,6 +356,36 @@ interface CloudWorld {
   bodyId: string;
   /** The tile set's cloud coverage map (r = coverage) as decoded, for 'clouds.coverageMap'. */
   coverage: ImageBitmap;
+  /** Its pixels (r = coverage), for placing the layer under the vessel. */
+  pixels: ImageData;
+}
+
+/**
+ * Longitude offset (rad) of the cloud layer that puts the cloudiest 12 deg x 12 deg stretch of the latitude band
+ * of the body-fixed direction `up` under it (equirectUv of PROBE_FACE_CS: u = (lon + offset) / 2 pi + 0.5).
+ */
+function cloudOffsetUnder(map: ImageData, up: Vec3): number {
+  const row = Math.floor((0.5 - Math.asin(Math.max(-1, Math.min(1, up.z))) / Math.PI) * map.height);
+  const half = Math.round((6 / 360) * map.width);
+  const band: number[] = [];
+  for (let x = 0; x < map.width; x++) {
+    let s = 0;
+    for (let dy = -half; dy <= half; dy += 4) s += map.data[(Math.max(0, Math.min(map.height - 1, row + dy)) * map.width + x) * 4]!;
+    band.push(s);
+  }
+  let best = 0;
+  let bestSum = -1;
+  let run = 0;
+  for (let x = -half; x <= half; x++) run += band[(x + map.width) % map.width]!;
+  for (let x = 0; x < map.width; x++) {
+    if (run > bestSum) {
+      bestSum = run;
+      best = x;
+    }
+    run += band[(x + half + 1) % map.width]! - band[(x - half + map.width) % map.width]!;
+  }
+  const lon = Math.atan2(up.y, up.x);
+  return ((best + 0.5) / map.width - 0.5) * 2 * Math.PI - lon;
 }
 
 async function loadCloudWorld(defs: DefLibrary, tilesUrl: string): Promise<CloudWorld | null> {
@@ -315,7 +395,10 @@ async function loadCloudWorld(defs: DefLibrary, tilesUrl: string): Promise<Cloud
   const manifest = (await (await fetch(`${base}/manifest.json`)).json()) as TileManifest;
   const path = manifest.globals[def.render.clouds!.coverageMap]!.path;
   const coverage = await createImageBitmap(await (await fetch(`${base}/${path}`)).blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-  return { bodyId: def.id, coverage };
+  const canvas = new OffscreenCanvas(coverage.width, coverage.height);
+  const c2d = canvas.getContext('2d')!;
+  c2d.drawImage(coverage, 0, 0);
+  return { bodyId: def.id, coverage, pixels: c2d.getImageData(0, 0, coverage.width, coverage.height) };
 }
 
 /**
@@ -334,6 +417,7 @@ function createCloudLayerFeature(world: CloudWorld): RenderFeature {
   let bindings: ReturnType<ReturnType<typeof coreOf>['createSceneBindings']>;
   let uniform: GPUBuffer;
   let bodyIndex = -1;
+  let longitudeOffset: number | null = query.get('cloudUnder') === '1' ? null : 0;
   return {
     id: 'sky-lab-clouds',
     init(c) {
@@ -410,7 +494,14 @@ function createCloudLayerFeature(world: CloudWorld): RenderFeature {
       if (bodyIndex >= 4) bodyIndex = -1;
       const def = ctx.defs.bodies[world.bodyId]!;
       const cl = def.render.clouds!;
-      coreOf(ctx).setCloudShadowParams({ far: bodyIndex >= 0 ? { bodyIndex, layerRadius: def.radius + 0.5 * (cl.bottomAltitude + cl.topAltitude), opticalDepth: LAB_CLOUD_TAU, longitudeOffset: 0 } : null });
+      if (longitudeOffset === null) {
+        // Once, at the first frame with a vessel: the layer is turned so that a cloud field lies under it.
+        const s = frame.snapshot;
+        const v = s.vessels.find((x) => x.id === s.activeVesselId);
+        const body = s.bodies.find((b) => b.id === world.bodyId);
+        if (v && body) longitudeOffset = cloudOffsetUnder(world.pixels, v3.normalize(quat.rotateInv(body.qFixedToRoot, v3.sub(v.rRoot, body.rRoot))));
+      }
+      coreOf(ctx).setCloudShadowParams({ far: bodyIndex >= 0 ? { bodyIndex, layerRadius: def.radius + 0.5 * (cl.bottomAltitude + cl.topAltitude), opticalDepth: LAB_CLOUD_TAU, longitudeOffset: longitudeOffset ?? 0 } : null });
       ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([bodyIndex, 0, 0, 0]));
     },
     drawTransparent(_frame, pass) {
@@ -437,6 +528,7 @@ async function boot(): Promise<void> {
   let cloudDefaults: { screen: GPUTextureView; depth: GPUTextureView } | null = null;
   const defs = await loadDefs(fetchDefSource());
   const clouds = query.get('clouds') === '1' ? await loadCloudWorld(defs, '/tiles') : null;
+  const groundAlbedo = query.has('ground') && query.get('probeAlbedo') !== 'mean' ? await loadAlbedoPixels(defs, '/tiles') : new Map<string, ImageData>();
   const app = await createLabApp({
     canvas,
     name: 'sky',
@@ -457,7 +549,7 @@ async function boot(): Promise<void> {
         list.push(createLabPlanetFeature({ maps }));
       }
       if (query.get('spheres') === '1') list.push(createSpheresFeature());
-      if (query.has('ground')) list.push(createGroundCapFeature(d));
+      if (query.has('ground')) list.push(createGroundCapFeature(d, groundAlbedo));
       if (clouds) list.push(createCloudLayerFeature(clouds));
       if (query.has('heavy')) list.push(createHeavyFeature());
       if (query.get('sky') !== '0') {
@@ -465,6 +557,7 @@ async function boot(): Promise<void> {
           ...skyParts(),
           probeAlbedo: query.get('probeAlbedo') === 'mean' ? 'meanColor' : 'tileset',
           ...(query.has('mwSize') ? { milkyWayFaceSize: Number(query.get('mwSize')) } : {}),
+          ...(query.get('mwDetail') === '0' ? { milkyWayDetail: false } : {}),
         });
         list.push(sky);
       }
@@ -552,7 +645,8 @@ async function boot(): Promise<void> {
         bodies: scene.bodies.map((b) => {
           const def = app.defs.bodies[b.id]!;
           const snap = f.snapshot.bodies.find((x) => x.id === b.id)!;
-          return { centre: b.centre, radius: b.radius, weight: b.weight, albedo: [...def.render.meanColor], sunDir: snap.sunDir };
+          const surface = def.render.surface;
+          return { centre: b.centre, radius: b.radius, weight: b.weight, albedo: [...def.render.meanColor], sunDir: snap.sunDir, ...(surface?.brdf === 'hapke' && surface.hapke ? { hapke: surface.hapke } : {}) };
         }),
         sunE: [f.sun.color[0] * f.sun.illuminance, f.sun.color[1] * f.sun.illuminance, f.sun.color[2] * f.sun.illuminance],
         sunRadius: f.sun.angularRadius,
@@ -573,7 +667,7 @@ async function boot(): Promise<void> {
       };
     },
   };
-  window.__sky = { ...lab, cpu: { referenceRadiance, projectSh, bruteForceIrradiance, shIrradiance, flareRadiance, ndcDirection } };
+  window.__sky = { ...lab, cpu: { referenceRadiance, projectSh, bruteForceIrradiance, shIrradiance, flareRadiance, ndcDirection, starImageRadius, starPsf } };
 
   if (query.get('hud') !== '0') {
     setInterval(() => {

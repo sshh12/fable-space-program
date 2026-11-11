@@ -49,6 +49,34 @@ export function decodeRgb9e5(v: number): [number, number, number] {
   return [(v & 511) * scale, ((v >>> 9) & 511) * scale, ((v >>> 18) & 511) * scale];
 }
 
+/**
+ * Rec. 709 luminance of rgb9e5ufloat texels as IEEE half floats (the texels of an r16float texture): the Milky
+ * Way's detail layer, the finest baked level kept as luminance only (2 bytes per texel instead of 4).
+ */
+export function rgb9e5LuminanceHalf(texels: Uint32Array): Uint16Array {
+  const out = new Uint16Array(texels.length);
+  const f = new Float32Array(1);
+  const u = new Uint32Array(f.buffer);
+  for (let i = 0; i < texels.length; i++) {
+    const v = texels[i]!;
+    f[0] = (0.2126 * (v & 511) + 0.7152 * ((v >>> 9) & 511) + 0.0722 * ((v >>> 18) & 511)) * 2 ** ((v >>> 27) - 24);
+    // float32 -> float16, round to nearest, for a finite value >= 0 (the largest rgb9e5 value, 65408, is below the half maximum).
+    const x = u[0]!;
+    const e = ((x >>> 23) & 0xff) - 112;
+    const m = x & 0x7fffff;
+    if (e <= 0) out[i] = e < -10 ? 0 : (((m | 0x800000) >> (1 - e)) + 0x1000) >> 13;
+    else out[i] = Math.min(0x7bff, ((e << 10) | (m >> 13)) + ((m >> 12) & 1));
+  }
+  return out;
+}
+
+/** Decode an IEEE half float (tests). */
+export function decodeHalf(h: number): number {
+  const e = (h >>> 10) & 31;
+  const m = h & 1023;
+  return e === 0 ? m * 2 ** -24 : (1 + m / 1024) * 2 ** (e - 15);
+}
+
 export interface StarCatalogue {
   count: number;
   /** STAR_RECORD_FLOATS floats per star: direction xyz, lux, linear-sRGB colour (luminance 1), V. */

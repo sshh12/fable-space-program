@@ -12,6 +12,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { coreOf, createSceneBindings, f16ToF32, mipCount, type SceneBindings, type Tracked } from '@/render/core';
+import { albedoGridFromSrgb, type AlbedoGrid } from './photometry';
 import { probeSceneOf, type ProbeScene } from './probeScene';
 import { PROBE_BLEND_CS, PROBE_DOWN_CS, PROBE_FACE_CS, PROBE_PREFILTER_CS, PROBE_SH_BLEND_CS, PROBE_SH_CS } from './shaders';
 
@@ -67,6 +68,7 @@ export class EnvironmentProbe {
   private sceneGroup: GPUBindGroup | null = null;
   private sceneVersion = -1;
   private readonly albedo = new Map<string, { view: GPUTextureView; slot: number }>();
+  private readonly albedoGrids = new Map<string, AlbedoGrid>();
   private readonly blank: GPUTextureView;
   private milkyWay: GPUTextureView;
   private milkyWayScale = 0;
@@ -220,6 +222,13 @@ export class EnvironmentProbe {
         });
         ctx.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture: tex }, [bitmap.width, bitmap.height]);
         core.mips.generate(tex);
+        // A coarse copy on the CPU: the far image of the body takes the mean albedo of the face it shows from it.
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const c2d = canvas.getContext('2d', { willReadFrequently: true });
+        if (c2d) {
+          c2d.drawImage(bitmap, 0, 0);
+          this.albedoGrids.set(def.id, albedoGridFromSrgb(c2d.getImageData(0, 0, bitmap.width, bitmap.height).data, bitmap.width, bitmap.height));
+        }
         bitmap.close();
         if (this.albedo.size < 4) this.albedo.set(def.id, { view: tex.createView(), slot: this.albedo.size });
         this.faceGroup = null;
@@ -229,6 +238,11 @@ export class EnvironmentProbe {
     run()
       .catch((e: unknown) => core.reportError(`${this.featureId}: albedo maps: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => this.pending--);
+  }
+
+  /** Coarse linear-albedo grid of a body's albedoLowRes map, once it is loaded. */
+  albedoGrid(bodyId: string): AlbedoGrid | undefined {
+    return this.albedoGrids.get(bodyId);
   }
 
   setMilkyWay(view: GPUTextureView, luminanceScale: number, faceSize: number): void {

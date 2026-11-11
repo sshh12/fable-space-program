@@ -8,13 +8,36 @@
  */
 import type { Vec3, Vec3Tuple } from '@/core/math';
 
-/** Standard deviation of the Gaussian point-spread function of a star, render pixels (rendering-design 9). */
-export const STAR_PSF_SIGMA_PX = 0.7;
-/** Half size of a star quad in units of sigma: 4.3 sigma = 3.0 px; the Gaussian beyond it holds 1e-4 of the energy. */
+/**
+ * Point-spread function of every point source (stars, bodies smaller than a few pixels): a Gaussian core plus
+ * power-law wings, as a lens (and an eye) images a point. Core: sigma 1.0 px (rendering-design 9 asked for
+ * 0.7 px; at 1.0 px the temporal resolve's jitter ripple is half as large, docs/requests/sky-lighting-1.md).
+ * Wings: a Moffat profile (1 + r^2 / alpha^2)^-1.5, the r^-3 envelope of a diffraction pattern, holding
+ * STAR_WING_SHARE of the energy; that share is taken out of the core, so the image still integrates to the
+ * source's illuminance / pixel solid angle. The wings are what makes a bright star a larger image than a faint
+ * one: a pure Gaussian grows only as sqrt(ln(flux)).
+ */
+export const STAR_PSF_SIGMA_PX = 1.0;
+/** Half size of the core's quad in units of sigma: the Gaussian beyond 4.3 sigma holds 1e-4 of the energy. */
 export const STAR_QUAD_SIGMAS = 4.3;
-/** A distant body is an impostor below this projected diameter (px) and its geometry above the next one. */
-export const IMPOSTOR_FULL_PX = 3;
-export const IMPOSTOR_NONE_PX = 6;
+export const STAR_WING_SHARE = 0.3;
+export const STAR_WING_ALPHA_PX = 2;
+/** The wings are drawn out to where they fall under this pre-exposed level (far below the display's black) ... */
+export const STAR_WING_FLOOR = 1 / 1024;
+/** ... and never further than this (px). */
+export const STAR_WING_MAX_PX = 48;
+
+/**
+ * Hand-over of a distant body from its analytic far image to its geometry, in DISPLAY pixels (so dynamic
+ * resolution does not switch the representation). The far image has full weight while the body's sunlit part
+ * is narrower than IMPOSTOR_LIT_FULL_PX (thin bright geometry loses energy in the temporal resolve:
+ * docs/requests/sky-lighting-1.md), fades out to IMPOSTOR_LIT_NONE_PX, and is never used above
+ * IMPOSTOR_DIAMETER_NONE_PX (fading from IMPOSTOR_DIAMETER_FULL_PX), where the body's own detail matters.
+ */
+export const IMPOSTOR_LIT_FULL_PX = 4;
+export const IMPOSTOR_LIT_NONE_PX = 7;
+export const IMPOSTOR_DIAMETER_FULL_PX = 20;
+export const IMPOSTOR_DIAMETER_NONE_PX = 32;
 /** Planetshine far-field formula of the render core fades in between these multiples of a body's radius. */
 export const PLANETSHINE_FADE_START_R = 2;
 export const PLANETSHINE_FADE_END_R = 4;
@@ -30,12 +53,42 @@ export function pixelSolidAngle(tanHalfFovX: number, tanHalfFovY: number, width:
 }
 
 /**
- * Peak luminance (cd/m^2) of a star of illuminance `e` (lux) drawn as a Gaussian of `sigma` px: the pixel
- * values L_peak exp(-d^2 / 2 sigma^2) sum to e / omegaPx over the pixel lattice (the lattice sum of a
- * sigma = 0.7 px Gaussian equals its integral 2 pi sigma^2 to 1e-4 at any sub-pixel position).
+ * Radius (px) out to which the image of a point source is drawn: where its wings fall under STAR_WING_FLOOR, for
+ * a source whose pixels sum to `p` (pre-exposed: illuminance / pixel solid angle x exposure); at least the
+ * core's 4.3 sigma, at most STAR_WING_MAX_PX.
  */
-export function starPeakLuminance(e: number, omegaPx: number, sigma = STAR_PSF_SIGMA_PX): number {
-  return e / (omegaPx * 2 * Math.PI * sigma * sigma);
+export function starImageRadius(p: number, share = STAR_WING_SHARE): number {
+  const a = STAR_WING_ALPHA_PX;
+  const q = ((p * share) / (2 * Math.PI * a * a * STAR_WING_FLOOR)) ** (2 / 3);
+  return Math.min(STAR_WING_MAX_PX, Math.max(STAR_QUAD_SIGMAS * STAR_PSF_SIGMA_PX, a * Math.sqrt(Math.max(q - 1, 0))));
+}
+
+/**
+ * Wings of an image drawn out to `radius` px: amplitude and floor of amp x ((1 + r^2 / alpha^2)^-1.5 - floor),
+ * which is zero at the radius (no step) and integrates to `share` over the disc of that radius.
+ */
+export function starWing(radius: number, share = STAR_WING_SHARE): { amp: number; floor: number } {
+  const a2 = STAR_WING_ALPHA_PX * STAR_WING_ALPHA_PX;
+  const q = 1 + (radius * radius) / a2;
+  const floor = q ** -1.5;
+  return { amp: share / (2 * Math.PI * a2 * (1 - q ** -0.5) - Math.PI * radius * radius * floor), floor };
+}
+
+/** Point-spread function: the fraction of a point source's flux in a pixel at `r` px from it, for an image of `radius` px. */
+export function starPsf(r: number, radius: number, share = STAR_WING_SHARE): number {
+  const s2 = STAR_PSF_SIGMA_PX * STAR_PSF_SIGMA_PX;
+  const core = ((1 - share) * Math.exp((-0.5 * r * r) / s2)) / (2 * Math.PI * s2);
+  if (r >= radius || share <= 0) return core;
+  const w = starWing(radius, share);
+  return core + w.amp * ((1 + (r * r) / (STAR_WING_ALPHA_PX * STAR_WING_ALPHA_PX)) ** -1.5 - w.floor);
+}
+
+/**
+ * Peak luminance (cd/m^2) of a star of illuminance `e` (lux) at exposure `exposure`: the pixel values
+ * e / omegaPx x starPsf sum to e / omegaPx over the pixel lattice (to 1e-3 at any sub-pixel position).
+ */
+export function starPeakLuminance(e: number, omegaPx: number, exposure = 1): number {
+  return (e / omegaPx) * starPsf(0, starImageRadius((e / omegaPx) * exposure));
 }
 
 /** Lattice sum of exp(-|p - c|^2 / 2 sigma^2) over integer pixel centres around a sub-pixel centre c (for tests). */
@@ -72,17 +125,174 @@ export function lambertSphereIlluminance(eSunAtBody: number, geometricAlbedo: nu
   return eSunAtBody * geometricAlbedo * (radius / distance) ** 2 * lambertPhase(phaseAngle);
 }
 
-/**
- * Weight of the point impostor against the body's real geometry, by projected diameter in px: 1 up to
- * IMPOSTOR_FULL_PX, 0 from IMPOSTOR_NONE_PX, smoothstep between.
- */
-export const impostorWeight = (diameterPx: number): number => 1 - smooth01((diameterPx - IMPOSTOR_FULL_PX) / (IMPOSTOR_NONE_PX - IMPOSTOR_FULL_PX));
+/** Width (px) of the sunlit part of a sphere of `diameterPx` seen at phase angle `phase` (rad), along the sun line. */
+export const litWidthPx = (diameterPx: number, phase: number): number => 0.5 * diameterPx * (1 + Math.cos(phase));
 
 /**
- * Standard deviation (px) of the impostor's Gaussian: the star PSF widened by the second moment of a uniform disc
- * of `diameterPx` (variance r^2 / 4 per axis), so the blob has the size of the body at the hand-over.
+ * Weight of a body's analytic far image against its real geometry, from its projected diameter in display px and
+ * the phase angle: 1 while the lit width is under IMPOSTOR_LIT_FULL_PX, 0 from IMPOSTOR_LIT_NONE_PX or from a
+ * diameter of IMPOSTOR_DIAMETER_NONE_PX, smoothsteps between.
  */
-export const impostorSigmaPx = (diameterPx: number): number => Math.sqrt(STAR_PSF_SIGMA_PX ** 2 + (diameterPx / 4) ** 2);
+export const impostorWeight = (diameterPx: number, phase: number): number =>
+  (1 - smooth01((litWidthPx(diameterPx, phase) - IMPOSTOR_LIT_FULL_PX) / (IMPOSTOR_LIT_NONE_PX - IMPOSTOR_LIT_FULL_PX))) *
+  (1 - smooth01((diameterPx - IMPOSTOR_DIAMETER_FULL_PX) / (IMPOSTOR_DIAMETER_NONE_PX - IMPOSTOR_DIAMETER_FULL_PX)));
+
+/**
+ * The far image of a body is its sunlit sphere sampled on a grid fixed to the body and convolved with the
+ * point-spread function. The grid is in latitude / longitude about the axis perpendicular to the sun-observer
+ * plane and covers the sunlit lune only (longitude from the bright limb to the terminator), so every sample
+ * is lit however thin the crescent, and the integrand is smooth. Rows and samples per row are chosen for a
+ * spacing of IMPOSTOR_SAMPLE_SPACING_PX on the disc (at least 8 rows of at least 2); kernel sigma: the star PSF
+ * for a point, narrowing to IMPOSTOR_KERNEL_RESOLVED_PX for a resolved disc (the sharpness of antialiased
+ * geometry); wing share: the star's for a point, none once the disc is resolved.
+ */
+export const IMPOSTOR_KERNEL_RESOLVED_PX = 0.6;
+export const IMPOSTOR_SAMPLE_SPACING_PX = 0.5;
+export const IMPOSTOR_MAX_ROWS = 128;
+/** Rows (latitude) of the far image's grid and samples of its equatorial row (rows nearer the poles have rowSamples() of them). */
+export function impostorLune(diameterPx: number, g: number): { rows: number; cols: number } {
+  const r = 0.5 * diameterPx;
+  return {
+    rows: Math.min(IMPOSTOR_MAX_ROWS, Math.max(8, Math.ceil((Math.PI * r) / IMPOSTOR_SAMPLE_SPACING_PX))),
+    cols: Math.min(IMPOSTOR_MAX_ROWS, Math.max(4, Math.ceil(((Math.PI - g) * r) / IMPOSTOR_SAMPLE_SPACING_PX))),
+  };
+}
+/** Samples of the row whose latitude has cosine `a`. */
+export const rowSamples = (cols: number, a: number): number => Math.max(2, Math.ceil(cols * a));
+export const impostorKernelPx = (diameterPx: number): number => STAR_PSF_SIGMA_PX + (IMPOSTOR_KERNEL_RESOLVED_PX - STAR_PSF_SIGMA_PX) * smooth01((diameterPx - 3) / 7);
+export const impostorWingShare = (diameterPx: number): number => STAR_WING_SHARE * (1 - smooth01((diameterPx - 2) / 4));
+
+/** Parameters of the Hapke function of a regolith surface (BodyDef.render.surface.hapke). */
+export interface HapkeParams {
+  b0: number;
+  hS: number;
+  bP: number;
+  cP: number;
+}
+
+/**
+ * Hapke bidirectional reflectance x mu0 (rendering-design 8.2: shadow-hiding opposition surge, two-term phase
+ * function, Lommel-Seeliger limb, no macroscopic roughness): w = single-scattering albedo, mu0 / mu = cosines of
+ * incidence / emission, g = phase angle (rad). The radiance of the surface is this times the sun's illuminance.
+ */
+export function hapkeBrdfMu0(w: number, mu0: number, mu: number, g: number, p: HapkeParams): number {
+  if (mu0 <= 0 || mu <= 0) return 0;
+  const B = p.b0 / (1 + Math.tan(g / 2) / p.hS);
+  const cg = Math.cos(g);
+  const P = 1 + p.bP * cg + p.cP * (1.5 * cg * cg - 0.5);
+  const gam = Math.sqrt(1 - w);
+  const H0 = (1 + 2 * mu0) / (1 + 2 * mu0 * gam);
+  const H = (1 + 2 * mu) / (1 + 2 * mu * gam);
+  return (w / (4 * Math.PI)) * (mu0 / (mu0 + mu)) * ((1 + B) * P + H0 * H - 1);
+}
+
+/**
+ * Single-scattering albedo of a Hapke surface whose albedo map value is `albedo`: the maps are normalised to
+ * incidence 30 deg, emission 0, phase 30 deg (rendering-design 8.2), so w solves
+ * pi x hapke(w, cos 30, 1, 30 deg) / cos 30 = albedo (bisection; saturates at w = 1).
+ */
+export function hapkeSingleScattering(albedo: number, p: HapkeParams): number {
+  const mu0 = Math.cos(Math.PI / 6);
+  const at = (w: number): number => (Math.PI * hapkeBrdfMu0(w, mu0, 1, Math.PI / 6, p)) / mu0;
+  let lo = 0;
+  let hi = 0.999999;
+  if (at(hi) <= albedo) return hi;
+  for (let k = 0; k < 40; k++) {
+    const mid = 0.5 * (lo + hi);
+    if (at(mid) < albedo) lo = mid;
+    else hi = mid;
+  }
+  return 0.5 * (lo + hi);
+}
+
+/** Shading of a far body: Lambert with the albedo that gives the sphere its geometric albedo, or the Hapke function. */
+export interface FarBodyShading {
+  /** Lambert: radiance per lux = albedo x mu0 / pi per channel. */
+  lambertAlbedo: Vec3Tuple;
+  /** Hapke: single-scattering albedo per channel and the parameters (null = Lambert). */
+  hapke: { w: Vec3Tuple; params: HapkeParams } | null;
+}
+
+/**
+ * Radiance per lux (rgb) of a point of a far body's disc at (u, v) in units of its radius (v up, the camera along
+ * +z), lit from unit direction `sun` in the same frame at phase angle g. Zero outside the disc and on the night side.
+ */
+export function farBodyRadiance(s: FarBodyShading, u: number, v: number, sun: Vec3, g: number): Vec3Tuple {
+  const r2 = u * u + v * v;
+  if (r2 >= 1) return [0, 0, 0];
+  const mu = Math.sqrt(1 - r2);
+  const mu0 = u * sun.x + v * sun.y + mu * sun.z;
+  if (mu0 <= 0) return [0, 0, 0];
+  if (s.hapke) {
+    const h = s.hapke;
+    return [hapkeBrdfMu0(h.w[0], mu0, mu, g, h.params), hapkeBrdfMu0(h.w[1], mu0, mu, g, h.params), hapkeBrdfMu0(h.w[2], mu0, mu, g, h.params)];
+  }
+  return [(s.lambertAlbedo[0] * mu0) / Math.PI, (s.lambertAlbedo[1] * mu0) / Math.PI, (s.lambertAlbedo[2] * mu0) / Math.PI];
+}
+
+/**
+ * Sum over the far image's sample grid (impostorLune) of radiance per lux x the sample's area on the disc of unit
+ * radius, per channel, with the photocentre of its luminance along the sun's direction in the image plane (in
+ * radii) and the number of samples. The shader does the same sum and normalises it to farBodyDiscIntegral.
+ */
+export function farBodyLuneSum(s: FarBodyShading, diameterPx: number, g: number): { sum: Vec3Tuple; centre: number; samples: number } {
+  const { rows, cols } = impostorLune(diameterPx, g);
+  const sun = { x: Math.sin(g), y: 0, z: Math.cos(g) };
+  const span = Math.PI - g;
+  const dBeta = Math.PI / rows;
+  const sum: Vec3Tuple = [0, 0, 0];
+  let cx = 0;
+  let cl = 0;
+  let samples = 0;
+  for (let j = 0; j < rows; j++) {
+    const beta = -0.5 * Math.PI + (j + 0.5) * dBeta;
+    const a = Math.cos(beta);
+    const nj = rowSamples(cols, a);
+    const dPsi = span / nj;
+    for (let i = 0; i < nj; i++) {
+      // x = a cos(psi) runs from the bright limb (psi = 0) to the terminator (psi = pi - g).
+      const psi = (i + 0.5) * dPsi;
+      const x = a * Math.cos(psi);
+      const L = farBodyRadiance(s, x, Math.sin(beta), sun, g);
+      const dA = a * a * Math.sin(psi) * dPsi * dBeta;
+      const l = (0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2]) * dA;
+      sum[0] += L[0] * dA;
+      sum[1] += L[1] * dA;
+      sum[2] += L[2] * dA;
+      cx += x * l;
+      cl += l;
+      samples++;
+    }
+  }
+  return { sum, centre: cl > 0 ? cx / cl : 0, samples };
+}
+
+/**
+ * Phase-integrated radiance per lux of a far body's disc of unit radius (rgb): the integral of farBodyRadiance
+ * over the sunlit part of the disc at phase angle g, in longitude / latitude about the axis perpendicular to
+ * the sun-observer plane (the integrand is smooth there; midpoint rule, 48 x 32 by default; 24 x 16 is within
+ * 0.5 % of it). A Lambert sphere gives (2 / 3) x albedo x lambertPhase(g).
+ */
+export function farBodyDiscIntegral(s: FarBodyShading, g: number, nLat = 48, nLon = 32): Vec3Tuple {
+  const sun = { x: Math.sin(g), y: 0, z: Math.cos(g) };
+  const out: Vec3Tuple = [0, 0, 0];
+  const span = Math.PI - g;
+  if (span <= 0) return out;
+  for (let j = 0; j < nLat; j++) {
+    const beta = -0.5 * Math.PI + ((j + 0.5) * Math.PI) / nLat;
+    const a = Math.cos(beta);
+    for (let i = 0; i < nLon; i++) {
+      // x = a cos(psi) runs from the limb (psi = 0) to the terminator (psi = pi - g); dx dy = a^2 sin(psi) dpsi dbeta.
+      const psi = ((i + 0.5) * span) / nLon;
+      const L = farBodyRadiance(s, a * Math.cos(psi), Math.sin(beta), sun, g);
+      const dA = a * a * Math.sin(psi) * (span / nLon) * (Math.PI / nLat);
+      out[0] += L[0] * dA;
+      out[1] += L[1] * dA;
+      out[2] += L[2] * dA;
+    }
+  }
+  return out;
+}
 
 /** Weight of the render core's planetshine light for a body `distance` from its centre (smoothstep 2 R .. 4 R). */
 export const planetshineWeight = (distance: number, radius: number): number =>
@@ -240,3 +450,65 @@ export const raDecToDir = (ra: number, dec: number): Vec3 => ({ x: Math.cos(dec)
 /** Galactic north pole and galactic centre (J2000, IAU 1958 / Reid & Brunthaler 2004), radians. */
 export const GALACTIC_NORTH_POLE = { ra: (192.85948 * Math.PI) / 180, dec: (27.12825 * Math.PI) / 180 };
 export const GALACTIC_CENTRE = { ra: (266.40499 * Math.PI) / 180, dec: (-28.93617 * Math.PI) / 180 };
+
+// ------------------------------------------------------------------------------------- albedo of the visible face
+
+/** A body's albedo map reduced to a coarse equirectangular grid of linear albedo (row 0 = north, column 0 = longitude -180 deg). */
+export interface AlbedoGrid {
+  width: number;
+  height: number;
+  /** rgb per cell, linear. */
+  data: Float32Array;
+}
+
+/** Box-reduce sRGB pixels (rgba8, equirectangular) to a grid of `width` x `height` cells of linear albedo. */
+export function albedoGridFromSrgb(pixels: Uint8ClampedArray | Uint8Array, srcWidth: number, srcHeight: number, width = 64, height = 32): AlbedoGrid {
+  const lin = new Float32Array(256);
+  for (let v = 0; v < 256; v++) lin[v] = v <= 0.04045 * 255 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4;
+  const data = new Float32Array(width * height * 3);
+  const count = new Float32Array(width * height);
+  for (let y = 0; y < srcHeight; y++) {
+    const cy = Math.min(height - 1, Math.floor((y * height) / srcHeight));
+    for (let x = 0; x < srcWidth; x++) {
+      const c = cy * width + Math.min(width - 1, Math.floor((x * width) / srcWidth));
+      const i = (y * srcWidth + x) * 4;
+      data[c * 3] = data[c * 3]! + lin[pixels[i]!]!;
+      data[c * 3 + 1] = data[c * 3 + 1]! + lin[pixels[i + 1]!]!;
+      data[c * 3 + 2] = data[c * 3 + 2]! + lin[pixels[i + 2]!]!;
+      count[c] = count[c]! + 1;
+    }
+  }
+  for (let c = 0; c < width * height; c++) for (let k = 0; k < 3; k++) data[c * 3 + k] = data[c * 3 + k]! / Math.max(count[c]!, 1);
+  return { width, height, data };
+}
+
+/**
+ * Mean albedo of the part of a body that is both sunlit and turned to the observer: every grid cell weighted by
+ * its area, its projection towards the observer and the Lommel-Seeliger brightness mu0 / (mu0 + mu) of a
+ * regolith surface. `toObserver` and `toSun` are unit vectors in the BODY-FIXED frame. Null when nothing lit
+ * is in view.
+ */
+export function visibleFaceAlbedo(grid: AlbedoGrid, toObserver: Vec3, toSun: Vec3): Vec3Tuple | null {
+  const sum: Vec3Tuple = [0, 0, 0];
+  let total = 0;
+  for (let j = 0; j < grid.height; j++) {
+    const lat = (0.5 - (j + 0.5) / grid.height) * Math.PI;
+    const cl = Math.cos(lat);
+    const z = Math.sin(lat);
+    for (let i = 0; i < grid.width; i++) {
+      const lon = ((i + 0.5) / grid.width - 0.5) * 2 * Math.PI;
+      const x = cl * Math.cos(lon);
+      const y = cl * Math.sin(lon);
+      const mu = x * toObserver.x + y * toObserver.y + z * toObserver.z;
+      const mu0 = x * toSun.x + y * toSun.y + z * toSun.z;
+      if (mu <= 0 || mu0 <= 0) continue;
+      const w = (cl * mu * mu0) / (mu0 + mu);
+      const c = (j * grid.width + i) * 3;
+      sum[0] += grid.data[c]! * w;
+      sum[1] += grid.data[c + 1]! * w;
+      sum[2] += grid.data[c + 2]! * w;
+      total += w;
+    }
+  }
+  return total > 0 ? [sum[0] / total, sum[1] / total, sum[2] / total] : null;
+}
