@@ -90,6 +90,18 @@ hosting side esp when not in use. No need for alerts rn"
 - **No alerts for now**: do not build alert routing or ask for a webhook; keep the metrics and logs that the
   capacity report needs. Alerting is a later seam.
 
+## Plan, GitHub App and load tests (2026-11-11, after the cost-floor revision)
+
+Verbatim: "let's do hobby and setup gh app and load tests latter".
+
+- **Stay on the Railway Hobby plan** from the start (OPEN_QUESTIONS Q2: not Pro from day one). The move to
+  Pro happens at the measured break-even or when a stage needs it, and the lead tells the user first.
+- **Railway's GitHub App is not authorised yet** and will be set up later: until then rollouts upload an
+  export of the release tag from this machine (the documented fallback). Do not ask again; do not block on it.
+- **The larger load-test rehearsals (split and launch stages, which need Pro and spend) are deferred.**
+  Build the load-test tooling and run what the Hobby stage and the local stack allow; the capacity report
+  states the larger stages as estimates until the user schedules the rehearsals.
+
 Facts about this machine for the local stack: Docker Desktop 29.6 is installed but its daemon is not running
 (WSL 2 with an Ubuntu distribution exists, stopped); no native Postgres is installed. The machine once
 crashed under heavy combined load, and a Docker Desktop VM takes memory from the browser tests and bakes.
