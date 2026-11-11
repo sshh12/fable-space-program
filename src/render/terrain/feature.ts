@@ -13,7 +13,7 @@ import { coreOf, MAX_BODIES, type SceneBindings, type Tracked } from '@/render/c
 import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
-import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap } from './lod';
+import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap, type ReliefFloor } from './lod';
 import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
 import { buildRecordConstants, resolveOwners, type PadDisc, type RecordContext } from './records';
@@ -102,6 +102,8 @@ interface BodyState {
   surfaceVersion: number;
   hasOcean: boolean;
   seaLevel: number;
+  /** Levels up to the preload level are drawn within RELIEF_RADII radii, whatever their size on screen. */
+  relief: ReliefFloor;
   /** Per frame. */
   frameIndex: number;
   bodyIndex: number;
@@ -125,6 +127,8 @@ const MAX_RECORDS = 6144;
 const MAX_INSTANCES = 1 << 16;
 /** The second selection pass (prefetch) runs every this many frames. */
 const PREFETCH_EVERY = 8;
+/** Distance (in body radii) within which the preload level is resident and drawn: the whole-body shadow cascade then casts from tiles with quads of about three of its texels. */
+const RELIEF_RADII = 16;
 /** Fade-in used for a few seconds after a camera cut, s (there is no continuity to protect right after a cut). */
 const FAST_FADE_SECONDS = 0.12;
 const FAST_FADE_WINDOW = 3;
@@ -210,7 +214,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const age = time - n.activatedAt;
       const fade = n.fadeSeconds > 0 && age < n.fadeSeconds ? 1 - smooth01(age / n.fadeSeconds) : 0;
       force = Math.max(fade, capMorph(n.level, b.cap));
-      invRange = 1 / levelRange(n.level, b.K, b.tree.faceSize);
+      invRange = 1 / levelRange(n.level, b.K, b.tree.faceSize, b.relief);
     }
     records[o] = p.x + b.centre.x;
     records[o + 1] = p.y + b.centre.y;
@@ -295,6 +299,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       tileGroup,
       surfaceGroup: null,
       surfaceVersion: -1,
+      relief: { level: preloadLevel, range: RELIEF_RADII * def.radius },
       hasOcean: def.ocean !== null,
       seaLevel: def.ocean?.seaLevel ?? 0,
       frameIndex: -1,
@@ -394,8 +399,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     b.observers = obs;
 
     // Coarse levels: 0..pinLevel always resident; one more level is loaded ahead once the camera is near
-    // the body (within 16 radii), so that a cut to anywhere on it starts from 64 tiles per face.
-    const near = pose.cameraAltitude < 16 * b.def.radius;
+    // the body (within RELIEF_RADII radii): a cut to anywhere on it starts from 64 tiles per face, and
+    // within that distance the level is drawn (the relief floor), so the terminator has shadows to show.
+    const near = pose.cameraAltitude < RELIEF_RADII * b.def.radius;
     if (b.pinNear !== near) {
       b.pinNear = near;
       streamer.setResidentLevels(b.stream, pinLevel, near ? preloadLevel : pinLevel);
@@ -416,6 +422,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       occluderRadius: occluder,
       fadeSeconds: cut || !morphEnabled ? 0 : clock < fastFadeUntil ? FAST_FADE_SECONDS : FADE_SECONDS,
       prefetch: 0,
+      relief: b.relief,
     };
     b.tree.select(base);
 

@@ -4,7 +4,7 @@
  * boundary vertices that no neighbouring tile shares (cracks).
  */
 import type { Vec3 } from '@/core/math';
-import { GRID_QUADS, morphFactor, type MorphWindow } from '@/render/terrain/lod';
+import { GRID_QUADS, morphFactor, type MorphWindow, type ReliefFloor } from '@/render/terrain/lod';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode } from '@/render/terrain/quadtree';
 import { frameDir, snapDirection } from '@/render/terrain/tileMath';
 
@@ -63,6 +63,7 @@ export interface Sim {
   K: number;
   window: MorphWindow;
   faceSize: number;
+  relief?: ReliefFloor | null;
 }
 
 /** Body-fixed position of grid vertex (i, j) of a selected tile after the morph: the float64 twin of terrainVertex. */
@@ -74,7 +75,7 @@ export function vertex(n: TileNode, i: number, j: number, sim: Sim): Vec3 {
     const rr = R + hc;
     d = Math.min(d, Math.max(0, Math.hypot(dir0.x * rr - o.pos.x, dir0.y * rr - o.pos.y, dir0.z * rr - o.pos.z) - o.bias));
   }
-  const k = morphFactor(n.level, d, sim.K, sim.faceSize, sim.window);
+  const k = morphFactor(n.level, d, sim.K, sim.faceSize, sim.window, sim.relief);
   const [slideU, slideV] = snapDirection(n.key.face);
   const si = i + (i % 2) * slideU;
   const sj = j + (j % 2) * slideV;

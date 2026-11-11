@@ -27,6 +27,7 @@ for (const body of ['earth', 'moon'] as const) {
       console.log(`${v.name}: ${b.visible}/${b.selected} tiles, deepest level ${b.deepestLevel}, water ${b.waterTiles}, rocks ${st.rocks.instances}, ready ${st.stream.ready}, evicted ${st.stream.evictedTotal}, mean luma ${s.stats.meanLuma.toFixed(1)}`);
       expect(s.stats.width).toBe(1920);
       expect(b.visible).toBeGreaterThan(0);
+      expect(st.stream.nightDropped, 'tiles that lost their night lights to a full pool').toBe(0);
     }
     await expectNoErrors(page, pageLog);
   });

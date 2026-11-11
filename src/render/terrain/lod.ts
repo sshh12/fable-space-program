@@ -45,15 +45,28 @@ export function morphWindow(K: number): MorphWindow {
   return { m0, m1: Math.max(0.95, m0 + 0.08) };
 }
 
+/**
+ * A floor under the level ranges: tiles of `level` are used within `range` of an observer however small
+ * they are on screen, and each coarser level within twice the range of the next. It keeps the relief of a
+ * body in its geometry while the body is a small disc: the whole-body shadow cascade casts from the tiles
+ * that are drawn, and a level-0 mesh has no craters to cast a shadow at the terminator.
+ */
+export interface ReliefFloor {
+  level: number;
+  range: number;
+}
+
 /** Distance within which tiles of `level` are used (= split distance of their parent). Infinite for level 0. */
-export function levelRange(level: number, K: number, faceSize: number): number {
-  return level <= 0 ? Infinity : (2 * K * faceSize) / 2 ** level;
+export function levelRange(level: number, K: number, faceSize: number, relief?: ReliefFloor | null): number {
+  if (level <= 0) return Infinity;
+  const range = (2 * K * faceSize) / 2 ** level;
+  return relief && level <= relief.level ? Math.max(range, relief.range * 2 ** (relief.level - level)) : range;
 }
 
 /** Distance-based morph factor of a level-`level` vertex at distance `d` (0 for level 0: nothing to morph to). */
-export function morphFactor(level: number, d: number, K: number, faceSize: number, w: MorphWindow): number {
+export function morphFactor(level: number, d: number, K: number, faceSize: number, w: MorphWindow, relief?: ReliefFloor | null): number {
   if (level <= 0) return 0;
-  const x = (d / levelRange(level, K, faceSize) - w.m0) / (w.m1 - w.m0);
+  const x = (d / levelRange(level, K, faceSize, relief) - w.m0) / (w.m1 - w.m0);
   return x <= 0 ? 0 : x >= 1 ? 1 : x;
 }
 

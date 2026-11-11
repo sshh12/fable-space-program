@@ -99,6 +99,46 @@ describe('CDLOD selection', () => {
     expect(tree.items.filter((it) => it.node.level === 2).every((it) => it.node.activatedAt === 0.4)).toBe(true);
   });
 
+  it('the relief floor keeps level 3 in the geometry of a distant body, without cracks where it gives way', () => {
+    const K = lodK(1440, Math.PI / 3, 8);
+    const relief = { level: 3, range: 16 * R };
+    // From 20,000 km the whole body is inside the floor's range: every tile is level 3 (without the floor: level 0 and 1).
+    {
+      const tree = new BodyQuadtree(R, -9130, 10790);
+      const obs = [observer(-18, 8, 20_000e3)];
+      const p = { ...params(obs, K, 12), relief };
+      const items = converge(tree, p);
+      expect(items.every((it) => it.node.level === 3 && it.quadrant < 0)).toBe(true);
+      expect(items.length).toBe(6 * 64);
+      const r = countCracks(items, { observers: obs, K, window: p.window, faceSize: tree.faceSize, relief });
+      expect({ cracks: r.cracks, worst: r.worst }).toEqual({ cracks: 0, worst: 0 });
+      const plain = new BodyQuadtree(R, -9130, 10790);
+      expect(Math.max(...converge(plain, params(obs, K, 12)).map((it) => it.node.level))).toBeLessThanOrEqual(1);
+    }
+    // From 15 radii up the near side is level 3 and the far side level 2: the border between them morphs shut.
+    {
+      const tree = new BodyQuadtree(R, -9130, 10790);
+      const obs = [observer(40, -70, 15 * R)];
+      const p = { ...params(obs, K, 12), relief };
+      const items = converge(tree, p);
+      const levels = new Set(items.map((it) => it.node.level));
+      expect(levels.has(3) && levels.has(2)).toBe(true);
+      const r = countCracks(items, { observers: obs, K, window: p.window, faceSize: tree.faceSize, relief });
+      expect(r.vertices).toBeGreaterThan(1000);
+      expect({ cracks: r.cracks, worst: r.worst }).toEqual({ cracks: 0, worst: 0 });
+    }
+    // Close to the ground the floor changes nothing.
+    {
+      const obs = [observer(1, 23, 4000)];
+      const withFloor = new BodyQuadtree(R, -9130, 10790);
+      const without = new BodyQuadtree(R, -9130, 10790);
+      const a = converge(withFloor, { ...params(obs, K, 12), relief });
+      const b = converge(without, params(obs, K, 12));
+      const near = (items: typeof a): string[] => items.filter((it) => it.node.level >= 5).map((it) => `${it.node.id}:${it.quadrant}`).sort();
+      expect(near(a)).toEqual(near(b));
+    }
+  });
+
   it('over deep water a tile is in view when the sea surface over it is: the far water sheet is drawn from the same tile', () => {
     const sea = 0;
     const ocean = new BodyQuadtree(R, -9130, 10790, sea);

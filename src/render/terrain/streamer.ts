@@ -34,7 +34,12 @@ export interface StreamerOptions {
   tileLayers: number;
   /** Layers of the albedo and aux arrays (one of each per tile with image data of its own). */
   imageLayers: number;
-  /** Layers of the night-light array (one channel with a border texel; dark tiles take none). */
+  /**
+   * Layers of the night-light array (one channel with a border texel; dark tiles take none). Night images
+   * belong to tiles of the coarse levels, which almost always have resident children and so cannot be
+   * evicted: the pool holds every lit tile of levels 0..3 of the near body and those of the two levels
+   * below that were in view lately.
+   */
   nightLayers: number;
   /** Upload budget per frame: tiles and milliseconds, whichever is reached first. */
   uploadTiles: number;
@@ -47,7 +52,7 @@ export const DEFAULT_STREAMER_OPTIONS: StreamerOptions = {
   workers: Math.max(1, Math.min(8, (globalThis.navigator?.hardwareConcurrency ?? 4) - 2)),
   tileLayers: 1280,
   imageLayers: 1024,
-  nightLayers: 384,
+  nightLayers: 1024,
   uploadTiles: 8,
   uploadMs: 2,
   workerCacheBytes: 96 * 1024 * 1024,
@@ -86,6 +91,8 @@ export interface StreamStats {
   cancelledTotal: number;
   /** Uploads that had to wait because a pool was full and nothing could be evicted. */
   stalledTotal: number;
+  /** Tiles uploaded without their night lights because the night pool was full (0 with a pool of the right size). */
+  nightDropped: number;
   /** Bakes the height authority flagged as computed on incomplete data. */
   incompleteBakes: number;
   /** Largest number of tiles and milliseconds spent on uploads in one frame. */
@@ -134,6 +141,7 @@ export class TileStreamer {
     evictedTotal: 0,
     cancelledTotal: 0,
     stalledTotal: 0,
+    nightDropped: 0,
     incompleteBakes: 0,
     maxUploadTiles: 0,
     maxUploadMs: 0,
@@ -354,7 +362,15 @@ export class TileStreamer {
       }
       const needImage = r.albedo !== null;
       const needNight = r.night !== null;
-      if (!this.reserve(n, needImage, needNight)) {
+      let room = this.reserve(n, needImage, needNight);
+      if (!room && needNight && this.reserve(n, needImage, false)) {
+        // Lights are not worth holding a tile back for: with only the night pool full it goes up dark.
+        r.night = null;
+        r.nightDark = true;
+        this.s.nightDropped++;
+        room = true;
+      }
+      if (!room) {
         this.s.stalledTotal++;
         // A pinned tile that finds no room means the pools are too small for the always-resident levels.
         if (n.pinned && !this.failed && t0 - a.at > 20_000) this.fail(`terrain: no free texture layer for an always-resident tile of "${a.body.id}" (pools too small)`);

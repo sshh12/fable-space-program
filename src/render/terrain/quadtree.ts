@@ -6,7 +6,7 @@
  */
 import type { FaceId, TileKey } from '@/core/geo/cubeSphere';
 import type { Vec3 } from '@/core/math';
-import { capMaxLevel, levelRange, type MorphWindow } from './lod';
+import { capMaxLevel, levelRange, type MorphWindow, type ReliefFloor } from './lod';
 import { frameDir, shellBoundSphere, tileFrame, tileId, type BoundSphere, type TileFrame } from './tileMath';
 
 export const TILE_EMPTY = 0;
@@ -145,6 +145,8 @@ export interface SelectParams {
   maxLevel: number;
   /** null: no culling (prefetch passes and tests). */
   frustum: ViewFrustum | null;
+  /** Floor under the level ranges (lod.ts), or none. */
+  relief?: ReliefFloor | null;
   /** Radius of the sphere that occludes terrain beyond the horizon (0 = no horizon culling). */
   occluderRadius: number;
   /** Fade-in duration given to tiles activated in this frame (0 right at a camera cut). */
@@ -386,7 +388,7 @@ export class BodyQuadtree {
       if (!settled) this.fading++;
     }
     const level = n.level;
-    const childRange = levelRange(level + 1, p.K, this.faceSize);
+    const childRange = levelRange(level + 1, p.K, this.faceSize, p.relief);
     if (level >= capMaxLevel(p.cap, p.maxLevel) || d >= childRange) {
       if (emitting) this.emit(n, -1, cls === 0);
       return;
