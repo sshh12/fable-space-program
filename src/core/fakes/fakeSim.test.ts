@@ -149,6 +149,47 @@ describe('FakeSim', () => {
     expect(createFakeSim(defs, { scene: 'ascent' }).snapshot().readouts.latitude * (180 / Math.PI)).toBeCloseTo(site.location.latDeg, 6);
   });
 
+  it('stands on the real ground when told where it is: origin, radar altitude and the floor of a descent', () => {
+    // A launch mount: ground 21.6 m above the reference radius, the stack's lowest point 18 m above it, the
+    // origin 60 m above the lowest point.
+    const pad = createFakeSim(defs, { scene: 'pad', ground: { height: 21.6, originHeight: 60, clearance: 18 } }).snapshot();
+    expect(pad.readouts.altitudeAsl).toBeCloseTo(21.6 + 18 + 60, 6);
+    expect(pad.readouts.altitudeRadar).toBeCloseTo(18, 6);
+    // A mare floor 1,900 m below the reference radius: the landed vessel stands on it, not on the sphere.
+    const moon = createFakeSim(defs, { scene: 'lunarSurface', location: { latDeg: 0.66, lonDeg: 23.44 }, ground: { height: -1900, originHeight: 4.5 } }).snapshot();
+    expect(moon.readouts.altitudeAsl).toBeCloseTo(-1895.5, 6);
+    expect(moon.readouts.altitudeRadar).toBeCloseTo(0, 6);
+    expect(moon.readouts.latitude * (180 / Math.PI)).toBeCloseTo(0.66, 6);
+    expect(moon.readouts.longitude * (180 / Math.PI)).toBeCloseTo(23.44, 6);
+    // A descent under parachutes ends with the lowest point on the water, and the radar altitude says so on the way.
+    const sim = createFakeSim(defs, { scene: 'chutes', ground: { height: 0, originHeight: 2 } });
+    expect(sim.snapshot().readouts.altitudeRadar).toBeCloseTo(2498, 6);
+    sim.advanceRails(sim.snapshot().ut + 600);
+    const down = sim.snapshot();
+    expect(down.readouts.altitudeAsl).toBeCloseTo(2, 6);
+    expect(down.readouts.altitudeRadar).toBeCloseTo(0, 6);
+    // A flying scene can start lower (the last metres under the canopies) or higher.
+    const low = createFakeSim(defs, { scene: 'chutes', altitude: 120, ground: { height: 0, originHeight: 2 } }).snapshot();
+    expect(low.readouts.altitudeAsl).toBeCloseTo(120, 6);
+    expect(low.readouts.altitudeRadar).toBeCloseTo(118, 6);
+    expect(createFakeSim(defs, { scene: 'ascent', altitude: 12000 }).snapshot().readouts.altitudeAsl).toBeCloseTo(12000, 6);
+    // Without it nothing changes: the scene's altitude above the reference radius is also the radar altitude.
+    const plain = createFakeSim(defs, { scene: 'pad' }).snapshot();
+    expect(plain.readouts.altitudeAsl).toBe(60);
+    expect(plain.readouts.altitudeRadar).toBe(60);
+  });
+
+  it('a capsule under parachutes hangs nose up (the lines leave at the apex), heat shield towards the ground', () => {
+    const s = createFakeSim(defs, { scene: 'chutes' }).snapshot();
+    const v = s.vessels[0]!;
+    const up = v3.normalize(v.r);
+    expect(v3.dot(quat.rotate(v.q, v3.unitY()), up)).toBeCloseTo(1, 9);
+    expect(s.navball.pitchDeg).toBeCloseTo(90, 3);
+    // Reentry, for comparison: the nose trails, the heat shield leads.
+    const e = createFakeSim(defs, { scene: 'reentry' }).snapshot().vessels[0]!;
+    expect(v3.dot(quat.rotate(e.q, v3.unitY()), v3.normalize(e.v))).toBeLessThan(-0.99);
+  });
+
   it('landed vessels ride the rotating body and refuse rails warp under thrust', () => {
     const sim = createFakeSim(defs, { scene: 'pad' });
     const s0 = sim.snapshot();

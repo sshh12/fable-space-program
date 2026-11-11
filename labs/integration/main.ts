@@ -9,7 +9,12 @@
  *   &sim=real&scenario=<id>     the real Sim of src/sim when it exists (default: FakeSim, ?scene=<FakeScene>)
  *   &vehicle=<id>&stage=<n>     FakeSim: the real parts of this vehicle after n fired stages (default: the first
  *                               vehicle, staged as the scene needs; stage=none = the FakeSim's placeholder parts)
- *   &at=lat,lon                 FakeSim: stand the 'pad' and 'ascent' scenes here instead of at the site
+ *   &at=lat,lon                 FakeSim: put a surface scene here instead of at its own place (pad, ascent: the
+ *                               site; lunarSurface: the scenario's landing target; chutes: the first recovery zone)
+ *   &hover=<m>                  FakeSim, lunarSurface: the lander's feet this high above the ground (default 0)
+ *   &start=<m>                  FakeSim, ascent and chutes: altitude of the vessel at the start (default 9,000 / 2,500)
+ * The surface scenes stand on the REAL terrain: the stack on the launch mount (lowest point at the pad's clamp
+ * height), the lander on its feet, the radar altitude measured from the baked ground or the sea.
  *   &throttle=<0..1>            FakeSim: throttle held from the start (engines of the fired stages burn)
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
  *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
@@ -23,7 +28,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { PartSnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -75,6 +80,13 @@ export interface IntegrationLab {
   lookFromTo(from: Site, to: Site): void;
   /** Pin the sun at azimuth / elevation (deg) as seen from a body-fixed point, or release it with null. */
   setSun(site: Site | null, azDeg?: number, elDeg?: number): void;
+  /** Pin the sun in a direction that is fixed in the active vessel's frame (VES axes), e.g. through a window. */
+  setSunInVesselFrame(dirVes: Vec3): void;
+  /**
+   * A/B switch for the near cloud shadow (the optical-depth map around the camera): off = every reader of
+   * the frame's near placement (deferred lighting, forward-lit shaders) sees no near map; the far term stays.
+   */
+  setNearCloudShadow(on: boolean): void;
   /**
    * Stay `distance` metres from the active vessel, off to the side of the sun line (along the axis the
    * view turns about, so the vessel never enters the frame and never covers the sun), and look at a
@@ -115,8 +127,64 @@ export interface IntegrationLab {
    * published keeps its last content, so use it for packages that only draw: vfx, vehicle, cockpit).
    */
   setEnabled(pkg: FeaturePackage, on: boolean): void;
+  /**
+   * Orbit a point of the active vessel: `along` metres from its origin along its +Y axis (negative = towards
+   * the engines; the origin of a stack is its command part, at the top), from `distance` metres, yaw from
+   * north and pitch above the horizon in degrees, the local vertical up. Frames a stack with its plume.
+   */
+  orbitVesselPoint(yawDeg: number, pitchDeg: number, distance: number, along?: number): void;
+  /** Lowest and highest point of the active vessel along its +Y axis, m from its origin (part bounds). */
+  vesselExtent(): { yMin: number; yMax: number } | null;
   /** Stop following (the camera keeps its last placement). */
   release(): void;
+}
+
+/** Lowest and highest point of a stack of upright parts along +Y, m from the vessel origin (stowed legs end at their hinge). */
+function stackExtent(defs: DefLibrary, parts: readonly PartSnapshot[]): { yMin: number; yMax: number } | null {
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const p of parts) {
+    const def = defs.parts[p.def];
+    if (!def) continue;
+    const legs = p.modules.find((m) => m.type === 'legs');
+    const low = legs && legs.type === 'legs' && legs.deploy < 0.5 ? 0 : def.bounds.yMin;
+    yMin = Math.min(yMin, p.localPos.y + low);
+    yMax = Math.max(yMax, p.localPos.y + def.bounds.yMax);
+  }
+  return Number.isFinite(yMin) ? { yMin, yMax } : null;
+}
+
+/**
+ * Where a FakeSim surface scene stands on the real terrain: its place, the height of the ground (or the sea)
+ * there, and how the vessel sits on it. Null for the orbit scenes; without real parts only the place.
+ */
+async function surfacePlace(
+  defs: DefLibrary,
+  terrain: TerrainProvider,
+  scene: FakeScene,
+  parts: readonly PartSnapshot[] | null,
+): Promise<{ location: { latDeg: number; lonDeg: number }; ground?: { height: number; originHeight: number; clearance: number } } | null> {
+  const site = Object.values(defs.sites)[0];
+  const landing = Object.values(defs.scenarios).find((s) => s.suggestedLanding)?.suggestedLanding;
+  const zone = site?.recoveryZones[0];
+  const root = defs.rootBodyId;
+  const places: Partial<Record<FakeScene, { bodyId: string; latDeg: number; lonDeg: number; clearance: number } | undefined>> = {
+    pad: site && { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, clearance: site.pad.clampHeight },
+    ascent: site && { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, clearance: 0 },
+    lunarSurface: landing ? { bodyId: landing.bodyId, latDeg: landing.latDeg, lonDeg: landing.lonDeg, clearance: Math.max(0, Number(query.get('hover') ?? 0)) } : undefined,
+    chutes: zone && { bodyId: site?.bodyId ?? root, latDeg: zone.latDeg, lonDeg: zone.lonDeg, clearance: 0 },
+  };
+  const place = places[scene];
+  if (!place) return null;
+  const at = query.get('at')?.split(',').map(Number);
+  const location = at && at.length === 2 && at.every(Number.isFinite) ? { latDeg: at[0]!, lonDeg: at[1]! } : { latDeg: place.latDeg, lonDeg: place.lonDeg };
+  const extent = parts ? stackExtent(defs, parts) : null;
+  if (!extent) return { location };
+  const dir = latLonToDir(location.latDeg * DEG, location.lonDeg * DEG);
+  await terrain.ensureLoaded(place.bodyId, dir, 50, 'integration-lab');
+  const sea = defs.bodies[place.bodyId]?.ocean?.seaLevel;
+  const height = Math.max(terrain.heightAt(place.bodyId, dir), sea ?? -Infinity);
+  return { location, ground: { height, originHeight: -extent.yMin, clearance: place.clearance } };
 }
 
 /** Stages of the vehicle already fired in each FakeSim scene (the stack that flies that part of the mission). */
@@ -260,13 +328,14 @@ async function boot(): Promise<void> {
     const stage = query.get('stage');
     const vehicleId = query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '';
     const real = stage === 'none' ? null : await realVesselParts(defs, vehicleId, stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
-    const at = query.get('at')?.split(',').map(Number);
+    const place = await surfacePlace(defs, terrain, scene, real?.parts ?? null);
     inner = createFakeSim(defs, {
       scene,
       // The vessel carries the vehicle's id with its parts: the cockpit finds its layout and the vessel
       // visuals their engine children through it.
       ...(real ? { parts: real.parts, stageLabels: real.stageLabels, vehicleId } : {}),
-      ...(at && at.length === 2 && at.every(Number.isFinite) ? { location: { latDeg: at[0]!, lonDeg: at[1]! } } : {}),
+      ...(place ?? {}),
+      ...(query.has('start') && Number.isFinite(Number(query.get('start'))) ? { altitude: Number(query.get('start')) } : {}),
     });
     const throttle = Number(query.get('throttle') ?? 0);
     if (throttle > 0) inner.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: Math.min(1, throttle) });
@@ -363,6 +432,18 @@ async function boot(): Promise<void> {
     seenErrors = errors.length;
   };
 
+  // A/B switch for the near cloud shadow: this feature's prepare runs after everyone's (order) and takes the
+  // near placement back before the frame uniforms are written.
+  let nearCloudShadow = true;
+  await app.renderer.addFeature({
+    id: 'lab-cloud-shadow-switch',
+    order: 1e6,
+    init() {},
+    prepare() {
+      if (!nearCloudShadow) coreOf(ctx).setCloudShadowParams({ near: null });
+    },
+  });
+
   // A lab feature that can replace the lit image by a G-buffer target (read back by the image-decode check).
   const gbufferView = createGBufferView();
   await app.renderer.addFeature(gbufferView.feature);
@@ -455,6 +536,18 @@ async function boot(): Promise<void> {
     setSun(site, azDeg = 120, elDeg = 40) {
       sunOverride = site ? sunAtSite(site, azDeg, elDeg) : null;
     },
+    setSunInVesselFrame(dirVes) {
+      const d = v3.normalize(dirVes);
+      sunOverride = {
+        dirRoot(snapshot) {
+          const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+          return v ? quat.rotate(v.q, d) : null;
+        },
+      };
+    },
+    setNearCloudShadow(on) {
+      nearCloudShadow = on;
+    },
     lookNearSun(offsetDeg, distance = 60) {
       place((snapshot) => {
         const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
@@ -525,6 +618,27 @@ async function boot(): Promise<void> {
         if (at) app.camera.spec = { type: 'free', ...at };
       });
       return true;
+    },
+    orbitVesselPoint(yawDeg, pitchDeg, distance, along = 0) {
+      place((snapshot) => {
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        if (!v) return;
+        const b = bodyOf(snapshot, v.bodyId);
+        const up = v3.normalize(v3.sub(v.rRoot, b.rRoot));
+        let north = v3.reject(quat.rotate(b.qFixedToRoot, v3.unitZ()), up);
+        north = v3.lenSq(north) < 1e-12 ? v3.anyOrthogonal(up) : v3.normalize(north);
+        const east = v3.cross(north, up);
+        const yaw = yawDeg * DEG;
+        const pitch = pitchDeg * DEG;
+        const out = v3.add(v3.scale(v3.add(v3.scale(north, Math.cos(yaw)), v3.scale(east, Math.sin(yaw))), Math.cos(pitch)), v3.scale(up, Math.sin(pitch)));
+        const target = v3.add(v.rRoot, quat.rotate(v.q, { x: 0, y: along, z: 0 }));
+        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(target, out, distance), qViewToRoot: lookRotation(v3.neg(out), up) };
+      });
+    },
+    vesselExtent() {
+      const s = app.snapshot();
+      const v = s.vessels.find((x) => x.id === s.activeVesselId);
+      return v ? stackExtent(defs, v.parts) : null;
     },
     setEnabled(pkg, on) {
       for (const f of built.features) if (built.packageOf[f.id] === pkg) guards.get(f.id)?.setEnabled(on);

@@ -252,3 +252,20 @@ copy is replaced by `#include "cloud_shadow"`.
   shadow change), exposure specs 6 of 6, unit tests of the core, the render core and the fakes green,
   `npm run typecheck` clean for my paths. Markers present: cockpit, sim-world-pilot, sky-lighting,
   vehicle-pad. Waiting for terrain-render, atmosphere-clouds, ocean, vfx.
+- 2026-11-11 00:29. The machine restarted (Windows Update) while this package waited for terrain-render.
+- 2026-11-11 07:20, closing pass (in progress; sections 2-6 are rewritten when it ends). So far:
+  - The budget scenes of pass 1 did not show what their checkpoint is about, found by looking at the
+    pictures: the cockpit was not drawn in the seat view (the FakeSim published no vehicle id), the stack on
+    the pad stood 30 m deep in the ground and the lander 1.9 km above the real mare floor (the FakeSim knew
+    only the reference sphere), the capsule hung nose down under its canopies, the ascent camera cut the
+    plume off. Fixed in `src/core/fakes/fakeSim.ts` (options `vehicleId`, `ground`, `altitude`; `location` for
+    every surface scene; nose up under parachutes) and `labs/integration/main.ts` (surface scenes stand on the
+    baked terrain, `orbitVesselPoint`, `&hover=`, `&start=`).
+  - `budget.perf.spec.ts` reports the median over six windows of 240 frames of each window's p99 (one hitch
+    in one window decided a number before) and frames every scene; a first quiet run has every budgeted
+    package inside its line except the sky (0.37 ms against 0.2-0.3), which is an artefact of the ballast
+    (the pass after the long ballast pass pays about 0.23 ms of it in one frame out of five; being fixed in
+    `labs/render-core/probes.ts`).
+  - New lab switches for a check of cloud shadows above a deck (`setNearCloudShadow`, `setSunInVesselFrame`).
+  - terrain-render regenerated its material sets at 07:40 while a run was going: terrain-dependent checks
+    wait for its marker.

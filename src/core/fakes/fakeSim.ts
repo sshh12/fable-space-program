@@ -49,10 +49,25 @@ export interface FakeSimOptions {
   /** Site used by the surface scenes (default: first site in the library). */
   siteId?: string;
   /**
-   * Put the scenes that stand at the site ('pad', 'ascent') at this point instead (labs: a launch under an
-   * overcast sky, over open water). The site definition itself, and what the snapshot says about it, is unchanged.
+   * Put a surface scene ('pad', 'ascent', 'lunarSurface', 'chutes') at this point instead of its own (labs: a
+   * launch under an overcast sky, a landing at the scenario's target). The site definition itself, and what
+   * the snapshot says about it, is unchanged.
    */
   location?: { latDeg: number; lonDeg: number };
+  /**
+   * Altitude of the vessel origin above the reference radius at the start of a surface scene, m (default: the
+   * scene's own; 'ascent' 9,000 climbing, 'chutes' 2,500 sinking). A standing scene with `ground` ignores it.
+   */
+  altitude?: number;
+  /**
+   * The real ground under a surface scene (labs that draw the baked terrain; the default is a body without
+   * relief): `height` = terrain or sea surface above the reference radius under the vessel, `originHeight` =
+   * height of the vessel origin above the vessel's lowest point (both m). `readouts.altitudeRadar` is then
+   * the height of the lowest point above that ground, a descent ends with the lowest point on it, and the
+   * scenes that stand ('pad', 'lunarSurface') start with the lowest point `clearance` metres above it
+   * (default 0: standing; a launch mount's clamp height; a hover height).
+   */
+  ground?: { height: number; originHeight: number; clearance?: number };
   /** Stage labels for the staging stack (default: a generic 4-entry stack). */
   stageLabels?: string[];
 }
@@ -102,6 +117,7 @@ export class FakeSim implements Sim {
   private readonly ut0: number;
   private tick = 0;
   private readonly spec: SceneSpec;
+  private readonly ground: { height: number; originHeight: number; clearance?: number } | null;
   private controls: ControlInputs = { ...NEUTRAL_CONTROLS, translate: v3.zero() };
   private q: Quat = quat.identity();
   private w: Vec3 = v3.zero();
@@ -147,6 +163,9 @@ export class FakeSim implements Sim {
       chutes: { bodyId: root, kind: 'surface', altitude: 2500, latDeg: 8, lonDeg: -146, climbRate: -8, chutes: true },
     };
     this.spec = specs[opts.scene];
+    if (opts.location && this.spec.kind === 'surface') this.spec = { ...this.spec, latDeg: opts.location.latDeg, lonDeg: opts.location.lonDeg };
+    if (opts.altitude !== undefined && this.spec.kind === 'surface') this.spec = { ...this.spec, altitude: opts.altitude };
+    this.ground = opts.ground ?? null;
     this.siteDir = latLonToDir((this.spec.latDeg ?? 0) * DEG, (this.spec.lonDeg ?? 0) * DEG);
     this.orbitPhase0 = 0.6;
     this.navballMode = this.spec.kind === 'orbit' ? 'orbit' : 'surface';
@@ -365,9 +384,13 @@ export class FakeSim implements Sim {
     if (this.spec.kind === 'surface') {
       const { q, spin } = this.bodyOrientation(b.id, ut);
       const climb = this.spec.climbRate ?? 0;
-      const altitude = clamp(this.spec.altitude + climb * t, 30, 150e3);
+      // On real ground a standing scene starts on it (plus its clearance) and nothing sinks below it.
+      const g = this.ground;
+      const floor = g ? g.height + g.originHeight : 30;
+      const start = g && climb === 0 ? floor + (g.clearance ?? 0) : this.spec.altitude;
+      const altitude = clamp(start + climb * t, floor, 150e3);
       const r = v3.scale(quat.rotate(q, this.siteDir), b.radius + altitude);
-      const moving = altitude > 30 && altitude < 150e3;
+      const moving = altitude > floor && altitude < 150e3;
       const v = v3.add(v3.cross(spin, r), v3.scale(v3.normalize(r), moving ? climb : 0));
       return { r, v, altitude };
     }
@@ -440,8 +463,9 @@ export class FakeSim implements Sim {
   private initialAttitude(): Quat {
     const { e, u } = this.enu(this.ut);
     if (this.spec.kind === 'surface') {
-      // Nose up (down under parachutes), ventral (-Z) facing east; X = Y x Z keeps the frame right-handed.
-      const y = this.spec.chutes ? v3.neg(u) : u;
+      // Nose up (also under parachutes: the lines leave at the apex and the heat shield faces the ground),
+      // ventral (-Z) facing east; X = Y x Z keeps the frame right-handed.
+      const y = u;
       const z = v3.neg(e);
       return quat.fromBasis(v3.cross(y, z), y, z);
     }
@@ -665,7 +689,7 @@ export class FakeSim implements Sim {
     const readouts: Readouts = {
       met: Math.max(0, ut - this.ut0),
       altitudeAsl: st.altitude,
-      altitudeRadar: st.altitude,
+      altitudeRadar: this.ground && this.spec.kind === 'surface' ? st.altitude - this.ground.originHeight - this.ground.height : st.altitude,
       latitude: subLatLon.lat,
       longitude: subLatLon.lon,
       speedOrbital: v3.len(st.v),
