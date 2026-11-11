@@ -551,7 +551,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const s = n.sphere;
       visWord[visible] = rec | ((it.quadrant + 1) << 20);
       visList[visible] = (it.quadrant >= 0 ? 1 : 0) | (ocean && n.hMin < sea ? 2 : 0);
-      visKey[visible] = Math.round(8 * Math.max(0, Math.hypot(s.cx - eye.x, s.cy - eye.y, s.cz - eye.z) - s.r)) * 65536 + visible;
+      const ex = s.cx - eye.x;
+      const ey = s.cy - eye.y;
+      const ez = s.cz - eye.z;
+      visKey[visible] = Math.round(8 * Math.max(0, Math.sqrt(ex * ex + ey * ey + ez * ez) - s.r)) * 65536 + visible;
       visible++;
     }
     // The four lists, nearest tile first: on broken ground seen from eye height a pixel is covered by

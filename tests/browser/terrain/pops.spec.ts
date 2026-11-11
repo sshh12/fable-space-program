@@ -27,6 +27,7 @@ const ABS_LIMIT = 16;
 const SPIKE_FACTOR = 2.5;
 const SPIKE_FLOOR = 1.5;
 const BLOCKS = 16 * 9;
+const HALF_WINDOW = 10;
 
 interface PathResult {
   diffs: number[];
@@ -49,9 +50,12 @@ function analyse(r: PathResult): { max: number; median: number; worst: number; s
   let worst = 0;
   const window: number[] = [];
   for (let b = 0; b < BLOCKS; b++) {
-    for (let i = 0; i < frames; i++) {
+    // A frame is judged against the ten frames on each side of it. The first and last ten frames of a path
+    // have one side only: a fade-in that begins there (twenty frames of small steps, of which the path
+    // shows the first two) would be counted as a pop against the still frames before it.
+    for (let i = HALF_WINDOW; i < frames - HALF_WINDOW; i++) {
       window.length = 0;
-      for (let j = Math.max(0, i - 10); j < Math.min(frames, i + 11); j++) window.push(r.blocks[j * BLOCKS + b]!);
+      for (let j = i - HALF_WINDOW; j <= i + HALF_WINDOW; j++) window.push(r.blocks[j * BLOCKS + b]!);
       window.sort((p, q) => p - q);
       const local = window[window.length >> 1]!;
       const d = r.blocks[i * BLOCKS + b]!;
@@ -90,7 +94,7 @@ const CASES: PathCase[] = [
   // whole-body shadow cascade to the camera-fitted cascades (they join at about 1,500 km) and through the
   // first level change below the relief floor (level 3 to 4 at about 650 km with this field of view at the
   // 720 lines the spec renders).
-  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 450e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,8', fov: 40, levelChange: true },
+  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 400e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,8', fov: 40, levelChange: true },
 ];
 
 async function fly(page: Page, c: PathCase): Promise<PathResult> {

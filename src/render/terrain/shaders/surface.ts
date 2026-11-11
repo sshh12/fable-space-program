@@ -587,7 +587,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   var tw = pow(abs(facing), vec3f(8.0));
   tw /= tw.x + tw.y + tw.z;
   // A plane with a small share is not sampled; its share goes to zero continuously on the way there.
-  tw = max(tw - vec3f(0.06), vec3f(0.0));
+  tw = max(tw - vec3f(0.12), vec3f(0.0));
   tw /= tw.x + tw.y + tw.z;
 
   var ratioA = vec3f(1.0);

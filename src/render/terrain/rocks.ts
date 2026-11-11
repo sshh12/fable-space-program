@@ -254,6 +254,8 @@ interface RockBody {
   /** Where the observers were, and the range per metre of radius, when the G-buffer lists were last built. */
   listEyes: Vec3[];
   listRangePerRadius: number;
+  /** No chunk in range holds a rock (as of the last build of the lists): nothing to write or draw. */
+  empty: boolean;
 }
 
 interface MeshBuffers {
@@ -421,6 +423,7 @@ export class RockRenderer {
         scanned: [],
         listEyes: [],
         listRangePerRadius: 0,
+        empty: true,
       });
     }
   }
@@ -656,9 +659,9 @@ export class RockRenderer {
       const eyes = b.listEyes;
       if (eyes.length !== a.observers.length || b.listRangePerRadius !== b.rangePerRadius || a.observers.some((o, i) => v3.dist(o.pos, eyes[i]!) > LIST_TOLERANCE_M)) this.listsStale = true;
 
-      // Chunk origins of this frame, relative to the camera.
+      // Chunk origins of this frame, relative to the camera (of the chunks that hold rocks).
       for (const c of b.wanted) {
-        if (c.lastUsed !== this.frameIndex) continue;
+        if (c.lastUsed !== this.frameIndex || c.count === 0) continue;
         const g = c.origin;
         const m = b.rot;
         const q = b.prevRot;
@@ -670,7 +673,7 @@ export class RockRenderer {
         d[o + 4] = q[0] * g.x + q[1] * g.y + q[2] * g.z + b.prevCentre.x;
         d[o + 5] = q[3] * g.x + q[4] * g.y + q[5] * g.z + b.prevCentre.y;
         d[o + 6] = q[6] * g.x + q[7] * g.y + q[8] * g.z + b.prevCentre.z;
-        c.far = Math.hypot(d[o]!, d[o + 1]!, d[o + 2]!);
+        c.far = Math.sqrt(d[o]! * d[o]! + d[o + 1]! * d[o + 1]! + d[o + 2]! * d[o + 2]!);
       }
     }
     if (this.dirty) this.packRocks();
@@ -685,7 +688,9 @@ export class RockRenderer {
         this.buildDraws(b, pixelAngle);
         b.listEyes = active.find((x) => x.id === b.info.id)!.observers.map((o) => v3.clone(o.pos));
         b.listRangePerRadius = b.rangePerRadius;
+        b.empty = !b.wanted.some((c) => c.listed);
       }
+      if (b.empty) continue;
       const u = this.uniformData;
       const m = b.rot;
       const pm = b.prevRot;
@@ -702,7 +707,7 @@ export class RockRenderer {
       this.gbufferCount = this.instanceCount;
       this.gbufferTriangles = this.triangles;
     }
-    if (this.bodies.some((b) => b.active)) {
+    if (this.bodies.some((b) => b.active && !b.empty)) {
       this.device.queue.writeBuffer(this.chunkBuffer, 0, this.chunkData);
       if (rebuild && this.instanceCount > 0) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
     }
@@ -838,7 +843,7 @@ export class RockRenderer {
   drawGBuffer(pass: GPURenderPassEncoder): void {
     let set = false;
     for (const b of this.bodies) {
-      if (!b.active) continue;
+      if (!b.active || b.empty) continue;
       if (!set) {
         pass.setPipeline(this.gbuffer.get());
         pass.setBindGroup(1, this.emptyGroup);
@@ -864,7 +869,7 @@ export class RockRenderer {
   drawShadow(pass: GPURenderPassEncoder, cascade: ShadowCascadeView, bodyId: string): void {
     if (cascade.texelSize > SHADOW_MAX_TEXEL) return;
     const b = this.bodies.find((x) => x.info.id === bodyId);
-    if (!b || !b.active) return;
+    if (!b || !b.active || b.empty) return;
     const m = cascade.viewProj;
     // A rock smaller than half a texel leaves no mark in the map.
     const texelRadius = 0.5 * cascade.texelSize;
