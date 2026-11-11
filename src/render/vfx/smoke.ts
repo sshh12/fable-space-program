@@ -350,6 +350,8 @@ struct MarchOut {
   let exposure = frame.exposure.x;
   let scale = su.steamAlbedo.w;
   let scroll = vec3f(-su.flow2.z * time, -3.0 * time, -su.flow2.w * time);
+  // Size of a ray of this pass at one metre (two half-resolution pixels).
+  let pixel = 4.0 * frame.cameraUp.w * vfx.half.w;
 
   var Lf = vec3f(0.0); var Tf = 1.0;     // smoke in front of the emitters
   var Lb = vec3f(0.0); var Tb = 1.0;     // smoke behind them
@@ -379,19 +381,36 @@ struct MarchOut {
     }
     var cell = vec4f(0.0);
     var warp = vec3f(0.0);
+    var ng = 0.5;
+    var cavity = 0.5;
+    var hard = 0.0;
+    var noiseQ = vec3f(0.0);
+    var noiseFoot = 0.0;
     if (sigma > 1e-5) {
       // Billows: the density is looked up at a position displaced by two octaves of noise that ride up with
-      // the cloud (lumpy edges however smooth the advected field is), then thin gas is eroded.
+      // the cloud (lumpy edges however smooth the advected field is). Detail finer than a ray of this pass
+      // can show is left out (it would come back as blocks).
       let q = (p + scroll) * scale;
-      let n = vfxNoiseLod(q, dt * scale);
-      let n2 = vfxNoiseLod(q * 3.1 + vec3f(0.37, 0.11, 0.73), dt * scale * 3.1);
+      let foot = max(dt, 1.5 * pixel * (t + 0.5 * dt)) * scale;
+      let n = vfxNoiseLod(q, foot);
+      let n2 = vfxNoiseLod(q * 3.1 + vec3f(0.37, 0.11, 0.73), foot * 3.1);
       let amp = 0.3 / scale;
-      warp = (vec3f(n.r, n.a, n.g) - 0.5) * (2.0 * amp) + (vec3f(n2.r, n2.a, n2.g) - 0.5) * (0.6 * amp);
+      warp = (vec3f(n.r, n.a, n.g) - 0.5) * (1.4 * amp) + (vec3f(n2.r, n2.a, n2.g) - 0.5) * (0.6 * amp);
       cell = textureSampleLevel(densityTex, linearClamp, smokeToUvw(p + warp), 0.0);
-      sigma = cell.r + cell.g;
-      let cover = saturate(sigma / 0.03);
-      let billow = 0.65 * n.g + 0.35 * n2.b;
-      sigma *= saturate((billow - su.smokeAlbedo.w * (1.0 - cover)) * 4.0 + cover);
+      let raw = cell.r + cell.g;
+      cavity = n2.b;
+      let cover = saturate(raw / 0.03);
+      let billow = 0.5 * n.g + 0.3 * n2.g + 0.2 * n2.b;
+      ng = n.g;
+      // Dense gas has a surface: where the advected field plus the billow noise passes a threshold the gas is
+      // several times as dense as the field says, so that the cloud ends in a hard, lumpy edge within a metre
+      // or two. Inside the cloud the noise can not open a hole (a gap shows more cloud, never the ground);
+      // thin gas at the fringe stays a haze that fades out smoothly.
+      let field = cover + (billow - 0.5) * (2.0 * su.smokeAlbedo.w) * (1.0 - 0.45 * cover);
+      hard = smoothstep(0.4, 0.6, field);
+      sigma = raw * (3.0 * hard + 0.6 * cover * (1.0 - hard));
+      noiseQ = q;
+      noiseFoot = foot;
       fine = 6.0;
     } else {
       fine -= 1.0;
@@ -400,18 +419,23 @@ struct MarchOut {
       // The light is looked up where the density was: the shading follows the billows, not the cells.
       let lt = textureSampleLevel(lightTex, linearClamp, smokeToUvw(p + warp), 0.0);
       let albedo = (su.smokeAlbedo.rgb * cell.r + su.steamAlbedo.rgb * cell.g) / max(cell.r + cell.g, 1e-6);
-      // Sun: single scattering plus two wide octaves standing in for multiple scattering.
+      // Sun. A dense cloud is lit like a surface: the side towards the sun (transmittance of the light volume)
+      // is bright, the lee side keeps only what is scattered about inside (two wide octaves). The lumps shade
+      // each other: where the billow noise rises towards the sun, this sample lies in a fold.
       let wide = pow(lt.a, 0.0833);
-      let sun = sunE * (phase * lt.r + 1.5 * lt.a + 1.1 * wide) * (1.0 / (4.0 * PI));
+      let towards = vfxNoiseLod(noiseQ + su.sunSite.xyz * 0.1, noiseFoot);
+      // (The small cells of the detail noise are crevices between their feature points: darker there.)
+      let relief = clamp(1.0 - 7.0 * (towards.g - ng) * hard, 0.2, 1.7) * mix(1.0, 0.5 + 0.75 * smoothstep(0.15, 0.7, cavity), hard);
+      let sun = sunE * ((0.7 + 0.3 * phase) * 2.2 * lt.r * relief + (0.45 * lt.a + 0.3 * wide) * (0.5 + 0.5 * relief)) * (1.0 / (4.0 * PI));
       // Plume: the jet is a line of light; gas next to it glows from the light that has been scattered about
       // inside the cloud as well as from what reaches it directly.
       let toL = plumeLightPoint(p) - p;
       let dl2 = max(dot(toL, toL), 25.0);
       let plume = su.lightColor.rgb * ((lt.g + 0.6 * pow(lt.g, 0.3) + 0.12 * pow(lt.g, 0.08)) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
-      // Gas fresh from the plume still glows.
+      // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;
-      let glow = su.glow.rgb * (h2 * h2 * h2 * h2);
+      let glow = su.glow.rgb * (0.3 * h2 * h2 * h2);
       let J = (albedo * (sun + plume + sky) + glow) * exposure;
       let stepT = exp(-sigma * dt);
       slabL += slabT * J * (1.0 - stepT);
@@ -485,16 +509,24 @@ struct CombineOut {
   let st = in.uv * vec2f(size) - 0.5;
   let base = floor(st);
   let f = st - base;
-  var F = vec4f(0.0);
-  var B = vec4f(0.0);
-  var dLog = 0.0;
+  // Each ray is composed with THIS pixel's emitters before the rays are mixed: mixing the smoke in front of
+  // and behind the emitters separately darkens the pixel wherever neighbouring rays split their smoke at
+  // different distances (a hairline along the outline of every plume inside the cloud).
+  let TE = 1.0 - E.a;
+  var C = vec4f(0.0);
+  var M = vec2f(0.0);
   var wsum = 0.0;
-  var bestF = vec4f(0.0, 0.0, 0.0, 1.0);
-  var bestB = vec4f(0.0, 0.0, 0.0, 1.0);
-  var bestLog = 0.0;
+  var bestC = vec4f(E.rgb, E.a);
+  var bestM = m;
   var bestDiff = 3.0e38;
-  for (var k = 0; k < 4; k++) {
-    let o = vec2i(k & 1, k >> 1);
+  // Cubic B-spline weights over the 4 x 4 rays around the pixel: no diamonds or blocks of quarter-resolution
+  // pixels, and the per-ray jitter of a thin fringe is averaged instead of drawn as a stipple.
+  let gx = 1.0 - f.x;
+  let gy = 1.0 - f.y;
+  let wx = vec4f(gx * gx * gx, 3.0 * f.x * f.x * f.x - 6.0 * f.x * f.x + 4.0, 3.0 * gx * gx * gx - 6.0 * gx * gx + 4.0, f.x * f.x * f.x) * (1.0 / 6.0);
+  let wy = vec4f(gy * gy * gy, 3.0 * f.y * f.y * f.y - 6.0 * f.y * f.y + 4.0, 3.0 * gy * gy * gy - 6.0 * gy * gy + 4.0, f.y * f.y * f.y) * (1.0 / 6.0);
+  for (var k = 0; k < 16; k++) {
+    let o = vec2i(k & 3, k >> 2) - vec2i(1);
     let ip = clamp(vec2i(base) + o, vec2i(0), size - 1);
     let a = textureLoad(auxTex, ip, 0);
     let zn = exp2(a.r);
@@ -507,23 +539,21 @@ struct CombineOut {
     var bk: vec4f;
     if (near) { fr = textureLoad(frontNearTex, ip, 0); bk = textureLoad(backNearTex, ip, 0); }
     else { fr = textureLoad(frontFarTex, ip, 0); bk = textureLoad(backFarTex, ip, 0); }
-    let bil = select(1.0 - f.x, f.x, o.x == 1) * select(1.0 - f.y, f.y, o.y == 1);
+    let col = vec4f(fr.rgb + fr.a * (E.rgb + TE * bk.rgb), 1.0 - fr.a * TE * bk.a);
+    let mom = vec2f((1.0 - fr.a) * a.b + fr.a * m.r, (1.0 - fr.a) + fr.a * m.g);
     // Depth steps of a few per cent are the slope of the ground under the cloud, not an edge: only a real
     // discontinuity may take a ray's weight away, or the cloud is drawn in blocks of quarter-resolution pixels.
-    let w = (bil + 0.01) / (1.0 + sq(diff * 12.0));
-    F += fr * w;
-    B += bk * w;
-    dLog += a.b * w;
+    let w = wx[o.x + 1] * wy[o.y + 1] / (1.0 + sq(diff * 12.0));
+    C += col * w;
+    M += mom * w;
     wsum += w;
-    if (diff < bestDiff) { bestDiff = diff; bestF = fr; bestB = bk; bestLog = a.b; }
+    if (all(o >= vec2i(0)) && all(o <= vec2i(1)) && diff < bestDiff) { bestDiff = diff; bestC = col; bestM = mom; }
   }
-  if (wsum < 1e-4) { F = bestF; B = bestB; dLog = bestLog; }
-  else { F /= wsum; B /= wsum; dLog /= wsum; }
-  let TE = 1.0 - E.a;
+  if (wsum < 0.02) { C = bestC; M = bestM; }
+  else { C /= wsum; M /= wsum; }
   var out: CombineOut;
-  out.color = vec4f(writeHdr(F.rgb + F.a * (E.rgb + TE * B.rgb)), saturate(1.0 - F.a * TE * B.a));
-  let ws = 1.0 - F.a;
-  out.moment = vec4f(ws * dLog + F.a * m.r, ws + F.a * m.g, 0.0, 0.0);
+  out.color = vec4f(writeHdr(C.rgb), saturate(C.a));
+  out.moment = vec4f(M, 0.0, 0.0);
   return out;
 }
 `;
