@@ -297,10 +297,12 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
    * every cascade), 'lattice' (bracing, guard rails, stairs: members thinner than a coarse shadow texel,
    * which cast into the fine cascades only) and 'gratings' (the open floors, which cast nothing).
    */
-  const build = (part: 'body' | 'lattice' | 'gratings') =>
+  const build = (part: 'body' | 'lattice' | 'gratings' | 'latticeCaster') =>
     (b: MeshBuilder): void => {
       const B = part === 'body';
-      const L = part === 'lattice';
+      // The lattice's caster for the fine cascades is its bracing alone, at true gauge.
+      const C = part === 'latticeCaster';
+      const L = part === 'lattice' || C;
       const G = part === 'gratings';
       const first = b.vertexCount;
       // ---- columns (H sections), level frames, bracing
@@ -332,7 +334,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
         box(b, dist + 8, 2.6, 2.4, [-(dist - 11.5) / 2, H + 4.6, 0], 'crane');
       }
       if (b.lod < 2) {
-        const braceR = b.pick(0.11, 0.24, 0);
+        const braceR = C ? 0.11 : b.pick(0.11, 0.24, 0);
         for (let l = 0; L && l < levels; l++) {
           const y0 = l * levelH + 0.05;
           const y1 = (l + 1) * levelH - 0.5;
@@ -346,8 +348,9 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
           for (let f = 0; f < 4; f++) {
             const a = corners[f]!;
             const c = corners[(f + 1) % 4]!;
-            rod(b, [flip ? a[0] : c[0], y0, flip ? a[1] : c[1]], [flip ? c[0] : a[0], y1, flip ? c[1] : a[1]], braceR, b.pick(8, 5, 4), 'brace');
-            if (b.lod === 0) {
+            rod(b, [flip ? a[0] : c[0], y0, flip ? a[1] : c[1]], [flip ? c[0] : a[0], y1, flip ? c[1] : a[1]], braceR, C ? 4 : b.pick(8, 5, 4), 'brace');
+            if (C) rod(b, [flip ? c[0] : a[0], y0, flip ? c[1] : a[1]], [flip ? a[0] : c[0], y1, flip ? a[1] : c[1]], braceR, 4, 'brace');
+            if (b.lod === 0 && !C) {
               rod(b, [flip ? c[0] : a[0], y0, flip ? c[1] : a[1]], [flip ? a[0] : c[0], y1, flip ? a[1] : c[1]], braceR, 8, 'brace');
               // Gusset plates where the braces meet the columns, and the splice plate where they cross.
               const out: Vec3Tuple = [(a[0] + c[0]) / (2 * col), 0, (a[1] + c[1]) / (2 * col)];
@@ -366,6 +369,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
           // Open grating between the level beams, in four bays round the elevator shaft and the stair well.
           for (let l = 1; l <= levels; l++) gratingPanel(b, 0, l * levelH + 0.02, 0, 2 * col - 0.4, 2 * col - 0.4, l % 2 === 0);
         }
+        if (C) return;
         if (b.lod === 0 && L) {
           const e = col - 0.25;
           for (let l = 1; l <= levels; l++) {
@@ -470,6 +474,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
   const body = buildModel('pad.umbilicalTower', build('body'), lodPixels);
   const lattice = buildModel('pad.umbilicalTower.lattice', build('lattice'), lodPixels);
   const gratings = buildModel('pad.umbilicalTower.gratings', build('gratings'), lodPixels);
+  const latticeCaster = buildModel('pad.umbilicalTower.latticeCaster', build('latticeCaster'), lodPixels);
 
   const armModel = (name: string, length: number): PartModel =>
     buildModel(name, (b) => {
@@ -520,7 +525,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
       box(b, length - 0.6, 0.9, 0.8, [-(length - 0.6) / 2, 1.3, 0], 'shadow-proxy');
     });
 
-  const models: Record<string, PartModel> = { body, lattice, gratings };
+  const models: Record<string, PartModel> = { body, lattice, gratings, latticeCaster };
   arms.forEach((a, i) => {
     models[`arm${i}`] = armModel(`pad.umbilicalTower.arm${i}`, dist - half - 0.5 - a.reach);
     models[`armShadow${i}`] = armShadow(`pad.umbilicalTower.armShadow${i}`, dist - half - 0.5 - a.reach);
@@ -544,7 +549,9 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
     models,
     pose(state, emit, moving) {
       emit('body', null, null, { grime: 1 });
-      emit('lattice', null, null, { grime: 1, fineShadowOnly: true });
+      // Rails, treads and gusset plates of 23 levels cast nothing; the bracing casts for the lattice.
+      emit('lattice', null, null, { grime: 1, castShadow: false });
+      emit('latticeCaster', null, null, { fineShadowOnly: true, shadowProxy: true });
       emit('gratings', null, null, { castShadow: false });
       const t = state.arms * state.arms * (3 - 2 * state.arms);
       arms.forEach((a, i) => {

@@ -26,6 +26,8 @@ interface Row {
   updateP50: number;
   updateP95: number;
   siteUpdateP50: number;
+  /** Medians of the same four passes: what a frame costs when no other GPU client cuts in (printed, not asserted). */
+  p50: [number, number, number, number];
 }
 
 const PERF = 'perf=features&scale=1&governor=off';
@@ -74,6 +76,7 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
           updateP50: update[120]!,
           updateP95: update[228]!,
           siteUpdateP50: siteUpdate[120]!,
+          p50: [ps['vehicle.gbuffer']?.p50 ?? 0, ps['vehicle.shadow']?.p50 ?? 0, ps['site.gbuffer']?.p50 ?? 0, ps['site.shadow']?.p50 ?? 0] as [number, number, number, number],
         };
       }, w === 0),
     );
@@ -125,7 +128,7 @@ test('vehicle and site budgets at 1440p with the full stack on the pad', async (
         `${name.padEnd(6)}: vehicle G-buffer ${r.vehicleGbuffer.toFixed(3)} ms, vehicle shadows ${r.vehicleShadow.toFixed(3)} ms, site G-buffer ${r.siteGbuffer.toFixed(3)} + shadow ${r.siteShadow.toFixed(3)} ms (p99); ` +
           `instance update ${r.updateP50.toFixed(3)} ms p50 / ${r.updateP95.toFixed(3)} ms p95 (site ${r.siteUpdateP50.toFixed(3)} ms); ` +
           `${r.instances} instances, ${r.triangles} triangles, ${r.shadowTriangles} shadow triangles; frame p99 ${r.frameP99.toFixed(2)} ms, ballast ${r.ballast.toFixed(2)} ms; ` +
-          `windows gbuffer/shadow/site/update: ${r.windows}`,
+          `windows gbuffer/shadow/site/update: ${r.windows}; p50 of the middle window: vehicle G-buffer ${r.p50[0].toFixed(3)}, vehicle shadows ${r.p50[1].toFixed(3)}, site G-buffer ${r.p50[2].toFixed(3)}, site shadows ${r.p50[3].toFixed(3)} ms`,
       );
     }
     for (const r of Object.values(results)) {

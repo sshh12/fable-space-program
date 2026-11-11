@@ -110,6 +110,8 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   let proxyBatch: MeshBatch;
   /** Stand-ins of low, thin structures: cast only into the coarse cascades that can still resolve them. */
   let proxyNearBatch: MeshBatch;
+  /** Simplified casters of dense lattices for the fine cascades (never drawn into the G-buffer). */
+  let fineCasterBatch: MeshBatch;
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
   const lodSelector = new LodSelector();
@@ -196,6 +198,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       fineBatch = coreOf(c).meshes.createBatch('site-fine');
       proxyBatch = coreOf(c).meshes.createBatch('site-shadow-proxies');
       proxyNearBatch = coreOf(c).meshes.createBatch('site-shadow-proxies-near');
+      fineCasterBatch = coreOf(c).meshes.createBatch('site-casters-fine');
       for (const site of Object.values(defs.sites)) sites.push(buildSite(site));
     },
 
@@ -212,6 +215,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       fineBatch.begin(frame);
       proxyBatch.begin(frame);
       proxyNearBatch.begin(frame);
+      fineCasterBatch.begin(frame);
       stats.sites = 0;
       stats.instances = 0;
       stats.fading = 0;
@@ -261,7 +265,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
               if (opts?.castShadow === false) inst.castShadow = false;
               if (opts?.emissive !== undefined) inst.emissiveScale = opts.emissive;
               if (opts?.grime) inst.soot = opts.grime;
-              const target = opts?.shadowProxy ? (opts.nearShadowOnly ? proxyNearBatch : proxyBatch) : opts?.fineShadowOnly ? fineBatch : opts?.nearShadowOnly ? nearBatch : batch;
+              const target = opts?.shadowProxy ? (opts.fineShadowOnly ? fineCasterBatch : opts.nearShadowOnly ? proxyNearBatch : proxyBatch) : opts?.fineShadowOnly ? fineBatch : opts?.nearShadowOnly ? nearBatch : batch;
               const h0 = lods[0]!;
               const draw = lodSelector.pick(state, lodSelector.sizePx(inst.originRelCam, inst.q, h0.boundsCenter, h0.boundsRadius), pl.models.lodPixels[model]!, lods.length);
               // An ordinary structure casts from a coarser copy; the thin-structure classes cast what is drawn.
@@ -300,6 +304,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       fineBatch.finish();
       proxyBatch.finish();
       proxyNearBatch.finish();
+      fineCasterBatch.finish();
       // The lamps nearest to the camera's reach become local lights.
       lamps.sort((a, b) => a.d - b.d);
       stats.lights = 0;
@@ -326,12 +331,14 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       // `cascade.everyFrame` is true.
       casterBatch.drawShadow(pass, cascade);
       if (cascade.texelSize <= NEAR_SHADOW_TEXEL) nearBatch.drawShadow(pass, cascade);
-      if (cascade.texelSize <= FINE_SHADOW_TEXEL) fineBatch.drawShadow(pass, cascade);
-      else {
+      if (cascade.texelSize <= FINE_SHADOW_TEXEL) {
+        fineBatch.drawShadow(pass, cascade);
+        fineCasterBatch.drawShadow(pass, cascade);
+      } else {
         proxyBatch.drawShadow(pass, cascade);
         if (cascade.texelSize <= NEAR_SHADOW_TEXEL) proxyNearBatch.drawShadow(pass, cascade);
       }
-      stats.shadowTriangles = casterBatch.stats.shadowTriangles + nearBatch.stats.shadowTriangles + fineBatch.stats.shadowTriangles + proxyBatch.stats.shadowTriangles + proxyNearBatch.stats.shadowTriangles;
+      stats.shadowTriangles = casterBatch.stats.shadowTriangles + nearBatch.stats.shadowTriangles + fineBatch.stats.shadowTriangles + fineCasterBatch.stats.shadowTriangles + proxyBatch.stats.shadowTriangles + proxyNearBatch.stats.shadowTriangles;
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
@@ -343,6 +350,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       fineBatch.destroy();
       proxyBatch.destroy();
       proxyNearBatch.destroy();
+      fineCasterBatch.destroy();
       const done = new Set<StructureModels>();
       for (const rt of sites) {
         for (const pl of rt.placed) {

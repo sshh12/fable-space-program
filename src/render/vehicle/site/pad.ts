@@ -440,7 +440,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       // cable trays, the hydraulic power unit of the hold-down clamps
       b.mat('refractory').masks(0, 0.9, 0.9, 0);
       ringSolid(b, holeR + 0.35, holeR + 1.7, top - 0.02, top + 0.035, nSeg, 'refractory-ring');
-      b.mat('steel-dark').masks(0.3, 1, 0.4, 0);
+      b.mat('steel-dark').masks(0.3, 1, 0.1, 0);
       for (const [x, z] of [[-8.6, -3.2], [8.2, 4.6], [-3.4, 8.8], [4.0, -8.9]] as [number, number][]) {
         box(b, 1.3, 0.03, 0.95, [x, top + 0.012, z], 'hatch');
         if (b.lod === 0) {
@@ -449,14 +449,14 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
           b.mat('steel-dark');
         }
       }
-      b.mat('grating').masks(0.2, 0.8, 0.5, 0);
+      b.mat('grating').masks(0.2, 0.8, 0.1, 0);
       for (const [x, z, w, d] of [[0, -half + 1.1, 9, 0.45], [0, half - 1.1, 9, 0.45], [-half + 1.1, 0, 0.45, 9]] as [number, number, number, number][]) box(b, w, 0.02, d, [x, top + 0.008, z], 'drain');
-      b.mat('galvanised').masks(0.2, 1, 0.35, 0);
+      b.mat('galvanised').masks(0.2, 1, 0.1, 0);
       for (const z of [-half + 1.9, half - 1.9]) {
         box(b, 2 * half - 7, 0.11, 0.42, [0.6, top + 0.055, z], 'cable-tray');
         if (b.lod === 0) for (let x = -half + 4.5; x <= half - 3.4; x += 1.5) box(b, 0.06, 0.125, 0.46, [x, top + 0.063, z], 'tray-strap');
       }
-      b.mat('paint-grey').masks(0.25, 1, 0.3, 0);
+      b.mat('paint-grey').masks(0.25, 1, 0.1, 0);
       box(b, 1.8, 1.15, 1.0, [-half + 2.4, top + 0.575, half - 3.6], 'hydraulic-unit');
       if (b.lod === 0) {
         b.mat('steel-bare');
@@ -469,7 +469,9 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       // ---- sound-suppression water: a ring main round the opening, fed by two risers up the south-east
       // pier, with six rainbirds: flanged goose-neck pipes that end in flattened fan nozzles over the opening
       // (Painted pipe: grey epoxy over the whole water system, the fan nozzles in oxide red.)
-      b.mat('paint-grey').masks(0.2, 1, 0.5, 0);
+      // (Grime weights of pipes and fittings stay under the threshold at which the mesh shader starts to
+      // draw soot in streaks: streaks across a pipe read as stripes.)
+      b.mat('paint-grey').masks(0.2, 1, 0.08, 0);
       torus(b, ringR, 0.17, top + 0.2, nSeg, b.pick(10, 6, 4), 'deluge-main');
       for (const dz of [0, 0.75]) pipe(b, [[half - 0.9, -0.2, half - 2.9 - dz], [half - 0.9, top + 0.2, half - 2.9 - dz], [ringR * 0.72, top + 0.2, ringR * 0.72 - dz * 0.4]], 0.2, 0.7, { segs: b.pick(12, 8, 5), tag: 'deluge-riser' });
       for (let k = 0; k < 6; k++) {
@@ -478,7 +480,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
         const p: Vec3Tuple = [ringR * out[0], top, ringR * out[2]];
         const neck: Vec3Tuple = [p[0] - out[0] * 1.15, top + 2.25, p[2] - out[2] * 1.15];
         const tip: Vec3Tuple = [p[0] - out[0] * 1.75, top + 2.05, p[2] - out[2] * 1.75];
-        b.mat('paint-grey').masks(0.2, 1, 0.6, 0);
+        b.mat('paint-grey').masks(0.2, 1, 0.08, 0);
         pipe(b, [[p[0], top + 0.2, p[2]], [p[0], top + 1.75, p[2]], neck, tip], 0.22, 0.55, { segs: b.pick(14, 8, 5), tag: 'rainbird' });
         // Flanges at the base and under the bend, saddle on the ring main, brace back to the deck.
         b.at(xf.translate(p[0], top + 0.42, p[2]), () => ringSolid(b, 0.2, 0.34, -0.04, 0.04, b.pick(16, 10, 6), 'rainbird-flange'));
@@ -490,7 +492,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
           b.at(xf.translate(p[0], top + 1.435, p[2]), () => boltCircle(b, 0.27, 0, 10, 0.015, 0.012));
         }
         // Fan nozzle: the pipe is flattened into a wide slot that throws a sheet of water across the opening.
-        b.mat('paint-red').masks(0.3, 1, 0.7, 0);
+        b.mat('paint-red').masks(0.3, 1, 0.1, 0);
         const d: Vec3Tuple = [tip[0] - neck[0], tip[1] - neck[1], tip[2] - neck[2]];
         const l = Math.hypot(d[0], d[1], d[2]);
         const along = (t: number): Vec3Tuple => [tip[0] + (d[0] / l) * t, tip[1] + (d[1] / l) * t, tip[2] + (d[2] / l) * t];
@@ -503,7 +505,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       // ---- handrails and the stair tower from the apron to the deck
       const e = half - 0.2;
       handrail(b, [[-e + cut, top, -e], [e - cut, top, -e], [e, top, -e + cut], [e, top, e - cut], [e - cut, top, e], [-e + cut, top, e], [-e, top, e - cut], [-e, top, -e + cut], [-e + cut, top, -e]]);
-      b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+      b.mat('galvanised').masks(0.2, 1, 0.1, 0);
       const sx0 = -half - 3.2;
       const flights = Math.ceil(top / 3);
       const zA = -half + 2;
@@ -530,15 +532,15 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
         stairFlight(b, [x, ya, dir > 0 ? zA + 0.45 : zB - 0.45], [x, yb, dir > 0 ? zB - 0.45 : zA + 0.45], 1.1);
         // Landing across the tower at the head of the flight, with a guard rail on its outer edge.
         const zl = dir > 0 ? zB : zA;
-        b.mat('grating').masks(0.2, 0.9, 0.3, 0);
+        b.mat('grating').masks(0.2, 0.9, 0.1, 0);
         box(b, 2.7, 0.05, 0.9, [sx0, yb - 0.025, zl], 'landing');
-        b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+        b.mat('galvanised').masks(0.2, 1, 0.1, 0);
         for (const s of [-1, 1]) box(b, 2.8, 0.16, 0.05, [sx0, yb - 0.1, zl + s * 0.45], 'landing-beam');
         handrail(b, [[sx0 - 1.35, yb, zl + dir * 0.45], [sx0 + 1.35, yb, zl + dir * 0.45]], 1.0, 1.35);
       }
-      b.mat('grating').masks(0.2, 0.9, 0.3, 0);
+      b.mat('grating').masks(0.2, 0.9, 0.1, 0);
       box(b, 3.4, 0.06, 1.2, [-half - 1.6, top - 0.03, zA + 0.6], 'gangway');
-      b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+      b.mat('galvanised').masks(0.2, 1, 0.1, 0);
       for (const s of [-1, 1]) box(b, 3.4, 0.2, 0.06, [-half - 1.6, top - 0.13, zA + 0.6 + s * 0.6], 'landing-beam');
       handrail(b, [[-half - 3.2, top, zA], [-half, top, zA]], 1.0, 1.1);
     }
@@ -656,7 +658,7 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
       b.mat(material).masks(0.1, 1, 0.3, 0.3);
       pipe(b, pts, radius, radius * 3, { segs: b.pick(14, 8, 5), tag: 'pipe' });
     }
-    b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+    b.mat('galvanised').masks(0.2, 1, 0.1, 0);
     const w = count * pitch + 0.5;
     const n = Math.max(2, Math.round(length / 9));
     // The far LOD keeps the two end supports, so the run still stands on the ground.

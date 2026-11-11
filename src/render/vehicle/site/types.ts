@@ -48,7 +48,9 @@ export interface SiteItemOpts {
    * The item is not drawn at all; it only casts the sun shadow of a thin structure into the cascades too
    * coarse to resolve its members (texel over `FINE_SHADOW_TEXEL`): a solid, slender stand-in, so that the
    * shadow of a mast or a pipe run stays a continuous band at any distance instead of breaking up or
-   * dropping out.
+   * dropping out. Together with `fineShadowOnly` it is the opposite: a simplified caster for the FINE
+   * cascades of a lattice so dense (rails, treads, plates on every level) that drawing all of it into the
+   * every-frame cascades costs more than its shadow shows.
    */
   shadowProxy?: boolean;
   /** 0..1 multiplier on the model's vertex grime weights (weathering, blast staining; default 0). */
