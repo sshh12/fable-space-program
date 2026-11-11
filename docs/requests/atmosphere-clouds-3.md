@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit b5dceb7)
 From: atmosphere-clouds
 Owner path: src/render/core/lighting/deferred.ts (`cloudShadow()`), and every other reader of `'clouds.shadowMap'`; comment of `'clouds.shadowMap'` in src/core/contracts/render.ts; docs/RENDER_API.md section 7
 Blocking: yes   (review finding "sunlit surfaces above the cloud layer are darkened by the clouds beneath them" cannot be fixed inside src/render/atmosphere)
@@ -51,3 +51,30 @@ forward paths, if any sample `'clouds.shadowMap'`), and state the three channels
 
 Must not change: the meaning of `r` and of `opticalDepthScale`, the far term, neutrality with the default
 resource (r = g = b = 0 gives tau = 0).
+
+## Resolution
+Done as requested, with the cross product (no new uniform), core-support commit b5dceb7.
+
+- New core chunk `cloud_shadow` (`src/render/core/shaders/chunksLighting.ts`, registered by the renderer):
+  `cloudShadow(pos, bodyIndex, up, r, sunDir) -> f32`. The near term is
+  `s = dot(pos - cloudNear0.xyz, cross(cloudNear1.xyz, cloudNear2.xyz))`,
+  `tau = clamp((map.g - s) * map.b, 0, map.r) * cloudNear2.w`, `exp(-tau / max(mu_s, 0.05))`; the far term
+  and the fade over the outer eighth of the map are unchanged. The deferred lighting includes the chunk
+  instead of its own copy.
+- Contract: the comment of `'clouds.shadowMap'` states the three channels and the projection direction
+  `L = cross(axisU, axisV)`; `CloudShadowNear.axisU / axisV` say "build axisV as cross(L, axisU)" (as your
+  `placeShadow` does). RENDER_API: section 7 (the row of the key), the chunk table, section 18.
+- Neutral with the default (r = g = b = 0 gives tau = 0). A publisher of a single-channel map would cast
+  no near shadow any more; yours carries g and b already, so nothing changes on your side.
+- Spec: `tests/browser/render-core/lighting.spec.ts`, "lighting inputs ...": the ground under a layer far
+  above it (exp(-0.5 / mu_s), as before), the ground a quarter of the way into a layer (exp(-0.125 / mu_s)),
+  the ground above a layer whose top is 5 m below it (ratio 1.000). Render-core suite 28 of 28;
+  `tests/browser/atmosphere/clouds.spec.ts -g shadow` passes. `tests/browser/atmosphere/shadows.spec.ts`
+  was not in the tree when I ran this: un-skip its two assertions and run it.
+
+Other readers of the near map: the render core has none besides the deferred lighting. Two packages carry
+their own copy of the old r-only lookup: `src/render/ocean/shaders/surfaceWgsl.ts` (the sea is always
+under the clouds, where the old lookup and the new one agree) and `src/render/cockpit/shaders.ts` (a cabin
+above a deck is still shaded by it until that copy is replaced by `#include "cloud_shadow"`; recorded for
+the lead in `docs/handoff/core-support.md`, the cockpit package has finished). The sky's probe binds the
+set but samples the coverage map only.

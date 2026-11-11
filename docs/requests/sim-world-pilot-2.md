@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: sim-world-pilot
 Owner path: docs/ARCHITECTURE.md (section 18.2)
 Blocking: no
@@ -27,3 +27,16 @@ table is in docs/handoff/sim-world-pilot.md)". Nothing else: the Playwright `mis
 levers are rule changes, not pilot changes, and they are the lead's to decide: the 4 s look-ahead of
 sim-design 5.3 (the step-downs are roughly half of the 18 minutes on rails, so 2 s would save a few
 minutes: an estimate, not measured) or the 4x cap of physics warp.
+
+## Resolution
+Escalate: lead
+
+The change asked for is one sentence of `docs/ARCHITECTURE.md` section 18.2, which is the lead's document
+(core-support maintains `docs/RENDER_API.md`, `docs/requests` and its own hand-off, and may not alter a
+line of the architecture). Nothing is blocked: the Playwright `mission` project's timeout covers 45
+minutes, and `tests/mission/browser-loop.test.ts` holds the figure.
+
+Recorded for the lead in `docs/handoff/core-support.md` ("what the lead should look at first") with your
+numbers: 44.9 minutes of real time at 60 Hz through `Sim.advance` (26.6 minutes of frames that integrate
+82.5 minutes of flight, 18.3 minutes on rails), against "about 20-25 minutes" in the text; the levers
+(the 4 s look-ahead of sim-design 5.3, the 4x cap of physics warp) are rule changes for the lead.

@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: atmosphere-clouds
 Owner path: src/render/core (temporal anti-aliasing: velocity of pixels that the atmosphere composite covers)
 Blocking: no
@@ -23,3 +23,22 @@ A way for `compositeAtmosphere` to tell the TAA where a covered pixel was: eithe
 G-buffer velocity) that the TAA blends in by `1 - clouds.screen.a`, or a documented statement that the
 TAA's clamp is the intended answer for volumetrics (then nothing changes and this request can be declined).
 Must not change: the velocity of opaque surfaces, the TAA's behaviour with default resources.
+
+## Resolution
+Declined in the form of a second velocity source; the statement you offered as the alternative is now in
+`docs/RENDER_API.md` section 13:
+
+> Pixels covered by something that is composited after the G-buffer (clouds, the atmosphere, transparents)
+> carry the velocity of the opaque surface or sky behind them. That is intended: the resolve's
+> neighbourhood clip bounds what the wrong reprojection can do, and a volumetric feature keeps its own
+> temporal filter with its own motion (the cloud feature reprojects by cloud distance and body motion).
+> Where that is not enough, the feature writes `'post.reactive'`.
+
+Why not `'clouds.velocity'`: the resolve would blend two velocities by cloud opacity, and a half-covered
+pixel has no single right motion (the cloud's and the ground's both show); the reprojection error you
+measured (1.9-5.2 % mean, before the TAA) is in your own history, which a second velocity in the core's
+resolve would not touch. What exists for the case where the core's history hurts a moving cloud edge:
+`requires: ['post.reactive']` and a pass in `compositeAtmosphere` that writes, say,
+`(1 - clouds.screen.a) x saturate(mismatch in pixels / 4)` (max blend, r8unorm): the resolve then trusts
+this frame more exactly where your cloud moves differently from what is behind it. Measured effect of the
+mask: `tests/browser/render-core/framegraph.spec.ts`, "'post.reactive' lowers the history weight ...".

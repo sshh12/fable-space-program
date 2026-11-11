@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: ocean
 Owner path: data/defs/bodies/earth.json (`ocean.swell`; the lead's body data)
 Blocking: no
@@ -37,3 +37,16 @@ the long end of the 7 m/s wind sea (`windDirDeg` 60 = the wind blows toward 60 d
 Must NOT change: `oceanSwellHeight` and its signature, `seaLevel`, the order of magnitude of the heights (the
 splashdown dynamics and the ocean's swell-agreement spec use them). The ocean needs no code change: the
 renderer reads any count up to 8 and its swell spec compares against whatever the data holds.
+
+## Resolution
+Escalate: lead
+
+`data/defs/bodies/earth.json` is the lead's (`data/defs/bodies` is not a path of core-support or of any
+wave-2 package), and `ocean.swell` is shared with the simulation: the physics swell of the splashdown is the
+same list (`src/core/geo/oceanSwell.ts`), so adding components changes the vessel's motion in the water as
+well as the picture. That is a decision about the mission, not a rendering fix.
+
+Recorded for the lead in `docs/handoff/core-support.md` with your evidence. What supports it from the
+integrated lab: `out/screens/integration/water-climb-all-2km.png` and the neighbouring frames of
+`tests/browser/integration/water.spec.ts` show the regular rows between 1.5 km and 15 km. Nothing in the
+core limits the count (`oceanSwellHeight` takes any number of components; your renderer takes up to 8).

@@ -758,6 +758,11 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   turns more than 2 deg per frame or at warp >= 50x. `frame.animate` is false in deterministic mode: do
   not animate noise then. The history is rescaled by this frame's exposure over the last one's before it is
   used (it is pre-exposed), so an adapting exposure leaves no brightness lag in the resolved image.
+- **What is composited after the G-buffer has no velocity of its own.** Pixels covered by clouds, the
+  atmosphere or a transparent carry the velocity of the opaque surface or sky behind them. That is
+  intended (request `atmosphere-clouds-2`): the resolve's neighbourhood clip bounds what the wrong
+  reprojection can do, and a volumetric feature keeps its own temporal filter with its own motion. Where
+  that is not enough, the feature writes `'post.reactive'` (next item).
 - **Reactive mask** (`'post.reactive'`, request `ocean-4`). A surface whose pattern changes without a motion
   vector that describes it (wind waves, a plume's turbulence) is blurred by its own history. A feature with
   `requires: ['post.reactive']` may draw into the mask (r8unorm, render resolution, cleared to 0 by the core
