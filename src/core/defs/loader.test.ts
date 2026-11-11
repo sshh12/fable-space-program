@@ -115,6 +115,34 @@ describe('definition loader', () => {
     await expect(loadDefs(memorySource(files([good[1], good[0]])))).rejects.toThrow(/prerequisite/);
   });
 
+  it('validates the resource amounts a scenario starts with', async () => {
+    const files = (resources: unknown): Record<string, unknown> => ({
+      'bodies/a.json': { id: 'a', parent: null, mu: 1, radius: 1, orbit: null },
+      'sites/k.json': { id: 'k', bodyId: 'a' },
+      'resources.json': [{ id: 'LOX' }, { id: 'CH4' }],
+      'parts/tank.json': { id: 'tank', resources: [{ resource: 'LOX', capacity: 1000, tankBottomY: 0, tankHeight: 1 }] },
+      'parts/strut.json': { id: 'strut' },
+      'vehicles/v.json': { id: 'v', parts: [{ id: 't1', def: 'tank', parent: null }, { id: 's1', def: 'strut', parent: 't1' }] },
+      'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(resources === undefined ? {} : { resources }) },
+    });
+    // Absent: as before. Present and valid: kept as written, the capacity itself and a rounding error above it included.
+    expect((await loadDefs(memorySource(files(undefined)))).scenarios['s']!.resources).toBeUndefined();
+    expect((await loadDefs(memorySource(files({ t1: { LOX: 250.5 } })))).scenarios['s']!.resources).toEqual({ t1: { LOX: 250.5 } });
+    expect((await loadDefs(memorySource(files({ t1: { LOX: 0 } })))).scenarios['s']!.resources!['t1']!['LOX']).toBe(0);
+    await expect(loadDefs(memorySource(files({ t1: { LOX: 1000.0005 } })))).resolves.toBeDefined();
+    await expect(loadDefs(memorySource(files({})))).resolves.toBeDefined();
+    // Everything else names the scenario file.
+    await expect(loadDefs(memorySource(files([1])))).rejects.toThrow(/scenarios\/s\.json.*must be an object/);
+    await expect(loadDefs(memorySource(files({ nope: { LOX: 1 } })))).rejects.toThrow(/scenarios\/s\.json.*no part "nope"/);
+    await expect(loadDefs(memorySource(files({ t1: 5 })))).rejects.toThrow(/scenarios\/s\.json.*resource id -> kg/);
+    await expect(loadDefs(memorySource(files({ t1: { CH4: 1 } })))).rejects.toThrow(/scenarios\/s\.json.*holds no "CH4"/);
+    await expect(loadDefs(memorySource(files({ s1: { LOX: 1 } })))).rejects.toThrow(/holds no "LOX"/);
+    await expect(loadDefs(memorySource(files({ t1: { LOX: -1 } })))).rejects.toThrow(/from 0 to its capacity 1000/);
+    await expect(loadDefs(memorySource(files({ t1: { LOX: 1000.01 } })))).rejects.toThrow(/from 0 to its capacity 1000/);
+    await expect(loadDefs(memorySource(files({ t1: { LOX: '12' } })))).rejects.toThrow(/from 0 to its capacity/);
+    await expect(loadDefs(memorySource(files({ t1: { LOX: null } })))).rejects.toThrow(/from 0 to its capacity/);
+  });
+
   it('ignores dotted section files as definitions', async () => {
     const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
     const lib = await loadDefs(memorySource({ 'bodies/a.json': root, 'bodies/a.section.json': { anything: true } }));

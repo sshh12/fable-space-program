@@ -129,6 +129,24 @@ export function validateLibrary(lib: DefLibrary): void {
     if (!lib.sites[s.site]) throw new DefError(file, `unknown site "${s.site}"`);
     if (s.target !== null && !lib.bodies[s.target]) throw new DefError(file, `unknown target "${s.target}"`);
     if (s.suggestedLanding && !lib.bodies[s.suggestedLanding.bodyId]) throw new DefError(file, `unknown landing body "${s.suggestedLanding.bodyId}"`);
+    if (s.resources !== undefined) {
+      if (!isObject(s.resources)) throw new DefError(file, '"resources" must be an object: part instance id -> resource id -> kg');
+      const vehicle = lib.vehicles[s.vehicle]!;
+      for (const [partId, amounts] of Object.entries(s.resources as Record<string, unknown>)) {
+        const placement = vehicle.parts.find((p) => p.id === partId);
+        if (!placement) throw new DefError(file, `resources: vehicle "${s.vehicle}" has no part "${partId}"`);
+        if (!isObject(amounts)) throw new DefError(file, `resources of part "${partId}" must be an object: resource id -> kg`);
+        const tanks = lib.parts[placement.def]!.resources ?? [];
+        for (const [resource, kg] of Object.entries(amounts)) {
+          const tank = tanks.find((t) => t.resource === resource);
+          if (!tank) throw new DefError(file, `resources: part "${partId}" (${placement.def}) holds no "${resource}"`);
+          // Amounts captured from a flight may sit a rounding error above the capacity.
+          if (typeof kg !== 'number' || !Number.isFinite(kg) || kg < 0 || kg > tank.capacity * (1 + 1e-6)) {
+            throw new DefError(file, `resources: "${resource}" of part "${partId}" must be a number of kg from 0 to its capacity ${tank.capacity}, got ${String(kg)}`);
+          }
+        }
+      }
+    }
     if (!Array.isArray(s.milestones)) throw new DefError(file, '"milestones" must be an array (it may be empty)');
     const seen = new Set<string>();
     for (const m of s.milestones) {

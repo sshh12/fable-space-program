@@ -580,6 +580,14 @@ export interface ScenarioDef {
   start: ScenarioStart;
   /** Number of stage-stack entries considered already fired (their dropped parts are not spawned). */
   stagesAlreadyFired: number;
+  /**
+   * Resource amounts at the start, kg: part instance id (VehicleDef.parts[].id) -> resource id -> kg.
+   * Overrides the vehicle's own amounts (VehiclePartPlacement.resources, default full) for the parts and
+   * resources listed; everything not listed keeps the vehicle's amount. Entries for parts that
+   * `stagesAlreadyFired` has already dropped are ignored. The loader checks that every part is one of the
+   * scenario's vehicle, that it holds the resource, and that 0 <= kg <= capacity (request sim-world-pilot-1).
+   */
+  resources?: Record<string, Record<ResourceId, number>>;
   target: BodyId | null;
   /** Landing target: becomes the SurfaceTarget of kind 'landing' (HUD, map, landingTarget readout). */
   suggestedLanding: { bodyId: BodyId; latDeg: number; lonDeg: number; name: string } | null;
