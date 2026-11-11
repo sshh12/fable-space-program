@@ -174,7 +174,7 @@
   },
   "reentry": {
     "standoff": 0.14,
-    "luminance": 1600000,
+    "luminance": 420000,
     "referenceFlux": 3000000,
     "fluxExponent": 0.75,
     "minIntensity": 0.02,
@@ -182,8 +182,8 @@
     "colorSpeeds": [3500, 7000, 10500],
     "colors": [[1.0, 0.42, 0.14], [1.0, 0.5, 0.62], [0.86, 0.82, 1.0]],
     "flicker": { "lowHz": 8, "highHz": 30, "amount": 0.22 },
-    "light": { "efficacy": 0.9, "range": 60 },
-    "trail": { "luminance": 90000, "lifetime": 18, "radiusScale": 2.2, "smoke": 0.02 },
+    "light": { "efficacy": 0.015, "range": 60 },
+    "trail": { "luminance": 26000, "lifetime": 18, "radiusScale": 1.4, "smoke": 0.02 },
     "steps": 32
   },
   "explosion": {
@@ -192,11 +192,12 @@
     "maxRadius": 260,
     "durationPerCbrtJoule": 0.0006,
     "minDuration": 1.2,
-    "luminance": 2500000,
+    "luminance": 60000,
     "flashEfficacy": 0.0006,
     "flashTime": 0.18,
+    "lightEfficacy": 0.004,
     "color": [1.0, 0.62, 0.26],
-    "smokeAlbedo": [0.09, 0.085, 0.08],
+    "smokeAlbedo": [0.16, 0.15, 0.14],
     "partBurst": { "energy": 40000000, "sparks": 320, "debris": 140 },
     "steps": 28
   },

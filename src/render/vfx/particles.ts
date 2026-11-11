@@ -243,13 +243,16 @@ fn glow(T: f32) -> vec3f {
     if (hh < floor + p.size) {
       let vn = dot(v, up);
       if (kind == KIND_DROPLET || kind == KIND_ICE) {
-        p.life = 0.0;
-      } else if (kind == KIND_SPARK || kind == KIND_CHIP) {
-        if (vn < 0.0) { v = (v - up * vn) * 0.6 - up * (vn * 0.3); }
+        // Falling back into the water / onto the ground ends it; on the way up it has only just been thrown.
+        if (vn < 0.0 && hh < floor) { p.life = 0.0; }
       } else {
-        if (vn < 0.0) { v -= up * vn; }
+        if (kind == KIND_SPARK || kind == KIND_CHIP) {
+          if (vn < 0.0) { v = (v - up * vn) * 0.6 - up * (vn * 0.3); }
+        } else if (vn < 0.0) {
+          v -= up * vn;
+        }
+        pos += up * (floor + p.size - hh);
       }
-      pos += up * (floor + p.size - hh);
     }
     p.vel = v;
     p.pos = pos;

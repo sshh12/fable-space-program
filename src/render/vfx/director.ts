@@ -446,7 +446,7 @@ export class EffectDirector {
         const B = this.data.explosion.partBurst;
         const hot = ev.cause === 'overheat' || ev.cause === 'explosion';
         this.burst(out, pos, vd.vel, Math.round(B.sparks * (hot ? 1 : 0.35)), B.debris, 1, seed);
-        if (hot) out.fireballs.push({ pos, vel: vd.vel, energy: B.energy, seed });
+        if (ev.cause === 'overheat') out.fireballs.push({ pos, vel: vd.vel, energy: B.energy, seed });
         break;
       }
       case 'explosion': {
@@ -476,7 +476,7 @@ export class EffectDirector {
           out.emitters.push({
             kind: 'droplet',
             shape,
-            pos: v3.addScaled(pos, up, 0.1),
+            pos: v3.addScaled(pos, up, 0.25),
             axis: up,
             radius: r,
             vel: v3.scale(horizontal, 0.5),

@@ -172,6 +172,8 @@ export interface VfxData {
     luminance: number;
     flashEfficacy: number;
     flashTime: number;
+    /** Luminous intensity of a burning fireball per unit of luminance x cross-section. */
+    lightEfficacy: number;
     color: Vec3Tuple;
     smokeAlbedo: Vec3Tuple;
     partBurst: { energy: number; sparks: number; debris: number };
@@ -319,6 +321,7 @@ const ROOT: Schema = {
     luminance: 'n',
     flashEfficacy: 'n',
     flashTime: 'p',
+    lightEfficacy: 'n',
     color: 'c',
     smokeAlbedo: 'c',
     partBurst: { energy: 'p', sparks: 'n', debris: 'n' },

@@ -7,15 +7,20 @@
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
+import { ChuteSystem } from './chutes';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
 import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
 import { loadVfxData, type VfxData } from './data';
 import { EffectDirector } from './director';
-import { EffectDomain, type DomainFrame } from './domain';
+import { applyRebase, EffectDomain, type DomainFrame } from './domain';
+import { FireballRenderer } from './fireball';
 import { ParticleSystem } from './particles';
+import { PlasmaRenderer } from './plasma';
 import { plumeLightIntensity } from './plumeModel';
 import { PlumeRenderer, type PlacedCluster, type PlumeSlice } from './plumes';
 import { SmokeSystem } from './smoke';
+import { FoamRenderer } from './splash';
+import { TrailSystem } from './trail';
 import { VolumePass, type VolumeItem } from './volumes';
 
 export const VFX_FEATURE_ID = 'vfx';
@@ -83,6 +88,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let particles: ParticleSystem;
   let director: EffectDirector;
   let smoke: SmokeSystem;
+  let trails: TrailSystem;
+  let plasma: PlasmaRenderer;
+  let fireballs: FireballRenderer;
+  let chutes: ChuteSystem;
+  let foam: FoamRenderer;
   const domain = new EffectDomain();
 
   let effectTime = 0;
@@ -155,6 +165,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       particles = new ParticleSystem(c, common, data.particles.pool, data.particles.maxSpawnPerFrame);
       director = new EffectDirector(c.defs, data);
       smoke = new SmokeSystem(c, common, data);
+      trails = new TrailSystem(c, common, data);
+      plasma = new PlasmaRenderer(c, common, data);
+      fireballs = new FireballRenderer(c, common, data);
+      chutes = new ChuteSystem(c, common, data);
+      foam = new FoamRenderer(c, common, data);
     },
 
     prepare(frame) {
@@ -187,6 +202,9 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       plumes.update(placed, noiseTime);
       plumeLights(candidates);
       common.setProbe(PROBE_PAD, smoke.update(frame, placed, effectTime, simDt));
+      trails.update(frame, placed, effectTime);
+      plasma.update(frame, effectTime, noiseTime);
+      candidates.push(...plasma.lights);
 
       // ---- effect domain, director, particles
       const g = common.globals;
@@ -199,17 +217,24 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         if (dom.reset) {
           particles.clear();
           director.reset();
+          fireballs.clear();
+          chutes.clear();
+          foam.clear();
         } else if (dom.rebase) {
           const rb = dom.rebase;
-          director.rebase((p) => ({
-            x: rb.A[0] * p.x + rb.A[1] * p.y + rb.A[2] * p.z + rb.a.x,
-            y: rb.A[3] * p.x + rb.A[4] * p.y + rb.A[5] * p.z + rb.a.y,
-            z: rb.A[6] * p.x + rb.A[7] * p.y + rb.A[8] * p.z + rb.a.z,
-          }));
+          director.rebase((p) => applyRebase(rb, p, v3.zero()).p);
+          fireballs.rebase(rb);
+          chutes.rebase(rb);
+          foam.rebase(rb);
         }
         const d = dom;
         const out = director.update(frame, d, placed, effectTime, simDt);
         for (const e of out.emitters) particles.emit(e);
+        for (const f of out.fireballs) fireballs.spawn(f, effectTime);
+        for (const sp of out.splashes) foam.spawn(sp, effectTime);
+        foam.update(frame, effectTime);
+        const floorLevel = out.water !== null || out.ground !== null ? Math.max(out.water ?? -1e30, out.ground ?? -1e30) : null;
+        for (const e of chutes.update(frame, d, effectTime, simDt, floorLevel)) particles.emit(e);
         particles.prepare(frame, effectTime, d.rebase, depthUsable);
 
         const originRel = v3.sub(d.originRoot, frame.camera.positionRoot);
@@ -257,6 +282,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           const intensity: Vec3Tuple = [f.color[0] * f.intensity * k, f.color[1] * f.intensity * k, f.color[2] * f.intensity * k];
           candidates.push({ power: lum(intensity), light: { kind: 'point', posRelCam: v3.add(originRel, quat.rotate(d.q, f.pos)), intensity, range: f.range } });
         }
+        fireballs.update(frame, d, effectTime, simDt, density);
+        candidates.push(...fireballs.lights);
         stats.ground = out.ground ?? NaN;
       }
 
@@ -290,6 +317,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       stats.particles = particles.alive;
       stats.spawned = particles.spawnedTotal;
       stats.smoke = smoke.active() ? 1 : 0;
+      stats.trailSegments = trails.segments;
+      stats.plasma = plasma.count;
+      stats.fireballs = fireballs.count;
+      stats.canopies = chutes.canopyCount;
+      stats.foam = foam.count;
       stats.smokeSource = smoke.sourceRate;
       ctx.perf.counter('vfx.plumes', plumes.instanceCount);
       ctx.perf.counter('vfx.particles', particles.alive);
@@ -301,18 +333,29 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       particles.compute(frame, encoder);
     },
 
+    drawShadow(_frame, pass, cascade) {
+      chutes.drawShadow(pass, cascade);
+    },
+
+    drawGBuffer(_frame, pass) {
+      chutes.drawGBuffer(pass);
+    },
+
     preTransparent(frame, encoder) {
       const items: VolumeItem[] = [];
       for (let i = 0; i < plumes.instanceCount; i++) {
         const index = i;
         items.push({ distance: plumes.distance(i), draw: (pass) => plumes.draw(pass, index) });
       }
+      items.push(...trails.items(), ...plasma.items(), ...fireballs.items());
       volumes.run(frame, encoder, items, smoke);
       stats.volumes = volumes.drawn;
     },
 
     drawTransparent(_frame, pass) {
       volumes.draw(pass);
+      foam.draw(pass);
+      chutes.drawLines(pass);
       particles.draw(pass);
     },
 
@@ -323,6 +366,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       volumes.dispose();
       particles.dispose();
       smoke.dispose();
+      trails.dispose();
+      plasma.dispose();
+      fireballs.dispose();
+      chutes.dispose();
+      foam.dispose();
       common.dispose();
     },
 

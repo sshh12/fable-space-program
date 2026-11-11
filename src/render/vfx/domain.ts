@@ -53,6 +53,11 @@ export interface DomainFrame {
   altitude: number;
 }
 
+/** Apply a re-base to a position and a velocity stored in domain coordinates. */
+export function applyRebase(rb: DomainRebase, p: Vec3, v: Vec3): { p: Vec3; v: Vec3 } {
+  return { p: v3.add(mat3.mulVec(rb.A, p), rb.a), v: v3.add(v3.add(mat3.mulVec(rb.A, v), mat3.mulVec(rb.B, p)), rb.b) };
+}
+
 /** Surface domain re-base distance and space domain re-base distance / speed. */
 export const SURFACE_REBASE = 3000;
 export const SPACE_REBASE = 2000;

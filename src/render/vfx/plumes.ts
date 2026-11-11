@@ -134,7 +134,7 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   // Afterburning with ambient air: a thin ring in the shear layer, then a turbulent flame brush downstream.
   let ox = cells.w;
   if (ox > 0.002) {
-    let ringW = 0.08 * re + 0.4 * g.mixing;
+    let ringW = 0.08 * re + 0.4 * g.mixing + 0.14 * max(g.rb - re, 0.0);
     let ring = exp(-sq((rr - (g.rb - 0.35 * g.mixing)) / ringW)) * sqrt(min(2.0, 0.25 * re / ringW));
     o.e += inst.shearColor.rgb * (k * ox * ring * smoothstep(0.0, 2.5 * re, xc) * exp(-xc / lens.x) * fil);
     let brush = exp(-sq(rr / (0.8 * g.rb))) * smoothstep(0.0, 0.25 * lens.y, xc) * exp(-xc / lens.y);
