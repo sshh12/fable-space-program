@@ -43,8 +43,9 @@ const FIELDS = [
 ] as const;
 
 test('deep-space star field, the Orion region and the Southern Cross at the dark-adapted automatic exposure', async ({ page, pageLog }) => {
-  // The night side of a low orbit with the planet not drawn: nothing lit is in view, so the exposure is the dark-adapted floor.
-  await openPage(page, '/labs/sky/?scene=lowOrbit&night=1&planet=0&parts=-impostors&hud=0');
+  // The night side of a low orbit with the planet not drawn (nor the sun behind it): nothing lit is in view, so the
+  // exposure is the dark-adapted floor.
+  await openPage(page, '/labs/sky/?scene=lowOrbit&night=1&planet=0&parts=-impostors,-sun,-flare&hud=0');
   await assertDiscreteGpu(page);
   const p = await vesselPos(page);
   await page.evaluate((pos) => window.__sky!.lookAtRaDec(266.4, -28.9, 70, pos), p);
@@ -78,6 +79,43 @@ test('deep-space star field, the Orion region and the Southern Cross at the dark
     }
     console.log(`${f.name} at EV100 ${ev.toFixed(1)}: ${peaks16} star images above 16/255, ${peaks128} above 128/255; mean level ${shot.stats.meanLuma.toFixed(1)}/255`);
     expect(peaks16).toBeGreaterThan(1000);
+    if (f.name === 'orion-closeup') {
+      // The constellation reads: Betelgeuse (V 0.5) and Rigel (V 0.1) are images several times wider than a 5th
+      // magnitude star, and they keep their colour around the burned-out core (orange / blue-white).
+      const D = Math.PI / 180;
+      const at = async (ra: number, dec: number) => (await page.evaluate((d) => window.__sky!.projectDir(d), { x: Math.cos(dec * D) * Math.cos(ra * D), y: Math.cos(dec * D) * Math.sin(ra * D), z: Math.sin(dec * D) }))!;
+      const image = (c: { x: number; y: number }): { area: number; rgb: [number, number, number] } => {
+        let area = 0;
+        const rgb: [number, number, number] = [0, 0, 0];
+        let n = 0;
+        for (let dy = -20; dy <= 20; dy++) {
+          for (let dx = -20; dx <= 20; dx++) {
+            const x = Math.round(c.x) + dx;
+            const y = Math.round(c.y) + dy;
+            if (x < 0 || y < 0 || x >= png.width || y >= png.height || dx * dx + dy * dy > 400) continue;
+            const v = luma(y * png.width + x);
+            if (v >= 128) area++;
+            // The skirt: between 48 and 200/255, where the display has not burned the colour out.
+            if (v >= 48 && v < 200 && dx * dx + dy * dy <= 100) {
+              for (let k = 0; k < 3; k++) rgb[k] = rgb[k]! + png.data[(y * png.width + x) * 4 + k]!;
+              n++;
+            }
+          }
+        }
+        return { area, rgb: [rgb[0] / Math.max(n, 1), rgb[1] / Math.max(n, 1), rgb[2] / Math.max(n, 1)] };
+      };
+      const betelgeuse = image(await at(88.7929, 7.4071));
+      const rigel = image(await at(78.6345, -8.2016));
+      const mintaka = image(await at(83.0017, -0.2991));
+      console.log(
+        `Orion: Betelgeuse ${betelgeuse.area} px at 128/255 or more, skirt (${betelgeuse.rgb.map((v) => v.toFixed(0)).join(', ')}); Rigel ${rigel.area} px, skirt (${rigel.rgb.map((v) => v.toFixed(0)).join(', ')}); Mintaka (V 2.2) ${mintaka.area} px`,
+      );
+      expect(betelgeuse.area).toBeGreaterThan(60);
+      expect(rigel.area).toBeGreaterThan(60);
+      expect(rigel.area).toBeGreaterThan(1.5 * mintaka.area);
+      expect(betelgeuse.rgb[0] / betelgeuse.rgb[2]).toBeGreaterThan(1.3);
+      expect(rigel.rgb[2] / rigel.rgb[0]).toBeGreaterThan(1.0);
+    }
   }
   await expectNoErrors(page, pageLog);
 });
@@ -92,7 +130,7 @@ test('Milky Way memory options side by side: 1024 colour only, the default (1024
   const crops: Record<string, PNG[]> = {};
   let ev: number | null = null;
   for (const v of variants) {
-    await openPage(page, `/labs/sky/?scene=lowOrbit&night=1&planet=0&parts=-impostors&hud=0${v.query}`);
+    await openPage(page, `/labs/sky/?scene=lowOrbit&night=1&planet=0&parts=-impostors,-sun,-flare&hud=0${v.query}`);
     await assertDiscreteGpu(page);
     const p = await vesselPos(page);
     await page.evaluate((pos) => window.__sky!.lookAtRaDec(266.4, -28.9, 70, pos), p);

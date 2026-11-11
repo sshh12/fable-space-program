@@ -45,13 +45,13 @@ export interface BladeDef {
 
 /** The seven blades of this iris (a fixed table: manufacturing spread of 20-30 % in strength and length). */
 export const BLADES: readonly BladeDef[] = [
-  { angle: 0.012, amplitude: 1.0, length: 0.065, fan: 0.042 },
-  { angle: -0.021, amplitude: 0.72, length: 0.058, fan: 0.056 },
-  { angle: 0.03, amplitude: 1.24, length: 0.074, fan: 0.038 },
-  { angle: -0.008, amplitude: 0.86, length: 0.067, fan: 0.05 },
-  { angle: 0.019, amplitude: 1.12, length: 0.07, fan: 0.045 },
-  { angle: -0.027, amplitude: 0.78, length: 0.05, fan: 0.06 },
-  { angle: 0.004, amplitude: 1.05, length: 0.063, fan: 0.041 },
+  { angle: 0.012, amplitude: 1.0, length: 0.073, fan: 0.042 },
+  { angle: -0.021, amplitude: 0.72, length: 0.065, fan: 0.056 },
+  { angle: 0.03, amplitude: 1.24, length: 0.076, fan: 0.038 },
+  { angle: -0.008, amplitude: 0.86, length: 0.075, fan: 0.05 },
+  { angle: 0.019, amplitude: 1.12, length: 0.074, fan: 0.045 },
+  { angle: -0.027, amplitude: 0.78, length: 0.053, fan: 0.06 },
+  { angle: 0.004, amplitude: 1.05, length: 0.07, fan: 0.041 },
 ];
 
 export interface StarburstDef {
@@ -71,12 +71,12 @@ export interface StarburstDef {
 }
 
 export const STARBURST: StarburstDef = {
-  coreEnergy: 0.0022,
+  coreEnergy: 0.0028,
   coreAngle: 0.012,
-  skirtEnergy: 0.0037,
+  skirtEnergy: 0.003,
   skirtAngle: 0.02,
-  veilEnergy: 0.0012,
-  rayEnergy: 0.002,
+  veilEnergy: 0.0006,
+  rayEnergy: 0.0028,
   rayKnee: 0.03,
   rayDiscSigma: 0.5,
 };

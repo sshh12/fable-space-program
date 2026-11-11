@@ -333,16 +333,8 @@ test('crescent Moon (regolith, the tile set\'s albedo map): the far image has th
   }
   const diameters = [1.5, 3, 4.5, 6.2, 9, 12.5, 18, 26, 40];
   const distances = distancesFor(radius, diameters);
-  await placeCamera(page, distances[distances.length - 1]!, 125, true);
-  await page.waitForFunction(
-    () => {
-      const e = window.__lab!.renderer.exposureInfo();
-      return Math.abs(e.ev100 - e.targetEv100) < 0.02;
-    },
-    undefined,
-    { timeout: 60_000 },
-  );
-  const ev = await page.evaluate(() => window.__lab!.renderer.exposureInfo().ev100);
+  // Hand-set to the exposure of sunlit regolith (a crescent this small is too little of the frame for the meter).
+  const ev = 13.5;
   const { labels } = await approachSheet(page, distances, 125, ev, true, 'crescent-moon-approach-sheet.png');
   console.log(`crescent Moon at EV100 ${ev.toFixed(2)}, tiles (3x zoom, left to right):\n  ${labels.join('\n  ')}`);
   await expectNoErrors(page, pageLog);

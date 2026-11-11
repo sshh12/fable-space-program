@@ -27,7 +27,7 @@
  * Specs drive the rest through window.__sky (this page) and window.__lab (the lab app).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { MeshData, RenderContext, RenderFeature } from '@/core/contracts/render';
+import type { FrameContext, MeshData, RenderContext, RenderFeature } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -352,6 +352,49 @@ function createHeavyFeature(): RenderFeature {
 /** Vertical optical depth of the lab's cloud layer at full coverage (a lab value: thick stratocumulus). */
 const LAB_CLOUD_TAU = 20;
 
+/**
+ * What the stand-in cloud shell puts on the screen this frame, estimated on a 16 x 9 grid of view rays with the
+ * shell's own model (CPU): the fraction of the frame its sunlit part covers and the mean luminance there (cd/m^2).
+ */
+function cloudDeckOnScreen(frame: FrameContext, world: CloudWorld, bodyIndex: number, layerRadius: number, longitudeOffset: number): { luminance: number; coverage: number } {
+  const pose = frame.bodies[bodyIndex]!;
+  const c = pose.centerRelCam;
+  const tanY = Math.tan(frame.camera.fovY / 2);
+  const tanX = (tanY * frame.renderSize[0]) / frame.renderSize[1];
+  const right = { x: frame.view[0]!, y: frame.view[4]!, z: frame.view[8]! };
+  const up = { x: frame.view[1]!, y: frame.view[5]!, z: frame.view[9]! };
+  const fwd = { x: -frame.view[2]!, y: -frame.view[6]!, z: -frame.view[10]! };
+  const outside = v3.len(c) > layerRadius;
+  const map = world.pixels;
+  let covered = 0;
+  let light = 0;
+  const nx = 16;
+  const ny = 9;
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = (((i + 0.5) / nx) * 2 - 1) * tanX;
+      const y = (1 - ((j + 0.5) / ny) * 2) * tanY;
+      const d = v3.normalize(v3.add(fwd, v3.add(v3.scale(right, x), v3.scale(up, y))));
+      const b = v3.dot(d, c);
+      const det = b * b - v3.lenSq(c) + layerRadius * layerRadius;
+      if (det < 0) continue;
+      const t = outside ? b - Math.sqrt(det) : b + Math.sqrt(det);
+      if (t <= 0) continue;
+      const n = v3.normalize(v3.sub(v3.scale(d, t), c));
+      const muS = v3.dot(n, pose.sunDir);
+      if (muS <= 0) continue;
+      const nf = quat.rotateInv(pose.qFixedToRoot, n);
+      const u = (((Math.atan2(nf.y, nf.x) + longitudeOffset) / (2 * Math.PI) + 0.5) % 1 + 1) % 1;
+      const v = 0.5 - Math.asin(Math.max(-1, Math.min(1, nf.z))) / Math.PI;
+      const tau = (map.data[(Math.min(map.height - 1, Math.floor(v * map.height)) * map.width + Math.min(map.width - 1, Math.floor(u * map.width))) * 4]! / 255) * LAB_CLOUD_TAU;
+      const alpha = 1 - Math.exp(-tau / Math.max(Math.abs(v3.dot(d, n)), 0.02));
+      covered += alpha;
+      light += (alpha * frame.sun.illuminance * muS * ((0.15 * tau) / (2 + 0.15 * tau))) / Math.PI;
+    }
+  }
+  return covered > 0 ? { luminance: light / covered, coverage: covered / (nx * ny) } : { luminance: 0, coverage: 0 };
+}
+
 interface CloudWorld {
   bodyId: string;
   /** The tile set's cloud coverage map (r = coverage) as decoded, for 'clouds.coverageMap'. */
@@ -501,7 +544,15 @@ function createCloudLayerFeature(world: CloudWorld): RenderFeature {
         const body = s.bodies.find((b) => b.id === world.bodyId);
         if (v && body) longitudeOffset = cloudOffsetUnder(world.pixels, v3.normalize(quat.rotateInv(body.qFixedToRoot, v3.sub(v.rRoot, body.rRoot))));
       }
-      coreOf(ctx).setCloudShadowParams({ far: bodyIndex >= 0 ? { bodyIndex, layerRadius: def.radius + 0.5 * (cl.bottomAltitude + cl.topAltitude), opticalDepth: LAB_CLOUD_TAU, longitudeOffset: longitudeOffset ?? 0 } : null });
+      const layerRadius = def.radius + 0.5 * (cl.bottomAltitude + cl.topAltitude);
+      coreOf(ctx).setCloudShadowParams({ far: bodyIndex >= 0 ? { bodyIndex, layerRadius, opticalDepth: LAB_CLOUD_TAU, longitudeOffset: longitudeOffset ?? 0 } : null });
+      if (bodyIndex >= 0) {
+        // The exposure meter's histogram is taken before the transparent pass, where this stand-in draws its shell:
+        // it tells the meter what a cloud renderer's deck would have put there (a sunlit cloud deck sets the
+        // exposure of a daylight orbit).
+        const deck = cloudDeckOnScreen(frame, world, bodyIndex, layerRadius, longitudeOffset ?? 0);
+        if (deck.coverage > 0) coreOf(ctx).addEmissiveHint(deck.luminance, deck.coverage);
+      }
       ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([bodyIndex, 0, 0, 0]));
     },
     drawTransparent(_frame, pass) {

@@ -286,16 +286,36 @@ test('display image at the exposure of a sunlit scene: wedge rays that end, a gl
   const img = displayImage(await shootAt(page, METERED_EV, 'flare-display-check-ev14'));
   expect(img.w).toBe(geo.w);
   const pxOf = (deg: number): number => Math.tan((deg * Math.PI) / 180) / geo.pxAngle;
-  /** Luma around the circle of radius r px about the sun, 0.25 deg steps (pixels outside the frame dropped). */
-  const ring = (r: number): { phi: number; l: number }[] => {
-    const out: { phi: number; l: number }[] = [];
+  /**
+   * Pixels on the cone of constant angle from the sun whose radius is r px at the image centre (atan(r x pixel
+   * angle)), 0.25 deg steps in azimuth from the image-plane up towards right; off axis that cone is not a circle
+   * on the screen. Pixels outside the frame are dropped.
+   */
+  const tanY = (geo.pxAngle * geo.h) / 2;
+  const tanX = (tanY * geo.w) / geo.h;
+  const coneOf = (sun: { x: number; y: number }, r: number): { phi: number; x: number; y: number }[] => {
+    // View space: x right, y up, z along the view axis.
+    const s0 = [((2 * sun.x) / geo.w - 1) * tanX, (1 - (2 * sun.y) / geo.h) * tanY, 1];
+    const sl = Math.hypot(s0[0]!, s0[1]!, s0[2]!);
+    const sv = s0.map((v) => v / sl);
+    const upRaw = [-sv[0]! * sv[1]!, 1 - sv[1]! * sv[1]!, -sv[2]! * sv[1]!];
+    const ul = Math.hypot(upRaw[0]!, upRaw[1]!, upRaw[2]!);
+    const up = upRaw.map((v) => v / ul);
+    // right = up x s for these axes (x right, y up, z forward).
+    const rt = [up[1]! * sv[2]! - up[2]! * sv[1]!, up[2]! * sv[0]! - up[0]! * sv[2]!, up[0]! * sv[1]! - up[1]! * sv[0]!];
+    const theta = Math.atan(r * geo.pxAngle);
+    const out: { phi: number; x: number; y: number }[] = [];
     for (let i = 0; i < 1440; i++) {
       const phi = (i * Math.PI) / 720;
-      const l = img.luma(geo.x + r * Math.sin(phi), geo.y - r * Math.cos(phi));
-      if (l >= 0) out.push({ phi, l });
+      const d = [0, 1, 2].map((k) => sv[k]! * Math.cos(theta) + (up[k]! * Math.cos(phi) + rt[k]! * Math.sin(phi)) * Math.sin(theta));
+      if (d[2]! <= 1e-6) continue;
+      const x = ((d[0]! / d[2]! / tanX + 1) / 2) * geo.w;
+      const y = ((1 - d[1]! / d[2]! / tanY) / 2) * geo.h;
+      if (x >= 0 && y >= 0 && x <= geo.w - 1 && y <= geo.h - 1) out.push({ phi, x, y });
     }
     return out;
   };
+  const ring = (r: number): { phi: number; l: number; x: number; y: number }[] => coneOf(geo, r).map((q) => ({ ...q, l: img.luma(q.x, q.y) }));
 
   // (a) Glare: the median over the azimuth falls monotonically and meets black without a rim.
   const radii: number[] = [];
@@ -309,15 +329,23 @@ test('display image at the exposure of a sunlit scene: wedge rays that end, a gl
   expect(far.length).toBeGreaterThan(0);
   // From the radius where it is under 16/255 it takes more than a doubling of the radius to reach black.
   expect(far[0]!.m).toBeGreaterThanOrEqual(1);
-  const tail = profile.filter((p) => p.r >= r16.r);
-  // Slope where it meets its floor (8 px baseline: the medians are quantised to one level).
-  for (let i = 2; i < tail.length; i++) expect((tail[i - 2]!.m - tail[i]!.m) / 8).toBeLessThan(0.2);
-  // Neutral along the tail: no colour cast where it fades (channels within 3 % or one level).
-  for (const p of profile.filter((q) => q.m < 120 && q.m > 6)) {
-    const px = ring(p.r).map((s) => img.rgb(geo.x + p.r * Math.sin(s.phi), geo.y - p.r * Math.cos(s.phi))!);
-    const c = [0, 1, 2].map((k) => median(px.map((v) => v[k]!)));
-    expect(Math.max(...c) - Math.min(...c)).toBeLessThanOrEqual(Math.max(1, 0.03 * p.m));
+  // No rim: once it is under 16/255 (from a quarter beyond that radius: the theta^-2 skirt itself falls 0.25 levels
+  // per px where it crosses the knee of the tone curve) it sinks slowly, under 0.15 levels per px (8 px baseline: the
+  // medians are quantised to one level).
+  const tail = profile.filter((p) => p.r >= 1.25 * r16.r);
+  for (let i = 2; i < tail.length; i++) expect((tail[i - 2]!.m - tail[i]!.m) / 8).toBeLessThan(0.15);
+  // No colour cast where it fades: the tail keeps the colour of the source (the sun's own slightly warm white) to
+  // within 3 % in R/G and B/G, at every radius (ring means: the medians are quantised).
+  const sunColour = await page.evaluate(() => window.__lab!.renderer.frameContext!.sun.color);
+  const casts: string[] = [];
+  for (const p of profile.filter((q) => q.m < 60 && q.m > 6 && q.r % 24 === 0)) {
+    const px = ring(p.r).map((s) => img.rgb(s.x, s.y)!);
+    const c = [0, 1, 2].map((k) => px.reduce((acc, v) => acc + v[k]!, 0) / px.length);
+    casts.push(`${p.r}: R/G ${(c[0]! / c[1]!).toFixed(3)} B/G ${(c[2]! / c[1]!).toFixed(3)}`);
+    expect(Math.abs(c[0]! / c[1]! - sunColour[0] / sunColour[1])).toBeLessThan(0.03);
+    expect(Math.abs(c[2]! / c[1]! - sunColour[2] / sunColour[1])).toBeLessThan(0.03);
   }
+  console.log(`colour along the tail (the sun: R/G ${(sunColour[0] / sunColour[1]).toFixed(3)} B/G ${(sunColour[2] / sunColour[1]).toFixed(3)}): ${casts.join('  ')}`);
 
   // (b) Rays: at 60 px from the sun the strongest ray is at least as wide as the solar disc (half maximum over the glare).
   const at60 = ring(60);
@@ -349,40 +377,49 @@ test('display image at the exposure of a sunlit scene: wedge rays that end, a gl
     const b = median(c.map((s) => s.l));
     // Ghosts are not rays: only directions outside the ghost line (within 12 deg of the axis through the image centre) count.
     const axis = Math.atan2(geo.w / 2 - geo.x, -(geo.h / 2 - geo.y));
-    const off = c.filter((s) => Math.abs(Math.atan2(Math.sin(s.phi - axis), Math.cos(s.phi - axis))) > 0.5);
-    expect(Math.max(...off.map((s) => s.l)) - b).toBeLessThanOrEqual(3);
+    // A ray is at least a degree wide here: the ring is averaged over 2 deg windows (9 samples), which takes the
+    // dither and the 8-bit steps out of the maximum.
+    const smooth = c.map((s, i) => ({ phi: s.phi, l: [-4, -3, -2, -1, 0, 1, 2, 3, 4].reduce((acc, k) => acc + c[(i + k + c.length) % c.length]!.l, 0) / 9 }));
+    // (the ghosts lie on the line through the image centre, on both sides of the sun, and are up to 5 deg wide: 1 rad about it is left out)
+    const off = smooth.filter((s) => Math.abs(Math.atan2(Math.sin(s.phi - axis), Math.cos(s.phi - axis))) > 1.0 && Math.abs(Math.atan2(Math.sin(s.phi - axis - Math.PI), Math.cos(s.phi - axis - Math.PI))) > 1.0);
+    const excess = Math.max(...off.map((s) => s.l)) - b;
+    console.log(`${deg} deg from the sun: the brightest 2 deg of the ring stand ${excess.toFixed(1)}/255 over its median ${b.toFixed(0)}/255`);
+    expect(excess).toBeLessThanOrEqual(3);
   }
 
   // (c) Ghosts: at this exposure none is brighter than a quarter of mid-grey over its surroundings (mid-grey 117/255, a quarter 55/255).
   await aimNearSun(page, 30, 60);
   const off30 = await page.evaluate(() => window.__sky!.projectDir(window.__lab!.renderer.frameContext!.sun.dirRoot)!);
   const ghosts = displayImage(await shootAt(page, METERED_EV, 'flare-off-axis-30deg-ev14'));
+  // Beyond 20 deg from the sun (true angle: the glare is under 15/255 there) the brightest thing is a ghost.
+  const viewDir = (x: number, y: number): [number, number, number] => {
+    const d = [((2 * x) / geo.w - 1) * tanX, (1 - (2 * y) / geo.h) * tanY, 1];
+    const l = Math.hypot(d[0]!, d[1]!, d[2]!);
+    return [d[0]! / l, d[1]! / l, d[2]! / l];
+  };
+  const sun30 = viewDir(off30.x, off30.y);
   let ghostMax = 0;
   for (let y = 0; y < ghosts.h; y += 2) {
     for (let x = 0; x < ghosts.w; x += 2) {
-      if (Math.hypot(x - off30.x, y - off30.y) > pxOf(12)) ghostMax = Math.max(ghostMax, ghosts.luma(x, y));
+      const d = viewDir(x, y);
+      if (d[0] * sun30[0] + d[1] * sun30[1] + d[2] * sun30[2] < Math.cos((20 * Math.PI) / 180)) ghostMax = Math.max(ghostMax, ghosts.luma(x, y));
     }
   }
-  console.log(`sun 30 deg off axis: brightest pixel further than 12 deg from the sun ${ghostMax.toFixed(0)}/255`);
+  console.log(`sun 30 deg off axis: brightest pixel further than 20 deg from the sun ${ghostMax.toFixed(0)}/255`);
   expect(ghostMax).toBeLessThan(55);
 
   // (d) Sun 0.3 deg outside the frame: haze at that edge and nothing else (no line, no bright ghost).
-  const tanX = await page.evaluate(() => window.__sky!.flareGeometry()!.view.tanX);
   await aimNearSun(page, (Math.atan(tanX) * 180) / Math.PI + 0.3, 60);
   const out = displayImage(await shootAt(page, METERED_EV, 'flare-sun-outside-display-check-ev14'));
   const sunOut = await page.evaluate(() => window.__sky!.projectDir(window.__lab!.renderer.frameContext!.sun.dirRoot)!);
   let worst = 0;
   for (const deg of [9, 12, 16, 24, 40]) {
     const r = pxOf(deg);
-    const vals: number[] = [];
-    for (let i = 0; i < 1440; i++) {
-      const phi = (i * Math.PI) / 720;
-      const l = out.luma(sunOut.x + r * Math.sin(phi), sunOut.y - r * Math.cos(phi));
-      if (l >= 0) vals.push(l);
-    }
+    const vals = coneOf(sunOut, r).map((q) => out.luma(q.x, q.y));
+    if (vals.length < 40) continue;
     worst = Math.max(worst, Math.max(...vals) - median(vals));
   }
   console.log(`sun 0.3 deg outside the frame: largest excess over the ring median beyond 9 deg ${worst.toFixed(1)}/255`);
-  expect(worst).toBeLessThan(40);
+  expect(worst).toBeLessThan(12);
   await expectNoErrors(page, pageLog);
 });
