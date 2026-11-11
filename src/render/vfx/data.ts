@@ -124,11 +124,14 @@ export interface VfxData {
     turbulence: number;
     wind: { headingDeg: number; speed: number };
     dissipation: number;
-    smokeRate: number;
-    steamRate: number;
+    /** Seconds the volume lives on after the last source. */
+    linger: number;
     deluge: { duration: number; ramp: number };
-    smoke: { albedo: Vec3Tuple; extinction: number };
-    steam: { albedo: Vec3Tuple; extinction: number };
+    /** Extinction cross-section produced per kilogram of exhaust reaching the pad, m^2/kg. */
+    smoke: { albedo: Vec3Tuple; yield: number };
+    steam: { albedo: Vec3Tuple; yield: number };
+    /** Glow of gas fresh from the plume. */
+    glow: { color: Vec3Tuple; luminance: number };
     steps: number;
     erosion: number;
     erosionScale: number;
@@ -271,11 +274,11 @@ const ROOT: Schema = {
     turbulence: 'n',
     wind: { headingDeg: 'n', speed: 'n' },
     dissipation: 'n',
-    smokeRate: 'n',
-    steamRate: 'n',
+    linger: 'p',
     deluge: { duration: 'p', ramp: 'p' },
-    smoke: { albedo: 'c', extinction: 'p' },
-    steam: { albedo: 'c', extinction: 'p' },
+    smoke: { albedo: 'c', yield: 'n' },
+    steam: { albedo: 'c', yield: 'n' },
+    glow: { color: 'c', luminance: 'n' },
     steps: 'i',
     erosion: 'u',
     erosionScale: 'p',

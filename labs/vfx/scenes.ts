@@ -168,8 +168,8 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
           const ext = yExtent(defs, parts);
           const z0 = earth.clampHeight - ext.yMin;
           const v = sim.addVessel({ id: 'stack', parts, enu: { x: 0, y: 0, z: z0 }, qVesToEnu: noseUp(90), aero: stillAir(101325, 1.2, 288), situation: 'prelaunch', boundingRadius: 110 });
-          const boosters = sim.engines(v).filter((e) => e.def.plume === sim.engines(v)[0]!.def.plume && e.part.def === sim.engines(v).find((x) => x.def.thrustVac > 3e6)?.part.def);
-          const boosterDef = boosters[0]!.part.def;
+          const boosterDef = sim.engines(v).find((x) => x.def.thrustVac > 3e6)!.part.def;
+          const boosters = sim.engines(v, boosterDef);
           const tIgnite = num(q, 'ignite', 1);
           const tLift = tIgnite + 3;
           let ignited = false;

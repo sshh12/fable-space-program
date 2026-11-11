@@ -390,7 +390,7 @@ export function createLabSky(sim: LabSim, defs: DefLibrary): LabSky {
       ctx.device.queue.writeBuffer(skyUniform, 0, new Float32Array([420 * k, 1150 * k, 3800 * k, 0, 5200 * k, 6400 * k, 7800 * k, 0]));
       // 'env.sh9': constant irradiance (lux) plus a little more from above; airless bodies get the sunlit ground's bounce.
       const sh = new Float32Array(36);
-      const sky: Vec3Tuple = hasAir ? [9000 * k + 0.002, 12500 * k + 0.002, 18000 * k + 0.003] : [1, 1, 1].map(() => 1400 * Math.max(sinEl, 0)) as Vec3Tuple;
+      const sky: Vec3Tuple = hasAir ? [11000 * k + 0.002, 12500 * k + 0.002, 15000 * k + 0.003] : [1, 1, 1].map(() => 1400 * Math.max(sinEl, 0)) as Vec3Tuple;
       for (let ch = 0; ch < 3; ch++) sh[ch] = sky[ch]! / 0.282095;
       ctx.device.queue.writeBuffer(shBuffer, 0, sh);
       ctx.device.queue.writeTexture({ texture: irradiance }, new Uint16Array([f32ToF16(hasAir ? sky[0] : 0), f32ToF16(hasAir ? sky[1] : 0), f32ToF16(hasAir ? sky[2] : 0), f32ToF16(1)]), {}, [1, 1, 1]);

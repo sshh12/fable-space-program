@@ -8,13 +8,14 @@
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
-import { G, PROBE_FOCUS, VfxCommon } from './common';
+import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
 import { loadVfxData, type VfxData } from './data';
 import { EffectDirector } from './director';
 import { EffectDomain, type DomainFrame } from './domain';
 import { ParticleSystem } from './particles';
 import { plumeLightIntensity } from './plumeModel';
 import { PlumeRenderer, type PlacedCluster, type PlumeSlice } from './plumes';
+import { SmokeSystem } from './smoke';
 import { VolumePass, type VolumeItem } from './volumes';
 
 export const VFX_FEATURE_ID = 'vfx';
@@ -81,6 +82,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let volumes: VolumePass;
   let particles: ParticleSystem;
   let director: EffectDirector;
+  let smoke: SmokeSystem;
   const domain = new EffectDomain();
 
   let effectTime = 0;
@@ -152,6 +154,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       volumes = new VolumePass(c, common);
       particles = new ParticleSystem(c, common, data.particles.pool, data.particles.maxSpawnPerFrame);
       director = new EffectDirector(c.defs, data);
+      smoke = new SmokeSystem(c, common, data);
     },
 
     prepare(frame) {
@@ -183,6 +186,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       }
       plumes.update(placed, noiseTime);
       plumeLights(candidates);
+      common.setProbe(PROBE_PAD, smoke.update(frame, placed, effectTime, simDt));
 
       // ---- effect domain, director, particles
       const g = common.globals;
@@ -285,12 +289,15 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       stats.lights = myLights.length;
       stats.particles = particles.alive;
       stats.spawned = particles.spawnedTotal;
+      stats.smoke = smoke.active() ? 1 : 0;
+      stats.smokeSource = smoke.sourceRate;
       ctx.perf.counter('vfx.plumes', plumes.instanceCount);
       ctx.perf.counter('vfx.particles', particles.alive);
     },
 
     compute(frame, encoder) {
       common.runProbes(frame, encoder);
+      smoke.compute(frame, encoder);
       particles.compute(frame, encoder);
     },
 
@@ -300,7 +307,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         const index = i;
         items.push({ distance: plumes.distance(i), draw: (pass) => plumes.draw(pass, index) });
       }
-      volumes.run(frame, encoder, items, null);
+      volumes.run(frame, encoder, items, smoke);
       stats.volumes = volumes.drawn;
     },
 
@@ -315,6 +322,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       plumes.dispose();
       volumes.dispose();
       particles.dispose();
+      smoke.dispose();
       common.dispose();
     },
 
