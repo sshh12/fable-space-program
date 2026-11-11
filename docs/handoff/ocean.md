@@ -334,7 +334,7 @@ error in `chunksLighting.ts`, a material uniform of the wrong size); the specs h
 | LEO: broad glint at the mirror point, Cox-Munk width within 20 % | half maximum at tan(beta) 0.1582 vs Cox-Munk 0.1588 (ratio 0.996, the Gaussian lobe; GGX gave 1.14); in facet-slope space over fully covered discs (64/64 cells) of radius 0.08 / 0.12 / 0.16: centroid 0.0014 / 0.0032 / 0.0038 (bound 0.02), paraboloid peak 0.0043 / 0.011 / 0.018 (bound 0.03) | glint.spec |
 | 2 m: glitter path toward the sun, same function | centroid 644.1 px vs the sun's 640.0; coefficient of variation in the path 13.2 (discrete sparkles; 2.2 with the smooth lobe); 0.00 % of the energy off the path | glint.spec |
 | Sun on the horizon: no pixel above HDR_MAX, nanPixels 0 | elevations +0.4, 0, -0.3 deg at EV 13 and 4: max 56,220 (saturating glint at EV 4), NaN 0 | glint.spec |
-| Whitecaps calibrated (new) | resolved foam coverage looking down from 150 m at 9 places: 0.095-0.135 %, mean 0.117 %, against the far water's statistical 0.117 % (ratio 1.00) | foam.spec |
+| Whitecaps calibrated, in patches, not repeating | from 150 m at 9 places with frozen time (texels without history: breaker, trail, old-foam proxy) mean 0.152 % (ratio 1.30 to the far water's statistical 0.117 %), after 12 s of running sea 0.136 % (ratio 1.16); area-weighted median patch 3.9 m2 or more in most frames, 3.3 patches of 1 m2 or more per frame; correlation at the 72.5 m cascade period at most 0.048 (bound 0.05: the thinnest-foam frame is close to it) | foam.spec |
 | No swimming when the camera translates | 64 planet-fixed points from two camera positions 3 km apart: worst 0.53 mm; 250 m away and back: bit-identical | stability.spec |
 | Triplanar blend zones not visible | not applicable: one planet-fixed chart (section 9.1) | - |
 | Correct motion vectors | TAA / single-frame gradient energy, camera flying 5 m/s over a frozen sea 0.64 of still; animated sea 0.88 with the reactive mask, 0.41 without | stability.spec |
@@ -345,8 +345,32 @@ error in `chunksLighting.ts`, a material uniform of the wrong size); the specs h
 ### 8.1 Performance (ARCHITECTURE 17.1: 0.9 splashdown, 0.8 pad, 0.3 ascent 10-40 km, 0.1 LEO; brief: FFT < 0.3, near pass < 0.6)
 
 2560 x 1440, `perf=features`, governor off, ~7 ms ballast. Six 240-frame windows per scene, the MEDIAN of the
-windows' p99 (and p50) is reported; each scene is asserted against its own line. Latest run (2026-11-11 06:15,
-vfx and terrain functional suites in the other two GPU slots), ms:
+windows' p99 (and p50) is reported; each scene is asserted against its own line.
+
+**After visual round 1 (2026-11-11 14:45, three other agents' GPU suites in the other slots): the budget is
+FAILED, at p50 as well as p99.** ms:
+
+| Scene | ocean p99 / p50 | water pass p99 / p50 | FFT p99 | line | result |
+|---|---|---|---|---|---|
+| splashdown (3 m, capsule, wake) | 1.66 / 0.96 | 1.55 / 0.87 | 0.07 | 0.9 (near pass 0.6) | FAILS (p50 too) |
+| coast, 60 m above the shelf | 1.56 / 1.14 | 1.46 / 1.05 | 0.06 | 0.8 (near pass 0.6) | FAILS (p50 too) |
+| 10 km above the sea | 1.17 / 0.71 | 1.00 / 0.63 | 0.15 | 0.3 | FAILS (p50 too) |
+| LEO | 0 / 0 | 0 | 0 | 0.1 | holds |
+
+`brdf_water` share of the core's lighting (with minus without the ocean feature): LEO +0.20 p50, 10 km +0.24 p50
+(round 0: +0.13 / +0.13); the deferred far sheet now pays for the glitter cells, the Gaussian lobe, the far-wave
+bank (two noises + ten components) and a third slick family.
+
+Round 0 for comparison (06:15): splashdown water pass p50 0.41, coast 0.51, 10 km ocean p50 0.30. The forward
+fragment shader roughly doubled in cost with round 1 (glitter, foam map read and lace, the bed from the scene and
+caustics, vessel reflections, cloud lighting, the seabed beside objects); one probe-free cut was made (the vessel
+reflection march only for rays that pass near the hull: splashdown water pass p50 1.04 -> 0.87). The cost has
+not been profiled term by term in round 1; that is the first task of the next round (probe runs with terms
+switched off, as in section 8.1 of round 0: likely candidates are the 4x-anisotropic cascade/capillary/long-wave
+taps, the foam map's B-spline taps, the refraction and vertical seabed marches over the shelf, and register
+pressure of one very large fragment shader). Nothing was loosened: the perf spec fails as it stands.
+
+Round 0 table (06:15, vfx and terrain suites in the other two slots):
 
 | Scene | ocean p99 / p50 | water pass p99 / p50 | FFT (quiet windows) | line | result |
 |---|---|---|---|---|---|
@@ -422,11 +446,9 @@ the rest (G-buffer and depth reads, amplitudes, ripples, wake, field, transmitta
 
 ## 11. Known weaknesses (plainly)
 
-- **Perf p99 on this shared GPU fails** the splashdown, coast and 10 km lines (section 8.1); p50 is under the
-  near-pass line at splashdown (0.41) and the coast (0.51) and at the ascent line at 10 km (0.30 total). The
-  10 km scene has no margin: between fadeStart 15 km and the 10 km camera the forward pass shades the whole
-  detail region. Further cuts would be the shadow lookup (0.04 ms, the core's PCSS on every lit pixel; a water
-  pixel cannot know whether a caster is near without the core's help) and the swell evaluation per pixel.
+- **Perf FAILS after visual round 1** (section 8.1): the forward water pass costs p50 0.87 ms at splashdown and
+  1.05 ms at the coast against the 0.6 ms near-pass line, the 10 km scene 0.71 ms against 0.3. The round-1
+  features roughly doubled the fragment cost; profiling and cutting it is the first job of the next round.
 - **Haze from 10 km to orbit**: the lab's single-scattering sky (Rayleigh + Mie of `bodies/earth.json` plus an
   isotropic multiple-scattering estimate) and the real atmosphere of the integration lab
   (`out/screens/integration/water-climb-all-14km.png`, `-400km.png`) both lay a bright blue-grey veil over the
@@ -544,3 +566,17 @@ reference photographs in `out/qa/ref/` (sea-surface-close, earth-orbit-ocean).
   `atmosphere-clouds-5` (a deleted diagnostic spec: deletion stands).
 - `ocean-5` / `ocean-6` (swell data): done by the lead during the round (1ccd5e0, 9d48042).
 - No new request filed: everything else was inside the ocean's paths.
+
+### 14.3 Measured at the end of round 1
+
+- Functional suite (`tests/browser/ocean`, 32 specs): 31 passed in the full run at 14:16-14:27 with the lead's new
+  swell; the foam spec, which failed there on a 72.5 m correlation of 0.077 in its thinnest frame, passes after the
+  lace re-tiling and the criterion change (correlation at most 0.048). Glint: LEO half-width ratio 0.996, glitter
+  path coefficient of variation 13.2, no NaN, max 56,219 below HDR_MAX with the sun on the horizon. Hand-over:
+  fadeStart worst 0.33 %, band worst 0.12 %, beyond fadeEnd bit-identical, climb ring worst 1.21. Swell agreement
+  with the eight-component data: worst 0.02 mm, damping zone worst 4.0 cm. TAA: animated sea 0.85 of still.
+- Perf: FAILS (section 8.1).
+- Honest score of the round-1 picture against the reference photographs (the critics' lenses, 10 = photograph):
+  photo about 6, artifact about 6. Better than round 0 everywhere a critic looked (glitter instead of a grey plate,
+  no worm lines, structure from 3 km to orbit, a continuous shelf, surf, foam with holes and edges), but not yet 8:
+  the haze-veiled glint from 10 km up, compact whitecaps, soft caustics, and a perf budget that is broken.
