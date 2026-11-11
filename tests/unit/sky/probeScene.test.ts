@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
+import type { FrameContext } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { v3, type Vec3 } from '@/core/math';
 import { planetshineAt } from '@/render/core';
-import { bruteForceIrradiance, planetshineWeights, projectSh, referenceRadiance, type ReferenceScene } from '@/render/sky/probeScene';
+import { bruteForceIrradiance, planetshineWeights, probeGroundSphere, probeSceneOf, projectSh, referenceRadiance, PROBE_MIN_GROUND_HEIGHT, type ReferenceScene } from '@/render/sky/probeScene';
 import { shIrradiance } from '@/render/sky/photometry';
 
 let defs: DefLibrary;
@@ -41,6 +42,64 @@ describe('probe weights against the render core planetshine (no light counted tw
     const v = s.vessels[0]!.rRoot;
     const w = planetshineWeights(v, v, s, defs);
     for (const b of s.bodies) if (b.id !== s.starId) expect(w.get(b.id)).toBe(1);
+  });
+});
+
+describe('probe ground sphere (the active vessel\'s body)', () => {
+  const R = 1_737_400;
+  it('is the reference sphere in orbit, also over depressions and mountains', () => {
+    for (const radar of [100e3, 100e3 + 9000, 100e3 - 5000]) {
+      const g = probeGroundSphere(R, R + 100e3, radar);
+      expect(g.radius).toBe(R);
+      expect(g.height).toBeCloseTo(100e3, 6);
+    }
+  });
+  it('goes through the actual ground below the datum, never closer than PROBE_MIN_GROUND_HEIGHT', () => {
+    // Landed at the site 1907.8 m below the datum, origin 3 m above the ground (radar 0 once held, 3 m hovering).
+    const landed = probeGroundSphere(R, R - 1904.8, 3);
+    expect(landed.radius).toBeCloseTo(R - 1907.8, 6);
+    expect(landed.height).toBeCloseTo(3, 6);
+    expect(probeGroundSphere(R, R - 1904.8, 0).height).toBeCloseTo(PROBE_MIN_GROUND_HEIGHT, 6);
+    // A capsule floating with its origin 0.5 m under the sea surface (radar 0).
+    expect(probeGroundSphere(6_371_000, 6_371_000 - 0.5, 0).height).toBeCloseTo(PROBE_MIN_GROUND_HEIGHT, 6);
+  });
+  it('is continuous through a descent over ground below the datum', () => {
+    const ground = -1907.8;
+    let prev: { radius: number; height: number } | null = null;
+    for (let h = 3000; h >= ground + 3; h -= 0.25) {
+      const g = probeGroundSphere(R, R + h, h - ground);
+      expect(g.height).toBeGreaterThan(0);
+      expect(g.radius).toBeLessThanOrEqual(R);
+      expect(g.radius).toBeGreaterThanOrEqual(R + ground - 1e-6);
+      if (prev) expect(Math.abs(g.radius - prev.radius)).toBeLessThan(0.25 + 1e-6);
+      prev = g;
+    }
+  });
+  it('lights the ground-facing side at a landing site below the datum as just above the datum (CPU reference)', () => {
+    const s = snap('lunarSurface');
+    const v = s.vessels[0]!;
+    const moon = s.bodies.find((b) => b.id === v.bodyId)!;
+    const R0 = defs.bodies[v.bodyId]!.radius;
+    const up = v3.normalize(v3.sub(v.rRoot, moon.rRoot));
+    const north = v3.normalize(v3.anyOrthogonal(up));
+    const sunDir = v3.normalize(v3.add(v3.scale(up, Math.sin(0.6)), v3.scale(north, Math.cos(0.6))));
+    const irradianceDown = (altitude: number, radar: number): number => {
+      const rRoot = v3.addScaled(moon.rRoot, up, R0 + altitude);
+      const snapshot: SimSnapshot = { ...s, vessels: s.vessels.map((x) => (x.id === v.id ? { ...x, rRoot } : x)), readouts: { ...s.readouts, altitudeRadar: radar } };
+      const frame = { snapshot, camera: { positionRoot: rRoot }, sun: { bodyId: s.starId }, bodies: s.bodies.map((b) => ({ id: b.id, cameraAltitude: v3.dist(rRoot, b.rRoot) - (defs.bodies[b.id]?.radius ?? 0) })) } as unknown as FrameContext;
+      const scene = probeSceneOf(frame, defs);
+      const ref: ReferenceScene = {
+        bodies: scene.bodies.map((b) => ({ centre: b.centre, radius: b.radius, weight: b.weight, albedo: [0.12, 0.12, 0.12], sunDir: b.id === v.bodyId ? sunDir : s.bodies.find((x) => x.id === b.id)!.sunDir })),
+        sunE: [130_000, 130_000, 130_000],
+        sunRadius: 0.00465,
+        background: [0, 0, 0],
+      };
+      return bruteForceIrradiance((d) => referenceRadiance(ref, d), v3.neg(up), 200)[0];
+    };
+    const datum = irradianceDown(30, 30);
+    const site = irradianceDown(-1904.8, 3);
+    expect(datum).toBeGreaterThan(0.12 * 130_000 * Math.sin(0.6) * 0.95);
+    expect(Math.abs(site / datum - 1)).toBeLessThan(0.02);
   });
 });
 

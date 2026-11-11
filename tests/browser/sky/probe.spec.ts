@@ -89,6 +89,49 @@ test('SH9 irradiance in low orbit matches a brute-force integration of the analy
   await expectNoErrors(page, pageLog);
 });
 
+test('the probe keeps the ground at a landing site below the datum and through a descent across it', async ({ page, pageLog }) => {
+  // The mission's lunar landing site lies 1907.8 m below the Moon's reference radius (moon-tranquility
+  // recommendedTarget). The vessel descends over that ground from 2.5 km above the datum to resting on it
+  // (origin 3 m above the ground, radar altitude 3 m); the ground-facing irradiance must stay that of the
+  // sunlit regolith all the way (the reference-sphere probe lost the ground below the datum: 8.5e-4 lux).
+  await openPage(page, '/labs/sky/?scene=lunarSurface&planet=0&probeAlbedo=mean&hud=0');
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 4, 300_000);
+  const site = -1907.8;
+  const cases = [
+    { label: '+30 m over the datum', alt: 30, ground: 0 },
+    { label: '+2500 m, site ground', alt: 2500, ground: site },
+    { label: '+1000 m, site ground', alt: 1000, ground: site },
+    { label: '+1 m, site ground', alt: 1, ground: site },
+    { label: '-1 m, site ground', alt: -1, ground: site },
+    { label: '-1000 m, site ground', alt: -1000, ground: site },
+    { label: 'landed at the site', alt: site + 3, ground: site },
+  ];
+  const results: { label: string; down: number; brute: number; up: number }[] = [];
+  for (const c of cases) {
+    await page.evaluate((x) => {
+      window.__sky!.setVesselAltitude(x.alt, x.ground);
+      window.__sky!.setSunForVessel({ elevationDeg: 35, azimuthDeg: 100 });
+      window.__lab!.camera.spec = { type: 'orbit', target: { vesselId: 'active' }, yaw: 0, pitch: 0.3, distance: 8 };
+    }, c);
+    await probeCycles(page);
+    const m = await measure(page);
+    const d = m.normals.find((n) => n.name === 'earth-facing')!;
+    const u = m.normals.find((n) => n.name === 'space-facing')!;
+    results.push({ label: c.label, down: d.gpu, brute: d.brute, up: u.gpu });
+    console.log(`${c.label.padEnd(22)} ground-facing irradiance: probe ${d.gpu.toExponential(4)} lux, brute force ${d.brute.toExponential(4)} lux; sky-facing ${u.gpu.toExponential(3)} lux`);
+  }
+  const ref = results[0]!;
+  for (const r of results) {
+    expect(Math.abs(r.down / ref.down - 1)).toBeLessThan(0.1);
+    expect(Math.abs(r.down / r.brute - 1)).toBeLessThan(0.1);
+  }
+  // Continuous through the datum (+1 m / -1 m): no step in the bounce light.
+  const at = (l: string) => results.find((r) => r.label === l)!;
+  expect(Math.abs(at('-1 m, site ground').down / at('+1 m, site ground').down - 1)).toBeLessThan(0.01);
+  await expectNoErrors(page, pageLog);
+});
+
 test('probe energy responds to the day and night side and to altitude', async ({ page, pageLog }) => {
   await openPage(page, '/labs/sky/?scene=lowOrbit&planet=0&probeAlbedo=mean&hud=0');
   await assertDiscreteGpu(page);

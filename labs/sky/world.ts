@@ -1,7 +1,8 @@
 /**
  * Sky lab world helpers: a Sim wrapper that pins the star along a chosen direction and/or moves the active
  * vessel to another altitude above its body (so the probe can be measured at any altitude and in any
- * lighting without depending on the FakeSim's date).
+ * lighting without depending on the FakeSim's date), over ground at a chosen elevation (the read-outs' radar
+ * altitude follows, as the real sim reports it).
  */
 import type { BodySnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
 import { v3, type Vec3 } from '@/core/math';
@@ -11,21 +12,27 @@ export interface WorldOverrides {
   sunDir: ((s: SimSnapshot) => Vec3 | null) | null;
   /** Altitude (m) of the active vessel above its body's reference radius, or null to keep the sim's. */
   vesselAltitude: number | null;
+  /**
+   * Elevation (m) of the ground under the active vessel relative to the reference radius (with vesselAltitude):
+   * readouts.altitudeRadar = max(0, vesselAltitude - groundAltitude). 0 = ground on the datum.
+   */
+  groundAltitude: number;
 }
 
 export function withOverrides(inner: Sim, o: WorldOverrides): Sim {
   const fix = (s: SimSnapshot): SimSnapshot => {
     let out = s;
     if (o.vesselAltitude !== null) {
+      const h = o.vesselAltitude;
       const vessels = out.vessels.map((v) => {
         if (v.id !== out.activeVesselId) return v;
         const body = out.bodies.find((b) => b.id === v.bodyId)!;
         const radius = inner.defs.bodies[v.bodyId]!.radius;
         const up = v3.normalize(v3.sub(v.rRoot, body.rRoot));
-        const r = v3.scale(up, radius + o.vesselAltitude!);
+        const r = v3.scale(up, radius + h);
         return { ...v, r, rRoot: v3.add(body.rRoot, r) };
       });
-      out = { ...out, vessels };
+      out = { ...out, vessels, readouts: { ...out.readouts, altitudeAsl: h, altitudeRadar: Math.max(0, h - o.groundAltitude) } };
     }
     const dir = o.sunDir?.(out);
     if (dir) {

@@ -16,8 +16,12 @@ export interface ProbeBody {
   frameIndex: number;
   /** Body centre relative to the probe, ROOT axes (m). */
   centre: Vec3;
+  /**
+   * Radius of the sphere that stands for the body's ground in the probe (m): the reference radius, except for
+   * the active vessel's own body where the ground under the vessel lies below it (probeGroundSphere).
+   */
   radius: number;
-  /** Probe altitude above the body's reference radius (m, float64). */
+  /** Probe height above that sphere (m, float64; > 0). */
   altitude: number;
   /** Share of the body's light that the probe carries: 1 - the render core's planetshine weight for it. */
   weight: number;
@@ -60,6 +64,27 @@ export function planetshineWeights(point: Vec3, cameraRoot: Vec3, snapshot: SimS
   return out;
 }
 
+/** Height of the probe point above the ground it stands on, at least (m): the vessel's origin is above its lowest contact point. */
+export const PROBE_MIN_GROUND_HEIGHT = 1;
+
+/**
+ * The sphere that stands for a body's ground in the probe seen from `distance` (m) from its centre, with the
+ * ground `groundHeight` (m) below the probe point (the active vessel's radar altitude), and the probe's height
+ * above it. The reference sphere, except where the ground lies below it (a crater floor or basin under a
+ * landing site, a capsule floating with its origin under the sea surface): there the sphere goes through the
+ * actual ground while the probe is below the reference radius, and rises back to the reference radius as the
+ * probe climbs above it, reaching it once the probe is as high above the reference radius as the ground lies
+ * below it. Continuous in position; in orbit (higher than any depression is deep) it is the reference sphere.
+ * The probe is never less than PROBE_MIN_GROUND_HEIGHT above the sphere.
+ */
+export function probeGroundSphere(referenceRadius: number, distance: number, groundHeight: number): { radius: number; height: number } {
+  const hg = Math.max(groundHeight, PROBE_MIN_GROUND_HEIGHT);
+  const hd = distance - referenceRadius;
+  const depth = Math.max(0, hg - hd);
+  const lower = Math.max(0, depth - Math.max(hd, 0));
+  return { radius: referenceRadius - lower, height: hd + lower };
+}
+
 /** The probe scene for this frame: the active vessel (or the camera when there is none) and the frame's first bodies. */
 export function probeSceneOf(frame: FrameContext, defs: DefLibrary): ProbeScene {
   const s = frame.snapshot;
@@ -77,7 +102,10 @@ export function probeSceneOf(frame: FrameContext, defs: DefLibrary): ProbeScene 
     if (!def || pose.id === frame.sun.bodyId) continue;
     const snap = s.bodies.find((b) => b.id === pose.id)!;
     const centre = v3.sub(snap.rRoot, positionRoot);
-    bodies.push({ id: pose.id, frameIndex: i, centre, radius: def.radius, altitude: v3.len(centre) - def.radius, weight: 1 - (shine.get(pose.id) ?? 0) });
+    const distance = v3.len(centre);
+    // The read-outs' radar altitude is the active vessel's height above the terrain or sea of its central body.
+    const ground = vessel && vessel.bodyId === pose.id ? probeGroundSphere(def.radius, distance, s.readouts.altitudeRadar) : { radius: def.radius, height: distance - def.radius };
+    bodies.push({ id: pose.id, frameIndex: i, centre, radius: ground.radius, altitude: ground.height, weight: 1 - (shine.get(pose.id) ?? 0) });
     if (def.render.atmosphere && pose.cameraAltitude < skyViewAlt) {
       skyViewAlt = pose.cameraAltitude;
       skyViewBody = i;

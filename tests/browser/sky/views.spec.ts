@@ -21,6 +21,7 @@ test('deep-space star field at long exposure and the Orion region', async ({ pag
   const p = await vesselPos(page);
   await page.evaluate((pos) => window.__sky!.lookAtRaDec(266.4, -28.9, 70, pos), p);
   await settle(page);
+  if ((await page.evaluate(() => window.__sky!.sky!.status().milkyWayFaceSize)) !== 1024) throw new Error('Milky Way cube not at the default 1024 per face');
   assertRealImage((await saveScreenshot(page, 'sky', 'starfield-deep-space-ev-5')).stats, 'star field', { minNonBlack: 0.02, minStd: 2, minBuckets: 20 });
   await page.evaluate((pos) => window.__sky!.lookAtRaDec(83.8, -1.0, 24, pos), p);
   await settle(page);
@@ -28,6 +29,21 @@ test('deep-space star field at long exposure and the Orion region', async ({ pag
   await page.evaluate((pos) => window.__sky!.lookAtRaDec(187, -60, 30, pos), p);
   await settle(page);
   await saveScreenshot(page, 'sky', 'crux-centaurus-ev-5');
+  await expectNoErrors(page, pageLog);
+});
+
+test('Milky Way cube at the full baked 2048 per face (the default keeps 1024 in VRAM): comparison views', async ({ page, pageLog }) => {
+  // Evidence for the VRAM decision (hand-off): the same views as above with the finest mip uploaded.
+  await openPage(page, '/labs/sky/?scene=translunar&planet=0&parts=-impostors&ev=-5&hud=0&mwSize=2048');
+  await assertDiscreteGpu(page);
+  const p = await vesselPos(page);
+  await page.evaluate((pos) => window.__sky!.lookAtRaDec(266.4, -28.9, 70, pos), p);
+  await settle(page);
+  if ((await page.evaluate(() => window.__sky!.sky!.status().milkyWayFaceSize)) !== 2048) throw new Error('Milky Way cube not at 2048 per face');
+  await saveScreenshot(page, 'sky', 'starfield-deep-space-ev-5-mw2048');
+  await page.evaluate((pos) => window.__sky!.lookAtRaDec(83.8, -1.0, 24, pos), p);
+  await settle(page);
+  await saveScreenshot(page, 'sky', 'orion-closeup-ev-5-mw2048');
   await expectNoErrors(page, pageLog);
 });
 
@@ -62,7 +78,8 @@ for (const v of [
   // environment alone: the lit Earth (with the lab's cloud layer) or Moon below, black space above.
   { name: 'pbr-spheres-leo-day', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&hud=0&orbit=0,14,8', sun: { elevationDeg: 40, azimuthDeg: 100, fromCamera: true } as const },
   { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&hud=0&orbit=0,14,8&night=1', sun: null },
-  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as const },
+  // At the mission's landing site, 1907.8 m below the Moon's reference radius, resting on the ground (origin 3 m up).
+  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8&valt=-1904.8&ground=-1907.8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as const },
 ]) {
   test(`PBR spheres lit by the probe: ${v.name}`, async ({ page, pageLog }) => {
     await openPage(page, v.url);

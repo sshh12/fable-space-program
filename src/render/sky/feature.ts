@@ -15,7 +15,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import { STAR_RECORD_FLOATS, type SkyManifest } from '@/core/contracts/sky';
 import { mat4, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
 import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type SceneBindings, type Tracked } from '@/render/core';
-import { GHOSTS, STARBURST, STARBURST_MAX_ANGLE, ghostIntegral, haloIntegral, spikeIntegral } from './flare';
+import { GHOSTS, STARBURST, coneNdcBounds, flareNormalisation, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
 import { impostorSigmaPx, impostorWeight, IMPOSTOR_NONE_PX, lambertSphereIlluminance, pixelSolidAngle, STAR_PSF_SIGMA_PX, STAR_QUAD_SIGMAS } from './photometry';
 import { EnvironmentProbe, type ProbeState } from './probe';
 import { BACKGROUND_FS, FLARE_VIS_CS, FLARE_WGSL, IMPOSTOR_WGSL, STARS_WGSL } from './shaders';
@@ -39,7 +39,16 @@ export interface SkyFeatureOptions extends Partial<SkyParts> {
    * baked (default), or BodyDef.render.meanColor everywhere (labs compare the probe with a CPU reference).
    */
   probeAlbedo?: 'tileset' | 'meanColor';
+  /**
+   * Largest face size (texels) of the Milky Way cube kept in VRAM (default MILKY_WAY_FACE_SIZE): finer mips of
+   * the baked chain are not uploaded. 1024 keeps the sky within its 0.1 GB line of ARCHITECTURE 17; the baked
+   * 2048 costs 134 MB instead of 34 MB.
+   */
+  milkyWayFaceSize?: number;
 }
+
+/** Default largest Milky Way face size in VRAM (texels): 0.088 deg per texel at the face centre. */
+export const MILKY_WAY_FACE_SIZE = 1024;
 
 export interface ImpostorInfo {
   bodyId: string;
@@ -51,10 +60,14 @@ export interface ImpostorInfo {
 }
 
 export interface FlareStateInfo {
-  /** Visible fraction of the solar disc (depth samples), cloud transmittance at the sun, 1 when the sun centre is in view. */
+  /**
+   * Visible fraction of the solar disc (depth samples on screen, body spheres off screen), cloud transmittance at
+   * the sun, 1 when the sun centre is in view, the lens hood's transmission (1 inside the frame).
+   */
   visible: number;
   cloud: number;
   inView: number;
+  hood: number;
   transmittance: Vec3Tuple;
 }
 
@@ -62,6 +75,8 @@ export interface SkyStatus {
   manifest: SkyManifest | null;
   starsLoaded: boolean;
   milkyWayLoaded: boolean;
+  /** Face size of the Milky Way cube in VRAM (texels; 0 until loaded). */
+  milkyWayFaceSize: number;
   error: string | null;
   /** Whether the flare was drawn in the last frame. */
   flareDrawn: boolean;
@@ -107,7 +122,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   let ctx: RenderContext;
   let defs: DefLibrary;
   let device: GPUDevice;
-  const status: SkyStatus = { manifest: null, starsLoaded: false, milkyWayLoaded: false, error: null, flareDrawn: false };
+  const status: SkyStatus = { manifest: null, starsLoaded: false, milkyWayLoaded: false, milkyWayFaceSize: 0, error: null, flareDrawn: false };
   let pendingLoads = 0;
   let catalogue: StarCatalogue | null = null;
 
@@ -151,7 +166,7 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
   let visGroup: GPUBindGroup;
   let visPipeline: Tracked<GPUComputePipeline>;
   let flareThisFrame = false;
-  let flareNorm = { halo: 1, spikes: 1, ghosts: GHOSTS.map(() => 1), sunRadius: -1 };
+  let flareHood = 0;
 
   let probe: EnvironmentProbe;
   let probeThisFrame = false;
@@ -188,11 +203,16 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     status.starsLoaded = true;
 
     const mw = manifest.milkyWay;
+    // Mips of the baked chain finer than the VRAM face-size limit are skipped (each level halves the face).
+    const limit = options.milkyWayFaceSize ?? MILKY_WAY_FACE_SIZE;
+    let skip = 0;
+    while (mw.faceSize >> skip > limit && skip < mw.mipLevels - 1) skip++;
+    const faceSize = mw.faceSize >> skip;
     const tex = coreOf(ctx).createTextureChecked({
       label: `${id}.milkyWay`,
       format: 'rgb9e5ufloat',
-      size: [mw.faceSize, mw.faceSize, 6],
-      mipLevelCount: mw.mipLevels,
+      size: [faceSize, faceSize, 6],
+      mipLevelCount: mw.mipLevels - skip,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
     const layout = faceMipLayout(mw.faceSize, mw.mipLevels);
@@ -203,28 +223,18 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       if (!fres.ok) throw new Error(`${base}/${mw.files[face]}: HTTP ${fres.status}`);
       const data = await fres.arrayBuffer();
       if (data.byteLength !== bytes) throw new Error(`${mw.files[face]}: ${data.byteLength} bytes, expected ${bytes} (full mip chain of ${mw.faceSize}^2 rgb9e5)`);
-      for (let l = 0; l < mw.mipLevels; l++) {
+      for (let l = skip; l < mw.mipLevels; l++) {
         const { offset, size } = layout[l]!;
-        device.queue.writeTexture({ texture: tex, mipLevel: l, origin: [0, 0, face] }, data, { offset, bytesPerRow: size * 4, rowsPerImage: size }, [size, size, 1]);
+        device.queue.writeTexture({ texture: tex, mipLevel: l - skip, origin: [0, 0, face] }, data, { offset, bytesPerRow: size * 4, rowsPerImage: size }, [size, size, 1]);
       }
     }
     milkyWayTex = tex;
     milkyWay = tex.createView({ dimension: 'cube' });
     status.milkyWayLoaded = true;
+    status.milkyWayFaceSize = faceSize;
     rebuildSkyGroup();
-    probe.setMilkyWay(milkyWay, mw.luminanceScale, mw.faceSize);
+    probe.setMilkyWay(milkyWay, mw.luminanceScale, faceSize);
   }
-
-  /** Normalisation of the flare profiles (numeric integrals over the drawn domain); depends on the sun's size. */
-  const normaliseFlare = (sunRadius: number): void => {
-    if (Math.abs(sunRadius - flareNorm.sunRadius) < 1e-3 * sunRadius) return;
-    flareNorm = {
-      halo: 1 / haloIntegral(STARBURST.haloCore, sunRadius),
-      spikes: 1 / spikeIntegral(STARBURST.spikeWidth, STARBURST.spikeLength, 1, sunRadius),
-      ghosts: GHOSTS.map((g) => 1 / ghostIntegral(g)),
-      sunRadius,
-    };
-  };
 
   const prepareSky = (frame: FrameContext, tanX: number, tanY: number): void => {
     const [w, h] = frame.renderSize;
@@ -310,25 +320,41 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
 
   const prepareFlare = (frame: FrameContext, tanX: number, tanY: number): void => {
     flareThisFrame = false;
+    flareHood = 0;
     if (!parts.flare || frame.camera.kind === 'interior' || frame.sun.illuminance <= 0) return;
     const [cx, cy, cw] = clipOfDirection(mat4.mul(frame.projUnjittered, frame.view), frame.sun.dirRoot);
     if (cw <= 0) return;
     const sx = cx / cw;
     const sy = cy / cw;
-    const rs = frame.sun.angularRadius;
-    if (Math.abs(sx) > 1 + Math.tan(rs) / tanX || Math.abs(sy) > 1 + Math.tan(rs) / tanY) return;
-    normaliseFlare(rs);
+    // A sun outside the frame still lights the lens through the hood (flare.ts hoodTransmission); NDC x tan = image-plane tangent.
+    const hood = hoodTransmission(Math.max(0, (Math.abs(sx) - 1) * tanX), Math.max(0, (Math.abs(sy) - 1) * tanY));
+    if (hood <= 0) return;
+    flareHood = hood;
+    // Profiles normalised over the sphere outside the disc (numeric integrals; depend on the sun's size).
+    const flareNorm = flareNormalisation(frame.sun.angularRadius);
+    const view: FlareView = {
+      right: { x: frame.view[0]!, y: frame.view[4]!, z: frame.view[8]! },
+      up: { x: frame.view[1]!, y: frame.view[5]!, z: frame.view[9]! },
+      forward: { x: -frame.view[2]!, y: -frame.view[6]!, z: -frame.view[10]! },
+      tanX,
+      tanY,
+    };
+    // Ghost bounds grow by 1.5 px: the jitter moves the profile on screen by up to half a pixel.
+    const [w, h] = frame.renderSize;
+    const mx = 3 / w;
+    const my = 3 / h;
     const u = new Uint32Array(flareData);
     const f = new Float32Array(flareData);
     f.fill(0);
     u[0] = FLARE_TERMS;
-    f.set([sx, sy, 0, 0], 4);
+    f.set([hood, 0, 0, 0], 4);
     const t = (k: number, a: number[], b: number[], c2: number[], q: number[]): void => f.set([...a, ...b, ...c2, ...q], 8 + k * 16);
-    const half = Math.tan(STARBURST_MAX_ANGLE);
-    t(0, [0, 0, STARBURST.spikeLength, 0], [...STARBURST.tint, STARBURST.energy], [STARBURST.haloCore, flareNorm.halo, STARBURST.spikeWidth, flareNorm.spikes], [half / tanX, half / tanY, 0, 0]);
+    t(0, [0, 0, STARBURST.spikeLength, 0], [...STARBURST.tint, STARBURST.energy], [STARBURST.haloCore, flareNorm.halo, STARBURST.spikeWidth, flareNorm.spikes], [-1, -1, 1, 1]);
     GHOSTS.forEach((g, i) => {
-      const extent = Math.tan(g.radius * (1 + g.chroma) * 1.05);
-      t(1 + i, [sx * g.k, sy * g.k, g.radius, 1], [...g.tint, g.energy], [g.softness, flareNorm.ghosts[i]!, g.chroma, 0], [extent / tanX, extent / tanY, 0, 0]);
+      const gx = sx * g.k;
+      const gy = sy * g.k;
+      const [x0, y0, x1, y1] = coneNdcBounds(view, ndcDirection(view, gx, gy), ghostSupport(g));
+      t(1 + i, [gx, gy, g.radius, 1], [...g.tint, g.energy], [g.softness, flareNorm.ghosts[i]!, g.chroma, 0], [x0 - mx, y0 - my, x1 + mx, y1 + my]);
     });
     device.queue.writeBuffer(flareBuf, 0, flareData);
     // Transmittance towards the sun at the camera: the nearest frame body with an atmosphere shell around the camera.
@@ -569,8 +595,9 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     readProbeSh: () => probe.readSh(),
     readProbeFace: (face, mip = 0) => probe.readFace(face, mip),
     async readFlareState() {
+      const hood = flareHood;
       const f = await readStorage(flareState, 32);
-      return { visible: f[0]!, cloud: f[1]!, inView: f[2]!, transmittance: [f[4]!, f[5]!, f[6]!] };
+      return { visible: f[0]!, cloud: f[1]!, inView: f[2]!, hood, transmittance: [f[4]!, f[5]!, f[6]!] };
     },
   };
   return feature;

@@ -11,7 +11,7 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA, STARBURST_MAX_ANGLE } from './flare';
+import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
 import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
@@ -237,9 +237,11 @@ struct VOut {
 `;
 
 /**
- * Visible fraction of the solar disc: 64 Vogel-disc samples of 'scene.depth' over the disc (a sample outside
- * the render target counts as hidden), times the cloud transmittance 'clouds.screen'.a at the sun's
- * position where a cloud lies in front ('clouds.depth' < 3e38), times the atmosphere's transmittance towards
+ * Visible fraction of the solar disc: 64 Vogel-disc samples over the disc, each tested against 'scene.depth'
+ * where it falls inside the render target and against the frame bodies' reference spheres where it does not
+ * (the depth buffer does not cover it: a sun just outside the frame still lights the lens, unless a body hides
+ * it), times the cloud transmittance 'clouds.screen'.a at the sun's position where a cloud lies in front
+ * ('clouds.depth' < 3e38; off screen, at the nearest edge pixel), times the atmosphere's transmittance towards
  * the sun at the camera. Written to a storage buffer read by the flare shaders (no CPU readback).
  */
 export const FLARE_VIS_CS = (bindings: string): string => /* wgsl */ `
@@ -247,10 +249,24 @@ export const FLARE_VIS_CS = (bindings: string): string => /* wgsl */ `
 #include "atmosphere_common"
 ${bindings}
 struct FlareVisParams { atmo: vec4f }   // x = frame body index of the camera's atmosphere (-1 none), y = camera radius (m), z = mu of the sun there
-struct FlareState { visible: vec4f, transmittance: vec4f }  // visible.x = disc fraction, .y = cloud transmittance, .z = on-screen samples; transmittance.rgb
+struct FlareState { visible: vec4f, transmittance: vec4f }  // visible.x = disc fraction, .y = cloud transmittance, .z = 1 when the sun centre is on screen; transmittance.rgb
 @group(2) @binding(0) var<uniform> visParams: FlareVisParams;
 @group(2) @binding(1) var<storage, read_write> flareState: FlareState;
 var<workgroup> hits: array<f32, 64>;
+
+/// True when the ray from the camera along unit d meets the reference sphere of a non-star frame body that the
+/// camera is above (a camera below a body's datum sees its ground through 'scene.depth' only).
+fn bodyHides(d: vec3f) -> bool {
+  for (var i = 0u; i < frame.counts.x; i++) {
+    if ((bodyFlags(i) & BODY_FLAG_STAR) != 0u || frame.bodies[i].sunDir.w <= 0.0) { continue; }
+    let c = frame.bodies[i].center.xyz;
+    let R = frame.bodies[i].center.w;
+    if (dot(d, c) <= 0.0) { continue; }
+    let cr = cross(d, c);
+    if (dot(cr, cr) < R * R) { return true; }
+  }
+  return false;
+}
 
 @compute @workgroup_size(64) fn main(@builtin(local_invocation_index) li: u32) {
   let s = frame.sunDir.xyz;
@@ -264,16 +280,19 @@ var<workgroup> hits: array<f32, 64>;
   let phi = f32(li) * 2.39996323;
   let d = normalize(s + (e1 * cos(phi) + e2 * sin(phi)) * tan(r));
   let c = frame.viewProjUnjittered * vec4f(d, 0.0);
+  var onScreen = false;
   var h = 0.0;
   if (c.w > 0.0) {
     let ndc = c.xy / c.w;
     let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
     if (all(uv >= vec2f(0.0)) && all(uv < vec2f(1.0))) {
+      onScreen = true;
       let size = vec2f(textureDimensions(sceneDepthTex));
       let depth = textureLoad(sceneDepthTex, vec2i(uv * size), 0);
       h = select(0.0, 1.0, depth == 0.0);
     }
   }
+  if (!onScreen) { h = select(1.0, 0.0, bodyHides(d)); }
   hits[li] = h;
   workgroupBarrier();
   if (li == 0u) {
@@ -284,13 +303,13 @@ var<workgroup> hits: array<f32, 64>;
     let cc = frame.viewProjUnjittered * vec4f(s, 0.0);
     if (cc.w > 0.0) {
       let ndc = cc.xy / cc.w;
-      let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-      if (all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0))) {
-        inView = 1.0;
-        let cs = vec2i(textureDimensions(cloudsScreenTex));
-        let q = clamp(vec2i(uv * vec2f(cs)), vec2i(0), cs - 1);
-        if (textureLoad(cloudsDepthTex, q, 0).r < 3.0e38) { cloud = textureLoad(cloudsScreenTex, q, 0).a; }
-      }
+      let uvSun = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+      inView = select(0.0, 1.0, all(uvSun >= vec2f(0.0)) && all(uvSun <= vec2f(1.0)));
+      // A sun outside the frame: the cloud at the nearest edge pixel stands for the cloud in front of it.
+      let uv = clamp(uvSun, vec2f(0.0), vec2f(1.0));
+      let cs = vec2i(textureDimensions(cloudsScreenTex));
+      let q = clamp(vec2i(uv * vec2f(cs)), vec2i(0), cs - 1);
+      if (textureLoad(cloudsDepthTex, q, 0).r < 3.0e38) { cloud = textureLoad(cloudsScreenTex, q, 0).a; }
     }
     var t = vec3f(1.0);
     let bi = i32(visParams.atmo.x);
@@ -302,10 +321,13 @@ var<workgroup> hits: array<f32, 64>;
 `;
 
 /**
- * Lens flare in the transparent stage. Instance 0 = starburst + glare halo around the sun (6 diffraction
- * spikes of a hexagonal aperture, chromatic: spike length scales with wavelength), instances 1.. = ghosts
- * (soft discs on the line from the sun through the image centre). Each term's angular profile is normalised
+ * Lens flare in the transparent stage. Instance 0 = starburst + glare halo around the sun (14 chromatic
+ * diffraction spikes of a 7-blade aperture, spike length scaling with wavelength, and a power-law veiling
+ * glare), drawn over the whole frame; instances 1.. = ghosts (soft discs on the line from the sun through the
+ * image centre), each on the screen-space bounding box of its cone. Each term's angular profile is normalised
  * on the CPU so its luminance integrates to `energy` x the illuminance at the lens; the sum is under 1 %.
+ * The source is the sun's illuminance x the visible disc fraction, cloud and atmosphere transmittance
+ * (FLARE_VIS_CS) x the lens hood's transmission for a sun outside the frame (flare.ts hoodTransmission).
  * Additive (alpha 0); applyAtmosphere at distance 0 is exactly neutral: the flare forms inside the lens.
  */
 export const FLARE_WGSL = (bindings: string): string => /* wgsl */ `
@@ -316,16 +338,15 @@ ${CAP_WGSL}
 const FLARE_HALO_SHARE = ${f(FLARE_HALO_SHARE)};
 const FLARE_HALO_POWER = ${f(HALO_POWER)};
 const SPIKE_COUNT = ${f(SPIKE_COUNT)};
-const STARBURST_MAX_ANGLE = ${f(STARBURST_MAX_ANGLE)};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
 struct FlareState { visible: vec4f, transmittance: vec4f }
 struct FlareTerm {
   pos: vec4f,     // xy = centre in NDC (ghosts) or unused (starburst: the sun), z = radius (rad, ghosts) / spike length scale (rad), w = kind (0 starburst, 1 ghost)
   tint: vec4f,    // rgb = relative colour (luminance 1), a = energy fraction of the source
   shape: vec4f,   // starburst: x = halo core (rad), y = halo norm (1/sr), z = spike width (rad), w = spike norm (1/sr); ghost: x = edge softness, y = disc norm (1/sr), z = chroma shift
-  quad: vec4f,    // xy = quad half size in NDC
+  quad: vec4f,    // NDC bounds of the term: xy = min, zw = max (the whole screen for the starburst)
 }
-struct FlareUniforms { count: vec4u, sunNdc: vec4f, terms: array<FlareTerm, 8> }
+struct FlareUniforms { count: vec4u, sun: vec4f, terms: array<FlareTerm, 8> }   // sun.x = lens hood transmission
 @group(2) @binding(0) var<uniform> flare: FlareUniforms;
 @group(2) @binding(1) var<storage, read> flareState: FlareState;
 
@@ -336,11 +357,8 @@ struct VOut {
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   var o: VOut;
   let t = flare.terms[ii];
-  let corner = vec2f(f32(vi & 1u), f32(vi >> 1u)) * 2.0 - 1.0;
-  var centre = t.pos.xy;
-  if (t.pos.w < 0.5) { centre = flare.sunNdc.xy; }
-  let p = centre + corner * t.quad.xy;
-  o.pos = vec4f(p, 0.0, 1.0);
+  let corner = vec2f(f32(vi & 1u), f32(vi >> 1u));
+  o.pos = vec4f(mix(t.quad.xy, t.quad.zw, corner), 0.0, 1.0);
   o.index = ii;
   return o;
 }
@@ -352,7 +370,7 @@ fn ndcRay(n: vec2f) -> vec3f {
 
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
   let st = flareState;
-  let source = frame.sunIlluminance.rgb * st.transmittance.rgb * (st.visible.x * st.visible.y);
+  let source = frame.sunIlluminance.rgb * st.transmittance.rgb * (st.visible.x * st.visible.y * flare.sun.x);
   if (dot(source, source) <= 0.0) { discard; }
   let t = flare.terms[in.index];
   // The ray this (jittered) pixel samples, as for the scene behind it.
@@ -384,11 +402,8 @@ fn ndcRay(n: vec2f) -> vec3f {
     let lambda = SPIKE_LAMBDA;
     let along = vec3f(1.0) / (vec3f(1.0) + (theta * theta) / (t.pos.z * t.pos.z * lambda * lambda));
     let spikes = t.shape.w * gw * along / lambda;
-    // Smooth end at STARBURST_MAX_ANGLE (flare.ts starburstWindow): the quad's edge never shows.
-    let xw = saturate(theta / STARBURST_MAX_ANGLE);
-    let fadeOut = (1.0 - xw * xw) * (1.0 - xw * xw);
     // tint.a = energy of the whole term; shape.y and shape.w normalise halo and spikes to 1 each (CPU, numeric).
-    L = source * t.tint.rgb * t.tint.a * (halo * FLARE_HALO_SHARE + spikes * (1.0 - FLARE_HALO_SHARE)) * fadeOut;
+    L = source * t.tint.rgb * t.tint.a * (halo * FLARE_HALO_SHARE + spikes * (1.0 - FLARE_HALO_SHARE));
   } else {
     // Ghost: a soft disc of angular radius t.pos.z, chromatic fringe by a radial shift per channel.
     let c = ndcRay(t.pos.xy);
@@ -457,8 +472,8 @@ ${CUBE_WGSL}
 ${PROBE_STEP_WGSL}
 const CLOUD_G = 0.85;
 struct ProbeBody {
-  centre: vec4f,   // xyz = body centre relative to the probe (ROOT, m), w = radius (m)
-  info: vec4f,     // x = frame body index, y = probe altitude above the radius (m, from float64), z = weight in the probe (1 - planetshine weight), w = albedo map slot (-1 = mean colour)
+  centre: vec4f,   // xyz = body centre relative to the probe (ROOT, m), w = radius of the body's ground sphere in the probe (m; probeScene.ts probeGroundSphere)
+  info: vec4f,     // x = frame body index, y = probe height above that sphere (m, from float64), z = weight in the probe (1 - planetshine weight), w = albedo map slot (-1 = mean colour)
 }
 struct ProbeUniforms {
   probeRelCam: vec4f,   // xyz = probe relative to the camera (m), w = number of bodies
@@ -475,10 +490,11 @@ struct ProbeUniforms {
 @group(2) @binding(7) var outFace: texture_storage_2d_array<rgba16float, write>;
 
 /// Distance along unit ray d to a sphere of radius rs centred at 'c' (relative to the ray origin), for an
-/// origin at altitude h above it. Cancellation-free near the surface and from far away. -1 = miss.
+/// origin at altitude h above it. Cancellation-free near the surface and from far away; the origin's radius is
+/// taken as rs + h (float64 on the CPU), consistent with h to the last metre. -1 = miss.
 fn hitSphere(d: vec3f, c: vec3f, h: f32, rs: f32) -> f32 {
-  let r0 = length(c);
-  let up = -c / r0;
+  let r0 = rs + h;
+  let up = -c / length(c);
   let mu = dot(d, up);
   if (h <= 0.0 || mu >= 0.0) { return -1.0; }
   let cr = cross(d, up);

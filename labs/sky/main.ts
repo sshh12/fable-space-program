@@ -12,6 +12,11 @@
  *                       clouds, switch on the far cloud term, and draw the layer as a thin translucent shell with
  *                       the probe's cloud model
  *   valt=<m>            move the active vessel to this altitude above its body
+ *   ground=<m>          (with valt) ground elevation under the vessel relative to the datum: the read-outs' radar
+ *                       altitude follows, and a ground cap (regolith, or terrain on a body with an atmosphere) is
+ *                       drawn there around the vessel (a landing site below the datum: the LabPlanet sphere is
+ *                       above the camera then and not drawn)
+ *   mwSize=<n>          largest Milky Way face size in VRAM (SkyFeatureOptions.milkyWayFaceSize; default 1024)
  *   night=1             the star behind the vessel's body (vessel in its shadow)
  *   heavy=<n>           GPU ballast iterations (perf specs keep the GPU busy, RENDER_API section 14)
  *   hud=0               no text overlay
@@ -19,7 +24,7 @@
  * Specs drive the rest through window.__sky (this page) and window.__lab (the lab app).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { RenderContext, RenderFeature } from '@/core/contracts/render';
+import type { MeshData, RenderContext, RenderFeature } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -27,7 +32,21 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, mat4, quat, v3, type Vec3 } from '@/core/math';
 import { coreOf, createSolidTexture, instanceInFrame, mipCount, sphereMesh, type ManagedTarget, type MeshBatch, type ModelHandle, type Tracked } from '@/render/core';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
-import { bruteForceIrradiance, clipOfDirection, createSkyFeature, projectSh, raDecToDir, referenceRadiance, shIrradiance, type ReferenceScene, type SkyFeature, type SkyParts } from '@/render/sky';
+import {
+  bruteForceIrradiance,
+  clipOfDirection,
+  createSkyFeature,
+  flareRadiance,
+  ndcDirection,
+  projectSh,
+  raDecToDir,
+  referenceRadiance,
+  shIrradiance,
+  type FlareGeometry,
+  type ReferenceScene,
+  type SkyFeature,
+  type SkyParts,
+} from '@/render/sky';
 import { withOverrides, type WorldOverrides } from './world';
 
 export interface SkyLab {
@@ -41,7 +60,8 @@ export interface SkyLab {
    * and `azimuthDeg` clockwise from north (or from the camera's horizontal view direction with fromCamera).
    */
   setSunForVessel(mode: 'night' | { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean } | null): void;
-  setVesselAltitude(h: number | null): void;
+  /** Active vessel `h` m above its body's datum (null = the sim's position), over ground at `groundAltitude` m (default 0 = the datum). */
+  setVesselAltitude(h: number | null, groundAltitude?: number): void;
   /** Camera at `position` (ROOT, default the ROOT origin) looking at RA / Dec (deg), north up. */
   lookAtRaDec(raDeg: number, decDeg: number, fovDeg?: number, position?: Vec3, rollDeg?: number): void;
   lookFrom(position: Vec3, forward: Vec3, up?: Vec3, fovDeg?: number): void;
@@ -52,8 +72,17 @@ export interface SkyLab {
   setHeavy(n: number): void;
   /** CPU description of the probe scene of the last frame (airless, cloudless; mean colours) for brute-force checks. */
   referenceScene(): ReferenceScene | null;
-  /** CPU reference functions of src/render/sky (brute-force irradiance, SH projection). */
-  cpu: { referenceRadiance: typeof referenceRadiance; projectSh: typeof projectSh; bruteForceIrradiance: typeof bruteForceIrradiance; shIrradiance: typeof shIrradiance };
+  /** Flare geometry of the last frame (unjittered camera, sun), the input of cpu.flareRadiance. */
+  flareGeometry(): FlareGeometry | null;
+  /** CPU reference functions of src/render/sky (brute-force irradiance, SH projection, flare model). */
+  cpu: {
+    referenceRadiance: typeof referenceRadiance;
+    projectSh: typeof projectSh;
+    bruteForceIrradiance: typeof bruteForceIrradiance;
+    shIrradiance: typeof shIrradiance;
+    flareRadiance: typeof flareRadiance;
+    ndcDirection: typeof ndcDirection;
+  };
 }
 
 declare global {
@@ -64,7 +93,7 @@ declare global {
 
 const query = new URLSearchParams(location.search);
 const scene = (query.get('scene') as FakeScene | null) ?? 'lowOrbit';
-const overrides: WorldOverrides = { sunDir: null, vesselAltitude: query.has('valt') ? Number(query.get('valt')) : null };
+const overrides: WorldOverrides = { sunDir: null, vesselAltitude: query.has('valt') ? Number(query.get('valt')) : null, groundAltitude: Number(query.get('ground') ?? 0) };
 let heavyIterations = Number(query.get('heavy') ?? 0);
 
 function skyParts(): Partial<SkyParts> {
@@ -124,6 +153,99 @@ function createSpheresFeature(): RenderFeature {
     },
     drawShadow(_f, pass, cascade) {
       batch.drawShadow(pass, cascade);
+    },
+  };
+}
+
+/** Angular extent of the lab ground cap (rad): 35 km of the Moon, 127 km of the Earth around the vessel. */
+const GROUND_CAP_ANGLE = 0.02;
+
+/**
+ * Spherical cap of the UNIT sphere around +Z out to GROUND_CAP_ANGLE, origin at its centre on the surface
+ * (scaled to the ground radius per instance: float32 positions stay at millimetres). Rings are spaced
+ * geometrically from 1e-7 rad, so the ground under the camera is finely tessellated.
+ */
+function groundCapMesh(rings = 80, segments = 128): MeshData {
+  const alphas = [0];
+  const a0 = 1e-7;
+  for (let j = 0; j < rings; j++) alphas.push(a0 * (GROUND_CAP_ANGLE / a0) ** (j / (rings - 1)));
+  const w = segments + 1;
+  const n = alphas.length * w;
+  const positions = new Float32Array(n * 3);
+  const normals = new Float32Array(n * 3);
+  const tangents = new Float32Array(n * 4);
+  const uvs = new Float32Array(n * 2);
+  alphas.forEach((a, j) => {
+    for (let i = 0; i <= segments; i++) {
+      const ph = (i / segments) * 2 * Math.PI;
+      const k = j * w + i;
+      const nx = Math.sin(a) * Math.cos(ph);
+      const ny = Math.sin(a) * Math.sin(ph);
+      positions.set([nx, ny, -2 * Math.sin(a / 2) ** 2], k * 3);
+      normals.set([nx, ny, Math.cos(a)], k * 3);
+      tangents.set([-Math.sin(ph), Math.cos(ph), 0, 1], k * 4);
+      uvs.set([i / segments, j / rings], k * 2);
+    }
+  });
+  // The winding of sphereMesh (outward faces front): the centre ring is degenerate, as a sphere's pole.
+  const idx: number[] = [];
+  for (let j = 0; j < rings; j++) {
+    for (let i = 0; i < segments; i++) {
+      const a = j * w + i;
+      const c = a + w;
+      if (j > 0) idx.push(a, c, a + 1);
+      idx.push(a + 1, c, c + 1);
+    }
+  }
+  const s = Math.sin(GROUND_CAP_ANGLE);
+  return {
+    positions,
+    normals,
+    tangents,
+    uvs,
+    indices: new Uint32Array(idx),
+    groups: [{ material: 0, start: 0, count: idx.length }],
+    bounds: { min: [-s, -s, -2 * Math.sin(GROUND_CAP_ANGLE / 2) ** 2], max: [s, s, 0] },
+  };
+}
+
+/**
+ * Ground under the active vessel at `overrides.groundAltitude` (with valt): a spherical cap of the body at that
+ * elevation, body-fixed, regolith on an airless body (terrain on one with an atmosphere) of the body's mean
+ * colour. Lab only: stands for the terrain renderer at a landing site below the datum.
+ */
+function createGroundCapFeature(defs: DefLibrary): RenderFeature {
+  let batch: MeshBatch;
+  const models = new Map<string, ModelHandle>();
+  return {
+    id: 'sky-lab-ground',
+    init(c) {
+      const meshes = coreOf(c).meshes;
+      batch = meshes.createBatch('sky-lab-ground');
+      const mesh = groundCapMesh();
+      for (const b of Object.values(defs.bodies)) {
+        if (b.emission) continue;
+        const shading = b.render.atmosphere ? ('terrain' as const) : ('regolith' as const);
+        models.set(b.id, meshes.createModel({ name: `ground-${b.id}`, lods: [mesh], materials: [{ name: `ground-${b.id}`, shading, baseColor: [...b.render.meanColor], metallic: 0, roughness: 1 }] }));
+      }
+    },
+    prepare(frame) {
+      batch.begin(frame);
+      const s = frame.snapshot;
+      const v = s.vessels.find((x) => x.id === s.activeVesselId);
+      const pose = v && frame.bodies.find((b) => b.id === v.bodyId);
+      const body = v && s.bodies.find((b) => b.id === v.bodyId);
+      const model = v && models.get(v.bodyId);
+      if (v && pose && body && model && overrides.vesselAltitude !== null) {
+        const up = v3.normalize(quat.rotateInv(body.qFixedToRoot, v3.sub(v.rRoot, body.rRoot)));
+        const rg = defs.bodies[v.bodyId]!.radius + overrides.groundAltitude;
+        const parent = { originRelCam: pose.centerRelCam, q: pose.qFixedToRoot, prevOriginRelCam: pose.prevCenterRelCam, prevQ: pose.prevQFixedToRoot };
+        batch.add(model, instanceInFrame(parent, v3.scale(up, rg), quat.fromTo({ x: 0, y: 0, z: 1 }, up), { scale: rg, bodyFixed: true, castShadow: false }));
+      }
+      batch.finish();
+    },
+    drawGBuffer(_f, pass) {
+      batch.drawGBuffer(pass);
     },
   };
 }
@@ -335,10 +457,15 @@ async function boot(): Promise<void> {
         list.push(createLabPlanetFeature({ maps }));
       }
       if (query.get('spheres') === '1') list.push(createSpheresFeature());
+      if (query.has('ground')) list.push(createGroundCapFeature(d));
       if (clouds) list.push(createCloudLayerFeature(clouds));
       if (query.has('heavy')) list.push(createHeavyFeature());
       if (query.get('sky') !== '0') {
-        sky = createSkyFeature({ ...skyParts(), probeAlbedo: query.get('probeAlbedo') === 'mean' ? 'meanColor' : 'tileset' });
+        sky = createSkyFeature({
+          ...skyParts(),
+          probeAlbedo: query.get('probeAlbedo') === 'mean' ? 'meanColor' : 'tileset',
+          ...(query.has('mwSize') ? { milkyWayFaceSize: Number(query.get('mwSize')) } : {}),
+        });
         list.push(sky);
       }
       return list;
@@ -376,8 +503,9 @@ async function boot(): Promise<void> {
       overrides.sunDir = dir ? () => dir : null;
     },
     setSunForVessel,
-    setVesselAltitude(h) {
+    setVesselAltitude(h, groundAltitude = 0) {
       overrides.vesselAltitude = h;
+      overrides.groundAltitude = groundAltitude;
     },
     lookAtRaDec(raDeg, decDeg, fovDeg, position = { x: 0, y: 0, z: 0 }, rollDeg = 0) {
       const fwd = raDecToDir(raDeg * DEG, decDeg * DEG);
@@ -431,8 +559,21 @@ async function boot(): Promise<void> {
         background: [0, 0, 0],
       };
     },
+    flareGeometry() {
+      const f = app.renderer.frameContext;
+      if (!f) return null;
+      const tanY = Math.tan(f.camera.fovY / 2);
+      const tanX = (tanY * f.renderSize[0]) / f.renderSize[1];
+      const [x, y, w] = clipOfDirection(mat4.mul(f.projUnjittered, f.view), f.sun.dirRoot);
+      return {
+        view: { right: { x: f.view[0]!, y: f.view[4]!, z: f.view[8]! }, up: { x: f.view[1]!, y: f.view[5]!, z: f.view[9]! }, forward: { x: -f.view[2]!, y: -f.view[6]!, z: -f.view[10]! }, tanX, tanY },
+        sun: f.sun.dirRoot,
+        sunRadius: f.sun.angularRadius,
+        sunNdc: [x / w, y / w],
+      };
+    },
   };
-  window.__sky = { ...lab, cpu: { referenceRadiance, projectSh, bruteForceIrradiance, shIrradiance } };
+  window.__sky = { ...lab, cpu: { referenceRadiance, projectSh, bruteForceIrradiance, shIrradiance, flareRadiance, ndcDirection } };
 
   if (query.get('hud') !== '0') {
     setInterval(() => {
