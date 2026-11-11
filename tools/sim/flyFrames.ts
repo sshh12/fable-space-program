@@ -34,6 +34,8 @@ export interface FramesFlight {
   frames: number;
   /** frames / 60 / 60: minutes of real time at 60 Hz. */
   realMinutes: number;
+  /** Frames in which physics steps ran (the others advanced on rails). */
+  physicsFrames: number;
   ticks: number;
   wallSeconds: number;
   phases: PhasePacing[];
@@ -69,6 +71,7 @@ export async function flyFrames(opts: FramesOptions = {}): Promise<FramesFlight>
   };
   const perPhase = new Map<string, PhasePacing>();
   let frames = 0;
+  let physicsFrames = 0;
   const t0 = performance.now();
   while (!stop && frames < maxFrames) {
     if (awaitTerrain) for (let p = sim.terrainPending(); p !== null; p = sim.terrainPending()) await p;
@@ -87,6 +90,7 @@ export async function flyFrames(opts: FramesOptions = {}): Promise<FramesFlight>
       perPhase.set(key, e);
     }
     e.frames++;
+    if (sim.stats().steps > stepsBefore) physicsFrames++;
     e.steps += sim.stats().steps - stepsBefore;
     e.simTime += sim.peek().simUt - utBefore;
   }
@@ -97,6 +101,7 @@ export async function flyFrames(opts: FramesOptions = {}): Promise<FramesFlight>
     failure: pilot.failure ?? (last.mission.failed ? last.mission.failureReason : null),
     frames,
     realMinutes: frames / 3600,
+    physicsFrames,
     ticks,
     wallSeconds: (performance.now() - t0) / 1000,
     phases: [...perPhase.values()].sort((x, y) => y.frames - x.frames),
@@ -113,6 +118,8 @@ if (invokedDirectly) {
   if (i >= 0 && process.argv[i + 1] !== undefined) o.scenario = process.argv[i + 1]!;
   const f = await flyFrames(o);
   console.log(`${f.done ? 'done' : `stopped (${f.failure ?? 'frame limit'})`}: ${f.frames} frames = ${f.realMinutes.toFixed(1)} min of real time at 60 Hz; ${f.ticks} control ticks; ${f.wallSeconds.toFixed(1)} s of wall clock here`);
+  const steps = f.sim.stats().steps;
+  console.log(`${f.physicsFrames} frames (${(f.physicsFrames / 3600).toFixed(1)} min) ran ${steps} physics steps = ${(steps / 120 / 60).toFixed(1)} min of integrated flight (${(steps / 8 / 3600).toFixed(1)} min if every one of them ran at 4x); ${f.frames - f.physicsFrames} frames (${((f.frames - f.physicsFrames) / 3600).toFixed(1)} min) advanced on rails`);
   console.log(`milestones: ${f.milestones.map((m) => m.id).join(' ')}`);
   console.log(`terrain: incompleteQueries ${f.last.terrain.incompleteQueries}; ${JSON.stringify(f.sim.stats())}`);
   console.log('phase                        real min   sim time     steps/frame');
