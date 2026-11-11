@@ -17,7 +17,7 @@ import { fsDefSource } from '../../../src/core/defs/fsSource';
 import { loadDefs } from '../../../src/core/defs/loader';
 import { createFsTileSource } from '../../../src/terrain/fsTileSource';
 import { createTerrainProvider, type TerrainAuthority } from '../../../src/terrain/provider';
-import { boundaryPoints, edgeStats, loadAround, truncatedSource, type LayerWithSource } from './edgeChecks';
+import { boundaryPoints, edgeStats, loadAround, sourceHeldSource, truncatedSource, type LayerWithSource } from './edgeChecks';
 import { moveToward, offset, prng, REPO_ROOT } from './helpers';
 
 const TILES = path.join(REPO_ROOT, 'data/tiles');
@@ -126,18 +126,26 @@ function tileBorderSuite(body: string, R: () => number, defsP: () => DefLibrary)
  *    rectangles): the bakes store parent-identical data there, so the surface must keep the parent's texture
  *    (ratio 1). Keying E on coverage (the contract's literal recursion) gave 0.35-0.77 there: the parent's
  *    procedural detail was switched off with nothing to replace it.
- *  - Source ring (0.1 / 0.5 / 1 tile inside the source boundary): where the ring starts the texture must not
- *    step; further in, real data replaces the procedural detail and the ratio (real data against the model) is
- *    reported, not asserted.
+ *  - Source ring (0.1 / 0.5 / 1 tile inside the source boundary): the ratio against the parent-level surface
+ *    (real data against the model) is reported, not asserted. Where the ring of level L starts (0.1 tile)
+ *    level L must not step: asserted against the SAME surface without level L's source ring (the manifest
+ *    with no source tiles at level L; data and every other level's ring unchanged), ratio 1.
+ *    The ring-start assertion used to be the ratio against the parent-level surface (0.8-1.25). That held
+ *    only while the source rectangles of the levels did not share boundaries. Since the Earth bake lists
+ *    exactly the tiles that hold land (docs/requests/terrain-core-4.md), the source sets of levels 8-12 share
+ *    the coast: 0.1 level-9 tile inside the level-9 boundary lies 0.8 level-12 tile inside the level-12
+ *    boundary, where the level-12 ring is almost complete (E about 11.8) and full-weight 10 m land data has
+ *    replaced the model. The ratio against the parent there (Earth level 9: 0.80 at one posting) is real
+ *    coast against the model, the same quantity as "further in", not a step of level 9's ring.
  */
-async function ringTexture(body: string, defs: DefLibrary, R: number): Promise<{ level: number; margin: number[]; source: number[]; row: string }[]> {
+async function ringTexture(body: string, defs: DefLibrary, R: number): Promise<{ level: number; margin: number[]; ringStart: number[]; row: string }[]> {
   const tileset = defs.bodies[body]!.terrain!.tileset;
   const layer = (JSON.parse(readFileSync(path.join(TILES, tileset, 'manifest.json'), 'utf8')) as TileManifest).layers['height'] as LayerWithSource;
   const sc = layer.sourceCoverage;
   if (!sc) throw new Error(`${tileset}: the height layer has no sourceCoverage`);
   const srcLayer = { ...layer, coverage: sc };
   const base = createFsTileSource(TILES);
-  const out: { level: number; margin: number[]; source: number[]; row: string }[] = [];
+  const out: { level: number; margin: number[]; ringStart: number[]; row: string }[] = [];
   for (const L of Object.keys(layer.coverage).map(Number).sort((a, b) => a - b)) {
     const opts = { bodies: [body], cacheBytes: 768 * 1024 * 1024 };
     const tp = await createTerrainProvider(defs, base, opts);
@@ -173,23 +181,35 @@ async function ringTexture(body: string, defs: DefLibrary, R: number): Promise<{
       margin.push(...r);
       cells.push(`margin ${w}: ${r.map((x) => x.toFixed(2)).join('/')}`);
     }
-    const source: number[] = [];
-    const sp = boundaryPoints(srcLayer, L, 40, prng(600 + L));
-    for (const w of [0.1, 0.5, 1]) {
+    const ringStart: number[] = [];
+    // A level whose source is no finer than its parent lists no source tiles (docs/requests/terrain-core-4.md,
+    // Moon level 9): it has no source ring, the whole level is margin and E stays at the parent level.
+    const hasSource = (sc[String(L)] ?? []).length > 0;
+    if (!hasSource) cells.push('no source tiles at this level (source no finer than the parent level)');
+    const sp = hasSource ? boundaryPoints(srcLayer, L, 40, prng(600 + L)) : [];
+    for (const w of hasSource ? [0.1, 0.5, 1] : []) {
       const r = await ratios(
         sp.map((q) => moveToward(q.p, q.inside, w * ts, R)),
         `L${L} source ${w}`,
       );
-      if (w === 0.1) source.push(...r);
       cells.push(`source +${w}: ${r.map((x) => x.toFixed(2)).join('/')}`);
     }
-    out.push({ level: L, margin, source, row: cells.join(', ') });
+    if (hasSource) {
+      // The same surface without level L's source ring: what this ring changes where it starts.
+      const held = await createTerrainProvider(defs, sourceHeldSource(base, L), opts);
+      const cs = sp.map((q) => moveToward(q.p, q.inside, 0.1 * ts, R));
+      await Promise.all(cs.map((c, i) => held.ensureLoaded(body, c, 0.14 * ts, `h${i}`)));
+      for (const c of cs) expect(held.residency(body, c).complete, `L${L} ring start`).toBe(true);
+      ringStart.push(...[1, 4].map((m) => stat(tp, cs, (m * ts) / 256) / stat(held, cs, (m * ts) / 256)));
+      cells.push(`ring start vs the same surface without this ring: ${ringStart.map((x) => x.toFixed(3)).join('/')}`);
+    }
+    out.push({ level: L, margin, ringStart, row: cells.join(', ') });
   }
   return out;
 }
 
 function ringTextureSuite(body: string, R: () => number, defsP: () => DefLibrary): void {
-  it(`${body}: texture of every coverage margin equals the parent level's; no step where a source ring starts (H / H_parent band-pass slope, 1 and 4 postings)`, async () => {
+  it(`${body}: texture of every coverage margin equals the parent level's; no step where a level's source ring starts (band-pass slope ratios, 1 and 4 postings)`, async () => {
     const rows = await ringTexture(body, defsP(), R());
     for (const r of rows) console.log(`[real ${body} ring texture L${r.level}] ${r.row}`);
     for (const r of rows) {
@@ -197,9 +217,9 @@ function ringTextureSuite(body: string, R: () => number, defsP: () => DefLibrary
         expect(x, `L${r.level} margin`).toBeGreaterThan(0.9);
         expect(x, `L${r.level} margin`).toBeLessThan(1.1);
       }
-      for (const x of r.source) {
-        expect(x, `L${r.level} source ring start`).toBeGreaterThan(0.8);
-        expect(x, `L${r.level} source ring start`).toBeLessThan(1.25);
+      for (const x of r.ringStart) {
+        expect(x, `L${r.level} source ring start`).toBeGreaterThan(0.95);
+        expect(x, `L${r.level} source ring start`).toBeLessThan(1.05);
       }
     }
   }, 900_000);

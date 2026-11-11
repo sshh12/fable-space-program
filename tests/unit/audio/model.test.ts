@@ -145,6 +145,18 @@ describe('two propagation paths', () => {
     expect(far.paths.body.gain).toBe(0);
   });
 
+  it('only a camera attached to the vessel hears the structure-borne share (request audio-1): a ground-fixed camera at the same place hears none', () => {
+    const attached = steady({ ...externalAt(40), pressure: 0 }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
+    const fixed = steady({ ...externalAt(40), pressure: 0, attachedVesselId: null }, { nozzle: 0 }).engines.find((e) => e.running > 0)!;
+    expect(attached.paths.body.gain).toBeGreaterThan(0);
+    expect(fixed.paths.body.gain).toBe(0);
+    // In air the ground camera still hears the airborne path exactly as the attached one does.
+    const a = steady(externalAt(40)).engines.find((e) => e.running > 0)!;
+    const f = steady({ ...externalAt(40), attachedVesselId: null }).engines.find((e) => e.running > 0)!;
+    expect(f.paths.air).toEqual(a.paths.air);
+    expect(f.paths.body.gain).toBe(0);
+  });
+
   it('the attach share is measured from the bounding sphere about the VES origin, not the centre of mass', () => {
     const prop = cfg.mix.propagation;
     // Listener 150 m from the VES origin (radius 55: 95 m outside the sphere), CoM displaced 60 m towards it.

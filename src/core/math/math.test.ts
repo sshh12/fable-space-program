@@ -15,6 +15,7 @@ import {
   mat4,
   Prng,
   quat,
+  timeFromPeriapsis,
   timeSincePeriapsis,
   v3,
   wrapPi,
@@ -208,6 +209,39 @@ describe('conic', () => {
     const t = timeSincePeriapsis(hyp, nuSoi);
     expect(t).toBeGreaterThan(0);
     expect(Number.isFinite(t)).toBe(true);
+  });
+  it('time since periapsis keeps its digits through e = 1 (request sim-orbits-3): against quadrature of dt = sqrt(p^3/mu) dnu / (1 + e cos nu)^2', () => {
+    // Composite Simpson on the smooth integrand: an independent reference with about 1e-13 relative error.
+    const quadrature = (e: number, nu: number): number => {
+      const n = 40000;
+      const h = nu / n;
+      const f = (x: number): number => 1 / (1 + e * Math.cos(x)) ** 2;
+      let acc = f(0) + f(nu);
+      for (let i = 1; i < n; i++) acc += (i % 2 === 1 ? 4 : 2) * f(i * h);
+      return (acc * h) / 3;
+    };
+    const p = 1.3e7;
+    const k = Math.sqrt((p * p * p) / MU_EARTH);
+    // The classical E - e sin E / e sinh H - H forms were wrong by 2e-11 .. 1e-7 at these eccentricities,
+    // and the former Barker band |e - 1| < 1e-9 ignored (1 - e) altogether.
+    for (const e of [0, 0.3, 0.97, 0.99999, 1 - 1e-7, 1 - 2e-9, 1 - 5e-10, 1, 1 + 5e-10, 1 + 2e-9, 1 + 1e-7, 1.0001, 1.3, 3]) {
+      const nuMax = e > 1 ? 0.9 * Math.acos(-1 / e) : 2.6;
+      for (const nu of [-nuMax, -1.1, -0.2, -1e-3, 1e-6, 0.05, 0.7, 1.9, nuMax]) {
+        if (Math.abs(nu) > nuMax) continue;
+        const want = k * quadrature(e, nu);
+        const got = timeFromPeriapsis(e, p, MU_EARTH, nu);
+        expect(Math.abs(got - want) / Math.abs(want), `e = ${e}, nu = ${nu}`).toBeLessThan(2e-12);
+      }
+    }
+    // Exactly Barker's equation at e = 1, and +/-Infinity at and beyond a hyperbola's asymptote.
+    const D = Math.tan(0.6);
+    expect(timeFromPeriapsis(1, p, MU_EARTH, 1.2)).toBeCloseTo(k * (D / 2 + (D * D * D) / 6), 6);
+    expect(timeFromPeriapsis(2, p, MU_EARTH, Math.acos(-1 / 2) + 1e-6)).toBe(Infinity);
+    expect(timeFromPeriapsis(2, p, MU_EARTH, -Math.acos(-1 / 2) - 1e-6)).toBe(-Infinity);
+    // timeSincePeriapsis is the same relation on ConicElements.
+    const c = conicFromState(MU_EARTH, v3.new(6.6e6, 0, 0), v3.new(0, Math.sqrt((MU_EARTH * (2 - 3e-9)) / 6.6e6), 0), 0);
+    expect(Math.abs(c.e - 1)).toBeLessThan(1e-8);
+    expect(timeSincePeriapsis(c, 1.4)).toBe(timeFromPeriapsis(c.e, c.p, c.mu, 1.4));
   });
   it('inclination and node of a polar orbit', () => {
     const rc = 7.0e6;

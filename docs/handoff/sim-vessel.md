@@ -454,3 +454,17 @@ Known weaknesses:
   limit per joint (no separate lateral limit). Joint over-stress uses the crewed vessel's seat g-load.
 - `rcsPulse` is emitted at most every 0.25 s per RCS part while firing starts, not per thruster pulse.
 - Timings were taken while the bakes were running.
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `sim-vessel-1` resolved (doc comments only, no type change): `ContactPointDef` (foot pads of a `legs`
+  part, derived probes, 0.625 x crashTolerance lateral limit), `rcs.thrusters[].dir` = exhaust direction,
+  `decoupler` / `decouple` / `jettisonLES` cut the joint to the PARENT with the impulse along the part's Y,
+  `fairing.shields` match instance id or def id, `joint.maxQAlpha` in Pa rad, and `VesselEnvironment`
+  describes the START of the step (spawned vessels are stepped once in the same tick). `sim-design.md` 8.2
+  now says about 3 500 Pa rad (the data's value) instead of 60 000.
+- The three "decisions the lead still has to take" above (SAS coasting criterion, 6.8 m landing-gear pad
+  circle, stage delays) are accepted as built for the baseline; sim-world-pilot owns the part data in wave 2
+  and may enlarge the RCS thrusters if hand-flying shows the coasting slews are too slow.
+
+Full list: `docs/handoff/lead-baseline.md`.

@@ -280,6 +280,14 @@ export interface ThermalSurfaceDef {
   maxTemp: number;
 }
 
+/**
+ * A contact probe of a part (part frame). On a part with a `legs` module, `PartDef.contactPoints[i]`
+ * describes the FOOT PAD of leg `i` (`radius`, `mu`, `crashTolerance`; `pos` repeats that leg's
+ * `footDeployed`) and is not a structural probe: the engine adds one probe at each leg hinge itself. The
+ * lateral touchdown limit of a foot pad is 0.625 x `crashTolerance`. On every other part the points are
+ * structural probes; where they are missing, empty, or leave an end face of `PartDef.bounds` uncovered, the
+ * engine derives probes from `bounds` there.
+ */
 export interface ContactPointDef {
   pos: Vec3Tuple;
   radius: number;
@@ -312,9 +320,11 @@ export type StageAction =
   | { kind: 'igniteEngines'; parts: string[] }
   | { kind: 'shutdownEngines'; parts: string[] }
   | { kind: 'releaseClamps'; parts: string[]; minThrustToWeight?: number }
+  /** Cuts the joint between the named part (instance id; it carries a `decoupler` module) and its PARENT. */
   | { kind: 'decouple'; part: string }
   | { kind: 'fireSeparationMotors'; parts: string[] }
   | { kind: 'jettisonFairing'; part: string }
+  /** Cuts the joint between the named part (the escape tower, with its `decoupler` module) and its PARENT. */
   | { kind: 'jettisonLES'; part: string }
   | { kind: 'deployParachute'; parts: string[]; mode: 'drogue' | 'main' }
   | { kind: 'cutParachute'; parts: string[] }
@@ -355,14 +365,44 @@ export type ModuleDef =
       plume: string;
       sound: string;
     }
-  | { type: 'rcs'; thrusters: { pos: Vec3Tuple; dir: Vec3Tuple; thrust: number }[]; isp: number; resource: ResourceId }
+  | {
+      type: 'rcs';
+      /**
+       * `dir` = unit EXHAUST direction in the part frame; the thrust (N) acts opposite, at `pos`. Same
+       * meaning as `NozzleDef.dir`, so plumes are drawn along `dir` for engines and thrusters alike.
+       */
+      thrusters: { pos: Vec3Tuple; dir: Vec3Tuple; thrust: number }[];
+      isp: number;
+      resource: ResourceId;
+    }
   | { type: 'reactionWheel'; torque: Vec3Tuple }
-  | { type: 'decoupler'; impulse: number; separationPlaneY: number }
-  | { type: 'fairing'; panels: number; impulse: number; shields: string[] }
+  | {
+      type: 'decoupler';
+      /**
+       * Separation impulse, N s. When the part is decoupled (`StageAction` 'decouple' / 'jettisonLES') the
+       * joint between this part and its PARENT is cut; the impulse acts along this part's Y axis, equal and
+       * opposite on the two sides.
+       */
+      impulse: number;
+      /** Height (y in this part's frame, m) of the plane the two sides part at. */
+      separationPlaneY: number;
+    }
+  | {
+      type: 'fairing';
+      panels: number;
+      /** Separation impulse per panel, N s. */
+      impulse: number;
+      /** Parts the closed fairing shields from the airflow: each entry matches a part's instance id OR its def id. */
+      shields: string[];
+    }
   | { type: 'launchClamp' }
   | { type: 'les' }
   | {
       type: 'legs';
+      /**
+       * Pad radius, friction and crash tolerance of leg `i` are `PartDef.contactPoints[i]` (see
+       * `ContactPointDef`); `stroke` (m), `k` (N/m), `c` (N s/m) and `preload` (N) describe the strut.
+       */
       legs: { hinge: Vec3Tuple; footDeployed: Vec3Tuple; footStowed: Vec3Tuple; stroke: number; k: number; c: number; preload: number }[];
       deployTime: number;
     }
@@ -434,6 +474,10 @@ export interface PartDef {
   thermal: { surfaces: ThermalSurfaceDef[] };
   contactPoints?: ContactPointDef[];
   buoyancy?: { pos: Vec3Tuple; radius: number }[];
+  /**
+   * Strength of the joint to the parent: `maxAccelG` in g; `maxQAlpha` = dynamic pressure x angle of attack
+   * the joint survives, in Pa rad (the launch stack's weakest joint carries about 3 500: 6 deg at 33 kPa).
+   */
   joint: { maxAccelG: number; maxQAlpha?: number };
   modules: ModuleDef[];
   visual: PartVisualDef | null;

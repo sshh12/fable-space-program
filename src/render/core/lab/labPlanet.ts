@@ -153,8 +153,16 @@ export function createLabPlanetFeature(options: LabPlanetOptions = {}): RenderFe
   let pending = 0;
   const seabedDepth = options.seabedDepth ?? 30;
 
+  // The server's listing of baked tile sets (/tiles/index.json): a tile set that is not there is skipped
+  // without requesting its manifest, because Chrome logs a 404 as a console error.
+  let tilesets: Promise<string[] | null> | null = null;
+  const bakedTilesets = (): Promise<string[] | null> =>
+    (tilesets ??= fetch(`${ctx.tilesUrl}/index.json`, { cache: 'no-cache' }).then(async (r) => (r.ok ? ((await r.json()) as { tilesets: string[] }).tilesets : null)));
+
   const loadMap = async (entry: PlanetEntry, tileset: string): Promise<void> => {
     const base = `${ctx.tilesUrl}/${tileset}`;
+    const baked = await bakedTilesets();
+    if (baked && !baked.includes(tileset)) return;
     const res = await fetch(`${base}/manifest.json`);
     if (!res.ok) return;
     const manifest = (await res.json()) as TileManifest;

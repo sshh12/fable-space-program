@@ -14,12 +14,30 @@ export interface AudioListener {
   kind: ViewKind;
   /** Vessel the listener is inside (cockpit) or null for an external camera. */
   insideVesselId: string | null;
-  /** Listener position in the active vessel's VES frame, m (external cameras: where the chase camera is). */
+  /**
+   * Vessel an EXTERNAL rig rigidly follows (the chase rig, a later EVA third-person rig tethered to the ship):
+   * the listener hears a faint structure-borne share of that vessel's sources, faded with its distance from
+   * the vessel. `null` for a free or ground-fixed camera, for an interior listener (`insideVesselId` says
+   * which hull it is coupled to) and for the map. Producers derive it from `CameraState.focusVesselId` of an
+   * 'external' camera (src/camera/listener.ts); the audio engine never guesses attachment from distance.
+   */
+  attachedVesselId: string | null;
+  /**
+   * Listener position in the active vessel's VES frame, m (external cameras: where the chase camera is).
+   * For `kind: 'map'` the audio engine ignores position, orientation and `ambientPressure`: a map camera is
+   * 100 km or more away in vacuum, so the engine places a map listener where the last outside flight camera
+   * of the active vessel was (with that camera's attachment), in that vessel's air; before any outside
+   * camera was seen it uses the stand-in position of the audio mix data. Producers need no special case.
+   */
   positionVes: Vec3;
   /** Listener forward and up in VES axes (for panning). */
   forwardVes: Vec3;
   upVes: Vec3;
-  /** Ambient static pressure at the listener, Pa (0 in vacuum: airborne sound cannot reach it). */
+  /**
+   * Ambient static pressure at the listener, Pa (0 in vacuum: airborne sound cannot reach it). For
+   * `kind: 'interior'` this is the static pressure OUTSIDE the hull at the listener, not the cabin pressure:
+   * it scales the airborne path that reaches the cabin through the hull; cabin sounds always have cabin air.
+   */
   ambientPressure: number;
 }
 

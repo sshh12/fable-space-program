@@ -29,12 +29,16 @@ from moon.sampling import dirs_to_tiles, srgb_decode  # noqa: E402
 from moon.tiles import TileReader  # noqa: E402
 
 # LOLA benchmarks of docs/research/moon-sky-data.md: PDS ldem_64 pixel values (row 0 = 90 N, column 0 = 0 E,
-# pixel centres at (c + 0.5) / 64 deg), located by reading the file (see the hand-off).
+# pixel centres at (c + 0.5) / 64 deg), located by reading the file (see the hand-off). The last field names
+# the reference the 60 m acceptance uses. Tycho is judged against the PDS ldem_256 pixel at the same place
+# (lead decision, docs/requests/bake-moon-sky-1.md): ldem_64 is offset by 1-2 pixels of 118 m in longitude
+# against the 256 ppd products, and this benchmark sits on the steep central peak, where that offset is
+# 80-90 m of height. On flat ground (the other three) the offset is invisible and ldem_64 stays the reference.
 BENCHMARKS = [
-    ("Tranquility", 5717, 1502, -1925.0),
-    ("Tycho floor", 8531, 22310, -1295.5),
-    ("Apollo 17", 4467, 1969, -2624.5),
-    ("Aitken (SPA)", 9152, 12224, -6948.0),
+    ("Tranquility", 5717, 1502, -1925.0, "ldem_64"),
+    ("Tycho floor", 8531, 22310, -1295.5, "ldem_256"),
+    ("Apollo 17", 4467, 1969, -2624.5, "ldem_64"),
+    ("Aitken (SPA)", 9152, 12224, -6948.0, "ldem_64"),
 ]
 LDEM256 = "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/img/"
 
@@ -169,7 +173,7 @@ def check_shared_edges(edges: dict) -> dict:
 # -- 3. LOLA benchmarks -------------------------------------------------------------------------------------
 def benchmarks(reader: TileReader) -> dict:
     out = {}
-    for name, row, col, ref in BENCHMARKS:
+    for name, row, col, ref, judged_against in BENCHMARKS:
         lat = 90.0 - (row + 0.5) / 64.0
         lon = (col + 0.5) / 64.0
         d = cube.lat_lon_to_dir(math.radians(lat), math.radians(lon))[None]
@@ -183,11 +187,13 @@ def benchmarks(reader: TileReader) -> dict:
         r256 = int(((90.0 - lat) if lat >= 0 else -lat) * 256)
         c256 = int((lon % 180.0) * 256)
         v = np.frombuffer(fetch.read_range(LDEM256 + f"ldem_256_{q}.img", (r256 * 46080 + c256) * 2, 2), "<i2")[0] * 0.5
+        target = float(v) if judged_against == "ldem_256" else ref
         e = {"latDeg": lat, "lonDeg": lon, "ldem64": ref, "ldem256Pixel": float(v), "level6Point": round(p6, 2),
-             "level6MeanOverLdem64Pixel": round(m6, 2), "diffPoint": round(p6 - ref, 2), "diffMean": round(m6 - ref, 2)}
+             "level6MeanOverLdem64Pixel": round(m6, 2), "diffPoint": round(p6 - ref, 2), "diffMean": round(m6 - ref, 2),
+             "judgedAgainst": judged_against, "diffMeanToJudged": round(m6 - target, 2)}
         out[name] = e
-        check(abs(m6 - ref) <= 60.0, f"benchmark {name}: level 6 {m6:.1f} m (mean over the ldem_64 pixel; point {p6:.1f}) vs ldem_64 {ref} m, "
-                                     f"ldem_256 pixel {v:.1f} m (limit 60 m)")
+        check(abs(m6 - target) <= 60.0, f"benchmark {name}: level 6 {m6:.1f} m (mean over the ldem_64 pixel; point {p6:.1f}) vs ldem_64 {ref} m, "
+                                        f"ldem_256 pixel {v:.1f} m (limit 60 m against {judged_against})")
     lat, lon, ref = 90.0 - 5717.5 / 64.0, 1502.5 / 64.0, -1925.0
     d = cube.lat_lon_to_dir(math.radians(lat), math.radians(lon))[None]
     p12 = float(reader.data_height(d, 12)[0])
@@ -520,12 +526,18 @@ def deshading(reader: TileReader) -> dict:
     lw = np.log([r["ratioRawWac"] for r in rows])
     corr = float(np.corrcoef(lf, lw)[0, 1])
     mean_ratio = float(np.exp(lf.mean()))
-    print(f"INFO residual wall asymmetry vs the mosaic's baked shading: correlation of log ratios {corr:.3f} "
-          f"(residual shading would correlate); geometric-mean ratio over all craters {mean_ratio:.3f} (not an acceptance "
-          f"criterion: the brief asks for each of 20 craters within 5 %, see docs/requests/bake-moon-sky-2.md)")
-    check(len(ok) >= 20, f"albedo de-shading: {len(ok)} of {len(rows)} craters have a west-/east-facing wall brightness ratio within 5 % at level 7 "
-                         f"(median |1 - ratio| {np.median([abs(r['ratioLevel7'] - 1) for r in rows]):.3f}; raw WAC "
-                         f"{np.median([abs(r['ratioRawWac'] - 1) for r in rows]):.3f})")
+    # Acceptance (lead decision, docs/requests/bake-moon-sky-2.md): residual ILLUMINATION, not albedo symmetry.
+    # The prescribed SVS base has real west/east wall albedo differences beyond 5 % on 11 of these craters
+    # (dark-halo ejecta, mare/highland contacts, rays), so the per-crater count is reported, not judged.
+    # Residual shading would push every ratio the mosaic's way: the mean ratio would leave 1 and the
+    # per-crater log ratios would follow the raw mosaic's.
+    print(f"INFO albedo wall symmetry: {len(ok)} of {len(rows)} craters have a west-/east-facing wall brightness ratio within 5 % at level 7 "
+          f"(median |1 - ratio| {np.median([abs(r['ratioLevel7'] - 1) for r in rows]):.3f}; raw WAC "
+          f"{np.median([abs(r['ratioRawWac'] - 1) for r in rows]):.3f})")
+    check(len(rows) >= 20 and abs(mean_ratio - 1.0) <= 0.05 and abs(corr) < 0.3,
+          f"albedo de-shading: no residual illumination on {len(rows)} sampled craters (>= 20): geometric-mean west-/east-facing wall "
+          f"ratio {mean_ratio:.3f} (limit within 5 % of 1), correlation of the per-crater log ratios with the raw mosaic's "
+          f"baked shading {corr:.3f} (limit |r| < 0.3)")
     return {"craters": rows, "within5pct": len(ok), "correlationWithRawShading": corr, "geometricMeanRatio": mean_ratio}
 
 

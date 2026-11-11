@@ -340,10 +340,10 @@ test('low sun: shadow edges from the far staggered cascades are straight (no tee
     rc.trackSiteFromVessel(rc.probes.ridgeSite, 40);
   });
   await waitIdle(page, 150);
-  const cascadesNow = (): Promise<{ fit: string; texelSize: number; aspect: number; everyFrame: boolean }[]> =>
+  const cascadesNow = (): Promise<{ fit: string; texelSize: number; texelSizeV: number; aspect: number; everyFrame: boolean }[]> =>
     page.evaluate(() => {
-      const seen = new Map<string, { fit: string; texelSize: number; aspect: number; everyFrame: boolean }>();
-      for (const c of window.__rc!.probes.cascadeLog().slice(-80)) seen.set(`${c.fit}:${c.texelSize.toFixed(1)}`, { fit: c.fit, texelSize: c.texelSize, aspect: c.aspect, everyFrame: c.everyFrame });
+      const seen = new Map<string, { fit: string; texelSize: number; texelSizeV: number; aspect: number; everyFrame: boolean }>();
+      for (const c of window.__rc!.probes.cascadeLog().slice(-80)) seen.set(`${c.fit}:${c.texelSize.toFixed(1)}`, { fit: c.fit, texelSize: c.texelSize, texelSizeV: c.texelSizeV, aspect: c.aspect, everyFrame: c.everyFrame });
       return [...seen.values()];
     });
   const orbit = await ridgeShadowEdge(page, 80, 14, 40);
@@ -353,6 +353,13 @@ test('low sun: shadow edges from the far staggered cascades are straight (no tee
   expect(orbitCascade.everyFrame).toBe(false);
   // The cascade is fitted to the ground it shadows: finer texels along the light than a square map has.
   expect(orbitCascade.aspect).toBeGreaterThan(2);
+  // ShadowCascadeView.texelSizeV (request render-core-3) is that finer axis: texelSize / aspect; texelSize
+  // stays the coarser one. Square cascades report the same value on both axes.
+  expect(orbitCascade.texelSizeV).toBeCloseTo(orbitCascade.texelSize / orbitCascade.aspect, 1);
+  for (const c of await cascadesNow()) {
+    expect(c.texelSizeV).toBeLessThanOrEqual(c.texelSize * (1 + 1e-9));
+    expect(c.texelSizeV).toBeCloseTo(c.texelSize / c.aspect, 1);
+  }
   expect(orbit.n).toBeGreaterThan(200);
   expect(orbit.length).toBeGreaterThan(600);
   // Bound. Before the receiver fit and the receiver-space kernel this edge was a saw of 2.3 px amplitude

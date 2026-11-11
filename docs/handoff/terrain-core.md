@@ -403,3 +403,22 @@ Looked at after this round's changes:
   work (bench CPU-busy report, the measured-defect tests, the request evidence, this note) was checked and
   carried over. Nothing under `src/terrain`, `tests/unit/terrain-core` or `tools/terrain-core` was truncated;
   the review probes and the full suite were re-run on the re-baked tile sets.
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `terrain-core-1` resolved: `TileLayerManifest.sourceCoverage` and `SOURCE_BLEND_TILES` (= 1) are in
+  `src/core/contracts/terrain.ts` with the E recursion on source rectangles and the relaxed
+  `TerrainResidency.effectiveLevel` comment; `src/terrain/coverage.ts` re-exports the constant and
+  `src/terrain/body.ts` reads the contract field (the local `HeightLayerWithSource` type is gone).
+- `terrain-core-4` resolved by both bakes (Moon 4f89577: level 9 lists no source tiles; Earth 93e67ae: land
+  tiles only, exact rectangle covers). `tests/unit/terrain-core/realData.test.ts` "texture ..." was
+  corrected for both: a level without source tiles has no source ring (it produced NaN), and the ring-start
+  assertion now compares against the same surface without that level's ring (new helper
+  `sourceHeldSource` in `edgeChecks.ts`), because with land-only source tiles the rings of levels 8-12 share
+  the coast and the old ratio against the parent surface measured real coast against the model there
+  (Earth level 9: 0.80). The ratios against the parent are still printed.
+- Effective level on the final manifests: 12.00 at the pad and within 500 m of it (11.67 at the shoreline
+  1 km east); 12.00 within 1 km of the lunar landing target (11.79 at 1.5 km west, 8.0 at 3 km east/west,
+  outside the NAC strip).
+
+Full list: `docs/handoff/lead-baseline.md`.

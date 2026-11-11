@@ -152,12 +152,16 @@ interface ListenerGeometry {
   up: Vec3;
   fwd: Vec3;
   interior: boolean;
-  /** Vessel whose structure carries sound to the listener: the one it sits in, or the active vessel for an outside camera. */
-  vesselId: string;
+  /**
+   * Vessel whose structure carries sound to the listener: the one it sits in, or the vessel an outside camera
+   * is attached to (AudioListener.attachedVesselId); null for a free outside camera, which hears no
+   * structure-borne sound at all.
+   */
+  vesselId: string | null;
   pressure: number;
   active: VesselSnapshot;
-  /** Distance from an outside listener to the active vessel's bounding sphere (about the VES origin), m. */
-  distanceToActive: number;
+  /** Distance from an attached outside listener to that vessel's bounding sphere (about its VES origin), m. */
+  attachDistance: number;
 }
 
 interface ClusterAcc {
@@ -215,7 +219,7 @@ export class SoundModel {
   private readonly creakRng: Prng;
   private readonly reported = new Set<string>();
   /** The last outside (non-map) listener, in the VES frame of the vessel that was active then. */
-  private lastOutside: { vesselId: string; pos: Vec3; fwd: Vec3; up: Vec3 } | null = null;
+  private lastOutside: { vesselId: string; attachedVesselId: string | null; pos: Vec3; fwd: Vec3; up: Vec3 } | null = null;
   private readonly ambienceAssets: string[];
 
   constructor(
@@ -277,27 +281,35 @@ export class SoundModel {
     let forward = l.forwardVes;
     let upHint = l.upVes;
     let pressure = l.ambientPressure;
+    let attachedId = l.attachedVesselId;
     if (l.kind === 'map') {
       const last = this.lastOutside?.vesselId === active.id ? this.lastOutside : null;
       if (last) {
         position = last.pos;
         forward = last.fwd;
         upHint = last.up;
+        attachedId = last.attachedVesselId;
       } else {
+        // The stand-in is a chase camera of the active vessel that was never shown.
         position = this.config.mix.propagation.mapListener.positionVes;
         forward = v3.len(position) > 1e-6 ? v3.neg(position) : v3.unitY();
         upHint = v3.unitY();
+        attachedId = active.id;
       }
       pressure = active.aero.pressure;
     } else if (l.kind !== 'interior') {
-      this.lastOutside = { vesselId: active.id, pos: v3.clone(l.positionVes), fwd: v3.clone(l.forwardVes), up: v3.clone(l.upVes) };
+      this.lastOutside = { vesselId: active.id, attachedVesselId: l.attachedVesselId, pos: v3.clone(l.positionVes), fwd: v3.clone(l.forwardVes), up: v3.clone(l.upVes) };
     }
     const fwd = v3.len(forward) > 1e-9 ? v3.normalize(forward) : v3.unitY();
     const side = v3.cross(fwd, upHint);
     const right = v3.len(side) > 1e-9 ? v3.normalize(side) : v3.anyOrthogonal(fwd);
     const up = v3.cross(right, fwd);
     const interior = l.kind === 'interior';
-    const vesselId = interior ? (l.insideVesselId ?? active.id) : active.id;
+    const attached = interior || attachedId === null ? null : (snap.vessels.find((v) => v.id === attachedId) ?? null);
+    if (!interior && attachedId !== null && !attached) this.report(problems, `listener is attached to vessel ${attachedId}, which is not in the snapshot`);
+    const vesselId = interior ? (l.insideVesselId ?? active.id) : (attached?.id ?? null);
+    // `position` is in the active vessel's VES frame; another vessel's origin is carried into it.
+    const attachOrigin = !attached || attached.id === active.id ? v3.zero() : quat.rotateInv(active.q, v3.sub(attached.rRoot, active.rRoot));
     return {
       pos: v3.clone(position),
       right,
@@ -307,7 +319,7 @@ export class SoundModel {
       vesselId,
       pressure,
       active,
-      distanceToActive: Math.max(0, v3.len(position) - active.boundingRadius),
+      attachDistance: attached ? Math.max(0, v3.dist(position, attachOrigin) - attached.boundingRadius) : Infinity,
     };
   }
 
@@ -385,7 +397,7 @@ export class SoundModel {
       cutoff = combineCutoffs(cutoff, hull.cutoffHz);
       if (coupled) body = bodyGain * dbToGain(structureDb(d, prop));
     } else if (coupled) {
-      body = bodyGain * dbToGain(prop.attach.gainDb) * attachFactor(geom.distanceToActive, prop);
+      body = bodyGain * dbToGain(prop.attach.gainDb) * attachFactor(geom.attachDistance, prop);
     }
     return {
       air: { gain: airGain, cutoff, delay: ret.delay, jump, pan: this.panOf(geom, rel) },

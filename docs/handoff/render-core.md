@@ -320,3 +320,19 @@ Also fixed on the way: the mesh system culled casters against a fitted cascade w
 the dark-frame step of the exposure spec depended on how fast the run was (its sun override followed the
 camera, and its quaternion from a basis divided by a term that can be zero): it now pins the sun, pauses
 the sim and uses a well-conditioned conversion (9 passes out of 9).
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `render-core-1` declined: cloud-shadow placement stays with `coreOf(ctx).setCloudShadowParams({ near, far })`
+  (per-frame CPU data; one path). The contract comment of `'clouds.shadowMap'` and RENDER_API section 7 say so;
+  the atmosphere-clouds brief names the call. Section 5 item 11 above stands.
+- `render-core-2` resolved: the dev server answers `/tiles/index.json` with `{ "tilesets": string[] }`
+  (`tools/server/dataPlugin.ts`, `listTilesets`); the LabPlanet reads it and skips a tile set that is not
+  baked without requesting its manifest (`src/render/core/lab/labPlanet.ts`). Section 5 item 13: both tile
+  sets exist now, so `?maps=tileset` logs nothing either way.
+- `render-core-3` resolved: `ShadowCascadeView.texelSize` is documented as the texel along u (the coarser
+  axis), `farDistance` as not describing a square, and the view has a new field `texelSizeV: number` (m,
+  equal to `texelSize` for a square cascade), filled from `CascadeCapture.texelSizeV` in
+  `shadows/shadowSystem.ts`; asserted in `tests/browser/render-core/shadows.spec.ts` (low sun).
+
+Full list: `docs/handoff/lead-baseline.md`.

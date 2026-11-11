@@ -38,6 +38,23 @@ export interface TileLayerManifest {
    * levels). A tile is fetchable iff level <= globalMaxLevel or it lies in a rect of its level.
    */
   coverage: Record<string, TileRect[]>;
+  /**
+   * `height` layer only, optional: where each sparse level holds data GENUINELY FINER than its parent level.
+   * Key = level (decimal string, a sparse level); value = rectangles of tiles, every one of them inside
+   * `coverage` of that level (a manifest that lists a source tile outside the coverage, or at a global
+   * level, is rejected). Bakes extend `coverage` one tile or more beyond the area their source data covers
+   * and fill that margin with parent-identical (upsampled) data, so that the run-time blend ring lies on
+   * data that equals the parent; `sourceCoverage` lists the tiles touching the area where the level's
+   * source has a non-zero weight AND resolves wavelengths below the parent level's (a source coarser than
+   * the parent level's posting adds nothing: such a level lists `[]`, or is left out).
+   *
+   * The height authority keys the effective level E on these rectangles (see SOURCE_BLEND_TILES), so
+   * procedural amplification is replaced exactly where real detail begins; the data blend D,
+   * `layerHasTile` and residency keep using `coverage`. Absent field = every sparse level is finer than its
+   * parent over its whole coverage (E keys on `coverage`, the COVERAGE_BLEND_TILES recursion). When the
+   * field is present, a sparse level without a key, or with an empty list, has no finer data anywhere.
+   */
+  sourceCoverage?: Record<string, TileRect[]>;
   /** frt1-height only: preferred metres-per-count per level (index = level); tiles may use a coarser power of two. */
   heightScales?: number[];
   /** frt1-u8 only: meaning of the byte values, e.g. land-cover class ids, or { land: 0, water: 255 }. */
@@ -116,13 +133,36 @@ export const TILE_LAYER = { height: 'height', albedo: 'albedo', watermask: 'wate
  * w_L is C2-continuous, 0 on the coverage boundary and 1 from a quarter tile inside it.
  *
  * Data height:      D_g = bicubic(level g = globalMaxLevel),  D_L = D_(L-1) + w_L (bicubic_L - D_(L-1)).
- * Effective level:  E_g = g,                                  E_L = E_(L-1) + w_L (L - E_(L-1)).
+ * Effective level:  E_g = g,                                  E_L = E_(L-1) + s_L (L - E_(L-1)),
+ *                   s_L = w_L when the height layer has no `sourceCoverage`; otherwise the SOURCE weight of
+ *                   SOURCE_BLEND_TILES below.
  * So the surface is exactly the parent-level surface on a coverage boundary: no wall where high-resolution
  * regions end, whatever the two sources disagree by. The effective level (fractional) is what procedural
  * amplification keys its octave and crater-size weights on, so synthetic detail also fades smoothly there.
  * Bakes keep regions of interest at least COVERAGE_BLEND_TILES inside their coverage rectangles.
  */
 export const COVERAGE_BLEND_TILES = 0.25;
+
+/**
+ * Width, in tiles of the level in question, of the ring inside a `TileLayerManifest.sourceCoverage` boundary
+ * over which the effective level E rises to that level.
+ *
+ * Source weight s_L(p): computed exactly like the coverage weight w_L above, but on the rectangles of
+ * `sourceCoverage[L]` instead of `coverage[L]` (0 where no source tile of level L contains p, and for a
+ * level with no source tiles) and rising over SOURCE_BLEND_TILES instead of COVERAGE_BLEND_TILES:
+ *   s_L = smootherstep(min(1, d / SOURCE_BLEND_TILES)).
+ * Like w_L it is a pure function of the manifest. One tile, not a quarter: source rectangles are
+ * tile-granular, so the real detail begins anywhere in the outermost source tile and fades in over the
+ * bake's feather (measured on the Moon: 0.1-0.3 of its full value 0.2-0.3 tile inside the source boundary,
+ * about 0.5 at half a tile, 0.8-1 at one tile); a quarter-tile ring switched the procedural detail off half
+ * a tile before the real detail arrived.
+ *
+ * Consequences: inside a coverage margin (covered, but outside the source rectangles) the data equals the
+ * parent's and E stays at the parent level, so the parent's procedural detail continues unchanged up to
+ * where real data replaces it. Regions of interest (landing sites, the pad) lie at least SOURCE_BLEND_TILES
+ * inside the source rectangles of every level they rely on.
+ */
+export const SOURCE_BLEND_TILES = 1;
 
 /** Does `layer` contain tile `key`? Pure function of the manifest. */
 export function layerHasTile(layer: TileLayerManifest, key: TileKey): boolean {
@@ -161,7 +201,14 @@ export interface TerrainResidency {
   /** Deepest data level resident at the point, and the deepest level the manifest offers there. */
   residentLevel: number;
   availableLevel: number;
-  /** Fractional effective data level E at the point (see COVERAGE_BLEND_TILES); equals availableLevel away from coverage edges. */
+  /**
+   * Fractional effective data level E at the point (see COVERAGE_BLEND_TILES and SOURCE_BLEND_TILES): the
+   * level whose real detail the surface carries there. It equals `availableLevel` well inside the source
+   * rectangles of every level (at least SOURCE_BLEND_TILES from their boundary; without `sourceCoverage`,
+   * COVERAGE_BLEND_TILES inside the coverage). It is LOWER, by design, in a coverage margin and at a level
+   * whose source is no finer than its parent: tiles of `availableLevel` exist and are loaded there, but
+   * they hold parent-identical data, and procedural amplification fills in from E down.
+   */
   effectiveLevel: number;
   /** True when every level that contributes at the point is resident (collision uses final data). */
   complete: boolean;

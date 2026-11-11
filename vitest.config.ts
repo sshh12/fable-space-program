@@ -16,7 +16,6 @@ export default defineConfig({
     // Several agents run suites on this machine at once; the default (one worker per core) multiplied the
     // real-data suites into tens of GB. Raise with VITEST_MAX_WORKERS only on a quiet machine.
     maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 6),
-    minWorkers: 1,
     include: process.env.MISSION
       ? ['tests/mission/**/*.test.ts']
       : ['src/**/*.test.ts', 'tests/unit/**/*.test.ts', 'tools/**/*.test.ts'],

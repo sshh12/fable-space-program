@@ -301,3 +301,17 @@ No contract was changed; no open requests against map-view paths exist.
 `synthetic-chain*.png`, `synthetic-8-patches.png`, `hover-impact-details.png`, `hover-add-maneuver.png`,
 `accept-*.png` (acceptance steps, including `accept-panel.png` with the total and time fields and
 `accept-follow-lowOrbit.png` / `accept-follow-lunarOrbit.png` from the moving-camera spec).
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `map-view-3` resolved (doc comments only): `MapView.update` displaySize = CSS pixels; `drawOverlay`
+  target = `RenderContext.canvasFormat` (non-sRGB view), sRGB-encoded values, premultiplied alpha;
+  `SimSnapshot.patches.planned` starts AT the first node (`planned[0].tStart = nodes[0].ut`, every planned
+  patch has `afterNodeId`); the at-intercept anchor derivation is in the `Patch.bodyPosAtEnd` comment;
+  `MapUpdateResult.consumed` documents that click-only elements do not consume on hover. The optional
+  `MapView.mount` was not added: the factory option `createMapView(gpu, defs, { uiRoot })` is the sanctioned
+  way and is named in the `MapView` comment.
+- `sim-orbits-3`: core `timeSincePeriapsis` (used by `anomalyTime.ts` and `scene.ts`) is now the
+  cancellation-free relation, exact through e = 1; no change in src/map.
+
+Full list: `docs/handoff/lead-baseline.md`.

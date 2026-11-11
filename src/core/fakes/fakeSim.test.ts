@@ -82,8 +82,11 @@ describe('FakeSim', () => {
     expect(s0.readouts.speedSurface).toBeLessThan(1e-6);
     expect(s0.readouts.speedOrbital).toBeGreaterThan(400);
     expect(s0.readouts.speedOrbital).toBeLessThan(470);
-    expect(s0.readouts.latitude * (180 / Math.PI)).toBeCloseTo(19.1, 6);
-    expect(s0.readouts.longitude * (180 / Math.PI)).toBeCloseTo(-155.5, 6);
+    // The pad stands where the site definition says (the Earth bake snapped it to real terrain; this test
+    // used to pin the nominal 19.1 N 155.5 W of ARCHITECTURE section 1).
+    const site = defs.sites[sim.scenario.site]!;
+    expect(s0.readouts.latitude * (180 / Math.PI)).toBeCloseTo(site.location.latDeg, 6);
+    expect(s0.readouts.longitude * (180 / Math.PI)).toBeCloseTo(site.location.lonDeg, 6);
     sim.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: 1 });
     expect(sim.commands.setWarpLevel(8).ok).toBe(false);
     expect(sim.commands.stage().ok).toBe(true);
@@ -93,6 +96,34 @@ describe('FakeSim', () => {
     expect(events).toContain('stageFired');
     expect(events).toContain('warpChanged');
     expect(sim.snapshot().events).toHaveLength(0);
+  });
+
+  it('rollDeg has the sign of the roll control: positive = rotation about +Y, dorsal toward starboard (request sim-orbits-2)', () => {
+    for (const scene of ['lowOrbit', 'translunar', 'lunarOrbit', 'reentry'] as const) {
+      const sim = createFakeSim(defs, { scene });
+      const before = sim.snapshot().navball;
+      sim.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), roll: 1 });
+      sim.advance(1 / 60);
+      sim.advance(1 / 60);
+      const after = sim.snapshot().navball;
+      let d = after.rollDeg - before.rollDeg;
+      d -= 360 * Math.round(d / 360);
+      expect(d, scene).toBeGreaterThan(0);
+      expect(d, scene).toBeLessThan(10);
+      // The published angles are those of the published quaternion (horizon frame: +X east, +Y north, +Z up).
+      const nose = quat.rotate(after.qVesselToHorizon, v3.unitY());
+      const dorsal = quat.rotate(after.qVesselToHorizon, v3.unitZ());
+      const upRef = v3.normalize(v3.reject(v3.unitZ(), nose));
+      const roll = Math.atan2(v3.dot(dorsal, v3.cross(nose, upRef)), v3.dot(dorsal, upRef)) * (180 / Math.PI);
+      expect(after.rollDeg).toBeCloseTo(roll, 6);
+      expect(after.pitchDeg).toBeCloseTo(Math.asin(nose.z) * (180 / Math.PI), 6);
+      expect(after.headingDeg).toBeCloseTo(((Math.atan2(nose.x, nose.y) * (180 / Math.PI)) + 360) % 360, 6);
+    }
+    // Nose vertical on the pad: roll 0, heading = the side the ventral face looks at (east in the pad scene).
+    const pad = createFakeSim(defs, { scene: 'pad' }).snapshot().navball;
+    expect(pad.pitchDeg).toBeCloseTo(90, 6);
+    expect(pad.rollDeg).toBe(0);
+    expect(pad.headingDeg).toBeCloseTo(90, 6);
   });
 
   it('reports surface targets, landing-target navigation and the presentation/simulation times', async () => {

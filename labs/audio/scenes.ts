@@ -83,18 +83,21 @@ export interface ListenerSpec {
   lookAt?: Vec3;
   pressure: number;
   insideVesselId?: string | null;
+  /** External listeners: the vessel the camera follows. Default: the active vessel for mode 'chase' and unknown flight rigs, none for kind 'map'; pass null for a ground-fixed camera. */
+  attachedVesselId?: string | null;
 }
 
 export function listener(spec: ListenerSpec, activeVesselId: string): AudioListener {
   if (spec.kind === 'interior') {
-    return { mode: spec.mode, kind: 'interior', insideVesselId: spec.insideVesselId ?? activeVesselId, positionVes: spec.position, forwardVes: v3.unitY(), upVes: v3.unitZ(), ambientPressure: spec.pressure };
+    return { mode: spec.mode, kind: 'interior', insideVesselId: spec.insideVesselId ?? activeVesselId, attachedVesselId: null, positionVes: spec.position, forwardVes: v3.unitY(), upVes: v3.unitZ(), ambientPressure: spec.pressure };
   }
   const target = spec.lookAt ?? v3.zero();
   let fwd = v3.sub(target, spec.position);
   fwd = v3.len(fwd) < 1e-6 ? v3.unitY() : v3.normalize(fwd);
   let up = v3.reject(v3.unitY(), fwd);
   up = v3.len(up) < 1e-6 ? v3.unitZ() : v3.normalize(up);
-  return { mode: spec.mode, kind: spec.kind, insideVesselId: spec.insideVesselId ?? null, positionVes: spec.position, forwardVes: fwd, upVes: up, ambientPressure: spec.pressure };
+  const attachedVesselId = spec.attachedVesselId !== undefined ? spec.attachedVesselId : spec.kind === 'external' ? activeVesselId : null;
+  return { mode: spec.mode, kind: spec.kind, insideVesselId: spec.insideVesselId ?? null, attachedVesselId, positionVes: spec.position, forwardVes: fwd, upVes: up, ambientPressure: spec.pressure };
 }
 
 /** External listener `distance` m from the stack's engine plane, at height `height`, on azimuth `az` (rad). */

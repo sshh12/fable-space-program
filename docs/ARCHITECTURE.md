@@ -42,6 +42,7 @@ source of truth for every interface named below.
 | 25 | Missions are data | `ScenarioDef.milestones` is a list of generic triggers (`MilestoneTrigger`); the sim has one evaluator and no mission-specific code. Named surface places (`SurfaceTarget`: landing target, recovery zones, launch site) come from scenario and site data. | "Don't hard-code this one mission." |
 | 26 | Terrain and determinism | `Sim.ready` and `Sim.terrainPending()` form the await protocol that makes asynchronous tile loading reproducible; collision vertices are evaluated lazily, never as whole grids. | The headless mission must reproduce a golden hash while terrain streams from disk; touchdown must not hitch. Sections 6 and 7.2. |
 | 27 | Vessel-to-vessel contact | Not simulated. Clean separation is guaranteed by data (impulses, retro and ullage motors) and asserted: after each of the ten stage events the clearance between the bounds of the separated vessels stays positive for 30 s. | Inter-vessel collision is a large feature with little pay-off for this mission; the test keeps the separations honest. |
+| 28 | Scenario start time | The mission starts 10 minutes before a **coplanar** crossing of the Moon's orbit plane at the pad, on **either** azimuth (ascending, about 81 deg, or descending, about 99 deg), with the pad Sun at 10-35 deg (morning) and the landing-site Sun at 5-35 deg and rising from start + 3 d to start + 5 d. Chosen by `tools/sim/findStartTime.ts --launch-kind either`: 2029-09-24T18:26:58.8Z, launch azimuth 99.4 deg (`tools/sim/start-time.json`). | With the ascending crossing alone the three constraints have no solution in 2027-2030 at the resolved pad (the lunar Sun climbs 24.4 deg in the two days, successive ascending opportunities step 12.2 deg); the descending crossing is just as coplanar, so TLI still needs no plane change, and it heads over open ocean. It gives a daylit pad and a low Sun for relief at lunar touchdown. `docs/requests/sim-orbits-1.md`. |
 
 ---
 
@@ -323,6 +324,9 @@ manifest.json                                   TileManifest (src/core/contracts
 globals/...                                     whole-body equirect maps listed in manifest.globals
 ```
 
+The server also answers `/tiles/index.json` with `{ "tilesets": string[] }`, the tile sets that are baked
+(directories with a manifest), so a page can skip a missing one without a failed request.
+
 Mapping: `dir = normalize(N + s U + t V)`; tile-local `(u, v)` to `(s, t)` as in `cubeSphere.ts`. For every
 raster layer the column index increases with `u` and the **row index increases with `v`** (row 0 is the
 low-`t` edge), so texture coordinates equal tile `(u, v)` for every layer. Equatorial-face tiles therefore
@@ -398,6 +402,12 @@ heightAt(body, dir, lambdaMin?) = D(dir)        data height: Catmull-Rom bicubic
   fractional **effective level** `E`; amplification octaves and crater size classes are weighted by a
   smooth function of `E`, so procedural detail also fades across the ring instead of ending at a wall.
   `w_L` and `E` are pure functions of the manifest, never of what happens to be resident.
+  Where the height layer lists `sourceCoverage` (the tiles of each sparse level whose data is genuinely
+  finer than the parent level; bakes extend `coverage` a tile beyond that and fill the margin with
+  parent-identical data), `E` rises on those rectangles instead, over one tile (`SOURCE_BLEND_TILES`),
+  while `D` keeps blending on `coverage`: in a margin, and at a level whose source is no finer than its
+  parent, the parent's procedural detail simply continues until real detail replaces it. Regions of
+  interest lie at least one tile inside the source rectangles of the levels they rely on.
 - **Collision surface = rendered surface.** `heightAt` without a band limit returns the bilinear
   interpolation of the height function on the vertex grid of the body's max-render-level tiles - exactly
   the mesh drawn at full detail (difference < 3 cm). Collision vertices are evaluated lazily, one by one,
@@ -705,8 +715,9 @@ kind, never exhaustively on the mode, so an unknown mode behaves as its kind.
   under g-load; UI clicks.
 - **Two propagation paths**: airborne (gain and low-pass cutoff scale with ambient pressure at the listener
   and with distance; silent in vacuum) and structure-borne (through the hull; always present inside the
-  cabin, heavily low-passed, and faintly for an external camera attached to the vessel). This is what makes
-  vacuum "muffled" rather than mute.
+  cabin, heavily low-passed, and faintly for an external camera attached to the vessel:
+  `AudioListener.attachedVesselId`, set for rigs that follow a vessel, null for a free or ground-fixed
+  camera). This is what makes vacuum "muffled" rather than mute.
 - Listener = camera: cockpit vs external, position relative to nozzles (panning, distance attenuation and
   delay), all from `AudioListener`.
 - Assets are generated at build time (`tools/audio`, keys from `.env`, never shipped) plus procedural

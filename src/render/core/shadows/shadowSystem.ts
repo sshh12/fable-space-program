@@ -121,6 +121,7 @@ export class ShadowSystem {
             index: c.layer,
             viewProj: m.viewProj,
             texelSize: c.capture.texelSize,
+            texelSizeV: c.capture.texelSizeV,
             farDistance: c.desired.farDistance,
             anchor: c.desired.anchor,
             everyFrame: c.desired.everyFrame,

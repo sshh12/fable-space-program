@@ -462,4 +462,24 @@ describe('audio listener', () => {
     expect(v3.dist(quat.rotate(v.q, l.positionVes), v3.sub(c.positionRoot, v.rRoot))).toBeLessThan(1e-6);
     expect(v3.len(l.forwardVes)).toBeCloseTo(1, 12);
   });
+
+  it('attachedVesselId names the vessel an external flight rig follows; null in the cockpit and in the map (request audio-1)', () => {
+    const src = sim('lowOrbit');
+    const s = src.snap();
+    const v = s.vessels[0]!;
+    const chase = createChaseRig({ defs });
+    chase.activate(null, s);
+    const fromChase = chase.update(s, IDLE, DT);
+    expect(buildAudioListener(defs, s, fromChase).attachedVesselId).toBe(v.id);
+    const cockpit = createCockpitRig({ defs });
+    cockpit.activate(null, s);
+    const inside = buildAudioListener(defs, s, cockpit.update(s, IDLE, DT));
+    expect(inside.insideVesselId).toBe(v.id);
+    expect(inside.attachedVesselId).toBeNull();
+    const map = createMapRig({ defs });
+    map.activate(fromChase, s);
+    expect(buildAudioListener(defs, s, map.update(s, IDLE, DT)).attachedVesselId).toBeNull();
+    // A free external camera (no focus vessel) is attached to nothing.
+    expect(buildAudioListener(defs, s, { ...fromChase, mode: 'pad-camera', focusVesselId: null }).attachedVesselId).toBeNull();
+  });
 });

@@ -593,10 +593,22 @@ export class FakeSim implements Sim {
     };
     const qHorizonToRoot = quat.fromBasis(e, n, u);
     const qVesselToHorizon = quat.mul(quat.conj(qHorizonToRoot), this.q);
-    const pitchDeg = Math.asin(clamp(v3.dot(nose, u), -1, 1)) / DEG;
-    const headingDeg = ((Math.atan2(v3.dot(nose, e), v3.dot(nose, n)) / DEG) + 360) % 360;
+    // Angle conventions of NavballState (contracts/sim.ts), the same as the real navball's.
+    const sinPitch = clamp(v3.dot(nose, u), -1, 1);
+    const pitchDeg = Math.asin(sinPitch) / DEG;
     const dorsal = quat.rotate(this.q, v3.unitZ());
-    const rollDeg = Math.atan2(v3.dot(dorsal, v3.cross(u, nose)), v3.dot(dorsal, v3.reject(u, nose))) / DEG;
+    let horiz = v3.reject(nose, u);
+    let upRef: Vec3;
+    if (v3.len(horiz) > 1e-9) {
+      upRef = v3.normalize(v3.reject(u, nose));
+    } else {
+      // Nose vertical: the heading is that of the ventral side and the roll is 0.
+      horiz = v3.reject(sinPitch >= 0 ? v3.neg(dorsal) : dorsal, u);
+      upRef = dorsal;
+    }
+    const headingDeg = ((Math.atan2(v3.dot(horiz, e), v3.dot(horiz, n)) / DEG) + 360) % 360;
+    // Positive roll = rotation about +Y (the nose): the dorsal side tips toward starboard = cross(nose, upRef).
+    const rollDeg = Math.atan2(v3.dot(dorsal, v3.cross(nose, upRef)), v3.dot(dorsal, upRef)) / DEG;
 
     const conic = landed ? null : conicFromState(body.mu, st.r, st.v, ut);
     const aps = conic ? conicApsides(conic) : { rp: body.radius, ra: body.radius };

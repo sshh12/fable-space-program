@@ -397,3 +397,21 @@ No requests against the sim-orbits paths were open.
   in August 2037. Lunar phases are self-consistent (the Sun is the real Almanac Sun) but do NOT match real
   calendar dates; sky/render must take phases from the body system, never from a real ephemeris. No nodal
   regression or apsidal precession, by design.
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `sim-orbits-1` decided: constraint (a) accepts EITHER coplanar azimuth. `tools/sim/start-time.json` was
+  regenerated with `npx tsx tools/sim/findStartTime.ts --launch-kind either --landing-lat 0.661471
+  --landing-lon 23.435999` (final pad, bake-recommended target): **startUt 938240818.839663 =
+  2029-09-24T18:26:58.8Z**, launch at +600 s on the descending crossing, surface azimuth 99.40 deg, pad Sun
+  30.87 deg, landing Sun 7.44 -> 31.86 deg. The section "Scenario start time" above describes the superseded
+  2037 file. `START_CONSTRAINT_DEFAULTS.launchKind` is still 'ascending' (the function default); the scenario
+  test passes `launchKind: 'either'` from the file's `constraints`.
+- `sim-orbits-2` resolved: `NavballState` documents pitch, heading and roll (roll positive = rotation about
+  +Y, the sign of the roll control); FakeSim now computes the same angles as `attitudeAngles`.
+- `sim-orbits-3` resolved: `timeFromPeriapsis(e, p, mu, nu)`, `atanOverX` and `atanhOverX` moved to
+  `src/core/math/conic.ts`; core `timeSincePeriapsis(c, nu)` calls it; `src/sim/orbit/anomaly.ts` re-exports
+  the three (no copy left, same import paths for sim code). The ConicElements comment documents the radial
+  convention (`p === 0`) and the period band. "Known limits: duplication with src/core/math" above is gone.
+
+Full list: `docs/handoff/lead-baseline.md`.

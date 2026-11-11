@@ -232,13 +232,17 @@ test('an unknown view mode of kind external sounds exactly like the chase camera
   expect(r.modelIdentical).toBe(true);
   expect(r.frames).toBeGreaterThan(300);
   expect(r.enginesRms).toBeGreaterThan(0.003);
-  // Chrome's offline renderer is not bit-reproducible for a graph this size (re-rendering the SAME scene
-  // differs by float rounding: about -75 dB re each tap's own RMS, -85 dB on the master). The unknown mode
-  // must sit inside that noise floor - no further from chase than chase is from itself (x4, or -100 dB
-  // when the re-render happens to be bit-exact) - and far below audibility (every tap's largest sample
-  // difference at least 60 dB under that tap's RMS).
-  expect(r.tapDiff).toBeLessThanOrEqual(Math.max(4 * r.selfTapDiff, 1e-5));
+  // Chrome's offline renderer is not bit-reproducible for a graph this size: two renders of the SAME scene
+  // either agree bit for bit or differ by float rounding, about -71 .. -75 dB re each tap's own RMS
+  // (2e-4 .. 3e-4) and -80 .. -85 dB re the master's RMS, and which of the two happens is independent
+  // from render to render. The unknown mode must sit inside that noise floor: no further from chase than
+  // chase is from itself (x4), or than the floor itself, taken at twice the largest difference measured
+  // (-66 dB per tap, -70 dB on the master), when this run's chase pair happened to be bit-exact. (The
+  // floor used to be -100 dB / -80 dB in that case, which failed whenever the chase pair was exact and
+  // the chase/unknown pair was not: 1 run in the lead's baseline, tapDiff 2.1e-4 against a bound of 1e-5.)
+  // And far below audibility: every tap's largest sample difference at least 60 dB under that tap's RMS.
+  expect(r.tapDiff).toBeLessThanOrEqual(Math.max(4 * r.selfTapDiff, 5e-4));
   expect(db(r.tapDiff)).toBeLessThan(-60);
-  expect(r.masterDiff).toBeLessThanOrEqual(Math.max(4 * r.selfMasterDiff, 1e-4 * r.masterRms));
+  expect(r.masterDiff).toBeLessThanOrEqual(Math.max(4 * r.selfMasterDiff, 3e-4 * r.masterRms));
   await expectNoErrors(page, pageLog);
 });

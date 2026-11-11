@@ -209,9 +209,23 @@ export interface SharedResourceMap {
    * Everything drawn after the atmosphere composite (transparents) applies it through `applyAtmosphere()`.
    */
   'atmosphere.aerialPerspective': GPUTextureView;
-  /** Orthographic cloud optical-depth map around the camera for near-field cloud shadows. */
+  /**
+   * Orthographic cloud optical-depth map around the camera for near-field cloud shadows (r = optical depth
+   * along the local vertical).
+   *
+   * PLACEMENT of both cloud shadow maps is not a shared resource: it is CPU data that changes every frame
+   * (the near map follows the camera), so the publishing feature passes it to the render core in `prepare`,
+   * every frame, with `coreOf(ctx).setCloudShadowParams({ near, far })` (src/render/core public API, types
+   * `CloudShadowNear` / `CloudShadowFar`; docs/RENDER_API.md section 7). The core writes it into the frame
+   * uniforms (`cloudNear0..2`, `cloudFar`) after all `prepare` hooks; `null` switches a term off, which is
+   * also the default. This is the only path: there is no 'clouds.shadowParams' key.
+   */
   'clouds.shadowMap': GPUTextureView;
-  /** Global cloud coverage (equirect) for far-field shadows and the environment probe. */
+  /**
+   * Global cloud coverage (equirect, row 0 = north, column 0 = longitude -180 deg, r = coverage) for
+   * far-field shadows and the environment probe. Layer radius, optical depth and longitude advection: the
+   * `far` member of `setCloudShadowParams` (see 'clouds.shadowMap').
+   */
   'clouds.coverageMap': GPUTextureView;
   /**
    * Result of this frame's cloud march at half render resolution, rgba16float: rgb = cloud radiance
@@ -359,9 +373,21 @@ export interface ShadowCascadeView {
   index: number;
   /** World (camera-relative, ROOT axes) -> shadow clip, valid for THIS frame. */
   viewProj: Mat4;
-  /** World-space size of one shadow texel, m. */
+  /**
+   * World-space size of one shadow texel along u, m: the coarser of the two axes (a staggered camera cascade
+   * fitted to its receivers at low sun has finer texels along v). Use it for caster LOD and small-caster
+   * culling.
+   */
   texelSize: number;
-  /** Far distance of this cascade from the camera, m (Infinity for a cascade fitted to a whole distant body). */
+  /** World-space size of one shadow texel along v, m. Equal to `texelSize` for a square cascade, never larger. */
+  texelSizeV: number;
+  /**
+   * Far distance of this cascade from the camera, m (Infinity for a cascade fitted to a whole distant body).
+   * Ground inside this distance is inside the map, but the footprint is not always a square of
+   * 2 x farDistance around the camera: at low sun it is a band (as wide as before along u, up to 16 times
+   * narrower along v, centred on the ground it shadows). Cull casters against `viewProj`
+   * (|clip.x|, |clip.y| <= 1 + margin), never by distance from the camera.
+   */
   farDistance: number;
   /** Frame the cascade is anchored to. */
   anchor: { kind: 'body' | 'vessel'; id: string };
@@ -504,7 +530,13 @@ export interface RenderFeature {
    * (aerial perspective + cloud occlusion), because the atmosphere composite has already happened.
    */
   drawTransparent?(frame: FrameContext, pass: GPURenderPassEncoder): void;
-  /** LDR overlay after tonemapping, at display resolution (orbit lines, markers). No depth attachment. */
+  /**
+   * LDR overlay after tonemapping, at display resolution (orbit lines, markers). The pass is the core's
+   * tonemap pass onto the canvas: one colour target in `RenderContext.canvasFormat` (the swap chain's own
+   * non-sRGB view, canvas `alphaMode: 'opaque'`), no depth attachment, sample count 1. Write
+   * display-referred, sRGB-ENCODED values; blend with premultiplied alpha
+   * (`src-factor: one, dst-factor: one-minus-src-alpha`). `frame.displaySize` is in device pixels.
+   */
   drawOverlay?(frame: FrameContext, pass: GPURenderPassEncoder): void;
   /** True when nothing is loading/compiling (used by deterministic screenshots). */
   isIdle?(): boolean;

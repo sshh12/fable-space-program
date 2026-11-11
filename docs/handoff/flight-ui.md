@@ -410,3 +410,14 @@ action, SAS or staging change. No other open request targets flight-ui paths. No
    implementation writes into the `rgba8unorm` texture).
 3. `sim-orbits-2` (FakeSim roll sign) affects how the FakeSim looks in this lab; nothing in flight-ui needs to
    change when it is fixed.
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `sim-orbits-2` resolved: FakeSim's `rollDeg` now has the ARCHITECTURE / real-sim sign (positive = dorsal
+  toward starboard) and its heading on the pad is that of the ventral side, so the MFD ADI is no longer
+  mirrored in the lab (section 5, "FakeSim's rollDeg has the opposite sign", no longer applies).
+- `audio-1`: `buildAudioListener` (`src/camera/listener.ts`) fills the new `AudioListener.attachedVesselId`:
+  `camera.focusVesselId` for a `kind: 'external'` camera, null for the cockpit and the map.
+- Note 2 of section 6: `NavballRenderer.view` is documented as sRGB-encoded, premultiplied colour.
+
+Full list: `docs/handoff/lead-baseline.md`.

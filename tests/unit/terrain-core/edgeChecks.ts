@@ -83,6 +83,26 @@ export function truncatedSource(src: TileSource, fromLevel: number): TileSource 
   };
 }
 
+/**
+ * A TileSource with the same tiles and coverage, whose height layer lists no SOURCE tiles at `level`: the
+ * data and the source rings of every other level are unchanged, but level `level` adds nothing to the
+ * effective level E ("the same surface without this level's source ring").
+ */
+export function sourceHeldSource(src: TileSource, level: number): TileSource {
+  return {
+    async manifest(tileset: string): Promise<TileManifest> {
+      const m = await src.manifest(tileset);
+      const copy: TileManifest = JSON.parse(JSON.stringify(m)) as TileManifest;
+      const sc = (copy.layers['height'] as LayerWithSource | undefined)?.sourceCoverage;
+      if (!sc) throw new Error(`${tileset}: the height layer has no sourceCoverage`);
+      sc[String(level)] = [];
+      return copy;
+    },
+    tile: (tileset, layer, key) => src.tile(tileset, layer, key),
+    file: (tileset, rel) => src.file(tileset, rel),
+  };
+}
+
 export interface EdgeStats {
   points: number;
   /** max |H(p + 1 mm) - H(p - 1 mm)| across the boundary (includes the honest change due to local slope). */

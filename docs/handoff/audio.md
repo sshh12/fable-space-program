@@ -106,8 +106,10 @@ as it is.
   on the vessel the listener is coupled to, no delay, 2x low-pass (engines 160-240 Hz) + hull resonance,
   attenuated 0.15 dB/m along the vessel (floor -24 dB). `kind: 'interior'` = cabin mix: full structure-borne
   path, airborne only through the hull (-19 dB, 2.4 kHz). `'external'`/`'map'` = outside listener: airborne
-  path, plus a faint structure-borne share near the active vessel: -12 dB re the cabin's coupling, full within
-  60 m of the bounding sphere about the VES origin, none beyond 250 m (see request audio-1); after the outside
+  path, plus a faint structure-borne share from the vessel the camera is attached to
+  (`AudioListener.attachedVesselId`, request audio-1, resolved by the lead): -12 dB re the cabin's coupling, full
+  within 60 m of that vessel's bounding sphere about its VES origin, none beyond 250 m; a free or ground-fixed
+  camera (`attachedVesselId: null`) hears none; after the outside
   bus gain it is about 17 dB below what the crew hears. `mode` is never read.
 - **Aero:** wind loop + pink-noise band (level `20 log10(q / 30 kPa)`, brightness with Mach) and a transonic
   buffet (brown noise, AM, Gaussian in Mach around 1.0). Cabin: hull-borne (1.4 kHz).
@@ -318,9 +320,11 @@ Listen-proof clips (10 s each, master output, `out/audio/*.wav`; spectrograms wi
   445 m: 14 dB at the master). Lowering the makeup and raising bus gains trades this against bus headroom.
 - **Surface ambience follows the active vessel**, not the listener: a ground camera loses the breeze once the
   rocket is 1.5 km up; there is no ambience in vacuum (the Moon outside is silent, by design).
-- **External structure-borne share** is a distance heuristic until the listener says which vessel a camera
-  follows (request audio-1). A chase camera beyond 250 m in vacuum hears nothing.
-- `ambientPressure` of an interior listener is taken as the OUTSIDE static pressure (request audio-1).
+- **External structure-borne share** is heard only by a camera attached to the vessel
+  (`AudioListener.attachedVesselId`, request audio-1 resolved) and still fades with distance
+  (`propagation.attach`): a chase camera beyond 250 m in vacuum hears nothing. The range may be widened in
+  `data/defs/audio/mix.json` now that a ground camera no longer receives the share.
+- `ambientPressure` of an interior listener is the OUTSIDE static pressure (now stated in the contract).
 - **Memory:** each continuous voice owns one mono 20 s delay line (3.8 MB at 48 kHz): 7.7 MB for aero and
   reentry, +3.8 MB per sounding engine cluster (4 clusters lit at once: 23 MB in all); plus ~23 MB of shared
   noise buffers (19 MB audio-rate, 3.6 MB slow modulation).
@@ -340,6 +344,18 @@ Listen-proof clips (10 s each, master output, `out/audio/*.wav`; spectrograms wi
 
 ## Requests
 
-- `docs/requests/audio-1.md` (non-blocking, `src/core/contracts/audio.ts`): add
+- `docs/requests/audio-1.md` (resolved by the lead between the waves, see its Resolution): add
   `AudioListener.attachedVesselId`, document `ambientPressure` for interior listeners, and document that the
   audio engine places a `kind: 'map'` listener itself (its position and pressure are not used).
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `audio-1` resolved: `AudioListener.attachedVesselId: string | null` (required). `src/audio/model.ts` gives
+  the faint structure-borne share only for sources on that vessel, faded with the listener's distance from
+  that vessel's bounding sphere (`propagation.attach`, unchanged values); a free or ground-fixed camera
+  hears none; a `kind: 'map'` listener inherits the attachment of the last outside flight camera (the
+  stand-in before any is attached to the active vessel). The contract documents `ambientPressure` of an
+  interior listener (outside static pressure) and the map-listener rule. Lab: `ListenerSpec.attachedVesselId`
+  (default: the active vessel for external listeners; the `liftoff-pad` scene's pad camera passes null).
+
+Full list: `docs/handoff/lead-baseline.md`.

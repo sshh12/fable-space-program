@@ -482,3 +482,17 @@ Review findings (independent review of the first bake) and what was done:
    from the shipped faces with the manifest's luminanceScale and checks the photometric chain on catalogue stars.
 7. Albedo ring artefacts on crater walls (minor): smooth slope mask with a floor of 0.5 (section 4.2); the
    `deshade-*.png` sheets now show the mask as a fifth panel.
+
+## Changes by the lead between the waves (2026-11-10)
+
+- `bake-moon-sky-1` resolved: the Tycho benchmark is judged against the PDS `ldem_256` pixel at its
+  coordinates (-1357.0 m; level 6 mean -1383.5 m, 26.5 m off); the other three stay on `ldem_64`
+  (`BENCHMARKS` in `tools/bake/moon/verify.py`). No tile changed.
+- `bake-moon-sky-2` resolved: the de-shading acceptance is "geometric-mean west/east wall ratio within 5 % of
+  1 over at least 20 craters and |r| < 0.3 between the per-crater log ratios and the raw mosaic's" (0.975,
+  r = -0.051 on 26 craters); the per-crater count (13 of 26 within 5 %) is printed as information.
+- `python -I tools/bake/moon/verify.py` now ends with **ALL CHECKS PASSED** (56 s, run by the lead through
+  the gate); section 3's "2 acceptance checks fail" and the first two items of section 7 describe the
+  criteria as they were. The brief's acceptance sentence was changed accordingly.
+
+Full list: `docs/handoff/lead-baseline.md`.

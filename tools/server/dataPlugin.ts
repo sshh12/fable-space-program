@@ -3,14 +3,18 @@
  * with the production build.
  *
  *   /tiles/**          <- data/tiles/**   baked tile pyramids  ({tileset}/{layer}/{face}/{level}/{x}/{y}.{ext})
+ *   /tiles/index.json  generated listing { tilesets: string[] } of the tile sets that are baked (the
+ *                      directories under data/tiles that contain a manifest.json), so a page can skip a
+ *                      missing tile set without a 404 (which Chrome logs as a console error)
  *   /sky/**            <- data/sky/**     baked star maps / catalogs
  *   /defs/**           <- data/defs/**    JSON definitions
  *   /defs/index.json   generated listing { files: string[] } of every JSON file under data/defs
  *
  * Responses carry COOP/COEP/CORP headers so the page is cross-origin isolated (SharedArrayBuffer,
  * 5 microsecond timers). Tiles are large and never copied into dist: `vite preview` serves them from
- * data/ through the same middleware. A request with a `?v=` query is treated as content-addressed
- * (immutable); anything else revalidates with an ETag.
+ * data/ through the same middleware; only the listing tiles/index.json (as of build time) is emitted. A
+ * request with a `?v=` query is treated as content-addressed (immutable); anything else revalidates with
+ * an ETag.
  */
 import fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -55,6 +59,20 @@ function listJson(root: string): string[] {
   return out.sort();
 }
 
+/** Ids of the baked tile sets: sub-directories of `tilesRoot` that hold a manifest.json, sorted. */
+export function listTilesets(tilesRoot: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(tilesRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(tilesRoot, e.name, 'manifest.json')))
+    .map((e) => e.name)
+    .sort();
+}
+
 export function fableDataPlugin(repoRoot: string): Plugin {
   const mounts: { prefix: string; dir: string }[] = [
     { prefix: '/tiles/', dir: path.join(repoRoot, 'data', 'tiles') },
@@ -62,6 +80,7 @@ export function fableDataPlugin(repoRoot: string): Plugin {
     { prefix: '/defs/', dir: path.join(repoRoot, 'data', 'defs') },
   ];
   const defsRoot = path.join(repoRoot, 'data', 'defs');
+  const tilesRoot = path.join(repoRoot, 'data', 'tiles');
 
   const handler = (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
     const rawUrl = req.url ?? '/';
@@ -79,6 +98,10 @@ export function fableDataPlugin(repoRoot: string): Plugin {
     };
     if (pathname === '/defs/index.json') {
       send(200, { 'Content-Type': MIME['.json']!, 'Cache-Control': 'no-cache' }, JSON.stringify({ files: listJson(defsRoot) }));
+      return;
+    }
+    if (pathname === '/tiles/index.json') {
+      send(200, { 'Content-Type': MIME['.json']!, 'Cache-Control': 'no-cache' }, JSON.stringify({ tilesets: listTilesets(tilesRoot) }));
       return;
     }
     const file = path.normalize(path.join(mount.dir, pathname.slice(mount.prefix.length)));
@@ -126,6 +149,7 @@ export function fableDataPlugin(repoRoot: string): Plugin {
         this.emitFile({ type: 'asset', fileName: `defs/${f}`, source: fs.readFileSync(path.join(defsRoot, f)) });
       }
       this.emitFile({ type: 'asset', fileName: 'defs/index.json', source: JSON.stringify({ files }) });
+      this.emitFile({ type: 'asset', fileName: 'tiles/index.json', source: JSON.stringify({ tilesets: listTilesets(tilesRoot) }) });
     },
   };
 }

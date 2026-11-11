@@ -31,6 +31,11 @@ export const VACUUM: Readonly<AtmosphereSample> = Object.freeze({ density: 0, pr
  * (uniform gravity, flat ground, exponential atmosphere).
  *
  * Vessel translational state is in BCI(bodyId); "fixed" means the body-fixed frame of that body.
+ *
+ * The environment describes the START of the step it is passed to: `ut`, `qFixedToInertial`, the sun and
+ * the swell behind `ocean.waterHeight` are those of the state the step integrates FROM. Vessels a step
+ * spawns (stage separation, debris) are returned in that same start-of-step state and must be stepped once
+ * with the same environment in the same tick, so that every vessel is at `ut + dt` afterwards.
  */
 export interface VesselEnvironment {
   ut: number;

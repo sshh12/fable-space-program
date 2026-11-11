@@ -48,7 +48,8 @@ function liftoff(lib: DefLibrary, name: 'liftoff-pad' | 'liftoff-cabin', mode = 
       listen: (t): ListenerSpec => {
         const h = height(t);
         if (name === 'liftoff-cabin') return { kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'booster'), pressure: pressureAt(h) };
-        return { kind: 'external', mode, position: v3.sub(pad, { x: 0, y: h, z: 0 }), lookAt: { x: 0, y: 30, z: 0 }, pressure: SEA_LEVEL };
+        // The pad camera stands on the ground; any other mode is a rig that follows the vehicle.
+        return { kind: 'external', mode, attachedVesselId: mode === 'pad-camera' ? null : base.activeVesselId, position: v3.sub(pad, { x: 0, y: h, z: 0 }), lookAt: { x: 0, y: 30, z: 0 }, pressure: SEA_LEVEL };
       },
       state: (t) => {
         if (t >= ignite && prev < ignite) e.activate(isBoosterEngine);

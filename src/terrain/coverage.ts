@@ -7,7 +7,7 @@
 import type { FaceId } from '../core/geo/cubeSphere';
 import { dirToTile, tileUvToDir } from '../core/geo/cubeSphere';
 import type { TileLayerManifest, TileRect } from '../core/contracts/terrain';
-import { COVERAGE_BLEND_TILES } from '../core/contracts/terrain';
+import { COVERAGE_BLEND_TILES, SOURCE_BLEND_TILES } from '../core/contracts/terrain';
 import { smootherstep01, tileNumber } from './util';
 
 /** Neighbour offsets, bit k of a missing-neighbour mask refers to NEIGHBOURS[k]. */
@@ -109,16 +109,11 @@ export class LayerCoverage {
 }
 
 /**
- * Width, in tiles of the level, of the ring inside a `sourceCoverage` boundary over which the effective level
- * rises (the source weight s_L; evaluator.ts). Source rectangles are tile-granular ("tiles touching the area
- * where the source data lies"): the real detail begins anywhere in the outermost tile and fades in over the
- * bake's feather. Measured on the real Moon tiles (level-L data detail against the distance from the source
- * boundary): ~0.1-0.3 of its full value at 0.2-0.3 tile, ~0.5 at 0.5 tile, ~0.8-1 at 1 tile. A one-tile
- * smootherstep follows that; the quarter-tile coverage ring switched the procedural detail off ~half a tile
- * before the real detail arrived (RMS slope down to 0.4-0.6 there). Regions of interest need to lie at least
- * this far inside their source rectangles for E to reach the level.
+ * Width of the source ring over which the effective level rises (the source weight s_L; evaluator.ts): the
+ * contract's constant (src/core/contracts/terrain.ts, where the measurement behind it is stated),
+ * re-exported for the modules of this package.
  */
-export const SOURCE_BLEND_TILES = 1;
+export { SOURCE_BLEND_TILES };
 
 /** Coverage weight from a missing-neighbour mask and tile-local (u, v), rising over `blend` tiles. */
 export function weightFromMask(mask: number, u: number, v: number, blend = COVERAGE_BLEND_TILES): number {

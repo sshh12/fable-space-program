@@ -384,8 +384,9 @@ lights, the map fill light and RT5 emissive. Eclipses and planetshine are comput
   `AmbientInput.skyIrradiance`; a forward shader that fills an `AmbientInput` itself follows the same rule.
 - `CameraState.fillLight` adds `albedo x fill x E_sun / pi` (map view only).
 
-Request `docs/requests/render-core-1.md` asks for the cloud-shadow placement to become a SharedResources
-key; until then `setCloudShadowParams` is the API.
+Cloud-shadow placement stays with `setCloudShadowParams` (lead decision on `docs/requests/render-core-1.md`,
+declined): it is per-frame CPU data, and one path is clearer than a second, GPU-side one. The contract
+comment of `'clouds.shadowMap'` in `src/core/contracts/render.ts` says so.
 
 ---
 
@@ -487,7 +488,8 @@ camera (texel = 2 r / 2048 along u; along v the same or finer, see above), a `de
    smaller than half of `cascade.texelSize`. Do not cull by clip z on the sun side (pancaking). The
    footprint is not always a square around the camera (receiver fit, above): never cull by distance from
    the camera or by `cascade.farDistance`, only by the clip rectangle. `cascade.texelSize` is the texel
-   along u, the coarser of the two: pick terrain LODs from it.
+   along u, the coarser of the two: pick terrain LODs from it. `cascade.texelSizeV` is the texel along v
+   (equal for a square cascade, finer for a receiver-fitted one).
 5. `cascade.index` is the array layer (stable for the lifetime of a cascade), `cascade.fit` tells a
    whole-body cascade (`farDistance` is Infinity): terrain should draw coarse resident tiles of that body.
 

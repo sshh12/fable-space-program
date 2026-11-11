@@ -76,7 +76,17 @@ export interface Patch {
   nextBodyId?: string;
   /** Set on patches downstream of a maneuver node (drawn dashed). */
   afterNodeId?: string;
-  /** ROOT-frame position of `bodyId` at tEnd (lets the map draw encounters "at intercept"). */
+  /**
+   * ROOT-frame position of `bodyId` at tEnd (lets the map draw encounters "at intercept").
+   *
+   * At-intercept drawing anchors each encounter (the patches inside a child SOI) at the child body's ROOT
+   * position at the SOI ENTRY, not at the encounter patch's own `bodyPosAtEnd` (the body at SOI exit or
+   * impact, up to 65,000 km further along the Moon's orbit after a 17 h approach). With `prev` the patch
+   * that ends with 'soiEnter' and `p` the first patch inside the SOI:
+   *   anchor = prev.bodyPosAtEnd + conicPosition(prev.conic, prev.nuEnd) - conicPosition(p.conic, p.nuStart)
+   * so the drawn chain is continuous at the intercept. Every encounter has its own anchor (a planned
+   * encounter at another time than the current one is drawn around its own ghost of the body).
+   */
   bodyPosAtEnd: Vec3;
   markers: Marker[];
 }
@@ -277,9 +287,19 @@ export interface NavballState {
    */
   qVesselToHorizon: Quat;
   markers: NavballMarkers;
-  /** Nose elevation above the horizon, compass heading of the nose, and roll; degrees. */
+  /** Nose (+Y of VES) elevation above the local horizon, degrees in [-90, 90]. */
   pitchDeg: number;
+  /**
+   * Compass direction of the nose, degrees in [0, 360), 0 = north, 90 = east. When the nose is vertical (on
+   * the pad) it is the compass direction the ventral side (-Z of VES) faces for a nose-up vessel, of the
+   * dorsal side for a nose-down one: the heading the nose takes up when it pitches over.
+   */
   headingDeg: number;
+  /**
+   * Rotation about the nose, degrees in (-180, 180]: 0 with the dorsal side (+Z of VES) up, positive =
+   * rotation about +Y (dorsal side toward starboard, clockwise seen from behind): the sign of
+   * `ControlInputs.roll` (ARCHITECTURE section 3). 0 when the nose is vertical.
+   */
   rollDeg: number;
 }
 
@@ -524,7 +544,14 @@ export interface SimSnapshot {
   navball: NavballState;
   readouts: Readouts;
   staging: { nextStage: number; stages: StageInfo[]; lockout: boolean };
-  /** Predicted trajectory of the active vessel: without nodes, and with nodes (from the first node on). */
+  /**
+   * Predicted trajectory of the active vessel. `current` ignores maneuver nodes. `planned` is empty without
+   * a node; otherwise it STARTS AT the first future node: `planned[0].tStart = nodes[0].ut`, from the state
+   * on the current trajectory at that time plus the node's delta-v, and every planned patch carries
+   * `afterNodeId` (the latest node applied before it). The arc from now to the first node is not repeated
+   * in `planned`: it is the part of `current` before `nodes[0].ut`. A planned patch that runs into a later
+   * node ends there with endReason 'maneuver'.
+   */
   patches: { current: Patch[]; planned: Patch[] };
   nodes: ManeuverNode[];
   /** Events since the previous snapshot() call, in time order. */

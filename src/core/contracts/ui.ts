@@ -11,7 +11,7 @@ import type { SimSnapshot } from './sim';
  * both the HUD and the cockpit instrument display.
  */
 export interface NavballRenderer {
-  /** 512 x 512 rgba8unorm texture view; alpha = coverage of the ball. */
+  /** 512 x 512 rgba8unorm texture view holding sRGB-encoded colour premultiplied by alpha; alpha = coverage of the ball. */
   readonly view: GPUTextureView;
   render(encoder: GPUCommandEncoder, snapshot: SimSnapshot): void;
 }
@@ -36,7 +36,14 @@ export interface Hud {
   dispose(): void;
 }
 
-/** Map view controller: owns orbit lines, markers and maneuver-node editing (via PlayerCommands only). */
+/**
+ * Map view controller: owns orbit lines, markers and maneuver-node editing (via PlayerCommands only).
+ *
+ * DOM UI: the node editor has a numeric panel (typing needs DOM inputs). The contract has no mount method;
+ * the factory takes the element to place it in, `createMapView(gpu, defs, { uiRoot?: HTMLElement })` in
+ * src/map: an element laid over the canvas whose CSS pixels coincide with the canvas' (the HUD container).
+ * Default: document.body with fixed positioning, which is right when the canvas fills the viewport.
+ */
 export interface MapView {
   setActive(active: boolean): void;
   /**
@@ -44,6 +51,10 @@ export interface MapView {
    * and snapshot of the frame currently on screen (what the player is pointing at), so hit-testing matches
    * what was drawn. The result tells the rest of the frame whether the pointer is taken and whether the
    * player asked to focus something (double click on a body or vessel).
+   *
+   * `displaySize` is the size of the canvas in CSS pixels: the space of `PointerState` and of
+   * `MapElementInfo`. (`FrameContext.displaySize` is in device pixels; the map derives the ratio from the
+   * next `drawOverlay` frame.)
    */
   update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: MapPointer, displaySize: [number, number]): MapUpdateResult;
   /** For tests and the pilot HUD: screen positions (CSS px) of interactive elements. */
@@ -55,9 +66,16 @@ export type MapPointer = PointerState;
 
 export interface MapUpdateResult {
   /**
-   * True while the map owns the pointer (hover over an interactive element, a drag in progress, focus in
-   * the numeric panel). The camera rig then ignores pointer input and the flight controller ignores the
+   * True while the map owns the pointer: hover over a DRAGGABLE element (a maneuver node, a gizmo handle),
+   * a handle or node drag in progress (until release), the pointer over the map's DOM panel, or focus in
+   * one of its fields. The camera rig then ignores pointer input and the flight controller ignores the
    * throttle axis (ControlContext.pointerCaptured).
+   *
+   * Click-only elements (trajectories, bodies, markers) do NOT consume on hover, although a click on them
+   * does something (add a node, set the target, double-click to focus): orbit lines and planet discs cover
+   * most of the map, and consuming there would stop the camera from rotating and zooming over them. Their
+   * actions fire on a press and release with less than a few pixels of movement; a press that moves
+   * further belongs to the camera.
    */
   consumed: boolean;
   /** Set on the frame the player double-clicks a body or vessel: the app passes it to the map camera rig. */

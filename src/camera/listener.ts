@@ -39,6 +39,8 @@ export function buildAudioListener(defs: DefLibrary, s: SimSnapshot, camera: Cam
     mode: camera.mode,
     kind: camera.kind,
     insideVesselId: camera.insideVesselId,
+    // Only an external flight rig follows a vessel rigidly; the map orbits its focus from 100 km or more.
+    attachedVesselId: camera.kind === 'external' ? camera.focusVesselId : null,
     positionVes: quat.rotateInv(v.q, rel),
     forwardVes: quat.rotateInv(v.q, viewForward(camera.qViewToRoot)),
     upVes: quat.rotateInv(v.q, viewUp(camera.qViewToRoot)),

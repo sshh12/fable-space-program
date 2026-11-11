@@ -270,20 +270,17 @@ export class BodyTerrain implements EvalBody {
 /** Reach (m) every load set adds around its points: the collision quad around a query and normalAt baselines. */
 export const BASE_REACH = 4;
 
-/** A height layer that may carry the `sourceCoverage` field of docs/requests/terrain-core-1.md. */
-type HeightLayerWithSource = TileLayerManifest & { sourceCoverage?: Record<string, TileRect[]> };
-
 /**
  * Coverage of the height layer's optional `sourceCoverage`: per sparse level, the rectangles of tiles whose data
  * is genuinely finer than the parent level (the bakes extend `coverage` one or more tiles beyond the source data
- * and fill that margin with parent-identical data). Requested from the contract in docs/requests/terrain-core-1.md
- * and written by both bakes; read here as an additive manifest field. The effective level E keys on these
+ * and fill that margin with parent-identical data). `TileLayerManifest.sourceCoverage` of the contract
+ * (docs/requests/terrain-core-1.md), written by both bakes. The effective level E keys on these
  * rectangles (weights computed exactly like the coverage weight), the data blend D keeps using `coverage`.
  * Absent: null (E keys on `coverage`, the contract's COVERAGE_BLEND_TILES recursion). Every source tile must lie
  * in `coverage` at a sparse level, otherwise the manifest is rejected.
  */
 function sourceCoverageOf(layer: TileLayerManifest, cov: LayerCoverage, tileset: string): LayerCoverage | null {
-  const sc = (layer as HeightLayerWithSource).sourceCoverage;
+  const sc = layer.sourceCoverage;
   if (sc === undefined) return null;
   for (const [k, rects] of Object.entries(sc)) {
     const level = Number(k);

@@ -1,9 +1,9 @@
 /**
- * The sim's anomaly/time relations against the core ones that UI consumers of Patch.conic evaluate
- * (src/core/math/conic.ts), and the periapsis-anchored state reconstruction of src/sim/orbit/kepler.ts.
+ * The anomaly/time relation shared by the sim and the UI consumers of Patch.conic (src/core/math/conic.ts),
+ * and the periapsis-anchored state reconstruction of src/sim/orbit/kepler.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { conicFromState, conicMaxTrueAnomaly, timeSincePeriapsis } from '../../../src/core/math/conic';
+import { conicFromState, conicMaxTrueAnomaly, timeFromPeriapsis as coreTimeFromPeriapsis, timeSincePeriapsis } from '../../../src/core/math/conic';
 import { v3 } from '../../../src/core/math/vec3';
 import { timeFromPeriapsis } from '../../../src/sim/orbit/anomaly';
 import { conicStateAtTime, makeOrbit, propagate, timeSincePeriapsisOfState } from '../../../src/sim/orbit/kepler';
@@ -17,34 +17,27 @@ function conicOf(e: number) {
   return conicFromState(MU, { x: RP, y: 0, z: 0 }, { x: 0, y: vp, z: 0 }, 0);
 }
 
-describe('time since periapsis: sim relation vs core timeSincePeriapsis', () => {
-  // Outside the core's Barker band (|e - 1| < 1e-9) both are exact relations; the core's E - e sin E and
-  // e sinh H - H lose ~1e-16/|1 - e| relative near e = 1, which bounds the agreement there.
-  const es = [0, 1e-6, 0.01, 0.3, 0.7, 0.97, 0.999, 0.99999, 1 - 1e-7, 1 - 2e-9, 1, 1 + 2e-9, 1 + 1e-7, 1.0001, 1.01, 1.3, 2, 3.5, 5];
+describe('time since periapsis: one relation for the sim and the core', () => {
+  // Request sim-orbits-3: the core adopted the sim's cancellation-free relation, so UI consumers of
+  // Patch.conic (core timeSincePeriapsis) and the sim (timeFromPeriapsis) evaluate the same function.
+  // Its accuracy near e = 1 is proven against quadrature in src/core/math/math.test.ts.
+  it('the sim re-exports the core function', () => {
+    expect(timeFromPeriapsis).toBe(coreTimeFromPeriapsis);
+  });
+
+  const es = [0, 1e-6, 0.01, 0.3, 0.7, 0.97, 0.999, 0.99999, 1 - 1e-7, 1 - 2e-9, 1 - 5e-10, 1, 1 + 5e-10, 1 + 2e-9, 1 + 1e-7, 1.0001, 1.01, 1.3, 2, 3.5, 5];
   for (const e of es) {
-    it(`e = ${e}`, () => {
+    it(`e = ${e}: timeSincePeriapsis(conic, nu) is bit-identical to timeFromPeriapsis(e, p, mu, nu)`, () => {
       const c = conicOf(e);
       const numax = conicMaxTrueAnomaly(c);
-      const tol = e === 1 ? 1e-14 : 1e-13 + 4e-16 / Math.abs(1 - c.e);
       for (let i = -200; i <= 200; i++) {
         const nu = (0.999 * numax * i) / 200;
-        const core = timeSincePeriapsis(c, nu);
         const sim = timeFromPeriapsis(c.e, c.p, MU, nu);
         expect(Number.isFinite(sim)).toBe(true);
-        expect(Math.abs(core - sim) / Math.max(Math.abs(sim), 1)).toBeLessThanOrEqual(tol);
+        expect(timeSincePeriapsis(c, nu)).toBe(sim);
       }
     });
   }
-
-  it('inside the core Barker band the two agree near periapsis (core drops the (1 - e) terms)', () => {
-    for (const e of [1 - 5e-10, 1 + 5e-10]) {
-      const c = conicOf(e);
-      for (let nu = -2; nu <= 2; nu += 0.05) {
-        const sim = timeFromPeriapsis(c.e, c.p, MU, nu);
-        expect(Math.abs(timeSincePeriapsis(c, nu) - sim) / Math.max(Math.abs(sim), 1)).toBeLessThan(1e-7);
-      }
-    }
-  });
 
   it('the state-based relation (near-radial tPeriapsis) equals the true-anomaly one on ordinary conics', () => {
     for (const e of [0.1, 0.5, 0.97, 1.5, 4]) {

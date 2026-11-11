@@ -34,6 +34,7 @@ export interface CascadeLogEntry {
   fit: string;
   anchor: string;
   texelSize: number;
+  texelSizeV: number;
   /** Half extent along u over half extent along v of the footprint (1 = square, above 1 = fitted to its receivers). */
   aspect: number;
 }
@@ -131,7 +132,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       id: 'lab-casters',
       init() {},
       drawShadow(frame: FrameContext, _pass: GPURenderPassEncoder, c: ShadowCascadeView) {
-        cascadeLog.push({ frame: frame.frameIndex, index: c.index, everyFrame: c.everyFrame, fit: c.fit, anchor: `${c.anchor.kind}:${c.anchor.id}`, texelSize: c.texelSize, aspect: Math.hypot(c.viewProj[1]!, c.viewProj[5]!, c.viewProj[9]!) / Math.hypot(c.viewProj[0]!, c.viewProj[4]!, c.viewProj[8]!) });
+        cascadeLog.push({ frame: frame.frameIndex, index: c.index, everyFrame: c.everyFrame, fit: c.fit, anchor: `${c.anchor.kind}:${c.anchor.id}`, texelSize: c.texelSize, texelSizeV: c.texelSizeV, aspect: Math.hypot(c.viewProj[1]!, c.viewProj[5]!, c.viewProj[9]!) / Math.hypot(c.viewProj[0]!, c.viewProj[4]!, c.viewProj[8]!) });
         if (cascadeLog.length > 4000) cascadeLog.splice(0, 2000);
       },
     });

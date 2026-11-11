@@ -493,7 +493,7 @@ Mach tables (linear interpolation, clamp ends):
 | Blunt stage end / tumbling cylinder end-on | 0.85 | 0.85 | 1.00 | 1.25 | 1.35 | 1.45 | 1.50 | 1.55 | 1.60 |
 | Capsule, shield-first (ref = pi D^2/4) | 0.90 | 0.92 | 1.05 | 1.25 | 1.40 | 1.45 | 1.38 | 1.32 | 1.30 |
 
-Dynamic pressure `q = 0.5 rho |vAir|^2`. Structural limit: each vessel configuration has `maxQAlpha` (Pa rad); the launch stack fails (breaks at the weakest joint - section 10.3) if `q * alpha > 60 000 Pa rad` (e.g. 6 deg at 33 kPa - a careless hard pitch at max-Q destroys the rocket, a gentle gravity turn does not). **(verified)** max-Q on a nominal ascent is 28-31 kPa at ~12 km.
+Dynamic pressure `q = 0.5 rho |vAir|^2`. Structural limit: each vessel configuration has `maxQAlpha` (Pa rad); the launch stack fails (breaks at the weakest joint - section 10.3) if `q * alpha` exceeds about `3 500 Pa rad` (e.g. 6 deg at 33 kPa = 3 456 Pa rad; an earlier revision of this line said 60 000 Pa rad, which contradicted its own example and could never be reached - corrected by the lead, request sim-vessel-1; the per-joint values are `PartDef.joint.maxQAlpha` in `data/defs/parts/` - a careless hard pitch at max-Q destroys the rocket, a gentle gravity turn does not). **(verified)** max-Q on a nominal ascent is 28-31 kPa at ~12 km.
 
 ---
 
@@ -808,7 +808,7 @@ Target plane normal `nT` = Moon orbit normal (ECI). Pad inertial position `rP(t)
 
 `data/scenarios/lunar-direct.json`: `{ vehicle: "meridian-lunar", site: "ka-lae-lc1", startUt, target: "moon", suggestedLanding: {lat: 0.8, lon: 23.5, name: "Mare Tranquillitatis"} }`.
 
-`startUt` is produced offline by `tools/find-start-time.ts` (deterministic search over 2026-2030) with constraints: (a) a coplanar ascending-azimuth window occurs 10 minutes after `startUt`; (b) Sun elevation at the pad between 10 and 35 deg (morning light, long shadows); (c) between start + 3 d and start + 5 d the Sun elevation at the suggested landing site stays within 5-35 deg and is rising (Apollo-style lighting, lit for the whole stay); (d) Moon above the pad horizon is not required. The chosen value is written into the scenario file with the computed Sun/Moon angles as comments in an adjacent `README`.
+`startUt` is produced offline by `tools/find-start-time.ts` (deterministic search over 2026-2030) with constraints: (a) a coplanar window on either azimuth (ascending, about 81 deg, or descending, about 99 deg; the lead's decision on `docs/requests/sim-orbits-1.md`, ARCHITECTURE section 1 row 28 - with the ascending crossing alone there is no solution in 2027-2030) occurs 10 minutes after `startUt`; (b) Sun elevation at the pad between 10 and 35 deg (morning light, long shadows); (c) between start + 3 d and start + 5 d the Sun elevation at the suggested landing site stays within 5-35 deg and is rising (Apollo-style lighting, lit for the whole stay); (d) Moon above the pad horizon is not required. The chosen value is written into the scenario file with the computed Sun/Moon angles as comments in an adjacent `README`.
 
 The suggested landing site is flat mare within 6.7 deg of the lunar equator, reachable from the near-equatorial lunar orbit that a coplanar transfer produces; the player may land anywhere.
 
