@@ -13,6 +13,8 @@
  *   &planet=0  &sky=0  &relief=0   switch the LabPlanet, the sun disc + stars, the mountain backdrop off
  *   &maps=synthetic           LabPlanet albedo from a procedural map instead of the baked albedoLowRes
  *   &hud=0                    no text overlay
+ *   &quality=q                pin FrameContext.qualityScale at q (< 1) through the governor (not in deterministic mode)
+ *   &heavy=N                  ballast pass of N iterations (perf specs: a GPU at the clock of a real frame)
  * plus every renderer parameter of createLabApp (scale, governor, perf, ev, fov, deterministic, paused).
  * Specs drive the rest through window.__lab and window.__atmo.
  */
@@ -119,6 +121,8 @@ async function boot(): Promise<void> {
     name: 'atmosphere',
     scene: 'pad',
     autoReady: false,
+    // A budget no frame can meet drives the governor straight down to the requested quality and holds it there.
+    renderer: Number(query.get('quality')) > 0 && Number(query.get('quality')) < 1 ? { governor: { qualityMin: Number(query.get('quality')), budgetMs: 0.01 } } : undefined,
     sim: (defs: DefLibrary) => {
       const inner = createFakeSim(defs, { scene: 'pad' });
       const first = Object.values(defs.sites)[0];

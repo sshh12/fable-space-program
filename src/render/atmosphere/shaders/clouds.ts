@@ -393,7 +393,8 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   // makes it fit, separately for the low shell (two thirds of the budget) and the smooth shell above it
   // (one third, steps three times longer): the near field keeps its share of the detail either way.
   let budget = max(atmo.steps.w, 12.0);
-  var coarsen = vec2f(1.0);
+  // (The governor's quality scale lengthens every step as well: cloudLight.w = 1 / qualityScale.)
+  var coarsen = vec2f(atmo.cloudLight.w);
   for (var i = 0; i < 4; i++) {
     var need = vec2f(0.0);
     for (var k = 0; k < 4; k++) {
@@ -401,7 +402,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
       let b = ray.t0 + spans.span[k].y;
       if (spans.kind[k] == 1) { need.x += cloudStepCount(a, b, coarsen.x); } else if (spans.kind[k] == 2) { need.y += cloudStepCount(a, b, coarsen.y); }
     }
-    coarsen = max(vec2f(1.0), vec2f(need.x / (budget * 0.667), need.y / budget));
+    coarsen = max(vec2f(atmo.cloudLight.w), vec2f(need.x / (budget * 0.667), need.y / budget));
   }
   // Step phase: blue noise while frames accumulate; the middle of the step when noise is frozen.
   let xi = 0.5 + (blueNoise(vec2u(hp)).y - 0.5) * atmo.misc.z;
@@ -423,6 +424,8 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   var tFront = 3.0e38;
   var tBack = 0.0;
   var steps = 0.0;
+  var haveLight = false;
+  var lastLight = vec3f(0.0);
   for (var k = 0; k < 4; k++) {
     var s = spans.span[k].x;
     let sEnd = spans.span[k].y;
@@ -580,7 +583,12 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
       let muS = dot(up, sunDir);
       let vis = atmoSunVisibility(posL, sunDir, bi).x;
       var J = vec3f(0.0);
-      if (vis > 0.0) {
+      // A slab that adds next to nothing to the pixel (deep inside a cloud already entered, or one more layer
+      // of a thin veil) takes the light of the slab before it instead of marching towards the sun again.
+      let reuse = haveLight && st.T * (1.0 - seg) * den.frac < 0.03;
+      if (reuse) {
+        J = lastLight;
+      } else if (vis > 0.0) {
         // Optical depth towards the sun: six cone samples through the same column, then the far term.
         let reach = max(atmo.cloudPhase.w, footprint * 3.0);
         var tau = 0.0;
@@ -606,10 +614,14 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
         let highOrders = atmo.cloudLight.x * thick * (0.4 + 0.6 * saturate(muS)) / (PI * (1.0 + kd * tau * max(muS, 0.15)));
         J = e * (lowOrders + highOrders);
       }
-      // Ambient: sky from above, the sunlit ground from below, each through the cloud in between.
-      let sky = textureSampleLevel(irradianceLut, linearClamp, skyIrradianceUvFromRMuS(r, muS, rb, rt), layer, 0.0).rgb;
-      let groundE = sky + frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rb, muS) * (max(muS, 0.0) * vis);
-      J += (sky / (1.0 + kd * den.above) + groundE * (atmo.cloudDeep.y / (1.0 + kd * den.below))) * (atmo.cloudDeep.z * 0.5 / PI);
+      if (!reuse) {
+        // Ambient: sky from above, the sunlit ground from below, each through the cloud in between.
+        let sky = textureSampleLevel(irradianceLut, linearClamp, skyIrradianceUvFromRMuS(r, muS, rb, rt), layer, 0.0).rgb;
+        let groundE = sky + frame.sunIlluminance.rgb * atmosphereSunTransmittance(transLut, bi, rb, muS) * (max(muS, 0.0) * vis);
+        J += (sky / (1.0 + kd * den.above) + groundE * (atmo.cloudDeep.y / (1.0 + kd * den.below))) * (atmo.cloudDeep.z * 0.5 / PI);
+        lastLight = J;
+        haveLight = true;
+      }
 
       let before = st.cover * (1.0 - st.T);
       cloudStackStep(&st, den.frac, seg, J);
@@ -754,7 +766,7 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
  *   g = distance along the line (from the map plane, towards the sun) where the cloud begins on the sun side,
  *   b = mean extinction along the line behind that point (1 / m).
  * A point at distance s along its line has  tau = clamp((g - s) b, 0, r)  between it and the sun.
- * A quarter of the texels is re-marched per frame; the others are copied from the previous frame at the
+ * A sixteenth of the texels is re-marched per frame; the others are copied from the previous frame at the
  * whole-texel shift of the origin. Bindings (group 1): 0 = AtmoU, 1 = coverage, 2 = base noise,
  * 3 = detail noise, 4 = previous map.
  */
@@ -766,7 +778,9 @@ ${CLOUD_HEADER}
   let pix = vec2i(in.position.xy);
   let n = i32(atmo.shadowShift.w);
   let phase = i32(atmo.shadowShift.z);
-  let mine = ((pix.x & 1) + 2 * (pix.y & 1)) == phase;
+  // One texel of every 4 x 4 block per frame, in an order that spreads successive frames over the block.
+  let order = array<i32, 16>(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+  let mine = order[(pix.x & 3) + 4 * (pix.y & 3)] == phase;
   if (!mine && atmo.shadowL.w > 0.5) {
     let src = pix + vec2i(atmo.shadowShift.xy);
     if (all(src >= vec2i(0)) && all(src < vec2i(n))) { return textureLoad(prevTex, src, 0); }

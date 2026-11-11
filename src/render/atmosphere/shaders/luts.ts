@@ -235,12 +235,14 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   let d = normalize(viewRay(uv));
   var rays: array<AtmoRay, 2>;
   var phases: array<vec2f, 2>;
+  var others: array<vec2f, 2>;   // eclipses by other bodies at the two ends of each path
   for (var a = 0; a < 2; a++) {
     rays[a].len = -1.0;
     let bix = atmo.bodies[a];
     if (bix < 0) { continue; }
     let bi = u32(bix);
     rays[a] = atmoRay(bi, d);
+    others[a] = vec2f(atmoOtherVisibility(d * rays[a].t0, frame.bodies[bi].sunDir.xyz, bi), atmoOtherVisibility(d * (rays[a].t0 + max(rays[a].len, 0.0)), frame.bodies[bi].sunDir.xyz, bi));
     let cosSun = dot(d, frame.bodies[bi].sunDir.xyz);
     phases[a] = vec2f(atmoPhaseR(cosSun), atmoPhaseM(cosSun, frame.bodies[bi].mie.w));
   }
@@ -261,7 +263,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         let s = ts - rays[a].t0;
         if (s <= 0.0 || s >= rays[a].len) { continue; }
         let bi = u32(atmo.bodies[a]);
-        let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, rays[a], s, phases[a]);
+        let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, rays[a], s, phases[a], mix(others[a].x, others[a].y, s / rays[a].len));
         src += o.direct * atmoCloudShadowOnRay(bi, d, rays[a], s) + o.multi;
         ext += o.ext;
       }

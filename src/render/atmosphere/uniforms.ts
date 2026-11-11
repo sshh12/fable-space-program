@@ -39,7 +39,7 @@ const FIELDS = [
   ['cloudHigh', 'vec4f', 'high layer: thickness min, thickness max (m), extinction min, extinction max (1 / m)'],
   ['cloudHigh2', 'vec4f', 'coverage where the high layer starts, where it is full, where the column starts to fill, where it is full'],
   ['cloudDeep', 'vec4f', 'deep column extinction (1 / m), ground albedo for the bounce, ambient scale, multi-scatter octave gain'],
-  ['cloudLight', 'vec4f', 'strength of the diffuse (high-order) sun term, two-stream attenuation coefficient 0.75 (1 - g), relief of the top of thick sheets (m), unused'],
+  ['cloudLight', 'vec4f', 'strength of the diffuse (high-order) sun term, two-stream attenuation coefficient 0.75 (1 - g), relief of the top of thick sheets (m), 1 / qualityScale (lengthens the cloud march steps)'],
   ['cloudPhase', 'vec4f', 'forward g, backward g, lobe mix, sun reach of the cone samples (m)'],
   ['cloudMarch', 'vec4f', 'step factor (step = distance x factor), min step (m), max step (m), angle of a half-resolution pixel (rad)'],
   ['cloudWind', 'vec4f', 'xyz = noise shear per metre of altitude (noise frame), w = scroll of the detail noise (m)'],

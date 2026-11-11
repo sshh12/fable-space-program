@@ -179,6 +179,8 @@ struct MarchOut {
     let cosSun = dot(d, frame.bodies[bi].sunDir.xyz);
     let phase = vec2f(atmoPhaseR(cosSun), atmoPhaseM(cosSun, frame.bodies[bi].mie.w));
     var cdf = atmoBuildCdf(bi, ray, 0.0, sEnd);
+    let othersA = atmoOtherVisibility(d * ray.t0, frame.bodies[bi].sunDir.xyz, bi);
+    let othersB = atmoOtherVisibility(d * (ray.t0 + sEnd), frame.bodies[bi].sunDir.xyz, bi);
     var sPrev = 0.0;
     for (var i = 0; i < n; i++) {
       var sNext = sEnd;
@@ -186,7 +188,8 @@ struct MarchOut {
       // The medium and the smooth part of the light are taken at the middle of the stratum: no noise in a
       // clear sky. Only the cloud shadow, which has edges, is looked up at a blue-noise position inside the
       // stratum (a different one for every sample: golden-ratio sequence), so shafts dither instead of band.
-      let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, ray, atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n)), phase);
+      let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n));
+      let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, ray, sm, phase, mix(othersA, othersB, sm / sEnd));
       var src = o.direct + o.multi;
       if (bix == atmo.bodies.z) {
         let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * atmo.misc.z + f32(i) * 0.61803398875)) / f32(n));
@@ -289,6 +292,29 @@ ${out}
   let st = in.uv * vec2f(size) - 0.5;
   let base = floor(st);
   let fr = st - base;
+  // The depths the four surrounding texels were marched to, and how far the pixel's own depth is from
+  // each: zero at either depth of a texel, growing with the gap in between (a third surface inside the
+  // block) and outside the bracket.
+  var depths: array<vec2f, 4>;
+  var diffs: array<f32, 4>;
+  var uniformDepth = true;
+  for (var k = 0; k < 4; k++) {
+    let ip = clamp(vec2i(base) + vec2i(k & 1, k >> 1), vec2i(0), size - 1);
+    let dh = textureLoad(depthHalfTex, ip, 0).rg;
+    depths[k] = dh;
+    let zF = viewZFromDepth(dh.r);
+    let zN = viewZFromDepth(dh.g);
+    let below = max(zN - zFull, 0.0);
+    let above = max(zFull - zF, 0.0);
+    let inside = min(max(zFull - zN, 0.0), max(zF - zFull, 0.0));
+    diffs[k] = min((below + above + inside) / max(min(zFull, zF), 1e-3), 1000.0);
+    uniformDepth = uniformDepth && dh.r == dh.g && diffs[k] < 2.0e-4;
+  }
+  // Most of the frame: sky, and surfaces without a depth edge nearby. All four texels agree with the pixel,
+  // the weights below reduce to bilinear ones, and the filtering sampler does the same in two lookups.
+  if (uniformDepth) {
+    return pack(textureSampleLevel(addFarTex, linearClamp, in.uv, 0.0).rgb, textureSampleLevel(mulFarTex, linearClamp, in.uv, 0.0).rgb);
+  }
   var sumA = vec3f(0.0);
   var sumM = vec3f(0.0);
   var wsum = 0.0;
@@ -298,17 +324,12 @@ ${out}
   for (var k = 0; k < 4; k++) {
     let o = vec2i(k & 1, k >> 1);
     let ip = clamp(vec2i(base) + o, vec2i(0), size - 1);
-    let dh = textureLoad(depthHalfTex, ip, 0).rg;
+    let dh = depths[k];
     let zF = viewZFromDepth(dh.r);
     let zN = viewZFromDepth(dh.g);
     var a = textureLoad(addFarTex, ip, 0).rgb;
     var m = textureLoad(mulFarTex, ip, 0).rgb;
-    // Distance of the pixel's depth from the two depths this texel was marched to: zero at either of them,
-    // growing with the gap in between (a third surface inside the block) and outside the bracket.
-    let below = max(zN - zFull, 0.0);
-    let above = max(zFull - zF, 0.0);
-    let inside = min(max(zFull - zN, 0.0), max(zF - zFull, 0.0));
-    let diff = min((below + above + inside) / max(min(zFull, zF), 1e-3), 1000.0);
+    let diff = diffs[k];
     if (dh.r != dh.g) {
       // Interpolate between the texel's near and far candidates at the pixel's own depth.
       let w = saturate((zFull - zN) / max(zF - zN, 1e-6 * zN));

@@ -200,7 +200,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       });
       compositeLayout = device.createBindGroupLayout({
         label: `${id}.composite`,
-        entries: [tex(0, 'unfilterable-float'), tex(1, 'unfilterable-float'), tex(2, 'unfilterable-float'), tex(3, 'unfilterable-float'), tex(4, 'unfilterable-float'), tex(5, 'depth')],
+        entries: [tex(0), tex(1), tex(2, 'unfilterable-float'), tex(3, 'unfilterable-float'), tex(4, 'unfilterable-float'), tex(5, 'depth')],
       });
       marchPipeline = core.fullscreenPipeline({
         label: `${id}.march`,

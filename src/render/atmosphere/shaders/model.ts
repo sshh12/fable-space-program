@@ -170,6 +170,23 @@ fn atmoSunVisibility(pos: vec3f, sunDir: vec3f, own: u32) -> vec2f {
   return vis;
 }
 
+/// Visible fraction of the solar disc from a camera-relative point against every non-star body except
+/// 'own': eclipses by other bodies. It varies over hundreds of kilometres, so a path through an atmosphere
+/// evaluates it at its two ends and interpolates.
+fn atmoOtherVisibility(pos: vec3f, sunDir: vec3f, own: u32) -> f32 {
+  var vis = 1.0;
+  for (var i = 0u; i < frame.counts.x; i++) {
+    if (i == own || (bodyFlags(i) & BODY_FLAG_STAR) != 0u) { continue; }
+    let toBody = frame.bodies[i].center.xyz - pos;
+    let dist = max(length(toBody), 1e-3);
+    let dir = toBody / dist;
+    let ro = asin(min(frame.bodies[i].center.w / dist, 1.0));
+    let sep = atan2(length(cross(dir, sunDir)), dot(dir, sunDir));
+    vis *= discVisibleFraction(frame.sunDir.w, ro, sep);
+  }
+  return vis;
+}
+
 /// Multi-scattering transfer (luminance per unit of scattering coefficient and of sun illuminance) at
 /// altitude h and sun-zenith cosine muS; 'top' = shell thickness.
 fn atmoMultiScatter(ms: texture_2d_array<f32>, layer: i32, h: f32, muS: f32, top: f32) -> vec3f {
@@ -184,20 +201,22 @@ struct AtmoSample {
 }
 
 /// Source terms and extinction of body 'bi' at distance s along the path of 'ray' (camera ray d).
-/// 'phase' = (Rayleigh, Mie) phase for this ray. Cloud shadows are the caller's business: they multiply
+/// 'phase' = (Rayleigh, Mie) phase for this ray, 'others' = visible fraction of the sun against the other
+/// bodies at the sample (atmoOtherVisibility). Cloud shadows are the caller's business: they multiply
 /// 'direct' (see chunk "atmosphere_cloud_shadow").
-fn atmoSampleAt(trans: texture_2d_array<f32>, ms: texture_2d_array<f32>, bi: u32, layer: i32, d: vec3f, ray: AtmoRay, s: f32, phase: vec2f) -> AtmoSample {
+fn atmoSampleAt(trans: texture_2d_array<f32>, ms: texture_2d_array<f32>, bi: u32, layer: i32, d: vec3f, ray: AtmoRay, s: f32, phase: vec2f, others: f32) -> AtmoSample {
   let rb = frame.bodies[bi].center.w;
   let h = atmoRayAltitude(ray, s);
   let pos = d * (ray.t0 + s);
   let up = normalize(pos - frame.bodies[bi].center.xyz);
   let sunDir = frame.bodies[bi].sunDir.xyz;
   let muS = dot(up, sunDir);
-  let vis = atmoSunVisibility(pos, sunDir, bi);
+  // The body's own shadow (with its penumbra) from the sample's radius and sun angle; eclipses from 'others'.
+  let own = atmoHorizonVisibility(rb + max(h, 0.0), rb, muS) * others;
   let m = atmoMedium(bi, h);
   var sun = vec3f(0.0);
-  if (vis.x > 0.0) { sun = atmosphereSunTransmittance(trans, bi, rb + max(h, 0.0), muS) * vis.x; }
-  let psi = atmoMultiScatter(ms, layer, h, muS, frame.bodies[bi].prevCenter.w - rb) * vis.y;
+  if (own > 0.0) { sun = atmosphereSunTransmittance(trans, bi, rb + max(h, 0.0), muS) * own; }
+  let psi = atmoMultiScatter(ms, layer, h, muS, frame.bodies[bi].prevCenter.w - rb) * others;
   var o: AtmoSample;
   o.direct = frame.sunIlluminance.rgb * sun * (m.scatR * phase.x + vec3f(m.scatM * phase.y));
   o.multi = frame.sunIlluminance.rgb * psi * (m.scatR + vec3f(m.scatM));
@@ -270,11 +289,14 @@ fn atmoIntegrate(trans: texture_2d_array<f32>, ms: texture_2d_array<f32>, bi: u3
   let cosSun = dot(d, frame.bodies[bi].sunDir.xyz);
   let phase = vec2f(atmoPhaseR(cosSun), atmoPhaseM(cosSun, frame.bodies[bi].mie.w));
   var cdf = atmoBuildCdf(bi, ray, 0.0, ray.len);
+  let othersA = atmoOtherVisibility(d * ray.t0, frame.bodies[bi].sunDir.xyz, bi);
+  let othersB = atmoOtherVisibility(d * (ray.t0 + ray.len), frame.bodies[bi].sunDir.xyz, bi);
   var sPrev = 0.0;
   for (var i = 0; i < n; i++) {
     var sNext = ray.len;
     if (i < n - 1) { sNext = atmoInvCdf(&cdf, f32(i + 1) / f32(n)); }
-    let o = atmoSampleAt(trans, ms, bi, layer, d, ray, atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n)), phase);
+    let sm = atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n));
+    let o = atmoSampleAt(trans, ms, bi, layer, d, ray, sm, phase, mix(othersA, othersB, sm / ray.len));
     let dt = sNext - sPrev;
     path.L += path.T * (o.direct + o.multi) * atmoSegment(o.ext, dt);
     path.T *= exp(-o.ext * dt);

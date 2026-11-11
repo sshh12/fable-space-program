@@ -589,8 +589,9 @@ export interface LabHeavy {
 }
 
 /**
- * Ballast: a fullscreen pass whose cost is `iterations`, encoded first in the frame (compute hook) with an
- * empty pass of its own behind it, so that its tail is not charged to the pass that follows.
+ * Ballast: a fullscreen pass whose cost is `iterations`, encoded last in the compute hook (after every
+ * feature's own compute passes) with an empty pass of its own behind it, so that its tail is not charged
+ * to a pass that is being measured.
  */
 export function createLabHeavy(initial: number): LabHeavy {
   let ctx: RenderContext;
@@ -601,7 +602,7 @@ export function createLabHeavy(initial: number): LabHeavy {
   let iterations = initial;
   const feature: RenderFeature = {
     id: 'lab-heavy',
-    order: -200,
+    order: 1000,
     init(c) {
       ctx = c;
       const core = coreOf(c);

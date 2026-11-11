@@ -568,7 +568,7 @@ export class CloudSystem {
     u.set('cloudHigh', params.highThicknessMinM, params.highThicknessMaxM, params.highExtinctionMin, params.highExtinctionMax);
     u.set('cloudHigh2', params.highCoverageStart, params.highCoverageFull, params.deepCoverageStart, params.deepCoverageFull);
     u.set('cloudDeep', params.deepExtinction, params.groundAlbedo, params.ambientScale, params.multiScatterGain);
-    u.set('cloudLight', params.diffuseScatter, 0.75 * (1 - params.diffusionG), params.topReliefM, 0);
+    u.set('cloudLight', params.diffuseScatter, 0.75 * (1 - params.diffusionG), params.topReliefM, 1 / Math.min(Math.max(frame.qualityScale, 0.25), 1));
     u.set('cloudPhase', params.phaseG1, params.phaseG2, params.phaseMix, params.sunReachM);
     const halfH = Math.ceil(frame.renderSize[1] / 2);
     u.set('cloudMarch', params.stepFactor, params.stepMinM, params.stepMaxM, (2 * Math.tan(frame.camera.fovY / 2)) / halfH);
@@ -659,7 +659,7 @@ export class CloudSystem {
     u.set('shadowU', axisU.x, axisU.y, axisU.z, params.shadowSteps);
     u.set('shadowV', axisV.x, axisV.y, axisV.z, scale);
     u.set('shadowL', dir.x, dir.y, dir.z, full ? 0 : 1);
-    u.set('shadowShift', shift[0], shift[1], frame.frameIndex & 3, n);
+    u.set('shadowShift', shift[0], shift[1], frame.frameIndex & 15, n);
     this.shadowValid = true;
     return { bodyIndex, originRelCam, axisU, axisV, dir, halfExtent: he, opticalDepthScale: scale };
   }
