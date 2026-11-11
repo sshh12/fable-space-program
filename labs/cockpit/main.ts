@@ -10,6 +10,7 @@
  *   look=<yawDeg>,<pitchDeg>             seat look direction (yaw right, pitch up), fov=<deg>
  *   aim=mfd0|mfd1|mfd2|fdai|switches|annunciator|hatch|windowL   look at a cockpit point
  *   g=<gLoad>, throttle=<0..1>, lights=0|1   lab decorations: g-load shown to the cabin, throttle, lights
+ *   ballast=<n>                          GPU ballast iterations (the perf spec keeps the GPU busy, ballast.ts)
  * Plus every createLabApp parameter (perf=features, scale=, governor=off, deterministic=1, ...).
  *
  * Keys 9 / 0 / minus cycle the pages of the three displays through a minimal mapping (the app shell does the
@@ -26,6 +27,7 @@ import { createCockpitFeature, loadCockpitLayout, type CockpitFeature } from '@/
 import { seatFrames } from '@/render/cockpit/cabin/context';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
+import { createBallastFeature } from './ballast';
 import { buildLabHull, createLabHullFeature } from './hull';
 import { createLabSkyFeature } from './sky';
 
@@ -65,6 +67,8 @@ interface CockpitLabApi {
   geometry(): { triangles: Record<string, number>; controls: number; labels: number; windows: number; floods: number };
   set(opts: { g?: number; throttle?: number; lights?: boolean }): void;
   keysSeen(): string[];
+  /** GPU ballast iterations per pixel (0 = off). */
+  setBallast(iterations: number): void;
   debug(): { navballDefault: boolean; mfdDefault: boolean; exposure: ReturnType<typeof window.__lab extends undefined ? never : NonNullable<typeof window.__lab>['renderer']['exposureInfo']> };
 }
 declare global {
@@ -186,6 +190,8 @@ async function boot(): Promise<void> {
   feature = created.feature;
   const controls = created.controls;
   await app.renderer.addFeature(feature);
+  const ballast = createBallastFeature(Number(params.get('ballast') ?? 0));
+  if (params.has('ballast')) await app.renderer.addFeature(ballast);
   const model = feature.model(vehicle.cockpit!)!;
 
   // ---- seat camera
@@ -306,6 +312,9 @@ async function boot(): Promise<void> {
       if (o.lights !== undefined && o.lights !== app.snapshot().readouts.lightsOn) app.sim.commands.toggleLights();
     },
     keysSeen: () => keys.slice(),
+    setBallast(n) {
+      ballast.iterations = n;
+    },
     debug: () => ({ navballDefault: app.renderer.resources.isDefault('ui.navball'), mfdDefault: app.renderer.resources.isDefault('ui.mfd'), exposure: app.renderer.exposureInfo() }),
   };
   await app.testApi.api.waitFrames(3);

@@ -35,8 +35,91 @@ export const CABIN_DECLS = (scene: string): string => /* wgsl */ `
 @group(1) @binding(3) var labelAtlas: texture_2d<f32>;
 @group(1) @binding(4) var mfdTex: texture_2d_array<f32>;
 @group(1) @binding(5) var navballTex: texture_2d<f32>;
+/// The per-frame cabin quantities, computed once per frame by AMBIENT_WGSL: CabinAmbient, then the radiance
+/// of every cabin polygon whose radiance comes from the GPU (windows: the probe; displays: their mean).
+@group(1) @binding(6) var<storage, read> cabinAmb: array<vec4f, ${AMBIENT_VEC4S}>;
+fn cabinAmbient() -> CabinAmbient {
+  var o: CabinAmbient;
+  o.uniformE = cabinAmb[0].xyz;
+  o.brightness = cabinAmb[0].w;
+  o.sunT = cabinAmb[1].xyz;
+  return o;
+}
+fn cabinPolyRadiance(i: u32) -> vec3f { return cabinAmb[2u + i].xyz; }
 ${scene}
 `;
+
+/** First binding of the scene sets in the cabin group (after the cabin's own bindings 0..6). */
+export const CABIN_SCENE_BINDING = 7;
+
+/**
+ * One invocation per frame: the cabin quantities every pixel shares (uniform inter-reflection irradiance,
+ * display brightness, sun transmittance), from the environment probe, the displays' mean and the
+ * atmosphere's transmittance. Group 1: cabin uniform, display array, output, then the scene sets.
+ */
+export const AMBIENT_WGSL = (scene: string): string => /* wgsl */ `
+#include "frame"
+@group(1) @binding(0) var<uniform> cabin: CabinFrame;
+@group(1) @binding(1) var mfdTex: texture_2d_array<f32>;
+@group(1) @binding(2) var<storage, read_write> outAmb: array<vec4f, ${AMBIENT_VEC4S}>;
+fn cabinPolyRadiance(i: u32) -> vec3f { return outAmb[2u + i].xyz; }
+${scene}
+#include "cockpit_cabin"
+// One invocation per cabin polygon; texture fetches run in parallel, the sums in invocation 0.
+var<workgroup> wFlux: array<vec3f, ${MAX_CABIN_POLYS}>;
+var<workgroup> wShared: vec4f;
+@compute @workgroup_size(${MAX_CABIN_POLYS}) fn main(@builtin(local_invocation_index) i: u32) {
+  let n = cabin.counts.x;
+  var kind = 255u;
+  var P: CabinPoly;
+  if (i < n) {
+    P = cabin.polys[i];
+    kind = u32(P.p0.w);
+  }
+  // Windows: the flux they let in (for the uniform inter-reflection term) and what a cabin surface sees
+  // through them: the probe about the outward axis, filtered over the cone the cabin's surfaces look out
+  // through (about 1.5 sr).
+  var L = vec3f(0.0);
+  var flux = vec3f(0.0);
+  if (kind == POLY_WINDOW) {
+    flux = windowRadiance(-P.normal.xyz, 6.28, P.radiance.rgb) * (PI * P.radiance.w);
+    L = windowRadiance(-P.normal.xyz, 1.5, P.radiance.rgb);
+  }
+  wFlux[i] = flux;
+  workgroupBarrier();
+  if (i == 0u) {
+    let sunT = cabinSunTransmittance();
+    var total = cabin.bounce.y * sunT * cabin.sunColor.rgb + vec3f(cabin.bounce.z);
+    for (var k = 0u; k < ${MAX_CABIN_POLYS}u; k++) { total += wFlux[k]; }
+    // Display brightness follows the light the cabin receives (ambient sensor), never below the night floor.
+    let eCabin = luminance(total) * cabin.bounce.x / max(cabin.bounce.w, 1e-3);
+    let brightness = clamp(sqrt(eCabin / cabin.display.z), cabin.display.y, 1.0);
+    outAmb[1] = vec4f(sunT, 0.0);
+    wShared = vec4f(total, brightness);
+  }
+  workgroupBarrier();
+  let brightness = wShared.w;
+  var dflux = vec3f(0.0);
+  if (kind == POLY_DISPLAY) {
+    L = displayMean(u32(P.p1.w)) * brightness;
+    dflux = L * (PI * P.radiance.w);
+  }
+  wFlux[i] = dflux;
+  if (i < n) { outAmb[2u + i] = vec4f(L, 0.0); }
+  workgroupBarrier();
+  if (i == 0u) {
+    var total = wShared.xyz;
+    for (var k = 0u; k < ${MAX_CABIN_POLYS}u; k++) { total += wFlux[k]; }
+    outAmb[0] = vec4f(total * cabin.bounce.x, brightness);
+  }
+}
+`;
+
+/** vec4s of the ambient pass's output: CabinAmbient (2), then one per cabin polygon. */
+export const AMBIENT_VEC4S = 2 + MAX_CABIN_POLYS;
+
+/** First binding of the scene sets in the ambient pass's group. */
+export const AMBIENT_SCENE_BINDING = 3;
 
 /** Common include block of the cabin modules. */
 const HEAD = (decls: string): string => `
@@ -85,7 +168,7 @@ struct CabinFrame {
   plasma: vec4f,                       // rgb = shock-layer radiance seen through the windows (cd/m^2), w = plasma intensity
   display: vec4f,                      // x = display luminance at full brightness (cd/m^2), y = minimum brightness, z = full-brightness ambient (lux), w = pixel structure on (1)
   counts: vec4u,                       // x = polygons, y = windows (the first y polygons), z = displays, w = flags (bit 0 = camera inside the cabin)
-  vib: vec4f,                          // w = LOD dither fade (1 = solid)
+  vib: vec4f,                          // reserved (zero)
   misc: vec4f,                         // x = glass transmittance (mean), y = dust density, z = scratch density, w = pane ior
   tint: vec4f,                         // rgb = transmittance of one pane (tint and Fresnel at normal incidence)
   view: vec4f,                         // xyz = camera position in the part frame, w = 1 when the camera is inside the cabin
@@ -102,10 +185,14 @@ fn dirRoot(v: vec3f) -> vec3f { return vec3f(dot(cabin.m0.xyz, v), dot(cabin.m1.
 /// Vector irradiance of a polygon (Lambert): the cosine-weighted directions over its solid angle, over pi.
 /// dot(n, V) is the form factor from a point with normal n (without horizon clipping).
 fn edgeVec(a: vec3f, b: vec3f) -> vec3f {
-  let c = clamp(dot(a, b), -0.9999, 0.9999);
-  let theta = acos(c);
-  let x = cross(a, b);
-  return x * (theta / max(length(x), 1e-6));
+  // theta / sin(theta) by the rational fit of Hill and Heitz (no acos, no length).
+  let x = dot(a, b);
+  let y = abs(x);
+  let p = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+  let q = 3.4175940 + (4.1616724 + y) * y;
+  let k = p / q;
+  let thetaOverSin = select(0.5 * inverseSqrt(max(1.0 - x * x, 1e-7)) - k, k, x > 0.0);
+  return cross(a, b) * thetaOverSin;
 }
 fn polyVector(pos: vec3f, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
   let u0 = normalize(a - pos);
@@ -147,27 +234,6 @@ struct CabinAmbient {
   sunT: vec3f,
 }
 
-/// Per-frame quantities every pixel needs (a handful of fetches with identical addresses: cache hits).
-fn cabinAmbient() -> CabinAmbient {
-  var o: CabinAmbient;
-  o.sunT = cabinSunTransmittance();
-  var flux = cabin.bounce.y * o.sunT * cabin.sunColor.rgb + vec3f(cabin.bounce.z);
-  for (var i = 0u; i < cabin.counts.y; i++) {
-    let P = cabin.polys[i];
-    let L = windowRadiance(-P.normal.xyz, 6.28, P.radiance.rgb);
-    flux += L * (PI * P.radiance.w);
-  }
-  // Display brightness follows the light the cabin receives (ambient sensor), never below the night floor.
-  let eCabin = luminance(flux) * cabin.bounce.x / max(cabin.bounce.w, 1e-3);
-  o.brightness = clamp(sqrt(eCabin / cabin.display.z), cabin.display.y, 1.0);
-  for (var i = 0u; i < cabin.counts.x; i++) {
-    let P = cabin.polys[i];
-    if (u32(P.p0.w) == POLY_DISPLAY) { flux += displayMean(u32(P.p1.w)) * o.brightness * (PI * P.radiance.w); }
-  }
-  o.uniformE = flux * cabin.bounce.x;
-  return o;
-}
-
 struct CabinLight {
   diffuse: vec3f,    // irradiance (lux) to be multiplied by albedo / pi
   specular: vec3f,   // reflected luminance (cd/m^2)
@@ -196,12 +262,10 @@ fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, amb: Ca
     if (lenV < 1e-7) { continue; }
     let ff = max(dot(n, V), 0.0);
     var L: vec3f;
-    if (kind == POLY_WINDOW) {
-      L = windowRadiance(V / lenV, lenV * TWO_PI, P.radiance.rgb);
+    if (kind == POLY_WINDOW || kind == POLY_DISPLAY) {
+      L = cabinPolyRadiance(i);
     } else if (kind == POLY_PATCH) {
       L = P.radiance.rgb * amb.sunT;
-    } else if (kind == POLY_DISPLAY) {
-      L = displayMean(u32(P.p1.w)) * amb.brightness;
     } else {
       L = P.radiance.rgb;
     }
@@ -249,7 +313,8 @@ struct VIn {
   @location(6) ctl: vec2u,
 }
 struct VOut {
-  @builtin(position) clip: vec4f,
+  // Invariant: the depth pre-pass and the shading pass produce bit-identical depth (depth test 'equal').
+  @invariant @builtin(position) clip: vec4f,
   @location(0) world: vec3f,
   @location(1) n: vec3f,
   @location(2) t: vec4f,
@@ -376,12 +441,13 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f, fw: f32) -> Detail {
   return d;
 }
 
+/// Depth pre-pass: the shading pass then runs once per visible pixel (depth test 'equal', no overdraw).
+@fragment fn fsDepth() -> GBufferOut {
+  var o: GBufferOut;
+  return o;
+}
+
 @fragment fn fs(in: VOut) -> GBufferOut {
-  let fade = cabin.vib.w;
-  if (fade < 1.0) {
-    let nz = blueNoise(vec2u(in.clip.xy)).a;
-    if (nz >= fade) { discard; }
-  }
   let mat = materials[in.misc.x];
   let shading = u32(mat.b.y + 0.5);
   var albedo = mat.a.rgb;
@@ -464,6 +530,9 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f, fw: f32) -> Detail {
 }
 `;
 
+/** Depth pre-pass entry of INTERIOR_WGSL: no colour is written (every target's write mask is 0). */
+export const INTERIOR_DEPTH_ENTRY = 'fsDepth';
+
 /** Depth-only shadow caster: the same vertices with the animated controls. */
 export const SHADOW_WGSL = /* wgsl */ `
 #include "frame"
@@ -514,11 +583,6 @@ struct VOut {
 }
 
 @fragment fn fs(in: VOut) -> GBufferOut {
-  let fade = cabin.vib.w;
-  if (fade < 1.0) {
-    let nz = blueNoise(vec2u(in.clip.xy)).a;
-    if (nz >= fade) { discard; }
-  }
   let size = vec2f(textureDimensions(mfdTex));
   var img = textureSample(mfdTex, anisoRepeat, in.uv, in.layer).rgb;
   // Pixel structure: when one display pixel covers several screen pixels the R, G and B stripes and the
@@ -567,11 +631,6 @@ struct VOut {
 }
 fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045)); }
 @fragment fn fs(in: VOut) -> GBufferOut {
-  let fade = cabin.vib.w;
-  if (fade < 1.0) {
-    let nz = blueNoise(vec2u(in.clip.xy)).a;
-    if (nz >= fade) { discard; }
-  }
   let t = textureSample(navballTex, linearClamp, in.uv);
   // Premultiplied sRGB image: un-premultiply, decode; outside the ball the cavity is black.
   let c = select(vec3f(0.0), srgbToLinear(min(t.rgb / max(t.a, 1e-3), vec3f(1.0))), t.a > 0.004);
@@ -693,7 +752,8 @@ fn glass(in: VOut) -> GlassOut {
   } else {
     refl = textureSampleLevel(envProbeCube, linearClamp, r, 0.0).rgb;
   }
-  var add = refl * (2.0 * F);
+  // info.y: reflectance factor of the pane (anti-reflection coated display cover glass about 1/8).
+  var add = refl * (2.0 * F * in.info.y);
   // Dust and scratches on the cabin side light up when the sun shines through at a grazing angle.
   let sunN = dot(frame.sunDir.xyz, -n);
   if (sunN > 0.0 && cabin.sun.w > 0.0) {

@@ -29,7 +29,7 @@ import { cockpitLayouts } from './layout';
 import { cabinSources, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 import { insideDistance } from './mould';
-import { BALL_WGSL, CABIN_CHUNK, CABIN_DECLS, CABIN_HEADER_FLOATS, CABIN_POLY_FLOATS, CABIN_UNIFORM_FLOATS, CONTROL_FLOATS, DISPLAY_WGSL, GLASS_WGSL, INTERIOR_WGSL, MAX_MATERIALS, SHADOW_WGSL, TUNNEL_WGSL } from './shaders';
+import { AMBIENT_SCENE_BINDING, AMBIENT_VEC4S, AMBIENT_WGSL, BALL_WGSL, CABIN_CHUNK, CABIN_DECLS, CABIN_SCENE_BINDING, CABIN_HEADER_FLOATS, CABIN_POLY_FLOATS, CABIN_UNIFORM_FLOATS, CONTROL_FLOATS, DISPLAY_WGSL, GLASS_WGSL, INTERIOR_DEPTH_ENTRY, INTERIOR_WGSL, MAX_MATERIALS, SHADOW_WGSL, TUNNEL_WGSL } from './shaders';
 
 export interface CockpitFeatureOptions {
   /** The shared navball renderer; its view is published as 'ui.navball' when nobody else has. */
@@ -82,6 +82,9 @@ interface GpuModel {
   atlas: GPUTexture;
   group: GPUBindGroup | null;
   groupVersion: number;
+  /** The ambient pass's group (cabin uniform, displays, output, scene sets) and its resource version. */
+  ambientGroup: GPUBindGroup | null;
+  ambientVersion: number;
   shadowGroup: GPUBindGroup;
   cabinData: Float32Array<ArrayBuffer>;
   controlData: Float32Array<ArrayBuffer>;
@@ -104,7 +107,13 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let shadowLayout: GPUBindGroupLayout;
   let tunnelLayout: GPUBindGroupLayout;
   let scene: SceneBindings;
+  let ambientScene: SceneBindings;
+  let ambientLayout: GPUBindGroupLayout;
+  let ambientPipe: Tracked<GPUComputePipeline>;
+  /** Output of the ambient pass, read by every cabin pixel (shared by the layouts: one interior is drawn). */
+  let ambientBuf: GPUBuffer;
   let interior: Tracked<GPURenderPipeline>;
+  let interiorDepth: Tracked<GPURenderPipeline>;
   let shadow: Tracked<GPURenderPipeline>;
   let display: Tracked<GPURenderPipeline>;
   let ballPipe: Tracked<GPURenderPipeline>;
@@ -117,7 +126,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let navballVersion = -1;
 
   // Per-frame state.
-  let active: { gm: GpuModel; lod: LodName; vessel: VesselSnapshot; interiorView: boolean; centre: Vec3; fade: number } | null = null;
+  let active: { gm: GpuModel; lod: LodName; vessel: VesselSnapshot; interiorView: boolean; centre: Vec3 } | null = null;
   let clock = 0;
   let gFiltered = 1;
   let tunnel = 0;
@@ -159,7 +168,25 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const device = c.device;
       const core = coreOf(c);
       core.shaders.register('cockpit_cabin', CABIN_CHUNK);
-      scene = createSceneBindings(c, 1, 6, ['env', 'atmosphereLuts', 'transparency', 'shadow']);
+      scene = createSceneBindings(c, 1, CABIN_SCENE_BINDING, ['env', 'atmosphereLuts', 'transparency', 'shadow']);
+      ambientScene = createSceneBindings(c, 1, AMBIENT_SCENE_BINDING, ['env', 'atmosphereLuts']);
+      ambientBuf = device.createBuffer({ label: 'cockpit.ambient', size: AMBIENT_VEC4S * 16, usage: GPUBufferUsage.STORAGE });
+      ambientLayout = device.createBindGroupLayout({
+        label: 'cockpit.ambient',
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+          { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float', viewDimension: '2d-array' } },
+          { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+          ...ambientScene.layoutEntries,
+        ],
+      });
+      ambientPipe = core.shaders.tracked(() =>
+        device.createComputePipeline({
+          label: 'cockpit.ambient',
+          layout: device.createPipelineLayout({ label: 'cockpit.ambient', bindGroupLayouts: [c.frameBindGroupLayout, ambientLayout] }),
+          compute: { module: c.shaders.createModule('cockpit.ambient', AMBIENT_WGSL(ambientScene.wgsl)), entryPoint: 'main' },
+        }),
+      );
       const FV = GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX;
       layout = device.createBindGroupLayout({
         label: 'cockpit.cabin',
@@ -170,6 +197,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
           { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
           { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
           { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+          { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
           ...scene.layoutEntries,
         ],
       });
@@ -199,19 +227,24 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         ],
         VERTEX_STRIDE,
       );
-      const gpipe = (label: string, code: string, buffers: GPUVertexBufferLayout[]): Tracked<GPURenderPipeline> =>
+      const gpipe = (label: string, code: string, buffers: GPUVertexBufferLayout[], pass: 'single' | 'depth' | 'shade' = 'single'): Tracked<GPURenderPipeline> =>
         core.shaders.tracked(() => {
           const module = c.shaders.createModule(label, code);
           return device.createRenderPipeline({
             label,
             layout: plLayout,
             vertex: { module, entryPoint: 'vs', buffers },
-            fragment: { module, entryPoint: 'fs', targets: gbufferTargets },
+            fragment:
+              pass === 'depth'
+                ? { module, entryPoint: INTERIOR_DEPTH_ENTRY, targets: gbufferTargets.map((x) => ({ ...x, writeMask: 0 })) }
+                : { module, entryPoint: 'fs', targets: gbufferTargets },
             primitive: { topology: 'triangle-list', cullMode: 'none' },
-            depthStencil: gbufferDepth,
+            // The interior is drawn twice: depth first, then shaded where its depth won (no overdraw shading).
+            depthStencil: pass === 'shade' ? { ...gbufferDepth, depthWriteEnabled: false, depthCompare: 'equal' } : gbufferDepth,
           });
         });
-      interior = gpipe('cockpit.interior', INTERIOR_WGSL(decls), interiorLayout);
+      interiorDepth = gpipe('cockpit.interiorDepth', INTERIOR_WGSL(decls), interiorLayout, 'depth');
+      interior = gpipe('cockpit.interior', INTERIOR_WGSL(decls), interiorLayout, 'shade');
       display = gpipe('cockpit.display', DISPLAY_WGSL(decls), vtx([[0, 'float32x3', 0], [1, 'float32x3', 12], [2, 'float32x2', 24], [3, 'float32', 32]], 36));
       ballPipe = gpipe('cockpit.ball', BALL_WGSL(decls), vtx([[0, 'float32x3', 0], [1, 'float32x3', 12], [2, 'float32x2', 24]], 32));
       shadow = core.shaders.tracked(() => {
@@ -262,6 +295,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       if (c.resources.version('ui.navball') === 0) c.resources.publish('ui.navball', opts.navball.view);
       for (const id of layoutIds) models.set(id, uploadModel(c, buildCockpitModel(defs, id)));
       // Compile now so that shader errors surface before the first frame.
+      ambientPipe.get();
+      interiorDepth.get();
       interior.get();
       display.get();
       ballPipe.get();
@@ -356,7 +391,6 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
           mu = v3.dot(v3.scale(rel, 1 / rBody), frame.sun.dirRoot);
         }
       }
-      const fade = 1;
       writeCabin(gm, {
         origin,
         q,
@@ -375,7 +409,6 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         time: clock,
         camPart,
         inside,
-        fade,
       });
       ctx.device.queue.writeBuffer(gm.cabin, 0, gm.cabinData);
       if (tunnel > 0.001) ctx.device.queue.writeBuffer(tunnelBuffer, 0, new Float32Array([tunnel, frame.displaySize[0] / frame.displaySize[1], tn.maxDarken, 0]));
@@ -396,12 +429,27 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
             { binding: 3, resource: gm.atlas.createView() },
             { binding: 4, resource: ctx.resources.get('ui.mfd') },
             { binding: 5, resource: ctx.resources.get('ui.navball') },
+            { binding: 6, resource: { buffer: ambientBuf } },
             ...scene.entries(),
           ],
         });
       }
+      const av = ambientScene.version() + ctx.resources.version('ui.mfd') * 104729;
+      if (!gm.ambientGroup || gm.ambientVersion !== av) {
+        gm.ambientVersion = av;
+        gm.ambientGroup = ctx.device.createBindGroup({
+          label: 'cockpit.ambient',
+          layout: ambientLayout,
+          entries: [
+            { binding: 0, resource: { buffer: gm.cabin } },
+            { binding: 1, resource: ctx.resources.get('ui.mfd') },
+            { binding: 2, resource: { buffer: ambientBuf } },
+            ...ambientScene.entries(),
+          ],
+        });
+      }
       const centre = v3.add(origin, quat.rotate(q, { x: 0, y: 1.1, z: 0 }));
-      active = { gm, lod, vessel, interiorView, centre, fade };
+      active = { gm, lod, vessel, interiorView, centre };
       st.active = true;
       st.layout = model.layoutId;
       st.vesselId = vessel.id;
@@ -416,6 +464,14 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       if (!displays || !active) return;
       const t0 = performance.now();
       displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder);
+      // After the display mips: the ambient pass reads their means.
+      const ts = ctx.perf.gpuPass('cockpit.ambient') as GPUComputePassTimestampWrites | undefined;
+      const pass = encoder.beginComputePass({ label: 'cockpit.ambient', ...(ts ? { timestampWrites: ts } : {}) });
+      pass.setPipeline(ambientPipe.get());
+      pass.setBindGroup(0, frame.frameBindGroup);
+      pass.setBindGroup(1, active.gm.ambientGroup!);
+      pass.dispatchWorkgroups(1);
+      pass.end();
       st.prepareMs += performance.now() - t0;
     },
 
@@ -443,9 +499,11 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const gm = active.gm;
       const range = gm.model.mesh.ranges[active.lod]!;
       pass.setBindGroup(1, gm.group);
-      pass.setPipeline(interior.get());
       pass.setVertexBuffer(0, gm.vertex);
       pass.setIndexBuffer(gm.index, 'uint32');
+      pass.setPipeline(interiorDepth.get());
+      pass.drawIndexed(range.count, 1, range.start);
+      pass.setPipeline(interior.get());
       pass.drawIndexed(range.count, 1, range.start);
       pass.setPipeline(display.get());
       pass.setVertexBuffer(0, gm.display);
@@ -487,6 +545,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       }
       displays?.dispose();
       tunnelBuffer?.destroy();
+      ambientBuf?.destroy();
     },
   };
   return { feature, controls };
@@ -561,13 +620,15 @@ function uploadModel(ctx: RenderContext, model: CockpitModel): GpuModel {
   // Glass: every window pane, the display cover glasses and the attitude indicator's cover glass.
   const gv: number[] = [];
   const panes: { first: number; count: number; centre: Vec3 }[] = [];
-  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3): void => {
+  // Last vertex attribute: (pane index, reflectance factor): 1 for bare glass, about 1/8 for the displays'
+  // anti-reflection coated cover glass.
+  const pushPane = (centre: Vec3, outline: Vec3[], n: Vec3, ux: Vec3, uy: Vec3, reflectance = 1): void => {
     const firstV = gv.length / PANE_FLOATS;
     const uvOf = (p: Vec3): [number, number] => [v3.dot(v3.sub(p, centre), ux), v3.dot(v3.sub(p, centre), uy)];
     for (let i = 0; i < outline.length; i++) {
       for (const p of [centre, outline[i]!, outline[(i + 1) % outline.length]!]) {
         const [u, w] = uvOf(p);
-        gv.push(p.x, p.y, p.z, n.x, n.y, n.z, u, w, panes.length, 0);
+        gv.push(p.x, p.y, p.z, n.x, n.y, n.z, u, w, panes.length, reflectance);
       }
     }
     panes.push({ first: firstV, count: gv.length / PANE_FLOATS - firstV, centre });
@@ -584,7 +645,7 @@ function uploadModel(ctx: RenderContext, model: CockpitModel): GpuModel {
     const hw = d.width / 2 + 0.002;
     const hh = d.height / 2 + 0.002;
     const pts = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([a, b]) => v3.add(c, v3.add(v3.scale(f.x, a!), v3.scale(f.y, b!))));
-    pushPane(c, pts, f.n, f.x, f.y);
+    pushPane(c, pts, f.n, f.x, f.y, 0.12);
   }
   {
     const f = nb.frame;
@@ -645,6 +706,8 @@ function uploadModel(ctx: RenderContext, model: CockpitModel): GpuModel {
     atlas,
     group: null,
     groupVersion: -1,
+    ambientGroup: null,
+    ambientVersion: -1,
     shadowGroup,
     cabinData: new Float32Array(CABIN_UNIFORM_FLOATS),
     controlData: new Float32Array(controlCount * CONTROL_FLOATS),
@@ -701,7 +764,6 @@ interface CabinFrameInput {
   time: number;
   camPart: Vec3;
   inside: boolean;
-  fade: number;
 }
 
 function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
@@ -731,7 +793,7 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
   u[53] = windows;
   u[54] = gm.model.displays.length;
   u[55] = f.inside ? 1 : 0;
-  d.set([0, 0, 0, f.fade], 56);
+  d.set([0, 0, 0, 0], 56);
   const T = glassTransmittance(gm.model);
   const n = L.windows.panes.length;
   const per = T.map((x) => x ** (1 / n));

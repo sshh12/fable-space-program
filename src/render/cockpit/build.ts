@@ -39,16 +39,18 @@ export interface CockpitModel {
 export function buildCockpitModelFrom(layoutId: string, layout: CockpitLayoutDef, mould: CapsuleMouldLineDef): CockpitModel {
   const ctx = new CabinContext(layout, mould);
   let regions: Region[] = [];
+  // Near to far as seen from the couches (the console and the couches first, the pressure shell last), so
+  // that early depth testing rejects most of the shell's hidden pixels before they are shaded.
   for (const detail of [0, 1, 2] as const) {
     ctx.detail = detail;
-    const r = buildShell(ctx);
-    if (detail === 0) regions = r;
-    buildWindows(ctx);
+    buildConsole(ctx);
+    buildCouches(ctx);
+    buildFixtures(ctx);
     buildHatch(ctx);
     buildDockingHatch(ctx);
-    buildCouches(ctx);
-    buildConsole(ctx);
-    buildFixtures(ctx);
+    buildWindows(ctx);
+    const r = buildShell(ctx);
+    if (detail === 0) regions = r;
     ctx.b.mark(LOD_RANGES[detail]);
   }
   const mesh = ctx.b.build();

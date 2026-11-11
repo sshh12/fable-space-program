@@ -73,7 +73,8 @@ export class MfdDisplays {
       format: MFD_FORMAT,
       size: [width, height, count],
       mipLevelCount: levels,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      // COPY_SRC: tests and tools read the published pages back.
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.view = this.texture.createView({ dimension: '2d-array' });
     const module = device.createShaderModule({ label: 'cockpit.mfdMips', code: MIP_WGSL });
