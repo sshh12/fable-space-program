@@ -104,7 +104,7 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'capsule-heat-shield-charred', query: shield, setup: () => void window.__veh!.sim.setAll('heatShield', { ablatorFraction: 0.58 }), minNonBlack: 0.05 },
       { name: 'capsule-charred-back-shell', query: `${SPACE}&stage=8&sunv=0.6,0.3,0.7&eye=4.4,2.2,4.2&at=0,1.0,0&fov=45`, setup: () => void window.__veh!.sim.setAll('heatShield', { ablatorFraction: 0.58 }), minNonBlack: 0.05 },
       { name: 'capsule-windows', query: `${SPACE}&stage=8&sunv=0.4,0.5,0.8&eye=0.25,2.7,3.5&at=0,1.45,1.0&fov=36`, minNonBlack: 0.2 },
-      { name: 'capsule-hatch', query: `${SPACE}&stage=8&sunv=0.35,0.4,-0.85&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, minNonBlack: 0.2 },
+      { name: 'capsule-hatch', query: `${SPACE}&stage=8&sunv=0.9,0.35,-0.25&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, minNonBlack: 0.2 },
     ]);
   });
 
@@ -112,7 +112,9 @@ test.describe('vehicle and pad screenshots', () => {
     const petal = `${SPACE}&stage=2&stages=1&coast=2&hold=1&solo=1&focus=panel0`;
     await take(page, pageLog, [
       { name: 'fairing-petal-outside', query: `${petal}&sunv=0.6,0.3,0.7&eye=9.5,5,9.5&at=2.3,4.7,2.3&fov=50`, minNonBlack: 0.05 },
-      { name: 'fairing-petal-inside', query: `${petal}&sunv=-0.55,0.45,-0.7&eye=-3.4,6.5,-3.4&at=2.3,4.9,2.3&fov=70`, minNonBlack: 0.05 },
+      // (A sun below the local horizon is eclipsed by the planet even when the lab does not draw it: these
+      // directions are on the day side for the petal's attitude 2 s after separation.)
+      { name: 'fairing-petal-inside', query: `${petal}&sunv=-0.4,0.8,-0.45&eye=-3.4,6.5,-3.4&at=2.3,4.9,2.3&fov=70`, minNonBlack: 0.15 },
       { name: 'les', query: `${SPACE}&stage=1&${SUN_SPACE}&eye=8.5,6.5,6&at=0,4.4,0&fov=45`, minNonBlack: 0.02 },
       { name: 'les-motor-closeup', query: `${SPACE}&stage=1&${SUN_SPACE}&eye=3.2,7.6,2.6&at=0,7.4,0&fov=40`, minNonBlack: 0.02 },
     ]);
