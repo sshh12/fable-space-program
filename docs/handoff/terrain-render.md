@@ -31,7 +31,7 @@ This note is the state after the review fixes (section 10 lists every finding an
 | `shaders/surface.ts` | sampling, water logic, night lights, detail materials, orbital detail, `TERRAIN_GBUFFER_WGSL`, `TERRAIN_WATER_WGSL` |
 | `shaders/regolith.ts` | this package's `brdf_regolith` chunk (section 3, "Regolith") |
 | `data/defs/render/earth.surface.json`, `moon.surface.json` | every tunable (section 6) |
-| `public/assets/terrain/<set>/` | material sets: per material and scale `<id>-<near|mid|far|aerial>.ah.webp` (albedo + height) and `.nra.webp` (normal xy, roughness, AO), `set.json`; 26.4 MB on disk, 187 MiB on the GPU |
+| `public/assets/terrain/<set>/` | material sets: per material and scale `<id>-<near|mid|far|aerial>.ah.webp` (albedo + height) and `.nra.webp` (normal xy, roughness, AO), `set.json`; 26.4 MiB on disk, 187 MiB on the GPU |
 | `tools/terrain/photo_source.py` | source photographs of the Earth set from an image model (OpenAI key from `.env`, section 4) |
 | `tools/terrain/gen_materials.py` | builds both sets: Earth from the photographs, Moon synthesised |
 | `tools/terrain/bench-select.ts`, `probe-bake.ts`, `scan-spikes.ts` | selection benchmark in Node; evidence tools of requests 1 and 2 |
@@ -133,7 +133,8 @@ allocated per tile per frame. A tile's record is built with its parent's image o
 the parent has never been drawn itself (a camera cut onto resident tiles draws children first). The visible
 tiles are drawn nearest first (one numeric sort of at most a few hundred keys): on broken ground seen from
 eye height a pixel is covered by several hills, and the depth test spares the fragment shader all but the
-first (terrain G-buffer at the stony site: 2.1 ms unsorted, 0.9 ms sorted).
+first (terrain G-buffer at the stony site: 2.1 ms unsorted, 0.9 ms sorted, measured before the triplanar
+planes followed the terrain normal, which costs about 0.4 ms there).
 
 **Streaming.** One job per worker at a time: `prepareTile` + `bakeTile` of terrain-core (65 x 65 heights,
 256 x 256 normal/material), the albedo `ImageBitmap` (decode options of ARCHITECTURE section 1), the aux
@@ -264,7 +265,7 @@ prefixes.
 | `terrain-render-2` (1.1 km needle in the Earth heights near the pad) | resolved b8ea6a7, data repaired; pad views re-rendered |
 | `terrain-render-3` (blocky night-light cells) | declined: in the source; handled in the shader (section 3) |
 | `terrain-render-cs-1` (from core-support: sea sheet missing near a low camera over deep ocean, water material at the seabed inside the near field, lines along sheet tile edges) | resolved d43e8fd, see the request's resolution |
-| `terrain-render-cs-2` (from core-support: no crater shadows at the lunar terminator from 20,000 and 5,000 km, a shadow step at 1,500 km on approach) | resolved d3bac0a and closed by the filer (25b92c5, its bound lowered from 0.4 % to 0.2 % of the lit pixels): the relief floor gives the terminator its shadows (0.45 % at 5,000 km, 0.31 % at 20,000 km in the reviewer's run of `tests/browser/integration/shadows.spec.ts`, 3 of 3) |
+| `terrain-render-cs-2` (from core-support: no crater shadows at the lunar terminator from 20,000 and 5,000 km, a shadow step at 1,500 km on approach) | resolved d3bac0a and closed by the filer (25b92c5, its bound lowered from 0.4 % to 0.2 % of the lit pixels): the relief floor gives the terminator its shadows. `tests/browser/integration/shadows.spec.ts -g "terminator|approach"` on the final code of this package: 3 of 3, 0.53 % of the lit pixels in a terrain shadow at 5,000 km and 0.36 % at 20,000 km (0.45 % and 0.31 % in the reviewer's run, before the regolith BRDF of section 3), no shadow pop on the approach through 1,500 km |
 
 No request against this package's paths is open.
 
@@ -316,21 +317,24 @@ npx tsx tools/terrain/bench-select.ts                                           
 |---|---|---|
 | Reviewed screenshots (33 views, 1920 x 1080, `out/screens/terrain/`) | `views.spec.ts`, `integrated.spec.ts` | all rendered and looked at, section 9 |
 | No cracks or holes (magenta behind the silhouette, descents on both bodies) | `integrity`: "no cracks or holes" + marker control | 0 magenta pixels over 12 heights x 4 captures on each body, deepest levels 20 / 18 |
-| LOD pops, 400 km -> 2 m on both bodies, Moon approach 20,000 -> 450 km, also with 500 ms delay | `pops.spec.ts` | 0 block spikes in all six runs; worst (block - floor) / local median 1.01 (Earth), 1.87 (Moon), 1.27 (approach); control without morphing: 5 spikes, worst 4.2 |
-| Warp at 200 km: 5x, 10x (20 s each), 50x for 60 s | `terrain.perf`: warp | 5x: cap 7.09, queue at most 4, 118-161 tiles uploaded; 10x: cap 6.09, queue at most 6; 50x: ground speed 367 km/s, cap 3.77, level 3 drawn, at least 5 tiles in view, queue at most 2; 0 frames over 33 ms in all three (largest 17-21 ms); day-side screenshots |
+| LOD pops, 400 km -> 2 m on both bodies, Moon approach 20,000 -> 400 km, also with 500 ms delay | `pops.spec.ts` | 0 block spikes in all six runs; worst (block - floor) / local median 1.00 (Earth), 1.93 (Moon), 1.11 (approach); control without morphing: 6 to 10 spikes in 5 to 8 frames, worst 3.9 to 4.8 |
+| Warp at 200 km: 5x, 10x (20 s each), 50x for 60 s | `terrain.perf`: warp | 5x: cap 7.09, queue at most 4, 119 tiles uploaded; 10x: cap 6.09, queue at most 6, 169 uploaded; 50x: ground speed 367 km/s, cap 3.77, level 3 drawn, at least 5 tiles in view, queue at most 3; 0 frames over 33 ms in all three (largest 17-20 ms); day-side screenshots |
 | Image decode within 2/255, water mask exact | `integrity`: image tiles | 4 coastal level-12 tiles: largest difference 0 on land and water, 0 mask and land-cover differences |
-| Near-field hand-over | `integrity`: ocean near field | near pixel: sea at -1.7 m -> seabed at -2198 m with the near field; sheet kept at 34 km; unchanged without it |
+| Near-field hand-over | `integrity`: ocean near field | near pixel: sea at 1.6 m -> seabed at -2197 m with the near field; far pixel (34.6 km) unchanged; the picture without the near field is the one from before |
 | Surface match within 3 cm at 1,000 points | `integrity`: collision surface | 1,000 vertices of 22 (Earth) / 18 (Moon) deepest-level tiles: max 0.000 mm |
-| No jitter at millimetre steps | `integrity`: millimetres | frame difference per 1 mm step: Earth median 0.72, max 0.82; Moon 1.36 / 1.52 (8-bit levels; a jittering vertex would show as steps that stand out: the largest step is within 1.5 x the median) |
+| No jitter at millimetre steps | `integrity`: millimetres | frame difference per 1 mm step: Earth median 0.75, max 0.85; Moon 1.37 / 1.53 (8-bit levels; a jittering vertex would show as steps that stand out: the largest step is within 1.5 x the median) |
 | expectNoErrors | every spec | yes |
 
 The pop detector works on the presented canvas at half resolution in 16 x 9 blocks. A block's
 frame-to-frame difference is compared with the median of the same block over the surrounding frames: a
 spike is a block whose difference, less a noise floor of 1.5 levels, is more than 2.5 times that median;
-a block difference above 16 levels fails outright. The whole-frame mean differences stay at 3.3 (Earth),
-3.3 (Moon), 1.0 (approach) levels per frame with maxima 4.8 / 7.3 / 4.7: the camera moves 0.5 % of its
-height per frame, so the image itself changes that much (more than with the first, smoother material sets:
-the ground has grain now). The control run with geomorphing and fade-ins switched off shows what the
+a block difference above 16 levels fails outright. A frame is judged where it has ten frames on each side
+(a fade-in that begins in the last frames of a path is twenty frames of small steps, of which the path
+shows the first two: with the approach ending at 450 km those two were counted as pops; flown on to 400 km
+the same frames have both sides and nothing stands out). The whole-frame mean differences stay at 3.4
+(Earth), 3.5 (Moon), 1.8 (approach) levels per frame with maxima 4.8 / 7.3 / 8.8: the camera moves 0.5 % of
+its height per frame, so the image itself changes that much (more than with the first, smoother material
+sets: the ground has grain now). The control run with geomorphing and fade-ins switched off shows what the
 detector sees when tiles do pop. The approach path crosses the hand-over from the whole-body shadow cascade
 to the camera-fitted cascades (about 1,500 km) and the first level change below the relief floor (level 3
 to 4 at about 650 km at the spec's render height); the spec asserts that the deepest level changes along
@@ -353,28 +357,34 @@ taken with three to five other agents' GPU jobs running.
 
 | View | Terrain G-buffer incl. far water, p99 (budget) | Terrain shadows, amortised (budget) | Rocks, G-buffer p99 + shadows (budget) | Main thread without uploads, p99 / median (budget 1) | Selection p99 |
 |---|---|---|---|---|---|
-| pad, 1.7 m | 0.81 ms (1.5) | 0.18 ms (0.5) | 0 (0.15): no rocks on the pad disc | 0.66 / 0.36 ms | 0.46 ms |
-| stony ground 1 km from the pad, 1.7 m | 1.34 ms (1.5) | 0.27 ms (0.5) | 0.085 ms (0.3): 400 k triangles | 0.91 / 0.45 ms | 0.53 ms |
-| 10 km | 1.07 ms (1.5) | 0.08 ms (0.5) | - | 0.62 / 0.36 ms | 0.45 ms |
-| LEO, 250 km | 0.23 ms (1.5) | 0.07 ms (0.4) | - | 0.68 / 0.32 ms | 0.52 ms |
-| lunar orbit, 100 km | 0.36 ms (1.8) | 0.05 ms (0.6) | - | 0.44 / 0.27 ms | 0.32 ms |
-| lunar surface, 1.7 m | 0.83 ms (1.8) | 0.26 ms (0.6) | 0.037 ms (0.3): 239 k triangles | 0.76 / 0.43 ms | 0.45 ms |
-| Moon from 5,000 km (relief floor) | 0.73 ms (1.8) | 0.05 ms (0.6) | - | 0.37 / 0.21 ms | 0.26 ms |
-| Earth from 20,000 km (relief floor) | 0.79 ms (1.5) | 0.04 ms (0.4) | - | 0.36 / 0.22 ms | 0.23 ms |
+| pad, 1.7 m | 0.59 ms (1.5) | 0.18 ms (0.5) | 0 (0.15): no rocks on the pad disc | 1.02 / 0.55 ms in the full run (over); 0.65 / 0.34 ms alone | 0.66 ms; 0.44 alone |
+| stony ground 1 km from the pad, 1.7 m | 1.33 ms (1.5) | 0.27 ms (0.5) | 0.11 ms (0.3): 400 k triangles | 0.94 / 0.52 ms | 0.57 ms |
+| 10 km | 1.09 ms (1.5) | 0.08 ms (0.5) | - | 0.47 / 0.22 ms | 0.35 ms |
+| LEO, 250 km | 0.22 ms (1.5) | 0.07 ms (0.4) | - | 0.34 / 0.18 ms | 0.24 ms |
+| lunar orbit, 100 km | 0.61 ms (1.8) | 0.05 ms (0.6) | - | 0.33 / 0.16 ms | 0.23 ms |
+| lunar surface, 1.7 m | 0.85 ms (1.8) | 0.26 ms (0.6) | 0.04 ms (0.3): 239 k triangles | 0.82 / 0.43 ms | 0.47 ms |
+| Moon from 5,000 km (relief floor) | 0.46 ms (1.8) | 0.05 ms (0.6) | - | 0.28 / 0.14 ms | 0.19 ms |
+| Earth from 20,000 km (relief floor) | 0.22 ms (1.5) | 0.04 ms (0.4) | - | 0.29 / 0.14 ms | 0.19 ms |
 
-The pad, stony-ground and lunar-surface rows are from a run with the gate otherwise empty (3 of 3 passed);
-the others from the full run before it, with other agents' browsers on the GPU (8 of 10 passed: in that run
-the main-thread p99 at the pad was 1.11 ms and at the lunar surface 1.00 ms, medians 0.60 and 0.62 ms, and
-the spec failed on that line; every GPU line passed in both). The same selection takes 0.13 ms in Node
+These are the numbers of the last full run on the final code: 9 of 10 passed. Every GPU line is within its
+budget. The one failure is the main-thread line at the pad (the view with the most tiles: 672 selected):
+p99 1.02 ms against 1; the same test run alone right afterwards gave 0.65 ms (median 0.34). Over the
+session that line read 0.65 to 0.85 ms in five runs of the pad test alone or in small groups and 0.76, 1.11
+and 1.02 ms in three full runs, the higher ones while other agents' jobs were running; the lunar surface
+read 0.76 to 1.00 ms. The assertion is left at the budget. The same selection takes 0.13 ms in Node
 (`bench-select.ts`): the main thread of an unfocused headless Chrome on a shared machine is the larger part
-of these figures.
+of these figures, and the margin on this machine is small.
 
-60 s descent 60 km -> 30 m on the Moon (full run): 3,600 frames, 0 over 33 ms (largest 29.7 ms; 20.2 ms in
-the run before); selection p99 0.59 ms (largest 0.85), with the prefetch passes 0.73 ms; 517 tiles
-uploaded, at most 6 in a frame, upload time p99 1.63 ms (largest 2.32 ms; the spec asserts p99 <= 2 ms and
-no frame over 6 ms: the loop stops before the tile that would pass 2 ms by its running estimate with a
-margin, and always uploads at least one); largest queue 30; deepest level 18; terrain pools 1,046 MiB (plus
-187 MiB of detail material arrays, which the brief's 1.1 GB does not count).
+Across runs the terrain G-buffer at the pad read 0.58 to 0.83 ms and on the stony ground 1.33 to 1.44 ms
+(budget 1.5: the tightest GPU line; two thirds of it is the detail layers on ground where two planes and
+two materials meet).
+
+60 s descent 60 km -> 30 m on the Moon: 3,600 frames, 0 over 33 ms (largest 17.4 ms; 29.7 ms in a run under
+load); selection p99 0.59 ms (largest 1.03), with the prefetch passes 0.66 ms; 522 tiles uploaded, at most
+6 in a frame, upload time p99 1.53 ms (largest 2.20 ms; the spec asserts p99 <= 2 ms and no frame over
+6 ms: the loop stops before the tile that would pass 2 ms by its running estimate with a margin, and always
+uploads at least one); largest queue 30; deepest level 18; terrain pools 1,046 MiB (plus 187 MiB of detail
+material arrays, which the brief's 1.1 GB does not count).
 
 ## 9. Screenshots (looked at)
 
@@ -405,7 +415,7 @@ keys) and by night (northern Italy), the Hawaiian islands from LEO; the apron at
 | 2 major | lunar surface soft at landing distances, pebble-like rocks | lunar set regenerated with real relief at every scale (grain, clods, craterlets 2.5 cm to 250 m in the equilibrium numbers of the height function); far and aerial layers cover the magnification gap of the tile maps between 300 m and 2 km; 12 rock shapes in 4 classes, worn and chipped, partly buried; regolith BRDF and terminator handling so that the relief reads as shadowed slopes, not black dots |
 | 3 minor | dark specks and rings on lowland coasts, stair-stepped lakes | mask / imagery disagreement handled per fragment, cubic mask reconstruction, `earth-leo-lowland-coast` view added |
 | 4 minor | total main-thread cost neither reported nor asserted | tile constants written once, two rows per tile per frame, no per-tile allocation; `debug.stats().cpu`; the perf spec asserts the whole hook time without uploads under 1 ms (p99); rock lists by prefixes and kept between frames |
-| 5 minor | approach pop test crossed neither a level change nor the hand-over | path extended to 450 km under an 8 degree sun; the spec asserts a level change on every path |
+| 5 minor | approach pop test crossed neither a level change nor the hand-over | path extended to 400 km under an 8 degree sun (hand-over at about 1,500 km, level 3 to 4 at about 650 km); the spec asserts a level change on every path |
 | 6 minor | wrong parent-image flags when child and parent are first drawn in one frame | `buildRecordConstants` resolves the parent's owners; `records.test.ts` reproduces the cut case |
 | 7 minor | rocks line a difference of two measurements, upload budget only as p99, warp test blind | rocks are passes of their own (`rocksSeparate`) and measured on a site with rocks; upload p99 <= 2 ms and maximum < 6 ms asserted, estimate with a margin; warp test with a nadir camera over the ground track, sun over it, visible tiles and a day-side screenshot asserted, plus 5x and 10x where tiles stream |
 | 8 minor | whole-body cascade casts from level 3; stale request status | hand-off corrected (sections 4.1a, 5); far views inside the relief floor measured (section 8.1) |
@@ -446,8 +456,9 @@ ground 1 km from the pad the rock buffer overflowed (48k rocks) and the terrain 
 - **Water colour**: deep water is one colour by construction (deviation 4).
 - **Enclosed basins below sea level** that the mask calls water get the sheet at sea level; not looked at.
 - **Whole-body shadows** resolve craters wider than about 20 km (deviation 1a).
-- **CPU**: the whole hook time is under 1 ms at p99 on a quiet machine by a small margin at the lunar surface
-  and on stony ground (median 0.5-0.6 ms); single measurements under other agents' load exceed it. The rock
-  lists cost 0.1-0.4 ms on frames in which the camera moves through a dense field.
+- **CPU**: the whole hook time is under 1 ms at p99 when the machine is quiet (0.65 ms at the pad, 0.8-0.9 ms
+  at the lunar surface and on stony ground; medians 0.35-0.5 ms) and over it in some runs under other
+  agents' load (section 8.1). The rock lists cost up to 0.4 ms more on frames in which the camera moves
+  through a dense field (they are kept only while it stands within 2 cm).
 - **Earth material photographs are not in the repository** (deviation 7).
 - **VRAM**: the detail material arrays add 187 MiB to the 1,046 MiB of tile pools.
