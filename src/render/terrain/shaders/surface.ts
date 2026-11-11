@@ -493,6 +493,15 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
     if (axis == 0) { st = p.yz; dx = dpx.yz; dy = dpy.yz; au = vec3f(0.0, 1.0, 0.0); av = vec3f(0.0, 0.0, 1.0); }
     else if (axis == 1) { st = p.zx; dx = dpx.zx; dy = dpy.zx; au = vec3f(0.0, 0.0, 1.0); av = vec3f(1.0, 0.0, 0.0); }
     else { st = p.xy; dx = dpx.xy; dy = dpy.xy; au = vec3f(1.0, 0.0, 0.0); av = vec3f(0.0, 1.0, 0.0); }
+    // Ground seen at a shallow angle has a footprint many times longer than wide. Past the sampler's 16
+    // taps the filter would pick its level by the long axis, a mip level coarser for every doubling: the
+    // ground 50 m ahead of a standing eye loses its grain. The long axis is shortened by up to a half, so
+    // the level stays the short axis's up to a ratio of 32 (one level of undersampling along the line of
+    // sight, where the image is foreshortened most).
+    let lx = dot(dx, dx);
+    let ly = dot(dy, dy);
+    let shorten = clamp(16.0 * sqrt(max(min(lx, ly), 1e-24) / max(max(lx, ly), 1e-24)), 0.5, 1.0);
+    if (lx > ly) { dx *= shorten; } else { dy *= shorten; }
     let d = detailPlane(scale, material, info.rgb, meanH, meanLod, st, dx, dy);
     o.ratio += wa * d.ratio;
     o.height += wa * (d.height - meanH) * info.a;

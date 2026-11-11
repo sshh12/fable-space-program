@@ -113,6 +113,10 @@ const VIEWS: PerfView[] = [
   { name: 'LEO', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 250e3, heading: 20, pitch: -40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
   { name: 'lunar orbit', body: 'moon', query: { body: 'moon', lat: 1.5, lon: 21.5, alt: 100e3, heading: 80, pitch: -30, sun: '92,10' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: null } },
   { name: 'lunar surface', body: 'moon', query: { body: 'moon', ...LUNAR_SITE, agl: 1.7, heading: 250, pitch: -6, sun: '92,11' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: 0.3 } },
+  // Far views inside 16 radii, where the relief floor draws the whole near side at level 3 (about 190 tiles
+  // of 4,096 quads) however small the body is on screen: held to the lines of the orbit views.
+  { name: 'moon 5,000 km', body: 'moon', query: { body: 'moon', lat: -38, lon: 4, alt: 5_000e3, heading: 0, pitch: -89.9, fov: 16, sun: '100,8' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: null } },
+  { name: 'earth 20,000 km', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 20_000e3, heading: 0, pitch: -89.9, fov: 40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
 ];
 
 for (const v of VIEWS) {

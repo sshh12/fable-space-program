@@ -246,10 +246,13 @@ for (const site of [
     const median = sorted[sorted.length >> 1]!;
     const max = sorted[sorted.length - 1]!;
     console.log(`${site.body}: frame-to-frame difference over 23 steps of 1 mm: median ${median.toFixed(4)}, max ${max.toFixed(4)} (8-bit levels)`);
-    // A 1 mm step moves the nearest ground (3.6 m away) by 0.3 px at most: the image barely changes (well
-    // under one 8-bit level on average), and every step changes it by the same small amount. Vertex
-    // jitter would show as steps that stand out from the others.
-    expect(median).toBeLessThan(1);
+    // A 1 mm step moves the nearest ground (3.6 m away) by 0.3 px at most: the image barely changes, and
+    // every step changes it by the same small amount. Vertex jitter would show as steps that stand out
+    // from the others. How much "barely" is depends on the grain: the near detail layer has 2 mm texels,
+    // and under the 11 degree sun of the lunar site its slopes straddle the sun's elevation, so a third of
+    // a pixel changes the image by 1.4 levels on average there (0.7 on Earth); without the detail layers it
+    // was 0.2.
+    expect(median).toBeLessThan(2);
     expect(max).toBeLessThan(Math.max(1.5 * median, 0.05));
     await shot(page, `jitter-${site.body}`);
     await expectNoErrors(page, pageLog);

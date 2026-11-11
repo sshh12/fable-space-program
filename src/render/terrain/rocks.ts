@@ -720,7 +720,7 @@ export class RockRenderer {
    * Instance lists of the G-buffer pass, per (variant, level of detail). A rock is in while it can cover
    * rockMinPixels: within a chunk that is a prefix of each variant's rocks (largest first), found with
    * the chunk's nearest distance; the vertex shader applies the exact per-rock range and scale. Only the
-   * chunks near enough for a finer level of detail are walked rock by rock.
+   * rocks large enough for a finer level of detail are walked one by one.
    */
   private buildDraws(b: RockBody, pixelAngle: number): void {
     this.bucketCount.fill(0);
@@ -734,16 +734,11 @@ export class RockRenderer {
       const d = c.data;
       const minRadius = c.near / b.rangePerRadius;
       if (c.maxRadius < minRadius) continue;
-      // Even the chunk's largest rock, at the chunk's nearest point, is below the size of the middle level
-      // of detail: every variant's prefix goes to its coarse list as it stands. (A rock of the prefix that
-      // lies beyond its own range is drawn with scale 0 by the vertex shader.)
-      if (k * c.maxRadius * c.maxRadius <= 484 * c.near * c.near) {
-        for (let v = 0; v < ROCK_VARIANTS; v++) {
-          const start = c.variantStart[v]!;
-          this.pushRange(v * ROCK_LODS + 2, c.base + start, c.base + RockRenderer.prefixEnd(d, start, c.variantStart[v + 1]!, minRadius));
-        }
-        continue;
-      }
+      // A rock below this radius is under the size of the middle level of detail even at the chunk's
+      // nearest point: that tail of every variant's prefix goes to the coarse list as it stands (a rock
+      // of it that lies beyond its own range is drawn with scale 0 by the vertex shader). Only the larger
+      // rocks in front of it are looked at one by one.
+      const coarseRadius = c.near * Math.sqrt(484 / k);
       // The camera in the chunk's own (body-fixed) axes: a rock's distance is then three subtractions.
       const slotBase = c.slot * 8;
       const ox = -this.chunkData[slotBase]!;
@@ -753,8 +748,11 @@ export class RockRenderer {
       const cy = b.rot[1] * ox + b.rot[4] * oy + b.rot[7] * oz;
       const cz = b.rot[2] * ox + b.rot[5] * oy + b.rot[8] * oz;
       for (let v = 0; v < ROCK_VARIANTS; v++) {
-        const end = RockRenderer.prefixEnd(d, c.variantStart[v]!, c.variantStart[v + 1]!, minRadius);
-        for (let i = c.variantStart[v]!; i < end; i++) {
+        const start = c.variantStart[v]!;
+        const end = RockRenderer.prefixEnd(d, start, c.variantStart[v + 1]!, minRadius);
+        if (end === start) continue;
+        const fine = RockRenderer.prefixEnd(d, start, end, coarseRadius);
+        for (let i = start; i < fine; i++) {
           const o = i * ROCK_FLOATS;
           const radius = d[o + 3]!;
           const dx = d[o]! - cx;
@@ -766,6 +764,7 @@ export class RockRenderer {
           const pixels2 = (k * r2) / (d2 > 0.0025 ? d2 : 0.0025);
           this.pushRange(v * ROCK_LODS + (pixels2 > 8100 ? 0 : pixels2 > 484 ? 1 : 2), c.base + i, c.base + i + 1);
         }
+        this.pushRange(v * ROCK_LODS + 2, c.base + fine, c.base + end);
       }
     }
     this.flushBuckets(b.draws);

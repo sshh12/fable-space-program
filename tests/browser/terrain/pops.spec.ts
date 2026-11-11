@@ -88,8 +88,9 @@ const CASES: PathCase[] = [
   { name: 'moon-descent', body: 'moon', ...LUNAR_SITE, from: 400e3, to: 2, agl: true, heading: 280, pitchFrom: -75, pitchTo: -12, sun: '92,11' },
   // Towards the terminator region under a low sun (8 degrees: long shadows), through the hand-over from the
   // whole-body shadow cascade to the camera-fitted cascades (they join at about 1,500 km) and through the
-  // first level change below the relief floor (level 3 to 4 at about 1,000 km with this field of view).
-  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 800e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,8', fov: 40, levelChange: true },
+  // first level change below the relief floor (level 3 to 4 at about 650 km with this field of view at the
+  // 720 lines the spec renders).
+  { name: 'moon-approach', body: 'moon', lat: -20, lon: 60, from: 20_000e3, to: 450e3, agl: false, heading: 0, pitchFrom: -89.9, pitchTo: -89.9, sun: '90,8', fov: 40, levelChange: true },
 ];
 
 async function fly(page: Page, c: PathCase): Promise<PathResult> {
@@ -119,9 +120,11 @@ test('the detector sees pops: a descent with geomorphing and fade-ins switched o
   const r = await fly(page, c);
   const a = analyse(r);
   console.log(`control (no morph), ${c.name}: ${a.spikes.length} block spikes in ${a.spikeFrames} frames, worst (block - floor) / local median ${a.worst.toFixed(2)};${describeSpikes(r, a.spikes)}`);
-  // Measured: 15 block spikes in 8 frames, the worst block at 9 x its local median (18.8 against 1.9 levels).
+  // Measured: 5 block spikes in 5 frames, the worst block at 4.2 x its local median (25.3 against 6.1
+  // levels); the same descent with morphing stays at 1.9 x. (With the smoother ground of the first material
+  // sets the frames around a pop changed less: 15 spikes, the worst at 9 x.)
   expect(a.spikeFrames).toBeGreaterThanOrEqual(4);
-  expect(a.worst).toBeGreaterThan(5);
+  expect(a.worst).toBeGreaterThan(3.2);
   await expectNoErrors(page, pageLog);
 });
 
