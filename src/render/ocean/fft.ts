@@ -23,7 +23,7 @@ export class OceanFft {
   /** Index of the foam texture written by the latest update (the one to sample). */
   foamCurrent = 0;
   private readonly params: GPUBuffer;
-  private readonly paramData = new Float32Array(12);
+  private readonly paramData = new Float32Array(16);
   private readonly h0: GPUBuffer;
   private readonly omega: GPUBuffer;
   private readonly work: GPUBuffer;
@@ -69,7 +69,7 @@ export class OceanFft {
     this.omega = device.createBuffer({ label: 'ocean.omegaIndex', size: om.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.omega, 0, om);
     this.work = device.createBuffer({ label: 'ocean.fftWork', size: CASCADE_COUNT * 4 * n * n * 8, usage: GPUBufferUsage.STORAGE });
-    this.params = device.createBuffer({ label: 'ocean.fftParams', size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.params = device.createBuffer({ label: 'ocean.fftParams', size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
     const C = GPUShaderStage.COMPUTE;
     const storageTex = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: C, storageTexture: { access: 'write-only', format: 'rgba16float', viewDimension: '2d-array' } });
@@ -143,7 +143,12 @@ export class OceanFft {
       return out;
     };
     this.mipGroups = [mips(0), mips(1)];
-    for (let c = 0; c < CASCADE_COUNT; c++) this.paramData[8 + c] = cascades.spectra[c]!.band.length;
+    for (let c = 0; c < CASCADE_COUNT; c++) {
+      const sp = cascades.spectra[c]!;
+      this.paramData[8 + c] = sp.band.length;
+      // div D = lambda k H: its variance is lambda^2 x the slope variance; J ~ 1 + div D.
+      this.paramData[12 + c] = tunables.choppiness * Math.sqrt(sp.slopeVariance);
+    }
   }
 
   /** The near field switched off: the next update starts a new history (no stale previous frame or foam). */
@@ -166,8 +171,8 @@ export class OceanFft {
     // A new history starts without the foam of an earlier session (decay to zero).
     p[2] = this.primed ? dt : 1e4;
     p[3] = this.tunables.foamDecay;
-    p[4] = this.tunables.foamJacobianThreshold;
-    p[5] = this.tunables.foamGain;
+    p[4] = this.tunables.foamSigma;
+    p[5] = this.tunables.foamRampSigma;
     device.queue.writeBuffer(this.params, 0, p);
     const k = (1 - this.foamCurrent) as 0 | 1;
     const pass = encoder.beginComputePass({ label: 'ocean.fft', timestampWrites: timestamp });

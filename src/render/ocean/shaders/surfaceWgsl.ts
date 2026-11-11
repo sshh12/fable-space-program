@@ -32,6 +32,7 @@ const OCEAN_LOD_RANGE = ${LOD_RANGE.toFixed(4)};
 const OCEAN_MORPH = ${MORPH_FRACTION.toFixed(4)};
 const OCEAN_PATCH_CELLS = ${PATCH_CELLS.toFixed(1)};
 const OCEAN_DEEP = 10000.0;
+const OCEAN_FOAM_WEIGHT = vec4f(1.0, 0.85, 0.45, 0.0);
 
 /// Vertical water depth (m, below sea level) of the opaque surface seen at screen uv 'uv' with reversed depth
 /// 'd' along the ray of a water point at eye distance 'waterDist'; OCEAN_DEEP where it says nothing (sky,
@@ -170,6 +171,7 @@ struct FsOut {
   var jyy = 1.0;
   var resolved = 0.0;
   var foamJ = 0.0;
+  var lace = 0.0;
   var shoreNoise = 0.0;
   for (var c = 0u; c < OCEAN_CASCADES; c++) {
     let cs = oceanU.cascades[c];
@@ -185,8 +187,32 @@ struct FsOut {
     // The hardware keeps about the minor axis of the footprint (8:1 anisotropy): what it averages away is unresolved.
     let lod = log2(max(max(fpMin, fpMaj / 8.0) * 256.0 * cs.geom.y, 1e-6));
     resolved += oceanFilteredFraction(c, lod) * cs.stats.x * sq(amp[c]);
-    foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c]);
+    // Whitecaps belong to the breaking chop: the long cascades carry them, the capillary cascade none.
+    foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * OCEAN_FOAM_WEIGHT[c]);
+    // Lace: the short cascades' Jacobians, normalised by their spread, give foam its bubbly breakup.
+    if (c >= 2u) { lace += (1.0 - fm.g) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4) * 0.5; }
     if (c == 2u) { shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0); }
+  }
+  // Coverage follows the folding density; inside it the lace decides which bubbles are white.
+  let laceN = saturate(0.5 + 0.18 * lace);
+  foamJ = smoothstep(1.0 - foamJ * 1.15 - 0.08, 1.0 - foamJ * 1.15 + 0.08, laceN) * min(foamJ * 3.0, 1.0);
+  // Capillary detail: the finest cascade again, compressed and rotated, carrying the slope variance that the
+  // JONSWAP cascades do not (Cox-Munk counts the capillaries); resolved only where a pixel is that small.
+  {
+    let c3 = oceanU.cascades[3];
+    for (var k = 0u; k < 2u; k++) {
+      let lay = oceanU.detail[k];
+      let rot = mat2x2f(lay.y, lay.z, -lay.z, lay.y);
+      let sc = lay.x * c3.geom.y;
+      let org = select(oceanU.detailOrigin.xy, oceanU.detailOrigin.zw, k == 1u);
+      let uvd = org + (rot * in.plane0) * sc;
+      let der = textureSampleGrad(oceanDeriv, anisoRepeat, uvd, 3, (rot * dpx) * sc, (rot * dpy) * sc);
+      let slope = transpose(rot) * der.xy * (lay.w * amp[3]);
+      sx += slope.x;
+      sy += slope.y;
+      let lod = log2(max(max(fpMin, fpMaj / 8.0) * 256.0 * sc, 1e-6));
+      resolved += oceanFilteredFraction(3u, lod) * c3.stats.x * sq(lay.w * amp[3]);
+    }
   }
   let deltaF = oceanSphereOffset(in.planeF);
   let upF = oceanUpAt(deltaF);
@@ -335,6 +361,31 @@ struct FsOut {
       let att = waterRrsOf(o, vec3f(0.0), waterRefractedCos(max(muS, 0.05)), clamp(max(colR, 0.0) / pathV, 0.05, 1.0)).bottomAttenuation * tr;
       lit += (seabed * att - bottomFar) * (detail * (1.0 - waterFoamCoverage(s)));
     }
+  }
+
+  // Debug views (OCEAN_DEBUG_VIEWS): one term at a time, same exposure.
+  let view = (oceanU.counts.w >> 8u) & 15u;
+  if (view != 0u) {
+    var d = vec3f(0.0);
+    let NoV = max(dot(s.n, s.v), 1e-4);
+    let alpha = waterAlpha(s);
+    let dfg = envBrdfApprox(sqrt(alpha), NoV);
+    let cov = waterFoamCoverage(s);
+    switch (view) {
+      case 1u: { d = waterSkyRadiance(s, reflect(-s.v, s.n), alpha) * (0.02 * dfg.x + dfg.y) * (1.0 - cov); }
+      case 2u: { d = (waterBodyAmbient(s, amb).total + waterBodyDirect(s, sunDir).total * sunEff) * (1.0 - cov); }
+      case 3u: {
+        var ss = s;
+        ss.lightAlpha = 0.6 * frame.sunDir.w;
+        ss.albedo = vec3f(0.0);
+        d = (brdfWaterDirect(ss, sunDir) - waterBodyDirect(ss, sunDir).total * (1.0 - cov)) * sunEff;
+      }
+      case 4u: { d = vec3f(cov) * 2000.0; }
+      case 5u: { d = (s.n * 0.5 + 0.5) * 2000.0; }
+      case 6u: { d = vec3f(s.roughness, sqrt(waterAlpha(s)), detail) * 2000.0; }
+      default: { d = lit; }
+    }
+    lit = d;
   }
 
   var o: FsOut;

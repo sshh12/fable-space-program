@@ -17,8 +17,9 @@ import { FFT_SIZE } from '../spectrum';
 export const FFT_SPECTRUM_WGSL = /* wgsl */ `
 struct FftParams {
   time: vec4f,      // x = tau = frac(t / T), y = choppiness, z = dt (s), w = foam decay (1/s)
-  foam: vec4f,      // x = Jacobian threshold, y = gain, zw = 0
+  foam: vec4f,      // x = foam threshold below J = 1 in standard deviations of the cascade's Jacobian, y = ramp width (same unit)
   lengths: vec4f,   // patch length of each cascade (m)
+  sigmaJ: vec4f,    // standard deviation of each cascade's Jacobian
 }
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(1) var<storage, read> h0: array<vec4f>;
@@ -133,6 +134,7 @@ struct FftParams {
   time: vec4f,
   foam: vec4f,
   lengths: vec4f,
+  sigmaJ: vec4f,
 }
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(3) var<storage, read_write> work: array<vec2f>;
@@ -166,7 +168,8 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
     textureStore(derivOut, texel, c, vec4f(p2.x, p2.y, p3.x, p3.y));
     // Jacobian of the horizontal map x -> x + D: folding (J < threshold) breeds foam, which then decays.
     let J = (1.0 + p3.x) * (1.0 + p3.y) - p1.y * p1.y;
-    let fresh = saturate((fp.foam.x - J) * fp.foam.y);
+    let sj = fp.sigmaJ[c];
+    let fresh = saturate(((1.0 - fp.foam.x * sj) - J) / max(fp.foam.y * sj, 1e-6));
     let old = textureLoad(foamPrev, texel, c, 0).r * decay;
     textureStore(foamOut, texel, c, vec4f(max(old, fresh), J, 0.0, 1.0));
   }

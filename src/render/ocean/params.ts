@@ -38,8 +38,9 @@ export interface OceanTunables {
   /** 0..1: how strongly the imagery colour tints the deep-water colour. */
   imageryTint: number;
   foamDecay: number;
-  foamJacobianThreshold: number;
-  foamGain: number;
+  /** Foam where a cascade's Jacobian falls more than foamSigma of its standard deviations below 1, full over foamRampSigma more. */
+  foamSigma: number;
+  foamRampSigma: number;
   foamAlbedo: number;
   shoreFoamDepth: number;
   refractionDistortion: number;
@@ -51,6 +52,10 @@ export interface OceanTunables {
   rippleAmplitude: number;
   rippleLifetime: number;
   wetLineDryingRate: number;
+  /** Compression of the first capillary detail layer (the second uses its square). */
+  capillaryScale: number;
+  /** Slope variance left to the GGX lobe even where a pixel is a few millimetres (shortest capillaries). */
+  unresolvedFloor: number;
 }
 
 const need = (file: string, params: Record<string, number>, name: string, check: (v: number) => boolean = Number.isFinite): number => {
@@ -109,8 +114,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     detailFadeFraction: need(file, p, 'detailFadeFraction', (v) => v > 0 && v < 1),
     imageryTint: need(file, p, 'imageryTint', fraction),
     foamDecay: need(file, p, 'foamDecayPerS', positive),
-    foamJacobianThreshold: need(file, p, 'foamJacobianThreshold', positive),
-    foamGain: need(file, p, 'foamGain', positive),
+    foamSigma: need(file, p, 'foamSigma', positive),
+    foamRampSigma: need(file, p, 'foamRampSigma', positive),
     foamAlbedo: need(file, p, 'foamAlbedo', fraction),
     shoreFoamDepth: need(file, p, 'shoreFoamDepthM', positive),
     refractionDistortion: need(file, p, 'refractionDistortion', (v) => v >= 0),
@@ -122,6 +127,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     rippleAmplitude: need(file, p, 'rippleAmplitudeM', (v) => v >= 0),
     rippleLifetime: need(file, p, 'rippleLifetimeS', positive),
     wetLineDryingRate: need(file, p, 'wetLineDryingRateMps', positive),
+    capillaryScale: need(file, p, 'capillaryScale', (v) => v > 1),
+    unresolvedFloor: need(file, p, 'unresolvedSlopeVariance', (v) => v >= 0),
   };
 }
 

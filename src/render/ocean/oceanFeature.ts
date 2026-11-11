@@ -33,6 +33,8 @@ import { packOceanUniforms, type OceanFrameData } from './uniforms';
 import { OceanVessels, type VesselFrame } from './vessels';
 
 export const OCEAN_FEATURE_ID = 'ocean';
+/** Debug views of the near-field surface: one shading term each (lab diagnostics). */
+export const OCEAN_DEBUG_VIEWS = { none: 0, skyReflection: 1, body: 2, sunSpecular: 3, foam: 4, normal: 5, roughness: 6 } as const;
 const MAX_PATCHES = 4096;
 const GRID = PATCH_CELLS + 1;
 
@@ -52,8 +54,12 @@ export interface OceanSurfaceSample {
 export interface OceanDebug {
   /** The near-field value published this frame. */
   nearField(): OceanNearFieldValue;
-  /** Force the near field off (deferred water only) or back to automatic (null). */
+  /** Force the near field off (deferred water only) or back to automatic. */
   forceNearFieldOff(off: boolean): void;
+  /** Scale the FFT chop (1 = the data; 0 shows the shared swell alone). Debug hook for labs and specs. */
+  setChopScale(scale: number): void;
+  /** Show one shading term of the near field (OCEAN_DEBUG_VIEWS); 'none' = normal shading. */
+  setDebugView(view: keyof typeof OCEAN_DEBUG_VIEWS): void;
   /** Heights of the displaced surface (what the vertex shader draws, unfiltered) at body-fixed unit directions. */
   sampleSurface(dirsFixed: readonly Vec3[]): Promise<{ ut: number; samples: OceanSurfaceSample[] }>;
   /** Spectrum statistics and frame state for tests and the hand-off. */
@@ -67,6 +73,7 @@ export interface OceanDebug {
     swellSlopeVariance: number;
     cascades: { length: number; kLow: number; kHigh: number; heightRms: number; slopeVariance: number; residual: number }[];
     subCascadeVariance: number;
+    capillaryAmplitude: number;
     vesselZones: number;
     ripples: number;
     wetSlots: number;
@@ -82,6 +89,8 @@ interface BodyOcean {
   residual: number[];
   fftHeightRms: number;
   swellVariance: number;
+  /** Capillary detail layers (the finest cascade compressed and rotated). */
+  detail: { scale: number; angle: number; amplitude: number }[];
 }
 
 export function createOceanFeature(options: { id?: string; order?: number } = {}): OceanFeature {
@@ -94,6 +103,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   const nearFieldData = new ArrayBuffer(16);
   let nearField: OceanNearFieldValue = { bodyIndex: -1, fadeStart: 0, fadeEnd: 0 };
   let forcedOff = false;
+  let chopScale = 1;
+  let debugView = 0;
   let brdfKey = '';
   let uniformBuffer: GPUBuffer;
   const uniformData = new ArrayBuffer(OCEAN_UNIFORM_BYTES);
@@ -170,6 +181,12 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     forceNearFieldOff(off) {
       forcedOff = off;
     },
+    setChopScale(scale) {
+      chopScale = scale;
+    },
+    setDebugView(view) {
+      debugView = OCEAN_DEBUG_VIEWS[view];
+    },
     async sampleSurface(dirsFixed) {
       const a = active;
       if (!a) throw new Error('ocean.sampleSurface: the near field is not active');
@@ -245,6 +262,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           ? b.cascades.spectra.map((c, i) => ({ length: c.band.length, kLow: c.band.kLow, kHigh: c.band.kHigh, heightRms: Math.sqrt(c.heightVariance), slopeVariance: c.slopeVariance, residual: b.residual[i]! }))
           : [],
         subCascadeVariance: Math.max(0, cm - (b?.swellVariance ?? 0) - fftVar),
+        capillaryAmplitude: b?.detail[0]?.amplitude ?? 0,
         vesselZones: a?.vf.zones.length ?? 0,
         ripples: a?.vf.ripples.length ?? 0,
         wetSlots: lastWetSlots,
@@ -297,13 +315,23 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         // Inside a damping zone the two long cascades vanish and the short ones keep a 3-sigma height under 4 cm.
         const shortSigma = Math.hypot(sigma[2] ?? 0, sigma[3] ?? 0);
         const keep = Math.min(1, 0.04 / Math.max(3 * shortSigma, 1e-9));
+        const swellVariance = swellSlopeVariance(t.swell);
+        const fftVariance = cascades.spectra.reduce((s, x) => s + x.slopeVariance, 0);
+        // The capillary layers carry what Cox-Munk has beyond swell + cascades, less a remainder below any pixel.
+        const layerVariance = Math.max(0, coxMunkVariance(t.windSpeed) - swellVariance - fftVariance - t.unresolvedFloor);
+        const v3 = cascades.spectra[3]!.slopeVariance;
+        const amplitude = v3 > 0 ? Math.sqrt(layerVariance / (2 * v3)) : 0;
         bodies.set(def.id, {
           tunables: t,
           cascades,
           fft: null,
           residual: [0, 0, keep, keep],
           fftHeightRms: Math.hypot(...sigma),
-          swellVariance: swellSlopeVariance(t.swell),
+          swellVariance,
+          detail: [
+            { scale: t.capillaryScale, angle: 0.6435, amplitude },
+            { scale: t.capillaryScale * t.capillaryScale, angle: 2.2143, amplitude },
+          ],
         });
       }
       c.shaders.register('ocean_waves', OCEAN_WAVES_WGSL);
@@ -492,8 +520,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         repeatPeriod: t.repeatPeriod,
         dt,
         foamDecay: t.foamDecay,
-        foamThreshold: t.foamJacobianThreshold,
-        foamGain: t.foamGain,
+        foamThreshold: t.foamSigma,
+        foamGain: t.foamRampSigma,
         foamAlbedo: t.foamAlbedo,
         shoreFoamDepth: t.shoreFoamDepth,
         refractionDistortion: t.refractionDistortion,
@@ -510,6 +538,15 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         wake: vf.wake,
         seaLevel: t.seaRadius - t.radius,
         waveBound,
+        chopScale,
+        debugView,
+        detail: body.detail.map((l) => {
+          // Planet-fixed: rotate and compress the reference's chart coordinates in float64, keep the fraction.
+          const c = Math.cos(l.angle);
+          const sn = Math.sin(l.angle);
+          const L = body.cascades.spectra[3]!.band.length / l.scale;
+          return { ...l, origin: [frac((c * ref.x - sn * ref.y) / L), frac((sn * ref.x + c * ref.y) / L)] as [number, number] };
+        }),
       };
       if (uniformF.length !== OCEAN_UNIFORM_VEC4 * 4) throw new Error('ocean: uniform size mismatch');
       packOceanUniforms(data, uniformF, uniformU);

@@ -72,6 +72,12 @@ export interface OceanFrameData {
   wake: { x: number; y: number; extent: number; valid: boolean };
   seaLevel: number;
   waveBound: number;
+  /** FFT chop scale (1 = data; a debug hook for the swell-agreement views). */
+  chopScale: number;
+  /** Debug view: 0 = normal shading; see OCEAN_DEBUG_VIEWS. */
+  debugView: number;
+  /** Capillary detail layers: compression, rotation (rad), slope amplitude, origin (texture coordinates mod 1). */
+  detail: { scale: number; angle: number; amplitude: number; origin: [number, number] }[];
 }
 
 /** Write OceanUniforms into `f` (Float32Array of OCEAN_UNIFORM_VEC4 * 4) / `u` (Uint32Array view of the same buffer). */
@@ -100,7 +106,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   u[o] = d.swell.count;
   u[o + 1] = Math.min(d.vessels.length, MAX_VESSELS);
   u[o + 2] = Math.min(d.ripples.length, MAX_RIPPLES);
-  u[o + 3] = d.wake.valid ? 1 : 0;
+  u[o + 3] = (d.wake.valid ? 1 : 0) | ((d.debugView & 15) << 8);
   o += 4;
   v4(d.wake.x, d.wake.y, d.wake.extent, 1 / d.wake.extent);
   for (let i = 0; i < MAX_SWELL; i++) v4(d.swell.dirK[i * 4]!, d.swell.dirK[i * 4 + 1]!, d.swell.dirK[i * 4 + 2]!, d.swell.dirK[i * 4 + 3]!);
@@ -131,6 +137,11 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
     else v4(0, 0, 0, 0);
   }
   v4(d.ripple.k, d.ripple.lifetime, d.ripple.groupSpeed, d.ripple.omega);
-  v4(d.seaLevel, d.waveBound, 0, 0);
+  v4(d.seaLevel, d.waveBound, d.chopScale, 0);
+  for (let k = 0; k < 2; k++) {
+    const l = d.detail[k]!;
+    v4(l.scale, Math.cos(l.angle), Math.sin(l.angle), l.amplitude);
+  }
+  v4(d.detail[0]!.origin[0], d.detail[0]!.origin[1], d.detail[1]!.origin[0], d.detail[1]!.origin[1]);
   if (o !== OCEAN_UNIFORM_VEC4 * 4) throw new Error(`ocean: uniform packing wrote ${o / 4} vec4, expected ${OCEAN_UNIFORM_VEC4}`);
 }

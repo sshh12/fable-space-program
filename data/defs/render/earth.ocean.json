@@ -17,16 +17,16 @@
     "nearFieldFadeStartM": 15000,
     "nearFieldFadeEndM": 30000,
     "detailFadeFraction": 0.45,
-    "backscatterR": 0.0012,
-    "backscatterG": 0.0019,
-    "backscatterB": 0.0036,
+    "backscatterR": 0.0021,
+    "backscatterG": 0.003,
+    "backscatterB": 0.0045,
     "imageryTint": 0.5,
     "foamDecayPerS": 0.6,
-    "foamJacobianThreshold": 0.62,
-    "foamGain": 3.0,
+    "foamSigma": 3.0,
+    "foamRampSigma": 0.8,
     "foamAlbedo": 0.72,
     "shoreFoamDepthM": 1.6,
-    "refractionDistortion": 0.08,
+    "refractionDistortion": 1.0,
     "chromaticOffset": 0.012,
     "vesselDampingHullRadii": 3,
     "wakeExtentM": 96,
@@ -34,6 +34,8 @@
     "rippleWavelengthM": 2.4,
     "rippleAmplitudeM": 0.1,
     "rippleLifetimeS": 18,
-    "wetLineDryingRateMps": 0.004
+    "wetLineDryingRateMps": 0.004,
+    "capillaryScale": 4.2,
+    "unresolvedSlopeVariance": 0.0025
   }
 }
