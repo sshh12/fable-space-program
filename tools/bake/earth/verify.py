@@ -624,6 +624,45 @@ def check_regional_coastline() -> None:
                   f"other disagreements" + (f" ({', '.join(bad[:8])})" if bad else ""), tally)
 
 
+def check_regional_needles() -> None:
+    """No needle in the regional heights (docs/requests/terrain-render-2.md: corrupt survey samples on the
+    shore stood up to 1,135 m above ground a few metres high): on the finest level of every region, no land
+    vertex stands more than heights.SPIKE_EXCESS_M above the 75th percentile of its 9 x 9 neighbourhood,
+    judged on 3 x 3 tile mosaics so that vertices at tile edges see their true neighbours. The coarser
+    regional levels are averages of the finest one; their largest excess is reported."""
+    from earth import heights
+    for r_id in regmod.list_regions():
+        reg = regmod.load(r_id)
+        lv = regmod.levels(reg)
+        finest = lv[-1]
+        have = set(regmod.rect_tiles(regmod.coverage_rects(reg, finest)))
+        cands = []
+        tl = sorted(have)
+        for i in range(0, len(tl), 64):
+            cands.extend(heights._despike_scan_unit((r_id, finest, tuple(tl[i:i + 64]))))
+        needles = 0
+        worst = 0.0
+        m = heights.M_MARGIN
+        for f, x, y in cands:
+            mos = np.full((769, 769), np.nan)
+            for i in range(3):
+                for j in range(3):
+                    if (f, x - 1 + i, y - 1 + j) in have:
+                        mos[j * 256:j * 256 + 257, i * 256:i * 256 + 257] = tiles.read_height(f, finest, x - 1 + i, y - 1 + j)[1:258, 1:258]
+            sub = mos[256 - m:513 + m, 256 - m:513 + m]
+            mask = heights.spike_mask(sub)[m:m + 257, m:m + 257]
+            needles += int(mask.sum())
+            filled = np.where(np.isnan(sub), -1e9, sub)
+            excess = (filled - heights._p75(filled))[m:m + 257, m:m + 257]
+            land = sub[m:m + 257, m:m + 257] > 0.0
+            if land.any():
+                worst = max(worst, float(excess[land].max()))
+        check(f"height needles {r_id}", needles == 0,
+              f"{needles} land vertices of level {finest} stand more than {heights.SPIKE_EXCESS_M:g} m above the 75th "
+              f"percentile of their 9 x 9 neighbourhood ({len(tl)} tiles, {len(cands)} looked at closely; largest "
+              f"excess {worst:.1f} m)", {"needles": needles, "candidates": len(cands), "largestExcessM": worst})
+
+
 def check_regional_pits() -> None:
     """No closed depression in the regional heights that the source DEM does not have: on every regional
     tile, the 4-connected areas at or below 0.5 m that lie within its 3 x 3 tile neighbourhood, hold no sea floor
@@ -907,6 +946,7 @@ def main(argv: list[str]) -> int:
     check_coastline()
     check_regional_coastline()
     check_regional_pits()
+    check_regional_needles()
     near_shore_profile()
     check_deshade()
     check_arid_aspect()

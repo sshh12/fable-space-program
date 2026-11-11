@@ -527,3 +527,45 @@ landcover step, and the pool cap (8 -> 6 workers, PACKAGE_RULES 13c).
 | 3 (major) | Regional water mask stale (built before the height re-bake, no dependency) | Mask config holds the build hashes of the regional height and global mask; mask = height sign + inland water; re-baked, then land cover and regional albedo (which track the mask) | verify `regional coastline` at every regional level: 0 disagreements outside deliberate inland water / global-dry ground (the stale mask failed this check with 35 at level 12) |
 | 4 (minor) | Coastline check could not fail; fjords MODIS misses turned to land | Dry override only where the ground is not connected to the ocean (global texel connectivity); the check accepts a departure only with that evidence or at water above sea level, and probes the review's three fjords | verify `coastline agreement`: 0 other disagreements, all three fjord points water |
 | 5 (minor) | Near-shore shelf at ~0 m then a 30-40 deg wall; sea texels stored as 0.00 m | 1:10 slope from the coastline (ETOPO where shallower); ocean at most -0.2 m, land at least +0.2 m; no vertex stored as 0 m | verify `near-shore sea floor` (INFO) and the zero-vertex count (0) in the pit check |
+
+## Changes in wave 2 (core-support)
+
+**Needles in the regional heights removed (request `terrain-render-2`).** The survey source (Terrarium z15 /
+3DEP) has isolated corrupt samples on land that WorldCover classes as land, mostly on the shore: at level 12
+they stood up to 1,135 m above ground a few metres high, 2 km from the pad (19.0004 N, 155.5884 W), and
+rendered as needles with kilometre-long shadows; the collision surface had them too.
+
+- `tools/bake/earth/heights.py` has a despike pass for the FINEST regional level, run after the pit passes
+  and before the coarser levels are averaged from it (`run_despike`, `despike_level`, `despike_field`,
+  `spike_mask`). A land vertex is a needle when it stands more than 30 m above the 75th percentile of its
+  9 x 9 vertex neighbourhood (86 m at level 12). On a slope, a cliff edge or a ridge crest at least a quarter
+  of the window is as high as the sample, and a cone would need flanks steeper than 45 degrees all round, so
+  terrain is not touched. A needle is replaced by the median of the land vertices of its window that are
+  not needles themselves (at least `MIN_LAND_M`: it stays land, so the stored sign, the coastline and the
+  water mask do not move); a second, tighter pass (5 m) takes the skirt that the tent average of a
+  one-pixel source spike leaves on the vertices within 2 of it; both repeat to a fixed point. Decisions are
+  taken on 3 x 3 tile mosaics and every copy of a changed vertex is written (shared edges, border rings).
+- `python -I tools/bake/earth/bake.py despike [--region <id>]` repairs an EXISTING bake without its sources
+  (they are deleted by `cleanup`): the pass on the stored finest level, then exactly the coarser tiles that
+  average a changed vertex are derived again from the stored level below with the normal bake's code. The
+  unit records of the region's height levels are rewritten for the present configuration (it now contains
+  the despike parameters), so a later `bake.py heights` finds them done and needs no download.
+- Result on `earth-ka-lae` (two runs, the second after the pass was made iterative): **127 vertices in 14
+  clusters** at level 12 (13 + 1 tiles), and 12 + 1 / 10 + 1 / 8 + 1 / 7 + 2 tiles at levels 11 / 10 / 9 / 8.
+  Largest: 1,135 m -> 6.2 m (19.0004 N 155.5884 W), 579 m -> 2.0 m (19.1848 N 155.9070 W), 470 m -> 6.3 m
+  (19.0102 N 155.8015 W), 226 m -> 0.4 m (18.9686 N 155.5994 W), 132 m -> 1.3 m (19.4808 N 155.9334 W),
+  66 m -> 1.6 m (19.4576 N 154.8427 W); the remaining clusters are 26-56 m. Everything else is bit-identical
+  (50 + 6 of 10,499 regional height files differ from the backup taken before the run).
+- Verification: `verify.py` has a new check "height needles <region>" (no land vertex of the finest level
+  more than 30 m above the 75th percentile of its neighbourhood, on mosaics); terrain-render's scanner
+  (`npx tsx tools/terrain/scan-spikes.ts earth 18.987556 -155.603239 100000 12 60`) finds nothing in the
+  whole region; the pad (21.64 m), Mauna Loa and the terrain-core real-data suite are unchanged.
+- **Manifest**: `layers.height.build` and `contentHash` changed (`5a9f0db7c755fdf8` -> `ab20fdfc579d4015`);
+  coverage and sourceCoverage are unchanged.
+- **Not re-baked**: the regional water mask, albedo and land cover record the height build as an input and
+  are now stale in the pipeline's bookkeeping (`bake.py region` would re-bake them, which needs the
+  WorldCover and Sentinel-2 downloads again, about 40 minutes and several GB). Their content is not affected
+  in any way that shows: the mask follows the height SIGN, which no despiked vertex changed; the land cover
+  does not read heights at these points; the regional albedo was de-shaded with the regional normals, so
+  about twenty 9.5 m texels around each cluster carry a de-shading factor computed from the needle's slope
+  (bounded by the clamp of the correction). Whoever next re-bakes the region gets them consistent for free.

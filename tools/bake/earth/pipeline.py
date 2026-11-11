@@ -99,6 +99,17 @@ def run(step: str, regions: list[str], region_given: bool = False) -> None:
         from earth import cleanup
         cleanup.run()
         return
+    if step == "despike":
+        import json
+        from earth import heights
+        out = paths.REPO / "out" / "bake" / "earth"
+        out.mkdir(parents=True, exist_ok=True)
+        for r in regions:
+            report = heights.repair_spikes(r)
+            (out / f"despike-{r}.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
+            log(f"despike {r}: {report['vertices']} vertices at level {report['finest']}; tiles changed per level {report['tiles']}")
+        _manifest("height", regions if region_given else regmod.list_regions())
+        return
     raise ValueError(step)
 
 

@@ -20,6 +20,8 @@ skipped on a re-run with the same configuration):
     recovery    recovery-zone report (out/bake/earth/recovery-zones.json)
     cleanup     delete raw downloads and intermediates that are no longer needed
     status      print what is baked and the disk use
+    despike     remove needle samples from the stored regional heights of --region (or every region) without
+                their sources, re-derive the coarser regional tiles they reach, rewrite the manifest
 
 Runs under the bake venv (data/cache/earth/venv), creating it from requirements.txt when missing.
 """
@@ -58,7 +60,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("step", choices=["site", "heights", "albedo", "watermask", "night", "landcover", "clouds",
                                      "globals", "region", "all", "manifest", "contact", "recovery", "cleanup",
-                                     "status"])
+                                     "status", "despike"])
     ap.add_argument("--region", help="region id (data/defs/regions/<id>.json); default: every earth-* region")
     a = ap.parse_args(argv)
     set_below_normal()

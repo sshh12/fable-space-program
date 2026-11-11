@@ -8,6 +8,9 @@ the regional source already equals the global one). A regional vertex never quan
 that would round to 0 are stored as +/- one quantum with their own sign (keep_sign), so the sign of every
 stored vertex is unambiguous for physics (water = below sea level, ARCHITECTURE row 12) and for the water mask.
 Every regional level also has its closed sea-level pockets below the grid's resolution filled (fill_pits).
+The finest regional level is despiked before the coarser ones are derived from it (despike): the survey
+source has isolated corrupt samples on the shore, hundreds of metres above ground that is a few metres high
+(docs/requests/terrain-render-2.md).
 """
 from __future__ import annotations
 
@@ -150,6 +153,183 @@ def fill_pits(h: np.ndarray) -> tuple[np.ndarray, int]:
     return out, filled
 
 
+# -- despike -------------------------------------------------------------------------------------------------
+SPIKE_WINDOW = 9           # vertices: the neighbourhood a sample is judged against (86 m at level 12)
+SPIKE_EXCESS_M = 30.0      # a land vertex this far above the 75th percentile of its window is a needle
+SPIKE_SKIRT_M = 5.0        # the same test, tighter, within SPIKE_SKIRT of a removed needle (the tent average
+SPIKE_SKIRT = 2            # of the finest level smears a one-pixel source spike over its neighbours)
+SPIKE_SCAN_M = 24.0        # candidate tiles: the test on the tile's own grid with a lower threshold
+SPIKE_ROUNDS = 8           # the pass repeats until nothing is flagged (removing a needle lowers the percentile
+                           # its neighbours are judged against); real clusters need two rounds
+SPIKE_CFG = [SPIKE_WINDOW, SPIKE_EXCESS_M, SPIKE_SKIRT_M, SPIKE_SKIRT, "p75", "land-median-v2", SPIKE_ROUNDS]
+
+
+def _p75(a: np.ndarray) -> np.ndarray:
+    """75th percentile of the SPIKE_WINDOW neighbourhood of every sample (edges: nearest)."""
+    from scipy import ndimage
+    return ndimage.percentile_filter(a, 75, size=SPIKE_WINDOW, mode="nearest")
+
+
+def spike_mask(h: np.ndarray, excess_m: float = SPIKE_EXCESS_M) -> np.ndarray:
+    """Land samples standing more than excess_m above the 75th percentile of their neighbourhood. No natural
+    surface does at this posting: on a slope, a cliff edge or a ridge crest at least a quarter of the window
+    is as high as the sample; a cone would need flanks steeper than 45 degrees all round. NaN = no data
+    (never flagged, and a sample whose window touches it is not judged)."""
+    from scipy import ndimage
+    nan = np.isnan(h)
+    filled = np.where(nan, -1e9, h)
+    judged = ~ndimage.binary_dilation(nan, iterations=SPIKE_WINDOW // 2) if nan.any() else np.ones(h.shape, bool)
+    return judged & (filled > 0.0) & (filled - _p75(filled) > excess_m)
+
+
+def despike_field(h: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(h without needles, mask of the samples changed). A needle is replaced by the median of the land
+    samples of its window that are not needles themselves (regsrc.MIN_LAND_M when there are none: it stays
+    land, so the coastline and the water mask do not move). A second, tighter pass takes the skirt a removed
+    needle leaves on the samples next to it. Both repeat until no sample is flagged, so the result is a fixed
+    point: despiking it again changes nothing."""
+    from scipy import ndimage
+    r = SPIKE_WINDOW // 2
+    out = h.copy()
+    changed = np.zeros(h.shape, bool)
+
+    def replace(mask: np.ndarray) -> None:
+        for j, i in zip(*np.nonzero(mask)):
+            win = out[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
+            ok = ~mask[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1] & ~np.isnan(win) & (win > 0.0)
+            out[j, i] = float(np.median(win[ok])) if ok.any() else regsrc.MIN_LAND_M
+            changed[j, i] = True
+
+    for _ in range(SPIKE_ROUNDS):
+        first = spike_mask(out)
+        if not first.any():
+            return out, changed
+        replace(first)
+        near = ndimage.binary_dilation(first, structure=np.ones((3, 3), bool), iterations=SPIKE_SKIRT) & ~first
+        skirt = near & spike_mask(out, SPIKE_SKIRT_M)
+        if skirt.any():
+            replace(skirt)
+    if spike_mask(out).any():
+        raise ValueError("despike: needles remain after the last round")
+    return out, changed
+
+
+def _despike_scan_unit(u: tuple) -> list:
+    """Tiles of a chunk that may hold a needle (the test on the tile's own 259 x 259 grid, lower threshold)."""
+    _region_id, level, tl = u
+    out = []
+    for face, x, y in tl:
+        h = tiles.read_height(face, level, x, y).astype(np.float64)
+        if float(h.max()) <= SPIKE_SCAN_M:
+            continue
+        if ((h > 0.0) & (h - _p75(h) > SPIKE_SCAN_M)).any():
+            out.append((face, x, y))
+    return out
+
+
+M_MARGIN = 96              # mosaic cells around the centre tile that the decision for its vertices reads
+                           # (a round reaches 10 cells; clusters are a few cells wide)
+
+
+def despike_level(region_id: str, level: int, scale: float, candidates: list) -> dict:
+    """Remove the needles of one stored regional level. Works on 3 x 3 tile mosaics of the candidate tiles and
+    their neighbours, so a vertex is judged against its true neighbourhood whichever tile stores it, and
+    writes a changed vertex to EVERY tile that stores it (shared edges and border rings): seams stay
+    identical. Returns {"vertices", "tiles": [(face, x, y)], "worst": [...], "changed": [(face, gy, gx)]} (global
+    vertex indices: tile * 256 + vertex); runs in one process."""
+    reg = regmod.load(region_id)
+    have = set(regmod.rect_tiles(regmod.coverage_rects(reg, level)))
+    todo = set()
+    for f, x, y in candidates:
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if (f, x + dx, y + dy) in have:
+                    todo.add((f, x + dx, y + dy))
+    cache: dict = {}
+
+    def get(f, x, y):
+        k = (f, x, y)
+        if k not in cache:
+            cache[k] = tiles.read_height(f, level, x, y).astype(np.float64) if k in have else None
+        return cache[k]
+
+    changes: dict = {}                       # (face, gy, gx) global vertex -> (new value, old value)
+    lo, hi = 256 - M_MARGIN, 513 + M_MARGIN
+    for f, x, y in sorted(todo):
+        mos = np.full((769, 769), np.nan)
+        for i in range(3):
+            for j in range(3):
+                t = get(f, x - 1 + i, y - 1 + j)
+                if t is not None:
+                    mos[j * 256:j * 256 + 257, i * 256:i * 256 + 257] = t[1:258, 1:258]
+        sub = mos[lo:hi, lo:hi]
+        fixed, changed = despike_field(sub)
+        c = changed[M_MARGIN:M_MARGIN + 257, M_MARGIN:M_MARGIN + 257]
+        for jj, ii in zip(*np.nonzero(c)):
+            key = (f, y * 256 + int(jj), x * 256 + int(ii))
+            changes[key] = (float(fixed[M_MARGIN + jj, M_MARGIN + ii]), float(sub[M_MARGIN + jj, M_MARGIN + ii]))
+        if len(cache) > 400:
+            cache.clear()
+    by_tile: dict = {}
+    for (f, gy, gx), (v, _old) in changes.items():
+        for ty in range((gy + 1) // 256 - 1, (gy + 1) // 256 + 1):
+            for tx in range((gx + 1) // 256 - 1, (gx + 1) // 256 + 1):
+                jy, ix = gy - ty * 256 + 1, gx - tx * 256 + 1          # index in the 259 grid
+                if (f, tx, ty) in have and 0 <= jy <= 258 and 0 <= ix <= 258:
+                    by_tile.setdefault((f, tx, ty), []).append((jy, ix, v))
+    for (f, x, y), lst in by_tile.items():
+        h = tiles.read_height(f, level, x, y).astype(np.float64)
+        for jy, ix, v in lst:
+            h[jy, ix] = v
+        tiles.write_height(f, level, x, y, keep_sign(h, scale), scale)
+    worst = sorted(((old - new, f, gy, gx, old, new) for (f, gy, gx), (new, old) in changes.items()), reverse=True)[:12]
+    n = 2 ** level
+    rows = []
+    for _d, f, gy, gx, old, new in worst:
+        s, t = -1.0 + 2.0 * (gx / 256.0) / n, -1.0 + 2.0 * (gy / 256.0) / n
+        la, lo_ = _points_latlon(cube.face_st_to_dir(f, np.array([s]), np.array([t])))
+        rows.append({"lat": round(float(la[0]), 5), "lon": round(float(lo_[0]), 5), "was": round(old, 1), "now": round(new, 1)})
+    log(f"height {region_id} level {level}: {len(changes)} needle vertices removed in {len(by_tile)} tiles"
+        + (f"; highest {rows[0]['was']} m -> {rows[0]['now']} m at {rows[0]['lat']}, {rows[0]['lon']}" if rows else ""))
+    return {"vertices": len(changes), "tiles": sorted(by_tile), "worst": rows, "changed": sorted(changes)}
+
+
+def _despike_unit(u: tuple) -> dict:
+    region_id, level, scale = u
+    import json
+    sdir = paths.STATE / f"height-{region_id}-l{level}-despike-scan"
+    cands = []
+    for p in sorted(sdir.glob("*.cand.json")):
+        cands.extend(tuple(t) for t in json.loads(p.read_text(encoding="utf-8")))
+    res = despike_level(region_id, level, scale, cands)
+    (paths.STATE / f"height-{region_id}-l{level}-despike" / "removed.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
+    return res
+
+
+def _despike_scan(u: tuple) -> int:
+    """Scan unit: writes its candidate list next to its state marker (the despike unit reads them)."""
+    import json
+    region_id, level, tl = u
+    cands = _despike_scan_unit(u)
+    sdir = paths.STATE / f"height-{region_id}-l{level}-despike-scan"
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / f"{tl[0][0]}-{tl[0][1]}-{tl[0][2]}-{len(tl)}.cand.json").write_text(json.dumps(cands), encoding="utf-8")
+    return len(cands)
+
+
+def run_despike(region_id: str, level: int, scale: float, cfg: dict) -> dict | None:
+    """The despike pass of the finest regional level (scan in the pool, then one process). Returns the result
+    of the pass when it ran in this call, None when it was already done for this configuration."""
+    tl = regmod.rect_tiles(regmod.coverage_rects(regmod.load(region_id), level))
+    chunks = [tuple(tl[i:i + 64]) for i in range(0, len(tl), 64)]
+    run_units(f"height-{region_id}-l{level}-despike-scan", _despike_scan, [(region_id, level, c) for c in chunks],
+              key=lambda u: f"{u[2][0][0]}-{u[2][0][1]}-{u[2][0][2]}-{len(u[2])}", config=cfg)
+    (paths.STATE / f"height-{region_id}-l{level}-despike").mkdir(parents=True, exist_ok=True)
+    res = run_units(f"height-{region_id}-l{level}-despike", _despike_unit, [(region_id, level, scale)],
+                    key=lambda u: "all", config=cfg, workers=1)
+    return res[0] if res else None
+
+
 def _points_latlon(p: np.ndarray):
     lat, lon = cube.dir_to_lat_lon(p)
     return np.degrees(lat), np.degrees(lon)
@@ -259,6 +439,32 @@ def _edge_pit_unit(u: tuple) -> int:
     return len(changes)
 
 
+def _level_cfg(reg: dict, level: int) -> dict:
+    """Configuration a regional level is recorded with (its hash is in every unit marker of the level)."""
+    return {"v": 5, "region": reg, "level": level, "grid": regsrc.GRID_VERSION,
+            "rampSmoothM": regsrc.RAMP_SMOOTH_M, "nearSmoothM": regsrc.NEAR_SMOOTH_M,
+            "softM": regsrc.SOFT_M, "inlandMaxDevM": regsrc.INLAND_MAX_DEV_M, "openPx": regsrc.OPEN_PX,
+            "fillPits": [PIT_MAX_VERTICES, PIT_RIM_M, "every level", 4, "spill4"],
+            "minLandM": regsrc.MIN_LAND_M, "minSeaM": regsrc.MIN_SEA_M,
+            "keepSign": True, "despike": SPIKE_CFG}
+
+
+def region_is_baked(region_id: str) -> bool:
+    """Every unit of every regional level is recorded as done for the present configuration."""
+    reg = regmod.load(region_id)
+    lv = regmod.levels(reg)
+    for level in lv:
+        tl = regmod.rect_tiles(regmod.coverage_rects(reg, level))
+        scale = float(reg["levels"][str(level)]["heightScale"])
+        units = [(region_id, level, lv[-1], scale, tuple(tl[i:i + 64])) for i in range(0, len(tl), 64)]
+        cfg = _level_cfg(reg, level)
+        if not units_done(f"height-{region_id}-l{level}", units, lambda u: f"{u[4][0][0]}-{u[4][0][1]}-{u[4][0][2]}-{len(u[4])}", cfg):
+            return False
+        if not units_done(f"height-{region_id}-l{level}-pits", [(region_id, level, scale)], lambda u: "edge", cfg):
+            return False
+    return units_done(f"height-{region_id}-l{lv[-1]}-despike", [(region_id, lv[-1])], lambda u: "all", _level_cfg(reg, lv[-1]))
+
+
 def bake_region(region_id: str) -> None:
     reg = regmod.load(region_id)
     lv = regmod.levels(reg)
@@ -273,18 +479,12 @@ def bake_region(region_id: str) -> None:
         scale = float(reg["levels"][str(level)]["heightScale"])
         chunks = [tl[i:i + 64] for i in range(0, len(tl), 64)]
         units = [(region_id, level, finest, scale, tuple(c)) for c in chunks]
-        plan.append((level, len(tl), units, {"v": 5, "region": reg, "level": level, "grid": regsrc.GRID_VERSION,
-                                             "rampSmoothM": regsrc.RAMP_SMOOTH_M, "nearSmoothM": regsrc.NEAR_SMOOTH_M,
-                                             "softM": regsrc.SOFT_M, "inlandMaxDevM": regsrc.INLAND_MAX_DEV_M, "openPx": regsrc.OPEN_PX, "fillPits": [PIT_MAX_VERTICES, PIT_RIM_M, "every level", 4, "spill4"],
-                                             "minLandM": regsrc.MIN_LAND_M, "minSeaM": regsrc.MIN_SEA_M,
-                                             "keepSign": True}))
+        plan.append((level, len(tl), units, _level_cfg(reg, level)))
     from earth import manifest
 
     def pit_unit(level, cfg):
         return [(region_id, level, float(reg["levels"][str(level)]["heightScale"]))]
-    if all(units_done(f"height-{region_id}-l{level}", units, key, cfg)
-           and units_done(f"height-{region_id}-l{level}-pits", pit_unit(level, cfg), lambda u: "edge", cfg)
-           for level, _, units, cfg in plan):
+    if region_is_baked(region_id):
         log(f"height {region_id}: every level already baked")
         manifest.mark("height", region_id)
         return
@@ -295,7 +495,98 @@ def bake_region(region_id: str) -> None:
         run_units(f"height-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)
         run_units(f"height-{region_id}-l{level}-pits", _edge_pit_unit, pit_unit(level, cfg), key=lambda u: "edge",
                   config=cfg, workers=1)
+        if level == finest:
+            # before the coarser levels are averaged from this one
+            run_despike(region_id, level, float(reg["levels"][str(level)]["heightScale"]), cfg)
     manifest.mark("height", region_id)
+
+
+def repair_spikes(region_id: str) -> dict:
+    """Despike an EXISTING regional bake without its sources (which `cleanup` has deleted): the pass on the
+    stored finest level, then every coarser tile that averages a changed vertex is derived again from the
+    stored level below with the code of the normal bake (full weighting, fill_pits, keep_sign, the tile-edge
+    pit pass). A coarse vertex averages the 3 x 3 finer vertices around it, so the tiles to derive again are
+    known exactly from the changed vertices. Where such a tile reaches outside the finer level's coverage its
+    outer vertices would need the global source: they keep their stored values, which is exact as long as
+    none of them averages a changed vertex (the pass refuses to continue otherwise). Afterwards the stored
+    tiles are what bake_region produces with the present configuration, so the unit records of every level
+    are rewritten for it (a later `heights` run finds them done). Layers that record the height build as an
+    input (regional water mask, albedo, land cover) become stale in the usual way."""
+    from earth import manifest
+    from earth.util import config_hash
+    reg = regmod.load(region_id)
+    lv = regmod.levels(reg)
+    finest = lv[-1]
+
+    def cfg_of(level):
+        return _level_cfg(reg, level)
+
+    scale_of = lambda level: float(reg["levels"][str(level)]["heightScale"])   # noqa: E731
+    res = run_despike(region_id, finest, scale_of(finest), cfg_of(finest))
+    if res is None:
+        import json
+        res = json.loads((paths.STATE / f"height-{region_id}-l{finest}-despike" / "removed.json").read_text(encoding="utf-8"))
+    changed = {tuple(v) for v in res["changed"]}          # (face, gy, gx) of the level below the one in work
+    report = {"finest": finest, "vertices": res["vertices"], "tiles": {finest: len(res["tiles"])}, "worst": res["worst"]}
+    for level in reversed(lv[:-1]):
+        have = set(regmod.rect_tiles(regmod.coverage_rects(reg, level)))
+        # tile X stores coarse vertices 256 X - 1 .. 256 X + 257, which average finer vertices 512 X - 3 .. 512 X + 515
+        todo = set()
+        for f, gy, gx in changed:
+            for X in range(-((515 - gx) // 512), (gx + 3) // 512 + 1):
+                for Y in range(-((515 - gy) // 512), (gy + 3) // 512 + 1):
+                    if (f, X, Y) in have:
+                        todo.add((f, X, Y))
+        todo = sorted(todo)
+        child_rects = regmod.coverage_rects(reg, level + 1)
+
+        def loader(f, L, x, y, child_rects=child_rects):
+            for r in child_rects:
+                if r["face"] == f and r["x0"] <= x <= r["x1"] and r["y0"] <= y <= r["y1"]:
+                    return tiles.read_height(f, L, x, y)
+            return None
+
+        cache = hpyramid.TileCache(level + 1, loader)
+        rewritten = set()
+        next_changed = set()
+        jj, ii = np.meshgrid(np.arange(259), np.arange(259), indexing="ij")
+        for f, x, y in todo:
+            before = tiles.read_height(f, level, x, y)
+            # outside the finer level's coverage the stencil has no tile: NaN instead of the global source
+            h = hpyramid.downsample_tile(f, level, x, y, cache, lambda p: np.full(len(p), np.nan))
+            outer = np.isnan(h)
+            if outer.any():
+                gy, gx = y * 256 + jj[outer] - 1, x * 256 + ii[outer] - 1
+                for cy, cx in zip(gy.tolist(), gx.tolist()):
+                    if any((f, 2 * cy + dy, 2 * cx + dx) in changed for dy in (-1, 0, 1) for dx in (-1, 0, 1)):
+                        raise RuntimeError(f"height {region_id}: tile {f}/{level}/{x}/{y} averages a despiked vertex "
+                                           "and the global source: it can only be re-baked from the sources")
+                h = np.where(outer, before.astype(np.float64), h)
+            h = keep_sign(fill_pits(h)[0], scale_of(level))
+            tiles.write_height(f, level, x, y, h, scale_of(level))
+            after = tiles.read_height(f, level, x, y)
+            diff = before != after
+            if diff.any():
+                rewritten.add((f, x, y))
+                for j, i in zip(*np.nonzero(diff)):
+                    next_changed.add((f, y * 256 + int(j) - 1, x * 256 + int(i) - 1))
+            cache.trim()
+        _edge_pit_unit((region_id, level, scale_of(level)))
+        log(f"height {region_id} level {level}: {len(todo)} tiles derived again, {len(rewritten)} changed "
+            f"({len(next_changed)} vertices)")
+        report["tiles"][level] = len(rewritten)
+        changed = next_changed
+    # the stored levels now match the present configuration: adopt it in the unit records
+    for level in lv:
+        cfg = cfg_of(level)
+        h = config_hash(cfg)
+        for name in (f"height-{region_id}-l{level}", f"height-{region_id}-l{level}-pits"):
+            for p in (paths.STATE / name).glob("*.done"):
+                p.write_text(h, encoding="utf-8")
+    manifest.mark("height", region_id)
+    if not region_is_baked(region_id):
+        raise RuntimeError(f"height {region_id}: the unit records do not match the present configuration after the repair")
+    return report
 
 
 def source_land_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
