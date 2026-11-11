@@ -89,7 +89,9 @@ hosting side esp when not in use. No need for alerts rn"
 Facts about this machine for the local stack: Docker Desktop 29.6 is installed but its daemon is not running
 (WSL 2 with an Ubuntu distribution exists, stopped); no native Postgres is installed. The machine once
 crashed under heavy combined load, and a Docker Desktop VM takes memory from the browser tests and bakes.
-Prefer a local stack that runs as plain Node processes with an embedded or file-backed Postgres-compatible
-store by default (so agents and the user can run it without starting Docker), and keep the pinned Linux
-image through docker compose for the checks that need the production build (bit-exact replay, the image
-itself). Say which tests need which.
+
+The user, on Docker (verbatim): "We can use docker desktop if that's useful". So Docker Desktop is
+allowed. Choose per purpose between real services in containers (real Postgres, the pinned Linux image:
+highest fidelity to production) and plain Node processes with an embedded or file-backed store (nothing to
+start, less memory). State the default form of the one-command local stack and why, cap the Docker VM's
+memory, and say which tests need which.
