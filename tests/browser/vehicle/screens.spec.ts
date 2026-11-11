@@ -191,7 +191,8 @@ test.describe('vehicle and pad screenshots', () => {
       // Peak heating as the simulation holds it (the ablation temperature), the face already charring, seen face on.
       { name: 'capsule-entry-peak-heating', query: shield, setup: () => void window.__veh!.sim.setAll('heatShield', { surfaceTemp: 3100, ablatorFraction: 0.9 }), minNonBlack: 0.05 },
       { name: 'capsule-windows', query: `${SPACE}&stage=8&sunv=0.4,0.5,0.8&eye=0.25,2.7,3.5&at=0,1.45,1.0&fov=36`, minNonBlack: 0.2 },
-      { name: 'capsule-hatch', query: `${SPACE}&stage=8&sunv=0.9,0.35,-0.25&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, minNonBlack: 0.2 },
+      // (The hatch faces the planet in this attitude: a sun more than a few degrees toward -Z is eclipsed.)
+      { name: 'capsule-hatch', query: `${SPACE}&stage=8&sunv=0.85,0.45,-0.1&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, minNonBlack: 0.2 },
     ]);
     expect(changedShare(shots['capsule-entry-cold']!, shots['capsule-entry-hot-shield']!)).toBeGreaterThan(0.02);
   });

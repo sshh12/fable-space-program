@@ -191,9 +191,9 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        // Over a marking the coat is thin (a few streaks: the letters stay whole and at full contrast); it
-        // thickens raggedly over the cell round each one instead of cutting its letters into stripes.
-        m.frost = outer ? frostAt(y) * (markedAt(_phi, y, y) ? 0.27 : frostFilm(y, _phi)) : 0;
+        // Over a marking the coat is thin: a veil that takes part of the letters' contrast and keeps their edges,
+        // with few solid cells (request vehicle-pad-6); it thickens raggedly over the cell round each marking.
+        m.frost = outer ? frostAt(y) * (markedAt(_phi, y, y) ? 0.38 : frostFilm(y, _phi)) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;

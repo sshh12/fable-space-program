@@ -5,7 +5,8 @@ Owner paths: `src/render/vehicle/**`, `data/defs/visuals/parts/**`, `data/defs/s
 `tests/unit/vehicle/**`. Nothing outside these paths was changed. Requests: section 7.
 
 State: built, reviewed, fixed, and reworked once after the first visual critique (section 9, "Visual
-close-out, round 1", 2026-11-11). Sections 1 to 7 describe the package as it is now.
+close-out, round 1", 2026-11-11; the round was finished by a second agent after the first hit a spend limit:
+"Round 1, continued"). Sections 1 to 7 describe the package as it is now.
 
 ## 1. What exists
 
@@ -70,7 +71,7 @@ extension), heat shield `surfaceTemp` (the shield's glow) and `ablatorFraction` 
 
 What a generator returns (`PartVisual`): named models with 3 LODs each (a wire has 4), a `pose` that emits them
 for the part's module state, optional `lights(input)` (lamps when on, the spill of a glowing heat shield; a
-light may be a line with `end`), and `sootSeconds`. Per emitted item (`PoseOpts`): `temperature`, `cold`,
+light may be a line with `end`, or a spot with `dir` and `cone`: every lamp is one), and `sootSeconds`. Per emitted item (`PoseOpts`): `temperature`, `cold`,
 `fade` (dithered coverage: used only for a vessel that fades out), `castShadow`, `emissive`, `soot`, `frost`,
 `scale`. A site item (`SiteItemOpts`): `emissive`, `moving`, `castShadow`, `grime`, and the shadow classes
 `nearShadowOnly`, `fineShadowOnly`, `shadowProxy` (below).
@@ -113,7 +114,7 @@ node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/model-report.ts [
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts [radial]           # terrain under every structure
 ```
 
-Browser specs: `screens.spec.ts` (8 screenshot tests with 66 views in the vehicle lab, live captures: jitter
+Browser specs: `screens.spec.ts` (8 screenshot tests with 67 views in the vehicle lab, live captures: jitter
 and noise running, 72 frames of temporal accumulation; and the LOD dolly test), `staging.spec.ts`, `game.spec.ts` (the integration lab on the real
 terrain, sky and exposure: 9 pad views, 4 flight views, 3 lunar ground views, and the terrain-to-pad-plane gap
 under every structure), `vehicle.perf.spec.ts`, `adhoc.spec.ts` (`VEH_ADHOC`). Pictures: `out/screens/vehicle/`
@@ -178,9 +179,9 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 2. `createVesselVisualFeature` and `createSiteFeature` take options, not a context.
 3. Capsule heat-shield dome: the sphere of the file's `radiusOfCurvature` through the file's dome samples.
 4. Bounds test: radius within 5 % of `bounds.radius`; `yMin` / `yMax` within 5 % of max(radius, height).
-5. The mesh system has no alpha-tested or transparent materials (request 4). Decals are opaque atlas
-   rectangles cut into the lathe grid; window panes are an opaque, single-sided `glass` model; bar gratings are
-   real bars at LOD 0 and open frames at LOD 1.
+5. The mesh system has no transparent materials; it has alpha-tested ones since request 4. Decals are opaque
+   atlas rectangles cut into the lathe grid; window panes are an opaque, single-sided `glass` model; bar gratings
+   are real bars at LOD 0 and a cut-out plate (`grating`, `alphaCutoff` 0.5) beyond.
 6. LOD selection is done by the features, not by the mesh system's size band (section 2).
 7. `SiteFeature.override` pins a state immediately; the swing animation is driven by the vessel on the pad.
 8. In the vehicle lab the pad surface is the reference sphere and the sky, probe and ambient are the lab's
@@ -188,16 +189,21 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 9. The decal sheet lives at `data/defs/visuals/parts/livery.json`.
 10. A wire cannot be drawn with sub-pixel coverage: it is four gauges (true, 0.22, 0.7, 2.2 m), each used
     where it is one to three pixels wide.
-11. Floodlight banks register a vertical line light in front of the vehicle (where their beams land), not a
-    light at the lenses: the core has no spot lights (request 2).
+11. Lamps are spot lights at their lenses (request 2, part 1): floodlight banks aimed at the vehicle, the
+    tower's lamps across at it, landing lamps down at the touchdown area. None casts a shadow (part 2 open).
 12. The heat shield's glow is compressed against a black body (`shieldGlowLuminance`): sunlit white at 1,900 K,
     eight times that at 3,100 K, so the face keeps its gradient instead of burning out to a flat disc.
 
 ## 6. Known weaknesses (stated plainly)
 
-- Night: no local light casts a shadow (request 2). The vehicle is lit top to bottom and is the brightest thing
-  on the pad, the tower carries work lights, but the tower and masts throw no shadows across the apron, there
-  are no beams in the haze, and the lander's legs cast no shadow in its landing lights.
+- Night: no local light casts a shadow (request 2, part 2 open). The banks are spots aimed at the vehicle and
+  it is the brightest thing on the pad, but the tower and masts throw no shadows across the apron, the far side
+  of the vehicle is lit wherever a bank's cone reaches it, there are no beams in the haze, and the lander's legs
+  cast no shadow in its landing lights.
+- Frost: the core draws a thin coat as a few solid streaks, not as a veil, so markings carry a weight of 0.27
+  (nearly bare, letters whole) and read as clear windows in the coat (request 6).
+- The integration lab's lunar scene has the lander's legs stowed (request 5): `game-moon-*` views show the
+  legs folded up; the vehicle lab's `lander-*` views show the landed lander.
 - Perf: the vehicle's shadow line failed its p99 budget in two of the last three runs under load and is within 10 % of it in the third (section 4).
 - Glass is opaque: no inner panes, no cabin behind the windows from outside (the cockpit package's glazing
   replaces the panes when `exteriorGlass` is false).
@@ -222,11 +228,14 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 | File | To | State | What |
 |---|---|---|---|
 | `docs/requests/vehicle-pad-1.md` | render core, mesh shader | resolved (ad38ab3) | clear coat under soot and frost, texture-space break-up of both, frost and soot colours. Used: frost and soot are plain vertex weights on the skin now |
-| `docs/requests/vehicle-pad-2.md` | render core, contracts | open | spot lights, shadowed local lights |
+| `docs/requests/vehicle-pad-2.md` | render core, contracts | part 1 resolved (d48e735), part 2 open | spot lights (used by every lamp), shadowed local lights (not built) |
 | `docs/requests/vehicle-pad-3.md` | terrain render | open (the terrain package is drawing a site ground plan from the structures' footprint parameters as of this writing) | site ground as graded earthwork instead of a concrete disc |
-| `docs/requests/vehicle-pad-4.md` | render core, contracts | open | alpha-cutout materials |
+| `docs/requests/vehicle-pad-4.md` | render core, contracts | resolved (95d2c70) | alpha-cutout materials. Used: `grating` |
+| `docs/requests/vehicle-pad-5.md` | integration lab (core-support) | open | lunar scene with the lander's legs deployed |
+| `docs/requests/vehicle-pad-6.md` | render core, mesh shader | open | thin frost as a veil instead of sparse streaks |
 
-No open request in `docs/requests` is against these paths.
+Against these paths: `cockpit-11` (ports in the boost cover, dark lining) resolved in 9a5339a. No other
+open request in `docs/requests` is against these paths.
 
 ## 8. First review: findings and what was done
 

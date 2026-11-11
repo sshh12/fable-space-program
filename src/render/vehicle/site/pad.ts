@@ -753,18 +753,18 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
     box(b, 3.6, 2.0, 0.3, [lampC[0], lampC[1], lampC[2]], 'shadow-proxy');
   });
   // The bank is a battery of searchlights aimed at the vehicle, which stands `aimDistance` in front of it: a
-  // spot at the bank's face aimed at `aimHeight` on the vehicle's axis. Its cone takes in the vehicle from the
-  // mount to near its top at full strength and the apron round its base at the edge; the ground under the
-  // mast and behind the bank stays dark, as on a floodlit pad.
+  // spot at the bank's face aimed at `aimHeight` on the vehicle's axis. Its cone takes in the vehicle at full
+  // strength up to two thirds of its height, its top and the apron round its base at the cone's soft edge
+  // (the apron at about a third of the vehicle's light); the ground under the mast stays dark.
   const aim = numParam(params, 'aimDistance', 80);
   const lens: Vec3Tuple = [lampC[0], lampC[1], lampC[2] - 0.3];
-  const to: Vec3Tuple = [0, numParam(params, 'aimHeight', 47) - lens[1], -aim - lens[2]];
+  const to: Vec3Tuple = [0, numParam(params, 'aimHeight', 34) - lens[1], -aim - lens[2]];
   const tl = Math.hypot(...to);
   const lights: PartLight[] = [
     {
       pos: lens,
       dir: [to[0] / tl, to[1] / tl, to[2] / tl],
-      cone: [numParam(params, 'innerDeg', 24) * DEG, numParam(params, 'outerDeg', 34) * DEG],
+      cone: [numParam(params, 'innerDeg', 24) * DEG, numParam(params, 'outerDeg', 44) * DEG],
       radius: 1.2,
       intensity: [candela, candela * 0.98, candela * 0.94],
       range,
