@@ -212,6 +212,9 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
   await saveScreenshot(page, 'render-core', 'mesh-soot-half');
   const halfFrost = await face(0, 0.5);
   await saveScreenshot(page, 'render-core', 'mesh-frost-half');
+  // A thin coat (request vehicle-pad-6) is a veil: every pixel hazed, no bare paint between the cells.
+  const thinFrost = await face(0, 0.35);
+  await saveScreenshot(page, 'render-core', 'mesh-frost-thin');
   const covered = half.luma.filter((v) => v < 0.5 * level).length / half.luma.length;
   // Streaks run along v (up the panel): neighbours differ more across than along.
   let across = 0;
@@ -258,7 +261,7 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
 
   console.log(
     `soot and frost on clear-coated paint: full soot ${(mean(sooted.luma) / level).toFixed(3)}, full frost ${(mean(frosted.luma) / level).toFixed(2)} of the clean level; half soot: ${(100 * covered).toFixed(0)} % of the face under half the clean level, ` +
-      `mean ${(mean(half.luma) / level).toFixed(2)}, neighbour difference across / along the streaks ${(across / along).toFixed(2)}; half frost mean ${(mean(halfFrost.luma) / level).toFixed(2)}; ` +
+      `mean ${(mean(half.luma) / level).toFixed(2)}, neighbour difference across / along the streaks ${(across / along).toFixed(2)}; half frost mean ${(mean(halfFrost.luma) / level).toFixed(2)}; thin frost (0.35) min ${(Math.min(...thinFrost.luma) / level).toFixed(2)} mean ${(mean(thinFrost.luma) / level).toFixed(2)}; ` +
       `environment mirrored at 80 degrees: clean ${coatClean.toFixed(0)} cd/m^2, sooted ${coatSoot.toFixed(0)}, frosted ${coatFrost.toFixed(0)}`,
   );
   expect(mean(sooted.luma) / level).toBeLessThan(0.3);
@@ -269,6 +272,8 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
   expect(half.luma.filter((v) => v > 0.85 * level).length / half.luma.length, 'share of the face left clean at half weight').toBeGreaterThan(0.1);
   expect(across / along).toBeGreaterThan(1.5);
   expect(mean(halfFrost.luma) / level).toBeGreaterThan(1.3);
+  expect(Math.min(...thinFrost.luma) / level, 'the barest pixel under thin frost').toBeGreaterThan(1.3);
+  expect(mean(thinFrost.luma)).toBeLessThan(mean(frosted.luma));
   expect(again.luma).toEqual(clean.luma);
   // Under the layer there is no mirror: the clean coat reflects a thousand cd/m^2 and more of the 4,000.
   expect(coatClean).toBeGreaterThan(900);

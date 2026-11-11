@@ -689,7 +689,11 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   pattern gives way to a plain blend), 0 at weight 0 and complete at weight 1; soot is brown-black
   (0.030, 0.024, 0.019) at roughness 0.92, frost white (0.93, 0.95, 0.97) at roughness 0.85; and the clear
   coat and the anisotropy written to RT4 are multiplied by `(1 - soot) x (1 - frost)`: a sooted or frosted
-  tank has no mirror on top. `terrain` shading keeps plain blends of the masks (grime on site structures).
+  tank has no mirror on top. Under the frost cells lies a veil that follows the weight itself (request
+  `vehicle-pad-6`): `0.55 x smoothstep(0, 0.6, weight)` of the way to frost everywhere (0.34 at weight
+  0.35), and the coat is covered by `max(cells, 0.8 x veil)`: a thin coat is an even matte haze in which a
+  marking keeps its edges and loses contrast; weight 0 is bare paint and weight 1 the solid coat as before.
+  `terrain` shading keeps plain blends of the masks (grime on site structures).
 - **Wet line.** The mesh system reads `'ocean.wetness'` (published by the ocean feature: the physics swell
   plane, an influence radius and the wet line for up to 8 vessels at the water). A `standard` / `terrain`
   fragment within `plane.w` of a slot's plane point whose height above the plane is below the wet line
@@ -1258,6 +1262,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Mesh G-buffer shader, `standard` shading: a frost veil under the cells, `0.55 x smoothstep(0, 0.6, weight)`, clear coat covered by `max(cells, 0.8 x veil)`, section 10 | `vehicle-pad-6` | vehicle-pad (thin frost over markings) | None at frost weight 0 and 1; between, the paint is hazed evenly instead of left bare between the cells |
 | `PbrMaterialDef.alphaCutoff`: alpha-tested materials in the mesh system's G-buffer and shadow passes (second shadow pipeline with uv for models that have one; stochastic coverage where the mips average the alpha), section 10 | `vehicle-pad-4` | vehicle-pad (gratings, perforated plate) | None: materials without it are drawn exactly as before. The material uniform grew to 80 bytes (internal) |
 | Sun-shadow lookup: the kernel stops turning per pixel where a texel covers 2 to 8 pixels or more (`SHADOW_SPIN_FULL` / `_NONE`); `sampleSunShadowSoft(..., softRadius)`; terrain and regolith pixels take a smallest filter radius from RT4.a (`encodeShadowSoftness` / `decodeShadowSoftness`, `SHADOW_SOFTNESS_MIN_M` / `_MAX_M`), the mesh system writes it from `PbrMaterialDef.shadowSoftness`; sections 6 and 8 | `cockpit-10`, `terrain-render-4` | cockpit (window wells at arm's length), vehicle-pad (a hull seen from a metre or two), terrain (writes RT4.a) | None: receivers seen at under 2 pixels per texel and terrain that leaves RT4.a at 0 are unchanged. Close-up shadow edges are smooth instead of stippled |
 | `LocalLight.kind` gained `'spot'` (`dirRelCam`, `cone`) and every light an optional `radius`; `LightUniform` gained `shape: vec4f` (xy = octahedral beam axis of a spot, z = cos inner, w = cos outer), `intensity.a` = source radius, `endKind.w` = 2 for a spot whose `endKind.xyz` is its own position; chunk `local_lights` with `localLightSample(i, posRelCam, n)`; the frame uniform buffer is 3024 bytes (was 2768; `lights` is the last member, no other offset moved), section 7 | `vfx-5`, `vehicle-pad-2` | vehicle-pad (floodlights and landing lamps as spots), vfx (plume and fireball lights with the flame's size); ocean and vfx (their forward copies of the light loop) | None for existing callers: a light without `radius` and kind point / capsule is lit exactly as before. WGSL that includes `frame` gets the new struct automatically; a forward light loop that wants spots and radii calls `localLightSample()` (a copy that reads `posRange` / `endKind` itself sees a spot as a point light of its axial intensity and ignores the radius: switch to the function) |

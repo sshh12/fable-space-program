@@ -213,11 +213,17 @@ fn blackbody(T: f32) -> vec3f {
     albedo = mix(albedo, vec3f(0.030, 0.024, 0.019), soot * 0.92);
     roughness = mix(roughness, 0.92, soot);
     metallic *= 1.0 - soot;
-    let frost = layerCoverage(saturate(I.params.z * v.masks.a), uvm, 19);
-    albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frost);
-    roughness = mix(roughness, 0.85, frost);
-    metallic *= 1.0 - frost;
-    coat = (1.0 - soot) * (1.0 - frost);
+    let frostWeight = saturate(I.params.z * v.masks.a);
+    let frost = layerCoverage(frostWeight, uvm, 19);
+    // A thin coat is a veil under the cells (request vehicle-pad-6): an even matte haze that follows the
+    // weight (0.34 of the way to frost at weight 0.35, 0.55 at 0.6 and above), so markings under it lose
+    // contrast instead of being cut into stripes. Weight 0: none; weight 1: the solid coat as before.
+    let veil = 0.55 * smoothstep(0.0, 0.6, frostWeight);
+    let frostCover = max(frost, veil);
+    albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frostCover);
+    roughness = mix(roughness, 0.85, frostCover);
+    metallic *= 1.0 - frostCover;
+    coat = (1.0 - soot) * (1.0 - max(frost, 0.8 * veil));
     param = max(param, max(I.params.w, hullWetness(v.pos)));
   } else if (shading == MATERIAL_TERRAIN) {
     // Site structures: soot is grime and frost is rime, plain blends of the vertex masks.
