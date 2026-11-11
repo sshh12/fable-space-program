@@ -11,7 +11,7 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
+import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
 import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
@@ -321,11 +321,14 @@ fn bodyHides(d: vec3f) -> bool {
 `;
 
 /**
- * Lens flare in the transparent stage. Instance 0 = starburst + glare halo around the sun (14 chromatic
- * diffraction spikes of a 7-blade aperture, spike length scaling with wavelength, and a power-law veiling
- * glare), drawn over the whole frame; instances 1.. = ghosts (soft discs on the line from the sun through the
- * image centre), each on the screen-space bounding box of its cone. Each term's angular profile is normalised
- * on the CPU so its luminance integrates to `energy` x the illuminance at the lens; the sum is under 1 %.
+ * Lens flare in the transparent stage (flare.ts has the model and its CPU twin). Instance 0 = the starburst
+ * around the sun, drawn over the whole frame: glare core + theta^-2 skirt + uniform veil, and the fourteen
+ * diffraction rays of the 7-blade iris (as wide as the solar disc at the base, opening into fans, each blade
+ * with its own strength, length, fan and angular error, a slight wavelength smear along the ray). Instances
+ * 1.. = the ghosts: images of the iris (rounded heptagons turned like the rays) on the line from the sun
+ * through the image centre, blurred by the solar disc, with lateral colour, an uneven fill and a cat's-eye
+ * clip off axis, each on the screen-space bounding box of its cone. Every term's profile is normalised on the
+ * CPU so its luminance integrates to its energy fraction x the illuminance at the lens; the sum is under 1 %.
  * The source is the sun's illuminance x the visible disc fraction, cloud and atmosphere transmittance
  * (FLARE_VIS_CS) x the lens hood's transmission for a sun outside the frame (flare.ts hoodTransmission).
  * Additive (alpha 0); applyAtmosphere at distance 0 is exactly neutral: the flare forms inside the lens.
@@ -335,18 +338,30 @@ export const FLARE_WGSL = (bindings: string): string => /* wgsl */ `
 #include "transparency"
 ${bindings}
 ${CAP_WGSL}
-const FLARE_HALO_SHARE = ${f(FLARE_HALO_SHARE)};
-const FLARE_HALO_POWER = ${f(HALO_POWER)};
-const SPIKE_COUNT = ${f(SPIKE_COUNT)};
+const SPIKE_COUNT = ${SPIKE_COUNT};
+const BLADE_COUNT = ${BLADE_COUNT};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
+const POLY_EQ_CIRCLE = ${f(POLY_EQ_CIRCLE)};
 struct FlareState { visible: vec4f, transmittance: vec4f }
-struct FlareTerm {
-  pos: vec4f,     // xy = centre in NDC (ghosts) or unused (starburst: the sun), z = radius (rad, ghosts) / spike length scale (rad), w = kind (0 starburst, 1 ghost)
-  tint: vec4f,    // rgb = relative colour (luminance 1), a = energy fraction of the source
-  shape: vec4f,   // starburst: x = halo core (rad), y = halo norm (1/sr), z = spike width (rad), w = spike norm (1/sr); ghost: x = edge softness, y = disc norm (1/sr), z = chroma shift
-  quad: vec4f,    // NDC bounds of the term: xy = min, zw = max (the whole screen for the starburst)
+struct Blade {
+  dir: vec4f,     // x = sin, y = cos of the edge normal's angle in the image plane (from up towards right), z = its angular error (rad), w = ray amplitude
+  ray: vec4f,     // x = ray length scale (rad), y = fan (across width per radian from the sun)
 }
-struct FlareUniforms { count: vec4u, sun: vec4f, terms: array<FlareTerm, 8> }   // sun.x = lens hood transmission
+struct Ghost {
+  pos: vec4f,     // xy = centre in NDC, z = apothem of the iris image (rad), w = +1 / -1 (inverted image)
+  tint: vec4f,    // rgb = coating tint (luminance 1), a = energy fraction x normalisation (1/sr)
+  shape: vec4f,   // x = edge blur (rad), y = roundness, z = rim, w = fill gradient per radian along the axis
+  extra: vec4f,   // x = lateral colour shift (rad), y = cat's-eye shift (rad), z = cat's-eye radius (rad), w = support (rad)
+  quad: vec4f,    // NDC bounds: xy = min, zw = max
+}
+struct FlareUniforms {
+  count: vec4u,
+  sun: vec4f,     // x = lens hood transmission, y = veil (energy / frame solid angle, 1/sr), zw = unit axis-to-sun direction in the image plane (right, up)
+  glare: vec4f,   // x = core angle (rad), y = core energy x normalisation, z = skirt angle (rad), w = skirt energy x normalisation
+  rays: vec4f,    // x = knee angle (rad), y = energy x normalisation, z = across sigma at the sun (rad)
+  blades: array<Blade, ${BLADE_COUNT}>,
+  ghosts: array<Ghost, ${GHOSTS.length}>,
+}
 @group(2) @binding(0) var<uniform> flare: FlareUniforms;
 @group(2) @binding(1) var<storage, read> flareState: FlareState;
 
@@ -356,9 +371,10 @@ struct VOut {
 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   var o: VOut;
-  let t = flare.terms[ii];
   let corner = vec2f(f32(vi & 1u), f32(vi >> 1u));
-  o.pos = vec4f(mix(t.quad.xy, t.quad.zw, corner), 0.0, 1.0);
+  var q = vec4f(-1.0, -1.0, 1.0, 1.0);
+  if (ii > 0u) { q = flare.ghosts[ii - 1u].quad; }
+  o.pos = vec4f(mix(q.xy, q.zw, corner), 0.0, 1.0);
   o.index = ii;
   return o;
 }
@@ -367,12 +383,26 @@ struct VOut {
 fn ndcRay(n: vec2f) -> vec3f {
   return normalize(frame.cameraForward.xyz + frame.cameraRight.xyz * (n.x * frame.cameraRight.w) + frame.cameraUp.xyz * (n.y * frame.cameraUp.w));
 }
+fn smooth01(x: f32) -> f32 { return smoothstep(0.0, 1.0, x); }
+
+/// One channel of a ghost at tangent-plane point q (rad; right, up) from its centre (flare.ts ghostShape).
+fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> f32 {
+  var poly = -1.0e9;
+  for (var b = 0; b < BLADE_COUNT; b++) { poly = max(poly, gh.pos.w * dot(q, flare.blades[b].dir.xy)); }
+  let R = gh.pos.z;
+  let s = gh.shape.x;
+  let d = mix(poly, length(q) / POLY_EQ_CIRCLE, gh.shape.y);
+  let mask = smooth01(0.5 - (d - R) / (2.0 * s));
+  let fill = 1.0 + gh.shape.z * (smooth01((d / R - 0.55) / 0.45) - 0.5);
+  let grad = max(0.0, 1.0 + gh.shape.w * dot(q, axis));
+  let clip = smooth01(0.5 - (length(q + axis * gh.extra.y) - gh.extra.z) / (2.0 * s));
+  return mask * fill * grad * clip;
+}
 
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
   let st = flareState;
   let source = frame.sunIlluminance.rgb * st.transmittance.rgb * (st.visible.x * st.visible.y * flare.sun.x);
   if (dot(source, source) <= 0.0) { discard; }
-  let t = flare.terms[in.index];
   // The ray this (jittered) pixel samples, as for the scene behind it.
   let uv = in.pos.xy * frame.renderSize.zw;
   let dir = normalize(viewRay(uv));
@@ -382,37 +412,48 @@ fn ndcRay(n: vec2f) -> vec3f {
   // ghosts of a source on the optical axis fall onto the source itself.
   if (theta < frame.sunDir.w + 1.5 * 2.0 * frame.cameraUp.w * frame.renderSize.w) { discard; }
   var L = vec3f(0.0);
-  if (t.pos.w < 0.5) {
-    // Starburst + glare around the sun direction.
-    // Halo: (1 + (theta / c)^2)^-p (flare.ts haloProfile); shape.y normalises its integral to 1.
-    let x = theta / t.shape.x;
-    let halo = t.shape.y * pow(1.0 + x * x, -FLARE_HALO_POWER);
-    // Spikes: angle about the sun in the image plane.
+  if (in.index == 0u) {
+    // Glare: core + theta^-2 skirt + veil.
+    let xc = theta / flare.glare.x;
+    let xs = theta / flare.glare.z;
+    let glare = flare.glare.y * pow(1.0 + xc * xc, -1.5) + flare.glare.w / (1.0 + xs * xs) + flare.sun.y;
+    // Rays: azimuth about the sun in the image plane, from the camera's up towards its right.
     let toS = normalize(dir - s * dot(dir, s));
     let up = normalize(frame.cameraUp.xyz - s * dot(frame.cameraUp.xyz, s));
     let rt = cross(s, up);
     let phi = atan2(dot(toS, rt), dot(toS, up));
-    // Distance to the nearest spike (SPIKE_COUNT of them, evenly spaced), as an angle across the spike.
-    let seg = TWO_PI / SPIKE_COUNT;
-    let dphi = abs(phi - seg * round(phi / seg));
-    let across = theta * sin(dphi);
-    let w = t.shape.z;
-    let gw = exp(-0.5 * across * across / (w * w));
-    // Along the spike: a Fraunhofer edge falls off as theta^-2 beyond the core; length scales with wavelength.
-    let lambda = SPIKE_LAMBDA;
-    let along = vec3f(1.0) / (vec3f(1.0) + (theta * theta) / (t.pos.z * t.pos.z * lambda * lambda));
-    let spikes = t.shape.w * gw * along / lambda;
-    // tint.a = energy of the whole term; shape.y and shape.w normalise halo and spikes to 1 each (CPU, numeric).
-    L = source * t.tint.rgb * t.tint.a * (halo * FLARE_HALO_SHARE + spikes * (1.0 - FLARE_HALO_SHARE));
+    let seg = TWO_PI / f32(SPIKE_COUNT);
+    let j = round(phi / seg);
+    let m = (i32(j) + SPIKE_COUNT) % SPIKE_COUNT;
+    // Rays 2b and 2b + BLADE_COUNT belong to blade b (both directions perpendicular to its edge).
+    let blade = flare.blades[select((m + BLADE_COUNT) % SPIKE_COUNT, m, (m & 1) == 0) / 2];
+    let across = theta * sin(phi - j * seg - blade.dir.z);
+    let w0 = flare.rays.z;
+    let fan = blade.ray.y * theta;
+    let sigma = sqrt(w0 * w0 + fan * fan);
+    // Along: flat inside the knee, theta^-2 beyond, ending at the blade's length; angles scale with wavelength.
+    let t = vec3f(theta) / SPIKE_LAMBDA;
+    let tl = t / blade.ray.x;
+    let tk = t / flare.rays.x;
+    let along = exp(-tl * tl) / (vec3f(1.0) + tk * tk) / SPIKE_LAMBDA;
+    let rays = flare.rays.y * blade.dir.w * along * (exp(-0.5 * across * across / (sigma * sigma)) / (2.5066282746 * sigma));
+    L = source * (vec3f(glare) + rays);
   } else {
-    // Ghost: a soft disc of angular radius t.pos.z, chromatic fringe by a radial shift per channel.
-    let c = ndcRay(t.pos.xy);
-    let r = atan2(length(cross(dir, c)), dot(dir, c)) / t.pos.z;
-    let soft = t.shape.x;
-    let shift = t.shape.z;
-    let disc = saturate((vec3f(1.0) - vec3f(r * (1.0 - shift), r, r * (1.0 + shift))) / soft);
-    let ring = disc * (vec3f(0.55) + 0.45 * smoothstep(vec3f(0.6), vec3f(1.0), vec3f(r)));
-    L = source * t.tint.rgb * t.tint.a * t.shape.y * ring;
+    let gh = flare.ghosts[in.index - 1u];
+    let c = ndcRay(gh.pos.xy);
+    let a = atan2(length(cross(dir, c)), dot(dir, c));
+    if (a > gh.extra.w) { discard; }
+    let upc = normalize(frame.cameraUp.xyz - c * dot(frame.cameraUp.xyz, c));
+    let rtc = cross(c, upc);
+    let tv = dir - c * dot(dir, c);
+    let tvl = length(tv);
+    var p = vec2f(0.0);
+    if (tvl > 0.0) { p = vec2f(dot(tv, rtc), dot(tv, upc)) * (a / tvl); }
+    let axis = flare.sun.zw;
+    // Lateral colour: the red and blue images are displaced along the axis-to-sun line.
+    let sh = axis * gh.extra.x;
+    let img = vec3f(ghostShape(gh, p + sh, axis), ghostShape(gh, p, axis), ghostShape(gh, p - sh, axis));
+    L = source * gh.tint.rgb * gh.tint.a * img;
   }
   let c = applyAtmosphere(uv, 0.0, L * frame.exposure.x, 0.0);
   return vec4f(capAdditive(c.rgb), 0.0);

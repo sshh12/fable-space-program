@@ -15,7 +15,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import { STAR_RECORD_FLOATS, type SkyManifest } from '@/core/contracts/sky';
 import { mat4, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
 import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type SceneBindings, type Tracked } from '@/render/core';
-import { GHOSTS, STARBURST, coneNdcBounds, flareNormalisation, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
+import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, STARBURST, bladeAngle, coneNdcBounds, flareNormalisation, frameSolidAngle, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
 import { impostorSigmaPx, impostorWeight, IMPOSTOR_NONE_PX, lambertSphereIlluminance, pixelSolidAngle, STAR_PSF_SIGMA_PX, STAR_QUAD_SIGMAS } from './photometry';
 import { EnvironmentProbe, type ProbeState } from './probe';
 import { BACKGROUND_FS, FLARE_VIS_CS, FLARE_WGSL, IMPOSTOR_WGSL, STARS_WGSL } from './shaders';
@@ -100,7 +100,8 @@ const SKY_UNIFORM_FLOATS = 20;
 const MAX_IMPOSTORS = 16;
 const IMPOSTOR_FLOATS = 4 + MAX_IMPOSTORS * 12;
 const FLARE_TERMS = 1 + GHOSTS.length;
-const FLARE_FLOATS = 8 + 8 * 16;
+/** FlareUniforms of FLARE_WGSL: count, sun, glare, rays, the blades (2 vec4 each), the ghosts (5 vec4 each). */
+const FLARE_FLOATS = 16 + BLADE_COUNT * 8 + GHOSTS.length * 20;
 
 const luma = (c: Readonly<Vec3Tuple>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
@@ -347,14 +348,32 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     const f = new Float32Array(flareData);
     f.fill(0);
     u[0] = FLARE_TERMS;
-    f.set([hood, 0, 0, 0], 4);
-    const t = (k: number, a: number[], b: number[], c2: number[], q: number[]): void => f.set([...a, ...b, ...c2, ...q], 8 + k * 16);
-    t(0, [0, 0, STARBURST.spikeLength, 0], [...STARBURST.tint, STARBURST.energy], [STARBURST.haloCore, flareNorm.halo, STARBURST.spikeWidth, flareNorm.spikes], [-1, -1, 1, 1]);
+    const rs = frame.sun.angularRadius;
+    const gf = ghostFrame(view, [sx, sy], rs);
+    const lateral = ghostLateral(gf.offAxis);
+    f.set([hood, STARBURST.veilEnergy / frameSolidAngle(tanX, tanY), gf.axis[0], gf.axis[1]], 4);
+    f.set([STARBURST.coreAngle, STARBURST.coreEnergy * flareNorm.core, STARBURST.skirtAngle, STARBURST.skirtEnergy * flareNorm.skirt], 8);
+    f.set([STARBURST.rayKnee, STARBURST.rayEnergy * flareNorm.rays, STARBURST.rayDiscSigma * rs, 0], 12);
+    BLADES.forEach((b, i) => {
+      const a = bladeAngle(i);
+      f.set([Math.sin(a), Math.cos(a), b.angle, b.amplitude, b.length, b.fan, 0, 0], 16 + i * 8);
+    });
     GHOSTS.forEach((g, i) => {
       const gx = sx * g.k;
       const gy = sy * g.k;
-      const [x0, y0, x1, y1] = coneNdcBounds(view, ndcDirection(view, gx, gy), ghostSupport(g));
-      t(1 + i, [gx, gy, g.radius, 1], [...g.tint, g.energy], [g.softness, flareNorm.ghosts[i]!, g.chroma, 0], [x0 - mx, y0 - my, x1 + mx, y1 + my]);
+      const support = ghostSupport(g, rs);
+      const blur = g.blur * rs;
+      const [x0, y0, x1, y1] = coneNdcBounds(view, ndcDirection(view, gx, gy), support);
+      f.set(
+        [
+          ...[gx, gy, g.radius, g.flip],
+          ...[g.tint[0], g.tint[1], g.tint[2], g.energy * flareNorm.ghosts[i]!],
+          ...[blur, g.round, g.rim, (g.gradient * lateral) / g.radius],
+          ...[g.chroma * g.radius * lateral, g.vignette * gf.offAxis * g.radius, GHOST_CLIP_RADIUS * g.radius + 2 * blur, support],
+          ...[x0 - mx, y0 - my, x1 + mx, y1 + my],
+        ],
+        16 + BLADE_COUNT * 8 + i * 20,
+      );
     });
     device.queue.writeBuffer(flareBuf, 0, flareData);
     // Transmittance towards the sun at the camera: the nearest frame body with an atmosphere shell around the camera.
