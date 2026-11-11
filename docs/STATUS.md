@@ -1,7 +1,7 @@
 # Project status and how to resume
 
 Living checkpoint, kept current by the lead. Read this first when picking the work up in a new session.
-Last updated: 2026-11-11, early afternoon (Pacific), during the visual close-out on Opus 5.5.
+Last updated: 2026-11-11, 15:50 Pacific, after the second crash (git recovered, nothing committed was lost).
 
 ## Where the project is
 
@@ -11,7 +11,8 @@ Last updated: 2026-11-11, early afternoon (Pacific), during the visual close-out
 | Wave 1 (9 packages: render-core, terrain-core, bake-earth, bake-moon-sky, sim-orbits, sim-vessel, audio, flight-ui, map-view) | Done: built, independently reviewed, fixed. Hand-offs in `docs/handoff/` |
 | Wave 2 (8 feature packages + core-support) | Built, reviewed and fixed. The headless mission flies pad to splashdown under real physics (`npm run test:mission`, about 77 s wall; touchdown 1.19 m from the lunar target, splashdown inside the recovery zone; `docs/handoff/sim-world-pilot.md`) |
 | Visual close-out of wave 2 | **In progress** (see below). First critique scored every rendering package 3-5/10 against real photographs |
-| App integration v1 (`src/app` wired against `createSim`, browser mission in real Chrome) | **Next / in progress**. `src/app/main.ts` is still the 78-line boot shell: nobody can play the game yet |
+| App integration v1 (`src/app` wired against `createSim`, browser mission in real Chrome) | **Wired: the game is playable in the browser** (`npm run dev`, then `/`; the scripted test pilot flies inside the page at `/?pilot=1`). `docs/handoff/app-integration-v1.md` has the keys, the frame-time table and the pictures. The Playwright `mission` spec (about 45 minutes in real Chrome) is the open step |
+| Lead data change: eight-component swell (requests ocean-5/6) | Done: `docs/handoff/lead-swell.md`; headless mission re-passes, new golden `3f3a131cdd88eba7` |
 | Design v2 for the expanded scope (`docs/ARCHITECTURE_V2.md`, `MIGRATION_V2.md`, `WORK_PACKAGES_V2.json`, `OPEN_QUESTIONS_V2.md`) | Done, critiqued and revised twice (cost floor, local stack). Not started: 29 packages in waves 3-7 |
 
 User decisions that bind v2 are in `docs/research/v2/user-decisions.md` (anonymous identity, Railway Hobby at
@@ -31,17 +32,32 @@ lens) -> next fix round, until both lenses give 8/10 with no blocker, at most tw
   (later rounds); copied to `docs/qa/wave2/` at each checkpoint.
 - Scores so far (photo / artifact, out of 10):
 
-| Package | Round 0 | Round 1 | Later |
+| Package | Round 0 | Latest critique | State at the checkpoint (next step) |
 |---|---|---|---|
-| atmosphere-clouds | 4 / 4 | fix round 1 in progress | |
-| sky-lighting | 4.5 / 5 | 6 / 6.5 | fix round 2 in progress |
-| ocean | 4 / 4 | fix round 1 in progress | |
-| vehicle-pad | 4 / 4 | fix round 1 in progress | |
-| cockpit | 3 / 3.5 | 4 / 4 | fix round 2 in progress |
-| vfx | 3.5 / 3.5 | fix round 1 in progress | |
-| terrain-render | 5 / 4.5 | fix round 1 in progress | |
-| flight-ui | 5.5 / 6.5 | 6.8 / 7 | rounds 2-3 fixed without critics; critique pending |
-| map-view | 4 / 4.5 | 6 / 6.5 | rounds 2-3 fixed without critics; critique pending |
+| flight-ui | 5.5 / 6.5 | r5: 7.8 / 7.9 (0 blockers, 1 major) | nearly there: one more fix round on the r5 lists |
+| map-view | 4 / 4.5 | r4: 6.5 / 7 (0 blockers, 2 + 2 majors) | round 5 fixes partly committed; critique r5 next |
+| atmosphere-clouds | 4 / 4 | r1: 5.5 / 5.5 (0 blockers, 8 + 8 majors) | round 2 fixes in progress (uncommitted work in the tree); critique r2 next |
+| ocean | 4 / 4 | r1: 5 / 5.5 (1 blocker, 10 + 10 majors) | fix round 2 on the r1 lists |
+| vfx | 3.5 / 3.5 | r1: 4.5 / 5 (3 + 2 blockers) | round 2 fixes in progress (uncommitted work in the tree) |
+| sky-lighting | 4.5 / 5 | r1: 6 / 6.5 | round 2 fixes committed; critique r2 next |
+| cockpit | 3 / 3.5 | r1: 4 / 4 (3 + 1 blockers) | round 2 fixes partly committed; continue round 2 |
+| terrain-render | 5 / 4.5 | r0: 5 / 4.5 (1 + 1 blockers) | round 1 fixes committed (trees to 7 km, ground colour, pad relief); critique r1 next |
+| vehicle-pad | 4 / 4 | none since round 0 | round 1 fixes committed (parts 1-7, lights with shadows); critique r1 next |
+
+The critique lists of every round are in git under `docs/qa/wave2/` (copies of `out/qa/wave2/`); the reference
+library's index is `docs/qa/ref/INDEX.md` (the images themselves are only in `out/qa/ref/`, 51 MB, rebuildable
+from the URLs in the index).
+
+## The 2026-11-11 15:35 crash and the git recovery
+
+Bugcheck 0x119 (VIDEO_SCHEDULER_INTERNAL_ERROR, GPU scheduler/driver) while four WebGPU Chrome test runs ran at
+once (373 W; memory was fine). The heavy gate is back to **two GPU slots** (`tools/dev/heavy.mjs`); keep it there
+or update the NVIDIA driver (610.88) before raising it. The crash zeroed `.git/refs/heads/main`, the index and two
+working files; main was restored to the last intact commit from the reflog (3762197), `git fsck --full` passed,
+the index was rebuilt, and the two files were restored from HEAD. A copy of the damaged `.git` is in the session
+scratchpad. Uncommitted work of the interrupted agents (atmosphere, vfx, flight-ui, app tests, two hand-offs) is
+still in the working tree and also on the branch `wip/2026-11-11-crash` on GitHub: the next agent for each
+package takes it over.
 
 ## How to resume
 
