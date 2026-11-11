@@ -540,7 +540,7 @@ struct FsOut {
     var conf = 0.0;
     if (found) {
       let edge = min(min(hitUv.x, 1.0 - hitUv.x), min(hitUv.y, 1.0 - hitUv.y));
-      conf = saturate(edge * 25.0) * (1.0 - smoothstep(0.6, 1.0, tHit / reach));
+      conf = saturate(edge * 8.0) * (1.0 - smoothstep(0.6, 1.0, tHit / reach));
     } else if (!seabed) {
       hitUv = lastUv;
       tHit = tLast;
