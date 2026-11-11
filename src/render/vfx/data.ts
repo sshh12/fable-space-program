@@ -222,6 +222,12 @@ export interface VfxData {
     fluxExponent: number;
     minIntensity: number;
     wakeLengthRadii: number;
+    /**
+     * Emission of the wake relative to the shock layer (0..1). The gas cools by thousands of kelvin as it
+     * expands round the shoulder, and what air radiates falls far faster than its temperature: the wake is a
+     * dim, coloured stream behind a white-hot head, not a second head.
+     */
+    wakeGain: number;
     /** Speed at which the streaks of the wake stream away, m/s (what the eye can follow; the gas is far faster). */
     streakSpeed: number;
     colorSpeeds: Vec3Tuple;
@@ -403,6 +409,7 @@ const ROOT: Schema = {
     fluxExponent: 'p',
     minIntensity: 'u',
     wakeLengthRadii: 'p',
+    wakeGain: 'u',
     streakSpeed: 'n',
     colorSpeeds: 'n3',
     colors: 'cs',

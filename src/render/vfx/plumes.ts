@@ -21,7 +21,7 @@ const NOZZLE_FLOATS = 28;
 /** March steps of an engine cluster and of an RCS jet at quality 1. */
 export const PLUME_STEPS = 28;
 /** A free expansion is smooth (no cells, no eddies): it is marched with this much fewer steps. */
-export const FAR_STEPS_SAVED = 0.5;
+export const FAR_STEPS_SAVED = 0.57;
 export const RCS_STEPS = 14;
 /**
  * A plume that covers more of the frame than this is marched with fewer steps per ray (down to STEPS_FLOOR

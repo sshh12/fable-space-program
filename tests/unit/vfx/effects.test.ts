@@ -12,7 +12,7 @@ import { v3 } from '@/core/math/vec3';
 import { loadVfxData, type VfxData } from '@/render/vfx';
 import { buildCanopyMesh, buildProfileTable, canopyProfile, canopyRadius, clusterAngle, PANEL_COLS, PANEL_ROWS, PROFILE_LEVELS, PROFILE_SAMPLES, profileLevelCoord, profileLevelInflation } from '@/render/vfx/canopyModel';
 import { applyRebase, EffectDomain, SURFACE_REBASE } from '@/render/vfx/domain';
-import { capHeight, plasmaColor, plasmaLuminance, reentryProxy } from '@/render/vfx/plasma';
+import { capHeight, plasmaColor, plasmaLuminance, plasmaWindowRadiance, reentryProxy } from '@/render/vfx/plasma';
 import { crownHeight } from '@/render/vfx/splash';
 import { contrailFactor, trailRadius, trailState, type TrailNode } from '@/render/vfx/trail';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
@@ -194,6 +194,22 @@ describe('reentry proxy and colour', () => {
     const mid = plasmaColor(R, 0.5 * (R.colorSpeeds[0] + R.colorSpeeds[1]));
     expect(mid[2]).toBeGreaterThan(R.colors[0][2]);
     expect(mid[2]).toBeLessThan(R.colors[1][2]);
+  });
+  it('a lee window sees a sheath far dimmer than the layer, brightening with the intensity, in the colour of the gas', () => {
+    const R = data.reentry;
+    const at = (k: number) => plasmaWindowRadiance(R, k * R.referenceFlux, k, 7600);
+    const [w3, w6, w10] = [at(0.3), at(0.6), at(1)];
+    expect(w3.luminance).toBeGreaterThan(0);
+    expect(w6.luminance).toBeGreaterThan(w3.luminance);
+    expect(w10.luminance).toBeGreaterThan(w6.luminance);
+    // Below a twentieth of the shock layer itself, and still a light source (above a lit cabin wall).
+    expect(w10.luminance).toBeLessThan(plasmaLuminance(R, R.referenceFlux, 1) / 20);
+    expect(w10.luminance).toBeGreaterThan(300);
+    const c = w10.color;
+    expect(0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]).toBeCloseTo(1, 6);
+    const gas = plasmaColor(R, 7600);
+    expect(c[0] / c[2]).toBeCloseTo(gas[0] / gas[2], 6);
+    expect(plasmaWindowRadiance(R, 0, 0, 7600).luminance).toBe(0);
   });
 });
 

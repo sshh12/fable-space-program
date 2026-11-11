@@ -198,7 +198,7 @@ struct FOut {
   glowLum *= 0.45 + 1.1 * bead.r;
   // The head of a trail seen from so far that the glowing body and its wake are smaller than a pixel: their
   // light is not lost, it is in this pixel (a point that clips and blooms at the front of the line).
-  glowLum *= 1.0 + s.taper.z * 0.06 * smoothstep(0.3, 1.5, pixelMid / max(s.taper.z, 1e-3)) * exp(-fromNewest / max(4.0 * pixelMid, 1e-3)) * step(1.0, s.albedoA.w + s.albedoB.w);
+  glowLum *= 1.0 + s.taper.z * 2.0 * smoothstep(0.3, 1.5, pixelMid / max(s.taper.z, 1e-3)) * exp(-fromNewest / max(4.0 * pixelMid, 1e-3)) * step(1.0, s.albedoA.w + s.albedoB.w);
   // Sub-pixel tubes are widened to a pixel and thinned by the same factor.
   let pixel = 2.0 * frame.cameraUp.w * vfx.half.w * tMid;
   let rDraw = max(radius, 0.7 * pixel);

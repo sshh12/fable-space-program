@@ -23,3 +23,4 @@ export {
 } from './plumeModel';
 export { MAX_CLUSTER_NOZZLES, MAX_RCS_PER_VESSEL, gatherPlumeClusters, type NozzleInstance, type PlumeCluster } from './clusters';
 export type { PlumeSlice } from './plumes';
+export { plasmaColor, plasmaLuminance, plasmaWindowRadiance } from './plasma';

@@ -12,12 +12,15 @@ async function probe(page: Page, enu: { x: number; y: number; z: number }, dx: n
       const p = lab.project(enu);
       if (!p) return null;
       const size = lab.app.renderer.frameContext!.renderSize;
+      // Mean of a block of 11 x 11 pixels: from 2 km a flame is two or three pixels wide, and a smaller block
+      // would hold more or less of it as the sub-pixel jitter of the frame moves it.
+      const N = 11;
       const block = async (cx: number, cy: number): Promise<number[]> => {
-        const x = Math.min(size[0] - 3, Math.max(0, Math.round(cx) - 1));
-        const y = Math.min(size[1] - 3, Math.max(0, Math.round(cy) - 1));
-        const px = await lab.app.renderer.readHdrPixels('hdr', { x, y, width: 3, height: 3 });
+        const x = Math.min(size[0] - N, Math.max(0, Math.round(cx) - (N >> 1)));
+        const y = Math.min(size[1] - N, Math.max(0, Math.round(cy) - (N >> 1)));
+        const px = await lab.app.renderer.readHdrPixels('hdr', { x, y, width: N, height: N });
         const s = [0, 0, 0];
-        for (let i = 0; i < 9; i++) for (let c = 0; c < 3; c++) s[c]! += px.data[i * 4 + c]! / 9;
+        for (let i = 0; i < N * N; i++) for (let c = 0; c < 3; c++) s[c]! += px.data[i * 4 + c]! / (N * N);
         return s;
       };
       return { on: await block(p.x, p.y), off: await block(p.x + dx, p.y), x: p.x, y: p.y };
@@ -79,9 +82,11 @@ test('behind a synthetic overcast deck the plume and its trail are hidden; below
     await page.evaluate(({ on, deck }) => window.__vfx!.sky.setOvercast(on ? { altitude: deck, transmittance: 0.02 } : null), { on, deck });
     await page.evaluate(() => window.__vfx!.renderExact(3, false));
   };
+  // The probe sits in the body of the flame, 40 m below the nozzles (the flame is about a vehicle length long
+  // and ends in a ragged tip: a point further down is flame in one frame and sky in the next).
   const plumeAt = async (): Promise<{ x: number; y: number; z: number }> => {
-    const v = await page.evaluate(() => window.__vfx!.vesselEnu('stack'));
-    return { x: v.x, y: v.y, z: v.z - 125 };
+    const n = await page.evaluate(() => window.__vfx!.nozzleEnu('stack'));
+    return { x: n.x, y: n.y, z: n.z - 40 };
   };
 
   // (1) The vehicle below the deck: the plume is seen the same with and without the deck.

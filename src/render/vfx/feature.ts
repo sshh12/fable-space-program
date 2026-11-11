@@ -99,6 +99,14 @@ const LIGHT_SEGMENTS: [number, number][] = [
 const GROUND_LIGHT_SHARE = 0.6;
 const GROUND_LIGHT_HEIGHT = 0.3;
 const GROUND_LIGHT_MAX_HEIGHT = 30;
+/**
+ * That light shines from this many points on a ring about the foot, at a radius of this share of their
+ * height: the spread flame and the cloud it lights stand around the jet, not on its axis. From the axis no
+ * light would reach the hull walls above the engines (they face away from it), and the vehicle would stand
+ * as a black silhouette in its own launch at night.
+ */
+const GROUND_LIGHT_POINTS = 3;
+const GROUND_LIGHT_RING = 1;
 
 /**
  * The vfx feature. `ctx` is optional: the feature receives its RenderContext in `init` (pass
@@ -233,7 +241,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
    * intensity (proportional to thrust) is spread along the luminous length of the jet, little of it near the
    * nozzles (the gas there is dim and a point light close to the bells would burn them out), most of it in
    * the body of the flame. Where the jet meets the ground the line ends above it and what the ground cuts
-   * off shines from the flame that spreads over the surface and the cloud it lights: a point above the foot.
+   * off shines from the flame that spreads over the surface and the cloud it lights: points on a ring above
+   * the foot.
    * `ground(pc)` = distance along the jet axis to the ground (Infinity: none), `up` = local vertical (ROOT axes).
    */
   const plumeLights = (candidates: LightCandidate[], ground: (pc: PlacedCluster) => number, up: Vec3 | null): void => {
@@ -280,8 +289,21 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       if (cut > 0.01 && up && Number.isFinite(tg)) {
         const foot = v3.addScaled(pc.originRelCam, pc.axisX, tg);
         const height = Math.min(GROUND_LIGHT_MAX_HEIGHT, Math.max(3 * reMax, GROUND_LIGHT_HEIGHT * cut * length));
-        const k = cut * GROUND_LIGHT_SHARE;
-        candidates.push({ power: power * k, light: { kind: 'point', posRelCam: v3.addScaled(foot, up, height), intensity: scaled(k), range: range(power) } });
+        const k = (cut * GROUND_LIGHT_SHARE) / GROUND_LIGHT_POINTS;
+        // The ring: horizontal, wider than the cluster of nozzles, its first point on the side of the cluster's own Y axis.
+        let spread = 0;
+        for (const p of pc.nozzlePos) spread = Math.max(spread, Math.hypot(p.y, p.z));
+        const ring = Math.max(GROUND_LIGHT_RING * height, spread + 4 * reMax);
+        let e1 = v3.reject(pc.axisY, up);
+        if (v3.len(e1) < 0.1) e1 = v3.reject(pc.axisZ, up);
+        e1 = v3.normalize(e1);
+        const e2 = v3.cross(up, e1);
+        const centre = v3.addScaled(foot, up, height);
+        for (let i = 0; i < GROUND_LIGHT_POINTS; i++) {
+          const a = (2 * Math.PI * i) / GROUND_LIGHT_POINTS;
+          const at = v3.addScaled(v3.addScaled(centre, e1, ring * Math.cos(a)), e2, ring * Math.sin(a));
+          candidates.push({ power: power * k, light: { kind: 'point', posRelCam: at, intensity: scaled(k), range: range(power) } });
+        }
       }
     }
   };
