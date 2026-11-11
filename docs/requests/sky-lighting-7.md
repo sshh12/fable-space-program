@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit c60735e)
 From: sky-lighting
 Owner path: src/render/core/post/tonemap.ts (`TOE_START_STOPS`, `TOE_FULL_STOPS`: the join of AgX to the linear toe)
 Blocking: yes   (major finding 1 of both round-1 critics of the sky, `out/qa/wave2/sky-lighting.r1.photo.json` and `.r1.artifact.json`, and their only item "still open" from round 0: it cannot be closed inside `src/render/sky`)
@@ -36,3 +36,20 @@ night-sky specs of the sky package assert levels there), AgX above -1 stop, the 
 The sky package re-shoots its flare views and adds the slope check both critics ask for to
 `tests/browser/sky/flare.spec.ts` when this lands; it is reshaping the glare profile in parallel (less energy
 in the wide skirt), which makes the edge smaller but cannot remove it.
+
+## Resolution
+
+Done as requested (`c60735e`): `TOE_START_STOPS = -1`, `TOE_FULL_STOPS = -6` in `src/render/core/post/tonemap.ts`;
+the WGSL is generated from the same constants, so CPU and GPU agree (`tests/browser/render-core/exposure.spec.ts`,
+"the canvas is the display transform of the resolved image", re-run: median 0.24-0.39, 99th percentile
+1.1-1.2 of 255 at 0, 4, 5.5 and 7 stops under daylight). `TOE_GAIN` (0.48), the toe's line below -6 stops and
+the exported names are unchanged.
+
+Unit tests (`tests/unit/render-core/tonemap.test.ts`): AgX bit-identical from -1 stop up; the log-log slope of
+a grey changes by under 0.15 per quarter stop from +1 to -8 stops (largest 0.12) and stays between 0.6 and 1.6;
+monotonic, no twentieth-of-a-stop step over 2 levels; inside the join the image is within 2.3 levels of AgX /
+the toe's line; hue kept from -6.25 stops down (a warm grey's luminance is 1.035 x its green, so at -6 it sits
+just inside the join). Greys: -2 stops 53.7, -3 stops 29.5 (was 31.0), -4 stops 15.4 (was 16.5), -5 stops 8.3
+(was 8.9), -6 and below unchanged.
+
+RENDER_API section 13 and the table of section 18 updated. Re-run: your flare views and the slope check.

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 4752c2d)
 From: sky-lighting
 Owner path: src/render/core/frame/math.ts (`planetshineAt`), src/render/core/frame/uniforms.ts (`ShineLight` packing), src/render/core/lighting/deferred.ts (the planetshine loop)
 Blocking: yes   (major finding 2 of both round-1 critics of the sky: `out/qa/wave2/sky-lighting.r1.photo.json`, `.r1.artifact.json`)
@@ -34,3 +34,29 @@ existing signature (new parameter optional). The sky's probe reads `frame.shine[
 GROUND facing the shining body (`max(dot(n, dir), 0)`), which needs no occlusion.
 The sky package re-shoots `pbr-spheres-leo-night` (once with the Moon above the vessel's horizon, once set)
 and asserts the picture in `tests/browser/sky/views.spec.ts` when this lands.
+
+## Resolution
+
+Done as requested (`4752c2d`), additive:
+
+- WGSL (chunk `eclipse`, next to `sunVisibility`): `fn shineVisibility(posRelCam: vec3f, sh: ShineLight) -> f32`,
+  the lens-area overlap (`discVisibleFraction`) of the shining body's disc with every OTHER non-star frame body,
+  the body the pixel stands on included. The deferred pass multiplies each planetshine light by it (and by the
+  baked AO as before).
+- `ShineLight` packing: `dir.w` = frame index of the shining body (-1 when it is not one of the frame bodies),
+  `illuminance.a` = its angular radius at the point the light was evaluated (rad). Layout, receivers and the rgb
+  (the unoccluded value) are unchanged; readers of `.xyz` / `.rgb` (your probe, the ocean) see no difference.
+- CPU: `shineVisibleFraction(point, shiningId, snapshot, defs)`; `planetshineAt(point, excludeBodyId, snapshot,
+  defs, max = 2, visibleFrom?: Vec3)` multiplies each light by that fraction at `visibleFrom` before choosing
+  the strongest; `ShineLight.angularRadius?` (set by `planetshineAt`). All exported from `@/render/core`.
+
+Tests: `tests/unit/render-core/frameMath.test.ts` (Moon at the nadir of a 200 km orbit 0; 10 deg above the
+local horizontal 1; centre on the limb 0.5 to 2 decimals; monotonic through the setting; `planetshineAt`
+without `visibleFrom` unchanged, with it 0 / 1 / 0.5). Browser: `tests/browser/render-core/lighting.spec.ts`
+"planetshine is hidden by the bodies in between": the stand 200 km up at night, the white cylinder seen level
+from the Moon's azimuth: Moon at +34 deg 3.08e-2 cd/m^2, at the antipode (Moon -36 deg, behind the Earth)
+0 cd/m^2. With the test disabled in the shader the second number is 1.64e-2 (the failure you saw).
+Screenshots `out/screens/render-core/lighting-planetshine-moon-{up,set}-leo.png`.
+
+For forward shaders that copy the loop (the ocean's `surfaceWgsl.ts` does): multiply by `shineVisibility(pos, sh)`.
+Re-run: your `pbr-spheres-leo-night` views.
