@@ -164,11 +164,12 @@ async function mountMap(page: Page): Promise<void> {
  * direction given by yaw / pitch (ROOT axes), looking at it, 50 degree field of view, map camera kind. With
  * `moonAt` (degrees clockwise from screen up) the camera rolls about its view axis so the focus body's
  * satellite appears in that direction (the player turns the map camera so; the HUD's navball and panels cover
- * the bottom of the frame).
+ * the bottom of the frame). `rollDeg` turns the picture about the view axis (space has no up; the map camera
+ * may show a body upside down).
  */
-async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' | 'sun' | 'side' | { yaw: number; pitch: number; moonAt?: number }, dist: number): Promise<void> {
+async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' | 'sun' | 'side' | { yaw: number; pitch: number; moonAt?: number }, dist: number, rollDeg = 0): Promise<void> {
   await page.evaluate(
-    async ([bodyId, d, distance]) => {
+    async ([bodyId, d, distance, roll]) => {
       const app = window.__integration!.app;
       const url = '/src/map/testing/camera.ts';
       type Vec = { x: number; y: number; z: number };
@@ -222,6 +223,15 @@ async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' 
         const th = (moonAt * Math.PI) / 180;
         const up = { x: Math.cos(th) * a.x - Math.sin(th) * b.x, y: Math.cos(th) * a.y - Math.sin(th) * b.y, z: Math.cos(th) * a.z - Math.sin(th) * b.z };
         c = cam.lookAtCamera(eye, body.rRoot, (50 * Math.PI) / 180, up);
+      } else if (roll !== 0) {
+        const o = { x: Math.cos(pitch) * Math.cos(yaw), y: Math.cos(pitch) * Math.sin(yaw), z: Math.sin(pitch) };
+        const right = { x: -Math.sin(yaw), y: Math.cos(yaw), z: 0 };
+        // the orbit camera's up = right x forward (forward = -o)
+        const up0 = { x: -(right.y * o.z - right.z * o.y), y: -(right.z * o.x - right.x * o.z), z: -(right.x * o.y - right.y * o.x) };
+        const th = (roll * Math.PI) / 180;
+        const up = { x: Math.cos(th) * up0.x + Math.sin(th) * right.x, y: Math.cos(th) * up0.y + Math.sin(th) * right.y, z: Math.cos(th) * up0.z + Math.sin(th) * right.z };
+        const eye = { x: body.rRoot.x + o.x * distance, y: body.rRoot.y + o.y * distance, z: body.rRoot.z + o.z * distance };
+        c = cam.lookAtCamera(eye, body.rRoot, (50 * Math.PI) / 180, up);
       }
       // The lab's own camera placement (if any) would move the camera back every frame.
       window.__integration!.release();
@@ -229,7 +239,7 @@ async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' 
       app.camera.settings.fovY = (50 * Math.PI) / 180;
       app.camera.spec = { type: 'free', positionRoot: c.positionRoot, qViewToRoot: c.qViewToRoot } as typeof app.camera.spec;
     },
-    [focusBodyId, dir, dist] as const,
+    [focusBodyId, dir, dist, rollDeg] as const,
   );
 }
 
@@ -343,7 +353,8 @@ for (const [tag, viewport, dpr] of [
 
       const lo = await openWithMap(page, 'lunarOrbit');
       await mountHud(page);
-      await orbitView(page, null, 'side', 7e6);
+      // turned upside down: the landing target, near the sub-camera point, would sit under the HUD's speed plate
+      await orbitView(page, null, 'side', 7e6, 180);
       await shoot(page, 'real-hud-lunarOrbit');
       await expectClearOfHud(page);
       await expectClean(page, pageLog, lo);

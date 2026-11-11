@@ -85,13 +85,18 @@ test('debris are dots; the hovered one shows its orbit', async ({ page, pageLog 
   await expectNoErrors(page, pageLog);
 });
 
-test('synthetic load case has 8 patches and 20 debris orbits drawn', async ({ page, pageLog }) => {
+test('synthetic load case has 8 patches and 20 debris orbits drawn (at the close-up; under 60 px at the overview they are left out)', async ({ page, pageLog }) => {
   await openLab(page, 'scene=synthetic&perf=1');
   const s = await state(page);
   expect(s.patches.current.length + s.patches.planned.length).toBe(8);
-  const lines = (await lab(page, (l) => l.stats())).lines;
+  let lines = (await lab(page, (l) => l.stats())).lines;
   expect(lines.filter((l) => /^(current|planned)\//.test(l.id))).toHaveLength(8);
-  expect(lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(20);
+  // at the Earth-Moon overview the debris rings are a few pixels across around the Earth's icon: not drawn
+  expect(lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(0);
   await saveScreenshot(page, 'map-view', 'synthetic-8-patches');
+  await openLab(page, 'scene=synthetic&perf=1&dist=9e7');
+  lines = (await lab(page, (l) => l.stats())).lines;
+  expect(lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(20);
+  await saveScreenshot(page, 'map-view', 'synthetic-8-patches-earth');
   await expectNoErrors(page, pageLog);
 });

@@ -56,8 +56,12 @@ CSS px, `panelNudge(comp, sign, factor)`), `HANDLES`, `dragDelta`, `modifierFact
   `prepare` builds the scene and uploads it; `drawOverlay` only encodes. The scene's scratch storage is reused
   by the next build, so nothing outside `src/map` may hold on to a `MapScene`.
 - Units: `update`'s `displaySize` is CSS px of the canvas (the PointerState space); `FrameContext.displaySize`
-  is device px. Pixel constants (2.5 px lines, 10 px hit tolerance, 6 px fade, 1 m/s per 10 px) are CSS px;
-  the chord tolerance is in device px.
+  is device px. Pixel constants (2.5 px lines, 10 px hit tolerance, 1.5 px fade, 1 m/s per 10 px of handle
+  drag, label type, icons, the gizmo, the node panel) are INTERFACE px: CSS px at 720p, scaled with the flight
+  HUD's unit `min(1vh, 0.5625vw)` above it (`uiScale` in projection.ts, 1.5 at 1920 x 1080 CSS px, steps of
+  1/16, floor 0.8), so the map keeps its size relative to the HUD panels at every resolution. The chord
+  tolerance is in device px; the click slop (4 px) in CSS px. `Projector.pxScale` = device px per interface px,
+  `Projector.cssScale` = device px per CSS px.
 - `drawOverlay` pipelines are created for `RenderContext.canvasFormat` and write display-referred sRGB with
   premultiplied alpha (`docs/requests/map-view-3.md` item 2). Shader modules come from `ctx.shaders`.
 - `setActive(true)` only in map view: when inactive, `update` returns `{ consumed: false }`, nothing is drawn
@@ -127,7 +131,8 @@ Drawing (all from the snapshot; nothing is predicted by the map):
 - Other vessels (`conicFromState`, 0.45 alpha): full ellipse, or to the surface for suborbital ones, or to
   the SOI boundary for open ones; left out while under 60 px across (`ORBIT_MIN_SPAN_PX`) unless hovered.
   Debris are dots (drawn under the label plates); a debris orbit (0.2 alpha) is drawn only for the hovered
-  debris or with `setDebrisOrbits(true)` (the perf load case). The hovered vessel or debris is ringed and its
+  debris or with `setDebrisOrbits(true)` (the perf load case), and like other vessels' orbits only while it
+  spans 60 px (twenty rings around an 11 px planet icon were a scribble). The hovered vessel or debris is ringed and its
   orbit drawn in the hover colour, 2 px. Bodies' orbits (`BodySnapshot.orbit`, attractors only), SOI
   silhouettes seen from outside (nothing from inside: a great circle read as a second orbit). Tolerances: other
   vessels' and the hovered debris' orbits 0.9 px, debris orbits drawn in bulk 1.5 px (20 % alpha), zone rings
@@ -152,10 +157,14 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   within 12 px of its marker). A patch in another body's frame than the one before it starts with a small
   entry tick (`<list>/<i>/start`; left out within 12 px of the SOI marker). Apsis and AN/DN markers are left
   out on a patch under 40 px across. The apsis the active vessel sits at (within 11 px) is printed as the
-  vessel label's second line ("Pe 200.0 km  now") instead of folding into a "+1".
+  vessel label's second line ("Pe 200.0 km  now") instead of folding into a "+1". Lengths are written with
+  the flight HUD's rule (`formatDistance` mirrors `src/ui/format.ts` formatLength: km with one decimal up
+  to 10,000 km for apsides, "180.0 Mm" above), so a label and the HUD panel beside it agree.
 - Visibility is binary: an icon, label and plate are drawn at full strength while the anchor is in front and
   not behind a body (hidden < 0.5), else not at all (an unselected node behind a body keeps a dashed ring at
-  0.6). Only lines fade over the 1.5 px limb ramp.
+  0.6). Only lines fade over the 1.5 px limb ramp. An anchor under other UI (a `setObstacles` rectangle: the
+  navball, a HUD panel) gets neither icon nor label: the HUD covers it, and a label set beside the panel with a
+  leader into it pointed at nothing.
 - Clutter: icons closer than 11 px (from the edge of a body icon) collapse into one (a body icon wins, then
   the active vessel, then the label priority) with a "+n" badge on the icon's upper-right corner; impact and
   atmosphere-entry labels of folded members are still placed beside the cluster's icon; the hover tooltip lists
@@ -377,12 +386,11 @@ show through less; the label cache also keys on the landing-target prediction (t
 - Dashes cross-fade between two octaves of world period by depth: at a depth half-way between octaves a stretch
   shows both patterns at partial strength (a static frame can show it); zooming changes which pattern
   dominates, never where a dash sits on the path.
-- Map icons are placed by geometry and are not moved off HUD panels: an icon (the vessel, the Moon) can lie
-  under the navball or a HUD panel; its label is then hidden or placed elsewhere (labels, the node panel and
-  tooltips do keep clear of `setObstacles` rectangles).
-- The flight HUD writes distances above 10,000 km in Mm ("180.0 Mm"), the map in grouped km ("180 000 km");
-  they now share a frame (`real-hud-translunar.png`). The map kept km as the round-0 list asked; making the
-  two agree is a choice for flight-ui (noted in `docs/requests/map-view-5.md`).
+- Map icons are placed by geometry and are not moved off HUD panels: an object under the navball or a HUD
+  panel is simply covered (no icon, no label); the player turns the map camera to see it. The obstacle shapes
+  are rectangles, so an icon in the corner of the navball's box (outside the round ball) is left out too.
+- `formatDistance` mirrors the HUD's `formatLength` rule by copy (src/map may not import src/ui): if flight-ui
+  changes its rule, `src/map/format.ts` must follow (the unit test pins the shared cases).
 - The synthetic scene is static; editing is exercised against the FakeSim (single-body patches).
 - The panel's time field is frozen while it has focus (typing is not overwritten), so with the sim running
   the shown "In" value ages until the field is left.
