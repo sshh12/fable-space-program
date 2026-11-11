@@ -19,6 +19,7 @@ export type SceneBindingSet =
   | 'cloudShadow'
   | 'oceanNearField'
   | 'oceanWetness'
+  | 'plasmaWindow'
   | 'gbuffer';
 
 interface Slot {
@@ -78,6 +79,10 @@ const SETS: Record<SceneBindingSet, { prelude?: string; slots: Slot[] }> = {
     prelude: `struct OceanVesselWater { plane: vec4f, normal: vec4f, params: vec4f }
 struct OceanWetness { count: vec4u, vessels: array<OceanVesselWater, ${OCEAN_WETNESS_SLOTS}> }`,
     slots: [{ key: 'ocean.wetness', decl: 'var<uniform> oceanWetness: OceanWetness;', layout: { buffer: { type: 'uniform' } }, buffer: true }],
+  },
+  // The reentry sheath seen through a cabin window (request cockpit-13; the 'vfx.plasmaWindow' comment in the contract).
+  plasmaWindow: {
+    slots: [{ key: 'vfx.plasmaWindow', decl: 'var<uniform> plasmaWindow: vec4f;', layout: { buffer: { type: 'uniform' } }, buffer: true }],
   },
   // RT0 / RT1 / RT2 of this frame. Never put this set into a group that is set inside drawGBuffer (the
   // textures are that pass's attachments); use a group of its own for the passes from drawWater on.

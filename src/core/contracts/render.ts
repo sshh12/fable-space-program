@@ -69,6 +69,8 @@ export const WATER_DEPTH_ENCODE_MAX = 200;
 /** Vessel slots and byte size of the 'ocean.wetness' uniform buffer (count vec4u + slots x 3 vec4f). */
 export const OCEAN_WETNESS_SLOTS = 8;
 export const OCEAN_WETNESS_BYTES = 16 + OCEAN_WETNESS_SLOTS * 48;
+/** Byte size of the 'vfx.plasmaWindow' uniform buffer (one vec4f). */
+export const PLASMA_WINDOW_BYTES = 16;
 
 /** Values written to G-buffer RT2.b (times 1/255). */
 export const MATERIAL_ID = {
@@ -312,6 +314,14 @@ export interface SharedResourceMap {
    * Default: count 0, every slot unused.
    */
   'ocean.wetness': GPUBuffer;
+  /**
+   * The reentry plasma sheath as a cabin window sees it (request cockpit-13). Uniform buffer of
+   * PLASMA_WINDOW_BYTES (one vec4f), published by the vfx feature in prepare every frame: rgb = luminance of
+   * the sheath seen through a lee-side window, cd/m^2, linear sRGB (the mean over its streaks and flicker),
+   * for the vessel the camera is in, else the active vessel; a = that vessel's plasmaIntensity (0..1).
+   * WGSL: binding set 'plasmaWindow' declares plasmaWindow: vec4f. Default: all zero (no sheath).
+   */
+  'vfx.plasmaWindow': GPUBuffer;
   /** 512^2 rgba8 navball render (also used by the cockpit instrument). */
   'ui.navball': GPUTextureView;
   /** Array texture of cockpit multi-function displays. */
