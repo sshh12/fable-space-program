@@ -252,10 +252,10 @@ export const HUD_CSS = /* css */ `
 .hud .tile.next.locked .lockline { display: flex; align-items: center; gap: 0.45em; font-size: 0.8em; color: var(--caution); white-space: nowrap; }
 .hud .tile.next.locked .lockline b { font-weight: 700; letter-spacing: 0.1em; }
 .hud .tile.next.locked .lockline span { color: #f1dcb5; }
-.hud .tile.compact { gap: calc(var(--u) * 0.6); height: calc(var(--u) * 1.8); padding: 0; }
+.hud .tile.compact { gap: calc(var(--u) * 0.6); height: calc(var(--u) * 1.8); padding: 0; line-height: 1.12; }
 .hud .tile.compact + .tile.compact { border-top: 1px solid rgba(170, 198, 235, 0.11); }
 .hud .tile.compact .sn { font-size: 0.78em; }
-.hud .tile.compact .ico { width: calc(var(--u) * 1.8); height: calc(var(--u) * 1.8); background: none; color: #c3d0df; }
+.hud .tile.compact .ico { width: calc(var(--u) * 1.65); height: calc(var(--u) * 1.65); background: none; color: #c3d0df; }
 .hud .tile.compact .ico svg { width: 94%; height: 94%; }
 .hud .tile.compact .name { font-size: 0.86em; font-weight: 500; color: #dbe4ef; }
 .hud .tile.compact .dv { font-size: 0.8em; font-weight: 500; color: var(--label); }
