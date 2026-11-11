@@ -158,8 +158,12 @@ for (const quality of qualities) {
       for (const { scene, row } of results) {
         expect(row.ballast, scene.name).toBeGreaterThan(5);
         expect(row.quality, scene.name).toBeCloseTo(quality, 2);
-        expect(row.atmosphere, `${scene.name}: atmosphere`).toBeLessThanOrEqual(scene.atmosphereMax);
-        expect(row.clouds, `${scene.name}: clouds`).toBeLessThanOrEqual(cloudMax);
+        // (A line whose medians are far inside the budget and whose p99 is not has spikes in single passes:
+        // see the per-pass p50 / p99 printed above. Time slices of other GPU jobs on the machine land at
+        // the pass boundaries where the GPU changes engine or target - the compute pass, the composite.)
+        const hint = (p50: number): string => `p50 ${p50.toFixed(3)} ms; passes (p50/p99): ${row.passes}`;
+        expect(row.atmosphere, `${scene.name}: atmosphere p99 of the median window [${hint(row.atmosphereP50)}]`).toBeLessThanOrEqual(scene.atmosphereMax);
+        expect(row.clouds, `${scene.name}: clouds p99 of the median window [${hint(row.cloudsP50)}]`).toBeLessThanOrEqual(cloudMax);
       }
       await expectNoErrors(page, pageLog);
     });

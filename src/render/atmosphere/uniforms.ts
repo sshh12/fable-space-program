@@ -15,7 +15,7 @@ const FIELDS = [
   ['lutBody', 'vec4i', 'frame body index of each table layer'],
   ['steps', 'vec4f', 'march samples of bodies 0 / 1, sky-view samples, cloud primary step budget'],
   ['halfSize', 'vec4f', 'half-resolution target: w, h, 1 / w, 1 / h'],
-  ['misc', 'vec4f', 'exposure / previous exposure, cloud history valid (0 / 1), amplitude of the blue-noise step phase of cloud rays (0 while noise is frozen), weight of a fresh cloud sample against its history'],
+  ['misc', 'vec4f', 'exposure / previous exposure, cloud history valid (0 / 1), amplitude of the blue-noise step phase of cloud rays (0 while noise is frozen), weight of a fresh cloud sample against its history in a pixel that stands still'],
   ['shadowOrigin', 'vec4f', 'cloud shadow map: origin relative to the camera (ROOT axes), w = half extent in m (0 = no map)'],
   ['shadowU', 'vec4f', 'unit +u axis, w = number of density steps'],
   ['shadowV', 'vec4f', 'unit +v axis, w = optical depth scale (cos of the projection direction to the vertical at the origin)'],

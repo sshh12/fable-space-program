@@ -655,7 +655,7 @@ export class CloudSystem {
     const targetKey = `${this.screen.version}:${this.histories[0].version}:${this.histories[1].version}:${this.quarterColor.version}`;
     this.historyValid = this.lastMarchFrame === frame.frameIndex - 1 && targetKey === this.lastTargetKey;
     this.lastTargetKey = targetKey;
-    u.set('misc', frame.exposure / this.lastExposure, this.historyValid ? 1 : 0, frame.animate ? 1 : 0, 0.35);
+    u.set('misc', frame.exposure / this.lastExposure, this.historyValid ? 1 : 0, frame.animate ? 1 : 0, 0.125);
 
     // Cloud shadows for the deferred lighting, the atmosphere march and the clouds themselves.
     const far = { bodyIndex: body.bodyIndex, layerRadius: R + params.bottomAltitude + 0.5 * params.lowThicknessM, opticalDepth: params.farShadowOpticalDepth, longitudeOffset: lonOffset };

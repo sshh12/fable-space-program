@@ -830,6 +830,7 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
     color = fresh;
     geom = textureLoad(freshGeomTex, qp, 0).rgb;
   }
+  var hg = NO_CLOUD.rgb;   // the geometry this pixel had in the previous frame
   if (atmo.misc.y > 0.5) {
     // Reproject by the distance of the cloud (a point fixed to the body): prev = p + M p + t, relative to
     // the previous eye. Where there is no cloud the direction alone is reprojected (a far point). The cloud
@@ -851,16 +852,21 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
       let motion = length((uvPrev - (vec2f(hp) + 0.5) * atmo.halfSize.zw) * atmo.halfSize.xy);
       let slack = (hi - lo) * 0.08 + vec4f(1e-4);
       let clamped = mix(hist, clamp(hist, lo - slack, hi + slack), saturate(motion * 4.0 - 0.1));
+      hg = textureLoad(historyGeomTex, vec2i(uvPrev * atmo.halfSize.xy), 0).rgb;
       if (isFresh) {
-        color = mix(clamped, fresh, atmo.misc.w);
+        // A pixel that stands still averages its last eight or so marches (each through a different point
+        // of its area and, while noise animates, at a different step phase): the four pixels of a block,
+        // marched in different frames, then agree instead of showing the block as a lattice. A pixel that
+        // moves follows its newest march.
+        // A pixel that has jumped (a cut to another view) has no history worth keeping.
+        color = mix(clamped, fresh, max(mix(atmo.misc.w, 0.5, saturate(motion * 2.0)), saturate((motion - 8.0) / 8.0)));
       } else {
-        color = clamped;
+        color = mix(clamped, est, saturate((motion - 8.0) / 8.0));
         // The geometry too is the pixel's own, of its march up to three frames ago, while it has not moved:
         // the distance of a cloud decides how much air is drawn in front of it, and a distance borrowed
         // from a neighbouring ray (which may have hit a cloud a hundred kilometres nearer) shows as blocks
         // and bars wherever cloud layers are seen edge-on. With motion the estimate from this frame's
         // samples takes over.
-        let hg = textureLoad(historyGeomTex, vec2i(uvPrev * atmo.halfSize.xy), 0).rgb;
         let still = motion < 0.15;
         if (still) {
           geom = hg;
@@ -869,6 +875,12 @@ const NO_CLOUD = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
         }
       }
     }
+  }
+  // An edge that the sub-pixel positions of the rays straddle: the newest march of the pixel found no cloud
+  // while its averaged radiance still holds some. The cloud is then where this pixel last had it, or where
+  // its neighbours have it (without a distance it would be drawn behind all the air of the path).
+  if (geom.b > 1.0e37 && color.a < 0.999) {
+    if (hg.b < 1.0e37) { geom = hg; } else if (geomNow.b < 1.0e37) { geom = geomNow; }
   }
   var o: ResolveOut;
   o.color = vec4f(writeHdr(color.rgb), saturate(color.a));

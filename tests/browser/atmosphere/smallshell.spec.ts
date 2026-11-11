@@ -176,8 +176,13 @@ test.describe('a planet a few dozen pixels across', () => {
         if (litPixels < 100) failures.push(`${key} fov ${fov}: only ${litPixels} daylight pixels`);
         if (outside > 0) failures.push(`${key} fov ${fov}: ${outside} lit pixels outside the disc`);
         if (holes > 0) failures.push(`${key} fov ${fov}: ${holes} holes in the daylight side`);
-        if (row2 > 0.01 + 1.5 * rowRef) failures.push(`${key} fov ${fov}: alternating rows ${(row2 * 100).toFixed(2)} % against ${(rowRef * 100).toFixed(2)} % of detail`);
-        if (col2 > 0.01 + 1.5 * colRef) failures.push(`${key} fov ${fov}: alternating columns ${(col2 * 100).toFixed(2)} % against ${(colRef * 100).toFixed(2)} % of detail`);
+        // The air has no detail of its own: its period-two component must not stand out of what the ground
+        // under it has at three and four lines. The clouds do (the coverage map has cells of a pixel's size
+        // at this distance, and which of them falls on which line changes with the cloud clock): for them the
+        // comparison is a coarse one, and the silhouette checks above are what holds the clouds to the disc.
+        const allowed = (ref: number): number => (key === 'air' ? 0.01 + 1.5 * ref : 0.05 + 3 * ref);
+        if (row2 > allowed(rowRef)) failures.push(`${key} fov ${fov}: alternating rows ${(row2 * 100).toFixed(2)} % against ${(rowRef * 100).toFixed(2)} % of detail`);
+        if (col2 > allowed(colRef)) failures.push(`${key} fov ${fov}: alternating columns ${(col2 * 100).toFixed(2)} % against ${(colRef * 100).toFixed(2)} % of detail`);
       }
     }
     expect(failures).toEqual([]);
