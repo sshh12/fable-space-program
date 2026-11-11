@@ -21,7 +21,9 @@ import { createVolumePipeline, type VolumeItem } from './volumes';
 
 export const MAX_FOAM = 8;
 const INST_FLOATS = 8;
-const CROWN_FLOATS = 16;
+const CROWN_FLOATS = 20;
+/** The mist of a crown hangs in the air for this many flight times of its rim. */
+const MIST_LIFE = 3;
 const GRAVITY_FALLBACK = 9.81;
 
 /** Rim height of a crown (m) `age` seconds after an impact that throws the sheet up at `speed` m/s. */
@@ -53,7 +55,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   if (dot(t1, t1) < 1e-4) { t1 = cross(up, vec3f(1.0, 0.0, 0.0)); }
   t1 = normalize(t1);
   let t2 = cross(up, t1);
-  let p = F.centre.xyz + (t1 * c.x + t2 * c.z) * (F.centre.w * 1.1) + up * (c.y * (foamU.albedo.w + 1.0));
+  let p = F.centre.xyz + (t1 * c.x + t2 * c.z) * (F.centre.w * 1.55) + up * (c.y * (foamU.albedo.w + 1.0));
   var o: VOut;
   o.pos = frame.viewProj * vec4f(vfxDomainToRel(p), 1.0);
   o.inst = ii;
@@ -77,21 +79,35 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let band = foamU.albedo.w;
   if (abs(h) > band) { discard; }
   let hz = d - up * h;
-  let rho = length(hz) / F.centre.w;
-  if (rho >= 1.0) { discard; }
+  let rho0 = length(hz) / F.centre.w;
+  if (rho0 >= 1.5) { discard; }
   let age = F.state.x;
-  // An expanding ring of churned water and a mottled patch inside it that breaks up with time.
-  let n = vfxNoise(hz * 0.09 + vec3f(F.state.z));
-  let n2 = vfxNoise(hz * 0.37 + vec3f(F.state.z * 3.0));
-  // The ring is ragged: its radius wanders and it is torn where the noise is low.
-  let rhoN = rho + (n.r - 0.5) * 0.22 + (n2.g - 0.5) * 0.08;
-  let ring = exp(-sq((rhoN - 0.78) / 0.11)) * smoothstep(0.3, 0.75, 0.6 * n.g + 0.75 * n2.b) * 1.5;
-  let mottle = smoothstep(0.35 + 0.55 * age, 0.75 + 0.3 * age, 0.55 * n.g + 0.45 * n2.b + 0.35 * (1.0 - rho)) * (1.0 - smoothstep(0.75, 1.0, rho));
-  let a = saturate((0.9 * ring * (1.0 - age) + mottle) * F.state.y * (1.0 - smoothstep(0.6, 1.0, age))) * (1.0 - smoothstep(0.7 * band, band, abs(h)));
+  // Noise no finer than the pixel shows it (a threshold on unfiltered noise is a speckle of pinholes).
+  let fpx = length(rel) * 2.0 * frame.cameraUp.w * frame.renderSize.w / max(abs(dot(normalize(rel), vfxDomainDir(up))), 0.08);
+  let n0 = vfxNoiseLod(hz * (0.9 / F.centre.w) + vec3f(F.state.z * 7.0), fpx * 0.9 / F.centre.w);
+  let n1 = vfxNoiseLod(hz * 0.09 + vec3f(F.state.z), fpx * 0.09);
+  let n2 = vfxNoiseLod(hz * 0.31 + vec3f(F.state.z * 3.0), fpx * 0.31);
+  // The patch has no outline to speak of: its edge wanders by forty per cent and more, in lobes, tongues and
+  // small bays, and fades out softly.
+  let rho = rho0 / (1.0 + 0.9 * (n0.r - 0.5) + 0.45 * (n1.g - 0.5) + 0.2 * (n2.r - 0.5));
+  let edge = 1.0 - smoothstep(0.62, 1.0, rho);
+  if (edge <= 0.0) { discard; }
+  // White foam: a ragged ring of churned water that runs outwards, and a mottled patch inside it that breaks
+  // up into streaks and islands as it ages. Under and around it the water is full of air: pale turquoise,
+  // smooth, fading within seconds.
+  let ring = exp(-sq((rho - 0.72) / 0.16)) * (1.0 - age) * (0.35 + 1.1 * n1.g);
+  let body = 0.5 * n1.g + 0.3 * n2.b + 0.2 * n0.g + 0.3 * (1.0 - rho);
+  let patches = smoothstep(0.36 + 0.5 * age, 0.56 + 0.45 * age, body);
+  let white = saturate(0.85 * max(ring, patches)) * edge;
+  let air = (1.0 - smoothstep(0.35, 1.0, rho)) * (1.0 - smoothstep(0.05, 0.45, age)) * edge;
+  let fadeOut = 1.0 - smoothstep(0.6, 1.0, age);
+  let band_ = 1.0 - smoothstep(0.7 * band, band, abs(h));
+  let a = saturate(max(white, 0.7 * air) * F.state.y * fadeOut) * band_;
   if (a < 0.003) { discard; }
   let probe = vfxProbes[0];
-  let lum = foamU.albedo.rgb * (probe.sun.rgb * saturate(dot(probe.up.xyz, frame.sunDir.xyz)) + vfxProbeAmbient(0u)) * (1.0 / PI);
-  let c = vfxAtmosphere(uv, length(rel), lum * frame.exposure.x * a, a);
+  let E = (probe.sun.rgb * saturate(dot(probe.up.xyz, frame.sunDir.xyz)) + vfxProbeAmbient(0u)) * (1.0 / PI);
+  let tint = mix(vec3f(0.22, 0.55, 0.56), foamU.albedo.rgb, saturate(white / max(max(white, 0.7 * air), 1e-4)));
+  let c = vfxAtmosphere(uv, length(rel), tint * E * frame.exposure.x * a, a);
   return vec4f(writeHdr(c.rgb), saturate(c.a));
 }
 `;
@@ -103,7 +119,8 @@ struct Crown {
   centre: vec4f,   // xyz = entry point on the water, domain coordinates, w = radius of the crown's foot now (m)
   shape: vec4f,    // x = height of the rim now (m), y = outward lean (m per m of height), z = thickness of the sheet at its foot (m), w = age (s)
   look: vec4f,     // x = optical depth across the sheet at its foot, y = break-up 0..1, z = seed, w = march steps
-  bound: vec4f,    // x = radius of the proxy (m), y = its height (m), z = 1 while the sheet still rises, w unused
+  bound: vec4f,    // x = radius of the proxy (m), y = its height (m), z = time of flight of the rim (s), w = the height the rim reaches (m)
+  mist: vec4f,     // x = radius of the body that fell in (m), y = optical depth across the body of mist (0 = none), z, w unused
 }
 struct CrownU { albedo: vec4f }
 @group(2) @binding(0) var<uniform> crownU: CrownU;
@@ -141,15 +158,28 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let H = max(C.shape.x, 0.05);
   let lean = C.shape.y;
   let thick = C.shape.z;
+  let age = C.shape.w;
   let breakup = C.look.y;
   let seed = C.look.z;
+  let body = C.mist.x;
+  let peak = C.bound.w;
+  let flight = max(C.bound.z, 1e-3);
   let steps = max(10.0, floor(C.look.w * vfx.time.w + 0.5));
   let dt = (R.t1 - R.t0) / steps;
   let jitter = blueNoise(vec2u(in.pos.xy)).g;
   let probe = vfxProbes[0];
   let sunL = vec3f(dot(frame.sunDir.xyz, f.X), dot(frame.sunDir.xyz, f.Y), dot(frame.sunDir.xyz, f.Z));
+  let sunH = sunL.xz / max(length(sunL.xz), 1e-3);
+  let low = saturate(1.0 - 1.4 * sunL.y);
   let amb = vfxProbeAmbient(0u);
   let fp = 2.0 * frame.cameraUp.w * vfx.half.w;
+  // Looking towards the sun through spray: the drops throw its light forward.
+  let forward = pow(saturate(dot(R.rd, sunL)), 6.0);
+  // The body of mist: a ring of fine spray that the sheet leaves in the air, wider and higher with time,
+  // settling and thinning long after the sheet has fallen back.
+  let mistR = foot + 0.5 * lean * peak * (1.0 - exp(-age / (0.5 * flight)));
+  let mistW = 0.45 * body + 0.25 * lean * peak * saturate(age / flight);
+  let mistH = max(peak * (0.16 + 0.22 * saturate(age / (0.6 * flight))) * (1.0 - 0.3 * saturate(age / (2.0 * flight) - 0.5)), 0.2);
   var L = vec3f(0.0);
   var T = 1.0;
   var wsum = 0.0;
@@ -160,33 +190,56 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     if (p.y < 0.0) { continue; }
     let r = length(p.xz);
     let ang = p.xz / max(r, 1e-3);
-    // The rim stands higher here and lower there: fingers, coarse and fine.
     let lod = max(t * fp, 0.5 * dt) / foot;
-    let rimN = vfxNoiseLod(vec3f(ang * 0.55, seed), lod * 0.3);
-    let rimF = vfxNoiseLod(vec3f(ang * 1.9, seed * 2.7 + 0.3), lod);
-    let rim = H * (0.5 + 0.75 * rimN.r + 0.3 * (rimF.g - 0.5));
+    // Nothing about the crown is the same all the way round: here the wall stands high and far out and leans
+    // over, there it is low and steep (slow noise in the angle), and its rim is a row of fingers (fast noise).
+    let slow = vfxNoiseLod(vec3f(ang * 0.42, seed), lod * 0.3);
+    let fast = vfxNoiseLod(vec3f(ang * 1.9, seed * 2.7 + 0.3), lod);
+    let rim = H * (0.3 + 1.1 * slow.r + 0.5 * (fast.g - 0.5));
+    let leanA = lean * (0.55 + 0.95 * slow.a);
+    let footA = foot * (0.9 + 0.22 * slow.g);
     let s = p.y / max(rim, 0.05);
-    if (s > 1.0) { continue; }
-    // The sheet: leaning outwards, more so towards the rim, thinner towards the rim.
-    let rs = foot + p.y * lean * (1.0 + 0.35 * s);
-    let w = thick * (1.0 - 0.7 * s) + 0.03;
-    let across = (r - rs) / w;
-    if (abs(across) > 2.6) { continue; }
-    // It tears from the rim downwards: holes where the noise is low, more of them with time; what is left
-    // between them are the ligaments.
-    let tear = vfxNoiseLod(vec3f(ang * 2.6, p.y / foot * 0.9 - C.shape.w * 0.25 + seed * 5.1), lod * 1.3);
-    let fine = vfxNoiseLod(vec3f(ang * 7.0, p.y / foot * 2.8 - C.shape.w * 0.6 + seed * 1.3), lod * 3.5);
-    let hold = 0.62 * tear.g + 0.38 * fine.b;
-    let cut = breakup * (0.25 + 1.0 * s) - 0.12;
-    let whole = smoothstep(cut, cut + 0.16, hold) * (1.0 - smoothstep(0.86, 1.0, s));
-    if (whole <= 0.0) { continue; }
-    let sigma = C.look.x / thick * exp(-across * across) * whole;
-    let stepT = exp(-sigma * dt);
-    // White water: light from both sides gets through a sheet this thin, a little more from the side it faces.
-    let nrm = normalize(vec3f(ang.x, -lean, ang.y) * sign(across + 1e-4));
-    let facing = dot(nrm, sunL);
-    let sun = probe.sun.rgb * (0.38 + 0.42 * saturate(facing) + 0.2 * saturate(-facing));
-    let J = crownU.albedo.rgb * (sun + amb * (0.75 + 0.25 * nrm.y)) * (1.0 / PI);
+    var sigma = 0.0;
+    var toSun = 0.0;
+    if (s < 1.0 && C.look.x > 0.0) {
+      // The sheet is a wall of water with lumps: thick at its root, thin between the lumps, and it tears from
+      // the rim downwards into ligaments (holes where the noise is low, more of them with time).
+      let lump = vfxNoiseLod(vec3f(ang * 3.1, p.y / foot * 1.3 - age * 0.3 + seed * 5.1), lod * 1.5);
+      let fine = vfxNoiseLod(vec3f(ang * 8.0, p.y / foot * 3.2 - age * 0.7 + seed * 1.3), lod * 4.0);
+      let rs = footA + p.y * leanA * (1.0 + 0.35 * s);
+      let w = thick * (1.0 - 0.6 * s) * (0.45 + 1.3 * lump.r) + 0.03;
+      let across = (r - rs) / w;
+      if (abs(across) < 2.6) {
+        let hold = 0.6 * lump.g + 0.4 * fine.b;
+        let cut = breakup * (0.2 + 1.1 * s) - 0.1;
+        let whole = smoothstep(cut, cut + 0.2, hold) * (1.0 - smoothstep(0.8, 1.0, s));
+        sigma = C.look.x / thick * exp(-across * across) * whole * (0.25 + 1.6 * (1.0 - s) * (1.0 - s) + 0.6 * lump.g);
+        // Water between this point and the sun: the rest of this wall's thickness on its sunward side, and
+        // (with a low sun) the wall across the crown for the side that faces away.
+        let side = dot(ang, sunH);
+        toSun = sigma * w * (1.3 - clamp(across, -1.3, 1.3) * sign(side)) + C.look.x * low * saturate(-side) * (1.0 - s);
+      }
+    }
+    var mist = 0.0;
+    if (C.mist.y > 0.0 && p.y < 3.0 * mistH) {
+      // A torus of spray around the rim, thin in the middle, lumpy, with no top and no side to it: it thins out
+      // upwards and outwards as a bell curve does.
+      let n = vfxNoiseLod(vec3f(p.x, p.y - 0.6 * age, p.z) * (0.35 / body) + vec3f(seed * 3.3), max(t * fp, 0.5 * dt) * 0.35 / body);
+      let n2 = vfxNoiseLod(vec3f(p.x, p.y - 0.9 * age, p.z) * (1.1 / body) + vec3f(seed * 1.7), max(t * fp, 0.5 * dt) * 1.1 / body);
+      let rN = r * (1.0 + 0.5 * (n.r - 0.5)) + 0.6 * mistW * (slow.g - 0.5);
+      let ring = exp(-sq((rN - mistR) / mistW)) + 0.2 * (1.0 - smoothstep(0.0, mistR, rN));
+      let hN = mistH * (0.55 + 0.9 * slow.r) * (0.7 + 0.6 * n.a);
+      mist = C.mist.y / mistW * ring * exp(-sq(p.y / (1.3 * hN))) * saturate((0.1 + 1.6 * n.g) * (0.5 + 1.0 * n2.b) - 0.15);
+    }
+    let total = sigma + mist;
+    if (total <= 0.0) { continue; }
+    let stepT = exp(-total * dt);
+    // White water: sunlight that has come through little of it is bright, the lee of a thick wall is grey; what
+    // is scattered about inside keeps a floor under it. Never brighter than a sunlit white surface, except
+    // against the sun, where thin spray shines.
+    let lit = 0.3 + 0.7 * exp(-toSun);
+    let glare = 1.0 + 1.6 * forward * exp(-1.5 * toSun);
+    let J = crownU.albedo.rgb * (probe.sun.rgb * (lit * glare) + amb) * (1.0 / PI);
     let c = J * (1.0 - stepT);
     let lw = T * luminance(c) + 1e-12;
     L += T * c;
@@ -314,19 +367,25 @@ export class FoamRenderer {
       // The crown: up on the speed of the impact, down under gravity; it has torn apart by the time its rim is back at the water.
       const flight = (2 * p.crownSpeed) / gravity;
       const life = age / flight;
-      if (life >= 1 || p.strength <= 0) return;
+      if (life >= MIST_LIFE || p.strength <= 0) return;
       const peak = (p.crownSpeed * p.crownSpeed) / (2 * gravity);
       const height = crownHeight(p.crownSpeed, gravity, age);
       const foot = p.bodyRadius * (1.05 + K.spread * (1 - Math.exp(-age / (0.35 * flight))));
-      const thick = K.thickness * p.bodyRadius * (1 - 0.55 * life);
+      const thick = K.thickness * p.bodyRadius * (1 - 0.55 * Math.min(1, life));
       const o = this.crownDistances.length * CROWN_FLOATS;
       const C = this.crownData;
       C.set([p.pos.x, p.pos.y, p.pos.z, foot], o);
       C.set([height, lean, thick, age], o + 4);
-      C.set([K.opticalDepth * p.strength * (1 - 0.6 * life * life), Math.min(1, K.breakup * Math.pow(life, 0.8)), p.seed, K.steps], o + 8);
-      // The rim reaches 1.4 heights where the noise stands it highest; the sheet leans out by up to 1.35 lean x height.
-      const top = 1.4 * Math.max(height, 0.05);
-      C.set([foot + 1.35 * lean * top + 2.6 * thick + 0.1, top + 0.2, age < 0.5 * flight ? 1 : 0, peak], o + 12);
+      C.set([life < 1 ? K.opticalDepth * p.strength * (1 - 0.6 * life * life) : 0, Math.min(1, K.breakup * Math.pow(Math.min(1, life), 0.8)), p.seed, K.steps], o + 8);
+      // The rim reaches 1.65 heights where the noise stands it highest; the sheet leans out by up to twice lean x
+      // height and stands up to 1.12 foot radii out; the mist reaches three of its scale heights and widths.
+      const top = 1.65 * Math.max(height, 0.05);
+      const mistHeight = 3 * 0.38 * peak;
+      const mistReach = foot + 0.5 * lean * peak + 2.6 * (0.45 * p.bodyRadius + 0.25 * lean * peak);
+      C.set([Math.max(1.12 * foot + 2.0 * lean * top + 4.6 * thick + 0.1, mistReach), Math.max(top, mistHeight) + 0.2, flight, peak], o + 12);
+      // The mist comes up with the sheet and thins out over its life.
+      const mist = K.mist * p.strength * Math.min(1, age / (0.25 * flight)) * (1 - life / MIST_LIFE) ** 1.5;
+      C.set([p.bodyRadius, mist, 0, 0], o + 16);
       this.crownDistances.push(v3.len(v3.add(originRel, quat.rotate(dom.q, p.pos))));
     });
     if (this.patches.length > 0) this.device.queue.writeBuffer(this.buffer, 0, this.data, 0, this.patches.length * INST_FLOATS);

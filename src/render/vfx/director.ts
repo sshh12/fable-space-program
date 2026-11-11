@@ -7,7 +7,7 @@ import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext } from '@/core/contracts/render';
 import type { PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
-import { DEG, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
+import { DEG, hashToUnit, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { VfxData } from './data';
 import { EffectDomain, type DomainFrame } from './domain';
 import type { DustSheetSpawn } from './dust';
@@ -503,10 +503,43 @@ export class EffectDirector {
             seed: seed + k,
           });
         };
-        // The crown: a steep sheet from the rim; a flatter outer skirt; the jet that rises in the middle.
-        droplets(W.count * 0.6, 'ring', radius * 1.05, [(90 - C.crownAngleDeg[1]) * DEG, (90 - C.crownAngleDeg[0]) * DEG], [0.35 * v0, 1.25 * v0], 1);
-        droplets(W.count * 0.3, 'ring', radius * 1.2, [50 * DEG, 82 * DEG], [0.25 * v0, 0.95 * v0], 2);
-        droplets(W.count * 0.1, 'disc', radius * 0.45, [0, 0.16], [0.4 * v0, 1.35 * v0], 3);
+        // Spray all round the rim, a flatter outer skirt, the jet that rises in the middle ...
+        droplets(W.count * 0.3, 'ring', radius * 1.05, [(90 - C.crownAngleDeg[1]) * DEG, (90 - C.crownAngleDeg[0]) * DEG], [0.35 * v0, 1.1 * v0], 1);
+        droplets(W.count * 0.12, 'ring', radius * 1.2, [50 * DEG, 82 * DEG], [0.25 * v0, 0.95 * v0], 2);
+        droplets(W.count * 0.08, 'disc', radius * 0.45, [0, 0.16], [0.4 * v0, 1.35 * v0], 3);
+        // ... and most of the water in fingers: jets from points of the rim, each at its own angle and speed,
+        // unevenly spaced, further and faster on the side the capsule was moving towards.
+        const rnd = (k: number): number => hashToUnit(hashU32((seed * 2654435761 + k * 40503) >>> 0));
+        const fingers = 10 + Math.floor(6 * rnd(1));
+        let t1 = v3.cross(up, v3.unitZ());
+        if (v3.lenSq(t1) < 1e-4) t1 = v3.cross(up, v3.unitX());
+        t1 = v3.normalize(t1);
+        const t2 = v3.cross(up, t1);
+        const drift = v3.len(horizontal);
+        for (let i = 0; i < fingers; i++) {
+          const az = ((i + 0.9 * rnd(10 + i)) / fingers) * 2 * Math.PI;
+          const radial = v3.add(v3.scale(t1, Math.cos(az)), v3.scale(t2, Math.sin(az)));
+          const lee = drift > 0.1 ? (v3.dot(radial, horizontal) / drift) * Math.min(1, drift / 4) : 0;
+          const tilt = (12 + 28 * rnd(30 + i) + 10 * lee) * DEG;
+          const reach = (0.75 + 0.7 * rnd(50 + i)) * (1 + 0.35 * lee);
+          out.emitters.push({
+            kind: 'droplet',
+            shape: 'disc',
+            pos: v3.addScaled(v3.addScaled(pos, radial, radius * 1.05), up, 0.25),
+            axis: v3.normalize(v3.add(v3.scale(up, Math.cos(tilt)), v3.scale(radial, Math.sin(tilt)))),
+            radius: 0.22 * radius,
+            vel: v3.scale(horizontal, 0.5),
+            speed: [0.25 * v0, reach * v0],
+            speedExponent: 0.8,
+            polar: [0, 0.07 + 0.08 * rnd(70 + i)],
+            life: W.life,
+            size: W.size,
+            color: W.albedo,
+            opacity: 0.85,
+            count: Math.round(((W.count * 0.5) / fingers) * amount * (0.6 + 0.8 * rnd(90 + i))),
+            seed: seed + 16 + i,
+          });
+        }
         out.emitters.push({
           // The fine spray that gives the crown its body: thrown up with the sheet, stopped by the air within
           // a few metres, then hanging and settling.

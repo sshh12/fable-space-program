@@ -277,7 +277,7 @@ export interface VfxData {
      * `thickness` in body radii at the foot; optical depth across the sheet at the foot; how far it tears
      * apart by the time it has fallen back (0..1); march steps.
      */
-    crown: { albedo: Vec3Tuple; rise: number; spread: number; thickness: number; opticalDepth: number; breakup: number; steps: number };
+    crown: { albedo: Vec3Tuple; rise: number; spread: number; thickness: number; opticalDepth: number; breakup: number; steps: number; /** Optical depth across the body of mist the crown leaves in the air. */ mist: number };
   };
 }
 
@@ -441,7 +441,7 @@ const ROOT: Schema = {
     foamTime: 'p',
     foamAlbedo: 'c',
     foamSwell: 'p',
-    crown: { albedo: 'c', rise: 'p', spread: 'n', thickness: 'p', opticalDepth: 'n', breakup: 'u', steps: 'i' },
+    crown: { albedo: 'c', rise: 'p', spread: 'n', thickness: 'p', opticalDepth: 'n', breakup: 'u', steps: 'i', mist: 'n' },
   },
 };
 

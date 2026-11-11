@@ -146,7 +146,11 @@ fn slotOf(i: u32) -> u32 { let n = u32(pu.flags.z); return (pu.counts.x + n - 1u
   p.pos = pos - e.sweep.xyz * sub + p.vel * p.age;
   p.life = mix(e.life.x, e.life.y, rnd(seed, j, 9u));
   p.color = e.color;
-  p.size = mix(e.life.z, e.life.w, rnd(seed, j, 10u));
+  // Sizes: evenly spread for puffs of gas and mist; for things (ice, chips, drops) a wide spread with many
+  // small pieces and a few large ones (equal steps of the logarithm, weighted towards the small end).
+  let pick = rnd(seed, j, 10u);
+  p.size = mix(e.life.z, e.life.w, pick);
+  if (e.misc.x == KIND_ICE || e.misc.x == KIND_CHIP || e.misc.x == KIND_DROPLET) { p.size = e.life.z * pow(e.life.w / max(e.life.z, 1e-6), pick * pick * pick); }
   p.growth = e.misc.y;
   p.kind = e.misc.x;
   p.seed = rnd(seed, j, 11u);
@@ -293,6 +297,13 @@ fn glow(T: f32) -> vec3f {
       let glint = pow(saturate(sin(p.seed * 91.0 + p.age * (9.0 + 30.0 * p.seed))), 24.0);
       lum += probe.sun.rgb * (lit * glint * select(0.5, 2.5, kind == KIND_ICE));
     }
+    if (kind == KIND_DROPLET) {
+      // White water: as bright as the sheet it was torn from (a sunlit white surface), and every drop is a lens
+      // that flashes when it lines up with the sun.
+      lum = p.color.rgb * (probe.sun.rgb * lit + vfxLocalLights(rel) + vfxProbeAmbient(0u)) * (1.0 / PI);
+      let glint = pow(saturate(sin(p.seed * 113.0 + p.age * (14.0 + 45.0 * p.seed))), 16.0);
+      lum += probe.sun.rgb * (lit * glint * 1.2);
+    }
     if (kind == KIND_GAS) { alpha *= sq(p.aux.z / max(p.size, 1e-3)); }
   }
   p.lum = vec4f(lum, alpha);
@@ -346,7 +357,8 @@ struct VOut {
   let pixel = viewZ / pu.flags.w;
   var radius = p.size;
   var alpha = p.lum.a;
-  let minR = 1.0 * pixel;
+  // (The floor itself differs from particle to particle by a third, so that a cloud of specks is not a row of equal dots.)
+  let minR = (0.7 + 0.45 * p.seed) * pixel;
   if (radius < minR) { alpha *= pow(radius / minR, 1.5); radius = minR; }
   // A particle that fills the view fades out (the eye is inside the cloud).
   alpha *= saturate(2.0 - radius / (220.0 * pixel));

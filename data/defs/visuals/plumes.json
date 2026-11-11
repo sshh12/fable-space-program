@@ -170,11 +170,11 @@
       "sheetSpeed": 55,
       "sheetSteps": 10
     },
-    "ice": { "liftoffCount": 2600, "stagingCount": 900, "sheddingRate": 420, "sheddingTime": 9, "size": [0.02, 0.09], "life": [3, 9], "speed": [0.3, 3.5], "albedo": [0.92, 0.95, 1.0] },
+    "ice": { "liftoffCount": 1400, "stagingCount": 320, "sheddingRate": 260, "sheddingTime": 9, "size": [0.015, 0.5], "life": [3, 9], "speed": [0.5, 9], "albedo": [0.92, 0.95, 1.0] },
     "gas": { "count": 240, "speed": [140, 360], "size": [0.3, 0.9], "life": [0.12, 0.36], "color": [0.86, 0.88, 0.92], "opacity": 0.05 },
     "sparks": { "count": 500, "speed": [8, 70], "size": [0.015, 0.05], "life": [0.25, 1.4], "temperature": [1900, 3200] },
-    "debris": { "count": 260, "speed": [4, 55], "size": [0.03, 0.22], "life": [4, 14], "albedo": [0.4, 0.4, 0.42] },
-    "spray": { "count": 16000, "mistCount": 160, "size": [0.008, 0.03], "mistSize": [0.4, 1.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.04 },
+    "debris": { "count": 160, "speed": [4, 55], "size": [0.03, 0.9], "life": [4, 14], "albedo": [0.4, 0.4, 0.42] },
+    "spray": { "count": 7000, "mistCount": 160, "size": [0.01, 0.13], "mistSize": [0.6, 2.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.06 },
     "ablation": { "rate": 1400, "speed": [15, 120], "size": [0.012, 0.04], "life": [0.25, 0.9], "temperature": [2200, 3400] }
   },
   "frost": { "resources": ["LOX", "LH2", "CH4"], "vibrationThrottle": 0.2 },
@@ -266,6 +266,6 @@
     "foamTime": 26,
     "foamAlbedo": [0.86, 0.9, 0.92],
     "foamSwell": 6,
-    "crown": { "albedo": [0.9, 0.93, 0.95], "rise": 0.75, "spread": 0.9, "thickness": 0.16, "opticalDepth": 3.2, "breakup": 1.0, "steps": 30 }
+    "crown": { "albedo": [0.9, 0.93, 0.95], "rise": 0.75, "spread": 0.9, "thickness": 0.16, "opticalDepth": 3.2, "breakup": 1.0, "steps": 30, "mist": 0.7 }
   }
 }
