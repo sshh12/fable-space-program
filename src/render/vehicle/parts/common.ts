@@ -219,16 +219,27 @@ export function ventPort(b: MeshBuilder, s: Surface, phi: number, y: number, rad
   b.mat(prev);
 }
 
-/** Access door: a thin raised panel that follows the skin, with flush fasteners round its edge. */
-export function accessDoor(b: MeshBuilder, s: Surface, phi: number, y: number, w: number, h: number): void {
+/**
+ * Access door: a thin raised panel that follows the skin, with flush fasteners round its edge. `hole`
+ * (half sizes along the arc and along the meridian, about the door's centre) leaves an opening in it: the
+ * door is then four strips round the opening.
+ */
+export function accessDoor(b: MeshBuilder, s: Surface, phi: number, y: number, w: number, h: number, hole?: { arc: number; slant: number }): void {
   if (b.lod === 2) return;
   const proud = 0.007;
-  curvedPanel(b, s, phi, y, w, h, proud, 'door');
+  const l = Math.hypot(1, surfaceSlope(s, y));
+  const r = surfaceRadius(s, y);
+  if (hole) {
+    const ha = Math.min(hole.arc, w / 2 - 0.02);
+    const hs = Math.min(hole.slant, h / 2 - 0.02);
+    const sb = (h / 2 - hs) / 2;
+    const sa = (w / 2 - ha) / 2;
+    for (const sg of [-1, 1]) curvedPanel(b, s, phi, y + (sg * (hs + sb)) / l, w, h / 2 - hs, proud, 'door');
+    for (const sg of [-1, 1]) curvedPanel(b, s, phi + (sg * (ha + sa)) / r, y, w / 2 - ha, 2 * hs, proud, 'door');
+  } else curvedPanel(b, s, phi, y, w, h, proud, 'door');
   if (b.lod !== 0) return;
   const prev = b.material;
   b.mat('steel-bare');
-  const l = Math.hypot(1, surfaceSlope(s, y));
-  const r = surfaceRadius(s, y);
   const on = (up: number, across: number): Xf => surfaceFrame(s, phi + across / r, y + up / l, proud);
   const nx = Math.max(2, Math.round(h / 0.14));
   const nz = Math.max(2, Math.round(w / 0.14));

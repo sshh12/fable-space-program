@@ -7,12 +7,14 @@
  * 'les.tower': launch escape system: boost protective cover shaped from the capsule mould line it
  * shields, truss tower, escape motor with the canted nozzles of the part's engine module, nose cone.
  */
+import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { decalSheetOf } from '../decals';
-import { MeshBuilder, add3, norm3, polar, scale3, xf } from '../geom/builder';
+import { MeshBuilder, add3, dot3, norm3, polar, scale3, sub3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, ball, beam, bolt, boltCircle, box, frustum, lathe, phisWith, radialFrame, ringSolid, rod, uniformPhis, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, surfaceFrame, ventPort } from './common';
+import { accessDoor, band, bandRegion, buildModel, curvedPanel, decalRegion, parseList, regionBounds, regionHeights, surfaceFrame, surfaceSlope, ventPort } from './common';
+import { capsuleOpenings, projectToShell, roundRectLoop } from './capsule';
 import { mouldLine, shellRadius } from './mouldline';
 import { Params, staticPose, type PartGenerator, type PartModel, type PoseInput, type PoseSink } from './types';
 
@@ -189,20 +191,37 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
   const rIn = (yc: number): number => Math.max(shellRadius(ml, yc) + clear, apexR);
   /** Outer surface of the cover at a height in the part frame. */
   const coverOuter = (y: number): number => rIn(y + yCap) + cw;
+  const lining = mat(P.str('lining', 'phenolic'), where);
+  const ports = coverPorts(ml, windowPortIds(params['windowPorts'], where), rIn, cw, P.num('portMargin', 0.025), where);
+  /** A port as a lathe region of the cover (part frame). */
+  const portRegion = (q: CoverPort): LatheRegion => ({ phi0: q.phi0, phi1: q.phi1, y0: toLes(q.y0), y1: toLes(q.y1), mat: coverMat, hole: true });
+  const hatchPort = ports.find((q) => q.id === HATCH_WINDOW);
+
+  /** Painted regions and port openings of the cover's lathe at a LOD (none at the far LOD). */
+  const coverRegions = (b: MeshBuilder): LatheRegion[] => {
+    const regions: LatheRegion[] = [];
+    if (b.lod === 2) return regions;
+    for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(sheet, e.name, shellRadius(ml, e.n[1]! + yCap) + clear + cw, e.n[0]!, e.n[1]!, e.n[2]! / coneSlope, false, ['skin0', 'skin1']));
+    for (const q of ports) regions.push(portRegion(q));
+    return regions;
+  };
+  /** The cover's lathe azimuths at this LOD (port and decal edges on grid lines). */
+  const coverPhis = (b: MeshBuilder, regions: LatheRegion[]): number[] => phisWith(b.pick(120, 56, 20), regionBounds(regions));
 
   const body = buildModel(`${def.id}.body`, (b) => {
     const segs = b.pick(120, 56, 20);
-    // ---- boost protective cover: one watertight shell from the underside of its top plate, down the
-    // inside, round the skirt and up the outside
+    // ---- boost protective cover: one shell from the underside of its top plate, down the inside, round
+    // the skirt and up the outside; the glazed ports are cut through it (LOD 0 and 1)
     const yBot = toLes(ml.heatShield.maxDiameterY);
-    const regions: LatheRegion[] = [];
-    if (b.lod < 2) for (const e of parseList(P.str('decals', ''))) regions.push(decalRegion(sheet, e.name, shellRadius(ml, e.n[1]! + yCap) + clear + cw, e.n[0]!, e.n[1]!, e.n[2]! / coneSlope, false, ['skin0', 'skin1']));
+    const regions = coverRegions(b);
+    const cut = b.lod < 2 ? ports : [];
     const n = b.pick(14, 7, 3);
     const ys: number[] = [];
     for (let i = 0; i <= n; i++) ys.push(ml.heatShield.maxDiameterY + ((ml.cone.yTop - ml.heatShield.maxDiameterY) * i) / n);
-    // Where the cone reaches the apex cover radius the shell becomes a cylinder.
-    const p = Profile.at(0, 0).mat('blanket');
-    p.corner(apexR, 0);
+    // Where the cone reaches the apex cover radius the shell becomes a cylinder. The inside is a dark
+    // lining: it sees no sky and no sun (it faces the capsule a hand's width away).
+    const p = Profile.at(0, 0).mat(lining);
+    p.corner(apexR, 0).mark('in0');
     let last = Infinity;
     for (let i = ys.length - 1; i >= 0; i--) {
       const r = rIn(ys[i]!);
@@ -210,6 +229,7 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
       p.to(r, toLes(ys[i]!));
       last = r;
     }
+    p.mark('in1');
     p.hard().mat('alu-machined');
     p.corner(rIn(ml.heatShield.maxDiameterY) + cw, yBot).mark('skin0').mat(coverMat);
     last = Infinity;
@@ -222,32 +242,87 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
     p.to(apexR + cw, plateY).hard().mark('skin1').mat('alu-machined');
     p.corner(0, plateY);
     p.splitAtY('skin0', 'skin1', regionHeights(regions));
+    p.splitAtY('in0', 'in1', regionHeights(regions));
     b.mat(coverMat).masks(0.1, 1, 0.6, 0);
     lathe(b, p, {
-      phis: phisWith(segs, regionBounds(regions)),
+      phis: coverPhis(b, regions),
       regions,
       tag: 'boost-cover',
+      closed: cut.length === 0,
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         const outer = r > rIn(y + yCap) + cw * 0.5;
         m.soot = outer ? 0.25 + 0.75 * Math.max(0, Math.min(1, (y - yBot) / (plateY - yBot))) : 0.1;
-        m.ao = outer ? 1 : 0.55;
+        m.ao = outer ? 1 : 0.12;
       },
     });
+    const hy = toLes(ml.hatch.y);
+    const hphi = ml.hatch.azimuthDeg * DEG;
     if (b.lod < 2) {
-      // Hatch access panel over the capsule hatch (it follows the cone of the cover), its window port in a
-      // bezel, vents, skirt band.
-      const hy = toLes(ml.hatch.y);
-      const hphi = ml.hatch.azimuthDeg * DEG;
+      // Hatch access panel over the capsule hatch (it follows the cone of the cover; open round the hatch
+      // window's port), the ports' reveals through the wall and their bezels, vents, skirt band.
       b.mat(coverMat).masks(0.2, 1, 0.5, 0);
-      accessDoor(b, coverOuter, hphi, hy, ml.hatch.width + 0.14, ml.hatch.height + 0.14);
-      const wr = ml.hatch.window.radius;
-      b.at(surfaceFrame(coverOuter, hphi, hy, 0.012), () => {
-        // The pane is flat; the bezel takes up the few millimetres by which the curved panel falls away under it.
-        b.mat('glass').masks(0, 1, 0.4, 0);
-        frustum(b, wr, wr, -0.006, 0.004, b.pick(24, 12, 6), 'port');
-        b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
-        ringSolid(b, wr - 0.002, wr + 0.022, -0.008, 0.009, b.pick(24, 12, 6), 'port-bezel');
-      });
+      const hl = Math.hypot(1, surfaceSlope(coverOuter, hy));
+      const hr = coverOuter(hy);
+      const doorHole = hatchPort ? { arc: Math.max(Math.abs(hatchPort.phi0 - hphi), Math.abs(hatchPort.phi1 - hphi)) * hr + 0.002, slant: Math.max(Math.abs(toLes(hatchPort.y0) - hy), Math.abs(toLes(hatchPort.y1) - hy)) * hl + 0.002 } : undefined;
+      accessDoor(b, coverOuter, hphi, hy, ml.hatch.width + 0.14, ml.hatch.height + 0.14, doorHole);
+      for (const q of ports) {
+        const y0 = toLes(q.y0);
+        const y1 = toLes(q.y1);
+        const edgePhis = portPhis(coverPhis(b, regions), q);
+        // Reveal: the cut faces of the wall, facing into the opening (counter-clockwise seen from outside).
+        b.mat(lining).masks(0.1, 0.35, 0.1, 0);
+        b.begin(false, 'port-reveal');
+        const wall = (pts: [number, number][], into: (phi: number, y: number) => Vec3Tuple): void => {
+          let u = 0;
+          for (let i = 0; i + 1 < pts.length; i++) {
+            const [fa, ya] = pts[i]!;
+            const [fb, yb] = pts[i + 1]!;
+            const pa = polar(coverOuter(ya), fa, ya);
+            const pb = polar(coverOuter(yb), fb, yb);
+            const run = sub3(pb, pa);
+            const len = Math.hypot(...run);
+            const at = (f: number, y: number, r: number, nn: Vec3Tuple, uu: number, v: number): number => {
+              const t = norm3(sub3(run, scale3(nn, dot3(run, nn))));
+              return b.v(r * Math.sin(f), y, r * Math.cos(f), nn[0], nn[1], nn[2], t[0], t[1], t[2], uu, v);
+            };
+            const nA = into(fa, ya);
+            const nB = into(fb, yb);
+            const oa = at(fa, ya, coverOuter(ya), nA, u, 0);
+            const ob = at(fb, yb, coverOuter(yb), nB, u + len, 0);
+            const ia = at(fa, ya, coverOuter(ya) - cw, nA, u, cw);
+            const ib = at(fb, yb, coverOuter(yb) - cw, nB, u + len, cw);
+            b.quad(oa, ob, ib, ia);
+            u += len;
+          }
+        };
+        const upSlope = (f: number, y: number): Vec3Tuple => {
+          const k = surfaceSlope(coverOuter, y);
+          return norm3([k * Math.sin(f), 1, k * Math.cos(f)]);
+        };
+        const along = (f: number): Vec3Tuple => [Math.cos(f), 0, -Math.sin(f)];
+        wall(edgePhis.map((f) => [f, y0]), (f, y) => upSlope(f, y));
+        wall([[q.phi1, y0], [q.phi1, y1]], (f) => scale3(along(f), -1));
+        wall([...edgePhis].reverse().map((f) => [f, y1]), (f, y) => scale3(upSlope(f, y), -1));
+        wall([[q.phi0, y1], [q.phi0, y0]], (f) => along(f));
+        // Bezel: four strips on the outer surface (on the door for the hatch window), lapping 4 mm over the cut.
+        b.mat('anodised').masks(0.3, 1, 0.5, 0);
+        const yc = (y0 + y1) / 2;
+        const rc = coverOuter(yc);
+        const l = Math.hypot(1, surfaceSlope(coverOuter, yc));
+        const hs = ((y1 - y0) / 2) * l;
+        const ha = ((q.phi1 - q.phi0) / 2) * rc;
+        const phc = (q.phi0 + q.phi1) / 2;
+        const fw = 0.032;
+        const lap = 0.004;
+        const proud = q.id === HATCH_WINDOW ? 0.015 : 0.008;
+        for (const sg of [-1, 1]) curvedPanel(b, coverOuter, phc, yc + (sg * (hs + fw / 2 - lap)) / l, 2 * (ha + fw - lap), fw, proud, 'port-bezel', 0.002);
+        for (const sg of [-1, 1]) curvedPanel(b, coverOuter, phc + (sg * (ha + fw / 2 - lap)) / rc, yc, fw, 2 * (hs - lap), proud, 'port-bezel', 0.002);
+        if (b.lod === 0) {
+          b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
+          const nb = Math.max(2, Math.round((2 * hs) / 0.09));
+          for (let i = 0; i <= nb; i++) for (const sg of [-1, 1]) b.at(surfaceFrame(coverOuter, phc + (sg * (ha + fw / 2 - lap)) / rc, yc - (hs - 0.02) / l + ((2 * (hs - 0.02)) / l) * (i / nb), proud), () => bolt(b, 0.005, 0.0015));
+        }
+      }
       b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
       band(b, coverOuter(yBot + 0.06), yBot + 0.06, 0.08, 0.01, segs, 'skirt-band');
       for (const az of [60, 300]) ventPort(b, coverOuter, az * DEG, toLes(ml.heatShield.maxDiameterY + 0.6), 0.04, 0.05);
@@ -360,5 +435,114 @@ export const lesTower: PartGenerator = ({ def, params, defs }) => {
       b.at(xf.translate(0, tip - 0.1, 0), () => ball(b, 0.022, 0, 10, 6, 0.022, 'probe'));
     }
   });
-  return { models: { body }, pose: staticPose, sootSeconds: P.num('sootSeconds', 3) };
+
+  // ---- port panes: their own model, left out (with the capsule's panes) when the camera is in the cabin.
+  // Each is a dark pane following the cover's cone a little inside the cut (on the surface where the far
+  // LOD has no cut).
+  const glass = buildModel(`${def.id}.glass`, (g) => {
+    g.mat('glass').masks(0, 1, 0.4, 0);
+    for (const q of ports) {
+      const phis = g.lod < 2 ? portPhis(coverPhis(g, coverRegions(g)), q) : uniformPhis(2, q.phi0, q.phi1);
+      const lift = g.lod < 2 ? -0.012 : 0.002;
+      const y0 = toLes(q.y0);
+      const y1 = toLes(q.y1);
+      const pr = Profile.at(coverOuter(y0) + lift, y0).to(coverOuter(y1) + lift, y1);
+      lathe(g, pr, { phis, closed: false, tag: 'port-pane' });
+    }
+  });
+  const pose = (_input: PoseInput, emit: PoseSink): void => {
+    emit('body', null, null);
+    if (ports.length > 0) emit('glass', null, null, { castShadow: false, cold: true });
+  };
+  return { models: { body, glass }, pose, sootSeconds: P.num('sootSeconds', 3) };
 };
+
+/** The lathe azimuths over a port, ascending from its phi0 (azimuths past 2 pi when it crosses 0). */
+function portPhis(all: readonly number[], q: CoverPort): number[] {
+  return all
+    .map((f) => (f < q.phi0 - 1e-9 ? f + TAU : f))
+    .filter((f) => f >= q.phi0 - 1e-9 && f <= q.phi1 + 1e-9)
+    .sort((a, c) => a - c);
+}
+
+/** Port id of the hatch's round window (the mould line's windows are named by their own ids). */
+export const HATCH_WINDOW = 'hatch-window';
+
+/** The cover's `windowPorts` parameter: a list of window ids (absent: the hatch window alone). */
+function windowPortIds(v: unknown, where: string): string[] {
+  if (v === undefined) return [HATCH_WINDOW];
+  const list = Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[;,]/).map((s) => s.trim()).filter((s) => s) : null;
+  if (!list || list.some((s) => typeof s !== 'string')) throw new Error(`${where}: "windowPorts" must be a list of window ids`);
+  return list as string[];
+}
+
+/** A glazed opening in the boost cover: azimuth range (radians, phi1 > phi0) and capsule-frame heights. */
+export interface CoverPort {
+  id: string;
+  phi0: number;
+  phi1: number;
+  y0: number;
+  y1: number;
+}
+
+/**
+ * Openings of the boost cover: each frames the view through its cabin window from every seat's eye point
+ * (the window's outline seen from each eye, carried out to both faces of the cover's wall), plus `margin`
+ * along the arc and the meridian. Without seats the window is carried straight out along its normal.
+ */
+export function coverPorts(ml: CapsuleMouldLineDef, ids: readonly string[], rIn: (yCapsule: number) => number, wall: number, margin: number, where: string): CoverPort[] {
+  const openings = capsuleOpenings(ml);
+  return ids.map((id) => {
+    const o = id === HATCH_WINDOW ? openings.find((x) => x.hatch) : openings.find((x) => x.id === id && !x.hatch);
+    if (!o) throw new Error(`${where}: windowPorts: the mould line has no window "${id}"`);
+    const outline: Vec3Tuple[] = [];
+    if (id === HATCH_WINDOW) {
+      const rw = ml.hatch.window.radius;
+      for (let i = 0; i < 24; i++) outline.push(projectToShell(ml, o, rw * Math.cos((i / 24) * TAU), rw * Math.sin((i / 24) * TAU)));
+    } else for (const q of roundRectLoop(o.hw, o.hh, o.rho, 0.04, 4)) outline.push(projectToShell(ml, o, q.a, q.b));
+    const eyes: (Vec3Tuple | null)[] = ml.seats.length > 0 ? ml.seats.map((s) => s.pos as Vec3Tuple) : [null];
+    let f0 = Infinity;
+    let f1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const eye of eyes) {
+      for (const p of outline) {
+        const d = eye ? norm3(sub3(p, eye)) : o.N;
+        // Only eyes that see the window from inside the cabin frame it.
+        if (dot3(d, o.N) < 0.2) continue;
+        for (const off of [0, wall]) {
+          const R = (y: number): number => rIn(y) + off;
+          const f = (t: number): number => {
+            const q = add3(p, scale3(d, t));
+            return Math.hypot(q[0], q[2]) - R(q[1]);
+          };
+          let a = 0;
+          let c = 0.02;
+          while (f(c) < 0 && c < 2) {
+            a = c;
+            c += 0.02;
+          }
+          for (let i = 0; i < 30; i++) {
+            const m = (a + c) / 2;
+            if (f(m) < 0) a = m;
+            else c = m;
+          }
+          const q = add3(p, scale3(d, (a + c) / 2));
+          let phi = Math.atan2(q[0], q[2]);
+          phi += TAU * Math.round((o.phi - phi) / TAU);
+          f0 = Math.min(f0, phi);
+          f1 = Math.max(f1, phi);
+          y0 = Math.min(y0, q[1]);
+          y1 = Math.max(y1, q[1]);
+        }
+      }
+    }
+    if (!Number.isFinite(f0)) throw new Error(`${where}: windowPorts: no seat sees out of window "${id}"`);
+    const yc = (y0 + y1) / 2;
+    const r = rIn(yc) + wall;
+    const l = Math.hypot(1, (rIn(yc + 0.005) - rIn(yc - 0.005)) / 0.01);
+    const p0 = f0 - margin / r;
+    const turn = TAU * Math.floor(p0 / TAU);
+    return { id, phi0: p0 - turn, phi1: f1 + margin / r - turn, y0: y0 - margin / l, y1: y1 + margin / l };
+  });
+}

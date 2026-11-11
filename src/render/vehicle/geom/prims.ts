@@ -182,6 +182,8 @@ export interface LatheRegion {
   rot?: boolean;
   /** Restrict to the profile segments between two marks. */
   span?: [string, string];
+  /** Leave the cells out: an opening through the surface (declare the lathe `closed: false`). */
+  hole?: boolean;
 }
 
 export interface MaskOut {
@@ -449,6 +451,7 @@ export function lathe(b: MeshBuilder, prof: Profile, o: LatheOpts = {}): void {
         m = R.mat;
         break;
       }
+      if (dom > 0 && regions[dom - 1]!.hole) continue;
       if (m !== domMat) {
         b.mat(m);
         domMat = m;

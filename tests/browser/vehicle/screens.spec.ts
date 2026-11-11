@@ -207,6 +207,8 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'les-motor-closeup', query: `${SPACE}&stage=1&${SUN_SPACE}&eye=3.2,7.6,2.6&at=0,7.4,0&fov=40`, minNonBlack: 0.02 },
       { name: 'les-boost-cover-hatch', query: 'scene=pad&site=0&sun=110,45&eye=3.6,1.9,-5.2&at=0,1.0,-1.2&fov=38' },
       { name: 'les-boost-cover-profile', query: 'scene=pad&site=0&sun=110,45&eye=0.5,1.2,-7.5&at=0,1.0,0&fov=38' },
+      // The commander's forward window seen through its port in the boost cover.
+      { name: 'les-boost-cover-port', query: 'scene=pad&site=0&sun=110,45&eye=-2.2,2.6,5.6&at=-0.4,1.4,1.1&fov=34' },
     ]);
   });
 

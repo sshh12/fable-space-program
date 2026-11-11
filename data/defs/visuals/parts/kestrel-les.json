@@ -4,6 +4,7 @@
     "mouldLine": "visuals/shared/kestrel-mouldline",
     "coverClearance": 0.105,
     "coverWall": 0.025,
+    "windowPorts": ["hatch-window", "fwd-left"],
     "apexCoverRadius": 0.55,
     "cover": "paint-white",
     "tower": "paint-white",

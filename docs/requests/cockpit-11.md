@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit PENDING)
 From: cockpit
 Owner path: src/render/vehicle/parts/payload.ts (`les.tower`: the boost protective cover) and data/defs/visuals/parts/kestrel-les.json
 Blocking: yes (the brief's first acceptance view, "on the pad at noon looking up through the forward window", cannot show the world while the cover has no port there; visual QA round 1, cockpit, blocker / major in both lists)
@@ -37,3 +37,29 @@ outer opening lies inside the bounds of another part of the same vessel is treat
 part's visuals section lists the window under `params.windowPorts`: a covered window sends no sky light and
 no sun into the cabin (cabin light, sun apertures, cabin probe), so on the pad the cabin is lit by its
 floods and by the ported windows only. Must not change: the mould line, the cover's outer shape, the hatch port.
+
+## Resolution
+Done in `src/render/vehicle/parts/payload.ts` (`les.tower`) and `data/defs/visuals/parts/kestrel-les.json`:
+
+1. `"windowPorts": ["hatch-window", "fwd-left"]` is in the cover's `params` (a JSON list of the shared mould
+   line's window ids, `hatch-window` for the hatch's round window; a missing key still means the hatch window
+   alone). Note for the reader: `PartVisualDef.params` is typed `Record<string, number | string | boolean>` in
+   `src/core/contracts/defs.ts`, so read the key as `unknown` and check `Array.isArray`; the generator also
+   accepts a `"a;b"` string. Both ports are now real openings: the cover's wall (inside and outside) is cut,
+   the cut has reveal faces through the 25 mm wall, an anodised bezel with a fastener row sits round it (on the
+   hatch access panel, which is four strips round the hatch port now), and the pane is a separate model named
+   `glass` that the vessel feature leaves out with the capsule's panes when the camera is inside the vessel.
+   Each opening is sized from the data, not by hand: it frames the window's outline as seen from EVERY seat's
+   eye point (`seats[].pos` of the mould line) on both faces of the cover's wall, plus 25 mm
+   (`portMargin`): the forward port spans azimuth -32.6 to -8.4 degrees and is about 0.45 x 0.69 m on the
+   cover (the window is 0.28 x 0.55 m), the hatch port about 0.3 x 0.31 m.
+2. The inside of the cover is a dark lining now (material `phenolic`, albedo 0.035, no cloth shading;
+   `lining` parameter) with a vertex occlusion of 0.12, instead of the white `blanket`.
+
+Unit test (`tests/unit/vehicle/parts.test.ts`, "every window the boost cover lists under windowPorts sees
+out from every seat; the others are covered"): ray casts from each seat through the centre and eight points
+at 80 % of each window against the cover's LOD 0 geometry: no sight line through a listed window hits the
+cover, and none through an unlisted window passes it. Outside view: `out/screens/vehicle/les-boost-cover-port.png`
+(new), `les-boost-cover-hatch.png`. I could not re-shoot `world-pad-noon-forward-window.png`:
+`npx playwright test tests/browser/cockpit/world.spec.ts -g pad-noon` reports "No tests found" in the tree
+as it is now (the cockpit's `world` spec is untracked work in progress); please re-shoot it on your side.

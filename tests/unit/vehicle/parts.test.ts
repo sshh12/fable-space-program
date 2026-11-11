@@ -11,7 +11,8 @@
  *    the mould line of the capsule it covers;
  *  - triangle budgets of the full stack.
  */
-import { shieldGlowLuminance } from '@/render/vehicle/parts/capsule';
+import { capsuleOpenings, projectToShell, shieldGlowLuminance } from '@/render/vehicle/parts/capsule';
+import { HATCH_WINDOW } from '@/render/vehicle/parts/payload';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CapsuleMouldLineDef, DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { PartSnapshot } from '@/core/contracts/sim';
@@ -102,7 +103,9 @@ describe('part visuals', () => {
   });
 
   it('open components are only sheets and bands, never structure', () => {
-    const allowed = new Set(['band', 'frame', 'weld', 'corrugation', 'hatband', 'throat-ring', 'lip-ring', 'boot', 'sep-joint', 'clamp-band', 'strap', 'skirt-band', 'case-band', 'nozzle-band', 'core-band', 'foil', 'well', 'sleeve', 'pad-foil', 'capsule-skin', 'capsule-reveal', 'capsule-door', 'pane', 'placard', 'rime']);
+    const allowed = new Set(['band', 'frame', 'weld', 'corrugation', 'hatband', 'throat-ring', 'lip-ring', 'boot', 'sep-joint', 'clamp-band', 'strap', 'skirt-band', 'case-band', 'nozzle-band', 'core-band', 'foil', 'well', 'sleeve', 'pad-foil', 'capsule-skin', 'capsule-reveal', 'capsule-door', 'pane', 'placard', 'rime',
+      // The boost cover is a shell with glazed ports cut through it, like the capsule's skin.
+      'boost-cover', 'port-reveal', 'port-pane']);
     for (const id of Object.keys(defs.parts)) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         for (const lod of model.lods) lod.meta.tags.forEach((tag, c) => lod.meta.closed[c] === 0 && expect(allowed.has(tag), `${id}.${name}: open component "${tag}"`).toBe(true));
@@ -682,4 +685,77 @@ describe('capsule exterior and the shared mould line', () => {
     }
     expect(covers).toBeGreaterThanOrEqual(1);
   });
+
+  it('every window the boost cover lists under windowPorts sees out from every seat; the others are covered', () => {
+    let ports = 0;
+    for (const vehicle of Object.values(defs.vehicles)) {
+      const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
+      for (const les of parts) {
+        const def = defs.parts[les.def]!;
+        if (def.visual?.generator !== 'les.tower') continue;
+        const key = String(def.visual.params['mouldLine']);
+        const ml = getSection<CapsuleMouldLineDef>(defs, key);
+        const capsule = parts.find((q) => defs.parts[q.def]!.visual?.generator === 'capsule.mouldline' && String(defs.parts[q.def]!.visual!.params['mouldLine']) === key)!;
+        const listed = (def.visual.params as Record<string, unknown>)['windowPorts'] as string[] | undefined;
+        expect(Array.isArray(listed), `${les.def}: params.windowPorts is a list`).toBe(true);
+        // The cover's solid geometry (LOD 0, panes left out) in the capsule's frame.
+        const g = posedPart(visualOf(les.def), { def, modules: les.modules, skip: ['glass'] }, 0);
+        const off: Vec3Tuple = [les.localPos.x - capsule.localPos.x, les.localPos.y - capsule.localPos.y, les.localPos.z - capsule.localPos.z];
+        const P = (k: number): Vec3Tuple => [g.positions[3 * k]! + off[0], g.positions[3 * k + 1]! + off[1], g.positions[3 * k + 2]! + off[2]];
+        /** Does the segment from o along d (unit) for len metres hit the cover? */
+        const blocked = (o: Vec3Tuple, d: Vec3Tuple, len: number): boolean => {
+          for (let t = 0; t < g.indices.length; t += 3) {
+            const a = P(g.indices[t]!);
+            const e1 = sub(P(g.indices[t + 1]!), a);
+            const e2 = sub(P(g.indices[t + 2]!), a);
+            const p = cross(d, e2);
+            const det = dot(e1, p);
+            if (Math.abs(det) < 1e-12) continue;
+            const s = sub(o, a);
+            const u = dot(s, p) / det;
+            if (u < 0 || u > 1) continue;
+            const q = cross(s, e1);
+            const v = dot(d, q) / det;
+            if (v < 0 || u + v > 1) continue;
+            const h = dot(e2, q) / det;
+            if (h > 0 && h < len) return true;
+          }
+          return false;
+        };
+        for (const o of capsuleOpenings(ml)) {
+          const id = o.hatch ? HATCH_WINDOW : o.id;
+          const r = o.hatch ? ml.hatch.window.radius : Math.min(o.hw, o.hh);
+          // Rays from every seat through the window's centre and through points 80 % of the way to its edge.
+          let open = 0;
+          let shut = 0;
+          for (const seat of ml.seats) {
+            for (let k = 0; k <= 8; k++) {
+              const th = (k / 8) * 2 * Math.PI;
+              const f = k === 8 ? 0 : 0.8;
+              const a = o.hatch ? f * r * Math.cos(th) : f * o.hw * Math.cos(th);
+              const b = o.hatch ? f * r * Math.sin(th) : f * o.hh * Math.sin(th);
+              const w = projectToShell(ml, o, a, b, 0.002);
+              const d = norm(sub(w, seat.pos as Vec3Tuple));
+              if (dot(d, o.N) < 0.2) continue;
+              if (blocked(w, d, 0.6)) shut++;
+              else open++;
+            }
+          }
+          if (listed!.includes(id)) {
+            ports++;
+            expect(shut, `${les.def}: ${id} is listed under windowPorts but ${shut} of ${open + shut} sight lines hit the cover`).toBe(0);
+          } else expect(open, `${les.def}: ${id} is not a port but ${open} sight lines pass the cover`).toBe(0);
+        }
+      }
+    }
+    expect(ports).toBeGreaterThanOrEqual(2);
+  });
 });
+
+const sub = (a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: Vec3Tuple, b: Vec3Tuple): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a: Vec3Tuple): Vec3Tuple => {
+  const l = Math.hypot(a[0], a[1], a[2]);
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
