@@ -634,8 +634,14 @@ export class CloudSystem {
     // Each half-resolution pixel is marched every fourth frame, through a different point of its area each
     // time (the frame's own anti-aliasing sequence, which also runs while noise is frozen): the history
     // averages them into an edge that is as wide as the pixel instead of a staircase.
+    // (Only while the camera is near enough for clouds to have edges: from orbit a pixel holds a fraction of
+    // cloud, which has none, and rays that moved inside pixels the size of the map's cells would show the
+    // four pixels of a block, marched in different frames, as a lattice.)
     const sub = taaJitter(frame.frameIndex >> 2, 8);
-    u.set('cloudJitter', sub[0], sub[1], 0, 0);
+    const nearestFootprint = (Math.max(pose.cameraAltitude - params.topAltitude, 0) * 2 * Math.tan(frame.camera.fovY / 2)) / Math.ceil(frame.renderSize[1] / 2);
+    const fade = Math.min(Math.max((nearestFootprint - 150) / 450, 0), 1);
+    const amplitude = 1 - fade * fade * (3 - 2 * fade);
+    u.set('cloudJitter', sub[0] * amplitude, sub[1] * amplitude, 0, 0);
     u.set('cloudHigh', params.highThicknessMinM, params.highThicknessMaxM, params.highExtinctionMin, params.highExtinctionMax);
     u.set('cloudHigh2', params.highCoverageStart, params.highCoverageFull, params.deepCoverageStart, params.deepCoverageFull);
     u.set('cloudDeep', params.deepExtinction, params.groundAlbedo, params.ambientScale, params.multiScatterGain);
