@@ -209,19 +209,26 @@ This is an inference; what would settle it is the same spec on a machine with no
 The three texture copies per frame of the first hand-off are gone (history and geometry alternate between
 two targets, the shadow map is refreshed in place), so every byte the package moves is inside a timed pass.
 
-**Screenshots** in `out/screens/atmosphere/`. Looked at after the last code change that could affect them,
-at full size or as crops: `clouds-ground-cumulus`, `leo-day`, `ascent-10km` (explore copy and the 1440p
-perf frame), `earth-moon-distance-wide`, `small-shell-{bare,air,clouds}-fov30`, `shadow-lit-quad-above-the-deck`,
-`pad-eclipse`, `sampling-low-orbit-limb` and `-animated`, `perf-low-orbit-1440p`, `perf-60-000-km-1440p`,
-`perf-ascent-10-km-1440p` (crops). Looked at as half-size contact sheets, one code change earlier (the
-change in between only affects pixels that move and the weight of the temporal average): `pad-noon`,
-`pad-sunset-minus-10min`, `pad-sunset`, `pad-anti-twilight`, `ascent-25km`, `ascent-40km`, `ascent-80km`,
-`leo-terminator`, `clouds-ground-sunset`, `clouds-ground-cumulus-into-sun`, `clouds-under-deck`,
-`clouds-above-deck`, `leo-day-limb`, `leo-night-limb`, `earth-60000km`, `earth-60000km-crescent`.
-NOT looked at in their final state: `pad-night`, `leo-low-sun`, `earth-moon-distance`, `clouds-in-deck`,
-`clouds-deck-top`, `clouds-ground-after-sunset`, the `transparent-*`, `tunables-*`, `clouds-*` test images,
-`pad-eclipse-partial`, `pad-eclipse-none`, and five of the eight 1440p perf frames. No view was iterated
-against reference photographs at native 1440p in animated mode, as the review asked.
+**Screenshots** in `out/screens/atmosphere/`. What was looked at, and in which state:
+- In the final state, at full size or as enlarged crops: `earth-moon-distance-wide` and
+  `small-shell-{bare,air,clouds}-fov30` (the blocker), the 60,000 km view at 1440p frozen and animated
+  (`explore/z-60000-1440p*`, the lattice).
+- In the final state, as half-size contact sheets: `clouds-ground-cumulus`, `clouds-ground-sunset`,
+  `clouds-ground-cumulus-into-sun`, `clouds-ground-after-sunset`, `clouds-deck-top`, `clouds-above-deck`,
+  `clouds-in-deck`, `ascent-10km`, `ascent-25km`, `leo-day`, `leo-day-limb`, `leo-terminator`, `leo-low-sun`,
+  `leo-night-limb`, `earth-60000km`, `earth-moon-distance`, `pad-night`, `pad-eclipse-partial`.
+- Before the last four changes to the temporal resolve (averaging weight, history reset on view cuts, cloud
+  distance of edge pixels, no sub-pixel ray positions from orbit), at full size or as crops:
+  `clouds-ground-cumulus`, `leo-day`, `shadow-lit-quad-above-the-deck`, `pad-eclipse`,
+  `sampling-low-orbit-limb` and `-animated`, and crops of the 1440p perf frames `perf-low-orbit`,
+  `perf-60-000-km` and `perf-ascent-10-km` (the last two are where the residual lattice of section 9 was seen).
+- Clear-sky images, unaffected by those changes, as half-size contact sheets: `pad-noon`,
+  `pad-sunset-minus-10min`, `pad-sunset`, `pad-anti-twilight`, `ascent-40km`, `ascent-80km`; also
+  `clouds-under-deck` and `earth-60000km-crescent` in the earlier state only.
+- NOT looked at: the `transparent-*`, `tunables-*` and `clouds-*` test images other than those named,
+  `pad-eclipse-none`, `sampling-ascent-*`, and five of the eight 1440p perf frames.
+No view was iterated against reference photographs at native 1440p in animated mode, as the review asked;
+half-size contact sheets do not show pixel-scale defects.
 
 ## 6. Tunables
 
