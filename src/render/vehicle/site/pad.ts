@@ -168,12 +168,12 @@ export function gratingPanel(b: MeshBuilder, cx: number, y: number, cz: number, 
     if (alongX) box(b, 0.022, d * 0.6, W - 0.024, [cx + t, y - d * 0.15, cz], 'grating');
     else box(b, W - 0.024, d * 0.6, 0.022, [cx, y - d * 0.15, cz + t], 'grating');
   }
-  // `coarse`: LOD 1 keeps bearing bars too, as heavier bars at 150 mm (a grating seen from 6 to 25 m: its
+  // `coarse`: LOD 1 keeps bearing bars too, as heavier bars at 200 mm (a grating seen from 6 to 50 m: its
   // 60 mm bars would be under a pixel apart and alias into glitter, its frame alone would read as no floor).
   if (b.lod === 0 || coarse) {
     const fine = b.lod === 0;
-    const nb = Math.max(2, Math.round(W / (fine ? 0.06 : 0.15)));
-    const t0 = fine ? 0.008 : 0.02;
+    const nb = Math.max(2, Math.round(W / (fine ? 0.06 : 0.2)));
+    const t0 = fine ? 0.008 : 0.025;
     for (let i = 1; i < nb; i++) {
       const t = -W / 2 + (W * i) / nb;
       if (alongX) box(b, L - 0.024, d, t0, [cx, y, cz + t], 'grating');
@@ -747,15 +747,24 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
     frustum(b, 0.55, 0.3, 0, H - 2.2, 4, 'shadow-proxy');
     box(b, 3.6, 2.0, 0.3, [lampC[0], lampC[1], lampC[2]], 'shadow-proxy');
   });
-  // The bank is a battery of searchlights aimed at the vehicle, which stands `aimDistance` in front of it.
-  // An omni light at the lenses would light the ground under the mast and leave the vehicle dim, so the
-  // bank's light is registered where its beams land: a vertical line light a few metres in front of the
-  // vehicle on the bank's side, from above the launch mount to `beamTop`. The vehicle is lit top to bottom
-  // and is the brightest thing on the pad; the apron gets what spills past it.
+  // The bank is a battery of searchlights aimed at the vehicle, which stands `aimDistance` in front of it: a
+  // spot at the bank's face aimed at `aimHeight` on the vehicle's axis. Its cone takes in the vehicle from the
+  // mount to near its top at full strength and the apron round its base at the edge; the ground under the
+  // mast and behind the bank stays dark, as on a floodlit pad.
   const aim = numParam(params, 'aimDistance', 80);
-  const standoff = numParam(params, 'beamStandoff', 15);
-  const z = -(aim - standoff);
-  const lights: PartLight[] = [{ pos: [0, numParam(params, 'beamBottom', 32), z], end: [0, numParam(params, 'beamTop', 104), z], intensity: [candela, candela * 0.98, candela * 0.94], range }];
+  const lens: Vec3Tuple = [lampC[0], lampC[1], lampC[2] - 0.3];
+  const to: Vec3Tuple = [0, numParam(params, 'aimHeight', 47) - lens[1], -aim - lens[2]];
+  const tl = Math.hypot(...to);
+  const lights: PartLight[] = [
+    {
+      pos: lens,
+      dir: [to[0] / tl, to[1] / tl, to[2] / tl],
+      cone: [numParam(params, 'innerDeg', 24) * DEG, numParam(params, 'outerDeg', 34) * DEG],
+      radius: 1.2,
+      intensity: [candela, candela * 0.98, candela * 0.94],
+      range,
+    },
+  ];
   return {
     models: { body, lamps, shadow },
     pose: (state, emit) => {

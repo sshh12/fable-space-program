@@ -415,12 +415,12 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
     const m = def.modules[lightIndex];
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
     const cd = (lampCandela(m.params) / lampAz.length) * input.anim.lamp;
-    // A lamp looks down and outward. Its light is put 1.5 m out along that axis with a reach that ends on the
-    // ground in front of the lander: an omni light at the lens would light the hull behind it.
+    // A lamp looks down and a little outward: a spot at its lens whose cone takes in the touchdown area and
+    // the legs on its side, never the hull above it.
     return lampAz.map((phi) => {
       const p = lampAt(phi);
-      const out = polar(1, phi, 0);
-      return { pos: [p[0] + out[0] * 1.2, p[1] - 0.9, p[2] + out[2] * 1.2] as Vec3Tuple, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 16 };
+      const dir = norm3(polar(Math.sin(25 * DEG), phi, -Math.cos(25 * DEG)));
+      return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [20 * DEG, 36 * DEG] as [number, number], radius: 0.09, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
     });
   };
   return { models: { body, lamp }, pose, lights };
@@ -606,7 +606,7 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
     const cd = lampCandela(m.params) * input.anim.lamp;
     const dir = norm3(polar(1, ladderPhi + 0.42, -0.6));
-    return [{ pos: add3(lampAt, scale3(dir, 1.6)), intensity: [cd, cd * 0.97, cd * 0.9], range: 14 }];
+    return [{ pos: add3(lampAt, scale3(dir, 0.1)), dir, cone: [18 * DEG, 30 * DEG], radius: 0.08, intensity: [cd, cd * 0.97, cd * 0.9], range: 30 }];
   };
   return { models: { body, antenna, platform, lamp }, pose, lights };
 };

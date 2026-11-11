@@ -399,7 +399,12 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         for (const l of e.visual.lights(e.input)) {
           if (lightBudget.n >= maxLights) break;
           const pVes = v3.add(localPos, quat.rotate(localRot, v3.fromTuple(l.pos)));
-          frame.lights.push({ kind: 'point', posRelCam: v3.add(parent.originRelCam, quat.rotate(parent.q, pVes)), intensity: l.intensity, range: l.range });
+          const posRelCam = v3.add(parent.originRelCam, quat.rotate(parent.q, pVes));
+          const radius = l.radius ?? 0;
+          if (l.dir) {
+            const dirRelCam = v3.normalize(quat.rotate(parent.q, quat.rotate(localRot, v3.fromTuple(l.dir))));
+            frame.lights.push({ kind: 'spot', posRelCam, dirRelCam, cone: l.cone ?? [0, Math.PI / 4], intensity: l.intensity, range: l.range, radius });
+          } else frame.lights.push({ kind: 'point', posRelCam, intensity: l.intensity, range: l.range, radius });
           lightBudget.n++;
         }
       }

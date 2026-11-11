@@ -78,9 +78,15 @@ export interface PartLight {
   pos: Vec3Tuple;
   /** Second end point of a line light (a bank of lamps, a beam's lit column); absent = a point light. */
   end?: Vec3Tuple;
-  /** Linear-sRGB colour times luminous intensity, cd. */
+  /** Linear-sRGB colour times luminous intensity, cd (on the beam axis for a spot). */
   intensity: Vec3Tuple;
   range: number;
+  /** A spot: unit beam axis in the part frame (the direction the light travels). */
+  dir?: Vec3Tuple;
+  /** A spot's half angles [inner, outer], radians (full inside inner, none past outer). */
+  cone?: [number, number];
+  /** Radius of the emitting face, m (a lamp bank, a lens). */
+  radius?: number;
 }
 
 export interface PartVisual {

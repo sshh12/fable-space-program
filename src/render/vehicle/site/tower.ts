@@ -519,7 +519,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
     });
   /**
    * An arm's walkway floor, a model of its own so that it picks its LOD by its own bar pitch: every 60 mm bar
-   * only within a few metres, heavier bars at 150 mm out to about 25 m (at 1080p), then a plate of grating
+   * only within a few metres, heavier bars at 200 mm out to about 50 m (at 720p), then a plate of grating
    * texture (a dark band from below, as a real walkway is at that distance).
    */
   const armGrating = (name: string, length: number): PartModel =>
@@ -533,7 +533,7 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
           box(b, length - 0.8, 0.03, 1.3, [-(length - 0.8) / 2, 0.12, 0], 'grating');
         }
       },
-      [numParam(params, 'gratingLod1Pixels', 2400), numParam(params, 'gratingLod2Pixels', 650)],
+      [numParam(params, 'gratingLod1Pixels', 2400), numParam(params, 'gratingLod2Pixels', 300)],
     );
   /** Stand-in that casts an arm's shadow where the cascades cannot resolve its truss. */
   const armShadow = (name: string, length: number): PartModel =>
@@ -561,7 +561,9 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
     b.at(xf.translate(0, H + 21.3, 0), () => ball(b, 0.25, 0, b.pick(10, 6, 5), b.pick(6, 4, 3), 0.25, 'beacon'));
   });
 
-  const lights: PartLight[] = lampHeights.map((y) => ({ pos: [face - 3.5, y, 0] as Vec3Tuple, intensity: [2.6e5, 2.5e5, 2.3e5] as Vec3Tuple, range: 110 }));
+  // The lamp pairs on the vehicle face: spots aimed across at the vehicle, a little down (they light the
+  // vehicle and the swing arms in front of them, not the tower behind their lenses).
+  const lights: PartLight[] = lampHeights.map((y) => ({ pos: [face - 0.3, y, 0] as Vec3Tuple, dir: [-0.985, -0.17, 0] as Vec3Tuple, cone: [38 * DEG, 58 * DEG] as [number, number], radius: 1.2, intensity: [2.6e5, 2.5e5, 2.3e5] as Vec3Tuple, range: 110 }));
   const yaw = (angle: number): QuatTuple | null => (angle === 0 ? null : [0, Math.sin(angle / 2), 0, Math.cos(angle / 2)]);
   return {
     models,

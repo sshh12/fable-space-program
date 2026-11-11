@@ -778,8 +778,8 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const out: PartLight[] = [];
     if (lightDef && lightDef.type === 'light' && input.anim.lamp > 0) {
       const cd = lampCandela(lightDef.params) * input.anim.lamp;
-      // In front of the lens, with a reach that ends well short of the far side of the hull.
-      out.push({ pos: add3(lampPos.p, scale3(lampPos.n, 1.2)), intensity: [cd, cd * 0.97, cd * 0.9], range: 14 });
+      // A spot at the lens along its axis: it cannot light the hull behind it.
+      out.push({ pos: add3(lampPos.p, scale3(lampPos.n, 0.05)), dir: lampPos.n, cone: [15 * DEG, 28 * DEG], radius: 0.06, intensity: [cd, cd * 0.97, cd * 0.9], range: 30 });
     }
     // The glowing shock layer spills round the shoulder onto the back shell: three lights just outside the rim.
     const hs = input.modules[shieldIndex];
