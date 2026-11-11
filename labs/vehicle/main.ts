@@ -27,7 +27,7 @@
 import type { RenderFeature } from '@/core/contracts/render';
 import { boxMesh, type MeshBatch, type ModelHandle, coreOf } from '@/render/core';
 import { createLabApp, createLabPlanetFeature, type LabApp } from '@/render/core/lab';
-import { createVesselVisualFeature, materialDef, type VesselVisualFeature } from '@/render/vehicle';
+import { createSiteFeature, createVesselVisualFeature, materialDef, type SiteFeature, type VesselVisualFeature } from '@/render/vehicle';
 import type { FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3 } from '@/core/math';
@@ -127,6 +127,8 @@ export interface VehicleLab {
   app: LabApp;
   sim: VehicleLabSim;
   vehicle: VesselVisualFeature;
+  /** The launch complex (null when the lab runs without it). */
+  site: SiteFeature | null;
   env: ReturnType<typeof createLabEnvFeature>;
   setSun(sun: SunSpec | null): void;
 }
@@ -152,6 +154,8 @@ async function boot(): Promise<void> {
   const upAxis = params.get('up') ?? 'y';
   const vehicle = createVesselVisualFeature({ exteriorGlass: flag('glass', true) });
   const env = createLabEnvFeature({ kind: envKind });
+  // The lab planet has no relief: the pad surface is the reference sphere here.
+  const site = flag('site', placeKind === 'pad') ? createSiteFeature({ padElevation: () => 0 }) : null;
 
   const app = await createLabApp({
     canvas,
@@ -176,12 +180,16 @@ async function boot(): Promise<void> {
       else if (sunv && sunv.length === 3) sim.setSun({ kind: 'vessel', dir: [sunv[0]!, sunv[1]!, sunv[2]!] });
       return sim;
     },
-    features: (_defs, sim) => {
+    features: (defs, sim) => {
       const s = sim as VehicleLabSim;
       const list: RenderFeature[] = [env];
-      if (flag('planet', true)) list.push(createLabPlanetFeature());
+      // On the ground the lab planet is a plain of weathered lava and scrub (one colour): the backdrop of the
+      // pad, not a terrain. In space it shows the low-resolution albedo maps.
+      const ground = { width: 2, height: 1, data: new Uint8Array([122, 108, 92, 255, 122, 108, 92, 255]) };
+      if (flag('planet', true)) list.push(createLabPlanetFeature(placeKind === 'pad' || (placeKind === 'ground' && scene !== 'lunarSurface') ? { maps: { [defs.rootBodyId]: ground } } : {}));
       const place = s.placement;
       if (place.kind === 'ground' && flag('slab', true)) list.push(createSlabFeature(s, place));
+      if (site) list.push(site);
       list.push(vehicle);
       if (params.has('ballast')) list.push(createBallastFeature(num('ballast', 2000)));
       return list;
@@ -207,7 +215,7 @@ async function boot(): Promise<void> {
     autoReady: false,
   });
   const sim = app.sim as VehicleLabSim;
-  lab = { app, sim, vehicle, env, setSun: (sun) => sim.setSun(sun) };
+  lab = { app, sim, vehicle, site, env, setSun: (sun) => sim.setSun(sun) };
   window.__veh = lab;
   if (params.get('hud') === '0') info.style.display = 'none';
   await app.testApi.api.waitFrames(2);

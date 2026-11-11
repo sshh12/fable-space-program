@@ -686,7 +686,8 @@ export const capsuleApexCover: PartGenerator = ({ def, params }) => {
     lathe(b, p, { segs: b.pick(72, 36, 16), tag: 'apex-cover' });
     if (b.lod === 0) {
       b.mat('steel-bare').masks(0.3, 1, 0.3, 0);
-      boltCircle(b, seat - 0.12, H, 8, 0.012, 0.008);
+      // Countersunk flush with the land the escape tower sits on.
+      boltCircle(b, seat - 0.2, H - 0.008, 8, 0.012, 0.008);
       b.mat('alu-machined');
       for (const phi of [0.8, 0.8 + Math.PI]) rod(b, [0.3 * Math.sin(phi), H, 0.3 * Math.cos(phi)], [0.3 * Math.sin(phi + 0.5), H, 0.3 * Math.cos(phi + 0.5)], 0.008, 6, 'lanyard');
     }

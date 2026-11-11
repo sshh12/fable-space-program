@@ -120,10 +120,12 @@ function rcsClusters(def: PartDef): { pos: Vec3Tuple; dirs: Vec3Tuple[] }[] {
 }
 
 /** RCS quad: a small housing on a boom from the hull with one bell per firing direction. */
-function rcsQuad(b: MeshBuilder, c: { pos: Vec3Tuple; dirs: Vec3Tuple[] }, hullR: number, exitR: number): void {
-  const phi = Math.atan2(c.pos[0], c.pos[2]);
+function rcsQuad(b: MeshBuilder, cluster: { pos: Vec3Tuple; dirs: Vec3Tuple[] }, hullR: number, exitR: number, inset = 0): void {
+  const phi = Math.atan2(cluster.pos[0], cluster.pos[2]);
   const rad: Vec3Tuple = [Math.sin(phi), 0, Math.cos(phi)];
-  const r = Math.hypot(c.pos[0], c.pos[2]);
+  // `inset` draws the quad a little inboard of the thrust axis (keeps the hardware inside the part envelope).
+  const r = Math.hypot(cluster.pos[0], cluster.pos[2]) - inset;
+  const c = { pos: [rad[0] * r, cluster.pos[1], rad[2] * r] as Vec3Tuple, dirs: cluster.dirs };
   const prev = b.material;
   b.mat('alu-machined').masks(0.25, 1, 0.5, 0);
   const core = 0.075 + exitR;
@@ -261,7 +263,7 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
         );
       }
     };
-    deck(y1, topR - 0.1, true, gold, 0.2);
+    deck(y1, Math.min(topR - 0.1, coreR - 0.08), true, gold, 0.2);
     deck(y0, wellR, false, 'blanket-silver', 1);
 
     // ---- mating rings, base frame, engine well and mount
@@ -430,7 +432,7 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
       frustum(b, mr, mr + 0.08, my, my + 0.16, b.pick(28, 14, 8), 'mount');
     }
     // ---- RCS quads, CMG housing, ladder, lamp housing
-    for (const c of clusters) rcsQuad(b, c, skinR, P.num('rcsExitRadius', 0.042));
+    for (const c of clusters) rcsQuad(b, c, skinR, P.num('rcsExitRadius', 0.042), P.num('rcsInset', 0));
     if (b.lod < 2) {
       b.mat('alu-machined').masks(0.25, 1, 0.3, 0);
       b.at(radialFrame(skinR - 0.02, 135 * DEG, H * 0.74), () => {

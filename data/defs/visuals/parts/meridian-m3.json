@@ -2,7 +2,7 @@
   "generator": "stage.tank",
   "params": {
     "skin": "foam-white",
-    "skinAlt": "foam-white",
+    "skinAlt": "foam-white-b",
     "aftSkirt": "steel-brushed",
     "fwdSkirt": "paint-white",
     "intertank": "foam-white",

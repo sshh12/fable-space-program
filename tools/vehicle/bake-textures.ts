@@ -149,13 +149,18 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Spray-on foam insulation, tile 2.4 m: popcorn skin, overlapping spray passes, sun-darkened patches.
+  // Spray-on foam insulation, tile 2.4 m: popcorn skin over irregular spray lumps. Nothing in it is larger
+  // than a few decimetres: a bigger feature would show the tile repeat on a 9 m tank (the large-scale tone
+  // differences are separate materials on the mesh).
   foam() {
     const S = 1024;
-    const pass = (v: number, u: number): number => 0.5 + 0.5 * Math.sin(2 * Math.PI * (v * 8 + 0.35 * fbm(u, v, 3, 8, 2, 81)));
+    const lump = (u: number, v: number): number => {
+      const c = worley(u + 0.02 * fbm(u, v, 16, 16, 2, 80), v, 22, 26, 81, 1);
+      return 1 - smooth(0.0, 0.75, c.f1);
+    };
     const h = Field.from(S, S, (u, v) => {
       const pop = 1 - smooth(0.0, 0.55, worley(u, v, 120, 120, 82).f1);
-      return 0.004 * pop + 0.006 * fbm(u, v, 14, 14, 3, 83) + 0.012 * fbm(u, v, 3, 3, 2, 84) + 0.004 * pass(v, u);
+      return 0.0035 * pop + 0.006 * fbm(u, v, 20, 20, 3, 83) + 0.009 * lump(u, v);
     });
     save('foam_n', normalMap(h, 2.4, 0.9));
     const ao = cavity(h, 3, 160);
@@ -163,24 +168,24 @@ const recipes: Record<string, () => void> = {
       'foam_orm',
       orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 30, 30, 2, 85)), 1]),
     );
-    const fresh = rgb(218, 152, 78);
-    const aged = rgb(172, 100, 46);
-    const pale = rgb(228, 176, 108);
+    const fresh = rgb(216, 150, 78);
+    const aged = rgb(178, 106, 50);
+    const pale = rgb(226, 172, 104);
     const colour = (u: number, v: number, x: number, y: number): [number, number, number] => {
-      const age = smooth(0.3, 0.8, fbm(u, v, 3, 4, 5, 86) * 0.86 + 0.14 * pass(v, u));
-      const patch = smooth(0.66, 0.72, fbm(u, v, 6, 6, 3, 87));
-      let c = lerp3(fresh, aged, age);
-      c = lerp3(c, pale, patch * 0.45);
-      return tint(c, (0.84 + 0.16 * fbm(u, v, 110, 110, 2, 88)) * (0.9 + 0.1 * fbm(u, v, 24, 24, 3, 89)) * (0.72 + 0.28 * ao.at(x, y)));
+      const age = smooth(0.25, 0.8, fbm(u, v, 12, 12, 5, 86));
+      const patch = smooth(0.7, 0.78, fbm(u, v, 18, 18, 3, 87));
+      let c = lerp3(fresh, aged, age * 0.5);
+      c = lerp3(c, pale, patch * 0.3);
+      return tint(c, (0.86 + 0.14 * fbm(u, v, 110, 110, 2, 88)) * (0.74 + 0.26 * ao.at(x, y)));
     };
     save('foam_albedo', Image.from(S, S, colour));
     // The same foam under a white top coat: the relief stays, the colour is a slightly yellowed off-white.
     save(
       'foamwhite_albedo',
       Image.from(S, S, (u, v, x, y) => {
-        const yellow = smooth(0.45, 0.8, fbm(u, v, 3, 3, 4, 86));
-        const c = lerp3(rgb(232, 230, 222), rgb(220, 210, 184), yellow * 0.6);
-        return tint(c, (0.93 + 0.07 * fbm(u, v, 90, 90, 2, 88)) * (0.82 + 0.18 * ao.at(x, y)));
+        const yellow = smooth(0.35, 0.8, fbm(u, v, 12, 12, 5, 86));
+        const c = lerp3(rgb(232, 230, 222), rgb(222, 213, 190), yellow * 0.5);
+        return tint(c, (0.94 + 0.06 * fbm(u, v, 110, 110, 2, 88)) * (0.84 + 0.16 * ao.at(x, y)));
       }),
     );
   },

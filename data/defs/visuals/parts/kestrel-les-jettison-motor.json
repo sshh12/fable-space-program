@@ -2,7 +2,7 @@
   "generator": "motor.pack",
   "params": {
     "caseRadius": 0.1,
-    "caseLength": 0.42,
+    "caseLength": 0.3,
     "nozzleLength": 0.14,
     "pod": "paint-white",
     "skinRadius": 0.27,

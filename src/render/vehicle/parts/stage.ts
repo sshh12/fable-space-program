@@ -10,7 +10,7 @@ import type { Vec3Tuple } from '@/core/math';
 import { MeshBuilder, polar, xf } from '../geom/builder';
 import { DEG, Profile, TAU, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, raceway, regionBounds, regionHeights, seams, sootRamp, stringers, umbilicalPlate, ventPort } from './common';
+import { accessDoor, band, bandRegion, buildModel, decalRegion, hash01, parseList, raceway, regionBounds, regionHeights, seams, sootRamp, stringers, umbilicalPlate, ventPort } from './common';
 import { Params, staticPose, type PartGenerator } from './types';
 
 const mat = (id: string, where: string): MatId => {
@@ -138,7 +138,8 @@ export const stageTank: PartGenerator = ({ def, params }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        m.frost = outer ? frostAt(y) : 0;
+        // Frost is patchy: thinner where the barrel panels differ, never a uniform coat.
+        m.frost = outer ? frostAt(y) * (0.72 + 0.28 * hash01(Math.round(y * 2.3), Math.round(_phi * 9))) : 0;
         m.soot = outer ? 0.12 + 0.88 * sootRamp(y, 0, sootTop) : y < aftTop + 1 ? 0.6 : 0;
         m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;

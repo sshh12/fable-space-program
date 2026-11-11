@@ -35,12 +35,12 @@ export function envRadiance(kind: LabEnvKind, d: Vec3, up: Vec3, sun: Vec3, out:
     const k = kind === 'night' ? 0.00002 : 0.03 + 0.97 * day;
     if (c >= 0) {
       const t = Math.pow(c, 0.42);
-      const hz = 9500 * k;
-      const zn = 3200 * k;
-      // Horizon haze is nearly white, the zenith is blue.
-      out[0] = hz * 0.96 * (1 - t) + zn * 0.36 * t;
-      out[1] = hz * 1.0 * (1 - t) + zn * 0.62 * t;
-      out[2] = hz * 1.06 * (1 - t) + zn * 1.55 * t;
+      const hz = 11500 * k;
+      const zn = 5200 * k;
+      // Horizon haze is pale, the zenith is blue.
+      out[0] = hz * 0.8 * (1 - t) + zn * 0.3 * t;
+      out[1] = hz * 0.93 * (1 - t) + zn * 0.56 * t;
+      out[2] = hz * 1.12 * (1 - t) + zn * 1.6 * t;
       const g = Math.max(0, v3.dot(d, sun));
       const glow = 5200 * k * Math.pow(g, 12) + 1600 * k * Math.pow(g, 3);
       out[0] += glow * 1.05;
@@ -50,10 +50,10 @@ export function envRadiance(kind: LabEnvKind, d: Vec3, up: Vec3, sun: Vec3, out:
       // Ground: sunlit coast of dark lava and scrub, blended into the haze at the horizon.
       const lit = (E_SUN * 0.78 * Math.max(0, sunEl)) / Math.PI + 4500 * k;
       const h = Math.exp(c * 9);
-      const hz = 9500 * k;
-      out[0] = lit * 0.16 * (1 - h) + hz * 0.96 * h;
-      out[1] = lit * 0.145 * (1 - h) + hz * h;
-      out[2] = lit * 0.12 * (1 - h) + hz * 1.06 * h;
+      const hz = 11500 * k;
+      out[0] = lit * 0.16 * (1 - h) + hz * 0.8 * h;
+      out[1] = lit * 0.145 * (1 - h) + hz * 0.93 * h;
+      out[2] = lit * 0.12 * (1 - h) + hz * 1.12 * h;
     }
     return;
   }
@@ -117,17 +117,17 @@ struct LabEnv { up: vec4f, sun: vec4f }   // up.w = kind (0 day, 1 night), sun.w
   let day = clamp((sunEl + 0.1) / 0.35, 0.0, 1.0);
   let k = select(0.03 + 0.97 * day, 0.00002, env.up.w > 0.5);
   var L = vec3f(0.0);
-  let hz = 9500.0 * k;
+  let hz = 11500.0 * k;
   if (c >= 0.0) {
     let t = pow(c, 0.42);
-    let zn = 3200.0 * k;
-    L = hz * vec3f(0.96, 1.0, 1.06) * (1.0 - t) + zn * vec3f(0.36, 0.62, 1.55) * t;
+    let zn = 5200.0 * k;
+    L = hz * vec3f(0.8, 0.93, 1.12) * (1.0 - t) + zn * vec3f(0.3, 0.56, 1.6) * t;
     let g = max(dot(d, env.sun.xyz), 0.0);
     L += (5200.0 * k * pow(g, 12.0) + 1600.0 * k * pow(g, 3.0)) * vec3f(1.05, 1.0, 0.9);
   } else {
     let lit = 128000.0 * 0.78 * max(sunEl, 0.0) / PI + 4500.0 * k;
     let h = exp(c * 9.0);
-    L = lit * vec3f(0.16, 0.145, 0.12) * (1.0 - h) + hz * vec3f(0.96, 1.0, 1.06) * h;
+    L = lit * vec3f(0.16, 0.145, 0.12) * (1.0 - h) + hz * vec3f(0.8, 0.93, 1.12) * h;
   }
   return vec4f(writeHdr(L * frame.exposure.x), 1.0);
 }

@@ -121,12 +121,12 @@ export const fairingPetals: PartGenerator = ({ def, params }) => {
           tag: 'frame',
         });
       }
-      for (const edge of [gap + 0.012, sector - gap - 0.012]) {
+      for (const edge of [gap + 0.024, sector - gap - 0.024]) {
         beam(b, polar(R - wall - 0.035, edge, 0.12), polar(R - wall - 0.035, edge, yS), 0.07, 0.05, [Math.sin(edge), 0, Math.cos(edge)], 'edge-beam');
         if (b.lod === 0) {
           b.mat('steel-dark');
           const latches = 7;
-          for (let i = 0; i < latches; i++) b.at(xf.mul(xf.translate(...polar(R - wall - 0.09, edge, 0.5 + ((yS - 0.8) * i) / (latches - 1))), xf.rotY(edge)), () => box(b, 0.1, 0.14, 0.06, [0, 0, 0], 'latch'));
+          for (let i = 0; i < latches; i++) b.at(xf.mul(xf.translate(...polar(R - wall - 0.09, edge, 0.5 + ((yS - 0.8) * i) / (latches - 1))), xf.rotY(edge)), () => box(b, 0.08, 0.14, 0.06, [0, 0, 0], 'latch'));
           b.mat('alu-machined');
         }
       }

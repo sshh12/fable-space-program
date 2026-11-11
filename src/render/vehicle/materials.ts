@@ -68,7 +68,10 @@ const SPECS = {
   // ---- composites, insulation, thermal protection
   carbon: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.18, tile: [0.25, 0.25], tex: { a: 'carbon_albedo', n: 'carbon_n', o: 'carbon_orm' } },
   'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
+  /** The same foam where it has darkened in the sun (older closeouts, the windward side). */
+  'foam-aged': { color: [0.8, 0.7, 0.6], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },
   'foam-white': { color: [1, 1, 1], metallic: 0, roughness: 0.82, tile: [2.4, 2.4], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
+  'foam-white-b': { color: [0.93, 0.92, 0.9], metallic: 0, roughness: 0.86, tile: [2.4, 2.4], tex: { a: 'foamwhite_albedo', n: 'foam_n', o: 'foam_orm' } },
   cork: { color: [1, 1, 1], metallic: 0, roughness: 0.94, tile: [0.7, 0.7], tex: { a: 'cork_albedo', n: 'cork_n', o: 'cork_orm' } },
   ablator: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [1.2, 1.2], tex: { a: 'ablator_albedo', n: 'ablator_n', o: 'ablator_orm' } },
   'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [0.72, 0.72], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },

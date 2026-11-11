@@ -3,7 +3,7 @@
   "params": {
     "tankRadius": 1,
     "tankDistance": 1.9,
-    "coreRadius": 1.72,
+    "coreRadius": 2.1,
     "lobes": 4,
     "wellRadius": 0.96,
     "foil": "mli-gold",

@@ -18,8 +18,9 @@ export interface MeshReport {
   leaks: [number, string, number][];
   /** Boundary edges of the components declared open, per tag. */
   openEdges: Record<string, number>;
-  /** Triangles whose winding disagrees with their vertex normals. */
+  /** Triangles whose winding disagrees with their vertex normals, in total and per component tag. */
   flipped: number;
+  flippedByTag: Record<string, number>;
   /** Closed components with a non-positive signed volume (built inside-out): [component, tag]. */
   insideOut: [number, string][];
 }
@@ -44,7 +45,7 @@ export function weld(positions: Float32Array, eps = 2e-5): Uint32Array {
 export function checkMesh(mesh: BuiltMesh): MeshReport {
   const { positions: P, normals: N, tangents: T, indices: I } = mesh;
   const nv = P.length / 3;
-  const report: MeshReport = { vertices: nv, triangles: I.length / 3, badNormals: 0, badTangents: 0, degenerate: 0, leaks: [], openEdges: {}, flipped: 0, insideOut: [] };
+  const report: MeshReport = { vertices: nv, triangles: I.length / 3, badNormals: 0, badTangents: 0, degenerate: 0, leaks: [], openEdges: {}, flipped: 0, flippedByTag: {}, insideOut: [] };
   const volume = new Float64Array(mesh.meta.closed.length);
   const centre = new Float64Array(mesh.meta.closed.length * 3);
   const centreN = new Uint32Array(mesh.meta.closed.length);
@@ -96,7 +97,11 @@ export function checkMesh(mesh: BuiltMesh): MeshReport {
       continue;
     }
     const comp = mesh.meta.triComponent[t]!;
-    if (gx * (N[a * 3]! + N[b * 3]! + N[c * 3]!) + gy * (N[a * 3 + 1]! + N[b * 3 + 1]! + N[c * 3 + 1]!) + gz * (N[a * 3 + 2]! + N[b * 3 + 2]! + N[c * 3 + 2]!) <= 0) report.flipped++;
+    if (gx * (N[a * 3]! + N[b * 3]! + N[c * 3]!) + gy * (N[a * 3 + 1]! + N[b * 3 + 1]! + N[c * 3 + 1]!) + gz * (N[a * 3 + 2]! + N[b * 3 + 2]! + N[c * 3 + 2]!) <= 0) {
+      report.flipped++;
+      const tag = mesh.meta.tags[comp] ?? '';
+      report.flippedByTag[tag] = (report.flippedByTag[tag] ?? 0) + 1;
+    }
     {
       // Signed volume about the component's centroid (numerically safe far from the origin).
       const n = centreN[comp]!;
