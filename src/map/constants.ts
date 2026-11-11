@@ -102,7 +102,7 @@ export const TOOLTIP_OFFSET_PX = 18;
  * covered line cell, in CSS px^2 of covered UI per unit of line weight (LineGrid).
  */
 export const TOOLTIP_LINE_CLEARANCE_PX = 6;
-export const TOOLTIP_LINE_COST = 15;
+export const TOOLTIP_LINE_COST = 22;
 
 /** Icons drawn for bodies and vessels whose projected diameter is below this. */
 export const SMALL_OBJECT_PX = 6;
@@ -134,7 +134,7 @@ export const MARKER_MIN_PATCH_PX = 40;
 export const SURFACE_TWIN_MIN_PX = 12;
 export const NODE_SMALL_RADIUS_PX = 5.5;
 /** Line occupancy grid cell for label, tooltip and panel placement. */
-export const GRID_CELL_PX = 8;
+export const GRID_CELL_PX = 12;
 /** Label plate padding (horizontal, vertical) and leader line width. */
 export const PLATE_PAD_X_PX = 4;
 export const PLATE_PAD_Y_PX = 1;

@@ -152,7 +152,7 @@ export interface LabelBox {
 /** The outer ring of candidates lies this many device px (per CSS px) further out. */
 export const FAR_RING_PX = 22;
 /** Cost of a candidate per unit of covered line weight (LineGrid.cost): one trajectory across a label ~ 5 places. */
-const LINE_COST = 0.1;
+const LINE_COST = 0.15;
 /** Cost of a candidate that lies nearer to another icon than to its own anchor (it would read as that icon's). */
 const FOREIGN_COST = 9;
 

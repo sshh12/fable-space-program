@@ -568,9 +568,14 @@ export class SceneBuilder {
   private builds = 0;
   /** Per body: visible-limb radius and icon colour (from the definitions; computed once). */
   private readonly bodyStyles = new Map<string, { radius: number; vis: number; tint: Rgba }>();
-  /** Occupancy bitmap of the coincidence test (suppressCoincident), reused. */
+  /** Occupancy bitmap of the coincidence test (suppressCoincident), reused; the cells marked in the last build. */
   private occ = new Uint8Array(0);
-  private readonly dash = new Float64Array(4);
+  private marked = new Int32Array(4096);
+  private nMarked = 0;
+  private readonly clipT = new Float64Array(2);
+  private readonly dash = new Float64Array(5);
+  /** Arc length from the node at each vertex parameter of a dashed line, by line id (dashAlongPath). */
+  private readonly arcCache = new Map<string, { conic: ConicElements | null; u0: number; n: number; u: Float64Array; arc: Float64Array; u2: Float64Array; arc2: Float64Array }>();
   /** Lines of the last build that re-used breakpoints / were sampled afresh (lab statistics and tests). */
   reuse = { resampled: 0, fresh: 0 };
 
@@ -1225,14 +1230,58 @@ export class SceneBuilder {
     const curve = rec.curve;
     let arc = 0;
     const end = rec.start + rec.count;
+    // Arc lengths of the last build at the same parameters (kept breakpoints give the same vertices frame after
+    // frame): taken over while the patch's conic and start are unchanged, integrated afresh otherwise.
+    const conic = rec.patch?.conic ?? null;
+    let cache = this.arcCache.get(rec.id);
+    const valid = curve !== null && conic !== null && cache !== undefined && cache.conic === conic && cache.u0 === v.u[rec.start];
+    if (!cache) {
+      if (this.arcCache.size > 64) this.arcCache.clear();
+      this.arcCache.set(rec.id, (cache = { conic, u0: 0, n: 0, u: new Float64Array(64), arc: new Float64Array(64), u2: new Float64Array(64), arc2: new Float64Array(64) }));
+    }
+    if (cache.u2.length < rec.count) {
+      cache.u2 = new Float64Array(2 * rec.count);
+      cache.arc2 = new Float64Array(2 * rec.count);
+    }
+    const nu = cache.u2;
+    const narc = cache.arc2;
+    let p = 0;
+    // the speed |dr/du| at the previous vertex (NaN: not evaluated yet)
+    let f0 = NaN;
     for (let j = rec.start; j < end; j++) {
+      const u = v.u[j]!;
       if (j > rec.start) {
-        if (curve) arc += arcLength(curve, v.u[j - 1]!, v.u[j]!, this.dash);
-        else arc += Math.hypot(v.vx[j]! - v.vx[j - 1]!, v.vy[j]! - v.vy[j - 1]!, v.vz[j]! - v.vz[j - 1]!);
+        let hit = false;
+        if (valid) {
+          while (p < cache.n && cache.u[p]! < u - 1e-12) p++;
+          if (p < cache.n && Math.abs(cache.u[p]! - u) <= 1e-12) {
+            arc = cache.arc[p]!;
+            hit = true;
+            f0 = NaN;
+          }
+        }
+        if (!hit) {
+          if (curve) {
+            const u0 = v.u[j - 1]!;
+            if (Number.isNaN(f0)) f0 = conicSpeed(curve, u0, this.dash);
+            arc += arcLength(curve, u0, u, f0, this.dash);
+            f0 = this.dash[4]!;
+          } else arc += Math.hypot(v.vx[j]! - v.vx[j - 1]!, v.vy[j]! - v.vy[j - 1]!, v.vz[j]! - v.vz[j - 1]!);
+        }
       }
       v.len[j] = arc;
       v.oct[j] = Math.floor(Math.log2(Math.max(1e-3, k * -v.vz[j]!)));
+      nu[j - rec.start] = u;
+      narc[j - rec.start] = arc;
     }
+    // this build's table becomes the cache (the two buffers swap)
+    cache.u2 = cache.u;
+    cache.arc2 = cache.arc;
+    cache.u = nu;
+    cache.arc = narc;
+    cache.n = rec.count;
+    cache.conic = conic;
+    cache.u0 = v.u[rec.start]!;
   }
 
   /**
@@ -1240,12 +1289,18 @@ export class SceneBuilder {
    * screen box of the trajectories) holds what has been drawn, in priority order: the current trajectory up to
    * the first node (the path the vessel is on), then the planned patches in time order, then the current
    * trajectory after the first node (the path it leaves). A segment of a later line that runs within about
-   * COINCIDENT_PX of drawn cells for most of its length is not drawn (its `seg` flag is cleared), so coincident
-   * laps read as one stroke and a node with little delta-v shows one orbit, not interleaved dashes. The segment
-   * is only hidden (VertexArrays.cover): it can still be clicked and a node still slides along it.
+   * COINCIDENT_PX of drawn cells for most of its on-screen length is not drawn, so coincident laps read as one
+   * stroke and a node with little delta-v shows one orbit, not interleaved dashes. The segment is only hidden
+   * (VertexArrays.cover): it can still be clicked and a node still slides along it. Segments are clipped to the
+   * box before they are walked (a chord far off screen costs nothing), and only the marked cells are cleared
+   * for the next build.
    */
   private suppressCoincident(scene: MapScene, firstNodeUt: number): void {
     const lines = scene.lines;
+    const occ0 = this.occ;
+    // clear what the previous build marked
+    for (let q = 0; q < this.nMarked; q++) occ0[this.marked[q]!] = 0;
+    this.nMarked = 0;
     let planned = 0;
     for (const l of lines) if (l.kind === 'planned') planned++;
     if (planned === 0) return;
@@ -1253,7 +1308,8 @@ export class SceneBuilder {
     const W = scene.proj.width;
     const H = scene.proj.height;
     const cs = (COINCIDENT_PX / 2) * scene.proj.pxScale;
-    // screen box of the trajectories' drawn vertices
+    const inv = 1 / cs;
+    // screen box of the trajectories' drawn vertices, clipped to the screen
     let x0 = Infinity;
     let y0 = Infinity;
     let x1 = -Infinity;
@@ -1275,61 +1331,78 @@ export class SceneBuilder {
     x1 = Math.min(W, x1) + 2 * cs;
     y1 = Math.min(H, y1) + 2 * cs;
     if (!(x1 > x0 && y1 > y0)) return;
-    const cols = Math.ceil((x1 - x0) / cs);
-    const rows = Math.ceil((y1 - y0) / cs);
+    const cols = Math.ceil((x1 - x0) * inv);
+    const rows = Math.ceil((y1 - y0) * inv);
     const n = cols * rows;
     if (n > 4e6) return;
     if (this.occ.length < n) this.occ = new Uint8Array(Math.ceil(n * 1.25));
     const occ = this.occ;
-    occ.fill(0, 0, n);
-    const cellOf = (x: number, y: number): number => {
-      const i = Math.floor((x - x0) / cs);
-      const j = Math.floor((y - y0) / cs);
-      return i < 0 || j < 0 || i >= cols || j >= rows ? -1 : j * cols + i;
-    };
+    const clip = this.clipT;
+    // the part of segment i inside the box [x0, x1] x [y0, y1] (Liang-Barsky), as parameters clip[0..1]
+    const clipSeg = (ax: number, ay: number, dx: number, dy: number): boolean => clipToBox(ax, ay, dx, dy, x0, y0, x1, y1, clip);
     const mark = (i: number): void => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const dx = v.sx[i + 1]! - ax;
       const dy = v.sy[i + 1]! - ay;
-      const steps = Math.min(4096, Math.ceil(Math.hypot(dx, dy) / (0.7 * cs)));
-      for (let s = 0; s <= steps; s++) {
-        const c = cellOf(ax + (dx * s) / steps, ay + (dy * s) / steps);
-        if (c >= 0) occ[c] = 1;
+      if (!clipSeg(ax, ay, dx, dy)) return;
+      const t0 = clip[0]!;
+      const t1 = clip[1]!;
+      // one step per 2 cells: a skipped cell is still within the 3 x 3 neighbourhood the test looks at
+      const steps = Math.max(1, Math.ceil((Math.sqrt(dx * dx + dy * dy) * (t1 - t0)) / (2 * cs)));
+      let gx = (ax + dx * t0 - x0) * inv;
+      let gy = (ay + dy * t0 - y0) * inv;
+      const sx = (dx * (t1 - t0) * inv) / steps;
+      const sy = (dy * (t1 - t0) * inv) / steps;
+      for (let s = 0; s <= steps; s++, gx += sx, gy += sy) {
+        const ci = gx | 0;
+        const cj = gy | 0;
+        if (ci < 0 || cj < 0 || ci >= cols || cj >= rows) continue;
+        const c = cj * cols + ci;
+        if (occ[c] === 0) {
+          occ[c] = 1;
+          if (this.nMarked >= this.marked.length) {
+            const grown = new Int32Array(this.marked.length * 2);
+            grown.set(this.marked);
+            this.marked = grown;
+          }
+          this.marked[this.nMarked++] = c;
+        }
       }
     };
-    // most of the segment within one cell of drawn cells
+    // any drawn cell in the 3 x 3 neighbourhood (unrolled; at the box edge a read wraps into the next row or
+    // falls outside the array, which only concerns points in the off-screen padding)
+    const near = (gx: number, gy: number): boolean => {
+      const c = (gy | 0) * cols + (gx | 0);
+      const u = c - cols;
+      const d = c + cols;
+      return occ[u - 1] === 1 || occ[u] === 1 || occ[u + 1] === 1 || occ[c - 1] === 1 || occ[c] === 1 || occ[c + 1] === 1 || occ[d - 1] === 1 || occ[d] === 1 || occ[d + 1] === 1;
+    };
+    // three quarters of the segment's on-screen part within a cell of drawn cells (a sample per 3 cells, the
+    // middle first: most segments are decided by one or two lookups)
     const covered = (i: number): boolean => {
       const ax = v.sx[i]!;
       const ay = v.sy[i]!;
       const dx = v.sx[i + 1]! - ax;
       const dy = v.sy[i + 1]! - ay;
-      const steps = Math.min(4096, Math.max(2, Math.ceil(Math.hypot(dx, dy) / cs)));
-      let hit = 0;
-      let off = 0;
+      if (!clipSeg(ax, ay, dx, dy)) return false;
+      const t0 = clip[0]!;
+      const t1 = clip[1]!;
+      const gx0 = (ax + dx * t0 - x0) * inv;
+      const gy0 = (ay + dy * t0 - y0) * inv;
+      const gdx = dx * (t1 - t0) * inv;
+      const gdy = dy * (t1 - t0) * inv;
+      if (!near(gx0 + gdx * 0.5, gy0 + gdy * 0.5)) return false;
+      const cells = Math.sqrt(gdx * gdx + gdy * gdy);
+      // a short segment (most of them): its two ends decide
+      if (cells <= 6) return near(gx0, gy0) && near(gx0 + gdx, gy0 + gdy);
+      const steps = Math.min(256, Math.max(2, Math.ceil(cells / 3)));
+      const allowed = 0.25 * (steps + 1);
+      let miss = 0;
       for (let s = 0; s <= steps; s++) {
-        const x = ax + (dx * s) / steps;
-        const y = ay + (dy * s) / steps;
-        if (x < 0 || y < 0 || x > W || y > H) {
-          off++;
-          continue;
-        }
-        const ci = Math.floor((x - x0) / cs);
-        const cj = Math.floor((y - y0) / cs);
-        let near = false;
-        for (let b = Math.max(0, cj - 1); b <= Math.min(rows - 1, cj + 1) && !near; b++) {
-          const row = b * cols;
-          for (let a = Math.max(0, ci - 1); a <= Math.min(cols - 1, ci + 1); a++) {
-            if (occ[row + a] === 1) {
-              near = true;
-              break;
-            }
-          }
-        }
-        if (near) hit++;
+        if (!near(gx0 + (gdx * s) / steps, gy0 + (gdy * s) / steps) && ++miss > allowed) return false;
       }
-      const on = steps + 1 - off;
-      return on > 0 && hit >= 0.75 * on;
+      return true;
     };
     // 1. the current trajectory up to the first node: drawn as it is, and the reference for everything else
     for (const l of lines) {
@@ -1341,12 +1414,16 @@ export class SceneBuilder {
       for (const l of lines) {
         if (l.kind !== (pass === 0 ? 'planned' : 'current')) continue;
         const end = l.start + l.count - 1;
+        let any = false;
         for (let i = l.start; i < end; i++) {
           if (v.seg[i] !== 1) continue;
           if (pass === 1 && !(v.t[i + 1]! > firstNodeUt)) continue;
-          if (covered(i)) v.cover[i] = 1;
+          if (covered(i)) {
+            v.cover[i] = 1;
+            any = true;
+          }
         }
-        this.cleanCover(l, (DASH_PERIOD_PX * scene.proj.pxScale) | 0);
+        if (any) this.cleanCover(l, (DASH_PERIOD_PX * scene.proj.pxScale) | 0);
         if (pass === 0) for (let i = l.start; i < end; i++) if (v.seg[i] === 1 && v.cover[i] === 0) mark(i);
       }
     }
@@ -1425,7 +1502,9 @@ export class SceneBuilder {
         const runStart = i;
         let len = 0;
         while (i < end && v.seg[i] === 1 && v.cover[i] === target) {
-          len += Math.hypot(v.sx[i + 1]! - v.sx[i]!, v.sy[i + 1]! - v.sy[i]!);
+          const ex = v.sx[i + 1]! - v.sx[i]!;
+          const ey = v.sy[i + 1]! - v.sy[i]!;
+          len += Math.sqrt(ex * ex + ey * ey);
           i++;
         }
         const before = runStart > l.start && v.seg[runStart - 1] === 1 && v.cover[runStart - 1] !== target;
@@ -1543,20 +1622,44 @@ function sameShape(e: number, curve: ViewConic): boolean {
 }
 
 /**
- * Arc length (m) of a placed conic between sampling parameters u0 and u1: composite Simpson over panels of at
- * most ARC_PANEL in the parameter, of the speed |dr/du| (exact for a circle; for e = 0.97 the relative error of
- * a 0.05 rad panel is below 1e-6). `scratch` holds four floats.
+ * Arc length (m) of a placed conic between sampling parameters u0 and u1, given the speed f0 = |dr/du| at u0:
+ * composite Simpson over panels of at most ARC_PANEL in the parameter (exact for a circle; for e = 0.97 the
+ * relative error of a 0.05 rad panel is below 1e-6). The speed at u1 is left in scratch[4] for the next piece.
+ * `scratch` holds five floats.
  */
 const ARC_PANEL = 0.05;
-function arcLength(curve: ViewConic, u0: number, u1: number, scratch: Float64Array): number {
+function arcLength(curve: ViewConic, u0: number, u1: number, f0: number, scratch: Float64Array): number {
   const span = u1 - u0;
+  const f1 = conicSpeed(curve, u1, scratch);
+  scratch[4] = f1;
   if (!(Math.abs(span) > 0)) return 0;
   const n = Math.min(4096, Math.max(1, Math.ceil(Math.abs(span) / ARC_PANEL)));
   const h = span / n;
-  let sum = conicSpeed(curve, u0, scratch) + conicSpeed(curve, u1, scratch);
+  let sum = f0 + f1;
   for (let i = 1; i < n; i++) sum += 2 * conicSpeed(curve, u0 + i * h, scratch);
   for (let i = 0; i < n; i++) sum += 4 * conicSpeed(curve, u0 + (i + 0.5) * h, scratch);
   return Math.abs((h / 6) * sum);
+}
+
+/** Clip the segment (a, a + d) to a box: true and the parameter range in out[0..1] when part of it is inside. */
+function clipToBox(ax: number, ay: number, dx: number, dy: number, x0: number, y0: number, x1: number, y1: number, out: Float64Array): boolean {
+  out[0] = 0;
+  out[1] = 1;
+  return clipEdge(-dx, ax - x0, out) && clipEdge(dx, x1 - ax, out) && clipEdge(-dy, ay - y0, out) && clipEdge(dy, y1 - ay, out) && out[1]! > out[0]!;
+}
+
+/** One Liang-Barsky boundary: narrows the range out[0..1]; false when nothing is left. */
+function clipEdge(p: number, q: number, out: Float64Array): boolean {
+  if (p === 0) return q >= 0;
+  const r = q / p;
+  if (p < 0) {
+    if (r > out[1]!) return false;
+    if (r > out[0]!) out[0] = r;
+  } else {
+    if (r < out[0]!) return false;
+    if (r < out[1]!) out[1] = r;
+  }
+  return true;
 }
 
 /** |dr/du| of a placed conic at parameter u (m per unit parameter). */

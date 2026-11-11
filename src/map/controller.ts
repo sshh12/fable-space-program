@@ -340,6 +340,7 @@ export class MapController implements MapView {
     rep: new Int32Array(64),
     px: new Float64Array(64),
     py: new Float64Array(64),
+    pr: new Float64Array(64),
     pi: new Int32Array(64),
     groups: [] as ClusterGroup[],
     stamp: 0,
@@ -1417,6 +1418,9 @@ export class MapController implements MapView {
     const qx = pool.px;
     const qy = pool.py;
     const qi = pool.pi;
+    if (pool.pr.length < qx.length) pool.pr = new Float64Array(qx.length);
+    // a body icon is larger than the others: its cluster reaches to its edge
+    const qr = pool.pr;
     let m = 0;
     for (let i = 0; i < n; i++) {
       const p = pts[i]!;
@@ -1424,17 +1428,17 @@ export class MapController implements MapView {
       qx[m] = p.x;
       qy[m] = p.y;
       qi[m] = i;
+      qr[m] = p.shape === ICON.bodyDisc ? p.r : 0;
       m++;
     }
     for (let a = 0; a < m; a++) {
       const ax = qx[a]!;
       const ay = qy[a]!;
-      // a body icon is larger than the others: its cluster reaches to its edge
-      const ra = pts[qi[a]!]!.shape === ICON.bodyDisc ? pts[qi[a]!]!.r : 0;
+      const ra = qr[a]!;
       for (let b = a + 1; b < m; b++) {
         const dx = ax - qx[b]!;
         const dy = ay - qy[b]!;
-        const rb = pts[qi[b]!]!.shape === ICON.bodyDisc ? pts[qi[b]!]!.r : 0;
+        const rb = qr[b]!;
         const lim = reach + ra + rb;
         if (dx * dx + dy * dy < (ra + rb > 0 ? lim * lim : reach2)) {
           const r0 = find(qi[a]!);
