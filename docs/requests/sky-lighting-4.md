@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 81a26d0: the Magellanic Clouds' colour; the nebulae declined, see Resolution)
 From: sky-lighting
 Owner path: tools/bake/sky (the Milky Way cube `data/sky/milkyway-*.rgb9e5`)
 Blocking: no
@@ -51,3 +51,23 @@ some 230,000 more stars, 9 MB at 40 B per star) and take those stars out of the 
 catalogue to V 6.5; the sky draws them as point images with the photometric PSF and needs no code change (the
 star count comes from the manifest; the whole background pass, 8,920 stars and the Milky Way, is 0.014 ms p99 at
 1440p today, so the star budget has room; the count would be measured when the data lands).
+
+## Resolution
+
+The addendum (the magenta Clouds) is done (`81a26d0`), the nebulae are declined for this pass.
+
+- The SVS Milky Way layer does carry an emission-line tint in both Clouds: mean chroma of their texels before,
+  normalised to green, LMC (1.10, 1.00, 1.22), SMC (1.04, 1.00, 1.26). `tools/bake/sky/clouds_colour.py`
+  keeps every texel's luminance and moves its chroma, inside a soft disc about each Cloud (LMC 4.5 deg full,
+  fading out by 6.5 deg; SMC 2.0 / 3.2 deg; J2000), to the colour of a B-V 0.5 star field through the star
+  catalogue's own rule (`stars.bv_to_temperature`, `blackbody_srgb`): (1.051, 0.983, 1.017), so the Clouds
+  are the colour of their stars, R >= G >= B x 0.9 as asked. 63,729 texels of face nz; mips rebuilt; format,
+  orientation, `luminanceScale` and the band luminance elsewhere unchanged; `manifest.milkyWay.cloudsColour`
+  records it (a second run is a no-op).
+- The nebulae (M42 / M43, Carina, M8, M31, ...) are declined for this pass: each needs a freely licensed
+  photographic source placed by its J2000 coordinates and scaled to its literature surface brightness, a
+  colour judgement per object, and the removal of that image's own stars against the catalogue's (or they
+  appear twice). That is a careful bake of its own, not a close-out step; it is listed for the lead in
+  `docs/handoff/core-support.md`. Nothing in your package can stand in for it (the cube is the only place
+  extended light lives).
+Re-shoot `pbr-spheres-leo-night` (the Large Cloud in the upper left of the frame centre).
