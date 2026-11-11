@@ -14,6 +14,7 @@ import { coreOf } from '@/render/core';
 import { BatchMipGenerator, LayerPool } from './gpuPools';
 import { GRID_VERTS } from './lod';
 import { BodyQuadtree, NIGHT_DARK, TILE_EMPTY, TILE_LOADING, TILE_QUEUED, TILE_READY, TILE_UPLOADING, type TileNode } from './quadtree';
+import { NIGHT_SIZE } from './nightImage';
 import { ownsData } from './records';
 import type { TileJob, TileResult, WorkerInit, WorkerResponse } from './workerProtocol';
 
@@ -33,7 +34,7 @@ export interface StreamerOptions {
   tileLayers: number;
   /** Layers of the albedo and aux arrays (one of each per tile with image data of its own). */
   imageLayers: number;
-  /** Layers of the night-light array (one channel; dark tiles take none). */
+  /** Layers of the night-light array (one channel with a border texel; dark tiles take none). */
   nightLayers: number;
   /** Upload budget per frame: tiles and milliseconds, whichever is reached first. */
   uploadTiles: number;
@@ -46,7 +47,7 @@ export const DEFAULT_STREAMER_OPTIONS: StreamerOptions = {
   workers: Math.max(1, Math.min(8, (globalThis.navigator?.hardwareConcurrency ?? 4) - 2)),
   tileLayers: 1280,
   imageLayers: 1024,
-  nightLayers: 512,
+  nightLayers: 384,
   uploadTiles: 8,
   uploadMs: 2,
   workerCacheBytes: 96 * 1024 * 1024,
@@ -166,7 +167,7 @@ export class TileStreamer {
     this.aux = new LayerPool(ctx, 'terrain.aux', 'rg8unorm', IMAGE_SIZE, o.imageLayers, true, 2);
     // Night lights keep one channel (the sRGB-encoded red of the image; the colour is a per-body tint), so that
     // every always-resident tile can hold its lights within the VRAM budget.
-    this.night = new LayerPool(ctx, 'terrain.night', 'r8unorm', IMAGE_SIZE, o.nightLayers, true, 1);
+    this.night = new LayerPool(ctx, 'terrain.night', 'r8unorm', NIGHT_SIZE, o.nightLayers, true, 1);
     this.s.poolBytes = this.heights.bytes + this.normals.bytes + this.albedo.bytes + this.aux.bytes + this.night.bytes;
     this.mips = new BatchMipGenerator(ctx);
 
@@ -320,7 +321,6 @@ export class TileStreamer {
 
   private discard(a: Arrived): void {
     a.result.albedo?.close();
-    a.result.night?.close();
     a.node.state = TILE_EMPTY;
   }
 
@@ -382,8 +382,7 @@ export class TileStreamer {
       if (r.night) {
         const nl = this.night.alloc();
         n.nightLayer = nl;
-        device.queue.copyExternalImageToTexture({ source: r.night }, { texture: this.night.texture, origin: [0, 0, nl], premultipliedAlpha: false }, [IMAGE_SIZE, IMAGE_SIZE]);
-        r.night.close();
+        device.queue.writeTexture({ texture: this.night.texture, origin: [0, 0, nl] }, r.night, { bytesPerRow: NIGHT_SIZE, rowsPerImage: NIGHT_SIZE }, [NIGHT_SIZE, NIGHT_SIZE, 1]);
         fresh.night.push(nl);
       } else if (r.nightDark) {
         n.nightLayer = NIGHT_DARK;
@@ -518,7 +517,6 @@ export class TileStreamer {
     for (const w of this.workers) w.worker.terminate();
     for (const a of this.arrived) {
       a.result.albedo?.close();
-      a.result.night?.close();
     }
     this.arrived.length = 0;
     this.heights.destroy();

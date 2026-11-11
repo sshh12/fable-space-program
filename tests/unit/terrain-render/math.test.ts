@@ -8,6 +8,7 @@ import type { Vec3 } from '@/core/math';
 import { buildGridMesh } from '@/render/terrain/gridMesh';
 import { capMaxLevel, capMorph, fadeMorph, levelRange, lodK, LOD_K_MIN, morphFactor, morphWindow, warpLevelCap } from '@/render/terrain/lod';
 import { buildNoiseVolume, NOISE_SIZE } from '@/render/terrain/materials';
+import { borderSource, buildNightImage, NIGHT_SIZE } from '@/render/terrain/nightImage';
 import { coverageWeight, imageryLevelAt } from '@/render/terrain/records';
 import { buildRockMesh, ROCK_LODS, ROCK_RADIUS_MAX, ROCK_RADIUS_MIN, ROCK_VARIANTS } from '@/render/terrain/rockMesh';
 import { angleToFootprint, frameDir, shellBoundSphere, shellDistance, tileFrame, tileLocalF32 } from '@/render/terrain/tileMath';
@@ -288,3 +289,66 @@ function mulberry(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+describe('night-light images', () => {
+  // A smooth field over the sphere, sampled at the texel centres of any tile.
+  const field = (d: Vec3): number => Math.round(120 + 100 * Math.sin(40 * d.x + 1) * Math.cos(33 * d.y) * Math.sin(27 * d.z + 2));
+  const red = async (key: TileKey): Promise<Uint8Array> => {
+    const out = new Uint8Array(256 * 256);
+    for (let j = 0; j < 256; j++) for (let i = 0; i < 256; i++) out[j * 256 + i] = field(tileUvToDir(key, (i + 0.5) / 256, (j + 0.5) / 256));
+    return out;
+  };
+
+  it('border texels are the edge texels of the neighbours on the same face', () => {
+    const key: TileKey = { face: 2, level: 5, x: 7, y: 19 };
+    expect(borderSource(key, -1, 40)).toEqual({ key: { face: 2, level: 5, x: 6, y: 19 }, x: 255, y: 40 });
+    expect(borderSource(key, 256, 40)).toEqual({ key: { face: 2, level: 5, x: 8, y: 19 }, x: 0, y: 40 });
+    expect(borderSource(key, 13, 256)).toEqual({ key: { face: 2, level: 5, x: 7, y: 20 }, x: 13, y: 0 });
+    expect(borderSource(key, -1, -1)).toEqual({ key: { face: 2, level: 5, x: 6, y: 18 }, x: 255, y: 255 });
+  });
+
+  it('the bordered image continues the field across tile edges, cube edges and cube corners', async () => {
+    const keys: TileKey[] = [
+      { face: 0, level: 5, x: 19, y: 31 },
+      { face: 3, level: 5, x: 0, y: 0 },
+      { face: 5, level: 4, x: 15, y: 7 },
+      { face: 4, level: 6, x: 20, y: 33 },
+    ];
+    for (const key of keys) {
+      const img = (await buildNightImage(key, red))!;
+      expect(img.length).toBe(NIGHT_SIZE * NIGHT_SIZE);
+      const own = await red(key);
+      // Interior: the tile itself.
+      for (const [i, j] of [[0, 0], [255, 255], [17, 200]] as const) expect(img[(j + 1) * NIGHT_SIZE + i + 1]).toBe(own[j * 256 + i]);
+      // Border: the field one texel beyond the edge. The source texel lies within a texel of that point,
+      // and the field changes by a few counts per texel at these levels.
+      let worst = 0;
+      for (let t = -1; t <= 256; t++) {
+        for (const [i, j] of [[t, -1], [t, 256], [-1, t], [256, t]] as const) {
+          const want = field(tileUvToDir(key, (i + 0.5) / 256, (j + 0.5) / 256));
+          worst = Math.max(worst, Math.abs(img[(j + 1) * NIGHT_SIZE + i + 1]! - want));
+        }
+      }
+      expect(worst, `tile ${key.face}/${key.level}/${key.x}/${key.y}`).toBeLessThan(6);
+    }
+  });
+
+  it('a tile without light, border included, takes no texture; a missing neighbour repeats the edge', async () => {
+    const key: TileKey = { face: 2, level: 5, x: 7, y: 19 };
+    const dark = async (): Promise<Uint8Array> => new Uint8Array(256 * 256).fill(2);
+    expect(await buildNightImage(key, dark)).toBeNull();
+    // Light only in the edge column of the neighbour: this tile needs a texture for its border.
+    const edgeLit = async (k: TileKey): Promise<Uint8Array> => {
+      const out = new Uint8Array(256 * 256);
+      if (k.x === 6 && k.y === 19) for (let j = 0; j < 256; j++) out[j * 256 + 255] = 200;
+      return out;
+    };
+    const img = (await buildNightImage(key, edgeLit))!;
+    expect(img[(100 + 1) * NIGHT_SIZE]).toBe(200);
+    expect(img[(100 + 1) * NIGHT_SIZE + 1]).toBe(0);
+    const alone = async (k: TileKey): Promise<Uint8Array | null> => (k.x === 7 && k.y === 19 ? new Uint8Array(256 * 256).fill(90) : null);
+    const lone = (await buildNightImage(key, alone))!;
+    expect(lone[0]).toBe(90);
+    expect(lone[NIGHT_SIZE * NIGHT_SIZE - 1]).toBe(90);
+  });
+});

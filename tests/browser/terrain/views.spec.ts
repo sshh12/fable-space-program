@@ -6,7 +6,8 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 
 /**
  * The reviewed screenshots of the brief (out/screens/terrain/<view>.png). One page per body; every view
- * waits until the terrain has streamed in and settled. TERRAIN_VIEWS=name1,name2 limits the run.
+ * waits until the terrain has streamed in and settled. TERRAIN_VIEWS=name1,name2 limits the run;
+ * TERRAIN_QUERY="p.earth.nightClusterM=0&rocks=0" adds lab query parameters (A/B of a tunable).
  */
 const only = process.env.TERRAIN_VIEWS?.split(',').filter(Boolean);
 const wanted = VIEWS.filter((v) => !only || only.some((o) => v.name === o || (o.endsWith('*') && v.name.startsWith(o.slice(0, -1)))));
@@ -16,7 +17,7 @@ for (const body of ['earth', 'moon'] as const) {
   if (views.length === 0) continue;
   test(`reviewed views: ${body}`, async ({ page, pageLog }) => {
     test.setTimeout(20 * 60_000);
-    await openLab(page, { ...Object.fromEntries(new URLSearchParams(viewUrl(views[0]!).split('?')[1])), hud: 0 });
+    await openLab(page, { ...Object.fromEntries(new URLSearchParams(viewUrl(views[0]!).split('?')[1])), hud: 0, ...Object.fromEntries(new URLSearchParams(process.env.TERRAIN_QUERY ?? '')) });
     for (const v of views) {
       await applyView(page, v);
       await settle(page, 12);

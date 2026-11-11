@@ -1,13 +1,15 @@
 /// <reference lib="webworker" />
 /**
  * Terrain tile worker (module worker). Owns one terrain-core height authority fed by a fetch TileSource and
- * answers tile jobs: geometry + normal/material bake, and the decode of the image layers (albedo, night:
- * createImageBitmap; water mask, land cover: tileCodec).
+ * answers tile jobs: geometry + normal/material bake, and the decode of the image layers (albedo:
+ * createImageBitmap; night: one channel with a border from the neighbouring tiles, nightImage.ts; water
+ * mask, land cover: tileCodec).
  */
 import { deepestAvailable, layerHasTile, TILE_LAYER, type TileLayerManifest, type TileManifest, type TileSource } from '@/core/contracts/terrain';
-import type { TileKey } from '@/core/geo/cubeSphere';
+import { tileKeyString, type TileKey } from '@/core/geo/cubeSphere';
 import { decodeTileFile, IMAGE_TILE_SIZE } from '@/core/geo/tileCodec';
 import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { buildNightImage } from './nightImage';
 import { IMAGE_DECODE_OPTIONS, type TileJob, type TileResult, type WorkerInit, type WorkerRequest, type WorkerResponse } from './workerProtocol';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -99,14 +101,34 @@ async function imageTile(tileset: string, layer: string, key: TileKey): Promise<
 }
 
 let probe: OffscreenCanvasRenderingContext2D | null = null;
-/** True when no texel of the image is brighter than 3 / 255 (most night tiles: open ocean, wilderness). */
-function isDark(bitmap: ImageBitmap): boolean {
-  if (!probe) probe = new OffscreenCanvas(N, N).getContext('2d', { willReadFrequently: true })!;
-  probe.globalCompositeOperation = 'copy';
-  probe.drawImage(bitmap, 0, 0);
-  const px = probe.getImageData(0, 0, N, N).data;
-  for (let i = 0; i < px.length; i += 4) if (px[i]! > 3 || px[i + 1]! > 3 || px[i + 2]! > 3) return false;
-  return true;
+/**
+ * Red channel of a night image (the lights are warm white: red is their largest channel), cached: every
+ * tile is also read for the borders of the eight tiles around it.
+ */
+const redCache = new Map<string, Promise<Uint8Array | null>>();
+function nightRed(tileset: string, key: TileKey): Promise<Uint8Array | null> {
+  const id = `${tileset}/${tileKeyString(key)}`;
+  let p = redCache.get(id);
+  if (p) {
+    redCache.delete(id);
+    redCache.set(id, p);
+    return p;
+  }
+  p = (async () => {
+    const bitmap = await imageTile(tileset, TILE_LAYER.night, key);
+    if (!bitmap) return null;
+    if (!probe) probe = new OffscreenCanvas(N, N).getContext('2d', { willReadFrequently: true })!;
+    probe.globalCompositeOperation = 'copy';
+    probe.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const px = probe.getImageData(0, 0, N, N).data;
+    const out = new Uint8Array(N * N);
+    for (let i = 0; i < out.length; i++) out[i] = px[i * 4]!;
+    return out;
+  })();
+  redCache.set(id, p);
+  if (redCache.size > 96) redCache.delete(redCache.keys().next().value!);
+  return p;
 }
 
 async function runJob(job: TileJob): Promise<void> {
@@ -118,7 +140,7 @@ async function runJob(job: TileJob): Promise<void> {
   const manifest = manifests.get(job.tileset)!;
   let albedo: ImageBitmap | null = null;
   let aux: Uint8Array<ArrayBuffer> | null = null;
-  let night: ImageBitmap | null = null;
+  let night: Uint8Array<ArrayBuffer> | null = null;
   let nightDark = false;
   if (job.image) {
     aux = new Uint8Array(N * N * 2);
@@ -131,11 +153,7 @@ async function runJob(job: TileJob): Promise<void> {
     albedo = bitmap;
   }
   if (job.night) {
-    night = await imageTile(job.tileset, TILE_LAYER.night, job.key);
-    if (night && isDark(night)) {
-      night.close();
-      night = null;
-    }
+    night = await buildNightImage(job.key, (k) => nightRed(job.tileset, k));
     nightDark = night === null;
   }
   const heights = bake.geometry.heights as Float32Array<ArrayBuffer>;
@@ -159,7 +177,7 @@ async function runJob(job: TileJob): Promise<void> {
   const transfer: Transferable[] = [heights.buffer, normal.buffer];
   if (aux) transfer.push(aux.buffer);
   if (albedo) transfer.push(albedo);
-  if (night) transfer.push(night);
+  if (night) transfer.push(night.buffer);
   post(result, transfer);
 }
 

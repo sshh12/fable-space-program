@@ -12,7 +12,7 @@ import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
 import { coreOf, MAX_BODIES, type SceneBindings, type Tracked } from '@/render/core';
 import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
-import { loadLowResAlbedo } from './lowResAlbedo';
+import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap } from './lod';
 import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
@@ -252,7 +252,13 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const h = typeof site.location.padElevation === 'number' ? site.location.padElevation : provider.heightAt(def.id, dir);
       pads.push({ centre: v3.scale(dir, def.radius + h), radius: Math.min(params.apronRadiusM, site.pad.flatRadius) });
     }
-    const stream: StreamBody = { id: def.id, tileset: terrain.tileset, tree, albedoLayer, nightLayer: surface.nightLights ? manifest.layers[TILE_LAYER.night] : undefined };
+    // Night lights are read `nightMinMip` levels above the layer's deepest level: its source cells are
+    // coarser than its texels (the layer is baked at the imagery's resolution), and sampling whole tiles of
+    // the coarser level instead of low mips of the finer one gives every drawn tile the same ground
+    // resolution, 16 times fewer images per level skipped and as many fewer tile edges in the glow.
+    const nightSource = surface.nightLights ? manifest.layers[TILE_LAYER.night] : undefined;
+    const nightLayer = nightSource ? { ...nightSource, globalMaxLevel: Math.max(0, nightSource.globalMaxLevel - Math.round(params.nightMinMip)), coverage: {} } : undefined;
+    const stream: StreamBody = { id: def.id, tileset: terrain.tileset, tree, albedoLayer, nightLayer };
     const recordCtx: RecordContext = { tree, detailScales: [params.detailScale0M, params.detailScale1M, params.detailScale2M], orbitalWavelength: params.orbitalWavelengthM, pads, albedoLayer };
     const materialData = buildMaterialUniform(set, params);
     const materialBuffer = device.createBuffer({ label: `terrain.material.${def.id}`, size: MATERIAL_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -478,8 +484,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     u.set([1 / p.detailScale0M, 1 / p.detailScale1M, 1 / p.detailScale2M, p.detailFadeDistanceM], 48);
     u.set([p.orbitalWavelengthM, p.orbitalAlbedoStrength, p.orbitalReliefStrength, p.orbitalOctaves], 52);
     u.set([p.nightLuminance, p.nightOnCos, p.nightOffCos, b.stream.nightLayer ? 1 : 0], 56);
-    u.set([b.def.render.surface!.brdf === 'hapke' ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.hasOcean ? 1 : 0, b.tree.faceSize, 0], 60);
-    u.set([p.nightTintR, p.nightTintG, p.nightTintB, p.nightMinMip], 64);
+    u.set([b.def.render.surface!.brdf === 'hapke' ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.hasOcean ? 1 : 0, b.tree.faceSize, p.nightClusterM], 60);
+    u.set([p.nightTintR, p.nightTintG, p.nightTintB, p.nightClusterStrength], 64);
+    u.set([srgbToLinear(p.deepWaterSrgbR / 255), srgbToLinear(p.deepWaterSrgbG / 255), srgbToLinear(p.deepWaterSrgbB / 255), p.deepWaterDepthM], 68);
     device.queue.writeBuffer(b.uniform, 0, u);
 
     const s = b.stats;

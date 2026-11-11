@@ -98,6 +98,34 @@ describe('CDLOD selection', () => {
     expect(tree.items.filter((it) => it.node.level === 2).every((it) => it.node.activatedAt === 0.4)).toBe(true);
   });
 
+  it('a prefetch pass only requests: tiles around the predicted position are wanted at reduced priority, nothing is drawn or activated', () => {
+    const tree = new BodyQuadtree(R, -9130, 10790);
+    const here = [observer(0, 0, 30e3)];
+    const p = params(here, 2.44, 12);
+    const items = converge(tree, p);
+    const frame = 1000;
+    tree.select({ ...p, frameIndex: frame, time: 10000 });
+    expect(tree.wanted.length).toBe(0);
+    const drawn = tree.items.length;
+    const activated = tree.items.map((it) => it.node.activatedAt);
+    // Two seconds ahead at 1.6 km/s: 3.2 km further east, where finer tiles are not loaded yet.
+    const ahead = [observer(0, 0.4, 8e3)];
+    tree.select({ ...p, frameIndex: frame, time: 10000, observers: ahead, prefetch: 0.3 });
+    expect(tree.items.length).toBe(drawn);
+    expect(tree.items.map((it) => it.node.activatedAt)).toEqual(activated);
+    expect(tree.wanted.length).toBeGreaterThan(0);
+    // Requests of the camera pass itself would have priority >= 1 (range / distance); these are scaled down.
+    const camera = new BodyQuadtree(R, -9130, 10790);
+    for (const root of camera.roots) makeReady(camera, root);
+    camera.select({ ...p, frameIndex: 1, time: 10, observers: ahead });
+    const direct = Math.max(...camera.wanted.map((n) => n.priority));
+    const prefetched = Math.max(...tree.wanted.map((n) => n.priority));
+    expect(direct).toBeGreaterThanOrEqual(1);
+    expect(prefetched).toBeGreaterThan(0);
+    for (const n of tree.wanted) expect(n.lastTouched).toBe(frame);
+    expect(items.length).toBeGreaterThan(0);
+  });
+
   it('the warp cap limits the deepest level and the frustum culls what is behind the camera', () => {
     const tree = new BodyQuadtree(R, -9130, 10790);
     const obs = [observer(0, 0, 20e3)];

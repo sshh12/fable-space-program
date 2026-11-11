@@ -71,6 +71,15 @@ fn terrainVaryings(v: TerrainVertex) -> TerrainVaryings {
 `;
 
 const SURFACE_FUNCTIONS_WGSL = /* wgsl */ `
+const NOISE_PERIOD = ${NOISE_PERIOD}.0;
+const NOISE_GRADIENT_RANGE = ${NOISE_GRADIENT_RANGE}.0;
+
+/// Periodic gradient noise at lattice position p: rgb = gradient per cell, a = value in -1..1.
+fn noiseAt(p: vec3f) -> vec4f {
+  let n = textureSampleLevel(noiseTex, linearRepeat, p / NOISE_PERIOD, 0.0) * 2.0 - 1.0;
+  return vec4f(n.rgb * NOISE_GRADIENT_RANGE, n.a);
+}
+
 fn decodeSlope(v: vec2f, scale: f32) -> vec2f {
   let x = clamp(v * 2.0 - 1.0, vec2f(-0.996), vec2f(0.996));
   return scale * 0.5 * log((1.0 + x) / (1.0 - x));
@@ -152,35 +161,86 @@ fn maskInfluence(t: TileRecord, k: f32, imageLevel: f32) -> f32 {
   return saturate(imageLevel + 3.0 - (t.b.w - k));
 }
 
-fn nightEmission(t: TileRecord, uv: vec2f, k: f32, dx: vec2f, dy: vec2f, sphereRoot: vec3f) -> vec3f {
+/// Colour of water as the imagery shows it. The body-wide imagery paints the open ocean one flat colour and
+/// keeps measured colour only in a band of a few kilometres around land (regional imagery adds its own
+/// band): over shelves and reefs that colour is the sea floor showing through, over deep water it is only
+/// the outline of the band. With depth the colour therefore goes to the open-ocean colour.
+fn waterAlbedo(imagery: vec3f, depth: f32) -> vec3f {
+  if (body.deepWater.w <= 0.0) { return imagery; }
+  return mix(imagery, body.deepWater.rgb, smoothstep(0.08 * body.deepWater.w, body.deepWater.w, depth));
+}
+
+/// The night image of a tile at lod (0 = one texel per pixel, negative = magnified). Magnified, a bilinear
+/// tap draws the texel grid as crosses and diamonds in the glow of a town: a cubic B-spline (four bilinear
+/// taps) takes over within one level.
+fn nightSample(tileUv: vec2f, layer: i32, lod: f32) -> f32 {
+  // The texture holds the tile's image inside a border of one texel from the tiles around it.
+  let size = f32(textureDimensions(nightTex).x);
+  let uv = (tileUv * (size - 2.0) + 1.0) / size;
+  if (lod >= 0.0) { return textureSampleLevel(nightTex, tileSampler, uv, layer, lod).r; }
+  let st = uv * size - 0.5;
+  let i = floor(st);
+  let f = st - i;
+  let f2 = f * f;
+  let f3 = f2 * f;
+  let w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  let w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  let w3 = f3 / 6.0;
+  let w2 = 1.0 - w0 - w1 - w3;
+  let g0 = w0 + w1;
+  let g1 = w2 + w3;
+  let h0 = (i - 0.5 + w1 / g0) / size;
+  let h1 = (i + 1.5 + w3 / g1) / size;
+  let cubic =
+    (textureSampleLevel(nightTex, tileSampler, vec2f(h0.x, h0.y), layer, 0.0).r * g0.x + textureSampleLevel(nightTex, tileSampler, vec2f(h1.x, h0.y), layer, 0.0).r * g1.x) * g0.y +
+    (textureSampleLevel(nightTex, tileSampler, vec2f(h0.x, h1.y), layer, 0.0).r * g0.x + textureSampleLevel(nightTex, tileSampler, vec2f(h1.x, h1.y), layer, 0.0).r * g1.x) * g1.y;
+  return mix(textureSampleLevel(nightTex, tileSampler, uv, layer, 0.0).r, cubic, saturate(-lod));
+}
+
+/// Night lights (pre-exposed). The layer is display-referred and saturates over city centres: a shoulder
+/// gives the centres more luminance than the suburbs. Below the resolution of the layer the light of a town
+/// is broken up into clusters by band-limited noise (octaves a pixel resolves, fixed to the ground), so a
+/// close view from orbit shows grains of light, not evenly glowing cells. sphere = body-fixed direction.
+fn nightEmission(t: TileRecord, uv: vec2f, k: f32, dx: vec2f, dy: vec2f, sphere: vec3f, sphereRoot: vec3f, footprint: f32) -> vec3f {
   if (body.night.w < 0.5 || t.images.z < 0) { return vec3f(0.0); }
   let bi = u32(body.p0.w);
   let muS = dot(sphereRoot, frame.bodies[bi].sunDir.xyz);
   let on = 1.0 - smoothstep(body.night.y, body.night.z, muS);
   if (on <= 0.0) { return vec3f(0.0); }
+  // One channel, sRGB-encoded (the red of the night image).
+  let texels = 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)) * 65536.0, 1e-12));
   let uvN = t.nightUv.xy + uv * t.nightUv.z;
-  // One channel, sRGB-encoded (the red of the night image). The layer is sampled no finer than
-  // nightTint.a mip levels: the source lights are blocks of several texels, which only read as towns
-  // once they are filtered to their real resolution.
-  let footprint = 0.5 * log2(max(dot(dx, dx), dot(dy, dy)) * 65536.0);
-  let lod = max(footprint + log2(t.nightUv.z), body.nightTint.a);
-  var c = pow(textureSampleLevel(nightTex, tileSampler, uvN, t.images.z, lod).r, 2.2);
+  var c = pow(nightSample(uvN, t.images.z, texels + log2(t.nightUv.z)), 2.2);
   if (k > 0.0 && (t.flags.x & 2) != 0) {
     var p = 0.0;
     if (t.images.w >= 0) {
       let uvP = t.parentNightUv.xy + uv * t.parentNightUv.z;
-      // The parent's image is one level coarser: the same ground footprint is one mip level lower there.
-      p = pow(textureSampleLevel(nightTex, tileSampler, uvP, t.images.w, max(footprint + log2(t.parentNightUv.z), body.nightTint.a - 1.0)).r, 2.2);
+      p = pow(nightSample(uvP, t.images.w, texels + log2(t.parentNightUv.z)), 2.2);
     }
     c = mix(c, p, k);
+  }
+  if (c <= 0.0) { return vec3f(0.0); }
+  // The centre of a city is one sheet of light, its outskirts and the villages are grains.
+  let grain = body.nightTint.a * (1.0 - 0.7 * smoothstep(0.2, 0.85, c));
+  c = c / (1.0 - 0.85 * min(c, 1.0));
+  if (body.misc.w > 0.0) {
+    // The direction on the body times radius / wavelength: at 2.4 km the lattice coordinate is about 2,700,
+    // where 32-bit floats still resolve a thousandth of a cell.
+    var q = sphere * (body.p0.x / body.misc.w);
+    var lambda = body.misc.w;
+    var m = 0.0;
+    for (var i = 0; i < 4; i++) {
+      m += noiseAt(q + vec3f(3.7, 11.3, 7.1)).a * smoothstep(1.5, 3.0, lambda / footprint);
+      q = q.zxy * 2.0 + vec3f(5.3, 1.7, 9.1);
+      lambda *= 0.5;
+    }
+    c *= exp2(grain * m);
   }
   return body.nightTint.rgb * (c * body.night.x * on * frame.exposure.x);
 }
 `;
 
 const DETAIL_WGSL = /* wgsl */ `
-const NOISE_PERIOD = ${NOISE_PERIOD}.0;
-const NOISE_GRADIENT_RANGE = ${NOISE_GRADIENT_RANGE}.0;
 struct ClassBlend {
   w0: vec4f,           // weights of materials 0..3
   w1: vec4f,           // weights of materials 4..7
@@ -219,12 +279,6 @@ fn classBlend(t: TileRecord, uv: vec2f, k: f32) -> ClassBlend {
     o.orb = mix(o.orb, p.orb, k);
   }
   return o;
-}
-
-/// Periodic gradient noise at lattice position p: rgb = gradient per cell, a = value in -1..1.
-fn noiseAt(p: vec3f) -> vec4f {
-  let n = textureSampleLevel(noiseTex, linearRepeat, p / NOISE_PERIOD, 0.0) * 2.0 - 1.0;
-  return vec4f(n.rgb * NOISE_GRADIENT_RANGE, n.a);
 }
 
 fn pick8(a: vec4f, b: vec4f, i: i32) -> f32 {
@@ -468,7 +522,10 @@ ${DETAIL_WGSL}
   let ddn = dpdx(tn.n);
   let ddm = dpdy(tn.n);
   let sphereRoot = body.rot * tn.sphere;
-  let emissive = nightEmission(t, uv, k, dx, dy, sphereRoot);
+  let dist = length(in.pos);
+  let pixelAngle = 2.0 * frame.cameraUp.w * frame.renderSize.w;
+  let footprint = max(dist * pixelAngle, 1e-4);
+  let emissive = nightEmission(t, uv, k, dx, dy, tn.sphere, sphereRoot, footprint);
   let sea = body.p0.y;
   let above = in.height - sea;
   let hasOcean = body.misc.y > 0.5;
@@ -477,7 +534,6 @@ ${DETAIL_WGSL}
   // mask still decides the coastline (the threshold slides to "never" as the geometry takes over), and
   // never inside the ocean's near field, where the sea bed and the shore are ordinary terrain under the
   // forward water surface.
-  let dist = length(in.pos);
   if (hasOcean) {
     var influence = maskInfluence(t, k, s.imageLevel);
     if (oceanNearField.bodyIndex == i32(body.p0.w) && dist < oceanNearField.fadeStart) { influence = 0.0; }
@@ -485,13 +541,11 @@ ${DETAIL_WGSL}
     let threshold = mix(0.5, mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {
       let depth = max(-above, 0.0) + mat.p2.w * saturate((s.mask - 0.5) * 2.0);
-      return gbufferPack(s.albedo, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(depth), velocity, emissive);
+      return gbufferPack(waterAlbedo(s.albedo, max(-above, 0.0)), 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(depth), velocity, emissive);
     }
   }
 
   // ---- land
-  let pixelAngle = 2.0 * frame.cameraUp.w * frame.renderSize.w;
-  let footprint = max(dist * pixelAngle, 1e-4);
   let cb = classBlend(t, uv, k);
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
@@ -571,9 +625,11 @@ ${SURFACE_FUNCTIONS_WGSL}
   // (enclosed depressions) never gets a sheet.
   let influence = maskInfluence(t, k, s.imageLevel);
   if (s.mask < mix(-0.01, 0.5, influence) || s.maskWide < 0.004) { discard; }
-  let sphereRoot = body.rot * normalize(t.cHat.xyz + tileDelta(uv, t));
+  let sphere = normalize(t.cHat.xyz + tileDelta(uv, t));
+  let sphereRoot = body.rot * sphere;
   let depth = max(body.p0.y - in.height, 0.0);
-  let emissive = nightEmission(t, uv, k, dx, dy, sphereRoot);
-  return gbufferPack(s.albedo, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(depth), velocityFromClip(in.currClip, in.prevClip), emissive);
+  let footprint = max(length(in.pos) * 2.0 * frame.cameraUp.w * frame.renderSize.w, 1e-4);
+  let emissive = nightEmission(t, uv, k, dx, dy, sphere, sphereRoot, footprint);
+  return gbufferPack(waterAlbedo(s.albedo, depth), 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(depth), velocityFromClip(in.currClip, in.prevClip), emissive);
 }
 `;

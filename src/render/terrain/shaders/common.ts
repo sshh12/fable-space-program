@@ -9,7 +9,7 @@
 export const RECORD_BYTES = 320;
 export const RECORD_FLOATS = RECORD_BYTES / 4;
 /** Bytes of the TerrainBody uniform. */
-export const BODY_UNIFORM_BYTES = 272;
+export const BODY_UNIFORM_BYTES = 288;
 export const MAX_OBSERVERS = 4;
 
 export const TERRAIN_COMMON_WGSL = /* wgsl */ `
@@ -22,8 +22,9 @@ struct TerrainBody {
   detailInv: vec4f,              // 1 / tiling length of the three detail scales (1/m), detail fade distance (m)
   orbital: vec4f,                // base wavelength (m), albedo strength, relief strength, octave count
   night: vec4f,                  // luminance of a white texel (cd/m^2), cos(sun zenith) where lights are fully on, where they are off, 1 = has night layer
-  misc: vec4f,                   // land material id, 1 = has ocean, mean tile size of level 0 (m), unused
-  nightTint: vec4f,              // rgb = colour of the night lights (linear), a = finest mip level the night layer is sampled at
+  misc: vec4f,                   // land material id, 1 = has ocean, mean tile size of level 0 (m), longest wavelength of the night-light clusters (m; 0 = none)
+  nightTint: vec4f,              // rgb = colour of the night lights (linear), a = strength of the clusters (octaves of brightness)
+  deepWater: vec4f,              // rgb = colour the imagery gives the open ocean (linear), w = depth (m) from which water has it (0 = off)
 }
 
 struct TileRecord {

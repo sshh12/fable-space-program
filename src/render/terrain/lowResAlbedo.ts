@@ -7,7 +7,7 @@ import type { TileManifest } from '@/core/contracts/terrain';
 import type { Vec3, Vec3Tuple } from '@/core/math';
 import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
 
-const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+export const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
 /**
  * Sampler of the linear albedo at a body-fixed direction. A tile set without the global map yields the

@@ -181,7 +181,7 @@ export function createNearFieldPublisher(defs: DefLibrary, resources: () => Core
   };
 }
 
-/** A fullscreen pass of `iterations` loop steps per pixel, encoded first in the frame, to keep the GPU at its working clock. */
+/** A fullscreen pass of `iterations` loop steps per pixel, encoded late in the frame, to keep the GPU at its working clock. */
 export function createBallast(initial: number): { feature: RenderFeature; set(iterations: number): void; get(): number } {
   let iterations = initial;
   let ctx: RenderContext;
@@ -217,7 +217,9 @@ export function createBallast(initial: number): { feature: RenderFeature; set(it
       prepare() {
         ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([iterations, 0, 0, 0]));
       },
-      compute(frame, encoder) {
+      // Encoded after the scene (preTransparent), so that the tail of this long pass is not charged to the
+      // shadow and G-buffer passes that are being measured: it lands in the core's last copy instead.
+      preTransparent(frame, encoder) {
         if (iterations <= 0) return;
         const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.view, loadOp: 'clear', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-ballast.burn') as GPURenderPassTimestampWrites | undefined });
         pass.setBindGroup(0, frame.frameBindGroup);

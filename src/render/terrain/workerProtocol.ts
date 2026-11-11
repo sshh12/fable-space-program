@@ -48,8 +48,8 @@ export interface TileResult {
   albedo: ImageBitmap | null;
   /** 256 x 256 x 2 bytes: r = water mask (0 land .. 255 water), g = land-cover class id; null when not requested. */
   aux: Uint8Array<ArrayBuffer> | null;
-  /** Decoded night lights; null when not requested or when the tile is completely dark. */
-  night: ImageBitmap | null;
+  /** Night lights, NIGHT_SIZE x NIGHT_SIZE bytes (nightImage.ts); null when not requested or when the tile is completely dark. */
+  night: Uint8Array<ArrayBuffer> | null;
   nightDark: boolean;
   /** Milliseconds spent baking and decoding (diagnostics). */
   bakeMs: number;
