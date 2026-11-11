@@ -27,6 +27,13 @@ export const EV_DARK_FLOOR = -3;
 /** Below this lit fraction of the frame the photometric prior is used alone; above LIT_FULL the histogram alone. */
 export const LIT_PRIOR_ONLY = 0.005;
 export const LIT_FULL = 0.1;
+/**
+ * The same for a lit area that is BRIGHTER than the prior asks for (a plume and the cloud it lights at
+ * night, a floodlit patch in a dark frame): the histogram alone from this fraction. Highlight protection
+ * must not wait for a tenth of the frame; a few sparse pixels dimmer than the prior still may not open
+ * the exposure (they keep the slow ramp to LIT_FULL). Request vfx-3.
+ */
+export const LIT_FULL_BRIGHT = 0.02;
 /** Any lit geometry at all (fraction of the frame) counts as "something lit is in view" for the prior. */
 export const LIT_PRESENT = 0.0002;
 /** The 99th percentile of lit pixels is kept below this multiple of mid-grey (highlight protection). */
@@ -194,7 +201,7 @@ export function meterExposure(m: MeterInput): MeterResult {
     evHistogram = evMean - exposureCompensationCurve(evMean);
     // Highlight protection applies to exterior metering; in a cabin the windows are allowed to blow out.
     if (!interior) evHistogram = Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
-    w = smooth(LIT_PRIOR_ONLY, LIT_FULL, stats.litFraction);
+    w = smooth(LIT_PRIOR_ONLY, evHistogram > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
   }
   let ev = evPrior + (evHistogram - evPrior) * w - m.exposureCompensation;
   ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));

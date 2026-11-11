@@ -115,6 +115,36 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     expect(prot.targetEv100).toBeGreaterThan(base.targetEv100);
   });
 
+  it('a bright area in a dark frame is exposed for as soon as it covers 2 % (request vfx-3)', () => {
+    // A night launch seen from the pad: nothing lit by the sun, the cloud the plume lights (2,000 to
+    // 20,000 cd/m^2) on 2.5 % of the frame, the rest unlit ground.
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, 2e3, 2e4, 2500);
+    const night = { sunVisibility: 0, litObjectInView: false };
+    const r = meter(h, night);
+    expect(r.evPrior).toBe(EV_DARK_FLOOR);
+    expect(r.histogramWeight).toBe(1);
+    expect(r.targetEv100).toBeCloseTo(r.evHistogram, 9);
+    expect(r.targetEv100).toBeGreaterThan(12);
+    // (It used to be weighted 0.09 against the dark floor: EV100 -1.4, the plume a white area for seconds.)
+    // Half of that area is half-way there; under 0.5 % it is still the prior alone.
+    const small = new Uint32Array(HISTOGRAM_BINS);
+    fill(small, 2e3, 2e4, 400);
+    expect(meter(small, night).histogramWeight).toBe(0);
+    const mid = new Uint32Array(HISTOGRAM_BINS);
+    fill(mid, 2e3, 2e4, 1250);
+    expect(meter(mid, night).histogramWeight).toBeGreaterThan(0.3);
+    expect(meter(mid, night).histogramWeight).toBeLessThan(0.7);
+    // A lit area DIMMER than the prior keeps the slow ramp: 2.5 % of a sunlit frame in deep shade
+    // (20 to 200 cd/m^2 against sunny 16) opens the exposure by less than a stop, as before.
+    const shade = new Uint32Array(HISTOGRAM_BINS);
+    fill(shade, 20, 200, 2500);
+    const day = meter(shade);
+    expect(day.evHistogram).toBeLessThan(day.evPrior);
+    expect(day.histogramWeight).toBeLessThan(0.15);
+    expect(day.evPrior - day.targetEv100).toBeLessThan(1);
+  });
+
   it('honours exposure compensation, minEv100 and interior metering', () => {
     const h = new Uint32Array(HISTOGRAM_BINS);
     fill(h, 2000, 6000, 0.9 * N);

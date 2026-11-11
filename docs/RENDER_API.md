@@ -750,7 +750,7 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   1 % coverage (`EMISSIVE_FULL`), in proportion below, not at all under 0.02 %. So a trail across a night
   sky is exposed for the trail, RCS puffs on a lander in shadow stop the camera down part of the way, and
   in daylight a plume over the sky counts exactly like the same plume over the ground. Hints apply to the
-  next frame's metering; adaptation speeds are unchanged. An interior view ignores them. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
+  next frame's metering; adaptation speeds are unchanged. An interior view ignores them. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones, and exponential (the same constants as rates per second) while the gap is large: 70 % of a 15 EV jump is taken in half a second. Between 0.5 % and 10 % of the frame lit, the target is a mix of the photometric prior and the histogram; a lit area BRIGHTER than the prior (a plume and its cloud at night) is followed alone from 2 % (`LIT_FULL_BRIGHT`, request `vfx-3`).
 - TAA / TAAU: Halton(2, 3) jitter of 8 samples (8 / scale^2 when upscaling, at most 32) in `frame.proj`;
   the resolve runs at display resolution (jitter-aware 3 x 3 reconstruction, closest-depth velocity,
   5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
@@ -1078,6 +1078,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Exposure target: a lit area brighter than the prior takes over from 2 % of the frame instead of 10 % (`LIT_FULL_BRIGHT`) | `vfx-3` | vfx (night launch, fireballs), anything bright in a dark frame (lights on the lunar night side, city lights) | None. Such frames are exposed for the bright area sooner: darker surroundings, no white-out |
 | `'clouds.depth'` is rg32float: r = where the cloud begins along the pixel's ray, g = where it ends (was r32float, one mean distance with a +-10 % band); `applyAtmosphere` attenuates by `smoothstep(r, g, distance)` | `atmosphere-clouds-1` | atmosphere (publisher), every transparent (through `applyAtmosphere`, no change), sky (tests `r < 3.0e38` only) | Publisher: write both distances; a texture that carries r alone gives a step at r. Readers that sampled the key themselves: r is now the BEGIN of the cloud, not its mean distance |
 | `'clouds.shadowMap'` is depth-resolved (r, g, b as in section 7); new chunk `cloud_shadow` with the lookup the deferred lighting uses | `atmosphere-clouds-3` | atmosphere (publisher: nothing to change, the map already carries g and b); cockpit and ocean (their forward shaders sample the map themselves) | A publisher of a single-channel map casts no near shadow any more: write g and b. Forward-lit shaders: `#include "cloud_shadow"` and call `cloudShadow()` instead of an own copy of the r-only lookup, or surfaces above a deck stay in its shade |
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
