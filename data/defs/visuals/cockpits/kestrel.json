@@ -5,7 +5,8 @@
     "floor": { "shading": "standard", "albedo": [0.07, 0.075, 0.08], "roughness": 0.78, "detail": "paint", "detailStrength": 1.0, "wear": { "amount": 0.5, "albedo": [0.62, 0.63, 0.63], "metallic": 1 }, "grime": 0.9, "variation": 0.06 },
     "aluminium": { "shading": "standard", "albedo": [0.91, 0.92, 0.92], "roughness": 0.3, "metallic": 1, "anisotropy": 0.55, "detail": "brushed", "detailStrength": 0.8, "grime": 0.4, "variation": 0.06 },
     "steel": { "shading": "standard", "albedo": [0.66, 0.65, 0.63], "roughness": 0.24, "metallic": 1, "detail": "brushed", "detailStrength": 0.4, "grime": 0.3, "variation": 0.05 },
-    "blanket": { "shading": "standard", "albedo": [0.7, 0.67, 0.6], "roughness": 0.86, "detail": "quilt", "detailStrength": 1.0, "translucency": 0.0, "grime": 0.5, "variation": 0.12 },
+    "blanket": { "shading": "cloth", "albedo": [0.68, 0.66, 0.6], "roughness": 0.8, "detail": "quilt", "detailStrength": 0.8, "translucency": 0.0, "grime": 0.5, "variation": 0.14 },
+    "liner": { "shading": "cloth", "albedo": [0.74, 0.73, 0.68], "roughness": 0.72, "detail": "weave", "detailStrength": 0.7, "translucency": 0.0, "grime": 0.5, "variation": 0.12 },
     "closeout": { "shading": "standard", "albedo": [0.6, 0.615, 0.61], "roughness": 0.42, "detail": "paint", "detailStrength": 0.7, "wear": { "amount": 0.3, "albedo": [0.62, 0.63, 0.63], "metallic": 1 }, "grime": 0.6, "variation": 0.1 },
     "bezel": { "shading": "standard", "albedo": [0.03, 0.032, 0.035], "roughness": 0.42, "detail": "paint", "detailStrength": 0.5, "wear": { "amount": 0.22, "albedo": [0.62, 0.63, 0.63], "metallic": 1 }, "grime": 0.4, "variation": 0.05 },
     "rubber": { "shading": "standard", "albedo": [0.022, 0.022, 0.022], "roughness": 0.78, "detail": "rubber", "detailStrength": 1.0, "grime": 0.5, "variation": 0.08 },
@@ -221,12 +222,12 @@
   "hatch": { "thickness": 0.075, "latches": 10, "handleSide": 1, "dockingHatchY": 2.4 },
   "lighting": {
     "floods": [
-      { "azDeg": 32, "y": 2.02, "length": 0.22, "aim": [0.1, 1.55, 0.35], "lumens": 420, "cct": 4600 },
-      { "azDeg": -32, "y": 2.02, "length": 0.22, "aim": [-0.1, 1.55, 0.35], "lumens": 420, "cct": 4600 },
-      { "azDeg": 148, "y": 1.98, "length": 0.22, "aim": [0.35, 1.05, 0.0], "lumens": 420, "cct": 4600 },
-      { "azDeg": -148, "y": 1.98, "length": 0.22, "aim": [-0.35, 1.05, 0.0], "lumens": 420, "cct": 4600 },
-      { "azDeg": 90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 220, "cct": 4600 },
-      { "azDeg": -90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 220, "cct": 4600 }
+      { "azDeg": 32, "y": 2.02, "length": 0.22, "aim": [0.1, 1.55, 0.35], "lumens": 190, "cct": 4600 },
+      { "azDeg": -32, "y": 2.02, "length": 0.22, "aim": [-0.1, 1.55, 0.35], "lumens": 190, "cct": 4600 },
+      { "azDeg": 148, "y": 1.98, "length": 0.22, "aim": [0.35, 1.05, 0.0], "lumens": 190, "cct": 4600 },
+      { "azDeg": -148, "y": 1.98, "length": 0.22, "aim": [-0.35, 1.05, 0.0], "lumens": 190, "cct": 4600 },
+      { "azDeg": 90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 110, "cct": 4600 },
+      { "azDeg": -90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 110, "cct": 4600 }
     ],
     "displayLuminance": 450,
     "displayMinBrightness": 0.06,
@@ -244,7 +245,7 @@
     "vibration": { "perAccel": 0.00008, "perKpa": 0.00006, "maxAmplitude": 0.004, "frequencies": [7.3, 11.9, 17.6], "buffet": { "peak": 2.0, "mach": 1.0, "width": 0.25 } }
   },
   "displays": { "width": 1024, "height": 768, "rateHz": 15, "pages": ["flight", "orbit", "systems"], "pixelStructure": [2.5, 6.0] },
-  "transport": { "maxEdge": 0.035, "aoRays": 48, "aoDistance": 0.45, "sourceRays": 8, "sunMapSize": 2048, "sunMapMargin": 0.05 },
+  "transport": { "maxEdge": 0.035, "aoRays": 96, "aoDistance": 0.45, "sourceRays": 12, "sunMapSize": 2048, "sunMapMargin": 0.05, "probeSize": 128 },
   "alarms": { "overheatFraction": 0.85, "gLimit": 8, "gDoseFraction": 0.4, "plasmaBlackout": 0.2, "ablatorLow": 0.3, "rcsLow": 0.15 },
   "farLodPixels": 140
 }

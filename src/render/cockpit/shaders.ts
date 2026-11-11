@@ -23,17 +23,22 @@
  * 2 materials, 3 label atlas, 4 MFD array, 5 navball image, 6 ambient pass output, 7 cabin sun map,
  * 8 / 9 detail texture arrays, 10.. the scene sets env, atmosphereLuts, transparency.
  */
-import { MAX_DISPLAYS, MAX_WINDOWS } from './layout';
+import { QUILT } from './cabin/quilt';
+import { MAX_DISPLAYS, MAX_FLOODS, MAX_WINDOWS } from './layout';
 import { MAX_CABIN_POLYS } from './lighting';
 
 export const CONTROL_FLOATS = 24;
+/** vec4s of one occlusion record as the shaders unpack it (occlusion.ts: 24 bytes per vertex). */
+export const OCC_VEC4 = 6;
 /** vec4s of the cabin uniform's header (CabinFrame in CABIN_CHUNK, before `polys`). */
-export const CABIN_HEADER_VEC4 = 28 + 4 * MAX_WINDOWS;
+export const CABIN_HEADER_VEC4 = 24 + OCC_VEC4 + 7 * MAX_WINDOWS;
 export const CABIN_HEADER_FLOATS = 4 * CABIN_HEADER_VEC4;
 export const CABIN_POLY_FLOATS = 4 * 6;
 export const CABIN_UNIFORM_FLOATS = CABIN_HEADER_FLOATS + MAX_CABIN_POLYS * CABIN_POLY_FLOATS;
 export const MAX_MATERIALS = 48;
 export const MATERIAL_FLOATS = 20;
+/** Luminance (cd/m^2) is stored in the cabin probe times this (rgba16float holds 65504). */
+export const PROBE_SCALE = 1 / 32;
 
 /** Header slots (vec4 index) of CabinFrame. */
 export const CABIN = {
@@ -47,8 +52,8 @@ export const CABIN = {
   plasma: 11,
   display: 12,
   counts: 13,
-  sunU: 14,
-  sunV: 15,
+  probe: 14,
+  proxy: 15,
   sunL: 16,
   sunMap: 17,
   sunPart: 18,
@@ -56,9 +61,10 @@ export const CABIN = {
   tint: 20,
   view: 21,
   glare: 22,
-  ballOcc: 23,
-  glassSun: 27,
-  apertures: 28,
+  glassSun: 23,
+  ballOcc: 24,
+  apertures: 24 + OCC_VEC4,
+  sunTiles: 24 + OCC_VEC4 + 4 * MAX_WINDOWS,
 } as const;
 
 /** Declarations of group 1 (prefix of every cabin module); `scene` is the createSceneBindings WGSL. */
@@ -75,20 +81,31 @@ export const CABIN_DECLS = (scene: string): string => /* wgsl */ `
 @group(1) @binding(7) var cabinSunMap: texture_depth_2d;
 @group(1) @binding(8) var detailN: texture_2d_array<f32>;
 @group(1) @binding(9) var detailM: texture_2d_array<f32>;
+/// The cabin probe (probe.ts): the lit interior seen from the cabin's centre, part-frame axes, prefiltered
+/// mips, luminance x cabin.probe.w^-1. While the probe itself is rendered a black cube is bound here.
+@group(1) @binding(10) var cabinProbe: texture_cube<f32>;
 fn cabinAmbient() -> CabinAmbient {
   var o: CabinAmbient;
-  o.uniformE = cabinAmb[0].xyz;
   o.brightness = cabinAmb[0].w;
   o.sunT = cabinAmb[1].xyz;
   o.cloudT = cabinAmb[1].w;
   return o;
 }
 fn cabinPolyRadiance(i: u32) -> vec3f { return cabinAmb[2u + i].xyz; }
+/// Irradiance (lux) of the cabin's inter-reflected light on a surface with unit normal n (PART frame): the
+/// probe's bounce light as nine spherical-harmonic coefficients (the compute pass PROBE_SH_WGSL).
+fn cabinBounce(n: vec3f) -> vec3f {
+  let b = ${2 + MAX_CABIN_POLYS}u;
+  let e = cabinAmb[b].xyz + cabinAmb[b + 1u].xyz * n.y + cabinAmb[b + 2u].xyz * n.z + cabinAmb[b + 3u].xyz * n.x
+        + cabinAmb[b + 4u].xyz * (n.x * n.y) + cabinAmb[b + 5u].xyz * (n.y * n.z) + cabinAmb[b + 6u].xyz * (3.0 * n.z * n.z - 1.0)
+        + cabinAmb[b + 7u].xyz * (n.x * n.z) + cabinAmb[b + 8u].xyz * (n.x * n.x - n.y * n.y);
+  return max(e, vec3f(0.0));
+}
 ${scene}
 `;
 
-/** First binding of the scene sets in the cabin group (after the cabin's own bindings 0..9). */
-export const CABIN_SCENE_BINDING = 10;
+/** First binding of the scene sets in the cabin group (after the cabin's own bindings 0..10). */
+export const CABIN_SCENE_BINDING = 11;
 
 /**
  * One invocation per frame: the cabin quantities every pixel shares (uniform inter-reflection irradiance,
@@ -104,9 +121,10 @@ export const AMBIENT_WGSL = (scene: string): string => /* wgsl */ `
 fn cabinPolyRadiance(i: u32) -> vec3f { return outAmb[2u + i].xyz; }
 ${scene}
 #include "cockpit_cabin"
+#include "cloud_shadow"
 
-/// Cloud transmittance of the sun at the vessel (RENDER_API section 7: near optical-depth map around the
-/// camera, coverage map beyond, both placed by the frame uniforms).
+/// Cloud transmittance of the sun at the vessel: the core's depth-resolved lookup (RENDER_API section 7,
+/// chunk cloud_shadow), so a cabin above a cloud deck is not shaded by the deck below it.
 fn cabinCloudTransmittance() -> f32 {
   let bi = i32(cabin.sunColor.w);
   if (bi < 0) { return 1.0; }
@@ -114,28 +132,7 @@ fn cabinCloudTransmittance() -> f32 {
   let pos = vec3f(cabin.m0.w, cabin.m1.w, cabin.m2.w);
   let rel = pos - b.center.xyz;
   let r = length(rel);
-  let up = rel / max(r, 1.0);
-  let sunDir = b.sunDir.xyz;
-  let muS = max(dot(up, sunDir), 0.05);
-  var far = 1.0;
-  if (i32(frame.cloudFar.x) == bi && r < frame.cloudFar.y) {
-    let bq = dot(rel, sunDir);
-    let t = -bq + sqrt(max(bq * bq - (r * r - frame.cloudFar.y * frame.cloudFar.y), 0.0));
-    let d = normalize(rootToFixed(u32(bi), rel + sunDir * t));
-    let lon = atan2(d.y, d.x) + frame.cloudFar.w;
-    let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(d.z, -1.0, 1.0)) / PI);
-    far = exp(-textureSampleLevel(cloudCoverageMapTex, linearClamp, uv, 0.0).r * frame.cloudFar.z / muS);
-  }
-  let he = frame.cloudNear0.w;
-  if (he > 0.0 && i32(frame.cloudNear1.w) == bi) {
-    let q = vec2f(dot(pos - frame.cloudNear0.xyz, frame.cloudNear1.xyz), dot(pos - frame.cloudNear0.xyz, frame.cloudNear2.xyz)) / he;
-    let edge = 1.0 - max(abs(q.x), abs(q.y));
-    if (edge > 0.0) {
-      let tau = textureSampleLevel(cloudShadowMapTex, linearClamp, q * 0.5 + 0.5, 0.0).r * frame.cloudNear2.w;
-      return mix(far, exp(-tau / muS), saturate(edge * 8.0));
-    }
-  }
-  return far;
+  return cloudShadow(pos, bi, rel / max(r, 1.0), r, b.sunDir.xyz);
 }
 
 // One invocation per cabin polygon; texture fetches run in parallel, the sums in invocation 0.
@@ -155,8 +152,8 @@ var<workgroup> wShared: vec4f;
   var L = vec3f(0.0);
   var flux = vec3f(0.0);
   if (kind == POLY_WINDOW) {
-    flux = windowRadiance(-P.normal.xyz, 6.28, P.radiance.rgb) * (PI * P.radiance.w);
-    L = windowRadiance(-P.normal.xyz, 1.5, P.radiance.rgb);
+    flux = windowRadiance(-P.normal.xyz, 6.28, P.radiance.rgb, P.p2.w) * (PI * P.radiance.w);
+    L = windowRadiance(-P.normal.xyz, 1.5, P.radiance.rgb, P.p2.w);
   }
   wFlux[i] = flux;
   workgroupBarrier();
@@ -189,11 +186,39 @@ var<workgroup> wShared: vec4f;
 }
 `;
 
-/** vec4s of the ambient pass's output: CabinAmbient (2), then one per cabin polygon. */
-export const AMBIENT_VEC4S = 2 + MAX_CABIN_POLYS;
+/**
+ * vec4s of the cabin's per-frame GPU quantities: CabinAmbient (2), one per cabin polygon (the ambient pass),
+ * then the nine irradiance coefficients of the probe's bounce light (PROBE_SH_WGSL).
+ */
+export const AMBIENT_VEC4S = 2 + MAX_CABIN_POLYS + 9;
 
 /** First binding of the scene sets in the ambient pass's group. */
 export const AMBIENT_SCENE_BINDING = 3;
+
+/** Bind group 2 of the cabin probe's pipelines: one cube face's view-projection (part frame -> clip). */
+const PROBE_FACE_WGSL = /* wgsl */ `
+struct ProbeFace { viewProj: mat4x4f }
+@group(2) @binding(0) var<uniform> probeFace: ProbeFace;
+`;
+
+/**
+ * Direction of a cube face's texel (face index in WebGPU's order +X, -X, +Y, -Y, +Z, -Z; uv with (0, 0) at
+ * the top left): forward + (2u - 1) right + (1 - 2v) up, the axes PROBE_FACES (probe.ts) renders with.
+ */
+const CUBE_DIR_WGSL = /* wgsl */ `
+fn cubeDir(face: u32, uv: vec2f) -> vec3f {
+  let a = uv.x * 2.0 - 1.0;
+  let b = 1.0 - uv.y * 2.0;
+  switch (face) {
+    case 0u: { return normalize(vec3f(1.0, b, -a)); }
+    case 1u: { return normalize(vec3f(-1.0, b, a)); }
+    case 2u: { return normalize(vec3f(a, 1.0, -b)); }
+    case 3u: { return normalize(vec3f(a, -1.0, b)); }
+    case 4u: { return normalize(vec3f(a, b, 1.0)); }
+    default: { return normalize(vec3f(-a, b, -1.0)); }
+  }
+}
+`;
 
 /** Common include block of the cabin modules: frame chunks, the declarations, the cabin chunk, the sun. */
 const HEAD = (decls: string): string => `
@@ -203,6 +228,7 @@ const HEAD = (decls: string): string => `
 #include "transparency"
 ${decls}
 #include "cockpit_cabin"
+${PROBE_FN_WGSL}
 ${SUN_WGSL}
 `;
 
@@ -233,7 +259,7 @@ struct Material {
   e: vec4f,           // colour under worn paint (linear), its metallic
 }
 struct CabinPoly {
-  p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f,  // corners, camera-relative ROOT axes (m); p0.w = kind, p1.w = display layer / window index
+  p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f,  // corners, camera-relative ROOT axes (m); p0.w = kind, p1.w = display layer / window / flood index, p2.w = windows: share of the entry plasma this window sees
   radiance: vec4f,                             // rgb cd/m^2 (NOT pre-exposed; windows: glass transmittance), w = area (m^2)
   normal: vec4f,                               // xyz = emitting / outward normal (ROOT), w = 1 when the source is on
 }
@@ -248,18 +274,19 @@ struct CabinFrame {
   plasma: vec4f,                       // rgb = shock-layer radiance seen through the windows (cd/m^2), w = plasma intensity
   display: vec4f,                      // x = display luminance at full brightness (cd/m^2), y = minimum brightness, z = full-brightness ambient (lux), w = screen px per texel where the pixel structure starts
   counts: vec4u,                       // x = polygons, y = windows (the first y polygons; also the apertures), z = displays, w = flags (bit 0 = camera inside the cabin)
-  sunU: vec4f,                         // cabin sun map: u = dot(xyz, p_part) + w
-  sunV: vec4f,                         //                v = dot(xyz, p_part) + w
-  sunL: vec4f,                         //                depth = dot(xyz, p_part) + w (0 at the sun side .. 1)
-  sunMap: vec4f,                       // x = texel (m), y = depth range (m), z = map size (texels), w = 1 when the sun lights the cabin this frame
+  probe: vec4f,                        // xyz = the cabin probe's centre (part frame), w = cd/m^2 per unit stored in the probe
+  proxy: vec4f,                        // the cabin as the probe's parallax proxy: inner cone radius = x - y * height, between the floor (z) and the tunnel joint (w), part frame
+  sunL: vec4f,                         // cabin sun map: depth = dot(xyz, p_part) + w (0 at the sun side .. 1)
+  sunMap: vec4f,                       // x = size of one window's tile in atlas uv, y = depth range (m), z = atlas size (texels), w = 1 when the sun lights the cabin this frame
   sunPart: vec4f,                      // xyz = unit direction to the sun (part frame), w = penumbra slope 2 tan(angular radius)
   misc: vec4f,                         // x = glass transmittance (mean), y = dust density, z = scratch density, w = pane ior
   tint: vec4f,                         // rgb = transmittance of one pane (tint and Fresnel at normal incidence)
   view: vec4f,                         // xyz = camera position in the part frame, w = 1 when the camera is inside the cabin
   glare: vec4f,                        // x = display cover glass reflectance (relative to bare glass), y = its anti-glare roughness, z = screen px per texel where the pixel structure is resolved, w = 0
-  ballOcc: array<vec4f, 4>,            // the occlusion record (occlusion.ts) at the front of the attitude ball
   glassSun: vec4f,                     // rgb = the glazing's transmittance at normal incidence (all panes), w = panes
+  ballOcc: array<vec4f, ${OCC_VEC4}>,  // the occlusion record (occlusion.ts) at the front of the attitude ball
   apertures: array<vec4f, ${4 * MAX_WINDOWS}>,  // per window (WindowMeta.aperture): outer-end centre + half width, inward normal + half height, tangent + corner radius, generator + prism length
+  sunTiles: array<vec4f, ${3 * MAX_WINDOWS}>,   // per window, its tile of the cabin sun map: atlas u = dot(xyz, p_part) + w; atlas v likewise; x, y = metres per unit of atlas u, v (0 = the sun does not enter here), z, w = the tile's first atlas u, v
   polys: array<CabinPoly, ${MAX_CABIN_POLYS}>,
 }
 
@@ -295,12 +322,13 @@ fn polyVector(pos: vec3f, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
   return V;
 }
 
-/// Radiance coming in through a window along direction d (ROOT): the environment probe plus the shock layer.
-fn windowRadiance(d: vec3f, solidAngle: f32, trans: vec3f) -> vec3f {
+/// Radiance coming in through a window along direction d (ROOT): the environment probe plus this window's
+/// share of the shock layer's glow (plasmaShare; the share flickers and differs from window to window).
+fn windowRadiance(d: vec3f, solidAngle: f32, trans: vec3f, plasmaShare: f32) -> vec3f {
   let mips = f32(textureNumLevels(envProbeCube)) - 1.0;
   // Mip whose texel spans the solid angle the window subtends (64^2 faces: one texel ~ 2.4e-4 sr).
   let mip = clamp(0.5 * log2(max(solidAngle, 1e-6) / 2.4e-4), 0.0, mips);
-  return (textureSampleLevel(envProbeCube, linearClamp, d, mip).rgb + cabin.plasma.rgb) * trans;
+  return (textureSampleLevel(envProbeCube, linearClamp, d, mip).rgb + cabin.plasma.rgb * plasmaShare) * trans;
 }
 
 /// Transmittance of the atmosphere along the sun ray at the vessel (1 outside atmospheres).
@@ -317,44 +345,37 @@ fn displayMean(layer: u32) -> vec3f {
 }
 
 struct CabinAmbient {
-  /// Uniform inter-reflection irradiance (lux), the display brightness that follows the cabin's light, and
-  /// the atmosphere's and the clouds' transmittance of the sun at the vessel.
-  uniformE: vec3f,
+  /// The display brightness that follows the cabin's light, and the atmosphere's and the clouds'
+  /// transmittance of the sun at the vessel.
   brightness: f32,
   sunT: vec3f,
   cloudT: f32,
 }
 
-/// Baked visibility of the cabin's sources at a point (occlusion.ts): ambient, floods, each window, each display.
+/// Baked visibility of the cabin's sources at a point (occlusion.ts): ambient, each window, each display,
+/// each flood light.
 struct Occ {
   ao: f32,
-  flood: f32,
   w: array<f32, ${MAX_WINDOWS}>,
   d: array<f32, ${MAX_DISPLAYS}>,
+  f: array<f32, ${MAX_FLOODS}>,
 }
-fn occUnpack(o0: vec4f, o1: vec4f, o2: vec4f, o3: vec4f) -> Occ {
+fn occUnpack(o0: vec4f, o1: vec4f, o2: vec4f, o3: vec4f, o4: vec4f, o5: vec4f) -> Occ {
   var o: Occ;
   o.ao = o0.x;
-  o.flood = o0.y;
   o.w = array<f32, ${MAX_WINDOWS}>(o0.z, o0.w, o1.x, o1.y, o1.z, o1.w, o2.x, o2.y);
   o.d = array<f32, ${MAX_DISPLAYS}>(o2.z, o2.w, o3.x, o3.y);
+  o.f = array<f32, ${MAX_FLOODS}>(o4.x, o4.y, o4.z, o4.w, o5.x, o5.y, o5.z, o5.w);
   return o;
 }
 
-struct CabinLight {
-  diffuse: vec3f,    // irradiance (lux) to be multiplied by albedo / pi
-  specular: vec3f,   // reflected luminance (cd/m^2)
-}
-
-/// Light arriving at a cabin surface from every cabin polygon (pos camera-relative ROOT, unit n and v),
-/// each source weighted by its baked visibility at the surface. sunScale = the atmosphere's and the
-/// clouds' transmittance of the sun (the sun patches' radiance is given without them).
-fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, occIn: Occ, sunScale: vec3f) -> CabinLight {
+/// Light arriving at a cabin surface from every cabin polygon as irradiance (lux; pos camera-relative ROOT,
+/// unit n), each source weighted by its baked visibility at the surface. sunScale = the atmosphere's and
+/// the clouds' transmittance of the sun (the sun patches' radiance is given without them). The specular
+/// reflection of the same sources comes from the cabin probe, which holds their images.
+fn cabinLight(pos: vec3f, n: vec3f, occIn: Occ, sunScale: vec3f) -> vec3f {
   var occ = occIn;
-  var o: CabinLight;
-  o.diffuse = vec3f(0.0);
-  o.specular = vec3f(0.0);
-  let NoV = max(dot(n, v), 1e-3);
+  var diffuse = vec3f(0.0);
   for (var i = 0u; i < cabin.counts.x; i++) {
     let P = cabin.polys[i];
     if (P.normal.w < 0.5) { continue; }
@@ -376,14 +397,13 @@ fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, occIn: 
     } else if (kind == POLY_PATCH) {
       vis = occ.ao;
     } else {
-      vis = occ.flood;
+      vis = occ.f[min(index, ${MAX_FLOODS - 1}u)];
     }
     // A source this point cannot see (baked) costs nothing.
     if (vis <= 0.004) { continue; }
     let V = polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz);
-    let lenV = length(V);
-    if (lenV < 1e-7) { continue; }
     let ff = max(dot(n, V), 0.0);
+    if (ff <= 0.0) { continue; }
     var L: vec3f;
     if (kind == POLY_WINDOW || kind == POLY_DISPLAY) {
       L = cabinPolyRadiance(i);
@@ -392,24 +412,51 @@ fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, occIn: 
     } else {
       L = P.radiance.rgb;
     }
-    let E = L * (PI * ff) * vis;
-    o.diffuse += E;
-    // Representative-point specular for the bright, compact sources (windows, floodlights).
-    if ((kind == POLY_WINDOW || kind == POLY_FLOOD) && roughness < 0.75) {
-      let l = V / lenV;
-      let NoL = dot(n, l);
-      if (NoL > 0.0) {
-        let h = normalize(v + l);
-        // Widen the lobe by the angular size of the source.
-        let a = sqrt(sq(max(roughness * roughness, 0.002)) + lenV * 0.5);
-        let D = D_GGX(saturate(dot(n, h)), a);
-        let Vis = V_SmithGGXCorrelated(NoV, NoL, a);
-        let F = F_Schlick(f0, saturate(dot(v, h)));
-        o.specular += D * Vis * F * E;
-      }
-    }
+    diffuse += L * (PI * ff) * vis;
   }
-  return o;
+  return diffuse;
+}
+`;
+
+/**
+ * Lookups of the cabin probe (included after the declarations by the modules that shade with it): the lit
+ * cabin along a ray, parallax-corrected against the cabin's own shape, prefiltered for a roughness.
+ */
+const PROBE_FN_WGSL = /* wgsl */ `
+/// Direction in which the probe sees what a ray from p along d (both PART frame, d unit) hits: the ray is
+/// intersected with the cabin's proxy (the inner cone between the floor and the tunnel joint).
+fn cabinProbeDir(p: vec3f, d: vec3f) -> vec3f {
+  let b = cabin.proxy.y;
+  let rr = cabin.proxy.x - b * p.y;
+  let A = d.x * d.x + d.z * d.z - b * b * d.y * d.y;
+  let B = 2.0 * (p.x * d.x + p.z * d.z + b * rr * d.y);
+  let C = p.x * p.x + p.z * p.z - rr * rr;
+  var t = 6.0;
+  let disc = B * B - 4.0 * A * C;
+  if (abs(A) > 1e-6 && disc >= 0.0) {
+    let s = sqrt(disc);
+    let t0 = (-B - s) / (2.0 * A);
+    let t1 = (-B + s) / (2.0 * A);
+    // The nearest crossing ahead that lies on the cabin's nappe of the cone.
+    if (t0 > 1e-3 && cabin.proxy.x - b * (p.y + d.y * t0) > 0.0) { t = min(t, t0); }
+    if (t1 > 1e-3 && cabin.proxy.x - b * (p.y + d.y * t1) > 0.0) { t = min(t, t1); }
+  }
+  if (d.y < -1e-5) { t = min(t, max((cabin.proxy.z - p.y) / d.y, 0.0)); }
+  if (d.y > 1e-5) { t = min(t, max((cabin.proxy.w - p.y) / d.y, 0.0)); }
+  return p + d * t - cabin.probe.xyz;
+}
+/// Probe mip that holds the cabin blurred for a GGX lobe of this roughness.
+fn cabinProbeLod(roughness: f32) -> f32 {
+  let texelsPerRad = f32(textureDimensions(cabinProbe).x) / 1.5708;
+  return clamp(log2(max(roughness * roughness, 1e-3) * texelsPerRad * 1.4), 0.0, f32(textureNumLevels(cabinProbe)) - 1.0);
+}
+/// Luminance (cd/m^2) the cabin sends toward p (PART frame) from direction d, blurred for a roughness.
+fn cabinProbeAt(p: vec3f, d: vec3f, roughness: f32) -> vec3f {
+  return textureSampleLevel(cabinProbe, linearClamp, cabinProbeDir(p, d), cabinProbeLod(roughness)).rgb * cabin.probe.w;
+}
+/// Specular occlusion from the baked ambient occlusion (Lagarde and de Rousiers 2014).
+fn cabinSpecOcclusion(NoV: f32, ao: f32, roughness: f32) -> f32 {
+  return saturate(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao);
 }
 `;
 
@@ -425,11 +472,6 @@ const SUN_TAPS = array<vec2f, 16>(
   vec2f(-0.6439, -0.2342), vec2f(-0.2706, -0.6466), vec2f(0.3075, -0.7004), vec2f(0.7428, 0.1121), vec2f(0.6311, 0.5862),
   vec2f(0.1729, 0.8396), vec2f(-0.4089, 0.7871), vec2f(-0.8282, 0.2391), vec2f(-0.8565, -0.3214), vec2f(-0.5321, -0.7957),
   vec2f(0.0247, -0.9442));
-
-/// Sun-map coordinates (u, v, depth) of a part-frame point.
-fn sunCoord(p: vec3f) -> vec3f {
-  return vec3f(dot(cabin.sunU.xyz, p) + cabin.sunU.w, dot(cabin.sunV.xyz, p) + cabin.sunV.w, dot(cabin.sunL.xyz, p) + cabin.sunL.w);
-}
 
 /// Share of a disc cut off by a straight edge at signed distance x (in disc radii, + = the centre is past
 /// the edge): the area of the part of the disc on the open side, over the disc's area.
@@ -481,74 +523,87 @@ fn apertureVisibility(p: vec3f, i: u32) -> vec2f {
   return vec2f(vis, cosI);
 }
 
-/// The sun's light through the windows at p: the best window's disc fraction times its glazing's
-/// transmittance (per channel; Fresnel at the incidence on every surface of every pane).
-fn sunThroughWindows(p: vec3f) -> vec3f {
+/// The sun's light through the windows at p: rgb = the best window's disc fraction times its glazing's
+/// transmittance (per channel; Fresnel at the incidence on every surface of every pane), w = that window.
+fn sunThroughWindows(p: vec3f) -> vec4f {
   var best = vec2f(0.0);
+  var which = 0u;
   for (var i = 0u; i < cabin.counts.y; i++) {
     let a = apertureVisibility(p, i);
-    if (a.x > best.x) { best = a; }
+    if (a.x > best.x) {
+      best = a;
+      which = i;
+    }
   }
-  if (best.x <= 0.0) { return vec3f(0.0); }
+  if (best.x <= 0.0) { return vec4f(0.0); }
   let ior = cabin.misc.w;
   let f0 = sq((ior - 1.0) / (ior + 1.0));
   let fr = f0 + (1.0 - f0) * pow5(1.0 - best.y);
-  return cabin.glassSun.rgb * pow((1.0 - fr) / (1.0 - f0), 2.0 * cabin.glassSun.w) * best.x;
+  return vec4f(cabin.glassSun.rgb * pow((1.0 - fr) / (1.0 - f0), 2.0 * cabin.glassSun.w) * best.x, f32(which));
 }
 
-/// Visibility of the sun past the interior's own occluders (the cabin sun map) at a part-frame point with
-/// geometric normal ng (turned to the sun by the caller): 0 .. 1. sc and its screen derivatives (taken in
-/// uniform control flow by the caller) give the receiver plane, so taps over a sloped receiver compare at
-/// the receiver's own depth. PCSS: a blocker search, then a PCF whose radius follows the blocker distance.
-fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, sc: vec3f, scdx: vec3f, scdy: vec3f) -> f32 {
-  let texel = cabin.sunMap.x;
+/// Widest penumbra radius the sun map filters (m): the penumbra of a blocker 0.65 m from the receiver.
+const SUN_PENUMBRA_MAX = 0.006;
+
+/// Visibility of the sun past the interior's own occluders at a part-frame point with geometric normal ng
+/// (turned to the sun by the caller), lit through window wi: 0 .. 1. Every window the sun enters has its own
+/// tile of the cabin sun map, fitted to the cross-section of its beam (sunmap.ts): a few tenths of a
+/// millimetre per texel, so an occluder's edge stays straight on a receiver the light only grazes. The
+/// receiver's plane is known analytically (ng and the tile's axes), so taps over a sloped receiver compare
+/// at the receiver's own depth. PCSS: a blocker search, then a 6 x 6 grid of bilinear comparisons over the
+/// penumbra the blocker distance and the solar diameter give.
+fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
+  let tu = cabin.sunTiles[3u * wi];
+  let tv = cabin.sunTiles[3u * wi + 1u];
+  let ti = cabin.sunTiles[3u * wi + 2u];
+  if (ti.x <= 0.0) { return 1.0; }
   let range = cabin.sunMap.y;
   let size = cabin.sunMap.z;
-  let mPerUv = texel * size;
-  let det = scdx.x * scdy.y - scdx.y * scdy.x;
-  var dzduv = vec2f(0.0);
-  if (abs(det) > 1e-14) { dzduv = vec2f(scdy.y * scdx.z - scdx.y * scdy.z, scdx.x * scdy.z - scdy.x * scdx.z) / det; }
-  // Bounded: at grazing incidence a tap must not compare against a depth far off the receiver.
-  let maxSlope = 12.0 * mPerUv / range;
-  dzduv = clamp(dzduv, vec2f(-maxSlope), vec2f(maxSlope));
+  let mPerUv = ti.xy;
+  let texelM = max(mPerUv.x, mPerUv.y) / size;
+  // Depth of the receiver's plane per metre along the tile's axes (the light travels along -sunPart).
+  let slope = clamp(vec2f(dot(ng, tu.xyz) * mPerUv.x, dot(ng, tv.xyz) * mPerUv.y) / max(NoL, 0.06), vec2f(-12.0), vec2f(12.0));
+  let dzduv = slope * mPerUv / range;
   let sinL = sqrt(max(1.0 - NoL * NoL, 0.0));
-  // Normal offset (part frame) and constant bias grow toward grazing incidence, where a texel spans more depth.
-  let q = sunCoord(p + ng * texel * (0.5 + 3.0 * sinL));
-  let bias = (1.5 + 2.0 * sinL) * texel / range;
-  // Blocker search over the widest penumbra a cabin-sized blocker distance gives (3 m).
-  let slope = cabin.sunPart.w;
-  let searchUv = max(3.0 * slope, 3.0 * texel) / mPerUv;
+  let q0 = p + ng * (texelM * (1.0 + 2.0 * sinL) + 0.0003);
+  let q = vec3f(dot(tu.xyz, q0) + tu.w, dot(tv.xyz, q0) + tv.w, dot(cabin.sunL.xyz, q0) + cabin.sunL.w);
+  // What is left after the plane fit: the map's own interpolation within a texel of a sloped caster.
+  let bias = (0.0004 + texelM * (1.0 + 0.75 * sinL / max(NoL, 0.06))) / range;
+  let guard = vec2f(1.5 / size);
+  let lo = ti.zw + guard;
+  let hi = ti.zw + vec2f(cabin.sunMap.x) - guard;
+  // Blocker search over the widest penumbra that is filtered.
+  let searchUv = vec2f(SUN_PENUMBRA_MAX) / mPerUv;
   var zBlock = 0.0;
   var nBlock = 0.0;
   for (var k = 0u; k < 16u; k++) {
     let o = SUN_TAPS[k] * searchUv;
     let zr = q.z + dot(o, dzduv) - bias;
-    let d4 = textureGather(cabinSunMap, nearestClamp, q.xy + o);
+    let d4 = textureGather(cabinSunMap, nearestClamp, clamp(q.xy + o, lo, hi));
     let m = select(vec4f(0.0), vec4f(1.0), d4 < vec4f(zr));
     nBlock += m.x + m.y + m.z + m.w;
     zBlock += dot(d4, m);
   }
   if (nBlock < 0.5) { return 1.0; }
+  if (nBlock > 63.5) { return 0.0; }
   zBlock /= nBlock;
-  // Penumbra radius in texels (blocker distance x solar diameter), filtered by a fixed 8 x 8 grid of
-  // bilinear comparisons no more than a texel apart: smooth, with neither noise nor banding. The grid
-  // reaches 4 texels (8 mm), the penumbra of a blocker 0.9 m away; farther interior blockers keep 8 mm.
-  let penTexels = clamp((q.z - zBlock) * range * slope / texel, 1.0, 4.0);
-  let stepUv = (penTexels / 4.0) / size;
+  // Penumbra radius (m): blocker distance x the sun's angular radius, at least a texel and a half.
+  let pen = clamp((q.z - zBlock) * range * 0.5 * cabin.sunPart.w, 1.5 * texelM, SUN_PENUMBRA_MAX);
+  let stepUv = vec2f(pen / 3.0) / mPerUv;
   var lit = 0.0;
-  for (var j = 0; j < 8; j++) {
-    for (var i = 0; i < 8; i++) {
-      let o = (vec2f(f32(i), f32(j)) - 3.5) * stepUv;
-      lit += textureSampleCompareLevel(cabinSunMap, shadowCompare, q.xy + o, q.z + dot(o, dzduv) - bias);
+  for (var j = 0; j < 6; j++) {
+    for (var i = 0; i < 6; i++) {
+      let o = (vec2f(f32(i), f32(j)) - 2.5) * stepUv;
+      lit += textureSampleCompareLevel(cabinSunMap, shadowCompare, clamp(q.xy + o, lo, hi), q.z + dot(o, dzduv) - bias);
     }
   }
-  return lit / 64.0;
+  return lit / 36.0;
 }
 
 /// The sun at a part-frame point of a cabin surface with geometric normal ngIn (part frame): rgb
 /// transmittance of windows, glazing and interior occluders. Cloth (two-sided) uses the normal turned to
 /// the sun.
-fn cabinSun(p: vec3f, ngIn: vec3f, twoSided: bool, sc: vec3f, scdx: vec3f, scdy: vec3f) -> vec3f {
+fn cabinSun(p: vec3f, ngIn: vec3f, twoSided: bool) -> vec3f {
   if (cabin.sunMap.w < 0.5) { return vec3f(0.0); }
   let ls = cabin.sunPart.xyz;
   var ng = ngIn;
@@ -557,7 +612,7 @@ fn cabinSun(p: vec3f, ngIn: vec3f, twoSided: bool, sc: vec3f, scdx: vec3f, scdy:
   if (NoL <= 0.0) { return vec3f(0.0); }
   let through = sunThroughWindows(p);
   if (max(through.r, max(through.g, through.b)) <= 0.0) { return vec3f(0.0); }
-  return through * sunMapVisibility(p, ng, NoL, sc, scdx, scdy);
+  return through.rgb * sunMapVisibility(p, ng, NoL, u32(through.w + 0.5));
 }
 
 /// Sun illuminance (lux, rgb) at the vessel through the atmosphere and the clouds (before the windows).
@@ -566,7 +621,12 @@ fn cabinSunIlluminance(amb: CabinAmbient) -> vec3f {
 }
 `;
 
-/** Interior G-buffer: animated controls, textured surface detail, labels, emitters, the sun, cabin light. */
+/**
+ * Interior: animated controls, textured surface detail, labels, emitters, the sun, cabin light. Entry points:
+ * vsDepth / fsDepth (depth pre-pass), vs / fs (G-buffer), fsDecal (label decals), vsProbe / fsProbe (the
+ * cabin probe: the same surfaces seen from the cabin's centre, diffuse light only; bind group 2 holds the
+ * cube face's view-projection).
+ */
 export const INTERIOR_WGSL = (decls: string): string => /* wgsl */ `
 ${HEAD(decls)}
 
@@ -580,6 +640,7 @@ const LABEL_COLORS = array<vec3f, 6>(
   vec3f(0.82, 0.83, 0.82), vec3f(0.02, 0.02, 0.02), vec3f(0.72, 0.52, 0.02),
   vec3f(0.55, 0.04, 0.03), vec3f(0.3, 0.32, 0.33), vec3f(0.04, 0.3, 0.12));
 
+${PROBE_FACE_WGSL}
 struct VIn {
   @location(0) pos: vec3f,
   @location(1) nrm: vec4f,
@@ -592,27 +653,29 @@ struct VIn {
   @location(8) occ1: vec4f,
   @location(9) occ2: vec4f,
   @location(10) occ3: vec4f,
+  @location(11) occ4: vec4f,
+  @location(12) occ5: vec4f,
 }
 struct VOut {
   // Invariant: the depth pre-pass and the shading pass produce bit-identical depth (depth test 'equal').
   @invariant @builtin(position) clip: vec4f,
-  @location(0) world: vec3f,
+  @location(0) part: vec3f,
   @location(1) n: vec3f,
   @location(2) t: vec4f,
-  @location(3) uv0: vec2f,
-  @location(4) uv1: vec2f,
-  @location(5) @interpolate(flat) misc: vec4u,
-  @location(6) @interpolate(flat) ctl: vec2u,
-  @location(7) currClip: vec4f,
-  @location(8) prevClip: vec4f,
-  @location(9) part: vec3f,
-  @location(10) occ0: vec4f,
-  @location(11) occ1: vec4f,
-  @location(12) occ2: vec4f,
-  @location(13) occ3: vec4f,
+  @location(3) uv: vec4f,                 // xy = uv0 (surface coordinates), zw = uv1 (label atlas)
+  @location(4) @interpolate(flat) misc: vec4u,
+  @location(5) @interpolate(flat) ctl: vec2u,
+  @location(6) currClip: vec4f,
+  @location(7) prevClip: vec4f,
+  @location(8) occ0: vec4f,
+  @location(9) occ1: vec4f,
+  @location(10) occ2: vec4f,
+  @location(11) occ3: vec4f,
+  @location(12) occ4: vec4f,
+  @location(13) occ5: vec4f,
 }
 
-@vertex fn vs(v: VIn) -> VOut {
+fn vertexOut(v: VIn) -> VOut {
   var p = v.pos;
   var pp = v.pos;
   var n = v.nrm.xyz;
@@ -630,11 +693,9 @@ struct VOut {
   o.clip = frame.viewProj * vec4f(w, 1.0);
   o.currClip = frame.viewProjUnjittered * vec4f(w, 1.0);
   o.prevClip = frame.prevViewProj * vec4f(wp, 1.0);
-  o.world = w;
   o.n = dirRoot(n);
   o.t = vec4f(dirRoot(t), v.tan.w);
-  o.uv0 = v.uv0;
-  o.uv1 = v.uv1;
+  o.uv = vec4f(v.uv0, v.uv1);
   o.misc = v.misc;
   o.ctl = v.ctl;
   o.part = p;
@@ -642,27 +703,49 @@ struct VOut {
   o.occ1 = v.occ1;
   o.occ2 = v.occ2;
   o.occ3 = v.occ3;
+  o.occ4 = v.occ4;
+  o.occ5 = v.occ5;
+  return o;
+}
+@vertex fn vs(v: VIn) -> VOut { return vertexOut(v); }
+@vertex fn vsProbe(v: VIn) -> VOut {
+  var o = vertexOut(v);
+  o.clip = probeFace.viewProj * vec4f(o.part, 1.0);
   return o;
 }
 
 // ------------------------------------------------------------------------------------------- detail
-struct Detail { albedo: f32, rough: f32, slope: vec2f, cavity: f32, wear: f32, grime: f32 }
+/// slope: tangent-space normal offset (texture detail); dh: screen derivatives of a height field in metres
+/// (procedural relief: the surface-gradient form, independent of how the pattern lies in the tangent frame).
+struct Detail { albedo: f32, rough: f32, slope: vec2f, dh: vec2f, cavity: f32, wear: f32, grime: f32 }
 
 fn partHash(seed: u32, k: i32) -> f32 { return hash_to_unit(hash4(i32(seed), k, 71, 19)); }
 /// Fade of a pattern of spatial frequency f (cycles per metre) given the pixel footprint fw (m): patterns
 /// finer than about two pixels are filtered out instead of aliasing into moire.
 fn aaFade(f: f32, fw: f32) -> f32 { return 1.0 - smoothstep(0.2, 0.45, f * fw); }
 
-/// Surface detail of a material at metric surface coordinates uv: the baked detail textures (tone, gloss,
-/// normal, cavity, wear and grime masks) with a per-part phase, tone and gloss, plus the procedural patterns
-/// that follow the geometry (quilting, duct ribs, knurling).
-fn materialDetail(mat: Material, uv: vec2f, dx: vec2f, dy: vec2f, fw: f32, seed: u32, edge: bool) -> Detail {
+const QUILT_CELL = ${QUILT.cell};
+const QUILT_HEIGHT = ${QUILT.height};
+const QUILT_POWER = ${QUILT.power};
+
+/// Surface detail of a material at surface coordinates uv (metres; quilted blankets: quilt cells, cabin/quilt.ts):
+/// the baked detail textures (tone, gloss, normal, cavity, wear and grime masks) with a per-part phase, tone
+/// and gloss, plus the procedural patterns that follow the geometry (quilting, duct ribs, knurling).
+fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f32, seed: u32, edge: bool) -> Detail {
   var d: Detail;
   let strength = mat.c.y;
   let variation = mat.d.w;
+  let pattern = u32(mat.c.x + 0.5);
+  // Metric coordinates for the textures (a quilt's coordinates count cells).
+  let unit = select(1.0, QUILT_CELL, pattern == 1u);
+  let uv = uvIn * unit;
+  let dx = dxIn * unit;
+  let dy = dyIn * unit;
+  let fw = fwIn * unit;
   d.albedo = 1.0 + (partHash(seed, 0) - 0.5) * variation;
   d.rough = (partHash(seed, 1) - 0.5) * variation;
   d.slope = vec2f(0.0);
+  d.dh = vec2f(0.0);
   d.cavity = 1.0;
   d.wear = 0.0;
   d.grime = 0.0;
@@ -678,32 +761,55 @@ fn materialDetail(mat: Material, uv: vec2f, dx: vec2f, dy: vec2f, fw: f32, seed:
     d.cavity = mix(1.0, tN.z, strength);
     d.albedo *= mix(1.0, tM.r * 2.0, strength);
     d.rough += (tM.g - 0.5) * strength;
-    // Paint wears through on edges where the wear mask is highest; mat.d.y is how much of the edge goes.
-    d.wear = select(0.0, smoothstep(1.0 - mat.d.y, 1.0 - mat.d.y + 0.15, tM.b), edge && mat.d.y > 0.0);
+    // Paint wears through along an edge in runs: a slow variation along the edge decides where a run is worn
+    // (mat.d.y of the edge's length), the fine mask frays the ends of each run into chips.
+    if (edge && mat.d.y > 0.0) {
+      let run = valueNoise3(vec3f(uv.x * 14.0 + f32(seed) * 3.7, f32(seed) * 0.37, 0.5), 51);
+      d.wear = smoothstep(1.0 - mat.d.y - 0.06, 1.0 - mat.d.y + 0.06, run + (tM.b - 0.5) * 0.3);
+    }
     d.grime = tM.a;
   }
-  switch (u32(mat.c.x + 0.5)) {
-    case 1u: { // quilted blanket: stitched diamond cells, each bay sewn a little differently
-      let cell = mix(0.062, 0.08, partHash(seed, 4));
-      let ang = (partHash(seed, 5) - 0.5) * 0.16;
-      let cs = cos(ang);
-      let sn = sin(ang);
-      var q = vec2f(cs * uv.x - sn * uv.y, sn * uv.x + cs * uv.y) / cell + vec2f(partHash(seed, 6), partHash(seed, 7));
-      // Hand-sewn seams wander.
-      q += vec2f(valueNoise3(vec3f(uv * 6.0, 0.3), 31) - 0.5, valueNoise3(vec3f(uv * 6.0, 0.7), 32) - 0.5) * 0.18;
-      let a = vec2f(q.x + q.y, q.x - q.y) * 0.7071;
+  switch (pattern) {
+    case 1u: { // quilted blanket: every diamond cell a pillow pinched along its stitched seams
+      let a = vec2f(uvIn.x + uvIn.y, uvIn.x - uvIn.y) * 0.7071;
       let f = fract(a) - 0.5;
       let id = floor(a);
-      let seam = min(0.5 - abs(f.x), 0.5 - abs(f.y));
-      // Each cell puffs by its own amount (filling settles unevenly).
-      let fill = mix(0.55, 1.25, hash_to_unit(hash4(i32(id.x), i32(id.y), i32(seed), 33)));
-      let puff = smoothstep(0.0, 0.11 * fill, seam);
-      d.cavity *= mix(0.7, 1.0, puff);
-      d.slope += vec2f(f.x + f.y, f.x - f.y) * (1.0 - puff) * 0.22 * strength * fill;
-      d.albedo *= 0.94 + 0.06 * puff;
-      let stitch = step(seam, 0.013) * step(0.45, fract((a.x + a.y) * 9.0)) * aaFade(140.0 / cell, fw);
-      d.albedo *= 1.0 - 0.28 * stitch;
-      d.grime = max(d.grime, (1.0 - puff) * 0.6);
+      // Each cell is filled a little differently (the batting settles).
+      let fill = mix(0.75, 1.15, hash_to_unit(hash4(i32(id.x), i32(id.y), i32(seed), 33)));
+      let c = max(cos(PI * f.x) * cos(PI * f.y), 1e-4);
+      let ce = pow(c, QUILT_POWER);
+      // Gradient of the pillow height (m) in cell coordinates. The crease at the seam is as sharp as the
+      // pixel footprint resolves (fwIn = cells per pixel): from afar the cloth dives into the seam more
+      // gently, so a crease narrower than a pixel does not sparkle.
+      let soft = clamp(fwIn * 2.5, 0.03, 0.6);
+      var ga = -(QUILT_HEIGHT * fill * QUILT_POWER * PI) * ce * sin(PI * f) / (cos(PI * f) + vec2f(soft));
+      // Distance to the nearest seam (cells) and which pair of seams it belongs to.
+      let sd = vec2f(0.5) - abs(f);
+      let seam = min(sd.x, sd.y);
+      let seamM = seam * QUILT_CELL;
+      // Puckers: the cloth gathers along each seam in short ripples across it.
+      let along = select(a.x, a.y, sd.x < sd.y);
+      let ph = hash_to_unit(hash4(i32(id.x), i32(id.y), i32(sd.x < sd.y), 34)) * 6.28;
+      let pk = 2.0 * PI * QUILT_CELL / 0.011;
+      let pucker = 0.00045 * exp(-seamM / 0.008) * aaFade(1.0 / 0.011, fw);
+      let gp = pucker * pk * cos(along * pk + ph);
+      ga += select(vec2f(gp, 0.0), vec2f(0.0, gp), sd.x < sd.y);
+      let lim = 1.5 * QUILT_CELL;
+      ga = clamp(ga, vec2f(-lim), vec2f(lim));
+      // Chain rule to the screen: cells -> uv0 (a rotation) -> pixels.
+      let gq = vec2f(ga.x + ga.y, ga.x - ga.y) * 0.7071;
+      let fade = aaFade(1.0 / QUILT_CELL, fw * 0.5);
+      d.dh = vec2f(dot(gq, dxIn), dot(gq, dyIn)) * fade;
+      // The stitched groove: a narrow shaded line, and the thread as dashes along it.
+      let groove = 1.0 - smoothstep(0.0015, 0.0045, seamM);
+      d.cavity *= mix(1.0, 0.62, groove);
+      d.albedo *= 1.0 - 0.1 * groove;
+      let thread = (1.0 - smoothstep(0.0006, 0.0012, seamM)) * step(0.4, fract(along * QUILT_CELL / 0.0035)) * aaFade(1.0 / 0.0035, fw);
+      d.albedo *= 1.0 + 0.22 * thread;
+      d.rough -= 0.1 * thread;
+      // Dust gathers a little in the grooves, handling polishes the crowns.
+      d.grime = max(d.grime * 0.6, groove * 0.5);
+      d.rough -= 0.05 * ce;
     }
     case 2u: { // ribbed duct: ribs along the tube
       let r = sin(uv.x * 260.0) * aaFade(41.0, fw);
@@ -739,44 +845,63 @@ struct VDepth { @invariant @builtin(position) clip: vec4f }
   return o;
 }
 
-/// Shade an interior fragment. decal: a label drawn over its face after the interior, blended by its ink
-/// (RT0 and RT5 only), so the face underneath shows through unchanged where there is no ink.
-fn shade(in: VOut, decal: bool) -> GBufferOut {
+struct Shaded {
+  albedo: vec3f,
+  n: vec3f,
+  t: vec3f,
+  roughness: f32,
+  metallic: f32,
+  materialId: u32,
+  param: f32,
+  anisotropy: f32,
+  clearcoat: f32,
+  /// Luminance toward the eye (cd/m^2, not pre-exposed) and the share of it that is cabin light reflected
+  /// diffusely (the probe's bounce light: without the sun's own reflection and what the surface emits).
+  luminance: vec3f,
+  bounceShare: f32,
+  ink: f32,
+}
+
+/// Shade an interior fragment seen from 'eye' (camera-relative ROOT; the camera itself, or the probe's
+/// centre). decal: a label drawn over its face after the interior, blended by its ink (RT0 and RT5 only), so
+/// the face underneath shows through unchanged where there is no ink. probe: diffuse light only.
+fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let mat = materials[in.misc.x];
   let shading = u32(mat.b.y + 0.5);
   let flags = in.misc.z;
   let isLabel = (flags & FLAG_LABEL) != 0u;
-  // Screen derivatives in uniform control flow: detail filtering, label filtering, the sun map's receiver plane.
-  let duvx = dpdx(in.uv0);
-  let duvy = dpdy(in.uv0);
+  let world = toRoot(cabin.m0, cabin.m1, cabin.m2, in.part);
+  // Screen derivatives in uniform control flow: detail filtering, label filtering, the face normal.
+  let duvx = dpdx(in.uv.xy);
+  let duvy = dpdy(in.uv.xy);
   let fw = max(length(duvx), length(duvy));
-  let uvDx = dpdx(in.uv1);
-  let uvDy = dpdy(in.uv1);
-  let sc = sunCoord(in.part);
-  let scdx = dpdx(sc);
-  let scdy = dpdy(sc);
-  let faceRaw = cross(dpdx(in.world), dpdy(in.world));
+  let uvDx = dpdx(in.uv.zw);
+  let uvDy = dpdy(in.uv.zw);
+  let sigmaX = dpdx(world);
+  let sigmaY = dpdy(world);
+  let faceRaw = cross(sigmaX, sigmaY);
 
   let seed = select(in.misc.w, 0u, isLabel);
-  let det = materialDetail(mat, in.uv0, duvx, duvy, fw, seed, (flags & FLAG_EDGE) != 0u);
-  var occ = occUnpack(in.occ0, in.occ1, in.occ2, in.occ3);
+  let det = materialDetail(mat, in.uv.xy, duvx, duvy, fw, seed, (flags & FLAG_EDGE) != 0u);
+  var occ = occUnpack(in.occ0, in.occ1, in.occ2, in.occ3, in.occ4, in.occ5);
   // Modelled cavity (vertex) and texture cavity darken the cabin's ambient light only.
   let cavity = (f32(in.misc.y) / 255.0) * det.cavity;
 
   var albedo = mat.a.rgb * det.albedo;
   var roughness = clamp(mat.a.w + det.rough, 0.04, 1.0);
   var metallic = mat.b.x;
-  // Worn edges show what is under the paint.
+  // Worn edges show what is under the paint or the anodising.
   albedo = mix(albedo, mat.e.rgb, det.wear);
   metallic = mix(metallic, mat.e.w, det.wear);
-  roughness = mix(roughness, 0.32, det.wear);
-  // Grime settles where little light and few hands reach: cavities and occluded corners.
-  let grime = saturate(det.grime * mat.d.z * (1.6 - occ.ao - 0.6 * cavity));
-  albedo *= 1.0 - 0.45 * grime;
+  roughness = mix(roughness, 0.5, det.wear);
+  // Grime settles where few hands reach: the texture's mask in modelled cavities (the same on every
+  // identical part; the baked occlusion does not enter).
+  let grime = saturate(det.grime * mat.d.z * (1.5 - cavity));
+  albedo *= 1.0 - 0.4 * grime;
   roughness = mix(roughness, 0.85, grime * 0.5);
 
   var N = normalize(in.n);
-  let viewDir = normalize(-in.world);
+  let viewDir = normalize(eye - world);
   // Two-sided: the vertex normal is flipped when it lies on the far side of the visible face.
   var faceN = normalize(faceRaw);
   if (dot(faceN, viewDir) < 0.0) { faceN = -faceN; }
@@ -784,13 +909,19 @@ fn shade(in: VOut, decal: bool) -> GBufferOut {
   var T = in.t.xyz - N * dot(in.t.xyz, N);
   T = select(normalize(T), tangentFrame(N)[0], dot(T, T) < 1e-8);
   let B = cross(N, T) * in.t.w;
-  let n = normalize(N + T * det.slope.x + B * det.slope.y);
+  // Procedural relief as a surface gradient (Mikkelsen): grad h = (dh/dx R1 + dh/dy R2) / det.
+  let r1 = cross(sigmaY, N);
+  let r2 = cross(N, sigmaX);
+  let dt = dot(sigmaX, r1);
+  var grad = vec3f(0.0);
+  if (abs(dt) > 1e-12) { grad = (det.dh.x * r1 + det.dh.y * r2) / dt; }
+  let n = normalize(N + T * det.slope.x + B * det.slope.y - grad);
 
   // Labels: ink from the atlas over the face material.
   var emissive = vec3f(0.0);
   var ink = 0.0;
   if (isLabel) {
-    ink = textureSampleGrad(labelAtlas, linearClamp, in.uv1, uvDx, uvDy).r;
+    ink = textureSampleGrad(labelAtlas, anisoRepeat, in.uv.zw, uvDx, uvDy).r;
     let inkColor = LABEL_COLORS[min(in.misc.w, 5u)];
     if ((flags & FLAG_EMISSIVE) == 0u) {
       // A decal is the ink alone (its coverage blends it over the face); otherwise ink over the face.
@@ -814,7 +945,7 @@ fn shade(in: VOut, decal: bool) -> GBufferOut {
     emissive += C.emit.rgb * lit * legend;
     if (isLabel) {
       // Unlit legend: light grey lettering on the dark lens.
-      albedo = mix(albedo, vec3f(0.35), ink * (1.0 - lit));
+      albedo = mix(albedo, vec3f(0.42), ink * (1.0 - lit));
     }
   }
 
@@ -825,29 +956,59 @@ fn shade(in: VOut, decal: bool) -> GBufferOut {
   let a = roughness * roughness;
   roughness = sqrt(sqrt(saturate(a * a + kernel)));
 
-  // Cabin light (everything but the sun): emitted term, so it reaches no pixel outside the cabin.
+  // Cabin light (everything but the sun): the sources as polygons with their baked visibility, the light
+  // the cabin's own surfaces reflect (the probe's bounce irradiance about the normal), and for glossy
+  // surfaces the probe's image of the cabin along the reflected ray.
   let amb = cabinAmbient();
   let f0 = mix(vec3f(0.04), albedo, metallic);
-  let cl = cabinLight(in.world, n, viewDir, roughness, f0, occ, amb.sunT * amb.cloudT);
-  let diffuseColor = albedo * (1.0 - metallic);
-  let ambientSpec = amb.uniformE * (f0 * 0.5 + 0.02) * (1.0 - roughness) / PI;
-  emissive += diffuseColor * (cl.diffuse + amb.uniformE * occ.ao * cavity) / PI + cl.specular + ambientSpec * occ.ao * cavity;
+  let materialId = select(MATERIAL_STANDARD, MATERIAL_CLOTH, shading == 1u);
+  let nPart = dirPart(n);
+  let NoV = max(dot(n, viewDir), 1e-3);
+  let E = cabinLight(world, n, occ, amb.sunT * amb.cloudT) + cabinBounce(nPart) * (occ.ao * cavity);
+  // In the probe a metal counts as a diffuse reflector of its own colour (it holds no specular light).
+  let diffuseColor = select(albedo * (1.0 - metallic), albedo, probe);
+  var reflected = diffuseColor * E / PI;
+  let Ta = normalize(T - n * dot(T, n));
+  if (!probe) {
+    if (shading == 1u) {
+      // Cloth: fibres standing off the weave scatter light toward a grazing eye.
+      reflected += mix(vec3f(0.07), albedo, 0.35) * E * (sq(1.0 - NoV) * 1.6 / PI);
+    } else {
+      let vPart = dirPart(viewDir);
+      var rn = nPart;
+      if (mat.b.z > 0.0) {
+        // Brushed metal: the lobe stretches across the grain (Filament's bent normal).
+        let g = dirPart(cross(n, Ta) * in.t.w);
+        let an = cross(cross(g, vPart), g);
+        rn = normalize(mix(nPart, an, mat.b.z * saturate(5.0 * roughness)));
+      }
+      let dfg = envBrdfApprox(roughness, NoV);
+      let so = cabinSpecOcclusion(NoV, occ.ao * cavity, roughness);
+      reflected += cabinProbeAt(in.part, reflect(-vPart, rn), roughness) * (f0 * dfg.x + vec3f(dfg.y)) * so;
+      if (mat.b.w > 0.0) {
+        let fc = (0.04 + 0.96 * pow5(1.0 - NoV)) * mat.b.w;
+        reflected = reflected * (1.0 - fc) + cabinProbeAt(in.part, reflect(-vPart, nPart), 0.08) * (fc * so);
+      }
+    }
+  }
 
   // The sun through the windows, through the core's BRDFs and the cabin's own shadow map.
-  let materialId = select(MATERIAL_STANDARD, MATERIAL_CLOTH, shading == 1u);
-  let ngPart = dirPart(faceN);
-  let sunVis = cabinSun(in.part, ngPart, shading == 1u, sc, scdx, scdy);
+  var sunLit = vec3f(0.0);
+  // Soft goods take the sun on their smooth surface (the interpolated normal): the facets of a blanket's
+  // mesh are coarser than its quilting.
+  let ngPart = dirPart(select(faceN, N, shading == 1u));
+  let sunVis = cabinSun(in.part, ngPart, shading == 1u);
   if (max(sunVis.r, max(sunVis.g, sunVis.b)) > 0.0) {
     var s: Surface;
-    s.pos = in.world;
-    s.viewDist = length(in.world);
+    s.pos = world;
+    s.viewDist = length(world - eye);
     s.n = n;
     s.ao = 1.0;
     s.v = viewDir;
     s.roughness = roughness;
     s.albedo = albedo;
-    s.metallic = metallic;
-    s.t = normalize(T - n * dot(T, n));
+    s.metallic = select(metallic, 0.0, probe);
+    s.t = Ta;
     s.anisotropy = select(0.0, mat.b.z, materialId == MATERIAL_STANDARD);
     s.up = n;
     s.altitude = 0.0;
@@ -860,25 +1021,46 @@ fn shade(in: VOut, decal: bool) -> GBufferOut {
     let l = cabin.sun.xyz;
     var f = brdfStandardDirect(s, l);
     if (shading == 1u) { f = brdfClothDirect(s, l); }
-    emissive += f * cabinSunIlluminance(amb) * sunVis;
+    if (probe) { f = albedo * (max(dot(n, l), 0.0) / PI); }
+    sunLit = f * cabinSunIlluminance(amb) * sunVis;
   }
 
-  let param = select(0.0, mat.c.z, shading == 1u);
-  var o = gbufferPack(albedo, 0.0, n, roughness, metallic, materialId, param,
-                      velocityFromClip(in.currClip, in.prevClip), emissive * frame.exposure.x);
-  if (materialId == MATERIAL_STANDARD) {
-    let Ta = normalize(T - n * dot(T, n));
-    o.extra = gbufferExtra(n, Ta, mat.b.z, mat.b.w, 0.08);
+  var o: Shaded;
+  o.albedo = albedo;
+  o.n = n;
+  o.t = Ta;
+  o.roughness = roughness;
+  o.metallic = metallic;
+  o.materialId = materialId;
+  o.param = select(0.0, mat.c.z, shading == 1u);
+  o.anisotropy = mat.b.z;
+  o.clearcoat = mat.b.w;
+  o.luminance = reflected + sunLit + emissive;
+  o.bounceShare = saturate(luminance(reflected) / max(luminance(o.luminance), 1e-6));
+  o.ink = ink;
+  return o;
+}
+
+fn pack(in: VOut, s: Shaded, decal: bool) -> GBufferOut {
+  var o = gbufferPack(s.albedo, 0.0, s.n, s.roughness, s.metallic, s.materialId, s.param,
+                      velocityFromClip(in.currClip, in.prevClip), s.luminance * frame.exposure.x);
+  if (s.materialId == MATERIAL_STANDARD) {
+    o.extra = gbufferExtra(s.n, s.t, s.anisotropy, s.clearcoat, 0.08);
   }
   if (decal) {
-    o.albedo.a = ink;
-    o.emissive.a = ink;
+    o.albedo.a = s.ink;
+    o.emissive.a = s.ink;
   }
   return o;
 }
 
-@fragment fn fs(in: VOut) -> GBufferOut { return shade(in, false); }
-@fragment fn fsDecal(in: VOut) -> GBufferOut { return shade(in, true); }
+@fragment fn fs(in: VOut) -> GBufferOut { return pack(in, shade(in, vec3f(0.0), false, false), false); }
+@fragment fn fsDecal(in: VOut) -> GBufferOut { return pack(in, shade(in, vec3f(0.0), true, false), true); }
+/// The cabin probe: luminance / cabin.probe.w, alpha = the share that is reflected cabin light.
+@fragment fn fsProbe(in: VOut) -> @location(0) vec4f {
+  let s = shade(in, toRoot(cabin.m0, cabin.m1, cabin.m2, cabin.probe.xyz), false, true);
+  return vec4f(min(s.luminance / cabin.probe.w, vec3f(60000.0)), s.bounceShare);
+}
 `;
 
 /** Depth pre-pass entry of INTERIOR_WGSL: no colour is written (every target's write mask is 0). */
@@ -929,7 +1111,7 @@ ${CASTER_COMMON}
 }
 `;
 
-/** Displays: the MFD images as emitters behind glass (MATERIAL_ID.display), with the RGB stripe structure up close. */
+/** Displays: the MFD images as emitters behind glass (MATERIAL_ID.display), with the RGB stripe structure up close; and in the cabin probe. */
 export const DISPLAY_WGSL = (decls: string): string => /* wgsl */ `
 ${HEAD(decls)}
 
@@ -963,9 +1145,6 @@ const PANEL_ALBEDO = vec3f(0.012, 0.013, 0.015);
 
 @fragment fn fs(in: VOut) -> GBufferOut {
   let size = vec2f(textureDimensions(mfdTex));
-  let sc = sunCoord(in.part);
-  let scdx = dpdx(sc);
-  let scdy = dpdy(sc);
   let uvSize = in.uv * size;
   let texelPx = 1.0 / max(max(length(dpdx(uvSize)), length(dpdy(uvSize))), 1e-6);
   var img = textureSample(mfdTex, anisoRepeat, in.uv, in.layer).rgb;
@@ -984,13 +1163,30 @@ const PANEL_ALBEDO = vec3f(0.012, 0.013, 0.015);
   let amb = cabinAmbient();
   let n = normalize(in.n);
   // The sun on the screen: the dark panel's diffuse reflection (the cover glass adds its own reflection).
-  let sunVis = cabinSun(in.part, normalize(in.nPart), false, sc, scdx, scdy);
+  let sunVis = cabinSun(in.part, normalize(in.nPart), false);
   let sunLit = PANEL_ALBEDO / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
   var o = gbufferPack(PANEL_ALBEDO, 0.0, n, 0.16, 0.0, MATERIAL_DISPLAY, amb.brightness,
                       velocityFromClip(in.currClip, in.prevClip), img * (cabin.display.x * frame.exposure.x));
   // RT5 carries the image at full brightness (the core scales it); the sunlit panel is added in proportion.
   o.emissive = vec4f(o.emissive.rgb + writeHdr(sunLit * frame.exposure.x / max(amb.brightness, 1e-3)), 1.0);
   return o;
+}
+
+// The same screens in the cabin probe: emitters (alpha 0: their light reaches surfaces as polygon sources).
+${PROBE_FACE_WGSL}
+@vertex fn vsProbe(v: VIn) -> VOut {
+  var o: VOut;
+  o.clip = probeFace.viewProj * vec4f(v.pos, 1.0);
+  o.uv = v.uv;
+  o.layer = u32(v.layer + 0.5);
+  o.n = dirRoot(v.nrm);
+  o.part = v.pos;
+  o.nPart = v.nrm;
+  return o;
+}
+@fragment fn fsProbe(in: VOut) -> @location(0) vec4f {
+  let img = textureSampleLevel(mfdTex, linearClamp, in.uv, in.layer, 3.0).rgb;
+  return vec4f(img * (cabin.display.x * cabinAmbient().brightness / cabin.probe.w), 0.0);
 }
 `;
 
@@ -1024,9 +1220,6 @@ struct VOut {
 }
 fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045)); }
 @fragment fn fs(in: VOut) -> GBufferOut {
-  let sc = sunCoord(in.part);
-  let scdx = dpdx(sc);
-  let scdy = dpdy(sc);
   let t = textureSample(navballTex, linearClamp, in.uv);
   // Premultiplied sRGB image: un-premultiply, decode; outside the ball the cavity is black.
   let c = select(vec3f(0.0), srgbToLinear(min(t.rgb / max(t.a, 1e-3), vec3f(1.0))), t.a > 0.004);
@@ -1035,10 +1228,15 @@ fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3
   let v = normalize(-in.world);
   let amb = cabinAmbient();
   // The ball sits in the instrument's cavity: the occlusion baked at the front of the ball.
-  let occ = occUnpack(cabin.ballOcc[0], cabin.ballOcc[1], cabin.ballOcc[2], cabin.ballOcc[3]);
-  let cl = cabinLight(in.world, n, v, 0.35, vec3f(0.04), occ, amb.sunT * amb.cloudT);
-  var emissive = albedo * (cl.diffuse + amb.uniformE * occ.ao) / PI + cl.specular + albedo * cabin.atmo.z;
-  let sunVis = cabinSun(in.part, normalize(in.nPart), false, sc, scdx, scdy);
+  let occ = occUnpack(cabin.ballOcc[0], cabin.ballOcc[1], cabin.ballOcc[2], cabin.ballOcc[3], cabin.ballOcc[4], cabin.ballOcc[5]);
+  let nP = normalize(in.nPart);
+  let E = cabinLight(in.world, n, occ, amb.sunT * amb.cloudT) + cabinBounce(nP) * occ.ao;
+  // A satin ball: its faint image of the cabin on top of the painted sphere.
+  let NoV = max(dot(n, v), 1e-3);
+  let dfg = envBrdfApprox(0.38, NoV);
+  let spec = cabinProbeAt(in.part, reflect(-dirPart(v), nP), 0.38) * (0.04 * dfg.x + dfg.y) * cabinSpecOcclusion(NoV, occ.ao, 0.38);
+  var emissive = albedo * E / PI + spec + albedo * cabin.atmo.z;
+  let sunVis = cabinSun(in.part, nP, false);
   emissive += albedo / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
   return gbufferPack(albedo, 0.0, n, 0.38, 0.0, MATERIAL_STANDARD, 0.0, velocityFromClip(in.currClip, in.prevClip), emissive * frame.exposure.x);
 }
@@ -1086,15 +1284,16 @@ fn fresnelDielectric(cosi: f32, eta: f32) -> f32 {
   return 0.5 * (rs * rs + rp * rp);
 }
 
-/// What the cabin looks like along a ray from bare window glass: the displays, floodlights and sun patches
-/// where the ray hits them (real images of the screens), the uniform cabin luminance otherwise.
-fn cabinRadianceAlong(o: vec3f, d: vec3f, amb: CabinAmbient) -> vec3f {
-  var L = amb.uniformE * cabin.bounce.w / PI * 1.6;
+/// What the cabin looks like along a ray from bare window glass (o camera-relative ROOT, oPart the same
+/// point in the part frame, d ROOT): the cabin probe's image of the lit interior, and over it the displays
+/// and the flood lights where the ray hits them (sharp images of the screens and the lamps).
+fn cabinRadianceAlong(o: vec3f, oPart: vec3f, d: vec3f, amb: CabinAmbient) -> vec3f {
+  var L = textureSampleLevel(cabinProbe, linearClamp, cabinProbeDir(oPart, dirPart(d)), 0.0).rgb * cabin.probe.w;
   var best = 1e9;
   for (var i = 0u; i < cabin.counts.x; i++) {
     let P = cabin.polys[i];
     let kind = u32(P.p0.w);
-    if ((kind != POLY_DISPLAY && kind != POLY_FLOOD && kind != POLY_PATCH) || P.normal.w < 0.5) { continue; }
+    if ((kind != POLY_DISPLAY && kind != POLY_FLOOD) || P.normal.w < 0.5) { continue; }
     let nn = P.normal.xyz;
     let den = dot(d, nn);
     if (den >= -1e-4) { continue; }
@@ -1109,8 +1308,6 @@ fn cabinRadianceAlong(o: vec3f, d: vec3f, amb: CabinAmbient) -> vec3f {
     best = t;
     if (kind == POLY_DISPLAY) {
       L = textureSampleLevel(mfdTex, linearClamp, vec2f(s, 1.0 - r), u32(P.p1.w), 1.5).rgb * cabin.display.x * amb.brightness;
-    } else if (kind == POLY_PATCH) {
-      L = P.radiance.rgb * amb.sunT * amb.cloudT;
     } else {
       L = P.radiance.rgb;
     }
@@ -1118,59 +1315,26 @@ fn cabinRadianceAlong(o: vec3f, d: vec3f, amb: CabinAmbient) -> vec3f {
   return L;
 }
 
-/// What an anti-glare (etched) cover glass reflects: every cabin source through a GGX lobe of the glass's
-/// roughness, so a lamp becomes a soft glow instead of a sharp image over the data; F is applied by the caller.
-fn cabinGlossyReflection(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, amb: CabinAmbient) -> vec3f {
-  var L = amb.uniformE * cabin.bounce.w / PI;
-  let NoV = max(dot(n, v), 1e-3);
-  for (var i = 0u; i < cabin.counts.x; i++) {
-    let P = cabin.polys[i];
-    let kind = u32(P.p0.w);
-    if (P.normal.w < 0.5) { continue; }
-    // Windows let light in from their outside; emitters shine to the side they face.
-    let side = dot(P.p0.xyz - pos, P.normal.xyz);
-    if ((kind == POLY_WINDOW && side < 0.0) || (kind != POLY_WINDOW && side > 0.0)) { continue; }
-    let V = polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz);
-    let lenV = length(V);
-    if (lenV < 1e-7) { continue; }
-    let l = V / lenV;
-    let NoL = dot(n, l);
-    if (NoL <= 0.0) { continue; }
-    var Ls: vec3f;
-    if (kind == POLY_WINDOW || kind == POLY_DISPLAY) { Ls = cabinPolyRadiance(i); } else if (kind == POLY_PATCH) { Ls = P.radiance.rgb * amb.sunT * amb.cloudT; } else { Ls = P.radiance.rgb; }
-    let h = normalize(v + l);
-    let a = sqrt(sq(max(roughness * roughness, 0.002)) + lenV * 0.5);
-    // Microfacet reflection of the source's irradiance (F applied by the caller).
-    L += D_GGX(saturate(dot(n, h)), a) * V_SmithGGXCorrelated(NoV, NoL, a) * Ls * (PI * max(dot(n, V), 0.0));
-  }
-  return L;
-}
-
-/// Dust specks, smudges and fine scratches of the cabin-side surface (coverage 0..1), uv in metres. Specks
-/// are jittered in their cells, vary in size (many small, few large) and gather in clumps; smudges are
-/// wiped streaks; scratches are curved hairlines of random length.
+/// Film on the cabin-side surface of a pane (coverage 0..1), uv in metres: an even veil of fine dust (a
+/// little uneven where the pane was wiped: faint arcs), a few specks and fibres, hairline scratches.
 fn grime(uv: vec2f) -> f32 {
   let density = cabin.misc.y;
-  // Clumping: the local speck density follows a slow noise.
-  let clump = smoothstep(0.3, 0.85, valueNoise3(vec3f(uv * 9.0, 0.5), 45));
-  var speck = 0.0;
-  for (var s = 0; s < 2; s++) {
-    let scale = select(620.0, 230.0, s == 1);
-    let g = uv * scale + f32(s) * 17.3;
-    let cell = floor(g);
-    let h = hash4(i32(cell.x), i32(cell.y), 7 + s, 41);
-    let p = hash_to_unit(h);
-    let jitter = vec2f(hash_to_unit(hash4(i32(cell.x), i32(cell.y), 8 + s, 41)), hash_to_unit(hash4(i32(cell.x), i32(cell.y), 9 + s, 41))) - 0.5;
-    let size = 0.08 + 0.3 * pow(hash_to_unit(hash4(i32(cell.x), i32(cell.y), 10 + s, 41)), 3.0);
-    let f = fract(g) - 0.5 - jitter * (0.9 - 2.0 * size);
-    let keep = step(p, density * select(0.05, 0.02, s == 1) * (0.25 + 2.2 * clump));
-    speck = max(speck, keep * smoothstep(size, size * 0.4, length(f)) * (0.5 + 0.5 * hash_to_unit(hash4(i32(cell.x), i32(cell.y), 11 + s, 41))));
-  }
-  // Wiped smudges: streaky noise along a direction that turns slowly over the pane.
-  let ang = valueNoise3(vec3f(uv * 2.0, 1.5), 46) * PI;
-  let dir = vec2f(cos(ang), sin(ang));
-  let streak = valueNoise3(vec3f(dot(uv, dir) * 60.0, dot(uv, vec2f(-dir.y, dir.x)) * 6.0, 2.0), 42);
-  let smudge = smoothstep(0.62, 0.92, streak) * smoothstep(0.35, 0.75, valueNoise3(vec3f(uv * 4.0, 3.0), 47)) * 0.3;
+  // The veil: nearly even, a slow variation and the arcs of the last wipe.
+  let slow = valueNoise3(vec3f(uv * 5.0, 0.5), 45);
+  let wipeC = vec2f(-0.35, -0.5);
+  let wipe = 0.5 + 0.5 * sin(length(uv - wipeC) * 140.0 + 6.0 * valueNoise3(vec3f(uv * 3.0, 1.5), 46));
+  let veil = density * (0.1 + 0.05 * slow + 0.035 * wipe * smoothstep(0.35, 0.7, valueNoise3(vec3f(uv * 2.2, 3.0), 47)));
+  // Specks: sparse (well under one in a hundred cells of 1.2 mm), a few of them fibres.
+  let g = uv * 820.0;
+  let cell = floor(g);
+  let h = hash4(i32(cell.x), i32(cell.y), 7, 41);
+  let jitter = vec2f(hash_to_unit(hash4(i32(cell.x), i32(cell.y), 8, 41)), hash_to_unit(hash4(i32(cell.x), i32(cell.y), 9, 41))) - 0.5;
+  let size = 0.1 + 0.25 * pow(hash_to_unit(hash4(i32(cell.x), i32(cell.y), 10, 41)), 4.0);
+  let fq = fract(g) - 0.5 - jitter * 0.5;
+  let fa = hash_to_unit(hash4(i32(cell.x), i32(cell.y), 11, 41)) * PI;
+  let fibre = vec2f(dot(fq, vec2f(cos(fa), sin(fa))) * select(1.0, 0.3, hash_to_unit(hash4(i32(cell.x), i32(cell.y), 12, 41)) > 0.8), dot(fq, vec2f(-sin(fa), cos(fa))));
+  let speck = step(hash_to_unit(h), density * 0.004) * smoothstep(size, size * 0.4, length(fibre));
+  let smudge = veil;
   // Scratches: hairline arcs in random cells, random length and curvature.
   let sg = uv * 40.0;
   let sc = floor(sg);
@@ -1182,7 +1346,7 @@ fn grime(uv: vec2f) -> f32 {
   let along = dot(q, vec2f(cos(sa), sin(sa)));
   let across = dot(q, vec2f(-sin(sa), cos(sa))) - curve * along * along;
   let scratch = step(hs, cabin.misc.z * 0.5) * smoothstep(0.012, 0.0, abs(across)) * smoothstep(len, len * 0.7, abs(along));
-  return clamp(speck + smudge * density + scratch * 0.4, 0.0, 1.0);
+  return clamp(smudge + speck * 0.5 + scratch * 0.3, 0.0, 1.0);
 }
 
 struct GlassOut { transmit: vec3f, add: vec3f }
@@ -1200,21 +1364,26 @@ fn glass(in: VOut) -> GlassOut {
   let amb = cabinAmbient();
   let coverGlass = in.info.y < 1.0;
   var refl: vec3f;
+  let nPart = normalize(in.nPart);
+  let nvPart = select(-nPart, nPart, fromInside);
   if (!fromInside) {
     refl = textureSampleLevel(envProbeCube, linearClamp, reflect(-v, nv), 0.0).rgb;
   } else if (coverGlass) {
-    refl = cabinGlossyReflection(in.world + nv * 0.002, nv, v, cabin.glare.y, amb);
+    // Anti-glare (etched) cover glass: the cabin through a lobe of the glass's roughness, so a lamp becomes
+    // a soft glow instead of a sharp image over the data.
+    refl = cabinProbeAt(in.part + nvPart * 0.002, reflect(-dirPart(v), nvPart), cabin.glare.y);
   } else {
-    refl = cabinRadianceAlong(in.world + nv * 0.002, reflect(-v, nv), amb);
+    // Bare glass mirrors the cabin; each pane is drawn where it is, so the two panes' images lie a little
+    // apart (the doubled reflection of a real window).
+    refl = cabinRadianceAlong(in.world + nv * 0.002, in.part + nvPart * 0.002, reflect(-v, nv), amb);
   }
   // info.y: reflectance of the pane relative to bare glass (the displays' coated cover glass is lower).
   var add = refl * (2.0 * F * in.info.y);
-  // Dust and scratches on the cabin side light up when the sun shines through at a grazing angle.
-  let nPart = normalize(in.nPart);
+  // The film of dust on the cabin side scatters the sun that shines through it toward the eye.
   let sunN = dot(frame.sunDir.xyz, -n);
   if (sunN > 0.0 && cabin.sun.w > 0.0) {
     // The pane lies in its window's aperture: only the windows clip the light that reaches it.
-    let lit = sunThroughWindows(in.part);
+    let lit = sunThroughWindows(in.part).rgb;
     let g = grime(in.uv) * lit;
     let cosTh = dot(-v, frame.sunDir.xyz);
     let hg = (1.0 - 0.49) / pow(1.0 + 0.49 - 1.4 * cosTh, 1.5) / (4.0 * PI);
@@ -1239,6 +1408,111 @@ fn glass(in: VOut) -> GlassOut {
   let uv = in.clip.xy * frame.renderSize.zw;
   let c = applyAtmosphere(uv, length(in.world), g.add * frame.exposure.x, 0.0);
   return vec4f(writeHdr(c.rgb), 0.0);
+}
+`;
+
+/**
+ * The window panes in the cabin probe: what comes in through them (the environment probe along the ray
+ * from the cabin's centre, plus the window's share of the entry plasma), as emitters (alpha 0). Vertex
+ * buffer: the glass panes of feature.ts (the window panes only are drawn).
+ */
+export const PROBE_WINDOW_WGSL = (decls: string): string => /* wgsl */ `
+${HEAD(decls)}
+${PROBE_FACE_WGSL}
+struct VOut { @builtin(position) clip: vec4f, @location(0) part: vec3f, @location(1) @interpolate(flat) window: u32 }
+@vertex fn vs(@location(0) pos: vec3f, @location(3) info: vec2f) -> VOut {
+  var o: VOut;
+  o.clip = probeFace.viewProj * vec4f(pos, 1.0);
+  o.part = pos;
+  o.window = u32(info.x + 0.5);
+  return o;
+}
+@fragment fn fs(in: VOut) -> @location(0) vec4f {
+  let d = dirRoot(normalize(in.part - cabin.probe.xyz));
+  let P = cabin.polys[min(in.window, MAX_CABIN_POLYS - 1u)];
+  let L = (textureSampleLevel(envProbeCube, linearClamp, d, 0.0).rgb + cabin.plasma.rgb * P.p2.w) * P.radiance.rgb;
+  return vec4f(min(L / cabin.probe.w, vec3f(60000.0)), 0.0);
+}
+`;
+
+/**
+ * Mips of the cabin probe: every level is the level above seen through a small disc of directions (eight
+ * taps about each texel's direction, sampled across the cube's faces), so level k holds the cabin blurred
+ * for a lobe 2^k texels wide. Group 0: the previous level as a cube, the level to write (all six faces).
+ */
+export const PROBE_MIPS_WGSL = /* wgsl */ `
+@group(0) @binding(0) var src: texture_cube<f32>;
+@group(0) @binding(1) var smp: sampler;
+@group(0) @binding(2) var dst: texture_storage_2d_array<rgba16float, write>;
+${CUBE_DIR_WGSL}
+@compute @workgroup_size(8, 8, 1) fn main(@builtin(global_invocation_id) id: vec3u) {
+  let size = textureDimensions(dst);
+  if (id.x >= size.x || id.y >= size.y) { return; }
+  var sum = vec4f(0.0);
+  for (var k = 0; k < 8; k++) {
+    let a = f32(k) * 0.7853982 + 0.39;
+    let r = select(0.45, 0.9, (k & 1) == 1);
+    let uv = (vec2f(id.xy) + 0.5 + vec2f(cos(a), sin(a)) * r) / vec2f(size);
+    sum += textureSampleLevel(src, smp, cubeDir(id.z, uv), 0.0);
+  }
+  textureStore(dst, id.xy, id.z, sum / 8.0);
+}
+`;
+
+/**
+ * The probe's bounce light as irradiance: nine spherical-harmonic coefficients (rgb, lux) of the luminance
+ * of the probe's reflecting surfaces (rgb x alpha: emitters and the sun's own reflection are left out, they
+ * reach surfaces as polygon sources), convolved with the cosine lobe, written behind the ambient pass's
+ * output. Group 0: the probe's level 0 as an array, the cabin's ambient buffer, the cabin uniform.
+ */
+export const PROBE_SH_WGSL = /* wgsl */ `
+@group(0) @binding(0) var src: texture_2d_array<f32>;
+@group(0) @binding(1) var<storage, read_write> outAmb: array<vec4f, ${AMBIENT_VEC4S}>;
+struct ProbeParams { scale: vec4f }   // x = cd/m^2 per stored unit, y = share of the new value (temporal filter)
+@group(0) @binding(2) var<uniform> params: ProbeParams;
+${CUBE_DIR_WGSL}
+var<workgroup> acc: array<array<vec3f, 9>, 64>;
+@compute @workgroup_size(64) fn main(@builtin(local_invocation_index) li: u32) {
+  let size = textureDimensions(src).x;
+  let texels = size * size * 6u;
+  let per = texels / 64u;
+  var s: array<vec3f, 9>;
+  for (var k = 0u; k < 9u; k++) { s[k] = vec3f(0.0); }
+  for (var i = 0u; i < per; i++) {
+    let t = li * per + i;
+    let face = t / (size * size);
+    let r = t % (size * size);
+    let px = vec2u(r % size, r / size);
+    let uv = (vec2f(px) + 0.5) / f32(size);
+    let c = textureLoad(src, px, face, 0);
+    let d = cubeDir(face, uv);
+    let q = uv * 2.0 - 1.0;
+    // Solid angle of the texel.
+    let w = 4.0 / (f32(size * size) * pow(1.0 + dot(q, q), 1.5));
+    let L = c.rgb * (c.a * w);
+    s[0] += L * 0.282095;
+    s[1] += L * (0.488603 * d.y);
+    s[2] += L * (0.488603 * d.z);
+    s[3] += L * (0.488603 * d.x);
+    s[4] += L * (1.092548 * d.x * d.y);
+    s[5] += L * (1.092548 * d.y * d.z);
+    s[6] += L * (0.315392 * (3.0 * d.z * d.z - 1.0));
+    s[7] += L * (1.092548 * d.x * d.z);
+    s[8] += L * (0.546274 * (d.x * d.x - d.y * d.y));
+  }
+  acc[li] = s;
+  workgroupBarrier();
+  if (li == 0u) {
+    // Cosine-lobe convolution (pi, 2 pi / 3, pi / 4) and the basis constants of the evaluation (cabinBounce).
+    var K = array<f32, 9>(0.886227, 1.023328, 1.023328, 1.023328, 0.858086, 0.858086, 0.247708, 0.858086, 0.429043);
+    for (var k = 0u; k < 9u; k++) {
+      var sum = vec3f(0.0);
+      for (var j = 0u; j < 64u; j++) { sum += acc[j][k]; }
+      let now = sum * (K[k] * params.scale.x);
+      let b = ${2 + MAX_CABIN_POLYS}u + k;
+      outAmb[b] = vec4f(mix(outAmb[b].xyz, now, params.scale.y), 0.0);
+    }
+  }
 }
 `;
 

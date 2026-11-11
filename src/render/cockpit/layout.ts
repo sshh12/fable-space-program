@@ -300,6 +300,8 @@ export interface LightTransportDef {
   /** Cabin sun shadow map: resolution (texels) and the extra radius around the interior's bounds (m). */
   sunMapSize: number;
   sunMapMargin: number;
+  /** Cabin probe (probe.ts): texels per side of a cube face. */
+  probeSize: number;
 }
 
 export interface CockpitLayoutDef {
@@ -363,6 +365,7 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   const t = l.transport;
   if (!(t.maxEdge > 0.005) || !(t.aoRays >= 4 && t.aoRays <= 256) || !(t.sourceRays >= 1 && t.sourceRays <= 64) || !(t.aoDistance > 0)) fail('transport: maxEdge > 5 mm, aoRays 4..256, sourceRays 1..64, aoDistance > 0');
   if (!Number.isInteger(Math.log2(t.sunMapSize)) || t.sunMapSize < 256 || t.sunMapSize > 4096) fail('transport.sunMapSize: a power of two in 256..4096');
+  if (!Number.isInteger(Math.log2(t.probeSize)) || t.probeSize < 32 || t.probeSize > 512) fail('transport.probeSize: a power of two in 32..512');
   const cg = l.windows.coverGlass;
   if (!(cg.reflectance >= 0 && cg.reflectance <= 1) || !(cg.roughness >= 0 && cg.roughness <= 1)) fail('windows.coverGlass: reflectance and roughness in 0..1');
   const [p0, p1] = l.displays.pixelStructure;
@@ -372,3 +375,5 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
 /** Occlusion slots per vertex (occlusion.ts): windows including the hatch window, and displays. */
 export const MAX_WINDOWS = 8;
 export const MAX_DISPLAYS = 4;
+/** Flood lights with a baked visibility of their own. */
+export const MAX_FLOODS = 8;

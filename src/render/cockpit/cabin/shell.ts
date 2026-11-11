@@ -10,7 +10,8 @@
 import { DEG, v3, type Vec3 } from '@/core/math';
 import { frameAt, type Attr } from '../mesh';
 import { azimuthOf, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
-import { FLAG_ENCLOSURE, type CabinContext } from './context';
+import { FLAG_ENCLOSURE, FLAG_OVERLAY, type CabinContext } from './context';
+import { QUILT, quiltHeight } from './quilt';
 
 const TWO_PI = 2 * Math.PI;
 /** Azimuth in [0, 2 pi): the grid seam is at +Z (dorsal), between the forward windows. */
@@ -265,7 +266,7 @@ export function buildShell(ctx: CabinContext): Region[] {
   const structure = ctx.m('structure', { flags: FLAG_ENCLOSURE });
   const yFloor = m.floorY;
   const yTop = m.tunnelJoinY;
-  coneWall(ctx, { surface, regions, y0: yFloor, y1: yTop, attr: structure, nAz: detail === 0 ? 160 : detail === 1 ? 72 : 36, nY: detail === 0 ? 30 : detail === 1 ? 12 : 6, rings: detail === 0 ? 5 : 2 });
+  coneWall(ctx, { surface, regions, y0: yFloor, y1: yTop, attr: structure, nAz: detail === 0 ? 120 : detail === 1 ? 72 : 36, nY: detail === 0 ? 18 : detail === 1 ? 12 : 6, rings: detail === 0 ? 5 : 2 });
 
   // ---- apex tunnel wall from the cone joint up to the docking hatch, and its lip
   const yDock = layout.hatch.dockingHatchY;
@@ -315,14 +316,16 @@ export function buildShell(ctx: CabinContext): Region[] {
   // ---- blankets (upper cone) and close-out panels (lower cone) in the bays
   const frames = [yFloor, ...sh.ringFramesY.filter((y) => y > yFloor && y < yTop), yTop];
   for (let j = 0; j + 1 < frames.length; j++) {
-    const ya = frames[j]! + (j === 0 ? 0.01 : fw * 0.6);
-    const yb = frames[j + 1]! - (j + 1 === frames.length - 1 ? 0.015 : fw * 0.6);
-    if (yb - ya < 0.06) continue;
     const closeout = frames[j + 1]! <= sh.closeoutTopY + 1e-6;
+    // A blanket's rim tucks under the frames' flanges, up to the web; a hard panel stops short of them.
+    const clear = closeout ? fw * 0.6 : 0.007;
+    const ya = frames[j]! + (j === 0 ? 0.01 : clear);
+    const yb = frames[j + 1]! - (j + 1 === frames.length - 1 ? 0.015 : clear);
+    if (yb - ya < 0.06) continue;
     for (let k = 0; k < ns; k++) {
       const s0 = (k + 0.5) / ns;
       const s1 = (k + 1.5) / ns;
-      const gapAz = (sh.stringer.width * 0.5 + sh.blanket.inset) / m.innerRadius((ya + yb) / 2);
+      const gapAz = (sh.stringer.width * 0.5 + (closeout ? sh.blanket.inset : 0.0015)) / m.innerRadius((ya + yb) / 2);
       // Bays are clipped against the opening regions band by band.
       const intervals = clipInterval([s0 * TWO_PI + gapAz, s1 * TWO_PI - gapAz], freeIntervals(regions, ya, yb, 0.012 / m.innerRadius((ya + yb) / 2)));
       for (const [a0, a1] of intervals) {
@@ -433,23 +436,140 @@ function stringer(ctx: CabinContext, regions: Region[], a: number, y0: number, y
   }
 }
 
-/** Quilted insulation blanket over a bay: puffed toward the cabin, its edges tucked to the wall. */
+/** Deterministic pseudo-random numbers in [0, 1) from an integer seed (mulberry32). */
+function seeded(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Insulation blanket over a bay. A soft part, modelled as one: the batting bulges toward the cabin between
+ * the frames, the rim rolls over and tucks down to the wall under the frame flanges, press studs pin it to
+ * the structure and pinch it, the fill sags a little unevenly. Most bays are quilted (diamond cells sewn
+ * through, each a pillow: cabin/quilt.ts gives the relief, the mesh is displaced by it and the shader
+ * shades it per pixel); some are plain liner panels. No two bays are sewn alike: the quilting turns, shifts
+ * and wanders from bay to bay. At full detail the bay may carry a row of hook-and-loop squares, seated on
+ * the cloth.
+ */
 function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: number): void {
   const { b, mould: m, layout } = ctx;
   const th = layout.shell.blanket.thickness;
-  const ns = Math.max(2, Math.ceil(((a1 - a0) * m.innerRadius(y0)) / (ctx.detail === 0 ? 0.04 : 0.12)));
-  const nt = Math.max(2, Math.ceil((y1 - y0) / (ctx.detail === 0 ? 0.04 : 0.12)));
-  const edge = (x: number): number => {
-    const d = Math.min(x, 1 - x) * 2;
-    return Math.min(1, d * 6) ** 0.5;
-  };
-  const at = (s: number, t: number): Vec3 => {
+  const detail = ctx.detail;
+  const ac = (a0 + a1) / 2;
+  const yc = (y0 + y1) / 2;
+  // Metres along the generator per metre of height.
+  const gen = 1 / m.cone.genY;
+  const H = (y1 - y0) * gen;
+  const W = (a1 - a0) * m.innerRadius(yc);
+  const rnd = seeded(Math.round(a0 * 4096) * 7919 + Math.round(y0 * 4096) * 104729 + 17);
+  const plain = rnd() < 0.2 || Math.min(W, H) < 0.12;
+  const cell = QUILT.cell * (0.93 + 0.14 * rnd());
+  const turn = (rnd() - 0.5) * 0.16;
+  const cs = Math.cos(turn);
+  const sn = Math.sin(turn);
+  const phase: [number, number] = [rnd(), rnd()];
+  const ph = [rnd() * 6.28, rnd() * 6.28, rnd() * 6.28, rnd() * 6.28];
+  const roll = Math.min(0.028, W / 3.2, H / 3.2);
+  // Press studs: near the corners and along the long edges.
+  const studs: [number, number][] = [];
+  const inset = Math.min(0.03, roll * 1.1);
+  if (Math.min(W, H) > 0.1) {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) studs.push([sx * (W / 2 - inset), sy * (H / 2 - inset)]);
+    const nx = Math.floor(W / 0.2);
+    for (let k = 1; k < nx; k++) for (const sy of [-1, 1]) studs.push([-W / 2 + (W * k) / nx, sy * (H / 2 - inset)]);
+    const ny = Math.floor(H / 0.2);
+    for (let k = 1; k < ny; k++) for (const sx of [-1, 1]) studs.push([sx * (W / 2 - inset), -H / 2 + (H * k) / ny]);
+  }
+  const edge = (d: number): number => (d >= roll ? 1 : Math.sqrt(Math.max(0, 1 - (1 - d / roll) ** 2)));
+  /** The blanket at bay coordinates (s, t) in 0..1: the displaced point, the smooth surface under it, uv0. */
+  const at = (s: number, t: number, lift = 0): { p: Vec3; base: Vec3; uv: [number, number] } => {
     const a = a0 + (a1 - a0) * s;
     const y = y0 + (y1 - y0) * t;
-    return wallPoint(ctx, a, y, 0.002 + th * edge(s) * edge(t));
+    const r = m.innerRadius(y);
+    const xm = (a - ac) * r;
+    const ym = (y - yc) * gen;
+    const e = edge(Math.min(s, 1 - s) * (a1 - a0) * r) * edge(Math.min(t, 1 - t) * H);
+    let pinch = 0;
+    for (const [sx, sy] of studs) pinch = Math.max(pinch, Math.exp(-((xm - sx) ** 2 + (ym - sy) ** 2) / (0.024 * 0.024)));
+    const sag = 0.0024 * (Math.sin(xm * 9 + ph[0]!) * Math.sin(ym * 7 + ph[1]!) + 0.5 * Math.sin(xm * 17 + ym * 13 + ph[2]!));
+    const thick = 0.003 + (th * (1 - 0.5 * pinch) + sag) * e;
+    // Quilt coordinates: metric bay coordinates turned, scaled to cells, shifted, and bent a little.
+    const wx = 0.07 * Math.sin(ym * 11 + ph[3]!) + 0.04 * Math.sin(xm * 23 + ph[0]!);
+    const wy = 0.07 * Math.sin(xm * 10 + ph[2]!) + 0.04 * Math.sin(ym * 19 + ph[1]!);
+    const q: [number, number] = [(cs * xm - sn * ym) / cell + phase[0] + wx, (sn * xm + cs * ym) / cell + phase[1] + wy];
+    const relief = plain ? 0 : quiltHeight(q[0], q[1]) * e * (1 - 0.6 * pinch);
+    return { p: wallPoint(ctx, a, y, thick + relief + lift), base: wallPoint(ctx, a, y, thick + lift), uv: plain ? [xm, ym] : q };
   };
-  const attr: Attr = ctx.m('blanket');
-  b.patch(at, ns, nt, attr, { flip: true, uvOffset: [a0 * m.innerRadius(y0), y0], aoAt: (s, t) => 0.72 + 0.28 * edge(s) * edge(t) });
+  // Grid: fine rows over the rolled rim, an even grid inside.
+  const step = detail === 0 ? 0.02 : detail === 1 ? 0.07 : 0.14;
+  const rim = detail === 0 ? [0, 0.22, 0.55, 1] : [0, 1];
+  const axis = (L: number): number[] => {
+    const n = Math.max(1, Math.round((L - 2 * roll) / step));
+    const out = rim.map((x) => (x * roll) / L);
+    for (let k = 1; k < n; k++) out.push((roll + ((L - 2 * roll) * k) / n) / L);
+    for (const x of [...rim].reverse()) out.push(1 - (x * roll) / L);
+    return out;
+  };
+  const S = axis(W);
+  const T = axis(H);
+  // Out of the cabin's sun map (it lies on the wall and shades nothing but itself, and its mesh is coarser
+  // than its quilting; the shader shades the relief).
+  const attr: Attr = ctx.m(plain ? 'liner' : 'blanket', { flags: FLAG_ENCLOSURE });
+  b.surface(S.length - 1, T.length - 1, (i, j) => at(S[i]!, T[j]!), attr, { flip: true });
+  if (detail > 0) return;
+
+  // Press studs: a domed metal cap on the cloth (overlay: the cloth under it is not buried in the bake).
+  const stud = ctx.m('steel', { flags: FLAG_OVERLAY });
+  const frameOn = (xm: number, ym: number): { o: Vec3; n: Vec3 } => {
+    const t = 0.5 + ym / H;
+    const y = y0 + (y1 - y0) * t;
+    const s = 0.5 + xm / ((a1 - a0) * m.innerRadius(y));
+    return { o: at(s, t).base, n: wallInward(ctx, a0 + (a1 - a0) * s, y) };
+  };
+  for (const [sx, sy] of studs) {
+    const f = frameOn(sx, sy);
+    b.lathe(v3.addScaled(f.o, f.n, -0.0005), f.n, [[0.0058, 0], [0.0054, 0.0012], [0.0036, 0.002], [0, 0.0023]], 8, stud);
+  }
+  // Hook-and-loop squares where the crew park loose items: a small grid sewn on a plain liner panel,
+  // square to the bay, each square a pad standing a millimetre and a half off the cloth.
+  if (plain && W > 0.2 && H > 0.24) {
+    const nx = 2 + Math.floor(rnd() * 3);
+    const ny = 1 + Math.floor(rnd() * 3);
+    const size = 0.024 + 0.006 * rnd();
+    const pitch = size + 0.022 + 0.02 * rnd();
+    const cx = (rnd() - 0.5) * Math.max(0, W - 0.14 - nx * pitch);
+    const cy = (rnd() - 0.5) * Math.max(0, H - 0.14 - ny * pitch);
+    const velcro = ctx.m('velcro', { flags: FLAG_OVERLAY });
+    const onCloth = (xm: number, ym: number, lift: number): Vec3 => {
+      const t = 0.5 + ym / H;
+      const y = y0 + (y1 - y0) * t;
+      return at(0.5 + xm / ((a1 - a0) * m.innerRadius(y)), t, lift).p;
+    };
+    for (let i = 0; i < nx; i++) {
+      for (let j = 0; j < ny; j++) {
+        const px = cx + (i - (nx - 1) / 2) * pitch;
+        const py = cy + (j - (ny - 1) / 2) * pitch;
+        // Top face, and a skirt down to the cloth.
+        b.surface(2, 2, (u, v) => ({ p: onCloth(px + (u / 2 - 0.5) * size, py + (v / 2 - 0.5) * size, 0.0016), uv: [px + (u / 2 - 0.5) * size, py + (v / 2 - 0.5) * size] }), velcro, { flip: true });
+        const ring: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+        for (let k = 0; k < 4; k++) {
+          const [ax, ay] = ring[k]!;
+          const [bx, by] = ring[(k + 1) % 4]!;
+          const pa = onCloth(px + (ax * size) / 2, py + (ay * size) / 2, 0.0016);
+          const pb = onCloth(px + (bx * size) / 2, py + (by * size) / 2, 0.0016);
+          const qa = onCloth(px + (ax * size) / 2, py + (ay * size) / 2, 0);
+          const qb = onCloth(px + (bx * size) / 2, py + (by * size) / 2, 0);
+          const out = v3.normalize(v3.sub(v3.lerp(pa, pb, 0.5), onCloth(px, py, 0.0016)));
+          b.strip(pa, pb, qb, qa, out, v3.normalize(v3.sub(pb, pa)), velcro);
+        }
+      }
+    }
+  }
 }
 
 /** Hard close-out panel on the lower cone: flat in (az, y), chamfered, with fasteners at the corners. */

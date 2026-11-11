@@ -56,13 +56,14 @@ interface LabScene {
   fov?: number;
 }
 const SCENES: Record<string, LabScene> = {
-  pad: { fake: 'pad', fired: 0, sun: { site: [205, 64] }, lights: false, look: [18, 46] },
+  // On the pad and during entry the crew have the cabin lights on.
+  pad: { fake: 'pad', fired: 0, sun: { site: [205, 64] }, lights: true, look: [18, 46] },
   leo: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [8, 2] },
   // Earth through the left side window, its axis turned toward the horizon ahead (the limb in view), the sun
   // high over the vessel shining in through the right side window.
   'leo-earth': { fake: 'lowOrbit', fired: 4, nadir: { window: 'side-left', offNadirDeg: 88 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [-70, 8], aim: 'sideL', fov: 50 },
   night: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: 'eclipse', lights: true, look: [20, -2] },
-  reentry: { fake: 'reentry', fired: 8, sun: 'eclipse', lights: false, look: [16, 40] },
+  reentry: { fake: 'reentry', fired: 8, sun: 'eclipse', lights: true, look: [16, 40] },
   moon: { fake: 'lunarSurface', fired: 6, sun: { site: [255, 16] }, lights: false, look: [-88, -6] },
 };
 const sceneName = params.get('scene') ?? 'leo';

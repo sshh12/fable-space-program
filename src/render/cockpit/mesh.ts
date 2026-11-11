@@ -243,6 +243,40 @@ export class MeshBuilder {
     }
   }
 
+  /**
+   * Surface from an explicit (ni + 1) x (nj + 1) grid of points: `at(i, j)` gives a vertex's position `p`, its
+   * surface coordinates `uv` and optionally `base`, the point of the smooth surface under a displaced one.
+   * Normals and tangents are central differences of the base grid, so relief that the shader adds per
+   * pixel (a quilt's pillows) is not counted twice. The front is d/di x d/dj unless `flip`.
+   */
+  surface(ni: number, nj: number, at: (i: number, j: number) => { p: Vec3; uv: [number, number]; base?: Vec3 }, a: Attr, opts: { flip?: boolean } = {}): void {
+    this.part();
+    const flip = opts.flip ? -1 : 1;
+    const pts: { p: Vec3; uv: [number, number]; base?: Vec3 }[] = [];
+    for (let j = 0; j <= nj; j++) for (let i = 0; i <= ni; i++) pts.push(at(i, j));
+    const row = ni + 1;
+    const basePoint = (i: number, j: number): Vec3 => {
+      const q = pts[j * row + i]!;
+      return q.base ?? q.p;
+    };
+    const first = this.vertexCount;
+    for (let j = 0; j <= nj; j++) {
+      for (let i = 0; i <= ni; i++) {
+        const di = v3.sub(basePoint(Math.min(ni, i + 1), j), basePoint(Math.max(0, i - 1), j));
+        const dj = v3.sub(basePoint(i, Math.min(nj, j + 1)), basePoint(i, Math.max(0, j - 1)));
+        const q = pts[j * row + i]!;
+        this.vertex(q.p, v3.scale(v3.cross(di, dj), flip), di, q.uv, a, flip);
+      }
+    }
+    for (let j = 0; j < nj; j++) {
+      for (let i = 0; i < ni; i++) {
+        const k = first + j * row + i;
+        if (flip > 0) this.quad(k, k + 1, k + row + 1, k + row);
+        else this.quad(k, k + row, k + row + 1, k + 1);
+      }
+    }
+  }
+
   /** Flat quad from four corners (counter-clockwise from the front, a parallelogram), uv0 in metres from the first corner. */
   flatQuad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, a: Attr, uvOrigin: [number, number] = [0, 0]): void {
     this.part();

@@ -13,4 +13,5 @@ export { seatFrames, type ControlMeta, type DisplayMeta, type WindowMeta, type S
 export { MfdDisplays, MFD_FORMAT, type DisplayStats } from './displays';
 export { buildBvh, bvhRay, type Bvh, type BvhHit } from './bvh';
 export { bakeVertex, occlusionAt, occlusionSources, unpackOcclusion, OCC_STRIDE, type VertexOcclusion } from './occlusion';
-export { sunMapTransform, type SunMapTransform } from './sunmap';
+export { sunEnters, sunMapLayout, sunTileUniform, type SunMapLayout, type SunTile } from './sunmap';
+export { probeDirection, probeFaceMatrix, PROBE_FACES } from './probe';

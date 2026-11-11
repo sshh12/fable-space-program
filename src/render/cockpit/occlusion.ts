@@ -1,7 +1,7 @@
 /**
  * Baked occlusion of the interior, per vertex: how much of the cabin's own light reaches each vertex past the
  * interior's geometry. Computed once when the feature initialises, on the GPU (one invocation per vertex,
- * rays against the BVH of that detail level, bvh.ts), into a second vertex stream of 16 bytes:
+ * rays against the BVH of that detail level, bvh.ts), into a second vertex stream of 24 bytes:
  *
  *   byte 0       ambient occlusion: cosine-weighted hemisphere visibility within `transport.aoDistance`
  *                (the cabin's inter-reflected light, sun-patch bounce)
@@ -10,6 +10,11 @@
  *   bytes 2..9   visibility of each window opening (MAX_WINDOWS slots; window order of the model)
  *   bytes 10..13 visibility of each display (MAX_DISPLAYS slots)
  *   bytes 14..15 zero
+ *   bytes 16..23 visibility of each flood light on its own (MAX_FLOODS slots): every lamp casts its own
+ *                shadow of the console, the couches and the frames
+ *
+ * Every vertex uses the same sample pattern (no per-vertex rotation): neighbouring vertices then differ only
+ * by what they see, so the interpolated result is smooth instead of mottled.
  *
  * Source visibility weights each sample point by its form-factor kernel cos_r cos_e / d^2, so a source seen
  * at grazing incidence counts for little. `occlusionAt` is the same computation on the CPU (unit tests, and
@@ -18,12 +23,12 @@
 import { v3, type Vec3 } from '@/core/math';
 import { bvhRay, type Bvh } from './bvh';
 import type { CockpitModel } from './build';
-import { MAX_DISPLAYS, MAX_WINDOWS } from './layout';
+import { MAX_DISPLAYS, MAX_FLOODS, MAX_WINDOWS } from './layout';
 import { windowQuad } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 
-export const OCC_STRIDE = 16;
-export const MAX_FLOODS = 8;
+export const OCC_STRIDE = 24;
+export { MAX_FLOODS };
 /** Offset of the ray start along the vertex normal, and how far short of a source sample rays stop (m). */
 const RAY_LIFT = 0.002;
 const SOURCE_STOP = 0.012;
@@ -84,6 +89,8 @@ function basis(n: Vec3): [Vec3, Vec3] {
 }
 
 const fract = (x: number): number => x - Math.floor(x);
+/** Rotation of the sample patterns, the same at every vertex. */
+const SAMPLE_ROTATION = 0.37;
 const GOLDEN = 0.6180339887;
 
 /** Point k of `count` stratified samples on a quad (bilinear), rotated by `rot`. */
@@ -119,12 +126,15 @@ export interface VertexOcclusion {
   flood: number;
   windows: number[];
   displays: number[];
+  /** Each flood light on its own. */
+  floods: number[];
 }
 
 /** The bake of one vertex on the CPU (position p, unit normal n, vertex index for the sample rotation). */
 export function occlusionAt(model: CockpitModel, bvh: Bvh, sources: OccSources, p: Vec3, n: Vec3, index: number): VertexOcclusion {
   const t = model.layout.transport;
-  const rot = pcg(index) / 4294967296;
+  void index;
+  const rot = SAMPLE_ROTATION;
   const [tx, ty] = basis(n);
   const o = v3.addScaled(p, n, RAY_LIFT);
   let open = 0;
@@ -140,6 +150,7 @@ export function occlusionAt(model: CockpitModel, bvh: Bvh, sources: OccSources, 
     flood: sourceVisibility(bvh, p, n, sources.floods, t.sourceRays, rot),
     windows: sources.windows.map((w) => sourceVisibility(bvh, p, n, [w], t.sourceRays, rot)),
     displays: sources.displays.map((d) => sourceVisibility(bvh, p, n, [d], t.sourceRays, rot)),
+    floods: sources.floods.map((f) => sourceVisibility(bvh, p, n, [f], t.sourceRays, rot)),
   };
 }
 
@@ -152,13 +163,14 @@ export function bakeVertex(model: CockpitModel, i: number): { p: Vec3; n: Vec3 }
 }
 
 /** Unpacked bytes of one vertex's occlusion record (as the shader reads them). */
-export function unpackOcclusion(words: Uint32Array, vertex: number, windows: number, displays: number): VertexOcclusion {
-  const byte = (k: number): number => ((words[vertex * 4 + (k >> 2)]! >>> ((k & 3) * 8)) & 255) / 255;
+export function unpackOcclusion(words: Uint32Array, vertex: number, windows: number, displays: number, floods = 0): VertexOcclusion {
+  const byte = (k: number): number => ((words[vertex * (OCC_STRIDE / 4) + (k >> 2)]! >>> ((k & 3) * 8)) & 255) / 255;
   return {
     ao: byte(0),
     flood: byte(1),
     windows: Array.from({ length: windows }, (_, i) => byte(2 + i)),
     displays: Array.from({ length: displays }, (_, i) => byte(2 + MAX_WINDOWS + i)),
+    floods: Array.from({ length: floods }, (_, i) => byte(16 + i)),
   };
 }
 
@@ -273,7 +285,7 @@ fn byteOf(x: f32) -> u32 { return u32(clamp(x, 0.0, 1.0) * 255.0 + 0.5); }
   let nxy = unpack2x16snorm(verts[w + 3u]);
   let nzw = unpack2x16snorm(verts[w + 4u]);
   let n = normalize(vec3f(nxy, nzw.x));
-  let rot = f32(pcg(index)) / 4294967296.0;
+  let rot = ${SAMPLE_ROTATION};
   let sgn = select(-1.0, 1.0, n.z >= 0.0);
   let ba = -1.0 / (sgn + n.z);
   let bb = n.x * n.y * ba;
@@ -289,7 +301,7 @@ fn byteOf(x: f32) -> u32 { return u32(clamp(x, 0.0, 1.0) * 255.0 + 0.5); }
     let dir = tx * (r * cos(phi)) + ty * (r * sin(phi)) + n * sqrt(1.0 - u1);
     if (!occluded(o, dir, P.misc.x)) { open += 1u; }
   }
-  var bytes: array<u32, 16>;
+  var bytes: array<u32, 24>;
   bytes[0] = byteOf(f32(open) / f32(aoRays));
   var fl = vec2f(0.0);
   for (var i = 0u; i < P.counts.x; i++) { fl += sourceWeights(P.floods[i], p, n, P.counts.z, rot); }
@@ -300,8 +312,11 @@ fn byteOf(x: f32) -> u32 { return u32(clamp(x, 0.0, 1.0) * 255.0 + 0.5); }
   for (var i = 0u; i < ${MAX_DISPLAYS}u; i++) {
     bytes[2u + ${MAX_WINDOWS}u + i] = select(0u, byteOf(ratio(sourceWeights(P.displays[i], p, n, P.counts.z, rot))), i < P.range.w);
   }
-  for (var k = 0u; k < 4u; k++) {
-    outOcc[index * 4u + k] = bytes[k * 4u] | (bytes[k * 4u + 1u] << 8u) | (bytes[k * 4u + 2u] << 16u) | (bytes[k * 4u + 3u] << 24u);
+  for (var i = 0u; i < ${MAX_FLOODS}u; i++) {
+    bytes[16u + i] = select(0u, byteOf(ratio(sourceWeights(P.floods[i], p, n, P.counts.z, rot))), i < P.counts.x);
+  }
+  for (var k = 0u; k < 6u; k++) {
+    outOcc[index * 6u + k] = bytes[k * 4u] | (bytes[k * 4u + 1u] << 8u) | (bytes[k * 4u + 2u] << 16u) | (bytes[k * 4u + 3u] << 24u);
   }
 }
 `;

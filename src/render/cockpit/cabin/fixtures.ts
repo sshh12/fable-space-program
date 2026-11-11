@@ -192,12 +192,7 @@ export function buildFixtures(ctx: CabinContext): void {
   b.box(offsetFrame(fdf, 0, 0, -0.025), 0.11, 0.13, 0.025, 0.012, ctx.m('pouch'));
   b.box(offsetFrame(fdf, 0, 0.11, 0.002), 0.105, 0.012, 0.004, 0.003, ctx.m('velcro', { flags: FLAG_OVERLAY }));
   ctx.labelQuad(fdf, 0, -0.03, 0.12, 0.016, 'FLIGHT DATA FILE', 'pouch', { color: 1 });
-  // Velcro patches scattered on the blankets: the classic loose-item anchors of a crewed cabin.
-  const patches: [number, number][] = [[-30, 1.35], [30, 1.35], [-100, 1.6], [100, 1.6], [-165, 1.25], [165, 1.25], [0, 1.85], [-60, 0.95], [60, 0.95]];
-  for (const [az, y] of patches) {
-    const pf = wallFrame(ctx, az, y, plateInset(ctx, az, y, 0.05, 0.05, 0.002) + 0.023);
-    b.box(pf, 0.025, 0.025, 0.0015, 0.001, ctx.m('velcro', { flags: FLAG_OVERLAY }));
-  }
+  // (The hook-and-loop squares on the blankets are part of the blankets: cabin/shell.ts.)
 }
 
 /** Move a frame along `dir` until the box [-hx, hx] x [-hy, hy] x [z0, z1] around it clears the wall by 3 mm. */

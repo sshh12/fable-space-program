@@ -152,7 +152,7 @@ export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn
       radiance: [L * f.color[0], L * f.color[1], L * f.color[2]],
       area,
       on: lightsOn,
-      index: 0,
+      index: model.floods.indexOf(f),
     });
     if (lightsOn) lampFlux += f.lumens;
   }

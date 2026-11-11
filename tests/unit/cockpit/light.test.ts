@@ -11,7 +11,7 @@ import { FLAG_ENCLOSURE, FLAG_OVERLAY, seatFrames } from '@/render/cockpit/cabin
 import { castCabinRay } from '@/render/cockpit/lighting';
 import { insideDistance } from '@/render/cockpit/mould';
 import { occlusionAt, occlusionSources, type OccSources } from '@/render/cockpit/occlusion';
-import { sunMapTransform } from '@/render/cockpit/sunmap';
+import { sunEnters, sunMapLayout, sunTileUniform } from '@/render/cockpit/sunmap';
 import { testModel } from './helpers';
 
 let model: CockpitModel;
@@ -115,29 +115,61 @@ describe('occlusion bake', () => {
 });
 
 describe('cabin sun map', () => {
-  it('maps the whole interior into the map for any sun direction', () => {
+  it('gives every window the sun enters a tile that holds its whole beam at sub-millimetre texels', () => {
     const b = model.mesh.bounds;
     const c = v3.scale(v3.add(b.min, b.max), 0.5);
     const pos = meshPositions(model.mesh);
     let radius = 0;
     for (let i = 0; i < pos.length; i += 3) radius = Math.max(radius, v3.dist({ x: pos[i]!, y: pos[i + 1]!, z: pos[i + 2]! }, c));
-    for (const sun of [{ x: 0, y: 1, z: 0 }, v3.normalize({ x: 1, y: 0.2, z: -0.4 }), { x: 0, y: -1, z: 0 }]) {
-      const t = sunMapTransform(sun, c, radius + 0.05, 2048);
-      expect(t.texel).toBeLessThan(0.0025);
-      for (let i = 0; i < pos.length; i += 3 * 331) {
-        const p = { x: pos[i]!, y: pos[i + 1]!, z: pos[i + 2]! };
-        for (const row of [t.u, t.v, t.l]) {
-          const x = row[0] * p.x + row[1] * p.y + row[2] * p.z + row[3];
-          expect(x).toBeGreaterThan(0);
-          expect(x).toBeLessThan(1);
+    const apertures = model.windows.map((w) => w.aperture);
+    // Straight into each window, and obliquely across the cabin.
+    const suns = [...model.windows.map((w) => v3.neg(w.inward)), v3.normalize({ x: 1, y: 0.6, z: 0.3 }), v3.normalize({ x: -0.3, y: 0.9, z: 0.4 })];
+    let layouts = 0;
+    for (const sun of suns) {
+      const t = sunMapLayout(sun, apertures, c, radius + 0.05);
+      const lit = apertures.filter((a) => sunEnters(a.inward, sun)).length;
+      expect(t === null).toBe(lit === 0);
+      if (!t) continue;
+      layouts++;
+      expect(t.tiles).toHaveLength(lit);
+      expect(t.perSide * t.perSide).toBeGreaterThanOrEqual(lit);
+      const tileTexels = Math.floor(2048 / t.perSide);
+      const depth = (p: Vec3): number => t.l[0] * p.x + t.l[1] * p.y + t.l[2] * p.z + t.l[3];
+      for (const tile of t.tiles) {
+        // Texels: well under a millimetre (the old cabin-wide map had 2 mm).
+        expect(Math.max(tile.spanU, tile.spanV) / tileTexels).toBeLessThan(0.001);
+        const a = apertures[tile.window]!;
+        // Both ends of the aperture's prism, carried along the sun, lie inside the tile.
+        for (const end of [0, a.innerDepth]) {
+          for (const [st, sg] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+            const p = v3.add(v3.addScaled(a.centre, a.inward, end), v3.add(v3.scale(a.t, st * a.hw), v3.scale(a.g, sg * a.hh)));
+            if (end > 0) continue;
+            for (const row of [tile.u, tile.v]) {
+              const x = row[0] * p.x + row[1] * p.y + row[2] * p.z + row[3];
+              expect(x).toBeGreaterThan(0);
+              expect(x).toBeLessThan(1);
+            }
+            // The shader's atlas coordinates of the same point lie inside the tile's cell of the atlas.
+            const tileUv = tileTexels / 2048;
+            const rec = sunTileUniform(tile, tileUv);
+            const au = rec[0]! * p.x + rec[1]! * p.y + rec[2]! * p.z + rec[3]!;
+            const av = rec[4]! * p.x + rec[5]! * p.y + rec[6]! * p.z + rec[7]!;
+            expect(au).toBeGreaterThan(rec[10]!);
+            expect(au).toBeLessThan(rec[10]! + tileUv);
+            expect(av).toBeGreaterThan(rec[11]!);
+            expect(av).toBeLessThan(rec[11]! + tileUv);
+          }
         }
       }
-      // Depth grows away from the sun.
-      const near = v3.addScaled(c, sun, 1);
-      const far = v3.addScaled(c, sun, -1);
-      const depth = (p: Vec3): number => t.l[0] * p.x + t.l[1] * p.y + t.l[2] * p.z + t.l[3];
-      expect(depth(near)).toBeLessThan(depth(far));
+      // Depth: every interior vertex inside 0..1, growing away from the sun.
+      for (let i = 0; i < pos.length; i += 3 * 331) {
+        const d = depth({ x: pos[i]!, y: pos[i + 1]!, z: pos[i + 2]! });
+        expect(d).toBeGreaterThan(0);
+        expect(d).toBeLessThan(1);
+      }
+      expect(depth(v3.addScaled(c, sun, 1))).toBeLessThan(depth(v3.addScaled(c, sun, -1)));
     }
+    expect(layouts).toBeGreaterThanOrEqual(model.windows.length);
   });
 
   it('closes the openings for the core and leaves the enclosure out of the cabin map', () => {
