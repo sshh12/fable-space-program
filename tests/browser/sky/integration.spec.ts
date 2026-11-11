@@ -584,10 +584,37 @@ for (const variant of ['moonless', 'moonlit'] as const) {
     console.log(
       `LEO night (${variant}): EV100 ${ev.toFixed(2)}; galactic longitude ${target.longitude} deg at ${target.elevation.toFixed(1)} deg elevation, at pixel ${px ? `${px.x.toFixed(0)}, ${px.y.toFixed(0)}` : '-'}: mean ${band.toFixed(1)}/255 over 60 px`,
     );
+    // The airglow band on the limb (request sky-lighting-9): the brightest 5-row strip between 40 px above and 60 px
+    // below where the limb crosses the middle of the frame (dip under the horizontal, camera pitched 6 deg up), over
+    // the columns 560-1000 (away from the twilight towards the sun's azimuth).
+    const dip = await page.evaluate(() => {
+      const f = (window as unknown as { __skyInt: { frame(): { radius: number; altitude: number } } }).__skyInt.frame();
+      return (Math.acos(f.radius / (f.radius + f.altitude)) * 180) / Math.PI;
+    });
+    const limbY = png.height / 2 + (Math.tan(((dip + 6) * Math.PI) / 180) / Math.tan((35 * Math.PI) / 180)) * (png.height / 2);
+    let airglow = 0;
+    let airglowY = 0;
+    for (let y = Math.round(limbY - 40); y < Math.round(limbY + 60) - 5; y++) {
+      let s = 0;
+      for (let yy = y; yy < y + 5; yy++) {
+        for (let x = 560; x < 1000; x++) {
+          const i = (yy * png.width + x) * 4;
+          s += 0.2126 * png.data[i]! + 0.7152 * png.data[i + 1]! + 0.0722 * png.data[i + 2]!;
+        }
+      }
+      if (s / (5 * 440) > airglow) {
+        airglow = s / (5 * 440);
+        airglowY = y;
+      }
+    }
+    console.log(`limb band (airglow): brightest 5-row strip ${airglow.toFixed(1)}/255 at y ${airglowY} (limb at ${limbY.toFixed(0)}); the Milky Way window ${band.toFixed(1)}/255`);
     expect(px).not.toBeNull();
     if (variant === 'moonless') {
       expect(ev).toBeLessThan(-4);
       expect(band).toBeGreaterThanOrEqual(12);
+      // In every orbital night photograph the airglow band is at least as bright as the Milky Way (milkyway-airglow.jpg:
+      // (88, 90, 66) against (47, 54, 67)).
+      expect(airglow).toBeGreaterThanOrEqual(band);
     }
     await expectClean(page, pageLog, info);
   });
