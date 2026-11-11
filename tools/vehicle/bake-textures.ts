@@ -727,9 +727,29 @@ const recipes: Record<string, () => void> = {
       const c = worley(u, v, 300, 300, 541, 1);
       return smooth(0.5, 0.2, c.f1) * c.id;
     });
+    // Cracks in a road run across it (thermal) and along it (at the edge of a paving pass), as single wandering
+    // lines that were sealed with a band of tar: no network of polygons.
+    const lines: { across: boolean; at: number; from: number; to: number; w: number; k: number; slope: number }[] = [];
+    for (let k = 0; k < 4; k++) {
+      const r = (q: number): number => hash(k, q, 549);
+      const len = 0.3 + 0.55 * r(3);
+      lines.push({ across: k < 3, at: r(1), from: r(2), to: r(2) + len, w: 0.0016 + 0.0022 * r(4), k, slope: (r(5) - 0.5) * 0.25 });
+    }
     const crack = (u: number, v: number): number => {
-      const c = worley(u + 0.02 * fbm(u, v, 10, 10, 2, 542), v + 0.02 * fbm(u, v, 10, 10, 2, 543), 4, 4, 544, 1);
-      return smooth(0.012, 0.003, c.f2 - c.f1) * smooth(0.45, 0.6, fbm(u, v, 3, 3, 2, 545));
+      let c = 0;
+      for (const l of lines) {
+        const a = l.across ? u : v;
+        const b = l.across ? v : u;
+        // Position along the line (wrapped into [from, from + 1)) and the line's wander across.
+        const t = mod(a - l.from, 1);
+        if (t > l.to - l.from) continue;
+        const end = smooth(0, 0.04, t) * smooth(l.to - l.from, l.to - l.from - 0.04, t);
+        const off = l.slope * t + 0.05 * (fbm(a, l.k * 0.37, 4, 1, 3, 542 + l.k) - 0.5) + 0.006 * (fbm(a, l.k * 0.61, 40, 1, 2, 543 + l.k) - 0.5);
+        let d = Math.abs(mod(b - l.at - off + 0.5, 1) - 0.5);
+        d = d / l.w;
+        c = Math.max(c, end * smooth(1, 0.35, d));
+      }
+      return c;
     };
     const h = Field.from(S, S, (u, v, x, y) => 0.004 * stone.at(x, y) + 0.006 * fbm(u, v, 20, 20, 3, 546) + 0.002 * crack(u, v));
     save('asphalt_n', normalMap(h, 6, 0.8));
