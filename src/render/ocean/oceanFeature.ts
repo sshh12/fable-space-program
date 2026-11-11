@@ -28,6 +28,7 @@ import { coxMunkVariance, oceanTunables, type OceanTunables } from './params';
 import { MAX_SWELL, prepareSwell, swellAmplitudeBound, swellSlopeVariance, type PreparedSwell } from './swell';
 import { OCEAN_UNIFORM_BYTES, OCEAN_UNIFORM_VEC4, OCEAN_WAVES_WGSL } from './shaders/waves';
 import { buildWaterBrdfWgsl, whitecapCoverage } from './shaders/waterBrdf';
+import { FIELD_BAKE_WGSL, FIELD_SIZE } from './shaders/fieldWgsl';
 import { REACTIVE_WGSL } from './shaders/reactiveWgsl';
 import { READBACK_WGSL, SURFACE_PIPELINE_WGSL } from './shaders/surfaceWgsl';
 import { packOceanUniforms, type OceanFrameData } from './uniforms';
@@ -157,6 +158,15 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let reactiveGroup: GPUBindGroup;
   let reactivePipeline: Tracked<GPURenderPipeline>;
   let reactiveValue = 0;
+  // Roughness field of brdf_water baked over the near field (shaders/fieldWgsl.ts): planet-fixed texels on the
+  // current chart, re-baked when the chart or the body changes or the reference drifts a quarter of the margin.
+  let fieldTex: GPUTexture;
+  let fieldView: GPUTextureView;
+  let fieldBakeBuffer: GPUBuffer;
+  let fieldBakeGroup: GPUBindGroup;
+  let fieldPipeline: Tracked<GPURenderPipeline>;
+  const fieldBakeData = new Float32Array(8);
+  const field = { chart: null as OceanChart | null, bodyId: '', cx: 0, cy: 0, extent: 0, bake: false };
   let readbackLayout: GPUBindGroupLayout;
   let readbackPipeline: Tracked<GPUComputePipeline>;
   let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number } | null = null;
@@ -185,6 +195,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     if (key === brdfKey) return;
     brdfKey = key;
     ctx.shaders.register('brdf_water', buildWaterBrdfWgsl(list, { directSpecular }));
+    ctx.shaders.register('ocean_water_forward', buildWaterBrdfWgsl(list, { directSpecular, fieldFromPass: true }));
   };
 
   const oceanGroup = (fft: OceanFft): GPUBindGroup => {
@@ -203,6 +214,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           { binding: 5, resource: fft.foamViews[fft.foamCurrent]! },
           { binding: 6, resource: vessels.wakeViews[vessels.wakeCurrent]! },
           { binding: 7, resource: oceanSampler },
+          { binding: 8, resource: fieldView },
         ],
       });
       oceanGroups.set(key, g);
@@ -455,8 +467,33 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           arr(5, F),
           { binding: 6, visibility: F, texture: { sampleType: 'float' } },
           { binding: 7, visibility: F, sampler: { type: 'filtering' } },
+          { binding: 8, visibility: F, texture: { sampleType: 'float' } },
         ],
       });
+      fieldTex = core.createTextureChecked({
+        label: 'ocean.roughnessField',
+        size: [FIELD_SIZE, FIELD_SIZE],
+        format: 'r16float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      fieldView = fieldTex.createView();
+      fieldBakeBuffer = device.createBuffer({ label: 'ocean.fieldBake', size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      const fieldLayout = device.createBindGroupLayout({
+        label: 'ocean.fieldBake',
+        entries: [
+          { binding: 0, visibility: F, buffer: { type: 'uniform' } },
+          { binding: 1, visibility: F, buffer: { type: 'uniform' } },
+        ],
+      });
+      fieldBakeGroup = device.createBindGroup({
+        label: 'ocean.fieldBake',
+        layout: fieldLayout,
+        entries: [
+          { binding: 0, resource: { buffer: uniformBuffer } },
+          { binding: 1, resource: { buffer: fieldBakeBuffer } },
+        ],
+      });
+      fieldPipeline = core.fullscreenPipeline({ label: 'ocean.fieldBake', fragment: FIELD_BAKE_WGSL, targets: [{ format: 'r16float' }], layouts: [fieldLayout] });
       oceanSampler = device.createSampler({ label: 'ocean.sampler', addressModeU: 'repeat', addressModeV: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: 4 });
       const layout = device.createPipelineLayout({ label: 'ocean.surface', bindGroupLayouts: [c.frameBindGroupLayout, sceneLayout, oceanLayout] });
       const blend: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } };
@@ -598,6 +635,20 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
       const tau = frac(ut / t.repeatPeriod);
       reactiveValue = t.taaReactive * reactiveScale;
+      // Field texture: covers fadeEnd plus a margin around the reference; re-centred when the reference has
+      // moved a quarter of the margin (every few km of flight), or the chart or the body changed.
+      const margin = 0.25 * t.fadeEnd;
+      if (field.chart !== chart || field.bodyId !== pose.id || Math.hypot(ref.x - field.cx, ref.y - field.cy) > margin / 4) {
+        field.chart = chart;
+        field.bodyId = pose.id;
+        field.cx = ref.x;
+        field.cy = ref.y;
+        field.extent = 2 * (t.fadeEnd + margin);
+        field.bake = true;
+        const row = [t.foamAlbedo, t.windDir, t.windVariability, t.slickStrength];
+        fieldBakeData.set([0, 0, field.extent, 0, ...row]);
+        device.queue.writeBuffer(fieldBakeBuffer, 0, fieldBakeData);
+      }
       const data: OceanFrameData = {
         cHat: ref.cHat,
         seaRadius: t.seaRadius,
@@ -646,6 +697,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         waveBound,
         chopScale,
         taaReactive: reactiveValue,
+        field: { x: field.cx - ref.x, y: field.cy - ref.y, extent: field.extent },
         debugView,
         detail: body.detail.map((l) => {
           // Planet-fixed: rotate and compress the reference's chart coordinates in float64, keep the fraction.
@@ -684,6 +736,20 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       if (!a) return;
       const fft = ensureFft(a.body);
       fft.update(encoder, a.tau, a.dt, ctx.perf.gpuPass('ocean.fft') as GPUComputePassTimestampWrites | undefined);
+      if (field.bake) {
+        // This frame's uniforms hold the reference the bake area is relative to (offset 0: centred on it).
+        field.bake = false;
+        const pass = encoder.beginRenderPass({
+          label: 'ocean.fieldBake',
+          colorAttachments: [{ view: fieldView, loadOp: 'clear', clearValue: [1, 0, 0, 1], storeOp: 'store' }],
+          timestampWrites: ctx.perf.gpuPass('ocean.fieldBake') as GPURenderPassTimestampWrites | undefined,
+        });
+        pass.setPipeline(fieldPipeline.get());
+        pass.setBindGroup(0, _frame.frameBindGroup);
+        pass.setBindGroup(1, fieldBakeGroup);
+        pass.draw(3);
+        pass.end();
+      }
       vessels.updateWake(encoder, a.vf, a.dt, ctx.perf.gpuPass('ocean.wake') as GPUComputePassTimestampWrites | undefined);
     },
 
@@ -730,7 +796,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       disposed = true;
       for (const b of bodies.values()) b.fft?.dispose();
       vessels.dispose();
-      for (const b of [nearFieldBuffer, uniformBuffer, patchBuffer, gridBuffer, indexBuffer]) b.destroy();
+      for (const b of [nearFieldBuffer, uniformBuffer, patchBuffer, gridBuffer, indexBuffer, fieldBakeBuffer]) b.destroy();
+      fieldTex.destroy();
     },
   };
   return feature;

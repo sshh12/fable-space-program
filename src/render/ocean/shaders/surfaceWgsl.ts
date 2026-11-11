@@ -26,8 +26,9 @@ ${sceneBindings}
 @group(2) @binding(5) var oceanFoam: texture_2d_array<f32>;
 @group(2) @binding(6) var oceanWake: texture_2d<f32>;
 @group(2) @binding(7) var oceanSampler: sampler;   // trilinear, repeat, 4x anisotropic
+@group(2) @binding(8) var oceanField: texture_2d<f32>; // roughness field of brdf_water, baked over the near field (fieldWgsl.ts)
 #include "ocean_waves"
-#include "brdf_water"
+#include "ocean_water_forward"
 
 const OCEAN_LOD_RANGE = ${LOD_RANGE.toFixed(4)};
 const OCEAN_MORPH = ${MORPH_FRACTION.toFixed(4)};
@@ -273,6 +274,8 @@ struct FsOut {
   s.lightAlpha = 0.0;
   s.materialId = MATERIAL_WATER;
   s.bodyIndex = bi;
+  // The planet-fixed roughness field of brdf_water, from the texture baked over the near field.
+  waterFieldValue = textureSampleLevel(oceanField, linearClamp, (in.planeF - oceanU.field.xy) * oceanU.field.w + 0.5, 0.0).r;
   s.altitude = oceanU.misc.x + in.height;
   s.roughness = clamp(resolved / oceanU.wind.y, 0.0, 1.0);
   // Imagery colour: the sheet's (band) or the seabed's (near field: the terrain draws it with its albedo layer).

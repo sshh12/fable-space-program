@@ -37,7 +37,7 @@ async function measure(page: Page): Promise<Row & { windows: string }> {
         const ps = window.__lab!.renderer.passStats();
         const perf = window.__test!.perf()!;
         const p99 = (n: string): number => ps[n]?.p99 ?? 0;
-        const separate = ['ocean.fft', 'ocean.wake', 'ocean.reactive'];
+        const separate = ['ocean.fft', 'ocean.wake', 'ocean.reactive', 'ocean.fieldBake'];
         return {
           oceanP99: perf.features['ocean']?.gpuMs ?? 0,
           fftP99: p99('ocean.fft'),

@@ -82,6 +82,8 @@ export interface OceanFrameData {
 
   /** Capillary detail layers: compression, rotation (rad), slope amplitude, origin (texture coordinates mod 1). */
   detail: { scale: number; angle: number; amplitude: number; origin: [number, number] }[];
+  /** Roughness-field texture: plane offset of its centre from the reference point (m), extent (m). */
+  field: { x: number; y: number; extent: number };
 }
 
 /** Write OceanUniforms into `f` (Float32Array of OCEAN_UNIFORM_VEC4 * 4) / `u` (Uint32Array view of the same buffer). */
@@ -147,6 +149,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
     v4(l.scale, Math.cos(l.angle), Math.sin(l.angle), l.amplitude);
   }
   v4(d.detail[0]!.origin[0], d.detail[0]!.origin[1], d.detail[1]!.origin[0], d.detail[1]!.origin[1]);
+  v4(d.field.x, d.field.y, d.field.extent, d.field.extent > 0 ? 1 / d.field.extent : 0);
 
   if (o !== OCEAN_UNIFORM_VEC4 * 4) throw new Error(`ocean: uniform packing wrote ${o / 4} vec4, expected ${OCEAN_UNIFORM_VEC4}`);
 }

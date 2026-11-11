@@ -20,7 +20,7 @@ import { CASCADE_COUNT, CASCADE_MIPS } from '../spectrum';
 export const MAX_VESSELS = 8;
 export const MAX_RIPPLES = 8;
 /** Number of vec4 in OceanUniforms (see packOceanUniforms). */
-export const OCEAN_UNIFORM_VEC4 = 79;
+export const OCEAN_UNIFORM_VEC4 = 80;
 export const OCEAN_UNIFORM_BYTES = OCEAN_UNIFORM_VEC4 * 16;
 
 export const OCEAN_WAVES_WGSL = /* wgsl */ `
@@ -66,6 +66,7 @@ struct OceanUniforms {
   // Capillary detail layers: the finest cascade compressed by 'scale' and rotated, slopes x 'amplitude'.
   detail: array<vec4f, 2>,   // x = scale, y = cos(rotation), z = sin(rotation), w = slope amplitude
   detailOrigin: vec4f,       // xy / zw = texture coordinates of the reference point for layer 0 / 1, modulo 1
+  field: vec4f,              // roughness-field texture: xy = plane offset of its centre from the reference point, z = extent (m), w = 1 / extent
 }
 
 fn oceanRot(v: vec3f) -> vec3f { return oceanU.rot0.xyz * v.x + oceanU.rot1.xyz * v.y + oceanU.rot2.xyz * v.z; }

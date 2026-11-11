@@ -40,10 +40,83 @@ const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 export const whitecapCoverage = (windSpeed: number): number => Math.min(0.2, 3.84e-6 * windSpeed ** 3.41) * 0.4;
 
 /**
- * WGSL of the chunk with the per-body constants of the frame body list `bodies` (index = frame body index;
- * null = no ocean).
+ * The planet-fixed roughness field of the unresolved slope variance (mean about 1): mesoscale wind-speed
+ * changes (tens of km) and surfactant slicks (calm bands along the wind, a few km wide, in patches), which give
+ * the glint seen from altitude its structure. A function of the body-fixed position only (p, m) and of the
+ * body's row q = (foam albedo, wind direction (rad, compass, toward), variability, slick strength), so the
+ * deferred path (evaluated per pixel) and the forward path (baked into a planet-fixed texture over the near
+ * field, see fieldWgsl.ts) agree, and the pattern is fixed to the sea.
  */
-export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], options: { directSpecular?: boolean } = {}): string {
+export const WATER_FIELD_WGSL = /* wgsl */ `
+/// Gradient noise: Perlin's twelve edge gradients picked by an integer hash (no transcendentals, no local
+/// array), scaled to the standard deviation of the noise chunk's gradientNoise3 (0.31).
+fn waterGrad(i: vec3i, seed: i32, d: vec3f) -> f32 {
+  var h = (u32(i.x) * 0x8da6b343u) ^ (u32(i.y) * 0xd8163841u) ^ (u32(i.z) * 0xcb1ab31fu) ^ (u32(seed) * 0x165667b1u);
+  h = (h ^ (h >> 16u)) * 0x7feb352du;
+  h = (h ^ (h >> 15u)) * 0x846ca68bu;
+  let hb = (h ^ (h >> 16u)) & 15u;
+  let u = select(d.y, d.x, hb < 8u);
+  let v = select(select(d.z, d.x, hb == 12u || hb == 14u), d.y, hb < 4u);
+  return select(u, -u, (hb & 1u) != 0u) + select(v, -v, (hb & 2u) != 0u);
+}
+fn waterNoise3(p: vec3f, seed: i32) -> f32 {
+  let i = vec3i(floor(p));
+  let f = fract(p);
+  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let n0 = waterGrad(i, seed, f);
+  let n1 = waterGrad(i + vec3i(1, 0, 0), seed, f - vec3f(1.0, 0.0, 0.0));
+  let n2 = waterGrad(i + vec3i(0, 1, 0), seed, f - vec3f(0.0, 1.0, 0.0));
+  let n3 = waterGrad(i + vec3i(1, 1, 0), seed, f - vec3f(1.0, 1.0, 0.0));
+  let n4 = waterGrad(i + vec3i(0, 0, 1), seed, f - vec3f(0.0, 0.0, 1.0));
+  let n5 = waterGrad(i + vec3i(1, 0, 1), seed, f - vec3f(1.0, 0.0, 1.0));
+  let n6 = waterGrad(i + vec3i(0, 1, 1), seed, f - vec3f(0.0, 1.0, 1.0));
+  let n7 = waterGrad(i + vec3i(1, 1, 1), seed, f - vec3f(1.0, 1.0, 1.0));
+  return mix(mix(mix(n0, n1, u.x), mix(n2, n3, u.x), u.y), mix(mix(n4, n5, u.x), mix(n6, n7, u.x), u.y), u.z) * 1.135;
+}
+fn waterRoughnessFieldFixed(p: vec3f, q: vec4f) -> f32 {
+  let up = normalize(p);
+  var east = cross(vec3f(0.0, 0.0, 1.0), up);
+  if (dot(east, east) < 1e-10) { east = vec3f(1.0, 0.0, 0.0); }
+  east = normalize(east);
+  let north = cross(up, east);
+  let along = east * sin(q.y) + north * cos(q.y);
+  let across = cross(up, along);
+  // Wind: two octaves of smooth noise, 25-90 km.
+  let wind = waterNoise3(p / 90000.0, 11) * 0.7 + waterNoise3(p / 25000.0, 12) * 0.3;
+  // Slicks: broad calm bands stretched along the wind (about 30 km x 2.5 km), present in patches.
+  let sp = along * (dot(p, along) / 30000.0) + across * (dot(p, across) / 2500.0) + up * (dot(p, up) / 30000.0);
+  let streak = waterNoise3(sp, 13) * 0.75 + waterNoise3(sp * 2.1, 14) * 0.25;
+  let slick = smoothstep(0.15, 0.6, streak) * smoothstep(0.0, 0.5, waterNoise3(p / 60000.0, 15));
+  return exp(q.z * wind) * (1.0 - q.w * slick);
+}
+`;
+
+// Deferred path: the field per shaded point, evaluated once (every light and the ambient term ask for it).
+const FIELD_PER_PIXEL = /* wgsl */ `${WATER_FIELD_WGSL}
+var<private> waterFieldKey: vec4f = vec4f(0.0, 0.0, 0.0, -1.0);
+var<private> waterFieldValue: f32 = 1.0;
+fn waterRoughnessField(s: Surface) -> f32 {
+  if (s.bodyIndex < 0) { return 1.0; }
+  let key = vec4f(s.pos, f32(s.bodyIndex));
+  if (all(key == waterFieldKey)) { return waterFieldValue; }
+  let bi = u32(s.bodyIndex);
+  waterFieldKey = key;
+  waterFieldValue = waterRoughnessFieldFixed(rootToFixed(bi, s.pos - frame.bodies[bi].center.xyz), waterBodyParam(s, 1u));
+  return waterFieldValue;
+}`;
+
+// Forward near field: the pass sets waterFieldValue from its baked field texture before lighting (the noise
+// itself cost that pass 0.15 ms at 1440p).
+const FIELD_FROM_PASS = /* wgsl */ `
+var<private> waterFieldValue: f32 = 1.0;
+fn waterRoughnessField(s: Surface) -> f32 { return select(waterFieldValue, 1.0, s.bodyIndex < 0); }`;
+
+/**
+ * WGSL of the chunk with the per-body constants of the frame body list `bodies` (index = frame body index;
+ * null = no ocean). `fieldFromPass`: the variant of the forward near-field pass ("ocean_water_forward"), which
+ * reads the roughness field from the private `waterFieldValue` its fragment shader sets.
+ */
+export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], options: { directSpecular?: boolean; fieldFromPass?: boolean } = {}): string {
   const rows: string[] = [];
   for (let i = 0; i < MAX_BODIES; i++) {
     const t = bodies[i] ?? null;
@@ -54,7 +127,6 @@ export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], op
 // OVERRIDABLE chunk "brdf_water", provided by the ocean package (src/render/ocean/shaders/waterBrdf.ts).
 // Needs in scope: chunks frame, gbuffer, brdf; skyViewLut, skyIrradianceLut (set 'atmosphereLuts'),
 // envProbeCube, envSh9 (set 'env'). See the module comment for the meaning of the Surface fields.
-#include "noise"
 const WATER_IOR = 1.34;
 const WATER_GGX_KAPPA = ${GGX_KAPPA};
 // 1 = normal; 0 isolates the direct specular for tests (debug hook of the ocean feature).
@@ -67,45 +139,9 @@ fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bod
 fn waterWind(s: Surface) -> f32 { return frame.bodies[max(s.bodyIndex, 0)].ocean.a; }
 fn waterCoxMunk(s: Surface) -> f32 { return 0.003 + 0.00512 * waterWind(s); }
 
-/// GGX alpha of the slopes the shading normal does not carry (without the light's own angular size).
-/// Planet-fixed variability of the unresolved slope variance (mean about 1): mesoscale wind-speed changes
-/// (tens of km) and surfactant slicks (calm bands along the wind, a few km wide, in patches), which give
-/// the glint seen from altitude its structure. A function of the body-fixed position only, so the deferred and
-/// the forward path agree, and the pattern is fixed to the sea.
-// The field is evaluated once per shaded point: every light and the ambient term ask for it (waterAlpha).
-var<private> waterFieldKey: vec4f = vec4f(0.0, 0.0, 0.0, -1.0);
-var<private> waterFieldValue: f32 = 1.0;
-
-fn waterRoughnessField(s: Surface) -> f32 {
-  if (s.bodyIndex < 0) { return 1.0; }
-  let key = vec4f(s.pos, f32(s.bodyIndex));
-  if (all(key == waterFieldKey)) { return waterFieldValue; }
-  waterFieldKey = key;
-  waterFieldValue = waterRoughnessFieldAt(s);
-  return waterFieldValue;
-}
-
-fn waterRoughnessFieldAt(s: Surface) -> f32 {
-  let bi = u32(s.bodyIndex);
-  let b = frame.bodies[bi];
-  let p = rootToFixed(bi, s.pos - b.center.xyz);
-  let q = waterBodyParam(s, 1u);
-  let up = normalize(p);
-  var east = cross(vec3f(0.0, 0.0, 1.0), up);
-  if (dot(east, east) < 1e-10) { east = vec3f(1.0, 0.0, 0.0); }
-  east = normalize(east);
-  let north = cross(up, east);
-  let along = east * sin(q.y) + north * cos(q.y);
-  let across = cross(up, along);
-  // Wind: two octaves of smooth noise, 25-90 km.
-  let wind = gradientNoise3(p / 90000.0, 11) * 0.7 + gradientNoise3(p / 25000.0, 12) * 0.3;
-  // Slicks: broad calm bands stretched along the wind (about 30 km x 2.5 km), present in patches.
-  let sp = along * (dot(p, along) / 30000.0) + across * (dot(p, across) / 2500.0) + up * (dot(p, up) / 30000.0);
-  let streak = gradientNoise3(sp, 13) * 0.75 + gradientNoise3(sp * 2.1, 14) * 0.25;
-  let slick = smoothstep(0.15, 0.6, streak) * smoothstep(0.0, 0.5, gradientNoise3(p / 60000.0, 15));
-  return exp(q.z * wind) * (1.0 - q.w * slick);
-}
-
+/// GGX alpha of the slopes the shading normal does not carry (without the light's own angular size), with the
+/// planet-fixed roughness field (WATER_FIELD_WGSL).
+${options.fieldFromPass ? FIELD_FROM_PASS : FIELD_PER_PIXEL}
 fn waterAlpha(s: Surface) -> f32 {
   let unresolved = waterCoxMunk(s) * waterRoughnessField(s) * clamp(1.0 - s.roughness, 0.0, 1.0);
   return sqrt(WATER_GGX_KAPPA * WATER_GGX_KAPPA * unresolved + 1e-6);

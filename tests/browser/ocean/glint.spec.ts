@@ -107,8 +107,12 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
   }
   console.log(`LEO glint: peak at tan(beta) ${peak.tanBeta.toFixed(4)} (px ${peak.x},${peak.y}); half maximum at tan(beta) ${half.toFixed(4)}, Cox-Munk ${expectedHalf.toFixed(4)} (sigma^2 ${st.coxMunk.toFixed(4)}); ratio ${(half / expectedHalf).toFixed(3)}`);
   console.log('profile:', prof.slice(0, 40).map((p) => `${p.t.toFixed(3)}:${p.g.toExponential(2)}`).join(' '));
-  // At the mirror point, and with the Cox-Munk width.
-  expect(peak.tanBeta).toBeLessThan(0.03);
+  // At the mirror point: the radially averaged glint peaks there. (The brightest single pixel lies wherever the
+  // planet-fixed roughness field happens to be calmest near the mirror point, within a few hundredths.)
+  const profPeak = prof.filter((p) => p.n >= 20).reduce((m, p) => (p.g > m.g ? p : m));
+  console.log(`radial profile peak at tan(beta) ${profPeak.t.toFixed(3)}`);
+  expect(profPeak.t).toBeLessThan(0.03);
+  expect(peak.tanBeta).toBeLessThan(0.06);
   expect(half / expectedHalf).toBeGreaterThan(0.8);
   expect(half / expectedHalf).toBeLessThan(1.2);
   // Broad: a sizeable part of the image glints (not a handful of sparkles).
