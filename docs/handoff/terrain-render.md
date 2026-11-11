@@ -342,8 +342,8 @@ prefixes.
 8. **CPU budget**: the perf spec asserts the feature's whole main-thread time without tile uploads (p99 of
    200 frames) under 1 ms, not only the selection. Under other agents' load single runs exceed it
    (section 8.1).
-9. **Rocks at the pad**: the flattened pad disc holds no rocks, so the 0.15 ms line of the pad checkpoint is
-   met with nothing to draw. The cost of rocks on Earth is measured on the densest rock field near the site
+9. **Rocks at the pad**: until request `terrain-render-6` the flattened pad disc held no rocks; with the site's
+   shape (1581cf9) rocks lie outside the flat core and areas (145 in the pad view, 0.004 ms against 0.15). The cost of rocks on Earth is measured on the densest rock field near the site
    and held to the 0.3 ms of the lunar line. Earth draws rocks to 200 m and from 5 pixels (Moon: 250 m,
    3 pixels).
 
@@ -356,8 +356,8 @@ prefixes.
 | `terrain-render-3` (blocky night-light cells) | declined: in the source; handled in the shader (section 3) |
 | `terrain-render-cs-1` (from core-support: sea sheet missing near a low camera over deep ocean, water material at the seabed inside the near field, lines along sheet tile edges) | resolved d43e8fd, see the request's resolution |
 | `terrain-render-4` (sun-shadow filter at least a caster quad wide for terrain pixels: gear-tooth crater shadows from orbit) | resolved c417fb0 (RT4.a, `encodeShadowSoftness`); used by the terrain shader since round 1 (section 2) |
-| `terrain-render-5` (strips of different exposure and a blue cast in the regional lunar imagery) | open (bake-moon); the shader keeps 40 % of the lunar imagery's saturation meanwhile |
-| `terrain-render-6` (the site flattens a 450 m disc: a perfect plane with a circular edge) | open (site data / terrain core) |
+| `terrain-render-5` (strips of different exposure and a blue cast in the regional lunar imagery) | declined in part: the cast is gone with the colour step of sky-lighting-6 (81a26d0); the strip steps stay (a re-bake of the WAC mosaic, listed for the lead). The shader keeps 40 % of the lunar imagery's saturation |
+| `terrain-render-6` (the site flattens a 450 m disc: a perfect plane with a circular edge) | resolved 1581cf9 (`pad.shape`: exactly flat core of 115 m and areas under the structures, a quarter of the natural relief elsewhere inside 450 m, ragged blends); `pad-off-apron` and `integrated-off-apron-eye` re-shot on it. `sitePlan.ts` does not read `pad.shape.areas` (its slabs come from the structures' footprints, which the areas follow) |
 | `terrain-render-7` (dark tile-shaped region by the shore with ocean and atmosphere) | withdrawn: the cloud shadow map's staircase, removed by atmosphere-clouds in 6587a0d |
 | `terrain-render-cs-2` (from core-support: no crater shadows at the lunar terminator from 20,000 and 5,000 km, a shadow step at 1,500 km on approach) | resolved d3bac0a and closed by the filer (25b92c5, its bound lowered from 0.4 % to 0.2 % of the lit pixels): the relief floor gives the terminator its shadows. `tests/browser/integration/shadows.spec.ts -g "terminator|approach"` on the final code of this package: 3 of 3, 0.53 % of the lit pixels in a terrain shadow at 5,000 km and 0.36 % at 20,000 km (0.45 % and 0.31 % in the reviewer's run, before the regolith BRDF of section 3), no shadow pop on the approach through 1,500 km |
 
@@ -580,7 +580,7 @@ stand-in.
 
 | # | Item | Done | Look at |
 |---|---|---|---|
-| 1 blocker | Ground at eye height a flat printed plane, nothing stands up | Ground cover (section 3): tussocks, wind-shaped scrub, kiawe trees, stands of kiawe to 7 km, loose clinker, by land-cover class, instanced with shadows in every cascade fine enough for them; shadows of the detail relief along the sun (section 3, "Relief shadows"); lava where the land cover says rock. The horizon is broken by trees and scrub. Not done: the plane itself (the site flattens 450 m of ground in the height authority: request `terrain-render-6`), parallax displacement of the detail layers | `integrated-off-apron-eye`, `integrated-grass-eye`, `integrated-kiawe-eye`, `integrated-kiawe-120m`, `grass-eye`, `kiawe-eye`, `kiawe-120m` |
+| 1 blocker | Ground at eye height a flat printed plane, nothing stands up | Ground cover (section 3): tussocks, wind-shaped scrub, kiawe trees, stands of kiawe to 7 km, loose clinker, by land-cover class, instanced with shadows in every cascade fine enough for them; shadows of the detail relief along the sun (section 3, "Relief shadows"); lava where the land cover says rock. The horizon is broken by trees and scrub. The plane itself: request `terrain-render-6`, resolved at the end of the round (a quarter of the natural relief and rocks back on the disc, ragged edge). Not done: parallax displacement of the detail layers | `integrated-off-apron-eye`, `integrated-grass-eye`, `integrated-kiawe-eye`, `integrated-kiawe-120m`, `grass-eye`, `kiawe-eye`, `kiawe-120m` |
 | 2 major | Wrong colours: rust ground, cream strip brighter than concrete, salmon slopes | Ground takes its material's albedo where the imagery is a graded mosaic (section 3, "Ground colour"; `anchorAlbedo`: lava neutral to cool, soil grey-brown), imagery keeps 70 % of its saturation there and its luminance is bounded to 1.6 x the material's; built-up cells are dirt, not concrete. Measured in `integrated-30m`: concrete Y 0.41, lava around it 0.11 (3.7 x), ground R/B 1.17 (was 2.9) | `integrated-30m`, `integrated-200m`, `integrated-1km`, `integrated-40km` |
 | 3 major | Apron a perfect 280 m disc, no joints | Site ground plan from the structures (`sitePlan.ts`): concrete slabs under every structure with a footprint, bays with joints, a tone per bay, dirt along joints, stains, scorch towards the pad, kerb; gravel lane bed under the crawlerway; compacted shoulder with a ragged edge. In the game the vehicle-pad package's groundworks cover it (request `vehicle-pad-3`, resolved) | `pad-30m`, `integrated-30m`, `integrated-apron-eye`, `pad-apron-down` |
 | 4 major | Flat grey "ponds" on a slope near the pad | Mask water above sea level only on level ground (slope below 0.03-0.07), dark with wet margins and the deep colour towards the middle; the fill rule tests hue (blue), not darkness | `integrated-1km`, `earth-1km` |
@@ -627,10 +627,10 @@ stand-in.
 
 ### Not fixed, and why
 
-- **The flattened plain around the pad** (photo 1, artifact 1): 450 m of geometrically level ground with a
-  circular edge is in the site data and the height authority, not in this package (request
-  `terrain-render-6`, open). The ground cover, clinker and relief shadows carry the eye-height views; the
-  plane is still visible as a plane beyond about 50 m.
+- **The plain around the pad** (photo 1, artifact 1): request `terrain-render-6` was answered at the end of
+  the round (1581cf9): a quarter of the natural hummocks is back inside 450 m and the blend is ragged, and
+  the rock field now has rocks there (the pad view of the perf spec draws 145). Ka Lae's natural ground is
+  low relief, so the plain stays gentle.
 - **Parallax displacement of the detail layers** within 30 m (both critics): not done. The relief shadows
   march the same height maps towards the sun; displacement would be a second march per pixel on the most
   expensive views (stony ground is the tightest G-buffer line).
@@ -698,8 +698,8 @@ stand-in.
 
 - Photo lens: about 6.5. The pad surroundings read as a lava coast with grass, scrub and kiawe that stand
   up and cast shadows (`integrated-off-apron-eye`, `integrated-kiawe-120m`, `integrated-200m`); the Moon
-  from orbit, the terminator and the standing views hold up. Against it: the perfectly level plain around the
-  pad (request `terrain-render-6`), lava a little bright against the sky, crowns that look faceted up close
+  from orbit, the terminator and the standing views hold up. Against it: the plain around the pad is gentle (a
+  quarter of Ka Lae's low relief), lava a little bright against the sky, crowns that look faceted up close
   (`integrated-stony-ground`, the scrub at the left), smooth pale lumps for the coarser lunar rocks, a
   mottled slope in `moon-300m`, soft crater-shadow edges from orbit.
 - Artifact lens: about 6. No tiling, no texel staircases on land cover, no stray concrete, no ponds on
