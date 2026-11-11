@@ -27,7 +27,8 @@ const perf = (page: Page): Promise<Perf> => page.evaluate('window.__mapLab.perf(
 test.setTimeout(25 * 60_000);
 
 for (const [name, query] of [
-  ['overview', 'scene=synthetic&perf=1&quiet=1&spin=0.002'],
+  // (the overview distance of the earlier measurements; the lab's own default overview is closer now)
+  ['overview', 'scene=synthetic&perf=1&quiet=1&spin=0.002&dist=1.15e9'],
   ['earth close-up', 'scene=synthetic&perf=1&quiet=1&spin=0.002&dist=9e7'],
 ] as const) {
   test(`map overlay budget (${name}): GPU p99 < 0.1 ms, CPU p99 < 0.5 ms`, async ({ page, pageLog }, testInfo) => {

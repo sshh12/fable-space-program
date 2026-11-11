@@ -1545,12 +1545,11 @@ export class MapController implements MapView {
         this.icon(gizmo, h.x, h.y, HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, HANDLE_RADIUS_PX * (hot ? 1.15 : 1) * k, 0, def.icon, def.color, 1);
         this.clear(h.x, h.y, HANDLE_RADIUS_PX * k);
       }
+      // (no label: the node panel beside the gizmo names the node and shows its delta-v and time; a label among
+      // the arms would only cover the orbit next to the node being edited)
       const r = NODE_RADIUS_PX * 1.1 * k;
       this.icon(gizmo, sel.x, sel.y, r, r, 0, sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, 1);
       this.clear(sel.x, sel.y, r, true);
-      this.tangentAt(scene, sel.loc.key.list, sel.loc.key.index, sel.loc.node.ut);
-      const side = this.labelSide(scene, sel.loc.patch.bodyId, sel.x, sel.y, this.tangent.x, this.tangent.y);
-      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, labelTint(COLORS.node), 'plate', side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- add-maneuver preview where the pointer hovers a trajectory
@@ -1626,14 +1625,17 @@ export class MapController implements MapView {
       if (!b.placed) continue;
       const body = l.style === 'body';
       if (!body) this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, COLORS.plate, 1);
-      // A label set away from its icon is tied to it: a leader from the icon's edge to the nearest point of the plate.
+      // A label set away from its icon is tied to it: a leader from the icon's edge to the nearest point of the
+      // plate, when the plate is far from the icon or sits diagonally off a small one (only a corner near it:
+      // two such labels side by side read crosswise without one).
       const nx = Math.max(b.x, Math.min(b.ax, b.x + b.width));
       const ny = Math.max(b.y, Math.min(b.ay, b.y + b.height));
       const dx = nx - b.ax;
       const dy = ny - b.ay;
       const d = Math.hypot(dx, dy);
       const r0 = b.clear + 1.5 * k;
-      if (d - b.clear > leaderGap && d > r0 + 2 * k) {
+      const diagonal = nx !== b.ax && ny !== b.ay && b.clear < 20 * k;
+      if ((d - b.clear > leaderGap || diagonal) && d > r0 + 2 * k) {
         const ux = dx / d;
         const uy = dy / d;
         this.icon(plates, b.ax + ux * (r0 + d) * 0.5, b.ay + uy * (r0 + d) * 0.5, (d - r0) / 2, (LEADER_WIDTH_PX / 2) * k, Math.atan2(uy, ux), ICON.bar, COLORS.leader, 1);

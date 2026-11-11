@@ -132,6 +132,44 @@ test('screenshot: hover details on a marker and the add-maneuver preview on the 
   await expectNoErrors(page, pageLog);
 });
 
+/**
+ * The glyph atlas, icons and lines at device pixel ratio 2 (1920 x 1080 CSS px, a 3840 x 2160 frame): the node
+ * editor in low orbit and the synthetic chain around the Moon. Labels must be as crisp as at 1x (the atlas is
+ * rasterised at the device size), the panel the same CSS size.
+ */
+test.describe('device pixel ratio 2 (4K)', () => {
+  test.use({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 });
+  for (const [name, query, node] of [
+    ['dpr2-lowOrbit-node', 'scene=lowOrbit&paused=1', null],
+    ['dpr2-synthetic-moon', 'scene=synthetic&dist=1.4e8', 'node-a'],
+  ] as const) {
+    test(`screenshot: ${name}`, async ({ page, pageLog }) => {
+      await openLab(page, query);
+      await page.evaluate(
+        ([n]) => {
+          const lab = (window as unknown as { __mapLab: { view: { selectNode(id: string | null): void }; setFocus(f: { bodyId?: string }): void } }).__mapLab;
+          const s = window.__test!.state()!;
+          if (n) {
+            lab.setFocus({ bodyId: s.bodies.find((b) => b.orbit !== null)!.id });
+            lab.view.selectNode(n);
+          } else {
+            const id = window.__test!.commands!.addNode(s.ut + 1500);
+            window.__test!.commands!.setNode(id, { dv: { prograde: 420, normal: 60, radial: -40 } });
+            lab.view.selectNode(id);
+          }
+        },
+        [node] as const,
+      );
+      await frames(page, 5);
+      const shot = await saveScreenshot(page, 'map-view', name);
+      expect(shot.stats.width).toBe(3840);
+      assertRealImage(shot.stats, name, { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
+      await expect(page.locator('[data-map-panel]')).toBeVisible();
+      await expectNoErrors(page, pageLog);
+    });
+  }
+});
+
 const CLOSEUPS: [string, string, string | null][] = [
   ['synthetic-earth', 'scene=synthetic&dist=9e7', 'node-b'],
   ['synthetic-moon', 'scene=synthetic&dist=1.4e8', 'node-a'],
