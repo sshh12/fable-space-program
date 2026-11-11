@@ -10,6 +10,7 @@
  *   magenta=1               magenta behind the body silhouette (holes and cracks); silhouette=<m> radius offset
  *   nearfield=<start>,<end> publish 'ocean.nearField' for the camera's body
  *   workers=<n>             tile workers (default 6 in the lab)   delay=<ms> artificial streaming delay
+ *   cover=0                 no ground cover (tussocks, shrubs, trees, loose stones)
  *   rocks=0                 no rock field                          ballast=<iterations> GPU ballast pass
  *   morph=0                 geomorphing and fade-ins off (control experiment of the pop detector)
  *   hud=0                   no text overlay
@@ -151,10 +152,11 @@ async function boot(): Promise<void> {
       return provider;
     },
     // With performance attribution the rocks are a feature of their own, so their passes are timed alone.
-    { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0', rocksSeparate: query.get('perf') === 'features' },
+    { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0', cover: query.get('cover') !== '0', rocksSeparate: query.get('perf') === 'features' },
   );
   await app.renderer.addFeature(terrain);
   if (terrain.rocks) await app.renderer.addFeature(terrain.rocks);
+  if (terrain.cover) await app.renderer.addFeature(terrain.cover);
   if (query.has('delay')) terrain.debug.setStreamDelay(Number(query.get('delay')));
   if (query.get('morph') === '0') terrain.debug.setMorphEnabled(false);
 
@@ -362,7 +364,7 @@ async function boot(): Promise<void> {
         `${lines.join('\n')}\n` +
         `queue ${s.queued}  loading ${s.loading}  uploading ${s.uploading}  ready ${s.ready}  free ${s.freeTileLayers}/${s.freeImageLayers}/${s.freeNightLayers}\n` +
         `uploaded ${s.uploadedTotal}  evicted ${s.evictedTotal}  cancelled ${s.cancelledTotal}  bake ${s.bakeMs.toFixed(1)} ms  image ${s.imageMs.toFixed(1)} ms\n` +
-        `select ${st.selectMs.toFixed(2)} ms  records ${st.records}  rocks ${st.rocks.instances}`;
+        `select ${st.selectMs.toFixed(2)} ms  records ${st.records}  rocks ${st.rocks.instances}  cover ${st.cover.instances}`;
     });
   }
   await app.testApi.api.waitFrames(2);

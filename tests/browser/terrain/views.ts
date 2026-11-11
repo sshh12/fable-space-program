@@ -43,6 +43,11 @@ export const VIEWS: View[] = [
   { name: 'pad-off-apron', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -12 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-ground-close', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -50 }, fov: 35, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-30m', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, height: 30, agl: true, heading: 40, pitch: -22 }, sun: { az: 105, el: 31, ...PAD } },
+  // What stands up from the ground (ground cover) where the land cover says grass and trees, 500 to 700 m
+  // north-east and north of the pad: at eye height, and the same thickets from 120 m up.
+  { name: 'grass-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0041, lon: PAD.lon + 0.0052, height: 1.7, agl: true, heading: 320, pitch: -5 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'kiawe-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, height: 1.7, agl: true, heading: 70, pitch: -3 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'kiawe-120m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, height: 120, agl: true, heading: 15, pitch: -24 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'earth-1km', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.004, lon: PAD.lon - 0.004, height: 1000, agl: false, heading: 45, pitch: -35 }, sun: { az: 105, el: 31, ...PAD } },
   // Broken, stony ground 1 km south-west of the pad at eye height: relief of the height function under the
   // detail layers, and the rock field (the pad's own surroundings are flattened and hold no rocks).

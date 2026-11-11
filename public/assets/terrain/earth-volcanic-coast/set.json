@@ -344,16 +344,16 @@
       "black-sand": 1.0
     },
     "sparseScrub": {
-      "scrub-soil": 0.7,
-      "pahoehoe": 0.3
+      "scrub-soil": 0.5,
+      "pahoehoe": 0.5
     },
     "grass": {
-      "pasture": 0.8,
-      "scrub-soil": 0.2
+      "pasture": 0.7,
+      "scrub-soil": 0.3
     },
     "shrub": {
-      "pasture": 0.55,
-      "scrub-soil": 0.45
+      "pasture": 0.5,
+      "scrub-soil": 0.5
     },
     "trees": {
       "pasture": 1.0
@@ -430,11 +430,11 @@
     "pasture": -0.5
   },
   "slopeGain": {
-    "aa": 0.8,
+    "aa": 2.0,
     "pahoehoe": 0.2,
-    "black-sand": -1.0,
-    "scrub-soil": -0.3,
-    "pasture": -0.6
+    "black-sand": -2.0,
+    "scrub-soil": -0.6,
+    "pasture": -1.0
   },
   "noiseGain": {
     "aa": 0.5,
@@ -446,34 +446,215 @@
   "rockMaterial": "aa",
   "albedoGain": {
     "pahoehoe": [
+      0.5,
       0.0,
-      -3.0,
-      0.0
+      -2.0
     ],
     "aa": [
+      1.0,
       0.0,
-      -3.0,
-      0.0
+      -2.0
     ],
     "black-sand": [
       0.0,
-      -2.0,
-      0.0
+      0.0,
+      -1.0
     ],
     "scrub-soil": [
+      -1.0,
       0.0,
-      1.5,
-      -1.5
+      -1.0
     ],
     "pasture": [
       0.0,
       0.0,
-      5.0
+      4.0
     ]
   },
   "hexBlend": [
     6.0,
     -6.0
   ],
-  "terrainRelief": 0.25
+  "terrainRelief": 0.25,
+  "shoreGain": {
+    "black-sand": 3.0,
+    "pasture": -2.0,
+    "scrub-soil": -1.0
+  },
+  "gloss": {
+    "pahoehoe": 0.6
+  },
+  "gravelMaterial": "black-sand",
+  "anchorAlbedo": {
+    "pasture": [
+      0.15,
+      0.132,
+      0.05
+    ],
+    "scrub-soil": [
+      0.16,
+      0.117,
+      0.076
+    ]
+  },
+  "cover": {
+    "windToDeg": 235.0,
+    "windLean": 0.35,
+    "kinds": [
+      {
+        "id": "tussock",
+        "shape": "tuft",
+        "radiusM": [
+          0.16,
+          0.55
+        ],
+        "heightPerRadius": [
+          1.1,
+          2.0
+        ],
+        "rangeM": 180.0,
+        "minPixels": 3.5,
+        "chunkM": 16.0,
+        "tint": [
+          0.13,
+          0.125,
+          0.045
+        ],
+        "tintDry": [
+          0.26,
+          0.21,
+          0.09
+        ],
+        "clump": 0.7,
+        "clumpM": 9.0
+      },
+      {
+        "id": "scrub",
+        "shape": "bush",
+        "radiusM": [
+          0.5,
+          1.7
+        ],
+        "heightPerRadius": [
+          0.7,
+          1.1
+        ],
+        "rangeM": 700.0,
+        "minPixels": 4.0,
+        "chunkM": 64.0,
+        "tint": [
+          0.05,
+          0.07,
+          0.028
+        ],
+        "tintDry": [
+          0.1,
+          0.095,
+          0.045
+        ],
+        "clump": 0.6,
+        "clumpM": 40.0
+      },
+      {
+        "id": "kiawe",
+        "shape": "tree",
+        "radiusM": [
+          2.2,
+          4.8
+        ],
+        "heightPerRadius": [
+          0.75,
+          1.1
+        ],
+        "rangeM": 1800.0,
+        "minPixels": 4.0,
+        "chunkM": 256.0,
+        "tint": [
+          0.045,
+          0.062,
+          0.026
+        ],
+        "tintDry": [
+          0.075,
+          0.08,
+          0.04
+        ],
+        "clump": 0.5,
+        "clumpM": 120.0
+      },
+      {
+        "id": "clinker",
+        "shape": "stone",
+        "radiusM": [
+          0.035,
+          0.2
+        ],
+        "heightPerRadius": [
+          0.6,
+          1.0
+        ],
+        "rangeM": 60.0,
+        "minPixels": 4.0,
+        "chunkM": 16.0,
+        "tint": [
+          0.04,
+          0.036,
+          0.034
+        ],
+        "tintDry": [
+          0.06,
+          0.05,
+          0.044
+        ],
+        "clump": 0.9,
+        "clumpM": 7.0
+      }
+    ],
+    "classDensity": {
+      "unknown": {
+        "tussock": 0.15
+      },
+      "bareRock": {
+        "tussock": 0.05,
+        "scrub": 0.0012,
+        "clinker": 0.5
+      },
+      "sand": {
+        "clinker": 0.05
+      },
+      "sparseScrub": {
+        "tussock": 0.35,
+        "scrub": 0.006,
+        "clinker": 0.2
+      },
+      "grass": {
+        "tussock": 1.4,
+        "scrub": 0.003
+      },
+      "shrub": {
+        "tussock": 0.7,
+        "scrub": 0.02,
+        "kiawe": 0.0015
+      },
+      "trees": {
+        "tussock": 0.45,
+        "scrub": 0.012,
+        "kiawe": 0.011
+      },
+      "crop": {
+        "tussock": 0.9
+      },
+      "wetland": {
+        "tussock": 1.0,
+        "scrub": 0.004
+      }
+    }
+  },
+  "chroma": {
+    "pahoehoe": 0.25,
+    "aa": 0.3,
+    "black-sand": 0.3,
+    "concrete-apron": 0.5,
+    "scrub-soil": 0.8
+  }
 }

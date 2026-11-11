@@ -6,9 +6,11 @@
  * that can still cover `rockMinPixels` on screen at the chunk's distance. A rock is visible out to
  * radius x rangePerRadius (at most rockRangeM) and grows from nothing over the outer 30 % of that range,
  * so neither a rock nor a chunk ever pops in. A collidable rock is the ellipsoidal cap of the height
- * function: its mesh is the unit rock (a polyhedron around the unit ball, rockMesh.ts) scaled by the cap's
+ * function: its mesh is the unit rock (a broken block around the unit ball, rockMesh.ts) scaled by the cap's
  * radius and height, centred on the base point: the lower part of the block is in the ground. The rock
- * carries the near layer of the set's rock material, triplanar in its own axes.
+ * carries the near layer of the set's rock material, triplanar in its own axes and tiled at a few times its
+ * own size (a pebble does not show a boulder's facets magnified); soil is banked against its foot and lies
+ * in its hollows.
  */
 import type { BodyDef } from '@/core/contracts/defs';
 import { MATERIAL_ID, RENDER_FORMATS, type FrameContext, type RenderContext, type ShadowCascadeView } from '@/core/contracts/render';
@@ -18,7 +20,7 @@ import { coreOf, type Tracked } from '@/render/core';
 import type { TerrainAuthority } from '@/terrain';
 import type { MaterialSet, SurfaceParams } from './materials';
 import type { LodObserverFixed } from './quadtree';
-import { buildRockMesh, ROCK_LODS, ROCK_VARIANTS } from './rockMesh';
+import { buildRockMesh, ROCK_LODS, ROCK_VARIANTS, ROCK_VERTEX_FLOATS } from './rockMesh';
 import { tileId } from './tileMath';
 
 export interface RockBodyInfo {
@@ -46,7 +48,7 @@ struct RockBody {
   rot: mat3x3f,
   prevRot: mat3x3f,
   p0: vec4f,       // range per metre of rock radius, largest range (m), material id, frame body index
-  p1: vec4f,       // roughness, detail layer, detail tiling (1/m), unused
+  p1: vec4f,       // roughness, detail layer, largest detail tiling length (m), albedo of the soil relative to a rock's tint
 }
 struct RockRecord {
   pos: vec4f,      // xyz = base point relative to the chunk origin (body-fixed, m), w = horizontal radius (m)
@@ -104,9 +106,10 @@ struct RockVaryings {
   @location(4) @interpolate(flat) rock: u32,
   @location(5) model: vec3f,
   @location(6) fixed: vec3f,
+  @location(7) extra: vec2f,      // soil share at the foot, cavity (1 = open face)
 }
 
-@vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @builtin(instance_index) instance: u32) -> RockVaryings {
+@vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @location(2) extra: vec2f, @builtin(instance_index) instance: u32) -> RockVaryings {
   let v = rockVertex(position, normal, instance);
   let r = rocks[v.rock];
   let c = chunks[u32(r.misc.y)];
@@ -119,14 +122,17 @@ struct RockVaryings {
   o.rock = v.rock;
   o.model = position;
   o.fixed = v.fixed;
+  o.extra = extra;
   return o;
 }
 
 @fragment fn fs(in: RockVaryings) -> GBufferOut {
   let r = rocks[in.rock];
   let layer = i32(rockBody.p1.y);
-  // Triplanar rock texture in the rock's own axes (it turns with the rock), in metres.
-  let p = (in.local + vec3f(r.misc.z)) * rockBody.p1.z;
+  // Triplanar rock texture in the rock's own axes (it turns with the rock), tiled at four times the rock's
+  // radius (never longer than the layer was made for): a hand-sized stone and a boulder both show grain,
+  // pits and a facet or two.
+  let p = (in.local + vec3f(r.misc.z)) / clamp(4.0 * r.pos.w, 0.3, rockBody.p1.z);
   let dpx = dpdx(p);
   let dpy = dpdy(p);
   let nm = normalize(in.model);
@@ -136,6 +142,7 @@ struct RockVaryings {
   var grad = vec3f(0.0);
   var rough = 0.0;
   var ao = 0.0;
+  var relief = 0.0;
   for (var axis = 0; axis < 3; axis++) {
     var uv: vec2f; var dx: vec2f; var dy: vec2f; var au: vec3f; var av: vec3f;
     if (axis == 0) { uv = p.yz; dx = dpx.yz; dy = dpy.yz; au = vec3f(0.0, 1.0, 0.0); av = vec3f(0.0, 0.0, 1.0); }
@@ -149,30 +156,39 @@ struct RockVaryings {
     grad += w[axis] * (-nxy.x / nz * au - nxy.y / nz * av);
     rough += w[axis] * b.b;
     ao += w[axis] * b.a;
+    relief += w[axis] * a.a;
   }
-  // Faces of a rock are flat: most of the shading normal is the face normal (from the position
-  // derivatives), the rest the smooth vertex normal. Then the detail gradient (rock axes) perturbs it.
+  // The mesh is one smooth surface; what is left of its facets (a third of the face normal, from the
+  // position derivatives) keeps broken edges readable. Then the detail gradient (rock axes) perturbs it,
+  // more strongly than on the ground: a rock face is pitted and stepped.
   let nv = normalize(in.normal);
   var face = cross(dpdx(in.fixed), dpdy(in.fixed));
   let fl = length(face);
   if (fl > 0.0) { face /= fl; } else { face = nv; }
   if (dot(face, nv) < 0.0) { face = -face; }
-  let nf = normalize(mix(nv, face, 0.75));
-  var g = quatRotate(r.q, grad);
+  let nf = normalize(mix(nv, face, 0.3));
+  var g = 1.6 * quatRotate(r.q, grad);
   g -= nf * dot(g, nf);
-  let n = rockBody.rot * normalize(nf - g);
-  var albedo = r.tint.rgb * mix(vec3f(luminance(ratio)), ratio, 0.5);
+  let up = quatRotate(r.q, vec3f(0.0, 0.0, 1.0));
+  let soilTint = rockBody.p1.w * r.tint.rgb;
+  let cavity = saturate(in.extra.y);
+  // Fracture faces differ in tone; hollows are darker (dust and shade).
+  var albedo = r.tint.rgb * mix(vec3f(luminance(ratio)), ratio, 0.6) * mix(0.72, 1.0, cavity);
   let id = u32(rockBody.p0.z);
   if (id == MATERIAL_REGOLITH) {
-    // Level faces carry a film of the soil the rock sits in (the tint is the soil's colour, brightened).
-    let dust = 0.55 * smoothstep(0.55, 0.95, dot(nf, quatRotate(r.q, vec3f(0.0, 0.0, 1.0))));
-    albedo = mix(albedo, 0.8 * r.tint.rgb, dust);
+    // Level faces carry a film of the soil the rock sits in.
+    let dust = 0.55 * smoothstep(0.55, 0.95, dot(nf, up));
+    albedo = mix(albedo, soilTint, dust);
   }
+  // Soil banked against the foot, reaching higher in the hollows of the face than on what stands out.
+  let banked = smoothstep(0.42, 0.62, in.extra.x + 0.3 * (0.5 - relief));
+  albedo = mix(albedo, soilTint, banked);
+  let n = rockBody.rot * normalize(nf - g * (1.0 - 0.7 * banked));
   albedo = clamp(albedo, vec3f(0.0), vec3f(1.0));
-  // Contact shading: the part of the rock near the ground sees less sky.
-  let contact = mix(0.45, 1.0, saturate(in.local.z / max(0.6 * r.misc.x, 1e-3)));
+  // Contact shading: the part of the rock near the ground sees less sky; hollows see less of everything.
+  let contact = mix(0.45, 1.0, saturate(in.local.z / max(0.6 * r.misc.x, 1e-3))) * mix(0.6, 1.0, cavity);
   // Rock is fresh material: on a regolith body the opposition surge is weaker than on mature soil. There
-  // the metallic channel is the RMS slope (x 2) of the facets within a pixel (shaders/regolith.ts): a rock
+  // the metallic channel is the RMS slope (x 2) of the facets within a pixel (shaders/lighting.ts): a rock
   // face is pitted and granular below what its normal map holds.
   let regolith = id == MATERIAL_REGOLITH;
   let param = select(0.0, 1.0, regolith);
@@ -336,10 +352,11 @@ export class RockRenderer {
       ],
     });
     const vertexLayout: GPUVertexBufferLayout = {
-      arrayStride: 24,
+      arrayStride: ROCK_VERTEX_FLOATS * 4,
       attributes: [
         { shaderLocation: 0, offset: 0, format: 'float32x3' },
         { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        { shaderLocation: 2, offset: 24, format: 'float32x2' },
       ],
     };
     const emptyLayout = device.createBindGroupLayout({ label: 'terrain.rocks.empty', entries: [] });
@@ -699,7 +716,7 @@ export class RockRenderer {
       const hapke = b.info.def.render.surface!.brdf === 'hapke';
       u.set([b.rangePerRadius, b.info.params.rockRangeM, hapke ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.bodyIndex], 24);
       const rockLayer = b.info.set.index.get(b.info.set.manifest.rockMaterial)!;
-      u.set([b.info.params.rockRoughness, rockLayer, 1 / b.info.params.detailScale0M, 0], 28);
+      u.set([b.info.params.rockRoughness, rockLayer, b.info.params.detailScale0M, 1 / Math.max(b.info.params.rockAlbedoScale, 1e-3)], 28);
       this.device.queue.writeBuffer(b.uniform, 0, u);
     }
     if (rebuild) {

@@ -11,10 +11,12 @@ import { HEX_PERIOD, NOISE_PERIOD } from './shaders/surface';
 import { frameDir, snapDirection } from './tileMath';
 
 
-export interface PadDisc {
-  /** Centre of the apron in the body-fixed frame (m) and its radius (m). */
+export interface SiteDisc {
+  /** Pad centre of a launch site in the body-fixed frame (m), and the reach of its ground plan from there (m). */
   centre: Vec3;
   radius: number;
+  /** Index of the site in the material uniform's site tables. */
+  index: number;
 }
 
 export interface RecordContext {
@@ -23,7 +25,7 @@ export interface RecordContext {
   detailScales: readonly [number, number, number, number];
   /** Base wavelength of the orbital noise, m. */
   orbitalWavelength: number;
-  pads: readonly PadDisc[];
+  pads: readonly SiteDisc[];
   /** Imagery (albedo) layer of the body's tile set. */
   albedoLayer: TileLayerManifest;
   /** Night-light layer as the renderer reads it, when the body shows night lights. */
@@ -164,8 +166,8 @@ export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Ar
   f.set([mod(o.x, s[2]), mod(o.y, s[2]), mod(o.z, s[2]), corner(0, 1)], 48);
   const w = ctx.orbitalWavelength;
   f.set([mod(o.x / w, NOISE_PERIOD), mod(o.y / w, NOISE_PERIOD), mod(o.z / w, NOISE_PERIOD), corner(1, 1)], 52);
-  // row 14: nearest launch-pad apron
-  let best: PadDisc | null = null;
+  // row 14: nearest launch site (its ground plan: concrete, gravel)
+  let best: SiteDisc | null = null;
   let bestD = Infinity;
   for (const p of ctx.pads) {
     const d = Math.hypot(p.centre.x - o.x, p.centre.y - o.y, p.centre.z - o.z);
@@ -178,8 +180,8 @@ export function buildRecordConstants(n: TileNode, ctx: RecordContext): Float32Ar
   // row 15: flags
   const [slideU, slideV] = snapDirection(n.key.face);
   i[60] = (pio !== io ? 1 : 0) | (nightLayer(pno) !== nightLayer(no) || pno !== no ? 2 : 0) | (slideU > 0 ? 4 : 0) | (slideV > 0 ? 8 : 0);
-  // row 16: tiling origin of the fourth detail scale
-  f.set([mod(o.x, s[3]), mod(o.y, s[3]), mod(o.z, s[3]), 0], 64);
+  // row 16: tiling origin of the fourth detail scale, and the site of row 14
+  f.set([mod(o.x, s[3]), mod(o.y, s[3]), mod(o.z, s[3]), best ? best.index : 0], 64);
   return f;
 }
 

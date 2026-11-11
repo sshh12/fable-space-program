@@ -30,11 +30,26 @@ const VIEWS: IntegratedView[] = [
   { name: '30m', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, alt: PAD_ELEVATION + 30, heading: 40, pitch: -22 },
   { name: '200m', lat: PAD.lat + 0.001, lon: PAD.lon + 0.0085, alt: 200, heading: 30, pitch: -20 },
   { name: '1km', lat: PAD.lat - 0.004, lon: PAD.lon - 0.004, alt: 1000, heading: 45, pitch: -35 },
+  // Where the land cover says grass and trees (ground cover: tussocks, scrub, kiawe), 500 to 700 m from the
+  // pad, at eye height and from 120 m; and the broken, stony ground 1 km south-west of it.
+  // (Heights of the ground there: 14.84, 21.15, 21.62 and 18.27 m, from the height authority.)
+  { name: 'grass-eye', lat: PAD.lat + 0.0041, lon: PAD.lon + 0.0052, alt: 14.84 + 1.7, heading: 320, pitch: -5 },
+  { name: 'kiawe-eye', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, alt: 21.15 + 1.7, heading: 70, pitch: -3 },
+  { name: 'kiawe-120m', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, alt: 21.62 + 120, heading: 15, pitch: -24 },
+  { name: 'stony-ground', lat: 18.981197, lon: -155.609964, alt: 18.27 + 1.7, heading: 200, pitch: -8 },
+  // The far views of the brief as the game shows them: with atmosphere, clouds' absence aside, and ocean.
+  { name: '10km', lat: PAD.lat, lon: PAD.lon, alt: 10e3, heading: 340, pitch: -25 },
+  { name: '40km', lat: PAD.lat, lon: PAD.lon, alt: 40e3, heading: 330, pitch: -35 },
+  { name: 'leo-hawaii', lat: 17.2, lon: -154.6, alt: 400e3, heading: 340, pitch: -55 },
 ];
+
+/** INTEGRATED_VIEWS=30m,grass-eye limits the run. */
+const only = process.env.INTEGRATED_VIEWS?.split(',').filter(Boolean);
 
 test('the ground around the pad with sky, atmosphere and ocean (integration lab)', async ({ page }) => {
   test.setTimeout(20 * 60_000);
   for (const v of VIEWS) {
+    if (only && !only.includes(v.name)) continue;
     const q = new URLSearchParams({
       features: 'terrain,sky,atmosphere,ocean',
       scene: 'pad',

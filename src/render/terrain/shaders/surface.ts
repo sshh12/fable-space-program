@@ -5,6 +5,7 @@
  *
  * Group 3 layout is mirrored by materials.ts (MATERIAL_UNIFORM_FLOATS) and feature.ts.
  */
+import { MAX_SITES, MAX_SITE_SHAPES } from '../sitePlan';
 import { TERRAIN_COMMON_WGSL } from './common';
 
 /** Period of the orbital noise volume in lattice cells, and the range its stored gradient is scaled by. */
@@ -22,14 +23,14 @@ export const DETAIL_SCALES = 4;
  */
 export const HEX_PERIOD = 64;
 /** Floats of the TerrainMaterial uniform. */
-export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6) * 4;
+export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6 + 2 + 4 + MAX_MATERIALS + 2 * MAX_SITES + 2 * MAX_SITE_SHAPES) * 4;
 
 const SURFACE_BINDINGS_WGSL = /* wgsl */ `
 struct TerrainMaterial {
   classW: array<vec4f, ${MAX_CLASSES * 2}>,   // land-cover class c: weights of materials 0..3 in [2c], 4..7 in [2c + 1]
   classOrb: array<vec4f, ${MAX_CLASSES}>,     // per class: orbital albedo amplitude, orbital relief amplitude, macro tint amplitude, unused
   layer: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: rgb = mean linear albedo of material m's layer of scale s, a = relief of its height map (m)
-  layerB: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: x = mean of the layer's height map (0..1), yzw unused
+  layerB: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: x = mean of the layer's height map (0..1), y = roughness factor of what stands above the mean (1 = none: crests of ropy lava are glassy), z = share of the material's colour variation kept where the ground takes its albedo (rock is grey, growth is not), w unused
   channelGain: array<vec4f, 2>,               // weight added per unit of the normal map's material channel (rockiness / freshness)
   slopeGain: array<vec4f, 2>,                 // weight added on steep ground
   noiseGain: array<vec4f, 2>,                 // weight added per unit of macro noise (-1..1)
@@ -39,7 +40,15 @@ struct TerrainMaterial {
   p2: vec4f,                                  // base roughness, Toksvig gain, apron edge width (m), lake depth (m)
   p3: vec4f,                                  // shore wetness height (m), brightening of fresh material, AO strength of the detail maps, chroma share of the detail ratio
   p4: vec4f,                                  // texel size on the ground of the near, mid, far and aerial layers (m)
-  p5: vec4f,                                  // hexagon blend: weight (octaves) per unit of height above / below the layer's mean; share of the far and aerial relief the terrain's own normal map replaces; apron shoulder width (m)
+  p5: vec4f,                                  // hexagon blend: weight (octaves) per unit of height above / below the layer's mean; share of the far and aerial relief the terrain's own normal map replaces; width of the gravel shoulder around a site's concrete (m)
+  shoreGain: array<vec4f, 2>,                 // weight added on low, level ground at the water's edge
+  p6: vec4f,                                  // imagery calibration: data level above which the imagery is calibrated (regional mosaics; below 0 = all of it), share of its saturation kept, its reference luminance, exponent of (luminance / reference)
+  p7: vec4f,                                  // share of the material's own albedo in the ground colour where a pixel is finer than the imagery, and where it is coarser; joint spacing of concrete slabs (m); gravel material (-1 = none)
+  p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
+  p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); unused
+  anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
+  siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
+  siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
 }
 
 @group(3) @binding(0) var normalTex: texture_2d_array<f32>;
@@ -232,13 +241,28 @@ fn maskInfluence(t: TileRecord, k: f32, imageLevel: f32) -> f32 {
   return saturate(imageLevel + 3.0 - (t.b.w - k));
 }
 
+/// How much a colour of the imagery is the flat fill the body-wide mosaic paints the open sea with, or the
+/// ramp towards it (0 .. 1). The fill is dark AND strongly blue; fresh lava, forest in shadow and swamp
+/// water are as dark but not blue, so darkness alone never makes water of them.
+fn fillness(c: vec3f) -> f32 {
+  let fillLum = 4.0 * luminance(body.deepWater.rgb) + 0.002;
+  let dark = 1.0 - smoothstep(0.6 * fillLum, 1.2 * fillLum, luminance(c));
+  return dark * smoothstep(1.6, 2.6, c.b / max(c.r, 1e-5)) * smoothstep(1.0, 1.4, c.b / max(c.g, 1e-5));
+}
+
 /// Colour of water as the imagery shows it. The body-wide imagery paints the open ocean one flat colour and
 /// keeps measured colour only in a band of a few kilometres around land (regional imagery adds its own
 /// band): over shelves and reefs that colour is the sea floor showing through, over deep water it is only
-/// the outline of the band. With depth the colour therefore goes to the open-ocean colour.
+/// the outline of the band. With depth the colour therefore goes to the open-ocean colour. Where the imagery
+/// holds the fill or its ramp right up to the shore (a dark outline around every coast, if it were kept),
+/// shallow water takes the colour of the bottom seen through it instead: lighter and greener than the deep
+/// sea, the more the shallower.
 fn waterAlbedo(imagery: vec3f, depth: f32) -> vec3f {
   if (body.deepWater.w <= 0.0) { return imagery; }
-  return mix(imagery, body.deepWater.rgb, smoothstep(0.08 * body.deepWater.w, body.deepWater.w, depth));
+  let s = exp(-depth / (0.1 * body.deepWater.w));
+  let shallow = body.deepWater.rgb * (1.0 + 2.2 * s) + vec3f(0.0, 0.011, 0.007) * s;
+  let base = mix(imagery, shallow, fillness(imagery));
+  return mix(base, body.deepWater.rgb, smoothstep(0.08 * body.deepWater.w, body.deepWater.w, depth));
 }
 
 /// The night image of a tile at lod (0 = one texel per pixel, negative = magnified). Magnified, a bilinear
@@ -318,12 +342,15 @@ struct ClassBlend {
   orb: vec4f,          // orbital amplitudes of the blended classes
 }
 
-/// Land-cover classes around a point of an image tile, blended bilinearly as weight vectors (class ids
-/// themselves cannot be filtered).
+/// Land-cover classes around a point of an image tile, blended as weight vectors (class ids themselves
+/// cannot be filtered). The weights are bilinear ones sharpened with a smoothstep: between two classes the
+/// change takes the middle third of a texel, not all of it. The caller displaces the lookup by band-limited
+/// noise (imageryWarp), so the line between two classes is ragged like the edge of a thicket, never the
+/// straight side of a raster cell.
 fn classBlendAt(uvI: vec2f, layer: i32) -> ClassBlend {
   let st = uvI * 256.0 - 0.5;
   let i0 = floor(st);
-  let f = st - i0;
+  let f = smoothstep(vec2f(0.3), vec2f(0.7), st - i0);
   var o: ClassBlend;
   o.w0 = vec4f(0.0);
   o.w1 = vec4f(0.0);
@@ -341,10 +368,10 @@ fn classBlendAt(uvI: vec2f, layer: i32) -> ClassBlend {
   return o;
 }
 
-fn classBlend(t: TileRecord, uv: vec2f, k: f32) -> ClassBlend {
-  var o = classBlendAt(t.imageUv.xy + uv * t.imageUv.z, t.images.x);
+fn classBlend(t: TileRecord, uv: vec2f, k: f32, warp: vec2f) -> ClassBlend {
+  var o = classBlendAt(t.imageUv.xy + (uv + warp) * t.imageUv.z, t.images.x);
   if (k > 0.0 && (t.flags.x & 1) != 0) {
-    let p = classBlendAt(t.parentImageUv.xy + uv * t.parentImageUv.z, t.images.y);
+    let p = classBlendAt(t.parentImageUv.xy + (uv + warp) * t.parentImageUv.z, t.images.y);
     o.w0 = mix(o.w0, p.w0, k);
     o.w1 = mix(o.w1, p.w1, k);
     o.orb = mix(o.orb, p.orb, k);
@@ -363,6 +390,7 @@ struct DetailPlane {
   slope: vec2f,        // height gradient along the plane's two axes
   rough: f32,
   ao: f32,
+  shadow: f32,         // share of the sun the layer's own relief keeps off the point (0 .. 1)
 }
 
 const HEX_PERIOD = ${HEX_PERIOD};
@@ -393,14 +421,23 @@ fn hexHash(v: vec2i) -> vec3f {
 /// from the layer's mean height winning (mat.p5: stones and, where the set says so, pits stay whole).
 /// 'st' = plane position in tiling lengths. 'meanLod' >= 0: the albedo is divided by the layer's own average
 /// over one imagery texel (that mip level) instead of its overall mean: what the imagery already shows of a
-/// large layer is not added twice. 'meanH' = mean of the layer's height map.
-fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st: vec2f, dx: vec2f, dy: vec2f) -> DetailPlane {
+/// large layer is not added twice. 'meanH' = mean of the layer's height map, 'gloss' = roughness factor of
+/// what stands above it. 'sun': xy = unit direction towards the sun along the plane's axes, z = rise of the
+/// sun's rays per tiling length in units of the layer's height range (0 = no shadows wanted): the height map
+/// of the copy that dominates the pixel is marched towards the sun, and what stands above the ray shadows
+/// the point (a clod, a pebble, the rim of a craterlet cast a shadow on their neighbours, which a normal
+/// map alone cannot).
+fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, meanLod: f32, st: vec2f, dx: vec2f, dy: vec2f, sun: vec3f) -> DetailPlane {
   var o: DetailPlane;
   o.ratio = vec3f(0.0);
   o.height = 0.0;
   o.slope = vec2f(0.0);
   o.rough = 0.0;
   o.ao = 0.0;
+  o.shadow = 0.0;
+  var domW = 0.0;
+  var domUv = vec2f(0.0);
+  var domRot = vec2f(1.0, 0.0);
   let sk = vec2f(2.0 * st.x - st.y, 2.0 * st.y);
   let base = floor(sk);
   let f = sk - base;
@@ -446,6 +483,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st
     }
     let dh = a.a - meanH;
     wi *= exp2(mat.p5.x * max(dh, 0.0) + mat.p5.y * max(-dh, 0.0));
+    if (wi > domW) { domW = wi; domUv = uv; domRot = vec2f(c, sn); }
     let nxy = n.rg * 2.0 - 1.0;
     let nz = sqrt(max(1.0 - dot(nxy, nxy), 0.04));
     let g = -nxy / nz;
@@ -453,7 +491,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st
     o.height += wi * a.a;
     // The gradient in the layer's own (rotated) axes, turned back into the plane's.
     o.slope += wi * vec2f(c * g.x + sn * g.y, -sn * g.x + c * g.y);
-    o.rough += wi * n.b;
+    o.rough += wi * n.b * mix(1.0, gloss, smoothstep(0.0, 0.2, dh));
     o.ao += wi * n.a;
     wsum += wi;
   }
@@ -463,6 +501,33 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st
   o.slope *= inv;
   o.rough *= inv;
   o.ao *= inv;
+  if (sun.z > 0.0 && domW > 0.0) {
+    // Six taps towards the sun in the dominant copy, 1.5 to 37 texels away, each from the mip level that
+    // averages what lies between it and the last (a cone: far taps are wide, so the shadow of a far stone
+    // has a soft edge and a near one a hard edge).
+    let dir = vec2f(domRot.x * sun.x - domRot.y * sun.y, domRot.y * sun.x + domRot.x * sun.y);
+    var size = f32(textureDimensions(detailA).x);
+    var wide = 0;
+    if (scale != 0) {
+      size = f32(textureDimensions(detailWideA).x);
+      wide = ${DETAIL_SCALES - 1} * layer + scale - 1;
+    }
+    let lod0 = max(0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)) * size * size, 1e-12)), 0.0);
+    var d = 1.5 * exp2(lod0) / size;
+    var h0: f32;
+    if (scale == 0) { h0 = textureSampleLevel(detailA, linearRepeat, domUv, layer, lod0).a; }
+    else { h0 = textureSampleLevel(detailWideA, linearRepeat, domUv, wide, lod0).a; }
+    var occ = 0.0;
+    for (var i = 0; i < 6; i++) {
+      var h: f32;
+      let lod = lod0 + 0.6 * f32(i);
+      if (scale == 0) { h = textureSampleLevel(detailA, linearRepeat, domUv + dir * d, layer, lod).a; }
+      else { h = textureSampleLevel(detailWideA, linearRepeat, domUv + dir * d, wide, lod).a; }
+      occ = max(occ, h - h0 - d * sun.z);
+      d *= 1.9;
+    }
+    o.shadow = smoothstep(0.0, 0.05, occ);
+  }
   return o;
 }
 
@@ -472,19 +537,26 @@ struct DetailLayer {
   grad: vec3f,         // height gradient in body-fixed axes (surface-gradient form of the detail normal)
   rough: f32,
   ao: f32,
+  shadow: f32,         // share of the sun the layer's relief keeps off the point
 }
 
 /// One material at one scale, triplanar in body-fixed axes. 'p' = planet-fixed position in tiling lengths,
-/// 'dpx' / 'dpy' its screen derivatives, 'w' the projection weights, 'meanLod' as in detailPlane.
-fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, dpy: vec3f, w: vec3f) -> DetailLayer {
+/// 'dpx' / 'dpy' its screen derivatives, 'w' the projection weights, 'meanLod' as in detailPlane. 'sun': xyz
+/// = unit direction towards the sun (body-fixed), w = tangent of its elevation above the terrain times the
+/// layer's tiling length (m); 0 = no shadows of the relief wanted (they are marched on the plane that carries
+/// most of the pixel).
+fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, dpy: vec3f, w: vec3f, sun: vec4f) -> DetailLayer {
   var o: DetailLayer;
   o.ratio = vec3f(0.0);
   o.height = 0.0;
   o.grad = vec3f(0.0);
   o.rough = 0.0;
   o.ao = 0.0;
+  o.shadow = 0.0;
   let info = mat.layer[material * ${DETAIL_SCALES} + scale];
-  let meanH = mat.layerB[material * ${DETAIL_SCALES} + scale].x;
+  let infoB = mat.layerB[material * ${DETAIL_SCALES} + scale];
+  let meanH = infoB.x;
+  let wTop = max(w.x, max(w.y, w.z));
   for (var axis = 0; axis < 3; axis++) {
     let wa = w[axis];
     if (wa <= 0.0) { continue; }
@@ -505,7 +577,14 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
     let ly = dot(dy, dy);
     let shorten = clamp(16.0 * sqrt(max(min(lx, ly), 1e-24) / max(max(lx, ly), 1e-24)), 0.5, 1.0);
     if (lx > ly) { dx *= shorten; } else { dy *= shorten; }
-    let d = detailPlane(scale, material, info.rgb, meanH, meanLod, st, dx, dy);
+    var sunP = vec3f(0.0);
+    if (sun.w > 0.0 && wa >= wTop) {
+      let s2 = vec2f(dot(sun.xyz, au), dot(sun.xyz, av));
+      let l2 = length(s2);
+      if (l2 > 0.05) { sunP = vec3f(s2 / l2, sun.w / max(info.a, 1e-4)); }
+    }
+    let d = detailPlane(scale, material, info.rgb, meanH, infoB.y, meanLod, st, dx, dy, sunP);
+    o.shadow = max(o.shadow, d.shadow);
     o.ratio += wa * d.ratio;
     o.height += wa * (d.height - meanH);
     o.grad += wa * (d.slope.x * au + d.slope.y * av);
@@ -515,14 +594,56 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
   return o;
 }
 
+struct SiteGround {
+  concrete: f32,       // signed distance to the concrete of the site, m (negative inside)
+  gravel: f32,         // signed distance to its gravel (lane beds and the shoulder around the concrete), m
+  q: vec2f,            // position in the frame of the nearest slab, m
+}
+
+/// The ground plan of launch site 'site' at 'rel' (body-fixed offset from the pad centre): the twin of
+/// siteGround in sitePlan.ts.
+fn siteGround(rel: vec3f, site: i32) -> SiteGround {
+  let fe = mat.siteFrame[2 * site];
+  let fn_ = mat.siteFrame[2 * site + 1];
+  let en = vec2f(dot(rel, fe.xyz), dot(rel, fn_.xyz));
+  var o: SiteGround;
+  o.concrete = 1e6;
+  o.gravel = 1e6;
+  o.q = en;
+  let first = i32(fe.w);
+  let count = i32(fn_.w);
+  for (var i = first; i < first + count; i++) {
+    let a = mat.siteShape[2 * i];
+    let b = mat.siteShape[2 * i + 1];
+    let d = en - a.xy;
+    // Shape axes: x = east turned clockwise by the heading, z = minus the heading direction.
+    let p = vec2f(d.x * b.x - d.y * b.y, -(d.x * b.y + d.y * b.x));
+    let k = abs(p) - (a.zw - vec2f(b.w));
+    let sd = length(max(k, vec2f(0.0))) + min(max(k.x, k.y), 0.0) - b.w;
+    if (b.z < 0.5) {
+      if (sd < o.concrete) { o.concrete = sd; o.q = p; }
+    } else {
+      o.gravel = min(o.gravel, sd);
+    }
+  }
+  o.gravel = min(o.gravel, o.concrete - mat.p5.w);
+  return o;
+}
+
 struct Detail {
-  albedoRatio: vec3f,
-  apronRatio: vec3f,   // albedo / mean albedo of the apron material (1 where the detail has faded)
+  albedoRatio: vec3f,  // albedo / mean albedo of the blended materials
+  ratioFirst: vec3f,   // the same of the first material alone, and of the second (1 where the detail has faded)
+  ratioSecond: vec3f,
+  matAlbedo: vec3f,    // mean albedo of the blended materials: what the ground is made of
+  chroma: f32,         // share of their colour variation the blended materials keep on that albedo
+  first: i32,
+  second: i32,
   grad: vec3f,
   rough: f32,
   roughMix: f32,
   ao: f32,
   aerial: f32,         // how much of the aerial layer shows (the orbital noise gives way to it)
+  shadow: f32,         // share of the sun the detail relief keeps off the pixel (0 .. 1)
 }
 
 /// Imagery-anchored detail: four scales, each a layer with content of its own size (near: grains, pebbles and
@@ -533,34 +654,35 @@ struct Detail {
 /// once they are fine enough; their relief gives way as the tile's normal map resolves it (by the share
 /// mat.p5.z: all of it where the layers hold what the height function also holds, craters; little where
 /// they hold what it does not, bushes and tussocks), and their albedo keeps only what is finer than the
-/// imagery.
+/// imagery. 'site' = share of the pixel under a site's concrete and under its gravel; 'shore' = how much the
+/// ground is low, level and at the water's edge; 'sun' = direction towards the sun (body-fixed) and the
+/// tangent of its elevation above the terrain (0 = the relief casts no shadows).
 fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: vec3f, cb: ClassBlend, channel: f32, slopeMag: f32,
-                 dist: f32, footprint: f32, apron: f32, normalTexel: f32, imageTexel: f32, imagery: vec3f) -> Detail {
+                 dist: f32, footprint: f32, site: vec2f, shore: f32, normalTexel: f32, imageTexel: f32, imagery: vec3f, sun: vec4f) -> Detail {
   var o: Detail;
   o.albedoRatio = vec3f(1.0);
-  o.apronRatio = vec3f(1.0);
+  o.ratioFirst = vec3f(1.0);
+  o.ratioSecond = vec3f(1.0);
   o.grad = vec3f(0.0);
   o.rough = mat.p2.x;
   o.roughMix = 0.0;
   o.ao = 1.0;
   o.aerial = 0.0;
-  let fadeEnd = body.morph.z;
-  if (dist >= fadeEnd) { return o; }
-  let distFade = 1.0 - smoothstep(0.6 * fadeEnd, fadeEnd, dist);
+  o.shadow = 0.0;
 
   // Material weights: land cover, the bake's material channel, slope, macro noise, the colour of the
-  // imagery (dark grey ground is rock, saturated ground is soil, green ground is grass: the measured colour
-  // corrects a land-cover class that lumps them), launch-pad apron.
+  // imagery (darkness, saturation, greenness: the measured colour corrects a land-cover class that lumps
+  // different ground), the water's edge, and the ground plan of a launch site.
   let steep = smoothstep(mat.p0.x, mat.p0.y, slopeMag);
   let macroNoise = noiseAt((t.noise.xyz + local / body.orbital.x) * (body.orbital.x / mat.p1.w)).a;
   let top = max(imagery.r, max(imagery.g, imagery.b));
   let dark = 1.0 - saturate(luminance(imagery) / 0.12);
   let sat = smoothstep(0.25, 0.6, (top - min(imagery.r, min(imagery.g, imagery.b))) / max(top, 1e-4));
-  let green = (imagery.g - max(imagery.r, imagery.b)) / max(top, 1e-4);
+  let green = clamp((imagery.g - max(imagery.r, imagery.b)) / max(top, 1e-4), -0.5, 0.5);
   let w0 = max(cb.w0 + channel * mat.channelGain[0] + steep * mat.slopeGain[0] + macroNoise * mat.noiseGain[0] +
-               dark * mat.albedoGain[0] + sat * mat.albedoGain[2] + green * mat.albedoGain[4], vec4f(0.0));
+               dark * mat.albedoGain[0] + sat * mat.albedoGain[2] + green * mat.albedoGain[4] + shore * mat.shoreGain[0], vec4f(0.0));
   let w1 = max(cb.w1 + channel * mat.channelGain[1] + steep * mat.slopeGain[1] + macroNoise * mat.noiseGain[1] +
-               dark * mat.albedoGain[1] + sat * mat.albedoGain[3] + green * mat.albedoGain[5], vec4f(0.0));
+               dark * mat.albedoGain[1] + sat * mat.albedoGain[3] + green * mat.albedoGain[5] + shore * mat.shoreGain[1], vec4f(0.0));
   let count = i32(mat.p0.w);
   var first = 0;
   var second = 0;
@@ -576,11 +698,32 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   var blend = 0.0;
   if (ws > 0.0) { blend = 0.5 * saturate(4.0 * ws / (wf + ws) - 1.0); }
   let apronM = i32(mat.p0.z);
-  if (apron > 0.0 && apronM >= 0) {
-    // The apron replaces whatever lies under it: blend towards it as the second material.
-    if (first != apronM) { second = first; first = apronM; blend = 1.0 - apron; }
-    else { blend *= 1.0 - apron; }
+  let gravelM = i32(mat.p7.w);
+  var slab = false;
+  if (site.x > 0.0 && apronM >= 0) {
+    // Concrete replaces whatever lies under it: its gravel shoulder, or the ground.
+    if (site.y > 0.5 && gravelM >= 0) { second = gravelM; } else { second = first; }
+    first = apronM;
+    blend = 1.0 - site.x;
+    slab = true;
+  } else if (site.y > 0.0 && gravelM >= 0) {
+    if (first != gravelM) { second = first; first = gravelM; blend = 1.0 - site.y; }
+    else { blend *= 1.0 - site.y; }
   }
+  o.first = first;
+  o.second = second;
+  var meanA = mat.anchor[first].rgb;
+  var meanB = mat.anchor[second].rgb;
+  if (first == gravelM && !slab) { meanA = mat.p8.rgb; }
+  if (second == gravelM && slab) { meanB = mat.p8.rgb; }
+  o.matAlbedo = mix(meanA, meanB, blend);
+  let chromaA = mat.layerB[first * ${DETAIL_SCALES}].z;
+  let chromaB = mat.layerB[second * ${DETAIL_SCALES}].z;
+  o.chroma = mix(chromaA, chromaB, blend);
+
+  let fadeEnd = body.morph.z;
+  if (dist >= fadeEnd) { return o; }
+  let distFade = 1.0 - smoothstep(0.6 * fadeEnd, fadeEnd, dist);
 
   // Triplanar weights from the terrain's own normal (the tile's normal map, without the detail it is about
   // to receive): on a slope the plane that faces it takes over, and nothing is stretched down a hillside.
@@ -600,6 +743,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   var roughB = 0.0;
   var aoA = 1.0;
   var aoB = 1.0;
+  var litA = 1.0;
   var wsum = 0.0;
   for (var s = 0; s < ${DETAIL_SCALES}; s++) {
     let inv = body.detailInv[s];
@@ -623,14 +767,18 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
     let p = (origin + local) * inv;
     let dpx = dlx * inv;
     let dpy = dly * inv;
-    let a = detailSample(s, first, meanLod, p, dpx, dpy, tw);
+    // Shadows of the relief: only of relief that shows, and only while the sun stands low over the ground.
+    var sunS = vec4f(0.0);
+    if (sun.w > 0.0 && relief > 0.05) { sunS = vec4f(sun.xyz, sun.w * period); }
+    let a = detailSample(s, first, meanLod, p, dpx, dpy, tw, sunS);
     ratioA *= mix(vec3f(1.0), a.ratio, f * mat.p1.x);
     gradA += a.grad * relief;
     hA += a.height * f;
     roughA += a.rough * f;
     aoA *= mix(1.0, a.ao, f * mat.p3.z);
+    litA *= 1.0 - a.shadow * relief;
     if (blend > 0.002) {
-      let b = detailSample(s, second, meanLod, p, dpx, dpy, tw);
+      let b = detailSample(s, second, meanLod, p, dpx, dpy, tw, vec4f(0.0));
       ratioB *= mix(vec3f(1.0), b.ratio, f * mat.p1.x);
       gradB += b.grad * relief;
       hB += b.height * f;
@@ -642,21 +790,22 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   if (wsum <= 0.0) { return o; }
   // Height blend: the second material shows first where it stands higher (rock through sand, grass over
   // soil), over a share of the ground that follows its weight. Heights are sums over the scales, each in
-  // units of its layer's own range.
+  // units of its layer's own range. The edge of a slab is a kerb: no blend there.
   var bl = blend;
-  if (blend > 0.002 && blend < 0.998) {
+  if (blend > 0.002 && blend < 0.998 && !slab) {
     bl = saturate((hB - hA) * mat.p1.z + (blend - 0.5) * 3.5 + 0.5) * smoothstep(0.0, 0.06, blend);
     bl = mix(blend, bl, saturate(wsum));
   }
-  let ratio = mix(ratioA, ratioB, bl);
-  let lum = max(luminance(ratio), 1e-3);
-  // Detail mostly modulates brightness; a share of its colour variation is kept.
-  o.albedoRatio = mix(vec3f(lum), ratio, mat.p3.w);
-  if (first == apronM) { o.apronRatio = ratioA; }
+  o.albedoRatio = mix(ratioA, ratioB, bl);
+  o.ratioFirst = ratioA;
+  o.ratioSecond = ratioB;
+  o.matAlbedo = mix(meanA, meanB, bl);
+  o.chroma = mix(chromaA, chromaB, bl);
   o.grad = mix(gradA, gradB, bl) * mat.p1.y;
   o.roughMix = saturate(wsum);
   o.rough = mix(roughA, roughB, bl) / wsum;
   o.ao = mix(aoA, aoB, bl);
+  o.shadow = (1.0 - litA) * (1.0 - bl);
   return o;
 }
 
@@ -770,8 +919,14 @@ ${DETAIL_WGSL}
         inNearField = true;
       }
     }
-    let coastal = 1.0 - smoothstep(2.0, 6.0, above);
-    let threshold = mix(0.5, mix(1.01, 0.5, influence), coastal);
+    // The mask decides the coastline only where the ground is at sea level within what coarse quads can be
+    // wrong by (a pool the mask shows a few metres above the sea would be water from afar and dry lava from
+    // near, where the geometry decides).
+    let coastal = 1.0 - smoothstep(0.75, 2.0, above);
+    // Away from sea level the mask alone says "lake", and it is believed only where the ground is level: a
+    // pond lies flat, and the land-cover source behind the mask also calls dark lava and shadowed slopes water.
+    let levelGround = 1.0 - smoothstep(0.03, 0.07, tn.slopeMag);
+    let threshold = mix(mix(1.01, 0.5, levelGround), mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {
       water = true;
       waterColour = waterAlbedo(s.albedo, max(-above, 0.0));
@@ -781,69 +936,140 @@ ${DETAIL_WGSL}
 
   // ---- land the mask and the imagery disagree about. The body-wide imagery paints the sea one fill colour
   // (body.deepWater) from a coarser coastline than the mask's: islets and a rim of the coast are land in the
-  // mask and fill in the image, and the texels next to them are dark ramps towards it. Fill is water (the
-  // sheet's colour; never inside the ocean's near field, which holds no terrain-written water); a ramp takes
-  // the brightest of the texels around it (the land colour spreads one texel towards the sea).
+  // mask and fill in the image, and the texels next to them are ramps towards it. Fill at sea level is water
+  // (the sheet's colour; never inside the ocean's near field, which holds no terrain-written water); a ramp
+  // gives way to the brightest of the texels around it by as much as it is a ramp (a continuous weight: no
+  // texel-shaped patches); fill that stands above the sea is land of unknown colour and takes its material's.
+  var fillLand = 0.0;
   if (!water && hasOcean && body.deepWater.w > 0.0 && s.maskWide > 0.004) {
-    let fillLum = 4.0 * luminance(body.deepWater.rgb) + 0.002;
     let texel = 1.25 / 256.0;
     var best = s.albedo;
-    var nearFill = luminance(s.albedo) < fillLum;
+    let f0 = fillness(s.albedo);
+    var nearFill = f0;
+    var allFill = f0;
     for (var i = 0; i < 4; i++) {
       let o = vec2f(select(-texel, texel, (i & 1) == 1), 0.0);
       let tap = textureSampleLevel(albedoTex, tileSampler, s.uvImage + select(o, o.yx, i >= 2), s.imageLayer, 0.0).rgb;
-      nearFill = nearFill || luminance(tap) < fillLum;
+      let ft = fillness(tap);
+      nearFill = max(nearFill, ft);
+      allFill = min(allFill, ft);
       if (luminance(tap) > luminance(best)) { best = tap; }
     }
-    if (nearFill) {
-      if (luminance(best) < fillLum && !inNearField) {
-        water = true;
-        waterColour = waterAlbedo(s.albedo, body.deepWater.w);
-        waterDepth = max(-above, 0.0) + mat.p2.w;
-      } else {
-        // Only what the ramp has darkened is replaced: land that is as bright as its neighbours stays as it is.
-        s.albedo = mix(best, s.albedo, smoothstep(0.3, 0.8, luminance(s.albedo) / max(luminance(best), 1e-5)));
-      }
+    if (allFill > 0.5 && above < 3.0 && !inNearField) {
+      water = true;
+      waterColour = waterAlbedo(s.albedo, body.deepWater.w);
+      waterDepth = max(-above, 0.0) + mat.p2.w;
+    } else if (nearFill > 0.0) {
+      s.albedo = mix(s.albedo, best, nearFill * (1.0 - smoothstep(0.3, 0.8, luminance(s.albedo) / max(luminance(best), 1e-5))));
+      fillLand = smoothstep(0.5, 1.0, allFill);
     }
   }
 
   // ---- land
-  let cb = classBlend(t, uv, k);
+  let cb = classBlend(t, uv, k, warp);
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
   let imageTexel = levelSize * exp2(-min(s.imageLevel, lv)) / 256.0;
   let normalTexel = levelSize * exp2(-(t.b.w - k)) / 256.0;
 
-  // A launch-pad apron is a slab: its edge is a clean line, one pixel wide at any distance. Soil laps over
-  // the rim here and there (band-limited noise fixed to the ground, wavelengths of about 2.5 m and 0.6 m),
-  // the last metres of the slab are dirtier, and the ground around it is worn bare for a few metres.
+  // ---- the ground plan of a launch site: concrete slabs with a clean kerb (one pixel wide at any
+  // distance), gravel beds and a compacted shoulder whose outer edge is ragged (band-limited noise fixed to
+  // the ground).
   var apron = 0.0;
-  var shoulder = 0.0;
-  var rimDirt = 0.0;
+  var gravel = 0.0;
+  var slabQ = vec2f(0.0);
+  var kerb = 0.0;
+  var siteNoise = vec2f(0.0);
   if (t.pad.w > 0.0) {
-    let outside = length(in.local - t.pad.xyz) - t.pad.w;
-    let lattice = t.noise.xyz + in.local / body.orbital.x;
-    let r1 = max(round(body.orbital.x / 2.5), 1.0);
-    let n1 = noiseAt(lattice * r1).a;
-    let n2 = noiseAt(lattice.zxy * (4.0 * r1) + vec3f(3.1, 7.7, 5.3)).a;
-    let lap = mat.p2.z * (max(n1, 0.0) + 0.35 * max(n2, 0.0));
-    let w = max(0.04, 0.75 * footprint);
-    apron = 1.0 - smoothstep(-w, w, outside + lap);
-    shoulder = (1.0 - apron) * (1.0 - smoothstep(0.0, mat.p5.w, outside)) * (0.65 + 0.35 * n1);
-    rimDirt = smoothstep(-6.0 * mat.p2.z - 1.0, 0.0, outside) * (0.5 + 0.5 * n2);
+    let rel = in.local - t.pad.xyz;
+    if (dot(rel, rel) < t.pad.w * t.pad.w) {
+      let sg = siteGround(rel, i32(t.detail3.w));
+      let lattice = t.noise.xyz + in.local / body.orbital.x;
+      let r1 = max(round(body.orbital.x / 7.0), 1.0);
+      let n1 = noiseAt(lattice * r1).a;
+      let n2 = noiseAt(lattice.zxy * (5.0 * r1) + vec3f(3.1, 7.7, 5.3)).a;
+      siteNoise = vec2f(n1, n2);
+      let w = max(0.02, 0.75 * footprint);
+      apron = 1.0 - smoothstep(-w, w, sg.concrete);
+      let ragged = sg.gravel + mat.p5.w * (0.5 * n1 + 0.2 * n2);
+      let wg = max(0.35, 0.75 * footprint);
+      gravel = (1.0 - smoothstep(-wg, wg, ragged)) * (1.0 - apron);
+      slabQ = sg.q;
+      kerb = sg.concrete;
+    }
   }
-  let detail = terrainDetail(t, in.local, dlx, dly, tn.n, cb, s.channel, tn.slopeMag, dist, footprint, apron, normalTexel, imageTexel, s.albedo);
+  // Size of the pixel along the slab's axes (taken here, in uniform control flow).
+  let slabPixel = fwidth(slabQ);
+  var shore = 0.0;
+  if (hasOcean) {
+    shore = (1.0 - smoothstep(0.4 * mat.p9.x, mat.p9.x, above)) * smoothstep(0.0, 0.02, s.maskWide) * (1.0 - steep);
+  }
+  // The sun over the terrain (its own normal, without the detail): direction in body-fixed axes and the
+  // tangent of its elevation; the detail relief casts shadows while that is below about 40 degrees.
+  let sunRoot = frame.bodies[u32(body.p0.w)].sunDir.xyz;
+  let sunFixed = sunRoot * body.rot;
+  let muTerrain = dot(tn.n, sunFixed);
+  var sun = vec4f(0.0);
+  if (mat.p8.a > 0.0 && muTerrain > 0.01 && muTerrain < 0.66) {
+    sun = vec4f(sunFixed, muTerrain / sqrt(1.0 - muTerrain * muTerrain));
+  }
+  let detail = terrainDetail(t, in.local, dlx, dly, tn.n, cb, s.channel, tn.slopeMag, dist, footprint, vec2f(apron, gravel), shore, normalTexel, imageTexel, s.albedo, sun);
   let orb = orbitalDetail(t, in.local, cb, footprint, imageTexel, normalTexel, steep);
 
+  // ---- colour. The imagery is a picture, not an albedo map: a regional mosaic is graded dark and
+  // saturated. Where it is calibrated (mat.p6) it keeps a share of its saturation, and the ground takes the
+  // albedo of the material it is made of, times the imagery's brightness relative to its usual one (bounded):
+  // mostly so where a pixel is finer than the imagery (the materials are what one sees), less from afar.
+  let calibrated = select(smoothstep(mat.p6.x, mat.p6.x + 1.0, min(s.imageLevel, lv)), 1.0, mat.p6.x < 0.0);
+  let lumI = luminance(s.albedo);
+  let image = mix(vec3f(lumI), s.albedo, mix(1.0, mat.p6.y, calibrated));
+  let finer = smoothstep(1.0, 4.0, imageTexel / footprint);
+  let anchor = max(calibrated * mix(mat.p7.y, mat.p7.x, finer), fillLand);
+  let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.45);
+  let ground = mix(image, detail.matAlbedo * mix(rel, 1.0, fillLand), anchor);
+  // The detail mostly modulates brightness on imagery colour; on the material's own colour it is the material.
+  let lumR = max(luminance(detail.albedoRatio), 1e-3);
   // The orbital noise stands in for structure nobody has data for; where the aerial layer shows, it has it.
-  var albedo = s.albedo * detail.albedoRatio * mix(orb.albedo, 1.0, 0.75 * detail.aerial);
+  var albedo = ground * mix(vec3f(lumR), detail.albedoRatio, mix(mat.p3.w, detail.chroma, anchor)) * mix(orb.albedo, 1.0, 0.75 * detail.aerial);
   // Fresh material (crater ejecta, exposed rock) is brighter than the mature surface around it.
-  albedo *= 1.0 + mat.p3.y * s.channel;
-  // Worn ground beside a slab: paler and greyer than the growth around it.
-  albedo = mix(albedo, vec3f(1.5, 1.42, 1.3) * luminance(albedo), 0.5 * saturate(shoulder));
-  // A launch-pad apron is not in the imagery: it has the albedo of its own material, at every distance.
+  albedo *= 1.0 + mat.p3.y * smoothstep(0.25, 0.9, s.channel);
+  var roughScale = 1.0;
+  var siteAo = 1.0;
+  if (gravel > 0.0 && mat.p7.w >= 0.0) {
+    // Compacted gravel: its own colour; wheel-worn and paler towards the concrete, dirtier at its ragged edge.
+    var gr = detail.ratioFirst;
+    if (detail.first != i32(mat.p7.w)) { gr = detail.ratioSecond; }
+    let worn = 1.0 + 0.18 * siteNoise.x + 0.1 * (1.0 - smoothstep(0.0, mat.p5.w, kerb));
+    albedo = mix(albedo, mat.p8.rgb * mix(vec3f(luminance(gr)), gr, 0.6) * worn, gravel);
+    // The foot of the kerb is in the slab's shade.
+    siteAo = mix(1.0, 0.55, (1.0 - smoothstep(0.0, 0.5, kerb)) * gravel);
+  }
   if (apron > 0.0 && mat.p0.z >= 0.0) {
-    albedo = mix(albedo, mat.layer[i32(mat.p0.z) * ${DETAIL_SCALES}].rgb * detail.apronRatio * (1.0 - 0.22 * rimDirt), apron);
+    // Concrete is not in the imagery: it has the albedo of its own material at every distance. Slabs are
+    // poured in bays: joints (a dark line, box-filtered to the pixel), a tone per bay, a few bays replaced
+    // later and paler; stains that run with the fall of the slab, soot and scorch towards the middle of the
+    // pad, a paler chamfer along the kerb.
+    let bay = mat.p7.z;
+    let cell = floor(slabQ / bay);
+    let f = slabQ - cell * bay;
+    let j = min(f, vec2f(bay) - f);
+    let fp = max(slabPixel, vec2f(1e-4));
+    let cover = saturate((min(j + 0.5 * fp, vec2f(0.014)) - max(j - 0.5 * fp, vec2f(-0.014))) / fp);
+    let joint = max(cover.x, cover.y);
+    let hb = hexHash(vec2i(cell));
+    var tone = 0.9 + 0.2 * hb.x + 0.16 * smoothstep(0.9, 0.93, hb.y);
+    let stain = noiseAt(vec3f(slabQ.x / 13.0, slabQ.y / 2.1, 3.3)).a;
+    let blotch = noiseAt(vec3f(slabQ.x / 5.3, slabQ.y / 4.7, 9.1)).a;
+    tone *= 1.0 - 0.2 * smoothstep(0.15, 0.7, stain) - 0.14 * smoothstep(0.2, 0.8, blotch);
+    let scorch = (1.0 - smoothstep(10.0, 46.0, length(slabQ))) * (0.75 + 0.25 * siteNoise.y);
+    tone *= 1.0 - 0.5 * scorch;
+    tone *= 1.0 + 0.1 * (1.0 - smoothstep(0.0, 0.3, -kerb));
+    var concrete = mat.layer[i32(mat.p0.z) * ${DETAIL_SCALES}].rgb * detail.ratioFirst * tone;
+    // Rust from the joints and soot are warm and dark.
+    concrete = mix(concrete, concrete * vec3f(0.95, 0.8, 0.62), 0.6 * smoothstep(0.3, 0.8, stain) + 0.35 * scorch);
+    concrete *= 1.0 - 0.8 * joint;
+    albedo = mix(albedo, concrete, apron);
+    roughScale = mix(1.0, 0.94 + 0.12 * hb.z, apron);
   }
   albedo = clamp(albedo, vec3f(0.0), vec3f(1.0));
 
@@ -854,7 +1080,6 @@ ${DETAIL_WGSL}
     // Without a sky nothing lights a slope the sun has set on: relief that exists only as a normal map
     // would still turn single pixels of it towards the sun (lit dots on a slope that is in the shadow of
     // itself). The detail gives way as the terrain's own normal reaches the terminator.
-    let muTerrain = dot(body.rot * tn.n, frame.bodies[u32(body.p0.w)].sunDir.xyz);
     g *= smoothstep(-0.02, 0.1, muTerrain);
   }
   g -= tn.n * dot(g, tn.n);
@@ -867,7 +1092,7 @@ ${DETAIL_WGSL}
 
   // Roughness: material roughness, widened by the slope variance the pixel cannot resolve (Toksvig):
   // the variance between neighbouring pixels plus the part of the tile's slope spectrum below the footprint.
-  var rough = mix(mat.p2.x, detail.rough, detail.roughMix);
+  var rough = mix(mat.p2.x, detail.rough, detail.roughMix) * roughScale;
   let lod = max(0.5 * log2(max(dot(dx, dx), dot(dy, dy)) * 65536.0), 0.0);
   let sigma = 0.5 * t.parentUv.z;
   let variance = pixelVariance + sigma * sigma * saturate(lod / 7.0);
@@ -876,14 +1101,16 @@ ${DETAIL_WGSL}
   var param = s.channel;
   var metallic = 0.0;
   if (materialId == MATERIAL_TERRAIN) {
-    // Wet ground along the shore: within the swell's reach above sea level, where water is near.
+    // Wet ground along the shore: within the swash's reach above sea level, where water is near.
     param = 0.0;
     if (hasOcean) {
-      param = (1.0 - smoothstep(0.25 * mat.p3.x, mat.p3.x, above)) * smoothstep(0.0, 0.02, s.maskWide);
+      // (Patchy: spray and pools wet the rock here and there, not as a ribbon.)
+      let patchy = 0.55 + 0.45 * noiseAt((t.noise.xyz + in.local / body.orbital.x) * max(round(body.orbital.x / 9.0), 1.0)).a;
+      param = (1.0 - smoothstep(0.25 * mat.p9.y, mat.p9.y, above)) * smoothstep(0.0, 0.02, s.maskWide) * saturate(patchy);
     }
   } else {
     // Regolith has no metal: the channel carries the RMS slope of what neighbouring pixels disagree about
-    // (x 2), which the regolith BRDF of this package (shaders/regolith.ts) reads as the spread of the facets
+    // (x 2), which the regolith BRDF of this package (shaders/lighting.ts) reads as the spread of the facets
     // within the pixel. Under a low sun a normal map that flips between lit and unlit from pixel to pixel
     // is then a grey of the right mean, not a pattern of black dots.
     metallic = saturate(2.0 * sqrt(pixelVariance));
@@ -891,7 +1118,11 @@ ${DETAIL_WGSL}
   if (water) {
     return gbufferPack(waterColour, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(waterDepth), velocity, emissive);
   }
-  return gbufferPack(albedo, s.ao * detail.ao, n, rough, metallic, materialId, param, velocity, emissive);
+  var packed = gbufferPack(albedo, s.ao * detail.ao * siteAo, n, rough, metallic, materialId, param, velocity, emissive);
+  // RT4.b of the terrain materials: the share of the sun that relief below the mesh keeps off the pixel
+  // (read by this package's brdf_terrain and brdf_regolith; every other writer of these materials leaves 0).
+  packed.extra.b = saturate(detail.shadow * mat.p8.a);
+  return packed;
 }
 `;
 

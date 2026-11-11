@@ -253,5 +253,11 @@
   ],
   "terrainRelief": 1.0,
   "apronMaterial": null,
-  "rockMaterial": "boulder"
+  "rockMaterial": "boulder",
+  "shoreGain": {},
+  "gloss": {},
+  "gravelMaterial": null,
+  "anchorAlbedo": {},
+  "cover": null,
+  "chroma": {}
 }

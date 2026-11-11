@@ -14,12 +14,14 @@ import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap, type ReliefFloor } from './lod';
-import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SurfaceParams } from './materials';
+import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SiteGroundPlan, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
-import { buildRecordConstants, type PadDisc, type RecordContext } from './records';
+import { CoverRenderer, type CoverBodyInfo, type CoverSite } from './cover';
+import { buildRecordConstants, type RecordContext, type SiteDisc } from './records';
 import { RockRenderer } from './rocks';
 import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN_SHADOW_WGSL, TILE_FRAME_BYTES, TILE_FRAME_FLOATS } from './shaders/common';
-import { REGOLITH_BRDF_WGSL } from './shaders/regolith';
+import { regolithBrdfWgsl, TERRAIN_BRDF_WGSL } from './shaders/lighting';
+import { buildSitePlan, MAX_SITES } from './sitePlan';
 import { MATERIAL_UNIFORM_FLOATS, TERRAIN_GBUFFER_WGSL, TERRAIN_WATER_WGSL } from './shaders/surface';
 import { TileStreamer, type StreamBody, type StreamerOptions, type StreamStats } from './streamer';
 import type { BoundSphere } from './tileMath';
@@ -37,11 +39,14 @@ export interface TerrainFeatureOptions {
   preloadLevel?: number;
   /** Draw the rock field (default true). */
   rocks?: boolean;
+  /** Draw the ground cover: tussocks, shrubs, trees, loose stones (default true). */
+  cover?: boolean;
   /**
    * Leave the rock draws to the companion feature `TerrainFeature.rocks` (default false: the terrain feature
    * draws them in its own hooks). Performance attribution times every feature's hooks in passes of their
    * own, so a lab that adds the companion gets the rocks' G-buffer and shadow cost as measured lines
-   * (`<id>-rocks.gbuffer`, `<id>-rocks.shadow`).
+   * (`<id>-rocks.gbuffer`, `<id>-rocks.shadow`). The ground cover is then left to `TerrainFeature.cover` in
+   * the same way (`<id>-cover.gbuffer`, `<id>-cover.shadow`).
    */
   rocksSeparate?: boolean;
 }
@@ -81,10 +86,12 @@ export interface TerrainDebug {
      * (caster walks and draws of the terrain), `gbuffer`. `hooks - upload` is what the budget line
      * "quadtree + cascades" covers; uploads have their own line.
      */
-    cpu: { hooks: number; stream: number; upload: number; build: number; rocks: number; shadow: number; gbuffer: number };
+    cpu: { hooks: number; stream: number; upload: number; build: number; rocks: number; cover: number; shadow: number; gbuffer: number };
     /** Bytes of the detail material arrays of every body. */
     materialBytes: number;
     rocks: { instances: number; chunks: number; triangles: number };
+    /** Ground cover: instances in this frame's lists (shadow lists included), chunks held, triangles of the G-buffer lists. */
+    cover: { instances: number; chunks: number; triangles: number };
   };
   /** Delay every tile by `ms` between the worker and the upload (tests of late streaming). */
   setStreamDelay(ms: number): void;
@@ -95,6 +102,8 @@ export interface TerrainDebug {
   setMorphEnabled(on: boolean): void;
   /** Draw the rock field or not (performance attribution: the rocks' share is the difference). */
   setRocksEnabled(on: boolean): void;
+  /** Draw the ground cover or not. */
+  setCoverEnabled(on: boolean): void;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
   /** READY tiles of a level, nearest to a point first (at most `limit`). */
@@ -111,6 +120,8 @@ export interface TerrainFeature extends RenderFeature {
   readonly debug: TerrainDebug;
   /** With `rocksSeparate`: the feature that draws the rock field (add it after this one); else null. */
   readonly rocks: RenderFeature | null;
+  /** With `rocksSeparate`: the feature that draws the ground cover (add it after this one); else null. */
+  readonly cover: RenderFeature | null;
 }
 
 interface BodyState {
@@ -122,6 +133,9 @@ interface BodyState {
   params: SurfaceParams;
   set: MaterialSet;
   albedoAt: (dir: Vec3) => [number, number, number];
+  /** Launch sites on the body with their ground plans (nothing of the ground cover stands on them). */
+  sites: CoverSite[];
+  landcover: TileManifest['layers'][string] | undefined;
   materialBuffer: GPUBuffer;
   uniform: GPUBuffer;
   uniformData: Float32Array<ArrayBuffer>;
@@ -184,6 +198,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let streamer: TileStreamer;
   let provider: TerrainAuthority;
   let rocks: RockRenderer | null = null;
+  let cover: CoverRenderer | null = null;
   let gbufferPipeline: Tracked<GPURenderPipeline>;
   let waterPipeline: Tracked<GPURenderPipeline>;
   let shadowPipeline: Tracked<GPURenderPipeline>;
@@ -225,9 +240,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let clock = 0;
   let morphEnabled = true;
   let rocksEnabled = true;
+  let coverEnabled = true;
   let selectMs = 0;
   let prefetchMs = 0;
-  const cpu = { hooks: 0, stream: 0, upload: 0, build: 0, rocks: 0, shadow: 0, gbuffer: 0 };
+  const cpu = { hooks: 0, stream: 0, upload: 0, build: 0, rocks: 0, cover: 0, shadow: 0, gbuffer: 0 };
   // Time of the frame's prepare and of all its draw hooks so far, ms.
   let prepareMs = 0;
   let drawMs = 0;
@@ -309,13 +325,20 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const albedoLayer = manifest.layers[TILE_LAYER.albedo];
     if (!albedoLayer) throw new Error(`tile set "${terrain.tileset}" has no albedo layer`);
     const tree = new BodyQuadtree(def.radius, terrain.minElevation, terrain.maxElevation, def.ocean ? def.ocean.seaLevel : null);
-    const pads: PadDisc[] = [];
+    const pads: SiteDisc[] = [];
+    const sitePlans: SiteGroundPlan[] = [];
+    const sites: CoverSite[] = [];
     for (const site of Object.values(ctx.defs.sites)) {
-      if (site.bodyId !== def.id || params.apronRadiusM <= 0) continue;
+      if (site.bodyId !== def.id || params.apronRadiusM <= 0 || pads.length >= MAX_SITES) continue;
       const dir = latLonToDir(site.location.latDeg * DEG, site.location.lonDeg * DEG);
-      // The apron lies on the flattened pad disc; its height is the pad's (the pad is flat within flatRadius).
+      // The site's ground plan lies on the flattened pad disc; its height is the pad's (flat within flatRadius).
       const h = typeof site.location.padElevation === 'number' ? site.location.padElevation : provider.heightAt(def.id, dir);
-      pads.push({ centre: v3.scale(dir, def.radius + h), radius: Math.min(params.apronRadiusM, site.pad.flatRadius) });
+      const plan = buildSitePlan(site, params);
+      const east = v3.normalize(v3.cross({ x: 0, y: 0, z: 1 }, dir));
+      const north = v3.cross(dir, east);
+      pads.push({ centre: v3.scale(dir, def.radius + h), radius: plan.reach, index: pads.length });
+      sitePlans.push({ plan, east: [east.x, east.y, east.z], north: [north.x, north.y, north.z] });
+      sites.push({ centre: v3.scale(dir, def.radius + h), east, north, plan });
     }
     // Night lights are read `nightMinMip` levels above the layer's deepest level: its source cells are
     // coarser than its texels (the layer is baked at the imagery's resolution), and sampling whole tiles of
@@ -325,7 +348,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const nightLayer = nightSource ? { ...nightSource, globalMaxLevel: Math.max(0, nightSource.globalMaxLevel - Math.round(params.nightMinMip)), coverage: {} } : undefined;
     const stream: StreamBody = { id: def.id, tileset: terrain.tileset, tree, albedoLayer, nightLayer };
     const recordCtx: RecordContext = { tree, detailScales: [params.detailScale0M, params.detailScale1M, params.detailScale2M, params.detailScale3M], orbitalWavelength: params.orbitalWavelengthM, pads, albedoLayer, nightLayer };
-    const materialData = buildMaterialUniform(set, params);
+    const materialData = buildMaterialUniform(set, params, sitePlans);
     const materialBuffer = device.createBuffer({ label: `terrain.material.${def.id}`, size: MATERIAL_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(materialBuffer, 0, materialData);
     const uniform = device.createBuffer({ label: `terrain.body.${def.id}`, size: BODY_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -350,6 +373,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       params,
       set,
       albedoAt,
+      sites,
+      landcover: manifest.layers[TILE_LAYER.landcover],
       materialBuffer,
       uniform,
       uniformData: new Float32Array(BODY_UNIFORM_BYTES / 4),
@@ -644,6 +669,32 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   };
 
   const rocksSeparate = options.rocksSeparate === true && options.rocks !== false;
+  const coverSeparate = options.rocksSeparate === true && options.cover !== false;
+  const coverFeature: RenderFeature | null = coverSeparate
+    ? {
+        id: `${options.id ?? 'terrain'}-cover`,
+        order: (options.order ?? -50) + 2,
+        // The ground cover belongs to the terrain feature, which builds it in its own init and prepare.
+        init() {},
+        drawGBuffer(_frame, pass) {
+          if (!initialised) return;
+          const t0 = performance.now();
+          cover?.drawGBuffer(pass);
+          const dt = performance.now() - t0;
+          cpu.cover += dt;
+          drawMs += dt;
+        },
+        drawShadow(frame, pass, cascade: ShadowCascadeView) {
+          if (!initialised) return;
+          const t0 = performance.now();
+          const b = cascadeBody(frame, cascade);
+          if (b) cover?.drawShadow(pass, cascade, b.id);
+          const dt = performance.now() - t0;
+          cpu.cover += dt;
+          drawMs += dt;
+        },
+      }
+    : null;
   const rocksFeature: RenderFeature | null = rocksSeparate
     ? {
         id: `${options.id ?? 'terrain'}-rocks`,
@@ -685,8 +736,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const source = createFetchTileSource(ctx.tilesUrl);
       const defs: DefLibrary = ctx.defs;
       const candidates = Object.values(defs.bodies).filter((d) => d.terrain && d.render.surface && (!baked || baked.includes(d.terrain.tileset)));
-      // Regolith surfaces are lit by this package's version of the regolith BRDF (shaders/regolith.ts).
-      if (candidates.some((d) => d.render.surface!.brdf === 'hapke')) ctx.shaders.register('brdf_regolith', REGOLITH_BRDF_WGSL);
+      // Regolith surfaces are lit by this package's version of the regolith BRDF (shaders/lighting.ts).
+      if (candidates.some((d) => d.render.surface!.brdf === 'hapke')) ctx.shaders.register('brdf_regolith', regolithBrdfWgsl());
+      // Land is lit by this package's version of the terrain BRDF (the shadows of relief below the mesh).
+      if (candidates.some((d) => d.render.surface!.brdf !== 'hapke')) ctx.shaders.register('brdf_terrain', TERRAIN_BRDF_WGSL);
 
       streamer = new TileStreamer(
         ctx,
@@ -783,6 +836,14 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         streamer.setResidentLevels(b.stream, 0, 0);
       }
       if (options.rocks !== false) rocks = new RockRenderer(ctx, provider, bodies.map((b) => ({ id: b.id, def: b.def, params: b.params, set: b.set, albedoAt: b.albedoAt })));
+      if (options.cover !== false) {
+        const covered: CoverBodyInfo[] = [];
+        for (const b of bodies) {
+          const def = b.set.manifest.cover;
+          if (def && b.landcover) covered.push({ id: b.id, def: b.def, cover: def, tileset: b.def.terrain!.tileset, landcover: b.landcover, sites: b.sites, seaLevel: b.hasOcean ? b.seaLevel : null });
+        }
+        if (covered.length > 0) cover = new CoverRenderer(ctx, provider, source, noiseView, covered);
+      }
 
       // The six root tiles of every body are there before the first frame: there is always something to draw.
       await new Promise<void>((resolve, reject) => {
@@ -833,13 +894,25 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       if (instanceCount > 0) device.queue.writeBuffer(instanceBuffer, 0, instances, 0, instanceCount);
       const t3 = performance.now();
       rocks?.prepare(frame, rocksEnabled ? active.map((b) => ({ id: b.id, bodyIndex: b.bodyIndex, observers: b.observers })) : []);
+      const t3b = performance.now();
+      cover?.prepare(
+        frame,
+        coverEnabled
+          ? active.map((b) => {
+              const pose = frame.bodies[b.bodyIndex]!;
+              const o = b.observers[0]!;
+              return { id: b.id, bodyIndex: b.bodyIndex, eye: o.pos, r: o.r, dir: o.dir, frustum: frustumOf(frame, pose) };
+            })
+          : [],
+      );
       ctx.perf.counter('terrain.tiles', bodies.reduce((a, b) => a + b.stats.visible, 0));
       ctx.perf.counter('terrain.queue', streamer.stats().queued + streamer.stats().loading);
       const t4 = performance.now();
       cpu.stream = t2 - t1;
       cpu.upload = streamer.stats().lastUploadMs;
       cpu.build = t3 - t2;
-      cpu.rocks = t4 - t3;
+      cpu.rocks = t3b - t3;
+      cpu.cover = t4 - t3b;
       cpu.shadow = 0;
       cpu.gbuffer = 0;
       prepareMs = t4 - t0;
@@ -872,6 +945,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         drawLists(pass, l.full, l.quad);
       }
       if (!rocksSeparate) rocks?.drawGBuffer(pass);
+      if (!coverSeparate) cover?.drawGBuffer(pass);
       const dt = performance.now() - t0;
       cpu.gbuffer += dt;
       drawMs += dt;
@@ -929,6 +1003,11 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         rocks?.drawShadow(pass, cascade, b.id);
         cpu.rocks += performance.now() - t1;
       }
+      if (!coverSeparate && casterScratch.length > 0) {
+        const t2 = performance.now();
+        cover?.drawShadow(pass, cascade, b.id);
+        cpu.cover += performance.now() - t2;
+      }
       drawMs += performance.now() - t0;
     },
 
@@ -936,15 +1015,18 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       if (!initialised) return false;
       if (!streamer.isIdle()) return false;
       if (rocks && !rocks.isIdle()) return false;
+      if (cover && !cover.isIdle()) return false;
       // A tile still relaxing from its fade-in changes the image.
       return bodies.every((b) => b.frameIndex !== frameIndex || b.tree.fading === 0);
     },
 
     rocks: rocksFeature,
+    cover: coverFeature,
 
     dispose() {
       streamer?.dispose();
       rocks?.dispose();
+      cover?.dispose();
     },
 
     debug: {
@@ -959,6 +1041,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           cpu: { ...cpu, hooks: prepareMs + drawMs },
           materialBytes: bodies.reduce((a, b) => a + b.set.bytes, 0),
           rocks: rocks ? rocks.stats() : { instances: 0, chunks: 0, triangles: 0 },
+          cover: cover ? cover.stats() : { instances: 0, chunks: 0, triangles: 0 },
         };
       },
       setStreamDelay(ms: number) {
@@ -969,6 +1052,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setRocksEnabled(on: boolean) {
         rocksEnabled = on;
+      },
+      setCoverEnabled(on: boolean) {
+        coverEnabled = on;
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),

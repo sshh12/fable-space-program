@@ -7,7 +7,9 @@ import type { RenderContext } from '@/core/contracts/render';
 import { LANDCOVER_CLASS } from '@/core/contracts/terrain';
 import { hash4, hashToUnit } from '@/core/math';
 import { coreOf, mipCount } from '@/render/core';
+import type { CoverDef } from './cover';
 import { DETAIL_SCALES, MATERIAL_UNIFORM_FLOATS, MAX_CLASSES, MAX_MATERIALS, NOISE_GRADIENT_RANGE, NOISE_PERIOD } from './shaders/surface';
+import { MAX_SITES, MAX_SITE_SHAPES, packSiteShapes, type SitePlan } from './sitePlan';
 import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
 
 /** One texture layer of a material: its content at one detail scale. */
@@ -67,10 +69,29 @@ export interface MaterialSetManifest {
    * where they hold what it does not (bushes, tussocks).
    */
   terrainRelief: number;
+  /** Weight added on low, level ground at the water's edge (beaches). */
+  shoreGain: Record<string, number>;
+  /**
+   * Roughness factor of what stands above a layer's mean height, per material (default 1): the crests of
+   * ropy lava are glassy, the hollows between them are not.
+   */
+  gloss: Record<string, number>;
+  /** Share of a material's colour variation kept where the ground takes its albedo (default 1): rock is grey, growth is not. */
+  chroma: Record<string, number>;
+  /**
+   * Albedo the ground takes where a material covers it and the imagery is calibrated (linear rgb), per
+   * material; default: the mean of its near layer. Lets a set state what its ground is (olive, dry grass)
+   * where the photographs its layers were made from are not (a watered lawn).
+   */
+  anchorAlbedo: Record<string, [number, number, number]>;
   /** Material of launch-pad aprons, or null. */
   apronMaterial: string | null;
+  /** Material whose layers the compacted gravel of a launch site carries (with the body's gravel albedo), or null. */
+  gravelMaterial: string | null;
   /** Material whose near layer the rock meshes carry. */
   rockMaterial: string;
+  /** What stands up from the ground by land-cover class (cover.ts), or null for bare ground. */
+  cover: CoverDef | null;
 }
 
 /** Required numeric tunables of render/*.surface.json `params` (every key must be present). */
@@ -109,8 +130,20 @@ export const SURFACE_PARAM_KEYS = [
   'deepWaterSrgbB',
   'deepWaterDepthM',
   'apronRadiusM',
-  'apronEdgeM',
+  'apronMarginM',
+  'apronJointM',
   'apronShoulderM',
+  'gravelAlbedoR',
+  'gravelAlbedoG',
+  'gravelAlbedoB',
+  'imageryCalibrationLevel',
+  'imagerySaturation',
+  'imageryRefLuminance',
+  'imageryContrast',
+  'anchorNear',
+  'anchorFar',
+  'reliefShadow',
+  'shoreReachM',
   'lakeDepthM',
   'shoreWetnessHeightM',
   'rockRangeM',
@@ -158,6 +191,7 @@ export async function loadMaterialSet(ctx: RenderContext, setId: string): Promis
   if (manifest.materials.length > MAX_MATERIALS) throw new Error(`terrain material set "${setId}": ${manifest.materials.length} materials, at most ${MAX_MATERIALS}`);
   if (manifest.materials.some((m) => m.layers.length !== DETAIL_SCALES)) throw new Error(`terrain material set "${setId}": every material needs ${DETAIL_SCALES} layers`);
   if (!Array.isArray(manifest.hexBlend) || manifest.hexBlend.length !== 2 || typeof manifest.terrainRelief !== 'number') throw new Error(`terrain material set "${setId}": set.json lacks hexBlend or terrainRelief`);
+  if (typeof manifest.shoreGain !== 'object' || typeof manifest.gloss !== 'object' || typeof manifest.chroma !== 'object' || typeof manifest.anchorAlbedo !== 'object' || manifest.gravelMaterial === undefined || manifest.cover === undefined) throw new Error(`terrain material set "${setId}": set.json lacks shoreGain, gloss or gravelMaterial (rebuild it: tools/terrain/gen_materials.py --manifest-only)`);
   const core = coreOf(ctx);
   const count = manifest.materials.length;
   const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT;
@@ -200,8 +234,15 @@ export async function loadMaterialSet(ctx: RenderContext, setId: string): Promis
   };
 }
 
-/** The TerrainMaterial uniform (shaders/surface.ts) of a body. */
-export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams): Float32Array<ArrayBuffer> {
+/** A launch site as the material uniform holds it: its ground plan and the east and north unit vectors at the pad (body-fixed). */
+export interface SiteGroundPlan {
+  plan: SitePlan;
+  east: [number, number, number];
+  north: [number, number, number];
+}
+
+/** The TerrainMaterial uniform (shaders/surface.ts) of a body. `sites`: at most MAX_SITES, in the order of their index. */
+export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: readonly SiteGroundPlan[] = []): Float32Array<ArrayBuffer> {
   const f = new Float32Array(MATERIAL_UNIFORM_FLOATS);
   const m = set.manifest;
   const idx = (id: string): number => {
@@ -225,7 +266,7 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams): Float3
   let o = orbBase + MAX_CLASSES * 4;
   m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanAlbedo[0], l.meanAlbedo[1], l.meanAlbedo[2], l.reliefM], o + (i * DETAIL_SCALES + s) * 4)));
   o += MAX_MATERIALS * DETAIL_SCALES * 4;
-  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => (f[o + (i * DETAIL_SCALES + s) * 4] = l.meanHeight)));
+  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanHeight, m.gloss[mt.id] ?? 1, m.chroma[mt.id] ?? 1], o + (i * DETAIL_SCALES + s) * 4)));
   o += MAX_MATERIALS * DETAIL_SCALES * 4;
   const gains = (table: Record<string, number>, at: number): void => {
     for (const [id, value] of Object.entries(table)) f[at + idx(id)] = value;
@@ -239,10 +280,28 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams): Float3
   const macroRatio = Math.max(1, Math.round(p.orbitalWavelengthM / p.macroNoiseWavelengthM));
   f.set([p.slopeLo, p.slopeHi, m.apronMaterial ? idx(m.apronMaterial) : -1, m.materials.length], o);
   f.set([p.detailAlbedoStrength, p.detailNormalStrength, p.detailHeightContrast, p.orbitalWavelengthM / macroRatio], o + 4);
-  f.set([p.baseRoughness, p.toksvigGain, p.apronEdgeM, p.lakeDepthM], o + 8);
+  f.set([p.baseRoughness, p.toksvigGain, 0, p.lakeDepthM], o + 8);
   f.set([p.shoreWetnessHeightM, p.freshAlbedoBoost, p.detailAoStrength, p.detailChroma], o + 12);
   f.set([p.detailScale0M / m.nearSize, p.detailScale1M / m.wideSize, p.detailScale2M / m.wideSize, p.detailScale3M / m.wideSize], o + 16);
   f.set([m.hexBlend[0], m.hexBlend[1], m.terrainRelief, Math.max(p.apronShoulderM, 1e-3)], o + 20);
+  o += 24;
+  gains(m.shoreGain, o);
+  o += 8;
+  f.set([p.imageryCalibrationLevel, p.imagerySaturation, Math.max(p.imageryRefLuminance, 1e-4), p.imageryContrast], o);
+  f.set([p.anchorNear, p.anchorFar, Math.max(p.apronJointM, 0.5), m.gravelMaterial ? idx(m.gravelMaterial) : -1], o + 4);
+  f.set([p.gravelAlbedoR, p.gravelAlbedoG, p.gravelAlbedoB, p.reliefShadow], o + 8);
+  f.set([Math.max(p.shoreReachM, 1e-3), Math.max(p.shoreWetnessHeightM, 1e-3), 0, 0], o + 12);
+  o += 16;
+  m.materials.forEach((mt, i) => f.set(m.anchorAlbedo[mt.id] ?? mt.layers[0].meanAlbedo, o + i * 4));
+  o += MAX_MATERIALS * 4;
+  if (sites.length > MAX_SITES) throw new Error(`terrain: ${sites.length} launch sites on one body, at most ${MAX_SITES}`);
+  let shape = 0;
+  sites.forEach((site, i) => {
+    const count = Math.min(site.plan.shapes.length, MAX_SITE_SHAPES - shape);
+    f.set([site.east[0], site.east[1], site.east[2], shape, site.north[0], site.north[1], site.north[2], count], o + i * 8);
+    packSiteShapes({ ...site.plan, shapes: site.plan.shapes.slice(0, count) }, f, o + MAX_SITES * 8 + shape * 8);
+    shape += count;
+  });
   return f;
 }
 

@@ -50,9 +50,9 @@ struct TileRecord {
   detail1: vec4f,                // scale 1, w = imagery level at corner (1, 0)
   detail2: vec4f,                // scale 2, w = imagery level at corner (0, 1)
   noise: vec4f,                  // xyz = tile origin / orbital base wavelength, modulo the noise period, w = imagery level at corner (1, 1)
-  pad: vec4f,                    // xyz = nearest launch-pad centre relative to the tile origin (body-fixed, m), w = apron radius (0 = none)
+  pad: vec4f,                    // xyz = nearest launch-pad centre relative to the tile origin (body-fixed, m), w = reach of the site's ground plan (0 = none)
   flags: vec4i,                  // x = flags: 1 = parent uses another image, 2 = parent uses another night image, 4 / 8 = odd vertices slide up along u / v
-  detail3: vec4f,                // xyz = tile origin modulo HEX_PERIOD tiling lengths of detail scale 3 (m), w = unused
+  detail3: vec4f,                // xyz = tile origin modulo HEX_PERIOD tiling lengths of detail scale 3 (m), w = index of the site of 'pad'
 }
 
 // Both arrays are indexed by the tile's layer in the height pool (one slot per resident tile).

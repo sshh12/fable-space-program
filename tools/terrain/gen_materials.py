@@ -574,9 +574,9 @@ SETS = {
             "water": {"black-sand": 1.0},
             "bareRock": {"pahoehoe": 0.6, "aa": 0.4},
             "sand": {"black-sand": 1.0},
-            "sparseScrub": {"scrub-soil": 0.7, "pahoehoe": 0.3},
-            "grass": {"pasture": 0.8, "scrub-soil": 0.2},
-            "shrub": {"pasture": 0.55, "scrub-soil": 0.45},
+            "sparseScrub": {"scrub-soil": 0.5, "pahoehoe": 0.5},
+            "grass": {"pasture": 0.7, "scrub-soil": 0.3},
+            "shrub": {"pasture": 0.5, "scrub-soil": 0.5},
             "trees": {"pasture": 1.0},
             "crop": {"pasture": 0.7, "scrub-soil": 0.3},
             "builtUp": {"concrete-apron": 0.6, "scrub-soil": 0.4},
@@ -598,26 +598,67 @@ SETS = {
             "wetland": [0.08, 0.01],
         },
         "channelGain": {"aa": 0.6, "scrub-soil": -0.3, "black-sand": -0.3, "pasture": -0.5},
-        "slopeGain": {"aa": 0.8, "pahoehoe": 0.2, "black-sand": -1.0, "scrub-soil": -0.3, "pasture": -0.6},
+        # Steep ground is broken rock: a cliff or a bluff shows clinker, never turf or sand.
+        "slopeGain": {"aa": 2.0, "pahoehoe": 0.2, "black-sand": -2.0, "scrub-soil": -0.6, "pasture": -1.0},
         "noiseGain": {"aa": 0.5, "pahoehoe": -0.5, "scrub-soil": 0.35, "pasture": -0.35},
-        # The imagery is the measured colour of the ground, and it corrects the land-cover class (which calls
-        # red soil with dry grass "bare" like a lava field). Weight per unit of three features of the imagery
-        # colour: darkness (1 = black, 0 = albedo 0.12 and above), saturation (0 below 0.25, 1 above 0.6 of
-        # (max - min) / max) and greenness ((g - max(r, b)) / max). Grey ground is lava or sand, saturated
-        # brown ground is soil, green ground is grass. (Darkness is unused here: vegetation and wet soil are
-        # as dark as basalt.)
+        # The colour of the imagery corrects the land-cover class. Weight per unit of three features of it:
+        # darkness (1 = black, 0 = albedo 0.12 and above), saturation (0 below 0.25, 1 above 0.6 of
+        # (max - min) / max) and greenness ((g - max(r, b)) / max, -0.5 .. 0.5). Saturation is unused: the
+        # regional mosaic is graded and saturated everywhere (median 0.8, lava fields included), and it said
+        # "soil" on every lava flow. Dark ground of a rock class is the young, clinkery flow; green ground is
+        # growth whatever the class says; dry soil is the paler ground.
         "albedoGain": {
-            "pahoehoe": [0.0, -3.0, 0.0],
-            "aa": [0.0, -3.0, 0.0],
-            "black-sand": [0.0, -2.0, 0.0],
-            "scrub-soil": [0.0, 1.5, -1.5],
-            "pasture": [0.0, 0.0, 5.0],
+            "pahoehoe": [0.5, 0.0, -2.0],
+            "aa": [1.0, 0.0, -2.0],
+            "black-sand": [0.0, 0.0, -1.0],
+            "scrub-soil": [-1.0, 0.0, -1.0],
+            "pasture": [0.0, 0.0, 4.0],
         },
+        # Low, level ground at the water's edge is a beach of black sand.
+        "shoreGain": {"black-sand": 3.0, "pasture": -2.0, "scrub-soil": -1.0},
+        # The crests of ropy lava are glassy.
+        "gloss": {"pahoehoe": 0.6},
+        # What the ground is where a material covers it (linear albedo), where that is not the mean of its
+        # photographs: the grass of this coast is dry and olive (sRGB about 96, 92, 52), not a lawn; its dry
+        # soil is grey-brown ash (about 112, 96, 78), not red earth.
+        "anchorAlbedo": {"pasture": [0.15, 0.132, 0.05], "scrub-soil": [0.16, 0.117, 0.076]},
+        # Lava, cinder and concrete are grey: the rust and blue specks of their photographs stay faint.
+        "chroma": {"pahoehoe": 0.25, "aa": 0.3, "black-sand": 0.3, "concrete-apron": 0.5, "scrub-soil": 0.8},
         # Stones, tufts and clinker stay whole where the hexagon pattern blends its copies; cracks and gaps give way.
         "hexBlend": [6.0, -6.0],
         # Bushes and tussocks of the far and aerial layers are not in the height function: their relief stays.
         "terrainRelief": 0.25,
+        # What stands up from the ground (src/render/terrain/cover.ts): tussocks of dry grass, wind-shaped
+        # scrub, low kiawe trees, loose clinker. Densities are instances per square metre by land-cover class;
+        # sizes in metres; the trade wind blows towards the south-west and bends everything that way.
+        "cover": {
+            "windToDeg": 235.0,
+            "windLean": 0.35,
+            "kinds": [
+                {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "chunkM": 16.0,
+                 "tint": [0.13, 0.125, 0.045], "tintDry": [0.26, 0.21, 0.09], "clump": 0.7, "clumpM": 9.0},
+                {"id": "scrub", "shape": "bush", "radiusM": [0.5, 1.7], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "chunkM": 64.0,
+                 "tint": [0.05, 0.07, 0.028], "tintDry": [0.10, 0.095, 0.045], "clump": 0.6, "clumpM": 40.0},
+                {"id": "kiawe", "shape": "tree", "radiusM": [2.2, 4.8], "heightPerRadius": [0.75, 1.1], "rangeM": 1800.0, "minPixels": 4.0, "chunkM": 256.0,
+                 "tint": [0.045, 0.062, 0.026], "tintDry": [0.075, 0.08, 0.04], "clump": 0.5, "clumpM": 120.0},
+                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.6, 1.0], "rangeM": 60.0, "minPixels": 4.0, "chunkM": 16.0,
+                 "tint": [0.04, 0.036, 0.034], "tintDry": [0.06, 0.05, 0.044], "clump": 0.9, "clumpM": 7.0},
+            ],
+            "classDensity": {
+                "unknown": {"tussock": 0.15},
+                "bareRock": {"tussock": 0.05, "scrub": 0.0012, "clinker": 0.5},
+                "sand": {"clinker": 0.05},
+                "sparseScrub": {"tussock": 0.35, "scrub": 0.006, "clinker": 0.2},
+                "grass": {"tussock": 1.4, "scrub": 0.003},
+                "shrub": {"tussock": 0.7, "scrub": 0.02, "kiawe": 0.0015},
+                "trees": {"tussock": 0.45, "scrub": 0.012, "kiawe": 0.011},
+                "crop": {"tussock": 0.9},
+                "wetland": {"tussock": 1.0, "scrub": 0.004},
+            },
+        },
         "apronMaterial": "concrete-apron",
+        # Crushed cinder, compacted: the shoulders and lane beds of a launch site (fine and even).
+        "gravelMaterial": "black-sand",
         "rockMaterial": "aa",
     },
     "lunar-regolith": {
@@ -637,17 +678,23 @@ SETS = {
         "slopeGain": {"compacted-soil": 0.9, "fine-regolith": -0.6},
         "noiseGain": {"compacted-soil": 0.25},
         "albedoGain": {},
+        "shoreGain": {},
+        "gloss": {},
+        "anchorAlbedo": {},
+        "chroma": {},
         # Pits and craters stay whole as well as stones and rims (a crater cut in two is a blotch).
         "hexBlend": [10.0, 10.0],
         # The craters of the far and aerial layers are of sizes the height function has too.
         "terrainRelief": 1.0,
+        "cover": None,
         "apronMaterial": None,
+        "gravelMaterial": None,
         "rockMaterial": "boulder",
     },
 }
 
 
-MANIFEST_KEYS = ("classWeights", "classOrbital", "channelGain", "slopeGain", "noiseGain", "albedoGain", "hexBlend", "terrainRelief", "apronMaterial", "rockMaterial")
+MANIFEST_KEYS = ("classWeights", "classOrbital", "channelGain", "slopeGain", "noiseGain", "albedoGain", "shoreGain", "gloss", "anchorAlbedo", "chroma", "hexBlend", "terrainRelief", "cover", "apronMaterial", "gravelMaterial", "rockMaterial")
 
 
 def bake(layer: Layer) -> tuple[np.ndarray, np.ndarray, dict]:

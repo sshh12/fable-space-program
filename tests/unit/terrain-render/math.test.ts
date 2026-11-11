@@ -10,7 +10,7 @@ import { capMaxLevel, capMorph, fadeMorph, levelRange, lodK, LOD_K_MIN, morphFac
 import { buildNoiseVolume, NOISE_SIZE } from '@/render/terrain/materials';
 import { borderSource, buildNightImage, NIGHT_SIZE } from '@/render/terrain/nightImage';
 import { coverageWeight, imageryLevelAt } from '@/render/terrain/records';
-import { buildRockMesh, clipPolyhedron, ROCK_CHIP, ROCK_CLASSES, ROCK_LODS, ROCK_REACH, ROCK_TOP, ROCK_VARIANTS, rockPlanes } from '@/render/terrain/rockMesh';
+import { buildRockMesh, clipPolyhedron, ROCK_CHIP, ROCK_CLASSES, ROCK_LODS, ROCK_REACH, ROCK_TOP, ROCK_VARIANTS, ROCK_VERTEX_FLOATS, rockPlanes } from '@/render/terrain/rockMesh';
 import { angleToFootprint, frameDir, shellBoundSphere, shellDistance, tileFrame, tileLocalF32 } from '@/render/terrain/tileMath';
 
 const R_EARTH = 6_371_000;
@@ -233,8 +233,10 @@ describe('meshes', () => {
     }
   });
 
-  it('rock meshes are closed polyhedra around the unit cap, wound outwards, in bounds, with unit normals', () => {
-    const bound = Math.hypot(ROCK_REACH / Math.cos(Math.PI / 8), ROCK_TOP) + ROCK_CHIP;
+  it('rock meshes are closed surfaces around the unit cap, wound outwards, in bounds, with unit normals', () => {
+    // The foot flares by up to 16 % where soil is banked against it.
+    const bound = Math.hypot((1.16 * ROCK_REACH) / Math.cos(Math.PI / 8), ROCK_TOP) + ROCK_CHIP;
+    const S = ROCK_VERTEX_FLOATS;
     for (let variant = 0; variant < ROCK_VARIANTS; variant++) {
       // Every half-space leaves the unit ball inside: the polyhedron encloses the collision cap.
       for (const pl of rockPlanes(variant).slice(0, -1)) expect(pl.d / Math.hypot(...pl.n)).toBeGreaterThanOrEqual(1);
@@ -243,21 +245,27 @@ describe('meshes', () => {
         const m = buildRockMesh(variant, lod);
         counts.push(m.indices.length / 3);
         let lowest = Infinity;
-        for (let i = 0; i < m.vertices.length; i += 6) {
+        for (let i = 0; i < m.vertices.length; i += S) {
           const r = Math.hypot(m.vertices[i]!, m.vertices[i + 1]!, m.vertices[i + 2]!);
           expect(r).toBeGreaterThanOrEqual(1 - 1e-5);
           expect(r).toBeLessThanOrEqual(bound);
           expect(Math.hypot(m.vertices[i + 3]!, m.vertices[i + 4]!, m.vertices[i + 5]!)).toBeCloseTo(1, 4);
           lowest = Math.min(lowest, m.vertices[i + 2]!);
+          // Soil share and cavity are fractions.
+          expect(m.vertices[i + 6]).toBeGreaterThanOrEqual(0);
+          expect(m.vertices[i + 6]).toBeLessThanOrEqual(1);
+          expect(m.vertices[i + 7]).toBeGreaterThan(0);
+          expect(m.vertices[i + 7]).toBeLessThanOrEqual(1);
         }
         // The sides reach into the ground.
         expect(lowest).toBeLessThan(-0.5);
         // Outward winding, and no open edge above the buried rim (positions are shared between faces).
-        const key = (v: number): string => `${Math.round(m.vertices[v * 6]! * 1e4)},${Math.round(m.vertices[v * 6 + 1]! * 1e4)},${Math.round(m.vertices[v * 6 + 2]! * 1e4)}`;
+        const key = (v: number): string => `${Math.round(m.vertices[v * S]! * 1e4)},${Math.round(m.vertices[v * S + 1]! * 1e4)},${Math.round(m.vertices[v * S + 2]! * 1e4)}`;
         const edges = new Map<string, { count: number; z: number }>();
+        let concave = 0;
         for (let t = 0; t < m.indices.length; t += 3) {
           const [a, b, c] = [m.indices[t]!, m.indices[t + 1]!, m.indices[t + 2]!];
-          const P = (v: number): [number, number, number] => [m.vertices[v * 6]!, m.vertices[v * 6 + 1]!, m.vertices[v * 6 + 2]!];
+          const P = (v: number): [number, number, number] => [m.vertices[v * S]!, m.vertices[v * S + 1]!, m.vertices[v * S + 2]!];
           const [pa, pb, pc] = [P(a), P(b), P(c)];
           const ux = pb[0] - pa[0];
           const uy = pb[1] - pa[1];
@@ -269,12 +277,32 @@ describe('meshes', () => {
           expect(n[0]! * (pa[0] + pb[0] + pc[0]) + n[1]! * (pa[1] + pb[1] + pc[1]) + n[2]! * (pa[2] + pb[2] + pc[2])).toBeGreaterThan(0);
           for (const [p, q] of [[a, b], [b, c], [c, a]] as const) {
             const k = [key(p), key(q)].sort().join('|');
-            const e = edges.get(k) ?? { count: 0, z: Math.max(m.vertices[p * 6 + 2]!, m.vertices[q * 6 + 2]!) };
+            const e = edges.get(k) ?? { count: 0, z: Math.max(m.vertices[p * S + 2]!, m.vertices[q * S + 2]!) };
             e.count++;
             edges.set(k, e);
           }
         }
         for (const e of edges.values()) if (e.z > -0.6) expect(e.count).toBe(2);
+        // A broken rock is not convex: some vertex lies behind the plane of a triangle it does not belong to
+        // by more than rounding (looked for among the finest level's vertices only: it is the shape).
+        if (lod === 0) {
+          for (let t = 0; t < m.indices.length && concave === 0; t += 3) {
+            const P = (v: number): [number, number, number] => [m.vertices[v * S]!, m.vertices[v * S + 1]!, m.vertices[v * S + 2]!];
+            const [pa, pb, pc] = [P(m.indices[t]!), P(m.indices[t + 1]!), P(m.indices[t + 2]!)];
+            const n = [(pb[1] - pa[1]) * (pc[2] - pa[2]) - (pb[2] - pa[2]) * (pc[1] - pa[1]), (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]), (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0])];
+            const l = Math.hypot(n[0]!, n[1]!, n[2]!);
+            if (pa[2] < 0.1 || l < 1e-6) continue;
+            for (let i = 0; i < m.vertices.length; i += S) {
+              if (m.vertices[i + 2]! < 0.1) continue;
+              const d = (n[0]! * (m.vertices[i]! - pa[0]) + n[1]! * (m.vertices[i + 1]! - pa[1]) + n[2]! * (m.vertices[i + 2]! - pa[2])) / l;
+              if (d > 0.03) {
+                concave++;
+                break;
+              }
+            }
+          }
+          expect(concave).toBeGreaterThan(0);
+        }
       }
       expect(counts[0]!).toBeGreaterThan(counts[1]!);
       expect(counts[1]!).toBeGreaterThan(counts[2]!);
@@ -299,7 +327,7 @@ describe('meshes', () => {
     // No two variants are the same solid.
     const signature = (v: number): string => {
       const m = buildRockMesh(v, 2);
-      return Array.from(m.vertices.subarray(0, 36))
+      return Array.from(m.vertices.subarray(0, 6 * ROCK_VERTEX_FLOATS))
         .map((x) => x.toFixed(3))
         .join(',');
     };
