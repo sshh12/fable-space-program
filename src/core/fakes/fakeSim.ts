@@ -115,6 +115,10 @@ export class FakeSim implements Sim {
   private events: SimEvent[] = [];
   private readonly parts: PartSnapshot[];
   private throttleActual = 0;
+  /** The staged engines burn (throttle above 2 %); time since they last lit and since they last went out, s (-1: never / burning). */
+  private enginesLit = false;
+  private ignitionAge = -1;
+  private shutdownAge = -1;
   private readonly orbitPhase0: number;
   private readonly siteDir: Vec3;
 
@@ -261,6 +265,16 @@ export class FakeSim implements Sim {
     if (this.warpIndex > this.maxWarpIndex()) this.warpIndex = this.maxWarpIndex();
     const tau = this.controls.throttle > this.throttleActual ? 0.8 : 0.3;
     this.throttleActual += (this.controls.throttle - this.throttleActual) * Math.min(1, attitudeDt / tau);
+    // Engine clocks, as the real engine module keeps them: 0 on the step the engines light, counting while
+    // they burn; the shutdown clock starts at 0 on the step they go out and counts while they are off.
+    const lit = this.throttleActual > 0.02;
+    if (lit && !this.enginesLit) {
+      this.ignitionAge = 0;
+      this.shutdownAge = -1;
+    } else if (lit) this.ignitionAge += simDt;
+    else if (this.enginesLit) this.shutdownAge = 0;
+    else if (this.shutdownAge >= 0) this.shutdownAge += simDt;
+    this.enginesLit = lit;
     const rate = (this.fineControl ? 6 : 20) * DEG;
     const c = this.controls;
     // pitch up = +X rotation, yaw right = -Z rotation, roll right = +Y rotation (VES frame)
@@ -525,7 +539,8 @@ export class FakeSim implements Sim {
             thrust: Math.max(0, massFlow * G0 * isp),
             ambientPressure: pressure,
             pressureRatio: Math.min(1e6, (md.nozzles[0]?.exitPressure ?? 1e4) / Math.max(pressure, 1e-3)),
-            ignitionAge: thr > 0.02 ? Math.max(0, m.ignitionAge) + 1 / 60 : m.ignitionAge,
+            // Engines that staging has not activated keep the clocks they were given.
+            ...(m.active ? { ignitionAge: this.ignitionAge, shutdownAge: this.shutdownAge } : {}),
           };
         }
         if (m.type === 'legs') return { ...m, deploy: this.legsDeployed ? 1 : 0 };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NEUTRAL_CONTROLS } from '../contracts/controls';
 import type { DefLibrary } from '../contracts/defs';
+import type { ModuleState, PartSnapshot } from '../contracts/sim';
 import { fsDefSource } from '../defs/fsSource';
 import { loadDefs } from '../defs/loader';
 import { conicPosition } from '../math/conic';
@@ -73,6 +74,59 @@ describe('FakeSim', () => {
     expect(sim.commands.setSasMode('maneuver').ok).toBe(true);
     expect(sim.commands.removeNode(id).ok).toBe(true);
     expect(sim.snapshot().patches.planned).toHaveLength(0);
+  });
+
+  it('engines keep time since ignition and since shutdown, like the real engine module', () => {
+    const engineDef = Object.values(defs.parts).find((p) => p.modules.some((m) => m.type === 'engine'))!;
+    const engineAt = engineDef.modules.findIndex((m) => m.type === 'engine');
+    const part = (id: string, active: boolean): PartSnapshot => ({
+      instanceId: id,
+      def: engineDef.id,
+      localPos: v3.zero(),
+      localRot: { x: 0, y: 0, z: 0, w: 1 },
+      tempSkin: 290,
+      maxTemp: 2000,
+      resources: {},
+      modules: engineDef.modules.map((m, i) =>
+        i === engineAt
+          ? { type: 'engine', active, throttleActual: 0, thrust: 0, massFlow: 0, ambientPressure: 0, pressureRatio: 1, gimbal: [0, 0], ignitionAge: -1, shutdownAge: -1, ignitionsLeft: null, flameout: false }
+          : ({ type: m.type } as unknown as ModuleState),
+      ),
+      shielded: false,
+    });
+    const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: [part('burning', true), part('idle', false)] });
+    const engine = (id: string): Extract<ModuleState, { type: 'engine' }> => sim.snapshot().vessels[0]!.parts.find((p) => p.instanceId === id)!.modules[engineAt] as Extract<ModuleState, { type: 'engine' }>;
+    expect(engine('burning').ignitionAge).toBe(-1);
+    expect(engine('burning').shutdownAge).toBe(-1);
+    sim.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: 1 });
+    // The throttle spools up: the engines light on the first step that takes it past 2 %.
+    let steps = 0;
+    while (engine('burning').ignitionAge < 0 && steps < 20) {
+      sim.advance(1 / 60);
+      steps++;
+    }
+    expect(engine('burning').ignitionAge).toBe(0);
+    for (let i = 0; i < 120; i++) sim.advance(1 / 60);
+    // Two seconds later the age is two seconds (it used to stay at 1/60 s for ever: request vfx-2).
+    expect(engine('burning').ignitionAge).toBeCloseTo(2, 6);
+    expect(engine('burning').shutdownAge).toBe(-1);
+    expect(engine('burning').thrust).toBeGreaterThan(0);
+    // An engine that staging has not activated never lights.
+    expect(engine('idle').ignitionAge).toBe(-1);
+    expect(engine('idle').thrust).toBe(0);
+    // Throttle to zero: the shutdown clock starts at 0 on the step the engines go out and counts from there.
+    sim.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: 0 });
+    const burned = (): number => engine('burning').ignitionAge;
+    let out = 0;
+    while (engine('burning').shutdownAge < 0 && out < 200) {
+      sim.advance(1 / 60);
+      out++;
+    }
+    expect(engine('burning').shutdownAge).toBe(0);
+    const frozen = burned();
+    for (let i = 0; i < 60; i++) sim.advance(1 / 60);
+    expect(engine('burning').shutdownAge).toBeCloseTo(1, 6);
+    expect(burned()).toBe(frozen);
   });
 
   it('the surface scenes can be placed away from the site', () => {
