@@ -155,7 +155,7 @@ Self-check of the small-shell spec: `ATMO_FINE=0` runs it on the half-resolution
 
 ## 5. Measured (2026-11-10 / 11, this machine, last runs)
 
-Functional suite: 45 passed, 1 skipped (the tuning tool). Unit: 35. Boundary test green.
+Functional suite (end of round 1): 50 passed, 1 failed (`transparents.spec.ts`, broken layer: section 11), 1 skipped (the tuning tool). Unit: 40. Boundary test green. The tables below are from before round 1 where section 11 does not give newer numbers.
 
 | Criterion | Result |
 |---|---|
@@ -348,3 +348,96 @@ units), new `lowThinDensity` 0.2 and `lowDensityVariation` 1.0.
 | Minor: foreign file in a commit | Request 5; pathspec commits |
 | Minor: fragile tunables | Cause was a negative optical depth below a sample where the map's top lies under the low layer's (ambient term divided by ~0); fixed, relief clamped to the sheet, ranges validated, `tunables.spec.ts` |
 | Minor: transparent colour at 50 km | Request 4, declined for this wave |
+
+## 11. Visual close-out, round 1
+
+The round-0 visual critique (`out/qa/wave2/atmosphere-clouds.md`: photo lens 4 / 10, artifact lens 4 / 10,
+21 items) was worked in two runs. Parts 1 - 4 (a4eec0f, acec1f5, 89b4d1a, 3c95159) were made by the first
+owner of round 1, whose run ended at a spend limit; the rest (6587a0d, ddf4a33, 77079f9 and the commit with
+this section) by its successor, who took over the uncommitted low-sun shadow-map work, finished it and
+checked the whole state again. The screenshots named below are the ones in `out/screens/atmosphere/`
+written by the last full run of the functional suite (`native-*-1440p.png`: 2560 x 1440, animated, temporal
+accumulation running; the rest 1280 x 720, deterministic). They were opened at full size and as enlarged
+crops and compared with the photographs of `out/qa/ref/` named per item.
+
+### What was done, item by item
+
+| # | Item (severity) | Done | Look at | State |
+|---|---|---|---|---|
+| 1 | Pad cumulus are putty under a veil (blocker) | New cloud model (part 1): Perlin-Worley shapes eroded by detail noise, flat bases and domes from a height-dependent threshold, no sheet over fair-weather fields; surfaces found by bisection and marched from there, light from the density gradient, two-stream diffuse light (dark bases, bright tops) (part 2). `cloudlight.spec.ts` asserts the share of the sky the field covers: 0.465 for a map cover of 0.4 (band 0.3 - 0.5) | `native-ground-cumulus-1440p.png`, `native-ground-cumulus-into-sun-1440p.png`, `clouds-ground-cumulus.png`; ref `sky-ground-clouds/cu-humilis-nsw.jpg` | Separate cauliflower cumulus with flat grey bases and blue sky between them, ranks foreshortened towards the horizon. Not met: the large bodies overhead are smoother than in a photograph, and their cauliflower edges are soft at 1:1 |
+| 2 | From low orbit: blurred equal blobs, no shadows (blocker) | Shadow map centred where the camera looks from above the layer, mesoscale relief shading, coverage map one level up beyond its resolution (part 3); the map the core reads is filtered (item 3), so the shadow of a cloud on the sea is a soft offset copy instead of the map's texel staircase | `native-leo-day-1440p.png`, `leo-day.png`; ref `earth-orbit-clouds/cloud-gazing-pacific.jpg` | Clouds have lit and shaded sides and relief. Not met: from 400 km a texel of the map is 1.3 - 1.9 km, so the shadow of a cloud a few km across is a soft smudge (sun 20 deg: beside the clouds; sun 50 deg: mostly under them); the fields are popcorn of one size with soft edges |
+| 3 | Saw teeth, stripes and combs at low sun (blocker) | (a) Under a low sun the map is narrower along v, its texels about square on the ground (the first owner's uncommitted work, finished). (b) The core reads a FILTERED map: per texel the mean transmittance (beam and total separately) over a tent of 3 x 3 texels, 7 x 3 across the sun's azimuth when the sun is low; the depth channels follow as optical-depth-weighted means. (c) A full re-march uses the same step count as the incremental refresh: two counts in one map drew the 4 x 4 refresh pattern as stripes along the sun's azimuth for the first 64 frames after every re-anchor (the comb of the critique; it survived 4x the steps and the far term switched off, and vanished with a 4096 map and after one full refresh cycle). The density lookups of the map are no longer widened at low sun: the filter does that job | `native-leo-low-sun-1440p.png`, `leo-low-sun.png`, `native-ground-sunset-1440p.png`, `clouds-ground-sunset.png`; ref `earth-orbit-clouds/cloud-shadows-sunset-tanzania.jpg`, `sky-ground-clouds/sunset-crepuscular-pacific.jpg` | No saw teeth, no comb, no texel staircase. At sunset from the ground the shafts fan smoothly from the sun. From orbit under a 4 deg sun the shadows of the field are soft streaks along the sun's azimuth, as in the reference. Cost of the filter pass: 0.02 - 0.03 ms |
+| 4 | Whatever a cloud shades turns navy (major) | Request `atmosphere-clouds-6`, resolved by core-support (926373f): the map carries beam and total transmission (two-stream diffuse + fill), the deferred lighting lights a shadow with white cloud-base light and a reduced sky. The air under a cloud follows the same share (`atmoCloudedSource`) | `native-under-deck-1440p.png`, `clouds-under-deck.png`, `shadow-lit-quad-under-the-deck.png`; ref `sky-ground-clouds/overcast-landscape.jpg` | `shadows.spec.ts`: lit quad under the deck at 0.16 of its clear value, blue / red within 1 % of the sunlit one; ground 500 m ahead 0.275 of clear. Deck neutral grey (175, 177, 184), sea slate (74, 84, 106). The ocean's forward surface still reads the map by hand (`ocean-cs-2`, ocean owner) |
+| 5 | Overcast decks: contour lines, dunes, veins (major) | Bisection to the surface and steps stratified from it, per-pixel step phase (part 2), light interpolated instead of reused near the surface | `native-above-deck-1440p.png`, `tunables-shipped.png`, `clouds-under-deck.png` | From 6 km at 1440p: a cloud sea of lumps and pits, no contour lines in either mode. Not met: from 25 km (`tunables-*`) the deck is a flat two-tone camouflage of pale cells; from just under its base it is smooth painted lobes with hard edges, not the soft mottling of an overcast photograph |
+| 6 | Ascent: flat white splats (major) | Items 1 and 2 | `native-ascent-10km-1440p.png`, `native-ascent-25km-1440p.png`, `ascent-10km.png` | Cumulus with tops, shaded sides and shadows on the islands. Large systems are still smooth white masses from 25 km |
+| 7 | Far cloud edge-on: bars and blocks (major) | Far layers integrated analytically per step, candidates of a depth block agree about a cloud, row alternation tested over the whole frame below the horizon (part 4) | `native-ascent-10km-1440p.png`, `sampling-ascent-10km-horizon*.png` | `sampling.spec.ts`: pixels alternating row by row below the horizon 0.18 % (10 km) and 0.32 % (5 km), row period 2 at most 0.04 %; frozen vs accumulated 1.8 / 1.9 % |
+| 8 | Clouds do not dim with the sun (major) | Flux on a layer times the two-stream reflectance (parts 1 - 2) | `earth-60000km-crescent.png`, `leo-terminator.png` | `cloudlight.spec.ts`, overcast from 25 km: 0.722 / 0.370 / 0.089 of the 60 deg value at 30 / 10 / 3 deg; the crescent dims towards the terminator, tops pink there |
+| 9 | 60,000 km: two-tone white paint (major) | Opacity from the map with mottling kept at the weather scale (parts 1, 3); request `atmosphere-clouds-8` to bake-earth (open) for a map with dynamic range | `native-earth-60000km-1440p.png`, `clouds-orbit-vs-map.png` | Intermediate tones and structure inside systems. `clouds.spec.ts` now measures the picture the frame shows (the full-resolution tile): correlation with the map 0.913, opacity 0.08 at map cover 0 - 0.1 rising to 0.92 at 0.9 - 1. Inside the large systems the map itself is flat (request 8) |
+| 10 | Sunset clouds one hue (major) | Shaded cloud lit by the sky away from the sun, sides see the horizon band (parts 2, 4) | `clouds-ground-sunset-side.png`, `native-ground-sunset-1440p.png`; ref `sky-ground-clouds/cb-sunset-panorama.jpg`, `sunset-crepuscular-pacific.jpg` | `cloudlight.spec.ts`: sunlit cloud R/B 3.74, shade 1.55, sky overhead B/R 2.0. Not met: looking INTO the setting sun the backlit clouds are one warm tan about as bright as the sky; the photographs show dark neutral silhouettes with bright rims |
+| 11 | Light lags the sun, 2 px border (major) | Light-change detection in the resolve, border texels keep a history (parts 1, 4) | `clouds-ground-after-sunset.png` | `cloudlight.spec.ts`: eight frames after a 4.5 deg step of the sun the frame is at 0.999 of settled; border rows and columns within 0.6 % of their neighbours. After sunset the clouds are dark blue-grey silhouettes against the twilight |
+| 12 | Single dark pixels on small discs (major) | Four rays per pixel in the tile, far layers integrated (part 4) | `earth-60000km.png`, `earth-moon-distance-wide.png` | `cloudlight.spec.ts`: isolated dark pixels 0 / 0 / 2 / 0 (60,000 km, crescent, Moon's distance, wide) |
+| 13 | Telephoto: staircase limb and blur (major) | The tile is chosen by texel size, not by rectangle size alone (`FINE_TILE_SIZE` 1024, `FINE_TEXEL_SHARE`) (part 3) | `earth-moon-distance.png` | Smooth limb, crisp cloud. A faint speckle of thin cloud remains on the open sea at 3x |
+| 14 | Stipple at quality 0.7 (major) | Linear budget; steps lengthen past it instead of light being reused (part 4) | `clouds-quality-0.7-*.png` | `clouds.spec.ts`: grain 0.32 / 0.35 % (ground, q 1 / 0.7), 0.75 / 0.75 % (above a deck); mean luminance -0.99 / -2.54 % |
+| 15 | Interlaced scanlines on the sea (major) | Candidates of a block agree (part 4) | `sampling-ascent-5km-horizon.png` | See item 7 |
+| 16 | Inside cloud: flat dark grey (minor) | Not worked in round 1 | `clouds-in-deck.png` | Not met: one flat grey |
+| 17 | Twilight violet-grey (minor) | Not worked in round 1 | `sky-anti-twilight.png` | Not met: lavender above the belt |
+| 18 | Limb stair-stepped at night (minor) | Side effect of items 7 and 15 | `leo-night-limb.png` | The orange layer is continuous; at 3x the lower edge shows a faint step where it crosses a half-resolution texel |
+| 19 | Hard regime boundaries (minor) | Steps lengthen past the budget: opacity does not depend on it (part 4) | `tunables-coarse-steps.png`, `leo-low-sun.png` | No arc and no straight line seen |
+| 20 | Sun glare (outside the package) | Request `atmosphere-clouds-7`, resolved by core-support (1523877) | `leo-low-sun.png` | The glare still covers a large part of a frame exposed for the sunlit planet with the sun in it |
+| 21 | Evidence hygiene (minor) | `native.spec.ts`: ten acceptance views at 2560 x 1440, animated, temporal state reset, each compared with its deterministic frame (means within 1.7 %); every capture resets the cloud history and clock | all | The tuning output under `explore/` was deleted after this round, except the two map-distance frames `m-20000km-1080p.png` and `m-14000km-1080p.png` that request `map-view-6` cites |
+
+New in round 1, from request `sky-lighting-9`: **airglow** (section 3; `leo-night-airglow.png`: a thin
+yellow-green band on the night limb, 3.6e-3 cd/m^2, a faint red layer above it; from the ground at a
+dark-adapted exposure a faint yellow glow towards the horizon).
+
+### Requests
+
+- Filed: `atmosphere-clouds-6` (resolved), `-7` (resolved), `-8` (open, bake-earth), `-9` (resolved).
+- Against this package: `sky-lighting-9` resolved (airglow); `map-view-6` answered for the clouds (see the
+  request), open for the stars (sky-lighting).
+
+### Not fixed, and why
+
+- Items 16 (inside a cloud) and 17 (twilight colour) were not worked: the blockers and majors came first.
+- Item 5 from under the base, item 10 into the sun, and the soft edges and single size of the fields from
+  orbit (items 1, 2, 6) each need a change of the cloud model or its lighting that could not be made and
+  verified in the time of this round. What to try next: a base whose brightness follows the optical depth
+  above it, with a mottling of its own (overcast from below); for a backlit cloud, the high-order term
+  weighted by the transmitted rather than the reflected share of the two-stream solution; from orbit, a
+  finer shape octave kept alive to footprints of 1 - 2 km.
+- `transparents.spec.ts`, "above a broken layer ...": a quad IN FRONT of the cloud keeps 0.837 - 0.840 of
+  its brightness (bound 0.85; behind the cloud 0.002, in the gap 0.86). It fails the same way on the files of
+  3c95159 (run for comparison). The bound was not loosened; the spec fails. The missing share is not air
+  (the quad in the gap, three times as far, keeps more): `clouds.depth` at that pixel must put the cloud's
+  begin nearer than the cloud is.
+- The half-resolution cloud buffer from 60,000 km (what transparents read there) is less opaque than the
+  picture (mean 0.33 against 0.38).
+
+### Perf
+`atmosphere.perf.spec.ts` at the end of round 1 (1440p, attribution mode, 7 ms ballast, five windows of 160
+frames, median window). The machine was loaded: the other three GPU slots of the gate ran other agents'
+specs the whole time (two of them perf specs). ms, p99 / p50:
+
+| Scene | atmosphere, q 1 | clouds, q 1 | atmosphere, q 0.7 | clouds, q 0.7 |
+|---|---|---|---|---|
+| pad (budget 0.8) | **0.869** / 0.589 | 0.780 / 0.711 | 0.549 / 0.511 | 0.682 / 0.618 |
+| ascent 10 km | 0.648 / 0.610 | 0.771 / 0.704 | 0.582 / 0.530 | 0.664 / 0.614 |
+| low orbit | 0.702 / 0.476 | 0.881 / 0.807 | **5.399** / 0.418 | 0.841 / 0.778 |
+| low orbit, low sun | 0.636 / 0.405 | 0.814 / 0.737 | **2.220** / 0.358 | 0.769 / 0.697 |
+| 60,000 km | 0.502 / 0.278 | 0.827 / 0.773 | 0.260 / 0.238 | 0.537 / 0.504 |
+| ground, cumulus overhead (0.8) | **0.846** / 0.585 | 0.795 / 0.704 | 0.743 / 0.508 | 0.701 / 0.623 |
+| inside a deck | 0.842 / 0.601 | 0.569 / 0.517 | 0.748 / 0.520 | 0.578 / 0.515 |
+| above a deck | 0.819 / 0.606 | 0.886 / 0.838 | 0.758 / 0.524 | 0.785 / 0.736 |
+
+- **Clouds** (budget 1.3 at q 1, 0.9 at q 0.7): met in every scene and every window, p99 at most 0.886 and
+  0.841. Lower than at the hand-off before round 1 in the heaviest views (cumulus overhead 0.978 -> 0.704
+  p50). New passes: `cloudShadowFilter` 0.018 - 0.020 ms.
+- **Atmosphere** (budget 0.9, 0.8 at the pad and under cumulus): every median is inside (0.24 - 0.61 ms).
+  The spec FAILS on p99 in this run: the pad at q 1 (0.869 against 0.8) and low orbit at q 0.7 (5.4 ms). The
+  excess sits in single passes, as described in section 5 ("the composite spike"): in the pad row the
+  composite's p99 is 0.255 ms against a median of 0.042; in the low-orbit row 4.8 ms against 0.042, with
+  other GPU contexts running. The airglow added about 0.03 ms to the march's median at the pad (the
+  atmosphere median there went from 0.558 to 0.589 ms). The assertion was not changed; the line has to be
+  re-measured on a quiet machine.
+- Map distances at 1080p in the lab (not in the spec): a disc of 790 - 810 px is marched in the
+  full-resolution tile, `cloudMarchFine` 0.76 - 0.80 ms (p50, loaded machine), cloud line about 1.0 ms.

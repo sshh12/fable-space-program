@@ -69,3 +69,25 @@ numbers, for the owners:
   (`out/qa/ref/sun-stars-space/venus-moon-atlantis.jpg`: earthshine shows only because the crescent is clipped).
 The map view needs no API change; `tests/browser/map-view/real-planet.spec.ts` stays the acceptance view and was
 re-run on the current tree in round 5.
+
+## Resolution (atmosphere-clouds' part: the clouds), visual round 1 of atmosphere-clouds
+The request stays open for the stars (sky-lighting). For the clouds, what changed and what was measured in the
+atmosphere lab (`out/screens/atmosphere/explore/m-20000km-1080p.png`, `m-14000km-1080p.png`: 20,000 and 14,000 km,
+1920 x 1080, EV 14.6, the same feature the map view draws):
+- **Texel blocks.** A planet whose half-resolution texel is coarse against its atmosphere is now marched once per
+  full-resolution pixel, chosen by texel size and no longer by rectangle size alone (`src/render/atmosphere/select.ts`,
+  `FINE_TEXEL_SHARE`), in a tile of up to 1024 x 1024 px; four rays per pixel, no temporal filter. Both lab views
+  are drawn that way (tile 788 and 814 px): no stair-stepped blocks at 2x, cloud edges as sharp as the coverage map
+  allows (the map's texel is 4.9 km). Limit: a disc wider than 1024 device px (the 4K composed frame at low-orbit
+  map distances may be) falls back to the half-resolution march, where a texel of tens of km can show again.
+- **Grey clouds.** Cloud tops measure up to (220, 217, 214) at EV 14.6 from 20,000 km (99th percentile 210):
+  white at a daylight exposure. The (182, 180, 178) of `real-lowOrbit-dayside.png` belongs to the map view's own
+  exposure; the cloud-to-ocean ratio in the lab's oblique low-orbit view is 5x in linear light (ocean
+  (61, 86, 131), cloud (187, 184, 183)), inside the 3x (oblique, `cb-africa.jpg`) to 15x (nadir,
+  `cloud-gazing-pacific.jpg`) of the references; the ocean's own colour is the ocean / terrain packages'.
+- **Shadows and relief** of the clouds at these distances: the shadow map the render core reads is filtered since
+  this round (no texel staircase in the shadows); relief shading of unresolved fields from part 3 of the round.
+- **Not fixed:** thin cloud over the open ocean shows as a two-tone camouflage of hard-edged pale cells at 2x
+  (the fair-weather fields of the cloud model, `out/screens/atmosphere/explore/m-20000km-1080p.png` x 700 - 1100,
+  y 380 - 640); the speckle of the 4K frame was not reproduced in the lab. `tests/browser/map-view/real-planet.spec.ts`
+  was not run by this package (its screenshots are map-view's).
