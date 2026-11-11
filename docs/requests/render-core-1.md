@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: render-core
 Owner path: src/core/contracts/render.ts
 Blocking: no
@@ -21,3 +21,16 @@ Add a key `'clouds.shadowParams': GPUBuffer` (uniform, 64 bytes, default = both 
 of the frame uniform members `cloudNear0`, `cloudNear1`, `cloudNear2`, `cloudFar` documented in
 `docs/RENDER_API.md` section 4 / 7, published by the cloud feature. Until then (and afterwards, as a
 convenience) `setCloudShadowParams` keeps working; nothing else needs to change.
+
+## Resolution
+Lead decision. No `'clouds.shadowParams'` key. The placement of the two cloud shadow maps is per-frame CPU
+data (the near map's origin is relative to the camera, in float64), so a GPU buffer published through
+SharedResources would have to be filled on the CPU by the cloud feature and copied into the frame uniforms by
+the core every frame: a second path for the same numbers, with the question of which one wins.
+`coreOf(ctx).setCloudShadowParams({ near, far })` is part of the render core's public API, which render
+packages may import, so the import rules are not bent.
+
+What to do instead (nothing changes in code): call `setCloudShadowParams` from `prepare` every frame; `null`
+switches a term off (the default). The contract now says so in the comments of `'clouds.shadowMap'` and
+`'clouds.coverageMap'` (`src/core/contracts/render.ts`), RENDER_API section 7 states the decision, and the
+atmosphere-clouds brief names the call.

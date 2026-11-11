@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: bake-moon-sky
 Owner path: docs/WORK_PACKAGES.json (bake-moon-sky acceptance), docs/research/moon-sky-data.md section 0 item 0
 Blocking: no
@@ -26,3 +26,17 @@ steep central peak, where 150 m of longitude is 80-90 m of height.
 Re-base the Tycho benchmark on the 256 ppd product (the `ldem_256` pixel the verifier prints, -1357 m region
 value at the same coordinates) or widen that one tolerance to 100 m with this note. Nothing in the bake or
 the tile data needs to change; the other three benchmarks pass as specified.
+
+## Resolution
+Lead decision: re-base, do not widen. The Tycho benchmark is judged against the PDS `ldem_256` pixel at the
+benchmark's coordinates (43.305 S, 348.602 E: -1357.0 m) with the same 60 m tolerance; Tranquility, Apollo 17
+and Aitken stay on their `ldem_64` values. Reason: the acceptance is meant to prove the bake's georeferencing
+and vertical datum against LOLA; the 256 ppd product is the one the bake's source agrees with pixel for
+pixel, and a 100 m tolerance on a steep slope would prove less than 60 m against the right reference.
+
+- `tools/bake/moon/verify.py`: `BENCHMARKS` entries carry the reference they are judged against;
+  `verify.json` gains `judgedAgainst` and `diffMeanToJudged` per benchmark. Result: Tycho level 6 mean
+  -1383.5 m against -1357.0 m (26.5 m): PASS. No tile changed.
+- Brief (`docs/WORK_PACKAGES.json`, bake-moon-sky acceptance) and `docs/research/moon-sky-data.md` section 0
+  item 0 say the same.
+- `python -I tools/bake/moon/verify.py` (through the gate, 56 s): ALL CHECKS PASSED.

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: sim-vessel
 Owner path: src/core/contracts/defs.ts, src/core/contracts/simInternal.ts (doc comments only)
 Blocking: no
@@ -37,3 +37,22 @@ vehicle, vfx and world teams read `defs.ts`, not my code.
 Doc comments in `defs.ts` stating points 1-3 (no type change), one sentence in `simInternal.ts` for point 4, and a
 note next to ARCHITECTURE/sim-design for point 5 if the lead prefers a different limit (it is one number per part
 in `data/defs/parts/meridian-*.json`). Nothing must change in the types.
+
+## Resolution
+Lead. Doc comments only; no type changed. sim-vessel's readings are confirmed as the contract.
+
+1. `ModuleDef` `rcs.thrusters[].dir`: unit EXHAUST direction in the part frame, thrust acts opposite (as
+   `NozzleDef.dir`).
+2. `ContactPointDef` and `ModuleDef` `legs`: on a part with a `legs` module `contactPoints[i]` is the foot
+   pad of leg `i` (radius, mu, crashTolerance; `pos` repeats `footDeployed`), not a structural probe; the
+   engine adds a probe at each hinge; missing or incomplete `contactPoints` get probes derived from
+   `bounds`; lateral touchdown limit = 0.625 x `crashTolerance`.
+3. `decoupler` module, `StageAction` 'decouple' and 'jettisonLES': the joint between the named part and its
+   PARENT is cut; `separationPlaneY` is in the part frame; the impulse acts along the part's Y axis, equal
+   and opposite. `fairing.shields` entries match an instance id or a def id. `PartDef.joint.maxQAlpha` is in
+   Pa rad.
+4. `VesselEnvironment` (`simInternal.ts`): describes the START of the step (`ut`, `qFixedToInertial`, sun,
+   swell); vessels a step spawns are in the start-of-step state and are stepped once in the same tick.
+5. `docs/research/sim-design.md` 8.2: "60 000 Pa rad" corrected to about 3 500 Pa rad (6 deg at 33 kPa =
+   3 456), with the per-joint values in the part data. The data's limits (3 500 on the weakest joint,
+   4 000-5 000 on the others) are accepted.

@@ -1,4 +1,4 @@
-Status: resolved
+Status: resolved (commit fa1c31b)
 From: map-view
 Owner path: vite.config.ts (dev server used by tests/browser/globalSetup.ts)
 Blocking: no

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: render-core
 Owner path: tools/server/dataPlugin.ts
 Blocking: no
@@ -21,3 +21,20 @@ Serve a generated listing `GET /tiles/index.json` -> `{ "tilesets": string[] }` 
 `data/tiles` that contain a `manifest.json`), like `/defs/index.json`, and copy it into the production
 build. The LabPlanet (and the terrain package) can then skip tile sets that are not there without a
 failed request. Nothing else changes.
+
+## Resolution
+Lead. `tools/server/dataPlugin.ts`:
+
+- `GET /tiles/index.json` -> `{ "tilesets": string[] }`: the sub-directories of `data/tiles` that contain a
+  `manifest.json`, sorted; generated per request (dev and preview), `Cache-Control: no-cache`, isolation
+  headers as for every data response.
+- `export function listTilesets(tilesRoot: string): string[]`.
+- The production build emits `tiles/index.json` (the listing as of build time) next to `defs/index.json`;
+  tiles themselves are still never copied.
+- `src/render/core/lab/labPlanet.ts` reads the listing once and skips a tile set that is not listed without
+  requesting its manifest; if the listing itself is unavailable it behaves as before.
+- Test: `tools/server/dataPlugin.test.ts` (listing, a tile set without a manifest is not listed, headers,
+  path containment, bundle output).
+Served URLs, the data plugin's other behaviour and the isolation headers are unchanged. Both tile sets exist
+now, so the original 404 no longer occurs either way; a wave-2 lab that must run without a tile set fetches
+`${ctx.tilesUrl}/index.json` first. ARCHITECTURE 7.1 mentions the listing.

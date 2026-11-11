@@ -1,4 +1,4 @@
-Status: resolved (Moon part by bake-moon-sky, commit 4f89577; Earth part by bake-earth, see below)
+Status: resolved (commits 4f89577 Moon, 93e67ae Earth)
 From: terrain-core
 Owner path: tools/bake/moon (region.py, sourceCoverage of the SLDEM band) and tools/bake/earth (heights.py, sourceCoverage over the regional sea floor)
 Blocking: no
@@ -60,3 +60,13 @@ rectangles (`region.tile_set_rects`): levels 8-12 list 12 / 36 / 112 / 406 / 1,5
 43 rectangles on face 1 (previously one bounding rectangle per level around the 100 km disc; level 12: x
 2936..3018, y 2782..2861, 6,640 tiles). `verify.py` checks it (`height sourceCoverage`: listed = expected, all inside the coverage). Manifest
 contentHash `5a9f0db7c755fdf8`; re-run the realData suite.
+
+## Resolution (lead, between the waves)
+Both parts are in. `tests/unit/terrain-core/realData.test.ts` ("texture of every coverage margin ...") was
+corrected for the new manifests: a level that lists no source tiles (Moon level 9) has no source ring and is
+no longer sampled for one (it produced NaN), and the ring-start assertion compares the surface with the same
+surface without that level's source ring (`sourceHeldSource` in `tests/unit/terrain-core/edgeChecks.ts`,
+ratio within 5 % of 1) instead of with the parent-level surface: with land-only source tiles the rings of
+Earth levels 8-12 share the coast, so 0.1 level-9 tile inside the level-9 boundary the level-12 ring is nearly
+complete and the old ratio (0.80) measured real coast against the model, not a step. The ratios against the
+parent are still printed. Effective level at the pad: 12.00 (11.67 at the shoreline 1 km east).

@@ -1,4 +1,4 @@
-Status: open (data side delivered by both bakes and used by terrain-core; the contract text remains, see the update below)
+Status: resolved (commit 3d9fcae)
 From: terrain-core
 Owner path: src/core/contracts/terrain.ts (TileLayerManifest, COVERAGE_BLEND_TILES and TerrainResidency comments); tools/bake/moon and tools/bake/earth (manifest writers)
 Blocking: no
@@ -72,3 +72,21 @@ coarser than the parent level's posting (level 9, terrain-core-4). Tiles per lev
 11: 76, 12: 222. `verify.py` checks that every source rectangle lies inside `coverage` and that every source
 pixel with weight > 0 lies in a listed tile. Nothing else is needed from the Moon bake; the contract text stays
 with the lead.
+
+## Resolution (lead, contract text)
+Lead: the contract text (the data side and the implementation were already in).
+
+`src/core/contracts/terrain.ts`:
+- `TileLayerManifest.sourceCoverage?: Record<string, TileRect[]>` (height layer): tiles of each sparse level
+  whose data is genuinely finer than the parent level - touching the area where the level's source has
+  non-zero weight and resolving wavelengths below the parent's; every tile inside `coverage`; `[]` or no key
+  for a level without finer data; absent field = the whole coverage (E keys on `coverage`).
+- `export const SOURCE_BLEND_TILES = 1` with the source weight s_L (computed like w_L on the source
+  rectangles, rising over one tile) and the reason for one tile; the E recursion at `COVERAGE_BLEND_TILES`
+  reads `E_L = E_(L-1) + s_L (L - E_(L-1))`, s_L = w_L without `sourceCoverage`. "Regions of interest lie at
+  least SOURCE_BLEND_TILES inside the source rectangles of every level they rely on."
+- `TerrainResidency.effectiveLevel`: equals `availableLevel` only well inside the source rectangles; lower
+  by design in a coverage margin and at a level whose source is no finer than its parent.
+Code: `src/terrain/coverage.ts` re-exports the contract's constant (was its own), `src/terrain/body.ts`
+reads `layer.sourceCoverage` from the contract type. ARCHITECTURE 7.2 states the rule. Migration: import
+`SOURCE_BLEND_TILES` from either place; nothing else changes. D, `coverage`, `layerHasTile` are untouched.

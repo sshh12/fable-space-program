@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: sim-orbits
 Owner path: src/core/math/conic.ts (timeSincePeriapsis; ConicElements doc comment)
 Blocking: no
@@ -47,3 +47,25 @@ tests/unit/sim-orbits/anomaly.test.ts asserts the bound 1e-13 + 4e-16/|1 - e| ou
    should treat such a patch as the straight segment between its start and end positions." and align the
    period sentence with conicFromState ("null when e >= 1 - 1e-9 or when e >= 1").
 What must NOT change: the ConicElements fields and `conicFromState`'s output for non-radial states.
+
+## Resolution
+Lead. Both points.
+
+1. `src/core/math/conic.ts` now holds the cancellation-free relation:
+   `export function timeFromPeriapsis(e: number, p: number, mu: number, nu: number): number` (with
+   `atanOverX`, `atanhOverX` exported and `remainder3` private), and
+   `timeSincePeriapsis(c, nu)` = `timeFromPeriapsis(c.e, c.p, c.mu, nu)`: same signature and conventions
+   (elliptic results in (-period/2, period/2], +/-Infinity beyond a hyperbola's asymptote), no parabolic
+   band, `c.a` is no longer read. `src/sim/orbit/anomaly.ts` no longer has a copy: it re-exports the three
+   functions, so sim imports are unchanged.
+   Tests: `src/core/math/math.test.ts` "time since periapsis keeps its digits through e = 1" checks the
+   relation against quadrature of dt = sqrt(p^3/mu) dnu / (1 + e cos nu)^2 to 2e-12 for e from 0 to 3,
+   including 1 +/- 5e-10, 1 +/- 2e-9 and 1 +/- 1e-7 (the old form was off by 1e-9 .. 1e-7 there);
+   `tests/unit/sim-orbits/anomaly.test.ts` asserts that the sim function IS the core function and that
+   `timeSincePeriapsis` is bit-identical to it.
+2. The `ConicElements` comment documents the radial convention (e = 1, p = 0, test `p === 0`; a = 1/alpha;
+   P = minus the radial direction; W arbitrary; period null; the vessel stays at true anomaly pi; draw the
+   straight segment) and `period` says "null when e >= 1, and also for e >= 1 - 1e-9; test
+   `period !== null`, never `e < 1`".
+Migration: none. Values of `timeSincePeriapsis` change only within rounding away from e = 1 and become
+correct near it. `ConicElements` fields and `conicFromState` output are unchanged.

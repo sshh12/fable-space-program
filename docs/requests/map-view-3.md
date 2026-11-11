@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: map-view
 Owner path: src/core/contracts/ui.ts (MapView), src/core/contracts/render.ts (drawOverlay), src/core/contracts/sim.ts (Patch doc comments)
 Blocking: no
@@ -55,3 +55,25 @@ MapUpdateResult.consumed: "hover over a draggable element (node, gizmo handle) o
 click-only elements (trajectories, bodies, markers) do not consume on hover, and a press that moves more
 than a few pixels over them belongs to the camera".
 What must NOT change: the existing fields and signatures.
+
+## Resolution
+Lead, doc comments only; no field or signature changed. src/map's readings are confirmed as the contract.
+
+1. `MapView.update` (`src/core/contracts/ui.ts`): `displaySize` is the canvas size in CSS pixels, the space
+   of `PointerState` and `MapElementInfo`.
+2. `RenderFeature.drawOverlay` (`render.ts`): the pass is the core's tonemap pass onto the canvas - one
+   colour target in `RenderContext.canvasFormat` (non-sRGB view, `alphaMode: 'opaque'`), no depth, sample
+   count 1; write sRGB-encoded display-referred values with premultiplied-alpha blending. This is what the
+   core does (`src/render/core/post/tonemap.ts`, RENDER_API section 2 row 11).
+3. `MapView.mount` was NOT added (declined part): the factory option
+   `createMapView(gpu, defs, { uiRoot?: HTMLElement })` stays the way to place the node panel; the `MapView`
+   comment names it. The app passes the HUD container.
+4. `SimSnapshot.patches.planned` (`sim.ts`): starts AT the first future node - `planned[0].tStart =
+   nodes[0].ut`, state on the current trajectory plus the node's delta-v; every planned patch carries
+   `afterNodeId`; the arc before the first node exists only in `current`. This is what `predictPatches`
+   (`src/sim/orbit/patches.ts`) and FakeSim emit; sim-world-pilot publishes it unchanged.
+5. `Patch.bodyPosAtEnd`: the at-intercept anchor derivation (SOI entry, per encounter) is in the comment.
+6. `MapUpdateResult.consumed`: draggable elements and the DOM panel consume; click-only elements
+   (trajectories, bodies, markers) do not consume on hover, and a press that moves more than a few pixels
+   over them belongs to the camera.
+Also from the flight-ui hand-off: `NavballRenderer.view` is documented as sRGB-encoded, premultiplied.

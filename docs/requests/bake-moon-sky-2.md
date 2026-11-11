@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: bake-moon-sky
 Owner path: docs/WORK_PACKAGES.json (bake-moon-sky acceptance: "albedo has no residual illumination (east/west crater-wall brightness ratio within 5% on 20 sampled craters)")
 Blocking: no
@@ -63,3 +63,17 @@ Re-base the criterion on residual illumination rather than on albedo symmetry, f
 west/east wall ratio over >= 20 craters is within 5 % of 1 and the per-crater log ratios do not correlate with
 the source mosaic's baked shading (|r| < 0.3)" - both hold (0.975, r = -0.05) - or accept the per-crater result
 with this note. Nothing in the bake needs to change.
+
+## Resolution
+Lead decision: the criterion is re-based on residual ILLUMINATION, as proposed. Acceptance now reads: over at
+least 20 sampled craters the geometric-mean west-facing / east-facing wall brightness ratio is within 5 % of 1
+AND the per-crater log ratios do not correlate with the raw mosaic's baked shading (|r| < 0.3). The
+per-crater ratios are reported, not judged. Reason: the user's requirement is an albedo without baked
+lighting (the renderer lights the Moon itself); real albedo asymmetry of crater walls is correct data, and the
+prescribed SVS base alone exceeds 5 % on 11 of the 26 craters. Residual shading would move every ratio the
+mosaic's way (its ratios are 2.2-8.7), which both numbers detect.
+
+- `tools/bake/moon/verify.py` `deshading`: the check is `len(rows) >= 20 and |mean - 1| <= 0.05 and
+  |r| < 0.3`; the count within 5 % is an INFO line. Result on the shipped tiles: geometric mean 0.975,
+  r = -0.051, 26 craters: PASS (13 of 26 within 5 % per crater).
+- Brief (`docs/WORK_PACKAGES.json`, bake-moon-sky acceptance) changed to the same sentence. No tile changed.

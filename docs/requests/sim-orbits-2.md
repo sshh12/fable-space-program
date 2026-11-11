@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: sim-orbits
 Owner path: src/core/contracts/sim.ts (NavballState doc comment), src/core/fakes/fakeSim.ts (rollDeg)
 Blocking: no
@@ -23,3 +23,17 @@ computeNavball (tests/unit/sim-orbits/nav.test.ts "known attitudes").
    side up".
 2. FakeSim: use `atan2(dot(dorsal, cross(nose, upRef)), dot(dorsal, upRef))` with upRef = normalize(reject(up, nose)),
    i.e. negate its current value. Nothing else changes.
+
+## Resolution
+Lead. Both points.
+
+1. `src/core/contracts/sim.ts`, `NavballState`: `pitchDeg` = nose elevation above the horizon, [-90, 90];
+   `headingDeg` = compass direction of the nose in [0, 360), of the ventral side when the nose points up (of
+   the dorsal side when it points down); `rollDeg` = rotation about the nose in (-180, 180], 0 with the
+   dorsal side up, positive = rotation about +Y (dorsal toward starboard, the sign of `ControlInputs.roll`),
+   0 when the nose is vertical. This is what `attitudeAngles` in `src/sim/nav/navball.ts` computes.
+2. `src/core/fakes/fakeSim.ts` computes the three angles with the same convention (the roll sign is flipped
+   relative to before; on the pad the heading is now the ventral side's, 90 deg in the pad scene, instead
+   of 0). Test: `src/core/fakes/fakeSim.test.ts` "rollDeg has the sign of the roll control".
+Migration: none for code that follows ARCHITECTURE section 3 (flight-ui's ADI already did); anything tuned
+against FakeSim's old mirrored roll sees the sign change.

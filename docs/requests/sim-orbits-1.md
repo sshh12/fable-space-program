@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: sim-orbits
 Owner path: docs/WORK_PACKAGES.json (start-time constraints in the sim-orbits and sim-world-pilot briefs; scenario start policy)
 Blocking: no
@@ -62,3 +62,34 @@ tests already support all of them):
 Whatever is chosen, the values used are recorded in start-time.json `constraints`, and the sim-orbits test
 re-checks the file with exactly those. What must NOT change: constraint (a) must stay a COPLANAR crossing
 (ascending or descending) 600 s after the start - the TLI-without-plane-change profile depends on that.
+
+## Resolution
+Lead decision: **option 2 - either coplanar azimuth**. Constraint (a) reads "a coplanar launch opportunity to
+the Moon's orbit plane, ascending or descending, 600 s after the start"; (b) and (c) are unchanged (pad Sun
+10-35 deg; landing-site Sun 5-35 deg and rising from start + 3 d to start + 5 d, lit throughout), and so is
+the 2027-2030 range.
+
+Why this one: it keeps every number of the scenario constraints and the search range; the descending
+crossing is exactly as coplanar as the ascending one (sim-design 12 and 15.1 name both azimuths), so the
+profile that keeps the mission flyable by hand - parking orbit in the Moon's plane, TLI from any revolution
+without a plane change - is untouched; the heading (99.4 deg) lies inside Ka Lae's open-ocean sector; and the
+chosen date has at least 1 deg of margin on every bound, a pad in full morning daylight (Sun 30.9 deg) and a
+low Sun for relief at lunar touchdown (7.4 deg at start + 3 d, about 11 deg half a day later). Option 1 leaves
+the range by seven years for no gain, option 3 lowers the landing Sun below the 5 deg that keeps the landing
+site out of long crater shadows with only 0.35 deg to spare at start + 3 d, option 4 moves the stay window
+the mission timeline is built on.
+
+What changed:
+- `tools/sim/start-time.json` regenerated with
+  `npx tsx tools/sim/findStartTime.ts --launch-kind either --landing-lat 0.661471 --landing-lon 23.435999`
+  (final pad 18.987556 N 155.603239 W 21.62 m; the bake-recommended lunar target): **startUt
+  938240818.839663 = 2029-09-24T18:26:58.839Z**; launch at +600 s (18:36:58.8Z), descending crossing,
+  surface azimuth 99.4021 deg; pad Sun 30.866 deg; landing Sun 7.4353 -> 31.8633 deg, rising, lit;
+  `constraints.launchKind` = 'either'. `tests/unit/sim-orbits/startTime.test.ts` re-asserts the file.
+- Briefs: sim-orbits (item 6, constraint (a)) and sim-world-pilot (FIRST STEP: re-run with
+  `--launch-kind either`, the expected result, the scenario test calls `checkStartConstraints` with the
+  file's `constraints`, launchKind 'either'; a daylight splashdown is preferred where the trajectory leaves
+  a choice, not a gate). ARCHITECTURE section 1 row 28; `sim-design.md` 15.3 constraint (a).
+- No engine change. `START_CONSTRAINT_DEFAULTS.launchKind` stays 'ascending' (the function's default; the
+  sim-orbits test pins it), so callers pass the kind from the file. `padAzimuthDeg` stays 90: the pilot (and
+  the player) rolls the ventral side to the launch azimuth after tower clear, as sim-design 16.2 describes.

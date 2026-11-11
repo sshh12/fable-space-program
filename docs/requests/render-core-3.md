@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 3d9fcae)
 From: render-core
 Owner path: src/core/contracts/render.ts
 Blocking: no
@@ -28,3 +28,18 @@ Comment only, plus one optional field:
   `CascadeCapture.texelSizeV`. Nothing in the core or the mesh system needs it.
 
 Nothing else must change; the core already documents both rules in `docs/RENDER_API.md` section 8.
+
+## Resolution
+Lead. `src/core/contracts/render.ts`, `ShadowCascadeView`:
+
+- `texelSize`: documented as the world-space texel size along u, the coarser of the two axes (use it for
+  caster LOD and small-caster culling).
+- NEW field `texelSizeV: number` (m): the texel along v; equal to `texelSize` for a square cascade, never
+  larger. Required, always filled by the core from `CascadeCapture.texelSizeV`
+  (`src/render/core/shadows/shadowSystem.ts`). Additive for features (they only read the view).
+- `farDistance`: the footprint is not always a square of 2 x farDistance around the camera; cull casters
+  against `viewProj`, never by distance.
+RENDER_API section 8 rule 4 mentions `texelSizeV`. Test: `tests/browser/render-core/shadows.spec.ts` ("low
+sun ...") asserts `texelSizeV = texelSize / aspect` for the receiver-fitted 200 km cascade and
+`texelSizeV <= texelSize` for every cascade. Migration: none for features; code that builds a
+`ShadowCascadeView` literal itself (only the core does) must add `texelSizeV`.
