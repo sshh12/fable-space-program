@@ -190,10 +190,10 @@ export const padApron: SiteGenerator = ({ params, defs }) => {
    * blast staining of earlier launches beside the trench near the mount.
    */
   const grime = (x: number, z: number): number => {
-    const patches = 0.32 * noise2(x / 17, z / 17, 3) + 0.18 * noise2(x / 5.3, z / 5.3, 5);
+    const patches = 0.62 * noise2(x / 17, z / 17, 3) + 0.26 * noise2(x / 5.3, z / 5.3, 5);
     const d = Math.abs(x) - gap;
-    const blast = 0.5 * Math.exp(-Math.max(0, d) / 7) * Math.exp(-((z / 34) ** 2)) * (0.55 + 0.45 * noise2(x / 3.1, z / 9, 9));
-    return Math.min(0.85, Math.max(0, patches - 0.12) + blast);
+    const blast = 0.55 * Math.exp(-Math.max(0, d) / 9) * Math.exp(-((z / 34) ** 2)) * (0.55 + 0.45 * noise2(x / 3.1, z / 9, 9));
+    return Math.min(0.85, Math.max(0, patches - 0.26) + blast);
   };
   const body = buildModel('pad.apron', (b) => {
     b.mat('concrete').masks(0, 1, 0, 0);
