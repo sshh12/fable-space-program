@@ -71,8 +71,6 @@ interface Row {
   renderScale: number;
 }
 
-const rows: Row[] = [];
-
 for (const [index, checkpoint] of CHECKPOINTS.entries()) {
   test(`summed GPU budget: ${checkpoint}`, async ({ page, pageLog }) => {
     test.setTimeout(40 * 60_000);
@@ -137,8 +135,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
         renderScale: m.perf.renderScale,
       };
     });
-    rows.push(row);
-    writeTable();
+    writeTable(row);
     console.log(`[budget ${checkpoint}] loaded ${row.loaded.join(', ') || 'none'}; ${Object.entries(row.measured).map(([k, v]) => `${k} ${v.toFixed(3)} / ${(row.budget[k] ?? 0).toFixed(2)}`).join(', ')}; frame p99 ${row.frame.withoutBallast.toFixed(2)} ms without the ballast (${row.ballastMs.toFixed(1)} ms)`);
 
     expect(row.qualityScale).toBe(1);
@@ -156,10 +153,20 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
   });
 }
 
-/** out/core-support/budget.json and budget.md from the rows measured so far. */
-function writeTable(): void {
+/**
+ * out/core-support/budget.json and budget.md: the row just measured replaces the one of its checkpoint in
+ * the file (a failed test restarts the worker, so the table is kept on disk, not in memory).
+ */
+function writeTable(row: Row): void {
   const dir = path.join(repoRoot, 'out', 'core-support');
   fs.mkdirSync(dir, { recursive: true });
+  let kept: Row[] = [];
+  try {
+    kept = JSON.parse(fs.readFileSync(path.join(dir, 'budget.json'), 'utf8')) as Row[];
+  } catch {
+    kept = [];
+  }
+  const rows = CHECKPOINTS.map((c) => (c === row.checkpoint ? row : kept.find((r) => r.checkpoint === c))).filter((r): r is Row => r !== undefined);
   fs.writeFileSync(path.join(dir, 'budget.json'), JSON.stringify(rows, null, 2));
   const pkgs = ['core', 'terrain', 'vehicle', 'cockpit', 'atmosphere', 'ocean', 'sky', 'vfx', 'ui'];
   const head = `| Package (lines of 17.1 summed) | ${rows.map((r) => r.checkpoint).join(' | ')} |\n|---|${rows.map(() => '---').join('|')}|`;
