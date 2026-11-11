@@ -312,7 +312,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     features.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || featureSeq.get(a)! - featureSeq.get(b)!);
     perf.setFeatureIds(features.map((f) => f.id));
   };
-  const requires = (key: 'scene.colorCopy' | 'scene.colorCopyTransparent'): boolean => features.some((f) => f.requires?.includes(key));
+  const requires = (key: 'scene.colorCopy' | 'scene.colorCopyTransparent' | 'post.reactive'): boolean => features.some((f) => f.requires?.includes(key));
 
   // ------------------------------------------------------------------------------------------ targets
   let displayW = Math.max(1, canvas.width);
@@ -361,6 +361,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     resources.publish('gbuffer.material', views.material);
     resources.reset('scene.colorCopy');
     resources.reset('scene.colorCopyTransparent');
+    reactive?.destroy();
+    reactive = null;
+    resources.reset('post.reactive');
     for (const m of managed) m.make();
     ao.resize(w, h);
     lighting?.setInputs({ albedo: views.albedo, normal: views.normal, material: views.material, extra: views.extra, emissive: views.hdrAux, ao: ao.view, aoDepth: ao.depthView });
@@ -374,6 +377,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     }
     return t[which];
   };
+  // 'post.reactive': exists only while a feature requires it; cleared at the start of every frame.
+  let reactive: GPUTexture | null = null;
+  const ensureReactive = (): GPUTextureView => {
+    if (!reactive) {
+      reactive = tex('post.reactive', 'r8unorm', targets!.width, targets!.height, GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING);
+      resources.publish('post.reactive', reactive.createView({ label: 'post.reactive' }));
+    }
+    return resources.get('post.reactive');
+  };
   const renderSizeFor = (scale: number): [number, number] => [Math.max(8, Math.round(displayW * scale)), Math.max(8, Math.round(displayH * scale))];
 
   // ------------------------------------------------------------------------------------------- state
@@ -385,6 +397,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let prevViewProj: Mat4 = mat4.identity();
   let frameContext: FrameContext | null = null;
   let ev100 = EV_DARK_FLOOR;
+  /** Exposure the TAA history was written with (0 = none yet). */
+  let historyExposure = 0;
   let evInitialised = false;
   let evOverride: number | null = null;
   let disposed = false;
@@ -612,6 +626,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const attribution = Boolean(opts.perfFeatures) || (!deterministic && frameIndex % 64 === 32);
     const encoder = device.createCommandEncoder({ label: `frame ${frameIndex}` });
 
+    // The reactive mask starts every frame at 0 (features draw into it in compositeAtmosphere / preTransparent).
+    if (requires('post.reactive')) {
+      encoder.beginRenderPass({ label: 'reactive.clear', colorAttachments: [{ view: ensureReactive(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.reactive.clear') }).end();
+    } else if (reactive) {
+      reactive.destroy();
+      reactive = null;
+      resources.reset('post.reactive');
+    }
+
     // 1. compute
     for (const f of features) if (f.compute) runCpu(`${f.id}.compute`, () => f.compute!(frame, encoder));
 
@@ -767,7 +790,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       reset: historyReset,
       // rendering-design 2.4: fast view rotation or high warp halves the history weight.
       historyScale: viewTurn > (2 * Math.PI) / 180 || warp >= 50 ? 0.5 : 1,
+      exposureRatio: historyExposure > 0 ? exposure / historyExposure : 1,
+      reactive: resources.get('post.reactive'),
     });
+    historyExposure = exposure;
     historyReset = false;
     const canvasView = context.getCurrentTexture().createView({ label: 'canvas' });
     runRasterHook(

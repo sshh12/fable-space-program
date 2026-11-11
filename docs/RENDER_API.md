@@ -754,7 +754,18 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
   velocity for everything that moves on screen, or it will ghost. History weight is halved when the view
   turns more than 2 deg per frame or at warp >= 50x. `frame.animate` is false in deterministic mode: do
-  not animate noise then.
+  not animate noise then. The history is rescaled by this frame's exposure over the last one's before it is
+  used (it is pre-exposed), so an adapting exposure leaves no brightness lag in the resolved image.
+- **Reactive mask** (`'post.reactive'`, request `ocean-4`). A surface whose pattern changes without a motion
+  vector that describes it (wind waves, a plume's turbulence) is blurred by its own history. A feature with
+  `requires: ['post.reactive']` may draw into the mask (r8unorm, render resolution, cleared to 0 by the core
+  every frame) in a pass of its own in `compositeAtmosphere` or `preTransparent`: the view from
+  `ctx.resources.get('post.reactive')` as the only colour attachment, `loadOp: 'load'`, blend operation
+  `max`, no depth attachment (test against `'scene.depth'` in the shader). The resolve multiplies the
+  history weight of a pixel by `1 - value`. Measured on per-pixel noise that is new every frame: the
+  frame-to-frame change of the resolved image is 0.06 with mask 0, 0.34 with 0.5 and 0.72 with 1. Use the
+  smallest value that keeps the detail (0.3-0.5 for resolved waves): a reactive pixel is anti-aliased by
+  this frame's 3 x 3 reconstruction alone.
 - Screen-space AO (GTAO, 2 slices x 6 steps per side) and contact shadows (10 steps towards the sun over
   max(0.3 m, 1.5 % of the distance)) are computed at half resolution from `'scene.depthOpaque'` and RT1;
   AO multiplies ambient light only (`Surface.ao`), the contact term multiplies the sun.
@@ -879,6 +890,7 @@ Specs follow `tests/browser/shell/lab-template.spec.ts`: `openPage`, `assertDisc
 - [ ] Samples copies (`scene.*`), never live attachments; bind groups rebuilt on `resources.version` change;
       `gbuffer.*` only from `drawWater` on, in a bind group that is never set inside `drawGBuffer`.
 - [ ] `drawShadow`: body-fixed casters in every cascade of their body, moving casters only when `cascade.everyFrame`.
+- [ ] A pattern that evolves without a motion vector writes `'post.reactive'` (section 13) instead of blurring.
 - [ ] Scales work with `frame.qualityScale`; no noise animation when `!frame.animate`; `isIdle()` reports loading.
 - [ ] Lab page with `createLabApp`, spec with screenshots you looked at, perf spec under `withGpuLock` in attribution mode.
 
@@ -1059,6 +1071,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |

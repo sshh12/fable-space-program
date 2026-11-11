@@ -30,6 +30,10 @@ export interface PostInputs {
   reset: boolean;
   /** Multiplier on the history weight (0.5 under fast view rotation or high time warp). */
   historyScale: number;
+  /** This frame's exposure over the previous frame's: the history is pre-exposed with the old one. */
+  exposureRatio: number;
+  /** 'post.reactive' (r8unorm): the history weight of a pixel is multiplied by 1 - value. */
+  reactive: GPUTextureView;
 }
 export interface PostOutputs {
   color: GPUTextureView;
@@ -44,8 +48,9 @@ export const TAA_HISTORY_WEIGHT = 0.9;
 export const RCAS_SHARPNESS = 0.87; // exp2(-0.2): the FSR "0.2 stops" setting
 
 const TAA_FS = /* wgsl */ `
-struct TaaUniforms { v: vec4f }   // x = 1 when the history is invalid, y = history weight
+struct TaaUniforms { v: vec4f }   // x = 1 when the history is invalid, y = history weight, z = exposure now / exposure of the history
 @group(1) @binding(0) var<uniform> taa: TaaUniforms;
+@group(1) @binding(5) var reactiveTex: texture_2d<f32>;
 @group(1) @binding(1) var hdrTex: texture_2d<f32>;
 @group(1) @binding(2) var velocityTex: texture_2d<f32>;
 @group(1) @binding(3) var depthTex: texture_depth_2d;
@@ -57,7 +62,8 @@ fn fromYcocg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x -
 fn squash(c: vec3f) -> vec3f { return c / (1.0 + luminance(c)); }
 fn unsquash(c: vec3f) -> vec3f { return c / max(1.0 - luminance(c), 1e-5); }
 
-fn historyTap(uv: vec2f) -> vec3f { return squash(writeHdr(textureSampleLevel(historyTex, linearClamp, uv, 0.0).rgb)); }
+// The history was written with the previous frame's exposure: bring it to this frame's before anything else.
+fn historyTap(uv: vec2f) -> vec3f { return squash(writeHdr(textureSampleLevel(historyTex, linearClamp, uv, 0.0).rgb * taa.v.z)); }
 /// 5-tap Catmull-Rom (the four corner taps of the 9-tap bilinear form are dropped).
 fn historyCatmullRom(uv: vec2f) -> vec3f {
   let size = vec2f(textureDimensions(historyTex));
@@ -167,6 +173,8 @@ fn historyCatmullRom(uv: vec2f) -> vec3f {
     // When upscaling, an output pixel far from this frame's nearest sample trusts the history more.
     let fresh = mix(0.35, 1.0, saturate(wCentre * 1.6));
     weight = clamp(1.0 - (1.0 - weight) * fresh, 0.0, 0.98) * mix(1.0, 0.85, saturate(speedPx / 24.0));
+    // A feature may ask for less history where its pattern has no motion vector ('post.reactive').
+    weight *= 1.0 - saturate(textureSampleLevel(reactiveTex, linearClamp, in.uv, 0.0).r);
     result = mix(colour, hist, weight);
   }
   return vec4f(writeHdr(unsquash(max(result, vec3f(0.0)))), 1.0);
@@ -247,7 +255,7 @@ export class PostProcess {
     this.bloomFormat = rg11b10 ? 'rg11b10ufloat' : 'rgba16float';
     const tex = (binding: number, sampleType: GPUTextureSampleType = 'float'): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType } });
     const ubo = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
-    this.taaLayout = device.createBindGroupLayout({ label: 'core.taa', entries: [ubo(0), tex(1), tex(2), tex(3, 'depth'), tex(4)] });
+    this.taaLayout = device.createBindGroupLayout({ label: 'core.taa', entries: [ubo(0), tex(1), tex(2), tex(3, 'depth'), tex(4), tex(5)] });
     this.downLayout = device.createBindGroupLayout({ label: 'core.bloomDown', entries: [tex(0)] });
     this.upLayout = device.createBindGroupLayout({ label: 'core.bloomUp', entries: [tex(0), tex(1)] });
     this.taaPipeline = core.fullscreenPipeline({ label: 'core.taa', fragment: TAA_FS, layouts: [this.taaLayout], targets: [{ format: 'rgba16float' }] });
@@ -300,7 +308,7 @@ export class PostProcess {
     const cur = 1 - prev;
     this.current = cur;
     const t = this.taaInputs;
-    if (!t || t.hdr !== inputs.hdr || t.velocity !== inputs.velocity || t.depth !== inputs.depth) {
+    if (!t || t.hdr !== inputs.hdr || t.velocity !== inputs.velocity || t.depth !== inputs.depth || t.reactive !== inputs.reactive) {
       this.taaInputs = inputs;
       this.taaGroups = [null, null];
     }
@@ -314,9 +322,10 @@ export class PostProcess {
         { binding: 2, resource: inputs.velocity },
         { binding: 3, resource: inputs.depth },
         { binding: 4, resource: this.historyViews[prev]! },
+        { binding: 5, resource: inputs.reactive },
       ],
     });
-    device.queue.writeBuffer(this.taaUniform, 0, new Float32Array([inputs.reset ? 1 : 0, TAA_HISTORY_WEIGHT * inputs.historyScale, 0, 0]));
+    device.queue.writeBuffer(this.taaUniform, 0, new Float32Array([inputs.reset ? 1 : 0, TAA_HISTORY_WEIGHT * inputs.historyScale, inputs.exposureRatio, 0]));
     {
       const pass = encoder.beginRenderPass({ label: 'taa', colorAttachments: [{ view: this.historyViews[cur]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.taa') });
       pass.setBindGroup(0, frameGroup);

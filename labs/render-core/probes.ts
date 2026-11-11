@@ -9,6 +9,8 @@
  *   sun      the solar disc as a background feature (1.9e9 cd/m^2, limb darkened)
  *   heavy    a deliberately expensive fullscreen pass that honours FrameContext.qualityScale
  *   copies   a feature that only requires both colour copies, so all four core copies run (perf spec)
+ *   reactive a patch of per-pixel noise (0 or 2) that is new every frame and has no motion vector, and the
+ *            'post.reactive' mask over its left half (setReactive)
  *   ridge    a 150 km body-fixed ridge on the moon-sized body (terminator shadow from far away)
  *
  * Markers are 16 x 16 px squares in the top-left corner of the render target: marker k covers
@@ -89,7 +91,12 @@ export interface Probes {
   volumeScreen(): { x: number; y: number; radius: number } | null;
   setHeavy(iterations: number): void;
   heavyIterations(): number;
+  /** Value the reactive probe writes into 'post.reactive' over the left half of its flickering patch. */
+  setReactive(value: number): void;
 }
+
+/** Render-target rectangle of the reactive probe's flickering patch; the mask covers its left half. */
+export const REACTIVE_PATCH = { x: 400, y: 300, width: 400, height: 100 };
 
 const scissorMarker = (pass: GPURenderPassEncoder, k: number): void => pass.setScissorRect(MARKER.x(k), MARKER.y, MARKER.size, MARKER.size);
 
@@ -105,6 +112,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   let volumeOn = true;
   let volumeScreen: { x: number; y: number; radius: number } | null = null;
   let heavyIterations = Number(query.get('heavy') ?? 0);
+  let reactiveValue = 0;
 
   // ------------------------------------------------------------------------------------------- order
   if (names.has('order')) {
@@ -930,6 +938,68 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     });
   }
 
+  // ---------------------------------------------------------------------------------------- reactive
+  if (names.has('reactive')) {
+    let ctx: RenderContext;
+    let mask: Tracked<GPURenderPipeline>;
+    let patch: Tracked<GPURenderPipeline>;
+    let uniform: GPUBuffer;
+    let group: GPUBindGroup;
+    const P = REACTIVE_PATCH;
+    features.push({
+      id: 'lab-reactive',
+      requires: ['post.reactive'],
+      init(c) {
+        ctx = c;
+        const core = coreOf(c);
+        uniform = c.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        const layout = c.device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
+        group = c.device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: uniform } }] });
+        const U = /* wgsl */ `struct ReactiveU { v: vec4f }   // x = mask value, y = frame index
+          @group(1) @binding(0) var<uniform> ru: ReactiveU;`;
+        mask = core.fullscreenPipeline({
+          label: 'lab-reactive.mask',
+          layouts: [layout],
+          fragment: `${U}
+            @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f { return vec4f(ru.v.x, 0.0, 0.0, 1.0); }`,
+          targets: [{ format: 'r8unorm', blend: { color: { operation: 'max', srcFactor: 'one', dstFactor: 'one' }, alpha: { operation: 'max', srcFactor: 'one', dstFactor: 'one' } } }],
+        });
+        patch = core.fullscreenPipeline({
+          label: 'lab-reactive.patch',
+          layouts: [layout],
+          fragment: `#include "hash"
+            ${U}
+            @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
+              // White noise per pixel and frame: a high-contrast pattern the neighbourhood clip cannot reject.
+              let h = hash4(i32(in.position.x), i32(in.position.y), i32(ru.v.y), 77);
+              return vec4f(vec3f(select(0.0, 2.0, (h & 1u) == 1u)), 1.0);
+            }`,
+          targets: [{ format: RENDER_FORMATS.hdr }],
+          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+        });
+      },
+      prepare(frame) {
+        ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([reactiveValue, frame.frameIndex, 0, 0]));
+      },
+      preTransparent(frame, encoder) {
+        const pass = encoder.beginRenderPass({ colorAttachments: [{ view: ctx.resources.get('post.reactive'), loadOp: 'load', storeOp: 'store' }], timestampWrites: ctx.perf.gpuPass('lab-reactive.mask') });
+        pass.setBindGroup(0, frame.frameBindGroup);
+        pass.setPipeline(mask.get());
+        pass.setBindGroup(1, group);
+        pass.setScissorRect(P.x, P.y, P.width / 2, P.height);
+        pass.draw(3);
+        pass.end();
+      },
+      drawTransparent(frame, pass) {
+        pass.setPipeline(patch.get());
+        pass.setBindGroup(1, group);
+        pass.setScissorRect(P.x, P.y, P.width, P.height);
+        pass.draw(3);
+        pass.setScissorRect(0, 0, frame.renderSize[0], frame.renderSize[1]);
+      },
+    });
+  }
+
   // ------------------------------------------------------------------------------------------ copies
   if (names.has('copies')) features.push({ id: 'lab-copies', requires: ['scene.colorCopy', 'scene.colorCopyTransparent'], init() {} });
 
@@ -979,6 +1049,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     ridgeSite,
     attach(a) {
       app = a;
+    },
+    setReactive(value) {
+      reactiveValue = value;
     },
     hookLog: () => hookLogLast,
     cascadeLog: () => cascadeLog.slice(),

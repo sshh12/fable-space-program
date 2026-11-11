@@ -197,3 +197,54 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
   expect(r.cloud.nearRight).toBe(2);
   await expectNoErrors(page, pageLog);
 });
+
+test("'post.reactive' lowers the history weight where a feature asks for it: a pattern without a motion vector is shown as it is", async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?probe=reactive&planet=0&stand=0&sun=120,40&hud=0&ev=14');
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 30);
+  // The patch is per-pixel noise (0 or 2), new in every frame, with zero velocity: its neighbourhood is so
+  // contrasty that the history clip accepts any history, and the resolve averages successive patterns.
+  // Measured: the mean absolute change between two consecutive resolved frames, under the mask (left half
+  // of the patch) and beside it (right half).
+  const change = (): Promise<{ masked: number; plain: number; isDefault: boolean }> =>
+    page.evaluate(async () => {
+      const lab = window.__lab!;
+      lab.setLoop(false);
+      const rows: Float32Array[] = [];
+      for (let i = 0; i < 2; i++) {
+        lab.renderFrame();
+        rows.push((await lab.renderer.readHdrPixels('resolved', { x: 400, y: 320, width: 400, height: 60 })).data);
+      }
+      lab.setLoop(true);
+      const mean = (x0: number, x1: number): number => {
+        let sum = 0;
+        let n = 0;
+        for (let y = 0; y < 60; y++) {
+          for (let x = x0; x < x1; x++) {
+            sum += Math.abs(rows[0]![(y * 400 + x) * 4]! - rows[1]![(y * 400 + x) * 4]!);
+            n++;
+          }
+        }
+        return sum / n;
+      };
+      return { masked: mean(20, 180), plain: mean(220, 380), isDefault: lab.renderer.resources.isDefault('post.reactive') };
+    });
+  const off = await change();
+  expect(off.isDefault).toBe(false); // the probe requires the mask, so the core's target is published
+  await page.evaluate(() => window.__rc!.probes.setReactive(1));
+  await page.evaluate(() => window.__test!.waitFrames(6));
+  const on = await change();
+  await page.evaluate(() => window.__rc!.probes.setReactive(0.5));
+  await page.evaluate(() => window.__test!.waitFrames(6));
+  const half = await change();
+  console.log(`reactive mask: frame-to-frame change of the resolved noise patch: mask 0: ${off.masked.toFixed(3)} (beside it ${off.plain.toFixed(3)}), mask 0.5: ${half.masked.toFixed(3)}, mask 1: ${on.masked.toFixed(3)} (beside it ${on.plain.toFixed(3)})`);
+  // Without the mask both halves are the same slow average.
+  expect(Math.abs(off.masked - off.plain)).toBeLessThan(0.3 * off.plain);
+  // Mask 1: every frame is the current pattern alone; the change between frames is several times larger.
+  expect(on.masked).toBeGreaterThan(3 * off.masked);
+  // Beside the mask nothing changed, and half a mask lies in between.
+  expect(Math.abs(on.plain - off.plain)).toBeLessThan(0.3 * off.plain);
+  expect(half.masked).toBeGreaterThan(1.3 * off.masked);
+  expect(half.masked).toBeLessThan(0.9 * on.masked);
+  await expectNoErrors(page, pageLog);
+});

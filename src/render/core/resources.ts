@@ -76,6 +76,8 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'scene.colorCopyTransparent': tex2d('sceneColorCopyTransparent', 'rgba16float', [0, 0, 0, 1]),
     // Before the first frame (and for a consumer without a renderer behind it): all zero. The normal default is
     // a float format like the real target (rg16float); both bind as texture_2d<f32>.
+    // No feature asks for less history anywhere.
+    'post.reactive': tex2d('postReactive', 'r8unorm', [0]),
     'gbuffer.albedo': tex2d('gbufferAlbedo', 'rgba8unorm-srgb', [0, 0, 0, 0]),
     'gbuffer.normal': tex2d('gbufferNormal', 'rgba16float', [0, 0, 0, 0]),
     'gbuffer.material': tex2d('gbufferMaterial', 'rgba8unorm', [0, 0, 0, 0]),

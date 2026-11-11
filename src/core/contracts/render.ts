@@ -332,6 +332,18 @@ export interface SharedResourceMap {
   'gbuffer.albedo': GPUTextureView;
   'gbuffer.normal': GPUTextureView;
   'gbuffer.material': GPUTextureView;
+  /**
+   * Reactive mask of the temporal resolve: r8unorm at render resolution, 0 everywhere at the start of every
+   * frame. The resolve multiplies the history weight of a pixel by (1 - value): 0 = normal accumulation,
+   * 1 = this frame only. For surfaces whose PATTERN changes without a motion vector that describes it
+   * (wind waves, a plume's turbulence): their history is a blur of earlier patterns.
+   * A feature that lists 'post.reactive' in `RenderFeature.requires` may draw into it: in a pass of its own
+   * in `compositeAtmosphere` or `preTransparent`, with this view as the only colour attachment, loadOp
+   * 'load', blend operation 'max' (several features may write), no depth attachment (compare against
+   * 'scene.depth' in the shader). The core clears it and hands it to the resolve only while some feature
+   * requires it; otherwise the key is a 1 x 1 zero default. Re-published when the internal resolution changes.
+   */
+  'post.reactive': GPUTextureView;
   /** Sun shadow cascade array + its uniform buffer (per-frame world-to-shadow matrices, splits). */
   'shadow.cascades': GPUTextureView;
   'shadow.uniforms': GPUBuffer;
@@ -536,8 +548,11 @@ export interface RenderFeature {
   readonly id: string;
   /** Sort key within each hook (default 0). */
   readonly order?: number;
-  /** Optional scene copies this feature samples; the core makes only the copies somebody asks for. */
-  readonly requires?: readonly ('scene.colorCopy' | 'scene.colorCopyTransparent')[];
+  /**
+   * Optional core resources this feature uses; the core makes only what somebody asks for: the scene colour
+   * copies it samples, and the reactive mask of the temporal resolve it draws into ('post.reactive').
+   */
+  readonly requires?: readonly ('scene.colorCopy' | 'scene.colorCopyTransparent' | 'post.reactive')[];
   init(ctx: RenderContext): void | Promise<void>;
   /** CPU work: culling, streaming, uniform uploads, registering lights. */
   prepare?(frame: FrameContext): void;
