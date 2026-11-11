@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: sky-lighting
 Owner path: docs/ARCHITECTURE.md section 17 (VRAM line "sky 0.1"), lead decision
 Blocking: no
@@ -28,3 +28,16 @@ Either raise the "sky" VRAM line of ARCHITECTURE 17 to 0.15 GB, in which case th
 default, on the lead's word) uses `createSkyFeature({ milkyWayFaceSize: 2048 })`; or confirm the 0.1 GB line,
 in which case nothing changes (1024 stays the default). Must not change: the sky's photometry (the cube's
 luminance scale is the same at every mip; the Milky Way band and star-visibility specs pass either way).
+
+## Resolution
+Escalate: lead
+
+This asks to raise a budget line of ARCHITECTURE section 17 (VRAM, "sky 0.1"), which only the lead can
+change; core-support may not weaken a line of the architecture, and the request names the lead as owner.
+
+Nothing is blocked: the sky's default (`MILKY_WAY_FACE_SIZE` = 1024, 41 MB for the whole sky) keeps the
+line, and the full cube is one option away (`createSkyFeature({ milkyWayFaceSize: 2048 })`, 134 MB for the
+cube, about 0.14 GB for the sky). The decision and its evidence (the 1024 / 2048 screenshot pairs named
+above: indistinguishable at a 70 degree field, soft background stars at 24 degrees) are listed for the lead
+in `docs/handoff/core-support.md` under "what the lead should look at first". If the lead raises the line
+to 0.15 GB, the app shell passes the option; no code changes are needed in the sky or in the core.
