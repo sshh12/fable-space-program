@@ -23,12 +23,12 @@ interface Row {
 }
 
 /**
- * Three windows of 240 frames; the least disturbed one counts. The GPU is shared with other agents' browser
+ * Six windows of 240 frames; the least disturbed one counts. The GPU is shared with other agents' browser
  * tests (the GPU lock serialises perf specs only), and concurrent work can only add time to a pass.
  */
 async function measure(page: Page): Promise<Row & { windows: string }> {
   const rows: Row[] = [];
-  for (let w = 0; w < 3; w++) {
+  for (let w = 0; w < 6; w++) {
     rows.push(
       await page.evaluate(async (first) => {
         await window.__test!.waitFrames(first ? 90 : 10);

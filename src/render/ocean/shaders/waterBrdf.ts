@@ -72,8 +72,20 @@ fn waterCoxMunk(s: Surface) -> f32 { return 0.003 + 0.00512 * waterWind(s); }
 /// (tens of km) and surfactant slicks (calm bands along the wind, a few km wide, in patches), which give
 /// the glint seen from altitude its structure. A function of the body-fixed position only, so the deferred and
 /// the forward path agree, and the pattern is fixed to the sea.
+// The field is evaluated once per shaded point: every light and the ambient term ask for it (waterAlpha).
+var<private> waterFieldKey: vec4f = vec4f(0.0, 0.0, 0.0, -1.0);
+var<private> waterFieldValue: f32 = 1.0;
+
 fn waterRoughnessField(s: Surface) -> f32 {
   if (s.bodyIndex < 0) { return 1.0; }
+  let key = vec4f(s.pos, f32(s.bodyIndex));
+  if (all(key == waterFieldKey)) { return waterFieldValue; }
+  waterFieldKey = key;
+  waterFieldValue = waterRoughnessFieldAt(s);
+  return waterFieldValue;
+}
+
+fn waterRoughnessFieldAt(s: Surface) -> f32 {
   let bi = u32(s.bodyIndex);
   let b = frame.bodies[bi];
   let p = rootToFixed(bi, s.pos - b.center.xyz);
