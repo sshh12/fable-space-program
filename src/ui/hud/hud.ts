@@ -176,6 +176,9 @@ function keyCap(label: string, cls = 'kbd', title?: string): HTMLSpanElement {
   return el('span', glyph ? `${cls} glyph` : cls, [text], title ? { title } : named ? { title: label } : {});
 }
 
+/** Horizontal speed: a level arrow (SVG, never a font glyph). */
+const HORIZONTAL_ICON = { stroke: 'M3.5,12H19.5 M14.5,7L19.5,12L14.5,17', width: 2.6 };
+
 /** Vertical-speed trend icon (SVG path swapped on change; class carries the tone). */
 function trendIcon(): { el: SVGSVGElement; set(t: VerticalTrend): void } {
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -323,7 +326,8 @@ export function createHud(opts: HudOptions): HudImpl {
     [
       el('div', 'ptitle', [el('span', '', [altLabel.node])]),
       el('span', 'val big', [altValue.node]),
-      el('div', 'vs', [vsIcon.el, el('b', '', [vsValue.node]), el('span', '', ['·']), el('span', '', ['horiz. ', hsValue.node])]),
+      // Vertical speed after its trend icon, horizontal speed after a horizontal arrow (fixed-width cells).
+      el('div', 'vs', [el('span', 'sp', [vsIcon.el, el('b', '', [vsValue.node])], { title: 'Vertical speed' }), el('span', 'sp', [svgIcon(HORIZONTAL_ICON, { className: 'hsi' }), el('b', '', [hsValue.node])], { title: 'Horizontal speed' })]),
     ],
     {
       [INTERACTIVE_ATTR]: '',

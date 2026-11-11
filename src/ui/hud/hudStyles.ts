@@ -166,11 +166,13 @@ export const HUD_CSS = /* css */ `
 .hud .warp-limit { font-size: 0.78em; color: var(--caution); margin-top: calc(var(--u) * 0.3); white-space: normal; line-height: 1.2; }
 
 /* ---------------------------------------------------------------- altitude */
-.hud .alt { min-width: calc(var(--u) * 19.5); text-align: center; padding: calc(var(--u) * 0.4) calc(var(--u) * 1.2); cursor: pointer; }
+.hud .alt { width: calc(var(--u) * 24); text-align: center; padding: calc(var(--u) * 0.4) calc(var(--u) * 1); cursor: pointer; }
 .hud .alt .ptitle { letter-spacing: 0.06em; }
 .hud .alt .val.big { display: block; text-align: center; height: 1.22em; contain: size layout style; }
-.hud .alt .vs { display: flex; align-items: center; justify-content: center; gap: 0.4em; font-size: 0.86em; color: var(--label); height: 1.3em; contain: size layout style; }
+.hud .alt .vs { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: 0.9em; font-size: 0.84em; color: var(--label); height: 1.3em; contain: size layout style; }
+.hud .alt .vs .sp { display: flex; align-items: center; gap: 0.35em; white-space: nowrap; }
 .hud .alt .vs b { color: var(--text); font-weight: 600; }
+.hud .alt .hsi { width: 0.95em; height: 0.95em; flex: none; color: var(--label); }
 /* Vertical-speed trend icon: up / down chevron or a level bar (SVG, never a font glyph). */
 .hud .vsi { width: 0.95em; height: 0.95em; flex: none; overflow: visible; }
 .hud .vsi path { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
