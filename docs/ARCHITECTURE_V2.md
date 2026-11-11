@@ -16,8 +16,11 @@ for wave 2. `docs/MIGRATION_V2.md` says how the code moves from v1 to this desig
 How numbers are marked: **measured** = taken from `docs/research/v2/codebase-audit.md`, a hand-off or
 `frontend-ux.md` (one Ryzen 9950X3D core, Node 24); **derived** = arithmetic on measured numbers and list
 prices; **assumed** = a planning value that the load test (section 28.7) must replace. No capacity or cost
-figure in this file has been measured on Railway; the memory figures of the small stage were measured on
-the development machine (`hosting-small.md` section 4). The cloud derating used is 2.5x (assumed, and a
+figure of the game has been measured on Railway; the memory figures of the small stage were measured on
+the development machine (`hosting-small.md` section 4). One account fact is measured: what the workspace's
+other project already costs (`railway usage`, read 2026-11-10; section 30). Where sections 16 and 30 of
+this file differ from `hosting-small.md` (the idle level, the two buckets, the egress budgets, the
+workspace bill), this file is the later one. The cloud derating used is 2.5x (assumed, and a
 single-thread figure: a shard runs many workers that all step the same tick at the same wall instant, so
 the first cloud measurement is taken with 1, 2, 4 and 8 synchronised workers on the small stage, and with
 16 and 22 in the launch rehearsal, and replaces it; sections 16.2 and 28.7). Every large cost line carries
@@ -47,8 +50,8 @@ a low and a high value.
 | 42 | Protocol | Binary WebSocket, inputs up, state down. Exact keyframes, deltas against the last keyframe, structural changes as deterministic operations, coasting craft as conic elements on change. Section 13. | Railway has no UDP; latest-wins messages would also survive datagrams. |
 | 43 | Persistence | Postgres, written only by the directory (which holds a fenced lease), in 250 ms batches. Islands are durable through checkpoints of the whole island state plus an input journal, replayed exactly on one pinned build. Every stored blob carries a codec version and the definition fingerprints it was written under. Transitions that involve two owners are committed before they are shown. Section 15. | A deploy freezes the universe for a measured number of seconds and loses no committed state; a dock can never be half-stored; parked ships survive definition changes. |
 | 44 | Expiry clock | The wall clock. A ship is kept 14 days after its owner's last session; an assembly lives as long as its most recently active owner. All numbers are fields of `UniverseRules` and are shown to players. | Universe times differ by centuries between vessels; the wall clock is the only one all share. |
-| 45 | Hosting | Railway hosts everything at run time, on **one codebase and one image definition, deployed as a ladder of stages** (16.2). **Stage 0 (Combined, on the Hobby plan)** is where the game starts and what is always on: `game` (one process holding the gateway, directory, API and publisher roles, with the shard's worker isolates as its threads), `shell` (static, CDN on, carrying the tile mirror), `postgres`, an hourly `dump` job and one bucket: about $5-10 a month with nobody connected and $9-22 at 5 concurrent players (estimates, section 30), against ceilings of $30 and $50. Nothing in production sleeps; an empty universe is **idle-light** (no tick loop, no worker isolates, no terrain; 6.2). **Stage 1** is the same topology on Pro (volume backups, point-in-time recovery, deploys by digest); **stage 2** is the **split** (`gate`, `dir`, `sim-1`); **stage 3** is the **launch** topology (`sim-1..K`, gateway replicas, `pub` and `packs` services, the scale controller). Every move has a measured trigger, is configuration and a deploy with at most one short announced freeze, and loses no committed state; the lead tells the user before the plan or the standing spend rises. The local stack runs the same roles on this machine with no cloud resource (16.4). Modal hosts bots, bakes, audits and the off-site copy in its own environment, with nothing always on. Netlify is an optional host for the shell only. One region, US East. Section 16. | User decision: about $50 a month or less at about 5 players on the Hobby plan, about $30 or less when idle, growth by configuration when measured need arises. Only Railway holds long-lived sockets cheaply. What it costs is stated, not hidden: a front-page day that arrives unannounced is not absorbed from stage 0 by itself; players beyond the admission cap queue and watch until a human moves the deployment up (16.2). |
-| 46 | Tile delivery | The bake output and the dev server stay plain files. Production serves content-addressed range-readable **packs** from a Railway bucket through presigned URLs, with the `packs` mirror role (a streaming proxy of the bucket behind a CDN: carried by the `shell` service up to stage 2, its own service with replicas and its own domain at stage 3) as fallback, and a first-paint **boot pack** of at most 25 MB from the shell's CDN. Revises row 4. | 862,000 files cannot be addressed one presigned URL at a time; 15 TB in a day must not be billed egress, and at 5 players tiles must cost nothing; a visitor must see the title in seconds. |
+| 45 | Hosting | Railway hosts everything at run time, on **one codebase and one image definition, deployed as a ladder of stages** (16.2). **Stage 0 (Combined, on the Hobby plan)** is where the game starts and what is always on: `game` (one process holding the gateway, directory, API and publisher roles, with the shard's worker isolates as its threads), `shell` (static, CDN on, carrying the tile mirror), `postgres`, an hourly `dump` job and two buckets (`packs`, `dumps`). It adds about $5-15 a month to the workspace bill with nobody connected and $10-25 at 5 concurrent players (estimates, section 30), against ceilings of $30 and $50. The workspace's other project already uses the plan's included $5 (measured: $7.4-10.2 a month), so the game's usage is billed in full, and the workspace total reaches $20, where Pro costs what Hobby costs, at about 5 players or sooner: the plan question is put to the user with those numbers (OPEN_QUESTIONS Q2). Nothing in production sleeps; an empty universe is **idle** (no tick loop; at stages 0 to 2 one worker isolate and the launch bodies' resident terrain stay warm, so the first Deploy after a quiet spell waits for nothing; 6.2). Every public byte source has a daily egress budget, so the month is bounded by configuration and not by an alert (16.2). **Stage 1** is the same topology on Pro (volume backups, point-in-time recovery, deploys by digest); **stage 2** is the **split** (`gate`, `dir`, `sim-1`); **stage 3** is the **launch** topology (`sim-1..K`, gateway replicas, `pub` and `packs` services, the scale controller). Every move has a measured trigger, is configuration and a deploy with at most one short announced freeze, and loses no committed state; the lead tells the user before the plan or the standing spend rises. The local stack runs the same roles on this machine with no cloud resource (16.4). Modal hosts bots, bakes, audits and the off-site copy in its own environment, with nothing always on. Netlify is an optional host for the shell only. One region, US East. Section 16. | User decision: about $50 a month or less at about 5 players on the Hobby plan, about $30 or less when idle, growth by configuration when measured need arises. Only Railway holds long-lived sockets cheaply. What it costs is stated, not hidden: a front-page day that arrives unannounced is not absorbed from stage 0 by itself; players beyond the admission cap queue and watch until a human moves the deployment up (16.2). |
+| 46 | Tile delivery | The bake output and the dev server stay plain files. Production serves content-addressed range-readable **packs** from a Railway bucket through presigned URLs, with the `packs` mirror role (a streaming proxy of the bucket behind a CDN: carried by the `shell` service up to stage 2, its own service with replicas and its own domain at stage 3; it proxies ranges if the CDN caches them and small slices otherwise, decided by a wave-3 measurement) as fallback, and a first-paint **boot pack** of at most 25 MB that `shell` loads from the bucket at start and serves through its CDN. Revises row 4. | 862,000 files cannot be addressed one presigned URL at a time; 15 TB in a day must not be billed egress, and at 5 players tiles must cost nothing; a visitor must see the title in seconds. |
 | 47 | Identity | Anonymous by default: an account record that a non-extractable device key points at, a callsign, a recovery code. Other sign-ins are more credential rows later. Nothing else is built. | User decision. |
 | 48 | Lobbies | The lobby is the unit of deployment (one directory, one shard set, one Postgres schema). One public lobby exists; the client lists lobbies. | "Build around lobbies, one mega-lobby for now." |
 | 49 | Front end | One scene, one renderer, one loop from the menu to flight; the menu is DOM over the live canvas; the app shell is a state machine. Section 23. | "Menu over a live Earth and space view, seamless transition." |
@@ -56,7 +59,7 @@ a low and a high value.
 | 51 | Chat | Quick-comms (fixed phrases) only. Free-text chat is not built and has no rules flag; it is a forward seam (section 32, OPEN_QUESTIONS Q9). | An anonymous free-text channel at front-page scale is a moderation job nobody has taken on; a flag that switches nothing is a stub. |
 | 52 | Rules are data | Every number of sections 5, 7.4-7.6, 9.4 and 15.5 is a field of one versioned `UniverseRules` document served to clients, which render the rules screen and every countdown from it. A staging rule set with lifetimes of minutes demonstrates expiry. | "Configurable, visible to players." |
 | 53 | Accepted inconsistencies | (a) An object launched at an earlier time is not collided against histories already committed. (b) Two passive vessels never collide with each other. (c) After a private warp a player is alone in their time until someone jumps, holds or arranges a meeting. (d) A server crash may re-run up to 250 ms of flight; an outcome between two owners that was shown inside that window is marked provisional until it is durable (15.1). All four are stated on the rules screen. | They cannot be designed away in any forward-only model; hiding them would be merging timelines. |
-| 54 | Launch capacity | The launch complex is sized from a launches-per-day target, not from a pad count: `pads x (cohort horizon + 24 h) / mean cycle` must cover the sessions of a front-page day. Release defaults: 32 pads (16 per site), a 14-day cohort horizon, a 150 s mean cycle: 276,000 launches in the first day, 18,400 a day sustained. The complex is data and costs nothing while unused, so it is the same at every stage; at stages 0 to 2 the admission cap binds before the pads do. Sections 5.9, 9.3, 16.3. | Pads, not CPU, bind first; a capacity plan that ignores them is wrong by an order of magnitude. |
+| 54 | Launch capacity | The launch complex is sized from a launches-per-day target, not from a pad count: `pads x (cohort horizon + 24 h) / mean cycle` must cover the sessions of a front-page day. Release defaults: 32 pads (16 per site), a 14-day cohort horizon, a 150 s mean cycle: 276,000 launches in the first day, 18,400 a day sustained. The complex is data and costs nothing while unused, so it is the same at every stage; at stages 0 to 2 the admission cap binds before the pads do, and the per-pad cycle is measured there on a rule set with few pads (28.7). Sections 5.9, 9.3, 16.3. | Pads, not CPU, bind first; a capacity plan that ignores them is wrong by an order of magnitude. |
 | 55 | Scheduling | Waves 3-7 with sub-waves; contracts are written by the lead before each wave; every shared file has one owner per sub-wave; the three risky switches (tick grid, `LocalSession` replacing `World`, activation of the Sun-rooted body set) and the app integration are packages with gates, not lead chores. Section 33. | The first plan put five packages into one agent and three switches between waves with no owner. |
 
 ### 1.2 Decisions carried over from v1
@@ -150,13 +153,16 @@ src/map/                       map view: trajectories, census layer, targets, in
 src/shell/                     app state machine, menu framework and screens, settings models
 src/bench/                     calibration shots, solver, quality profiles
 src/audio/                     audio engine
-server/                        Node roles: gateway, directory host, shard host, API, publisher; Postgres
-                               writer and schema; bucket access; role wiring; the trailing-lane executor.
-                               Imports src/core, src/sim, src/terrain, src/universe, src/net
+server/                        Node roles: gateway, directory host, shard host, API, publisher (the only
+                               implementation of each, 16.1); Postgres writer and schema; bucket access;
+                               role wiring; the trailing-lane executor.
+                               Imports src/core, src/sim, src/terrain, src/universe, src/net; never deploy/
 bots/                          headless bot players (NetSession + pilots) and the Modal fleet app
-deploy/                        Railway service definitions per stage, Dockerfile, rollout, stage and scale
-                               scripts, the scale controller, the local stack (deploy/local: the one-command
-                               launcher and the compose file), CI
+deploy/                        Railway service definitions per stage, Dockerfile, the program entry and the
+                               role manifest, the static roles (deploy/roles: shell, packs, dump, the egress
+                               meter), boot-manifest.json, rollout, stage and scale scripts, the scale
+                               controller, the local stack (deploy/local: the one-command launcher and the
+                               compose file), CI
 labs/<package>/                lab pages
 tests/unit/<package>/, tests/browser/<package>/, tests/mission/    as in v1
 tests/browser/app/, tests/browser/mission/   the integrated app (app-integration packages, final-gate)
@@ -416,7 +422,7 @@ therefore never carries their craft further than their own `advanceLimit` allows
 universe is down, and after every restart it is held for a **resume window** (30 s for a restart on the same
 build, 90 s when the build changed and clients must reload; 15.4), so the pad crowd is still one group and
 nobody's burn runs without them. Cohort clocks follow it. Production never suspends the process to save
-money (16.2): with nobody connected the directory keeps running in its idle-light state (6.2), so the live
+money (16.2): with nobody connected the directory keeps running in its idle state (6.2), so the live
 clock keeps tracking wall time and a fate on the live clock still comes due when it should. The lobby's epoch (the live tick at first start)
 is a deployment setting on the tick grid; the default is the start of the `lunar-direct` scenario
 (2029-09-24T18:26:58Z).
@@ -752,14 +758,13 @@ has passed) and the acceptance window; the executors live in `server/`.
   two-control-tick jitter buffer absorbs a millisecond of wake-up error), so Railway bills what is used and
   an idle shard costs its memory. The load test reports billed vCPU-seconds per integrated vessel-second
   and idle shard CPU.
-- **An empty universe steps nothing: idle-light.** A passive vessel is on no clock and has no timers
+- **An empty universe steps nothing: the idle state.** A passive vessel is on no clock and has no timers
   (5.1), so when the last island is gone and the last grace, hold and pad slot has ended (minutes after the
-  last pilot left; an unattended run or a piece of debris in atmosphere is first flown to rest), the shard
-  host terminates its worker isolates and releases every terrain residency, and the tick loop stops. What
-  then remains on a timer: the renewal of the writer lease (one UPDATE every 5 s over one Postgres
-  connection); a metrics sample every 30 s (memory and the cost numbers of section 27); one timer for the
-  earliest `horizon_tick` on the live or a cohort clock (a fate, U13: a worker and the terrain are
-  brought up 60 s before it, the unattended run is flown, and the process goes idle again); and the
+  last pilot left; an unattended run or a piece of debris in atmosphere is first flown to rest), the tick
+  loop stops. What then remains on a timer: the renewal of the writer lease (one UPDATE every 5 s over one
+  Postgres connection); a metrics sample every 30 s (memory and the cost numbers of section 27); one timer
+  for the earliest `horizon_tick` on the live or a cohort clock (a fate, U13: a worker and the terrain it
+  needs are ready 60 s before it, the unattended run is flown, and the process goes idle again); and the
   hourly dump job and the nightly audit, which live outside the process (15.3). Everything else runs **when asked for instead of on a timer**. The expiry sweep is due every 60 s
   but is skipped while no session is open and no public document is requested, and it runs first, before
   the answer, when the next request arrives: nobody can observe a removal between two sweeps, and the
@@ -767,11 +772,22 @@ has passed) and the acceptance window; the executors live in `server/`.
   cached for a second (13.1). The pad timetable is a table of tick intervals that is evaluated when it is
   read. Journal and checkpoint partitions are created with the first island and dropped by their
   retention rule, after which there is nothing left to drop.
+- **How much stays resident while idle is a setting, `idleLevel`.** **Warm** is the default at stages 0
+  to 2: one worker isolate stays up and the resident pyramids of the bodies that have launch sites stay
+  loaded (Earth's is 102 MB decoded); every other residency, and every tile-store entry beyond those
+  pyramids, is released ten minutes after the last island left. Warm costs 0.1-0.25 GB, that is $1-2.50 a
+  month, and removes a path: the first Deploy after a quiet spell is the first Deploy of a busy server
+  and depends on nothing fetched over the network at that moment. The user accepted an idle floor of
+  about $30 so that nothing fragile is bought with it; a teardown and re-creation of isolates on every
+  quiet evening, and a first launch of the day that waits on a 48 MB ranged read from the bucket, is
+  exactly that. **Light** also terminates the worker isolates and releases every residency. It is the
+  setting for the extra shards of stage 3, where an idle shard is worth money and the directory places
+  the first island of a quiet spell on a shard that is already warm; a shard coming out of the light
+  level starts a worker and loads the body's resident pyramid from the bucket (1,020 tiles and 48 MB for
+  Earth: 1-3 s, assumed, measured in the launch rehearsal).
 - **Coming back from idle is not a wake-up.** The process, its sockets and the database never stopped, so
-  the title, the menu and the public documents answer at once. The first Deploy after an idle spell
-  starts a worker isolate and loads Earth's resident pyramid from the bucket (1,020 tiles, 48 MB): 1-3 s
-  (assumed; a line of the capacity report), which falls inside the briefing and the 10 s transit, so the
-  player does not wait for it. Budgets in 29.2.
+  the title, the menu and the public documents answer at once, and at the warm level the worker and the
+  terrain a first Deploy needs are already there. Budgets in 29.2.
 - **Inter-role traffic is batched.** One frame per gateway process per shard per control tick in each
   direction; one batch (or a SharedArrayBuffer ring) per worker per tick between a shard's main thread and
   its workers. No message crosses a thread or a socket per input or per vessel. Main-thread utilisation of
@@ -861,12 +877,17 @@ low-score bots, and reports server CPU, egress and correction rate for each (28.
    neighbourhood is closed to new arrivals.
 6. Admission: new spawns queue in the menu, which holds no socket. A queued player spectates from the
    public documents (the `live.json` markers and the census snapshot of the menu region, 13.1): no socket,
-   and no server cost per spectator beyond the publisher's bounded request budget (13.1) or, once `pub`
-   is its own service, CDN misses.
+   and no server cost per spectator beyond the publisher's request and byte budgets (13.1) or, once `pub`
+   is its own service, CDN misses. When the publisher's daily byte budget is spent the spectating view
+   is the first thing to go: a queued player keeps the title, the live Earth, the queue position last
+   received and the note that the lobby is busy.
 
 Admission is driven by measurement: the directory admits a pilot only while the fleet's p99 step time is
 under 6 ms of the 8.33 ms tick, and never beyond the stage's **admission cap** (16.2: 20 at stage 0 until
-its load test replaces the figure), which is what bounds the bill of a stage that nobody is watching.
+its load test replaces the figure). The cap bounds what players can add to the bill of a stage that
+nobody is watching; the egress budgets of 16.2 bound what everyone else can. The cap is a setting: a
+rehearsal environment lifts it for the compute ramps, so that admission there comes from measured step
+time alone (28.7).
 
 ---
 
@@ -1462,36 +1483,90 @@ into a stream of fallbacks. Image tiles are decoded with
   of one tile coordinate adjacent, groups in Morton order per level, height layers in their own packs, small
   bodies one pack per body and layer. The index (`[pack, offset, length]` per tile group) lives beside the
   manifest, which stays the single promise of what exists.
-- **Boot pack.** Everything needed to draw the title is one small pack served by the `shell` service's CDN:
-  the bundle, the definition library, levels 0-3 of Earth and the Moon, the low mips of the sky and cloud
-  maps, the menu's assets. Budget: **25 MB or less before the title** (section 29.2). Everything else
-  (129 MB of sky data, 37 MB of assets, regional tiles, the calibration's pad region) streams behind the
-  title screen.
-- Clients read packs by HTTP range from an ordered mirror list with failover on 429, 5xx and timeout:
-  1. **The bucket**: presigned URLs on a Railway bucket (free egress and free operations on every plan;
-     signed with a quantised date so every client gets the same URL for a week). One bucket holds the
-     packs (14-20 GB: $0.21-0.30 a month) and the database dumps; the Hobby plan's 1 TB is far away.
+- **Boot pack.** Everything of baked data that the title needs is one small content-addressed pack:
+  levels 0-3 of Earth and the Moon, the low mips of the sky and cloud maps, the menu's assets. With the
+  bundle and the definition library, which are built from the repository and are in the image, the
+  first paint is **25 MB or less before the title** (section 29.2). Everything else (129 MB of sky data,
+  37 MB of assets, regional tiles, the calibration's pad region) streams behind the title screen.
+- **How the boot pack reaches `shell`.** Baked data is not in the repository (`data/tiles` is ignored)
+  and neither CI nor Railway's build has it, so the boot pack cannot be built into the image.
+  `tools/pack` uploads it to the `packs` bucket under its content hash and writes a small tracked
+  manifest, `deploy/boot-manifest.json` (hash, bytes, what is deferred). `shell` fetches the pack once
+  at start with the bucket credential it already holds for the mirror role (ingress is free), verifies
+  the hash, keeps the 25 MB in memory inside its 0.25 GB limit and serves it at an immutable hashed URL
+  (`/boot/<hash>.pack`). Its health check passes only once the pack is loaded and verified, so a
+  deployment with a missing or wrong pack never takes traffic. The rollout checks the boot manifest
+  hash that the running `shell` reports against the release commit, beside the `buildId` (16.2). On the
+  local stack the same code reads the same object from the local stand-in for the bucket (16.4). Git LFS
+  and an un-ignored upload are not used.
+- Clients read packs by HTTP range from an ordered mirror list. A request moves to the next mirror on
+  429, 5xx, a timeout, **404 for an object the index promises** (a storage fault has returned
+  `NoSuchKey` for existing objects before) and, after one refresh of the pack list, **403** (an expired
+  signature). The client checks the status and the length of the body against the offset and length it
+  already knows from the index; it never depends on reading `Content-Range`, which is not a
+  CORS-safelisted response header.
+  1. **The bucket**: presigned URLs on the Railway bucket `packs` (free egress and free operations on
+     every plan). A URL is signed with the date quantised to the UTC day and a lifetime of 7 days, the
+     longest the presigner allows: every client gets the same URL for a day, and a URL handed out at
+     any moment is good for at least six more days, longer than any session. The client refreshes the
+     pack list once a day and on a 403.
   2. **The `packs` mirror role**: a streaming proxy of the bucket that serves immutable cache headers
-     behind Railway's CDN. Railway's CDN keys on path and query, not on `Range`, so the mirror exposes
-     each pack as fixed, aligned **16 MB slice objects** (`/p/<hash>/<n>`) and the client maps a range to
-     slices; the pack format does not change. **Up to stage 2 the role is carried by the `shell`
-     service**, which already has the CDN and holds no socket: a hit costs nothing, a miss is billed
-     egress ($0.014 for a whole new visitor's 275 MB), and tile traffic never touches the process that
-     runs the universe. It streams without a disk cache there, inside the shell's small replica limit. At
-     stage 3 it becomes its own service on its own domain, with replicas and a local disk cache (no
-     volume, so it can have replicas and redeploys without downtime), so that tiles and the shell share
-     neither a connection limit nor a purge.
+     behind Railway's CDN. How it addresses bytes is decided by a wave-3 measurement, not fixed here.
+     Railway announced in July 2026 that its CDN supports `Range` and `Content-Range`. If the
+     measurement shows that a ranged response is cached and that a ranged miss pulls only that range
+     from the origin, the mirror proxies ranges of `/p/<hash>` and the client sends it the ranges it
+     would send the bucket. If not, the mirror exposes each pack as fixed, aligned **slice objects**
+     (`/p/<hash>/<n>`) of 2 MB (1 MB if the measurement asks for it) and the client maps a range to
+     slices. The pack list states the mode and the slice size, so neither is compiled into the client,
+     and the pack format does not change. A slice costs the bytes of the whole slice even when one
+     100-300 kB tile group was wanted, so the mirror is judged on **bytes sent per byte needed** over
+     a recorded first session: at most 1.5, or the slice size goes down. (At 16 MB slices a scattered
+     regional read would have cost many times its bytes, and 2.6 s at 50 Mbit/s before the first tile
+     decoded.) **Up to stage 2 the role is carried by the `shell` service**, which already has the CDN
+     and holds no socket: a hit costs nothing, a miss is billed egress ($0.014 for a whole new
+     visitor's 275 MB, times the bytes-sent factor), and tile traffic never touches the process that
+     runs the universe. It streams without a disk cache there, inside the shell's small replica limit.
+     Three rules keep it from being an open tap (16.2): a request with a query string on `/p/` or
+     `/boot/` is answered 404 with no body (Railway's CDN keys on the full query string, so `?x=1`,
+     `?x=2` and so on would make every request a billed miss); origin bytes are limited per client
+     address; and mirror misses have a daily byte budget, after which the mirror answers 429 and
+     clients stay on the bucket. At stage 3 it becomes its own service on its own domain, with
+     replicas and a local disk cache (no volume, so it can have replicas and redeploys without
+     downtime), so that tiles and the shell share neither a connection limit nor a purge.
+- **Two buckets, split by who may hold the credential.** A Railway bucket credential is all or nothing:
+  it cannot be made read-only or scoped to a prefix, and bucket access is not logged. `packs` holds the
+  packs and the boot pack (14-20 GB: $0.21-0.30 a month; immutable, content-addressed, verified by hash
+  where it matters); its credential is held by `game` (it signs the pack list), by `shell` (the mirror
+  and the boot pack) and by the upload tool on the development machine. `dumps` holds the database
+  dumps and the journals sampled for the replay audit; its credential is held only by the `dump` job
+  and by the Modal jobs that copy and audit them (15.3, 16.2). So no process that faces the public can
+  read or delete a dump (accounts and recovery-code hashes are in them), and the dump job's pruning
+  cannot touch a pack. Storage is billed on the workspace total, so two buckets cost what one would,
+  and the Hobby plan's 1 TB is far away. A bucket belongs to one environment, which is why a rehearsal
+  environment is handed the production `packs` credential and nothing else (16.2). No role has a code
+  path that deletes or overwrites a pack. `data/packs` on the development machine is kept until a
+  copy outside the production bucket exists (a Modal volume filled through the presigned pack list,
+  16.2); the packer is deterministic, so the same tiles give the same hashes again.
 - Tile bytes are cached by content hash in OPFS, so a changed URL never causes a re-download. Sky data and
   `public/assets` take the same path.
-- The page is cross-origin isolated; every pack response carries CORS headers and exposes `Content-Range`.
-- **What a new visitor costs at stage 0** (derived): at most 25 MB of boot pack from the shell (free on a
-  CDN hit, $0.00125 on a miss) and about 275 MB from the bucket ($0). At 5 concurrent players with
-  30-minute sessions and 15 % new visitors that is about 1,080 new visitors a month, all of whose tile
-  bytes are free on the bucket path, and $15 a month if every one of them fell back to the mirror with
-  every request a miss.
+- The page is cross-origin isolated; every pack response carries CORS headers for ranged GET. Whether
+  the bucket honours `ExposeHeaders` is recorded in wave 3, and nothing depends on it.
+- **What a new visitor costs at stage 0** (derived): at most 25 MB of first paint from the shell (free on
+  a CDN hit, $0.00125 on a miss) and about 275 MB from the bucket ($0). At 5 concurrent players with
+  30-minute sessions and 15 % new visitors that is about 1,080 new visitors a month (36 a day, about
+  10 GB a day), all of whose tile bytes are free on the bucket path. **If the bucket path is unusable
+  from a browser** (its CORS setting breaks, or an incident like the day in July 2026 when presigned
+  GETs returned `NoSuchKey`), those bytes come through the mirror: $15 a month times the bytes-sent
+  factor if every request missed the CDN, and never more than the mirror's daily budget (8 GB a day,
+  $12 a month; 16.2). Past the budget a new visitor keeps the boot set and what the cache holds, and
+  tiles stop streaming until the bucket path is back or the lead raises the budget: the game degrades
+  before the bill does. The case is written down because it is realistic, not because it is expected.
 - **Pass or fail, measured in wave 3** (`platform-delivery` scope D). Correctness first, from Chrome
-  against the deployed stage 0: ranged GET of a presigned URL with CORS under cross-origin isolation, the
-  slice path through the shell's CDN, failover between the two. Then throughput of the **bucket** from a
+  against the deployed stage 0: ranged GET of a presigned URL with CORS under cross-origin isolation;
+  **what the CDN does with `Range`** (is a ranged response cached, what does a ranged miss pull from
+  the origin), which chooses the mirror's mode; the mirror path through the shell's CDN in that mode,
+  with its bytes sent per byte needed (at most 1.5) and the time to the first decoded tile beside the
+  bucket's; failover between the two, including an expired URL and a 404. Then throughput of the **bucket** from a
   Modal fleet at 20, 500 and 2,000 concurrent fetchers replaying real tile requests for 15 minutes (bucket
   egress is free, so the test costs nothing on Railway): it passes with p95 first byte of a cold range at
   or under 400 ms, errors at or under 0.5 %, and 1.5 Gbit/s sustained in aggregate at 2,000 (15 TB in a
@@ -1511,16 +1586,21 @@ heap and every worker is its own isolate, so server memory is designed, not left
 bodies and 22 workers that would be 10-40 GB per shard).
 
 - **Lazy per-body residency** (10.2): a body's pyramid is loaded when the first island enters its sphere of
-  influence on that shard and released when the last one leaves. With no island at all, nothing is
-  resident (idle-light, 6.2). Measured on the development machine: Earth's resident pyramid is 102 MB
-  decoded, the Moon's 68 MB.
-- **Worker isolates exist on demand**: the first island starts one, more are started as the step-time
-  budget requires up to the stage's setting (2 at stage 0), and all are terminated when the last island
-  is gone. An isolate holding the simulation code and the definitions is 15-50 MB (measured).
+  influence on that shard and released when the last one leaves. With no island at all, what stays
+  resident is the idle level's choice (6.2): the pyramids of the bodies with launch sites at the warm
+  level, nothing at the light level. Measured on the development machine: Earth's resident pyramid is
+  102 MB decoded, the Moon's 68 MB.
+- **Worker isolates exist on demand**: one is kept while idle at the warm level (at the light level the
+  first island starts it), more are started as the step-time budget requires up to the stage's setting
+  (2 at stage 0), and the extra ones are terminated when the last island is gone. An isolate holding the
+  simulation code and the definitions is 15-50 MB (measured; about 34 MB was not returned after isolates
+  were terminated, which is one more reason not to cycle them every evening).
 - **One decoded-tile store per shard**, in SharedArrayBuffers, read by every worker isolate; the data is
-  read-only, and the journal already records the resident level. Its cap is a setting: 512 MB at stages 0
-  and 1, 1 GB on the stage-2 shard, 2.5 GB on a launch shard. Each worker keeps only its lazily memoised
-  collision vertices (32 MB).
+  read-only, and the journal already records the resident level. Its cap is a setting: 256 MB at stage 0
+  (a cache that is held for a month fills, so the cap is what gets billed), 512 MB at stage 1 once the
+  limits are raised, 1 GB on the stage-2 shard, 2.5 GB on a launch shard. Entries outside the resident
+  pyramids that no island has touched for ten minutes are released. Each worker keeps only its lazily
+  memoised collision vertices (32 MB).
 - Height packs are read by range from the bucket (ingress and bucket egress are free) straight into the
   decoded store. **There is no on-disk cache of packs by default**: Railway bills a container's page
   cache as memory until the kernel evicts it, so a disk LRU would be paid for as RAM; the replica memory
@@ -1528,12 +1608,17 @@ bodies and 22 workers that would be 10-40 GB per shard).
   shard, switched on only if the measured bucket latency asks for it. First touch in a new region stalls
   only the island that needs it (7.6). From stage 3 the directory places landings on shards that already
   hold the region where it can.
-- **Budget**: at stages 0 and 1 the whole `game` process is 0.15-0.35 GB idle-light, 0.4-0.75 GB at 5
-  players and 0.8-1.6 GB at 50 (derived from the measurements of `hosting-small.md` section 4), inside a
-  2 GB replica limit. From stage 2: 200 MB per worker isolate, 0.5 GB for the shard's main thread, the
-  store cap; 7.4 GB for a 22-worker shard, about 2 GB for the stage-2 shard (29.2). Resident memory is a
-  line of every load-test report (as Railway bills it: the container's memory including page cache), and
-  the memory lines of section 30 are computed from it.
+- **Budget**: at stage 0 the whole `game` process is 0.3-0.7 GB idle at the warm level (0.15-0.45 GB at
+  the light level), 0.4-0.75 GB at 5 players and 0.8-1.6 GB at 50 with the limits raised (derived from
+  the measurements of `hosting-small.md` section 4), inside a 2 GB replica limit. The 0.75 GB at 5
+  players is the sum of the configured caps, not a hope: about 0.1 GB of runtime and definitions, the
+  256 MB store full, two isolates at about 0.1 GB each with their collision vertices, and 0.2 GB of
+  heap for sessions, the directory's index and buffers. From stage 2: 200 MB per worker isolate, 0.5 GB
+  for the shard's main thread, the store cap; 7.4 GB for a 22-worker shard (derived from the per-isolate
+  figure measured on a small shard; measured as a whole only in the launch rehearsal), about 2 GB for
+  the stage-2 shard (29.2). Resident memory is a line of every load-test report **as Railway bills it:
+  the container's cgroup `memory.current`, page cache included, nothing subtracted**, and the memory
+  lines of section 30 are computed from it.
 
 ---
 
@@ -1618,11 +1703,37 @@ Types: `src/core/contracts/net.ts`. Implementation of the wire layer: `src/net`.
   until that has been tested). Every public document therefore carries `pollAfterS` (4 s by default),
   which the publisher raises up to 30 s when its request rate passes its budget (50 requests a second at
   stage 0, assumed), and beyond four times the budget it answers 429 with `Retry-After`; the menu keeps
-  its last picture and says the lobby is busy. When polling outgrows that, `pub` becomes its own stateless
-  service with the CDN on (a step of 16.2 that needs no freeze). That 50,000 visitors then cost one
-  computation a second and CDN hits is a claim about a beta CDN: its behaviour at a one-second lifetime is
-  verified before the step is relied on, and the lifetime is raised to 5 s if it is not honoured. A
-  spectating or queued player draws craft from these documents and holds no socket either.
+  its last picture and says the lobby is busy. The request budget protects the thread. The bill is
+  protected by a second one, in bytes: **anonymous requests for public documents have a daily egress
+  budget** (2 GB a day at stage 0, about ten times what 5 players and their menus use; a setting). At
+  half of it `pollAfterS` goes to its maximum, and when it is spent the publisher answers 429 until the
+  next UTC day. Requests are also limited per client address. A request that carries a live session
+  token is not anonymous: a player in flight keeps the census for the map, and those requests are
+  bounded by the admission cap. Without the byte budget a crawler or a looping client inside the
+  request budget could draw 100 GB and more a day from a process that has no CDN in front of it. When
+  polling outgrows the budgets, `pub` becomes its own stateless service with the CDN on (a step of 16.2
+  that needs no freeze). That 50,000 visitors then cost one computation a second and CDN hits is a claim
+  about a beta CDN: its behaviour at a one-second lifetime is verified before the step is relied on, and
+  the lifetime is raised to 5 s if it is not honoured. A spectating or queued player draws craft from
+  these documents and holds no socket either.
+- **The publisher is one module with one owner.** It is a role of `server/` (`server-persistence`),
+  whether it runs inside `game`, inside `dir` or as `ROLES=pub` in a service of its own: the code that
+  the "`pub` behind the CDN" step deploys is the code production has been running all along.
+- **The endpoint document.** A client never has a server address compiled in. `shell` serves
+  `GET /endpoints.json`, sent `no-cache` (a few hundred bytes, never held by the CDN):
+  `{ v, build, gate: string[], api: string[], pub: string[], bootPack: { url, hash, bytes } }`, each
+  list an **ordered list of candidates**. The values are the `shell` service's configuration; changing
+  them is a redeploy of `shell`, which never touches the universe. The client reads the document at
+  boot and **reads it again before every reconnect attempt, and on 429, 5xx or a network failure from
+  the publisher or the API**; it tries the candidates of a list in order, and a role in standby refuses
+  at once with `standby`, so the next candidate is tried without waiting. A stage move therefore lists
+  the new service first and the old one second **before** its freeze begins and removes the old one
+  afterwards: a pilot in flight during the move loses the socket at the freeze, re-reads the document,
+  is refused by the new gateway while it is in standby, and resumes on it inside the resume window as
+  soon as it accepts. No page reload is needed and nobody is left holding a dead address. Owners: the
+  shell side and the local stack's document, `platform-delivery`; the reader and the candidate logic
+  (`src/client/endpoints`), `netcode-client`; its use at boot and by the menu's poller,
+  `app-integration-2`. Bots and the test harness find the gateway the same way, never by configuration.
 
 ### 13.2 Session
 
@@ -1830,8 +1941,27 @@ event_log   (seq bigserial, at timestamptz, tick float8, kind text, data jsonb) 
 rules       (version int pk, doc jsonb, activated_at)
 report      (id, at, reporter, subject, kind, context jsonb)
 lease       (name text pk, holder text, token bigint, renewed_at timestamptz)       -- the directory's writer lease
+usage_hour  (hour timestamptz, service text, gb_seconds float8, vcpu_seconds float8,
+             egress_bytes jsonb,                    -- per route; what /ops sums for the month to date
+             primary key (hour, service))
+meta        (key text pk, value bigint)             -- change_seq: see below
 ```
 
+- **Encoding and locale are pinned, the same everywhere.** The cluster is created with
+  `--encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8`: on Railway through
+  `POSTGRES_INITDB_ARGS`, set before the template's first boot (the locale provider is fixed at creation,
+  like the major version); on the local stack through the `initdbFlags` of the embedded package; in the
+  compose form through the same variable. Without it the embedded cluster on this Windows machine is
+  created as WIN1252 with a Windows collation: a ship name outside that code page fails to insert,
+  `citext` uniqueness and ordering follow another collation than production, and a production dump may
+  not restore locally. The directory refuses to start on a database whose `server_encoding` is not UTF8
+  or whose `datlocprovider` is not the built-in one, at every stage and on the local stack.
+- `meta.change_seq` is incremented by every batch that writes anything other than the `lease` row and
+  `usage_hour`. It is what "something changed" means for the dump job (15.3): the lease is renewed
+  every 5 s, so a test on the WAL position or the transaction counter would never be false.
+- `usage_hour` holds the cost accumulators of section 27 for the services that can report them (one
+  small row per hour and service, written in the normal batch and read back at start), so the
+  month-to-date figure on `/ops` survives a rollout or a crash of `game`.
 - An assembly is one `vessel` row with several `craft` rows; links and per-craft stage stacks are inside
   `dyn`. Persisting a docked assembly needs nothing beyond persisting a vessel. Ids, tombstones and
   lineage follow section 3: a `vessel.id` is never held by two live rows, and a craft's own row is
@@ -1854,7 +1984,11 @@ lease       (name text pk, holder text, token bigint, renewed_at timestamptz)   
   combined `game` process safe at stages 0 and 1, exactly as it makes the `dir` service's overlap safe
   from stage 2. Shards send checkpoints, journal chunks and transition requests to the directory over the
   role transport (a `MessagePort` inside `game`, the private network from stage 2); a database worker
-  thread writes the batches.
+  thread writes the batches. **Connections are counted**: a directory process holds at most 4 (the
+  lease session with its advisory lock, the batch writer, a reader, one spare) and the dump job 1;
+  `max_connections` is 40, of which 3 are reserved. During a rollout two `game` processes, the dump and
+  an operator session are connected at once, which is the one moment that must not meet a limit: the
+  rollout test asserts a peak of at most 12 connections (28.6) and the capacity report states the peak.
 - A journal chunk holds everything needed to replay: tick range, **every tick-stamped input of 7.2** (each
   pilot's input changes with their applied ticks, commands in applied order, admissions, reservation
   results, adds and removes, range-safety and safing actions, helm grants, the inputs derived from timers,
@@ -1869,22 +2003,38 @@ lease       (name text pk, holder text, token bigint, renewed_at timestamptz)   
   minutes in practice). Nothing is rewritten in place, so there is no dead-tuple growth and daily volume
   backups do not pin churned blocks. `event_log` is partitioned by day and kept 30 days (a deployment
   setting), for the same reason. Volume: 5 GB at stage 0 (the Hobby plan's largest; 0.3-3 GB expected at
-  5-50 players with the WAL capped at 256 MB, derived), 20 GB from stage 1, 100 GB for a launch; table
-  and WAL size are lines of the load-test report. A rules switch turns the journal off (checkpoints every
+  5-50 players with the WAL capped at 256 MB, derived). From stage 1 it is grown only when used space
+  passes 4 GB (to 20 GB, and to 100 GB for a launch): a volume grows live but never shrinks, it is
+  billed on used space, and a volume above 5 GB cannot go back to the Hobby plan (16.2). Table and WAL
+  size are lines of the load-test report. A rules switch turns the journal off (checkpoints every
   10 s, at most 10 s lost).
 - **Copies, by stage.** The Hobby plan has no volume backups and no point-in-time recovery, so at stage 0
   the copies are ours: (1) the volume; (2) a compressed logical dump of everything **except**
-  `island_jrnl` and `island_ckpt` to the Railway bucket (a different storage system), written by the
-  `dump` job every hour, skipped when nothing was committed since the last one, and taken once more at
-  the end of every rollout's flush; the job keeps 24 hourly, 14 daily and 8 weekly dumps and deletes the
-  rest itself, since buckets have no lifecycle rules; (3) a nightly copy of the newest dump to a Modal
-  volume, off Railway. **The recovery point at stage 0 is therefore up to about one hour of directory
-  state if the volume is lost** (a crash or a deploy loses nothing: the volume survives both). From stage
-  1 Railway's daily, weekly and monthly volume backups and point-in-time recovery (minute-level, WAL
-  archived to a bucket) are switched on and the dump moves to every 6 hours. Uploads from a service to a
-  bucket are billed egress and have their own cost line (megabytes a day at stage 0). One sampled journal
-  in a hundred is archived for the replay audit. A restore from the dump returns every passive ship and
-  assembly; flights that were in progress restart from their last passive record.
+  `island_jrnl`, `island_ckpt` and `usage_hour` to the Railway bucket `dumps` (a different storage
+  system, and a credential no public-facing process holds: 10.4), written by the `dump` job every hour,
+  **skipped when `meta.change_seq` has not moved since the last dump** (15.2: an empty universe uploads
+  nothing, although its lease row is rewritten every 5 s), and taken once more at the end of every
+  rollout's flush; the job keeps 24 hourly, 14 daily and 8 weekly dumps and deletes the rest itself,
+  since buckets have no lifecycle rules; (3) a nightly copy of the newest dump to a Modal volume, off
+  Railway. **The recovery point at stage 0 is therefore up to about one hour of directory state if the
+  volume is lost** (a crash or a deploy loses nothing: the volume survives both). From stage 1 Railway's
+  daily, weekly and monthly volume backups and point-in-time recovery (minute-level, WAL archived to a
+  bucket) are switched on and the dump moves to every 6 hours. One sampled journal in a hundred is
+  archived to the `dumps` bucket for the replay audit. A restore from the dump returns every passive
+  ship and assembly; flights that were in progress restart from their last passive record.
+- **The dump job is a role of the one image**, not a second Dockerfile: the image installs the PGDG
+  `postgresql-client-18` beside Node (about 15 MB), so `ROLES=dump` has a `pg_dump` of the server's
+  major and the S3 client it needs to list, prune and decide whether to skip; it refuses to run when
+  `pg_dump`'s major differs from the server's. On Railway it is a cron service started from the same
+  build as `game`; it exists for seconds and holds one connection.
+- **Dump uploads are billed egress and grow with what is stored**, so they have a budget like every
+  other byte source (16.2): about 15-30 MB a dump at 5 players (hourly: $0.6-1.1 a month), 60-120 MB
+  at 20, 150-300 MB at 50 (about 5,000 accounts inside the retention window, 10-20 thousand vessels of
+  5-25 kB each). The job uploads at most 1.5 GB a day at stage 0: it stays hourly while a day's dumps
+  fit and lengthens its interval when they do not (2 hours from about 60 MB a dump, 6 hours from about
+  180 MB). The interval in force, and the recovery point that follows from it, are shown on `/ops`. A
+  lobby that has grown that far is past the point where the Pro plan costs the same (16.2), and
+  point-in-time recovery then closes the gap.
 
 ### 15.4 Restart and recovery
 
@@ -2005,6 +2155,12 @@ configuration. A process runs one role or several. Roles talk through one messag
 a `MessagePort` inside one process and a length-prefixed TCP stream on Railway's private network,
 **batched per control tick** (6.2). Which roles share a process is the only thing that differs between the
 stages of 16.2 and between the shapes of the local stack (16.4): there is one execution path.
+**Every role has one implementation and one owner.** `gate`, `dir`, `sim`, `api` and `pub` live under
+`server/` (`server-persistence`); `shell`, `packs` and `dump` live under `deploy/roles`
+(`platform-delivery`; the dump's content is `server-persistence`'s). A role manifest names each role's
+entry, and the program's entry starts whichever roles `ROLES` names and hands each the shared services
+it needs (the logger, the egress meter of 16.2), so `server/` never imports `deploy/`. The publisher
+that runs inside `game` at stage 0 is the module that `ROLES=pub` starts as its own service later.
 
 | Role | Does | Does not | Stages 0 and 1 | Stage 2 | Stage 3 |
 |---|---|---|---|---|---|
@@ -2013,8 +2169,9 @@ stages of 16.2 and between the shapes of the local stack (16.4): there is one ex
 | **Shard** (`sim-k`), one main thread plus one isolate per worker thread | Steps islands, runs unattended runs and the Reduced tier, holds the height authority with one shared tile store (10.5), encodes frames, sends checkpoints and journals, turns timers into stamped inputs | Anything about vessels it does not hold | the worker isolates of `game`, started on demand | `sim-1` | `sim-1..K`, one service each |
 | **API** (`api`), stateless, no CDN | Accounts and recovery, lobby list, presigned pack list, the planning endpoint, token-protected metrics and `/ops`, bulk account provisioning with an operator token (rehearsal environments and the local stack only, never production) | Sockets; public polling | in `game` | in `dir` | own service, 2 replicas |
 | **Publisher** (`pub`), stateless | Serves what is the same for everyone: `live.json`, `status.json`, rules, the census snapshots and deltas, with explicit cache lifetimes | Anything per player | in `game`, no CDN, bounded (13.1) | in `dir`, or its own service with the CDN on | own service, 2 replicas, CDN on |
-| **Static** (`shell`), no volume, CDN on | The shell and the boot pack, with the cross-origin isolation headers | Anything dynamic; sockets | own service | own service | own service |
+| **Static** (`shell`), no volume, CDN on | The client build, the boot pack (loaded from the bucket at start, 10.4) and the endpoint document (13.1), with the cross-origin isolation headers | Anything dynamic; sockets | own service | own service | own service |
 | **Mirror** (`packs`), no volume, behind a CDN | The tile mirror (10.4) | Anything dynamic | in `shell` | in `shell` | own service, 4 replicas, own domain |
+| **Dump** (`dump`), a cron job | The logical dump to the `dumps` bucket, its retention and its skip rule (15.3) | Anything else | cron service | cron service (every 6 hours from stage 1) | cron service |
 
 - A worker is one isolate because `src/sim` keeps module-level scratch state. Vessels move between workers
   by value.
@@ -2028,37 +2185,45 @@ stages of 16.2 and between the shapes of the local stack (16.4): there is one ex
 - **What never shares a process**: `shell` and anything that holds sockets (a front-end deploy would
   restart the universe); two directories (one writer per lobby; the lease is what makes a deploy overlap
   safe); Postgres and anything else (a service with a volume cannot overlap its deploys).
-- The combined process is a deployment stage and a test shape, and the split is a deployment stage and a
-  test shape: the suites of 28.4 and 28.6 run both, so no stage is first exercised in production.
+- Each stage's wiring is also a named shape of the local stack (16.4): **combined** (stages 0 and 1),
+  **split** (stage 2: `gate`, `dir` carrying `api` and `pub`, `sim-1`, and a `sim-2` for migration and
+  kills) and **launch** (stage 3: `api` and `pub` as their own processes, two gateways, two shards). The
+  suites of 28.4 and 28.6 run the combined and the split shape in full, the moves between them in both
+  directions, and a smoke of the launch shape, so no wiring is first exercised in production.
 
 ### 16.2 Deployment: a ladder of stages on one codebase
 
 The game starts on the smallest stage and moves up only on measured need. Every stage runs the same
 program, the same roles, the same schema and the same data; a move is configuration and a deploy, never a
-rewrite. The always-on deployment is stage 0, and its bill follows use: about $5-10 a month with nobody
-connected and $9-22 at 5 concurrent players (estimates; section 30), against the user's ceilings of about
-$30 idle and about $50 at 5 players.
+rewrite. The always-on deployment is stage 0, and what it costs follows use: it adds about $5-15 a month
+to the workspace bill with nobody connected and $10-25 at 5 concurrent players (estimates; section 30),
+against the user's ceilings of about $30 idle and about $50 at 5 players. "Adds" is the exact word. The
+Hobby plan's included $5 is per workspace, and the workspace's other project already uses more than
+that: $7.4 projected for the current billing period and $10.2 in the last one (`railway usage`, read
+2026-11-10). Every dollar of the game's usage is therefore billed, and every trigger that depends on the
+plan is a figure of the **workspace**, not of the game.
 
 | Stage | Plan | Railway services | Holds | Standing cost (section 30) |
 |---|---|---|---|---|
-| **0 Combined** (always on; where the game starts) | Hobby | `game` (gate, dir, api and pub in one process; up to 2 worker isolates; 512 MB tile store; replica limit 2 vCPU / 2 GB), `shell` (static and `packs`, CDN on; limit 0.5 vCPU / 0.25 GB), `postgres` (Postgres 18; limit 1 vCPU / 1 GB; 5 GB volume), `dump` (hourly cron job), one bucket | Admission cap 20: the count at which the conservative projection reaches about $50 a month if held all month. The stage-0 load test replaces it with the measured count | $5-10 a month idle; $9-22 at 5 concurrent players held all month; about $5-11 for 5 players on four evening hours a day |
-| **1 Combined on Pro** | Pro | The same services, with volume backups and point-in-time recovery on, the volume grown to 20 GB, `game` deployed from the CI image by digest, 30-day logs; replica limits as measured need says | Admission cap up to the measured limit of the `game` main thread (assumed 150-300 players) | max($20, usage): the same bill as stage 0 once usage has passed $20, plus about $0.3-1 for the WAL archive |
-| **2 Split** | Pro | `gate` x 1, `dir` (carrying `api` and `pub`), `sim-1` (4 workers, 1 GB tile store), `shell`, `postgres` (20 GB), bucket | about 300-500 concurrent players (assumed); admission cap 500 until a load test says otherwise | about $3-6 a month more than stage 1 at equal load; 200 concurrent held all month about $130-400 |
-| **3 Launch** | Pro | `gate` x 3 or more, `dir`, `sim-1..K` (workers per shard from the measured knee, 22 at most; 2.5 GB tile store), `api` x 2, `pub` x 2, `shell`, `packs` x 4, `postgres` (100 GB), the scale controller | per shard about 360 integrated objects on the conservative figure and about 2,200 on the derived one, at 50 % headroom | 500 concurrent held all month $420-1,020; a front-page day adds $105-345 |
+| **0 Combined** (always on; where the game starts) | Hobby | `game` (gate, dir, api and pub in one process; up to 2 worker isolates; 256 MB tile store; idle level warm; replica limit 2 vCPU / 2 GB), `shell` (static and `packs`, CDN on; limit 0.5 vCPU / 0.25 GB), `postgres` (Postgres 18; limit 1 vCPU / 0.5 GB; 5 GB volume), `dump` (hourly cron job), two buckets (`packs`, `dumps`) | Admission cap 20: the count the conservative projection puts at about $53 a month for the game if it were held all month. The stage-0 load test replaces it with the measured count | Added to the workspace bill: $5-15 a month idle; $10-25 at 5 concurrent players held all month; about $6-17 for 5 players on four evening hours a day |
+| **1 Combined on Pro** | Pro | The same services, with volume backups and point-in-time recovery on, `game` deployed from the CI image by digest, 30-day logs; the volume grown only when used space passes 4 GB; replica limits as measured need says | Admission cap up to the measured limit of the `game` main thread (assumed 150-300 players) | The workspace pays max($20, the usage of both projects): the same bill as stage 0 once the workspace's usage has passed $20 and $0-8 a month more below that, plus about $0.3-1 for the WAL archive |
+| **2 Split** | Pro | `gate` x 1, `dir` (carrying `api` and `pub`), `sim-1` (4 workers, 1 GB tile store), `shell`, `postgres`, the buckets | about 300-500 concurrent players (assumed); admission cap 500 until a load test says otherwise | about $3-6 a month more than stage 1 at equal load; 200 concurrent held all month about $130-400 |
+| **3 Launch** | Pro | `gate` x 3 or more, `dir`, `sim-1..K` (workers per shard from the measured knee, 22 at most; 2.5 GB tile store; idle level light on the extra shards), `api` x 2, `pub` x 2, `shell`, `packs` x 4, `postgres` (volume up to 100 GB), the scale controller | per shard about 360 integrated objects on the conservative figure and about 2,200 on the derived one, at 50 % headroom | 500 concurrent held all month $420-1,020; a front-page day adds $105-345 |
 | Beyond | Pro | a second gateway service at 8,000 connections, directory helpers on their own service, a second lobby as a second copy of the stack | 10,000+ | section 30 |
 
-**Moving between stages.** Every trigger is a measured number, shown with its current value on `/ops` and
-by `deploy/stage.mjs status`. The lead tells the user before any move that changes the plan or raises the
-standing spend; the user's answer is recorded in OPEN_QUESTIONS.
+**Moving between stages.** Every trigger is a measured number, shown with its current value by
+`deploy/stage.mjs status` and, for what the game itself can see, on `/ops` (section 27 says which is
+which). The lead tells the user before any move that changes the plan or raises the standing spend; the
+user's answer is recorded in OPEN_QUESTIONS.
 
 | Move | Trigger | What the move involves | Freeze |
 |---|---|---|---|
-| 0 to 1 | Projected usage at or above about $20 a month (from there Pro costs what Hobby costs, because both bill the larger of the fee and the usage); or the volume above 4 GB; or the user wants platform backups and point-in-time recovery sooner (up to $15 a month more) | The user upgrades the workspace (it covers the other project in it too). Then, scripted: backups and point-in-time recovery on (this may restart Postgres: the path of 15.4), the volume grown live, `game` switched from the repository build to the CI image by digest (needs a registry credential, OPEN_QUESTIONS Q5) | Seconds (the Postgres restart), or none |
-| Limits, inside stage 0 or 1 | Admission refusing spawns on step time, or the admission cap reached on several days | The replica limits of `game` (up to 8 vCPU / 8 GB on Hobby, 24 / 24 on Pro), its worker count and the admission cap are raised: variables and one graceful rollout. This raises the worst-case month, so the lead tells the user first | Under 40 s plus the resume window |
-| `pub` behind the CDN, at any stage | The publisher above its request budget for 10 minutes (the `pollAfterS` stretch is active, 13.1) | `pub` is created as its own stateless service with the CDN on and the shell's endpoint list points at it; about $1 a month | None |
-| 1 to 2 | The `game` main thread above 50 % utilisation at peak (measured); or players within 70 % of its measured limit; or the gateway and the simulation need separate deploys | `deploy/stage.mjs up --to split`: `gate`, `dir` and `sim-1` are created from the same digest and wait in standby; the freeze is announced; `game` freezes, writes final checkpoints, flushes and releases the lease; `dir` takes the lease and runs the decode sweep; `sim-1` registers and restores the islands from the checkpoints (same build); `gate` accepts; the shell's endpoint list is pointed at `gate`; `game` is removed | One announced freeze: under 40 s plus the 30 s resume window (the rollout budget of 29.2) |
-| 2 to 3 | An announced launch, or measured admission queueing at stage 2 | `deploy/stage.mjs up --to launch`: `sim-2..K`, gateway replicas and the `api`, `pub` and `packs` services are added, the volume grown to 100 GB, the scale controller enabled inside the ceiling of OPEN_QUESTIONS Q6 | None (it adds services and replicas) |
-| Down | Usage back under the trigger for a billing cycle | The same scripts in reverse: 3 to 2 removes services after their islands have migrated; 2 to 1 is the mirrored freeze. A plan downgrade is the user's | As the move up |
+| 0 to 1 | **The workspace's** projected usage for the month at or above $20, read from `railway usage --json` by `deploy/stage.mjs status` (both plans bill the larger of the fee and the usage, and billing is per workspace: with the other project at $7-10 that is the game alone at about $10-13, which is the idle state on the high estimate and about 5-9 concurrent players on the low one); or the volume above 4 GB; or the user wants platform backups and point-in-time recovery sooner ($0-8 a month more, OPEN_QUESTIONS Q2). A projection from the roles' own metrics cannot see the other project and is never used for this trigger | The user upgrades the workspace (it covers the other project in it too). Then, scripted: backups and point-in-time recovery on (this may restart Postgres: the path of 15.4); the source of `game` set to the CI image by digest (needs a registry credential, OPEN_QUESTIONS Q5), **which takes effect at the next regular rollout**, so the move has no rollout of its own. The volume is not grown | Seconds (the Postgres restart), or none |
+| Limits, inside stage 0 or 1 | Admission refusing spawns on step time, or the admission cap reached on several days | The replica limits of `game` (up to 8 vCPU / 8 GB on Hobby, 24 / 24 on Pro), its worker count, its tile-store cap, the admission cap and, with them, the egress budgets are raised: variables and one graceful rollout. This raises the worst-case month, so the lead tells the user first | Under 40 s plus the resume window |
+| `pub` behind the CDN, at any stage | The publisher above its request budget for 10 minutes (the `pollAfterS` stretch is active, 13.1), or its daily byte budget spent on two days of a week | `pub` is created as its own stateless service with the CDN on (`ROLES=pub`: the module that has been running inside `game`, 16.1); the endpoint document lists it first and `game` second (13.1); about $1 a month | None |
+| 1 to 2 | The `game` main thread above 50 % utilisation at peak (measured); or players within 70 % of its measured limit; or the gateway and the simulation need separate deploys | `deploy/stage.mjs up --to split`: `gate`, `dir` and `sim-1` are created from the same digest and wait in standby; **the endpoint document is changed to list `gate` first and `game` second, and the script waits until the redeployed `shell` serves it** (13.1); the freeze is announced; `game` freezes, writes final checkpoints, flushes and releases the lease; `dir` takes the lease and runs the decode sweep; `sim-1` registers and restores the islands from the checkpoints (same build); `gate` accepts, and clients, which re-read the document before every reconnect attempt, resume on it inside the resume window; `game` is removed and then dropped from the document | One announced freeze: under 40 s plus the 30 s resume window (the rollout budget of 29.2) |
+| 2 to 3 | An announced launch, or measured admission queueing at stage 2 | `deploy/stage.mjs up --to launch`: `sim-2..K`, gateway replicas and the `api`, `pub` and `packs` services are added (each listed in the endpoint document before it is relied on), the volume grown when its used space asks for it, the scale controller enabled inside the ceiling of OPEN_QUESTIONS Q6 | None (it adds services and replicas) |
+| Down | Usage back under the trigger for a billing cycle | 3 to 2 removes services after their islands have migrated: no freeze. 2 to 1 is the mirrored freeze: `game` is created in standby and listed second in the endpoint document; `gate`, `dir` and `sim-1` freeze, write final checkpoints and release the lease; `game` takes it and restores. It is tested like the move up (28.6). 1 to 0 is offered only while the volume is still 5 GB or smaller: backups and point-in-time recovery off, the source of `game` back to the repository build at the next rollout, then the plan downgrade, which is the user's. **Once the volume has grown past 5 GB, stage 1 is one-way**: a volume never shrinks and 5 GB is the Hobby plan's largest, so going back would mean a dump, a new volume and a restore with a freeze of minutes, and it is not offered | 3 to 2 and 1 to 0: none. 2 to 1: as the move up |
 
 No move loses committed state: each is the graceful column of 15.4 or needs no freeze at all, and each
 ends with a dump.
@@ -2075,9 +2240,10 @@ set, one schema; a second lobby is a second copy of whatever stage it needs).
   players (the admission cap) play normally. Everyone else still gets the title, the live Earth and the
   menu inside the cold-start budget, because the shell, its CDN, the boot pack and the bucket do not
   depend on `game`; they are given a queue position and watch from the public documents, whose polling
-  the publisher stretches and, past its budget, refuses (13.1). Nobody loses a ship, the universe does not
-  slow down, and the day is bounded by the replica limits and the cap at about $3-10, or about $70 if the
-  shell's CDN missed every boot-pack request (section 30).
+  the publisher stretches and, past its request or byte budget, refuses (13.1): on such a day the
+  spectating view runs out within the first hour and the queue shows the last picture with a note.
+  Nobody loses a ship, the universe does not slow down, and the day is bounded by the replica limits,
+  the cap and the egress budgets below at about $3-5, whatever the CDN does (section 30).
 - **How fast a human can move up once somebody looks** (targets; every step is timed in the stage-up drill
   of 28.7): the limits and the cap of `game` raised to what one Hobby replica holds, about 5 minutes with
   one freeze; `pub` behind the CDN, about 10 minutes with no freeze; the Pro upgrade, the user's click;
@@ -2097,43 +2263,80 @@ set, one schema; a second lobby is a second copy of whatever stage it needs).
   Hobby plan cannot pull an image from a private registry); the lead moves that branch to the release
   tag. Autodeploy is off. Its health check passes in standby; `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=45`
   (the default of 0 would turn every deploy into a crash); restart policy Always; one replica; no volume;
-  no CDN.
-- **`shell`** is the same image in its static role: cross-origin isolation headers, immutable hashed
-  assets, `index.html` sent `no-cache` so the CDN does not hold it for its default two hours, the boot
-  pack and the mirror's slice endpoint. CDN on. It autodeploys on its own watch paths, so a front-end
-  push never restarts the universe.
+  no CDN; `ADMISSION_CAP=20`; idle level warm; a 256 MB tile store.
+- **`shell`** is the same image in its static role: cross-origin isolation headers, the client build as
+  immutable hashed assets, `index.html` and `endpoints.json` (13.1) sent `no-cache` so the CDN does not
+  hold them for its default two hours, the boot pack fetched from the `packs` bucket at start and held in
+  memory (10.4; the health check waits for it), and the mirror. CDN on. It autodeploys on its own watch
+  paths, so a front-end push never restarts the universe.
 - **`postgres`** is Railway's template on the Postgres 18 image (the major is chosen at creation and is
-  the one the local stack embeds), private network only, with `shared_buffers=96MB`, `max_wal_size=256MB`,
-  `min_wal_size=64MB` and `max_connections=20` set through `ALTER SYSTEM`. **`dump`** is a Railway cron
-  service on the same Postgres image, so its `pg_dump` matches the server (15.3).
+  the one the local stack embeds), private network only. Before its first boot `POSTGRES_INITDB_ARGS` is
+  set to `--encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8`, the same cluster settings
+  as the local stack (15.2; they cannot be changed afterwards). `shared_buffers=96MB`,
+  `max_wal_size=256MB`, `min_wal_size=64MB` and `max_connections=40` are set through `ALTER SYSTEM` (the
+  pools are stated in 15.3). **Its replica limit is 1 vCPU / 0.5 GB.** Railway bills page cache, and the
+  lease UPDATE, recycled WAL segments and every dump fill it; the limit is what makes the kernel give
+  it back, so the limit is the most that Postgres memory can cost ($5 a month).
+- **`dump`** is a cron service that runs the `dump` role of the same image, whose `pg_dump` is of the
+  server's major (15.3). It holds the `dumps` credential; `game` and `shell` do not.
+- **Buckets**: `packs` and `dumps`, in US East (10.4).
 - **Domains**: Railway's own. If the user supplies a domain, the Hobby plan's two custom domains cover
-  `shell` and `game`.
+  `shell` and `game`; the endpoint document is what tells a client either.
 - **Build identity.** A journal is valid only for the build that wrote it, and at stage 0 the image is
   built by Railway instead of being pulled by digest. The build therefore computes a `buildId` from the
   Node image digest and the hash of the server bundle; CI builds the same Dockerfile at the same commit
   and records its `buildId`; the rollout script refuses a deployment whose `buildId` differs from CI's,
-  and the Modal audit builds from the same Dockerfile and checks the id before it replays anything. From
-  stage 1 the CI image is deployed by digest and one artefact runs everywhere.
+  and the Modal audit builds from the same Dockerfile and checks the id before it replays anything. The
+  `buildId` does not cover baked data, so the rollout also checks the boot manifest hash and the client
+  build hash that the running `shell` reports against the release commit (10.4). From stage 1 the CI
+  image is deployed by digest and one artefact runs everywhere.
 - **Nothing in production sleeps.** The time model would allow it (an empty universe is passive, and every
-  wall-clock timer can catch up), but Railway's Serverless mode would save $0-5 a month on a floor that
-  the plan fee mostly covers already, at the price of a first visit of 5-15 s that may fail with a 502,
-  on a feature Railway itself calls a poor fit for WebSocket servers and databases. So `game` and
-  `postgres` stay up and the universe goes **idle-light** (6.2): no tick loop, no worker isolates, no
-  terrain, documents only on request. **The first visitor after any idle spell waits for nothing**: the
-  title comes from the shell's CDN, the menu's documents are answered at once, and the 1-3 s it takes to
-  start a worker and load Earth's pyramid for the first Deploy pass inside the briefing and the transit.
-  True scale to zero is used where it is free of risk: Modal (nothing always on; a cold start only delays
-  a batch job), the `dump` job (a container that exists for seconds each hour), and rehearsal
+  wall-clock timer can catch up), but Railway's Serverless mode would save a few dollars a month at the
+  price of a first visit of 5-15 s that may fail with a 502, on a feature Railway itself calls a poor fit
+  for WebSocket servers and databases. The user has said that an idle floor of about $30 is acceptable
+  where zero would be complex or fragile, and this is such a place. So `game` and `postgres` stay up and
+  the universe goes **idle at the warm level** (6.2): no tick loop, documents only on request, one
+  worker isolate and the launch bodies' resident terrain kept. **The first visitor after any quiet
+  spell waits for nothing, and so does the first Deploy**: the title comes from the shell's CDN, the
+  menu's documents are answered at once, and the worker and the terrain are already there. True scale
+  to zero is used where it is simple and robust: Modal (nothing always on; a cold start only delays a
+  batch job), the `dump` job (a container that exists for seconds each hour), and rehearsal
   environments, which exist only while a measurement runs.
-- **The idle floor is $5-10 a month**, the plan fee included: $3.5-9.7 of usage (memory of `game` and
-  Postgres, in that order, is most of it), of which the fee's included $5 covers what the workspace's
-  other project has not already used.
-- **The bill is bounded without alerts.** No hard usage limit is set: it would stop the services and
-  suspend the bucket. The replica limits bound compute at about $100 a month even if every service were
-  pegged all month, and the admission cap bounds what players can add. `/ops` and
-  `deploy/stage.mjs status` show the month-to-date usage computed from the roles' own metrics at list
-  prices, the projection for the month, and every trigger of the table above with its current value; the
-  lead reads them at every release and writes the cost line into `docs/capacity/`.
+- **The idle floor: the game adds $5-15 a month to the workspace bill**, all of it usage (memory of
+  `game` and Postgres, in that order, is most of it; the warm level is $1-2.50 of it). With the other
+  project the workspace then pays about $13-25 a month on the Hobby plan. Both figures are under the $30
+  the user named.
+- **The bill is bounded by configuration, not by an alert.** No hard usage limit is set: Railway's limit
+  is per workspace, so it would stop the other project too, and it suspends the buckets. Two things
+  bound the month instead.
+  *Compute*: the replica limits (`game` 2 vCPU / 2 GB, `postgres` 1 vCPU / 0.5 GB, `shell` 0.5 vCPU /
+  0.25 GB) cap it at about $100 a month even if every service were pegged all month.
+  *Egress*: replica limits do not bound bytes, and stage 0 has public byte sources that need no
+  admission, so **every route that sends bytes to the internet has a daily budget, counted in process
+  from the egress-per-route meters of section 27** and reset at 00:00 UTC:
+
+  | Route | Daily budget (a setting) | If spent every day of a month | When it is spent |
+  |---|---|---|---|
+  | `shell`: the client build (CDN misses) | 3 GB | $4.50 | 503 with `Retry-After` for misses of hashed assets; CDN hits are unaffected |
+  | `shell`: the boot pack (CDN misses) | 1 GB (40 copies) | $1.50 | a redirect to the presigned copy in the bucket, which is free |
+  | `shell`: the mirror (CDN misses) | 8 GB | $12 | 429; clients stay on the bucket path (10.4) |
+  | `game`: public documents, anonymous | 2 GB | $3 | `pollAfterS` at its maximum from half the budget, then 429 (13.1) |
+  | `game`: the API, anonymous routes | 1 GB | $1.50 | 429; requests with a live session are served |
+  | `dump`: uploads | 1.5 GB | $2.25 | the dump interval lengthens (15.3) |
+  | `game`: sockets | no daily budget: the admission cap of 20 times the 6 kB/s per-client cap | $15.80 | the cap and the per-client budget already hold it |
+
+  The hashed routes of `shell` (`/p/`, `/boot/`, the assets) answer **404 with no body to any request
+  that has a query string**, so a cache-busting variant never returns bytes, and origin bytes are also
+  limited per client address (300 MB in 10 minutes on the mirror; whether the CDN passes the client's
+  address to the origin is checked in wave 3, and the daily budgets do not depend on it). **The worst
+  month the game can cost at stage 0 is therefore about $140**: about $100 of pegged compute, which
+  takes a runaway bug, plus about $40 of egress if every budget were spent every day; a month in which a
+  scraper or a broken client spends every budget every day on otherwise normal compute is about $25
+  above a normal month. `deploy/stage.mjs status` prints the workspace's usage and estimated bill from
+  `railway usage --json` (both projects, which is what the plan triggers are judged on), the game's
+  share, each budget with what was used of it today, and every trigger of the table above; `/ops` shows
+  what the game itself can measure (section 27). The lead reads them at every release and writes the
+  cost line into `docs/capacity/`.
 
 **Mechanics shared by the stages.**
 
@@ -2175,7 +2378,9 @@ set, one schema; a second lobby is a second copy of whatever stage it needs).
 - **Modal** (own environment `fsp`, app names prefixed `fsp-`; existing apps and volumes untouched;
   nothing always on, so it costs nothing between jobs and the two nightly jobs stay inside the monthly
   credit): `fsp-audit` (nightly replay of archived journals against committed checkpoints, on the build
-  that wrote them), `fsp-offsite` (nightly copy of the newest dump from the bucket to a Modal volume),
+  that wrote them), `fsp-offsite` (nightly copy of the newest dump from the `dumps` bucket to a Modal
+  volume; and, once per pack set, a copy of the packs to a Modal volume through the presigned pack list,
+  which needs no credential and makes the development machine's `data/packs` deletable),
   `fsp-bots` (load-test players, 100 or more per 4-core container so that 5,000 bots stay well under the
   workspace's container limit shared with the existing apps), `fsp-bake`, `fsp-probe` (bucket throughput
   tests, expressed as concurrent fetchers per container).
@@ -2183,7 +2388,15 @@ set, one schema; a second lobby is a second copy of whatever stage it needs).
   second region would be a second lobby.
 - **Secrets**: run-time secrets as Railway sealed or reference variables; deploy secrets in GitHub
   Actions once they exist (until then rollouts run from the development machine's logged-in CLIs; stage 0
-  needs no deploy secret in GitHub at all); the client holds no provider credential.
+  needs no deploy secret in GitHub at all); the client holds no provider credential. **Three credentials
+  exist outside Railway, and they are named**: the `dumps` bucket credential as a Modal secret in
+  environment `fsp`, for `fsp-offsite` and `fsp-audit` (it is the full credential of that bucket,
+  because Railway cannot issue a read-only one; that is why dumps have a bucket of their own); the
+  `packs` bucket credential in the development machine's `.env`, for the upload tool; and the operator
+  token of a **rehearsal** environment as a Modal secret for `fsp-bots`, created with the environment
+  and deleted with it. A sealed variable cannot be read back, so each of these is generated or read once
+  by the deploy script at creation and written to both places in the same run, never to a file or a
+  log. The session signing key, the database URL and production's operator token never leave Railway.
 - **CI** (GitHub Actions on `sshh12/fable-space-program`): secrets check, a repository scan for `TODO`,
   `FIXME`, `stub` and `placeholder` outside the allowed simple-body data, typecheck (browser and Node
   configurations), boundaries, unit and universe suites, the net suites on synthetic terrain, the
@@ -2194,9 +2407,20 @@ set, one schema; a second lobby is a second copy of whatever stage it needs).
 - **Rehearsal environments, no standing staging.** A rehearsal environment is a second environment of the
   Railway project in the shape of the stage being measured, on `rules/staging.json` or a load-test rule
   set. `deploy/stage.mjs rehearse` creates it, it exists for the run and it is deleted afterwards, so
-  nothing stands idle and nothing needs waking. A rehearsal in the shape of stage 0 fits the Hobby plan
-  and costs cents. A rehearsal of stage 2 or 3 needs the Pro plan and is run only after the lead has
-  told the user what it will cost (28.7, section 30).
+  nothing stands idle and nothing needs waking. **Storage is the part that needs saying.** Railway
+  buckets belong to one environment, so a new environment starts with empty ones, and re-uploading
+  14-20 GB of packs for every run is hours at this machine's uplink. `rehearse` therefore gives the
+  rehearsal environment the production `packs` credential as a sealed variable: its `game`, its `shell`
+  and its bots read the same immutable, content-addressed packs as production, through a pack list
+  signed by the rehearsal's own `game`. It is **never** given the `dumps` credential: the rehearsal's
+  dumps go to its own `dumps` bucket, which is deleted with it, so nothing a rehearsal writes or prunes
+  can touch a production dump. The `packs` credential cannot be made read-only; what protects the packs
+  is that no role contains a delete or an overwrite of a pack, that every pack is verified by hash, and
+  that a second copy exists off Railway (10.4). A rehearsal environment also has the operator switches
+  that production never has: bulk account provisioning, a lifted admission cap and the fault commands
+  of 28.7. A rehearsal in the shape of stage 0 fits the Hobby plan and costs a few dollars. A rehearsal
+  of stage 2 or 3 needs the Pro plan and is run only after the lead has told the user what it will cost
+  (28.7, section 30).
 
 ### 16.3 Scaling path
 
@@ -2241,30 +2465,67 @@ and where the multi-client acceptance runs. The deployed environment is needed o
 proofs: the deploy itself, restart recovery on the production database, and measured hosting numbers
 (28.7, 31.4).
 
-- **One command.** `npm run stack` (`deploy/local/stack.mjs`, run under
+- **One command.** `npm run stack` (the script wraps `deploy/local/stack.mjs` in
   `node tools/dev/heavy.mjs --class=stack`) starts:
   - a real PostgreSQL 18 from the `embedded-postgres` package, in a directory the stack owns
-    (`data/stack/<name>/pg`);
-  - the roles as host Node processes in the shape of the production stage: the combined `game` process
-    and `shell` by default; with `--split`, `gate`, `dir`, `sim-1`, `sim-2`, `api` and `pub` as separate
-    processes over the TCP transport;
-  - the existing dev server for plain-file tiles, and a small HTTP Range server over `data/packs` with the
-    bucket's CORS and `Content-Range` behaviour and the mirror's slice endpoint, so the pack path, the
-    failover and the boot pack are exercised without a bucket;
+    (`data/stack/<name>/pg`), created with production's cluster settings through `initdbFlags`
+    (`--encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8`, 15.2; the package's default
+    would create a WIN1252 cluster on this machine). The stack refuses to start on a data directory
+    whose encoding or locale provider differs;
+  - the roles as host Node processes in a named shape (below);
+  - the page a browser loads (below);
+  - a small HTTP server over `data/packs` that stands in for the bucket (ranged GET with CORS,
+    presigned-style URLs whose expiry it honours, switches that make it answer 403, 404 or 429 for the
+    failover tests) and for the mirror in the mode wave 3 chose, so the pack path, the failover, the
+    boot pack and the shell's load of it are exercised without a bucket;
+  - the stack's own endpoint document (13.1), which is how every client, browser or headless, finds
+    the roles: no test is handed a gateway address by configuration;
   - when a test asks for them, the latency injector and N headless clients or Chrome instances.
 
-  Options: `--rules=local|staging|default|<a load-test set>`, `--fresh` (a new database), `--db=docker`
-  (the Postgres container instead of the embedded one, behind the same `DATABASE_URL`), and `STACK_NAME`
-  with `STACK_PORT_BASE` so that two packages do not collide. The command returns when everything is
-  ready and leaves the stack running in the background, with its state under `data/stack/<name>`;
-  `npm run stack -- status` prints what runs and its memory; `npm run stack -- down` stops everything.
-  Nothing is left running after a suite.
+  Options: `--shape=combined|split|launch`, `--rules=local|staging|default|<a load-test set>`, `--fresh`
+  (a new database), `--db=docker` (the Postgres container instead of the embedded one, behind the same
+  `DATABASE_URL`), `--page=dev|build`, `--profile=acceptance|load`, `--compose`, and `STACK_NAME`
+  (state under `data/stack/<name>`, so one package's database is never another's).
+- **The stack lives exactly as long as its launcher, and the launcher holds the one `stack` slot.**
+  `heavy.mjs` frees a slot when the wrapped command exits. A stack left running in the background would
+  therefore hold no slot, and two packages could start two stacks, or a stack beside the 6 GB Docker
+  VM, on the machine that once crashed under load. So there is no background mode.
+  `npm run stack -- [options] -- <command>` takes the slot, brings the stack up, hands the command
+  `STACK_URL`, `STACK_ENDPOINTS` and `STACK_STATE`, runs it, and brings the stack down when the command
+  exits, whatever its exit code, and on a signal. Without a command it stays in the foreground, for hand
+  work, until it is interrupted. `npm run stack -- status`, from another terminal, prints what runs with
+  its memory; `npm run stack -- down` cleans up after a launcher that died (its slot is reclaimed, as
+  for any dead holder). The compose form is the same launcher with `--compose`, in the same slot: the
+  host stack and the compose stack never run together, and never two of either; a second launcher
+  waits. A package holds the slot for one suite at a time and gives it up between suites, so packages
+  that work in the same wave take turns. Since only one stack runs at a time there is one port range;
+  `STACK_NAME` only separates the data directories of runs that follow each other.
+- **Shapes are the wirings of the stages (16.1), by name.** `combined` (the default; `game` and `shell`:
+  stages 0 and 1). `split` (`gate`, `dir` carrying `api` and `pub`, `sim-1`, `sim-2` and `shell`, over
+  the TCP transport: stage 2, with the second shard there for cross-shard migration and kills).
+  `launch` (two `gate` processes, `dir`, `sim-1`, `sim-2`, `api`, `pub`, `shell` and `packs`, each its
+  own process: the stage-3 wiring). The moves between combined and split, in both directions, are
+  driven by the harness on a live database (28.6). The table below says which suite runs on which.
+- **What page a browser loads.** Two sources, both provided by the lead as root configuration.
+  `--page=dev`, the default, for everyday work, the functional specs and the two-browser stories: the
+  existing Vite dev server (which also serves the plain-file tiles), started by the launcher with the
+  stack's endpoint document, so the unbundled app finds the local roles the way the built one finds
+  production's; without a stack the document is absent and the app offers Practice only, as today.
+  `--page=build`, for the cold-start and boot-pack rows of 29.2, the whole flights of 31.5 in real
+  Chrome and anything that asserts bytes or seconds: the `shell` role serves a production client build
+  and the boot pack. `npm run stack:client` (the lead's script, the same Vite configuration as CI's
+  build) writes that build to `data/stack/client/<source hash>/`, never to the shared `dist/`, under
+  `--class=cpu`, and does nothing when the source hash is unchanged; the launcher runs it when
+  `--page=build` is asked for. It is the only client build a package ever runs.
+  `tests/browser/globalSetup.ts` (the lead's) starts no server of its own when `STACK_URL` is set and
+  points the `functional` and `acceptance` projects at it; without it, it behaves as today.
 - **Host processes and an embedded Postgres are the default, on measurements** (`hosting-small.md`
   section 8). There is no daemon to start. Postgres takes about 160 MB, against 1-3 GB for the Docker VM,
   on a machine that once crashed under combined load and whose browser tests need the memory and the GPU.
   Postgres is ready in 0.1-0.3 s (4 s for the first initialisation). The plain-file tile tree is read
   natively, where a bind mount into a container is 36 times slower. No image is rebuilt per edit. And it
-  is a real Postgres exactly where the design depends on one: the advisory lock is exclusive between
+  is a real Postgres exactly where the design depends on one (its Windows bundle includes `citext`, and
+  with the cluster settings above its encoding and collation are production's): the advisory lock is exclusive between
   sessions, a fenced write with a stale token changes no row, the 250 ms batches are real transactions,
   partitions work, and a committed row survives a hard kill. PGlite is not used for the stack: it has a
   single session, so a second directory "takes" the same advisory lock and the lease cannot be expressed.
@@ -2277,11 +2538,18 @@ proofs: the deploy itself, restart recovery on the production database, and meas
   suite that needs it starts the Docker daemon if it is stopped and stops what it started. Tiles reach
   the containers as packs (large files read at 170 MB/s through a bind mount) or over HTTP from a host
   process, never as the plain-file tree through a bind mount.
-- **Memory, inside the machine-load rules.** `heavy.mjs` has one `stack` slot: the host stack and the
-  compose stack never run at the same time, and never two of either. The host stack's servers stay under
-  1.5 GB in the combined shape and 2.5 GB in the split shape (Postgres 0.2 GB, `game` 0.4-0.8 GB, the
-  tile servers 0.2 GB); a headless client is about 150 MB; Chrome instances stay in the `gpu` class. The
-  Docker VM is capped at 6 GB, 8 processors and 2 GB of swap, with `autoMemoryReclaim=dropCache`, in
+- **Memory, inside the machine-load rules.** One stack at a time, by the slot above. In the
+  **acceptance profile** (the default: up to six headless clients, two worker isolates per shard, a
+  256 MB tile store) the host stack's servers stay under 1.5 GB in the combined shape and 2.5 GB in the
+  split and launch shapes (Postgres 0.2 GB, `game` 0.4-0.8 GB, the tile servers 0.2 GB); a headless
+  client is about 150 MB; Chrome instances stay in the `gpu` class. The **load profile**
+  (`--profile=load`: the local runs with 50 to 500 wire-level clients or bots) has its own bound, 4 GB
+  for the servers and 2 GB for the clients, and its launcher does not start with less than 16 GB of
+  physical memory free; nothing else heavy runs beside it, and it makes no capacity claim. A memory row
+  that fits neither these bounds nor the Docker VM is not run on this machine: per-isolate and
+  tile-store memory are measured on a shard of two to four workers, the 22-worker figure is derived from
+  them, and the shard is measured whole only in the launch rehearsal (28.7). The Docker VM is capped at
+  6 GB, 8 processors and 2 GB of swap, with `autoMemoryReclaim=dropCache`, in
   `%UserProfile%\.wslconfig`. That file applies to every WSL 2 distribution and takes effect after
   `wsl --shutdown`, so it is written once, at a moment when nothing runs (OPEN_QUESTIONS, "Small
   things").
@@ -2290,13 +2558,15 @@ proofs: the deploy itself, restart recovery on the production database, and meas
 |---|---|---|
 | 28.1 unit, 28.2 universe, 28.3 mission | Nothing: in-process | No database |
 | Lane equivalence and migration (`tests/net/server`) | Host stack | Executors only; no signal, no dump |
-| 28.4 the latency matrix with two to six headless clients | Host stack, combined shape; the docking, disconnect and warp rows once more in the split shape | Latency is injected per client; drain by control message works on Windows |
-| 28.5 the two-browser acceptance stories; the flights of 31.4 and 31.5 through `NetSession` | Host stack, combined shape | Memory and the GPU belong to the browsers |
+| 28.4 the latency matrix with two to six headless clients | Host stack, combined shape; the docking, disconnect and warp rows once more in the split shape; the docking row once in the launch shape | Latency is injected per client; drain by control message works on Windows |
+| 28.5 the two-browser acceptance stories | Host stack, combined shape, `--page=dev` | Memory and the GPU belong to the browsers |
+| The flights of 31.4 and 31.5 through `NetSession` in real Chrome; every cold-start and boot-pack row | Host stack, combined shape, `--page=build` | The page a player gets: the production client build and the boot pack from `shell` |
 | 28.6 expiry on the staging rule set with an injected wall clock | Host stack | No signal or dump involved |
-| 28.6 restart and recovery (graceful rollout, two overlapping directories, kills of a worker, of `game`, of a shard and of the directory, a Postgres restart, the decode sweep, restore from the dump); replay audits; billed-memory measurements | Compose, the pinned Linux image | Signals, the build replay is defined on, `pg_dump` and `pg_restore`, container memory |
+| 28.6 restart and recovery (graceful rollout, two overlapping directories, the stage move in both directions, kills of a worker, of `game`, of a shard and of the directory, a Postgres restart, the decode sweep, restore from the dump); replay audits; billed-memory measurements (cgroup `memory.current`) | Compose, the pinned Linux image, combined and split shapes | Signals, the build replay is defined on, `pg_dump` and `pg_restore`, container memory |
 | The image smoke test before every deploy | Compose | It is the artefact Railway runs |
 | Pack, upload and presign scripts | Host stack for the pack path; compose's MinIO for upload and presign | The real bucket is measured in wave 3 |
-| 28.7 the local load run (up to about 200 bots; no capacity claim) | Host stack, under the heavy gate | Least memory |
+| The local load runs (`server-persistence`: 5 to 500 wire-level clients; 28.7: up to about 200 bots; no capacity claim) | Host stack, `--profile=load` | Least memory; its own stated bound |
+| The scale controller's dry run | Host stack, launch shape | The stage-3 wiring without a cloud resource |
 
 A local-stack result is never reported as a deployed or a measured-capacity result.
 
@@ -2322,7 +2592,9 @@ A local-stack result is never reported as a deployed or a measured-capacity resu
   exports no session. Until `src/universe` exists (waves 3 and 4) `createSession` returns `World` typed as
   `LocalSession`; the switch is a gated step with an owner (MIGRATION_V2 step 4.3).
 - **`NetSession`** (`src/client/net`) is the same interface over a gateway: the session layer of `src/net`,
-  the replica of 13.5, the relevant-set and census stores, the clock, the planning providers. Commands that
+  the replica of 13.5, the relevant-set and census stores, the clock, the planning providers. It finds
+  the gateway, the API and the publisher through the endpoint document (13.1), which it reads again
+  before every reconnect attempt, so a stage move or a new `pub` service needs no reload. Commands that
   change state return `{ ok: true, pending: true }` at once and are confirmed by a `commandResult` event;
   planning commands (`addNode`, `setNode`, `removeNode`, `setNavballMode`, `setTarget`) stay synchronous
   because they are local.
@@ -2786,7 +3058,13 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
 - Bounds at the gateway: inputs above 60 per second, commands above 20 per second, subscription churn and
   stamps beyond `clock(up) + 0.25 s` are dropped. Account creation is limited per IP address per hour;
   `X-Real-IP` comes from Railway's edge. (Load-test bots share addresses: bulk provisioning with an
-  operator token is accepted on rehearsal environments and on the local stack only, never on production.)
+  operator token is accepted on rehearsal environments and on the local stack only, never on production;
+  the same switch enables the fault commands of 28.7 and the lifted admission cap.)
+- Bytes are bounded as well as requests: every route that sends to the internet without admission (the
+  client build, the boot pack, the mirror, the public documents, the anonymous API routes) has a daily
+  egress budget and a per-address limit, and the hashed routes refuse query strings (16.2). A scraper,
+  a looping client or an abuser can use up a budget, which degrades spectating or the tile fallback for
+  that day; it cannot run up the bill.
 - **Time requests are bounded per account** (all `UniverseRules` fields): six `Time` messages per 10 s;
   one warp proposal per 30 s and one open proposal per clock; one ask-to-advance per group per 5 minutes
   after a refusal, and one open request per group; joining an attended clock at most once per 60 s, and
@@ -2814,20 +3092,32 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
   utilisation, resident memory and tile-store size; per gateway connections, bytes per second per tier,
   dropped frames, input lateness; directory main-thread utilisation, transitions per second, screening and
   chain time, batch commit latency, passive object count and its fill fraction, pad queue and wait per
-  class, reservations granted and denied; recovery and freeze durations. While the universe is idle-light
+  class, reservations granted and denied; recovery and freeze durations. While the universe is idle
   (6.2) there is nothing to publish every second: a sample is taken every 30 s and on every read of
   `/metrics`, `/ops` or `status.json`.
-- **Cost and stage numbers** are metrics like the rest: billed-style memory of every process (resident
-  memory including page cache), vCPU-seconds, egress bytes per route (sockets, public documents, the
-  mirror, dump uploads), volume size, and from them the month-to-date usage at list prices, the projection
-  for the month and the current value of every stage trigger of 16.2.
+- **Cost numbers, and who can know which.** Every role meters itself: billed-style memory (the
+  container's cgroup `memory.current`, page cache included, where a cgroup exists), vCPU-seconds, and
+  egress bytes per route (sockets, public documents, the API, the client build, the boot pack, the
+  mirror, dump uploads). The per-route meters are also what the daily egress budgets of 16.2 count.
+  `game` writes its own accumulators to `usage_hour` (15.2) in the normal batch and reads them back at
+  start, so the month-to-date figure survives rollouts and crashes. **`/ops` shows what `game` can
+  measure and says so**: its own memory, CPU and egress at list prices, month to date and projected,
+  each egress budget with today's use, and the triggers that are the game's own (main-thread
+  utilisation, admission, players against the cap). **It cannot see** Postgres's memory and CPU (the
+  second-largest idle line), `shell`, the dump job, the volume, the buckets, or the workspace's other
+  project. Those come from Railway: `deploy/stage.mjs status` reads `railway usage --json` and the
+  per-project split with the logged-in CLI, prints the workspace's usage and estimated bill beside the
+  game's share, evaluates the 0-to-1 trigger on the workspace figure (16.2), and with `--push` posts
+  that reading to `/ops` through the operator API, where it is shown with its date. `game` holds no
+  Railway token.
 - **No alerts are routed** (user decision). Nothing posts to a webhook or an address, and no destination
   is asked for; alerting is a forward seam (section 32). Every threshold an alert would watch (admission
   queue, p99 step time, connections, main-thread utilisation, the passive fill fraction, the projected
-  spend, every action of the stage-3 controller) is a named metric with its threshold beside it on `/ops`,
-  so a human who looks sees what an alert would have said. Railway's own usage e-mail is a switch in the
-  user's account and nothing depends on it. No hard usage limit is set, because it would take the game
-  offline; the bill is bounded by replica limits and the admission cap instead (16.2).
+  spend, each egress budget, every action of the stage-3 controller) is a named metric with its
+  threshold beside it on `/ops`, so a human who looks sees what an alert would have said. Railway's own
+  usage e-mail is a switch in the user's account and nothing depends on it. No hard usage limit is set:
+  it is per workspace and would take the game, its buckets and the other project offline. The month is
+  bounded by replica limits, the admission cap and the per-route egress budgets instead (16.2).
 - The API serves them as `GET /status.json` (public: players online, in flight, queue, build, rules
   version) and `GET /metrics` (Prometheus text, token-protected). An operator page under `/ops` (token)
   shows the same live.
@@ -2935,8 +3225,10 @@ embedded Postgres, in the combined shape that stage 0 deploys), a proxy that inj
 TCP-style stalls per client, and two to six headless `NetSession` clients driven by scripted pilots.
 Matrix: 0, 50, 150 and 300 ms round trip; 0 and 5 % stalled sends of 200 ms. The rendezvous and docking,
 disconnect and warp rows run once more in the split shape at 150 ms, so the transport between services is
-flown before stage 2 ever needs it. Rows that kill a process or deliver a signal belong to 28.6 and run in
-the pinned Linux image.
+flown before stage 2 ever needs it, and the docking row once in the launch shape (separate `api` and
+`pub`, two gateways), so the stage-3 wiring has flown too. Every client finds its gateway through the
+stack's endpoint document (13.1), as a browser does. Rows that kill a process or deliver a signal belong
+to 28.6 and run in the pinned Linux image.
 Every run records whether it started from pad spawns on a fresh database or from **seeded** vessels; a
 seeded run is marked in the result table and never counts as a completion proof.
 
@@ -2982,10 +3274,19 @@ on the host stack.
   a deploy overlap of `game` and as the ordered sequence of the split: every vessel identical by island
   hash afterwards; the burning island is held until its pilot resumes and the throttle is where the pilot
   left it; clients on the old build are told to reload and resume inside the build-change grace; the
-  freeze duration is reported.
-- **The stage move** from the combined shape to the split on a live database (`game` drains, `dir` takes
-  the lease, `sim-1` restores from the checkpoints): every vessel identical by island hash, flights held
-  for their pilots, the freeze duration reported.
+  freeze duration is reported, and so is the peak number of Postgres connections during the overlap
+  (at most 12 of the 40, 15.3).
+- **The stage move, in both directions**, on a live database: combined to split (`game` drains, `dir`
+  takes the lease, `sim-1` restores from the checkpoints) and split back to combined (the mirrored
+  freeze). In each: every vessel identical by island hash, flights held for their pilots, the freeze
+  duration reported. **The clients are given no address**: they hold the endpoint document, which the
+  harness changes before the freeze as the stage script does (the new service first, the old one
+  second), and they must resume on the new gateway inside the 30 s resume window. A client that needs a
+  reload, or a configured address, to find the new gateway fails the row.
+- **Cluster settings**: the stack and the directory refuse a database that is not UTF8 with the
+  built-in locale provider; a ship name with characters outside Windows-1252 and outside Latin-1 is
+  stored and read back, callsign uniqueness is case-insensitive, and a dump taken in the pinned image
+  restores into the host stack's embedded cluster (`pg_restore` run from the image against it).
 - **Combined shape**: a worker isolate killed during an ascent (the islands are restored by another
   isolate and replayed to the last sent frame from the surviving input buffer); SIGKILL of the
   `game` process during an ascent, a claim commit and a dock (each island back at its own durable tick,
@@ -3021,13 +3322,56 @@ lead announces first. Three programmes, in the order in which they may spend:
 
 | Programme | Where | Needs | What it measures |
 |---|---|---|---|
-| **1. Stage 0** (always run) | The deployed production stage for the two cost readings, the wake from idle, a rollout and the cold start; a rehearsal environment in the stage-0 shape for everything that loads the server | The Hobby plan; a few dollars on Railway; Modal bots are R&D | **The idle floor** (12 hours with nobody connected) and **the cost at 5 players** (5 bots in the normal mix held 6 hours), from Railway's usage figures per service and from the roles' own metrics, projected to a month: at or under about $30 idle and about $50 at 5 players, or the report says by how much it missed and why. The time from the first Deploy after an idle spell to control. Ramps of 5, 10, 20, 50, 100 and 200 bots, 15 minutes each, the upper levels with the replica limit raised to what one Hobby replica holds: main-thread utilisation of `game` per connected bot (it sets the admission caps of stages 0 and 1 and the trigger for stage 2), step time with 1, 2, 4 and 8 synchronised workers (it replaces the 2.5x derating), memory as billed. A rollout at 20 bots and at the highest level that held; a kill of `game` and of a worker isolate at load; a Postgres restart under load; the churn run; a visitor mix sized for the stage (500 menu clients while 20 bots fly: the publisher's budget and its stretch); expiry in real wall-clock time on the staging rules; a cold start from a clean profile |
-| **2. The stage-up drill and the split** | A rehearsal environment walked up the ladder | The Pro plan, so only after the lead has told the user the cost (section 30) | Every move of 16.2 timed under 50 flying bots (0 to 1, the limits, `pub` behind the CDN, 1 to 2), with nothing lost by island hash. Ramps of 200 and 500 on stage 2; a rollout under load at 200; a forced shard kill and a directory kill at load |
-| **3. The launch rehearsal** | A rehearsal environment at stage 3 | Pro; the lead tells the user first; Railway is told before the 2,000 and 5,000 runs | Ramps of 1,000, 2,000 and 5,000; **scale-out under load** (time from the controller's trigger to K new shards taking islands, at 500 bots); a visitor mix of 5,000 menu clients while 500 bots fly; the mirror's throughput (10.4); step time with 16 and 22 synchronised workers; a rollout at 2,000; a two-hour soak at the highest level that held |
+| **1. Stage 0** (always run) | The deployed production stage for the two cost readings, a rollout and the cold start; a rehearsal environment in the stage-0 shape for everything that loads the server | The Hobby plan; a few dollars on Railway; Modal bots are R&D | **The idle floor** (12 hours with nobody connected) and **the cost at 5 players** (5 bots in the normal mix held 6 hours), from Railway's usage figures per service and per project and from the roles' own metrics, projected to a month by the one formula of 29.2: at or under about $30 idle and about $50 at 5 players, or the report says by how much it missed and why. The time from the first Deploy after a quiet spell to control. On the rehearsal environment: ramps of 5, 10, 20, 50, 100 and 200 bots, 15 minutes each, the upper levels with the replica limit raised to what one Hobby replica holds: main-thread utilisation of `game` per connected bot (it sets the admission caps of stages 0 and 1 and the trigger for stage 2), step time with synchronised workers (it replaces the 2.5x derating), memory as billed; **the pad cycle** on a rule set with few pads; a rollout at 20 bots and at the highest level that held; a crash of `game` and of a worker isolate at load; a Postgres restart under load; the churn run; a visitor mix sized for the stage (500 menu clients while 20 bots fly: the publisher's request and byte budgets and its stretch); **the egress budgets under a hostile client**; expiry in real wall-clock time on the staging rules; a cold start from a clean profile. The rules for these rows are below the table |
+| **2. The stage-up drill and the split** | A rehearsal environment walked up the ladder | The Pro plan, so only after the lead has told the user the cost (section 30) and the user has agreed (the checkpoint below) | Every move of 16.2 timed under 50 flying bots (0 to 1, the limits, `pub` behind the CDN, 1 to 2, and 2 back to 1), with nothing lost by island hash and with bots that find the new services only through the endpoint document. Ramps of 200 and 500 on stage 2; step time with 8 synchronised workers under load; a rollout under load at 200; a forced shard kill and a directory kill at load |
+| **3. The launch rehearsal** | A rehearsal environment at stage 3 | Pro; the lead tells the user first; Railway is told before the 2,000 and 5,000 runs | Ramps of 1,000, 2,000 and 5,000; **the pad-storm and launch-day mixes on the release rule set** (32 pads queueing for real); **scale-out under load** (time from the controller's trigger to K new shards taking islands, at 500 bots); a visitor mix of 5,000 menu clients while 500 bots fly; the mirror's throughput (10.4); step time with 16 and 22 synchronised workers and the memory of a 22-worker shard; a rollout at 2,000; a two-hour soak at the highest level that held |
+
+**The checkpoint between programme 1 and the others.** Programmes 2 and 3 need the user's yes, and the
+user is asked with programme 1's numbers, so the sequence is explicit. When programme 1 ends,
+`deploy-loadtest` writes `docs/capacity/<date>-stage0.md` and files a request for the lead. The lead
+puts OPEN_QUESTIONS Q19 to the user with those numbers and the prices of section 30 and records the
+answer and its time under Q19. On a yes (and a Pro workspace) the package goes on with programmes 2
+and 3. While it waits it does its other work (the stage scripts and their dry runs, the split and
+launch shapes on the local stack, the production acceptance). On a no, or with no answer 48 hours after
+the request, it finishes with the estimates wording; a yes that arrives later re-opens the package for
+those two programmes before `final-gate` runs.
 
 If programmes 2 and 3 have not run, the capacity report says so in its first lines: the measured limit is
 the stage-0 limit, the figures for stages 2 and 3 are estimates, and their correctness rests on the split
-shape of the local stack. That is an honest report and not a blocker; a game that was never deployed is.
+and launch shapes of the local stack. That is an honest report and not a blocker; a game that was never
+deployed is.
+
+Rules for programme 1's rows:
+
+- **The idle reading is a window with its wake-ups listed, not a claim that nothing happened.**
+  Production is reachable by strangers, and by design a fate that falls due flies during idle. The
+  report lists every wake-up in the window (fates flown, document requests, sessions) and asserts the
+  idle state between them: no tick loop, one worker isolate, only the launch bodies' resident terrain.
+  The reading is taken **before any bot has flown on production**, or after the bots' ships and debris
+  have been abandoned and removed, so the test does not seed its own fates. An interval in which a
+  stranger is connected is excluded and the window is extended to keep 12 hours.
+- **Billed memory creeps**, so one reading is not enough: Postgres's page cache fills with the lease
+  writes, recycled WAL and dump runs until its replica limit pushes back, and a tile store fills to its
+  cap. The idle reading is taken again once every service has been up for at least 72 hours with dump
+  runs in the window (by `final-gate` if the package's own window closes sooner); both readings are
+  reported, and the cap-derived bound of section 30 is printed beside them.
+- **The compute ramps on the rehearsal environment run with the admission cap lifted.** Stage 0 has a cap
+  of 20; with it in place every bot above 20 would queue by configuration and the 50 to 200 levels
+  would count nothing. Admission then comes from measured step time alone, and each row records the cap
+  in force. One run at the cap of 20 shows the queue and the spectating path.
+- **Synchronised-worker step time**: with 1, 2, 4 and 8 workers **while the main thread is idle** (a
+  Hobby replica has 8 vCPU; eight workers under bot load beside the main thread, the database thread and
+  the helpers would measure contention, not the workers), and with 1, 2, 4 and 6 under bot load. Eight
+  and more under load belong to programmes 2 and 3.
+- **Crashes are injected, not requested from Railway.** A service restart on Railway is a SIGTERM with
+  the 45 s drain, which is the graceful path. The crash of `game` and the loss of a worker isolate use
+  an operator-token fault command of the API (exit the process without draining; terminate worker k),
+  which exists only where bulk provisioning exists: rehearsal environments and the local stack, never
+  production.
+- **The egress budgets are attacked**: one client loops on the mirror, on the boot pack and the hashed
+  assets with changing query strings, and on the public documents; the report gives the bytes each
+  route sent against its budget, the answer after the budget, and that players in flight were
+  unaffected.
 
 - **Bots** are real `NetSession` clients with scripted pilots, headless in Node on Modal (100 or more per
   4-core container; at most 50 containers at 5,000, leaving the workspace's headroom to the existing
@@ -3042,14 +3386,22 @@ shape of the local stack. That is an honest report and not a blocker; a game tha
   per bot, and counts only when the ratio meets the mix's target (0.75 for the normal mix, 1.35 for the
   launch-day mix). At least one bot in ten runs full prediction and checks every correction; the rest may
   replay recorded input logs with jitter, and a replay that crashes early is replaced, not counted.
-- Bots read height packs through the pack source, as a browser does. Accounts are provisioned in bulk with
-  the operator token on rehearsal environments only; the five bots of the cost reading on production
-  create ordinary accounts and abandon their ships when the reading ends.
-- **Pads and compute are measured separately.** The pad-storm and launch-day mixes run on the release rule
-  set and report the **pad-limited** player count: launches per wall hour (reservoir and sustained) and
-  the median and p95 wall-clock wait from Deploy to control-enabled per level. The compute ramps run on a
-  load-test rule set with synthetic extra pads (`tests/load/rules`), so the CPU, gateway and directory
-  limits are found independently of pads, and report the **compute-limited** player count.
+- Bots read height packs through the pack source, as a browser does, and find every address through the
+  endpoint document. A rehearsal environment reads the production `packs` bucket (16.2), so no run
+  uploads packs. Accounts are provisioned in bulk with the operator token on rehearsal environments
+  only; the five bots of the cost reading on production create ordinary accounts and abandon their
+  ships when the reading ends.
+- **Pads and compute are measured separately.** The compute ramps run on a load-test rule set with
+  synthetic extra pads (`tests/load/rules`), so the CPU, gateway and directory limits are found
+  independently of pads, and report the **compute-limited** player count. The **pad-limited** count
+  needs pads that queue. The release complex (32 pads, 768 launches an hour) does not queue under the
+  200 bots of programme 1 (at most about 400 launches an hour), so programme 1 runs the pad-storm mix
+  on a **pad-scarce** rule set: the release cycle, dwell and safing values and 4 pads, which 100 to 200
+  bots saturate. It reports the measured launches per pad per hour, the distribution of the wait from
+  Deploy to control-enabled, and the bot count at which the p95 wait passes 120 s. The figure for 32
+  pads is then stated as **derived** from the measured per-pad cycle, and is measured as such (reservoir
+  and sustained launches per wall hour, median and p95 wait per level on the release rule set) only in
+  programme 3.
 - **Every ramp level** is held 15 minutes. In each programme: a soak at the highest level that held (one
   hour on stage 0, two in the launch rehearsal), with passive-object count, table and WAL size over time;
   a reconnect storm; a rollout under load (freeze duration); the **visitor mix** (menu clients polling the
@@ -3066,9 +3418,11 @@ shape of the local stack. That is an honest report and not a blocker; a game tha
   vessels solid to another attended vessel in the launch-day mix. If it is missed, the fields to tune are
   the cohort bucket length, the launch range, the default of follow, `advanceLimit` and the in-phase offer;
   the report says which were changed.
-- **Measured and published**: usage in dollars per service, idle and at 5 players, projected to a month;
-  memory as billed per process, idle-light and under load; step time per worker at 1, 2, 4 and 8
-  synchronised workers (stage 0) and at 16 and 22 (launch rehearsal); integrated objects per worker thread
+- **Measured and published**: usage in dollars per service, idle and at 5 players, projected to a month,
+  with the workspace's bill beside it; memory as billed per process, idle and under load, at 12 and at
+  72 hours of uptime; bytes sent per route against each egress budget; step time per worker at 1, 2, 4
+  and 8 synchronised workers (stage 0) and at 16 and 22 (launch rehearsal); launches per pad per hour
+  and the wait distribution; peak Postgres connections during a rollout; integrated objects per worker thread
   at the admission threshold; billed vCPU-seconds per integrated vessel-second and idle CPU; main-thread
   utilisation of `game` per connected bot, and of every shard and the directory from stage 2; dilated and
   held islands; gateway CPU per connection; bytes per second per player per tier as billed; directory
@@ -3086,7 +3440,8 @@ shape of the local stack. That is an honest report and not a blocker; a game tha
   or the bots cannot run for a reason outside the package, the report is titled local-only, makes no
   capacity statement, and the package reports the unmet completion criteria to the user as a blocker. A
   report that stops at programme 1 makes no front-page statement beyond the estimates and the scaling
-  path, and says so.
+  path, and says so: in it every figure of the stage-3 bottleneck list (29.2) is either measured or
+  marked "estimate" with the programme that would measure it.
 
 ### 28.8 Whole flights
 
@@ -3173,25 +3528,27 @@ under 16.7 ms and GPU p99 at or under 11 ms, one browser measured at a time unde
 | Snapshot build for a crowded island | <= 1.0 ms p99 for 64 vessels: full part snapshots only for the vessels inside the presentation relevance cut (about 40 us each, measured), pose-only snapshots for the rest (<= 5 us each); nameplates <= 0.2 ms |
 | Planning | never on the main thread above 1 ms; a heliocentric prediction up to 20 ms in the worker; the endpoint's p95 reported |
 | Corrections, solo flight at 150 ms round trip | none visible; fewer than one per player-minute above tolerance; zero reversals |
-| **Monthly cost of the always-on deployment** (stage 0, Hobby plan, everything included) | at or under about $30 with nobody connected (estimate $5-10); at or under about $50 at 5 concurrent players held all month (estimate $9-22). Projected from measured usage by `deploy-loadtest` and again by `final-gate` |
-| **Idle-light** (nobody connected, the last grace ended) | no tick loop, no worker isolate, no resident terrain; `game` at or under 0.35 GB and 0.02 vCPU averaged over 10 minutes, Postgres at or under 0.25 GB; inside the process only the lease UPDATE every 5 s, a metrics sample every 30 s and the timer for the next fate |
-| First Deploy after an idle spell | a worker isolate and Earth's resident pyramid within 3 s (assumed 1-3 s), inside the briefing and the transit; the title and the public documents answer at once, because nothing was asleep |
-| `game` at stage 0 | 0.4-0.75 GB and at most 0.15 vCPU at 5 players; 0.8-1.6 GB at 50; replica limit 2 vCPU / 2 GB; tile store 512 MB; main thread at or under 50 % (its measured limit, assumed 150-300 players, is the trigger for stage 2) |
-| Admission cap | 20 at stage 0 (the count the conservative projection puts at about $50 a month if held all month), then the measured count; up to the measured main-thread limit at stage 1; 500 at stage 2 until a load test says otherwise |
+| **Monthly cost of the always-on deployment** (stage 0, Hobby plan) | **One formula, used by every report.** `U` is the game's own usage: the sum of its services' lines at list prices, from Railway's per-project usage for the window, cross-checked with the roles' meters, projected to 730 hours. `U` is what the game adds to the workspace bill, because the other project already uses the plan's included $5 (measured), and it is what the estimates of section 30 are compared with: $5-15 idle, $10-25 at 5 players. **The ceilings are judged on `U + $5`**, as if the game paid the whole plan fee itself: at or under about $30 with nobody connected and about $50 at 5 concurrent players held all month. The workspace's bill, max($5, `U` plus the other project's usage), is reported beside them. Read by `platform-delivery` (idle skeleton), `deploy-loadtest` and `final-gate` |
+| **Idle** (nobody connected, the last grace ended) | no tick loop; inside the process only the lease UPDATE every 5 s, a metrics sample every 30 s and the timer for the next fate. Warm level (stages 0 to 2): one worker isolate and the launch bodies' resident pyramids; `game` at or under 0.7 GB and 0.02 vCPU averaged over 10 minutes. Light level: no worker isolate and no resident terrain; at or under 0.45 GB. Postgres at or under its 0.5 GB replica limit in either |
+| First Deploy after a quiet spell | warm: control-enabled no later than on a busy server (nothing is loaded at that moment); the title and the public documents answer at once, because nothing was asleep. Light (extra shards at stage 3): a worker isolate and the body's resident pyramid within 3 s (assumed 1-3 s, measured in the launch rehearsal) |
+| `game` at stage 0 | 0.4-0.75 GB and at most 0.15 vCPU at 5 players (0.75 GB is the sum of the configured caps, 10.5); 0.8-1.6 GB at 50 with the limits raised; replica limit 2 vCPU / 2 GB; tile store 256 MB; main thread at or under 50 % (its measured limit, assumed 150-300 players, is the trigger for stage 2) |
+| Postgres at stage 0 | replica limit 1 vCPU / 0.5 GB, so at most $5 a month of memory whatever the page cache does; `max_connections` 40; at most 4 connections per directory process and 1 for the dump; peak during a rollout at or under 12 |
+| Egress budgets at stage 0 (16.2) | per day: client build 3 GB, boot pack 1 GB, mirror 8 GB, anonymous public documents 2 GB, anonymous API 1 GB, dump uploads 1.5 GB; sockets bounded by the admission cap times 6 kB/s. Worst month about $40 of egress, about $140 with every service pegged as well |
+| Admission cap | 20 at stage 0 (the count the conservative projection puts at about $53 a month for the game if held all month), then the measured count; up to the measured main-thread limit at stage 1; 500 at stage 2 until a load test says otherwise; lifted on rehearsal environments for the compute ramps |
 | Downstream per player | planning average 2.5 kB/s (cruise); 6 kB/s hard cap, which a launch day reaches; upstream under 0.6 kB/s. The complete census is HTTP from the publisher and is not in this budget |
 | Server CPU per connected player (derived; conservative) | 0.0055 vCPU normal mix, 0.0094 launch-heavy; 0.025 and 0.043 on `hosting.md`'s figure |
 | One worker thread at 50 % (derived; conservative) | 100-125 integrated objects; 16. Replaced by the synchronised-worker measurements (1, 2, 4 and 8 on stage 0; 16 and 22 in the launch rehearsal) |
 | Shard and directory main threads (from stage 2) | <= 50 % utilisation with per-tick batching (about 48,000 inputs and as many frames a second per shard at 1,600 players would otherwise be most of a core) |
-| Shard memory (from stage 2) | 200 MB per worker isolate; tile store 1 GB (stage 2) or 2.5 GB (launch); 7.4 GB for 22 workers, about 2 GB for the stage-2 shard (10.5) |
+| Shard memory (from stage 2) | 200 MB per worker isolate; tile store 1 GB (stage 2) or 2.5 GB (launch); 7.4 GB for 22 workers (derived from the per-isolate and store figures measured on a shard of two to four workers; measured whole in the launch rehearsal), about 2 GB for the stage-2 shard (10.5) |
 | One gateway vCPU (assumed) | 250-500 connections; 10,000 per service |
-| Public documents | at most one generation a second, and none while nobody asks; menu clients poll every `pollAfterS` (4 s, stretched to 30 s under load). Without a CDN (the publisher inside `game` or `dir`): a budget of 50 requests a second, 429 beyond 200 (assumed). With `pub` as its own service: 5,000 menu tabs are about 1,250 requests a second before the CDN |
+| Public documents | at most one generation a second, and none while nobody asks; menu clients poll every `pollAfterS` (4 s, stretched to 30 s under load). Without a CDN (the publisher inside `game` or `dir`): a budget of 50 requests a second, 429 beyond 200 (assumed), and 2 GB a day of anonymous bytes, 429 beyond it (13.1). With `pub` as its own service: 5,000 menu tabs are about 1,250 requests a second before the CDN |
 | Directory | 10,000 transitions a second; 100,000 vessels in 50 MB (assumed); a reservation answered in under 5 ms |
 | Rollout (deploy that affects the simulation) | universe frozen under 40 s plus the resume window (30 s, or 90 s on a build change); no committed state lost; no burn flown without its pilot |
 | Crash | at most 250 ms of flight lost per island at every stage (at stages 0 and 1 a crash of the `game` process is the crash of everything, 15.4); islands back within 60 s at 5,000 integrated vessels; flights in progress held for their pilots |
 | Loss of the database volume | stage 0: at most about one hour of directory state (hourly dump, off-site copy nightly); from stage 1: minutes (point-in-time recovery) |
-| Stage moves | 0 to 1: seconds or none; the limits of `game`: one rollout; 1 to 2: one announced freeze inside the rollout budget; 2 to 3: none. Human time from stage 0 to the launch topology: about an hour (target; timed in the stage-up drill) |
+| Stage moves | 0 to 1: seconds (a Postgres restart) or none; the switch of `game` to the CI image rides the next regular rollout and adds no freeze. The limits of `game`: one rollout. 1 to 2 and 2 back to 1: one announced freeze inside the rollout budget, and clients resume on the new gateway inside the 30 s resume window through the endpoint document, with no reload. 2 to 3, 3 to 2 and 1 to 0: none. Human time from stage 0 to the launch topology: about an hour (target; timed in the stage-up drill) |
 | Scale-out (stage 3) | time from the controller's trigger to new shards taking islands: measured in the launch rehearsal, target under 3 minutes |
-| Local stack | one command; servers at or under 1.5 GB in the combined shape and 2.5 GB in the split shape; Postgres ready in under 1 s after its first initialisation; the Docker VM, when a suite needs it, capped at 6 GB (16.4) |
+| Local stack | one command, one stack at a time (the launcher holds the `stack` slot for the stack's whole life); acceptance profile: servers at or under 1.5 GB in the combined shape and 2.5 GB in the split and launch shapes; load profile: servers at or under 4 GB and clients at or under 2 GB, started only with 16 GB free; Postgres ready in under 1 s after its first initialisation; the Docker VM, when a suite needs it, capped at 6 GB (16.4) |
 | **Cold start** (first visit, 50 Mbit/s, cold OPFS, clean profile) | <= 25 MB and <= 8 s to the title; the rest streams behind it; calibration data (<= 150 MB) resident before the benchmark starts; calibration itself under 30 s. Owners: `capability-settings` (ordering, what is deferred), `platform-delivery` (boot pack layout). Measured against the deployed shell and bucket by `deploy-loadtest` |
 | Menu DOM | 0.5 ms main thread per frame; scrim pass under 0.1 ms GPU |
 | Transit | about 10 s with no frame at or above 33 ms |
@@ -3200,10 +3557,14 @@ under 16.7 ms and GPU p99 at or under 11 ms, one browser measured at a time unde
 | Remote vessels | full detail for as many as fit the pad-row column at Ultra; nameplates for 8 plus target, partners and own ships |
 
 **What binds first on the ladder is money, not a machine.** Every concurrent player held all month adds
-about $0.62-1.93 (derived; socket egress is 40-50 % of it and CPU about a third). In order: (a) usage
-reaches $20 a month at about 5-23 concurrent players held all month, from where the Pro plan costs
-nothing extra and brings backups, point-in-time recovery and deploys by digest (stage 1); (b) $50 a month
-at about 20-70 concurrent held all month, which is why stage 0's admission cap starts at 20; (c) the main
+about $0.6-1.9 (derived; socket egress is 40-50 % of it and CPU about a third). In order: (a) **the
+workspace's** usage reaches $20 a month, from where the Pro plan costs nothing extra and brings backups,
+point-in-time recovery and deploys by digest (stage 1). The workspace's other project is $7-10 of that
+(measured), so the game's share of the trigger is about $10-13: on the high estimate the game is there
+with nobody connected, on the low one at about 5-9 concurrent players held all month. Stage 0 on the
+Hobby plan may therefore last weeks, not months, and the user is told so before it is built
+(OPEN_QUESTIONS Q2); (b) the game alone at $50 a month at about 18-70 concurrent held all month, which
+is why stage 0's admission cap starts at 20; (c) the main
 thread of `game` (sockets, directory, documents) at 50 % utilisation, assumed at 150-300 players and
 measured by programme 1 of 28.7 (stage 2); (d) the Hobby plan's 5 GB volume, only if a retention rule
 were missing; (e) 8 vCPU per Hobby replica, about six worker threads; (f) from there the order below.
@@ -3217,7 +3578,11 @@ while the reservoir lasts, so this is a one-day sizing; (4) the shard main threa
 enough; (5) egress as a sustained cost, at the cap on a launch day; (6) memory per shard; (7) one crowded
 island (single-threaded; per-island dilation and the vessel budget of 7.2); (8) directory screening and
 forecast chains against a crowded low-orbit shell (estimated at 1-2 cores at 5,000 players, not measured);
-(9) terrain on shards; (10) Postgres batches. The capacity report lists each with its measured number.
+(9) terrain on shards; (10) Postgres batches. The capacity report lists each with its measured number,
+or marks it "estimate" and names the programme of 28.7 that would measure it: programme 1 measures the
+per-pad cycle (on a pad-scarce rule set), the main thread, the workers up to 8, egress and memory at its
+own scale; the 32-pad queue, 16 and 22 workers, shard memory and the directory at 5,000 players are
+measured only in programmes 2 and 3.
 
 ---
 
@@ -3228,46 +3593,83 @@ billed as the container's memory including page cache), $0.15 per GB-month of vo
 of bucket, $0.05 per GB of service egress (uploads from a service to a bucket included), bucket egress and
 private-network traffic free; Modal preemptible CPU $0.0000131 per core-second, with a $30 monthly
 credit. The Hobby plan bills `$5 + max(0, usage - $5)`, the Pro plan `$20 + max(0, usage - $20)`: the fee
-includes its own amount of usage, per workspace. "Low" uses the measured step and memory costs with the
-2.5x derating and the planning-average bit rate; "high" uses 0.025-0.03 vCPU per player or integrated
-vessel, the 6 kB/s cap and the upper memory budgets. Every column holds its concurrency for a whole month
-(730 hours), with everything in the real-time lane, sleep-scheduled workers and the shell on Railway.
-Every figure is an estimate until the load test replaces it.
+includes its own amount of usage, **per workspace**. "Low" uses the measured step and memory costs with
+the 2.5x derating and the planning-average bit rate; "high" uses 0.025-0.03 vCPU per player or integrated
+vessel, the 6 kB/s cap and the memory that the configured caps allow (the 256 MB tile store full, Postgres
+at its 0.5 GB replica limit). Every column holds its concurrency for a whole month (730 hours), with
+everything in the real-time lane, sleep-scheduled workers and the shell on Railway. Every figure of the
+game is an estimate until the load test replaces it.
 
-**Stage 0: the always-on deployment (Hobby plan, combined `game`).**
+**What the workspace already pays (measured, `railway usage`, 2026-11-10).** The workspace holds one
+other project, `haulpoint-tms`. In the billing period of 2 November to 2 December it had used $4.18 after
+8 days and Railway estimates $7.40 for the period; the period before was $10.23, almost all of it memory.
+No soft or hard limit is set. So the plan's included $5 is already used, and the game's usage is added to
+a workspace bill of $7-10 dollar for dollar.
+
+**Stage 0: the always-on deployment (Hobby plan, combined `game`, idle level warm).**
 
 | Line | Nobody (low / high) | 5 players (low / high) | 50 players (low / high) |
 |---|---|---|---|
-| `game` memory | 0.2 GB $2.00 / 0.45 GB $4.50 | 0.4 GB $4.00 / 0.75 GB $7.50 | 0.8 GB $8.00 / 1.6 GB $16.00 |
+| `game` memory | 0.3 GB $3.00 / 0.7 GB $7.00 | 0.4 GB $4.00 / 0.75 GB $7.50 | 0.8 GB $8.00 / 1.6 GB $16.00 |
 | `game` CPU | $0.10 / $0.40 | $0.80 / $2.90 | $7.90 / $27.40 |
-| `shell` memory and CPU | $0.45 / $0.85 | $0.55 / $0.90 | $0.60 / $1.20 |
-| Postgres memory | 0.06 GB $0.60 / 0.25 GB $2.50 | 0.1 GB $1.00 / 0.3 GB $3.00 | 0.2 GB $2.00 / 0.5 GB $5.00 |
+| `shell` memory and CPU (the boot pack is held in memory) | $0.70 / $1.10 | $0.80 / $1.20 | $0.85 / $1.50 |
+| Postgres memory (high: its replica limit) | 0.1 GB $1.00 / 0.5 GB $5.00 | 0.15 GB $1.50 / 0.5 GB $5.00 | 0.25 GB $2.50 / 0.5 GB $5.00 |
 | Postgres CPU and volume | $0.10 / $0.35 | $0.20 / $0.60 | $0.55 / $2.05 |
-| Bucket (packs and dumps, 16-25 GB) | $0.24 / $0.38 | $0.24 / $0.38 | $0.30 / $0.40 |
+| Buckets (packs and dumps, 16-25 GB) | $0.24 / $0.38 | $0.24 / $0.38 | $0.30 / $0.40 |
 | Socket egress at 2.5 kB/s / at the 6 kB/s cap | $0 | $1.64 / $3.94 | $16.40 / $39.40 |
-| Boot pack through `shell` (CDN all hits / all misses) | $0 / $0.50 | $0 / $1.40 | $0 / $13.80 |
+| Client build and boot pack through `shell` (CDN all hits / all misses) | $0 / $0.50 | $0 / $1.40 | $0 / $13.80 |
 | API and public documents | $0 | $0.10 / $0.50 | $0.50 / $2.00 |
-| Dumps (the cron job and upload egress) | $0 / $0.20 | $0.20 / $0.70 | $0.30 / $1.50 |
+| Dumps (the cron job and upload egress; hourly, every 6 hours at 50) | $0 / $0.20 | $0.60 / $1.20 | $1.00 / $2.00 |
 | Modal (nightly audit and off-site copy; inside the credit) | $0 | $0 | $0 |
-| **Usage** | **$3.5 / $9.7** | **$8.7 / $21.8** | **$36.6 / $108.8** |
-| **Bill on Hobby** | **$5.0 / $9.7** | **$8.7 / $21.8** | **$36.6 / $108.8** |
-| The same on Pro (stage 1) | $20.0 / $20.0 | $20.0 / $21.8 | $36.6 / $108.8 |
-| Added if every tile came through the mirror with every request a miss | $0 | $14.9 | $148.5 |
+| **The game's usage = what it adds to the workspace bill** | **$5.1 / $14.9** | **$9.9 / $24.6** | **$38.0 / $109.6** |
+| Judged against the ceilings: usage + the $5 plan fee | $10.1 / $19.9 | $14.9 / $29.6 | - |
+| The workspace's bill on Hobby, with the other project at $7.4 (low) and $10.2 (high) | $12.5 / $25.1 | $17.3 / $34.8 | $45.4 / $119.8 |
+| The workspace's bill on Pro (stage 1) | $20.0 / $25.1 | $20.0 / $34.8 | $45.4 / $119.8 |
+| What Pro costs more than Hobby | $7.5 / $0 | $2.7 / $0 | $0 |
 
-- **Against the user's ceilings**: idle $5-10 against about $30; 5 players $9-22 against about $50. A
-  realistic small pattern (5 players on four evening hours a day, idle otherwise) is about $5-11 a month.
-- The plan's included $5 is per workspace and is shared with the workspace's other project. If that
-  project already uses it, the game's whole usage is billed: $3.5-9.7 idle and $8.7-21.8 at 5 players on
-  top of a fee that is paid either way. Whether it does is read from the account in wave 3.
-- Each concurrent player held all month adds $0.62-1.93. Usage passes $20 between 5 and 23 concurrent
-  players held all month (from there the Pro plan costs the same) and $50 between 20 and 70.
-- The worst case of a month at stage 0 is bounded by configuration, not by an alert: the replica limits
-  cap compute at about $100, and the admission cap of 20 holds the conservative projection at about $50.
+- **Against the user's ceilings**: the game adds $5-15 a month idle against about $30, and $10-25 at 5
+  players against about $50; counted with the whole plan fee, $10-20 and $15-30. Even the bill of the
+  whole workspace, the other project included, is under both ceilings on these estimates ($13-25 idle,
+  $17-35 at 5 players). A realistic small pattern (5 players on four evening hours a day, idle
+  otherwise) adds about $6-17 a month. The target is met on the estimates with room to spare; what is
+  not met is the earlier headline of "$5-10 idle, the plan fee included", which assumed the included $5
+  was free to use.
+- **The high column is a bound where a cap makes it one.** Postgres memory cannot be billed above its
+  0.5 GB replica limit, and `game` at 5 players cannot hold more than the sum of its caps (0.75 GB,
+  10.5). The 50-player column is beyond stage 0's admission cap and assumes the limits were raised.
+  Billed memory creeps as caches fill, so the idle reading is taken at 12 hours and again at 72 (28.7),
+  and a short reading is never projected alone.
+- **The Pro plan is close from the first day.** Billing is per workspace: usage passes $20 when the game
+  alone reaches about $10-13, that is with nobody connected on the high estimate and at about 5-9
+  concurrent players on the low one. Below that point Pro costs $0-8 a month more than Hobby and brings
+  volume backups, point-in-time recovery, deploys by digest and 30-day logs; above it, nothing more.
+  This is OPEN_QUESTIONS Q2, put to the user with these figures.
+- Each concurrent player held all month adds $0.6-1.9. The game alone passes $50 between 18 and 70
+  concurrent players held all month; at the admission cap of 20 held all month the conservative
+  projection is about $53.
+- **Dumps grow with what is stored.** A dump is about 15-30 MB at 5 players and 150-300 MB at 50; hourly
+  uploads at 50 players would be 110-215 GB, $5-11 a month, which is why the upload has a daily budget
+  and the interval lengthens with the dump (15.3; the 50-player line is priced at every 6 hours).
+- **The worst month is bounded by configuration, not by an alert, and the bound includes egress** (16.2).
+  Compute at the replica limits: about $100 if every service were pegged all month. Egress at the daily
+  budgets: $4.50 for the client build, $1.50 for the boot pack, $12 for the mirror, $3 for public
+  documents, $1.50 for the API, $2.25 for dump uploads, and $15.80 for sockets at the admission cap and
+  the per-client cap: about $40. **So the game cannot cost more than about $140 in a month at stage 0**,
+  and a month in which a scraper, a looping client or an abuser spends every budget every day costs
+  about $25 more than a normal one. On the high estimate at 5 players that month is still under $50
+  ($24.6, less the $3 of those lines already in it, plus $24.75: about $46). Without the budgets none
+  of this would hold: one client pulling mirror misses at 200 Mbit/s is about 2 TB and $108 in a day,
+  and public documents inside the request budget alone could reach $200 in a month.
+- **If the bucket path cannot be used from a browser**, tiles come through the mirror and are billed:
+  about $15 a month at 5 players times the bytes sent per byte needed (10.4), but never more than the
+  mirror's budget of $12 a month; past it, tiles stop streaming for new visitors that day. With the
+  budget the 5-player bill stays under $50 in that case too; without it, it would not.
 - **A front-page day that arrives at stage 0 unannounced** (50,000 visitors, 20 admitted, the rest
-  queued): compute pegged at its limits about $3, socket egress under $1, public documents inside the
-  publisher's budget up to about $7, the boot pack $0 on CDN hits and up to $62 if every request missed:
-  **about $3-10, at most about $70**. It buys 20 players a normal day and everyone else a title, a queue
-  and a view; absorbing the day is what stage 3 is for.
+  queued): compute pegged at its limits about $3.30, socket egress $0.50, and every egress budget spent,
+  $0.80: **about $3-5, whatever the CDN does**. It buys 20 players a normal day and everyone else a
+  title and a queue, with a live view for as long as the publisher's byte budget lasts (the first hour
+  or less); absorbing the day is what stage 3 is for, and the first step up, `pub` behind the CDN, is
+  ten minutes with no freeze.
 
 **Stages 2 and 3: the split and the launch topology (Pro plan).**
 
@@ -3277,7 +3679,7 @@ Every figure is an estimate until the load test replaces it.
 | Memory, from isolate counts (10.5, 16.2) | $30 / $80 | $120 / $240 | $600 / $1,710 |
 | Postgres, volume, backups | $8 / $25 | $46 / $70 | $120 / $250 |
 | WebSocket egress at 2.5 kB/s / at the 6 kB/s cap | $65 / $156 | $162 / $389 | $1,620 / $3,890 |
-| Dumps to the bucket (billed egress) | $2 | $4 | $6 / $18 |
+| Dumps to the bucket (billed egress; every 6 hours, a dump of 0.25-1.25 GB once the lobby is near its 50,000-object cap) | $2 / $7 | $2 / $8 | $2 / $8 |
 | Buckets, `shell`, `packs`, `pub` | $3 / $15 | $25 | $70 |
 | Modal (audits) | $0 (inside the credit) | $0 / $30 | $30 |
 | **Total (low / high)** | **about $130 / $400** | **about $420 / $1,020** | **about $3,000 / $8,500** |
@@ -3292,17 +3694,21 @@ Every figure is an estimate until the load test replaces it.
 - **A front-page day served at stage 3** (5,000 concurrent for 24 hours, launch-heavy, 50,000 visitors, on
   top of a quiet month): CPU $19-143, memory $20-57, socket egress $54 at the planning average and $130
   at the cap, the rest about $10: **about $105-185 on the low CPU figure, $265-345 on the high one**. Tile
-  egress is $0 on the bucket path and up to $750 if that path fails on the day and tiles fall back to
-  billed egress through `packs` with every request a miss. The $750 rests on 300 MB of tiles per new
-  visitor, which is an assumption: `platform-delivery` measures the bytes and requests of a recorded
-  first session (boot, calibration, title, one launch to orbit) and this figure and the 15 TB behind it
-  are recomputed from it. Such a day is spent only after the lead has told the user and the deployment
-  has been moved up.
+  egress is $0 on the bucket path. If that path fails on the day and tiles fall back to billed egress
+  through `packs` with every request a miss, the cost is $750 **times the mirror's bytes sent per byte
+  needed** (1.0 if it can proxy ranges, up to the 1.5 the pass criterion allows with slices: $750 to
+  $1,125), unless the `packs` service's own daily budget, which the lead sets for the launch, stops it
+  sooner. The $750 rests on 300 MB of tiles per new visitor, which is an assumption: `platform-delivery`
+  measures the bytes and requests of a recorded first session (boot, calibration, title, one launch to
+  orbit), on the bucket path and as bytes actually transferred in the mirror's mode, and this figure,
+  the 15 TB behind it and the per-visitor figures of 10.4 are recomputed from it. Such a day is spent
+  only after the lead has told the user and the deployment has been moved up.
 - **Measurements and rehearsals** (28.7). Programme 1 (stage 0) costs a few dollars on Railway: the
   production readings are the deployment's own bill, and a rehearsal environment in the stage-0 shape for
-  an afternoon of ramps is about $1-3 of compute and egress. Its bots are tens of bot-hours on Modal (R&D,
-  inside the credit). Programmes 2 and 3 need the Pro plan ($20 for the month, of which stage 0's own
-  usage would have cost $5-10 anyway) and, for one clean pass, about 22,500 bot-hours ($45-100 on Modal,
+  an afternoon of ramps is about $1-3 of compute and egress (it reads the production pack bucket, so no
+  run uploads packs; 16.2). Its bots are tens of bot-hours on Modal (R&D, inside the credit). Programmes
+  2 and 3 need the Pro plan (the workspace then pays at least $20 for the month, which is $0-8 more than
+  it would have paid on Hobby) and, for one clean pass, about 22,500 bot-hours ($45-100 on Modal,
   R&D), about $30 on Railway and up to $45 of billed mirror egress when the CDN misses: **about $150 with
   no rerun, and a load test exists to fail, be fixed and run again**. The lead tells the user the figure
   before starting either, every run prints the cumulative spend, and the rehearsal environment is deleted
@@ -3431,8 +3837,9 @@ a docking approach, the sensor-camera view.
   rolls a simulation deploy, resumes both and finds the assembly intact (record ids and island hash from
   `/ops`), then undocks; the pack list and tiles load from a clean profile. The URL, build id, rules
   version and results are recorded. Expiry is demonstrated in real wall-clock time on a rehearsal
-  environment running the staging rule set. **The deployed stage projects, from measured usage, to about
-  $30 a month or less idle and about $50 or less at 5 concurrent players** (28.7, programme 1).
+  environment running the staging rule set. **The deployed stage projects, from measured usage and by the
+  formula of 29.2, to about $30 a month or less idle and about $50 or less at 5 concurrent players**
+  (28.7, programme 1).
 
 ### 31.5 The final gate (wave 7)
 
@@ -3446,15 +3853,18 @@ universe, the client and the server. The `final-gate` package:
    heliocentric cruise at 1,000,000x, at sphere-of-influence entry and at capture, with the pop detector
    and the frame-time assertions.
 4. Runs the production acceptance of 31.4 on the final build, and reads the cost again: two hours idle
-   and two hours with 5 bots on production, projected to a month against the two ceilings.
+   and two hours with 5 bots on production, projected to a month against the two ceilings by the formula
+   of 29.2, with the memory lines of services that have been up at least 72 hours beside the earlier
+   readings (28.7).
 5. Runs the repository scan (`TODO`, `FIXME`, `stub`, `placeholder` outside the allowed simple-body data)
    and the secrets check.
 6. Produces one results table with a row per line of `PROMPT.txt`, naming the test or demonstration that
    proves it and its result. A line without proof is reported to the user as not done. If the game is
    not deployed or programme 1 of the load test did not run, the table says "not deployed" and lists the
    completion criteria that are therefore unmet, as a blocker for the user, not as a pass on the local
-   stack. The capacity row quotes the measured stage-0 limits and states which of the larger stages were
-   rehearsed and which are estimates.
+   stack. The capacity row quotes the measured stage-0 limits, gives the pad limit as the measured
+   per-pad cycle with the 32-pad figure marked derived unless programme 3 ran, and states which of the
+   larger stages were rehearsed and which are estimates.
 
 ---
 
@@ -3512,24 +3922,27 @@ play-tests the time rules between waves 5 and 6.
 | Risk | Mitigation |
 |---|---|
 | No capacity or cost number is measured | Programme 1 of the load test runs on the deployed stage 0 before anything larger is planned; every figure in sections 29 and 30 carries a low and a high value and the report replaces them; the larger stages are measured in rehearsals the lead announces first, and until then the report calls them estimates |
-| The always-on bill exceeds what the user set (about $50 at 5 players, about $30 idle) | Stage 0 on the Hobby plan with idle-light; billed memory is the largest line and has budgets (29.2) measured in the pinned image before deployment and on Railway in wave 3; replica limits and the admission cap bound the month without an alert; the projection from measured usage is an acceptance criterion of `deploy-loadtest` and `final-gate` |
+| The always-on bill exceeds what the user set (about $50 at 5 players, about $30 idle) | Stage 0 on the Hobby plan, idle with one warm worker; the estimates ($5-15 idle, $10-25 at 5 players, added to the workspace bill) leave room under both ceilings; billed memory is the largest line and its caps are what the high estimates assume (a 256 MB tile store, Postgres limited to 0.5 GB), measured as cgroup memory in the pinned image before deployment and on Railway in wave 3, at 12 and at 72 hours; the projection from measured usage, by one formula (29.2), is an acceptance criterion of `deploy-loadtest` and `final-gate` |
+| The bill is run up by someone who is not a player (a scraper, a looping client, an abuser), with no alert and no hard limit | Replica limits bound compute; every route that sends bytes without admission has a daily egress budget counted in process, a per-address limit and no query strings on hashed routes; the worst month is stated ($140, of which $40 egress) and the budgets are attacked in the stage-0 load programme (16.2, 28.7) |
+| The workspace is shared with another project, so the Hobby plan's included usage is gone and the Pro break-even is near | Measured before building ($7.4-10.2 a month for the other project); every plan trigger is read from the workspace's usage, not from the game's own metrics; the choice between Hobby and Pro from the first day is put to the user with the real premium of $0-8 a month (OPEN_QUESTIONS Q2) |
 | Launch slots bind long before CPU | Sized from a launches-per-day target (decision 54): 32 pads, a 14-day cohort reservoir; pad wait is its own service level; the load test finds the pad limit and the compute limit separately; the scaling path names pads, sites and cycle with numbers |
 | The sky is mostly echoes after the first warp | Live clock, range rule, cohorts, follow, meet, in-phase jump, U8b; coherence is measured by the load test with a target and named tuning fields; an acceptance story for two strangers at different leads; a play-test with a written result (Q7) |
-| A front-page day arrives unannounced while the game is at stage 0 | Accepted and stated (16.2): it is not absorbed automatically and nobody is alerted. The admission cap holds the players, the menu queues and shows the rest, the publisher bounds its own load, and the day costs about $3-10. The way up is scripted, rehearsed and timed (about an hour of a human's time to the launch topology); an announced launch is moved up the day before; from stage 3 a controller scales inside a pre-approved ceiling |
-| The small stage and the large one drift apart | One program, one role schema, one database schema; the combined and the split shapes both run in the suites of 28.4 and 28.6 on every release; the stage move itself is a tested rollout (28.6) and a timed drill (28.7) |
+| A front-page day arrives unannounced while the game is at stage 0 | Accepted and stated (16.2): it is not absorbed automatically and nobody is alerted. The admission cap holds the players, the menu queues and shows the rest for as long as the publisher's byte budget lasts, every public byte source has a daily budget, and the day costs about $3-5. The way up is scripted, rehearsed and timed (about an hour of a human's time to the launch topology); an announced launch is moved up the day before; from stage 3 a controller scales inside a pre-approved ceiling |
+| The small stage and the large one drift apart | One program, one role schema, one database schema, one implementation and one owner per role (the publisher included); the combined and the split shapes both run in the suites of 28.4 and 28.6 on every release, with a smoke of the launch shape; the stage move is a tested rollout in both directions (28.6), with clients that find the new gateway only through the endpoint document, and a timed drill (28.7) |
 | Touchdown is where client and server can disagree visibly | Threshold watch drains lag; exact contact state on the wire; outcomes only on the server's event; its own tolerance tests |
 | The refactor lands on a moving tree | The tick grid moves first, on `World`, in its own guarded step; the guard is bit-exact for attended craft on the tick-grid `World`; contracts are the lead's pre-wave step; the sim side and the presentation sweep are separate packages; `LocalSession` is built beside `World` and the switch is a gated step with the other packages' flight suites as its gate |
 | Wave-2 pixels drift through three reworks | Reference images recorded before wave 3 with a compare helper as a gate of every package that touches the renderer |
 | Lanes and hand-overs add states | One step loop; `lagCap = 0` first; hand-overs and reservations are fenced in memory and off the input path; no island steps past a pending merge or into an unreserved copy; lane-equivalence and fuzz suites are commit gates; the deferred lane holds no attended vessel |
 | The directory is a single writer and a single point of failure | It does event-driven work only; it holds a fenced lease, so a second process cannot write. From stage 2 its crash freezes the universe for its restart time while shards keep their state and re-register, losing nothing. At stages 0 and 1 it shares the `game` process, whose crash re-runs at most 250 ms per island (15.4). Partitioning is on the scaling path |
-| The database at stage 0 has no platform backup | Hourly dumps to the bucket (a different storage system), a nightly copy off Railway, a restore test from the dump (28.6); the recovery point of about one hour is stated; stage 1 brings backups and point-in-time recovery, and the user may ask for it from the first day (OPEN_QUESTIONS Q2) |
+| The database at stage 0 has no platform backup | Hourly dumps to their own bucket (a different storage system, with a credential no public-facing process holds), a nightly copy off Railway, a restore test from the dump (28.6); the recovery point of about one hour is stated; stage 1 brings backups and point-in-time recovery, and the user may ask for it from the first day (OPEN_QUESTIONS Q2) |
 | Stored ships meet changed definitions | Versioned codec with part fingerprints, a migration registry, a decode sweep before the lobby opens, a corpus of every released build in CI |
 | Server memory per isolate, and memory billed while idle | Lazy per-body residency, worker isolates on demand, one shared tile store per shard, no disk cache of packs (page cache is billed), a per-worker budget, memory as billed in every load-test report |
-| Bucket throughput under concurrent ranged reads is unproven | Measured in wave 3 by a Modal fleet with pass and fail numbers (free on the Railway side); the `packs` mirror with slice objects behind the shell's CDN is the fallback; the escalation outside the three providers is written with thresholds; the OPFS cache keeps return visits off the network |
-| The first minute of a front-page visitor | A 25 MB boot pack and an 8 s title budget; calibration behind the title; neither depends on `game`; measured from a clean profile against the deployed shell and bucket |
+| Bucket throughput under concurrent ranged reads is unproven | Measured in wave 3 by a Modal fleet with pass and fail numbers (free on the Railway side); the `packs` mirror behind the shell's CDN is the fallback (ranges or small slices, chosen by measurement and judged on bytes sent per byte needed), with a daily budget so that a broken bucket path degrades tile streaming before it raises the bill; the escalation outside the three providers is written with thresholds; the OPFS cache keeps return visits off the network |
+| The first minute of a front-page visitor | A 25 MB first paint and an 8 s title budget; the boot pack reaches `shell` from the bucket at start, verified by hash, with the health check waiting for it; calibration behind the title; neither depends on `game`; measured from a clean profile against the deployed shell and bucket |
 | Determinism is tied to one V8 build and CPU architecture | One image definition with Node pinned by digest for shards, tests and audits; a `buildId` checked at every rollout while Railway builds the image (stage 0) and one artefact by digest from stage 1; journals are build-bound and checkpoints are not; a Node upgrade is a re-baseline |
 | Railway restarts on every deploy and overlaps old and new | A rollout script (one `game` hand-over at stages 0 and 1, the ordered sequence at one digest from stage 2); a 45 s drain window instead of the default of none; the directory lease; gateways last; the freeze is measured and stated |
-| The local stack differs from production | Real Postgres 18 in both; the restart, recovery and replay suites and the image smoke test run in the pinned Linux image; the deployed proofs run on the deployed stage; a local result is never reported as a deployed one |
+| The local stack differs from production | Real Postgres 18 in both, created with the same encoding and locale (UTF8, the built-in C.UTF-8) and refused otherwise; the restart, recovery and replay suites and the image smoke test run in the pinned Linux image; clients find the roles through an endpoint document, as in production; the cold-start rows load a production client build from `shell`; the deployed proofs run on the deployed stage; a local result is never reported as a deployed one |
+| The local stack overloads the machine that once crashed | The launcher holds the one `stack` slot for the stack's whole life, so no second stack and no Docker VM starts beside it; stated memory bounds per profile; the Docker VM capped at 6 GB; rows that do not fit (a 22-worker shard) are derived here and measured in a rehearsal |
 | WebSocket over TCP in one region | Prediction hides stalls up to 500 ms; docking is slow by design; a quarter second of round trip in Asia and Australia is stated |
 | Ground-level realism at 32 pads on two sites; clouds, tiles, corridor, landing data (v1 risks) | Arid coastal sites, landcover-driven detail, one march path, lifting capsule with roll rule, NAC region with calibrated procedural detail; checkpoints at one pad per class per site; the Madrakah fall-back of Q8 |
 | Frame over budget with several launches in view | The v2 budget columns sum to 11 ms at the Ultra default with the vehicle lines as caps; other-craft detail is what fits; frame time is asserted in the integrated app and in the two-browser stories |
