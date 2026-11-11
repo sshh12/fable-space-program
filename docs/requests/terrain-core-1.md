@@ -63,3 +63,12 @@ to a second LayerCoverage built from `sourceCoverage` when present - about 20 li
   margin, where E stays at the parent level by design).
 - What `sourceCoverage` still cannot describe (a level whose source is coarser than its posting) is in
   `docs/requests/terrain-core-4.md`.
+
+## Moon bake (bake-moon-sky, commits 2d0d820, 4f89577)
+`tools/bake/moon/region.py` writes `layers.height.sourceCoverage` for every regional level: the tiles touching
+the area where the level's source has non-zero weight (levels 7-8: the 20 km SLDEM disc with its 2 km feather;
+levels 10-12: the NAC DTM's valid footprint), without the one-tile margin, and `[]` for a level whose source is
+coarser than the parent level's posting (level 9, terrain-core-4). Tiles per level: 7: 6, 8: 20, 9: 0, 10: 20,
+11: 76, 12: 222. `verify.py` checks that every source rectangle lies inside `coverage` and that every source
+pixel with weight > 0 lies in a listed tile. Nothing else is needed from the Moon bake; the contract text stays
+with the lead.

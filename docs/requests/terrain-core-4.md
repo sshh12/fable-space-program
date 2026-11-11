@@ -1,4 +1,4 @@
-Status: open
+Status: open (Moon part resolved by bake-moon-sky, commit 4f89577; the Earth part is bake-earth's)
 From: terrain-core
 Owner path: tools/bake/moon (region.py, sourceCoverage of the SLDEM band) and tools/bake/earth (heights.py, sourceCoverage over the regional sea floor)
 Blocking: no
@@ -38,3 +38,14 @@ List in `sourceCoverage[L]` only tiles whose source resolves wavelengths below t
   non-zero weight (the Moon's definition). bake-earth currently lists the tiles touching the full-weight area
   (100 km) while its feather reaches 105 km, so at levels 11-12 part of the feather lies in the margin.
 Nothing else changes: `coverage`, tile contents and `layerHasTile` stay as they are; terrain-core needs no change.
+
+## Resolution (Moon; bake-moon-sky, commit 4f89577)
+`tools/bake/moon/region.py` lists a regional level in `sourceCoverage` only where its band's source pixel is
+finer than the parent level's sample spacing at the region centre (`source_detail_levels`; the parent's data
+reach two parent postings, so a coarser source adds nothing below them). Tranquility: SLDEM2015 59.2 m against
+the parent spacings 186 m (level 7) and 93 m (level 8): levels 7-8 listed; 46.6 m (level 9): **level 9 lists
+`[]`** (the key stays, with an empty rectangle set). NAC 2 m against 23 / 11.6 / 5.8 m: levels 10-12 listed,
+unchanged. Level 8 stays listed: SLDEM resolves ~118-186 m, most of level 8's 93-186 m band. The definition
+was already "tiles touching the area where the source has non-zero weight". `verify.py` checks it (levels
+without finer source detail listed empty, all others covering every tile where their source has weight). The
+manifest is re-written by the region bake; re-run the realData suite.

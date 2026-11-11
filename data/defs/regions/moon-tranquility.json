@@ -153,32 +153,32 @@
       },
       {
         "distanceM": 209.4,
-        "diameterM": 32.0,
+        "diameterM": 32.1,
         "depthM": 4.08
       },
       {
         "distanceM": 326.6,
-        "diameterM": 165.1,
+        "diameterM": 165.5,
         "depthM": 5.13
       },
       {
         "distanceM": 337.9,
-        "diameterM": 224.0,
-        "depthM": 11.26
+        "diameterM": 224.1,
+        "depthM": 11.28
       },
       {
         "distanceM": 384.4,
         "diameterM": 50.4,
-        "depthM": 8.38
+        "depthM": 8.37
       },
       {
         "distanceM": 420.4,
         "diameterM": 21.8,
-        "depthM": 0.87
+        "depthM": 0.86
       },
       {
         "distanceM": 441.0,
-        "diameterM": 21.4,
+        "diameterM": 21.5,
         "depthM": 0.72
       },
       {
@@ -188,12 +188,12 @@
       },
       {
         "distanceM": 465.2,
-        "diameterM": 51.8,
-        "depthM": 4.41
+        "diameterM": 52.0,
+        "depthM": 4.42
       },
       {
         "distanceM": 473.5,
-        "diameterM": 85.8,
+        "diameterM": 85.6,
         "depthM": 3.0
       },
       {
@@ -203,28 +203,28 @@
       },
       {
         "distanceM": 477.6,
-        "diameterM": 33.4,
+        "diameterM": 33.5,
         "depthM": 1.01
       },
       {
         "distanceM": 491.1,
-        "diameterM": 32.4,
-        "depthM": 1.45
+        "diameterM": 32.5,
+        "depthM": 1.44
       },
       {
-        "distanceM": 528.1,
-        "diameterM": 87.4,
+        "distanceM": 530.1,
+        "diameterM": 87.5,
         "depthM": 3.12
       },
       {
         "distanceM": 547.4,
-        "diameterM": 47.7,
+        "diameterM": 48.0,
         "depthM": 1.53
       },
       {
         "distanceM": 557.8,
-        "diameterM": 29.1,
-        "depthM": 1.23
+        "diameterM": 29.7,
+        "depthM": 1.24
       },
       {
         "distanceM": 566.1,
@@ -233,55 +233,55 @@
       },
       {
         "distanceM": 584.5,
-        "diameterM": 258.7,
-        "depthM": 11.06
+        "diameterM": 258.9,
+        "depthM": 11.07
       },
       {
         "distanceM": 584.5,
-        "diameterM": 22.5,
-        "depthM": 2.3
+        "diameterM": 22.3,
+        "depthM": 2.28
       },
       {
         "distanceM": 590.7,
-        "diameterM": 40.2,
+        "diameterM": 40.3,
         "depthM": 2.79
       }
     ],
     "detectorCheckAtPreferNear": [
       {
-        "distanceM": 54.6,
-        "diameterM": 58.5,
-        "depthM": 3.4
+        "distanceM": 53.6,
+        "diameterM": 60.0,
+        "depthM": 3.39
       },
       {
         "distanceM": 135.9,
-        "diameterM": 22.7,
+        "diameterM": 22.8,
         "depthM": 1.2
       },
       {
         "distanceM": 166.8,
-        "diameterM": 29.8,
-        "depthM": 1.1
+        "diameterM": 29.3,
+        "depthM": 1.12
       },
       {
-        "distanceM": 221.6,
-        "diameterM": 26.3,
+        "distanceM": 220.2,
+        "diameterM": 26.4,
         "depthM": 0.98
       },
       {
         "distanceM": 239.2,
         "diameterM": 35.9,
-        "depthM": 1.41
+        "depthM": 1.43
       },
       {
         "distanceM": 252.1,
-        "diameterM": 21.4,
-        "depthM": 2.12
+        "diameterM": 21.3,
+        "depthM": 2.13
       },
       {
         "distanceM": 322.0,
-        "diameterM": 255.6,
-        "depthM": 8.6
+        "diameterM": 255.7,
+        "depthM": 8.62
       },
       {
         "distanceM": 327.7,
@@ -295,12 +295,12 @@
       },
       {
         "distanceM": 383.6,
-        "diameterM": 122.7,
+        "diameterM": 122.8,
         "depthM": 15.85
       },
       {
         "distanceM": 387.5,
-        "diameterM": 24.9,
+        "diameterM": 24.6,
         "depthM": 1.17
       },
       {
@@ -310,28 +310,28 @@
       },
       {
         "distanceM": 421.0,
-        "diameterM": 20.8,
+        "diameterM": 21.4,
         "depthM": 1.6
       },
       {
         "distanceM": 421.1,
         "diameterM": 27.0,
-        "depthM": 2.13
+        "depthM": 2.14
       },
       {
-        "distanceM": 438.0,
-        "diameterM": 26.2,
-        "depthM": 1.03
+        "distanceM": 436.4,
+        "diameterM": 25.8,
+        "depthM": 1.02
       },
       {
         "distanceM": 450.3,
-        "diameterM": 25.6,
+        "diameterM": 25.8,
         "depthM": 2.83
       },
       {
         "distanceM": 472.5,
         "diameterM": 29.3,
-        "depthM": 2.38
+        "depthM": 2.39
       },
       {
         "distanceM": 495.9,
@@ -339,7 +339,7 @@
         "depthM": 15.31
       }
     ],
-    "candidatesPassingGridCriteria": 1023,
+    "candidatesPassingGridCriteria": 1059,
     "candidatesTried": 1,
     "reEvaluatedOnRebake": true
   }
