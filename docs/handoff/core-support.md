@@ -279,3 +279,11 @@ copy is replaced by `#include "cloud_shadow"`.
   loses 56 % of it; `cockpit-cs-1` filed (the cabin shader's own copy of the old cloud-shadow lookup).
   The LEO cockpit budget row now looks at the two forward windows with the Earth in them (`&roll=180`,
   `sitAtWindowBelow`).
+- 08:55-09:10. Wave-1 suites after the FakeSim changes: functional 115 of 115 (flight-ui, shell, map-view,
+  audio, render-core), perf 5 of 5 (numbers for section 3), unit suite 967 of 968 (the one failure is
+  terrain-render's own selection test, mid-edit). Dry run of the integration suite with terrain in its
+  working state: 22 of 24 (the cabin check, and the climb's control: the water's own step-to-step change had
+  doubled with the ocean's long-wave normals and hid a 5 % brightness step; the climb now compares region
+  means too and reports it). New check (c) at the landing site under an 8 degree sun. Check (f) looks at
+  the vehicle's sunlit side. The dark quadrilaterals of pass 1's remark on (d) are tree stands and
+  windbreaks in the Sentinel-2 source (level-12 tiles looked at). Waiting for terrain-render's marker.
