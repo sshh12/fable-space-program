@@ -11,7 +11,7 @@ import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
 import type { MfdPage } from '@/core/contracts/ui';
 import { DefError, getSection, listSections } from '@/core/defs/loader';
 
-export type MaterialDetail = 'none' | 'paint' | 'brushed' | 'quilt' | 'weave' | 'webbing' | 'velcro' | 'ribbed' | 'knurl' | 'rubber' | 'cast' | 'foil';
+export type MaterialDetail = 'none' | 'paint' | 'brushed' | 'quilt' | 'weave' | 'webbing' | 'velcro' | 'ribbed' | 'knurl' | 'rubber' | 'cast';
 
 export interface CockpitMaterialDef {
   shading: 'standard' | 'cloth';
@@ -21,12 +21,34 @@ export interface CockpitMaterialDef {
   metallic?: number;
   anisotropy?: number;
   clearcoat?: number;
-  /** Procedural surface detail evaluated in the interior shader, and its strength 0..1. */
+  /**
+   * Surface detail and its strength 0..1: a baked detail texture (public/assets/cockpit, tools/cockpit)
+   * and, for quilt / ribbed / knurl, a procedural pattern that follows the geometry.
+   */
   detail?: MaterialDetail;
   detailStrength?: number;
   /** Cloth only: thin-surface translucency. */
   translucency?: number;
+  /** Edge wear: share of the chamfered edges worn through (0..1) and what shows there (linear colour, metallic). */
+  wear?: { amount: number; albedo: [number, number, number]; metallic: number };
+  /** Grime in occluded corners and cavities (0..1) and the part-to-part variation of tone and gloss (0..1). */
+  grime?: number;
+  variation?: number;
 }
+
+/** Detail texture layer (by name in public/assets/cockpit/detail.json) and procedural pattern of each kind. */
+export const DETAIL_KINDS: Record<Exclude<MaterialDetail, 'none'>, { layer: string; pattern: 0 | 1 | 2 | 3 }> = {
+  paint: { layer: 'paint', pattern: 0 },
+  brushed: { layer: 'brushed', pattern: 0 },
+  quilt: { layer: 'nomex', pattern: 1 },
+  weave: { layer: 'fabric', pattern: 0 },
+  webbing: { layer: 'webbing', pattern: 0 },
+  velcro: { layer: 'velcro', pattern: 0 },
+  ribbed: { layer: 'rubber', pattern: 2 },
+  knurl: { layer: 'cast', pattern: 3 },
+  rubber: { layer: 'rubber', pattern: 0 },
+  cast: { layer: 'cast', pattern: 0 },
+};
 
 /** Snapshot facts that lamps, switches and readouts can show (src/render/cockpit/instruments.ts). */
 export type InstrumentBinding =
@@ -188,6 +210,11 @@ export interface WindowsDef {
   scratches: number;
   /** Shade extension 0 (stowed) .. 1 (drawn) per window id. */
   shades: Record<string, number>;
+  /**
+   * Display cover glass: reflectance relative to bare glass (anti-reflection coating) and the roughness of
+   * its anti-glare (etched) surface, which spreads reflected sources into a soft lobe.
+   */
+  coverGlass: { reflectance: number; roughness: number };
 }
 
 export interface HatchDef {
@@ -215,6 +242,8 @@ export interface LightingDef {
   displayMinBrightness: number;
   /** Ambient illuminance (lux) at which the displays reach full brightness. */
   displayFullAmbient: number;
+  /** Integral lighting of the attitude indicator (luminance of its white at night, cd/m^2). */
+  fdaiLighting: number;
   /** Back-lit legends of the panels (cd/m^2) and their colour. */
   legendLuminance: number;
   legendColor: [number, number, number];
@@ -229,8 +258,25 @@ export interface LightingDef {
 export interface ExperienceDef {
   /** g-induced tunnel vision: onset and full effect (g), response time constant (s). */
   tunnel: { onsetG: number; fullG: number; tau: number; maxDarken: number };
-  /** Structure-borne vibration: displacement amplitude per (m/s^2) of thrust acceleration and per kPa of q. */
-  vibration: { perAccel: number; perKpa: number; maxAmplitude: number; frequencies: number[] };
+  /**
+   * Structure-borne vibration: displacement amplitude per (m/s^2) of thrust acceleration and per kPa of q;
+   * the q term is multiplied by 1 + peak exp(-((M - mach) / width)^2) (transonic buffet).
+   */
+  vibration: { perAccel: number; perKpa: number; maxAmplitude: number; frequencies: number[]; buffet: { peak: number; mach: number; width: number } };
+}
+
+/** Thresholds of the caution and warning lamps (fractions of the snapshot's own limits, g). */
+export interface AlarmsDef {
+  /** Hottest part above this fraction of its temperature limit: OVER HEAT and the master alarm. */
+  overheatFraction: number;
+  /** Sustained g above this (g), or the g dose above this fraction of its limit: G LIMIT and the master alarm. */
+  gLimit: number;
+  gDoseFraction: number;
+  /** Plasma intensity above which the comm blackout lamp lights. */
+  plasmaBlackout: number;
+  /** Ablator and RCS propellant fractions below which their lamps light. */
+  ablatorLow: number;
+  rcsLow: number;
 }
 
 export interface DisplaysDef {
@@ -238,6 +284,22 @@ export interface DisplaysDef {
   height: number;
   rateHz: number;
   pages: MfdPage[];
+  /** Screen pixels per display texel at which the RGB stripe structure starts and is fully resolved. */
+  pixelStructure: [number, number];
+}
+
+/** Occlusion bake (occlusion.ts) and the cabin's own sun shadow map (sunmap.ts). */
+export interface LightTransportDef {
+  /** Longest flat-face edge at full detail (m), so baked occlusion has vertices to live on. */
+  maxEdge: number;
+  /** Ambient occlusion: rays per vertex and the distance beyond which geometry does not occlude (m). */
+  aoRays: number;
+  aoDistance: number;
+  /** Rays per vertex towards each window, display and flood light. */
+  sourceRays: number;
+  /** Cabin sun shadow map: resolution (texels) and the extra radius around the interior's bounds (m). */
+  sunMapSize: number;
+  sunMapMargin: number;
 }
 
 export interface CockpitLayoutDef {
@@ -251,6 +313,8 @@ export interface CockpitLayoutDef {
   windows: WindowsDef;
   hatch: HatchDef;
   lighting: LightingDef;
+  transport: LightTransportDef;
+  alarms: AlarmsDef;
   experience: ExperienceDef;
   displays: DisplaysDef;
   /** Projected size (px) of the capsule below which the outside LOD gives way to the far LOD. */
@@ -282,6 +346,8 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   for (const [name, m] of Object.entries(mats)) {
     if (m.albedo.length !== 3 || m.albedo.some((c) => !(c >= 0 && c <= 1))) fail(`material "${name}": albedo must be three values in 0..1`);
     if (!(m.roughness >= 0 && m.roughness <= 1)) fail(`material "${name}": roughness must be in 0..1`);
+    if (m.detail && m.detail !== 'none' && !DETAIL_KINDS[m.detail]) fail(`material "${name}": unknown detail "${m.detail}"`);
+    if (m.wear && !(m.wear.amount >= 0 && m.wear.amount <= 1 && m.wear.albedo.length === 3)) fail(`material "${name}": wear.amount in 0..1 and a wear.albedo colour`);
   }
   if (Object.keys(mats).length > 48) fail('at most 48 materials');
   for (const seat of mould.seats) if (!l.couches.seats[seat.id]) fail(`couches.seats has no entry for seat "${seat.id}" of the mould line`);
@@ -292,4 +358,17 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   if (l.windows.panes.length < 1 || l.windows.panes.length > 3) fail('windows.panes: one to three panes');
   if (!(l.lighting.cabinAlbedo > 0 && l.lighting.cabinAlbedo < 0.95)) fail('lighting.cabinAlbedo must be in (0, 0.95)');
   if (l.experience.vibration.frequencies.length === 0) fail('experience.vibration.frequencies: at least one frequency');
+  if (mould.windows.length + 1 > MAX_WINDOWS) fail(`at most ${MAX_WINDOWS - 1} windows besides the hatch window (occlusion slots)`);
+  if (l.console.displays.length > MAX_DISPLAYS) fail(`at most ${MAX_DISPLAYS} displays (occlusion slots)`);
+  const t = l.transport;
+  if (!(t.maxEdge > 0.005) || !(t.aoRays >= 4 && t.aoRays <= 256) || !(t.sourceRays >= 1 && t.sourceRays <= 64) || !(t.aoDistance > 0)) fail('transport: maxEdge > 5 mm, aoRays 4..256, sourceRays 1..64, aoDistance > 0');
+  if (!Number.isInteger(Math.log2(t.sunMapSize)) || t.sunMapSize < 256 || t.sunMapSize > 4096) fail('transport.sunMapSize: a power of two in 256..4096');
+  const cg = l.windows.coverGlass;
+  if (!(cg.reflectance >= 0 && cg.reflectance <= 1) || !(cg.roughness >= 0 && cg.roughness <= 1)) fail('windows.coverGlass: reflectance and roughness in 0..1');
+  const [p0, p1] = l.displays.pixelStructure;
+  if (!(p0 > 0 && p1 > p0)) fail('displays.pixelStructure: two increasing positive values');
 }
+
+/** Occlusion slots per vertex (occlusion.ts): windows including the hatch window, and displays. */
+export const MAX_WINDOWS = 8;
+export const MAX_DISPLAYS = 4;

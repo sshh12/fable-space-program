@@ -10,7 +10,7 @@
 import { DEG, v3, type Vec3 } from '@/core/math';
 import { frameAt, type Attr } from '../mesh';
 import { azimuthOf, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
-import type { CabinContext } from './context';
+import { FLAG_ENCLOSURE, type CabinContext } from './context';
 
 const TWO_PI = 2 * Math.PI;
 /** Azimuth in [0, 2 pi): the grid seam is at +Z (dorsal), between the forward windows. */
@@ -261,7 +261,8 @@ export function buildShell(ctx: CabinContext): Region[] {
   const detail = ctx.detail;
   const surface = innerSurface(ctx);
   const regions = openingRegions(ctx, detail === 0 ? 96 : 48, surface);
-  const structure = ctx.m('structure');
+  // The wall, the tunnel and the floor bound the cabin: the sun's way in is the windows' apertures.
+  const structure = ctx.m('structure', { flags: FLAG_ENCLOSURE });
   const yFloor = m.floorY;
   const yTop = m.tunnelJoinY;
   coneWall(ctx, { surface, regions, y0: yFloor, y1: yTop, attr: structure, nAz: detail === 0 ? 160 : detail === 1 ? 72 : 36, nY: detail === 0 ? 30 : detail === 1 ? 12 : 6, rings: detail === 0 ? 5 : 2 });
@@ -278,7 +279,7 @@ export function buildShell(ctx: CabinContext): Region[] {
 
   // ---- floor over the aft bulkhead
   const floorR = m.innerRadius(yFloor);
-  const floor = ctx.m('floor');
+  const floor = ctx.m('floor', { flags: FLAG_ENCLOSURE });
   const nr = detail === 0 ? 10 : 3;
   b.patch(
     (s, t) => {

@@ -4,10 +4,13 @@
  */
 export { createCockpitFeature, type CockpitFeature, type CockpitFeatureOptions, type CockpitFrameStats } from './feature';
 export { createCockpitControls, type CockpitControlsImpl } from './controls';
-export { buildCockpitModel, buildCockpitModelFrom, LOD_RANGES, type CockpitModel, type LodName } from './build';
+export { buildCockpitModel, buildCockpitModelFrom, displayVertices, meshBvh, meshPositions, LOD_RANGES, type CockpitModel, type LodName } from './build';
 export { cockpitLayouts, loadCockpitLayout, validateLayout, type CockpitLayoutDef, type InstrumentBinding, type ReadoutBinding } from './layout';
-export { bindingState, controlStates, digitMask, readoutText, updateMemory, type ControlState, type InstrumentMemory } from './instruments';
+export { bindingState, controlStates, digitMask, instrumentSource, readoutText, updateMemory, type ControlState, type InstrumentMemory, type InstrumentSource } from './instruments';
 export { cabinSources, castCabinRay, glassTransmittance, windowQuad, MAX_CABIN_POLYS, type CabinPoly, type CabinSources } from './lighting';
 export { insideDistance, innerOutline, mouldOf, openingsOf, conePointAt, type Mould, type Opening } from './mould';
 export { seatFrames, type ControlMeta, type DisplayMeta, type WindowMeta, type SeatFrame } from './cabin/context';
 export { MfdDisplays, MFD_FORMAT, type DisplayStats } from './displays';
+export { buildBvh, bvhRay, type Bvh, type BvhHit } from './bvh';
+export { bakeVertex, occlusionAt, occlusionSources, unpackOcclusion, OCC_STRIDE, type VertexOcclusion } from './occlusion';
+export { sunMapTransform, type SunMapTransform } from './sunmap';

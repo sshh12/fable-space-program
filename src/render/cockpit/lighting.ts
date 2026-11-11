@@ -4,16 +4,16 @@
  *
  *  - windows: the inner pane outline as an area-equivalent quad, outward normal, glass transmittance;
  *  - sun patches: for every window the sun shines into, the window quad projected along the sun onto the
- *    surface its centre ray hits (inner wall, floor, docking hatch, or one of the build's proxy boxes),
- *    glowing with that surface's reflected sunlight rho E cos / pi;
+ *    surface its centre ray hits (a ray against the interior's BVH), glowing with that surface's reflected
+ *    sunlight rho E cos / pi (rho from the surface's material);
  *  - floodlights (lens strips, luminance = flux / (pi area)) and displays (their image's mean is read on the
  *    GPU from the last mip).
  * Pure: unit-tested without a GPU.
  */
 import { v3, type Vec3 } from '@/core/math';
+import { bvhRay } from './bvh';
 import type { CockpitModel } from './build';
-import type { ProxyBox, WindowMeta } from './cabin/context';
-import { radiusOf } from './mould';
+import type { WindowMeta } from './cabin/context';
 
 export const MAX_CABIN_POLYS = 24;
 export const POLY_WINDOW = 0;
@@ -80,93 +80,21 @@ export function glassTransmittance(model: CockpitModel): [number, number, number
 
 interface Hit {
   t: number;
+  /** Unit normal of the surface that was hit (either orientation) and its diffuse reflectance. */
   n: Vec3;
   albedo: number;
 }
 
-/** Nearest hit of a ray inside the cabin: inner cone, apex tunnel, docking hatch, floor, proxy boxes. */
+/**
+ * Nearest hit of a ray (unit direction d) against the interior's full-detail geometry; the receiver's
+ * diffuse reflectance is its material's: luminance of the base colour times (1 - metallic).
+ */
 export function castCabinRay(model: CockpitModel, o: Vec3, d: Vec3): Hit | null {
-  const m = model.mould;
-  const wall = m.wallThickness;
-  let best: Hit | null = null;
-  const consider = (h: Hit | null): void => {
-    if (h && h.t > 1e-4 && (!best || h.t < best.t)) best = h;
-  };
-  // Inner cone: r = a + b y with a = r0 - slope y0 - offset, b = slope.
-  const prof = model.mould.profile;
-  const r0 = model.mould.heatShield.maxDiameter / 2;
-  const c = model.mould.cone;
-  const slope = (c.radiusTop - r0) / (c.yTop - c.yBottom);
-  const nR = (c.yTop - c.yBottom) / Math.hypot(c.radiusTop - r0, c.yTop - c.yBottom);
-  const offset = wall / nR;
-  const A = r0 - slope * c.yBottom - offset;
-  // x^2 + z^2 = (A + B y)^2 along o + t d.
-  const B = slope;
-  const qa = d.x * d.x + d.z * d.z - B * B * d.y * d.y;
-  const qb = 2 * (o.x * d.x + o.z * d.z - (A + B * o.y) * B * d.y);
-  const qc = o.x * o.x + o.z * o.z - (A + B * o.y) ** 2;
-  const disc = qb * qb - 4 * qa * qc;
-  const tunnelR = m.apexTunnel.radius - wall;
-  const joinY = (tunnelR - A) / B;
-  if (disc >= 0 && Math.abs(qa) > 1e-12) {
-    for (const s of [-1, 1]) {
-      const t = (-qb + s * Math.sqrt(disc)) / (2 * qa);
-      const p = v3.addScaled(o, d, t);
-      if (t > 1e-4 && p.y >= m.cabinFloorY && p.y <= joinY && A + B * p.y > 0) {
-        const r = radiusOf(p) || 1;
-        const n = v3.normalize({ x: (-p.x / r) * nR, y: -Math.sqrt(1 - nR * nR), z: (-p.z / r) * nR });
-        consider({ t, n, albedo: 0.55 });
-      }
-    }
-  }
-  // Floor and docking hatch planes.
-  if (Math.abs(d.y) > 1e-9) {
-    const tf = (m.cabinFloorY - o.y) / d.y;
-    const pf = v3.addScaled(o, d, tf);
-    if (radiusOf(pf) < A + B * m.cabinFloorY) consider({ t: tf, n: { x: 0, y: 1, z: 0 }, albedo: 0.08 });
-    const dockY = model.layout.hatch.dockingHatchY - 0.03;
-    const td = (dockY - o.y) / d.y;
-    const pd = v3.addScaled(o, d, td);
-    if (radiusOf(pd) < tunnelR) consider({ t: td, n: { x: 0, y: -1, z: 0 }, albedo: 0.55 });
-  }
-  for (const box of model.proxies) consider(rayBox(box, o, d));
-  void prof;
-  return best;
-}
-
-/** Ray against an oriented box (slab test); the normal of the face that was entered. */
-function rayBox(b: ProxyBox, o: Vec3, d: Vec3): Hit | null {
-  const f = b.frame;
-  const axes = [f.x, f.y, f.n];
-  const rel = v3.sub(o, f.o);
-  let tmin = -Infinity;
-  let tmax = Infinity;
-  let nEnter: Vec3 = f.n;
-  for (let k = 0; k < 3; k++) {
-    const ax = axes[k]!;
-    const e = v3.dot(rel, ax);
-    const dd = v3.dot(d, ax);
-    const h = b.half[k]!;
-    if (Math.abs(dd) < 1e-12) {
-      if (e < -h || e > h) return null;
-      continue;
-    }
-    let t1 = (-h - e) / dd;
-    let t2 = (h - e) / dd;
-    let n1 = v3.neg(ax);
-    if (t1 > t2) {
-      [t1, t2] = [t2, t1];
-      n1 = ax;
-    }
-    if (t1 > tmin) {
-      tmin = t1;
-      nEnter = n1;
-    }
-    tmax = Math.min(tmax, t2);
-    if (tmin > tmax) return null;
-  }
-  if (tmax < 0 || tmin < 1e-4) return null;
-  return { t: tmin, n: nEnter, albedo: b.albedo };
+  const h = bvhRay(model.bvh, o, d, 1e-4, 16, false);
+  if (!h) return null;
+  const m = model.layout.materials[model.materialNames[h.material]!]!;
+  const albedo = (0.2126 * m.albedo[0] + 0.7152 * m.albedo[1] + 0.0722 * m.albedo[2]) * (1 - (m.metallic ?? 0));
+  return { t: h.t, n: v3.normalize(h.normal), albedo };
 }
 
 export interface CabinSources {

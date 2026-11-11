@@ -6,10 +6,10 @@
  * Every frame starts at the INNER outline of its opening (the shared outline carried inward through the
  * wall) and grows into the cabin along the opening's inward normal, so it lines up with the exterior cut.
  */
-import { DEG, v3, type Vec3 } from '@/core/math';
-import { frameAt, local, offsetFrame, type Attr, type Frame } from '../mesh';
+import { v3, type Vec3 } from '@/core/math';
+import { FLAG_EDGE, frameAt, local, offsetFrame, type Attr, type Frame } from '../mesh';
 import { conePointAt, openingFrame, openingsOf, radialDir, revPoint, type Opening } from '../mould';
-import { FLAG_EMISSIVE, type CabinContext, type PaneMeta } from './context';
+import { FLAG_ENCLOSURE, type ApertureMeta, type CabinContext, type PaneMeta } from './context';
 
 type Loop = [number, number][];
 
@@ -82,8 +82,12 @@ function tangentOf(points: Vec3[]): (i: number) => Vec3 {
   return (i) => v3.normalize(v3.sub(points[(i + 1) % points.length]!, points[(i - 1 + points.length) % points.length]!));
 }
 
-/** Bezel around an opening: tunnel wall, chamfered front face, outer side. Returns the panes it holds. */
-function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, depth: number, mat: string, paneDepths: number[]): PaneMeta[] {
+/**
+ * Bezel around an opening: tunnel wall, chamfered front face, outer side. Returns the panes it holds and
+ * the depth of its inner edge's plane (from the inner wall's centre along the inward normal). The bezel
+ * belongs to the enclosure: the sun sees it as the window's aperture (WindowMeta.aperture).
+ */
+function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, depth: number, mat: string, paneDepths: number[]): { panes: PaneMeta[]; edgeDepth: number } {
   const ch = Math.min(0.004, width * 0.2);
   const planar = (d: number): ((i: number) => number) => planarDepths(g, base, d);
   const a0 = loop3(g, base, 0);
@@ -95,14 +99,14 @@ function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, dep
   const b1c = loop3(g, l2, planarDepths(g, l2, depth));
   const b1 = loop3(g, l3, planarDepths(g, l3, depth - ch));
   const b0 = loop3(g, l3, 0);
-  const attr = ctx.m(mat);
+  const attr = ctx.m(mat, { flags: FLAG_ENCLOSURE });
   const toCentre = (pts: Vec3[]) => (i: number): Vec3 => v3.normalize(v3.reject(v3.sub(g.frame.centreInner, pts[i]!), g.inward));
   const fromCentre = (pts: Vec3[]) => (i: number): Vec3 => v3.neg(toCentre(pts)(i));
-  ringBetween(ctx, a0, a1, ctx.m(mat, { ao: 0.75 }), toCentre(a0), tangentOf(a0));
-  ringBetween(ctx, a1, a1c, attr, (i) => v3.normalize(v3.add(toCentre(a1)(i), g.inward)), tangentOf(a1));
+  ringBetween(ctx, a0, a1, ctx.m(mat, { ao: 0.75, flags: FLAG_ENCLOSURE }), toCentre(a0), tangentOf(a0));
+  ringBetween(ctx, a1, a1c, { ...attr, flags: FLAG_ENCLOSURE | FLAG_EDGE }, (i) => v3.normalize(v3.add(toCentre(a1)(i), g.inward)), tangentOf(a1));
   ringBetween(ctx, a1c, b1c, attr, () => g.inward, tangentOf(a1c));
-  ringBetween(ctx, b1c, b1, attr, (i) => v3.normalize(v3.add(fromCentre(b1)(i), g.inward)), tangentOf(b1c));
-  ringBetween(ctx, b1, b0, ctx.m(mat, { ao: 0.8 }), fromCentre(b1), tangentOf(b1));
+  ringBetween(ctx, b1c, b1, { ...attr, flags: FLAG_ENCLOSURE | FLAG_EDGE }, (i) => v3.normalize(v3.add(fromCentre(b1)(i), g.inward)), tangentOf(b1c));
+  ringBetween(ctx, b1, b0, ctx.m(mat, { ao: 0.8, flags: FLAG_ENCLOSURE }), fromCentre(b1), tangentOf(b1));
   // Panes and their seals: a dark gasket ring where each pane meets the tunnel wall. Pane depths count from
   // the most inward point of the outline (the wall is concave seen from the cabin, so a planar pane must
   // clear the sagitta of the curved opening).
@@ -114,10 +118,27 @@ function bezel(ctx: CabinContext, g: OpeningGeom, base: Loop, width: number, dep
     panes.push({ frame: g.plane(pd), outline, depth: pd });
     if (ctx.detail === 0) {
       const inner = loop3(g, offsetLoop(base, -0.006), planarDepths(g, offsetLoop(base, -0.006), pd + 0.0015));
-      ringBetween(ctx, outline.map((p) => v3.addScaled(p, g.inward, 0.0015)), inner, ctx.m('rubber'), () => g.inward, tangentOf(outline));
+      ringBetween(ctx, outline.map((p) => v3.addScaled(p, g.inward, 0.0015)), inner, ctx.m('rubber', { flags: FLAG_ENCLOSURE }), () => g.inward, tangentOf(outline));
     }
   }
-  return panes;
+  return { panes, edgeDepth: depth - ch };
+}
+
+/** The window's aperture for the sun: the shared outline as a prism from the outer mould line to the bezel edge. */
+function apertureOf(ctx: CabinContext, g: OpeningGeom, o: Opening, edgeDepth: number): ApertureMeta {
+  // The outer outline is curved (it lies on the cone): its prism end is the mean plane of its points.
+  const pts = o.outline(64).map(([u, v]) => conePointAt(ctx.mould, o.azDeg, o.y, u, v, 0));
+  const sag = pts.reduce((s, p) => s + v3.dot(v3.sub(p, g.frame.centreOuter), g.inward), 0) / pts.length;
+  return {
+    centre: v3.addScaled(g.frame.centreOuter, g.inward, sag),
+    inward: g.inward,
+    t: g.frame.t,
+    g: g.frame.g,
+    hw: o.width / 2,
+    hh: o.height / 2,
+    rc: o.cornerRadius,
+    innerDepth: ctx.mould.wall + edgeDepth - sag,
+  };
 }
 
 /** Polygon area of a planar loop (part frame). */
@@ -133,10 +154,10 @@ export function buildWindows(ctx: CabinContext): void {
   for (const o of openingsOf(ctx.mould).filter((x) => x.kind === 'window')) {
     const g = geomOf(ctx, o);
     const base = o.outline(count);
-    const panes = bezel(ctx, g, base, w.bezelWidth, w.bezelDepth, 'bezel', ctx.detail === 2 ? [w.panes[w.panes.length - 1]!] : w.panes);
+    const { panes, edgeDepth } = bezel(ctx, g, base, w.bezelWidth, w.bezelDepth, 'bezel', ctx.detail === 2 ? [w.panes[w.panes.length - 1]!] : w.panes);
     if (ctx.detail === 0) {
       const outline = loop3(g, base, planarDepths(g, base, w.panes[w.panes.length - 1]!));
-      ctx.windows.push({ id: o.id, kind: 'window', outline: loop3(g, base, 0), centre: g.frame.centreInner, inward: g.inward, area: loopArea(outline), panes });
+      ctx.windows.push({ id: o.id, kind: 'window', outline: loop3(g, base, 0), centre: g.frame.centreInner, inward: g.inward, area: loopArea(outline), panes, aperture: apertureOf(ctx, g, o, edgeDepth) });
       shade(ctx, g, o, w.shades[o.id] ?? 0);
       // Bezel fasteners and a window placard.
       const f = g.plane(w.bezelDepth);
@@ -230,10 +251,10 @@ export function buildHatch(ctx: CabinContext): void {
   const wg = geomOf(ctx, win);
   const wLoop = win.outline(count);
   const wPanes = ctx.layout.windows.panes.map((d) => Math.min(d, T - pocket - 0.004));
-  const panes = bezel(ctx, wg, wLoop, 0.035, T - pocket + 0.012, 'bezel', ctx.detail === 2 ? [wPanes[wPanes.length - 1]!] : wPanes);
+  const { panes, edgeDepth } = bezel(ctx, wg, wLoop, 0.035, T - pocket + 0.012, 'bezel', ctx.detail === 2 ? [wPanes[wPanes.length - 1]!] : wPanes);
   if (ctx.detail === 0) {
     const outline = loop3(wg, wLoop, planarDepths(wg, wLoop, wPanes[wPanes.length - 1]!));
-    ctx.windows.push({ id: 'hatch-window', kind: 'hatchWindow', outline: loop3(wg, wLoop, 0), centre: wg.frame.centreInner, inward: wg.inward, area: loopArea(outline), panes });
+    ctx.windows.push({ id: 'hatch-window', kind: 'hatchWindow', outline: loop3(wg, wLoop, 0), centre: wg.frame.centreInner, inward: wg.inward, area: loopArea(outline), panes, aperture: apertureOf(ctx, wg, win, edgeDepth) });
   }
   if (ctx.detail === 2) return;
 
@@ -297,6 +318,25 @@ export function buildHatch(ctx: CabinContext): void {
 
 const localDirOf = (f: Frame, a: number, b: number): Vec3 => v3.add(v3.scale(f.x, a), v3.scale(f.y, b));
 
+/**
+ * Shadow-only geometry for the core's cascades: every window opening closed at the inner wall (the PLUGS),
+ * so that the core's sun never lights the cabin, which the cockpit lights itself (never drawn shaded).
+ */
+export function buildPlugs(ctx: CabinContext): void {
+  const m = ctx.mould;
+  const b = ctx.b;
+  const attr = ctx.m('bezel');
+  for (const o of openingsOf(m).filter((x) => x.kind !== 'hatch')) {
+    const g = geomOf(ctx, o);
+    const loop = loop3(g, o.outline(96), 0);
+    b.part();
+    const c = b.vertex(g.frame.centreInner, g.inward, g.frame.t, [0, 0], attr);
+    const first = b.vertexCount;
+    for (const p of loop) b.vertex(p, g.inward, g.frame.t, [0, 0], attr);
+    for (let i = 0; i < loop.length; i++) b.tri(c, first + i, first + ((i + 1) % loop.length));
+  }
+}
+
 export function buildDockingHatch(ctx: CabinContext): void {
   const m = ctx.mould;
   const y = ctx.layout.hatch.dockingHatchY;
@@ -326,6 +366,4 @@ export function buildDockingHatch(ctx: CabinContext): void {
     b.tube([{ x: 0, y: y - 0.05, z: 0 }, revPoint(r - 0.07, y - 0.048, a)], 0.004, 6, ctx.m('steel'));
   }
   ctx.labelQuad(offsetFrame(hub, 0, -0.18, 0), 0, 0, 0.22, 0.015, 'DOCKING HATCH · PEV FIRST', 'hatch', { color: 1, style: { box: true } });
-  void DEG;
-  void FLAG_EMISSIVE;
 }

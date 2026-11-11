@@ -5,7 +5,9 @@
  *    (read back from the texture: the accent underline sits under the new page's tab);
  *  - the lab forwards real key presses 9 / 0 / minus to cyclePage(0 / 1 / 2);
  *  - crew overlay: tunnel vision above the onset g in the interior view only; vibration under thrust;
- *  - the reduced detail level outside, and the full one inside.
+ *  - the reduced detail level outside, and the full one inside;
+ *  - what the displays painted equals the HUD's strings for the same snapshot (the painting path itself);
+ *  - the GPU occlusion bake agrees with its CPU reference.
  */
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, test, waitIdle } from '../harness';
@@ -49,9 +51,12 @@ test('draws the interior from the seat, three displays painting at 15 Hz, no err
   const geo = await page.evaluate(() => window.__cockpit!.geometry());
   expect(geo.triangles.lod0).toBeGreaterThan(50_000);
   expect(geo.windows).toBe(5);
-  await page.evaluate(() => window.__cockpit!.resetDisplayStats());
-  const t0 = await page.evaluate(() => performance.now());
-  await page.waitForTimeout(3000);
+  // Measured over 180 rendered frames (about 3 s at 60 Hz), timed in the page.
+  const t0 = await page.evaluate(() => {
+    window.__cockpit!.resetDisplayStats();
+    return performance.now();
+  });
+  await page.waitForFunction(() => window.__cockpit!.stats().displays.frames >= 180, undefined, { timeout: 60_000, polling: 50 });
   const st = await page.evaluate(() => window.__cockpit!.stats());
   const seconds = (await page.evaluate(() => performance.now())) - t0;
   expect(st.active).toBe(true);
@@ -135,8 +140,8 @@ test('tunnel vision above the onset g in the interior view only; vibration under
   await open(page, 'scene=leo');
   expect((await page.evaluate(() => window.__cockpit!.stats())).tunnel).toBe(0);
   await page.evaluate(() => window.__cockpit!.set({ g: 9.5 }));
-  // Low-pass with a 2.5 s time constant: after 6 s the filtered load is well above the 6 g onset.
-  await page.waitForTimeout(6000);
+  // Low-pass with a 2.5 s time constant: the filtered load climbs through the 6 g onset within seconds.
+  await page.waitForFunction(() => window.__cockpit!.stats().tunnel > 0.2, undefined, { timeout: 30_000, polling: 100 });
   const t = (await page.evaluate(() => window.__cockpit!.stats())).tunnel;
   expect(t).toBeGreaterThan(0.2);
   expect(t).toBeLessThanOrEqual(1);
@@ -160,5 +165,30 @@ test('tunnel vision above the onset g in the interior view only; vibration under
   const v = (await page.evaluate(() => window.__cockpit!.stats())).vibration;
   expect(v).toBeGreaterThan(1e-4);
   expect(v).toBeLessThanOrEqual(0.004);
+  await expectNoErrors(page, pageLog);
+});
+
+test('the MFDs paint the HUD strings: what the cockpit displays themselves drew', async ({ page, pageLog }) => {
+  test.setTimeout(240_000);
+  await open(page, 'scene=leo');
+  await page.evaluate(() => window.__cockpit!.setPage(0, 'flight'));
+  await page.waitForFunction(() => window.__cockpit!.paintedText()[0]?.page === 'flight', undefined, { timeout: 30_000, polling: 50 });
+  // Two paints later, so the record is from the regular 15 Hz cadence, not only the page change.
+  const tick0 = await page.evaluate(() => window.__cockpit!.paintedText()[0]!.tick);
+  await page.waitForFunction((t) => window.__cockpit!.paintedText()[0]!.tick > t, tick0, { timeout: 30_000, polling: 50 });
+  const rec = await page.evaluate(() => window.__cockpit!.paintedText()[0]!);
+  // The HUD's strings for the very snapshot the display painted: every one of them was drawn, verbatim.
+  for (const [field, value] of Object.entries(rec.hud)) expect(rec.texts, `flight page draws the HUD ${field} "${value}"`).toContain(value);
+  await expectNoErrors(page, pageLog);
+});
+
+test('the GPU occlusion bake matches the CPU reference', async ({ page, pageLog }) => {
+  test.setTimeout(240_000);
+  await open(page, 'scene=leo');
+  const r = await page.evaluate(() => window.__cockpit!.occlusionCheck(300));
+  // Same rays, same BVH: differences come from float rounding at grazing hits and the 8-bit storage.
+  expect(r.mean, 'mean |GPU - CPU| over every channel').toBeLessThan(0.01);
+  expect(r.max, 'largest |GPU - CPU|').toBeLessThan(0.2);
+  expect(r.meanAo, 'the bake is not empty').toBeGreaterThan(0.3);
   await expectNoErrors(page, pageLog);
 });

@@ -10,7 +10,7 @@
  */
 import { DEG, v3, type Vec3 } from '@/core/math';
 import type { ConsoleSectionDef, LampDef, ReadoutDef, RotaryDef, SwitchDef } from '../layout';
-import { frameAt, local, offsetFrame, tiltFrame, type Attr, type Frame } from '../mesh';
+import { FLAG_EDGE, frameAt, local, offsetFrame, tiltFrame, type Attr, type Frame } from '../mesh';
 import { insideDistance } from '../mould';
 import { FLAG_EMISSIVE, FLAG_SEGMENT, seatFrames, type CabinContext } from './context';
 
@@ -81,8 +81,10 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
   for (let i = 0; i < 4; i++) {
     const [ax, au] = rect[i]!;
     const [bx, bu] = rect[(i + 1) % 4]!;
-    for (let k = 0; k < 6; k++) {
-      const t = k / 6;
+    // Edges sampled finely enough for the occlusion bake at full detail.
+    const segs = Math.max(6, Math.min(48, Math.ceil(Math.hypot((bx - ax) * 1, bu - au) / ctx.b.maxEdge)));
+    for (let k = 0; k < segs; k++) {
+      const t = k / segs;
       const p = pt(ax + (bx - ax) * t, au + (bu - au) * t);
       poly.push(fitInside(ctx, p, centre));
     }
@@ -93,15 +95,36 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
   // Face (fan from the centre), chamfer ring, side walls back to the body depth.
   const shrinkTo = (p: Vec3, d: number): Vec3 => v3.add(p, v3.scale(v3.normalize(v3.sub(centre, p)), d));
   const faceLoop = poly.map((p) => shrinkTo(p, ch));
+  // Face: concentric rings from the centre out to the loop (subdivided like the other flat faces).
+  b.part();
+  const reach = Math.max(...faceLoop.map((p) => v3.dist(p, centre)));
+  const rings = Math.max(1, Math.min(24, Math.ceil(reach / ctx.b.maxEdge)));
   const ci = b.vertex(centre, n, f.x, [0, 0], panelMat);
   const first = b.vertexCount;
-  for (const p of faceLoop) {
-    const d = v3.sub(p, centre);
-    b.vertex(p, n, f.x, [v3.dot(d, f.x), v3.dot(d, f.y)], panelMat);
+  for (let r = 1; r <= rings; r++) {
+    for (const p of faceLoop) {
+      const q = v3.lerp(centre, p, r / rings);
+      const d = v3.sub(q, centre);
+      b.vertex(q, n, f.x, [v3.dot(d, f.x), v3.dot(d, f.y)], panelMat);
+    }
   }
-  for (let i = 0; i < faceLoop.length; i++) b.tri(ci, first + i, first + ((i + 1) % faceLoop.length));
+  const nl = faceLoop.length;
+  for (let i = 0; i < nl; i++) b.tri(ci, first + i, first + ((i + 1) % nl));
+  for (let r = 1; r < rings; r++) {
+    const a0 = first + (r - 1) * nl;
+    const a1 = first + r * nl;
+    for (let i = 0; i < nl; i++) b.quad(a0 + i, a1 + i, a1 + ((i + 1) % nl), a0 + ((i + 1) % nl));
+  }
   const chamferBack = poly.map((p) => v3.addScaled(p, n, -ch));
-  ringLoops(ctx, faceLoop, chamferBack, ctx.m('panel'), (i) => v3.normalize(v3.add(n, v3.normalize(v3.sub(poly[i]!, centre)))));
+  ringLoops(ctx, faceLoop, chamferBack, ctx.m('panel', { flags: FLAG_EDGE }), (i) => v3.normalize(v3.add(n, v3.normalize(v3.sub(poly[i]!, centre)))));
+  // Quarter-turn fasteners at the panel's corners (where the corner is not cut by the wall).
+  if (ctx.detail === 0) {
+    for (const [x, u] of [[x0 + 0.012, u0 + 0.012], [x1 - 0.012, u0 + 0.012], [x1 - 0.012, u1 - 0.012], [x0 + 0.012, u1 - 0.012]] as [number, number][]) {
+      const p = pt(x, u);
+      if (insideDistance(ctx.def, p) < ctx.def.wallThickness + MARGIN + 0.01) continue;
+      fastener(ctx, offsetFrame(f, x, u - sec.uHinge, 0));
+    }
+  }
   // Body: each back corner as deep as fits.
   const backLoop = chamferBack.map((p) => fitInside(ctx, v3.addScaled(p, n, -depth), p));
   ringLoops(ctx, chamferBack, backLoop, ctx.m('consoleBody', { ao: 0.6 }), (i) => v3.normalize(v3.sub(poly[i]!, centre)));
@@ -111,9 +134,14 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
   const bfirst = b.vertexCount;
   for (const p of backLoop) b.vertex(p, v3.neg(n), f.x, [0, 0], ctx.m('consoleBody', { ao: 0.5 }));
   for (let i = 0; i < backLoop.length; i++) b.tri(bci, bfirst + ((i + 1) % backLoop.length), bfirst + i);
-  const hx = Math.abs(x1 - x0) / 2;
-  const hu = Math.abs(u1 - u0) / 2;
-  ctx.proxy(offsetFrame(f, (x0 + x1) / 2, (u0 + u1) / 2 - sec.uHinge, -depth / 2), [hx, hu, depth / 2], 0.05);
+}
+
+/** Quarter-turn panel fastener: dimpled cup washer, slotted stud head. */
+function fastener(ctx: CabinContext, f: Frame): void {
+  const b = ctx.b;
+  b.lathe(f.o, f.n, [[0.0062, 0], [0.0062, 0.0006], [0.0052, 0.0011], [0.0046, 0.0009]], 20, ctx.m('steel'), { ref: f.x });
+  b.lathe(local(f, 0, 0, 0.0009), f.n, [[0.0042, 0], [0.0042, 0.0007], [0.0034, 0.0012], [0.0, 0.0013]], 20, ctx.m('steel', { flags: FLAG_EDGE }), { ref: f.x });
+  b.box(offsetFrame(f, 0, 0, 0.0021), 0.0036, 0.00045, 0.0002, 0.00005, ctx.m('cavity'));
 }
 
 function ringLoops(ctx: CabinContext, a: Vec3[], c: Vec3[], attr: Attr, normal: (i: number) => Vec3): void {
@@ -274,7 +302,7 @@ function lens(ctx: CabinContext, f: Frame, hx: number, hy: number, lamp: LampDef
     return;
   }
   const rect = ctx.label(lamp.label, hy * 2 * 0.95, hx * 2 * 0.95, { weight: 700 });
-  const lensAttr = ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE, emit: 4, label: { rect, origin: [-hx, -hy], size: [hx * 2, hy * 2] } });
+  const lensAttr = ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE, ink: 4, label: { rect, origin: [-hx, -hy], size: [hx * 2, hy * 2] } });
   ctx.b.box(offsetFrame(f, 0, 0, -0.002), hx, hy, 0.002, 0.0006, ctx.m('lens', { ctl: c.index, flags: FLAG_EMISSIVE }), { frontAttr: lensAttr });
 }
 
@@ -293,13 +321,16 @@ function singleLamp(ctx: CabinContext, f: Frame, size: number, lamp: LampDef, ke
 export function toggleSwitch(ctx: CabinContext, f: Frame, sw: SwitchDef, key: string, panelMat = 'panel'): void {
   const b = ctx.b;
   const throwDeg = 28;
-  b.cylinder(local(f, 0, 0, 0), f.n, 0.0072, 0.0035, 6, ctx.m('steel'));
-  b.cylinder(local(f, 0, 0, 0.0035), f.n, 0.0046, 0.004, 12, ctx.m('steel'));
-  const pivot = local(f, 0, 0, 0.007);
+  // Keyed lock washer with its anti-rotation tab, hex nut, threaded bushing.
+  b.cylinder(local(f, 0, 0, 0), f.n, 0.0085, 0.0007, 20, ctx.m('steel'), { caps: 'top' });
+  b.box(offsetFrame(f, 0, 0.0095, 0.00035), 0.0016, 0.0022, 0.00035, 0.0001, ctx.m('steel'));
+  b.lathe(local(f, 0, 0, 0.0007), f.n, [[0.0072, 0], [0.0072, 0.0026], [0.0062, 0.0032], [0.0046, 0.0032]], 6, ctx.m('steel'), { ref: f.x });
+  b.cylinder(local(f, 0, 0, 0.0032), f.n, 0.0046, 0.0042, 16, ctx.m('steel', { flags: FLAG_EDGE }), { caps: 'top' });
+  const pivot = local(f, 0, 0, 0.0074);
   // Lever along +n at rest; a rotation by +a about +x tips it toward -y, so "up" (position 0) is -throw.
   const c = ctx.control(key, () => ({ kind: 'toggle', pivot, axis: f.x, binding: sw.binding, angles: [-throwDeg * DEG, throwDeg * DEG] }));
-  b.cylinder(pivot, f.n, 0.0018, 0.019, 8, ctx.m('steel', { ctl: c.index }), { radius1: 0.0028, caps: 'none' });
-  b.lathe(local(f, 0, 0, 0.007 + 0.019), f.n, [[0.0028, 0], [0.0032, 0.002], [0.0026, 0.004], [0.0, 0.0045]], 10, ctx.m('steel', { ctl: c.index }));
+  // Bat-handle lever: a tapered chrome shank swelling into a rounded tip.
+  b.lathe(pivot, f.n, [[0.0, -0.0004], [0.0017, 0], [0.0019, 0.008], [0.0024, 0.017], [0.0031, 0.0215], [0.0029, 0.0235], [0.0018, 0.0248], [0.0, 0.0252]], 14, ctx.m('steel', { ctl: c.index }), { ref: f.x });
   const labelMat = panelMat;
   ctx.labelQuad(f, 0, 0.024, 0.034, 0.0065, sw.label, labelMat, { color: panelMat === 'panel' ? 0 : 1, backlit: panelMat === 'panel' });
   if (sw.up) ctx.labelQuad(f, 0.0125, 0.0105, 0.014, 0.0045, sw.up, labelMat, { color: panelMat === 'panel' ? 4 : 1, style: { align: 'left' } });

@@ -8,9 +8,12 @@
  * The opening outlines are recomputed here with plain trigonometry from the file (not with mould.ts).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { createCockpitRig } from '@/camera';
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import { getSection } from '@/core/defs/loader';
-import type { CockpitModel } from '@/render/cockpit/build';
+import { createFakeSim } from '@/core/fakes/fakeSim';
+import { displayVertices, type CockpitModel } from '@/render/cockpit/build';
+import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { testDefs, testModel, vertexPosition } from './helpers';
 
 type V = { x: number; y: number; z: number };
@@ -264,24 +267,87 @@ describe('cockpit interior geometry (shared mould line)', () => {
     }
   });
 
-  it('keeps the display quads planar and never magnifies their images from the seat at 1440p', () => {
+  it('keeps the display quads planar and never magnifies their images from the seat at 1440p', async () => {
     const cdr = def.seats.find((s) => s.id === 'cdr')!;
     const eye = { x: cdr.pos[0], y: cdr.pos[1], z: cdr.pos[2] };
-    const fovY = (70 * Math.PI) / 180;
+    // The field of view the app's cockpit camera starts with (src/camera), not a literal.
+    const fovY = await cockpitCameraFov();
     const pxPerRad = 1440 / 2 / Math.tan(fovY / 2);
     const { width: texW, height: texH } = model.layout.displays;
+    // The vertices the display pipeline actually draws (displayVertices): 6 per display, 9 floats each.
+    const dv = displayVertices(model);
+    expect(dv.length).toBe(model.displays.length * 6 * 9);
     for (const d of model.displays) {
-      const f = d.frame;
-      // Planar: the frame is orthonormal and the four corners lie in its plane.
-      expect(Math.abs(dot(f.x, f.n))).toBeLessThan(1e-9);
-      expect(Math.abs(dot(f.y, f.n))).toBeLessThan(1e-9);
-      // Texels per screen pixel along both axes at the nearest point of the screen (the worst case).
-      const dist = len(sub(f.o, eye));
-      const cosv = Math.abs(dot(norm(sub(eye, f.o)), f.n));
+      const pts: V[] = [];
+      for (let k = 0; k < 6; k++) {
+        const o = (d.index * 6 + k) * 9;
+        expect(dv[o + 8]).toBe(d.index);
+        pts.push({ x: dv[o]!, y: dv[o + 1]!, z: dv[o + 2]! });
+      }
+      // Planar: every emitted vertex lies in the plane of the first three (within 1 micrometre).
+      const n = norm(cross(sub(pts[1]!, pts[0]!), sub(pts[2]!, pts[0]!)));
+      for (const p of pts) expect(Math.abs(dot(sub(p, pts[0]!), n)), `display ${d.index} vertex off its plane`).toBeLessThan(1e-6);
+      // The two triangles cover the active area: their summed area equals width x height.
+      const area = (a: V, b: V, c: V): number => len(cross(sub(b, a), sub(c, a))) / 2;
+      expect(area(pts[0]!, pts[1]!, pts[2]!) + area(pts[3]!, pts[4]!, pts[5]!)).toBeCloseTo(d.width * d.height, 6);
+      // Texels per screen pixel along both axes at the screen's centre.
+      const centre = scale(pts.reduce((s, p) => add(s, p), { x: 0, y: 0, z: 0 }), 1 / 6);
+      const dist = len(sub(centre, eye));
+      const cosv = Math.abs(dot(norm(sub(eye, centre)), n));
       const pxW = (d.width / dist) * pxPerRad;
       const pxH = ((d.height * cosv) / dist) * pxPerRad;
       const texelsPerPx = Math.min(texW / pxW, texH / pxH);
       expect(texelsPerPx, `display ${d.index}: texels per screen pixel`).toBeGreaterThanOrEqual(1.5);
     }
   });
+
+  it('prints every label right-reading from the side it faces', () => {
+    // For each label triangle: the directions in which the atlas u grows (text runs right) and v grows
+    // (text runs down) must form, with the face normal, a right-handed reading frame seen from the front.
+    const f32 = new Float32Array(model.mesh.vertices);
+    const i16 = new Int16Array(model.mesh.vertices);
+    const u16 = new Uint16Array(model.mesh.vertices);
+    const u8 = new Uint8Array(model.mesh.vertices);
+    const idx = model.mesh.indices;
+    let labels = 0;
+    // Decal labels and the lamp legends (lens faces, in the full detail level).
+    const tris: number[] = [];
+    for (const r of [model.mesh.ranges.labels!, model.mesh.ranges.lod0!]) for (let i = r.start; i < r.start + r.count; i += 3) tris.push(i);
+    for (const i of tris) {
+      const tri = [idx[i]!, idx[i + 1]!, idx[i + 2]!];
+      if ((u8[tri[0]! * 48 + 42]! & 1) === 0) continue;
+      const P = tri.map((k) => ({ x: f32[k * 12]!, y: f32[k * 12 + 1]!, z: f32[k * 12 + 2]! }));
+      const UV = tri.map((k) => [u16[k * 24 + 18]! / 65535, u16[k * 24 + 19]! / 65535] as const);
+      const N = norm({ x: i16[tri[0]! * 24 + 6]!, y: i16[tri[0]! * 24 + 7]!, z: i16[tri[0]! * 24 + 8]! });
+      // Solve for the 3-D gradients of u and v over the triangle.
+      const e1 = sub(P[1]!, P[0]!);
+      const e2 = sub(P[2]!, P[0]!);
+      const du1 = UV[1]![0] - UV[0]![0];
+      const dv1 = UV[1]![1] - UV[0]![1];
+      const du2 = UV[2]![0] - UV[0]![0];
+      const dv2 = UV[2]![1] - UV[0]![1];
+      const det = du1 * dv2 - du2 * dv1;
+      if (Math.abs(det) < 1e-12) continue;
+      // Positions along increasing u and increasing v (inverse of the uv Jacobian).
+      const dPdu = scale(sub(scale(e1, dv2), scale(e2, dv1)), 1 / det);
+      const dPdv = scale(sub(scale(e2, du1), scale(e1, du2)), 1 / det);
+      // Atlas v grows downwards on the text: up = -dPdv. Right x up must point out of the face (along N).
+      const handed = dot(cross(dPdu, scale(dPdv, -1)), N);
+      expect(handed, `label triangle ${i / 3} reads mirrored`).toBeGreaterThan(0);
+      labels++;
+    }
+    expect(labels).toBeGreaterThan(200);
+  });
 });
+
+/** The vertical field of view the app's cockpit camera rig starts with. */
+async function cockpitCameraFov(): Promise<number> {
+  const defs = await testDefs();
+  const vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
+  const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 4 })) });
+  const raw = sim.snapshot();
+  const s = { ...raw, vessels: raw.vessels.map((v) => (v.id === raw.activeVesselId ? { ...v, vehicleId } : v)) };
+  const rig = createCockpitRig({ defs });
+  rig.activate(null, s);
+  return rig.update(s, { yaw: 0, pitch: 0, zoom: 1 }, 0).fovY;
+}

@@ -9,27 +9,32 @@
  *   20 tangent    snorm16x4   xyz along +uv0.x, w = bitangent sign
  *   28 uv0        float32x2   surface coordinates in metres (procedural detail)
  *   36 uv1        unorm16x2   label-atlas coordinates (when FLAG_LABEL is set)
- *   40 misc       uint8x4     material index, baked ambient occlusion (0..255), flags, emissive group
+ *   40 misc       uint8x4     material index, cavity (0..255: 255 = open; modelled creases only, the
+ *                             occlusion by other geometry is baked separately, occlusion.ts), flags,
+ *                             ink colour (labels) or part seed (everything else)
  *   44 control    uint16x2    control index (0 = static), sub index (segment bit of a seven-segment digit)
+ *
+ * Every primitive call starts a new PART: its vertices carry a part seed (0..255) so that the shader can
+ * vary tone, wear and pattern phase from part to part (no two panels or blankets look identical).
  */
 import { v3, type Vec3 } from '@/core/math';
 
 export const VERTEX_STRIDE = 48;
 export const FLAG_LABEL = 1;
-/** Faces of a pane, lamp lens or display: never written to the shadow pass by the shadow LOD selection. */
-export const FLAG_NO_SHADOW = 2;
+/** Vertex flag: a chamfer or bevel along an edge (where paint wears through first). */
+export const FLAG_EDGE = 2;
 
 export interface Attr {
   /** Material index into the layout's material list. */
   mat: number;
-  /** Baked ambient occlusion 0..1 (default 1). */
+  /** Modelled cavity 0..1 (creases of a quilt or a cushion seam; default 1 = open). */
   ao?: number;
   /** Control index (0 = static) and sub index. */
   ctl?: number;
   sub?: number;
   flags?: number;
-  /** Emissive group (lamp lenses, LED strips: index into the per-frame emitter table, 0 = none). */
-  emit?: number;
+  /** Label ink colour (index into LABEL_COLORS); only with `label`. */
+  ink?: number;
   /** Label atlas rectangle [u0, v0, u1, v1] mapped onto uv0 normalised by `labelSize`. */
   label?: { rect: [number, number, number, number]; origin: [number, number]; size: [number, number] };
 }
@@ -81,6 +86,8 @@ export interface BuiltMesh {
   indices: Uint32Array;
   /** Index ranges of each part (LOD) that was closed with `mark`. */
   ranges: Record<string, { start: number; count: number }>;
+  /** Vertex ranges of the same parts (each LOD's vertices are contiguous). */
+  vertexRanges: Record<string, { start: number; count: number }>;
   bounds: { min: Vec3; max: Vec3 };
 }
 
@@ -94,7 +101,17 @@ export class MeshBuilder {
   private ctl: number[] = [];
   readonly idx: number[] = [];
   private rangeStart = 0;
+  private vertexStart = 0;
   readonly ranges: Record<string, { start: number; count: number }> = {};
+  readonly vertexRanges: Record<string, { start: number; count: number }> = {};
+  /** Longest edge of a flat face before it is subdivided (m; Infinity = never), so baked occlusion has vertices to live on. */
+  maxEdge = Infinity;
+  private partSeed = 0;
+
+  /** Start a new part: the following vertices get a new seed. */
+  part(): void {
+    this.partSeed = (this.partSeed * 1103515245 + 12345) >>> 0;
+  }
 
   get vertexCount(): number {
     return this.pos.length / 3;
@@ -114,6 +131,9 @@ export class MeshBuilder {
   }
   controlOf(i: number): number {
     return this.ctl[i * 2]!;
+  }
+  flagsOf(i: number): number {
+    return this.misc[i * 4 + 2]!;
   }
 
   vertex(p: Vec3, n: Vec3, t: Vec3, uv: [number, number], a: Attr, tw = 1): number {
@@ -141,7 +161,7 @@ export class MeshBuilder {
       const sv = (uv[1] - a.label.origin[1]) / a.label.size[1];
       this.uv1.push(u0 + (u1 - u0) * Math.max(0, Math.min(1, su)), v0 + (v1 - v0) * Math.max(0, Math.min(1, 1 - sv)));
     } else this.uv1.push(0, 0);
-    this.misc.push(a.mat, Math.round(255 * Math.max(0, Math.min(1, a.ao ?? 1))), (a.flags ?? 0) | (a.label ? FLAG_LABEL : 0), a.emit ?? 0);
+    this.misc.push(a.mat, Math.round(255 * Math.max(0, Math.min(1, a.ao ?? 1))), (a.flags ?? 0) | (a.label ? FLAG_LABEL : 0), a.label ? (a.ink ?? 0) : (this.partSeed >>> 16) & 255);
     this.ctl.push(a.ctl ?? 0, a.sub ?? 0);
     return i;
   }
@@ -154,10 +174,32 @@ export class MeshBuilder {
     this.idx.push(a, b, c, a, c, d);
   }
 
-  /** Close the current index range under `name` (a LOD or a separately drawn part). */
+  /** Close the current index and vertex ranges under `name` (a LOD). */
   mark(name: string): void {
     this.ranges[name] = { start: this.rangeStart, count: this.idx.length - this.rangeStart };
+    this.vertexRanges[name] = { start: this.vertexStart, count: this.vertexCount - this.vertexStart };
     this.rangeStart = this.idx.length;
+    this.vertexStart = this.vertexCount;
+  }
+
+  /**
+   * Flat grid over a planar quad: corner(0, 0) .. corner(1, 1) bilinear, subdivided so no cell edge exceeds
+   * `maxEdge`. uv0 = metric coordinates along the two edges from `uvOrigin`.
+   */
+  private grid(at: (s: number, t: number) => Vec3, lu: number, lv: number, n: Vec3, t: Vec3, a: Attr, uvOrigin: [number, number]): void {
+    const nu = Math.max(1, Math.min(64, Math.ceil(lu / this.maxEdge)));
+    const nv = Math.max(1, Math.min(64, Math.ceil(lv / this.maxEdge)));
+    const base = this.vertexCount;
+    for (let j = 0; j <= nv; j++) {
+      for (let i = 0; i <= nu; i++) this.vertex(at(i / nu, j / nv), n, t, [uvOrigin[0] + (lu * i) / nu, uvOrigin[1] + (lv * j) / nv], a);
+    }
+    const row = nu + 1;
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        const k = base + j * row + i;
+        this.quad(k, k + 1, k + row + 1, k + row);
+      }
+    }
   }
 
   // ----------------------------------------------------------------------------------------- primitives
@@ -168,6 +210,7 @@ export class MeshBuilder {
    * arc length (metres) along s and t, scaled by `uvScale`.
    */
   patch(at: (s: number, t: number) => Vec3, ns: number, nt: number, a: Attr, opts: { flip?: boolean; uvOffset?: [number, number]; aoAt?: (s: number, t: number) => number; normalAt?: (s: number, t: number) => Vec3 } = {}): void {
+    this.part();
     const h = 1e-4;
     const base = this.vertexCount;
     const flip = opts.flip ? -1 : 1;
@@ -200,32 +243,25 @@ export class MeshBuilder {
     }
   }
 
-  /** Flat quad from four corners (counter-clockwise from the front), uv0 in metres from the first corner. */
+  /** Flat quad from four corners (counter-clockwise from the front, a parallelogram), uv0 in metres from the first corner. */
   flatQuad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, a: Attr, uvOrigin: [number, number] = [0, 0]): void {
+    this.part();
     const ex = v3.sub(p1, p0);
     const ey = v3.sub(p3, p0);
     const n = v3.cross(ex, ey);
-    const lx = v3.len(ex);
-    const ly = v3.len(ey);
-    const ux = v3.scale(ex, 1 / Math.max(lx, 1e-9));
-    const uvOf = (p: Vec3): [number, number] => {
-      const d = v3.sub(p, p0);
-      return [uvOrigin[0] + v3.dot(d, ux), uvOrigin[1] + v3.dot(d, v3.normalize(v3.reject(ey, ux)))];
-    };
-    const i0 = this.vertex(p0, n, ex, uvOf(p0), a);
-    const i1 = this.vertex(p1, n, ex, uvOf(p1), a);
-    const i2 = this.vertex(p2, n, ex, uvOf(p2), a);
-    const i3 = this.vertex(p3, n, ex, uvOf(p3), a);
-    this.quad(i0, i1, i2, i3);
-    void ly;
+    const at = (s: number, t: number): Vec3 => v3.lerp(v3.lerp(p0, p1, s), v3.lerp(p3, p2, s), t);
+    this.grid(at, v3.len(ex), v3.len(ey), n, ex, a, uvOrigin);
   }
 
   /**
    * Box in a frame (centre f.o, half sizes along x, y, n) with chamfered edges of width `bevel`.
-   * Faces are flat-shaded; chamfers carry the averaged normal so edges catch highlights.
+   * Faces are flat-shaded (subdivided down to `maxEdge`); chamfers carry the averaged normal so edges catch
+   * highlights, and FLAG_EDGE so that they wear.
    */
   box(f: Frame, hx: number, hy: number, hz: number, bevel: number, a: Attr, opts: { skipBack?: boolean; frontAttr?: Attr } = {}): void {
+    this.part();
     const b = Math.max(0, Math.min(bevel, hx * 0.49, hy * 0.49, hz * 0.49));
+    const edgeAttr: Attr = { ...a, flags: (a.flags ?? 0) | FLAG_EDGE };
     const dirs: [Vec3, Vec3, Vec3, number, number, number][] = [
       // normal, u axis, v axis, half extent along normal, half u, half v
       [f.n, f.x, f.y, hz, hx, hy],
@@ -242,11 +278,14 @@ export class MeshBuilder {
       const eu = hu - b;
       const ev = hv - b;
       const attr = k === 0 && opts.frontAttr ? opts.frontAttr : a;
-      const i0 = this.vertex(at(-eu, -ev), n, u, [-eu, -ev], attr);
-      const i1 = this.vertex(at(eu, -ev), n, u, [eu, -ev], attr);
-      const i2 = this.vertex(at(eu, ev), n, u, [eu, ev], attr);
-      const i3 = this.vertex(at(-eu, ev), n, u, [-eu, ev], attr);
-      this.quad(i0, i1, i2, i3);
+      if (attr.label) {
+        // A labelled face (lamp lens legend) keeps its four corners: the atlas mapping is per vertex.
+        const i0 = this.vertex(at(-eu, -ev), n, u, [-eu, -ev], attr);
+        const i1 = this.vertex(at(eu, -ev), n, u, [eu, -ev], attr);
+        const i2 = this.vertex(at(eu, ev), n, u, [eu, ev], attr);
+        const i3 = this.vertex(at(-eu, ev), n, u, [-eu, ev], attr);
+        this.quad(i0, i1, i2, i3);
+      } else this.grid((s, t) => at(-eu + 2 * eu * s, -ev + 2 * ev * t), 2 * eu, 2 * ev, n, u, attr, [-eu, -ev]);
     });
     if (b <= 0) return;
     // Chamfer strips along the 12 edges and triangles at the 8 corners.
@@ -261,7 +300,7 @@ export class MeshBuilder {
         const p1 = corner(1, sy, sz, [b, 0, b]);
         const p2 = corner(1, sy, sz, [b, b, 0]);
         const p3 = corner(-1, sy, sz, [b, b, 0]);
-        this.strip(p0, p1, p2, p3, nrm, f.x, a);
+        this.strip(p0, p1, p2, p3, nrm, f.x, edgeAttr);
       }
     }
     for (const sx of signs) {
@@ -271,7 +310,7 @@ export class MeshBuilder {
         const p1 = corner(sx, 1, sz, [0, b, b]);
         const p2 = corner(sx, 1, sz, [b, b, 0]);
         const p3 = corner(sx, -1, sz, [b, b, 0]);
-        this.strip(p0, p1, p2, p3, nrm, f.y, a);
+        this.strip(p0, p1, p2, p3, nrm, f.y, edgeAttr);
       }
     }
     for (const sx of signs) {
@@ -281,7 +320,7 @@ export class MeshBuilder {
         const p1 = corner(sx, sy, 1, [0, b, b]);
         const p2 = corner(sx, sy, 1, [b, 0, b]);
         const p3 = corner(sx, sy, -1, [b, 0, b]);
-        this.strip(p0, p1, p2, p3, nrm, f.n, a);
+        this.strip(p0, p1, p2, p3, nrm, f.n, edgeAttr);
       }
     }
     for (const sx of signs) {
@@ -291,7 +330,7 @@ export class MeshBuilder {
           const pa = corner(sx, sy, sz, [0, b, b]);
           const pb = corner(sx, sy, sz, [b, 0, b]);
           const pc = corner(sx, sy, sz, [b, b, 0]);
-          this.triFacing(pa, pb, pc, nrm, a);
+          this.triFacing(pa, pb, pc, nrm, edgeAttr);
         }
       }
     }
@@ -324,6 +363,7 @@ export class MeshBuilder {
    * ring: front face between outline and hole, inner wall along the hole. Caps: 'front' / 'back' / both.
    */
   extrude(f: Frame, outline: [number, number][], depth: number, a: Attr, opts: { hole?: [number, number][]; bevel?: number; caps?: 'front' | 'back' | 'both' | 'none'; frontAttr?: Attr; backDepth?: number } = {}): void {
+    this.part();
     const n = outline.length;
     const bevel = opts.bevel ?? 0;
     const back = opts.backDepth ?? 0;
@@ -363,6 +403,7 @@ export class MeshBuilder {
     const front = opts.frontAttr ?? a;
     if (bevel > 0) {
       // Bevel ring: from the wall top (inset) to the front face, moved inward by `bevel`.
+      const bevelAttr: Attr = { ...front, flags: (front.flags ?? 0) | FLAG_EDGE };
       const ring = (loop: [number, number][], sign: number): void => {
         const base = this.vertexCount;
         for (let i = 0; i <= loop.length; i++) {
@@ -371,8 +412,8 @@ export class MeshBuilder {
           const [nx, ny] = outN(loop, k, sign);
           const nn = v3.normalize(localDir(f, nx, ny, 1));
           const tt = localDir(f, -ny, nx, 0);
-          this.vertex(local(f, x, y, depth - bevel), nn, tt, [i, 0], front);
-          this.vertex(local(f, x - nx * bevel, y - ny * bevel, depth), nn, tt, [i, bevel], front);
+          this.vertex(local(f, x, y, depth - bevel), nn, tt, [i, 0], bevelAttr);
+          this.vertex(local(f, x - nx * bevel, y - ny * bevel, depth), nn, tt, [i, bevel], bevelAttr);
         }
         for (let i = 0; i < loop.length; i++) {
           const a0 = base + i * 2;
@@ -417,6 +458,7 @@ export class MeshBuilder {
 
   /** Cylinder (or cone frustum with radius1) from base along axis. Caps optional. */
   cylinder(base: Vec3, axis: Vec3, radius: number, length: number, sides: number, a: Attr, opts: { radius1?: number; caps?: 'both' | 'top' | 'bottom' | 'none'; ref?: Vec3; arc?: [number, number] } = {}): void {
+    this.part();
     const ax = v3.normalize(axis);
     const ref = v3.normalize(v3.reject(opts.ref ?? v3.anyOrthogonal(ax), ax));
     const bi = v3.cross(ax, ref);
@@ -461,6 +503,7 @@ export class MeshBuilder {
    * the outward side is to the right of the direction of travel when radius is horizontal and height up).
    */
   lathe(base: Vec3, axis: Vec3, profile: [number, number][], sides: number, a: Attr, opts: { ref?: Vec3; arc?: [number, number]; flip?: boolean } = {}): void {
+    this.part();
     const ax = v3.normalize(axis);
     const ref = v3.normalize(v3.reject(opts.ref ?? v3.anyOrthogonal(ax), ax));
     const bi = v3.cross(ax, ref);
@@ -511,6 +554,7 @@ export class MeshBuilder {
    */
   tube(path: Vec3[], radius: number | ((s: number) => number), sides: number, a: Attr, opts: { caps?: boolean } = {}): void {
     if (path.length < 2) return;
+    this.part();
     const rad = typeof radius === 'number' ? (): number => radius : radius;
     const tangents = path.map((p, i) => v3.normalize(v3.sub(path[Math.min(path.length - 1, i + 1)]!, path[Math.max(0, i - 1)]!)));
     let normal = v3.normalize(v3.reject(v3.anyOrthogonal(tangents[0]!), tangents[0]!));
@@ -553,6 +597,7 @@ export class MeshBuilder {
 
   /** Disc or annulus in a frame (z = c), facing +n (or -n with flip). */
   disc(f: Frame, rOuter: number, rInner: number, sides: number, a: Attr, opts: { c?: number; flip?: boolean } = {}): void {
+    this.part();
     const c = opts.c ?? 0;
     const n = opts.flip ? v3.neg(f.n) : f.n;
     const base0 = this.vertexCount;
@@ -613,6 +658,6 @@ export class MeshBuilder {
       u16[(o + 44) / 2 + 1] = this.ctl[i * 2 + 1]!;
     }
     if (this.rangeStart < this.idx.length) this.mark('rest');
-    return { vertices: buf, vertexCount: count, indices: Uint32Array.from(this.idx), ranges: { ...this.ranges }, bounds: { min, max } };
+    return { vertices: buf, vertexCount: count, indices: Uint32Array.from(this.idx), ranges: { ...this.ranges }, vertexRanges: { ...this.vertexRanges }, bounds: { min, max } };
   }
 }

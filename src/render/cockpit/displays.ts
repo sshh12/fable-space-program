@@ -4,6 +4,10 @@
  * rgba8unorm-srgb texture array with a full mip chain (the smallest mip is the image's mean, which the
  * cabin light uses for the display glow). The array is published as 'ui.mfd'. A page change repaints that
  * display on the next frame.
+ *
+ * Upload: the canvas becomes a VideoFrame imported as an external texture and is drawn into mip 0 by a
+ * render pass, then the mips by more passes, all on the frame's encoder and all timed as
+ * 'cockpit.mfdUpload', so the GPU cost of the whole upload is measured (a queue copy cannot be timed).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { PerfRecorder } from '@/core/contracts/render';
@@ -22,6 +26,19 @@ struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f }
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var smp: sampler;
 @fragment fn fs(v: V) -> @location(0) vec4f { return textureSampleLevel(src, smp, v.uv, 0.0); }
+`;
+
+/** Mip 0 from the painted canvas: an external texture (sRGB-encoded values), decoded for the sRGB target. */
+const UPLOAD_WGSL = /* wgsl */ `
+struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> V {
+  let q = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  return V(vec4f(q * 2.0 - 1.0, 0.0, 1.0), vec2f(q.x, 1.0 - q.y));
+}
+@group(0) @binding(0) var src: texture_external;
+@group(0) @binding(1) var smp: sampler;
+fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92, c <= vec3f(0.04045)); }
+@fragment fn fs(v: V) -> @location(0) vec4f { return vec4f(srgbToLinear(textureSampleBaseClampToEdge(src, smp, v.uv).rgb), 1.0); }
 `;
 
 export interface DisplayStats {
@@ -46,7 +63,10 @@ export class MfdDisplays {
   private readonly next: number[] = [];
   private readonly dirty = new Set<number>();
   private readonly pipeline: GPURenderPipeline;
+  private readonly upload: GPURenderPipeline;
   private readonly sampler: GPUSampler;
+  /** Frames imported this update: closed at the next update, after the encoder that uses them was submitted. */
+  private frames: VideoFrame[] = [];
   private readonly mipViews: GPUTextureView[][] = [];
   private readonly mipGroups: GPUBindGroup[][] = [];
   private readonly period: number;
@@ -83,6 +103,13 @@ export class MfdDisplays {
       layout: 'auto',
       vertex: { module, entryPoint: 'vs' },
       fragment: { module, entryPoint: 'fs', targets: [{ format: MFD_FORMAT }] },
+    });
+    const uploadModule = device.createShaderModule({ label: 'cockpit.mfdUpload', code: UPLOAD_WGSL });
+    this.upload = device.createRenderPipeline({
+      label: 'cockpit.mfdUpload',
+      layout: 'auto',
+      vertex: { module: uploadModule, entryPoint: 'vs' },
+      fragment: { module: uploadModule, entryPoint: 'fs', targets: [{ format: MFD_FORMAT }] },
     });
     this.sampler = device.createSampler({ label: 'cockpit.mfdMips', minFilter: 'linear', magFilter: 'linear' });
     for (let i = 0; i < count; i++) {
@@ -124,6 +151,8 @@ export class MfdDisplays {
    */
   update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder): void {
     this.stats.frames++;
+    for (const f of this.frames) f.close();
+    this.frames = [];
     const due: number[] = [...this.dirty];
     if (due.length === 0) {
       let best = -1;
@@ -139,7 +168,7 @@ export class MfdDisplays {
       const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
       const b = performance.now();
-      this.device.queue.copyExternalImageToTexture({ source: this.canvases[i]! }, { texture: this.texture, origin: [0, 0, i] }, [this.width, this.height]);
+      this.encodeUpload(i, encoder);
       const c = performance.now();
       this.encodeMips(i, encoder);
       this.stats.paintMs += b - a;
@@ -149,6 +178,29 @@ export class MfdDisplays {
       this.stats.paints++;
     }
     this.stats.cpuMs += performance.now() - t0;
+  }
+
+  /** Mip 0 of a layer from its canvas, drawn in a timed pass. */
+  private encodeUpload(layer: number, encoder: GPUCommandEncoder): void {
+    const frame = new VideoFrame(this.canvases[layer]!, { timestamp: 0, alpha: 'discard' });
+    this.frames.push(frame);
+    const group = this.device.createBindGroup({
+      layout: this.upload.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.device.importExternalTexture({ source: frame }) },
+        { binding: 1, resource: this.sampler },
+      ],
+    });
+    const ts = this.perf.gpuPass('cockpit.mfdUpload') as GPURenderPassTimestampWrites | undefined;
+    const pass = encoder.beginRenderPass({
+      label: `cockpit.mfdUpload.${layer}`,
+      colorAttachments: [{ view: this.mipViews[layer]![0]!, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+      ...(ts ? { timestampWrites: ts } : {}),
+    });
+    pass.setPipeline(this.upload);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
   }
 
   private encodeMips(layer: number, encoder: GPUCommandEncoder): void {
@@ -174,6 +226,7 @@ export class MfdDisplays {
   }
 
   dispose(): void {
+    for (const f of this.frames) f.close();
     this.texture.destroy();
   }
 }

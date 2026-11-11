@@ -23,18 +23,28 @@ async function settle(page: Page, frames = 60): Promise<void> {
   await page.evaluate((n) => window.__test!.waitFrames(n), frames);
 }
 
-const shots: { name: string; url: string; setup?: (page: Page) => Promise<void>; dark?: boolean }[] = [
+// ec = exposure compensation (EV) where a photographer would expose for the bright or dark subject: the
+// Earth and the Moon through a window (the cabin metering exposes for the cabin), the cabin from outside.
+const shots: { name: string; url: string; dark?: boolean }[] = [
   { name: 'pad-noon-forward-window', url: 'scene=pad' },
-  { name: 'leo-earth-side-window', url: 'scene=leo&look=-62,4' },
+  // The window's axis turned toward the horizon ahead: Earth below, the limb and black space above.
+  { name: 'leo-earth-side-window', url: 'scene=leo-earth&ec=-3', dark: true },
   { name: 'leo-sun-patch-console', url: 'scene=leo' },
   { name: 'night-displays-floods', url: 'scene=night', dark: true },
   { name: 'reentry-plasma', url: 'scene=reentry', dark: true },
-  { name: 'moon-horizon', url: 'scene=moon' },
-  { name: 'look-back-couches-hatch', url: 'scene=leo&look=104,-30&fov=85' },
+  // Head over the commander's left shoulder, level with the side window: the sunlit ground and the
+  // horizon against the black sky (the capsule stands upright, so the window looks out above the horizon).
+  { name: 'moon-horizon', url: 'scene=moon&eye=-0.05,-0.12,0.04&aim=horizonL&fov=60&ec=-2' },
+  // From the commander's seat, head raised, looking round at the other couches and down to the hatch.
+  { name: 'look-back-couches-hatch', url: 'scene=leo&eye=0.2,-0.35,0.4&aim=hatchDoor&fov=80' },
+  // The side hatch from low between the pilot's and the specialist's couches (it lies beyond the crew's feet).
+  { name: 'hatch-mechanism', url: 'scene=leo&at=0.36,0.8,-0.75&aim=hatchDoor&fov=75' },
   { name: 'closeup-mfd', url: 'scene=leo&aim=mfd0&fov=24' },
   { name: 'closeup-fdai', url: 'scene=leo&aim=fdai&fov=22' },
   { name: 'closeup-switches', url: 'scene=leo&aim=switches&fov=26' },
-  { name: 'chase-window', url: 'scene=leo&view=chase&window=fwd-left&distance=2.2&fov=45' },
+  // Looking in from outside: in the Earth's shadow with the floods on, and along the sun's way in by day.
+  { name: 'chase-window-night', url: 'scene=night&view=chase&window=fwd-left&distance=1.6&fov=45&ec=-2', dark: true },
+  { name: 'chase-window-sun', url: 'scene=leo&view=chase&window=side-right&target=mfd0&distance=1.2&fov=40' },
 ];
 
 for (const s of shots) {

@@ -1,7 +1,7 @@
 /**
  * Shared state of one cockpit build: the mesh builder, material indices, the registry of animated / lit
  * controls, label-atlas allocations and the metadata the feature needs at run time (display quads, the
- * navball instrument, windows, floodlights, ray-cast proxies for sun patches).
+ * navball instrument, windows, floodlights).
  */
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import { v3, type Vec3 } from '@/core/math';
@@ -12,7 +12,7 @@ import { mouldOf, type Mould } from '../mould';
 /** Detail level of a build pass: 0 = inside (full), 1 = outside near, 2 = outside far. */
 export type Detail = 0 | 1 | 2;
 
-export type ControlKind = 'toggle' | 'guard' | 'rotary' | 'lamp' | 'digit' | 'rhc' | 'thc' | 'throttle' | 'flood' | 'shade' | 'button';
+export type ControlKind = 'toggle' | 'guard' | 'rotary' | 'lamp' | 'digit' | 'rhc' | 'thc' | 'throttle' | 'flood';
 
 export interface ControlMeta {
   /** 1-based index written to the vertices (0 = static geometry). */
@@ -31,11 +31,8 @@ export interface ControlMeta {
   digit?: number;
   /** Seat of a hand controller. */
   seat?: string;
-  /** Floodlight index (kind 'flood') or window id (kind 'shade'). */
+  /** Floodlight index (kind 'flood'). */
   flood?: number;
-  window?: string;
-  /** Translation axis of a sliding part (shade: along the window; thc uses the controller frame). */
-  slide?: Vec3;
   /** Fixed position for controls whose binding is 'none'. */
   fixed?: number;
 }
@@ -65,6 +62,24 @@ export interface WindowMeta {
   inward: Vec3;
   area: number;
   panes: PaneMeta[];
+  aperture: ApertureMeta;
+}
+
+/**
+ * The opening as the sun sees it: a straight prism of the shared rounded rectangle (half sizes hw, hh,
+ * corner radius rc; a circle when rc = hw = hh) along the inward normal, from the outer mould line to the
+ * inner edge of the bezel. `centre` is the outer end's centre (on the mean plane of the curved outer
+ * outline), t and g its axes (tangential, along the generator), `innerDepth` the prism's length.
+ */
+export interface ApertureMeta {
+  centre: Vec3;
+  inward: Vec3;
+  t: Vec3;
+  g: Vec3;
+  hw: number;
+  hh: number;
+  rc: number;
+  innerDepth: number;
 }
 
 export interface CouchMeta {
@@ -83,13 +98,6 @@ export interface FloodMeta {
   lumens: number;
   color: [number, number, number];
   control: number;
-}
-
-/** Oriented box used by the CPU sun-patch ray cast (big occluders and receivers only). */
-export interface ProxyBox {
-  frame: Frame;
-  half: [number, number, number];
-  albedo: number;
 }
 
 export interface LabelAlloc {
@@ -134,7 +142,6 @@ export class CabinContext {
   readonly windows: WindowMeta[] = [];
   readonly floods: FloodMeta[] = [];
   readonly couches: CouchMeta[] = [];
-  readonly proxies: ProxyBox[] = [];
   readonly labels: LabelAlloc[] = [];
   private readonly labelByKey = new Map<string, LabelAlloc>();
   private shelfX = 0;
@@ -195,50 +202,55 @@ export class CabinContext {
   /**
    * A label quad on a face: centred at (a, b) of frame f, lifted `lift` off the face, size w x h (m).
    * `color` indexes LABEL_COLORS; `backlit` legends glow with the panel lighting; `mat` is the face material
-   * underneath (the label shows that material where the atlas has no ink).
+   * underneath (the label shows that material where the atlas has no ink). The text reads left to right
+   * and upright along +y seen from the side +n points to, whatever the handedness of f.
    */
   labelQuad(f: Frame, a: number, b: number, w: number, h: number, text: string, mat: string, opts: { color?: number; backlit?: boolean; lift?: number; style?: Partial<LabelStyle> } = {}): void {
     if (this.detail > 0) return;
     const rect = this.label(text, h, w, opts.style);
     const lift = opts.lift ?? 0.0004;
-    const attr = this.m(mat, { emit: opts.color ?? 0, flags: opts.backlit ? FLAG_BACKLIT : 0, label: { rect, origin: [-w / 2, -h / 2], size: [w, h] } });
-    const p0 = local(f, a - w / 2, b - h / 2, lift);
-    const p1 = local(f, a + w / 2, b - h / 2, lift);
-    const p2 = local(f, a + w / 2, b + h / 2, lift);
-    const p3 = local(f, a - w / 2, b + h / 2, lift);
+    const attr = this.m(mat, { ink: opts.color ?? 0, flags: opts.backlit ? FLAG_BACKLIT : 0, label: { rect, origin: [-w / 2, -h / 2], size: [w, h] } });
+    const c = local(f, a, b, lift);
+    const xr = readingRight(f);
+    const at = (su: number, sv: number): Vec3 => v3.add(c, v3.add(v3.scale(xr, su), v3.scale(f.y, sv)));
     const bld = this.b;
-    const i0 = bld.vertex(p0, f.n, f.x, [-w / 2, -h / 2], attr);
-    const i1 = bld.vertex(p1, f.n, f.x, [w / 2, -h / 2], attr);
-    const i2 = bld.vertex(p2, f.n, f.x, [w / 2, h / 2], attr);
-    const i3 = bld.vertex(p3, f.n, f.x, [-w / 2, h / 2], attr);
+    bld.part();
+    const i0 = bld.vertex(at(-w / 2, -h / 2), f.n, xr, [-w / 2, -h / 2], attr);
+    const i1 = bld.vertex(at(w / 2, -h / 2), f.n, xr, [w / 2, -h / 2], attr);
+    const i2 = bld.vertex(at(w / 2, h / 2), f.n, xr, [w / 2, h / 2], attr);
+    const i3 = bld.vertex(at(-w / 2, h / 2), f.n, xr, [-w / 2, h / 2], attr);
     bld.quad(i0, i1, i2, i3);
   }
 
   /**
    * A label printed on an annulus (r0..r1) around (0, 0) of frame f: the atlas image covers the square of
-   * side 2 r1, so dial scales can be printed around an opening without covering it.
+   * side 2 r1, so dial scales can be printed around an opening without covering it. Reads like labelQuad.
    */
   labelRing(f: Frame, r0: number, r1: number, text: string, mat: string, opts: { color?: number; backlit?: boolean; lift?: number } = {}): void {
     if (this.detail > 0) return;
     const rect = this.label(text, 2 * r1, 2 * r1);
-    const attr = this.m(mat, { emit: opts.color ?? 0, flags: opts.backlit ? FLAG_BACKLIT : 0, label: { rect, origin: [-r1, -r1], size: [2 * r1, 2 * r1] } });
+    const attr = this.m(mat, { ink: opts.color ?? 0, flags: opts.backlit ? FLAG_BACKLIT : 0, label: { rect, origin: [-r1, -r1], size: [2 * r1, 2 * r1] } });
     const lift = opts.lift ?? 0.0004;
+    const xr = readingRight(f);
+    const c = local(f, 0, 0, lift);
     const n = 64;
+    this.b.part();
     const base = this.b.vertexCount;
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * 2 * Math.PI;
       for (const r of [r0, r1]) {
         const x = Math.cos(a) * r;
         const y = Math.sin(a) * r;
-        this.b.vertex(local(f, x, y, lift), f.n, f.x, [x, y], attr);
+        this.b.vertex(v3.add(c, v3.add(v3.scale(xr, x), v3.scale(f.y, y))), f.n, xr, [x, y], attr);
       }
     }
     for (let i = 0; i < n; i++) this.b.quad(base + i * 2, base + i * 2 + 2, base + i * 2 + 3, base + i * 2 + 1);
   }
+}
 
-  proxy(frame: Frame, half: [number, number, number], albedo: number): void {
-    if (this.detail === 0) this.proxies.push({ frame, half, albedo });
-  }
+/** The direction text runs in on face f seen from +n: f.x for a right-handed frame, -f.x for a left-handed one. */
+export function readingRight(f: Frame): Vec3 {
+  return v3.dot(v3.cross(f.x, f.y), f.n) >= 0 ? f.x : v3.neg(f.x);
 }
 
 /** Vertex flag: the label's ink glows with the panel lighting. */
@@ -247,6 +259,12 @@ export const FLAG_BACKLIT = 4;
 export const FLAG_EMISSIVE = 8;
 /** Vertex flag: seven-segment segment (lit when bit `sub` of the digit mask is set). */
 export const FLAG_SEGMENT = 16;
+/**
+ * Vertex flag: part of the cabin's enclosure (pressure wall, floor, tunnel, window bezels): the light that
+ * enters through a window is bounded by the window's analytic aperture, so these surfaces stay out of the
+ * cabin's sun map (sunmap.ts), which holds the interior's occluders only.
+ */
+export const FLAG_ENCLOSURE = 32;
 
 export interface SeatFrame {
   id: string;

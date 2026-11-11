@@ -180,6 +180,8 @@ export interface Opening {
   outline(count: number): [number, number][];
   width: number;
   height: number;
+  /** Corner radius of the rounded rectangle (half the width for a round opening). */
+  cornerRadius: number;
 }
 
 /** Every opening of the shared file: the windows, the hatch and the hatch's round window (at the hatch centre). */
@@ -191,11 +193,12 @@ export function openingsOf(m: Mould): Opening[] {
     y: w.y,
     width: w.width,
     height: w.height,
+    cornerRadius: w.shape === 'round' ? w.width / 2 : w.cornerRadius,
     outline: (n: number) => (w.shape === 'round' ? circleOutline(w.width / 2, n) : roundedRectOutline(w.width, w.height, w.cornerRadius, n)),
   }));
   const h = m.def.hatch;
-  out.push({ id: 'hatch', kind: 'hatch', azDeg: h.azimuthDeg, y: h.y, width: h.width, height: h.height, outline: (n) => roundedRectOutline(h.width, h.height, h.cornerRadius, n) });
-  out.push({ id: 'hatch-window', kind: 'hatchWindow', azDeg: h.azimuthDeg, y: h.y, width: 2 * h.window.radius, height: 2 * h.window.radius, outline: (n) => circleOutline(h.window.radius, n) });
+  out.push({ id: 'hatch', kind: 'hatch', azDeg: h.azimuthDeg, y: h.y, width: h.width, height: h.height, cornerRadius: h.cornerRadius, outline: (n) => roundedRectOutline(h.width, h.height, h.cornerRadius, n) });
+  out.push({ id: 'hatch-window', kind: 'hatchWindow', azDeg: h.azimuthDeg, y: h.y, width: 2 * h.window.radius, height: 2 * h.window.radius, cornerRadius: h.window.radius, outline: (n) => circleOutline(h.window.radius, n) });
   return out;
 }
 

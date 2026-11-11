@@ -257,5 +257,4 @@ function locker(ctx: CabinContext, az: number, y: number, w: number, h: number, 
   b.box(offsetFrame(f, 0, h / 2 - 0.035, 0.008), 0.035, 0.012, 0.003, 0.002, ctx.m('anodized'));
   b.box(offsetFrame(f, 0, h / 2 - 0.035, 0.0115), 0.026, 0.006, 0.0012, 0.0008, ctx.m('steel'));
   ctx.labelQuad(offsetFrame(f, 0, 0, 0.006), 0, -0.01, Math.min(w * 0.8, 0.2), 0.018, label, 'closeout', { color: 1, style: { box: true } });
-  ctx.proxy(offsetFrame(f, 0, 0, -depth / 2), [w / 2, h / 2, depth / 2], 0.55);
 }

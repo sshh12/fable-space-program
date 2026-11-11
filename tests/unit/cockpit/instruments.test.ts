@@ -11,18 +11,23 @@ import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DefError } from '@/core/defs/loader';
 import { quat, v3 } from '@/core/math';
 import { createCockpitControls } from '@/render/cockpit/controls';
-import { bindingState, controlStates, digitMask, readoutText, updateMemory, type InstrumentMemory } from '@/render/cockpit/instruments';
-import { validateLayout, type CockpitLayoutDef, type ReadoutDef } from '@/render/cockpit/layout';
+import { bindingState, controlStates, digitMask, instrumentSource, readoutText, updateMemory, type InstrumentMemory, type InstrumentSource } from '@/render/cockpit/instruments';
+import { validateLayout, type AlarmsDef, type CockpitLayoutDef, type ReadoutDef } from '@/render/cockpit/layout';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { buildMfdPage, describeFlight, describeOrbit, formatMet, landingTargetRows, describeLandingTarget, MFD_PAGES } from '@/ui';
 import { testDefs, testModel } from './helpers';
 
 let defs: DefLibrary;
 let vehicleId: string;
+let alarms: AlarmsDef;
+
+/** The instruments of the active vessel of a snapshot. */
+const act = (s: SimSnapshot): InstrumentSource => instrumentSource(s, s.vessels.find((v) => v.id === s.activeVesselId)!);
 
 beforeAll(async () => {
   defs = await testDefs();
   vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
+  alarms = (await testModel()).layout.alarms;
 });
 
 function snapshot(scene: Parameters<typeof createFakeSim>[1]['scene'], fired: number, edit?: (s: SimSnapshot) => SimSnapshot): SimSnapshot {
@@ -68,25 +73,25 @@ describe('CockpitControls', () => {
 describe('instrument bindings', () => {
   it('follow the snapshot: switches, lamps and selectors', () => {
     const s = snapshot('lowOrbit', 4, (x) => ({ ...x, readouts: { ...x.readouts, sasEnabled: true, rcsEnabled: false, legsDeployed: true, lightsOn: true, maxTempFraction: 0.9, gLoad: 2 }, staging: { ...x.staging, lockout: true } }));
-    expect(bindingState('sas', s, defs).on).toBe(true);
-    expect(bindingState('rcs', s, defs).on).toBe(false);
-    expect(bindingState('gear', s, defs)).toEqual({ on: true, index: 0 });
-    expect(bindingState('rcs', s, defs).index).toBe(1);
-    expect(bindingState('overheat', s, defs).on).toBe(true);
-    expect(bindingState('masterAlarm', s, defs).on).toBe(true);
-    expect(bindingState('stagingLocked', s, defs).on).toBe(true);
-    expect(bindingState('gLimit', s, defs).on).toBe(false);
+    expect(bindingState('sas', act(s), defs, alarms).on).toBe(true);
+    expect(bindingState('rcs', act(s), defs, alarms).on).toBe(false);
+    expect(bindingState('gear', act(s), defs, alarms)).toEqual({ on: true, index: 0 });
+    expect(bindingState('rcs', act(s), defs, alarms).index).toBe(1);
+    expect(bindingState('overheat', act(s), defs, alarms).on).toBe(true);
+    expect(bindingState('masterAlarm', act(s), defs, alarms).on).toBe(true);
+    expect(bindingState('stagingLocked', act(s), defs, alarms).on).toBe(true);
+    expect(bindingState('gLimit', act(s), defs, alarms).on).toBe(false);
     // The tower goes with the third staging action: the abort lamp follows the LES module on the vessel.
-    expect(bindingState('abortArmed', snapshot('pad', 0), defs).on).toBe(true);
-    expect(bindingState('abortArmed', s, defs).on).toBe(false);
-    expect(bindingState('navballMode', s, defs).index).toBe(['surface', 'orbit', 'target'].indexOf(s.navball.mode));
+    expect(bindingState('abortArmed', act(snapshot('pad', 0)), defs, alarms).on).toBe(true);
+    expect(bindingState('abortArmed', act(s), defs, alarms).on).toBe(false);
+    expect(bindingState('navballMode', act(s), defs, alarms).index).toBe(['surface', 'orbit', 'target'].indexOf(s.navball.mode));
   });
 
   it('sets every control of the Kestrel interior to a valid state', async () => {
     const model = await testModel();
     const s = snapshot('reentry', 8);
     const mem: InstrumentMemory = { lastStageUt: null };
-    const states = controlStates(model.controls, s, defs, 1.25, mem, () => ({ R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() }), () => [100, 100, 100]);
+    const states = controlStates(model.controls, act(s), defs, alarms, 1.25, mem, () => ({ R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() }), () => [100, 100, 100]);
     expect(states).toHaveLength(model.controls.length);
     for (const st of states) {
       expect(Math.abs(Math.hypot(st.rot.x, st.rot.y, st.rot.z, st.rot.w) - 1)).toBeLessThan(1e-9);
@@ -98,12 +103,42 @@ describe('instrument bindings', () => {
     expect(lampOn('liftUp')).toBe(s.readouts.liftVectorUp === true);
   });
 
+  it('describe the vessel the interior belongs to, not the active one', async () => {
+    const model = await testModel();
+    const base = snapshot('lowOrbit', 4, (x) => ({ ...x, readouts: { ...x.readouts, sasEnabled: true, lightsOn: true, gLoad: 0.5, deltaVTotal: 1234 } }));
+    const own = base.vessels.find((v) => v.id === base.activeVesselId)!;
+    // A second vessel of the same vehicle, not the active one, pulling 9 g with its own parts.
+    const other = { ...own, id: 'other', gLoad: 9 };
+    const s = { ...base, vessels: [...base.vessels, other] };
+    const src = instrumentSource(s, other);
+    expect(src.active).toBe(false);
+    // Readout-only facts (the active vessel's SAS, lights, HUD numbers) do not describe the other vessel...
+    expect(bindingState('sas', src, defs, alarms).on).toBe(false);
+    expect(bindingState('lights', src, defs, alarms).on).toBe(false);
+    const dv: ReadoutDef = { label: 'DV', binding: 'deltaV', digits: 4, color: [1, 0, 0], luminance: 100 };
+    expect(readoutText(dv, src, { lastStageUt: null })).toBe('    ');
+    expect(readoutText(dv, act(s), { lastStageUt: null })).toBe('1234');
+    // ...its own g does: the g readout and the g limit follow the vessel's own load.
+    const g: ReadoutDef = { label: 'G', binding: 'gLoad', digits: 3, points: [1], color: [1, 0, 0], luminance: 100 };
+    expect(readoutText(g, src, { lastStageUt: null })).toBe(' 90');
+    expect(readoutText(g, act(s), { lastStageUt: null })).toBe(' 05');
+    expect(bindingState('gLimit', src, defs, alarms).on).toBe(true);
+    expect(bindingState('gLimit', act(s), defs, alarms).on).toBe(false);
+    // Hand controllers rest and floods stay dark on a vessel that is not being flown.
+    const flown = { ...s, appliedControls: { ...s.appliedControls, pitch: 1, throttle: 1 } };
+    const st = controlStates(model.controls, instrumentSource(flown, other), defs, alarms, 0, { lastStageUt: null }, () => ({ R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() }), () => [100, 100, 100]);
+    model.controls.forEach((c, i) => {
+      if (c.kind === 'rhc' || c.kind === 'throttle') expect(quat.angleBetween(st[i]!.rot, quat.identity())).toBeLessThan(1e-9);
+      if (c.kind === 'flood') expect(st[i]!.lit).toBe(0);
+    });
+  });
+
   it('moves the hand controllers with the applied controls', async () => {
     const model = await testModel();
     const base = snapshot('lowOrbit', 4);
     const s = { ...base, appliedControls: { ...base.appliedControls, pitch: 1, roll: 0, yaw: 0, throttle: 1, translate: { x: 1, y: 0, z: 0 } } };
     const axes = { R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() };
-    const st = controlStates(model.controls, s, defs, 0, { lastStageUt: null }, () => axes, () => [0, 0, 0]);
+    const st = controlStates(model.controls, act(s), defs, alarms, 0, { lastStageUt: null }, () => axes, () => [0, 0, 0]);
     const of = (kind: string): number => model.controls.findIndex((c) => c.kind === kind);
     expect(quat.angleBetween(st[of('rhc')]!.rot, quat.identity())).toBeGreaterThan(0.2);
     expect(v3.len(st[of('thc')]!.offset)).toBeCloseTo(0.008, 6);
@@ -116,7 +151,7 @@ describe('seven-segment readouts', () => {
   it('show the same seconds as the HUD mission clock', () => {
     for (const t of [0, 59.9, 3723.4, 2 * 86400 + 5 * 3600 + 7 * 60 + 9.99, 13.6 * 86400]) {
       const s = snapshot('lowOrbit', 4, (x) => ({ ...x, readouts: { ...x.readouts, met: t } }));
-      const text = readoutText(met, s, { lastStageUt: null });
+      const text = readoutText(met, act(s), { lastStageUt: null });
       const hud = formatMet(t);
       // DDD HH MM SS from the readout; the HUD string carries the same fields.
       const d = Number(text.slice(0, 3));
@@ -141,10 +176,10 @@ describe('seven-segment readouts', () => {
     const mem: InstrumentMemory = { lastStageUt: null };
     const evt: ReadoutDef = { label: 'EVT', binding: 'eventTimer', digits: 4, colons: [1], color: [1, 0, 0], luminance: 100 };
     const s0 = snapshot('lowOrbit', 4);
-    updateMemory(mem, { ...s0, events: [{ type: 'stageFired', ut: s0.ut - 75, vesselId: s0.activeVesselId, stageIndex: 4, label: 'x' }] });
-    expect(readoutText(evt, s0, mem)).toBe('0115');
+    updateMemory(mem, { ...s0, events: [{ type: 'stageFired', ut: s0.ut - 75, vesselId: s0.activeVesselId, stageIndex: 4, label: 'x' }] }, s0.activeVesselId);
+    expect(readoutText(evt, act(s0), mem)).toBe('0115');
     const s1 = { ...s0, readouts: { ...s0.readouts, nodeBurn: { nodeId: 'n', dvRemaining: v3.zero(), dvRemainingMag: 10, burnTime: 4, timeToBurnStart: 42, timeToNode: 44, insufficientDeltaV: false } } };
-    expect(readoutText(evt, s1, mem)).toBe('-042');
+    expect(readoutText(evt, act(s1), mem)).toBe('-042');
   });
 });
 

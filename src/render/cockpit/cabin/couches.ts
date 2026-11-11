@@ -46,29 +46,80 @@ export function couchPoints(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef)
 }
 
 /**
- * Pillow-shaped cushion over a rectangle of a frame (half sizes hx, hy), crowned by `thick` with soft edges.
- * The shape is smooth in the middle and rolls over at the border, like stitched foam in a cover.
+ * Upholstered pad over a rectangle of a frame (half sizes hx, hy, thickness `thick` along f.n): a squircle
+ * outline, a crowned (or dished) top panel, the cover rolling over a foam edge into a vertical side panel,
+ * a piping cord sewn into the seam between them, and optionally `channels` stitched channels across the
+ * top (each a pulled-down seam line). One closed surface: s runs around the outline, t from the top's
+ * centre over the roll and down the side.
  */
-function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number } = {}): void {
-  const n = ctx.detail === 0 ? 18 : 6;
+function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number; channels?: number } = {}): void {
+  const full = ctx.detail === 0;
   const dish = opts.dish ?? 0;
-  const edge = (x: number): number => {
-    const a = Math.abs(x);
-    return a < 0.82 ? 1 : Math.sqrt(Math.max(0, 1 - ((a - 0.82) / 0.18) ** 2));
+  const channels = full ? (opts.channels ?? 0) : 0;
+  const roll = Math.min(thick * 0.6, hx * 0.4, hy * 0.4);
+  const ax = hx - roll;
+  const ay = hy - roll;
+  const p = 5;
+  // Squircle outline of the top panel and its outward normal in the frame's plane.
+  const outline = (s: number): [number, number, number, number] => {
+    const a = s * 2 * Math.PI;
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    const x = ax * Math.sign(c) * Math.abs(c) ** (2 / p);
+    const y = ay * Math.sign(sn) * Math.abs(sn) ** (2 / p);
+    const gx = (Math.sign(x) * Math.abs(x / ax) ** (p - 1)) / ax;
+    const gy = (Math.sign(y) * Math.abs(y / ay) ** (p - 1)) / ay;
+    const gl = Math.hypot(gx, gy) || 1;
+    return [x, y, gx / gl, gy / gl];
   };
-  const remap = (s: number): number => Math.sin((s - 0.5) * Math.PI);
-  ctx.b.patch(
-    (s, t) => {
-      const X = remap(s);
-      const Y = remap(t);
-      const h = thick * edge(X) * edge(Y) * (1 - dish * (1 - X * X) * 0.5);
-      return local(f, X * hx, Y * hy, h);
-    },
-    n,
-    n,
-    attr,
-    { aoAt: (s, t) => 0.7 + 0.3 * edge(remap(s)) * edge(remap(t)) },
-  );
+  const tTop = 0.55;
+  const tRoll = 0.88;
+  const seam = (y: number): number => {
+    let d = 0;
+    for (let k = 1; k <= channels; k++) {
+      const ys = -ay + (2 * ay * k) / (channels + 1);
+      d += Math.exp(-(((y - ys) / 0.006) ** 2));
+    }
+    return d;
+  };
+  const at = (s: number, t: number): Vec3 => {
+    const [x, y, nx, ny] = outline(s);
+    if (t <= tTop) {
+      const rho = t / tTop;
+      const px = x * rho;
+      const py = y * rho;
+      const crown = 1 - dish * 0.5 * (1 - rho * rho) - 0.18 * seam(py) * Math.min(1, rho * 3);
+      return local(f, px, py, thick * crown);
+    }
+    if (t <= tRoll) {
+      const phi = ((t - tTop) / (tRoll - tTop)) * (Math.PI / 2);
+      return local(f, x + nx * roll * Math.sin(phi), y + ny * roll * Math.sin(phi), thick - roll + roll * Math.cos(phi));
+    }
+    const k = (t - tRoll) / (1 - tRoll);
+    return local(f, x + nx * roll, y + ny * roll, (thick - roll) * (1 - k));
+  };
+  const ns = full ? 72 : 16;
+  const nt = full ? 22 : 7;
+  // Normals by central differences (away from the top's centre, where the outline collapses).
+  const normalAt = (s: number, t: number): Vec3 => {
+    const h = 1e-3;
+    const tt = Math.max(t, 0.03);
+    const ds = v3.sub(at(s + h, tt), at(s - h, tt));
+    const dt = v3.sub(at(s, Math.min(1, tt + h)), at(s, Math.max(0, tt - h)));
+    return v3.normalize(v3.cross(dt, ds));
+  };
+  ctx.b.patch(at, ns, nt, attr, {
+    normalAt,
+    aoAt: (s, t) => (t <= tTop ? 1 - 0.35 * seam(outline(s)[1] * (t / tTop)) : t > tRoll ? 0.75 : 1),
+  });
+  if (!full) return;
+  // Piping cord in the seam between the top panel and the side panel.
+  const path: Vec3[] = [];
+  for (let i = 0; i <= 64; i++) {
+    const [x, y, nx, ny] = outline(i / 64);
+    path.push(local(f, x + nx * roll * 0.72, y + ny * roll * 0.72, thick - roll + roll * 0.7));
+  }
+  ctx.b.tube(path, Math.min(0.0028, roll * 0.25), 6, attr);
 }
 
 /** Rigid pan under a cushion: a thin chamfered plate. */
@@ -103,17 +154,16 @@ export function buildCouches(ctx: CabinContext): void {
     const backBot = c.hipU + 0.03;
     const backF = faceL(seatPoint(s, 0, (backTop + backBot) / 2, backPlane - 0.008), s);
     const backHy = (backTop - backBot) / 2;
-    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, cush, { dish: 0.25 });
+    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, cush, { dish: 0.25, channels: 4 });
     pan(ctx, { ...backF, o: local(backF, 0, 0, -0.002) }, hw + 0.008, backHy + 0.02, c.pan);
     if (d === 0) {
       for (const side of [-1, 1]) cushion(ctx, faceL(local(backF, side * (hw - 0.02), 0, 0.004), s), 0.03, backHy - 0.02, c.cushion + 0.025, cush);
     }
-    ctx.proxy(backF, [hw, backHy, 0.05], 0.12);
     if (d === 0) ctx.couches.push({ seat: s.id, headrest: local(headF, 0, 0, hr.depth), backCentre: local(backF, 0, 0, c.cushion), backNormal: backF.n });
     // ---- hip (seat) cushion bridging back and thigh pans
     const hipN = v3.normalize(v3.add(s.L, pts.thighN));
     const hipFrame: Frame = { o: v3.addScaled(pts.hip, hipN, -0.01), x: s.R, y: v3.normalize(v3.cross(hipN, s.R)), n: hipN };
-    if (d < 2) cushion(ctx, hipFrame, hw - 0.04, 0.06, c.cushion * 0.9, cush);
+    if (d < 2) cushion(ctx, hipFrame, hw - 0.04, 0.06, c.cushion * 0.9, cush, { channels: 1 });
     // ---- thigh and shin pans
     const tMid = v3.lerp(pts.hip, pts.knee, 0.5);
     // The thigh pan runs from the hip to the (possibly inboard-shifted) knee.
@@ -122,13 +172,12 @@ export function buildCouches(ctx: CabinContext): void {
     const thighFs: Frame = { o: v3.addScaled(tMid, thighNn, -0.012), x: v3.cross(thighY, thighNn), y: thighY, n: thighNn };
     const tl = v3.dist(pts.hip, pts.knee) / 2;
     const legHw = cfg.legHalfWidth;
-    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.02, c.cushion * 0.8, cush);
+    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.02, c.cushion * 0.8, cush, { channels: 2 });
     pan(ctx, { ...thighFs, o: local(thighFs, 0, 0, -0.002) }, legHw + 0.008, tl, c.pan);
-    ctx.proxy(thighFs, [legHw, tl, 0.04], 0.12);
     const sMid = v3.lerp(pts.knee, pts.foot, 0.5);
     const shinF: Frame = { o: v3.addScaled(sMid, pts.shinN, -0.012), x: s.R, y: pts.shin, n: pts.shinN };
     const sl = cfg.shinLength / 2;
-    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.02, c.cushion * 0.7, cush);
+    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.02, c.cushion * 0.7, cush, { channels: 2 });
     pan(ctx, { ...shinF, o: local(shinF, 0, 0, -0.002) }, legHw, sl, c.pan);
     if (d === 0) {
       // Heel cups and toe strap at the foot end.
@@ -169,7 +218,7 @@ export function buildCouches(ctx: CabinContext): void {
         const p0 = seatPoint(s, x, -0.28, backPlane + 0.07);
         const p1 = seatPoint(s, x, c.hipU + 0.02, backPlane + 0.07);
         const armF = faceL(v3.lerp(p0, p1, 0.5), s);
-        b.box(armF, 0.03, v3.dist(p0, p1) / 2, 0.022, 0.012, cush);
+        cushion(ctx, { ...armF, o: local(armF, 0, 0, -0.022) }, 0.03, v3.dist(p0, p1) / 2, 0.044, cush, { channels: 0 });
         if (d === 0) {
           // Brackets from the rail to the armrest.
           for (const at of [p0, p1]) {
@@ -255,6 +304,18 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   for (const side of [-1, 1]) b.box(faceL(local(backF, side * 0.08, -backHy * 0.1, lift + 0.004), s), 0.026, 0.012, 0.004, 0.002, ctx.m('steel'));
 }
 
+/** Rubber bellows boot over a controller's gimbal: a cone of folds from rBottom to rTop over `height`. */
+function bellows(ctx: CabinContext, base: Vec3, axis: Vec3, rBottom: number, rTop: number, height: number, ref: Vec3): void {
+  const folds = 6;
+  const profile: [number, number][] = [];
+  for (let k = 0; k <= folds * 2; k++) {
+    const u = k / (folds * 2);
+    const r = rBottom + (rTop - rBottom) * u - (k % 2 === 1 ? 0.0028 : 0);
+    profile.push([r, u * height]);
+  }
+  ctx.b.lathe(base, axis, profile, 24, ctx.m('rubber'), { ref });
+}
+
 /** Rotation hand controller on the right armrest, translation controller and throttle on the left. */
 function handControllers(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): void {
   const c = ctx.layout.couches;
@@ -267,25 +328,64 @@ function handControllers(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): v
   b.box({ ...baseF, o: local(baseF, 0, 0, 0.015) }, 0.042, 0.055, 0.02, 0.008, ctx.m('anodized'));
   const pivot = local(baseF, 0, 0, 0.038);
   const rhc = ctx.control(`rhc:${s.id}`, () => ({ kind: 'rhc', pivot, axis: s.R, binding: 'none', seat: s.id }));
-  b.cylinder(local(baseF, 0, 0, 0.034), baseF.n, 0.03, 0.022, 16, ctx.m('rubber'), { radius1: 0.012, caps: 'none' });
+  bellows(ctx, local(baseF, 0, 0, 0.034), baseF.n, 0.03, 0.012, 0.024, s.R);
   const mov = (extra: Omit<Attr, 'mat'> = {}): ((name: string) => Attr) => (name) => ctx.m(name, { ctl: rhc.index, ...extra });
   const mv = mov();
   b.cylinder(local(baseF, 0, 0, 0.03), baseF.n, 0.008, 0.05, 10, mv('steel'));
-  // Grip: a lathe profile tilted slightly forward, with trigger and a hat switch on top.
+  // Grip: sculpted, tilted slightly forward; finger grooves on the front (toward the feet), a palm swell at
+  // the back, a pinky flange, the trigger under the index finger, a four-way hat and a thumb button on top.
   const gripBase = local(baseF, 0, 0, 0.075);
   const gripAxis = v3.normalize(v3.add(baseF.n, v3.scale(s.U, 0.25)));
-  b.lathe(gripBase, gripAxis, [[0.0, -0.002], [0.019, 0.0], [0.022, 0.02], [0.021, 0.05], [0.024, 0.08], [0.02, 0.1], [0.012, 0.11], [0.0, 0.112]], 18, mv('rubber'), { ref: s.R });
-  b.cylinder(v3.addScaled(gripBase, gripAxis, 0.11), gripAxis, 0.005, 0.008, 8, mv('anodized'));
-  b.box(frameAt(v3.add(v3.addScaled(gripBase, gripAxis, 0.065), v3.scale(s.U, -0.022)), s.R, gripAxis), 0.006, 0.014, 0.006, 0.002, mv('warning'));
+  const front = v3.normalize(v3.reject(v3.neg(s.U), gripAxis));
+  const side = v3.cross(gripAxis, front);
+  const L = 0.115;
+  const gripPoint = (sa: number, t: number): Vec3 => {
+    const z = t * L;
+    const a = sa * 2 * Math.PI;
+    const ca = Math.cos(a);
+    const sn = Math.sin(a);
+    // Half depth (front-back) and half width, with three finger grooves on the front half.
+    const swell = 1 + 0.12 * Math.exp(-(((z - 0.07) / 0.03) ** 2));
+    let depth = 0.02 * swell;
+    if (ca > 0 && z > 0.018 && z < 0.085) depth -= 0.0026 * ca * (0.5 + 0.5 * Math.cos((2 * Math.PI * (z - 0.018)) / 0.0223));
+    const width = 0.0165 * (1 + 0.08 * Math.exp(-(((z - 0.05) / 0.03) ** 2)));
+    // Rounded top and a flared base.
+    const cap = t > 0.86 ? Math.sqrt(Math.max(0, 1 - ((t - 0.86) / 0.14) ** 2)) : 1;
+    const flare = 1 + 0.25 * Math.exp(-((z / 0.008) ** 2));
+    const k = cap * flare;
+    return v3.add(v3.addScaled(gripBase, gripAxis, z + 0.004 * ca * Math.min(1, t * 3)), v3.add(v3.scale(front, depth * ca * k), v3.scale(side, width * sn * k)));
+  };
+  const gh = 1e-3;
+  b.patch(gripPoint, 40, 24, mv('rubber'), {
+    normalAt: (sa, t) => {
+      const tt = Math.min(Math.max(t, 0.02), 0.98);
+      return v3.normalize(v3.cross(v3.sub(gripPoint(sa + gh, tt), gripPoint(sa - gh, tt)), v3.sub(gripPoint(sa, tt + gh), gripPoint(sa, tt - gh))));
+    },
+  });
+  // Hat switch (four-way cap on a short stem) and thumb button on the top; trigger under the index finger.
+  const top = v3.addScaled(gripBase, gripAxis, L);
+  b.cylinder(v3.addScaled(top, gripAxis, -0.004), gripAxis, 0.0055, 0.008, 12, mv('anodized'));
+  b.lathe(v3.addScaled(top, gripAxis, 0.004), gripAxis, [[0.0075, 0], [0.0075, 0.0015], [0.006, 0.003], [0, 0.0035]], 16, mv('rubber'), { ref: side });
+  b.cylinder(v3.add(v3.addScaled(gripBase, gripAxis, L * 0.86), v3.scale(side, 0.0125)), v3.normalize(v3.add(gripAxis, side)), 0.0042, 0.006, 12, mv('warning'));
+  const trig = [0.06, 0.072, 0.083].map((z, k) => v3.add(v3.addScaled(gripBase, gripAxis, z), v3.scale(front, 0.024 + 0.006 * Math.sin((k / 2) * Math.PI))));
+  b.tube(trig, 0.0042, 8, mv('anodized'), { caps: true });
   // ---- THC: T-handle on the left armrest end
   const lx = cfg.armrests[0]!;
   const tBase = seatPoint(s, lx, -0.36, backPlane + 0.1);
   const tF = faceL(tBase, s);
   b.box({ ...tF, o: local(tF, 0, 0, 0.015) }, 0.04, 0.05, 0.02, 0.008, ctx.m('anodized'));
+  bellows(ctx, local(tF, 0, 0, 0.034), tF.n, 0.026, 0.011, 0.022, s.R);
   const thc = ctx.control(`thc:${s.id}`, () => ({ kind: 'thc', pivot: local(tF, 0, 0, 0.035), axis: s.R, binding: 'none', seat: s.id }));
   const tv = (name: string): Attr => ctx.m(name, { ctl: thc.index });
-  b.cylinder(local(tF, 0, 0, 0.034), tF.n, 0.009, 0.04, 10, tv('steel'));
-  b.cylinder(v3.addScaled(local(tF, 0, 0, 0.08), s.R, -0.045), s.R, 0.012, 0.09, 14, tv('rubber'), { caps: 'both' });
+  b.cylinder(local(tF, 0, 0, 0.034), tF.n, 0.009, 0.046, 10, tv('steel'));
+  // Barrel grip across the stem: knurled rubber with rounded ends.
+  const barrel: [number, number][] = [];
+  for (let k = 0; k <= 12; k++) {
+    const u = k / 12;
+    const r = 0.0125 * (0.86 + 0.14 * Math.sin(Math.PI * u)) * Math.sqrt(Math.min(1, Math.min(u, 1 - u) * 14 + 0.02));
+    barrel.push([r, u * 0.09]);
+  }
+  b.lathe(v3.addScaled(local(tF, 0, 0, 0.082), s.R, -0.045), s.R, barrel, 20, tv('knob'), { ref: tF.n });
   // ---- throttle quadrant beside the THC
   const qF = frameAt(seatPoint(s, lx - Math.sign(lx) * 0.05, -0.47, backPlane + 0.1), s.U, tF.n);
   b.box({ ...qF, o: local(qF, 0, 0.012, 0) }, 0.05, 0.012, 0.005, 0.002, ctx.m('anodized'));

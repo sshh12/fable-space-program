@@ -1,0 +1,37 @@
+{
+  "size": 512,
+  "layers": [
+    {
+      "name": "paint",
+      "tile": 0.5
+    },
+    {
+      "name": "brushed",
+      "tile": 0.4
+    },
+    {
+      "name": "fabric",
+      "tile": 0.12
+    },
+    {
+      "name": "nomex",
+      "tile": 0.2
+    },
+    {
+      "name": "webbing",
+      "tile": 0.1
+    },
+    {
+      "name": "velcro",
+      "tile": 0.06
+    },
+    {
+      "name": "rubber",
+      "tile": 0.15
+    },
+    {
+      "name": "cast",
+      "tile": 0.15
+    }
+  ]
+}
