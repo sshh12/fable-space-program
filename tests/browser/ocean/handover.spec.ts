@@ -78,39 +78,61 @@ test('inside fadeStart the depth copy holds the seabed; a submerged object is re
   for (const a of withNear) expect(a).toBeLessThan(-150);
   for (const a of without) expect(Math.abs(a)).toBeLessThan(0.05);
 
-  // Refraction of a submerged object (shallow shelf): the image around it changes with the refraction offset.
+  // Refraction of a submerged object (shallow shelf). The object's image is the difference between the frame
+  // with and without it; with refraction its centroid moves (the apparent position of a submerged object) and
+  // its outline changes, against the same frames with the refraction offset off.
   await page.evaluate(() => {
     window.__ocean!.applyPreset('refraction');
     window.__lab!.renderer.setExposureOverride(13.5);
   });
   await waitIdle(page, 30);
-  const window_ = await page.evaluate(async () => {
-    const lab = window.__ocean!;
-    const at = lab.props.submergedAt;
-    const def = lab.app.defs.bodies[lab.site.bodyId]!;
-    const p = lab.project(((d) => ({ x: d.x * (def.radius - at.depth), y: d.y * (def.radius - at.depth), z: d.z * (def.radius - at.depth) }))(lab.dirAt(at.east, at.north)))!;
-    return { x: Math.round(p.x), y: Math.round(p.y) };
-  });
-  const crop = async (): Promise<number[]> =>
-    page.evaluate(async (c) => {
-      const img = await window.__lab!.renderer.readHdrPixels('hdr');
-      const out: number[] = [];
-      for (let y = c.y - 40; y <= c.y + 40; y += 2) for (let x = c.x - 60; x <= c.x + 60; x += 2) out.push(img.data[(y * img.width + x) * 4 + 1]!);
-      return out;
-    }, window_);
-  const refracted = await crop();
+  const objectImage = async (): Promise<{ n: number; cx: number; cy: number; mask: number[] }> => {
+    const lum = async (): Promise<number[]> =>
+      page.evaluate(async () => {
+        const img = await window.__lab!.renderer.readHdrPixels('hdr');
+        const out: number[] = [];
+        for (let i = 0; i < img.width * img.height; i++) out.push(img.data[i * 4 + 1]!);
+        return out;
+      });
+    await page.evaluate(() => (window.__ocean!.props.submerged = true));
+    await page.evaluate(() => window.__test!.waitFrames(4));
+    const withObj = await lum();
+    await page.evaluate(() => (window.__ocean!.props.submerged = false));
+    await page.evaluate(() => window.__test!.waitFrames(4));
+    const without = await lum();
+    await page.evaluate(() => (window.__ocean!.props.submerged = true));
+    const w = await page.evaluate(() => window.__lab!.renderer.frameContext!.renderSize[0]);
+    let n = 0;
+    let cx = 0;
+    let cy = 0;
+    const mask = withObj.map((v, i) => {
+      const on = Math.abs(v - without[i]!) > 0.1 * Math.max(without[i]!, 1e-4) ? 1 : 0;
+      if (on) {
+        n++;
+        cx += i % w;
+        cy += Math.floor(i / w);
+      }
+      return on;
+    });
+    return { n, cx: cx / Math.max(n, 1), cy: cy / Math.max(n, 1), mask };
+  };
+  const refracted = await objectImage();
   await saveScreenshot(page, 'ocean', 'handover-refraction');
   await page.evaluate(() => window.__ocean!.ocean!.debug.setRefractionScale(0));
-  await page.evaluate(() => window.__test!.waitFrames(4));
-  const straight = await crop();
+  const straight = await objectImage();
   await page.evaluate(() => window.__ocean!.ocean!.debug.setRefractionScale(1));
-  const mean = refracted.reduce((s, v) => s + v, 0) / refracted.length;
-  const diff = refracted.reduce((s, v, i) => s + Math.abs(v - straight[i]!), 0) / refracted.length;
-  // Refraction moves the object's outline and the seabed pattern: some pixels change a lot, the mean noticeably.
-  const moved = refracted.filter((v, i) => Math.abs(v - straight[i]!) > 0.2 * Math.max(v, straight[i]!)).length / refracted.length;
-  console.log(`refraction: object at px ${JSON.stringify(window_)}, mean ${mean.toFixed(4)}, mean |refracted - unrefracted| ${diff.toFixed(4)} (${((diff / mean) * 100).toFixed(1)} %), pixels changed by more than 20 %: ${(moved * 100).toFixed(1)} %`);
-  expect(diff / mean).toBeGreaterThan(0.015);
-  expect(moved).toBeGreaterThan(0.02);
+  let both = 0;
+  let either = 0;
+  refracted.mask.forEach((m, i) => {
+    if (m && straight.mask[i]) both++;
+    if (m || straight.mask[i]) either++;
+  });
+  const shift = Math.hypot(refracted.cx - straight.cx, refracted.cy - straight.cy);
+  console.log(`refraction: object image ${refracted.n} px (unrefracted ${straight.n} px), centroid moved ${shift.toFixed(1)} px, overlap ${(both / Math.max(either, 1)).toFixed(2)}`);
+  // Seen through the water at all, and moved / reshaped by the refraction.
+  expect(refracted.n).toBeGreaterThan(300);
+  expect(straight.n).toBeGreaterThan(300);
+  expect(shift > 1.5 || both / either < 0.85).toBe(true);
   await expectNoErrors(page, pageLog);
 });
 

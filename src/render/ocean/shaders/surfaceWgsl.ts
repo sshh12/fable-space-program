@@ -361,19 +361,26 @@ struct FsOut {
     let tdir = refract(-s.v, s.n, 1.0 / WATER_IOR);
     let size = frame.renderSize.xy;
     let cosT = max(dot(tdir, -s.up), 0.15);
-    let reach = min(max(column, 0.0) / cosT, 40.0) * 1.25 + 0.05;
+    // The unrefracted column may end on an object in the water; the refracted ray can pass under it, so the
+    // march goes at least 4 m deep (and as deep as that column), and when it meets nothing it samples where it ends.
+    let reach = min(max(column, 4.0) / cosT, 40.0) * 1.25;
     // Path length in the water to what the refracted ray meets (refined between the last two steps).
-    var tHit = min(max(column, 0.0) / cosT, 40.0);
+    var tHit = reach;
     var hitUv = uv;
+    var lastUv = uv;
+    var tLast = reach;
+    var found = false;
     var tPrev = 0.0;
     for (var i = 1u; i <= 6u; i++) {
       let t = reach * sq(f32(i) / 6.0);
       let q = posRel + tdir * t;
       let pu = projectToUv(q);
-      if (pu.w <= 0.0) { break; }
+      // Off screen there is nothing to see: keep the last sample that was on screen.
+      if (pu.w <= 0.0 || any(pu.xy < vec2f(0.0)) || any(pu.xy > vec2f(1.0))) { break; }
       let px = vec2i(clamp(pu.xy * size, vec2f(0.0), size - 1.0));
       let d = textureLoad(sceneDepthOpaqueTex, px, 0);
       if (d <= 0.0) { break; }
+      if (length(positionFromDepth(pu.xy, d)) >= dist - 0.05) { lastUv = pu.xy; tLast = t; }
       if (pu.z <= d) {
         let behind = length(positionFromDepth(pu.xy, d));
         if (behind >= dist - 0.05) {
@@ -382,14 +389,21 @@ struct FsOut {
           let f = saturate((behind - length(qPrev)) / max(length(q) - length(qPrev), 1e-4));
           tHit = mix(tPrev, t, f);
           hitUv = projectToUv(posRel + tdir * tHit).xy;
+          found = true;
         }
         break;
       }
       tPrev = t;
     }
+    // Nothing met on screen: what the refracted ray sees is not in the frame. Over the seabed the modelled bottom
+    // term (the seabed's own albedo) stays; under an object in the water, where the march ended is used.
+    if (!found && !seabed) {
+      hitUv = lastUv;
+      tHit = tLast;
+    }
     let uvR = uv + (hitUv - uv) * (oceanU.shore.y * detail);
     let dR = textureLoad(sceneDepthOpaqueTex, vec2i(clamp(uvR * size, vec2f(0.0), size - 1.0)), 0);
-    if (dR > 0.0 && length(positionFromDepth(uvR, dR)) >= dist - 0.05) {
+    if ((found || !seabed) && dR > 0.0 && length(positionFromDepth(uvR, dR)) >= dist - 0.05) {
       let hitDepth = tHit * cosT;
       let ch = oceanU.shore.z * saturate(1.0 - hitDepth / 6.0);
       let seen = vec3f(

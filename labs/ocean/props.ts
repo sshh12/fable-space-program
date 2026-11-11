@@ -116,8 +116,11 @@ function beachMesh(size: number, cells: number, height: (x: number, y: number) =
 }
 
 /** Value noise for the beach relief and the sand texture (deterministic). */
-function noise2(x: number, y: number, seed: number): number {
-  const h = (a: number, b: number): number => {
+function noise2(x: number, y: number, seed: number, period = 0): number {
+  const h = (a0: number, b0: number): number => {
+    // With a period the lattice wraps, so a texture made of it tiles without a seam.
+    const a = period > 0 ? ((a0 % period) + period) % period : a0;
+    const b = period > 0 ? ((b0 % period) + period) % period : b0;
     let v = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ Math.imul(seed, 2147483647);
     v = Math.imul(v ^ (v >>> 13), 1274126177);
     return ((v ^ (v >>> 16)) >>> 0) / 4294967296;
@@ -144,7 +147,7 @@ function sandTexture(size = 256): { width: number; height: number; data: Uint8Ar
   const data = new Uint8Array(size * size * 4);
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
-      const n = 0.55 * noise2(i / 9, j / 9, 5) + 0.3 * noise2(i / 3, j / 3, 6) + 0.15 * noise2(i, j, 7);
+      const n = 0.55 * noise2(i / 8, j / 8, 5, size / 8) + 0.3 * noise2(i / 4, j / 4, 6, size / 4) + 0.15 * noise2(i, j, 7, size);
       const o = (j * size + i) * 4;
       // sRGB-encoded sand: pale calcareous (0.62, 0.55, 0.42) linear-ish with grain variation.
       data[o] = Math.round(200 + 40 * (n - 0.5));
