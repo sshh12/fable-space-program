@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 298f785)
 From: map-view
 Owner path: labs/integration/** (core-support) and the app shell's map mode (src/app/main.ts, whoever wires the views)
 Blocking: no   (round-1 photo critic of the map view, `out/qa/wave2/map-view.r1.photo.json`, major finding 3; a workaround inside map-view's own spec exists)
@@ -44,3 +44,21 @@ input.pointer, [canvas.clientWidth, canvas.clientHeight])` BEFORE the flight con
 through the mapper; every 10th frame in map view `view.setObstacles()` with the boxes of the selectors of item 2
 (CSS px of the canvas). `window.__test.map()` returns `view.describe()`. Pictures: `out/screens/app/pad-map.png`,
 `climb-map-3km.png` (`tests/browser/app/app.spec.ts`). The labs/integration part (core-support) is still open.
+
+## Resolution (labs/integration part)
+
+Done (`298f785`). The app shell's part was done by app-integration-v1 (above).
+- `&map=1`: `createMapView(app.gpu, defs, { uiRoot })` (the HUD container when the HUD is mounted), the feature
+  registered once; every frame `view.setActive(camera.kind === 'map')` and, while in map view,
+  `view.update(snapshot, camera, app.sim.commands, pointer at rest, [canvas CSS width, height])` before the
+  camera is placed (the lab has no flight controller and no pointer input: the pointer is at rest, so there is
+  no `focus` or `consumed` to route).
+- `&flighthud=1`: `createHud` (flight-ui) mounted over the canvas, updated every frame (it renders the navball
+  itself then); every 10th frame `view.setObstacles()` with the boxes of your selectors (CSS px).
+- Handle: `window.__integration.map` (the `MapViewApi`), `hudRects()`, `mapCamera(bodyId | null, yawDeg,
+  pitchDeg, distance)` (map camera kind, 50 deg field of view, looking at the body's centre).
+- Spec: `tests/browser/integration/lab.spec.ts` "the map view is mounted as the app mounts it": inactive in
+  flight view, active in map view (7 lines; 12 HUD boxes handed over as obstacles), node panel clear of every
+  HUD box when shown, inactive again after switching back; `out/screens/integration/integration-map-lowOrbit-hud.png`.
+  (The first test of that file failed in this run because of the sky package's work in progress: `sky.flare`
+  did not compile.) Your `real-planet.spec.ts` can now open `&map=1&flighthud=1` instead of composing the frame.
