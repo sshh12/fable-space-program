@@ -326,6 +326,13 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
 | `sky-lighting-8` | yes | resolved `4752c2d` | Planetshine occluded per pixel by every other body (`shineVisibility`, `shineVisibleFraction`, `planetshineAt(..., visibleFrom)`) |
 | `vfx-5` | no | resolved `d48e735` | `LocalLight.radius`: falloff floored at the source's surface, horizon-cut sources; chunk `local_lights` |
 | `vehicle-pad-2` | no | part 1 resolved `d48e735` | `LocalLight.kind: 'spot'` (`dirRelCam`, `cone`); part 2 (shadowed spots) **not built**: first open item below |
+| `cockpit-10` | no | resolved `c417fb0` | Shadow kernel stops turning per pixel where a texel covers 2-8+ pixels: smooth edges at arm's length |
+| `terrain-render-4` | no | resolved `c417fb0` | RT4.a of terrain / regolith = smallest shadow filter radius (`encodeShadowSoftness`, `sampleSunShadowSoft`, `PbrMaterialDef.shadowSoftness`) |
+| `vehicle-pad-4` | no | resolved `95d2c70` | `PbrMaterialDef.alphaCutoff`: G-buffer and shadow alpha test, stochastic coverage on coarse mips |
+| `atmosphere-clouds-9` | no | resolved `edfd096` | `AtmosphereRenderDef.airglow` / `AirglowLayerDef` in the defs contract |
+| `vehicle-pad-6` | no | resolved `94e4266` | Frost veil under the break-up cells |
+| `cockpit-12` | no | part 1 resolved `6e0c7a2`, part 2 declined | Interior bright areas of 1-8 % of the frame brought into the shoulder; no camera-dependent tone curve |
+| `vehicle-pad-5` | no | resolved `f184651` | `FakeSimOptions.legsDeployed`; integration lab `lunarSurface` stands on deployed legs (`&legs=0`) |
 
 ### Open items of this pass
 
@@ -336,3 +343,6 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
 - 13:30. Take-over. `sky-lighting-7` finished and committed; render-core exposure specs 6 of 6.
 - 13:40. `sky-lighting-8`; render-core browser suite 34 of 34.
 - 13:50. `vfx-5`, `vehicle-pad-2` part 1 (lighting spec 9 of 9 with the new checks).
+- 14:00. `cockpit-10`, `terrain-render-4` (render-core suite 36 of 36), `vehicle-pad-4`, `atmosphere-clouds-9`.
+- 14:10. `vehicle-pad-6`, `cockpit-12` (unit suite of the meter 31 of 31; render-core exposure specs 6 of 6),
+  `vehicle-pad-5` (integration landing-site check passes with the legs out).
