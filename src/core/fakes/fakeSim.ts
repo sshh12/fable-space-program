@@ -40,6 +40,12 @@ export interface FakeSimOptions {
   ut?: number;
   /** Parts of the active vessel (e.g. from the real vessel assembler). Engine module states follow the throttle. */
   parts?: PartSnapshot[];
+  /**
+   * Vehicle definition the active vessel is published as (`VesselSnapshot.vehicleId`, `scenario.vehicle`): the
+   * one `parts` were assembled from. Default '': the placeholder vessel belongs to no vehicle, and features
+   * that look the vehicle up (cockpit layout, engine children) find none.
+   */
+  vehicleId?: string;
   /** Site used by the surface scenes (default: first site in the library). */
   siteId?: string;
   /**
@@ -149,7 +155,7 @@ export class FakeSim implements Sim {
     this.scenario = {
       id: `fake-${opts.scene}`,
       name: `Fake scene: ${opts.scene}`,
-      vehicle: '',
+      vehicle: opts.vehicleId ?? '',
       site: site?.id ?? '',
       startUt: this.ut0,
       start: { kind: 'state', bodyId: this.spec.bodyId, r: [0, 0, 0], v: [0, 0, 0] },

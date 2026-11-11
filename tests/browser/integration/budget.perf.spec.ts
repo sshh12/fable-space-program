@@ -78,7 +78,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
     const row = await withGpuLock(async (): Promise<Row> => {
       const scene = SCENES[checkpoint];
       info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
-      if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitInCockpit(0, 5)), 'the vehicle has a cockpit seat to sit in').toBe(true);
+      if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitInCockpit(8, 2)), 'the vehicle has a cockpit seat to sit in').toBe(true);
       await settle(page, 120);
       expect(await page.evaluate(() => window.__lab!.renderer.frameContext!.renderSize)).toEqual([2560, 1440]);
       await save(page, `budget-${checkpoint.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`);

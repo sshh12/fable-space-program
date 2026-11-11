@@ -258,11 +258,14 @@ async function boot(): Promise<void> {
   } else {
     const scene = (query.get('scene') as FakeScene | null) ?? 'lowOrbit';
     const stage = query.get('stage');
-    const real = stage === 'none' ? null : await realVesselParts(defs, query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '', stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
+    const vehicleId = query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '';
+    const real = stage === 'none' ? null : await realVesselParts(defs, vehicleId, stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
     const at = query.get('at')?.split(',').map(Number);
     inner = createFakeSim(defs, {
       scene,
-      ...(real ? { parts: real.parts, stageLabels: real.stageLabels } : {}),
+      // The vessel carries the vehicle's id with its parts: the cockpit finds its layout and the vessel
+      // visuals their engine children through it.
+      ...(real ? { parts: real.parts, stageLabels: real.stageLabels, vehicleId } : {}),
       ...(at && at.length === 2 && at.every(Number.isFinite) ? { location: { latDeg: at[0]!, lonDeg: at[1]! } } : {}),
     });
     const throttle = Number(query.get('throttle') ?? 0);

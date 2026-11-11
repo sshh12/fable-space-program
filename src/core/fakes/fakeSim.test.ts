@@ -129,6 +129,15 @@ describe('FakeSim', () => {
     expect(burned()).toBe(frozen);
   });
 
+  it('names the vehicle it was told it flies (features look the vehicle definition up by it)', () => {
+    const vehicleId = Object.keys(defs.vehicles)[0]!;
+    const sim = createFakeSim(defs, { scene: 'lowOrbit', vehicleId });
+    expect(sim.scenario.vehicle).toBe(vehicleId);
+    expect(sim.snapshot().vessels[0]!.vehicleId).toBe(vehicleId);
+    // The default stays "no vehicle": the placeholder vessel belongs to none.
+    expect(createFakeSim(defs, { scene: 'lowOrbit' }).snapshot().vessels[0]!.vehicleId).toBe('');
+  });
+
   it('the surface scenes can be placed away from the site', () => {
     const sim = createFakeSim(defs, { scene: 'ascent', location: { latDeg: -42.5, lonDeg: 101.25 } });
     const s = sim.snapshot();
