@@ -400,6 +400,12 @@ lights, the map fill light and RT5 emissive. Eclipses and planetshine are comput
   bodies as directional lights, `E = E_sun x geometricAlbedo x (R / d)^2 x Phi(phase)` (Lambert sphere),
   coloured by `meanColor`, faded out closer than 4 R (there the environment probe must carry it). A pixel
   uses its nearest body's list when it is lower than half a radius above it, else the free-space list.
+  It has no shadow map: it is multiplied by the pixel's BAKED occlusion (RT0.a), as the probe ambient is,
+  so a closed interior that writes AO 0 receives no planetshine through its walls (request `cockpit-2`).
+- Cloth (`MATERIAL_CLOTH`) is lit on both sides (wrapped diffuse and translucency), so its sun-shadow
+  lookup uses the normal turned towards the sun: a caster between the fabric and the sun shadows the lit
+  side and the back-lit side alike (request `cockpit-1`). Every other material keeps the early-out for faces
+  turned away from the sun.
 - Ambient by material. The sky irradiance table and the probe are alternatives, never summed on one
   surface, because the probe already contains the sky: terrain and water use the table (never the probe);
   standard, cloth and display use `env.sh9` alone (+ `env.probeCube` specular for standard and display),
@@ -723,8 +729,11 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   alone (sunny 16 x sun visibility at the camera when a lit body, a lit vessel, any lit geometry or the
   unoccluded solar disc itself is in view; EV -3, the dark-adapted floor, otherwise);
   between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
-  `minEv100` (lower bound of EV100) and `kind: 'interior'` (meters geometry within 8 m, no highlight cap)
-  are honoured. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
+  `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
+  geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range and
+  without the highlight cap (request `cockpit-3`): a sun patch on a panel, several hundred times brighter
+  than the cabin, moves the exposure by less than a stop, so the cabin stays readable and the patch and the
+  windows blow out. Exterior and map metering are unchanged. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones.
 - TAA / TAAU: Halton(2, 3) jitter of 8 samples (8 / scale^2 when upscaling, at most 32) in `frame.proj`;
   the resolve runs at display resolution (jitter-aware 3 x 3 reconstruction, closest-depth velocity,
   5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
@@ -1035,6 +1044,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
+| Cloth looks the sun shadow up with the normal turned to the sun; planetshine is multiplied by the baked AO (RT0.a) | `cockpit-1`, `cockpit-2` | cockpit, vehicle-pad (canopies, blankets), anything that bakes AO into RT0.a | None. Surfaces with baked AO below 1 receive that much less planetshine |
 | `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |
 | LabPlanet: inside `'ocean.nearField'.fadeStart` the seabed follows the sheet (`seabedDepth: 'sheet'`, new default): sheet depth and map colour instead of a 30 m sand floor | `ocean-2` | ocean lab and specs; any lab that publishes a near field over the LabPlanet | A lab that relied on the fixed floor passes `seabedDepth: 30` |
 | `SharedResourceMap` keys `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'` (live RT0 / RT1 / RT2, readable from `drawWater` on) and binding set `gbuffer` (section 6, section 11) | `ocean-1` | ocean (band between `fadeStart` and `fadeEnd`); anyone who wants the material under a pixel after lighting | None. Do not put the set into a bind group that is set inside `drawGBuffer` |

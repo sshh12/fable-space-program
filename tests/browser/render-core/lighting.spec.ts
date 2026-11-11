@@ -281,3 +281,71 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   await page.evaluate(() => window.__rc!.probes.inputs.setEnvRadiance(null));
   await expectNoErrors(page, pageLog);
 });
+
+test('cloth is shadowed on both sides: a caster between the sun and a back-lit panel darkens it (request cockpit-1)', async ({ page, pageLog }) => {
+  // The sun stands behind the tower as seen from the cloth panel (bearing 153.4 deg, 30 deg high): the tower's
+  // shadow falls across the middle of the panel; its ends are in the sun.
+  await openPage(page, '/labs/render-core/?sun=153.4,30&hud=0&paused=1&ev=14');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+  });
+  const at = (yawDeg: number): Promise<{ shadowed: number; lit: number }> =>
+    page.evaluate(async (yaw) => {
+      window.__rc!.lookAt([-9, 0, 1.55], yaw, 0, 5);
+      await window.__test!.waitFrames(6);
+      const lum = async (p: [number, number, number]): Promise<number> => {
+        const px = window.__rc!.projectSitePoint(p)!;
+        const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(px.x) - 1, y: Math.round(px.y) - 1, width: 3, height: 3 });
+        let sum = 0;
+        for (let i = 0; i < 9; i++) sum += 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+        return sum / 9;
+      };
+      return { shadowed: await lum([-9, 0, 1.55]), lit: await lum([-9, 1.25, 1.55]) };
+    }, yawDeg);
+  await waitIdle(page, 10);
+  // From the east: the face turned to the sun. From the west: the back of the panel, lit through the fabric.
+  const front = await at(90);
+  const back = await at(270);
+  await saveScreenshot(page, 'render-core', 'lighting-cloth-backlit-shadow');
+  console.log(`cloth panel: front lit ${front.lit.toFixed(4)}, in the tower's shadow ${front.shadowed.toFixed(4)}; back lit through the fabric ${back.lit.toFixed(4)}, in the shadow ${back.shadowed.toFixed(4)}`);
+  expect(front.lit).toBeGreaterThan(0.02);
+  expect(front.shadowed).toBeLessThan(0.1 * front.lit);
+  // The back is lit through the fabric where the sun reaches the panel, and dark where the tower stands in between.
+  expect(back.lit).toBeGreaterThan(0.005);
+  expect(back.shadowed).toBeLessThan(0.1 * back.lit);
+  await expectNoErrors(page, pageLog);
+});
+
+test('planetshine is gated by the baked occlusion: a surface that writes AO 0 receives none (request cockpit-2)', async ({ page, pageLog }) => {
+  // Night on the Moon (the sun 25 deg below the horizon of the stand), the Earth in the sky: earthshine only.
+  await openPage(page, '/labs/render-core/?scene=lunarSurface&sun=90,-25&hud=0&paused=1&ev=-1');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(true);
+    window.__lab!.renderer.setJitter(false);
+    window.__rc!.lookAt([-12, -4, 0.5], 90, 60, 7);
+  });
+  await waitIdle(page, 10);
+  const r = await page.evaluate(async () => {
+    await window.__test!.waitFrames(6);
+    const lum = async (p: [number, number, number]): Promise<number> => {
+      const px = window.__rc!.projectSitePoint(p)!;
+      const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: Math.round(px.x) - 2, y: Math.round(px.y) - 2, width: 5, height: 5 });
+      let sum = 0;
+      for (let i = 0; i < 25; i++) sum += 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+      return sum / 25;
+    };
+    const earth = window.__rc!.directionAtSite(window.__lab!.defs.rootBodyId);
+    // The tops of the two boxes (z = 1).
+    return { open: await lum([-12, -3, 1]), closed: await lum([-12, -5, 1]), earthElevation: earth.elDeg, exposure: window.__lab!.renderer.frameContext!.exposure };
+  });
+  await saveScreenshot(page, 'render-core', 'lighting-planetshine-occlusion');
+  console.log(`earthshine (Earth ${r.earthElevation.toFixed(0)} deg above the horizon): open box ${(r.open / r.exposure).toFixed(3)} cd/m^2, box with baked AO 0 ${(r.closed / r.exposure).toFixed(4)} cd/m^2`);
+  expect(r.earthElevation).toBeGreaterThan(20);
+  // Earthshine of a few lux on a 50 % grey top face: some tenths of a cd/m^2.
+  expect(r.open / r.exposure).toBeGreaterThan(0.05);
+  expect(r.closed).toBeLessThan(0.02 * r.open);
+  await expectNoErrors(page, pageLog);
+});

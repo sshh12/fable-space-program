@@ -133,6 +133,36 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeGreaterThan(0.08);
     expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeLessThan(0.4);
   });
+
+  it('interior metering keeps the cabin readable when a sun patch falls into it (request cockpit-3)', () => {
+    // 95 % of the near pixels are cabin at 20-45 cd/m^2, 5 % are a sun patch on a panel at 14,000-20,000.
+    const near = new Uint32Array(HISTOGRAM_BINS);
+    fill(near, 20, 45, 0.95 * 0.6 * N);
+    fill(near, 14000, 20000, 0.05 * 0.6 * N);
+    const cabin = new Uint32Array(HISTOGRAM_BINS);
+    fill(cabin, 20, 45, 0.6 * N);
+    const withPatch = meter(near, { histogramNear: near, kind: 'interior' });
+    const without = meter(cabin, { histogramNear: cabin, kind: 'interior' });
+    // The patch moves the exposure by less than a stop, and the cabin stays near mid-grey ...
+    expect(withPatch.targetEv100 - without.targetEv100).toBeLessThan(1);
+    expect(withPatch.targetEv100 - without.targetEv100).toBeGreaterThan(0);
+    const cabinAt = 30 * exposureFromEv100(withPatch.targetEv100);
+    expect(cabinAt).toBeGreaterThan(0.08);
+    expect(cabinAt).toBeLessThan(0.3);
+    // ... while the patch blows out (far above white).
+    expect(17000 * exposureFromEv100(withPatch.targetEv100)).toBeGreaterThan(20);
+    // The statistic is the log-average of the whole near histogram: dark corners count too.
+    const stats = histogramStats(near, N, Infinity);
+    expect(stats.logMean).toBeGreaterThan(30);
+    expect(stats.logMean).toBeLessThan(50);
+    expect(stats.mean).toBeGreaterThan(700);
+    // An exterior view of the same pixels still exposes for the bright part (a lit object on black).
+    expect(meter(near, { kind: 'external' }).targetEv100).toBeGreaterThan(withPatch.targetEv100 + 3);
+    // A uniform cabin meters the same either way (log-average = mean).
+    const flat = new Uint32Array(HISTOGRAM_BINS);
+    flat[luminanceBin(30)] = 0.6 * N;
+    expect(histogramStats(flat, N, Infinity).logMean).toBeCloseTo(histogramStats(flat, N).mean, 6);
+  });
 });
 
 describe('quality governor and dynamic resolution', () => {

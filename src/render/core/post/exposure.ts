@@ -54,6 +54,8 @@ export interface HistogramStats {
   /** Arithmetic mean and 99th percentile luminance of the lit range, cd/m^2 (0 when nothing is lit). */
   mean: number;
   p99: number;
+  /** Log-average (geometric mean) luminance of the lit range, cd/m^2: a few very bright pixels barely move it. */
+  logMean: number;
 }
 
 function percentileBin(h: ArrayLike<number>, lo: number, total: number, p: number): number {
@@ -66,22 +68,27 @@ function percentileBin(h: ArrayLike<number>, lo: number, total: number, p: numbe
   return HISTOGRAM_BINS - 1;
 }
 
-/** Statistics of the lit range of a histogram of `sampleCount` sampled pixels (sky and dark pixels are not in the bins). */
-export function histogramStats(h: ArrayLike<number>, sampleCount: number): HistogramStats {
+/**
+ * Statistics of the lit range of a histogram of `sampleCount` sampled pixels (sky and dark pixels are not in
+ * the bins). The lit range is everything within `litRangeEv` of the brightest pixels (Infinity: every bin).
+ */
+export function histogramStats(h: ArrayLike<number>, sampleCount: number, litRangeEv = LIT_RANGE_EV): HistogramStats {
   let total = 0;
   for (let i = 0; i < HISTOGRAM_BINS; i++) total += h[i]!;
-  if (total <= 0 || sampleCount <= 0) return { litFraction: 0, mean: 0, p99: 0 };
+  if (total <= 0 || sampleCount <= 0) return { litFraction: 0, mean: 0, p99: 0, logMean: 0 };
   const binsPerEv = HISTOGRAM_BINS / HISTOGRAM_RANGE_LOG2;
   const top = percentileBin(h, 0, total, 0.995);
-  const lo = Math.max(0, Math.floor(top - LIT_RANGE_EV * binsPerEv));
+  const lo = Number.isFinite(litRangeEv) ? Math.max(0, Math.floor(top - litRangeEv * binsPerEv)) : 0;
   let lit = 0;
   let sum = 0;
+  let sumLog = 0;
   for (let i = lo; i < HISTOGRAM_BINS; i++) {
     lit += h[i]!;
     sum += h[i]! * binLuminance(i);
+    sumLog += h[i]! * (HISTOGRAM_MIN_LOG2 + ((i + 0.5) / HISTOGRAM_BINS) * HISTOGRAM_RANGE_LOG2);
   }
-  if (lit <= 0) return { litFraction: 0, mean: 0, p99: 0 };
-  return { litFraction: lit / sampleCount, mean: sum / lit, p99: binLuminance(percentileBin(h, lo, lit, 0.99)) };
+  if (lit <= 0) return { litFraction: 0, mean: 0, p99: 0, logMean: 0 };
+  return { litFraction: lit / sampleCount, mean: sum / lit, p99: binLuminance(percentileBin(h, lo, lit, 0.99)), logMean: 2 ** (sumLog / lit) };
 }
 
 /** "Keeps night dark and day bright": bright scenes are rendered above mid-grey, dim ones below. */
@@ -118,10 +125,19 @@ const smooth = (a: number, b: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/** Target EV100 for one frame (before temporal adaptation). */
+/**
+ * Target EV100 for one frame (before temporal adaptation).
+ *
+ * Exterior and map views meter the arithmetic mean of the lit range (a lit object on black must not be
+ * rendered grey) and protect highlights. An interior view meters the geometry within INTERIOR_RANGE by its
+ * LOG-AVERAGE over everything above the luminance floor: a sun patch that comes through a window is several
+ * hundred times brighter than the cabin it falls into, and an arithmetic mean would expose for the patch
+ * and leave the cabin black. With the log-average the cabin stays readable and the patch (like the windows,
+ * which are farther than the range) blows out, as in a photograph taken inside (docs/requests/cockpit-3.md).
+ */
 export function meterExposure(m: MeterInput): MeterResult {
   const interior = m.kind === 'interior';
-  const stats = histogramStats(interior ? m.histogramNear : m.histogram, m.sampleCount);
+  const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(m.histogram, m.sampleCount);
   const all = interior ? histogramStats(m.histogram, m.sampleCount) : stats;
 
   // Photometric prior: sunny-16 scaled by the sun's visibility when something lit is in view, else the dark floor.
@@ -132,7 +148,7 @@ export function meterExposure(m: MeterInput): MeterResult {
   let evHistogram = evPrior;
   let w = 0;
   if (stats.mean > 0) {
-    const evMean = ev100ForMidGrey(stats.mean);
+    const evMean = ev100ForMidGrey(interior ? stats.logMean : stats.mean);
     evHistogram = evMean - exposureCompensationCurve(evMean);
     // Highlight protection applies to exterior metering; in a cabin the windows are allowed to blow out.
     if (!interior) evHistogram = Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));

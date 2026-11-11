@@ -231,7 +231,12 @@ fn envIrradiance(n: vec3f) -> vec3f {
       sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
       sunE *= cloudShadow(pos, bi, s.up, r, sunDir);
     }
-    let shadow = sampleSunShadow(pos, s.n, pix) * aoc.y;
+    // Cloth is lit on both sides (wrapped diffuse, light shining through), so its cascade lookup uses the
+    // normal turned towards the sun: whatever stands between the fabric and the sun shadows it whichever way
+    // it faces. Every other material is dark through its BRDF on faces turned away (the lookup returns 1).
+    var nShadow = s.n;
+    if (s.materialId == MATERIAL_CLOTH && dot(s.n, sunDir) < 0.0) { nShadow = -s.n; }
+    let shadow = sampleSunShadow(pos, nShadow, pix) * aoc.y;
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
       lit += brdfDirect(s, sunDir) * sunE * shadow;
@@ -286,7 +291,9 @@ fn envIrradiance(n: vec3f) -> vec3f {
   for (var k = 0u; k < 2u; k++) {
     let sh = frame.shine[receiver * 2u + k];
     if (sh.illuminance.r + sh.illuminance.g + sh.illuminance.b > 0.0) {
-      lit += brdfDirect(s, sh.dir.xyz) * sh.illuminance.rgb;
+      // A planet's disc is an extended source without a shadow map: the baked occlusion (RT0.a) stands in
+      // for its visibility, as it does for the probe. A closed cabin writes 0 and receives none of it.
+      lit += brdfDirect(s, sh.dir.xyz) * sh.illuminance.rgb * g.ao;
     }
   }
 

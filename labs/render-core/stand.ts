@@ -149,6 +149,14 @@ export function createStandFeature(options: StandOptions): StandFeature {
       placed.push({ model: model('pole', cylinderMesh(0.05, 6, 16), mat('pole', [0.8, 0.8, 0.8], 0.5, 0)), pos: [-3, -5, 3], rot: upright });
       placed.push({ model: model('bar', boxMesh(4, 0.3, 0.3), mat('bar', [0.5, 0.52, 0.2], 0.7, 0)), pos: [2, -5, 3], rot: null });
       placed.push({ model: model('step', boxMesh(2, 2, 0.4), mat('step', [0.55, 0.5, 0.45], 0.8, 0)), pos: [6, -5, 0.2], rot: null });
+      // Two equal boxes, one with baked occlusion 1 and one with 0 in its vertex masks (the inside of a closed
+      // cabin writes 0): ambient light and planetshine reach the first only.
+      const open = boxMesh(1, 1, 1);
+      const closed = boxMesh(1, 1, 1);
+      closed.masks = new Uint8Array((closed.positions.length / 3) * 4);
+      for (let v = 0; v < closed.masks.length; v += 4) closed.masks.set([0, 0, 255, 255], v);
+      placed.push({ model: model('aoOpen', open, mat('aoOpen', [0.5, 0.5, 0.5], 0.7, 0)), pos: [-12, -3, 0.5], rot: null });
+      placed.push({ model: model('aoClosed', closed, mat('aoClosed', [0.5, 0.5, 0.5], 0.7, 0)), pos: [-12, -5, 0.5], rot: null });
 
       // Emissive objects: a lit panel (20,000 cd/m^2), a dim one (300 cd/m^2) and a hot sphere (1500 K black body).
       placed.push({ model: model('lamp', boxMesh(1.2, 0.1, 0.8), mat('lamp', [0.02, 0.02, 0.02], 0.4, 0, { emissive: [20000, 9000, 2500] })), pos: [8.5, 1, 1], rot: null });
