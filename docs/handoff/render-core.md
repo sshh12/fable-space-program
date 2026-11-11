@@ -336,3 +336,30 @@ the sim and uses a well-conditioned conversion (9 passes out of 9).
   `shadows/shadowSystem.ts`; asserted in `tests/browser/render-core/shadows.spec.ts` (low sun).
 
 Full list: `docs/handoff/lead-baseline.md`.
+
+## Changes in wave 2 (core-support)
+
+The render core was maintained by `core-support` during wave 2. Every change, with its request and a
+migration line, is in `docs/RENDER_API.md` section 18; the reasons and measurements are in
+`docs/handoff/core-support.md` (sections 1 and 2). In short, against this note:
+
+- **Section 2 (public API).** New shared resources: `'gbuffer.albedo' / 'gbuffer.normal' / 'gbuffer.material'`
+  (live RT0-RT2 from deferred lighting on, binding set `gbuffer`), `'ocean.wetness'` (binding set
+  `oceanWetness`; the mesh system's G-buffer shader applies the wet line), `'post.reactive'` (per-pixel
+  history weight of the resolve; `RenderFeature.requires` accepts it). `CoreApi.addEmissiveHint(luminance,
+  coverage)`. `createMeshSystem` takes the resource registry. `LabPlanetOptions.seabedDepth` is
+  `number | 'sheet'` (default `'sheet'`).
+- **Exposure (4.x, 6).** Interior metering is the log-average of the whole near histogram; emitters over sky
+  pixels are metered through emissive hints. The TAA history is rescaled by the exposure ratio between
+  frames, so an adapting exposure leaves no lag in the resolved image.
+- **Lighting.** Cloth looks the sun shadow up with the normal turned towards the sun; planetshine is
+  multiplied by the baked AO.
+- **Shadows.** Cascade 0 of an interior camera covers 6 m (`INTERIOR_CASCADE_RADIUS`), 0.59 cm texels.
+- **Section 6 (known weaknesses), still open.** The resolve loses energy of sub-pixel bright geometry under
+  jitter and leaves a jitter-cycle ripple on star pixels (request `sky-lighting-1`, declined: a linear blend
+  for still pixels was tried and creates energy at saturated sources; needs a resolve with per-pixel
+  accumulation). Cascades of 8 km and below still get no receiver fit. Local lights are unshadowed.
+- **Specs added.** `framegraph.spec.ts`: G-buffer read-back markers, the reactive mask; `mesh.spec.ts`:
+  LabPlanet seabed modes, the wet line; `lighting.spec.ts`: back-lit cloth under a caster, planetshine in a
+  closed box; unit tests for the interior meter, the emissive prior and the interior cascade.
+
