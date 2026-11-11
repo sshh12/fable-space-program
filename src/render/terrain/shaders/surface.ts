@@ -14,7 +14,7 @@ export const NOISE_GRADIENT_RANGE = 4;
 export const MAX_MATERIALS = 8;
 export const MAX_CLASSES = 16;
 /** Floats of the TerrainMaterial uniform. */
-export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + MAX_MATERIALS + 2 + 2 + 2 + 2 + 4) * 4;
+export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + MAX_MATERIALS + 2 + 2 + 2 + 2 + 5) * 4;
 
 const SURFACE_BINDINGS_WGSL = /* wgsl */ `
 struct TerrainMaterial {
@@ -29,6 +29,7 @@ struct TerrainMaterial {
   p1: vec4f,                                  // detail albedo strength, detail normal strength, height-blend contrast, macro noise wavelength (m)
   p2: vec4f,                                  // base roughness, Toksvig gain, apron edge width (m), lake depth (m)
   p3: vec4f,                                  // shore wetness height (m), brightening of fresh material, AO strength of the detail maps, chroma share of the detail ratio
+  p4: vec4f,                                  // mip bias of detail scales 0, 1, 2 (larger scales keep only their coarse structure), unused
 }
 
 @group(3) @binding(0) var normalTex: texture_2d_array<f32>;
@@ -158,13 +159,18 @@ fn nightEmission(t: TileRecord, uv: vec2f, k: f32, dx: vec2f, dy: vec2f, sphereR
   let on = 1.0 - smoothstep(body.night.y, body.night.z, muS);
   if (on <= 0.0) { return vec3f(0.0); }
   let uvN = t.nightUv.xy + uv * t.nightUv.z;
-  // One channel, sRGB-encoded (the red of the night image).
-  var c = pow(textureSampleGrad(nightTex, tileSampler, uvN, t.images.z, dx * t.nightUv.z, dy * t.nightUv.z).r, 2.2);
+  // One channel, sRGB-encoded (the red of the night image). The layer is sampled no finer than
+  // nightTint.a mip levels: the source lights are blocks of several texels, which only read as towns
+  // once they are filtered to their real resolution.
+  let footprint = 0.5 * log2(max(dot(dx, dx), dot(dy, dy)) * 65536.0);
+  let lod = max(footprint + log2(t.nightUv.z), body.nightTint.a);
+  var c = pow(textureSampleLevel(nightTex, tileSampler, uvN, t.images.z, lod).r, 2.2);
   if (k > 0.0 && (t.flags.x & 2) != 0) {
     var p = 0.0;
     if (t.images.w >= 0) {
       let uvP = t.parentNightUv.xy + uv * t.parentNightUv.z;
-      p = pow(textureSampleGrad(nightTex, tileSampler, uvP, t.images.w, dx * t.parentNightUv.z, dy * t.parentNightUv.z).r, 2.2);
+      // The parent's image is one level coarser: the same ground footprint is one mip level lower there.
+      p = pow(textureSampleLevel(nightTex, tileSampler, uvP, t.images.w, max(footprint + log2(t.parentNightUv.z), body.nightTint.a - 1.0)).r, 2.2);
     }
     c = mix(c, p, k);
   }
@@ -270,6 +276,7 @@ fn detailSample(layer: i32, p: vec3f, dpx: vec3f, dpy: vec3f, w: vec3f) -> Detai
 
 struct Detail {
   albedoRatio: vec3f,
+  apronRatio: vec3f,   // albedo / mean albedo of the apron material (1 where the detail has faded)
   grad: vec3f,
   rough: f32,
   roughMix: f32,
@@ -282,6 +289,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
                  dist: f32, footprint: f32, apron: f32) -> Detail {
   var o: Detail;
   o.albedoRatio = vec3f(1.0);
+  o.apronRatio = vec3f(1.0);
   o.grad = vec3f(0.0);
   o.rough = mat.p2.x;
   o.roughMix = 0.0;
@@ -341,8 +349,11 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
     if (s == 1) { origin = t.detail1.xyz; }
     if (s == 2) { origin = t.detail2.xyz; }
     let p = (origin + local) * inv;
-    let dpx = dlx * inv;
-    let dpy = dly * inv;
+    // Larger scales magnify the layer many times: a mip bias keeps only its coarse structure there, so a
+    // pebble or a hairline crack never turns into a painted boulder or a trench.
+    let blur = exp2(mat.p4[s]);
+    let dpx = dlx * (inv * blur);
+    let dpy = dly * (inv * blur);
     // Relief shrinks with the tiling length: slopes stay the same at every scale, heights scale with it.
     let hs = period;
     let a = detailSample(first, p, dpx, dpy, tw);
@@ -373,6 +384,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
   let lum = max(luminance(ratio), 1e-3);
   // Detail mostly modulates brightness; a share of its colour variation is kept.
   o.albedoRatio = mix(vec3f(lum), ratio, mat.p3.w);
+  if (first == apronM) { o.apronRatio = ratioA; }
   o.grad = mix(gradA, gradB, bl) * mat.p1.y;
   o.roughMix = saturate(wsum);
   o.rough = mix(roughA, roughB, bl) / wsum;
@@ -496,6 +508,10 @@ ${DETAIL_WGSL}
   var albedo = s.albedo * detail.albedoRatio * orb.albedo;
   // Fresh material (crater ejecta, exposed rock) is brighter than the mature surface around it.
   albedo *= 1.0 + mat.p3.y * s.channel;
+  // A launch-pad apron is not in the imagery: it has the albedo of its own material, at every distance.
+  if (apron > 0.0 && mat.p0.z >= 0.0) {
+    albedo = mix(albedo, mat.meanAlbedo[i32(mat.p0.z)].rgb * detail.apronRatio, apron);
+  }
   albedo = clamp(albedo, vec3f(0.0), vec3f(1.0));
 
   // Detail and orbital relief as surface gradients on top of the tile normal.

@@ -23,7 +23,7 @@ struct TerrainBody {
   orbital: vec4f,                // base wavelength (m), albedo strength, relief strength, octave count
   night: vec4f,                  // luminance of a white texel (cd/m^2), cos(sun zenith) where lights are fully on, where they are off, 1 = has night layer
   misc: vec4f,                   // land material id, 1 = has ocean, mean tile size of level 0 (m), unused
-  nightTint: vec4f,              // rgb = colour of the night lights (linear), a unused
+  nightTint: vec4f,              // rgb = colour of the night lights (linear), a = finest mip level the night layer is sampled at
 }
 
 struct TileRecord {

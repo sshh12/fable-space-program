@@ -463,7 +463,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     u.set([p.orbitalWavelengthM, p.orbitalAlbedoStrength, p.orbitalReliefStrength, p.orbitalOctaves], 52);
     u.set([p.nightLuminance, p.nightOnCos, p.nightOffCos, b.stream.nightLayer ? 1 : 0], 56);
     u.set([b.def.render.surface!.brdf === 'hapke' ? MATERIAL_ID.regolith : MATERIAL_ID.terrain, b.hasOcean ? 1 : 0, b.tree.faceSize, 0], 60);
-    u.set([p.nightTintR, p.nightTintG, p.nightTintB, 0], 64);
+    u.set([p.nightTintR, p.nightTintG, p.nightTintB, p.nightMinMip], 64);
     device.queue.writeBuffer(b.uniform, 0, u);
 
     const s = b.stats;

@@ -3,14 +3,15 @@
  * unit sphere: a blend of a faceted hull (the intersection of random half-spaces: flat faces and edges)
  * and smooth lumps, sampled on icospheres of 3, 2 and 1 subdivisions, so the levels of detail share one
  * silhouette. The radius stays within ROCK_RADIUS_MIN..MAX of the unit sphere: a collidable rock is the
- * ellipsoidal cap of the height function scaled by its radius and cap height, and the mesh encloses it.
+ * ellipsoidal cap of the height function scaled by its radius and cap height, and the mesh encloses it
+ * (faces touch the cap, corners and edges stand out from it).
  */
 import { hash4, hashToUnit } from '@/core/math';
 
 export const ROCK_VARIANTS = 6;
 export const ROCK_LODS = 3;
-export const ROCK_RADIUS_MIN = 0.98;
-export const ROCK_RADIUS_MAX = 1.22;
+export const ROCK_RADIUS_MIN = 1.0;
+export const ROCK_RADIUS_MAX = 1.55;
 
 export interface RockMeshData {
   /** xyz position, xyz normal per vertex (6 floats). */
@@ -70,23 +71,25 @@ function rockShape(variant: number): RockShape {
   const seed = 0x7f4a7c15 + variant * 977;
   const u = (i: number, j: number): number => hashToUnit(hash4(i, j, variant, seed));
   const planes: number[] = [];
-  const count = 9 + (variant % 3) * 3;
+  // Few faces make slabs and wedges, more make rounder boulders. Every rock has a roughly level top face.
+  const count = 6 + (variant % 3) * 4;
+  planes.push(0.12 * (u(90, 0) - 0.5), 0.12 * (u(90, 1) - 0.5), 1, 1.0);
   for (let i = 0; i < count; i++) {
-    const z = u(i, 0) * 2 - 1;
-    const a = u(i, 1) * 2 * Math.PI;
+    const z = u(i, 0) * 1.5 - 0.75;
+    const a = ((i + 0.7 * u(i, 1)) / count) * 2 * Math.PI;
     const r = Math.sqrt(Math.max(0, 1 - z * z));
-    // Faces sit between 1.0 and 1.16 radii from the centre.
-    planes.push(r * Math.cos(a), r * Math.sin(a), z, 1.0 + 0.16 * u(i, 2));
+    // Faces sit between 1.0 and 1.12 radii from the centre: they touch the collision cap.
+    planes.push(r * Math.cos(a), r * Math.sin(a), z, 1.0 + 0.12 * u(i, 2));
   }
   const lumps: number[] = [];
   for (let i = 0; i < 7; i++) {
     const z = u(i, 3) * 2 - 1;
     const a = u(i, 4) * 2 * Math.PI;
     const r = Math.sqrt(Math.max(0, 1 - z * z));
-    lumps.push(r * Math.cos(a), r * Math.sin(a), z, 0.35 + 0.5 * u(i, 5), (u(i, 6) - 0.35) * 0.16);
+    lumps.push(r * Math.cos(a), r * Math.sin(a), z, 0.35 + 0.5 * u(i, 5), (u(i, 6) - 0.2) * 0.2);
   }
   // Variants alternate between blocky (angular ejecta) and rounded (weathered) rocks.
-  return { planes, lumps, faceting: variant % 2 === 0 ? 0.85 : 0.45 };
+  return { planes, lumps, faceting: variant % 2 === 0 ? 0.95 : 0.7 };
 }
 
 /** Radius of the rock surface along unit direction (x, y, z). */
@@ -97,7 +100,7 @@ function rockRadius(shape: RockShape, x: number, y: number, z: number): number {
     if (c > 0.05) hull = Math.min(hull, shape.planes[i + 3]! / c);
   }
   hull = Math.min(hull, ROCK_RADIUS_MAX);
-  let smooth = 1.08;
+  let smooth = 1.12;
   for (let i = 0; i < shape.lumps.length; i += 5) {
     const c = x * shape.lumps[i]! + y * shape.lumps[i + 1]! + z * shape.lumps[i + 2]!;
     const w = shape.lumps[i + 3]!;

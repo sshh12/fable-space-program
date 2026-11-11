@@ -20,29 +20,30 @@
       "albedoHeight": "blocky-ejecta.ah.webp",
       "normalRoughAo": "blocky-ejecta.nra.webp",
       "meanAlbedo": [
-        0.14646,
-        0.14374,
-        0.13784
+        0.14155,
+        0.13874,
+        0.13262
       ],
-      "meanRoughness": 0.8949,
-      "heightGain": 0.2768
+      "meanRoughness": 0.9046,
+      "heightGain": 0.2331
     },
     {
       "id": "compacted-soil",
       "albedoHeight": "compacted-soil.ah.webp",
       "normalRoughAo": "compacted-soil.nra.webp",
       "meanAlbedo": [
-        0.10312,
-        0.10026,
-        0.09452
+        0.10786,
+        0.10486,
+        0.09888
       ],
-      "meanRoughness": 0.925,
-      "heightGain": 0.1099
+      "meanRoughness": 0.94,
+      "heightGain": 0.2378
     }
   ],
   "classWeights": {
     "unknown": {
-      "fine-regolith": 1.0
+      "fine-regolith": 1.0,
+      "blocky-ejecta": -1.0
     }
   },
   "classOrbital": {
@@ -52,8 +53,8 @@
     ]
   },
   "channelGain": {
-    "blocky-ejecta": 1.4,
-    "fine-regolith": -0.8
+    "blocky-ejecta": 2.6,
+    "fine-regolith": -0.6
   },
   "slopeGain": {
     "compacted-soil": 0.9,

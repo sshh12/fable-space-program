@@ -85,6 +85,8 @@ export interface StreamStats {
   cancelledTotal: number;
   /** Uploads that had to wait because a pool was full and nothing could be evicted. */
   stalledTotal: number;
+  /** Bakes the height authority flagged as computed on incomplete data. */
+  incompleteBakes: number;
   /** Largest number of tiles and milliseconds spent on uploads in one frame. */
   maxUploadTiles: number;
   maxUploadMs: number;
@@ -129,6 +131,7 @@ export class TileStreamer {
     evictedTotal: 0,
     cancelledTotal: 0,
     stalledTotal: 0,
+    incompleteBakes: 0,
     maxUploadTiles: 0,
     maxUploadMs: 0,
     lastUploadMs: 0,
@@ -228,7 +231,8 @@ export class TileStreamer {
     if (!job || job.id !== msg.id) return;
     slot.job = null;
     this.jobs.delete(job.id);
-    if (!msg.complete) this.fail(`terrain tile ${job.body.id} ${job.node.key.face}/${job.node.key.level}/${job.node.key.x}/${job.node.key.y}: baked on incomplete data`);
+    // A bake flagged incomplete is drawn all the same and counted: see docs/requests/terrain-render-1.md.
+    if (!msg.complete) this.s.incompleteBakes++;
     this.bakeSum += msg.bakeMs;
     this.imageSum += msg.imageMs;
     this.s.jobs++;

@@ -78,8 +78,9 @@ export function createSkyStandIn(lux: number): RenderFeature {
           for (let x = 0; x < w; x++) {
             // u = (mu_s + 0.2) / 1.2 (atmosphere_common chunk).
             const mu = ((x + 0.5) / w) * 1.2 - 0.2;
+            // Daylight above the horizon, a twilight that is gone at 7 degrees below it, nothing at night.
             const day = Math.max(mu, 0) ** 0.6;
-            const dusk = Math.min(1, Math.max(0, (mu + 0.2) / 0.2)) * 0.03;
+            const dusk = Math.min(1, Math.max(0, (mu + 0.12) / 0.12)) * 0.03;
             const e = lux * Math.max(day, dusk);
             const o = ((l * h + y) * w + x) * 4;
             data[o] = f32ToF16(e * 0.62);

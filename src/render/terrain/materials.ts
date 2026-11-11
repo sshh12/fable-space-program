@@ -50,6 +50,8 @@ export const SURFACE_PARAM_KEYS = [
   'detailScale0M',
   'detailScale1M',
   'detailScale2M',
+  'detailBias1',
+  'detailBias2',
   'detailAlbedoStrength',
   'detailNormalStrength',
   'detailHeightContrast',
@@ -71,6 +73,7 @@ export const SURFACE_PARAM_KEYS = [
   'nightTintR',
   'nightTintG',
   'nightTintB',
+  'nightMinMip',
   'apronRadiusM',
   'apronEdgeM',
   'lakeDepthM',
@@ -179,6 +182,7 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams): Float3
   f.set([p.detailAlbedoStrength, p.detailNormalStrength, p.detailHeightContrast, p.orbitalWavelengthM / macroRatio], o + 4);
   f.set([p.baseRoughness, p.toksvigGain, p.apronEdgeM, p.lakeDepthM], o + 8);
   f.set([p.shoreWetnessHeightM, p.freshAlbedoBoost, p.detailAoStrength, p.detailChroma], o + 12);
+  f.set([0, p.detailBias1, p.detailBias2, 0], o + 16);
   return f;
 }
 

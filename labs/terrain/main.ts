@@ -12,6 +12,7 @@
  *   workers=<n>             tile workers (default 6 in the lab)   delay=<ms> artificial streaming delay
  *   rocks=0                 no rock field                          ballast=<iterations> GPU ballast pass
  *   hud=0                   no text overlay
+ *   p.<body>.<key>=<n>      override a tunable of data/defs/render/<body>.surface.json (A/B comparisons)
  *
  * window.__terrain is the handle for specs.
  */
@@ -80,6 +81,11 @@ async function boot(): Promise<void> {
     },
   });
   const ctx = app.renderer.context;
+  for (const [key, value] of query) {
+    const m = /^p\.([\w-]+)\.(\w+)$/.exec(key);
+    const surface = m ? ctx.defs.bodies[m[1]!]?.render.surface : undefined;
+    if (m && surface) surface.params[m[2]!] = Number(value);
+  }
   terrain = createTerrainFeature(
     ctx,
     async () => {

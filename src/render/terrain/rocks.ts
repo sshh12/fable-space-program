@@ -47,7 +47,7 @@ struct RockBody {
 struct RockRecord {
   pos: vec4f,      // xyz = base point relative to the chunk origin (body-fixed, m), w = horizontal radius (m)
   q: vec4f,        // rock axes -> body-fixed (rock +Z = local up)
-  misc: vec4f,     // vertical semi-axis (m), chunk slot, texture offset, unused
+  misc: vec4f,     // vertical semi-axis (m), chunk slot, texture offset, elongation along the rock's x axis
   tint: vec4f,     // rgb = linear albedo
 }
 struct RockChunk { origin: vec4f, prevOrigin: vec4f }
@@ -72,7 +72,7 @@ fn rockVertex(position: vec3f, normal: vec3f, instance: u32) -> RockVertex {
   let centre = rockBody.rot * r.pos.xyz + c.origin.xyz;
   let range = min(r.pos.w * rockBody.p0.x, rockBody.p0.y);
   let grow = saturate((range - length(centre)) / (0.3 * range));
-  let scale = vec3f(r.pos.w, r.pos.w, r.misc.x);
+  let scale = vec3f(r.pos.w * r.misc.w, r.pos.w, r.misc.x);
   var o: RockVertex;
   o.local = position * scale * grow;
   o.fixed = quatRotate(r.q, o.local) + r.pos.xyz;
@@ -99,6 +99,7 @@ struct RockVaryings {
   @location(3) prevClip: vec4f,
   @location(4) @interpolate(flat) rock: u32,
   @location(5) model: vec3f,
+  @location(6) fixed: vec3f,
 }
 
 @vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @builtin(instance_index) instance: u32) -> RockVaryings {
@@ -113,6 +114,7 @@ struct RockVaryings {
   o.prevClip = frame.prevViewProj * vec4f(rockBody.prevRot * v.fixed + c.prevOrigin.xyz, 1.0);
   o.rock = v.rock;
   o.model = position;
+  o.fixed = v.fixed;
   return o;
 }
 
@@ -144,8 +146,14 @@ struct RockVaryings {
     rough += w[axis] * b.b;
     ao += w[axis] * b.a;
   }
-  // The detail gradient lives in rock axes: bring it to the body-fixed frame, then perturb the normal.
-  let nf = normalize(in.normal);
+  // Faces of a rock are flat: most of the shading normal is the face normal (from the position
+  // derivatives), the rest the smooth vertex normal. Then the detail gradient (rock axes) perturbs it.
+  let nv = normalize(in.normal);
+  var face = cross(dpdx(in.fixed), dpdy(in.fixed));
+  let fl = length(face);
+  if (fl > 0.0) { face /= fl; } else { face = nv; }
+  if (dot(face, nv) < 0.0) { face = -face; }
+  let nf = normalize(mix(nv, face, 0.75));
   var g = quatRotate(r.q, grad);
   g -= nf * dot(g, nf);
   let n = rockBody.rot * normalize(nf - g);
@@ -405,7 +413,9 @@ export class RockRenderer {
       out[o + 8] = cap;
       out[o + 9] = c.slot;
       out[o + 10] = u1 * 7;
-      out[o + 11] = rock.variant % ROCK_VARIANTS;
+      // Elongated along one horizontal axis (never narrower than the collision cap).
+      out[o + 11] = 1 + 0.5 * hashToUnit(hash4(rock.seed, 4, 0, 0));
+      out[o + 15] = rock.variant % ROCK_VARIANTS;
       const shade = scale * (0.85 + 0.3 * u3);
       out[o + 12] = Math.min(1, tint[0] * shade);
       out[o + 13] = Math.min(1, tint[1] * shade);
@@ -604,7 +614,7 @@ export class RockRenderer {
         if (dist >= Math.min(radius * b.rangePerRadius, range)) continue;
         const pixels = (2 * radius) / (Math.max(dist, 0.05) * pixelAngle);
         const lod = pixels > 90 ? 0 : pixels > 22 ? 1 : 2;
-        this.buckets[d[o + 11]! * ROCK_LODS + lod]!.push(c.base + i);
+        this.buckets[d[o + 15]! * ROCK_LODS + lod]!.push(c.base + i);
       }
     }
     for (let k = 0; k < this.buckets.length; k++) {
@@ -673,7 +683,7 @@ export class RockRenderer {
         const margin = 1 + (2 * radius) / (cascade.texelSize * 1024);
         if (Math.abs(cx) > margin || Math.abs(cy) > margin) continue;
         const lod = radius > 24 * cascade.texelSize ? 1 : 2;
-        this.buckets[d[o + 11]! * ROCK_LODS + lod]!.push(c.base + i);
+        this.buckets[d[o + 15]! * ROCK_LODS + lod]!.push(c.base + i);
       }
     }
     for (let k = 0; k < this.buckets.length; k++) {

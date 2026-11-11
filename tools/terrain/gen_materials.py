@@ -159,7 +159,7 @@ def pahoehoe(n: int) -> Layer:
     # Glassy skin (silvery grey) where the crust is intact, rusty oxidation in patches, dark cracks.
     albedo = albedo * (1.0 + 0.55 * patches[..., None]) + np.array([0.022, 0.010, 0.002]) * smoothstep(0.3, 1.2, spectral(n, 20, 2.2, 2, 14))[..., None]
     albedo *= (1.0 - 0.6 * crack)[..., None] * (0.9 + 0.2 * unit(micro))[..., None]
-    rough = 0.62 - 0.22 * patches + 0.3 * crack + 0.05 * unit(micro)
+    rough = 0.84 - 0.14 * patches + 0.12 * crack + 0.04 * unit(micro)
     return Layer(height, albedo, rough, rms_slope=0.28)
 
 
@@ -248,7 +248,7 @@ def concrete_apron(n: int) -> Layer:
     albedo *= (1.0 - 0.3 * stains)[..., None] * (1.0 - 0.25 * streak)[..., None] * (1.0 - 0.7 * crack)[..., None]
     albedo = albedo * (1 - 0.5 * np.clip(agg, 0, 1)[..., None]) + 0.5 * np.clip(agg, 0, 1)[..., None] * np.array([0.20, 0.19, 0.18])
     albedo += np.array([0.030, 0.012, 0.0]) * smoothstep(1.0, 2.2, spectral(n, 61, 2.6, 2, 12))[..., None]
-    rough = 0.82 - 0.12 * stains + 0.1 * crack
+    rough = 0.9 - 0.06 * stains + 0.06 * crack
     return Layer(height, albedo, rough, rms_slope=0.06)
 
 
@@ -277,7 +277,7 @@ def blocky_ejecta(n: int) -> Layer:
     height = 0.3 * soil + 0.08 * grit
     albedo = tint((0.125, 0.122, 0.115), n) * (0.93 + 0.14 * unit(grit))[..., None]
     rough = np.full((n, n), 0.94)
-    for i, (count, share, lift) in enumerate(((16, 0.55, 1.0), (110, 0.4, 0.55), (800, 0.3, 0.25))):
+    for i, (count, share, lift) in enumerate(((70, 0.3, 1.0), (420, 0.32, 0.6), (1800, 0.3, 0.3))):
         f1, f2, ids, _ = worley(n, count, 83 + i * 5, jitter=1.0)
         r = cell_random(ids, 84 + i * 5)
         tilt_a = cell_random(ids, 85 + i * 5) * 2 * np.pi
@@ -294,18 +294,22 @@ def blocky_ejecta(n: int) -> Layer:
 
 
 def compacted_soil(n: int) -> Layer:
-    """Compacted, cloddy soil: a firm crust broken into clods, slightly darker than loose soil."""
-    f1, f2, ids, _ = worley(n, 60, 91, jitter=0.95)
-    wx = spectral(n, 92, 2.4, 2, 20) * n * 0.02
-    wy = spectral(n, 93, 2.4, 2, 20) * n * 0.02
-    edge = warp(f2 - f1, wx, wy)
-    idw = warp_ids(ids, wx, wy)
-    clod = smoothstep(0.0, 0.16, edge) * (0.7 + 0.3 * cell_random(idw, 94))
-    fine = spectral(n, 95, 1.4, 16, 256)
-    height = 0.65 * clod + 0.25 * spectral(n, 96, 2.5, 1, 12) + 0.1 * fine
-    albedo = tint((0.108, 0.105, 0.099), n) * (0.92 + 0.14 * unit(fine))[..., None] * (1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.1, edge)))[..., None]
-    rough = 0.9 + 0.05 * unit(fine)
-    return Layer(height, albedo, rough, rms_slope=0.2)
+    """Compacted, cloddy soil: a firm, lumpy crust of clods of many sizes, slightly darker than loose soil."""
+    height = 0.45 * spectral(n, 96, 2.4, 1, 14)
+    albedo_mod = np.zeros((n, n))
+    for i, (count, share, lift) in enumerate(((160, 0.45, 0.5), (900, 0.5, 0.3), (3600, 0.5, 0.16))):
+        f1, f2, ids, _ = worley(n, count, 91 + i * 4, jitter=1.0)
+        r = cell_random(ids, 92 + i * 4)
+        # A clod: a rounded lump that fills part of its cell.
+        size = 0.35 + 0.35 * cell_random(ids, 93 + i * 4)
+        lump = (r < share) * np.clip(1.0 - (f1 / size) ** 2, 0.0, 1.0) ** 0.7
+        height = height + lift * lump
+        albedo_mod += (0.5 - cell_random(ids, 94 + i * 4)) * 0.1 * (lump > 0.05)
+    fine = spectral(n, 95, 1.2, 24, 256)
+    height = height + 0.07 * fine
+    albedo = tint((0.108, 0.105, 0.099), n) * (0.93 + 0.14 * unit(fine))[..., None] * (1.0 + albedo_mod)[..., None]
+    rough = 0.92 + 0.04 * unit(fine)
+    return Layer(height, albedo, rough, rms_slope=0.22)
 
 
 # ------------------------------------------------------------------------------------------------- sets
@@ -349,9 +353,11 @@ SETS = {
     },
     "lunar-regolith": {
         "materials": [("fine-regolith", fine_regolith), ("blocky-ejecta", blocky_ejecta), ("compacted-soil", compacted_soil)],
-        "classWeights": {"unknown": {"fine-regolith": 1.0}},
+        # Ejecta shows only where the bake's freshness channel is well above half (fresh craters and their
+        # blankets), not on every faint trace of it.
+        "classWeights": {"unknown": {"fine-regolith": 1.0, "blocky-ejecta": -1.0}},
         "classOrbital": {"unknown": [0.035, 0.01]},
-        "channelGain": {"blocky-ejecta": 1.4, "fine-regolith": -0.8},
+        "channelGain": {"blocky-ejecta": 2.6, "fine-regolith": -0.6},
         "slopeGain": {"compacted-soil": 0.9, "fine-regolith": -0.6},
         "noiseGain": {"compacted-soil": 0.25},
         "apronMaterial": None,
