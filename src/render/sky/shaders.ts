@@ -11,8 +11,8 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
-import { SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX, STAR_WING_ALPHA_PX, STAR_WING_FLOOR, STAR_WING_MAX_PX, STAR_WING_SHARE } from './photometry';
+import { BLADE_COUNT, GHOSTS, POLY_EQ_CIRCLE, RAY_REACH, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
+import { IMPOSTOR_KERNEL_CUT, SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX, STAR_WING_ALPHA_PX, STAR_WING_FLOOR, STAR_WING_MAX_PX, STAR_WING_SHARE } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 
@@ -217,11 +217,13 @@ struct StarOut {
  * photometric function (Lambert with the albedo of its geometric albedo, or its Hapke function) and spread with
  * the point-spread function, so the image carries the phase shape (a crescent a few pixels across is an
  * off-centre sliver), does not depend on the pixel grid or on the temporal resolve, and becomes a star-like
- * point as the body shrinks. Its pixels are normalised (in the vertex stage) to add up to the body's
- * phase-integrated flux. Drawn in the transparent stage so that it can replace the body's own geometry: on a
- * pixel whose depth belongs to the body the blend is (1 - a) x geometry + image, a = weight x (the whole disc
- * for a small body, its sunlit part for a larger one, so the night side keeps what the geometry shows there);
- * elsewhere the image is added.
+ * point as the body shrinks. Its pixels add up to the body's phase-integrated flux (the grid's sum is normalised
+ * to it on the CPU for coarse grids; fine grids are within 2 % by themselves). Each pixel only visits the
+ * samples within 2.8 sigma of it: a fragment's work is a few dozen samples whatever the size of the body.
+ * Drawn in the transparent stage so that it can replace the body's own geometry: on a pixel whose depth belongs
+ * to the body the blend is (1 - a) x geometry + image, a = weight x (the whole disc for a small body, its
+ * sunlit part for a larger one, so the night side keeps what the geometry shows there); elsewhere the image is
+ * added.
  */
 export const IMPOSTOR_WGSL = (bindings: string): string => /* wgsl */ `
 #include "frame"
@@ -229,39 +231,36 @@ export const IMPOSTOR_WGSL = (bindings: string): string => /* wgsl */ `
 ${bindings}
 ${CAP_WGSL}
 const WING_ALPHA2 = ${f(STAR_WING_ALPHA_PX * STAR_WING_ALPHA_PX)};
+const KERNEL_CUT = ${f(IMPOSTOR_KERNEL_CUT)};
+// A Gaussian cut at KERNEL_CUT sigma holds 1 - exp(-cut^2 / 2) of its integral: the kernel is scaled back to 1.
+const KERNEL_NORM = ${f(1 / (1 - Math.exp(-0.5 * IMPOSTOR_KERNEL_CUT * IMPOSTOR_KERNEL_CUT)))};
 struct Impostor {
   centre: vec4f,   // xyz = body centre relative to the camera (ROOT, m), w = radius (m)
   axis: vec4f,     // xy = unit direction of the sun in the image plane at the body (x right, y up), z = phase angle (rad), w = weight of the image
-  light: vec4f,    // rgb = sunlight at the body (colour x lux x eclipse), a = 1 for a Hapke surface
-  albedo: vec4f,   // rgb = Lambert albedo, or the Hapke single-scattering albedo
-  hapke: vec4f,    // b0, hS, bP, cP
-  flux: vec4f,     // rgb = phase-integrated radiance of the disc per unit radius^2 (the reference of the normalisation), a = share of the wings
+  scale: vec4f,    // rgb = radiance of a sample per unit of its photometric term: sunlight x albedo / pi (Lambert) or sunlight x w / (4 pi) (Hapke); a = 1 for Hapke
+  gamma: vec4f,    // Hapke: xyz = sqrt(1 - w) per channel, w = (1 + B(g)) P(g) (opposition surge x phase function at this phase angle)
+  flux: vec4f,     // rgb = phase-integrated radiance of the disc per unit radius^2, a = share of the wings
   shape: vec4f,    // x = radius (px), y = quad half size (px), z = distance to the near side (m), w = kernel sigma (px)
-  lune: vec4f,     // x = rows, y = samples of the equatorial row, z = 0 whole disc .. 1 sunlit part only (alpha over the geometry)
-  wing: vec4f,     // x = amplitude, y = floor, z = radius (px) of the wings (photometry.ts starWing)
+  lune: vec4f,     // x = rows, y = samples of the equatorial row, z = 0 whole disc .. 1 sunlit part only (alpha over the geometry), w = normalisation of the grid's sum
+  wing: vec4f,     // x = amplitude, y = floor, z = radius (px) of the wings (photometry.ts starWing), w = photocentre along the sun's direction (px)
 }
 struct Impostors { count: vec4u, list: array<Impostor, 16> }
 @group(2) @binding(0) var<uniform> impostors: Impostors;
 
-/// Hapke reflectance x mu0 (photometry.ts hapkeBrdfMu0; rendering-design 8.2).
-fn farHapke(w: vec3f, mu0: f32, mu: f32, g: f32, p: vec4f) -> vec3f {
-  let B = p.x / (1.0 + tan(g * 0.5) / p.y);
-  let cg = cos(g);
-  let P = 1.0 + p.z * cg + p.w * (1.5 * cg * cg - 0.5);
-  let gam = sqrt(vec3f(1.0) - w);
-  let H0 = (1.0 + 2.0 * mu0) / (vec3f(1.0) + 2.0 * mu0 * gam);
-  let H = (1.0 + 2.0 * mu) / (vec3f(1.0) + 2.0 * mu * gam);
-  return w / (4.0 * PI) * (mu0 / (mu0 + mu)) * ((1.0 + B) * P + H0 * H - 1.0);
-}
-/// Radiance (rgb) of the sample at latitude cosine a, longitude psi from the bright limb, times its area on the unit disc.
+/// Radiance (rgb) of the sample at latitude cosine a, longitude psi from the bright limb, times its area on the
+/// unit disc (photometry.ts farBodyRadiance: Lambert, or the Hapke function of rendering-design 8.2).
 fn farSample(im: Impostor, a: f32, psi: f32, cell: f32) -> vec3f {
-  let g = im.axis.z;
-  let mu = a * sin(psi);
-  let mu0 = a * sin(psi + g);
+  let sp = sin(psi);
+  let mu = a * sp;
+  let mu0 = a * sin(psi + im.axis.z);
   if (mu0 <= 0.0 || mu <= 0.0) { return vec3f(0.0); }
-  let dA = a * a * sin(psi) * cell;
-  if (im.light.a > 0.5) { return im.light.rgb * farHapke(im.albedo.rgb, mu0, mu, g, im.hapke) * dA; }
-  return im.light.rgb * im.albedo.rgb * (mu0 / PI * dA);
+  let dA = a * a * sp * cell;
+  if (im.scale.a > 0.5) {
+    let H0 = (1.0 + 2.0 * mu0) / (vec3f(1.0) + 2.0 * mu0 * im.gamma.xyz);
+    let H = (1.0 + 2.0 * mu) / (vec3f(1.0) + 2.0 * mu * im.gamma.xyz);
+    return im.scale.rgb * (mu0 / (mu0 + mu) * dA) * (vec3f(im.gamma.w - 1.0) + H0 * H);
+  }
+  return im.scale.rgb * (mu0 * dA);
 }
 fn rowSamples(cols: f32, a: f32) -> i32 { return max(2, i32(ceil(cols * a))); }
 
@@ -269,47 +268,21 @@ struct VOut {
   @builtin(position) pos: vec4f,
   @location(0) offsetPx: vec2f,                       // pixel offset from the projected centre (x right, y down)
   @location(1) @interpolate(flat) index: u32,
-  @location(2) @interpolate(flat) norm: f32,          // reference flux / grid flux
-  @location(3) @interpolate(flat) photocentre: f32,   // px from the centre along the sun's direction
 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   var o: VOut;
-  let im = impostors.list[ii];
-  let d = length(im.centre.xyz);
-  let dir = im.centre.xyz / d;
+  let d = length(impostors.list[ii].centre.xyz);
+  let dir = impostors.list[ii].centre.xyz / d;
   // Clip position of the near side of the body: its depth is what the geometry pixels of the body hold.
-  let clip = frame.viewProj * vec4f(dir * im.shape.z, 1.0);
+  let clip = frame.viewProj * vec4f(dir * impostors.list[ii].shape.z, 1.0);
   o.index = ii;
-  o.norm = 0.0;
-  o.photocentre = 0.0;
   if (clip.w <= 0.0) {
     o.pos = vec4f(0.0, 0.0, -1.0, 1.0);
     o.offsetPx = vec2f(0.0);
     return o;
   }
-  // What the grid adds up to, and where its light is centred (the same for all four vertices).
-  let rows = i32(im.lune.x);
-  let dBeta = PI / im.lune.x;
-  let span = PI - im.axis.z;
-  var sum = 0.0;
-  var cx = 0.0;
-  for (var j = 0; j < rows; j++) {
-    let a = cos(-0.5 * PI + (f32(j) + 0.5) * dBeta);
-    let nj = rowSamples(im.lune.y, a);
-    let dPsi = span / f32(nj);
-    for (var i = 0; i < nj; i++) {
-      let psi = (f32(i) + 0.5) * dPsi;
-      let l = luminance(farSample(im, a, psi, dPsi * dBeta));
-      sum += l;
-      cx += l * a * cos(psi);
-    }
-  }
-  if (sum > 0.0) {
-    o.norm = luminance(im.flux.rgb) / sum;
-    o.photocentre = im.shape.x * cx / sum;
-  }
   let corner = vec2f(f32(vi & 1u), f32(vi >> 1u)) * 2.0 - 1.0;
-  let off = corner * im.shape.y;
+  let off = corner * impostors.list[ii].shape.y;
   o.pos = vec4f(clip.xy + off * vec2f(2.0, -2.0) * frame.renderSize.zw * clip.w, clip.z, clip.w);
   o.offsetPx = off;
   return o;
@@ -323,40 +296,47 @@ struct VOut {
   let p = vec2f(in.offsetPx.x, -in.offsetPx.y);
   let pp = vec2f(dot(p, t), dot(p, vec2f(-t.y, t.x))) / im.shape.x;
   let sigma = im.shape.w / im.shape.x;
-  let s3 = 3.0 * sigma;
+  let cut = KERNEL_CUT * sigma;
   let rows = i32(im.lune.x);
   let dBeta = PI / im.lune.x;
   let span = PI - im.axis.z;
-  // Rows within 3 sigma of the pixel, and in each row the samples within 3 sigma.
-  let jLo = clamp(i32(floor((asin(clamp(pp.y - s3, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
-  let jHi = clamp(i32(ceil((asin(clamp(pp.y + s3, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
-  let k = 1.0 / (TWO_PI * sigma * sigma);
+  // Rows within the kernel's reach of the pixel, and in each row the samples within it.
+  let jLo = clamp(i32(floor((asin(clamp(pp.y - cut, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
+  let jHi = clamp(i32(ceil((asin(clamp(pp.y + cut, -1.0, 1.0)) + 0.5 * PI) / dBeta - 0.5)), 0, rows - 1);
+  let k = KERNEL_NORM / (TWO_PI * sigma * sigma);
   var core = vec3f(0.0);
   var lit = 0.0;
   for (var j = jLo; j <= jHi; j++) {
     let beta = -0.5 * PI + (f32(j) + 0.5) * dBeta;
     let a = cos(beta);
-    let cLo = (pp.x - s3) / a;
+    let y = sin(beta);
+    let dy = pp.y - y;
+    // Half width of the kernel's disc along this row.
+    let reach2 = cut * cut - dy * dy;
+    if (reach2 <= 0.0) { continue; }
+    let reach = sqrt(reach2);
+    let cLo = (pp.x - reach) / a;
     if (cLo > 1.0) { continue; }
-    let psiLo = acos(clamp((pp.x + s3) / a, -1.0, 1.0));
+    let psiLo = acos(clamp((pp.x + reach) / a, -1.0, 1.0));
     if (psiLo > span) { continue; }
     let psiHi = acos(clamp(cLo, -1.0, 1.0));
     let nj = rowSamples(im.lune.y, a);
     let dPsi = span / f32(nj);
     let iLo = clamp(i32(floor(psiLo / dPsi - 0.5)), 0, nj - 1);
     let iHi = clamp(i32(ceil(psiHi / dPsi - 0.5)), 0, nj - 1);
-    let y = sin(beta);
     for (var i = iLo; i <= iHi; i++) {
       let psi = (f32(i) + 0.5) * dPsi;
-      let dq = pp - vec2f(a * cos(psi), y);
-      let g = k * exp(-0.5 * dot(dq, dq) / (sigma * sigma));
+      let dx = pp.x - a * cos(psi);
+      let d2 = dx * dx + dy * dy;
+      if (d2 > cut * cut) { continue; }
+      let g = k * exp(-0.5 * d2 / (sigma * sigma));
       core += farSample(im, a, psi, dPsi * dBeta) * g;
       lit += a * a * sin(psi) * dPsi * dBeta * g;
     }
   }
-  var lum = core * in.norm * (1.0 - im.flux.a);
+  var lum = core * im.lune.w * (1.0 - im.flux.a);
   // Wings of a point-like body: the star's, about the photocentre.
-  let dc = p - t * in.photocentre;
+  let dc = p - t * im.wing.w;
   let r2 = dot(dc, dc);
   if (im.flux.a > 0.0 && r2 < im.wing.z * im.wing.z) {
     lum += im.flux.rgb * (im.shape.x * im.shape.x) * im.wing.x * (pow(1.0 + r2 / WING_ALPHA2, -1.5) - im.wing.y);
@@ -479,6 +459,7 @@ const SPIKE_COUNT = ${SPIKE_COUNT};
 const BLADE_COUNT = ${BLADE_COUNT};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
 const POLY_EQ_CIRCLE = ${f(POLY_EQ_CIRCLE)};
+const RAY_REACH = ${f(RAY_REACH)};
 struct FlareState { visible: vec4f, transmittance: vec4f }
 struct Blade {
   dir: vec4f,     // x = sin, y = cos of the edge normal's angle in the image plane (from up towards right), z = its angular error (rad), w = ray amplitude
@@ -522,8 +503,9 @@ fn ndcRay(n: vec2f) -> vec3f {
 }
 fn smooth01(x: f32) -> f32 { return smoothstep(0.0, 1.0, x); }
 
-/// One channel of a ghost at tangent-plane point q (rad; right, up) from its centre (flare.ts ghostShape).
-fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> f32 {
+/// One channel of a ghost at tangent-plane point q (rad; right, up) from its centre (flare.ts ghostShape):
+/// x = the image, y = distance measure of the iris image at q, z = distance from the cat's-eye centre.
+fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> vec3f {
   var poly = -1.0e9;
   for (var b = 0; b < BLADE_COUNT; b++) { poly = max(poly, gh.pos.w * dot(q, flare.blades[b].dir.xy)); }
   let R = gh.pos.z;
@@ -532,8 +514,9 @@ fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> f32 {
   let mask = smooth01(0.5 - (d - R) / (2.0 * s));
   let fill = 1.0 + gh.shape.z * (smooth01((d / R - 0.55) / 0.45) - 0.5);
   let grad = max(0.0, 1.0 + gh.shape.w * dot(q, axis));
-  let clip = smooth01(0.5 - (length(q + axis * gh.extra.y) - gh.extra.z) / (2.0 * s));
-  return mask * fill * grad * clip;
+  let dv = length(q + axis * gh.extra.y);
+  let clip = smooth01(0.5 - (dv - gh.extra.z) / (2.0 * s));
+  return vec3f(mask * fill * grad * clip, d, dv);
 }
 
 @fragment fn fs(in: VOut) -> @location(0) vec4f {
@@ -553,27 +536,31 @@ fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> f32 {
     // Glare: core + theta^-2 skirt + veil.
     let xc = theta / flare.glare.x;
     let xs = theta / flare.glare.z;
-    let glare = flare.glare.y * pow(1.0 + xc * xc, -1.5) + flare.glare.w / (1.0 + xs * xs) + flare.sun.y;
-    // Rays: azimuth about the sun in the image plane, from the camera's up towards its right.
-    let toS = normalize(dir - s * dot(dir, s));
-    let up = normalize(frame.cameraUp.xyz - s * dot(frame.cameraUp.xyz, s));
-    let rt = cross(s, up);
-    let phi = atan2(dot(toS, rt), dot(toS, up));
-    let seg = TWO_PI / f32(SPIKE_COUNT);
-    let j = round(phi / seg);
-    let m = (i32(j) + SPIKE_COUNT) % SPIKE_COUNT;
-    // Rays 2b and 2b + BLADE_COUNT belong to blade b (both directions perpendicular to its edge).
-    let blade = flare.blades[select((m + BLADE_COUNT) % SPIKE_COUNT, m, (m & 1) == 0) / 2];
-    let across = theta * sin(phi - j * seg - blade.dir.z);
-    let w0 = flare.rays.z;
-    let fan = blade.ray.y * theta;
-    let sigma = sqrt(w0 * w0 + fan * fan);
-    // Along: flat inside the knee, theta^-2 beyond, ending at the blade's length; angles scale with wavelength.
-    let t = vec3f(theta) / SPIKE_LAMBDA;
-    let tl = t / blade.ray.x;
-    let tk = t / flare.rays.x;
-    let along = exp(-tl * tl) / (vec3f(1.0) + tk * tk) / SPIKE_LAMBDA;
-    let rays = flare.rays.y * blade.dir.w * along * (exp(-0.5 * across * across / (sigma * sigma)) / (2.5066282746 * sigma));
+    let vc = 1.0 + xc * xc;
+    let glare = flare.glare.y / (vc * sqrt(vc)) + flare.glare.w / (1.0 + xs * xs) + flare.sun.y;
+    var rays = vec3f(0.0);
+    if (theta < RAY_REACH) {
+      // Rays: azimuth about the sun in the image plane, from the camera's up towards its right.
+      let toS = normalize(dir - s * dot(dir, s));
+      let up = normalize(frame.cameraUp.xyz - s * dot(frame.cameraUp.xyz, s));
+      let rt = cross(s, up);
+      let phi = atan2(dot(toS, rt), dot(toS, up));
+      let seg = TWO_PI / f32(SPIKE_COUNT);
+      let j = round(phi / seg);
+      let m = (i32(j) + SPIKE_COUNT) % SPIKE_COUNT;
+      // Rays 2b and 2b + BLADE_COUNT belong to blade b (both directions perpendicular to its edge).
+      let blade = flare.blades[select((m + BLADE_COUNT) % SPIKE_COUNT, m, (m & 1) == 0) / 2];
+      let across = theta * sin(phi - j * seg - blade.dir.z);
+      let w0 = flare.rays.z;
+      let fan = blade.ray.y * theta;
+      let sigma = sqrt(w0 * w0 + fan * fan);
+      // Along: flat inside the knee, theta^-2 beyond, ending at the blade's length; angles scale with wavelength.
+      let t = vec3f(theta) / SPIKE_LAMBDA;
+      let tl = t / blade.ray.x;
+      let tk = t / flare.rays.x;
+      let along = exp(-tl * tl) / (vec3f(1.0) + tk * tk) / SPIKE_LAMBDA;
+      rays = flare.rays.y * blade.dir.w * along * (exp(-0.5 * across * across / (sigma * sigma)) / (2.5066282746 * sigma));
+    }
     L = source * (vec3f(glare) + rays);
   } else {
     let gh = flare.ghosts[in.index - 1u];
@@ -587,9 +574,15 @@ fn ghostShape(gh: Ghost, q: vec2f, axis: vec2f) -> f32 {
     var p = vec2f(0.0);
     if (tvl > 0.0) { p = vec2f(dot(tv, rtc), dot(tv, upc)) * (a / tvl); }
     let axis = flare.sun.zw;
-    // Lateral colour: the red and blue images are displaced along the axis-to-sun line.
-    let sh = axis * gh.extra.x;
-    let img = vec3f(ghostShape(gh, p + sh, axis), ghostShape(gh, p, axis), ghostShape(gh, p - sh, axis));
+    // Lateral colour: the red and blue images are displaced along the axis-to-sun line. Well inside the iris image
+    // and the cat's-eye clip the three differ only by that shift of the fill: the green image stands for all
+    // (flare.ts ghostImage).
+    let green = ghostShape(gh, p, axis);
+    var img = vec3f(green.x);
+    if (green.y > gh.pos.z - gh.shape.x - gh.extra.x || green.z > gh.extra.z - gh.shape.x - gh.extra.x) {
+      let sh = axis * gh.extra.x;
+      img = vec3f(ghostShape(gh, p + sh, axis).x, green.x, ghostShape(gh, p - sh, axis).x);
+    }
     L = source * gh.tint.rgb * gh.tint.a * img;
   }
   let c = applyAtmosphere(uv, 0.0, L * frame.exposure.x, 0.0);

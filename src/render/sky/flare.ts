@@ -81,6 +81,8 @@ export const STARBURST: StarburstDef = {
   rayDiscSigma: 0.5,
 };
 
+/** Angle from the sun (rad) beyond which the rays are not evaluated: the longest has fallen by e^-14 there. */
+export const RAY_REACH = 0.3;
 /** Relative wavelength per channel (R, G, B): a ray's angles scale with it (red rays are a little longer). */
 export const SPIKE_LAMBDA: Vec3Tuple = [1.04, 1.0, 0.95];
 
@@ -114,9 +116,10 @@ const normaliseTint = (c: Vec3Tuple): Vec3Tuple => {
 };
 
 /**
- * Twelve ghosts of very different size and strength. Energies are of the order of two coated reflections
- * (1e-5 of the source and less) into areas of 5e-4 to 0.3 sr: at the exposure of a sunlit scene the brightest
- * is about an eighth of mid-grey and most are below the display's black.
+ * Eleven ghosts of very different size and strength. Energies are of the order of two coated reflections
+ * (1e-5 of the source and less) into areas of 5e-4 to 0.06 sr: at the exposure of a sunlit scene the brightest
+ * is about a tenth of mid-grey and most are a few display levels. (Stray light spread wider than that is the
+ * veil of the starburst.)
  */
 export const GHOSTS: readonly GhostDef[] = [
   { k: -0.28, radius: 0.012, energy: 1.5e-6, tint: normaliseTint([0.75, 0.95, 1.0]), blur: 1.2, round: 0.25, rim: -0.3, gradient: 0.3, chroma: 0.1, flip: 1, vignette: 0.3 },
@@ -130,7 +133,6 @@ export const GHOSTS: readonly GhostDef[] = [
   { k: 0.55, radius: 0.044, energy: 5.0e-6, tint: normaliseTint([0.6, 0.95, 0.8]), blur: 2.2, round: 0.25, rim: -0.25, gradient: 0.35, chroma: 0.05, flip: -1, vignette: 0.6 },
   { k: 0.78, radius: 0.011, energy: 1.0e-6, tint: normaliseTint([0.9, 0.9, 1.0]), blur: 1.1, round: 0.35, rim: -0.4, gradient: 0.2, chroma: 0.12, flip: 1, vignette: 0.3 },
   { k: 1.42, radius: 0.07, energy: 7.0e-6, tint: normaliseTint([0.7, 0.6, 1.0]), blur: 3.0, round: 0.3, rim: 0.45, gradient: 0.4, chroma: 0.04, flip: -1, vignette: 0.8 },
-  { k: -2.3, radius: 0.3, energy: 4.0e-5, tint: normaliseTint([0.96, 0.98, 1.0]), blur: 8.0, round: 0.5, rim: 0.15, gradient: 0.5, chroma: 0.02, flip: 1, vignette: 1.0 },
 ];
 
 export const FLARE_TOTAL_ENERGY =
@@ -172,6 +174,7 @@ export const glareSkirt = (theta: number): number => 1 / (1 + (theta / STARBURST
  * unnormalised: amplitude x along(theta / lambda) / lambda x a unit-integral Gaussian across.
  */
 export function rayProfile(theta: number, phi: number, sunRadius: number, lambda: number): number {
+  if (theta >= RAY_REACH) return 0;
   const seg = (2 * Math.PI) / SPIKE_COUNT;
   const j = Math.round(phi / seg);
   const blade = BLADES[spikeBlade(j)]!;
@@ -230,6 +233,32 @@ export function ghostShape(g: GhostDef, f: GhostFrame, px: number, py: number, c
   return mask * fill * grad * clip;
 }
 
+/**
+ * The three channels of a ghost at (px, py). Where the green image is well inside the iris image and the
+ * cat's-eye clip (further from both edges than the blur and the lateral colour shift), the three images differ
+ * only by that shift of the fill: the green one stands for all (the shader's shortcut: two thirds of a ghost's
+ * pixels are interior).
+ */
+export function ghostImage(g: GhostDef, f: GhostFrame, px: number, py: number): Vec3Tuple {
+  const lateral = ghostLateral(f.offAxis);
+  const R = g.radius;
+  const s = g.blur * f.sunRadius;
+  const cs = g.chroma * R * lateral;
+  let poly = -Infinity;
+  for (let b = 0; b < BLADE_COUNT; b++) {
+    const a = bladeAngle(b);
+    poly = Math.max(poly, g.flip * (px * Math.sin(a) + py * Math.cos(a)));
+  }
+  const d = poly + (Math.hypot(px, py) / POLY_EQ_CIRCLE - poly) * g.round;
+  const shift = g.vignette * f.offAxis * R;
+  const dv = Math.hypot(px + f.axis[0] * shift, py + f.axis[1] * shift);
+  if (d <= R - s - cs && dv <= GHOST_CLIP_RADIUS * R + s - cs) {
+    const v = ghostShape(g, f, px, py, 0);
+    return [v, v, v];
+  }
+  return [ghostShape(g, f, px, py, -1), ghostShape(g, f, px, py, 0), ghostShape(g, f, px, py, 1)];
+}
+
 /** Angular radius (rad) beyond which a ghost is zero in every channel. */
 export const ghostSupport = (g: GhostDef, sunRadius: number): number => (g.radius + g.blur * sunRadius) / POLY_MIN_COS + g.chroma * g.radius;
 
@@ -258,8 +287,7 @@ export function rayIntegral(lambda: number, sunRadius: number): number {
   const lb = Math.log(Math.PI);
   for (let i = 0; i < nt; i++) {
     const th = Math.exp(la + ((i + 0.5) * (lb - la)) / nt);
-    // The rays end within a few lengths: nothing to add beyond.
-    if (th > 0.8) break;
+    if (th >= RAY_REACH) break;
     let ring = 0;
     for (let j = 0; j < np; j++) ring += rayProfile(th, ((j + 0.5) * 2 * Math.PI) / np, sunRadius, lambda);
     s += ((ring * 2 * Math.PI) / np) * Math.sin(th) * ((th * (lb - la)) / nt);
@@ -381,7 +409,8 @@ export function flareRadiance(g: FlareGeometry, d: Vec3, pixelAngle: number): Ve
     const tl = Math.hypot(t.x, t.y, t.z);
     const px = tl > 0 ? (a * dot3(t, bc.rt)) / tl : 0;
     const py = tl > 0 ? (a * dot3(t, bc.up)) / tl : 0;
-    for (let c = 0; c < 3; c++) out[c] = out[c]! + gh.energy * gh.tint[c]! * n.ghosts[i]! * ghostShape(gh, gf, px, py, c - 1);
+    const img = ghostImage(gh, gf, px, py);
+    for (let c = 0; c < 3; c++) out[c] = out[c]! + gh.energy * gh.tint[c]! * n.ghosts[i]! * img[c]!;
   });
   return out;
 }

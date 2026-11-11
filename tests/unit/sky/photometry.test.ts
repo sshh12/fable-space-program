@@ -20,6 +20,8 @@ import {
   hapkeSingleScattering,
   impostorKernelPx,
   impostorLune,
+  IMPOSTOR_SAMPLE_SPACING_PX,
+  luneSampleCount,
   impostorWeight,
   impostorWingShare,
   IMPOSTOR_DIAMETER_NONE_PX,
@@ -206,8 +208,10 @@ describe('distant bodies', () => {
     }
     // Lattice, kernel and wings change continuously with the size.
     expect(impostorLune(0.5, 0)).toEqual({ rows: 8, cols: 4 });
-    expect(impostorLune(20, 0).rows).toBe(Math.ceil((Math.PI * 10) / 0.5));
-    expect(impostorLune(20, 2.5).cols).toBe(Math.ceil(((Math.PI - 2.5) * 10) / 0.5));
+    expect(impostorLune(20, 0).rows).toBe(Math.ceil((Math.PI * 10) / IMPOSTOR_SAMPLE_SPACING_PX));
+    expect(impostorLune(20, 2.5).cols).toBe(Math.ceil(((Math.PI - 2.5) * 10) / IMPOSTOR_SAMPLE_SPACING_PX));
+    expect(luneSampleCount(0.5, 0)).toBe(farBodyLuneSum({ lambertAlbedo: [1, 1, 1], hapke: null }, 0.5, 0).samples);
+    expect(luneSampleCount(20, 2.18)).toBe(farBodyLuneSum({ lambertAlbedo: [1, 1, 1], hapke: null }, 20, 2.18).samples);
     expect(impostorKernelPx(0.5)).toBe(STAR_PSF_SIGMA_PX);
     expect(impostorKernelPx(20)).toBeCloseTo(0.6, 12);
     expect(impostorWingShare(1)).toBe(STAR_WING_SHARE);

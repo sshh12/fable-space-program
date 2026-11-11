@@ -142,13 +142,21 @@ export const impostorWeight = (diameterPx: number, phase: number): number =>
  * point-spread function. The grid is in latitude / longitude about the axis perpendicular to the sun-observer
  * plane and covers the sunlit lune only (longitude from the bright limb to the terminator), so every sample
  * is lit however thin the crescent, and the integrand is smooth. Rows and samples per row are chosen for a
- * spacing of IMPOSTOR_SAMPLE_SPACING_PX on the disc (at least 8 rows of at least 2); kernel sigma: the star PSF
+ * spacing of IMPOSTOR_SAMPLE_SPACING_PX on the disc (the narrowest kernel's sigma; at least 8 rows of at least
+ * 2); kernel sigma: the star PSF
  * for a point, narrowing to IMPOSTOR_KERNEL_RESOLVED_PX for a resolved disc (the sharpness of antialiased
  * geometry); wing share: the star's for a point, none once the disc is resolved.
  */
 export const IMPOSTOR_KERNEL_RESOLVED_PX = 0.6;
-export const IMPOSTOR_SAMPLE_SPACING_PX = 0.5;
+export const IMPOSTOR_SAMPLE_SPACING_PX = 0.6;
 export const IMPOSTOR_MAX_ROWS = 128;
+/** The kernel is cut at this many sigma (and scaled back to unit integral): a pixel visits a few dozen samples. */
+export const IMPOSTOR_KERNEL_CUT = 2.8;
+/**
+ * Grids of up to this many samples are normalised to the reference integral (their midpoint sum is up to 4 %
+ * off); finer grids are within 2 % by themselves and are not summed a second time on the CPU.
+ */
+export const IMPOSTOR_NORMALISE_MAX_SAMPLES = 600;
 /** Rows (latitude) of the far image's grid and samples of its equatorial row (rows nearer the poles have rowSamples() of them). */
 export function impostorLune(diameterPx: number, g: number): { rows: number; cols: number } {
   const r = 0.5 * diameterPx;
@@ -159,6 +167,13 @@ export function impostorLune(diameterPx: number, g: number): { rows: number; col
 }
 /** Samples of the row whose latitude has cosine `a`. */
 export const rowSamples = (cols: number, a: number): number => Math.max(2, Math.ceil(cols * a));
+/** Number of samples of the far image's grid. */
+export function luneSampleCount(diameterPx: number, g: number): number {
+  const { rows, cols } = impostorLune(diameterPx, g);
+  let n = 0;
+  for (let j = 0; j < rows; j++) n += rowSamples(cols, Math.cos(-0.5 * Math.PI + ((j + 0.5) * Math.PI) / rows));
+  return n;
+}
 export const impostorKernelPx = (diameterPx: number): number => STAR_PSF_SIGMA_PX + (IMPOSTOR_KERNEL_RESOLVED_PX - STAR_PSF_SIGMA_PX) * smooth01((diameterPx - 3) / 7);
 export const impostorWingShare = (diameterPx: number): number => STAR_WING_SHARE * (1 - smooth01((diameterPx - 2) / 4));
 

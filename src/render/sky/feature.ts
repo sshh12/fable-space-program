@@ -18,6 +18,10 @@ import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type Scen
 import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, STARBURST, bladeAngle, coneNdcBounds, flareNormalisation, frameSolidAngle, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, type FlareView } from './flare';
 import {
   farBodyDiscIntegral,
+  farBodyLuneSum,
+  IMPOSTOR_KERNEL_CUT,
+  IMPOSTOR_NORMALISE_MAX_SAMPLES,
+  luneSampleCount,
   hapkeSingleScattering,
   impostorKernelPx,
   impostorLune,
@@ -123,8 +127,8 @@ const ADDITIVE: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one', o
 const PREMULTIPLIED: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } };
 const SKY_UNIFORM_FLOATS = 20;
 const MAX_IMPOSTORS = 16;
-/** Floats per Impostor of IMPOSTOR_WGSL (9 vec4). */
-const IMPOSTOR_STRIDE = 36;
+/** Floats per Impostor of IMPOSTOR_WGSL (8 vec4). */
+const IMPOSTOR_STRIDE = 32;
 const IMPOSTOR_FLOATS = 4 + MAX_IMPOSTORS * IMPOSTOR_STRIDE;
 interface FarBody {
   shading: FarBodyShading;
@@ -418,20 +422,32 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       const wingRadius = share > 0 ? starImageRadius(luma(flux) * radiusPx * radiusPx * frame.exposure * weight, share) : 0;
       const wing = share > 0 ? starWing(wingRadius, share) : { amp: 0, floor: 0 };
       const hp = far.shading.hapke;
+      // Radiance of a sample per unit of its photometric term, and for Hapke the terms that depend on the phase angle only.
+      const k = hp ? 1 / (4 * Math.PI) : 1 / Math.PI;
       const albedo = hp ? hp.w : far.shading.lambertAlbedo;
+      const cg = Math.cos(phase);
+      const surge = hp ? (1 + hp.params.b0 / (1 + Math.tan(phase / 2) / hp.params.hS)) * (1 + hp.params.bP * cg + hp.params.cP * (1.5 * cg * cg - 0.5)) : 0;
+      // A coarse grid's midpoint sum is normalised to the reference integral; its light's centre places the wings.
+      let norm = 1;
+      let photocentre = 0;
+      if (luneSampleCount(diameterPx, phase) <= IMPOSTOR_NORMALISE_MAX_SAMPLES) {
+        const grid = farBodyLuneSum(far.shading, diameterPx, phase);
+        const gridLuma = luma([light[0] * grid.sum[0], light[1] * grid.sum[1], light[2] * grid.sum[2]]);
+        if (gridLuma > 0) norm = luma(flux) / gridLuma;
+        photocentre = grid.centre * radiusPx;
+      }
       const o = 4 + n * IMPOSTOR_STRIDE;
       f32.set(
         [
           ...[pose.centerRelCam.x, pose.centerRelCam.y, pose.centerRelCam.z, R],
           ...[axis[0]!, axis[1]!, phase, weight],
-          ...[light[0], light[1], light[2], hp ? 1 : 0],
-          ...[albedo[0], albedo[1], albedo[2], 0],
-          ...(hp ? [hp.params.b0, hp.params.hS, hp.params.bP, hp.params.cP] : [0, 1, 0, 0]),
+          ...[light[0] * albedo[0] * k, light[1] * albedo[1] * k, light[2] * albedo[2] * k, hp ? 1 : 0],
+          ...(hp ? [Math.sqrt(1 - hp.w[0]), Math.sqrt(1 - hp.w[1]), Math.sqrt(1 - hp.w[2]), surge] : [1, 1, 1, 0]),
           ...[flux[0], flux[1], flux[2], share],
-          ...[radiusPx, Math.max(radiusPx + 3 * sigma + 1, wingRadius), dist - 1.5 * R, sigma],
+          ...[radiusPx, Math.max(radiusPx + IMPOSTOR_KERNEL_CUT * sigma + 1, wingRadius), dist - 1.5 * R, sigma],
           // Over the geometry the image replaces the whole disc of a small body and only the sunlit part of a larger one.
-          ...[lune.rows, lune.cols, smooth01((diameterPx - 6) / 6), 0],
-          ...[wing.amp, wing.floor, wingRadius, 0],
+          ...[lune.rows, lune.cols, smooth01((diameterPx - 6) / 6), norm],
+          ...[wing.amp, wing.floor, wingRadius, photocentre],
         ],
         o,
       );
