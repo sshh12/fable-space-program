@@ -64,7 +64,7 @@ export function sunAtSite(site: Site, azDeg: number, elDeg: number): SunOverride
 
 /** Wrap a Sim so that every snapshot has the star placed along the overridden direction (bodies' sunDir follow). */
 export function withSunOverride(inner: Sim, getOverride: () => SunOverride | null): Sim {
-  const fix = (s: SimSnapshot): SimSnapshot => {
+  return withSnapshotMap(inner, (s: SimSnapshot): SimSnapshot => {
     const o = getOverride();
     const dir = o?.dirRoot(s);
     if (!dir) return s;
@@ -79,7 +79,11 @@ export function withSunOverride(inner: Sim, getOverride: () => SunOverride | nul
       return { ...b, sunDir: v3.normalize(to), sunDistance: v3.len(to) };
     });
     return { ...s, bodies };
-  };
+  });
+}
+
+/** The same Sim with every snapshot (and peek) passed through `fix`: how a lab stages what the renderer sees. */
+export function withSnapshotMap(inner: Sim, fix: (s: SimSnapshot) => SimSnapshot): Sim {
   return {
     defs: inner.defs,
     scenario: inner.scenario,

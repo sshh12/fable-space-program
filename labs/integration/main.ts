@@ -13,6 +13,8 @@
  *                               site; lunarSurface: the scenario's landing target; chutes: the first recovery zone)
  *   &hover=<m>                  FakeSim, lunarSurface: the lander's feet this high above the ground (default 0)
  *   &start=<m>                  FakeSim, ascent and chutes: altitude of the vessel at the start (default 9,000 / 2,500)
+ *   &roll=<deg>                 turn the active vessel about its long axis as the renderer sees it (the FakeSim
+ *                               flies dorsal side up; 180 = windows towards the body below)
  * The surface scenes stand on the REAL terrain: the stack on the launch mount (lowest point at the pad's clamp
  * height), the lander on its feet, the radar altitude measured from the baked ground or the sea.
  *   &throttle=<0..1>            FakeSim: throttle held from the start (engines of the fired stages burn)
@@ -35,7 +37,7 @@ import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
-import { DEG, mat4, quat, v3, type Vec3 } from '@/core/math';
+import { DEG, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type SceneBindings, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
@@ -43,7 +45,7 @@ import { createFetchTileSource, createTerrainProvider } from '@/terrain';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
 import { createProbes } from '../render-core/probes';
 import { createEndBallast } from './ballast';
-import { sunAtSite, withSunOverride, type Site, type SunOverride } from '../render-core/world';
+import { sunAtSite, withSnapshotMap, withSunOverride, type Site, type SunOverride } from '../render-core/world';
 import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, realVesselParts, type FeaturePackage } from './features';
 
 export interface IntegrationLab {
@@ -123,6 +125,24 @@ export interface IntegrationLab {
    * such part or seat (placeholder parts, a stage without the capsule).
    */
   sitInCockpit(yawDeg?: number, pitchDeg?: number): boolean;
+  /**
+   * Sit in the cockpit seat and aim at the cabin window through which the body below shows most: the window
+   * whose line of sight from the seat dips furthest below the local horizon. Returns that window's id and
+   * the dip in degrees, or null without a cockpit model (no cockpit package, placeholder parts).
+   */
+  sitAtWindowBelow(): { window: string; dipDeg: number } | null;
+  /** Eye points of the seats of the cockpit camera's command part: id and position in the part frame, m. */
+  cockpitSeats(): { id: string; pos: Vec3 }[];
+  /** The seat view aimed at a point of the cabin (part frame, m). False without a cockpit seat. */
+  sitInCockpitAimedAt(pointPart: Vec3): boolean;
+  /**
+   * Pin the sun so that it shines through a cabin window onto a point of the cabin (part frame, m): of all
+   * windows the one through which the sun then stands highest above the local horizon. Returns that window
+   * and the sun's elevation, or null without a cockpit model.
+   */
+  sunThroughWindowOnto(pointPart: Vec3): { window: string; elevationDeg: number } | null;
+  /** Stand `distance` metres from the active vessel on its sunlit side (`offDeg` off the sun line) and look at it. */
+  watchVesselFromSunSide(distance: number, offDeg?: number): void;
   /**
    * Switch the features of a package off or on in the running page (their hooks are skipped; what they
    * published keeps its last content, so use it for packages that only draw: vfx, vehicle, cockpit).
@@ -341,6 +361,14 @@ async function boot(): Promise<void> {
     const throttle = Number(query.get('throttle') ?? 0);
     if (throttle > 0) inner.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: Math.min(1, throttle) });
   }
+  // &roll: the vessel turned about its own +Y in every snapshot (attitude as drawn; the FakeSim's own
+  // readouts keep describing the unrolled vessel).
+  const rollDeg = Number(query.get('roll') ?? 0);
+  if (Number.isFinite(rollDeg) && rollDeg !== 0) {
+    const turn = quat.fromAxisAngle(v3.unitY(), rollDeg * DEG);
+    const unrolled = inner;
+    inner = withSnapshotMap(unrolled, (s) => ({ ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, q: quat.mul(v.q, turn) } : v)) }));
+  }
   const sim = withSunOverride(inner, () => sunOverride);
 
   const app = await createLabApp({ canvas, name: 'integration', defs, sim, features: [], autoReady: false });
@@ -465,7 +493,9 @@ async function boot(): Promise<void> {
     const up = quat.rotate(b.qFixedToRoot, latLonToDir(s.latDeg * DEG, s.lonDeg * DEG));
     return { pos: v3.addScaled(b.rRoot, up, defs.bodies[s.bodyId]!.radius + s.alt), up };
   };
+  // Every placement is an outside view; the seat view says so itself afterwards.
   const place = (fn: ((snapshot: SimSnapshot) => void) | null): void => {
+    app.camera.settings.kind = 'external';
     follow = fn;
     fn?.(app.snapshot());
   };
@@ -491,6 +521,36 @@ async function boot(): Promise<void> {
     return { x: (0.5 + (0.5 * c.x) / c.w) * f.renderSize[0], y: (0.5 - (0.5 * c.y) / c.w) * f.renderSize[1], distance: v3.len(relCam), viewZ: c.w };
   };
 
+  const clampUnit = (x: number): number => Math.max(-1, Math.min(1, x));
+  /**
+   * The cabin of the active vessel: the cockpit camera's seat (eye point and axes, part frame), the part's
+   * attitude, the local vertical, and the windows of the cockpit package's cabin model (duck-typed: the lab
+   * imports no package statically). Null when the vessel has no such part or seat.
+   */
+  const cabin = (): { eye: Vec3; L: Vec3; U: Vec3; R: Vec3; up: Vec3; partRot: Quat; qPart: Quat; seats: { id: string; pos: [number, number, number] }[]; windows: { id: string; centre: Vec3 }[] } | null => {
+    const s = app.snapshot();
+    const v = s.vessels.find((x) => x.id === s.activeVesselId);
+    const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
+    const part = v?.parts.find((p) => p.instanceId === vehicle?.cameras.cockpit.part);
+    const seats = part ? (defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : [])) ?? []) : [];
+    const seat = seats.find((x) => x.id === vehicle?.cameras.cockpit.seat);
+    if (!v || !part || !seat) return null;
+    const cockpit = (built.handles['cockpit.createCockpitFeature'] as { feature?: { model?(id: string): { windows?: { id: string; centre: Vec3 }[] } | undefined } } | undefined)?.feature;
+    const L = v3.normalize(v3.fromTuple(seat.lookDir));
+    const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
+    return {
+      eye: v3.fromTuple(seat.pos),
+      L,
+      U,
+      R: v3.cross(L, U),
+      up: v3.normalize(v.r),
+      partRot: part.localRot,
+      qPart: quat.mul(v.q, part.localRot),
+      seats,
+      windows: (vehicle?.cockpit ? cockpit?.model?.(vehicle.cockpit)?.windows : undefined) ?? [],
+    };
+  };
+
   const lab: IntegrationLab = {
     app,
     available: availablePackages(),
@@ -505,6 +565,7 @@ async function boot(): Promise<void> {
     simKind,
     terrain,
     surface(bodyId, latDeg, lonDeg, alt, headingDeg, pitchDeg) {
+      app.camera.settings.kind = 'external';
       follow = null;
       app.camera.spec = { type: 'surface', bodyId, latDeg, lonDeg, alt, headingDeg, pitchDeg };
     },
@@ -617,11 +678,11 @@ async function boot(): Promise<void> {
         };
       };
       if (!find(app.snapshot())) return false;
-      app.camera.settings.kind = 'interior';
       place((snapshot) => {
         const at = find(snapshot);
         if (at) app.camera.spec = { type: 'free', ...at };
       });
+      app.camera.settings.kind = 'interior';
       return true;
     },
     orbitVesselPoint(yawDeg, pitchDeg, distance, along = 0) {
@@ -644,6 +705,49 @@ async function boot(): Promise<void> {
       const s = app.snapshot();
       const v = s.vessels.find((x) => x.id === s.activeVesselId);
       return v ? stackExtent(defs, v.parts) : null;
+    },
+    sitAtWindowBelow() {
+      const c = cabin();
+      if (!c || c.windows.length === 0) return null;
+      let best: { window: string; dipDeg: number; centre: Vec3 } | null = null;
+      for (const w of c.windows) {
+        const dip = -Math.asin(clampUnit(v3.dot(quat.rotate(c.qPart, v3.normalize(v3.sub(w.centre, c.eye))), c.up))) / DEG;
+        if (!best || dip > best.dipDeg) best = { window: w.id, dipDeg: dip, centre: w.centre };
+      }
+      if (!best || !lab.sitInCockpitAimedAt(best.centre)) return null;
+      return { window: best.window, dipDeg: best.dipDeg };
+    },
+    cockpitSeats: () => cabin()?.seats.map((x) => ({ id: x.id, pos: v3.fromTuple(x.pos) })) ?? [],
+    sitInCockpitAimedAt(pointPart) {
+      const c = cabin();
+      if (!c) return false;
+      const d = v3.normalize(v3.sub(pointPart, c.eye));
+      return lab.sitInCockpit(Math.atan2(v3.dot(d, c.R), v3.dot(d, c.L)) / DEG, Math.asin(clampUnit(v3.dot(d, c.U))) / DEG);
+    },
+    sunThroughWindowOnto(pointPart) {
+      const c = cabin();
+      if (!c || c.windows.length === 0) return null;
+      let best: { window: string; elevationDeg: number; dirVes: Vec3 } | null = null;
+      for (const w of c.windows) {
+        const dPart = v3.normalize(v3.sub(w.centre, pointPart));
+        const elevation = Math.asin(clampUnit(v3.dot(quat.rotate(c.qPart, dPart), c.up))) / DEG;
+        if (!best || elevation > best.elevationDeg) best = { window: w.id, elevationDeg: elevation, dirVes: quat.rotate(c.partRot, dPart) };
+      }
+      if (!best) return null;
+      lab.setSunInVesselFrame(best.dirVes);
+      return { window: best.window, elevationDeg: best.elevationDeg };
+    },
+    watchVesselFromSunSide(distance, offDeg = 30) {
+      place((snapshot) => {
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        if (!v) return;
+        const b = bodyOf(snapshot, v.bodyId);
+        const up = v3.normalize(v3.sub(v.rRoot, b.rRoot));
+        let side = v3.cross(b.sunDir, up);
+        side = v3.lenSq(side) < 1e-12 ? v3.anyOrthogonal(b.sunDir) : v3.normalize(side);
+        const out = quat.rotate(quat.fromAxisAngle(v3.cross(b.sunDir, side), offDeg * DEG), b.sunDir);
+        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(v.rRoot, out, distance), qViewToRoot: lookRotation(v3.neg(out), up) };
+      });
     },
     setEnabled(pkg, on) {
       for (const f of built.features) if (built.packageOf[f.id] === pkg) guards.get(f.id)?.setEnabled(on);

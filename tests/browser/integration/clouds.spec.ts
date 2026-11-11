@@ -16,6 +16,10 @@
  *    aerial-perspective volume of the render contract carries ONE transmittance per froxel ("a = mean
  *    transmittance"), so a transparent is dimmed alike in red, green and blue, by the mean of the three:
  *    that mean is what the test expects, and the missing reddening is recorded for the hand-off.
+ *  - Above an overcast deck nothing is in the deck's shade (the near cloud-shadow map is depth-resolved:
+ *    request atmosphere-clouds-3). The capsule, flown above the deck with the sun through a window on the
+ *    panel, is looked at from the seat and from outside with the near cloud shadow on and off (the lab's
+ *    switch): neither the hull, lit by the core, nor the cabin, lit by the cockpit's own shader, may change.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,7 +47,7 @@ interface Launch {
  * feature's cloud clock: a first, small page reports where that clock starts, the place is computed for
  * it, and the tests check it again with the clock of the page they run in.
  */
-async function openLaunch(page: Page, kind: 'overcast' | 'clear', query: string): Promise<{ info: Awaited<ReturnType<typeof openIntegration>>; launch: Launch } | null> {
+async function openLaunch(page: Page, kind: 'overcast' | 'clear', query: string, throttle = 1): Promise<{ info: Awaited<ReturnType<typeof openIntegration>>; launch: Launch } | null> {
   const map = coverageMap();
   if (!map) return null;
   const boxes = findSky(map, kind, kind === 'overcast' ? 1.0 : 2.0, 50);
@@ -52,7 +56,7 @@ async function openLaunch(page: Page, kind: 'overcast' | 'clear', query: string)
   await openIntegration(page, 'features=atmosphere&scene=ascent&paused=1&hud=0');
   const start = await cloudClock(page);
   const launch: Launch = { latDeg: box.latDeg, lonDeg: mapToFixedLon(box.lonMapDeg, start.time ?? 0, start.drift ?? CLOUDS.params.coverageDriftMps, EARTH_RADIUS), box };
-  const info = await openIntegration(page, `scene=ascent&at=${launch.latDeg},${launch.lonDeg}&throttle=1&hud=0&governor=off&sun=140,50&sunsite=earth,${launch.latDeg},${launch.lonDeg}&${query}`);
+  const info = await openIntegration(page, `scene=ascent&at=${launch.latDeg},${launch.lonDeg}&throttle=${throttle}&hud=0&governor=off&sun=140,50&sunsite=earth,${launch.latDeg},${launch.lonDeg}&${query}`);
   return { info, launch };
 }
 
@@ -206,4 +210,95 @@ test('(b) a plume and trail 50 km away take aerial perspective: their light fall
   // Without aerial perspective the ratio is 1 in every colour. With it: the mean transmittance of the air.
   for (let c = 0; c < 3; c++) expect(Math.abs(ratio[c]! - mean), `with / without the atmosphere of what the effect adds, channel ${'rgb'[c]}: ${ratio[c]!.toFixed(3)} against the air's mean transmittance ${mean.toFixed(3)}`).toBeLessThan(0.06);
   expect(Math.max(...ratio), 'the effect is dimmed by the air').toBeLessThan(0.9);
+});
+
+test('(b) above an overcast deck neither the hull nor the cabin is in the shade of the deck below', async ({ page, pageLog }) => {
+  // The orbital stack (escape tower and boost cover gone, the windows clear), engines off, climbing out of the deck.
+  const opened = await openLaunch(page, 'overcast', 'ev=11&stage=4', 0);
+  test.skip(!opened, 'the Earth tile set has no cloud coverage map, or no overcast place in it');
+  const { info, launch } = opened!;
+  requireFeatures(test, info, ['atmosphere', 'vehicle', 'cockpit']);
+  await freeze(page);
+  await page.waitForFunction((h) => window.__lab!.snapshot().readouts.altitudeAsl > h, CLOUDS.topAltitude + 1500, { timeout: 240_000, polling: 250 });
+  await page.evaluate(() => window.__test!.setPaused(true));
+  const clock = await cloudClock(page);
+  const column = coverageBox(coverageMap()!, launch.latDeg, fixedToMapLon(launch.lonDeg, clock.time!, clock.drift!, EARTH_RADIUS), 0.3);
+  expect(column.min, 'coverage of the map over the launch point as the feature reads it now').toBeGreaterThan(0.9);
+
+  // The sun through a window onto the head end of the middle couch, the commander looking at that couch.
+  const aimed = await page.evaluate(() => {
+    const lab = window.__integration!;
+    const seats = lab.cockpitSeats();
+    const target = seats.find((x) => x.id !== lab.app.defs.vehicles[lab.app.snapshot().vessels[0]!.vehicleId]?.cameras.cockpit.seat) ?? seats[0];
+    if (!target) return null;
+    const sun = lab.sunThroughWindowOnto(target.pos);
+    return sun ? { ...sun, seat: target.id, pos: target.pos, altitude: lab.app.snapshot().readouts.altitudeAsl } : null;
+  });
+  expect(aimed, 'the vehicle has a cockpit with seats and windows').not.toBeNull();
+  const sunElevation = aimed!.elevationDeg;
+  expect(sunElevation, 'the sun stands above the deck (deg)').toBeGreaterThan(10);
+
+  /**
+   * Luminance (cd/m^2) of the frame with the near cloud shadow on, off and on again: the mean of the middle
+   * of the frame and the mean of its brightest 2 % (the sun patch, wherever it lies).
+   */
+  const onOff = (): Promise<Record<'on' | 'off' | 'again', { mean: number; bright: number }>> =>
+    page.evaluate(async () => {
+      const lab = window.__integration!;
+      const r = lab.app.renderer;
+      const [W, H] = r.frameContext!.renderSize;
+      const rect = { x: Math.round(W * 0.2), y: Math.round(H * 0.2), width: Math.round(W * 0.6), height: Math.round(H * 0.6) };
+      const read = async (): Promise<{ mean: number; bright: number }> => {
+        await window.__test!.waitFrames(40);
+        const d = (await r.readHdrPixels('hdr', rect)).data;
+        const luma = new Float32Array(d.length / 4);
+        let sum = 0;
+        for (let i = 0; i < luma.length; i++) {
+          luma[i] = 0.2126 * d[4 * i]! + 0.7152 * d[4 * i + 1]! + 0.0722 * d[4 * i + 2]!;
+          sum += luma[i]!;
+        }
+        luma.sort();
+        const top = Math.max(1, Math.round(0.02 * luma.length));
+        let bright = 0;
+        for (let i = luma.length - top; i < luma.length; i++) bright += luma[i]!;
+        const e = r.frameContext!.exposure;
+        return { mean: sum / luma.length / e, bright: bright / top / e };
+      };
+      const on = await read();
+      lab.setNearCloudShadow(false);
+      const off = await read();
+      lab.setNearCloudShadow(true);
+      const again = await read();
+      return { on, off, again };
+    });
+
+  // From outside: the sunlit side of the hull, 25 m away.
+  await page.evaluate(() => window.__integration!.watchVesselFromSunSide(25));
+  const hull = await onOff();
+  await save(page, 'clouds-hull-above-the-deck');
+  // From the commander's seat, looking at the couch the sun falls on.
+  expect(await page.evaluate((p) => window.__integration!.sitInCockpitAimedAt(p), aimed!.pos)).toBe(true);
+  const cabin = await onOff();
+  await save(page, 'clouds-cabin-above-the-deck');
+  await page.evaluate(() => window.__integration!.setNearCloudShadow(false));
+  await page.evaluate(() => window.__test!.waitFrames(40));
+  await save(page, 'clouds-cabin-above-the-deck-no-near-shadow');
+  await page.evaluate(() => window.__integration!.setNearCloudShadow(true));
+
+  const ratio = (x: { on: { mean: number; bright: number }; off: { mean: number; bright: number } }, k: 'mean' | 'bright'): number => x.on[k] / x.off[k];
+  console.log(
+    `(b) above the deck at ${launch.latDeg}, ${launch.lonDeg.toFixed(2)} (map coverage ${column.min.toFixed(2)}, tops ${(column.topM / 1000).toFixed(1)} km), capsule ${(aimed!.altitude / 1000).toFixed(1)} km up, sun ${sunElevation.toFixed(0)} deg up through window ${aimed!.window} onto seat ${aimed!.seat}. ` +
+      `Luminance with / without the near cloud shadow: hull mean ${hull.on.mean.toFixed(0)} / ${hull.off.mean.toFixed(0)} cd/m^2 (${ratio(hull, 'mean').toFixed(3)}), brightest 2 % ${hull.on.bright.toFixed(0)} / ${hull.off.bright.toFixed(0)} (${ratio(hull, 'bright').toFixed(3)}); ` +
+      `cabin mean ${cabin.on.mean.toFixed(1)} / ${cabin.off.mean.toFixed(1)} cd/m^2 (${ratio(cabin, 'mean').toFixed(3)}), brightest 2 % ${cabin.on.bright.toFixed(0)} / ${cabin.off.bright.toFixed(0)} (${ratio(cabin, 'bright').toFixed(3)}); ` +
+      `repeat: hull ${(hull.again.mean / hull.on.mean).toFixed(3)}, cabin ${(cabin.again.mean / cabin.on.mean).toFixed(3)}`,
+  );
+  record('b.aboveTheDeck', { loaded: info.loaded, launch, column, aimed, hull, cabin });
+  expect(hull.off.bright, 'the hull is in sunlight (cd/m^2)').toBeGreaterThan(2000);
+  expect(cabin.off.bright, 'the sun reaches into the cabin: its brightest 2 % (cd/m^2)').toBeGreaterThan(200);
+  // Nothing above the deck is shaded by it: the picture is the same with and without the near map, to 3 %.
+  for (const k of ['mean', 'bright'] as const) {
+    expect(Math.abs(ratio(hull, k) - 1), `hull, ${k}: luminance with / without the near cloud shadow ${ratio(hull, k).toFixed(3)}`).toBeLessThan(0.03);
+    expect(Math.abs(ratio(cabin, k) - 1), `cabin, ${k}: luminance with / without the near cloud shadow ${ratio(cabin, k).toFixed(3)} (the cabin shader's own cloud-shadow lookup: request cockpit-cs-1)`).toBeLessThan(0.03);
+  }
+  await expectClean(page, pageLog, info);
 });
