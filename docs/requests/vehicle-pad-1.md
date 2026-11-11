@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit ad38ab3)
 From: vehicle-pad
 Owner path: src/render/core/mesh/meshSystem.ts (G-buffer fragment shader of the mesh system)
 Blocking: yes (visual close-out items 4 "frost" and 12 "soot" of out/qa/wave2/vehicle-pad.md are a blocker and a major; both end in this shader)
@@ -39,3 +39,34 @@ Must NOT change: the meaning of `MeshInstance.soot / frost` and of mask channels
 
 Workaround in my paths until then: frost as vertex weights on the tank skin itself (no dithered shell), soot
 weights continuous across panels; both keep the glossy coat, which is the visible defect.
+
+## Resolution
+Implemented in the `MATERIAL_STANDARD` branch of the mesh G-buffer shader (commit ad38ab3,
+`src/render/core/mesh/meshSystem.ts`). An instance with soot = frost = 0 is bit-identical to before (the
+test reads the clean panel, applies the layers, takes them off again and compares value for value).
+
+1. **Coat.** `gbufferExtra(n, Ta, anisotropy x coat, clearcoat x coat, clearcoatRoughness)` with
+   `coat = (1 - soot) x (1 - frost)`, soot and frost being the layers after the break-up below.
+2. **Break-up.** `layerCoverage(w, uvm, seed)`: `w` = instance value x vertex mask, `uvm` = the mesh UV
+   divided by `material.misc.zw` (no new varying), `g` = 0.6 x value noise with cells 0.03 m in u and
+   0.25 m in v + 0.4 x the same at four times the cell size, `layer = smoothstep(g - 0.18, g + 0.18,
+   1.35 w - 0.17)`, exactly 0 at `w` = 0 and 1 at `w` = 1; soot and frost have their own seeds. One addition
+   you did not ask for: each octave gives way to its mean (0.5) where its cell is smaller than a pixel
+   (`fwidth`), so from far away the layer is the plain blend again instead of shimmering.
+3. **Frost**: albedo towards (0.93, 0.95, 0.97), roughness towards 0.85.
+4. **Soot**: albedo towards (0.030, 0.024, 0.019) with the weight 0.92 x layer as before, roughness 0.92.
+
+`MATERIAL_TERRAIN` keeps its plain blends with the old colours and roughness; the meaning of
+`MeshInstance.soot / frost` and of mask channels b / a is unchanged. UVs are expected in metres, u round the
+part and v along it, as you say yours are; a model with 0..1 UVs gets one streak per 3 % of its width.
+
+Measured (`tests/browser/render-core/mesh.spec.ts`, "soot and frost lie on the paint", lab
+`/labs/render-core/?probe=inputs,layers&sun=180,40&ev=13`, a clear-coated grey panel of 4 m x 6 m with
+both masks at 1, `window.__rc.probes.setLayers(soot, frost)`): full soot 0.21 of the clean level, full
+frost 3.2 times it; at half weight soot covers 45 % of the face (mean 0.59 of clean) and neighbouring
+pixels differ 8 times more across the streaks than along them; half frost: mean 2.06 times clean. A uniform
+environment of 4,000 cd/m^2 mirrored at 80 degrees from the normal: 2,280 cd/m^2 on the clean coat, 73
+under soot, 91 under frost. Pictures: `out/screens/render-core/mesh-soot-half.png`, `mesh-frost-half.png`.
+
+Re-run `tests/browser/vehicle` on your side (your tools did not type-check while this was verified:
+`tools/vehicle/bake-textures.ts`); the render core's mesh, lighting, stand and extras specs pass.
