@@ -4,11 +4,13 @@
  *  - Climb from 2 m to 400 km above open ocean with frozen time: nothing pops. The camera rises by a
  *    constant factor per step, so the image changes smoothly; a hand-over that is not continuous (the near
  *    field switching on or off, a level-of-detail change of the sheet) is one step whose frame difference
- *    stands far above its neighbours. Two differences are kept per step: pixel by pixel, and of the frames
- *    averaged over 16 px blocks. Close to the water the wave pattern itself changes by 4-15 of 255 per
- *    step, pixel by pixel, so there only the block averages are sensitive (a patch that appears, vanishes
- *    or changes brightness); a control test shows what the detector reports when the near field is
- *    switched off within one step.
+ *    stands far above its neighbours. Three differences are kept per step: pixel by pixel, of the frames
+ *    averaged over 16 px blocks, and of the means of an 8 x 6 grid of regions. Close to the water the wave
+ *    pattern itself changes by 4-15 of 255 per step pixel by pixel and by about 1 in the block averages
+ *    (the waves are larger than a block there), so there the region means are what is sensitive: a region
+ *    holds many waves and its mean stays put unless the brightness changes, a ring passes or a patch
+ *    appears or vanishes. A control test changes the brightness of the frame by 5 % within one step, which
+ *    must be reported, and prints what switching the near field off within one step looks like.
  *  - At fadeStart the forward water equals the deferred sheet within 2 %: the same frame with the near field
  *    forced off, compared pixel by pixel where the sea is just inside fadeStart and between fadeStart and
  *    fadeEnd (where both representations must coincide: that is what "no ring" means).
@@ -86,15 +88,20 @@ async function openOcean(page: Page): Promise<Place> {
 
 interface ClimbSeries {
   altitudes: number[];
-  /** Per step: pixel-by-pixel mean and worst 16 px block; mean and worst difference of the block averages. */
+  /**
+   * Per step: pixel-by-pixel mean and worst 16 px block; mean and worst difference of the block averages;
+   * mean and worst change of the mean of an eighth-by-sixth region of the frame.
+   */
   mean: number[];
   block: number[];
   coarse: number[];
   coarseBlock: number[];
+  region: number[];
+  regionBlock: number[];
 }
 
 interface Pop {
-  series: 'mean' | 'block' | 'coarse' | 'coarseBlock';
+  series: 'mean' | 'block' | 'coarse' | 'coarseBlock' | 'region' | 'regionBlock';
   index: number;
   value: number;
   neighbours: number;
@@ -102,11 +109,14 @@ interface Pop {
 
 /**
  * Steps that stand out of a climb: several times the steps around them and plainly visible (pixel by pixel:
- * a mean above 1.5 of 255 or a block above 24; block averages: a mean above 0.75 or a block above 8).
+ * a mean above 1.5 of 255 or a block above 24; block averages: a mean above 0.75 or a block above 8; region
+ * means: a mean above 0.75 or a region above 3). The region means are what sees a change of brightness
+ * under a wave field of any contrast: the waves move the pixels and the 16 px blocks from step to step, a
+ * region's mean they leave alone.
  */
 function pops(c: ClimbSeries): Pop[] {
   const of = (series: Pop['series'], factor: number, floor: number): Pop[] => spikes(c[series], factor, floor).map((s) => ({ series, ...s }));
-  return [...of('mean', 3, 1.5), ...of('block', 3, 24), ...of('coarse', 3, 0.75), ...of('coarseBlock', 3, 8)];
+  return [...of('mean', 3, 1.5), ...of('block', 3, 24), ...of('coarse', 3, 0.75), ...of('coarseBlock', 3, 8), ...of('region', 3, 0.75), ...of('regionBlock', 3, 3)];
 }
 
 const describePops = (c: ClimbSeries, list: Pop[]): string => list.map((s) => `${c.altitudes[s.index]!.toFixed(0)} -> ${c.altitudes[s.index + 1]!.toFixed(0)} m: ${s.series} ${s.value.toFixed(2)} (around it ${s.neighbours.toFixed(2)})`).join('; ') || 'none';
@@ -119,6 +129,8 @@ async function climb(page: Page, at: { latDeg: number; lonDeg: number }, heading
   const block: number[] = [];
   const coarse: number[] = [];
   const coarseBlock: number[] = [];
+  const region: number[] = [];
+  const regionBlock: number[] = [];
   let prev: Shot | null = null;
   const keep = new Set([0, altitudes.findIndex((h) => h > 150), altitudes.findIndex((h) => h > 2_000), altitudes.findIndex((h) => h > 14_000), altitudes.findIndex((h) => h > 29_000), altitudes.findIndex((h) => h > 100_000), altitudes.length - 1]);
   for (let i = 0; i < altitudes.length; i++) {
@@ -131,6 +143,8 @@ async function climb(page: Page, at: { latDeg: number; lonDeg: number }, heading
       block.push(d.blockMax);
       coarse.push(d.coarseMean);
       coarseBlock.push(d.coarseMax);
+      region.push(d.regionMean);
+      regionBlock.push(d.regionMax);
     }
     if (keep.has(i)) {
       const label = altitudes[i]! < 1000 ? `${Math.round(altitudes[i]!)}m` : `${Math.round(altitudes[i]! / 1000)}km`;
@@ -138,7 +152,7 @@ async function climb(page: Page, at: { latDeg: number; lonDeg: number }, heading
     }
     prev = shot;
   }
-  return { altitudes, mean, block, coarse, coarseBlock };
+  return { altitudes, mean, block, coarse, coarseBlock, region, regionBlock };
 }
 
 for (const variant of [
@@ -159,7 +173,7 @@ for (const variant of [
     const found = all.filter((s) => !inShell(s));
     console.log(
       `(a) climb [${info.loaded.join(', ')}] at ${at.latDeg}, ${at.lonDeg.toFixed(2)}${at.clear ? ' (clear in the cloud map)' : ''}: ${c.mean.length} steps; frame difference pixel by pixel: mean ${Math.min(...c.mean).toFixed(2)} .. ${Math.max(...c.mean).toFixed(2)}, worst block ${Math.max(...c.block).toFixed(1)}; ` +
-        `of the block averages: mean ${Math.min(...c.coarse).toFixed(2)} .. ${Math.max(...c.coarse).toFixed(2)}, worst block ${Math.max(...c.coarseBlock).toFixed(1)}; pops: ${describePops(c, found)}; inside the cloud shell: ${describePops(c, all.filter(inShell))}`,
+        `of the block averages: mean ${Math.min(...c.coarse).toFixed(2)} .. ${Math.max(...c.coarse).toFixed(2)}, worst block ${Math.max(...c.coarseBlock).toFixed(1)}; of the region means: mean ${Math.min(...c.region).toFixed(2)} .. ${Math.max(...c.region).toFixed(2)}, worst region ${Math.max(...c.regionBlock).toFixed(1)}; pops: ${describePops(c, found)}; inside the cloud shell: ${describePops(c, all.filter(inShell))}`,
     );
     record(`a.climb.${variant.name}`, { loaded: info.loaded, at, steps: c.mean.length, pops: found, inCloudShell: all.filter(inShell), ...c });
     expect(found, 'steps of the climb where the frame, or a part of it, jumps').toEqual([]);
@@ -167,7 +181,7 @@ for (const variant of [
   });
 }
 
-test('(a) control: what the climb reports and what it cannot see', async ({ page, pageLog }) => {
+test('(a) control: the climb reports a change of brightness of 5 % in one step', async ({ page, pageLog }) => {
   const info = await openIntegration(page, 'features=terrain,ocean,sky&scene=lowOrbit&paused=1&hud=0&ev=14&governor=off');
   requireFeatures(test, info, ['terrain', 'ocean']);
   await freeze(page);
@@ -175,7 +189,7 @@ test('(a) control: what the climb reports and what it cannot see', async ({ page
   // Twenty-one steps of the same climb from 2 km, where the waves of the near field fill the lower half of
   // the frame. `change` is applied before the eleventh frame.
   const run = async (change: () => Promise<void>): Promise<ClimbSeries> => {
-    const c: ClimbSeries = { altitudes: [], mean: [], block: [], coarse: [], coarseBlock: [] };
+    const c: ClimbSeries = { altitudes: [], mean: [], block: [], coarse: [], coarseBlock: [], region: [], regionBlock: [] };
     let prev: Shot | null = null;
     let h = 2000;
     for (let i = 0; i <= 20; i++, h *= 1.05) {
@@ -190,22 +204,27 @@ test('(a) control: what the climb reports and what it cannot see', async ({ page
         c.block.push(d.blockMax);
         c.coarse.push(d.coarseMean);
         c.coarseBlock.push(d.coarseMax);
+        c.region.push(d.regionMean);
+        c.regionBlock.push(d.regionMax);
       }
       prev = shot;
     }
     return c;
   };
   const at9 = (c: ClimbSeries, k: keyof Omit<ClimbSeries, 'altitudes'>): string => `${c[k][9]!.toFixed(2)} (before ${c[k][8]!.toFixed(2)}, after ${c[k][10]!.toFixed(2)})`;
-  const describe = (c: ClimbSeries): string => `pixel by pixel mean ${at9(c, 'mean')}, block ${at9(c, 'block')}; block averages mean ${at9(c, 'coarse')}, block ${at9(c, 'coarseBlock')}; reported: ${describePops(c, pops(c))}`;
+  const describe = (c: ClimbSeries): string =>
+    `pixel by pixel mean ${at9(c, 'mean')}, block ${at9(c, 'block')}; block averages mean ${at9(c, 'coarse')}, block ${at9(c, 'coarseBlock')}; region means mean ${at9(c, 'region')}, region ${at9(c, 'regionBlock')}; reported: ${describePops(c, pops(c))}`;
 
   // 1. The whole frame 5 % brighter from one step on (0.07 EV): reported.
   const brighter = await run(() => page.evaluate(() => window.__lab!.renderer.setExposureOverride(14 - 0.07)));
   await page.evaluate(() => window.__lab!.renderer.setExposureOverride(14));
   console.log(`(a) control, the frame 5 % brighter from 3.3 km on: ${describe(brighter)}`);
   // 2. The near field forced off from one step on: the waves give way to the smooth sheet. Pixel by pixel
-  //    that is no more than what the wave pattern changes from step to step anyway, and the block averages
-  //    of the two representations agree (they are built to): the climb does NOT see it. The hand-over is
-  //    measured by the forward-against-deferred test below, not by the climb.
+  //    and in 16 px blocks that is no more than what the wave pattern changes from step to step anyway. The
+  //    means of the regions differ a little between the two representations (0.85 of 255 when this was
+  //    written, against 0.19 between ordinary steps), which the region series reports while that is so:
+  //    printed and recorded, not asserted, because the agreement of the two is the business of the
+  //    forward-against-deferred test below, and the better they agree the less there is to see here.
   const ocean = (off: boolean): Promise<void> => page.evaluate((o) => (window.__integration!.handles['ocean.createOceanFeature'] as { debug: { forceNearFieldOff(off: boolean): void } }).debug.forceNearFieldOff(o), off);
   const vanished = await run(() => ocean(true));
   await ocean(false);
@@ -213,8 +232,6 @@ test('(a) control: what the climb reports and what it cannot see', async ({ page
   record('a.climb.control', { loaded: info.loaded, at, brighter: { ...brighter, found: pops(brighter) }, vanished: { ...vanished, found: pops(vanished) } });
   expect(pops(brighter).map((s) => s.index), 'the step in which the frame became 5 % brighter').toContain(9);
   expect(pops(brighter).filter((s) => s.index !== 9), 'no other step is reported').toEqual([]);
-  // Stated, not hidden: were this ever reported, the comment above and the hand-off would be out of date.
-  expect(vanished.coarse[9]!, 'block averages agree between the near field and the sheet (the step is no larger than its neighbours x 3)').toBeLessThan(3 * Math.max(vanished.coarse[8]!, 0.25));
   await expectClean(page, pageLog, info);
 });
 

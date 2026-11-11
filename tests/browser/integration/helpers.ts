@@ -133,6 +133,13 @@ export interface FrameDiff {
    */
   coarseMean: number;
   coarseMax: number;
+  /**
+   * The same on a grid of 8 x 6 regions: mean and largest absolute change of a region's mean value. A
+   * region holds many waves, so a wave field that merely moves leaves its mean alone, whatever its
+   * contrast; a change of brightness, a ring, a patch that appears or vanishes moves it.
+   */
+  regionMean: number;
+  regionMax: number;
 }
 
 /** Difference between two frames of equal size. `rect` restricts it (x, y, width, height in pixels). */
@@ -148,6 +155,10 @@ export function frameDiff(a: Shot, b: Shot, rect?: { x: number; y: number; width
   const blockSum = new Float64Array(bw * bh);
   const blockSigned = new Float64Array(bw * bh);
   const blockN = new Uint32Array(bw * bh);
+  const RX = 8;
+  const RY = 6;
+  const regionSigned = new Float64Array(RX * RY);
+  const regionN = new Uint32Array(RX * RY);
   let sum = 0;
   let changed = 0;
   for (let y = 0; y < h; y++) {
@@ -164,6 +175,9 @@ export function frameDiff(a: Shot, b: Shot, rect?: { x: number; y: number; width
       blockSum[k] = blockSum[k]! + d;
       blockSigned[k] = blockSigned[k]! + signed;
       blockN[k] = blockN[k]! + 1;
+      const r = Math.min(RY - 1, Math.floor((y * RY) / h)) * RX + Math.min(RX - 1, Math.floor((x * RX) / w));
+      regionSigned[r] = regionSigned[r]! + signed;
+      regionN[r] = regionN[r]! + 1;
     }
   }
   let blockMax = 0;
@@ -178,7 +192,17 @@ export function frameDiff(a: Shot, b: Shot, rect?: { x: number; y: number; width
     coarseMax = Math.max(coarseMax, c);
     blocks++;
   }
-  return { mean: sum / (w * h), blockMax, changed: changed / (w * h), coarseMean: coarseSum / Math.max(1, blocks), coarseMax };
+  let regionSum = 0;
+  let regionMax = 0;
+  let regions = 0;
+  for (let r = 0; r < regionSigned.length; r++) {
+    if (regionN[r]! === 0) continue;
+    const c = Math.abs(regionSigned[r]! / regionN[r]!);
+    regionSum += c;
+    regionMax = Math.max(regionMax, c);
+    regions++;
+  }
+  return { mean: sum / (w * h), blockMax, changed: changed / (w * h), coarseMean: coarseSum / Math.max(1, blocks), coarseMax, regionMean: regionSum / Math.max(1, regions), regionMax };
 }
 
 /**
