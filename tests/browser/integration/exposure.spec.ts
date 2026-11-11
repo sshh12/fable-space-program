@@ -5,6 +5,7 @@
  * never produces a NaN or a value above HDR_MAX, in the scene target and after the resolve.
  */
 import type { Page } from '@playwright/test';
+import { EV_DARK_FLOOR } from '../../../src/render/core/post/exposure';
 import { expect, test } from '../harness';
 import { expectClean, openIntegration, record, requireFeatures, save } from './helpers';
 
@@ -90,6 +91,10 @@ test('the sun entering a dark-adapted frame saturates at HDR_MAX without NaN, an
     }
   }
   expect(dark, `a dark-adapted view exists (${tried.join('; ')})`).not.toBeNull();
+  // Dark adaptation proper: down to the floor (the last three stops take 25 s).
+  await page.waitForFunction((floor) => window.__lab!.renderer.exposureInfo().ev100 <= floor + 0.02, EV_DARK_FLOOR, { timeout: 120_000 });
+  dark = await exposure(page, 3);
+  expect(dark.ev100, 'EV100 of the dark-adapted frame').toBeCloseTo(EV_DARK_FLOOR, 1);
   // Turn towards the sun, 3 degrees per step, a few frames per step.
   let worstNan = 0;
   let peak = 0;

@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { buildHapkeLut, DEFAULT_HAPKE, hapkeAlbedoAtNorm, hapkeBrdfMu0, HAPKE_NORM } from '@/render/core/lighting/deferred';
 import { blackbodyRadiance } from '@/render/core/mesh/meshSystem';
 import {
+  ADAPT_DARK,
   adaptEv100,
   binLuminance,
+  DARK_ADAPT_EV,
   EV_DARK_FLOOR,
+  EV_MIN,
   ev100ForMidGrey,
   exposureCompensationCurve,
   exposureFromEv100,
@@ -15,6 +18,7 @@ import {
   INTERIOR_NIGHT_KEY_EV,
   LUMINANCE_FLOOR,
   luminanceBin,
+  SUNLIT_HIGHLIGHT_MAX_EV,
   meterExposure,
   sunny16Ev,
   type MeterInput,
@@ -61,6 +65,38 @@ describe('exposure curve', () => {
     expect(ev).toBe(15);
     expect(frames).toBeLessThan(600); // under 10 s from the dark floor to full sun
     expect(frames).toBeGreaterThan(30); // but not instantaneous
+  });
+
+  it('dark adaptation is slow below EV -3 and the way back is not (request sky-lighting-3)', () => {
+    expect(EV_DARK_FLOOR).toBe(-6);
+    expect(EV_MIN).toBeLessThan(EV_DARK_FLOOR);
+    expect(DARK_ADAPT_EV).toBe(-3);
+    const seconds = (from: number, to: number): number => {
+      let ev = from;
+      let frames = 0;
+      while (ev !== to && frames < 100000) {
+        ev = adaptEv100(ev, to, 1 / 60);
+        frames++;
+      }
+      expect(ev).toBe(to);
+      return frames / 60;
+    };
+    // From daylight to EV -3 as before (a few seconds), the last three stops in 20 to 30 seconds.
+    const toMinus3 = seconds(15, DARK_ADAPT_EV);
+    expect(toMinus3).toBeLessThan(12);
+    const last = seconds(DARK_ADAPT_EV, EV_DARK_FLOOR);
+    expect(last).toBeGreaterThan(20);
+    expect(last).toBeLessThan(30);
+    expect(seconds(15, EV_DARK_FLOOR)).toBeCloseTo(toMinus3 + last, 0);
+    // The rate below -3 is ADAPT_DARK, whatever the gap (no exponential head start).
+    expect(-4 - adaptEv100(-4, EV_DARK_FLOOR, 1)).toBeCloseTo(ADAPT_DARK, 9);
+    expect(-3.5 - adaptEv100(-3.5, -3.6, 1)).toBeCloseTo(0.1, 9);
+    // Above -3 nothing changed, and a step that crosses -3 stops there for this frame.
+    expect(adaptEv100(5, -6, 1 / 60)).toBe(adaptEv100(5, -3, 1 / 60));
+    expect(adaptEv100(-2.99, -6, 1)).toBe(DARK_ADAPT_EV);
+    // Back up from the floor: under 10 s to full sun, the first stops within a fraction of a second.
+    expect(seconds(EV_DARK_FLOOR, 15)).toBeLessThan(10);
+    expect(adaptEv100(EV_DARK_FLOOR, 15, 0.25)).toBeGreaterThan(EV_DARK_FLOOR + 5);
   });
 });
 
@@ -110,8 +146,9 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     expect(base.histogramWeight).toBe(1);
     const mean = histogramStats(h, N).mean;
     expect(base.targetEv100).toBeCloseTo(ev100ForMidGrey(mean) - exposureCompensationCurve(ev100ForMidGrey(mean)), 6);
-    // Add 3 % of very bright pixels (a white lander): the 99th percentile must stay below 4 x mid-grey.
-    fill(h, 60000, 70000, 0.03 * N);
+    // Add 3 % of very bright pixels (a white lander in the sun: albedo 0.8 to 0.9 under 128,000 lux): the
+    // 99th percentile must stay below 4 x mid-grey.
+    fill(h, 30000, 36000, 0.03 * N);
     const prot = meter(h);
     const p99 = histogramStats(h, N).p99;
     expect(p99 * exposureFromEv100(prot.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
@@ -238,6 +275,70 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     const flat = new Uint32Array(HISTOGRAM_BINS);
     flat[luminanceBin(30)] = 0.6 * N;
     expect(histogramStats(flat, N, Infinity).logMean).toBeCloseTo(histogramStats(flat, N).mean, 6);
+  });
+});
+
+describe('highlight protection is bounded while the sun lights the scene (request vfx-4)', () => {
+  const day = (): Uint32Array => {
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, 2000, 6000, 0.9 * N); // sunlit ground
+    return h;
+  };
+  const evSun = sunny16Ev(SUN);
+
+  it('lit pixels far brighter than sunlit white clip instead of darkening the day', () => {
+    const base = meter(day()).targetEv100;
+    // Steam and ground lit by a plume (and anything else that is geometry and brighter than the sun makes
+    // it): 3 % of the frame at 300,000 to 1,000,000 cd/m^2.
+    const h = day();
+    fill(h, 3e5, 1e6, 0.03 * N);
+    const lit = meter(h).targetEv100;
+    expect(SUNLIT_HIGHLIGHT_MAX_EV).toBe(0.5);
+    expect(lit).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+    expect(lit).toBeGreaterThanOrEqual(base);
+    // The bright patch is two stops and more over white: it clips, and the day stays a day (sunlit ground
+    // of albedo 0.1 no darker than two stops under mid-grey).
+    expect(3e5 * exposureFromEv100(lit)).toBeGreaterThan(4);
+    expect(4000 * exposureFromEv100(lit)).toBeGreaterThan(0.18 / 4);
+    // Sunlit white itself (0.9 x 128,000 / pi cd/m^2) is still protected: the bound is half a stop above
+    // what holds it under 4 x mid-grey.
+    const white = day();
+    fill(white, 33000, 36700, 0.05 * N);
+    expect(histogramStats(white, N).p99 * exposureFromEv100(meter(white).targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+  });
+
+  it('an emitter over the sky is bounded alike by day', () => {
+    const base = meter(day()).targetEv100;
+    const flame = meter(day(), { emissive: [{ luminance: 5e6, coverage: 0.05 }] }).targetEv100;
+    expect(flame).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+    expect(flame).toBeGreaterThanOrEqual(base);
+    // Over an empty daylight sky (nothing else lit in the frame) the same: the prior is the sun's.
+    const sky = meter(new Uint32Array(HISTOGRAM_BINS), { emissive: [{ luminance: 5e6, coverage: 0.05 }] }).targetEv100;
+    expect(sky).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+    expect(sky).toBeGreaterThanOrEqual(evSun);
+  });
+
+  it('at night, in an eclipse and under a sliver of sun the protection is whole', () => {
+    const night = { sunVisibility: 0, litObjectInView: false };
+    // The plume-lit pad of a night launch: exposed so that its 99th percentile stays under 4 x mid-grey.
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, 2e3, 2e4, 0.05 * N);
+    const pad = meter(h, night);
+    expect(histogramStats(h, N).p99 * exposureFromEv100(pad.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+    // An emitter over the night sky, as before (request vfx-1).
+    const trail = meter(new Uint32Array(HISTOGRAM_BINS), { ...night, emissive: [{ luminance: 26000, coverage: 0.02 }] });
+    expect(26000 * exposureFromEv100(trail.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.05);
+    // 3 % of the solar disc over the limb: the scene is not sunlit in the sense of the bound.
+    const sliver = meter(h, { sunVisibility: 0.03 });
+    expect(histogramStats(h, N).p99 * exposureFromEv100(sliver.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+    // From a third of the disc on the bound is whole; between 5 % and 30 % it comes in gradually.
+    const bright = new Uint32Array(HISTOGRAM_BINS);
+    fill(bright, 2e4, 4e4, 0.05 * N);
+    const third = meter(bright, { sunVisibility: 0.3 }).targetEv100;
+    expect(third).toBeLessThanOrEqual(sunny16Ev(SUN * 0.3) + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+    const tenth = meter(bright, { sunVisibility: 0.1 }).targetEv100;
+    expect(tenth).toBeGreaterThan(sunny16Ev(SUN * 0.1) + SUNLIT_HIGHLIGHT_MAX_EV);
+    expect(tenth).toBeLessThan(meter(bright, { sunVisibility: 0.03 }).targetEv100);
   });
 });
 

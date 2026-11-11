@@ -70,8 +70,9 @@ core-owned pass the core has already called `pass.setBindGroup(0, frame.frameBin
 | 7 | atmosphere + clouds | `compositeAtmosphere(frame, encoder, hdrTarget)` | Your own passes; the last one blends into `hdrTarget` (loadOp `load`). May sample `'scene.depth'`, `'scene.depthHalf'`. Publish `'atmosphere.aerialPerspective'`, `'clouds.screen'`, `'clouds.depth'`. |
 | 8 | offscreen transparents | `preTransparent(frame, encoder)` | Your own passes into your own targets (half-resolution volumes). Read `'scene.depth'` / `'scene.depthHalf'`. Never touch the HDR target. |
 | 8a | copy | core | HDR -> `'scene.colorCopyTransparent'`, only if required. |
+| 8b | exposure histogram | core | Of the HDR target as it is HERE: opaque geometry, water, atmosphere and clouds. What `drawTransparent` adds is not metered (section 13). |
 | 9 | transparents | `drawTransparent(frame, pass)` | Colour: HDR with blending (premultiplied: `one`, `one-minus-src-alpha`; or dual-source). Depth read-only (`depthWriteEnabled: false`), compare `greater-equal`. Every fragment goes through `applyAtmosphere()` (section 9). |
-| 10 | TAA / TAAU, bloom, exposure, tonemap | core | Dynamic resolution on GPU time; inputs sanitised. |
+| 10 | TAA / TAAU, bloom, tonemap | core | Dynamic resolution on GPU time; inputs sanitised. |
 | 11 | LDR overlay | `drawOverlay(frame, pass)` | Colour: the canvas (`ctx.canvasFormat`), display resolution, sRGB-encoded values, no depth. Drawn after the tonemap in the same pass. |
 
 Rules that hold everywhere:
@@ -733,7 +734,8 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   of the lit range to mid-grey with the compensation curve `clamp((EV - 4) x 0.08, -1, 0.8)`, capped so
   the 99th percentile stays below 4 x mid-grey. Below 0.5 % lit coverage the photometric prior is used
   alone (sunny 16 x sun visibility at the camera when a lit body, a lit vessel, any lit geometry or the
-  unoccluded solar disc itself is in view; EV -3, the dark-adapted floor, otherwise);
+  unoccluded solar disc itself is in view; EV -6, the dark-adapted floor `EV_DARK_FLOOR`, otherwise: the
+  Milky Way then lies two stops under mid-grey; the target is clamped to `EV_MIN` = -7 after compensation);
   between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
@@ -746,17 +748,25 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   hundred times brighter than the cabin stops the camera down by 1.75 EV and still blows out, the shaded
   cabin sits two to three stops under mid-grey, and the windows (farther than 8 m) blow out. Exterior and
   map metering do not know these terms.
-- **Emitters over the sky** (request `vfx-1`). The histogram holds geometry only, so a plume, a reentry
-  trail or a fireball in front of space or the night sky is invisible to the meter. A feature that draws
-  one calls `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
+- **The meter sees what is lit, not what emits** (request `vfx-4`). The histogram is taken before the
+  transparent pass: terrain, water, clouds, hulls and whatever a plume LIGHTS are in it; the flame, the
+  splash crown and the fireball are not, whether they stand in front of geometry or of the sky. And while
+  the sun lights the scene (`sunVisibility` from 0.05, fully from 0.3) the metered pixels and the emitter
+  hints may raise the target to at most `SUNLIT_HIGHLIGHT_MAX_EV` = 0.5 EV above sunny 16: sunlit white
+  sits just under display white there, and anything brighter clips and blooms instead of turning noon
+  into dusk. (A frame full of sunlit cloud or snow is therefore shown at half to two thirds of white; the
+  mean alone would have put it at a third.) At night, in an eclipse and in a cabin nothing is bounded.
+- **Emitters** (requests `vfx-1`, `vfx-4`). A plume, a reentry trail or a fireball is invisible to the
+  meter. A feature that draws one and wants the camera to react calls
+  `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
   `luminance` = representative luminance of its visible part (cd/m^2), `coverage` = fraction of the frame
-  it covers where NO geometry is behind it (the part in front of geometry is metered already). In exterior
+  it covers (over the sky or over geometry alike: neither part is metered otherwise). In exterior
   and map views the hint is added to the histogram as lit pixels of that luminance and coverage, and it
   raises the photometric prior towards the exposure that keeps the emitter below 4 x mid-grey: fully from
   1 % coverage (`EMISSIVE_FULL`), in proportion below, not at all under 0.02 %. So a trail across a night
   sky is exposed for the trail, RCS puffs on a lander in shadow stop the camera down part of the way, and
   in daylight a plume over the sky counts exactly like the same plume over the ground. Hints apply to the
-  next frame's metering; adaptation speeds are unchanged. An interior view ignores them. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones, and exponential (the same constants as rates per second) while the gap is large: 70 % of a 15 EV jump is taken in half a second. Between 0.5 % and 10 % of the frame lit, the target is a mix of the photometric prior and the histogram; a lit area BRIGHTER than the prior (a plume and its cloud at night) is followed alone from 2 % (`LIT_FULL_BRIGHT`, request `vfx-3`).
+  next frame's metering; adaptation speeds are unchanged. An interior view ignores them. Adaptation 2.5 EV/s towards brighter scenes, 0.8 EV/s towards darker ones, and exponential (the same constants as rates per second) while the gap is large: 70 % of a 15 EV jump is taken in half a second. Below EV -3 (`DARK_ADAPT_EV`) the fall is dark adaptation: a constant 0.12 EV/s (`ADAPT_DARK`), 25 s for the three stops down to the floor; the way back up keeps its rate, so one lit pixel in view ends it at once (request `sky-lighting-3`). Between 0.5 % and 10 % of the frame lit, the target is a mix of the photometric prior and the histogram; a lit area BRIGHTER than the prior (a plume and its cloud at night) is followed alone from 2 % (`LIT_FULL_BRIGHT`, request `vfx-3`).
 - TAA / TAAU: Halton(2, 3) jitter of 8 samples (8 / scale^2 when upscaling, at most 32) in `frame.proj`;
   the resolve runs at display resolution (jitter-aware 3 x 3 reconstruction, closest-depth velocity,
   5-tap Catmull-Rom history, YCoCg variance clip), RCAS sharpening in the tonemap pass. Write correct RT3
@@ -783,7 +793,15 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   max(0.3 m, 1.5 % of the distance)) are computed at half resolution from `'scene.depthOpaque'` and RT1;
   AO multiplies ambient light only (`Surface.ao`), the contact term multiplies the sun.
 - Bloom is threshold-free and linear (6 levels, 13-tap downsamples, no Karis average), mixed at 4 %; the
-  tonemapper is AgX.
+  tonemapper is AgX with a linear toe (request `sky-lighting-3`): from 3 stops under mid-grey upwards the
+  image is AgX alone (mid-grey at 117 of 255, 3 stops under it at 31); from 4 stops under it downwards
+  display-linear = `TOE_GAIN` (0.48) x scene-linear on the colour as a whole, so a dim colour keeps its hue
+  and a smooth falloff has no foot (a grey at -5 / -6 / -7 / -8 stops shows as 8.9 / 4.4 / 2.2 / 1.1 of 255;
+  the sigmoid alone gave 3.4 / 0.8 / 0.2 / 0.1 and turned a warm grey rust-brown on the way); a smoothstep
+  in stops of scene luminance between the two. Bright saturated colours desaturate towards white over the
+  last four stops and are white from about 6.5 stops over mid-grey (an orange 1.6 : 0.8 : 0.2 shows as
+  233, 204, 146 at +3 stops, 253, 241, 209 at +5). `displayLinear()` in `src/render/core/post/tonemap.ts`
+  is the same arithmetic on the CPU; `tests/browser/render-core/exposure.spec.ts` holds the canvas to it.
 - Saturated sources keep their energy (ARCHITECTURE 10.4): the spatial reconstruction of the resolve and the
   bloom chain are linear, and the history clip does not cut very bright values down, so a sun disc of a
   few pixels or a stable glint at `HDR_MAX` reaches the bloom. Measured on a 9-pixel disc at `HDR_MAX`:
@@ -1135,6 +1153,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
+| The exposure histogram is taken before the transparent pass (frame graph step 8b); under the sun the target is bounded at sunny 16 + `SUNLIT_HIGHLIGHT_MAX_EV` (0.5) for metered pixels and emitter hints alike | `vfx-4` | vfx (flames, splashes, fireballs no longer stop the camera down; send a hint for an emitter in front of geometry if the camera should react); every bright daylight frame (cloud decks, snow, a white hull filling the frame: up to 0.65 EV brighter than before); night scenes unchanged | A transparent that was metered because it stood in front of geometry is not any more: add a hint where that was relied on |
+| Dark floor `EV_DARK_FLOOR` -3 -> -6, `EV_MIN` -3 -> -7; dark adaptation below EV -3 at `ADAPT_DARK` = 0.12 EV/s (`DARK_ADAPT_EV`); the tone curve's toe is linear and hue-preserving below 4 stops under mid-grey (`TOE_GAIN`, `displayLinear`) | `sky-lighting-3` | every view with nothing lit in it (the night sky, deep space, the night side from orbit); every pixel darker than 3 stops under mid-grey in every package (deep shadow, unlit sides: lifted, e.g. 3.4 -> 8.9 of 255 at 5 stops under) | None in code. Specs that pinned the floor at -3 or the level of deep shadow must be re-measured; a frame with nothing lit takes 25 s longer to reach its darkest exposure |
 | Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin at night is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.75 EV darker than before |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
 | Cloth looks the sun shadow up with the normal turned to the sun; planetshine is multiplied by the baked AO (RT0.a) | `cockpit-1`, `cockpit-2` | cockpit, vehicle-pad (canopies, blankets), anything that bakes AO into RT0.a | None. Surfaces with baked AO below 1 receive that much less planetshine |

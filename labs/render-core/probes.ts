@@ -12,6 +12,8 @@
  *   reactive a patch of per-pixel noise (0 or 2) that is new every frame and has no motion vector, and the
  *            'post.reactive' mask over its left half (setReactive)
  *   ridge    a 150 km body-fixed ridge on the moon-sized body (terminator shadow from far away)
+ *   flame    an additive transparent rectangle over the middle of the frame (30 % x 30 %), in front of
+ *            whatever is there, of a luminance set with setFlame (cd/m^2; 0 = off): an emitter over geometry
  *
  * Markers are 16 x 16 px squares in the top-left corner of the render target: marker k covers
  * x = 8 + 24 k .. 24 + 24 k, y = 8 .. 24.
@@ -101,7 +103,12 @@ export interface Probes {
   heavyIterations(): number;
   /** Value the reactive probe writes into 'post.reactive' over the left half of its flickering patch. */
   setReactive(value: number): void;
+  /** Luminance (cd/m^2) of the flame probe's rectangle; 0 = not drawn. */
+  setFlame(luminance: number): void;
 }
+
+/** The flame probe's rectangle, as fractions of the render target: x, y, width, height. */
+export const FLAME_RECT = { x: 0.35, y: 0.35, width: 0.3, height: 0.3 };
 
 /** Render-target rectangle of the reactive probe's flickering patch; the mask covers its left half. */
 export const REACTIVE_PATCH = { x: 400, y: 300, width: 400, height: 100 };
@@ -117,6 +124,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   const cascadeLog: CascadeLogEntry[] = [];
   let violations = 0;
   let cloudLayer: { begin: number; end: number } | null = null;
+  let flameLuminance = 0;
   let volumeOn = true;
   let volumeScreen: { x: number; y: number; radius: number } | null = null;
   let heavyIterations = Number(query.get('heavy') ?? 0);
@@ -686,6 +694,46 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     });
   }
 
+  // ------------------------------------------------------------------------------------------- flame
+  if (names.has('flame')) {
+    let ctx: RenderContext;
+    let pipeline: Tracked<GPURenderPipeline>;
+    let uniform: GPUBuffer;
+    let group: GPUBindGroup;
+    features.push({
+      id: 'lab-flame',
+      order: 30,
+      init(c) {
+        ctx = c;
+        uniform = c.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        const layout = c.device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
+        group = c.device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: uniform } }] });
+        pipeline = coreOf(c).fullscreenPipeline({
+          label: 'lab-flame.quad',
+          layouts: [layout],
+          fragment: /* wgsl */ `struct FlameU { v: vec4f }   // x = luminance, cd/m^2
+            @group(1) @binding(0) var<uniform> flame: FlameU;
+            @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f { return vec4f(writeHdr(vec3f(flame.v.x * frame.exposure.x)), 0.0); }`,
+          targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one' }, alpha: { srcFactor: 'zero', dstFactor: 'one' } } }],
+          depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+        });
+        pipeline.get();
+      },
+      prepare() {
+        ctx.device.queue.writeBuffer(uniform, 0, new Float32Array([flameLuminance, 0, 0, 0]));
+      },
+      drawTransparent(frame, pass) {
+        if (flameLuminance <= 0) return;
+        const [w, h] = frame.renderSize;
+        pass.setPipeline(pipeline.get());
+        pass.setBindGroup(1, group);
+        pass.setScissorRect(Math.floor(w * FLAME_RECT.x), Math.floor(h * FLAME_RECT.y), Math.floor(w * FLAME_RECT.width), Math.floor(h * FLAME_RECT.height));
+        pass.draw(3);
+        pass.setScissorRect(0, 0, w, h);
+      },
+    });
+  }
+
   // ------------------------------------------------------------------- moving caster (vessel frame)
   if (names.has('mover')) {
     let batch: MeshBatch;
@@ -1085,5 +1133,8 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       heavyIterations = n;
     },
     heavyIterations: () => heavyIterations,
+    setFlame(luminance) {
+      flameLuminance = Math.max(0, luminance);
+    },
   };
 }

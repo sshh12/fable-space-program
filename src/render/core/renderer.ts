@@ -763,6 +763,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       perf.gpuGap('core.copies');
     }
 
+    // 8b. exposure histogram of what is LIT: opaque geometry, water, atmosphere and clouds, before anything
+    // that emits in front of them is drawn (a flame over the pad must not stop the camera down: request vfx-4).
+    meter.run(encoder, frame, perf, frameBindGroup, T.views.hdr, T.views.depthCopy);
+
     // 9. transparents
     if (features.some((f) => f.drawTransparent)) {
       runRasterHook(
@@ -780,8 +784,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       );
     }
 
-    // 10. exposure histogram, TAA / TAAU, bloom, tonemap; 11. LDR overlay
-    meter.run(encoder, frame, perf, frameBindGroup, T.views.hdr, T.views.depthCopy);
+    // 10. TAA / TAAU, bloom, tonemap; 11. LDR overlay
     const warp = snapshot.warp.factor;
     const viewTurn = 2 * Math.acos(Math.min(1, Math.abs(camera.qViewToRoot.x * prevCamera.qViewToRoot.x + camera.qViewToRoot.y * prevCamera.qViewToRoot.y + camera.qViewToRoot.z * prevCamera.qViewToRoot.z + camera.qViewToRoot.w * prevCamera.qViewToRoot.w)));
     const resolved = post.run(encoder, frame, perf, frameBindGroup, {

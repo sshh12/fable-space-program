@@ -39,8 +39,12 @@ test('static scene with TAA: frame-to-frame difference below 1/255 mean, near ob
   console.log(`static TAA diff: mean ${d1.meanAbsDiff.toFixed(4)} and ${d2.meanAbsDiff.toFixed(4)} of 255, max ${Math.max(d1.maxAbsDiff, d2.maxAbsDiff)}`);
   expect(d1.meanAbsDiff).toBeLessThan(1);
   expect(d2.meanAbsDiff).toBeLessThan(1);
-  // No flicker anywhere: jitter, AO and shadow noise are fully resolved (a z-fight would toggle whole pixels).
-  expect(Math.max(d1.maxAbsDiff, d2.maxAbsDiff)).toBeLessThanOrEqual(24);
+  // No flicker anywhere: jitter, AO and shadow noise are fully resolved (a z-fight would toggle whole pixels
+  // between the levels of two surfaces, a hundred and more). What is left is the resolve's jitter-cycle
+  // ripple on the one-pixel silhouette of the cylinder's shaded side against the black sky (request
+  // sky-lighting-1): 16 against 44 of 255 there at this frame's exposure, which is sunny 16 + 0.5 EV since
+  // request vfx-4 (it was 0.65 EV darker, and the same pixels differed by 24).
+  expect(Math.max(d1.maxAbsDiff, d2.maxAbsDiff)).toBeLessThanOrEqual(36);
   expect(a.stats.fractionNonBlack).toBeGreaterThan(0.2);
 
   // Both objects are in the depth buffer at their true distances (reversed-Z: depth = 0.05 m / distance).

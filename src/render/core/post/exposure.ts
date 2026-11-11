@@ -20,10 +20,22 @@ export const INTERIOR_RANGE = 8;
 export const MID_GREY = 0.18;
 /** exposure = 1 / (EXPOSURE_K * 2^EV100). */
 export const EXPOSURE_K = 1.2;
-export const EV_MIN = -3;
+/** Lower bound of EV100 after exposure compensation: one stop of room under the dark floor. */
+export const EV_MIN = -7;
 export const EV_MAX = 16.5;
-/** Dark-adapted floor: the exposure of a frame with nothing lit in it (stars and the Milky Way visible). */
-export const EV_DARK_FLOOR = -3;
+/**
+ * Dark-adapted floor: the exposure of a frame with nothing lit in it and no emitter metered. At EV -6 the
+ * Milky Way (5e-4 to 1e-3 cd/m^2) lies 1.7 to 2.7 stops under mid-grey, as in night photographs from orbit
+ * (request sky-lighting-3; it was -3, which left the night sky a black frame with a few dozen dots).
+ */
+export const EV_DARK_FLOOR = -6;
+/**
+ * Below this EV100 the eye's (and the camera operator's) dark adaptation is slow: the exposure falls at
+ * ADAPT_DARK EV per second, 25 s for the three stops down to the floor. Everything above it, and the way
+ * back up, keeps the ordinary rates: one lit pixel brings the exposure back at once.
+ */
+export const DARK_ADAPT_EV = -3;
+export const ADAPT_DARK = 0.12;
 /** Below this lit fraction of the frame the photometric prior is used alone; above LIT_FULL the histogram alone. */
 export const LIT_PRIOR_ONLY = 0.005;
 export const LIT_FULL = 0.1;
@@ -38,6 +50,19 @@ export const LIT_FULL_BRIGHT = 0.02;
 export const LIT_PRESENT = 0.0002;
 /** The 99th percentile of lit pixels is kept below this multiple of mid-grey (highlight protection). */
 export const HIGHLIGHT_CAP = 4;
+/**
+ * While the sun lights the scene, the metered pixels and the emitters may raise the target to at most this
+ * many EV above sunny 16: sunlit white (albedo 0.9) sits at 0.9 of white there, and half a stop covers snow,
+ * cloud tops and a white hull. Whatever is brighter than that by day (a flame, the ground it lights)
+ * clips and blooms, as in every daylight launch photograph, instead of turning noon into dusk (request
+ * vfx-4). A frame full of sunlit cloud or snow is therefore shown at half to two thirds of white, not at
+ * the mid-grey a mean alone would give it. The bound comes in between SUNLIT_VISIBILITY_MIN and
+ * SUNLIT_VISIBILITY_FULL of the solar disc: under a sliver of sun, in an eclipse and at night the
+ * protection is whole.
+ */
+export const SUNLIT_HIGHLIGHT_MAX_EV = 0.5;
+export const SUNLIT_VISIBILITY_MIN = 0.05;
+export const SUNLIT_VISIBILITY_FULL = 0.3;
 /**
  * Interior metering (request cockpit-5). A dim cabin is displayed dim: the target is this many EV darker
  * than the log-average alone asks for when the near log-mean is at or below INTERIOR_NIGHT_LOW cd/m^2,
@@ -176,7 +201,11 @@ const smooth = (a: number, b: number, x: number): number => {
  * so that the cabin is exposed between its shade and its sun patch, as a photograph taken inside is. The
  * windows are farther than the range and blow out.
  *
- * Emitters over the sky (`emissive`) are not in the histogram, which holds geometry only. In an exterior or
+ * The histogram is taken BEFORE the transparent pass (request vfx-4): it holds what is lit (terrain, water,
+ * clouds, hulls, and whatever a plume lights), not what emits in front of it. A flame, a splash crown or a
+ * fireball drawn over geometry reaches the meter the same way as one over the sky: through a hint.
+ *
+ * Emitters (`emissive`) are not in the histogram, which holds geometry only. In an exterior or
  * map view they are added to it as if they were lit pixels of their luminance and coverage (so a plume is
  * metered alike in front of the ground and in front of space), and they raise the prior: an emitter that
  * covers EMISSIVE_FULL of the frame is exposed so that it stays below the highlight cap, a smaller one in
@@ -206,9 +235,13 @@ export function meterExposure(m: MeterInput): MeterResult {
   // floor; raised towards the exposure that keeps an emitter under the highlight cap, by its coverage.
   const somethingLit = m.litObjectInView || all.litFraction > LIT_PRESENT;
   const evSun = sunny16Ev(m.sunIlluminance * m.sunVisibility);
+  // Highlight protection under the sun ends half a stop above sunny 16 (not in a cabin, not without the sun).
+  const sunlit = !interior && somethingLit ? smooth(SUNLIT_VISIBILITY_MIN, SUNLIT_VISIBILITY_FULL, m.sunVisibility) : 0;
+  const evSunlitMax = evSun + SUNLIT_HIGHLIGHT_MAX_EV;
+  const underTheSun = (evHighlight: number): number => (sunlit > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * sunlit : evHighlight);
   let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
   if (emitterCoverage > 0) {
-    const evEmitter = Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
+    const evEmitter = underTheSun(Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
     if (evEmitter > evPrior) evPrior += (evEmitter - evPrior) * smooth(LIT_PRESENT, EMISSIVE_FULL, emitterCoverage);
   }
 
@@ -223,7 +256,9 @@ export function meterExposure(m: MeterInput): MeterResult {
       const evHigh = Math.log2(stats.p99 / (INTERIOR_HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
       evHistogram = Math.min(Math.max(evBase, evHigh), evBase + INTERIOR_HIGHLIGHT_MAX_EV);
     } else {
-      evHistogram = Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
+      // The bound holds for the mean as well as for the 99th percentile: a few per cent of the frame at a
+      // hundred times sunlit white move the arithmetic mean by stops.
+      evHistogram = underTheSun(Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))));
     }
     w = smooth(LIT_PRIOR_ONLY, evHistogram > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
   }
@@ -233,9 +268,15 @@ export function meterExposure(m: MeterInput): MeterResult {
   return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior };
 }
 
-/** Eye-like temporal adaptation: EV rises quickly when the scene gets brighter and falls more slowly. */
+/**
+ * Eye-like temporal adaptation: EV rises quickly when the scene gets brighter and falls more slowly, and
+ * below DARK_ADAPT_EV it falls at the slow, constant rate of dark adaptation.
+ */
 export function adaptEv100(current: number, target: number, dt: number): number {
-  const d = target - current;
+  if (target < current && current <= DARK_ADAPT_EV) return current - Math.min(current - target, ADAPT_DARK * dt);
+  // A fall that would cross DARK_ADAPT_EV ends there for this step; the slow rate takes over from the next.
+  const goal = target < current ? Math.max(target, DARK_ADAPT_EV) : target;
+  const d = goal - current;
   const rate = d > 0 ? ADAPT_UP : ADAPT_DOWN;
   // Exponential approach far from the target, constant-rate cap so large jumps take visible time.
   const step = Math.min(Math.abs(d), Math.max(rate * dt, Math.abs(d) * (1 - Math.exp(-dt * rate))));

@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { EV_DARK_FLOOR } from '../../../src/render/core/post/exposure';
+import { displayLinear, srgbEncode } from '../../../src/render/core/post/tonemap';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
 // The first navigation of a run compiles the page through Vite; on a loaded machine that alone can take a minute.
@@ -125,10 +127,17 @@ test('a sunlit object covering 3 % of a black frame exposes within 0.5 EV of sun
     }
     lab.camera.spec = { type: 'free', positionRoot: { x: v.x + fwd.x * 200, y: v.y + fwd.y * 200, z: v.z + fwd.z * 200 }, qViewToRoot: q };
   });
-  await page.waitForFunction(() => window.__lab!.renderer.exposureInfo().targetEv100 === -3, undefined, { timeout: 30_000 });
+  await page.waitForFunction((ev) => window.__lab!.renderer.exposureInfo().targetEv100 === ev, EV_DARK_FLOOR, { timeout: 30_000 });
+  // Down to EV -3 in a few seconds, then dark adaptation: 25 s for the last three stops.
+  const t0 = Date.now();
+  await page.waitForFunction(() => window.__lab!.renderer.exposureInfo().ev100 <= -3, undefined, { timeout: 30_000 });
+  const toMinus3 = (Date.now() - t0) / 1000;
   await settled(page);
+  const toFloor = (Date.now() - t0) / 1000 - toMinus3;
   const floor = await exposure(page);
-  expect(floor.ev100).toBeCloseTo(-3, 1);
+  console.log(`dark frame: EV100 ${floor.ev100.toFixed(2)}; ${toMinus3.toFixed(1)} s down to EV -3, ${toFloor.toFixed(1)} s more to the floor`);
+  expect(floor.ev100).toBeCloseTo(EV_DARK_FLOOR, 1);
+  expect(toFloor, 'seconds of dark adaptation from EV -3 to the floor').toBeGreaterThan(18);
   expect(floor.litFraction).toBe(0);
   await expectNoErrors(page, pageLog);
 });
@@ -152,7 +161,7 @@ test('a thin crescent of a body exposes within 0.5 EV of sunny 16', async ({ pag
   await expectNoErrors(page, pageLog);
 });
 
-test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the small disc keeps its energy through the resolve, and the image recovers as exposure adapts', async ({ page, pageLog }) => {
+test('overflow: sun disc and a mirror ball at the dark-adapted floor never produce NaN, the small disc keeps its energy through the resolve, and the image recovers as exposure adapts', async ({ page, pageLog }) => {
   // The sim is paused, so the camera that places the sun is the camera the frame is rendered with (in a
   // running sim the vessel moves 24 m per frame under a camera 40 m away).
   await openPage(page, '/labs/render-core/?scene=translunar&planet=0&stand=0&probe=ball,mirror,sun&orbit=20,10,40&hud=0&fov=100&paused=1&scale=1');
@@ -177,9 +186,9 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the sm
     });
   });
   await waitIdle(page, 10);
-  const r = await page.evaluate(async () => {
+  const r = await page.evaluate(async (floorEv) => {
     const lab = window.__lab!;
-    lab.renderer.setExposureOverride(-3);
+    lab.renderer.setExposureOverride(floorEv);
     lab.setLoop(false);
     /** Where the sun is in the HDR target, and how many saturated SKY pixels (depth == 0) lie on its disc. */
     const sunOnScreen = async (): Promise<{ x: number; y: number; inFrame: boolean; saturatedSky: number; saturatedGeometry: number }> => {
@@ -228,7 +237,7 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the sm
         resolvedEnergy += s.data[k + 1]! / 8;
       }
     }
-    // Release the override: exposure adapts from EV -3 upwards; check every frame on the way.
+    // Release the override: exposure adapts from the floor upwards; check every frame on the way.
     lab.renderer.setExposureOverride(null);
     const recovery: { ev: number; nan: number; max: number }[] = [];
     for (let i = 0; i < 400; i++) {
@@ -241,7 +250,7 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the sm
     }
     lab.setLoop(true);
     return { frames, recovery, resolvedSunMax, hdrEnergy, resolvedEnergy };
-  });
+  }, EV_DARK_FLOOR);
   for (const f of r.frames) {
     // The sun disc really is in the frame, on sky pixels, saturated: this is the overflow path under test.
     expect(f.sun.inFrame).toBe(true);
@@ -295,5 +304,87 @@ test('overflow: sun disc and a mirror ball at EV100 -3 never produce NaN, the sm
   const sky = ringMean(70, 80);
   console.log(`overflow: glow around the recovered sun ${glow.toFixed(1)} / 255 at 5-9 px, sky ${sky.toFixed(1)} / 255 at 70-80 px`);
   expect(glow).toBeGreaterThan(sky + 12);
+  await expectNoErrors(page, pageLog);
+});
+
+test('the canvas is the display transform of the resolved image: AgX above three stops under mid-grey, the linear toe below four', async ({ page, pageLog }) => {
+  // The LabPlanet from low orbit with no bloom to speak of and a still camera: the canvas pixel must be what
+  // the CPU port of the tonemap pass makes of the resolved HDR pixel, at the daylight exposure and four to
+  // seven stops under it (where the toe decides: request sky-lighting-3).
+  await openPage(page, '/labs/render-core/?scene=lowOrbit&stand=0&hud=0&paused=1&deterministic=1&scale=1&governor=off&body=earth&lat=10&lon=-150&alt=300000&pitch=-60');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => window.__lab!.renderer.setJitter(false));
+  await waitIdle(page, 20);
+  const s16 = await sunny16(page);
+  const rows: string[] = [];
+  for (const stopsUnder of [0, 4, 5.5, 7]) {
+    await page.evaluate((ev) => window.__lab!.renderer.setExposureOverride(ev), s16 + stopsUnder);
+    await page.evaluate(() => window.__test!.waitFrames(24));
+    const hdr = await page.evaluate(async () => {
+      const px = await window.__lab!.renderer.readHdrPixels('resolved');
+      return { width: px.width, height: px.height, data: Array.from(px.data) };
+    });
+    const png = PNG.sync.read(await page.screenshot());
+    expect([png.width, png.height]).toEqual([hdr.width, hdr.height]);
+    const errors: number[] = [];
+    let darkest = Infinity;
+    let brightest = -Infinity;
+    let inToe = 0;
+    for (let y = 8; y < hdr.height - 8; y += 12) {
+      for (let x = 8; x < hdr.width - 8; x += 12) {
+        const at = (dx: number, dy: number, c: number): number => hdr.data[((y + dy) * hdr.width + x + dx) * 4 + c]!;
+        // Smooth places only: where the four neighbours agree within 2 %, sharpening and bloom change nothing.
+        let smooth = at(0, 0, 1) > 1e-7;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [3, 3], [-3, -3]] as const) for (let c = 0; c < 3; c++) if (Math.abs(at(dx, dy, c) - at(0, 0, c)) > 0.02 * at(0, 0, c) + 1e-6) smooth = false;
+        if (!smooth) continue;
+        const want = displayLinear([at(0, 0, 0), at(0, 0, 1), at(0, 0, 2)]).map((v) => 255 * srgbEncode(v));
+        const o = (y * png.width + x) * 4;
+        for (let c = 0; c < 3; c++) errors.push(Math.abs(png.data[o + c]! - want[c]!));
+        const level = Math.log2(Math.max(0.2126 * at(0, 0, 0) + 0.7152 * at(0, 0, 1) + 0.0722 * at(0, 0, 2), 1e-12) / 0.18);
+        darkest = Math.min(darkest, level);
+        brightest = Math.max(brightest, level);
+        if (level < -4) inToe++;
+      }
+    }
+    errors.sort((a, b) => a - b);
+    const p = (q: number): number => errors[Math.min(errors.length - 1, Math.floor(q * errors.length))] ?? NaN;
+    rows.push(`${stopsUnder} stops under daylight: ${errors.length / 3} smooth pixels from ${darkest.toFixed(1)} to ${brightest.toFixed(1)} stops around mid-grey (${inToe} below -4), canvas against the CPU transform: median ${p(0.5).toFixed(2)}, 99th percentile ${p(0.99).toFixed(2)} of 255`);
+    expect(errors.length, 'smooth pixels compared').toBeGreaterThan(3000);
+    // One level of dither on each side, and the sharpening's and the bloom's last per cent.
+    expect(p(0.5)).toBeLessThan(1.0);
+    expect(p(0.99)).toBeLessThan(2.5);
+    if (stopsUnder >= 5.5) expect(inToe, 'smooth pixels more than four stops under mid-grey (the linear toe)').toBeGreaterThan(2000);
+  }
+  for (const row of rows) console.log(row);
+  await page.evaluate(() => window.__lab!.renderer.setExposureOverride(null));
+  await expectNoErrors(page, pageLog);
+});
+
+test('the meter sees what is lit, not what emits in front of it: a flame over sunlit ground clips and the day stays a day (request vfx-4)', async ({ page, pageLog }) => {
+  // Sunlit ground fills the frame; the flame probe draws an additive transparent over 9 % of it.
+  await openPage(page, '/labs/render-core/?scene=lowOrbit&stand=0&hud=0&probe=flame&scale=1&governor=off&body=earth&lat=10&lon=-150&alt=300000&pitch=-60');
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 30);
+  await settled(page);
+  const before = await exposure(page);
+  const s16 = await sunny16(page);
+  const centre = async (): Promise<number> => {
+    const png = PNG.sync.read(await page.screenshot());
+    const o = (Math.floor(png.height / 2) * png.width + Math.floor(png.width / 2)) * 4;
+    return Math.min(png.data[o]!, png.data[o + 1]!, png.data[o + 2]!);
+  };
+  const groundLevel = await centre();
+  // A flame of 2e7 cd/m^2 (five hundred times sunlit white) for two seconds.
+  await page.evaluate(() => window.__rc!.probes.setFlame(2e7));
+  await page.evaluate(() => window.__test!.waitFrames(120));
+  const during = await exposure(page);
+  const flameLevel = await centre();
+  await saveScreenshot(page, 'render-core', 'exposure-flame-over-ground');
+  await page.evaluate(() => window.__rc!.probes.setFlame(0));
+  console.log(`flame over sunlit ground: EV100 ${before.ev100.toFixed(2)} -> ${during.ev100.toFixed(2)} (target ${before.targetEv100.toFixed(2)} -> ${during.targetEv100.toFixed(2)}, sunny 16 = ${s16.toFixed(2)}); centre pixel ${groundLevel} -> ${flameLevel} of 255`);
+  expect(Math.abs(during.targetEv100 - before.targetEv100), 'change of the exposure target when the flame appears (EV)').toBeLessThan(0.05);
+  expect(Math.abs(during.ev100 - before.ev100)).toBeLessThan(0.05);
+  expect(flameLevel, 'the flame clips').toBeGreaterThanOrEqual(250);
+  expect(groundLevel).toBeLessThan(240);
   await expectNoErrors(page, pageLog);
 });
