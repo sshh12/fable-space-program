@@ -9,7 +9,7 @@ sets (`earth`, content hash `ab20fdfc579d4015`; `moon`).
 This note is the state after the review fixes (section 10) and after round 1 of the visual close-out
 (section 12: every item of the two critics' lists, what was done, what was not, measured performance).
 Sections 1 to 7 describe the code as it is now; sections 8, 9 and 11 are the review-stage record and are
-superseded by section 12 where they differ.
+superseded by section 12 where they differ (performance of the final code: section 12, "Performance").
 
 ## 1. Where things are
 
@@ -648,3 +648,60 @@ stand-in.
 - Seen in the integration lab and not this package's: horizontal scan-line stripes over the far hills and the
   sea horizon in `integrated-30m` (atmosphere / clouds, work in progress of atmosphere-clouds at the time of
   the run; the terrain alone draws no such lines).
+
+### Performance (final run on the final code, 1440p, `withGpuLock`; three to four other agents' GPU jobs running)
+
+`terrain.perf.spec.ts`: 7 of 12 passed. Numbers are the smallest p99 / mean of up to six interleaved rounds
+(section 8.1). G-buffer and shadows include the ground cover (`terrain-cover.*` passes), as the spec asserts.
+
+| View | Terrain G-buffer + cover, ms (budget) | Shadows + cover, amortised (budget) | Rocks | Main thread p99 / median, ms (budget 1) | Selection p99 |
+|---|---|---|---|---|---|
+| pad, 1.7 m | 0.92 + 0.18 = 1.09 (1.5) | 0.29 + 0.31 = **0.60** (0.5) | 0.00 | **1.90** / 1.41 (cover 0.61 mean) | 0.72 |
+| stony ground, 1.7 m | **2.27** + 0.08 = **2.35** (1.5) | 0.35 + 0.49 = **0.84** (0.5) | **0.69** (0.3) | **2.37** / 1.45 (cover 0.66) | 0.83 |
+| kiawe, 1.7 m | 1.12 + 0.41 = **1.53** (1.5) | 0.35 + 1.13 = **1.48** (0.5) | 0.27 | **2.41** / 1.71 (cover 0.89) | 0.74 |
+| thickets, 120 m | **2.12** + 0.81 = **2.93** (1.5) | 0.20 + 0.76 = **0.96** (0.5) | 0.00 | **2.18** / 1.45 (cover 0.70) | 0.82 |
+| 10 km | 1.14 (1.5) | 0.07 (0.5) | - | 0.85 / 0.42 | 0.64 |
+| LEO | 0.24 (1.5) | 0.07 (0.4) | - | 0.54 / 0.38 | 0.39 |
+| lunar orbit | 0.51 (1.8) | 0.05 (0.6) | - | 0.49 / 0.35 | 0.35 |
+| lunar surface, 1.7 m | 0.84 (1.8) | 0.31 (0.6) | 0.13 (0.3) | 0.95 / 0.69 | 0.62 |
+| Moon from 5,000 km | 0.77 (1.8) | 0.05 (0.6) | - | 0.38 / 0.20 | 0.28 |
+| Earth from 20,000 km | 0.24 (1.5) | 0.04 (0.4) | - | 0.38 / 0.27 | 0.25 |
+
+- 60 s lunar descent: 3,600 frames, 0 over 33 ms (largest 20.0 ms), upload p99 1.70 ms (largest 4.50), queue at
+  most 29, deepest level 18, pools 1,046 MiB: passed. (In an earlier run of the session, with four other GPU
+  jobs, 9 frames were over 33 ms, the largest 211 ms; the run right after it had none.)
+- Warp: failed in this run at 5x (17 frames over 33 ms, largest 310 ms, while map-view's perf project and
+  three functional suites ran); in the run before it 5x, 10x and 50x passed with no frame over 33 ms
+  (largest 19.7 / 21.9 / 21.5 ms, queue at most 4 / 5 / 3).
+- **Over budget, not load alone**: everything on the ground at the Earth site. The far views and the Moon
+  are within their lines with a wide margin (they were 1.2 to 3.4 times higher in a run under heavier
+  load an hour earlier). The four ground views were over in every run of the session:
+  - The ground cover's main-thread cost: 0.6 to 0.9 ms mean. Its G-buffer lists are kept while the camera
+    stands still and index runs are block copies now; what remains is per chunk per frame (some 1,600 chunks
+    of five kinds, out to 7 km: camera-relative rows, frustum test, prefix searches) and per cascade (the
+    shadow lists). Fix not done: chunk origins relative to a body-fixed anchor that moves rarely (rows written
+    only when it does), shadow lists kept per cascade like the G-buffer lists.
+  - Cover shadows (0.3 to 1.1 ms): every cascade whose texel is at most an instance's diameter draws it.
+    Not done: casting only from instances of two texels and more, or a coarser shadow mesh for crowns.
+  - Terrain G-buffer on broken ground and over thickets (2.1 to 2.3 ms): two materials, up to three
+    triplanar planes, three hexagon copies, four detail scales and their relief-shadow marches (four taps each
+    now, were six). A/B with `p.earth.reliefShadow=0` under load: 2.85 -> 2.14 ms at the stony site.
+  - Rocks at the stony site 0.69 ms (0.3): 43,000 instances; the lunar surface's are within budget.
+  The assertions are unchanged. These lines need either the reductions above or a re-measure on the quiet
+  machine before they can be judged; the lead's re-measure (PACKAGE_RULES 16) is the reference.
+- Functional suite on the final code: 20 of 20 (`integrity`: no holes in 12 heights x 4 captures on both
+  bodies, image decode exact, collision surface 0.000 mm, near-field hand-over, jitter; `pops`: 0 block
+  spikes on all six paths, worst ratio 1.18 Earth / 1.71 Moon / 1.02 approach; `views`; `integrated`;
+  `smoke`). Unit tests 44 of 44; typecheck of the package's paths clean; `boundaries.test.ts` 7 of 7.
+
+### Honest scores (own judgement of the final screenshots)
+
+- Photo lens: about 6.5. The pad surroundings read as a lava coast with grass, scrub and kiawe that stand
+  up and cast shadows (`integrated-off-apron-eye`, `integrated-kiawe-120m`, `integrated-200m`); the Moon
+  from orbit, the terminator and the standing views hold up. Against it: the perfectly level plain around the
+  pad (request `terrain-render-6`), lava a little bright against the sky, crowns that look faceted up close
+  (`integrated-stony-ground`, the scrub at the left), smooth pale lumps for the coarser lunar rocks, a
+  mottled slope in `moon-300m`, soft crater-shadow edges from orbit.
+- Artifact lens: about 6. No tiling, no texel staircases on land cover, no stray concrete, no ponds on
+  slopes, no gear teeth; left: rounded shapes of the coarser rock meshes, the ghosting of hexagon copies at
+  one's feet, notches at the near-field radius, stipple at the terminator from 5,000 km.
