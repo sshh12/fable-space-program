@@ -86,9 +86,10 @@ test.describe('vehicle and pad screenshots', () => {
   test('launch complex: overview at noon and at night, tank farm, crew arm, buildings, apron, far view', async ({ page, pageLog }) => {
     await take(page, pageLog, [
       { name: 'site-overview-noon', query: 'scene=pad&sun=175,68&eye=250,-15,330&at=-40,-112,-20&fov=42' },
-      { name: 'site-tank-farm', query: 'scene=pad&sun=175,68&eye=175,-112,285&at=195,-112,255&fov=60' },
+      { name: 'site-tank-farm', query: 'scene=pad&sun=175,68&eye=140,-92,330&at=195,-112,255&fov=55' },
       { name: 'site-crew-arm', query: `${PAD}&eye=9,3,-12&at=0,1.2,-6&fov=60` },
-      { name: 'site-crew-arm-white-room', query: 'scene=pad&sun=140,40&eye=22,10,-34&at=0,2,-12&fov=45' },
+      { name: 'site-crew-arm-white-room', query: 'scene=pad&sun=140,40&eye=-7.5,3.5,-8.5&at=0,1.3,-4.2&fov=55' },
+      { name: 'site-crew-arm-from-tower', query: 'scene=pad&sun=140,40&eye=22,10,-34&at=0,2,-12&fov=45' },
       { name: 'site-support-building', query: `${PAD}&eye=-20,-114,40&at=-38,-117,24&fov=50` },
       { name: 'site-apron', query: `${PAD}&eye=-45,-108,70&at=-25,-118,25&fov=55` },
       { name: 'site-far-800m', query: 'scene=pad&sun=175,68&eye=500,-20,600&at=-40,-100,-20&fov=42' },
@@ -123,7 +124,7 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'lander-mli-closeup', query: 'scene=lunarSurface&sun=290,22&stage=6&eye=1.9,-5.9,5.3&at=0.3,-6.3,2.9&fov=40', minNonBlack: 0.2 },
       { name: 'lander-foot-pad', query: `${MOON}&stage=6&eye=6.7,-7.9,7.1&at=4.8,-8.75,4.8&fov=40`, minNonBlack: 0.2 },
       { name: 'lander-leg-intact', query: legs, minNonBlack: 0.2 },
-      { name: 'lander-leg-broken', query: legs, setup: () => void window.__veh!.sim.setAll('legs', { broken: [true, false, false, false] }), minNonBlack: 0.2 },
+      { name: 'lander-leg-broken', query: legs, setup: () => void window.__veh!.sim.setAll('legs', { broken: [false, true, false, false] }), minNonBlack: 0.2 },
       { name: 'lander-lights', query: 'scene=lunarSurface&sun=110,-20&env=void&stage=6&eye=14,-3,11&at=0,-5.5,0&fov=45', setup: () => void window.__veh!.sim.setAll('light', { on: true }), minNonBlack: 0.01 },
     ]);
     const lit = await page.evaluate(() => window.__veh!.vehicle.stats.lights);
@@ -156,9 +157,11 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'engines-clean', query: engines, setup: noFrost },
       { name: 'engines-sooted', query: engines, setup: sootEverything },
     ]);
-    // Frost: a good part of the barrel in view changes; soot: the skin above the skirt and the bell interiors.
-    expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!)).toBeGreaterThan(0.03);
-    expect(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!)).toBeGreaterThan(0.03);
+    // Frost is white on white paint: a few levels of luma over a good part of the barrel in view, more over the
+    // markings it covers. Soot: the skin above the skirt and the bell interiors.
+    expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 3)).toBeGreaterThan(0.04);
+    expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 10)).toBeGreaterThan(0.005);
+    expect(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!, 3)).toBeGreaterThan(0.06);
     expect(changedShare(shots['aft-clean']!, shots['aft-sooted']!)).toBeGreaterThan(0.01);
     expect(changedShare(shots['engines-clean']!, shots['engines-sooted']!)).toBeGreaterThan(0.004);
   });
