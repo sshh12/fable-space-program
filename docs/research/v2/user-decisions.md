@@ -67,4 +67,29 @@ What this means for the design:
   plan allows is run only after the lead has told the user what it will cost.
 
 The other defaults in OPEN_QUESTIONS_V2.md stand (sensor-camera view for craft without a cabin, second site
-in Oman with fallback, quick-comms only, no alert destination yet).
+in Oman with fallback, quick-comms only).
+
+## Local end-to-end runs, scale to zero, alerts (2026-11-11, later message)
+
+Verbatim: "Ideally we can also run locally for e2e testing or we have some sort of scale to zero on the
+hosting side esp when not in use. No need for alerts rn"
+
+- **The whole game must run locally, end to end, with no cloud resource**: server roles, persistence, tile
+  delivery and several browser clients on this machine, started by one command, used for the multi-client
+  acceptance tests and for everyday development. The deployed environment is then needed only for the
+  deployed proofs (deploy, restart recovery on production, measured hosting numbers), not for building or
+  testing features.
+- **Hosting should cost close to nothing when nobody is playing**: design scale to zero (or the nearest
+  thing the Hobby plan offers) into the smallest stage - the universe is persistent but an empty one needs
+  no CPU - and state the wake-up time a first visitor sees and what, if anything, must still run on a
+  timer. If true scale to zero is impossible for a component, say what its idle floor costs.
+- **No alerts for now**: do not build alert routing or ask for a webhook; keep the metrics and logs that the
+  capacity report needs. Alerting is a later seam.
+
+Facts about this machine for the local stack: Docker Desktop 29.6 is installed but its daemon is not running
+(WSL 2 with an Ubuntu distribution exists, stopped); no native Postgres is installed. The machine once
+crashed under heavy combined load, and a Docker Desktop VM takes memory from the browser tests and bakes.
+Prefer a local stack that runs as plain Node processes with an embedded or file-backed Postgres-compatible
+store by default (so agents and the user can run it without starting Docker), and keep the pinned Linux
+image through docker compose for the checks that need the production build (bit-exact replay, the image
+itself). Say which tests need which.
