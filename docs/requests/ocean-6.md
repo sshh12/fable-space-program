@@ -53,8 +53,8 @@ the vessel rides).
 
 What I can add for the decision, from the code I maintain:
 
-- Nothing in the core limits option 1. `oceanSwellHeight` and `oceanSwellVelocity` sum whatever the list
-  holds; the unit tests of `src/core/geo/oceanSwell.ts` do not pin the count. The cost is in the mission:
+- Nothing in the core limits option 1. `oceanSwellHeight` (`src/core/geo/oceanSwell.ts`) sums whatever the
+  list holds, and no unit test pins the number of components. The cost is in the mission:
   the headless run's log hash changes (every step after the capsule meets the water), and gate 13
   ("floating upright after 30 s", vertical speed at splashdown) has to be met again on the new sea, with
   eight components at up to 0.06 steepness instead of four at 0.034. That is one run of
