@@ -43,6 +43,8 @@ const SETS: Record<SceneBindingSet, { prelude?: string; slots: Slot[] }> = {
       { key: 'atmosphere.aerialPerspective', decl: 'var aerialPerspectiveTex: texture_3d<f32>;', layout: tex('float', '3d') },
       { key: 'clouds.screen', decl: 'var cloudsScreenTex: texture_2d<f32>;', layout: tex('float') },
       { key: 'clouds.depth', decl: 'var cloudsDepthTex: texture_2d<f32>;', layout: tex('float') },
+      // Last, so that nothing a feature binds after this set moves (request atmosphere-clouds-4).
+      { key: 'atmosphere.aerialTransmittance', decl: 'var aerialTransmittanceTex: texture_3d<f32>;', layout: tex('float', '3d') },
     ],
   },
   sceneDepth: { slots: [{ key: 'scene.depth', decl: 'var sceneDepthTex: texture_depth_2d;', layout: tex('depth') }] },

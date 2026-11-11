@@ -56,6 +56,8 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'atmosphere.skyViewLut': tex2d('skyViewLut', 'rgba16float', [0, 0, 0, 1]),
     'atmosphere.skyIrradianceLut': texArray('skyIrradianceLut', 'rgba16float', [0, 0, 0, 1]),
     'atmosphere.aerialPerspective': createSolidTexture(device, 'default.aerialPerspective', 'rgba16float', [0, 0, 0, 1], { dimension: '3d' }).createView(),
+    // a = 0: not published; applyAtmosphere then uses the mean transmittance of 'atmosphere.aerialPerspective'.
+    'atmosphere.aerialTransmittance': createSolidTexture(device, 'default.aerialTransmittance', 'rgba16float', [1, 1, 1, 0], { dimension: '3d' }).createView(),
     'clouds.shadowMap': tex2d('cloudShadowMap', 'r16float', [0]),
     'clouds.coverageMap': tex2d('cloudCoverageMap', 'r8unorm', [0]),
     'clouds.screen': tex2d('cloudsScreen', 'rgba16float', [0, 0, 0, 1]),

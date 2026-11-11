@@ -681,18 +681,23 @@ export const TRANSPARENCY_WGSL = /* wgsl */ `
 //   aerialPerspectiveTex: texture_3d<f32>   ('atmosphere.aerialPerspective')
 //   cloudsScreenTex: texture_2d<f32>        ('clouds.screen')
 //   cloudsDepthTex: texture_2d<f32>         ('clouds.depth')
+//   aerialTransmittanceTex: texture_3d<f32> ('atmosphere.aerialTransmittance')
 
 /// Mandatory for everything drawn in drawTransparent. 'uv' = screen UV of the fragment, 'distance' = metres
 /// from the eye, 'colour' = pre-exposed PREMULTIPLIED radiance, 'alpha' = opacity. Adds the in-scatter in
 /// front of the fragment, applies the transmittance up to it, and attenuates the fragment by the
 /// transmittance of the cloud in front of the pixel in proportion to how far into the cloud's span it lies
 /// ('clouds.depth': r = begin, g = end): untouched in front of the cloud, fully attenuated behind it.
+/// The transmittance is per channel where the atmosphere publishes 'atmosphere.aerialTransmittance' (its
+/// alpha is 1 then; request atmosphere-clouds-4: smoke and plumes redden with distance as the ground behind
+/// them does), else the mean transmittance of 'atmosphere.aerialPerspective'.a in all three.
 /// Exactly neutral with the default resources.
 fn applyAtmosphere(uv: vec2f, distance: f32, colour: vec3f, alpha: f32) -> vec4f {
   let slice = aerialDistanceToSlice(distance);
   let ap = textureSampleLevel(aerialPerspectiveTex, linearClamp, vec3f(uv, slice / AERIAL_SLICES), 0.0);
   let nearFade = saturate(slice * 2.0);
-  let trans = 1.0 + (ap.a - 1.0) * nearFade;
+  let apT = textureSampleLevel(aerialTransmittanceTex, linearClamp, vec3f(uv, slice / AERIAL_SLICES), 0.0);
+  let trans = vec3f(1.0) + (select(vec3f(ap.a), apT.rgb, apT.a > 0.5) - 1.0) * nearFade;
   let c = colour * trans + ap.rgb * (nearFade * frame.exposure.x * alpha);
   let span = textureSampleLevel(cloudsDepthTex, linearClamp, uv, 0.0).rg;
   let cloudTrans = textureSampleLevel(cloudsScreenTex, linearClamp, uv, 0.0).a;

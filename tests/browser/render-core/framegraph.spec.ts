@@ -211,6 +211,45 @@ test('a half-resolution volume from preTransparent is occluded by opaque geometr
   await expectNoErrors(page, pageLog);
 });
 
+test('applyAtmosphere takes the per-channel transmittance when the atmosphere publishes it, the mean otherwise (request atmosphere-clouds-4)', async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?probe=cloud&sun=120,40&hud=0&paused=1&ev=14.5');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => window.__test!.setDeterministic(true));
+  await waitIdle(page, 6);
+  const r = await page.evaluate(async () => {
+    const lab = window.__lab!;
+    const rc = window.__rc!;
+    lab.setLoop(false);
+    lab.renderer.setJitter(false);
+    // The far band (40 m: the near fade is complete there), pre-exposed radiance 2 in every channel.
+    const band = async (): Promise<number[]> => {
+      lab.renderFrame();
+      lab.renderFrame();
+      const img = await lab.renderer.readHdrPixels('hdr');
+      const o = ((Math.floor(img.height * 0.3) + 12) * img.width + Math.floor(img.width * 0.7)) * 4;
+      return [img.data[o]!, img.data[o + 1]!, img.data[o + 2]!];
+    };
+    const neutral = await band();
+    rc.probes.setAerial({ inscatter: 0, mean: 0.7 });
+    const mean = await band();
+    rc.probes.setAerial({ inscatter: 0, mean: 0.7, perChannel: [0.9, 0.75, 0.5] });
+    const perChannel = await band();
+    rc.probes.setAerial(null);
+    const back = await band();
+    lab.renderer.setJitter(true);
+    lab.setLoop(true);
+    return { neutral, mean, perChannel, back };
+  });
+  console.log(`applyAtmosphere at 40 m, radiance 2: default ${r.neutral.map((v) => v.toFixed(3)).join(' ')}; mean 0.7 ${r.mean.map((v) => v.toFixed(3)).join(' ')}; per channel 0.9 / 0.75 / 0.5 ${r.perChannel.map((v) => v.toFixed(3)).join(' ')}`);
+  expect(r.neutral).toEqual([2, 2, 2]);
+  for (const v of r.mean) expect(v).toBeCloseTo(1.4, 2);
+  expect(r.perChannel[0]).toBeCloseTo(1.8, 2);
+  expect(r.perChannel[1]).toBeCloseTo(1.5, 2);
+  expect(r.perChannel[2]).toBeCloseTo(1.0, 2);
+  expect(r.back).toEqual([2, 2, 2]);
+  await expectNoErrors(page, pageLog);
+});
+
 test("'post.reactive' lowers the history weight where a feature asks for it: a pattern without a motion vector is shown as it is", async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?probe=reactive&planet=0&stand=0&sun=120,40&hud=0&ev=14');
   await assertDiscreteGpu(page);

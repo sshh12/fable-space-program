@@ -228,6 +228,13 @@ export interface SharedResourceMap {
    */
   'atmosphere.aerialPerspective': GPUTextureView;
   /**
+   * Per-channel transmittance of the same froxels (request atmosphere-clouds-4): 32 x 32 x 32 rgba16float,
+   * same slice mapping as 'atmosphere.aerialPerspective'; rgb = transmittance of the path from the eye to the
+   * froxel per channel, a = 1 (the publisher's mark). `applyAtmosphere()` uses it when a = 1, else the mean
+   * of 'atmosphere.aerialPerspective'.a. Default: rgb 1, a 0 (not published).
+   */
+  'atmosphere.aerialTransmittance': GPUTextureView;
+  /**
    * Orthographic cloud map around the camera for near-field cloud shadows, projected along the direction
    * L = cross(axisU, axisV) of its placement (unit, towards the sun; kept a few degrees above the horizon):
    *   r = optical depth of the whole layer along the line through the texel, as the ground sees it: beam

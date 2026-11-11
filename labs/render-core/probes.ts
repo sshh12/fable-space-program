@@ -113,6 +113,12 @@ export interface Probes {
    * `true` = from 18 m to 22 m from the eye, or its span in metres; `false` = none.
    */
   setCloudLayer(on: boolean | { begin: number; end: number }): void;
+  /**
+   * The cloud probe's aerial perspective (request atmosphere-clouds-4): 'atmosphere.aerialPerspective' with
+   * in-scatter inscatter (cd/m^2, grey) and mean transmittance mean everywhere, and with perChannel
+   * 'atmosphere.aerialTransmittance' (rgb, a = 1) as well; null = the defaults.
+   */
+  setAerial(v: { inscatter: number; mean: number; perChannel?: [number, number, number] } | null): void;
   setVolume(on: boolean): void;
   /** Projected centre (render px) and radius (px) of the fog sphere in the last frame. */
   volumeScreen(): { x: number; y: number; radius: number } | null;
@@ -146,6 +152,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   const cascadeLog: CascadeLogEntry[] = [];
   let violations = 0;
   let cloudLayer: { begin: number; end: number } | null = null;
+  type Aerial = { inscatter: number; mean: number; perChannel?: [number, number, number] } | null;
+  let aerial: Aerial = null;
+  let aerialPublished: Aerial = null;
   let flameLuminance = 0;
   const layers = { soot: 0, frost: 0 };
   let volumeOn = true;
@@ -663,6 +672,19 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         }
       },
       compositeAtmosphere(frame) {
+        if (aerial !== aerialPublished) {
+          aerialPublished = aerial;
+          const r = app?.renderer.resources;
+          if (!aerial) {
+            r?.reset('atmosphere.aerialPerspective');
+            r?.reset('atmosphere.aerialTransmittance');
+          } else {
+            const s = aerial.inscatter;
+            ctx.resources.publish('atmosphere.aerialPerspective', createSolidTexture(ctx.device, 'lab-cloud.aerial', 'rgba16float', [s, s, s, aerial.mean], { dimension: '3d' }).createView());
+            if (aerial.perChannel) ctx.resources.publish('atmosphere.aerialTransmittance', createSolidTexture(ctx.device, 'lab-cloud.aerialT', 'rgba16float', [...aerial.perChannel, 1], { dimension: '3d' }).createView());
+            else r?.reset('atmosphere.aerialTransmittance');
+          }
+        }
         // Publish (or withdraw) a synthetic cloud layer: transmittance 0.02 over the LEFT half of the screen,
         // between `begin` and `end` metres from the eye.
         if (cloudLayer === published) return;
@@ -1183,6 +1205,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     movingCasterViolations: () => violations,
     setCloudLayer(on) {
       cloudLayer = on === true ? { begin: 18, end: 22 } : on === false ? null : on;
+    },
+    setAerial(v) {
+      aerial = v;
     },
     setVolume(on) {
       volumeOn = on;
