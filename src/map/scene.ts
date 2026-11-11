@@ -34,11 +34,52 @@ import {
 import { locateNode, type NodeLocation, type PatchKey, type PatchList } from './nodes';
 import { occlusionWeight, type Occluder } from './occlusion';
 import { Projector, type Viewport } from './projection';
-import { FAINT_MAX_TURN, Sampler } from './sampler';
+import { FAINT_MAX_TURN, Sampler, type SampledCurve } from './sampler';
 
 const TWO_PI = 2 * Math.PI;
 /** Time tolerance (s) when matching a planned patch to the current patch it continues. */
 const UT_EPS = 1e-3;
+
+/**
+ * Breakpoints of a sampled line, kept from build to build under the line's id. While the conic keeps its
+ * shape (a coasting vessel, a body orbit, an SOI circle) only the view changes between frames, so the next
+ * build evaluates the curve at the same parameters and verifies the exact chord error of every piece
+ * (`Sampler.resample`) instead of refining from scratch: one evaluation and one error per vertex, no
+ * trigonometry, no heap. A piece over the tolerance, a changed shape or a range the breakpoints do not
+ * cover falls back to a fresh sampling, so the drawn line is within the tolerance on every frame.
+ */
+interface BreakpointCache {
+  kind: ViewConic['kind'];
+  e: number;
+  /** Tolerance (device px) the line is drawn to. */
+  tolerance: number;
+  /** The range was one whole revolution of an ellipse: the breakpoints serve any start parameter. */
+  closed: boolean;
+  n: number;
+  u: Float64Array;
+  c: Float64Array;
+  s: Float64Array;
+  /** Vertices of the fresh sampling's initial partition and its greatest piece error. */
+  initial: number;
+  maxError: number;
+  /** Set when the view has zoomed out since the fresh sampling: the next build samples afresh. */
+  stale: boolean;
+  /** Build counter of the last use (unused entries are dropped). */
+  used: number;
+}
+/**
+ * A fresh sampling that will be re-used refines to this fraction of the tolerance, so a slowly turning or
+ * zooming view does not push a piece over the tolerance in the next frames (about 12 % more vertices).
+ */
+const REUSE_HEADROOM = 0.8;
+/** Breakpoints are dropped when the greatest error has fallen to this fraction of the fresh sampling's. */
+const REUSE_OVER_REFINED = 0.5;
+/** Largest change of eccentricity, as a fraction of |1 - e^2|, for which the breakpoints still apply. */
+const REUSE_SHAPE_TOLERANCE = 1e-3;
+/** Breakpoints closer than this to an end of the range (rad) are left out. */
+const REUSE_PARAM_EPS = 1e-9;
+/** Unused entries are swept every this many builds. */
+const REUSE_SWEEP_BUILDS = 256;
 
 export type LineKind = 'current' | 'planned' | 'vesselOrbit' | 'debrisOrbit' | 'bodyOrbit' | 'soi' | 'recoveryZone' | 'ghostBody';
 
@@ -290,6 +331,14 @@ export class SceneBuilder {
   private readonly labelCache = new WeakMap<Marker, Map<string, { ut: number; target: string | null; landingId: string | null; miss: number; text: { label: string[]; details: string[] } }>>();
   private readonly vesselOrbits = new Map<string, VesselOrbitCache>();
   private readonly nodeLocations = new Map<string, NodeCache>();
+  /** Breakpoints per line id, and scratch for the list handed to the sampler. */
+  private readonly breakpoints = new Map<string, BreakpointCache>();
+  private bu = new Float64Array(64);
+  private bc = new Float64Array(64);
+  private bs = new Float64Array(64);
+  private builds = 0;
+  /** Lines of the last build that re-used breakpoints / were sampled afresh (lab statistics and tests). */
+  reuse = { resampled: 0, fresh: 0 };
 
   constructor(
     private readonly defs: DefLibrary,
@@ -301,6 +350,12 @@ export class SceneBuilder {
     const verts = this.verts;
     verts.n = 0;
     this.curvesUsed = 0;
+    this.builds++;
+    this.reuse.resampled = 0;
+    this.reuse.fresh = 0;
+    if (this.builds % REUSE_SWEEP_BUILDS === 0) {
+      for (const [id, entry] of this.breakpoints) if (entry.used < this.builds - 1) this.breakpoints.delete(id);
+    }
     const scene: MapScene = {
       snapshot,
       camera,
@@ -668,7 +723,7 @@ export class SceneBuilder {
   private addCurve(scene: MapScene, id: string, kind: LineKind, curve: ViewConic, u0: number, u1: number, color: Rgba, widthPx: number, dashed: boolean): PatchCurveLine | null {
     const proj = scene.proj;
     const faint = kind === 'debrisOrbit' || kind === 'vesselOrbit' || kind === 'recoveryZone';
-    const s = faint ? this.sampler.sample(curve, u0, u1, proj, FAINT_CHORD_TOLERANCE_PX, MAX_POINTS_PER_CURVE, FAINT_MAX_TURN) : this.sampler.sample(curve, u0, u1, proj, CHORD_TOLERANCE_PX);
+    const s = this.sampleLine(id, curve, u0, u1, proj, faint);
     if (s.count < 2) return null;
     const verts = this.verts;
     verts.reserve(s.count);
@@ -701,6 +756,122 @@ export class SceneBuilder {
     const rec: PatchCurveLine = { kind, id, start, count: s.count, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: visible, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
     scene.lines.push(rec);
     return rec;
+  }
+
+  /**
+   * Sample line `id` over [u0, u1]: from the breakpoints kept for it when they still apply and every piece
+   * verifies (BreakpointCache), else afresh. The result is within the line's tolerance either way.
+   */
+  private sampleLine(id: string, curve: ViewConic, u0: number, u1: number, proj: Projector, faint: boolean): SampledCurve {
+    const sampler = this.sampler;
+    const tolerance = faint ? FAINT_CHORD_TOLERANCE_PX : CHORD_TOLERANCE_PX;
+    let entry = this.breakpoints.get(id);
+    if (entry && !entry.stale && entry.tolerance === tolerance && entry.kind === curve.kind && sameShape(entry.e, curve)) {
+      const n = this.fitBreakpoints(entry, curve, u0, u1);
+      const r = n >= 2 ? sampler.resample(curve, this.bu, this.bc, this.bs, n, proj, tolerance) : null;
+      if (r) {
+        entry.used = this.builds;
+        // Refined for a closer view than this one: good for this frame, sampled afresh in the next.
+        if (n > entry.initial + 1 && r.maxError < REUSE_OVER_REFINED * entry.maxError) entry.stale = true;
+        this.reuse.resampled++;
+        return r;
+      }
+    }
+    const s = faint ? sampler.sample(curve, u0, u1, proj, tolerance * REUSE_HEADROOM, MAX_POINTS_PER_CURVE, FAINT_MAX_TURN) : sampler.sample(curve, u0, u1, proj, tolerance * REUSE_HEADROOM);
+    this.reuse.fresh++;
+    if (s.count < 2 || s.capped) {
+      if (entry) this.breakpoints.delete(id);
+      return s;
+    }
+    const n = s.count;
+    if (!entry || entry.u.length < n) {
+      const size = Math.max(32, 2 * n);
+      entry = { kind: curve.kind, e: curve.e, tolerance, closed: false, n: 0, u: new Float64Array(size), c: new Float64Array(size), s: new Float64Array(size), initial: 0, maxError: 0, stale: false, used: 0 };
+      this.breakpoints.set(id, entry);
+    }
+    entry.kind = curve.kind;
+    entry.e = curve.e;
+    entry.tolerance = tolerance;
+    entry.closed = curve.kind === 'E' && Math.abs(u1 - u0 - TWO_PI) <= REUSE_PARAM_EPS;
+    entry.n = n;
+    entry.u.set(s.u.subarray(0, n));
+    entry.c.set(s.c.subarray(0, n));
+    entry.s.set(s.s.subarray(0, n));
+    entry.initial = s.initial;
+    entry.maxError = s.maxError;
+    entry.stale = false;
+    entry.used = this.builds;
+    return s;
+  }
+
+  /**
+   * Breakpoints of `entry` for the range [u0, u1], into bu / bc / bs: the two ends plus every kept
+   * breakpoint strictly between them. A whole revolution of an ellipse may start anywhere (the kept points
+   * are taken modulo one turn); any other range must lie inside the kept one. Returns the count, 0 when the
+   * kept breakpoints do not cover the range.
+   */
+  private fitBreakpoints(entry: BreakpointCache, curve: ViewConic, u0: number, u1: number): number {
+    const n = entry.n;
+    const cu = entry.u;
+    const cc = entry.c;
+    const cs = entry.s;
+    if (this.bu.length < n + 2) {
+      const size = 2 * (n + 2);
+      this.bu = new Float64Array(size);
+      this.bc = new Float64Array(size);
+      this.bs = new Float64Array(size);
+    }
+    const bu = this.bu;
+    const bc = this.bc;
+    const bs = this.bs;
+    const hyperbola = curve.kind === 'H';
+    bu[0] = u0;
+    bc[0] = hyperbola ? Math.cosh(u0) : Math.cos(u0);
+    bs[0] = hyperbola ? Math.sinh(u0) : Math.sin(u0);
+    let m = 1;
+    if (entry.closed) {
+      if (Math.abs(u1 - u0 - TWO_PI) > REUSE_PARAM_EPS) return 0;
+      // Offsets of the kept points from the first one: ascending in [0, 2 pi) for j = 0 .. n - 2.
+      const first = cu[0]!;
+      const turn = u0 - first;
+      const d = turn - TWO_PI * Math.floor(turn / TWO_PI);
+      const base = u0 - d;
+      let j0 = 0;
+      while (j0 < n - 1 && cu[j0]! - first <= d + REUSE_PARAM_EPS) j0++;
+      for (let j = j0; j < n - 1; j++) {
+        bu[m] = base + (cu[j]! - first);
+        bc[m] = cc[j]!;
+        bs[m] = cs[j]!;
+        m++;
+      }
+      const next = base + TWO_PI;
+      for (let j = 0; j < j0; j++) {
+        const o = cu[j]! - first;
+        if (o >= d - REUSE_PARAM_EPS) break;
+        bu[m] = next + o;
+        bc[m] = cc[j]!;
+        bs[m] = cs[j]!;
+        m++;
+      }
+      bu[m] = u1;
+      bc[m] = bc[0]!;
+      bs[m] = bs[0]!;
+      return m + 1;
+    }
+    if (cu[0]! > u0 + REUSE_PARAM_EPS || cu[n - 1]! < u1 - REUSE_PARAM_EPS) return 0;
+    for (let j = 0; j < n; j++) {
+      const u = cu[j]!;
+      if (u <= u0 + REUSE_PARAM_EPS) continue;
+      if (u >= u1 - REUSE_PARAM_EPS) break;
+      bu[m] = u;
+      bc[m] = cc[j]!;
+      bs[m] = cs[j]!;
+      m++;
+    }
+    bu[m] = u1;
+    bc[m] = hyperbola ? Math.cosh(u1) : Math.cos(u1);
+    bs[m] = hyperbola ? Math.sinh(u1) : Math.sin(u1);
+    return m + 1;
   }
 
   private addPatchLine(scene: MapScene, list: PatchList, index: number, p: Patch, origin: Vec3, color: Rgba, dashed: boolean, now: number, tau: number, dimAfterUt: number): void {
@@ -897,6 +1068,12 @@ export class SceneBuilder {
 }
 
 const ORIGIN: Vec3 = { x: 0, y: 0, z: 0 };
+
+/** Do breakpoints made for eccentricity `e` still apply to `curve` (same parameter kind assumed)? */
+function sameShape(e: number, curve: ViewConic): boolean {
+  if (curve.kind === 'nu') return e === curve.e;
+  return Math.abs(curve.e - e) <= REUSE_SHAPE_TOLERANCE * Math.abs(1 - curve.e * curve.e);
+}
 
 /** A one-element occluder list (reused: occlusionWeight only reads it). */
 const ONE_OCCLUDER = (() => {

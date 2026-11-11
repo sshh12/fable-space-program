@@ -24,6 +24,11 @@
  *    midpoint instead and uses the angle its 3-D sagitta subtends at the eye, in pixels.
  * In the parabolic band (|e - 1| < 1e-6, sampled in true anomaly) T comes from the end tangents and the
  * weight is not known: h itself (w' / (1 + w') < 1) bounds the error there.
+ * 4. `resample` re-uses the breakpoints of an earlier sampling of a curve of the same shape (the scene keeps
+ *    them per line while the conic's eccentricity is unchanged): the curve is evaluated at those parameters
+ *    for the current view and the exact error of every piece is verified, which costs one evaluation and one
+ *    error per vertex, no trigonometry and no refinement. The result is as exact as a fresh sampling (every
+ *    piece is within the tolerance, or the call reports failure); only the vertex count may differ.
  */
 import { CHORD_TOLERANCE_PX, MAX_POINTS_PER_CURVE } from './constants';
 import type { ViewConic } from './conicCurve';
@@ -55,6 +60,13 @@ export interface SampledCurve {
   /** Screen position (device px); NaN when the vertex is behind the near plane. */
   sx: Float64Array;
   sy: Float64Array;
+  /** Unit-curve coordinates of every vertex: (cos u, sin u), or (cosh u, sinh u) on a hyperbola. */
+  c: Float64Array;
+  s: Float64Array;
+  /** Largest chord error among the pieces of the output, device px (pieces outside the frustum count as 0). */
+  maxError: number;
+  /** Vertices of the initial partition, before any refinement (`resample`: the number of breakpoints given). */
+  initial: number;
   /** True when the vertex cap stopped the refinement before every piece met the tolerance. */
   capped: boolean;
   /** Curve evaluations spent on this call (the cost measure: about one per output vertex). */
@@ -128,6 +140,10 @@ export class Sampler {
       vz: new Float64Array(n),
       sx: new Float64Array(n),
       sy: new Float64Array(n),
+      c: new Float64Array(n),
+      s: new Float64Array(n),
+      maxError: 0,
+      initial: 0,
       capped: false,
       evaluations: 0,
     };
@@ -144,19 +160,14 @@ export class Sampler {
     const out = this.out;
     out.capped = false;
     out.evaluations = 0;
+    out.maxError = 0;
+    out.initial = 0;
     if (!(u1 > u0) || !Number.isFinite(u0) || !Number.isFinite(u1)) {
       out.count = 0;
       return out;
     }
     const maxVerts = Math.min(cap, this.cap);
-    this.ftx = proj.tanHalfX * (1 + (2 * CULL_MARGIN_PX) / proj.width);
-    this.fty = proj.tanHalfY * (1 + (2 * CULL_MARGIN_PX) / proj.height);
-    this.fnx = 1 / Math.sqrt(1 + this.ftx * this.ftx);
-    this.fny = 1 / Math.sqrt(1 + this.fty * this.fty);
-    this.near = proj.near;
-    this.focal = proj.focal;
-    this.cx = proj.cx;
-    this.cy = proj.cy;
+    this.setView(proj);
     this.curve = curve;
     // A whole ellipse outside the view frustum (sphere about its centre with radius a) is not sampled at all.
     if (curve.kind === 'E') {
@@ -167,8 +178,10 @@ export class Sampler {
       }
     }
     const first = this.initialPieces(curve, u0, u1, Math.min(maxTurn, Math.PI / 2));
+    out.initial = this.nPieces + 1;
     // Refinement, greatest error first; every step adds one vertex.
     let vertices = this.nPieces + 1;
+    let acceptedError = 0;
     while (this.heapSize > 0) {
       const k = this.heap[0]!;
       const err = this.kerr[k]!;
@@ -211,7 +224,11 @@ export class Sampler {
       this.kb[prevPiece] = b;
       this.knext[prevPiece] = last;
       this.km[k] = -1;
-      if (added === 0) continue; // accept as is
+      if (added === 0) {
+        // Accept as is (it has left the heap: remember its error for maxError).
+        if (err > acceptedError) acceptedError = err;
+        continue;
+      }
       for (let p = k, i = 0; i <= added; i++, p = this.knext[p]!) {
         this.km[p] = -1;
         this.kerr[p] = this.pieceError(p);
@@ -226,7 +243,64 @@ export class Sampler {
     }
     out.count = n;
     out.evaluations = this.nPoints;
+    // Every piece is in the heap (a refined piece is popped and pushed back with its parts), except those
+    // accepted with an exhausted parameter: the root is the greatest error of the rest.
+    out.maxError = Math.max(acceptedError, this.heapSize > 0 ? this.kerr[this.heap[0]!]! : 0);
     return out;
+  }
+
+  /**
+   * Re-use breakpoints: evaluate `curve` at the ascending parameters us[0 .. count) for this view (cs / ss are
+   * their unit-curve coordinates, as SampledCurve.c / .s gave them) and verify the exact chord error of
+   * every piece. Returns this.out when every piece is within `tolerancePx`, null when one is not (the caller
+   * then samples afresh).
+   *
+   * Precondition: the parameters refine an initial partition of a curve of this shape (same kind, the
+   * eccentricity within a small fraction of |1 - e^2|), so that every piece still turns by less than
+   * 90 degrees and spans at most 90 degrees of eccentric anomaly, which the error measure relies on.
+   */
+  resample(curve: ViewConic, us: Float64Array, cs: Float64Array, ss: Float64Array, count: number, proj: Projector, tolerancePx: number): SampledCurve | null {
+    this.nPoints = 0;
+    this.nPieces = 0;
+    this.heapSize = 0;
+    const out = this.out;
+    out.capped = false;
+    out.evaluations = 0;
+    out.count = 0;
+    out.maxError = 0;
+    out.initial = count;
+    if (count < 2 || count > this.cap) return null;
+    this.setView(proj);
+    this.curve = curve;
+    // Points 0 .. count - 1 are the vertices in order; a midpoint that the near-plane measure evaluates is
+    // stored after them and is not part of the output.
+    for (let i = 0; i < count; i++) this.placePoint(curve, us[i]!, cs[i]!, ss[i]!);
+    let maxError = 0;
+    for (let i = 0; i + 1 < count; i++) {
+      const k = this.nPieces++;
+      this.ka[k] = i;
+      this.kb[k] = i + 1;
+      this.km[k] = -1;
+      const err = this.pieceError(k);
+      if (!(err <= tolerancePx)) return null;
+      if (err > maxError) maxError = err;
+    }
+    for (let i = 0; i < count; i++) this.emit(i, i);
+    out.count = count;
+    out.evaluations = this.nPoints;
+    out.maxError = maxError;
+    return out;
+  }
+
+  private setView(proj: Projector): void {
+    this.ftx = proj.tanHalfX * (1 + (2 * CULL_MARGIN_PX) / proj.width);
+    this.fty = proj.tanHalfY * (1 + (2 * CULL_MARGIN_PX) / proj.height);
+    this.fnx = 1 / Math.sqrt(1 + this.ftx * this.ftx);
+    this.fny = 1 / Math.sqrt(1 + this.fty * this.fty);
+    this.near = proj.near;
+    this.focal = proj.focal;
+    this.cx = proj.cx;
+    this.cy = proj.cy;
   }
 
   private emit(n: number, i: number): void {
@@ -237,6 +311,8 @@ export class Sampler {
     o.vz[n] = this.pz[i]!;
     o.sx[n] = this.psx[i]!;
     o.sy[n] = this.psy[i]!;
+    o.c[n] = this.pc[i]!;
+    o.s[n] = this.ps[i]!;
   }
 
   private initialPieces(curve: ViewConic, u0: number, u1: number, maxTurn: number): number {
@@ -294,24 +370,21 @@ export class Sampler {
 
   /** Evaluate the view-space position and projection at parameter u; returns the point index. */
   private evalPoint(curve: ViewConic, u: number): number {
+    return curve.kind === 'H' ? this.placePoint(curve, u, Math.cosh(u), Math.sinh(u)) : this.placePoint(curve, u, Math.cos(u), Math.sin(u));
+  }
+
+  /** The same with the unit-curve coordinates of u given: (cos u, sin u), or (cosh u, sinh u) on a hyperbola. */
+  private placePoint(curve: ViewConic, u: number, c: number, s: number): number {
     const i = this.nPoints++;
-    let c: number;
-    let s: number;
     let X: number;
     let Y: number;
     if (curve.kind === 'E') {
-      c = Math.cos(u);
-      s = Math.sin(u);
       X = curve.aAbs * (c - curve.e);
       Y = curve.b * s;
     } else if (curve.kind === 'H') {
-      c = Math.cosh(u);
-      s = Math.sinh(u);
       X = curve.aAbs * (curve.e - c);
       Y = curve.b * s;
     } else {
-      c = Math.cos(u);
-      s = Math.sin(u);
       const r = curve.p / (1 + curve.e * c);
       X = r * c;
       Y = r * s;

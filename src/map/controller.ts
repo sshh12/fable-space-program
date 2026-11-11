@@ -156,6 +156,8 @@ export interface MapStats {
   targets: number;
   icons: number;
   glyphs: number;
+  /** Lines of the last build drawn from kept breakpoints / sampled afresh (scene.ts, BreakpointCache). */
+  reuse: { resampled: number; fresh: number };
 }
 
 /** Metrics of the 12 px monospace label font without an atlas (vitest); the atlas reports the real ones. */
@@ -467,6 +469,7 @@ export class MapController implements MapView {
       targets: s?.targets.length ?? 0,
       icons: d ? d.icons[0].length + d.icons[1].length : 0,
       glyphs: d ? d.texts[0].reduce((n, t) => n + t.text.length, 0) + d.texts[1].reduce((n, t) => n + t.text.length, 0) : 0,
+      reuse: { ...this.builder.reuse },
     };
   }
 

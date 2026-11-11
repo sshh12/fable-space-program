@@ -315,3 +315,17 @@ No contract was changed; no open requests against map-view paths exist.
   cancellation-free relation, exact through e = 1; no change in src/map.
 
 Full list: `docs/handoff/lead-baseline.md`.
+
+## Changes in wave 2 (core-support)
+
+- **Breakpoint re-use (CPU budget of the Earth close-up).** On the quiet machine the 8-patch + 20-debris
+  close-up still measured CPU p99 0.525 ms against 0.5 ms. `SceneBuilder` now keeps the breakpoints of every
+  sampled line under its id (`BreakpointCache` in `scene.ts`) and, while the conic keeps its shape, draws the
+  line from them through the new `Sampler.resample(curve, us, cs, ss, count, proj, tolerancePx)`, which
+  evaluates the curve at the kept parameters for the current view and verifies the exact chord error of
+  every piece (null when a piece is over the tolerance: the builder then samples afresh). Exactness per
+  frame is unchanged (0.3 px patches, 0.9 px faint lines); fresh samplings refine to 0.8 of the tolerance,
+  so lines carry 10-12 % more vertices. Measured under the lock: overview p99 0.425 -> 0.340 ms, close-up
+  0.525 -> 0.390 ms (p50 0.270 -> 0.200 ms). `SampledCurve` gained `c`, `s`, `maxError`, `initial`;
+  `MapStats` gained `reuse: { resampled, fresh }` (lines of the last build per path). Tests:
+  `tests/unit/map-view/breakpointReuse.test.ts`. The "Known limits" CPU item above no longer applies.
