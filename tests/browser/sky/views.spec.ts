@@ -32,7 +32,7 @@ test('deep-space star field at long exposure and the Orion region', async ({ pag
 });
 
 test('the sun just above the limb of the Earth from low orbit, with flare', async ({ page, pageLog }) => {
-  await openPage(page, '/labs/sky/?scene=lowOrbit&hud=0&maps=tileset');
+  await openPage(page, '/labs/sky/?scene=lowOrbit&hud=0&clouds=1');
   await assertDiscreteGpu(page);
   // Sun 3 deg above the limb (the horizon dips 14.2 deg at 200 km), camera looking at it from the vessel.
   await page.evaluate(() => {
@@ -57,9 +57,11 @@ test('the sun just above the limb of the Earth from low orbit, with flare', asyn
 });
 
 for (const v of [
-  { name: 'pbr-spheres-leo-day', url: '/labs/sky/?scene=lowOrbit&spheres=1&hud=0&orbit=0,14,8', sun: { elevationDeg: 35, azimuthDeg: 300 } as const },
-  { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&hud=0&orbit=0,14,8&night=1', sun: null },
-  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8', sun: { elevationDeg: 18, azimuthDeg: 280 } as const },
+  // The sun comes from the camera's right, a little behind it, so the left halves of the spheres show the
+  // environment alone: the lit Earth (with the lab's cloud layer) or Moon below, black space above.
+  { name: 'pbr-spheres-leo-day', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&hud=0&orbit=0,14,8', sun: { elevationDeg: 40, azimuthDeg: 100, fromCamera: true } as const },
+  { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&hud=0&orbit=0,14,8&night=1', sun: null },
+  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as const },
 ]) {
   test(`PBR spheres lit by the probe: ${v.name}`, async ({ page, pageLog }) => {
     await openPage(page, v.url);

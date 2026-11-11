@@ -10,6 +10,8 @@ import type { Vec3Tuple } from '@/core/math';
 export const FLARE_HALO_SHARE = 0.55;
 /** Halo profile (1 + (theta / c)^2)^-HALO_POWER: veiling glare of the lens, falls as theta^-3. */
 export const HALO_POWER = 1.5;
+/** Diffraction spikes: two per aperture blade for an odd blade count (7 blades -> 14 spikes). */
+export const SPIKE_COUNT = 14;
 /** Angular extent of the starburst quad (rad). */
 export const STARBURST_MAX_ANGLE = 0.35;
 
@@ -39,12 +41,12 @@ const normaliseTint = (c: Vec3Tuple): Vec3Tuple => {
   return [c[0] / l, c[1] / l, c[2] / l];
 };
 
-export const STARBURST: StarburstDef = { energy: 0.006, haloCore: 0.02, spikeWidth: 0.0012, spikeLength: 0.03, tint: [1, 1, 1] };
+export const STARBURST: StarburstDef = { energy: 0.004, haloCore: 0.012, spikeWidth: 0.0009, spikeLength: 0.012, tint: [1, 1, 1] };
 export const GHOSTS: GhostDef[] = [
-  { k: -0.35, radius: 0.035, softness: 0.12, chroma: 0.04, energy: 0.0008, tint: normaliseTint([1.0, 0.78, 0.48]) },
-  { k: -0.7, radius: 0.02, softness: 0.2, chroma: 0.06, energy: 0.0005, tint: normaliseTint([0.5, 0.88, 1.0]) },
-  { k: 0.45, radius: 0.05, softness: 0.1, chroma: 0.05, energy: 0.0006, tint: normaliseTint([0.82, 0.6, 1.0]) },
-  { k: -1.25, radius: 0.09, softness: 0.08, chroma: 0.08, energy: 0.0004, tint: normaliseTint([0.62, 1.0, 0.72]) },
+  { k: -0.35, radius: 0.03, softness: 0.35, chroma: 0.03, energy: 0.00012, tint: normaliseTint([1.0, 0.84, 0.6]) },
+  { k: -0.7, radius: 0.016, softness: 0.45, chroma: 0.04, energy: 0.00006, tint: normaliseTint([0.62, 0.86, 1.0]) },
+  { k: 0.42, radius: 0.045, softness: 0.3, chroma: 0.04, energy: 0.0001, tint: normaliseTint([0.85, 0.72, 1.0]) },
+  { k: -1.2, radius: 0.08, softness: 0.25, chroma: 0.05, energy: 0.00008, tint: normaliseTint([0.72, 1.0, 0.8]) },
 ];
 export const FLARE_TOTAL_ENERGY = STARBURST.energy + GHOSTS.reduce((s, g) => s + g.energy, 0);
 
@@ -84,7 +86,7 @@ export function spikeIntegral(width: number, length: number, lambda: number, sun
   const np = 720;
   const a = sunRadius;
   const b = STARBURST_MAX_ANGLE;
-  const seg = Math.PI / 3;
+  const seg = (2 * Math.PI) / SPIKE_COUNT;
   for (let i = 0; i < nt; i++) {
     // Logarithmic steps in theta: the spike is concentrated at small angles.
     const u0 = Math.log(a) + ((i + 0.5) * (Math.log(b) - Math.log(a))) / nt;

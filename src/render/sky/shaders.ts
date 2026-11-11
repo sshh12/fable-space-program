@@ -11,7 +11,7 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_LAMBDA } from './flare';
+import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
 import { IMPOSTOR_FULL_PX, IMPOSTOR_NONE_PX, SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
@@ -303,6 +303,7 @@ export const FLARE_WGSL = (bindings: string): string => /* wgsl */ `
 ${bindings}
 const FLARE_HALO_SHARE = ${f(FLARE_HALO_SHARE)};
 const FLARE_HALO_POWER = ${f(HALO_POWER)};
+const SPIKE_COUNT = ${f(SPIKE_COUNT)};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
 struct FlareState { visible: vec4f, transmittance: vec4f }
 struct FlareTerm {
@@ -358,8 +359,8 @@ fn ndcRay(n: vec2f) -> vec3f {
     let up = normalize(frame.cameraUp.xyz - s * dot(frame.cameraUp.xyz, s));
     let rt = cross(s, up);
     let phi = atan2(dot(toS, rt), dot(toS, up));
-    // Distance to the nearest of 6 spikes (every 60 deg), as an angle across the spike.
-    let seg = PI / 3.0;
+    // Distance to the nearest spike (SPIKE_COUNT of them, evenly spaced), as an angle across the spike.
+    let seg = TWO_PI / SPIKE_COUNT;
     let dphi = abs(phi - seg * round(phi / seg));
     let across = theta * sin(dphi);
     let w = t.shape.z;
