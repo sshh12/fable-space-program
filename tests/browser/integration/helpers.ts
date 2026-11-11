@@ -126,6 +126,13 @@ export interface FrameDiff {
   blockMax: number;
   /** Fraction of pixels whose largest channel difference exceeds 8. */
   changed: number;
+  /**
+   * The same comparison on the frames averaged over 16 x 16 pixel blocks: mean and largest difference of
+   * the block means. Texture that merely decorrelates between two frames (waves, noise) averages out here;
+   * a patch that appears, vanishes or changes its brightness does not.
+   */
+  coarseMean: number;
+  coarseMax: number;
 }
 
 /** Difference between two frames of equal size. `rect` restricts it (x, y, width, height in pixels). */
@@ -139,6 +146,7 @@ export function frameDiff(a: Shot, b: Shot, rect?: { x: number; y: number; width
   const bw = Math.ceil(w / B);
   const bh = Math.ceil(h / B);
   const blockSum = new Float64Array(bw * bh);
+  const blockSigned = new Float64Array(bw * bh);
   const blockN = new Uint32Array(bw * bh);
   let sum = 0;
   let changed = 0;
@@ -149,16 +157,28 @@ export function frameDiff(a: Shot, b: Shot, rect?: { x: number; y: number; width
       const d1 = Math.abs(a.data[o + 1]! - b.data[o + 1]!);
       const d2 = Math.abs(a.data[o + 2]! - b.data[o + 2]!);
       const d = (d0 + d1 + d2) / 3;
+      const signed = (a.data[o]! - b.data[o]! + a.data[o + 1]! - b.data[o + 1]! + a.data[o + 2]! - b.data[o + 2]!) / 3;
       sum += d;
       if (Math.max(d0, d1, d2) > 8) changed++;
       const k = Math.floor(y / B) * bw + Math.floor(x / B);
       blockSum[k] = blockSum[k]! + d;
+      blockSigned[k] = blockSigned[k]! + signed;
       blockN[k] = blockN[k]! + 1;
     }
   }
   let blockMax = 0;
-  for (let k = 0; k < blockSum.length; k++) if (blockN[k]! > 0) blockMax = Math.max(blockMax, blockSum[k]! / blockN[k]!);
-  return { mean: sum / (w * h), blockMax, changed: changed / (w * h) };
+  let coarseSum = 0;
+  let coarseMax = 0;
+  let blocks = 0;
+  for (let k = 0; k < blockSum.length; k++) {
+    if (blockN[k]! === 0) continue;
+    blockMax = Math.max(blockMax, blockSum[k]! / blockN[k]!);
+    const c = Math.abs(blockSigned[k]! / blockN[k]!);
+    coarseSum += c;
+    coarseMax = Math.max(coarseMax, c);
+    blocks++;
+  }
+  return { mean: sum / (w * h), blockMax, changed: changed / (w * h), coarseMean: coarseSum / Math.max(1, blocks), coarseMax };
 }
 
 /**
