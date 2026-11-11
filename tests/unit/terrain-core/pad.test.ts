@@ -5,6 +5,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { dirToTile } from '../../../src/core/geo/cubeSphere';
 import type { TerrainAuthority } from '../../../src/terrain/provider';
+import { buildFlattenDiscs, discWeight } from '../../../src/terrain/modifiers';
+import { loadDefs } from '../../../src/core/defs/loader';
+import { fsDefSource } from '../../../src/core/defs/fsSource';
 import { EARTH_R, FIXTURE_POINTS } from '../../../tools/terrain-core/fixtures';
 import { fixtureProvider, offset, prng } from './helpers';
 
@@ -72,5 +75,116 @@ describe('launch pad', () => {
     await p.ensureLoaded('earth', pad, 600, 'pad');
     expect(p.heightAt('earth', pad)).toBe(123.5);
     expect(p.heightAt('earth', offset(pad, 300, -200, EARTH_R), 2)).toBe(123.5);
+  });
+});
+
+describe('launch pad with a shape (request terrain-render-6)', () => {
+  // The hardstand core, one turned area, a quarter of the natural relief elsewhere inside 450 m.
+  const shape = {
+    coreRadius: 110,
+    coreBlend: 40,
+    reliefShare: 0.25,
+    areas: [{ east: -250, north: 150, halfEast: 40, halfNorth: 25, headingDeg: 30, blend: 25 }],
+    edgeNoise: { amplitude: 0.6, wavelength: 60 },
+  };
+  let tp: TerrainAuthority;
+  let elevation: number;
+  beforeAll(async () => {
+    tp = (await fixtureProvider({ bodies: ['earth'], padShape: shape })).tp;
+    await tp.ensureLoaded('earth', pad, 1500, 'pad');
+    elevation = tp.heightAt('earth', pad, 1);
+  }, 120_000);
+
+  it('is exactly flat inside the core and on the areas, on the collision surface too', () => {
+    const rng = prng(5);
+    let worst = 0;
+    for (let i = 0; i < 600; i++) {
+      const r = 108 * Math.sqrt(rng.next());
+      const a = rng.range(0, 2 * Math.PI);
+      worst = Math.max(worst, Math.abs(tp.heightAt('earth', offset(pad, r * Math.cos(a), r * Math.sin(a), EARTH_R), 1) - elevation));
+    }
+    // The area, turned 30 deg clockwise: points inside its rectangle.
+    const h = (30 * Math.PI) / 180;
+    for (let i = 0; i < 300; i++) {
+      const u = rng.range(-39, 39);
+      const v = rng.range(-24, 24);
+      // Local east axis (cos h, -sin h), local north axis (sin h, cos h) in (east, north).
+      const e = -250 + u * Math.cos(h) + v * Math.sin(h);
+      const n = 150 - u * Math.sin(h) + v * Math.cos(h);
+      worst = Math.max(worst, Math.abs(tp.heightAt('earth', offset(pad, e, n, EARTH_R), 1) - elevation));
+    }
+    expect(worst).toBeLessThan(1e-6);
+    expect(Math.abs(tp.heightAt('earth', offset(pad, 30, -40, EARTH_R)) - elevation)).toBeLessThan(1e-4);
+  });
+
+  it('keeps reliefShare of the natural relief on the rest of the disc, and is natural from blendRadius on', () => {
+    const fixture = { flatRadius: 450, blendRadius: 900 };
+    const rng = prng(9);
+    const ratios: number[] = [];
+    for (let i = 0; i < 400; i++) {
+      const r = rng.range(200, 430);
+      const a = rng.range(0, 2 * Math.PI);
+      const e = r * Math.cos(a);
+      const n = r * Math.sin(a);
+      if (Math.hypot(e + 250, n - 150) < 120) continue; // clear of the area and its blend
+      const d = offset(pad, e, n, EARTH_R);
+      const p = tp.heightParts('earth', d, 1);
+      const nat = p.data + p.amplification;
+      if (Math.abs(nat - elevation) < 0.2) continue;
+      ratios.push((p.height - elevation) / (nat - elevation));
+    }
+    expect(ratios.length).toBeGreaterThan(20);
+    for (const q of ratios) expect(q).toBeCloseTo(0.25, 6);
+    // Beyond blendRadius: natural.
+    for (const az of [0, 1.7, 3.3, 5.0]) {
+      const p = tp.heightParts('earth', offset(pad, (fixture.blendRadius + 5) * Math.cos(az), (fixture.blendRadius + 5) * Math.sin(az), EARTH_R), 0.3);
+      expect(p.height).toBeCloseTo(p.data + p.amplification, 9);
+    }
+  });
+
+  it('has ragged edges: the disc does not end on a circle', () => {
+    // Along the ring 700 m out (in the disc's blend: a nominal weight of 0.75 x 0.43) the weight varies with
+    // the azimuth, and stays between 0 and the floor.
+    const weights: number[] = [];
+    for (let k = 0; k < 72; k++) {
+      const az = (k / 72) * 2 * Math.PI;
+      const d = offset(pad, 700 * Math.cos(az), 700 * Math.sin(az), EARTH_R);
+      const p = tp.heightParts('earth', d, 1);
+      const nat = p.data + p.amplification;
+      if (Math.abs(nat - elevation) < 0.2) continue;
+      weights.push(1 - (p.height - elevation) / (nat - elevation));
+    }
+    expect(weights.length).toBeGreaterThan(10);
+    const mean = weights.reduce((a, b) => a + b, 0) / weights.length;
+    const sd = Math.sqrt(weights.reduce((a, b) => a + (b - mean) ** 2, 0) / weights.length);
+    expect(sd).toBeGreaterThan(0.04);
+    for (const w of weights) {
+      expect(w).toBeGreaterThanOrEqual(-1e-9);
+      expect(w).toBeLessThanOrEqual(0.75 + 1e-9);
+    }
+  });
+});
+
+describe("the repository's launch sites", () => {
+  it('build their flatten shapes (validation) and level the core and every area exactly', async () => {
+    const defs = await loadDefs(fsDefSource());
+    for (const body of Object.values(defs.bodies)) {
+      if (!body.terrain) continue;
+      const sites = Object.values(defs.sites).filter((s) => s.bodyId === body.id);
+      const discs = buildFlattenDiscs(body, sites);
+      for (const s of sites) {
+        const disc = discs.find((d) => d.source === `sites/${s.id}.json pad`)!;
+        const at = (east: number, north: number): number => {
+          const c = { x: disc.cx, y: disc.cy, z: disc.cz };
+          const d = offset(c, east, north, body.radius);
+          return discWeight(disc, d.x, d.y, d.z, body.radius);
+        };
+        expect(at(0, 0)).toBe(1);
+        if (!s.pad.shape) continue;
+        expect(at(0.9 * s.pad.shape.coreRadius, 0)).toBe(1);
+        for (const a of s.pad.shape.areas) expect(at(a.east, a.north)).toBe(1);
+        expect(at(s.pad.blendRadius + 1, 0)).toBe(0);
+      }
+    }
   });
 });

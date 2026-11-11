@@ -16,7 +16,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { BodyDef, DefLibrary, LaunchSiteDef, TerrainAmplificationDef } from '../../src/core/contracts/defs';
+import type { BodyDef, DefLibrary, LaunchSiteDef, SitePadShapeDef, TerrainAmplificationDef } from '../../src/core/contracts/defs';
 import type { TileManifest, TileRect } from '../../src/core/contracts/terrain';
 import { layerHasTile, LANDCOVER_CLASS } from '../../src/core/contracts/terrain';
 import { dirToTile, latLonToDir, tilePath, tileUvToDir, type FaceId, type TileKey } from '../../src/core/geo/cubeSphere';
@@ -276,6 +276,8 @@ export interface FixtureDefOptions {
   model?: string;
   /** Launch-pad elevation of the fixture site ('terrain' = natural height). */
   padElevation?: number | 'terrain';
+  /** pad.shape of the fixture site (request terrain-render-6); default none (one disc). */
+  padShape?: SitePadShapeDef;
   /** Override the Earth/Moon tile set names (used by tests that rewrite a manifest). */
   moonTileset?: string;
   earthTileset?: string;
@@ -295,7 +297,7 @@ export async function fixtureDefs(repoRoot: string, o: FixtureDefOptions = {}): 
     bodyId: 'earth',
     location: { latDeg: FIXTURE_PAD.latDeg, lonDeg: FIXTURE_PAD.lonDeg, padElevation: o.padElevation ?? 'terrain' },
     padAzimuthDeg: 90,
-    pad: { flatRadius: 450, blendRadius: 900, clampHeight: 18 },
+    pad: { flatRadius: 450, blendRadius: 900, clampHeight: 18, ...(o.padShape ? { shape: o.padShape } : {}) },
     structures: [],
     recoveryZones: [],
   };

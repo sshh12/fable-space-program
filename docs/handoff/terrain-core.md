@@ -434,3 +434,16 @@ Full list: `docs/handoff/lead-baseline.md`.
 - **Bake budget re-measured on the quiet machine** (2026-11-10 17:09, CPU busy 6 %): Moon L6 / 10 / 13 / 16 /
   18 = 6.0 / 9.9 / 15.4 / 16.7 / 13.4 ms; Earth L6 / 10 / 13 / 16 / 20 = 8.7 / 12.3 / 13.7 / 20.3 / 18.8 ms.
   Still over 12 ms from level 13; not closed in wave 2 (reasons in `docs/handoff/core-support.md`).
+- **Shaped launch sites** (request `terrain-render-6`, visual close-out): `LaunchSiteDef.pad.shape?:
+  SitePadShapeDef` (`src/core/contracts/defs.ts`). Without it a site is one disc as before (bit-identical).
+  With it the height authority levels the site EXACTLY only inside `coreRadius` and on the `areas` (turned
+  rectangles in the pad's east/north frame), keeps `reliefShare` of the natural relief elsewhere inside
+  `flatRadius`, is natural from `blendRadius` on, and every blend (core, areas, disc) has a ragged far end
+  (band-limited noise, `edgeNoise.amplitude` x the blend width, `edgeNoise.wavelength` m; deterministic
+  hash noise in the site's tangent plane). The weight never reaches beyond `blendRadius`, so the bakers'
+  proximity tests are unchanged; collision = render as before (`applyDiscs` / `flattenWeight` /
+  `discWeight` in `src/terrain/modifiers.ts`). **Lead-owned data changed**: `data/defs/sites/ka-lae-lc1.json`
+  `pad.shape` (core 115 m + 40 m blend, a quarter of the relief kept, five areas: water tower, both tank
+  farms, crawlerway, the building west of the pad; edges ragged by 60 % over 60 m). Tests:
+  `tests/unit/terrain-core/pad.test.ts` (exactly flat core and turned area, the relief share, natural beyond
+  the blend, ragged disc edge, the repository's shape valid).

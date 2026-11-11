@@ -242,6 +242,30 @@ export interface SiteLocationDef {
   padElevation: number | 'terrain';
 }
 
+/**
+ * How the height authority levels a launch site (request terrain-render-6). Without it the site is one disc:
+ * flat at the pad elevation out to `pad.flatRadius`, blended back to natural terrain by `pad.blendRadius`.
+ * With it the ground is EXACTLY flat only inside `coreRadius` and on the `areas` (the slabs that need level
+ * ground); elsewhere inside `pad.flatRadius` the natural relief keeps the share `reliefShare` (0 = flat,
+ * 1 = natural), returning fully by `pad.blendRadius`. Every blend (core, areas, the disc) has a ragged edge:
+ * its far end moves in by up to the fraction `edgeNoise.amplitude` with band-limited noise of
+ * `edgeNoise.wavelength` metres, so no edge is a circle or a straight line. Nothing reaches beyond
+ * `pad.blendRadius`; the collision surface stays the rendered surface.
+ */
+export interface SitePadShapeDef {
+  /** Exactly flat disc about the pad centre (the hardstand), m, and the width of its ragged blend, m. */
+  coreRadius: number;
+  coreBlend: number;
+  /** Share of the natural relief kept inside `pad.flatRadius` outside the core and the areas, 0..1. */
+  reliefShare: number;
+  /**
+   * Exactly flat rectangles in the pad's east/north frame (m): centre, half extents along east and north
+   * before the turn, turned clockwise by `headingDeg` (compass), and the width of their ragged blend (m).
+   */
+  areas: { east: number; north: number; halfEast: number; halfNorth: number; headingDeg: number; blend: number }[];
+  edgeNoise: { amplitude: number; wavelength: number };
+}
+
 export interface LaunchSiteDef {
   id: SiteId;
   name: string;
@@ -250,7 +274,7 @@ export interface LaunchSiteDef {
   location: SiteLocationDef;
   /** Compass direction (deg, clockwise from north) that the vessel's ventral side (-Z) faces on the pad. */
   padAzimuthDeg: number;
-  pad: { flatRadius: number; blendRadius: number; clampHeight: number };
+  pad: { flatRadius: number; blendRadius: number; clampHeight: number; shape?: SitePadShapeDef };
   /** Static structures: procedural model generator id + placement in the pad's east/north/up frame (m). */
   structures: { model: string; offsetEnu: Vec3Tuple; headingDeg: number; params?: Record<string, number | string> }[];
   recoveryZones: { name: string; latDeg: number; lonDeg: number; radiusKm: number }[];
