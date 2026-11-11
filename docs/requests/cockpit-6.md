@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 9997263)
 From: cockpit
 Owner path: src/render/core/post/exposure.ts (`meterExposure`, interior branch, the change of request cockpit-5)
 Blocking: yes (it corrects cockpit-5, which I specified wrongly in one point; same QA items)
@@ -34,3 +34,22 @@ In the interior branch of `meterExposure` only:
    report if it is still too dark).
 
 Nothing else changes; the constants stay exported.
+
+## Resolution
+Done as asked (commit 9997263), in the interior branch only.
+
+1. `keyEv = INTERIOR_NIGHT_KEY_EV x (1 - smoothstep(log2 4, log2 64, log2 logMean)) x dark`, with
+   `dark = 1 - clamp(sunVisibility, 0, 1)` when `sunIlluminance > 0`, and 1 when there is no star at all.
+   A cabin at 1.5-6 cd/m^2: the whole 1.5 EV in the Earth's shadow, half of it with half the solar disc
+   hidden, none in full sun (displayed at mid-grey level again).
+2. `INTERIOR_HIGHLIGHT_MAX_EV` = 1.25.
+
+The constants are exported as before; unit tests in `tests/unit/render-core/exposureGovernor.test.ts`
+("a cabin lit by its floods and displays alone, out of the sun, is displayed dim; a daylit one at
+mid-grey", "highlights of the cabin weigh in, by a bounded amount"); RENDER_API section 13 and the row of
+section 18 say what is in the code. `sunVisibility` is the geometric fraction of the disc that the bodies
+leave visible at the camera: it does not know the cabin's own walls or the time of day at a window, so a
+cabin on the day side with every window turned away from the sun counts as "by day" (no key), which is
+what your request asks for.
+
+Not re-run by me: `tests/browser/cockpit` (your tree).
