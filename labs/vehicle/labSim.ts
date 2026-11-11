@@ -80,6 +80,11 @@ export class VehicleLabSim implements Sim {
     return this.stage;
   }
 
+  /** Labels of the vehicle's stage stack, in firing order. */
+  get stageLabels(): string[] {
+    return this.defs.vehicles[this.vehicleId]!.stages.map((s) => s.label);
+  }
+
   get placement(): LabPlace {
     return this.place;
   }

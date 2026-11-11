@@ -1,7 +1,7 @@
 /**
  * Model report (not an acceptance test): prints triangle counts and mesh checks per part model, and the
  * stack totals per LOD. Run with
- *   PARTS=atlas-9m,vela-2 npx vitest run tests/unit/vehicle/scratch.test.ts --disable-console-intercept
+ *   PARTS=atlas-9m,vela-2 npx vitest run tests/unit/vehicle/modelReport.test.ts --disable-console-intercept
  * (no PARTS = the stack totals only).
  */
 import { it } from 'vitest';

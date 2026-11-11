@@ -10,7 +10,7 @@ import { DEG, TAU, beam, bolt, box, extrude, frustum, pipe, ringSolid, rod, zipL
 import type { MatId } from '../materials';
 import { buildModel } from '../parts/common';
 import type { PartLight } from '../parts/types';
-import { numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
+import { flatSite, numParam, staticSite, strParam, type SiteGenerator, type SiteSink, type SiteState } from './types';
 
 /** Extrude a polygon given in the (z, y) plane along X between x0 and x1. */
 export function extrudeZY(b: MeshBuilder, poly: [number, number][], x0: number, x1: number, tag: string): void {
@@ -153,7 +153,7 @@ export const padApron: SiteGenerator = ({ params }) => {
     for (const sx of [-1, 1]) groundDecal(b, 'hazard', [sx * (gap + 0.9), t + 0.008, 0], 2 * hz - 8, 0.9, 90, Math.round((2 * hz - 8) / 7.2));
     groundDecal(b, 'lc1', [-(gap + (hx - gap) * 0.55), t + 0.008, hz * 0.55], 17, 8.9, 0);
   });
-  return { models: { body }, pose: staticSite };
+  return { models: { body }, pose: flatSite };
 };
 
 // ------------------------------------------------------------------------------------------- trench
@@ -400,7 +400,7 @@ export const padCrawlerway: SiteGenerator = ({ params }) => {
     box(b, median, 0.55, length, [0, -0.1, 0], 'median');
     for (const s of [-1, 1]) box(b, 1.2, 0.7, length, [s * (median / 2 + track + 0.6), -0.05, 0], 'kerb');
   });
-  return { models: { body }, pose: staticSite };
+  return { models: { body }, pose: flatSite };
 };
 
 // ------------------------------------------------------------------------------------------ pipe run
@@ -428,21 +428,22 @@ export const padPipeRun: SiteGenerator = ({ params }) => {
       b.mat(material).masks(0.1, 1, 0.3, 0.3);
       pipe(b, pts, radius, radius * 3, { segs: b.pick(14, 8, 5), tag: 'pipe' });
     }
-    if (b.lod === 2) return;
     b.mat('galvanised').masks(0.2, 1, 0.3, 0);
     const w = count * pitch + 0.5;
     const n = Math.max(2, Math.round(length / 9));
-    for (let k = 0; k <= n; k++) {
+    // The far LOD keeps the two end supports, so the run still stands on the ground.
+    for (let k = 0; k <= n; k += b.lod === 2 ? n : 1) {
       const z = -(length * k) / n;
       box(b, 0.22, height - radius, 0.22, [0, (height - radius) / 2, z], 'support');
-      box(b, w, 0.16, 0.26, [0, height - radius - 0.08, z], 'cross-head');
+      if (b.lod < 2) box(b, w, 0.16, 0.26, [0, height - radius - 0.08, z], 'cross-head');
     }
+    if (b.lod === 2) return;
     if (b.lod === 0) {
       b.mat('steel-bare');
       for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + 0.07, -0.06, 0.06, 16, 'flange'));
     }
   });
-  return { models: { body }, pose: staticSite };
+  return { models: { body }, pose: flatSite };
 };
 
 // ---------------------------------------------------------------------------------------- floodlight

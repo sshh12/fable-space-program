@@ -879,6 +879,8 @@ export function tube(b: MeshBuilder, path: Vec3Tuple[], radius: number | ((i: nu
     twist = Math.atan2(dot3(cross3(a, c), d0), dot3(a, c));
   }
   const rows: number[][] = [];
+  // Ring positions in the caller's frame (the builder stores them transformed), for the end caps.
+  const local: Vec3Tuple[][] = [];
   let run = 0;
   for (let k = 0; k < count; k++) {
     const i = k % n;
@@ -893,6 +895,7 @@ export function tube(b: MeshBuilder, path: Vec3Tuple[], radius: number | ((i: nu
     if (k > 0) run += len3(sub3(P[i]!, P[(k - 1) % n]!));
     const r = rad(i);
     const row: number[] = [];
+    const ringLocal: Vec3Tuple[] = [];
     for (let j = 0; j <= segs; j++) {
       const a = (j / segs) * TAU;
       const c = Math.cos(a);
@@ -901,9 +904,11 @@ export function tube(b: MeshBuilder, path: Vec3Tuple[], radius: number | ((i: nu
       // Around-direction tangent dN/da: cross(N, T) runs along the path, where v increases.
       const tg: Vec3Tuple = [by[0] * c - fx[0] * s, by[1] * c - fx[1] * s, by[2] * c - fx[2] * s];
       const p = P[i]!;
+      ringLocal.push([p[0] + nrm[0] * r, p[1] + nrm[1] * r, p[2] + nrm[2] * r]);
       row.push(b.v(p[0] + nrm[0] * r, p[1] + nrm[1] * r, p[2] + nrm[2] * r, nrm[0], nrm[1], nrm[2], tg[0], tg[1], tg[2], a * r, run));
     }
     rows.push(row);
+    local.push(ringLocal);
   }
   for (let k = 0; k < rows.length - 1; k++) {
     const r0 = rows[k]!;
@@ -914,12 +919,12 @@ export function tube(b: MeshBuilder, path: Vec3Tuple[], radius: number | ((i: nu
   for (const end of [0, 1]) {
     const i = end === 0 ? 0 : n - 1;
     const dn = scale3(dirAt(i), end === 0 ? -1 : 1);
-    const row = rows[end === 0 ? 0 : rows.length - 1]!;
-    const t: Vec3Tuple = norm3(sub3(b.position(row[0]!), P[i]!));
+    const row = local[end === 0 ? 0 : local.length - 1]!;
+    const t: Vec3Tuple = norm3(sub3(row[0]!, P[i]!));
     const c = b.vt(P[i]!, dn, t, 0, 0);
     const ring: number[] = [];
     for (let j = 0; j <= segs; j++) {
-      const q = b.position(row[j]!);
+      const q = row[j]!;
       const rel = sub3(q, P[i]!);
       ring.push(b.vt(q, dn, t, dot3(rel, t), dot3(rel, cross3(dn, t))));
     }

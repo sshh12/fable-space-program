@@ -14,7 +14,7 @@ import type { MatId } from '../materials';
 import { buildModel, parseList } from '../parts/common';
 import type { PartLight, PartModel } from '../parts/types';
 import { handrail } from './pad';
-import { numParam, staticSite, strParam, type SiteGenerator } from './types';
+import { flatSite, numParam, strParam, type SiteGenerator } from './types';
 
 /** Marking on a vertical board: centre, width along `right`, height along +Y, facing `right x up`. */
 function boardDecal(b: MeshBuilder, name: string, centre: Vec3Tuple, right: Vec3Tuple, width: number, height: number): void {
@@ -304,5 +304,5 @@ export const padCatenary: SiteGenerator = ({ params }) => {
     }
     tube(b, pts, radius, { segs: b.pick(6, 4, 3), tag: 'wire' });
   });
-  return { models: { body }, pose: staticSite };
+  return { models: { body }, pose: flatSite };
 };

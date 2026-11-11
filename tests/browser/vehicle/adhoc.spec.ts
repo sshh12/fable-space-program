@@ -2,7 +2,7 @@
  * Ad-hoc screenshots while working on a model: not part of the acceptance run (skipped unless VEH_ADHOC is
  * set). Entries are separated by ';', each "name|query string of the vehicle lab":
  *
- *   VEH_ADHOC="m1|scene=pad&only=m1&vessel=active&offset=30,-80,40&look=0,-80,0" \
+ *   VEH_ADHOC="pad|scene=pad&sun=205,40&eye=60,-50,75&at=0,-50,0&fov=60" [VEH_SIZE=2560x1440] [VEH_EVAL=<js run in the page>] \
  *     node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle/adhoc.spec.ts --project=functional
  *
  * Errors of the page are printed, not asserted, so a half-built model can still be looked at.

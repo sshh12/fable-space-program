@@ -200,7 +200,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const sp = Profile.at(sc[0]![0], sc[0]![1]);
     sp.pts[0]!.hard = false;
     for (let i = 1; i < sc.length; i++) sp.to(sc[i]![0], sc[i]![1]);
-    lathe(b, sp, { phis, join: true });
+    lathe(b, sp, { phis, join: true, mask: (_y, phi, r, m) => void (m.soot = shieldChar(phi, r)) });
 
     // ---- back shell cone as a grid with the opening blocks left out
     b.mat(shellMat);

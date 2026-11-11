@@ -79,3 +79,10 @@ export function strParam(p: StructureParams, key: string, fallback: string): str
 
 /** Static structure: one 'body' model. */
 export const staticSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null);
+
+/**
+ * Static structure that casts no sun shadow: slabs flush with the ground, thin wires, low pipe runs. Their
+ * shadows are below what the cascades resolve at the distances they are seen from, and they would be a
+ * fifth of the complex's caster triangles.
+ */
+export const flatSite = (_state: SiteState, emit: SiteSink): void => emit('body', null, null, { castShadow: false });

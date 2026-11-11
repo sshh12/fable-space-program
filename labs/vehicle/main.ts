@@ -135,6 +135,8 @@ export interface VehicleLab {
   site: SiteFeature | null;
   env: ReturnType<typeof createLabEnvFeature>;
   setSun(sun: SunSpec | null): void;
+  /** Camera and look-at point in the frame of the active vessel, or of the vessel matching `focus` (nose up). */
+  setView(eye: [number, number, number], at: [number, number, number], focus?: string | null): void;
 }
 
 declare global {
@@ -153,10 +155,10 @@ async function boot(): Promise<void> {
     const a = params.get(key)?.split(',').map(Number);
     return a && a.length === 3 && a.every(Number.isFinite) ? [a[0]!, a[1]!, a[2]!] : null;
   };
-  const eye = tuple3('eye');
-  const at = tuple3('at') ?? [0, 0, 0];
+  let eye = tuple3('eye');
+  let at = tuple3('at') ?? [0, 0, 0];
   const upAxis = params.get('up') ?? 'y';
-  const focus = params.get('focus');
+  let focus = params.get('focus');
   const vehicle = createVesselVisualFeature({ exteriorGlass: flag('glass', true) });
   const env = createLabEnvFeature({ kind: envKind });
   // The lab planet has no relief: the pad surface is the reference sphere here.
@@ -203,7 +205,8 @@ async function boot(): Promise<void> {
       if (eye && lab) {
         // eye= / at= are given in the active vessel's frame with +Y (the nose) as "up": the view a person
         // standing by the stack has, which the lab's vessel camera (dorsal side up) does not give.
-        const v = (focus ? snapshot.vessels.find((x) => x.id.includes(focus) || x.parts.some((p) => p.instanceId.includes(focus))) : undefined) ?? snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
+        const text = focus;
+        const v = (text ? snapshot.vessels.find((x) => x.id.includes(text) || x.parts.some((p) => p.instanceId.includes(text))) : undefined) ?? snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
         const pos = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(eye)));
         const target = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(at)));
         const up = quat.rotate(v.q, upAxis === 'z' ? v3.unitZ() : v3.unitY());
@@ -220,7 +223,19 @@ async function boot(): Promise<void> {
     autoReady: false,
   });
   const sim = app.sim as VehicleLabSim;
-  lab = { app, sim, vehicle, site, env, setSun: (sun) => sim.setSun(sun) };
+  lab = {
+    app,
+    sim,
+    vehicle,
+    site,
+    env,
+    setSun: (sun) => sim.setSun(sun),
+    setView: (e, a, f = null) => {
+      eye = e;
+      at = a;
+      focus = f;
+    },
+  };
   window.__veh = lab;
   // stages=<n>: fire that many stages now; coast=<s>: let the separated vessels drift for s seconds.
   for (let i = 0; i < num('stages', 0); i++) sim.fireStage();
