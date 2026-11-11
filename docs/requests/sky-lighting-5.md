@@ -1,4 +1,4 @@
-Status: open
+Status: withdrawn (the sky package shoots the views itself, commit after 8bb6e85; see Resolution)
 From: sky-lighting
 Owner path: labs/integration, tests/browser/integration (views of the sky with the real terrain, atmosphere-clouds and ocean)
 Blocking: no
@@ -32,3 +32,14 @@ Three views in the integration lab (terrain, atmosphere-clouds, ocean, sky and a
    dark floor), looking along the galactic plane above the limb. Check: Milky Way mean at least 12/255.
 Must not change: nothing in `src/render/sky` is needed for this; `createSkyFeature()` is registered as it is
 in `labs/sky`.
+
+## Resolution
+Withdrawn by the requester: the integration lab's public handle (`window.__integration`: `setSun`,
+`setSunInVesselFrame`, `watchVesselFromSunSide`, `handles['sky.createSkyFeature']`) and a free camera on
+`window.__lab` are enough to take the views from a spec in the sky package's own paths, so nothing is needed in
+`labs/integration` or `tests/browser/integration`. `tests/browser/sky/integration.spec.ts` writes
+`out/screens/sky/integration-sun-above-limb.png` (sun 6 deg above the limb, flare drawn and unattenuated, no
+row structure beyond 10 deg), `integration-sun-at-limb.png` (0.3 deg: transmittance 0.10 / 0.03 / 0.002; the
+exposure of that view is request sky-lighting-10), `integration-hull-over-earth.png` (the vehicle over the
+Earth by day) and `integration-leo-night.png` (moonless night side, Milky Way 34/255 over 60 px at EV -6; the
+night face and the missing airglow are request sky-lighting-9).
