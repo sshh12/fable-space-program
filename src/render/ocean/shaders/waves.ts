@@ -55,7 +55,7 @@ struct OceanUniforms {
   time: vec4f,          // x = tau = frac(t / T), y = tau of the previous frame, z = T (s), w = dt (s)
   foam: vec4f,          // x = decay (1/s), y = Jacobian threshold, z = gain, w = foam albedo
   shore: vec4f,         // x = shore foam depth (m), y = refraction distortion, z = chromatic offset, w = statistical whitecap coverage
-  counts: vec4u,        // x = swell components, y = vessels, z = ripples, w = flags (bit 0 = wake texture valid, bits 8..11 = debug view)
+  counts: vec4u,        // x = swell components, y = vessels, z = ripples, w = flags (bit 0 = wake texture valid, bits 8..11 = debug view, bits 16..20 = wave layers updated this frame)
   wake: vec4f,          // xy = plane offset of the wake texture centre from the reference point, z = extent (m), w = 1 / extent
   swellDirK: array<vec4f, ${MAX_SWELL}>,    // xyz = unit body-fixed direction, w = wavenumber k
   swellAmpPhase: array<vec4f, ${MAX_SWELL}>, // x = amplitude, y = phase at the reference point now, z = d . cHat, w = phase one frame earlier
@@ -263,10 +263,13 @@ fn oceanSurfaceFrom(p0: vec2f, delta0: vec3f, up0: vec3f, filterWidth: f32, deta
   return o;
 }
 
+/// 1 when wave layer c (a cascade, or OCEAN_LONG_LAYER) is updated this frame, 0 when no pixel can resolve it.
+fn oceanLayerOn(c: u32) -> f32 { return f32((oceanU.counts.w >> (16u + c)) & 1u); }
+
 /// Per-cascade amplitude factors (vessel damping x TMA in water of depth h) at plane offset p.
 fn oceanAmplitudes(p: vec2f, h: f32) -> vec4f {
   var a = vec4f(1.0);
-  for (var c = 0u; c < OCEAN_CASCADES; c++) { a[c] = oceanDamping(c, p) * oceanTma(c, h) * oceanU.misc.z; }
+  for (var c = 0u; c < OCEAN_CASCADES; c++) { a[c] = oceanDamping(c, p) * oceanTma(c, h) * oceanU.misc.z * oceanLayerOn(c); }
   return a;
 }
 

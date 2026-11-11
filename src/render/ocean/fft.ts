@@ -36,6 +36,8 @@ export class OceanFft {
   private readonly colsGroups: [GPUBindGroup, GPUBindGroup];
   private readonly mipGroups: [GPUBindGroup[], GPUBindGroup[]];
   private primed = false;
+  /** Layers updated by the latest update. */
+  private mask = 0;
 
   constructor(
     private readonly ctx: RenderContext,
@@ -84,12 +86,12 @@ export class OceanFft {
         { binding: 3, visibility: C, buffer: { type: 'storage' } },
       ],
     });
-    const rowsLayout = device.createBindGroupLayout({ label: 'ocean.fft.rows', entries: [{ binding: 3, visibility: C, buffer: { type: 'storage' } }] });
+    const rowsLayout = device.createBindGroupLayout({ label: 'ocean.fft.rows', entries: [{ binding: 0, visibility: C, buffer: { type: 'uniform' } }, { binding: 3, visibility: C, buffer: { type: 'storage' } }] });
     const colsLayout = device.createBindGroupLayout({
       label: 'ocean.fft.columns',
       entries: [{ binding: 0, visibility: C, buffer: { type: 'uniform' } }, { binding: 3, visibility: C, buffer: { type: 'storage' } }, storageTex(4), storageTex(5), storageTex(6), sampledTex(7)],
     });
-    const mipLayout = device.createBindGroupLayout({ label: 'ocean.fft.mip', entries: [sampledTex(0), sampledTex(1), sampledTex(2), storageTex(3), storageTex(4), storageTex(5)] });
+    const mipLayout = device.createBindGroupLayout({ label: 'ocean.fft.mip', entries: [sampledTex(0), sampledTex(1), sampledTex(2), storageTex(3), storageTex(4), storageTex(5), { binding: 6, visibility: C, buffer: { type: 'uniform' } }] });
     const pipe = (label: string, code: string, entry: string, layout: GPUBindGroupLayout): GPUComputePipeline =>
       device.createComputePipeline({ label, layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }), compute: { module: ctx.shaders.createModule(label, code), entryPoint: entry } });
     this.spectrumPipe = pipe('ocean.fft.spectrum', FFT_SPECTRUM_WGSL, 'spectrum', spectrumLayout);
@@ -107,7 +109,7 @@ export class OceanFft {
         { binding: 3, resource: { buffer: this.work } },
       ],
     });
-    this.rowsGroup = device.createBindGroup({ label: 'ocean.fft.rows', layout: rowsLayout, entries: [{ binding: 3, resource: { buffer: this.work } }] });
+    this.rowsGroup = device.createBindGroup({ label: 'ocean.fft.rows', layout: rowsLayout, entries: [{ binding: 0, resource: { buffer: this.params } }, { binding: 3, resource: { buffer: this.work } }] });
     const level = (t: GPUTexture, mip: number): GPUTextureView => t.createView({ dimension: '2d-array', baseMipLevel: mip, mipLevelCount: 1 });
     const cols = (k: 0 | 1): GPUBindGroup =>
       device.createBindGroup({
@@ -137,6 +139,7 @@ export class OceanFft {
               { binding: 3, resource: level(this.disp, m) },
               { binding: 4, resource: level(this.deriv, m) },
               { binding: 5, resource: level(this.foam[k], m) },
+              { binding: 6, resource: { buffer: this.params } },
             ],
           }),
         );
@@ -158,10 +161,14 @@ export class OceanFft {
   }
 
   /**
-   * Evolve to time tau = frac(t / T) (prepared in float64 by the caller). `dt` drives the foam decay.
+   * Evolve to time tau = frac(t / T) (prepared in float64 by the caller). `dt` drives the foam decay. Only the
+   * layers in `mask` (bit c = layer c) are updated: a layer no pixel can resolve this frame keeps its old content
+   * and is not sampled (the shaders give it amplitude 0); one that comes back starts a new history (reset).
    * Records into `encoder`; `timestamp` is the core's timestampWrites for the pass.
    */
-  update(encoder: GPUCommandEncoder, tau: number, dt: number, timestamp: GPUComputePassTimestampWrites | undefined): void {
+  update(encoder: GPUCommandEncoder, tau: number, dt: number, mask: number, timestamp: GPUComputePassTimestampWrites | undefined): void {
+    if ((mask & ~this.mask) !== 0) this.primed = false;
+    this.mask = mask;
     const device = this.ctx.device;
     const n = FFT_SIZE;
     // The previous frame's displacement (all mips) for motion vectors.
@@ -174,6 +181,7 @@ export class OceanFft {
     p[3] = this.tunables.foamDecay;
     p[4] = this.tunables.foamSigma;
     p[5] = this.tunables.foamRampSigma;
+    p[18] = mask;
     device.queue.writeBuffer(this.params, 0, p);
     const k = (1 - this.foamCurrent) as 0 | 1;
     const pass = encoder.beginComputePass({ label: 'ocean.fft', timestampWrites: timestamp });

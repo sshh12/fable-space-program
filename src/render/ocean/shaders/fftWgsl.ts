@@ -21,8 +21,9 @@ struct FftParams {
   foam: vec4f,      // x = foam threshold below J = 1 in standard deviations of the cascade's Jacobian, y = ramp width (same unit)
   lengths: vec4f,   // patch length of layers 0..3 (m)
   sigmaJ: vec4f,    // standard deviation of the Jacobian of layers 0..3
-  layer4: vec4f,    // x = patch length, y = Jacobian spread of layer 4 (the long-wave layer)
+  layer4: vec4f,    // x = patch length, y = Jacobian spread of layer 4 (the long-wave layer), z = mask of the layers updated this frame
 }
+fn layerActive(c: u32) -> bool { return ((u32(fp.layer4.z) >> c) & 1u) != 0u; }
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(1) var<storage, read> h0: array<vec4f>;
 @group(0) @binding(2) var<storage, read> omegaIndex: array<f32>;
@@ -38,7 +39,7 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x;
   let j = id.y;
   let c = id.z;
-  if (i >= N || j >= N || c >= ${FFT_LAYERS}u) { return; }
+  if (i >= N || j >= N || c >= ${FFT_LAYERS}u || !layerActive(c)) { return; }
   let o = (c * N + j) * N + i;
   let s = h0[o];
   // Phase 2 pi frac(m tau): exact in float32 because m is an integer and tau < 1.
@@ -76,6 +77,18 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
+/** The parameter block as the passes after the spectrum declare it (layer mask in layer4.z). */
+const FFT_PARAMS = /* wgsl */ `
+struct FftParams {
+  time: vec4f,
+  foam: vec4f,
+  lengths: vec4f,
+  sigmaJ: vec4f,
+  layer4: vec4f,
+}
+fn layerActive(c: u32) -> bool { return ((u32(fp.layer4.z) >> c) & 1u) != 0u; }
+`;
+
 /** One 256-point inverse FFT of four signals per workgroup (row or column `line` of cascade `z`). */
 const FFT_CORE = /* wgsl */ `
 const N = ${FFT_SIZE}u;
@@ -108,6 +121,8 @@ fn fftWorkgroup(t: u32) {
 `;
 
 export const FFT_ROWS_WGSL = /* wgsl */ `
+${FFT_PARAMS}
+@group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(3) var<storage, read_write> work: array<vec2f>;
 ${FFT_CORE}
 @compute @workgroup_size(${FFT_SIZE / 2}, 1, 1)
@@ -115,6 +130,7 @@ fn rows(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: vec
   let t = lid.x;
   let row = wg.x;
   let c = wg.y;
+  if (!layerActive(c)) { return; }
   let base = c * 4u * N * N + row * N;
   for (var q = 0u; q < 4u; q++) {
     for (var k = 0u; k < 2u; k++) {
@@ -133,13 +149,7 @@ fn rows(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: vec
 `;
 
 export const FFT_COLUMNS_WGSL = /* wgsl */ `
-struct FftParams {
-  time: vec4f,
-  foam: vec4f,
-  lengths: vec4f,
-  sigmaJ: vec4f,
-  layer4: vec4f,
-}
+${FFT_PARAMS}
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(3) var<storage, read_write> work: array<vec2f>;
 @group(0) @binding(4) var dispOut: texture_storage_2d_array<rgba16float, write>;
@@ -152,6 +162,7 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
   let t = lid.x;
   let col = wg.x;
   let c = wg.y;
+  if (!layerActive(c)) { return; }
   let base = c * 4u * N * N + col;
   for (var q = 0u; q < 4u; q++) {
     for (var k = 0u; k < 2u; k++) {
@@ -182,6 +193,8 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
 
 /** 2 x 2 box downsample of three cascade arrays from mip l - 1 to mip l. */
 export const FFT_MIP_WGSL = /* wgsl */ `
+${FFT_PARAMS}
+@group(0) @binding(6) var<uniform> fp: FftParams;
 @group(0) @binding(0) var srcA: texture_2d_array<f32>;
 @group(0) @binding(1) var srcB: texture_2d_array<f32>;
 @group(0) @binding(2) var srcC: texture_2d_array<f32>;
@@ -191,7 +204,7 @@ export const FFT_MIP_WGSL = /* wgsl */ `
 @compute @workgroup_size(8, 8, 1)
 fn mip(@builtin(global_invocation_id) id: vec3u) {
   let size = textureDimensions(dstA);
-  if (id.x >= size.x || id.y >= size.y) { return; }
+  if (id.x >= size.x || id.y >= size.y || !layerActive(id.z)) { return; }
   let layer = i32(id.z);
   let p = vec2i(id.xy) * 2;
   var a = vec4f(0.0);

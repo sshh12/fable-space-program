@@ -79,6 +79,8 @@ export interface OceanFrameData {
   taaReactive: number;
   /** Debug view: 0 = normal shading; see OCEAN_DEBUG_VIEWS. */
   debugView: number;
+  /** Wave layers updated this frame (bit c = layer c of the wave arrays). */
+  layerMask: number;
 
   /** Capillary detail layers: compression, rotation (rad), slope amplitude, origin (texture coordinates mod 1). */
   detail: { scale: number; angle: number; amplitude: number; origin: [number, number] }[];
@@ -114,7 +116,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   u[o] = d.swell.count;
   u[o + 1] = Math.min(d.vessels.length, MAX_VESSELS);
   u[o + 2] = Math.min(d.ripples.length, MAX_RIPPLES);
-  u[o + 3] = (d.wake.valid ? 1 : 0) | ((d.debugView & 15) << 8);
+  u[o + 3] = (d.wake.valid ? 1 : 0) | ((d.debugView & 15) << 8) | ((d.layerMask & 31) << 16);
   o += 4;
   v4(d.wake.x, d.wake.y, d.wake.extent, 1 / d.wake.extent);
   for (let i = 0; i < MAX_SWELL; i++) v4(d.swell.dirK[i * 4]!, d.swell.dirK[i * 4 + 1]!, d.swell.dirK[i * 4 + 2]!, d.swell.dirK[i * 4 + 3]!);

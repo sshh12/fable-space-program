@@ -25,12 +25,13 @@ import {
   type SurfacePatch,
 } from './nearField';
 import { coxMunkVariance, oceanTunables, type OceanTunables } from './params';
+import { FFT_SIZE } from './spectrum';
 import { MAX_SWELL, prepareSwell, swellAmplitudeBound, swellSlopeVariance, type PreparedSwell } from './swell';
 import { OCEAN_UNIFORM_BYTES, OCEAN_UNIFORM_VEC4, OCEAN_WAVES_WGSL } from './shaders/waves';
 import { buildWaterBrdfWgsl, whitecapCoverage } from './shaders/waterBrdf';
 import { FIELD_BAKE_WGSL, FIELD_MIP_WGSL, FIELD_MIPS, FIELD_SIZE } from './shaders/fieldWgsl';
 import { REACTIVE_WGSL } from './shaders/reactiveWgsl';
-import { READBACK_WGSL, SURFACE_PIPELINE_WGSL } from './shaders/surfaceWgsl';
+import { OCEAN_LOD_CUT, READBACK_WGSL, SURFACE_PIPELINE_WGSL } from './shaders/surfaceWgsl';
 import { packOceanUniforms, type OceanFrameData } from './uniforms';
 import { OceanVessels, type VesselFrame } from './vessels';
 
@@ -97,6 +98,8 @@ export interface OceanDebug {
     /** The long-wave normals layer (render-only slopes): patch length, highest wavenumber, height RMS, slope variance, gain on the spectrum. */
     longWave: { length: number; kHigh: number; heightRms: number; slopeVariance: number; gain: number } | null;
     windSpeed: number;
+    /** Wave layers updated this frame (bit c = cascade c, bit 4 = the long-wave layer); 0 when no waves are drawn. */
+    layerMask: number;
     vesselZones: number;
     ripples: number;
     wetSlots: number;
@@ -180,7 +183,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
    * the forward surface and the reactive mask run. From higher up every water pixel is in the band, where the
    * forward surface would only repeat the deferred sheet's radiance (surfaceWgsl.ts), so nothing is drawn.
    */
-  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number; near: boolean } | null = null;
+  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number; near: boolean; layerMask: number } | null = null;
   let wasNear = false;
   let lastUt = 0;
   let lastWetSlots = 0;
@@ -363,6 +366,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         capillaryAmplitude: b?.detail[0]?.amplitude ?? 0,
         longWave: b ? { length: b.cascades.long.band.length, kHigh: b.cascades.long.band.kHigh, heightRms: Math.sqrt(b.cascades.long.heightVariance), slopeVariance: b.cascades.long.slopeVariance, gain: b.cascades.long.gain } : null,
         windSpeed: t?.windSpeed ?? 0,
+        layerMask: a?.near ? a.layerMask : 0,
         vesselZones: a?.vf.zones.length ?? 0,
         ripples: a?.vf.ripples.length ?? 0,
         wetSlots: lastWetSlots,
@@ -662,6 +666,14 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       wasNear = near;
       const tau = frac(ut / t.repeatPeriod);
       reactiveValue = t.taaReactive * reactiveScale;
+      // Wave layers worth updating: no water is nearer than the nadir, so no pixel sees a layer sharper than the nadir
+      // footprint does; a layer filtered beyond OCEAN_LOD_CUT there (+ 0.75 mip of margin) is sampled nowhere.
+      const pixelAngle = 2 / (frame.projUnjittered[5]! * frame.renderSize[1]);
+      const nadirFootprint = Math.max(camAboveSea - waveBound, 0.05) * pixelAngle;
+      let layerMask = 0;
+      [...body.cascades.spectra, body.cascades.long].forEach((sp, c) => {
+        if (Math.log2((nadirFootprint * FFT_SIZE) / sp.band.length) < OCEAN_LOD_CUT + 0.75) layerMask |= 1 << c;
+      });
       // Field texture: covers fadeEnd plus a margin around the reference; re-centred when the reference has
       // moved a quarter of the margin (every few km of flight), or the chart or the body changed.
       const margin = 0.25 * t.fadeEnd;
@@ -726,6 +738,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         taaReactive: reactiveValue,
         field: { x: field.cx - ref.x, y: field.cy - ref.y, extent: field.extent },
         debugView,
+        layerMask,
         detail: body.detail.map((l) => {
           // Planet-fixed: rotate and compress the reference's chart coordinates in float64, keep the fraction.
           const c = Math.cos(l.angle);
@@ -764,7 +777,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       }
       if (patchCount > 0) device.queue.writeBuffer(patchBuffer, 0, patchData, 0, patchCount * 4);
       ctx.perf.counter('ocean.patches', patchCount);
-      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea, near };
+      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea, near, layerMask };
       const fft = ensureFft(body);
       ctx.resources.publish('ocean.displacement', fft.dispView);
       ctx.resources.publish('ocean.derivatives', fft.derivView);
@@ -777,7 +790,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       vessels.updateWake(encoder, a.vf, a.dt, ctx.perf.gpuPass('ocean.wake') as GPUComputePassTimestampWrites | undefined);
       if (!a.near) return;
       const fft = ensureFft(a.body);
-      fft.update(encoder, a.tau, a.dt, ctx.perf.gpuPass('ocean.fft') as GPUComputePassTimestampWrites | undefined);
+      fft.update(encoder, a.tau, a.dt, a.layerMask, ctx.perf.gpuPass('ocean.fft') as GPUComputePassTimestampWrites | undefined);
       if (field.bake) {
         // This frame's uniforms hold the reference the bake area is relative to (offset 0: centred on it).
         field.bake = false;

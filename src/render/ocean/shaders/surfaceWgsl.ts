@@ -11,6 +11,13 @@
  */
 import { LOD_RANGE, MORPH_FRACTION, PATCH_CELLS } from '../nearField';
 
+/**
+ * A wave layer filtered beyond this mip keeps under 0.1 % of its slope variance (filteredSlopeFraction): its slopes
+ * are not sampled (their variance is unresolved, in the GGX lobe), its foam is the statistical coverage. A layer
+ * that no pixel of the frame can see sharper than this is not even updated (oceanFeature).
+ */
+export const OCEAN_LOD_CUT = 4.5;
+
 export const SURFACE_PIPELINE_WGSL = (sceneBindings: string): string => /* wgsl */ `
 #include "frame"
 #include "gbuffer"
@@ -46,9 +53,7 @@ const OCEAN_LACE_WEIGHT = vec4f(0.0, 0.4, 0.45, 0.55);
 const OCEAN_LACE_NORM = 0.665;
 // Lowest lace threshold: the share of a fully foamed pixel's bubbles that stay dark.
 const OCEAN_FOAM_CORE = 0.22;
-// A cascade filtered beyond this mip keeps under 0.1 % of its slope variance (filteredSlopeFraction): its slopes
-// are not sampled (their variance is unresolved, in the GGX lobe), its foam is the statistical coverage.
-const OCEAN_LOD_CUT = 4.5;
+const OCEAN_LOD_CUT = ${OCEAN_LOD_CUT.toFixed(2)};
 // Below this the vertical march finds the seabed under a water point; deeper water changes neither the TMA
 // attenuation (every band at full strength from about 15 m) nor the shore foam.
 const OCEAN_VERTICAL_REACH = 24.0;
@@ -341,7 +346,7 @@ struct FsOut {
   // half its variance: their sum does not repeat and breaks the swell's regular crossing pattern up.
   {
     let lw = oceanU.long;
-    let aL = 0.70710678 * detail * oceanTmaOmega(lw.stats.z, seaDepth) * oceanU.misc.z;
+    let aL = 0.70710678 * detail * oceanTmaOmega(lw.stats.z, seaDepth) * oceanU.misc.z * oceanLayerOn(OCEAN_LONG_LAYER);
     let g = lw.geom.y;
     let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * g, 1e-6));
     let keep = 1.0 - smoothstep(OCEAN_LOD_CUT - 1.0, OCEAN_LOD_CUT, lod);
