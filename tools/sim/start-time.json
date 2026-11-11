@@ -22,7 +22,7 @@
     "bodyId": "moon",
     "latDeg": 0.661471,
     "lonDeg": 23.435999,
-    "source": "argument"
+    "source": "data/defs/scenarios/lunar-direct.json suggestedLanding"
   },
   "constraints": {
     "launchKind": "either",

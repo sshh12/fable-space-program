@@ -27,7 +27,7 @@ export interface MissionPilotOptions {
   pitchProgramme?: PitchProgramme;
   /** Minimum stay on the lunar surface, s (default 900). */
   surfaceStay?: number;
-  /** Tilt of the departure direction out of the Moon's orbit plane that the lunar ascent sets up, degrees (default 8). */
+  /** Tilt of the departure direction out of the Moon's orbit plane that the lunar ascent sets up, degrees (default 10). */
   returnPlaneTiltDeg?: number;
   /** Use physics warp in long integrated phases (pacing only; default true). */
   physicsWarp?: boolean;
