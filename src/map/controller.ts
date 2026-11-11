@@ -1645,6 +1645,15 @@ export class MapController implements MapView {
             const ex = Math.max(x0 - hd.x, 0, hd.x - (x0 + w));
             const ey = Math.max(y0 - hd.y, 0, hd.y - (y0 + h));
             if (ex * ex + ey * ey < (HANDLE_RADIUS_PX * k + k) ** 2) score += 100;
+            // and its arm (points along it, inside the badge grown by a pixel)
+            for (let f = 0.15; f < 1; f += 0.1) {
+              const ax = selX + (hd.x - selX) * f;
+              const ay = selY + (hd.y - selY) * f;
+              if (ax > x0 - k && ax < x0 + w + k && ay > y0 - k && ay < y0 + h + k) {
+                score += 100;
+                break;
+              }
+            }
           }
           if (selShown) {
             const ex = Math.max(x0 - selX, 0, selX - (x0 + w));

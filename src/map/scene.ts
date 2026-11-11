@@ -431,6 +431,7 @@ export class VertexArrays {
     const cut0 = this.cut0;
     const cut1 = this.cut1;
     const slen = this.slen;
+    const dzs = this.dz;
     for (let q = start; q < j; q++) {
       tt[q] = NaN;
       alpha[q] = 1;
@@ -440,7 +441,7 @@ export class VertexArrays {
       cover[q] = 0;
       cut0[q] = 0;
       cut1[q] = 0;
-      this.dz[q] = -vz[q]!;
+      dzs[q] = -vz[q]!;
       if (front[q] !== 1) {
         len[q] = L;
         slen[q] = L;
@@ -1747,12 +1748,15 @@ export class SceneBuilder {
       delta[r] = delta[prev]!;
       zr[r] = zr[prev]!;
     }
+    // The octave the upload reads is only the headroom of the dash coordinate's modulus (two octaves above it):
+    // within 10 % of the own depth it may stay the own one, further off it is taken from the borrowed depth.
     const k = (DASH_PERIOD_PX * scene.proj.pxScale) / scene.proj.focal;
     for (let q = 0; q < n; q++) {
       const j = lo + q;
+      const r = zr[q]!;
       v.len[j] = v.len[j]! + delta[q]!;
-      v.dz[j] = -v.vz[j]! * zr[q]!;
-      v.oct[j] = Math.floor(Math.log2(Math.max(1e-3, k * v.dz[j]!)));
+      v.dz[j] = -v.vz[j]! * r;
+      if (r > 1.1 || r < 0.9) v.oct[j] = Math.floor(Math.log2(Math.max(1e-3, k * v.dz[j]!)));
     }
   }
 

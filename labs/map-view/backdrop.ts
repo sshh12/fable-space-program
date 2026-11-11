@@ -36,7 +36,7 @@ fn toSrgb(c: vec3f) -> vec3f {
   let dir = normalize(u.viewToRoot * d);
   let pixel = 1.0 / u.screen.z; // angular size of a pixel at the centre (rad)
   var best = 3.4e38;
-  var col = vec3f(0.006, 0.008, 0.012);
+  var col = vec3f(0.003, 0.003, 0.004);
   let n = u32(u.screen.w);
   for (var i = 0u; i < n; i++) {
     let s = u.spheres[i];
@@ -59,7 +59,9 @@ fn toSrgb(c: vec3f) -> vec3f {
       let nrm = normalize(dir * t - c);
       let lit = max(dot(nrm, s.sun.xyz), 0.0);
       let rim = pow(1.0 - max(dot(nrm, -dir), 0.0), 3.0) * 0.08;
-      shaded = toSrgb(s.color.rgb * (lit * 1.6 + 0.035) + vec3f(rim * 0.4, rim * 0.5, rim * 0.7) * lit);
+      // no ambient term: the night side is as black as space, as the real renderer shows it at map distances
+      // (the overlay's silhouette ring is what outlines it there)
+      shaded = toSrgb(s.color.rgb * (lit * 1.6 + 0.0015) + vec3f(rim * 0.4, rim * 0.5, rim * 0.7) * lit);
     }
     col = mix(col, shaded, cover);
   }

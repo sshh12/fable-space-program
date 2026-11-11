@@ -227,6 +227,9 @@ const rectDist = (x: number, y: number, x0: number, y0: number, x1: number, y1: 
 let links = new Float64Array(4 * 64);
 /** Anchors and plate centres of the labels placed so far, ax, ay, cx, cy per entry. */
 let cents = new Float64Array(4 * 64);
+/** Per label: the obstacles (indices into the rectangle buffer) and icons near enough to matter. */
+let nearRects = new Int32Array(256);
+let nearIcons = new Int32Array(256);
 
 /** Distance from (px, py) to the segment (ax, ay)-(bx, by). */
 const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
@@ -282,6 +285,8 @@ export function declutter(
     links = new Float64Array(4 * labels.length);
     cents = new Float64Array(4 * labels.length);
   }
+  if (nearRects.length < nFixed + labels.length) nearRects = new Int32Array(2 * (nFixed + labels.length));
+  if (nearIcons.length < icons.length) nearIcons = new Int32Array(2 * icons.length);
   let nLinks = 0;
   const margin = LINE_MARGIN_PX * scale;
   const neighbourReach = NEIGHBOUR_PX * scale;
@@ -350,11 +355,25 @@ export function declutter(
       }
       seq = ranked;
     }
+    // The obstacles and icons that can matter to any of its candidates (within the reach of the outer ring and
+    // the label's size, with room for the foreign-icon and connector tests): each candidate tests only these.
+    const reachBox = l.clear + gap + (rings - 1) * farRing + Math.max(l.width, l.altWidth) + l.height + 30 * scale;
+    let nNear = 0;
+    for (let k = 0; k < n; k++) {
+      const o = 4 * k;
+      if (rects[o]! < l.ax + reachBox && rects[o + 2]! > l.ax - reachBox && rects[o + 1]! < l.ay + reachBox && rects[o + 3]! > l.ay - reachBox) nearRects[nNear++] = k;
+    }
+    let nIcons = 0;
+    for (let k = 0; k < icons.length; k++) {
+      const ic = icons[k]!;
+      if (Math.abs(ic.x - l.ax) < reachBox + ic.r && Math.abs(ic.y - l.ay) < reachBox + ic.r) nearIcons[nIcons++] = k;
+    }
     // the nearest other marker: the label leans away from it
     let fx = 0;
     let fy = 0;
     let fd = neighbourReach;
-    for (const ic of icons) {
+    for (let q = 0; q < nIcons; q++) {
+      const ic = icons[nearIcons[q]!]!;
       if (!ic.pair) continue;
       const dx = ic.x - l.ax;
       const dy = ic.y - l.ay;
@@ -443,8 +462,8 @@ export function declutter(
           let cost = rank - (slot === prevSlot ? bonus : 0);
           if (cost >= best) continue;
           let free = true;
-          for (let k = 0; k < n; k++) {
-            const o = 4 * k;
+          for (let q = 0; q < nNear; q++) {
+            const o = 4 * nearRects[q]!;
             if (x < rects[o + 2]! && rects[o]! < x1 && y < rects[o + 3]! && rects[o + 1]! < y1) {
               free = false;
               break;
@@ -478,7 +497,8 @@ export function declutter(
           if (cost >= best) continue;
           // another marker's icon nearer to the plate than its own anchor: it would read as that marker's label
           const own = rectDist(l.ax, l.ay, x, y, x1, y1);
-          for (const ic of icons) {
+          for (let q = 0; q < nIcons; q++) {
+            const ic = icons[nearIcons[q]!]!;
             if (!ic.pair || (Math.abs(ic.x - l.ax) < 0.5 && Math.abs(ic.y - l.ay) < 0.5)) continue;
             if (rectDist(ic.x, ic.y, x, y, x1, y1) + ic.r * 0.5 + 2 < own) {
               cost += FOREIGN_COST;
@@ -492,7 +512,8 @@ export function declutter(
           const qy = Math.max(y, Math.min(l.ay, y1));
           if (own > l.clear + 2 * scale) {
             let crosses = false;
-            for (const ic of icons) {
+            for (let q = 0; q < nIcons; q++) {
+              const ic = icons[nearIcons[q]!]!;
               if (Math.abs(ic.x - l.ax) < 0.5 && Math.abs(ic.y - l.ay) < 0.5) continue;
               if (segDist(ic.x, ic.y, l.ax, l.ay, qx, qy) < ic.r * 0.9) {
                 crosses = true;
@@ -514,6 +535,10 @@ export function declutter(
             bslot = slot;
             bShort = form === 1;
           }
+          // the place beside its anchor it had is still free and costs nothing beyond its rank: it keeps it (no
+          // flip to a slightly better-ranked place that has just come free); a place on the outer ring is
+          // searched again every time, so a label does not stay out on a leader once room comes back
+          if (step < 0 && found && ring === 0 && best <= rank - bonus) break;
         }
       }
     }

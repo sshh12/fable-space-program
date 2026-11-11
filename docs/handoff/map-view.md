@@ -173,7 +173,7 @@ Drawing (all from the snapshot; nothing is predicted by the map):
   within 12 px of its marker; otherwise labelled "Impact point" / "Entry point"). A patch in another body's frame than the one before it starts with a small
   entry tick (`<list>/<i>/start`; left out within 12 px of the SOI marker). Apsis and AN/DN markers are left
   out on a patch under 40 px across. The apsis the active vessel sits at (within 11 px) is printed as the
-  vessel label's second line ("Pe 200.0 km  now") instead of folding into a "+1". Lengths are written with
+  vessel label's second line ("Pe 200.0 km  T− 0:00") instead of folding into a "+1". Lengths are written with
   the flight HUD's rule (`formatDistance` mirrors `src/ui/format.ts` formatLength: km with one decimal up
   to 10,000 km for apsides, "180.0 Mm" above), so a label and the HUD panel beside it agree.
 - Visibility is binary: an icon, label and plate are drawn at full strength while the anchor is in front and
@@ -441,10 +441,12 @@ show through less; the label cache also keys on the landing-target prediction (t
 
 - `docs/requests/map-view-4.md` (src/core, src/ui/hud/hudStyles.ts): the HUD's font stack and palette as
   shared constants. Resolved by core-support (d3134ab): `src/core/ui/theme.ts`; src/map imports it.
-- `docs/requests/map-view-5.md` (labs/integration and the app shell's map mode; core-support), open, not
-  blocking: mount the map with the flight HUD in map mode and pass the HUD panel rectangles to
-  `setObstacles`. The app shell part is done (9469c2d: `src/app/features.ts`, `src/app/game.ts`); the
-  integration lab part is still open. Workaround in map-view's own spec (`mountHud` in `real-planet.spec.ts`).
+- `docs/requests/map-view-5.md` (labs/integration and the app shell's map mode; core-support), resolved: the
+  app mounts the map with the flight HUD in map mode and passes the HUD panel rectangles to `setObstacles`
+  (9469c2d: `src/app/features.ts`, `src/app/game.ts`), and so does the integration lab with `&map=1&flighthud=1`
+  (298f785, `window.__integration.map`, `mapCamera()`). `real-planet.spec.ts` still composes its frame itself
+  (`mountMap`, `mountHud`; it opens the lab without `&map=1`); moving it to the lab's own mount is a
+  simplification left for later.
 - `docs/requests/map-view-7.md` (src/core/fakes, labs/integration; core-support), round 5: the FakeSim's
   "Fake vessel" read as placeholder text in every composed picture. Answered in code (ecc9238:
   `FakeSimOptions.vesselName`; the integration lab names the craft after its vehicle); the map lab passes
