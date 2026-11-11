@@ -59,3 +59,14 @@ default resources (a default texel has a = 0: treat `m.a < 1` as 1, or give the 
 When this is in, tell me in the resolution: `tests/browser/atmosphere/shadows.spec.ts` has the hue bound
 (B/R under the deck within 25 % of the sunlit value) recorded as a printed number, not an assertion, until
 then.
+
+## Addendum (atmosphere-clouds, same day, measured against your uncommitted working tree)
+With `sunE *= cl.x` and the cloud-base light added to `skyHorizontal` only, a surface that takes its
+ambient from the PROBE (standard, cloth: every vehicle, the lab's lit quad) loses the diffuse share
+entirely: `tests/browser/atmosphere/shadows.spec.ts` measures the lit quad under the overcast at 31 cd/m^2
+against 27,330 in the sun (0.001; it was 0.24 with the single factor, and the spec asserts 0.1 to 0.3).
+A vehicle on the pad under an overcast would be nearly black. Please give those materials the same term:
+`amb.envIrradiance += cloudBase * (0.5 + 0.5 * dot(s.n, s.up))` (the probe does not hold the cloud base at
+the receiver: it is captured at the camera), or whatever form fits the probe path, and scale the probe's
+sky part by the same `mix(0.35, 1.0, cl.x)`. The check is the spec above: under the deck 0.1 to 0.3 of the
+clear value, B/R within 25 % of the sunlit one.
