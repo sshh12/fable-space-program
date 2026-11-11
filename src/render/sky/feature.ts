@@ -235,8 +235,10 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     // Scintillation: only inside an atmosphere (the camera below the top of the nearest atmosphere body's shell).
     let inside = false;
     for (const pose of frame.bodies) {
-      const atm = defs.bodies[pose.id]?.render.atmosphere;
-      if (!atm || pose.cameraAltitude >= atm.topAltitude) continue;
+      const def = defs.bodies[pose.id];
+      const atm = def?.render.atmosphere;
+      // Inside the shell: between half a radius below the datum (sea floor, caves) and the top of the atmosphere.
+      if (!def || !atm || pose.cameraAltitude >= atm.topAltitude || pose.cameraAltitude < -0.5 * def.radius) continue;
       const r = v3.len(pose.centerRelCam);
       const up = v3.scale(pose.centerRelCam, -1 / r);
       d.set([1, pose.cameraAltitude, atm.rayleighScaleHeight, r / atm.rayleighScaleHeight], 8);

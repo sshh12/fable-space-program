@@ -16,7 +16,19 @@ import { IMPOSTOR_FULL_PX, IMPOSTOR_NONE_PX, SCINTILLATION_ZENITH_VARIANCE, STAR
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 
+/**
+ * Cap of every ADDITIVE write of this feature (stars, impostors, each flare term), pre-exposed. Blending cannot
+ * clamp, and the solar disc already sits at HDR_MAX (60,000): a full-strength additive draw over it would reach
+ * 120,000 and overflow rgba16float (65,504) to Inf. With this cap the worst stack over a disc pixel (two stars,
+ * an impostor, five flare terms) stays at 64,000. 500 is about 2,800 x mid-grey: far above display white, so the
+ * cap changes no tonemapped pixel; it only limits the bloom of a grossly overexposed point.
+ */
+export const ADDITIVE_CAP = 500;
+const CAP_WGSL = `const ADDITIVE_CAP = ${f(ADDITIVE_CAP)};
+fn capAdditive(c: vec3f) -> vec3f { return min(writeHdr(c), vec3f(ADDITIVE_CAP)); }`;
+
 export const SKY_COMMON_WGSL = /* wgsl */ `
+${CAP_WGSL}
 const STAR_SIGMA_PX = ${f(STAR_PSF_SIGMA_PX)};
 const SCINT_ZENITH = ${f(SCINTILLATION_ZENITH_VARIANCE)};
 struct SkyUniforms {
@@ -157,7 +169,7 @@ struct StarOut {
 }
 @fragment fn fs(in: StarOut) -> @location(0) vec4f {
   let g = exp(-0.5 * dot(in.offsetPx, in.offsetPx) / (STAR_SIGMA_PX * STAR_SIGMA_PX));
-  return vec4f(writeHdr(in.peak * g), 1.0);
+  return vec4f(capAdditive(in.peak * g), 1.0);
 }
 `;
 
@@ -170,6 +182,7 @@ export const IMPOSTOR_WGSL = (bindings: string): string => /* wgsl */ `
 #include "frame"
 #include "transparency"
 ${bindings}
+${CAP_WGSL}
 const IMPOSTOR_FULL_PX = ${f(IMPOSTOR_FULL_PX)};
 const IMPOSTOR_NONE_PX = ${f(IMPOSTOR_NONE_PX)};
 struct Impostor {
@@ -221,7 +234,7 @@ struct VOut {
   let g = exp(-0.5 * dot(in.offsetPx, in.offsetPx) / (sigma * sigma)) / (TWO_PI * sigma * sigma);
   let lum = im.flux.rgb * g * im.shape.w / (cosOff * cosOff * cosOff);
   let c = applyAtmosphere(uv, im.shape.z, lum * im.flux.a * frame.exposure.x, alpha);
-  return vec4f(writeHdr(c.rgb), c.a);
+  return vec4f(capAdditive(c.rgb), c.a);
 }
 `;
 
@@ -301,6 +314,7 @@ export const FLARE_WGSL = (bindings: string): string => /* wgsl */ `
 #include "frame"
 #include "transparency"
 ${bindings}
+${CAP_WGSL}
 const FLARE_HALO_SHARE = ${f(FLARE_HALO_SHARE)};
 const FLARE_HALO_POWER = ${f(HALO_POWER)};
 const SPIKE_COUNT = ${f(SPIKE_COUNT)};
@@ -345,12 +359,14 @@ fn ndcRay(n: vec2f) -> vec3f {
   // The ray this (jittered) pixel samples, as for the scene behind it.
   let uv = in.pos.xy * frame.renderSize.zw;
   let dir = normalize(viewRay(uv));
+  let s = frame.sunDir.xyz;
+  let theta = atan2(length(cross(dir, s)), dot(dir, s));
+  // Nothing is added on the solar disc (including its anti-aliased rim): it is at HDR_MAX already, and the
+  // ghosts of a source on the optical axis fall onto the source itself.
+  if (theta < frame.sunDir.w + 1.5 * 2.0 * frame.cameraUp.w * frame.renderSize.w) { discard; }
   var L = vec3f(0.0);
   if (t.pos.w < 0.5) {
     // Starburst + glare around the sun direction.
-    let s = frame.sunDir.xyz;
-    let theta = atan2(length(cross(dir, s)), dot(dir, s));
-    if (theta < frame.sunDir.w) { discard; }   // the disc itself is saturated already
     // Halo: (1 + (theta / c)^2)^-p (flare.ts haloProfile); shape.y normalises its integral to 1.
     let x = theta / t.shape.x;
     let halo = t.shape.y * pow(1.0 + x * x, -FLARE_HALO_POWER);
@@ -382,7 +398,7 @@ fn ndcRay(n: vec2f) -> vec3f {
     L = source * t.tint.rgb * t.tint.a * t.shape.y * ring;
   }
   let c = applyAtmosphere(uv, 0.0, L * frame.exposure.x, 0.0);
-  return vec4f(writeHdr(c.rgb), 0.0);
+  return vec4f(capAdditive(c.rgb), 0.0);
 }
 `;
 
