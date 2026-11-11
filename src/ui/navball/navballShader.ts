@@ -98,8 +98,8 @@ fn toVes(d: vec3f) -> vec3f {
 
 /**
  * Visibility of the lettering at a pixel showing heading hDeg / pitch pDeg: the label this pixel belongs to
- * (nearest anchor of the label grid) is shown while its farthest corner lies inside edge - 0.02 of the window and
- * faded out as a whole over the 0.06 before that, so it is never cut by the lip; a label on the far hemisphere
+ * (nearest anchor of the label grid) is shown while its farthest corner lies inside edge - 0.065 of the window and
+ * faded out as a whole by edge - 0.025, so it is never cut by the lip; a label on the far hemisphere
  * is off. Every pixel of one label computes the same value.
  */
 fn labelVisibility(hDeg: f32, pDeg: f32, edge: f32) -> f32 {
@@ -133,7 +133,7 @@ fn labelVisibility(hDeg: f32, pDeg: f32, edge: f32) -> f32 {
   let ra = length(a.xz);
   let dir = select(vec2f(1.0, 0.0), a.xz / ra, ra > 1e-5);
   let reach = ra + halfW * abs(dot(e.xz, dir)) + halfH * abs(dot(n.xz, dir));
-  return 1.0 - smoothstep(edge - 0.08, edge - 0.02, reach);
+  return 1.0 - smoothstep(edge - 0.065, edge - 0.025, reach);
 }
 
 /**
