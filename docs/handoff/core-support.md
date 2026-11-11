@@ -269,3 +269,13 @@ copy is replaced by `#include "cloud_shadow"`.
   - New lab switches for a check of cloud shadows above a deck (`setNearCloudShadow`, `setSunInVesselFrame`).
   - terrain-render regenerated its material sets at 07:40 while a run was going: terrain-dependent checks
     wait for its marker.
+- 08:00-08:40. The ballast artefact traced per frame (the first compute pass behind the long pass, about
+  0.23 ms in a quarter of the frames; none without the ballast; four kinds of pass in between did not take
+  it). The budget runs now put the ballast at the end of the frame (`labs/integration/ballast.ts`): sky
+  0.04 ms everywhere. First complete table with every package loaded (terrain in its working state): every
+  budgeted line inside, sums of the p99s 1.9-5.5 ms against 11 (`out/core-support/budget.md`; to be repeated
+  after terrain-render's marker).
+- 08:40-08:55. Check (b) extended: above an overcast deck the hull keeps its light (1.000) and the cabin
+  loses 56 % of it; `cockpit-cs-1` filed (the cabin shader's own copy of the old cloud-shadow lookup).
+  The LEO cockpit budget row now looks at the two forward windows with the Earth in them (`&roll=180`,
+  `sitAtWindowBelow`).

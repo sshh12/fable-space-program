@@ -77,8 +77,9 @@ const SCENES: Record<Checkpoint, Scene> = {
   // Climbing from 12 km at 350 m/s: the stack and 150 m of its plume.
   'ascent 10-40 km': { query: 'scene=ascent&start=12000&throttle=1', stack: { yaw: 200, pitch: -4, distance: 280, from: 'base', along: -20 } },
   LEO: { query: 'scene=lowOrbit&orbit=30,15,60' },
-  // The commander's seat, looking at the panel (the view the cockpit package measures its own line in).
-  'LEO cockpit': { query: 'scene=lowOrbit', cockpit: true },
+  // The commander's seat, the capsule rolled windows-down: the cabin, the panel's edge and the two forward
+  // windows with the Earth in them (terrain, atmosphere and clouds are drawn behind the glass).
+  'LEO cockpit': { query: 'scene=lowOrbit&roll=180', cockpit: true },
   // The lander 12 m above the landing target on its descent engine, the sun 15 degrees up.
   'lunar descent': { query: `scene=lunarSurface&throttle=0.4&hover=12&sun=100,15&sunsite=${landing.bodyId},${landing.latDeg},${landing.lonDeg}&orbit=40,12,45` },
   reentry: { query: 'scene=reentry&orbit=160,10,30' },
@@ -125,7 +126,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
     const row = await withGpuLock(async (): Promise<Row> => {
       const scene = SCENES[checkpoint];
       info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
-      if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitInCockpit(8, 2)), 'the vehicle has a cockpit seat to sit in').toBe(true);
+      if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitAtWindowBelow()), 'the vehicle has a cockpit seat with a window to look through').not.toBeNull();
       if (scene.stack) {
         await page.evaluate((c) => {
           const lab = window.__integration!;
