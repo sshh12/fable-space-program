@@ -362,4 +362,16 @@ migration line, is in `docs/RENDER_API.md` section 18; the reasons and measureme
 - **Specs added.** `framegraph.spec.ts`: G-buffer read-back markers, the reactive mask; `mesh.spec.ts`:
   LabPlanet seabed modes, the wet line; `lighting.spec.ts`: back-lit cloth under a caster, planetshine in a
   closed box; unit tests for the interior meter, the emissive prior and the interior cascade.
-
+- **Section 4.1 (measuring with a ballast), corrected in the closing pass.** The empty pass behind the
+  lab's ballast keeps the ballast's left-over away from the core's copies and render passes, but not from a
+  feature's compute pass: in the integration lab the first compute pass of the frame (the ocean's wake step,
+  the sky's probe step) read about 0.23 ms too long in one frame out of four, which made the sky's line read
+  0.37 ms instead of 0.04. Measurements of features put the ballast at the END of the frame
+  (`labs/integration/ballast.ts`) and report the median over six windows of each window's p99
+  (RENDER_API section 14). This lab's own numbers are unaffected (re-measured 2026-11-11: core fixed
+  0.516 ms, 1.7 M triangles 0.450 ms, CPU frame p99 0.55 ms).
+- **Known weakness, seen with the real terrain.** From 60 m to 5 km above the lunar landing site under an
+  8 degree sun, crater shadows 1.5 to 8 km from the camera come from the 7.8 m texels of cascade 4 (two to
+  three pixels wide): soft, ragged in craters with rough walls; pictures
+  `out/screens/integration/shadows-landing-site-low-sun-*.png`. A receiver fit of the cascades of 8 km and
+  below is what would sharpen them; not built.
