@@ -195,8 +195,8 @@
     "colorSpeeds": [3500, 7000, 10500],
     "colors": [[1.0, 0.42, 0.14], [1.0, 0.5, 0.62], [0.86, 0.82, 1.0]],
     "flicker": { "lowHz": 8, "highHz": 30, "amount": 0.22 },
-    "light": { "efficacy": 0.015, "range": 60 },
-    "trail": { "luminance": 26000, "lifetime": 18, "radiusScale": 0.9, "smoke": 0.02 },
+    "light": { "efficacy": 0.05, "range": 60 },
+    "trail": { "luminance": 300000, "lifetime": 0.6, "radiusScale": 0.55, "smoke": 0.02, "trainLuminance": 500, "trainLifetime": 22 },
     "steps": 32
   },
   "explosion": {
@@ -217,7 +217,7 @@
     "fragmentBurn": [2.2, 5.5],
     "fragmentSpeed": 2.6,
     "fragmentSmoke": 2.2,
-    "fragmentGlow": 500000,
+    "fragmentGlow": 160000,
     "steps": 40
   },
   "parachutes": {

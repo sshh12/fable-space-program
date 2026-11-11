@@ -228,7 +228,8 @@ export interface VfxData {
     colors: [Vec3Tuple, Vec3Tuple, Vec3Tuple];
     flicker: { lowHz: number; highHz: number; amount: number };
     light: { efficacy: number; range: number };
-    trail: { luminance: number; lifetime: number; radiusScale: number; smoke: number };
+    /** The trail of a reentry: the hot glow at the head (cd/m^2, e-folding time s), the faint persistent train behind it, radius in body radii, smoke. */
+    trail: { luminance: number; lifetime: number; radiusScale: number; smoke: number; trainLuminance: number; trainLifetime: number };
     steps: number;
   };
   explosion: {
@@ -407,7 +408,7 @@ const ROOT: Schema = {
     colors: 'cs',
     flicker: { lowHz: 'p', highHz: 'p', amount: 'u' },
     light: { efficacy: 'n', range: 'p' },
-    trail: { luminance: 'n', lifetime: 'p', radiusScale: 'p', smoke: 'n' },
+    trail: { luminance: 'n', lifetime: 'p', radiusScale: 'p', smoke: 'n', trainLuminance: 'n', trainLifetime: 'p' },
     steps: 'i',
   },
   explosion: {

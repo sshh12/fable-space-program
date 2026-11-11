@@ -43,6 +43,9 @@ export interface TrailNode {
   glow0: number;
   glowLife: number;
   glowColor: Vec3Tuple;
+  /** A second, faint and long-lived glow (the persistent train of a reentry): luminance at birth (cd/m^2) and e-folding time (s). */
+  train0?: number;
+  trainLife?: number;
 }
 
 export interface Trail {
@@ -72,7 +75,7 @@ export function trailState(data: VfxData['trail'], node: TrailNode, age: number)
   return [
     node.smoke0 * thin * Math.exp(-age / data.smokeLifetime),
     node.contrail0 * thin * smooth(0.1, 0.9, age) * Math.exp(-age / data.contrailLifetime),
-    node.glow0 * Math.exp(-age / Math.max(node.glowLife, 0.01)),
+    node.glow0 * Math.exp(-age / Math.max(node.glowLife, 0.01)) + (node.train0 ?? 0) * Math.exp(-age / Math.max(node.trainLife ?? 1, 0.01)),
   ];
 }
 
@@ -92,7 +95,7 @@ struct TrailSeg {
   albedoB: vec4f,    // rgb, w = glow at B
   noise: vec4f,      // xyz = noise coordinate of node A, w = noise scale (1/m)
   glow: vec4f,       // rgb = glow colour, w = noise amount
-  taper: vec4f,      // x, y = distance of A and of B from the newest end of the trail along it (m), z = taper length (m), w = unused
+  taper: vec4f,      // x, y = distance of A and of B from the newest end of the trail along it (m), z = taper length (m), w = length of the whole trail (m)
 }
 @group(2) @binding(0) var<storage, read> trailSegs: array<TrailSeg>;
 
@@ -174,20 +177,34 @@ struct FOut {
   let eyeAlong = -dot(s.a.xyz, ux);
   let eyeNear = length(aPerp) / max(radius, 1e-3);
   let eyeBy = smoothstep(-30.0 * radius, -10.0 * radius, eyeAlong) * (1.0 - smoothstep(len + 10.0 * radius, len + 30.0 * radius, eyeAlong));
-  let show = smoothstep(0.0, 1.0, mix(s.taper.x, s.taper.y, along) / max(s.taper.z, 1e-3)) * mix(1.0, smoothstep(1.2, 3.0, eyeNear), eyeBy);
+  // (A fade-in shorter than a pixel is no fade-in: the trail then starts at the vehicle. The oldest end fades
+  // out over a few radii, raggedly: no cut.)
+  let pixelMid = 2.0 * frame.cameraUp.w * vfx.half.w * tMid;
+  let fromNewest = mix(s.taper.x, s.taper.y, along);
+  let fadeIn = max(smoothstep(0.0, 1.0, fromNewest / max(s.taper.z, 1e-3)), smoothstep(0.5, 1.5, pixelMid / max(s.taper.z, 1e-3)));
+  let show = fadeIn * mix(1.0, smoothstep(1.2, 3.0, eyeNear), eyeBy);
   var tau0 = mix(s.na.w, s.nb.w, along) * show;
-  var glowLum = mix(s.albedoA.w, s.albedoB.w, along) * show;
+  // The glow decays exponentially with age: interpolated as such between the nodes.
+  var glowLum = exp(mix(log(max(s.albedoA.w, 1e-3)), log(max(s.albedoB.w, 1e-3)), along)) * show;
   let albedo = mix(s.albedoA.rgb, s.albedoB.rgb, along);
   // Turbulent structure fixed in the air: it modulates the radius and the amount.
   let closest = d * tMid;
   let n = vfxNoiseLod(s.noise.xyz + (closest - s.a.xyz) * s.noise.w, 2.0 * frame.cameraUp.w * vfx.half.w * tMid * s.noise.w);
   radius *= 1.0 + (n.r - 0.5) * 1.2 * s.glow.w;
   tau0 *= 1.0 + (n.g - 0.5) * 1.6 * s.glow.w;
+  tau0 *= smoothstep(0.0, 1.0, (s.taper.w - fromNewest) / max(6.0 * radius, 1e-3) - 0.6 * n.a);
+  // Beads: the brightness of a glowing trail varies along it on the scale of a kilometre, however thin it is drawn.
+  let bead = vfxNoiseLod(s.noise.xyz * 0.37 + (closest - s.a.xyz) * (1.0 / 1300.0), pixelMid / 1300.0);
+  glowLum *= 0.45 + 1.1 * bead.r;
+  // The head of a trail seen from so far that the glowing body and its wake are smaller than a pixel: their
+  // light is not lost, it is in this pixel (a point that clips and blooms at the front of the line).
+  glowLum *= 1.0 + s.taper.z * 0.06 * smoothstep(0.3, 1.5, pixelMid / max(s.taper.z, 1e-3)) * exp(-fromNewest / max(4.0 * pixelMid, 1e-3)) * step(1.0, s.albedoA.w + s.albedoB.w);
   // Sub-pixel tubes are widened to a pixel and thinned by the same factor.
   let pixel = 2.0 * frame.cameraUp.w * vfx.half.w * tMid;
   let rDraw = max(radius, 0.7 * pixel);
   let thin = radius / rDraw;
-  let q = d * tm - s.a.xyz;
+  // The axis is kinked by the same turbulence (a trail is never a ruled line).
+  let q = d * tm - s.a.xyz + (vec3f(n.r, n.a, n.b) - 0.5) * (2.4 * s.glow.w * radius);
   let qPerp = q - ux * dot(q, ux);
   let d2 = dot(qPerp, qPerp);
   let g = exp(-d2 / (rDraw * rDraw));
@@ -339,7 +356,19 @@ export class TrailSystem {
       const key = `reentry|${vessel.id}`;
       this.feed(
         this.trail(key, vessel.bodyId, R.wakeLengthRadii * radius * (0.3 + 0.7 * Math.min(1, plasma))),
-        { pos: toFixed(vessel.bodyId, at), born: effectTime, radius0: R.trail.radiusScale * radius, spread: 0.1 * D.expansionSpeed, smoke0: R.trail.smoke * plasma, contrail0: 0, glow0: R.trail.luminance * Math.pow(plasma, R.fluxExponent), glowLife: R.trail.lifetime, glowColor: color },
+        {
+          pos: toFixed(vessel.bodyId, at),
+          born: effectTime,
+          radius0: R.trail.radiusScale * radius,
+          spread: 0.1 * D.expansionSpeed,
+          smoke0: R.trail.smoke * plasma,
+          contrail0: 0,
+          glow0: R.trail.luminance * Math.pow(plasma, R.fluxExponent),
+          glowLife: R.trail.lifetime,
+          glowColor: color,
+          train0: R.trail.trainLuminance * Math.pow(plasma, R.fluxExponent),
+          trainLife: R.trail.trainLifetime,
+        },
         effectTime,
       );
       fed.add(key);
@@ -349,7 +378,7 @@ export class TrailSystem {
       if (f.smoke <= 0 && f.glow <= 0) continue;
       this.feed(
         this.trail(f.key, f.bodyId, 2 * f.radius),
-        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.1 * D.expansionSpeed, diffusivity: 0.08 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.22, glowColor: f.color },
+        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.1 * D.expansionSpeed, diffusivity: 0.08 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.09, glowColor: f.color },
         effectTime,
       );
       fed.add(f.key);
@@ -429,10 +458,15 @@ export class TrailSystem {
         const scale = D.noiseScale / Math.max(0.5 * (sa.radius + sb.radius), 1);
         const frac = (x: number): number => x * scale - Math.floor(x * scale);
         S.set([frac(nodeA.pos.x), frac(nodeA.pos.y), frac(nodeA.pos.z), scale], o + 24);
-        const gc = nodeA.glow0 > 0 ? nodeA.glowColor : list[i + 1]!.glowColor;
+        // The colour of the glow goes with its age: white-hot at the head, the colour of the gas behind it, dull red in the train.
+        const base = nodeA.glow0 > 0 ? nodeA.glowColor : list[i + 1]!.glowColor;
+        const age = effectTime - 0.5 * (nodeA.born + list[i + 1]!.born);
+        const hot = Math.exp(-age / Math.max(0.6 * nodeA.glowLife, 0.01));
+        const old = nodeA.train0 ? 1 - Math.exp(-age / (0.25 * (nodeA.trainLife ?? 1))) : 0;
+        const gc: Vec3Tuple = [0, 1, 2].map((c) => (base[c]! + (1 - base[c]!) * 0.7 * hot) * (1 - old) + [1, 0.32, 0.12][c]! * old) as Vec3Tuple;
         // A wake that glows for seconds is smooth gas, not a billowing cloud.
-        S.set([gc[0], gc[1], gc[2], nodeA.glow0 > 0 && nodeA.glowLife > 2 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
-        S.set([fromEnd[i]!, fromEnd[i + 1]!, t.taper, 0], o + 32);
+        S.set([gc[0], gc[1], gc[2], nodeA.train0 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
+        S.set([fromEnd[i]!, fromEnd[i + 1]!, t.taper, fromEnd[0]!], o + 32);
         count++;
       }
       for (let c0 = first; c0 < count; c0 += CHUNK) {

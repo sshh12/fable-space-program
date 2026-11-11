@@ -247,10 +247,14 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
   let steps = max(10.0, floor(I.windZ.w * vfx.time.w + 0.5));
   let jitter = blueNoise(vec2u(in.pos.xy)).b;
   let seed = vec3f(I.params.z, I.params.z * 1.7, I.params.z * 0.3);
-  let hot = vec3f(luminance(I.color.rgb)) * vec3f(1.0, 0.96, 1.05);
+  let hot = vec3f(luminance(I.color.rgb)) * vec3f(1.35, 1.25, 1.15);
   let fp = 2.0 * frame.cameraUp.w * vfx.half.w;      // footprint of a pixel per metre of distance
   let ph = fract(vec2f(I.flow.x, I.flow.x + 0.5));
   let wa = 1.0 - abs(2.0 * ph.x - 1.0);
+  // Is the eye inside the tube of the wake (within the sheath and its skirt)?
+  let eyeX = max(R.ro.x, 0.0);
+  let eyeTube = Rb * (0.5 + 0.5 * exp(-eyeX / (1.5 * Rb))) * (1.0 + 0.02 * eyeX / Rb) + 2.0 * (0.12 * Rb + 0.03 * eyeX);
+  let eyeInside = (1.0 - smoothstep(1.0, 2.5, length(R.ro.yz) / eyeTube)) * step(0.0, R.ro.x);
   var L = vec3f(0.0);
   var wsum = 0.0;
   var tsum = 0.0;
@@ -263,32 +267,38 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
     let B = plasmaBody(I, p);
     if (B.sd <= 0.0) { continue; }
     var j = vec3f(0.0);
-    // Shock layer on the windward side: a bright front at the standoff distance, glowing gas behind it.
-    // The gas runs from the stagnation point outwards along the wall, and its streaks are drawn out along
-    // that flow and carried by it (two phases of a flow map, cross-faded).
-    let e = saturate(-B.n.x);
-    let delta = d0s * (1.0 + 1.6 * (1.0 - e)) * (0.65 + 0.35 * k);
-    if (B.sd < 1.7 * delta && e > 0.04) {
-      var v = vec3f(1.0, 0.0, 0.0) - B.n * B.n.x;
-      let vm = length(v);
-      v = v / max(vm, 0.05);
-      let adv = 1.8 * Rb * vm;
+    // How far round to the windward side this point lies, from a point inside the body (smooth across the
+    // shoulder, where the wall normal of the proxy jumps): 1 at the stagnation point, about 0.4 at the
+    // shoulder, 0 in the lee.
+    let m = normalize(p - I.bodyAxis.xyz * (0.4 * Rb));
+    let e = saturate(-m.x);
+    // Shock layer: the gas between the bow shock and the wall glows through its whole depth, a little more
+    // right behind the shock. It is thin and white-hot at the stagnation point and thickens and reddens
+    // towards the shoulder, where it leaves the body as the sheath of the wake. Its turbulence is carried
+    // along the wall by the flow (two phases of a flow map, cross-faded): at the stagnation point, where
+    // the flow stands still, it only boils; streaks form where the gas runs fast. No pole, no pattern.
+    let delta = d0s * (1.0 + 2.2 * (1.0 - e)) * (0.65 + 0.35 * k);
+    if (B.sd < 1.3 * delta + 0.9 * Rb && e > 0.0) {
+      let v = vec3f(1.0, 0.0, 0.0) - m * m.x;
+      let adv = 1.6 * Rb;
       let qa = p - v * (ph.x * adv);
       let qb = p - v * (ph.y * adv);
-      let lod = t * fp * 1.5 / Rb;
-      let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.72)) * (1.5 / Rb) + seed, lod);
-      let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.72)) * (1.5 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
-      let n = mix(nb.g, na.g, wa);
-      let n2 = mix(nb.b, na.b, wa);
-      let layer = smoothstep(1.35 * delta, 0.85 * delta, B.sd);
-      let front = exp(-sq((B.sd - 0.95 * delta) / (0.3 * delta)));
-      let streak = (0.25 + 2.6 * n * n) * (0.55 + 0.9 * n2);
-      let face = pow(smoothstep(0.04, 1.0, e), 1.3);
-      let kA = (0.22 * layer * (0.3 + 0.7 * k) + front) * face * streak;
-      j += mix(I.color.rgb, hot, saturate(e * e * (0.25 + 0.75 * k))) * (kA / d0s);
+      let lod = max(t * fp, 0.5 * dt) * 1.2 / Rb;
+      let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.6)) * (1.2 / Rb) + seed, lod);
+      let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.6)) * (1.2 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
+      let tex = 1.0 + 0.7 * (mix(nb.g, na.g, wa) - 0.5) + 0.5 * (mix(nb.r, na.r, wa) - 0.5);
+      let fill = smoothstep(1.3 * delta, 0.85 * delta, B.sd) * (0.6 + 0.4 * exp(-sq((B.sd - 0.9 * delta) / (0.35 * delta))));
+      let face = pow(e, 1.2);
+      let heat = saturate(e * e * (0.35 + 0.65 * k));
+      j += mix(I.color.rgb, hot, heat) * (fill * face * tex * (0.55 + 0.45 * k) / delta);
+      // The hot gas ahead of and around the layer: a soft envelope that reaches a third of a radius out and
+      // wraps the shoulder (what a camera sees as the glare around the head).
+      let reach = max(B.sd - delta, 0.0);
+      j += I.color.rgb * (0.012 * (0.3 + 0.7 * k) * exp(-reach / (0.2 * Rb)) * saturate(0.25 + 0.75 * e) / (0.2 * Rb));
     }
     // Behind the shoulder: the layer leaves the wall as a sheath that necks down behind the body, the wake
-    // core lights up where it closes, and both stream away in streaks.
+    // core lights up where it closes, and both stream away, cooling: white where they are hottest, the
+    // colour of the gas, then deep orange and dull red far down the wake (where the trail takes over).
     let xw = p.x;
     if (xw > -0.5 * Rb) {
       let rw = length(p.yz);
@@ -299,17 +309,22 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let foot = max(t * fp, 0.4 * dt) / Rb;
       let st = vfxNoiseLod(vec3f((xw - I.params.x) * 0.06, p.y * 0.6, p.z * 0.6) / Rb + seed, foot * 0.6);
       let st2 = vfxNoiseLod(vec3f((xw - I.params.x * 1.9) * 0.2, p.y * 2.1, p.z * 2.1) / Rb + seed * 2.3, foot * 2.1);
-      let streak = (0.06 + 2.6 * st.g * st.g) * (0.3 + 1.4 * st2.b);
-      let wS = 0.1 * Rb + 0.03 * xs;
+      let streak = (0.45 + 1.1 * st.g) * (0.7 + 0.6 * st2.b);
+      let wS = 0.12 * Rb + 0.03 * xs;
       let sheath = exp(-sq((rw - Rw) / wS)) * smoothstep(-0.4 * Rb, 0.3 * Rb, xw);
-      let core = exp(-sq(rw / (0.55 * Rw))) * smoothstep(0.8 * Rb, 3.0 * Rb, xw);
-      let base = 0.1 * exp(-sq(rw / Rw)) * smoothstep(0.0, Rb, xw);
+      let core = exp(-sq(rw / (0.6 * Rw))) * smoothstep(0.5 * Rb, 2.5 * Rb, xw);
       let fade = exp(-xs / wakeLen) * (1.0 - smoothstep(0.7, 1.0, xs / boxLen));
-      j += mix(I.color.rgb, hot, 0.5 * k * core) * ((0.6 * sheath + (0.25 + 0.6 * k) * core + base) * fade * streak * (0.08 + 0.92 * k) * (0.16 / Rb));
+      let warm = exp(-xs / (0.4 * wakeLen));
+      var tint = mix(vec3f(1.0, 0.3, 0.1) * luminance(I.color.rgb) * 1.3, I.color.rgb, warm);
+      tint = mix(tint, hot, saturate(warm * warm * k * (0.35 * sheath + core)));
+      // A camera that rides inside the wake sees the sheath where it leaves the body; the gas within a few
+      // radii of the camera itself, on whatever side, is left out, or it would be a veil over the frame.
+      let aroundEye = eyeInside * (1.0 - smoothstep(2.0 * Rb, 7.0 * Rb, t));
+      j += tint * ((0.9 * sheath + (0.5 + 0.9 * k) * core) * fade * streak * (0.2 + 0.8 * k) * (1.0 - aroundEye) * (0.4 / Rb));
     }
-    // Glowing gas right at the lens would be a veil over the whole frame (a camera riding in the wake):
-    // what lies within a few body radii of the eye is left out.
-    let c = j * (I.color.w * dt * smoothstep(1.0 * Rb, 6.0 * Rb, t));
+    // Only what touches the lens is left out (a camera riding in the wake looks down a streaming sheath).
+    let c = j * (I.color.w * dt * smoothstep(0.3 * Rb, 2.0 * Rb, t));
+
     let lw = luminance(c) + 1e-12;
     L += c;
     wsum += lw;
@@ -381,12 +396,13 @@ export class PlasmaRenderer {
       const wakeLength = R.wakeLengthRadii * proxy.radius * (0.3 + 0.7 * intensity);
       const boxLength = proxy.afterLength + 2.5 * wakeLength;
       // The sheath is Rw + 3 wS wide at the far end (see the shader).
-      const boxRadius = 1.15 * Math.max(extent + 5 * standoff, 0.5 * proxy.radius * (1 + (0.02 * boxLength) / proxy.radius) + 3 * (0.1 * proxy.radius + 0.03 * boxLength));
+      // ... and the envelope of hot gas around the head reaches a radius and a half beyond the body.
+      const boxRadius = 1.15 * Math.max(extent + 1.5 * proxy.radius, 0.5 * proxy.radius * (1 + (0.02 * boxLength) / proxy.radius) + 3 * (0.12 * proxy.radius + 0.03 * boxLength));
       this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance });
       const o = this.placed.length * INST_FLOATS;
       D.set([origin.x, origin.y, origin.z, boxLength], o);
       D.set([wind.x, wind.y, wind.z, boxRadius], o + 4);
-      D.set([wy.x, wy.y, wy.z, -(extent + 6 * standoff)], o + 8);
+      D.set([wy.x, wy.y, wy.z, -(extent + 1.5 * proxy.radius)], o + 8);
       D.set([wz.x, wz.y, wz.z, R.steps], o + 12);
       D.set([axisWind.x, axisWind.y, axisWind.z, proxy.radius], o + 16);
       D.set([proxy.noseRadius, proxy.afterLength, proxy.tipRadius, standoff], o + 20);
@@ -400,7 +416,12 @@ export class PlasmaRenderer {
       // The glow lights the vessel and its cabin: a point light just ahead of the windward face.
       const power = R.light.efficacy * luminance * Math.PI * proxy.radius * proxy.radius * flicker;
       const at = v3.addScaled(origin, wind, -(sag + 2 * standoff + 0.5 * proxy.radius));
-      this.lights.push({ power: power * (0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]), light: { kind: 'point', posRelCam: at, intensity: [color[0] * power, color[1] * power, color[2] * power], range: R.light.range } });
+      const lum = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
+      this.lights.push({ power: power * lum, light: { kind: 'point', posRelCam: at, intensity: [color[0] * power, color[1] * power, color[2] * power], range: R.light.range } });
+      // ... and the wake behind it lights the back shell: a second light where the sheath closes.
+      const rear = 0.5 * power * (0.2 + 0.8 * intensity);
+      const behind = v3.addScaled(origin, wind, proxy.afterLength + 1.2 * proxy.radius);
+      this.lights.push({ power: rear * lum, light: { kind: 'point', posRelCam: behind, intensity: [color[0] * rear, color[1] * rear, color[2] * rear], range: R.light.range } });
     }
     if (this.placed.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.placed.length * INST_FLOATS);
   }
