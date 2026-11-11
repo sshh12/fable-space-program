@@ -696,7 +696,8 @@ function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): v
   const altX = w - f.pad - vsiW - w * 0.015 - tapeW;
   drawTape(ctx, f, altX, tapeY, tapeW, tapeH, alt, fl.altitude, altTitle, 'left', altFmt, 300);
   drawVsi(ctx, f, w - f.pad - vsiW, tapeY, vsiW, tapeH, r.verticalSpeed);
-  drawHeadingTape(ctx, f, cx, f.bottom - headingH, rr * 1.6, headingH, s.navball.headingDeg, fl.heading);
+  const tapeHalf = rr * 0.66;
+  drawHeadingTape(ctx, f, cx, f.bottom - headingH, tapeHalf * 2, headingH, s.navball.headingDeg, fl.heading);
   // Read-out boxes under the tapes: throttle and g on the left, horizontal and vertical speed on the right.
   const row = (label: string): MfdRow => model.rows.find((x) => x.label === label)!;
   const boxTop = tapeY + tapeH + h * 0.035;
@@ -708,14 +709,15 @@ function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): v
   statBox(ctx, f, altX, boxTop, rw, boxH, 'Horizontal', row('Horizontal').value);
   const vr = row('Vertical');
   statBox(ctx, f, altX, boxTop + boxH + h * 0.012, rw, boxH, 'Vertical', vr.value, vr.tone ?? 'normal', vr.icon);
-  // Pitch and roll read-outs at the lower corners of the ADI.
+  // Pitch and roll read-outs flanking the heading tape (clear of the read-out boxes whatever their length).
+  const prY = f.bottom - headingH / 2;
+  const gapX = h * 0.025;
   setFont(ctx, 600, px(f, MIN_TEXT));
-  const py = cy + rr * 0.92;
-  text(ctx, 'PITCH', cx - rr * 1.0, py - h * 0.022, 'right', 'middle', LABEL);
-  text(ctx, 'ROLL', cx + rr * 1.0, py - h * 0.022, 'left', 'middle', LABEL);
+  text(ctx, 'PITCH', cx - tapeHalf - gapX, prY - h * 0.02, 'right', 'middle', LABEL);
+  text(ctx, 'ROLL', cx + tapeHalf + gapX, prY - h * 0.02, 'left', 'middle', LABEL);
   setFont(ctx, 700, px(f, 0.036));
-  text(ctx, fl.pitch, cx - rr * 1.0, py + h * 0.018, 'right', 'middle', COLORS.normal);
-  text(ctx, fl.roll, cx + rr * 1.0, py + h * 0.018, 'left', 'middle', COLORS.normal);
+  text(ctx, fl.pitch, cx - tapeHalf - gapX, prY + h * 0.02, 'right', 'middle', COLORS.normal, altX - (cx + tapeHalf) - gapX * 2);
+  text(ctx, fl.roll, cx + tapeHalf + gapX, prY + h * 0.02, 'left', 'middle', COLORS.normal, altX - (cx + tapeHalf) - gapX * 2);
 }
 
 // ------------------------------------------------------------------------------------------------ orbit
