@@ -7,6 +7,13 @@
  * RCAS sharpening happens in the tonemap pass. Bloom is threshold-free and linear: 13-tap downsamples,
  * 9-tap tent upsamples blended level by level, mixed into the image at 4 % by the tonemapper.
  *
+ * Shape of the bloom (request atmosphere-clouds-7). The chain is a glare spread function: of the energy it
+ * spreads, each level twice as wide carries BLOOM_FALLOFF (half) of the one before, the widest included,
+ * which is a point spread falling with about the third power of the distance, as the veiling glare of a
+ * lens does: a saturated source keeps a small clipped core with a tight veil around it and no plateau. The
+ * widths are fixed in ANGLE (fractions of the frame height), not in pixels: the levels are counted from a
+ * frame 720 pixels high, a higher frame gets more levels (bloomLevelCount) and its finest ones carry less.
+ *
  * Energy of saturated sources (ARCHITECTURE 10.4: the sun disc at HDR_MAX still drives bloom). The spatial
  * reconstruction of the resolve and the whole bloom chain are LINEAR, so a source of a pixel or two (the
  * sun at a wide field of view, a glint) keeps its energy. Only the temporal blend runs in the reversible
@@ -42,8 +49,46 @@ export interface PostOutputs {
   sharpness: number;
 }
 
+/** Levels of the bloom chain for a frame BLOOM_REFERENCE_HEIGHT pixels high (level l is blurred over about 2^(l+1) of its pixels). */
 export const BLOOM_LEVELS = 6;
+export const BLOOM_REFERENCE_HEIGHT = 720;
+/** Share of the bloom's energy at a level, relative to the level half as wide. */
+export const BLOOM_FALLOFF = 0.5;
 export const BLOOM_MIX = 0.04;
+
+/** Levels of the chain for a display `height` pixels high: the widest level keeps its size relative to the frame. */
+export function bloomLevelCount(height: number): number {
+  return Math.max(3, Math.min(9, BLOOM_LEVELS + Math.round(Math.log2(Math.max(height, 1) / BLOOM_REFERENCE_HEIGHT))));
+}
+
+/**
+ * The bloom's distribution over its levels for a display `height` pixels high: `weights[l]` = share of the
+ * spread energy at level l (sum 1), `blend[l]` = the up pass's mix factor at level l (the share of
+ * everything wider than l in everything from l on; none for the widest level). A level as wide, relative
+ * to the frame, as level k of the reference frame carries (1 - f) / (1 - f^BLOOM_LEVELS) x f^k with f =
+ * BLOOM_FALLOFF; the finest level takes what is left (nothing when the frame is a power of two times the
+ * reference: its levels then are the reference's, one step wider each).
+ */
+export function bloomWeights(height: number): { weights: number[]; blend: number[] } {
+  const n = bloomLevelCount(height);
+  const shift = Math.log2(Math.max(height, 1) / BLOOM_REFERENCE_HEIGHT);
+  const a = (1 - BLOOM_FALLOFF) / (1 - BLOOM_FALLOFF ** BLOOM_LEVELS);
+  const weights = new Array<number>(n).fill(0);
+  let rest = 1;
+  for (let l = n - 1; l >= 1; l--) {
+    weights[l] = Math.min(rest, a * BLOOM_FALLOFF ** (l - shift));
+    rest -= weights[l]!;
+  }
+  weights[0] = Math.max(0, rest);
+  const blend = new Array<number>(n - 1).fill(0);
+  let wider = 0;
+  for (let l = n - 1; l >= 0; l--) {
+    const from = wider + weights[l]!;
+    if (l < n - 1) blend[l] = from > 0 ? wider / from : 0;
+    wider = from;
+  }
+  return { weights, blend };
+}
 export const TAA_HISTORY_WEIGHT = 0.9;
 export const RCAS_SHARPNESS = 0.87; // exp2(-0.2): the FSR "0.2 stops" setting
 
@@ -202,6 +247,7 @@ fn tap(uv: vec2f) -> vec3f { return writeHdr(textureSampleLevel(srcTex, linearCl
 const BLOOM_UP_FS = /* wgsl */ `
 @group(1) @binding(0) var lowTex: texture_2d<f32>;    // the coarser, already blurred level
 @group(1) @binding(1) var highTex: texture_2d<f32>;   // this level's downsample
+@group(1) @binding(2) var<uniform> up: vec4f;         // x = share of the wider levels in the result (bloomWeights().blend)
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let t = 1.0 / vec2f(textureDimensions(lowTex));
   let uv = in.uv;
@@ -214,8 +260,8 @@ const BLOOM_UP_FS = /* wgsl */ `
     s += textureSampleLevel(lowTex, linearClamp, uv + t * vec2f(cos(a), sin(a)) * 1.25, 0.0).rgb * w;
   }
   let high = textureSampleLevel(highTex, linearClamp, uv, 0.0).rgb;
-  // Convex blend: the chain conserves energy, wide levels carry the long tail.
-  return vec4f(mix(high, s / 16.0, 0.62), 1.0);
+  // Convex blend: the chain conserves energy; each wider level carries half of the one before.
+  return vec4f(mix(high, s / 16.0, up.x), 1.0);
 }
 `;
 
@@ -239,6 +285,8 @@ export class PostProcess {
   private upViews: GPUTextureView[] = [];
   private downGroups: GPUBindGroup[] = [];
   private upGroups: GPUBindGroup[] = [];
+  private upUniforms: GPUBuffer[] = [];
+  private levels = BLOOM_LEVELS;
   private taaGroups: (GPUBindGroup | null)[] = [null, null];
   private taaInputs: PostInputs | null = null;
   private current = 0;
@@ -257,7 +305,7 @@ export class PostProcess {
     const ubo = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
     this.taaLayout = device.createBindGroupLayout({ label: 'core.taa', entries: [ubo(0), tex(1), tex(2), tex(3, 'depth'), tex(4), tex(5)] });
     this.downLayout = device.createBindGroupLayout({ label: 'core.bloomDown', entries: [tex(0)] });
-    this.upLayout = device.createBindGroupLayout({ label: 'core.bloomUp', entries: [tex(0), tex(1)] });
+    this.upLayout = device.createBindGroupLayout({ label: 'core.bloomUp', entries: [tex(0), tex(1), ubo(2)] });
     this.taaPipeline = core.fullscreenPipeline({ label: 'core.taa', fragment: TAA_FS, layouts: [this.taaLayout], targets: [{ format: 'rgba16float' }] });
     this.downPipeline = core.fullscreenPipeline({ label: 'core.bloomDown', fragment: BLOOM_DOWN_FS, layouts: [this.downLayout], targets: [{ format: this.bloomFormat }] });
     this.upPipeline = core.fullscreenPipeline({ label: 'core.bloomUp', fragment: BLOOM_UP_FS, layouts: [this.upLayout], targets: [{ format: this.bloomFormat }] });
@@ -275,7 +323,7 @@ export class PostProcess {
     if (w === this.width && h === this.height) return;
     this.width = w;
     this.height = h;
-    for (const t of [...this.history, ...this.down, ...this.up]) t.destroy();
+    for (const t of [...this.history, ...this.down, ...this.up, ...this.upUniforms]) t.destroy();
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
     const make = (label: string, format: GPUTextureFormat, tw: number, th: number): GPUTexture =>
       createTextureChecked(this.device, { label, format, size: [Math.max(1, tw), Math.max(1, th)], usage }, this.core.reportError);
@@ -283,11 +331,19 @@ export class PostProcess {
     this.historyViews = this.history.map((t) => t.createView());
     this.down = [];
     this.up = [];
-    for (let l = 0; l < BLOOM_LEVELS; l++) {
+    this.upUniforms = [];
+    this.levels = bloomLevelCount(h);
+    const { blend } = bloomWeights(h);
+    for (let l = 0; l < this.levels; l++) {
       const tw = Math.ceil(w / 2 ** (l + 1));
       const th = Math.ceil(h / 2 ** (l + 1));
       this.down.push(make(`core.bloomDown${l}`, this.bloomFormat, tw, th));
-      if (l < BLOOM_LEVELS - 1) this.up.push(make(`core.bloomUp${l}`, this.bloomFormat, tw, th));
+      if (l < this.levels - 1) {
+        this.up.push(make(`core.bloomUp${l}`, this.bloomFormat, tw, th));
+        const u = this.device.createBuffer({ label: `core.bloomUp${l}`, size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        this.device.queue.writeBuffer(u, 0, new Float32Array([blend[l]!, 0, 0, 0]));
+        this.upUniforms.push(u);
+      }
     }
     this.downViews = this.down.map((t) => t.createView());
     this.upViews = this.up.map((t) => t.createView());
@@ -337,7 +393,8 @@ export class PostProcess {
 
     // Bloom chain from the resolved image. The first downsample reads the history texture that was just written.
     const resolved = this.historyViews[cur]!;
-    for (let l = 0; l < BLOOM_LEVELS; l++) {
+    const levels = this.levels;
+    for (let l = 0; l < levels; l++) {
       const key = l === 0 ? cur : 2 + l;
       this.downGroups[key] ??= device.createBindGroup({
         label: `core.bloomDown${l}`,
@@ -351,13 +408,14 @@ export class PostProcess {
       pass.draw(3);
       pass.end();
     }
-    for (let l = BLOOM_LEVELS - 2; l >= 0; l--) {
+    for (let l = levels - 2; l >= 0; l--) {
       this.upGroups[l] ??= device.createBindGroup({
         label: `core.bloomUp${l}`,
         layout: this.upLayout,
         entries: [
-          { binding: 0, resource: l === BLOOM_LEVELS - 2 ? this.downViews[l + 1]! : this.upViews[l + 1]! },
+          { binding: 0, resource: l === levels - 2 ? this.downViews[l + 1]! : this.upViews[l + 1]! },
           { binding: 1, resource: this.downViews[l]! },
+          { binding: 2, resource: { buffer: this.upUniforms[l]! } },
         ],
       });
       const pass = encoder.beginRenderPass({ label: `bloomUp${l}`, colorAttachments: [{ view: this.upViews[l]!, loadOp: 'clear', storeOp: 'store' }], timestampWrites: perf.gpuPass('core.bloom') });

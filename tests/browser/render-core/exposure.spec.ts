@@ -388,3 +388,73 @@ test('the meter sees what is lit, not what emits in front of it: a flame over su
   expect(groundLevel).toBeLessThan(240);
   await expectNoErrors(page, pageLog);
 });
+
+test('the glare of the sun is a clipped core with a steep veil, and as wide in a frame of twice the size (request atmosphere-clouds-7)', async ({ page, pageLog }) => {
+  // The sun alone on a black sky, in the middle of the frame, at the exposure of a sunlit scene (EV 13: its
+  // disc, 6 px across at this field of view, is saturated at HDR_MAX).
+  await openPage(page, '/labs/render-core/?scene=translunar&planet=0&stand=0&probe=sun&orbit=20,10,40&hud=0&fov=60&paused=1&scale=1&ev=13');
+  await assertDiscreteGpu(page);
+  await page.evaluate(() => {
+    window.__rc!.setSunOverride({
+      dirRoot: () => {
+        const q = window.__lab!.cameraState().qViewToRoot;
+        // The view axis (0, 0, -1) in ROOT axes.
+        return { x: -2 * (q.x * q.z + q.w * q.y), y: -2 * (q.y * q.z - q.w * q.x), z: -(1 - 2 * (q.x * q.x + q.y * q.y)) };
+      },
+    });
+  });
+  /** Mean luminance (0..255) of the canvas in rings around its centre, radii in units of the frame height. */
+  const profile = async (name: string): Promise<{ height: number; rings: number[] }> => {
+    // The rim of a new saturated source is believed over about two seconds: let the glow build up.
+    await page.evaluate(() => window.__test!.waitFrames(240));
+    const shot = await saveScreenshot(page, 'render-core', name);
+    const png = PNG.sync.read(shot.buffer);
+    const cx = png.width / 2;
+    const cy = png.height / 2;
+    const rings = RADII.map((f) => {
+      const r = f * png.height;
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) {
+        for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+          const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+          if (Math.abs(d - r) > Math.max(1, 0.05 * r)) continue;
+          const i = (y * png.width + x) * 4;
+          sum += 0.2126 * png.data[i]! + 0.7152 * png.data[i + 1]! + 0.0722 * png.data[i + 2]!;
+          n++;
+        }
+      }
+      return sum / Math.max(1, n);
+    });
+    return { height: png.height, rings };
+  };
+  // 0.7 %, 1.4 %, 2.8 %, 5.6 %, 11 %, 21 %, 28 % and 42 % of the frame height: 5 to 300 px at 720.
+  const RADII = [0.007, 0.014, 0.028, 0.056, 0.111, 0.208, 0.278, 0.417];
+  const small = await profile('glare-720');
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.evaluate(() => window.__test!.waitFrames(30));
+  const large = await profile('glare-1440');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  console.log(
+    `glare of the sun at EV 13, luminance / 255 in rings at ${RADII.map((f) => `${(100 * f).toFixed(1)}`).join(', ')} % of the frame height: ` +
+      `${small.height} px high: ${small.rings.map((v) => v.toFixed(1)).join(', ')}; ${large.height} px high: ${large.rings.map((v) => v.toFixed(1)).join(', ')}`,
+  );
+  expect(small.height).toBe(720);
+  expect(large.height).toBe(1440);
+  const [r07, r14, , r56, r111, r208, r278, r417] = small.rings as [number, number, number, number, number, number, number, number];
+  // A clipped core a few disc diameters across ...
+  expect(r07).toBeGreaterThan(250);
+  expect(r14).toBeGreaterThan(250);
+  // ... and a veil that falls steeply and has no plateau: with the level weights of a constant mix (0.62,
+  // the rest at the widest level) the rings at 14, 21 and 28 % of the frame height were at 115, 66 and 19.
+  expect(r111).toBeLessThan(80);
+  expect(r111).toBeLessThan(0.45 * r56);
+  expect(r208).toBeLessThan(15);
+  expect(r208).toBeLessThan(0.2 * r111);
+  expect(r278).toBeLessThan(4);
+  expect(r417).toBeLessThan(1);
+  // Sized in angle: the same profile in a frame of twice the size.
+  for (let i = 0; i < RADII.length; i++) expect(Math.abs(large.rings[i]! - small.rings[i]!), `ring at ${(100 * RADII[i]!).toFixed(1)} % of the frame height`).toBeLessThanOrEqual(Math.max(3, 0.06 * small.rings[i]!));
+  await expectNoErrors(page, pageLog);
+});
+
