@@ -22,10 +22,16 @@
  *   backdrop=bright            the backdrop's worst case for HUD legibility: a near-white sunlit cloud deck / regolith
  *                              and a pale sky
  *   mfd=native                 the six MFD pages at 512 x 384, shown 1 : 1 (the smallest supported display)
+ *   attitude=<yaw>,<pitch>,<roll>  lab decoration: the vessel turned by this offset in its own frame (degrees),
+ *                              markers and read-outs moved to match (markers off the nose, a real roll)
+ *   dose=<g s>                 lab decoration: the crew's g-dose (the bar under the g tube)
+ *   lift=<bankDeg>             lab decoration: a capsule lift-vector marker 30 deg off the nose, banked (0 = up)
  *
  * The FakeSim gives every stage the same engine numbers; the lab replaces them with the mission vehicle's
  * stage table (data/defs/vehicles/meridian-lunar.json: icons, action kinds, which stages carry engines) and
- * plausible delta-v / TWR / burn times, so stages without engines (gear, chutes, jettisons) are photographed too.
+ * plausible delta-v / TWR / burn times, reported as the sim reports them: the fired stage that owns the running
+ * engines keeps live numbers (the active stage), other fired stages none. Stages without engines (gear, chutes,
+ * jettisons) are photographed too.
  */
 import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
 import type { CameraRig, CameraState } from '@/core/contracts/render';
@@ -68,35 +74,92 @@ const STAGE_TABLE: { icon: string; actions: string[]; engine: { dv: number; twr:
   { icon: 'chute', actions: ['cutParachute', 'deployParachute'], engine: null },
 ];
 
-/** Lab decoration: the mission vehicle's stage table in place of the FakeSim's generic one. */
-function realisticStages(s: SimSnapshot): SimSnapshot {
+/**
+ * The fired stage that owns the running engines, as the sim reports it (src/sim/vessel/facade.ts stagingInfo):
+ * the latest fired engine stage, unless a later fired stage shut the engines down. -1 without one.
+ */
+function activeStageIndex(fired: number): number {
+  for (let i = fired - 1; i >= 0; i--) {
+    const row = STAGE_TABLE[i];
+    if (!row) continue;
+    if (row.engine) return i;
+    if (row.actions.includes('shutdownEngines')) return -1;
+  }
+  return -1;
+}
+
+/**
+ * Lab decoration: the mission vehicle's stage table in place of the FakeSim's generic one, reported the way the
+ * sim reports it: unfired engine stages and the fired stage that owns the running engines (`fill` = the
+ * propellant left in it) carry numbers, every other fired stage none; the total is over all of them.
+ */
+function realisticStages(s: SimSnapshot, activeFill: number): SimSnapshot {
   let total = 0;
+  const active = activeStageIndex(s.staging.nextStage);
   const stages = s.staging.stages.map((info, i) => {
     const row = STAGE_TABLE[i];
     if (!row) return info;
-    if (!row.engine) return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: null, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0 };
-    const frac = info.propellantFraction ?? 1;
+    const none = { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: null, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0 };
+    if (!row.engine || (info.fired && i !== active)) return none;
+    const frac = info.fired ? activeFill : 1;
     const dv = Math.round(row.engine.dv * frac);
-    if (!info.fired) total += dv;
-    return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: frac, deltaVVac: dv, deltaVNow: dv, twr: row.engine.twr, burnTime: row.engine.burn * frac };
+    total += dv;
+    // TWR grows as the stage burns its propellant (mass falls); a rough lab figure.
+    const twr = row.engine.twr / (1 - 0.55 * (1 - frac));
+    return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: frac, deltaVVac: dv, deltaVNow: dv, twr, burnTime: row.engine.burn * frac };
   });
   return { ...s, staging: { ...s.staging, stages }, readouts: { ...s.readouts, deltaVTotal: total } };
+}
+
+/**
+ * Lab decoration: the vessel turned by an attitude offset in its own frame (yaw right, pitch up, roll right,
+ * degrees) away from the FakeSim's attitude, with every navball marker and the pitch / heading / roll read-outs
+ * moved to match. Shows markers off the nose and a roll other than 0 or 180 degrees.
+ */
+function offsetAttitude(s: SimSnapshot, yawDeg: number, pitchDeg: number, rollDeg: number): SimSnapshot {
+  const qOff = quat.mul(quat.mul(quat.fromAxisAngle(v3.unitZ(), -yawDeg * DEG), quat.fromAxisAngle(v3.unitX(), pitchDeg * DEG)), quat.fromAxisAngle(v3.unitY(), rollDeg * DEG));
+  const q = quat.mul(s.navball.qVesselToHorizon, qOff);
+  const inv = quat.conj(qOff);
+  const m = s.navball.markers;
+  const mv = (d: Vec3 | null): Vec3 | null => (d ? quat.rotate(inv, d) : null);
+  const markers = {
+    prograde: mv(m.prograde)!,
+    retrograde: mv(m.retrograde)!,
+    normal: mv(m.normal)!,
+    antinormal: mv(m.antinormal)!,
+    radialOut: mv(m.radialOut)!,
+    radialIn: mv(m.radialIn)!,
+    maneuver: mv(m.maneuver),
+    target: mv(m.target),
+    antiTarget: mv(m.antiTarget),
+    liftVector: mv(m.liftVector),
+  };
+  const nose = quat.rotate(q, v3.unitY());
+  const dorsal = quat.rotate(q, v3.unitZ());
+  const level = v3.reject(v3.unitZ(), nose);
+  const upPerp = v3.len(level) > 1e-6 ? v3.normalize(level) : dorsal;
+  const roll = Math.atan2(v3.dot(v3.cross(upPerp, dorsal), nose), v3.dot(upPerp, dorsal)) / DEG;
+  const pitch = Math.asin(Math.max(-1, Math.min(1, nose.z))) / DEG;
+  const heading = (((Math.atan2(nose.x, nose.y) / DEG) % 360) + 360) % 360;
+  return { ...s, navball: { ...s.navball, qVesselToHorizon: q, markers, pitchDeg: pitch, headingDeg: heading, rollDeg: roll } };
 }
 
 interface SceneSetup {
   groups: LabGroup[];
   fill: Partial<Record<LabGroup, number>>;
   fired: number;
+  /** Propellant left in the active (burning) stage, as the sim would report it. */
+  activeFill: number;
 }
 const SETUP: Record<FakeScene, SceneSetup> = {
-  pad: { groups: ['booster', 'upper', 'lander', 'capsule'], fill: {}, fired: 0 },
-  ascent: { groups: ['booster', 'upper', 'lander', 'capsule'], fill: { booster: 0.62 }, fired: 1 },
-  lowOrbit: { groups: ['upper', 'lander', 'capsule'], fill: { upper: 0.34 }, fired: 4 },
-  translunar: { groups: ['lander', 'capsule'], fill: { lander: 0.97 }, fired: 5 },
-  lunarOrbit: { groups: ['lander', 'capsule'], fill: { lander: 0.81 }, fired: 5 },
-  lunarSurface: { groups: ['lander', 'capsule'], fill: { lander: 0.22 }, fired: 6 },
-  reentry: { groups: ['capsule'], fill: { capsule: 0.8 }, fired: 8 },
-  chutes: { groups: ['capsule'], fill: { capsule: 0.55 }, fired: 9 },
+  pad: { groups: ['booster', 'upper', 'lander', 'capsule'], fill: {}, fired: 0, activeFill: 1 },
+  ascent: { groups: ['booster', 'upper', 'lander', 'capsule'], fill: { booster: 0.62 }, fired: 1, activeFill: 0.62 },
+  lowOrbit: { groups: ['upper', 'lander', 'capsule'], fill: { upper: 0.34 }, fired: 4, activeFill: 0.34 },
+  translunar: { groups: ['lander', 'capsule'], fill: { lander: 0.97 }, fired: 5, activeFill: 0.97 },
+  lunarOrbit: { groups: ['lander', 'capsule'], fill: { lander: 0.81 }, fired: 5, activeFill: 0.81 },
+  lunarSurface: { groups: ['lander', 'capsule'], fill: { lander: 0.22 }, fired: 6, activeFill: 0.22 },
+  reentry: { groups: ['capsule'], fill: { capsule: 0.8 }, fired: 8, activeFill: 1 },
+  chutes: { groups: ['capsule'], fill: { capsule: 0.55 }, fired: 9, activeFill: 1 },
 };
 
 /** Debug surface of this lab for its Playwright specs. */
@@ -176,11 +239,25 @@ async function boot(): Promise<void> {
 
   const predicted = params.get('predicted');
   const flightParam = params.get('flight')?.split(',').map(Number) ?? null;
+  const attitudeParam = params.get('attitude')?.split(',').map(Number) ?? null;
+  const doseParam = params.get('dose');
+  const liftParam = params.get('lift');
   const decorate = (raw: SimSnapshot): SimSnapshot => {
-    let s = realisticStages(tagLabVehicle(raw));
+    let s = realisticStages(tagLabVehicle(raw), setup.activeFill);
     if (flightParam) {
       const [thr, g] = flightParam as [number, number];
       s = { ...s, readouts: { ...s.readouts, throttle: thr, thrust: thr * 9.2e6, gLoad: g } };
+    }
+    if (doseParam !== null) s = { ...s, readouts: { ...s.readouts, gDose: Number(doseParam) } };
+    if (liftParam !== null) {
+      // A lifting capsule's lift vector: 30 deg off the nose toward the lift direction (bank in degrees, 0 = up).
+      const b = Number(liftParam) * DEG;
+      const lift = v3.normalize({ x: Math.sin(b) * 0.5, y: Math.cos(30 * DEG), z: Math.cos(b) * 0.5 });
+      s = { ...s, navball: { ...s.navball, markers: { ...s.navball.markers, liftVector: lift } }, readouts: { ...s.readouts, liftVectorUp: Math.cos(b) > 0 } };
+    }
+    if (attitudeParam) {
+      const [yaw, pitch, roll] = attitudeParam as [number, number, number];
+      s = offsetAttitude(s, yaw ?? 0, pitch ?? 0, roll ?? 0);
     }
     if (params.get('failed') === '1') s = { ...s, mission: { failed: true, failureReason: 'Heat shield burned through at 61 km (lab decoration)', crewAlive: false } };
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };

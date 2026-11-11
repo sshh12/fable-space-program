@@ -7,10 +7,17 @@
  *
  * Layout by camera.kind (unknown modes behave as their kind):
  *   external  everything;
- *   interior  clock, warp, notifications, stage stack and the system strip (the cockpit instruments show the rest);
+ *   interior  clock, warp, notifications, landing target, stage stack and the system strip (the cockpit
+ *             instruments show the rest);
  *   map       clock, warp, altitude, orbit, landing target, node burn, navball with SAS (no stage stack).
  * The bottom cluster is a three-column grid with the navball alone in the middle column, so the ball stays on
  * the screen's centre line whatever appears beside it (a maneuver panel, the gauges).
+ *
+ * The frame is for the scene: panels show what the flight phase needs and fold the rest (a coverage budget of
+ * 20 % of a 16:9 frame is asserted by the screenshot spec). Only the next stage and the stage that is burning
+ * get full tiles, every other stage is one line of one list; resources show the groups in use and fold the full
+ * ones into one line; the landing-target panel is one line until a prediction, an entry or a descent makes its
+ * rows matter; the orbit panel leaves while the vessel heats up or falls through the air.
  *
  * The navball: every update renders the shared 512 x 512 texture (NavballRenderer.view, published as
  * 'ui.navball' for the cockpit) and, while the navball is on screen, the lit instrument ball at native
@@ -34,6 +41,7 @@ import type { GpuHandle } from '@/core/gpu/device';
 import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt, type VerticalTrend } from '../format';
 import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS, UNLOCK_ICON } from '../icons';
 import {
+  ablatorTone,
   activeVesselOf,
   altitudeDatumName,
   altitudeSource,
@@ -47,15 +55,19 @@ import {
   describeWarp,
   G_SCALE,
   gTone,
+  inAtmosphere,
   isLanded,
   isPredictionRow,
+  landingTargetExpanded,
   landingTargetRows,
   orbitPhase,
   RADAR_ALTITUDE_SWITCH,
+  summarizeResources,
   type AltitudeMode,
+  type StageTileView,
 } from '../model';
 import { drawNavballBezel } from '../navball/bezel';
-import { HUD_BALL_RADIUS_FRACTION } from '../navball/navballMath';
+import { HUD_BALL_LIP, HUD_BALL_RADIUS_FRACTION } from '../navball/navballMath';
 import type { NavballRendererImpl } from '../navball/navballRenderer';
 import { AttrSlot, bar, classFlag, el, FillSlot, Flag, hiddenFlag, hudButton, INTERACTIVE_ATTR, RevealSlot, TextSlot, ToneSlot } from './dom';
 import { HUD_CSS, HUD_STYLE_ID } from './hudStyles';
@@ -96,7 +108,10 @@ export interface HudImpl extends Hud {
   readonly meanUpdateMs: number;
   /** Number of updates that refreshed the text readouts (about TEXT_HZ per second while visible). */
   readonly textUpdates: number;
-  /** Label/value rows currently shown by the landing-target panel (null when hidden). */
+  /**
+   * Label/value rows the landing-target panel shows now (null when hidden): landingTargetRows() while the panel
+   * is expanded, its first two rows (distance, bearing) while it is one line.
+   */
   landingTargetRows(): [string, string][] | null;
   /** Current notifications (oldest first). */
   notifications(): string[];
@@ -106,11 +121,11 @@ export interface HudImpl extends Hud {
 export const HUD_TEXT_HZ = 10;
 const TEXT_PERIOD = 1 / HUD_TEXT_HZ;
 
-/** Stacks longer than this show the stages after the next two as compact one-line tiles. */
-const FULL_STAGE_TILES = 6;
-
 /** Most landing-target rows (landingTargetRows). */
 const LT_ROWS = 5;
+
+/** Heat flux above which the vessel counts as heating (W/m^2): the entry panel shows, the orbit panel leaves. */
+const HEATING_FLUX = 1000;
 
 const SAS_NAMES: Record<SasMode, string> = {
   stability: 'Stability',
@@ -123,8 +138,11 @@ const SAS_NAMES: Record<SasMode, string> = {
   maneuver: 'Maneuver',
 };
 
-/** Punctuation key caps show the glyph with its shifted glyph, so "." and "," never shrink to specks. */
-const GLYPH_CAPS: Record<string, string> = { '.': '. >', ',': ', <', '/': '/ ?', '`': '` ~', '-': '- _', '=': '= +', '[': '[ {', ']': '] }', ';': '; :', "'": '\' "', '\\': '\\ |' };
+/**
+ * Punctuation key caps are named (a "." or "," cap is a 2 px speck at 720p); brackets keep their glyph, enlarged.
+ */
+const NAMED_CAPS: Record<string, string> = { '.': 'Period', ',': 'Comma', '/': 'Slash', '`': 'Backquote', '-': 'Minus', '=': 'Equals', ';': 'Semicolon', "'": 'Quote', '\\': 'Backslash' };
+const GLYPH_CAPS = new Set(['[', ']']);
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOAST_SECONDS = 4.5;
@@ -143,9 +161,19 @@ function row(label: string, value: TextSlot, valueCls = ''): { root: HTMLDivElem
   return { root: el('div', 'row', [el('span', 'lbl', [l.node]), valueEl]), label: l, valueEl };
 }
 
+/** A label, a bar and its value on one line (heat shield, skin temperature). */
+function barRow(label: string): { root: HTMLDivElement; value: TextSlot; fill: FillSlot; tone: ToneSlot } {
+  const value = new TextSlot('');
+  const b = bar();
+  const root = el('div', 'brow', [el('span', 'lbl', [label]), b.root, el('span', 'bv', [value.node])]);
+  return { root, value, fill: b.fill, tone: new ToneSlot(b.root) };
+}
+
 function keyCap(label: string, cls = 'kbd', title?: string): HTMLSpanElement {
-  const glyph = GLYPH_CAPS[label];
-  return el('span', glyph ? `${cls} glyph` : cls, [glyph ?? label], title ? { title } : {});
+  const named = NAMED_CAPS[label];
+  const text = named ?? label;
+  const glyph = GLYPH_CAPS.has(label);
+  return el('span', glyph ? `${cls} glyph` : cls, [text], title ? { title } : named ? { title: label } : {});
 }
 
 /** Vertical-speed trend icon (SVG path swapped on change; class carries the tone). */
@@ -183,9 +211,39 @@ function tapeGauge(cls: string, caption: string, nums: [string, number][], ticks
   return { root, value, valueEl, fill: new RevealSlot(win, layer) };
 }
 
+/**
+ * Splits key-help groups over `n` columns so that the tallest column is as short as possible (a header counts
+ * 1.6 lines; ties go to the most even split). Each column keeps the groups in their order. Exhaustive over the
+ * assignments (a binding table has a handful of groups).
+ */
+export function balanceColumns(heights: readonly number[], n: number): number[][] {
+  let best: number[] | null = null;
+  let bestKey = [Infinity, Infinity];
+  const assign = new Array<number>(heights.length).fill(0);
+  const total = Math.pow(n, heights.length);
+  for (let code = 0; code < total; code++) {
+    let c = code;
+    const sums = new Array<number>(n).fill(0);
+    for (let i = 0; i < heights.length; i++) {
+      const col = c % n;
+      assign[i] = col;
+      c = Math.floor(c / n);
+      sums[col] = sums[col]! + heights[i]!;
+    }
+    const key = [Math.max(...sums), sums.reduce((a, s) => a + s * s, 0)];
+    if (key[0]! < bestKey[0]! - 1e-9 || (Math.abs(key[0]! - bestKey[0]!) < 1e-9 && key[1]! < bestKey[1]! - 1e-9)) {
+      bestKey = key;
+      best = assign.slice();
+    }
+  }
+  const cols: number[][] = Array.from({ length: n }, () => []);
+  (best ?? heights.map(() => 0)).forEach((col, i) => cols[col]!.push(i));
+  return cols;
+}
+
 interface StageSlot {
-  /** Index into SimSnapshot.staging.stages. */
-  index: number;
+  /** A one-line row of the later-stages list (delta-v without its "Δv" prefix). */
+  compact: boolean;
   dv: TextSlot;
   meta: TextSlot | null;
   fill: FillSlot | null;
@@ -236,20 +294,19 @@ export function createHud(opts: HudOptions): HudImpl {
   const chevCap = chevrons.map((c) => classFlag(c, 'cap'));
   const warpLimitEl = el('div', 'warp-limit', [warpLimit.node]);
   const warpLimitShow = hiddenFlag(warpLimitEl);
+  const railsLabel = new TextSlot('');
+  // Title row: "MISSION TIME" and the warp factor (with its kind); then MET, UT and the warp control.
   const clock = el('div', 'panel clock', [
-    el('div', 'ptitle', [el('span', '', ['Mission time']), el('span', 'rails', [])]),
+    el('div', 'ptitle', [el('span', '', ['Mission time']), el('span', 'wf', [el('span', 'rails', [railsLabel.node]), el('b', 'factor', [warpFactor.node])])]),
     el('div', 'met', [met.node]),
     el('div', 'ut', [ut.node]),
     el('div', 'warp', [
       hudButton(['‹'], 'warpdown', 'Slower time warp (,)', () => dispatch('warpDown')),
       chevSvg,
       hudButton(['›'], 'warpup', 'Faster time warp (.)', () => dispatch('warpUp')),
-      el('span', 'factor', [warpFactor.node]),
     ]),
     warpLimitEl,
   ]);
-  const railsLabel = new TextSlot('');
-  clock.querySelector('.rails')!.append(railsLabel.node);
 
   // ------------------------------------------------------------------------------- top centre: altitude
   const altLabel = new TextSlot('Altitude · sea level');
@@ -284,9 +341,9 @@ export function createHud(opts: HudOptions): HudImpl {
 
   // ------------------------------------------------------------------------- top right: keyboard + help
   const kbCapture = hudButton(
-    [svgIcon(UNLOCK_ICON), el('span', '', ['Browser shortcuts active · ']), el('b', '', ['Click to capture keyboard'])],
+    [svgIcon(UNLOCK_ICON), el('b', '', ['Click to capture keyboard'])],
     'pill kbcap',
-    'Fullscreen with keyboard lock: Ctrl+W and similar shortcuts reach the game, and Left Ctrl becomes an extra throttle-down key',
+    'Browser shortcuts are active. Click for fullscreen with keyboard lock: Ctrl+W and similar shortcuts then reach the game, and Left Ctrl becomes an extra throttle-down key',
     () => opts.requestKeyboardCapture?.(),
   );
   const kbOk = el('div', 'pill kbok', [svgIcon(LOCK_ICON), el('span', '', ['Keyboard captured'])]);
@@ -307,15 +364,14 @@ export function createHud(opts: HudOptions): HudImpl {
   const peRow = apsis('Periapsis', orbit.pe, orbit.peT);
   const peTone = new ToneSlot(peRow.valueEl);
   const peSubTone = new ToneSlot(peRow.subEl);
+  const orbitBody = new TextSlot('');
   const orbitPanel = el('div', 'panel orbit', [
-    el('div', 'ptitle', [el('span', '', ['Orbit']), el('span', 'pname', [])]),
+    el('div', 'ptitle', [el('span', '', ['Orbit']), el('span', 'pname', [orbitBody.node])]),
     apsis('Apoapsis', orbit.ap, orbit.apT).root,
     peRow.root,
     row('Inclination', orbit.inc).root,
     row('Period', orbit.per).root,
   ]);
-  const orbitBody = new TextSlot('');
-  orbitPanel.querySelector('.pname')!.append(orbitBody.node);
   const orbitShow = hiddenFlag(orbitPanel);
 
   // Atmospheric flight rows: in their own panel during an ascent, folded into the entry panel while it shows.
@@ -325,12 +381,10 @@ export function createHud(opts: HudOptions): HudImpl {
   atmPanel.append(atmRows);
   const atmShow = hiddenFlag(atmPanel);
 
-  const entry = { flux: new TextSlot(), abl: new TextSlot(), temp: new TextSlot(), lift: new TextSlot(), chute: new TextSlot() };
-  const ablBar = bar('accent');
-  const tempBar = bar('caution');
-  const ablRow = row('Heat shield', entry.abl);
-  const ablBlock = el('div', '', [ablRow.root, ablBar.root]);
-  const ablShow = hiddenFlag(ablBlock);
+  const entry = { flux: new TextSlot(), lift: new TextSlot(), chute: new TextSlot() };
+  const ablRow = barRow('Heat shield');
+  const ablShow = hiddenFlag(ablRow.root);
+  const tempRow = barRow('Skin temp.');
   const liftRow = el('div', 'row', [el('span', 'lbl', ['Lift vector']), el('span', 'lift', [entry.lift.node])]);
   const liftShow = hiddenFlag(liftRow);
   const chuteLight = el('span', 'light', [entry.chute.node]);
@@ -342,7 +396,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const entryAtmSlot = el('div', 'atmslot');
   const entrySep = el('div', 'sep');
   const entrySepShow = hiddenFlag(entrySep);
-  const entryPanel = el('div', 'panel entry', [el('div', 'ptitle', [el('span', '', ['Entry'])]), entryAtmSlot, entrySep, fluxRow.root, ablBlock, row('Skin temperature', entry.temp).root, tempBar.root, liftRow, chuteRow], { 'data-show': 'external' });
+  const entryPanel = el('div', 'panel entry', [el('div', 'ptitle', [el('span', '', ['Entry'])]), entryAtmSlot, entrySep, fluxRow.root, ablRow.root, tempRow.root, liftRow, chuteRow], { 'data-show': 'external' });
   const entryShow = hiddenFlag(entryPanel);
   /** Where the atmosphere rows live: in the entry panel while it shows (one panel fewer on the left edge). */
   const atmInEntry = new Flag((on) => {
@@ -350,8 +404,10 @@ export function createHud(opts: HudOptions): HudImpl {
     entrySepShow.set(on);
   });
 
+  // Landing target / recovery zone: one line (name, distance, bearing) until its rows matter, then the rows.
   const ltName = new TextSlot('');
   const ltKind = new TextSlot('Landing target');
+  const ltLine = new TextSlot('');
   const ltRows: { label: TextSlot; value: TextSlot; root: HTMLDivElement; show: Flag; pred: Flag }[] = [];
   const ltRowsEl = el('div', 'rows');
   for (let i = 0; i < LT_ROWS; i++) {
@@ -360,27 +416,33 @@ export function createHud(opts: HudOptions): HudImpl {
     ltRows.push({ label: r.label, value: v, root: r.root, show: hiddenFlag(r.root), pred: classFlag(r.root, 'pred') });
     ltRowsEl.append(r.root);
   }
+  const ltRowsShow = hiddenFlag(ltRowsEl);
+  const ltLineEl = el('div', 'ltline', [ltLine.node]);
+  const ltLineShow = hiddenFlag(ltLineEl);
   // Recovery-zone status: a light row at value size (green inside, amber outside once it matters).
   const zoneText = new TextSlot('');
   const zoneSub = new TextSlot('');
   const zoneEl = el('div', 'zone', [el('span', 'light', [zoneText.node]), el('span', 'sub', [zoneSub.node])]);
   const zoneTone = new ToneSlot(zoneEl);
   const zoneShow = hiddenFlag(zoneEl);
-  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node])]), el('div', 'tname', [el('span', 'pname', [ltName.node])]), ltRowsEl, zoneEl], {
+  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node])]), el('div', 'tname', [el('span', 'pname', [ltName.node])]), ltLineEl, ltRowsEl, zoneEl], {
     'data-show': 'external map interior',
   });
   const ltShow = hiddenFlag(ltPanel);
   let ltCurrentRows: [string, string][] | null = null;
 
   const pad = { target: new TextSlot(), relInc: new TextSlot(), cross: new TextSlot(), az: new TextSlot() };
-  const padTargets = el('div', 'targets');
-  const relIncRow = row('Relative inclination', pad.relInc);
+  const padTargets = el('span', 'targets');
+  const relIncRow = row('Rel. inclination', pad.relInc);
   const crossRow = row('Plane crossing', pad.cross);
   const azRow = row('Launch azimuth', pad.az);
   const relIncShow = hiddenFlag(relIncRow.root);
   const crossShow = hiddenFlag(crossRow.root);
   const azShow = hiddenFlag(azRow.root);
-  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), el('span', 'pname', [pad.target.node])]), padTargets, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
+  const padNameEl = el('span', 'pname', [pad.target.node]);
+  const padNameShow = hiddenFlag(padNameEl);
+  // Title row: "LAUNCH" and the target: the body buttons (the chosen one lit) or, without them, its name.
+  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
   const padShow = hiddenFlag(padPanel);
   const targetButtons = new Map<string, { btn: HTMLButtonElement; on: Flag; show: Flag }>();
   const commands = opts.commands;
@@ -404,8 +466,9 @@ export function createHud(opts: HudOptions): HudImpl {
   const lcol = el('div', 'lcol', [clock, padPanel, orbitPanel, ltPanel, atmPanel, entryPanel]);
 
   // ---------------------------------------------------------------------------------- right column
-  // The stack is a column-reverse flexbox: the next stage (first child) sits at the bottom; a stack taller than
-  // the column is clipped at the far end (top), never at the next stage.
+  // Stage stack, top to bottom: the later stages as one list of one-line rows (highest number on top), the next
+  // stage as a full tile and, at the bottom, the stage that is burning now. A stack taller than the column is
+  // clipped at the top (flex-end), never at the next or the active stage.
   const stagesEl = el('div', 'stages');
   const stagesMore = new TextSlot('');
   const stagesMoreEl = el('div', 'more', [stagesMore.node]);
@@ -414,7 +477,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const resShow = hiddenFlag(resPanel);
   const rcol = el('div', 'rcol', [el('div', 'stagewrap', [stagesMoreEl, stagesEl], { 'data-show': 'external interior' }), resPanel]);
   let stageKey = '';
-  let stageSlots: StageSlot[] = [];
+  let stageSlots = new Map<number, StageSlot>();
   let resKey = '';
   let resSlots: { fill: FillSlot; pct: TextSlot; low: Flag }[] = [];
 
@@ -458,14 +521,15 @@ export function createHud(opts: HudOptions): HudImpl {
   const hdg = new TextSlot('000°');
   const pitchText = new TextSlot('');
   const rollText = new TextSlot('');
-  const ball = el('div', 'ball', [
-    ballCanvas,
-    bezelCanvas,
+  // Read-outs of the ball in fixed-width windows on one row above the bezel: pitch, heading (over the top
+  // index), roll. They never touch the instrument and never change width with the value.
+  const chips = el('div', 'nbchips', [
+    el('div', 'pr pitch', [el('span', 'lbl', ['Pitch']), el('b', '', [pitchText.node])]),
     el('div', 'hdg', [hdg.node]),
-    el('div', 'pr pitch', [el('span', 'lbl', ['Pitch']), pitchText.node]),
-    el('div', 'pr roll', [el('span', 'lbl', ['Roll']), rollText.node]),
+    el('div', 'pr roll', [el('span', 'lbl', ['Roll']), el('b', '', [rollText.node])]),
   ]);
-  const nbwrap = el('div', 'nbwrap bc', [speedPanel, ball], { 'data-show': 'external map' });
+  const ball = el('div', 'ball', [ballCanvas, bezelCanvas]);
+  const nbwrap = el('div', 'nbwrap bc', [speedPanel, chips, ball], { 'data-show': 'external map' });
 
   const doseBar = bar('caution');
   const doseShow = new Flag((on) => (doseBar.root.style.visibility = on ? 'visible' : 'hidden'));
@@ -505,15 +569,22 @@ export function createHud(opts: HudOptions): HudImpl {
     list.push(e);
     groups.set(e.group, list);
   }
-  const cols = el('div', 'cols');
+  const groupEls: HTMLElement[] = [];
+  const groupHeights: number[] = [];
   for (const [g, entries] of groups) {
     const group = el('div', 'group', [el('h3', '', [g])]);
     for (const e of entries) {
       const keys = el('span', 'keys', [...e.keys.map((k) => keyCap(k)), ...e.lockedKeys.map((k) => keyCap(k, 'kbd locked', 'Only while the keyboard is captured (fullscreen)'))]);
       group.append(el('div', 'item', [el('span', '', [e.text]), keys]));
     }
-    cols.append(group);
+    groupEls.push(group);
+    groupHeights.push(entries.length + 1.6);
   }
+  const cols = el(
+    'div',
+    'cols',
+    balanceColumns(groupHeights, 3).map((ids) => el('div', 'col', ids.map((i) => groupEls[i]!))),
+  );
   const help = el(
     'div',
     'help',
@@ -543,21 +614,30 @@ export function createHud(opts: HudOptions): HudImpl {
   ctx.configure({ device: gpu.device, format: gpu.canvasFormat, alphaMode: 'premultiplied' });
   const bezelCtx = bezelCanvas.getContext('2d');
   let ballPx = 0;
+  let bezelPx = 0;
   const ro = new ResizeObserver((entries) => {
     for (const e of entries) {
       const box = e.devicePixelContentBoxSize?.[0];
       const px = box ? Math.round(box.inlineSize) : Math.round(e.contentRect.width * devicePixelRatio);
-      ballPx = Math.max(1, Math.min(2048, px));
-      ballCanvas.width = ballPx;
-      ballCanvas.height = ballPx;
-      bezelCanvas.width = ballPx;
-      bezelCanvas.height = ballPx;
-      // A hidden ball (interior view) reports a zero box: nothing to draw.
-      if (bezelCtx && ballPx >= 16) drawNavballBezel(bezelCtx, ballPx, HUD_BALL_RADIUS_FRACTION);
+      const size = Math.max(1, Math.min(2048, px));
+      if (e.target === ballCanvas) {
+        ballPx = size;
+        ballCanvas.width = size;
+        ballCanvas.height = size;
+      } else {
+        // The bezel canvas is larger than the ball's box (its soft shadow fades out inside the canvas).
+        bezelPx = size;
+        bezelCanvas.width = size;
+        bezelCanvas.height = size;
+      }
     }
+    // A hidden ball (interior view) reports a zero box: nothing to draw.
+    if (bezelCtx && ballPx >= 16 && bezelPx >= ballPx) drawNavballBezel(bezelCtx, bezelPx, HUD_BALL_RADIUS_FRACTION * (ballPx / bezelPx));
   });
   ro.observe(ballCanvas);
-  const ballOpts = { radiusFraction: HUD_BALL_RADIUS_FRACTION, instrument: true };
+  ro.observe(bezelCanvas);
+  // The ball is drawn larger than the window and the bezel's lip covers its outer rim (HUD_BALL_LIP).
+  const ballOpts = { radiusFraction: HUD_BALL_RADIUS_FRACTION / HUD_BALL_LIP, lip: HUD_BALL_LIP, instrument: true };
 
   // ------------------------------------------------------------------------------------- toasts
   interface Toast {
@@ -663,93 +743,108 @@ export function createHud(opts: HudOptions): HudImpl {
     helpClass.set(helpOpen);
   }
 
+  /**
+   * A full tile: number column, icon plate, the name on a line of its own (with the action icons that differ
+   * from the stage icon, or the ACTIVE light), then delta-v, TWR and burn time (the next stage: after its key
+   * cap; an engine-less next stage: what firing it does), and a thin propellant strip.
+   */
+  function fullTile(t: StageTileView, role: 'next' | 'active', locked: boolean): { tile: HTMLElement; slot: StageSlot } {
+    const iconName = stageIconFor(t.icon);
+    const dv = new TextSlot('');
+    let meta: TextSlot | null = null;
+    let fill: FillSlot | null = null;
+    let barTone: Flag | null = null;
+    const head: HTMLElement[] = [el('div', 'name', [t.label])];
+    if (role === 'active') head.push(el('span', 'light act', ['ACTIVE']));
+    else {
+      const acts = [...new Set(t.actionKinds.map(stageIconFor))].filter((k) => k !== iconName).slice(0, 3);
+      if (acts.length > 0) head.push(el('span', 'acts', acts.map((k) => svgIcon(STAGE_ICONS[k]))));
+    }
+    let line2: HTMLElement;
+    if (locked) {
+      line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['after last stage'])]);
+    } else {
+      meta = new TextSlot('');
+      const parts: HTMLElement[] = [];
+      if (role === 'next') parts.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
+      if (t.hasEngines) parts.push(el('span', 'dv', [dv.node]));
+      parts.push(el('span', 'meta', [meta.node]));
+      line2 = el('div', 'l2', parts);
+    }
+    const mainParts: HTMLElement[] = [el('div', 'l1', head), line2];
+    if (t.propellant !== null) {
+      const b = bar('prop');
+      fill = b.fill;
+      barTone = classFlag(b.root, 'caution');
+      mainParts.push(b.root);
+    }
+    const tile = el('div', `tile ${role}`, [el('div', 'sn', [t.number]), el('div', 'ico', [svgIcon(locked ? LOCK_ICON : STAGE_ICONS[iconName])]), el('div', 'main', mainParts)]);
+    if (role === 'next') {
+      if (locked) tile.classList.add('locked');
+      tile.setAttribute(INTERACTIVE_ATTR, '');
+      tile.title = locked ? 'Staging is locked for a moment after the last stage' : `Fire this stage (${keyFor('stage') ?? 'Space'})`;
+      tile.addEventListener('pointerdown', (e) => e.preventDefault());
+      tile.addEventListener('click', () => {
+        if (!tile.classList.contains('locked')) dispatch('stage');
+      });
+    }
+    return { tile, slot: { compact: false, dv, meta, fill, barTone } };
+  }
+
   function updateStages(s: SimSnapshot): void {
     const st = describeStages(s);
     const remaining = st.tiles.filter((t) => !t.fired);
-    // One tile per remaining StageInfo, next first. Long stacks keep the next two stages in full and show the
-    // rest as compact one-line tiles (number, icon, name, delta-v).
-    const compactFrom = remaining.length > FULL_STAGE_TILES ? 2 : Infinity;
-    const key = `${remaining.map((t, i) => `${t.index}:${t.label}:${t.icon}:${t.actionKinds.join(',')}:${t.next ? 1 : 0}:${t.hasEngines ? 1 : 0}:${i >= compactFrom ? 'c' : 'f'}`).join('|')}#${st.lockout ? 1 : 0}`;
+    const next = remaining.find((t) => t.next) ?? null;
+    const later = remaining.filter((t) => t !== next);
+    const active = st.active >= 0 ? st.tiles[st.active]! : null;
+    const tileKey = (t: StageTileView): string => `${t.index}:${t.label}:${t.icon}:${t.actionKinds.join(',')}:${t.hasEngines ? 1 : 0}:${t.propellant !== null ? 1 : 0}`;
+    const key = `${later.map(tileKey).join('|')}#${next ? tileKey(next) : '-'}#${active ? tileKey(active) : '-'}#${st.lockout ? 1 : 0}`;
     if (key !== stageKey) {
       stageKey = key;
       stagesEl.replaceChildren();
-      stageSlots = [];
-      remaining.forEach((t, i) => {
-        const compact = i >= compactFrom;
-        const locked = t.next && st.lockout;
-        const iconName = stageIconFor(t.icon);
-        const dv = new TextSlot('');
-        const num = el('div', 'sn', [t.number]);
-        const icon = el('div', 'ico', [svgIcon(locked ? LOCK_ICON : STAGE_ICONS[iconName])]);
-        let fill: FillSlot | null = null;
-        let barTone: Flag | null = null;
-        let tile: HTMLElement;
-        let meta: TextSlot | null = null;
-        if (compact) {
-          tile = el('div', 'tile compact', [num, icon, el('div', 'name', [t.label]), el('div', 'dv', [dv.node])]);
-        } else {
-          // Line 1: the name and the action icons that differ from the stage icon. Line 2: the key cap of the
-          // next stage, delta-v, TWR and burn time; or the lockout and its reason. Under it a thin propellant strip.
-          const acts = [...new Set(t.actionKinds.map(stageIconFor))].filter((k) => k !== iconName).slice(0, 3);
-          const line1 = el('div', 'l1', [el('div', 'name', [t.label]), ...(acts.length > 0 ? [el('span', 'acts', acts.map((k) => svgIcon(STAGE_ICONS[k])))] : [])]);
-          let line2: HTMLElement;
-          if (locked) {
-            line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['after last stage'])]);
-          } else {
-            meta = new TextSlot('');
-            const parts: HTMLElement[] = [];
-            if (t.next) parts.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
-            // Stages without engines have no delta-v: the span leaves the line (no gap before "no engines").
-            if (t.hasEngines) parts.push(el('span', 'dv', [dv.node]));
-            parts.push(el('span', 'meta', [meta.node]));
-            line2 = el('div', 'l2', parts);
-          }
-          const mainParts: HTMLElement[] = [line1, line2];
-          if (t.propellant !== null) {
-            const b = bar('prop');
-            fill = b.fill;
-            barTone = classFlag(b.root, 'caution');
-            mainParts.push(b.root);
-          }
-          tile = el('div', 'tile', [num, icon, el('div', 'main', mainParts)]);
-          if (t.next) {
-            tile.classList.add('next');
-            if (locked) tile.classList.add('locked');
-            tile.setAttribute(INTERACTIVE_ATTR, '');
-            tile.title = locked ? 'Staging is locked for a moment after the last stage' : `Fire this stage (${keyFor('stage') ?? 'Space'})`;
-            tile.addEventListener('pointerdown', (e) => e.preventDefault());
-            tile.addEventListener('click', () => {
-              if (!tile.classList.contains('locked')) dispatch('stage');
-            });
-          }
+      stageSlots = new Map();
+      if (later.length > 0) {
+        // One list, highest stage on top: number, icon, name and (engine stages) delta-v on one line each.
+        const list = el('div', 'later');
+        for (const t of [...later].reverse()) {
+          const dv = new TextSlot('');
+          list.append(el('div', 'tile compact', [el('div', 'sn', [t.number]), el('div', 'ico', [svgIcon(STAGE_ICONS[stageIconFor(t.icon)])]), el('div', 'name', [t.label]), el('div', 'dv', [dv.node])]));
+          stageSlots.set(t.index, { compact: true, dv, meta: null, fill: null, barTone: null });
         }
+        stagesEl.append(list);
+      }
+      for (const [t, role] of [
+        [next, 'next'],
+        [active, 'active'],
+      ] as const) {
+        if (!t) continue;
+        const { tile, slot } = fullTile(t, role, role === 'next' && st.lockout);
         stagesEl.append(tile);
-        stageSlots.push({ index: t.index, dv, meta, fill, barTone });
-      });
+        stageSlots.set(t.index, slot);
+      }
     }
-    remaining.forEach((t, i) => {
-      const slot = stageSlots[i];
-      if (!slot) return;
-      const compact = i >= compactFrom;
-      slot.dv.set(t.hasEngines ? (compact ? t.deltaV : `Δv ${t.deltaV}`) : '');
-      slot.meta?.set(t.hasEngines ? `TWR ${t.twr} · ${t.burnTime}` : 'no engines');
+    for (const t of [...later, ...(next ? [next] : []), ...(active ? [active] : [])]) {
+      const slot = stageSlots.get(t.index);
+      if (!slot) continue;
+      slot.dv.set(t.hasEngines ? (slot.compact ? t.deltaV : `Δv ${t.deltaV}`) : '');
+      slot.meta?.set(t.hasEngines ? `TWR ${t.twr} · ${t.burnTime}` : t.actions);
       if (slot.fill && t.propellant !== null) {
         slot.fill.set(t.propellant);
         slot.barTone?.set(t.propellant < 0.1);
       }
-    });
-    stagesMore.set(remaining.length === 0 ? 'No stages left' : `Δv ${st.deltaVTotal} total`);
+    }
+    stagesMore.set(remaining.length === 0 && !active ? 'No stages left' : `Δv ${st.deltaVTotal} total`);
   }
 
   function updateResources(s: SimSnapshot): void {
-    const groupsView = describeResources(s, defs);
-    resShow.set(groupsView.length > 0);
-    const key = groupsView.map((g) => `${g.id}:${g.bars.map((b) => b.resourceId).join(',')}`).join('|');
+    const sum = summarizeResources(describeResources(s, defs));
+    resShow.set(sum.detailed.length > 0);
+    const key = `${sum.detailed.map((g) => `${g.id}:${g.bars.map((b) => b.resourceId).join(',')}`).join('|')}#${sum.full.join('|')}`;
     if (key !== resKey) {
       resKey = key;
       resGroupsEl.replaceChildren();
       resSlots = [];
-      for (const g of groupsView) {
+      for (const g of sum.detailed) {
         const grp = el('div', 'grp', [el('div', 'gname', [g.label])]);
         for (const b of g.bars) {
           const pb = bar();
@@ -759,9 +854,10 @@ export function createHud(opts: HudOptions): HudImpl {
         }
         resGroupsEl.append(grp);
       }
+      if (sum.full.length > 0) resGroupsEl.append(el('div', 'full', [el('b', '', ['Full']), ` ${sum.full.join(' · ')}`]));
     }
     let i = 0;
-    for (const g of groupsView) {
+    for (const g of sum.detailed) {
       for (const b of g.bars) {
         const slot = resSlots[i++];
         if (!slot) continue;
@@ -802,12 +898,15 @@ export function createHud(opts: HudOptions): HudImpl {
     const altSrc = altitudeSource(s, altMode);
     const w = s.warp;
     const phase = orbitPhase(s, defs);
+    const heating = r.heatFlux > HEATING_FLUX;
+    const airborne = !landed && inAtmosphere(s, defs);
 
-    // Panel visibility.
-    const showOrbit = !landed && (kind === 'map' || (kind === 'external' && phase.show));
+    // Panel visibility. The orbit leaves while the vessel heats up or falls through the air on a suborbital path.
+    const showOrbit = !landed && (kind === 'map' || (kind === 'external' && phase.show && !heating));
     const inAir = !landed && (r.dynamicPressure > 1 || r.mach > 0.02);
-    const heating = r.heatFlux > 1000;
-    const showEntry = heating || r.chuteEnvelope !== null || r.liftVectorUp !== null;
+    // The chute light matters while the next chute stage could be fired: coming down through the air.
+    const chuteRelevant = r.chuteEnvelope !== null && airborne && r.verticalSpeed < 0;
+    const showEntry = heating || chuteRelevant || r.liftVectorUp !== null;
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.
@@ -820,6 +919,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const showPad = onGround && (targetButtonsShown > 0 || r.targetBodyId !== null || r.targetRelativeInclination !== null || r.launchWindow !== null);
     const nb = r.nodeBurn;
     const tBurn = nb?.timeToBurnStart ?? null;
+    const ltExpanded = landingTargetExpanded(s, defs);
     orbitShow.set(showOrbit);
     atmInEntry.set(showEntry);
     atmShow.set(inAir && !showEntry);
@@ -827,11 +927,14 @@ export function createHud(opts: HudOptions): HudImpl {
     fluxShow.set(heating);
     ablShow.set(r.ablatorFraction !== null);
     liftShow.set(r.liftVectorUp !== null);
-    chuteShow.set(r.chuteEnvelope !== null);
+    chuteShow.set(chuteRelevant);
     ltShow.set(r.landingTarget !== null);
+    ltRowsShow.set(ltExpanded);
+    ltLineShow.set(!ltExpanded);
     if (r.landingTarget === null) ltCurrentRows = null;
     padShow.set(showPad);
     padTargetsShow.set(targetButtonsShown > 0);
+    padNameShow.set(targetButtonsShown === 0);
     relIncShow.set(r.targetRelativeInclination !== null);
     crossShow.set(r.launchWindow !== null);
     azShow.set(r.launchWindow !== null);
@@ -868,7 +971,9 @@ export function createHud(opts: HudOptions): HudImpl {
 
     // Text: at HUD_TEXT_HZ, and at once on any discrete change.
     const lt = r.landingTarget;
-    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${s.staging.nextStage}|${s.staging.lockout}|${s.staging.stages.length}|${s.mission.failed}`;
+    const st = s.staging;
+    const activeStage = describeActiveStage(s);
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
     textClock += dt;
     const due = textClock >= TEXT_PERIOD - 1e-4;
     if (forceText || due || sig !== lastSig) {
@@ -876,12 +981,22 @@ export function createHud(opts: HudOptions): HudImpl {
       forceText = false;
       lastSig = sig;
       textUpdates++;
-      updateText(s, kind, { showOrbit, inAir: inAir || showEntry, showEntry, showPad });
+      updateText(s, kind, { showOrbit, inAir: inAir || showEntry, showEntry, showPad, ltExpanded });
     }
   }
 
+  /** Index of the stage that owns the running engines (describeStages().active), cheaply, for the signature. */
+  function describeActiveStage(s: SimSnapshot): number {
+    const st = s.staging;
+    for (let i = Math.min(st.nextStage, st.stages.length) - 1; i >= 0; i--) {
+      const info = st.stages[i]!;
+      if (info.fired && info.propellantFraction !== null) return i;
+    }
+    return -1;
+  }
+
   /** Every text readout (and the slow bars) of the visible panels. */
-  function updateText(s: SimSnapshot, kind: ViewKind, show: { showOrbit: boolean; inAir: boolean; showEntry: boolean; showPad: boolean }): void {
+  function updateText(s: SimSnapshot, kind: ViewKind, show: { showOrbit: boolean; inAir: boolean; showEntry: boolean; showPad: boolean; ltExpanded: boolean }): void {
     const r = s.readouts;
     const v = activeVesselOf(s);
     const bodyDef = v ? defs.bodies[v.bodyId] : undefined;
@@ -892,7 +1007,7 @@ export function createHud(opts: HudOptions): HudImpl {
     ut.set(formatUt(s.ut));
     const w = describeWarp(s, WARP_LEVELS);
     warpFactor.set(w.factor);
-    railsLabel.set(w.index > 0 ? (w.onRails ? 'rails warp' : 'physics warp') : '');
+    railsLabel.set(w.index > 0 ? (w.onRails ? 'rails' : 'physics') : '');
     warpLimit.set(w.limit ?? '');
     warpLimitShow.set(w.limit !== null);
 
@@ -925,15 +1040,18 @@ export function createHud(opts: HudOptions): HudImpl {
       atm.aoa.set(formatRadAsDeg(r.angleOfAttack));
     }
 
-    // Entry: heat shield, skin temperature, lift vector, chute envelope.
+    // Entry: heat shield, skin temperature, lift vector, chute envelope. Each bar is coloured as a whole by the
+    // zone its reading is in (the heat shield red only below its redline).
     if (show.showEntry) {
       entry.flux.set(formatHeatFlux(r.heatFlux));
       if (r.ablatorFraction !== null) {
-        entry.abl.set(formatPercent(r.ablatorFraction));
-        ablBar.fill.set(r.ablatorFraction);
+        ablRow.value.set(formatPercent(r.ablatorFraction));
+        ablRow.fill.set(r.ablatorFraction);
+        ablRow.tone.set(ablatorTone(r.ablatorFraction));
       }
-      entry.temp.set(formatPercent(r.maxTempFraction));
-      tempBar.fill.set(r.maxTempFraction);
+      tempRow.value.set(formatPercent(r.maxTempFraction));
+      tempRow.fill.set(r.maxTempFraction);
+      tempRow.tone.set(r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'good');
       entry.lift.set(r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN');
       if (r.chuteEnvelope) {
         entry.chute.set(r.chuteEnvelope.toUpperCase());
@@ -947,18 +1065,24 @@ export function createHud(opts: HudOptions): HudImpl {
       ltName.set(lt.name);
       ltKind.set(lt.kindLabel);
       const rows = landingTargetRows(lt);
-      ltRows.forEach((slot, i) => {
-        const rr = rows[i];
-        slot.show.set(rr !== undefined);
-        if (!rr) return;
-        slot.label.set(rr[0]);
-        slot.value.set(rr[1]);
-        slot.pred.set(isPredictionRow(rr[0]));
-      });
-      ltCurrentRows = rows;
+      if (show.ltExpanded) {
+        ltRows.forEach((slot, i) => {
+          const rr = rows[i];
+          slot.show.set(rr !== undefined);
+          if (!rr) return;
+          slot.label.set(rr[0]);
+          slot.value.set(rr[1]);
+          slot.pred.set(isPredictionRow(rr[0]));
+        });
+        ltCurrentRows = rows;
+      } else {
+        // One line: distance and bearing (the first two rows of the full readout).
+        ltLine.set(`${lt.distance} · ${lt.bearing}`);
+        ltCurrentRows = rows.slice(0, 2);
+      }
       // Recovery zone: inside is the go state (green); outside matters once the descent is committed.
       const zone = lt.zoneRadius !== null;
-      const committed = r.chuteEnvelope !== null || lt.predicted !== null;
+      const committed = show.ltExpanded && (r.chuteEnvelope !== null || lt.predicted !== null);
       zoneShow.set(zone && (lt.insideZone || committed));
       zoneText.set(lt.insideZone ? 'INSIDE ZONE' : 'OUTSIDE ZONE');
       zoneSub.set(lt.zoneRadius !== null ? `r ${lt.zoneRadius}` : '');
@@ -994,12 +1118,12 @@ export function createHud(opts: HudOptions): HudImpl {
     if (r.gDose > 0) doseBar.fill.set(r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0);
 
     // Node burn.
-    const nb = describeNodeBurn(s);
-    if (nb) {
-      node.dv.set(nb.deltaV);
-      node.burn.set(nb.burnTime);
-      node.start.set(nb.started ? `burning · ${nb.startIn}` : nb.startIn);
-      nodeDvTone.set(nb.insufficient ? 'warning' : 'accent');
+    const nbv = describeNodeBurn(s);
+    if (nbv) {
+      node.dv.set(nbv.deltaV);
+      node.burn.set(nbv.burnTime);
+      node.start.set(nbv.started ? `burning · ${nbv.startIn}` : nbv.startIn);
+      nodeDvTone.set(nbv.insufficient ? 'warning' : 'accent');
     }
 
     if (s.mission.failed) failReason.set(s.mission.failureReason ?? 'The mission cannot continue.');

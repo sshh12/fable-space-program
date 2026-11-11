@@ -82,7 +82,10 @@ export interface NavballRendererImpl extends NavballRenderer {
 }
 
 export interface NavballTargetOptions {
+  /** Radius of the ball as a fraction of half the target (default BALL_RADIUS_FRACTION). */
   radiusFraction?: number;
+  /** Part of the ball's radius that is drawn (default 1): a bezel lip covers the rest (HUD_BALL_LIP). */
+  lip?: number;
   instrument?: boolean;
 }
 
@@ -260,7 +263,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     return count;
   };
 
-  const writeState = (slot: Slot, state: NavballState, sizePx: number, radiusFraction = BALL_RADIUS_FRACTION, look = 0): number => {
+  const writeState = (slot: Slot, state: NavballState, sizePx: number, radiusFraction = BALL_RADIUS_FRACTION, look = 0, lip = 1): number => {
     const { x, y, z, w } = state.qVesselToHorizon;
     const b = ballScratch;
     // mat3.fromQuat, row by row, each padded to a vec4.
@@ -276,6 +279,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     b[12] = radiusFraction;
     b[13] = sizePx;
     b[14] = look;
+    b[15] = lip;
     const d = slot.data;
     let same = slot.valid;
     for (let i = 0; same && i < 16; i++) same = d[i] === b[i];
@@ -319,7 +323,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     },
     renderState,
     renderTo(encoder, state, targetView, format, sizePx, o) {
-      const count = writeState(hudSlot, state, sizePx, o?.radiusFraction ?? BALL_RADIUS_FRACTION, o?.instrument ? 1 : 0);
+      const count = writeState(hudSlot, state, sizePx, o?.radiusFraction ?? BALL_RADIUS_FRACTION, o?.instrument ? 1 : 0, o?.lip ?? 1);
       draw(encoder, hudSlot, count, targetView, format, 'ui.navball.hud');
     },
     dispose() {

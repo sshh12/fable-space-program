@@ -59,10 +59,12 @@ export const MARKER_COLORS: Record<MarkerIconName, string> = {
 };
 
 /**
- * The fixed vessel reticle (orange wings), 48 x 24 box centred on (24, 12). Its centre is an open ring, so a
- * marker held on the nose shows through it (the reticle is drawn over the markers).
+ * The fixed vessel reticle, 48 x 24 box centred on (24, 12): an aircraft symbol of two thin orange wings with
+ * short downward stubs and a centre dot. Everything but the dot stays outside a radius of 12 units, beyond the
+ * rays of the markers (ring radius 5, rays to 10.5), so a marker held on the nose (prograde or retrograde hold)
+ * shows whole around the dot although the reticle is drawn over the markers.
  */
-export const RETICLE_ICON: IconDef = { stroke: 'M2,12H14.6L24,19.4L33.4,12H46 M24,3.2V7.6 M21.5,12a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0', width: 2.3 };
+export const RETICLE_ICON: IconDef = { stroke: 'M2,12H12V15.8 M46,12H36V15.8', fill: dot(24, 12, 1.45), width: 1.9 };
 export const RETICLE_COLOR = '#ffa53a';
 
 /** Stage and action icons; StageInfo.icon / actionKinds strings are mapped by `stageIconFor`. */

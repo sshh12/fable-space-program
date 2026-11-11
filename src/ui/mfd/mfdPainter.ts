@@ -52,6 +52,8 @@ import {
   describeResources,
   describeStages,
   describeWarp,
+  ABLATOR_REDLINE,
+  ablatorTone,
   G_SCALE,
   gTone,
   isLanded,
@@ -155,18 +157,21 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const v = activeVesselOf(s);
       const landed = isLanded(v);
       const none = '—';
+      const bodyName = v ? (defs.bodies[v.bodyId]?.name ?? v.bodyId) : none;
+      // Landed there is no orbit to tabulate: one status line (the page gives the space to the body graphic).
+      if (landed) return { page, title: TITLE[page], rows: [{ label: 'Body', value: bodyName }, { label: 'Situation', value: 'Landed · no orbit', tone: 'dim' }], status };
       return {
         page,
         title: TITLE[page],
         rows: [
-          { label: 'Body', value: v ? (defs.bodies[v.bodyId]?.name ?? v.bodyId) : none },
-          { label: 'Apoapsis', value: landed ? none : o.apoapsis, tone: landed ? 'dim' : 'accent' },
-          { label: 'Time to Ap', value: landed ? none : o.apoapsisTime },
-          { label: 'Periapsis', value: landed ? none : o.periapsis, tone: landed ? 'dim' : r.periapsisAltitude < 0 ? 'warning' : 'accent' },
-          { label: 'Time to Pe', value: landed ? none : o.periapsisTime },
-          { label: 'Inclination', value: landed ? none : o.inclination },
-          { label: 'Eccentricity', value: landed ? none : o.eccentricity },
-          { label: 'Period', value: landed ? none : o.period },
+          { label: 'Body', value: bodyName },
+          { label: 'Apoapsis', value: o.apoapsis, tone: 'accent' },
+          { label: 'Time to Ap', value: o.apoapsisTime },
+          { label: 'Periapsis', value: o.periapsis, tone: r.periapsisAltitude < 0 ? 'warning' : 'accent' },
+          { label: 'Time to Pe', value: o.periapsisTime },
+          { label: 'Inclination', value: o.inclination },
+          { label: 'Eccentricity', value: o.eccentricity },
+          { label: 'Period', value: o.period },
         ],
         section: nb
           ? {
@@ -206,14 +211,18 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const st = describeStages(s);
       const remaining = st.tiles.filter((t) => !t.fired);
       const next = remaining.find((t) => t.next);
+      const active = st.active >= 0 ? st.tiles[st.active] : undefined;
+      // The summary strip shows the stage that is burning; before the first ignition, the next engine stage.
+      const subject = active ?? (next?.hasEngines ? next : undefined);
       return {
         page,
         title: TITLE[page],
         rows: [
+          { label: 'Active stage', value: active ? `${active.number} · ${active.label}` : 'none', tone: active ? 'good' : 'dim' },
           { label: 'Next stage', value: next ? `${next.number} · ${next.label}` : 'none', tone: 'accent' },
-          { label: 'Stage Δv', value: next?.hasEngines ? next.deltaV : '—' },
-          { label: 'Stage TWR', value: next?.hasEngines ? next.twr : '—' },
-          { label: 'Stage burn', value: next?.hasEngines ? next.burnTime : '—' },
+          { label: 'Stage Δv', value: subject ? subject.deltaV : '—' },
+          { label: 'Stage TWR', value: subject ? subject.twr : '—' },
+          { label: 'Stage burn', value: subject ? subject.burnTime : '—' },
           { label: 'Stages left', value: `${remaining.length}` },
           { label: 'Δv remaining (vac)', value: st.deltaVTotal, tone: 'accent' },
           { label: 'Staging', value: st.lockout ? 'LOCKED' : 'READY', tone: st.lockout ? 'caution' : 'good' },
@@ -227,7 +236,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad >= G_SCALE.limit ? 'warning' : r.gLoad >= G_SCALE.caution ? 'caution' : 'accent' },
         { label: 'G dose', value: `${formatNumber(r.gDose, 1)} / ${formatNumber(r.gDoseLimit, 0)}${NBSP}g·s`, tone: doseFrac > 0.7 ? 'warning' : doseFrac > 0.4 ? 'caution' : 'normal' },
         { label: 'Heat flux', value: formatHeatFlux(r.heatFlux) },
-        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'none', tone: r.ablatorFraction !== null && r.ablatorFraction < 0.3 ? 'warning' : r.ablatorFraction === null ? 'dim' : 'normal' },
+        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'none', tone: r.ablatorFraction === null ? 'dim' : ablatorTone(r.ablatorFraction) === 'warning' ? 'warning' : 'normal' },
         { label: 'Skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
         { label: 'Dyn. pressure', value: formatPressure(r.dynamicPressure) },
         { label: 'Mach', value: formatMach(r.mach) },
@@ -255,7 +264,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
 type Ctx = OffscreenCanvasRenderingContext2D;
 
 /** Page geometry: canvas size, content box between header and footer, and the text floor. */
-interface Frame {
+export interface Frame {
   w: number;
   h: number;
   top: number;
@@ -382,12 +391,16 @@ function niceStep(x: number): number {
 
 /**
  * A vertical tape (speed or altitude): ticks moving past a fixed pointer box that holds the current value.
- * `side` is where the ADI is: the pointer box points that way.
+ * `side` is where the ADI is: the pointer box points that way. A scale numeral is drawn only where it is whole:
+ * clear of both tape ends and of the pointer box (glass-cockpit tapes mask them completely). `floor` is the
+ * scale's lower end (a speed tape ends at zero): below it the tape is hatched and carries no ticks.
  */
-function drawTape(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: number, value: number, boxText: string, title: string, side: 'left' | 'right', fmt: (v: number) => string, minSpan: number): void {
+function drawTape(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: number, value: number, boxText: string, title: string, side: 'left' | 'right', fmt: (v: number) => string, minSpan: number, floor = -Infinity): void {
   const span = Math.max(minSpan, Math.abs(value) * 0.08);
   const step = niceStep(span / 4);
   const pxPer = th / span;
+  const bh = px(f, 0.06);
+  const fs = px(f, MIN_TEXT);
   ctx.save();
   ctx.fillStyle = PANEL;
   ctx.fillRect(x, y, tw, th);
@@ -397,10 +410,24 @@ function drawTape(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: numb
   const cy = y + th / 2;
   const tickX = side === 'right' ? x + tw : x;
   const dir = side === 'right' ? -1 : 1;
+  // Below the scale's floor: hatched, no ticks.
+  const floorY = cy - (floor - value) * pxPer;
+  if (floorY < y + th) {
+    ctx.fillStyle = 'rgba(120,150,190,0.08)';
+    ctx.fillRect(x, floorY, tw, y + th - floorY);
+    ctx.strokeStyle = 'rgba(120,150,190,0.22)';
+    ctx.lineWidth = 1;
+    for (let k = -th; k < tw + th; k += f.h * 0.022) {
+      ctx.beginPath();
+      ctx.moveTo(x + k, floorY);
+      ctx.lineTo(x + k - (y + th - floorY), y + th);
+      ctx.stroke();
+    }
+  }
   ctx.strokeStyle = 'rgba(220,230,245,0.75)';
   ctx.lineWidth = Math.max(1, f.h * 0.003);
-  setFont(ctx, 600, px(f, MIN_TEXT));
-  const first = Math.floor((value - span) / (step / 2)) * (step / 2);
+  setFont(ctx, 600, fs);
+  const first = Math.max(Math.floor((value - span) / (step / 2)) * (step / 2), floor);
   for (let v = first; v <= value + span; v += step / 2) {
     const yy = cy - (v - value) * pxPer;
     const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
@@ -409,14 +436,16 @@ function drawTape(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: numb
     ctx.moveTo(tickX, yy);
     ctx.lineTo(tickX + dir * len, yy);
     ctx.stroke();
-    if (major) text(ctx, fmt(v), tickX + dir * tw * 0.27, yy, side === 'right' ? 'right' : 'left', 'middle', '#c9d5e4');
+    // A numeral only where its whole line fits: inside the tape and outside the pointer box.
+    const halfLine = fs * 0.62;
+    const whole = yy - halfLine >= y + 1 && yy + halfLine <= y + th - 1 && Math.abs(yy - cy) >= bh / 2 + halfLine;
+    if (major && whole) text(ctx, fmt(v), tickX + dir * tw * 0.27, yy, side === 'right' ? 'right' : 'left', 'middle', '#c9d5e4');
   }
   ctx.restore();
   ctx.strokeStyle = RULE;
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
   // Pointer box with the exact value (the model's string), pointing toward the ADI.
-  const bh = px(f, 0.06);
   const bx0 = x - (side === 'left' ? tw * 0.08 : 0);
   const bw = tw * 1.08;
   ctx.beginPath();
@@ -457,13 +486,15 @@ function drawVsi(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: numbe
   setFont(ctx, 600, px(f, MIN_TEXT));
   ctx.strokeStyle = 'rgba(220,230,245,0.7)';
   ctx.lineWidth = Math.max(1, f.h * 0.003);
+  // Short ticks on the left edge; the numerals right-aligned after them, a clear gap between the two.
+  const tick = Math.min(tw * 0.16, f.h * 0.012);
   for (const [v, l] of [[0, '0'], [10, '10'], [100, '100'], [1000, '1k'], [-10, '10'], [-100, '100'], [-1000, '1k']] as [number, string][]) {
     const yy = cy - map(v) * 0.94;
     ctx.beginPath();
     ctx.moveTo(x, yy);
-    ctx.lineTo(x + tw * (v === 0 ? 0.45 : 0.3), yy);
+    ctx.lineTo(x + (v === 0 ? tick * 1.8 : tick), yy);
     ctx.stroke();
-    text(ctx, l, x + tw * 0.94, yy, 'right', 'middle', '#c9d5e4');
+    text(ctx, l, x + tw - Math.max(2, tw * 0.06), yy, 'right', 'middle', '#c9d5e4', tw - tick - Math.max(4, tw * 0.12));
   }
   const py = cy - map(Math.max(-1000, Math.min(1000, vs))) * 0.94;
   ctx.strokeStyle = vs > 0.05 ? COLORS.good : vs < -0.05 ? COLORS.caution : COLORS.normal;
@@ -500,7 +531,9 @@ function drawHeadingTape(ctx: Ctx, f: Frame, cx: number, y: number, tw: number, 
     if (major) {
       const n = ((d % 360) + 360) % 360;
       const name = ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[n] ?? String(n / 10).padStart(2, '0');
-      text(ctx, name, xx, y + th * 0.66, 'center', 'middle', n % 90 === 0 ? COLORS.normal : '#c9d5e4');
+      // Only labels that sit whole inside the tape, with a margin from its ends.
+      const half = ctx.measureText(name).width / 2 + f.h * 0.006;
+      if (xx - half >= x && xx + half <= x + tw) text(ctx, name, xx, y + th * 0.66, 'center', 'middle', n % 90 === 0 ? COLORS.normal : '#c9d5e4');
     }
   }
   ctx.restore();
@@ -540,45 +573,62 @@ function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSn
   const ladderR = r * 0.8;
   const pxPerDeg = ladderR / 25;
   const off = pitch * pxPerDeg;
+  // Zenith and nadir on the ladder's scale (90 deg from the horizon): the fills are graded around them, so the
+  // disc is never one flat colour, and the ladder continues over the pole.
+  const zenY = off - 90 * pxPerDeg;
+  const nadY = off + 90 * pxPerDeg;
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
   ctx.translate(cx, cy);
   ctx.rotate(-roll);
-  const sky = ctx.createLinearGradient(0, off, 0, off - 2.4 * r);
-  sky.addColorStop(0, '#5aa6e8');
-  sky.addColorStop(0.45, '#2c74bd');
-  sky.addColorStop(1, '#0f3466');
+  const sky = ctx.createRadialGradient(0, zenY, 0, 0, zenY, 90 * pxPerDeg);
+  sky.addColorStop(0, '#0d2f5e');
+  sky.addColorStop(0.55, '#2c74bd');
+  sky.addColorStop(1, '#5aa6e8');
   ctx.fillStyle = sky;
-  ctx.fillRect(-2 * r, off - 8 * r, 4 * r, 8 * r);
-  const ground = ctx.createLinearGradient(0, off, 0, off + 2.4 * r);
-  ground.addColorStop(0, '#a8693a');
-  ground.addColorStop(0.45, '#7a4720');
-  ground.addColorStop(1, '#3c210b');
+  ctx.fillRect(-2 * r, off - 6 * r, 4 * r, 6 * r);
+  const ground = ctx.createRadialGradient(0, nadY, 0, 0, nadY, 90 * pxPerDeg);
+  ground.addColorStop(0, '#2e1808');
+  ground.addColorStop(0.55, '#7a4720');
+  ground.addColorStop(1, '#a8693a');
   ctx.fillStyle = ground;
-  ctx.fillRect(-2 * r, off, 4 * r, 8 * r);
+  ctx.fillRect(-2 * r, off, 4 * r, 6 * r);
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = Math.max(2, r * 0.016);
   ctx.beginPath();
   ctx.moveTo(-2 * r, off);
   ctx.lineTo(2 * r, off);
   ctx.stroke();
-  // Pitch ladder.
+  // Pitch ladder, every 5 deg, continued over the poles (a line 10 deg past the zenith reads 80, on the other
+  // side). A rung is drawn only where the ladder's clip leaves most of it (no lens-shaped slivers at the edge);
+  // numerals stay upright whatever the roll.
   ctx.save();
   ctx.beginPath();
   ctx.arc(0, 0, ladderR, 0, Math.PI * 2);
   ctx.clip();
-  ctx.lineWidth = Math.max(1.5, r * 0.011);
+  const lw = Math.max(1.5, r * 0.011);
+  ctx.lineWidth = lw;
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-  setFont(ctx, 600, Math.max(r * 0.085, f.min));
-  for (let p = -90; p <= 90; p += 5) {
-    if (p === 0) continue;
+  const numSize = Math.max(r * 0.085, f.min);
+  setFont(ctx, 600, numSize);
+  const upright = (label: string, x: number, y: number, align: CanvasTextAlign): void => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(roll);
+    text(ctx, label, 0, 0, align, 'middle', '#ffffff');
+    ctx.restore();
+  };
+  for (let p = -175; p <= 175; p += 5) {
+    if (p === 0 || Math.abs(p) === 90) continue;
     const y = off - p * pxPerDeg;
-    if (Math.abs(y) > ladderR * 1.05) continue;
     const major = p % 10 === 0;
     const half = major ? r * 0.24 : r * 0.1;
-    if (p < 0 && major) {
+    const chord = ladderR * ladderR - y * y;
+    if (chord <= 0 || Math.sqrt(chord) < half * 0.85 + lw) continue;
+    const real = Math.abs(p) > 90 ? Math.sign(p) * (180 - Math.abs(p)) : p;
+    if (real < 0 && major) {
       // Below the horizon: split lines.
       ctx.beginPath();
       ctx.moveTo(-half, y);
@@ -592,14 +642,42 @@ function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSn
       ctx.lineTo(half, y);
       ctx.stroke();
     }
-    // Numerals at both ends, kept off the aircraft symbol (suppressed within 4 deg of the centre).
-    if (major && Math.abs(y) > 4 * pxPerDeg) {
-      const label = String(Math.abs(p));
-      text(ctx, label, -half - r * 0.04, y, 'right', 'middle', '#ffffff');
-      text(ctx, label, half + r * 0.04, y, 'left', 'middle', '#ffffff');
+    // Numerals at both ends where they fit whole, kept off the aircraft symbol (none within 4 deg of the centre).
+    if (major && Math.abs(y) > 4 * pxPerDeg && Math.sqrt(chord) > half + r * 0.04 + numSize * 1.3) {
+      const label = String(Math.abs(real));
+      upright(label, -half - r * 0.04 - numSize * 0.55, y, 'center');
+      upright(label, half + r * 0.04 + numSize * 0.55, y, 'center');
     }
   }
   ctx.restore();
+  // Zenith (a ring with eight spokes) and nadir (a ring with a cross) marks.
+  const poleMark = (y: number, zenith: boolean): void => {
+    if (Math.abs(y) > r * 1.2) return;
+    const pr = r * 0.075;
+    ctx.save();
+    ctx.translate(0, y);
+    ctx.lineCap = 'round';
+    for (const [col, wd] of [
+      ['rgba(0,0,0,0.6)', lw * 2.6],
+      [zenith ? '#ffffff' : '#ffe2be', lw * 1.3],
+    ] as [string, number][]) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = wd;
+      ctx.beginPath();
+      ctx.arc(0, 0, pr, 0, Math.PI * 2);
+      for (let k = 0; k < (zenith ? 8 : 4); k++) {
+        const a = (k * Math.PI * 2) / (zenith ? 8 : 4) + (zenith ? 0 : Math.PI / 4);
+        const r0 = zenith ? pr * 1.35 : 0;
+        const r1 = zenith ? pr * 2.1 : pr;
+        ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+        ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  poleMark(zenY, true);
+  poleMark(nadY, false);
   // Sky pointer: rides with the horizon against the fixed bank scale.
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
@@ -637,16 +715,6 @@ function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSn
   ctx.closePath();
   ctx.fill();
 
-  // Velocity vector (navball prograde in the vessel frame), when it is within the ladder.
-  const pg = s.navball.markers.prograde;
-  if (pg && pg.y > 0.05) {
-    const az = (Math.atan2(pg.x, pg.y) * 180) / Math.PI;
-    const el = (Math.atan2(pg.z, Math.hypot(pg.x, pg.y)) * 180) / Math.PI;
-    const vx = az * pxPerDeg;
-    const vy = -el * pxPerDeg;
-    if (Math.hypot(vx, vy) < ladderR * 0.92) drawIcon(ctx, MARKER_ICONS.prograde, cx + vx, cy + vy, r * 0.17, MARKER_COLORS.prograde);
-  }
-
   // Fixed aircraft symbol: two wings and an open centre square.
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -668,6 +736,17 @@ function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSn
     ctx.stroke();
     ctx.strokeRect(cx - r * 0.025, cy - r * 0.025, r * 0.05, r * 0.05);
   }
+
+  // Velocity vector (navball prograde in the vessel frame) within the ladder, drawn over the aircraft symbol so
+  // a velocity on the nose shows around its open centre.
+  const pg = s.navball.markers.prograde;
+  if (pg && pg.y > 0.05) {
+    const az = (Math.atan2(pg.x, pg.y) * 180) / Math.PI;
+    const el = (Math.atan2(pg.z, Math.hypot(pg.x, pg.y)) * 180) / Math.PI;
+    const vx = az * pxPerDeg;
+    const vy = -el * pxPerDeg;
+    if (Math.hypot(vx, vy) < ladderR * 0.92) drawIcon(ctx, MARKER_ICONS.prograde, cx + vx, cy + vy, r * 0.17, MARKER_COLORS.prograde);
+  }
 }
 
 function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
@@ -687,12 +766,13 @@ function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): v
   const tapeY = cy - rr * 0.95;
   const speed = fl.speedMode === 'surface' ? r.speedSurface : r.speedOrbital;
   const leftX = f.pad + w * 0.02;
-  drawTape(ctx, f, leftX, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60);
+  // A speed cannot be negative: the speed tape's scale ends at zero.
+  drawTape(ctx, f, leftX, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60, 0);
   const radar = fl.altitudeSource === 'radar';
   const alt = radar ? r.altitudeRadar : r.altitudeAsl;
   const altFmt = (v: number): string => (Math.abs(alt) >= 2e4 ? `${formatNumber(v / 1000, 0)}` : formatNumber(v, 0));
   const altTitle = `${radar ? 'RADAR ALT' : 'ALT'} ${Math.abs(alt) >= 2e4 ? 'km' : 'm'}`;
-  const vsiW = w * 0.045;
+  const vsiW = w * 0.055;
   const altX = w - f.pad - vsiW - w * 0.015 - tapeW;
   drawTape(ctx, f, altX, tapeY, tapeW, tapeH, alt, fl.altitude, altTitle, 'left', altFmt, 300);
   drawVsi(ctx, f, w - f.pad - vsiW, tapeY, vsiW, tapeH, r.verticalSpeed);
@@ -769,28 +849,18 @@ function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h
   }
   // The focus sits so that the drawn conic is centred in the area (true scale), or at the centre (exaggerated).
   const focusX = exaggeration > 1 || !closed ? cx : cx + ((mapR(ra) - mapR(rp)) / 2);
-  // Body: a lit sphere in its own colour, an atmosphere rim where it has one.
-  const g = ctx.createRadialGradient(focusX - bodyR * 0.35, cy - bodyR * 0.35, bodyR * 0.1, focusX, cy, bodyR);
-  g.addColorStop(0, bodyColor(body.render?.meanColor, 1.25));
-  g.addColorStop(1, bodyColor(body.render?.meanColor, 0.32));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(focusX, cy, bodyR, 0, Math.PI * 2);
-  ctx.fill();
-  if (body.atmosphere) {
-    ctx.strokeStyle = 'rgba(110,170,255,0.55)';
-    ctx.lineWidth = Math.max(2, bodyR * 0.03);
-    ctx.beginPath();
-    ctx.arc(focusX, cy, bodyR + ctx.lineWidth, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  setFont(ctx, 700, px(f, 0.034));
-  text(ctx, body.name.toUpperCase(), focusX, cy, 'center', 'middle', 'rgba(234,242,255,0.85)');
+  // The view looks down the orbit normal: screen right = P (periapsis), screen up = Q. On the surface (no
+  // conic) the vessel is at the top: screen up = its radial direction.
+  const up = Math.hypot(v.r.x, v.r.y, v.r.z) > 0 ? scaleVec(v.r, 1 / Math.hypot(v.r.x, v.r.y, v.r.z)) : { x: 0, y: 0, z: 1 };
+  const frame = conic ? { P: conic.P, Q: conic.Q, W: conic.W } : surfaceFrame(up);
+  const sunDir = s.bodies.find((b) => b.id === body.id)?.sunDir ?? null;
+  drawBodyDisc(ctx, focusX, cy, bodyR, body.render?.meanColor, body.atmosphere !== null, sunDir, frame);
   setFont(ctx, 600, px(f, MIN_TEXT));
+  const name = body.name.toUpperCase();
   if (landed || !conic) {
     // On the surface: the vessel on the limb at the top.
     drawIcon(ctx, MARKER_ICONS.prograde, focusX, cy - bodyR, f.h * 0.06, MARKER_COLORS.prograde);
-    text(ctx, landed ? 'LANDED · NO ORBIT' : 'NO TRAJECTORY', cx, y + h * 0.96, 'center', 'middle', LABEL);
+    text(ctx, `${name} · ${landed ? 'LANDED · NO ORBIT' : 'NO TRAJECTORY'}`, cx, y + h * 0.97, 'center', 'middle', LABEL, w);
     return;
   }
   // The conic as a polyline (clipped outside the body; hyperbolas within their asymptotes).
@@ -845,10 +915,100 @@ function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h
   drawIcon(ctx, MARKER_ICONS.prograde, vx, vy, f.h * 0.06, MARKER_COLORS.prograde);
   setFont(ctx, 600, px(f, MIN_TEXT));
   const caption = !closed ? 'ESCAPE TRAJECTORY' : exaggeration > 1.5 ? `ALTITUDE EXAGGERATED ×${formatNumber(exaggeration, 0)}` : 'TRUE SCALE';
-  text(ctx, caption, cx, y + h * 0.97, 'center', 'middle', LABEL);
+  text(ctx, `${name} · ${caption}`, cx, y + h * 0.97, 'center', 'middle', LABEL, w);
+}
+
+const scaleVec = (a: { x: number; y: number; z: number }, k: number): { x: number; y: number; z: number } => ({ x: a.x * k, y: a.y * k, z: a.z * k });
+const dot3 = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross3 = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): { x: number; y: number; z: number } => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x,
+});
+
+type Axes = { P: { x: number; y: number; z: number }; Q: { x: number; y: number; z: number }; W: { x: number; y: number; z: number } };
+
+/** A view frame with `up` as screen up (Q), screen right P perpendicular to it, W toward the viewer. */
+function surfaceFrame(up: { x: number; y: number; z: number }): Axes {
+  const ref = Math.abs(up.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  const p = cross3(up, ref);
+  const P = scaleVec(p, 1 / Math.hypot(p.x, p.y, p.z));
+  return { P, Q: up, W: cross3(P, up) };
+}
+
+/**
+ * The body as seen down the view's W axis: night side in a dark tone of its own colour, the sunlit part
+ * (bounded by the limb and the terminator, the projection of the great circle facing the sun) graded from the
+ * sub-solar side, limb darkening, and an atmosphere rim brighter on the day side. Without a sun direction the
+ * whole disc is lit from the upper left.
+ */
+function drawBodyDisc(ctx: Ctx, x: number, y: number, R: number, meanColor: readonly number[] | undefined, atmosphere: boolean, sunDir: { x: number; y: number; z: number } | null, axes: Axes): void {
+  // Sun in the view: in-plane direction (screen x right, screen y down) and its component toward the viewer.
+  const su = sunDir ? dot3(sunDir, axes.P) : -0.5;
+  const sv = sunDir ? dot3(sunDir, axes.Q) : 0.5;
+  const sz = sunDir ? dot3(sunDir, axes.W) : 0.7;
+  const ang = Math.hypot(su, sv) > 1e-6 ? Math.atan2(-sv, su) : 0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, R, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = bodyColor(meanColor, 0.09);
+  ctx.fillRect(x - R, y - R, 2 * R, 2 * R);
+  // Lit region in a frame whose +u axis points at the sun: with the sun at (c, 0, sz) in (u, v, toward the viewer),
+  // the front half of the terminator projects to u = -sz sqrt(R^2 - v^2) (a half-ellipse of semi-axis R |sz|);
+  // the lit part lies between it and the limb on the sun's side.
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  const n = 48;
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const t = -Math.PI / 2 + (Math.PI * i) / n;
+    if (i === 0) ctx.moveTo(Math.cos(t) * R, Math.sin(t) * R);
+    else ctx.lineTo(Math.cos(t) * R, Math.sin(t) * R);
+  }
+  for (let i = n; i >= 0; i--) {
+    const vv = -R + (2 * R * i) / n;
+    ctx.lineTo(-sz * Math.sqrt(Math.max(0, R * R - vv * vv)), vv);
+  }
+  ctx.closePath();
+  const day = ctx.createLinearGradient(R, 0, Math.min(R * 0.8, -sz * R), 0);
+  day.addColorStop(0, bodyColor(meanColor, 1.35));
+  day.addColorStop(0.6, bodyColor(meanColor, 1.0));
+  day.addColorStop(1, bodyColor(meanColor, 0.42));
+  ctx.fillStyle = day;
+  ctx.fill();
+  ctx.rotate(-ang);
+  // Limb darkening over day and night.
+  const limb = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
+  limb.addColorStop(0, 'rgba(0,0,0,0)');
+  limb.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = limb;
+  ctx.fillRect(-R, -R, 2 * R, 2 * R);
+  ctx.restore();
+  if (atmosphere) {
+    // A thin blue rim, brighter where it is lit.
+    const rim = ctx.createLinearGradient(x + Math.cos(ang) * R, y + Math.sin(ang) * R, x - Math.cos(ang) * R, y - Math.sin(ang) * R);
+    rim.addColorStop(0, 'rgba(120,180,255,0.8)');
+    rim.addColorStop(1, 'rgba(120,180,255,0.18)');
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = Math.max(2, R * 0.03);
+    ctx.beginPath();
+    ctx.arc(x, y, R + ctx.lineWidth * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
 function paintOrbit(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
+  if (isLanded(activeVesselOf(s))) {
+    // Landed: the status in two boxes on top and the body graphic over the rest of the page.
+    const bh = f.h * 0.095;
+    const gap = f.w * 0.012;
+    const bw = (f.w - 2 * f.pad - gap) / 2;
+    model.rows.slice(0, 2).forEach((row, i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, bh, row.label, row.value, row.tone ?? 'normal'));
+    const top = f.top + bh + f.h * 0.02;
+    drawOrbitDiagram(ctx, f, f.pad, top, f.w - 2 * f.pad, f.bottom - top, s, defs);
+    return;
+  }
   const leftW = f.w * 0.4;
   const n = model.rows.length + (model.section ? model.section.rows.length + 1.3 : 0);
   const rowH = Math.min(f.h * 0.072, (f.bottom - f.top) / n);
@@ -871,8 +1031,9 @@ function paintSystems(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
   const x = f.pad * 2.5 + leftW;
   const w = f.w - x - f.pad;
   const groups = describeResources(s, defs);
-  const lines = groups.reduce((acc, g) => acc + 1.2 + g.bars.length * 1.25, 0);
-  const lh = Math.min(f.h * 0.09, (f.bottom - f.top) / Math.max(1, lines));
+  // The resource blocks take the column's whole height (bars grow when there are few of them).
+  const lines = 0.9 + groups.reduce((acc, g) => acc + 1.2 + g.bars.length * 1.25, 0);
+  const lh = Math.min(f.h * 0.14, (f.bottom - f.top) / Math.max(1, lines));
   let y = f.top;
   sectionHeading(ctx, f, 'Resources', x, y + lh * 0.4, w);
   y += lh * 0.9;
@@ -896,43 +1057,57 @@ function paintSystems(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
 
 function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
   const st = describeStages(s);
-  const tiles = st.tiles.filter((t) => !t.fired);
-  // Summary strip: next stage and its numbers, total delta-v, staging state.
+  const active = st.active >= 0 ? st.tiles[st.active]! : null;
+  // The stack: the stage burning now first (green), then the next (cyan) and the later stages.
+  const tiles = [...(active ? [active] : []), ...st.tiles.filter((t) => !t.fired)];
+  // Summary strip: the active stage's numbers (the next engine stage's before the first ignition), total
+  // delta-v, staging state.
   const stripH = f.h * 0.095;
   const gap = f.w * 0.012;
   const get = (label: string): MfdRow => model.rows.find((r) => r.label === label)!;
-  const boxes: MfdRow[] = [get('Stage Δv'), get('Stage TWR'), get('Stage burn'), get('Δv remaining (vac)'), get('Staging')];
+  const who = active ? 'Active' : 'Next';
+  const boxes: [string, MfdRow][] = [
+    [`${who} Δv`, get('Stage Δv')],
+    [`${who} TWR`, get('Stage TWR')],
+    [`${who} burn`, get('Stage burn')],
+    ['Δv remaining', get('Δv remaining (vac)')],
+    ['Staging', get('Staging')],
+  ];
   const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
-  boxes.forEach((b, i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, stripH, b.label.replace(' (vac)', ''), b.value, b.tone ?? 'normal'));
-  // The stack, next first, filling the rest of the page.
+  boxes.forEach(([label, b], i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, stripH, label, b.value, i < 3 && active ? 'good' : (b.tone ?? 'normal')));
+  // The stack fills the rest of the page; tiles grow (to a limit) when few stages remain.
   const y0 = f.top + stripH + f.h * 0.03;
   const avail = f.bottom - y0;
-  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.15);
+  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.2);
   const x = f.pad;
   const w = f.w - 2 * f.pad;
   tiles.forEach((t, i) => {
     const yy = y0 + i * th;
+    const isActive = t === active;
     const locked = t.next && st.lockout;
-    ctx.fillStyle = locked ? 'rgba(255,187,77,0.14)' : t.next ? 'rgba(85,212,255,0.13)' : i % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.015)';
+    ctx.fillStyle = isActive ? 'rgba(95,227,154,0.12)' : locked ? 'rgba(255,187,77,0.14)' : t.next ? 'rgba(85,212,255,0.13)' : i % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.015)';
     ctx.fillRect(x, yy + th * 0.05, w, th * 0.9);
-    if (t.next) {
-      ctx.fillStyle = locked ? COLORS.caution : COLORS.accent;
+    if (t.next || isActive) {
+      ctx.fillStyle = isActive ? COLORS.good : locked ? COLORS.caution : COLORS.accent;
       ctx.fillRect(x, yy + th * 0.05, Math.max(3, th * 0.06), th * 0.9);
     }
-    const tone = locked ? COLORS.caution : t.next ? COLORS.accent : '#d2deec';
-    setFont(ctx, 700, Math.max(th * 0.36, f.min));
-    text(ctx, t.number, x + th * 0.55, yy + th / 2, 'center', 'middle', tone);
-    drawIcon(ctx, STAGE_ICONS[stageIconFor(t.icon)], x + th * 1.35, yy + th / 2, th * 0.6, tone, null);
-    setFont(ctx, 600, Math.max(th * 0.34, f.min));
-    const nameX = x + th * 2;
+    const tone = isActive ? COLORS.good : locked ? COLORS.caution : t.next ? COLORS.accent : '#d2deec';
+    const s1 = Math.min(th * 0.36, f.h * 0.05);
+    setFont(ctx, 700, Math.max(s1, f.min));
+    text(ctx, t.number, x + th * 0.5, yy + th / 2, 'center', 'middle', tone);
+    drawIcon(ctx, STAGE_ICONS[stageIconFor(t.icon)], x + th * 1.25, yy + th / 2, Math.min(th * 0.6, f.h * 0.08), tone, null);
+    setFont(ctx, 600, Math.max(Math.min(th * 0.34, f.h * 0.045), f.min));
+    const nameX = x + th * 1.9;
     const twoLines = th > f.min * 2.3;
     text(ctx, t.label, nameX, yy + (twoLines ? th * 0.36 : th / 2), 'left', 'middle', COLORS.normal, w * 0.45);
-    const meta = t.hasEngines ? `Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}` : 'no engines';
-    setFont(ctx, 500, Math.max(th * 0.26, f.min));
-    if (twoLines) text(ctx, locked ? 'LOCKED · after last stage' : meta, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : LABEL, w * 0.5);
-    else text(ctx, meta, x + w * 0.5, yy + th / 2, 'left', 'middle', LABEL, w * 0.28);
+    // Engine stages: their numbers; engine-less stages: what firing them does.
+    const meta = t.hasEngines ? `Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}` : t.actions;
+    const tag = isActive ? 'ACTIVE · ' : '';
+    setFont(ctx, 500, Math.max(Math.min(th * 0.26, f.h * 0.036), f.min));
+    if (twoLines) text(ctx, locked ? 'LOCKED · after last stage' : `${tag}${meta}`, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : isActive ? COLORS.good : LABEL, w * 0.55);
+    else text(ctx, `${tag}${meta}`, x + w * 0.5, yy + th / 2, 'left', 'middle', isActive ? COLORS.good : LABEL, w * 0.28);
     if (t.propellant !== null) {
-      bar(ctx, x + w * 0.8, yy + th * 0.42, w * 0.18, th * 0.18, t.propellant, t.propellant < 0.1 ? COLORS.caution : COLORS.good);
+      bar(ctx, x + w * 0.8, yy + th * 0.42, w * 0.18, Math.min(th * 0.18, f.h * 0.025), t.propellant, t.propellant < 0.1 ? COLORS.caution : COLORS.good);
     }
   });
   if (tiles.length === 0) {
@@ -943,7 +1118,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
 
 // ------------------------------------------------------------------------------------------------ entry
 
-interface GaugeSpec {
+export interface GaugeSpec {
   label: string;
   value: string;
   frac: number;
@@ -953,23 +1128,65 @@ interface GaugeSpec {
   redline: number | null;
   ticks: [number, string][];
   tone: Tone;
+  /**
+   * A remaining quantity, where low is bad (ablator): the whole fill takes the colour of the zone its reading is
+   * in, so a nominal reading shows no red; the low zone stays a faint tint on the track under the redline.
+   * Otherwise (g, dose, temperature: high is bad) the fill shows each zone it passes in that zone's colour.
+   */
+  lowIsBad?: boolean;
+}
+
+/** The ablator gauge of the entry page: green above the 30 % redline, red only below it. */
+export function ablatorGauge(fraction: number): GaugeSpec {
+  return {
+    label: 'ABLATOR',
+    value: formatPercent(fraction),
+    frac: fraction,
+    zones: [
+      [ABLATOR_REDLINE, COLORS.warning],
+      [1, COLORS.good],
+    ],
+    redline: ABLATOR_REDLINE,
+    ticks: [
+      [0, '0'],
+      [0.5, '50'],
+      [1, '100'],
+    ],
+    tone: ablatorTone(fraction) === 'warning' ? 'warning' : 'normal',
+    lowIsBad: true,
+  };
 }
 
 /** A vertical bar gauge with its scale, coloured zones, redline, readout above and label below. */
-function drawBarGauge(ctx: Ctx, f: Frame, x: number, y: number, bw: number, bh: number, g: GaugeSpec): void {
-  // Track with faint zones, then the fill in the zone colour of each part.
+export function drawBarGauge(ctx: Ctx, f: Frame, x: number, y: number, bw: number, bh: number, g: GaugeSpec): void {
+  const frac = Math.max(0, Math.min(1, g.frac));
+  // Track with faint zones.
   let prev = 0;
   for (const [to, col] of g.zones) {
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = col;
     ctx.fillRect(x, y + bh * (1 - to), bw, bh * (to - prev));
     ctx.globalAlpha = 1;
-    const fillTo = Math.min(to, Math.max(0, Math.min(1, g.frac)));
-    if (fillTo > prev) {
-      ctx.fillStyle = col;
-      ctx.fillRect(x, y + bh * (1 - fillTo), bw, bh * (fillTo - prev));
-    }
     prev = to;
+  }
+  if (g.lowIsBad) {
+    // One colour for the whole fill: the zone the reading is in.
+    const zone = g.zones.find(([to]) => frac < to) ?? g.zones[g.zones.length - 1]!;
+    if (frac > 0) {
+      ctx.fillStyle = zone[1];
+      ctx.fillRect(x, y + bh * (1 - frac), bw, bh * frac);
+    }
+  } else {
+    // The fill in the zone colour of each part.
+    prev = 0;
+    for (const [to, col] of g.zones) {
+      const fillTo = Math.min(to, frac);
+      if (fillTo > prev) {
+        ctx.fillStyle = col;
+        ctx.fillRect(x, y + bh * (1 - fillTo), bw, bh * (fillTo - prev));
+      }
+      prev = to;
+    }
   }
   ctx.strokeStyle = RULE;
   ctx.lineWidth = 1;
@@ -1027,17 +1244,7 @@ function paintEntry(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): vo
       tone: r.gDose / doseLimit > 0.7 ? 'warning' : r.gDose / doseLimit > 0.4 ? 'caution' : 'normal',
     },
   ];
-  if (r.ablatorFraction !== null) {
-    gauges.push({
-      label: 'ABLATOR',
-      value: formatPercent(r.ablatorFraction),
-      frac: r.ablatorFraction,
-      zones: [[0.3, COLORS.warning], [1, COLORS.accent]],
-      redline: 0.3,
-      ticks: [[0, '0'], [0.5, '50'], [1, '100']],
-      tone: r.ablatorFraction < 0.3 ? 'warning' : 'normal',
-    });
-  }
+  if (r.ablatorFraction !== null) gauges.push(ablatorGauge(r.ablatorFraction));
   gauges.push({
     label: 'SKIN TEMP',
     value: formatPercent(r.maxTempFraction),

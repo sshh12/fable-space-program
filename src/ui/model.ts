@@ -305,6 +305,12 @@ export interface StageTileView {
   actionKinds: string[];
   fired: boolean;
   next: boolean;
+  /**
+   * The stage whose engines are running (or armed) now: the sim fills a fired stage's numbers only for the one
+   * that owns the active engines (StageInfo of a fired stage with propellantFraction set), so its delta-v, TWR,
+   * burn time and propellant are live. At most one tile is active.
+   */
+  active: boolean;
   deltaV: string;
   deltaVVac: string;
   twr: string;
@@ -312,10 +318,48 @@ export interface StageTileView {
   /** 0..1 or null when the stage has no engines. */
   propellant: number | null;
   hasEngines: boolean;
+  /** What firing the stage does, from its action kinds ("separate · deploy chute"); empty when unknown. */
+  actions: string;
 }
 
-export function describeStages(s: SimSnapshot): { tiles: StageTileView[]; lockout: boolean; nextStage: number; deltaVTotal: string } {
+/** Words for the action kinds of a stage (the second line of an engine-less next-stage tile). */
+const ACTION_WORDS: Record<string, string> = {
+  igniteengines: 'ignite',
+  shutdownengines: 'shut down',
+  decouple: 'separate',
+  fireseparationmotors: 'sep. motors',
+  jettisonfairing: 'jettison fairing',
+  jettisonles: 'jettison tower',
+  deployparachute: 'deploy chute',
+  cutparachute: 'cut chute',
+  deploylegs: 'deploy gear',
+  releaseclamps: 'release clamps',
+  enablercs: 'RCS on',
+};
+
+/** "separate · deploy chute": the known action kinds of a stage in order, each once. */
+export function stageActionText(actionKinds: readonly string[]): string {
+  const words = actionKinds.map((k) => ACTION_WORDS[k.toLowerCase().replace(/[^a-z]/g, '')]).filter((w): w is string => w !== undefined);
+  return [...new Set(words)].join(' · ');
+}
+
+export interface StagesView {
+  tiles: StageTileView[];
+  /** Index of the active (burning) stage, or -1. */
+  active: number;
+  lockout: boolean;
+  nextStage: number;
+  deltaVTotal: string;
+}
+
+export function describeStages(s: SimSnapshot): StagesView {
   const st = s.staging;
+  // The active stage: the latest fired stage the sim still reports numbers for (the owner of the running engines).
+  let active = -1;
+  for (let i = Math.min(st.nextStage, st.stages.length) - 1; i >= 0 && active < 0; i--) {
+    const info = st.stages[i]!;
+    if (info.fired && info.propellantFraction !== null) active = i;
+  }
   const tiles = st.stages.map((info, i): StageTileView => {
     const hasEngines = info.propellantFraction !== null;
     return {
@@ -326,15 +370,17 @@ export function describeStages(s: SimSnapshot): { tiles: StageTileView[]; lockou
       actionKinds: info.actionKinds,
       fired: info.fired,
       next: i === st.nextStage,
+      active: i === active,
       deltaV: hasEngines ? formatDeltaV(info.deltaVNow) : '',
       deltaVVac: hasEngines ? formatDeltaV(info.deltaVVac) : '',
       twr: hasEngines ? formatTwr(info.twr) : '',
       burnTime: hasEngines ? formatDuration(info.burnTime) : '',
       propellant: info.propellantFraction,
       hasEngines,
+      actions: stageActionText(info.actionKinds),
     };
   });
-  return { tiles, lockout: st.lockout, nextStage: st.nextStage, deltaVTotal: formatDeltaV(s.readouts.deltaVTotal) };
+  return { tiles, active, lockout: st.lockout, nextStage: st.nextStage, deltaVTotal: formatDeltaV(s.readouts.deltaVTotal) };
 }
 
 // ------------------------------------------------------------------------------------------ resources
@@ -392,6 +438,60 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
       amount: e.capacity > 0 ? formatPercent(e.amount / e.capacity) : '—',
     })),
   }));
+}
+
+export interface ResourceSummary {
+  /** Groups shown resource by resource: every group in use (any resource below full), else the first group. */
+  detailed: ResourceGroupView[];
+  /** Labels of the remaining groups, all full (folded into one line). */
+  full: string[];
+}
+
+/**
+ * What the HUD's resource panel shows: the groups being drained in detail and the untouched ones folded into
+ * one "full" line, so a ten-tank stack does not fill the screen with bars at 100 %.
+ */
+export function summarizeResources(groups: readonly ResourceGroupView[]): ResourceSummary {
+  const inUse = groups.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
+  const detailed = inUse.length > 0 ? inUse : groups.slice(0, 1);
+  return { detailed, full: groups.filter((g) => !detailed.includes(g)).map((g) => g.label) };
+}
+
+/** Heat-shield redline: below this ablator fraction the shield is in its last margin (HUD and MFD). */
+export const ABLATOR_REDLINE = 0.3;
+
+/** Tone of an ablator reading: low is bad, so the whole reading turns red only below the redline. */
+export const ablatorTone = (f: number): 'good' | 'warning' => (f < ABLATOR_REDLINE ? 'warning' : 'good');
+
+// ------------------------------------------------------------------------------------- flight phase
+
+/** The vessel is inside its body's atmosphere (below the simulated top). */
+export function inAtmosphere(s: SimSnapshot, defs: DefLibrary): boolean {
+  const v = activeVesselOf(s);
+  const top = v ? (defs.bodies[v.bodyId]?.atmosphere?.simTop ?? 0) : 0;
+  return top > 0 && s.readouts.altitudeAsl < top;
+}
+
+/**
+ * Coming down: in flight and descending either through an atmosphere or on a path that meets the surface
+ * (periapsis below it), which covers an entry, a descent under chutes and a powered landing.
+ */
+export function isDescending(s: SimSnapshot, defs: DefLibrary): boolean {
+  const v = activeVesselOf(s);
+  if (!v || isLanded(v)) return false;
+  const r = s.readouts;
+  return r.verticalSpeed < 0 && (inAtmosphere(s, defs) || r.periapsisAltitude < 0);
+}
+
+/**
+ * The landing-target panel shows its full rows (down-range, cross-range, the predicted miss, the zone status)
+ * only while they matter: with a prediction, heating in an entry, or descending. Otherwise it is one line
+ * (name, distance and bearing), so a recovery zone 6 000 km away does not take five rows of the screen.
+ */
+export function landingTargetExpanded(s: SimSnapshot, defs: DefLibrary): boolean {
+  const lt = s.readouts.landingTarget;
+  if (!lt) return false;
+  return lt.predicted !== null || s.readouts.heatFlux > 1000 || isDescending(s, defs);
 }
 
 // ------------------------------------------------------------------------------------------- time warp

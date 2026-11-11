@@ -17,8 +17,18 @@ import type { Vec3 } from '@/core/math/vec3';
 /** Ball radius as a fraction of half the render target (margin for edge anti-aliasing and limb markers). */
 export const BALL_RADIUS_FRACTION = 0.93;
 
-/** Ball radius fraction of the HUD instrument canvas: the outer ring of the canvas carries the bezel. */
+/**
+ * Radius of the HUD instrument's window (the bezel's inner edge) as a fraction of half the ball canvas: the
+ * outer ring of the canvas carries the bezel.
+ */
 export const HUD_BALL_RADIUS_FRACTION = 0.84;
+
+/**
+ * Part of the ball's radius that shows through the HUD bezel's window. Like the case mask of a real attitude
+ * indicator, the bezel's inner lip covers the outer rim of the ball, where markings are foreshortened to
+ * slivers: the window shows directions up to acos(sqrt(1 - 0.94^2)) = 70 deg off the nose.
+ */
+export const HUD_BALL_LIP = 0.94;
 
 /** Half-size of a marker icon in normalised ball units (fraction of the ball radius). */
 export const MARKER_HALF_SIZE = 0.19;

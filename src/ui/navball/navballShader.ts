@@ -1,15 +1,18 @@
 /**
  * WGSL for the navball: an analytically ray-cast textured sphere (exact silhouette and per-pixel normal)
  * rotated by qVesselToHorizon, then the markers and, last, the fixed vessel reticle as premultiplied icon quads
- * clipped to the ball's silhouette. Output is sRGB-encoded, premultiplied by coverage (alpha = coverage).
+ * clipped to the ball's visible disc. Output is sRGB-encoded, premultiplied by coverage (alpha = coverage).
  *
  * Two looks (Ball.params.z):
  *   0  the shared 512 texture ('ui.navball'): soft shading only, no highlight. The cockpit lights this image
  *      itself as the albedo of its instrument ball, so nothing view-dependent is baked in.
  *   1  the HUD instrument: a strongly rounded sphere (wrap-diffuse key light from the upper left with a dark
- *      terminator side, limb darkening to about 0.4, a contact shadow where the ball meets the bezel), a small
- *      sharp-edged window reflection on its varnish and a faint Fresnel rim. The reflection is added on top of
- *      the shaded albedo, never multiplied into it, so the markings keep their contrast.
+ *      terminator side, limb darkening, a contact shadow under the bezel's lip), a faint graded window
+ *      reflection on its varnish, a faint Fresnel rim and the bank sky pointer. Label ink (the white markings)
+ *      is darkened less than the painted background, so numerals on the shaded side keep their contrast, and it
+ *      fades into the background toward the lip, where the sphere foreshortens it.
+ * Ball.params.w is the lip: the part of the ball's radius that is drawn (1 for the shared texture; the HUD's
+ * bezel covers the outer rim).
  */
 export const NAVBALL_WGSL = /* wgsl */ `
 struct Ball {
@@ -17,7 +20,7 @@ struct Ball {
   r0: vec4f,
   r1: vec4f,
   r2: vec4f,
-  // x: ball radius fraction, y: target size in px, z: look (0 shared texture, 1 HUD instrument), w: unused
+  // x: ball radius fraction, y: target size in px, z: look (0 shared texture, 1 HUD instrument), w: lip
   params: vec4f,
 };
 
@@ -66,29 +69,38 @@ fn vsBall(@builtin(vertex_index) i: u32) -> VsOut {
 /**
  * The varnish reflection of a window light up and to the left of the instrument. On an orthographic sphere the
  * normal at screen radius r reflects the view ray to the polar angle 2 asin(r), at the screen azimuth of the
- * pixel, so a window spanning a band of polar angles and azimuths reflects as an annular sector parallel to the
- * rim: a crisp curved strip (sharp radial edges at pixel scale, soft ends), brighter toward the rim.
+ * pixel, so a window spanning a band of polar angles and azimuths reflects as a curved strip parallel to the rim.
+ * It lies in the outer band just inside the lip (clear of the numerals nearer the centre), is graded across and
+ * along (soft edges several pixels wide, brightest toward the rim and its middle) and stays faint.
  */
-fn windowReflection(p: vec2f, r: f32) -> f32 {
+fn windowReflection(p: vec2f, r: f32, lip: f32) -> f32 {
   let ang = atan2(p.y, p.x);
-  let centre = 2.3;
+  let centre = 1.98;
   let da = abs(atan2(sin(ang - centre), cos(ang - centre)));
-  let r0 = 0.7;
-  let r1 = 0.87;
-  let fw = max(fwidth(r), 1e-4) * 0.9;
-  let radial = smoothstep(r0 - fw, r0 + fw, r) * (1.0 - smoothstep(r1 - fw, r1 + fw, r));
-  let along = 1.0 - smoothstep(0.26, 0.4, da);
-  // A frame bar across the strip splits it into two panes.
-  let bar = smoothstep(0.012, 0.012 + fw / max(r, 0.2), abs(ang - centre - 0.04));
-  return radial * along * bar * mix(0.35, 1.0, smoothstep(r0, r1, r));
+  let r0 = lip - 0.15;
+  let r1 = lip - 0.02;
+  let radial = smoothstep(r0, r0 + 0.06, r) * (1.0 - smoothstep(r1 - 0.03, r1, r));
+  let along = 1.0 - smoothstep(0.12, 0.34, da);
+  return radial * along * mix(0.45, 1.0, smoothstep(r0, r1, r));
+}
+
+/** Signed distance to an isosceles triangle with its tip at the origin and its base at y = q.y (iq). */
+fn sdTriangleIsosceles(p0: vec2f, q: vec2f) -> f32 {
+  let p = vec2f(abs(p0.x), p0.y);
+  let a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
+  let b = p - q * vec2f(clamp(p.x / q.x, 0.0, 1.0), 1.0);
+  let s = -sign(q.y);
+  let d = min(vec2f(dot(a, a), s * (p.x * q.y - p.y * q.x)), vec2f(dot(b, b), s * (p.y - q.y)));
+  return -sqrt(d.x) * sign(d.y);
 }
 
 @fragment
 fn fsBall(in: VsOut) -> @location(0) vec4f {
   let p = in.p;
   let r = length(p);
+  let lip = ball.params.w;
   let radiusPx = ball.params.x * ball.params.y * 0.5;
-  let coverage = clamp((1.0 - r) * radiusPx + 0.5, 0.0, 1.0);
+  let coverage = clamp((lip - r) * radiusPx + 0.5, 0.0, 1.0);
   let z = sqrt(max(0.0, 1.0 - min(r * r, 1.0)));
 
   // Direction shown at this pixel: VES (sx, z, sy) rotated into the horizon frame.
@@ -111,7 +123,6 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
   let n = vec3f(p.x, p.y, z) / max(1.0, r);
   let L = normalize(vec3f(-0.42, 0.58, 0.7));
   let ndl = dot(n, L);
-  let reflection = windowReflection(p, r);
   var lit: vec3f;
   if (ball.params.z < 0.5) {
     // Shared texture: soft shading only (the cockpit relights it).
@@ -119,13 +130,41 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
     let limb = 1.0 - 0.36 * pow(1.0 - z, 2.2);
     lit = albedo * diffuse * limb;
   } else {
-    // HUD instrument: wrap diffuse with a dark terminator side, deep limb darkening, contact shadow at the bezel.
+    // The painted background without its markings: a coarse mip of the same texture (the ink is sparse).
+    let bg = textureSampleGrad(ballTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x) * 12.0, vec2f(gu.y, gv.y) * 12.0).rgb;
+    let ink = smoothstep(0.18, 0.55, min(albedo.r, min(albedo.g, albedo.b)));
+    // Markings fade into the paint where the sphere foreshortens them, just inside the lip.
+    let inkVisible = mix(0.3, 1.0, smoothstep(0.3, 0.52, z));
+    let paint = mix(bg, albedo, inkVisible);
+    // Wrap diffuse with a dark terminator side, limb darkening, contact shadow under the lip.
     let wrap = clamp((ndl + 0.3) / 1.3, 0.0, 1.0);
     let diffuse = 0.3 + 0.86 * wrap * wrap * (3.0 - 2.0 * wrap);
-    let limb = mix(0.4, 1.0, smoothstep(0.0, 0.6, z));
-    let contact = 1.0 - 0.6 * smoothstep(0.9, 0.995, r);
+    let limb = mix(0.42, 1.0, smoothstep(0.2, 0.75, z));
+    let contact = 1.0 - 0.55 * smoothstep(lip - 0.1, lip - 0.004, r);
+    let shade = diffuse * limb * contact;
+    // Ink keeps more of its brightness than the background (numerals on the dark side stay readable).
+    let shadeInk = 0.5 + 0.5 * shade;
     let fresnel = pow(1.0 - z, 5.0);
-    lit = albedo * diffuse * limb * contact + vec3f(0.62, 0.68, 0.74) * (reflection * 0.5) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
+    let reflection = windowReflection(p, r, lip);
+    lit = paint * mix(shade, shadeInk, ink * inkVisible) + vec3f(0.62, 0.68, 0.74) * (reflection * 0.17) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
+
+    // Bank sky pointer: a white triangle on the rim pointing out at the bezel's roll scale, toward the zenith
+    // as projected on the ball (rides with the horizon; fades out with the nose near the vertical, where bank
+    // is undefined).
+    let zen = ball.r2.xyz;
+    let zl = length(zen.xz);
+    let show = smoothstep(0.04, 0.14, zl);
+    if (show > 0.0) {
+      let dir = zen.xz / max(zl, 1e-6);
+      let tip = dir * (lip - 0.006);
+      let rel = p - tip;
+      let q = vec2f(dot(rel, vec2f(-dir.y, dir.x)), dot(rel, -dir));
+      let d = sdTriangleIsosceles(q, vec2f(0.062, 0.12));
+      let fill = clamp(0.5 - d * radiusPx, 0.0, 1.0) * show;
+      let edge = clamp(0.5 - (d - 1.4 / radiusPx) * radiusPx, 0.0, 1.0) * show;
+      lit = mix(lit, vec3f(0.006, 0.008, 0.012), edge * 0.85);
+      lit = mix(lit, vec3f(0.92, 0.95, 0.98), fill);
+    }
   }
   return vec4f(toSrgb(lit) * coverage, coverage);
 }
@@ -160,9 +199,9 @@ fn vsMarker(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) ->
 @fragment
 fn fsMarker(in: VsMarker) -> @location(0) vec4f {
   let c = textureSample(atlasTex, ballSamp, in.uv);
-  // Markers lie on the sphere: nothing is drawn outside its silhouette (same edge as the ball's coverage).
+  // Markers lie on the sphere: nothing is drawn outside its visible disc (same edge as the ball's coverage).
   let radiusPx = ball.params.x * ball.params.y * 0.5;
-  let inside = clamp((1.0 - length(in.bp)) * radiusPx + 0.5, 0.0, 1.0);
+  let inside = clamp((ball.params.w - length(in.bp)) * radiusPx + 0.5, 0.0, 1.0);
   return c * (in.alpha * inside);
 }
 `;

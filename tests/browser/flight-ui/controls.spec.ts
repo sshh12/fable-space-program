@@ -347,25 +347,41 @@ test.describe('flight-ui controls', () => {
   });
 
   test('the landing-target panel shows the lunar scenes numbers and matches the MFD landing page', async ({ page, pageLog }) => {
-    for (const query of ['scene=lunarOrbit', 'scene=lunarSurface', 'scene=lunarOrbit&predicted=impact', 'scene=reentry&predicted=entry']) {
+    // Expanded (every row) with a prediction; one line (name, distance, bearing) in orbit without one and landed.
+    for (const [query, expanded] of [
+      ['scene=lunarOrbit', false],
+      ['scene=lunarSurface', false],
+      ['scene=lunarOrbit&predicted=impact', true],
+      ['scene=reentry&predicted=entry', true],
+    ] as const) {
       await open(page, query);
       await page.evaluate(() => window.__test!.setPaused(true));
       // The text readouts refresh at 10 Hz: wait for a refresh of the paused snapshot.
       const n0 = await page.evaluate(() => window.__test!.waitFrames(1).then(() => window.__flightUi!.hudTiming().textUpdates));
       await page.waitForFunction((n) => window.__flightUi!.hudTiming().textUpdates > n, n0);
-      const dom = await page.locator('.hud .lt .rows .row').evaluateAll((rows) => rows.filter((r) => !(r as HTMLElement).hidden).map((r) => [r.querySelector('.lbl')!.textContent!, r.querySelector('.val')!.textContent!]));
       const mfd = await page.evaluate(() => window.__flightUi!.mfdSection('landing')!);
-      expect(dom).toEqual(mfd.rows.map((r) => [r.label, r.value]));
+      const mfdRows = mfd.rows.map((r) => [r.label, r.value]);
+      const hud = (await page.evaluate(() => window.__flightUi!.hudLandingRows()))!;
+      if (expanded) {
+        await expect(page.locator('.hud .lt .rows')).toBeVisible();
+        const dom = await page.locator('.hud .lt .rows .row').evaluateAll((rows) => rows.filter((r) => !(r as HTMLElement).hidden).map((r) => [r.querySelector('.lbl')!.textContent!, r.querySelector('.val')!.textContent!]));
+        expect(dom).toEqual(mfdRows);
+        expect(hud).toEqual(dom);
+      } else {
+        await expect(page.locator('.hud .lt .rows')).toBeHidden();
+        expect(hud).toEqual(mfdRows.slice(0, 2));
+        await expect(page.locator('.hud .lt .ltline')).toHaveText(`${hud[0]![1]} · ${hud[1]![1]}`);
+      }
       const name = await page.locator('.hud .lt .pname').textContent();
       expect(mfd.heading).toContain(name!);
       const s = await state(page);
       const lt = s.readouts.landingTarget!;
       // The numbers are the readout's: distance in km to the shown precision, bearing to the degree.
-      const km = Number(dom[0]![1]!.replace(/[ \s]/g, '').replace('km', ''));
-      if (dom[0]![1]!.endsWith('km')) expect(Math.abs(km * 1000 - lt.distance)).toBeLessThan(100);
-      expect(dom[1]![1]).toBe(`${String(Math.round(((lt.bearingDeg % 360) + 360) % 360) % 360).padStart(3, '0')}°`);
-      if (query.includes('impact')) expect(dom[4]![0]).toBe('Impact miss');
-      if (query.includes('entry')) expect(dom[4]![0]).toBe('Entry point miss');
+      const km = Number(hud[0]![1]!.replace(/[ \s]/g, '').replace('km', ''));
+      if (hud[0]![1]!.endsWith('km')) expect(Math.abs(km * 1000 - lt.distance)).toBeLessThan(100);
+      expect(hud[1]![1]).toBe(`${String(Math.round(((lt.bearingDeg % 360) + 360) % 360) % 360).padStart(3, '0')}°`);
+      if (query.includes('impact')) expect(hud[4]![0]).toBe('Impact miss');
+      if (query.includes('entry')) expect(hud[4]![0]).toBe('Entry point miss');
       if (query === 'scene=lunarOrbit') expect(await page.locator('.hud .lt .pname').textContent()).toBe('Tranquility Base');
       await expectNoErrors(page, pageLog);
     }
@@ -395,14 +411,15 @@ test.describe('flight-ui controls', () => {
   });
 
   test('HUD layout: one tile per remaining stage, no empty launch panel, the terrain notice clear of the panels', async ({ page, pageLog }) => {
-    // Pad: the 10-stage lab vehicle shows all 10 stages (the next two in full, the rest compact), the next
-    // stage at the bottom, and nothing overlaps the resources panel below the stack.
+    // Pad: the 10-stage lab vehicle shows all 10 stages (the next one as a full tile, the later ones as one-line
+    // rows of one list), the next stage at the bottom, and nothing overlaps the resources panel below the stack.
     await open(page, 'scene=pad');
     const s = await state(page);
     const tiles = page.locator('.hud .stages .tile');
     await expect(tiles).toHaveCount(s.staging.stages.filter((x) => !x.fired).length);
     expect(await tiles.count()).toBe(10);
-    await expect(page.locator('.hud .stages .tile.compact')).toHaveCount(8);
+    await expect(page.locator('.hud .stages .tile.compact')).toHaveCount(9);
+    await expect(page.locator('.hud .stages .tile.active')).toHaveCount(0);
     const boxes = await tiles.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect));
     const res = (await page.locator('.hud .res').boundingBox())!;
     const next = (await page.locator('.hud .tile.next').boundingBox())!;
@@ -412,6 +429,8 @@ test.describe('flight-ui controls', () => {
       expect(b.bottom).toBeLessThanOrEqual(next.y + next.height + 0.5);
     }
     await expect(page.locator('.hud .stagewrap .more')).toHaveText(/^Δv .* total$/);
+    // Engine-less stages say nothing about engines: one-line rows, and the next stage's line names its actions.
+    await expect(page.locator('.hud .stages')).not.toContainText('no engines');
     // Every stage name of the mission vehicle reads in full, and the number column and icon stay inside their tile.
     const names = await page.locator('.hud .stages .tile .name, .hud .stages .tile .meta').evaluateAll((els) => els.map((e) => ({ text: e.textContent, over: e.scrollWidth - e.clientWidth })));
     for (const n of names) expect(n.over, `stage text "${n.text}" is cut`).toBeLessThanOrEqual(0);

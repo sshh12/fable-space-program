@@ -37,6 +37,10 @@ import {
 } from '@/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
 import { labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
+import { UI_COLORS } from '@/core/ui/theme';
+import { balanceColumns } from '@/ui/hud/hud';
+import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
+import { landingTargetExpanded, stageActionText, summarizeResources } from '@/ui/model';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -359,10 +363,11 @@ describe('display models', () => {
     expect([at(1), at(7), at(11)]).toEqual(['normal', 'caution', 'warning']);
   });
 
-  it('blanks apoapsis and periapsis on the orbit page while landed', () => {
+  it('collapses the orbit page to one status line while landed (no orbit to tabulate)', () => {
     const rows = buildMfdPage('orbit', snap('lunarSurface'), defs).rows;
-    expect(rows.find((r) => r.label === 'Apoapsis')!.value).toBe('—');
-    expect(rows.find((r) => r.label === 'Periapsis')!.value).toBe('—');
+    expect(rows.map((r) => r.label)).toEqual(['Body', 'Situation']);
+    expect(rows[1]!.value).toBe('Landed · no orbit');
+    expect(buildMfdPage('orbit', snap('lunarOrbit'), defs).rows.find((r) => r.label === 'Apoapsis')!.value).not.toBe('—');
   });
 
   it('paints every MFD page of every scene at 1024 x 768 and 512 x 384 with no text under 3 % of the height', () => {
@@ -410,5 +415,101 @@ describe('display models', () => {
     expect(st.tiles[1]!.next).toBe(true);
     const w = describeWarp(s, WARP_LEVELS);
     expect(w.limit).toMatch(/^Limited to ×4: /);
+  });
+});
+
+describe('round-2 display rules', () => {
+  const frame: Frame = { w: 1024, h: 768, top: 80, bottom: 700, pad: 23, min: 23 };
+
+  /** Colour of every solid fill (globalAlpha 1) exactly as wide as the gauge's bar (30 px): the fill, not the redline. */
+  function solidFills(paint: (ctx: OffscreenCanvasRenderingContext2D) => void): string[] {
+    const t: Record<string | symbol, unknown> = { globalAlpha: 1 };
+    const out: string[] = [];
+    const ctx = new Proxy(t, {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        if (prop === 'measureText') return (x: string) => ({ width: x.length * 10 });
+        if (prop === 'fillRect') return (_x: number, _y: number, w: number) => void (target.globalAlpha === 1 && w === 30 && out.push(String(target.fillStyle)));
+        return () => undefined;
+      },
+      set(target, prop, value) {
+        target[prop] = value;
+        return true;
+      },
+    }) as unknown as OffscreenCanvasRenderingContext2D;
+    paint(ctx);
+    return out;
+  }
+
+  it('fills the ablator gauge in one colour by the zone of its reading: no red at a nominal 80 %, red below the redline', () => {
+    for (const [frac, red] of [
+      [0.8, false],
+      [0.31, false],
+      [0.2, true],
+    ] as const) {
+      const fills = solidFills((ctx) => drawBarGauge(ctx, frame, 100, 100, 30, 300, ablatorGauge(frac)));
+      expect(fills.includes(UI_COLORS.warning), `ablator ${frac}`).toBe(red);
+      expect(fills.includes(UI_COLORS.good), `ablator ${frac}`).toBe(!red);
+    }
+    // A high-is-bad gauge (g load) still shows every zone it passes.
+    const g = { ...ablatorGauge(0.9), lowIsBad: false, zones: [[0.5, UI_COLORS.good], [0.8, UI_COLORS.caution], [1, UI_COLORS.warning]] as [number, string][] };
+    expect(solidFills((ctx) => drawBarGauge(ctx, frame, 100, 100, 30, 300, g))).toEqual(expect.arrayContaining([UI_COLORS.good, UI_COLORS.caution, UI_COLORS.warning]));
+  });
+
+  it('reports the stage that owns the running engines as active, with its live numbers', () => {
+    const base = snap('ascent');
+    const stages = base.staging.stages.map((x, i) => ({ ...x, fired: i === 0, propellantFraction: i === 0 ? 0.6 : x.propellantFraction, deltaVNow: i === 0 ? 1890 : x.deltaVNow }));
+    const s = { ...base, staging: { ...base.staging, nextStage: 1, stages } };
+    const st = describeStages(s);
+    expect(st.active).toBe(0);
+    expect(st.tiles[0]!.active).toBe(true);
+    expect(n(st.tiles[0]!.deltaV)).toBe('1 890 m/s');
+    // A fired stage the sim no longer reports (its engines shut down) is not active.
+    const off = { ...s, staging: { ...s.staging, stages: stages.map((x, i) => (i === 0 ? { ...x, propellantFraction: null } : x)) } };
+    expect(describeStages(off).active).toBe(-1);
+    // The MFD staging strip takes its numbers from the active stage.
+    const rows = buildMfdPage('staging', s, defs).rows;
+    expect(rows.find((r) => r.label === 'Active stage')!.value).toBe(`1 · ${stages[0]!.label}`);
+    expect(rows.find((r) => r.label === 'Stage Δv')!.value).toBe(st.tiles[0]!.deltaV);
+  });
+
+  it('names what an engine-less stage does instead of what it lacks', () => {
+    expect(stageActionText(['decouple', 'deployParachute'])).toBe('separate · deploy chute');
+    expect(stageActionText(['fireSeparationMotors', 'jettisonLES', 'jettisonFairing'])).toBe('sep. motors · jettison tower · jettison fairing');
+    expect(stageActionText(['deployLegs', 'deployLegs'])).toBe('deploy gear');
+    expect(stageActionText(['someFutureAction'])).toBe('');
+  });
+
+  it('folds the full resource groups into one line and shows the groups in use', () => {
+    const groups = [
+      { id: 'a', label: 'Booster', bars: [{ resourceId: 'x', name: 'X', fraction: 0.62, amount: '62 %' }] },
+      { id: 'b', label: 'Upper', bars: [{ resourceId: 'x', name: 'X', fraction: 1, amount: '100 %' }] },
+      { id: 'c', label: 'Capsule', bars: [{ resourceId: 'y', name: 'Y', fraction: 1, amount: '100 %' }] },
+    ];
+    expect(summarizeResources(groups)).toEqual({ detailed: [groups[0]], full: ['Upper', 'Capsule'] });
+    // All full (on the pad): the first group in detail.
+    const full = groups.map((g) => ({ ...g, bars: g.bars.map((b) => ({ ...b, fraction: 1 })) }));
+    expect(summarizeResources(full).detailed.map((g) => g.id)).toEqual(['a']);
+  });
+
+  it('opens the landing-target rows only with a prediction, in an entry or while descending', () => {
+    const orbit = snap('lunarOrbit');
+    expect(landingTargetExpanded(orbit, defs)).toBe(false);
+    expect(landingTargetExpanded(snap('lunarSurface'), defs)).toBe(false);
+    const lt = orbit.readouts.landingTarget!;
+    const predicted = { ...orbit, readouts: { ...orbit.readouts, landingTarget: { ...lt, predicted: { kind: 'impact' as const, ut: orbit.ut + 100, latitude: 0, longitude: 0, missDistance: 10, missBearingDeg: 0 } } } };
+    expect(landingTargetExpanded(predicted, defs)).toBe(true);
+    const descent = { ...orbit, readouts: { ...orbit.readouts, verticalSpeed: -12, periapsisAltitude: -40_000 } };
+    expect(landingTargetExpanded(descent, defs)).toBe(true);
+  });
+
+  it('balances the key-help columns by height', () => {
+    // The default binding groups: Attitude 7, Throttle 6, SAS 9, Translation 6, Systems 3, Time 5, Views 12, Cockpit 3.
+    const heights = [7, 6, 9, 6, 3, 5, 12, 3].map((x) => x + 1.6);
+    const cols = balanceColumns(heights, 3);
+    const sums = cols.map((c) => c.reduce((a, i) => a + heights[i]!, 0));
+    expect(cols.flat().sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    for (const c of cols) expect(c).toEqual([...c].sort((a, b) => a - b));
+    expect(Math.max(...sums) - Math.min(...sums)).toBeLessThanOrEqual(3);
   });
 });

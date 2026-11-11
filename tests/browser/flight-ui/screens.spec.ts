@@ -6,7 +6,10 @@ import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, s
  * Screenshots of every FakeSim scene with the full flight HUD at 1280 x 720 and 3840 x 2160, plus the
  * cockpit and map views, the key-help overlay, the mission-failed banner and the six MFD pages, saved to
  * out/screens/flight-ui/ for review by eye. Also: the HUD over the backdrop's worst case (a near-white cloud
- * deck / regolith and a pale sky) with a measured label contrast, and the MFD pages at 512 x 384 shown 1 : 1.
+ * deck / regolith and a pale sky) with a measured label contrast and plate uniformity, the coverage budget of
+ * the HUD in every external scene, the active stage's tile, views that show markers off the nose, a real roll,
+ * the g tube in its amber and red zones with the g-dose bar and the lift-vector marker, and the MFD pages at
+ * 512 x 384 shown 1 : 1.
  */
 const SCENES: [string, string][] = [
   ['pad', 'target=moon'],
@@ -19,6 +22,9 @@ const SCENES: [string, string][] = [
   ['reentry', 'predicted=entry'],
   ['chutes', ''],
 ];
+
+/** Largest share of a 16:9 frame the HUD may cover in an external view (plates, tiles, chips and the ball). */
+const COVERAGE_BUDGET = 0.2;
 
 async function shoot(page: Page, log: PageLog, url: string, name: string, frames = 30): Promise<Buffer> {
   await openPage(page, url);
@@ -63,6 +69,62 @@ async function labelContrasts(page: Page, png: Buffer): Promise<{ text: string; 
   return out;
 }
 
+/**
+ * Share of the frame the HUD covers, from the layout: every visible plate, tile, pill and read-out chip as its
+ * box, and the navball instrument as the disc of its bezel, rasterised into one mask (overlaps count once).
+ */
+async function hudCoverage(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const W = innerWidth;
+    const H = innerHeight;
+    const mask = new Uint8Array(W * H);
+    const visible = (e: Element): boolean => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+    const boxes = [...document.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .nbchips > div, .hud .toast')].filter(visible);
+    for (const e of boxes) {
+      const r = e.getBoundingClientRect();
+      for (let y = Math.max(0, Math.floor(r.top)); y < Math.min(H, Math.ceil(r.bottom)); y++) mask.fill(1, y * W + Math.max(0, Math.floor(r.left)), y * W + Math.min(W, Math.ceil(r.right)));
+    }
+    const ball = document.querySelector('.hud .ball');
+    if (ball && visible(ball)) {
+      const r = ball.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const R = (r.width / 2) * 0.985;
+      for (let y = Math.floor(cy - R); y <= Math.ceil(cy + R); y++) {
+        if (y < 0 || y >= H) continue;
+        const half = Math.sqrt(Math.max(0, R * R - (y + 0.5 - cy) * (y + 0.5 - cy)));
+        mask.fill(1, y * W + Math.max(0, Math.round(cx - half)), y * W + Math.min(W, Math.round(cx + half)));
+      }
+    }
+    let n = 0;
+    for (let i = 0; i < mask.length; i++) n += mask[i]!;
+    return n / (W * H);
+  });
+}
+
+/**
+ * Fill of every visible plate along a column of its padding (no text there), below the plate's lit top
+ * gradient: the spread in 8-bit levels of the brightest channel. A scene edge behind a plate shows up as spread.
+ */
+async function plateSpreads(page: Page, png: Buffer): Promise<{ cls: string; spread: number }[]> {
+  const img = PNG.sync.read(png);
+  const plates = await page.locator('.hud .lcol .panel, .hud .rcol .panel, .hud .later, .hud .tile.next, .hud .tile.active, .hud .bottom .panel').evaluateAll((els) =>
+    els.filter((e) => e.getClientRects().length > 0).map((e) => ({ cls: e.className, r: e.getBoundingClientRect().toJSON() as DOMRect })),
+  );
+  return plates.map((p) => {
+    const x = Math.round(p.r.left + 3);
+    let lo = 255;
+    let hi = 0;
+    for (let y = Math.ceil(p.r.top + p.r.height * 0.45); y < Math.floor(p.r.bottom - 4); y++) {
+      const i = (y * img.width + x) * 4;
+      const v = Math.max(img.data[i]!, img.data[i + 1]!, img.data[i + 2]!);
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    return { cls: p.cls, spread: hi - lo };
+  });
+}
+
 for (const [w, h, tag] of [
   [1280, 720, '720p'],
   [3840, 2160, '4k'],
@@ -73,8 +135,22 @@ for (const [w, h, tag] of [
       test(`scene ${scene}`, async ({ page, pageLog }) => {
         await shoot(page, pageLog, `/labs/flight-ui/?scene=${scene}${extra ? `&${extra}` : ''}`, `${scene}-${tag}`);
         expect(await page.evaluate(() => window.__test!.page.name)).toBe('flight-ui');
+        if (tag === '720p') {
+          const c = await hudCoverage(page);
+          console.log(`HUD coverage ${scene}: ${(c * 100).toFixed(1)} %`);
+          expect(c, `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
+        }
       });
     }
+    test('markers off the nose and a 25 degree roll (normal, radial, anti-target, maneuver)', async ({ page, pageLog }) => {
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&node=1&target=moon&attitude=24,-14,25', `attitude-lowOrbit-${tag}`);
+    });
+    test('high-g entry: g tube in its red zone, g-dose bar, lift-vector marker, retrograde off the nose', async ({ page, pageLog }) => {
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&predicted=entry&flight=0,11.2&dose=6.4&lift=35&attitude=-8,10,-18', `entry-highg-${tag}`);
+    });
+    test('retrograde held on the nose under chutes', async ({ page, pageLog }) => {
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes&flight=0,7.4', `retrograde-hold-${tag}`);
+    });
     test('cockpit view', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&view=cockpit', `cockpit-lowOrbit-${tag}`);
     });
@@ -107,13 +183,52 @@ test.describe('flight-ui over a near-white backdrop (720p)', () => {
     ['reentry', 'predicted=entry'],
     ['lunarSurface', ''],
   ] as const) {
-    test(`scene ${scene}: every label keeps 4.5 : 1 against its panel`, async ({ page, pageLog }) => {
+    test(`scene ${scene}: every label keeps 4.5 : 1 against its panel, no scene edge prints through a plate, the HUD stays in its budget`, async ({ page, pageLog }) => {
       const png = await shoot(page, pageLog, `/labs/flight-ui/?scene=${scene}&backdrop=bright${extra ? `&${extra}` : ''}`, `bright-${scene}-720p`);
       const c = await labelContrasts(page, png);
       expect(c.length).toBeGreaterThan(5);
       for (const x of c) expect(x.ratio, `label "${x.text}"`).toBeGreaterThanOrEqual(4.5);
+      // A plate over the horizon (sunlit regolith or cloud deck against the sky) keeps one tone.
+      const spreads = await plateSpreads(page, png);
+      expect(spreads.length).toBeGreaterThan(3);
+      for (const p of spreads) expect(p.spread, `plate "${p.cls}" fill spread (8-bit levels)`).toBeLessThanOrEqual(8);
+      expect(await hudCoverage(page), `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
     });
   }
+});
+
+test.describe('flight-ui stage stack (720p)', () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+  test('the burning stage has its own tile with live delta-v, TWR, burn time and propellant', async ({ page, pageLog }) => {
+    for (const [scene, extra, number] of [
+      ['ascent', 'flight=0.86,2.35', '1'],
+      ['lunarOrbit', '', '5'],
+    ] as const) {
+      await openPage(page, `/labs/flight-ui/?scene=${scene}${extra ? `&${extra}` : ''}`);
+      await page.evaluate(() => window.__test!.waitFrames(10));
+      const s = await page.evaluate(() => window.__test!.state()!);
+      const info = s.staging.stages[Number(number) - 1]!;
+      expect(info.fired).toBe(true);
+      expect(info.propellantFraction).not.toBeNull();
+      const tile = page.locator('.hud .stages .tile.active');
+      await expect(tile).toHaveCount(1);
+      await expect(tile.locator('.sn')).toHaveText(number);
+      await expect(tile.locator('.dv')).toHaveText(/^Δv [\d\s ]+ m\/s$/);
+      const dv = Number((await tile.locator('.dv').textContent())!.replace(/[^\d]/g, ''));
+      expect(Math.abs(dv - info.deltaVNow)).toBeLessThanOrEqual(1);
+      await expect(tile.locator('.meta')).toHaveText(/^TWR [\d.]+ · [\d:]+$/);
+      await expect(tile.locator('.bar.prop')).toBeVisible();
+      // The active tile sits under the next stage's tile, at the bottom of the stack.
+      const a = (await tile.boundingBox())!;
+      const n = (await page.locator('.hud .stages .tile.next').boundingBox())!;
+      expect(a.y).toBeGreaterThan(n.y + n.height - 1);
+      // The MFD staging strip shows the same stage.
+      const rows = await page.evaluate(() => window.__flightUi!.mfdRows('staging'));
+      expect(rows.find((r) => r.label === 'Active stage')!.value).toContain(info.label);
+      expect(rows.find((r) => r.label === 'Stage Δv')!.value).not.toBe('—');
+      await expectNoErrors(page, pageLog);
+    }
+  });
 });
 
 test.describe('flight-ui MFD pages at 512 x 384, 1 : 1', () => {
