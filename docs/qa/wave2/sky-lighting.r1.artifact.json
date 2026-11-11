@@ -1,0 +1,89 @@
+{
+  "screenshotsLookedAt": 34,
+  "overallScore": 6.5,
+  "previousItemsStillOpen": [
+    "2 - Glare around the sun: partly fixed. The rim to black is gone and the profile is monotonic, but the glow is still a neutral grey ball with a traceable edge: the gradient breaks at 17-19/255 (r about 195 px at 720p EV 14, about 235 px in the 1440p view)."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "flare-deep-space-ev14.png, flare-display-check-ev14.png, flare-off-axis-30deg-ev14.png, flare-off-axis-35deg-ev14.png, sun-at-earth-limb-leo-flare.png, perf-1440p-leo-horizon.png",
+      "defect": "The glare is still a grey ball whose edge the eye can trace. Ring medians at 720p, EV 14, deep space: 38.0 / 32.0 / 26.1 / 21.1 / 18.2 / 16.9 / 14.9 / 13.2 of 255 at 160 to 230 px in 10 px steps: the fall drops from 5-6 levels per 10 px to 1.3-2 within 20 px. At 1440p: 60 / 42 / 28 / 19 / 15 / 13 at 180 to 280 px (14-18 levels per 20 px, then 2-4). The break sits at the same display level in every view (17-19/255), not at the same radius, and the EV 12 frame has none (62 / 58 / 54 / 51 at 200-230 px). Inside the edge the ball is fat: with a clip radius of 11 px the display-linear level is 0.45 at 4 clip radii and 0.17 at 7, so the picture is a small star inside a 400 px fog ball and the rays (5-14 levels over the glare at 60 px, gone by 100 px) are nearly lost in it.",
+      "realReference": "out/qa/ref/sun-stars-space/bright-sun-eva.jpg (INDEX: glare 50 % at 2 clip radii, 10 % at 4, 1.5 % at 7), full-sunburst-over-earth.jpg, sun-horizon-eva.jpg: a burned core a few clip radii wide whose tail thins continuously into black; there is no radius where the gradient changes pace, and the rays reach well beyond the glow.",
+      "likelyCause": "The edge is made by the core's display transform, not by the glare profile: src/render/core/post/tonemap.ts blends AgX into the linear toe over one stop (TOE_START_STOPS -3, TOE_FULL_STOPS -4, lines 52-65). Evaluating displayLinear() for greys gives 21 levels per stop at -3.25 stops under mid-grey and 8 levels per stop at -4: the slope falls 2.7 times across half a stop, between 21/255 and 16.5/255. Every smooth gradient that crosses that level gets the same contour (terminators and twilight will too). The size of the ball is the sky's: the theta^-2 skirt in src/render/sky/flare.ts still holds 87/255 (one stop under mid-grey) 9 deg from the sun at the metered exposure.",
+      "fixDirection": "Request to core-support: make the toe slope-continuous, either a blend at least 3 stops wide (for example start -1.5, full -5) or a toe gain matched to AgX's local slope at the join; unit test that display levels per stop change by under 25 % per half stop from -1 to -7 stops. Then in sky: add to tests/browser/sky/flare.spec.ts that the ring-median slope changes by under 1.5 times between neighbouring 10 px rings from 100 px outwards, and move energy out of the 2-10 deg skirt (into the far veil, or drop it) until the display-linear ring median at 7 clip radii is about 0.05 or less at EV 14, so the rays stand clear of the glow."
+    },
+    {
+      "severity": "major",
+      "view": "pbr-spheres-leo-night.png",
+      "defect": "On the night side every sphere is lit by a hard directional light that comes from below the horizon, through the Earth. White sphere: a straight diagonal terminator with the lower-right half at about 150/255. Black, chrome and gold spheres: a compact highlight at the lower right (on the chrome sphere it lies inside the reflected black Earth disc). Copper: a lit lower-right crescent. From the highlight on the black sphere (offset +32, +29 px on a 52 px radius, camera pitched 14 deg down) the light is about 44 deg below the local horizontal, 30 deg below the geometric horizon (dip 14 deg at 200 km). It is the brightest thing on the spheres, so the view does not show what it is for (space side lit at the Milky Way level, Earth side black).",
+      "realReference": "With the Moon below the horizon, hardware on the night side of an orbit is lit only by starlight, airglow and city lights: out/qa/ref/sun-stars-space/milkyway-dragon.jpg and earth-orbit-clouds/limb-panorama.jpg show structure as near-black shapes with at most a faint diffuse fill, no hard terminator and no point highlight. Moonlight exists only while the Moon is above the local horizon.",
+      "likelyCause": "The core's planetshine has no occlusion test. planetshineAt() in src/render/core/frame/math.ts (line 193) is evaluated at the centre of the vessel's body for everything below 0.5 R (src/render/core/renderer.ts line 618), so the Moon lights a vessel wherever it is on its orbit, and src/render/core/lighting/deferred.ts lines 273-283 add it with only the baked AO. The lab's night=1 puts the sun at the nadir and no lab light exists, so the source is the Moon. At the dark floor (EV -6) moonlight is several stops over the starlight the frame is exposed for. Not in src/render/sky; the probe's planetshineWeights() (src/render/sky/probeScene.ts line 46) uses the same list.",
+      "fixDirection": "Request to core-support: evaluate planetshine at the receiver (vessel or camera) and multiply it by the fraction of the shining body's disc that is clear of every other body, with the disc-overlap function already used for sunVisibilityAt; unit test: Moon behind the Earth seen from low orbit gives 0. Then re-shoot pbr-spheres-leo-night and assert in tests/browser/sky/views.spec.ts that with the Moon below the horizon no sphere has a highlight or a terminator (for example the brightest pixel of the black sphere under 8/255 and the white sphere's two halves within a factor of 2)."
+    },
+    {
+      "severity": "minor",
+      "view": "leo-day-stars-invisible.png, sun-at-earth-limb-leo-flare.png, perf-1440p-leo-horizon.png, pbr-spheres-leo-day.png, leo-night-dark-adapted.png, perf-1440p-leo-horizon-night.png",
+      "defect": "Previous item 13, still open: every view with the Earth in it is staged on the lab stand-in, which is a placeholder at a glance. Flat olive and saturated blue fills, blurred cloud blobs with black outlines and streaks at the limb, no atmosphere arc; on the night side a pure black disc (0/255) with a razor limb and stars at full brightness down to it; the ocean glint in the 1440p view is a diamond lattice of facets about 12 px wide when amplified 6 times. The package's named review shot, the sun near the limb with the flare, has still never been seen through an atmosphere. This caps what can be judged and the score.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/orbital-sunrise-terminator.jpg and sun-stars-space/sun-first-rays-limb.jpg: the sun breaks through a thin layered blue-to-orange arc, reddened at the limb; limb-panorama.jpg: the night limb carries an airglow band and stars dim into it.",
+      "likelyCause": "labs/sky/main.ts (LabPlanet and the clouds=1 shell). Render packages may not import each other; docs/requests/sky-lighting-5.md (three integration-lab views with the real Earth) is open.",
+      "fixDirection": "Lead and integration: deliver the three views of request sky-lighting-5 at the settled automatic exposure and judge the flare, the probe reflections and the night limb there. Until then keep these sky-lab views as functional evidence only."
+    },
+    {
+      "severity": "minor",
+      "view": "leo-night-dark-adapted.png, pbr-spheres-leo-night.png",
+      "defect": "The Magellanic Clouds are magenta and violet at the settled exposure: Large Cloud core (69, 56, 73), R/G 1.24 and B/G 1.31; Small Cloud (48, 45, 61). The Milky Way in the same frame is a warm grey (48, 44, 42). Amplified 4 times the Large Cloud is plainly pink. Left over from previous item 7.",
+      "realReference": "In long exposures from orbit and from the ground the Magellanic Clouds are white to blue-white with green between red and blue; only small emission regions (Tarantula) are pink.",
+      "likelyCause": "The cube's data, not the shader or the toe (the band keeps its hue): the sky bake. docs/requests/sky-lighting-4.md is open.",
+      "fixDirection": "Sky bake: check the colour balance of the Magellanic Cloud region in the source layers and the rgb9e5 encode; assert G within 10 % of the mean of R and B over the Large Cloud's bar."
+    },
+    {
+      "severity": "minor",
+      "view": "perf-1440p-leo-horizon-night.png (corners), orion-closeup-auto.png, milky-way-1024-default-2048-orion-closeup-crop-3x.png",
+      "defect": "Previous item 8 is fixed at 720p and 60-90 deg, but at the 1440p target the faint stars from the cube are smeared towards the frame corners while catalogue stars stay round: lag-1 autocorrelation of the background along the radial diagonal against the tangential one is 0.68 / 0.47 in the top-left corner and 0.69 / 0.53 in the top-right, 0.61 / 0.61 at the centre. At 3 times zoom the corner grain reads as combed streaks. In the 24 deg Orion view the faint stars are still 1-2 px horizontal and vertical dashes beside round catalogue stars.",
+      "realReference": "A real star field is one population of round points at every brightness, to the corners of the frame (out/qa/ref/sun-stars-space/milkyway-airglow.jpg: all stars point-like).",
+      "likelyCause": "src/render/sky/feature.ts and BACKGROUND_FS in src/render/sky/shaders.ts: the 2048 luminance level is 0.044 deg per texel; a 1440p pixel is 0.045 deg at the centre of a 90 deg frame but about 0.022 deg radially in the corner, and the cockpit zooms to 25 deg, so the level is magnified 2 to 2.6 times with a bilinear filter. The catalogue stops at V 6.5.",
+      "fixDirection": "Carry the stars to about V 9 in the instanced catalogue and bake them out of the cube (sky bake), or sample the luminance level with a bicubic or Gaussian kernel when magnified. Add a 1440p corner check: radial and tangential lag-1 autocorrelation within 0.1 of each other."
+    },
+    {
+      "severity": "minor",
+      "view": "flare-off-axis-35deg-ev12.png, flare-sun-just-outside-frame-ev12.png, flare-off-axis-35deg-ev14.png",
+      "defect": "The ghosts are one stamp repeated: eleven regular heptagons in the same orientation on one line, each a flat inner fill inside a brighter concentric heptagon ring, in a row of pastel colours. At EV 14 they are dim (at most 32/255) and pass; two stops over, they reach 98/255 and read as a game lens-flare string.",
+      "realReference": "out/qa/ref/sun-stars-space/full-sunburst-over-earth.jpg and bright-sun-eva.jpg: a few ghosts of very different size, sharpness and brightness, some cut to a cat's eye, most with uneven fills; no two alike.",
+      "likelyCause": "src/render/sky/flare.ts GHOSTS and the ghost branch of FLARE_WGSL in src/render/sky/shaders.ts: one profile (inner disc plus rim) and one iris mask for every entry; only radius, colour and position differ.",
+      "fixDirection": "Vary the profile per ghost (some with no rim, some defocused to a blur several times their size, one or two clipped by a second circle off axis), and vary edge softness by a factor of 3 or more. Keep the energies."
+    },
+    {
+      "severity": "minor",
+      "view": "pbr-spheres-lunar-surface.png",
+      "defect": "The lunar ground is a cold blue-grey slab: (77, 78, 81) near the horizon, (65, 67, 70) mid-frame, blue above red everywhere, with no texture and a ruler-straight horizon; the sphere shadows on it are 0.6/255. The shadow sides of the white and grey spheres take the same blue tint. The chrome sphere now matches the ground (previous item 11 is fixed in the probe), but it reflects a uniform slab with no shadows in it.",
+      "realReference": "out/qa/ref/moon-surface: regolith is a warm grey-brown with red above blue; shadows are very dark but filled by light from the surrounding ground, not zero.",
+      "likelyCause": "The albedo map's colour at the landing site (data/tiles/moon globals, bake-moon-sky; docs/requests/sky-lighting-6.md is open) and the lab's flat ground cap in labs/sky/main.ts. The probe is an analytic 64 px cube and carries no cast shadows by design.",
+      "fixDirection": "bake-moon-sky: correct the map's colour balance (R/B of mare soil about 1.1-1.25) and make BodyDef.render.meanColor agree with the map's mean. Lead: re-take this view on the real terrain renderer."
+    },
+    {
+      "severity": "minor",
+      "view": "orion-closeup-auto.png, crux-centaurus-auto.png",
+      "defect": "Previous item 12, still open: no emission nebulae. The sword of Orion is a handful of blue-white stars with no glow around them; nothing pink-white along the band in the Crux view.",
+      "realReference": "In a long exposure of this field the Orion Nebula is a pink-white glow about a degree across (30 px in this view), the most conspicuous object after the bright stars.",
+      "likelyCause": "The cube's source maps carry starlight and dust only (sky bake); docs/requests/sky-lighting-4.md is open.",
+      "fixDirection": "Sky bake: composite the bright extended objects (Orion, Carina, Lagoon, Andromeda) into the cube at literature surface brightness."
+    },
+    {
+      "severity": "minor",
+      "view": "flare-sun-just-outside-frame-ev14.png, flare-sun-outside-display-check-ev14.png, flare-sun-just-outside-frame-ev12.png",
+      "defect": "The report says a sun 0.3 deg outside the frame gives haze only; the pictures show seven to nine ray stubs fanning in from the edge: 185-209/255 over a glare of 150-160 at 60 px from the edge, 121 over 95 at 110 px. They end within about 130 px, so this is no longer lines across the frame, and a real lens does image rays from a sun just outside the sensor. It is a mismatch between the claim and the picture, and the spec only checks beyond 9 deg.",
+      "realReference": "A sun a few degrees outside the frame gives haze at that edge; a sun touching the edge still shows the stubs of its rays.",
+      "likelyCause": "tests/browser/sky/flare.spec.ts part (d) measures only beyond 9 deg from the sun, and the view is taken 0.3 deg outside, where the starburst is rightly still drawn.",
+      "fixDirection": "Add a view and a check with the sun 3 deg outside the frame (no ray above the ring median by more than 1/255 anywhere), and word the hand-off as 'ray stubs within 9 deg, haze beyond'."
+    },
+    {
+      "severity": "minor",
+      "view": "leo-night-dark-adapted.png (not visible in a still)",
+      "defect": "Previous item 9, partly fixed by the fixer's own figures: stars still ripple with the 8-frame jitter cycle for a static camera, 0.35 % mean and 3.1 % at most between consecutive frames (was 0.82 % and 7.5 %). The acceptance criterion is zero. I could not confirm or refute this from stills.",
+      "realReference": "Outside an atmosphere stars are perfectly steady.",
+      "likelyCause": "The core's jittered 3 x 3 reconstruction in src/render/core/post/postProcess.ts is not an interpolator for a point source; request sky-lighting-1 was declined and passed to the lead.",
+      "fixDirection": "Lead: decide on the resolve redesign (or exclude the background point sources from the jitter by drawing them at the unjittered projection after the resolve)."
+    }
+  ]
+}

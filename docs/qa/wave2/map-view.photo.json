@@ -1,0 +1,118 @@
+{
+  "screenshotsLookedAt": 25,
+  "overallScore": 4,
+  "worstViews": [
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\accept-occlusion.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\scene-lowOrbit.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\lowOrbit-node.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\accept-node-added.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\synthetic-8-patches.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\map-view\\synthetic-earth.png"
+  ],
+  "findings": [
+    {
+      "severity": "blocker",
+      "view": "out/screens/map-view/accept-occlusion.png (straight periwinkle line from about (0,437) to (1150,0), running over the lit face of the Earth near (560,225)-(700,170))",
+      "defect": "A second line in the Moon-orbit colour is drawn across the whole frame and straight over the Earth's disc, unoccluded, 10-27 px above the real Moon orbit (which is correctly hidden behind the planet). It is perfectly straight (slope -0.385 at every column) while the real orbit is curved. It is not an object: it is one chord of the Moon-orbit polyline whose far end lies behind the camera, mirrored through the screen. Reproduced headlessly (scene builder + float32 emulation of the vertex shader, same view as the spec): the chord from the vertex at screen (-8018,3526), depth 32,200 km, to the next vertex at depth -112,300 km clips to a depth of -2 m / -8 m instead of +0.05 m, and its end lands at (+1.4e11, -5.2e10) px, i.e. slope -0.385, exactly the line in the screenshot. In a sweep of 720 camera orientations 24,000 km from the Earth about 40 % of views get such a spurious Moon-orbit line; in the translunar scene about 40 % of views get a spurious line of the ACTIVE trajectory (2.5 px, bright cyan); in lunar orbit the Moon orbit and the SOI circle do the same. Because the sign of the rounding error changes from view to view, the line will pop in and out while the player rotates the map camera.",
+      "realReference": "In KSP, Juno or any shipped orbital map an orbit that wraps around the camera is simply cut at the screen edge. No line ever crosses the face of the planet it should be behind, and nothing flashes on and off with camera yaw.",
+      "likelyCause": "src/map/gpu/shaders.ts, vsLine near-plane clip: `pb = mix(pb, pa, t)` with t = (near - wb0)/(wa0 - wb0), near = NEAR_PLANE = 0.05 m (src/core/contracts/render.ts) while pa/pb are float32 view-space metres of order 1e8. Float32 rounding there is 8-16 m, hundreds of times the near distance, so the clipped point ends up behind the eye about a third of the time and toScreen() divides by a negative w. The sampler (src/map/sampler.ts) deliberately leaves off-frustum pieces as single chords of 22.5 / 45 degrees of orbit, so every orbit larger than the camera distance has two chords that straddle the camera plane. The fragment then interpolates positions beside the eye, which the occlusion test rightly calls unoccluded. The static-camera jitter specs cannot catch this.",
+      "fixDirection": "Clip at the camera plane in float64 on the CPU: in scene.ts addCurve (or the sampler's emit) when consecutive vertices straddle the near plane, end the polyline there (flag bit 0 off) if the front vertex is off screen, otherwise insert the f64 intersection at a depth that survives float32. Or make the shader clip robust: clip to max(near, ~4e-6 * max(length(pa), length(pb))) and drop the instance when the clipped w is still <= 0. Add a test that rotates the camera through 360 degrees around the Earth at 2.4e7 m in the lowOrbit and translunar scenes and asserts that no drawn segment has an end with w <= 0 and that no Moon-orbit-coloured pixels lie inside the Earth's disc."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/scene-lowOrbit.png (Central Pacific ring, about (440-560, 445-555)); same view in lowOrbit-node.png and hover-add-maneuver.png; smaller breaks at the top and bottom of the Central Atlantic ring in accept-occlusion.png; faceting in accept-recovery-zones.png",
+      "defect": "Recovery-zone rings break up into disconnected dashes where they approach the limb: the middle of each chord vanishes and only the stretches near the vertices remain, so the ring looks torn. Probe of the default lowOrbit view with the shader's occlusion function: 20 of 307 px of near-side chords of zone 0 and 21 of 123 px of zone 1 are classified as hidden (chords (558,544)-(553,530), (476,455)-(461,448), (606,569)-(561,554) and others, matching the gaps on screen). Seen face-on (accept-recovery-zones.png) the same rings are visibly polygonal and wobbly.",
+      "realReference": "A recovery area on a mission map or in a shipped game is a clean, continuous circle that wraps smoothly over the limb and is cut exactly where it goes behind the planet.",
+      "likelyCause": "src/map/gpu/shaders.ts occlusion(): `if (tp <= t1 + tol + slack) continue;` compares distance ALONG THE RAY, while the slack set in src/map/scene.ts addZoneLine (lines 1057-1066) is the RADIAL depth of the chord below the sphere (11-43 km here, because zones use FAINT_CHORD_TOLERANCE_PX = 0.9 and get only 16-21 vertices). At grazing incidence a point d below the surface is d / cos(incidence) further along the ray, so chord interiors within roughly 25 degrees of the limb fail the test. The 0.9 px tolerance (constants.ts: 'under a pixel is invisible' holds for 20 % alpha debris, not for a 2 px ring at 90 % alpha) is also what makes the rings look faceted.",
+      "fixDirection": "Keep the chords out of the sphere instead of forgiving them: sample the zone circle on a slightly larger sphere (radius R + worst sagitta, or ring radius divided by cos(half step)) so no chord dips below the datum, and drop the slack; or change the test for surface lines to radial depth (visible when |P - centre| >= R - slack and the point is on the near side, tp <= tc). Sample zone rings at the 0.3 px tolerance. Add a browser check that a ring crossing the limb has no gaps on its near side."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/lowOrbit-node.png, accept-panel.png, synthetic-earth.png, synthetic-moon.png (node panel and every label); compare out/screens/flight-ui/map-lowOrbit-720p.png",
+      "defect": "The map speaks a different visual language from the rest of the game. Every label is 12 px Consolas rasterised from a canvas, and the node editor is a Consolas form with plain bordered inputs and text buttons ('-1 orbit', '+1 orbit', 'Delete'). The flight HUD that will share the screen uses Bahnschrift / DIN with tracked uppercase captions, tabular figures and its own panel chrome, and already has a MANEUVER panel. Side by side the map reads as a developer overlay, and the player gets two maneuver panels in two styles.",
+      "realReference": "KSP 2, Juno: New Origins, Elite Dangerous: one type family and one panel component across HUD and map; captions in small tracked capitals, numerals tabular, the node editor built from the HUD's own panel with the six axis glyphs as icon buttons.",
+      "likelyCause": "src/map/gpu/glyphAtlas.ts FONT_FAMILY = Consolas (one monospace advance for every glyph; drawList and labels.ts measure text as chars * advance); src/map/panel.ts `font: 12px/1.35 Consolas` and hard-coded colours; nothing shared with src/ui/hud/hudStyles.ts (Bahnschrift, 'DIN Alternate', 'Segoe UI').",
+      "fixDirection": "Move the HUD's type and colour tokens somewhere src/map may import (src/core) or file a request to flight-ui for them. Rasterise the atlas in the HUD family with per-glyph advances (store the advance per cell, measure labels by summing advances, keep digits tabular). Restyle the panel from the HUD tokens: uppercase tracked captions, the handle glyph beside each of Prograde / Normal / Radial, icon buttons, and agree with flight-ui which of the two maneuver panels owns which numbers."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/accept-recovery-zones.png, accept-occlusion.png, scene-lowOrbit.png (labels and lines over the lit Earth); all 25 screenshots (backdrop)",
+      "defect": "Legibility over a bright body is weak and is unproven over the real one. (a) Surface-target names are drawn in the dim text colour over a heavy 3 px dark halo; on the lit Earth they read as grey bubble letters whose outline is stronger than the letters ('Central Pacific', 'Ka Lae Pacific Spaceport, Launch Complex 1'). (b) Lines have no dark edge: the light cyan orbit and the 2 px green rings sit on the light blue sphere at low contrast and would nearly vanish over white cloud tops. (c) Every screenshot shows the lab's untextured gradient spheres, which is exactly the 'blue gradient / smooth sphere' PROMPT.txt forbids, and the feature is mounted nowhere else (createMapView is called only by labs/map-view/main.ts; src/app/main.ts and labs/integration do not use it). There is no picture of the overlay over the real Earth, clouds, atmosphere limb, Moon or stars.",
+      "realReference": "Shipped maps draw orbit lines with a dark casing or a glow that survives over clouds and ocean glint, and labels in full white with a soft shadow or a dark pill; the map is shown over the game's real planet render.",
+      "likelyCause": "src/map/controller.ts buildDrawList line 779: target labels use COLORS.textDim. src/map/gpu/shaders.ts fsLine: coverage only, no casing (fsIcon has a halo at lines 385-390, lines have none). labs/map-view/backdrop.ts is the only backdrop the overlay has ever been drawn over.",
+      "fixDirection": "Draw target names in COLORS.text at full alpha (dim only for a second line). Add a dark casing to fsLine (a second, wider coverage ramp that writes the halo colour at about half alpha, as fsIcon does), at least where the fragment lies over a body disc. Mount the feature in the integration lab over the real renderer and add screenshots over the day side with clouds, the terminator, the Moon and the translunar overview, then re-tune colours and halo by eye."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/lowOrbit-node.png (gizmo at (790,224), label at (829,216))",
+      "defect": "In the hand-off's own 'gizmo + panel' picture the selected node looks disabled: its six handles, the node disc and the label 'Node 1  Δv 426.1 m/s / T-25m 00s' are drawn at about a third strength (murky olive, plum and teal on black, grey text), and the handle arms are close to invisible, while the panel beside it is open and editable. The node merely sits just behind the Earth's limb.",
+      "realReference": "In KSP the gizmo of the node being edited is an interface control: always full strength and on top. Only unselected nodes fade behind a body.",
+      "likelyCause": "src/map/controller.ts line 820: `const a = Math.max(0.35, 1 - n.hidden)` is applied to the selected node's handles (line 837), arms (0.55 * a, line 833, 1.5 px wide) and label (line 842).",
+      "fixDirection": "For the selected node use alpha 1 for the disc, handles, arms and label; show 'behind the body' with a separate cue (for example a broken ring around the disc). Raise the arms to 2 px and at least 0.8 alpha so they also hold over a lit planet (accept-panel.png)."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/accept-node-added.png (tooltip at (485-560, 497-597) under the panel); hover-impact-details.png (tooltip at (670-980, 380-463))",
+      "defect": "The hover tooltip fights the rest of the interface. Right after a node is added, the 'Maneuver node / Prograde / Normal / Radial / Total / In' tooltip is half covered by the node panel, its values ghost through the panel beside the Prograde / Normal / Radial captions, and the tooltip box sits on top of the prograde handle at (498,527), the control the player wants next. It also repeats what the panel already shows. In hover-impact-details.png the tooltip slices through the 'Pe 2912 km / T-3d 19h 26m' label and the second line of Node 1's label.",
+      "realReference": "A shipped interface shows one source for a value at a time: no tooltip for the object whose editor is open, tooltips placed in free space, and whatever lies under a tooltip fully hidden.",
+      "likelyCause": "src/map/controller.ts lines 875-890: the tooltip is drawn by the GPU overlay at pointer + 18 px and clamped only to the viewport; tooltipLines() returns the node tooltip even for the selected node. The panel is a DOM element above the canvas with a 0.94 alpha background (src/map/panel.ts), so it always covers overlay drawing and lets it show through.",
+      "fixDirection": "No node or handle tooltip while that node is selected (move the 'Shift fine, Ctrl coarse' hint into the panel). Use the panel rectangle and the gizmo's handle positions as blocked areas when placing a tooltip and flip it to the free side. Make the panel background opaque. Hide (not overdraw) labels whose rectangle the tooltip covers."
+    },
+    {
+      "severity": "major",
+      "view": "out/screens/map-view/synthetic-8-patches.png (cluster at (610-660, 345-375)); scene-synthetic.png and synthetic-chain.png (Moon cluster at (380-460, 385-460)); synthetic-moon.png and hover-impact-details.png (label at (403-634, 352)); accept-zoom-1e9m.png (centre); synthetic-earth.png (bottom edge)",
+      "defect": "Labels cannot be matched to their icons and are crossed by lines. Nodes 2, 3 and 4, Relay 1 and Kestrel are stacked on one spot with five labels scattered around and no leader lines. Around the Moon five icons overlap within 40 px with 'Exit Moon', 'Moon', 'Impact … miss 22.7 km', 'Pe 2912 km' and 'Node 1' around them. The dashed planned trajectory runs through the words 'miss 22.7 km'; a zone ring runs through 'Ka Lae Pacific Spaceport' (accept-recovery-zones.png). The impact marker and its ground cross are drawn 8 px apart as a double red icon. At system zoom the Ap, Pe and vessel icons of a 200 km orbit pile onto the Earth with three labels. A label is placed over the lab's status text at the bottom edge, which shows that labels avoid nothing but the node panel, so they will also run under the HUD.",
+      "realReference": "Shipped maps collapse co-located markers into one icon, attach displaced labels with a thin leader line, keep text off trajectory lines (or give it a backing plate), and stop showing apsis markers for an orbit that is a few pixels across.",
+      "likelyCause": "src/map/labels.ts declutter() takes only icon circles, other label boxes and the single panel rectangle as obstacles; lines are not obstacles; no leader is drawn when a label is moved away from its anchor; controller.ts draws every marker regardless of the on-screen size of its patch and draws both the impact marker and its '/surface' point.",
+      "fixDirection": "Draw a 1 px leader (label colour, half alpha) whenever a placed label is more than about 14 px from its anchor. Penalise candidate positions whose rectangle intersects visible segments of current / planned lines. Merge markers closer than about 12 px into one icon with a combined tooltip, and hide the ground cross when it is within 10 px of its marker. Suppress apsis and node-line labels when their patch spans less than about 40 px. Let the app pass further blocked rectangles (the HUD panels) to update()/the controller."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/scene-translunar.png and accept-translunar.png (centre, (640,360)); accept-zoom-1e9m.png; synthetic-moon.png ((637,365))",
+      "defect": "The body the view is centred on has no name. In the Earth-Moon overview the Earth is an unlabelled 8 px dot while the Moon is labelled; at 1e9 m it disappears under the Ap / Pe / vessel icons; in the Moon close-up the Moon is a 19 px grey blob with two red icons on it and no label.",
+      "realReference": "Orbital maps name every body that is too small to recognise, the central one first.",
+      "likelyCause": "src/map/constants.ts SMALL_OBJECT_PX = 6 and src/map/controller.ts lines 785-790: a body gets an icon and a label only while its projected diameter is under 6 px.",
+      "fixDirection": "Keep the ring icon under 6 px, but label a body whenever its projected radius is under about 40 px, with a priority above markers."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/accept-zoom-1e9m.png (two near-identical ring-and-dot icons at (630,361) and (640,360)); accept-node-added.png; scene-synthetic.png",
+      "defect": "Icons do not say what they are. Apoapsis and periapsis share one glyph, the active vessel is the same ring-and-dot in white, and SOI entry and exit share one double ring; only the text tells them apart, and the text is the first thing de-cluttering removes.",
+      "realReference": "KSP tags apsides 'Ap' / 'Pe' in the marker itself; shipped maps give the player's craft a distinct solid glyph pointing along its velocity and use arrows for entering and leaving an SOI.",
+      "likelyCause": "src/map/gpu/shaders.ts shapeSd(): case 0 (apsis) for both apsides, case 11 (vessel) is a ring with a core, case 2 (soi) for both crossings.",
+      "fixDirection": "Distinct apsis glyphs (up / down chevron in the ring, or the letters), a solid oriented chevron for the active vessel, inward / outward arrows for SOI entry / exit."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/synthetic-earth.png (around (430-1000, 150-520))",
+      "defect": "Twenty debris orbits at equal weight turn the Earth close-up into a grey scribble that runs through the gizmo, the 'Entry 10.85 km/s' label and the planet, with a dozen unlabelled dots and icons on top. The two nearly coincident planned laps draw as doubled rust-coloured dashes of low contrast.",
+      "realReference": "Shipped maps hide debris orbits by default (dots only, orbit on hover or by filter) and keep future laps readable.",
+      "likelyCause": "src/map/scene.ts addVesselOrbit draws every non-controllable vessel's orbit (COLORS.debrisOrbit, 0.2 alpha); planned patches far ahead fade to FADE_FLOOR 0.32.",
+      "fixDirection": "Draw debris as dots only, with the orbit on hover or behind a filter toggle; raise the floor for planned patches of the selected node or brighten the lap the pointer is near."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/accept-landing-target.png (dimmer line at y 343-360 across the frame)",
+      "defect": "With the camera inside the Moon's SOI its boundary is drawn as a great circle in the orbit plane, which appears as a straight line through the Moon beside the Moon's real orbit line. It reads as a second orbit.",
+      "realReference": "Maps show an SOI as a shell seen from outside; from inside nothing is drawn.",
+      "likelyCause": "src/map/scene.ts addSoiLine, the `else if (b.orbit)` branch (lines 1011-1016).",
+      "fixDirection": "Draw no SOI line while the eye is inside the sphere."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/scene-translunar.png ('Pe 180.0 Mm'), scene-synthetic.png ('Ap 425.6 Mm', 'Closest 358.2 Mm'), scene-lowOrbit.png ('T-0.0s')",
+      "defect": "Distances switch to megametres, a unit no mission display or shipped game uses, and the HUD beside it writes the same quantities in km ('6 087.9 km'). An event happening now reads 'T-0.0s'.",
+      "realReference": "NASA displays and KSP use km with digit grouping at these ranges.",
+      "likelyCause": "src/map/format.ts formatDistance / formatTimeTo.",
+      "fixDirection": "km with thin-space grouping up to at least 1e7 km, matching the HUD's formatter; 'now' when |t| < 1 s."
+    },
+    {
+      "severity": "minor",
+      "view": "out/screens/map-view/synthetic-moon-intercept.png (panel at (843-1073, 396-621)); accept-node-added.png; accept-prograde-drag.png",
+      "defect": "The node panel floats 92 px beside the node and covers the trajectory just downstream of it, the part that changes while the player drags a handle (the dashed planned line and the Moon's orbit disappear under it; in accept-prograde-drag.png the prograde handle sits against the panel's edge).",
+      "realReference": "KSP docks the maneuver editor in a screen corner so the trajectory near the node stays visible.",
+      "likelyCause": "src/map/controller.ts panelPlacement() with PANEL_OFFSET_X_PX = 92, PANEL_OFFSET_Y_PX = 28.",
+      "fixDirection": "Dock the panel to a HUD edge, or place it on the side away from the downstream trajectory and the prograde handle."
+    }
+  ]
+}

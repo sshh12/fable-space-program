@@ -1,0 +1,200 @@
+{
+  "screenshotsLookedAt": 172,
+  "overallScore": 5,
+  "previousItemsStillOpen": [
+    "1 Exposure follows the effects - partly open: splash, explosion, ignition and staging now hold the sky (splash sky (135,151,176) in all seven frames, explosion sky 96-97 from 0.03 s to 3.5 s, ignition ground 108 throughout). The pad steam cloud still drives the meter: the chase day sky is (55,68,90) at T+0 to T+6 and (87,102,126) at T+10, about 1.3 EV of pumping within one sequence. The engine lab sky at sea level is (89,104,130).",
+    "4 Vacuum ignition flash - partly open: the flat disc is gone and the flash is over by 0.3 s, but the 0.05 s frame is still a sideways radial sunburst with straight spokes and a sand-grain rim.",
+    "5 Reentry shock layer - open: from behind it is still a solar-eclipse look (a mauve disc in a clipped white ring, orange hairline sparks in the upper half only, a red veil on the left). From the side and the front it is a clipped white lens or ellipse with an inner ring.",
+    "6 Splash - open as a major (no longer a blocker): the crown is a symmetric white bowl, the droplets are round soft disc sprites (snow-globe look), the mist is soft blobs, and the foam is a turquoise disc with white blotches. There are no ring waves.",
+    "7 Solid motors - partly open: there is now a flame and billowing smoke, but the smoke is lit evenly with no shaded side, and the vacuum fans have sand-grain rims and comb-toothed tips.",
+    "8 Explosion - partly open: the flash, fire and black soot sequence now works, but the fragments at 0.2-0.6 s are still thick, straight, constant-width rods (sea urchin look), and the night close-up shows crumpled-foil facets.",
+    "9 Booster plume - open: a parallel-sided cream column of even brightness down to the cloud, not clipped and with no glare (booster-45m, chase t10-day).",
+    "11 Pad cloud - open: near-black ink-blot holes in the sunlit cloud (chase t3/t6/t10, day and night), a worm-textured fringe in the 1440p live frame, and a soft body.",
+    "13 Flat white bells and base ring - open: the booster-45m base ring is flat (245,236,220). At night the hull is black with clipped neon outlines on the base ring and pod rims, the lunar legs are clipped white lines, and the base of the solid-motor capsule is a flat white ellipse.",
+    "14 RCS - open in a new form: the grey beams are gone, but a firing now reads as a tiny out-of-focus glow halo. Shadow frames are still 98-99.6 % black.",
+    "15 Lunar dust - open: a painted sunburst of rays at 30 m, a razor-sharp horizon at 5-10 m, and white speed-line dashes drawn above the horizon against the black sky.",
+    "16 Trails - open: the night reentry trail from 50 km is a ruler line (peak 212-226 and 5-6 px wide, unchanged from x=20 to x=1000), and the ascent trail in haze is a uniform soft stick.",
+    "17 Cut-away canopies - open in a new form: they no longer stay domed but become rigid banana or hook tubes with regular gore stripes. Their lines hang as straight parallel fringes that end in mid-air.",
+    "18 Clustered canopies interpenetrate - open (mains-reef2-backlit, mains-full-backlit).",
+    "19 Reefed mains as corn-cob ellipsoids - open (mains-reef1-backlit).",
+    "21 Secondary bursts as separate balls, one nearly square - open (explosion/close-0.6s, right burst)."
+  ],
+  "findings": [
+    {
+      "severity": "blocker",
+      "view": "engine-vela-2v/30km-min.png (segments at x~520-600 and at the right edge, y~330-385); engine-lyra-d/30km-min.png (five evenly spaced faint segments, x~270-1150, y~330-360); engine-atlas-9m/10km-min.png (x~615) and 10km-full.png (x~905); engine-vela-2/10km-full.png (beads at x~235, 410, 580)",
+      "defect": "Downstream of the nozzle the plume falls apart into detached copies spaced at a regular interval (about 170-220 px), like a dashed line. Each copy has a dim pointed upstream tip, a hard vertical bright face with a dithered edge, and a fading tail. In vela-2v at 30 km the first copy is as bright as the attached plume, so the frame shows three separate plume chunks. In lyra-d at 30 km there is a dark gap after the nozzle and then a row of faint dashes. At 10 km the same thing shows as a hard vertical step inside the atlas flame and as evenly spaced beads along the vela-2 column. The lone blob in ascent/12km reported in item 9 is very likely the same fault.",
+      "realReference": "liftoff-ascent/falcon9-twilight-plume.jpg and soyuz-ms13-jellyfish.jpg: a plume at altitude is one continuous, smooth, widening body with no gaps, no repetition along its length and no internal flat faces. liftoff-ascent/apollo6-f1-trail.jpg: the trail behind the bright zone is a continuous smoky band.",
+      "likelyCause": "Hypothesis: the exhaust trail (src/render/vfx/trail.ts) is drawn as separate segments between nodes. Each segment carries its own near-field brightness ramp or a copy of the plume's start-up envelope, so in the lab, where the vehicle moves fast relative to the node interval, every node becomes a little plume with a hard face. The hand-off between the plume volume and the first trail node (fed at min(length/2, 30 re) behind the nozzles) leaves the gap seen in lyra-d. The regular spacing and the plume-shaped profile of each copy point to the trail feed rather than to shock cells.",
+      "fixDirection": "Switch trails off in the 30 km min-throttle tiles to confirm the source. Make trail segments overlap and blend as one tube, with brightness continuous across nodes and no per-segment ramp. Start the trail inside the plume's window and cross-fade over at least one segment so there is neither a gap nor a double count. Add a spec that samples the luminance along the plume axis and fails on any rise downstream of the core or on any periodic modulation."
+    },
+    {
+      "severity": "blocker",
+      "view": "reentry-views/behind-1.0.png, behind-0.3.png; reentry-views/front-0.3.png, front-1.0.png; reentry-views/side-close-1.0.png; reentry/plasma-1.0-day.png, plasma-1.0-night.png",
+      "defect": "Item 5 is not resolved. From behind, the shock layer is still a flat mottled mauve disc inside a clipped white ring, a solar-eclipse look. The orange sparks are ruler-straight hairlines in the upper half only, and a red-brown veil covers the left third. There is no wake from behind. From the front it is a soft-edged white ellipse with a concentric inner ring and a mottled centre, like a contact lens. From the side it is a clipped white lens with a uniform pink halo, and the wake is a parallel-sided tube that leaves the head through a sharp concave neck. At intensity 1.0 the wake under the head's bloom is nearly white (208,174,176 at x=300 in side-close-1.0). The fixer's wakeGain made the 0.3 views better; the 1.0 views and the behind views are unchanged in kind.",
+      "realReference": "reentry-chutes/eft1-plasma-side-window.jpg: a streaming pink-magenta to salmon sheath with fine radial streaks and a hot white-yellow core, never a ring. reentry-chutes/dragon-reentry-from-iss.jpg and progress42-reentry.jpg: a compact clipped head with glare and an incandescent trail that tapers and cools, with no ring and no disc.",
+      "likelyCause": "src/render/vfx/plasma.ts: the shield layer is still a thin shell at the standoff distance, so seen face-on its rim integrates to a ring around a darker centre (the eclipse). The near-eye cut of the wake (smoothstep over 1-6 Rb) still removes the wake for a camera behind the capsule, and spark emission is not spread around the rim. At intensity 1.0 the wake emission plus bloom from the clipped head lifts the wake to near white.",
+      "fixDirection": "Give the post-shock layer a volumetric envelope with a smooth radial falloff (0.3-0.5 Rb thick, densest on the axis at the stagnation region) so a face-on view is brightest in the middle and has no rim ring. Draw a streaming sheath for cameras inside 6 Rb instead of cutting the wake, faded symmetrically. Emit sparks uniformly in azimuth with curved, length-varying paths. Scale wakeGain with intensity so the wake at 1.0 stays at least 2 stops under the head. Add a spec on behind-1.0 that the ring-to-centre luminance ratio is below 1.2."
+    },
+    {
+      "severity": "major",
+      "view": "liftoff-chase/t0-day.png through t10-day.png; liftoff/t0-day.png against t10-day.png; engine-atlas-9m/sl-full.png against sl-full-live.png",
+      "defect": "The exposure still follows the pad steam cloud. With the chase camera the sky median is (56,69,91) at T+0, (55,69,91) at T+3 and (55,68,90) at T+6, while the cloud fills the bottom of the frame, then jumps to (87,102,126) at T+10 when the cloud leaves the frame: about 1.3 EV of pumping in one sequence, and a navy dusk sky for the first six seconds. The pad camera drifts 0.65 EV (sky 65 to 80). Separately, the same scene shot deterministic and live differs by about 0.5 EV (atlas sl-full sky 89 against 108, ground 129 against 149), so the meter does not settle to the same answer in both modes. Splash, explosion, ignition and staging are now stable.",
+      "realReference": "liftoff-ascent/artemis2-launch-2.jpg: in daylight the brilliant steam cloud clips while the sky, pad and towers stay at normal daylight exposure; only 0.8 % of pixels clip. launch-pad/sls-pad-blue-sky.jpg: the daylight sky over the pad is Y 0.15 to 0.33 (80,108,156 up high).",
+      "likelyCause": "The core meter (exposure.ts / exposureMeter.ts) still lets a large bright transparent cover (the plume-lit cloud over 20-40 % of the frame) pull the EV down. The fix that holds the small highlights (white water, fireball) does not cover a cloud this large. The deterministic/live gap suggests that adaptation in the live capture has not converged, or that the meter histogram depends on the noise offset.",
+      "fixDirection": "Request from core-support that, with the sun up, the EV is bounded to the sunny-16 prior within about +-0.5 EV whatever the transparents cover, so the cloud clips instead of darkening the sky. Extend the exposure spec to the chase sequence (sky EV between T+0 and T+10 within 0.4) and assert that deterministic and live shots of the same scene agree within 0.2 EV."
+    },
+    {
+      "severity": "major",
+      "view": "engine-atlas-9m/vac-full.png, engine-solids/vac-les.png and vac-retro.png, plumes-close/booster-45m.png, liftoff/t0-day.png, perf-lift-off-from-a-chase-camera-at-150-m.png (blue grain at the nozzles), lunar/5m-day-close.png (stippled lander shadow at x~1000-1280, y~520-620), explosion/close-2.5s.png (granular trail), all the *-live.png pictures",
+      "defect": "Every half-resolution volume still shows its per-pixel dither as sand-grain stipple: on plume rims, along the edges of the solid-motor fans, as blue grain at the booster nozzles, inside the ignition flash, on the explosion's fragment trails, and as a stippled 'screen-door' lander shadow under the lunar dust. The new *-live pictures do not show a converged frame. Measured as Laplacian standard deviation, live and deterministic are the same to two digits: booster-45m 21.61 against 21.63, explosion close-0.6s 17.57 against 17.52, lunar 5m 7.46 against 7.36, solids sl-les 4.49 against 4.41. The mean absolute difference between each pair is only 0.4-0.7. The 1440p perf frames show the same grain.",
+      "realReference": "Every reference in liftoff-ascent/ (artemis2-launch-1.jpg, sts51f-ignition.jpg, soyuz-ms13-jellyfish.jpg): gas and smoke are smooth at the pixel scale; their structure is turbulence, not noise.",
+      "likelyCause": "One blue-noise offset per half-resolution pixel on a short march (plumes.ts, smoke.ts, dust.ts, plasma.ts), with no spatial filter before the depth-aware upsample in volumes.ts. The live capture either does not run the temporal filter long enough to converge, or the temporal filter does not reach the volume targets, because the live pictures carry the same grain.",
+      "fixDirection": "Add a small depth-aware spatial denoise (3x3 or an a-trous pass) on the half-resolution volume image before the composite. Check that the live screenshot path actually accumulates 16 or more jittered frames before capture, and add a spec that live grain (Laplacian standard deviation in a plume patch) is at least 30 % lower than deterministic. Re-shoot the live set."
+    },
+    {
+      "severity": "major",
+      "view": "liftoff-chase/t10-night.png (aft end), plumes-close/booster-45m.png and booster-45m-night.png, lunar/30m-night.png (legs), engine-solids/vac-les.png and sl-les.png (capsule base)",
+      "defect": "Surfaces near a flame are still lit as if by a point at zero distance. In booster-45m the underside of the base ring is a flat, unshaded cream annulus (245,236,220) and the pod exits are flat white ellipses. At night (chase T+10) the hull is pitch black, and only the base ring edge and the pod rims are drawn as clipped thin outlines, a neon-sign look. The lunar legs at night are clipped white lines beside a black body. The base of the solid-motor capsule is a uniform white ellipse in the vacuum and sea-level tiles.",
+      "realReference": "liftoff-ascent/sts51f-ignition.jpg: the orbiter and external tank are lit warm with smooth gradients by the plume. liftoff-ascent/atlasv-oa6-liftoff.jpg: the vehicle is silhouetted but its aft end is rimmed by a broad warm gradient, not a hairline. spacecraft-hardware/orion-a2-sm-engines.jpg: nozzle bells are matte metal with shading.",
+      "likelyCause": "The plume lights are zero-radius (the request vfx-5 for a source radius on LocalLight is still open), so 1/d^2 explodes on surfaces within a few metres while everything farther away gets almost nothing. The capsule base sits within one exit radius of the light segment.",
+      "fixDirection": "Push vfx-5 with core-support (floor d^2 at the jet radius, or an area/capsule light with radius). Until then, start the light segment several exit radii downstream and clamp its intensity per surface by the illuminance of the flame's visible area. Verify that the base ring shows a gradient and is not clipped at 45 m by day, and that at night the aft 10 m of the hull reaches mid-grey with a smooth falloff."
+    },
+    {
+      "severity": "major",
+      "view": "liftoff-chase/t6-day.png (x~1000-1110, y~455-500), liftoff-chase/t3-day.png, t10-day.png, t6-night.png; perf-lift-off-from-a-chase-camera-at-150-m.png (fringe at x~1780-2240, y~720-920)",
+      "defect": "The pad cloud still has near-black ink-blot holes with dendritic edges inside its sunlit body (visible in both day and night chase frames at the right of the cloud). At 1440p live the thin fringe of the cloud shows a marbled worm-like noise texture instead of fading, so the noise function itself is visible. The body is soft everywhere, with no crisp cauliflower edges. The hairlines of item 12 are gone.",
+      "realReference": "liftoff-ascent/artemis2-launch-2.jpg and apollo4-liftoff.jpg: a brilliant white or tan cloud with hard-edged billows over many scales, gaps showing darker self-shadowed cloud and never black ground, and fringes that thin out smoothly.",
+      "likelyCause": "src/render/vfx/smoke.ts: the steep erosion threshold (saturate((billow - erosion*(1-cover))*4 + cover)) cuts holes to zero density, and the ground-shadow multiply behind them makes them near black. In the fringe, the warped noise octaves are seen at low density without enough samples, so their isolines show as worms.",
+      "fixDirection": "Replace the threshold erosion with a soft remap that keeps a density floor away from the rim. Fade the ground-shadow multiply where the cloud above is thin. Add a multiple-scattering ambient so gaps read grey-white. Band-limit the fringe octaves to the half-resolution footprint and add finer curl at the silhouette."
+    },
+    {
+      "severity": "major",
+      "view": "plumes-close/booster-45m.png, booster-110m.png, liftoff-chase/t10-day.png and t10-night.png, liftoff/t10-day.png, overcast-plume-below-deck.png",
+      "defect": "The booster plume is a parallel-sided cream column of even brightness from the nozzles to the cloud. It is not clipped by day (core about 228-240), has no glare, and has blue-violet stipple at the nozzles and soft streaks. By night it is the same column, only brighter. It does not widen or break up into turbulent flame within a vehicle length.",
+      "realReference": "liftoff-ascent/apollo4-liftoff.jpg: the plume clips at the core (~10x the sky) and spreads into a wide yellow-orange flame. liftoff-ascent/sts51f-ignition.jpg: SRB plumes clip blinding white with glare. liftoff-ascent/artemis1-launch-1.jpg: the night plume clips with a large glare.",
+      "likelyCause": "plumes.json methalox-booster: core and shear lengths applied to the merged radius keep a constant-width luminous column. The per-cluster rgb clamp (HDR_MAX*0.25) and the remaining meter pull (finding 3) keep it below white, so bloom stays weak. There is no large-eddy displacement of the boundary.",
+      "fixDirection": "Shorten the luminous length to about one vehicle length at sea level, displace the boundary with eddies at the scale of rb that grow downstream, let the core clip by 2-3 stops so bloom forms a glare, and add a spec that the core reaches 255 in at least a few hundred pixels at 45 m by day."
+    },
+    {
+      "severity": "major",
+      "view": "splash/impact-0.4s.png, impact-1s.png, impact-1.8s.png, impact-2.5s.png, impact-5s.png, splash/close-0.4s.png, close-1s.png",
+      "defect": "The splash reads as particle sprites. The droplets are round soft-edged white discs of a few sizes, scattered evenly around a ring (a snow-globe or bokeh look). The crown is a symmetric white bowl. The mist is a ring of identical soft blobs. Afterwards the foam is a flat turquoise disc with white blotches and an elliptical outline. Exposure no longer pumps, and the droplets are no longer grey.",
+      "realReference": "sea-surface-close/heavy-seas-essex-1960.jpg: spray sheets are translucent white curtains, and old foam is a lace of thin filaments. Apollo and Orion splashdown footage: an asymmetric lumpy wall of white water with ragged curtains and chunky spray of very different sizes, drifting downwind.",
+      "likelyCause": "particles.ts KIND_DROPLET draws every drop as a round Gaussian sprite with no motion stretch and no glints. The crown in splash.ts is still axisymmetric. The foam ring in FOAM_WGSL is an analytic ellipse with a thresholded mottle.",
+      "fixDirection": "Stretch drops along their velocity by the exposure time, give them a heavy-tailed size distribution with sun glints, and group them into fingers that break from the crown rim. Bias the crown by the entry velocity. Draw the foam as filaments with a noise-perturbed outline. File the ring-wave request with the ocean package."
+    },
+    {
+      "severity": "major",
+      "view": "explosion/day-0.2s.png, day-0.6s.png, close-0.6s.png (right secondary at x~705-780, y~300-390), close-night-0.6s.png",
+      "defect": "The fragments at 0.2-0.6 s are still thick, straight, constant-width pale rods radiating from the centre (sea urchin look). The right secondary burst in close-0.6s is a near-square block of popcorn cells with flat sides, beside a blurred main ball. In close-night-0.6s the ball's interior is a field of bright angular facets like crumpled foil. The later soot cloud (1.5-7 s) is a clear improvement.",
+      "realReference": "Vehicle break-ups on film (CRS-7, Antares Orb-3, AMOS-6): fragments are bright heads with thin, kinked, curving trails; secondary deflagrations bulge out of the main fireball and merge with it; fire structure is rounded, rolling cauliflower, never facets.",
+      "likelyCause": "Fragment trails are trail.ts tubes widened to a pixel, with the full fragmentSmoke radius from birth and no curvature. The secondaries are placed at the rim of the first ball and use the same noise at a smaller radius. The first-octave displacement follows the lattice of the 64^3 noise texture, which gives the facets and the square outline.",
+      "fixDirection": "Make young fragment trails thin (0.2-0.4 m), give them a bright head and curved ballistic paths from the first frame, and grow the radius with age. Spawn the secondaries inside the main ball (0.4-0.8 R) and scale the noise frequency with radius. Use an analytic gradient noise or a higher base frequency for the first octave so the outline does not follow the texel grid."
+    },
+    {
+      "severity": "major",
+      "view": "reentry/trail-50km-night.png; haze-trail-50km.png",
+      "defect": "From 50 km at night the reentry trail is still a ruler line: the peak is (224,182,160) at x=20, (219,183,167) at x=400 and (226,210,207) at x=1000, with the width 5-6 px all the way, and only the last 50 px near the head clip. Seconds of flight show no fading or narrowing along the frame. The daytime version now fades properly. The ascent trail seen through haze is a uniform soft orange stick of constant width.",
+      "realReference": "reentry-chutes/dragon-reentry-from-iss.jpg: a compact saturated head and a tail that fades slowly. reentry-chutes/progress42-reentry.jpg: a brighter leading head and a dimmer, slightly wavy tail.",
+      "likelyCause": "trail.ts: a single glow term with an 18 s lifetime, widened to a pixel at constant energy. At night the exposure rises until the whole train sits near display white.",
+      "fixDirection": "Split it into a hot term (e-folding 0.3-0.6 s) and a train term (hundreds of cd/m^2 that decays over tens of seconds), graded by age in both colour and luminance. Add beading noise along the length that survives at sub-pixel width. Give the ascent trail a radius that varies with age and noise, and a ragged old end."
+    },
+    {
+      "severity": "major",
+      "view": "splash/cut-away-1s.png, splash/cut-away-6s.png, perf-chutes-and-splash.png",
+      "defect": "After cut-away the canopies no longer stay domed, but they now form rigid banana and hook shapes standing in mid-air, with perfectly regular radial gore stripes and a quilt-like tile pattern. Their lines hang as dense fringes of straight parallel rods ending in mid-air, like jellyfish tentacles. Nothing reads as slack cloth.",
+      "realReference": "sea-surface-close/apollo9-floats.jpg: released canopies lie on the water as limp sheets. Orion and Apollo recovery footage: released mains crumple at once, stream, and fall as cloth with slack, tangled lines.",
+      "likelyCause": "src/render/vfx/chutes.ts drift state: the collapse bends the analytic canopy profile as a whole (a single curvature), so the gore pattern stays regular. The lines are drawn as straight segments of fixed length from the skirt, with no confluence and no sag.",
+      "fixDirection": "Collapse each gore independently, with random radial crumple and folds of falling amplitude, and add cloth wrinkles at the pattern scale. Draw the lines as catenaries or noise-perturbed polylines that trail upward relative to the falling canopy, and shorten them visibly as they go slack."
+    },
+    {
+      "severity": "major",
+      "view": "chutes/mains-reef1-backlit.png, chutes/mains-reef2-backlit.png, chutes/mains-full-backlit.png (x~620-780, y~180-230), chutes/drogues-reefed.png",
+      "defect": "Clustered canopies still pass through each other: at reef 2 the third canopy sits half inside the upper right one, and at full inflation the lower canopy's crown pokes into the upper canopy's skirt. Reef-1 mains are closed corn-cob ellipsoids with a brick-grid pattern and a ragged polygonal hem, dull against the light. The suspension lines stay light grey while the capsule is a black silhouette against the sun.",
+      "realReference": "reentry-chutes/artemis2-mains.jpg and demo1-four-mains.jpg: clustered canopies press against each other and never overlap, and against bright sky the canopies and lines are darker than the sky.",
+      "likelyCause": "canopyModel.ts clusterAngle spaces canopies by the projected skirt radius, not by the bulb's maximum radius plus flutter, and no contact pass exists. The reefed profile is a closed ellipsoid. chutes.ts lights the lines as half sun-facing whatever the view.",
+      "fixDirection": "Space by the maximum profile radius plus the flutter amplitude, and add a contact pass that flattens touching sides. Model reef 1 as a fluted tube with an open mouth. Make line radiance depend on the view-sun angle."
+    },
+    {
+      "severity": "major",
+      "view": "lunar/30m-day.png, lunar/10m-day.png, lunar/5m-day-close.png, perf-lunar-descent-with-dust.png",
+      "defect": "At 30 m the dust is still a fan of pale straight rays painted on the ground. At 10 m and 5 m the horizon is razor sharp (the step from sky 12 to ground 184 within 4 px), and nothing veils it. Short bright dashes of dust particles are drawn above the horizon against the black sky, like a warp starfield. The dark blot under the lander is gone.",
+      "realReference": "Apollo 11-17 descent film: a thin, bright, continuous radial sheet that washes out the surface detail and softens the horizon below about 10 m, with fine flickering streaks inside it.",
+      "likelyCause": "src/render/vfx/dust.ts: the streak term is still a high-contrast angular noise with little radial variation, and the sheet's optical depth at the horizon is too low to veil it. The streak particles (30,000/s, widened to a pixel) are drawn even where they project onto the sky.",
+      "fixDirection": "Lower the streak contrast to 3:1 or less and vary it along the radius. Raise the sheet's optical depth toward the camera at low altitude so the horizon softens. Limit visible particles to a sparse set of larger ejecta and fade them above the sheet height."
+    },
+    {
+      "severity": "major",
+      "view": "rcs/pulse-sun.png, rcs/all-sun.png, rcs/all-sun-12m.png, rcs/all-shadow.png, rcs/all-shadow-12m.png, rcs/pulse-shadow.png",
+      "defect": "Thruster firings now read as tiny soft out-of-focus glow halos at the ports: no jet, no flame core, no puff shape. In shadow the frames are 98.1-99.6 % black. The only effect visible is a clipped white crescent on the top rim of the hull and two small glows.",
+      "realReference": "Apollo and Shuttle RCS firings in vacuum: a bright nozzle flash and a short, wide, translucent puff that is visibly gas for a metre or two; at night the flash lights the nearby structure brilliantly.",
+      "likelyCause": "plume.rcs in plumes.json was cut to a short, faint near field, so only the hint glow and bloom remain. The thruster light is a point at the port, so it clips the nearest rim and leaves the rest black.",
+      "fixDirection": "Give the puff a visible 30-45 degree cone with density falling as 1/r^2 over 1-2 m and a short bright core, plus a sharp on/off envelope. Spread the thruster light over the puff so the hull around the port is lit with a gradient, not a hairline."
+    },
+    {
+      "severity": "major",
+      "view": "engine-solids/sl-les.png, sl-retro.png, sl-les-close-live.png, vac-les.png, vac-retro.png",
+      "defect": "Solid-motor smoke now billows, but it is lit evenly cream, with no shaded side and no self-shadow, and its edges are soft and blurred. The vacuum fans have sand-grain stippled rims along their whole outline and comb-toothed jagged tips at the nozzles.",
+      "realReference": "liftoff-ascent/artemis2-launch-1.jpg: SRB exhaust is dense, opaque, white with a lit and a shaded side. liftoff-ascent/sts51f-ignition.jpg: blinding white plumes with a hard edge.",
+      "likelyCause": "The jet march in plumes.ts uses one constant, unshadowed sun term per instance, and the boundary noise is band-limited to large scales only. The rim stipple is the per-pixel dither of finding 4, made worse by a fan bounded by a sharp analytic cone at a low sample count.",
+      "fixDirection": "Add a two- or three-step shadow sample toward the sun (or an analytic depth term) so the far side darkens. Add billows at the scale of rb that sharpen with distance. Denoise as in finding 4, and soften the fan bound near the nozzle so the tip does not comb."
+    },
+    {
+      "severity": "major",
+      "view": "splash/before.png (shadow at x~860-1280, y~320-345), splash/impact-0.4s.png, splash/cut-away-1s.png, splash/cut-away-6s.png, perf-chutes-and-splash.png",
+      "defect": "The canopy shadows on the open sea are near black: median (2,11,32) inside the shadow against sea (13,53,105), about 5x darker. They have hard edges with a stippled upper edge and fine horizontal stripes inside. They read as oil slicks or holes in the water. The capsule's shadow beside it is the same black.",
+      "realReference": "sea-surface-close/artemis2-floating-2.jpg and apollo17-splashdown.jpg: open ocean seen from above is mostly reflected sky, so a shadow on deep water removes only the small diffuse/subsurface part and is faint. earth-orbit-ocean/glint-pacific-cb-shadows.jpg: shadows show clearly only inside the glint.",
+      "likelyCause": "The shadow term multiplies the whole sea radiance, including the sky reflection, instead of only the sun-specular and subsurface terms (lab ocean or ocean package shading). The stipple and stripes are shadow-map filtering at a grazing sun without temporal jitter (item 28).",
+      "fixDirection": "Raise this with the ocean package (or the lab's ocean material): apply the sun shadow only to the sun glint and the subsurface term, never to the sky reflection. Check it on the real ocean with live filtering, and raise the canopy caster's slope-scaled bias if the stripes persist."
+    },
+    {
+      "severity": "minor",
+      "view": "vacuum-ignition/ignition-0.05s.png (x~470-900, y~60-420)",
+      "defect": "The first frames of vacuum ignition are a sunburst of straight radial spokes spreading sideways from the engine plane, perpendicular to the axis, with a sand-grain dithered rim; it also brightens the ground beneath. By 0.3 s it is gone and the plume is clean, so the flat disc of item 4 is fixed, but this frame still reads as a sprite.",
+      "realReference": "Upper-stage ignition in vacuum (Merlin Vacuum, J-2): a translucent puff of propellant expanding in all directions with soft, irregular structure, no fixed spokes.",
+      "likelyCause": "The flash term in plumes.ts is now a widening shell, but it is modulated by the angular streak noise (hence the spokes), and at its low density the per-pixel dither shows at the rim.",
+      "fixDirection": "Modulate the flash with isotropic 3D turbulence instead of the streak noise, and let it travel downstream with the gas front. Denoise as in finding 4."
+    },
+    {
+      "severity": "minor",
+      "view": "plumes-close/staging-separation-70m.png, plumes-close/staging-retro-70m.png, staging/2.4s-ullage.png, staging/2.9s-retro.png, liftoff-chase/t3-night.png",
+      "defect": "The separation glow ball is gone, and the ullage and retro motors now have separate cores (item 3 fixed). But each jet is a smooth straight-edged cone with a stippled rim. The debris and ice are round soft discs (a few sizes) plus a sprinkle of gold dots. At night the hull at T+3 is surrounded by dozens of identical round glowing discs.",
+      "realReference": "liftoff-ascent/falcon9-first-stage-separation.jpg: separation gas is faint and wispy; staging and ice debris are irregular tumbling flakes of very different sizes, often seen as short streaks.",
+      "likelyCause": "particles.ts draws ice and debris as round Gaussian sprites with a one-pixel minimum radius and no motion stretch. The motor jets use the solid profile with a sharp analytic boundary.",
+      "fixDirection": "Use a heavy-tailed size distribution, motion-stretched sprites with tumbling glints, and fewer, larger pieces. Add boundary noise at the scale of rb to the small-motor jets."
+    },
+    {
+      "severity": "minor",
+      "view": "lunar/30m-night.png (strut at x~655-680, y~360-400), lunar/3m-night.png",
+      "defect": "With the sun down the lander's exhaust is a soft white flashlight cone, and the strut crossing it is still drawn as a dotted line of alternating bright and dark dashes. At 3 m the lit ground carries radial white dashes and a visible grain.",
+      "realReference": "Apollo LM descent engine in vacuum: essentially invisible plume; at night only the lit ground shows.",
+      "likelyCause": "The half-resolution plume composite over sub-pixel strut geometry alternates between in-front and behind per pixel (the depth-aware upsample). The near-field brightness of methalox-lander in vacuum is still high.",
+      "fixDirection": "Reject half-resolution volume samples whose moment depth lies behind the full-resolution depth for thin geometry, and lower the lander's vacuum near field by another stop."
+    },
+    {
+      "severity": "minor",
+      "view": "perf-lift-off-from-inside-the-cloud.png, liftoff-chase/inside-cloud-t6-day.png, inside-cloud-t6-night.png",
+      "defect": "From inside the cloud the frame is still one flat orange-tan fill, with the mount as a faint silhouette and a hard-edged darker trapezoid on the ground below it. A contrast stretch of the 1440p frame shows a worm-like noise texture and a dashed horizontal seam across the fill.",
+      "realReference": "liftoff-ascent/sts97-smoke-steam-night.jpg: plume-lit smoke falls off steeply away from the flame, with darker pockets.",
+      "likelyCause": "smoke.ts ends the march a few metres in, where the plume term is nearly constant. The ground-shadow multiply shows through as the wedge. The noise texture of finding 6 is visible at low contrast.",
+      "fixDirection": "Add the direction-dependent plume term for near samples, keep large-scale density variation near the eye, and fade the ground-shadow multiply when the eye is inside the cloud."
+    },
+    {
+      "severity": "minor",
+      "view": "reentry-views/front-0.3.png and front-1.0.png (x~820-940, y~150-230)",
+      "defect": "Seen from the front, the receding wake converges to a hard grey pointed tip with a bright point at its end, like a pencil, instead of dissolving.",
+      "realReference": "reentry-chutes/dragon-reentry-from-iss.jpg: the far end of a trail fades out without a defined end.",
+      "likelyCause": "The trail tube keeps a constant radius and optical depth over its whole length, so in perspective many kilometres of it pile up into a few pixels at the vanishing point.",
+      "fixDirection": "Grow the radius and fall the density with age so the projected far end thins out, and cap the accumulated optical depth per pixel."
+    },
+    {
+      "severity": "minor",
+      "view": "explosion/close-2.5s.png (x~290-305, y~140-190)",
+      "defect": "A short dark vertical bar still crosses the left fragment trail, and the trail itself is a granular, sandy tube.",
+      "realReference": "Debris trails on film: continuous, turbulent smoke with no cut bars.",
+      "likelyCause": "Not identified (item 26). Possibly a fragment drawn as an opaque sub-pixel stick in front of its own trail, or a sorting error between the trail and the smoke volume.",
+      "fixDirection": "Step through the frame with fragments, trails and debris off one at a time to find what draws the bar."
+    }
+  ]
+}

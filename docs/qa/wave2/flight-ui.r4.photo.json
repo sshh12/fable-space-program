@@ -1,0 +1,90 @@
+{
+  "screenshotsLookedAt": 48,
+  "overallScore": 7.5,
+  "previousItemsStillOpen": [
+    "minor (r1.photo 'ORB body is a featureless shaded ball' and its r1.artifact twin): the terminator, limb darkening and caption were added, but the disc still carries nothing that identifies the body. Earth in mfd-pages-native-reentry.png is a blue-grey ball with a straight terminator and the Moon in mfd-pages-4k.png / mfd-pages-hover-4k.png a grey one. See the finding below.",
+    "minor (r1.artifact 'pole-on limb debris', round-3 lip fade): pole-on it is fixed, but in the horizon views at 4K numerals are still cut in half by the bezel lip. lowOrbit-4k.png has '60' under the sky pointer at the top rim and '-60' at the bottom rim; attitude-lowOrbit-4k.png and entry-highg-4k.png have the same at their rims. See the finding below."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ (every screenshot except prograde-hold.png): especially ascent-720p.png, translunar-720p.png, lunarSurface-720p.png, warp-refused.png, chutes-720p.png, retrograde-hold-720p.png, reentry-720p.png, entry-highg-720p.png, lunarOrbit-720p.png, mfd-pages-hover-4k.png, failed-720p.png, failed-4k.png, cockpit-cabin-lowOrbit-4k.png",
+      "defect": "Every screenshot shows a stopped clock and readings that contradict each other, so on a second look the HUD looks broken even where its code is right. (1) The MET reads T+ 00:00:00 and UTC reads 2028-03-03 20:26:40 in every scene, including 9.2 km up climbing at 350 m/s, 180 Mm out in translunar coast, landed on the Moon, in entry, and under PHYSICS x4 warp (warp-refused). In cockpit-cabin-lowOrbit the cabin's own MET display reads 00:00:00:05 right next to the HUD's 00:00:00. (2) G LOAD reads 0.00 g under the mains at a steady 8 m/s sink (chutes) and in a powered climb with the M-1 at TWR 1.67 (warp-refused). The 720p ascent of the same climb shows 2.35 g. (3) Entry at 68 km shows vertical speed 0.0 m/s and 4.50 g at 2.7 kPa; a capsule needs about 15 kPa for that load. (4) The lunar orbit is 100 x 100 km, yet the panel shows IMPACT MISS 6 840 m. Under the chutes at 2.5 km the panel shows TRACK · ARRIVAL none. (5) Landed, after stage 6 'deploy gear' has fired, the MFD LND and SYS pages show GEAR UP in amber and the HUD's GEAR button is unlit. (6) The MISSION FAILED banner reads 'Heat shield burned through at 61 km (lab decoration)' while the vessel is at 68 km and HEAT SHIELD shows 80 % in green. The debug words '(lab decoration)' are on screen.",
+      "realReference": "Shipped HUD captures (KSP 1 and 2, Microsoft Flight Simulator) and real mission telemetry (Apollo and Orion MET, Falcon webcast overlays) always show one consistent state with a running clock. The cabin still from the cockpit package in the same frame already does: its MET runs. The brief judges interface packages on 'correct information'.",
+      "likelyCause": "labs/flight-ui/main.ts overrides throttle, thrust and gLoad only when `flight=` is given (line 251), so every other scene keeps the FakeSim's 0 g. The FakeSim's met is ut - ut0 (src/core/fakes/fakeSim.ts:690), which is about 0 s in a page that was just opened. The `predicted=` decoration (lines 276-282) attaches a fixed 6 840 m miss whatever the orbit. The failure reason literal at line 264 includes '(lab decoration)'. Gear state is never decorated.",
+      "fixDirection": "Give each lab scene a coherent state in the lab's decoration layer, as `flight=` already does. Set a plausible readouts.met per scene (for example ascent 00:01:10, LEO 00:52:00, translunar 1 d 02 h, lunar orbit 3 d 04 h, landed 4 d 06 h; the pad stays at 0 or shows T-). Set the g load per scene (about 1 g under mains, the ascent default from the stage's TWR). Give the entry a sink rate and a q that match its g. Add an impact prediction only to descending scenes. Set gear down once the gear stage has fired. Make the failure reason consistent with the readouts and drop '(lab decoration)' from the on-screen string. Add a spec assertion that MET is not 0 in every scene except the pad and that no on-screen text contains 'lab'."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png, lowOrbit-4k.png, translunar-4k.png, lunarOrbit-4k.png, lunarSurface-4k.png, attitude-lowOrbit-720p.png; STG page of mfd-pages-4k.png and mfd-pages-hover-4k.png",
+      "defect": "The ACTIVE (burning) tile is named after the staging event that started it and shows that event's decoupler icon. Low orbit reads '4 M-2 separation ACTIVE' while RESOURCES shows 'M-2 upper stage 34 %' draining. The lunar orbit, translunar and landed views read '5 M-3 separation ACTIVE' with a green separation glyph while the lander's descent engine is what burns. A player sees 'ACTIVE: M-3 separation' and reads it as a separation in progress. The next tile is right to name what firing it does; the active tile should name what is running.",
+      "realReference": "KSP's staging stack shows the active stage by its engine parts (engine icons, fuel bar). Launch-webcast and flight-software telemetry name the running stage by its vehicle or engine ('STAGE 2', 'MVac'), not by the separation that started it.",
+      "likelyCause": "src/ui/model.ts:375-376 describeStages uses StageInfo.label and StageInfo.icon for every tile, the active one included. src/ui/hud/hud.ts builds the active tile from the same fields, and so does the MFD STG list (src/ui/mfd/mfdPainter.ts around line 1149-1169).",
+      "fixDirection": "For the active tile, show the engine icon and the name of what is burning: the stage group of its tanks (vehicle stageGroups label, for example 'Lander descent') or the engine name, with the event as a small subtitle if wanted ('since M-3 separation'). Use the same text on the MFD STG page and its 'Active stage' row."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\reentry-720p.png, reentry-4k.png, entry-highg-720p.png, bright-reentry-720p.png; ENT and LND pages of mfd-pages-native-reentry.png",
+      "defect": "During entry the recovery-zone panel gives two answers in two adjacent rows. 'ENTRY POINT MISS 6 840 m · 238°' reads as on target to within 7 km. Directly under it an amber 'OUTSIDE ZONE r 1 800 km' light reads as a miss. Neither one is about where the capsule will splash down. Per the contract, the 'entry' prediction is the entry-interface point, not the splash point; the light tests the vessel's current sub-point, which is 6 126 km away. A player cannot tell from the panel whether they will land in the zone, which is what the panel is for.",
+      "realReference": "The Apollo Entry Monitor System and Orion's entry displays show range-to-go to the predicted splash point. KSP trajectory tools mark a predicted landing point. A zone light in a shipped HUD answers 'will I land inside'.",
+      "likelyCause": "src/ui/hud/hud.ts:1115-1121 shows the zone light once 'committed' (a prediction or a chute envelope exists) and colours it from lt.insideZone, which src/ui/model.ts:167 computes from the sub-point distance. The row label is 'Entry point miss' and does not say 'interface' (model.ts:136, src/core/contracts/sim.ts:409-414).",
+      "fixDirection": "Label the entry prediction for what it is ('ENTRY INTERFACE 6 840 m from zone centre'). While only an entry-interface prediction exists, do not show the amber OUTSIDE ZONE light: show nothing, or a neutral 'ZONE 5 885 km behind'. Drive the inside or outside light from an impact prediction or, under chutes, from the sub-point. Mirror the change on the MFD ENT and LND rows."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png, translunar-720p.png, reentry-720p.png, attitude-lowOrbit-720p.png, pad-720p.png, warp-refused.png",
+      "defect": "The smallest text on the HUD at 1280 x 720 is on its primary instrument. The navball's pitch numerals ('20' to '50', '-20' to '-50') have a cap height of 6 px, measured on '30' in lowOrbit-720p at x 604-614, y 582-587; that is about 8 px type. The heading labels '030', '060', '120' are about the same. The HUD's own floor for DOM text is 10 px, about 7 px caps. Pole-on, the '30' and '40' numerals near the rim are smaller still. The warp step buttons' '‹' and '›' glyphs are about 3 px tall at 720p.",
+      "realReference": "Shipped HUDs hold one minimum size for everything a player reads. KSP's navball numerals at 720p are its largest marks, and the Apollo FDAI (out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg) carries few, large numerals.",
+      "likelyCause": "src/ui/navball/navballTexture.ts:146 draws numerals at size 40 and :138 heading labels at 42 / 56 into the ball texture. With the ball at 24.5u (about 150 px of visible disc at 720p) that maps to roughly 6 px caps. The warp step buttons use text glyphs inside .warp button (src/ui/hud/hudStyles.ts:159).",
+      "fixDirection": "Raise the numeral and heading-label size in the texture by about 1.35x, and drop the +-20 numerals or every second column so the larger labels still fit. Alternatively, enlarge the ball at 720p only. Add the ball's numerals to the 10 px floor check (measure a known glyph in the 720p screenshot). Draw the warp step arrows as SVG chevrons at the cap height of the label text."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-4k.png (top rim under the sky pointer, bottom rim below the maneuver marker), attitude-lowOrbit-4k.png (upper and lower-right rim), entry-highg-4k.png (top rim), reentry-4k.png",
+      "defect": "Residual of the round-1 limb-debris item. In the horizon views the bezel lip still cuts numerals in half: '60' at the top rim, its upper half gone and the lower half at 50 to 70 % ink, and '-60' at the bottom rim the same way. At 4K these are plain half-glyphs. Pole-on the lip fade works.",
+      "realReference": "The Apollo FDAI (out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg) and KSP's navball show whole markings or none at the case edge, never half a numeral.",
+      "likelyCause": "src/ui/navball/navballShader.ts:139: lipFade = 1 - smoothstep(lip - 0.075, lip - 0.012, r) fades per pixel over a band narrower than one glyph (about 0.1 R high at 4K), so a numeral that straddles the band keeps its inner half at full or near-full ink.",
+      "fixDirection": "Fade label ink over a band at least one glyph tall (about lip - 0.17 to lip - 0.06) so a glyph near the lip dims as a whole. Better, put a label-centre mask in a second texture channel so each glyph fades by the radius of its centre. Re-shoot lowOrbit-4k and attitude-lowOrbit-4k and look at both rims."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-native-reentry.png (ORB: Earth), mfd-pages-native.png, mfd-pages-4k.png, mfd-pages-hover-4k.png (ORB: Moon)",
+      "defect": "The body on the ORB page is still a smooth gradient ball with a terminator. Earth is a dull blue-grey disc with no land, clouds or ocean contrast; the Moon is a grey disc with no maria. Next to the otherwise detailed glass pages it reads as stand-in art, and Earth and Moon differ only by tint.",
+      "realReference": "The Soyuz moving-map display shows coastlines (out/qa/ref/cockpit-interiors/soyuz-ms20-descent-module.jpg). The Orion display in out/qa/ref/cockpit-interiors/orion-a2-flyby-hansen.jpg shows the real Moon with its maria. Even schematic orbit displays draw a coarse land or maria mask.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts drawOrbitDiagram paints a radial gradient in the body colour plus the terminator. The hand-off says the painter has no asset access and that engine code may not carry per-body tables.",
+      "fixDirection": "Let the painter take an optional small equirectangular albedo image per body through its options (the app or cockpit can pass one already loaded for the globe or the map view; the painter stays Canvas 2D). Draw it orthographically under the terminator. Fall back to the gradient when none is given."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\failed-720p.png, failed-4k.png",
+      "defect": "The mission-failed state is a banner laid over a live HUD. The SAS, RCS, GEAR and ABORT buttons, the next-stage tile with its Space cap, the warp control and the 'Capture keyboard' pill are all still lit and clickable at full strength around it. The banner offers no next step. A dead crew with a fully armed flight interface reads as unfinished.",
+      "realReference": "Shipped flight games (KSP 1 and 2, Microsoft Flight Simulator crash screen) dim or remove the flight controls on failure and present the outcome as a modal with its choices (revert to launch, recover, quit to menu).",
+      "likelyCause": "src/ui/hud/hudStyles.ts:399-401 styles .failed as a centred box; nothing dims or disables the other HUD parts while it shows (compare .help-open at :405, which hides them).",
+      "fixDirection": "While mission.failed is set, dim the flight panels (for example opacity 0.35 and no pointer events, as the help sheet does), keep the clock, and give the banner the actions the app shell offers (or at least a key hint such as 'Esc: menu'). Shoot failed-* again."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\stage-lockout.png",
+      "defect": "The locked tile reads '1 Launch · LOCKED after last stage' on the pad, where there is no last stage. The reason is fixed text with no time left, so it reads as an error rather than a short interlock.",
+      "realReference": "KSP's stage lock shows a clear locked state with its toggle, and real sequencers show an inhibit with its reason. A timed interlock in a shipped HUD shows the seconds remaining.",
+      "likelyCause": "src/ui/hud/hud.ts:796 writes the literal 'after last stage', and src/ui/mfd/mfdPainter.ts:1169 does the same. StagingState carries only a boolean lockout.",
+      "fixDirection": "Write 'LOCKED · staging interlock' (or the seconds left, if the sim can add them; file a request against the contract). Do not imply a previous stage when nextStage is 0."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lunarOrbit-4k.png against mfd-pages-4k.png (STG page); lunarSurface-4k.png against mfd-pages-hover-4k.png (STG page)",
+      "defect": "The two stage stacks of one interface run in opposite directions. The HUD puts the later stages at the top, the next stage under them and the ACTIVE stage at the bottom (KSP order). The MFD STG page puts ACTIVE at the top and the later stages below it. A player who looks from one to the other has to re-read the order each time.",
+      "realReference": "A shipped game keeps one ordering of its staging list across every display that shows it (KSP's stack and its engineer readouts both read bottom-up).",
+      "likelyCause": "src/ui/hud/hudStyles.ts:221 (.stages justify-content: flex-end, later stages first) against the top-down list in mfdPainter.ts's staging page (around line 1140).",
+      "fixDirection": "Pick one order. Either draw the MFD STG list bottom-up, with ACTIVE at the bottom above the summary strip, or reverse the HUD stack. State the choice in the hand-off."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ascent-4k.png, pad-4k.png, lowOrbit-4k.png, bright-pad-720p.png",
+      "defect": "The HUD is clean and legible but has no look of its own. Every element is the same dark slate rounded rectangle with a 1 px hairline and a soft drop shadow, eleven plates of identical material: clock, orbit, zone, altitude, speed, chips, SAS, gauges, stack and resources. Only the navball bezel is an object. Next to a shipped title it reads as a well-made web dashboard over the scene rather than the interface of this spacecraft. The hand-off says the same ('a clean flat UI by design').",
+      "realReference": "KSP 2 houses its navball, throttle and staging in one shaped instrument cluster with its own material. Elite Dangerous and Microsoft Flight Simulator panels have a visual language that ties to their cockpits. This package's MFD pages already have a stronger identity (black glass, tab bar, status footer) than the HUD.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:56-61: one shared plate rule (.panel, .later, .tile) for all elements, so hierarchy comes only from type size.",
+      "fixDirection": "Give the bottom cluster one shared housing (SAS panel, ball and gauges on one bar, with the bezel's machined finish carried into it). Tie the side columns to the MFD's glass language (tab-like titles, a status edge), and keep the plain plate for secondary readouts. Keep the coverage budget and the plate opacity."
+    }
+  ]
+}

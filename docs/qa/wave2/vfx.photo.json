@@ -1,0 +1,181 @@
+{
+  "package": "vfx",
+  "lens": "photograph test",
+  "note": "Screenshots were older than the last commit to src/render/vfx (23:02-23:08 against 23:09:45 on 2026-11-10), so the functional specs were re-run through the gate on 2026-11-11 07:53-08:01: 33 of 33 passed, every matrix sheet rewritten. The eight perf-*.png pictures are written by the perf project only and were NOT regenerated (they date from 22:46-22:51, before the last edits to feature.ts and plumes.json). The matrix is rendered in deterministic mode with frozen blue noise, so single-frame stipple in the sheets is partly a test artefact (finding 20); where a defect also shows in a live-TAA shot that shot is named. The lab vehicle, pad, ground and ocean are stand-ins and were not judged. engine-lyra-a was looked at as its half-size sheet plus two full-size tiles; every other matrix picture at full size.",
+  "screenshotsLookedAt": 171,
+  "overallScore": 3.5,
+  "worstViews": [
+    "C:/dev/fable-space-game/out/screens/vfx/engine-solids/sl-les.png",
+    "C:/dev/fable-space-game/out/screens/vfx/splash/close-0.4s.png",
+    "C:/dev/fable-space-game/out/screens/vfx/explosion/close-0.6s.png",
+    "C:/dev/fable-space-game/out/screens/vfx/liftoff-chase/t0-night.png",
+    "C:/dev/fable-space-game/out/screens/vfx/staging/4.6s-ignition.png",
+    "C:/dev/fable-space-game/out/screens/vfx/plumes-close/staging-separation-70m.png",
+    "C:/dev/fable-space-game/out/screens/vfx/reentry/trail-50km-day.png",
+    "C:/dev/fable-space-game/out/screens/vfx/lunar/10m-day.png",
+    "C:/dev/fable-space-game/out/screens/vfx/splash/cut-away-6s.png",
+    "C:/dev/fable-space-game/out/screens/vfx/rcs/all-shadow.png"
+  ],
+  "findings": [
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/engine-solids/sl-les.png, 10km-les.png, sl-retro.png, 10km-retro.png (sheet: out/screens/vfx/engine-solids.png)",
+      "defect": "Solid motors in air (escape motor, retro motors) are flat sand-coloured wedges with ruler-straight edges: no flame, no incandescent core, no glare anywhere in a 190 m frame, about as bright as the ground behind them. They read as cardboard cones or searchlight beams. From 30 km up the same motors flip to a white comet tip in a dim fan, so the two regimes look like two unrelated effects.",
+      "realReference": "Apollo and Orion launch-abort motor firings (Pad Abort 1, Ascent Abort 2) and Shuttle booster separation motors: a blinding yellow-white flame tens of nozzle diameters long that clips the camera, turning into dense white-grey smoke that billows with lumpy cauliflower edges, a lit and a shaded side, and flame glow showing through the smoke near the root.",
+      "likelyCause": "data/defs/visuals/plumes.json plume.solid: emission lengths are in exit radii (core.lengthRe 36, shear 70, afterburn 110) and end within the first metres for small nozzles, while smoke.lengthRe 400 with sunScatter 1.2 / extinction 1.6 fills the frame. src/render/vfx/plumes.ts jetSample: the particulates carry no thermal emission (o.e has only core, ring and brush terms); the smoke boundary is the analytic cone with a small radial noise (rr) so edges stay straight; the march uses one constant sun term per instance, no shadowing towards the sun.",
+      "fixDirection": "Give solids incandescent particulates: emission proportional to smoke density, decaying over roughly 80-150 exit radii from white-yellow to orange (new data fields, e.g. smoke.glow and smoke.glowLengthRe), so the root is a clipped flame that fades into smoke. Displace the boundary with billows whose size grows with the local jet radius (two or three octaves at the scale of rb, not re) and add a two- or three-step shadow sample towards the sun. Check at span=190 that the flame takes at least a third of the visible plume at sea level."
+    },
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/liftoff-chase/t0-night.png, t3-night.png, t6-night.png, t10-night.png; out/screens/vfx/liftoff/t0-night.png, t3-night.png, t10-night.png",
+      "defect": "A night lift-off is a black frame with a pastel jet and one patch of lit cloud beside it. Measured in liftoff-chase/t0-night.png: apron next to the mount 2/255, apron farther out 0/255, vehicle hull above the engines 1.7/255. The plume column has the same pixel values by night as by day (T+10 chase, same crop: 227,213,216 at night against 227,214,217 by day), so the camera sits at a daylight exposure for the flame and nothing the flame lights is visible. The brief's 'at night: ground and smoke lit by the plume' is not visibly met and the vehicle is an invisible silhouette at its own launch.",
+      "realReference": "Night launches (Artemis I, Apollo 17, Falcon Heavy at night): the plume is a clipped white-yellow column with a large glare; pad, tower, ground and the whole cloud are lit orange-white for hundreds of metres, the vehicle's flanks glow, the sky brightens.",
+      "likelyCause": "src/render/vfx/feature.ts: the plume's exposure hint (DAYLIGHT_WHITE = 12000; hand-off 5.12 'an eighth of their luminance, at most 12,000 cd/m^2 ... at night the camera is stopped down for it') pins the night exposure at daylight level; the meter rule from request vfx-3 (a lit area over 2 % of the frame takes the target) then picks the cloud right at the jet. Hull: plumeLights() puts a zero-radius capsule light on the jet axis below the nozzles, so vertical hull walls see it at grazing incidence and there is no bounce from the lit cloud or ground.",
+      "fixDirection": "Let the flame clip at night: cap the plume hint far lower when the scene is dark (for example min(L/8, 1000-2000 cd/m^2), or scale the cap by the sun's illuminance at the camera) so the meter settles on plume-lit ground and cloud and the jet blooms. Add a bounce light per burning cluster near the ground (cloud top or plume foot, intensity = albedo x intercepted flux), or request a source radius on LocalLight from core-support so the capsule is an area light. Verify: hull above the engines reaches mid-grey at T+3, apron 100 m out clearly visible at T+10."
+    },
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/plumes-close/staging-separation-70m.png, out/screens/vfx/staging/2.56s-separation.png, staging/2.4s-ullage.png, staging/4.6s-ignition.png, out/screens/vfx/vacuum-ignition/ignition-0.05s.png, ignition-0.3s.png, ignition-1s.png",
+      "defect": "Stage separation is a smooth cream glow ball about one and a half stage diameters across with a soft cauliflower rim, brighter than the sunlit hull and hiding half the vehicle; no separate retro or ullage jets (ullage motors are two featureless cream cones). Ignition of the vacuum stage, in both scenes, is a flat cream ellipse standing across the axis at the engine plane with a dithered edge; it is still there 0.3 s after ignition and leaves a cream residue at 1 s although flashTime is 0.25 s. Both read as halo sprites, which PROMPT.txt rules out.",
+      "realReference": "Saturn V first-stage separation film: eight retro jets as separate short white-yellow streaks, the interstage falling through a brief orange fireball as the J-2 engines light. Falcon 9 staging: thin, fast, nearly transparent gas puffs gone in under half a second, then a wide translucent blue-white vacuum plume washing over the first stage. Hydrolox ignition: a few frames of orange-red flash, then an almost invisible blue plume.",
+      "likelyCause": "src/render/vfx/director.ts case 'decoupled': 1400 x scale 'gas' particles (plumes.json particles.gas: size 0.3-1.1 m growing at 0.35 x puffSpeed, opacity 0.2, life to 1.1 s) drawn as round Gaussian sprites (particles.ts fs, exp(-3.5 r^2)) plus staging.flashIntensity 60000. Flash: plumes.ts jetSample adds flashColor * lens.w * k0 * inlet * front * exp(-xc/(8 re)) * exp(-sq(r/(1.3 rBulk + re))): an unmodulated Gaussian, cut along the axis by 'front' and 'inlet' and 3.2 widths wide radially, hence a pancake; six nozzles sum to one disc.",
+      "fixDirection": "Separation: cut gas count and opacity by an order of magnitude, emit a thin radial sheet from the separation plane that expands at 200 m/s or more and is gone in 0.3-0.4 s (opacity falling as 1/r^2); keep the pyro flash as a light of a few frames. Make the retro and ullage jets the subject (solids finding). Flash: modulate with the plume noise, let it travel with the gas (as long as the start-up front, not a disc), tint by propellant, zero at flashTime, never opaque."
+    },
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/splash/impact-0.1s.png, impact-0.4s.png, impact-1s.png, impact-1.8s.png, impact-2.5s.png, impact-5s.png, close-0.4s.png, close-1s.png",
+      "defect": "At 0.1 s a pure white flat disc with a fringe of short radial hairs. At 0.4 s the crown is a smooth, opaque, evenly white truncated cone (a bucket or lampshade) with a clean elliptical foot and a paper-cut rim, the capsule hidden inside. At 1 s torn-paper fingers. Droplets are thousands of identical matte grey dashes in an even halo (confetti), without sparkle, still hanging as a flat disc at 1.8 s. Afterwards a speckled white ring decal with a perfect elliptical outline; the water itself never changes and the capsule stands still and upright.",
+      "realReference": "Orion (EFT-1, Artemis I) and Crew Dragon splashdowns: an irregular wall of white water thrown out one to two capsule heights, lumpy, translucent at the ligaments, with dense spray that drifts downwind and bright glints on the drops; a rebound and collapse in the middle; then a boiling patch of pale turquoise aerated water with foam streaks and ring waves spreading for tens of metres while the capsule heaves and rocks.",
+      "likelyCause": "src/render/vfx/splash.ts CROWN_WGSL: a sheet with a Gaussian cross-section at opticalDepth 3.2 (opaque), rim and tear noise only in angle and at low frequency (ang*0.55, 1.9, 2.6, 7.0), shading a constant sun term (0.38 + 0.42 facing). FOAM_WGSL: hard rho < 1 ellipse, ring + mottle saturate to white at age 0, thresholded noise gives speckle. Droplets: particles.ts KIND_DROPLET is lit diffusely (glints exist only for ice and chips), 8-30 mm drops widened to a pixel and dimmed, 16000 from three ring emitters with an even angular spread; mistCount 160.",
+      "fixDirection": "Build the crown from a noisy thickness field (lumps in angle and height, two or three octaves) with optical depth from about 0.3 in ligaments to over 3 at the root, forward-scatter highlights, and a real body of mist (a volume that lingers and drifts, not 160 particles). Droplets: wide size distribution with a few large blobs, sun glints, clustered into fingers. Foam: outline perturbed by +-40 %, soft edge, turquoise tint under the white, no solid white disc at age 0; ask the ocean package for a ring-wave disturbance at the entry point."
+    },
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/explosion/day-0.2s.png, day-0.6s.png, day-1.5s.png, day-3.5s.png, day-7s.png, night-0.2s.png, night-1.5s.png, close-0.6s.png, close-2.5s.png",
+      "defect": "The fireball is a matte ochre-orange cotton ball no brighter than the sky behind it: no white-yellow core, no clipping, no glare, no black soot. Burning fragments are thick, straight, flat-ended peach rods of constant width and brightness. From 350 m everything is out of focus (features about a third of the radius, soft edges; a brown blur by 2.5 s). The fire turns into brown-grey smoke all at once. At night the ball is the only thing in the frame; the ground stays black.",
+      "realReference": "Vehicle break-ups on film (CRS-7, Antares Orb-3, Starship flight tests, Challenger): a core that clips to white-yellow for the first second, deep orange folds rolling into black-brown soot with fire showing through the cracks, turbulent detail down to the pixel; debris on curved arcs, each with a bright head and a thin, kinked smoke trail; ground and smoke lit orange at night.",
+      "likelyCause": "plumes.json explosion.luminance 70000 (a sunlit white surface is about 30,000 cd/m^2) and src/render/vfx/fireball.ts fire = color*(local^3*1.7) + color*(1,1.7,3.6)*pow(local,7)*3.2 with local mostly below 0.6: 15,000-40,000 cd/m^2 by day. Fire and smoke are switched for the whole ball by the scalars heat and smokeAmount (smoke = 1 - heat), so no soot while it burns. Noise octaves at q*0.45, 1.3 and 3.3 with 40 steps at half resolution. Fragments: trail tubes (fragmentSmoke 1.3 m radius, fragmentGlow 90000 saturating, diffusivity 0.08 x, little noise). Light: lightEfficacy 0.008.",
+      "fixDirection": "Raise the fire to 5e5-1.5e6 cd/m^2 over the first third of the duration with a temperature ramp (white, yellow, orange, dull red) driven per sample by a cooling field, and let soot extinction grow where the gas has cooled so dark folds wrap glowing cracks. Add two finer octaves (about q*8 and q*20) at the mean emission depth as the plumes do, or march at full resolution when the ball covers more than a tenth of the frame. Fragments: thin (0.2-0.4 m) trails with strong noise displacement, a bright head, curved by gravity from the start, breaking up. Send a hint so the core clips; raise lightEfficacy so the ground is lit at night."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/explosion/close-0.6s.png (lower right near 790,390 and lower left near 510,380), explosion/day-0.6s.png",
+      "defect": "Secondary bursts are separate small balls hanging outside the main fire, and the right one has an almost square outline (flat left, right and top sides) filled with popcorn-like cells: a cube of fire.",
+      "realReference": "Secondary deflagrations show as bulges and jets that push out of the main fireball and merge with it; nothing has straight sides.",
+      "likelyCause": "Hypothesis: src/render/vfx/fireball.ts, young ball: heat near 1 keeps it hot out to its surface and the surface is set by the first noise octave vfxNoiseLod(q*0.45) with amplitude 0.7; across a domain of +-1.5 radii that is about one lattice cell of the 64^3 trilinear noise, so the displaced surface follows the texel grid. Secondaries are placed at the rim of the first ball (fireball.ts lines 226-234).",
+      "fixDirection": "Spawn secondaries inside the first ball (0.4-0.8 of its radius) so they read as lobes; use a higher base frequency or an analytic gradient noise for the first octave; confirm by orbiting the camera that the outline does not follow the ROOT axes."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/reentry/plasma-1.0-day.png, plasma-0.3-day.png, plasma-1.0-night.png, out/screens/vfx/reentry-views/front-1.0.png, front-0.3.png, side-close-1.0.png, behind-1.0.png, behind-0.3.png, out/screens/vfx/dev/f9-int-reentry-side.png (integrated lab, real capsule)",
+      "defect": "The shock layer is a flat white disc with a hard outline stuck on the heat shield (a lens from the side, in the integrated shot too); from the front it is a flower of high-contrast radial petals inside a granular ring. The wake is a matte grey-pink translucent tube at mid-grey luminance, without glow, the same dusty rose at intensity 0.3 and 1.0; at 0.3 it stops halfway and a wider trail band starts off its axis further back (a visible break and kink). From behind there is no wake at all: a mottled pink disc, a glittering ring and a few ruler-straight orange spark lines. The capsule's own surfaces are not lit by the plasma.",
+      "realReference": "Orion EFT-1 and Artemis I, Soyuz and Dragon window footage: a streaming, pulsing sheath of orange-pink to white-hot gas filling the view aft, with bright flashes of ablator. From outside (Hayabusa, Stardust, ATV-1, Orion long-range tracking): a clipped white-yellow head with a glare much larger than the body, an incandescent wake that tapers without a break into the trail, glow wrapping the shoulder.",
+      "likelyCause": "src/render/vfx/plasma.ts fs: the layer is a thin shell at the standoff distance (front = exp(-sq((sd - 0.95 delta)/(0.3 delta))), face only on windward normals); streak = (0.25 + 2.6 n^2)(0.55 + 0.9 n2) is a 10:1 contrast (petals); the wake is scaled by 0.16/Rb and mixed towards 'hot', a grey (luminance x (1, 0.96, 1.05)), which desaturates it; the near-eye cut smoothstep(1 Rb, 6 Rb, t) removes the wake for a camera 16 m behind; plumes.json reentry.colors middle entry [1.0, 0.5, 0.62]; trail.ts line 341 sets the trail's taper from wakeLengthRadii x radius x (0.3 + 0.7 plasma) while the wake volume fades with exp(-xs/wakeLen), so at low intensity they do not overlap; reentry.light.efficacy 0.015.",
+      "fixDirection": "Add a soft post-shock glow envelope (0.3-0.5 Rb ahead of the shield, wrapping the shoulder, smooth falloff) on top of the thin front and let the stagnation region clip and bloom; cut streak contrast on the face to about +-25 %. Wake: five to ten times the luminance near the body with a saturated ramp by temperature (white core, orange edge), continuous into the trail (same axis, same radius, overlapping fades). Inside the wake draw a streaming sheath instead of cutting everything within 6 Rb. Raise the local light so the back shell takes an orange rim."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/reentry/trail-50km-day.png, reentry/trail-50km-night.png, out/screens/vfx/haze-trail-50km.png, out/screens/vfx/explosion/day-1.5s.png",
+      "defect": "From 50 km the reentry trail is a ruler-straight white line of constant width and constant, clipped brightness from the head to the edge of the frame, ending in a one-pixel dot: no bright head, no taper, no fade over many seconds of flight. The ascent exhaust trail from 50 km is a uniform straight stick with a flat cut end. Fragment trails of the explosion are the same tubes.",
+      "realReference": "Reentries seen from afar (Hayabusa, Soyuz and ATV from the ISS and from aircraft, Orion EFT-1): a head far brighter than everything else, a tail that dims by orders of magnitude within a second or two of flight and leaves a faint persistent train, with flicker and beading. Launch exhaust trails are lumpy, widen with age and fade.",
+      "likelyCause": "src/render/vfx/trail.ts: Gaussian tubes; trailRadius gives about 25 m after 18 s (radius0 + sqrt(4 x 9 x age)), below a pixel at 50 km, so the tube is widened to 0.7 px and thinned; glow0 = reentry.trail.luminance 26000 with glowLife 18 s still clips everywhere at the exposure the scene has; the plasma head is sub-pixel and its hint is an eighth; noise (trail.noiseAmount 0.6 on radius and optical depth) is invisible at that width.",
+      "fixDirection": "Two glow terms: a hot one (1e6 cd/m^2 or more at the head, e-folding 0.3-0.6 s) and a train (a few hundred cd/m^2 for tens of seconds), so the line fades along the frame. Draw the head as an energy-conserving point source when it is sub-pixel so it feeds bloom. Modulate brightness along the trail with noise at 0.5-2 km (beading) even at sub-pixel width. Exhaust trails: radius that varies with age and noise, a faded ragged old end."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/engine-atlas-9m/60km-full.png, vac-full.png, vac-min.png, out/screens/vfx/engine-vela-2v/60km-full.png, vac-full.png, out/screens/vfx/engine-lyra-d/vac-full.png, out/screens/vfx/plumes-close/vacuum-60m.png, out/screens/vfx/vacuum-ignition/ignition-4s.png, out/screens/vfx/staging/0.4s-burn.png",
+      "defect": "In near vacuum every engine shows a short, closed, egg-shaped glow (a light bulb) with a visible outline five to eight nozzle lengths downstream, covered with a regular fish-scale pattern. The 60 km and vacuum tiles are identical and smaller than the 30 km tile, so the brief's progression 'wide, then vast and faint' is not there. On the six-engine cluster the scales read as a projected texture.",
+      "realReference": "Falcon 9 second stage, Apollo S-IVB and lunar module burns in vacuum: a small brilliant core at the nozzle and a very wide (60-90 degrees either side), smooth fan that fades continuously with distance and has no outer edge; in sunlight faint radial striations, never cells.",
+      "likelyCause": "src/render/vfx/plumes.ts jetSample: the gas is held to the axis by rBulk = min(g.rb, 2 re + BULK_SLOPE*xc); vacuum decay through 'thin' and axial = exp(-xc/cells.z) (plumes.json core.vacuumLengthRe 6-11, vacuumCoreRe 3-5); halo 0.2 with almost no scattering; plumeField's 'window' fades at the bounding cone and box end, which draws the closed outline. The cells are the streak noise (noise.amount 0.4-0.55, STREAK anisotropy 0.34, fine octaves at fineScale 6.5) at full contrast where there is no turbulence.",
+      "fixDirection": "In vacuum fade noise.amount towards 0.1 and replace cells with weak radial striations (noise in the angle about the axis, drawn out along streamlines). Add the wide halo as faint gas with density falling as (re/r)^2 out to the Prandtl-Meyer limit and size the bounds so the window fade happens below 1 % of the peak. Let the visible core lengthen with altitude so 60 km and vacuum differ."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/liftoff/t10-day.png, out/screens/vfx/liftoff-chase/t10-day.png, out/screens/vfx/plumes-close/booster-45m.png, booster-110m.png, ascent-12km-90m.png, out/screens/vfx/ascent/2km.png, ascent/12km.png, out/screens/vfx/overcast-plume-below-deck.png",
+      "defect": "The booster plume is a parallel-sided pastel lilac column with a thin orange outline, equally bright from the nozzles to 150 m and more below, with no glare around it; at 45 m the nine jets look like frosted-glass tubes with white lumps. At 2 km it is a thin straight line running out of the frame. At 12 km it is a smooth beam with one stray white blob with a short tail inside it (ascent/12km.png near 480,690). From the pad camera it is a flat peach wedge several vehicle lengths long.",
+      "realReference": "Methalox boosters (Starship Super Heavy, Vulcan, New Glenn): crisp pink-white Mach discs in a blue-violet translucent jet for the first diameters, then a turbulent orange-yellow flame that flickers, spreads raggedly and ends within about a vehicle length; by day it clips to white with a wide glare and lights the vehicle's base.",
+      "likelyCause": "plumes.json plume.methalox-booster: core.lengthRe 46, shear 60, afterburn 75 applied to the merged jet's radius downstream give a flame of about 300 m; core colour [0.66, 0.62, 1.0] at 1e6 clips to lilac-white while shear and afterburn (1.9e5, 9.5e4) only outline it; plumes.ts clamps rgb to HDR_MAX*0.25 and adds no glare, and little bloom shows; no large eddies (noise at scaleRe 3.2 and finer only). The blob is probably the newest node of the exhaust trail (trail.ts lines 322-323 feed at min(length/2, 30 re) behind the nozzles) or the hand-over to the merged jet between xm and 2 xm.",
+      "fixDirection": "Shorten the luminous length to about one vehicle length at sea level, shift the downstream flame to orange-yellow with large eddies (noise at the scale of rb moving at 0.3-0.5 of jet speed, edge displacement growing with distance) and a ragged tip; make sure the core feeds bloom (check threshold and strength against the 60,000 HDR clamp in the lab); find the 12 km blob by switching trails off."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/plumes-close/booster-45m.png, out/screens/vfx/liftoff-chase/t6-day.png, t10-day.png, t10-night.png, out/screens/vfx/lunar/30m-night.png",
+      "defect": "Engine bells and the base ring are flat pure-white shapes with no shading, as if self-luminous, by day as well as at night; the lander's legs clip to white while its body is black.",
+      "realReference": "The bells of a running engine are dark, sooty or frost-streaked metal, at most rim-lit orange by the flame; only the exit lip and throat glow.",
+      "likelyCause": "src/render/vfx/feature.ts plumeLights(): the capsule light starts on the axis one exit radius below the nozzle plane with the whole cluster's intensity (6.49 cd/N x thrust); src/render/core/lighting/deferred.ts applies 1/d^2 down to d^2 = 1e-4 with no source radius, so everything within a few metres clips.",
+      "fixDirection": "Start the light a few exit radii downstream and spread the intensity along the visible flame (several weaker lights or one capsule weighted downstream); request a source radius on LocalLight from core-support so d^2 is floored at the jet radius."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/liftoff/t3-day.png, t10-day.png, out/screens/vfx/liftoff-chase/t3-day.png, t6-day.png, out/screens/vfx/dev/f8-pad-t6-day-150-live.png (live TAA)",
+      "defect": "The pad cloud is a low, flat, soft mound of cotton about two vehicle lengths wide and under half a vehicle length high at T+10, out of focus next to the vehicle, with ink-blot dark holes whose edges are blocky and dithered, round peach spots where fresh gas glows, and a wormy stipple at its fringes (in the live shot too).",
+      "realReference": "Saturn V, SLS and Starship lift-offs: hard-edged, tightly curled cauliflower billows with strong self-shadowing, a fast horizontal jet out of the flame trench, a cloud several hundred metres across and towering within ten seconds, brilliant white steam against tan exhaust.",
+      "likelyCause": "src/render/vfx/smoke.ts: quarter-resolution march and combine (hand-off 5.8); billows come from a positional warp (+-0.3/scale) of a smooth advected field and an erosion term saturate((billow - erosion*(1 - cover))*4 + cover) that makes holes instead of curls; glow = heat^16 makes the spots; plumes.json padSmoke.buoyancy 5.5 (cut from 20), steam.yield 24, jetSpeed 150, grid 160 x 96 x 160 over +-900 m.",
+      "fixDirection": "Sharpen instead of eroding: a half-resolution detail pass near the silhouette (or an upsample guided by a high-frequency density term), more small-scale curl in the advection, stronger directional shadowing in the light volume. Raise yield and trench-jet momentum so the cloud reaches a few hundred metres by T+10 with the jet still clear. Replace the heat^16 glow by in-scattered plume light."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/liftoff-chase/t6-day.png, t6-night.png, t3-night.png, out/screens/vfx/dev/f8-pad-t6-day-150-live.png",
+      "defect": "Two thin dark hairlines run through the pad cloud on either side of the plume, from where the plume enters the cloud down to the mount, diverging like the outline of a cone.",
+      "realReference": "Nothing real; a compositing seam.",
+      "likelyCause": "Hypothesis: src/render/vfx/smoke.ts splits the smoke into 'in front of' and 'behind' the emitters at tE = exp2(mr/mg) from the volume pass's moment target whenever mg > 1e-4 (march, and again in the combine). Along the silhouette of the plume's bounding cone the weight is tiny but not zero, so tE is unreliable in a band one pixel wide and the smoke there lands on the wrong side of the glow.",
+      "fixDirection": "Weight the split by the emitter's weight (treat mg below about 0.05 as no emitter, blend between), or dilate and blur the moment target before the smoke march; check with dist=150 at T+6 by day and night."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/rcs/pulse-sun.png, all-sun.png, all-sun-12m.png, pulse-shadow.png, all-shadow.png, all-shadow-12m.png",
+      "defect": "In sunlight the thruster firings are long, narrow, smooth grey-white beams (light shafts) several hull radii long, some smeared across the hull. In shadow the frame is black with a few dim tan streaks; the hull beside a firing thruster receives no light at all.",
+      "realReference": "Apollo, Shuttle and Dragon thruster firings: a short, wide (30-45 degrees half-angle) translucent puff that expands and is gone in a fraction of a second; at night a sharp orange-white flash at the nozzle that lights the nearby structure brilliantly (Shuttle primary thrusters at night).",
+      "likelyCause": "plumes.json plume.rcs: maxExpansionDeg 10, smoke.lengthRe 70, halo 0.9, sunScatter 14 (a filled 10 degree cone), core.luminance 2600 with vacuumGain 0.6, light.efficacy 2.",
+      "fixDirection": "Widen to 30-40 degrees with density falling as 1/r^2 (visible length 1-2 m for a small thruster), a short bright flame at the nozzle (50,000 cd/m^2 or more over a few exit diameters), a light strong enough to flash on the hull, and opacity following the ignition and shut-down transients."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/lunar/30m-day.png, 30m-day-close.png, 10m-day.png, 5m-day-close.png, 3m-night.png",
+      "defect": "At 30 m the dust is a fan of pale grey rays painted on the ground (a sunburst). At 10 m and 5 m the surface is covered with thin radial speed-lines and speckle, with a dark elliptical blot straight under the lander (it reads as an old blob shadow although the sun is from the side) and a blue haze cone above it; nothing hides the ground or the horizon. At night (3 m) the dust is a field of glittering specks.",
+      "realReference": "Apollo descent film (16 mm, LM window) and Blue Ghost and Chang'e landing video: a bright, fast, continuous sheet streaming radially along the surface that washes out the rocks and craters under it, streaks only as modulation inside the sheet, densest around the impingement ring; the lander's sharp shadow lies on the sheet; the horizon softens below about 10 m.",
+      "likelyCause": "src/render/vfx/dust.ts: amount = z * smoothstep(0.55 r0, 1.25 r0, r) * (r0/max(r, r0)) leaves a hole inside r0 that shows as a dark disc; streak = (0.1 + 2.4 s1.g^2)(0.25 + 1.5 s2.b) is a 24:1 contrast at angular frequencies 2.9 and 10.3 (rays, not a sheet); low optical depth. plumes.json particles.dust: 30,000 per second streak particles of 2-7 cm widened to a pixel (speed-lines).",
+      "fixDirection": "Sheet first: optical depth 1-2 at the impingement ring falling as r0/r, streak contrast 3:1 at most with finer angular frequencies (20-60) that flow outwards, no hole (fill the centre with scoured, plume-lit haze); raise the sheet with falling height so the horizon is veiled below 10 m; keep visible particles as a sparse accent of larger ejecta; keep the lander's shadow."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/splash/cut-away-6s.png, out/screens/vfx/chutes/mains-reef1-backlit.png",
+      "defect": "Six seconds after cut-away two canopies still stand fully domed in the air with their line bundles hanging straight below, like jellyfish or hot-air balloons. At the first reefing stage the mains are closed, regular corn-cob ellipsoids with a tile grid, dull brown against the light.",
+      "realReference": "Released mains lose their shape in about a second, fold, stream and drift down as crumpled cloth (Orion and Dragon recovery footage). Ringsails at the first reefing stage are long fluted tubes of gathered cloth with a small open mouth and a slightly swollen crown; against the sun the orange and white gores glow.",
+      "likelyCause": "src/render/vfx/chutes.ts drift: inflation = max(0.05, inflation0 * exp(-age/collapseTime)) with cutDrift.collapseTime 3.5 s and sinkSpeed 4.5, on the same analytic profile (canopyModel.ts); the reefed profile at sqrt(inflation) is a closed ellipsoid; the lantern term is scaled by filled = 0.35 + 0.65 smoothstep(0.02, 0.5, inflation), which dims the translucency when reefed.",
+      "fixDirection": "Collapse within a second with an asymmetric crumple (random radial collapse per gore, tilt, slack lines), then a streaming state falling at 10-15 m/s. Reef-1 profile as a tube with an open mouth and deep pleats (amplitude 0.3 R or more at 8 %). Keep single-layer translucency at full strength when back-lit."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/splash/before.png, impact-0.1s.png, impact-0.4s.png, impact-1s.png, impact-2.5s.png (in sequence)",
+      "defect": "The whole scene darkens by well over a stop when the splash appears (sky from near white to mid-grey, sea from mid-blue to navy) and brightens again as it subsides, although the white water covers a few percent of the frame.",
+      "realReference": "Recovery footage: exposure does not react to the splash; the white water simply clips.",
+      "likelyCause": "The core exposure meter's rule from the resolution of docs/requests/vfx-3.md (a lit area brighter than the prior takes the target from 2 % of the frame) reacting to crown, foam and droplets at sunlit-white luminance. Part of the first step (before to +0.1 s) may be the lab's initial adaptation; the swing between +0.4 s, +1 s and +2.5 s is not.",
+      "fixDirection": "Request a percentile-based daylight target from core-support so small highlights clip instead of driving the meter; keep crown and foam at or below sunlit white; verify the sky's pixel value stays within +-5 % through the sequence."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/lunar/30m-night.png, out/screens/vfx/dev/f9-int-lunar-surface.png",
+      "defect": "With the sun down the lander's exhaust is an opaque white shower cone with vertical streaks.",
+      "realReference": "A methalox or hypergolic plume in vacuum at night is a faint, transparent blue-violet glow.",
+      "likelyCause": "plume.methalox-lander's core clips to white when the exposure rises; streak noise at full amount in vacuum.",
+      "fixDirection": "Hold the hue when the core clips (limit per channel relative to the exposure white), cut noise in vacuum as in the vacuum-plume finding."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/vfx/plumes-close/booster-45m.png, staging-retro-70m.png, out/screens/vfx/liftoff-chase/t3-day.png, out/screens/vfx/staging/2.9s-retro.png, 3.6s-coast.png",
+      "defect": "Ice shed at lift-off and staging is a sprinkle of identical round white dots; at staging they sit in a tight torus at the separation plane for a second.",
+      "realReference": "Ice comes off in sheets and irregular flakes of very different sizes, tumbling, flashing, streaming away with the slipstream.",
+      "likelyCause": "plumes.json particles.ice size 0.02-0.09 m, all widened to one pixel (particles.ts minR), speed 0.3-3.5 m/s relative to the vehicle.",
+      "fixDirection": "A size distribution over a factor of 20 with a few large tumbling plates, fewer small ones, velocity taken from the slipstream (and from the stage-relative motion at staging) so they disperse."
+    },
+    {
+      "severity": "minor",
+      "view": "all matrix pictures, e.g. C:/dev/fable-space-game/out/screens/vfx/engine-solids/sl-retro.png, lunar/10m-day.png, reentry-views/side-close-1.0.png against out/screens/vfx/dev/f8-booster-45m-live.png",
+      "defect": "The review matrix is taken in deterministic mode with the blue-noise offset frozen, so every volume shows single-frame stipple that the live game's temporal filter mostly removes; the sheets cannot show what a player sees in grain or flicker.",
+      "realReference": "Not applicable (review process).",
+      "likelyCause": "src/render/core/renderer.ts line 618: noiseOffset: animate ? [...] : [0, 0], with animate = !deterministic.",
+      "fixDirection": "Request from core-support that the noise offset cycles with the frame index in deterministic mode too (still deterministic), or take the matrix with \"live\": true as tests/browser/vfx/shots.spec.ts allows, and re-shoot before the next visual review."
+    }
+  ]
+}

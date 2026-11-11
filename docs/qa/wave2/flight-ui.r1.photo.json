@@ -1,0 +1,113 @@
+{
+  "screenshotsLookedAt": 40,
+  "overallScore": 6.8,
+  "previousItemsStillOpen": [
+    "4. Panels are see-through (partly open): the label-contrast half is fixed (86 % plates, every label at least 4.5 : 1 over the white backdrop), but a hard scene edge still prints through the plates as a tone step across text rows: pad-4k LAUNCH panel (41,50,62) above the horizon and (25,36,49) below it, through the LAUNCH AZIMUTH row; bright-lunarSurface-720p LANDING TARGET panel and stage tile 8 (15,21,29) over the black sky and (49,55,64) over the regolith. Rated minor now; see the finding."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ascent-720p.png, lowOrbit-720p.png, pad-720p.png, reentry-720p.png, translunar-720p.png, lunarOrbit-720p.png and their 4K twins; bright-pad-720p.png, bright-ascent-720p.png",
+      "defect": "The HUD is a wall of opaque cards over the scene. Measured on the 720p screenshots (plate-colour mask plus the ball disc): 36.7 % of the frame in the powered ascent, 35.8 % in low orbit with a node, 34.1 % on the pad, 32.3 % in reentry, 30 % in translunar coast and lunar orbit. The white-backdrop shots agree (31.4 % and 33.8 % of pixels are dark plate, the lit part of the ball not counted). The right column is 274 of 1280 px wide (21 % of the width) and on the pad runs from y = 56 to y = 632 of 720; in reentry the left column runs from y = 13 to y = 652. With plates now 86 % opaque, that third of the view is simply gone, in a game whose subject is the view. Much of the covered area carries nothing for the phase: four full-height tiles whose second line is only \"no engines\"; RESOURCES lists every tank of every stage group (in the ascent 5 of 7 bars are untouched tanks at 100 %); RECOVERY ZONE spends five rows in low orbit and in translunar coast 180 Mm from Earth and ends in \"PREDICTED ARRIVAL none\"; the ORBIT panel stays up during reentry heating.",
+      "realReference": "Shipped flight HUDs keep the frame for the scene: KSP 1 and KSP 2 cover roughly 10 to 15 % of a 1080p frame (a narrow staging strip, the navball cluster, a small altimeter and clock, resources of the active stage only); Microsoft Flight Simulator's external view and Elite Dangerous keep the outer thirds clear. What the frame is for: the photographs in out/qa/ref/earth-orbit-clouds, out/qa/ref/liftoff-ascent and out/qa/ref/reentry-chutes.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:142-143: .lcol is 32.5u and .rcol 38u (widened from 33u in this round). src/ui/hud/hud.ts:110 FULL_STAGE_TILES = 6, so up to six stages get two-line tiles, engine-less ones included (hud.ts:735 writes 'no engines' on the second line). describeResources (src/ui/model.ts:359) lists every stage group. hud.ts:831 shows the landing-target panel whenever readouts.landingTarget is non-null; hud.ts:807 with orbitPhase (model.ts:282-296) hides the orbit panel only on a descending suborbital path.",
+      "fixDirection": "Set a coverage budget (for example 20 % of a 16:9 frame in every external scene) and assert it in tests/browser/flight-ui/screens.spec.ts on the bright-backdrop shots. Right column back to about 28u: a full tile only for the next stage and the active one, one compact line for every other stage, one line for engine-less tiles. Resources: show the group being drained and the next one, fold untouched groups into one line. Collapse RECOVERY ZONE / LANDING TARGET to one line (name and distance) until there is a prediction or the vessel is descending; hide ORBIT while heating. Consider a compact / scale setting for the HUD."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ascent-720p.png, ascent-4k.png, bright-ascent-720p.png, warp-refused.png, lunarOrbit-720p.png, lunarOrbit-4k.png, lowOrbit-4k.png; STG page of mfd-pages-4k.png and mfd-pages-native.png",
+      "defect": "The stage that is burning has no tile. In the powered ascent (86 % throttle, 2.35 g, M-1 booster RP-1 at 62 %) the stack starts at tile 2 \"M-1 separation\"; the remaining delta-v, thrust-to-weight and burn time of the engine in use are nowhere on the screen. The same in lunar orbit: lander MMH / NTO at 81 %, the next tile is \"Landing gear, no engines\", and there is no figure for the descent engine; the MFD STG strip reads \"STAGE ΔV — / STAGE TWR — / STAGE BURN —\". The one number a player watches during a burn (how much is left in this stage) is missing while four tiles say \"no engines\". Lab data, not judged: the \"Δv total\" badge (12 150 m/s in the ascent) is the lab's sum over unfired stages, so it too leaves out the running stage.",
+      "realReference": "KSP 1 and KSP 2 keep the active stage as the bottom tile of the staging stack with its live delta-v and burn time, and real sequencer and propulsion displays show the engine in use first. The package brief asks for \"one tile per StageInfo\".",
+      "likelyCause": "src/ui/hud/hud.ts:668: `const remaining = st.tiles.filter((t) => !t.fired)` drops every fired stage, the one still burning included, although StageInfo keeps deltaVNow, twr, burnTime and propellantFraction for it (src/core/contracts/sim.ts:306-320). The MFD staging strip takes its STAGE values from the next stage. labs/flight-ui/main.ts:80 sums the total over unfired stages only.",
+      "fixDirection": "Keep the most recently fired stage that still has propellant as an ACTIVE tile below the next-stage tile (distinct style, live delta-v, TWR, burn time and propellant strip), and feed the MFD STG strip from it. Add an assertion to the ascent and lunar-orbit screenshots that a tile with the active stage's delta-v is visible."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-native-reentry.png (ENT page, ABLATOR gauge)",
+      "defect": "At a healthy ABLATOR 80 % the gauge is a saturated red block from 0 to 30 % with a red line on top of it, and cyan only above. Red at a nominal reading says alarm, on the page a pilot watches during entry. This is the old G-tube defect (item 1 of the previous list) in mirror image: the zone colours are fixed to the scale and revealed by the fill, which is right for a quantity where high is bad and wrong for one where low is bad.",
+      "realReference": "Remaining-quantity gauges (aircraft fuel tapes, Shuttle MEDS tapes, the consumable bars on Soyuz and Crew Dragon displays; compare out/qa/ref/cockpit-interiors/soyuz-ms20-descent-module.jpg) colour the whole fill by the zone its top is in, or mark the low zone on the scale beside the tube. A nominal reading shows no red fill.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts:1030-1038: the ablator GaugeSpec has `zones: [[0.3, COLORS.warning], [1, COLORS.accent]]`, and drawBarGauge (mfdPainter.ts:959-990) paints the fill in the zone colour of each part.",
+      "fixDirection": "Give GaugeSpec a low-is-bad flag: colour the whole fill by the zone of the current value (accent above 30 %, red below), keep the low zone as the faint track and the line. Add a unit test that a gauge at a nominal value paints no warning-coloured fill."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-4k.png (LAUNCH panel), pad-720p.png (stage tiles 10 to 6 against 5 to 1), bright-lunarSurface-720p.png (LANDING TARGET panel, stage tile 8), ascent-4k.png (stage tile 4)",
+      "defect": "Residual of previous item 4. A hard scene edge still shows through the plates as a tone step: in pad-4k the LAUNCH panel is (41,50,62) above the sea horizon and (25,36,49) below it, and the step cuts through the LAUNCH AZIMUTH row; in pad-720p the five upper stage tiles are grey slate and the five lower ones dark navy; in bright-lunarSurface-720p the LANDING TARGET panel is (15,21,29) over the black sky and (49,55,64) over the regolith, a 1.5 : 1 step through \"TRACK · ARRIVAL none\". One component is drawn in two tones in one frame. Text stays legible.",
+      "realReference": "Shipped HUDs that use translucent plates blur what is behind them (KSP 2, Microsoft Flight Simulator panels) or make them opaque, so a horizon never draws a line through a row of text.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:15-16: --bg alpha 0.86 and --bg-top 0.87 with no backdrop filter, so 14 % of the scene still reaches the plate.",
+      "fixDirection": "Raise the plate alpha to 0.94 or more (the --bg-strong value), or add `backdrop-filter: blur()` if its cost at 4K stays inside the 0.5 ms HUD budget. Re-shoot pad and bright-lunarSurface and check that the step across a plate is below about 1.1 : 1."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, lunarSurface-720p.png, chutes-720p.png, pad-4k.png, lunarOrbit-4k.png",
+      "defect": "The window reflection on the navball lies on the upper-left numeral column and washes it out. Sampled in pad-4k: the ball under the strip has a luminance of 0.29 to 0.44 (its frame bar reaches pure white) against 0.135 on the clean ball beside it, so white numerals drop from about 5.7 : 1 to 2 to 3 : 1. At 720p, pole-on, the \"30\" and \"40\" under it cannot be read; in lunarOrbit-4k \"30\" and \"40\" sit inside the pale strip.",
+      "realReference": "On the Apollo FDAI (out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg) the glass reflections are thin, lie near the rim and leave the ball markings at full contrast; KSP's navball highlight is a faint rim glint.",
+      "likelyCause": "src/ui/navball/navballShader.ts:72-84 and :128: windowReflection covers the radii 0.70 to 0.87 R over about 0.7 rad and is added at 0.5 x (0.62, 0.68, 0.74) in linear space, with the frame bar at full strength.",
+      "fixDirection": "Halve the strength or less (peak about 0.15 to 0.2), narrow the strip and move it to 0.86 to 0.95 R so that it sits on the glass rim outside the numeral columns, and soften the frame bar."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-4k.png, pad-4k.png, reentry-4k.png (every external view; no screenshot shows a roll other than 0 or 180 degrees)",
+      "defect": "The new bezel carries a bank scale (ticks at 10, 20, 30, 45 and 60 degrees each side of the top, then every 30) and a fixed orange index, but nothing on the ball rides against it, so bank cannot be read from the scale: it is decoration that looks like an instrument. Roll is available only as the ROLL pill and the tilt of the horizon.",
+      "realReference": "An attitude indicator's bank scale always has a moving pointer: the roll bug against the index ring of the Apollo FDAI (out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg), the sky pointer of an aircraft ADI. The MFD FLT page of this same package has one.",
+      "likelyCause": "src/ui/navball/bezel.ts:71-93 draws the ticks; src/ui/navball/navballRenderer.ts has no roll pointer instance and src/ui/hud/hud.ts:989 only writes the roll text.",
+      "fixDirection": "Add a sky pointer on the ball's rim that turns with roll (one more instance in the marker pass, placed on the limb along the horizon-frame up direction), or remove the bank ticks. Add a lab scene with about 25 degrees of roll and photograph it."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-4k.png, lunarOrbit-4k.png, prograde-hold.png (prograde on the nose); reentry-4k.png, chutes-4k.png (retrograde on the nose)",
+      "defect": "With the reticle on top, a marker held on the nose is mostly hidden: prograde shows only as a lime disc behind the orange hub, retrograde as the same disc with two short lime stubs below the wings. Prograde and retrograde hold, the two commonest SAS states, look nearly alike and the icon itself cannot be recognised. In lunarOrbit-4k the reticle stem also covers half of the heading label \"E\".",
+      "realReference": "KSP's level indicator is a thin gold V with a small centre dot, and the prograde ring and its three ticks stay fully visible around it.",
+      "likelyCause": "src/ui/icons.ts:65: the reticle is stroked at width 2.3 in a 24-unit box with a hub ring of radius 2.5, a fin from y = 3.2 to 7.6 and a V that spans 9.4 units each side; the prograde icon (icons.ts:28) is a ring of radius 5 with rays to 10.5, so the fin and the V arms lie on its three rays.",
+      "fixDirection": "Thin the reticle (stroke about 1.4), drop or shorten the fin, and open the hub to a ring larger than the marker ring (radius about 6.5), or enlarge a marker that is within about 5 degrees of the nose so that its ticks clear the reticle."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png, lowOrbit-4k.png, translunar-4k.png, lunarSurface-4k.png, chutes-720p.png, cockpit-lowOrbit-4k.png; STG page of mfd-pages-4k.png",
+      "defect": "Engine-less stages carry the line \"no engines\" (\"Mains / no engines\", \"Drogues / no engines\", \"Landing gear / no engines\", \"Capsule separation / no engines\", and \"SPACE no engines\" on the next tile). It reads like a debug note, repeats on four of six tiles and is the reason those tiles are two lines tall.",
+      "realReference": "KSP's staging icons and real sequencer panels name the action (deploy, separate, jettison) or show nothing; no shipped stack labels a parachute by what it lacks.",
+      "likelyCause": "src/ui/hud/hud.ts:735: `slot.meta?.set(t.hasEngines ? ... : 'no engines')`; the MFD staging list does the same.",
+      "fixDirection": "Leave the second line out for engine-less stages (one-line tile), or write the action from actionKinds (\"deploy\", \"separate\", \"jettison\")."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-hover-4k.png, mfd-pages-hover-720p.png (FLT page, landed, pitch 90)",
+      "defect": "Pole-on, the MFD attitude indicator gives itself away as a flat ladder: the 70 and 80 degree lines are drawn on one side of the aircraft symbol only, the other half of the disc is empty blue, and there is no zenith mark, so on the pad and landed the cockpit's attitude display is half blank. On the same page the surface-speed tape prints \"−20\" below zero although a speed cannot be negative.",
+      "realReference": "A ball-type indicator continues over the pole (the Apollo FDAI in out/qa/ref/cockpit-interiors/apollo11-columbia-panel.jpg; the HUD navball of this package shows the 80 degree ring and both sides of the pole), and speed tapes end at zero.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts:537 drawAdi draws the ladder only up to 90 degrees of pitch and has no pole mark; drawTape (mfdPainter.ts:387, called for speed at :690) has no lower bound.",
+      "fixDirection": "Continue the ladder past the pole (mirror the lines with the heading reversed), add a zenith and a nadir mark like the HUD ball's, and clamp the speed tape at zero."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-native-reentry.png, mfd-pages-native.png, mfd-pages-4k.png (ORB page)",
+      "defect": "The body on the orbit page is a featureless shaded ball with its name printed across it (\"EARTH\" on a blue-grey ball, \"MOON\" on a grey one). The label is needed only because the disc shows nothing that identifies the body; it reads as stand-in art.",
+      "realReference": "The Soyuz moving-map display shows coastlines (out/qa/ref/cockpit-interiors/soyuz-ms20-descent-module.jpg); orbital displays draw the body with at least a coarse land mask or a terminator.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts:739-773: drawOrbitDiagram paints the body as a radial gradient in the body colour with the name as text; the painter has no body imagery.",
+      "fixDirection": "Draw a coarse land or maria mask from a small built-in table (a few dozen polygons), or at least a terminator from the sun direction, and move the name to the caption."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, ascent-720p.png, reentry-720p.png (gauges panel)",
+      "defect": "At 1280 x 720 the scale numerals of the throttle and G tubes (0 / 50 / 100, 0 / 4 / 8 / 12) and the captions THROTTLE and G LOAD are 8.4 to 8.7 px type, about 6 px capitals: the smallest text on the HUD, on its two gauges.",
+      "realReference": "Shipped HUDs hold a floor of roughly 10 to 11 px type at 720p for anything that carries a value.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:313 `.gauge .nums` font-size 0.6em and :324 `.gauge .gl` 0.62em of a 14 px base.",
+      "fixDirection": "Raise both to about 0.74em (the label size used everywhere else) and widen the numeral column by the same factor."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\keyhelp-720p.png, keyhelp-4k.png",
+      "defect": "The key-help sheet's three columns are unbalanced: the first ends at 62 % of the sheet's height and the third fills it, which leaves the lower-left quarter of the sheet empty.",
+      "realReference": "Shipped key-binding sheets balance their columns or group them in a fixed grid.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:366-367: `columns: 3` with `break-inside: avoid` groups of very different lengths.",
+      "fixDirection": "Order the groups for balance (for example Attitude + Throttle + Systems, SAS + Translation, Time + Views + Cockpit) or lay them out on an explicit three-column grid."
+    },
+    {
+      "severity": "minor",
+      "view": "the whole set in C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ (coverage of the screenshots, not a visible defect)",
+      "defect": "Several things the package draws are in no screenshot and so cannot be judged: a prograde or retrograde marker clear of the reticle; the normal, anti-normal, radial, anti-target and lift-vector markers; any roll other than 0 or 180 degrees; the G tube in its amber and red zones (the highest reading shown is 4.5 g) and the G-dose bar; the HUD panels that stay up in the cockpit view over an actual cabin (cockpit-lowOrbit shows them over empty space).",
+      "realReference": "Not applicable: a gap in the evidence.",
+      "likelyCause": "The FakeSim scenes hold the nose on the velocity vector at zero roll, and the lab's flight decoration stops at 2.35 g.",
+      "fixDirection": "Add lab options for an attitude offset (for example 20 degrees of yaw and 25 of roll), a high-g entry (11 g with a dose) and a lift-vector marker, and photograph them at 720p and 4K."
+    }
+  ]
+}

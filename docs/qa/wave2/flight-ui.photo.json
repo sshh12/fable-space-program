@@ -1,0 +1,125 @@
+{
+  "screenshotsLookedAt": 34,
+  "overallScore": 5.5,
+  "worstViews": [
+    "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lunarSurface-720p.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\chutes-720p.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-hover-720p.png",
+    "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png"
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, pad-4k.png, stage-lockout.png (1.00 g), lunarSurface-720p.png, lunarSurface-4k.png, terrain-pending-*.png (0.17 g), reentry-720p.png, reentry-4k.png, failed-*.png (4.50 g), ascent-*.png (throttle)",
+      "defect": "The G LOAD tube's green-amber-red ramp is stretched over whatever height is filled, so the top of the fill is always red. Sitting on the pad at 1.00 g the gauge shows a red-capped bar, on the Moon at 0.17 g an orange sliver, and at 4.50 g the same complete ramp ending at 45 % of the tube. The colour carries no information and signals danger at rest. Neither tube has numerals or a limit mark (full scale is a silent 10 g, ten unlabelled ticks). No screenshot in the set shows the throttle fill at all: the powered-ascent scene reads 0 % throttle and 0.00 g at Mach 1.17 (FakeSim data), so the throttle fill has never been looked at.",
+      "realReference": "Real g-meters and engine tapes (Shuttle MEDS tapes, Orion / Crew Dragon displays, KSP's g gauge) have colour bands fixed to the scale: green up to a limit, amber and red zones at fixed values, with a pointer or fill moving against them and printed numerals (0, 2, 4 ... 10).",
+      "likelyCause": "src/ui/hud/hudStyles.ts line 262: `.hud .gauge.g .tube > i { background: linear-gradient(to top, #5fe39a, #ffbb4d 55%, #ff6262); }` is on the element that is scaled with transform scaleY (FillSlot 'y' in src/ui/hud/hud.ts lines 389-390, `gFill.set(r.gLoad / 10)` line 758), so the gradient scales with the fill. Line 263 draws ticks without labels.",
+      "fixDirection": "Keep the gradient static at full tube height (on the tube or a fixed child) and reveal it with a mask that stays compositor-only: a dark cover anchored at the top and scaled by (1 - fraction), or a counter-scaled inner gradient layer. Put the colour stops at meaningful g (green to about 4 g, amber to about 6 g, red above, matching the MFD tones at 4 and 6 g in mfdPainter.ts). Add numerals 0 / 5 / 10 g and 0 / 50 / 100 % beside the tubes and a limit tick. Add a lab decoration with throttle > 0 and re-shoot the ascent scene."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, pad-4k.png, ascent-720p.png, ascent-4k.png, lunarSurface-720p.png, lunarSurface-4k.png, terrain-pending-*.png, chutes-720p.png, chutes-4k.png, stage-lockout.png, warp-refused.png",
+      "defect": "With the nose at the zenith or nadir (on the pad, in vertical ascent, landed on the Moon, under parachutes: the first and last views of every mission) the ball is a dartboard. Six spokes of numerals, the upper three upside down, and the six '80' labels, each stretched about 5.8 times, are packed into a ring that sits under the reticle, so half-hidden '8' and '80' fragments poke out around the orange wings. The zenith / nadir mark is completely covered by the reticle hub and the prograde ring, so the one thing this attitude should show (where straight up is) cannot be seen. At 720p the outer numerals (10 to 30) are unreadable smears along the limb.",
+      "realReference": "The Apollo FDAI ball and the KSP navball keep the pole regions clean: numerals run along only a few meridians and stop short of the pole, and the pole carries a distinct large mark (the FDAI's red gimbal-lock disc; KSP's converging lines to a clear point) that stays visible around the reticle.",
+      "likelyCause": "src/ui/navball/navballTexture.ts lines 114-122: pitch numerals on six meridians for every 10 deg including +-80, pre-stretched by 1/cos(pitch) (line 58, cap 9) and offset by 6/cos(p) deg, so the six 80-labels cover roughly 60 % of the 80-deg circle. Lines 123-129: the pole mark is a thin ring at 86.2 deg and a cap above 88.6 deg, smaller than the reticle hub drawn over it.",
+      "fixDirection": "Drop the +-80 numerals (or keep them on two opposite meridians) and put +-70 on three; above 60 deg shrink the numeral size with latitude instead of only stretching it, and keep numerals on the cardinal meridians only. Make the pole mark larger than the reticle hub (a bold ring near 83 deg with four inward ticks, or a contrasting cap out to 85 deg) so it frames the reticle. Re-shoot pad, lunarSurface and chutes at 720p."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\chutes-4k.png, chutes-720p.png (milky patch on the brown hemisphere), pad-4k.png, lunarSurface-4k.png (flat disc), lowOrbit-4k.png (bezel)",
+      "defect": "The ball does not hold up as a lit sphere inside an instrument. Pole-on it is a flat disc: shading spans only about 58-100 %, limb darkening is weak, and the 'gloss' is a wide milky haze up-left of centre that desaturates the texture (a pink-grey smudge on the brown hemisphere, a pale fog patch on the blue) instead of a highlight. The bezel is a flat translucent dark ring with hairlines: no bevel, no shadow where the ball meets the ring, no glass, no roll index marks. Only the curvature of the grid lines says 'sphere' in the equatorial views.",
+      "realReference": "A real attitude ball (Apollo FDAI, Soyuz globe) or a shipped game's navball (KSP 1 / 2): a strongly rounded sphere with deep falloff toward the limb, a recessed dark gap at the bezel, a machined bezel with fixed roll index ticks and a lubber mark, and a small crisp glass reflection rather than a haze.",
+      "likelyCause": "src/ui/navball/navballShader.ts lines 83-90: `diffuse = 0.58 + 0.42 * ndl`, `limb = 1.0 - 0.42 * pow(1.0 - z, 2.2)`, `gloss = pow(ndh, 60.0) * 0.16 + pow(ndh, 8.0) * 0.035` added in linear space; the power-8 lobe adds a 0.035 linear veil, several times the zenith blue's red channel, hence the milky patch. The bezel is CSS only: src/ui/hud/hudStyles.ts line 251.",
+      "fixDirection": "Remove the power-8 lobe; make the highlight a small sharp glass reflection (power 300 or more, or a shaped window reflection) with Fresnel only at the rim. Deepen the terminator (ambient about 0.35 with wrap diffuse) and the limb darkening (toward about 0.4 at the edge), and add a contact-shadow ring just inside the bezel. Draw the bezel in the shader or as layered CSS gradients with a bevel, an inner shadow, fixed roll ticks every 30 deg (10 deg near the top) and a top index triangle. Keep the texture mid-tones legible (highlight on the glass, not multiplied into the albedo)."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, pad-4k.png (LAUNCH panel over the sky and horizon, altitude panel over the rocket), ascent-720p.png (compact stage tiles over haze), translunar-4k.png, cockpit-lowOrbit-4k.png (stars through panels, panel edges nearly invisible)",
+      "defect": "Panels are 66 % opaque with no backdrop blur. Over the lab's pastel daytime sky the grey label text measures 3.6-4.0 : 1 against the panel (sampled: pad-720p 'RELATIVE INCLINATION' 3.57, compact tile delta-v 3.63, 'MISSION TIME' 3.66; pad-4k 3.6-4.1), below the 4.5 : 1 expected of 10-11 px capitals, and the scene prints through the text: the horizon line runs across the LAUNCH panel's last row, the white rocket shows as a light stripe behind '60.0 m', stars sit between rows over space. The lab backdrop never gets brighter than about (160, 190, 230); over sunlit cloud tops, ice or lit regolith (about 245) the same panel becomes mid-grey (about (89, 91, 95)) and the labels fall to about 2.6 : 1. Over black space the panels all but vanish (fill (5, 8, 12) on black, 17 %-alpha hairline), so blocks of numbers float with no container.",
+      "realReference": "Shipped AAA flight interfaces over bright scenes (Microsoft Flight Simulator, KSP 2, Elite Dangerous, Star Citizen MFDs) use either opaque instrument panels or frosted glass (blurred and darkened backdrop), hold label text at 4.5 : 1 or better in the worst-case scene, and keep a visible panel edge on bright and dark backgrounds alike.",
+      "likelyCause": "src/ui/hud/hudStyles.ts lines 12-17 (`--bg: rgba(8, 12, 18, 0.66)`, `--label: #93a2b8`, `--dim: #6c7a8f`, `--line` at 0.17 alpha); no backdrop-filter on `.hud .panel` (lines 44-51) or `.tile` (lines 186-194). labs/flight-ui/backdrop.ts (sky horizon colour 0.62, 0.78, 0.95; pale ocean) never approaches white, so the bright case was never photographed.",
+      "fixDirection": "Raise panel opacity to 0.84 or more (or add backdrop-filter blur plus darkening if its GPU cost at 4K fits the HUD budget; measure it), lift `--label` to about #aebace and stop using `--dim` for anything informative, so labels hold 4.5 : 1 over a white backdrop. Give panels a slightly lighter fill floor and a 1 px inner highlight so the edge reads over black. Add a lab backdrop mode with a near-white cloud deck or lit regolith and re-shoot the 720p set against it."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, lowOrbit-720p.png, translunar-720p.png, lunarOrbit-720p.png, lunarSurface-720p.png, reentry-720p.png, map-lowOrbit-720p.png, failed-720p.png, mfd-pages-720p.png and mfd-pages-hover-720p.png (FLT and LND 'VERTICAL' rows), and their 4K twins",
+      "defect": "Zero vertical speed is written with a solid square: 'square 0.0 m/s . horiz. 0.0 m/s' under the big altitude number, and 'square 0.0 m/s' in the MFD rows. It reads exactly like a missing-glyph box (a font fallback failure) in the primary flight readout, and it is in most of the screenshots because every steady state shows it.",
+      "realReference": "Real vertical-speed indicators and game HUDs show level flight as a centred pointer or a short horizontal bar, or simply a signed number ('+0.0 m/s'); direction arrows are drawn icons aligned to the text height.",
+      "likelyCause": "src/ui/format.ts line 63, `formatVerticalSpeed`: returns U+25A0 when |v| < 0.05 m/s; used by describeFlight (src/ui/model.ts) for the HUD's `.alt .vs` line and the MFD flight and landing rows.",
+      "fixDirection": "Replace the square with a thin level bar (an en dash, or a small dash icon as wide as the arrows) or no glyph with a signed value. Better: render all three states as one inline icon (up chevron, down chevron, bar; SVG in the HUD, Path2D in the MFD) coloured by tone, so nothing depends on the font's coverage of U+25A0 / 25B2 / 25BC."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png, lowOrbit-4k.png, map-lowOrbit-720p.png, map-lowOrbit-4k.png (compare prograde-hold.png and extra-rig.png: same scene without a node)",
+      "defect": "When a maneuver node exists the whole bottom instrument cluster slides left: the navball centre is at x = 613 of 1280 (about 1839 of 3840) instead of 640 (1920). The same scene without the node is centred. Creating or deleting a node therefore makes the primary instrument jump 28 px (84 px at 4K) sideways and leaves it off the screen centreline, away from the vessel it sits under. In the map view the MANEUVER box hangs off the lower right of the ball with empty space on the left.",
+      "realReference": "KSP, KSP 2 and every flight HUD keep the attitude ball locked to the screen centreline; burn information is attached beside the ball (KSP's burn bar on the navball's right) without moving it.",
+      "likelyCause": "src/ui/hud/hud.ts lines 405-408: `rightStack` holds the 25u-wide node panel (hudStyles.ts line 269) above the roughly 16.4u gauges panel inside the flex row `.bottom`, which is centred as a whole (hudStyles.ts line 230), so a wider right column shifts the ball.",
+      "fixDirection": "Lay `.bottom` out as a three-column grid `1fr auto 1fr` (SAS panel right-aligned in column 1, ball in column 2, gauges and node left-aligned in column 3), or take the node panel out of flow (absolute, anchored to the ball's upper right). Add a browser assertion that the ball's bounding-box centre equals the viewport centre with and without a node, in the external and map layouts."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-720p.png, mfd-pages-4k.png, mfd-pages-hover-720p.png, mfd-pages-hover-4k.png",
+      "defect": "The six MFD pages are web-dashboard tables, not flight displays. Label / value rows fill the top-left and 30-40 % of every page is dead black (under the rows on FLT, SYS and STG; right half of SYS). The FLT page's attitude indicator is a small flat two-colour disc with seven unlabelled rungs and a single '30': no heading tape, roll scale, 10-deg numerals or velocity marker, so inside the cockpit the player gets a poorer attitude instrument than the HUD navball it replaces. ENT shows four blank dark rectangles (G, DOSE, ABL, TEMP) with no scale, limit line or value, which look like empty placeholders in every state but entry. ORB draws the Moon as the same navy disc as Earth, and a 100 km orbit is a ring glued to the disc. Secondary text (stage sub-lines 'dv 2 800 m/s  TWR 1.30  2:40', scope ring labels at 2.2 % of display height, 'NORTH UP . TRACK 106', footer UT) is soft and hard to read at the lab's 420 px-wide tiles, which is about the size an MFD has in the seat view.",
+      "realReference": "Orion, Crew Dragon and Shuttle MEDS displays, and good simulator MFDs (DCS, MSFS glass cockpits, KSP RasterPropMonitor): the graphic instrument dominates the page (large ADI with roll arc, pitch-ladder numerals and heading tape; vertical tapes with bugs and limit bands; g and dose bars with redlines), text is sparse and large, and the page is filled edge to edge.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts paint() lines 580-640: one generic layout for all pages (rows in a fixed `leftW = width * 0.48` column, the instrument in the remaining column, e.g. ADI radius `min(gw, gh) * 0.44`); drawAdi (line 288) is a flat ladder with labels only at 30 deg; drawEntryGauges (line 514) draws bars without scale or limits; drawOrbit (line 357) uses one body colour; scope labels use `r * 0.075` type.",
+      "fixDirection": "Give each page a purpose-built layout that fills the canvas. FLT: an ADI at 60 % of the height or more with roll scale, numerals every 10 deg and a heading tape, altitude and speed tapes left and right, the remaining numbers small. ENT: bars with scales, redlines (g limit, dose limit 15 g.s) and numeric read-outs; hide ABL when the vessel has no ablator. ORB: body colour from the body definition and an exaggerated-altitude view for low orbits so Ap / Pe are readable. Raise the minimum text to about 3 % of display height and check legibility with the canvas shown at 400 px wide."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, pad-4k.png, ascent-720p.png, warp-refused.png, lowOrbit-720p.png, translunar-720p.png, stage-lockout.png",
+      "defect": "The stage stack shows truncated names in its default states: 'Capsule separa...' and 'Tower + fairing j...' on the pad, 'Capsule separat...' even in the full-size tiles in orbit, while a third of each compact row goes to a greyed delta-v and a bar. In compact rows the stage icon is about 12 px at 720p and its lower-right half is covered by the number badge, so it is an unreadable smudge. In full tiles the same glyph is printed twice (the big icon and again as the 'action' icon beside the bar). The LOCKED state (stage-lockout.png) differs from the armed state only by a hairline amber border and a 7 px 'LOCKED' word where the SPACE key cap was; the tile keeps its cyan 'ready' icon and glow, so a player pressing Space cannot see why nothing fires.",
+      "realReference": "KSP / KSP 2 staging stacks and real sequencer panels: every stage name readable in full, icon and number side by side and never overlapping, one icon per action, and an inhibited stage unmistakable (greyed tile, padlock, amber or hatched fill).",
+      "likelyCause": "src/ui/hud/hudStyles.ts lines 195-219: `.tile .ico .num` is positioned at right -0.35em / bottom -0.35em over the icon (compact: a 2.3u icon under a 0.6em badge); `.tile .name` has ellipsis with `.dv` and `.bar` as flex: none siblings in a 33u column (line 131); `.tile.locked` changes only border-color and the hint colour (lines 210-211). src/ui/hud/hud.ts lines 586-605 put the stage icon in `.ico` and again in `.acts`.",
+      "fixDirection": "In compact rows give the number its own leading column (no overlap), drop the delta-v text for stages without engines and let the name take the width (or widen the column to about 36u, or allow two lines). Do not render `.acts` when it only repeats the tile icon. For lockout, dim the tile, turn the icon tile amber with a padlock glyph and show 'LOCKED' plus the reason at label size."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\pad-720p.png, pad-4k.png, stage-lockout.png (top right of the ball)",
+      "defect": "The target marker is a pink ring with four blobs fused into it: at ball size it reads as a lumpy, scalloped blob with an uneven dark outline rather than a crisp icon.",
+      "realReference": "KSP's target marker: a clean circle with a centre dot and clearly separate ticks, a crisp silhouette at 24 px.",
+      "likelyCause": "src/ui/icons.ts line 37: `target` adds four filled dots of radius 1.6 centred exactly on the radius-6.5 ring ((16.6, 7.4) and its mirrors), so they merge with the ring stroke and its outline pass (drawIcon, lines 177-185).",
+      "fixDirection": "Replace the dots with short radial ticks outside the ring (for example ray(45, 8.5, 11) and its three mirrors) or a notched ring, and check the small mip levels of the atlas."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\keyhelp-720p.png, keyhelp-4k.png",
+      "defect": "The live HUD ghosts through the help sheet: '2 298.3 km', '131', 'no ground track', 'SURFACE SPEED 0.0 m/s 270' and the stage tiles are faintly readable behind the list of bindings. The '.' and ',' key caps (faster / slower warp) are indistinguishable at 720p.",
+      "realReference": "Modal help in shipped games sits on an opaque or blurred backdrop; punctuation keys are named ('Period', 'Comma') or drawn large.",
+      "likelyCause": "src/ui/hud/hudStyles.ts lines 296-297: `.help` scrim at 0.62 alpha and `.sheet` at 0.94 alpha with no blur; keyLabel() in src/input returns the bare punctuation character.",
+      "fixDirection": "Make the sheet fully opaque (or hide the HUD panels while it is open) and label punctuation keys with their names next to the character."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lunarOrbit-720p.png, lunarSurface-720p.png, terrain-pending-720p.png",
+      "defect": "The altimeter header reads 'ALTITUDE . SEA LEVEL . AUTO' in lunar orbit and on the lunar surface. The Moon has no sea, and the landed lander shows 30.0 m 'sea level'.",
+      "realReference": "Lunar altitudes (Apollo, LRO) are given above the mean radius / datum; 'sea level' is used only on bodies with an ocean.",
+      "likelyCause": "src/ui/hud/hud.ts lines 199 and 791 hard-code 'sea level' for the non-radar source.",
+      "fixDirection": "Use 'datum' (or a reference name from the body definition) for bodies without an ocean and keep 'sea level' for Earth; same wording in the tooltip (line 204)."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\chutes-720p.png, chutes-4k.png",
+      "defect": "'INSIDE ZONE', the one confirmation that the splashdown is inside the recovery area, is the smallest text on the screen (about 7.5 px type at 720p, green on grey, tucked into the panel title corner).",
+      "realReference": "Recovery and landing displays make the go / no-go state the most prominent element: a large coloured status word or light.",
+      "likelyCause": "src/ui/hud/hudStyles.ts line 279: `.lt .inside` at 0.72em inside the 0.74em `.ptitle`.",
+      "fixDirection": "Promote it to a status row or pill at value size, styled like the CHUTE ENVELOPE light, with an amber 'OUTSIDE ZONE' counterpart."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\ascent-720p.png, warp-refused.png, chutes-720p.png, pad-720p.png, reentry-720p.png",
+      "defect": "Context-blind content. 'PERIAPSIS -6 361.1 km' is printed in warning red during a nominal ascent and again under parachutes; the recovery-zone panel on the pad spends three rows on 'no ground track / no ground track / none'; in entry the left edge is five stacked panels from top to bottom, and with the right column and the bottom cluster the HUD boxes cover about a third of the frame of a game sold on its scenery.",
+      "realReference": "Shipped flight HUDs show what matters in the phase: no orbit alarm while suborbital by design, a collapsed target panel until there is a prediction, and the centre and upper thirds of the frame kept clear.",
+      "likelyCause": "src/ui/hud/hud.ts visibility rules (orbit panel always shown in flight in the external layout; landing-target panel whenever readouts.landingTarget is non-null) and the periapsis tone rule (red whenever below the surface).",
+      "fixDirection": "Tone periapsis red only once the vessel is above the atmosphere or coasting (amber 'suborbital' otherwise) and hide the orbit panel under chutes; collapse landing-target rows that have no data into one line; consider folding ATMOSPHERE and ENTRY into one panel."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-4k.png, translunar-4k.png, lunarOrbit-4k.png (ball, just above the horizon)",
+      "defect": "The +10 pitch numerals sit in the heading-label row, so the ball reads '10 030', '10 E', '10 150' along the horizon.",
+      "realReference": "On the KSP navball and on real ADI balls heading labels and pitch numerals occupy separate bands and meridians.",
+      "likelyCause": "src/ui/navball/navballTexture.ts line 112 (heading labels at pitch 6.2 deg, 38-50 px type, every 30 deg) and line 120 (pitch numerals at heading h + 15 + 6/cos(p), i.e. 21 deg, 81 deg, 141 deg ..., right beside the labels at 30, 90, 150).",
+      "fixDirection": "Move the pitch numerals to the mid-points between heading labels (h + 45) or omit the +-10 numerals; alternatively put the heading labels below the horizon tick row."
+    }
+  ]
+}

@@ -1,0 +1,159 @@
+{
+  "screenshotsLookedAt": 14,
+  "overallScore": 3.5,
+  "worstViews": [
+    "C:/dev/fable-space-game/out/screens/cockpit/closeup-mfd.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/leo-sun-patch-console.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/hatch-mechanism.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/chase-window-night.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/reentry-plasma.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/night-displays-floods.png",
+    "C:/dev/fable-space-game/out/screens/cockpit/moon-horizon.png"
+  ],
+  "findings": [
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/closeup-mfd.png (x 1340-1500, y 150-420 and x 0-170, y 760-860); closeup-fdai.png (x 920-1140, y 770-890); closeup-switches.png (x 1020-1180, y 0-110); leo-sun-patch-console.png (x 1195-1290, y 360-470 and x 810-850, y 560-600); perf-1440p-leo-seat.png (same patch)",
+      "defect": "The sun patch on the console (the brief's 'hard sun patch') has torn, comb-shaped edges wherever the edge is the shadow of an interior part: fingers 2-4 cm long with fine parallel streaks inside them, like stretched shadow-map texels. Only the edge that comes from the analytic window aperture is clean (the straight diagonal across MFD 1 from about (380,330) to (800,120) in closeup-mfd.png). The fault is visible from the seat at the default field of view, not only in the close-ups.",
+      "realReference": "Sunlight through a spacecraft window onto a panel: the shadow of a raised panel section, a bezel or an instrument housing 5-20 cm from the receiver is a straight, razor-sharp line with a penumbra of 0.5-2 mm (distance x 0.0093). No teeth, no streaks, identical from frame to frame.",
+      "likelyCause": "src/render/cockpit/sunmap.ts sunMapTransform (lines 31-38) and feature.ts:469/884: one 2048^2 orthographic map over the bounding sphere of the WHOLE interior (2 mm texels), although the sun only exists inside the window beams. The sun arrives through the side-right window almost parallel to the console face, so one texel covers 7 mm to several cm on the receiver along the light; the straight shadow edges of the raised centre console section, the MFD bezel and the FDAI housing rasterise as texel rows. src/render/cockpit/shaders.ts sunMapVisibility (lines 503-546) cannot hide that: its 8 x 8 comparison grid spans at most 4 texels, and the normal offset texel*(0.5+3*sinL) and bias (1.5+2*sinL) grow exactly at this incidence.",
+      "fixDirection": "Spend the resolution where the sun is: fit the map (or one tile per sun-facing window) to the cross-section of the window aperture prism in sun space (about 0.35 x 0.6 m, giving 0.2-0.3 mm texels at the same 2048^2, ten times finer), or drop the map for the sun term and trace one shadow ray per lit pixel against the lod0 BVH that already exists on the GPU for the occlusion bake (only pixels with sunThroughWindows > 0 pay; exact edges, penumbra from blocker distance x solar diameter). Keep the analytic aperture. Acceptance: in closeup-mfd.png every patch edge is straight within 1 px."
+    },
+    {
+      "severity": "blocker",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/pad-noon-forward-window.png (x 130-430, y 150-420; x 620-720, y 480-560); leo-sun-patch-console.png (x 430-560, y 100-250; x 150-450, y 380-560); night-displays-floods.png (x 0-470, y 200-640); reentry-plasma.png (whole wall); perf-1440p-leo-seat.png; closeup-switches.png (x 0-530, y 90-340)",
+      "defect": "The insulation blankets, which fill half of every seat view, read as flat cardboard with a net projected on it. (1) Each bay shows a hard-edged lighter quadrilateral inside a darker margin, with crisp straight creases that cut across the quilt cells: it looks like a semi-transparent sheet laid over the blanket. (2) The quilt seams are soft dark bands 1-2 cm wide with no stitch, no thread, no relief, so in the close-ups (closeup-fdai.png left third, closeup-switches.png left third) the wall looks out of focus.",
+      "realReference": "Quilted Nomex / beta-cloth blankets in Apollo, Soyuz and Orion cabins: every diamond cell is a small pillow with its own soft highlight and shadow, seams are 2-3 mm stitched grooves with visible thread rows and puckers radiating from them, the fabric has a weave sheen, the edge rolls smoothly under the frame and is laced or snapped down.",
+      "likelyCause": "src/render/cockpit/cabin/shell.ts blanket() lines 437-453: edge(x) = min(1, 12x)^0.5 lifts the patch to its full 16 mm within the first 4 cm mesh cell and is dead flat after it (C1 kink at the clamp), and aoAt ramps 0.72 -> 1.0 over the same single cell: a one-cell ramp against a flat plateau gives the crease. The quilting is not geometry: shaders.ts materialDetail case 1u (lines 686-707) uses puff = smoothstep(0, 0.11*fill, seam), cavity 0.7 and grime (1-puff)*0.6 (albedo x (1-0.45*grime)), i.e. a wide soft darkening; the slope term (0.22) is too weak to read as relief and the stitch term is removed by aaFade(140/cell) at seat distance.",
+      "fixDirection": "Model the quilt: tessellate blankets at about 1 cm and displace each diamond cell with a pillow profile (C1-continuous, per-cell fill as now), roll the rim with a smooth profile over at least 3 vertex rows and take the rim darkening from the bake, not from a linear ramp. Make the seam a 2-3 mm groove with a sharp normal crease and a thread row that survives filtering at 0.5-1.5 m, cut the seam darkening to 10 % or less, and bake a wrinkle normal layer that radiates from the stitches (tools/cockpit/bake-textures.ts). Add lacing or snaps along the rim."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/hatch-mechanism.png (x 990-1310, y 320-520; x 1290-1390, y 500-580; arcs on the window ring at x 760-800, y 470-620)",
+      "defect": "Light leak: a glowing blue-white line with bloom runs along the seam between the side-hatch door and its frame (pixels at 255,255,255), broken into segments. The outside is visible through the pressure hatch's perimeter.",
+      "realReference": "A plug-type pressure hatch seats on its seal all the way round: the seam is a dark line (seal bead and contact shadow), never a light source.",
+      "likelyCause": "src/render/cockpit/cabin/apertures.ts buildHatch lines 212-227: the frame's seal ring starts at the opening outline and goes outward (ring0 = loop3(g, base, 0) -> ringSeal at +14 mm), the door's edge wall starts at the outline inset by 4 mm (doorLoop = offsetLoop(base, -0.004), edge0 at depth 0.002). Nothing closes the 4 mm annulus between them, so the camera looks straight through the wall opening at the sunlit exterior, which clips at the cabin's exposure.",
+      "fixDirection": "Close the annulus with geometry: a rubber seal bulb from the door edge to the seal land, or make the door a true plug (its rim overlapping the land on the cabin side). Add a watertightness unit test: rays from several interior points toward a sphere of directions must all hit interior geometry or glass (no ray may leave the cabin), and include the door in the closed shell the core cascades draw."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/night-displays-floods.png (around the FDAI x 500-520, y 330-530; left of MFD 1 x 700-760, y 280-300; whiskers left of each seven-segment readout at x 1105-1135, y 690-710, x 1225-1250, y 665-690, x 1170-1195, y 595-615; streaks right of the switch guards x 880-940, y 620-660); closeup-switches.png (blot around the FINE switch x 1000-1160, y 380-520, none around its identical neighbours); closeup-fdai.png (x 1150-1290, y 80-640); hatch-mechanism.png (radial spokes on the door around the window x 640-1000, y 400-860); reentry-plasma.png (console face); chase-window-night.png (starburst on the surface at the top of the right window)",
+      "defect": "The baked occlusion shows the mesh instead of shadows: dark wisps and 'speed lines' radiate from instruments across the console face, one of five identical toggle switches sits in a dark blot, and the hatch door has a spoke pattern of light and dark rays around its window.",
+      "realReference": "Contact shadow under a bezel, a switch nut or a readout housing is a tight, even dark line 2-5 mm wide that follows the part's outline and is the same for identical parts; a flat door lit by its own window has a smooth falloff.",
+      "likelyCause": "src/render/cockpit/occlusion.ts bakes ambient occlusion and per-source visibility per VERTEX. src/render/cockpit/cabin/console.ts sectionSlab lines 98-117 triangulates each console face as a polar web (centre fan plus concentric rings every 3.5 cm, transport.maxEdge) that knows nothing of the parts mounted on it; the hatch pocket floor is one ring of long radial quads (apertures.ts:248, ringBetween pocketLoop -> holeLoop). A vertex that happens to lie under or beside a switch, bezel, rib or rod bakes dark and the value is interpolated along 3.5 cm and longer radial triangles.",
+      "fixDirection": "Bake occlusion of the large flat faces into a small lightmap atlas (2-3 mm per texel for the console faces, hatch door and close-out panels) instead of vertices, or re-mesh those faces as a regular grid refined to 8 mm or less around mounted parts with the mounted part's own footprint excluded from the vertex's rays. Add an explicit contact-occlusion term for mounted parts (analytic box / capsule occlusion in the shader) so identical parts get identical shadows."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/night-displays-floods.png; pad-noon-forward-window.png; hatch-mechanism.png (linkage rods and handle over the door and the window); reentry-plasma.png",
+      "defect": "Cabin light casts no shadows of anything thinner than the bake spacing. The floods and windows light the cabin like an ambient term: the hatch rods, the handle, the hand controllers, the switch levers and the hand holds cast nothing, and the far wall is nearly as bright as the wall beside the window. With flat mid-grey materials this is what makes the pad, night and reentry views read as a clay render.",
+      "realReference": "Flood tubes are 20 cm strip sources 0.5-1 m away: soft but distinct shadows (penumbra of a few cm) under the console overhang, behind the controllers and under every rod. Window daylight is strongly directional: surfaces next to the window are 5-10 times brighter than the opposite wall, with soft shadows of frames and couches.",
+      "likelyCause": "src/render/cockpit/shaders.ts cabinLight (lines 352-413): every source is an unoccluded Lambert polygon times one baked scalar per vertex (3.5 cm spacing, rest pose); the inter-reflection term amb.uniformE (AMBIENT_WGSL, feature.ts:963-964 with cabinAlbedo 0.5, so rho/(1-rho) = 1) adds as much perfectly uniform light as the direct light delivers.",
+      "fixDirection": "Give the fixed sources real visibility: the six floods never move relative to the cabin, so render small shadow maps (or one cube per pair) at init and whenever a control moves; give each bright window a shadow map along its axis or trace BVH rays for the two or three dominant sources in a half-resolution pass. Replace the uniform inter-reflection irradiance with a baked first-bounce irradiance per source (same lightmap as the occlusion fix), so the bounce also has a gradient."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/night-displays-floods.png (panes at x 840-960, y 0-100, measured flat 112,112,112; x 1190-1330, y 30-120)",
+      "defect": "At night the window panes are a flat, uniform mid-grey. They read as opaque grey plastic sheets or drawn shades, not as glass in front of black space.",
+      "realReference": "A cabin window at night is a dark mirror: black space (stars at long exposure) with a dim, sharp, slightly doubled reflection of the lit cabin, about 8 % per pane: the bright blankets, the flood tubes as lines, the displays as coloured rectangles.",
+      "likelyCause": "src/render/cockpit/shaders.ts cabinRadianceAlong (lines 1091-1119): the reflected radiance defaults to the constant amb.uniformE * cabin.bounce.w / PI * 1.6 for every ray that does not hit a display, flood or sun-patch polygon, so with the floods on both panes add the same grey everywhere (glass(), line 1208-1211).",
+      "fixDirection": "Reflect an image: render a small cabin reflection cube (128-256^2, lod1, re-rendered when the cabin light changes) and sample it with a parallax correction against the cabin's cone, or a planar reflection for the pane in view; keep the exact display / flood polygons on top. Add the second pane's offset ghost. Remove the 1.6 factor."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/reentry-plasma.png (windows x 880-970, y 220-600 and x 1200-1380, y 330-620: 69 % of pixels at 255,255,255); pad-noon-forward-window.png (windows); leo-sun-patch-console.png and closeup-mfd.png (patch at a flat 233,234,233 on the 8.5 % panel and on the 3 % bezel alike)",
+      "defect": "Energy clips without structure. Reentry: the windows are flat white rectangles while the whole cabin is one uniform salmon tint (median 186,140,106): a white source that lights orange, no plasma structure, no falloff from the windows, no flicker cue. Sun patch: a flat near-white cut-out with no glare, in which black anodised bezels and soft keys look white-painted. Pad: the forward windows show a near-white blank.",
+      "realReference": "Entry footage from inside Orion, Soyuz and Apollo: saturated orange-pink to violet glow with streaming structure in the window, the cabin lit warmly and unevenly from the windows. A sun patch in ISS or Apollo photographs blows out, but with a glare halo, and dark parts inside it still read darker than light parts.",
+      "likelyCause": "The interior exposure meters the dark cabin, so the window view, the plasma (data/defs/visuals/cockpits/kestrel.json lighting.plasmaLuminance 25000, plasmaColor [1, 0.42, 0.24]) and the sun patch are 6 or more stops over and every channel hits the tone curve's ceiling (hue lost). The plasma reaches the cabin only as one colour added to every window's radiance (shaders.ts windowRadiance line 303, cabin.plasma.rgb) and then mostly through the uniform inter-reflection term, hence the even tint. The plasma seen through the glass is the lab's stand-in.",
+      "fixDirection": "Meter the interior with a highlight term (windows and sun patches weighted in, so a sun patch on a 20 % surface lands no more than about 2 stops over white) or request a local-exposure / highlight roll-off that keeps hue from the core. Drive each window's plasma radiance from the real plasma field with spatial and temporal variation, and let the direct window term dominate the tint (see the shadowing finding). Re-shoot reentry with the vfx plasma in the integration lab."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/chase-window-night.png",
+      "defect": "The view is 98 % pure black and its own spec fails on the current tree: 'chase-window-night: mostly black (0.019)' (tests/browser/cockpit/views.spec.ts:57, 18 passed / 1 failed in my run through the gate). The hull is 0,0,0 even with a 12x gain, there is no light spill from the lit cabin onto the window wells or bezels, no reflection on the glass, and the two windows float in a void at ec=-2.",
+      "realReference": "Night-side photographs into a lit spacecraft window: the window glows, its light spills onto the well, the bezel and the nearby hull, the hull is faintly visible in earthshine or moonlight, and the glass carries reflections.",
+      "likelyCause": "views.spec.ts:46 (scene=night, distance 1.6 m, fov 45, ec=-2: the windows cover about 2 % of the frame). The cabin's light is written as emission on interior pixels only (shaders.ts shade(), hand-off deviation 2), so nothing outside the pressure wall receives it; the well walls belong to the exterior and get no cabin light; the lab hull has no night ambient.",
+      "fixDirection": "Light the window wells and the outer bezel from the cabin (treat each pane as an emitter toward the outside with the cabin's mean radiance times the glass transmittance), fix the exterior metering so ec=-2 is not needed, and frame the shot so the window fills a quarter of the frame (distance about 0.7 m). The spec must pass without lowering its threshold."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/look-back-couches-hatch.png (x 140-330, y 60-130; x 60-250, y 290-420; x 0-90, y 370-440; x 150-300, y 560-640)",
+      "defect": "One-pixel dotted white hairlines (up to 235,234,233, neutral white, in a wall that is otherwise 35,43,56) trace the rims of the blankets where they meet ring frames and stringers, with zig-zag kinks and one smoothly curved run with a rounded corner. They look like z-fighting or pinholes and would crawl in motion.",
+      "realReference": "These junctions lie in the shadow under the frame flanges: dark, continuous, with no sparkle.",
+      "likelyCause": "Not settled from the stills; two candidates. (a) Sub-pixel slivers of polished metal between the blanket rim and the frames (the hatch's aluminium seal land, apertures.ts:218-219, roughness 0.3, metallic 1; shade and tie-down rails) catching the representative-point specular of a window, which is unbounded at grazing view (shaders.ts lines 398-409: D * Vis * F * E with NoV clamped to 1e-3). (b) Pinholes: the blanket rim sits only 2 mm off the wall (shell.ts:449) while the wall's ring patches around openings are coarse flat facets (shell.ts:233-253, rings = 5) that deviate by millimetres from the cone, so slivers of another surface or of the sunlit exterior show at the cabin's exposure.",
+      "fixDirection": "Open /labs/cockpit/?scene=leo&eye=0.2,-0.35,0.4&aim=hatchDoor&fov=80 with a material-id or albedo debug output to see which surface the pixels belong to. Then: tuck blanket rims under the frame flanges with a real overlap, weld or refine the wall rings to the blanket tessellation, clamp the specular luminance of the representative-point lobe and widen roughness by the pixel footprint for thin parts. Add a browser test that renders the seat views over a magenta clear and asserts that no magenta pixel survives inside the cabin."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/pad-noon-forward-window.png (pane, x 930-1000, y 300-660 and the bottom strip, with a hard vertical cut at x 935); leo-sun-patch-console.png (x 1085-1130, y 100-130); hatch-mechanism.png (well of the hatch window, x 830-940, y 530-600); chase-window-sun.png (x 790-830, y 245-290; x 880-940, y 595-615); moon-horizon.png and leo-earth-side-window.png (well walls)",
+      "defect": "Noise patterns at the windows. The sunlit part of a pane shows a white cellular 'frost' that ends at a hard straight line, like bathroom glass; the sunlit well walls show a blocky salt-and-pepper speckle of 2-3 mm cells.",
+      "realReference": "Dust on a spacecraft window in grazing sun is a fine, even veil whose brightness follows the scattering angle, with a few bright specks, fibres and wipe arcs; it fades with the penumbra, not at a line. Painted or anodised well walls are smooth and matte.",
+      "likelyCause": "src/render/cockpit/shaders.ts grime() (lines 1152-1186): two speck layers at 620 and 230 cells per metre, gated by a 9 cycles-per-metre value-noise clump, give blotchy cells; glass() lines 1212-1223 multiplies them by sunThroughWindows(in.part) (the aperture's shadow line on the pane is the hard cut) and by hg * grazing * 0.004, which is strong enough to read as frost. Well walls: the 'paint' detail layer is 512 texels over 0.5 m (public/assets/cockpit/detail.json, about 1 mm per texel), its grime and cavity masks are magnified at 0.3 m and gain contrast in direct sun (albedo x (1 - 0.45 * grime), shaders.ts:774-775).",
+      "fixDirection": "Replace the speck field by a smooth forward-scattering haze (low amplitude, phase function only) plus sparse sub-millimetre specks (under 1 % coverage) and a few wipe arcs; let it fade over the penumbra. For surfaces seen from under 0.5 m use a finer detail tile (5-10 cm) or cut detailStrength and grime on the well walls."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/moon-horizon.png (x 605-640, y 540-620; x 700-740, y 215-250); leo-earth-side-window.png (x 646-690, y 575-620); chase-window-sun.png (x 790-830, y 240-300; x 930-990, y 580-620)",
+      "defect": "The rounded corners of the window openings are visibly polygonal: 4-5 straight facets per corner, on the outer mould-line opening, the well and the bezel, silhouetted against the bright view outside.",
+      "realReference": "A machined corner radius is a perfect arc at any magnification.",
+      "likelyCause": "src/render/cockpit/cabin/apertures.ts:153 (count = 64 outline points for the whole rounded rectangle at lod0; apertureOf line 130 also 64; hatch 72 at line 208): with a 6-7 cm corner radius that is 4-5 chords of 2-2.7 cm (about 22 degrees) per corner.",
+      "fixDirection": "Distribute outline points by curvature: 16 or more segments per corner at lod0 and one per straight edge, using the same parametrisation for the wall hole, the well, the bezel, the gaskets and the panes so they stay welded; smooth the normals around the corner. The exterior package cuts the same outline, so agree the sampling with it."
+    },
+    {
+      "severity": "major",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/moon-horizon.png; leo-earth-side-window.png; chase-window-sun.png",
+      "defect": "Three acceptance views show placeholders outside the glass: the Moon is a flat uniform grey (181,184,184) against black with a ruler-straight horizon, the Earth is a featureless pale blue-white field (200,211,223) with a soft limb, the hull is a flat grey cone in front of a flat blue field. As screenshots they read as two-tone graphics, and they cannot show whether the glass, the dust and the reflections sit correctly over a real, detailed view.",
+      "realReference": "From low orbit: crisp cloud systems, ocean glint, coastlines, a thin layered limb. On the lunar surface with the sun at 16 degrees: cratered regolith with long shadows and a rough horizon.",
+      "likelyCause": "labs/cockpit/sky.ts and labs/cockpit/hull.ts stand-ins (hand-off deviation 7), shot with ec=-3 and ec=-2.",
+      "fixDirection": "Not a player-facing defect of the interior, but the evidence is missing: re-shoot these three views in the integration lab (labs/integration) with the real planet, terrain, atmosphere and vehicle features, at the exposure the game uses, and review the glass over that."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/look-back-couches-hatch.png (controller box x 1165-1215, y 0-150); hatch-mechanism.png (gearbox x 520-660, y 560-760; lockers x 100-340, y 100-130 and x 0-330, y 500-570); night-displays-floods.png (MFD 3 bezel x 1360-1520, y 335-540); reentry-plasma.png (bezel x 790-1100, y 790-800); closeup-switches.png (x 600-615, y 400-760)",
+      "defect": "Edge wear is a sprinkle of isolated dots and blobs: white dots along the edges of black anodised boxes and bezels (they will sparkle in motion), dark soft blots along the edges of the light lockers, lumps on the console's side chamfer.",
+      "realReference": "Wear on painted or anodised edges is a thin continuous bright line on the sharpest edge that breaks into fine chips and scratches, concentrated at corners, fasteners and where hands and boots reach.",
+      "likelyCause": "src/render/cockpit/shaders.ts materialDetail line 682: wear = smoothstep on the mask channel of a 512^2 tile (1 mm per texel for 'paint', 0.3 mm for 'cast'), applied on FLAG_EDGE chamfers only and thresholded, so mask blobs of several mm survive as dots; the worn surface is metallic 1, albedo 0.62, roughness 0.32 and catches the window specular.",
+      "fixDirection": "Drive wear by the position across the chamfer (strongest on the edge line) times a finer mask, so it forms a line that breaks into chips; bias it to corners; make worn anodise a dull grey (albedo 0.25-0.35, roughness about 0.5)."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/pad-noon-forward-window.png (x 825-865, y 415-470; x 1395-1445, y 560-600); reentry-plasma.png (x 845-880, y 350-400; x 1415-1460, y 480-520)",
+      "defect": "Blank light squares, turned 45 degrees, hover over the window frames and overlap the shade rail and the bezel: they look like untextured tags stuck in mid-air.",
+      "realReference": "Velcro patches are bonded flat onto blankets and panels, aligned with the structure, never across a window frame, and show a hook or loop pile.",
+      "likelyCause": "src/render/cockpit/cabin/fixtures.ts lines 195-200: fixed positions (az +-30, y 1.35 and others) placed with plateInset + 0.023 regardless of openings, stringers and frames; the forward windows sit at az +-20, y 1.45 with a 4.5 cm bezel, so two patches land on their frames, 2 cm proud.",
+      "fixDirection": "Place patches inside blanket bays only (test against the opening regions and the stringer grid), seat them on the blanket surface, align them with the bay, vary their size."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/pad-noon-forward-window.png (x 300-470, y 390-430); reentry-plasma.png (x 300-470, y 340-400); hatch-mechanism.png (rods across the window, x 440-1300, y 300-720); look-back-couches-hatch.png (x 730-850, y 470-560)",
+      "defect": "Parts that end or run implausibly: the three-tube cable bundle along the ring frame stops in mid-air with a flat cut end; the hatch's latch rods run in straight lines from the gearbox to every latch, straight across the hatch window, hovering above the door without guides, and from the seat they alias into dotted lines.",
+      "realReference": "A harness ends in a connector backshell or passes through a grommet and sags slightly between clamps. Hatch linkages run around the door's perimeter through bellcranks and guides and keep the window clear.",
+      "likelyCause": "src/render/cockpit/cabin/fixtures.ts lines 155-180 (cable runs defined by azimuth ranges, no termination); src/render/cockpit/cabin/apertures.ts lines 288-300 (one straight 6-sided tube of 3.5 mm radius from the gearbox to each latch, 12 mm above the door face).",
+      "fixDirection": "Terminate each cable run in the console body or a wall grommet with a backshell. Route the latch drive as a perimeter linkage with bellcranks at the corners, clear of the window, with rod guides on the door; thicken or fade sub-pixel rods with distance."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/night-displays-floods.png (caution and warning panel, x 1150-1330, y 160-260); leo-sun-patch-console.png (x 1360-1580, y 170-260); pad-noon-forward-window.png (x 1190-1390, y 720-820); closeup-switches.png (position legends at x 970, 1115, 1255, 1405, y 488)",
+      "defect": "Text faults. The legends of the 18-lamp caution and warning panel are an illegible smear from the commander's seat (the panel is seen obliquely), lit lamps show as irregular coloured blobs. On the switch row the lower position legends (OFF, UP) are covered by the lever tips of every switch that is down.",
+      "realReference": "Engraved or back-lit legends stay crisp at oblique angles; panel legends are placed clear of the lever's travel as seen from the crew's eye.",
+      "likelyCause": "src/render/cockpit/shaders.ts line 793: the label atlas is sampled with textureSampleGrad and a trilinear sampler (isotropic, so the mip follows the longest footprint axis); 147 placards share one 2048^2 atlas. Switch legends: src/render/cockpit/cabin/console.ts lines 336-337 put the position legends 12.5 mm to the right and 10.5 mm above / below the bushing, inside the lever's projected travel as seen from the seat.",
+      "fixDirection": "Sample the atlas anisotropically (16x) or switch small legends to a signed-distance glyph atlas; give the annunciator legends more texels. Move the lower position legends below the lever's projected tip."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/closeup-switches.png (x 690-1600, y 290-300); night-displays-floods.png (x 560-1050, y 590-600)",
+      "defect": "A slit between the main console sections and the tilted lower switch panel shows the lit wall behind it: the console reads as separate boards hanging in the air.",
+      "realReference": "Console sections share a closed structure; joints are covered by a close-out strip, a hinge line or a gusset.",
+      "likelyCause": "src/render/cockpit/cabin/console.ts sectionSlab: each section is its own slab (kestrel.json console.sections, lower section tiltDeg -30) with no close-out between neighbours.",
+      "fixDirection": "Add a close-out strip or a shared frame between adjacent sections, and a visible support structure from the console to the wall."
+    },
+    {
+      "severity": "minor",
+      "view": "C:/dev/fable-space-game/out/screens/cockpit/look-back-couches-hatch.png (arm and leg pads, x 1000-1250, y 200-420); moon-horizon.png (cushion, x 150-350, y 300-600); closeup-fdai.png (housing screws at 515,152 and 1107,155 and 515,748)",
+      "defect": "Stretched and low-polygon detail: the couch fabric's weave is drawn out into long streaks on the narrow pads (it reads as brushed metal) and into regular vertical stripes on the back cushion; the FDAI housing screws are flat 8-sided discs with no slot or recess.",
+      "realReference": "A twill weave has the same thread pitch everywhere and follows the panel's cut; instrument screws are round, recessed, with a cross or hex drive.",
+      "likelyCause": "src/render/cockpit/cabin/couches.ts cushion() lines 54-104 builds each pad as a POLAR patch (s around the squircle outline, t from the centre outward) and src/render/cockpit/mesh.ts patch() lines 217-233 sets uv0 to the arc length along the s and t mid-lines, so the weave is mapped in polar coordinates: it pinches at the pad's centre and is drawn out along long narrow pads. Fasteners: 8-sided cylinders (console.ts:240 and :272, apertures.ts:168).",
+      "fixDirection": "Give the cushion's top panel planar metric UVs from the pad frame (x, y) and continue them by arc length over the roll and the side; raise the fastener segment count to 16-20 with a modelled drive recess (the console's quarter-turn fastener already has one)."
+    }
+  ]
+}

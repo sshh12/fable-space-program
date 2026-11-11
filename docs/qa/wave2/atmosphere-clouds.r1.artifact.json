@@ -1,0 +1,141 @@
+{
+  "screenshotsLookedAt": 100,
+  "overallScore": 5.5,
+  "previousItemsStillOpen": [
+    "3 (was blocker, now major): the saw teeth from the ground and the facets looking into the sun are gone, but from orbit at low sun the comb is still there. It shows as vertical brush-stroke streaks along the sun azimuth with saturated navy specks in the glint, in native-leo-low-sun-1440p.png, perf-low-orbit-terminator-1440p.png and leo-low-sun.png.",
+    "1 (was blocker, now major): separate cumulus with flat bases and blue gaps now exist, but the large clouds overhead are still smooth grey putty undersides with horizontal flutes and a lens-shaped highlight (native-ground-cumulus-1440p.png x 1900-2560, y 300-800). The far clouds just above the horizon carry per-pixel grain.",
+    "2 (was blocker, now major): from 400 km the fields are still soft popcorn of one size, softer than the planet. The large clouds are terraced plateaus outlined by bright veins, and the cloud shadows are faint smudges (native-leo-day-1440p.png x 1300-1950, y 750-1440).",
+    "5 (major): contour and vein lines are still there from 25 to 400 km: nested arcs in ascent-40km.png, worm creases in ascent-80km.png, terraces in native-leo-day-1440p.png, marble veins in native-above-deck-1440p.png. From 25 km the deck is a flat two-tone camouflage (tunables-*.png). From below, the base is cut-paper lobes with crisp outlines (transparent-quad-under-deck.png, native-under-deck-1440p.png).",
+    "6 (major): from 25 to 80 km the large weather systems are smooth white masses with creases. Only the small cumulus gained shaded sides and shadows.",
+    "9 (major): from 14,000 to 60,000 km the thick systems are flat white with no internal shading, and the thin cloud is a two-tone polygonal camouflage (explore/m-14000km-1080p.png, native-earth-60000km-1440p.png).",
+    "10 (major): the side view now has warm against cool, but clouds seen into the setting sun are one pale tan about as bright as the sky, with no dark cores and no silver linings (native-ground-sunset-1440p.png, clouds-ground-sunset.png, clouds-ground-cumulus-into-sun.png).",
+    "12 (major): single saturated navy pixels remain inside white cloud on tile-path discs. There are 30 in native-earth-60000km-1440p.png, for example (1393,479) = (13,41,106); 12 in earth-moon-distance.png; and earth-60000km.png has (700,225) = (48,72,112) among neighbours of about 105-135. The fixer's count of 0 / 0 / 2 / 0 does not match the pictures.",
+    "16 (minor): inside cloud the frame is one flat grey (clouds-in-deck.png standard deviation 1.2 / 1.1 / 0.9; perf-inside-a-deck-1440p.png 0.5).",
+    "17 (minor): twilight is still lavender: sky-anti-twilight.png (37,38,62) at (640,60) with R about equal to G, and pad-sunset-minus-10min.png neutral grey (98,97,105) above the glow.",
+    "18 (minor): the night limb is now smooth, but the boundary between the lit limb and the night side in leo-terminator.png (x 620-960, y 290-330) still shows a step.",
+    "19 (minor): tunables-coarse-steps.png still switches from the cell pattern to a featureless translucent sheet across a band at y about 230-300. It is softer than the old arc.",
+    "20 (minor, render core): the sun is still a large grey glare ball in perf-low-orbit-terminator-1440p.png and leo-low-sun.png."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\native-leo-low-sun-1440p.png (native x 1050-1500, y 720-1050); same folder: perf-low-orbit-terminator-1440p.png (x 850-1350, y 570-1050), leo-low-sun.png (x 480-760, y 380-560)",
+      "defect": "From 400 km with the sun 4 deg up, every cloud trails a comb of hairline vertical streaks along the sun azimuth, 1-4 px wide, like dry-brush strokes. They cross both the sea glint and the neighbouring cloud tops. The glint is also peppered with 2-3 px saturated navy specks: 23 pixels by a 7 px median test in native-leo-low-sun-1440p.png and 186 in perf-low-orbit-terminator-1440p.png, for example (1273,615) = (149,145,156) between (210,179,155) above and (225,201,167) below. This is the round-0 comb, softened but plainly visible at 3x in the animated native frame. It is not the 'soft streaks as in the reference' the hand-off describes.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/cloud-shadows-sunset-tanzania.jpg: the shadows of towers at low sun are single lanes as wide as their tower. They have smooth sides, taper, fade with distance in the haze, and are only 2.3-3.3x darker. There are no hairline striations and no specks. The specks would also twinkle as the camera moves.",
+      "likelyCause": "The filtered map (7x3 tent across the azimuth) is still a projection stretched about 14x along the azimuth at 4 deg. Per-texel differences along the long axis survive the filter as streaks, and the deterministic step phase of the map march freezes them. The specks belong to the same family as item 12: the deferred far term and the cloud march disagree about cover at a pixel, and on a bright glint that shows as a dark hole.",
+      "fixDirection": "Under about 8 deg, shade the surface and lower cloud with a per-pixel parallax shadow (the column density along the true sun direction, displaced by the cloud-top height) or a warped cascade along the azimuth. Widen the penumbra with occluder distance (PCSS with the sun's 0.27 deg). Read the cover for shadow and for cloud at the same map level. Add to the spec a high-pass energy bound across the sun azimuth and an isolated-dark-speck count for this native view."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\ascent-40km.png (x 880-1280, y 460-620); same folder: ascent-80km.png (x 560-1150, y 560-720), native-leo-day-1440p.png (x 1350-1950, y 1080-1440), native-above-deck-1440p.png (x 0-700, y 850-1250), tunables-shipped.png, native-ascent-25km-1440p.png (x 1300-2560, y 820-1120)",
+      "defect": "Large cloud masses seen from above still carry quantisation lines. From 40 km the big system is ruled with nested parallel arcs like wood grain (a 3x crop of ascent-40km.png). From 80 km the flat white mass has worm-like bright creases and plateaus, like melted wax. From 400 km at native 1440p the large cloud is terraced: flat plateaus outlined by hairline bright veins, a topographic map. From 6 km at 1440p the deck is grey marble veins on white. From 25 km (every tunables-*.png) the deck is a flat two-tone camouflage of pale blotches on grey, with no relief or shading. At 1440p from 25 km the large systems are smooth white rolls without granular texture.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/stratocumulus-field.jpg and cloud-gazing-pacific.jpg: decks and large systems are pebbly cells and rolls at every scale, with brightness changing continuously and fringes that are fibrous and translucent. There are no isolines, no plateaus and no marbling.",
+      "likelyCause": "The round-1 changes (bisection to the surface, stratified steps, interpolated light) act in the resolved near-surface regime. Two other regimes keep the old behaviour. In the unresolved fraction regime and the sheet-relief regime used from about 20 km up, the deck top is the analytic bell profile carved by `topReliefM` with the 9 km shape noise and the Worley cell channel (`meso.g`, `nb.a`), which crease along cell edges. Slab lighting is still placed by distance, not by optical depth.",
+      "fixDirection": "Apply blue-noise step phase and slab boundaries by optical depth in the far regimes too. Replace the bell-profile-plus-Worley relief with a multi-octave, domain-warped closed-cell top-height field. Shade it by its gradient where it is unresolved, and keep its variance (no fade to the mean). Add a ridge or line detector to the spec at 25, 40, 80 and 400 km and in tunables-shipped."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\native-ground-cumulus-1440p.png (native x 1900-2560, y 300-800 overhead underside; x 2350-2560, y 520-640 eye; x 450-750, y 820-960 grain); same folder: clouds-ground-cumulus.png, perf-pad-1440p.png",
+      "defect": "Fair-weather cumulus at mid-distance now read as cumulus, with flat bases, cauliflower tops and blue gaps. The bodies directly overhead do not. The largest cloud overhead is a uniform smooth grey underside with long soft horizontal flutes, no texture at any scale, and a lens-shaped brighter 'eye' with airbrushed edges: putty or a smoke simulation, not a cumulus base. The ranks of clouds toward the horizon are smeared horizontal laminae. The far clouds just above the mountains carry per-pixel salt-and-pepper grain: high-pass standard deviation 1.8-3.0 against 0.56 in the clear sky of the same frame, plain at 3x and the same at quality 0.7 and 1.",
+      "realReference": "out/qa/ref/sky-ground-clouds/cu-humilis-nsw.jpg and cu-mediocris.jpg: the bases are flat but mottled grey-blue, and the edges are ragged and sharp to the pixel. Even close overhead, a cumulus underside has soft lumpy texture and darker cores, not a polished surface. Distant cloud has no grain.",
+      "likelyCause": "Near the camera the eye ray enters the base, where only the low-frequency shape noise acts. Erosion is faded by footprint and acts only at the surface. The base light is a smooth two-stream term, and the half-resolution buffer is upsampled bilinearly. The grain is the far-field march, where too few samples are averaged over too few frames at long steps.",
+      "fixDirection": "Give the base a mottling of its own from the optical depth above, plus a fine erosion octave with curl distortion that stays alive near the camera. March at full resolution within a few km of the camera, or upsample edge-aware. For far rays, raise the accumulation weight or apply a small alpha- and depth-aware spatial filter. Check at native 1440p against cu-humilis-nsw.jpg."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\transparent-quad-under-deck.png (upper half, x 0-1280, y 0-300); same folder: native-under-deck-1440p.png (native x 1100-2560, y 0-700), transparent-quad-above-deck-hidden.png, transparent-volume-under-deck.png",
+      "defect": "Seen from just under an overcast, the base is stacked smooth translucent lobes with crisp, layered outlines, like overlapping sheets of tracing paper or vector shapes with an opacity. Inside each lobe the grey is uniform. Breaks in the deck show isolated cauliflower puffs pasted on flat grey sheets, and the two kinds of cloud do not belong to the same scene.",
+      "realReference": "out/qa/ref/sky-ground-clouds/overcast-landscape.jpg: soft continuous mottling, p95/p5 1.8x, no outlines. sc-lacunosus-stormy.jpg: texture everywhere, with bright rims only around real holes.",
+      "likelyCause": "The sheet bases come from an analytic profile and low-frequency shape noise. The edge of each sheet's coverage is a narrow remap, so every sheet ends in a contour. The sheet and shaped regimes are lit differently (one light per slab against the gradient light).",
+      "fixDirection": "Give the sheet base a multi-octave mottling and a wide, noisy coverage remap so it never shows an outline. Light sheet and shaped cloud with the same model. Assert in the spec that the base luminance has no step edges (gradient-magnitude histogram) in the under-deck view."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\native-earth-60000km-1440p.png (native x 1370-1490, y 460-540); same folder: earth-moon-distance.png (x 600-800, y 100-250), earth-60000km.png (x 540-720, y 200-300), earth-60000km-crescent.png",
+      "defect": "Single saturated navy pixels still sit inside white cloud on every disc drawn through the tile path.",
+      "realReference": "DSCOVR / Apollo 17 whole-disc photographs: cloud edges are graded, and there is no single-pixel hole or stair-stepped streak anywhere on the disc.",
+      "likelyCause": "Four rays per pixel reduce the holes but do not remove the cause. The deferred far shadow reads the coverage map at level 0, while the march reads a coarser level plus noise. Where they disagree, a shaded sea pixel shows through a one-pixel gap. The diagonal steps are coverage-map texels magnified with no filtering beyond bilinear.",
+      "fixDirection": "Read the cover for cloud and for its shadow at the same level. Before the composite, add a transmittance-aware 3x3 filter in the tile. Filter the map bicubically or with a stochastic jitter where its texel is larger than a pixel. Count isolated dark pixels inside cloud in the spec at native 1440p as well, with a test like the one above (at least 6 bright neighbours and under 0.6 of their median)."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\native-ground-sunset-1440p.png (native x 900-1800, y 560-940); same folder: clouds-ground-sunset.png (x 380-900, y 300-470), clouds-ground-cumulus-into-sun.png (x 160-600, y 160-430)",
+      "defect": "Clouds between the camera and a low sun are a uniform pale tan, about as bright as the sky around them, with no dark cores and no bright rims. The animated native frame is auto-exposed to a washed-out cream: frame mean 122 against 69 in the fixed-EV deterministic frame, with low contrast everywhere. At 40 deg into the sun the cumulus are mid-grey with no silver lining. The clouds look translucent instead of thick.",
+      "realReference": "out/qa/ref/sky-ground-clouds/sunset-crepuscular-pacific.jpg: backlit cores (50,50,46) against bright silver edges, cloud p95/p5 14.7x. low-sun-stratocumulus.jpg: core (42,44,42), rims a few px wide, about 6x edge to core.",
+      "likelyCause": "The high-order scattering term is isotropic and weighted by the reflected share, so a thick cloud facing away from the sun still glows in sunlight. The forward peak of the phase function is not concentrated at the optically thin edge. The ambient includes the bright horizon band.",
+      "fixDirection": "For backlit geometry, weight the multiple-scattering term by the transmitted share of the two-stream solution (thick cores go dark). Drive the silver lining by the optical depth to the cloud edge along the view ray with a strong forward lobe. Add a spec: looking into a 3 deg sun, cloud core to rim contrast at least 4x and core darker than the adjacent sky."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\explore\\m-14000km-1080p.png (x 820-1120, y 420-640); same folder: explore\\m-20000km-1080p.png, native-earth-60000km-1440p.png, clouds-orbit-vs-map.png",
+      "defect": "From 14,000 to 60,000 km the thin cloud over the ocean is a two-tone polygonal camouflage. Flat patches of a single grey-blue tone with hard, cell-shaped outlines sit on the sea, plainly procedural at 3x. The thick systems are flat white with no internal shading, so a weather system reads as cut-out paper.",
+      "realReference": "DSCOVR EPIC / Apollo 17 Blue Marble and out/qa/ref/earth-orbit-clouds/cloud-gazing-pacific.jpg: the thin cloud is gauzy and fibrous, with continuous gradients the sea shows through. Thick systems have bright cores, greyer thinner rims and shaded fronts.",
+      "likelyCause": "The mesoscale Worley cells (`meso.g`) threshold the coverage into cells with a hard remap. The opacity of the thick part saturates. The coverage map itself is clipped (request atmosphere-clouds-8 is still open with bake-earth).",
+      "fixDirection": "Replace the thresholded single-octave Worley modulation with a continuous, multi-octave modulation of optical depth that keeps its variance at every footprint. Shade thick systems by the gradient of the map's cloud-top channel. Add a spec on the share of distinct tone plateaus (posterisation) at 14,000 and 60,000 km."
+    },
+    {
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\transparent-quads-broken-layer.png (quad at about 640,358). Spec tests/browser/atmosphere/transparents.spec.ts, 'above a broken layer'",
+      "defect": "Sorting error between transparents and clouds. The fixer reports that a quad IN FRONT of the cloud keeps only 0.837-0.840 of its brightness, against the bound of 0.85, while a quad three times as far away in a gap keeps 0.86. Cloud light is applied to an object in front of the cloud. The spec fails and was not loosened. I did not re-run it, because the screenshots are newer than the last source commit. A rocket or a plume in front of a cloud bank would be hazed by a cloud behind it.",
+      "realReference": "Any photograph of an aircraft or a launch vehicle in front of cumulus: the object has the cloud as a background and is never veiled by it.",
+      "likelyCause": "As the fixer reads it, `clouds.depth` puts the cloud's begin nearer than the cloud at that pixel: a half-resolution front depth from a neighbouring block, or the opacity-weighted begin of a coarse step.",
+      "fixDirection": "Publish a conservative far-side front depth for each half-resolution texel (the maximum begin over the 2x2 block where coverage differs), or compare with the full-resolution scene depth when the transparent pass reads the cloud. Keep the bound."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\clouds-deck-top.png (crest x 700-1280, y 310-420; ring at about 300,503)",
+      "defect": "The top of the deck seen against the sky is a ragged 1-2 px popcorn stipple instead of a soft, lumpy silhouette, and faint horizontal row streaks show inside the crest. One small, perfectly round crater ring with a bright rim stands on the deck at about (300,503). It looks like a stamped decal.",
+      "realReference": "A cumulus or stratocumulus crest against blue sky photographed from an aircraft: rounded turrets with a soft rim one or two pixels wide and no pixel noise.",
+      "likelyCause": "Grazing rays through the crest at half resolution with too few samples. The ring is one Worley cell of the detail noise cut by the erosion threshold.",
+      "fixDirection": "Supersample or filter grazing rays at the silhouette (more samples where the opacity gradient is high). Randomise or domain-warp the detail noise so single cells cannot read as rings."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\clouds-in-deck.png; same folder: perf-inside-a-deck-1440p.png",
+      "defect": "Inside cloud the frame is one flat grey: clouds-in-deck.png (122,123,129) with a standard deviation of about 1, and perf-inside-a-deck-1440p.png a standard deviation of 0.5. Nothing streams past, nothing is brighter towards the top or the sun, and there is no depth cue. A player flying through cloud sees a grey card.",
+      "realReference": "Cockpit video of cloud penetration: a bright white-out that is lighter overhead, with wisps and density changes streaming past the camera.",
+      "likelyCause": "No near-field detail: the 60 m minimum step, erosion only at the surface, and the in-cloud light taken from the slab.",
+      "fixDirection": "Add a near-camera fog term with small-scale animated density and a directional in-cloud glow towards the sun and the top."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\sky-anti-twilight.png; same folder: pad-anti-twilight.png, pad-sunset-minus-10min.png, pad-sunset.png",
+      "defect": "Twilight skies are lavender or slate. sky-anti-twilight.png measures (37,38,62) at (640,60) and (51,47,68) at (640,280), so R is greater than or about equal to G. pad-anti-twilight.png is (109,110,142) at the top. pad-sunset-minus-10min.png has a neutral grey (98,97,105) zone above the glow.",
+      "realReference": "Civil twilight opposite the sun: blue to blue-grey above the pink belt with G well above R, and deep blue to indigo overhead.",
+      "likelyCause": "The band-averaged ozone and Rayleigh coefficients (earth.atmosphere.json) cannot follow the Chappuis absorption of light that has already been reddened.",
+      "fixDirection": "Fit the three-band coefficients to a spectral reference at twilight, or add bands. Assert G/R above 1.3 at 40 deg elevation."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\earth-60000km-crescent.png (x 520-600, y 220-500); same folder: native-earth-60000km-1440p.png (x 1400-1490, y 460-540), earth-moon-distance.png (x 700-780, y 100-250), leo-terminator.png (x 620-960, y 290-330)",
+      "defect": "At the terminator, cloud edges carry thin orange-brown outlines, and the dark interiors of the same clouds do not share the tint. The lit limb meets the night side with a small step. The brightest cloud per column now falls from 196 to 140 across the crescent (it was 207 to 176), so the dimming of item 8 works, but the coloured fringes read as edge-detection lines.",
+      "realReference": "Apollo 8 and 17 and DSCOVR frames at the terminator: cloud tops go grey, then pink, as a smooth gradient across the whole cloud. There are no coloured outlines.",
+      "likelyCause": "Only the thin edges of clouds are optically thin enough to pass the reddened sunlight. The cores take the fall-off term, so the reddened light appears as a rim. At the limb, the half-resolution silhouette is taken by nearest lookup.",
+      "fixDirection": "Apply the transmittance colour of the sun at the layer to the whole cloud (reflected light), not mainly through the thin-edge path. March the limb band at full resolution."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\tunables-coarse-steps.png (y 220-320 across the frame)",
+      "defect": "With coarse but in-range steps, the deck changes regime across a band. Below it is the cell pattern; above it is a featureless translucent sheet. The arc of round 0 has softened into a band, but the far field still changes appearance with distance.",
+      "realReference": "A deck keeps its texture, compressing smoothly, out to the haze at the horizon.",
+      "likelyCause": "Steps lengthen past the budget, so opacity is kept but the texture is not: the long steps average the relief away.",
+      "fixDirection": "Past the budget, switch the far field to the analytic or gradient-shaded representation that keeps the variance, instead of a long-step march. Assert uniform high-pass energy per screen band in tunables.spec.ts."
+    },
+    {
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\atmosphere\\perf-low-orbit-terminator-1440p.png (sun at the top centre); same folder: leo-low-sun.png",
+      "defect": "Outside this package (render core). The sun above the limb is still a flat grey gaussian ball about 300 px in radius at 1440p, a halo sprite.",
+      "realReference": "The sun from orbit at daylight exposure: a small clipped disc with tight veiling glare or diffraction spikes.",
+      "likelyCause": "Bloom or glare kernel sized in pixels in src/render/core/post. Request atmosphere-clouds-7 is resolved but the look has not changed.",
+      "fixDirection": "Hand to the owner of the post chain: an energy-conserving bloom with a steep kernel."
+    },
+    {
+      "severity": "minor",
+      "view": "tests/browser/atmosphere/atmosphere.perf.spec.ts (reported by the fixer, not re-run; no screenshot shows it)",
+      "defect": "The perf spec fails on two atmosphere p99 rows: pad at quality 1, 0.869 against 0.8 ms; low orbit at quality 0.7, 5.4 ms against 0.9 ms. The fixer traces the excess to single composite passes, with a p99 of 4.8 ms against a median of 0.042 ms. A 5 ms spike in one pass is a visible frame hitch (pop) on a 60 Hz machine if it happens in play and not only under a loaded gate.",
+      "realReference": "A shipped title holds frame time without periodic hitches in steady views.",
+      "likelyCause": "Unknown. It happens while other GPU contexts are running; a real stall of the composite cannot be ruled out.",
+      "fixDirection": "Re-measure on a quiet machine. If the spike persists, capture a GPU trace of the composite pass. Keep the assertion."
+    }
+  ]
+}

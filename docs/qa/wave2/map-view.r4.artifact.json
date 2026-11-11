@@ -1,0 +1,109 @@
+{
+  "package": "map-view",
+  "round": 4,
+  "lens": "artifact",
+  "screenshotsCurrent": "All 39 PNGs in out/screens/map-view were written 2026-11-11 12:45:18-12:47:48, after the last src/map commit (7608425, 12:41:14). src/map, labs/map-view and tests/browser/map-view have no uncommitted changes. The later commit 6fa3894 (12:47:58) only touched the spec and hand-off, and real-hud-lunarOrbit.png already shows its rolled framing. The specs were not re-run.",
+  "screenshotsLookedAt": 39,
+  "overallScore": 7,
+  "previousItemsStillOpen": [
+    "r1 artifact A1 / photo P7 (major, coincident patches): partly open. The zero-delta-v candy stripe is gone (accept-node-added.png shows one cyan stroke to the node and clean yellow dashes after it), and the 8-patch barber pole is now three separate strands (synthetic-8-patches.png). Two different planned legs 3-5 px apart still form a jagged pink/orange ladder over the Earth disc (synthetic-earth.png and hover-debris-orbit.png x 640-668, y 318-400; synthetic-8-patches-earth.png x 640-670, y 330-420). The long-range dashes now show a two-tone double pattern instead (finding 1). There is still no moving-camera sequence of a dashed patch.",
+    "r1 photo P5 (major, routed to other packages by request map-view-6): open. The planet under the overlay still gives the composite away. Cloud texels are blurry and stair-stepped in the 4K composed frame (real-hud-lowOrbit-node-4k.png, device px x 1500-1900, y 700-1000) and in real-lowOrbit-dayside.png. The Moon's limb is smeared (real-lunarOrbit.png x 440-470, y 300-500).",
+    "r1 artifact A10 / photo P9 (minor, zone ring at the limb): partly open. In zone-near-limb.png the 'South Pacific' centre dot at (330,487) still straddles the limb: its pixels are x 328-332 and the disc edge is x 328-334. Its label sits entirely in black space beside the planet, crossed by the Moon's SOI arc. The ring folded at the limb still shows a doubled stroke with a step at the cusp (305,385).",
+    "r1 artifact A6 / photo P8 (minor, labels on lines): partly open. Marker plates are now opaque and the selected node has no label. Body names have no plate, though, and lines run through them (finding 4). The pad label moves onto the planned path between two acceptance frames (finding 5). Under a 0.95 plate a dash still shows faintly: plate (6,9,15), dash under it (17,18,19) in dpr2-synthetic-moon.png, Impact plate at device px 1640-1730, 950-1030."
+  ],
+  "previousItemsFixedInPictures": [
+    "P1/A3 night side as black as space: fixed. A silhouette ring outlines the night limb in real-lowOrbit.png, real-lowOrbit-node.png, real-lunarOrbit.png and real-hud-lunarOrbit.png, and orbits now visibly end at it.",
+    "P2/A4 ghost pad label: fixed. The pad label is at full strength in real-lowOrbit.png, and the pad just inside the limb is simply absent in real-lowOrbit-dayside.png.",
+    "P3 map never shown with the HUD: fixed in pictures. real-hud-*-720p, real-hud-translunar, real-hud-lunarOrbit and real-hud-4k show one type scale, one unit and the node panel clear of the HUD panels. The app does not mount the map yet (request map-view-5); this is not a visual defect.",
+    "P4 Earth buried at the overview: fixed. A shaded Earth disc icon sits on top with its badge on the corner (scene-synthetic.png, accept-zoom-1e9m.png), and leaders are present. A new badge fault is in finding 3.",
+    "A2 debris dots inside label text: fixed. No dot lies inside a plate in hover-debris-orbit.png or synthetic-earth.png.",
+    "A5 Ap labels read crosswise: fixed by tint and leaders. In accept-panel.png the current Ap is cyan and the planned Ap is yellow, each with a leader.",
+    "A7 vessel name off its glyph: fixed (leaders in real-translunar.png, scene-translunar.png).",
+    "A8 hollow markers: fixed for Ap/Pe/AN/pad (dark interiors). The ghost Moon ring is still hollow (finding 7).",
+    "A9/P6 pointer-like vessel glyph: fixed. It is now a notched cyan chevron (accept-zoom-200km.png, real-hud-lowOrbit-node-4k.png).",
+    "A12/P12 hovered debris and tooltip clearance: fixed. The hovered dot is ringed and its orbit is drawn in white (hover-debris-orbit.png). The impact tooltip keeps clear of the trajectory (hover-impact-details.png).",
+    "P11 panel finish and P13 type hierarchy: fixed. The panel shows calendar UT and the T− countdown on two balanced hint lines; body names are in tracked capitals."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "scene-synthetic.png, synthetic-chain.png, synthetic-chain-intercept.png, scene-synthetic-intercept.png, synthetic-8-patches.png (return legs x 495-640, y 365-620; crop x 520-600, y 470-580 at 7x); synthetic-moon-intercept.png (orange dashed patch from the AN diamond (905,569) to the small SOI marker (1015,486))",
+      "defect": "On the long-range planned patches each dash is drawn as two overlaid partial patterns: a full-strength piece, then a dim brown piece offset from it, then a ghost tail. The line reads as dash, half-dash, ghost rather than one rhythm. A trace along the single orange strand in synthetic-moon-intercept.png, at about 1 px per sample, gives one 26 px period as: 7 px at R 186, 4 px at R 110-170, 3 px at R 186, 5 px at R 22-84, and only 4 px of true gap at R 1. The dim fraction drifts along the strand (R 22 to 84 in one gap, 167 to 110 in the other), so the pattern visibly changes along the path. Short-range dashes are clean: lowOrbit-node.png at 6x and real-hud-lowOrbit-node-4k.png. The fault is on the Earth-Moon legs that the overview exists to show.",
+      "realReference": "KSP / KSP 2 / Juno: New Origins draw a planned patch with one dash rhythm at every zoom. The gaps are as empty as the background, and nothing mid-tone sits between dashes.",
+      "likelyCause": "The hand-off's 'Known limits' says dashes cross-fade between two octaves of world period by depth, so a stretch at a depth between octaves shows both patterns at partial strength. A patch hundreds of thousands of km long crosses several octaves, so most of the overview sits in a blend. The two octaves' dash and gap intervals do not nest, so the blend fills the gaps with partial dashes.",
+      "fixDirection": "Make the octaves nest so a blend can only fill a gap fully or not at all. One option: define the coarse pattern's dashes as unions of fine dashes (fine period P with dash 0.6P; coarse period 2P where the dash covers [0, 1.6P) and the gap [1.6P, 2P) coincides with a fine gap), then cross-fade only the second fine gap. Another option: pick one world period per line piece from its mean m/px and switch it with hysteresis on zoom instead of per fragment. Add a pixel check in screens.spec.ts that every sample along a planned patch in scene-synthetic is either at least 0.8 of the dash peak or within 10 levels of the background."
+    },
+    {
+      "severity": "major",
+      "view": "real-hud-lowOrbit-node-4k.png (device px x 1500-1900, y 700-1000), real-lowOrbit-dayside.png (whole disc), real-lunarOrbit.png (left limb x 440-470, y 300-500). NOT this package's code; routed by open request map-view-6 to atmosphere-clouds / terrain-render.",
+      "defect": "In the composed 4K frame the overlay is crisp at 3 device px per interface px, but the cloud deck under it is a soft low-resolution mask: blurred blobs with stair-stepped texel edges, mid-grey tops and no cell texture. The mismatch in sharpness between overlay and planet is the first thing that marks the frame as rendered. The Moon's limb texture is smeared radially.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/cloud-gazing-pacific.jpg: cloud edges ragged and fractal at every scale, tops about 15x the ocean, crisp against navy sea. out/qa/ref/moon-surface/earthrise-a17.jpg: a sharp lunar limb.",
+      "likelyCause": "Cloud and surface level of detail at map distances belong to other packages. src/map only draws over them.",
+      "fixDirection": "Keep request map-view-6 open with real-hud-lowOrbit-node-4k.png added as evidence; that is the frame the player sees. map-view should keep real-planet.spec.ts as an acceptance view so the fault stays visible."
+    },
+    {
+      "severity": "minor",
+      "view": "synthetic-earth.png and hover-debris-orbit.png (over the Earth disc x 640-668, y 318-400; left leg pair x 400-600, y 380-720), synthetic-8-patches-earth.png (x 640-670, y 330-420)",
+      "defect": "Two different planned legs that run 3-5 px apart are each drawn with their own casing and unrelated dash phase. Pink dashes sit beside and between orange ones, forming a jagged ladder rather than two parallel lines, and on the Earth disc it reads as one broken stroke. This is the leftover of round-1 A1, which the hand-off admits (coincidence threshold 3 px).",
+      "realReference": "KSP 2 draws two nearly coincident patches either as one stroke or as two lines clearly separated in phase and spacing; never as interleaved short dashes.",
+      "likelyCause": "suppressCoincident only merges within 3 px. Dash phase is measured from each patch's own node, so neighbouring legs from different nodes have unrelated phases.",
+      "fixDirection": "For pairs that stay within 3-6 px over more than two dash periods, align the second line's phase to the first (take the arc parameter at the nearest point of the earlier line). Or offset it to a clear 2-line-width separation. Or draw it as a thin solid line with no dashes."
+    },
+    {
+      "severity": "minor",
+      "view": "scene-synthetic.png and synthetic-chain.png ('+1' at (489,632), 12x crop of x 470-510, y 605-655); scene-synthetic-intercept.png and synthetic-chain-intercept.png ('+1' at (488,632)); synthetic-8-patches.png ('+3' at (490,631))",
+      "defect": "The cluster badge is drawn over a yellow SOI-entry icon that still renders under it. The icon's ring shows above and below the '+' and its arrow tail sticks out at the badge's left, so the badge reads as a glyph pile ('→+1'). The badge also sits between the Enter Moon icon and the Ap icon, so which icon it counts for has to be guessed.",
+      "realReference": "In shipped maps a badge sits on the icon it summarises, and the folded members are not drawn.",
+      "likelyCause": "Either the folded member is still emitted to the icon list, or the badge (placed on the owner's upper-right corner) is not tested against neighbouring icons outside its cluster.",
+      "fixDirection": "Skip every folded member when building icon instances. Test the badge rectangle against other icons and move it to another corner of its owner when it would cover one. Add a unit check that no icon instance overlaps a badge rectangle."
+    },
+    {
+      "severity": "minor",
+      "view": "dpr2-synthetic-moon.png ('MOON' at device px 1730-1850, 1060-1100: a yellow dash runs between the two O's and under the second O); accept-zoom-1e9m.png ('MOON' x 465-506, y 595-606: the Moon's SOI circle runs through the 'N'); hover-impact-details.png and synthetic-moon.png ('MOON' x 576-617, y 354-366: the dashed patch passes through the label area)",
+      "defect": "Body names were moved to tracked capitals without a plate this round, and lines now run straight through them: the planned path, the SOI circle, and the orbit beside the icon. Text struck by a line was item 7 of the round-0 list; for body names it is back.",
+      "realReference": "Shipped maps either place an unplated body name off every line or give it a dark halo or knockout, so no stroke crosses the glyphs.",
+      "likelyCause": "Body-name labels skip the plate. Their placement either does not use the LineGrid line cost, or the cost of a thin SOI ring is too low to move them.",
+      "fixDirection": "Score body-name candidates with the same line cost, weighting SOI rings and trajectories. Where a line still passes under, draw a 2 px dark halo knockout behind the glyphs."
+    },
+    {
+      "severity": "minor",
+      "view": "accept-node-added.png -> accept-prograde-drag.png -> accept-panel.png (pad label 'Ka Lae Pacific Spaceport, Launch Complex 1'); accept-panel.png (vessel leader x 715-745, y 290-318)",
+      "defect": "Between two consecutive acceptance frames the pad label jumps. It was in empty space right of the pad (x 742-1000, y 445-460) and moves below-left (x 597-857, y 449-464) over the disc, covering the yellow dashed planned orbit and the green zone ring. Only the prograde field changed (0 to 10 m/s), which moves the planned path by under a pixel at this zoom. The label stays in the worse place in accept-panel.png. While a handle is dragged this will flicker. In accept-panel.png the 'Fake vessel' leader also runs under the selected node's anti-normal handle.",
+      "realReference": "Shipped map labels keep their position while their anchor is still and only move when the old position becomes blocked.",
+      "likelyCause": "src/map/labels.ts declutter is a stateless greedy search every frame (rank plus LINE_COST * line cost, no memory of the previous choice). Small changes in the line cost under a candidate flip the winner.",
+      "fixDirection": "Keep each label's previous candidate (by id) unless it is blocked or a new one is cheaper by a margin (about 2 ranks). Treat gizmo handles and arms as obstacles for leaders. Record the drag sequence and assert that a label whose anchor moved less than 1 px does not move."
+    },
+    {
+      "severity": "minor",
+      "view": "real-hud-lowOrbit-node-720p.png ('Ap 1839.1km' x 350-430, y 538-552, beside the HUD's 'APOAPSIS 200.0 km'); lowOrbit-node.png and real-lowOrbit-node.png ('Ap 1839.1km'); accept-panel.png ('Ap 371.5km' x 568-640, y 418-431 next to 'Ap 200.0 km' x 449-525, y 445-457); accept-zoom-200km.png and real-lowOrbit*.png ('Pe 200.0km')",
+      "defect": "At 720p the narrow no-break spaces collapse. Measured column gaps: group gap 2 px against 1 px between digits, and unit gap 1-3 px depending on the label. So 'Ap 1 839.1 km' reads as 'Ap 1839.1km' and 'Pe 200.0 km' as 'Pe 200.0km'. Two labels in one frame space their units differently (accept-panel.png), and the HUD panel beside them writes '200.0 km' with a 3 px gap and '6 084 km' grouped. Uneven per-glyph spacing also crowds 'T− 1:18:20'. At 4K the spacing is right (10 px group gap, HUD 9 px). The round-3 hand-off quotes 'Ap 1 839.1 km', which the 720p pictures do not show.",
+      "realReference": "The flight HUD in the same frame, and any shipped interface: grouping and unit spaces stay visible at every size.",
+      "likelyCause": "src/map/gpu/overlayRenderer.ts writeRun snaps each glyph to Math.round(pen). The U+202F advance is about 1.9 device px at 720p, so the visible gap is 1-3 px depending on the fractional pen position and the side bearings of proportional digits.",
+      "fixDirection": "Give U+202F a minimum advance of about 0.25 em (3 px at 720p), as the browser renders it in the HUD. Or round the run origin once and place glyphs at fractional offsets with a subpixel atlas. Add a unit test that the rendered U+202F gap exceeds the inter-digit gap by at least 1.5 px at uiScale 1."
+    },
+    {
+      "severity": "minor",
+      "view": "synthetic-moon-intercept.png (ghost 'Moon (encounter)' ring at (638,360) and red Impact icon at (649,360), 6x crop); hover-debris-orbit.png (stubs above the Node 2 icon at (655-663, 300-306), 12x crop)",
+      "defect": "Two icons overlap without clustering: the red impact icon covers about a third of the ghost Moon ring, which is still hollow, so the Moon's orbit line runs through it. Above the Node 2 icon, short pink and orange line stubs protrude 4-6 px past the icon like whiskers. These are the ends of the patches meeting there, overshooting the node.",
+      "realReference": "In a shipped map, icons either cluster or keep clear of each other, and lines end at the edge of the icon they run into.",
+      "likelyCause": "The two centres are about 11 px apart, at the CLUSTER_PX threshold, while each glyph is about 16 px wide. Patch lines are not clipped to the node icon's disc. The ghost-body glyph has no interior fill.",
+      "fixDirection": "Cluster by glyph extents (sum of radii) instead of centre distance. Stop patch polylines at the node icon's edge (or draw the node with an opaque interior over them). Give the ghost ring the same dark interior as the other markers."
+    },
+    {
+      "severity": "minor",
+      "view": "accept-node-added.png, accept-prograde-drag.png, accept-panel.png, accept-occlusion.png, accept-landing-target.png, accept-recovery-zones.png, accept-zoom-200km.png, accept-follow-*.png, scene-lowOrbit.png, scene-lunarOrbit.png, lowOrbit-node.png, zone-near-limb.png, dpr2-lowOrbit-node.png (25 of 39 pictures)",
+      "defect": "Every acceptance step, the gizmo and panel views and the zone views are photographed over the lab's analytic sphere. It is a featureless blue-grey or grey gradient with a terminator about 150 px wide, and a night side of (17,22,28) that the real renderer never shows (the real night side is (0,0,0)). Contrast of lines, plates and the night-limb ring is therefore judged against a backdrop the player never sees. For example, the lab sphere's visible night disc hides the very fault that the silhouette ring fixes on the real planet.",
+      "realReference": "real-lowOrbit-node.png and real-hud-*.png show the same views over the real renderer; those are what ships.",
+      "likelyCause": "labs/map-view/backdrop.ts is the default backdrop for the functional specs. Only real-planet.spec.ts mounts the integration lab.",
+      "fixDirection": "Repeat the acceptance steps that involve a body (node added and dragged, panel, occlusion, recovery zones, zone at the limb, landing target) in real-planet.spec.ts over the real renderer. Keep the lab sphere only for the synthetic multi-body scenes."
+    },
+    {
+      "severity": "minor",
+      "view": "zone-near-limb.png (South Pacific dot (330,487) and label x 236-318, y 480-495; cusp (305,385), 10x crop)",
+      "defect": "Leftover from round 1: the zone's centre dot straddles the limb, half on black space (dot pixels x 328-332, disc edge x 328-334 on row 487). Its label is placed wholly off the planet, where the Moon's SOI arc runs under it. The ring folded edge-on at the limb shows a doubled stroke with a step where the two halves meet.",
+      "realReference": "A surface marker is drawn on the visible disc or not at all; a ring seen edge-on at the limb ends cleanly at the limb.",
+      "likelyCause": "The binary visibility of the zone centre uses the soft weight at 0.5, so a centre exactly on the limb passes. The ring's two arcs near the cusp are cut independently.",
+      "fixDirection": "Hide a surface centre icon whose projected disc is not fully inside the body disc (hidden > 0.1, or test centre plus icon radius). At the fold, cut the ring at the tangent point so the two arcs meet in one point."
+    }
+  ]
+}

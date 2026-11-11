@@ -1,0 +1,127 @@
+{
+  "package": "map-view",
+  "round": 1,
+  "lens": "photo",
+  "screenshotsCurrent": "All 33 PNGs in out/screens/map-view are dated 2026-11-11 11:14-11:16, after the last src/map commit (aac8397, 11:12:07); src/map, labs/map-view and tests/browser/map-view have no uncommitted changes. No re-run was needed.",
+  "screenshotsLookedAt": 33,
+  "overallScore": 6,
+  "previousItemsStillOpen": [
+    "6 Icons pile up, bury the body they surround, displaced labels have no leader - PARTLY open: pile-ups now merge into '+n' badges, but at the Earth-Moon overview the 9 px Earth is still buried, now under the ends of the dashed planned patches and grey orbit ellipses (scene-synthetic.png, synthetic-chain.png, synthetic-8-patches.png at (640,360)); the node disc and the entry triangle still overlap at (667,311)/(665,325) in synthetic-earth.png and hover-debris-orbit.png; labels 30-40 px from their icon still have no leader ('Closest 358 176 km' beside the Kestrel icon in scene-synthetic.png, both 'Ap' labels in accept-panel.png).",
+    "7 Labels are struck through by lines - PARTLY open: every label has a plate, but the plate is 70 % opaque, so a line or dot behind it still reads through the text: the incoming orange patch through the top of 'Enter Moon' (synthetic-moon-intercept.png, x 936-1025, y 381-386), the dashed patch through the 'Impact ... miss 22.7 km' plate (hover-impact-details.png, x 540-580, y 318-348), debris dots inside 'Node 2 dv 986.6 m/s' and 'Entry 10.85 km/s' (synthetic-earth.png, hover-debris-orbit.png). Labels over HUD panels: only the lab passes obstacles; unproven with the real HUD.",
+    "8 Weak legibility over a lit body / never shown over the real planet - PARTLY open: five real-planet pictures now exist and lines and full-strength labels read well over cloud, but the pad label in the one day-side picture is a 35 % ghost bar across the lit disc (real-lowOrbit-dayside.png, x 264-550, y 219-236), lines still end at the bare radius inside the atmosphere rim (fixer-admitted), and the real-planet pictures are taken with hud=0, so the map has still never been shown together with the flight HUD."
+  ],
+  "previousItemsVerifiedFixed": [
+    "1 (blocker) false straight line: gone. accept-occlusion.png shows one Moon-orbit line, cut at the limb on both sides; no straight line crosses a disc in any of the 33 pictures.",
+    "2 tooltip collisions: no tooltip on the selected node; tooltip no longer cuts labels (hover-impact-details.png).",
+    "3 selected gizmo dimmed: full colour with a dashed node ring (lowOrbit-node.png, real-lowOrbit-node.png).",
+    "4 normal handles on the radial axis: six handles fanned and distinct (accept-node-added.png, accept-panel.png).",
+    "5 zone rings torn: rings continuous and smooth (scene-lowOrbit.png, accept-recovery-zones.png, zone-near-limb.png); small cusp artefact remains, see findings.",
+    "9 typeface and panel: labels and panel match the HUD family and panel chrome (compared with out/screens/flight-ui/map-lowOrbit-720p.png)."
+  ],
+  "findings": [
+    {
+      "severity": "major",
+      "view": "real-lowOrbit.png, real-lowOrbit-node.png (upper right of the Earth, x 700-870, y 150-360); real-lunarOrbit.png (right third of the Moon, pin at (832,351))",
+      "defect": "Over the real renderer the night side of the body is pure black (mean RGB 2,4,6 in x 700-870, y 240-300), so the map loses the thing the orbit goes around. The cyan orbit starts in empty space at (820,245) and arcs to (858,350) around nothing; the node gizmo with its 'behind the body' dashed ring at (790,224) and its label sit on plain black; on the Moon the Tranquility Base pin and a quarter of the orbit float in black. The lab sphere hid this because its dark side is a visible dark grey (17,22,28). A viewer cannot tell why the line starts where it does or what the dashed node ring is behind.",
+      "realReference": "Physically the dark limb is lost in space (out/qa/ref/moon-surface/earthrise-a17.jpg) apart from a thin airglow shell (earth-orbit-clouds/limb-panorama.jpg, airglow-red-yellow.jpg). A shipped orbital map never leaves it that way: KSP / KSP 2 / Juno light the body with ambient fill in map view or outline the disc, so the full silhouette is always readable under the trajectory.",
+      "likelyCause": "The overlay draws no silhouette of its occluders; it relies on the renderer's physically exposed planet. Every acceptance picture before this round used labs/map-view/backdrop.ts, which has ambient light.",
+      "fixDirection": "In drawOverlay, for every body larger than SMALL_OBJECT_PX draw a 1 px limb ring (body line colour, about 0.25 alpha, same analytic sphere as the occlusion test) and optionally a 4-6 % fill on the unlit part, under the lines. Or file a request to the renderer / integration owner for a map-mode fill light. Add a pixel check to real-planet.spec.ts that the night limb differs from the sky by a visible step along the orbit's emergence point."
+    },
+    {
+      "severity": "major",
+      "view": "real-lowOrbit-dayside.png (x 264-550, y 219-236; icon at (269,227))",
+      "defect": "The launch-site label 'Ka Lae Pacific Spaceport, Launch Complex 1' is drawn as a see-through grey bar 285 px long across the sunlit cloud deck: grey text (149,151,155) on a half-transparent plate (about 56,64,80 over 136,136,136 cloud), roughly 3.5:1 inside the plate and far less against the planet, with a barely visible icon. 'Central Pacific' 100 px below is at 18:1. In the only day-side picture of the real Earth it reads as a rendering fault, not as a state.",
+      "realReference": "Shipped map interfaces show a surface marker either fully (white on a solid plate, 4.5:1 or better) or not at all; a marker on the far side is dropped or reduced to a small hollow icon at the limb. No label is ever drawn at partial opacity over a bright planet.",
+      "likelyCause": "src/map/controller.ts about line 1431: `a = (1 - t.hidden) * ...` uses the soft limb-occlusion weight as the alpha of icon, text and plate. A target that sits inside the 1.5 px limb ramp gets 30-40 % alpha; the same pattern is used for bodies, vessels and markers (lines 1231, 1248, 1269).",
+      "fixDirection": "Make label visibility binary: full alpha while hidden < 0.5, otherwise no label and no plate (keep at most a hollow icon pinned to the limb). If a transition is wanted, fade over about 150 ms in time, not by the geometric weight. Add an assertion that no drawn label has alpha strictly between 0 and 1 in a static frame."
+    },
+    {
+      "severity": "major",
+      "view": "all five real-*.png; out/screens/flight-ui/map-lowOrbit-720p.png for comparison",
+      "defect": "The screen a player will actually see has not been rendered once. The real-planet pictures are taken with the HUD switched off (tests/browser/map-view/real-planet.spec.ts line 94, `hud=0`) and the map is mounted by the spec, not by the app; the flight HUD's own 'map' picture shows clock, ORBIT panel (x 10-197, y 85-183), navball (x 550-730, y 535-715) and MANEUVER panel (x 756-914, y 636-714) over a planet with no trajectory overlay at all. setObstacles is called only by labs/map-view/main.ts. Whether labels, the gizmo, the node panel and tooltips collide with those panels, and how the two maneuver panels and the two sets of apsis readouts sit together, cannot be judged. There is also no 4K / device-pixel-ratio 2 picture of the map's glyph atlas, while the HUD has 4K pictures.",
+      "realReference": "A shipped map view is one composed frame: trajectory overlay, body, star field and HUD panels with one hierarchy (KSP 2, Juno: New Origins). Acceptance pictures of an interface are taken of that frame.",
+      "likelyCause": "createMapView is referenced only by labs/map-view/main.ts and the real-planet spec; the integration lab does not import src/map (outside this package's paths).",
+      "fixDirection": "File a request to the integration / flight-ui owners: mount the map in the integration lab's map mode and pass the HUD panel rectangles to setObstacles every frame. Then extend real-planet.spec.ts with hud=1 pictures at 720p and 4K of lowOrbit with a node selected, the translunar overview and lunar orbit, and judge collisions and hierarchy there."
+    },
+    {
+      "severity": "major",
+      "view": "scene-synthetic.png, synthetic-chain.png, synthetic-chain-intercept.png, scene-synthetic-intercept.png, synthetic-8-patches.png (Earth at (640,360), Moon at (415,416), encounter cluster at (497-533, 537-562))",
+      "defect": "At the Earth-Moon overview the home planet cannot be seen: the 9 px half-lit Earth lies under the ends of two or three dashed planned patches and two to six grey orbit ellipses, marked only by the word 'Earth' 20 px above and a '+5' / '+11' badge. In the 8-patch scene the spot is a grey scribble. The '+3' badge in the intercept pictures floats between the 'Moon (encounter)' ring and the 'Enter Moon' icon, which itself carries a '+1' 25 px below, so it is unclear which icon each count belongs to. 'Closest 358 176 km' is placed beside the Kestrel arrow (611,373) while its own marker is 37 px below at (605,410) with no leader. The whole mission occupies about 250 x 250 px of a 1280 x 720 frame.",
+      "realReference": "KSP / KSP 2 / Orbiter overview: a body too small to recognise is a solid icon drawn above every line, cluster counts sit on the icon they summarise, a label moved away from its marker has a leader, and nothing is drawn through the planet icon.",
+      "likelyCause": "src/map/constants.ts: the body ring icon exists only under SMALL_OBJECT_PX = 6 and BODY_CLUSTER_MAX_RADIUS_PX = 6, so an 8-9 px body neither gets an icon nor wins its cluster and the renderer's dark disc stays under the overlay lines; leaders are emitted only for candidates on the outer 'farRing' (src/map/labels.ts lines 139, 179), not by distance; the badge is offset from the icon instead of overlapping it.",
+      "fixDirection": "While a body's radius is under about 12 px draw a filled body icon with a dark casing on the top layer and let it own the cluster; stop planned-patch lines at that icon's edge. Attach the badge to the icon's upper-right corner (overlapping by 2 px). Draw a leader whenever the gap between plate and anchor exceeds about 14 px, whichever candidate was chosen. Hide other vessels' orbits at this zoom unless hovered, as is now done for debris."
+    },
+    {
+      "severity": "major",
+      "view": "real-lowOrbit-dayside.png (cloud texels x 780-830, y 60-200; teal squiggle x 743-750, y 113-140), real-lowOrbit.png (blue dotted speckle x 560-590, y 470-500), real-lunarOrbit.png (limb x 440-470, y 290-400), real-translunar.png - NOT this package's code; listed for routing to atmosphere-clouds / terrain-render / sky",
+      "defect": "What gives the composite away next to a photograph is the planet under the overlay, not the overlay: from 14,000-24,000 km the clouds are a blurred low-resolution mask with stair-stepped texel blocks, mid-grey (about 200,200,200) instead of white, with no relief or shadows; there are rows of blue dotted speckle on the sea and a small teal squiggle; the Moon's texture is smeared radially near the limb and its terminator is a soft gradient with no crater shadows; no real-* frame has a single star. The map view is where the player looks at whole bodies for the longest time.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/cloudscape-philippine-sea.jpg (crisp white cloud tops with shadows, layered blue limb), out/qa/ref/sun-stars-space/moonset-limb.jpg (sharp lunar limb, crater relief along the terminator), out/qa/ref/moon-surface/earthrise-a17.jpg (crescent Earth, white cloud bands readable at a few hundred pixels).",
+      "likelyCause": "Cloud and surface level of detail at map distances and the exposure used in map camera mode belong to other packages; src/map only draws over them.",
+      "fixDirection": "Pass on to the owners with these four pictures. For map-view itself: keep real-planet.spec.ts as the acceptance view so these faults stay visible, and do not judge the overlay on the lab sphere."
+    },
+    {
+      "severity": "minor",
+      "view": "real-translunar.png (745,316), accept-node-added.png (745,288), accept-occlusion.png (648,390), scene-synthetic.png (611,373), every picture with a vessel",
+      "defect": "The active vessel is a plain white equilateral triangle about 13 px across. Its heading cannot be read (three identical corners): in scene-synthetic.png it looks as if Kestrel points at the Earth while its path leads away to the lower left, and in real-translunar.png and accept-node-added.png it is indistinguishable from an operating-system mouse pointer. It is the most important icon on the map and the least designed.",
+      "realReference": "KSP uses a vessel-type icon; Juno and Elite use an elongated chevron with a notch in the craft's colour. The heading is readable at 12 px and the glyph cannot be mistaken for the cursor.",
+      "likelyCause": "src/map/gpu/shaders.ts lines 318-321: `sdTri` (equilateral) with a circular notch of 0.62 r that vanishes at 6.5 px radius.",
+      "fixDirection": "Use an elongated chevron (length to width about 1.6:1) with a deep tail notch, filled in the trajectory colour with a white or dark outline, radius 9-10 px; or a small vessel-type glyph inside a ring. Add a unit check that the glyph's long axis matches the projected velocity."
+    },
+    {
+      "severity": "minor",
+      "view": "hover-debris-orbit.png and synthetic-earth.png (x 590-670, y 330-420 over the Earth; x 395-600, y 440-715), synthetic-8-patches.png (x 540-640, y 360-550), synthetic-moon-intercept.png (x 770-1280, y 0-610)",
+      "defect": "Previous item 14 is still visible. Where two laps of the planned path nearly coincide their dashes interleave into a stair-step ladder (over the Earth disc) or into out-of-phase pairs; in the 8-patch scene three lines braid. The dash colours are still muddy: the commonest dash pixels are (120,96,104) and (144,104,88), a grey mauve and a brown, not the orange and pink of the planned palette. The fixer reports that dashes still slide along the path when the camera turns; no moving-camera sequence exists.",
+      "realReference": "KSP 2 / Juno: planned patches keep a saturated, distinct hue per patch at any distance ahead, coincident laps collapse into one stroke, and the dash pattern is fixed to the path.",
+      "likelyCause": "src/map/constants.ts FADE_FLOOR 0.5 with FADE_TINT 0.45 toward a light neutral desaturates the hue; each lap carries its own screen-length phase (src/map/scene.ts `len`), measured from the node.",
+      "fixDirection": "Fade by alpha only (floor about 0.6) and keep the hue; when two dashed polylines of the same node run within 3 px on screen, draw one. Derive the phase from the arc parameter scaled by the local pixel scale so it is fixed to the path, then record a 30-frame orbit-camera sequence and assert a dash near the node moves less than 1 px."
+    },
+    {
+      "severity": "minor",
+      "view": "synthetic-earth.png (label x 497-627, y 295-327; dots at (597,298), (619,325)), hover-debris-orbit.png ('Entry 10.85 km/s', dot at (714,344)), synthetic-moon-intercept.png ('Enter Moon', x 936-1025, y 375-405), hover-impact-details.png ('Impact ...', x 417-636, y 318-348)",
+      "defect": "The label plate is see-through, so what is behind it becomes part of the text: a debris dot sits inside '986.6' like a second decimal point and another between 'Entry' and '10.85' like a middle dot; the incoming trajectory runs through the tops of the letters of 'Enter Moon'; the dashed patch crosses the 'Impact' plate. On empty black the plates also show as faint lighter boxes (5,6,11 on 0,0,0) around every label.",
+      "realReference": "Shipped map labels either have an opaque plate or none; nothing sharp shows through text, and icons under a label are hidden.",
+      "likelyCause": "src/map/constants.ts line 176: `plate: hex('#070b11', 0.7)`; icons and dots whose centre lies under a plate are not culled; the side rule considers only the label's own line, not the next patch that starts at an SOI marker.",
+      "fixDirection": "Plate alpha 0.92 or more where the label overlaps a line, icon or body disc, and no plate (soft shadow only) on empty sky; cull dots and icons under a placed plate; treat both patches that meet at an SOI marker as the label's own lines."
+    },
+    {
+      "severity": "minor",
+      "view": "zone-near-limb.png (dot at (330,487), cusp at (305,385)), real-lowOrbit-dayside.png (arc x 1005-1035, y 338-510; orbit hook end at (1012,232)), accept-occlusion.png (pad icon at (478,318))",
+      "defect": "Small faults where things meet the limb: the 'South Pacific' centre dot is drawn half outside the disc in black space; the folded ring next to it has a dark notch and a doubled stroke at its cusp; over the real Earth an unlabelled green arc of the Central Atlantic ring lies 1-2 px outside the visible limb; the orbit's return hook ends inside the blue atmosphere rim (bare-radius occluder, admitted by the fixer); the zone ring runs through the pad icon.",
+      "realReference": "A mark on a globe ends exactly at the visible limb, including the atmosphere; a centre marker behind the limb is not drawn.",
+      "likelyCause": "Zone centre icons use the soft hidden weight instead of a cut; the radial occlusion slack keeps ring vertices that lie just beyond the tangent point; occluders use BodyDef.radius without the visible atmosphere height.",
+      "fixDirection": "Hide the zone centre icon when hidden >= 0.5; cut zone rings at the tangent point instead of forgiving them radially at grazing angles; extend the Earth occluder by the visible atmosphere height in map mode; keep rings out of icon rectangles."
+    },
+    {
+      "severity": "minor",
+      "view": "all lowOrbit / lunarOrbit / translunar pictures ('+1' at the vessel), accept-panel.png (icons at (535,432) and (555,458), labels x 443-523 and x 566-655)",
+      "defect": "The periapsis marker of the orbit being flown is never visible: in every FakeSim picture it is folded into a '+1' on the vessel, so the map shows no Pe at all until hovered. In accept-panel.png the Ap of the current orbit and the Ap of the planned orbit use the same light-blue chevron ring 28 px apart, each label stands 32-39 px from its icon with the other icon nearer, and nothing says which belongs to the planned patch.",
+      "realReference": "KSP always shows Ap and Pe of the current orbit and draws a planned patch's markers in that patch's colour.",
+      "likelyCause": "Clustering treats the vessel as the cluster owner for any marker within CLUSTER_PX = 11; marker colour is per kind, not per patch list.",
+      "fixDirection": "Do not absorb apsis markers into the vessel: slide the apsis icon along the orbit to clear the vessel, or print it as the vessel label's second line. Draw planned-patch markers in the planned colour with a dashed ring, and add leaders (see the overview finding)."
+    },
+    {
+      "severity": "minor",
+      "view": "lowOrbit-node.png and real-lowOrbit-node.png (panel x 877-1113, y 90-357), accept-panel.png, synthetic-moon.png",
+      "defect": "Panel finish: 'UT 889001500.0 s' is a raw seconds counter while the HUD shows '2028-03-03 20:26:40 UTC' and a T+ clock; the read-only TOTAL dV and IN rows are boxed exactly like the editable fields; the hint line wraps with a dangling middle dot before 'Wheel 0.1'; the axis buttons are 20 px squares with 12 px glyphs; time is written three ways ('T-25m 00s' in the label, 'IN 25m 00.0s' in the panel, 'In 3d 18h 51m' in the tooltip).",
+      "realReference": "KSP 2 / Juno node editors: time shown as a countdown and calendar or mission time, read-only values unboxed, one time notation, touch-size axis buttons.",
+      "likelyCause": "src/map/panel.ts builds every row from the same input component and shows the snapshot's ut directly; src/map/format.ts has separate formatters for labels and tooltips.",
+      "fixDirection": "Show UT in the HUD's date format (editable as a countdown), render read-only rows as plain right-aligned figures, fix the hint to two balanced lines, enlarge the axis buttons to about 24 px, and use one notation for time-to-event everywhere."
+    },
+    {
+      "severity": "minor",
+      "view": "hover-impact-details.png (tooltip x 670-948, y 380-463; line from (750,367) to (1040,388)), hover-debris-orbit.png (tooltip x 720-853, y 390-443)",
+      "defect": "The impact tooltip is placed so that its top border lies on the incoming trajectory line for about 150 px; line and border merge and the line then disappears under the corner. In the debris picture the hovered dot has no highlight, and its orbit is drawn in the same grey as Relay 1's orbit, so which dot and which ring belong to the tooltip is a guess.",
+      "realReference": "A tooltip keeps a few pixels of clearance from the stroke it describes, and the hovered object is ringed or brightened together with its orbit.",
+      "likelyCause": "Tooltip placement avoids panel, handles and HUD rectangles but not polylines; no hover state for vessel dots.",
+      "fixDirection": "Score tooltip candidates against the current and planned polylines (6 px clearance); give the hovered dot a ring and draw its orbit in a distinct, brighter colour."
+    },
+    {
+      "severity": "minor",
+      "view": "scene-translunar.png, accept-translunar.png, real-translunar.png, hover-impact-details.png, synthetic-moon.png",
+      "defect": "Flat type hierarchy and small typographic faults: body names ('Earth', 'Moon'), vessel names and event labels are all the same 12 px bold white on a plate; the active vessel's label is not distinguished and in real-translunar.png stands 25 px from its icon, nearer to 'Earth', with no leader. Tabular figures leave holes around every '1' ('57.6 1 deg W', '5 1m'). In synthetic-moon.png the Moon-frame patch begins as a bare line end at (1040,388), 12 px inside the SOI ring, with no glyph.",
+      "realReference": "Shipped maps set body names apart (tracked capitals, no plate), tint the active craft's label in its trajectory colour, use proportional figures in running labels and tabular ones only in panels, and mark where a patch begins.",
+      "likelyCause": "One label style for every kind in the draw list; the glyph atlas uses tabular digits everywhere; in current-position mode the SOI-entry marker is drawn only on the parent-frame patch.",
+      "fixDirection": "Add label classes (body, active vessel, event) with their own case, tracking and colour; proportional digits in labels; a small entry tick where a child-frame patch starts."
+    }
+  ]
+}
