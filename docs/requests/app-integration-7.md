@@ -28,3 +28,10 @@ selection's demand fits the pool at that resolution (the LOD target, or which ti
 pad), or the pool is sized for it within the terrain's 1.1 GB VRAM line, or a tile that cannot get a slot is
 dropped from the wanted set instead of waiting in `uploading` (so `isIdle()` can become true with the parents
 drawn). Must not change: crack-free geomorphing, no pops, the VRAM line of ARCHITECTURE 17.
+
+## Also measured (main thread, for the CPU line of ARCHITECTURE 17)
+At 1280 x 720 with the pad idle (`window.__app.terrainStats().cpu` over 240 frames, machine shared): the terrain
+feature's hooks take p50 1.69 / p95 2.48 / max 3.24 ms per frame (selection `selectMs` p50 0.69 / p95 1.09, ground
+cover p50 0.63 / p95 0.93, build 0.15, shadow 0.12, rocks 0.06, uploads 0), against "quadtree + cascades <= 1 ms";
+the whole app frame was p50 4.1 / p99 6.2 ms (budget 6). At 1440p with the stall above, `window.__perf.features
+.terrain.cpuMs` read p99 14.9 ms at the pad and 11.4 ms in the climb (`out/app/perf-1440p.json`, under load).

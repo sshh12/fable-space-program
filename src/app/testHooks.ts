@@ -45,7 +45,14 @@ export interface AppDebug {
   /** Ids of the render features that report work in progress (`isIdle()` false): what `window.__test.isIdle()` waits for. */
   busyFeatures(): string[];
   /** The terrain feature's streaming counters and per-body selection (fading tiles, deepest level, nodes). */
-  terrainStats(): { stream: Record<string, number>; bodies: Record<string, { fading: number; deepestLevel: number; nodes: number }>; rocks: Record<string, number>; cover: Record<string, number> };
+  terrainStats(): {
+    stream: Record<string, number>;
+    bodies: Record<string, { fading: number; deepestLevel: number; nodes: number }>;
+    rocks: Record<string, number>;
+    cover: Record<string, number>;
+    /** Main-thread time of the terrain feature in the last frame, ms (hooks and their parts). */
+    cpu: Record<string, number>;
+  };
 }
 
 export interface AppBrief {
@@ -176,6 +183,7 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         bodies: Object.fromEntries(Object.entries(t.bodies).map(([id, b]) => [id, { fading: b.fading, deepestLevel: b.deepestLevel, nodes: b.nodes }])),
         rocks: { ...t.rocks },
         cover: { ...t.cover },
+        cpu: { ...t.cpu, selectMs: t.selectMs, prefetchMs: t.prefetchMs },
       };
     },
   };
