@@ -135,7 +135,9 @@ fn slotOf(i: u32) -> u32 { let n = u32(pu.flags.z); return (pu.counts.x + n - 1u
   } else {
     pos += radial * (e.pos.w * sqrt(rnd(seed, j, 2u)));
   }
-  let theta = mix(e.speed.z, e.speed.w, rnd(seed, j, 6u));
+  // Directions are spread evenly over the solid angle between the two polar angles (evenly in the angle itself
+  // they would crowd along the axis: a burst in all directions would be two columns of chips).
+  let theta = acos(clamp(mix(cos(e.speed.z), cos(e.speed.w), rnd(seed, j, 6u)), -1.0, 1.0));
   let dir = ax * cos(theta) + (t1 * cos(dirAz) + t2 * sin(dirAz)) * sin(theta);
   let speed = mix(e.speed.x, e.speed.y, pow(rnd(seed, j, 7u), e.misc2.y));
   let sub = rnd(seed, j, 8u);

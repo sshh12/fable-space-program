@@ -63,6 +63,8 @@ declare global {
   }
 }
 
+/** EV100 a camera over a real daylight sea settles at (the sea mirrors the sky: a few thousand cd/m^2). */
+const SEA_DAYLIGHT_EV = 13;
 const query = new URLSearchParams(location.search);
 const sceneName = query.get('scene') ?? 'engine';
 
@@ -107,6 +109,10 @@ async function boot(): Promise<void> {
     },
   });
   if (!query.has('ev') && scene.ev !== undefined && scene.ev !== null) app.renderer.setExposureOverride(scene.ev);
+  // The lab's sea is a dark Lambert sheet: it does not mirror the sky as a real sea does (a real sea shows the
+  // meter a few thousand cd/m^2 by day). The camera of a sea scene is held at the exposure a real sea gives,
+  // so that white water is judged at the exposure the game shows it at (?minev= overrides).
+  if (scene.ground === 'water' && scene.sunElevationDeg > 5 && !query.has('minev')) app.camera.settings.minEv100 = SEA_DAYLIGHT_EV;
   if (query.has('overcast')) sky.setOvercast({ altitude: Number(query.get('overcast')), transmittance: 0.02 });
   if (query.has('haze')) sky.setHaze({ length: Number(query.get('haze')), luminance: [5200, 6000, 7000] });
 

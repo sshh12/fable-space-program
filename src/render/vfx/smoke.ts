@@ -573,7 +573,11 @@ ${GRID_WGSL}
   let probe = vfxProbes[${PROBE_PAD}];
   let direct = probe.sun.rgb * max(su.sunSite.y, 0.03);
   let share = direct / max(direct + vfxProbeAmbient(${PROBE_PAD}u), vec3f(1e-6));
-  return vec4f(saturate3(vec3f(1.0) - share * ((1.0 - T) * su.lightColor.w)), 1.0);
+  // An eye inside the cloud sees the ground through the gas that shades it: the gas is what is seen, and a
+  // dark wedge painted on the ground under it would show through as a hard shape.
+  let eye = -vec3f(dot(su.origin.xyz, su.axisE.xyz), dot(su.origin.xyz, su.axisU.xyz), dot(su.origin.xyz, su.axisN.xyz));
+  let inside = saturate(textureSampleLevel(lightTex, linearClamp, smokeToUvw(vec3f(eye.x, max(eye.y, 0.5), eye.z)), 0.0).b / 0.02) * step(abs(eye.x), su.grid.y) * step(abs(eye.z), su.grid.y) * step(eye.y, su.grid.z);
+  return vec4f(saturate3(vec3f(1.0) - share * ((1.0 - T) * su.lightColor.w * (1.0 - 0.85 * inside))), 1.0);
 }
 `;
 
