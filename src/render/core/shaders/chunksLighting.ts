@@ -307,6 +307,25 @@ fn sunVisibility(posRelCam: vec3f, sunDir: vec3f) -> f32 {
   }
   return vis;
 }
+/// Fraction of a planetshine light's source disc that every OTHER non-star frame body leaves visible from a
+/// camera-relative point (request sky-lighting-8): the Moon behind the Earth lights nothing in low orbit.
+/// The light carries the shining body's frame index (dir.w) and angular radius (illuminance.a). CPU twin:
+/// shineVisibleFraction() in src/render/core/frame/math.ts.
+fn shineVisibility(posRelCam: vec3f, sh: ShineLight) -> f32 {
+  let shining = i32(round(sh.dir.w));
+  let rs = max(sh.illuminance.a, 1e-7);
+  var vis = 1.0;
+  for (var i = 0u; i < frame.counts.x; i++) {
+    if ((bodyFlags(i) & BODY_FLAG_STAR) != 0u || i32(i) == shining) { continue; }
+    let toBody = frame.bodies[i].center.xyz - posRelCam;
+    let dist = length(toBody);
+    let dir = toBody / max(dist, 1e-3);
+    let ro = asin(min(frame.bodies[i].center.w / max(dist, 1e-3), 1.0));
+    let sep = atan2(length(cross(dir, sh.dir.xyz)), dot(dir, sh.dir.xyz));
+    vis *= discVisibleFraction(rs, ro, sep);
+  }
+  return vis;
+}
 `;
 
 export const ATMOSPHERE_COMMON_WGSL = /* wgsl */ `

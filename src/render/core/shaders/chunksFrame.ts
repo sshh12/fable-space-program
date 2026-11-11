@@ -54,8 +54,8 @@ struct LightUniform {
 }
 
 struct ShineLight {
-  dir: vec4f,           // xyz = unit direction towards the shining body (ROOT axes)
-  illuminance: vec4f,   // rgb = illuminance at the receiver (lux)
+  dir: vec4f,           // xyz = unit direction towards the shining body (ROOT axes), w = its frame body index (-1 = not a frame body)
+  illuminance: vec4f,   // rgb = illuminance at the receiver (lux, unoccluded), a = angular radius of the shining body (rad)
 }
 
 struct FrameUniforms {

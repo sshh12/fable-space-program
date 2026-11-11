@@ -426,3 +426,51 @@ test('planetshine is gated by the baked occlusion: a surface that writes AO 0 re
   expect(r.closed).toBeLessThan(0.02 * r.open);
   await expectNoErrors(page, pageLog);
 });
+
+test('planetshine is hidden by the bodies in between: the Moon under a 200 km orbit\'s horizon lights nothing (request sky-lighting-8)', async ({ page, pageLog }) => {
+  // The stand 200 km above the Earth, at night (the sun 20 deg below the horizontal, behind the Earth: its limb is
+  // 14.2 deg down), twice: under the Moon (35 deg up) and at the antipode of that place (the Moon 35 deg DOWN,
+  // behind the Earth). The camera looks level at the white cylinder from the Moon's azimuth, so the surface in
+  // the middle of the frame faces the Moon's azimuth and sees it at the same angle (35 deg) in both places.
+  await openPage(page, '/labs/render-core/?scene=pad&site=moonview&hud=0&paused=1');
+  const view = await page.evaluate(() => ({ lat: window.__rc!.site.latDeg, lon: window.__rc!.site.lonDeg }));
+  const measure = async (lat: number, lon: number): Promise<{ moonEl: number; cdm2: number }> => {
+    await openPage(page, `/labs/render-core/?scene=pad&site=${lat},${lon},200000&hud=0&paused=1&ev=-4`);
+    await assertDiscreteGpu(page);
+    await page.evaluate(() => {
+      const lab = window.__lab!;
+      const root = lab.defs.rootBodyId;
+      const moonId = Object.entries(lab.defs.bodies).find(([, b]) => b.parent === root && b.gravityRole === 'attractor')![0];
+      const moon = window.__rc!.directionAtSite(moonId);
+      window.__test!.setDeterministic(true);
+      lab.renderer.setJitter(false);
+      window.__rc!.setSun([moon.azDeg + 90, -20]);
+      window.__rc!.lookAt([0, 28, 20], moon.azDeg, 0, 12);
+    });
+    await waitIdle(page, 10);
+    return page.evaluate(async () => {
+      const lab = window.__lab!;
+      await window.__test!.waitFrames(6);
+      const root = lab.defs.rootBodyId;
+      const moonId = Object.entries(lab.defs.bodies).find(([, b]) => b.parent === root && b.gravityRole === 'attractor')![0];
+      const f = lab.renderer.frameContext!;
+      const [w, h] = f.renderSize;
+      const px = await lab.renderer.readHdrPixels('hdr', { x: (w >> 1) - 3, y: (h >> 1) - 3, width: 7, height: 7 });
+      let sum = 0;
+      for (let i = 0; i < px.data.length; i += 4) sum += 0.2126 * px.data[i]! + 0.7152 * px.data[i + 1]! + 0.0722 * px.data[i + 2]!;
+      return { moonEl: window.__rc!.directionAtSite(moonId).elDeg, cdm2: sum / 49 / f.exposure };
+    });
+  };
+  const up = await measure(view.lat, view.lon);
+  await saveScreenshot(page, 'render-core', 'lighting-planetshine-moon-up-leo');
+  const set = await measure(-view.lat, view.lon + 180);
+  await saveScreenshot(page, 'render-core', 'lighting-planetshine-moon-set-leo');
+  console.log(`moonlight on a white hull at 200 km, night: Moon ${up.moonEl.toFixed(1)} deg: ${up.cdm2.toExponential(3)} cd/m^2; Moon ${set.moonEl.toFixed(1)} deg (behind the Earth): ${set.cdm2.toExponential(3)} cd/m^2`);
+  expect(up.moonEl).toBeGreaterThan(30);
+  expect(set.moonEl).toBeLessThan(-30);
+  // Moonlight of some hundredths of a lux on the white hull (0.85): of the order of 0.01 cd/m^2.
+  expect(up.cdm2).toBeGreaterThan(2e-3);
+  // Without the occlusion test the set Moon lit this face at about half of that (its phase is thinner there).
+  expect(set.cdm2).toBeLessThan(0.05 * up.cdm2);
+  await expectNoErrors(page, pageLog);
+});

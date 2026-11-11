@@ -200,8 +200,13 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
     const list = x.shine[r] ?? [];
     for (let k = 0; k < Math.min(SHINE_PER_RECEIVER, list.length); k++) {
       const o = OFFSET.shine + (r * SHINE_PER_RECEIVER + k) * 8;
-      put3(f, o, list[k]!.dir, 0);
-      f.set(list[k]!.illuminance, o + 4);
+      const light = list[k]!;
+      // dir.w = frame index of the shining body (-1: not a frame body), illuminance.a = its angular radius:
+      // the occlusion test of shineVisibility() (request sky-lighting-8).
+      let shiningIndex = -1;
+      for (let i = 0; i < bodyCount; i++) if (frame.bodies[i]!.id === light.bodyId) shiningIndex = i;
+      put3(f, o, light.dir, shiningIndex);
+      f.set([light.illuminance[0], light.illuminance[1], light.illuminance[2], light.angularRadius ?? 0], o + 4);
     }
   }
   for (let i = 0; i < lightCount; i++) {

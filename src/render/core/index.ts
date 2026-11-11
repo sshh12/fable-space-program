@@ -19,6 +19,7 @@ export {
   lambertSpherePhase,
   nearestBody,
   planetshineAt,
+  shineVisibleFraction,
   sunAt,
   sunVisibilityAt,
   taaJitter,

@@ -180,17 +180,55 @@ export interface ShineLight {
   dir: Vec3;
   /** Illuminance at the receiver, lux, linear sRGB. */
   illuminance: Vec3Tuple;
+  /**
+   * Angular radius of the shining body's disc seen from the point the light was evaluated at (rad): the
+   * source size of the occlusion test (request sky-lighting-8). Absent = a point source.
+   */
+  angularRadius?: number;
 }
 
 const luma = (c: Readonly<Vec3Tuple>): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+/**
+ * Fraction of the disc of body `shiningId` that every OTHER non-star body of the snapshot leaves visible from
+ * a ROOT-frame point (request sky-lighting-8): the overlap of discs used by `sunVisibilityAt`, with the
+ * shining body's own angular radius as the source. 0 when the Moon is behind the Earth seen from low orbit,
+ * 0.5 when the limb halves it. The WGSL twin is `shineVisibility()` of the eclipse chunk.
+ */
+export function shineVisibleFraction(point: Vec3, shiningId: string, snapshot: SimSnapshot, defs: DefLibrary): number {
+  const shining = snapshot.bodies.find((b) => b.id === shiningId);
+  const sdef = defs.bodies[shiningId];
+  if (!shining || !sdef) return 1;
+  const toS = v3.sub(shining.rRoot, point);
+  const ds = v3.len(toS);
+  const rs = Math.asin(Math.min(1, sdef.radius / Math.max(ds, 1e-3)));
+  let vis = 1;
+  for (const b of snapshot.bodies) {
+    if (b.id === snapshot.starId || b.id === shiningId) continue;
+    const def = defs.bodies[b.id];
+    if (!def) continue;
+    const to = v3.sub(b.rRoot, point);
+    const dist = v3.len(to);
+    const ro = Math.asin(Math.min(1, def.radius / Math.max(dist, 1e-3)));
+    vis *= discVisibleFraction(rs, ro, v3.angle(to, toS));
+    if (vis === 0) return 0;
+  }
+  return vis;
+}
 
 /**
  * Planetshine at a ROOT-frame point: every non-star body other than `excludeBodyId` lights the receiver
  * with E = E_sun(at the body) x geometricAlbedo x (R / d)^2 x Phi(phase), coloured by its mean visible
  * colour. The far-field formula fades out between 2 R and 4 R from the centre (closer than that the
  * environment probe carries the light). Strongest first, at most `max` entries.
+ *
+ * The lights carry no occlusion: the renderer evaluates them once per receiver body (at its centre) and the
+ * deferred pass tests every shaded point with `shineVisibility()`. A caller that lights one point itself
+ * passes that point as `visibleFrom`: each light is then multiplied by `shineVisibleFraction(visibleFrom)`
+ * (the body the point stands on, `excludeBodyId` included, hides what is below its horizon), before the
+ * strongest are chosen.
  */
-export function planetshineAt(point: Vec3, excludeBodyId: string | null, snapshot: SimSnapshot, defs: DefLibrary, max = 2): ShineLight[] {
+export function planetshineAt(point: Vec3, excludeBodyId: string | null, snapshot: SimSnapshot, defs: DefLibrary, max = 2, visibleFrom?: Vec3): ShineLight[] {
   const out: (ShineLight & { e: number })[] = [];
   const star = snapshot.bodies.find((b) => b.id === snapshot.starId);
   const emission = star ? defs.bodies[star.id]?.emission : null;
@@ -206,13 +244,15 @@ export function planetshineAt(point: Vec3, excludeBodyId: string | null, snapsho
     if (fade === 0) continue;
     const eSun = emission.illuminance * (emission.refDistance / b.sunDistance) ** 2;
     const alpha = v3.angle(b.sunDir, v3.neg(to));
-    const e = eSun * def.render.geometricAlbedo * (def.radius / d) ** 2 * lambertSpherePhase(alpha) * fade;
+    const visible = visibleFrom ? shineVisibleFraction(visibleFrom, b.id, snapshot, defs) : 1;
+    if (visible <= 0) continue;
+    const e = eSun * def.render.geometricAlbedo * (def.radius / d) ** 2 * lambertSpherePhase(alpha) * fade * visible;
     const mc = def.render.meanColor;
     const l = Math.max(luma(mc), 1e-6);
-    out.push({ bodyId: b.id, dir: v3.scale(to, 1 / d), illuminance: [(e * mc[0]) / l, (e * mc[1]) / l, (e * mc[2]) / l], e });
+    out.push({ bodyId: b.id, dir: v3.scale(to, 1 / d), illuminance: [(e * mc[0]) / l, (e * mc[1]) / l, (e * mc[2]) / l], angularRadius: Math.asin(Math.min(1, def.radius / d)), e });
   }
   out.sort((a, b) => b.e - a.e);
-  return out.slice(0, max).map(({ bodyId, dir, illuminance }) => ({ bodyId, dir, illuminance }));
+  return out.slice(0, max).map(({ bodyId, dir, illuminance, angularRadius }) => ({ bodyId, dir, illuminance, angularRadius }));
 }
 
 /** Body of the snapshot whose surface is nearest to a ROOT-frame point (stars excluded). */

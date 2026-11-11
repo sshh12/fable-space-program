@@ -16,6 +16,7 @@ import {
   jitterSequenceLength,
   lambertSpherePhase,
   planetshineAt,
+  shineVisibleFraction,
   sunAt,
   sunVisibilityAt,
   taaJitter,
@@ -180,6 +181,56 @@ describe('sun, eclipses and planetshine', () => {
     expect(dark ? dark.illuminance[1] : 0).toBeLessThan(0.01);
     // Close to the body the far-field formula is switched off (the environment probe carries the light).
     expect(planetshineAt(v3.addScaled(earth.rRoot, earth.sunDir, 1.5 * 6371e3), null, snap, defs).some((s) => s.bodyId === earth.id)).toBe(false);
+  });
+  it('hides a shining body behind the others: the Moon under a 200 km orbit\'s horizon lights nothing (request sky-lighting-8)', () => {
+    const earth = snap.bodies.find((b) => b.id === defs.rootBodyId)!;
+    const moon = snap.bodies.find((b) => b.id !== earth.id && b.id !== snap.starId)!;
+    const R = defs.bodies[earth.id]!.radius;
+    const u = v3.normalize(v3.sub(moon.rRoot, earth.rRoot));
+    const side = v3.normalize(v3.cross(u, { x: 0.3, y: 0.5, z: 0.8 }));
+    // A point of a 200 km orbit at angle theta from the sub-Moon point.
+    const at = (theta: number): Vec3 => v3.add(earth.rRoot, v3.scale(v3.add(v3.scale(u, Math.cos(theta)), v3.scale(side, Math.sin(theta))), R + 200e3));
+    const vis = (theta: number): number => shineVisibleFraction(at(theta), moon.id, snap, defs);
+    const elevation = (theta: number): number => {
+      const p = at(theta);
+      return Math.PI / 2 - v3.angle(v3.sub(p, earth.rRoot), v3.sub(moon.rRoot, p));
+    };
+    // Moon at the nadir, behind the Earth: nothing.
+    expect(vis(Math.PI)).toBe(0);
+    // Moon 10 degrees above the local horizontal (the limb is 14.2 degrees below it): all of it.
+    let theta = Math.PI / 2 - (10 * Math.PI) / 180;
+    for (let i = 0; i < 4; i++) theta += elevation(theta) - (10 * Math.PI) / 180;
+    expect(elevation(theta) * (180 / Math.PI)).toBeCloseTo(10, 3);
+    expect(vis(theta)).toBe(1);
+    // The Moon's centre on the limb: half of it. Bisection for the angle where the centre touches the limb.
+    let lo = Math.PI / 2;
+    let hi = Math.PI;
+    const onLimb = (t: number): number => {
+      const p = at(t);
+      const toE = v3.sub(earth.rRoot, p);
+      return v3.angle(toE, v3.sub(moon.rRoot, p)) - Math.asin(R / v3.len(toE));
+    };
+    for (let i = 0; i < 60; i++) {
+      const mid = 0.5 * (lo + hi);
+      if (onLimb(mid) > 0) lo = mid;
+      else hi = mid;
+    }
+    expect(vis(lo)).toBeCloseTo(0.5, 2);
+    // Monotonic through the setting.
+    let last = 2;
+    for (let t = lo - 0.01; t <= lo + 0.01; t += 0.0005) {
+      const f = vis(t);
+      expect(f).toBeLessThanOrEqual(last + 1e-12);
+      last = f;
+    }
+    // planetshineAt: the receiver's own body is evaluated at its centre (excluded as a source) and tested as an
+    // occluder from `visibleFrom`; without `visibleFrom` the value of an unoccluded light is unchanged.
+    const free = planetshineAt(earth.rRoot, earth.id, snap, defs).find((s) => s.bodyId === moon.id)!;
+    expect(free.angularRadius).toBeCloseTo(Math.asin(defs.bodies[moon.id]!.radius / v3.dist(moon.rRoot, earth.rRoot)), 12);
+    expect(planetshineAt(earth.rRoot, earth.id, snap, defs, 2, at(Math.PI)).some((s) => s.bodyId === moon.id)).toBe(false);
+    expect(planetshineAt(earth.rRoot, earth.id, snap, defs, 2, at(theta)).find((s) => s.bodyId === moon.id)!.illuminance).toEqual(free.illuminance);
+    const half = planetshineAt(earth.rRoot, earth.id, snap, defs, 2, at(lo)).find((s) => s.bodyId === moon.id)!;
+    expect(half.illuminance[1] / free.illuminance[1]).toBeCloseTo(0.5, 2);
   });
 });
 

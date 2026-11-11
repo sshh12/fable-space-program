@@ -140,7 +140,7 @@ struct BodyUniform {      // 256 bytes; frame.bodies[i] <-> FrameContext.bodies[
   reserved0: vec4f, reserved1: vec4f,
 }
 struct LightUniform { posRange: vec4f, endKind: vec4f, intensity: vec4f }   // FrameContext.lights[i]
-struct ShineLight { dir: vec4f, illuminance: vec4f }                         // planetshine, section 7
+struct ShineLight { dir: vec4f, illuminance: vec4f }                         // planetshine, section 7 (dir.w = shining body's frame index, illuminance.a = its angular radius)
 
 struct FrameUniforms {
   view: mat4x4f,               // ROOT axes -> view, rotation only (the eye is the origin)
@@ -404,6 +404,15 @@ lights, the map fill light and RT5 emissive. Eclipses and planetshine are comput
   uses its nearest body's list when it is lower than half a radius above it, else the free-space list.
   It has no shadow map: it is multiplied by the pixel's BAKED occlusion (RT0.a), as the probe ambient is,
   so a closed interior that writes AO 0 receives no planetshine through its walls (request `cockpit-2`).
+  Each light is also multiplied per pixel by `shineVisibility(pos, sh)` (chunk `eclipse`, request
+  `sky-lighting-8`): the fraction of the shining body's disc that every OTHER non-star frame body leaves
+  visible, the same lens-area overlap as `sunVisibility()`, with the shining body's angular radius as the
+  source. The body the pixel is on is one of those occluders, so the Moon under a low orbit's horizon lights
+  nothing and a Moon setting over the limb fades out over its own diameter. `ShineLight.dir.w` carries the
+  shining body's frame index (-1 when it is not a frame body), `illuminance.a` its angular radius; the rgb
+  stay the unoccluded value. A forward shader that copies the planetshine loop multiplies by
+  `shineVisibility()` too. CPU twins: `shineVisibleFraction(point, shiningId, snapshot, defs)` and the optional
+  last argument `visibleFrom` of `planetshineAt(...)`, which applies it.
 - Cloth (`MATERIAL_CLOTH`) is lit on both sides (wrapped diffuse and translucency), so its sun-shadow
   lookup uses the normal turned towards the sun: a caster between the fabric and the sun shadows the lit
   side and the back-lit side alike (request `cockpit-1`). Every other material keeps the early-out for faces
@@ -712,7 +721,7 @@ texture and view are replaced (and `version` incremented) when the internal reso
 
 Also exported from `@/render/core`: `MipGenerator`, `createSolidTexture`, `createTextureChecked`,
 `readTexturePixels`, `f32ToF16` / `f16ToF32`, `mipCount`, frame maths (`buildProjection`, `taaJitter`,
-`sunAt`, `sunVisibilityAt`, `planetshineAt`, `discVisibleFraction`), exposure helpers (`sunny16Ev`,
+`sunAt`, `sunVisibilityAt`, `planetshineAt`, `shineVisibleFraction`, `discVisibleFraction`), exposure helpers (`sunny16Ev`,
 `exposureFromEv100`, `ev100ForMidGrey`).
 
 `CoreRenderer` (what `createRenderer` returns) adds to the `Renderer` contract: `core`, `resources`
@@ -1218,6 +1227,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Planetshine is occluded per pixel by every other non-star body (`shineVisibility(pos, sh)` in chunk `eclipse`; `ShineLight.dir.w` = shining body's frame index, `illuminance.a` = its angular radius; CPU: `shineVisibleFraction`, `planetshineAt(..., max, visibleFrom?)`, `ShineLight.angularRadius?`), section 7 | `sky-lighting-8` | every package lit by the deferred pass at night: a vessel in low orbit is no longer lit by a Moon behind the Earth; ocean (its forward copy of the loop) | None in code. A forward shader that copies the planetshine loop multiplies each light by `shineVisibility(pos, sh)` to match the deferred result |
 | Tone curve: AgX joins the linear toe over five stops (`TOE_START_STOPS` -3 -> -1, `TOE_FULL_STOPS` -4 -> -6; the join's middle, `TOE_GAIN` and the toe below -6 stops unchanged), section 13 | `sky-lighting-7` | every package: smooth gradients that crossed 17-21 of 255 (glare, terminators, twilight skies, shaded hulls) lose the contour there | None in code. Greys between 1 and 6 stops under mid-grey move by up to 1.8 of 255 (-3 stops 29.5 instead of 31, -4 stops 15.4 instead of 16.5); a dim colour inside the join is a little less saturated than AgX alone made it |
 | FakeSim: `FakeSimOptions.vehicleId`, `ground`, `altitude`; `location` applies to every surface scene; the 'chutes' scene flies nose up (was nose down) | found by the budget pictures | every lab that flies real parts on the FakeSim | None for the options (additive). A lab that relied on the capsule being upside down under its canopies sees it upright |
 | Exposure target: a lit area brighter than the prior takes over from 2 % of the frame instead of 10 % (`LIT_FULL_BRIGHT`) | `vfx-3` | vfx (night launch, fireballs), anything bright in a dark frame (lights on the lunar night side, city lights) | None. Such frames are exposed for the bright area sooner: darker surroundings, no white-out |

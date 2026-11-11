@@ -281,9 +281,12 @@ fn envIrradiance(n: vec3f) -> vec3f {
   for (var k = 0u; k < 2u; k++) {
     let sh = frame.shine[receiver * 2u + k];
     if (sh.illuminance.r + sh.illuminance.g + sh.illuminance.b > 0.0) {
-      // A planet's disc is an extended source without a shadow map: the baked occlusion (RT0.a) stands in
-      // for its visibility, as it does for the probe. A closed cabin writes 0 and receives none of it.
-      lit += brdfDirect(s, sh.dir.xyz) * sh.illuminance.rgb * g.ao;
+      // The other bodies hide the shining one by the overlap of their discs (request sky-lighting-8: the Moon
+      // under a low orbit's horizon lights nothing). A planet's disc is an extended source without a shadow
+      // map: the baked occlusion (RT0.a) stands in for the vessel's own parts, as it does for the probe. A
+      // closed cabin writes 0 and receives none of it.
+      let shVis = shineVisibility(pos, sh);
+      if (shVis > 0.0) { lit += brdfDirect(s, sh.dir.xyz) * sh.illuminance.rgb * (g.ao * shVis); }
     }
   }
 
