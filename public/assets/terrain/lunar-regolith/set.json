@@ -1,0 +1,67 @@
+{
+  "formatVersion": 1,
+  "id": "lunar-regolith",
+  "size": 512,
+  "materials": [
+    {
+      "id": "fine-regolith",
+      "albedoHeight": "fine-regolith.ah.webp",
+      "normalRoughAo": "fine-regolith.nra.webp",
+      "meanAlbedo": [
+        0.11852,
+        0.11551,
+        0.10848
+      ],
+      "meanRoughness": 0.9486,
+      "heightGain": 0.0852
+    },
+    {
+      "id": "blocky-ejecta",
+      "albedoHeight": "blocky-ejecta.ah.webp",
+      "normalRoughAo": "blocky-ejecta.nra.webp",
+      "meanAlbedo": [
+        0.14646,
+        0.14374,
+        0.13784
+      ],
+      "meanRoughness": 0.8949,
+      "heightGain": 0.2768
+    },
+    {
+      "id": "compacted-soil",
+      "albedoHeight": "compacted-soil.ah.webp",
+      "normalRoughAo": "compacted-soil.nra.webp",
+      "meanAlbedo": [
+        0.10312,
+        0.10026,
+        0.09452
+      ],
+      "meanRoughness": 0.925,
+      "heightGain": 0.1099
+    }
+  ],
+  "classWeights": {
+    "unknown": {
+      "fine-regolith": 1.0
+    }
+  },
+  "classOrbital": {
+    "unknown": [
+      0.035,
+      0.01
+    ]
+  },
+  "channelGain": {
+    "blocky-ejecta": 1.4,
+    "fine-regolith": -0.8
+  },
+  "slopeGain": {
+    "compacted-soil": 0.9,
+    "fine-regolith": -0.6
+  },
+  "noiseGain": {
+    "compacted-soil": 0.25
+  },
+  "apronMaterial": null,
+  "rockMaterial": "blocky-ejecta"
+}

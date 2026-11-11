@@ -1,0 +1,175 @@
+{
+  "formatVersion": 1,
+  "id": "earth-volcanic-coast",
+  "size": 512,
+  "materials": [
+    {
+      "id": "pahoehoe",
+      "albedoHeight": "pahoehoe.ah.webp",
+      "normalRoughAo": "pahoehoe.nra.webp",
+      "meanAlbedo": [
+        0.06596,
+        0.0609,
+        0.0591
+      ],
+      "meanRoughness": 0.5762,
+      "heightGain": 0.357
+    },
+    {
+      "id": "aa",
+      "albedoHeight": "aa.ah.webp",
+      "normalRoughAo": "aa.nra.webp",
+      "meanAlbedo": [
+        0.03404,
+        0.02837,
+        0.02569
+      ],
+      "meanRoughness": 0.9134,
+      "heightGain": 0.2807
+    },
+    {
+      "id": "black-sand",
+      "albedoHeight": "black-sand.ah.webp",
+      "normalRoughAo": "black-sand.nra.webp",
+      "meanAlbedo": [
+        0.05761,
+        0.05594,
+        0.05208
+      ],
+      "meanRoughness": 0.89,
+      "heightGain": 0.0824
+    },
+    {
+      "id": "scrub-soil",
+      "albedoHeight": "scrub-soil.ah.webp",
+      "normalRoughAo": "scrub-soil.nra.webp",
+      "meanAlbedo": [
+        0.15362,
+        0.10688,
+        0.07243
+      ],
+      "meanRoughness": 0.9208,
+      "heightGain": 0.2288
+    },
+    {
+      "id": "concrete-apron",
+      "albedoHeight": "concrete-apron.ah.webp",
+      "normalRoughAo": "concrete-apron.nra.webp",
+      "meanAlbedo": [
+        0.2812,
+        0.27085,
+        0.25655
+      ],
+      "meanRoughness": 0.7993,
+      "heightGain": 0.0165
+    }
+  ],
+  "classWeights": {
+    "unknown": {
+      "scrub-soil": 1.0
+    },
+    "water": {
+      "black-sand": 1.0
+    },
+    "bareRock": {
+      "pahoehoe": 0.6,
+      "aa": 0.4
+    },
+    "sand": {
+      "black-sand": 1.0
+    },
+    "sparseScrub": {
+      "scrub-soil": 0.65,
+      "pahoehoe": 0.35
+    },
+    "grass": {
+      "scrub-soil": 1.0
+    },
+    "shrub": {
+      "scrub-soil": 1.0
+    },
+    "trees": {
+      "scrub-soil": 1.0
+    },
+    "crop": {
+      "scrub-soil": 1.0
+    },
+    "builtUp": {
+      "concrete-apron": 0.6,
+      "scrub-soil": 0.4
+    },
+    "snowIce": {
+      "scrub-soil": 1.0
+    },
+    "wetland": {
+      "scrub-soil": 1.0
+    }
+  },
+  "classOrbital": {
+    "unknown": [
+      0.06,
+      0.02
+    ],
+    "water": [
+      0.0,
+      0.0
+    ],
+    "bareRock": [
+      0.1,
+      0.05
+    ],
+    "sand": [
+      0.05,
+      0.03
+    ],
+    "sparseScrub": [
+      0.1,
+      0.03
+    ],
+    "grass": [
+      0.07,
+      0.02
+    ],
+    "shrub": [
+      0.1,
+      0.03
+    ],
+    "trees": [
+      0.12,
+      0.04
+    ],
+    "crop": [
+      0.08,
+      0.01
+    ],
+    "builtUp": [
+      0.12,
+      0.02
+    ],
+    "snowIce": [
+      0.02,
+      0.03
+    ],
+    "wetland": [
+      0.08,
+      0.01
+    ]
+  },
+  "channelGain": {
+    "aa": 0.6,
+    "scrub-soil": -0.4,
+    "black-sand": -0.3
+  },
+  "slopeGain": {
+    "aa": 0.8,
+    "pahoehoe": 0.2,
+    "black-sand": -1.0,
+    "scrub-soil": -0.5
+  },
+  "noiseGain": {
+    "aa": 0.5,
+    "pahoehoe": -0.5
+  },
+  "apronMaterial": "concrete-apron",
+  "rockMaterial": "aa"
+}
