@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
 /**
@@ -111,11 +112,42 @@ test('the sun disc subtends 0.533 deg, darkens towards the limb per channel and 
   expect(r.rimRatio).toBeLessThan(0.8);
   expect(Math.abs(r.rimRatio / r.rimModel - 1)).toBeLessThan(0.03);
   expect(r.maxCh).toBeLessThan(60_000);
-  // Through a "solar filter": EV100 30.4 puts the disc centre at about half of display white, so the limb darkening (and
-  // its reddening towards the limb, u is largest in blue) is visible in the display image.
-  await page.evaluate(() => window.__lab!.renderer.setExposureOverride(30.4));
+  // Through a "solar filter": EV100 32 puts the disc centre near mid-grey, below the shoulder of the tone curve (at EV
+  // 30.4 it sat at 208/255 and the shoulder flattened the profile to 0.89 at 0.9 R), so the limb darkening and its
+  // reddening towards the limb (u is largest in blue) show in the display image as in a white-light photograph.
+  await page.evaluate(() => window.__lab!.renderer.setExposureOverride(32));
   await page.evaluate(() => window.__test!.waitFrames(60));
-  await saveScreenshot(page, 'sky', 'sun-disc-limb-darkening-filter');
+  const shot = await saveScreenshot(page, 'sky', 'sun-disc-limb-darkening-filter');
+  const c = await page.evaluate(() => ({ ...window.__sky!.projectDir(window.__lab!.renderer.frameContext!.sun.dirRoot)!, rPx: window.__lab!.renderer.frameContext!.sun.angularRadius / ((2 * Math.tan(window.__lab!.renderer.frameContext!.camera.fovY / 2)) / window.__lab!.renderer.frameContext!.renderSize[1]) }));
+  const png = PNG.sync.read(shot.buffer);
+  const lin = (v: number): number => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const ring = (a: number, b: number): [number, number, number] => {
+    const s = [0, 0, 0];
+    let n = 0;
+    for (let y = Math.floor(c.y - c.rPx); y <= Math.ceil(c.y + c.rPx); y++) {
+      for (let x = Math.floor(c.x - c.rPx); x <= Math.ceil(c.x + c.rPx); x++) {
+        const t = Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y) / c.rPx;
+        if (t < a || t >= b) continue;
+        const i = (y * png.width + x) * 4;
+        for (let k = 0; k < 3; k++) s[k] = s[k]! + lin(png.data[i + k]!);
+        n++;
+      }
+    }
+    return [s[0]! / n, s[1]! / n, s[2]! / n];
+  };
+  const Y = (v: [number, number, number]): number => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  const centre = ring(0, 0.1);
+  const r90 = ring(0.88, 0.92);
+  const r98 = ring(0.97, 0.99);
+  console.log(
+    `through the filter (EV 32), display-linear: centre ${Y(centre).toFixed(3)}, 0.9 R / centre ${(Y(r90) / Y(centre)).toFixed(3)}, 0.98 R / centre ${(Y(r98) / Y(centre)).toFixed(3)}; R/B centre ${(centre[0] / centre[2]).toFixed(3)}, at 0.98 R ${(r98[0] / r98[2]).toFixed(3)} (white-light photographs: about 0.66 at 0.9 R, 0.5 at 0.98 R, warmer at the limb)`,
+  );
+  // The centre sits in the mid-tones, the limb is clearly darker and warmer than the centre.
+  expect(Y(centre)).toBeGreaterThan(0.08);
+  expect(Y(centre)).toBeLessThan(0.4);
+  expect(Y(r90) / Y(centre)).toBeLessThan(0.75);
+  expect(Y(r98) / Y(centre)).toBeLessThan(0.62);
+  expect(r98[0] / r98[2]).toBeGreaterThan(1.1 * (centre[0] / centre[2]));
   await expectNoErrors(page, pageLog);
 });
 

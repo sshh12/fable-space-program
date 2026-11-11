@@ -205,25 +205,83 @@ test('the sun just above the limb of the Earth from low orbit, with flare, at th
   await expectNoErrors(page, pageLog);
 });
 
+type Place = { elevationDeg: number; azimuthDeg: number; fromCamera?: boolean };
 for (const v of [
   // The sun comes from the camera's right, a little behind it, so the left halves of the spheres show the
   // environment alone: the lit Earth below (the lab's cloud layer turned so that a cloud field lies under the
   // vessel) and black space above.
-  { name: 'pbr-spheres-leo-day', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8', sun: { elevationDeg: 40, azimuthDeg: 100, fromCamera: true } as const },
-  { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8&night=1', sun: null },
+  { name: 'pbr-spheres-leo-day', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8', sun: { elevationDeg: 40, azimuthDeg: 100, fromCamera: true } as Place, moon: null },
+  // Night side with the Moon set (40 deg under the vessel's horizon, behind the Earth): starlight and the Milky Way
+  // from above, the black night side below; nothing may light the spheres from under the horizon (round 1: the
+  // core's planetshine had no occlusion test, request sky-lighting-8).
+  { name: 'pbr-spheres-leo-night', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8&night=1', sun: null, moon: { elevationDeg: -40, azimuthDeg: 30, fromCamera: true } as Place },
+  // The same with the Moon (gibbous, opposite the sun) 35 deg above the horizon, ahead and to the right.
+  { name: 'pbr-spheres-leo-night-moonlit', url: '/labs/sky/?scene=lowOrbit&spheres=1&clouds=1&cloudUnder=1&hud=0&orbit=0,14,8&night=1', sun: null, moon: { elevationDeg: 35, azimuthDeg: 40, fromCamera: true } as Place },
   // At the mission's landing site, 1907.8 m below the Moon's reference radius, resting on the ground (origin 3 m up).
-  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8&valt=-1904.8&ground=-1907.8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as const },
+  { name: 'pbr-spheres-lunar-surface', url: '/labs/sky/?scene=lunarSurface&spheres=1&hud=0&orbit=0,8,8&valt=-1904.8&ground=-1907.8', sun: { elevationDeg: 35, azimuthDeg: 100, fromCamera: true } as Place, moon: null },
 ]) {
   test(`PBR spheres lit by the probe: ${v.name}`, async ({ page, pageLog }) => {
     await openPage(page, v.url);
     await assertDiscreteGpu(page);
     if (v.sun) await page.evaluate((sun) => window.__sky!.setSunForVessel(sun), v.sun);
+    if (v.moon) await page.evaluate((moon) => window.__sky!.setBodyForVessel('moon', moon), v.moon);
     await settle(page, 150);
     const ev = await settledExposure(page);
     await settle(page, 60);
     const shot = await saveScreenshot(page, 'sky', v.name);
     console.log(`${v.name}: automatic exposure EV100 ${ev.toFixed(2)}, mean level ${shot.stats.meanLuma.toFixed(1)}/255`);
     if (v.sun) assertRealImage(shot.stats, v.name, { minNonBlack: 0.05, minStd: 5, minBuckets: 30 });
+    if (v.moon) {
+      // The six spheres sit 6 m ahead of the camera, 1.6 m apart (labs/sky createSpheresFeature): their centres and
+      // radii on the screen. Per sphere: the means of its upper and lower half (inside 0.85 of the radius), the
+      // brightest pixel of its bottom (below 0.4 of the radius: what it mirrors there lies under the horizon).
+      const cam = await page.evaluate(() => {
+        const f = window.__lab!.renderer.frameContext!;
+        return { fovY: f.camera.fovY, w: f.displaySize[0], h: f.displaySize[1] };
+      });
+      const png = PNG.sync.read(shot.buffer);
+      const tanY = Math.tan(cam.fovY / 2);
+      const tanX = (tanY * cam.w) / cam.h;
+      const rPx = (0.5 / 6 / tanY) * (cam.h / 2);
+      const spheres = ['white', 'grey', 'black', 'chrome', 'gold', 'copper'].map((name, i) => {
+        const cx = (cam.w / 2) * (1 + ((i - 2.5) * 1.6) / 6 / tanX);
+        const cy = cam.h / 2;
+        let up = 0;
+        let nu = 0;
+        let lo = 0;
+        let nl = 0;
+        let bottomMax = 0;
+        for (let y = Math.floor(cy - rPx); y <= Math.ceil(cy + rPx); y++) {
+          for (let x = Math.floor(cx - rPx); x <= Math.ceil(cx + rPx); x++) {
+            const dx = x - cx;
+            const dy = y - cy;
+            if (dx * dx + dy * dy > (0.85 * rPx) ** 2) continue;
+            const i4 = (y * png.width + x) * 4;
+            const l = 0.2126 * png.data[i4]! + 0.7152 * png.data[i4 + 1]! + 0.0722 * png.data[i4 + 2]!;
+            if (dy < 0) {
+              up += l;
+              nu++;
+            } else {
+              lo += l;
+              nl++;
+            }
+            if (dy > 0.4 * rPx) bottomMax = Math.max(bottomMax, l);
+          }
+        }
+        return { name, upper: up / Math.max(nu, 1), lower: lo / Math.max(nl, 1), bottomMax };
+      });
+      console.log(`${v.name}: ${spheres.map((s) => `${s.name} upper ${s.upper.toFixed(1)} lower ${s.lower.toFixed(1)} bottom max ${s.bottomMax.toFixed(0)}`).join('; ')}`);
+      const white = spheres[0]!;
+      if (v.moon.elevationDeg < 0) {
+        // Moon set: no light from under the horizon. The white sphere is no brighter below than above, and nothing on
+        // the mirror-like spheres' bottoms (the black night side) is more than a faint level.
+        expect(white.lower).toBeLessThanOrEqual(1.1 * white.upper + 1);
+        for (const s of spheres.filter((q) => q.name === 'black' || q.name === 'chrome')) expect(s.bottomMax).toBeLessThan(8);
+      } else {
+        // Moon up: the white sphere is moonlit from above.
+        expect(white.upper).toBeGreaterThan(1.5 * white.lower);
+      }
+    }
     await expectNoErrors(page, pageLog);
   });
 }
