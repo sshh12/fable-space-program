@@ -265,9 +265,10 @@ body (and for surface targets: body at least 18 px).
 
 ## Acceptance: measured
 
-101 unit tests (10 files incl. boundaries) and 27 functional browser specs pass (2026-11-11, round 2). The 2
-perf specs pass on the quiet machine (round 2: overview CPU p99 0.480 ms, close-up 0.4999 ms; table in
-"Visual close-out, round 2"). The rows below are the original acceptance runs of 2026-11-10.
+106 unit tests (11 files incl. boundaries) and 27 functional browser specs pass (2026-11-11, round 3). The 2
+perf specs pass on the quiet machine (round 3: overview CPU p99 0.435 ms, close-up 0.495 ms, GPU p99 0.008 /
+0.012 ms; tables in "Visual close-out, round 2" and "round 3"). The rows below are the original acceptance
+runs of 2026-11-10.
 
 | Criterion | Result |
 |---|---|
@@ -293,8 +294,8 @@ perf specs pass on the quiet machine (round 2: overview CPU p99 0.480 ms, close-
 | Browser: 200 km .. 1e9 m without jitter | static camera: consecutive-frame max diff 0 at 2e5, 2e6, 2e7, 2e8, 1e9 m. Moving: the sim steps between frames and the camera follows the vessel from 100 km (low Earth orbit and lunar orbit, 8 steps each); the vessel icon matches an independent f64 projection to 1e-6 px and the rendered line next to it keeps its offset to 0.001 px (Earth) / 0.000 px (Moon), limit 0.08 px. A float32 ROOT path would move by 0.19 px frame to frame in lunar orbit (computed for the same steps), so the spec tells the two apart there |
 | Browser: synthetic chain, at-intercept, every marker kind, both nodes | all via describe(); at intercept the impact lies on the ghost Moon, one ghost |
 | Browser: panel fields show their whole text | `scrollWidth <= clientWidth` for all six fields in the three synthetic close-ups (multi-day times) |
-| Overlay GPU < 0.1 ms (8 patches, 20 debris) | met: p99 <= 0.013 ms in every run (round 2: 0.009-0.015 ms) |
-| Overlay CPU < 0.5 ms per frame | round 2, 3-7 % load: overview p99 0.480 ms, Earth close-up p99 0.4999 ms (met, the close-up at the line); under the other agents' load the p99 has missed in earlier runs (tables below) |
+| Overlay GPU < 0.1 ms (8 patches, 20 debris) | met: p99 <= 0.016 ms in every run (round 3: 0.008 / 0.012 ms) |
+| Overlay CPU < 0.5 ms per frame | round 3, ~1 % load: overview p99 0.435 ms, Earth close-up p99 0.495 ms (met, the close-up near the line); under the other agents' load the p99 has missed in earlier runs (tables below) |
 
 ### Overlay cost
 
@@ -424,12 +425,13 @@ No contract was changed; no open requests against map-view paths exist.
 
 `scene-*.png` (each lab scene, synthetic and at-intercept), `lowOrbit-node.png` (gizmo + panel; the node is
 behind the limb and its gizmo at full strength, asserted by pixel), `synthetic-earth.png`,
-`synthetic-moon*.png` (panel beside node A), `synthetic-chain*.png`, `synthetic-8-patches.png` (every
-debris orbit drawn), `hover-impact-details.png`, `hover-add-maneuver.png`, `hover-debris-orbit.png`,
+`synthetic-moon*.png` (panel beside node A), `synthetic-chain*.png`, `synthetic-8-patches.png` (the load case
+at the overview: debris orbits under 60 px left out) and `synthetic-8-patches-earth.png` (its close-up, all 20
+debris orbits drawn), `hover-impact-details.png`, `hover-add-maneuver.png`, `hover-debris-orbit.png`,
 `zone-near-limb.png` (a recovery zone 82 degrees off the sub-camera point), `accept-*.png` (acceptance
 steps, including `accept-panel.png` and `accept-follow-lowOrbit.png` / `accept-follow-lunarOrbit.png` from
 the moving-camera spec), `dpr2-lowOrbit-node.png` and `dpr2-synthetic-moon.png` (1920 x 1080 CSS px at device
-pixel ratio 2: the glyph atlas, icons and lines at 2x), and over the REAL renderer (the map feature mounted
+pixel ratio 2: interface scale 1.5, so 3 device px per interface px), and over the REAL renderer (the map feature mounted
 into the integration lab by `real-planet.spec.ts`, `view.update` driven with the CSS size as the app does):
 `real-lowOrbit.png` (with a pixel check that the night limb stands out from the sky), `real-lowOrbit-dayside.png`,
 `real-lowOrbit-node.png`, `real-translunar.png`, `real-lunarOrbit.png`, and the frame the player sees, the map
@@ -597,3 +599,58 @@ dilated bitmap for the coincidence test.
 Unit: 94 in 9 files plus boundaries (101 with the boundaries test's 7) (new `visualQa2.test.ts`, formats extended). Browser (functional): 27
 specs (new: the HUD composition at 720p and 4K, two device-pixel-ratio-2 lab pictures, the night-limb pixel
 check). Perf: 2 (above).
+
+## Visual close-out, round 3 (2026-11-11)
+
+Work list: the round-2 critics' lists (`out/qa/wave2/map-view.r2.photo.json`, `.r2.artifact.json`) were not
+produced (the round-2 score is blank and the files do not exist). The package's new owner therefore reviewed
+all 37 round-2 pictures as the critics would (crops at 2-6x, next to `out/qa/ref/moon-surface/earthrise-a8.jpg`
+and `earth-orbit-clouds/limb-panorama.jpg`), re-checked every open item of the round-1 lists, and worked the
+defects found. Commits 7608425, 6fa3894 and the close-out commit.
+
+| Item (own review of the round-2 pictures) | What was done | Evidence |
+|---|---|---|
+| major (both lenses): at 1080p / 4K the HUD's type and panels scale with `min(1vh, 0.5625vw)` (1.5x at 1920 x 1080 CSS px) but the map's labels, icons, gizmo, lines and node panel stayed at their 720p size: the map read as two thirds of the HUD beside it, the node panel visibly smaller than the HUD's MANEUVER panel (`real-hud-lowOrbit-node-4k.png`, `dpr2-*.png`) | One interface scale for the whole map (`uiScale` in projection.ts: the HUD's unit relative to 720p, steps of 1/16, floor 0.8). `Projector.pxScale` is now device px per INTERFACE px (every pixel constant, the glyph atlas size, hit tolerance), `Projector.cssScale` device px per CSS px (pointer, describe(), DOM panel, obstacles, tooltip rect). The node panel's CSS is written in interface px and multiplied by `--mu`; it re-reports its size when the scale changes. Handle drags count pointer motion in interface px, so the handle stays under the pointer (1 m/s per 10 interface px). At 1280 x 720 nothing changes | `real-hud-lowOrbit-node-4k.png` (map panel, labels and gizmo in proportion with the HUD), `dpr2-lowOrbit-node.png`, `dpr2-synthetic-moon.png`; unit tests `visualQa3.test.ts` (scale steps, 3 device px per interface px at 1080p / DPR 2, describe() in CSS px, handle under the pointer at 1080p) |
+| major (artifact): in the composed translunar frame the Moon, the mission's destination, lay under the navball, its SOI circle under the SAS panel (`real-hud-translunar.png`) | (1) Cause in the map: an anchor under a `setObstacles` rectangle now gets neither icon nor label (it is covered by the HUD; before, its label was set beside the panel). (2) The spec's camera turns the view about its axis so the Moon sits upper right (`orbitView` `moonAt`), as a player turns the map camera | `real-hud-translunar.png` (Moon, its SOI and label clear, upper right) |
+| minor (artifact): the "Tranquility Base" label stood beside the HUD's ORBIT SPEED plate with a leader pointing into it (the pin was under the plate) (`real-hud-lunarOrbit.png`) | The rule above drops the covered pin and its label; the lunar HUD picture is rolled 180 degrees (space has no up) so the landing target is in view | `real-hud-lunarOrbit.png` (pin and label clear of every HUD plate); unit test (a vessel or surface target under an obstacle: no icon, no label) |
+| minor (artifact; round-1 photo P4 / artifact A2 leftovers): in the load case the 11 px Earth icon was wrapped in a scribble of twenty debris rings 10-20 px across (`synthetic-8-patches.png`) | Debris orbits drawn in bulk obey the 60 px minimum span of other vessels' orbits (the hovered one is always drawn). The load case still draws all 20 at the close-up, where the perf spec measures them | `synthetic-8-patches.png` (clean Earth icon), new `synthetic-8-patches-earth.png` (close-up, 20 rings); unit test; browser spec asserts 0 rings at the overview and 20 at the close-up |
+| minor (artifact; round-2 hand-off left it to flight-ui): one quantity in two units in the same frame, "180.0 Mm" in the HUD and "180 000 km" on the map (`real-hud-translunar.png`) | The map writes lengths with the HUD's rule (`formatDistance(m, 'distance' / 'apsis' / 'altitude')` mirrors `src/ui/format.ts` formatLength, narrow no-break spaces, true minus): "Ap 180.0 Mm", "Ap 1 839.1 km", "miss 22.70 km". Request map-view-5 item 4 withdrawn | `real-hud-translunar.png`, `real-translunar.png`, `scene-synthetic.png`; unit test (shared cases) |
+
+Re-checked and still fixed (round-1 items): no mirrored chord in any picture; tooltips clear of the panel and of
+labels; selected gizmo at full strength behind the limb; axes fanned from above; zone rings continuous to the
+limb; clustering with badges on the icon; opaque plates over dots; night limb ring; labels binary; HUD type
+and panel style; vessel chevron; Ap/Pe tinted per patch.
+
+Not fixed, or only in part, and why:
+- The planet under the map (photo lens): cloud texel blocks and grey cloud tops at 14,000-24,000 km, the
+  Moon's limb smear, belong to atmosphere-clouds / terrain-render / sky (request map-view-6, still open; the
+  real-planet pictures were re-taken on the current tree and show the same). No stars in the map frames is
+  physically right at the exposure of a sunlit planet (`earthrise-a8.jpg`: black sky, no stars).
+- The map is still mounted by its own spec, not by the app or the integration lab (request map-view-5, open).
+- Most lab pictures still use the lab's analytic sphere (labs/map-view/backdrop.ts); the real-planet pictures
+  are the acceptance views for the planet. No licensed global albedo map exists in the tree to texture it.
+- Two DIFFERENT planned patches that run 4-6 px apart (synthetic-earth.png, both legs of the return) are drawn
+  as two parallel dashed lines with unrelated dash phases; merging lines that far apart would also hide the
+  effect of a small burn, so the coincidence threshold stays at 3 px.
+
+### Overlay cost (perf spec under the GPU lock)
+
+| Run | Load | Overview CPU p50 / p99 | Close-up CPU p50 / p99 | GPU p99 (ov / cu) |
+|---|---|---|---|---|
+| round 3 final (6fa3894) | ~1 %, all GPU slots free after the run | 0.195 / **0.435** | 0.240 / **0.495** | 0.008 / 0.012 ms |
+
+Both lines pass. The interface scale costs nothing at 720p (the perf lab runs at 1280 x 720); the obstacle
+test is a loop over the HUD rectangles per point entry.
+
+### Tests
+
+Unit: 99 in 10 files plus boundaries (106 with the boundaries test's 7); new `tests/unit/map-view/visualQa3.test.ts`
+(5), the units test rewritten. Browser (functional): 27 specs (the load-case spec checks the close-up too; the
+HUD specs frame the Moon and the landing target clear of the HUD). Perf: 2 (above).
+
+### Own assessment
+
+Photo lens about 7: the composed frames now read as one interface at 720p and 4K (one type scale, one unit,
+nothing hiding under the HUD), but the planet the overlay sits on still gives the composite away next to a
+photograph, and that is outside this package. Artifact lens about 8: no defect of the overlay itself is left
+that I could find in the 38 pictures at 2-6x; the open points are the parallel dashed pair and the lab sphere.
