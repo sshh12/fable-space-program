@@ -534,13 +534,19 @@ export const CLOUD_SHADOW_WGSL = /* wgsl */ `
 //   cloudShadowMapTex: texture_2d<f32>     ('clouds.shadowMap')
 //   cloudCoverageMapTex: texture_2d<f32>   ('clouds.coverageMap')
 
-/// Cloud transmittance towards the sun at a camera-relative point 'pos' of body 'bodyIndex' ('up' = local
-/// vertical there, 'r' = its distance from the body centre): the near map around the camera, the coverage
+/// What the clouds leave of the sun's illuminance at a camera-relative point 'pos' of body 'bodyIndex' ('up'
+/// = local vertical there, 'r' = its distance from the body centre): x = the share that arrives in the
+/// direct beam, y = the share that arrives at all (the beam plus what the cloud passes on diffusely). y - x
+/// is light from the cloud base: white and not directional. The near map around the camera, the coverage
 /// map beyond it. The near map is depth-resolved: a receiver above the cloud is not shadowed by it, one
-/// inside it by the part above it only. Exactly 1 with the default resources and parameters.
-fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> f32 {
+/// inside it by the part above it only. Exactly (1, 1) with the default resources and parameters.
+/// 'clouds.shadowMap': r = optical depth of the whole layer as the ground sees it (beam + diffuse), g =
+/// where the cloud begins on the sun side, b = mean extinction behind that point, a = optical depth of the
+/// direct beam alone divided by r (1 and more; a texel below 1, the default's 0 included, counts as 1: a
+/// map that does not tell beam from diffuse casts its whole shadow in the beam).
+fn cloudLight(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> vec2f {
   let muS = max(dot(up, sunDir), 0.05);
-  var far = 1.0;
+  var far = vec2f(1.0);
   if (i32(frame.cloudFar.x) == bodyIndex && r < frame.cloudFar.y) {
     // Point where the sun ray crosses the layer mid-height.
     let b = frame.bodies[bodyIndex];
@@ -550,7 +556,11 @@ fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> 
     let d = normalize(rootToFixed(u32(bodyIndex), rel + sunDir * t));
     let lon = atan2(d.y, d.x) + frame.cloudFar.w;
     let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(d.z, -1.0, 1.0)) / PI);
-    far = exp(-textureSampleLevel(cloudCoverageMapTex, linearClamp, uv, 0.0).r * frame.cloudFar.z / muS);
+    // Coverage c stands for the optical depth c x cloudFar.z as the ground sees it; the beam meets
+    // (1 + 7 c) times that (thin cloud passes most of its light in the beam, a deck almost none).
+    let c = textureSampleLevel(cloudCoverageMapTex, linearClamp, uv, 0.0).r;
+    let tau = c * frame.cloudFar.z / muS;
+    far = vec2f(exp(-tau * (1.0 + 7.0 * c)), exp(-tau));
   }
   let he = frame.cloudNear0.w;
   if (he > 0.0 && i32(frame.cloudNear1.w) == bodyIndex) {
@@ -563,11 +573,17 @@ fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> 
       // r = optical depth of the whole layer on this line, g = where the cloud begins on the sun side
       // (distance along the projection direction from the map plane), b = mean extinction behind that point.
       let m = textureSampleLevel(cloudShadowMapTex, linearClamp, q * 0.5 + 0.5, 0.0);
-      let tau = clamp((m.g - s) * m.b, 0.0, m.r) * frame.cloudNear2.w;
-      return mix(far, exp(-tau / muS), saturate(edge * 8.0));
+      let tau = clamp((m.g - s) * m.b, 0.0, m.r) * frame.cloudNear2.w / muS;
+      return mix(far, vec2f(exp(-tau * max(m.a, 1.0)), exp(-tau)), saturate(edge * 8.0));
     }
   }
   return far;
+}
+
+/// Share of the sun's illuminance that reaches the point at all, beam and diffuse together (cloudLight().y):
+/// for a shader that lights with one factor on the sun. One that separates the two uses cloudLight.
+fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> f32 {
+  return cloudLight(pos, bodyIndex, up, r, sunDir).y;
 }
 `;
 

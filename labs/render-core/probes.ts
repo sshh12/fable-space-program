@@ -66,9 +66,11 @@ export interface LightingInputsProbe {
   /**
    * 'clouds.shadowMap' over a 200 m square at the site, projected along the local vertical: optical depth
    * `opticalDepth` everywhere, in a layer whose top is `top` metres above the site plane and which is
-   * `thickness` metres deep (default: 800 to 1000 m up, far above everything in the lab).
+   * `thickness` metres deep (default: 800 to 1000 m up, far above everything in the lab). `beam` is the
+   * map's alpha: the optical depth of the direct beam as a multiple of `opticalDepth` (default 0, the value
+   * of a map that does not tell beam from diffuse light: the whole shadow is cast in the beam).
    */
-  setCloudNear(v: { opticalDepth: number; top?: number; thickness?: number } | null): void;
+  setCloudNear(v: { opticalDepth: number; top?: number; thickness?: number; beam?: number } | null): void;
   /** One point light (cd, white) `height` metres above the site-frame point `at`. */
   setPointLight(v: { intensity: number; height: number; at: [number, number] } | null): void;
   /** 'ocean.nearField' for the site's body (what the ocean feature will publish). */
@@ -852,7 +854,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
   if (names.has('inputs')) {
     let ctx: RenderContext;
     let cloudFar: { coverage: number; opticalDepth: number } | null = null;
-    let cloudNear: { opticalDepth: number; top?: number; thickness?: number } | null = null;
+    let cloudNear: { opticalDepth: number; top?: number; thickness?: number; beam?: number } | null = null;
     let light: { intensity: number; height: number; at: [number, number] } | null = null;
     let wetness: { at: [number, number, number]; radius: number; wetLine: number } | null = null;
     let wetnessBuffer: GPUBuffer | null = null;
@@ -893,8 +895,9 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         };
         inputs.setCloudNear = (v) => {
           cloudNear = v;
-          // r = 1 (times the placement's scale), g = where the cloud begins, b = mean extinction below that.
-          if (v) c.resources.publish('clouds.shadowMap', solid('rgba16float', [1, v.top ?? 1000, 1 / (v.thickness ?? 200), 0]).createView());
+          // r = 1 (times the placement's scale), g = where the cloud begins, b = mean extinction below that,
+          // a = beam optical depth / r.
+          if (v) c.resources.publish('clouds.shadowMap', solid('rgba16float', [1, v.top ?? 1000, 1 / (v.thickness ?? 200), v.beam ?? 0]).createView());
           else app?.renderer.resources.reset('clouds.shadowMap');
         };
         inputs.setPointLight = (v) => {

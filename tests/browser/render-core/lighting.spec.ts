@@ -196,9 +196,14 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   expect(g(await centre()) / g(base)).toBeCloseTo(0.5, 2);
   await page.evaluate(() => window.__rc!.probes.inputs.setTransmittance(null));
 
-  // Far cloud shadow from the coverage map: exp(-coverage x tau / mu_s).
-  await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar({ coverage: 1, opticalDepth: 1 }));
-  expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-1 / muS), 2);
+  // Far cloud shadow from the coverage map (request atmosphere-clouds-6): of the sun's illuminance the share
+  // exp(-c x tau / mu_s) arrives at all, exp(-c (1 + 7 c) x tau / mu_s) of it in the beam, the rest from the
+  // cloud base. A horizontal matt card in the open receives the two together.
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar({ coverage: 0.5, opticalDepth: 1 }));
+  const farCard = g(await centre()) / g(base);
+  console.log(`far cloud (coverage 0.5, optical depth 1): the card receives ${farCard.toFixed(3)} of the clear value (all light ${Math.exp(-0.5 / muS).toFixed(3)}, beam alone ${Math.exp(-2.25 / muS).toFixed(3)})`);
+  expect(farCard / Math.exp(-0.5 / muS)).toBeGreaterThan(0.94);
+  expect(farCard / Math.exp(-0.5 / muS)).toBeLessThan(1.06);
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar(null));
 
   // Near cloud shadow map (takes over from the far term inside its footprint), with the layer far above
@@ -212,8 +217,56 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   // The ground ABOVE the layer (top 5 m below it): a cloud underneath casts no shadow upwards.
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, top: -5, thickness: 8 }));
   expect(g(await centre()) / g(base)).toBeCloseTo(1, 3);
+  // A map that tells beam from diffuse light (alpha = beam optical depth / r = 4): the card still receives
+  // about exp(-0.5 / mu_s) of the clear value, now mostly from the cloud base.
+  const cloudAll = Math.exp(-0.5 / muS);
+  const cloudBeam = Math.exp(-2 / muS);
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, beam: 4 }));
+  const nearCard = g(await centre()) / g(base);
+  expect(nearCard / cloudAll).toBeGreaterThan(0.94);
+  expect(nearCard / cloudAll).toBeLessThan(1.06);
+  // Under that cloud about a third of the clear sky is seen: the sky table counts with mix(0.35, 1, beam).
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(20000));
+  const skyUnderCloud = g(await centre()) - nearCard * g(base);
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear(null));
+  const skyClear = g(await centre()) - g(base);
+  await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(null));
+  expect(skyUnderCloud / skyClear).toBeCloseTo(0.35 + 0.65 * cloudBeam, 2);
   expect(g(await centre())).toBeCloseTo(g(base), 4);
+
+  // Beam and cloud base apart: the slab in the cast shadow of the tower (sun 60 degrees up in the south, the
+  // tower 8 m tall at (-7, -4): its shadow reaches 4.6 m north) against the slab in the sun beside it.
+  const lookDown = (x: number, y: number): Promise<void> => page.evaluate(([px, py]) => window.__rc!.lookAt([px!, py!, 0.02], 0, 89.9, 6), [x, y]);
+  await lookDown(-5, -1.5);
+  await waitIdle(page, 12);
+  const slabSun = g(await centre());
+  await lookDown(-7, -1.5);
+  await waitIdle(page, 12);
+  const shadowClear = g(await centre()) / slabSun;
+  // A map without the beam channel casts all of its shadow in the beam: nothing reaches the cast shadow.
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5 }));
+  const shadowPlain = g(await centre()) / slabSun;
+  // With it, the cast shadow is filled by the cloud base: (all - beam) of the clear sunlit value, less the
+  // ambient occlusion beside the tower.
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, beam: 4 }));
+  const shadowCloud = g(await centre()) / slabSun;
+  await lookDown(-5, -1.5);
+  await waitIdle(page, 12);
+  const sunCloud = g(await centre()) / slabSun;
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear(null));
+  console.log(
+    `cloud light (optical depth 0.5 as the ground sees it, 4 times that in the beam, sun 60 degrees up): all ${cloudAll.toFixed(3)}, beam ${cloudBeam.toFixed(3)}; card ${nearCard.toFixed(3)} of clear; ` +
+      `slab in the sun ${sunCloud.toFixed(3)}, in the tower's cast shadow ${shadowCloud.toFixed(3)} (clear sky ${shadowClear.toFixed(4)}, map without the beam channel ${shadowPlain.toFixed(4)}); sky table under the cloud ${(skyUnderCloud / skyClear).toFixed(3)} of clear`,
+  );
+  expect(shadowClear).toBeLessThan(0.01);
+  expect(shadowPlain).toBeLessThan(0.01);
+  expect(shadowCloud).toBeGreaterThan(0.8 * (cloudAll - cloudBeam));
+  expect(shadowCloud).toBeLessThan(1.05 * (cloudAll - cloudBeam));
+  // The sunlit slab has the beam on top of that: the cast shadow is soft-edged in brightness, 5 to 1 no more.
+  expect(sunCloud - shadowCloud).toBeGreaterThan(0.8 * cloudBeam);
+  expect(sunCloud - shadowCloud).toBeLessThan(1.3 * cloudBeam);
+  await page.evaluate(() => window.__rc!.lookAt(window.__rc!.stand!.whiteCard.pos, 0, 89.9, 6));
+  await waitIdle(page, 12);
 
   // Sky irradiance on a horizontal Lambert surface: + albedo x E / pi.
   await page.evaluate(() => window.__rc!.probes.inputs.setSkyIrradiance(20000));
@@ -256,6 +309,22 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   console.log(`standard material: env.sh9 alone ${stepEnv.toFixed(5)}, env.sh9 + sky table ${stepEnvSky.toFixed(5)}; no ambient ${g(stepBase).toFixed(5)}, sky table alone ${stepSky.toFixed(5)}`);
   expect(Math.abs(stepEnvSky - stepEnv)).toBeLessThan(1e-4 * stepEnv);
   expect(Math.abs(stepSky - g(stepBase))).toBeLessThan(1e-4 * g(stepBase));
+  // Under cloud (request atmosphere-clouds-6, addendum) a probe-lit surface takes the cloud base as well:
+  // the probe is captured at the camera and does not hold the cloud over this surface. The step's top
+  // receives the share exp(-0.5 / mu_s) of its clear value (beam + cloud base), not the beam alone, and of
+  // the probe's light it keeps mix(0.35, 1, beam).
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, beam: 4 }));
+  const stepCloud = g(await centre()) / g(stepBase);
+  await page.evaluate(() => window.__rc!.probes.inputs.setEnvIrradiance(30000));
+  const stepCloudAmb = g(await centre()) - stepCloud * g(stepBase);
+  await page.evaluate(() => {
+    window.__rc!.probes.inputs.setEnvIrradiance(null);
+    window.__rc!.probes.inputs.setCloudNear(null);
+  });
+  console.log(`standard material under the cloud: ${stepCloud.toFixed(3)} of its clear value (all light ${Math.exp(-0.5 / muS).toFixed(3)}, beam alone ${Math.exp(-2 / muS).toFixed(3)}); the probe's light ${(stepCloudAmb / stepAmb).toFixed(3)} of its clear value`);
+  expect(stepCloud / Math.exp(-0.5 / muS)).toBeGreaterThan(0.9);
+  expect(stepCloud / Math.exp(-0.5 / muS)).toBeLessThan(1.1);
+  expect(stepCloudAmb / stepAmb).toBeCloseTo(0.35 + 0.65 * Math.exp(-2 / muS), 2);
 
   // The same for cloth: the standing panel (albedo 0.42 in green) seen from the east takes the probe, not the sky table.
   await page.evaluate(() => window.__rc!.lookAt([-9, 0, 1.55], 90, 0, 4));

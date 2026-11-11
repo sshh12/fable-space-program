@@ -199,11 +199,19 @@ fn envIrradiance(n: vec3f) -> vec3f {
   var lit = vec3f(0.0);
   let muS = dot(s.up, sunDir);
   var vis = sunVisibility(pos, sunDir);
+  // Clouds (request atmosphere-clouds-6): x = share of the sun's illuminance in the direct beam, y = share
+  // that arrives at all. The beam is the sun term; y - x comes from the cloud base and is ambient light.
+  // (Looked up at night as well: the share of the sky that is seen under cloud must not jump at sunset.)
+  var cl = vec2f(1.0);
+  if (bi >= 0) { cl = cloudLight(pos, bi, s.up, r, sunDir); }
+  var cloudBase = vec3f(0.0);
   if (vis > 0.0) {
     var sunE = frame.sunIlluminance.rgb * vis;
     if (bi >= 0) {
       sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
-      sunE *= cloudShadow(pos, bi, s.up, r, sunDir);
+      // Illuminance of a horizontal surface by the cloud base: what the cloud passes on diffusely.
+      cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
+      sunE *= cl.x;
     }
     // Cloth is lit on both sides (wrapped diffuse, light shining through), so its cascade lookup uses the
     // normal turned towards the sun: whatever stands between the fabric and the sun shadows it whichever way
@@ -223,6 +231,7 @@ fn envIrradiance(n: vec3f) -> vec3f {
   // terrain and water take the table, standard and cloth the probe, regolith the table on a body that
   // has one and the probe on an airless body.
   var amb: AmbientInput;
+  let skyShare = mix(0.35, 1.0, cl.x);
   amb.skyIrradiance = vec3f(0.0);
   var skyHorizontal = vec3f(0.0);
   var hasSkyTable = false;
@@ -233,8 +242,11 @@ fn envIrradiance(n: vec3f) -> vec3f {
     if (layer >= 0 && r < b.prevCenter.w) {
       let uv = skyIrradianceUvFromRMuS(max(r, bodyRadius), muS, bodyRadius, b.prevCenter.w);
       skyHorizontal = textureSampleLevel(skyIrradianceLut, linearClamp, uv, layer, 0.0).rgb;
-      amb.skyIrradiance = skyHorizontal * (0.5 + 0.5 * dot(s.n, s.up));
     }
+    // Under cloud about a third of the blue sky is still seen (between and beside the clouds), and the
+    // cloud base adds its white light. Both are diffuse: no cast shadows, ambient occlusion applies.
+    skyHorizontal = skyHorizontal * skyShare + cloudBase;
+    amb.skyIrradiance = skyHorizontal * (0.5 + 0.5 * dot(s.n, s.up));
   }
   let refl = reflect(-s.v, s.n);
   let NoV = max(dot(s.n, s.v), 1e-4);
@@ -244,11 +256,15 @@ fn envIrradiance(n: vec3f) -> vec3f {
   amb.envSpecularCoat = vec3f(0.0);
   amb.skyReflection = vec3f(0.0);
   if (s.materialId == MATERIAL_STANDARD || s.materialId == MATERIAL_CLOTH || (s.materialId == MATERIAL_REGOLITH && !hasSkyTable)) {
-    amb.envIrradiance = envIrradiance(s.n);
+    // The probe is captured at the camera: it does not hold the cloud base over THIS surface. Under cloud
+    // the surface sees a third of what the probe shows, and the cloud base as a uniform white sky over it
+    // (irradiance cloudBase on a horizontal face, luminance cloudBase / pi in a mirror that looks up).
+    amb.envIrradiance = envIrradiance(s.n) * skyShare + cloudBase * (0.5 + 0.5 * dot(s.n, s.up));
     if (s.materialId == MATERIAL_STANDARD) {
       let mips = f32(textureNumLevels(envProbeCube)) - 1.0;
-      amb.envSpecular = textureSampleLevel(envProbeCube, linearClamp, refl, s.roughness * mips).rgb;
-      if (s.clearcoat > 0.0) { amb.envSpecularCoat = textureSampleLevel(envProbeCube, linearClamp, refl, s.clearcoatRoughness * mips).rgb; }
+      let base = cloudBase * ((0.5 + 0.5 * dot(refl, s.up)) / PI);
+      amb.envSpecular = textureSampleLevel(envProbeCube, linearClamp, refl, s.roughness * mips).rgb * skyShare + base;
+      if (s.clearcoat > 0.0) { amb.envSpecularCoat = textureSampleLevel(envProbeCube, linearClamp, refl, s.clearcoatRoughness * mips).rgb * skyShare + base; }
     }
   } else if (bi >= 0) {
     // Water and terrain reflect the sky: the camera's sky-view table nearby, the local sky irradiance far away.
