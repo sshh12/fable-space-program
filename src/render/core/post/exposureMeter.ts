@@ -47,7 +47,7 @@ export class ExposureMeter {
   private histogram = new Uint32Array(HISTOGRAM_BINS);
   private histogramNear = new Uint32Array(HISTOGRAM_BINS);
   private sampleCount = 1;
-  private result: MeterResult = { targetEv100: 0, litFraction: 0, histogramWeight: 0, evHistogram: 0, evPrior: 0 };
+  private result: MeterResult = { targetEv100: 0, litFraction: 0, histogramWeight: 0, evHistogram: 0, evPrior: 0, outsideFraction: 0, evOutside: 0, outsideWeight: 0 };
   private sunVis = 1;
 
   constructor(

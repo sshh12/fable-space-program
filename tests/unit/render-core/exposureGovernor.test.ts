@@ -16,6 +16,8 @@ import {
   INTERIOR_HIGHLIGHT_CAP,
   INTERIOR_HIGHLIGHT_MAX_EV,
   INTERIOR_NIGHT_KEY_EV,
+  INTERIOR_WINDOW_FROM,
+  INTERIOR_WINDOW_FULL,
   LUMINANCE_FLOOR,
   luminanceBin,
   SUNLIT_HIGHLIGHT_MAX_EV,
@@ -191,11 +193,12 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     const base = meter(h).targetEv100;
     expect(meter(h, { exposureCompensation: 1 }).targetEv100).toBeCloseTo(base - 1, 9);
     expect(meter(new Uint32Array(HISTOGRAM_BINS), { litObjectInView: false, minEv100: 4 }).targetEv100).toBe(4);
-    // Cabin: a dim interior (near histogram) with a blown-out window in the full histogram.
+    // Cabin: a dim interior (near histogram) with blown-out windows in the full histogram (the seat's
+    // view: under a tenth of the frame; from there up what is seen through them counts, request cockpit-7).
     const near = new Uint32Array(HISTOGRAM_BINS);
     fill(near, 5, 40, 0.7 * N);
     const all = new Uint32Array(near);
-    fill(all, 20000, 40000, 0.2 * N);
+    fill(all, 20000, 40000, 0.08 * N);
     const interior = meter(all, { histogramNear: near, kind: 'interior' });
     const exterior = meter(all, { histogramNear: near, kind: 'external' });
     expect(interior.targetEv100).toBeLessThan(exterior.targetEv100 - 5);
@@ -532,3 +535,88 @@ describe('Hapke inversion table and black-body table', () => {
     expect(c.color[0]).toBeGreaterThan(c.color[2]);
   });
 });
+
+describe('interior metering: what fills the frame through the windows (request cockpit-7)', () => {
+  /** A cabin by day (20-120 cd/m^2 over `cabin` of the frame) and lit geometry beyond it over `far` of the frame. */
+  const view = (cabin: number, far: number, farLo = 2000, farHi = 9000): { all: Uint32Array; near: Uint32Array } => {
+    const near = new Uint32Array(HISTOGRAM_BINS);
+    fill(near, 20, 120, cabin * N);
+    const all = Uint32Array.from(near);
+    if (far > 0) fill(all, farLo, farHi, far * N);
+    return { all, near };
+  };
+  const interior = (v: { all: Uint32Array; near: Uint32Array }, over: Partial<MeterInput> = {}): ReturnType<typeof meterExposure> => meter(v.all, { histogramNear: v.near, kind: 'interior', ...over });
+  const shown = (luminance: number, ev: number): number => luminance * exposureFromEv100(ev);
+
+  it('the seat view is metered on the cabin alone: windows under a tenth of the frame change nothing', () => {
+    expect(INTERIOR_WINDOW_FROM).toBe(0.1);
+    expect(INTERIOR_WINDOW_FULL).toBe(0.4);
+    const alone = interior(view(0.9, 0));
+    for (const far of [0.02, 0.05, 0.08, 0.1]) {
+      const r = interior(view(0.9, far));
+      expect(r.targetEv100).toBe(alone.targetEv100);
+      expect(r.outsideWeight).toBe(0);
+      expect(r.outsideFraction).toBeCloseTo(far, 3);
+    }
+    // The windows blow out there: sunlit cloud tops at 9,000 cd/m^2 are far above white.
+    expect(shown(9000, alone.targetEv100)).toBeGreaterThan(10);
+  });
+
+  it('the Earth filling the frame through a window is exposed as an exterior camera exposes it; the cabin goes to a silhouette', () => {
+    const v = view(0.5, 0.45);
+    const r = interior(v);
+    // What an exterior camera makes of the far pixels alone.
+    const farOnly = new Uint32Array(HISTOGRAM_BINS);
+    for (let i = 0; i < HISTOGRAM_BINS; i++) farOnly[i] = v.all[i]! - v.near[i]!;
+    const outside = meter(farOnly).targetEv100;
+    expect(r.outsideWeight).toBe(1);
+    expect(r.evOutside).toBeCloseTo(outside, 9);
+    expect(r.targetEv100).toBeCloseTo(outside, 9);
+    // Day side a stop or so under sunny 16 (the exterior key renders day bright): clouds below white, ocean
+    // and land in the mid-tones ...
+    expect(r.targetEv100).toBeLessThan(sunny16Ev(SUN));
+    expect(r.targetEv100).toBeGreaterThan(sunny16Ev(SUN) - 1.6);
+    expect(shown(9000, r.targetEv100)).toBeLessThan(1.2);
+    expect(shown(3000, r.targetEv100)).toBeGreaterThan(0.1);
+    // ... and the cabin around the window is five stops and more under mid-grey.
+    expect(shown(60, r.targetEv100)).toBeLessThan(0.18 / 32);
+    // Without the rule the same frame is metered on the cabin and the Earth is a white shape.
+    const cabinOnly = interior(view(0.5, 0)).targetEv100;
+    expect(r.targetEv100 - cabinOnly).toBeGreaterThan(5);
+    expect(shown(3000, cabinOnly)).toBeGreaterThan(4);
+  });
+
+  it('the weight rises smoothly between a tenth and four tenths of the frame, and the target with it', () => {
+    let last = interior(view(0.5, 0.1)).targetEv100;
+    for (const far of [0.15, 0.2, 0.25, 0.3, 0.35, 0.4]) {
+      const r = interior(view(0.5, far));
+      expect(r.targetEv100).toBeGreaterThan(last);
+      last = r.targetEv100;
+    }
+    const half = interior(view(0.5, 0.25));
+    expect(half.outsideWeight).toBeCloseTo(0.5, 2);
+    const cabinOnly = interior(view(0.5, 0)).targetEv100;
+    expect(half.targetEv100).toBeCloseTo(cabinOnly + 0.5 * (half.evOutside - cabinOnly), 6);
+    expect(interior(view(0.5, 0.6)).targetEv100).toBeCloseTo(interior(view(0.5, 0.4)).targetEv100, 1);
+  });
+
+  it('the outside only ever stops the camera down: a night side in the window leaves a lit cabin alone', () => {
+    const lit = interior(view(0.5, 0));
+    // City lights and moonlit cloud at 0.02-0.5 cd/m^2 over 45 % of the frame, the sun hidden by the Earth.
+    const night = { sunVisibility: 0 };
+    const withNight = interior(view(0.5, 0.45, 0.02, 0.5), night);
+    expect(withNight.outsideWeight).toBe(1);
+    expect(withNight.evOutside).toBeLessThan(lit.targetEv100 - 3);
+    expect(withNight.targetEv100).toBe(interior(view(0.5, 0), night).targetEv100);
+  });
+
+  it('exposure compensation and the floor apply after it; an exterior view of the same pixels is unchanged', () => {
+    const v = view(0.5, 0.45);
+    expect(interior(v, { exposureCompensation: 1 }).targetEv100).toBeCloseTo(interior(v).targetEv100 - 1, 9);
+    expect(interior(v, { minEv100: 16.5 }).targetEv100).toBe(16.5);
+    const exterior = meter(v.all, { histogramNear: v.near });
+    expect(exterior.outsideWeight).toBe(0);
+    expect(exterior.targetEv100).toBe(meter(v.all).targetEv100);
+  });
+});
+

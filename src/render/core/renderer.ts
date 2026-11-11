@@ -71,6 +71,10 @@ export interface ExposureInfo {
   histogramWeight: number;
   evPrior: number;
   evHistogram: number;
+  /** Interior views (request cockpit-7): share of the frame that is lit geometry beyond the cabin, its exterior EV100, its weight. */
+  outsideFraction: number;
+  evOutside: number;
+  outsideWeight: number;
   sunVisibility: number;
   override: number | null;
 }
@@ -919,7 +923,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     exposureInfo() {
       const m = meter.last();
-      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, sunVisibility: meter.lastSunVisibility(), override: evOverride };
+      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride };
     },
     resetPerf: () => perf.reset(),
     passStats: () => perf.passStats(),

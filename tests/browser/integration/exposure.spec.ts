@@ -120,3 +120,96 @@ test('the sun entering a dark-adapted frame saturates at HDR_MAX without NaN, an
   expect(settled.ev100).toBeGreaterThan(dark!.ev100 + 8);
   await expectClean(page, pageLog, info);
 });
+
+test('from the seat the windows blow out; leaning to the window the Earth fills the frame and is exposed as from outside (request cockpit-7)', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lowOrbit&roll=180&hud=0');
+  requireFeatures(test, info, ['vehicle', 'cockpit']);
+  interface WindowView {
+    ev100: number;
+    sunny16: number;
+    outsideFraction: number;
+    outsideWeight: number;
+    evOutside: number;
+    /** Pre-exposed luminance (1 = display white before the tone curve) of what is seen through the windows and of the cabin. */
+    outside: { mean: number; over: number };
+    cabin: { mean: number };
+  }
+  /** The seat view aimed at the window with the Earth in it, the eye `lean` of the way to the window. */
+  const view = (lean: number): Promise<WindowView | null> =>
+    page.evaluate(async (l) => {
+      if (!window.__integration!.sitAtWindowBelow(l)) return null;
+      window.__lab!.camera.settings.fovY = (55 * Math.PI) / 180;
+      const r = window.__lab!.renderer;
+      for (let i = 0; i < 60; i++) {
+        await window.__test!.waitFrames(30);
+        const e = r.exposureInfo();
+        if (Math.abs(e.ev100 - e.targetEv100) < 0.03) break;
+      }
+      await window.__test!.waitFrames(30);
+      const e = r.exposureInfo();
+      const depth = await r.readDepth();
+      const img = await r.readHdrPixels('hdr');
+      if (img.width !== depth.width || img.height !== depth.height) throw new Error('depth and colour targets differ in size');
+      // Reversed z with the interior near plane of 0.1 m: geometry beyond the meter's interior range of 8 m.
+      const farBelow = 0.1 / 8;
+      let far = 0;
+      let farSum = 0;
+      let farOver = 0;
+      let near = 0;
+      let nearSum = 0;
+      for (let i = 0; i < depth.data.length; i++) {
+        const z = depth.data[i]!;
+        if (z === 0) continue;
+        const y = 0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!;
+        if (z < farBelow) {
+          far++;
+          farSum += y;
+          if (y > 2) farOver++;
+        } else {
+          near++;
+          nearSum += y;
+        }
+      }
+      return {
+        ev100: e.ev100,
+        sunny16: Math.log2(r.frameContext!.sun.illuminance / (1.2 * Math.PI)),
+        outsideFraction: e.outsideFraction,
+        outsideWeight: e.outsideWeight,
+        evOutside: e.evOutside,
+        outside: { mean: farSum / Math.max(1, far), over: farOver / Math.max(1, far) },
+        cabin: { mean: nearSum / Math.max(1, near) },
+      };
+    }, lean);
+
+  const seat = await view(0);
+  expect(seat, 'a cockpit seat and a window with the Earth in it').not.toBeNull();
+  await save(page, 'exposure-window-from-seat');
+  const leaning = await view(0.85);
+  await save(page, 'exposure-window-leaning');
+  const back = await view(0);
+  const line = (v: WindowView): string =>
+    `EV100 ${v.ev100.toFixed(2)}, outside ${(100 * v.outsideFraction).toFixed(1)} % of the frame (weight ${v.outsideWeight.toFixed(2)}), outside shown at ${v.outside.mean.toFixed(2)} (${(100 * v.outside.over).toFixed(1)} % above 2), cabin at ${v.cabin.mean.toFixed(4)}`;
+  console.log(`window metering [${info.loaded.join(', ')}], sunny 16 = ${seat!.sunny16.toFixed(2)}: from the seat ${line(seat!)}; leaning to the window ${line(leaning!)}; back in the seat ${line(back!)}`);
+  record('f.windowMetering', { loaded: info.loaded, seat, leaning, back });
+  // From the seat the windows are a twentieth of the frame: the cabin is metered, what shows through them is far above white.
+  expect(seat!.outsideFraction).toBeLessThan(0.1);
+  expect(seat!.outsideWeight).toBe(0);
+  expect(seat!.ev100).toBeLessThan(8);
+  expect(seat!.cabin.mean).toBeGreaterThan(0.03);
+  expect(seat!.outside.over).toBeGreaterThan(0.9);
+  // Leaning to the window the Earth fills the frame: exposed as an exterior camera exposes it (the day side a
+  // stop or so under sunny 16), clouds below white, and the window frame a silhouette.
+  expect(leaning!.outsideFraction).toBeGreaterThan(0.4);
+  expect(leaning!.outsideWeight).toBe(1);
+  expect(leaning!.ev100).toBeGreaterThan(leaning!.sunny16 - 1.8);
+  expect(leaning!.ev100).toBeLessThan(leaning!.sunny16 + 0.5);
+  expect(leaning!.outside.mean).toBeGreaterThan(0.06);
+  expect(leaning!.outside.mean).toBeLessThan(0.7);
+  expect(leaning!.outside.over).toBeLessThan(0.02);
+  expect(leaning!.cabin.mean).toBeLessThan(0.02);
+  // Back in the seat the cabin is readable again.
+  expect(back!.outsideWeight).toBe(0);
+  expect(back!.cabin.mean).toBeGreaterThan(0.03);
+  await expectClean(page, pageLog, info);
+});
+

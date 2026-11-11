@@ -80,6 +80,16 @@ export const INTERIOR_NIGHT_HIGH = 64;
  */
 export const INTERIOR_HIGHLIGHT_CAP = 48;
 export const INTERIOR_HIGHLIGHT_MAX_EV = 1.25;
+/**
+ * What fills the frame through the windows (request cockpit-7). The lit geometry BEYOND INTERIOR_RANGE (the
+ * Earth, the Moon, the pad: `histogram` minus `histogramNear`) is metered as an exterior camera would meter
+ * it, and stops the interior exposure down towards that value by a weight that goes from 0 at
+ * INTERIOR_WINDOW_FROM to 1 at INTERIOR_WINDOW_FULL of the frame. It never opens the exposure (a night
+ * side in the window leaves a lit cabin alone), and the seat's normal view (windows 5-8 % of the frame)
+ * is metered on the cabin alone: there the windows blow out.
+ */
+export const INTERIOR_WINDOW_FROM = 0.1;
+export const INTERIOR_WINDOW_FULL = 0.4;
 /** Adaptation speed, EV per second: fast when the scene gets brighter, slower when it gets darker. */
 export const ADAPT_UP = 2.5;
 export const ADAPT_DOWN = 0.8;
@@ -183,7 +193,17 @@ export interface MeterResult {
   histogramWeight: number;
   evHistogram: number;
   evPrior: number;
+  /**
+   * Interior views: the part of the frame that is lit geometry beyond INTERIOR_RANGE, the EV100 an exterior
+   * camera would choose for it, and the weight with which it stops the cabin's exposure down (0 elsewhere).
+   */
+  outsideFraction: number;
+  evOutside: number;
+  outsideWeight: number;
 }
+
+/** Scratch: the far histogram of an interior view. */
+const FAR = new Float64Array(HISTOGRAM_BINS);
 
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -201,7 +221,9 @@ const smooth = (a: number, b: number, x: number): number => {
  * cockpit-5.md, cockpit-6.md): a dim cabin out of the sun gets a darker key (night is displayed as night), and the cabin's highlights
  * count with a cap twelve times looser than outside and a bound on how far they may stop the camera down,
  * so that the cabin is exposed between its shade and its sun patch, as a photograph taken inside is. The
- * windows are farther than the range and blow out.
+ * windows are farther than the range and blow out, until what is seen through them fills a tenth of the
+ * frame and more: then the exposure is stopped down towards what an exterior camera would choose for it
+ * (INTERIOR_WINDOW_FROM / _FULL, docs/requests/cockpit-7.md), and the window frame goes to a silhouette.
  *
  * The histogram is taken BEFORE the transparent pass (request vfx-4): it holds what is lit (terrain, water,
  * clouds, hulls, and whatever a plume lights), not what emits in front of it. A flame, a splash crown or a
@@ -238,9 +260,10 @@ export function meterExposure(m: MeterInput): MeterResult {
   const somethingLit = m.litObjectInView || all.litFraction > LIT_PRESENT;
   const evSun = sunny16Ev(m.sunIlluminance * m.sunVisibility);
   // Highlight protection under the sun ends half a stop above sunny 16 (not in a cabin, not without the sun).
-  const sunlit = !interior && somethingLit ? smooth(SUNLIT_VISIBILITY_MIN, SUNLIT_VISIBILITY_FULL, m.sunVisibility) : 0;
+  const sunlitOutside = somethingLit ? smooth(SUNLIT_VISIBILITY_MIN, SUNLIT_VISIBILITY_FULL, m.sunVisibility) : 0;
+  const sunlit = interior ? 0 : sunlitOutside;
   const evSunlitMax = evSun + SUNLIT_HIGHLIGHT_MAX_EV;
-  const underTheSun = (evHighlight: number): number => (sunlit > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * sunlit : evHighlight);
+  const underTheSun = (evHighlight: number, weight = sunlit): number => (weight > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * weight : evHighlight);
   let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
   if (emitterCoverage > 0) {
     const evEmitter = underTheSun(Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
@@ -265,10 +288,31 @@ export function meterExposure(m: MeterInput): MeterResult {
     }
     w = smooth(LIT_PRIOR_ONLY, evHistogram > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
   }
-  let ev = evPrior + (evHistogram - evPrior) * w - m.exposureCompensation;
+  let ev = evPrior + (evHistogram - evPrior) * w;
+
+  // What fills the frame through the windows stops the cabin's exposure down (request cockpit-7).
+  let outsideFraction = 0;
+  let evOutside = ev;
+  let outsideWeight = 0;
+  if (interior) {
+    for (let i = 0; i < HISTOGRAM_BINS; i++) FAR[i] = Math.max(0, m.histogram[i]! - m.histogramNear[i]!);
+    const far = histogramStats(FAR, m.sampleCount);
+    outsideFraction = far.litFraction;
+    outsideWeight = far.mean > 0 ? smooth(INTERIOR_WINDOW_FROM, INTERIOR_WINDOW_FULL, far.litFraction) : 0;
+    if (outsideWeight > 0) {
+      // The exterior rule on the far pixels alone (from a tenth of the frame up the histogram decides by
+      // itself there): arithmetic mean to mid-grey with the compensation curve, the highlight cap, the
+      // bound under the sun.
+      const evMean = ev100ForMidGrey(far.mean);
+      evOutside = underTheSun(Math.max(evMean - exposureCompensationCurve(evMean), Math.log2(far.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))), sunlitOutside);
+      if (evOutside > ev) ev += (evOutside - ev) * outsideWeight;
+    }
+  }
+
+  ev -= m.exposureCompensation;
   ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));
   if (m.minEv100 !== null) ev = Math.max(ev, m.minEv100);
-  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior };
+  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight };
 }
 
 /**

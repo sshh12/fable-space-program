@@ -128,9 +128,11 @@ export interface IntegrationLab {
   /**
    * Sit in the cockpit seat and aim at the cabin window through which the body below shows most: the window
    * whose line of sight from the seat dips furthest below the local horizon. Returns that window's id and
-   * the dip in degrees, or null without a cockpit model (no cockpit package, placeholder parts).
+   * the dip in degrees, or null without a cockpit model (no cockpit package, placeholder parts). With
+   * `lean` (0..0.95) the eye leaves the seat by that part of the way to the window's centre, still
+   * aimed at it: a crew member leaning to the window, which then fills the frame.
    */
-  sitAtWindowBelow(): { window: string; dipDeg: number } | null;
+  sitAtWindowBelow(lean?: number): { window: string; dipDeg: number } | null;
   /** Eye points of the seats of the cockpit camera's command part: id and position in the part frame, m. */
   cockpitSeats(): { id: string; pos: Vec3 }[];
   /** The seat view aimed at a point of the cabin (part frame, m). False without a cockpit seat. */
@@ -551,6 +553,33 @@ async function boot(): Promise<void> {
     };
   };
 
+  /** The seat view (interior), the eye moved by `eyePart` (part frame, m) from the seat's eye point. */
+  const seatView = (yawDeg: number, pitchDeg: number, eyePart: Vec3 | null): boolean => {
+    const find = (snapshot: SimSnapshot): { positionRoot: Vec3; qViewToRoot: ReturnType<typeof lookRotation> } | null => {
+      const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+      const camera = Object.values(defs.vehicles).find((d) => v?.parts.some((p) => p.instanceId === d.cameras.cockpit.part))?.cameras.cockpit;
+      const part = v?.parts.find((p) => p.instanceId === camera?.part);
+      if (!v || !camera || !part) return null;
+      const seats = defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : []));
+      const seat = seats?.find((s) => s.id === camera.seat);
+      if (!seat) return null;
+      const L = v3.normalize(v3.fromTuple(seat.lookDir));
+      const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
+      const qLook = quat.mul(quat.fromAxisAngle(v3.unitY(), -yawDeg * DEG), quat.fromAxisAngle(v3.unitX(), pitchDeg * DEG));
+      return {
+        positionRoot: v3.add(v.rRoot, quat.rotate(v.q, v3.add(part.localPos, quat.rotate(part.localRot, eyePart ? v3.add(v3.fromTuple(seat.pos), eyePart) : v3.fromTuple(seat.pos))))),
+        qViewToRoot: quat.normalize(quat.mul(quat.mul(v.q, part.localRot), quat.mul(lookRotation(L, U), qLook))),
+      };
+    };
+    if (!find(app.snapshot())) return false;
+    place((snapshot) => {
+      const at = find(snapshot);
+      if (at) app.camera.spec = { type: 'free', ...at };
+    });
+    app.camera.settings.kind = 'interior';
+    return true;
+  };
+
   const lab: IntegrationLab = {
     app,
     available: availablePackages(),
@@ -661,29 +690,7 @@ async function boot(): Promise<void> {
       });
     },
     sitInCockpit(yawDeg = 0, pitchDeg = 0) {
-      const find = (snapshot: SimSnapshot): { positionRoot: Vec3; qViewToRoot: ReturnType<typeof lookRotation> } | null => {
-        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
-        const camera = Object.values(defs.vehicles).find((d) => v?.parts.some((p) => p.instanceId === d.cameras.cockpit.part))?.cameras.cockpit;
-        const part = v?.parts.find((p) => p.instanceId === camera?.part);
-        if (!v || !camera || !part) return null;
-        const seats = defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : []));
-        const seat = seats?.find((s) => s.id === camera.seat);
-        if (!seat) return null;
-        const L = v3.normalize(v3.fromTuple(seat.lookDir));
-        const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
-        const qLook = quat.mul(quat.fromAxisAngle(v3.unitY(), -yawDeg * DEG), quat.fromAxisAngle(v3.unitX(), pitchDeg * DEG));
-        return {
-          positionRoot: v3.add(v.rRoot, quat.rotate(v.q, v3.add(part.localPos, quat.rotate(part.localRot, v3.fromTuple(seat.pos))))),
-          qViewToRoot: quat.normalize(quat.mul(quat.mul(v.q, part.localRot), quat.mul(lookRotation(L, U), qLook))),
-        };
-      };
-      if (!find(app.snapshot())) return false;
-      place((snapshot) => {
-        const at = find(snapshot);
-        if (at) app.camera.spec = { type: 'free', ...at };
-      });
-      app.camera.settings.kind = 'interior';
-      return true;
+      return seatView(yawDeg, pitchDeg, null);
     },
     orbitVesselPoint(yawDeg, pitchDeg, distance, along = 0) {
       place((snapshot) => {
@@ -706,7 +713,7 @@ async function boot(): Promise<void> {
       const v = s.vessels.find((x) => x.id === s.activeVesselId);
       return v ? stackExtent(defs, v.parts) : null;
     },
-    sitAtWindowBelow() {
+    sitAtWindowBelow(lean = 0) {
       const c = cabin();
       if (!c || c.windows.length === 0) return null;
       let best: { window: string; dipDeg: number; centre: Vec3 } | null = null;
@@ -714,7 +721,10 @@ async function boot(): Promise<void> {
         const dip = -Math.asin(clampUnit(v3.dot(quat.rotate(c.qPart, v3.normalize(v3.sub(w.centre, c.eye))), c.up))) / DEG;
         if (!best || dip > best.dipDeg) best = { window: w.id, dipDeg: dip, centre: w.centre };
       }
-      if (!best || !lab.sitInCockpitAimedAt(best.centre)) return null;
+      if (!best) return null;
+      const d = v3.sub(best.centre, c.eye);
+      const n = v3.normalize(d);
+      if (!seatView(Math.atan2(v3.dot(n, c.R), v3.dot(n, c.L)) / DEG, Math.asin(clampUnit(v3.dot(n, c.U))) / DEG, lean > 0 ? v3.scale(d, Math.min(lean, 0.95)) : null)) return null;
       return { window: best.window, dipDeg: best.dipDeg };
     },
     cockpitSeats: () => cabin()?.seats.map((x) => ({ id: x.id, pos: v3.fromTuple(x.pos) })) ?? [],
