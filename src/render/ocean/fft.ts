@@ -1,14 +1,14 @@
 /**
- * GPU side of the wave cascades: uploads the initial spectra once, then per frame (only while the near field
- * is active) evolves them, runs the inverse FFTs, assembles displacement / derivatives / foam into texture
- * arrays (one layer per cascade, full mip chain) and keeps the previous frame's displacement for motion
- * vectors. Published as 'ocean.displacement' and 'ocean.derivatives'.
+ * GPU side of the wave cascades: uploads the initial spectra once, then per frame (only while waves are drawn)
+ * evolves them, runs the inverse FFTs, assembles displacement / derivatives / foam into texture arrays (one layer
+ * per cascade, then the long-wave normals layer LONG_LAYER; full mip chain) and keeps the previous frame's
+ * displacement for motion vectors. Published as 'ocean.displacement' and 'ocean.derivatives'.
  */
 import type { RenderContext } from '@/core/contracts/render';
 import { coreOf } from '@/render/core';
 import type { OceanCascadeSet } from './cascades';
 import type { OceanTunables } from './params';
-import { CASCADE_COUNT, CASCADE_MIPS, FFT_SIZE } from './spectrum';
+import { CASCADE_MIPS, FFT_LAYERS, FFT_SIZE } from './spectrum';
 import { FFT_COLUMNS_WGSL, FFT_MIP_WGSL, FFT_ROWS_WGSL, FFT_SPECTRUM_WGSL } from './shaders/fftWgsl';
 
 export class OceanFft {
@@ -23,7 +23,7 @@ export class OceanFft {
   /** Index of the foam texture written by the latest update (the one to sample). */
   foamCurrent = 0;
   private readonly params: GPUBuffer;
-  private readonly paramData = new Float32Array(16);
+  private readonly paramData = new Float32Array(20);
   private readonly h0: GPUBuffer;
   private readonly omega: GPUBuffer;
   private readonly work: GPUBuffer;
@@ -46,7 +46,7 @@ export class OceanFft {
     const core = coreOf(ctx);
     const n = FFT_SIZE;
     const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
-    const texDesc = (label: string): GPUTextureDescriptor => ({ label, format: 'rgba16float', size: [n, n, CASCADE_COUNT], mipLevelCount: CASCADE_MIPS, usage });
+    const texDesc = (label: string): GPUTextureDescriptor => ({ label, format: 'rgba16float', size: [n, n, FFT_LAYERS], mipLevelCount: CASCADE_MIPS, usage });
     this.disp = core.createTextureChecked(texDesc('ocean.displacement'));
     this.dispPrev = core.createTextureChecked(texDesc('ocean.displacementPrev'));
     this.deriv = core.createTextureChecked(texDesc('ocean.derivatives'));
@@ -57,10 +57,11 @@ export class OceanFft {
     this.derivView = arr(this.deriv);
     this.foamViews = [arr(this.foam[0]), arr(this.foam[1])];
 
-    // Initial spectra and quantised dispersion indices, one block per cascade.
-    const h0 = new Float32Array(CASCADE_COUNT * n * n * 4);
-    const om = new Float32Array(CASCADE_COUNT * n * n);
-    cascades.spectra.forEach((s, c) => {
+    // Initial spectra and quantised dispersion indices, one block per layer (the cascades, then the long waves).
+    const layers = [...cascades.spectra, cascades.long];
+    const h0 = new Float32Array(FFT_LAYERS * n * n * 4);
+    const om = new Float32Array(FFT_LAYERS * n * n);
+    layers.forEach((s, c) => {
       h0.set(s.h0, c * n * n * 4);
       om.set(s.omegaIndex, c * n * n);
     });
@@ -68,8 +69,8 @@ export class OceanFft {
     device.queue.writeBuffer(this.h0, 0, h0);
     this.omega = device.createBuffer({ label: 'ocean.omegaIndex', size: om.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.omega, 0, om);
-    this.work = device.createBuffer({ label: 'ocean.fftWork', size: CASCADE_COUNT * 4 * n * n * 8, usage: GPUBufferUsage.STORAGE });
-    this.params = device.createBuffer({ label: 'ocean.fftParams', size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.work = device.createBuffer({ label: 'ocean.fftWork', size: FFT_LAYERS * 4 * n * n * 8, usage: GPUBufferUsage.STORAGE });
+    this.params = device.createBuffer({ label: 'ocean.fftParams', size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
     const C = GPUShaderStage.COMPUTE;
     const storageTex = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: C, storageTexture: { access: 'write-only', format: 'rgba16float', viewDimension: '2d-array' } });
@@ -143,12 +144,12 @@ export class OceanFft {
       return out;
     };
     this.mipGroups = [mips(0), mips(1)];
-    for (let c = 0; c < CASCADE_COUNT; c++) {
-      const sp = cascades.spectra[c]!;
-      this.paramData[8 + c] = sp.band.length;
-      // div D = lambda k H: its variance is lambda^2 x the slope variance; J ~ 1 + div D.
-      this.paramData[12 + c] = tunables.choppiness * Math.sqrt(sp.slopeVariance);
-    }
+    layers.forEach((sp, c) => {
+      // Layer c's patch length and Jacobian spread (div D = lambda k H: its variance is lambda^2 x the slope
+      // variance; J ~ 1 + div D) at [8 + c] / [12 + c], the fifth layer's at [16] / [17].
+      this.paramData[c < 4 ? 8 + c : 16] = sp.band.length;
+      this.paramData[c < 4 ? 12 + c : 17] = tunables.choppiness * Math.sqrt(sp.slopeVariance);
+    });
   }
 
   /** The near field switched off: the next update starts a new history (no stale previous frame or foam). */
@@ -164,7 +165,7 @@ export class OceanFft {
     const device = this.ctx.device;
     const n = FFT_SIZE;
     // The previous frame's displacement (all mips) for motion vectors.
-    if (this.primed) for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, CASCADE_COUNT]);
+    if (this.primed) for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, FFT_LAYERS]);
     const p = this.paramData;
     p[0] = tau;
     p[1] = this.tunables.choppiness;
@@ -178,23 +179,23 @@ export class OceanFft {
     const pass = encoder.beginComputePass({ label: 'ocean.fft', timestampWrites: timestamp });
     pass.setPipeline(this.spectrumPipe);
     pass.setBindGroup(0, this.spectrumGroup);
-    pass.dispatchWorkgroups(n / 16, n / 16, CASCADE_COUNT);
+    pass.dispatchWorkgroups(n / 16, n / 16, FFT_LAYERS);
     pass.setPipeline(this.rowsPipe);
     pass.setBindGroup(0, this.rowsGroup);
-    pass.dispatchWorkgroups(n, CASCADE_COUNT);
+    pass.dispatchWorkgroups(n, FFT_LAYERS);
     pass.setPipeline(this.colsPipe);
     pass.setBindGroup(0, this.colsGroups[k]);
-    pass.dispatchWorkgroups(n, CASCADE_COUNT);
+    pass.dispatchWorkgroups(n, FFT_LAYERS);
     pass.setPipeline(this.mipPipe);
     for (let m = 1; m < CASCADE_MIPS; m++) {
       pass.setBindGroup(0, this.mipGroups[k][m - 1]!);
       const size = n >> m;
-      pass.dispatchWorkgroups(Math.ceil(size / 8), Math.ceil(size / 8), CASCADE_COUNT);
+      pass.dispatchWorkgroups(Math.ceil(size / 8), Math.ceil(size / 8), FFT_LAYERS);
     }
     pass.end();
     this.foamCurrent = k;
     if (!this.primed) {
-      for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, CASCADE_COUNT]);
+      for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, FFT_LAYERS]);
       this.primed = true;
     }
   }

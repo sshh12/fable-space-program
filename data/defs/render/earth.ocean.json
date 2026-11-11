@@ -11,6 +11,8 @@
     "fetchM": 200000,
     "jonswapGamma": 3.3,
     "highPassWavelengthM": 25,
+    "longWaveDivisor": 5,
+    "longWaveSpreadDeg": 20,
     "choppiness": 0.85,
     "repeatPeriodS": 3600,
     "seed": 7,
@@ -39,6 +41,8 @@
     "unresolvedSlopeVariance": 0.0025,
     "windVariability": 0.35,
     "slickStrength": 0.35,
+    "gustVariability": 0.3,
+    "filamentStrength": 0.45,
     "taaReactive": 0.45
   }
 }

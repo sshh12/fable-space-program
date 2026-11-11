@@ -27,6 +27,12 @@ export interface OceanTunables {
   jonswapGamma: number;
   /** Wavelengths at or above this carry no FFT energy (they belong to the shared swell), m. */
   highPassWavelength: number;
+  /**
+   * Long-wave normals layer: patch length cascadePeriod / longWaveDivisor, drawn as two copies rotated by
+   * +-longWaveSpread (rad) about the wind, whose sum does not repeat.
+   */
+  longWaveDivisor: number;
+  longWaveSpread: number;
   choppiness: number;
   /** Dispersion is quantised to multiples of 2 pi / repeatPeriod so phases are exact in float32. */
   repeatPeriod: number;
@@ -59,6 +65,9 @@ export interface OceanTunables {
   /** Mesoscale variability of the slope variance (log amplitude) and the depth of slicks (0..1). */
   windVariability: number;
   slickStrength: number;
+  /** Gusts ("cat's paws", 0.3-1.5 km): log amplitude of the slope variance; calm filaments (~150 m wide): depth 0..1. */
+  gustVariability: number;
+  filamentStrength: number;
   /**
    * Largest reactive-mask value for the temporal resolve ('post.reactive', RENDER_API section 18), reached where
    * the shortest wave the pixel resolves changes its phase by much more than 0.1 rad per frame.
@@ -114,6 +123,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     fetch: need(file, p, 'fetchM', positive),
     jonswapGamma: need(file, p, 'jonswapGamma', positive),
     highPassWavelength: need(file, p, 'highPassWavelengthM', positive),
+    longWaveDivisor: need(file, p, 'longWaveDivisor', (v) => Number.isInteger(v) && v > 0 && v < divisors[0]!),
+    longWaveSpread: need(file, p, 'longWaveSpreadDeg', (v) => v > 0 && v < 45) * DEG,
     choppiness: need(file, p, 'choppiness', (v) => v >= 0 && v <= 2),
     repeatPeriod: need(file, p, 'repeatPeriodS', positive),
     seed: need(file, p, 'seed', Number.isInteger),
@@ -139,6 +150,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     unresolvedFloor: need(file, p, 'unresolvedSlopeVariance', (v) => v >= 0),
     windVariability: need(file, p, 'windVariability', (v) => v >= 0 && v < 1),
     slickStrength: need(file, p, 'slickStrength', fraction),
+    gustVariability: need(file, p, 'gustVariability', (v) => v >= 0 && v < 1),
+    filamentStrength: need(file, p, 'filamentStrength', fraction),
     taaReactive: need(file, p, 'taaReactive', fraction),
   };
 }

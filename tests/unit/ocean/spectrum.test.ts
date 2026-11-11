@@ -68,11 +68,41 @@ describe('ocean spectrum', () => {
     expect(sReal / sInt).toBeLessThan(1.1);
   });
 
-  it('leaves room under Cox-Munk: swell + FFT slope variance below 0.003 + 0.00512 U10', () => {
+  it('leaves room under Cox-Munk: swell + FFT + long-wave slope variance below 0.003 + 0.00512 U10', () => {
     const fft = set.spectra.reduce((s, c) => s + c.slopeVariance, 0);
     const cm = coxMunkVariance(t.windSpeed);
-    expect(swellSlopeVariance(t.swell) + fft).toBeLessThan(cm);
+    expect(swellSlopeVariance(t.swell) + fft + set.long.slopeVariance).toBeLessThan(cm);
     expect(fft).toBeGreaterThan(0.2 * cm);
+  });
+
+  it('long-wave normals layer: the complement of the high-pass, with swell + layer = the spectrum above it', () => {
+    const L = set.long;
+    expect(L.band.length).toBeCloseTo(t.cascadePeriod / t.longWaveDivisor, 9);
+    // It holds only what the cascades' high-pass leaves out: nothing at or below 15.6 m (full high-pass), and it
+    // reaches the high-pass wavelength (its grid resolves the 25 m cut-off).
+    const dk = TWO_PI / L.band.length;
+    const kFull = 1.6 * (TWO_PI / t.highPassWavelength);
+    for (let j = 0; j < FFT_SIZE; j++) {
+      for (let i = 0; i < FFT_SIZE; i++) {
+        const k = Math.hypot(freqIndex(i), freqIndex(j)) * dk;
+        if (k < kFull) continue;
+        const o = (j * FFT_SIZE + i) * 4;
+        expect(L.h0[o]! ** 2 + L.h0[o + 1]! ** 2).toBe(0);
+      }
+    }
+    expect(L.band.kHigh).toBeGreaterThan(TWO_PI / t.highPassWavelength);
+    // Its slope variance completes the swell to the spectrum's long-wave slopes (numerical integral of the
+    // complement, which the grid realises within 10 %).
+    const kMin = TWO_PI / L.band.length;
+    const full = integrateSpectrum({ ...set.params, highPassWavelength: 1e9 }, kMin, L.band.kHigh, true);
+    const hp = integrateSpectrum(set.params, kMin, L.band.kHigh, true);
+    const longPart = full - hp;
+    const swell = swellSlopeVariance(t.swell);
+    expect(longPart).toBeGreaterThan(swell);
+    expect((L.slopeVariance + swell) / longPart).toBeGreaterThan(0.9);
+    expect((L.slopeVariance + swell) / longPart).toBeLessThan(1.1);
+    expect(L.gain).toBeGreaterThan(0);
+    expect(L.gain).toBeLessThan(1);
   });
 
   it('spreading is normalised and the dispersion indices are exact integers', () => {

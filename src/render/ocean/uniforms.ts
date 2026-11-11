@@ -84,6 +84,8 @@ export interface OceanFrameData {
   detail: { scale: number; angle: number; amplitude: number; origin: [number, number] }[];
   /** Roughness-field texture: plane offset of its centre from the reference point (m), extent (m). */
   field: { x: number; y: number; extent: number };
+  /** Long-wave normals layer: its spectrum and, per copy, the rotation (rad) and origin (texture coordinates mod 1). */
+  long: { spectrum: CascadeSpectrum; copies: { angle: number; origin: [number, number] }[] };
 }
 
 /** Write OceanUniforms into `f` (Float32Array of OCEAN_UNIFORM_VEC4 * 4) / `u` (Uint32Array view of the same buffer). */
@@ -117,16 +119,16 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   v4(d.wake.x, d.wake.y, d.wake.extent, 1 / d.wake.extent);
   for (let i = 0; i < MAX_SWELL; i++) v4(d.swell.dirK[i * 4]!, d.swell.dirK[i * 4 + 1]!, d.swell.dirK[i * 4 + 2]!, d.swell.dirK[i * 4 + 3]!);
   for (let i = 0; i < MAX_SWELL; i++) v4(d.swell.ampPhase[i * 4]!, d.swell.ampPhase[i * 4 + 1]!, d.swell.ampPhase[i * 4 + 2]!, d.swellPrevPhase[i]!);
-  for (let c = 0; c < CASCADE_COUNT; c++) {
-    const cs = d.cascades[c]!;
+  if (CASCADE_MIPS < 9) throw new Error('ocean: filtered-variance table expects 9 mips');
+  const cascade = (cs: CascadeSpectrum, ox: number, oy: number, residual: number): void => {
     const L = cs.band.length;
-    v4(L, 1 / L, d.cascadeOrigin[c]![0], d.cascadeOrigin[c]![1]);
+    v4(L, 1 / L, ox, oy);
     const ff = cs.filteredSlopeFraction;
     v4(ff[0]!, ff[1]!, ff[2]!, ff[3]!);
     v4(ff[4]!, ff[5]!, ff[6]!, ff[7]!);
-    if (CASCADE_MIPS < 9) throw new Error('ocean: filtered-variance table expects 9 mips');
-    v4(cs.slopeVariance, Math.sqrt(cs.heightVariance), cs.meanOmega, d.cascadeResidual[c]!);
-  }
+    v4(cs.slopeVariance, Math.sqrt(cs.heightVariance), cs.meanOmega, residual);
+  };
+  for (let c = 0; c < CASCADE_COUNT; c++) cascade(d.cascades[c]!, d.cascadeOrigin[c]![0], d.cascadeOrigin[c]![1], d.cascadeResidual[c]!);
   for (let i = 0; i < MAX_VESSELS; i++) {
     const z = d.vessels[i];
     if (z) {
@@ -150,6 +152,10 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   }
   v4(d.detail[0]!.origin[0], d.detail[0]!.origin[1], d.detail[1]!.origin[0], d.detail[1]!.origin[1]);
   v4(d.field.x, d.field.y, d.field.extent, d.field.extent > 0 ? 1 / d.field.extent : 0);
+  cascade(d.long.spectrum, 0, 0, 0);
+  const [c0, c1] = d.long.copies;
+  v4(Math.cos(c0!.angle), Math.sin(c0!.angle), Math.cos(c1!.angle), Math.sin(c1!.angle));
+  v4(c0!.origin[0], c0!.origin[1], c1!.origin[0], c1!.origin[1]);
 
   if (o !== OCEAN_UNIFORM_VEC4 * 4) throw new Error(`ocean: uniform packing wrote ${o / 4} vec4, expected ${OCEAN_UNIFORM_VEC4}`);
 }

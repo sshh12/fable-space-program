@@ -15,17 +15,18 @@
  * cascade texture coordinates are plane coordinates / L plus the float64-reduced fraction of the reference.
  */
 import { MAX_SWELL } from '../swell';
-import { CASCADE_COUNT, CASCADE_MIPS } from '../spectrum';
+import { CASCADE_COUNT, CASCADE_MIPS, LONG_LAYER } from '../spectrum';
 
 export const MAX_VESSELS = 8;
 export const MAX_RIPPLES = 8;
 /** Number of vec4 in OceanUniforms (see packOceanUniforms). */
-export const OCEAN_UNIFORM_VEC4 = 80;
+export const OCEAN_UNIFORM_VEC4 = 86;
 export const OCEAN_UNIFORM_BYTES = OCEAN_UNIFORM_VEC4 * 16;
 
 export const OCEAN_WAVES_WGSL = /* wgsl */ `
 const OCEAN_MAX_SWELL = ${MAX_SWELL}u;
 const OCEAN_CASCADES = ${CASCADE_COUNT}u;
+const OCEAN_LONG_LAYER = ${LONG_LAYER}u;
 const OCEAN_CASCADE_MIPS = ${CASCADE_MIPS}.0;
 const OCEAN_MAX_VESSELS = ${MAX_VESSELS}u;
 const OCEAN_MAX_RIPPLES = ${MAX_RIPPLES}u;
@@ -67,6 +68,10 @@ struct OceanUniforms {
   detail: array<vec4f, 2>,   // x = scale, y = cos(rotation), z = sin(rotation), w = slope amplitude
   detailOrigin: vec4f,       // xy / zw = texture coordinates of the reference point for layer 0 / 1, modulo 1
   field: vec4f,              // roughness-field texture: xy = plane offset of its centre from the reference point, z = extent (m), w = 1 / extent
+  // Long-wave normals layer (layer OCEAN_LONG_LAYER of the wave arrays): slopes only, two rotated copies.
+  long: OceanCascade,        // geom = (L, 1 / L, 0, 0), filt0 / filt1, stats = (slope variance, height RMS, band mean omega, 0)
+  longRot: vec4f,            // xy = (cos, sin) of copy 0's rotation, zw = copy 1's
+  longOrigin: vec4f,         // xy / zw = texture coordinates of the reference point for copy 0 / 1, modulo 1
 }
 
 fn oceanRot(v: vec3f) -> vec3f { return oceanU.rot0.xyz * v.x + oceanU.rot1.xyz * v.y + oceanU.rot2.xyz * v.z; }
@@ -129,8 +134,10 @@ fn oceanSwellEval(delta: vec3f, up: vec3f, filterWidth: f32, prev: bool) -> Ocea
 }
 
 /// TMA depth factor (amplitude) of a cascade band in water of depth 'h' (m): sqrt(Phi(omega sqrt(h / g))).
-fn oceanTma(c: u32, h: f32) -> f32 {
-  let wh = oceanU.cascades[c].stats.z * sqrt(max(h, 0.0) / OCEAN_G);
+fn oceanTma(c: u32, h: f32) -> f32 { return oceanTmaOmega(oceanU.cascades[c].stats.z, h); }
+/// The same for a band of mean angular frequency 'omega' (rad/s).
+fn oceanTmaOmega(omega: f32, h: f32) -> f32 {
+  let wh = omega * sqrt(max(h, 0.0) / OCEAN_G);
   var phi = 1.0;
   if (wh < 1.0) { phi = 0.5 * wh * wh; } else if (wh < 2.0) { phi = 1.0 - 0.5 * sq(2.0 - wh); }
   return sqrt(phi);
@@ -264,8 +271,8 @@ fn oceanAmplitudes(p: vec2f, h: f32) -> vec4f {
 }
 
 /// Filtered fraction of cascade c's slope variance at (fractional) mip level l.
-fn oceanFilteredFraction(c: u32, l: f32) -> f32 {
-  let cs = oceanU.cascades[c];
+fn oceanFilteredFraction(c: u32, l: f32) -> f32 { return oceanFilteredFractionOf(oceanU.cascades[c], l); }
+fn oceanFilteredFractionOf(cs: OceanCascade, l: f32) -> f32 {
   let li = clamp(l, 0.0, 8.0);
   let i0 = u32(floor(li));
   let t = li - f32(i0);

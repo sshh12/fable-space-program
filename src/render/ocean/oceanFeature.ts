@@ -28,7 +28,7 @@ import { coxMunkVariance, oceanTunables, type OceanTunables } from './params';
 import { MAX_SWELL, prepareSwell, swellAmplitudeBound, swellSlopeVariance, type PreparedSwell } from './swell';
 import { OCEAN_UNIFORM_BYTES, OCEAN_UNIFORM_VEC4, OCEAN_WAVES_WGSL } from './shaders/waves';
 import { buildWaterBrdfWgsl, whitecapCoverage } from './shaders/waterBrdf';
-import { FIELD_BAKE_WGSL, FIELD_SIZE } from './shaders/fieldWgsl';
+import { FIELD_BAKE_WGSL, FIELD_MIP_WGSL, FIELD_MIPS, FIELD_SIZE } from './shaders/fieldWgsl';
 import { REACTIVE_WGSL } from './shaders/reactiveWgsl';
 import { READBACK_WGSL, SURFACE_PIPELINE_WGSL } from './shaders/surfaceWgsl';
 import { packOceanUniforms, type OceanFrameData } from './uniforms';
@@ -94,6 +94,9 @@ export interface OceanDebug {
     cascades: { length: number; kLow: number; kHigh: number; heightRms: number; slopeVariance: number; residual: number }[];
     subCascadeVariance: number;
     capillaryAmplitude: number;
+    /** The long-wave normals layer (render-only slopes): patch length, highest wavenumber, height RMS, slope variance, gain on the spectrum. */
+    longWave: { length: number; kHigh: number; heightRms: number; slopeVariance: number; gain: number } | null;
+    windSpeed: number;
     vesselZones: number;
     ripples: number;
     wetSlots: number;
@@ -165,7 +168,10 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let fieldBakeBuffer: GPUBuffer;
   let fieldBakeGroup: GPUBindGroup;
   let fieldPipeline: Tracked<GPURenderPipeline>;
-  const fieldBakeData = new Float32Array(8);
+  let fieldMipPipeline: Tracked<GPURenderPipeline>;
+  /** Per mip level: the view rendered into, and (from level 1) the bind group reading the level above. */
+  const fieldLevels: { view: GPUTextureView; src: GPUBindGroup | null }[] = [];
+  const fieldBakeData = new Float32Array(12);
   const field = { chart: null as OceanChart | null, bodyId: '', cx: 0, cy: 0, extent: 0, bake: false };
   let readbackLayout: GPUBindGroupLayout;
   let readbackPipeline: Tracked<GPUComputePipeline>;
@@ -341,7 +347,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const b = a?.body ?? [...bodies.values()][0] ?? null;
       const t = b?.tunables;
       const cm = t ? coxMunkVariance(t.windSpeed) : 0;
-      const fftVar = b ? b.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0) : 0;
+      const fftVar = b ? b.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0) + b.cascades.long.slopeVariance : 0;
       return {
         active: a !== null,
         bodyId: a?.body.tunables.bodyId ?? null,
@@ -355,6 +361,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           : [],
         subCascadeVariance: Math.max(0, cm - (b?.swellVariance ?? 0) - fftVar),
         capillaryAmplitude: b?.detail[0]?.amplitude ?? 0,
+        longWave: b ? { length: b.cascades.long.band.length, kHigh: b.cascades.long.band.kHigh, heightRms: Math.sqrt(b.cascades.long.heightVariance), slopeVariance: b.cascades.long.slopeVariance, gain: b.cascades.long.gain } : null,
+        windSpeed: t?.windSpeed ?? 0,
         vesselZones: a?.vf.zones.length ?? 0,
         ripples: a?.vf.ripples.length ?? 0,
         wetSlots: lastWetSlots,
@@ -408,8 +416,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         const shortSigma = Math.hypot(sigma[2] ?? 0, sigma[3] ?? 0);
         const keep = Math.min(1, 0.04 / Math.max(3 * shortSigma, 1e-9));
         const swellVariance = swellSlopeVariance(t.swell);
-        const fftVariance = cascades.spectra.reduce((s, x) => s + x.slopeVariance, 0);
-        // The capillary layers carry what Cox-Munk has beyond swell + cascades, less a remainder below any pixel.
+        const fftVariance = cascades.spectra.reduce((s, x) => s + x.slopeVariance, 0) + cascades.long.slopeVariance;
+        // The capillary layers carry what Cox-Munk has beyond swell + cascades + long waves, less a remainder below any pixel.
         const layerVariance = Math.max(0, coxMunkVariance(t.windSpeed) - swellVariance - fftVariance - t.unresolvedFloor);
         const v3 = cascades.spectra[3]!.slopeVariance;
         const amplitude = v3 > 0 ? Math.sqrt(layerVariance / (2 * v3)) : 0;
@@ -480,10 +488,11 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         label: 'ocean.roughnessField',
         size: [FIELD_SIZE, FIELD_SIZE],
         format: 'r16float',
+        mipLevelCount: FIELD_MIPS,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
       fieldView = fieldTex.createView();
-      fieldBakeBuffer = device.createBuffer({ label: 'ocean.fieldBake', size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      fieldBakeBuffer = device.createBuffer({ label: 'ocean.fieldBake', size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       const fieldLayout = device.createBindGroupLayout({
         label: 'ocean.fieldBake',
         entries: [
@@ -500,6 +509,14 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         ],
       });
       fieldPipeline = core.fullscreenPipeline({ label: 'ocean.fieldBake', fragment: FIELD_BAKE_WGSL, targets: [{ format: 'r16float' }], layouts: [fieldLayout] });
+      // Mip chain of the baked field (the forward pass samples it with the pixel's footprint).
+      const mipLayout = device.createBindGroupLayout({ label: 'ocean.fieldMip', entries: [{ binding: 0, visibility: F, texture: { sampleType: 'unfilterable-float' } }] });
+      fieldMipPipeline = core.fullscreenPipeline({ label: 'ocean.fieldMip', fragment: FIELD_MIP_WGSL, targets: [{ format: 'r16float' }], layouts: [mipLayout] });
+      for (let m = 0; m < FIELD_MIPS; m++) {
+        const view = fieldTex.createView({ baseMipLevel: m, mipLevelCount: 1 });
+        const src = m === 0 ? null : device.createBindGroup({ label: `ocean.fieldMip${m}`, layout: mipLayout, entries: [{ binding: 0, resource: fieldLevels[m - 1]!.view }] });
+        fieldLevels.push({ view, src });
+      }
       oceanSampler = device.createSampler({ label: 'ocean.sampler', addressModeU: 'repeat', addressModeV: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: 4 });
       const layout = device.createPipelineLayout({ label: 'ocean.surface', bindGroupLayouts: [c.frameBindGroupLayout, sceneLayout, oceanLayout] });
       const blend: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } };
@@ -636,7 +653,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       lastWetSlots = vessels.wetSlots;
       const rip = OceanVessels.rippleConstants(t);
       const cm = coxMunkVariance(t.windSpeed);
-      const fftVar = body.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0);
+      const fftVar = body.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0) + body.cascades.long.slopeVariance;
       const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
       // Water within fadeStart of the camera (the nearest water point is the nadir, at most waveBound above sea level).
       const near = camAboveSea - waveBound < t.fadeStart;
@@ -655,8 +672,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         field.cy = ref.y;
         field.extent = 2 * (t.fadeEnd + margin);
         field.bake = true;
-        const row = [t.foamAlbedo, t.windDir, t.windVariability, t.slickStrength];
-        fieldBakeData.set([0, 0, field.extent, 0, ...row]);
+        // The body's brdf_water rows (waterBrdf.ts); the footprint of the bake is its texel.
+        fieldBakeData.set([0, 0, field.extent, field.extent / FIELD_SIZE, t.foamAlbedo, t.windDir, t.windVariability, t.slickStrength, t.gustVariability, t.filamentStrength, 0, 0]);
         device.queue.writeBuffer(fieldBakeBuffer, 0, fieldBakeData);
       }
       const data: OceanFrameData = {
@@ -716,6 +733,17 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           const L = body.cascades.spectra[3]!.band.length / l.scale;
           return { ...l, origin: [frac((c * ref.x - sn * ref.y) / L), frac((sn * ref.x + c * ref.y) / L)] as [number, number] };
         }),
+        long: {
+          spectrum: body.cascades.long,
+          // Two copies rotated by -spread / +spread: each wave of the layer turns with its copy (and travels that
+          // way), the two lattices are incommensurate, so their sum does not repeat.
+          copies: [-t.longWaveSpread, t.longWaveSpread].map((angle) => {
+            const c = Math.cos(angle);
+            const sn = Math.sin(angle);
+            const L = body.cascades.long.band.length;
+            return { angle, origin: [frac((c * ref.x - sn * ref.y) / L), frac((sn * ref.x + c * ref.y) / L)] as [number, number] };
+          }),
+        },
       };
       if (uniformF.length !== OCEAN_UNIFORM_VEC4 * 4) throw new Error('ocean: uniform size mismatch');
       packOceanUniforms(data, uniformF, uniformU);
@@ -755,7 +783,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         field.bake = false;
         const pass = encoder.beginRenderPass({
           label: 'ocean.fieldBake',
-          colorAttachments: [{ view: fieldView, loadOp: 'clear', clearValue: [1, 0, 0, 1], storeOp: 'store' }],
+          colorAttachments: [{ view: fieldLevels[0]!.view, loadOp: 'clear', clearValue: [1, 0, 0, 1], storeOp: 'store' }],
           timestampWrites: ctx.perf.gpuPass('ocean.fieldBake') as GPURenderPassTimestampWrites | undefined,
         });
         pass.setPipeline(fieldPipeline.get());
@@ -763,6 +791,14 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         pass.setBindGroup(1, fieldBakeGroup);
         pass.draw(3);
         pass.end();
+        for (let m = 1; m < FIELD_MIPS; m++) {
+          const mp = encoder.beginRenderPass({ label: 'ocean.fieldMip', colorAttachments: [{ view: fieldLevels[m]!.view, loadOp: 'clear', clearValue: [1, 0, 0, 1], storeOp: 'store' }] });
+          mp.setPipeline(fieldMipPipeline.get());
+          mp.setBindGroup(0, _frame.frameBindGroup);
+          mp.setBindGroup(1, fieldLevels[m]!.src!);
+          mp.draw(3);
+          mp.end();
+        }
       }
     },
 

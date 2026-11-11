@@ -1,7 +1,8 @@
 /**
- * Compute shaders of the Tessendorf FFT: time evolution of the four cascade spectra (phases exact through the
- * quantised dispersion), two 256-point radix-2 passes per cascade (rows, then columns + assembly into the
- * displacement / derivative / foam texture arrays), and the mip chain of those arrays.
+ * Compute shaders of the Tessendorf FFT: time evolution of the layer spectra (the four cascades and the long-wave
+ * normals layer; phases exact through the quantised dispersion), two 256-point radix-2 passes per layer (rows,
+ * then columns + assembly into the displacement / derivative / foam texture arrays), and the mip chain of those
+ * arrays.
  *
  * Packing: four complex inverse FFTs per cascade carry eight real fields, two per transform
  * (IFFT(A + iB) = a + ib for Hermitian A, B):
@@ -12,14 +13,15 @@
  *   'ocean.derivatives'   rgba16float: dh/dx, dh/dy, dDx/dx, dDy/dy
  *   foam (internal)       rgba16float: r = foam 0..1 (Jacobian folding with temporal decay), g = Jacobian
  */
-import { FFT_SIZE } from '../spectrum';
+import { FFT_LAYERS, FFT_SIZE } from '../spectrum';
 
 export const FFT_SPECTRUM_WGSL = /* wgsl */ `
 struct FftParams {
   time: vec4f,      // x = tau = frac(t / T), y = choppiness, z = dt (s), w = foam decay (1/s)
   foam: vec4f,      // x = foam threshold below J = 1 in standard deviations of the cascade's Jacobian, y = ramp width (same unit)
-  lengths: vec4f,   // patch length of each cascade (m)
-  sigmaJ: vec4f,    // standard deviation of each cascade's Jacobian
+  lengths: vec4f,   // patch length of layers 0..3 (m)
+  sigmaJ: vec4f,    // standard deviation of the Jacobian of layers 0..3
+  layer4: vec4f,    // x = patch length, y = Jacobian spread of layer 4 (the long-wave layer)
 }
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(1) var<storage, read> h0: array<vec4f>;
@@ -36,7 +38,7 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x;
   let j = id.y;
   let c = id.z;
-  if (i >= N || j >= N || c >= 4u) { return; }
+  if (i >= N || j >= N || c >= ${FFT_LAYERS}u) { return; }
   let o = (c * N + j) * N + i;
   let s = h0[o];
   // Phase 2 pi frac(m tau): exact in float32 because m is an integer and tau < 1.
@@ -44,7 +46,7 @@ fn spectrum(@builtin(global_invocation_id) id: vec3u) {
   let e = vec2f(cos(ph), sin(ph));
   // h0(k) e^{-i omega t}: the mode h0(k) travels along +k (downwind for the wind-aligned half of the spectrum).
   let H = cmul(s.xy, vec2f(e.x, -e.y)) + cmul(s.zw, e);
-  let dk = 6.283185307179586 / fp.lengths[c];
+  let dk = 6.283185307179586 / select(fp.layer4.x, fp.lengths[min(c, 3u)], c < 4u);
   let kx = fi(i) * dk;
   let ky = fi(j) * dk;
   let k = sqrt(kx * kx + ky * ky);
@@ -136,6 +138,7 @@ struct FftParams {
   foam: vec4f,
   lengths: vec4f,
   sigmaJ: vec4f,
+  layer4: vec4f,
 }
 @group(0) @binding(0) var<uniform> fp: FftParams;
 @group(0) @binding(3) var<storage, read_write> work: array<vec2f>;
@@ -169,7 +172,7 @@ fn columns(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: 
     textureStore(derivOut, texel, c, vec4f(p2.x, p2.y, p3.x, p3.y));
     // Jacobian of the horizontal map x -> x + D: folding (J < threshold) breeds foam, which then decays.
     let J = (1.0 + p3.x) * (1.0 + p3.y) - p1.y * p1.y;
-    let sj = fp.sigmaJ[c];
+    let sj = select(fp.layer4.y, fp.sigmaJ[min(c, 3u)], c < 4u);
     let fresh = saturate(((1.0 - fp.foam.x * sj) - J) / max(fp.foam.y * sj, 1e-6));
     let old = textureLoad(foamPrev, texel, c, 0).r * decay;
     textureStore(foamOut, texel, c, vec4f(max(old, fresh), J, 0.0, 1.0));

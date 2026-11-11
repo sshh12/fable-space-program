@@ -11,6 +11,13 @@ import { hash4, hashToUnit, TWO_PI } from '@/core/math';
 
 export const FFT_SIZE = 256;
 export const CASCADE_COUNT = 4;
+/**
+ * Layer of the GPU wave arrays that holds the long-wave NORMALS layer: the wind sea above the high-pass wavelength
+ * that the physics swell does not carry, rendered as slopes only (the drawn height stays the shared swell).
+ */
+export const LONG_LAYER = CASCADE_COUNT;
+/** Layers of the GPU wave arrays: the four cascades and the long-wave layer. */
+export const FFT_LAYERS = CASCADE_COUNT + 1;
 /** Mip levels of a cascade texture (256 -> 1). */
 export const CASCADE_MIPS = 9;
 /** Capillary wavenumber of the capillary-gravity dispersion, rad/m (surface tension of sea water). */
@@ -95,7 +102,17 @@ export function highPass(k: number, highPassWavelength: number): number {
 export function spectrumK(kx: number, ky: number, p: SpectrumParams): number {
   const k = Math.hypot(kx, ky);
   if (k < 1e-9) return 0;
-  const hp = highPass(k, p.highPassWavelength);
+  return spectrumWeighted(kx, ky, k, p, highPass(k, p.highPassWavelength));
+}
+
+/** The complement of spectrumK: the same spectrum where the high-pass does NOT pass it (the long waves). */
+export function spectrumLongK(kx: number, ky: number, p: SpectrumParams): number {
+  const k = Math.hypot(kx, ky);
+  if (k < 1e-9) return 0;
+  return spectrumWeighted(kx, ky, k, p, 1 - highPass(k, p.highPassWavelength));
+}
+
+function spectrumWeighted(kx: number, ky: number, k: number, p: SpectrumParams, hp: number): number {
   if (hp === 0) return 0;
   const omega = dispersion(k, p.gravity);
   const { omegaP } = jonswapPeak(p.windSpeed, p.fetch, p.gravity);
@@ -149,7 +166,14 @@ const sinc = (x: number): number => (Math.abs(x) < 1e-6 ? 1 : Math.sin(x) / x);
  * the four cascades together carry the high-passed spectrum once. Gaussian amplitudes satisfy
  * E[sum |h0(k)|^2 + |h0(-k)|^2] = sum S(k) dk^2, i.e. the realised height variance estimates the integral.
  */
-export function buildCascadeSpectrum(cascade: number, band: CascadeBand, p: SpectrumParams, seed: number, repeatPeriod: number): CascadeSpectrum {
+export function buildCascadeSpectrum(
+  cascade: number,
+  band: CascadeBand,
+  p: SpectrumParams,
+  seed: number,
+  repeatPeriod: number,
+  spectrum: (kx: number, ky: number, p: SpectrumParams) => number = spectrumK,
+): CascadeSpectrum {
   const n = FFT_SIZE;
   const dk = TWO_PI / band.length;
   const omega0 = TWO_PI / repeatPeriod;
@@ -163,7 +187,7 @@ export function buildCascadeSpectrum(cascade: number, band: CascadeBand, p: Spec
       const k = Math.hypot(kx, ky);
       const o = (j * n + i) * 2;
       if (fi === -n / 2 || fj === -n / 2 || k < band.kLow || k >= band.kHigh || k === 0) continue;
-      const s = spectrumK(kx, ky, p);
+      const s = spectrum(kx, ky, p);
       if (s <= 0) continue;
       const [gr, gi] = gaussianPair(i, j, cascade, seed);
       const a = (Math.sqrt(s) * dk) / 2;
@@ -222,6 +246,21 @@ export function buildCascadeSpectrum(cascade: number, band: CascadeBand, p: Spec
     filteredSlopeFraction: filt.map((f) => (sVar > 0 ? f / sVar : 0)),
     meanOmega: wSum > 0 ? wE / wSum : 0,
   };
+}
+
+/**
+ * The long-wave normals layer (LONG_LAYER) on a patch of `length` m: the complement of the cascades' high-pass (the
+ * spectrum above about the high-pass wavelength, which the cascades leave to the swell), with its amplitudes scaled
+ * so that its slope variance is what the spectrum has there LESS what the physics swell already carries
+ * (`swellSlopeVariance`): swell + this layer = the spectrum's long-wave slopes. Zero when the swell carries them all.
+ */
+export function buildLongWaveSpectrum(length: number, p: SpectrumParams, seed: number, repeatPeriod: number, swellSlopeVariance: number): CascadeSpectrum & { gain: number } {
+  const band: CascadeBand = { length, kLow: 0, kHigh: (BAND_FRACTION * Math.PI * FFT_SIZE) / length };
+  const s = buildCascadeSpectrum(LONG_LAYER, band, p, seed, repeatPeriod, spectrumLongK);
+  const g2 = s.slopeVariance > 0 ? Math.max(0, s.slopeVariance - swellSlopeVariance) / s.slopeVariance : 0;
+  const gain = Math.sqrt(g2);
+  for (let i = 0; i < s.h0.length; i++) s.h0[i]! *= gain;
+  return { ...s, heightVariance: s.heightVariance * g2, slopeVariance: s.slopeVariance * g2, gain };
 }
 
 /** Integral of S(k) over the plane between two wavenumbers (numerical, polar), m^2; with `slope` the slope variance. */

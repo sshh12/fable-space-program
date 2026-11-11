@@ -284,7 +284,10 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
   await freeze(page, 14);
   await waitIdle(page, 8);
   const steps = 150;
-  const diffs: { alt: number; mean: number; ringStart: number; ringEnd: number; around: number }[] = [];
+  // Per fade radius R: the mean frame change on the ring (|d / R - 1| < 0.04) and in the bands just inside and just
+  // outside it (0.04 - 0.15). A ring is a change concentrated ON the radius; the bands on both sides cancel the
+  // smooth gradient of the change with distance (finer structure resolved nearer the camera moves more per step).
+  const diffs: { alt: number; mean: number; radii: { ring: number; inner: number; outer: number }[] }[] = [];
   let prev: number[] | null = null;
   for (let k = 0; k < steps; k++) {
     const alt = 2 * Math.pow(400000 / 2, k / (steps - 1));
@@ -304,20 +307,23 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
     });
     if (prev) {
       let s = 0;
-      const acc = { ringStart: [0, 0], ringEnd: [0, 0], around: [0, 0] };
+      const acc = [15000, 30000].map(() => ({ ring: [0, 0], inner: [0, 0], outer: [0, 0] }));
       for (let i = 0; i < cur.lum.length; i++) {
         const v = Math.abs(cur.lum[i]! - prev[i]!) / Math.max(prev[i]!, 1e-6);
         s += v;
         const d = cur.dist[i]!;
         if (d < 0) continue;
-        const key = Math.abs(d / 15000 - 1) < 0.04 ? 'ringStart' : Math.abs(d / 30000 - 1) < 0.04 ? 'ringEnd' : d > 11000 && d < 37500 ? 'around' : null;
-        if (key) {
-          acc[key][0]! += v;
-          acc[key][1]!++;
-        }
+        [15000, 30000].forEach((R, r) => {
+          const x = d / R - 1;
+          const key = Math.abs(x) < 0.04 ? 'ring' : x <= -0.04 && x > -0.15 ? 'inner' : x >= 0.04 && x < 0.15 ? 'outer' : null;
+          if (key) {
+            acc[r]![key][0]! += v;
+            acc[r]![key][1]!++;
+          }
+        });
       }
       const m = (a: number[]): number => (a[1]! > 20 ? a[0]! / a[1]! : 0);
-      diffs.push({ alt, mean: s / cur.lum.length, ringStart: m(acc.ringStart), ringEnd: m(acc.ringEnd), around: m(acc.around) });
+      diffs.push({ alt, mean: s / cur.lum.length, radii: acc.map((a) => ({ ring: m(a.ring), inner: m(a.inner), outer: m(a.outer) })) });
     }
     prev = cur.lum;
     if (k === 60 || k === 95 || k === 110) await saveScreenshot(page, 'ocean', `climb-${Math.round(alt)}m`);
@@ -330,11 +336,14 @@ test('a climb from 2 m to 400 km above open ocean shows no ring or pop (frozen t
       return { alt: d.alt, mean: d.mean, ratio: d.mean / Math.max(med, 1e-4) };
     })
     .sort((a, b) => b.ratio - a.ratio);
-  // A ring is a step whose change concentrates at the fade radii.
-  const rings = diffs.filter((d) => d.around > 0 && (d.ringStart > 0 || d.ringEnd > 0)).map((d) => ({ alt: d.alt, start: d.ringStart / d.around, end: d.ringEnd / d.around }));
+  // A ring is a step whose change concentrates at a fade radius: the ring's change against the mean of the bands on
+  // both sides of it (steps where the ring and both bands are on screen).
+  const ratio = (q: { ring: number; inner: number; outer: number }): number => (q.ring > 0 && q.inner > 0 && q.outer > 0 ? q.ring / (0.5 * (q.inner + q.outer)) : 0);
+  const rings = diffs.filter((d) => d.radii.some((q) => ratio(q) > 0)).map((d) => ({ alt: d.alt, start: ratio(d.radii[0]!), end: ratio(d.radii[1]!) }));
   const worstRing = rings.reduce((w, r) => Math.max(w, r.start, r.end), 0);
   console.log('largest step ratios:', JSON.stringify(spikes.slice(0, 5)));
   console.log(`steps with the fade radii on screen: ${rings.length}; worst ring ratio ${worstRing.toFixed(3)}`);
+  console.log('largest ring ratios:', JSON.stringify([...rings].sort((x, y) => Math.max(y.start, y.end) - Math.max(x.start, x.end)).slice(0, 6)));
   expect(spikes[0]!.ratio).toBeLessThan(2.5);
   expect(rings.length).toBeGreaterThan(20);
   expect(worstRing).toBeLessThan(1.6);

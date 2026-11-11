@@ -35,12 +35,17 @@ const OCEAN_LOD_RANGE = ${LOD_RANGE.toFixed(4)};
 const OCEAN_MORPH = ${MORPH_FRACTION.toFixed(4)};
 const OCEAN_PATCH_CELLS = ${PATCH_CELLS.toFixed(1)};
 const OCEAN_DEEP = 10000.0;
-const OCEAN_FOAM_WEIGHT = vec4f(1.0, 0.85, 0.45, 0.0);
-const OCEAN_FOAM_NORM = 2.3;
+// Whitecap weight of each cascade's folding foam. Cascade 0 (13-25 m, long crests) only adds to what the shorter
+// breaking crests of cascade 1 start: alone it would draw foam bars tens of metres long.
+const OCEAN_FOAM_WEIGHT = vec4f(0.55, 0.85, 0.45, 0.0);
+const OCEAN_FOAM_NORM = 1.85;
 // The band is evaluated by the forward pass out to this multiple of fadeStart, beyond it read from the deferred pass.
 const OCEAN_BAND_EVAL = 1.05;
 // Weights of the cascades' normalised convergence in the foam lace (cascade 1 breaks whitecap crests up).
 const OCEAN_LACE_WEIGHT = vec4f(0.0, 0.4, 0.45, 0.55);
+const OCEAN_LACE_NORM = 0.665;
+// Lowest lace threshold: the share of a fully foamed pixel's bubbles that stay dark.
+const OCEAN_FOAM_CORE = 0.22;
 // A cascade filtered beyond this mip keeps under 0.1 % of its slope variance (filteredSlopeFraction): its slopes
 // are not sampled (their variance is unresolved, in the GGX lobe), its foam is the statistical coverage.
 const OCEAN_LOD_CUT = 4.5;
@@ -66,14 +71,18 @@ fn oceanColumnDepth(uv: vec2f, d: f32, waterDist: f32) -> f32 {
 /// up), independent of the view: the vertical is marched down through the depth copy to where it passes behind the
 /// stored seabed (for a shelf that only rises or falls the bed under a water point is in view), refined between the
 /// last two steps. 'alongRay' is the depth where the view ray meets the bed (exact for a level bed): used when the
-/// vertical leaves the frame. OCEAN_DEEP when the bed is deeper than OCEAN_VERTICAL_REACH below the point.
+/// vertical leaves the frame. A bed deeper than the march (about twice that) returns the end of the march, a lower
+/// bound; OCEAN_DEEP when even OCEAN_VERTICAL_REACH did not reach it.
 fn oceanDepthBelow(posRel: vec3f, up: vec3f, alongRay: f32) -> f32 {
   if (alongRay > 2.5 * OCEAN_VERTICAL_REACH) { return OCEAN_DEEP; }
+  // The bed under the point lies within a few times the along-ray depth for any shelf slope seen at a useful angle:
+  // the march covers that range (at most the reach), denser near the surface.
+  let reach = min(2.0 * alongRay + 2.0, OCEAN_VERTICAL_REACH);
   let size = frame.renderSize.xy;
   var tPrev = 0.0;
   var gapPrev = 0.0;
-  for (var i = 0u; i <= 8u; i++) {
-    let t = OCEAN_VERTICAL_REACH * sq(f32(i) / 8.0);
+  for (var i = 0u; i <= 6u; i++) {
+    let t = reach * sq(f32(i) / 6.0);
     let q = posRel - up * t;
     let pu = projectToUv(q);
     if (pu.w <= 0.0 || any(pu.xy < vec2f(0.0)) || any(pu.xy > vec2f(1.0))) { return alongRay; }
@@ -89,7 +98,7 @@ fn oceanDepthBelow(posRel: vec3f, up: vec3f, alongRay: f32) -> f32 {
     tPrev = t;
     gapPrev = gap;
   }
-  return OCEAN_DEEP;
+  return select(reach, OCEAN_DEEP, reach >= OCEAN_VERTICAL_REACH);
 }
 
 /// The seabed depth under a camera-relative sea-level position (vertex stage).
@@ -296,9 +305,13 @@ struct FsOut {
   // Coverage follows the folding density; inside it the lace decides which bubbles are white. Where the footprint
   // averages the lace away the threshold widens by its lost spread, so the coverage becomes the expected (partial)
   // coverage of the pixel instead of a hard-edged blob.
+  // Even the freshest core keeps some breakup (the threshold never drops below OCEAN_FOAM_CORE) and its brightness
+  // varies with the bubbles, so no whitecap is a uniformly white disc.
   let laceN = saturate(0.5 + 0.3 * lace);
   let hw = 0.08 + 0.6 * sqrt(laceLost);
-  foamJ = smoothstep(1.0 - foamJ * 1.15 - hw, 1.0 - foamJ * 1.15 + hw, laceN) * min(foamJ * 3.0, 1.0);
+  let th = max(1.0 - foamJ * 1.15, OCEAN_FOAM_CORE);
+  let bubbles = mix(1.0, 0.8 + 0.2 * saturate(laceN * 2.0 - 0.3), 1.0 - sqrt(laceLost / OCEAN_LACE_NORM));
+  foamJ = smoothstep(th - hw, th + hw, laceN) * min(foamJ * 3.0, 1.0) * bubbles;
   // Where the whitecap cascades are not resolved (far, or fading towards fadeStart) their foam is the statistical
   // coverage of brdf_water (Monahan), which the resolved foam is calibrated to on average.
   foamJ = 1.0 - (1.0 - foamJ) * (1.0 - oceanU.shore.w * (1.0 - foamResolved / OCEAN_FOAM_NORM));
@@ -321,6 +334,29 @@ struct FsOut {
       sx += slope.x;
       sy += slope.y;
       resolved += oceanFilteredFraction(3u, lod) * c3.stats.x * sq(a);
+    }
+  }
+  // Long-wave normals layer: the wind sea above the high-pass wavelength that the four-component physics swell does
+  // not carry, slopes only (the drawn height stays the swell). Two copies of one FFT layer, rotated apart, each with
+  // half its variance: their sum does not repeat and breaks the swell's regular crossing pattern up.
+  {
+    let lw = oceanU.long;
+    let aL = 0.70710678 * detail * oceanTmaOmega(lw.stats.z, seaDepth) * oceanU.misc.z;
+    let g = lw.geom.y;
+    let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * g, 1e-6));
+    let keep = 1.0 - smoothstep(OCEAN_LOD_CUT - 1.0, OCEAN_LOD_CUT, lod);
+    if (aL > 0.0 && keep > 0.0) {
+      let ff = oceanFilteredFractionOf(lw, lod);
+      for (var k = 0u; k < 2u; k++) {
+        let cr = select(oceanU.longRot.xy, oceanU.longRot.zw, k == 1u);
+        let rot = mat2x2f(cr.x, cr.y, -cr.y, cr.x);
+        let uvl = select(oceanU.longOrigin.xy, oceanU.longOrigin.zw, k == 1u) + (rot * in.plane0) * g;
+        let der = textureSampleGrad(oceanDeriv, oceanSampler, uvl, OCEAN_LONG_LAYER, (rot * dpx) * g, (rot * dpy) * g);
+        let slope = transpose(rot) * der.xy * (aL * keep);
+        sx += slope.x;
+        sy += slope.y;
+        resolved += ff * lw.stats.x * sq(aL * keep);
+      }
     }
   }
   let sw = oceanSwellEval(deltaF, upF, fpMaj, false);
@@ -365,8 +401,9 @@ struct FsOut {
   s.lightAlpha = 0.0;
   s.materialId = MATERIAL_WATER;
   s.bodyIndex = bi;
-  // The planet-fixed roughness field of brdf_water, from the texture baked over the near field.
-  waterFieldValue = textureSampleLevel(oceanField, linearClamp, (in.planeF - oceanU.field.xy) * oceanU.field.w + 0.5, 0.0).r;
+  // The planet-fixed roughness field of brdf_water, from the texture baked over the near field (mip-filtered with
+  // this pixel's footprint, as the deferred path filters its octaves).
+  waterFieldValue = textureSampleGrad(oceanField, oceanSampler, (in.planeF - oceanU.field.xy) * oceanU.field.w + 0.5, dpx * oceanU.field.w, dpy * oceanU.field.w).r;
   s.altitude = oceanU.misc.x + in.height;
   s.roughness = clamp(resolved / oceanU.wind.y, 0.0, 1.0);
   // Imagery colour: the sheet's (band), the seabed's (the terrain draws it with its albedo layer) or that of a stray

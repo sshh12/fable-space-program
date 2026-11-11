@@ -40,12 +40,18 @@ const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
 export const whitecapCoverage = (windSpeed: number): number => Math.min(0.2, 3.84e-6 * windSpeed ** 3.41) * 0.4;
 
 /**
- * The planet-fixed roughness field of the unresolved slope variance (mean about 1): mesoscale wind-speed
- * changes (tens of km) and surfactant slicks (calm bands along the wind, a few km wide, in patches), which give
- * the glint seen from altitude its structure. A function of the body-fixed position only (p, m) and of the
- * body's row q = (foam albedo, wind direction (rad, compass, toward), variability, slick strength), so the
- * deferred path (evaluated per pixel) and the forward path (baked into a planet-fixed texture over the near
- * field, see fieldWgsl.ts) agree, and the pattern is fixed to the sea.
+ * The planet-fixed roughness field of the unresolved slope variance (mean about 1), which gives the glint seen
+ * from altitude its structure at every scale from about 100 m up:
+ *  - mesoscale wind-speed changes (25-90 km) and broad surfactant slicks (calm bands along the wind, a few km
+ *    wide, where the wind is light);
+ *  - gusts ("cat's paws"): patches of rougher and calmer water 0.3-1.5 km across, a little longer downwind;
+ *  - slick filaments: narrow calm streaks along the wind (about 150 m wide, km long), in the calmer regions.
+ * A function of the body-fixed position (p, m), of the body's rows q = (foam albedo, wind direction (rad, compass,
+ * toward), wind variability, slick strength) and q2 = (gust variability, filament strength, 0, 0), and of the
+ * footprint (m) it is seen with: octaves finer than the footprint fade out (their mean remains), so the pattern
+ * never aliases. The deferred path evaluates it per pixel; the forward path reads it from a planet-fixed texture
+ * baked over the near field with the texel as footprint and mip-filtered (fieldWgsl.ts), so the two agree where
+ * they meet, and the pattern is fixed to the sea.
  */
 export const WATER_FIELD_WGSL = /* wgsl */ `
 /// Gradient noise: Perlin's twelve edge gradients picked by an integer hash (no transcendentals, no local
@@ -73,7 +79,9 @@ fn waterNoise3(p: vec3f, seed: i32) -> f32 {
   let n7 = waterGrad(i + vec3i(1, 1, 1), seed, f - vec3f(1.0, 1.0, 1.0));
   return mix(mix(mix(n0, n1, u.x), mix(n2, n3, u.x), u.y), mix(mix(n4, n5, u.x), mix(n6, n7, u.x), u.y), u.z) * 1.135;
 }
-fn waterRoughnessFieldFixed(p: vec3f, q: vec4f) -> f32 {
+/// Weight of a noise octave of period 'scale' (m) seen with 'footprint' (m): 1 well resolved, 0 below about two pixels.
+fn waterOctave(footprint: f32, scale: f32) -> f32 { return 1.0 - smoothstep(0.25, 0.6, footprint / scale); }
+fn waterRoughnessFieldFixed(p: vec3f, q: vec4f, q2: vec4f, footprint: f32) -> f32 {
   let up = normalize(p);
   var east = cross(vec3f(0.0, 0.0, 1.0), up);
   if (dot(east, east) < 1e-10) { east = vec3f(1.0, 0.0, 0.0); }
@@ -83,11 +91,29 @@ fn waterRoughnessFieldFixed(p: vec3f, q: vec4f) -> f32 {
   let across = cross(up, along);
   // Wind: two octaves of smooth noise, 25-90 km.
   let wind = waterNoise3(p / 90000.0, 11) * 0.7 + waterNoise3(p / 25000.0, 12) * 0.3;
-  // Slicks: broad calm bands stretched along the wind (about 30 km x 2.5 km), present in patches.
+  // Surface films survive where the wind is light: slicks and filaments only in the calmer regions.
+  let calm = smoothstep(0.12, -0.3, wind);
+  // Slicks: broad calm bands stretched along the wind (about 30 km x 2.5 km).
   let sp = along * (dot(p, along) / 30000.0) + across * (dot(p, across) / 2500.0) + up * (dot(p, up) / 30000.0);
-  let streak = waterNoise3(sp, 13) * 0.75 + waterNoise3(sp * 2.1, 14) * 0.25;
-  let slick = smoothstep(0.15, 0.6, streak) * smoothstep(0.0, 0.5, waterNoise3(p / 60000.0, 15));
-  return exp(q.z * wind) * (1.0 - q.w * slick);
+  // (Their fine structure is the filaments' below.)
+  let slick = smoothstep(0.15, 0.6, waterNoise3(sp, 13)) * calm;
+  // Gusts: 1.5 km and 0.5 km octaves, stretched 1.4 : 1 downwind.
+  let pg = along * (dot(p, along) / 1.4) + across * dot(p, across) + up * dot(p, up);
+  var gust = 0.0;
+  let w1 = waterOctave(footprint, 1500.0);
+  if (w1 > 0.0) {
+    gust = waterNoise3(pg / 1500.0, 16) * (0.75 * w1);
+    let w2 = waterOctave(footprint, 500.0);
+    if (w2 > 0.0) { gust += waterNoise3(pg / 500.0, 17) * (0.45 * w2); }
+  }
+  // Filaments: narrow calm streaks along the wind (period about 4 km along, 300 m across).
+  var filament = 0.0;
+  let wf = waterOctave(footprint, 300.0) * calm;
+  if (wf > 0.0) {
+    let sf = along * (dot(p, along) / 4000.0) + across * (dot(p, across) / 300.0) + up * (dot(p, up) / 4000.0);
+    filament = smoothstep(0.2, 0.55, waterNoise3(sf, 18)) * wf;
+  }
+  return exp(q.z * wind + q2.x * gust) * (1.0 - q.w * slick) * (1.0 - q2.y * filament);
 }
 `;
 
@@ -101,7 +127,9 @@ fn waterRoughnessField(s: Surface) -> f32 {
   if (all(key == waterFieldKey)) { return waterFieldValue; }
   let bi = u32(s.bodyIndex);
   waterFieldKey = key;
-  waterFieldValue = waterRoughnessFieldFixed(rootToFixed(bi, s.pos - frame.bodies[bi].center.xyz), waterBodyParam(s, 1u));
+  // Footprint across the view: the pixel's angular size at this distance.
+  let footprint = s.viewDist * 2.0 * frame.cameraUp.w * frame.renderSize.w;
+  waterFieldValue = waterRoughnessFieldFixed(rootToFixed(bi, s.pos - frame.bodies[bi].center.xyz), waterBodyParam(s, 1u), waterBodyParam(s, 2u), footprint);
   return waterFieldValue;
 }`;
 
@@ -120,8 +148,13 @@ export function buildWaterBrdfWgsl(bodies: readonly (OceanTunables | null)[], op
   const rows: string[] = [];
   for (let i = 0; i < MAX_BODIES; i++) {
     const t = bodies[i] ?? null;
-    if (t) rows.push(`vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`, `vec4f(${f(t.foamAlbedo)}, ${f(t.windDir)}, ${f(t.windVariability)}, ${f(t.slickStrength)})`);
-    else rows.push('vec4f(0.002, 0.003, 0.0045, 0.0)', 'vec4f(0.7, 0.0, 0.0, 0.0)');
+    if (t) {
+      rows.push(
+        `vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`,
+        `vec4f(${f(t.foamAlbedo)}, ${f(t.windDir)}, ${f(t.windVariability)}, ${f(t.slickStrength)})`,
+        `vec4f(${f(t.gustVariability)}, ${f(t.filamentStrength)}, 0.0, 0.0)`,
+      );
+    } else rows.push('vec4f(0.002, 0.003, 0.0045, 0.0)', 'vec4f(0.7, 0.0, 0.0, 0.0)', 'vec4f(0.0)');
   }
   return /* wgsl */ `
 // OVERRIDABLE chunk "brdf_water", provided by the ocean package (src/render/ocean/shaders/waterBrdf.ts).
@@ -132,10 +165,10 @@ const WATER_GGX_KAPPA = ${GGX_KAPPA};
 // 1 = normal; 0 isolates the direct specular for tests (debug hook of the ocean feature).
 const WATER_DIRECT_SPECULAR = ${options.directSpecular === false ? '0.0' : '1.0'};
 // Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, wind direction (rad, compass, toward),
-// relative wind-speed variability, slick strength).
-const WATER_BODY = array<vec4f, ${MAX_BODIES * 2}>(${rows.join(', ')});
+// relative wind-speed variability, slick strength), (gust variability, filament strength, 0, 0).
+const WATER_BODY = array<vec4f, ${MAX_BODIES * 3}>(${rows.join(', ')});
 
-fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bodyIndex, 0)) * 2u + k]; }
+fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bodyIndex, 0)) * 3u + k]; }
 fn waterWind(s: Surface) -> f32 { return frame.bodies[max(s.bodyIndex, 0)].ocean.a; }
 fn waterCoxMunk(s: Surface) -> f32 { return 0.003 + 0.00512 * waterWind(s); }
 
@@ -260,15 +293,23 @@ fn waterSkyRadiance(s: Surface, dir: vec3f, alpha: f32) -> vec3f {
       nearL = textureSampleLevel(envProbeCube, linearClamp, d, sqrt(clamp(alpha, 0.0, 1.0)) * mips).rgb;
     } else {
       let camUp = b.cameraUp.xyz;
-      let tf = tangentFrame(d);
       let spread = min(alpha * 0.75, 0.6);
-      nearL = textureSampleLevel(skyViewLut, linearClamp, skyViewUv(d, camUp, sunDir), 0.0).rgb * 0.4;
-      for (var k = 0u; k < 4u; k++) {
-        let ang = f32(k) * 1.5707963 + 0.785398;
-        var dk = normalize(d + (tf[0] * cos(ang) + tf[1] * sin(ang)) * spread);
-        let dku = dot(dk, s.up);
-        if (dku < 0.0) { dk = normalize(dk - 2.0 * dku * s.up); }
-        nearL += textureSampleLevel(skyViewLut, linearClamp, skyViewUv(dk, camUp, sunDir), 0.0).rgb * 0.15;
+      let centre = textureSampleLevel(skyViewLut, linearClamp, skyViewUv(d, camUp, sunDir), 0.0).rgb;
+      // A lobe narrower than the table's own smoothness needs no blur (where the near field resolves the waves only
+      // a few hundredths of a radian are left): one tap there, the four-tap ring fading in over the next few.
+      let blur = smoothstep(0.03, 0.08, spread);
+      nearL = centre;
+      if (blur > 0.0) {
+        let tf = tangentFrame(d);
+        var ring = vec3f(0.0);
+        for (var k = 0u; k < 4u; k++) {
+          let ang = f32(k) * 1.5707963 + 0.785398;
+          var dk = normalize(d + (tf[0] * cos(ang) + tf[1] * sin(ang)) * spread);
+          let dku = dot(dk, s.up);
+          if (dku < 0.0) { dk = normalize(dk - 2.0 * dku * s.up); }
+          ring += textureSampleLevel(skyViewLut, linearClamp, skyViewUv(dk, camUp, sunDir), 0.0).rgb * 0.25;
+        }
+        nearL = mix(centre, centre * 0.4 + ring * 0.6, blur);
       }
     }
   }
