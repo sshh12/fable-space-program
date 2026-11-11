@@ -29,7 +29,7 @@ export function formatNumber(x: number, decimals = 0): string {
 
 /**
  * A length with an SI prefix chosen for readability: m below 10 km (0.1 m precision below 100 m), km below
- * 10,000 km, Mm below 10 million km, Gm above.
+ * 10,000 km (a `distance` from 1,000 km on without decimals), Mm below 10 million km, Gm above.
  *
  * No unit or precision boundary may sit where a value hovers in flight, or the string flickers between two
  * forms. `altitude` (the current altitude) keeps metres up to 50 km for ascent and landing; no planned orbit
@@ -44,7 +44,9 @@ export function formatLength(m: number, style: 'distance' | 'altitude' | 'apsis'
   const meterLimit = style === 'altitude' ? 5e4 : style === 'apsis' ? 0 : 1e4;
   if (a < meterLimit) return `${formatNumber(m, a < 100 ? 1 : 0)}${NBSP}m`;
   if (a < 1e5 && style === 'distance') return `${formatNumber(m / 1e3, 2)}${NBSP}km`;
-  if (a < 1e7) return `${formatNumber(m / 1e3, 1)}${NBSP}km`;
+  // A ground distance of a thousand kilometres and more is read to the kilometre (a tenth would be noise).
+  if (a < 1e6 || (a < 1e7 && style !== 'distance')) return `${formatNumber(m / 1e3, 1)}${NBSP}km`;
+  if (a < 1e7) return `${formatNumber(m / 1e3, 0)}${NBSP}km`;
   if (a < 1e10) return `${formatNumber(m / 1e6, a < 1e8 ? 2 : 1)}${NBSP}Mm`;
   return `${formatNumber(m / 1e9, 3)}${NBSP}Gm`;
 }

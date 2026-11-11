@@ -440,21 +440,36 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
   }));
 }
 
+/** One stage group in use on the HUD: one bar, the resource that runs out first. */
+export interface ResourceGroupLine {
+  id: string;
+  label: string;
+  /** Lowest fraction of the group's resources, 0..1, and its percentage string. */
+  fraction: number;
+  amount: string;
+  /** "RP-1 62 % · Liquid oxygen 62 %" (every resource of the group; the line's tooltip). */
+  detail: string;
+}
+
 export interface ResourceSummary {
-  /** Groups shown resource by resource: every group in use (any resource below full), else the first group. */
-  detailed: ResourceGroupView[];
-  /** Labels of the remaining groups, all full (folded into one line). */
+  /** Every group in use (any resource below full), aggregated to one line each. */
+  inUse: ResourceGroupLine[];
+  /** Labels of the remaining groups, all full (folded into one line; on the pad, every group). */
   full: string[];
 }
 
 /**
- * What the HUD's resource panel shows: the groups being drained in detail and the untouched ones folded into
- * one "full" line, so a ten-tank stack does not fill the screen with bars at 100 %.
+ * What the HUD's resource panel shows: one bar per stage group in use (aggregated: the resource of the group
+ * that runs out first) and the untouched groups folded into one "full" line, so a ten-tank stack does not fill
+ * the screen with bars at 100 %. The MFD systems page keeps every resource of every group.
  */
 export function summarizeResources(groups: readonly ResourceGroupView[]): ResourceSummary {
-  const inUse = groups.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
-  const detailed = inUse.length > 0 ? inUse : groups.slice(0, 1);
-  return { detailed, full: groups.filter((g) => !detailed.includes(g)).map((g) => g.label) };
+  const used = groups.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
+  const inUse = used.map((g): ResourceGroupLine => {
+    const low = g.bars.reduce((a, b) => (b.fraction < a.fraction ? b : a));
+    return { id: g.id, label: g.label, fraction: low.fraction, amount: low.amount, detail: g.bars.map((b) => `${b.name} ${b.amount}`).join(' · ') };
+  });
+  return { inUse, full: groups.filter((g) => !used.includes(g)).map((g) => g.label) };
 }
 
 /** Heat-shield redline: below this ablator fraction the shield is in its last margin (HUD and MFD). */

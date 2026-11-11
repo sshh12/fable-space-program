@@ -61,9 +61,12 @@ describe('formatters', () => {
     expect(n(formatLength(8765.4))).toBe('8 765 m');
     expect(n(formatLength(12_345))).toBe('12.35 km');
     expect(n(formatLength(12_345, 'altitude'))).toBe('12 345 m');
-    expect(n(formatLength(2_298_300))).toBe('2 298.3 km');
+    expect(n(formatLength(2_298_300))).toBe('2 298 km');
+    expect(n(formatLength(998_765))).toBe('998.8 km');
+    expect(n(formatLength(2_298_300, 'apsis'))).toBe('2 298.3 km');
     expect(n(formatLength(384_400_000))).toBe('384.4 Mm');
-    expect(n(formatLength(-6_360_200))).toBe('−6 360.2 km');
+    expect(n(formatLength(-6_360_200))).toBe('−6 360 km');
+    expect(n(formatLength(-6_360_200, 'apsis'))).toBe('−6 360.2 km');
     expect(n(formatLength(2e9))).toBe('200.0 Mm'.replace('200.0 Mm', '2 000.0 Mm'));
     expect(n(formatLength(2e10))).toBe('20.000 Gm');
   });
@@ -486,10 +489,13 @@ describe('round-2 display rules', () => {
       { id: 'b', label: 'Upper', bars: [{ resourceId: 'x', name: 'X', fraction: 1, amount: '100 %' }] },
       { id: 'c', label: 'Capsule', bars: [{ resourceId: 'y', name: 'Y', fraction: 1, amount: '100 %' }] },
     ];
-    expect(summarizeResources(groups)).toEqual({ detailed: [groups[0]], full: ['Upper', 'Capsule'] });
-    // All full (on the pad): the first group in detail.
+    expect(summarizeResources(groups)).toEqual({ inUse: [{ id: 'a', label: 'Booster', fraction: 0.62, amount: '62 %', detail: 'X 62 %' }], full: ['Upper', 'Capsule'] });
+    // A group is one line: the resource that runs out first.
+    const two = [{ ...groups[0]!, bars: [...groups[0]!.bars, { resourceId: 'z', name: 'Z', fraction: 0.55, amount: '55 %' }] }];
+    expect(summarizeResources(two).inUse[0]).toMatchObject({ fraction: 0.55, amount: '55 %', detail: 'X 62 % · Z 55 %' });
+    // All full (on the pad): one folded line.
     const full = groups.map((g) => ({ ...g, bars: g.bars.map((b) => ({ ...b, fraction: 1 })) }));
-    expect(summarizeResources(full).detailed.map((g) => g.id)).toEqual(['a']);
+    expect(summarizeResources(full)).toEqual({ inUse: [], full: ['Booster', 'Upper', 'Capsule'] });
   });
 
   it('opens the landing-target rows only with a prediction, in an entry or while descending', () => {
