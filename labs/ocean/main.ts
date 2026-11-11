@@ -13,6 +13,7 @@ import { createFakeSim } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, type LabApp, type LabCameraSpec } from '@/render/core/lab';
 import { createOceanFeature, type OceanFeature } from '@/render/ocean';
+import { createBallastFeature, type Ballast } from './ballast';
 import { createLabSkyFeature, type LabSky } from './labSky';
 import { offsetDir, OceanLabWorld, waterHeight, type LabSite } from './labSim';
 import { createLabPropsFeature, type LabProps } from './props';
@@ -55,6 +56,8 @@ export interface OceanLab {
   ocean: OceanFeature | null;
   sky: LabSky;
   props: LabProps;
+  /** GPU ballast for perf measurements (iterations of a fullscreen burn; 0 = off). */
+  ballast: Ballast;
   site: LabSite;
   preset: string;
   applyPreset(name: string): void;
@@ -92,6 +95,8 @@ async function boot(): Promise<void> {
   const info = document.getElementById('info') as HTMLDivElement;
   let world!: OceanLabWorld;
   const holder: { ocean: OceanFeature | null } = { ocean: null };
+  const ballast = createBallastFeature();
+  ballast.iterations = Number(query.get('ballast') ?? 0) || 0;
   let sky!: LabSky;
   let props!: LabProps;
   const site: LabSite = { bodyId: 'earth', latDeg: 8, lonDeg: -146 };
@@ -112,7 +117,7 @@ async function boot(): Promise<void> {
       return world.sim;
     },
     features: (defs) => {
-      const list: RenderFeature[] = [createLabPlanetFeature({ defaultMap: 'tileset' })];
+      const list: RenderFeature[] = [ballast, createLabPlanetFeature({ defaultMap: 'tileset' })];
       sky = createLabSkyFeature();
       list.push(sky);
       props = createLabPropsFeature(world, defs);
@@ -141,6 +146,7 @@ async function boot(): Promise<void> {
     ocean,
     sky,
     props,
+    ballast,
     site,
     preset: presetName,
     applyPreset(name) {

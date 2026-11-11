@@ -25,6 +25,7 @@ ${sceneBindings}
 @group(2) @binding(4) var oceanDeriv: texture_2d_array<f32>;
 @group(2) @binding(5) var oceanFoam: texture_2d_array<f32>;
 @group(2) @binding(6) var oceanWake: texture_2d<f32>;
+@group(2) @binding(7) var oceanSampler: sampler;   // trilinear, repeat, 4x anisotropic
 #include "ocean_waves"
 #include "brdf_water"
 
@@ -112,15 +113,17 @@ struct VsOut {
   // Band limit of the displacement: continuous in distance, about 1.35 x the coarsest cell found there.
   let fw = dist / 36.0;
   let detail = oceanDetail(dist);
+  let delta0 = oceanSphereOffset(p);
+  let up0 = oceanUpAt(delta0);
   var h = OCEAN_DEEP;
-  if (detail > 0.0) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(oceanSphereOffset(p))); }
+  if (detail > 0.0) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(delta0)); }
   let amp = oceanAmplitudes(p, h);
-  let sp = oceanSurfaceAt(p, fw, detail, amp, false);
+  let sp = oceanSurfaceFrom(p, delta0, up0, fw, detail, amp, false);
   let lift = oceanU.fade.w * (1.0 - detail);
   let posRel = oceanU.refRel.xyz + oceanRot(sp.delta + sp.up * (sp.height + lift));
   var prevRel = posRel + frame.prevEyeOffset.xyz * -1.0;
   if (oceanU.refRelPrev.w > 0.5) {
-    let pp = oceanSurfaceAt(p, fw, detail, amp, true);
+    let pp = oceanSurfaceFrom(p, delta0, up0, fw, detail, amp, true);
     prevRel = oceanU.refRelPrev.xyz + oceanRotPrev(pp.delta + pp.up * (pp.height + lift));
   }
   var o: VsOut;
@@ -182,26 +185,32 @@ struct FsOut {
   var shoreNoise = 0.0;
   for (var c = 0u; c < OCEAN_CASCADES; c++) {
     let cs = oceanU.cascades[c];
+    // The hardware keeps about the minor axis of the footprint (4:1 anisotropy here): what it averages away is
+    // unresolved. A cascade filtered away entirely at this footprint is not sampled at all.
+    let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * cs.geom.y, 1e-6));
+    if (amp[c] == 0.0 || lod > 7.5) { continue; }
     let uvc = oceanCascadeUv(c, in.plane0);
     let gx = dpx * cs.geom.y;
     let gy = dpy * cs.geom.y;
-    let der = textureSampleGrad(oceanDeriv, anisoRepeat, uvc, c, gx, gy);
-    let fm = textureSampleGrad(oceanFoam, anisoRepeat, uvc, c, gx, gy);
+    let der = textureSampleGrad(oceanDeriv, oceanSampler, uvc, c, gx, gy);
     sx += der.x * amp[c];
     sy += der.y * amp[c];
     jxx += der.z * amp[c];
     jyy += der.w * amp[c];
-    // The hardware keeps about the minor axis of the footprint (8:1 anisotropy): what it averages away is unresolved.
-    let lod = log2(max(max(fpMin, fpMaj / 8.0) * 256.0 * cs.geom.y, 1e-6));
     resolved += oceanFilteredFraction(c, lod) * cs.stats.x * sq(amp[c]);
-    // Whitecaps belong to the breaking chop: the long cascades carry them, the capillary cascade none.
-    foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * OCEAN_FOAM_WEIGHT[c]);
-    // Lace: the short cascades' Jacobians, normalised by their spread, give foam its bubbly breakup.
-    if (c >= 2u) { lace += (1.0 - fm.g) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4) * 0.5; }
-    if (c == 2u) { shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0); }
+    if (c < 3u) {
+      let fm = textureSampleGrad(oceanFoam, oceanSampler, uvc, c, gx, gy);
+      // Whitecaps belong to the breaking chop: the long cascades carry them, the capillary cascade none.
+      foamJ = 1.0 - (1.0 - foamJ) * (1.0 - saturate(fm.r) * amp[c] * OCEAN_FOAM_WEIGHT[c]);
+      // Lace: the shortest foam cascade's Jacobian, normalised by its spread, gives foam its bubbly breakup.
+      if (c == 2u) {
+        lace = (1.0 - fm.g) / max(oceanU.wind.w * sqrt(cs.stats.x), 1e-4);
+        shoreNoise = saturate(fm.r * 2.0 + (1.0 - fm.g) * 2.0);
+      }
+    }
   }
   // Coverage follows the folding density; inside it the lace decides which bubbles are white.
-  let laceN = saturate(0.5 + 0.18 * lace);
+  let laceN = saturate(0.5 + 0.25 * lace);
   foamJ = smoothstep(1.0 - foamJ * 1.15 - 0.08, 1.0 - foamJ * 1.15 + 0.08, laceN) * min(foamJ * 3.0, 1.0);
   // Capillary detail: the finest cascade again, compressed and rotated, carrying the slope variance that the
   // JONSWAP cascades do not (Cox-Munk counts the capillaries); resolved only where a pixel is that small.
@@ -209,15 +218,16 @@ struct FsOut {
     let c3 = oceanU.cascades[3];
     for (var k = 0u; k < 2u; k++) {
       let lay = oceanU.detail[k];
-      let rot = mat2x2f(lay.y, lay.z, -lay.z, lay.y);
       let sc = lay.x * c3.geom.y;
+      let lod = log2(max(max(fpMin, fpMaj / 4.0) * 256.0 * sc, 1e-6));
+      if (amp[3] == 0.0 || lod > 7.5) { continue; }
+      let rot = mat2x2f(lay.y, lay.z, -lay.z, lay.y);
       let org = select(oceanU.detailOrigin.xy, oceanU.detailOrigin.zw, k == 1u);
       let uvd = org + (rot * in.plane0) * sc;
-      let der = textureSampleGrad(oceanDeriv, anisoRepeat, uvd, 3, (rot * dpx) * sc, (rot * dpy) * sc);
+      let der = textureSampleGrad(oceanDeriv, oceanSampler, uvd, 3, (rot * dpx) * sc, (rot * dpy) * sc);
       let slope = transpose(rot) * der.xy * (lay.w * amp[3]);
       sx += slope.x;
       sy += slope.y;
-      let lod = log2(max(max(fpMin, fpMaj / 8.0) * 256.0 * sc, 1e-6));
       resolved += oceanFilteredFraction(3u, lod) * c3.stats.x * sq(lay.w * amp[3]);
     }
   }
@@ -282,6 +292,10 @@ struct FsOut {
   let muS = dot(s.up, sunDir);
   var lit = vec3f(0.0);
   var bottomFar = vec3f(0.0);
+  // The seabed contributes only where light can make the round trip through the column: beyond about
+  // 6 / (2 kappa_min) metres (about 95 m of clear ocean) it is invisible, and refraction is skipped.
+  let kMin = min(min(frame.bodies[bi].ocean.r, frame.bodies[bi].ocean.g), frame.bodies[bi].ocean.b);
+  let seeBottom = detail > 0.02 && !sheet && dOpaque > 0.0 && column * kMin < 3.0;
   var sunEff = vec3f(0.0);
   let vis = sunVisibility(posRel, sunDir);
   if (vis > 0.0) {
@@ -292,7 +306,7 @@ struct FsOut {
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
       lit += brdfWaterDirect(s, sunDir) * sunE * shadow;
-      bottomFar += waterBodyDirect(s, sunDir).bottom * sunE * shadow;
+      if (seeBottom) { bottomFar += waterBodyDirect(s, sunDir).bottom * sunE * shadow; }
       sunEff = sunE * shadow;
     }
   }
@@ -310,14 +324,16 @@ struct FsOut {
     amb.skyIrradiance = textureSampleLevel(skyIrradianceLut, linearClamp, suv, layer, 0.0).rgb * (0.5 + 0.5 * dot(s.n, s.up));
   }
   lit += brdfWaterAmbient(s, amb);
-  bottomFar += waterBodyAmbient(s, amb).bottom;
+  if (seeBottom) { bottomFar += waterBodyAmbient(s, amb).bottom; }
   var receiver = MAX_BODIES;
   if (s.altitude < 0.5 * b.center.w) { receiver = u32(bi); }
   for (var k = 0u; k < 2u; k++) {
     let sh = frame.shine[receiver * 2u + k];
-    if (sh.illuminance.r + sh.illuminance.g + sh.illuminance.b > 0.0) {
+    // Planetshine far below the sunlight on this pixel (moonlight by day) changes nothing visible: skipped.
+    let shE = sh.illuminance.r + sh.illuminance.g + sh.illuminance.b;
+    if (shE > 0.0 && shE > 1e-5 * (sunEff.r + sunEff.g + sunEff.b)) {
       lit += brdfWaterDirect(s, sh.dir.xyz) * sh.illuminance.rgb;
-      bottomFar += waterBodyDirect(s, sh.dir.xyz).bottom * sh.illuminance.rgb;
+      if (seeBottom) { bottomFar += waterBodyDirect(s, sh.dir.xyz).bottom * sh.illuminance.rgb; }
     }
   }
   for (var i = 0u; i < min(frame.counts.y, MAX_LIGHTS); i++) {
@@ -338,8 +354,8 @@ struct FsOut {
   lit += s.albedo * frame.sunIlluminance.rgb * (frame.misc.x / PI);
 
   // ---- refraction of the real seabed (near field only): replaces the modelled bottom term of the body colour.
-  if (detail > 0.0 && !sheet && dOpaque > 0.0) {
-    // March the refracted ray through the depth copy (8 steps, denser near the surface) to the first opaque
+  if (seeBottom) {
+    // March the refracted ray through the depth copy (6 steps, denser near the surface) to the first opaque
     // surface behind the water: a submerged object or the seabed seen through the waves, no screen-space ghosts.
     let tdir = refract(-s.v, s.n, 1.0 / WATER_IOR);
     let size = frame.renderSize.xy;
@@ -349,8 +365,8 @@ struct FsOut {
     var tHit = min(max(column, 0.0) / cosT, 40.0);
     var hitUv = uv;
     var tPrev = 0.0;
-    for (var i = 1u; i <= 8u; i++) {
-      let t = reach * sq(f32(i) / 8.0);
+    for (var i = 1u; i <= 6u; i++) {
+      let t = reach * sq(f32(i) / 6.0);
       let q = posRel + tdir * t;
       let pu = projectToUv(q);
       if (pu.w <= 0.0) { break; }

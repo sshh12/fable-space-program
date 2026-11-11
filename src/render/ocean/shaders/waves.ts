@@ -221,9 +221,25 @@ struct OceanSurfacePoint {
 /// move the point to p = p0 + D; the height is the swell evaluated AT p (so the drawn surface's height at any
 /// horizontal position equals oceanSwellHeight there) plus the FFT height carried from p0 plus ripples.
 fn oceanSurfaceAt(p0: vec2f, filterWidth: f32, detail: f32, amp: vec4f, prev: bool) -> OceanSurfacePoint {
-  var o: OceanSurfacePoint;
   let delta0 = oceanSphereOffset(p0);
-  let up0 = oceanUpAt(delta0);
+  return oceanSurfaceFrom(p0, delta0, oceanUpAt(delta0), filterWidth, detail, amp, prev);
+}
+
+/// oceanSurfaceAt with the Lagrangian point's sphere offset and up already known (shared by this and the
+/// previous frame's evaluation of the same vertex).
+fn oceanSurfaceFrom(p0: vec2f, delta0: vec3f, up0: vec3f, filterWidth: f32, detail: f32, amp: vec4f, prev: bool) -> OceanSurfacePoint {
+  var o: OceanSurfacePoint;
+  if (detail <= 0.0) {
+    // Between fadeStart and fadeEnd the surface is the flat sea-level sheet.
+    o.delta = delta0;
+    o.up = up0;
+    o.height = 0.0;
+    o.swell = 0.0;
+    o.fft = 0.0;
+    o.ripple = 0.0;
+    o.finalPlane = p0;
+    return o;
+  }
   let sw0 = oceanSwellEval(delta0, up0, filterWidth, prev);
   let f = oceanFftDisplacement(p0, filterWidth, amp * detail, prev);
   let p = p0 + (sw0.disp * detail + f.disp.xz);

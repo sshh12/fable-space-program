@@ -142,6 +142,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let sceneGroup: GPUBindGroup | null = null;
   let sceneVersion = -1;
   let oceanLayout: GPUBindGroupLayout;
+  let oceanSampler: GPUSampler;
   const oceanGroups = new Map<string, GPUBindGroup>();
   let pipeline: Tracked<GPURenderPipeline>;
   let readbackLayout: GPUBindGroupLayout;
@@ -189,6 +190,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           { binding: 4, resource: fft.derivView },
           { binding: 5, resource: fft.foamViews[fft.foamCurrent]! },
           { binding: 6, resource: vessels.wakeViews[vessels.wakeCurrent]! },
+          { binding: 7, resource: oceanSampler },
         ],
       });
       oceanGroups.set(key, g);
@@ -437,8 +439,10 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           arr(4, F),
           arr(5, F),
           { binding: 6, visibility: F, texture: { sampleType: 'float' } },
+          { binding: 7, visibility: F, sampler: { type: 'filtering' } },
         ],
       });
+      oceanSampler = device.createSampler({ label: 'ocean.sampler', addressModeU: 'repeat', addressModeV: 'repeat', magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', maxAnisotropy: 4 });
       const layout = device.createPipelineLayout({ label: 'ocean.surface', bindGroupLayouts: [c.frameBindGroupLayout, sceneLayout, oceanLayout] });
       const blend: GPUBlendState = { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } };
       pipeline = core.shaders.tracked(() => {
