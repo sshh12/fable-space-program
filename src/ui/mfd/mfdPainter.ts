@@ -673,27 +673,21 @@ function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSn
 function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
   const fl = describeFlight(s);
   const r = s.readouts;
-  const { w, h, top } = f;
-  // Status strip: throttle, g, horizontal and vertical speed.
-  const stripH = h * 0.095;
-  const gap = w * 0.012;
-  const bw = (w - 2 * f.pad - 3 * gap) / 4;
-  const row = (label: string): { label: string; value: string; tone?: Tone; icon?: VerticalTrend } => model.rows.find((x) => x.label === label)!;
-  const boxes = [row('Throttle'), row('G load'), row('Horizontal'), row('Vertical')];
-  boxes.forEach((b, i) => statBox(ctx, f, f.pad + i * (bw + gap), top, bw, stripH, b.label, b.value, b.tone ?? 'normal', b.icon));
-  // ADI, tapes, heading tape.
-  const areaTop = top + stripH + h * 0.06;
-  const headingH = h * 0.07;
+  const { w, h } = f;
+  // The ADI takes about 60 % of the page height, tapes on both sides, the heading tape under it.
+  const headingH = h * 0.065;
+  const areaTop = f.top + h * 0.045;
   const areaBottom = f.bottom - headingH - h * 0.05;
-  const rr = Math.min((areaBottom - areaTop) / 2 / 1.08, w * 0.24);
+  const rr = Math.min((areaBottom - areaTop) / 2 / 1.06, w * 0.25);
   const cx = w / 2;
-  const cy = (areaTop + areaBottom) / 2 + rr * 0.04;
+  const cy = areaTop + rr * 1.08;
   drawAdi(ctx, f, cx, cy, rr, s);
   const tapeW = w * 0.13;
-  const tapeH = rr * 2;
-  const tapeY = cy - rr;
+  const tapeH = rr * 1.7;
+  const tapeY = cy - rr * 0.95;
   const speed = fl.speedMode === 'surface' ? r.speedSurface : r.speedOrbital;
-  drawTape(ctx, f, f.pad + w * 0.02, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60);
+  const leftX = f.pad + w * 0.02;
+  drawTape(ctx, f, leftX, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60);
   const radar = fl.altitudeSource === 'radar';
   const alt = radar ? r.altitudeRadar : r.altitudeAsl;
   const altFmt = (v: number): string => (Math.abs(alt) >= 2e4 ? `${formatNumber(v / 1000, 0)}` : formatNumber(v, 0));
@@ -702,15 +696,26 @@ function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): v
   const altX = w - f.pad - vsiW - w * 0.015 - tapeW;
   drawTape(ctx, f, altX, tapeY, tapeW, tapeH, alt, fl.altitude, altTitle, 'left', altFmt, 300);
   drawVsi(ctx, f, w - f.pad - vsiW, tapeY, vsiW, tapeH, r.verticalSpeed);
-  drawHeadingTape(ctx, f, cx, f.bottom - headingH, rr * 1.7, headingH, s.navball.headingDeg, fl.heading);
+  drawHeadingTape(ctx, f, cx, f.bottom - headingH, rr * 1.6, headingH, s.navball.headingDeg, fl.heading);
+  // Read-out boxes under the tapes: throttle and g on the left, horizontal and vertical speed on the right.
+  const row = (label: string): MfdRow => model.rows.find((x) => x.label === label)!;
+  const boxTop = tapeY + tapeH + h * 0.035;
+  const boxH = Math.min(h * 0.085, (f.bottom - boxTop - h * 0.012) / 2);
+  const lw = tapeW * 1.25;
+  const rw = w - f.pad - altX;
+  statBox(ctx, f, leftX, boxTop, lw, boxH, 'Throttle', row('Throttle').value);
+  statBox(ctx, f, leftX, boxTop + boxH + h * 0.012, lw, boxH, 'G load', row('G load').value, row('G load').tone ?? 'normal');
+  statBox(ctx, f, altX, boxTop, rw, boxH, 'Horizontal', row('Horizontal').value);
+  const vr = row('Vertical');
+  statBox(ctx, f, altX, boxTop + boxH + h * 0.012, rw, boxH, 'Vertical', vr.value, vr.tone ?? 'normal', vr.icon);
   // Pitch and roll read-outs at the lower corners of the ADI.
   setFont(ctx, 600, px(f, MIN_TEXT));
-  const py = cy + rr * 0.98;
-  text(ctx, 'PITCH', cx - rr * 1.02, py - h * 0.022, 'right', 'middle', LABEL);
-  text(ctx, 'ROLL', cx + rr * 1.02, py - h * 0.022, 'left', 'middle', LABEL);
+  const py = cy + rr * 0.92;
+  text(ctx, 'PITCH', cx - rr * 1.0, py - h * 0.022, 'right', 'middle', LABEL);
+  text(ctx, 'ROLL', cx + rr * 1.0, py - h * 0.022, 'left', 'middle', LABEL);
   setFont(ctx, 700, px(f, 0.036));
-  text(ctx, fl.pitch, cx - rr * 1.02, py + h * 0.018, 'right', 'middle', COLORS.normal);
-  text(ctx, fl.roll, cx + rr * 1.02, py + h * 0.018, 'left', 'middle', COLORS.normal);
+  text(ctx, fl.pitch, cx - rr * 1.0, py + h * 0.018, 'right', 'middle', COLORS.normal);
+  text(ctx, fl.roll, cx + rr * 1.0, py + h * 0.018, 'left', 'middle', COLORS.normal);
 }
 
 // ------------------------------------------------------------------------------------------------ orbit
@@ -823,11 +828,12 @@ function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h
     ctx.lineTo(ax - d, ay);
     ctx.closePath();
     ctx.fill();
-    const tx = ax + (align === 'left' ? 1 : -1) * f.h * 0.025;
+    // Label above the point and value below it, both clear of the vessel icon that may sit on the apsis.
+    const tx = ax + (align === 'left' ? 1 : -1) * f.h * 0.012;
     setFont(ctx, 700, px(f, 0.036));
-    text(ctx, label, tx, ay - f.h * 0.022, align, 'middle', COLORS.normal);
+    text(ctx, label, tx, ay - f.h * 0.05, align, 'middle', COLORS.normal);
     setFont(ctx, 600, px(f, MIN_TEXT));
-    text(ctx, formatApsis(alt), tx, ay + f.h * 0.022, align, 'middle', alt < 0 ? COLORS.warning : LABEL);
+    text(ctx, formatApsis(alt), tx, ay + f.h * 0.05, align, 'middle', alt < 0 ? COLORS.warning : LABEL);
   };
   apsis(0, 'Pe', rp - R, 'right');
   if (closed) apsis(Math.PI, 'Ap', ra - R, 'left');
@@ -899,7 +905,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): 
   // The stack, next first, filling the rest of the page.
   const y0 = f.top + stripH + f.h * 0.03;
   const avail = f.bottom - y0;
-  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.11);
+  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.15);
   const x = f.pad;
   const w = f.w - 2 * f.pad;
   tiles.forEach((t, i) => {
@@ -1068,8 +1074,8 @@ function drawScope(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: Sim
   ctx.lineWidth = Math.max(1, r * 0.007);
   const rings = [100, 1000, 10_000, 100_000];
   const map = (m: number): number => (Math.log10(1 + Math.abs(m) / 30) / Math.log10(1 + 300_000 / 30)) * r;
-  // Labels go opposite the target (or to the lower left without one).
-  const labelBearing = (((scope && Math.hypot(scope.east, scope.north) > 0.5 ? (Math.atan2(scope.east, scope.north) * 180) / Math.PI : 45) + 180) * Math.PI) / 180;
+  // Ring labels stack along the vertical hair (their widths never meet), on the half away from the target.
+  const labelBearing = scope && scope.north < 0 ? 0 : Math.PI;
   setFont(ctx, 600, px(f, MIN_TEXT));
   for (const m of rings) {
     ctx.beginPath();

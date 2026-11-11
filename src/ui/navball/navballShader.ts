@@ -63,24 +63,24 @@ fn vsBall(@builtin(vertex_index) i: u32) -> VsOut {
   return o;
 }
 
-/** Soft-edged rectangle mask of a reflected direction against a window light (the varnish highlight). */
-fn windowReflection(n: vec3f) -> f32 {
-  // Mirror direction of the view ray (the eye looks along -z).
-  let rv = reflect(vec3f(0.0, 0.0, -1.0), n);
-  let w = normalize(vec3f(-0.5, 0.62, 0.6));
-  let tx = normalize(cross(vec3f(0.0, 0.0, 1.0), w));
-  let ty = cross(w, tx);
-  let d = dot(rv, w);
-  let q = vec2f(dot(rv, tx), dot(rv, ty)) / max(d, 1e-3);
-  // Window half extents (tangent units) and a rounded corner; edge softness from the pixel footprint.
-  let half = vec2f(0.2, 0.12);
-  let e = abs(q) - half + vec2f(0.035);
-  let sd = length(max(e, vec2f(0.0))) + min(max(e.x, e.y), 0.0) - 0.035;
-  let fw = max(fwidth(sd), 1e-4);
-  let inside = 1.0 - smoothstep(-fw, fw, sd);
-  // Two mullions split the window into panes (a lamp housing seen in the varnish).
-  let mull = 1.0 - 0.75 * (1.0 - smoothstep(0.0, fw * 1.5 + 0.004, abs(q.x - 0.03) - 0.008));
-  return inside * mull * step(0.0, d);
+/**
+ * The varnish reflection of a window light up and to the left of the instrument. On an orthographic sphere the
+ * normal at screen radius r reflects the view ray to the polar angle 2 asin(r), at the screen azimuth of the
+ * pixel, so a window spanning a band of polar angles and azimuths reflects as an annular sector parallel to the
+ * rim: a crisp curved strip (sharp radial edges at pixel scale, soft ends), brighter toward the rim.
+ */
+fn windowReflection(p: vec2f, r: f32) -> f32 {
+  let ang = atan2(p.y, p.x);
+  let centre = 2.3;
+  let da = abs(atan2(sin(ang - centre), cos(ang - centre)));
+  let r0 = 0.7;
+  let r1 = 0.87;
+  let fw = max(fwidth(r), 1e-4) * 0.9;
+  let radial = smoothstep(r0 - fw, r0 + fw, r) * (1.0 - smoothstep(r1 - fw, r1 + fw, r));
+  let along = 1.0 - smoothstep(0.26, 0.4, da);
+  // A frame bar across the strip splits it into two panes.
+  let bar = smoothstep(0.012, 0.012 + fw / max(r, 0.2), abs(ang - centre - 0.04));
+  return radial * along * bar * mix(0.35, 1.0, smoothstep(r0, r1, r));
 }
 
 @fragment
@@ -111,7 +111,7 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
   let n = vec3f(p.x, p.y, z) / max(1.0, r);
   let L = normalize(vec3f(-0.42, 0.58, 0.7));
   let ndl = dot(n, L);
-  let reflection = windowReflection(n);
+  let reflection = windowReflection(p, r);
   var lit: vec3f;
   if (ball.params.z < 0.5) {
     // Shared texture: soft shading only (the cockpit relights it).
@@ -125,7 +125,7 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
     let limb = mix(0.4, 1.0, smoothstep(0.0, 0.6, z));
     let contact = 1.0 - 0.6 * smoothstep(0.9, 0.995, r);
     let fresnel = pow(1.0 - z, 5.0);
-    lit = albedo * diffuse * limb * contact + vec3f(0.5, 0.56, 0.62) * (reflection * 0.42) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
+    lit = albedo * diffuse * limb * contact + vec3f(0.62, 0.68, 0.74) * (reflection * 0.5) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
   }
   return vec4f(toSrgb(lit) * coverage, coverage);
 }

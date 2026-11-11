@@ -552,7 +552,8 @@ export function createHud(opts: HudOptions): HudImpl {
       ballCanvas.height = ballPx;
       bezelCanvas.width = ballPx;
       bezelCanvas.height = ballPx;
-      if (bezelCtx) drawNavballBezel(bezelCtx, ballPx, HUD_BALL_RADIUS_FRACTION);
+      // A hidden ball (interior view) reports a zero box: nothing to draw.
+      if (bezelCtx && ballPx >= 16) drawNavballBezel(bezelCtx, ballPx, HUD_BALL_RADIUS_FRACTION);
     }
   });
   ro.observe(ballCanvas);
@@ -687,28 +688,28 @@ export function createHud(opts: HudOptions): HudImpl {
         if (compact) {
           tile = el('div', 'tile compact', [num, icon, el('div', 'name', [t.label]), el('div', 'dv', [dv.node])]);
         } else {
-          // Line 1: the name alone (and the key cap of the next stage). Line 2: delta-v, TWR and burn time, the
-          // action icons that differ from the stage icon, the propellant bar; or the lockout and its reason.
-          const line1 = el('div', 'l1', [el('div', 'name', [t.label])]);
+          // Line 1: the name and the action icons that differ from the stage icon. Line 2: the key cap of the
+          // next stage, delta-v, TWR and burn time; or the lockout and its reason. Under it a thin propellant strip.
+          const acts = [...new Set(t.actionKinds.map(stageIconFor))].filter((k) => k !== iconName).slice(0, 3);
+          const line1 = el('div', 'l1', [el('div', 'name', [t.label]), ...(acts.length > 0 ? [el('span', 'acts', acts.map((k) => svgIcon(STAGE_ICONS[k])))] : [])]);
           let line2: HTMLElement;
           if (locked) {
             line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['after last stage'])]);
           } else {
             meta = new TextSlot('');
-            const acts = [...new Set(t.actionKinds.map(stageIconFor))].filter((k) => k !== iconName).slice(0, 3);
             const parts: HTMLElement[] = [];
             if (t.next) parts.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
             parts.push(el('span', 'dv', [dv.node]), el('span', 'meta', [meta.node]));
-            if (acts.length > 0) parts.push(el('span', 'acts', acts.map((k) => svgIcon(STAGE_ICONS[k]))));
-            if (t.propellant !== null) {
-              const b = bar();
-              fill = b.fill;
-              barTone = classFlag(b.root, 'caution');
-              parts.push(b.root);
-            }
             line2 = el('div', 'l2', parts);
           }
-          tile = el('div', 'tile', [num, icon, el('div', 'main', [line1, line2])]);
+          const mainParts: HTMLElement[] = [line1, line2];
+          if (t.propellant !== null) {
+            const b = bar('prop');
+            fill = b.fill;
+            barTone = classFlag(b.root, 'caution');
+            mainParts.push(b.root);
+          }
+          tile = el('div', 'tile', [num, icon, el('div', 'main', mainParts)]);
           if (t.next) {
             tile.classList.add('next');
             if (locked) tile.classList.add('locked');
@@ -958,7 +959,7 @@ export function createHud(opts: HudOptions): HudImpl {
       const committed = r.chuteEnvelope !== null || lt.predicted !== null;
       zoneShow.set(zone && (lt.insideZone || committed));
       zoneText.set(lt.insideZone ? 'INSIDE ZONE' : 'OUTSIDE ZONE');
-      zoneSub.set(lt.zoneRadius !== null ? `radius ${lt.zoneRadius}` : '');
+      zoneSub.set(lt.zoneRadius !== null ? `r ${lt.zoneRadius}` : '');
       zoneTone.set(lt.insideZone ? 'good' : 'caution');
     } else ltCurrentRows = null;
 

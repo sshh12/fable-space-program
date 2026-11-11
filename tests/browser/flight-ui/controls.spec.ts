@@ -413,8 +413,8 @@ test.describe('flight-ui controls', () => {
     }
     await expect(page.locator('.hud .stagewrap .more')).toHaveText(/^Δv .* total$/);
     // Every stage name of the mission vehicle reads in full, and the number column and icon stay inside their tile.
-    const names = await page.locator('.hud .stages .tile .name').evaluateAll((els) => els.map((e) => ({ text: e.textContent, over: e.scrollWidth - e.clientWidth })));
-    for (const n of names) expect(n.over, `stage name "${n.text}" is cut`).toBeLessThanOrEqual(0);
+    const names = await page.locator('.hud .stages .tile .name, .hud .stages .tile .meta').evaluateAll((els) => els.map((e) => ({ text: e.textContent, over: e.scrollWidth - e.clientWidth })));
+    for (const n of names) expect(n.over, `stage text "${n.text}" is cut`).toBeLessThanOrEqual(0);
     const parts = await tiles.evaluateAll((els) =>
       els.map((t) => {
         const r = t.getBoundingClientRect();
