@@ -23,6 +23,12 @@ export interface StandOptions {
   slabSize?: number;
   /** PbrMaterialDef.shadowSoftness of the slab (m; request terrain-render-4). Default: none. */
   slabShadowSoftness?: number;
+  /**
+   * A 3 x 3 m bar-grating panel 2 m above the slab at (14, -10) (request vehicle-pad-4): 'cutout' with
+   * `alphaCutoff` 0.5 (bars 4.7 cm wide every 37.5 cm both ways: 77 % open), 'opaque' the same without it.
+   * Default: none.
+   */
+  grating?: 'cutout' | 'opaque';
   id?: string;
 }
 
@@ -51,6 +57,8 @@ export interface StandFeature extends RenderFeature {
   readonly batch: () => MeshBatch;
   /** Site-frame (ENU) centre of the white Lambert card and its albedo, for the HDR readback test. */
   readonly whiteCard: { pos: Vec3Tuple; albedo: number };
+  /** Centre (site ENU) of the grating panel when there is one, and its open share. */
+  readonly grating: { pos: Vec3Tuple; open: number } | null;
   /** Centres of the two 2 m textured planes: a procedural checker and the same pattern loaded from a PNG URL (8 x 8 squares of 0.25 m). */
   readonly texturedPlanes: { procedural: Vec3Tuple; url: Vec3Tuple };
   /** Centre (site ENU) of the display panel, whose 1.2 x 0.8 m faces look south and north, and its emitted luminance at brightness 1 (cd/m^2). */
@@ -94,6 +102,7 @@ export function createStandFeature(options: StandOptions): StandFeature {
     whiteCard,
     texturedPlanes,
     display,
+    grating: options.grating ? { pos: [14, -10, 2], open: (28 / 32) ** 2 } : null,
     setDisplayBrightness(b) {
       displayBrightness = b;
     },
@@ -130,6 +139,14 @@ export function createStandFeature(options: StandOptions): StandFeature {
       meshes.registerProceduralTexture('lab-checker', { width: 64, height: 64, data: checker });
       const textured = (name: string, texture: string): PbrMaterialDef => ({ name, shading: 'terrain', baseColor: [1, 1, 1], roughness: 1, metallic: 0, textures: { baseColor: texture } });
       placed.push({ model: model('texProc', planeMesh(2, 2), textured('texProc', 'lab-checker')), pos: texturedPlanes.procedural, rot: null });
+      if (options.grating) {
+        // 64 x 64 texels, four tiles over the panel: bars 4 texels (4.7 cm) wide every 32 texels (37.5 cm) both ways.
+        const g = new Uint8Array(64 * 64 * 4);
+        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) g.set([255, 255, 255, x % 32 < 4 || y % 32 < 4 ? 255 : 0], (y * 64 + x) * 4);
+        meshes.registerProceduralTexture('lab-grating', { width: 64, height: 64, data: g });
+        const gm: PbrMaterialDef = { name: `grating-${options.grating}`, shading: 'standard', baseColor: [0.55, 0.06, 0.04], roughness: 0.6, metallic: 0, doubleSided: true, textures: { baseColor: 'lab-grating' }, uvScale: [4, 4], ...(options.grating === 'cutout' ? { alphaCutoff: 0.5 } : {}) };
+        placed.push({ model: model('grating', planeMesh(3, 3), gm), pos: [14, -10, 2], rot: null });
+      }
       placed.push({ model: model('texUrl', planeMesh(2, 2), textured('texUrl', 'render/lab-grid.png')), pos: texturedPlanes.url, rot: null });
 
       const sphere = sphereMesh(0.5, 64, 32);

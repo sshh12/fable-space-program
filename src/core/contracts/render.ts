@@ -185,6 +185,12 @@ export interface PbrMaterialDef {
    * Softens every shadow falling on the surface, a vessel's included: for coarse ground seen from afar.
    */
   shadowSoftness?: number;
+  /**
+   * Alpha test (request vehicle-pad-4): fragments whose base-colour texture alpha is below this value are not
+   * drawn, in the G-buffer and in the shadow maps (bar grating, perforated plate). Absent = opaque. The test is
+   * dithered by half the alpha's screen-space gradient, so the cut edge is anti-aliased by the TAA.
+   */
+  alphaCutoff?: number;
   doubleSided?: boolean;
   /** Texture URLs (public/assets/**) or ids of procedural textures registered with the render core. */
   textures?: { baseColor?: string; normal?: string; orm?: string; emissive?: string };

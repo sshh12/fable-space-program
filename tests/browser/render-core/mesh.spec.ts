@@ -276,3 +276,78 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
   expect(coatFrost).toBeLessThan(0.75 * coatClean);
   await expectNoErrors(page, pageLog);
 });
+
+test('alpha-tested materials: a bar grating shows the ground through it, casts a dappled shadow and keeps its coverage far away (request vehicle-pad-4)', async ({ page, pageLog }) => {
+  /** Mean HDR luminance over the screen box of a ground rectangle (site ENU, z = 0) and its share of red pixels. */
+  const box = async (x0: number, x1: number, y0: number, y1: number, z: number): Promise<{ lum: number; red: number; px: number }> =>
+    page.evaluate(
+      async ({ r }) => {
+        const lab = window.__lab!;
+        await window.__test!.waitFrames(8);
+        const ps = [
+          [r.x0, r.y0],
+          [r.x1, r.y0],
+          [r.x0, r.y1],
+          [r.x1, r.y1],
+        ].map(([x, y]) => window.__rc!.projectSitePoint([x!, y!, r.z])!);
+        const xs = ps.map((p) => p.x);
+        const ys = ps.map((p) => p.y);
+        // Inner box of the (possibly trapezoidal) projection; east is to the right in every view used here.
+        const left = Math.ceil(Math.max(xs[0]!, xs[2]!));
+        const right = Math.floor(Math.min(xs[1]!, xs[3]!));
+        const top = Math.ceil(Math.min(...ys) + 0.15 * (Math.max(...ys) - Math.min(...ys)));
+        const bottom = Math.floor(Math.max(...ys) - 0.15 * (Math.max(...ys) - Math.min(...ys)));
+        const img = await lab.renderer.readHdrPixels('hdr', { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) });
+        let lum = 0;
+        let red = 0;
+        const n = img.width * img.height;
+        for (let i = 0; i < n; i++) {
+          const R = img.data[i * 4]!;
+          const G = img.data[i * 4 + 1]!;
+          lum += 0.2126 * R + 0.7152 * G + 0.0722 * img.data[i * 4 + 2]!;
+          if (R > 2.5 * G) red++;
+        }
+        return { lum: lum / n, red: red / n, px: n };
+      },
+      { r: { x0, x1, y0, y1, z } },
+    );
+  const shoot = async (mode: 'cutout' | 'opaque'): Promise<{ bars: number; farBars: number; shadow: number; open: number }> => {
+    await openPage(page, `/labs/render-core/?sun=180,70&hud=0&paused=1&ev=14.6&grating=${mode}`);
+    await assertDiscreteGpu(page);
+    await page.evaluate(() => {
+      window.__test!.setDeterministic(true);
+      window.__lab!.renderer.setJitter(false);
+      window.__rc!.lookAt(window.__rc!.stand!.grating!.pos, 0, 89.9, 6);
+    });
+    await waitIdle(page, 12);
+    // From above, 6 m: the panel's own pixels against the ground through it.
+    const top = await box(12.8, 15.2, -11.2, -8.8, 2);
+    await saveScreenshot(page, 'render-core', `mesh-grating-${mode}-top`);
+    // 60 m away: the bars are under a pixel; the coverage must stay the panel's solid share.
+    await page.evaluate(() => window.__rc!.lookAt(window.__rc!.stand!.grating!.pos, 0, 89.9, 60));
+    await waitIdle(page, 12);
+    const far = await box(12.8, 15.2, -11.2, -8.8, 2);
+    // From the south, under the panel's height: the ground in its shadow (the sun 70 deg up in the south puts it
+    // 0.73 m north of the panel) against the sunlit ground east of it.
+    await page.evaluate(() => window.__rc!.lookAt([14, -9.3, 0], 180, 12, 3));
+    await waitIdle(page, 12);
+    const shade = await box(13.5, 14.5, -9.8, -8.8, 0);
+    const lit = await box(16.2, 16.8, -9.8, -8.8, 0);
+    await saveScreenshot(page, 'render-core', `mesh-grating-${mode}-shadow`);
+    const open = await page.evaluate(() => window.__rc!.stand!.grating!.open);
+    return { bars: top.red, farBars: far.red, shadow: shade.lum / lit.lum, open };
+  };
+  const cut = await shoot('cutout');
+  const solid = await shoot('opaque');
+  console.log(`grating (open share ${cut.open.toFixed(3)}): panel pixels that are bars from 6 m ${cut.bars.toFixed(3)} (opaque ${solid.bars.toFixed(3)}), from 60 m ${cut.farBars.toFixed(3)} (opaque ${solid.farBars.toFixed(3)}); ground in its shadow / sunlit ground ${cut.shadow.toFixed(3)} (opaque ${solid.shadow.toFixed(3)})`);
+  // The opaque panel is a plank: all bar colour, and a full shadow.
+  expect(solid.bars).toBeGreaterThan(0.95);
+  expect(solid.shadow).toBeLessThan(0.3);
+  // The cut-out panel: the bars only, near and far (a fixed cut at 0.5 of the mip-averaged alpha would lose it).
+  expect(Math.abs(cut.bars - (1 - cut.open))).toBeLessThan(0.08);
+  expect(Math.abs(cut.farBars - (1 - cut.open))).toBeLessThan(0.1);
+  // Its shadow lets the open share of the sun through (plus the ambient that the opaque one keeps too).
+  expect(cut.shadow).toBeGreaterThan(cut.open - 0.12);
+  expect(cut.shadow).toBeLessThan(cut.open + 0.1 + solid.shadow);
+  await expectNoErrors(page, pageLog);
+});

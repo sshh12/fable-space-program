@@ -28,6 +28,23 @@ struct ShadowPassUniforms {
 @group(1) @binding(0) var<uniform> shadowPass: ShadowPassUniforms;
 `;
 
+/**
+ * Alpha test shared by the G-buffer and the cut-out shadow shader (request vehicle-pad-4). Near (a texel
+ * covers a pixel or more) the cut is at `cutoff`, dithered by half the alpha's screen-space gradient so that
+ * the TAA anti-aliases the edge. Far (several texels per pixel, coarse mips) the mip-averaged alpha is the
+ * share of the surface that is solid, and a fixed cut would make a 70 % open grating vanish (its average
+ * alpha falls under the cutoff) or close up: there the test becomes stochastic (keep with probability alpha),
+ * which the TAA and the shadow filter turn into the right partial coverage.
+ */
+const CUTOUT_WGSL = /* wgsl */ `
+fn cutoutFootprint(uv: vec2f, size: vec2f) -> f32 {
+  return max(length(dpdx(uv * size)), length(dpdy(uv * size)));
+}
+fn cutoutThreshold(cutoff: f32, alphaWidth: f32, texelsPerPixel: f32, noise: f32) -> f32 {
+  return mix(cutoff - (noise - 0.5) * alphaWidth, noise, smoothstep(1.0, 4.0, texelsPerPixel));
+}
+`;
+
 const INSTANCE_WGSL = /* wgsl */ `
 struct MeshInstance {
   m0: vec4f, m1: vec4f, m2: vec4f,   // rows of the 3x4 local -> camera-relative transform (ROOT axes)
@@ -45,6 +62,7 @@ const GBUFFER_SHADER = /* wgsl */ `
 #include "noise"
 #include "gbuffer"
 ${INSTANCE_WGSL}
+${CUTOUT_WGSL}
 @group(1) @binding(0) var<storage, read> instances: array<MeshInstance>;
 @group(1) @binding(1) var blackbodyLut: texture_2d<f32>;
 // 'ocean.wetness' (src/core/contracts/render.ts): the water at the vessels that float or are entering it.
@@ -56,6 +74,7 @@ struct Material {
   params: vec4f,      // roughness, shading id, material parameter, anisotropy
   emissive: vec4f,    // rgb cd/m^2, a = clearcoat
   misc: vec4f,        // clearcoat roughness, shadow softness (m; terrain and regolith), uv scale
+  cutout: vec4f,      // x = alpha cutoff (0 = opaque), yzw unused
 }
 @group(2) @binding(0) var<uniform> material: Material;
 @group(2) @binding(1) var baseColorTex: texture_2d<f32>;
@@ -156,6 +175,12 @@ fn blackbody(T: f32) -> vec3f {
     if (select(nz, 1.0 - nz, I.params2.y > 0.5) >= fade) { discard; }
   }
   let base = textureSample(baseColorTex, anisoRepeat, v.uv);
+  // Alpha test of cut-out materials (request vehicle-pad-4). (Derivatives first: they need uniform control flow.)
+  let alphaWidth = fwidth(base.a);
+  let texelsPerPixel = cutoutFootprint(v.uv, vec2f(textureDimensions(baseColorTex)));
+  if (material.cutout.x > 0.0) {
+    if (base.a < cutoutThreshold(material.cutout.x, alphaWidth, texelsPerPixel, blueNoise(vec2u(v.clip.xy)).g)) { discard; }
+  }
   let orm = textureSample(ormTex, anisoRepeat, v.uv);
   let tn = textureSample(normalTex, anisoRepeat, v.uv).xyz * 2.0 - 1.0;
   let em = textureSample(emissiveTex, anisoRepeat, v.uv).rgb;
@@ -240,6 +265,35 @@ ${INSTANCE_WGSL}
 @vertex fn vs(@location(0) pos: vec3f, @builtin(instance_index) inst: u32) -> @builtin(position) vec4f {
   let I = instances[inst];
   return shadowPass.viewProj * vec4f(instancePos(I.m0, I.m1, I.m2, pos), 1.0);
+}
+`;
+
+/** Shadow pass of cut-out materials (request vehicle-pad-4): the alpha test of the G-buffer shader, with uv. */
+const SHADOW_CUTOUT_SHADER = /* wgsl */ `
+#include "frame"
+#include "shadow_pass"
+${INSTANCE_WGSL}
+@group(2) @binding(0) var<storage, read> instances: array<MeshInstance>;
+struct Material { baseColor: vec4f, params: vec4f, emissive: vec4f, misc: vec4f, cutout: vec4f }
+@group(3) @binding(0) var<uniform> material: Material;
+@group(3) @binding(1) var baseColorTex: texture_2d<f32>;
+struct SOut {
+  @builtin(position) clip: vec4f,
+  @location(0) uv: vec2f,
+}
+@vertex fn vs(@location(0) pos: vec3f, @location(1) uv: vec2f, @builtin(instance_index) inst: u32) -> SOut {
+  let I = instances[inst];
+  var o: SOut;
+  o.clip = shadowPass.viewProj * vec4f(instancePos(I.m0, I.m1, I.m2, pos), 1.0);
+  o.uv = uv * material.misc.zw;
+  return o;
+}
+${CUTOUT_WGSL}
+@fragment fn fs(v: SOut) {
+  let a = textureSample(baseColorTex, anisoRepeat, v.uv).a;
+  let alphaWidth = fwidth(a);
+  let texelsPerPixel = cutoutFootprint(v.uv, vec2f(textureDimensions(baseColorTex)));
+  if (a < cutoutThreshold(material.cutout.x, alphaWidth, texelsPerPixel, blueNoise(vec2u(v.clip.xy)).g)) { discard; }
 }
 `;
 
@@ -349,6 +403,8 @@ interface GpuLod {
 interface ModelImpl extends ModelHandle {
   lods: GpuLod[];
   materials: GpuMaterial[];
+  /** Some material is alpha-tested: the shadow pass draws per material group (request vehicle-pad-4). */
+  cutout: boolean;
   lodPixels: readonly number[];
   uid: number;
 }
@@ -501,6 +557,18 @@ export function createMeshSystem(args: {
       depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
     });
   });
+  // Cut-out materials (request vehicle-pad-4): position and uv, the base colour's alpha tested in the fragment.
+  const shadowCutoutPipeline: Tracked<GPURenderPipeline> = shaders.tracked(() => {
+    const module = shaders.createModule('mesh.shadow.cutout', SHADOW_CUTOUT_SHADER);
+    return device.createRenderPipeline({
+      label: 'mesh.shadow.cutout',
+      layout: device.createPipelineLayout({ label: 'mesh.shadow.cutout', bindGroupLayouts: [frameLayout, shadowPassLayout, batchLayout, materialLayout] }),
+      vertex: { module, entryPoint: 'vs', buffers: [VERTEX_LAYOUT[0]!, { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }] },
+      fragment: { module, entryPoint: 'fs', targets: [] },
+      primitive: { topology: 'triangle-list', cullMode: 'none', unclippedDepth: true },
+      depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
+    });
+  });
 
   const vertexBuffer = (label: string, data: ArrayBufferView<ArrayBuffer>, usage: GPUBufferUsageFlags): GPUBuffer => {
     const b = createBufferChecked(device, { label, size: Math.max(16, Math.ceil(data.byteLength / 4) * 4), usage: usage | GPUBufferUsage.COPY_DST }, reportError);
@@ -547,14 +615,15 @@ export function createMeshSystem(args: {
         };
       });
       const materials: GpuMaterial[] = data.materials.map((def) => {
-        const u = new Float32Array(16);
+        const u = new Float32Array(20);
         u.set([def.baseColor[0], def.baseColor[1], def.baseColor[2], def.metallic], 0);
         const param = def.shading === 'cloth' ? (def.translucency ?? 0) : def.shading === 'display' ? 1 : 0;
         u.set([def.roughness, MATERIAL_ID[def.shading], param, def.anisotropy ?? 0], 4);
         const e = def.emissive ?? [0, 0, 0];
         u.set([e[0], e[1], e[2], def.clearcoat ?? 0], 8);
         u.set([def.clearcoatRoughness ?? 0.1, def.shadowSoftness ?? 0, def.uvScale?.[0] ?? 1, def.uvScale?.[1] ?? 1], 12);
-        const buffer = device.createBuffer({ label: `mesh.material.${def.name}`, size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        u.set([Math.max(def.alphaCutoff ?? 0, 0), 0, 0, 0], 16);
+        const buffer = device.createBuffer({ label: `mesh.material.${def.name}`, size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         device.queue.writeBuffer(buffer, 0, u);
         const t = def.textures ?? {};
         return {
@@ -576,6 +645,7 @@ export function createMeshSystem(args: {
         triangles: lods.map((l) => l.indexCount / 3),
         lods,
         materials,
+        cutout: materials.some((m) => (m.def.alphaCutoff ?? 0) > 0),
         lodPixels: options.lodPixels ?? DEFAULT_LOD_PIXELS,
         destroy() {
           for (const l of lods) {
@@ -796,17 +866,35 @@ export function createMeshSystem(args: {
               }
               let j = i + 1;
               while (j < g.count && visible(j)) j++;
-              if (!pipelineSet) {
-                pass.setPipeline(shadowPipeline.get());
-                pass.setBindGroup(2, bindGroup);
-                pipelineSet = true;
+              if (g.model.cutout) {
+                // Per material group: cut-out materials through the alpha-tested pipeline (request vehicle-pad-4).
+                for (const mg of lod.groups) {
+                  const mat = g.model.materials[mg.material]!;
+                  const cut = (mat.def.alphaCutoff ?? 0) > 0;
+                  pass.setPipeline(cut ? shadowCutoutPipeline.get() : shadowPipeline.get());
+                  pass.setBindGroup(2, bindGroup);
+                  if (cut) pass.setBindGroup(3, materialBindGroup(mat));
+                  pass.setVertexBuffer(0, lod.buffers[0]!);
+                  if (cut) pass.setVertexBuffer(1, lod.buffers[3]!);
+                  pass.setIndexBuffer(lod.index, 'uint32');
+                  pass.drawIndexed(mg.count, j - i, mg.start, 0, g.first + i);
+                }
+                // The next opaque model rebinds the plain pipeline.
+                pipelineSet = false;
+                bound = false;
+              } else {
+                if (!pipelineSet) {
+                  pass.setPipeline(shadowPipeline.get());
+                  pass.setBindGroup(2, bindGroup);
+                  pipelineSet = true;
+                }
+                if (!bound) {
+                  pass.setVertexBuffer(0, lod.buffers[0]!);
+                  pass.setIndexBuffer(lod.index, 'uint32');
+                  bound = true;
+                }
+                pass.drawIndexed(lod.indexCount, j - i, 0, 0, g.first + i);
               }
-              if (!bound) {
-                pass.setVertexBuffer(0, lod.buffers[0]!);
-                pass.setIndexBuffer(lod.index, 'uint32');
-                bound = true;
-              }
-              pass.drawIndexed(lod.indexCount, j - i, 0, 0, g.first + i);
               stats.shadowTriangles += (lod.indexCount / 3) * (j - i);
               i = j;
             }

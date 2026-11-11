@@ -666,6 +666,16 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   b = metallic factor; each string is a registered procedural id or a URL (absolute, or relative to
   `ctx.assetsUrl`), loaded with `createImageBitmap(..., { premultiplyAlpha: 'none', colorSpaceConversion:
   'none' })` and a full mip chain. Until a texture has loaded the factor alone is used.
+- `alphaCutoff` (request `vehicle-pad-4`): a cut-out material (bar grating, perforated plate). The G-buffer
+  shader and the shadow pass drop fragments whose base-colour alpha is under the cutoff (a model with such
+  a material is drawn into the shadow maps per material group, the cut-out groups through a second shadow
+  pipeline with uv and the base-colour texture; models without one keep the position-only pass). Near (a
+  texel covers a pixel or more) the cut is dithered by half the alpha's screen gradient, which the TAA
+  anti-aliases; far (4 texels per pixel and more, coarse mips) the test turns stochastic (keep with the
+  mip-averaged alpha's probability), so a 77 % open grating stays 23 % covered at 60 m instead of vanishing
+  or closing up. Measured on the lab's grating (`?grating=cutout|opaque`): bars 0.26 of the panel's pixels
+  from 6 m, 0.23 from 60 m; its shadow passes 0.73 of the sun (open share 0.77), the opaque panel 0.
+- `shadowSoftness` (terrain and regolith shading): written to RT4.a, see section 6.
 - LOD: projected diameter of the bounding sphere in render pixels; LOD i + 1 replaces LOD i below
   `lodPixels[i]` (default 220, 60, 16). Within +-15 % of a switch size both LODs are drawn with
   complementary blue-noise dither patterns (TAA resolves the cross-fade); shadows use the dominant LOD.
@@ -1248,6 +1258,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `PbrMaterialDef.alphaCutoff`: alpha-tested materials in the mesh system's G-buffer and shadow passes (second shadow pipeline with uv for models that have one; stochastic coverage where the mips average the alpha), section 10 | `vehicle-pad-4` | vehicle-pad (gratings, perforated plate) | None: materials without it are drawn exactly as before. The material uniform grew to 80 bytes (internal) |
 | Sun-shadow lookup: the kernel stops turning per pixel where a texel covers 2 to 8 pixels or more (`SHADOW_SPIN_FULL` / `_NONE`); `sampleSunShadowSoft(..., softRadius)`; terrain and regolith pixels take a smallest filter radius from RT4.a (`encodeShadowSoftness` / `decodeShadowSoftness`, `SHADOW_SOFTNESS_MIN_M` / `_MAX_M`), the mesh system writes it from `PbrMaterialDef.shadowSoftness`; sections 6 and 8 | `cockpit-10`, `terrain-render-4` | cockpit (window wells at arm's length), vehicle-pad (a hull seen from a metre or two), terrain (writes RT4.a) | None: receivers seen at under 2 pixels per texel and terrain that leaves RT4.a at 0 are unchanged. Close-up shadow edges are smooth instead of stippled |
 | `LocalLight.kind` gained `'spot'` (`dirRelCam`, `cone`) and every light an optional `radius`; `LightUniform` gained `shape: vec4f` (xy = octahedral beam axis of a spot, z = cos inner, w = cos outer), `intensity.a` = source radius, `endKind.w` = 2 for a spot whose `endKind.xyz` is its own position; chunk `local_lights` with `localLightSample(i, posRelCam, n)`; the frame uniform buffer is 3024 bytes (was 2768; `lights` is the last member, no other offset moved), section 7 | `vfx-5`, `vehicle-pad-2` | vehicle-pad (floodlights and landing lamps as spots), vfx (plume and fireball lights with the flame's size); ocean and vfx (their forward copies of the light loop) | None for existing callers: a light without `radius` and kind point / capsule is lit exactly as before. WGSL that includes `frame` gets the new struct automatically; a forward light loop that wants spots and radii calls `localLightSample()` (a copy that reads `posRange` / `endKind` itself sees a spot as a point light of its axial intensity and ignores the radius: switch to the function) |
 | Planetshine is occluded per pixel by every other non-star body (`shineVisibility(pos, sh)` in chunk `eclipse`; `ShineLight.dir.w` = shining body's frame index, `illuminance.a` = its angular radius; CPU: `shineVisibleFraction`, `planetshineAt(..., max, visibleFrom?)`, `ShineLight.angularRadius?`), section 7 | `sky-lighting-8` | every package lit by the deferred pass at night: a vessel in low orbit is no longer lit by a Moon behind the Earth; ocean (its forward copy of the loop) | None in code. A forward shader that copies the planetshine loop multiplies each light by `shineVisibility(pos, sh)` to match the deferred result |
