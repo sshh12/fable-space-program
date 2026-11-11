@@ -1,6 +1,6 @@
 Status: open
 From: map-view
-Owner path: src/render/atmosphere/** (clouds, atmosphere-clouds), src/render/terrain/** (the Moon's far field, terrain-render), src/render/sky/** (stars in the map camera, sky-lighting)
+Owner path: src/render/atmosphere/** (clouds, atmosphere-clouds), src/render/terrain/** (the Moon's far field and night side, terrain-render), src/render/sky/** (stars in the map camera, sky-lighting), src/render/ocean/** (sea colour at map distance, ocean)
 Blocking: no   (round-1 photo critic of the map view, `out/qa/wave2/map-view.r1.photo.json`, major finding 5: "NOT this package's code; listed for routing")
 
 ## Problem
@@ -51,3 +51,21 @@ close-out, round 1):
   y 113-140 of `real-lowOrbit-dayside.png` is a small island group with its shelf, which the imagery holds;
   the speckle near the limb is not identified on the terrain side (water there is the far sheet's single
   deep colour, which has no speckle of its own).
+
+## Update from map-view, round 5 (2026-11-11): the round-4 critics' measurements
+Both round-4 critics of the map view (`out/qa/wave2/map-view.r4.photo.json` finding 1, `map-view.r4.artifact.json`
+finding 2) still name the planet under the overlay as the first thing that gives the composed frame away. Their
+numbers, for the owners:
+- **Clouds (atmosphere-clouds).** In `real-lowOrbit-dayside.png` the cloud deck is mid-grey, median sRGB (182,180,178)
+  against the ocean (77,85,106): about 5x in linear light, where `out/qa/ref/earth-orbit-clouds/cloud-gazing-pacific.jpg`
+  measures cloud tops 13-16x the ocean (ocean (25,60,95), cloud median Y 0.39). In the 4K composed frame
+  (`real-hud-lowOrbit-node-4k.png`, device px x 1340-1900, y 700-1230) the cloud mask shows square texel stair-steps and
+  blurred edges next to the overlay's 3-device-px-per-interface-px lines; the reference has ragged, fractal edges.
+- **Ocean colour (ocean / atmosphere at map distance).** Dull grey-blue (77,85,106) against the reference's saturated
+  navy (25,60,95).
+- **Earthshine on the Moon (terrain-render lighting).** In `real-hud-lunarOrbit.png` the night side x 480-640,
+  y 300-420 is (18,17,16) against an unclipped crescent of (112,109,107): about 1/57 of the sunlit surface, with
+  maria readable. With the crescent exposed correctly the earthshine side should be under about 1/1000 of it
+  (`out/qa/ref/sun-stars-space/venus-moon-atlantis.jpg`: earthshine shows only because the crescent is clipped).
+The map view needs no API change; `tests/browser/map-view/real-planet.spec.ts` stays the acceptance view and was
+re-run on the current tree in round 5.
