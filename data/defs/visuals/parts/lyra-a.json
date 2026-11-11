@@ -10,7 +10,7 @@
     "exitAngleDeg": 11,
     "bell": "nozzle-wall",
     "extension": "nozzle-ext",
-    "lod1Pixels": 150,
-    "lod2Pixels": 36
+    "lod1Pixels": 110,
+    "lod2Pixels": 30
   }
 }

@@ -336,20 +336,25 @@ export const rcsPod: PartGenerator = ({ def, params }) => {
   return { models: { body }, pose: staticPose };
 };
 
-export const padClamp: PartGenerator = ({ def, params }) => {
+export const padClamp: PartGenerator = ({ def, params, defs }) => {
   const where = `visuals/parts/${def.id}`;
   const P = new Params(params, where);
+  const sheet = decalSheetOf(defs);
   const H = def.bounds.yMax;
   const reach = P.num('reach', def.bounds.radius);
   const swing = P.num('swingDeg', 52) * DEG;
+  // The warning stripes of the arm are a marking of the vehicle's livery, named by the visual file.
+  const hazard = P.str('hazardDecal', '');
   const pivot: Vec3Tuple = [0, H - 0.72, 0.18];
 
   // Part frame: +Z points away from the vehicle; the arm reaches toward -Z and holds the stage's base
   // post from below at y = H.
   const body = buildModel(`${def.id}.body`, (b) => {
     b.mat('paint-grey').masks(0.25, 1, 0.9, 0);
+    // Base plate on the deck's clamp seat.
     box(b, 1.16, 0.12, 1.56, [0, 0.06, 0.02], 'base');
-    // Welded pedestal: two side plates and a spine.
+    // Pedestal: a boxed weldment (closed section, the full width between the clevis cheeks), tapering to
+    // the pivot, with stiffening ribs welded to its sides and gussets down to the base plate.
     const col: [number, number][] = [
       [-0.3, 0.12],
       [0.62, 0.12],
@@ -358,35 +363,48 @@ export const padClamp: PartGenerator = ({ def, params }) => {
       [-0.02, H - 0.52],
       [-0.3, H - 1.3],
     ];
-    for (const sx of [-1, 1]) {
-      // Side plate in the (z, y) plane: extrude along X with the polygon given as (z, y).
-      b.at(xf.fromAxes([sx * 0.26, 0, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0]), () => extrude(b, col, -0.035, 0.035, false, 'plate'));
-    }
-    box(b, 0.46, H - 1.5, 0.08, [0, 0.12 + (H - 1.5) / 2, 0.5], 'spine');
-    box(b, 0.46, 0.08, 0.5, [0, H - 1.25, 0.2], 'shelf');
+    // Polygon given as (z, y); extruded along X.
+    const zy = (x: number): ReturnType<typeof xf.fromAxes> => xf.fromAxes([x, 0, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0]);
+    b.at(zy(0), () => extrude(b, col, -0.27, 0.27, false, 'pedestal'));
+    // Clevis cheeks that carry the pivot pin: thick plates standing above the pedestal on both sides of the arm.
+    const cheek: [number, number][] = [
+      [-0.2, H - 1.25],
+      [0.5, H - 1.05],
+      [0.5, H - 0.62],
+      [0.36, H - 0.46],
+      [0.02, H - 0.46],
+      [-0.2, H - 0.8],
+    ];
+    for (const sx of [-1, 1]) b.at(zy(sx * 0.29), () => extrude(b, cheek, -0.045, 0.045, false, 'cheek'));
     if (b.lod < 2) {
-      // Hydraulic release cylinder and the pivot pin.
-      b.mat('steel-dark').masks(0.2, 1, 0.9, 0);
-      rod(b, [0, 0.35, 0.42], [0, H - 1.35, 0.1], 0.11, b.pick(18, 10, 6), 'cylinder');
-      b.mat('steel-bare');
-      rod(b, [0, H - 1.35, 0.1], [0, H - 0.95, -0.02], 0.055, b.pick(14, 8, 6), 'ram');
-      rod(b, [-0.34, pivot[1], pivot[2]], [0.34, pivot[1], pivot[2]], 0.07, b.pick(18, 10, 6), 'pin');
+      for (const sx of [-1, 1]) {
+        // Ribs: flat bars on edge up the side of the pedestal.
+        for (const z of [-0.12, 0.18, 0.46]) box(b, 0.05, H - 1.75, 0.045, [sx * 0.295, 0.12 + (H - 1.75) / 2, z], 'rib');
+        // Gussets to the base plate (30 mm plate).
+        for (const z of [-0.2, 0.52]) b.at(xf.fromAxes([sx * 0.27, 0.12, z], [sx, 0, 0], [0, 0, -sx], [0, 1, 0]), () => extrude(b, [[0, 0], [0.3, 0], [0, 0.62]], -0.015, 0.015, false, 'gusset'));
+      }
+      // Blast shield on the face toward the flame: a scorched plate standing off the pedestal on four studs.
+      b.mat('steel-dark').masks(0.2, 1, 1, 0);
+      box(b, 0.9, H - 1.9, 0.04, [0, 0.3 + (H - 1.9) / 2, -0.4], 'shield');
       if (b.lod === 0) {
+        b.mat('steel-bare').masks(0.3, 1, 1, 0);
+        for (const sx of [-1, 1]) for (const y of [0.55, H - 1.9]) rod(b, [sx * 0.2, y, -0.31], [sx * 0.2, y, -0.385], 0.03, 8, 'stud');
+      }
+      // Hydraulic release cylinder with its clevis, the ram and the pivot pin with its retainers.
+      b.mat('steel-dark').masks(0.2, 1, 0.9, 0);
+      rod(b, [0, 0.42, 0.78], [0, H - 1.3, 0.62], 0.12, b.pick(18, 10, 6), 'cylinder');
+      box(b, 0.34, 0.2, 0.3, [0, 0.3, 0.74], 'cylinder-foot');
+      b.mat('steel-bare');
+      rod(b, [0, H - 1.3, 0.62], [0, H - 0.98, 0.5], 0.06, b.pick(14, 8, 6), 'ram');
+      rod(b, [-0.37, pivot[1], pivot[2]], [0.37, pivot[1], pivot[2]], 0.075, b.pick(18, 10, 6), 'pin');
+      if (b.lod === 0) {
+        for (const sx of [-1, 1]) b.at(xf.mul(xf.translate(sx * 0.345, pivot[1], pivot[2]), xf.rotZ(-sx * (Math.PI / 2))), () => frustum(b, 0.12, 0.12, 0, 0.025, 16, 'retainer'));
         b.mat('steel-bare').masks(0.3, 1, 0.9, 0);
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.at(xf.translate(sx * 0.46, 0.12, 0.02 + sz * 0.62), () => bolt(b, 0.04, 0.035));
-        b.mat('paint-yellow');
-        box(b, 1.18, 0.03, 0.1, [0, 0.135, -0.7], 'stripe');
-        // Gussets between the base plate and the side plates, hydraulic lines up the spine, anchor nuts.
-        b.mat('paint-grey').masks(0.3, 1, 0.9, 0);
-        for (const sx of [-1, 1]) {
-          for (const z of [-0.18, 0.2, 0.5]) {
-            b.at(xf.fromAxes([sx * 0.3, 0.12, z], [sx, 0, 0], [0, 0, -sx], [0, 1, 0]), () => extrude(b, [[0, 0], [0.26, 0], [0, 0.5]], -0.012, 0.012, false, 'gusset'));
-          }
-        }
-        b.mat('steel-bare').masks(0.2, 1, 0.9, 0);
-        for (const x of [-0.12, 0, 0.12]) pipe(b, [[x, 0.3, 0.56], [x, H - 1.5, 0.56], [x, H - 1.36, 0.3]], 0.016, 0.06, { segs: 6, tag: 'hydraulic-line' });
+        for (const sx of [-1, 1]) for (const z of [-0.62, -0.2, 0.24, 0.66]) b.at(xf.translate(sx * 0.48, 0.12, 0.02 + z), () => bolt(b, 0.04, 0.035));
+        // Hydraulic lines up the back of the pedestal to the cylinder, from a manifold block at its foot.
+        for (const x of [-0.1, 0, 0.1]) pipe(b, [[x, 0.3, 0.64], [x, H - 1.6, 0.64], [x * 0.5, H - 1.45, 0.72]], 0.016, 0.06, { segs: 6, tag: 'hydraulic-line' });
         b.mat('steel-dark');
-        box(b, 0.34, 0.5, 0.22, [0, 0.55, 0.66], 'manifold');
+        box(b, 0.34, 0.26, 0.16, [0, 0.26, 0.6], 'manifold');
       }
     }
   });
@@ -409,14 +427,37 @@ export const padClamp: PartGenerator = ({ def, params }) => {
     // Polygon given as (z, y); extrude along X.
     b.at(xf.fromAxes([0, 0, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0]), () => extrude(b, prof, -0.2, 0.2, false, 'arm'));
     b.mat('steel-bare').masks(0.5, 1, 0.9, 0);
-    // Bearing shoe that carries the stage: its top face is the hold-down plane.
-    box(b, 0.44, 0.02, 0.26, [0, topY - 0.01, tipZ + 0.14], 'shoe');
+    // Bearing shoe that carries the stage's hold-down post: a hardened block whose top face is the
+    // hold-down plane, between two keeper plates.
+    box(b, 0.46, 0.1, 0.3, [0, topY - 0.05, tipZ + 0.15], 'shoe');
     if (b.lod < 2) {
-      // Black warning chevrons on the yellow arm, pivot bosses, grease fittings.
-      b.mat('paint-black').masks(0.35, 1, 0.9, 0);
-      for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) box(b, 0.006, 0.11, 0.2, [sx * 0.2015, topY * (0.3 + 0.16 * i) * 0.9 + 0.02, tipZ * (0.16 + 0.19 * i)], 'chevron');
+      b.mat('steel-dark').masks(0.4, 1, 0.9, 0);
+      for (const sx of [-1, 1]) box(b, 0.03, 0.2, 0.3, [sx * 0.245, topY - 0.11, tipZ + 0.15], 'keeper');
+      if (hazard) {
+        // Diagonal warning stripes painted along both flanks of the arm (the livery's hazard marking).
+        const [u0, v0, u1, v1] = sheet.uv(hazard);
+        const a0: [number, number] = [0.02, 0.26];
+        const a1: [number, number] = [tipZ + 0.34, topY - 0.05];
+        const hgt = 0.15;
+        const len = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]);
+        const rep = Math.max(1, Math.round(len / (hgt * sheet.aspect(hazard))));
+        b.mat('decal').masks(0.3, 1, 0.9, 0);
+        b.begin(false, 'placard');
+        for (const sx of [-1, 1]) {
+          for (let i = 0; i < rep; i++) {
+            const at = (t: number, down: number): Vec3Tuple => [sx * 0.2012, a0[1] + (a1[1] - a0[1]) * t - down, a0[0] + (a1[0] - a0[0]) * t];
+            const t0 = i / rep;
+            const t1 = (i + 1) / rep;
+            const tan: Vec3Tuple = [0, (a1[1] - a0[1]) / len, (a1[0] - a0[0]) / len];
+            const q = [b.vt(at(t0, hgt), [sx, 0, 0], tan, u0, v1), b.vt(at(t1, hgt), [sx, 0, 0], tan, u1, v1), b.vt(at(t1, 0), [sx, 0, 0], tan, u1, v0), b.vt(at(t0, 0), [sx, 0, 0], tan, u0, v0)];
+            // The arm runs toward -Z, which is to the right seen from +X: this order is counter-clockwise there.
+            if (sx > 0) b.quad(q[0]!, q[1]!, q[2]!, q[3]!);
+            else b.quad(q[0]!, q[3]!, q[2]!, q[1]!);
+          }
+        }
+      }
       if (b.lod === 0) {
-        b.mat('steel-dark');
+        b.mat('steel-dark').masks(0.35, 1, 0.9, 0);
         for (const sx of [-1, 1]) b.at(xf.mul(xf.translate(sx * 0.2, 0, 0), xf.rotZ(-sx * (Math.PI / 2))), () => frustum(b, 0.12, 0.12, 0, 0.03, 16, 'boss'));
       }
     }

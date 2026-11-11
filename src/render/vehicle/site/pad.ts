@@ -6,7 +6,7 @@
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { decalSheetOf, type DecalSheet } from '../decals';
 import { MeshBuilder, xf } from '../geom/builder';
-import { DEG, TAU, beam, bolt, box, extrude, frustum, pipe, ringSolid, rod, zipLoops } from '../geom/prims';
+import { DEG, TAU, beam, bolt, boltCircle, bottle, box, extrude, frustum, pipe, rectPoly, ringSolid, rod, section, torus, zipLoops } from '../geom/prims';
 import type { MatId } from '../materials';
 import { buildModel, noise2 } from '../parts/common';
 import type { PartLight } from '../parts/types';
@@ -51,7 +51,9 @@ export function groundDecal(b: MeshBuilder, sheet: DecalSheet, name: string, cen
  * Closed plate between y0 and y1 whose plan outline is `outer` ([x, z] points, any winding) with a round
  * hole of radius `holeR` about the origin.
  */
-export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: number, holeSegs: number, y0: number, y1: number, tag: string): void {
+export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: number, holeSegs: number, y0: number, y1: number, tag: string, topMat?: MatId): void {
+  const sideMat = b.material;
+  const soot0 = b.soot;
   b.begin(true, tag);
   // Angles counter-clockwise seen from above: theta = atan2(-z, x).
   const pts = outer.map(([x, z]) => ({ x, z, a: Math.atan2(-z, x) })).sort((p, q) => p.a - q.a);
@@ -63,8 +65,12 @@ export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: 
   for (const top of [true, false]) {
     const y = top ? y1 : y0;
     const ny = top ? 1 : -1;
+    // The top face may be decked in its own material; both faces are scorched round the opening.
+    b.mat(top && topMat ? topMat : sideMat);
     const A = pts.map((p) => b.v(p.x, y, p.z, 0, ny, 0, 1, 0, 0, p.x, top ? -p.z : p.z, top ? 1 : -1));
+    b.soot = Math.max(soot0, 0.9);
     const B = hole.map((p) => b.v(p.x, y, p.z, 0, ny, 0, 1, 0, 0, p.x, top ? -p.z : p.z, top ? 1 : -1));
+    b.soot = soot0;
     zipLoops(
       b,
       A,
@@ -75,6 +81,7 @@ export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: 
     );
   }
   // Outer walls (facing away from the centre) and the bore (facing the centre).
+  b.mat(sideMat);
   const n = pts.length;
   let run = 0;
   for (let i = 0; i < n; i++) {
@@ -97,6 +104,7 @@ export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: 
     run += l;
   }
   const rows: [number, number][] = [];
+  b.soot = Math.max(soot0, 0.9);
   for (let i = 0; i <= holeSegs; i++) {
     const p = hole[i % holeSegs]!;
     const nx = -p.x / holeR;
@@ -108,6 +116,34 @@ export function plateWithHole(b: MeshBuilder, outer: [number, number][], holeR: 
     rows.push([b.v(p.x, y0, p.z, nx, 0, nz, tx, 0, tz, u, 0), b.v(p.x, y1, p.z, nx, 0, nz, tx, 0, tz, u, y1 - y0)]);
   }
   for (let i = 0; i < holeSegs; i++) b.quad(rows[i]![0], rows[i]![1], rows[i + 1]![1], rows[i + 1]![0]);
+  b.soot = soot0;
+}
+
+/**
+ * One flight of an industrial stair from `from` to `to` (the centre line of its going): two channel
+ * stringers, open-grating treads at about 0.2 m rise, and a handrail on both sides.
+ */
+export function stairFlight(b: MeshBuilder, from: Vec3Tuple, to: Vec3Tuple, width: number): void {
+  const prev = b.material;
+  const dx = to[0] - from[0];
+  const dz = to[2] - from[2];
+  const run = Math.hypot(dx, dz);
+  // Across the flight, horizontal.
+  const ax: Vec3Tuple = [dz / run, 0, -dx / run];
+  const off = (p: Vec3Tuple, s: number, up = 0): Vec3Tuple => [p[0] + ax[0] * s, p[1] + up, p[2] + ax[2] * s];
+  b.mat('galvanised');
+  for (const s of [-1, 1]) beam(b, off(from, (s * width) / 2, -0.12), off(to, (s * width) / 2, -0.12), 0.05, 0.26, ax, 'stringer');
+  if (b.lod < 2) {
+    const n = Math.max(2, Math.round((to[1] - from[1]) / 0.2));
+    b.mat('grating');
+    for (let i = 1; i < n; i += b.pick(1, 2, 1)) {
+      const t = i / n;
+      const c: Vec3Tuple = [from[0] + dx * t, from[1] + (to[1] - from[1]) * t, from[2] + dz * t];
+      b.at(xf.along(off(c, -width / 2 + 0.03), off(c, width / 2 - 0.03), [0, 1, 0]), () => box(b, 0.03, width - 0.06, 0.27, [0, (width - 0.06) / 2, 0], 'tread'));
+    }
+    for (const s of [-1, 1]) handrail(b, [off(from, (s * width) / 2), off(to, (s * width) / 2)], 1.0, 1.3);
+  }
+  b.mat(prev);
 }
 
 /** Handrail along a polyline at height y: posts and two rails. */
@@ -287,8 +323,8 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
   const y0 = top - thick;
 
   const body = buildModel('pad.launchMount', (b) => {
-    // ---- piers
-    b.mat('concrete-wall').masks(0, 1, 0.9, 0);
+    // ---- piers (grime weights: the mount's body is drawn with its grime shown)
+    b.mat('concrete-wall').masks(0, 1, 0.3, 0);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         box(b, pier, y0 + 0.3, pier, [sx * pc, (y0 - 0.3) / 2, sz * pc], 'pier');
@@ -300,7 +336,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       }
     }
     // ---- table: box girder deck with the exhaust opening
-    b.mat('paint-grey').masks(0.2, 1, 0.95, 0);
+    b.mat('paint-grey').masks(0.2, 1, 0.22, 0);
     const outline: [number, number][] = [];
     const cut = 2.2;
     for (const [x, z] of [
@@ -323,7 +359,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       const n = Math.max(1, Math.round(Math.hypot(c[0] - a[0], c[1] - a[1]) / 3));
       for (let k = 0; k < n; k++) dense.push([a[0] + ((c[0] - a[0]) * k) / n, a[1] + ((c[1] - a[1]) * k) / n]);
     }
-    plateWithHole(b, dense, holeR, b.pick(72, 36, 16), y0, top, 'deck');
+    plateWithHole(b, dense, holeR, b.pick(72, 36, 16), y0, top, 'deck', 'deck-plate');
     if (b.lod < 2) {
       // Girder flanges, opening liner and the painted keep-out ring.
       b.mat('steel-dark').masks(0.3, 1, 1, 0);
@@ -331,7 +367,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       ringSolid(b, holeR - 0.02, holeR + 0.25, y0 - 0.25, y0 + 0.02, b.pick(72, 36, 16), 'opening-skirt');
       b.mat('paint-yellow');
       ringSolid(b, holeR + 2.4, holeR + 2.7, top - 0.005, top + 0.012, b.pick(72, 36, 16), 'keep-out');
-      b.mat('paint-grey').masks(0.25, 1, 0.9, 0);
+      b.mat('paint-grey').masks(0.25, 1, 0.3, 0);
       for (const y of [y0 + 0.3, top - 0.3]) {
         for (const s of [-1, 1]) {
           box(b, 2 * half - 2 * cut, 0.25, 0.16, [0, y, s * (half + 0.07)], 'flange');
@@ -349,7 +385,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       }
     }
     // ---- seats under the four hold-down clamps (the clamps themselves are parts of the vehicle)
-    b.mat('steel-dark').masks(0.3, 1, 1, 0);
+    b.mat('steel-dark').masks(0.3, 1, 0.6, 0);
     for (let k = 0; k < 4; k++) {
       const phi = ((k + 0.5) / 4) * TAU;
       const x = seatR * Math.sin(phi);
@@ -364,44 +400,112 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
       });
     }
     if (b.lod < 2) {
-      // ---- rainbird deluge nozzles on the deck and their ring main
-      b.mat('paint-red').masks(0.2, 1, 0.9, 0);
+      const ringR = holeR + 3.6;
+      const nSeg = b.pick(72, 36, 16);
+      // ---- refractory lining round the exhaust opening and the deck's fittings: hatches, drain grates,
+      // cable trays, the hydraulic power unit of the hold-down clamps
+      b.mat('refractory').masks(0, 0.9, 0.9, 0);
+      ringSolid(b, holeR + 0.35, holeR + 1.7, top - 0.02, top + 0.035, nSeg, 'refractory-ring');
+      b.mat('steel-dark').masks(0.3, 1, 0.4, 0);
+      for (const [x, z] of [[-8.6, -3.2], [8.2, 4.6], [-3.4, 8.8], [4.0, -8.9]] as [number, number][]) {
+        box(b, 1.3, 0.03, 0.95, [x, top + 0.012, z], 'hatch');
+        if (b.lod === 0) {
+          b.mat('steel-bare');
+          for (const s of [-1, 1]) rod(b, [x + s * 0.35, top + 0.03, z - 0.3], [x + s * 0.35, top + 0.03, z + 0.3], 0.012, 6, 'hatch-handle');
+          b.mat('steel-dark');
+        }
+      }
+      b.mat('grating').masks(0.2, 0.8, 0.5, 0);
+      for (const [x, z, w, d] of [[0, -half + 1.1, 9, 0.45], [0, half - 1.1, 9, 0.45], [-half + 1.1, 0, 0.45, 9]] as [number, number, number, number][]) box(b, w, 0.02, d, [x, top + 0.008, z], 'drain');
+      b.mat('galvanised').masks(0.2, 1, 0.35, 0);
+      for (const z of [-half + 1.9, half - 1.9]) {
+        box(b, 2 * half - 7, 0.11, 0.42, [0.6, top + 0.055, z], 'cable-tray');
+        if (b.lod === 0) for (let x = -half + 4.5; x <= half - 3.4; x += 1.5) box(b, 0.06, 0.125, 0.46, [x, top + 0.063, z], 'tray-strap');
+      }
+      b.mat('paint-grey').masks(0.25, 1, 0.3, 0);
+      box(b, 1.8, 1.15, 1.0, [-half + 2.4, top + 0.575, half - 3.6], 'hydraulic-unit');
+      if (b.lod === 0) {
+        b.mat('steel-bare');
+        for (let i = 0; i < 3; i++) b.at(xf.translate(-half + 1.75 + i * 0.36, top + 1.15, half - 2.85), () => bottle(b, 0.13, 0.75, 0.1, 12, 'accumulator'));
+        for (let k = 0; k < 4; k++) {
+          const phi = ((k + 0.5) / 4) * TAU;
+          pipe(b, [[-half + 2.4 + k * 0.08, top + 0.05, half - 3.0], [-half + 2.4 + k * 0.08, top + 0.05, half - 2.4 + k * 0.1], [(seatR + 1.6) * Math.sin(phi), top + 0.05, (seatR + 1.6) * Math.cos(phi)]], 0.02, 0.2, { segs: 6, tag: 'hydraulic-line' });
+        }
+      }
+      // ---- sound-suppression water: a ring main round the opening, fed by two risers up the south-east
+      // pier, with six rainbirds: flanged goose-neck pipes that end in flattened fan nozzles over the opening
+      b.mat('galvanised').masks(0.2, 1, 0.5, 0);
+      torus(b, ringR, 0.17, top + 0.2, nSeg, b.pick(10, 6, 4), 'deluge-main');
+      for (const dz of [0, 0.75]) pipe(b, [[half - 0.9, -0.2, half - 2.9 - dz], [half - 0.9, top + 0.2, half - 2.9 - dz], [ringR * 0.72, top + 0.2, ringR * 0.72 - dz * 0.4]], 0.2, 0.7, { segs: b.pick(12, 8, 5), tag: 'deluge-riser' });
       for (let k = 0; k < 6; k++) {
         const phi = (k / 6) * TAU + 0.26;
-        const r = holeR + 3.6;
-        const p: Vec3Tuple = [r * Math.sin(phi), top, r * Math.cos(phi)];
-        b.mat('galvanised');
-        rod(b, p, [p[0], top + 1.25, p[2]], 0.1, b.pick(12, 8, 5), 'rainbird');
-        b.mat('paint-red');
-        b.at(xf.along([p[0], top + 1.25, p[2]], [p[0] * 0.8, top + 1.95, p[2] * 0.8]), () => frustum(b, 0.11, 0.2, 0, 0.42, b.pick(12, 8, 5), 'rainbird-head'));
+        const out: Vec3Tuple = [Math.sin(phi), 0, Math.cos(phi)];
+        const p: Vec3Tuple = [ringR * out[0], top, ringR * out[2]];
+        const neck: Vec3Tuple = [p[0] - out[0] * 1.15, top + 2.25, p[2] - out[2] * 1.15];
+        const tip: Vec3Tuple = [p[0] - out[0] * 1.75, top + 2.05, p[2] - out[2] * 1.75];
+        b.mat('galvanised').masks(0.2, 1, 0.6, 0);
+        pipe(b, [[p[0], top + 0.2, p[2]], [p[0], top + 1.75, p[2]], neck, tip], 0.22, 0.55, { segs: b.pick(14, 8, 5), tag: 'rainbird' });
+        // Flanges at the base and under the bend, saddle on the ring main, brace back to the deck.
+        b.at(xf.translate(p[0], top + 0.42, p[2]), () => ringSolid(b, 0.2, 0.34, -0.04, 0.04, b.pick(16, 10, 6), 'rainbird-flange'));
+        b.at(xf.translate(p[0], top + 1.4, p[2]), () => ringSolid(b, 0.2, 0.32, -0.035, 0.035, b.pick(16, 10, 6), 'rainbird-flange'));
+        rod(b, [p[0] + out[0] * 0.95, top, p[2] + out[2] * 0.95], [p[0] + out[0] * 0.18, top + 1.25, p[2] + out[2] * 0.18], 0.045, b.pick(8, 6, 4), 'rainbird-brace');
+        if (b.lod === 0) {
+          b.mat('steel-bare');
+          b.at(xf.translate(p[0], top + 0.46, p[2]), () => boltCircle(b, 0.28, 0, 10, 0.016, 0.012));
+          b.at(xf.translate(p[0], top + 1.435, p[2]), () => boltCircle(b, 0.27, 0, 10, 0.015, 0.012));
+        }
+        // Fan nozzle: the pipe is flattened into a wide slot that throws a sheet of water across the opening.
+        b.mat('paint-red').masks(0.3, 1, 0.7, 0);
+        const d: Vec3Tuple = [tip[0] - neck[0], tip[1] - neck[1], tip[2] - neck[2]];
+        const l = Math.hypot(d[0], d[1], d[2]);
+        const along = (t: number): Vec3Tuple => [tip[0] + (d[0] / l) * t, tip[1] + (d[1] / l) * t, tip[2] + (d[2] / l) * t];
+        const across: Vec3Tuple = [out[2], 0, -out[0]];
+        section(b, rectPoly(0.3, 0.2, 0.06), along(-0.05), along(0.3), across, 'rainbird-head');
+        section(b, rectPoly(0.52, 0.12, 0.03), along(0.3), along(0.62), across, 'rainbird-head');
+        b.mat('steel-dark');
+        section(b, rectPoly(0.56, 0.035, 0.01), along(0.62), along(0.66), across, 'rainbird-lip');
       }
-      b.mat('galvanised');
-      pipe(b, [[half - 0.6, top + 0.2, -half + 2.6], [half - 0.6, top + 0.2, half - 2.6], [-half + 2.6, top + 0.2, half - 0.6]], 0.14, 0.8, { segs: b.pick(10, 6, 5), tag: 'deluge-main' });
       // ---- handrails and the stair tower from the apron to the deck
       const e = half - 0.2;
       handrail(b, [[-e + cut, top, -e], [e - cut, top, -e], [e, top, -e + cut], [e, top, e - cut], [e - cut, top, e], [-e + cut, top, e], [-e, top, e - cut], [-e, top, -e + cut], [-e + cut, top, -e]]);
-      b.mat('galvanised').masks(0.2, 1, 0.7, 0);
+      b.mat('galvanised').masks(0.2, 1, 0.3, 0);
       const sx0 = -half - 3.2;
       const flights = Math.ceil(top / 3);
+      const zA = -half + 2;
+      const zB = -half + 6.4;
       for (const [x, z] of [
-        [sx0 - 1.3, -half + 2],
-        [sx0 + 1.3, -half + 2],
-        [sx0 - 1.3, -half + 6.4],
-        [sx0 + 1.3, -half + 6.4],
+        [sx0 - 1.4, zA - 0.45],
+        [sx0 + 1.4, zA - 0.45],
+        [sx0 - 1.4, zB + 0.45],
+        [sx0 + 1.4, zB + 0.45],
       ] as [number, number][]) {
         box(b, 0.2, top + 1.1, 0.2, [x, (top + 1.1) / 2, z], 'stair-post');
+      }
+      // Bracing of the stair tower's four faces, one bay per flight.
+      for (let f = 0; f < flights; f++) {
+        const ya = (top * f) / flights + 0.15;
+        const yb = (top * (f + 1)) / flights - 0.15;
+        for (const sx of [-1.4, 1.4]) rod(b, [sx0 + sx, f % 2 === 0 ? ya : yb, zA - 0.45], [sx0 + sx, f % 2 === 0 ? yb : ya, zB + 0.45], 0.035, b.pick(6, 4, 4), 'stair-brace');
       }
       for (let f = 0; f < flights; f++) {
         const ya = (top * f) / flights;
         const yb = (top * (f + 1)) / flights;
         const dir = f % 2 === 0 ? 1 : -1;
-        b.mat('grating');
-        beam(b, [sx0 + dir * -0.65, ya, -half + 2.3 + (dir > 0 ? 0 : 3.8)], [sx0 + dir * -0.65, yb, -half + 2.3 + (dir > 0 ? 3.8 : 0)], 1.1, 0.06, [1, 0, 0], 'stair');
-        box(b, 2.6, 0.05, 0.9, [sx0, yb, -half + (dir > 0 ? 6.4 : 2) + 0], 'landing');
-        b.mat('galvanised');
+        const x = sx0 - dir * 0.68;
+        stairFlight(b, [x, ya, dir > 0 ? zA + 0.45 : zB - 0.45], [x, yb, dir > 0 ? zB - 0.45 : zA + 0.45], 1.1);
+        // Landing across the tower at the head of the flight, with a guard rail on its outer edge.
+        const zl = dir > 0 ? zB : zA;
+        b.mat('grating').masks(0.2, 0.9, 0.3, 0);
+        box(b, 2.7, 0.05, 0.9, [sx0, yb - 0.025, zl], 'landing');
+        b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+        for (const s of [-1, 1]) box(b, 2.8, 0.16, 0.05, [sx0, yb - 0.1, zl + s * 0.45], 'landing-beam');
+        handrail(b, [[sx0 - 1.35, yb, zl + dir * 0.45], [sx0 + 1.35, yb, zl + dir * 0.45]], 1.0, 1.35);
       }
-      b.mat('grating');
-      box(b, 3.4, 0.06, 1.2, [-half - 1.6, top - 0.03, -half + 2.6], 'gangway');
+      b.mat('grating').masks(0.2, 0.9, 0.3, 0);
+      box(b, 3.4, 0.06, 1.2, [-half - 1.6, top - 0.03, zA + 0.6], 'gangway');
+      b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+      for (const s of [-1, 1]) box(b, 3.4, 0.2, 0.06, [-half - 1.6, top - 0.13, zA + 0.6 + s * 0.6], 'landing-beam');
+      handrail(b, [[-half - 3.2, top, zA], [-half, top, zA]], 1.0, 1.1);
     }
   });
 
@@ -429,15 +533,34 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
     if (b.lod < 2) {
       b.mat('steel-dark');
       box(b, 0.12, 1.1, 1.7, [-reach - 0.02, mastH - 0.55, 0], 'plate');
+      // Weather hood over the umbilical plate, and the flex hoses and cable loom that cross the last
+      // hand's breadth to the vehicle's own plate (they come away with the mast when it tips back).
+      b.mat('paint-grey');
+      box(b, 0.9, 0.06, 1.9, [-reach + 0.3, mastH + 0.06, 0], 'hood');
+      for (const s of [-1, 1]) box(b, 0.9, 0.5, 0.05, [-reach + 0.3, mastH - 0.2, s * 0.93], 'hood');
+      b.mat('rubber');
+      for (const [z, y, r] of [[-0.55, 0.15, 0.085], [-0.2, 0.25, 0.1], [0.2, 0.25, 0.1], [0.55, 0.15, 0.085], [0, -0.25, 0.06], [-0.4, -0.3, 0.045], [0.4, -0.3, 0.045]] as [number, number, number][]) {
+        rod(b, [-reach - 0.06, mastH - 0.55 + y, z], [-reach - 0.3, mastH - 0.57 + y, z], r, b.pick(10, 6, 5), 'hose');
+        if (b.lod === 0) {
+          b.mat('steel-bare');
+          b.at(xf.mul(xf.translate(-reach - 0.24, mastH - 0.565 + y, z), xf.rotZ(Math.PI / 2)), () => ringSolid(b, r - 0.004, r + 0.022, -0.03, 0.03, 12, 'hose-collar'));
+          b.mat('rubber');
+        }
+      }
       b.mat('steel-brushed');
       for (const z of [-0.4, 0, 0.4]) pipe(b, [[0.5, 0.3, z], [0.5, mastH - 0.6, z], [-reach + 0.1, mastH - 0.6, z]], 0.09, 0.3, { segs: b.pick(10, 6, 5), tag: 'umbilical-line' });
       b.mat('paint-yellow');
       box(b, 1.1, 0.25, 1.3, [0.2, 0.12, 0], 'hinge');
+      if (b.lod === 0) {
+        b.mat('steel-bare');
+        rod(b, [0.2, 0.26, -0.75], [0.2, 0.26, 0.75], 0.07, 12, 'hinge-pin');
+      }
     }
   });
 
   const pose = (state: SiteState, emit: SiteSink, moving: { arms: boolean }): void => {
-    emit('body', null, null);
+    // The deck carries its scorch and rust as vertex grime (heaviest round the exhaust opening).
+    emit('body', null, null, { grime: 1 });
     const a = (-28 * DEG * state.arms) / 2;
     // Tips back toward +X (away from the vehicle): rotation about Z.
     const rot: QuatTuple | null = state.arms > 0 ? [0, 0, Math.sin(a), Math.cos(a)] : null;

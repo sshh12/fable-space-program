@@ -112,16 +112,19 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     return c.rin[c.rin.length - 1]!;
   };
 
-  const wallBand = (b: MeshBuilder, c: Contour, i0: number, i1: number, outer: (i: number) => MatId, inner: MatId, segs: number, top: boolean): void => {
+  const wallBand = (b: MeshBuilder, c: Contour, i0: number, i1: number, outer: (i: number) => MatId, inner: (i: number) => MatId, segs: number, top: boolean): void => {
     let p: Profile;
     if (top) {
       // Injector face (seen from below), inner wall down, lip, outer wall up, injector dome to the axis.
-      p = Profile.at(0, -c.x[i0]!).mat(inner);
+      p = Profile.at(0, -c.x[i0]!).mat(inner(i0));
       p.corner(c.rin[i0]!, -c.x[i0]!);
     } else {
-      p = Profile.at(c.rin[i0]!, -c.x[i0]!).mat(inner);
+      p = Profile.at(c.rin[i0]!, -c.x[i0]!).mat(inner(i0));
     }
-    for (let i = i0 + 1; i <= i1; i++) p.to(c.rin[i]!, -c.x[i]!);
+    for (let i = i0 + 1; i <= i1; i++) {
+      p.mat(inner(i - 1));
+      p.to(c.rin[i]!, -c.x[i]!);
+    }
     p.hard().mat('steel-dark');
     p.corner(c.rout[i1]!, -c.x[i1]!);
     for (let i = i1 - 1; i >= i0; i--) {
@@ -184,7 +187,9 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     b.mat(bellMat).masks(0.05, 1, 0, 0);
     const xJ = c.x[iA]!;
     // Chamber jacket is plain alloy down to the throat, channel wall below.
-    wallBand(b, c, 0, iA, (i) => (c.x[i]! < xT - conv * 0.4 ? 'inconel' : bellMat), 'copper', segs, true);
+    // Gas side: the copper liner shows only in the chamber, above the throat; the bell below it is the
+    // channel wall seen from inside, a dark heat-stained nickel.
+    wallBand(b, c, 0, iA, (i) => (c.x[i]! < xT - conv * 0.4 ? 'inconel' : bellMat), (i) => (c.x[i]! < xT - 1e-6 ? 'copper' : 'nozzle-hot'), segs, true);
 
     // ---- mount, gimbal block and bearing
     b.mat('steel-dark').masks(0.2, 0.9, 0, 0);
@@ -346,7 +351,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
 
     // ---- flexible heat-shield boot between the engine and the stage's base closeout
     if (bootR > 0 && b.lod < 2) {
-      b.mat('blanket').masks(0, 0.8, 1, 0);
+      b.mat('boot').masks(0, 0.6, 1, 0);
       const x0 = xT + 0.02;
       const r0 = rOutAt(c, x0) + 0.02 * s;
       const p = Profile.at(r0, -x0);
@@ -369,16 +374,25 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     const i1 = which === 0 ? iB : c.x.length - 1;
     const segs = bellSegs(b);
     b.mat(extMat).masks(0.05, 1, 0, 0);
-    wallBand(b, c, i0, i1, () => extMat, extMat, segs, false);
+    // The thin wall of a radiatively cooled extension is rolled and welded from sheet courses: every second
+    // course has taken a slightly different oxide tint.
+    const course = (i: number): MatId => (extMat === 'nozzle-ext' && Math.floor((i - i0) / 2) % 2 === 1 ? 'nozzle-ext-b' : extMat);
+    wallBand(b, c, i0, i1, course, () => extMat, segs, false);
     if (b.lod < 2) {
+      // Circumferential stiffener rings (kept at LOD 1: they are what makes the cone read as a nozzle).
       b.mat('steel-dark').masks(0.1, 1, 0, 0);
-      const x = (c.x[i0]! + c.x[i1]!) / 2;
-      band(b, rOutAt(c, x), -x, 0.03 * s + 0.008, 0.012 * s + 0.003, segs, 'hatband');
+      const rings = b.pick(4, 2, 0);
+      for (let k = 0; k < rings; k++) {
+        const x = c.x[i0]! + ((c.x[i1]! - c.x[i0]!) * (k + 0.5)) / rings;
+        band(b, rOutAt(c, x), -x, 0.022 * s + 0.006, 0.012 * s + 0.003, segs, 'hatband');
+      }
       if (which === 1) band(b, rOutAt(c, c.x[i1]! - 0.02 * s), -(c.x[i1]! - 0.02 * s), 0.03 * s + 0.008, 0.012 * s + 0.004, segs, 'lip-ring');
     }
   };
 
-  const lodPixels = [P.num('lod1Pixels', 200), P.num('lod2Pixels', 44)];
+  // An engine keeps its full detail down to about a hundred pixels: the views a player has of an engine
+  // section (5 to 60 m) are nowhere near a switch.
+  const lodPixels = [P.num('lod1Pixels', 110), P.num('lod2Pixels', 30)];
   const models = {
     engine: buildModel(`${def.id}.engine`, main, lodPixels),
     hotA: buildModel(`${def.id}.hotA`, hot(0), lodPixels),

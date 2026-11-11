@@ -1,6 +1,7 @@
 {
   "generator": "pad.clamp",
   "params": {
-    "swingDeg": 52
+    "swingDeg": 52,
+    "hazardDecal": "hazard"
   }
 }

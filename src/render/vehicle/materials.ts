@@ -101,6 +101,8 @@ const SPECS = {
   'mli-black': { color: [0.03, 0.03, 0.033], metallic: 0, roughness: 0.46, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
+  /** Flexible heat-shield boot of an engine: aluminised cloth gone grey with heat and handling. */
+  boot: { color: [0.3, 0.295, 0.28], metallic: 0, roughness: 0.84, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.42, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   /** Rime on a cryogenic tank: matte, faintly blue white with a lumpy surface (no clear coat under it shows). */
   frost: { color: [1, 1, 1], metallic: 0, roughness: 0.88, tile: [4.8, 4.8], tex: { a: 'frost_albedo', n: 'frost_n', o: 'frost_orm' } },
