@@ -162,20 +162,21 @@ screenshots (all looked at) in `out/screens/integration/`. Run, through the gate
 `npx playwright test tests/browser/integration --project=functional` (about 15 minutes) and
 `--project=perf` for the budget.
 
-State on 2026-11-10 at 21:30, with terrain-render, ocean, atmosphere-clouds and vfx still changing their
-code (their done markers were missing); cockpit, vehicle-pad, sky-lighting, sim-world-pilot finished.
+State on 2026-11-10 at 22:45. Finished (done markers): cockpit, vehicle-pad, sky-lighting, sim-world-pilot,
+ocean. Still changing their code: terrain-render, atmosphere-clouds, vfx: a row below can move again
+until they finish; re-run the suite then.
 
 | Check | Spec | Result | Numbers |
 |---|---|---|---|
 | lab | `lab.spec.ts` | passes when no package is mid-edit | all seven packages load |
 | (a) climb 2 m - 400 km, open ocean, frozen time | `water.spec.ts` "climb" (251 steps of 5 %; terrain + ocean + sky, and every package) | **pass** | no step above 3 x its neighbours, pixel by pixel or of 16 px block averages; with clouds (clear place of the cloud map, 12 N 33 W) none inside the cloud shell either. Control test: a 5 % brightness step is reported (block-average mean 1.71 against 0.46); the near field vanishing in one step is NOT seen by this method (the waves' own step-to-step change is as large) and is covered by the next row |
-| (a) forward = deferred at fadeStart | `water.spec.ts` "fadeStart" (1, 6, 14 km up; towards and away from the sun; with and without the atmosphere) | **fails from 1 km up** -> `ocean-cs-1` | last 50 m inside fadeStart: 4.41 % (no atmosphere), 2.90 % (all, towards the sun); 6 km: 0.41 %, 14 km: 0.15-0.38 %; fadeStart to fadeEnd 0.1 % everywhere |
-| (a) shoreline at 200 m over the real seabed | `water.spec.ts` "shoreline" | seabed and refraction **pass**; foam **changed during the evening** | opaque depth under the water = real seabed within 0.7 m at 46 points 3-40 m deep; refraction changes the image by 2-4 % in the shallows, 0.2-0.4 % over deep water, 0 on land; foam coverage on the waterline 0.13-0.16 against 0.05 offshore at 20:20, 0.04 against 0.06 at 21:25 after ocean and terrain commits (re-run; file against ocean if it stays) |
+| (a) forward = deferred at fadeStart | `water.spec.ts` "fadeStart" (1, 6, 14 km up; towards and away from the sun; with and without the atmosphere; a second take of the same frame removes pixels that change by themselves) | **pass after the ocean's later commits** (`ocean-cs-1`, closed) | last 50 m inside fadeStart from 1 km up: 0.73-0.74 % without the atmosphere, 0.07-0.32 % with it (was 4.41 % / 2.90 %); 6 km: 0.41 %, 14 km: 0.15-0.38 %; fadeStart to fadeEnd 0.1 % without the atmosphere. **Open observation**: with the real clouds between camera and sea (6 and 14 km up) 1-7 % of the pixels from fadeStart outwards, beyond fadeEnd too, differ by more than 2 % between the frame with and without the near field (mean under 0.25 %): cloud-edge pixels whose resolve reacts to the sea's depth; not a ring in the water, not traced further; held by its mean in the spec |
+| (a) shoreline at 200 m over the real seabed | `water.spec.ts` "shoreline" | **pass** | opaque depth under the water = real seabed within 0.7 m at 46 points 3-40 m deep; refraction changes the image by 2-4 % in the shallows, 0.2-0.4 % over deep water, 0 on land; foam (the most of five instants a second apart: the swash comes and goes with the run-up) 0.50 on the waterline against 0.07 offshore |
 | (a) the sea without the ocean feature | `water.spec.ts` "without the ocean" | **pass after `terrain-render-cs-1`** (was: 6 % of the sea drawn from 200 m) | 100.00 % sheet at sea level at 200 m, 3, 10, 14.2, 20 km; no thin dark pixels |
 | (b) plume and trail above an overcast deck, pad camera | `clouds.spec.ts` | **pass** | launch at 42 S 19 E (map coverage 1.00, tops 12.3 km), vehicle 14.1 km up, 36 trail segments: with minus without vfx 0.0000 % from the pad, peak pixel 156 % of the window's luminance from above the deck |
 | (b) a plume 50 km away takes aerial perspective | `clouds.spec.ts` | **pass** against the contract's MEAN transmittance | with / without the atmosphere 0.758 / 0.756 / 0.753 (r, g, b); the air transmits 0.880 / 0.749 / 0.499 (mean 0.734): brightness right, reddening missing (atmosphere-clouds-4, for the lead) |
-| (c) lunar terminator from 20,000 and 5,000 km | `shadows.spec.ts` | **fails** -> `terrain-render-cs-2` (open; improving) | lit pixels shadowed by the terrain's casters: 12 and 23 of 100,000 at 20:50 (level 0-1 casters in the body cascade); 301 (0.31 %) and 466 (0.45 %) at 21:25; threshold 0.4 % |
-| (c) approach through 1,500 km | `shadows.spec.ts` | **fails** -> `terrain-render-cs-2` | one step with a 16 px block change of 28.1 of 255 (8-10 around it) where cascade `4:camera` joins `2:body`; 8.3 with `noshadow=terrain` |
+| (c) lunar terminator from 20,000 and 5,000 km | `shadows.spec.ts` | **pass after `terrain-render-cs-2`** | lit pixels shadowed by the terrain's casters: 301 of 95,646 (0.31 %) and 466 of 103,612 (0.45 %), within 0.04 disc radii of the terminator (12 and 23 before the owner's fix; bound 0.2 %). The body cascade holds level-3 casters: craters wider than about 20 km (level 4 does not fit the tile pools) |
+| (c) approach through 1,500 km | `shadows.spec.ts` (the frame of the game's 60 degree camera at 1,500 km) | **pass** | no step above 3 x its neighbours (mean 1.40-1.70 of 255, worst block 48.6). Through a frame of 600 km (texels of both cascades 3-4 px wide) the change of texel grid at the hand-over is one step of 28 of 255 in a 16 px block: not resolvable by the game's camera |
 | (c) pad, Earth turning: shadow edges | `shadows.spec.ts` | **pass** | ground alone: 0.0004-0.0007 % of the mean luminance per frame, worst 16 px block 0.037 %, no period 2 / 4 / 8. With site and vehicle: 0.07 %, block 73 % with their shadows, 70 % without (the sub-pixel lattice towers shimmer without TAA jitter; the shadows add nothing) |
 | (c) 100 km lunar orbit pass | `shadows.spec.ts` | **pass** | 0.064 % per frame, block 0.84 %, period strengths 0.00 |
 | (d) coverage edges, both bodies, 5 and 50 km | `terrain.spec.ts` (terrain + sky; median over rows of the column step) | **pass** | largest step along a boundary: Earth shading 0.65 %, imagery 0.63 %, geometry 0.012 % of the height; Moon 1.23 %, 1.04 %, 0.006 % (threshold 2 %). Seen, not measured as a line: a change of sharpness where level-12 imagery ends, and dark quadrilaterals in the regional Earth imagery (`coverage-edge-earth-5km-L11-y1.png`) |
@@ -193,8 +194,8 @@ bounding sphere touches the frustum as "in view": stand 400 m away for a dark-ad
 | Request | Owner | Status | One line |
 |---|---|---|---|
 | `terrain-render-cs-1` | terrain-render | **resolved by the owner** (`d43e8fd`), verified by re-running the spec | Sea sheet missing near a low camera over open ocean (seabed visible without the ocean feature), lines along sheet tile edges, water material at the seabed inside fadeStart |
-| `terrain-render-cs-2` | terrain-render | open | The whole-body shadow cascade holds level 0-1 casters: no crater shadows at the terminator from afar, shadows pop in at 1,500 km |
-| `ocean-cs-1` | ocean | open | From a low camera the forward water is 3-4.6 % off the deferred sheet in the last metres inside fadeStart |
+| `terrain-render-cs-2` | terrain-render | **resolved by the owner** (`d3bac0a`), verified; closed by me | The whole-body shadow cascade held level 0-1 casters: no crater shadows at the terminator from afar. Now level 3 |
+| `ocean-cs-1` | ocean | **fixed by the owner's later commits** (`3923a99`), verified; closed by me | From a low camera the forward water was 3-4.6 % off the deferred sheet in the last metres inside fadeStart; now 0.7-0.8 % |
 
 Not filed (the owner had finished; for the lead): the cockpit's cabin shader carries its own copy of the old
 near cloud-shadow lookup (`src/render/cockpit/shaders.ts`): a cabin above a deck is shaded by it until the
@@ -202,8 +203,10 @@ copy is replaced by `#include "cloud_shadow"`.
 
 ## 6. What the lead should look at first when integrating `src/app`
 
-1. **Open requests** `terrain-render-cs-2` and `ocean-cs-1` (section 5) and the shoreline foam (section 4):
-   re-run `tests/browser/integration` when the last four packages have their markers.
+1. **Re-run `tests/browser/integration`** when terrain-render, atmosphere-clouds and vfx have their markers
+   (section 4 is the state at 22:45, with those three still changing). Open observation: cloud-edge pixels
+   react to the near field being on or off (row "(a) forward = deferred"). `atmosphere-clouds-5` (a
+   deleted ocean spec) is open between two other packages and the ocean package has finished.
 2. **Budget** (g): re-run on the quiet machine; look at the LEO cockpit row (cockpit 0.000).
 3. **Decisions asked of the lead**: `sky-lighting-2` (Milky Way cube at 2048: sky VRAM 0.1 -> 0.15 GB),
    `sim-world-pilot-2` (ARCHITECTURE 18.2: the mission takes about 45 minutes), `ocean-5` (more swell
@@ -241,7 +244,11 @@ copy is replaced by `#include "cloud_shadow"`.
   `ocean-cs-1` filed. Check (c): `terrain-render-cs-2` filed. Check (b), (d), (e), (f) run.
 - 21:00-21:30. `atmosphere-clouds-1..4`, `ocean-5`, `sim-world-pilot-2`, `vfx-2`, `vfx-3`. Owner's fix of
   `terrain-render-cs-1` verified. Budget run under load.
-- State at 21:30: no request against my paths open; render-core browser suite 28 of 28 (after the cloud
+- 21:30-22:45. Hand-off rewritten. Owners' fixes verified and `terrain-render-cs-2`, `ocean-cs-1` closed;
+  checks (a) and (c) re-judged (game camera's frame, foam over the run-up, unstable pixels left out).
+  Wave-1 functional suites (flight-ui + shell, map-view, audio) 87 of 87; unit suite 959 of 959 after the
+  loader test stopped pinning an atmosphere tunable.
+- State at 22:45: no request against my paths open; render-core browser suite 28 of 28 (after the cloud
   shadow change), exposure specs 6 of 6, unit tests of the core, the render core and the fakes green,
   `npm run typecheck` clean for my paths. Markers present: cockpit, sim-world-pilot, sky-lighting,
   vehicle-pad. Waiting for terrain-render, atmosphere-clouds, ocean, vfx.
