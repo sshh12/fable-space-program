@@ -16,7 +16,13 @@ describe('definition loader', () => {
     expect(lib.rootBodyId).toBe('earth');
     expect(Object.keys(lib.bodies).sort()).toEqual(['earth', 'moon', 'sun']);
     const earth = lib.bodies['earth']!;
-    expect(earth.render.atmosphere?.rayleighScattering[2]).toBeCloseTo(33.1e-6, 12);
+    // The $ref to render/earth.atmosphere.json is resolved (the numbers are the atmosphere package's to tune:
+    // only their order of magnitude and "blue scatters more than red" are held here).
+    const rayleigh = earth.render.atmosphere!.rayleighScattering;
+    expect(rayleigh[2]).toBeGreaterThan(2e-5);
+    expect(rayleigh[2]).toBeLessThan(5e-5);
+    expect(rayleigh[2]).toBeGreaterThan(rayleigh[1]);
+    expect(rayleigh[1]).toBeGreaterThan(rayleigh[0]);
     expect(earth.terrain?.amplification.model).toBe('earth-landcover');
     expect(earth.ocean?.swell.length).toBe(4);
     for (const c of earth.ocean!.swell) expect(Math.hypot(...c.dir)).toBeCloseTo(1, 9);
