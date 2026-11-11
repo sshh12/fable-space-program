@@ -79,8 +79,8 @@ type Factory = (...args: unknown[]) => unknown;
 interface FactoryCall {
   /** Exported factory name. */
   name: string;
-  /** Arguments, as the package's hand-off documents them. */
-  args(env: FeatureEnv): unknown[];
+  /** Arguments, as the package's hand-off documents them; `present` = the packages whose modules are loaded. */
+  args(env: FeatureEnv, present: readonly FeaturePackage[]): unknown[];
 }
 
 /**
@@ -91,7 +91,10 @@ interface FactoryCall {
 const ADAPTERS: Record<FeaturePackage, FactoryCall[]> = {
   terrain: [{ name: 'createTerrainFeature', args: (env) => [env.ctx, () => env.terrain] }],
   vehicle: [
-    { name: 'createVesselVisualFeature', args: () => [] },
+    // With a cockpit feature the capsule's windows are the cockpit's: its interior is scene geometry behind
+    // its own transparent glazing, so the vehicle must not close them with its opaque outer panes while the
+    // camera is outside (docs/requests/cockpit-8.md). Whoever composes the app's features does the same.
+    { name: 'createVesselVisualFeature', args: (_env, present) => [{ exteriorGlass: !present.includes('cockpit') }] },
     { name: 'createSiteFeature', args: () => [] },
   ],
   cockpit: [{ name: 'createCockpitFeature', args: (env) => [env.ctx, { navball: env.navball, mfdPainter: env.mfdPainter }] }],
@@ -122,6 +125,7 @@ export async function importPackages(wanted: readonly FeaturePackage[]): Promise
 /** Build the features of the imported packages. */
 export function buildFeatures(modules: Partial<Record<FeaturePackage, Module>>, env: FeatureEnv): BuiltFeatures {
   const out: BuiltFeatures = { features: [], loaded: [], packageOf: {}, handles: {}, problems: [] };
+  const present = FEATURE_PACKAGES.filter((p) => ADAPTERS[p].some((call) => typeof modules[p]?.[call.name] === 'function'));
   for (const p of FEATURE_PACKAGES) {
     const mod = modules[p];
     if (!mod) continue;
@@ -134,7 +138,7 @@ export function buildFeatures(modules: Partial<Record<FeaturePackage, Module>>, 
         continue;
       }
       try {
-        const result = (factory as Factory)(...call.args(env));
+        const result = (factory as Factory)(...call.args(env, present));
         out.handles[`${p}.${call.name}`] = result;
         const features = featuresOf(result);
         if (features.length === 0) out.problems.push(`${p}: ${call.name} returned no RenderFeature`);

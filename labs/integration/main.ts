@@ -133,6 +133,13 @@ export interface IntegrationLab {
    * aimed at it: a crew member leaning to the window, which then fills the frame.
    */
   sitAtWindowBelow(lean?: number): { window: string; dipDeg: number } | null;
+  /**
+   * An outside camera (kind 'external') on the line from the seat through the centre of a cabin window,
+   * `distance` metres outside the window and looking in along that line. The window with the given id, or
+   * the one `sitAtWindowBelow` picks, or (for a lab without the cockpit package, which has no window list)
+   * a centre in the part frame. Returns the window's id and centre, or null without a seat or a window.
+   */
+  lookInThroughWindow(distance?: number, window?: string | Vec3): { window: string; centre: Vec3 } | null;
   /** Eye points of the seats of the cockpit camera's command part: id and position in the part frame, m. */
   cockpitSeats(): { id: string; pos: Vec3 }[];
   /** The seat view aimed at a point of the cabin (part frame, m). False without a cockpit seat. */
@@ -726,6 +733,18 @@ async function boot(): Promise<void> {
       const n = v3.normalize(d);
       if (!seatView(Math.atan2(v3.dot(n, c.R), v3.dot(n, c.L)) / DEG, Math.asin(clampUnit(v3.dot(n, c.U))) / DEG, lean > 0 ? v3.scale(d, Math.min(lean, 0.95)) : null)) return null;
       return { window: best.window, dipDeg: best.dipDeg };
+    },
+    lookInThroughWindow(distance = 1, window) {
+      const c = cabin();
+      if (!c) return null;
+      const dipOf = (x: { centre: Vec3 }): number => -Math.asin(clampUnit(v3.dot(quat.rotate(c.qPart, v3.normalize(v3.sub(x.centre, c.eye))), c.up)));
+      const w = typeof window === 'object' ? { id: '', centre: window } : window !== undefined ? c.windows.find((x) => x.id === window) : [...c.windows].sort((a, b) => dipOf(b) - dipOf(a))[0];
+      if (!w) return null;
+      const out = v3.sub(w.centre, c.eye);
+      const back = v3.neg(v3.normalize(out));
+      if (!seatView(Math.atan2(v3.dot(back, c.R), v3.dot(back, c.L)) / DEG, Math.asin(clampUnit(v3.dot(back, c.U))) / DEG, v3.addScaled(out, back, -distance))) return null;
+      app.camera.settings.kind = 'external';
+      return { window: w.id, centre: w.centre };
     },
     cockpitSeats: () => cabin()?.seats.map((x) => ({ id: x.id, pos: v3.fromTuple(x.pos) })) ?? [],
     sitInCockpitAimedAt(pointPart) {

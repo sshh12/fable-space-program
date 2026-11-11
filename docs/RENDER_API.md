@@ -1159,6 +1159,23 @@ let sunT = cloudShadow(pos, i32(bi), rel / r, r, frame.bodies[bi].sunDir.xyz);  
   line, the cabin of a capsule that has climbed through the deck included (`docs/requests/cockpit-cs-1.md`).
 - With nothing published the lookup returns exactly 1; no branch is needed for bodies without clouds.
 
+### 17.7 Compose the features of the game (the app shell)
+
+`labs/integration/features.ts` is the working example: every package's factory with the arguments its
+hand-off documents, registered in the order terrain, vehicle, cockpit, ocean, sky, atmosphere, vfx
+(`RenderFeature.order` decides the order inside each hook). One argument depends on what else is
+loaded (request `cockpit-8`):
+
+```ts
+createVesselVisualFeature({ exteriorGlass: !cockpitLoaded })
+```
+
+The vehicle draws an opaque outer pane over every capsule window while the camera is outside the vessel.
+With a cockpit feature the windows are the cockpit's: its interior is ordinary scene geometry behind its
+own transparent glazing, so the pane must go or the chase camera sees a black sheet where the lit cabin
+should show. Without a cockpit feature keep the default, or the capsule has holes. Checked by
+`tests/browser/integration/lab.spec.ts` ("the capsule windows belong to the cockpit").
+
 ---
 
 ## 18. Changes in wave 2
@@ -1178,6 +1195,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | Mesh G-buffer shader, `standard` shading: soot and frost broken up in texture space, new soot and frost colours and roughness, clear coat and anisotropy covered by them (section 10) | `vehicle-pad-1` | vehicle-pad (tank frost, engine-section soot); any `standard` instance with `soot` or `frost` above 0 | None for instances with both at 0 (bit-identical). A partly sooted or frosted `standard` surface looks different: streaks instead of a film, no gloss under the layer. `terrain` shading is unchanged |
 | The exposure histogram is taken before the transparent pass (frame graph step 8b); under the sun the target is bounded at sunny 16 + `SUNLIT_HIGHLIGHT_MAX_EV` (0.5) for metered pixels and emitter hints alike | `vfx-4` | vfx (flames, splashes, fireballs no longer stop the camera down; send a hint for an emitter in front of geometry if the camera should react); every bright daylight frame (cloud decks, snow, a white hull filling the frame: up to 0.65 EV brighter than before); night scenes unchanged | A transparent that was metered because it stood in front of geometry is not any more: add a hint where that was relied on |
 | Dark floor `EV_DARK_FLOOR` -3 -> -6, `EV_MIN` -3 -> -7; dark adaptation below EV -3 at `ADAPT_DARK` = 0.12 EV/s (`DARK_ADAPT_EV`); the tone curve's toe is linear and hue-preserving below 4 stops under mid-grey (`TOE_GAIN`, `displayLinear`) | `sky-lighting-3` | every view with nothing lit in it (the night sky, deep space, the night side from orbit); every pixel darker than 3 stops under mid-grey in every package (deep shadow, unlit sides: lifted, e.g. 3.4 -> 8.9 of 255 at 5 stops under) | None in code. Specs that pinned the floor at -3 or the level of deep shadow must be re-measured; a frame with nothing lit takes 25 s longer to reach its darkest exposure |
+| Integration lab: the vehicle feature is created with `exteriorGlass: false` when the cockpit package is loaded (section 17.7); lab helper `lookInThroughWindow(distance, window)` | `cockpit-8` | cockpit, vehicle-pad; the author of `src/app` | None in the packages. In the lab the capsule windows are open to the cabin from outside when both are loaded |
 | Interior metering: lit geometry beyond the cabin stops the exposure down from a tenth of the frame (`INTERIOR_WINDOW_FROM / FULL`), `MeterResult` and `exposureInfo()` gained `outsideFraction`, `evOutside`, `outsideWeight`, section 13 | `cockpit-7` | cockpit; anything with `CameraState.kind === 'interior'` | None below a tenth of the frame. An interior view in which the Earth, the Moon or the ground fill more than that through the windows is exposed darker, up to the exterior exposure at four tenths |
 | Interior metering: night key (`INTERIOR_NIGHT_KEY_EV`, `INTERIOR_NIGHT_LOW / HIGH`) and bounded highlight term (`INTERIOR_HIGHLIGHT_CAP`, `INTERIOR_HIGHLIGHT_MAX_EV`), section 13 | `cockpit-5`, `cockpit-6` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin out of the sun is displayed up to 1.5 EV darker; a cabin with sun in it up to 1.25 EV darker than before |
 | Interior metering uses the log-average of the near histogram (`histogramStats(h, n, litRangeEv)` gained `logMean` and the range argument) | `cockpit-3` | cockpit; anything with `CameraState.kind === 'interior'` | None. A cabin with sun patches is exposed several stops brighter than before; a uniformly lit cabin is unchanged |
