@@ -38,6 +38,7 @@
     "capillaryScale": 4.2,
     "unresolvedSlopeVariance": 0.0025,
     "windVariability": 0.35,
-    "slickStrength": 0.35
+    "slickStrength": 0.35,
+    "taaReactive": 0.45
   }
 }

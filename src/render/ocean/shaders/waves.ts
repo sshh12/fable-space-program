@@ -62,7 +62,7 @@ struct OceanUniforms {
   vessels: array<OceanVessel, ${MAX_VESSELS}>,
   ripples: array<vec4f, ${MAX_RIPPLES}>,     // xy = plane offset from the reference point, z = age now (s), w = amplitude (m)
   rippleParams: vec4f,  // x = wavenumber k, y = lifetime (s), z = group speed (m/s), w = omega (rad/s)
-  misc: vec4f,          // x = sea level above the reference radius (m), y = wave height bound (m), z = FFT chop scale (1; a debug hook), w = 0
+  misc: vec4f,          // x = sea level above the reference radius (m), y = wave height bound (m), z = FFT chop scale (1; a debug hook), w = largest TAA reactive value
   // Capillary detail layers: the finest cascade compressed by 'scale' and rotated, slopes x 'amplitude'.
   detail: array<vec4f, 2>,   // x = scale, y = cos(rotation), z = sin(rotation), w = slope amplitude
   detailOrigin: vec4f,       // xy / zw = texture coordinates of the reference point for layer 0 / 1, modulo 1

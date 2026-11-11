@@ -64,8 +64,9 @@ test('moving the camera away and back reproduces the frame; TAA keeps the detail
 
   // Motion vectors. A camera flying over a frozen sea is a static world: with exact motion vectors TAA keeps it
   // as sharp as with a still camera. The measure is the gradient energy of the TAA output relative to the
-  // single jittered frame it was resolved from (same frame, rendered by hand). The animated sea is reported:
-  // its pattern evolves (dispersive waves in many directions) and has no single motion vector.
+  // single jittered frame it was resolved from (same frame, rendered by hand). The animated sea's pattern
+  // evolves (dispersive waves in many directions) and has no single motion vector: the ocean marks it in the
+  // reactive mask ('post.reactive'), which must keep more of its detail than the history alone.
   await page.evaluate(() => {
     window.__ocean!.setSun([192, 40]);
     window.__lab!.renderer.setJitter(true);
@@ -113,13 +114,18 @@ test('moving the camera away and back reproduces the frame; TAA keeps the detail
   const still = await sharpness(false, false);
   const flying = await sharpness(false, true);
   const animated = await sharpness(true, false);
+  await page.evaluate(() => window.__ocean!.ocean!.debug.setReactiveScale(0));
+  const animatedNoMask = await sharpness(true, false);
+  await page.evaluate(() => window.__ocean!.ocean!.debug.setReactiveScale(1));
   await page.evaluate(() => window.__lab!.setLoop(true));
   await saveScreenshot(page, 'ocean', 'stability-animated');
-  console.log(`TAA output / single frame gradient energy: still ${still.toFixed(3)}, camera flying 5 m/s and turning 3 deg/s over a frozen sea ${flying.toFixed(3)} (ratio ${(flying / still).toFixed(2)}), animated sea ${animated.toFixed(3)} (ratio ${(animated / still).toFixed(2)})`);
+  console.log(`TAA output / single frame gradient energy: still ${still.toFixed(3)}, camera flying 5 m/s and turning 3 deg/s over a frozen sea ${flying.toFixed(3)} (ratio ${(flying / still).toFixed(2)}), animated sea ${animated.toFixed(3)} (ratio ${(animated / still).toFixed(2)}; without the reactive mask ${(animatedNoMask / still).toFixed(2)})`);
   // Measured with this method: terrain (core mesh motion vectors) 0.81, this water 0.68, this water with its
   // motion vectors zeroed 0.40. Water keeps a little less than terrain because its shading is view-dependent
   // (reflections slide over the surface as the camera moves).
   expect(flying / still).toBeGreaterThan(0.6);
-  expect(animated / still).toBeGreaterThan(0.42);
+  // Without the mask the animated sea measured 0.47-0.48 of the still one (request ocean-4).
+  expect(animated / still).toBeGreaterThan(0.6);
+  expect(animated).toBeGreaterThan(animatedNoMask * 1.15);
   await expectNoErrors(page, pageLog);
 });

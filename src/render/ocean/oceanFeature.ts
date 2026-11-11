@@ -28,6 +28,7 @@ import { coxMunkVariance, oceanTunables, type OceanTunables } from './params';
 import { MAX_SWELL, prepareSwell, swellAmplitudeBound, swellSlopeVariance, type PreparedSwell } from './swell';
 import { OCEAN_UNIFORM_BYTES, OCEAN_UNIFORM_VEC4, OCEAN_WAVES_WGSL } from './shaders/waves';
 import { buildWaterBrdfWgsl, whitecapCoverage } from './shaders/waterBrdf';
+import { REACTIVE_WGSL } from './shaders/reactiveWgsl';
 import { READBACK_WGSL, SURFACE_PIPELINE_WGSL } from './shaders/surfaceWgsl';
 import { packOceanUniforms, type OceanFrameData } from './uniforms';
 import { OceanVessels, type VesselFrame } from './vessels';
@@ -71,6 +72,8 @@ export interface OceanDebug {
   setDebugView(view: keyof typeof OCEAN_DEBUG_VIEWS): void;
   /** Scale the refraction offset (1 = the data). Debug hook for the refraction check. */
   setRefractionScale(scale: number): void;
+  /** Scale the values written to the TAA reactive mask (1 = the data, 0 = none). Debug hook for the stability check. */
+  setReactiveScale(scale: number): void;
   /** Switch the direct specular of brdf_water (sun glint) off to isolate it in tests; true restores it. */
   setDirectSpecular(on: boolean): void;
 
@@ -122,6 +125,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let chopScale = 1;
   let debugView = 0;
   let refractionScale = 1;
+  let reactiveScale = 1;
   let directSpecular = true;
   let lastFrame: FrameContext | null = null;
   let depthReadLayout: GPUBindGroupLayout;
@@ -146,6 +150,13 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let oceanSampler: GPUSampler;
   const oceanGroups = new Map<string, GPUBindGroup>();
   let pipeline: Tracked<GPURenderPipeline>;
+  let reactiveScene: SceneBindings;
+  let reactiveSceneLayout: GPUBindGroupLayout;
+  let reactiveSceneGroup: GPUBindGroup | null = null;
+  let reactiveSceneVersion = -1;
+  let reactiveGroup: GPUBindGroup;
+  let reactivePipeline: Tracked<GPURenderPipeline>;
+  let reactiveValue = 0;
   let readbackLayout: GPUBindGroupLayout;
   let readbackPipeline: Tracked<GPUComputePipeline>;
   let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number } | null = null;
@@ -212,6 +223,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     },
     setRefractionScale(scale) {
       refractionScale = scale;
+    },
+    setReactiveScale(scale) {
+      reactiveScale = scale;
     },
     setDirectSpecular(on) {
       directSpecular = on;
@@ -360,7 +374,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   const feature: OceanFeature = {
     id: options.id ?? OCEAN_FEATURE_ID,
     order: options.order ?? 0,
-    requires: ['scene.colorCopy'],
+    requires: ['scene.colorCopy', 'post.reactive'],
     debug,
 
     init(c) {
@@ -456,6 +470,21 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
           primitive: { topology: 'triangle-list', cullMode: 'none' },
           depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: true, depthCompare: 'greater-equal' },
         });
+      });
+      // Reactive mask of the temporal resolve (shaders/reactiveWgsl.ts), drawn in preTransparent.
+      reactiveScene = core.createSceneBindings(1, 0, ['sceneDepth', 'sceneDepthOpaque']);
+      reactiveSceneLayout = device.createBindGroupLayout({ label: 'ocean.reactiveScene', entries: reactiveScene.layoutEntries });
+      const reactiveLayout = device.createBindGroupLayout({
+        label: 'ocean.reactive',
+        entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }],
+      });
+      reactiveGroup = device.createBindGroup({ label: 'ocean.reactive', layout: reactiveLayout, entries: [{ binding: 0, resource: { buffer: uniformBuffer } }] });
+      const maxBlend: GPUBlendComponent = { operation: 'max', srcFactor: 'one', dstFactor: 'one' };
+      reactivePipeline = core.fullscreenPipeline({
+        label: 'ocean.reactive',
+        fragment: REACTIVE_WGSL(reactiveScene.wgsl),
+        targets: [{ format: 'r8unorm', blend: { color: maxBlend, alpha: maxBlend } }],
+        layouts: [reactiveSceneLayout, reactiveLayout],
       });
       readbackLayout = device.createBindGroupLayout({
         label: 'ocean.readback',
@@ -568,6 +597,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const fftVar = body.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0);
       const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
       const tau = frac(ut / t.repeatPeriod);
+      reactiveValue = t.taaReactive * reactiveScale;
       const data: OceanFrameData = {
         cHat: ref.cHat,
         seaRadius: t.seaRadius,
@@ -615,6 +645,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         seaLevel: t.seaRadius - t.radius,
         waveBound,
         chopScale,
+        taaReactive: reactiveValue,
         debugView,
         detail: body.detail.map((l) => {
           // Planet-fixed: rotate and compress the reference's chart coordinates in float64, keep the fraction.
@@ -670,6 +701,27 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       pass.setVertexBuffer(0, gridBuffer);
       pass.setIndexBuffer(indexBuffer, 'uint16');
       pass.drawIndexed(indexCount, patchCount);
+    },
+
+    preTransparent(frame, encoder) {
+      const a = active;
+      if (!a || patchCount === 0 || reactiveValue <= 0) return;
+      const v = reactiveScene.version();
+      if (!reactiveSceneGroup || v !== reactiveSceneVersion) {
+        reactiveSceneVersion = v;
+        reactiveSceneGroup = device.createBindGroup({ label: 'ocean.reactiveScene', layout: reactiveSceneLayout, entries: reactiveScene.entries() });
+      }
+      const pass = encoder.beginRenderPass({
+        label: 'ocean.reactive',
+        colorAttachments: [{ view: ctx.resources.get('post.reactive'), loadOp: 'load', storeOp: 'store' }],
+        timestampWrites: ctx.perf.gpuPass('ocean.reactive') as GPURenderPassTimestampWrites | undefined,
+      });
+      pass.setPipeline(reactivePipeline.get());
+      pass.setBindGroup(0, frame.frameBindGroup);
+      pass.setBindGroup(1, reactiveSceneGroup);
+      pass.setBindGroup(2, reactiveGroup);
+      pass.draw(3);
+      pass.end();
     },
 
     isIdle: () => coreOf(ctx).shaders.pendingCompilations() === 0,

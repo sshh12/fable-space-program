@@ -75,6 +75,8 @@ export interface OceanFrameData {
   waveBound: number;
   /** FFT chop scale (1 = data; a debug hook for the swell-agreement views). */
   chopScale: number;
+  /** Largest value written to the TAA reactive mask (0 = none). */
+  taaReactive: number;
   /** Debug view: 0 = normal shading; see OCEAN_DEBUG_VIEWS. */
   debugView: number;
 
@@ -139,7 +141,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
     else v4(0, 0, 0, 0);
   }
   v4(d.ripple.k, d.ripple.lifetime, d.ripple.groupSpeed, d.ripple.omega);
-  v4(d.seaLevel, d.waveBound, d.chopScale, 0);
+  v4(d.seaLevel, d.waveBound, d.chopScale, d.taaReactive);
   for (let k = 0; k < 2; k++) {
     const l = d.detail[k]!;
     v4(l.scale, Math.cos(l.angle), Math.sin(l.angle), l.amplitude);

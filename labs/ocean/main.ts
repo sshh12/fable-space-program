@@ -250,10 +250,22 @@ async function boot(): Promise<void> {
       `exposure EV ${app.renderer.exposureInfo().ev100.toFixed(2)}`;
     void v3;
   });
-  await app.testApi.api.waitFrames(4);
-  app.testApi.markReady(app.testApi.api.errors.length === 0);
+  // Let the preset settle for a few frames. If frames stop coming, say so rather than leave the harness waiting.
+  const settled = await Promise.race([
+    app.testApi.api.waitFrames(4).then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
+  ]);
+  if (!settled) app.testApi.reportError('ocean lab: no frame rendered within 30 s of set-up');
+  app.testApi.markReady(settled && app.testApi.api.errors.length === 0);
 }
 
 boot().catch((e: unknown) => {
+  // createLabApp reports its own failures; one in this lab's set-up must reach the harness too, not leave
+  // window.__test.ready pending.
+  const app = window.__lab;
+  if (app) {
+    app.testApi.reportError(e instanceof Error ? e.message : String(e));
+    app.testApi.markReady(false);
+  }
   console.error(e);
 });
