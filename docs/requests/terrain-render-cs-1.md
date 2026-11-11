@@ -106,4 +106,5 @@ Two things in the same spec that this change does not explain, for whoever owns 
 - "a shoreline from 200 m": foam coverage 0.081 on the waterline against 0.046 offshore, below the 2x bound.
 
 What to re-run: `water.spec.ts`; `tests/browser/terrain` (19 of 19 on this commit); unit tests of
-`tests/unit/terrain-render` (38 of 38, one new: the bounds of a submerged tile contain the sea surface).
+`tests/unit/terrain-render` (31 of 31 at that commit, one new: the bounds of a submerged tile contain the
+sea surface).

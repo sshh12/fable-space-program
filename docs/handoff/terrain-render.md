@@ -31,7 +31,7 @@ hash `ab20fdfc579d4015`; `moon`).
 | `tools/terrain/gen_materials.py` | generator of the material sets (procedural, tileable; no API keys used) |
 | `tools/terrain/bench-select.ts`, `probe-bake.ts`, `scan-spikes.ts` | selection benchmark in Node; evidence tools of requests 1 and 2 |
 | `labs/terrain/` | the lab (section 7) |
-| `tests/unit/terrain-render/` | 38 unit tests (LOD maths, crack-freedom by a float64 twin of the vertex shader, selection, coverage, meshes, night images) |
+| `tests/unit/terrain-render/` | 32 unit tests (LOD maths, crack-freedom by a float64 twin of the vertex shader, selection, relief floor, sea-surface bounds, coverage, meshes, night images) |
 | `tests/browser/terrain/` | `smoke`, `views` (the reviewed screenshots), `integrity`, `pops`, `terrain.perf` |
 
 ## 2. Public API (exact signatures)
@@ -87,6 +87,13 @@ level - 100 m on ocean bodies, else R + minElevation). On a body with a sea the 
 that lies under water reaches up to the sea surface (`TileNode.cull`, `cullTop`): the far water sheet is
 drawn from the same tile; the level-of-detail distance stays the distance to the terrain.
 
+**Relief floor.** Within 16 body radii (`RELIEF_RADII`, the distance at which level 3 is loaded ahead) the
+level ranges have a floor: `range(3) = 16 R`, `range(2) = 32 R`, `range(1) = 64 R` (`ReliefFloor` in
+`lod.ts`). The whole near side is then level 3 however small the body is on screen (Moon: 5.3 km quads,
+Earth: 19.5 km), morphing in like any other level. The reason is the shadows: every cascade casts from the
+tiles the camera selection draws (casters and receivers must have the same geometry), and a level-0 mesh has
+no craters. Beyond 16 radii and closer than the ordinary range of level 3 nothing changes.
+
 **Morph.** `k = clamp((d / range(l) - m0) / (m1 - m0))`, `m0 = clamp(0.5 + 0.5/K, 0.7, 0.9)`,
 `m1 = max(0.95, m0 + 0.08)`: the coarser side of every LOD border is unmorphed, the finer side is fully the
 parent's geometry. Odd vertices slide to an even neighbour in a direction fixed per cube face
@@ -103,8 +110,11 @@ observer, x 0.25 in the guard band, x 0.3 / 0.2 for prefetch passes); a request 
 dropped; a job in flight is discarded on arrival if nobody wants it. Uploads stop at 8 tiles or when the
 running estimate says the next tile would pass 2 ms. Pools (allocated once under OOM scopes): heights
 r32float 65^2 x 1280, normals rgba8 256^2 + mips x 1280, albedo rgba8-srgb + mips x 1024, aux rg8 + mips x
-1024, night r8 258^2 + mips x 384: 0.97 GiB. Eviction is LRU among tiles untouched for 90 frames; ancestors
-of drawn tiles and levels 0..2 are never evicted.
+1024, night r8 258^2 + mips x 1024: 1.02 GiB. Eviction is LRU among tiles untouched for 90 frames; ancestors
+of drawn tiles and levels 0..2 are never evicted. Night images belong to tiles of levels 0..5, which almost
+always have resident children and cannot be evicted: 472 of the 1024 layers are in use in low Earth orbit.
+A tile that finds the night pool full goes up without its lights (`StreamStats.nightDropped`, asserted 0 by
+`views.spec.ts`); with 384 layers the views stalled.
 
 **Water.** The sheet is drawn first (same tiles, vertices on the sea sphere, depth = the seabed's). It
 discards where the mask says land (while the mask is finer than the geometry: `influence =
@@ -130,9 +140,13 @@ radius; a rock is drawn within `radius x rangePerRadius` (at most `rockRangeM`),
 
 ## 4. Deviations from the brief (and why)
 
-1. **Levels 0-2 are always resident; level 3 is loaded ahead** for a body within 16 radii and can be evicted
-   again (brief: levels 0-3 always resident). With both bodies pinned to level 3 (768 tiles) the image pool
-   ran out at 10 km / 1440p. A cut to anywhere still starts from level 2 or 3.
+1. **Levels 0-2 are always resident; level 3 is loaded ahead and drawn** for a body within 16 radii (brief:
+   levels 0-3 always resident). With both bodies pinned to level 3 (768 tiles) the image pool ran out at
+   10 km / 1440p. A cut to anywhere still starts from level 2 or 3.
+1a. **Shadow casters are the camera selection** (plus resident tiles outside the view, down to the level
+   matching the cascade's texels), not tiles chosen per cascade: a caster finer than its receiver shadows
+   the receiver. The whole-body cascade (1.9 km texels on the Moon) therefore casts from level 3 (5.3 km
+   quads) between 16 radii and the ordinary range of level 3, see request cs-2.
 2. **`createTerrainFeature` has a third, optional `options` parameter** (pool sizes, pin levels, rocks off).
 3. **Night lights are one channel with a per-body tint, sampled at level 5 with a border**, not the RGB
    image at its deepest level: the RGB pool was exhausted by pinned tiles, the source's cells are 2-4 texels
@@ -143,9 +157,9 @@ radius; a rock is drawn within `radius x rangePerRadius` (at most `rockRangeM`),
    halo around every island from orbit. Shelves and reefs shallower than that keep their imagery colour.
 5. **CPU selection budget**: the per-frame selection is under 1 ms everywhere measured (p99 0.22-0.82 ms).
    Two frames in eight also run a request-only traversal for the streamer (2 s ahead, predicted impact),
-   timed separately (`prefetchMs`). In the 60 s descent selection + prefetch had a p99 of 0.64 ms in the
-   final run and of 0.77 and 1.04 ms in two earlier runs under heavier load from other agents' jobs (when
-   both were still counted as selection). The perf spec asserts selection < 1 ms and selection + prefetch
+   timed separately (`prefetchMs`). In the 60 s descent selection + prefetch had a p99 of 0.64 and 0.77 ms
+   in the last two runs and of 0.77 and 1.04 ms in two earlier runs under heavier load from other agents'
+   jobs (when both were still counted as selection). The perf spec asserts selection < 1 ms and selection + prefetch
    < 1.5 ms.
 6. **Lab defaults**: 6 tile workers (load rules of this machine), a sky stand-in instead of the atmosphere
    (the lab loads the terrain feature alone), so the Earth views are more saturated and harder-edged than
@@ -160,7 +174,8 @@ radius; a rock is drawn within `radius x rangePerRadius` (at most `rockRangeM`),
 | `terrain-render-1` (bake reads land cover beyond its data: "incomplete" bakes at level >= 14) | resolved 37f6f54 |
 | `terrain-render-2` (1.1 km needle in the Earth heights near the pad) | resolved b8ea6a7, data repaired; pad views re-rendered |
 | `terrain-render-3` (blocky night-light cells) | declined: in the source; handled in the shader (section 3) |
-| `terrain-render-cs-1` (from core-support: sea sheet missing near a low camera over deep ocean, water material at the seabed inside the near field, lines along sheet tile edges) | fixed in this package, see the request's resolution |
+| `terrain-render-cs-1` (from core-support: sea sheet missing near a low camera over deep ocean, water material at the seabed inside the near field, lines along sheet tile edges) | resolved d43e8fd, see the request's resolution |
+| `terrain-render-cs-2` (from core-support: no crater shadows at the lunar terminator from 20,000 and 5,000 km, a shadow step at 1,500 km on approach) | answered, left open: the relief floor gives the terminator its shadows (0.45 % of the lit pixels at 5,000 km, 0.31 % at 20,000 km against the spec's 0.4 %); the step at 1,500 km is unchanged (28 of 255 in one block): the floor does not act in that test (its selection is already level 4-5), and the cause was not found |
 
 ## 6. Tunables (`data/defs/render/<body>.surface.json`, all required)
 
@@ -193,7 +208,7 @@ handle of the specs: `placeCamera`, `setSun`, `setNearField`, `grab`, `reference
 
 ```
 npm run typecheck:paths -- src/render/terrain labs/terrain tests/browser/terrain tests/unit/terrain-render tools/terrain
-node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render/terrain tests/unit/terrain-render      # 38 tests
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render/terrain tests/unit/terrain-render      # 32 tests
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/terrain --project=functional   # 19 tests, 8 min
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/terrain/terrain.perf.spec.ts --project=perf   # 7 tests, 8-13 min
 TERRAIN_VIEWS=moon-standing,pad-* TERRAIN_QUERY="p.moon.rockAlbedoScale=1.2" ... views.spec.ts           # some views, A/B of a tunable
@@ -204,10 +219,10 @@ npx tsx tools/terrain/bench-select.ts                                           
 |---|---|---|
 | Reviewed screenshots (24 views, 1920 x 1080, `out/screens/terrain/`) | `views.spec.ts` | all rendered and looked at, section 9 |
 | No cracks or holes (magenta behind the silhouette, descents on both bodies) | `integrity`: "no cracks or holes" + marker control | 0 magenta pixels over 12 heights x 4 captures on each body, deepest levels 20 / 18 |
-| LOD pops, 400 km -> 2 m on both bodies, Moon approach 20,000 -> 1,500 km, also with 500 ms delay | `pops.spec.ts` | 0 block spikes in all six runs; worst (block - floor) / local median 1.02 (Earth), 1.91 (Moon), 1.46 (approach); control without morphing: 12 spikes, worst 9.1 |
-| Warp 50x at 200 km, 60 s | `terrain.perf`: warp | ground speed 367 km/s, cap 3.77, level 3 drawn; queue at most 2; 0 frames over 33 ms (largest 17.7 ms) |
+| LOD pops, 400 km -> 2 m on both bodies, Moon approach 20,000 -> 1,500 km, also with 500 ms delay | `pops.spec.ts` | 0 block spikes in all six runs; worst (block - floor) / local median 1.02 (Earth), 2.00 (Moon), 1.44 (approach); control without morphing: 21 spikes, worst 11.3 |
+| Warp 50x at 200 km, 60 s | `terrain.perf`: warp | ground speed 367 km/s, cap 3.77, level 3 drawn; queue at most 3 in four runs (0 in the last: level 3 is resident now); 0 frames over 33 ms (largest 17-21 ms) |
 | Image decode within 2/255, water mask exact | `integrity`: image tiles | 4 coastal level-12 tiles: largest difference 0 on land and water, 0 mask and land-cover differences |
-| Near-field hand-over | `integrity`: ocean near field | near pixel: sea at 1.2 m -> seabed at -2201 m with the near field; sheet kept at 34.5 km; unchanged without it. Also core-support's `tests/browser/integration/water.spec.ts`, "without the ocean": 100.00 % sheet at 200 m, 3, 10, 14.2, 20 km over the open Atlantic, 0 thin dark pixels in the bare sheet |
+| Near-field hand-over | `integrity`: ocean near field | near pixel: sea at 0.2 m -> seabed at -2202 m with the near field; sheet kept at 34 km; unchanged without it. Also core-support's `tests/browser/integration/water.spec.ts`, "without the ocean": 100.00 % sheet at 200 m, 3, 10, 14.2, 20 km over the open Atlantic, 0 thin dark pixels in the bare sheet |
 | Surface match within 3 cm at 1,000 points | `integrity`: collision surface | 1,000 vertices of 22 (Earth) / 18 (Moon) deepest-level tiles: max 0.000 mm |
 | No jitter at millimetre steps | `integrity`: millimetres | frame difference per 1 mm step: Earth median 0.382, max 0.393; Moon 0.199 / 0.234 (8-bit levels; a jittering vertex would show as spikes) |
 | expectNoErrors | every spec | yes |
@@ -216,7 +231,7 @@ The pop detector works on the presented canvas at half resolution in 16 x 9 bloc
 frame-to-frame difference is compared with the median of the same block over the surrounding frames: a
 spike is a block whose difference, less a noise floor of 1.5 levels, is more than 2.5 times that median;
 a block difference above 16 levels fails outright. The whole-frame mean differences stay at 2.1 (Earth),
-1.8 (Moon), 0.4 (approach) levels per frame with maxima 3.4 / 7.6 / 3.6: the camera moves 0.5 % of its
+1.8 (Moon), 0.6 (approach) levels per frame with maxima 3.4 / 7.6 / 4.3: the camera moves 0.5 % of its
 height per frame, so the image itself changes that much. The control run with geomorphing and fade-ins
 switched off shows what the detector sees when tiles do pop.
 
@@ -233,17 +248,22 @@ agents' browsers share the GPU; contention only adds time).
 |---|---|---|---|---|
 | pad, 1.7 m | 0.51 ms (1.5) | 0.18 ms (0.5) | 0.00 (0.15), no rocks on the apron | 0.82 ms |
 | 10 km | 0.59 ms (1.5) | 0.07 ms (0.5) | - | 0.51 ms |
-| LEO, 400 km | 0.22 ms (1.5) | 0.07 ms (0.4) | - | 0.27 ms |
-| lunar orbit, 100 km | 0.22 ms (1.8) | 0.05 ms (0.6) | - | 0.22 ms |
-| lunar surface, 1.7 m | 0.49 ms (1.8) | 0.20 ms (0.6) | 0.20 ms (0.3), 15,534 instances, 459 k triangles | 0.51 ms |
+| LEO, 400 km | 0.22 ms (1.5) | 0.07 ms (0.4) | - | 0.39 ms |
+| lunar orbit, 100 km | 0.22 ms (1.8) | 0.05 ms (0.6) | - | 0.32 ms |
+| lunar surface, 1.7 m | 0.49 ms (1.8) | 0.20 ms (0.6) | 0.20 ms (0.3), 15,534 instances, 459 k triangles | 0.69 ms |
 
-(Final run, 7 of 7. The run before it, without two other perf specs on the GPU, gave 0.29 and 0.35 ms for
-the G-buffer at the pad and at 10 km.)
+(7 of 7 on the last commit. LEO and the two lunar rows are from that run; the pad and 10 km rows are from the
+run before it, whose code differs only by the relief floor and the night pool: both tests passed in the last
+run too, their lines were lost from the log. A run without two other perf specs on the GPU gave 0.29 and
+0.35 ms for the G-buffer at the pad and at 10 km.)
 
-60 s descent 60 km -> 30 m on the Moon: 3,600 frames, 0 over 33 ms (largest 21.6 ms); selection p99
-0.56 ms (largest 0.83), with the prefetch passes 0.64 ms; 518 tiles uploaded, at most 7 in a frame, upload
-time p99 1.78 ms (largest 2.40 ms; the loop stops before the tile that would pass 2 ms by its running
-estimate); largest queue 29; deepest level 18; terrain pools 992 MiB.
+60 s descent 60 km -> 30 m on the Moon (last run): 3,600 frames, 0 over 33 ms (largest 17.9 ms); selection
+p99 0.62 ms (largest 0.93), with the prefetch passes 0.77 ms; 518 tiles uploaded, at most 7 in a frame,
+upload time p99 1.80 ms (largest 2.46 ms; the loop stops before the tile that would pass 2 ms by its running
+estimate); largest queue 30; deepest level 18; terrain pools 1,046 MiB.
+
+Not measured: the far views the relief floor acts in (a whole near side at level 3, up to about 190 tiles
+of 4,096 quads). The LEO view draws 252 tiles in 0.22 ms.
 
 CPU times come from an unfocused headless Chrome on a machine shared with other agents' jobs: the same
 traversal (666 tiles, lunar surface) takes 0.13 ms in Node (`bench-select.ts`).
@@ -281,6 +301,11 @@ solid city centres, no tile seams), the Hawaiian islands from LEO.
 - **Enclosed basins below sea level** that the mask calls water (Dead Sea, Caspian depressions) get the sheet
   at sea level, above their real surface; not looked at.
 - **Selection + prefetch** can pass 1 ms on prefetch frames during fast descents (deviation 5).
+- **Whole-body shadows** resolve craters wider than about 20 km (level 3); the cross-feature spec
+  `tests/browser/integration/shadows.spec.ts` wants more at 20,000 km (0.31 % against 0.4 % of the lit
+  pixels) and still sees one block change by 28 of 255 when the first camera-fitted cascade joins the body
+  cascade at 1,500 km (cause not found; see the answer in the request). Level 4 over the whole disc would
+  need 768 more resident tiles than the pools hold.
 - `tests/browser/integration/water.spec.ts` (core-support's, still being written while this was run): "without
   the ocean" passes; "at fadeStart ... within 2 %" fails at 1,000 m altitude by 4.6 % (4.7 % with this
   package's previous near-field test, so not caused by the change of request cs-1; 6 km and 14 km agree

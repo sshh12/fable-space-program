@@ -62,3 +62,44 @@ where the two overlap, so that the hand-over shows nothing. The spec asserts: mo
 pixels shadowed at both distances, lying along the terminator, and no step of the approach above three
 times its neighbours. Must not change: staggered cascades hold body-fixed casters only; the budget line
 "Terrain shadow casting (amortised)" of ARCHITECTURE 17.1.
+
+## Answer from terrain-render (commit d3bac0a) - left open: one of the three checks passes
+**What changed.** The casters of every cascade are the tiles the camera selection draws (a caster finer than
+its receiver shadows the receiver itself, so the two must be the same geometry), and from far away that
+selection was level 0-1. The level ranges now have a floor (`ReliefFloor` in `src/render/terrain/lod.ts`,
+`RELIEF_RADII = 16` in `feature.ts`): within 16 body radii, level 3 is drawn over the whole near side
+however small the body is on screen (`range(3) = 16 R`, doubling per coarser level, morphing in like any
+level; level 3 was already loaded ahead at that distance). On the Moon that is a vertex every 5.3 km, 2.8
+texels of the 1,878 m body cascade.
+
+**Measured with your spec** (`shadows.spec.ts -g "terminator|approach"`, on d3bac0a):
+
+| Check | Before | Now | Bound |
+|---|---|---|---|
+| terminator from 5,000 km: lit pixels in a terrain shadow | 23 (0.02 %) | 466 of 103,612 (0.45 %), median 0.04 disc radii from the terminator | > 0.4 %: passes |
+| terminator from 20,000 km | 12 (0.01 %) | 301 of 95,646 (0.31 %), median 0.03 disc radii from the terminator | > 0.4 %: fails |
+| approach, step at 1,497 km (cascade `4:camera` joins) | 28.1 (neighbours 8.3) | 28.05 (neighbours 8.55) | 3x neighbours: fails |
+
+Reviewed view: `out/screens/terrain/moon-terminator-5000km.png` (crater shadows along the whole terminator,
+lit rims beyond it).
+
+**What this package cannot give.**
+- Level 4 for the body cascade (2.7 km quads) over the whole disc is 768 resident tiles more than the pools
+  hold beside levels 0-3 (1,280 tile layers). Level 4 casters over level 3 receivers would shadow the
+  receivers (their surfaces differ by hundreds of metres at a grazing sun). So the body cascade gets level 3:
+  craters wider than about 20 km. At 20,000 km that is 0.31 % of the lit pixels.
+- The step at 1,497 km did not move (28.1 before, 28.05 now). The floor does not act in that test: its
+  field of view is narrow, so the ordinary ranges already select level 4-5 around the view centre from
+  3,000 km down, before and after this change. By the code (`selectCasters` in `quadtree.ts`) a tile of the
+  camera selection goes into every cascade it lies in as the same item, and both cascades ask for the same
+  caster level (4) outside the view; I did not check with `cascadeLog()` what each cascade received in that
+  step, nor whether the body cascade was re-rendered after the last camera move (its casters morph with the
+  camera's distance, so a cascade rendered some steps earlier holds a slightly different surface). If the
+  casters are the same, what differs between `2:body` (1,878 m texels) and `4:camera` (1,465 m) is the texel
+  grid and the bias and filter of the lookup: a hard shadow edge that moves by two pixels inside a 16 px
+  block changes the block by about 30 of 255, the size of the step. This is not resolved.
+
+**What to re-run.** `shadows.spec.ts`; `tests/browser/terrain` (19 of 19), `terrain.perf.spec.ts` (7 of 7:
+the budget views are closer than the floor reaches) and the unit tests of `tests/unit/terrain-render`
+(32 of 32, one new: the floor's levels from 20,000 km, no cracks where it gives way at 16 radii, no change
+near the ground) on this commit.
