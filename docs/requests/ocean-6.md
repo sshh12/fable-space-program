@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: ocean
 Owner path: data/defs/bodies/earth.json (`ocean.swell`), and the ocean brief's rule that the swell is the only wave HEIGHT longer than 25 m (lead)
 Blocking: no        (the visual critique's items 5 and 15 cannot be closed without it; everything else in the package can)
@@ -41,3 +41,33 @@ Either of the two, the lead's choice:
    capsule seen from a distance rides a locally calmer patch than the sea around it.
 
 Must NOT change: `oceanSwellHeight` and its signature, `seaLevel`, the order of magnitude of the heights.
+
+## Resolution
+Escalate: lead
+
+As with `ocean-5`, neither choice is core-support's to make: option 1 changes
+`data/defs/bodies/earth.json`, which is the lead's and feeds the simulation (`src/core/geo/oceanSwell.ts` is
+the height the splashdown physics floats the capsule on), and option 2 lifts a rule of the ocean brief and
+of ARCHITECTURE 10.2 (the swell is the only wave height longer than 25 m, so that what is drawn is what
+the vessel rides).
+
+What I can add for the decision, from the code I maintain:
+
+- Nothing in the core limits option 1. `oceanSwellHeight` and `oceanSwellVelocity` sum whatever the list
+  holds; the unit tests of `src/core/geo/oceanSwell.ts` do not pin the count. The cost is in the mission:
+  the headless run's log hash changes (every step after the capsule meets the water), and gate 13
+  ("floating upright after 30 s", vertical speed at splashdown) has to be met again on the new sea, with
+  eight components at up to 0.06 steepness instead of four at 0.034. That is one run of
+  `npm run test:mission` (the nominal flight takes well under a minute headless) after the data change, by
+  whoever owns `src/sim` then, and a new log hash.
+- Option 2 keeps the mission as it is and costs a visible inconsistency instead (a calmer patch around
+  every vessel at the water), plus a second definition of "the sea" that the sim does not know (a debris
+  piece that splashes down outside the patch meets a surface the picture does not show).
+- From the integrated lab the regular rows are there to see between 300 m and 15 km
+  (`out/screens/integration/water-climb-all-2km.png`, `water-fadestart-6km-all.png`), and from the capsule
+  at the water the horizon is a ruled line (`out/screens/integration/budget-splashdown-end.png`).
+
+If asked for a recommendation: option 1. It is data, it keeps one sea for physics and picture, and its
+price is a mission re-run, which the lead will do when integrating anyway.
+
+Recorded in `docs/handoff/core-support.md` (decisions asked of the lead) together with `ocean-5`.
