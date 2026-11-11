@@ -459,6 +459,8 @@ export abstract class PilotCore {
         }
         const marker = s.navball.markers.maneuver;
         const rem = nb.dvRemainingMag;
+        // Pacing only: the thruster trim at physics warp.
+        this.cruiseWarp(true);
         if (!marker || s.simUt - m.stageStart > 90 || rem > m.lastDv + 0.5) {
           this.cmd.removeNode(m.nodeId);
           this.endManeuver(`burn complete, ${rem.toFixed(2)} m/s left after the RCS trim`, m.dvPlanned - rem);

@@ -11,6 +11,7 @@
  */
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 import type { Patch, SimSnapshot, SurfaceTarget } from '@/core/contracts/sim';
+import { timeSincePeriapsis } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
 import { DEG, RAD, TWO_PI } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -54,10 +55,12 @@ const MAIN_ALTITUDE = 3200;
 /** Height of the braking gate above the ground and the sink rate there. */
 const GATE_HEIGHT = 130;
 const GATE_SINK = -5;
+/** Ground speed above which the target is taken from the panel's down-range / cross-range (below it: distance and bearing), m/s. */
+const TRACK_MIN_SPEED = 1;
 /** Fraction of the available deceleration the braking burn is started at. */
 const BRAKING_IGNITION_FRACTION = 0.9;
-/** Radar altitude below which the braking burn is flown at 1x (the landing site streams in and is seen in real time), m. */
-const BRAKING_WARP_FLOOR = 4000;
+/** Radar altitude below which the braking burn is flown at 1x: the final descent over the landing site is seen in real time, m. */
+const BRAKING_WARP_FLOOR = 2000;
 /**
  * Nominal ground distance from the entry point of the predicted trajectory (top of the atmosphere) to
  * splashdown for a 45 km vacuum perigee flown on the lift-vector rule, m, as a function of the compass
@@ -77,8 +80,16 @@ const TEI_MAX_REVOLUTIONS = 26;
 const RETURN_PLANE_TILT = 10;
 /** Time from lunar lift-off to the departure that the ascent plane is chosen for, s. */
 const DEPARTURE_DELAY = 18 * 3600;
-/** Weight of a metre per second against 25 km of splash miss in the first trans-Earth correction. */
+/** Weight of a metre per second against 25 km of splash miss in the trans-Earth corrections. */
 const TEC_DV_WEIGHT = 0.5;
+/** Altitudes of the second and third trans-Earth correction, m, and how early (s of flight) the pilot may stop for them. */
+const TEC_GATES = [150e6, 50e6];
+const TEC_GATE_SLACK = 300;
+/** Vacuum perigee error (km) and drift of the predicted splash point (m) inside which a later correction is not flown. */
+const TEC_PERIGEE_BAND = 2.5;
+const TEC_SPLASH_BAND = 50000;
+/** Real seconds a warp level must still have before the time it is coasting to (a few frames at any frame rate). */
+const COAST_MARGIN = 0.25;
 
 type Phase = string;
 
@@ -112,6 +123,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
   // return
   private zone: SurfaceTarget | null = null;
   private correctionIndex = 0;
+  /** Distance of the predicted splash point from the zone centre as the last trans-Earth correction left it, m. */
+  private splashHold = NaN;
 
   constructor(defs: DefLibrary, scenario: ScenarioDef, options: MissionPilotOptions) {
     super(defs, scenario);
@@ -839,16 +852,18 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     const rNow = R + this.rd.altitudeAsl;
     const vNow = this.rd.speedOrbital;
     const vNew = Math.sqrt(mu * (2 / rNow - 2 / (rNow + R + DESCENT_PERILUNE_ALTITUDE)));
-    const targetDir = pass.targetDir;
+    const target = this.landingTarget();
+    const targetFixed = dirFromLatLon(target.latitude, target.longitude);
     const tPass = pass.ut;
     const start: NodeVars = { ut: tPass - (0.5 + brakingRange / (TWO_PI * R)) * period, prograde: vNew - vNow, normal: 0, radial: 0 };
     const cost = (s: SimSnapshot): number => {
       const p = s.patches.planned[0];
       if (!p || p.conic.period === null) return 1e6;
+      // Where the map puts the perilune of the planned descent orbit on the ground, against the target.
       const pe = p.markers.find((m) => m.kind === 'periapsis');
-      if (!pe) return 1e5;
+      if (!pe || pe.latitude === undefined || pe.longitude === undefined) return 1e5;
       const alt = v3.len(pe.r) - R;
-      const range = arc(v3.normalize(pe.r), targetDir) * R;
+      const range = arc(dirFromLatLon(pe.latitude, pe.longitude), targetFixed) * R;
       const late = pe.ut > tPass ? 2000 : 0;
       return Math.abs(alt - DESCENT_PERILUNE_ALTITUDE) / 100 + Math.abs(range - brakingRange) / 1000 + late;
     };
@@ -881,19 +896,45 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
 
   // ------------------------------------------------------------------------------ powered descent
 
-  /** State of the vehicle relative to the landing target (what the landing panel and the navball show). */
-  private landingState(): LandingState {
-    const moon = this.bodySnap(this.moonId);
-    const t = this.landingTarget();
-    const r = this.v.r;
-    const radius = v3.len(r);
-    const up = v3.scale(r, 1 / radius);
-    const dT = quat.rotate(moon.qFixedToRoot, dirFromLatLon(t.latitude, t.longitude));
-    let toTarget = v3.reject(dT, up);
-    const range = arc(up, dT) * this.moonDef.radius;
-    toTarget = v3.len(toTarget) > 1e-9 ? v3.normalize(toTarget) : v3.anyOrthogonal(up);
-    const left = v3.cross(up, toTarget);
+  /**
+   * State of the vehicle relative to the landing target, from the landing panel (readouts.landingTarget)
+   * and the navball: while the vehicle moves over the ground the target lies `downRange` ahead on the
+   * ground track and `crossRange` to its right; once it is nearly stopped (no track to speak of) the
+   * panel's distance and compass bearing take over. Null (and the pilot gives up) without the read-out.
+   */
+  private landingState(): LandingState | null {
+    const lt = this.rd.landingTarget;
+    if (!lt || lt.targetId !== this.landingTarget().id) {
+      this.fail('the landing panel does not show the landing target');
+      return null;
+    }
+    const R = this.moonDef.radius;
+    const hz = this.horizon();
+    const up = hz.up;
+    const radius = v3.len(this.v.r);
     const vs = this.surfaceVelocity();
+    const vHoriz = v3.reject(vs, up);
+    const groundSpeed = v3.len(vHoriz);
+    let range: number;
+    let toTarget: Vec3;
+    if (groundSpeed > TRACK_MIN_SPEED && (lt.downRange !== 0 || lt.crossRange !== 0)) {
+      // Along-track and cross-track distances on the sphere back to the range and the relative bearing D:
+      // sin(range) sin(D) = sin(cross), sin(range) cos(D) = sin(down) cos(cross), cos(range) = cos(down) cos(cross).
+      const track = v3.scale(vHoriz, 1 / groundSpeed);
+      const right = v3.cross(track, up);
+      const cross = lt.crossRange / R;
+      const down = lt.downRange / R;
+      const y = Math.sin(cross);
+      const x = Math.sin(down) * Math.cos(cross);
+      const D = Math.atan2(y, x);
+      range = Math.atan2(Math.hypot(x, y), Math.cos(down) * Math.cos(cross)) * R;
+      toTarget = v3.add(v3.scale(track, Math.cos(D)), v3.scale(right, Math.sin(D)));
+    } else {
+      const brg = lt.bearingDeg * DEG;
+      range = lt.distance;
+      toTarget = v3.add(v3.scale(hz.north, Math.cos(brg)), v3.scale(hz.east, Math.sin(brg)));
+    }
+    const left = v3.cross(up, toTarget);
     // Height of the lowest point above the ground: the radar altitude smoothed over the terrain passing below.
     const offset = this.rd.altitudeAsl - this.rd.altitudeRadar;
     if (Number.isNaN(this.groundOffset)) this.groundOffset = offset;
@@ -939,6 +980,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
       this.note('landing gear deployed');
     }
     const ls = this.landingState();
+    if (!ls) return;
     // Far round the Moon the target is beyond the limb: coast on the clock until a few minutes before the pass.
     if (ls.range > 1.2e6 || ls.vAlong <= 0) {
       if (ls.range < 3e5 && ls.vAlong <= 0) return this.fail('the braking point was missed');
@@ -970,6 +1012,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     // Pacing only: the high part of the burn at physics warp, the last kilometres over the ground in real time.
     this.cruiseWarp(this.rd.altitudeRadar > BRAKING_WARP_FLOOR);
     const ls = this.landingState();
+    if (!ls) return;
     const cmd = brakingGuidance(ls, GATE_HEIGHT, GATE_SINK);
     this.flyAccel(cmd.accel, true);
     if (this.rd.thrust <= 0 && this.phaseTime > 5) return this.fail('descent engine out');
@@ -983,6 +1026,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
 
   private approach(): void {
     const ls = this.landingState();
+    if (!ls) return;
     const h = this.rd.altitudeRadar;
     // Hold about 110 m while the position error is nulled; come down to it if the braking ended high.
     const sink = clamp((110 - h) * 0.25, -8, 3);
@@ -999,6 +1043,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
 
   private terminal(): void {
     const ls = this.landingState();
+    if (!ls) return;
     const h = this.rd.altitudeRadar;
     const sink = -clamp(h / 8, 1.0, 6);
     const cmd = hoverGuidance(ls, { nullPosition: false, positionGain: 0, maxSpeed: 0, velocityGain: 0.8, maxTiltDeg: 10, sink, sinkGain: 0.9 });
@@ -1149,7 +1194,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     const R = this.rootDef.radius;
     // Eastward (prograde) returns count positive: the entry then flies with the Earth's rotation.
     const signedPerigee = (p.conic.W.z >= 0 ? 1 : -1) * periapsisRadius(p.conic);
-    const splash = predictSplash(patches, this.bodySnap(this.rootId), R, this.rootDef.atmosphere?.simTop ?? 0, this.s.simUt, entryDownRange);
+    const splash = predictSplash(patches, this.bodySnap(this.rootId), R, entryDownRange);
     const misses = splash ? zoneMisses(this.s.surfaceTargets, this.rootId, R, splash.latitude, splash.longitude) : [];
     return { signedPerigee, splash, misses };
   }
@@ -1324,29 +1369,29 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
   private transEarth(): void {
     this.ensureSas('stability');
     const alt = this.rd.altitudeAsl;
-    // Corrections after leaving the Moon, at 150 000 km and at 50 000 km; then the capsule goes its own way.
-    const gates = [Infinity, 150e6, 50e6];
+    // Corrections: one after leaving the Moon, then at 150 000 km and at 50 000 km; after that the capsule goes its own way.
     // (Taking over on the way home, e.g. from a QA start: a minute to settle before the first correction.)
     if (Number.isNaN(this.waitUntil)) this.waitUntil = this.ut + 60;
-    if (this.correctionIndex < gates.length) {
-      if (alt > gates[this.correctionIndex]! || (this.correctionIndex === 0 && !this.warpUntil(this.waitUntil))) {
-        this.coastDown(gates[this.correctionIndex]!);
-        return;
-      }
+    if (this.correctionIndex <= TEC_GATES.length) {
+      if (this.correctionIndex === 0) {
+        if (!this.warpUntil(this.waitUntil)) return;
+      } else if (!this.coastDown(TEC_GATES[this.correctionIndex - 1]!, TEC_GATE_SLACK)) return;
       const index = this.correctionIndex++;
       const now = this.returnCost(this.s.patches.current, 25);
       this.note(`return now: vacuum perigee ${(now.perigee / 1000).toFixed(1)} km, splash ${(now.miss / 1000).toFixed(0)} km from the centre of "${this.zone?.name ?? '?'}"`);
       const peNow = now.residuals ? Math.abs(now.residuals[0]!) : Infinity;
-      // Close in, only the perigee is worth propellant.
-      if (index > 0 && peNow < 2.5) return;
+      // The later corrections keep both targets: nothing is flown while the perigee is inside its band and
+      // the predicted splash point is where the last correction left it.
+      const drifted = Number.isFinite(this.splashHold) && now.miss > this.splashHold + TEC_SPLASH_BAND;
+      if (index > 0 && peNow < TEC_PERIGEE_BAND && !drifted) return;
       const start: NodeVars = { ut: this.ut + 240, prograde: 0, normal: 0, radial: 0 };
       const perigeeOnly = (s: SimSnapshot): number[] | null => {
         const r = this.returnCost(s.patches.planned, 25).residuals;
         return r ? [r[0]!] : null;
       };
-      // Far out the splash point is cheap to move: the first correction puts the perigee right and brings
-      // the predicted splash toward the zone centre as far as is worth the delta-v (each metre per second
-      // is weighed like TEC_DV_WEIGHT x 25 km of miss, so the entry track is turned but not at any price).
+      // Both targets at once: the perigee, and the predicted splash point brought toward the zone centre
+      // as far as is worth the delta-v (each metre per second is weighed like TEC_DV_WEIGHT x 25 km of
+      // miss, so the entry track is turned but not at any price; it is cheapest far out).
       const withSplash = (s: SimSnapshot, cand: NodeVars): number[] | null => {
         const r = this.returnCost(s.patches.planned, 25).residuals;
         return r ? [r[0]! * 4, r[1]!, r[2]!, TEC_DV_WEIGHT * cand.prograde, TEC_DV_WEIGHT * cand.radial, TEC_DV_WEIGHT * cand.normal] : null;
@@ -1356,27 +1401,23 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
         label,
         initial: start,
         plan: function* (budget: Budget): Plan {
-          let x = start;
-          if (index === 0) {
-            const shaped = yield* minNormNewton(
-              start,
-              {
-                vars: [
-                  { key: 'prograde', probe: 0.05, maxStep: 30 },
-                  { key: 'radial', probe: 0.05, maxStep: 30 },
-                  { key: 'normal', probe: 0.05, maxStep: 30 },
-                ],
-                residuals: withSplash,
-                tolerance: 0,
-                maxIterations: 10,
-              },
-              budget,
-            );
-            x = shaped.best;
-          }
+          const shaped = yield* minNormNewton(
+            start,
+            {
+              vars: [
+                { key: 'prograde', probe: 0.05, maxStep: 30 },
+                { key: 'radial', probe: 0.05, maxStep: 30 },
+                { key: 'normal', probe: 0.05, maxStep: 30 },
+              ],
+              residuals: withSplash,
+              tolerance: 0,
+              maxIterations: 10,
+            },
+            budget,
+          );
           // Then the perigee exactly, with the smallest change of the handles.
           const exact = yield* minNormNewton(
-            x,
+            shaped.best,
             {
               vars: [
                 { key: 'prograde', probe: 0.02, maxStep: 10 },
@@ -1398,33 +1439,48 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
         skipBelow: 0.03,
         then: () => {
           this.report[`${label}DeltaV`] = this.dvFlown[label] ?? 0;
+          const after = this.returnCost(this.s.patches.current, 25);
+          this.splashHold = after.miss;
+          this.report[`${label}SplashMiss`] = after.miss;
           this.go('transEarth', 8 * 86400);
         },
       });
       return;
     }
-    if (alt > CAPSULE_SEPARATION_ALTITUDE) {
-      this.coastDown(CAPSULE_SEPARATION_ALTITUDE);
-      return;
-    }
+    if (!this.coastDown(CAPSULE_SEPARATION_ALTITUDE, 20)) return;
     if (this.s.warp.index !== 0) this.cmd.setWarpLevel(0);
     this.go('entryPrep', 3600, `capsule separation coming up at ${(alt / 1000).toFixed(0)} km`);
   }
 
-  /** Warp down toward an altitude on the inbound leg (time from the radial speed, re-estimated every tick). */
-  private coastDown(altitude: number): void {
-    const vr = this.rd.verticalSpeed;
-    const alt = this.rd.altitudeAsl;
-    if (!Number.isFinite(altitude)) {
-      this.warpFor(120, 1);
-      return;
+  /**
+   * Seconds until the trajectory comes down through `altitude`, read off the conic of the current patch
+   * (the one the map draws); null when it never gets that low.
+   */
+  private timeToAltitude(altitude: number): number | null {
+    const p = this.s.patches.current[0];
+    if (!p || p.bodyId !== this.v.bodyId) return null;
+    const c = p.conic;
+    const cosNu = c.e > 1e-9 && c.p > 0 ? (c.p / (this.bodyDef(p.bodyId).radius + altitude) - 1) / c.e : NaN;
+    if (!(cosNu >= -1 && cosNu <= 1)) return null;
+    let t = c.tPeriapsis + timeSincePeriapsis(c, -Math.acos(cosNu));
+    if (c.period !== null) while (t < this.ut) t += c.period;
+    return t - this.ut;
+  }
+
+  /**
+   * Warp down the inbound leg toward `altitude`; true once it is no more than `slack` seconds of flight
+   * away (or below). The warp level is the highest whose next frames cannot carry the vessel past it.
+   */
+  private coastDown(altitude: number, slack: number): boolean {
+    if (this.rd.altitudeAsl <= altitude) return true;
+    const t = this.timeToAltitude(altitude);
+    if (t === null) {
+      this.fail(`the trajectory does not come down to ${(altitude / 1000).toFixed(0)} km`);
+      return false;
     }
-    if (vr >= -1) {
-      this.warpFor(3600, 1);
-      return;
-    }
-    // The fall accelerates: half the constant-speed estimate is a safe lower bound far out, and it tightens on the way in.
-    this.warpFor(Math.max(0, (alt - altitude) / -vr) * 0.5 + 5, 1);
+    if (t <= slack) return true;
+    this.warpFor(t, COAST_MARGIN);
+    return false;
   }
 
   private entryPrep(): void {
@@ -1435,7 +1491,10 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     const marker = this.s.navball.markers.retrograde;
     const err = Math.acos(clamp(marker.y, -1, 1));
     if (this.s.staging.nextStage === 7) {
-      if ((err < 3 * DEG && v3.len(this.v.w) < 0.5 * DEG) || this.phaseTime > 240 || this.rd.altitudeAsl < 600000) {
+      const ready = (err < 3 * DEG && v3.len(this.v.w) < 0.5 * DEG) || this.phaseTime > 240 || this.rd.altitudeAsl < 600000;
+      // Pacing only: the turn at physics warp, the separation in real time.
+      this.waitWarp(!ready);
+      if (ready) {
         if (this.s.staging.lockout) return;
         this.report['ascentPropellantLeftKg'] = this.propellantKg('ascent-stage');
         this.cmd.stage();
@@ -1454,12 +1513,15 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
     // The surface-relative velocity is what the capsule meets the air with.
     if (alt < 400000 && this.s.navball.mode !== 'surface') this.cmd.setNavballMode('surface');
     if (alt > 160000 && this.rd.verticalSpeed < 0) {
-      // Coast down to the atmosphere once the capsule points the right way.
+      // Coast down to the atmosphere once the capsule points the right way (the turn itself at physics warp).
       const marker = this.s.navball.markers.retrograde;
-      if (Math.acos(clamp(marker.y, -1, 1)) < 3 * DEG && v3.len(this.v.w) < 0.4 * DEG) this.coastDown(150000);
+      if (Math.acos(clamp(marker.y, -1, 1)) < 3 * DEG && v3.len(this.v.w) < 0.4 * DEG) this.coastDown(150000, 5);
+      else this.waitWarp(true);
       return;
     }
     // In the atmosphere: roll only. The lift vector goes up, or down while a skip-out threatens.
+    // (Pacing: the entry, the descent under the canopies and the wait on the water run at physics warp.)
+    this.cruiseWarp(true);
     const up = this.horizon().up;
     const liftUp = entryLiftUp(this.rd.verticalSpeed, this.rd.speedSurface);
     const lift = this.s.navball.markers.liftVector ?? { x: 0, y: 0, z: -1 };
@@ -1497,6 +1559,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
   }
 
   private chutes(): void {
+    this.cruiseWarp(true);
     const alt = this.rd.altitudeAsl;
     const next = this.s.staging.nextStage;
     if (next <= 8) {
@@ -1523,6 +1586,7 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
 
   private restingSince = NaN;
   private splashdown(): void {
+    this.cruiseWarp(true);
     const resting = this.v.situation === 'splashed' || this.v.situation === 'landed';
     if (!resting) this.restingSince = NaN;
     else if (Number.isNaN(this.restingSince)) this.restingSince = this.ut;

@@ -3,23 +3,29 @@
   "name": "QA: capsule five minutes before the entry interface",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938919949.2359293,
+  "startUt": 938919950.1463404,
   "start": {
     "kind": "state",
     "bodyId": "earth",
     "r": [
-      1752959.7198278252,
-      3281635.6751371315,
-      6179534.698370932
+      1752070.9346702117,
+      3278662.2757666074,
+      6182433.641421374
     ],
     "v": [
-      -4691.442621969898,
-      6848.428249878509,
-      -6330.424528068847
+      -4687.569178843721,
+      6849.428234168418,
+      -6329.360552027981
     ],
     "attitude": "retrograde"
   },
   "stagesAlreadyFired": 8,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

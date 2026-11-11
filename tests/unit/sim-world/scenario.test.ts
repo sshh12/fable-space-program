@@ -6,14 +6,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { MilestoneId } from '@/core/contracts/sim';
+import type { MilestoneId, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { DEG, RAD } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { createBodySystem } from '@/sim/bodies';
 import { checkStartConstraints, type StartConstraintOptions, type StartLaunchKind } from '@/sim/nav';
 import { repoRoot } from '../../../tools/sim/realWorld';
-import { active, createRealTerrain, loadLibrary, makeSim, settleTerrain } from './helpers';
+import { active, createRealTerrain, loadLibrary, makeSim, orbitScenario, settleTerrain } from './helpers';
 
 interface StartTimeFile {
   startUt: number;
@@ -156,6 +156,101 @@ describe('QA scenarios', () => {
     }
   });
 
+  it('start with the resources of that point of the mission (ScenarioDef.resources), not with full tanks', async () => {
+    const dryMass = (v: VesselSnapshot): number => v.parts.reduce((n, p) => n + defs.parts[p.def]!.dryMass, 0);
+    const fraction = (v: VesselSnapshot, part: string, resources: string[]): number => {
+      const p = v.parts.find((x) => x.instanceId === part)!;
+      const tanks = defs.parts[p.def]!.resources!.filter((r) => resources.includes(r.resource));
+      return tanks.reduce((n, r) => n + p.resources[r.resource]!, 0) / tanks.reduce((n, r) => n + r.capacity, 0);
+    };
+    const masses: Record<string, number> = {};
+    const starts: Record<string, VesselSnapshot> = {};
+    for (const id of ids) {
+      const sc = defs.scenarios[id]!;
+      expect(sc.resources, id).toBeDefined();
+      const sim = await makeSim(defs, id, terrain);
+      const v = active(sim.peek());
+      starts[id] = v;
+      masses[id] = v.mass;
+      // Every tank, thruster-propellant and ablator amount of the start vessel is the scenario's.
+      let onBoard = 0;
+      let listed = 0;
+      for (const p of v.parts) {
+        const held = Object.entries(p.resources);
+        if (held.length === 0) continue;
+        const amounts = sc.resources![p.instanceId];
+        expect(amounts, `${id}: ${p.instanceId}`).toBeDefined();
+        for (const [res, kg] of held) {
+          expect(amounts![res], `${id}: ${p.instanceId} ${res}`).toBeDefined();
+          // (To the gram the file is written in; a full tank is its capacity.)
+          expect(Math.abs(kg - amounts![res]!), `${id}: ${p.instanceId} ${res}`).toBeLessThan(1e-3);
+          onBoard += kg;
+          listed++;
+        }
+      }
+      expect(listed, id).toBeGreaterThan(0);
+      // (The scenario lists nothing that is not on board.)
+      expect(Object.values(sc.resources!).reduce((n, part) => n + Object.keys(part).length, 0), id).toBe(listed);
+      expect(v.mass, id).toBeCloseTo(dryMass(v) + onBoard, 3);
+    }
+    const engine = ['LOX', 'CH4', 'LH2'];
+    // Parking orbit: the third stage has not burnt yet (the second stage made the orbit).
+    expect(fraction(starts['qa-leo']!, 'm3', engine)).toBeGreaterThan(0.9);
+    // On the way out the lander has spent a few metres per second on the first correction.
+    expect(fraction(starts['qa-translunar']!, 'descent-stage', engine)).toBeGreaterThan(0.97);
+    expect(fraction(starts['qa-translunar']!, 'descent-stage', engine)).toBeLessThan(1);
+    // In lunar orbit the insertion burn is behind it; the descent orbit costs a few metres per second more.
+    const inOrbit = fraction(starts['qa-lunar-orbit']!, 'descent-stage', engine);
+    expect(inOrbit).toBeGreaterThan(0.5);
+    expect(inOrbit).toBeLessThan(0.8);
+    const descending = fraction(starts['qa-powered-descent']!, 'descent-stage', engine);
+    expect(descending).toBeLessThan(inOrbit);
+    expect(descending).toBeGreaterThan(inOrbit - 0.03);
+    // Landed: the descent tanks hold the landing margin (the mission lands with about 5 t of 36 t), the
+    // ascent stage is untouched; the lander weighs what the mission's lander weighs at touchdown, not 56.8 t.
+    const landed = starts['qa-lunar-surface']!;
+    expect(fraction(landed, 'descent-stage', engine)).toBeGreaterThan(0.05);
+    expect(fraction(landed, 'descent-stage', engine)).toBeLessThan(0.25);
+    expect(fraction(landed, 'ascent-stage', engine)).toBeGreaterThan(0.999);
+    expect(masses['qa-lunar-surface']!).toBeGreaterThan(22000);
+    expect(masses['qa-lunar-surface']!).toBeLessThan(30000);
+    // On the way home the ascent stage is nearly spent.
+    expect(fraction(starts['qa-trans-earth']!, 'ascent-stage', engine)).toBeGreaterThan(0.03);
+    expect(fraction(starts['qa-trans-earth']!, 'ascent-stage', engine)).toBeLessThan(0.3);
+    // Under the drogues the entry has burnt a good part of the ablator and a little thruster propellant.
+    const drogues = starts['qa-drogues']!;
+    expect(fraction(drogues, 'capsule', ['Ablator'])).toBeGreaterThan(0.3);
+    expect(fraction(drogues, 'capsule', ['Ablator'])).toBeLessThan(0.8);
+    expect(fraction(drogues, 'capsule', ['RCSProp'])).toBeGreaterThan(0.8);
+    expect(fraction(drogues, 'capsule', ['RCSProp'])).toBeLessThan(0.99);
+    const shield = drogues.parts.flatMap((p) => p.modules).find((m) => m.type === 'heatShield');
+    expect(shield && shield.type === 'heatShield' ? shield.ablatorFraction : NaN).toBeCloseTo(fraction(drogues, 'capsule', ['Ablator']), 9);
+  });
+
+  it('ScenarioDef.resources: listed amounts override, everything else keeps the vehicle amount, dropped parts are passed over', async () => {
+    const base = orbitScenario(defs.scenarios['lunar-direct']!, 't-resources', 'moon', 100000, 100000, 5);
+    const full = active((await makeSim(defs, base, terrain)).peek());
+    const sc = { ...base, id: 't-resources-set', resources: { 'descent-stage': { LOX: 1000 }, capsule: { Ablator: 60, RCSProp: 0 }, m1: { LOX: 5 } } };
+    const sim = await makeSim(defs, sc, terrain);
+    const v = active(sim.peek());
+    const part = (x: VesselSnapshot, id: string) => x.parts.find((p) => p.instanceId === id)!;
+    expect(part(v, 'descent-stage').resources['LOX']).toBe(1000);
+    expect(part(v, 'descent-stage').resources['CH4']).toBe(part(full, 'descent-stage').resources['CH4']);
+    expect(part(v, 'ascent-stage').resources).toEqual(part(full, 'ascent-stage').resources);
+    expect(part(v, 'capsule').resources['Ablator']).toBe(60);
+    expect(part(v, 'capsule').resources['RCSProp']).toBe(0);
+    expect(v.parts.some((p) => p.instanceId === 'm1')).toBe(false);
+    // Mass, the centre of mass and the read-outs follow.
+    const removed = part(full, 'descent-stage').resources['LOX']! - 1000 + (150 - 60) + 150;
+    expect(v.mass).toBeCloseTo(full.mass - removed, 6);
+    expect(v.comLocal.y).toBeGreaterThan(full.comLocal.y);
+    expect(sim.peek().readouts.ablatorFraction!).toBeCloseTo(0.4, 12);
+    expect(sim.peek().readouts.mass).toBeCloseTo(v.mass, 6);
+    // On its conic from the first moment: the start state is that of the lighter vehicle.
+    expect(v.translationMode).toBe('rails');
+    expect(sim.cheatCounter).toBe(0);
+  });
+
   it('qa-leo: third stage and lander in the parking orbit, in the plane of the Moon', async () => {
     const sim = await makeSim(defs, 'qa-leo', terrain);
     const s = sim.peek();
@@ -274,7 +369,10 @@ describe('QA scenarios', () => {
     const v = active(s);
     expect(v.parts.map((p) => p.def).sort()).toEqual(['kestrel-apex-cover', 'kestrel-capsule']);
     expect(s.staging.nextStage).toBe(8);
-    expect(s.readouts.rcsFraction).toBe(1);
+    // The shield is untouched, and so nearly are the capsule's thrusters: the service stage turned the
+    // stack heat shield forward before it let go.
+    expect(s.readouts.rcsFraction!).toBeGreaterThan(0.97);
+    expect(s.readouts.rcsFraction!).toBeLessThanOrEqual(1);
     expect(s.readouts.ablatorFraction).toBe(1);
     const entry = s.patches.current.flatMap((p) => p.markers).find((m) => m.kind === 'atmosphereEntry')!;
     expect(entry.vacuumPeriapsisAltitude!).toBeGreaterThan(30000);

@@ -13,17 +13,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { ScenarioCapturer, scenarioFileText } from '../../tools/sim/qaScenarios';
 import {
   CLEARANCE_SETTLE,
   deepestDataLevel,
   delayedSource,
   fly,
+  loadLibrary,
   maxOf,
   milestone,
   repoRoot,
   reproducibleMaxMs,
   STEP_WINDOW_SECONDS,
   SURFACE_STAY_SECONDS,
+  TARGET_DISC_RADIUS,
   tileContentHashes,
   writeFlightLog,
   type Flight,
@@ -41,6 +44,7 @@ interface Golden {
 
 let a: Flight;
 let b: Flight;
+let capturer: ScenarioCapturer;
 let delayed: ReturnType<typeof delayedSource> | null = null;
 const gates: { milestone: string; measured: string; gate: string }[] = [];
 const note = (id: string, measured: string, gate: string): void => {
@@ -49,7 +53,9 @@ const note = (id: string, measured: string, gate: string): void => {
 const km = (m: number): string => `${(m / 1000).toFixed(1)} km`;
 
 beforeAll(async () => {
-  a = await fly({ scenario: SCENARIO });
+  const defs = await loadLibrary();
+  capturer = new ScenarioCapturer(defs.scenarios[SCENARIO]!, (bodyId) => defs.bodies[bodyId]!.radius);
+  a = await fly({ scenario: SCENARIO, onPilotTick: (s, phase) => capturer.onTick(s, phase) });
   b = await fly({ scenario: SCENARIO, replay: { inputLog: a.run.inputLog, ticks: a.run.stats.ticks }, wrapSource: (source) => (delayed = delayedSource(source)) });
 }, 900_000);
 
@@ -138,11 +144,19 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     expect(d['availableLevel']).toBe(deepest);
     expect(d['residentLevel']).toBe(deepest);
     expect(d['terrainComplete']).toBe(1);
+    // The whole final descent: everything the tile set offers under the vehicle was resident and final on
+    // every tick. It starts kilometres from the target, where the regional data is coarser; inside the
+    // mission disc of 1,500 m about the target the deepest level is on offer and was resident throughout.
     const f = a.observations.finalDescent;
     expect(f.ticks).toBeGreaterThan(300);
     expect(f.startRadar).toBeGreaterThan(1900);
     expect(f.notResident).toBe(0);
     expect(f.notComplete).toBe(0);
+    expect(f.discTicks).toBeGreaterThan(300);
+    expect(f.discMinAvailableLevel).toBe(deepest);
+    expect(f.discMinResidentLevel).toBe(deepest);
+    // The distance the pilot steered by (the landing panel's, at first contact) is the one the record measures.
+    expect(Math.abs(a.report['landingMiss']! - d['distanceToLandingTarget']!)).toBeLessThan(1);
     expect(d['touchdownVerticalSpeed']!).toBeLessThan(2.5);
     expect(d['touchdownHorizontalSpeed']!).toBeLessThan(1.0);
     expect(d['touchdownTiltDeg']!).toBeLessThan(12);
@@ -159,7 +173,7 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     expect(st.maxTiltDeg).toBeLessThan(12);
     note(
       'LUNAR_TOUCHDOWN',
-      `${d['distanceToLandingTarget']!.toFixed(2)} m from the target; data level ${d['residentLevel']} of ${d['availableLevel']} (deepest ${deepest}), resident on all ${f.ticks} ticks below ${f.startRadar.toFixed(0)} m; ${d['touchdownVerticalSpeed']!.toFixed(2)} m/s down, ${d['touchdownHorizontalSpeed']!.toFixed(3)} m/s across, tilt ${d['touchdownTiltDeg']!.toFixed(2)} deg, ${d['legs']! - d['legsBroken']!} of ${d['legs']} legs intact; landed for ${st.observedFor.toFixed(0)} s, moved ${(st.maxDrift * 1000).toFixed(2)} mm`,
+      `${d['distanceToLandingTarget']!.toFixed(2)} m from the target; data level ${d['residentLevel']} of ${d['availableLevel']} there (deepest ${deepest}); final descent from ${f.startRadar.toFixed(0)} m, ${km(f.startDistance)} out: the available data resident and final on all ${f.ticks} ticks (level ${f.minResidentLevel} at the coarsest, out there), level ${f.discMinResidentLevel} on all ${f.discTicks} ticks within ${TARGET_DISC_RADIUS} m of the target; ${d['touchdownVerticalSpeed']!.toFixed(2)} m/s down, ${d['touchdownHorizontalSpeed']!.toFixed(3)} m/s across, tilt ${d['touchdownTiltDeg']!.toFixed(2)} deg, ${d['legs']! - d['legsBroken']!} of ${d['legs']} legs intact; landed for ${st.observedFor.toFixed(0)} s, moved ${(st.maxDrift * 1000).toFixed(2)} mm`,
       '<= 1,500 m; deepest level resident; < 2.5 m/s; < 1.0 m/s; < 12 deg; legs intact; landed after 600 s',
     );
   });
@@ -274,6 +288,32 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     if (m3) expect(m3.bodyId).toBe('moon');
     else expect(['orbiting', 'escaping']).toContain(stillFlying!.situation);
     note('debris', a.debris.map((f) => `${f.name}: ${f.reason} on ${f.bodyId}${f.distanceFromSite >= 0 ? ` ${km(f.distanceFromSite)} from the site` : ''}`).join('; '), 'M-1 impact down-range, M-3 lunar flyby or impact');
+  });
+
+  it('the QA scenarios on disk are the captures of this flight: state, time, stages fired and the resources on board', () => {
+    const captured = capturer.scenarios();
+    expect(captured.map((sc) => sc.id)).toEqual(['qa-leo', 'qa-translunar', 'qa-lunar-orbit', 'qa-powered-descent', 'qa-lunar-surface', 'qa-trans-earth', 'qa-entry', 'qa-drogues']);
+    for (const sc of captured) {
+      const file = path.join(repoRoot, 'data', 'defs', 'scenarios', `${sc.id}.json`);
+      expect(fs.readFileSync(file, 'utf8'), `${sc.id}.json is not the capture of the nominal flight: run tools/sim/captureScenarios.ts`).toBe(scenarioFileText(sc));
+    }
+    // What they carry is what the mission had on board at that point.
+    const engineKg = (id: string, part: string): number => {
+      const amounts = captured.find((sc) => sc.id === id)!.resources![part]!;
+      return Object.entries(amounts).reduce((n, [res, kg]) => (res === 'RCSProp' ? n : n + kg), 0);
+    };
+    const td = milestone(a, 'LUNAR_TOUCHDOWN').data;
+    expect(Math.abs(engineKg('qa-lunar-surface', 'descent-stage') - td['propellantKg:descent']!)).toBeLessThan(1);
+    expect(Math.abs(engineKg('qa-trans-earth', 'ascent-stage') - a.report['ascentPropellantLeftKg']!)).toBeLessThan(2);
+    const drogue = milestone(a, 'DROGUE_DEPLOY').data;
+    const capsule = captured.find((sc) => sc.id === 'qa-drogues')!.resources!['capsule']!;
+    const ablatorCapacity = a.defs.parts['kestrel-capsule']!.resources!.find((r) => r.resource === 'Ablator')!.capacity;
+    expect(capsule['Ablator']! / ablatorCapacity).toBeCloseTo(drogue['ablatorFraction']!, 3);
+    note(
+      'QA scenarios',
+      `the eight files are the captures of this flight; the landed start holds ${engineKg('qa-lunar-surface', 'descent-stage').toFixed(0)} kg of descent propellant, the trans-Earth start ${engineKg('qa-trans-earth', 'ascent-stage').toFixed(0)} kg in the ascent stage, the drogue start ${capsule['Ablator']!.toFixed(1)} kg of ablator`,
+      'files equal the captures',
+    );
   });
 
   it('cost: under 5 minutes of wall clock and under 100 microseconds per step', () => {

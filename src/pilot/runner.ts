@@ -57,8 +57,6 @@ export interface RunStats {
 export interface RunContext {
   sim: Sim;
   stats: RunStats;
-  /** Longest physics step in the last `seconds` of simulation time, ms (needs `clock`). */
-  recentMaxStepMs(seconds: number): number;
   /** Wall time of every physics step in the last `seconds` of simulation time, oldest first, ms (needs `clock`). */
   recentStepMs(seconds: number): Float32Array;
 }
@@ -205,16 +203,6 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
   const ctx: RunContext = {
     sim,
     stats,
-    recentMaxStepMs: (seconds: number): number => {
-      if (!ringMs || !ringUt) return 0;
-      let m = 0;
-      for (let i = 0; i < ringCount; i++) {
-        const k = (ringHead - 1 - i + STEP_RING) % STEP_RING;
-        if (ringUt[k]! < lastUt - seconds) break;
-        if (ringMs[k]! > m) m = ringMs[k]!;
-      }
-      return m;
-    },
     recentStepMs: (seconds: number): Float32Array => {
       if (!ringMs || !ringUt) return new Float32Array(0);
       let n = 0;

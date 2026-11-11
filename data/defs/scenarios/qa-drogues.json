@@ -3,23 +3,29 @@
   "name": "QA: capsule under drogues at 7 km over the recovery zone",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938920858.605988,
+  "startUt": 938920859.2359837,
   "start": {
     "kind": "state",
     "bodyId": "earth",
     "r": [
-      -1106836.4067019552,
-      6051533.569502559,
-      1683069.9961867009
+      -1104722.5250486592,
+      6050791.208414195,
+      1687121.546297515
     ],
     "v": [
-      -432.52407941397433,
-      -165.74032899755662,
-      -40.47936840003683
+      -431.8251421932318,
+      -165.36807820775545,
+      -40.78503861216193
     ],
     "attitude": "retrograde"
   },
   "stagesAlreadyFired": 9,
+  "resources": {
+    "capsule": {
+      "RCSProp": 139.939,
+      "Ablator": 87.118
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

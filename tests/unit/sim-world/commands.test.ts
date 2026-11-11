@@ -162,7 +162,9 @@ describe('commands and read-outs', () => {
     expect(sim.peek().staging.lockout).toBe(false);
     expect(sim.commands.cycleActiveVessel(1).ok).toBe(false);
     expect(sim.peek().staging.stages).toHaveLength(10);
-    expect(sim.peek().staging.stages[4]!.deltaVVac).toBeGreaterThan(3000);
+    // The descent stage after the insertion burn: what the landing needs (about 1,900 m/s) and a margin.
+    expect(sim.peek().staging.stages[4]!.deltaVVac).toBeGreaterThan(2300);
+    expect(sim.peek().staging.stages[4]!.deltaVVac).toBeLessThan(3000);
   });
 
   it('the navball switches mode by itself when the switch altitude is crossed', async () => {

@@ -1,15 +1,16 @@
 /**
  * Target geometry of the mission pilot, worked out from the snapshot (bodies, surface targets, patches):
  *  - where and when a lunar orbit passes over the landing target, and by how much it misses it sideways;
- *  - where a returning capsule comes down: the entry point of the predicted trajectory carried along the
- *    entry ground track by the nominal lifting-entry down-range, and its distance from the recovery zones.
+ *  - where a returning capsule comes down: the atmosphere-entry marker of the predicted trajectory carried
+ *    along the entry ground track by the nominal lifting-entry down-range, and its distance from the
+ *    recovery zones.
  */
-import type { BodySnapshot, Patch, SurfaceTarget } from '@/core/contracts/sim';
-import { conicPosition, conicVelocity, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
+import type { BodySnapshot, Marker, Patch, SurfaceTarget } from '@/core/contracts/sim';
+import { conicPosition, conicVelocity, type ConicElements } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
 import { TWO_PI } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { arc, dirFromLatLon, latLonOfDir, orientationAt, travel } from './math';
+import { arc, dirFromLatLon, horizonBasis, latLonOfDir, orientationAt, travel } from './math';
 
 export interface PassOver {
   /** Time the orbit passes abeam of the target, s. */
@@ -86,15 +87,26 @@ export interface SplashPrediction {
   heading: number;
 }
 
+/** The marker of a patch that says where on the ground it arrives: latitude and longitude as the map shows them. */
+function arrivalPoint(p: Patch): (Marker & { latitude: number; longitude: number }) | undefined {
+  const located = (m: Marker): m is Marker & { latitude: number; longitude: number } => m.latitude !== undefined && m.longitude !== undefined;
+  for (const kind of ['atmosphereEntry', 'impact', 'periapsis'] as const) {
+    const m = p.markers.find((x) => x.kind === kind);
+    if (m && located(m)) return m;
+  }
+  return undefined;
+}
+
 /**
- * Splash point of a predicted return to `body`: the point where the arriving conic comes down through
- * `entryAltitude` (the top of the atmosphere, where the map shows the atmosphereEntry marker), advanced by
- * `downRange(heading)` metres along the ground track there (the surface-relative velocity direction; the body's
- * rotation during the descent is in that direction already to first order). For a trajectory whose
- * perigee is still above `entryAltitude` the perigee point takes the place of the entry point, so that the
- * prediction stays continuous while a correction is being dragged through the atmosphere's edge.
+ * Splash point of a predicted return to `body`: the latitude and longitude of the atmosphereEntry marker
+ * of the arriving patch (where the trajectory comes down through the top of the atmosphere, the body's
+ * rotation until then included), advanced by `downRange(heading)` metres along the ground track there (the
+ * surface-relative velocity direction at the marker; the body's rotation during the descent is in that
+ * direction already to first order). For a trajectory whose perigee is still above the atmosphere the
+ * periapsis marker takes the place of the entry marker, so that the prediction stays continuous while a
+ * correction is being dragged through the atmosphere's edge.
  */
-export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bodyRadius: number, entryAltitude: number, snapshotUt: number, downRange: (heading: number) => number): SplashPrediction | null {
+export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bodyRadius: number, downRange: (heading: number) => number): SplashPrediction | null {
   let patch: Patch | undefined;
   for (const p of patches) {
     if (p.bodyId !== body.id) continue;
@@ -106,32 +118,26 @@ export function predictSplash(patches: readonly Patch[], body: BodySnapshot, bod
   if (!patch) return null;
   const c = patch.conic;
   if (!(c.p > 0)) return null;
-  const rp = c.p / (1 + c.e);
-  const rEntry = bodyRadius + entryAltitude;
-  let nu = 0;
-  if (rp < rEntry && c.e > 1e-9) nu = -Math.acos(Math.max(-1, Math.min(1, (c.p / rEntry - 1) / c.e)));
-  let t = c.tPeriapsis + timeSincePeriapsis(c, nu);
-  if (c.period !== null) while (t < patch.tStart - 1) t += c.period;
-  const r = conicPosition(c, nu);
-  const vel = conicVelocity(c, nu);
-  const qf = orientationAt(body, snapshotUt, t);
-  const surf = v3.sub(vel, v3.cross(body.spinRoot, r));
-  const up = v3.normalize(r);
-  const trackFixed = quat.rotateInv(qf, v3.normalize(v3.reject(surf, up)));
-  const entryDir = quat.rotateInv(qf, up);
-  const entryLL = latLonOfDir(entryDir);
-  const east = v3.normalize(v3.cross({ x: 0, y: 0, z: 1 }, entryDir));
-  const north = v3.cross(entryDir, east);
-  const heading = Math.atan2(v3.dot(trackFixed, east), v3.dot(trackFixed, north));
-  const splash = travel(entryDir, trackFixed, downRange(heading) / bodyRadius);
-  const ll = latLonOfDir(splash);
+  const marker = arrivalPoint(patch);
+  if (!marker) return null;
+  // Compass heading of the ground track at the marker: the velocity there relative to the turning surface.
+  const nu = Math.atan2(v3.dot(marker.r, c.Q), v3.dot(marker.r, c.P));
+  const surf = v3.sub(conicVelocity(c, nu), v3.cross(body.spinRoot, marker.r));
+  const pole = v3.len(body.spinRoot) > 0 ? v3.normalize(body.spinRoot) : { x: 0, y: 0, z: 1 };
+  const local = horizonBasis(marker.r, pole);
+  const heading = Math.atan2(v3.dot(surf, local.east), v3.dot(surf, local.north));
+  // The same heading from the marker's point on the body-fixed globe.
+  const entryDir = dirFromLatLon(marker.latitude, marker.longitude);
+  const fixed = horizonBasis(entryDir, { x: 0, y: 0, z: 1 });
+  const track = v3.add(v3.scale(fixed.north, Math.cos(heading)), v3.scale(fixed.east, Math.sin(heading)));
+  const ll = latLonOfDir(travel(entryDir, track, downRange(heading) / bodyRadius));
   return {
     latitude: ll.latitude,
     longitude: ll.longitude,
-    entryLatitude: entryLL.latitude,
-    entryLongitude: entryLL.longitude,
-    entryUt: t,
-    vacuumPerigeeAltitude: rp - bodyRadius,
+    entryLatitude: marker.latitude,
+    entryLongitude: marker.longitude,
+    entryUt: marker.ut,
+    vacuumPerigeeAltitude: c.p / (1 + c.e) - bodyRadius,
     heading,
   };
 }

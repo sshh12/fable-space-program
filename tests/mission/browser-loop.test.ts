@@ -41,10 +41,12 @@ describe('lunar-direct through Sim.advance, one 60 Hz frame at a time', () => {
     expect(f.milestones.find((m) => m.id === 'DROGUE_DEPLOY')!.data['rcsFraction']!).toBeGreaterThan(0.2);
   });
 
-  it('paces itself: under an hour of real time at 60 Hz, a control tick every fourth physics step', () => {
-    // 7.9 days of flight in well under an hour: the coasts are warped, the burns and the waits for them are
-    // at physics warp, lift-off, the final descent and the landings are in real time.
-    expect(f.realMinutes).toBeLessThan(60);
+  it('paces itself: about 45 minutes of real time at 60 Hz, a control tick every fourth physics step', () => {
+    // 7.9 days of flight: the coasts are warped (each step down a level waits out the four seconds of
+    // look-ahead), the burns, the entry and the waits are at physics warp, lift-off, the final descent and
+    // the landing are in real time. The 82 minutes of flight that must be integrated are 21 minutes even
+    // at 4x throughout, so this is the order of what the browser mission takes (measured: 44.9 min).
+    expect(f.realMinutes).toBeLessThan(50);
     expect(f.realMinutes).toBeGreaterThan(20);
     const steps = f.sim.stats().steps;
     const rails = f.sim.stats().railsAdvances;

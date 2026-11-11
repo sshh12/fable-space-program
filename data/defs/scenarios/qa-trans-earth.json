@@ -3,23 +3,34 @@
   "name": "QA: trans-Earth coast (ascent stage and capsule)",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938729608.5065017,
+  "startUt": 938729649.0362191,
   "start": {
     "kind": "state",
     "bodyId": "earth",
     "r": [
-      43948758.01190504,
-      -309907300.312074,
-      -101185733.07950811
+      43978597.07251873,
+      -309887324.5219722,
+      -101179974.91322404
     ],
     "v": [
-      -27.256048706665943,
-      815.6651878731398,
-      469.90801439460427
+      -27.459420085559724,
+      815.9075873441687,
+      470.0403919011943
     ],
     "attitude": "prograde"
   },
   "stagesAlreadyFired": 7,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    },
+    "ascent-stage": {
+      "LOX": 882.432,
+      "CH4": 245.12,
+      "RCSProp": 206.044
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

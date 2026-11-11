@@ -3,23 +3,39 @@
   "name": "QA: 100 km lunar orbit (lander stack)",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938524761.8437053,
+  "startUt": 938524763.0623635,
   "start": {
     "kind": "state",
     "bodyId": "moon",
     "r": [
-      -522639.36877557234,
-      -1644813.8760435332,
-      -620793.1229186467
+      -522819.2160044123,
+      -1644606.2279168058,
+      -620769.868464029
     ],
     "v": [
-      -1561.8546174010978,
-      371.90718368442396,
-      317.53118561472445
+      -1561.8391186224753,
+      372.0862814896858,
+      317.6831654138267
     ],
     "attitude": "prograde"
   },
   "stagesAlreadyFired": 5,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    },
+    "ascent-stage": {
+      "LOX": 8452.174,
+      "CH4": 2347.826,
+      "RCSProp": 236.564
+    },
+    "descent-stage": {
+      "LOX": 18320.036,
+      "CH4": 5088.899,
+      "RCSProp": 157.046
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

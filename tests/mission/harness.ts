@@ -36,6 +36,8 @@ export const CLEARANCE_WINDOW = 30;
 export const CLEARANCE_SETTLE = 0.5;
 /** Radar altitude below which the approach to the landing target counts as the final descent, m. */
 export const FINAL_DESCENT_ALTITUDE = 2000;
+/** Radius of the mission disc about the landing target (the touchdown gate of ARCHITECTURE 18.1), m. */
+export const TARGET_DISC_RADIUS = 1500;
 export const STEP_WINDOW_SECONDS = 60;
 export const SURFACE_STAY_SECONDS = 600;
 
@@ -69,7 +71,14 @@ export interface StageDrop {
 
 export interface Observations {
   separations: SeparationRecord[];
-  finalDescent: { ticks: number; notResident: number; notComplete: number; minResidentLevel: number; availableLevel: number; startRadar: number };
+  /**
+   * The final descent (below FINAL_DESCENT_ALTITUDE of radar altitude until first contact), per control tick:
+   * ticks on which less than the available data level was resident / the full-detail surface was not final,
+   * the lowest resident level of the whole descent (it starts kilometres out, where the regional data is
+   * coarser), and the same over the ticks within TARGET_DISC_RADIUS of the landing target, where the
+   * deepest level is on offer.
+   */
+  finalDescent: { ticks: number; notResident: number; notComplete: number; minResidentLevel: number; availableLevel: number; startRadar: number; startDistance: number; discTicks: number; discMinResidentLevel: number; discMinAvailableLevel: number };
   kepler: { checked: boolean; period: number; maxError: number; closureError: number; samples: number };
   /** Predicted Moon SOI entry time as read from the patches at least an hour before the entry; null when never seen. */
   soiPredictedEarlier: number | null;
@@ -115,7 +124,7 @@ interface PairState extends PairClearance {
 class FlightObserver {
   readonly obs: Observations = {
     separations: [],
-    finalDescent: { ticks: 0, notResident: 0, notComplete: 0, minResidentLevel: Infinity, availableLevel: -1, startRadar: NaN },
+    finalDescent: { ticks: 0, notResident: 0, notComplete: 0, minResidentLevel: Infinity, availableLevel: -1, startRadar: NaN, startDistance: NaN, discTicks: 0, discMinResidentLevel: Infinity, discMinAvailableLevel: Infinity },
     kepler: { checked: false, period: NaN, maxError: 0, closureError: NaN, samples: 0 },
     soiPredictedEarlier: null,
     surfaceStay: { contactUt: NaN, observedFor: 0, leftEarly: false, maxDrift: 0, maxTiltDeg: 0 },
@@ -330,13 +339,22 @@ class FlightObserver {
         this.obs.stepsBeforeLunarContact = ctx.recentStepMs(STEP_WINDOW_SECONDS);
       } else if (rd.altitudeRadar < FINAL_DESCENT_ALTITUDE) {
         const f = this.obs.finalDescent;
-        if (f.ticks === 0) f.startRadar = rd.altitudeRadar;
+        const distance = rd.landingTarget ? rd.landingTarget.distance : Infinity;
+        if (f.ticks === 0) {
+          f.startRadar = rd.altitudeRadar;
+          f.startDistance = distance;
+        }
         const res = this.terrain.residency(a.bodyId, fixedDir(s, a));
         f.ticks++;
         if (res.residentLevel < res.availableLevel) f.notResident++;
         if (!res.complete || !s.terrain.complete) f.notComplete++;
         if (res.residentLevel < f.minResidentLevel) f.minResidentLevel = res.residentLevel;
         f.availableLevel = res.availableLevel;
+        if (distance <= TARGET_DISC_RADIUS) {
+          f.discTicks++;
+          if (res.residentLevel < f.discMinResidentLevel) f.discMinResidentLevel = res.residentLevel;
+          if (res.availableLevel < f.discMinAvailableLevel) f.discMinAvailableLevel = res.availableLevel;
+        }
       }
       return;
     }
@@ -385,6 +403,8 @@ export interface FlightSetup {
   /** Replay this input log instead of flying the pilot. */
   replay?: { inputLog: readonly InputLogEntry[]; ticks: number };
   onLog?: (e: PilotLogEntry) => void;
+  /** Called at every control tick of a piloted flight with the snapshot and the pilot's phase. */
+  onPilotTick?: (snapshot: SimSnapshot, phase: string) => void;
 }
 
 export interface Flight {
@@ -430,7 +450,14 @@ export async function fly(setup: FlightSetup = {}): Promise<Flight> {
     if (setup.onLog) options.onLog = setup.onLog;
     const pilot = createMissionPilot(defs, scenario, options);
     const until = setup.untilMilestone;
-    run = await runHeadless(sim, pilot, { ...common, ...(until !== undefined ? { until: (s: SimSnapshot) => s.milestones.some((m) => m.id === until) } : {}) });
+    const watch = setup.onPilotTick;
+    const onTick = watch
+      ? (s: SimSnapshot, ctx: RunContext): void => {
+          observer.onTick(s, ctx);
+          watch(s, pilot.phase);
+        }
+      : common.onTick;
+    run = await runHeadless(sim, pilot, { ...common, onTick, ...(until !== undefined ? { until: (s: SimSnapshot) => s.milestones.some((m) => m.id === until) } : {}) });
     report = pilot.report;
     log = pilot.log;
   }

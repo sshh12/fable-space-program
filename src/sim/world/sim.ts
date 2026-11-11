@@ -83,7 +83,7 @@ import { anyEngineBurning } from '../vessel/modules/engine';
 import { rcsTranslationActive } from '../control/allocation';
 import { bodyEnvBase, OrientationCache, WorldEnv, type BodyEnvBase } from './environment';
 import { MilestoneEvaluator, type MilestoneFrame, type MilestoneHost, type OrbitSummary } from './milestones';
-import { applyPose, landedPose, orbitPose, padPose, statePose } from './scenarioStart';
+import { applyPose, applyStartResources, landedPose, orbitPose, padPose, statePose } from './scenarioStart';
 import { StateHasher } from './stateHash';
 import {
   IMPACT_DISC_RADIUS,
@@ -210,6 +210,12 @@ interface Entry {
   trackHold: boolean;
   /** In the terrain regime (low or slow near the ground): final data must be resident under it. */
   regime: boolean;
+  /**
+   * Time the vessel came into being: the scenario start, or the start of the step (or the command) whose
+   * separation made it. `Vessel.age` is kept equal to the world time minus this for EVERY entry, whatever
+   * its tier (the vessel package itself only counts the steps it is given).
+   */
+  bornUt: number;
   removed: boolean;
 }
 
@@ -323,7 +329,6 @@ class World implements SimWorld, MilestoneHost {
   private incompleteQueries = 0;
   private terrainWarpClamps = 0;
   private terrainClampActive = false;
-  private prewarmRemaining = 0;
 
   // diagnostics
   private readonly fates: DebrisFate[] = [];
@@ -438,8 +443,14 @@ class World implements SimWorld, MilestoneHost {
       sunStep: -1000000,
       trackHold: false,
       regime: false,
+      bornUt: this.ut,
       removed: false,
     };
+  }
+
+  /** Age of every vessel at the current world time (rails-tier and held vessels are not stepped). */
+  private stampAges(): void {
+    for (const e of this.entries) e.vessel.age = this.ut - e.bornUt;
   }
 
   private coarseHeight = (bodyId: string, dirFixed: Vec3): number => this.terrain.heightAt(bodyId, dirFixed, IMPACT_PREDICTION_LAMBDA);
@@ -450,6 +461,7 @@ class World implements SimWorld, MilestoneHost {
   private placeStartVessel(final: boolean): void {
     const sc = this.scenario;
     const vessel = assembleVessel(this.defs, sc.vehicle, { stagesAlreadyFired: sc.stagesAlreadyFired });
+    if (sc.resources) applyStartResources(vessel, sc.resources);
     const start = sc.start;
     const ut = sc.startUt;
     let bodyId: string;
@@ -527,6 +539,7 @@ class World implements SimWorld, MilestoneHost {
       }
     }
     this.initialiseModes();
+    this.stampAges();
     this.events.length = 0;
     this.eventsView = null;
     this.touch();
@@ -567,7 +580,6 @@ class World implements SimWorld, MilestoneHost {
     }
     if (v.hold === null) holdOnGround(v, this.envAt(e, sc.startUt));
     else rideBody(v, this.envAt(e, sc.startUt), 0);
-    v.age = 0;
     e.mode = 'landed';
     e.prevValid = false;
   }
@@ -833,6 +845,7 @@ class World implements SimWorld, MilestoneHost {
     if (incomplete) this.incompleteQueries++;
     this.stepsSinceBase = stepNumber;
     this.ut = utNew;
+    this.stampAges();
     this.tick++;
     this.stepCount++;
     this.stepsSinceControl++;
@@ -1053,7 +1066,7 @@ class World implements SimWorld, MilestoneHost {
         this.policy.track(`vessel:${v.id}`, e.bodyId, base.info.radius, dirFixed, VESSEL_DISC_RADIUS, VESSEL_REFRESH_DISTANCE);
       }
       if (e === a && regime && dirFixed && v.hold === null && radar < PREWARM_RADAR_ALTITUDE) {
-        this.prewarmRemaining = this.terrain.prewarmCollision(e.bodyId, this.touchdownPoint(e, dirFixed, radar), Math.min(40, 12 + 0.02 * radar), PREWARM_BUDGET);
+        this.terrain.prewarmCollision(e.bodyId, this.touchdownPoint(e, dirFixed, radar), Math.min(40, 12 + 0.02 * radar), PREWARM_BUDGET);
       }
     }
   }
@@ -1344,7 +1357,6 @@ class World implements SimWorld, MilestoneHost {
         this.advanceReduced(e, target);
         continue;
       }
-      v.age += dtAdvance;
       if (v.hold !== null) {
         if (e.tier === 'full') {
           rideBody(v, this.envAt(e, target), 0);
@@ -1377,6 +1389,7 @@ class World implements SimWorld, MilestoneHost {
     this.ut = target;
     this.utBase = target;
     this.stepsSinceBase = 0;
+    this.stampAges();
     this.tick++;
     this.railsAdvances++;
     this.stepsSinceControl = 0;
@@ -1519,12 +1532,14 @@ class World implements SimWorld, MilestoneHost {
       const alarms = this.altitudeAlarms(a, com);
       const eventFor = (level: number): WarpEvent | null =>
         nextWarpEvent({ system: this.system, ut: this.ut, bodyId: a.bodyId, r: com.r, v: com.v, patches: this.patches.current, nodes, warpIndex: level, alarms });
-      // The look-ahead depends on the level (its altitude-limit shell): step down until a level is admissible.
+      // The look-ahead depends on the level: step down until a level is admissible. The crossing of a
+      // level's own altitude-limit shell is an event for that level alone - the next level down has its
+      // own, lower shell - so it costs one level; every other event bounds all levels alike.
       for (let guard = 0; guard < WARP_LEVELS.length && idx > MAX_PHYSICS_WARP_INDEX; guard++) {
         const ev = eventFor(idx);
         const la = lookAheadWarpIndex(this.ut, ev);
         if (la >= idx) break;
-        idx = Math.max(la, MAX_PHYSICS_WARP_INDEX);
+        idx = ev !== null && ev.kind === 'altitudeLimit' ? idx - 1 : Math.max(la, MAX_PHYSICS_WARP_INDEX);
         limitedBy = this.describeEvent(ev);
       }
       max = idx;
@@ -2047,6 +2062,7 @@ class World implements SimWorld, MilestoneHost {
             if (e.railsEvent) e.railsEvent = this.computeRailsEvent(e, ut);
           }
           e.reducedUt += shift;
+          e.bornUt += shift;
           e.prevValid = false;
         }
         for (const n of this.nodes) n.ut += shift;
@@ -2322,7 +2338,10 @@ class World implements SimWorld, MilestoneHost {
         vRoot: v3.add(b.vRoot, v.v),
         sunVisibility: e.env.sunVisibility,
       });
-      if (lag > 0) this.present(e, snap, utP, lag, alpha, b.rRoot, b.vRoot);
+      if (lag > 0) {
+        this.present(e, snap, utP, lag, alpha, b.rRoot, b.vRoot);
+        snap.age = Math.max(0, snap.age - lag);
+      }
       vessels.push(snap);
     }
     if (this.wreck && a.removed) vessels.push(this.wreck);

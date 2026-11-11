@@ -10,6 +10,9 @@
  *  - 'state':  a BCI state vector of `bodyId` at startUt with an attitude along the velocity
  *              ('prograde', default), against it ('retrograde') or along the local vertical ('radialOut').
  *
+ * ScenarioDef.resources (tank, thruster-propellant and ablator amounts of a start in mid-mission) is
+ * applied to the assembled vessel before any of the poses is computed.
+ *
  * These functions only compute poses; the world owns the vessel list, terrain loading and modes.
  */
 import type { LaunchSiteDef, ScenarioStart } from '@/core/contracts/defs';
@@ -19,6 +22,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
 import { dirFromLatLon } from '../frames/bodyFrames';
 import { padState } from '../frames/padState';
+import { computeMassProps } from '../vessel/massProps';
 import { vesselBaseY } from '../vessel/structure';
 import type { Vessel } from '../vessel/types';
 
@@ -101,6 +105,32 @@ export function landedPose(system: BodySystem, bodyId: string, latDeg: number, l
   east = v3.len(east) > 1e-9 ? v3.normalize(east) : v3.anyOrthogonal(up);
   const q = attitudeAlong(up, v3.neg(east));
   return { bodyId, r, v: v3.cross(spin, r), q, w: quat.rotateInv(q, spin) };
+}
+
+/**
+ * Set the resource amounts a scenario starts with (ScenarioDef.resources: part instance id -> resource id
+ * -> kg) on the freshly assembled start vessel, before it is placed. Parts the vessel no longer has (their
+ * stage is already fired) and resources a part does not hold are passed over, as the contract says; the
+ * loader has checked ids and capacities. The heat shields' ablator read-out and the mass properties follow.
+ */
+export function applyStartResources(vessel: Vessel, resources: Readonly<Record<string, Readonly<Record<string, number>>>>): void {
+  for (const part of vessel.parts) {
+    const amounts = resources[part.instanceId];
+    if (!amounts) continue;
+    const tanks = part.def.resources ?? [];
+    for (let k = 0; k < tanks.length; k++) {
+      const kg = amounts[tanks[k]!.resource];
+      if (kg !== undefined) part.resources[k] = Math.min(Math.max(kg, 0), tanks[k]!.capacity);
+    }
+    for (let m = 0; m < part.modules.length; m++) {
+      const md = part.def.modules[m]!;
+      const ms = part.modules[m]!;
+      if (md.type !== 'heatShield' || ms.type !== 'heatShield') continue;
+      const k = tanks.findIndex((t) => t.resource === md.ablatorResource);
+      if (k >= 0 && tanks[k]!.capacity > 0) ms.ablatorFraction = part.resources[k]! / tanks[k]!.capacity;
+    }
+  }
+  computeMassProps(vessel);
 }
 
 export function applyPose(vessel: Vessel, pose: StartPose): void {

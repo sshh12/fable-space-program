@@ -20,6 +20,32 @@
     "attitude": "prograde"
   },
   "stagesAlreadyFired": 4,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    },
+    "ascent-stage": {
+      "LOX": 8452.174,
+      "CH4": 2347.826,
+      "RCSProp": 250
+    },
+    "descent-stage": {
+      "LOX": 28173.913,
+      "CH4": 7826.087,
+      "RCSProp": 200
+    },
+    "m3": {
+      "LOX": 72857.143,
+      "LH2": 12142.857
+    },
+    "m3-rcs-pod-a": {
+      "RCSProp": 116.927
+    },
+    "m3-rcs-pod-b": {
+      "RCSProp": 116.927
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

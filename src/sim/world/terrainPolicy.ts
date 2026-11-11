@@ -61,12 +61,6 @@ export class TerrainPolicy {
     return this.outstanding > 0 ? this.waiter : null;
   }
 
-  /** Centre of the current request of a slot, or null. */
-  centre(slot: string): { bodyId: string; dir: Vec3 } | null {
-    const d = this.discs.get(slot);
-    return d ? { bodyId: d.bodyId, dir: d.dir } : null;
-  }
-
   /** Request (and pin under `slot`) the disc; returns the provider's promise. */
   request(slot: string, bodyId: string, bodyRadius: number, dir: Vec3, radius: number): Promise<void> {
     const disc: Disc = { bodyId, bodyRadius, dir: v3.normalize(dir), radius, resolved: false, serial: ++this.serial };

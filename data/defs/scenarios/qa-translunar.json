@@ -3,23 +3,39 @@
   "name": "QA: translunar coast (lander stack)",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938274718.07316,
+  "startUt": 938274720.7399029,
   "start": {
     "kind": "state",
     "bodyId": "earth",
     "r": [
-      -40839710.00713025,
-      -74183662.63495716,
-      -24535264.30341061
+      -40841049.75311392,
+      -74190396.2160673,
+      -24537774.863658283
     ],
     "v": [
-      -502.7339037542356,
-      -2557.4269821527528,
-      -916.8745797143681
+      -502.6692926495334,
+      -2557.309311356571,
+      -916.8362020688794
     ],
     "attitude": "prograde"
   },
   "stagesAlreadyFired": 5,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    },
+    "ascent-stage": {
+      "LOX": 8452.174,
+      "CH4": 2347.826,
+      "RCSProp": 244.729
+    },
+    "descent-stage": {
+      "LOX": 28144.918,
+      "CH4": 7818.033,
+      "RCSProp": 182.707
+    }
+  },
   "target": "moon",
   "suggestedLanding": {
     "bodyId": "moon",

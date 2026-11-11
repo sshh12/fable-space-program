@@ -3,7 +3,7 @@
  * readouts): positions on conics at a time, body orientation a little ahead, great circles on a body.
  * Pure functions of their arguments; the pilot never reads simulation internals.
  */
-import type { BodySnapshot, Patch } from '@/core/contracts/sim';
+import type { BodySnapshot } from '@/core/contracts/sim';
 import { conicPosition, conicVelocity, type ConicElements } from '@/core/math/conic';
 import { quat, type Quat } from '@/core/math/quat';
 import { TWO_PI } from '@/core/math/scalar';
@@ -107,21 +107,7 @@ export function bearing(from: Vec3, to: Vec3): number {
   return Math.atan2(v3.dot(t, b.east), v3.dot(t, b.north));
 }
 
-/** First patch of a list about `bodyId`, or undefined. */
-export function patchAbout(patches: readonly Patch[], bodyId: string, from = 0): Patch | undefined {
-  for (let i = from; i < patches.length; i++) if (patches[i]!.bodyId === bodyId) return patches[i];
-  return undefined;
-}
-
 /** Periapsis radius of a conic. */
 export const periapsisRadius = (c: ConicElements): number => c.p / (1 + c.e);
-
-/** Smallest signed difference a - b of two angles, in (-pi, pi]. */
-export function angleDiff(a: number, b: number): number {
-  let d = (a - b) % TWO_PI;
-  if (d > Math.PI) d -= TWO_PI;
-  if (d <= -Math.PI) d += TWO_PI;
-  return d;
-}
 
 export const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);

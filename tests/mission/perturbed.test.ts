@@ -34,6 +34,9 @@ function check(f: Flight): void {
   expect(td['residentLevel']).toBe(deepestDataLevel('moon'));
   expect(td['terrainComplete']).toBe(1);
   expect(f.observations.finalDescent.notResident).toBe(0);
+  expect(f.observations.finalDescent.discMinResidentLevel).toBe(deepestDataLevel('moon'));
+  // The landing panel's distance, which the pilot steers by, agrees with the touchdown record.
+  expect(Math.abs(f.report['landingMiss']! - td['distanceToLandingTarget']!)).toBeLessThan(1);
   expect(td['touchdownVerticalSpeed']!).toBeLessThan(2.5);
   expect(td['touchdownHorizontalSpeed']!).toBeLessThan(1.0);
   expect(td['touchdownTiltDeg']!).toBeLessThan(12);

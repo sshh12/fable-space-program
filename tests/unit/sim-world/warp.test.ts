@@ -98,6 +98,43 @@ describe('warp never passes an event', () => {
     expect(sim.needsIntegration).toBe(true);
   });
 
+  it('falling through the altitude limits costs one level at a time: no level is taken away by the shell of a higher one', async () => {
+    // Top level requested all the way down from 320 000 km: 10 000x, then each lower level once, in order.
+    const top = await makeSim(defs, 'qa-trans-earth', terrain);
+    const seen: number[] = [];
+    let frames = 0;
+    for (; frames < 300000; frames++) {
+      frame(top);
+      const s = top.peek();
+      if (seen[seen.length - 1] !== s.warp.index) seen.push(s.warp.index);
+      if (active(s).translationMode !== 'rails') break;
+    }
+    const rails = seen.filter((i) => i > MAX_PHYSICS_WARP_INDEX);
+    expect(rails).toEqual([HIGH, HIGH - 1, HIGH - 2, HIGH - 3, HIGH - 4, HIGH - 5]);
+    // Each step down waits out its four seconds of look-ahead at the level above: 65 hours in about two minutes.
+    expect(frames).toBeLessThan(8000);
+    // A player who comes down at 100x keeps it through the shells of the levels above (30 000 km and 6 000 km).
+    const held = await makeSim(defs, 'qa-trans-earth', terrain);
+    while (held.peek().readouts.altitudeAsl > 4e7) frame(held);
+    const level = WARP_LEVELS.indexOf(100);
+    const ownShell = warpAltitudeLimit(defs.bodies['earth']!, level)!;
+    const higherShell = warpAltitudeLimit(defs.bodies['earth']!, level + 2)!;
+    let lowest = Infinity;
+    for (let i = 0; i < 300000; i++) {
+      held.commands.setWarpLevel(level);
+      held.advance(1 / 60);
+      const s = held.peek();
+      if (s.warp.index !== level) break;
+      lowest = s.readouts.altitudeAsl;
+    }
+    // It is given up only for its own shell (250 km), four seconds of real time ahead of it.
+    expect(higherShell).toBe(6e6);
+    expect(lowest).toBeLessThan(higherShell - 5e5);
+    expect(lowest).toBeGreaterThan(ownShell);
+    expect(held.peek().warp.index).toBe(level - 1);
+    expect(held.peek().warp.limitedBy).toMatch(/altitude/i);
+  });
+
   it('a node 3.4 revolutions ahead: warp stops at its lead time, the planned trajectory is never lost', async () => {
     const sim = await makeSim(defs, orbitScenario(defs.scenarios['lunar-direct']!, 't-node', 'earth', 300000, 320000, 4), terrain);
     const s0 = sim.peek();
