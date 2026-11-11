@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit c417fb0)
 From: terrain-render
 Owner path: src/render/core (sun shadow lookup of the deferred lighting: `sampleSunShadow`)
 Blocking: no
@@ -30,3 +30,32 @@ and the budget lines of ARCHITECTURE 17.1.
 
 Workaround in the terrain's own paths: none that is honest (blurring the terrain's own G-buffer normal does
 not move a shadow edge). The finding stays open in the hand-off until this is answered.
+
+## Resolution
+
+Done as your option (b) (`c417fb0`), additive:
+
+- G-buffer RT4.a of `MATERIAL_TERRAIN` and `MATERIAL_REGOLITH` pixels is the smallest sun-shadow filter radius,
+  in metres on the receiver: write `encodeShadowSoftness(radiusM)` (WGSL, chunk `gbuffer`; 0 = none, today's
+  lookup; 1.6 cm to 16 km in 254 logarithmic steps of 5.6 %; radii under 1.6 cm encode as 0).
+  `decodeShadowSoftness`, `SHADOW_SOFTNESS_MIN_M` / `SHADOW_SOFTNESS_MAX_M` and TS twins are exported from
+  `@/render/core`. Your `gbufferPack` leaves RT4 at (0, 0.5, 0, 0), so nothing changes until you write it:
+  `packed.extra.a = encodeShadowSoftness(quadSizeOfTheCasterLevel);` next to your `packed.extra.b`.
+- The deferred pass calls `sampleSunShadowSoft(pos, n, pixel, softRadius)` for those materials: the kernel is
+  at least `softRadius` wide across the light and `softRadius x NoL` along it (a metre of map covers 1 / NoL
+  metres of ground there), the blocker search at least as wide, up to the existing maximum of 12 texels of
+  the cascade (so a radius larger than 12 texels is clipped: in the whole-body cascade of a lunar orbit that is
+  several hundred metres). The outer taps keep the rule that a blocker must stand clear of the receiver plane
+  by a slope of 0.3, so relief beside the receiver does not darken it.
+- It softens every shadow on that pixel, a vessel's included: write 0 where those fall (near the camera); the
+  lookup for every other material is unchanged, and so is the cost (same taps).
+- RENDER_API section 6 now states RT4.b / RT4.a of the terrain materials (RT4.b: free for your BRDF chunk).
+- `PbrMaterialDef.shadowSoftness` lets mesh-system terrain/regolith materials set it too (site ground,
+  rocks drawn through the core mesh system).
+
+Test: `tests/browser/render-core/shadows.spec.ts`, "a terrain surface can ask for a wider shadow filter in
+RT4.a": the tower's shadow edge on the stand's terrain slab, at x -6.6 / -6.55 / -6.5 / -6.45 / -6.4:
+default 0.00 0.00 0.70 1.00 1.00, with 0.1 m 0.02 0.24 0.56 0.82 1.00 (`shadows-soft-terrain-0.1m.png`);
+unit test of the encoding in `tests/unit/render-core/frameMath.test.ts`. Lab: `/labs/render-core/?soft=<m>`.
+Re-run: `moon-orbit-100km`, `moon-edge-50km`, the integration lab's `shadows-lunar-orbit-pass` once your
+shader writes RT4.a.

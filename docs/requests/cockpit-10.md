@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit c417fb0)
 From: cockpit
 Owner path: src/render/core (sun shadow filter of the vessel-anchored cascade for receivers close to an interior camera); the receiver is the vehicle package's window well
 Blocking: no (visual QA wave 2, cockpit item 15, major: the cockpit cannot fix it inside its own paths)
@@ -27,3 +27,23 @@ A noise-free filter for sun-shadow receivers within about 1 m of an INTERIOR cam
 `CameraState.kind === 'interior'` and the receiver's view distance is under a metre, so that a grazing-lit
 wall at arm's length is smooth with a clean shadow edge. Must not change: the look or the cost of the
 cascades for exterior cameras and for receivers beyond that distance.
+
+## Resolution
+
+Done (`c417fb0`), in the core's cascade lookup (chunk `shadows`), for every camera, without an interior-only
+switch: the cause is not the interior camera but the magnification. The 12-tap kernel is turned per pixel by
+blue noise so that its banding becomes noise the TAA averages; where one shadow texel covers many pixels that
+noise is coarser than the TAA can hide (your stipple). The turning now fades out between 2 and 8 pixels per
+texel (`SHADOW_SPIN_FULL` / `SHADOW_SPIN_NONE`, the finer texel axis against the pixel footprint at the
+receiver's distance): beyond that the fixed pattern of bilinear comparisons is smooth and the edge clean.
+Receivers seen at fewer than 2 pixels per texel (every exterior view of anything farther than a few metres)
+are unchanged, and so is the cost (the same 8 + 12 taps).
+
+Test: `tests/browser/render-core/shadows.spec.ts`, "a shadow edge at arm's length is smooth": 0.35 m from a
+shadow edge of the finest cascade (17.8 px per cm, a texel covers about 20 px), deterministic noise and no
+jitter, the row-to-row variation along the edge is 0.008 at most per column (0.082 with the old per-pixel
+turning: the test fails without the change). Screenshot `out/screens/render-core/shadows-edge-arms-length.png`.
+RENDER_API section 8 and section 18.
+
+Re-run: `hatch-mechanism`, `moon-horizon`, `leo-earth-side-window` and the integration lab's
+`world-pad-noon-forward-window`.
