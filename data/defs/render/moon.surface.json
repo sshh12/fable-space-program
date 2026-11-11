@@ -16,7 +16,7 @@
     "detailScale3M": 900,
     "detailAlbedoStrength": 1.0,
     "detailNormalStrength": 1.0,
-    "detailHeightContrast": 20,
+    "detailHeightContrast": 3.0,
     "detailAoStrength": 0.8,
     "detailChroma": 0.3,
     "macroNoiseWavelengthM": 120,
@@ -49,6 +49,7 @@
     "shoreWetnessHeightM": 1,
     "rockRangeM": 250,
     "rockMinPixels": 3,
+    "rockMinRadiusM": 0.012,
     "rockAlbedoScale": 1.05,
     "rockRoughness": 0.9
   }

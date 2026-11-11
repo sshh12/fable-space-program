@@ -35,7 +35,7 @@ struct TerrainMaterial {
   noiseGain: array<vec4f, 2>,                 // weight added per unit of macro noise (-1..1)
   albedoGain: array<vec4f, 6>,                // weight added per unit of the imagery's darkness [0, 1], saturation [2, 3], greenness [4, 5]
   p0: vec4f,                                  // slope range lo, hi; apron material index (-1 = none); material count
-  p1: vec4f,                                  // detail albedo strength, detail normal strength, height-blend contrast (1/m), macro noise wavelength (m)
+  p1: vec4f,                                  // detail albedo strength, detail normal strength, height-blend contrast (per layer height range), macro noise wavelength (m)
   p2: vec4f,                                  // base roughness, Toksvig gain, apron edge width (m), lake depth (m)
   p3: vec4f,                                  // shore wetness height (m), brightening of fresh material, AO strength of the detail maps, chroma share of the detail ratio
   p4: vec4f,                                  // texel size on the ground of the near, mid, far and aerial layers (m)
@@ -411,12 +411,15 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st
   w = w * w * w;
   w = w * w;
   w /= w.x + w.y + w.z;
+  // A copy with a small share is not sampled; its share goes to zero continuously on the way there.
+  w = max(w - vec3f(0.04), vec3f(0.0));
+  w /= w.x + w.y + w.z;
   let b = vec2i(base);
   let iu = i32(up);
   var wsum = 0.0;
   for (var i = 0; i < 3; i++) {
     var wi = w[i];
-    if (wi < 0.02) { continue; }
+    if (wi <= 0.0) { continue; }
     var v = b + vec2i(iu, iu);
     if (i == 1) { v = b + vec2i(iu, 1 - iu); }
     if (i == 2) { v = b + vec2i(1 - iu, iu); }
@@ -465,7 +468,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, meanLod: f32, st
 
 struct DetailLayer {
   ratio: vec3f,        // albedo / mean albedo of the layer
-  height: f32,         // height above the layer's middle (m)
+  height: f32,         // height above the layer's mean, in units of the layer's height range
   grad: vec3f,         // height gradient in body-fixed axes (surface-gradient form of the detail normal)
   rough: f32,
   ao: f32,
@@ -484,7 +487,7 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
   let meanH = mat.layerB[material * ${DETAIL_SCALES} + scale].x;
   for (var axis = 0; axis < 3; axis++) {
     let wa = w[axis];
-    if (wa < 0.02) { continue; }
+    if (wa <= 0.0) { continue; }
     var st: vec2f;
     var dx: vec2f;
     var dy: vec2f;
@@ -504,7 +507,7 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
     if (lx > ly) { dx *= shorten; } else { dy *= shorten; }
     let d = detailPlane(scale, material, info.rgb, meanH, meanLod, st, dx, dy);
     o.ratio += wa * d.ratio;
-    o.height += wa * (d.height - meanH) * info.a;
+    o.height += wa * (d.height - meanH);
     o.grad += wa * (d.slope.x * au + d.slope.y * av);
     o.rough += wa * d.rough;
     o.ao += wa * d.ao;
@@ -531,7 +534,7 @@ struct Detail {
 /// mat.p5.z: all of it where the layers hold what the height function also holds, craters; little where
 /// they hold what it does not, bushes and tussocks), and their albedo keeps only what is finer than the
 /// imagery.
-fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: vec3f, cb: ClassBlend, channel: f32, slopeMag: f32,
+fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: vec3f, cb: ClassBlend, channel: f32, slopeMag: f32,
                  dist: f32, footprint: f32, apron: f32, normalTexel: f32, imageTexel: f32, imagery: vec3f) -> Detail {
   var o: Detail;
   o.albedoRatio = vec3f(1.0);
@@ -568,8 +571,10 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
     if (w > wf) { second = first; ws = wf; first = m; wf = w; }
     else if (w > ws) { second = m; ws = w; }
   }
+  // The second material shows (and is sampled) only where it has more than a quarter of the two weights:
+  // patches of one material with bands of mixture between them, not a mixture everywhere.
   var blend = 0.0;
-  if (ws > 0.0) { blend = ws / (wf + ws); }
+  if (ws > 0.0) { blend = 0.5 * saturate(4.0 * ws / (wf + ws) - 1.0); }
   let apronM = i32(mat.p0.z);
   if (apron > 0.0 && apronM >= 0) {
     // The apron replaces whatever lies under it: blend towards it as the second material.
@@ -577,8 +582,12 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
     else { blend *= 1.0 - apron; }
   }
 
-  // Triplanar weights from the smooth sphere normal (stable under the detail itself).
-  var tw = pow(abs(sphere), vec3f(8.0));
+  // Triplanar weights from the terrain's own normal (the tile's normal map, without the detail it is about
+  // to receive): on a slope the plane that faces it takes over, and nothing is stretched down a hillside.
+  var tw = pow(abs(facing), vec3f(8.0));
+  tw /= tw.x + tw.y + tw.z;
+  // A plane with a small share is not sampled; its share goes to zero continuously on the way there.
+  tw = max(tw - vec3f(0.06), vec3f(0.0));
   tw /= tw.x + tw.y + tw.z;
 
   var ratioA = vec3f(1.0);
@@ -597,8 +606,8 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
     let period = 1.0 / inv;
     let texel = mat.p4[s];
     // A scale shows while one repeat spans more than 8 pixels, fully from 24; and it has gone again where
-    // one of its texels spans a hundred pixels (the ground at one's feet shows nothing of the aerial layer).
-    let f = smoothstep(8.0, 24.0, period / footprint) * distFade * (1.0 - smoothstep(48.0, 160.0, texel / footprint));
+    // one of its texels spans some tens of pixels (the ground at one's feet shows nothing of the aerial layer).
+    let f = smoothstep(8.0, 24.0, period / footprint) * distFade * (1.0 - smoothstep(16.0, 64.0, texel / footprint));
     if (s == ${DETAIL_SCALES - 1}) { o.aerial = f; }
     if (f <= 0.0) { continue; }
     var relief = f;
@@ -631,10 +640,12 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, sphere: ve
     wsum += f;
   }
   if (wsum <= 0.0) { return o; }
-  // Height blend: the second material shows first where it stands higher (rock through sand, grass over soil).
+  // Height blend: the second material shows first where it stands higher (rock through sand, grass over
+  // soil), over a share of the ground that follows its weight. Heights are sums over the scales, each in
+  // units of its layer's own range.
   var bl = blend;
   if (blend > 0.002 && blend < 0.998) {
-    bl = saturate((hB - hA) * mat.p1.z + (blend - 0.5) * 3.5 + 0.5);
+    bl = saturate((hB - hA) * mat.p1.z + (blend - 0.5) * 3.5 + 0.5) * smoothstep(0.0, 0.06, blend);
     bl = mix(blend, bl, saturate(wsum));
   }
   let ratio = mix(ratioA, ratioB, bl);
@@ -821,7 +832,7 @@ ${DETAIL_WGSL}
     shoulder = (1.0 - apron) * (1.0 - smoothstep(0.0, mat.p5.w, outside)) * (0.65 + 0.35 * n1);
     rimDirt = smoothstep(-6.0 * mat.p2.z - 1.0, 0.0, outside) * (0.5 + 0.5 * n2);
   }
-  let detail = terrainDetail(t, in.local, dlx, dly, tn.sphere, cb, s.channel, tn.slopeMag, dist, footprint, apron, normalTexel, imageTexel, s.albedo);
+  let detail = terrainDetail(t, in.local, dlx, dly, tn.n, cb, s.channel, tn.slopeMag, dist, footprint, apron, normalTexel, imageTexel, s.albedo);
   let orb = orbitalDetail(t, in.local, cb, footprint, imageTexel, normalTexel, steep);
 
   // The orbital noise stands in for structure nobody has data for; where the aerial layer shows, it has it.

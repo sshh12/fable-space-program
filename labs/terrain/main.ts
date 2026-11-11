@@ -42,6 +42,8 @@ export interface TerrainLab {
   ballast(): number;
   /** Latitude and longitude (deg, body-fixed) of the point of a body under the camera. */
   cameraSubPoint(bodyId: string): { latDeg: number; lonDeg: number };
+  /** The point of a body under the active vessel, and the vessel's height above the body's reference radius (m). */
+  vesselSubPoint(bodyId: string): { latDeg: number; lonDeg: number; altitude: number };
   /** Copy the canvas (as presented this frame) into a 2-D canvas of the given size and return its RGBA bytes. Call right after renderFrame(). */
   grab(width: number, height: number): Uint8ClampedArray;
   /**
@@ -186,6 +188,14 @@ async function boot(): Promise<void> {
       const b = app.snapshot().bodies.find((x) => x.id === bodyId)!;
       const ll = dirToLatLon(quat.rotateInv(b.qFixedToRoot, v3.sub(app.cameraState().positionRoot, b.rRoot)));
       return { latDeg: ll.lat / DEG, lonDeg: ll.lon / DEG };
+    },
+    vesselSubPoint(bodyId) {
+      const snap = app.snapshot();
+      const b = snap.bodies.find((x) => x.id === bodyId)!;
+      const vessel = snap.vessels.find((x) => x.id === snap.activeVesselId)!;
+      const rel = v3.sub(vessel.rRoot, b.rRoot);
+      const ll = dirToLatLon(quat.rotateInv(b.qFixedToRoot, rel));
+      return { latDeg: ll.lat / DEG, lonDeg: ll.lon / DEG, altitude: v3.len(rel) - app.defs.bodies[bodyId]!.radius };
     },
     grab: (() => {
       let scratch: HTMLCanvasElement | null = null;

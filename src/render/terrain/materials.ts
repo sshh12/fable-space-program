@@ -19,7 +19,7 @@ export interface MaterialLayerManifest {
   /** Mean linear albedo of the albedo image as decoded (the imagery is multiplied by albedo / mean). */
   meanAlbedo: [number, number, number];
   meanRoughness: number;
-  /** Height range of the height channel, m (the height blend between materials works in metres). */
+  /** Height range of the height channel, m. */
   reliefM: number;
   /** Mean of the height channel, 0..1 (heights are measured from it). */
   meanHeight: number;
@@ -115,6 +115,7 @@ export const SURFACE_PARAM_KEYS = [
   'shoreWetnessHeightM',
   'rockRangeM',
   'rockMinPixels',
+  'rockMinRadiusM',
   'rockAlbedoScale',
   'rockRoughness',
 ] as const;

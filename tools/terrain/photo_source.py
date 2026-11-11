@@ -98,7 +98,7 @@ def main() -> None:
     ap.add_argument("--only", default="")
     ap.add_argument("--variants", type=int, default=1)
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--model", default="gpt-image-1")
+    ap.add_argument("--model", default="gpt-image-2")
     ap.add_argument("--quality", default="high")
     args = ap.parse_args()
     key = read_key()

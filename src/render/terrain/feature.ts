@@ -210,6 +210,11 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   // Scratch lists of buildBody: whole tiles, quadrants, and the same for the sea sheet.
   const listScratch = [new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2), new Uint32Array(MAX_INSTANCES >> 2)];
   const listCount = [0, 0, 0, 0];
+  // The visible tiles of a body, to be drawn nearest first: instance word, list (0 whole, 1 quadrant; + 2 with a sea sheet), distance.
+  const visWord = new Uint32Array(MAX_INSTANCES >> 2);
+  const visList = new Uint8Array(MAX_INSTANCES >> 2);
+  // Sort keys: the distance in eighths of a metre, times 65,536, plus the index (a plain numeric sort then orders by distance).
+  const visKey = new Float64Array(MAX_INSTANCES >> 2);
   let instanceCount = 0;
   let frameIndex = 0;
   let initialised = false;
@@ -535,18 +540,28 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     let visible = 0;
     let deepest = 0;
     // One pass: the record of every selected tile (those outside the view too: shadow cascades draw them),
-    // and the four lists of what is in view.
+    // and what is in view with its distance.
+    const eye = pose.cameraFixed;
     for (let i = 0; i < items.length; i++) {
       const it = items[i]!;
       const n = it.node;
       const rec = recordOf(b, n, time);
       if (n.level > deepest) deepest = n.level;
-      if (!it.visible) continue;
+      if (!it.visible || visible >= visWord.length) continue;
+      const s = n.sphere;
+      visWord[visible] = rec | ((it.quadrant + 1) << 20);
+      visList[visible] = (it.quadrant >= 0 ? 1 : 0) | (ocean && n.hMin < sea ? 2 : 0);
+      visKey[visible] = Math.round(8 * Math.max(0, Math.hypot(s.cx - eye.x, s.cy - eye.y, s.cz - eye.z) - s.r)) * 65536 + visible;
       visible++;
-      const word = rec | ((it.quadrant + 1) << 20);
-      const k = it.quadrant >= 0 ? 1 : 0;
-      listScratch[k]![listCount[k]!++] = word;
-      if (ocean && n.hMin < sea) listScratch[k + 2]![listCount[k + 2]!++] = word;
+    }
+    // The four lists, nearest tile first: on broken ground seen from eye height a pixel is covered by
+    // several hills, and the depth test spares the fragment shader all but the first.
+    const order = visKey.subarray(0, visible).sort();
+    for (let j = 0; j < visible; j++) {
+      const v = order[j]! % 65536;
+      const k = visList[v]! & 1;
+      listScratch[k]![listCount[k]!++] = visWord[v]!;
+      if (visList[v]! & 2) listScratch[k + 2]![listCount[k + 2]!++] = visWord[v]!;
     }
     const lists: [number, number][] = [];
     for (let k = 0; k < 4; k++) {

@@ -31,11 +31,13 @@ export interface RockBodyInfo {
 }
 
 const ROCK_FLOATS = 16;
-const MAX_ROCKS = 49152;
+const MAX_ROCKS = 98304;
 const MAX_CHUNKS = 1024;
 const MAX_ROCK_INSTANCES = 1 << 17;
 /** Chunk queries per frame are limited by time (ms). */
 const BUILD_BUDGET_MS = 0.6;
+/** An observer may move this far (m) before the G-buffer lists are built again (the vertex shader applies range and scale exactly every frame; the lists only decide levels of detail and which rocks are worth a draw). */
+const LIST_TOLERANCE_M = 0.02;
 /** Shadow cascades with texels larger than this hold no rocks. */
 const SHADOW_MAX_TEXEL = 0.6;
 
@@ -202,6 +204,15 @@ interface Chunk {
   minRadius: number;
   /** Radius of the chunk's largest rock, m (0 without rocks). */
   maxRadius: number;
+  /** The rocks' radii alone, in the order of `data` (the size searches stay within a few cache lines). */
+  radii: Float32Array;
+  /**
+   * Of the G-buffer lists as last built: is the chunk in them, with which smallest radius, and where each
+   * variant's prefix ends. The shadow lists are prefixes of the same prefixes.
+   */
+  listed: boolean;
+  listMin: number;
+  listEnd: Int32Array;
   built: boolean;
   lastUsed: number;
   /** Offset of the chunk's rocks in the GPU rock buffer and its slot in the per-frame chunk buffer. */
@@ -240,6 +251,9 @@ interface RockBody {
   /** Chunks in range of the observers (rebuilt when an observer has moved a quarter of a chunk). */
   wanted: Chunk[];
   scanned: Vec3[];
+  /** Where the observers were, and the range per metre of radius, when the G-buffer lists were last built. */
+  listEyes: Vec3[];
+  listRangePerRadius: number;
 }
 
 interface MeshBuffers {
@@ -265,6 +279,13 @@ export class RockRenderer {
   private bucketData: Uint32Array<ArrayBuffer>[] = Array.from({ length: ROCK_VARIANTS * ROCK_LODS }, () => new Uint32Array(1024));
   private readonly bucketCount = new Int32Array(ROCK_VARIANTS * ROCK_LODS);
   private readonly shadowRanges = new Int32Array(ROCK_VARIANTS * ROCK_LODS * 2);
+  /**
+   * The G-buffer lists are kept from frame to frame while nothing they depend on has changed: the chunks, the
+   * size threshold per metre, and the observers (to within LIST_TOLERANCE_M of where the lists were built).
+   */
+  private listsStale = true;
+  private gbufferCount = 0;
+  private gbufferTriangles = 0;
   private readonly uniformData = new Float32Array(32);
   private instanceCount = 0;
   private dirty = false;
@@ -398,6 +419,8 @@ export class RockRenderer {
         rangePerRadius: 0,
         wanted: [],
         scanned: [],
+        listEyes: [],
+        listRangePerRadius: 0,
       });
     }
   }
@@ -463,8 +486,11 @@ export class RockRenderer {
     c.count = found.length;
     c.minRadius = minRadius;
     c.maxRadius = found.reduce((m, rock) => Math.max(m, rock.radius), 0);
+    c.radii = Float32Array.from(found, (rock) => rock.radius);
+    c.listed = false;
     c.built = true;
     this.dirty = true;
+    this.listsStale = true;
   }
 
   /** Ground height above the reference radius under a direction, m (coarse: for range decisions only). */
@@ -477,6 +503,7 @@ export class RockRenderer {
     const range = b.info.params.rockRangeM;
     const R = b.info.def.radius;
     b.wanted.length = 0;
+    this.listsStale = true;
     b.scanned = observers.map((o) => o.pos);
     const seen = new Set<number>();
     observers.forEach((o, oi) => {
@@ -533,6 +560,10 @@ export class RockRenderer {
               count: 0,
               minRadius: Infinity,
               maxRadius: 0,
+              radii: new Float32Array(0),
+              listed: false,
+              listMin: 0,
+              listEnd: new Int32Array(ROCK_VARIANTS),
               built: false,
               lastUsed: -1,
               base: 0,
@@ -560,8 +591,12 @@ export class RockRenderer {
     const pixelAngle = (2 * Math.tan(frame.camera.fovY / 2)) / frame.renderSize[1];
     for (const b of this.bodies) {
       const a = active.find((x) => x.id === b.info.id);
+      const wasActive = b.active;
       b.active = false;
-      if (!a) continue;
+      if (!a) {
+        if (wasActive) this.listsStale = true;
+        continue;
+      }
       const p = b.info.params;
       const pose = frame.bodies[a.bodyIndex]!;
       b.bodyIndex = a.bodyIndex;
@@ -575,7 +610,10 @@ export class RockRenderer {
       // Which chunks are in range changes slowly: scan again when an observer has moved a quarter chunk.
       const moved = b.scanned.length !== a.observers.length || a.observers.some((o, i) => v3.dist(o.pos, b.scanned[i]!) > 0.25 * b.chunkSize);
       if (moved) this.scanChunks(b, a.observers);
-      if (b.wanted.length === 0) continue;
+      if (b.wanted.length === 0) {
+        if (wasActive) this.listsStale = true;
+        continue;
+      }
 
       // Distances of this frame, and the chunks to build or refine (nearest first, within the time budget).
       let refine: Chunk[] | null = null;
@@ -588,7 +626,7 @@ export class RockRenderer {
         c.near = near;
         c.lastUsed = near <= range ? this.frameIndex : c.lastUsed;
         if (near > range) continue;
-        const need = near / b.rangePerRadius;
+        const need = Math.max(p.rockMinRadiusM, near / b.rangePerRadius);
         if (!c.built || c.minRadius > need * 1.05 + 1e-6) (refine ??= []).push(c);
       }
       if (refine) {
@@ -598,8 +636,9 @@ export class RockRenderer {
             this.unbuilt++;
             continue;
           }
-          // Well below what is needed now, so that the chunk is not rebuilt for every metre of approach.
-          this.buildChunk(b, c, (c.near / b.rangePerRadius) * 0.6);
+          // Well below what is needed now, so that the chunk is not rebuilt for every metre of approach;
+          // never below the smallest rock the body draws as a mesh (smaller stones are in the detail layers).
+          this.buildChunk(b, c, Math.max(p.rockMinRadiusM, (c.near / b.rangePerRadius) * 0.75));
         }
       }
       // Forget chunks that have not been in range for a while.
@@ -612,7 +651,10 @@ export class RockRenderer {
           }
         }
       }
+      if (!wasActive) this.listsStale = true;
       b.active = true;
+      const eyes = b.listEyes;
+      if (eyes.length !== a.observers.length || b.listRangePerRadius !== b.rangePerRadius || a.observers.some((o, i) => v3.dist(o.pos, eyes[i]!) > LIST_TOLERANCE_M)) this.listsStale = true;
 
       // Chunk origins of this frame, relative to the camera.
       for (const c of b.wanted) {
@@ -632,9 +674,18 @@ export class RockRenderer {
       }
     }
     if (this.dirty) this.packRocks();
+    const rebuild = this.listsStale;
+    if (!rebuild) {
+      this.instanceCount = this.gbufferCount;
+      this.triangles = this.gbufferTriangles;
+    }
     for (const b of this.bodies) {
       if (!b.active) continue;
-      this.buildDraws(b, pixelAngle);
+      if (rebuild) {
+        this.buildDraws(b, pixelAngle);
+        b.listEyes = active.find((x) => x.id === b.info.id)!.observers.map((o) => v3.clone(o.pos));
+        b.listRangePerRadius = b.rangePerRadius;
+      }
       const u = this.uniformData;
       const m = b.rot;
       const pm = b.prevRot;
@@ -646,15 +697,21 @@ export class RockRenderer {
       u.set([b.info.params.rockRoughness, rockLayer, 1 / b.info.params.detailScale0M, 0], 28);
       this.device.queue.writeBuffer(b.uniform, 0, u);
     }
+    if (rebuild) {
+      this.listsStale = false;
+      this.gbufferCount = this.instanceCount;
+      this.gbufferTriangles = this.triangles;
+    }
     if (this.bodies.some((b) => b.active)) {
       this.device.queue.writeBuffer(this.chunkBuffer, 0, this.chunkData);
-      if (this.instanceCount > 0) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
+      if (rebuild && this.instanceCount > 0) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
     }
   }
 
   /** Lay every built chunk's rocks out in the GPU rock buffer. */
   private packRocks(): void {
     this.dirty = false;
+    this.listsStale = true;
     let n = 0;
     for (const b of this.bodies) {
       for (const c of b.chunks.values()) {
@@ -694,12 +751,12 @@ export class RockRenderer {
    * End of the prefix of a chunk's rocks start .. end - 1 (one variant, largest first) whose radius is at
    * least minRadius.
    */
-  private static prefixEnd(data: Float32Array, start: number, end: number, minRadius: number): number {
+  private static prefixEnd(radii: Float32Array, start: number, end: number, minRadius: number): number {
     let lo = start;
     let hi = end;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (data[mid * ROCK_FLOATS + 3]! >= minRadius) lo = mid + 1;
+      if (radii[mid]! >= minRadius) lo = mid + 1;
       else hi = mid;
     }
     return lo;
@@ -730,10 +787,14 @@ export class RockRenderer {
     // Squared size thresholds of the levels of detail: (pixels)^2 = 4 r^2 / (d^2 pixelAngle^2).
     const k = 4 / (pixelAngle * pixelAngle);
     for (const c of b.wanted) {
+      c.listed = false;
       if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex || c.near >= range) continue;
       const d = c.data;
+      const radii = c.radii;
       const minRadius = c.near / b.rangePerRadius;
       if (c.maxRadius < minRadius) continue;
+      c.listed = true;
+      c.listMin = minRadius;
       // A rock below this radius is under the size of the middle level of detail even at the chunk's
       // nearest point: that tail of every variant's prefix goes to the coarse list as it stands (a rock
       // of it that lies beyond its own range is drawn with scale 0 by the vertex shader). Only the larger
@@ -749,12 +810,15 @@ export class RockRenderer {
       const cz = b.rot[2] * ox + b.rot[5] * oy + b.rot[8] * oz;
       for (let v = 0; v < ROCK_VARIANTS; v++) {
         const start = c.variantStart[v]!;
-        const end = RockRenderer.prefixEnd(d, start, c.variantStart[v + 1]!, minRadius);
+        const end = RockRenderer.prefixEnd(radii, start, c.variantStart[v + 1]!, minRadius);
+        c.listEnd[v] = end;
         if (end === start) continue;
-        const fine = RockRenderer.prefixEnd(d, start, end, coarseRadius);
+        // (The chunks around the camera hold the small stones, and most of those are beyond their own
+        // range from the far side of the chunk: there every rock is looked at.)
+        const fine = c.near < 2 * b.chunkSize ? end : RockRenderer.prefixEnd(radii, start, end, coarseRadius);
         for (let i = start; i < fine; i++) {
           const o = i * ROCK_FLOATS;
-          const radius = d[o + 3]!;
+          const radius = radii[i]!;
           const dx = d[o]! - cx;
           const dy = d[o + 1]! - cy;
           const dz = d[o + 2]! - cz;
@@ -806,14 +870,11 @@ export class RockRenderer {
     const texelRadius = 0.5 * cascade.texelSize;
     // The coarsest mesh that still has the silhouette at this texel size.
     const middleRadius = 24 * cascade.texelSize;
-    const range = b.info.params.rockRangeM;
     const ndcPerMetre = 1 / (cascade.texelSize * 1024);
     const start0 = this.instanceCount;
     this.bucketCount.fill(0);
     for (const c of b.wanted) {
-      if (!c.built || c.base < 0 || c.lastUsed !== this.frameIndex || c.near >= range) continue;
-      const minRadius = Math.max(texelRadius, c.near / b.rangePerRadius);
-      if (c.maxRadius < minRadius) continue;
+      if (!c.listed || c.base < 0 || c.maxRadius < texelRadius) continue;
       // The chunk against the cascade's rectangle (its casters reach a little beyond its own footprint).
       const o = c.slot * 8;
       const px = this.chunkData[o]!;
@@ -821,12 +882,14 @@ export class RockRenderer {
       const pz = this.chunkData[o + 2]!;
       const margin = 1 + (c.reach + 4) * ndcPerMetre;
       if (Math.abs(m[0]! * px + m[4]! * py + m[8]! * pz + m[12]!) > margin || Math.abs(m[1]! * px + m[5]! * py + m[9]! * pz + m[13]!) > margin) continue;
-      const d = c.data;
+      const radii = c.radii;
+      const search = texelRadius > c.listMin;
+      const coarseOnly = c.maxRadius < middleRadius;
       for (let v = 0; v < ROCK_VARIANTS; v++) {
         const start = c.variantStart[v]!;
-        const end = RockRenderer.prefixEnd(d, start, c.variantStart[v + 1]!, minRadius);
+        const end = search ? RockRenderer.prefixEnd(radii, start, c.listEnd[v]!, texelRadius) : c.listEnd[v]!;
         if (end === start) continue;
-        const middle = RockRenderer.prefixEnd(d, start, end, middleRadius);
+        const middle = coarseOnly ? start : RockRenderer.prefixEnd(radii, start, end, middleRadius);
         this.pushRange(v * ROCK_LODS + 1, c.base + start, c.base + middle);
         this.pushRange(v * ROCK_LODS + 2, c.base + middle, c.base + end);
       }

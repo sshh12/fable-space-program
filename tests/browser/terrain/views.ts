@@ -44,6 +44,9 @@ export const VIEWS: View[] = [
   { name: 'pad-ground-close', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -50 }, fov: 35, sun: { az: 105, el: 31, ...PAD } },
   { name: 'pad-30m', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, height: 30, agl: true, heading: 40, pitch: -22 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'earth-1km', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.004, lon: PAD.lon - 0.004, height: 1000, agl: false, heading: 45, pitch: -35 }, sun: { az: 105, el: 31, ...PAD } },
+  // Broken, stony ground 1 km south-west of the pad at eye height: relief of the height function under the
+  // detail layers, and the rock field (the pad's own surroundings are flattened and hold no rocks).
+  { name: 'earth-stony-ground', body: 'earth', cam: { type: 'surface', lat: 18.981197, lon: -155.609964, height: 1.7, agl: true, heading: 200, pitch: -8 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'shoreline-200m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.001, lon: PAD.lon + 0.0085, height: 200, agl: false, heading: 30, pitch: -20 }, sun: { az: 105, el: 31, ...PAD } },
   { name: 'earth-edge-5km', body: 'earth', cam: { type: 'surface', lat: 19.93, lon: -155.72, height: 6.2e3, agl: false, heading: 0, pitch: -28 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 } },
   { name: 'earth-edge-50km', body: 'earth', cam: { type: 'surface', lat: 19.55, lon: -155.72, height: 50e3, agl: false, heading: 0, pitch: -42 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 } },
