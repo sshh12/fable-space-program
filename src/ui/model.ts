@@ -23,6 +23,7 @@ import {
   formatTwr,
   formatVerticalSpeed,
   formatWarp,
+  NBSP,
   verticalTrend,
   type VerticalTrend,
 } from './format';
@@ -77,7 +78,14 @@ export interface FlightView {
   /** "+12.3 m/s" / "−4.0 m/s" / "0.0 m/s" (formatVerticalSpeed); the direction is `verticalTrend`. */
   verticalSpeed: string;
   verticalTrend: VerticalTrend;
+  /**
+   * Horizontal speed in the frame of `speedMode`, so that it and the vertical speed are the two components of
+   * `speed`: over the ground in surface mode, the horizontal part of the orbital velocity in orbit mode (the
+   * vertical speed is the same in both frames: the body's rotation moves a point only horizontally).
+   */
   horizontalSpeed: string;
+  /** Horizontal speed over the ground whatever the mode (the landing page). */
+  horizontalSpeedSurface: string;
   /** Speed of the navball mode: surface speed or orbital speed. */
   speedMode: 'surface' | 'orbit';
   speed: string;
@@ -89,6 +97,12 @@ export interface FlightView {
   gLoad: string;
 }
 
+/**
+ * Horizontal part of the orbital velocity: the orbital speed less its radial component (the vertical speed, which
+ * the body's rotation does not change).
+ */
+export const orbitalHorizontalSpeed = (speedOrbital: number, verticalSpeed: number): number => Math.sqrt(Math.max(0, speedOrbital * speedOrbital - verticalSpeed * verticalSpeed));
+
 /** Primary flight data, the same strings on the HUD and the MFD flight / landing pages. */
 export function describeFlight(s: SimSnapshot, mode: AltitudeMode = 'auto'): FlightView {
   const r = s.readouts;
@@ -99,7 +113,8 @@ export function describeFlight(s: SimSnapshot, mode: AltitudeMode = 'auto'): Fli
     altitude: formatAltitude(src === 'radar' ? r.altitudeRadar : r.altitudeAsl),
     verticalSpeed: formatVerticalSpeed(r.verticalSpeed),
     verticalTrend: verticalTrend(r.verticalSpeed),
-    horizontalSpeed: formatSpeed(r.horizontalSpeed),
+    horizontalSpeed: formatSpeed(speedMode === 'surface' ? r.horizontalSpeed : orbitalHorizontalSpeed(r.speedOrbital, r.verticalSpeed)),
+    horizontalSpeedSurface: formatSpeed(r.horizontalSpeed),
     speedMode,
     speed: formatSpeed(speedMode === 'surface' ? r.speedSurface : r.speedOrbital),
     pitch: formatDeg(s.navball.pitchDeg),
@@ -137,7 +152,7 @@ export interface LandingTargetView {
    * its miss from the target centre; null when nothing is predicted.
    */
   predicted: { label: 'Impact' | 'Entry interface'; miss: string; missBearing: string; countdown: string; where: string } | null;
-  /** Shown instead of `predicted` when it is null ("Predicted arrival: none"). */
+  /** Shown instead of `predicted` when it is null (an em dash: nothing predicted). */
   noPrediction: string;
   /** Raw numbers for graphics (m), +down = ahead, +cross = right. */
   raw: { distance: number; downRange: number; crossRange: number; bearingDeg: number; missDistance: number | null; missBearingDeg: number | null };
@@ -178,7 +193,7 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
           where: formatLatLon(p.latitude, p.longitude),
         }
       : null,
-    noPrediction: 'none',
+    noPrediction: '—',
     raw: {
       distance: lt.distance,
       downRange: lt.downRange,
@@ -192,8 +207,9 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
 
 /**
  * Label/value rows of the landing-target readout, identical on the HUD panel and the MFD landing page. Rows
- * without data collapse: with no ground track (stationary) down-range and cross-range are one "Ground track:
- * none" row, and with neither a track nor a prediction the arrival row joins it ("Track · arrival: none").
+ * without data collapse: with no ground track (moving straight up or down) down-range and cross-range are one
+ * "Ground track: vertical" row, and with neither a track nor a prediction the arrival row joins it ("Track ·
+ * arrival: —").
  */
 export function landingTargetRows(v: LandingTargetView): [string, string][] {
   const rows: [string, string][] = [
@@ -201,12 +217,12 @@ export function landingTargetRows(v: LandingTargetView): [string, string][] {
     ['Bearing', v.bearing],
   ];
   if (v.tracked) rows.push(['Down-range', v.downRange], ['Cross-range', v.crossRange]);
-  else if (v.predicted) rows.push(['Ground track', 'none']);
+  else if (v.predicted) rows.push(['Ground track', 'vertical']);
   // An impact is where the vessel comes down; the entry interface only where it meets the atmosphere (its
   // miss from the target centre says nothing about the splash point), so the row is named for what it is.
   if (v.predicted) rows.push([v.predicted.label === 'Impact' ? 'Impact miss' : 'Entry interface', `${v.predicted.miss} · ${v.predicted.missBearing}`]);
   else if (v.tracked) rows.push(['Predicted arrival', v.noPrediction]);
-  else rows.push(['Track · arrival', 'none']);
+  else rows.push(['Track · arrival', v.noPrediction]);
   return rows;
 }
 
@@ -290,17 +306,24 @@ export interface OrbitView {
   closed: boolean;
 }
 
+/**
+ * The osculating orbit as the HUD and the MFD show it. A path whose periapsis lies below the surface never
+ * reaches it and has no period to fly (both '—'), and coming down on such a path the vessel meets the surface
+ * before its next apoapsis (no time to it either).
+ */
 export function describeOrbit(s: SimSnapshot): OrbitView {
   const r = s.readouts;
   const closed = r.eccentricity < 1 && Number.isFinite(r.apoapsisAltitude) && r.apoapsisAltitude > -1e30;
+  const meetsSurface = r.periapsisAltitude < 0;
+  const comingDown = meetsSurface && r.verticalSpeed < 0;
   return {
     apoapsis: closed ? formatApsis(r.apoapsisAltitude) : 'escape',
-    apoapsisTime: r.timeToApoapsis !== null ? formatCountdown(r.timeToApoapsis) : '—',
+    apoapsisTime: r.timeToApoapsis !== null && !comingDown ? formatCountdown(r.timeToApoapsis) : '—',
     periapsis: formatApsis(r.periapsisAltitude),
-    periapsisTime: r.timeToPeriapsis !== null ? formatCountdown(r.timeToPeriapsis) : '—',
+    periapsisTime: r.timeToPeriapsis !== null && !meetsSurface ? formatCountdown(r.timeToPeriapsis) : '—',
     inclination: formatRadAsDeg(r.inclination, 2),
     eccentricity: formatNumber(r.eccentricity, 4),
-    period: r.period !== null ? formatDuration(r.period) : '—',
+    period: r.period !== null && !meetsSurface ? formatDuration(r.period) : '—',
     closed,
   };
 }
@@ -354,6 +377,13 @@ export interface StageTileView {
   deltaV: string;
   deltaVVac: string;
   twr: string;
+  /**
+   * What the engines do at full throttle, named: 'TWR' and the thrust-to-weight ratio at local gravity near a
+   * body, 'Accel' and the acceleration (m/s^2) where local gravity is too weak for a ratio to mean anything
+   * (WEAK_GRAVITY: a translunar coast would read TWR 230).
+   */
+  thrustLabel: 'TWR' | 'Accel';
+  thrustValue: string;
   burnTime: string;
   /** 0..1 or null when the stage has no engines. */
   propellant: number | null;
@@ -412,6 +442,37 @@ export function stageActionText(actionKinds: readonly string[]): string {
   return [...new Set(words)].join(' · ');
 }
 
+const CHUTE_NAMES = { drogue: 'drogues', main: 'mains' } as const;
+
+/**
+ * What firing a stage does, from the vessel's vehicle definition where it is known: the words of
+ * stageActionText, with every chute named by its kind ("separate · deploy drogues", "release drogues · deploy
+ * mains": a cut releases the canopies the latest earlier stage deployed). Falls back to the bare action kinds of
+ * the StageInfo without a vehicle definition.
+ */
+export function stageActionWords(s: SimSnapshot, defs: DefLibrary | undefined, index: number): string {
+  const info = s.staging.stages[index];
+  const v = activeVesselOf(s);
+  const vehicle = defs && v ? defs.vehicles[v.vehicleId] : undefined;
+  const stage = vehicle?.stages[index];
+  if (!vehicle || !stage) return stageActionText(info?.actionKinds ?? []);
+  let deployed: 'drogue' | 'main' | null = null;
+  for (let i = 0; i < index; i++) for (const a of vehicle.stages[i]!.actions) if (a.kind === 'deployParachute') deployed = a.mode;
+  const words: string[] = [];
+  for (const a of stage.actions) {
+    let w: string | undefined;
+    if (a.kind === 'deployParachute') w = `deploy ${CHUTE_NAMES[a.mode]}`;
+    else if (a.kind === 'cutParachute') w = deployed ? `release ${CHUTE_NAMES[deployed]}` : ACTION_WORDS.cutparachute;
+    else w = ACTION_WORDS[a.kind.toLowerCase()];
+    if (w !== undefined && !words.includes(w)) words.push(w);
+    if (a.kind === 'deployParachute') deployed = a.mode;
+  }
+  return words.join(' · ');
+}
+
+/** Local gravity (m/s^2) below which a stage shows its acceleration instead of a thrust-to-weight ratio. */
+export const WEAK_GRAVITY = 0.5;
+
 export interface StagesView {
   tiles: StageTileView[];
   /** Index of the active (burning) stage, or -1. */
@@ -430,6 +491,11 @@ export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
     const info = st.stages[i]!;
     if (info.fired && info.propellantFraction !== null) active = i;
   }
+  // Local gravity at the vessel (the sim's TWR is at it): below WEAK_GRAVITY the tiles give the acceleration.
+  const v = activeVesselOf(s);
+  const body = defs && v ? defs.bodies[v.bodyId] : undefined;
+  const gLocal = body && v ? body.mu / (v.r.x * v.r.x + v.r.y * v.r.y + v.r.z * v.r.z) : null;
+  const weak = gLocal !== null && gLocal < WEAK_GRAVITY;
   const tiles = st.stages.map((info, i): StageTileView => {
     const hasEngines = info.propellantFraction !== null;
     return {
@@ -444,10 +510,12 @@ export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
       deltaV: hasEngines ? formatDeltaV(info.deltaVNow) : '',
       deltaVVac: hasEngines ? formatDeltaV(info.deltaVVac) : '',
       twr: hasEngines ? formatTwr(info.twr) : '',
+      thrustLabel: weak ? 'Accel' : 'TWR',
+      thrustValue: !hasEngines ? '' : weak ? `${formatNumber(info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
       burnTime: hasEngines ? formatDuration(info.burnTime) : '',
       propellant: info.propellantFraction,
       hasEngines,
-      actions: stageActionText(info.actionKinds),
+      actions: stageActionWords(s, defs, i),
       burnName: defs ? stageBurnLabel(s, defs, i) : null,
     };
   });
@@ -569,15 +637,33 @@ export function isDescending(s: SimSnapshot, defs: DefLibrary): boolean {
   return r.verticalSpeed < 0 && (inAtmosphere(s, defs) || r.periapsisAltitude < 0);
 }
 
+/** Heat flux above which a vessel coming in counts as heating up (W/m^2). */
+export const ENTRY_HEAT_FLUX = 1000;
+
+/**
+ * Entering an atmosphere: heating up (above ENTRY_HEAT_FLUX) while coming down, or while rising unpowered on a
+ * path that stays inside the atmosphere (a skip, which comes back down). An ascent heats up too (the stagnation
+ * flux of a rocket at Mach 0.6 is already a few kW/m^2) but climbs under power toward an apoapsis above the air:
+ * it is not an entry, and its orbit panel stays.
+ */
+export function isEntering(s: SimSnapshot, defs: DefLibrary): boolean {
+  const r = s.readouts;
+  if (r.heatFlux <= ENTRY_HEAT_FLUX) return false;
+  if (r.verticalSpeed < 0) return true;
+  const v = activeVesselOf(s);
+  const top = v ? (defs.bodies[v.bodyId]?.atmosphere?.simTop ?? 0) : 0;
+  return r.thrust <= 0 && r.throttle <= 0 && r.apoapsisAltitude < top;
+}
+
 /**
  * The landing-target panel shows its full rows (down-range, cross-range, the predicted miss, the zone status)
- * only while they matter: with a prediction, heating in an entry, or descending. Otherwise it is one line
- * (name, distance and bearing), so a recovery zone 6 000 km away does not take five rows of the screen.
+ * only while they matter: with a prediction, in an entry, or descending. Otherwise it is one line (name,
+ * distance and bearing), so a recovery zone 6 000 km away does not take five rows of the screen.
  */
 export function landingTargetExpanded(s: SimSnapshot, defs: DefLibrary): boolean {
   const lt = s.readouts.landingTarget;
   if (!lt) return false;
-  return lt.predicted !== null || s.readouts.heatFlux > 1000 || isDescending(s, defs);
+  return lt.predicted !== null || isEntering(s, defs) || isDescending(s, defs);
 }
 
 // ------------------------------------------------------------------------------------------- time warp

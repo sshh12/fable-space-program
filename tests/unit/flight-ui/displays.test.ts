@@ -36,11 +36,11 @@ import {
   RADAR_ALTITUDE_SWITCH,
 } from '@/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
+import { LAB_STAGES, labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
 import { UI_COLORS } from '@/core/ui/theme';
 import { balanceColumns } from '@/ui/hud/hud';
 import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
-import { landingTargetExpanded, stageActionText, stageBurnLabel, summarizeResources, zoneStatus } from '@/ui/model';
+import { isEntering, landingTargetExpanded, stageActionText, stageBurnLabel, summarizeResources, zoneStatus } from '@/ui/model';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -514,6 +514,60 @@ describe('round-2 display rules', () => {
     expect(stageActionText(['fireSeparationMotors', 'jettisonLES', 'jettisonFairing'])).toBe('sep. motors · jettison tower · jettison fairing');
     expect(stageActionText(['deployLegs', 'deployLegs'])).toBe('deploy gear');
     expect(stageActionText(['someFutureAction'])).toBe('');
+    // With the vehicle definition every chute is named by its kind, and a cut releases what an earlier stage deployed.
+    const sim = createFakeSim(defs, { scene: 'pad', parts: labVehicleParts(defs), stageLabels: LAB_STAGES.map((x) => x.label) });
+    const tiles = describeStages(tagLabVehicle(sim.snapshot()), defs).tiles;
+    expect(tiles.find((t) => t.label === 'Drogues')!.actions).toBe('separate · deploy drogues');
+    expect(tiles.find((t) => t.label === 'Mains')!.actions).toBe('release drogues · deploy mains');
+  });
+
+  it('gives a stage acceleration instead of a thrust-to-weight ratio where local gravity is weak', () => {
+    const near = describeStages(snap('lowOrbit'), defs).tiles.find((t) => t.hasEngines)!;
+    expect(near.thrustLabel).toBe('TWR');
+    expect(near.thrustValue).toBe(near.twr);
+    const far = snap('translunar');
+    const tile = describeStages(far, defs).tiles.find((t) => t.hasEngines)!;
+    expect(tile.thrustLabel).toBe('Accel');
+    expect(n(tile.thrustValue)).toMatch(/^\d+\.\d\d m\/s²$/);
+    expect(buildMfdPage('staging', far, defs).rows.some((r) => r.label === 'Stage accel')).toBe(true);
+  });
+
+  it('gives the altimeter speeds in the frame of the navball: in orbit mode they add up to the orbital speed', () => {
+    const s = snap('translunar');
+    expect(s.navball.mode).toBe('orbit');
+    // A climb on an ellipse: vertical +1.4 km/s, orbital 1.5 km/s (the surface frame turns with the Earth: 12 km/s).
+    const r = { ...s.readouts, verticalSpeed: 1449.4, speedOrbital: 1499.6, horizontalSpeed: 13_200 };
+    const f = describeFlight({ ...s, readouts: r });
+    const num = (x: string): number => Number(n(x).replace(/[^\d.+−-]/g, '').replace('−', '-'));
+    expect(Math.hypot(num(f.verticalSpeed), num(f.horizontalSpeed))).toBeCloseTo(r.speedOrbital, 0);
+    expect(f.speedMode).toBe('orbit');
+    expect(num(f.horizontalSpeedSurface)).toBeCloseTo(13_200, 0);
+    // Surface mode: the ground speed, as before.
+    const surf = describeFlight({ ...s, navball: { ...s.navball, mode: 'surface' }, readouts: r });
+    expect(num(surf.horizontalSpeed)).toBeCloseTo(13_200, 0);
+    // The landing page always reads the ground speed.
+    expect(n(buildMfdPage('landing', { ...s, readouts: r }, defs).rows.find((x) => x.label === 'Horizontal')!.value)).toBe(n(f.horizontalSpeedSurface));
+  });
+
+  it('shows no time to periapsis, no period and no apoapsis ahead on a path that meets the surface', () => {
+    const s = snap('reentry');
+    const r = { ...s.readouts, periapsisAltitude: -480e3, apoapsisAltitude: 205e3, verticalSpeed: -480, timeToPeriapsis: 1200, timeToApoapsis: 3800, period: 5100 };
+    const o = describeOrbit({ ...s, readouts: r });
+    expect([o.periapsisTime, o.period, o.apoapsisTime]).toEqual(['—', '—', '—']);
+    // Climbing on a suborbital path (an ascent): the apoapsis is still ahead.
+    const up = describeOrbit({ ...s, readouts: { ...r, verticalSpeed: 300 } });
+    expect(up.apoapsisTime).not.toBe('—');
+    expect(up.periapsisTime).toBe('—');
+  });
+
+  it('opens the entry panel for an entry, not for the heating of an ascent', () => {
+    const asc = snap('ascent');
+    const climbing = { ...asc, readouts: { ...asc.readouts, heatFlux: 2000, verticalSpeed: 202, thrust: 6e6, throttle: 1, apoapsisAltitude: 15e3 } };
+    expect(isEntering(climbing, defs)).toBe(false);
+    expect(landingTargetExpanded(climbing, defs)).toBe(landingTargetExpanded({ ...climbing, readouts: { ...climbing.readouts, heatFlux: 0 } }, defs));
+    expect(isEntering({ ...climbing, readouts: { ...climbing.readouts, verticalSpeed: -20 } }, defs)).toBe(true);
+    // A skip: rising unpowered on a path that stays inside the atmosphere.
+    expect(isEntering({ ...climbing, readouts: { ...climbing.readouts, thrust: 0, throttle: 0, apoapsisAltitude: 90e3 } }, defs)).toBe(true);
   });
 
   it('folds the full resource groups into one line and shows the groups in use', () => {

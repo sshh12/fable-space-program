@@ -200,7 +200,9 @@ export const LAB_GROUND: Record<string, number> = { earth: 57, moon: 4 };
 
 const BODY_COLORS: Record<string, [number, number, number]> = { earth: [0.09, 0.2, 0.36], moon: [0.32, 0.31, 0.3] };
 
-export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylinders: () => [number, number, number, number][], opts: { bright?: boolean } = {}): LabBackdrop {
+/** `ground`: the ground height per body in place of LAB_GROUND (the lab's ground= parameter). */
+export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylinders: () => [number, number, number, number][], opts: { bright?: boolean; ground?: Record<string, number> } = {}): LabBackdrop {
+  const groundOf = (id: string): number => opts.ground?.[id] ?? LAB_GROUND[id] ?? 0;
   const bright = opts.bright ? 1 : 0;
   const device = gpu.device;
   const module = device.createShaderModule({ label: 'lab.backdrop', code: WGSL });
@@ -240,7 +242,7 @@ export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylind
           continue;
         }
         const def = defs.bodies[b.id]!;
-        const R = def.radius + (LAB_GROUND[b.id] ?? 0);
+        const R = def.radius + groundOf(b.id);
         const rel = v3.sub(b.rRoot, cam.positionRoot);
         const h = v3.len(rel) - R;
         const f = mat3.fromQuat(quat.conj(b.qFixedToRoot));

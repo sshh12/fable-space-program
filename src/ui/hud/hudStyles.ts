@@ -2,8 +2,8 @@
  * HUD stylesheet. Every size derives from --u = min(1vh, 0.5625vw) (one hundredth of the height of a 16:9
  * frame), so the layout is identical from 1280 x 720 to 3840 x 2160 and never overflows narrower windows.
  *
- * The frame belongs to the scene: two narrow side columns (26u / 26.5u), a slim bottom cluster and one altimeter plate
- * at the top keep the HUD within a fifth of a 16:9 frame (asserted on the screenshots). Panels are opaque plates
+ * The frame belongs to the scene: two narrow side columns (25u / 25.5u), one instrument housing at the bottom and one
+ * altimeter plate at the top keep the HUD within a fifth of a 16:9 frame (asserted on the screenshots). Panels are opaque plates
  * (the theme's `panel` fill): a scene edge behind a plate stays below a few levels, so a horizon never draws a
  * line through a row of text; every plate has a light hairline, a dark outer ring and a lit top edge so its edge
  * reads on bright and dark scenes alike. Numerals are tabular; no text is smaller than 0.76 em of the 13.3 px
@@ -30,8 +30,8 @@ export const HUD_CSS = /* css */ `
   --caution: ${UI_COLORS.caution};
   --warning: ${UI_COLORS.warning};
   --gap: calc(var(--u) * 1.4);
-  --lcol: calc(var(--u) * 26);
-  --rcol: calc(var(--u) * 26.5);
+  --lcol: calc(var(--u) * 25);
+  --rcol: calc(var(--u) * 25.5);
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -63,20 +63,22 @@ export const HUD_CSS = /* css */ `
 /*
  * The interface's two materials. Flight readouts are panes of the cockpit displays' black glass (the MFD pages:
  * near-black face, a header strip with the title as the active tab - accent text over an accent underline - and a
- * status edge on the left in the colour of the panel's state). The bottom cluster is one instrument housing in the
- * navball bezel's machined gunmetal (SAS panel, gauges), with black-glass windows for its read-outs. Secondary
- * readouts (resources, the stage list) keep the plain plate.
+ * status edge on the left in the colour of the panel's state): the left column, the altimeter, the maneuver readout
+ * and the right column (the stage list under its header, resources). The bottom cluster is one instrument housing
+ * in the navball bezel's machined gunmetal carrying the SAS controls, the ball and the gauges, with black-glass
+ * windows for the ball's read-outs.
  */
-.hud .lcol .panel, .hud .tc .alt {
+.hud .lcol .panel, .hud .tc .alt, .hud .bottom .node, .hud .rcol .res, .hud .rcol .later, .hud .stagewrap .more {
   background: linear-gradient(180deg, rgba(11, 17, 26, 0.985), rgba(5, 8, 13, 0.975) 2.2em);
   border-color: rgba(120, 150, 190, 0.3);
 }
-.hud .lcol .panel { position: relative; --st: rgba(85, 212, 255, 0.5); }
-.hud .lcol .panel::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: calc(var(--u) * 0.34); border-radius: calc(var(--u) * 0.8) 0 0 calc(var(--u) * 0.8); background: var(--st); }
+.hud .lcol .panel, .hud .bottom .node, .hud .rcol .res { position: relative; --st: rgba(85, 212, 255, 0.5); }
+.hud .bottom .node { --st: #4f8dff; --tab: #9fc0ff; }
+.hud .lcol .panel::before, .hud .bottom .node::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: calc(var(--u) * 0.34); border-radius: calc(var(--u) * 0.8) 0 0 calc(var(--u) * 0.8); background: var(--st); }
 .hud .lcol .panel[data-st="good"] { --st: var(--good); }
 .hud .lcol .panel[data-st="caution"] { --st: var(--caution); }
 .hud .lcol .panel[data-st="warning"] { --st: var(--warning); }
-.hud .lcol .panel > .ptitle, .hud .tc .alt > .ptitle {
+.hud .lcol .panel > .ptitle, .hud .tc .alt > .ptitle, .hud .bottom .node > .ptitle, .hud .rcol .res > .ptitle {
   margin: calc(var(--u) * -0.5) calc(var(--u) * -0.95) calc(var(--u) * 0.4);
   padding: calc(var(--u) * 0.34) calc(var(--u) * 0.95) calc(var(--u) * 0.32);
   background: rgba(16, 26, 38, 0.95);
@@ -84,18 +86,19 @@ export const HUD_CSS = /* css */ `
   border-radius: calc(var(--u) * 0.8) calc(var(--u) * 0.8) 0 0;
 }
 .hud .tc .alt > .ptitle { margin: calc(var(--u) * -0.4) calc(var(--u) * -1) calc(var(--u) * 0.3); }
-.hud .lcol .panel > .ptitle > span:first-child, .hud .tc .alt > .ptitle > span:first-child { color: var(--accent); position: relative; }
-.hud .lcol .panel > .ptitle > span:first-child::after, .hud .tc .alt > .ptitle > span:first-child::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(var(--u) * -0.34); height: max(1.5px, calc(var(--u) * 0.22)); background: var(--accent); border-radius: 1px; }
-/* Gunmetal housing of the bottom cluster: lit from above like the bezel (bright top chamfer, dark lower edge). */
-.hud .bottom .sas, .hud .bottom .gauges {
-  background: linear-gradient(180deg, #3a434f 0, #2a313a 0.45em, #20262d 32%, #1c2228 100%);
-  border: 1px solid rgba(0, 0, 0, 0.7);
-  box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(225, 235, 248, 0.07), inset -1px 0 0 rgba(0, 0, 0, 0.35), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.4) rgba(0, 0, 0, 0.35);
+.hud .lcol .panel > .ptitle > span:first-child, .hud .tc .alt > .ptitle > span:first-child, .hud .bottom .node > .ptitle > span:first-child, .hud .rcol .res > .ptitle > span:first-child, .hud .stagewrap .more > span:first-child { color: var(--tab, var(--accent)); position: relative; }
+.hud .lcol .panel > .ptitle > span:first-child::after, .hud .tc .alt > .ptitle > span:first-child::after, .hud .bottom .node > .ptitle > span:first-child::after, .hud .rcol .res > .ptitle > span:first-child::after, .hud .stagewrap .more > span:first-child::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(var(--u) * -0.34); height: max(1.5px, calc(var(--u) * 0.22)); background: var(--tab, var(--accent)); border-radius: 1px; }
+/* Machined gunmetal of the bottom housing: lit from above like the bezel (bright top chamfer, dark lower edge). */
+.hud .bottom .housing {
+  background: linear-gradient(180deg, #3d4652 0, #2c333c calc(var(--u) * 0.9), #22282f 30%, #1b2026 100%);
+  border: 1px solid rgba(0, 0, 0, 0.72);
+  box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.42), inset 0 -1px 0 rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(225, 235, 248, 0.06), inset -1px 0 0 rgba(0, 0, 0, 0.35), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.6) rgba(0, 0, 0, 0.38);
 }
-.hud .bottom .speed, .hud .nbchips > div {
-  background: linear-gradient(180deg, rgba(11, 17, 26, 0.99), rgba(4, 7, 11, 0.99));
-  border: 1px solid rgba(0, 0, 0, 0.75);
-  box-shadow: 0 0 0 calc(var(--u) * 0.2) #2b323b, 0 0 0 calc(var(--u) * 0.2 + 1px) rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+/* Black-glass windows set into the housing and the bezel, each in a thin gunmetal frame. */
+.hud .bottom .speed, .hud .bottom .prw {
+  background: linear-gradient(180deg, rgba(11, 17, 26, 0.995), rgba(4, 7, 11, 0.995));
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  box-shadow: 0 0 0 calc(var(--u) * 0.22) #2e3640, 0 0 0 calc(var(--u) * 0.22 + 1px) rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 calc(var(--u) * 0.2) calc(var(--u) * 0.8) rgba(0, 0, 0, 0.35);
 }
 .hud .bottom .sas button { background: linear-gradient(180deg, #252c35, #171b21); border-color: rgba(0, 0, 0, 0.7); box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.16); }
 .hud .bottom .sas button:hover { background: linear-gradient(180deg, #2c4a5e, #1b2d3a); border-color: rgba(120, 200, 255, 0.45); }
@@ -166,8 +169,9 @@ export const HUD_CSS = /* css */ `
   color: var(--text);
   white-space: nowrap;
 }
-/* Bracket and arrow keys keep their glyph, enlarged and centred; other punctuation keys are named ("Period"). */
+/* Key glyphs as printed on the cap: brackets and arrows enlarged, punctuation (. , / - and the like) larger still. */
 .hud .kbd.glyph { font-size: 1.05em; font-weight: 700; padding: 0 0.35em; line-height: 1.12; }
+.hud .kbd.glyph.punct { font-size: 1.3em; font-weight: 800; min-width: 1.45em; line-height: 0.92; }
 
 /* Bars: a track and a fill scaled with transform (no layout per frame); the tone colours the whole fill. */
 .hud .bar { position: relative; height: calc(var(--u) * 0.7); border-radius: calc(var(--u) * 0.35); background: rgba(150, 175, 210, 0.18); overflow: hidden; }
@@ -259,8 +263,14 @@ export const HUD_CSS = /* css */ `
  */
 .hud .stagewrap { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .hud .stages { display: flex; flex-direction: column; justify-content: flex-end; gap: calc(var(--u) * 0.5); min-height: 0; overflow: hidden; }
+.hud .stagewrap .more:not(.alone) + .stages { margin-top: -1px; }
 .hud .stages > * { flex: none; }
-.hud .stagewrap .more { align-self: flex-end; font-size: 0.8em; font-weight: 600; color: var(--text); letter-spacing: 0.03em; white-space: nowrap; background: var(--bg-strong); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.5); padding: calc(var(--u) * 0.1) calc(var(--u) * 0.7); margin-bottom: calc(var(--u) * 0.5); box-shadow: var(--edge); }
+/* The stage list's header strip: the title as a tab and the total delta-v at its right (glass, as the left column). */
+.hud .stagewrap .more { display: flex; justify-content: space-between; align-items: baseline; gap: calc(var(--u) * 0.8); font-size: 0.8em; font-weight: 600; color: var(--text); white-space: nowrap; border: 1px solid rgba(120, 150, 190, 0.3); border-radius: calc(var(--u) * 0.8) calc(var(--u) * 0.8) 0 0; padding: calc(var(--u) * 0.3) calc(var(--u) * 0.9) calc(var(--u) * 0.36); box-shadow: var(--lit), var(--edge); background: rgba(16, 26, 38, 0.97); }
+.hud .stagewrap .more > span:first-child { letter-spacing: 0.11em; text-transform: uppercase; }
+.hud .stagewrap .more .tot { letter-spacing: 0.02em; }
+.hud .stagewrap .more + .stages > .later:first-child { border-top: 0; border-radius: 0 0 calc(var(--u) * 0.8) calc(var(--u) * 0.8); }
+.hud .stagewrap .more.alone { border-radius: calc(var(--u) * 0.8); }
 .hud .later { padding: calc(var(--u) * 0.15) calc(var(--u) * 0.8) calc(var(--u) * 0.15) calc(var(--u) * 0.45); }
 .hud .tile { display: flex; gap: calc(var(--u) * 0.7); align-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.8) calc(var(--u) * 0.45) calc(var(--u) * 0.5); }
 .hud .tile .sn { flex: none; width: 1.6em; text-align: center; font-size: 0.8em; font-weight: 700; color: var(--label); }
@@ -316,46 +326,54 @@ export const HUD_CSS = /* css */ `
 
 /* ---------------------------------------------------------------- bottom cluster */
 /*
- * Three columns, the navball alone in the middle one: the side columns are equal (1fr), so the ball sits on the
- * screen's centre line whatever the SAS panel, the gauges or a maneuver panel add on either side.
+ * One instrument: a gunmetal housing across the bottom carrying the SAS controls (left), the navball (centre) and
+ * the tape gauges (right), symmetric about the ball, so the ball sits on the screen's centre line. The ball's
+ * read-outs are black-glass windows set into the instrument: speed and heading on the bezel's top arc, pitch at 9
+ * and roll at 3 o'clock over the bezel's rim. The maneuver readout stands on the housing right of the ball.
  */
-.hud .bottom { position: absolute; left: var(--gap); right: var(--gap); bottom: calc(var(--u) * 0.9); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; column-gap: calc(var(--u) * 1.1); }
-.hud .bottom > .bl { grid-column: 1; justify-self: end; }
-.hud .bottom > .bc { grid-column: 2; }
-.hud .bottom > .br { grid-column: 3; justify-self: start; display: flex; flex-direction: column; gap: calc(var(--u) * 0.8); align-items: flex-start; }
-.hud .sas { width: calc(var(--u) * 15.5); display: flex; flex-direction: column; gap: calc(var(--u) * 0.45); padding: calc(var(--u) * 0.6) calc(var(--u) * 0.8); }
-.hud .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u) * 0.4); }
-.hud .toggles button { font-size: 0.78em; font-weight: 700; letter-spacing: 0.07em; padding: calc(var(--u) * 0.2) 0; color: var(--label); }
+.hud .bottom {
+  --ball: calc(var(--u) * 24.5);
+  --side: calc(var(--u) * 17);
+  --win: calc(var(--u) * 5.2);
+  --hh: calc(var(--u) * 14.2);
+  position: absolute; left: 50%; bottom: calc(var(--u) * 0.9); transform: translateX(-50%);
+  display: grid; grid-template-columns: var(--side) var(--win) var(--ball) var(--win) var(--side); grid-template-rows: auto; column-gap: calc(var(--u) * 0.45); align-items: end;
+}
+.hud .bottom > * { grid-row: 1; }
+.hud .bottom > .housing { grid-column: 1 / -1; align-self: end; height: var(--hh); border-radius: calc(var(--u) * 1.3); margin: 0 calc(var(--u) * -0.5); }
+.hud .bottom > .bl { grid-column: 1; z-index: 1; }
+.hud .bottom > .pitch { grid-column: 2; justify-self: end; margin-right: calc(var(--u) * -1.4); }
+.hud .bottom > .bc { grid-column: 3; z-index: 2; }
+.hud .bottom > .roll { grid-column: 4; justify-self: start; margin-left: calc(var(--u) * -1.4); }
+.hud .bottom > .br { grid-column: 5; z-index: 1; }
+/* The SAS controls and the gauges are regions of the housing (no plates of their own). */
+.hud .bottom .sas, .hud .bottom .gauges { background: none; border: 0; box-shadow: none; border-radius: 0; height: var(--hh); }
+.hud .sas { display: flex; flex-direction: column; justify-content: center; gap: calc(var(--u) * 0.45); padding: calc(var(--u) * 0.55) calc(var(--u) * 0.2) calc(var(--u) * 0.45) calc(var(--u) * 0.3); }
+.hud .toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(var(--u) * 0.35); }
+.hud .toggles button { font-size: 0.76em; font-weight: 700; letter-spacing: 0.03em; padding: calc(var(--u) * 0.18) 0; color: var(--label); }
 .hud .toggles button.on { color: #04121a; background: var(--accent); border-color: var(--accent); text-shadow: none; }
 .hud .toggles button.on.sasbtn { background: var(--good); border-color: var(--good); }
 .hud .toggles button.abort { color: var(--warning); border-color: rgba(255, 98, 98, 0.45); }
-.hud .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 0.4); }
-/* The key digit owns the top-left corner: the icon box is inset away from it, so the two never touch. */
-.hud .modes button { aspect-ratio: 1; padding: 27% 7% 7% 27%; display: flex; align-items: center; justify-content: center; position: relative; }
+/* SAS mode buttons: the marker icon fills the button (about 18 px at 720p); the key is in the tooltip and key help. */
+.hud .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 0.35); }
+.hud .modes button { height: calc(var(--u) * 3.15); padding: 8% 10%; display: flex; align-items: center; justify-content: center; }
 .hud .modes button svg { width: 100%; height: 100%; }
 .hud .modes button.on { border-color: rgba(95, 227, 154, 0.95); background: rgba(95, 227, 154, 0.2); box-shadow: inset 0 0 0 1px rgba(95, 227, 154, 0.6); }
-.hud .modes button .key { position: absolute; left: 0.3em; top: 0.12em; font-size: 0.76em; font-weight: 700; line-height: 1.2; color: var(--label); }
-.hud .modes button.on .key { color: var(--good); }
 .hud .modecap { font-size: 0.78em; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--label); text-align: center; white-space: nowrap; }
 .hud .modecap b { color: var(--good); font-weight: 700; }
 
-.hud .nbwrap { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 0.4); }
-.hud .speed { text-align: center; padding: calc(var(--u) * 0.3) calc(var(--u) * 1) calc(var(--u) * 0.35); cursor: pointer; width: calc(var(--u) * 17.5); }
-.hud .speed .ptitle { margin-bottom: 0; }
-.hud .speed .val.big { font-size: 1.45em; display: block; text-align: center; height: 1.2em; contain: size layout style; }
-.hud .speed .mode { color: var(--accent); }
-/*
- * The ball's read-outs: pitch, heading (over the bezel's top index) and roll in fixed-width windows on one row
- * above the instrument, clear of the bezel and never changing width with the value.
- */
-.hud .nbchips { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; column-gap: calc(var(--u) * 0.6); width: calc(var(--u) * 29); margin-bottom: calc(var(--u) * -0.3); }
-.hud .nbchips > div { border-radius: calc(var(--u) * 0.5); height: 1.55em; display: flex; align-items: center; contain: size layout style; }
-.hud .nbchips .pr { width: calc(var(--u) * 10.9); justify-content: space-between; gap: 0.4em; padding: 0 calc(var(--u) * 0.55); font-size: 0.8em; }
-.hud .nbchips .pr .lbl { font-size: 0.96em; letter-spacing: 0.05em; }
-.hud .nbchips .pr b { font-weight: 600; }
-.hud .nbchips .pitch { justify-self: start; }
-.hud .nbchips .roll { justify-self: end; }
-.hud .nbchips .hdg { justify-content: center; width: calc(var(--u) * 6.4); font-weight: 700; font-size: 0.92em; }
+.hud .nbwrap { display: flex; flex-direction: column; align-items: center; }
+/* Speed (in the navball's frame, its mode named) and heading: one window on the bezel's top arc. */
+.hud .bottom .speed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); width: calc(var(--u) * 29); height: calc(var(--u) * 3.3); margin-bottom: calc(var(--u) * -0.9); padding: 0 calc(var(--u) * 0.9); border-radius: calc(var(--u) * 0.7); cursor: pointer; contain: size layout style; }
+.hud .speed .spd { display: flex; align-items: baseline; gap: 0.5em; white-space: nowrap; }
+.hud .speed .mode { color: var(--accent); font-size: 0.78em; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.hud .speed .sv { font-size: 1.32em; font-weight: 600; letter-spacing: 0.01em; }
+.hud .speed .hd { display: flex; align-items: baseline; gap: 0.4em; white-space: nowrap; padding-left: calc(var(--u) * 0.8); border-left: 1px solid rgba(170, 198, 235, 0.18); }
+.hud .speed .hd b { font-size: 1.05em; font-weight: 700; }
+/* Pitch (9 o'clock) and roll (3 o'clock): two-line windows over the bezel's rim at the ball's centre height. */
+.hud .bottom .prw { z-index: 3; align-self: end; display: flex; flex-direction: column; align-items: center; justify-content: center; width: calc(var(--win) + var(--u) * 1.4); height: calc(var(--u) * 3.9); margin-bottom: calc(var(--ball) / 2 - var(--u) * 1.95); border-radius: calc(var(--u) * 0.6); line-height: 1.1; contain: size layout style; }
+.hud .prw .lbl { letter-spacing: 0.06em; }
+.hud .prw b { font-weight: 600; font-size: 0.92em; }
 /*
  * The navball instrument: the WebGPU ball (ray-cast sphere, shading and glass in the shader) and over it a
  * static 2-D canvas with the machined bezel - recessed gap, bevel lit from above, the roll scale and the top
@@ -373,15 +391,15 @@ export const HUD_CSS = /* css */ `
  * no layout or paint per frame). The fill has a flat top with a thin lighter line. Both gauges share one grid,
  * so tops, bottoms and values line up.
  */
-.hud .gauges { display: grid; grid-template-columns: auto auto; column-gap: calc(var(--u) * 1); row-gap: calc(var(--u) * 0.35); justify-items: center; padding: calc(var(--u) * 0.55) calc(var(--u) * 0.8) calc(var(--u) * 0.5) calc(var(--u) * 0.6); }
+.hud .gauges { display: grid; grid-template-columns: auto auto; justify-content: center; align-content: center; column-gap: calc(var(--u) * 1); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.4) calc(var(--u) * 0.6) calc(var(--u) * 0.35) calc(var(--u) * 0.4); }
 .hud .gauge { display: contents; }
 .hud .gauge.thr > * { grid-column: 1; }
 .hud .gauge.g > * { grid-column: 2; }
 .hud .gauge .gv { grid-row: 1; font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 6.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
-.hud .gauge .scale { grid-row: 2; position: relative; display: flex; gap: calc(var(--u) * 0.45); align-items: stretch; margin-top: calc(var(--u) * 0.45); }
-.hud .gauge .nums { position: relative; width: calc(var(--u) * 2.8); height: calc(var(--u) * 9.5); font-size: 0.78em; font-weight: 600; color: var(--label); }
+.hud .gauge .scale { grid-row: 2; position: relative; display: flex; gap: calc(var(--u) * 0.45); align-items: stretch; margin-top: calc(var(--u) * 0.35); }
+.hud .gauge .nums { position: relative; width: calc(var(--u) * 2.8); height: calc(var(--u) * 7.8); font-size: 0.78em; font-weight: 600; color: var(--label); }
 .hud .gauge .nums span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
-.hud .gauge .tube { position: relative; width: calc(var(--u) * 2.3); height: calc(var(--u) * 9.5); border-radius: calc(var(--u) * 0.3); background: rgba(6, 9, 14, 0.94); border: 1px solid var(--line); overflow: hidden; box-shadow: inset 0 calc(var(--u) * 0.25) calc(var(--u) * 0.6) rgba(0, 0, 0, 0.6); }
+.hud .gauge .tube { position: relative; width: calc(var(--u) * 2.3); height: calc(var(--u) * 7.8); border-radius: calc(var(--u) * 0.3); background: rgba(6, 9, 14, 0.94); border: 1px solid var(--line); overflow: hidden; box-shadow: inset 0 calc(var(--u) * 0.25) calc(var(--u) * 0.6) rgba(0, 0, 0, 0.6); }
 .hud .gauge .track { position: absolute; inset: 0; opacity: 0.2; }
 .hud .gauge .win { position: absolute; inset: 0; overflow: hidden; will-change: transform; transform: translateY(100%); }
 .hud .gauge .win > i { position: absolute; inset: 0; will-change: transform; transform: translateY(-100%); }
@@ -391,16 +409,17 @@ export const HUD_CSS = /* css */ `
 .hud .gauge .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0, transparent calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n))); }
 .hud .gauge .limit { position: absolute; left: -1px; right: -1px; height: 2px; background: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
 .hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.08em; color: var(--label); font-weight: 600; white-space: nowrap; }
-/* The crew's g-dose (only while there is one): label, bar and share of the fatal limit across the panel. */
-.hud .gauges .doseline { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; display: grid; grid-template-columns: auto minmax(calc(var(--u) * 2.5), 1fr) auto; column-gap: calc(var(--u) * 0.6); align-items: center; margin-top: calc(var(--u) * 0.1); padding-top: calc(var(--u) * 0.35); border-top: 1px solid rgba(170, 198, 235, 0.14); height: calc(1.3em + var(--u) * 0.35); contain: size layout style; }
+/* The crew's g-dose: label, bar and share of the fatal limit across the panel (always there; dim at 0 %). */
+.hud .gauges .doseline { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; display: grid; grid-template-columns: auto minmax(calc(var(--u) * 2.5), 1fr) auto; column-gap: calc(var(--u) * 0.6); align-items: center; margin-top: calc(var(--u) * 0.05); padding-top: calc(var(--u) * 0.3); border-top: 1px solid rgba(170, 198, 235, 0.16); height: calc(1.3em + var(--u) * 0.3); contain: size layout style; }
 .hud .gauges .doseline .bar { height: calc(var(--u) * 0.55); }
 .hud .gauges .doseline .dv { font-size: 0.86em; font-weight: 600; white-space: nowrap; }
 /* No dose yet: the line keeps its place, its reading dim. */
 .hud .gauges .doseline.nil .dv { color: var(--label); font-weight: 500; }
 
-.hud .node { position: relative; width: calc(var(--u) * 22); border-color: rgba(79, 141, 255, 0.6); }
-.hud .node .ptitle { color: #9fc0ff; }
-.hud .node.imminent { border-color: var(--caution); }
+.hud .bottom > .node { position: absolute; left: calc(50% + var(--u) * 15.3); bottom: calc(var(--hh) + var(--u) * 0.8); width: calc(var(--u) * 21); }
+.hud .node .nstart { font-size: 1.15em; font-variant-numeric: tabular-nums; }
+.hud .node.imminent .nstart { color: var(--caution); }
+.hud .node.imminent { border-color: var(--caution); --st: var(--caution); }
 /* The pulse animates the opacity of a glow layer, which runs on the compositor (no paint per frame). */
 .hud .node.imminent::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; box-shadow: 0 0 calc(var(--u) * 1.6) rgba(255, 187, 77, 0.55); opacity: 0; animation: hud-pulse 1s ease-in-out infinite; pointer-events: none; }
 @keyframes hud-pulse { 50% { opacity: 1; } }
@@ -423,8 +442,7 @@ export const HUD_CSS = /* css */ `
 .hud .atmrows .cell .val { text-align: left; font-size: 0.96em; }
 .hud .atmrows .cell + .cell { border-left: 1px solid rgba(170, 198, 235, 0.14); padding-left: calc(var(--u) * 0.8); }
 .hud .atmrows.sepd { border-top: 1px solid var(--line); margin-top: calc(var(--u) * 0.35); padding-top: calc(var(--u) * 0.3); }
-.hud .lt .tname { font-size: 1.05em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.1em; }
-.hud .lt .tname .pname { font-size: 1em; }
+.hud .lt .ptitle .pname { white-space: nowrap; min-width: 0; }
 .hud .lt .ltline { font-size: 0.86em; font-weight: 600; color: var(--label); height: 1.3em; contain: size layout style; }
 .hud .lt .rows .row { gap: calc(var(--u) * 0.6); }
 .hud .lt .rows .val { font-size: 0.92em; }
@@ -443,17 +461,21 @@ export const HUD_CSS = /* css */ `
 .hud .brow .bv { font-weight: 600; text-align: right; white-space: nowrap; }
 .hud .pad .padhint { font-size: 0.8em; color: var(--label); line-height: 1.25; margin: calc(var(--u) * 0.1) 0 calc(var(--u) * 0.25); }
 .hud .pad .targets { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 0.4); }
-.hud .pad .targets button { font-size: 1.15em; letter-spacing: 0.03em; text-transform: none; padding: 0 calc(var(--u) * 0.7); color: var(--text); }
+.hud .pad .targets button { font-size: 1.15em; letter-spacing: 0.03em; text-transform: none; padding: 0 calc(var(--u) * 0.7); color: var(--text); display: inline-flex; align-items: baseline; gap: 0.35em; }
+/* "Target Moon": the verb in the label style, so the chip reads as an action. */
+.hud .pad .targets button .pfx { font-size: 0.86em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--label); }
+.hud .pad .targets button.on .pfx { color: #ffc6f0; }
 .hud .pad .targets button.on { background: rgba(255, 91, 214, 0.24); border-color: rgba(255, 91, 214, 0.8); }
 
 /* ---------------------------------------------------------------- centre */
 /*
- * Mission failed: a modal outcome. The flight panels are dimmed and inert (no pointer events) behind it; the clock
- * stays readable; the banner offers the app shell's next steps.
+ * Mission failed: a modal outcome. The flight panels are powered down - their content dimmed and desaturated, the
+ * plates as opaque as ever - and inert (no pointer events) behind it; the clock stays readable; the banner offers
+ * the app shell's next steps.
  */
-.hud.failed-state .lcol > :not(.clock), .hud.failed-state .rcol, .hud.failed-state .bottom, .hud.failed-state .tc, .hud.failed-state .tr { opacity: 0.3; filter: saturate(0.35); }
+.hud.failed-state .lcol > :not(.clock), .hud.failed-state .rcol, .hud.failed-state .bottom, .hud.failed-state .tc, .hud.failed-state .tr { filter: brightness(0.42) saturate(0.25); }
 .hud.failed-state .lcol [data-hud-interactive], .hud.failed-state .rcol [data-hud-interactive], .hud.failed-state .bottom [data-hud-interactive], .hud.failed-state .tc [data-hud-interactive], .hud.failed-state .tr [data-hud-interactive] { pointer-events: none; }
-.hud.failed-state .clock .warp { opacity: 0.3; }
+.hud.failed-state .clock .warp { filter: brightness(0.42) saturate(0.25); }
 .hud.failed-state .clock .warp button { pointer-events: none; }
 .hud .failed { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; width: calc(var(--u) * 62); background: linear-gradient(180deg, rgba(46, 8, 10, 0.98), rgba(26, 5, 7, 0.98)); border: 1px solid rgba(255, 98, 98, 0.75); border-top: calc(var(--u) * 0.45) solid var(--warning); border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 2.2) calc(var(--u) * 4) calc(var(--u) * 2.4); box-shadow: var(--edge), 0 0 calc(var(--u) * 6) rgba(255, 60, 60, 0.25), 0 calc(var(--u) * 2) calc(var(--u) * 8) rgba(0, 0, 0, 0.6); }
 .hud .failed h2 { margin: 0; font-size: 2.4em; letter-spacing: 0.18em; color: var(--warning); font-weight: 700; }
@@ -480,5 +502,6 @@ export const HUD_CSS = /* css */ `
 .hud .help .item .keys { display: flex; gap: 0.3em; flex-wrap: wrap; justify-content: flex-end; }
 .hud .help .item .kbd { font-size: 0.9em; }
 .hud .help .item .kbd.glyph { font-size: 1.12em; }
+.hud .help .item .kbd.glyph.punct { font-size: 1.4em; }
 .hud .help .item .kbd.locked { border-color: rgba(255, 187, 77, 0.6); color: #ffe2b0; }
 `;

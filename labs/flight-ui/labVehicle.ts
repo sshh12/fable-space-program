@@ -3,7 +3,8 @@
  * M-3, the lander's descent and ascent stages, the capsule; labels as in data/defs/vehicles/meridian-lunar.json)
  * with resources, engines, legs, a heat shield and a command part whose seats are the capsule eye points of
  * data/defs/visuals/shared/kestrel-mouldline.json, and the mission's ten stages (labels, icons, action kinds;
- * the engine ignitions point at the lab parts, so the HUD can name what each stage burns). It exists so the
+ * the engine ignitions point at the lab parts, so the HUD can name what each stage burns; the stage figures are
+ * computed from these parts, flightState.ts). It exists so the
  * HUD's per-group resource bars, its stage stack and the cockpit rig can be exercised against the FakeSim; it is
  * never loaded by the app.
  */
@@ -67,23 +68,20 @@ const engine = (thrustVac: number, ispVac: number, ispSL: number, res: [string, 
 /**
  * The mission's ten stages (labels, icons and action kinds of meridian-lunar.json) on the lab stack: engine
  * ignitions and shutdowns name the lab's engine parts, so the HUD can name what a stage burns; the tower and the
- * fairing (which the lab stack does not model) point at the part they sit on. `engine` holds the lab's figures
- * for an engine stage (full delta-v, TWR and burn time) in place of the FakeSim's generic numbers.
+ * fairing (which the lab stack does not model) point at the part they sit on.
  */
-export const LAB_STAGES: { label: string; icon: string; actions: TimedStageAction[]; engine: { dv: number; twr: number; burn: number } | null }[] = [
-  { label: 'Launch', icon: 'engine', actions: [{ kind: 'igniteEngines', parts: ['m1-engines'] }, { kind: 'releaseClamps', parts: [] }], engine: { dv: 3150, twr: 1.32, burn: 158 } },
+export const LAB_STAGES: { label: string; icon: string; actions: TimedStageAction[] }[] = [
+  { label: 'Launch', icon: 'engine', actions: [{ kind: 'igniteEngines', parts: ['m1-engines'] }, { kind: 'releaseClamps', parts: [] }] },
   {
     label: 'M-1 separation',
     icon: 'decoupler',
     actions: [{ kind: 'shutdownEngines', parts: ['m1-engines'] }, { kind: 'fireSeparationMotors', parts: ['m2-tank'] }, { kind: 'decouple', part: 'm2-tank' }, { kind: 'igniteEngines', parts: ['m2-engine'] }],
-    engine: { dv: 4180, twr: 0.94, burn: 372 },
   },
-  { label: 'Tower + fairing jettison', icon: 'fairing', actions: [{ kind: 'fireSeparationMotors', parts: ['capsule'] }, { kind: 'jettisonLES', part: 'capsule' }, { kind: 'jettisonFairing', part: 'descent' }], engine: null },
+  { label: 'Tower + fairing jettison', icon: 'fairing', actions: [{ kind: 'fireSeparationMotors', parts: ['capsule'] }, { kind: 'jettisonLES', part: 'capsule' }, { kind: 'jettisonFairing', part: 'descent' }] },
   {
     label: 'M-2 separation',
     icon: 'decoupler',
     actions: [{ kind: 'shutdownEngines', parts: ['m2-engine'] }, { kind: 'enableRcs', parts: ['m3-tank'] }, { kind: 'decouple', part: 'm3-tank' }, { kind: 'igniteEngines', parts: ['m3-engine'] }],
-    engine: { dv: 3240, twr: 0.62, burn: 468 },
   },
   {
     label: 'M-3 separation',
@@ -95,13 +93,12 @@ export const LAB_STAGES: { label: string; icon: string; actions: TimedStageActio
       { kind: 'fireSeparationMotors', parts: ['m3-tank'] },
       { kind: 'igniteEngines', parts: ['descent'] },
     ],
-    engine: { dv: 2520, twr: 0.41, burn: 610 },
   },
-  { label: 'Landing gear', icon: 'legs', actions: [{ kind: 'deployLegs', parts: ['descent'] }], engine: null },
-  { label: 'Lunar lift-off', icon: 'engine', actions: [{ kind: 'shutdownEngines', parts: ['descent'] }, { kind: 'decouple', part: 'ascent' }, { kind: 'igniteEngines', parts: ['ascent'] }], engine: { dv: 2210, twr: 2.15, burn: 412 } },
-  { label: 'Capsule separation', icon: 'decoupler', actions: [{ kind: 'shutdownEngines', parts: ['ascent'] }, { kind: 'decouple', part: 'capsule' }, { kind: 'enableRcs', parts: ['capsule'] }], engine: null },
-  { label: 'Drogues', icon: 'chute', actions: [{ kind: 'decouple', part: 'capsule' }, { kind: 'deployParachute', parts: ['capsule'], mode: 'drogue' }], engine: null },
-  { label: 'Mains', icon: 'chute', actions: [{ kind: 'cutParachute', parts: ['capsule'] }, { kind: 'deployParachute', parts: ['capsule'], mode: 'main' }], engine: null },
+  { label: 'Landing gear', icon: 'legs', actions: [{ kind: 'deployLegs', parts: ['descent'] }] },
+  { label: 'Lunar lift-off', icon: 'engine', actions: [{ kind: 'shutdownEngines', parts: ['descent'] }, { kind: 'decouple', part: 'ascent' }, { kind: 'igniteEngines', parts: ['ascent'] }] },
+  { label: 'Capsule separation', icon: 'decoupler', actions: [{ kind: 'shutdownEngines', parts: ['ascent'] }, { kind: 'decouple', part: 'capsule' }, { kind: 'enableRcs', parts: ['capsule'] }] },
+  { label: 'Drogues', icon: 'chute', actions: [{ kind: 'decouple', part: 'capsule' }, { kind: 'deployParachute', parts: ['capsule'], mode: 'drogue' }] },
+  { label: 'Mains', icon: 'chute', actions: [{ kind: 'cutParachute', parts: ['capsule'] }, { kind: 'deployParachute', parts: ['capsule'], mode: 'main' }] },
 ];
 
 /** Adds the lab resources, parts and vehicle to a loaded library (in memory only). */
@@ -124,15 +121,15 @@ export function withLabVehicle(defs: DefLibrary): DefLibrary {
     ]),
     part('lab-m3-engine', 'M-3 engine', 'engine', 900, 1.1, -1.6, 0, [engine(2.4e5, 350, 180, ['lab-rp1', 'lab-lox'])]),
     part('lab-descent', 'Heron descent stage', 'tank', 2600, 2.1, 0, 3.2, [
-      engine(4.5e4, 311, 120, ['lab-mmh', 'lab-nto']),
+      engine(8.2e4, 311, 120, ['lab-mmh', 'lab-nto']),
       { type: 'legs', legs: [], deployTime: 2.5 },
     ], [
-      { resource: 'lab-mmh', capacity: 4200 },
-      { resource: 'lab-nto', capacity: 6900 },
+      { resource: 'lab-mmh', capacity: 5300 },
+      { resource: 'lab-nto', capacity: 8700 },
     ]),
-    part('lab-ascent', 'Heron ascent stage', 'tank', 1800, 1.6, 0, 2.4, [engine(1.6e4, 311, 120, ['lab-mmh', 'lab-nto'])], [
-      { resource: 'lab-mmh', capacity: 900 },
-      { resource: 'lab-nto', capacity: 1500 },
+    part('lab-ascent', 'Heron ascent stage', 'tank', 1800, 1.6, 0, 2.4, [engine(3.0e4, 311, 120, ['lab-mmh', 'lab-nto'])], [
+      { resource: 'lab-mmh', capacity: 2400 },
+      { resource: 'lab-nto', capacity: 4100 },
     ]),
     part('lab-capsule', 'Crew capsule', 'command', 5400, 2.0, -0.45, 2.85, [
       { type: 'command', crewCapacity: 3, sas: true, maxRateDegPerS: 10, seats: mould.seats.map((s) => ({ ...s })) },

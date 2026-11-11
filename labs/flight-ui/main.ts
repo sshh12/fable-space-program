@@ -31,14 +31,24 @@
  *   met=<s>                    the mission elapsed time to show (to match a still); default: the scene's own
  *   predicted=impact|entry|none  the predicted arrival (default: an impact in the descending scenes only), placed
  *                              along the ground track and measured from the target on the sphere
+ * The flight state of a still of the integration lab, with that lab's own parameters (labs/integration/main.ts):
+ *   start=<m>                  ascent and chutes: the vessel's altitude (above the reference radius) at the start
+ *                              (default 9,000 / 2,500; the mission clock moves along the FakeSim's climb with it)
+ *   hover=<m>                  lunarSurface: the lander's feet this high above the ground, flying (default 0: landed)
+ *   throttle=<0..1>            the throttle lever held from the start (engines of the fired stages burn)
+ *   stage=<n>                  stages fired at the start in place of the scene's own (pad: stage=1 is the lift-off)
+ *   sas=<mode>                 the SAS mode held from the start (e.g. retrograde)
+ *   ground=<m>                 the ground (or the sea) under the vessel, m above the reference radius, in place of
+ *                              the lab ground (the integration's stills stand on the real terrain or the sea)
  *
- * The FakeSim gives every stage the same engine numbers; the lab replaces them with the mission vehicle's
- * stage table (data/defs/vehicles/meridian-lunar.json: icons, action kinds, which stages carry engines) and
- * plausible delta-v / TWR / burn times, reported as the sim reports them: the fired stage that owns the running
+ * The FakeSim gives every stage the same engine numbers and the vessel a constant mass; the lab replaces them with
+ * the mission vehicle's stage table (data/defs/vehicles/meridian-lunar.json: icons, action kinds, which stages
+ * carry engines) and with figures computed from the lab parts the vessel carries (flightState.ts: mass, delta-v,
+ * TWR at local gravity, burn time), reported as the sim reports them: the fired stage that owns the running
  * engines keeps live numbers (the active stage), other fired stages none. Stages without engines (gear, chutes,
  * jettisons) are photographed too.
  */
-import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
+import type { ButtonAction, ControlInputs, SasMode } from '@/core/contracts/controls';
 import type { CameraRig, CameraState } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -49,16 +59,17 @@ import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { acquireGpu } from '@/core/gpu/device';
 import { quat, type Quat } from '@/core/math/quat';
-import { DEG } from '@/core/math/scalar';
+import { DEG, G0 } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { installTestApi } from '@/core/testing/testApi';
 import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, vesselComRoot, type ViewFrame } from '@/camera';
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel } from '@/input';
-import { buildMfdPage, createHud, createMfdPainter, createNavballRenderer, describeStages, formatAltitude, MFD_PAGES, projectMarker, type BodyAlbedoMap, type NavballRendererImpl } from '@/ui';
+import { buildMfdPage, createHud, createMfdPainter, createNavballRenderer, formatAltitude, MFD_PAGES, projectMarker, type BodyAlbedoMap, type NavballRendererImpl } from '@/ui';
 import { createLabBackdrop, LAB_GROUND } from './backdrop';
 import { createGpuBallast } from './ballast';
+import { airDensity, ellipseState, entryAtG, integrateEntry, labStageFigures, partsMass, speedOfSound, stageEngineGroup, withTrajectory, type EntrySample } from './flightState';
 import { createGpuTimer } from './gpuTimer';
-import { LAB_STAGES, labCylinders, labVehicleParts, tagLabVehicle, withLabVehicle, type LabGroup } from './labVehicle';
+import { LAB_STAGES, LAB_VEHICLE_ID, labCylinders, labVehicleParts, tagLabVehicle, withLabVehicle, type LabGroup } from './labVehicle';
 
 const params = new URLSearchParams(location.search);
 const scene = (params.get('scene') ?? 'lowOrbit') as FakeScene;
@@ -66,48 +77,18 @@ const testApi = installTestApi({ kind: 'lab', name: 'flight-ui', scenarioId: `fa
 
 const STAGES = LAB_STAGES.map((s) => s.label);
 
-/** The mission vehicle's stages (icon and action kinds as in meridian-lunar.json); dv / twr / burn for engine stages. */
-const STAGE_TABLE = LAB_STAGES.map((s) => ({ icon: s.icon, actions: s.actions.map((a) => a.kind as string), engine: s.engine }));
+/** The mission vehicle's stages (icon and action kinds as in meridian-lunar.json). */
+const STAGE_TABLE = LAB_STAGES.map((s) => ({ icon: s.icon, actions: s.actions.map((a) => a.kind as string) }));
 
 /** Index of the 'Landing gear' stage (deploys the lander's legs). */
 const GEAR_STAGE = LAB_STAGES.findIndex((s) => s.actions.some((a) => a.kind === 'deployLegs'));
 
-/**
- * The fired stage that owns the running engines, as the sim reports it (src/sim/vessel/facade.ts stagingInfo):
- * the latest fired engine stage, unless a later fired stage shut the engines down. -1 without one.
- */
-function activeStageIndex(fired: number): number {
-  for (let i = fired - 1; i >= 0; i--) {
-    const row = STAGE_TABLE[i];
-    if (!row) continue;
-    if (row.engine) return i;
-    if (row.actions.includes('shutdownEngines')) return -1;
-  }
-  return -1;
-}
-
-/**
- * Lab decoration: the mission vehicle's stage table in place of the FakeSim's generic one, reported the way the
- * sim reports it: unfired engine stages and the fired stage that owns the running engines (`fill` = the
- * propellant left in it) carry numbers, every other fired stage none; the total is over all of them.
- */
-function realisticStages(s: SimSnapshot, activeFill: number): SimSnapshot {
-  let total = 0;
-  const active = activeStageIndex(s.staging.nextStage);
-  const stages = s.staging.stages.map((info, i) => {
-    const row = STAGE_TABLE[i];
-    if (!row) return info;
-    const none = { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: null, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0 };
-    if (!row.engine || (info.fired && i !== active)) return none;
-    const frac = info.fired ? activeFill : 1;
-    const dv = Math.round(row.engine.dv * frac);
-    total += dv;
-    // TWR grows as the stage burns its propellant (mass falls); a rough lab figure.
-    const twr = row.engine.twr / (1 - 0.55 * (1 - frac));
-    return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: frac, deltaVVac: dv, deltaVNow: dv, twr, burnTime: row.engine.burn * frac };
-  });
-  return { ...s, staging: { ...s.staging, stages }, readouts: { ...s.readouts, deltaVTotal: total } };
-}
+/** A parameter as a finite number, or null. */
+const numParam = (name: string): number | null => {
+  const raw = params.get(name);
+  const x = raw === null ? NaN : Number(raw);
+  return Number.isFinite(x) ? x : null;
+};
 
 /**
  * Lab decoration: the vessel turned by an attitude offset in its own frame (yaw right, pitch up, roll right,
@@ -144,53 +125,59 @@ function offsetAttitude(s: SimSnapshot, yawDeg: number, pitchDeg: number, rollDe
 
 /**
  * One coherent flight state per FakeSim scene: what remains of the stack, the stages fired, and what the FakeSim
- * does not model (it opens every scene at mission time 0 and coasts): the mission elapsed time, a powered climb,
- * an entry whose dynamic pressure, height, heating and sink rate match its g load, a steady descent under the
- * mains, a predicted impact only where the vessel is coming down, and the recovery zone ahead of an entry.
+ * does not model (it opens every scene at mission time 0, coasts on circular orbits and weighs 50 t): the mission
+ * elapsed time, the mass and stage figures of the parts carried, a powered climb, an entry that is one moment of
+ * an integrated ballistic entry (its height, speed, flight-path angle, dynamic pressure, heating, osculating orbit
+ * and range to the impact all from that trajectory), a translunar ellipse, the lander standing on the ground, a
+ * steady descent under the mains, and a predicted impact only where the vessel is coming down.
  */
 interface SceneSetup {
   groups: LabGroup[];
   fill: Partial<Record<LabGroup, number>>;
   fired: number;
-  /** Propellant left in the active (burning) stage, as the sim would report it. */
-  activeFill: number;
   /** Mission elapsed time when the page opens, s (the pad stays at 0 until the first stage fires). */
   met: number;
-  /** A powered flight: the lever (the g load follows from the active stage's TWR). */
+  /** A powered flight: the lever (the g load follows from the active stage's thrust and the vessel's mass). */
   throttle?: number;
-  /** An entry: drag deceleration from the dynamic pressure (or the g given), and the state that goes with it. */
-  entry?: boolean;
+  /** A moment of the entry (ENTRY): the one at which the drag deceleration reaches this g. */
+  entryG?: number;
   /** Descending under the main chutes at a steady rate (drag = weight: 1 g). */
   chutes?: boolean;
-  /** Predicted arrival reported while coming down: 'impact' (range ahead along the ground track, m; 0 = below). */
-  impactRange?: number;
-  /** The target placed ahead of the vessel: distance (m) and bearing off the ground track (deg). */
-  targetAhead?: [number, number];
+  /** A predicted impact straight below (a descent under chutes). */
+  impactBelow?: boolean;
+  /** The target placed beyond the entry's impact point: miss distance (m) and bearing off the ground track (deg). */
+  targetBeyondImpact?: [number, number];
+  /** An elliptic coast: periapsis and apoapsis altitudes, m. */
+  coast?: { pe: number; ap: number };
+  /** The scene stands on (or moves above) the lab ground: the FakeSim measures its radar altitude from it. */
+  onGround?: boolean;
 }
 const ALL_GROUPS: LabGroup[] = ['booster', 'upper', 'm3', 'descent', 'ascent', 'capsule'];
 const DAY = 86400;
+/** Drag deceleration of the plain entry view, g. */
+const ENTRY_BASE_G = 0.68;
 const SETUP: Record<FakeScene, SceneSetup> = {
-  pad: { groups: ALL_GROUPS, fill: {}, fired: 0, activeFill: 1, met: 0 },
-  ascent: { groups: ALL_GROUPS, fill: { booster: 0.62 }, fired: 1, activeFill: 0.62, met: 70, throttle: 0.86 },
-  lowOrbit: { groups: ['m3', 'descent', 'ascent', 'capsule'], fill: { m3: 0.34 }, fired: 4, activeFill: 0.34, met: 52 * 60 },
-  translunar: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.97 }, fired: 5, activeFill: 0.97, met: DAY + 2 * 3600 + 21 * 60 },
-  lunarOrbit: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.81 }, fired: 5, activeFill: 0.81, met: 3 * DAY + 4 * 3600 + 25 * 60 },
-  lunarSurface: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.22 }, fired: 6, activeFill: 0.22, met: 4 * DAY + 6 * 3600 + 12 * 60 },
-  reentry: { groups: ['capsule'], fill: { capsule: 0.8 }, fired: 8, activeFill: 1, met: 8 * DAY + 2 * 3600 + 41 * 60, entry: true, impactRange: 1_425e3, targetAhead: [1_450e3, 1.2] },
-  chutes: { groups: ['capsule'], fill: { capsule: 0.55 }, fired: 9, activeFill: 1, met: 8 * DAY + 2 * 3600 + 52 * 60, chutes: true, impactRange: 0 },
+  pad: { groups: ALL_GROUPS, fill: {}, fired: 0, met: 0, onGround: true },
+  ascent: { groups: ALL_GROUPS, fill: { booster: 0.62 }, fired: 1, met: 70, throttle: 0.86, onGround: true },
+  lowOrbit: { groups: ['m3', 'descent', 'ascent', 'capsule'], fill: { m3: 0.34 }, fired: 4, met: 52 * 60 },
+  // A day after the translunar injection: climbing out on an ellipse from a 190 km perigee toward the Moon's distance.
+  translunar: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.97 }, fired: 5, met: DAY + 2 * 3600 + 21 * 60, coast: { pe: 190e3, ap: 380e6 } },
+  lunarOrbit: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.81 }, fired: 5, met: 3 * DAY + 4 * 3600 + 25 * 60 },
+  lunarSurface: { groups: ['descent', 'ascent', 'capsule'], fill: { descent: 0.22 }, fired: 6, met: 4 * DAY + 6 * 3600 + 12 * 60, onGround: true },
+  reentry: { groups: ['capsule'], fill: { capsule: 0.8 }, fired: 8, met: 8 * DAY + 2 * 3600 + 41 * 60, entryG: ENTRY_BASE_G, targetBeyondImpact: [26e3, 1.2] },
+  // Under the three mains (both chute stages fired), the ablator as the entry left it.
+  chutes: { groups: ['capsule'], fill: { capsule: 0.8 }, fired: 10, met: 8 * DAY + 2 * 3600 + 52 * 60, chutes: true, impactBelow: true, onGround: true },
 };
 
-const G0 = 9.80665;
 /** A capsule's ballistic coefficient m / (Cd A), kg/m^2: its drag deceleration is q / BALLISTIC. */
 const BALLISTIC = 400;
-/** Exponential atmosphere (sea-level density kg/m^3, scale height m) for the entry state's height. */
-const RHO0 = 1.225;
-const SCALE_HEIGHT = 7200;
 /** Sutton-Graves stagnation heating constant (Earth, SI) and the capsule's nose radius (m). */
 const SUTTON_GRAVES = 1.74e-4;
 const NOSE_RADIUS = 3;
-/** Flight-path angle of the entry, deg below the horizon. */
-const ENTRY_GAMMA = 1.3;
+/** The entry interface: height (m), speed relative to the air (m/s) and flight-path angle (deg) of the entry. */
+const ENTRY_INTERFACE = { h: 120e3, v: 7400, gammaDeg: -3 };
+/** The FakeSim's climb rates of its moving surface scenes (m/s) and their default start altitudes (m). */
+const FAKE_CLIMB: Partial<Record<FakeScene, { rate: number; start: number }>> = { ascent: { rate: 350, start: 9000 }, chutes: { rate: -8, start: 2500 } };
 
 /** Great-circle helpers on a sphere of radius R (angles in radians). */
 function destination(lat: number, lon: number, bearing: number, dist: number, R: number): [number, number] {
@@ -251,22 +238,31 @@ declare global {
  * The low-resolution albedo map of every body with a tile set (TileManifest.globals.albedoLowRes under
  * /tiles/<tileset>/), decoded to RGBA for the MFD painter. A body without one is drawn in its mean colour.
  */
-async function loadAlbedoMaps(defs: DefLibrary): Promise<Map<string, BodyAlbedoMap>> {
-  const maps = new Map<string, BodyAlbedoMap>();
+async function loadAlbedoMaps(defs: DefLibrary): Promise<{ albedo: Map<string, BodyAlbedoMap>; clouds: Map<string, BodyAlbedoMap> }> {
+  const albedo = new Map<string, BodyAlbedoMap>();
+  const clouds = new Map<string, BodyAlbedoMap>();
+  /** A global map of the tile set, decoded to RGBA at most `maxWidth` wide. */
+  const decode = async (tileset: string, path: string, maxWidth: number): Promise<BodyAlbedoMap> => {
+    const bitmap = await createImageBitmap(await (await fetch(`/tiles/${tileset}/${path}`)).blob());
+    const w = Math.min(maxWidth, bitmap.width);
+    const h = Math.round((bitmap.height * w) / bitmap.width);
+    const c = new OffscreenCanvas(w, h);
+    const cx = c.getContext('2d')!;
+    cx.drawImage(bitmap, 0, 0, w, h);
+    const d = cx.getImageData(0, 0, w, h);
+    return { width: d.width, height: d.height, data: d.data };
+  };
   for (const body of Object.values(defs.bodies)) {
     const tileset = body.terrain?.tileset;
     if (!tileset) continue;
     const manifest = (await (await fetch(`/tiles/${tileset}/manifest.json`)).json()) as TileManifest;
     const g = manifest.globals.albedoLowRes;
-    if (!g) continue;
-    const bitmap = await createImageBitmap(await (await fetch(`/tiles/${tileset}/${g.path}`)).blob());
-    const c = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const cx = c.getContext('2d')!;
-    cx.drawImage(bitmap, 0, 0);
-    const d = cx.getImageData(0, 0, bitmap.width, bitmap.height);
-    maps.set(body.id, { width: d.width, height: d.height, data: d.data });
+    if (g) albedo.set(body.id, await decode(tileset, g.path, g.width));
+    // The cloud cover the atmosphere draws (its coverage channel), reduced to the albedo map's size.
+    const cov = body.render.clouds ? manifest.globals[body.render.clouds.coverageMap] : undefined;
+    if (cov) clouds.set(body.id, await decode(tileset, cov.path, g?.width ?? 1024));
   }
-  return maps;
+  return { albedo, clouds };
 }
 
 /** Vessel attitude from navball angles (heading clockwise from north, roll right positive), as VES -> horizon. */
@@ -297,10 +293,27 @@ async function boot(): Promise<void> {
 
   const defs = withLabVehicle(await loadDefs(fetchDefSource()));
   const setup = SETUP[scene];
+  const fired = numParam('stage') ?? setup.fired;
   const parts = labVehicleParts(defs, setup.fill, setup.groups);
-  const sim = createFakeSim(defs, { scene, parts, stageLabels: STAGES });
-  for (let i = 0; i < setup.fired; i++) sim.commands.stage();
+  const vehicle = defs.vehicles[LAB_VEHICLE_ID]!;
+  // The scene's body and the ground under the vessel: the lab ground (what the backdrop draws), or ground=.
+  const sceneBody = scene === 'lunarOrbit' || scene === 'lunarSurface' ? 'moon' : defs.rootBodyId;
+  const groundHeight = numParam('ground') ?? LAB_GROUND[sceneBody] ?? 0;
+  const groundOverride = numParam('ground') !== null ? { [sceneBody]: groundHeight } : undefined;
+  const hover = Math.max(0, numParam('hover') ?? 0);
+  const start = numParam('start');
+  // A standing scene's lowest point sits on the ground (the pad: on the launch mount, at its clamp height).
+  const clampHeight = Object.values(defs.sites)[0]?.pad.clampHeight ?? 0;
+  const sim = createFakeSim(defs, {
+    scene,
+    parts,
+    stageLabels: STAGES,
+    ...(setup.onGround ? { ground: { height: groundHeight, originHeight: 0, clearance: scene === 'pad' ? clampHeight : hover } } : {}),
+    ...(start !== null && FAKE_CLIMB[scene] ? { altitude: start } : {}),
+  });
+  for (let i = 0; i < fired; i++) sim.commands.stage();
   if (params.get('target')) sim.commands.setTarget(params.get('target'));
+  if (params.get('sas')) sim.commands.setSasMode(params.get('sas') as SasMode);
   if (params.get('node') === '1') {
     const id = sim.commands.addNode(sim.peek().ut + 600);
     sim.commands.setNode(id, { dv: { prograde: 120, normal: 8, radial: -3 } });
@@ -309,60 +322,127 @@ async function boot(): Promise<void> {
 
   const predictedParam = params.get('predicted');
   const flightParam = params.get('flight')?.split(',').map(Number) ?? null;
+  const throttleParam = numParam('throttle');
   const attitudeParam = params.get('attitude')?.split(',').map(Number) ?? null;
   const doseParam = params.get('dose');
   const liftParam = params.get('lift');
   const metParam = params.get('met');
   const offsetParam = params.get('targetOffset')?.split(',').map(Number) ?? null;
 
-  /** The scene's flight state on top of the FakeSim's (SceneSetup): clock, powered flight, entry, chutes, gear. */
-  const sceneState = (s: SimSnapshot): SimSnapshot => {
-    const r = s.readouts;
-    // Mission time: the FakeSim opens every scene at 0. On the pad the clock waits for the first stage.
+  // The entry: one ballistic trajectory from the entry interface; each entry view is the moment of it at which the
+  // deceleration reaches its g (flight=<thr>,<g> picks another), and it flies on along it with the FakeSim's clock.
+  const earth = defs.bodies[defs.rootBodyId]!;
+  const entryPath: EntrySample[] = setup.entryG !== undefined ? integrateEntry(earth.mu, earth.radius, BALLISTIC, ENTRY_INTERFACE.h, ENTRY_INTERFACE.v, ENTRY_INTERFACE.gammaDeg * DEG) : [];
+  const entryBase = setup.entryG !== undefined ? entryAtG(entryPath, setup.entryG) : null;
+  const entryView = setup.entryG !== undefined ? entryAtG(entryPath, flightParam?.[1] ?? setup.entryG) : null;
+  const entryEnd = entryPath[entryPath.length - 1] ?? null;
+  const entryAt = (t: number): EntrySample => entryPath.find((x) => x.t >= t) ?? entryEnd!;
+  /** The moment of the entry the latest snapshot shows. */
+  let entryNow: EntrySample | null = null;
+
+  /** The active stage, as the sim reports it: the fired stage whose engines run (none after a shutdown stage). */
+  const activeStageIndex = (n: number): number => {
+    for (let i = n - 1; i >= 0; i--) {
+      if (stageEngineGroup(vehicle, i)) return i;
+      if (STAGE_TABLE[i]?.actions.includes('shutdownEngines')) return -1;
+    }
+    return -1;
+  };
+
+  /** The scene's flight state on top of the FakeSim's (SceneSetup). */
+  const sceneState = (raw: SimSnapshot): SimSnapshot => {
+    let s = raw;
+    const v0 = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    const body = defs.bodies[v0.bodyId]!;
+    // Mission time: the FakeSim opens every scene at 0. On the pad the clock waits for the first stage; a scene
+    // started higher or lower (start=) is that much later or earlier on the FakeSim's climb.
     const onPad = scene === 'pad' && s.staging.nextStage === 0;
-    const met = metParam !== null ? Number(metParam) : onPad ? 0 : setup.met + r.met;
-    const ut = onPad ? s.ut : s.ut - r.met + met;
+    const climb = FAKE_CLIMB[scene];
+    const startShift = climb && start !== null ? (start - climb.start) / climb.rate : 0;
+    const entryShift = entryView && entryBase ? entryView.t - entryBase.t : 0;
+    const met = metParam !== null ? Number(metParam) : onPad ? 0 : setup.met + startShift + entryShift + s.readouts.met;
+
+    // The state the lab sets: a moment of the entry, or the translunar ellipse.
+    if (entryView) {
+      const m = entryAt(entryView.t + s.readouts.met);
+      entryNow = m;
+      s = withTrajectory(s, defs, { altitude: m.h, ground: groundHeight, speed: m.v, gamma: m.gamma, frame: 'surface' });
+    } else if (setup.coast) {
+      const r = body.radius + s.readouts.altitudeAsl;
+      const e = ellipseState(body.mu, body.radius + setup.coast.pe, body.radius + setup.coast.ap, r);
+      s = withTrajectory(s, defs, { altitude: s.readouts.altitudeAsl, ground: 0, speed: e.speed, gamma: e.gamma, frame: 'inertial' });
+    }
+    // Off the ground (the lift-off still, a hover): the FakeSim still calls the vessel landed and reports no orbit;
+    // a flying vessel has the osculating orbit of its state (at rest over the turning body: an apoapsis where it is
+    // and a periapsis deep below the surface).
+    const liftedOff = v0.situation === 'landed' && (hover > 0 || (scene === 'pad' && s.staging.nextStage > 0 && (throttleParam ?? 0) > 0));
+    if (liftedOff) {
+      const rr = s.readouts;
+      s = withTrajectory(s, defs, { altitude: rr.altitudeAsl, ground: rr.altitudeAsl - rr.altitudeRadar, speed: rr.speedSurface, gamma: rr.verticalSpeed < 0 ? -Math.PI / 2 : Math.PI / 2, frame: 'surface' });
+    }
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    const r = s.readouts;
     const out = { ...r, met };
+    const ut = onPad ? s.ut : s.ut - r.met + met;
+
+    // Mass and stage figures from the parts the vessel carries (the sim's way: TWR at local gravity).
+    const gLocal = body.mu / v3.lenSq(v.r);
+    const mass = partsMass(defs, v.parts);
+    const active = activeStageIndex(s.staging.nextStage);
+    const stageInfos = s.staging.stages.map((info, i) => ({ ...info, icon: STAGE_TABLE[i]?.icon ?? info.icon, actionKinds: STAGE_TABLE[i]?.actions ?? info.actionKinds }));
+    const figures = labStageFigures(defs, vehicle, v.parts, stageInfos, active, gLocal);
+    out.mass = mass;
+    out.deltaVTotal = figures.total;
+    out.twr = 0;
+    out.thrust = 0;
     // Gear: the lander's legs come down with the 'Landing gear' stage; a vessel without the lander has none.
     const hasLegs = setup.groups.includes('descent');
     out.legsDeployed = hasLegs ? (s.staging.nextStage > GEAR_STAGE ? !r.legsDeployed : r.legsDeployed) : null;
-    // A powered flight: the g load is the active stage's TWR at this throttle (gravity losses aside).
-    const flight = flightParam ? { thr: flightParam[0]!, g: flightParam[1] ?? null } : setup.throttle !== undefined ? { thr: setup.throttle, g: null } : null;
-    if (flight) {
-      const active = describeStages(s).active;
-      const twr = active >= 0 ? s.staging.stages[active]!.twr : 0;
-      const g = flight.g ?? twr * flight.thr;
-      out.throttle = flight.thr;
-      out.thrust = flight.thr > 0 ? g * r.mass * G0 : 0;
-      out.twr = flight.thr > 0 ? twr : 0;
-      out.gLoad = g;
-    }
-    if (setup.entry) {
-      // Drag deceleration q / (m / Cd A): the g load fixes the dynamic pressure, which fixes the height for the
-      // speed (exponential atmosphere), the stagnation heating and, with the flight-path angle, the sink rate.
-      const v = r.speedSurface;
-      const g = flight?.g ?? r.dynamicPressure / (BALLISTIC * G0);
-      const q = g * BALLISTIC * G0;
-      const rho = (2 * q) / (v * v);
-      const alt = SCALE_HEIGHT * Math.log(RHO0 / rho);
-      out.gLoad = g;
-      out.dynamicPressure = q;
-      out.altitudeAsl = alt;
-      out.altitudeRadar = alt;
-      out.heatFlux = SUTTON_GRAVES * Math.sqrt(rho / NOSE_RADIUS) * v * v * v;
-      out.verticalSpeed = -v * Math.sin(ENTRY_GAMMA * DEG);
-      out.horizontalSpeed = v * Math.cos(ENTRY_GAMMA * DEG);
+
+    // A powered flight: the lever, and the thrust of the active stage's engines at it (the felt g follows).
+    const lever = flightParam ? flightParam[0]! : (throttleParam ?? setup.throttle ?? r.throttle);
+    const situation = liftedOff ? 'flying' : v.situation;
+    if (lever !== null && lever > 0 && active >= 0) {
+      const full = figures.stages[active]!.twr * mass * gLocal;
+      out.throttle = lever;
+      out.thrust = lever * full;
+      out.twr = out.thrust / (mass * gLocal);
+      out.gLoad = out.thrust / (mass * G0);
+      // Hovering: thrust balances weight, whatever lever the still was taken at.
+      if (hover > 0) out.gLoad = gLocal / G0;
+    } else if (lever !== null) out.throttle = lever;
+
+    if (entryView) {
+      // The entry's drag: the dynamic pressure, the felt g, the stagnation heating (Sutton-Graves).
+      const h = out.altitudeAsl;
+      const rho = airDensity(h);
+      const vAir = out.speedSurface;
+      out.dynamicPressure = 0.5 * rho * vAir * vAir;
+      out.gLoad = out.dynamicPressure / (BALLISTIC * G0);
+      out.heatFlux = SUTTON_GRAVES * Math.sqrt(rho / NOSE_RADIUS) * vAir * vAir * vAir;
     }
     // Under the mains at a steady sink rate drag equals weight: one g.
-    if (setup.chutes) out.gLoad = flight?.g ?? 1;
-    return { ...s, ut, readouts: out };
+    if (setup.chutes) out.gLoad = 1;
+    // The chute envelope is reported while a chute stage remains to be fired (as the sim does), none after the mains.
+    if (!stageInfos.some((x) => !x.fired && x.actionKinds.includes('deployParachute'))) out.chuteEnvelope = null;
+    // The Mach number from the standard atmosphere's speed of sound at the vessel's height.
+    if (body.atmosphere && out.altitudeAsl < body.atmosphere.simTop) out.mach = out.speedSurface / speedOfSound(out.altitudeAsl);
+
+    return {
+      ...s,
+      ut,
+      vessels: s.vessels.map((x) => (x.id === v.id ? { ...x, mass, situation } : x)),
+      staging: { ...s.staging, stages: figures.stages },
+      readouts: out,
+    };
   };
 
   /**
    * The landing target / recovery zone and the predicted arrival, worked out on the sphere so that every number
-   * agrees: the target moved to `targetOffset` (distance, compass bearing) or ahead of the vessel (SceneSetup),
-   * down-range and cross-range resolved along the FakeSim's ground track, and an impact (or entry interface)
-   * point along the track whose miss is its distance from the target.
+   * agrees: the target moved to `targetOffset` (distance, compass bearing) or beyond the entry's impact point
+   * (SceneSetup), down-range and cross-range resolved along the FakeSim's ground track, and an impact (or entry
+   * interface) point along the track - in an entry where the integrated trajectory ends - whose miss is its
+   * distance from the target.
    */
   const landingState = (s: SimSnapshot): SimSnapshot => {
     const r = s.readouts;
@@ -377,18 +457,25 @@ async function boot(): Promise<void> {
     let tLat = target.latitude;
     let tLon = target.longitude;
     let out = lt;
-    const place = offsetParam ? ([offsetParam[0]!, offsetParam[1]! * DEG] as const) : setup.targetAhead && track !== null ? ([setup.targetAhead[0], track + setup.targetAhead[1] * DEG] as const) : null;
+    // The entry's impact: where the integrated trajectory ends, ahead along the track.
+    const impactRange = entryNow && entryEnd ? entryEnd.x - entryNow.x : null;
+    const beyond = setup.targetBeyondImpact;
+    const place = offsetParam
+      ? ([offsetParam[0]!, offsetParam[1]! * DEG] as const)
+      : beyond && impactRange !== null && track !== null
+        ? ([impactRange + beyond[0], track + beyond[1] * DEG] as const)
+        : null;
     if (place) {
       const [dist, brg] = place;
       [tLat, tLon] = destination(r.latitude, r.longitude, brg, dist, R);
       out = { ...lt, distance: dist, bearingDeg: wrapDeg(brg / DEG), downRange: track !== null ? dist * Math.cos(brg - track) : 0, crossRange: track !== null ? dist * Math.sin(brg - track) : 0 };
     }
-    const kind = predictedParam === 'none' ? null : predictedParam === 'impact' || predictedParam === 'entry' ? predictedParam : setup.impactRange !== undefined ? 'impact' : null;
+    const kind = predictedParam === 'none' ? null : predictedParam === 'impact' || predictedParam === 'entry' ? predictedParam : impactRange !== null || setup.impactBelow ? 'impact' : null;
     if (kind) {
-      // Along the track (straight below without one): the impact the scene sets, else a few hundred km ahead.
-      const range = track === null ? 0 : (setup.impactRange ?? (kind === 'entry' ? 2_000e3 : 300e3));
-      const [pLat, pLon] = track === null ? [r.latitude, r.longitude] : destination(r.latitude, r.longitude, track, range, R);
-      const eta = track === null ? r.altitudeRadar / Math.max(1, -r.verticalSpeed) : range / Math.max(1, r.horizontalSpeed);
+      // Along the track (straight below without one): the entry's impact, else a few hundred km ahead.
+      const range = track === null || setup.impactBelow ? 0 : (impactRange ?? (kind === 'entry' ? 2_000e3 : 300e3));
+      const [pLat, pLon] = range === 0 ? [r.latitude, r.longitude] : destination(r.latitude, r.longitude, track!, range, R);
+      const eta = entryNow && entryEnd ? entryEnd.t - entryNow.t : range === 0 ? r.altitudeRadar / Math.max(1, -r.verticalSpeed) : range / Math.max(1, r.horizontalSpeed);
       out = {
         ...out,
         predicted: { kind, ut: s.ut + eta, latitude: pLat, longitude: pLon, missDistance: gcDistance(tLat, tLon, pLat, pLon, R), missBearingDeg: wrapDeg(gcBearing(tLat, tLon, pLat, pLon) / DEG) },
@@ -398,7 +485,7 @@ async function boot(): Promise<void> {
   };
 
   const decorate = (raw: SimSnapshot): SimSnapshot => {
-    let s = sceneState(realisticStages(tagLabVehicle(raw), setup.activeFill));
+    let s = sceneState(tagLabVehicle(raw));
     if (doseParam !== null) s = { ...s, readouts: { ...s.readouts, gDose: Number(doseParam) } };
     if (liftParam !== null) {
       // A lifting capsule's lift vector: 30 deg off the nose toward the lift direction (bank in degrees, 0 = up).
@@ -428,14 +515,16 @@ async function boot(): Promise<void> {
   const input = createInputSystem(canvas, { captureKeyboard: params.get('capture') === '1' });
   if (params.get('guard') === '1') installUnloadGuard(() => true);
   const controller = createFlightController({ notify: (m) => notifySink.fn(m) });
+  // A throttle held from the start (the integration lab's throttle=): the lever starts there.
+  if (throttleParam !== null) controller.setThrottle(Math.min(1, Math.max(0, throttleParam)));
   const terrain: TerrainProvider = {
-    heightAt: (bodyId) => LAB_GROUND[bodyId] ?? 0,
+    heightAt: (bodyId) => groundOverride?.[bodyId] ?? LAB_GROUND[bodyId] ?? 0,
     normalAt: (_b, dir) => dir,
     surfaceKind: () => 'land',
     ensureLoaded: () => Promise.resolve(),
     prewarmCollision: () => 0,
     residency: () => ({ availableLevel: 0, finalLevel: 0, complete: true }) as unknown as ReturnType<TerrainProvider['residency']>,
-    elevationRange: (bodyId) => ({ min: LAB_GROUND[bodyId] ?? 0, max: LAB_GROUND[bodyId] ?? 0 }),
+    elevationRange: (bodyId) => ({ min: groundOverride?.[bodyId] ?? LAB_GROUND[bodyId] ?? 0, max: groundOverride?.[bodyId] ?? LAB_GROUND[bodyId] ?? 0 }),
   };
   const chase = createChaseRig({ defs, terrain });
   const cockpit = createCockpitRig({ defs });
@@ -477,10 +566,10 @@ async function boot(): Promise<void> {
     keyHelp: keyHelpEntries(input.bindings),
     keyFor,
     commands: () => sim.commands,
-    // The lab's next steps after a failed mission: back to the pad, or this scene from its start.
+    // The lab's next steps after a failed mission: back to the pad, or this flight from its start.
     failureActions: [
       { label: 'Revert to launch', title: 'Start again from the pad', run: () => location.assign(`${location.pathname}?scene=pad`) },
-      { label: 'Restart scene', title: 'Start this scene again', run: () => location.reload() },
+      { label: 'Restart flight', title: 'Fly this part of the mission again from its start', run: () => location.reload() },
     ],
   });
   hud.mount(uiRoot);
@@ -498,7 +587,7 @@ async function boot(): Promise<void> {
   hud.setKeyboardLocked(input.keyboardLocked);
   input.onKeyboardLockChange((locked) => hud.setKeyboardLocked(locked));
   if (params.get('help') === '1') hud.toggleKeyHelp(true);
-  const backdrop = createLabBackdrop(gpu, defs, () => labCylinders(defs, parts), { bright: params.get('backdrop') === 'bright' });
+  const backdrop = createLabBackdrop(gpu, defs, () => labCylinders(defs, parts), { bright: params.get('backdrop') === 'bright', ...(groundOverride ? { ground: groundOverride } : {}) });
 
   // MFD showcase: 1024 x 768 pages scaled into a grid, or 512 x 384 pages shown 1 : 1 (mfd=native).
   const mfdEl = document.getElementById('mfd') as HTMLDivElement;
@@ -506,8 +595,8 @@ async function boot(): Promise<void> {
   const showMfd = params.get('mfd') === '1' || mfdNative;
   // The ORB page draws each body from its tile set's low-resolution albedo map, as the app would pass the one
   // it loads for its globe.
-  const albedo = showMfd ? await loadAlbedoMaps(defs) : new Map<string, BodyAlbedoMap>();
-  const painter = createMfdPainter({ bodyAlbedo: (id) => albedo.get(id) ?? null });
+  const maps = showMfd ? await loadAlbedoMaps(defs) : { albedo: new Map<string, BodyAlbedoMap>(), clouds: new Map<string, BodyAlbedoMap>() };
+  const painter = createMfdPainter({ bodyAlbedo: (id) => maps.albedo.get(id) ?? null, bodyClouds: (id) => maps.clouds.get(id) ?? null });
   const [mfdW, mfdH] = mfdNative ? [512, 384] : [1024, 768];
   const mfdCanvases = MFD_PAGES.map(() => {
     const c = document.createElement('canvas');

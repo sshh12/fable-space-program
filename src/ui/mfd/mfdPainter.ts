@@ -201,7 +201,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         { label: 'Δv total', value: formatDeltaV(r.deltaVTotal), tone: 'accent' },
         { label: 'RCS fuel', value: r.rcsFraction !== null ? formatPercent(r.rcsFraction) : '—' },
         { label: 'Max skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
-        { label: 'Gear', value: r.legsDeployed === null ? 'none' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed ? 'good' : 'normal' },
+        { label: 'Gear', value: r.legsDeployed === null ? 'no gear' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed === null ? 'dim' : r.legsDeployed ? 'good' : 'normal' },
         { label: 'Lights', value: r.lightsOn ? 'ON' : 'OFF' },
         { label: 'Fine control', value: r.fineControl ? 'ON' : 'OFF', tone: r.fineControl ? 'accent' : 'normal' },
       ];
@@ -225,10 +225,10 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         title: TITLE[page],
         rows: [
           // What is burning (the HUD's active tile), not the event that lit it.
-          { label: 'Active stage', value: active ? `${active.number} · ${active.burnName ?? active.label}` : 'none', tone: active ? 'good' : 'dim' },
-          { label: 'Next stage', value: next ? `${next.number} · ${next.label}` : 'none', tone: 'accent' },
+          { label: 'Active stage', value: active ? `${active.number} · ${active.burnName ?? active.label}` : '—', tone: active ? 'good' : 'dim' },
+          { label: 'Next stage', value: next ? `${next.number} · ${next.label}` : '—', tone: next ? 'accent' : 'dim' },
           { label: 'Stage Δv', value: subject ? subject.deltaV : '—' },
-          { label: 'Stage TWR', value: subject ? subject.twr : '—' },
+          { label: subject?.thrustLabel === 'Accel' ? 'Stage accel' : 'Stage TWR', value: subject ? subject.thrustValue : '—' },
           { label: 'Stage burn', value: subject ? subject.burnTime : '—' },
           { label: 'Stages left', value: `${remaining.length}` },
           { label: 'Δv remaining (vac)', value: st.deltaVTotal, tone: 'accent' },
@@ -243,7 +243,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad >= G_SCALE.limit ? 'warning' : r.gLoad >= G_SCALE.caution ? 'caution' : 'accent' },
         { label: 'G dose', value: `${formatNumber(r.gDose, 1)} / ${formatNumber(r.gDoseLimit, 0)}${NBSP}g·s`, tone: doseFrac > 0.7 ? 'warning' : doseFrac > 0.4 ? 'caution' : 'normal' },
         { label: 'Heat flux', value: formatHeatFlux(r.heatFlux) },
-        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'none', tone: r.ablatorFraction === null ? 'dim' : ablatorTone(r.ablatorFraction) === 'warning' ? 'warning' : 'normal' },
+        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'no shield', tone: r.ablatorFraction === null ? 'dim' : ablatorTone(r.ablatorFraction) === 'warning' ? 'warning' : 'normal' },
         { label: 'Skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
         { label: 'Dyn. pressure', value: formatPressure(r.dynamicPressure) },
         { label: 'Mach', value: formatMach(r.mach) },
@@ -258,9 +258,9 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const rows: MfdRow[] = [
         { label: 'Radar alt', value: f.altitude, tone: 'accent' },
         { label: 'Vertical', value: f.verticalSpeed, icon: f.verticalTrend, tone: r.verticalSpeed < -5 && r.altitudeRadar < 200 ? 'warning' : 'normal' },
-        { label: 'Horizontal', value: f.horizontalSpeed, tone: r.horizontalSpeed > 2 && r.altitudeRadar < 100 ? 'caution' : 'normal' },
+        { label: 'Horizontal', value: f.horizontalSpeedSurface, tone: r.horizontalSpeed > 2 && r.altitudeRadar < 100 ? 'caution' : 'normal' },
         { label: 'Tilt', value: formatRadAsDeg(r.tiltFromVertical), tone: r.tiltFromVertical > (12 * Math.PI) / 180 ? 'caution' : 'normal' },
-        { label: 'Gear', value: r.legsDeployed === null ? 'none' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed ? 'good' : r.altitudeRadar < 1000 ? 'caution' : 'normal' },
+        { label: 'Gear', value: r.legsDeployed === null ? 'no gear' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed === null ? 'dim' : r.legsDeployed ? 'good' : r.altitudeRadar < 1000 ? 'caution' : 'normal' },
         { label: 'Terrain', value: s.terrain.pending ? 'LOADING' : s.terrain.complete ? 'FINAL' : 'COARSE', tone: s.terrain.pending ? 'caution' : 'normal' },
       ];
       return { page, title: TITLE[page], rows, section: ltSection, status };
@@ -861,7 +861,10 @@ function drawOrbitDiagram(ctx: Ctx, env: PaintEnv, f: Frame, x: number, y: numbe
   const up = Math.hypot(v.r.x, v.r.y, v.r.z) > 0 ? scaleVec(v.r, 1 / Math.hypot(v.r.x, v.r.y, v.r.z)) : { x: 0, y: 0, z: 1 };
   const frame = conic ? { P: conic.P, Q: conic.Q, W: conic.W } : surfaceFrame(up);
   const bodySnap = s.bodies.find((b) => b.id === body.id);
-  drawBodyDisc(ctx, env, body.id, focusX, cy, bodyR, body.render?.meanColor, body.atmosphere !== null, bodySnap?.sunDir ?? null, frame, bodySnap?.qFixedToRoot ?? null);
+  // The air's Rayleigh optical depth per channel (scattering coefficient x scale height), for its blue in-scatter.
+  const sky = body.render?.atmosphere;
+  const air = body.atmosphere !== null ? (sky ? sky.rayleighScattering.map((b) => b * sky.rayleighScaleHeight) : [0, 0, 0]) : null;
+  drawBodyDisc(ctx, env, body.id, focusX, cy, bodyR, body.render?.meanColor, air, bodySnap?.sunDir ?? null, frame, bodySnap?.qFixedToRoot ?? null);
   setFont(ctx, 600, px(f, MIN_TEXT));
   const name = body.name.toUpperCase();
   if (landed || !conic) {
@@ -967,6 +970,40 @@ export interface MfdPainterOptions {
    * faint mottle of its own.
    */
   bodyAlbedo?: (bodyId: string) => BodyAlbedoMap | null;
+  /**
+   * The cloud cover of a body (the red channel, 0..255: e.g. the tile set's cloud coverage map named by
+   * `render.clouds.coverageMap`, reduced to about 1024 x 512), laid over its albedo map on the ORB page.
+   */
+  bodyClouds?: (bodyId: string) => BodyAlbedoMap | null;
+}
+
+/** Linear albedo of the cloud tops on the ORB page's body graphic. */
+const CLOUD_ALBEDO = 0.62;
+
+/** Mean linear colour of a body's surface with its clouds (once per pair of maps). */
+const surfaceMeans = new WeakMap<Uint8ClampedArray, WeakMap<object, readonly number[]>>();
+function surfaceMean(map: BodyAlbedoMap, clouds: BodyAlbedoMap | null): readonly number[] {
+  const key: object = clouds?.data ?? surfaceMeans;
+  let byClouds = surfaceMeans.get(map.data);
+  const hit = byClouds?.get(key);
+  if (hit) return hit;
+  const sum = [0, 0, 0];
+  let wsum = 0;
+  for (let row = 0; row < map.height; row++) {
+    // Area weight of the row (equirectangular map) and the cloud row under it.
+    const w = Math.cos(((row + 0.5) / map.height - 0.5) * Math.PI);
+    const crow = clouds ? Math.min(clouds.height - 1, Math.floor(((row + 0.5) / map.height) * clouds.height)) : 0;
+    for (let col = 0; col < map.width; col++) {
+      const o = (row * map.width + col) * 4;
+      const c = clouds ? clouds.data[(crow * clouds.width + Math.min(clouds.width - 1, Math.floor(((col + 0.5) / map.width) * clouds.width))) * 4]! / 255 : 0;
+      for (let ch = 0; ch < 3; ch++) sum[ch]! += w * (SRGB_TO_LINEAR[map.data[o + ch]!]! * (1 - c) + CLOUD_ALBEDO * c);
+      wsum += w;
+    }
+  }
+  const mean = sum.map((x) => x / wsum);
+  if (!byClouds) surfaceMeans.set(map.data, (byClouds = new WeakMap()));
+  byClouds.set(key, mean);
+  return mean;
 }
 
 interface PaintEnv {
@@ -1002,7 +1039,8 @@ function seedOf(id: string): number {
  * darkening under an atmosphere, and the surface from the albedo map (land, cloud and sea; maria and highlands)
  * or, without one, the mean colour with a low-contrast mottle fixed to the body.
  */
-function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmosphere: boolean, sun: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null, map: BodyAlbedoMap | null): OffscreenCanvas {
+function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], air: readonly number[] | null, sun: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null, map: BodyAlbedoMap | null, clouds: BodyAlbedoMap | null): OffscreenCanvas {
+  const atmosphere = air !== null;
   const size = Math.ceil(2 * R) + 2;
   const c = size / 2;
   const canvas = new OffscreenCanvas(size, size);
@@ -1018,9 +1056,14 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmo
   const su = sun ? dot3(sun, axes.P) : -0.5;
   const sv = sun ? dot3(sun, axes.Q) : 0.5;
   const sz = sun ? dot3(sun, axes.W) : 0.7;
-  // Display scale: the brightest mean channel at 0.3 linear; the sub-solar point about 1.5 x that.
+  // Display scale: the brightest mean channel of the surface drawn (the map with its clouds; else the body's mean
+  // colour) at 0.3 linear, the sub-solar point about 1.5 x that, so every body's day side reaches the same level.
   const mc = meanColor;
-  const k = 0.3 / Math.max(1e-3, Math.max(mc[0]!, mc[1]!, mc[2]!));
+  const drawn = map ? surfaceMean(map, clouds) : mc;
+  const k = 0.3 / Math.max(1e-3, Math.max(drawn[0]!, drawn[1]!, drawn[2]!));
+  // Rayleigh in-scatter of an atmosphere (single scattering, backscatter phase 1.5): reflectance 0.375 tau per
+  // channel looking straight down, more along the slant path toward the limb; it fades out across the terminator.
+  const haze = air ? air.map((tau) => k * 0.375 * tau) : null;
   const seed = seedOf(bodyId) * 40;
   const soft = atmosphere ? 0.05 : 0.015;
   const night = 0.045;
@@ -1055,6 +1098,14 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmo
         r = SRGB_TO_LINEAR[map.data[o]!]!;
         g = SRGB_TO_LINEAR[map.data[o + 1]!]!;
         b = SRGB_TO_LINEAR[map.data[o + 2]!]!;
+        if (clouds) {
+          const cc = Math.min(clouds.width - 1, Math.max(0, Math.floor(((lon + Math.PI) / (2 * Math.PI)) * clouds.width)));
+          const cr = Math.min(clouds.height - 1, Math.max(0, Math.floor(((Math.PI / 2 - lat) / Math.PI) * clouds.height)));
+          const cover = clouds.data[(cr * clouds.width + cc) * 4]! / 255;
+          r += (CLOUD_ALBEDO - r) * cover;
+          g += (CLOUD_ALBEDO - g) * cover;
+          b += (CLOUD_ALBEDO - b) * cover;
+        }
       } else {
         // A faint mottle: a few broad waves over the sphere, phases fixed by the body's id (+-12 %).
         const m = 1 + 0.06 * (Math.sin(3.1 * bx + 1.7 * by + seed) + Math.sin(2.3 * by - 2.9 * bz + 0.7 * seed) + Math.sin(4.7 * bz + 3.3 * bx - 1.3 * seed) * 0.6 + Math.sin(9.1 * bx - 7.3 * by + 5.1 * bz + seed) * 0.4);
@@ -1064,9 +1115,11 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmo
       }
       const s = k * light * limb;
       const o = (j * size + i) * 4;
-      d[o] = toSrgb8(r * s);
-      d[o + 1] = toSrgb8(g * s);
-      d[o + 2] = toSrgb8(b * s);
+      // The air's blue in-scatter over the day side: longer slant paths toward the limb (up to 3 x).
+      const hz = haze ? Math.min(3, 1 / Math.max(z, 0.2)) * Math.max(0, Math.min(1, (mu + soft) / (0.3 + soft))) : 0;
+      d[o] = toSrgb8(r * s + (haze ? haze[0]! * hz : 0));
+      d[o + 1] = toSrgb8(g * s + (haze ? haze[1]! * hz : 0));
+      d[o + 2] = toSrgb8(b * s + (haze ? haze[2]! * hz : 0));
       d[o + 3] = Math.round(255 * a);
     }
   }
@@ -1078,19 +1131,21 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], atmo
  * The body as seen down the view's W axis (shadeDisc), and an atmosphere rim brighter on the day side. Shaded per
  * pixel where the browser has an OffscreenCanvas (always in the app); elsewhere (unit tests in Node) a flat disc.
  */
-function drawBodyDisc(ctx: Ctx, env: PaintEnv, bodyId: string, x: number, y: number, R: number, meanColor: readonly number[] | undefined, atmosphere: boolean, sunDir: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null): void {
+function drawBodyDisc(ctx: Ctx, env: PaintEnv, bodyId: string, x: number, y: number, R: number, meanColor: readonly number[] | undefined, air: readonly number[] | null, sunDir: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null): void {
   const mc = meanColor ?? [0.2, 0.2, 0.2];
+  const atmosphere = air !== null;
   if (typeof OffscreenCanvas !== 'undefined') {
     const Rq = Math.max(2, Math.round(R));
     const map = env.opts.bodyAlbedo?.(bodyId) ?? null;
+    const clouds = map ? (env.opts.bodyClouds?.(bodyId) ?? null) : null;
     // Re-shade only when the picture would change visibly: about 0.3 deg of rotation or of the sun's direction.
     const qv = (v: V3 | null): string => (v ? `${Math.round(v.x * 200)},${Math.round(v.y * 200)},${Math.round(v.z * 200)}` : '-');
     const P = qFixed ? rotateInv(qFixed, axes.P) : axes.P;
     const Q = qFixed ? rotateInv(qFixed, axes.Q) : axes.Q;
-    const key = `${Rq}|${map ? `${map.width}x${map.height}` : 'mean'}|${atmosphere}|${qv(P)}|${qv(Q)}|${sunDir ? qv({ x: dot3(sunDir, axes.P), y: dot3(sunDir, axes.Q), z: dot3(sunDir, axes.W) }) : '-'}`;
+    const key = `${Rq}|${map ? `${map.width}x${map.height}` : 'mean'}|${clouds ? 'c' : ''}|${atmosphere}|${qv(P)}|${qv(Q)}|${sunDir ? qv({ x: dot3(sunDir, axes.P), y: dot3(sunDir, axes.Q), z: dot3(sunDir, axes.W) }) : '-'}`;
     let disc = env.discs.get(bodyId);
     if (!disc || disc.key !== key) {
-      disc = { key, canvas: shadeDisc(Rq, bodyId, mc, atmosphere, sunDir, axes, qFixed, map) };
+      disc = { key, canvas: shadeDisc(Rq, bodyId, mc, air, sunDir, axes, qFixed, map, clouds) };
       env.discs.set(bodyId, disc);
     }
     ctx.drawImage(disc.canvas, x - disc.canvas.width / 2, y - disc.canvas.height / 2, disc.canvas.width * (R / Rq), disc.canvas.height * (R / Rq));
@@ -1252,6 +1307,9 @@ function paintTanks(ctx: Ctx, f: Frame, groups: ReturnType<typeof describeResour
 
 // ---------------------------------------------------------------------------------------------- staging
 
+/** Tallest stage row of the staging page, share of the page height. */
+const STAGE_ROW = 0.115;
+
 function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
   const st = describeStages(s, defs);
   const active = st.active >= 0 ? st.tiles[st.active]! : null;
@@ -1266,7 +1324,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
   const who = active ? 'Active' : 'Next';
   const boxes: [string, MfdRow][] = [
     [`${who} Δv`, get('Stage Δv')],
-    [`${who} TWR`, get('Stage TWR')],
+    [`${who} ${(model.rows.find((r) => r.label === 'Stage accel') ? 'accel' : 'TWR')}`, model.rows.find((r) => r.label === 'Stage accel') ?? get('Stage TWR')],
     [`${who} burn`, get('Stage burn')],
     ['Δv remaining', get('Δv remaining (vac)')],
     ['Staging', get('Staging')],
@@ -1274,12 +1332,17 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
   const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
   const stripY = f.bottom - stripH;
   boxes.forEach(([label, b], i) => statBox(ctx, f, f.pad + i * (bw + gap), stripY, bw, stripH, label, b.value, i < 3 && active ? 'good' : (b.tone ?? 'normal')));
-  // The stack fills the rest of the page from the strip up: tiles grow when few stages remain (two stages take
-  // two thirds of it).
+  // The stack stands on the strip and grows upward, a row per stage at most STAGE_ROW of the page tall (a stack of
+  // two stays two rows, not two thirds of the page), under a heading that counts it.
   const areaBottom = stripY - f.h * 0.03;
-  const avail = areaBottom - f.top;
-  const th = avail / Math.max(3, tiles.length);
+  const avail = areaBottom - f.top - f.h * 0.06;
+  const th = Math.min(avail / Math.max(3, tiles.length), f.h * STAGE_ROW);
   const y0 = areaBottom - tiles.length * th;
+  if (tiles.length > 0) {
+    setFont(ctx, 600, Math.max(f.h * 0.032, f.min));
+    const left = tiles.filter((t) => t !== active).length;
+    text(ctx, `STACK · ${left} ${left === 1 ? 'STAGE' : 'STAGES'} LEFT${active ? ' · 1 BURNING' : ''}`, f.pad, y0 - f.h * 0.03, 'left', 'bottom', LABEL);
+  }
   const x = f.pad;
   const w = f.w - 2 * f.pad;
   tiles.forEach((t, i) => {
@@ -1303,7 +1366,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
     const twoLines = th > f.min * 2.3;
     text(ctx, isActive ? (t.burnName ?? t.label) : t.label, nameX, yy + (twoLines ? th * 0.36 : th / 2), 'left', 'middle', COLORS.normal, w * 0.45);
     // Engine stages: their numbers; engine-less stages: what firing them does.
-    const meta = t.hasEngines ? `Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}` : t.actions;
+    const meta = t.hasEngines ? `Δv ${t.deltaV}   ${t.thrustLabel} ${t.thrustValue}   ${t.burnTime}` : t.actions;
     const tag = isActive ? 'ACTIVE · ' : '';
     setFont(ctx, 500, Math.max(Math.min(th * 0.26, f.h * 0.036), f.min));
     if (twoLines) text(ctx, locked ? 'LOCKED · staging interlock' : `${tag}${meta}`, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : isActive ? COLORS.good : LABEL, w * 0.55);

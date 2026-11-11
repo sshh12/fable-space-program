@@ -9,9 +9,11 @@
  *   external  everything;
  *   interior  clock, warp, notifications, landing target, stage stack and the system strip (the cockpit
  *             instruments show the rest);
- *   map       clock, warp, altitude, orbit, landing target, node burn, navball with SAS (no stage stack).
- * The bottom cluster is a three-column grid with the navball alone in the middle column, so the ball stays on
- * the screen's centre line whatever appears beside it (a maneuver panel, the gauges).
+ *   map       clock, warp, altitude, orbit, landing target, node burn, the bottom instrument (no stage stack).
+ * The bottom cluster is one instrument: a gunmetal housing symmetric about the navball (SAS controls left, tape
+ * gauges right) with the ball's read-outs as windows set into it (speed and heading on the bezel's top arc,
+ * pitch at 9 and roll at 3 o'clock), so the ball stays on the screen's centre line; the maneuver readout stands
+ * on the housing right of the ball.
  *
  * The frame is for the scene: panels show what the flight phase needs and fold the rest (a coverage budget of
  * 20 % of a 16:9 frame is asserted by the screenshot spec). Only the next stage and the stage that is burning
@@ -56,6 +58,7 @@ import {
   G_SCALE,
   gTone,
   inAtmosphere,
+  isEntering,
   isLanded,
   isPredictionRow,
   landingTargetExpanded,
@@ -140,17 +143,14 @@ const TEXT_PERIOD = 1 / HUD_TEXT_HZ;
 /** Most landing-target rows (landingTargetRows). */
 const LT_ROWS = 5;
 
-/** Heat flux above which the vessel counts as heating (W/m^2): the entry panel shows, the orbit panel leaves. */
-const HEATING_FLUX = 1000;
+/** Skin temperature (share of the limit) from which the entry panel shows its rows in any phase (amber from here). */
+const SKIN_CAUTION = 0.7;
 
 /** Share of the fatal g-dose from which the dose bar turns red (amber below). */
 const DOSE_WARNING = 2 / 3;
 
 /** Longest list of full stage groups (characters, about two lines) the resources panel spells out. */
 const FULL_LINE_CHARS = 64;
-
-/** G load from which the g-dose line holds its place outside the atmosphere (a powered burn). */
-const DOSE_SLOT_G = 0.5;
 
 const SAS_NAMES: Record<SasMode, string> = {
   stability: 'Stability',
@@ -164,8 +164,8 @@ const SAS_NAMES: Record<SasMode, string> = {
 };
 
 /**
- * Punctuation key caps are named (a "." or "," cap is a 2 px speck at 720p); brackets and arrow keys keep their
- * glyph, enlarged.
+ * Key caps show the key's own glyph, as printed on the keyboard: punctuation drawn large (a "." at the text size is
+ * a 2 px speck at 720p) with its name in the tooltip, brackets and arrow keys enlarged.
  */
 const NAMED_CAPS: Record<string, string> = { '.': 'Period', ',': 'Comma', '/': 'Slash', '`': 'Backquote', '-': 'Minus', '=': 'Equals', ';': 'Semicolon', "'": 'Quote', '\\': 'Backslash' };
 const GLYPH_CAPS = new Set(['[', ']', '←', '→', '↑', '↓']);
@@ -197,9 +197,8 @@ function barRow(label: string): { root: HTMLDivElement; value: TextSlot; fill: F
 
 function keyCap(label: string, cls = 'kbd', title?: string): HTMLSpanElement {
   const named = NAMED_CAPS[label];
-  const text = named ?? label;
-  const glyph = GLYPH_CAPS.has(label);
-  return el('span', glyph ? `${cls} glyph` : cls, [text], title ? { title } : named ? { title: label } : {});
+  const kind = named ? ' glyph punct' : GLYPH_CAPS.has(label) ? ' glyph' : '';
+  return el('span', `${cls}${kind}`, [label], title ? { title } : named ? { title: named } : {});
 }
 
 /** Warp step buttons: chevrons pointing back (slower) and forward (faster). */
@@ -483,7 +482,9 @@ export function createHud(opts: HudOptions): HudImpl {
   const zoneEl = el('div', 'zone', [el('span', 'light', [zoneText.node]), el('span', 'sub', [zoneSub.node])]);
   const zoneTone = new ToneSlot(zoneEl);
   const zoneShow = hiddenFlag(zoneEl);
-  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node])]), el('div', 'tname', [el('span', 'pname', [ltName.node])]), ltLineEl, ltRowsEl, zoneEl], {
+  // The target's name sits in the title row beside a short kind tab ('Target' / 'Recovery'), so the one-line form
+  // is two rows: the title, and distance with bearing.
+  const ltPanel = el('div', 'panel lt', [el('div', 'ptitle', [el('span', '', [ltKind.node]), el('span', 'pname', [ltName.node])]), ltLineEl, ltRowsEl, zoneEl], {
     'data-show': 'external map interior',
   });
   const ltShow = hiddenFlag(ltPanel);
@@ -500,7 +501,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const padNameEl = el('span', 'pname', [pad.target.node]);
   const padNameShow = hiddenFlag(padNameEl);
   // Without a target the panel says what the buttons are for (it would otherwise be a title and a button).
-  const padHint = el('div', 'padhint', ['No target: pick a body for its launch window']);
+  const padHint = el('div', 'padhint', ['Pick a target body for its launch window']);
   const padHintShow = hiddenFlag(padHint);
   // Title row: "LAUNCH" and the target: the body buttons (the chosen one lit) or, without them, its name.
   const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), padHint, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
@@ -511,7 +512,7 @@ export function createHud(opts: HudOptions): HudImpl {
     for (const b of Object.values(defs.bodies)) {
       // The root body has no orbit to compare planes with: it is never a launch target.
       if (b.gravityRole !== 'attractor' || b.parent === null) continue;
-      const btn = hudButton([b.name], '', `Set ${b.name} as target`, () => {
+      const btn = hudButton([el('span', 'pfx', ['Target']), b.name], '', `Set ${b.name} as target`, () => {
         const c = commands();
         if (!c) return;
         const current = lastSnapshot?.readouts.targetBodyId ?? null;
@@ -537,8 +538,9 @@ export function createHud(opts: HudOptions): HudImpl {
   // clipped at the top (flex-end), never at the next or the active stage.
   const stagesEl = el('div', 'stages');
   const stagesMore = new TextSlot('');
-  const stagesMoreEl = el('div', 'more', [stagesMore.node]);
-  const stagesMoreShow = hiddenFlag(stagesMoreEl);
+  // The stack's header strip: its title and the total delta-v (or what is left when nothing can burn).
+  const stagesMoreEl = el('div', 'more', [el('span', '', ['Stages']), el('span', 'tot', [stagesMore.node])]);
+  const stagesMoreAlone = classFlag(stagesMoreEl, 'alone');
   const resGroupsEl = el('div', 'groups');
   const resPanel = el('div', 'panel res', [el('div', 'ptitle', [el('span', '', ['Resources'])]), resGroupsEl], { 'data-show': 'external' });
   const resShow = hiddenFlag(resPanel);
@@ -554,7 +556,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const gearBtn = hudButton(['GEAR'], '', 'Landing gear (G)', () => dispatch('toggleLegs'));
   const lightsBtn = hudButton(['LIGHTS'], '', 'Lights (U)', () => dispatch('toggleLights'));
   const fineBtn = hudButton(['FINE'], '', 'Fine control (Caps Lock)', () => dispatch('toggleFineControl'));
-  const toggles = el('div', 'toggles', [sasBtn, rcsBtn, gearBtn, lightsBtn, fineBtn, hudButton(['ABORT'], 'abort', 'Abort (Backspace)', () => dispatch('abort'))]);
+  const toggles = el('div', 'toggles', [sasBtn, rcsBtn, gearBtn, lightsBtn, fineBtn, hudButton(['ABORT'], 'abort', `Abort (${keyFor('abort') ?? 'Backspace'})`, () => dispatch('abort'))]);
   const sasOn = classFlag(sasBtn, 'on');
   const rcsOn = classFlag(rcsBtn, 'on');
   const gearOn = classFlag(gearBtn, 'on');
@@ -566,64 +568,68 @@ export function createHud(opts: HudOptions): HudImpl {
   SAS_MODES.forEach((mode, i) => {
     const icon = MARKER_ICONS[mode === 'stability' ? 'stability' : mode];
     const key = keyFor(`sas:${mode}`) ?? String(i + 1);
-    const b = hudButton([svgIcon(icon, { color: MARKER_COLORS[mode === 'stability' ? 'stability' : mode] }), el('span', 'key', [key])], '', `Hold ${SAS_NAMES[mode]} (${key})`, () =>
-      dispatch(`sas:${mode}`),
-    );
+    // The icon fills the button (the marker shapes differ by small strokes); the key is in the tooltip and the
+    // key help, as on KSP's mode buttons.
+    const b = hudButton([svgIcon(icon, { color: MARKER_COLORS[mode === 'stability' ? 'stability' : mode] })], '', `Hold ${SAS_NAMES[mode]} (${key})`, () => dispatch(`sas:${mode}`));
     modes.append(b);
     modeButtons.set(mode, { on: classFlag(b, 'on'), enabled: new Flag((on) => b.setAttribute('aria-disabled', on ? 'false' : 'true')) });
   });
   const sasCaption = new TextSlot('');
   const sasPanel = el('div', 'panel sas bl', [toggles, modes, el('div', 'modecap', [sasCaption.node])], { 'data-show': 'external map' });
 
+  // The ball's read-outs are windows of black glass set into the instrument: speed (in the navball's frame) and
+  // heading on the bezel's top arc, pitch at 9 o'clock and roll at 3 o'clock. Fixed widths: a value never
+  // changes a window's size.
   const speedMode = new TextSlot('Surface');
   const speedValue = new TextSlot('');
-  const speedPanel = el('div', 'panel speed', [el('div', 'ptitle', [el('span', 'mode', [speedMode.node]), el('span', '', ['speed'])]), el('span', 'val big', [speedValue.node])], {
-    [INTERACTIVE_ATTR]: '',
-    title: 'Click: surface / orbit navball (Tab)',
-  });
-  speedPanel.querySelector('.ptitle')!.setAttribute('style', 'justify-content:center');
+  const hdg = new TextSlot('000°');
+  const speedPanel = el(
+    'div',
+    'panel speed',
+    [el('span', 'spd', [el('span', 'mode', [speedMode.node]), el('b', 'sv', [speedValue.node])]), el('span', 'hd', [el('span', 'lbl', ['Hdg']), el('b', '', [hdg.node])], { title: 'Heading of the nose' })],
+    { [INTERACTIVE_ATTR]: '', title: 'Speed in the navball frame. Click: surface / orbit navball (Tab)' },
+  );
   speedPanel.addEventListener('click', () => dispatch('toggleNavballMode'));
   const ballCanvas = el('canvas', 'ballgl');
   const bezelCanvas = el('canvas', 'bezel');
-  const hdg = new TextSlot('000°');
   const pitchText = new TextSlot('');
   const rollText = new TextSlot('');
-  // Read-outs of the ball in fixed-width windows on one row above the bezel: pitch, heading (over the top
-  // index), roll. They never touch the instrument and never change width with the value.
-  const chips = el('div', 'nbchips', [
-    el('div', 'pr pitch', [el('span', 'lbl', ['Pitch']), el('b', '', [pitchText.node])]),
-    el('div', 'hdg', [hdg.node]),
-    el('div', 'pr roll', [el('span', 'lbl', ['Roll']), el('b', '', [rollText.node])]),
-  ]);
+  const pitchWin = el('div', 'prw pitch', [el('span', 'lbl', ['Pitch']), el('b', '', [pitchText.node])], { 'data-show': 'external map' });
+  const rollWin = el('div', 'prw roll', [el('span', 'lbl', ['Roll']), el('b', '', [rollText.node])], { 'data-show': 'external map' });
   const ball = el('div', 'ball', [ballCanvas, bezelCanvas]);
-  const nbwrap = el('div', 'nbwrap bc', [speedPanel, chips, ball], { 'data-show': 'external map' });
+  const nbwrap = el('div', 'nbwrap bc', [speedPanel, ball], { 'data-show': 'external map' });
 
   const thr = tapeGauge('thr', 'THROTTLE', [['0', 0], ['50', 0.5], ['100', 1]], 10, null);
   const gG = tapeGauge('g', 'G LOAD', [['0', 0], ['4', 4 / G_SCALE.full], ['8', 8 / G_SCALE.full], ['12', 1]], G_SCALE.full, G_SCALE.limit / G_SCALE.full);
   const gTextTone = new ToneSlot(gG.valueEl);
   gG.root.title = `G load: green to ${G_SCALE.caution} g, amber to the ${G_SCALE.limit} g limit (above it the crew's g-dose builds up)`;
-  // The crew's g-dose, while there is one: a labelled bar across the panel under both captions (its share of the
-  // fatal limit; amber, red from DOSE_WARNING), so the bar never stands unexplained under the g tube.
+  // The crew's g-dose: a labelled bar across the panel under both captions (its share of the fatal limit; amber,
+  // red from DOSE_WARNING), so the bar never stands unexplained under the g tube. The line is always there (a dim
+  // 0 % without a dose), so the tubes above it never move when a flight phase brings the first dose.
   const doseValue = new TextSlot('');
   const doseBar = bar();
   const doseTone = new ToneSlot(doseBar.root);
   const doseLine = el('div', 'doseline', [el('span', 'lbl', ['G dose']), doseBar.root, el('span', 'dv', [doseValue.node])], {
     title: "Crew g-dose: g-seconds above the crew's tolerance, as a share of the fatal limit (it recovers below the amber zone)",
   });
-  const doseShow = hiddenFlag(doseLine);
   const doseNil = classFlag(doseLine, 'nil');
-  const gauges = el('div', 'panel gauges', [thr.root, gG.root, doseLine]);
+  const gauges = el('div', 'panel gauges br', [thr.root, gG.root, doseLine], { 'data-show': 'external map' });
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
-  const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', ['Maneuver'])]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root, row('Burn start', node.start).root], {
+  // Title row: 'Maneuver' and the countdown to the burn's start (amber in its last 10 s); then delta-v and burn time.
+  const nodeStartEl = el('span', 'pname nstart', [node.start.node], { title: 'Time to the start of the burn' });
+  const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', ['Maneuver']), nodeStartEl]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root], {
     'data-show': 'external map',
   });
   const nodeShow = hiddenFlag(nodePanel);
   const nodeImminent = classFlag(nodePanel, 'imminent');
   const nodeDvTone = new ToneSlot(nodePanel.querySelector('.row .val')!);
-  const rightStack = el('div', 'br', [nodePanel, el('div', '', [gauges], { 'data-show': 'external' })]);
 
-  const bottom = el('div', 'bottom', [sasPanel, nbwrap, rightStack]);
+  // The bottom cluster is one instrument: a gunmetal housing that carries the SAS controls, the navball with its
+  // read-out windows and the tape gauges, symmetric about the ball (which stays on the screen's centre line); the
+  // maneuver readout stands on the housing to the right of the ball.
+  const housing = el('div', 'housing', [], { 'data-show': 'external map' });
+  const bottom = el('div', 'bottom', [housing, sasPanel, pitchWin, nbwrap, rollWin, gauges, nodePanel]);
 
   // ---------------------------------------------------------------------------------------- centre
   // Mission failed: a modal outcome over the dimmed, inert flight panels (the clock stays), with the next steps the
@@ -902,7 +908,8 @@ export function createHud(opts: HudOptions): HudImpl {
       const slot = stageSlots.get(t.index);
       if (!slot) continue;
       slot.dv.set(t.hasEngines ? (slot.compact ? t.deltaV : `Δv ${t.deltaV}`) : '');
-      slot.meta?.set(t.hasEngines ? `TWR ${t.twr}  ${t.burnTime}` : t.actions);
+      // Far from any body the acceleration (its unit says what it is) stands in for the TWR.
+      slot.meta?.set(t.hasEngines ? `${t.thrustLabel === 'TWR' ? 'TWR ' : ''}${t.thrustValue}  ${t.burnTime}` : t.actions);
       if (slot.fill && t.propellant !== null) {
         slot.fill.set(t.propellant);
         slot.barTone?.set(t.propellant < 0.1);
@@ -910,8 +917,8 @@ export function createHud(opts: HudOptions): HudImpl {
     }
     // The total only while something can still burn: with only chutes or separations left it would read "Δv 0".
     const canBurn = active !== null || remaining.some((t) => t.hasEngines);
-    stagesMoreShow.set(canBurn || remaining.length === 0);
-    stagesMore.set(remaining.length === 0 && !active ? 'No stages left' : `Δv ${st.deltaVTotal} total`);
+    stagesMore.set(canBurn ? `Δv ${st.deltaVTotal} total` : remaining.length === 0 ? 'all fired' : `${remaining.length} left`);
+    stagesMoreAlone.set(later.length === 0);
   }
 
   function updateResources(s: SimSnapshot): void {
@@ -979,15 +986,19 @@ export function createHud(opts: HudOptions): HudImpl {
     const altSrc = altitudeSource(s, altMode);
     const w = s.warp;
     const phase = orbitPhase(s, defs);
-    const heating = r.heatFlux > HEATING_FLUX;
+    // Heating in an entry (isEntering): an ascent heats up as well but keeps its orbit panel.
+    const heating = isEntering(s, defs);
     const airborne = !landed && inAtmosphere(s, defs);
+    // A thermal limit drawing near shows its rows whatever the phase (an ascent too).
+    const ablWarn = r.ablatorFraction !== null && ablatorTone(r.ablatorFraction) === 'warning';
+    const thermalWarn = !landed && (ablWarn || r.maxTempFraction > SKIN_CAUTION);
 
-    // Panel visibility. The orbit leaves while the vessel heats up or falls through the air on a suborbital path.
+    // Panel visibility. The orbit leaves during an entry or while falling through the air on a suborbital path.
     const showOrbit = !landed && (kind === 'map' || (kind === 'external' && phase.show && !heating));
     const inAir = !landed && (r.dynamicPressure > 1 || r.mach > 0.02);
     // The chute light matters while the next chute stage could be fired: coming down through the air.
     const chuteRelevant = r.chuteEnvelope !== null && airborne && r.verticalSpeed < 0;
-    const showEntry = heating || chuteRelevant || r.liftVectorUp !== null;
+    const showEntry = heating || chuteRelevant || r.liftVectorUp !== null || thermalWarn;
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.
@@ -1008,7 +1019,7 @@ export function createHud(opts: HudOptions): HudImpl {
     entryShow.set(showEntry);
     fluxShow.set(heating);
     // The heat shield matters while it heats up, or once it is in its last margin.
-    ablShow.set(r.ablatorFraction !== null && (heating || ablatorTone(r.ablatorFraction) === 'warning'));
+    ablShow.set(r.ablatorFraction !== null && (heating || ablWarn));
     liftShow.set(r.liftVectorUp !== null);
     chuteShow.set(chuteRelevant);
     ltShow.set(r.landingTarget !== null);
@@ -1028,9 +1039,7 @@ export function createHud(opts: HudOptions): HudImpl {
     noticeShow.set(s.terrain.pending && r.altitudeRadar < RADAR_ALTITUDE_SWITCH);
     failedShow.set(s.mission.failed);
     failedClass.set(s.mission.failed);
-    // The g-dose line holds its place wherever a dose can build up (in the air, or under a real acceleration), so
-    // the tubes above it never jump when the first dose appears; it reads a dim 0 % until then.
-    doseShow.set(r.gDose > 0 || (!landed && (inAtmosphere(s, defs) || r.gLoad >= DOSE_SLOT_G)));
+    // The g-dose line reads a dim 0 % until a dose builds up (it is always there: the tubes never move).
     doseNil.set(r.gDose <= 0);
 
     // Status edges: the clock amber while warp is capped, the orbit amber / red with its periapsis, the entry panel
@@ -1148,7 +1157,7 @@ export function createHud(opts: HudOptions): HudImpl {
       }
       tempRow.value.set(formatPercent(r.maxTempFraction));
       tempRow.fill.set(r.maxTempFraction);
-      tempRow.tone.set(r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'good');
+      tempRow.tone.set(r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > SKIN_CAUTION ? 'caution' : 'good');
       entry.lift.set(r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN');
       if (r.chuteEnvelope) {
         entry.chute.set(r.chuteEnvelope.toUpperCase());
@@ -1160,7 +1169,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const lt = describeLandingTarget(s);
     if (lt) {
       ltName.set(lt.name);
-      ltKind.set(lt.kindLabel);
+      ltKind.set(lt.kindLabel === 'Recovery zone' ? 'Recovery' : 'Target');
       const rows = landingTargetRows(lt);
       if (show.ltExpanded) {
         ltRows.forEach((slot, i) => {

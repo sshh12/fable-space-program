@@ -30,26 +30,46 @@ const SCENES: [string, string][] = [
 
 /**
  * Stills of the real renderer (the integration package's flight views, 2560 x 1440, no HUD of their own) shown
- * behind the HUD in place of the lab backdrop, each with the FakeSim scene that matches it.
+ * behind the HUD in place of the lab backdrop, each with the FakeSim scene it was rendered from and the flight state
+ * of that render, given with the integration lab's own parameters (tests/browser/integration/budget.perf.spec.ts
+ * SCENES): the lift-off on the mount, the climb from 12 km at full throttle, the lander hovering 12 m over the
+ * target on its descent engine, the last 120 m under the mains over the sea.
  */
 const REAL_STILLS: [string, string, string][] = [
-  ['ascent', '', '/out/screens/integration/budget-ascent-10-40-km.png'],
+  ['pad', 'stage=1&throttle=1', '/out/screens/integration/budget-pad-lift-off.png'],
+  ['ascent', 'start=12000&throttle=1', '/out/screens/integration/budget-ascent-10-40-km.png'],
   ['lowOrbit', 'node=1', '/out/screens/integration/budget-leo.png'],
-  ['lunarSurface', '', '/out/screens/integration/budget-lunar-descent.png'],
+  ['lunarSurface', 'throttle=0.4&hover=12', '/out/screens/integration/budget-lunar-descent.png'],
   ['reentry', '', '/out/screens/integration/budget-reentry.png'],
+  ['chutes', 'start=120&ground=0', '/out/screens/integration/budget-splashdown.png'],
 ];
 const repoPath = (url: string): string => path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...url.split('/').filter(Boolean));
 
 /**
- * The flight state reads as one: the mission clock runs (only the pad before lift-off reads T+ 00:00:00), and no
- * text on screen is a debug word of the lab.
+ * The flight state reads as one: the mission clock runs (only the pad before lift-off reads T+ 00:00:00), no text
+ * on screen is a debug word of the lab, a vessel standing on the ground reads a radar altitude of about zero, a
+ * vessel sinking faster than 50 m/s is on a path that meets the surface, a steady sink of less than 15 m/s through
+ * the air comes only under the main chutes (every chute stage fired), and the mass is that of the parts carried.
  */
 async function expectCoherentState(page: Page, scene: string): Promise<void> {
   const met = (await page.locator('.hud .clock .met').textContent())!.replace(/\s/g, ' ');
   if (scene === 'pad') expect(met, 'pad MET').toMatch(/^T\+ 00:00:00$/);
-  else expect(met, `${scene}: the mission clock runs`).not.toMatch(/^T\+ 00:00:0\d$/);
+  // (The lift-off still shows the first seconds after the first stage fired.)
+  else if (scene !== 'pad lift-off') expect(met, `${scene}: the mission clock runs`).not.toMatch(/^T\+ 00:00:0\d$/);
   const text = await page.locator('.hud').evaluate((e) => (e as HTMLElement).innerText);
-  expect(text, `${scene}: no lab words on screen`).not.toMatch(/\blab\b|decoration/i);
+  expect(text, `${scene}: no lab words on screen`).not.toMatch(/\blab\b|decoration|\bnone\b/i);
+  const s = await page.evaluate(() => window.__test!.state()!);
+  const r = s.readouts;
+  const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+  if (v.situation === 'landed' || v.situation === 'splashed') expect(r.altitudeRadar, `${scene}: radar altitude when landed`).toBeLessThan(5);
+  if (r.verticalSpeed < -50) expect(r.periapsisAltitude, `${scene}: sinking at ${r.verticalSpeed.toFixed(0)} m/s on a path that meets the surface`).toBeLessThan(0);
+  if (r.dynamicPressure > 0 && r.verticalSpeed < 0 && r.verticalSpeed > -15 && v.situation === 'flying' && r.thrust === 0) {
+    const chutes = s.staging.stages.filter((x) => x.actionKinds.includes('deployParachute'));
+    expect(chutes.length, `${scene}: chute stages`).toBeGreaterThan(0);
+    for (const c of chutes) expect(c.fired, `${scene}: a ${(-r.verticalSpeed).toFixed(1)} m/s sink needs "${c.label}" fired`).toBe(true);
+  }
+  expect(v.mass, `${scene}: the snapshot's mass is the readout`).toBeCloseTo(r.mass, 3);
+  expect(r.mass, `${scene}: not the FakeSim's constant 50 t`).not.toBe(50000);
 }
 
 /** The cockpit package's seat view in low orbit (16:9), shown behind the interior layout. */
@@ -112,7 +132,7 @@ async function hudCoverage(page: Page): Promise<number> {
     const H = innerHeight;
     const mask = new Uint8Array(W * H);
     const visible = (e: Element): boolean => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
-    const boxes = [...document.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .nbchips > div, .hud .toast')].filter(visible);
+    const boxes = [...document.querySelectorAll('.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .housing, .hud .prw, .hud .toast')].filter(visible);
     for (const e of boxes) {
       const r = e.getBoundingClientRect();
       for (let y = Math.max(0, Math.floor(r.top)); y < Math.min(H, Math.ceil(r.bottom)); y++) mask.fill(1, y * W + Math.max(0, Math.floor(r.left)), y * W + Math.min(W, Math.ceil(r.right)));
@@ -221,6 +241,7 @@ for (const [w, h, tag] of [
         if (tag === '720p') {
           expect(await hudCoverage(page), `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
           await expectTextFloor(page, `${scene} over the real renderer`);
+          await expectCoherentState(page, scene === 'pad' ? 'pad lift-off' : scene);
         }
       });
     }
@@ -228,13 +249,29 @@ for (const [w, h, tag] of [
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&node=1&target=moon&attitude=24,-14,25', `attitude-lowOrbit-${tag}`);
     });
     test('high-g entry: g tube in its red zone, g-dose line, lift-vector marker, retrograde off the nose', async ({ page, pageLog }) => {
-      // The instrument never moves when the dose appears: the g tube sits where it sits in the plain entry.
-      await openPage(page, '/labs/flight-ui/?scene=reentry');
-      await page.evaluate(() => window.__test!.waitFrames(10));
-      const tubeBefore = (await page.locator('.hud .gauge.g .tube').boundingBox())!;
+      // The instrument never moves through the flight's phases: the throttle and g tubes sit where they sit on the
+      // pad, in the climb, in orbit and in the plain entry (the g-dose line is always there).
+      const boxes: { scene: string; thr: { x: number; y: number; width: number; height: number }; g: { x: number; y: number; width: number; height: number } }[] = [];
+      for (const scene of ['pad', 'ascent', 'lowOrbit', 'reentry']) {
+        await openPage(page, `/labs/flight-ui/?scene=${scene}`);
+        await page.evaluate(() => window.__test!.waitFrames(10));
+        boxes.push({ scene, thr: (await page.locator('.hud .gauge.thr .tube').boundingBox())!, g: (await page.locator('.hud .gauge.g .tube').boundingBox())! });
+      }
+      // The plain entry's clock: the high-g view is a later moment of the same entry.
+      const entryMet = (await page.locator('.hud .clock .met').textContent())!;
       await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&flight=0,11.2&dose=6.4&lift=35&attitude=-8,10,-18', `entry-highg-${tag}`);
-      const tubeAfter = (await page.locator('.hud .gauge.g .tube').boundingBox())!;
-      for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(tubeAfter[k] - tubeBefore[k]), `g tube ${k}`).toBeLessThanOrEqual(0.5);
+      const g = (await page.locator('.hud .gauge.g .tube').boundingBox())!;
+      const thr = (await page.locator('.hud .gauge.thr .tube').boundingBox())!;
+      for (const b of boxes) {
+        for (const k of ['x', 'y', 'width', 'height'] as const) {
+          expect(Math.abs(g[k] - b.g[k]), `g tube ${k}: high-g entry against ${b.scene}`).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(thr[k] - b.thr[k]), `throttle tube ${k}: high-g entry against ${b.scene}`).toBeLessThanOrEqual(0.5);
+        }
+      }
+      expect((await page.locator('.hud .clock .met').textContent())!, 'the high-g moment comes later in the entry').not.toBe(entryMet);
+      const st = await page.evaluate(() => window.__test!.state()!);
+      expect(st.readouts.gLoad).toBeGreaterThan(11);
+      expect(st.readouts.periapsisAltitude, 'an entry meets the surface').toBeLessThan(0);
       // The dose has its own labelled line inside the gauges panel: 6.4 of the 15 g s limit.
       const line = page.locator('.hud .gauges .doseline');
       await expect(line).toBeVisible();
@@ -248,7 +285,8 @@ for (const [w, h, tag] of [
       if (tag === '720p') await expectTextFloor(page, 'entry-highg');
     });
     test('retrograde held on the nose under chutes', async ({ page, pageLog }) => {
-      await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes', `retrograde-hold-${tag}`);
+      await shoot(page, pageLog, '/labs/flight-ui/?scene=chutes&sas=retrograde', `retrograde-hold-${tag}`);
+      await expect(page.locator('.hud .modecap')).toHaveText(/retrograde/i);
     });
     test('cockpit view', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lowOrbit&view=cockpit', `cockpit-lowOrbit-${tag}`);
@@ -269,7 +307,13 @@ for (const [w, h, tag] of [
       if (tag === '720p') await expectTextFloor(page, 'key help');
     });
     test('mission failed banner', async ({ page, pageLog }) => {
-      await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&failed=1', `failed-${tag}`);
+      const png = await shoot(page, pageLog, '/labs/flight-ui/?scene=reentry&failed=1', `failed-${tag}`);
+      if (tag === '720p') {
+        // Powered down, not see-through: no scene edge prints through a dimmed plate.
+        const spreads = await plateSpreads(page, png);
+        expect(spreads.length).toBeGreaterThan(3);
+        for (const x of spreads) expect(x.spread, `dimmed plate "${x.cls}" fill spread (8-bit levels)`).toBeLessThanOrEqual(8);
+      }
     });
     test('terrain loading notice', async ({ page, pageLog }) => {
       await shoot(page, pageLog, '/labs/flight-ui/?scene=lunarSurface&terrainPending=1', `terrain-pending-${tag}`);
@@ -307,6 +351,19 @@ test.describe('flight-ui over a near-white backdrop (720p)', () => {
 
 test.describe('flight-ui stage stack (720p)', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
+  test('the mass is that of the parts carried: it falls as the stack is staged, and the MFD shows it', async ({ page, pageLog }) => {
+    const masses: number[] = [];
+    for (const scene of ['pad', 'ascent', 'lowOrbit', 'lunarOrbit', 'lunarSurface', 'reentry']) {
+      await openPage(page, `/labs/flight-ui/?scene=${scene}`);
+      await page.evaluate(() => window.__test!.waitFrames(5));
+      const s = await page.evaluate(() => window.__test!.state()!);
+      masses.push(s.readouts.mass);
+      const row = (await page.evaluate(() => window.__flightUi!.mfdRows('systems'))).find((r) => r.label === 'Mass')!;
+      expect(row.value.replace(/\s/g, ' ')).toMatch(s.readouts.mass >= 10000 ? new RegExp(`^${(s.readouts.mass / 1000).toFixed(1).replace('.', '\\.')}`) : /kg$/);
+      await expectNoErrors(page, pageLog);
+    }
+    for (let i = 1; i < masses.length; i++) expect(masses[i], `mass after scene ${i}`).toBeLessThan(masses[i - 1]!);
+  });
   test('the burning stage has its own tile with live delta-v, TWR, burn time and propellant, named for what burns', async ({ page, pageLog }) => {
     for (const [scene, extra, number] of [
       ['ascent', '', '1'],
