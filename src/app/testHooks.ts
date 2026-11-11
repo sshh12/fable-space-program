@@ -40,6 +40,8 @@ export interface AppDebug {
   mfdPages(): string[];
   /** A few numbers of the latest snapshot, cheap enough to poll every frame (state() copies everything). */
   brief(): AppBrief;
+  /** Local lights of the last rendered frame: kind, peak intensity (cd), distance from the eye and range, m. */
+  frameLights(): { kind: string; intensity: number; distance: number; range: number }[];
 }
 
 export interface AppBrief {
@@ -155,5 +157,12 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         paused: game.paused,
       };
     },
+    frameLights: () =>
+      (game.renderer.frameContext?.lights ?? []).map((l) => ({
+        kind: l.kind,
+        intensity: Math.max(...l.intensity),
+        distance: Math.hypot(l.posRelCam.x, l.posRelCam.y, l.posRelCam.z),
+        range: l.range,
+      })),
   };
 }

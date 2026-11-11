@@ -1,7 +1,8 @@
 /**
  * The app shell's own line over the scene, for the two states the HUD does not know about: the game is paused
  * (P), and the scripted test pilot is flying (with its phase). Drawn in the HUD's type and colours
- * (src/core/ui/theme.ts) at the top centre, above the HUD's clock; hidden when neither applies or the HUD is hidden.
+ * (src/core/ui/theme.ts), centred, under the HUD's altitude plate and its toasts (the top centre column of the
+ * HUD ends about 17 interface units down); hidden when neither applies or the HUD is hidden.
  */
 import { UI_COLORS, UI_FONT_FAMILY } from '@/core/ui/theme';
 
@@ -17,7 +18,7 @@ export function createStatusLine(container: HTMLElement): StatusLine {
   Object.assign(el.style, {
     position: 'absolute',
     left: '50%',
-    top: 'calc(min(1vh, 0.5625vw) * 1.6)',
+    top: 'calc(min(1vh, 0.5625vw) * 24)',
     transform: 'translateX(-50%)',
     display: 'none',
     gap: 'calc(min(1vh, 0.5625vw) * 1.2)',

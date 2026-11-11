@@ -184,10 +184,9 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   const inFlight = (): boolean => !snapshot.mission.failed && (snapshot.scenario.startKind !== 'pad' || snapshot.staging.nextStage > 0);
   const removeGuard = installUnloadGuard(inFlight);
 
+  // The status line shows PAUSED for as long as it lasts (a toast would fade while the game stays paused).
   const setPaused = (p: boolean): void => {
-    if (p === paused) return;
     paused = p;
-    hud.notify(p ? 'Paused' : 'Resumed');
   };
 
   const hudObstacles = (): { x: number; y: number; width: number; height: number }[] => {
@@ -204,6 +203,8 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   const frame = (now: number): void => {
     const realDt = deterministic ? 1 / 60 : Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - last) / 1000));
     last = now;
+    // The whole frame function is the CPU line of ARCHITECTURE 17 (window.__perf.cpu, request app-integration-1).
+    ctx.perf.cpuBegin('frame');
     timings.begin();
 
     // Input, then the map view sees the pointer against the frame that is on screen.
@@ -252,6 +253,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     renderer.render(snapshot, view.camera, view.observers, realDt);
     timings.mark('render');
     timings.end();
+    ctx.perf.cpuEnd('frame');
     frames++;
     deps.onFrameDone();
   };
