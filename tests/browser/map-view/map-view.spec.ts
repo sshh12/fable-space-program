@@ -21,10 +21,14 @@ type Lab = {
 /** Run `fn(window.__mapLab)` in the page (fn must be self-contained: it is sent as source text). */
 const lab = <T>(page: Page, fn: (l: Lab) => T): Promise<T> => page.evaluate(`(${fn.toString()})(window.__mapLab)`) as Promise<T>;
 
-/** lowOrbit seen from above the orbit plane: the whole orbit is a circle just outside the Earth disc. */
+/**
+ * lowOrbit seen from above the orbit plane: the whole orbit is a circle just outside the Earth disc. From
+ * 40,000 km: in perspective a 200 km orbit seen straight down is behind the limb closer in (at 24,000 km the
+ * silhouette lies at 237 km altitude in the plane of the Earth's centre).
+ */
 async function topView(page: Page): Promise<void> {
   const s = await state(page);
-  await lookAlong(page, s.patches.current[0]!.conic.W, 2.4e7);
+  await lookAlong(page, s.patches.current[0]!.conic.W, 4e7);
 }
 
 async function addNodeAtApoapsis(page: Page): Promise<string> {
@@ -66,6 +70,19 @@ test.describe('map view on the FakeSim', () => {
     expect(await page.evaluate(() => window.__test!.camera()!.qViewToRoot)).toEqual(camBefore); // the click did not move the camera
     expect(await lab(page, (l) => l.view.selectedNodeId)).toBe(id);
     await saveScreenshot(page, 'map-view', 'accept-node-added');
+    // The pointer is still on the new node: no tooltip repeats the panel, and panel, tooltip and the six handles
+    // are pairwise apart.
+    await frames(page, 2);
+    const tip = await page.evaluate(() => (window as unknown as { __mapLab: { view: { controller: { tooltipRect: { x: number; y: number; width: number; height: number } | null } } } }).__mapLab.view.controller.tooltipRect);
+    expect(tip).toBeNull();
+    const panelBox = (await page.locator('[data-map-panel]').boundingBox())!;
+    const handles = (await describeMap(page)).filter((e) => e.kind === 'nodeHandle');
+    expect(handles).toHaveLength(6);
+    for (const h of handles) {
+      const inside = h.x > panelBox.x - 9 && h.x < panelBox.x + panelBox.width + 9 && h.y > panelBox.y - 9 && h.y < panelBox.y + panelBox.height + 9;
+      expect(inside, `handle ${h.id} under the panel`).toBe(false);
+      for (const g of handles) if (g !== h) expect(Math.hypot(g.x - h.x, g.y - h.y), `${h.id} / ${g.id}`).toBeGreaterThan(18);
+    }
 
     // The planned apoapsis before the burn (dv = 0: it coincides with the orbit).
     const earth = await element(page, 'body', s1.vessels[0]!.bodyId);

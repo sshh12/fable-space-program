@@ -1,7 +1,8 @@
 /**
- * Lab-only backdrop for the map view: each body as an analytically ray-traced, Lambert-shaded sphere
- * (camera-relative float32 centres, so it is stable at any distance), the star as an emissive disc, on a
- * black sky. It stands in for the real renderer so the overlay can be judged against lit planets.
+ * Lab-only backdrop for the map view: each body as an analytically ray-traced, Lambert-shaded sphere with an
+ * anti-aliased limb (camera-relative float32 centres, so it is stable at any distance), the star as an
+ * emissive disc, on a black sky. It stands in for the real renderer so the overlay can be exercised alone;
+ * tests/browser/map-view/real-planet.spec.ts shows the overlay over the real renderer.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState } from '@/core/contracts/render';
@@ -33,6 +34,7 @@ fn toSrgb(c: vec3f) -> vec3f {
 @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let d = normalize(vec3f((pos.x - u.screen.x * 0.5) / u.screen.z, -(pos.y - u.screen.y * 0.5) / u.screen.z, -1.0));
   let dir = normalize(u.viewToRoot * d);
+  let pixel = 1.0 / u.screen.z; // angular size of a pixel at the centre (rad)
   var best = 3.4e38;
   var col = vec3f(0.006, 0.008, 0.012);
   let n = u32(u.screen.w);
@@ -43,18 +45,23 @@ fn toSrgb(c: vec3f) -> vec3f {
     let tc = dot(dir, c);
     if (tc <= 0.0) { continue; }
     let dperp = length(cross(dir, c));
-    if (dperp >= R) { continue; }
-    let t = tc - sqrt((R - dperp) * (R + dperp));
+    // analytic coverage of the limb: distance from the silhouette in pixels (one pixel wide ramp)
+    let cover = clamp((R - dperp) / (tc * pixel) + 0.5, 0.0, 1.0);
+    if (cover <= 0.0) { continue; }
+    let dp = min(dperp, R * 0.999999);
+    let t = tc - sqrt((R - dp) * (R + dp));
     if (t <= 0.0 || t >= best) { continue; }
     best = t;
+    var shaded: vec3f;
     if (s.color.w > 0.5) {
-      col = s.color.rgb;
+      shaded = s.color.rgb;
     } else {
       let nrm = normalize(dir * t - c);
       let lit = max(dot(nrm, s.sun.xyz), 0.0);
       let rim = pow(1.0 - max(dot(nrm, -dir), 0.0), 3.0) * 0.08;
-      col = toSrgb(s.color.rgb * (lit * 1.6 + 0.035) + vec3f(rim * 0.4, rim * 0.5, rim * 0.7) * lit);
+      shaded = toSrgb(s.color.rgb * (lit * 1.6 + 0.035) + vec3f(rim * 0.4, rim * 0.5, rim * 0.7) * lit);
     }
+    col = mix(col, shaded, cover);
   }
   return vec4f(col, 1.0);
 }

@@ -38,9 +38,22 @@ test('synthetic chain: every marker kind, both nodes, current-position and at-in
   for (const id of ['current/0', 'current/1', 'planned/0', 'planned/1', 'planned/2']) {
     expect(lines.find((l) => l.id === id)?.visibleVertices ?? 0, id).toBeGreaterThan(2);
   }
-  expect(lines.filter((l) => l.id.startsWith('vessel:debris')).length).toBe(20);
+  // Debris are dots: no orbit is drawn until the pointer is on one (then exactly its orbit).
+  expect(lines.filter((l) => l.id.startsWith('vessel:debris')).length).toBe(0);
   const shot = await saveScreenshot(page, 'map-view', 'synthetic-chain');
   assertRealImage(shot.stats, 'synthetic-chain', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
+  // (at the overview the debris sit in the Earth's cluster: the pointer picks the nearest one)
+  const debris = d.find((e) => e.kind === 'vessel' && e.id.startsWith('debris') && e.visible)!;
+  expect(debris).toBeDefined();
+  await page.mouse.move(debris.x, debris.y);
+  await frames(page, 3);
+  const hovered = (await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'));
+  expect(hovered).toHaveLength(1);
+  const picked = d.find((e) => `vessel:${e.id}` === hovered[0]!.id)!;
+  expect(Math.hypot(picked.x - debris.x, picked.y - debris.y)).toBeLessThan(14);
+  await page.mouse.move(5, 5);
+  await frames(page, 3);
+  expect((await lab(page, (l) => l.stats())).lines.filter((l) => l.id.startsWith('vessel:debris'))).toHaveLength(0);
 
   // At intercept: the lunar patches move to the Moon's position at the SOI entry of their encounter (the
   // planned flyby starts inside the current encounter at node A, so both share one ghost).

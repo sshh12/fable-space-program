@@ -264,6 +264,8 @@ export class MapController implements MapView {
   /** Tooltip of each hover key in a cluster: a count line, then the members' summaries, representative first. */
   private readonly clusters = new Map<string, string[]>();
   private readonly grid = new LineGrid();
+  /** Hover tooltip of the last draw list (CSS px), for tests. */
+  private tooltip: ScreenRect | null = null;
   private consumed = false;
   private lastDraw: DrawList | null = null;
   private readonly now: () => number;
@@ -562,6 +564,11 @@ export class MapController implements MapView {
 
   get currentScene(): MapScene | null {
     return this.scene;
+  }
+
+  /** The hover tooltip's rectangle in the last draw list (CSS px), or null when none is shown (tests). */
+  get tooltipRect(): ScreenRect | null {
+    return this.tooltip;
   }
 
   stats(): MapStats {
@@ -961,11 +968,15 @@ export class MapController implements MapView {
       rects.push(panel);
     }
     const underPanel = (x: number, y: number): boolean => panel !== null && x > panel.x0 && x < panel.x1 && y > panel.y0 && y < panel.y1;
+    // Icons the selected node's disc covers are left out (their tooltip is unreachable there anyway).
+    const selX = selShown ? sel.x : NaN;
+    const selY = selShown ? sel.y : NaN;
+    const underSelected = (x: number, y: number): boolean => Math.hypot(x - selX, y - selY) < (NODE_RADIUS_PX + 3) * k;
 
     // ---- point entries: bodies, vessels, markers, unselected nodes
     const pts: PointEntry[] = [];
     const entry = (e: Omit<PointEntry, 'others'>): void => {
-      if (!underPanel(e.x, e.y)) pts.push({ ...e, others: 0 });
+      if (!underPanel(e.x, e.y) && (e.rank >= 1000 || !underSelected(e.x, e.y))) pts.push({ ...e, others: 0 });
     };
     for (const b of scene.bodies) {
       if (!onScreen(b.x, b.y, b.front)) continue;
@@ -1182,6 +1193,8 @@ export class MapController implements MapView {
           const r0 = NODE_RADIUS_PX * k;
           const r1 = len - HANDLE_RADIUS_PX * k;
           gizmo.push({ x: sel.x + h.dx * (r0 + r1) * 0.5, y: sel.y + h.dy * (r0 + r1) * 0.5, hx: (r1 - r0) / 2, hy: (ARM_WIDTH_PX / 2) * k, rot: Math.atan2(h.dy, h.dx), shape: ICON.bar, color: def.color, alpha: ARM_ALPHA });
+          // labels keep off the arm too (a chain of small discs along it)
+          for (let d = r0 + 6 * k; d < r1; d += 8 * k) clearIcons.push({ x: sel.x + h.dx * d, y: sel.y + h.dy * d, r: 3 * k });
         }
       }
       for (const h of handles) {
@@ -1212,6 +1225,7 @@ export class MapController implements MapView {
 
     // ---- hover tooltip: in the quadrant around the pointer that covers neither the panel, nor a handle, nor
     // other UI; labels then keep clear of it (none is cut through)
+    this.tooltip = null;
     const tip = this.tooltipLines(scene);
     if (tip && this.hoverPos) {
       let tw = 0;
@@ -1249,6 +1263,7 @@ export class MapController implements MapView {
         }
         if (best === 0) break;
       }
+      this.tooltip = { x: tx / k, y: ty / k, width: width / k, height: height / k };
       top.push({ x: tx + width / 2, y: ty + height / 2, hx: width / 2, hy: height / 2, rot: 0, shape: ICON.roundRect, color: COLORS.tooltipBg, alpha: 1 });
       tip.forEach((line, i) => topTexts.push({ x: tx + 8 * k, y: ty + 5 * k + i * tm.lineHeight, text: line, color: i === 0 ? COLORS.text : COLORS.textDim, alpha: 1 }));
       rects.push({ x0: tx, y0: ty, x1: tx + width, y1: ty + height });

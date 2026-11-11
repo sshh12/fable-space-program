@@ -3,6 +3,7 @@
  * chain around the Earth and the Moon (current-position and at-intercept drawing), and the node gizmo
  * with its panel. Each is asserted to be a real image; all are reviewed by eye.
  */
+import { PNG } from 'pngjs';
 import { assertRealImage, expect, expectNoErrors, saveScreenshot, test } from '../harness';
 import { frames, openLab } from './helpers';
 
@@ -38,6 +39,59 @@ test('screenshot: low orbit with a planned burn, gizmo and panel', async ({ page
   const shot = await saveScreenshot(page, 'map-view', 'lowOrbit-node');
   assertRealImage(shot.stats, 'lowOrbit-node', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
   await expect(page.locator('[data-map-panel]')).toBeVisible();
+  // The node lies just behind the Earth's limb; its gizmo is a control and keeps its full colour (prograde
+  // handle #d7e85a, normal #e35cf5).
+  const all = await page.evaluate(() => window.__test!.map());
+  const node = all.find((e) => e.kind === 'node')!;
+  expect(node.visible).toBe(false);
+  const png = PNG.sync.read(shot.buffer);
+  const peak = (id: string): [number, number, number] => {
+    const h = all.find((e) => e.kind === 'nodeHandle' && e.id.endsWith(`/${id}`))!;
+    const best: [number, number, number] = [0, 0, 0];
+    for (let y = Math.round(h.y) - 6; y <= Math.round(h.y) + 6; y++) {
+      for (let x = Math.round(h.x) - 6; x <= Math.round(h.x) + 6; x++) {
+        const o = (y * png.width + x) * 4;
+        if (png.data[o]! + png.data[o + 1]! + png.data[o + 2]! > best[0] + best[1] + best[2]) {
+          best[0] = png.data[o]!;
+          best[1] = png.data[o + 1]!;
+          best[2] = png.data[o + 2]!;
+        }
+      }
+    }
+    return best;
+  };
+  const pro = peak('prograde');
+  expect(pro[0]).toBeGreaterThan(190);
+  expect(pro[1]).toBeGreaterThan(205);
+  const nrm = peak('normal');
+  expect(nrm[0]).toBeGreaterThan(200);
+  expect(nrm[2]).toBeGreaterThan(215);
+  await expectNoErrors(page, pageLog);
+});
+
+test('screenshot: a recovery zone near the limb (continuous ring, cut at the limb)', async ({ page, pageLog }) => {
+  await openLab(page, 'scene=lowOrbit&paused=1&quiet=1');
+  // Put the first recovery zone 82 degrees from the sub-camera point.
+  await page.evaluate(() => {
+    const s = window.__test!.state()!;
+    const z = s.surfaceTargets.find((t) => t.kind === 'recovery')!;
+    const b = s.bodies.find((x) => x.id === z.bodyId)!;
+    const q = b.qFixedToRoot;
+    const d = { x: Math.cos(z.latitude) * Math.cos(z.longitude), y: Math.cos(z.latitude) * Math.sin(z.longitude), z: Math.sin(z.latitude) };
+    // rotate the body-fixed direction into ROOT: v + 2w (q x v) + 2 q x (q x v)
+    const cross = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+    const t = cross(q, d);
+    const tt = cross(q, t);
+    const n = { x: d.x + 2 * q.w * t.x + 2 * tt.x, y: d.y + 2 * q.w * t.y + 2 * tt.y, z: d.z + 2 * q.w * t.z + 2 * tt.z };
+    const side = { x: -n.y, y: n.x, z: 0 };
+    const sl = Math.hypot(side.x, side.y) || 1;
+    const a = (82 * Math.PI) / 180;
+    const e = { x: n.x * Math.cos(a) + (side.x / sl) * Math.sin(a), y: n.y * Math.cos(a) + (side.y / sl) * Math.sin(a), z: n.z * Math.cos(a) };
+    window.__test!.setCameraOrbit(Math.atan2(e.y, e.x), Math.asin(Math.max(-1, Math.min(1, e.z / Math.hypot(e.x, e.y, e.z)))), 1.6e7);
+  });
+  await frames(page, 5);
+  const shot = await saveScreenshot(page, 'map-view', 'zone-near-limb');
+  assertRealImage(shot.stats, 'zone-near-limb', { minNonBlack: 0.002, minStd: 2, minBuckets: 20 });
   await expectNoErrors(page, pageLog);
 });
 
