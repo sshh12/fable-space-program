@@ -51,7 +51,9 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let d = vfxRelToDomain(rel) - F.centre.xyz;
   let up = vfx.domUp.xyz;
   let h = dot(d, up);
-  if (abs(h) > 3.0) { discard; }
+  // A decal on whatever the depth buffer holds near the water plane: swell within a couple of metres takes
+  // it, a hull standing in the water does not (it fades out above the plane).
+  if (h > 1.0 || h < -2.5) { discard; }
   let hz = d - up * h;
   let rho = length(hz) / F.centre.w;
   if (rho >= 1.0) { discard; }
@@ -63,7 +65,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let rhoN = rho + (n.r - 0.5) * 0.22 + (n2.g - 0.5) * 0.08;
   let ring = exp(-sq((rhoN - 0.78) / 0.11)) * smoothstep(0.3, 0.75, 0.6 * n.g + 0.75 * n2.b) * 1.5;
   let mottle = smoothstep(0.35 + 0.55 * age, 0.75 + 0.3 * age, 0.55 * n.g + 0.45 * n2.b + 0.35 * (1.0 - rho)) * (1.0 - smoothstep(0.75, 1.0, rho));
-  let a = saturate((0.9 * ring * (1.0 - age) + mottle) * F.state.y * (1.0 - smoothstep(0.6, 1.0, age)));
+  let a = saturate((0.9 * ring * (1.0 - age) + mottle) * F.state.y * (1.0 - smoothstep(0.6, 1.0, age))) * (1.0 - smoothstep(0.35, 1.0, h));
   if (a < 0.003) { discard; }
   let probe = vfxProbes[0];
   let lum = foamU.albedo.rgb * (probe.sun.rgb * saturate(dot(probe.up.xyz, frame.sunDir.xyz)) + vfxProbeAmbient(0u)) * (1.0 / PI);

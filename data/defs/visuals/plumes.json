@@ -161,7 +161,7 @@
     "gas": { "count": 1400, "speed": [25, 240], "size": [0.3, 1.1], "life": [0.35, 1.1], "color": [0.86, 0.88, 0.92], "opacity": 0.2 },
     "sparks": { "count": 500, "speed": [8, 70], "size": [0.015, 0.05], "life": [0.25, 1.4], "temperature": [1900, 3200] },
     "debris": { "count": 260, "speed": [4, 55], "size": [0.03, 0.22], "life": [4, 14], "albedo": [0.4, 0.4, 0.42] },
-    "spray": { "count": 22000, "mistCount": 4200, "size": [0.012, 0.055], "mistSize": [0.5, 1.6], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.22 },
+    "spray": { "count": 22000, "mistCount": 2600, "size": [0.012, 0.055], "mistSize": [0.5, 1.6], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.22 },
     "ablation": { "rate": 1400, "speed": [15, 120], "size": [0.012, 0.04], "life": [0.25, 0.9], "temperature": [2200, 3400] }
   },
   "frost": { "resources": ["LOX", "LH2", "CH4"], "vibrationThrottle": 0.2 },

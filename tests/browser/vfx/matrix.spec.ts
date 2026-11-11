@@ -83,7 +83,7 @@ sheetTest(
   2,
   ALTITUDES.flatMap(([label, q]) => [
     { name: `${label}-les`, query: `scene=engine&engine=kestrel-les&span=190&${q}` },
-    { name: `${label}-retro`, query: `scene=engine&engine=meridian-m1-retro-motors&span=420&hide=meridian-m1-retro-motors&${q}` },
+    { name: `${label}-retro`, query: `scene=engine&engine=meridian-m1-retro-motors&span=150&hide=meridian-m1-retro-motors&${q}` },
   ]),
 );
 
