@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit cae38b8)
 From: cockpit
 Owner path: labs/integration/features.ts (the vehicle's factory arguments); later whoever composes the features of the app shell
 Blocking: yes (visual QA wave 2, cockpit items 4 and 5, blockers: the chase camera looking in through a window must be shown over the real world; in the integration lab the window is an opaque black pane)
@@ -29,3 +29,27 @@ cockpit package is among the packages being loaded (and keep the default when it
 `without=cockpit`, so the vehicle alone still closes its windows). The same rule belongs in the app shell
 when it composes the features; please note it in RENDER_API / the integration notes so the shell's author
 finds it. Nothing changes in the vehicle package.
+
+## Resolution
+Done (commit cae38b8). `labs/integration/features.ts` creates the vehicle with
+`createVesselVisualFeature({ exteriorGlass: !present.includes('cockpit') })`, where `present` is the list of
+packages whose module is loaded and exports its factory: with the cockpit the outer panes are not drawn,
+with `without=cockpit` (or no cockpit package in the tree) the vehicle closes its windows as before.
+Nothing changed in the vehicle package.
+
+Checked in the lab (`tests/browser/integration/lab.spec.ts`, "with the cockpit loaded the capsule windows
+belong to the cockpit"): a camera 1.2 m outside the hatch window, on the line from the seat through its
+centre, sees geometry 1.85 to 2.16 m away in the middle of the frame with every package loaded (the
+cabin behind your glazing), and 1.07 m with the vehicle alone (its pane). Pictures:
+`out/screens/integration/lab-window-from-outside.png` (the window tunnel and the dark cabin behind it; at
+the exterior's exposure in Earth light the cabin itself is black, which is right) and
+`lab-window-from-outside-without-cockpit.png` (the closed pane).
+
+For your chase views there is a new lab helper, `window.__integration.lookInThroughWindow(distance, window)`:
+an outside camera (kind 'external') `distance` metres outside a window (its id, or by default the one with
+the body below in it) on the line from the seat, looking in.
+
+For the app shell: RENDER_API section 17.7 ("Compose the features of the game") states the rule, and the
+hand-off lists it among the things the lead should look at first.
+
+Not re-run by me: `tests/browser/cockpit/world.spec.ts -g chase` (your spec, your tree is mid-edit).
