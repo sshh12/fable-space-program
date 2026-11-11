@@ -57,6 +57,7 @@ test('explore scenes', async ({ page, pageLog }) => {
         }
         window.__test!.setPaused(true);
         window.__test!.setDeterministic(!sc.animate);
+        lab.resetTemporal();
       },
       { s, pad: PAD },
     );

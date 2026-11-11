@@ -264,7 +264,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         if (s <= 0.0 || s >= rays[a].len) { continue; }
         let bi = u32(atmo.bodies[a]);
         let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, rays[a], s, phases[a], mix(others[a].x, others[a].y, s / rays[a].len));
-        src += o.direct * atmoCloudShadowOnRay(bi, d, rays[a], s) + o.multi;
+        src += atmoCloudedSource(o.direct, o.multi, atmoCloudPassOnRay(bi, d, rays[a], s));
         ext += o.ext;
       }
       L += T * src * atmoSegment(ext, dt);

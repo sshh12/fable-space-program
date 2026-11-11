@@ -64,6 +64,11 @@ export interface AtmosphereLab {
   viewFromSpace(distance: number, phaseDeg: number, fovDeg?: number): void;
   setQuads(q: LabQuad[]): void;
   /**
+   * Start the clouds' temporal state again (no history, cloud clock at zero, shadow map re-marched): a
+   * capture taken a fixed number of frames later repeats from run to run.
+   */
+  resetTemporal(): void;
+  /**
    * Luminance (cd/m^2, linear sRGB) of render-target pixels: the pre-exposed HDR target divided by the
    * exposure of the frame. `rect` in render pixels (default: the centre pixel). `target`: 'hdr' = the scene
    * before temporal anti-aliasing (default), 'resolved' = after it (what goes to the tone mapper).
@@ -244,6 +249,9 @@ async function boot(): Promise<void> {
     },
     setQuads(q) {
       quads.set(q);
+    },
+    resetTemporal() {
+      feature.debug.clouds()?.resetTemporal(0);
     },
     async readLuminance(rect, target = 'hdr') {
       const f = app.renderer.frameContext!;

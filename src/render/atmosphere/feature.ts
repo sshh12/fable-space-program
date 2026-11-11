@@ -128,7 +128,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     r.publish('clouds.depth', cloudsOn ? clouds!.depthView : neutralCloudDepth);
     if (clouds) {
       r.publish('clouds.shadowMap', clouds.shadowView);
-      r.publish('clouds.coverageMap', clouds.coverageView);
+      r.publish('clouds.coverageMap', clouds.coverageCoreView);
     }
   };
 
@@ -159,7 +159,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 0, resource: { buffer: uniformBuffer } },
         { binding: 1, resource: tables.transmittanceView! },
         { binding: 2, resource: tables.multiScatterView! },
-        { binding: 3, resource: clouds ? clouds.shadowView : neutralShadow },
+        { binding: 3, resource: clouds ? clouds.shadowMomentView : neutralShadow },
         { binding: 4, resource: clouds ? clouds.coverageView : neutralCoverage },
         { binding: 5, resource: ctx.resources.get('scene.depthHalf') },
         { binding: 6, resource: cloudsOn ? clouds!.screenView : neutralCloudScreen },
@@ -183,7 +183,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 0, resource: { buffer: uniformBuffer } },
         { binding: 1, resource: tables.transmittanceView! },
         { binding: 2, resource: tables.multiScatterView! },
-        { binding: 3, resource: clouds ? clouds.shadowView : neutralShadow },
+        { binding: 3, resource: clouds ? clouds.shadowMomentView : neutralShadow },
         { binding: 4, resource: clouds ? clouds.coverageView : neutralCoverage },
         { binding: 5, resource: ctx.resources.get('scene.depthHalf') },
         { binding: 6, resource: cloudsOn ? clouds!.fineColorView : neutralCloudScreen },
@@ -223,7 +223,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         return t.createView();
       };
       neutralCloudScreen = solid(`${id}.neutral.cloudScreen`, 'rgba16float', new Uint16Array([0, 0, 0, 0x3c00]));
-      neutralCloudDepth = solid(`${id}.neutral.cloudDepth`, 'r32float', new Float32Array([3.0e38]));
+      neutralCloudDepth = solid(`${id}.neutral.cloudDepth`, 'rg32float', new Float32Array([3.0e38, 3.0e38]));
       neutralCloudGeom = solid(`${id}.neutral.cloudGeom`, 'rgba32float', new Float32Array([3.0e38, 3.0e38, 3.0e38, 0]));
       neutralShadow = solid(`${id}.neutral.shadow`, 'rgba16float', new Uint16Array([0, 0, 0, 0]));
       neutralCoverage = solid(`${id}.neutral.coverage`, 'r8unorm', new Uint8Array([0, 0, 0, 0]));
@@ -354,7 +354,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       signature = layers.map((l) => `${l.bodyId}:${JSON.stringify(bodyDef(frame, l.bodyIndex).render.atmosphere)}:${bodyDef(frame, l.bodyIndex).radius}`).join('|');
       tables.configure(layers.length, signature, frame.sun.illuminance, {
         uniforms: uniformBuffer,
-        shadowMap: clouds ? clouds.shadowView : neutralShadow,
+        shadowMap: clouds ? clouds.shadowMomentView : neutralShadow,
         coverageMap: clouds ? clouds.coverageView : neutralCoverage,
       });
       publish();

@@ -16,17 +16,24 @@
  */
 import { ATMO_UNIFORM_WGSL } from '../uniforms';
 
-/** Chunk "atmosphere_cloud_shadow": needs `atmo`, `atmoShadowTex`, `atmoCoverageTex` declared by the includer. */
+/**
+ * Chunk "atmosphere_cloud_shadow": needs `atmo`, `atmoShadowTex` (the MOMENT map of the cloud shadow pass:
+ * r = optical depth of the direct beam along the sun line, g, b = r x mean and mean squared altitude of the
+ * extinction, altitudes as fractions of the cloud shell) and `atmoCoverageTex` declared by the includer.
+ */
 export const CLOUD_SHADOW_WGSL = /* wgsl */ `
-/// Transmittance of the cloud layer between a camera-relative point of body 'bi' and the sun (1 = none).
+/// Optical depth of the cloud between a camera-relative point of body 'bi' and the sun, along the sun line.
 /// 'up' = local vertical at the point, r = its radius, muS = dot(up, sun direction). Near the camera the
-/// cloud shadow map (optical depth along the projection direction, front depth, mean extinction) gives a
-/// depth-resolved answer; beyond it the coverage map at the point where the sun ray leaves the layer.
-fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
-  if (i32(bi) != atmo.bodies.z || r >= atmo.cloudShell.y) { return 1.0; }
+/// moment map gives a depth-resolved answer (the share of a line's extinction that lies above the point's
+/// altitude; the three moments interpolate, so a lookup across a cloud edge is a thinner cloud, not a
+/// ramp of unlike quantities); beyond it the coverage map at the point where the sun ray leaves the layer.
+/// 'lod' = level of the moment map: 0 = its texels, higher = blurred (the penumbra far from the cloud, and
+/// all that a few samples along a sight line can carry).
+fn atmoCloudTauAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32, lod: f32) -> f32 {
+  if (i32(bi) != atmo.bodies.z || r >= atmo.cloudShell.y) { return 0.0; }
   let m = max(muS, 0.05);
   // The near map first: inside it (all but its outer eighth) the coverage map is not needed at all.
-  var nearT = 1.0;
+  var nearTau = 0.0;
   var nearW = 0.0;
   let he = atmo.shadowOrigin.w;
   if (he > 0.0) {
@@ -34,14 +41,20 @@ fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
     let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz)) / he;
     let edge = 1.0 - max(abs(q.x), abs(q.y));
     if (edge > 0.0) {
-      let s = dot(rel, atmo.shadowL.xyz);
-      let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, 0.0);
-      nearT = exp(-clamp((b.g - s) * b.b, 0.0, b.r) * atmo.shadowV.w / m);
+      let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, lod);
+      if (b.r > 1e-4) {
+        let mean = b.g / b.r;
+        let sd = sqrt(max(b.b / b.r - mean * mean, 1e-5));
+        let hn = (r - atmo.cloudShell.x) / (atmo.cloudShell.y - atmo.cloudShell.x);
+        // (The extinction of a line spread evenly over mean +- sqrt(3) sd; a small floor keeps a thin
+        // layer from becoming a step.)
+        nearTau = b.r * saturate(0.5 + (mean - hn) / (3.4641 * sd + 0.02)) * atmo.shadowV.w / m;
+      }
       nearW = saturate(edge * 8.0);
-      if (nearW >= 1.0) { return nearT; }
+      if (nearW >= 1.0) { return nearTau; }
     }
   }
-  var farT = 1.0;
+  var farTau = 0.0;
   if (atmo.far.w > 0.5 && r < atmo.far.x) {
     let sunDir = frame.bodies[bi].sunDir.xyz;
     let bq = r * muS;
@@ -49,21 +62,44 @@ fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
     let dfix = normalize(rootToFixed(bi, up * r + sunDir * t));
     let lon = atan2(dfix.y, dfix.x) + atmo.far.z;
     let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(dfix.z, -1.0, 1.0)) / PI);
-    // Points well below the layer are under all of it (this is the deferred lighting's term on the ground);
-    // inside the layer the term fades out towards the layer radius instead of switching.
-    // (Read at the size of the pixel that asks: from far away one pixel covers many texels of the map.)
-    let lod = max(log2(length(pos) * atmo.cloudMarch.w * atmo.noiseRot.w / (TWO_PI * frame.bodies[bi].center.w)), 1.0);
-    farT = mix(1.0, exp(-textureSampleLevel(atmoCoverageTex, linearClamp, uv, lod).r * atmo.far.y / m), saturate((atmo.far.x - r) / 600.0));
+    // Points well below the layer are under all of it; inside the layer the term fades out towards the
+    // layer radius instead of switching. (Read at the size of the pixel that asks: from far away one pixel
+    // covers many texels of the map. The map's coverage is an opacity: the optical depth of the direct beam
+    // grows steeply with it.)
+    let lod = max(log2(length(pos) * atmo.cloudMarch.w * atmo.noiseRot.w / (TWO_PI * frame.bodies[bi].center.w)), 0.0);
+    let c = textureSampleLevel(atmoCoverageTex, linearClamp, uv, lod).r;
+    farTau = c * (1.0 + 7.0 * c) * atmo.far.y / m * saturate((atmo.far.x - r) / 600.0);
   }
-  return mix(farT, nearT, nearW);
+  return mix(farTau, nearTau, nearW);
 }
 
-/// The same for the point at distance s along the path of 'ray' (camera ray d); 1 for bodies without clouds.
-fn atmoCloudShadowOnRay(bi: u32, d: vec3f, ray: AtmoRay, s: f32) -> f32 {
-  if (i32(bi) != atmo.bodies.z) { return 1.0; }
+/// Share of the sun's illuminance that passes a cloud of optical depth tau along the sun line: x = in the
+/// direct beam, y = in the beam and diffusely together (two-stream, plus the light that the lit sides of the
+/// clouds around send into a shadow: 8 % of the sun's). The ground under an overcast is dim, not black.
+fn atmoCloudPass(tau: f32) -> vec2f {
+  let direct = exp(-tau);
+  return vec2f(direct, direct + (1.0 - direct) * (1.0 / (1.0 + atmo.cloudLight.y * tau) + 0.08));
+}
+
+/// Transmittance of the cloud layer between a point and the sun (direct beam; 1 = none).
+fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
+  return exp(-atmoCloudTauAt(pos, bi, up, r, muS, 0.0));
+}
+
+/// atmoCloudPass for the point at distance s along the path of 'ray' (camera ray d); (1, 1) for bodies
+/// without clouds.
+fn atmoCloudPassOnRay(bi: u32, d: vec3f, ray: AtmoRay, s: f32) -> vec2f {
+  if (i32(bi) != atmo.bodies.z) { return vec2f(1.0); }
   let pos = d * (ray.t0 + s);
   let up = normalize(pos - frame.bodies[bi].center.xyz);
-  return atmoCloudShadowAt(pos, bi, up, frame.bodies[bi].center.w + max(atmoRayAltitude(ray, s), 0.0), dot(up, frame.bodies[bi].sunDir.xyz));
+  return atmoCloudPass(atmoCloudTauAt(pos, bi, up, frame.bodies[bi].center.w + max(atmoRayAltitude(ray, s), 0.0), dot(up, frame.bodies[bi].sunDir.xyz), 2.5));
+}
+
+/// What the air at a point under cloud scatters towards the eye, given its clear-sky source terms: the
+/// singly scattered sunlight is that of the light the cloud lets through (beam and diffuse), and the
+/// multiply scattered light, which comes from the whole sky, keeps a floor and follows the same share.
+fn atmoCloudedSource(direct: vec3f, multi: vec3f, passed: vec2f) -> vec3f {
+  return direct * passed.y + multi * (0.3 + 0.7 * passed.y);
 }
 `;
 
@@ -182,8 +218,22 @@ ${
   let uvCloud = in.uv - frame.jitter.xy * frame.renderSize.zw;
   let cloudSize = vec2i(textureDimensions(cloudGeomTex));
   let cloud = textureSampleLevel(cloudTex, linearClamp, uvCloud, 0.0);
-  // r = where the cloud begins along the ray, g = where it ends, b = its opacity-weighted mean distance.
-  let cloudGeom = textureLoad(cloudGeomTex, clamp(vec2i(uvCloud * vec2f(cloudSize)), vec2i(0), cloudSize - 1), 0).rgb;`
+  // r = where the cloud begins along the ray, g = where it ends, b = its opacity-weighted mean distance:
+  // read with the same four texels and weights as the radiance (over those that hold a cloud), so that
+  // wherever the radiance has cloud there is a distance for it, and the far and the near candidate below
+  // agree about it.
+  let cst = uvCloud * vec2f(cloudSize) - 0.5;
+  let cfr = cst - floor(cst);
+  var geomSum = vec3f(0.0);
+  var geomW = 0.0;
+  for (var k = 0; k < 4; k++) {
+    let o = vec2i(k & 1, k >> 1);
+    let g = textureLoad(cloudGeomTex, clamp(vec2i(floor(cst)) + o, vec2i(0), cloudSize - 1), 0).rgb;
+    let w = select(1.0 - cfr.x, cfr.x, o.x == 1) * select(1.0 - cfr.y, cfr.y, o.y == 1);
+    if (g.b < 1.0e37) { geomSum += g * w; geomW += w; }
+  }
+  var cloudGeom = vec3f(3.0e38);
+  if (geomW > 1e-4) { cloudGeom = geomSum / geomW; }`
 }
   let tCloud = cloudGeom.b;
   let xi = blueNoise(vec2u(pix)).x;
@@ -230,8 +280,8 @@ ${
       let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, ray, sm, phase, mix(othersA, othersB, sm / sEnd));
       var src = o.direct + o.multi;
       if (bix == atmo.bodies.z) {
-        let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * atmo.misc.z + f32(i) * 0.61803398875)) / f32(n), kHere);
-        src = o.direct * atmoCloudShadowOnRay(bi, d, ray, sj) + o.multi;
+        let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * frame.time.w + f32(i) * 0.61803398875)) / f32(n), kHere);
+        src = atmoCloudedSource(o.direct, o.multi, atmoCloudPassOnRay(bi, d, ray, sj));
       }
       var segA = sPrev;
       for (var e = 0; e < 2; e++) {

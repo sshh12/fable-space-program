@@ -18,11 +18,11 @@ export interface CloudParams {
   weatherScaleM: number;
 
   // --- low layer (cumulus / stratocumulus)
-  /** Depth of the low layer at full coverage, m. */
+  /** Depth of the low layer at full coverage, m (the map's cloud top can make it up to half as deep again, or shallower). */
   lowThicknessM: number;
   /** Extinction inside low cloud, 1 / m. */
   lowExtinction: number;
-  /** Width of the density ramp at a cloud edge, in units of the shape noise. */
+  /** Width of the density ramp at a cloud edge, in units of the shape noise (the upper body's is two and a half times wider). */
   lowEdgeSoftness: number;
   /** Low-layer coverage per unit of map coverage. */
   lowCoverageGain: number;
@@ -31,8 +31,8 @@ export interface CloudParams {
   /** How strongly the mesoscale noise breaks the map's texels into cells (0..1). */
   mesoscaleAmplitude: number;
   /**
-   * Strength of the detail erosion (how far it moves the surface of a cloud inwards, in units of the shape
-   * noise) and the pixel footprint (m) beyond which it is skipped.
+   * Strength of the detail erosion (how far it lowers the shape noise's excess over the threshold: deep
+   * enough to open holes) and the pixel footprint (m) beyond which it is skipped.
    */
   detailErosion: number;
   detailFadeFootprintM: number;
@@ -41,19 +41,19 @@ export interface CloudParams {
   /** Mesoscale variation of the low layer's extinction, in octaves either way (0 = uniform decks). */
   lowDensityVariation: number;
 
-  // --- high layer (altostratus / cirrus shield) and the deep column (nimbostratus, cumulonimbus)
+  // --- upper body (altostratus, anvils) and where it reaches down to the low layer (nimbostratus, cumulonimbus)
   highThicknessMinM: number;
   highThicknessMaxM: number;
   highExtinctionMin: number;
   highExtinctionMax: number;
-  /** Map coverage at which the high layer appears / is complete. */
+  /** Map coverage at which the upper body appears / is complete (only where the map's cloud top leaves room above the low layer). */
   highCoverageStart: number;
   highCoverageFull: number;
-  /** Map coverage at which the column between the layers starts to fill / is solid. */
+  /** Map coverage at which the upper body starts to reach down to the low layer / does. */
   deepCoverageStart: number;
   deepCoverageFull: number;
   deepExtinction: number;
-  /** Depth of the billows that the shape noise carves into the top of a thick sheet, m. */
+  /** Depth of the relief of the upper body's top, m (0.6 to 1.6 times this, growing with depth). */
   topReliefM: number;
 
   // --- lighting
@@ -77,15 +77,14 @@ export interface CloudParams {
   stepFactor: number;
   stepMinM: number;
   stepMaxM: number;
-  /** Pixel footprint (m) at which the resolved cloud shapes have faded into fractional coverage. */
-
   // --- shadows
   /** Half width of the near shadow map at ground level, m; it grows with the camera altitude by `shadowAltitudeGain`. */
   shadowHalfExtentM: number;
   shadowAltitudeGain: number;
   shadowMapSize: number;
+  /** Density steps along a line of the shadow map with the sun overhead (up to three times as many as it gets low). */
   shadowSteps: number;
-  /** Vertical optical depth at coverage 1 for the far (coverage-map) shadow term. */
+  /** Optical depth at coverage 1 of the far (coverage-map) shadow term AS THE GROUND SEES IT (beam and diffuse light together). */
   farShadowOpticalDepth: number;
 
   // --- motion (sim time)
@@ -100,41 +99,41 @@ export interface CloudParams {
 }
 
 const DEFAULTS: Omit<CloudParams, 'bottomAltitude' | 'topAltitude' | 'coverageMap'> = {
-  baseNoiseScaleM: 9000,
-  detailNoiseScaleM: 1100,
-  mesoscaleScaleM: 40000,
+  baseNoiseScaleM: 5200,
+  detailNoiseScaleM: 760,
+  mesoscaleScaleM: 46000,
   weatherScaleM: 350000,
   lowThicknessM: 1900,
-  lowExtinction: 0.06,
-  lowEdgeSoftness: 0.12,
-  lowCoverageGain: 0.9,
+  lowExtinction: 0.07,
+  lowEdgeSoftness: 0.05,
+  lowCoverageGain: 1,
   fairWeatherCoverage: 0.2,
-  mesoscaleAmplitude: 0.8,
-  detailErosion: 0.24,
+  mesoscaleAmplitude: 0.7,
+  detailErosion: 0.3,
   detailFadeFootprintM: 400,
   lowThinDensity: 0.2,
-  lowDensityVariation: 1.0,
-  highThicknessMinM: 500,
+  lowDensityVariation: 1,
+  highThicknessMinM: 600,
   highThicknessMaxM: 2600,
-  highExtinctionMin: 0.0004,
+  highExtinctionMin: 0.0015,
   highExtinctionMax: 0.012,
-  highCoverageStart: 0.22,
-  highCoverageFull: 0.75,
+  highCoverageStart: 0.45,
+  highCoverageFull: 0.9,
   deepCoverageStart: 0.72,
   deepCoverageFull: 0.95,
-  deepExtinction: 0.045,
-  topReliefM: 700,
+  deepExtinction: 0.02,
+  topReliefM: 600,
   phaseG1: 0.8,
   phaseG2: -0.3,
   phaseMix: 0.5,
-  sunReachM: 2500,
+  sunReachM: 2000,
   multiScatterGain: 0.5,
-  diffuseScatter: 0.7,
+  diffuseScatter: 0.9,
   diffusionG: 0.85,
   ambientScale: 1,
-  groundAlbedo: 0.15,
+  groundAlbedo: 0.1,
   stepFactor: 0.012,
-  stepMinM: 60,
+  stepMinM: 40,
   stepMaxM: 600,
   shadowHalfExtentM: 30000,
   shadowAltitudeGain: 2.5,
@@ -143,7 +142,7 @@ const DEFAULTS: Omit<CloudParams, 'bottomAltitude' | 'topAltitude' | 'coverageMa
   farShadowOpticalDepth: 2,
   coverageDriftMps: 6,
   noiseDriftMps: 8,
-  windShear: 0.6,
+  windShear: 0.12,
   detailRiseMps: 1.5,
   maxTimeRate: 4,
 };
@@ -176,8 +175,8 @@ export function resolveCloudParams(def: CloudRenderDef): { params: CloudParams; 
       (out as unknown as Record<string, number>)[key] = DEFAULTS[key];
     }
   };
-  range('lowEdgeSoftness', 0.02, 1);
-  range('detailErosion', 0, 0.5);
+  range('lowEdgeSoftness', 0.01, 1);
+  range('detailErosion', 0, 0.6);
   range('lowCoverageGain', 0, 2);
   range('fairWeatherCoverage', 0, 1);
   range('mesoscaleAmplitude', 0, 1);
