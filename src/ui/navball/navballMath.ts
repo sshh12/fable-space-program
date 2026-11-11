@@ -17,6 +17,9 @@ import type { Vec3 } from '@/core/math/vec3';
 /** Ball radius as a fraction of half the render target (margin for edge anti-aliasing and limb markers). */
 export const BALL_RADIUS_FRACTION = 0.93;
 
+/** Ball radius fraction of the HUD instrument canvas: the outer ring of the canvas carries the bezel. */
+export const HUD_BALL_RADIUS_FRACTION = 0.84;
+
 /** Half-size of a marker icon in normalised ball units (fraction of the ball radius). */
 export const MARKER_HALF_SIZE = 0.19;
 

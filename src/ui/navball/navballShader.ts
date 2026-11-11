@@ -1,7 +1,15 @@
 /**
  * WGSL for the navball: an analytically ray-cast textured sphere (exact silhouette and per-pixel normal)
- * rotated by qVesselToHorizon and lit softly, then the markers and the reticle as premultiplied icon quads.
- * Output is sRGB-encoded, premultiplied by coverage (alpha = coverage of the ball).
+ * rotated by qVesselToHorizon, then the markers and, last, the fixed vessel reticle as premultiplied icon quads
+ * clipped to the ball's silhouette. Output is sRGB-encoded, premultiplied by coverage (alpha = coverage).
+ *
+ * Two looks (Ball.params.z):
+ *   0  the shared 512 texture ('ui.navball'): soft shading only, no highlight. The cockpit lights this image
+ *      itself as the albedo of its instrument ball, so nothing view-dependent is baked in.
+ *   1  the HUD instrument: a strongly rounded sphere (wrap-diffuse key light from the upper left with a dark
+ *      terminator side, limb darkening to about 0.4, a contact shadow where the ball meets the bezel), a small
+ *      sharp-edged window reflection on its varnish and a faint Fresnel rim. The reflection is added on top of
+ *      the shaded albedo, never multiplied into it, so the markings keep their contrast.
  */
 export const NAVBALL_WGSL = /* wgsl */ `
 struct Ball {
@@ -9,7 +17,7 @@ struct Ball {
   r0: vec4f,
   r1: vec4f,
   r2: vec4f,
-  // x: ball radius fraction, y: target size in px, z: texture lod bias, w: unused
+  // x: ball radius fraction, y: target size in px, z: look (0 shared texture, 1 HUD instrument), w: unused
   params: vec4f,
 };
 
@@ -55,6 +63,26 @@ fn vsBall(@builtin(vertex_index) i: u32) -> VsOut {
   return o;
 }
 
+/** Soft-edged rectangle mask of a reflected direction against a window light (the varnish highlight). */
+fn windowReflection(n: vec3f) -> f32 {
+  // Mirror direction of the view ray (the eye looks along -z).
+  let rv = reflect(vec3f(0.0, 0.0, -1.0), n);
+  let w = normalize(vec3f(-0.5, 0.62, 0.6));
+  let tx = normalize(cross(vec3f(0.0, 0.0, 1.0), w));
+  let ty = cross(w, tx);
+  let d = dot(rv, w);
+  let q = vec2f(dot(rv, tx), dot(rv, ty)) / max(d, 1e-3);
+  // Window half extents (tangent units) and a rounded corner; edge softness from the pixel footprint.
+  let half = vec2f(0.2, 0.12);
+  let e = abs(q) - half + vec2f(0.035);
+  let sd = length(max(e, vec2f(0.0))) + min(max(e.x, e.y), 0.0) - 0.035;
+  let fw = max(fwidth(sd), 1e-4);
+  let inside = 1.0 - smoothstep(-fw, fw, sd);
+  // Two mullions split the window into panes (a lamp housing seen in the varnish).
+  let mull = 1.0 - 0.75 * (1.0 - smoothstep(0.0, fw * 1.5 + 0.004, abs(q.x - 0.03) - 0.008));
+  return inside * mull * step(0.0, d);
+}
+
 @fragment
 fn fsBall(in: VsOut) -> @location(0) vec4f {
   let p = in.p;
@@ -80,14 +108,25 @@ fn fsBall(in: VsOut) -> @location(0) vec4f {
   let gv = vec2f(dpdx(v), dpdy(v));
   let albedo = textureSampleGrad(ballTex, ballSamp, vec2f(u, v), vec2f(gu.x, gv.x), vec2f(gu.y, gv.y)).rgb;
 
-  // Soft key light from the upper left, wrap-around diffuse, gentle limb darkening and a faint gloss.
   let n = vec3f(p.x, p.y, z) / max(1.0, r);
-  let L = normalize(vec3f(-0.38, 0.55, 0.74));
-  let diffuse = 0.58 + 0.42 * max(dot(n, L), 0.0);
-  let limb = 1.0 - 0.42 * pow(1.0 - z, 2.2);
-  let h = normalize(L + vec3f(0.0, 0.0, 1.0));
-  let gloss = pow(max(dot(n, h), 0.0), 60.0) * 0.16 + pow(max(dot(n, h), 0.0), 8.0) * 0.035;
-  let lit = albedo * diffuse * limb + vec3f(gloss);
+  let L = normalize(vec3f(-0.42, 0.58, 0.7));
+  let ndl = dot(n, L);
+  let reflection = windowReflection(n);
+  var lit: vec3f;
+  if (ball.params.z < 0.5) {
+    // Shared texture: soft shading only (the cockpit relights it).
+    let diffuse = 0.62 + 0.38 * max(ndl, 0.0);
+    let limb = 1.0 - 0.36 * pow(1.0 - z, 2.2);
+    lit = albedo * diffuse * limb;
+  } else {
+    // HUD instrument: wrap diffuse with a dark terminator side, deep limb darkening, contact shadow at the bezel.
+    let wrap = clamp((ndl + 0.3) / 1.3, 0.0, 1.0);
+    let diffuse = 0.3 + 0.86 * wrap * wrap * (3.0 - 2.0 * wrap);
+    let limb = mix(0.4, 1.0, smoothstep(0.0, 0.6, z));
+    let contact = 1.0 - 0.6 * smoothstep(0.9, 0.995, r);
+    let fresnel = pow(1.0 - z, 5.0);
+    lit = albedo * diffuse * limb * contact + vec3f(0.5, 0.56, 0.62) * (reflection * 0.42) + vec3f(0.08, 0.1, 0.13) * fresnel * contact;
+  }
   return vec4f(toSrgb(lit) * coverage, coverage);
 }
 
@@ -95,6 +134,8 @@ struct VsMarker {
   @builtin(position) pos: vec4f,
   @location(0) uv: vec2f,
   @location(1) alpha: f32,
+  // Position in normalised ball units (unit disc = ball).
+  @location(2) bp: vec2f,
 };
 
 @vertex
@@ -106,18 +147,22 @@ fn vsMarker(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) ->
   // Width / height of the cell in pixels (the atlas is four times wider than tall).
   let aspect = (m.uv.z - m.uv.x) / (m.uv.w - m.uv.y) * 4.0;
   let half = vec2f(m.pos.z * aspect, m.pos.z);
-  let centre = m.pos.xy * ball.params.x;
+  let bp = m.pos.xy + c * half;
   var o: VsMarker;
-  o.pos = vec4f(centre + c * half * ball.params.x, 0.0, 1.0);
+  o.pos = vec4f(bp * ball.params.x, 0.0, 1.0);
   let t = c * 0.5 + 0.5;
   o.uv = vec2f(mix(m.uv.x, m.uv.z, t.x), mix(m.uv.w, m.uv.y, t.y));
   o.alpha = m.pos.w;
+  o.bp = bp;
   return o;
 }
 
 @fragment
 fn fsMarker(in: VsMarker) -> @location(0) vec4f {
   let c = textureSample(atlasTex, ballSamp, in.uv);
-  return c * in.alpha;
+  // Markers lie on the sphere: nothing is drawn outside its silhouette (same edge as the ball's coverage).
+  let radiusPx = ball.params.x * ball.params.y * 0.5;
+  let inside = clamp((1.0 - length(in.bp)) * radiusPx + 0.5, 0.0, 1.0);
+  return c * (in.alpha * inside);
 }
 `;

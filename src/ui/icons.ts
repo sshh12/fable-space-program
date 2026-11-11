@@ -34,8 +34,9 @@ export const MARKER_ICONS = {
   radialOut: { stroke: `${circle(4.2)}${ray(45, 6.2, 10.5)}${ray(135, 6.2, 10.5)}${ray(225, 6.2, 10.5)}${ray(315, 6.2, 10.5)}`, fill: dot(12, 12, 1.4) },
   radialIn: { stroke: `${circle(7)}${ray(45, 2.6, 6.2)}${ray(135, 2.6, 6.2)}${ray(225, 2.6, 6.2)}${ray(315, 2.6, 6.2)}` },
   maneuver: { stroke: `${circle(4.6)}${ray(-90, 6.5, 10.8)}${ray(30, 6.5, 10.8)}${ray(150, 6.5, 10.8)}M8.6,3.6L12,1.3L15.4,3.6`, fill: dot(12, 12, 1.4), width: 2.2 },
-  target: { stroke: circle(6.5), fill: `${dot(12, 12, 1.5)}${dot(16.6, 7.4)}${dot(7.4, 7.4)}${dot(16.6, 16.6)}${dot(7.4, 16.6)}` },
-  antiTarget: { stroke: `${circle(6.5)}${ray(45, 0, 6.5)}${ray(135, 0, 6.5)}${ray(225, 0, 6.5)}${ray(315, 0, 6.5)}`, fill: `${dot(19.4, 12)}${dot(4.6, 12)}${dot(12, 4.6)}${dot(12, 19.4)}` },
+  // Target: a ring with a centre dot and four separate diagonal ticks outside it (one path, outlined once).
+  target: { stroke: `${circle(6)}${ray(45, 8.4, 11.2)}${ray(135, 8.4, 11.2)}${ray(225, 8.4, 11.2)}${ray(315, 8.4, 11.2)}`, fill: dot(12, 12, 1.6) },
+  antiTarget: { stroke: `${circle(6)}${ray(45, 0, 6)}${ray(135, 0, 6)}${ray(225, 0, 6)}${ray(315, 0, 6)}${ray(0, 8.4, 11.2)}${ray(90, 8.4, 11.2)}${ray(180, 8.4, 11.2)}${ray(270, 8.4, 11.2)}` },
   liftVector: { stroke: `${circle(3.2)}M12,8.8V2.6M8.4,6.2L12,2.4L15.6,6.2M7.2,16.6H16.8`, width: 2.1 },
   stability: { stroke: `${circle(5.6)}${ray(0, 7.5, 11)}${ray(180, 7.5, 11)}${ray(-90, 7.5, 11)}${ray(90, 7.5, 11)}M9.2,12H14.8` },
 } satisfies Record<string, IconDef>;
@@ -57,8 +58,11 @@ export const MARKER_COLORS: Record<MarkerIconName, string> = {
   stability: '#e8eef6',
 };
 
-/** The fixed vessel reticle (orange wings), 48 x 24 box centred on (24, 12). */
-export const RETICLE_ICON: IconDef = { stroke: 'M2,12H15.5L24,19L32.5,12H46 M24,4V8', fill: dot(24, 12, 1.9), width: 2.6 };
+/**
+ * The fixed vessel reticle (orange wings), 48 x 24 box centred on (24, 12). Its centre is an open ring, so a
+ * marker held on the nose shows through it (the reticle is drawn over the markers).
+ */
+export const RETICLE_ICON: IconDef = { stroke: 'M2,12H14.6L24,19.4L33.4,12H46 M24,3.2V7.6 M21.5,12a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0', width: 2.3 };
 export const RETICLE_COLOR = '#ffa53a';
 
 /** Stage and action icons; StageInfo.icon / actionKinds strings are mapped by `stageIconFor`. */
@@ -124,6 +128,13 @@ export function stageIconFor(name: string): StageIconName {
   return STAGE_ALIASES[name.toLowerCase().replace(/[^a-z]/g, '')] ?? 'generic';
 }
 
+/** Vertical-speed trend: climbing / descending chevrons and a level bar (HUD and MFD; never a font glyph). */
+export const TREND_ICONS = {
+  up: { stroke: 'M4.5,16L12,8.5L19.5,16', width: 3 },
+  down: { stroke: 'M4.5,8L12,15.5L19.5,8', width: 3 },
+  level: { stroke: 'M5,12H19', width: 3 },
+} satisfies Record<string, IconDef>;
+
 /** Padlock (keyboard capture indicator). */
 export const LOCK_ICON: IconDef = { stroke: 'M6.5,11H17.5V20.5H6.5Z M8.5,11V8A3.5,3.5 0 0,1 15.5,8V11', fill: dot(12, 15.5, 1.5) };
 export const UNLOCK_ICON: IconDef = { stroke: 'M6.5,11H17.5V20.5H6.5Z M8.5,11V8A3.5,3.5 0 0,1 15.2,6.6', fill: dot(12, 15.5, 1.5) };
@@ -164,7 +175,7 @@ type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
  * Draw an icon with Canvas 2D centred at (x, y), `size` px for the 24-unit box, with an optional dark outline
  * for contrast over bright backgrounds.
  */
-export function drawIcon(ctx: Ctx2D, icon: IconDef, x: number, y: number, size: number, color: string, outline: string | null = 'rgba(6,10,16,0.85)', box: [number, number] = [24, 24]): void {
+export function drawIcon(ctx: Ctx2D, icon: IconDef, x: number, y: number, size: number, color: string, outline: string | null = 'rgba(6,10,16,0.85)', box: [number, number] = [24, 24], outlineWidth = 2.4): void {
   const k = size / box[1];
   ctx.save();
   ctx.translate(x - (box[0] / 2) * k, y - (box[1] / 2) * k);
@@ -176,10 +187,10 @@ export function drawIcon(ctx: Ctx2D, icon: IconDef, x: number, y: number, size: 
   const w = icon.width ?? 2;
   if (outline) {
     ctx.strokeStyle = outline;
-    ctx.lineWidth = w + 2.4;
+    ctx.lineWidth = w + outlineWidth;
     ctx.stroke(stroke);
     if (fill) {
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = outlineWidth;
       ctx.stroke(fill);
     }
   }

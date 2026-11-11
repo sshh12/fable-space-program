@@ -43,6 +43,18 @@
       #mfd.visible {
         display: grid;
       }
+      /* 512 x 384 pages at 1 : 1 (device pixel ratio 1): the smallest supported display, unscaled. */
+      #mfd.native {
+        grid-template-columns: repeat(3, 512px);
+        grid-template-rows: repeat(2, 384px);
+        justify-content: center;
+        align-content: center;
+        gap: 12px;
+      }
+      #mfd.native canvas {
+        width: 512px;
+        height: 384px;
+      }
       #mfd canvas {
         width: 100%;
         height: 100%;

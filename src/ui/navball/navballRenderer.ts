@@ -8,7 +8,11 @@
  * Texture contents: sRGB-encoded colour, premultiplied by coverage; alpha = coverage of the ball. The ball
  * texture is fixed in the local horizon frame and rotated by NavballState.qVesselToHorizon; every marker of
  * NavballMarkers on the visible hemisphere is drawn as a crisp icon at its orthographic projection
- * (navballMath.projectMarker), fading toward the limb, with the fixed vessel reticle on top.
+ * (navballMath.projectMarker), fading toward the limb and clipped to the ball, with the fixed vessel reticle
+ * drawn last, on top (its open centre and thin outline let a marker held on the nose show through).
+ *
+ * The shared texture carries soft shading only (the cockpit relights it as the albedo of its instrument ball);
+ * `renderTo` with `instrument: true` draws the HUD's lit instrument look (navballShader.ts).
  */
 import type { GpuHandle } from '@/core/gpu/device';
 import type { PerfRecorder } from '@/core/contracts/render';
@@ -39,18 +43,21 @@ export interface MarkerInstance {
 }
 
 /**
- * Marker quads for a navball state (visible hemisphere only). The fixed reticle is drawn first so a marker held
- * on the nose (SAS prograde hold) stays visible on top of it. Pure: also used by the tests.
+ * Marker quads for a navball state (visible hemisphere only), in draw order. The fixed reticle comes last, on
+ * top: like the aircraft symbol of an ADI it is never covered, and its open centre and thin outline keep a
+ * marker held on the nose (SAS prograde hold) readable under it. Pure: also used by the tests.
  */
 export function markerInstances(markers: NavballMarkers): MarkerInstance[] {
-  const out: MarkerInstance[] = [{ name: 'reticle', sx: 0, sy: 0, halfSize: RETICLE_HALF_SIZE, alpha: 1 }];
+  const out: MarkerInstance[] = [];
   for (const name of MARKER_ORDER) {
+    if (out.length >= MAX_MARKERS - 1) break;
     const d: Vec3 | null = markers[name];
     if (!d) continue;
     const alpha = limbFade(d.y);
     if (alpha <= 0) continue;
     out.push({ name, sx: d.x, sy: d.z, halfSize: MARKER_HALF_SIZE, alpha });
   }
+  out.push({ name: 'reticle', sx: 0, sy: 0, halfSize: RETICLE_HALF_SIZE, alpha: 1 });
   return out;
 }
 
@@ -65,9 +72,18 @@ export interface NavballRendererImpl extends NavballRenderer {
   readonly lastMarkers: readonly MarkerInstance[];
   /** Render a NavballState into the shared 512 x 512 texture. */
   renderState(encoder: GPUCommandEncoder, state: NavballState): void;
-  /** Render the same ball into another square target (e.g. the HUD canvas) at its native resolution. */
-  renderTo(encoder: GPUCommandEncoder, state: NavballState, target: GPUTextureView, format: GPUTextureFormat, sizePx: number): void;
+  /**
+   * Render the same ball into another square target (e.g. the HUD canvas) at its native resolution.
+   * `radiusFraction` (default BALL_RADIUS_FRACTION) leaves room for a bezel; `instrument` selects the lit
+   * HUD look (window reflection, deep shading, contact shadow) instead of the shared texture's soft shading.
+   */
+  renderTo(encoder: GPUCommandEncoder, state: NavballState, target: GPUTextureView, format: GPUTextureFormat, sizePx: number, opts?: NavballTargetOptions): void;
   dispose(): void;
+}
+
+export interface NavballTargetOptions {
+  radiusFraction?: number;
+  instrument?: boolean;
 }
 
 interface Pipelines {
@@ -217,20 +233,20 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     markerScratch[o + 7] = r[3];
   };
 
-  /** Same instances and order as markerInstances(), written straight into the uniform layout. */
+  /** Same instances and order as markerInstances() (reticle last), written straight into the uniform layout. */
   const updateMarkers = (markers: NavballMarkers): number => {
     if (markers === markerSource) return markerCount;
     markerSource = markers;
     let count = 0;
-    putMarker(count++, 'reticle', 0, 0, RETICLE_HALF_SIZE, 1);
     for (const name of MARKER_ORDER) {
-      if (count >= MAX_MARKERS) break;
+      if (count >= MAX_MARKERS - 1) break;
       const d = markers[name];
       if (!d) continue;
       const alpha = limbFade(d.y);
       if (alpha <= 0) continue;
       putMarker(count++, name, d.x, d.z, MARKER_HALF_SIZE, alpha);
     }
+    putMarker(count++, 'reticle', 0, 0, RETICLE_HALF_SIZE, 1);
     markerScratchU32[0] = count;
     const used = 4 + count * 8;
     let same = markerBytesValid && markerU32[0] === count;
@@ -244,7 +260,7 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     return count;
   };
 
-  const writeState = (slot: Slot, state: NavballState, sizePx: number): number => {
+  const writeState = (slot: Slot, state: NavballState, sizePx: number, radiusFraction = BALL_RADIUS_FRACTION, look = 0): number => {
     const { x, y, z, w } = state.qVesselToHorizon;
     const b = ballScratch;
     // mat3.fromQuat, row by row, each padded to a vec4.
@@ -257,8 +273,9 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
     b[8] = 2 * (x * z - w * y);
     b[9] = 2 * (y * z + w * x);
     b[10] = 1 - 2 * (x * x + y * y);
-    b[12] = BALL_RADIUS_FRACTION;
+    b[12] = radiusFraction;
     b[13] = sizePx;
+    b[14] = look;
     const d = slot.data;
     let same = slot.valid;
     for (let i = 0; same && i < 16; i++) same = d[i] === b[i];
@@ -301,8 +318,8 @@ export function createNavballRenderer(gpu: GpuHandle, opts: NavballRendererOptio
       renderState(encoder, snapshot.navball);
     },
     renderState,
-    renderTo(encoder, state, targetView, format, sizePx) {
-      const count = writeState(hudSlot, state, sizePx);
+    renderTo(encoder, state, targetView, format, sizePx, o) {
+      const count = writeState(hudSlot, state, sizePx, o?.radiusFraction ?? BALL_RADIUS_FRACTION, o?.instrument ? 1 : 0);
       draw(encoder, hudSlot, count, targetView, format, 'ui.navball.hud');
     },
     dispose() {

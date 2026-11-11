@@ -57,11 +57,23 @@ export const formatApsis = (m: number): string => formatLength(m, 'apsis');
 /** Speed in m/s with 0.1 m/s precision. */
 export const formatSpeed = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 1e5 ? 1 : 0)}${NBSP}m/s`;
 
-/** Vertical speed as a direction arrow and a magnitude: "▲ 12.3 m/s" (climbing), "▼ 4.0 m/s", "■ 0.0 m/s". */
+/** Below this magnitude (m/s) vertical speed reads as level. */
+const LEVEL_SPEED = 0.05;
+
+/**
+ * Vertical speed as a signed number: "+12.3 m/s" (climbing), "−4.0 m/s" (descending), "0.0 m/s" (level). The
+ * direction is drawn as an icon next to it (`verticalTrend`), never as a font glyph.
+ */
 export function formatVerticalSpeed(mps: number): string {
   if (!Number.isFinite(mps)) return '—';
-  return `${mps >= 0.05 ? '▲' : mps <= -0.05 ? '▼' : '■'}${NBSP}${formatSpeed(Math.abs(mps))}`;
+  if (Math.abs(mps) < LEVEL_SPEED) return formatSpeed(0);
+  return `${mps > 0 ? '+' : MINUS}${formatSpeed(Math.abs(mps))}`;
 }
+
+export type VerticalTrend = 'up' | 'down' | 'level';
+
+/** Direction of a vertical speed for its icon (the same threshold as formatVerticalSpeed). */
+export const verticalTrend = (mps: number): VerticalTrend => (mps >= LEVEL_SPEED ? 'up' : mps <= -LEVEL_SPEED ? 'down' : 'level');
 
 /** Delta-v in m/s (integer above 100 m/s). */
 export const formatDeltaV = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 100 ? 1 : 0)}${NBSP}m/s`;

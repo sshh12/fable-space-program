@@ -23,6 +23,8 @@ import {
   formatTwr,
   formatVerticalSpeed,
   formatWarp,
+  verticalTrend,
+  type VerticalTrend,
 } from './format';
 
 export function activeVesselOf(s: SimSnapshot): VesselSnapshot | null {
@@ -47,11 +49,34 @@ export function altitudeSource(s: SimSnapshot, mode: AltitudeMode = 'auto'): 'ra
   return !isLanded(activeVesselOf(s)) && s.readouts.altitudeRadar < RADAR_ALTITUDE_SWITCH ? 'radar' : 'asl';
 }
 
+/**
+ * Name of the altitude reference of the body under the vessel: "sea level" on a body with an ocean, "datum"
+ * (the mean-radius reference surface) on any other (the Moon has no sea).
+ */
+export function altitudeDatumName(s: SimSnapshot, defs: DefLibrary): 'sea level' | 'datum' {
+  const v = activeVesselOf(s);
+  const body = v ? defs.bodies[v.bodyId] : undefined;
+  return body && body.ocean !== null && body.ocean !== undefined ? 'sea level' : 'datum';
+}
+
+/**
+ * G-load scale shared by the HUD gauge and the MFD pages, from the sim's crew model: below 6 g a g-dose
+ * recovers, above 10 g it accumulates toward the fatal limit (src/sim/dynamics/failure.ts); the gauge reads to
+ * 12 g.
+ */
+export const G_SCALE = { caution: 6, limit: 10, full: 12 } as const;
+
+/** Tone of a g-load reading on the shared scale. */
+export function gTone(g: number): 'normal' | 'caution' | 'warning' {
+  return g >= G_SCALE.limit ? 'warning' : g >= G_SCALE.caution ? 'caution' : 'normal';
+}
+
 export interface FlightView {
   altitudeSource: 'radar' | 'asl';
   altitude: string;
-  /** "▲ 12.3 m/s" / "▼ 4.0 m/s" (formatVerticalSpeed). */
+  /** "+12.3 m/s" / "−4.0 m/s" / "0.0 m/s" (formatVerticalSpeed); the direction is `verticalTrend`. */
   verticalSpeed: string;
+  verticalTrend: VerticalTrend;
   horizontalSpeed: string;
   /** Speed of the navball mode: surface speed or orbital speed. */
   speedMode: 'surface' | 'orbit';
@@ -73,6 +98,7 @@ export function describeFlight(s: SimSnapshot, mode: AltitudeMode = 'auto'): Fli
     altitudeSource: src,
     altitude: formatAltitude(src === 'radar' ? r.altitudeRadar : r.altitudeAsl),
     verticalSpeed: formatVerticalSpeed(r.verticalSpeed),
+    verticalTrend: verticalTrend(r.verticalSpeed),
     horizontalSpeed: formatSpeed(r.horizontalSpeed),
     speedMode,
     speed: formatSpeed(speedMode === 'surface' ? r.speedSurface : r.speedOrbital),
@@ -154,18 +180,26 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
   };
 }
 
-/** Label/value rows of the landing-target readout, identical on the HUD panel and the MFD landing page. */
+/**
+ * Label/value rows of the landing-target readout, identical on the HUD panel and the MFD landing page. Rows
+ * without data collapse: with no ground track (stationary) down-range and cross-range are one "Ground track:
+ * none" row, and with neither a track nor a prediction the arrival row joins it ("Track · arrival: none").
+ */
 export function landingTargetRows(v: LandingTargetView): [string, string][] {
   const rows: [string, string][] = [
     ['Distance', v.distance],
     ['Bearing', v.bearing],
-    ['Down-range', v.downRange],
-    ['Cross-range', v.crossRange],
   ];
+  if (v.tracked) rows.push(['Down-range', v.downRange], ['Cross-range', v.crossRange]);
+  else if (v.predicted) rows.push(['Ground track', 'none']);
   if (v.predicted) rows.push([`${v.predicted.label} miss`, `${v.predicted.miss} · ${v.predicted.missBearing}`]);
-  else rows.push(['Predicted arrival', v.noPrediction]);
+  else if (v.tracked) rows.push(['Predicted arrival', v.noPrediction]);
+  else rows.push(['Track · arrival', 'none']);
   return rows;
 }
+
+/** True for the prediction row of landingTargetRows (drawn under a rule). */
+export const isPredictionRow = (label: string): boolean => label.endsWith(' miss') || label === 'Predicted arrival' || label === 'Track · arrival';
 
 /** Below this separation (m) the readout's down-range / cross-range carry no usable track direction. */
 const TRACK_RECOVERY_MIN_RANGE = 1;
@@ -228,6 +262,36 @@ export function describeOrbit(s: SimSnapshot): OrbitView {
     eccentricity: formatNumber(r.eccentricity, 4),
     period: r.period !== null ? formatDuration(r.period) : '—',
     closed,
+  };
+}
+
+export interface OrbitPhase {
+  /** The orbit panel belongs on the flight HUD (false while falling through the atmosphere on a suborbital path). */
+  show: boolean;
+  /** Periapsis below the surface while that is the plan: under power or inside the atmosphere. */
+  suborbital: boolean;
+  /** Tone of the periapsis value: red only for an unplanned impact (coasting above the atmosphere). */
+  periapsisTone: 'normal' | 'caution' | 'warning';
+}
+
+/**
+ * What the orbit readout means in the current flight phase. During a powered ascent or inside the atmosphere a
+ * periapsis below the surface is expected (amber, "suborbital"); coasting above the atmosphere it is an impact
+ * (red). A vessel falling through the atmosphere on a suborbital path (entry, parachutes) has no orbit to show.
+ */
+export function orbitPhase(s: SimSnapshot, defs: DefLibrary): OrbitPhase {
+  const r = s.readouts;
+  const v = activeVesselOf(s);
+  const body = v ? defs.bodies[v.bodyId] : undefined;
+  const atmTop = body?.atmosphere?.simTop ?? 0;
+  const inAtmosphere = atmTop > 0 && r.altitudeAsl < atmTop;
+  const powered = r.thrust > 0 || r.throttle > 0;
+  const below = r.periapsisAltitude < 0;
+  const suborbital = below && (inAtmosphere || powered);
+  return {
+    show: !(inAtmosphere && below && r.verticalSpeed < 0),
+    suborbital,
+    periapsisTone: below ? (suborbital ? 'caution' : 'warning') : atmTop > 0 && r.periapsisAltitude < atmTop ? 'caution' : 'normal',
   };
 }
 

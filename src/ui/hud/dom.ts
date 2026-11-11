@@ -79,6 +79,41 @@ export class FillSlot {
   }
 }
 
+/**
+ * Tape-gauge fill that reveals a scale-fixed colour layer: the window is translated down by (1 - f) of its
+ * height and the colour layer inside it back up by the same amount, so the colours stay where the scale puts
+ * them while the fill moves. Two composited transforms, no layout and no paint.
+ */
+export class RevealSlot {
+  private cur = -1;
+  constructor(
+    private readonly win: HTMLElement,
+    private readonly layer: HTMLElement,
+  ) {}
+  set(frac: number): void {
+    const f = Math.round(Math.max(0, Math.min(1, frac)) * 1000) / 1000;
+    if (f === this.cur) return;
+    this.cur = f;
+    const off = Math.round((1 - f) * 1000) / 10;
+    this.win.style.transform = `translateY(${off}%)`;
+    this.layer.style.transform = `translateY(${-off}%)`;
+  }
+}
+
+/** A string attribute written only when it changes. */
+export class AttrSlot {
+  private cur: string | null = null;
+  constructor(
+    private readonly e: Element,
+    private readonly name: string,
+  ) {}
+  set(v: string): void {
+    if (v === this.cur) return;
+    this.cur = v;
+    this.e.setAttribute(this.name, v);
+  }
+}
+
 export function bar(cls = ''): { root: HTMLDivElement; fill: FillSlot; tone: Flag[] } {
   const fillEl = el('i');
   const root = el('div', `bar ${cls}`.trim(), [fillEl]);

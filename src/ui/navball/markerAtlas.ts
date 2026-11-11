@@ -1,12 +1,13 @@
 /**
  * Navball marker atlas: every marker icon and the vessel reticle drawn with Canvas 2D (coloured, with a dark
- * outline for contrast) into a 1024 x 256 premultiplied RGBA atlas of 128 px cells. Each mip level is drawn
- * natively from the vector icons, so markers stay crisp at any ball size.
+ * outline for contrast) into a 2048 x 512 premultiplied RGBA atlas of 256 px cells (a 4K HUD shows a marker
+ * about 110 px wide, so the sampled level is always a minification of a natively drawn one). Each mip level is
+ * drawn natively from the vector icons, so markers stay crisp at any ball size.
  */
 import { drawIcon, MARKER_COLORS, MARKER_ICONS, RETICLE_COLOR, RETICLE_ICON, type MarkerIconName } from '../icons';
 
-export const ATLAS_SIZE: [number, number] = [1024, 256];
-const CELL = 128;
+export const ATLAS_SIZE: [number, number] = [2048, 512];
+const CELL = 256;
 
 export type AtlasEntry = MarkerIconName | 'reticle';
 
@@ -36,7 +37,8 @@ function drawAtlasLevel(scale: number): OffscreenCanvas {
   for (const [name, rect] of Object.entries(ATLAS_LAYOUT) as [AtlasEntry, [number, number, number, number]][]) {
     const cx = ((rect[0] + rect[2]) / 2) * w;
     const cy = ((rect[1] + rect[3]) / 2) * h;
-    if (name === 'reticle') drawIcon(ctx, RETICLE_ICON, cx, cy, cell * ICON_FILL, RETICLE_COLOR, 'rgba(10,6,2,0.9)', [48, 24]);
+    // The reticle is drawn over the markers: a thin outline, so a marker under it stays readable.
+    if (name === 'reticle') drawIcon(ctx, RETICLE_ICON, cx, cy, cell * ICON_FILL, RETICLE_COLOR, 'rgba(10,6,2,0.85)', [48, 24], 1.5);
     else drawIcon(ctx, MARKER_ICONS[name], cx, cy, cell * ICON_FILL, MARKER_COLORS[name]);
   }
   return c;

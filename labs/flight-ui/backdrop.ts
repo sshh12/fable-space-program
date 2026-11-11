@@ -28,7 +28,7 @@ struct Frame {
   r0: vec4f, r1: vec4f, r2: vec4f,     // view -> ROOT rotation columns as rows of the matrix (we dot with them)
   proj: vec4f,                          // x tan(fov/2) * aspect, y tan(fov/2), z body count, w show vessel
   sun: vec4f,                           // xyz direction, w sun angular radius cosine
-  vOrigin: vec4f,                       // vessel origin rel camera, w unused
+  vOrigin: vec4f,                       // vessel origin rel camera, w bright mode (0/1)
   vq0: vec4f, vq1: vec4f, vq2: vec4f,  // rows of VES -> ROOT rotation
   vinfo: vec4f,                         // x cylinder count, y marker (map) 0/1, z height px, w radians per pixel
   bodies: array<Body, 3>,
@@ -83,6 +83,8 @@ fn stars(d: vec3f) -> vec3f {
     let zen = vec3f(0.12, 0.32, 0.75);
     let hor = vec3f(0.62, 0.78, 0.95);
     var sky = mix(hor, zen, pow(clamp(el, 0.0, 1.0), 0.45)) * day;
+    // Bright mode: a pale, hazy sky (HUD legibility worst case).
+    sky = mix(sky, vec3f(1.05, 1.08, 1.12) * day, F.vOrigin.w * 0.8);
     sky += vec3f(1.0, 0.75, 0.45) * pow(max(sd, 0.0), 8.0) * 0.35 * day;
     sky += vec3f(1.0, 0.45, 0.2) * pow(1.0 - abs(el), 6.0) * smoothstep(0.3, 0.0, abs(sunEl)) * 0.4;
     col = mix(col, sky, thin * smoothstep(-0.2, 0.02, el + 0.02));
@@ -128,9 +130,11 @@ fn stars(d: vec3f) -> vec3f {
     let fw = t * F.vinfo.w / period / max(abs(dot(d, n)), 0.05);
     let line = 1.0 - smoothstep(0.0, max(fw * 1.5, 0.004), min(gg.x, gg.y));
     alb = mix(alb, alb * 1.35 + vec3f(0.03), line * smoothstep(40000.0, 2000.0, t) * 0.8);
-    let lam = max(dot(n, sun), 0.0);
+    // Bright mode: a sunlit cloud deck / lit regolith at near-white (about 250 in the frame).
+    alb = mix(alb, vec3f(1.12, 1.13, 1.15) * (0.94 + mott * 0.4), F.vOrigin.w);
+    let lam = max(dot(n, sun), F.vOrigin.w * 0.85);
     col = alb * (lam * 1.05 + 0.025);
-    if (b.color.w > 0.5) {
+    if (b.color.w > 0.5 && F.vOrigin.w < 0.5) {
       let haze = 1.0 - exp(-t / 120000.0);
       col = mix(col, vec3f(0.55, 0.7, 0.9) * smoothstep(-0.1, 0.3, dot(n, sun)), haze * 0.6);
     }
@@ -191,7 +195,8 @@ export const LAB_GROUND: Record<string, number> = { earth: 57, moon: 4 };
 
 const BODY_COLORS: Record<string, [number, number, number]> = { earth: [0.09, 0.2, 0.36], moon: [0.32, 0.31, 0.3] };
 
-export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylinders: () => [number, number, number, number][]): LabBackdrop {
+export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylinders: () => [number, number, number, number][], opts: { bright?: boolean } = {}): LabBackdrop {
+  const bright = opts.bright ? 1 : 0;
   const device = gpu.device;
   const module = device.createShaderModule({ label: 'lab.backdrop', code: WGSL });
   const pipeline = device.createRenderPipeline({ label: 'lab.backdrop', layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: gpu.canvasFormat }] } });
@@ -220,7 +225,7 @@ export function createLabBackdrop(gpu: GpuHandle, defs: DefLibrary, vesselCylind
       put(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0);
       put(t * (size[0] / size[1]), t, bodies.length, cam.kind === 'external' ? 1 : 0);
       put(sunDir.x, sunDir.y, sunDir.z, sunCos);
-      put(vOrigin.x, vOrigin.y, vOrigin.z, 0);
+      put(vOrigin.x, vOrigin.y, vOrigin.z, bright);
       put(vm[0], vm[1], vm[2], 0, vm[3], vm[4], vm[5], 0, vm[6], vm[7], vm[8], 0);
       put(cyl.length, isMap ? 1 : 0, size[1], (2 * t) / size[1]);
       for (let i = 0; i < 3; i++) {

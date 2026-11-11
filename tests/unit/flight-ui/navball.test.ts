@@ -103,7 +103,7 @@ describe('navball marker projection', () => {
     expect(checked).toBe(2000);
   });
 
-  it('places every marker of NavballMarkers on the visible hemisphere and the reticle first', () => {
+  it('places every marker of NavballMarkers on the visible hemisphere and draws the reticle last, on top', () => {
     const prograde = v3.normalize(v3.new(0.2, 0.9, 0.1));
     const markers = {
       prograde,
@@ -118,8 +118,9 @@ describe('navball marker projection', () => {
       liftVector: v3.normalize(v3.new(0, 0.6, 0.8)),
     };
     const inst = markerInstances(markers);
-    expect(inst[0]!.name).toBe('reticle');
-    const names = inst.slice(1).map((m) => m.name).sort();
+    expect(inst[inst.length - 1]!.name).toBe('reticle');
+    expect(inst.filter((m) => m.name === 'reticle')).toHaveLength(1);
+    const names = inst.slice(0, -1).map((m) => m.name).sort();
     // Behind the nose (y <= 0): retrograde, antinormal, both radials (y = 0 is the limb), antiTarget.
     expect(names).toEqual(['liftVector', 'maneuver', 'normal', 'prograde', 'target'].sort());
     const p = inst.find((m) => m.name === 'prograde')!;

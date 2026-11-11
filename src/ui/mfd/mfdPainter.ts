@@ -1,18 +1,32 @@
 /**
  * MfdPainter: the six cockpit multi-function display pages (flight, orbit, systems, staging, entry, landing),
  * drawn with Canvas 2D from the same display models and formatters as the HUD (src/ui/model.ts, format.ts).
- * Designed for 1024 x 768 at 15 Hz (rendering-design 10.6) and legible down to 512 x 384; every size is
- * proportional to the canvas height.
+ * Designed for 1024 x 768 at 15 Hz (rendering-design 10.6) and legible down to 512 x 384: every size is
+ * proportional to the canvas height and no text is smaller than 3 % of it (12 px at 384).
+ *
+ * Every page has its own layout, with the instrument dominating it and the page filled edge to edge:
+ *   FLT  a primary flight display: a large attitude indicator (graded sky and ground, a pitch ladder every
+ *        5 deg with numerals at both ends of every 10 deg line, a fixed bank scale with the sky pointer against
+ *        it, the velocity vector), speed and altitude tapes, a vertical-speed scale, a heading tape, and a strip
+ *        of throttle / g / horizontal / vertical boxes;
+ *   ORB  the conic around the body (its own colour), with the altitude exaggerated for low orbits so Ap and Pe
+ *        stay apart; rows on the left;
+ *   SYS  vehicle rows and large resource bars;
+ *   STG  a next-stage summary strip and the whole remaining stack;
+ *   ENT  entry rows, g / dose / ablator / temperature gauges with scales, zones, redlines and readouts, and the
+ *        landing-target rows;
+ *   LND  landing rows and target rows beside a full-height north-up landing scope.
  *
  * `buildMfdPage` returns the text content of a page (title, label/value rows, status); `paint` draws it with
- * the page's instrument graphic. The landing and entry pages carry the landing-target rows verbatim.
+ * the page's instruments. The landing and entry pages carry the landing-target rows verbatim.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor } from '../icons';
+import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, TREND_ICONS } from '../icons';
 import {
+  formatApsis,
   formatBearing,
   formatDeltaV,
   formatG,
@@ -27,8 +41,23 @@ import {
   formatTwr,
   formatUt,
   NBSP,
+  type VerticalTrend,
 } from '../format';
-import { activeVesselOf, describeFlight, describeLandingTarget, describeNodeBurn, describeOrbit, describeResources, describeStages, describeWarp, landingScope, landingTargetRows } from '../model';
+import {
+  activeVesselOf,
+  describeFlight,
+  describeLandingTarget,
+  describeNodeBurn,
+  describeOrbit,
+  describeResources,
+  describeStages,
+  describeWarp,
+  G_SCALE,
+  gTone,
+  isLanded,
+  landingScope,
+  landingTargetRows,
+} from '../model';
 
 export const MFD_PAGES: readonly MfdPage[] = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
 
@@ -41,6 +70,8 @@ export interface MfdRow {
   label: string;
   value: string;
   tone?: Tone;
+  /** Drawn before the value (vertical-speed direction). */
+  icon?: VerticalTrend;
 }
 
 export interface MfdPageModel {
@@ -59,14 +90,18 @@ const COLORS: Record<Tone, string> = {
   accent: '#55d4ff',
   good: '#5fe39a',
   caution: '#ffbb4d',
-  warning: '#ff6262',
-  dim: '#7c8aa0',
+  warning: '#ff6a6a',
+  dim: '#8492a7',
 };
 const BG = '#03060a';
 const PANEL = '#0b121b';
-const RULE = 'rgba(120,150,190,0.22)';
-const LABEL = '#7f90a8';
+const PANEL_HI = '#101a26';
+const RULE = 'rgba(120,150,190,0.26)';
+const LABEL = '#97a7bd';
 const FONT = 'Bahnschrift, "DIN Alternate", "Segoe UI", system-ui, sans-serif';
+/** Smallest text on any page, as a fraction of the page height. */
+const MIN_TEXT = 0.03;
+const ORANGE = '#ffa53a';
 
 const SAS_TEXT: Record<string, string> = {
   stability: 'STABILITY',
@@ -78,6 +113,8 @@ const SAS_TEXT: Record<string, string> = {
   radialIn: 'RADIAL IN',
   maneuver: 'MANEUVER',
 };
+
+const toneOf = (t: 'normal' | 'caution' | 'warning'): Tone => t;
 
 function statusLine(s: SimSnapshot): string {
   const r = s.readouts;
@@ -100,14 +137,14 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
         title: TITLE[page],
         rows: [
           { label: radar ? 'Radar alt' : 'Altitude', value: f.altitude, tone: 'accent' },
-          { label: 'Vertical', value: f.verticalSpeed, tone: r.verticalSpeed < -50 && radar ? 'caution' : 'normal' },
+          { label: 'Vertical', value: f.verticalSpeed, icon: f.verticalTrend, tone: r.verticalSpeed < -50 && radar ? 'caution' : 'normal' },
           { label: f.speedMode === 'surface' ? 'Surface spd' : 'Orbital spd', value: f.speed },
           { label: 'Horizontal', value: f.horizontalSpeed },
           { label: 'Pitch', value: f.pitch },
           { label: 'Heading', value: f.heading },
           { label: 'Roll', value: f.roll },
           { label: 'Throttle', value: f.throttle },
-          { label: 'G load', value: f.gLoad, tone: r.gLoad > 6 ? 'warning' : r.gLoad > 4 ? 'caution' : 'normal' },
+          { label: 'G load', value: f.gLoad, tone: toneOf(gTone(r.gLoad)) },
         ],
         status,
       };
@@ -116,18 +153,20 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const o = describeOrbit(s);
       const nb = describeNodeBurn(s);
       const v = activeVesselOf(s);
+      const landed = isLanded(v);
+      const none = '—';
       return {
         page,
         title: TITLE[page],
         rows: [
-          { label: 'Body', value: v ? (defs.bodies[v.bodyId]?.name ?? v.bodyId) : '—' },
-          { label: 'Apoapsis', value: o.apoapsis, tone: 'accent' },
-          { label: 'Time to Ap', value: o.apoapsisTime },
-          { label: 'Periapsis', value: o.periapsis, tone: r.periapsisAltitude < 0 ? 'warning' : 'accent' },
-          { label: 'Time to Pe', value: o.periapsisTime },
-          { label: 'Inclination', value: o.inclination },
-          { label: 'Eccentricity', value: o.eccentricity },
-          { label: 'Period', value: o.period },
+          { label: 'Body', value: v ? (defs.bodies[v.bodyId]?.name ?? v.bodyId) : none },
+          { label: 'Apoapsis', value: landed ? none : o.apoapsis, tone: landed ? 'dim' : 'accent' },
+          { label: 'Time to Ap', value: landed ? none : o.apoapsisTime },
+          { label: 'Periapsis', value: landed ? none : o.periapsis, tone: landed ? 'dim' : r.periapsisAltitude < 0 ? 'warning' : 'accent' },
+          { label: 'Time to Pe', value: landed ? none : o.periapsisTime },
+          { label: 'Inclination', value: landed ? none : o.inclination },
+          { label: 'Eccentricity', value: landed ? none : o.eccentricity },
+          { label: 'Period', value: landed ? none : o.period },
         ],
         section: nb
           ? {
@@ -185,10 +224,10 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
     case 'entry': {
       const doseFrac = r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0;
       const rows: MfdRow[] = [
-        { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad > 8 ? 'warning' : r.gLoad > 5 ? 'caution' : 'accent' },
+        { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad >= G_SCALE.limit ? 'warning' : r.gLoad >= G_SCALE.caution ? 'caution' : 'accent' },
         { label: 'G dose', value: `${formatNumber(r.gDose, 1)} / ${formatNumber(r.gDoseLimit, 0)}${NBSP}g·s`, tone: doseFrac > 0.7 ? 'warning' : doseFrac > 0.4 ? 'caution' : 'normal' },
         { label: 'Heat flux', value: formatHeatFlux(r.heatFlux) },
-        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'none', tone: r.ablatorFraction !== null && r.ablatorFraction < 0.3 ? 'warning' : 'normal' },
+        { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'none', tone: r.ablatorFraction !== null && r.ablatorFraction < 0.3 ? 'warning' : r.ablatorFraction === null ? 'dim' : 'normal' },
         { label: 'Skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
         { label: 'Dyn. pressure', value: formatPressure(r.dynamicPressure) },
         { label: 'Mach', value: formatMach(r.mach) },
@@ -202,7 +241,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const f = describeFlight(s, 'radar');
       const rows: MfdRow[] = [
         { label: 'Radar alt', value: f.altitude, tone: 'accent' },
-        { label: 'Vertical', value: f.verticalSpeed, tone: r.verticalSpeed < -5 && r.altitudeRadar < 200 ? 'warning' : 'normal' },
+        { label: 'Vertical', value: f.verticalSpeed, icon: f.verticalTrend, tone: r.verticalSpeed < -5 && r.altitudeRadar < 200 ? 'warning' : 'normal' },
         { label: 'Horizontal', value: f.horizontalSpeed, tone: r.horizontalSpeed > 2 && r.altitudeRadar < 100 ? 'caution' : 'normal' },
         { label: 'Tilt', value: formatRadAsDeg(r.tiltFromVertical), tone: r.tiltFromVertical > (12 * Math.PI) / 180 ? 'caution' : 'normal' },
         { label: 'Gear', value: r.legsDeployed === null ? 'none' : r.legsDeployed ? 'DOWN' : 'UP', tone: r.legsDeployed ? 'good' : r.altitudeRadar < 1000 ? 'caution' : 'normal' },
@@ -215,54 +254,106 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
 
 type Ctx = OffscreenCanvasRenderingContext2D;
 
+/** Page geometry: canvas size, content box between header and footer, and the text floor. */
+interface Frame {
+  w: number;
+  h: number;
+  top: number;
+  bottom: number;
+  pad: number;
+  /** Smallest text size, px. */
+  min: number;
+}
+
+const px = (f: Frame, frac: number): number => Math.round(Math.max(f.h * frac, f.min));
+
+function setFont(ctx: Ctx, weight: number, size: number): void {
+  ctx.font = `${weight} ${Math.round(size)}px ${FONT}`;
+}
+
+function text(ctx: Ctx, s: string, x: number, y: number, align: CanvasTextAlign, base: CanvasTextBaseline, color: string, maxWidth?: number): void {
+  ctx.textAlign = align;
+  ctx.textBaseline = base;
+  ctx.fillStyle = color;
+  if (maxWidth !== undefined) ctx.fillText(s, x, y, maxWidth);
+  else ctx.fillText(s, x, y);
+}
+
 function bar(ctx: Ctx, x: number, y: number, w: number, h: number, frac: number, color: string): void {
-  ctx.fillStyle = 'rgba(120,150,190,0.16)';
+  ctx.fillStyle = 'rgba(120,150,190,0.18)';
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
 }
 
-function drawRows(ctx: Ctx, rows: MfdRow[], x: number, y: number, w: number, rowH: number, maxRows: number): number {
+/** A framed box with a small label above a value (status strips). */
+function statBox(ctx: Ctx, f: Frame, x: number, y: number, w: number, h: number, label: string, value: string, tone: Tone = 'normal', icon?: VerticalTrend): void {
+  ctx.fillStyle = PANEL;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = RULE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  text(ctx, label.toUpperCase(), x + w * 0.06, y + h * 0.3, 'left', 'middle', LABEL, w * 0.9);
+  const vs = Math.min(h * 0.4, px(f, 0.042));
+  setFont(ctx, 700, vs);
+  const tw = Math.min(ctx.measureText(value).width, w * 0.86);
+  text(ctx, value, x + w * 0.94, y + h * 0.7, 'right', 'middle', COLORS[tone], w * 0.86);
+  if (icon) drawIcon(ctx, TREND_ICONS[icon], x + w * 0.94 - tw - vs * 0.7, y + h * 0.7, vs * 1.05, trendColor(icon), null);
+}
+
+const trendColor = (t: VerticalTrend): string => (t === 'up' ? COLORS.good : t === 'down' ? COLORS.caution : LABEL);
+
+/** Label / value rows; returns the y below the last row. */
+function drawRows(ctx: Ctx, f: Frame, rows: MfdRow[], x: number, y: number, w: number, rowH: number, maxRows: number): number {
   const shown = rows.slice(0, maxRows);
+  const lf = Math.max(Math.min(rowH * 0.46, f.h * 0.034), f.min);
+  const vf = Math.max(Math.min(rowH * 0.56, f.h * 0.042), f.min);
   shown.forEach((row, i) => {
     const yy = y + i * rowH;
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'transparent';
-    ctx.fillRect(x, yy, w, rowH);
-    ctx.font = `500 ${Math.round(rowH * 0.46)}px ${FONT}`;
-    ctx.fillStyle = LABEL;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(row.label.toUpperCase(), x + rowH * 0.3, yy + rowH / 2, w * 0.55);
-    ctx.font = `600 ${Math.round(rowH * 0.56)}px ${FONT}`;
-    ctx.fillStyle = COLORS[row.tone ?? 'normal'];
-    ctx.textAlign = 'right';
-    ctx.fillText(row.value, x + w - rowH * 0.3, yy + rowH / 2, w * 0.62);
+    if (i % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.03)';
+      ctx.fillRect(x, yy, w, rowH);
+    }
+    setFont(ctx, 500, lf);
+    text(ctx, row.label.toUpperCase(), x + rowH * 0.25, yy + rowH / 2, 'left', 'middle', LABEL, w * 0.56);
+    setFont(ctx, 600, vf);
+    const right = x + w - rowH * 0.25;
+    text(ctx, row.value, right, yy + rowH / 2, 'right', 'middle', COLORS[row.tone ?? 'normal'], w * 0.6);
+    if (row.icon) {
+      const tw = Math.min(ctx.measureText(row.value).width, w * 0.6);
+      drawIcon(ctx, TREND_ICONS[row.icon], right - tw - vf * 0.75, yy + rowH / 2, vf * 1.05, trendColor(row.icon), null);
+    }
   });
   return y + shown.length * rowH;
+}
+
+function sectionHeading(ctx: Ctx, f: Frame, s: string, x: number, y: number, w: number): void {
+  setFont(ctx, 700, px(f, 0.032));
+  text(ctx, s.toUpperCase(), x, y, 'left', 'middle', COLORS.accent, w);
 }
 
 function drawHeader(ctx: Ctx, w: number, h: number, page: MfdPage, s: SimSnapshot): number {
   const hh = Math.round(h * 0.085);
   ctx.fillStyle = PANEL;
   ctx.fillRect(0, 0, w, hh);
-  const tabW = (w * 0.62) / MFD_PAGES.length;
+  const tabW = (w * 0.66) / MFD_PAGES.length;
   MFD_PAGES.forEach((p, i) => {
     const x = i * tabW;
     const on = p === page;
-    ctx.font = `${on ? 700 : 500} ${Math.round(hh * 0.4)}px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = on ? COLORS.accent : LABEL;
-    ctx.fillText(TAB[p], x + tabW / 2, hh * 0.48);
+    if (on) {
+      ctx.fillStyle = PANEL_HI;
+      ctx.fillRect(x + tabW * 0.08, 0, tabW * 0.84, hh);
+    }
+    setFont(ctx, on ? 700 : 500, hh * 0.42);
+    text(ctx, TAB[p], x + tabW / 2, hh * 0.5, 'center', 'middle', on ? COLORS.accent : LABEL);
     if (on) {
       ctx.fillStyle = COLORS.accent;
       ctx.fillRect(x + tabW * 0.18, hh - Math.max(2, hh * 0.07), tabW * 0.64, Math.max(2, hh * 0.07));
     }
   });
-  ctx.font = `600 ${Math.round(hh * 0.4)}px ${FONT}`;
-  ctx.textAlign = 'right';
-  ctx.fillStyle = COLORS.normal;
-  ctx.fillText(formatMet(s.readouts.met), w - hh * 0.4, hh * 0.48);
+  setFont(ctx, 600, hh * 0.42);
+  text(ctx, formatMet(s.readouts.met), w - hh * 0.4, hh * 0.5, 'right', 'middle', COLORS.normal);
   ctx.fillStyle = RULE;
   ctx.fillRect(0, hh, w, 1);
   return hh;
@@ -274,182 +365,735 @@ function drawFooter(ctx: Ctx, w: number, h: number, model: MfdPageModel, s: SimS
   ctx.fillRect(0, h - fh, w, fh);
   ctx.fillStyle = RULE;
   ctx.fillRect(0, h - fh, w, 1);
-  ctx.font = `500 ${Math.round(fh * 0.46)}px ${FONT}`;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = s.readouts.sasEnabled ? COLORS.accent : LABEL;
-  ctx.fillText(model.status, fh * 0.5, h - fh / 2);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = LABEL;
-  ctx.fillText(formatUt(s.ut), w - fh * 0.5, h - fh / 2);
+  setFont(ctx, 600, Math.max(fh * 0.48, h * MIN_TEXT));
+  text(ctx, model.status, fh * 0.5, h - fh / 2, 'left', 'middle', s.readouts.sasEnabled ? COLORS.accent : LABEL);
+  setFont(ctx, 500, Math.max(fh * 0.48, h * MIN_TEXT));
+  text(ctx, formatUt(s.ut), w - fh * 0.5, h - fh / 2, 'right', 'middle', LABEL);
 }
 
-/** Artificial horizon (2-D attitude indicator) for the flight page. */
-function drawAdi(ctx: Ctx, cx: number, cy: number, r: number, s: SimSnapshot): void {
-  const pitch = (s.navball.pitchDeg * Math.PI) / 180;
+// ------------------------------------------------------------------------------------------------ flight
+
+/** A "nice" tape step (1, 2, 5 x 10^n) near `x`. */
+function niceStep(x: number): number {
+  const e = Math.pow(10, Math.floor(Math.log10(Math.max(x, 1e-9))));
+  const m = x / e;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * e;
+}
+
+/**
+ * A vertical tape (speed or altitude): ticks moving past a fixed pointer box that holds the current value.
+ * `side` is where the ADI is: the pointer box points that way.
+ */
+function drawTape(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: number, value: number, boxText: string, title: string, side: 'left' | 'right', fmt: (v: number) => string, minSpan: number): void {
+  const span = Math.max(minSpan, Math.abs(value) * 0.08);
+  const step = niceStep(span / 4);
+  const pxPer = th / span;
+  ctx.save();
+  ctx.fillStyle = PANEL;
+  ctx.fillRect(x, y, tw, th);
+  ctx.beginPath();
+  ctx.rect(x, y, tw, th);
+  ctx.clip();
+  const cy = y + th / 2;
+  const tickX = side === 'right' ? x + tw : x;
+  const dir = side === 'right' ? -1 : 1;
+  ctx.strokeStyle = 'rgba(220,230,245,0.75)';
+  ctx.lineWidth = Math.max(1, f.h * 0.003);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  const first = Math.floor((value - span) / (step / 2)) * (step / 2);
+  for (let v = first; v <= value + span; v += step / 2) {
+    const yy = cy - (v - value) * pxPer;
+    const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
+    const len = tw * (major ? 0.2 : 0.11);
+    ctx.beginPath();
+    ctx.moveTo(tickX, yy);
+    ctx.lineTo(tickX + dir * len, yy);
+    ctx.stroke();
+    if (major) text(ctx, fmt(v), tickX + dir * tw * 0.27, yy, side === 'right' ? 'right' : 'left', 'middle', '#c9d5e4');
+  }
+  ctx.restore();
+  ctx.strokeStyle = RULE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
+  // Pointer box with the exact value (the model's string), pointing toward the ADI.
+  const bh = px(f, 0.06);
+  const bx0 = x - (side === 'left' ? tw * 0.08 : 0);
+  const bw = tw * 1.08;
+  ctx.beginPath();
+  if (side === 'right') {
+    ctx.moveTo(bx0, cy - bh / 2);
+    ctx.lineTo(bx0 + bw, cy - bh / 2);
+    ctx.lineTo(bx0 + bw + bh * 0.3, cy);
+    ctx.lineTo(bx0 + bw, cy + bh / 2);
+    ctx.lineTo(bx0, cy + bh / 2);
+  } else {
+    ctx.moveTo(bx0 + bw, cy - bh / 2);
+    ctx.lineTo(bx0, cy - bh / 2);
+    ctx.lineTo(bx0 - bh * 0.3, cy);
+    ctx.lineTo(bx0, cy + bh / 2);
+    ctx.lineTo(bx0 + bw, cy + bh / 2);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.strokeStyle = COLORS.normal;
+  ctx.lineWidth = Math.max(1.5, f.h * 0.003);
+  ctx.stroke();
+  setFont(ctx, 700, px(f, 0.04));
+  text(ctx, boxText, bx0 + bw / 2, cy, 'center', 'middle', COLORS.normal, bw * 0.92);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  text(ctx, title, x + tw / 2, y - f.h * 0.012, 'center', 'bottom', LABEL, tw * 1.2);
+}
+
+/** Vertical speed on a log scale (+-1 / 10 / 100 / 1000 m/s) with a pointer. */
+function drawVsi(ctx: Ctx, f: Frame, x: number, y: number, tw: number, th: number, vs: number): void {
+  const cy = y + th / 2;
+  const map = (v: number): number => (Math.sign(v) * Math.log10(1 + Math.abs(v)) / Math.log10(1001)) * (th / 2);
+  ctx.fillStyle = PANEL;
+  ctx.fillRect(x, y, tw, th);
+  ctx.strokeStyle = RULE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  ctx.strokeStyle = 'rgba(220,230,245,0.7)';
+  ctx.lineWidth = Math.max(1, f.h * 0.003);
+  for (const [v, l] of [[0, '0'], [10, '10'], [100, '100'], [1000, '1k'], [-10, '10'], [-100, '100'], [-1000, '1k']] as [number, string][]) {
+    const yy = cy - map(v) * 0.94;
+    ctx.beginPath();
+    ctx.moveTo(x, yy);
+    ctx.lineTo(x + tw * (v === 0 ? 0.45 : 0.3), yy);
+    ctx.stroke();
+    text(ctx, l, x + tw * 0.94, yy, 'right', 'middle', '#c9d5e4');
+  }
+  const py = cy - map(Math.max(-1000, Math.min(1000, vs))) * 0.94;
+  ctx.strokeStyle = vs > 0.05 ? COLORS.good : vs < -0.05 ? COLORS.caution : COLORS.normal;
+  ctx.lineWidth = Math.max(2, f.h * 0.005);
+  ctx.beginPath();
+  ctx.moveTo(x - tw * 0.25, cy);
+  ctx.lineTo(x + tw * 0.4, py);
+  ctx.stroke();
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  text(ctx, 'V/S', x + tw / 2, y - f.h * 0.012, 'center', 'bottom', LABEL);
+}
+
+/** Horizontal heading tape under the ADI (+-35 deg) with the boxed heading. */
+function drawHeadingTape(ctx: Ctx, f: Frame, cx: number, y: number, tw: number, th: number, heading: number, headingText: string): void {
+  const x = cx - tw / 2;
+  const pxPerDeg = tw / 70;
+  ctx.save();
+  ctx.fillStyle = PANEL;
+  ctx.fillRect(x, y, tw, th);
+  ctx.beginPath();
+  ctx.rect(x, y, tw, th);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(220,230,245,0.75)';
+  ctx.lineWidth = Math.max(1, f.h * 0.003);
+  setFont(ctx, 600, px(f, 0.032));
+  const start = Math.floor((heading - 36) / 5) * 5;
+  for (let d = start; d <= heading + 36; d += 5) {
+    const xx = cx + (d - heading) * pxPerDeg;
+    const major = d % 10 === 0;
+    ctx.beginPath();
+    ctx.moveTo(xx, y);
+    ctx.lineTo(xx, y + th * (major ? 0.32 : 0.18));
+    ctx.stroke();
+    if (major) {
+      const n = ((d % 360) + 360) % 360;
+      const name = ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[n] ?? String(n / 10).padStart(2, '0');
+      text(ctx, name, xx, y + th * 0.66, 'center', 'middle', n % 90 === 0 ? COLORS.normal : '#c9d5e4');
+    }
+  }
+  ctx.restore();
+  ctx.strokeStyle = RULE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
+  // Boxed heading above the tape centre, pointing down at it.
+  const bw = px(f, 0.13);
+  const bh = px(f, 0.05);
+  const by = y - bh * 0.95;
+  ctx.beginPath();
+  ctx.moveTo(cx - bw / 2, by);
+  ctx.lineTo(cx + bw / 2, by);
+  ctx.lineTo(cx + bw / 2, by + bh * 0.8);
+  ctx.lineTo(cx + bh * 0.25, by + bh * 0.8);
+  ctx.lineTo(cx, by + bh * 1.05);
+  ctx.lineTo(cx - bh * 0.25, by + bh * 0.8);
+  ctx.lineTo(cx - bw / 2, by + bh * 0.8);
+  ctx.closePath();
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.strokeStyle = COLORS.normal;
+  ctx.lineWidth = Math.max(1.5, f.h * 0.003);
+  ctx.stroke();
+  setFont(ctx, 700, px(f, 0.036));
+  text(ctx, headingText, cx, by + bh * 0.42, 'center', 'middle', COLORS.normal);
+}
+
+/**
+ * Attitude indicator: graded sky and ground rotated by roll, a pitch ladder (every 5 deg, numerals at both ends
+ * of every 10 deg line, none near the aircraft symbol) clipped to 0.8 r, a fixed bank scale outside the disc
+ * with the sky pointer against it, the fixed aircraft symbol and the velocity vector.
+ */
+function drawAdi(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSnapshot): void {
+  const pitch = s.navball.pitchDeg;
   const roll = (s.navball.rollDeg * Math.PI) / 180;
+  const ladderR = r * 0.8;
+  const pxPerDeg = ladderR / 25;
+  const off = pitch * pxPerDeg;
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
   ctx.translate(cx, cy);
   ctx.rotate(-roll);
-  const pxPerRad = r / (Math.PI / 4);
-  const off = pitch * pxPerRad;
-  ctx.fillStyle = '#2d6aa8';
-  ctx.fillRect(-2 * r, -4 * r + off, 4 * r, 4 * r);
-  ctx.fillStyle = '#7a4a22';
-  ctx.fillRect(-2 * r, off, 4 * r, 4 * r);
-  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-  ctx.lineWidth = Math.max(1.5, r * 0.02);
+  const sky = ctx.createLinearGradient(0, off, 0, off - 2.4 * r);
+  sky.addColorStop(0, '#5aa6e8');
+  sky.addColorStop(0.45, '#2c74bd');
+  sky.addColorStop(1, '#0f3466');
+  ctx.fillStyle = sky;
+  ctx.fillRect(-2 * r, off - 8 * r, 4 * r, 8 * r);
+  const ground = ctx.createLinearGradient(0, off, 0, off + 2.4 * r);
+  ground.addColorStop(0, '#a8693a');
+  ground.addColorStop(0.45, '#7a4720');
+  ground.addColorStop(1, '#3c210b');
+  ctx.fillStyle = ground;
+  ctx.fillRect(-2 * r, off, 4 * r, 8 * r);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = Math.max(2, r * 0.016);
   ctx.beginPath();
   ctx.moveTo(-2 * r, off);
   ctx.lineTo(2 * r, off);
   ctx.stroke();
-  ctx.lineWidth = Math.max(1, r * 0.012);
-  ctx.font = `600 ${Math.round(r * 0.1)}px ${FONT}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  for (let p = -90; p <= 90; p += 10) {
+  // Pitch ladder.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, ladderR, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.lineWidth = Math.max(1.5, r * 0.011);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  setFont(ctx, 600, Math.max(r * 0.085, f.min));
+  for (let p = -90; p <= 90; p += 5) {
     if (p === 0) continue;
-    const y = off - ((p * Math.PI) / 180) * pxPerRad;
-    if (Math.abs(y) > r * 1.2) continue;
-    const half = p % 30 === 0 ? r * 0.3 : r * 0.16;
-    ctx.beginPath();
-    ctx.moveTo(-half, y);
-    ctx.lineTo(half, y);
-    ctx.stroke();
-    if (p % 30 === 0) ctx.fillText(String(Math.abs(p)), half + r * 0.04, y);
+    const y = off - p * pxPerDeg;
+    if (Math.abs(y) > ladderR * 1.05) continue;
+    const major = p % 10 === 0;
+    const half = major ? r * 0.24 : r * 0.1;
+    if (p < 0 && major) {
+      // Below the horizon: split lines.
+      ctx.beginPath();
+      ctx.moveTo(-half, y);
+      ctx.lineTo(-half * 0.35, y);
+      ctx.moveTo(half * 0.35, y);
+      ctx.lineTo(half, y);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-half, y);
+      ctx.lineTo(half, y);
+      ctx.stroke();
+    }
+    // Numerals at both ends, kept off the aircraft symbol (suppressed within 4 deg of the centre).
+    if (major && Math.abs(y) > 4 * pxPerDeg) {
+      const label = String(Math.abs(p));
+      text(ctx, label, -half - r * 0.04, y, 'right', 'middle', '#ffffff');
+      text(ctx, label, half + r * 0.04, y, 'left', 'middle', '#ffffff');
+    }
   }
   ctx.restore();
-  // Fixed aircraft symbol.
-  ctx.strokeStyle = '#ffa53a';
-  ctx.lineWidth = Math.max(2, r * 0.035);
-  ctx.lineCap = 'round';
+  // Sky pointer: rides with the horizon against the fixed bank scale.
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(cx - r * 0.55, cy);
-  ctx.lineTo(cx - r * 0.18, cy);
-  ctx.lineTo(cx, cy + r * 0.12);
-  ctx.lineTo(cx + r * 0.18, cy);
-  ctx.lineTo(cx + r * 0.55, cy);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(200,215,235,0.5)';
-  ctx.lineWidth = Math.max(1.5, r * 0.02);
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-  // Roll pointer.
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(-roll);
-  ctx.fillStyle = '#eaf2ff';
-  ctx.beginPath();
-  ctx.moveTo(0, -r * 0.98);
-  ctx.lineTo(-r * 0.06, -r * 0.86);
-  ctx.lineTo(r * 0.06, -r * 0.86);
+  ctx.moveTo(0, -r * 0.985);
+  ctx.lineTo(-r * 0.055, -r * 0.88);
+  ctx.lineTo(r * 0.055, -r * 0.88);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
-}
 
-/** Orbit diagram: the current conic in its own plane with the body, apsides and the vessel. */
-function drawOrbit(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimSnapshot, defs: DefLibrary): void {
-  const v = activeVesselOf(s);
-  const patch = s.patches.current[0];
-  const body = v ? defs.bodies[v.bodyId] : undefined;
-  if (!v || !body) return;
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const R = body.radius;
-  const conic = patch?.conic;
-  let scale: number;
-  if (conic && conic.e < 1) {
-    const rp = conic.a * (1 - conic.e);
-    const ra = conic.a * (1 + conic.e);
-    const b = conic.a * Math.sqrt(1 - conic.e * conic.e);
-    // The apsis labels sit outside the ellipse on the major axis: keep room for them inside the graphic area.
-    ctx.font = `600 ${Math.round(h * 0.045)}px ${FONT}`;
-    const gap = h * 0.02;
-    const labelRoom = gap + Math.max(ctx.measureText('Ap').width, ctx.measureText('Pe').width) + h * 0.01;
-    scale = Math.min(Math.max(1, w - 2 * labelRoom) / (rp + ra), (h * 0.92) / (2 * b));
-    ctx.save();
-    // Periapsis to the right; centre of the ellipse at -a e from the focus.
-    ctx.strokeStyle = COLORS.accent;
-    ctx.lineWidth = Math.max(2, h * 0.006);
+  // Rim and fixed bank scale outside the disc (0, 10, 20, 30, 45, 60 deg each side) with the top index.
+  ctx.strokeStyle = 'rgba(210,222,238,0.6)';
+  ctx.lineWidth = Math.max(1.5, r * 0.012);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = '#e6edf6';
+  for (const a of [10, 20, 30, 45, 60]) {
+    for (const sgn of [-1, 1]) {
+      const t = (sgn * a * Math.PI) / 180;
+      const long = a === 30 || a === 60;
+      const r1 = r * (long ? 1.1 : 1.065);
+      ctx.lineWidth = Math.max(1.5, r * (long ? 0.014 : 0.01));
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.sin(t) * r * 1.015, cy - Math.cos(t) * r * 1.015);
+      ctx.lineTo(cx + Math.sin(t) * r1, cy - Math.cos(t) * r1);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#e6edf6';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 1.015);
+  ctx.lineTo(cx - r * 0.05, cy - r * 1.1);
+  ctx.lineTo(cx + r * 0.05, cy - r * 1.1);
+  ctx.closePath();
+  ctx.fill();
+
+  // Velocity vector (navball prograde in the vessel frame), when it is within the ladder.
+  const pg = s.navball.markers.prograde;
+  if (pg && pg.y > 0.05) {
+    const az = (Math.atan2(pg.x, pg.y) * 180) / Math.PI;
+    const el = (Math.atan2(pg.z, Math.hypot(pg.x, pg.y)) * 180) / Math.PI;
+    const vx = az * pxPerDeg;
+    const vy = -el * pxPerDeg;
+    if (Math.hypot(vx, vy) < ladderR * 0.92) drawIcon(ctx, MARKER_ICONS.prograde, cx + vx, cy + vy, r * 0.17, MARKER_COLORS.prograde);
+  }
+
+  // Fixed aircraft symbol: two wings and an open centre square.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const wing = (sgn: number): void => {
     ctx.beginPath();
-    // The ellipse centre sits a e from the focus, so with the focus at cx + a e it is exactly cx.
-    ctx.ellipse(cx, cy, conic.a * scale, b * scale, 0, 0, Math.PI * 2);
+    ctx.moveTo(cx + sgn * r * 0.56, cy);
+    ctx.lineTo(cx + sgn * r * 0.22, cy);
+    ctx.lineTo(cx + sgn * r * 0.22, cy + r * 0.08);
+  };
+  for (const [col, wd] of [
+    ['rgba(0,0,0,0.85)', Math.max(4, r * 0.05)],
+    [ORANGE, Math.max(2.5, r * 0.028)],
+  ] as [string, number][]) {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = wd;
+    wing(-1);
     ctx.stroke();
-    ctx.restore();
-    const focusX = cx + ((ra - rp) / 2) * scale;
-    const bodyR = Math.max(3, R * scale);
-    ctx.fillStyle = '#1b3a5c';
-    ctx.beginPath();
-    ctx.arc(focusX, cy, bodyR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(120,170,230,0.6)';
-    ctx.lineWidth = 1.5;
+    wing(1);
     ctx.stroke();
-    // Apsides.
-    ctx.fillStyle = COLORS.normal;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText('Pe', focusX + rp * scale + gap, cy - h * 0.04);
-    ctx.textAlign = 'right';
-    ctx.fillText('Ap', focusX - ra * scale - gap, cy - h * 0.04);
-    // Vessel: true anomaly from the current position.
-    const nu = Math.atan2(v.r.x * conic.Q.x + v.r.y * conic.Q.y + v.r.z * conic.Q.z, v.r.x * conic.P.x + v.r.y * conic.P.y + v.r.z * conic.P.z);
-    const rr = conic.p / (1 + conic.e * Math.cos(nu));
-    const vx = focusX + rr * Math.cos(nu) * scale;
-    const vy = cy - rr * Math.sin(nu) * scale;
-    drawIcon(ctx, MARKER_ICONS.prograde, vx, vy, h * 0.06, MARKER_COLORS.prograde);
-  } else {
-    scale = Math.min(w, h) * 0.3 / R;
-    ctx.fillStyle = '#1b3a5c';
-    ctx.beginPath();
-    ctx.arc(cx, cy, R * scale, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.font = `500 ${Math.round(h * 0.05)}px ${FONT}`;
-    ctx.fillStyle = LABEL;
-    ctx.textAlign = 'center';
-    ctx.fillText(conic ? 'ESCAPE TRAJECTORY' : 'NO ORBIT (SURFACE)', cx, y + h * 0.92);
+    ctx.strokeRect(cx - r * 0.025, cy - r * 0.025, r * 0.05, r * 0.05);
   }
 }
 
+function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
+  const fl = describeFlight(s);
+  const r = s.readouts;
+  const { w, h, top } = f;
+  // Status strip: throttle, g, horizontal and vertical speed.
+  const stripH = h * 0.095;
+  const gap = w * 0.012;
+  const bw = (w - 2 * f.pad - 3 * gap) / 4;
+  const row = (label: string): { label: string; value: string; tone?: Tone; icon?: VerticalTrend } => model.rows.find((x) => x.label === label)!;
+  const boxes = [row('Throttle'), row('G load'), row('Horizontal'), row('Vertical')];
+  boxes.forEach((b, i) => statBox(ctx, f, f.pad + i * (bw + gap), top, bw, stripH, b.label, b.value, b.tone ?? 'normal', b.icon));
+  // ADI, tapes, heading tape.
+  const areaTop = top + stripH + h * 0.06;
+  const headingH = h * 0.07;
+  const areaBottom = f.bottom - headingH - h * 0.05;
+  const rr = Math.min((areaBottom - areaTop) / 2 / 1.08, w * 0.24);
+  const cx = w / 2;
+  const cy = (areaTop + areaBottom) / 2 + rr * 0.04;
+  drawAdi(ctx, f, cx, cy, rr, s);
+  const tapeW = w * 0.13;
+  const tapeH = rr * 2;
+  const tapeY = cy - rr;
+  const speed = fl.speedMode === 'surface' ? r.speedSurface : r.speedOrbital;
+  drawTape(ctx, f, f.pad + w * 0.02, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60);
+  const radar = fl.altitudeSource === 'radar';
+  const alt = radar ? r.altitudeRadar : r.altitudeAsl;
+  const altFmt = (v: number): string => (Math.abs(alt) >= 2e4 ? `${formatNumber(v / 1000, 0)}` : formatNumber(v, 0));
+  const altTitle = `${radar ? 'RADAR ALT' : 'ALT'} ${Math.abs(alt) >= 2e4 ? 'km' : 'm'}`;
+  const vsiW = w * 0.045;
+  const altX = w - f.pad - vsiW - w * 0.015 - tapeW;
+  drawTape(ctx, f, altX, tapeY, tapeW, tapeH, alt, fl.altitude, altTitle, 'left', altFmt, 300);
+  drawVsi(ctx, f, w - f.pad - vsiW, tapeY, vsiW, tapeH, r.verticalSpeed);
+  drawHeadingTape(ctx, f, cx, f.bottom - headingH, rr * 1.7, headingH, s.navball.headingDeg, fl.heading);
+  // Pitch and roll read-outs at the lower corners of the ADI.
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  const py = cy + rr * 0.98;
+  text(ctx, 'PITCH', cx - rr * 1.02, py - h * 0.022, 'right', 'middle', LABEL);
+  text(ctx, 'ROLL', cx + rr * 1.02, py - h * 0.022, 'left', 'middle', LABEL);
+  setFont(ctx, 700, px(f, 0.036));
+  text(ctx, fl.pitch, cx - rr * 1.02, py + h * 0.018, 'right', 'middle', COLORS.normal);
+  text(ctx, fl.roll, cx + rr * 1.02, py + h * 0.018, 'left', 'middle', COLORS.normal);
+}
+
+// ------------------------------------------------------------------------------------------------ orbit
+
+const linearToSrgb = (c: number): number => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+
+/** Display colour of a body from its mean albedo (linear), normalised to a dark-display brightness. */
+function bodyColor(meanColor: readonly number[] | undefined, gain: number): string {
+  const c = meanColor ?? [0.2, 0.2, 0.2];
+  const k = 0.3 / Math.max(1e-3, Math.max(c[0]!, c[1]!, c[2]!));
+  return `rgb(${c.map((x) => Math.round(255 * linearToSrgb(Math.min(1, x * k * gain)))).join(',')})`;
+}
+
+/**
+ * Orbit diagram: the conic around the body in its own plane, periapsis to the right. True to scale when that
+ * leaves the orbit clear of the body; otherwise (low orbits) the radius is drawn as body + exaggerated altitude,
+ * so a 100 x 100 km orbit is a ring well outside the disc with Ap and Pe apart, and the page says so.
+ */
+function drawOrbitDiagram(ctx: Ctx, f: Frame, x: number, y: number, w: number, h: number, s: SimSnapshot, defs: DefLibrary): void {
+  const v = activeVesselOf(s);
+  const body = v ? defs.bodies[v.bodyId] : undefined;
+  if (!v || !body) return;
+  const cx = x + w / 2;
+  const cy = y + h * 0.47;
+  const half = Math.min(w, h) / 2;
+  const R = body.radius;
+  const conic = s.patches.current[0]?.conic;
+  const landed = isLanded(v);
+  const closed = !!conic && conic.e < 1;
+  const rp = conic ? (conic.e < 1 ? conic.a * (1 - conic.e) : conic.p / (1 + conic.e)) : R;
+  const ra = closed ? conic.a * (1 + conic.e) : rp;
+  // Map a radius to the display: true scale when the orbit is well clear of the body, else exaggerated altitude.
+  let bodyR: number;
+  let mapR: (r: number) => number;
+  let exaggeration = 1;
+  const trueScale = (half * 0.8) / Math.max(closed ? (ra + rp) / 2 + (ra - rp) / 2 : rp * 2.2, R);
+  if (!landed && conic && R * trueScale > half * 0.55) {
+    bodyR = half * 0.5;
+    const altMax = Math.max(1000, (closed ? ra : rp * 1.5) - R);
+    const k = (half * 0.86 - bodyR) / altMax;
+    exaggeration = k / (bodyR / R);
+    mapR = (r) => bodyR + (r - R) * k;
+  } else if (landed || !conic) {
+    bodyR = half * 0.55;
+    mapR = (r) => (r / R) * bodyR;
+  } else {
+    bodyR = Math.max(3, R * trueScale);
+    mapR = (r) => r * trueScale;
+  }
+  // The focus sits so that the drawn conic is centred in the area (true scale), or at the centre (exaggerated).
+  const focusX = exaggeration > 1 || !closed ? cx : cx + ((mapR(ra) - mapR(rp)) / 2);
+  // Body: a lit sphere in its own colour, an atmosphere rim where it has one.
+  const g = ctx.createRadialGradient(focusX - bodyR * 0.35, cy - bodyR * 0.35, bodyR * 0.1, focusX, cy, bodyR);
+  g.addColorStop(0, bodyColor(body.render?.meanColor, 1.25));
+  g.addColorStop(1, bodyColor(body.render?.meanColor, 0.32));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(focusX, cy, bodyR, 0, Math.PI * 2);
+  ctx.fill();
+  if (body.atmosphere) {
+    ctx.strokeStyle = 'rgba(110,170,255,0.55)';
+    ctx.lineWidth = Math.max(2, bodyR * 0.03);
+    ctx.beginPath();
+    ctx.arc(focusX, cy, bodyR + ctx.lineWidth, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  setFont(ctx, 700, px(f, 0.034));
+  text(ctx, body.name.toUpperCase(), focusX, cy, 'center', 'middle', 'rgba(234,242,255,0.85)');
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  if (landed || !conic) {
+    // On the surface: the vessel on the limb at the top.
+    drawIcon(ctx, MARKER_ICONS.prograde, focusX, cy - bodyR, f.h * 0.06, MARKER_COLORS.prograde);
+    text(ctx, landed ? 'LANDED · NO ORBIT' : 'NO TRAJECTORY', cx, y + h * 0.96, 'center', 'middle', LABEL);
+    return;
+  }
+  // The conic as a polyline (clipped outside the body; hyperbolas within their asymptotes).
+  const nuMax = closed ? Math.PI : Math.acos(-1 / conic.e) * 0.96;
+  const steps = 240;
+  const pt = (nu: number): [number, number] => {
+    const rr = conic.p / (1 + conic.e * Math.cos(nu));
+    const d = mapR(rr);
+    return [focusX + d * Math.cos(nu), cy - d * Math.sin(nu)];
+  };
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.arc(focusX, cy, bodyR, 0, Math.PI * 2, true);
+  ctx.clip('evenodd');
+  ctx.strokeStyle = COLORS.accent;
+  ctx.lineWidth = Math.max(2, f.h * 0.005);
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const nu = -nuMax + (2 * nuMax * i) / steps;
+    const [px0, py0] = pt(nu);
+    if (i === 0) ctx.moveTo(px0, py0);
+    else ctx.lineTo(px0, py0);
+  }
+  if (closed) ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+  // Apsides: diamonds with labels and values (Pe right, Ap left).
+  const apsis = (nu: number, label: string, alt: number, align: 'left' | 'right'): void => {
+    const [ax, ay] = pt(nu);
+    const d = f.h * 0.014;
+    ctx.fillStyle = COLORS.normal;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - d);
+    ctx.lineTo(ax + d, ay);
+    ctx.lineTo(ax, ay + d);
+    ctx.lineTo(ax - d, ay);
+    ctx.closePath();
+    ctx.fill();
+    const tx = ax + (align === 'left' ? 1 : -1) * f.h * 0.025;
+    setFont(ctx, 700, px(f, 0.036));
+    text(ctx, label, tx, ay - f.h * 0.022, align, 'middle', COLORS.normal);
+    setFont(ctx, 600, px(f, MIN_TEXT));
+    text(ctx, formatApsis(alt), tx, ay + f.h * 0.022, align, 'middle', alt < 0 ? COLORS.warning : LABEL);
+  };
+  apsis(0, 'Pe', rp - R, 'right');
+  if (closed) apsis(Math.PI, 'Ap', ra - R, 'left');
+  // Vessel: true anomaly from the current position.
+  const nu = Math.atan2(v.r.x * conic.Q.x + v.r.y * conic.Q.y + v.r.z * conic.Q.z, v.r.x * conic.P.x + v.r.y * conic.P.y + v.r.z * conic.P.z);
+  const [vx, vy] = pt(nu);
+  drawIcon(ctx, MARKER_ICONS.prograde, vx, vy, f.h * 0.06, MARKER_COLORS.prograde);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  const caption = !closed ? 'ESCAPE TRAJECTORY' : exaggeration > 1.5 ? `ALTITUDE EXAGGERATED ×${formatNumber(exaggeration, 0)}` : 'TRUE SCALE';
+  text(ctx, caption, cx, y + h * 0.97, 'center', 'middle', LABEL);
+}
+
+function paintOrbit(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
+  const leftW = f.w * 0.4;
+  const n = model.rows.length + (model.section ? model.section.rows.length + 1.3 : 0);
+  const rowH = Math.min(f.h * 0.072, (f.bottom - f.top) / n);
+  let y = drawRows(ctx, f, model.rows, f.pad, f.top, leftW, rowH, 12);
+  if (model.section) {
+    sectionHeading(ctx, f, model.section.heading, f.pad, y + rowH * 0.65, leftW);
+    drawRows(ctx, f, model.section.rows, f.pad, y + rowH * 1.3, leftW, rowH, 8);
+  }
+  const gx = f.pad * 2 + leftW;
+  drawOrbitDiagram(ctx, f, gx, f.top, f.w - gx - f.pad, f.bottom - f.top, s, defs);
+}
+
+// ---------------------------------------------------------------------------------------------- systems
+
+function paintSystems(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, model: MfdPageModel): void {
+  const leftW = f.w * 0.42;
+  const rowH = Math.min(f.h * 0.085, (f.bottom - f.top) / model.rows.length);
+  drawRows(ctx, f, model.rows, f.pad, f.top, leftW, rowH, 12);
+  // Resources: one block per stage group, bars as large as the column allows.
+  const x = f.pad * 2.5 + leftW;
+  const w = f.w - x - f.pad;
+  const groups = describeResources(s, defs);
+  const lines = groups.reduce((acc, g) => acc + 1.2 + g.bars.length * 1.25, 0);
+  const lh = Math.min(f.h * 0.09, (f.bottom - f.top) / Math.max(1, lines));
+  let y = f.top;
+  sectionHeading(ctx, f, 'Resources', x, y + lh * 0.4, w);
+  y += lh * 0.9;
+  for (const g of groups) {
+    setFont(ctx, 700, px(f, 0.032));
+    text(ctx, g.label.toUpperCase(), x, y + lh * 0.45, 'left', 'middle', '#c9d5e4', w);
+    y += lh * 0.9;
+    for (const b of g.bars) {
+      setFont(ctx, 500, px(f, 0.032));
+      text(ctx, b.name, x + lh * 0.2, y + lh * 0.3, 'left', 'middle', LABEL, w * 0.6);
+      setFont(ctx, 700, px(f, 0.034));
+      text(ctx, b.amount, x + w, y + lh * 0.3, 'right', 'middle', b.fraction < 0.1 ? COLORS.caution : COLORS.normal);
+      bar(ctx, x + lh * 0.2, y + lh * 0.62, w - lh * 0.2, lh * 0.32, b.fraction, b.fraction < 0.1 ? COLORS.caution : COLORS.good);
+      y += lh * 1.25;
+    }
+    y += lh * 0.3;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- staging
+
+function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
+  const st = describeStages(s);
+  const tiles = st.tiles.filter((t) => !t.fired);
+  // Summary strip: next stage and its numbers, total delta-v, staging state.
+  const stripH = f.h * 0.095;
+  const gap = f.w * 0.012;
+  const get = (label: string): MfdRow => model.rows.find((r) => r.label === label)!;
+  const boxes: MfdRow[] = [get('Stage Δv'), get('Stage TWR'), get('Stage burn'), get('Δv remaining (vac)'), get('Staging')];
+  const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
+  boxes.forEach((b, i) => statBox(ctx, f, f.pad + i * (bw + gap), f.top, bw, stripH, b.label.replace(' (vac)', ''), b.value, b.tone ?? 'normal'));
+  // The stack, next first, filling the rest of the page.
+  const y0 = f.top + stripH + f.h * 0.03;
+  const avail = f.bottom - y0;
+  const th = Math.min(avail / Math.max(1, tiles.length), f.h * 0.11);
+  const x = f.pad;
+  const w = f.w - 2 * f.pad;
+  tiles.forEach((t, i) => {
+    const yy = y0 + i * th;
+    const locked = t.next && st.lockout;
+    ctx.fillStyle = locked ? 'rgba(255,187,77,0.14)' : t.next ? 'rgba(85,212,255,0.13)' : i % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.015)';
+    ctx.fillRect(x, yy + th * 0.05, w, th * 0.9);
+    if (t.next) {
+      ctx.fillStyle = locked ? COLORS.caution : COLORS.accent;
+      ctx.fillRect(x, yy + th * 0.05, Math.max(3, th * 0.06), th * 0.9);
+    }
+    const tone = locked ? COLORS.caution : t.next ? COLORS.accent : '#d2deec';
+    setFont(ctx, 700, Math.max(th * 0.36, f.min));
+    text(ctx, t.number, x + th * 0.55, yy + th / 2, 'center', 'middle', tone);
+    drawIcon(ctx, STAGE_ICONS[stageIconFor(t.icon)], x + th * 1.35, yy + th / 2, th * 0.6, tone, null);
+    setFont(ctx, 600, Math.max(th * 0.34, f.min));
+    const nameX = x + th * 2;
+    const twoLines = th > f.min * 2.3;
+    text(ctx, t.label, nameX, yy + (twoLines ? th * 0.36 : th / 2), 'left', 'middle', COLORS.normal, w * 0.45);
+    const meta = t.hasEngines ? `Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}` : 'no engines';
+    setFont(ctx, 500, Math.max(th * 0.26, f.min));
+    if (twoLines) text(ctx, locked ? 'LOCKED · after last stage' : meta, nameX, yy + th * 0.72, 'left', 'middle', locked ? COLORS.caution : LABEL, w * 0.5);
+    else text(ctx, meta, x + w * 0.5, yy + th / 2, 'left', 'middle', LABEL, w * 0.28);
+    if (t.propellant !== null) {
+      bar(ctx, x + w * 0.8, yy + th * 0.42, w * 0.18, th * 0.18, t.propellant, t.propellant < 0.1 ? COLORS.caution : COLORS.good);
+    }
+  });
+  if (tiles.length === 0) {
+    setFont(ctx, 600, px(f, 0.04));
+    text(ctx, 'NO STAGES LEFT', f.w / 2, y0 + avail / 2, 'center', 'middle', LABEL);
+  }
+}
+
+// ------------------------------------------------------------------------------------------------ entry
+
+interface GaugeSpec {
+  label: string;
+  value: string;
+  frac: number;
+  /** Zone colours from the bottom: [upTo fraction, colour]. */
+  zones: [number, string][];
+  /** Redline fraction, or null. */
+  redline: number | null;
+  ticks: [number, string][];
+  tone: Tone;
+}
+
+/** A vertical bar gauge with its scale, coloured zones, redline, readout above and label below. */
+function drawBarGauge(ctx: Ctx, f: Frame, x: number, y: number, bw: number, bh: number, g: GaugeSpec): void {
+  // Track with faint zones, then the fill in the zone colour of each part.
+  let prev = 0;
+  for (const [to, col] of g.zones) {
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y + bh * (1 - to), bw, bh * (to - prev));
+    ctx.globalAlpha = 1;
+    const fillTo = Math.min(to, Math.max(0, Math.min(1, g.frac)));
+    if (fillTo > prev) {
+      ctx.fillStyle = col;
+      ctx.fillRect(x, y + bh * (1 - fillTo), bw, bh * (fillTo - prev));
+    }
+    prev = to;
+  }
+  ctx.strokeStyle = RULE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+  // Scale on the left.
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  ctx.strokeStyle = 'rgba(220,230,245,0.7)';
+  ctx.lineWidth = Math.max(1, f.h * 0.0025);
+  for (const [t, label] of g.ticks) {
+    const yy = y + bh * (1 - t);
+    ctx.beginPath();
+    ctx.moveTo(x - bw * 0.18, yy);
+    ctx.lineTo(x, yy);
+    ctx.stroke();
+    text(ctx, label, x - bw * 0.26, yy, 'right', 'middle', '#c9d5e4');
+  }
+  if (g.redline !== null) {
+    const yy = y + bh * (1 - g.redline);
+    ctx.fillStyle = COLORS.warning;
+    ctx.fillRect(x - bw * 0.22, yy - Math.max(1.5, f.h * 0.003), bw * 1.44, Math.max(3, f.h * 0.006));
+  }
+  setFont(ctx, 700, px(f, 0.036));
+  text(ctx, g.value, x + bw / 2, y - f.h * 0.03, 'center', 'middle', COLORS[g.tone]);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  text(ctx, g.label, x + bw / 2, y + bh + f.h * 0.03, 'center', 'middle', LABEL);
+}
+
+function paintEntry(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
+  const r = s.readouts;
+  const leftW = f.w * 0.42;
+  const rowH = Math.min(f.h * 0.08, (f.bottom - f.top) / model.rows.length);
+  drawRows(ctx, f, model.rows, f.pad, f.top, leftW, rowH, 12);
+  const gx = f.pad * 2.5 + leftW;
+  const gw = f.w - gx - f.pad;
+  const gTop = f.top + f.h * 0.06;
+  const gh = (f.bottom - f.top) * (model.section ? 0.46 : 0.78);
+  const doseLimit = r.gDoseLimit > 0 ? r.gDoseLimit : 15;
+  const gauges: GaugeSpec[] = [
+    {
+      label: 'G LOAD',
+      value: formatG(r.gLoad),
+      frac: r.gLoad / G_SCALE.full,
+      zones: [[G_SCALE.caution / G_SCALE.full, COLORS.good], [G_SCALE.limit / G_SCALE.full, COLORS.caution], [1, COLORS.warning]],
+      redline: G_SCALE.limit / G_SCALE.full,
+      ticks: [[0, '0'], [4 / 12, '4'], [8 / 12, '8'], [1, '12']],
+      tone: toneOf(gTone(r.gLoad)),
+    },
+    {
+      label: 'G DOSE',
+      value: `${formatNumber(r.gDose, 1)}`,
+      frac: r.gDose / doseLimit,
+      zones: [[0.4, COLORS.good], [0.7, COLORS.caution], [1, COLORS.warning]],
+      redline: 1,
+      ticks: [[0, '0'], [0.5, formatNumber(doseLimit / 2, 1)], [1, formatNumber(doseLimit, 0)]],
+      tone: r.gDose / doseLimit > 0.7 ? 'warning' : r.gDose / doseLimit > 0.4 ? 'caution' : 'normal',
+    },
+  ];
+  if (r.ablatorFraction !== null) {
+    gauges.push({
+      label: 'ABLATOR',
+      value: formatPercent(r.ablatorFraction),
+      frac: r.ablatorFraction,
+      zones: [[0.3, COLORS.warning], [1, COLORS.accent]],
+      redline: 0.3,
+      ticks: [[0, '0'], [0.5, '50'], [1, '100']],
+      tone: r.ablatorFraction < 0.3 ? 'warning' : 'normal',
+    });
+  }
+  gauges.push({
+    label: 'SKIN TEMP',
+    value: formatPercent(r.maxTempFraction),
+    frac: r.maxTempFraction,
+    zones: [[0.7, COLORS.good], [0.85, COLORS.caution], [1, COLORS.warning]],
+    redline: 0.85,
+    ticks: [[0, '0'], [0.5, '50'], [1, '100']],
+    tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal',
+  });
+  const slot = gw / gauges.length;
+  const bw = Math.min(slot * 0.34, f.h * 0.07);
+  gauges.forEach((g, i) => drawBarGauge(ctx, f, gx + slot * i + slot * 0.52 - bw / 2, gTop, bw, gh - f.h * 0.06, g));
+  if (model.section) {
+    const sy = gTop + gh + f.h * 0.03;
+    sectionHeading(ctx, f, model.section.heading, gx, sy, gw);
+    const n = model.section.rows.length;
+    drawRows(ctx, f, model.section.rows, gx, sy + f.h * 0.03, gw, Math.min(rowH, (f.bottom - sy - f.h * 0.03) / Math.max(1, n)), 6);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- landing
+
 /**
  * Landing-target scope, log-scaled rings around the vessel, north-up at every speed (model.landingScope): the
- * target from distance and bearing, the ground track as a line from the vessel while there is one.
+ * target from distance and bearing, the ground track as a line from the vessel while there is one. Ring labels
+ * sit on the side opposite the target.
  */
-function drawScope(ctx: Ctx, cx: number, cy: number, r: number, s: SimSnapshot): void {
+function drawScope(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: SimSnapshot): void {
   const lt = describeLandingTarget(s);
   const scope = lt ? landingScope(lt) : null;
-  ctx.strokeStyle = 'rgba(120,150,190,0.35)';
-  ctx.lineWidth = Math.max(1, r * 0.008);
+  ctx.fillStyle = 'rgba(14,22,32,0.9)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(140,170,210,0.42)';
+  ctx.lineWidth = Math.max(1, r * 0.007);
   const rings = [100, 1000, 10_000, 100_000];
   const map = (m: number): number => (Math.log10(1 + Math.abs(m) / 30) / Math.log10(1 + 300_000 / 30)) * r;
-  ctx.font = `500 ${Math.round(r * 0.075)}px ${FONT}`;
-  ctx.fillStyle = LABEL;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'bottom';
+  // Labels go opposite the target (or to the lower left without one).
+  const labelBearing = (((scope && Math.hypot(scope.east, scope.north) > 0.5 ? (Math.atan2(scope.east, scope.north) * 180) / Math.PI : 45) + 180) * Math.PI) / 180;
+  setFont(ctx, 600, px(f, MIN_TEXT));
   for (const m of rings) {
     ctx.beginPath();
     ctx.arc(cx, cy, map(m), 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillText(m >= 1000 ? `${m / 1000} km` : `${m} m`, cx + map(m) * 0.72 + 4, cy - map(m) * 0.72);
   }
   ctx.beginPath();
   ctx.moveTo(cx - r, cy);
   ctx.lineTo(cx + r, cy);
-  // The vertical hair stops short of the N above and the caption below.
-  ctx.moveTo(cx, cy - r * 0.9);
-  ctx.lineTo(cx, cy + r * 0.9);
+  // The vertical hair stops short of the N above.
+  ctx.moveTo(cx, cy - r * 0.88);
+  ctx.lineTo(cx, cy + r);
   ctx.stroke();
-  ctx.fillStyle = COLORS.normal;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.font = `700 ${Math.round(r * 0.075)}px ${FONT}`;
-  ctx.fillText('N', cx, cy - r);
+  for (const m of rings) {
+    const lx = cx + Math.sin(labelBearing) * map(m);
+    const ly = cy - Math.cos(labelBearing) * map(m);
+    const label = m >= 1000 ? `${m / 1000} km` : `${m} m`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(3,6,10,0.85)';
+    ctx.fillRect(lx - tw / 2 - 3, ly - f.min * 0.62, tw + 6, f.min * 1.24);
+    text(ctx, label, lx, ly, 'center', 'middle', '#b7c5d8');
+  }
+  setFont(ctx, 700, px(f, 0.04));
+  text(ctx, 'N', cx, cy - r * 0.98, 'center', 'top', COLORS.normal);
   // Ground track: a dashed line from the vessel to the rim, in the prograde colour.
   const track = scope?.trackDeg ?? null;
   if (track !== null) {
@@ -464,113 +1108,33 @@ function drawScope(ctx: Ctx, cx: number, cy: number, r: number, s: SimSnapshot):
     ctx.stroke();
     ctx.restore();
   }
-  ctx.font = `500 ${Math.round(r * 0.07)}px ${FONT}`;
-  ctx.fillStyle = LABEL;
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(lt === null ? 'NORTH UP' : track !== null ? `NORTH UP · TRACK ${formatBearing(track)}` : 'NORTH UP · NO GROUND TRACK', cx, cy + r * 1.08);
+  setFont(ctx, 600, px(f, MIN_TEXT));
+  text(ctx, lt === null ? 'NORTH UP' : track !== null ? `NORTH UP · TRACK ${formatBearing(track)}` : 'NORTH UP · NO GROUND TRACK', cx, cy + r + f.h * 0.035, 'center', 'middle', LABEL);
   // Vessel at the centre.
-  drawIcon(ctx, MARKER_ICONS.stability, cx, cy, r * 0.14, '#ffa53a');
+  drawIcon(ctx, MARKER_ICONS.stability, cx, cy, r * 0.13, ORANGE);
   if (!scope) return;
   const d = Math.hypot(scope.east, scope.north);
   if (d > 0.5) {
     // Beyond the outer ring the target sits on the rim, pointing the way.
     const k = Math.min(map(d), r * 0.94) / d;
-    drawIcon(ctx, MARKER_ICONS.target, cx + scope.east * k, cy - scope.north * k, r * 0.16, MARKER_COLORS.target);
-  } else drawIcon(ctx, MARKER_ICONS.target, cx, cy, r * 0.16, MARKER_COLORS.target);
+    drawIcon(ctx, MARKER_ICONS.target, cx + scope.east * k, cy - scope.north * k, r * 0.15, MARKER_COLORS.target);
+  } else drawIcon(ctx, MARKER_ICONS.target, cx, cy, r * 0.15, MARKER_COLORS.target);
 }
 
-function drawStages(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimSnapshot): void {
-  const st = describeStages(s);
-  // Every remaining stage, next first; tiles shrink to fit long stacks (and leave a row for the lockout line).
-  const tiles = st.tiles.filter((t) => !t.fired);
-  const th = Math.min(h / Math.max(7, tiles.length + (st.lockout ? 1 : 0)), h * 0.14);
-  tiles.forEach((t, i) => {
-    const yy = y + i * th;
-    ctx.fillStyle = t.next ? 'rgba(85,212,255,0.12)' : 'rgba(255,255,255,0.03)';
-    ctx.fillRect(x, yy + th * 0.06, w, th * 0.88);
-    if (t.next) {
-      ctx.fillStyle = COLORS.accent;
-      ctx.fillRect(x, yy + th * 0.06, Math.max(3, th * 0.05), th * 0.88);
-    }
-    drawIcon(ctx, STAGE_ICONS[stageIconFor(t.icon)], x + th * 0.55, yy + th / 2, th * 0.55, t.next ? COLORS.accent : '#c9d4e3', null);
-    ctx.font = `600 ${Math.round(th * 0.3)}px ${FONT}`;
-    ctx.fillStyle = COLORS.normal;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${t.number}  ${t.label}`, x + th * 1.05, yy + th * 0.36, w * 0.55);
-    ctx.font = `500 ${Math.round(th * 0.24)}px ${FONT}`;
-    ctx.fillStyle = LABEL;
-    if (t.hasEngines) ctx.fillText(`Δv ${t.deltaV}   TWR ${t.twr}   ${t.burnTime}`, x + th * 1.05, yy + th * 0.68, w * 0.7 - th * 1.25);
-    if (t.propellant !== null) bar(ctx, x + w * 0.74, yy + th * 0.6, w * 0.23, th * 0.14, t.propellant, t.propellant < 0.1 ? COLORS.caution : COLORS.good);
-  });
-  if (st.lockout) {
-    ctx.font = `700 ${Math.round(th * 0.3)}px ${FONT}`;
-    ctx.fillStyle = COLORS.caution;
-    ctx.textAlign = 'center';
-    ctx.fillText('STAGING LOCKED', x + w / 2, y + h - th * 0.3);
+function paintLanding(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
+  const leftW = f.w * 0.42;
+  const n = model.rows.length + (model.section ? model.section.rows.length + 1.3 : 0);
+  const rowH = Math.min(f.h * 0.075, (f.bottom - f.top) / n);
+  const y = drawRows(ctx, f, model.rows, f.pad, f.top, leftW, rowH, 12);
+  if (model.section) {
+    sectionHeading(ctx, f, model.section.heading, f.pad, y + rowH * 0.65, leftW);
+    drawRows(ctx, f, model.section.rows, f.pad, y + rowH * 1.3, leftW, rowH, 8);
   }
-}
-
-function drawEntryGauges(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimSnapshot): void {
-  const r = s.readouts;
-  const items: [string, number, string][] = [
-    ['G', Math.min(1, r.gLoad / 10), r.gLoad > 8 ? COLORS.warning : r.gLoad > 5 ? COLORS.caution : COLORS.accent],
-    ['DOSE', r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0, COLORS.caution],
-    ['ABL', r.ablatorFraction ?? 0, (r.ablatorFraction ?? 1) < 0.3 ? COLORS.warning : COLORS.good],
-    ['TEMP', r.maxTempFraction, r.maxTempFraction > 0.85 ? COLORS.warning : COLORS.caution],
-  ];
-  const bw = w / (items.length * 1.6);
-  items.forEach(([label, frac, color], i) => {
-    const bx = x + i * bw * 1.6 + bw * 0.3;
-    const bh = h * 0.78;
-    ctx.fillStyle = 'rgba(120,150,190,0.16)';
-    ctx.fillRect(bx, y, bw, bh);
-    ctx.fillStyle = color;
-    const f = Math.max(0, Math.min(1, frac));
-    ctx.fillRect(bx, y + bh * (1 - f), bw, bh * f);
-    ctx.font = `600 ${Math.round(h * 0.07)}px ${FONT}`;
-    ctx.fillStyle = LABEL;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(label, bx + bw / 2, y + bh + h * 0.03);
-  });
-  // Lift vector arrow.
-  if (r.liftVectorUp !== null) {
-    const icon = MARKER_ICONS.liftVector;
-    ctx.save();
-    const cx = x + w * 0.93;
-    const cy = y + h * 0.4;
-    ctx.translate(cx, cy);
-    if (!r.liftVectorUp) ctx.rotate(Math.PI);
-    drawIcon(ctx, icon, 0, 0, h * 0.22, MARKER_COLORS.liftVector);
-    ctx.restore();
-  }
-}
-
-function drawResources(ctx: Ctx, x: number, y: number, w: number, h: number, s: SimSnapshot, defs: DefLibrary): void {
-  const groups = describeResources(s, defs);
-  const lines = groups.reduce((n, g) => n + 1 + g.bars.length, 0);
-  const lh = Math.min(h / Math.max(1, lines), h * 0.09);
-  let yy = y;
-  for (const g of groups) {
-    ctx.font = `700 ${Math.round(lh * 0.5)}px ${FONT}`;
-    ctx.fillStyle = COLORS.accent;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(g.label.toUpperCase(), x, yy + lh / 2);
-    yy += lh;
-    for (const b of g.bars) {
-      ctx.font = `500 ${Math.round(lh * 0.46)}px ${FONT}`;
-      ctx.fillStyle = LABEL;
-      ctx.fillText(b.name, x + lh * 0.4, yy + lh / 2, w * 0.36);
-      bar(ctx, x + w * 0.4, yy + lh * 0.3, w * 0.44, lh * 0.4, b.fraction, b.fraction < 0.1 ? COLORS.caution : COLORS.good);
-      ctx.fillStyle = COLORS.normal;
-      ctx.textAlign = 'right';
-      ctx.fillText(b.amount, x + w, yy + lh / 2);
-      ctx.textAlign = 'left';
-      yy += lh;
-    }
-  }
+  const gx = f.pad * 2 + leftW;
+  const gw = f.w - gx - f.pad;
+  const gh = f.bottom - f.top;
+  const r = Math.min(gw / 2, (gh - f.h * 0.07) / 2) * 0.97;
+  drawScope(ctx, f, gx + gw / 2, f.top + r + f.h * 0.005, r, s);
 }
 
 export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSnapshot, defs: DefLibrary): MfdPageModel } {
@@ -582,62 +1146,27 @@ export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSn
       ctx.save();
       ctx.fillStyle = BG;
       ctx.fillRect(0, 0, width, height);
-      const top = drawHeader(ctx, width, height, page, s);
-      const bottom = height - Math.round(height * 0.062);
+      const hh = drawHeader(ctx, width, height, page, s);
       const pad = height * 0.03;
-      const contentTop = top + pad;
-      const contentH = bottom - contentTop - pad;
-      // Page title.
-      ctx.font = `700 ${Math.round(height * 0.04)}px ${FONT}`;
-      ctx.fillStyle = COLORS.normal;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(model.title.toUpperCase(), pad, contentTop);
-      const rowsTop = contentTop + height * 0.06;
-      const leftW = width * 0.48;
-      const sectionInLeft = model.section !== undefined && page !== 'systems' && page !== 'staging' && page !== 'entry';
-      const rowH = Math.min(height * 0.062, (contentH - height * 0.06) / Math.max(1, model.rows.length + (sectionInLeft ? model.section!.rows.length + 1.4 : 0)));
-      let y = drawRows(ctx, model.rows, pad, rowsTop, leftW, rowH, 12);
-      if (model.section && page !== 'systems' && page !== 'staging' && page !== 'entry') {
-        y += rowH * 0.4;
-        ctx.font = `700 ${Math.round(rowH * 0.48)}px ${FONT}`;
-        ctx.fillStyle = COLORS.accent;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(model.section.heading.toUpperCase(), pad, y + rowH * 0.5, leftW);
-        drawRows(ctx, model.section.rows, pad, y + rowH, leftW, rowH, 8);
-      }
-      const gx = pad * 2 + leftW;
-      const gw = width - gx - pad;
-      const gy = contentTop;
-      const gh = contentH;
+      const f: Frame = { w: width, h: height, top: hh + pad, bottom: height - Math.round(height * 0.062) - pad, pad, min: height * MIN_TEXT };
       switch (page) {
         case 'flight':
-          drawAdi(ctx, gx + gw / 2, gy + gh * 0.48, Math.min(gw, gh) * 0.44, s);
+          paintFlight(ctx, f, s, model);
           break;
         case 'orbit':
-          drawOrbit(ctx, gx, gy, gw, gh, s, defs);
+          paintOrbit(ctx, f, s, defs, model);
           break;
         case 'systems':
-          drawResources(ctx, gx, gy + gh * 0.02, gw, gh * 0.96, s, defs);
+          paintSystems(ctx, f, s, defs, model);
           break;
         case 'staging':
-          drawStages(ctx, gx, gy, gw, gh, s);
+          paintStaging(ctx, f, s, model);
           break;
         case 'entry':
-          drawEntryGauges(ctx, gx, gy + gh * 0.03, gw, model.section ? gh * 0.5 : gh * 0.85, s);
-          if (model.section) {
-            const sy = gy + gh * 0.6;
-            ctx.font = `700 ${Math.round(rowH * 0.48)}px ${FONT}`;
-            ctx.fillStyle = COLORS.accent;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(model.section.heading.toUpperCase(), gx, sy, gw);
-            drawRows(ctx, model.section.rows, gx, sy + rowH * 0.6, gw, Math.min(rowH, (gh * 0.4 - rowH) / model.section.rows.length), 6);
-          }
+          paintEntry(ctx, f, s, model);
           break;
         case 'landing':
-          drawScope(ctx, gx + gw / 2, gy + gh / 2, Math.min(gw, gh) * 0.46, s);
+          paintLanding(ctx, f, s, model);
           break;
       }
       drawFooter(ctx, width, height, model, s);
@@ -645,4 +1174,3 @@ export function createMfdPainter(): MfdPainter & { build(page: MfdPage, s: SimSn
     },
   };
 }
-

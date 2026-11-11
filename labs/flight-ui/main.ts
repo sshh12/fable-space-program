@@ -18,6 +18,14 @@
  *   ballast=<iterations>       perf: a GPU ballast pass before the navball (ballast.ts; setBallast() at run time)
  *   help=1                     open the key-help overlay
  *   orbit=<yawDeg>,<pitchDeg>,<distance>   initial chase / map orbit
+ *   flight=<throttle>,<gLoad>  lab decoration: a powered flight (throttle lever, thrust and g load in the readouts)
+ *   backdrop=bright            the backdrop's worst case for HUD legibility: a near-white sunlit cloud deck / regolith
+ *                              and a pale sky
+ *   mfd=native                 the six MFD pages at 512 x 384, shown 1 : 1 (the smallest supported display)
+ *
+ * The FakeSim gives every stage the same engine numbers; the lab replaces them with the mission vehicle's
+ * stage table (data/defs/vehicles/meridian-lunar.json: icons, action kinds, which stages carry engines) and
+ * plausible delta-v / TWR / burn times, so stages without engines (gear, chutes, jettisons) are photographed too.
  */
 import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
 import type { CameraRig, CameraState } from '@/core/contracts/render';
@@ -45,6 +53,35 @@ const scene = (params.get('scene') ?? 'lowOrbit') as FakeScene;
 const testApi = installTestApi({ kind: 'lab', name: 'flight-ui', scenarioId: `fake-${scene}` });
 
 const STAGES = ['Launch', 'M-1 separation', 'Tower + fairing jettison', 'M-2 separation', 'M-3 separation', 'Landing gear', 'Lunar lift-off', 'Capsule separation', 'Drogues', 'Mains'];
+
+/** The mission vehicle's stages (icon and action kinds as in meridian-lunar.json); dv / twr / burn for engine stages. */
+const STAGE_TABLE: { icon: string; actions: string[]; engine: { dv: number; twr: number; burn: number } | null }[] = [
+  { icon: 'engine', actions: ['igniteEngines', 'releaseClamps'], engine: { dv: 3150, twr: 1.32, burn: 158 } },
+  { icon: 'decoupler', actions: ['shutdownEngines', 'fireSeparationMotors', 'decouple', 'igniteEngines'], engine: { dv: 4180, twr: 0.94, burn: 372 } },
+  { icon: 'fairing', actions: ['fireSeparationMotors', 'jettisonLES', 'jettisonFairing'], engine: null },
+  { icon: 'decoupler', actions: ['shutdownEngines', 'enableRcs', 'decouple', 'igniteEngines'], engine: { dv: 3240, twr: 0.62, burn: 468 } },
+  { icon: 'decoupler', actions: ['shutdownEngines', 'enableRcs', 'decouple', 'fireSeparationMotors', 'igniteEngines'], engine: { dv: 2520, twr: 0.41, burn: 610 } },
+  { icon: 'legs', actions: ['deployLegs'], engine: null },
+  { icon: 'engine', actions: ['shutdownEngines', 'decouple', 'igniteEngines'], engine: { dv: 2210, twr: 2.15, burn: 412 } },
+  { icon: 'decoupler', actions: ['shutdownEngines', 'decouple', 'enableRcs'], engine: null },
+  { icon: 'chute', actions: ['decouple', 'deployParachute'], engine: null },
+  { icon: 'chute', actions: ['cutParachute', 'deployParachute'], engine: null },
+];
+
+/** Lab decoration: the mission vehicle's stage table in place of the FakeSim's generic one. */
+function realisticStages(s: SimSnapshot): SimSnapshot {
+  let total = 0;
+  const stages = s.staging.stages.map((info, i) => {
+    const row = STAGE_TABLE[i];
+    if (!row) return info;
+    if (!row.engine) return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: null, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0 };
+    const frac = info.propellantFraction ?? 1;
+    const dv = Math.round(row.engine.dv * frac);
+    if (!info.fired) total += dv;
+    return { ...info, icon: row.icon, actionKinds: row.actions, propellantFraction: frac, deltaVVac: dv, deltaVNow: dv, twr: row.engine.twr, burnTime: row.engine.burn * frac };
+  });
+  return { ...s, staging: { ...s.staging, stages }, readouts: { ...s.readouts, deltaVTotal: total } };
+}
 
 interface SceneSetup {
   groups: LabGroup[];
@@ -138,8 +175,13 @@ async function boot(): Promise<void> {
   sim.snapshot();
 
   const predicted = params.get('predicted');
+  const flightParam = params.get('flight')?.split(',').map(Number) ?? null;
   const decorate = (raw: SimSnapshot): SimSnapshot => {
-    let s = tagLabVehicle(raw);
+    let s = realisticStages(tagLabVehicle(raw));
+    if (flightParam) {
+      const [thr, g] = flightParam as [number, number];
+      s = { ...s, readouts: { ...s.readouts, throttle: thr, thrust: thr * 9.2e6, gLoad: g } };
+    }
     if (params.get('failed') === '1') s = { ...s, mission: { failed: true, failureReason: 'Heat shield burned through at 61 km (lab decoration)', crewAlive: false } };
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };
     if (params.get('lockout') === '1') s = { ...s, staging: { ...s.staging, lockout: true } };
@@ -224,22 +266,25 @@ async function boot(): Promise<void> {
   hud.setKeyboardLocked(input.keyboardLocked);
   input.onKeyboardLockChange((locked) => hud.setKeyboardLocked(locked));
   if (params.get('help') === '1') hud.toggleKeyHelp(true);
-  const backdrop = createLabBackdrop(gpu, defs, () => labCylinders(defs, parts));
+  const backdrop = createLabBackdrop(gpu, defs, () => labCylinders(defs, parts), { bright: params.get('backdrop') === 'bright' });
 
-  // MFD showcase.
+  // MFD showcase: 1024 x 768 pages scaled into a grid, or 512 x 384 pages shown 1 : 1 (mfd=native).
   const mfdEl = document.getElementById('mfd') as HTMLDivElement;
   const painter = createMfdPainter();
+  const mfdNative = params.get('mfd') === 'native';
+  const [mfdW, mfdH] = mfdNative ? [512, 384] : [1024, 768];
   const mfdCanvases = MFD_PAGES.map(() => {
     const c = document.createElement('canvas');
-    c.width = 1024;
-    c.height = 768;
+    c.width = mfdW;
+    c.height = mfdH;
     mfdEl.append(c);
     return c;
   });
-  const mfdOffscreen = new OffscreenCanvas(1024, 768);
+  const mfdOffscreen = new OffscreenCanvas(mfdW, mfdH);
   const mfdCtx = mfdOffscreen.getContext('2d')!;
-  const showMfd = params.get('mfd') === '1';
+  const showMfd = params.get('mfd') === '1' || mfdNative;
   mfdEl.classList.toggle('visible', showMfd);
+  mfdEl.classList.toggle('native', mfdNative);
 
   let snapshot = decorate(sim.snapshot());
   let view: ViewFrame | null = null;
@@ -391,7 +436,7 @@ async function boot(): Promise<void> {
 
     if (showMfd) {
       MFD_PAGES.forEach((page, i) => {
-        painter.paint(mfdCtx, 1024, 768, page, snapshot, defs);
+        painter.paint(mfdCtx, mfdW, mfdH, page, snapshot, defs);
         mfdCanvases[i]!.getContext('2d')!.drawImage(mfdOffscreen, 0, 0);
       });
     }

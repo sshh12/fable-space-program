@@ -23,7 +23,12 @@ import {
   formatSignedRange,
   formatUt,
   formatVerticalSpeed,
+  altitudeDatumName,
+  G_SCALE,
+  gTone,
   landingScope,
+  orbitPhase,
+  verticalTrend,
   landingTargetRows,
   MARKER_COLORS,
   MFD_PAGES,
@@ -84,9 +89,13 @@ describe('formatters', () => {
     expect(n(formatLength(60_000, 'altitude'))).toBe('60.0 km');
     expect(n(formatLength(99_960, 'altitude'))).toBe('100.0 km');
     expect(n(formatLength(100_040, 'altitude'))).toBe('100.0 km');
-    expect(n(formatVerticalSpeed(12.34))).toBe('▲ 12.3 m/s');
-    expect(n(formatVerticalSpeed(-4))).toBe('▼ 4.0 m/s');
-    expect(n(formatVerticalSpeed(0.01))).toBe('■ 0.0 m/s');
+    // A signed number; the direction is an icon (verticalTrend), never a font glyph such as a solid square.
+    expect(n(formatVerticalSpeed(12.34))).toBe('+12.3 m/s');
+    expect(n(formatVerticalSpeed(-4))).toBe('−4.0 m/s');
+    expect(n(formatVerticalSpeed(0.01))).toBe('0.0 m/s');
+    expect(n(formatVerticalSpeed(-0.01))).toBe('0.0 m/s');
+    expect([verticalTrend(12.34), verticalTrend(-4), verticalTrend(0.01)]).toEqual(['up', 'down', 'level']);
+    for (const v of [12.34, -4, 0, 0.01]) expect(formatVerticalSpeed(v)).not.toMatch(/[■-◿]/);
   });
 
   it('spells out signs of ranges and normalises bearings', () => {
@@ -112,7 +121,8 @@ describe('display models', () => {
       expect(view.bearing).toBe(formatBearing(lt.bearingDeg));
       expect(view.predicted).toBeNull();
       const rows = landingTargetRows(view);
-      expect(rows.map((r) => r[0])).toEqual(['Distance', 'Bearing', 'Down-range', 'Cross-range', 'Predicted arrival']);
+      // Rows without data collapse: stationary on the surface there is neither a ground track nor a prediction.
+      expect(rows.map((r) => r[0])).toEqual(scene === 'lunarOrbit' ? ['Distance', 'Bearing', 'Down-range', 'Cross-range', 'Predicted arrival'] : ['Distance', 'Bearing', 'Track · arrival']);
       if (scene === 'lunarOrbit') {
         expect(view.downRange).toMatch(/ (ahead|behind)$/);
         expect(view.crossRange).toMatch(/ (left|right)$/);
@@ -156,7 +166,8 @@ describe('display models', () => {
       const rows = buildMfdPage('flight', s, defs).rows;
       expect(rows[0]).toMatchObject({ label: expectSource === 'radar' ? 'Radar alt' : 'Altitude', value: f.altitude });
       expect(rows.find((r) => r.label === 'Vertical')!.value).toBe(f.verticalSpeed);
-      expect(n(f.verticalSpeed)).toBe('▼ 12.3 m/s');
+      expect(n(f.verticalSpeed)).toBe('−12.3 m/s');
+      expect(f.verticalTrend).toBe('down');
       expect(rows.find((r) => r.label === 'Heading')!.value).toBe(formatBearing(s.navball.headingDeg));
       expect(rows.find((r) => r.label === 'Heading')!.value).toBe(f.heading);
     }
@@ -167,7 +178,8 @@ describe('display models', () => {
     // The landing page reads radar altitude and the same vertical / horizontal speed strings.
     const landing = buildMfdPage('landing', at(850, 3.21), defs).rows;
     expect(landing[0]).toMatchObject({ label: 'Radar alt', value: describeFlight(at(850, 3.21), 'radar').altitude });
-    expect(n(landing[1]!.value)).toBe('▲ 3.2 m/s');
+    expect(n(landing[1]!.value)).toBe('+3.2 m/s');
+    expect(landing[1]!.icon).toBe('up');
   });
 
   it('MFD landing and entry pages carry exactly the landing-target rows of the HUD panel', () => {
@@ -318,6 +330,75 @@ describe('display models', () => {
       const { vessel, target } = paintLanding(withTarget(0, { distance: 0.2, bearingDeg: 0, downRange: 0, crossRange: 0 }));
       expect(Math.hypot(target.x - vessel.x, target.y - vessel.y)).toBeLessThan(1e-9);
     });
+  });
+
+  it('names the altitude reference by the body: sea level on Earth, the datum on the Moon', () => {
+    expect(altitudeDatumName(snap('pad'), defs)).toBe('sea level');
+    expect(altitudeDatumName(snap('lowOrbit'), defs)).toBe('sea level');
+    for (const scene of ['lunarOrbit', 'lunarSurface'] as const) expect(altitudeDatumName(snap(scene), defs)).toBe('datum');
+  });
+
+  it('reads the orbit by flight phase: a suborbital ascent is amber, an entry or a descent under chutes hides it', () => {
+    const asc = snap('ascent');
+    const powered = { ...asc, readouts: { ...asc.readouts, throttle: 0.9, thrust: 8e6, periapsisAltitude: -6.3e6, verticalSpeed: 300 } };
+    expect(orbitPhase(powered, defs)).toEqual({ show: true, suborbital: true, periapsisTone: 'caution' });
+    const falling = { ...asc, readouts: { ...asc.readouts, throttle: 0, thrust: 0, periapsisAltitude: -6.3e6, verticalSpeed: -20, altitudeAsl: 3000 } };
+    expect(orbitPhase(falling, defs).show).toBe(false);
+    const lo = snap('lowOrbit');
+    expect(orbitPhase(lo, defs)).toEqual({ show: true, suborbital: false, periapsisTone: 'normal' });
+    // Coasting above the atmosphere with the periapsis below the surface: an impact (red).
+    const impact = { ...lo, readouts: { ...lo.readouts, throttle: 0, thrust: 0, periapsisAltitude: -1e5 } };
+    expect(orbitPhase(impact, defs).periapsisTone).toBe('warning');
+  });
+
+  it('tones g on one scale from the sim limits (HUD gauge and MFD pages)', () => {
+    expect(G_SCALE).toEqual({ caution: 6, limit: 10, full: 12 });
+    expect([gTone(1), gTone(4.5), gTone(6), gTone(9.9), gTone(10)]).toEqual(['normal', 'normal', 'caution', 'caution', 'warning']);
+    const s = snap('reentry');
+    const at = (g: number): string => buildMfdPage('flight', { ...s, readouts: { ...s.readouts, gLoad: g } }, defs).rows.find((r) => r.label === 'G load')!.tone!;
+    expect([at(1), at(7), at(11)]).toEqual(['normal', 'caution', 'warning']);
+  });
+
+  it('blanks apoapsis and periapsis on the orbit page while landed', () => {
+    const rows = buildMfdPage('orbit', snap('lunarSurface'), defs).rows;
+    expect(rows.find((r) => r.label === 'Apoapsis')!.value).toBe('—');
+    expect(rows.find((r) => r.label === 'Periapsis')!.value).toBe('—');
+  });
+
+  it('paints every MFD page of every scene at 1024 x 768 and 512 x 384 with no text under 3 % of the height', () => {
+    const g = globalThis as unknown as { Path2D?: unknown };
+    g.Path2D ??= class {};
+    for (const [w, h] of [
+      [1024, 768],
+      [512, 384],
+    ] as const) {
+      for (const scene of ['pad', 'ascent', 'lowOrbit', 'translunar', 'lunarOrbit', 'lunarSurface', 'reentry', 'chutes'] as const) {
+        const s = snap(scene);
+        for (const page of MFD_PAGES) {
+          const texts: string[] = [];
+          const sizes: number[] = [];
+          const gradient = { addColorStop: () => undefined };
+          const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+            get(t, prop) {
+              if (prop in t) return t[prop];
+              if (prop === 'measureText') return (x: string) => ({ width: x.length * h * 0.02 });
+              if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => gradient;
+              if (prop === 'fillText') return (x: string) => void texts.push(x);
+              return () => undefined;
+            },
+            set(t, prop, value) {
+              t[prop] = value;
+              if (prop === 'font') sizes.push(Number(/(\d+(?:\.\d+)?)px/.exec(String(value))![1]));
+              return true;
+            },
+          }) as unknown as OffscreenCanvasRenderingContext2D;
+          createMfdPainter().paint(ctx, w, h, page, s, defs);
+          expect(texts.length, `${scene} ${page}`).toBeGreaterThan(5);
+          for (const t of texts) expect(t, `${scene} ${page}`).not.toMatch(/NaN|undefined|Infinity/);
+          expect(Math.min(...sizes), `${scene} ${page} ${w}x${h}`).toBeGreaterThanOrEqual(Math.floor(h * 0.03));
+        }
+      }
+    }
   });
 
   it('describes stages and the warp limit', () => {
