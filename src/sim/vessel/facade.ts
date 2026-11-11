@@ -473,7 +473,11 @@ export function nextChuteEnvelope(vessel: Vessel, env: VesselEnvironment): Chute
   return null;
 }
 
-export function vesselReadouts(vessel: Vessel, env: VesselEnvironment): VesselReadouts {
+/**
+ * Vessel-level readouts. `stages` = an already computed stagingInfo(vessel, env) for the same state (the
+ * orchestrator caches it); omitted, it is computed here.
+ */
+export function vesselReadouts(vessel: Vessel, env: VesselEnvironment, stages?: readonly StageInfo[]): VesselReadouts {
   structureOf(vessel);
   if (!(vessel.mp.mass > 0)) computeMassProps(vessel);
   const rl = v3.len(vessel.r);
@@ -497,7 +501,7 @@ export function vesselReadouts(vessel: Vessel, env: VesselEnvironment): VesselRe
     }
   }
   let dv = 0;
-  for (const s of stagingInfo(vessel, env)) dv += s.deltaVVac;
+  for (const s of stages ?? stagingInfo(vessel, env)) dv += s.deltaVVac;
   const up = rl > 0 ? v3.scale(vessel.r, 1 / rl) : v3.unitY();
   const nose = quat.rotate(vessel.q, v3.unitY());
   let liftUp: boolean | null = null;
