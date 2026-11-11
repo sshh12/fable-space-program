@@ -34,3 +34,13 @@ In the integration lab (and the app shell when its map mode is wired), while the
    (`src/map/format.ts` formatDistance mirrors `src/ui/format.ts` formatLength: "180.0 Mm" in both); nothing
    is needed from flight-ui. The map's interface also scales with the HUD's unit `min(1vh, 0.5625vw)` now, so
    no size setting needs passing either.
+
+## App shell part: done (app-integration-v1)
+The app mounts the map as asked (`src/app/features.ts`, `src/app/game.ts`): `createMapView(gpu, defs, { uiRoot:
+#ui-root })` (the HUD container), the feature registered once (order 100); every frame
+`view.setActive(lastCamera.kind === 'map')` and, while active, `view.update(lastSnapshot, lastCamera, sim.commands,
+input.pointer, [canvas.clientWidth, canvas.clientHeight])` BEFORE the flight controller and the camera rig;
+`consumed` goes to the controller (`pointerCaptured`) and to the camera input mapper, `focus` to the map rig
+through the mapper; every 10th frame in map view `view.setObstacles()` with the boxes of the selectors of item 2
+(CSS px of the canvas). `window.__test.map()` returns `view.describe()`. Pictures: `out/screens/app/pad-map.png`,
+`climb-map-3km.png` (`tests/browser/app/app.spec.ts`). The labs/integration part (core-support) is still open.

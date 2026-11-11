@@ -173,6 +173,8 @@ test('a short real flight: ignite, lift off and climb a few kilometres, in every
   const audio = await page.evaluate(() => window.__test!.audio()!);
   expect(audio.state).toBe('running');
   expect(audio.buses.engines.rms).toBeGreaterThan(0);
+  await page.evaluate(() => window.__test!.waitFrames(60));
+  await shoot(page, 'liftoff-chase');
 
   await until(page, `b.altitudeAsl > ${pad.altitudeAsl + 150}`, 60_000);
   await shoot(page, 'climb-chase-150m');

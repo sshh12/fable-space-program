@@ -42,6 +42,8 @@ export interface AppDebug {
   brief(): AppBrief;
   /** Local lights of the last rendered frame: kind, peak intensity (cd), distance from the eye and range, m. */
   frameLights(): { kind: string; intensity: number; distance: number; range: number }[];
+  /** Ids of the render features that report work in progress (`isIdle()` false): what `window.__test.isIdle()` waits for. */
+  busyFeatures(): string[];
 }
 
 export interface AppBrief {
@@ -164,5 +166,6 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         distance: Math.hypot(l.posRelCam.x, l.posRelCam.y, l.posRelCam.z),
         range: l.range,
       })),
+    busyFeatures: () => game.features.list.filter((f) => f.isIdle !== undefined && !f.isIdle()).map((f) => f.id),
   };
 }
