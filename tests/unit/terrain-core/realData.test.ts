@@ -351,6 +351,26 @@ describe.skipIf(!HAS_MOON)('real Moon tiles', () => {
   );
 });
 
+describe.skipIf(!HAS_EARTH)('real Earth tiles: bakes of prepared render tiles are complete', () => {
+  it('geometry and normal / material map are complete at every render level near the pad, also below level 14 where rocks reach the normal band', async () => {
+    // docs/requests/terrain-render-1.md: from level 14 on the normal map was reported incomplete, because rock
+    // candidates kilometres from the tile had their abundance (land cover) read before they were rejected.
+    const defs = await loadDefs(fsDefSource(path.join(REPO_ROOT, 'data/defs')));
+    const site = Object.values(defs.sites).find((s) => s.bodyId === 'earth')!;
+    // A point 900 m from the pad (outside the flatten disc, where rocks exist).
+    const dir = latLonToDir((site.location.latDeg + 0.004) * DEG, (site.location.lonDeg - 0.007) * DEG);
+    // The worker configuration of the renderer: a small resident pyramid and cache.
+    const tp = await createTerrainProvider(defs, createFsTileSource(TILES), { bodies: ['earth'], residentLevel: 2, cacheBytes: 96 * 1024 * 1024 });
+    for (const level of [12, 13, 14, 15, 16, 18, 20]) {
+      const key = dirToTile(dir, level).key;
+      await tp.prepareTile('earth', key, 'render');
+      const bake = tp.bakeTile('earth', key);
+      expect(bake.geometry.complete, `geometry of level ${level}`).toBe(true);
+      expect(bake.normalMaterial.complete, `normal / material map of level ${level}`).toBe(true);
+    }
+  });
+});
+
 describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
   let defs: DefLibrary;
   let tp: TerrainAuthority;

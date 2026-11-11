@@ -513,6 +513,16 @@ export class TileBaker {
       cells(cell: number, shellHalf: number, reach: number): Int32Array {
         return shellCellsInCap(centre, capR * 1.01 + reach, R, cell, shellHalf);
       },
+      reaches(x: number, y: number, z: number, reach: number): boolean {
+        const dn = x * f.n[0] + y * f.n[1] + z * f.n[2];
+        if (dn <= 0) return false;
+        const sc = (x * f.u[0] + y * f.u[1] + z * f.u[2]) / dn;
+        const tc = (x * f.v[0] + y * f.v[1] + z * f.v[2]) / dn;
+        const fi = (((sc + 1) / 2) * n - key.x) * NORMAL_MAP_SIZE - 0.5;
+        const fj = (((tc + 1) / 2) * n - key.y) * NORMAL_MAP_SIZE - 0.5;
+        const rT = reach / minTexel + 1;
+        return Math.max(-1, Math.ceil(fi - rT)) <= Math.min(NORMAL_MAP_SIZE, Math.floor(fi + rT)) && Math.max(-1, Math.ceil(fj - rT)) <= Math.min(NORMAL_MAP_SIZE, Math.floor(fj + rT));
+      },
       forEachNear(x: number, y: number, z: number, reach: number, fn: (i: number, d2: number) => void) {
         const dn = x * f.n[0] + y * f.n[1] + z * f.n[2];
         if (dn <= 0) return;

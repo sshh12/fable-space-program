@@ -75,6 +75,13 @@ export interface BandRasterJob {
   cells(cell: number, shellHalf: number, reach: number): Int32Array;
   /** Calls fn(sampleIndex, distance^2) for every sample within `reach` metres of the datum point (x, y, z). */
   forEachNear(x: number, y: number, z: number, reach: number, fn: (i: number, d2: number) => void): void;
+  /**
+   * Can a feature centred at (x, y, z) with this reach touch any sample of the job? Exactly the index range
+   * forEachNear would visit, without visiting it: a cheap test to make BEFORE anything expensive is
+   * evaluated at the feature's centre. The cells of rare, large features are kilometres wide, so most of
+   * their candidates lie far outside the tile, where the tile's load set does not reach.
+   */
+  reaches(x: number, y: number, z: number, reach: number): boolean;
 }
 
 export interface AmplificationModel {

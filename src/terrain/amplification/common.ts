@@ -174,8 +174,12 @@ export function splatRocks(rocks: RockField, job: BandRasterJob, abundance: Rock
       const cx = buf[o]!;
       const cy = buf[o + 1]!;
       const cz = buf[o + 2]!;
-      if (buf[o + 5]! >= acceptanceRatio(D, abundance(cx, cy, cz), rocks.p.kMax)) continue;
       const rad = D / 2;
+      // The cells of the largest, rarest rocks are kilometres wide: most candidates cannot touch the tile.
+      // They are dropped before the abundance (land cover at the rock) is read, which is only resident
+      // around the tile (docs/requests/terrain-render-1.md) and is the expensive part.
+      if (!job.reaches(cx, cy, cz, rad)) continue;
+      if (buf[o + 5]! >= acceptanceRatio(D, abundance(cx, cy, cz), rocks.p.kMax)) continue;
       const r2 = rad * rad;
       const hR = buf[o + 4]! * rad;
       job.forEachNear(cx, cy, cz, rad, (si, d2) => {

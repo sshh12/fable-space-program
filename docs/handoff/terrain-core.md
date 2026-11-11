@@ -422,3 +422,15 @@ Looked at after this round's changes:
   outside the NAC strip).
 
 Full list: `docs/handoff/lead-baseline.md`.
+
+## Changes in wave 2 (core-support)
+
+- **Bakes of prepared tiles are complete from level 14 on** (request `terrain-render-1`). Rock candidates of
+  the rare, large size classes sit in cells kilometres wide; `splatRocks` read their abundance (land cover at
+  the rock) before dropping the ones that cannot touch the tile, up to 7 km outside the load set of
+  `prepareTile`, which flagged `normalMaterial.complete = false`. `BandRasterJob.reaches(x, y, z, reach)` (new,
+  implemented by the baker) is asked first. Bakes are bit-identical; real-data test "bakes of prepared render
+  tiles are complete" covers levels 12-20 near the pad.
+- **Bake budget re-measured on the quiet machine** (2026-11-10 17:09, CPU busy 6 %): Moon L6 / 10 / 13 / 16 /
+  18 = 6.0 / 9.9 / 15.4 / 16.7 / 13.4 ms; Earth L6 / 10 / 13 / 16 / 20 = 8.7 / 12.3 / 13.7 / 20.3 / 18.8 ms.
+  Still over 12 ms from level 13; not closed in wave 2 (reasons in `docs/handoff/core-support.md`).
