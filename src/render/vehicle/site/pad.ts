@@ -310,10 +310,13 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
         const phi = (k / 6) * TAU + 0.26;
         const r = holeR + 3.6;
         const p: Vec3Tuple = [r * Math.sin(phi), top, r * Math.cos(phi)];
-        rod(b, p, [p[0], top + 1.5, p[2]], 0.16, b.pick(12, 8, 5), 'rainbird');
-        b.at(xf.along([p[0], top + 1.5, p[2]], [p[0] * 0.8, top + 2.3, p[2] * 0.8]), () => frustum(b, 0.17, 0.3, 0, 0.55, b.pick(12, 8, 5), 'rainbird-head'));
+        b.mat('galvanised');
+        rod(b, p, [p[0], top + 1.25, p[2]], 0.1, b.pick(12, 8, 5), 'rainbird');
+        b.mat('paint-red');
+        b.at(xf.along([p[0], top + 1.25, p[2]], [p[0] * 0.8, top + 1.95, p[2] * 0.8]), () => frustum(b, 0.11, 0.2, 0, 0.42, b.pick(12, 8, 5), 'rainbird-head'));
       }
-      pipe(b, [[half - 0.6, top + 0.25, -half + 2.6], [half - 0.6, top + 0.25, half - 2.6], [-half + 2.6, top + 0.25, half - 0.6]], 0.2, 0.8, { segs: b.pick(10, 6, 5), tag: 'deluge-main' });
+      b.mat('galvanised');
+      pipe(b, [[half - 0.6, top + 0.2, -half + 2.6], [half - 0.6, top + 0.2, half - 2.6], [-half + 2.6, top + 0.2, half - 0.6]], 0.14, 0.8, { segs: b.pick(10, 6, 5), tag: 'deluge-main' });
       // ---- handrails and the stair tower from the apron to the deck
       const e = half - 0.2;
       handrail(b, [[-e + cut, top, -e], [e - cut, top, -e], [e, top, -e + cut], [e, top, e - cut], [e - cut, top, e], [-e + cut, top, e], [-e, top, e - cut], [-e, top, -e + cut], [-e + cut, top, -e]]);
@@ -345,8 +348,21 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
   // Tail service mast: stands on the deck on the tower side and carries the aft umbilical; it tips back
   // at lift-off. Model frame: origin at its hinge on the deck.
   const mast = buildModel('pad.launchMount.mast', (b) => {
+    // Two side frames with cross tubes: an open mast, not a block.
     b.mat('paint-grey').masks(0.25, 1, 0.95, 0);
-    box(b, 0.9, mastH, 1.1, [0.2, mastH / 2, 0], 'mast');
+    for (const sz of [-0.62, 0.62]) {
+      for (const sx of [-0.25, 0.65]) box(b, 0.14, mastH, 0.14, [sx, mastH / 2, sz], 'mast-post');
+      if (b.lod < 2) {
+        const bays = 4;
+        for (let i = 0; i < bays; i++) {
+          const ya = (mastH * i) / bays + 0.1;
+          const yb = (mastH * (i + 1)) / bays - 0.1;
+          rod(b, [i % 2 === 0 ? -0.25 : 0.65, ya, sz], [i % 2 === 0 ? 0.65 : -0.25, yb, sz], 0.035, b.pick(8, 6, 4), 'mast-brace');
+          rod(b, [-0.25, yb, sz], [0.65, yb, sz], 0.035, b.pick(8, 6, 4), 'mast-ring');
+        }
+      }
+    }
+    if (b.lod < 2) for (let i = 0; i <= 4; i++) for (const sx of [-0.25, 0.65]) rod(b, [sx, (mastH * i) / 4 + (i === 0 ? 0.2 : -0.1), -0.62], [sx, (mastH * i) / 4 + (i === 0 ? 0.2 : -0.1), 0.62], 0.035, b.pick(8, 6, 4), 'mast-cross');
     b.mat('steel-brushed');
     const reach = mastX - mastReach;
     box(b, reach + 0.2, 0.9, 1.5, [-(reach + 0.2) / 2 + 0.1, mastH - 0.55, 0], 'carrier');

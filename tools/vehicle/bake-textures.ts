@@ -43,19 +43,22 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Brushed sheet, tile 0.4 m: the grain runs along u.
+  // Brushed sheet, tile 0.4 m: the grain runs along u. Each scratch is a line of constant v that only drifts
+  // slowly, so the map has no lattice of its own to beat against the pixel grid.
   brushed() {
     const S = 512;
-    const grain = Field.from(S, S, (u, v) => fbm(u, v, 3, 220, 3, 31) * 0.6 + 0.4 * vnoise(u * 2, v * 512, 2, 512, 33));
-    const h = Field.from(S, S, (u, v, x, y) => 0.000035 * grain.at(x, y) + 0.00012 * fbm(u, v, 3, 3, 2, 34));
+    const grainAt = (u: number, v: number): number => {
+      const w = v + 0.003 * (fbm(u, v, 2, 2, 2, 31) - 0.5);
+      return 0.45 * vnoise(0.5, w * 256, 1, 256, 32) + 0.3 * vnoise(0.5, w * 128, 1, 128, 33) + 0.25 * vnoise(u * 2, w * 64, 2, 64, 36);
+    };
+    const grain = Field.from(S, S, grainAt);
+    const h = Field.from(S, S, (_u, _v, x, y) => 0.00003 * grain.at(x, y));
     save('brushed_n', normalMap(h, 0.4));
     save(
       'brushed_orm',
-      orm(S, S, (u, v, x, y) => {
-        const g = grain.at(x, y);
-        const stain = fbm(u, v, 4, 4, 4, 35);
-        return [1, clamp(0.72 + 0.2 * g + 0.14 * stain), clamp(0.93 + 0.07 * smooth(0.3, 0.6, stain))];
-      }),
+      // Only the grain: a 0.4 m tile cannot carry stains without showing its repeat (tone variation is the
+      // job of the vertex wear mask).
+      orm(S, S, (_u, _v, x, y) => [1, clamp(0.78 + 0.22 * grain.at(x, y)), 1]),
     );
   },
 
@@ -90,9 +93,9 @@ const recipes: Record<string, () => void> = {
       [0.0, rgb(150, 146, 140)],
       [0.3, rgb(158, 142, 112)],
       [0.46, rgb(150, 112, 70)],
-      [0.6, rgb(118, 72, 96)],
-      [0.74, rgb(66, 74, 132)],
-      [0.88, rgb(84, 112, 150)],
+      [0.6, rgb(128, 94, 102)],
+      [0.74, rgb(98, 100, 128)],
+      [0.88, rgb(112, 124, 142)],
       [1.0, rgb(128, 136, 142)],
     ];
     save(
@@ -129,13 +132,14 @@ const recipes: Record<string, () => void> = {
       const t = tow(u, v);
       return 0.00028 * Math.sqrt(Math.max(0, 1 - (2 * t.across - 1) ** 2)) + 0.00003 * fbm(u, v, 128, 128, 1, 71);
     });
-    save('carbon_n', normalMap(h, 0.25, 0.7));
+    save('carbon_n', normalMap(h, 0.25, 0.4));
     save(
       'carbon_albedo',
       Image.from(S, S, (u, v) => {
         const t = tow(u, v);
         const fibre = vnoise(t.across * 9 + (t.warp ? 0 : 40), t.along * 0.7, 4096, 4096, 72);
-        const k = 0.19 + 0.05 * (t.warp ? 1 : 0.55) + 0.035 * fibre + 0.02 * fbm(u, v, 3, 3, 3, 73);
+        // Warp and weft differ little in tone: the weave is a close-up detail and must average to one grey in the mips.
+        const k = 0.2 + 0.03 * (t.warp ? 1 : 0.86) + 0.03 * fibre;
         return [k, k, k * 1.03];
       }),
     );
@@ -144,7 +148,7 @@ const recipes: Record<string, () => void> = {
       orm(S, S, (u, v) => {
         const t = tow(u, v);
         const edge = Math.abs(2 * t.across - 1);
-        return [clamp(1 - 0.35 * smooth(0.75, 1, edge)), clamp(0.82 + 0.18 * edge), 1];
+        return [clamp(1 - 0.2 * smooth(0.75, 1, edge)), clamp(0.9 + 0.1 * edge), 1];
       }),
     );
   },
@@ -265,7 +269,7 @@ const recipes: Record<string, () => void> = {
     const h = Field.from(S, S, (u, v) => {
       const c = cellOf(u, v);
       const pillow = Math.pow(Math.sin(Math.PI * c.fu) * Math.sin(Math.PI * c.fv), 0.35);
-      return 0.0016 * pillow - 0.006 * smooth(0.02, 0.006, c.e) + 0.0003 * fbm(u, v, 80, 80, 2, 112) + (c.id - 0.5) * 0.0012;
+      return 0.0012 * pillow - 0.002 * smooth(0.012, 0.004, c.e) + 0.0003 * fbm(u, v, 80, 80, 2, 112) + (c.id - 0.5) * 0.0008;
     });
     save('tile_n', normalMap(h, 0.72));
     const ao = cavity(h, 3, 220);
@@ -273,10 +277,10 @@ const recipes: Record<string, () => void> = {
       'tile_albedo',
       Image.from(S, S, (u, v, x, y) => {
         const c = cellOf(u, v);
-        const gap = smooth(0.02, 0.008, c.e);
-        const shade = 0.86 + 0.12 * c.id + 0.04 * fbm(u, v, 20, 20, 3, 113);
-        const edgeWear = 1 - 0.1 * smooth(0.08, 0.02, c.e);
-        const k = mix(shade * edgeWear, 0.2, gap) * (0.8 + 0.2 * ao.at(x, y));
+        const gap = smooth(0.012, 0.004, c.e);
+        const shade = 0.9 + 0.08 * c.id + 0.04 * fbm(u, v, 20, 20, 3, 113);
+        const edgeWear = 1 - 0.06 * smooth(0.06, 0.015, c.e);
+        const k = mix(shade * edgeWear, 0.7, gap) * (0.94 + 0.06 * ao.at(x, y));
         return [k * 0.925, k * 0.925, k * 0.91];
       }),
     );
@@ -289,69 +293,49 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Multi-layer insulation foil, tile 1.1 m: sharp creases mostly along u, billowing between tie points.
+  // Multi-layer insulation foil, tile 1.1 m: a crumpled film is flat facets meeting in sharp creases. The
+  // height is a sum of warped triangle waves (each one a family of folds), so the surface is continuous and
+  // the facets tilt by a few degrees; folds mostly run along u (the pull direction).
   mli() {
-    // Crumpled foil is faceted: flat patches tilted at random, meeting in sharp creases. Two scales of
-    // Worley facets (elongated along u, the direction the blanket was pulled) over a soft billow.
     const S = 1024;
-    const warp = (u: number, v: number): [number, number] => [u + 0.02 * (fbm(u, v, 6, 6, 2, 121) - 0.5), v + 0.02 * (fbm(u, v, 6, 6, 2, 122) - 0.5)];
-    const gx = new Field(S, S);
-    const gy = new Field(S, S);
-    const edge = new Field(S, S);
-    for (let y = 0; y < S; y++) {
-      for (let x = 0; x < S; x++) {
-        const [u, v] = warp((x + 0.5) / S, (y + 0.5) / S);
-        const a = worley(u, v, 9, 20, 123, 1);
-        const b = worley(u, v, 30, 64, 124, 1);
-        const sx = (a.id - 0.5) * 0.34 + (b.id - 0.5) * 0.3;
-        const sy = (a.id2 - 0.5) * 0.62 + (b.id2 - 0.5) * 0.5;
-        gx.data[y * S + x] = sx;
-        gy.data[y * S + x] = sy;
-        edge.data[y * S + x] = Math.min(smooth(0, 0.07, a.f2 - a.f1), 0.35 + 0.65 * smooth(0, 0.1, b.f2 - b.f1));
+    const T = 1.1;
+    const tri = (x: number): number => Math.abs(2 * (x - Math.floor(x)) - 1);
+    // [cycles along u, cycles along v, facet slope]
+    const folds: [number, number, number][] = [
+      [1, 4, 0.1], [-2, 6, 0.1], [1, -9, 0.09], [3, 11, 0.08], [-1, 14, 0.08], [2, -19, 0.07], [5, 3, 0.05],
+      [-4, 7, 0.06], [7, -5, 0.04], [0, 25, 0.06], [3, -31, 0.05], [-6, 21, 0.05], [11, 9, 0.035], [-2, 43, 0.04],
+    ];
+    const h = Field.from(S, S, (u, v) => {
+      let sum = 0.012 * fbm(u, v, 2, 3, 2, 125);
+      for (let k = 0; k < folds.length; k++) {
+        const [m, n, slope] = folds[k]!;
+        const amp = (0.55 * slope * T) / (2 * Math.hypot(m, n));
+        const bend = 0.9 * (fbm(u, v, 3, 3, 2, 130 + k) - 0.5);
+        // Folds die out and start again: each family is strong in some places and absent in others.
+        const reach = smooth(0.3, 0.62, fbm(u, v, 3, 4, 2, 150 + k));
+        sum += amp * reach * tri(u * m + v * n + hash(k, 7, 123) + bend);
       }
-    }
-    const billow = Field.from(S, S, (u, v) => 0.014 * fbm(u, v, 3, 3, 2, 125));
-    const sB = (S / 1.1) * 0.5;
-    save(
-      'mli_n',
-      Image.from(S, S, (_u, _v, x, y) => {
-        // 3 x 3 box filter of the facet slopes keeps the creases sharp but not aliased.
-        let dx = 0;
-        let dy = 0;
-        for (let j = -1; j <= 1; j++) {
-          for (let i = -1; i <= 1; i++) {
-            dx += gx.at(x + i, y + j);
-            dy += gy.at(x + i, y + j);
-          }
-        }
-        dx = dx / 9 + (billow.at(x + 1, y) - billow.at(x - 1, y)) * sB;
-        dy = dy / 9 + (billow.at(x, y + 1) - billow.at(x, y - 1)) * sB;
-        const l = Math.hypot(dx, dy, 1);
-        return [0.5 - (0.5 * dx) / l, 0.5 - (0.5 * dy) / l, 0.5 + 0.5 / l];
-      }),
-    );
-    save(
-      'mli_orm',
-      orm(S, S, (u, v, x, y) => {
-        const e = edge.at(x, y);
-        return [clamp(0.55 + 0.45 * e), clamp(1 - 0.28 * e + 0.08 * fbm(u, v, 40, 40, 2, 126)), 1];
-      }),
-    );
+      return sum + 0.00025 * ridged(u, v, 30, 70, 2, 126);
+    });
+    save('mli_n', normalMap(h, T));
+    const ao = cavity(h, 4, 250);
+    save('mli_orm', orm(S, S, (u, v, x, y) => [clamp(0.72 + 0.28 * ao.at(x, y)), clamp(0.84 + 0.16 * fbm(u, v, 24, 24, 2, 127)), 1]));
   },
 
   // Hot-dip galvanised steel, tile 0.8 m: zinc spangle.
   galv() {
     const S = 512;
     const sp = (u: number, v: number) => worley(u, v, 26, 26, 131, 1);
-    const h = Field.from(S, S, (u, v) => 0.00012 * sp(u, v).id + 0.0003 * fbm(u, v, 6, 6, 3, 132));
+    const h = Field.from(S, S, (u, v) => 0.00003 * sp(u, v).id + 0.00015 * fbm(u, v, 24, 24, 3, 132));
     save('galv_n', normalMap(h, 0.8));
     save(
       'galv_albedo',
       Image.from(S, S, (u, v) => {
         const c = sp(u, v);
         const facet = 0.5 + 0.5 * Math.sin(40 * (c.dx * Math.cos(c.id2 * 6.283) + c.dy * Math.sin(c.id2 * 6.283)));
-        const k = 0.6 + 0.16 * c.id + 0.05 * facet + 0.06 * fbm(u, v, 5, 5, 4, 133);
-        const streak = 1 - 0.18 * smooth(0.6, 0.85, fbm(u, v, 14, 2, 3, 134));
+        // Spangle is a close-up detail: from a few metres the sheet is an even dull grey.
+        const k = 0.64 + 0.05 * c.id + 0.02 * facet + 0.02 * fbm(u, v, 30, 30, 2, 133);
+        const streak = 1 - 0.05 * smooth(0.6, 0.85, fbm(u, v, 40, 3, 2, 134));
         return [k * 0.97 * streak, k * 0.985 * streak, k * streak];
       }),
     );
@@ -359,7 +343,7 @@ const recipes: Record<string, () => void> = {
       'galv_orm',
       orm(S, S, (u, v) => {
         const c = sp(u, v);
-        return [1, clamp(0.7 + 0.3 * c.id2), clamp(0.9 + 0.1 * fbm(u, v, 5, 5, 3, 135))];
+        return [1, clamp(0.88 + 0.12 * c.id2), 0.95];
       }),
     );
   },

@@ -11,7 +11,7 @@
 import type { PartDef } from '@/core/contracts/defs';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { MeshBuilder, add3, norm3, polar, scale3, xf } from '../geom/builder';
-import { DEG, Profile, TAU, arcPath, beam, bolt, boltRing, bottle, box, extrude, frustum, lathe, phisWith, radialFrame, rectPoly, ringSolid, rod, tube, type LatheRegion, type MaskOut } from '../geom/prims';
+import { DEG, Profile, TAU, arcPath, beam, bolt, boltRing, bottle, box, extrude, frustum, lathe, phisWith, pipe, radialFrame, rectPoly, ringSolid, rod, tube, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
 import { accessDoor, band, bandRegion, buildModel, decalRegion, parseList, regionBounds, regionHeights, stringers, thruster, umbilicalPlate } from './common';
 import { mouldLine, shieldY } from './mouldline';
@@ -374,6 +374,17 @@ export const padClamp: PartGenerator = ({ def, params }) => {
         for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.at(xf.translate(sx * 0.46, 0.12, 0.02 + sz * 0.62), () => bolt(b, 0.04, 0.035));
         b.mat('paint-yellow');
         box(b, 1.18, 0.03, 0.1, [0, 0.135, -0.7], 'stripe');
+        // Gussets between the base plate and the side plates, hydraulic lines up the spine, anchor nuts.
+        b.mat('paint-grey').masks(0.3, 1, 0.9, 0);
+        for (const sx of [-1, 1]) {
+          for (const z of [-0.18, 0.2, 0.5]) {
+            b.at(xf.fromAxes([sx * 0.3, 0.12, z], [sx, 0, 0], [0, 0, -sx], [0, 1, 0]), () => extrude(b, [[0, 0], [0.26, 0], [0, 0.5]], -0.012, 0.012, false, 'gusset'));
+          }
+        }
+        b.mat('steel-bare').masks(0.2, 1, 0.9, 0);
+        for (const x of [-0.12, 0, 0.12]) pipe(b, [[x, 0.3, 0.56], [x, H - 1.5, 0.56], [x, H - 1.36, 0.3]], 0.016, 0.06, { segs: 6, tag: 'hydraulic-line' });
+        b.mat('steel-dark');
+        box(b, 0.34, 0.5, 0.22, [0, 0.55, 0.66], 'manifold');
       }
     }
   });
@@ -398,9 +409,14 @@ export const padClamp: PartGenerator = ({ def, params }) => {
     b.mat('steel-bare').masks(0.5, 1, 0.9, 0);
     // Bearing shoe that carries the stage: its top face is the hold-down plane.
     box(b, 0.44, 0.02, 0.26, [0, topY - 0.01, tipZ + 0.14], 'shoe');
-    if (b.lod === 0) {
-      b.mat('steel-dark');
-      for (const sx of [-1, 1]) b.at(xf.mul(xf.translate(sx * 0.2, 0, 0), xf.rotZ(-sx * (Math.PI / 2))), () => frustum(b, 0.12, 0.12, 0, 0.03, 16, 'boss'));
+    if (b.lod < 2) {
+      // Black warning chevrons on the yellow arm, pivot bosses, grease fittings.
+      b.mat('paint-black').masks(0.35, 1, 0.9, 0);
+      for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) box(b, 0.006, 0.11, 0.2, [sx * 0.2015, topY * (0.3 + 0.16 * i) * 0.9 + 0.02, tipZ * (0.16 + 0.19 * i)], 'chevron');
+      if (b.lod === 0) {
+        b.mat('steel-dark');
+        for (const sx of [-1, 1]) b.at(xf.mul(xf.translate(sx * 0.2, 0, 0), xf.rotZ(-sx * (Math.PI / 2))), () => frustum(b, 0.12, 0.12, 0, 0.03, 16, 'boss'));
+      }
     }
   });
 

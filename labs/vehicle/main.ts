@@ -10,12 +10,16 @@
  *   stage=<n>                     stages already fired (0 = full stack with clamps)
  *   only=<id,id,...>              keep only these part instance ids
  *   sun=<azDeg>,<elDeg>           sun fixed in the local horizon frame (pad / ground)
- *   sunv=<x>,<y>,<z>              sun direction in the vessel frame (space)
+ *   sunv=<x>,<y>,<z>              sun direction in the frame of the vessel (of the focus= vessel when given)
  *   env=day|night|orbit|moon|void lab environment (default from the scene)
  *   site=0|1                      launch complex (default 1 on the pad)
  *   slab=0|1                      concrete test slab under a 'ground' placement (default 1)
  *   planet=0|1                    analytic lab planet (default 1)
  *   glass=0|1                     opaque exterior window panes (default 1)
+ *   stages=<n>&coast=<s>&hold=1   fire n stages at start, let the pieces drift s seconds, then freeze time
+ *   solo=1                        with focus=: show that vessel alone (the others are parked 200 km away)
+ *   focus=<text>                  vessel that eye= / at= refer to: the first whose id, or one of whose part instance ids,
+ *                                 contains the text (default: the active vessel)
  *   eye=<x,y,z>&at=<x,y,z>        camera and look-at point in the active vessel's frame with the nose (+Y) up
  *                                 (up=z for the dorsal side up); on the pad -Z is east and +X south
  *   ballast=<iterations>          GPU ballast pass for perf measurements
@@ -152,6 +156,7 @@ async function boot(): Promise<void> {
   const eye = tuple3('eye');
   const at = tuple3('at') ?? [0, 0, 0];
   const upAxis = params.get('up') ?? 'y';
+  const focus = params.get('focus');
   const vehicle = createVesselVisualFeature({ exteriorGlass: flag('glass', true) });
   const env = createLabEnvFeature({ kind: envKind });
   // The lab planet has no relief: the pad surface is the reference sphere here.
@@ -177,7 +182,7 @@ async function boot(): Promise<void> {
       const sun = params.get('sun')?.split(',').map(Number);
       const sunv = params.get('sunv')?.split(',').map(Number);
       if (sun && sun.length === 2) sim.setSun({ kind: 'local', azDeg: sun[0]!, elDeg: sun[1]! });
-      else if (sunv && sunv.length === 3) sim.setSun({ kind: 'vessel', dir: [sunv[0]!, sunv[1]!, sunv[2]!] });
+      else if (sunv && sunv.length === 3) sim.setSun({ kind: 'vessel', dir: [sunv[0]!, sunv[1]!, sunv[2]!], ...(focus ? { focus } : {}) });
       return sim;
     },
     features: (defs, sim) => {
@@ -198,7 +203,7 @@ async function boot(): Promise<void> {
       if (eye && lab) {
         // eye= / at= are given in the active vessel's frame with +Y (the nose) as "up": the view a person
         // standing by the stack has, which the lab's vessel camera (dorsal side up) does not give.
-        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
+        const v = (focus ? snapshot.vessels.find((x) => x.id.includes(focus) || x.parts.some((p) => p.instanceId.includes(focus))) : undefined) ?? snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
         const pos = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(eye)));
         const target = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(at)));
         const up = quat.rotate(v.q, upAxis === 'z' ? v3.unitZ() : v3.unitY());
@@ -217,6 +222,11 @@ async function boot(): Promise<void> {
   const sim = app.sim as VehicleLabSim;
   lab = { app, sim, vehicle, site, env, setSun: (sun) => sim.setSun(sun) };
   window.__veh = lab;
+  // stages=<n>: fire that many stages now; coast=<s>: let the separated vessels drift for s seconds.
+  for (let i = 0; i < num('stages', 0); i++) sim.fireStage();
+  for (let t = 0; t < num('coast', 0); t += 1 / 60) sim.advance(1 / 60);
+  if (params.get('solo') === '1' && focus) sim.setSolo(focus);
+  if (params.get('hold') === '1') app.setPaused(true);
   if (params.get('hud') === '0') info.style.display = 'none';
   await app.testApi.api.waitFrames(2);
   app.testApi.markReady(app.testApi.api.errors.length === 0);

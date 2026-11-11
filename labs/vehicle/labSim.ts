@@ -43,7 +43,7 @@ export type SunSpec =
   /** Compass azimuth / elevation at the placement point, degrees. */
   | { kind: 'local'; azDeg: number; elDeg: number }
   /** Direction in the vessel frame (VES axes). */
-  | { kind: 'vessel'; dir: [number, number, number] };
+  | { kind: 'vessel'; dir: [number, number, number]; focus?: string };
 
 export class VehicleLabSim implements Sim {
   readonly defs: DefLibrary;
@@ -54,6 +54,7 @@ export class VehicleLabSim implements Sim {
   private stage: number;
   private t = 0;
   private drift = true;
+  private solo: string | null = null;
   private sun: SunSpec | null = null;
   private pendingEvents: SimEvent[] = [];
   private removed = new Set<string>();
@@ -180,6 +181,15 @@ export class VehicleLabSim implements Sim {
     this.pendingEvents.push({ type: 'vesselRemoved', ut: 0, vesselId, reason: 'expired' });
   }
 
+  /**
+   * Show one vessel alone: every vessel whose id and part instance ids do not contain the text is parked
+   * 200 km away (null = everything where it is). For pictures of one separated piece with nothing of the
+   * rest of the stack in the frame or between it and the sun.
+   */
+  setSolo(text: string | null): void {
+    this.solo = text;
+  }
+
   /** Freeze or resume the kinematic drift of separated vessels. */
   setDrift(on: boolean): void {
     this.drift = on;
@@ -249,7 +259,13 @@ export class VehicleLabSim implements Sim {
         const az = this.sun.azDeg * DEG;
         const el = this.sun.elDeg * DEG;
         dir = v3.add(v3.scale(v3.add(v3.scale(a0.east, Math.sin(az)), v3.scale(a0.north, Math.cos(az))), Math.cos(el)), v3.scale(a0.up, Math.sin(el)));
-      } else dir = quat.rotate(a0.q, v3.normalize(v3.fromTuple(this.sun.dir)));
+      } else {
+        // In the frame of the main vessel, or of the separated vessel named by `focus` (which may be tumbling).
+        const text = this.sun.focus;
+        const lv = text ? this.list.find((x) => x.vessel.id.includes(text) || x.parts.some((p) => p.instanceId.includes(text))) : undefined;
+        const q = lv ? quat.normalize(quat.mul(a0.q, quat.normalize(quat.mul(lv.vessel.q, quat.fromRotVec(v3.scale(lv.vessel.w, this.drift ? this.t - lv.t0 : 0)))))) : a0.q;
+        dir = quat.rotate(q, v3.normalize(v3.fromTuple(this.sun.dir)));
+      }
       const star = snap.bodies.find((b) => b.id === snap.starId)!;
       const centre = snap.bodies.find((b) => b.id === a0.bodyId)!;
       star.rRoot = v3.addScaled(centre.rRoot, dir, 1.495978707e11);
@@ -268,7 +284,9 @@ export class VehicleLabSim implements Sim {
     const vessels: VesselSnapshot[] = this.list.map((lv, index) => {
       const v = lv.vessel;
       const dt = this.drift ? this.t - lv.t0 : 0;
-      const rA = v3.addScaled(v.r, v.v, dt);
+      const solo = this.solo;
+      const parked = solo !== null && !(v.id.includes(solo) || lv.parts.some((p) => p.instanceId.includes(solo)));
+      const rA = v3.add(v3.addScaled(v.r, v.v, dt), v3.new(0, parked ? 2e5 : 0, 0));
       const qA = quat.normalize(quat.mul(v.q, quat.fromRotVec(v3.scale(v.w, dt))));
       const rRoot = v3.add(a.origin, quat.rotate(a.q, rA));
       const anchorVel = surface ? v3.add(body.vRoot, v3.cross(spin, v3.sub(a.origin, body.rRoot))) : template.vRoot;

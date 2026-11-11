@@ -76,8 +76,8 @@ const SPECS = {
   ablator: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [1.2, 1.2], tex: { a: 'ablator_albedo', n: 'ablator_n', o: 'ablator_orm' } },
   'tile-white': { color: [1, 1, 1], metallic: 0, roughness: 0.62, tile: [0.72, 0.72], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   'tile-black': { color: [0.07, 0.07, 0.075], metallic: 0, roughness: 0.55, tile: [0.72, 0.72], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
-  'mli-gold': { color: [0.95, 0.66, 0.2], metallic: 1, roughness: 0.24, anisotropy: -0.55, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-silver': { color: [0.88, 0.89, 0.9], metallic: 1, roughness: 0.22, anisotropy: -0.55, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-gold': { color: [0.95, 0.66, 0.2], metallic: 0.8, roughness: 0.4, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-silver': { color: [0.88, 0.89, 0.9], metallic: 0.85, roughness: 0.38, anisotropy: -0.6, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   'mli-black': { color: [0.025, 0.025, 0.028], metallic: 0, roughness: 0.5, tile: [1.1, 1.1], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },

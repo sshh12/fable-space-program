@@ -173,6 +173,17 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     return Math.min(1, 0.18 + 0.82 * Math.pow(up, 1.6) * streak);
   };
 
+  /**
+   * Char weight of the heat shield: even in the stagnation region, combed into radial streaks toward the
+   * shoulder where the flow ran outward (three widths of streak, fixed per azimuth).
+   */
+  const shieldChar = (phi: number, r: number): number => {
+    const a = phi / TAU;
+    const streak = 0.5 * hash01(Math.floor(a * 18), 11) + 0.3 * hash01(Math.floor(a * 48), 12) + 0.2 * hash01(Math.floor(a * 144), 13);
+    const t = Math.min(1, r / rB);
+    return 1 - 0.62 * Math.pow(t, 1.4) * (1 - streak);
+  };
+
   const skin = (b: MeshBuilder, glass: MeshBuilder | null): void => {
     const N = b.pick(144, 72, 24);
     const M = b.pick(48, 24, 6);
@@ -614,7 +625,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         }
       }
       phis.sort((a, c) => a - c);
-      lathe(b, p, { phis, regions, tag: 'capsule-skin', mask: (y, phi, _r, m) => void (m.soot = y <= yB + 1e-6 ? 1 : scorch(phi, y)) });
+      lathe(b, p, { phis, regions, tag: 'capsule-skin', mask: (y, phi, r, m) => void (m.soot = y <= yB + 1e-6 ? shieldChar(phi, r) : scorch(phi, y)) });
     }
     fittings(b);
   });
