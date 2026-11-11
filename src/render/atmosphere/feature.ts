@@ -14,6 +14,7 @@
 import type { BodyDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { resolveAirglow, type AirglowLayer } from './airglow';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
 import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchBodies, type AtmosphereLayer, type MarchSelection } from './select';
@@ -112,6 +113,19 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
   let lastScissor: [number, number, number, number] | null = null;
   let signature = '';
   let active = false;
+  /** Airglow layers by body id (resolved once per definition; problems reported once). */
+  const airglow = new Map<string, { signature: string; layers: AirglowLayer[] }>();
+  const airglowOf = (def: BodyDef): AirglowLayer[] => {
+    const atm = def.render.atmosphere;
+    if (!atm) return [];
+    const signature = JSON.stringify(atm.airglow ?? null);
+    const known = airglow.get(def.id);
+    if (known && known.signature === signature) return known.layers;
+    const r = resolveAirglow(atm);
+    for (const problem of r.problems) core.reportError(`${id}: ${def.id}.atmosphere: ${problem}`);
+    airglow.set(def.id, { signature, layers: r.layers });
+    return r.layers;
+  };
 
   const bodyDef = (frame: FrameContext, index: number): BodyDef => ctx.defs.bodies[frame.bodies[index]!.id]!;
 
@@ -342,6 +356,15 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       u.set('lutBody', layers[0]?.bodyIndex ?? 0, layers[1]?.bodyIndex ?? 0, layers[2]?.bodyIndex ?? 0, layers[3]?.bodyIndex ?? 0);
       u.set('steps', b0 ? b0.steps : 0, b1 ? b1.steps : 0, 32, clouds ? clouds.stepBudget(frame) : 0);
       u.set('halfSize', halfW, halfH, 1 / halfW, 1 / halfH);
+      ([b0, b1] as const).forEach((b, slot) => {
+        const glow = b ? airglowOf(bodyDef(frame, b.bodyIndex)) : [];
+        const geo = slot === 0 ? 'airglow0' : 'airglow1';
+        u.set(geo, glow[0]?.altitude ?? 0, glow[0]?.sigma ?? 0, glow[1]?.altitude ?? 0, glow[1]?.sigma ?? 0);
+        for (let l = 0; l < 2; l++) {
+          const e = glow[l]?.emission ?? [0, 0, 0];
+          u.set(slot === 0 ? (l === 0 ? 'airglow0C0' : 'airglow0C1') : l === 0 ? 'airglow1C0' : 'airglow1C1', e[0], e[1], e[2], 0);
+        }
+      });
       // The shells of the selected bodies bound everything the composite hook draws. A rectangle that fits
       // into the tile is marched at full resolution there.
       fullScissor = selection.bounds ? scissorOf(selection.bounds, rw, rh, 2) : [0, 0, 0, 0];

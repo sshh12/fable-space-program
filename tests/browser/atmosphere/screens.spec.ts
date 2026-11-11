@@ -168,6 +168,37 @@ test.describe('acceptance screenshots', () => {
         expect(stats.meanLuma).toBeLessThan(60);
       },
     },
+    {
+      // The night side with the sun far under the horizon, at a dark-adapted exposure: the airglow on the
+      // limb (a thin yellow-green band brighter than the Milky Way; ISS photographs give 1e-3 to 1e-2 cd/m^2
+      // edge-on) with the faint red layer above it, and black space beyond.
+      name: 'leo-night-airglow',
+      view: { alt: 400000, headingDeg: 270, pitchDeg: -18, fovDeg: 60 },
+      sun: { azDeg: 270, elDeg: -40 },
+      ev: -5,
+      frames: 30,
+      async check(p) {
+        // Down the middle column from black space to the night side: the brightest probe is the band.
+        let band: [number, number, number] = [0, 0, 0];
+        let bandY = 0;
+        for (let fy = 0.4; fy <= 0.56; fy += 0.004) {
+          const c = await p(0.5, fy);
+          if (luminance(c) > luminance(band)) {
+            band = c;
+            bandY = fy;
+          }
+        }
+        // Space a little above the red layer (the darkest of a few probes: a star may sit under one).
+        const space = Math.min(...(await Promise.all([0.2, 0.3, 0.4].map((fx) => p(fx, 0.12)))).map(luminance));
+        console.log(`[leo-night-airglow] band at ${bandY.toFixed(3)} of the height: rgb ${band.map((v) => v.toExponential(2)).join(', ')} (L ${luminance(band).toExponential(2)} cd/m^2); space ${space.toExponential(2)}`);
+        expect(luminance(band)).toBeGreaterThan(1e-3);
+        expect(luminance(band)).toBeLessThan(1e-2);
+        expect(luminance(band)).toBeGreaterThan(10 * space);
+        // Yellow-green: green above red above blue.
+        expect(band[1]).toBeGreaterThan(band[0]);
+        expect(band[0]).toBeGreaterThan(band[2]);
+      },
+    },
   ]);
 
   group('from deep space: 60,000 km and the Moon\'s distance', '', [

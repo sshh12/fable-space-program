@@ -48,6 +48,13 @@ const FIELDS = [
   ['shadowBlur', 'vec4f', 'filter of the map the render core reads: x, y = half width of its tent along u, v (texels)'],
   ['cloudJitter', 'vec4f', 'xy = offset of the half-resolution cloud rays inside their pixel this frame (pixels, +-0.5), z = offset of the step phase of this march (0..1, golden-ratio sequence), w = march index'],
   ['tile', 'vec4f', 'full-resolution march of a small shell: xy = render-target pixel of texel (0, 0) of the tile targets, zw = size of the marched rectangle (px)'],
+  // Airglow of the two marched atmosphere bodies (slot 0 / 1), up to two emitting layers each.
+  ['airglow0', 'vec4f', 'slot 0: altitude (m) and Gaussian sigma (m) of layer 0, the same of layer 1 (sigma 0 = no layer)'],
+  ['airglow0C0', 'vec4f', 'slot 0, layer 0: rgb luminance emitted per metre of path at the peak (cd/m^2 per m, linear sRGB)'],
+  ['airglow0C1', 'vec4f', 'slot 0, layer 1: the same'],
+  ['airglow1', 'vec4f', 'slot 1: as airglow0'],
+  ['airglow1C0', 'vec4f', 'slot 1, layer 0'],
+  ['airglow1C1', 'vec4f', 'slot 1, layer 1'],
 ] as const satisfies readonly (readonly [string, FieldType, string])[];
 
 export type AtmoField = (typeof FIELDS)[number][0];

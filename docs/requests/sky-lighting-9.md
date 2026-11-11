@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (atmosphere-clouds, visual round 1; commit with this resolution)
 From: sky-lighting
 Owner path: src/render/atmosphere/** (the atmosphere composite), data/defs/render/earth.atmosphere.json
 Blocking: no   (major finding 3 of the round-1 photo critic of the sky, `out/qa/wave2/sky-lighting.r1.photo.json`: outside `src/render/sky`)
@@ -38,3 +38,28 @@ it; nothing in `src/render/sky` needs the layer (its probe takes in-scatter from
 the airglow is added to that table at night the probe lights a vessel with it for free).
 The sky package asserts on its integration view (`tests/browser/sky/integration.spec.ts`, LEO night at the
 automatic exposure) that the limb band is at least as bright as the Milky Way once this lands.
+
+## Resolution
+1. **Airglow layer** - done. `AtmosphereRenderDef.airglow` (contract field added by core-support on request
+   `atmosphere-clouds-9`, `AirglowLayerDef`: peak altitude, full width at half maximum, zenith luminance,
+   linear sRGB colour). Earth (`data/defs/render/earth.atmosphere.json`): a yellow-green layer at 95 km,
+   9 km FWHM, 8e-5 cd/m^2 at the zenith (the 557.7 nm line with the sodium and hydroxyl light under it),
+   and a red one at 250 km, 80 km FWHM, 6e-6 cd/m^2. Validated in `src/render/atmosphere/airglow.ts`
+   (malformed layers are reported and left out; unit test `tests/unit/atmosphere/airglow.test.ts`).
+   The per-pixel march (half resolution and the full-resolution tile of a small shell) integrates each
+   optically thin Gaussian layer along the eye ray over the stretches within three sigma of its peak (eight
+   samples each), so the van Rhijn brightening towards the limb comes from the geometry. What lies in front
+   of the ray's lowest point is added in front of everything; what lies beyond it is attenuated by the
+   transmittance of the whole path and hidden by any cloud in front of it. Day and night alike (by day it is
+   lost in the scattered light). The march's screen rectangle reaches up to the highest layer (peak + 3 sigma).
+   Measured (`tests/browser/atmosphere/screens.spec.ts`, scene `leo-night-airglow`: 400 km, sun 40 deg under
+   the horizon, EV -5): the band 3.6e-3 cd/m^2 on the limb, rgb 3.0e-3 / 4.0e-3 / 1.2e-3 (yellow-green),
+   above space by more than ten times, the red layer a faint glow above it; from the ground at EV -6 the
+   sky near the horizon 1.5e-4 cd/m^2 and 1.0e-4 higher up. Screenshot
+   `out/screens/atmosphere/leo-night-airglow.png`.
+   Not done: the layer is not in `'atmosphere.skyViewLut'` (the probe does not light a vessel with it).
+2. **Extinction of the background through the limb** - already the case: the composite writes
+   `add + mul x destination` in one blend, `mul` being the transmittance of the path (and of the clouds),
+   so stars, the Milky Way and far bodies drawn before it are dimmed through the limb. The sky lab has no
+   atmosphere feature, which is why a star stands at full brightness above the limb there.
+

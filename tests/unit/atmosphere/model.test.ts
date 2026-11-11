@@ -4,6 +4,7 @@ import type { BodyPose } from '@/core/contracts/render';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { quat } from '@/core/math';
+import { airglowTop } from '@/render/atmosphere/airglow';
 import { advanceCloudClock, channelStd, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
 import { CLOUD_PARAM_KEYS, resolveCloudParams } from '@/render/atmosphere/params';
 import { distanceToTop, hitsGround, luminanceOf, mediumAt, multiScatter, opticalDepth, referenceAtmosphere, skyRadiance, transmittanceToTop } from '@/render/atmosphere/reference';
@@ -210,7 +211,8 @@ describe('body selection', () => {
 
   it('marches a body only when its shell reaches into the view, with samples by angular size', () => {
     const body = Object.values(defs.bodies).find((b) => b.render.atmosphere)!;
-    const rt = body.radius + body.render.atmosphere!.topAltitude;
+    // (The shell that bounds the march: the scattering atmosphere, or its airglow where that reaches higher.)
+    const rt = body.radius + Math.max(body.render.atmosphere!.topAltitude, airglowTop(body.render.atmosphere!));
     const layers = [{ bodyIndex: 0, layer: 0, bodyId: body.id }];
     const opts = { baseSteps: 24, qualityScale: 1, renderHeight: 1440, fovY: Math.PI / 3 };
     // Standing on it: full screen, full samples.

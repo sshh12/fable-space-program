@@ -17,5 +17,9 @@
   ],
   "ozoneCenterAltitude": 25000,
   "ozoneHalfWidth": 15000,
-  "groundAlbedo": 0.3
+  "groundAlbedo": 0.3,
+  "airglow": [
+    { "altitude": 95000, "thickness": 9000, "zenithLuminance": 0.00008, "color": [0.7, 1.0, 0.3] },
+    { "altitude": 250000, "thickness": 80000, "zenithLuminance": 0.000006, "color": [1.0, 0.06, 0.02] }
+  ]
 }

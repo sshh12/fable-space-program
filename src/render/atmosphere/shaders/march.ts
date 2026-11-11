@@ -156,6 +156,61 @@ fn marchEquivalent(bi: u32, ray: AtmoRay, tp: f32, dp: vec3f) -> vec2f {
   return vec2f(mix(tp, ray.t0 + s, w), hp);
 }
 
+/// Airglow: the light the upper atmosphere of the body in slot 'a' (body bi) emits along the eye ray d, up
+/// to tEnd metres from the eye, in cd/m^2 (not pre-exposed). Each layer is optically thin and Gaussian in
+/// altitude; its emission is integrated over the stretches of the ray that lie within three sigma of its
+/// peak (eight samples each: the limb's brightening by the long tangent path follows from the geometry).
+/// [0] = what lies before the ray's lowest point (from an eye above the layer, nothing but thin air in
+/// between), [1] = what lies beyond it (behind the dense air the path crosses: the caller weights it with
+/// the transmittance of the whole path, and the clouds in front of it hide it); w = the distance from the
+/// eye at which that part begins.
+fn atmoAirglow(bi: u32, a: i32, d: vec3f, tEnd: f32) -> array<vec4f, 2> {
+  var out = array<vec4f, 2>(vec4f(0.0, 0.0, 0.0, 3.0e38), vec4f(0.0, 0.0, 0.0, 3.0e38));
+  var geo = atmo.airglow0;
+  var cols = array<vec3f, 2>(atmo.airglow0C0.rgb, atmo.airglow0C1.rgb);
+  if (a == 1) {
+    geo = atmo.airglow1;
+    cols = array<vec3f, 2>(atmo.airglow1C0.rgb, atmo.airglow1C1.rgb);
+  }
+  if (geo.y <= 0.0 && geo.w <= 0.0) { return out; }
+  let up = frame.bodies[bi].cameraUp.xyz;
+  let r0 = frame.bodies[bi].cameraUp.w;
+  let h0 = frame.bodies[bi].sunDir.w;
+  let rb = frame.bodies[bi].center.w;
+  let mu = atmoPreciseMu(d, up);
+  let sLow = max(-r0 * mu, 0.0);
+  for (var l = 0; l < 2; l++) {
+    let alt = select(geo.x, geo.z, l == 1);
+    let sig = select(geo.y, geo.w, l == 1);
+    if (sig <= 0.0) { continue; }
+    let hiR = alt + 3.0 * sig;
+    let loR = max(alt - 3.0 * sig, 0.0);
+    let outer = atmoRaySphere(r0, h0 - hiR, mu, rb + hiR);
+    if (outer.y < outer.x || outer.y <= 0.0) { continue; }
+    let inner = atmoRaySphere(r0, h0 - loR, mu, rb + loR);
+    var iv = array<vec2f, 2>(outer, vec2f(1.0, -1.0));
+    if (inner.y >= inner.x && inner.y > 0.0) {
+      iv[0] = vec2f(outer.x, inner.x);
+      iv[1] = vec2f(inner.y, outer.y);
+    }
+    for (var k = 0; k < 2; k++) {
+      let s0 = max(iv[k].x, 0.0);
+      let s1 = min(iv[k].y, tEnd);
+      if (s1 <= s0) { continue; }
+      let ds = (s1 - s0) / 8.0;
+      var sum = 0.0;
+      for (var j = 0; j < 8; j++) {
+        let z = (altitudeAt(s0 + (f32(j) + 0.5) * ds, r0, h0, mu) - alt) / sig;
+        sum += exp(-0.5 * z * z);
+      }
+      let e = cols[l] * (sum * ds);
+      let part = select(1, 0, 0.5 * (s0 + s1) < sLow);
+      out[part] = vec4f(out[part].rgb + e, min(out[part].w, s0));
+    }
+  }
+  return out;
+}
+
 const HDR_SLACK = 8.0;
 
 struct MarchOut {
@@ -253,9 +308,22 @@ ${
     if (bix < 0) { continue; }
     let bi = u32(bix);
     let ray = atmoRay(bi, d);
+    // (The airglow in front of the ray's lowest point lies in front of every cloud and surface the path
+    // meets in the dense air; the part beyond it is added behind them, after the march.)
+    let glow = atmoAirglow(bi, a, d, tFar);
+    for (var e = 0; e < 2; e++) {
+      if (!evDone[e] && glow[0].w < 1.0e38 && evT[e] <= glow[0].w) { evL[e] = L; evTr[e] = T; evDone[e] = true; }
+    }
+    L += T * glow[0].rgb;
     // Path of this body in distances from its start: up to the scene surface.
     let sEnd = min(ray.len, tFar - ray.t0);
-    if (sEnd <= 0.0) { continue; }
+    if (sEnd <= 0.0) {
+      for (var e = 0; e < 2; e++) {
+        if (!evDone[e] && glow[1].w < 1.0e38 && evT[e] <= glow[1].w) { evL[e] = L; evTr[e] = T; evDone[e] = true; }
+      }
+      L += T * glow[1].rgb;
+      continue;
+    }
     for (var e = 0; e < 2; e++) {
       if (!evDone[e] && evT[e] <= ray.t0) { evL[e] = L; evTr[e] = T; evDone[e] = true; }
     }
@@ -302,6 +370,10 @@ ${
       T *= exp(-o.ext * dt);
       sPrev = sNext;
     }
+    for (var e = 0; e < 2; e++) {
+      if (!evDone[e] && glow[1].w < 1.0e38 && evT[e] <= glow[1].w) { evL[e] = L; evTr[e] = T; evDone[e] = true; }
+    }
+    L += T * glow[1].rgb;
   }
   for (var e = 0; e < 2; e++) {
     if (!evDone[e]) { evL[e] = L; evTr[e] = T; }

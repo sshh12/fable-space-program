@@ -6,6 +6,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { BodyPose } from '@/core/contracts/render';
 import { v3, type Vec3 } from '@/core/math';
+import { airglowTop } from './airglow';
 
 export interface AtmosphereLayer {
   /** Index into FrameContext.bodies (and frame.bodies in WGSL). */
@@ -105,7 +106,8 @@ export function selectMarchBodies(layers: readonly AtmosphereLayer[], bodies: re
   for (const l of layers) {
     const pose = bodies[l.bodyIndex]!;
     const def = defs.bodies[l.bodyId]!;
-    const rt = def.radius + def.render.atmosphere!.topAltitude;
+    // (The shell that bounds what the march draws: the scattering atmosphere, or the airglow above it.)
+    const rt = def.radius + Math.max(def.render.atmosphere!.topAltitude, airglowTop(def.render.atmosphere!));
     const distance = v3.len(pose.centerRelCam);
     const bounds = sphereScreenBounds(pose.centerRelCam, rt, view);
     if (bounds === null) continue;
