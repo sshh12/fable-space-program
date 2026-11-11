@@ -605,7 +605,9 @@ SETS = {
             "shrub": {"pasture": 0.5, "scrub-soil": 0.5},
             "trees": {"pasture": 1.0},
             "crop": {"pasture": 0.7, "scrub-soil": 0.3},
-            "builtUp": {"concrete-apron": 0.6, "scrub-soil": 0.4},
+            # Built-up cells of the land cover on this coast are tracks, yards and a few roofs at 10 m: compacted
+            # dirt and cinder. Concrete is where a site's ground plan puts it, never a stray white cell.
+            "builtUp": {"scrub-soil": 0.6, "black-sand": 0.4},
             "snowIce": {"scrub-soil": 1.0},
             "wetland": {"pasture": 1.0},
         },
@@ -645,11 +647,12 @@ SETS = {
         # The crests of ropy lava are glassy.
         "gloss": {"pahoehoe": 0.6},
         # What the ground is where a material covers it (linear albedo), where that is not the mean of its
-        # photographs: the dry soil of this coast is grey-brown ash (sRGB about 112, 96, 78), not red earth;
+        # photographs: the dry soil of this coast is grey-brown ash (sRGB about 112, 96, 78), not red earth, and no brighter than dry grass;
         # its grassland with the shade between the tussocks is hardly brighter than the lava beside it.
-        "anchorAlbedo": {"scrub-soil": [0.16, 0.117, 0.076], "pasture": [0.112, 0.1, 0.041]},
+        # Basalt is neutral to cool under a blue sky (sRGB about 65, 67, 70), not brown.
+        "anchorAlbedo": {"scrub-soil": [0.125, 0.098, 0.066], "pasture": [0.112, 0.1, 0.041], "pahoehoe": [0.057, 0.058, 0.061], "aa": [0.037, 0.035, 0.035]},
         # Lava, cinder and concrete are grey: the rust and blue specks of their photographs stay faint.
-        "chroma": {"pahoehoe": 0.25, "aa": 0.3, "black-sand": 0.3, "concrete-apron": 0.5, "scrub-soil": 0.8},
+        "chroma": {"pahoehoe": 0.15, "aa": 0.2, "black-sand": 0.3, "concrete-apron": 0.5, "scrub-soil": 0.8},
         # Stones, tufts and clinker stay whole where the hexagon pattern blends its copies; cracks and gaps give way.
         "hexBlend": [6.0, -6.0],
         # Bushes and tussocks of the far and aerial layers are not in the height function: their relief stays.
@@ -670,12 +673,12 @@ SETS = {
                 # Stands of kiawe as single meshes, from where the single trees have shrunk away out to 7 km.
                 {"id": "stand", "shape": "grove", "radiusM": [12.0, 24.0], "heightPerRadius": [0.26, 0.36], "rangeM": 7000.0, "minPixels": 4.0, "nearM": 1800.0, "chunkM": 512.0,
                  "tint": [0.04, 0.053, 0.024], "tintDry": [0.07, 0.075, 0.038], "clump": 0.5, "clumpM": 120.0},
-                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.6, 1.0], "rangeM": 60.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 16.0,
+                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.9, 1.6], "rangeM": 60.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.04, 0.036, 0.034], "tintDry": [0.06, 0.05, 0.044], "clump": 0.9, "clumpM": 7.0},
             ],
             "classDensity": {
                 "unknown": {"tussock": 0.15},
-                "bareRock": {"tussock": 0.05, "scrub": 0.0012, "clinker": 0.5},
+                "bareRock": {"tussock": 0.05, "scrub": 0.0012, "clinker": 0.3},
                 "sand": {"clinker": 0.05},
                 "sparseScrub": {"tussock": 0.35, "scrub": 0.006, "clinker": 0.2},
                 "grass": {"tussock": 1.4, "scrub": 0.003},

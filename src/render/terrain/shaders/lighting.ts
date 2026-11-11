@@ -29,7 +29,7 @@ export interface RegolithLightParams {
   bounceDown: number;
 }
 
-export const DEFAULT_REGOLITH_LIGHT: RegolithLightParams = { bounceFlat: 0.1, bounceDown: 0.45 };
+export const DEFAULT_REGOLITH_LIGHT: RegolithLightParams = { bounceFlat: 0.28, bounceDown: 0.36 };
 
 export const TERRAIN_BRDF_WGSL = /* wgsl */ `
 // "brdf_terrain" (MATERIAL_TERRAIN), terrain package. s.param = wetness 0..1, s.clearcoat = share of the sun
@@ -46,7 +46,9 @@ fn brdfTerrainDirect(s: Surface, l: vec3f) -> vec3f {
   let h = normalize(s.v + l);
   let NoV = max(dot(s.n, s.v), 1e-4);
   let a = ggxAlpha(max(m.w, 0.25), s.lightAlpha);
-  let f0 = mix(0.02, 0.04, s.param);
+  // Rock, glass and soil grains are dielectrics of index about 1.5: the glassy crests of ropy lava mirror the
+  // blue of the sky in photographs of it, which a reflectance of 0.02 (water's) did not.
+  let f0 = 0.04;
   let spec = D_GGX(saturate(dot(s.n, h)), a) * V_SmithGGXCorrelated(NoV, NoL, a) * (f0 + (1.0 - f0) * pow5(1.0 - saturate(dot(l, h))));
   return (m.rgb / PI + vec3f(spec)) * (NoL * (1.0 - s.clearcoat));
 }
@@ -54,7 +56,7 @@ fn brdfTerrainAmbient(s: Surface, a: AmbientInput) -> vec3f {
   let m = terrainWet(s);
   let NoV = max(dot(s.n, s.v), 1e-4);
   let dfg = envBrdfApprox(max(m.w, 0.25), NoV);
-  return (m.rgb * a.skyIrradiance / PI + a.skyReflection * (0.03 * dfg.x + dfg.y)) * s.ao;
+  return (m.rgb * a.skyIrradiance / PI + a.skyReflection * (0.04 * dfg.x + dfg.y)) * s.ao;
 }
 `;
 

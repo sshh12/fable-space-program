@@ -886,6 +886,10 @@ ${DETAIL_WGSL}
   let dist = length(in.pos);
   let pixelAngle = 2.0 * frame.cameraUp.w * frame.renderSize.w;
   let footprint = max(dist * pixelAngle, 1e-4);
+  // The long axis of the pixel's footprint on the ground: towards the limb and at a shallow angle it is many
+  // times the distance-based size. Noise read without filtering (orbital detail, the lights' grain) must
+  // leave out every octave shorter than it, or those octaves alias into streaks along the line of sight.
+  let footLong = max(footprint, max(length(dlx), length(dly)));
   // Imagery resolution at the fragment: the level of the image, capped by the effective level of the
   // imagery there (regional imagery is feathered to its parent over the edge of its coverage).
   let lv = mix(mix(t.detail0.w, t.detail1.w, uv.x), mix(t.detail2.w, t.noise.w, uv.x), uv.y);
@@ -897,7 +901,7 @@ ${DETAIL_WGSL}
   let velocity = velocityFromClip(in.currClip, in.prevClip);
   let sphereRoot = body.rot * tn.sphere;
   // (The grain of the lights fades by the long axis of the pixel's footprint on the ground.)
-  let emissive = nightEmission(t, uv, k, dx, dy, tn.sphere, sphereRoot, max(footprint, max(length(dlx), length(dly))));
+  let emissive = nightEmission(t, uv, k, dx, dy, tn.sphere, sphereRoot, footLong);
   let sea = body.p0.y;
   let above = in.height - sea;
   let hasOcean = body.misc.y > 0.5;
@@ -976,7 +980,21 @@ ${DETAIL_WGSL}
   }
 
   // ---- land
-  let cb = classBlend(t, uv, k, warp);
+  // The class raster is looked up where the imagery is, and displaced further by noise of 45 m, 14 m and
+  // 5 m (as far as half a class cell for the shorter ones, never more than 0.4 wavelengths): a cell's
+  // straight sides become the ragged edge of a thicket or a flow, and a row of cells of one class a
+  // meandering band, not a staircase.
+  let classTexel = levelSize * exp2(-min(s.imageLevel, lv)) / 256.0;
+  let classLattice = t.noise.xyz + in.local / body.orbital.x;
+  let c0 = max(round(body.orbital.x / 45.0), 1.0);
+  let c1 = max(round(body.orbital.x / 14.0), 1.0);
+  let cn0 = noiseAt(classLattice.zxy * c0 + vec3f(3.9, 5.2, 0.7));
+  let cn1 = noiseAt(classLattice * c1 + vec3f(7.3, 1.9, 4.4));
+  let cn2 = noiseAt(classLattice.yzx * (3.0 * c1) + vec3f(2.1, 8.7, 6.3));
+  let classWarp = (min(0.8 * classTexel, 12.0) * vec2f(cn0.a, clamp(0.5 * cn0.r, -1.0, 1.0)) +
+                   min(0.55 * classTexel, 5.6) * vec2f(cn1.a, clamp(0.5 * cn1.r, -1.0, 1.0)) +
+                   min(0.3 * classTexel, 1.9) * vec2f(cn2.a, clamp(0.5 * cn2.r, -1.0, 1.0))) / tileSize;
+  let cb = classBlend(t, uv, k, warp + classWarp);
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
   let imageTexel = levelSize * exp2(-min(s.imageLevel, lv)) / 256.0;
@@ -1024,7 +1042,7 @@ ${DETAIL_WGSL}
     sun = vec4f(sunFixed, muTerrain / sqrt(1.0 - muTerrain * muTerrain));
   }
   let detail = terrainDetail(t, in.local, dlx, dly, tn.n, cb, s.channel, tn.slopeMag, dist, footprint, vec2f(apron, gravel), shore, normalTexel, imageTexel, s.albedo, sun);
-  let orb = orbitalDetail(t, in.local, cb, footprint, imageTexel, normalTexel, steep);
+  let orb = orbitalDetail(t, in.local, cb, footLong, imageTexel, normalTexel, steep);
 
   // ---- colour. The imagery is a picture, not an albedo map: a regional mosaic is graded dark and
   // saturated. Where it is calibrated (mat.p6) it keeps a share of its saturation, and the ground takes the
@@ -1035,7 +1053,7 @@ ${DETAIL_WGSL}
   let image = mix(vec3f(lumI), s.albedo, mix(1.0, mat.p6.y, calibrated));
   let finer = smoothstep(1.0, 4.0, imageTexel / footprint);
   let anchor = max(calibrated * mix(mat.p7.y, mat.p7.x, finer), fillLand);
-  let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.45);
+  let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.3);
   let ground = mix(image, detail.matAlbedo * mix(rel, 1.0, fillLand), anchor);
   // The detail mostly modulates brightness on imagery colour; on the material's own colour it is the material.
   let lumR = max(luminance(detail.albedoRatio), 1e-3);
@@ -1088,11 +1106,17 @@ ${DETAIL_WGSL}
   // Detail and orbital relief as surface gradients on top of the tile normal.
   var g = detail.grad + orb.grad;
   let materialId = u32(body.misc.x);
+  var unresolved = 0.0;
   if (materialId == MATERIAL_REGOLITH) {
     // Without a sky nothing lights a slope the sun has set on: relief that exists only as a normal map
     // would still turn single pixels of it towards the sun (lit dots on a slope that is in the shadow of
-    // itself). The detail gives way as the terrain's own normal reaches the terminator.
-    g *= smoothstep(-0.02, 0.1, muTerrain);
+    // itself). The detail gives way as the terrain's own normal reaches the terminator, and the slopes it
+    // took out go into the spread of the facets the regolith BRDF integrates (below): a hillside near the
+    // terminator is a grey of lit and shaded grains that darkens smoothly, not ink blots and black specks.
+    let keep = smoothstep(-0.02, 0.1, muTerrain);
+    let gt = g - tn.n * dot(g, tn.n);
+    unresolved = (1.0 - keep * keep) * dot(gt, gt);
+    g *= keep;
   }
   g -= tn.n * dot(g, tn.n);
   let nFixed = normalize(tn.n - g);
@@ -1127,7 +1151,7 @@ ${DETAIL_WGSL}
     // is then a grey of the right mean, not a pattern of black dots.
     // (Regolith is rough at every size a pixel holds: a floor of 3 degrees keeps a slope that the sun grazes
     // a grey of lit and shaded grains, not a blot.)
-    metallic = saturate(2.0 * sqrt(pixelVariance + 0.0027));
+    metallic = saturate(2.0 * sqrt(pixelVariance + 0.0027 + unresolved));
   }
   if (water) {
     return gbufferPack(waterColour, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(waterDepth), velocity, emissive);

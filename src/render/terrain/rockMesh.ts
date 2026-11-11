@@ -153,7 +153,7 @@ export function clipPolyhedron(planes: Plane[]): Face[] {
 /** Largest outward displacement of the surface by its relief, and of its foot by the soil banked against it (unit rock). */
 export const ROCK_CHIP = 0.2;
 /** Share of a point's distance from the unit ball that wear removes: blocks, slabs, wedges; boulders. */
-export const ROCK_WEAR = [0.2, 0.45] as const;
+export const ROCK_WEAR = [0.1, 0.3] as const;
 /** Floats per vertex: position, normal, soil share (1 at the foot, 0 from a quarter of the height up), cavity (1 = open face, less in scoops and cracks). */
 export const ROCK_VERTEX_FLOATS = 8;
 
@@ -305,9 +305,10 @@ export function buildRockMesh(variant: number, lod: number, banked = true): Rock
       open -= 0.5 * k;
     }
     const cd = dot(crack, d);
-    const groove = Math.exp(-(cd * cd) / (0.035 * 0.035));
-    off *= 1 - 0.45 * groove;
-    open -= 0.5 * groove;
+    // (Narrow and not much darker than the face: a wide dark groove read as a seam stitched across the rock.)
+    const groove = Math.exp(-(cd * cd) / (0.022 * 0.022));
+    off *= 1 - 0.4 * groove;
+    open -= 0.25 * groove;
     // Lumps and pits: outwards only (the unit ball stays inside), finer ones on top.
     const coarse = chipNoise(d, seed, 1.9);
     const fine = chipNoise(d, seed + 7, 6.5);

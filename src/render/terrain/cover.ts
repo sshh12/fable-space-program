@@ -232,7 +232,8 @@ struct CoverVaryings {
     albedo = mix(albedo, albedo * vec3f(1.25, 1.1, 0.8), h * 0.6);
     ao = mix(0.35, 1.0, smoothstep(0.0, 0.6, h));
     shade = 0.55 * (1.0 - h) * (1.0 - h);
-    rough = 0.65;
+    // Dry blades are matt: a glossier tussock lit from behind turned into a white tuft against the light.
+    rough = 0.92;
   } else if (mode < 1.5) {
     if (in.extra.y > 1.5) {
       // Wood.
@@ -1103,8 +1104,12 @@ export class CoverRenderer {
         for (let v = 0; v < COVER_VARIANTS; v++) {
           const start = c.variantStart[v]!;
           const end = CoverRenderer.prefixEnd(c.radii, start, c.listEnd[v]!, texelRadius);
-          const middle = CoverRenderer.prefixEnd(c.radii, start, end, 12 * cascade.texelSize);
-          this.pushRange(base + v * COVER_LODS + 1, c.base + start, c.base + middle);
+          // A crown that spans a hundred texels and more casts from its finest mesh: the coarser ones draw its
+          // shadow as a few large polygons on the ground beside the eye.
+          const fine = CoverRenderer.prefixEnd(c.radii, start, end, 48 * cascade.texelSize);
+          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, 12 * cascade.texelSize);
+          this.pushRange(base + v * COVER_LODS, c.base + start, c.base + fine);
+          this.pushRange(base + v * COVER_LODS + 1, c.base + fine, c.base + middle);
           this.pushRange(base + v * COVER_LODS + 2, c.base + middle, c.base + end);
         }
       }

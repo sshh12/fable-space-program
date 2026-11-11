@@ -203,7 +203,7 @@ graded dark and saturated (median luminance 0.03, median saturation 0.8, lava fi
 imagery is finer than the body-wide mosaic (`imageryCalibrationLevel`; -1 = everywhere) it keeps
 `imagerySaturation` of its saturation, and the ground takes the albedo of the material it is made of
 (`set.json` `anchorAlbedo`, default the material's mean) times the imagery's luminance relative to
-`imageryRefLuminance`, to the power `imageryContrast`, bounded to 0.6 .. 1.45: by the share `anchorNear` where
+`imageryRefLuminance`, to the power `imageryContrast`, bounded to 0.6 .. 1.3: by the share `anchorNear` where
 a pixel is finer than the imagery, `anchorFar` where it is coarser. So lava is charcoal, dry grass olive and
 the concrete 3 to 4 times brighter than either, at every distance, and the imagery still decides where the
 ground is lighter or darker. Material weights: land-cover class, the bake's channel, slope (steep ground is
@@ -260,8 +260,8 @@ keep their hard shadows. In addition the terrain shader lets the detail normals 
 normal reaches the terminator (cosine -0.02 to 0.1): without a sky nothing lights a slope the sun has set
 on, and normal-map relief would still light single pixels of it. Regolith is rough at every size a pixel
 holds: sigma has a floor of 3 degrees. Its ambient term adds the light bounced off the sunlit ground (an
-airless body has no sky): the sun's illuminance on level ground times `bounceFlat` (0.10) for level ground in
-a shadow, rising with (1 - n . up) / 2 to `bounceDown` (0.45) for a face that looks straight down; constants
+airless body has no sky): the sun's illuminance on level ground times `bounceFlat` (0.28) for level ground in
+a shadow, rising with (1 - n . up) / 2 to `bounceDown` (0.36) for a face that looks straight down; constants
 of the chunk (`DEFAULT_REGOLITH_LIGHT`).
 
 **Night lights.** Read `nightMinMip` levels above the night layer's deepest level (Earth: level 5, 1.2 km

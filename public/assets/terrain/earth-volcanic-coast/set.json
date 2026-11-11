@@ -363,8 +363,8 @@
       "scrub-soil": 0.3
     },
     "builtUp": {
-      "concrete-apron": 0.6,
-      "scrub-soil": 0.4
+      "scrub-soil": 0.6,
+      "black-sand": 0.4
     },
     "snowIce": {
       "scrub-soil": 1.0
@@ -479,19 +479,29 @@
   },
   "anchorAlbedo": {
     "scrub-soil": [
-      0.16,
-      0.117,
-      0.076
+      0.125,
+      0.098,
+      0.066
     ],
     "pasture": [
       0.112,
       0.1,
       0.041
+    ],
+    "pahoehoe": [
+      0.057,
+      0.058,
+      0.061
+    ],
+    "aa": [
+      0.037,
+      0.035,
+      0.035
     ]
   },
   "chroma": {
-    "pahoehoe": 0.25,
-    "aa": 0.3,
+    "pahoehoe": 0.15,
+    "aa": 0.2,
     "black-sand": 0.3,
     "concrete-apron": 0.5,
     "scrub-soil": 0.8
@@ -625,8 +635,8 @@
           0.2
         ],
         "heightPerRadius": [
-          0.6,
-          1.0
+          0.9,
+          1.6
         ],
         "rangeM": 60.0,
         "minPixels": 4.0,
@@ -653,7 +663,7 @@
       "bareRock": {
         "tussock": 0.05,
         "scrub": 0.0012,
-        "clinker": 0.5
+        "clinker": 0.3
       },
       "sand": {
         "clinker": 0.05

@@ -158,27 +158,30 @@ struct RockVaryings {
     ao += w[axis] * b.a;
     relief += w[axis] * a.a;
   }
-  // The mesh is one welded surface of a broken rock; most of the shading normal is the face normal (from the
-  // position derivatives): fracture faces are planes that meet in edges. The smooth vertex normal rounds
-  // them a little, and the detail gradient (rock axes) pits them.
+  // The mesh is one welded surface of a broken rock whose fracture faces are already planes of its vertices;
+  // the smooth vertex normal shades them, with a share of the triangle's own normal (from the position
+  // derivatives) that keeps their edges crisp. (With most of the shading from the triangles, the
+  // tessellation itself showed as a net of facets on every rock near the eye.) The detail gradient (rock
+  // axes, at one and a half times the layer's slopes) pits and roughens them.
   let nv = normalize(in.normal);
   var face = cross(dpdx(in.fixed), dpdy(in.fixed));
   let fl = length(face);
   if (fl > 0.0) { face /= fl; } else { face = nv; }
   if (dot(face, nv) < 0.0) { face = -face; }
-  let nf = normalize(mix(nv, face, 0.7));
-  var g = quatRotate(r.q, grad);
+  let nf = normalize(mix(nv, face, 0.3));
+  var g = quatRotate(r.q, 1.5 * grad);
   g -= nf * dot(g, nf);
   let up = quatRotate(r.q, vec3f(0.0, 0.0, 1.0));
   let soilTint = rockBody.p1.w * r.tint.rgb;
   let cavity = saturate(in.extra.y);
-  // Fracture faces differ in tone; hollows are darker (dust and shade).
+  // Fracture faces differ in tone, the rock's grain shows at full contrast (crystals and vesicles survive a
+  // flat light that washes out its shading); hollows are darker (dust and shade).
   let tone = mix(vec3f(luminance(ratio)), ratio, 0.6);
-  var albedo = r.tint.rgb * mix(vec3f(1.0), tone, 0.6) * mix(0.72, 1.0, cavity);
+  var albedo = r.tint.rgb * tone * mix(0.72, 1.0, cavity);
   let id = u32(rockBody.p0.z);
   if (id == MATERIAL_REGOLITH) {
-    // Level faces carry a film of the soil the rock sits in.
-    let dust = 0.55 * smoothstep(0.55, 0.95, dot(nf, up));
+    // Level faces carry a thin film of the soil the rock sits in.
+    let dust = 0.3 * smoothstep(0.6, 0.95, dot(nf, up));
     albedo = mix(albedo, soilTint, dust);
   }
   // Soil banked against the foot, reaching higher in the hollows of the face than on what stands out.

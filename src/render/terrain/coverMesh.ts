@@ -218,7 +218,9 @@ function crown(b: Builder, lod: number, share: number, seed: number, centre: P3,
       const out: P3 = [q[0] - mid[0], q[1] - mid[1], (q[2] - mid[2]) * (radius / height)];
       const ol = Math.hypot(out[0], out[1], out[2]) || 1;
       const ll = Math.hypot(local[0], local[1], local[2]) || 1;
-      let n3: P3 = [0.3 * (local[0] / ll) + 0.7 * (out[0] / ol), 0.3 * (local[1] / ll) + 0.7 * (out[1] / ol), 0.3 * (local[2] / ll) + 0.7 * (out[2] / ol)];
+      // (Mostly the crown's: with a third of its own facets a cluster near the eye shaded as a crumpled
+      // sheet of paper. The shader adds the leaves' own scatter.)
+      let n3: P3 = [0.12 * (local[0] / ll) + 0.88 * (out[0] / ol), 0.12 * (local[1] / ll) + 0.88 * (out[1] / ol), 0.12 * (local[2] / ll) + 0.88 * (out[2] / ol)];
       const nl = Math.hypot(n3[0], n3[1], n3[2]) || 1;
       n3 = [n3[0] / nl, n3[1] / nl, n3[2] / nl];
       b.vertex(q, n3, Math.min(1, Math.max(0, (q[2] - centre[2]) / height)), Math.min(1, Math.max(0, (shell - 0.5) * 2)));
@@ -334,7 +336,7 @@ const buildTree = (variant: number, lod: number): CoverMeshData => fitted(rawTre
 const STONE_ROCKS = [0, 2, 6];
 
 function buildStone(variant: number, lod: number): CoverMeshData {
-  const m = buildRockMesh(STONE_ROCKS[variant % STONE_ROCKS.length]!, lod === 0 ? 1 : 2, false);
+  const m = buildRockMesh(STONE_ROCKS[variant % STONE_ROCKS.length]!, lod, false);
   if (ROCK_VERTEX_FLOATS !== COVER_VERTEX_FLOATS) throw new Error('cover: the rock vertex is not a cover vertex');
   return m;
 }

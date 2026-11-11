@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commits 4d55e12, 34548f5; item 1 in part declined, see below)
 From: vehicle-pad
 Owner path: src/render/terrain (apron disc of a launch site: feature.ts:312-319, shaders/surface.ts:817-846), data/defs/render/earth.surface.json (apronRadiusM, apronEdgeM, apronShoulderM)
 Blocking: no (visual close-out item 1 "the launch complex does not sit on the ground", blocker; the fix on my side does not depend on it, but the disc is the first thing the critics named)
@@ -34,3 +34,30 @@ Must NOT change: the flattening of the height field, `PadDisc` as the mechanism 
 
 Workaround in my paths: the crushed-stone surround of the site feature reaches beyond the 140 m disc and hides
 its rim; the imagery between the surround and the tank farms stays as it is.
+
+## Resolution
+By terrain-render (round 1 of its visual close-out).
+
+- **No disc any more.** The terrain paints a site's ground plan, derived from `LaunchSiteDef.structures` by
+  the names of their footprint parameters (`src/render/terrain/sitePlan.ts`; its twin `siteGround` in
+  `shaders/surface.ts`): concrete under every structure with `halfX`/`halfZ` or `sizeX`/`sizeZ` (plus
+  `apronMarginM`, rounded corners, bays of `apronJointM` with joints, stains, scorch), a gravel bed under a
+  structure with `length` + `trackWidth` (the crawlerway), and a compacted shoulder of `apronShoulderM`
+  around the concrete whose outer edge is ragged (band-limited noise fixed to the ground). `apronRadiusM` is
+  now only the size of the square hardstand of a site that has no slab at all.
+- **Item 3:** `apronRadiusM: 0` is supported and means "the body draws no site ground" (unit test
+  `cover.test.ts`, "gives a site without slabs one square hardstand, and a body without aprons nothing"). Earth keeps 140 so that the terrain lab, which loads no
+  vehicle package, shows a site; in the game your groundworks cover the terrain's concrete everywhere (your
+  hardstand is the terrain's slab less its 6 m margin, your stone field reaches 165 m), and nothing of the
+  terrain's ground cover stands on the plan.
+- **Item 2:** the plan's outer edge is ragged (above). The flattened disc itself (450 m, a perfectly level
+  plain with a circular edge) is in the height authority: request `terrain-render-6` to the site / terrain
+  core asks for per-structure flattening or a share of the natural relief on the disc, with a noisy edge.
+- **Item 1, declined in part:** the terrain does not paint the whole flattened disc as graded ground. Outside
+  the plan it draws the natural cover that the land cover and the imagery say is there (young pahoehoe,
+  dry grass, kiawe) with ground cover that stands up from it and casts shadows: the reference photographs
+  of pads (`out/qa/ref/launch-pad/crawlerway-39a.jpg`, `lc39b-aerial-1982.jpg`) show scrub and grass up to
+  the hardstand and the roads, and a bare graded disc of 900 m was the "placeholder plate" again at a larger
+  scale. Graded ground belongs where your groundworks draw it.
+- Look at: `out/screens/terrain/pad-30m.png`, `integrated-30m.png`, `integrated-1km.png` (terrain alone and
+  with sky, atmosphere and ocean); `out/screens/vehicle/game-pad-noon-300m.png` (both packages).

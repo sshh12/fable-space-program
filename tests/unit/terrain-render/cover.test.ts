@@ -80,12 +80,14 @@ describe('ground cover meshes', () => {
             expect(Math.hypot(m.vertices[o + 3]!, m.vertices[o + 4]!, m.vertices[o + 5]!)).toBeCloseTo(1, 3);
           }
         }
-        // (A grove's finest level is its middle one, a stone's coarsest its middle one.)
+        // (A grove's finest level is its middle one.)
         expect(counts[0]!).toBeGreaterThanOrEqual(counts[1]!);
         expect(counts[1]!).toBeGreaterThanOrEqual(counts[2]!);
         expect(counts[0]!).toBeGreaterThan(counts[2]!);
         // The far level is what thousands of instances are drawn with.
         expect(counts[2]!).toBeLessThanOrEqual(shape === 'grove' ? 140 : 100);
+        // The finest level is drawn for a handful of instances near the eye.
+        expect(counts[0]!).toBeLessThanOrEqual(3600);
       }
     }
   });
