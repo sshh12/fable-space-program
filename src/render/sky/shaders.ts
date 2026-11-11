@@ -11,7 +11,7 @@
  *   PROBE_*           the analytic environment probe: face evaluation, mip chain, SH9 projection, GGX
  *                     prefilter, temporal blend into the published cube and SH buffer
  */
-import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA } from './flare';
+import { FLARE_HALO_SHARE, HALO_POWER, SPIKE_COUNT, SPIKE_LAMBDA, STARBURST_MAX_ANGLE } from './flare';
 import { IMPOSTOR_FULL_PX, IMPOSTOR_NONE_PX, SCINTILLATION_ZENITH_VARIANCE, STAR_PSF_SIGMA_PX } from './photometry';
 
 const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : String(x));
@@ -318,6 +318,7 @@ ${CAP_WGSL}
 const FLARE_HALO_SHARE = ${f(FLARE_HALO_SHARE)};
 const FLARE_HALO_POWER = ${f(HALO_POWER)};
 const SPIKE_COUNT = ${f(SPIKE_COUNT)};
+const STARBURST_MAX_ANGLE = ${f(STARBURST_MAX_ANGLE)};
 const SPIKE_LAMBDA = vec3f(${SPIKE_LAMBDA.map(f).join(', ')});
 struct FlareState { visible: vec4f, transmittance: vec4f }
 struct FlareTerm {
@@ -385,8 +386,11 @@ fn ndcRay(n: vec2f) -> vec3f {
     let lambda = SPIKE_LAMBDA;
     let along = vec3f(1.0) / (vec3f(1.0) + (theta * theta) / (t.pos.z * t.pos.z * lambda * lambda));
     let spikes = t.shape.w * gw * along / lambda;
+    // Smooth end at STARBURST_MAX_ANGLE (flare.ts starburstWindow): the quad's edge never shows.
+    let xw = saturate(theta / STARBURST_MAX_ANGLE);
+    let fadeOut = (1.0 - xw * xw) * (1.0 - xw * xw);
     // tint.a = energy of the whole term; shape.y and shape.w normalise halo and spikes to 1 each (CPU, numeric).
-    L = source * t.tint.rgb * t.tint.a * (halo * FLARE_HALO_SHARE + spikes * (1.0 - FLARE_HALO_SHARE));
+    L = source * t.tint.rgb * t.tint.a * (halo * FLARE_HALO_SHARE + spikes * (1.0 - FLARE_HALO_SHARE)) * fadeOut;
   } else {
     // Ghost: a soft disc of angular radius t.pos.z, chromatic fringe by a radial shift per channel.
     let c = ndcRay(t.pos.xy);

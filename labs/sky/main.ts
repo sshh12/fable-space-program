@@ -137,6 +137,8 @@ function createHeavyFeature(): RenderFeature {
   let group: GPUBindGroup;
   return {
     id: 'sky-lab-heavy',
+    // Encoded after the sky's probe in the compute hook: the tail of a long pass is charged to the next one.
+    order: 1000,
     init(c) {
       ctx = c;
       const core = coreOf(c);

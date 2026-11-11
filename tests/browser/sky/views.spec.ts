@@ -34,9 +34,10 @@ test('deep-space star field at long exposure and the Orion region', async ({ pag
 test('the sun just above the limb of the Earth from low orbit, with flare', async ({ page, pageLog }) => {
   await openPage(page, '/labs/sky/?scene=lowOrbit&hud=0&clouds=1');
   await assertDiscreteGpu(page);
-  // Sun 3 deg above the limb (the horizon dips 14.2 deg at 200 km), camera looking at it from the vessel.
+  // Sun 7 deg above the limb (the horizon dips 14.2 deg at 200 km): the ground towards it is lit at grazing sun in a
+  // band below the limb; camera looking at it from the vessel.
   await page.evaluate(() => {
-    window.__sky!.setSunForVessel({ elevationDeg: -11.2, azimuthDeg: 90 });
+    window.__sky!.setSunForVessel({ elevationDeg: -7, azimuthDeg: 90 });
     window.__lab!.camera.settings.fovY = (60 * Math.PI) / 180;
     window.__lab!.onFrame((s) => {
       const v = s.vessels[0]!;

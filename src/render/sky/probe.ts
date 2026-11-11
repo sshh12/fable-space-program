@@ -305,8 +305,11 @@ export class EnvironmentProbe {
         ],
       });
     }
-    const pass = encoder.beginComputePass({ label: `${this.featureId}.probe`, timestampWrites: this.ctx.perf.gpuPass(`${this.featureId}.probe`) as GPUComputePassTimestampWrites | undefined });
     const st = this.state.step;
+    // One timed pass per frame, named by the cycle step it runs (perf rows '<id>.probe.face|mips|prefilter';
+    // passStats' mean of each is its amortised cost, the sum of the three means the probe's per-frame cost).
+    const name = `${this.featureId}.probe.${st < 6 ? 'face' : st === 6 ? 'mips' : 'prefilter'}`;
+    const pass = encoder.beginComputePass({ label: name, timestampWrites: this.ctx.perf.gpuPass(name) as GPUComputePassTimestampWrites | undefined });
     const groups = (n: number): number => Math.ceil(n / 8);
     if (st < 6) {
       pass.setPipeline(this.facePipeline.get());

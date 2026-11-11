@@ -53,11 +53,16 @@ export const FLARE_TOTAL_ENERGY = STARBURST.energy + GHOSTS.reduce((s, g) => s +
 /** Relative wavelength per channel (R, G, B) of the spikes' chromatic length. */
 export const SPIKE_LAMBDA: Vec3Tuple = [1.12, 1.0, 0.84];
 
-export const haloProfile = (theta: number, core: number): number => (1 + (theta / core) ** 2) ** -HALO_POWER;
+/** Smooth end of the starburst at STARBURST_MAX_ANGLE: (1 - (theta / max)^2)^2, so the quad's edge never shows. */
+export const starburstWindow = (theta: number): number => {
+  const x = theta / STARBURST_MAX_ANGLE;
+  return x >= 1 ? 0 : (1 - x * x) ** 2;
+};
+export const haloProfile = (theta: number, core: number): number => (1 + (theta / core) ** 2) ** -HALO_POWER * starburstWindow(theta);
 /** Spike profile at angle theta from the sun, dphi from the nearest spike, channel wavelength scale lambda. */
 export function spikeProfile(theta: number, dphi: number, width: number, length: number, lambda: number): number {
   const across = theta * Math.sin(dphi);
-  return (Math.exp((-0.5 * across * across) / (width * width)) / (1 + (theta * theta) / (length * length * lambda * lambda))) / lambda;
+  return ((Math.exp((-0.5 * across * across) / (width * width)) / (1 + (theta * theta) / (length * length * lambda * lambda))) / lambda) * starburstWindow(theta);
 }
 /** Ghost profile at r = angle / radius for one channel's shift s (+-chroma, 0 for green). */
 export function ghostProfile(r: number, softness: number, s: number): number {
