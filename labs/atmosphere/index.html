@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>Atmosphere and cloud lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font: 13px/1.4 ui-monospace, Consolas, monospace;
+        color: #cfd6e4;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      #info {
+        position: fixed;
+        left: 12px;
+        top: 10px;
+        white-space: pre;
+        pointer-events: none;
+        text-shadow: 0 0 3px #000;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="viewport" tabindex="0"></canvas>
+    <div id="info"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

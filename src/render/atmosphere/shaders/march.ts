@@ -1,0 +1,336 @@
+/**
+ * The unified per-pixel atmosphere march (half resolution) and its composite into the HDR target.
+ *
+ * March: one ray per half-resolution pixel through every atmosphere body it crosses (up to two), from the
+ * eye to the farthest scene depth of its 2 x 2 block. The state of the path is also recorded at the cloud
+ * depth of the pixel and at the nearest depth of the block, so the pass yields two complete candidates:
+ *   far  = everything behind the farthest surface of the block,
+ *   near = everything behind its nearest surface,
+ * each as (add, mul) with  final = add + mul x scene.  Clouds are folded in here:
+ *   add = inscatterFront + T_toCloud L_cloud + T_cloud inscatterBack,   mul = T_cloud T_total.
+ *
+ * Composite: per full-resolution pixel, each of the four surrounding half-resolution texels gives its two
+ * candidates; the value at the pixel's own depth is interpolated between them, the taps are blended with
+ * bilinear x depth-agreement weights (nearest-depth fallback), and one dual-source blend writes
+ * add + mul x destination.
+ */
+import { ATMO_UNIFORM_WGSL } from '../uniforms';
+
+/** Chunk "atmosphere_cloud_shadow": needs `atmo`, `atmoShadowTex`, `atmoCoverageTex` declared by the includer. */
+export const CLOUD_SHADOW_WGSL = /* wgsl */ `
+/// Transmittance of the cloud layer between a camera-relative point of body 'bi' and the sun (1 = none).
+/// 'up' = local vertical at the point, r = its radius, muS = dot(up, sun direction). Near the camera the
+/// cloud shadow map (optical depth along the projection direction, front depth, mean extinction) gives a
+/// depth-resolved answer; beyond it the coverage map at the point where the sun ray leaves the layer.
+fn atmoCloudShadowAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32) -> f32 {
+  if (i32(bi) != atmo.bodies.z || r >= atmo.cloudShell.y) { return 1.0; }
+  let m = max(muS, 0.05);
+  var farT = 1.0;
+  if (atmo.far.w > 0.5 && r < atmo.far.x) {
+    let sunDir = frame.bodies[bi].sunDir.xyz;
+    let bq = r * muS;
+    let t = -bq + sqrt(max(bq * bq + (atmo.far.x - r) * (atmo.far.x + r), 0.0));
+    let dfix = normalize(rootToFixed(bi, up * r + sunDir * t));
+    let lon = atan2(dfix.y, dfix.x) + atmo.far.z;
+    let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(dfix.z, -1.0, 1.0)) / PI);
+    // Points well below the layer are under all of it (this is the deferred lighting's term on the ground);
+    // inside the layer the term fades out towards the layer radius instead of switching.
+    farT = mix(1.0, exp(-textureSampleLevel(atmoCoverageTex, linearClamp, uv, 1.0).r * atmo.far.y / m), saturate((atmo.far.x - r) / 600.0));
+  }
+  let he = atmo.shadowOrigin.w;
+  if (he > 0.0) {
+    let rel = pos - atmo.shadowOrigin.xyz;
+    let q = vec2f(dot(rel, atmo.shadowU.xyz), dot(rel, atmo.shadowV.xyz)) / he;
+    let edge = 1.0 - max(abs(q.x), abs(q.y));
+    if (edge > 0.0) {
+      let s = dot(rel, atmo.shadowL.xyz);
+      let b = textureSampleLevel(atmoShadowTex, linearClamp, q * 0.5 + 0.5, 0.0);
+      let tau = clamp((b.g - s) * b.b, 0.0, b.r) * atmo.shadowV.w;
+      return mix(farT, exp(-tau / m), saturate(edge * 8.0));
+    }
+  }
+  return farT;
+}
+
+/// The same for the point at distance s along the path of 'ray' (camera ray d); 1 for bodies without clouds.
+fn atmoCloudShadowOnRay(bi: u32, d: vec3f, ray: AtmoRay, s: f32) -> f32 {
+  if (i32(bi) != atmo.bodies.z) { return 1.0; }
+  let pos = d * (ray.t0 + s);
+  let up = normalize(pos - frame.bodies[bi].center.xyz);
+  return atmoCloudShadowAt(pos, bi, up, frame.bodies[bi].center.w + max(atmoRayAltitude(ray, s), 0.0), dot(up, frame.bodies[bi].sunDir.xyz));
+}
+`;
+
+/**
+ * Bindings (group 1): 0 = AtmoU, 1 = transmittance, 2 = multi-scattering (texture_2d_array), 3 = cloud
+ * shadow map, 4 = coverage map, 5 = 'scene.depthHalf', 6 = cloud radiance / transmittance (half res),
+ * 7 = cloud geometry (half res: begin, end, mean distance), 8 = 'scene.depth'.
+ */
+export const MARCH_FS_WGSL = /* wgsl */ `
+#include "atmosphere_model"
+${ATMO_UNIFORM_WGSL}
+@group(1) @binding(0) var<uniform> atmo: AtmoU;
+@group(1) @binding(1) var transLut: texture_2d_array<f32>;
+@group(1) @binding(2) var msLut: texture_2d_array<f32>;
+@group(1) @binding(3) var atmoShadowTex: texture_2d<f32>;
+@group(1) @binding(4) var atmoCoverageTex: texture_2d<f32>;
+@group(1) @binding(5) var depthHalfTex: texture_2d<f32>;
+@group(1) @binding(6) var cloudTex: texture_2d<f32>;
+@group(1) @binding(7) var cloudGeomTex: texture_2d<f32>;
+@group(1) @binding(8) var sceneDepthTex: texture_depth_2d;
+#include "atmosphere_cloud_shadow"
+
+/// Distance along the centre ray d of a 2 x 2 block that stands for the surface point of one of its pixels
+/// (that pixel's own ray dp, distance tp). Near the camera the two rays are the same path and the distance
+/// is kept. Far away half a block of lateral offset moves the end point by kilometres of altitude (a planet
+/// seen from space: the centre ray would stop short of the ground, or run on below it), and what the path
+/// collects depends on the altitude it ends at: there the point of EQUAL ALTITUDE on the centre ray is taken.
+fn marchEquivalent(bi: u32, ray: AtmoRay, tp: f32, dp: vec3f) -> vec2f {
+  let rayP = atmoRay(bi, dp);
+  let sp = tp - rayP.t0;
+  let sc = tp - ray.t0;
+  // A surface point outside the shell on either ray: the atmosphere does not see the difference.
+  if (rayP.len <= 0.0 || ray.len <= 0.0 || sp <= 0.0 || sc <= 0.0) { return vec2f(tp, 3.0e38); }
+  let hp = atmoRayAltitude(rayP, sp);
+  let w = smoothstep(50.0, 400.0, abs(atmoRayAltitude(ray, sc) - hp));
+  if (w <= 0.0) { return vec2f(tp, hp); }
+  let roots = atmoRaySphere(ray.r, ray.h - hp, ray.mu, frame.bodies[bi].center.w + hp);
+  // The centre ray never reaches that altitude (a block across the limb): its lowest point stands in.
+  var s = max(-ray.r * ray.mu, 0.0);
+  if (roots.y >= roots.x) {
+    s = roots.x;
+    if (abs(roots.y - sc) < abs(roots.x - sc)) { s = roots.y; }
+  }
+  if (s <= 0.0) { return vec2f(tp, hp); }
+  return vec2f(mix(tp, ray.t0 + s, w), hp);
+}
+
+struct MarchOut {
+  @location(0) addFar: vec4f,
+  @location(1) mulFar: vec4f,
+  @location(2) addNear: vec4f,
+  @location(3) mulNear: vec4f,
+}
+
+@fragment fn fs(in: FullscreenOut) -> MarchOut {
+  let pix = vec2i(in.position.xy);
+  let dh = textureLoad(depthHalfTex, pix, 0).rg;
+  let ray = viewRay(in.uv);
+  let len = length(ray);
+  let d = ray / len;
+  var tFar = viewZFromDepth(dh.r) * len;
+  var tNear = viewZFromDepth(dh.g) * len;
+  var hNear = 3.0e38;   // altitude of the nearest surface point of the block above body 0 (when it is in its shell)
+  let nearSpread = min(tFar - tNear, 0.25 * tNear);
+  if (dh.r != dh.g && atmo.bodies.x >= 0) {
+    // Which pixels of the block hold its nearest and its farthest depth, and what stands for them on this ray.
+    let full = vec2i(textureDimensions(sceneDepthTex));
+    var offNear = vec2i(0);
+    var offFar = vec2i(0);
+    for (var k = 0; k < 4; k++) {
+      let o = vec2i(k & 1, k >> 1);
+      let z = textureLoad(sceneDepthTex, min(pix * 2 + o, full - 1), 0);
+      if (z == dh.g) { offNear = o; }
+      if (z == dh.r) { offFar = o; }
+    }
+    let b0 = u32(atmo.bodies.x);
+    let ray0 = atmoRay(b0, d);
+    let rayNear = viewRay((vec2f(pix * 2 + offNear) + 0.5) * frame.renderSize.zw);
+    let eqNear = marchEquivalent(b0, ray0, viewZFromDepth(dh.g) * length(rayNear), normalize(rayNear));
+    tNear = eqNear.x;
+    hNear = eqNear.y;
+    if (dh.r > 0.0) {
+      let rayFar = viewRay((vec2f(pix * 2 + offFar) + 0.5) * frame.renderSize.zw);
+      tFar = max(marchEquivalent(b0, ray0, viewZFromDepth(dh.r) * length(rayFar), normalize(rayFar)).x, tNear);
+    }
+  }
+  // The cloud buffers live on the unjittered pixel lattice: look them up where this (jittered) ray points.
+  let uvCloud = in.uv - frame.jitter.xy * frame.renderSize.zw;
+  let cloudSize = vec2i(textureDimensions(cloudGeomTex));
+  let cloud = textureSampleLevel(cloudTex, linearClamp, uvCloud, 0.0);
+  // r = where the cloud begins along the ray, g = where it ends, b = its opacity-weighted mean distance.
+  let cloudGeom = textureLoad(cloudGeomTex, clamp(vec2i(uvCloud * vec2f(cloudSize)), vec2i(0), cloudSize - 1), 0).rgb;
+  let tCloud = cloudGeom.b;
+  let xi = blueNoise(vec2u(pix)).x;
+
+  // Two points along the ray at which the path state is recorded, in order of distance.
+  let cloudFirst = tCloud <= tNear;
+  var evT = array<f32, 2>(min(tCloud, tNear), max(tCloud, tNear));
+  var evL = array<vec3f, 2>(vec3f(0.0), vec3f(0.0));
+  var evTr = array<vec3f, 2>(vec3f(1.0), vec3f(1.0));
+  var evDone = array<bool, 2>(false, false);
+
+  var L = vec3f(0.0);
+  var T = vec3f(1.0);
+  for (var a = 0; a < 2; a++) {
+    let bix = atmo.bodies[a];
+    if (bix < 0) { continue; }
+    let bi = u32(bix);
+    let ray = atmoRay(bi, d);
+    // Path of this body in distances from its start: up to the scene surface.
+    let sEnd = min(ray.len, tFar - ray.t0);
+    if (sEnd <= 0.0) { continue; }
+    for (var e = 0; e < 2; e++) {
+      if (!evDone[e] && evT[e] <= ray.t0) { evL[e] = L; evTr[e] = T; evDone[e] = true; }
+    }
+    let n = max(i32(atmo.steps[a]), 4);
+    let cosSun = dot(d, frame.bodies[bi].sunDir.xyz);
+    let phase = vec2f(atmoPhaseR(cosSun), atmoPhaseM(cosSun, frame.bodies[bi].mie.w));
+    var cdf = atmoBuildCdf(bi, ray, 0.0, sEnd);
+    var sPrev = 0.0;
+    for (var i = 0; i < n; i++) {
+      var sNext = sEnd;
+      if (i < n - 1) { sNext = atmoInvCdf(&cdf, f32(i + 1) / f32(n)); }
+      // The medium and the smooth part of the light are taken at the middle of the stratum: no noise in a
+      // clear sky. Only the cloud shadow, which has edges, is looked up at a blue-noise position inside the
+      // stratum (a different one for every sample: golden-ratio sequence), so shafts dither instead of band.
+      let o = atmoSampleAt(transLut, msLut, bi, atmo.layers[a], d, ray, atmoInvCdf(&cdf, (f32(i) + 0.5) / f32(n)), phase);
+      var src = o.direct + o.multi;
+      if (bix == atmo.bodies.z) {
+        let sj = atmoInvCdf(&cdf, (f32(i) + fract(0.5 + (xi - 0.5) * atmo.misc.z + f32(i) * 0.61803398875)) / f32(n));
+        src = o.direct * atmoCloudShadowOnRay(bi, d, ray, sj) + o.multi;
+      }
+      var segA = sPrev;
+      for (var e = 0; e < 2; e++) {
+        if (!evDone[e] && evT[e] - ray.t0 < sNext) {
+          let cut = max(evT[e] - ray.t0, segA);
+          let dtc = cut - segA;
+          L += T * src * atmoSegment(o.ext, dtc);
+          T *= exp(-o.ext * dtc);
+          evL[e] = L;
+          evTr[e] = T;
+          evDone[e] = true;
+          segA = cut;
+        }
+      }
+      let dt = sNext - segA;
+      L += T * src * atmoSegment(o.ext, dt);
+      T *= exp(-o.ext * dt);
+      sPrev = sNext;
+    }
+  }
+  for (var e = 0; e < 2; e++) {
+    if (!evDone[e]) { evL[e] = L; evTr[e] = T; }
+  }
+
+  let iCloud = select(1, 0, cloudFirst);
+  let iNear = 1 - iCloud;
+  let ex = frame.exposure.x;
+  let cap = vec3f(HDR_MAX);
+
+  // Far candidate: the whole path, with the cloud at its depth.
+  let Lc = evL[iCloud];
+  let Tc = evTr[iCloud];
+  let mulFar = T * cloud.a;
+  let addFar = (Lc + (L - Lc) * cloud.a) * ex + Tc * cloud.rgb;
+
+  // Near candidate: the path up to the nearest surface of the block; the cloud only if it lies in front of it.
+  let Ln = evL[iNear];
+  let Tn = evTr[iNear];
+  // Is the nearest surface behind the cloud? By distance: it lies beyond where the cloud ends (with a
+  // margin for the cloud having been marched along a ray half a pixel away: half the depth range of the
+  // block). Where altitude decides it outright it does: a surface under the layer is behind every cloud
+  // seen from above the layer, and in front of every cloud seen from under it.
+  var behind = saturate((tNear + 0.5 * nearSpread - cloudGeom.r) / max(cloudGeom.g - cloudGeom.r, 1.0));
+  if (atmo.bodies.z >= 0 && atmo.bodies.z == atmo.bodies.x && hNear < atmo.cloudShell.z) {
+    let h0 = frame.bodies[u32(atmo.bodies.x)].sunDir.w;
+    if (h0 > atmo.cloudShell.w) { behind = 1.0; } else if (h0 < atmo.cloudShell.z) { behind = 0.0; }
+  }
+  let Lcn = min(Lc, Ln);
+  let Tcn = max(Tc, Tn);
+  let mulNear = Tn * (1.0 + (cloud.a - 1.0) * behind);
+  let addNear = mix(Ln * ex, (Lcn + (Ln - Lcn) * cloud.a) * ex + Tcn * cloud.rgb, behind);
+
+  var o: MarchOut;
+  // add + mul x HDR_MAX never exceeds HDR_MAX: the blended result stays inside the HDR range.
+  o.mulFar = vec4f(saturate3(mulFar), 1.0);
+  o.addFar = vec4f(min(writeHdr(addFar), cap * (vec3f(1.0) - o.mulFar.rgb)), 1.0);
+  o.mulNear = vec4f(saturate3(mulNear), 1.0);
+  o.addNear = vec4f(min(writeHdr(addNear), cap * (vec3f(1.0) - o.mulNear.rgb)), 1.0);
+  return o;
+}
+`;
+
+/**
+ * Composite fragment shader. Bindings (group 1): 0..3 = addFar, mulFar, addNear, mulNear (half res),
+ * 4 = 'scene.depthHalf', 5 = 'scene.depth'. `mode`: 'dual' = one draw with dual-source blending,
+ * 'mul' / 'add' = the two draws of the fallback.
+ */
+export function compositeFsWgsl(mode: 'dual' | 'mul' | 'add'): string {
+  const out =
+    mode === 'dual'
+      ? /* wgsl */ `struct CompositeOut {
+  @location(0) @blend_src(0) add: vec4f,
+  @location(0) @blend_src(1) mul: vec4f,
+}
+fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(add, 1.0), vec4f(mul, 1.0)); }`
+      : /* wgsl */ `struct CompositeOut { @location(0) color: vec4f }
+fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(${mode === 'mul' ? 'mul' : 'add'}, 1.0)); }`;
+  return /* wgsl */ `${mode === 'dual' ? 'enable dual_source_blending;' : ''}
+#include "frame"
+#include "fullscreen"
+@group(1) @binding(0) var addFarTex: texture_2d<f32>;
+@group(1) @binding(1) var mulFarTex: texture_2d<f32>;
+@group(1) @binding(2) var addNearTex: texture_2d<f32>;
+@group(1) @binding(3) var mulNearTex: texture_2d<f32>;
+@group(1) @binding(4) var depthHalfTex: texture_2d<f32>;
+@group(1) @binding(5) var sceneDepthTex: texture_depth_2d;
+${out}
+
+@fragment fn fs(in: FullscreenOut) -> CompositeOut {
+  let pix = vec2i(in.position.xy);
+  let zFull = viewZFromDepth(textureLoad(sceneDepthTex, pix, 0));
+  let size = vec2i(textureDimensions(addFarTex));
+  let st = in.uv * vec2f(size) - 0.5;
+  let base = floor(st);
+  let fr = st - base;
+  var sumA = vec3f(0.0);
+  var sumM = vec3f(0.0);
+  var wsum = 0.0;
+  var bestA = vec3f(0.0);
+  var bestM = vec3f(1.0);
+  var bestDiff = 3.0e38;
+  for (var k = 0; k < 4; k++) {
+    let o = vec2i(k & 1, k >> 1);
+    let ip = clamp(vec2i(base) + o, vec2i(0), size - 1);
+    let dh = textureLoad(depthHalfTex, ip, 0).rg;
+    let zF = viewZFromDepth(dh.r);
+    let zN = viewZFromDepth(dh.g);
+    var a = textureLoad(addFarTex, ip, 0).rgb;
+    var m = textureLoad(mulFarTex, ip, 0).rgb;
+    // Distance of the pixel's depth from the two depths this texel was marched to: zero at either of them,
+    // growing with the gap in between (a third surface inside the block) and outside the bracket.
+    let below = max(zN - zFull, 0.0);
+    let above = max(zFull - zF, 0.0);
+    let inside = min(max(zFull - zN, 0.0), max(zF - zFull, 0.0));
+    let diff = min((below + above + inside) / max(min(zFull, zF), 1e-3), 1000.0);
+    if (dh.r != dh.g) {
+      // Interpolate between the texel's near and far candidates at the pixel's own depth.
+      let w = saturate((zFull - zN) / max(zF - zN, 1e-6 * zN));
+      if (w < 1.0) {
+        a = mix(textureLoad(addNearTex, ip, 0).rgb, a, w);
+        m = mix(textureLoad(mulNearTex, ip, 0).rgb, m, w);
+      }
+    }
+    let bil = select(1.0 - fr.x, fr.x, o.x == 1) * select(1.0 - fr.y, fr.y, o.y == 1);
+    let weight = (bil + 0.01) / (1.0 + diff * 200.0) * step(diff, 0.25);
+    sumA += a * weight;
+    sumM += m * weight;
+    wsum += weight;
+    if (diff < bestDiff) { bestDiff = diff; bestA = a; bestM = m; }
+  }
+  if (wsum < 1e-4) { return pack(bestA, bestM); }
+  return pack(sumA / wsum, sumM / wsum);
+}
+`;
+}
+
+/** 'src1' (the second blend source of dual-source blending) is newer than the installed WebGPU typings. */
+const SRC1 = 'src1' as GPUBlendFactor;
+
+/** Blend states of the composite draws: destination = add + mul x destination; destination alpha is kept. */
+export const COMPOSITE_BLEND: Record<'dual' | 'mul' | 'add', GPUBlendState> = {
+  dual: { color: { srcFactor: 'one', dstFactor: SRC1, operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } },
+  mul: { color: { srcFactor: 'zero', dstFactor: 'src', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } },
+  add: { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } },
+};
