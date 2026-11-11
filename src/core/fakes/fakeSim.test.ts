@@ -75,6 +75,17 @@ describe('FakeSim', () => {
     expect(sim.snapshot().patches.planned).toHaveLength(0);
   });
 
+  it('the surface scenes can be placed away from the site', () => {
+    const sim = createFakeSim(defs, { scene: 'ascent', location: { latDeg: -42.5, lonDeg: 101.25 } });
+    const s = sim.snapshot();
+    expect(s.readouts.latitude * (180 / Math.PI)).toBeCloseTo(-42.5, 6);
+    expect(s.readouts.longitude * (180 / Math.PI)).toBeCloseTo(101.25, 6);
+    expect(s.readouts.altitudeAsl).toBeCloseTo(9000, 3);
+    // The default is the site, as before.
+    const site = defs.sites[sim.scenario.site]!;
+    expect(createFakeSim(defs, { scene: 'ascent' }).snapshot().readouts.latitude * (180 / Math.PI)).toBeCloseTo(site.location.latDeg, 6);
+  });
+
   it('landed vessels ride the rotating body and refuse rails warp under thrust', () => {
     const sim = createFakeSim(defs, { scene: 'pad' });
     const s0 = sim.snapshot();

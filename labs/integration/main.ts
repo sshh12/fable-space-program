@@ -7,6 +7,10 @@
  *   &without=<list>             packages to leave out
  *   &planet=0                   no LabPlanet backdrop (it is added when the terrain feature is not loaded)
  *   &sim=real&scenario=<id>     the real Sim of src/sim when it exists (default: FakeSim, ?scene=<FakeScene>)
+ *   &vehicle=<id>&stage=<n>     FakeSim: the real parts of this vehicle after n fired stages (default: the first
+ *                               vehicle, staged as the scene needs; stage=none = the FakeSim's placeholder parts)
+ *   &at=lat,lon                 FakeSim: stand the 'pad' and 'ascent' scenes here instead of at the site
+ *   &throttle=<0..1>            FakeSim: throttle held from the start (engines of the fired stages burn)
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
  *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
@@ -25,6 +29,7 @@ import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
+import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { DEG, mat4, quat, v3, type Vec3 } from '@/core/math';
 import { coreOf, type SceneBindings, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
@@ -33,7 +38,7 @@ import { createFetchTileSource, createTerrainProvider } from '@/terrain';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
 import { createProbes } from '../render-core/probes';
 import { sunAtSite, withSunOverride, type Site, type SunOverride } from '../render-core/world';
-import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, type FeaturePackage } from './features';
+import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, realVesselParts, type FeaturePackage } from './features';
 
 export interface IntegrationLab {
   app: LabApp;
@@ -75,8 +80,13 @@ export interface IntegrationLab {
    * `offsetDeg` away from the sun (0 = straight at it), turning about the vessel's orbit normal.
    */
   lookNearSun(offsetDeg: number, distance?: number): void;
-  /** Render-target pixel of a body-fixed point (height above the reference radius) in the last frame; null when behind the camera. */
-  project(bodyId: string, latDeg: number, lonDeg: number, alt: number): { x: number; y: number; distance: number } | null;
+  /**
+   * Render-target pixel of a body-fixed point (height above the reference radius) in the last frame, its
+   * distance from the eye and its depth along the view axis (m); null when behind the camera.
+   */
+  project(bodyId: string, latDeg: number, lonDeg: number, alt: number): { x: number; y: number; distance: number; viewZ: number } | null;
+  /** The same for the active vessel. */
+  projectVessel(): { x: number; y: number; distance: number; viewZ: number } | null;
   /**
    * Show a G-buffer target instead of the lit scene (a fullscreen pass of the lab at the end of
    * drawTransparent writes it to the HDR target unexposed): 'albedo' = linear rgb, 'material' = roughness,
@@ -86,9 +96,30 @@ export interface IntegrationLab {
   /** Cascades handed to drawShadow since the last clear (?probe=casters). */
   cascadeLog(): { frame: number; index: number; everyFrame: boolean; fit: string; anchor: string; texelSize: number }[];
   clearCascadeLog(): void;
+  /**
+   * Stand on the line from the active vessel to a body-fixed point, `distance` metres from the vessel, and
+   * look at the vessel: two calls with different distances are two views along ONE line of sight.
+   */
+  watchVesselAlong(site: Site, distance: number): void;
+  /** Ride `below` metres under the active vessel (towards its body) and keep looking at a body-fixed point. */
+  watchSiteFromVessel(site: Site, below?: number): void;
+  /**
+   * Sit in the seat the vehicle definition names for the cockpit camera (interior view), looking `yawDeg`
+   * to the right and `pitchDeg` up from the seat's own look direction. False when the active vessel has no
+   * such part or seat (placeholder parts, a stage without the capsule).
+   */
+  sitInCockpit(yawDeg?: number, pitchDeg?: number): boolean;
+  /**
+   * Switch the features of a package off or on in the running page (their hooks are skipped; what they
+   * published keeps its last content, so use it for packages that only draw: vfx, vehicle, cockpit).
+   */
+  setEnabled(pkg: FeaturePackage, on: boolean): void;
   /** Stop following (the camera keeps its last placement). */
   release(): void;
 }
+
+/** Stages of the vehicle already fired in each FakeSim scene (the stack that flies that part of the mission). */
+const SCENE_STAGES: Record<FakeScene, number> = { pad: 0, ascent: 1, lowOrbit: 4, translunar: 5, lunarOrbit: 5, lunarSurface: 6, reentry: 8, chutes: 10 };
 
 declare global {
   interface Window {
@@ -113,8 +144,9 @@ const HOOKS = ['prepare', 'compute', 'drawShadow', 'drawGBuffer', 'drawWater', '
  * presence which passes exist), forwards them while enabled, and switches itself off, telling `onThrow`,
  * when one of them throws.
  */
-function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, castShadows = true): { feature: RenderFeature; disable(): void } {
+function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, castShadows = true): { feature: RenderFeature; disable(): void; setEnabled(on: boolean): void } {
   let enabled = true;
+  let broken = false;
   const feature: Record<string, unknown> = {
     id: inner.id,
     init: (c: RenderContext) => inner.init(c),
@@ -132,6 +164,7 @@ function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, 
         fn.apply(inner, args);
       } catch (e) {
         enabled = false;
+        broken = true;
         onThrow(`${hook} threw: ${e instanceof Error ? e.message : String(e)}`);
       }
     };
@@ -140,6 +173,10 @@ function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, 
     feature: feature as unknown as RenderFeature,
     disable() {
       enabled = false;
+      broken = true;
+    },
+    setEnabled(on) {
+      enabled = on && !broken;
     },
   };
 }
@@ -218,7 +255,17 @@ async function boot(): Promise<void> {
     inner = createSim(defs, query.get('scenario') ?? Object.keys(defs.scenarios)[0] ?? '', { terrain });
     simKind = 'real';
   } else {
-    inner = createFakeSim(defs, { scene: (query.get('scene') as FakeScene | null) ?? 'lowOrbit' });
+    const scene = (query.get('scene') as FakeScene | null) ?? 'lowOrbit';
+    const stage = query.get('stage');
+    const real = stage === 'none' ? null : await realVesselParts(defs, query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '', stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
+    const at = query.get('at')?.split(',').map(Number);
+    inner = createFakeSim(defs, {
+      scene,
+      ...(real ? { parts: real.parts, stageLabels: real.stageLabels } : {}),
+      ...(at && at.length === 2 && at.every(Number.isFinite) ? { location: { latDeg: at[0]!, lonDeg: at[1]! } } : {}),
+    });
+    const throttle = Number(query.get('throttle') ?? 0);
+    if (throttle > 0) inner.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: Math.min(1, throttle) });
   }
   const sim = withSunOverride(inner, () => sunOverride);
 
@@ -257,7 +304,7 @@ async function boot(): Promise<void> {
   const compiled = async (): Promise<void> => {
     for (let i = 0; i < 200 && app.renderer.core.shaders.pendingCompilations() > 0; i++) await app.testApi.api.waitFrames(3);
   };
-  const guards = new Map<string, { disable(): void }>();
+  const guards = new Map<string, { disable(): void; setEnabled(on: boolean): void }>();
   for (const inner of built.features) {
     const before = errors.length;
     const g = guardFeature(inner, (message) => quarantine(inner.id, [message]), !noShadow.has(built.packageOf[inner.id]!));
@@ -346,6 +393,14 @@ async function boot(): Promise<void> {
     app.gpu.device.queue.submit([encoder.finish()]);
   });
 
+  /** Render-target pixel of a point given relative to the camera (ROOT axes). */
+  const toPixel = (relCam: Vec3): { x: number; y: number; distance: number; viewZ: number } | null => {
+    const f = app.renderer.frameContext!;
+    const c = mat4.transformPoint(mat4.mul(f.projUnjittered, f.view), relCam);
+    if (c.w <= 0) return null;
+    return { x: (0.5 + (0.5 * c.x) / c.w) * f.renderSize[0], y: (0.5 - (0.5 * c.y) / c.w) * f.renderSize[1], distance: v3.len(relCam), viewZ: c.w };
+  };
+
   const lab: IntegrationLab = {
     app,
     available: availablePackages(),
@@ -412,12 +467,63 @@ async function boot(): Promise<void> {
       if (!f) return null;
       const b = f.bodyPose(bodyId);
       const p = v3.add(b.centerRelCam, quat.rotate(b.qFixedToRoot, v3.scale(latLonToDir(latDeg * DEG, lonDeg * DEG), defs.bodies[bodyId]!.radius + alt)));
-      const c = mat4.transformPoint(mat4.mul(f.projUnjittered, f.view), p);
-      if (c.w <= 0) return null;
-      return { x: (0.5 + (0.5 * c.x) / c.w) * f.renderSize[0], y: (0.5 - (0.5 * c.y) / c.w) * f.renderSize[1], distance: v3.len(p) };
+      return toPixel(p);
+    },
+    projectVessel() {
+      const f = app.renderer.frameContext;
+      const s = app.snapshot();
+      const v = s.vessels.find((x) => x.id === s.activeVesselId);
+      if (!f || !v) return null;
+      return toPixel(v3.sub(v.rRoot, app.cameraState().positionRoot));
     },
     showGBuffer(which) {
       gbufferView.which = which;
+    },
+    watchVesselAlong(site, distance) {
+      place((snapshot) => {
+        const { pos, up } = pointRoot(snapshot, site);
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        if (!v) return;
+        const away = v3.normalize(v3.sub(pos, v.rRoot));
+        app.camera.spec = { type: 'free', positionRoot: v3.addScaled(v.rRoot, away, distance), qViewToRoot: lookRotation(v3.neg(away), up) };
+      });
+    },
+    watchSiteFromVessel(site, below = 30) {
+      place((snapshot) => {
+        const { pos } = pointRoot(snapshot, site);
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        if (!v) return;
+        const eye = v3.addScaled(v.rRoot, v3.normalize(v.r), -below);
+        app.camera.spec = { type: 'free', positionRoot: eye, qViewToRoot: lookRotation(v3.sub(pos, eye), v3.lenSq(v.v) > 0 ? v.v : v3.anyOrthogonal(v.r)) };
+      });
+    },
+    sitInCockpit(yawDeg = 0, pitchDeg = 0) {
+      const find = (snapshot: SimSnapshot): { positionRoot: Vec3; qViewToRoot: ReturnType<typeof lookRotation> } | null => {
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        const camera = Object.values(defs.vehicles).find((d) => v?.parts.some((p) => p.instanceId === d.cameras.cockpit.part))?.cameras.cockpit;
+        const part = v?.parts.find((p) => p.instanceId === camera?.part);
+        if (!v || !camera || !part) return null;
+        const seats = defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : []));
+        const seat = seats?.find((s) => s.id === camera.seat);
+        if (!seat) return null;
+        const L = v3.normalize(v3.fromTuple(seat.lookDir));
+        const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
+        const qLook = quat.mul(quat.fromAxisAngle(v3.unitY(), -yawDeg * DEG), quat.fromAxisAngle(v3.unitX(), pitchDeg * DEG));
+        return {
+          positionRoot: v3.add(v.rRoot, quat.rotate(v.q, v3.add(part.localPos, quat.rotate(part.localRot, v3.fromTuple(seat.pos))))),
+          qViewToRoot: quat.normalize(quat.mul(quat.mul(v.q, part.localRot), quat.mul(lookRotation(L, U), qLook))),
+        };
+      };
+      if (!find(app.snapshot())) return false;
+      app.camera.settings.kind = 'interior';
+      place((snapshot) => {
+        const at = find(snapshot);
+        if (at) app.camera.spec = { type: 'free', ...at };
+      });
+      return true;
+    },
+    setEnabled(pkg, on) {
+      for (const f of built.features) if (built.packageOf[f.id] === pkg) guards.get(f.id)?.setEnabled(on);
     },
     cascadeLog: () => ballast?.cascadeLog() ?? [],
     clearCascadeLog: () => ballast?.clearCascadeLog(),

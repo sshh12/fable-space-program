@@ -223,3 +223,169 @@ export function record(check: string, result: unknown): void {
   all[check] = { at: new Date().toISOString(), ...((typeof result === 'object' && result !== null ? result : { value: result }) as object) };
   fs.writeFileSync(file, JSON.stringify(all, null, 2));
 }
+
+// ------------------------------------------------------------------------------------- the real cloud map
+
+/** The baked cloud coverage map of the Earth tile set: equirectangular, row 0 = north, column 0 = longitude -180 deg. */
+export interface CoverageMap {
+  width: number;
+  height: number;
+  /** Coverage, 0..255. */
+  coverage: Uint8Array;
+  /** Cloud top, m. */
+  top: Float32Array;
+}
+
+let coverageCache: CoverageMap | null | undefined;
+
+/** Decode the coverage map the atmosphere feature loads (null when the tile set has none). */
+export function coverageMap(): CoverageMap | null {
+  if (coverageCache !== undefined) return coverageCache;
+  coverageCache = null;
+  const base = path.join(repoRoot, 'data', 'tiles', 'earth');
+  const clouds = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'render', 'earth.clouds.json'), 'utf8')) as { coverageMap: string };
+  const manifest = JSON.parse(fs.readFileSync(path.join(base, 'manifest.json'), 'utf8')) as { globals?: Record<string, { path: string; channels: string[] }> };
+  const g = manifest.globals?.[clouds.coverageMap];
+  if (!g) return null;
+  const png = PNG.sync.read(fs.readFileSync(path.join(base, g.path)));
+  const n = png.width * png.height;
+  const coverage = new Uint8Array(n);
+  const top = new Float32Array(n);
+  // Two channels arrive as grey + alpha, colour sources carry them in r and g (as the feature reads them);
+  // the second channel is the cloud top in units of 12750 m / 255.
+  const second = g.channels.length === 2 ? 3 : 1;
+  for (let i = 0; i < n; i++) {
+    coverage[i] = png.data[i * 4]!;
+    top[i] = png.data[i * 4 + second]! * 50;
+  }
+  coverageCache = { width: png.width, height: png.height, coverage, top };
+  return coverageCache;
+}
+
+export interface SkyBox {
+  latDeg: number;
+  /** Longitude in the MAP (the map drifts over the body: see `mapToFixedLon`). */
+  lonMapDeg: number;
+  /** Smallest, largest and mean coverage (0..1) and mean cloud top (m) within `halfDeg` of the point. */
+  min: number;
+  max: number;
+  mean: number;
+  topM: number;
+}
+
+/** Coverage statistics of the map within `halfDeg` degrees of a point (map longitude). */
+export function coverageBox(map: CoverageMap, latDeg: number, lonMapDeg: number, halfDeg: number): SkyBox {
+  const px = map.width / 360;
+  const cx = ((lonMapDeg + 180) / 360) * map.width;
+  const cy = ((90 - latDeg) / 180) * map.height;
+  const hy = Math.max(1, Math.round(halfDeg * px));
+  const hx = Math.max(1, Math.round((halfDeg * px) / Math.max(0.2, Math.cos((latDeg * Math.PI) / 180))));
+  let min = 255;
+  let max = 0;
+  let sum = 0;
+  let top = 0;
+  let count = 0;
+  for (let y = Math.max(0, Math.round(cy - hy)); y <= Math.min(map.height - 1, Math.round(cy + hy)); y += 2) {
+    for (let dx = -hx; dx <= hx; dx += 2) {
+      const x = (((Math.round(cx) + dx) % map.width) + map.width) % map.width;
+      const c = map.coverage[y * map.width + x]!;
+      min = Math.min(min, c);
+      max = Math.max(max, c);
+      sum += c;
+      top += map.top[y * map.width + x]!;
+      count++;
+    }
+  }
+  return { latDeg, lonMapDeg, min: min / 255, max: max / 255, mean: sum / count / 255, topM: top / count };
+}
+
+/**
+ * Places of the real cloud map that are overcast (coverage >= 0.95 everywhere within `halfDeg`) or clear
+ * (<= 0.02 everywhere), best first, on a 2 degree grid between the given latitudes.
+ */
+export function findSky(map: CoverageMap, kind: 'overcast' | 'clear', halfDeg: number, maxAbsLatDeg = 55): SkyBox[] {
+  const out: SkyBox[] = [];
+  for (let lat = -maxAbsLatDeg; lat <= maxAbsLatDeg; lat += 2) {
+    for (let lon = -179; lon < 180; lon += 2) {
+      const b = coverageBox(map, lat, lon, halfDeg);
+      if (kind === 'overcast' ? b.min >= 0.95 : b.max <= 0.02) out.push(b);
+    }
+  }
+  return out.sort((a, b) => (kind === 'overcast' ? b.min - a.min || b.mean - a.mean : a.max - b.max || a.mean - b.mean));
+}
+
+/**
+ * Body-fixed longitude (deg) at which a map longitude lies when the cloud clock reads `cloudTime` seconds:
+ * the map drifts east at `driftMps` (the feature samples it at the body longitude minus the drift angle).
+ */
+export function mapToFixedLon(lonMapDeg: number, cloudTime: number, driftMps: number, radius: number): number {
+  const angle = ((((driftMps / radius) * cloudTime) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const lon = lonMapDeg + (angle * 180) / Math.PI;
+  return ((((lon + 180) % 360) + 360) % 360) - 180;
+}
+
+export interface CloudClock {
+  /** Cloud clock (s) and drift (m/s) the atmosphere feature uses now; null while the page has no cloud system. */
+  time: number | null;
+  drift: number | null;
+}
+
+/**
+ * The cloud clock of the running page. The feature owns it (it need not be the simulation time), so a
+ * place of the map is always located with the clock the feature reports, never with an assumed one.
+ */
+export async function cloudClock(page: Page): Promise<CloudClock> {
+  const read = (): Promise<CloudClock> =>
+    page.evaluate(() => {
+      const atmosphere = window.__integration!.handles['atmosphere.createAtmosphereFeature'] as { debug: { clouds(): { time(): number; activeParams(): { coverageDriftMps: number } | null } | null } } | undefined;
+      const clouds = atmosphere?.debug.clouds() ?? null;
+      return { time: clouds?.time() ?? null, drift: clouds?.activeParams()?.coverageDriftMps ?? null };
+    });
+  let clock = await read();
+  // The coverage map loads after the first frames.
+  for (let i = 0; i < 20 && clock.drift === null && (await page.evaluate(() => window.__integration!.loaded.includes('atmosphere'))); i++) {
+    await page.evaluate(() => window.__test!.waitFrames(10));
+    clock = await read();
+  }
+  return clock;
+}
+
+/** The inverse of `mapToFixedLon`. */
+export function fixedToMapLon(lonFixedDeg: number, cloudTime: number, driftMps: number, radius: number): number {
+  return lonFixedDeg - (mapToFixedLon(0, cloudTime, driftMps, radius) - 0);
+}
+
+// ---------------------------------------------------------------------------------------- air between points
+
+export interface AtmosphereDef {
+  rayleighScattering: [number, number, number];
+  rayleighScaleHeight: number;
+  mieScattering: number;
+  mieAbsorption: number;
+  mieScaleHeight: number;
+  ozoneAbsorption: [number, number, number];
+  ozoneCenterAltitude: number;
+  ozoneHalfWidth: number;
+}
+
+export const earthAtmosphere = (): AtmosphereDef => JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'render', 'earth.atmosphere.json'), 'utf8')) as AtmosphereDef;
+
+/**
+ * Transmittance (r, g, b) of the air between two points given relative to the body centre (m), from the
+ * definitions alone: Rayleigh and Mie extinction with their scale heights, ozone in its tent profile.
+ */
+export function airTransmittance(a: AtmosphereDef, radius: number, from: readonly [number, number, number], to: readonly [number, number, number]): [number, number, number] {
+  const N = 512;
+  const len = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+  const tau = [0, 0, 0];
+  for (let i = 0; i < N; i++) {
+    const t = (i + 0.5) / N;
+    const h = Math.hypot(from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, from[2] + (to[2] - from[2]) * t) - radius;
+    const rayleigh = Math.exp(-h / a.rayleighScaleHeight);
+    const mie = (a.mieScattering + a.mieAbsorption) * Math.exp(-h / a.mieScaleHeight);
+    const ozone = Math.max(0, 1 - Math.abs(h - a.ozoneCenterAltitude) / a.ozoneHalfWidth);
+    for (let c = 0; c < 3; c++) tau[c] = tau[c]! + (a.rayleighScattering[c]! * rayleigh + mie + a.ozoneAbsorption[c]! * ozone) * (len / N);
+  }
+  return [Math.exp(-tau[0]!), Math.exp(-tau[1]!), Math.exp(-tau[2]!)];
+}
+

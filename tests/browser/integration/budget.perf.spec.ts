@@ -42,15 +42,19 @@ const LINES: { line: string; pkg: FeaturePackage | 'core' | 'ui'; ms: number[] }
 ];
 const FRAME_BUDGET_MS = 11;
 
-/** Lab query of each checkpoint (FakeSim scene and camera) and whether the engines burn. */
-const SCENES: Record<Checkpoint, { query: string; throttle: number }> = {
-  'pad lift-off': { query: 'scene=pad&orbit=35,8,160', throttle: 1 },
-  'ascent 10-40 km': { query: 'scene=ascent&orbit=200,-20,180', throttle: 1 },
-  LEO: { query: 'scene=lowOrbit&orbit=30,15,60', throttle: 0 },
-  'LEO cockpit': { query: 'scene=lowOrbit&vessel=active&offset=0,0,0&look=0,10,0&kind=interior', throttle: 0 },
-  'lunar descent': { query: 'scene=lunarSurface&orbit=40,12,45', throttle: 0.4 },
-  reentry: { query: 'scene=reentry&orbit=160,10,30', throttle: 0 },
-  splashdown: { query: 'scene=chutes&orbit=30,5,60', throttle: 0 },
+/**
+ * Lab query of each checkpoint: the FakeSim scene with the real vehicle as it flies that part of the mission
+ * (the lab stages it), the throttle, and the chase camera (yaw, pitch in degrees, distance in metres).
+ */
+const SCENES: Record<Checkpoint, { query: string; cockpit?: boolean }> = {
+  // Engines lit and clamps released on the pad: the whole stack, the site, the deluge and the plume.
+  'pad lift-off': { query: 'scene=pad&stage=1&throttle=1&orbit=35,8,160' },
+  'ascent 10-40 km': { query: 'scene=ascent&throttle=1&orbit=200,-20,180' },
+  LEO: { query: 'scene=lowOrbit&orbit=30,15,60' },
+  'LEO cockpit': { query: 'scene=lowOrbit', cockpit: true },
+  'lunar descent': { query: 'scene=lunarSurface&throttle=0.4&orbit=40,12,45' },
+  reentry: { query: 'scene=reentry&orbit=160,10,30' },
+  splashdown: { query: 'scene=chutes&orbit=30,5,60' },
 };
 
 interface Row {
@@ -76,12 +80,7 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
     const row = await withGpuLock(async (): Promise<Row> => {
       const scene = SCENES[checkpoint];
       info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
-      if (scene.throttle > 0) {
-        await page.evaluate((t) => {
-          window.__test!.setControls({ throttle: t });
-          window.__test!.commands!.stage();
-        }, scene.throttle);
-      }
+      if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitInCockpit(0, 5)), 'the vehicle has a cockpit seat to sit in').toBe(true);
       await settle(page, 120);
       expect(await page.evaluate(() => window.__lab!.renderer.frameContext!.renderSize)).toEqual([2560, 1440]);
       await save(page, `budget-${checkpoint.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`);

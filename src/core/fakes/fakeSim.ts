@@ -42,12 +42,19 @@ export interface FakeSimOptions {
   parts?: PartSnapshot[];
   /** Site used by the surface scenes (default: first site in the library). */
   siteId?: string;
+  /**
+   * Put the scenes that stand at the site ('pad', 'ascent') at this point instead (labs: a launch under an
+   * overcast sky, over open water). The site definition itself, and what the snapshot says about it, is unchanged.
+   */
+  location?: { latDeg: number; lonDeg: number };
   /** Stage labels for the staging stack (default: a generic 4-entry stack). */
   stageLabels?: string[];
 }
 
 const OBLIQUITY = 23.4392911 * DEG;
-const DEFAULT_UT = 8.89e8;
+/** Start time of a FakeSim that is given none, seconds since J2000. */
+export const FAKE_SIM_DEFAULT_UT = 8.89e8;
+const DEFAULT_UT = FAKE_SIM_DEFAULT_UT;
 
 interface SceneSpec {
   bodyId: string;
@@ -115,8 +122,8 @@ export class FakeSim implements Sim {
     this.defs = defs;
     this.ut0 = this.ut = opts.ut ?? DEFAULT_UT;
     const site = defs.sites[opts.siteId ?? Object.keys(defs.sites)[0] ?? ''];
-    const siteLat = site?.location.latDeg ?? 19.1;
-    const siteLon = site?.location.lonDeg ?? -155.5;
+    const siteLat = opts.location?.latDeg ?? site?.location.latDeg ?? 19.1;
+    const siteLon = opts.location?.lonDeg ?? site?.location.lonDeg ?? -155.5;
     const root = defs.rootBodyId;
     const moon = Object.values(defs.bodies).find((b) => b.parent === root && b.gravityRole === 'attractor')?.id ?? root;
     const specs: Record<FakeScene, SceneSpec> = {

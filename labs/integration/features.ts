@@ -11,7 +11,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { RenderContext, RenderFeature } from '@/core/contracts/render';
-import type { Sim } from '@/core/contracts/sim';
+import type { PartSnapshot, Sim } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import type { MfdPainter, NavballRenderer } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
@@ -22,6 +22,7 @@ export type FeaturePackage = (typeof FEATURE_PACKAGES)[number];
 type Module = Record<string, unknown>;
 const RENDER_MODULES = import.meta.glob<Module>('/src/render/{terrain,vehicle,cockpit,ocean,sky,atmosphere,vfx}/index.ts');
 const SIM_MODULES = import.meta.glob<Module>('/src/sim/index.ts');
+const VESSEL_MODULES = import.meta.glob<Module>('/src/sim/vessel/public.ts');
 
 const modulePath = (p: FeaturePackage): string => `/src/render/${p}/index.ts`;
 
@@ -90,11 +91,11 @@ interface FactoryCall {
 const ADAPTERS: Record<FeaturePackage, FactoryCall[]> = {
   terrain: [{ name: 'createTerrainFeature', args: (env) => [env.ctx, () => env.terrain] }],
   vehicle: [
-    { name: 'createVesselVisualFeature', args: (env) => [env.ctx] },
-    { name: 'createSiteFeature', args: (env) => [env.ctx] },
+    { name: 'createVesselVisualFeature', args: () => [] },
+    { name: 'createSiteFeature', args: () => [] },
   ],
   cockpit: [{ name: 'createCockpitFeature', args: (env) => [env.ctx, { navball: env.navball, mfdPainter: env.mfdPainter }] }],
-  ocean: [{ name: 'createOceanFeature', args: (env) => [env.ctx] }],
+  ocean: [{ name: 'createOceanFeature', args: () => [] }],
   sky: [{ name: 'createSkyFeature', args: () => [] }],
   atmosphere: [{ name: 'createAtmosphereFeature', args: () => [] }],
   vfx: [{ name: 'createVfxFeature', args: (env) => [env.ctx] }],
@@ -147,6 +148,31 @@ export function buildFeatures(modules: Partial<Record<FeaturePackage, Module>>, 
     if (built > 0) out.loaded.push(p);
   }
   return out;
+}
+
+/**
+ * Parts of a real vehicle for the FakeSim (the vessel facade of src/sim/vessel): the stack as it is after
+ * `stagesFired` entries of its stage list. Null with the reason in `problems` when the facade is missing or
+ * refuses, so the lab falls back to the FakeSim's own placeholder parts.
+ */
+export async function realVesselParts(defs: DefLibrary, vehicleId: string, stagesFired: number, problems: string[]): Promise<{ parts: PartSnapshot[]; stageLabels: string[] } | null> {
+  const load = VESSEL_MODULES['/src/sim/vessel/public.ts'];
+  const vehicle = defs.vehicles[vehicleId];
+  if (!load || !vehicle) {
+    problems.push(`vessel: ${load ? `no vehicle "${vehicleId}" in the definitions` : 'src/sim/vessel/public.ts is not in the tree'}; the FakeSim flies its placeholder parts`);
+    return null;
+  }
+  try {
+    const mod = await load();
+    const assemble = mod['assembleVessel'] as ((d: DefLibrary, id: string, o: { stagesAlreadyFired?: number }) => unknown) | undefined;
+    const snapshots = mod['vesselPartSnapshots'] as ((v: unknown) => PartSnapshot[]) | undefined;
+    if (typeof assemble !== 'function' || typeof snapshots !== 'function') throw new Error('assembleVessel / vesselPartSnapshots are not exported');
+    const fired = Math.max(0, Math.min(vehicle.stages.length, stagesFired));
+    return { parts: snapshots(assemble(defs, vehicleId, { stagesAlreadyFired: fired })), stageLabels: vehicle.stages.map((s) => s.label) };
+  } catch (e) {
+    problems.push(`vessel: ${e instanceof Error ? e.message : String(e)}; the FakeSim flies its placeholder parts`);
+    return null;
+  }
 }
 
 export type CreateSim = (defs: DefLibrary, scenarioId: string, opts: { terrain: TerrainProvider }) => Sim;
