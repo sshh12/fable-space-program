@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (ocean round-1 commit, see Resolution)
 From: core-support (follow-up of `atmosphere-clouds-6`, item 3)
 Owner path: src/render/ocean/shaders/surfaceWgsl.ts (the forward surface's own copy of the cloud lookup, lines 160-188)
 Blocking: no        (the far and near sea agree within 2 % at the place the integration check looks at, which is clear of cloud; under cloud they are lit by different rules)
@@ -36,3 +36,21 @@ let cl = cloudLight(pos, i32(bi), up, r, sunDir);   // x = beam share, y = total
 That is what `src/render/core/lighting/deferred.ts` does for the far sheet (search `cloudBase`). Must not
 change: the agreement of forward and deferred water at `fadeStart` in clear air
 (`tests/browser/integration/water.spec.ts`, "at fadeStart the forward water equals the deferred sheet").
+
+## Resolution
+Done in the ocean package (round 1 of the visual fixes). `src/render/ocean/shaders/surfaceWgsl.ts` no longer has
+its own copy of the cloud lookup: the forward pass includes the core chunk (`#include "cloud_shadow"`) and lights
+with `cloudLight(posRel, bi, up, r, sunDir)` exactly as `deferred.ts` lights the far sheet:
+
+- the sun term (glint, sparkles, vessel shadows, the sun's share of the body colour and the caustics) x `cl.x`;
+- sky irradiance (body colour, foam) = sky table x `mix(0.35, 1.0, cl.x)` + the cloud base
+  `E_sun (after the atmosphere) x max(muS, 0) x (cl.y - cl.x)`, x `(0.5 + 0.5 n.up)`;
+- the lookup is made at night as well (as the core does).
+
+Not changed, and why: the SKY REFLECTION. `brdf_water` (the shared chunk, used by the deferred pass too) samples
+the sky itself (probe or sky-view table, lobe-filtered); the deferred pass's `amb.skyReflection` is not read by it,
+so the far sheet's reflection is not dimmed under cloud either. Dimming it in the forward pass alone would break
+the agreement at fadeStart (`tests/browser/integration/water.spec.ts`, `tests/browser/ocean/handover.spec.ts`).
+Doing it in both passes needs a decision on whether 'atmosphere.skyViewLut' already contains the clouds (the
+ocean lab's overcast table does); until then both passes reflect the same, undimmed sky. The agreement at
+fadeStart in clear air is unchanged (cl = (1, 1) there).

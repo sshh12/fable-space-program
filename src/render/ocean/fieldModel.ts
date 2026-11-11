@@ -12,9 +12,9 @@
  * hundred metres up to orbit:
  *  - mesoscale wind (about 110 km): log-normal changes of the wind sea, carried by a flow (two octaves of
  *    displacement) that everything below follows;
- *  - surface films where the wind is light: slick LINES (contours of the flow-warped noise: nested arcs around its
- *    eddies, kilometres to tens of kilometres long, 90-660 m wide: bright threads inside the glint, dark ones
- *    outside it) and calm POOLS (hard-edged tongues along the wind);
+ *  - surface films where the wind is light: slick FILAMENTS (the zero set of a flow-warped noise stretched along
+ *    the wind: single meandering lines kilometres to tens of kilometres long, 50-500 m wide, that end and rejoin:
+ *    bright threads inside the glint, dark ones outside it) and calm POOLS (hard-edged tongues along the wind);
  *  - gusts (cat's paws, 0.8 x 3 km) and wind rows (streaks 75-230 m apart, many times longer than wide), all
  *    along the wind;
  *  - packets of internal waves (parallel bands 1.3 km apart) in places.
@@ -40,15 +40,13 @@ export const FIELD = {
   warp0Amp: 14000,
   warp1: 11000,
   warp1Amp: 4000,
-  line1Along: 34000,
-  line1Across: 20000,
-  line1Step: 0.14,
-  line1Half: 110,
+  line1Along: 30000,
+  line1Across: 6000,
+  line1Half: 75,
   lineGate: 9000,
-  line2Along: 9000,
-  line2Across: 5000,
-  line2Step: 0.3,
-  line2Half: 45,
+  line2Along: 12000,
+  line2Across: 2000,
+  line2Half: 28,
   poolAlong: 140000,
   poolAcross: 7000,
   row1Along: 2600,
@@ -106,18 +104,15 @@ const saturate = (x: number): number => Math.min(1, Math.max(0, x));
 export const fieldOctave = (footprint: number, scale: number): number => 1 - smoothstep(0.25, 0.6, footprint / scale);
 
 /**
- * Fraction of a footprint `fp` (in noise units) centred `dist` (noise units, >= 0) from a contour line that lies
- * within `half` of the line.
+ * Fraction of a footprint `fp` (in noise units) centred `dist` (noise units, >= 0) from a line that lies within
+ * `half` of the line (its edges soft over half its width even where the footprint is sharp).
  */
 export function lineCover(dist: number, half: number, fp: number): number {
-  const w = Math.max(fp, 0.25 * half);
+  const w = Math.max(fp, 0.5 * half);
   const lo = Math.max(dist - 0.5 * w, -half);
   const hi = Math.min(dist + 0.5 * w, half);
   return saturate((hi - lo) / w);
 }
-
-/** Distance (noise units) of noise value `t` from the nearest contour of a family `step` apart. */
-const contourDistance = (t: number, step: number): number => Math.abs(t / step + 0.5 - Math.floor(t / step + 0.5) - 0.5) * step;
 
 /** The field before normalisation at wind-chart position (x along, y across; m) seen with `footprint` (chart m). */
 export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number): number {
@@ -134,16 +129,16 @@ export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number
   let slick = 0;
   let pool = 0;
   if (calm > 0) {
-    // Slick lines: contours of the flow-warped noise (nested arcs around its eddies), as wide as a film band,
-    // antialiased by the footprint, broken into bundles by a gate.
+    // Slick filaments: the ZERO SET of a flow-warped noise stretched along the wind (single lines that meander along
+    // the wind, end and rejoin; never the nested rings of a contour map), width and strength varying along them
+    // with a gate, antialiased by the footprint.
     const gate = fieldNoise2((x + wx) / F.lineGate, (y + wy) / F.lineGate, 16);
     const t1 = fieldNoise2((x + wx) / F.line1Along, (y + wy) / F.line1Across, 15);
     const g1 = 0.9 / F.line1Across;
-    // (Bands up to three times as wide where the gate is high: the broad slicks seen from orbit.)
-    const l1 = lineCover(contourDistance(t1, F.line1Step), F.line1Half * g1 * (1 + 2 * smoothstep(0.3, 0.7, gate)), footprint * g1) * smoothstep(-0.35, 0.05, gate);
+    const l1 = lineCover(Math.abs(t1), F.line1Half * g1 * (0.5 + 1.5 * smoothstep(-0.2, 0.6, gate)), footprint * g1) * smoothstep(-0.45, 0.05, gate);
     const t2 = fieldNoise2((x + 0.7 * wx) / F.line2Along, (y + 0.7 * wy) / F.line2Across, 17);
     const g2 = 0.9 / F.line2Across;
-    const l2 = lineCover(contourDistance(t2, F.line2Step), F.line2Half * g2, footprint * g2) * smoothstep(0.1, -0.3, gate);
+    const l2 = lineCover(Math.abs(t2), F.line2Half * g2 * (0.6 + 0.8 * smoothstep(0.5, -0.5, gate)), footprint * g2) * smoothstep(0.25, -0.35, gate);
     slick = Math.max(l1, 0.8 * l2) * calm;
     // Calm pools: hard-edged tongues of the same flow.
     // (The finer line noise frays their edges into streaks.)
@@ -163,14 +158,15 @@ export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number
       if (o2 > 0) rows += 0.7 * fieldNoise2(x / F.row2Along, y / F.row2Across, 19) * o2;
     }
   }
-  // Internal-wave packets: parallel bands in a few places.
+  // Internal-wave packets in a few places: narrow rough bands 1.3 km apart (where the wave's convergence crosses),
+  // bent by the flow, on calmer water between them. (0.2256 = the mean of the crest profile.)
   const oi = fieldOctave(footprint, 0.5 * F.internalWave);
   let iw = 0;
   if (oi > 0) {
-    const patch = smoothstep(0.3, 0.45, fieldNoise2(x / F.internalPatch + 5.5, y / F.internalPatch + 2.5, 21));
-    if (patch > 0) iw = Math.sin((6.283185307 * (x + wx)) / F.internalWave) * patch * oi;
+    const patch = smoothstep(0.45, 0.6, fieldNoise2(x / F.internalPatch + 5.5, y / F.internalPatch + 2.5, 21));
+    if (patch > 0) iw = ((0.5 + 0.5 * Math.sin((6.283185307 * (x + wx)) / F.internalWave)) ** 6 - 0.2256) * 1.5 * patch * oi;
   }
-  return wind * Math.exp(1.5 * p.gustVariability * rows) * (1 + 0.2 * iw) * (1 - 0.9 * p.filamentStrength * slick) * (1 - 0.55 * p.slickStrength * pool);
+  return wind * Math.exp(1.5 * p.gustVariability * rows) * (1 + 0.25 * iw) * (1 - 0.9 * p.filamentStrength * slick) * (1 - 0.55 * p.slickStrength * pool);
 }
 
 /**

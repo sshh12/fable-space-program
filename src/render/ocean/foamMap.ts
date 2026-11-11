@@ -15,9 +15,10 @@
  *
  * Three levels of FOAM_SIZE^2 texels, 0.25 m, 1 m and 4 m per texel (windows of 128 m, 512 m and 2 km around the
  * camera's nadir), each snapped to its own texel grid in chart coordinates, so the content is fixed to the planet
- * and a moving camera only scrolls it. A texel that scrolls in (or a level that starts) has no history: it takes the
- * criterion as it is now, and a wider zone around it as old foam, which is what a breaker leaves on average. A level
- * no pixel can resolve is not updated.
+ * and a moving camera only scrolls it. A texel that scrolls in (or a level that starts: a descending camera) has no
+ * history: it takes what the breakers of the last three seconds would have left there, looking downwind for the
+ * crests that passed over it (FOAM_CREST_SPEED), so a whitecap seen right after a level starts already trails its
+ * foam upwind of the crest. A level no pixel can resolve is not updated.
  */
 import type { RenderContext } from '@/core/contracts/render';
 import { coreOf } from '@/render/core';
@@ -36,6 +37,11 @@ export const FOAM_WEIGHTS = { long: 0.8, c0: 1.0, c1: 0.9, c2: 0.5, fine: 0.45 }
 export const FOAM_LOWPASS = 2.2;
 /** A level is updated while the sharpest pixel of the frame is no larger than this many of its texels. */
 export const FOAM_LEVEL_REACH = 2.5;
+/**
+ * Speed (m/s) at which breaking crests travel downwind: the phase speed of the 5-25 m waves that carry the breaking
+ * criterion (sqrt(g lambda / 2 pi) = 2.8-6.2 m/s), used where a texel has no history of its own.
+ */
+export const FOAM_CREST_SPEED = 4.5;
 
 export const foamTexel = (level: number): number => FOAM_TEXEL * FOAM_RATIO ** level;
 
@@ -55,6 +61,7 @@ struct FoamParams {
   weights: vec4f,   // long-wave layer, cascade 0, cascade 1 low-passed, fine part
   misc: vec4f,      // x = mip of cascade 1's low-pass, y = weight of cascade 2 in the fine part, z = threshold drop of the old-foam proxy, w = its density
   sigma: vec4f,     // 1 / standard deviation of the criterion at levels 0..2
+  trail: vec4f,     // xy = velocity of the breaking crests (plane axes, m/s), z = decay rate of active foam, w = of residual foam (1/s)
   levels: array<vec4f, ${FOAM_LEVELS}>,   // xy = plane offset of texel (0, 0)'s centre from the reference point (m), z = texel (m), w = 0 no update / 1 new history / 2 with history
   shifts: array<vec4i, ${FOAM_LEVELS}>,   // xy = texels the window moved since the level's previous update
 }
@@ -74,12 +81,8 @@ fn foamConv(c: u32, uv: vec2f, lod: f32, sigma: f32) -> f32 {
   return -(d.z + d.w) / max(sigma, 1e-6);
 }
 
-@compute @workgroup_size(8, 8, 1)
-fn foam(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= ${FOAM_SIZE}u || id.y >= ${FOAM_SIZE}u || id.z >= ${FOAM_LEVELS}u) { return; }
-  let lv = fm.levels[id.z];
-  if (lv.w < 0.5) { return; }
-  let p = lv.xy + vec2f(id.xy) * lv.z;
+/// The breaking criterion (criterion sigmas) at plane point p, for a level of texel 'texel' and index 'level'.
+fn foamCriterion(p: vec2f, texel: f32, level: u32) -> f32 {
   let lam = oceanU.wind.w;
   // No chop, no breaking: around a vessel the criterion fades with the chop (the waterline follows the swell).
   let amp = oceanAmplitudes(p, 1e4);
@@ -103,20 +106,42 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
   let low1 = foamConv(1u, uv1, fm.misc.x, s1);
   c += fm.weights.z * amp[1] * low1;
   // Fine part: what the low-pass took from cascade 1, and cascade 2, as this level's texel resolves them.
-  let lod1 = max(log2(lv.z * ${FFT_SIZE}.0 * oceanU.cascades[1].geom.y), 0.0);
-  let lod2 = max(log2(lv.z * ${FFT_SIZE}.0 * oceanU.cascades[2].geom.y), 0.0);
+  let lod1 = max(log2(texel * ${FFT_SIZE}.0 * oceanU.cascades[1].geom.y), 0.0);
+  let lod2 = max(log2(texel * ${FFT_SIZE}.0 * oceanU.cascades[2].geom.y), 0.0);
   c += fm.weights.w * (amp[1] * (foamConv(1u, uv1, min(lod1, fm.misc.x), s1) - low1) + fm.misc.y * amp[2] * foamConv(2u, oceanCascadeUv(2u, p), lod2, s2));
-  c *= fm.sigma[id.z] * amp[0];
+  return c * fm.sigma[level] * amp[0];
+}
 
+// Ages (s) at which a texel without history looks for the breaker that passed over it.
+const FOAM_TRAIL_AGES = array<f32, 6>(0.3, 0.65, 1.05, 1.5, 2.1, 2.9);
+
+@compute @workgroup_size(8, 8, 1)
+fn foam(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= ${FOAM_SIZE}u || id.y >= ${FOAM_SIZE}u || id.z >= ${FOAM_LEVELS}u) { return; }
+  let lv = fm.levels[id.z];
+  if (lv.w < 0.5) { return; }
+  let p = lv.xy + vec2f(id.xy) * lv.z;
+  let c = foamCriterion(p, lv.z, id.z);
   let fresh = saturate((c - fm.rates.z) / fm.rates.w);
   let src = vec2i(id.xy) + fm.shifts[id.z].xy;
   var breaker = fresh;
-  // Without a history: the breaker as it is now, and around it the foam such a breaker has left on average.
-  var left = max(fresh, fm.misc.w * saturate((c - (fm.rates.z - fm.misc.z)) / fm.rates.w));
+  var left = fresh;
   if (lv.w > 1.5 && all(src >= vec2i(0)) && all(src < vec2i(${FOAM_SIZE}))) {
     let prev = textureLoad(foamPrev, src, id.z, 0);
     breaker = max(prev.r * fm.rates.x, fresh);
     left = max(prev.g * fm.rates.y, breaker);
+  } else {
+    // Without a history (a level starting, a texel scrolling in): what the breakers of the last few seconds would
+    // have left here. A crest that breaks now at p + v t passed over p t seconds ago (as it is now: the shape of a
+    // breaking crest changes more slowly than it travels), so foam trails behind every breaker, and around it lies
+    // the old foam such breakers leave on average.
+    left = max(fresh, fm.misc.w * saturate((c - (fm.rates.z - fm.misc.z)) / fm.rates.w) * 0.5);
+    for (var k = 0u; k < 6u; k++) {
+      let age = FOAM_TRAIL_AGES[k];
+      let was = saturate((foamCriterion(p + fm.trail.xy * age, lv.z, id.z) - fm.rates.z) / fm.rates.w);
+      breaker = max(breaker, was * exp(-fm.trail.z * age));
+      left = max(left, was * exp(-fm.trail.w * age));
+    }
   }
   textureStore(foamOut, vec2i(id.xy), id.z, vec4f(breaker, left, c, 1.0));
 }
@@ -137,7 +162,7 @@ export class OceanFoamMap {
   current = 0;
   private readonly tex: [GPUTexture, GPUTexture];
   private readonly params: GPUBuffer;
-  private readonly data = new ArrayBuffer(64 + FOAM_LEVELS * 32);
+  private readonly data = new ArrayBuffer(80 + FOAM_LEVELS * 32);
   private readonly pipe: GPUComputePipeline;
   private readonly groups: [GPUBindGroup, GPUBindGroup];
   /** Per level: integer texel index of texel (0, 0) in chart coordinates at its last update, or null without content. */
@@ -228,6 +253,8 @@ export class OceanFoamMap {
     f.set([FOAM_WEIGHTS.long, FOAM_WEIGHTS.c0, FOAM_WEIGHTS.c1, FOAM_WEIGHTS.fine], 4);
     f.set([this.lowLod, FOAM_WEIGHTS.c2, t.foamOldDrop, t.foamOldDensity], 8);
     f.set([1 / this.sigma[0]!, 1 / this.sigma[1]!, 1 / this.sigma[2]!, 0], 12);
+    // Breaking crests travel downwind at about the phase speed of the waves that carry the criterion.
+    f.set([Math.sin(t.windDir) * FOAM_CREST_SPEED, Math.cos(t.windDir) * FOAM_CREST_SPEED, t.foamDecay, t.foamResidualDecay], 16);
     const out: FoamLevelFrame[] = [];
     let any = false;
     for (let l = 0; l < FOAM_LEVELS; l++) {
@@ -253,8 +280,8 @@ export class OceanFoamMap {
       } else {
         this.origin[l] = null;
       }
-      f.set([x, y, texel, mode], 16 + l * 4);
-      i.set([sx, sy, 0, 0], 16 + FOAM_LEVELS * 4 + l * 4);
+      f.set([x, y, texel, mode], 20 + l * 4);
+      i.set([sx, sy, 0, 0], 20 + FOAM_LEVELS * 4 + l * 4);
       out.push({ x, y, texel, valid: on });
     }
     this.ctx.device.queue.writeBuffer(this.params, 0, this.data);

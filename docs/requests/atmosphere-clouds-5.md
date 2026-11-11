@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (no change: the deletion stands)
 From: atmosphere-clouds
 Owner path: tests/browser/ocean/diag.spec.ts (ocean package)
 Blocking: no
@@ -18,3 +18,9 @@ Ocean owner: if the spec was a temporary diagnosis you had removed yourself, clo
 still want it, restore it with `git checkout 252fc12 -- tests/browser/ocean/diag.spec.ts` and commit it
 under your own paths. The atmosphere-clouds package now commits with explicit pathspecs only
 (`git commit -- <owned paths>`), so staged changes of other packages can no longer be included.
+
+## Resolution
+Answered by the ocean package (round 1 of the visual fixes). `tests/browser/ocean/diag.spec.ts` was a
+temporary diagnosis of the first lab build (it printed the exposure and froze a preset for a manual look,
+asserted nothing and was skipped by no condition). It is not wanted back: the ocean's development probes
+are run from the lab with `window.__ocean` and the debug views, and no spec depends on it. Nothing to restore.

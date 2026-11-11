@@ -30,6 +30,7 @@ export const SURFACE_PIPELINE_WGSL = (sceneBindings: string): string => /* wgsl 
 #include "eclipse"
 #include "atmosphere_common"
 #include "shadows"
+#include "cloud_shadow"
 ${sceneBindings}
 @group(2) @binding(0) var<uniform> oceanU: OceanUniforms;
 @group(2) @binding(1) var<storage, read> oceanPatches: array<vec4f>;
@@ -158,33 +159,6 @@ fn oceanColumnDepthAt(posRel: vec3f, up: vec3f) -> f32 {
   if (id == MATERIAL_TERRAIN || id == MATERIAL_REGOLITH) { return oceanDepthBelow(posRel, up, along, along); }
   let guess = oceanObjectGuess(along);
   return oceanDepthBelow(posRel, up, guess, 2.0 * guess + 2.0);
-}
-
-/// Cloud transmittance towards the sun (the placement documented in RENDER_API section 7).
-fn oceanCloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> f32 {
-  let muS = max(dot(up, sunDir), 0.05);
-  var far = 1.0;
-  if (i32(frame.cloudFar.x) == bodyIndex && r < frame.cloudFar.y) {
-    let b = frame.bodies[bodyIndex];
-    let rel = pos - b.center.xyz;
-    let bq = dot(rel, sunDir);
-    let t = -bq + sqrt(max(bq * bq - (r * r - frame.cloudFar.y * frame.cloudFar.y), 0.0));
-    let d = normalize(rootToFixed(u32(bodyIndex), rel + sunDir * t));
-    let lon = atan2(d.y, d.x) + frame.cloudFar.w;
-    let uvc = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(d.z, -1.0, 1.0)) / PI);
-    far = exp(-textureSampleLevel(cloudCoverageMapTex, linearClamp, uvc, 0.0).r * frame.cloudFar.z / muS);
-  }
-  let he = frame.cloudNear0.w;
-  if (he > 0.0 && i32(frame.cloudNear1.w) == bodyIndex) {
-    let rel = pos - frame.cloudNear0.xyz;
-    let q = vec2f(dot(rel, frame.cloudNear1.xyz), dot(rel, frame.cloudNear2.xyz)) / he;
-    let edge = 1.0 - max(abs(q.x), abs(q.y));
-    if (edge > 0.0) {
-      let tau = textureSampleLevel(cloudShadowMapTex, linearClamp, q * 0.5 + 0.5, 0.0).r * frame.cloudNear2.w;
-      return mix(far, exp(-tau / muS), saturate(edge * 8.0));
-    }
-  }
-  return far;
 }
 
 struct VsOut {
@@ -584,8 +558,10 @@ struct FsOut {
     let wuv = (in.planeF - oceanU.wake.xy) * oceanU.wake.w + 0.5;
     let edge = saturate(min(min(wuv.x, wuv.y), min(1.0 - wuv.x, 1.0 - wuv.y)) * 12.0);
     let w = textureSampleLevel(oceanWake, linearClamp, wuv, 0.0).r * edge * detail;
-    breaker = max(breaker, saturate(2.0 * w - 0.8));
-    density = 1.0 - (1.0 - density) * (1.0 - w);
+    // Churned water is fresh, thick foam only where the hull keeps working it (the densest part of the ring); what
+    // spreads from there is old foam: lace with the water showing through, thinning outwards.
+    breaker = max(breaker, 0.6 * smoothstep(0.75, 0.98, w));
+    density = 1.0 - (1.0 - density) * (1.0 - 0.85 * w);
   }
   // The thinnest foam dissolves instead of leaving single specks.
   density = saturate((density - 0.08) / 0.92);
@@ -603,7 +579,8 @@ struct FsOut {
   let statistical = oceanU.shore.w * (1.0 - mapped);
   s.metallic = 1.0 - (1.0 - foamOpaque) * (1.0 - statistical);
   s.clearcoatRoughness = 1.0;
-  s.clearcoat = mix(1.0, mix(oceanU.foam.y, 1.0, thick) * (0.8 + 0.2 * laceFine), foamOpaque / max(s.metallic, 1e-5));
+  // (Bubbles: the albedo varies with the fine lace, by a third in thin foam, a tenth in thick.)
+  s.clearcoat = mix(1.0, mix(oceanU.foam.y, 1.0, thick) * mix(0.67 + 0.33 * laceFine, 0.9 + 0.1 * laceFine, thick), foamOpaque / max(s.metallic, 1e-5));
 
   // Imagery colour: the sheet's (band), the seabed's (the terrain draws it with its albedo layer) or that of a stray
   // water fragment.
@@ -633,11 +610,16 @@ struct FsOut {
   var lit = vec3f(0.0);
   var bottomFar = vec3f(0.0);
   var sunEff = vec3f(0.0);
+  // Clouds, as the deferred lighting applies them to the far sheet (request ocean-cs-2): the direct beam is the
+  // sun term; what the cloud passes on diffusely is white light from the cloud base, ambient.
+  let cl = cloudLight(posRel, bi, s.up, r, sunDir);
+  var cloudBase = vec3f(0.0);
   let vis = sunVisibility(posRel, sunDir);
   if (vis > 0.0) {
     var sunE = frame.sunIlluminance.rgb * vis;
     sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
-    sunE *= oceanCloudShadow(posRel, bi, s.up, r, sunDir);
+    cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
+    sunE *= cl.x;
     let shadow = sampleSunShadow(posRel, s.n, pix);
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
@@ -655,10 +637,13 @@ struct FsOut {
   amb.skyReflection = vec3f(0.0);
   amb.specularOcclusion = 1.0;
   let layer = i32(b.fixedX.w);
+  var skyHorizontal = vec3f(0.0);
   if (layer >= 0 && r < b.prevCenter.w) {
     let suv = skyIrradianceUvFromRMuS(max(r, b.center.w), muS, b.center.w, b.prevCenter.w);
-    amb.skyIrradiance = textureSampleLevel(skyIrradianceLut, linearClamp, suv, layer, 0.0).rgb * (0.5 + 0.5 * dot(s.n, s.up));
+    skyHorizontal = textureSampleLevel(skyIrradianceLut, linearClamp, suv, layer, 0.0).rgb;
   }
+  // Under cloud about a third of the blue sky is still seen, and the cloud base adds its white light.
+  amb.skyIrradiance = (skyHorizontal * mix(0.35, 1.0, cl.x) + cloudBase) * (0.5 + 0.5 * dot(s.n, s.up));
   lit += brdfWaterAmbient(s, amb);
   if (seeBottom) { bottomFar += waterBodyAmbient(s, amb).bottom; }
   var receiver = MAX_BODIES;
