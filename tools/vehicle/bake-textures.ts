@@ -515,7 +515,8 @@ const recipes: Record<string, () => void> = {
     // flanks (a tent across it, tapering at its ends), laid over one another. Where folds cross, the flanks
     // meet in more creases, so the surface is a mosaic of flat facets of every size between sharp crease
     // lines, which is what turns a highlight into the long glints and dark folds of the photographs. Two
-    // families: long hanging folds of 25-70 cm mostly along v, and short ones of 8-25 cm in any direction.
+    // families: long hanging folds of 30-90 cm mostly along v, and fewer, gentler short ones of 10-30 cm (a
+    // dense crinkle of mirror facets turns into black-and-white static from a few metres).
     const folds = new Field(S, S);
     const crest = new Field(S, S);
     const fold = (k: number, seed: number, lMin: number, lMax: number, wMin: number, wMax: number, aMin: number, aMax: number, hang: number): void => {
@@ -548,8 +549,8 @@ const recipes: Record<string, () => void> = {
         }
       }
     };
-    for (let k = 0; k < 150; k++) fold(k, 131, 0.25, 0.7, 0.05, 0.13, 0.006, 0.015, 0.7);
-    for (let k = 0; k < 520; k++) fold(k, 132, 0.08, 0.25, 0.018, 0.05, 0.0012, 0.0034, 0.3);
+    for (let k = 0; k < 95; k++) fold(k, 131, 0.3, 0.9, 0.06, 0.18, 0.005, 0.012, 0.7);
+    for (let k = 0; k < 240; k++) fold(k, 132, 0.1, 0.3, 0.02, 0.06, 0.0008, 0.0022, 0.3);
     // A broad sag between the stand-off buttons under it.
     const h = Field.from(S, S, (u, v, x, y) => 0.006 * fbm(u, v, 3, 3, 2, 125) + folds.at(x, y));
     const creaseA = (_u: number, _v: number, x: number, y: number): number => crest.at(x, y);
