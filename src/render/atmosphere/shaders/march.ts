@@ -105,6 +105,8 @@ fn marchEquivalent(bi: u32, ray: AtmoRay, tp: f32, dp: vec3f) -> vec2f {
   return vec2f(mix(tp, ray.t0 + s, w), hp);
 }
 
+const HDR_SLACK = 8.0;
+
 struct MarchOut {
   @location(0) addFar: vec4f,
   @location(1) mulFar: vec4f,
@@ -242,11 +244,14 @@ struct MarchOut {
   let addNear = mix(Ln * ex, (Lcn + (Ln - Lcn) * cloud.a) * ex + Tcn * cloud.rgb, behind);
 
   var o: MarchOut;
-  // add + mul x HDR_MAX never exceeds HDR_MAX: the blended result stays inside the HDR range.
+  // add + mul x HDR_MAX never exceeds HDR_MAX by more than HDR_SLACK: the blended result stays inside the
+  // HDR range (the half-float target has steps of 32 at HDR_MAX, so the slack cannot even be stored). The
+  // slack is there for the thinnest air: where 1 - mul is below float32 resolution a bound without it would
+  // erase the glow of the upper atmosphere one colour channel at a time.
   o.mulFar = vec4f(saturate3(mulFar), 1.0);
-  o.addFar = vec4f(min(writeHdr(addFar), cap * (vec3f(1.0) - o.mulFar.rgb)), 1.0);
+  o.addFar = vec4f(min(writeHdr(addFar), max(cap * (vec3f(1.0) - o.mulFar.rgb), vec3f(HDR_SLACK))), 1.0);
   o.mulNear = vec4f(saturate3(mulNear), 1.0);
-  o.addNear = vec4f(min(writeHdr(addNear), cap * (vec3f(1.0) - o.mulNear.rgb)), 1.0);
+  o.addNear = vec4f(min(writeHdr(addNear), max(cap * (vec3f(1.0) - o.mulNear.rgb), vec3f(HDR_SLACK))), 1.0);
   return o;
 }
 `;

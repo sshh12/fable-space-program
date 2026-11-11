@@ -160,3 +160,74 @@ export function phaseHenyeyGreenstein(cosTheta: number, g: number): number {
   const g2 = g * g;
   return (1 - g2) / (4 * Math.PI * Math.max(1 + g2 - 2 * g * cosTheta, 1e-4) ** 1.5);
 }
+
+/**
+ * Float32-faithful mirror of the WGSL `atmoRaySphere`: signed distances (near, far) along a unit ray to the
+ * sphere of radius rs, from a point at radius r0 = rs + dh with vertical cosine mu; null when the line
+ * misses. The gap between the sphere and the ray's perigee is formed from dh, so nothing cancels at the
+ * surface.
+ */
+export function raySphereStable(r0: number, dh: number, mu: number, rs: number, f: Round = exact): [number, number] | null {
+  const s = f(Math.sqrt(Math.max(f(1 - f(mu * mu)), 0)));
+  const gap = f(f(r0 * f(f(mu * mu) / f(1 + s))) - dh);
+  const disc = f(gap * f(rs + f(r0 * s)));
+  if (disc < 0) return null;
+  const sq = f(Math.sqrt(disc));
+  const b = f(r0 * mu);
+  const c = f(dh * f(r0 + rs));
+  if (b > 0) {
+    const t0 = f(-f(b + sq));
+    return [t0, f(c / t0)];
+  }
+  const t1 = f(sq - b);
+  if (t1 <= 0) return [0, 0];
+  return [f(c / t1), t1];
+}
+
+/** Start of a camera ray's path through an atmosphere shell (mirror of the WGSL `AtmoRay`). */
+export interface RayFrame {
+  /** Distance from the eye to the start of the path (0 with the eye inside the shell). */
+  t0: number;
+  /** Length of the path inside the shell and in front of the reference sphere (<= 0: none). */
+  len: number;
+  /** Radius, altitude and vertical cosine of the ray at the start of the path. */
+  r: number;
+  h: number;
+  mu: number;
+  ground: boolean;
+}
+
+/**
+ * Float32-faithful mirror of the WGSL `atmoRay`. `cosUp` = dot(ray, camera up), `sinUp` = |cross(ray, camera up)|
+ * (both as the shader has them, i.e. already rounded); r0 / h0 = camera radius / altitude from float64.
+ */
+export function rayFrame(r0: number, h0: number, cosUp: number, sinUp: number, rb: number, rt: number, f: Round = exact): RayFrame {
+  const top = f(rt - rb);
+  if (h0 <= top) {
+    const mu = Math.abs(cosUp) < 0.7 ? cosUp : Math.sign(cosUp) * f(Math.sqrt(Math.max(f(1 - f(sinUp * sinUp)), 0)));
+    const out = raySphereStable(r0, f(h0 - top), mu, rt, f);
+    let len = out ? out[1] : -1;
+    let ground = false;
+    if (mu < 0 && h0 > 0) {
+      const g = raySphereStable(r0, h0, mu, rb, f);
+      if (g && g[1] > g[0] && g[0] > 0) {
+        len = Math.min(len, g[0]);
+        ground = true;
+      }
+    }
+    return { t0: 0, len, r: r0, h: h0, mu, ground };
+  }
+  const p = f(r0 * sinUp);
+  if (cosUp >= 0 || p >= rt) return { t0: 0, len: -1, r: rt, h: top, mu: 0, ground: false };
+  const sinA = f(p / rt);
+  const cosA = f(Math.sqrt(Math.max(f(1 - f(sinA * sinA)), 0)));
+  const t0 = Math.max(f(f(r0 * f(Math.sqrt(Math.max(f(1 - f(sinUp * sinUp)), 0)))) - f(rt * cosA)), 0);
+  let len = f(f(2 * rt) * cosA);
+  let ground = false;
+  if (p < rb) {
+    const q = f(p / rb);
+    len = f(f(rt * cosA) - f(rb * f(Math.sqrt(Math.max(f(1 - f(q * q)), 0)))));
+    ground = true;
+  }
+  return { t0, len, r: rt, h: top, mu: -cosA, ground };
+}

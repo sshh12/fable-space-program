@@ -3,6 +3,7 @@
  * screenshots into out/screens/atmosphere, and luminance probes of the HDR target.
  */
 import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
 import { assertDiscreteGpu, openPage, saveScreenshot, waitIdle } from '../harness';
 
 export const PKG = 'atmosphere';
@@ -62,3 +63,17 @@ export async function probe(page: Page, fx: number, fy: number, half = 2): Promi
 }
 
 export const luminance = (c: readonly [number, number, number]): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+/** Fraction of the pixels of a screenshot that are white in every channel (blown out). */
+export function clippedFraction(png: Buffer): number {
+  const { width, height, data } = PNG.sync.read(png);
+  let n = 0;
+  for (let i = 0; i < width * height * 4; i += 4) if (data[i]! >= 253 && data[i + 1]! >= 253 && data[i + 2]! >= 253) n++;
+  return n / (width * height);
+}
+
+/** Decoded pixels of a screenshot. */
+export function decode(png: Buffer): { width: number; height: number; data: Uint8Array } {
+  const { width, height, data } = PNG.sync.read(png);
+  return { width, height, data };
+}

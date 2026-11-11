@@ -8,7 +8,7 @@ import type { BodyDef } from '@/core/contracts/defs';
 import type { BodyPose, FrameContext, RenderContext } from '@/core/contracts/render';
 import type { TileManifest } from '@/core/contracts/terrain';
 import { DEG, mat3, quat, v3, type Vec3 } from '@/core/math';
-import { coreOf, f16ToF32, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { coreOf, f16ToF32, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
 import { resolveCloudParams, type CloudParams } from './params';
 import type { MarchBody } from './select';
 import { scissorOf } from './select';
@@ -776,6 +776,21 @@ export class CloudSystem {
     encoder.copyTextureToTexture({ texture: this.geom.texture }, { texture: this.historyGeom.texture }, this.geom.size);
     this.lastMarchFrame = frame.frameIndex;
     this.lastExposure = frame.exposure;
+  }
+
+  /**
+   * Read the resolved cloud buffers back (tests and diagnosis), half resolution, row 0 first:
+   * `radiance` = rgba (pre-exposed, premultiplied radiance; a = transmittance), `geometry` = rgba (distance
+   * where the cloud begins, where it ends, its opacity-weighted mean; 3.0e38 = no cloud).
+   */
+  async readBuffers(): Promise<{ width: number; height: number; radiance: Float32Array; geometry: Float32Array }> {
+    const [width, height] = this.screen.size;
+    const rect = { x: 0, y: 0, width, height };
+    const half = new Uint16Array(await readTexturePixels(this.device, this.screen.texture, rect, 8));
+    const radiance = new Float32Array(half.length);
+    for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
+    const geometry = new Float32Array(await readTexturePixels(this.device, this.geom.texture, rect, 16));
+    return { width, height, radiance, geometry };
   }
 
   /** Tunables of the body whose clouds are being drawn. */
