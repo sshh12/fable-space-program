@@ -102,6 +102,12 @@ const MAX_INSTANCES = 1 << 19;
 const MAX_KINDS = 6;
 /** Chunk builds per frame are limited by time (ms). */
 const BUILD_BUDGET_MS = 0.5;
+/** IDENTITY[i] = i: instance lists are runs of consecutive record indices. */
+const IDENTITY = ((): Uint32Array => {
+  const a = new Uint32Array(MAX_RECORDS);
+  for (let i = 0; i < a.length; i++) a[i] = i;
+  return a;
+})();
 /** A chunk built while in view fades in over this many seconds. */
 const FADE_SECONDS = 0.5;
 /** The eye may move this far (m) before the G-buffer lists are built again (levels of detail are chosen by size on screen; the vertex shader applies range and growth exactly every frame). */
@@ -950,7 +956,13 @@ export class CoverRenderer {
       grown.set(data.subarray(0, count));
       this.bucketData[bucket] = data = grown;
     }
-    for (let i = 0; i < n; i++) data[count + i] = from + i;
+    // A range of records is a run of consecutive indices: copied from the identity table (a block copy), not
+    // written one by one (shadow lists of thick cover are some hundred thousand indices per cascade).
+    if (n < 16) {
+      for (let i = 0; i < n; i++) data[count + i] = from + i;
+    } else {
+      data.set(IDENTITY.subarray(from, to), count);
+    }
     this.bucketCount[bucket] = count + n;
   }
 

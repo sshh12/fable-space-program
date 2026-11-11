@@ -247,7 +247,11 @@ instance by instance in the chunks around the camera. An instance is drawn withi
 (`minPixels`), at most `rangeM`, grows from nothing over the outer 30 % and, for a kind with `nearM`, from
 0.7 `nearM` to `nearM` (stands of trees take over where single trees have shrunk away, 1.3 to 1.8 km).
 Chunks are built within 0.5 ms per frame, in view first; a chunk built in view fades in over 0.5 s;
-`isIdle()` waits for both. Records are appended to one GPU buffer (524,288 instances; holes are closed when
+`isIdle()` waits for both. The G-buffer instance lists (indices sorted into buckets by shape, variant and
+level of detail, some hundred thousand in thick cover) are kept between frames while the eye stands within
+2 cm, the pixel scale is the same and a signature of the listed chunks (slot, record base, visibility, list
+ends) is unchanged; only the chunk rows (relative to the camera) are written every frame. A moving camera
+rebuilds them every frame (0.5-0.9 ms of main thread in the thickets, under load). Records are appended to one GPU buffer (524,288 instances; holes are closed when
 its end is reached). Shadows: every cascade whose texel is at most the instance's diameter, from the
 coarsest mesh (the middle one from 24 texels across, the finest from 96: a crown near the eye cast a few
 large polygons with the coarser ones). Meshes (`coverMesh.ts`): tussocks of 46 / 18 / 8 blades
@@ -257,8 +261,8 @@ stems for a tree, eight without stems for a stand; loose stones are rock meshes 
 Grass bends with `windToDeg` / `windLean`; scrub and trees are turned downwind. Nothing of it collides.
 
 **Relief shadows.** The detail layers' height maps cast shadows: on the triplanar plane that carries most
-of a pixel, the copy of the hexagon pattern that dominates it is marched towards the sun (6 taps, 1.5 to 37
-texels, each from a coarser mip: a cone), for every detail scale that shows, while the sun stands lower
+of a pixel, the copy of the hexagon pattern that dominates it is marched towards the sun (4 taps, 1.5 to 33
+texels, each from a mip level coarser: a cone), for every detail scale that shows, while the sun stands lower
 than about 40 degrees over the terrain's own normal. What stands above the ray shadows the pixel
 (`reliefShadow` = strength). The result goes to RT4.b (section 2). The shade inside a tussock or a crown
 uses the same channel.

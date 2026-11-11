@@ -509,7 +509,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, mean
   o.rough *= inv;
   o.ao *= inv;
   if (sun.z > 0.0 && domW > 0.0) {
-    // Six taps towards the sun in the dominant copy, 1.5 to 37 texels away, each from the mip level that
+    // Four taps towards the sun in the dominant copy, 1.5 to 33 texels away, each from the mip level that
     // averages what lies between it and the last (a cone: far taps are wide, so the shadow of a far stone
     // has a soft edge and a near one a hard edge).
     let dir = vec2f(domRot.x * sun.x - domRot.y * sun.y, domRot.y * sun.x + domRot.x * sun.y);
@@ -525,13 +525,13 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, mean
     if (scale == 0) { h0 = textureSampleLevel(detailA, linearRepeat, domUv, layer, lod0).a; }
     else { h0 = textureSampleLevel(detailWideA, linearRepeat, domUv, wide, lod0).a; }
     var occ = 0.0;
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 4; i++) {
       var h: f32;
-      let lod = lod0 + 0.6 * f32(i);
+      let lod = lod0 + 1.0 * f32(i);
       if (scale == 0) { h = textureSampleLevel(detailA, linearRepeat, domUv + dir * d, layer, lod).a; }
       else { h = textureSampleLevel(detailWideA, linearRepeat, domUv + dir * d, wide, lod).a; }
       occ = max(occ, h - h0 - d * sun.z);
-      d *= 1.9;
+      d *= 2.8;
     }
     o.shadow = smoothstep(0.0, 0.05, occ);
   }
