@@ -519,7 +519,7 @@ fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   let texelsPerRad = f32(textureDimensions(cabinProbe).x) / 1.5708;
   let lod = clamp(max(cabinProbeLod(roughness), log2(max(fp * texelsPerRad, 1e-3)) + 0.5), 0.0, f32(textureNumLevels(cabinProbe)) - 1.0);
   let dir = normalize(cabinProbeDir(p, d));
-  if (lod < 2.5) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
+  if (lod < 3.0) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
   // The coarse mips are a few texels per face: a single bilinear lookup draws a bright window there as a
   // blocky lozenge on a flat glossy panel. Two lookups half a texel apart (of that mip) across the diagonal
   // of the texel grid round it off.
@@ -636,8 +636,8 @@ const SUN_PENUMBRA_MAX = 0.006;
 /// tile of the cabin sun map, fitted to the cross-section of its beam (sunmap.ts): a few tenths of a
 /// millimetre per texel, so an occluder's edge stays straight on a receiver the light only grazes. The
 /// receiver's plane is known analytically (ng and the tile's axes), so taps over a sloped receiver compare
-/// at the receiver's own depth. PCSS: a blocker search, then a grid of bilinear comparisons (6 x 6 to
-/// 8 x 8, a texel and a half apart where that suffices) over the penumbra the nearest blocker and the solar
+/// at the receiver's own depth. PCSS: a blocker search, then a grid of bilinear comparisons (5 x 5 to
+/// 7 x 7, a texel and a half apart where that suffices) over the penumbra the nearest blocker and the solar
 /// diameter give.
 fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   let tu = cabin.sunTiles[3u * wi];
@@ -681,10 +681,10 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   // grows to four texels there, so a caster's rasterised edge does not show as teeth.)
   let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, texelM * (1.5 + 2.5 * sinL * sinL), SUN_PENUMBRA_MAX);
   // Bilinear comparisons on a grid over the penumbra, a texel and a half apart (wide penumbrae take more taps,
-  // up to 8 x 8; beyond that the spacing grows, over a ramp already several millimetres wide): a smooth
+  // 5 x 5 to 7 x 7; beyond that the spacing grows, over a ramp already several millimetres wide): a smooth
   // ramp across the edge, no stacked copies of it.
   let penUv = vec2f(pen) / mPerUv;
-  let nAx = u32(clamp(ceil(2.0 * max(penUv.x, penUv.y) * size / 1.5), 6.0, 8.0));
+  let nAx = u32(clamp(ceil(2.0 * max(penUv.x, penUv.y) * size / 1.5), 5.0, 7.0));
   let stepUv = 2.0 * penUv / f32(nAx);
   let mid = 0.5 * f32(nAx - 1u);
   var lit = 0.0;

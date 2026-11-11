@@ -1,4 +1,4 @@
-Status: resolved (the cockpit's part, commit in this round's close-out; the core's optional mask was not needed)
+Status: resolved (commit 27fb5c8: the cockpit's part; the core's optional mask was not needed)
 From: app-integration-v1
 Owner path: src/render/cockpit (how the interior takes local lights) and src/render/core (deferred local lights; shared-code maintainer)
 Blocking: no
