@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit d43e8fd)
 From: core-support (cross-feature check (a), `tests/browser/integration/water.spec.ts`)
 Owner path: src/render/terrain (the sea-level sheet: `TERRAIN_WATER_WGSL`, the water draw lists)
 Blocking: yes        (check (a) "removing the ocean feature leaves the terrain's water intact" cannot pass)
@@ -71,3 +71,39 @@ above 99.9 % and no pixel without geometry at 200 m, 3, 10, 14.2 and 20 km; fewe
 in the bare sheet. Must not change: the hand-over inside `fadeStart` when the ocean is present (the forward
 pass finds the real seabed there: errors below 0.7 m at 46 points, same spec) and the coastline per pixel
 from the mask.
+
+## Resolution
+Three causes, all in `src/render/terrain` (commit d43e8fd):
+
+1. **Sheet missing near a low camera, and towards the horizon.** Tiles were culled by the bounds of their
+   terrain; over deep water that is the seabed, kilometres below a sea surface that is in view. A tile whose
+   terrain lies under the sea now carries a visibility bound that reaches up to sea level
+   (`TileNode.cull`, `cullTop` in `quadtree.ts`, from `BodyQuadtree`'s new optional `seaLevel` argument),
+   used by the frustum and the horizon test. The level-of-detail distance is unchanged (distance to the
+   terrain), so nothing more is streamed.
+2. **Lines and holes along sheet tile edges.** The sheet computed its morph factor from the distance to its
+   own vertex at sea level while the tiles had been selected by their distance to the terrain: over deep
+   water the sheet stayed unmorphed next to coarser tiles. It now morphs by the distance to the terrain
+   vertex, exactly like the terrain (`terrainVertex` in `shaders/common.ts`).
+3. **Water material at the seabed inside `fadeStart`.** The terrain fragment tested the near field at the
+   fragment; a seabed 5 km down is beyond `fadeStart` under a surface point that is inside it. The test is
+   now made where the pixel's ray meets the sea surface (`shaders/surface.ts`).
+
+Measured with your spec (`water.spec.ts`, "without the ocean feature the terrain draws the whole sea
+itself", passes): terrain and sky alone at 200 m, 3, 10, 14.2 and 20 km over 12 N 33 W: 100.00 % of the sea
+pixels are the sheet at sea level, 0 water material below sea level, 0 seabed, 0 without geometry, 0 thin
+dark pixels at every height. With the ocean: 0.00 % water material below sea level inside `fadeStart`
+(84 % seabed, 11 % sheet at 200 m).
+
+Not changed: the coastline per pixel from the mask; the hand-over inside `fadeStart` ("a shoreline from
+200 m": the seabed under the forward water at 46 points, errors 0.0-0.7 m). The sheet keeps its tall skirts
+(a shorter skirt opened a notch of sky at the tip of an island on the horizon in this package's hole test).
+
+Two things in the same spec that this change does not explain, for whoever owns them:
+- "at fadeStart the forward water equals the deferred sheet within 2 %": fails at 1,000 m altitude (last
+  300 m inside `fadeStart`: worst 4.6 %, heading 120 and 300); it fails the same with the previous
+  near-field test of the terrain fragment (4.7 %); 6 km and 14 km agree within 0.5 %.
+- "a shoreline from 200 m": foam coverage 0.081 on the waterline against 0.046 offshore, below the 2x bound.
+
+What to re-run: `water.spec.ts`; `tests/browser/terrain` (19 of 19 on this commit); unit tests of
+`tests/unit/terrain-render` (38 of 38, one new: the bounds of a submerged tile contain the sea surface).
