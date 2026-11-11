@@ -4,16 +4,18 @@ The `earth` tile set: global height, albedo, water mask, night lights and land c
 pyramid (levels 8-12) around the resolved launch pad, the global cloud and low-resolution albedo maps, the
 resolved pad location, and the tools to re-run or extend all of it as data-only bakes.
 
-Status: complete. `python -I tools/bake/earth/verify.py` passes 33 of 33 checks (output in section 5);
+Status: complete, including the fixes for the independent review of 2026-11-10 (section 12).
+`python -I tools/bake/earth/verify.py` passes 41 of 41 checks (output in section 5);
 `python -I tools/bake/common/test_common.py` is green; the TypeScript spot check decodes 5 of 5 tiles
-identically. Two acceptance checks are measured in a more robust form than the brief words them (albedo
-seams, hillshade); both the literal and the gated numbers are below, and section 8 explains why.
+identically. Three acceptance checks are measured in a more robust form than the brief words them (albedo
+seams, Mauna Kea hillshade, and the relief-shading gate of the global imagery); the literal and the gated
+numbers are below, and section 8 explains why.
 
 ## 1. What a consumer needs
 
 | Item | Where | Notes |
 |---|---|---|
-| Tile set | `data/tiles/earth/manifest.json` + `{layer}/{face}/{level}/{x}/{y}.{ext}` | `TileManifest` (src/core/contracts/terrain.ts), written through `layout.merge_layer` / `write_manifest`; contentHash `3a3dbf4c1286f274` |
+| Tile set | `data/tiles/earth/manifest.json` + `{layer}/{face}/{level}/{x}/{y}.{ext}` | `TileManifest` (src/core/contracts/terrain.ts), written through `layout.merge_layer` / `write_manifest`; contentHash `5a9f0db7c755fdf8` |
 | Globals | `data/tiles/earth/globals/cloudCoverage.png`, `globals/albedoLowRes.png` | listed in `manifest.globals` |
 | Pad location | `data/defs/sites/ka-lae-lc1.location.json` | `latDeg 18.987556, lonDeg -155.603239, padElevation 21.62` (a number) |
 | Region definition | `data/defs/regions/earth-ka-lae.json` | centre, per-level radii and height scales, sources, site criteria |
@@ -28,17 +30,19 @@ sphere (EGM2008 / local mean sea level, i.e. sea level = 0); bathymetry is the s
 
 | Layer | Encoding | Global | Regional (face 1) | Content |
 |---|---|---|---|---|
-| `height` | frt1-height, 259 x 259 vertex grid, 1-sample border at the true neighbouring direction | 0-7, scale 0.5 m | 8-10 at 0.125 m, 11-12 at 0.0625 m | ETOPO 2022 15"; regional USGS 3DEP (Terrarium z15) on land, ETOPO sea floor |
+| `height` | frt1-height, 259 x 259 vertex grid, 1-sample border at the true neighbouring direction | 0-7, scale 0.5 m | 8-10 at 0.125 m, 11-12 at 0.0625 m | ETOPO 2022 15"; regional USGS 3DEP (Terrarium z15) on land and inland water (lake surfaces), ETOPO sea floor in the ocean only; no regional vertex is exactly 0 m |
 | `albedo` | webp 256 x 256 opaque RGB, **lossless** (section 8) | 0-7 | 8-12 | Blue Marble NG Aug 2004, de-shaded; regional Sentinel-2 cloudless 2020/21/23/24/25 median |
-| `watermask` | frt1-u8 256 x 256, `{land: 0, water: 255}`, anti-aliased | 0-7 | 8-12 | height sign + MODIS MOD44W; regional height sign on the WorldCover coastline + WorldCover inland water |
+| `watermask` | frt1-u8 256 x 256, `{land: 0, water: 255}`, anti-aliased | 0-7 | 8-12 | height sign + MODIS MOD44W (inland water; dry ground only where not connected to the ocean); regional height sign + WorldCover inland water |
 | `night` | webp 256 x 256 opaque RGB, lossy q90 | 0-7 | - | Black Marble 2016, moonlit background removed |
 | `landcover` | frt1-u8 256 x 256, ids = `LANDCOVER_CLASS` | 0-7 (classifier) | 8-12 (WorldCover) | `manifest.layers.landcover.classes` lists the ids |
 
 Additive manifest fields (ignored by readers that do not know them):
-- `layers.height.sourceCoverage` (requested in `docs/requests/terrain-core-1.md`): per level, the rectangles of
-  tiles that touch the 100 km area of interest, where the regional source has full weight. The coverage ring
-  outside them holds data that converges on the parent (source feather 100-105 km plus one margin tile).
-  Level 12: face 1, x 2936..3018, y 2782..2861. The contract field itself is still to be added by the lead.
+- `layers.height.sourceCoverage` (requested in `docs/requests/terrain-core-1.md` and `-4.md`): per level, an
+  exact cover by rectangles of the tiles where the level holds data genuinely finer than its parent: tiles that
+  touch the area where the regional source has non-zero weight (100 km + the 5 km source feather) AND hold land
+  (3DEP). Sea-only tiles carry the ETOPO 15" sea floor (~900 m shortest wavelength) and stay in `coverage`
+  only. Levels 8-12: 12 / 36 / 112 / 406 / 1,521 tiles in 2 / 5 / 11 / 22 / 43 rectangles (face 1). Checked by
+  verify (`height sourceCoverage`). The contract field itself is still to be added by the lead.
 - `layers.<name>.build`: hash of the layer's bake records, so `contentHash` changes whenever a layer is
   re-baked with a different configuration (layout.write_manifest hashes only the manifest body; without this a
   re-bake of tiles alone would not change it).
@@ -109,7 +113,7 @@ python -I tools/bake/earth/bake.py watermask                          # needs he
 python -I tools/bake/earth/bake.py albedo                             # needs heights (+ regional watermask)
 python -I tools/bake/earth/bake.py night
 python -I tools/bake/earth/bake.py landcover                          # needs albedo, night, watermask, heights
-python -I tools/bake/earth/bake.py globals                            # cloudCoverage + albedoLowRes
+python -I tools/bake/earth/bake.py globals                            # albedoLowRes (+ cloudCoverage only if missing; `clouds` takes a new snapshot)
 python -I tools/bake/earth/bake.py region    --region earth-ka-lae   # all regional layers of one region
 python -I tools/bake/earth/bake.py all                                # everything in order + manifest, contact, recovery, verify, cleanup if verify passes
 python -I tools/bake/earth/bake.py manifest | contact | recovery | cleanup | status
@@ -145,19 +149,52 @@ across tiles AND cube faces, and borders are the true neighbouring surface. Leve
 of the finer bilinear surface over the coarse vertex footprint) of the stored level below, evaluated in a
 face-independent local east/north frame (`hpyramid.py`). Regional level 12: the same tent average of the
 regional source at twice its resolution; levels 11..8: full weighting of the stored finer regional level
-(global source outside it). Regional source (`regsrc.py`): Terrarium z15 (USGS 3DEP 10 m) on land, the
-coastline taken from ESA WorldCover (Terrarium's own shoreline follows tile edges in places, and its sea
-values step at every tile edge), the sea floor from ETOPO ramped from 0 m at the coastline to the ETOPO depth
-over 1.5 km, the ramp driven by the coast distance smoothed over 300 m (a plain Euclidean distance creases
-along the medial axes of bays and headlands, which showed as facets fanning out from the coast), all
-feathered into the global ETOPO surface between 100 and 105 km from the pad.
+(global source outside it). Regional source (`regsrc.py`):
+- **Land** = ESA WorldCover land (10 m; Terrarium's own shoreline follows z15 tile edges in places and its
+  sea values are garbage near this coast: 3DEP "land" heights of 5-2265 m over 16 % of WorldCover's
+  near-shore ocean). Height = Terrarium z15 (USGS 3DEP 10 m), at least +0.2 m.
+- **Ocean** = WorldCover water connected to the open sea at WorldCover's own 10 m resolution: the components
+  of the water mask, opened by a 5 x 5 pixel square, that touch the WorldCover grid border and reach -20 m in
+  ETOPO, plus the water within 2 pixels of them. Everything else WorldCover calls water (lakes, ponds,
+  reservoirs, rivers, dark lava pockets joined to the sea by channels narrower than ~45 m: 6.3 km2 in this
+  region) is **inland water** and keeps the Terrarium surface (at least +0.2 m; where Terrarium departs from
+  ETOPO by more than 100 m, a corrupt 3DEP value, ETOPO). Lake Waiau is a 3,970 m crater lake again, not a
+  shaft to sea level.
+- **Sea floor**: `min(w far + (1 - w) shallower(near, far), -0.2 m)` with `far` = ETOPO (at most -1 m),
+  `near` = -0.1 x the distance from the coast (`nearShoreSlope` 0.1 in the region file), `shallower` a 1 m
+  soft maximum (ETOPO wins where it is shallower: bays, shelves), `w` = smootherstep(distance / 1.5 km). The
+  distances are the signed distance to the ocean's coastline on a 40 m grid, Gaussian-smoothed over 80 m
+  (near term) and 300 m (blend): a smoothed SIGNED distance equals the true distance at a straight coast, so
+  the slope starts at the coastline, while the smoothing removes the medial-axis creases of a plain
+  Euclidean distance (the facets of docs/requests/terrain-core-3.md). Off the pad the sea is 1 m deep within
+  50 m of the shore, 6 m at 50-100 m, 13 m at 100-200 m, 24 m at 200-300 m, 67 m at 400-600 m, 532 m at
+  1-1.5 km (medians; sea shallower than 5 m reaches 122 m from the shore, 95th percentile).
+- All of it feathered into the global ETOPO surface between 100 and 105 km from the pad.
+- **Stored values**: no regional vertex is exactly 0 m (`heights.keep_sign`: a value that would quantise to
+  0 is stored as one quantum of its own sign, an exact 0 as +1 quantum), so the sign that physics reads is
+  the coastline's. Closed sea-level pockets of at most 16 vertices under a rim higher than 10 m, which the
+  vertex grid cannot connect to the sea (WorldCover water joined to it through gaps narrower than a vertex
+  spacing), are filled to their spill level at every regional level (`heights.fill_pits`, plus a pass over
+  3 x 3 tile mosaics for pockets on tile edges that writes every copy of a shared vertex).
 
-**Albedo.** Blue Marble (August 2004 base, no added relief shading) still carries the real sun's shading of
-the MODIS composite: a first-order model `Y = A (1 + alpha n_east + beta n_north)` is fitted per 5 deg latitude
-band against ETOPO normals (alpha +0.4..+0.6: east-facing slopes brighter, the 10:30 overpass; beta about -1.1
-in the northern and +1.3 in the southern mid-latitudes: the noon sun) and divided out with the level-7 height
-normals (tapered off poleward of 60-70 deg where the fit is unreliable). Levels 6..0 are 2 x 2 means in linear
-light. Regional: Sentinel-2 cloudless median of 2020, 2021, 2023, 2024, 2025 (no visible cloud remnants), box
+**Albedo.** Blue Marble (August 2004 base, no added relief shading) still carries the shading of the MODIS
+Terra morning overpass sun, to first order `Y = A (1 + alpha n_east + beta n_north)`. alpha and beta are fitted
+per 5 deg latitude band AND per class of local brightness (the source's mean luminance over ~3 km; six
+classes 0-0.05-0.08-0.12-0.18-0.26-1: light reflected by bright surrounding terrain fills the shade, so bright
+deserts show about half the shading of dark scrub), on level-7 texels of bare or sparsely vegetated land (raw
+greenness < 0, no snow, slope > 2 deg; vegetation that follows aspect would masquerade as shading), with the
+SAME normals the correction divides by (the stored level-7 height tile), by least squares of log(Y / local
+mean) on the normal minus its local mean (Gaussian over 10 texels; centring the predictor too removes the
+attenuation of a plain local ratio). Each band's coefficients are clipped into the physically possible box
+between 0 (diffuse light only) and the Lambertian sun vectors c = (s_east, s_north) / s_up of 10:00-12:00
+local solar time in mid-August (e.g. alpha 0..0.56 and beta -0.16..0 at 22.5 N; alpha 0..0.71, beta 0..0.78 at
+22.5 S). The correction `Y / clamp(1 + alpha n_e + beta n_n, 0.6, 1.6)` is tapered off between 60 and 70 deg
+latitude. The fit is a first pass over all six faces before any tile is written (`deshade-bmng-08-v3.json`
+in the work cache holds it). The earlier fit (one free alpha/beta per band against a 2 x 2-averaged 30" ETOPO
+grid, 30 km neighbourhood, all land) roughly doubled the correction and INVERTED the relief shading (review
+of 2026-11-10); a strength-only fit along the 10:30 sun vector still over-corrected the bright northern ranges
+by 5-7 % (their shading is more north-south than the 10:30 sun: the composite mixes view geometries). verify.py
+gates the global imagery on eight hyper-arid ranges (section 5). Levels 6..0 are 2 x 2 means in linear light. Regional: Sentinel-2 cloudless median of 2020, 2021, 2023, 2024, 2025 (no visible cloud remnants), box
 filtered per texel, de-shaded with the regional DEM (alpha +0.053, beta -0.010, fitted at level 10 against
 brightness relative to a 600 m neighbourhood on ground above 1500 m; larger scales and vegetated ground
 confuse the windward/leeward vegetation pattern with shading and gave an unphysical alpha of -0.2),
@@ -166,9 +203,19 @@ open water beyond 1.5-6 km from the coast faded to the global base (the S2 open 
 and the outer 64 texels of every level's coverage feathered into the bilinear upsample of the stored parent.
 
 **Water mask.** Coastlines follow the elevation sign (4 x 4 sub-samples of the bilinear height surface per
-texel); the independent source (MODIS MOD44W 250 m globally, WorldCover 10 m regionally) adds inland water
-(lakes, wide rivers) and removes dry depressions (Qattara, Dead Sea shore, polders) wherever it is more than 2
-texels from its own water / the sea. Only MODIS tiles that can hold land are fetched (21,806 of 51,200): those
+texel). Globally, MODIS MOD44W 250 m adds inland water (lakes, wide rivers; more than 2 texels from the sea)
+and removes dry ground below sea level, but only where that ground is NOT connected to the world ocean:
+connectivity is computed per level-7 texel over the whole globe (`watermask.py`: texels below sea level that
+MODIS calls water or that lie within 3 texels of ground deeper than 10 m conduct; components are joined across
+tile and cube-face edges with a sparse graph; the ocean is the component holding the open Pacific). So a
+fjord MODIS misses is sea, the Caspian depression, Dead Sea, Qattara and Death Valley are enclosed basins, and
+shallow below-sea-level ground MODIS maps as land with no deep water next to it (polders behind dykes that
+ETOPO 15" cannot resolve) stays land. The bake writes, per level-7 tile, which texels below sea level are not
+ocean (`data/cache/earth/verify/watermask-inland`, kept by cleanup) for the coastline check. Regionally the
+mask IS the regional height sign, plus WorldCover water that is not the ocean (the same classification as the
+regional height: lakes at their surface), plus dry ground only where the global mask is dry too; its
+configuration records the build hashes of the regional height and the global mask, so it is re-baked
+whenever either is (it was stale before: review finding 3). Only MODIS tiles that can hold land are fetched (21,806 of 51,200): those
 whose ETOPO maximum exceeds -10 m, plus every tile over below-sea-level ground that is not connected to the
 world ocean (`gibs.depression_tiles()`, from the baked level-4 heights). Without the second set, whole
 1.1-degree tiles of the north Caspian lowland (Atyrau, the Volga delta fringe) counted as open water and showed
@@ -199,7 +246,7 @@ stops cold clear ground (night deserts, ice sheets) from reading as cloud. Both 
 
 ## 5. Verification
 
-`python -I tools/bake/earth/verify.py` (full decode of every tile), 2026-11-10 09:27, 200 s, also written to
+`python -I tools/bake/earth/verify.py` (full decode of every tile), 2026-11-10 16:27, 273 s, also written to
 `out/bake/earth/verify.json`:
 
 ```
@@ -214,41 +261,72 @@ PASS  Challenger Deep level 7: min -10583.6 m within 30 km (need < -10400)
 PASS  Mauna Kea level 12: summit 4200.2 m (4207 +/- 40)
 PASS  Mauna Loa level 12: summit 4169.6 m (4169 +/- 40)
 PASS  pad ka-lae-lc1: level-12 height 21.64 m at the location file's coordinates vs padElevation 21.62 m
+PASS  height sourceCoverage earth-ka-lae: level 8: 12 tiles in 2 rects (expected 12, 0 differ, inside coverage True); level 9: 36 tiles in 5 rects (expected 36, 0 differ, inside coverage True); level 10: 112 tiles in 11 rects (expected 112, 0 differ, inside coverage True); level 11: 406 tiles in 22 rects (expected 406, 0 differ, inside coverage True); level 12: 1521 tiles in 43 rects (expected 1521, 0 differ, inside coverage True)
 PASS  height seams across cube edges, levels 0-3: 360 tile edges on cube edges compared, 0 differ, 0 skipped (scale differs)
-PASS  height seams between neighbouring tiles: 1640 shared edges compared (global and regional levels), 0 differ, 1 skipped (scale differs)
+PASS  height seams between neighbouring tiles: 1640 shared edges compared (global and regional levels), 0 differ, 0 skipped (scale differs)
 PASS  cube mapping round trip: 1000 lat/lon -> tile (u, v) -> lat/lon, max error 1.73e-09 m
 PASS  registration vs source raster: 620 points with relief: RMS equivalent displacement 0.059 source texels (fitted mean shift east +0.001, north -0.001 texels; 463 m texels); RMS height difference over all 1000 points 2.51 m
-PASS  albedo seams, global level 7: 2000 tile borders: mean |difference| across the border 0.648, interior pairs next to it 0.648 (excess +0.0007, 2 s.e. 0.0095), all interior pairs 0.654 (sRGB levels)
-PASS  albedo seams, regional level 8: 300 tile borders: mean |difference| across the border 0.649, interior pairs next to it 0.691 (excess -0.0426, 2 s.e. 0.0194), all interior pairs 0.712 (sRGB levels)
-PASS  albedo seams, regional level 9: 300 tile borders: mean |difference| across the border 0.539, interior pairs next to it 0.545 (excess -0.0056, 2 s.e. 0.0143), all interior pairs 0.520 (sRGB levels)
-PASS  albedo seams, regional level 10: 300 tile borders: mean |difference| across the border 0.735, interior pairs next to it 0.756 (excess -0.0209, 2 s.e. 0.0222), all interior pairs 0.821 (sRGB levels)
-PASS  albedo seams, regional level 11: 300 tile borders: mean |difference| across the border 0.632, interior pairs next to it 0.635 (excess -0.0027, 2 s.e. 0.0195), all interior pairs 0.645 (sRGB levels)
-PASS  albedo seams, regional level 12: 300 tile borders: mean |difference| across the border 0.466, interior pairs next to it 0.458 (excess +0.0082, 2 s.e. 0.0142), all interior pairs 0.435 (sRGB levels)
+PASS  albedo seams, global level 7: 2000 tile borders: mean |difference| across the border 0.627, interior pairs next to it 0.624 (excess +0.0026, 2 s.e. 0.0093), all interior pairs 0.632 (sRGB levels)
+PASS  albedo seams, regional level 8: 300 tile borders: mean |difference| across the border 0.650, interior pairs next to it 0.692 (excess -0.0416, 2 s.e. 0.0194), all interior pairs 0.711 (sRGB levels)
+PASS  albedo seams, regional level 9: 300 tile borders: mean |difference| across the border 0.538, interior pairs next to it 0.542 (excess -0.0042, 2 s.e. 0.0132), all interior pairs 0.519 (sRGB levels)
+PASS  albedo seams, regional level 10: 300 tile borders: mean |difference| across the border 0.734, interior pairs next to it 0.753 (excess -0.0195, 2 s.e. 0.0227), all interior pairs 0.818 (sRGB levels)
+PASS  albedo seams, regional level 11: 300 tile borders: mean |difference| across the border 0.628, interior pairs next to it 0.632 (excess -0.0039, 2 s.e. 0.0192), all interior pairs 0.640 (sRGB levels)
+PASS  albedo seams, regional level 12: 300 tile borders: mean |difference| across the border 0.466, interior pairs next to it 0.457 (excess +0.0088, 2 s.e. 0.0141), all interior pairs 0.433 (sRGB levels)
 PASS  coverage edge earth-ka-lae level 8: height vs bicubic parent RMS 0.78 m (< 3); outermost texel row vs bilinear parent: albedo max 0 (mean 0.01) /255, watermask max 0 (mean 0.00) /255 (every texel within 2)
 PASS  coverage edge earth-ka-lae level 9: height vs bicubic parent RMS 0.44 m (< 3); outermost texel row vs bilinear parent: albedo max 0 (mean 0.01) /255, watermask max 0 (mean 0.00) /255 (every texel within 2)
 PASS  coverage edge earth-ka-lae level 10: height vs bicubic parent RMS 0.12 m (< 3); outermost texel row vs bilinear parent: albedo max 0 (mean 0.02) /255, watermask max 0 (mean 0.00) /255 (every texel within 2)
 PASS  coverage edge earth-ka-lae level 11: height vs bicubic parent RMS 0.05 m (< 3); outermost texel row vs bilinear parent: albedo max 0 (mean 0.02) /255, watermask max 0 (mean 0.00) /255 (every texel within 2)
 PASS  coverage edge earth-ka-lae level 12: height vs bicubic parent RMS 0.02 m (< 3); outermost texel row vs bilinear parent: albedo max 0 (mean 0.02) /255, watermask max 0 (mean 0.00) /255 (every texel within 2)
-PASS  water area fraction: 71.66 % of the sphere at level 5 (need 70-72 %)
-PASS  coastline agreement: of 1000 sampled level-7 height zero crossings, 954 have the mask's 50 % contour within one texel, 46 lie where the independent MODIS source deliberately overrides the elevation sign (dry land below sea level such as the Caspian depression, Qattara, polders; lakes), 0 disagree otherwise (100.0 % agreement on the remaining coast points)
-INFO  hillshade measure level 7 (global imagery, 300 m texels): Mauna Kea above 3300 m, slopes > 5 deg (285 east-, 206 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.003 (need 1 +/- 0.03); plain flank means 0.0628 / 0.0670 = 0.936 (surface material, reported only)
-PASS  no baked hillshade level 10: Mauna Kea above 3300 m, slopes > 5 deg (17253 east-, 13960 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.012 (need 1 +/- 0.03); plain flank means 0.0666 / 0.0708 = 0.941 (surface material, reported only)
-PASS  no baked hillshade level 12: Mauna Kea above 3300 m, slopes > 5 deg (271152 east-, 221208 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.015 (need 1 +/- 0.03); plain flank means 0.0667 / 0.0709 = 0.941 (surface material, reported only)
+PASS  water area fraction: 71.67 % of the sphere at level 5 (need 70-72 %)
+PASS  coastline agreement: of 1000 sampled level-7 height zero crossings, 957 have the mask's 50 % contour within one texel (95.7 %); deliberate departures with independent evidence: 19 in enclosed basins below sea level not connected to the ocean, 24 on shallow below-sea-level ground MODIS maps as land with no deep ground next to it (polders, ETOPO coast offsets), 0 at inland water above sea level; 0 other disagreements. Open-sea fjords MODIS misses: 65.669 -39.623: mask water on 7 of the 7 texels below sea level (deepest -398 m); 67.657 -65.977: mask water on 4 of the 4 texels below sea level (deepest -116 m); 67.705 -33.159: mask water on 1 of the 1 texels below sea level (deepest -1 m)
+PASS  regional coastline earth-ka-lae level 8: of 298 sampled height zero crossings (outside the coverage feather; 2 more inside it skipped), 298 have the mask's 50 % contour within one texel; 0 at inland water above sea level, 0 on ground the global mask also keeps dry; 0 other disagreements
+PASS  regional coastline earth-ka-lae level 9: of 280 sampled height zero crossings (outside the coverage feather; 20 more inside it skipped), 280 have the mask's 50 % contour within one texel; 0 at inland water above sea level, 0 on ground the global mask also keeps dry; 0 other disagreements
+PASS  regional coastline earth-ka-lae level 10: of 292 sampled height zero crossings (outside the coverage feather; 8 more inside it skipped), 292 have the mask's 50 % contour within one texel; 0 at inland water above sea level, 0 on ground the global mask also keeps dry; 0 other disagreements
+PASS  regional coastline earth-ka-lae level 11: of 300 sampled height zero crossings (outside the coverage feather; 0 more inside it skipped), 300 have the mask's 50 % contour within one texel; 0 at inland water above sea level, 0 on ground the global mask also keeps dry; 0 other disagreements
+PASS  regional coastline earth-ka-lae level 12: of 997 sampled height zero crossings (outside the coverage feather; 3 more inside it skipped), 996 have the mask's 50 % contour within one texel; 0 at inland water above sea level, 1 on ground the global mask also keeps dry; 0 other disagreements
+PASS  no inland pits in regional heights earth-ka-lae: 10499 tiles of levels 8-12: 0 closed areas at or below 0.5 m without sea floor under a rim more than 10 m high; 0 vertices stored as exactly 0 m (370 low areas reach beyond the 3 x 3 neighbourhood: sea)
+INFO  near-shore sea floor earth-ka-lae level 12: median depth by distance from the shore (8 x 8 km around the pad, 10 m grid): 0-50 m -1.1, 50-100 m -6.0, 100-200 m -12.8, 200-300 m -23.7, 300-400 m -38.3, 400-600 m -67.0, 600-800 m -151.6, 800-1000 m -288.0, 1000-1500 m -531.9; sea shallower than 5 m reaches 122 m from the shore (95th percentile), 215 m at most; shallowest sea sample -0.001 m
+INFO  hillshade measure level 7 (global imagery, 300 m texels): Mauna Kea above 3300 m, slopes > 5 deg (285 east-, 206 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.009 (need 1 +/- 0.03); plain flank means 0.0648 / 0.0644 = 1.006 (surface material, reported only)
+PASS  no baked hillshade level 10: Mauna Kea above 3300 m, slopes > 5 deg (17256 east-, 13961 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.012 (need 1 +/- 0.03); plain flank means 0.0664 / 0.0706 = 0.941 (surface material, reported only)
+PASS  no baked hillshade level 12: Mauna Kea above 3300 m, slopes > 5 deg (271150 east-, 221211 west-facing texels): each slope against its 300 m surroundings, east/west ratio 1.015 (need 1 +/- 0.03); plain flank means 0.0665 / 0.0707 = 0.941 (surface material, reported only)
+PASS  no relief shading in the global imagery: level 7, slopes > 10 deg, mean albedo ratios (need 1 +/- 0.06; texels E/W/N/S): Tibesti E/W 1.035 N/S 1.010 (23488/22897/21443/21781); Hoggar E/W 1.011 N/S 0.997 (5824/6286/3991/3776); Sinai E/W 0.949 N/S 1.015 (26632/26514/17422/23208); Hajar E/W 0.950 N/S 0.960 (20754/20232/22268/20759); Kunlun E/W 0.972 N/S 0.966 (6681/7519/10122/10063); Panamint E/W 1.038 N/S 1.024 (35342/34900/23786/26340); Atacama Andes E/W 1.019 N/S 0.963 (20556/23740/14591/14572); Namib escarpment E/W 0.949 N/S 0.980 (5838/8406/6290/6295); worst deviation 0.051
 PASS  night lights resolve towns: level-7 tile (2, 52, 97) over northern India: 205 separate lit blobs (sRGB > 40), 11.9 % lit
 PASS  TypeScript decode spot check: 5 of 5 tiles decode identically in TypeScript and Python
-PASS  total baked size: 10.34 GB in 697349 files under data/tiles/earth
-33 of 33 checks passed in 200 s
+PASS  total baked size: 10.30 GB in 697349 files under data/tiles/earth
+41 of 41 checks passed in 273 s
 ```
 
 Notes on the checks:
 - Coverage edges are checked on EVERY tile of the outer ring of every level (not a sample).
+- `coastline agreement` (global) accepts a departure of the mask from the height sign only with evidence:
+  the below-sea-level texel is not connected to the ocean (the class map the water-mask bake writes, section
+  4), or the water lies above sea level (a lake). The literal agreement is 957 of 1000 (95.7 %); the 43
+  departures are 19 points in enclosed basins (Caspian, Dead Sea and Jordan valley, Faiyum, Danakil, Salton
+  Sea, Laguna Chasico) and 24 on shallow coastal lowland ETOPO puts 0.5-4 m below sea level (Caspian shore,
+  Venice, Chao Phraya delta, Louisiana, Pamlico, Loire, Lake Eyre) (section 9). The three open-sea fjords of the
+  review are water.
+- `regional coastline`: the same rule at every regional level (deliberate only at inland water above sea level
+  or where the global mask is dry too); crossings inside the 64-texel coverage feather are skipped.
+- `no inland pits`: every regional tile, closed areas at or below 0.5 m in its 3 x 3 tile neighbourhood with no
+  sea floor and a rim more than 10 m high (4-connected), plus a count of vertices stored as exactly 0 m.
+- `no relief shading in the global imagery`: level 7 over eight hyper-arid ranges, E/W and N/S mean albedo of
+  slopes > 10 deg within 6 % (section 8, item 3). Before the fix these read E/W 0.82-0.89 and N/S 0.69 (Namib)
+  to 1.18 (Panamint): the shading was inverted.
+- `near-shore sea floor` (INFO): the profile off the pad (review finding 5).
 - The TypeScript spot check decodes 3 height tiles (face 2 level 7, face 0 level 0, the level-12 pad tile), the
   level-12 pad watermask tile and the level-12 pad landcover tile through `src/core/geo/tileCodec.ts` (`npx
   tsx`) and compares sha256 of every decoded value, header fields and 8 samples each with the Python decode.
 - `python -I tools/bake/common/test_common.py`: 9 tests OK. `npx vitest run tools/dev/boundaries.test.ts`:
   7 passed. `npm run typecheck:paths -- tools/bake/earth/ts_spot_check.ts`: OK.
 
-Contact sheets (`out/bake/earth/contact/`, all regenerated by `bake.py contact`). Opened and inspected:
+Contact sheets (`out/bake/earth/contact/`, all regenerated by `bake.py contact`). Opened and inspected after
+the review fixes: `region-earth-ka-lae-hillshade-pad-20km.png` and `-pad-3km.png` (sea floor smooth, no facets,
+no pits; the band shallower than 5 m is 50-100 m wide along the open coast and wider only in the bay south of
+the pad where ETOPO itself is shallow), `region-earth-ka-lae-albedo-pad-3km.png` (one mask coastline on the
+shore, the double coastline of the stale mask is gone; a few small inland WorldCover water bodies outlined),
+`place-netherlands.png` (polders and Flevoland land, IJsselmeer water), `place-greenland-coast.png` (fjords water
+in the mask), `place-caspian-north.png` (lowland land, no blocks), `place-himalaya.png`, and a hillshade of Lake
+Waiau at levels 12/10/8 (a flat crater lake, no shaft). Earlier in the build, opened and inspected:
 - `globe-albedo|height|watermask|landcover|night.png` (unfolded cube, north up) and `face4-albedo.png`
   (Arctic face): continents in the right places and orientation, no seams on any cube edge, night lights black
   except settlements, hypsometry and hillshade continuous across faces, land cover plausible per biome.
@@ -291,23 +369,30 @@ and the mask (section 9).
 
 | Layer | Files | Size |
 |---|---|---|
-| height | 141,569 (131,070 global + 10,499 regional) | 7.38 GB (regional 0.27 GB) |
-| albedo | 141,569 | 2.56 GB (regional 0.15 GB) |
+| height | 141,569 (131,070 global + 10,499 regional) | 7.38 GB (regional 0.26 GB) |
+| albedo | 141,569 | 2.52 GB (regional 0.14 GB) |
 | watermask | 141,569 | 0.07 GB |
 | night | 131,070 | 0.10 GB |
 | landcover | 141,569 | 0.19 GB |
 | globals | 2 | 0.04 GB |
-| **total** | **697,349 files incl. manifest** | **10.34 GB** (9.6 GiB) |
+| **total** | **697,349 files incl. manifest** | **10.30 GB** (9.6 GiB) |
 
-Cache after `cleanup`: 0.63 GB (the venv; plus 0.1 MB of verification reference samples, fits and bake records).
+Cache after `cleanup`: 0.63 GB (the venv; plus 4 MB of verification references: reference samples and the
+water mask's per-tile class map of below-sea-level ground not connected to the ocean; fits and bake records).
 Peak cache during the bake: about 13 GB (ETOPO memmap and BMNG quadrants). Peak resident memory of a
 6-worker albedo bake: about 2.8 GB in total.
 
 Timings (shared machine, Moon bake and browser tests running; provisional): ETOPO download + memmap 18 min;
 global heights roughly 45 min; MODIS water-mask fetch 24 min (21,806 tiles at 15 req/s); Sentinel-2 fetch 33
-min (5 years, z12 + z14); global water mask 17 min; regional heights 6.5 min (incl. the 2 GB Terrarium stack);
-global albedo 17 min (6 faces) and regional albedo 6 min; night 2 min per face; landcover 10 min; globals
-1 min; contact sheets 3 min; verify 3.5 min.
+min (5 years, z12 + z14); global water mask 20 min (2.5 min of it the ocean-connectivity pass); regional
+heights 8 min (plus 9 min to fetch and stack the 8,079 Terrarium z15 tiles, 2 GB); global albedo 6 min for the
+de-shading fit pass and 20 min for the tiles (6 faces) and regional albedo 6 min; night 2 min per face;
+landcover 10 min; globals 1 min; contact sheets 3 min; verify 4 min.
+
+Memory (for the 2026-11-10 crash investigation): the largest single process of this package is the regional
+coast-grid build in the heights step, 3.5 GB peak working set for about a minute (labelling the 390 M pixel
+WorldCover grid, two distance transforms on the 72 M cell 40 m grid); the 6-worker pools stay under about
+3 GB in total; every heavy step ran through `tools/dev/heavy.mjs`, one at a time.
 
 ## 8. Deviations from the brief (and why)
 
@@ -324,9 +409,9 @@ global albedo 17 min (6 faces) and regional albedo 6 min; night 2 min per face; 
    the plain all-interior mean is printed too. A real seam (lossy q90) exceeds it by ~60 %.
 3. **Hillshade gate.** The brief: east- and west-facing slopes of Mauna Kea have equal mean albedo within 3 %.
    Literally measured (slopes > 5 deg above 3300 m within 8 km of the summit) the ratio is 0.94 at levels 10
-   and 12 and 0.936 at level 7. That asymmetry is surface material, not shading:
-   - it has the SAME value in two independent sources (Sentinel-2 regionally, MODIS-based Blue Marble
-     globally) and the opposite sign of what their 10:30 morning sun would bake in (east-facing brighter);
+   and 12 (Sentinel-2) and 1.006 at level 7 (Blue Marble, after the corrected de-shading). The regional
+   asymmetry is surface material, not shading:
+   - it has the opposite sign of what the 10:30 morning sun would bake in (east-facing brighter);
    - the east-facing texels lie on the east flank (2.9 km east of the summit on average) and the west-facing
      ones on the west flank (3.1 km west): different lava and cinder surfaces; within each flank,
      summit-facing slopes are darker than outward-facing ones on both sides (a radially symmetric pattern,
@@ -337,25 +422,49 @@ global albedo 17 min (6 faces) and regional albedo 6 min; night 2 min per face; 
    surroundings (both slopes of the same cone under the same material), 1.012 at level 10 and 1.015 at level
    12 (need 1 +/- 0.03); the flank means are reported next to it. Forcing the literal number would need an
    anti-physical de-shading that brightens east-facing slopes against their surroundings.
-4. **Total size 10.34 GB**, slightly above the expected 7-10 GB, because of item 1 (heights alone are
-   7.38 GB). The whole `data/` directory currently holds 23 GB, of which 7.8 GB is the Moon bake's working cache
-   (`data/cache/moon`, not mine); with that cache cleaned the total is about 15 GB.
+   At level 7 the paired form is insensitive (300 m texels: the review injected a synthetic shading of
+   strength 1 and moved it only from 1.003 to 1.029), and Mauna Kea has only ~250 texels per flank there, so
+   the global imagery has its own gate: over eight hyper-arid bare ranges (Tibesti, Hoggar, Sinai, Hajar,
+   Kunlun, Panamint, Atacama Andes, Namib escarpment; slopes > 10 deg in 3 x 3 level-7 tiles) the east/west and
+   north/south mean-albedo ratios lie within 6 %. The review proposed "about 5 %"; the worst measured value is
+   5.1 % (Sinai and Namib E/W 0.949, Hajar 0.950). The source's own shading differs between ranges of the same
+   latitude band and brightness by up to 8 % (E/W 1.126 at Tibesti, 1.050 at Hajar, both at 21-23 N), which
+   no per-band correction can remove; residual 5 % on single ranges is that scatter, uncorrected shading is
+   10-30 % and the previous inverted correction 11-31 %. Mauna Kea at level 7 is reported (INFO).
+4. **Total size 10.30 GB**, slightly above the expected 7-10 GB, because of item 1 (heights alone are
+   7.38 GB). The whole `data/` directory holds 16 GB after this package's cleanup (2026-11-10 16:25).
 5. Global heights from **ETOPO 2022 15"** (one of the two sources the brief allows), GEBCO 2025 as the
    documented alternative in `sources.json`.
 
 ## 9. Known limits and data notes
 
-- **Depressions and physics.** Where land lies below sea level (Caspian shore and depression, Qattara, Dead
-  Sea shore, Dutch polders) the mask says land but the height is below 0 m, so
-  ARCHITECTURE row 12 ("water = solid surface below sea level") makes physics see sea there. Nothing in the
-  mission flies there; a contract that keys physics water on the mask, or on a separate sea-connectivity flag,
-  would fix it.
+- **Depressions and physics.** Where land lies below sea level and is not connected to the ocean (Caspian
+  shore and depression, Qattara, Dead Sea shore, Death Valley, Danakil) the mask says land but the height is
+  below 0 m, so ARCHITECTURE row 12 ("water = solid surface below sea level") makes physics see sea there. The
+  same holds on shallow coastal lowland that ETOPO puts 0.5-4 m below sea level and MODIS maps as land, with no
+  water deeper than 10 m within 3 texels: polders behind dykes (Netherlands, Venice), the Chao Phraya delta,
+  Louisiana marsh, the Pamlico lowlands, the Loire marshes: 24 of 1,000 sampled coast points, more than half of them on the shore of the Caspian depression (section 5). The
+  mask follows the imagery there on purpose; a fjord or inlet that MODIS misses is sea in the mask (it reaches
+  deep water). Nothing in the mission flies there; a contract that keys physics water on the mask, or on a
+  separate sea-connectivity flag, would fix it.
 - **ETOPO artefacts.** A few small (1-5 km2) 20-50 m "islands" exist in ETOPO 2022 where no island is charted
   (six in the South Pacific recovery zone, section 6). They are in height and mask alike. Removing them needs a
   global height correction against MODIS and a re-bake of the global pyramid; not done.
-- **Near-shore sea floor near the pad.** No near-shore survey is in the sources: the first 200-300 m off the
-  coast are a smooth shelf less than 5 m deep (the start of the 1.5 km ramp to ETOPO depths), not the real
-  drop-off of the lava coast. Smooth and seamless, but not surveyed bathymetry.
+- **Near-shore sea floor near the pad.** No near-shore survey is in the sources: the first 1.5 km are a
+  modelled 1:10 drop-off from the coastline blended into ETOPO 2022 (section 4; 1 m deep within 50 m of the
+  shore, 13 m at 100-200 m, 24 m at 200-300 m). Smooth and seamless, but not surveyed bathymetry. (The earlier
+  build's ramp started with zero slope: a shelf less than 5 m deep out to 400-740 m, then a 30-40 deg wall, and
+  sea texels stored as exactly 0.00 m; review finding 5.)
+- **Regional coastline = WorldCover's.** WorldCover reads some dark young lava next to the surf as water
+  (Punalu'u to Kamehame, 19.15-19.24 N on the Ka'u coast): there the stored coast lies up to 50-100 m inland
+  of the surf line seen in the imagery, with Terrarium's 20-40 m land meeting the sea floor in a cliff. Terrarium
+  cannot arbitrate: near this coast its "land" values (5 m up to 2265 m) also cover 16 % of WorldCover's ocean
+  within 300 m of the shore, including open water 100-300 m out. Pockets of such "water" joined to the sea by
+  channels narrower than ~45 m are inland water at the Terrarium height; tiny sea-level pockets the vertex grid
+  cannot connect are filled (section 4).
+- **Kapoho (2018 lava delta).** 3DEP predates the 2018 eruption: the new land that WorldCover 2021 maps east of
+  Kapoho (19.47-19.50 N, 154.81-154.83 W, 80 km from the pad) has 3DEP sea-floor values and is stored at the
+  +0.2 m land minimum, a flat about 15 m below the real delta.
 - **Regional imagery** is Sentinel-2 cloudless (CC BY-NC-SA 4.0): non-commercial only, swap before any
   commercial release (`sources.json` names the replacement path). The 5-year median has no cloud remnants
   near the pad; the open ocean is faded to Blue Marble beyond 1.5-6 km from the coast.
@@ -370,8 +479,11 @@ global albedo 17 min (6 faces) and regional albedo 6 min; night 2 min per face; 
   comes from night lights, whose bloom spreads it over dense rural plains (the whole Nile delta reads as
   built-up). `wetland` is never assigned. The regional classes come from WorldCover.
 - **Dependency tracking** between steps is by configuration: a step re-runs when its own configuration
-  changes, and the landcover steps also when an input layer was re-baked. After re-baking the inputs of any
-  other step by hand, delete that step's records (`data/cache/earth/state/<step>-*`) to force it.
+  changes, and also when an input layer was re-baked (its configuration holds the input layers' build hashes)
+  for: global and regional land cover, the regional water mask (regional height, global mask), the regional
+  albedo and its fit (regional height and mask, global albedo) and the global de-shading fit (global height and
+  mask). The global water mask and global albedo depend only on the global height (not re-baked by these
+  steps); after re-baking it by hand, delete their records (`data/cache/earth/state/<step>-*`) to force them.
 - **Night lights** end at level 7 (500 m source) by design; the source's blooming halos around big cities are
   kept.
 
@@ -380,6 +492,9 @@ global albedo 17 min (6 faces) and regional albedo 6 min; night 2 min per face; 
 - Filed by this package: none.
 - Against this package, resolved: `docs/requests/terrain-core-3.md` (terraced regional sea floor): resolved
   (smooth ETOPO sea floor with a smoothed coastal ramp; regional heights re-baked).
+- Against this package, resolved: the Earth part of `docs/requests/terrain-core-4.md` (`sourceCoverage` only
+  where the level holds finer data): land tiles within the source-weight area only (section 1), checked by
+  verify; terrain-core should re-run its realData texture test on the new manifest.
 - Against this package, partly resolved: `docs/requests/terrain-core-1.md` (`sourceCoverage`): the earth
   manifest now writes `layers.height.sourceCoverage` exactly as the request specifies (section 1). The
   contract field in `src/core/contracts/terrain.ts` is the lead's; the request file stays open for that part
@@ -402,3 +517,13 @@ depression tiles), most dry savanna / steppe / tundra classed as bare rock (clas
 contentHash that did not change when tiles were re-baked (`build` fields), all-ocean coverage-edge contact
 crops (now chosen where the boundary crosses land), a worker race on building the WorldCover grid in the
 landcover step, and the pool cap (8 -> 6 workers, PACKAGE_RULES 13c).
+
+## 12. Independent review (2026-11-10) and what changed
+
+| # | Finding | Fix | Evidence now |
+|---|---|---|---|
+| 1 (blocker) | Inland water at any altitude (Lake Waiau 3,970 m and ~400 more) baked as sea: shafts to 0.00 m in level 12, craters in 8-11 | Ocean = WorldCover water connected to the open sea (10 m connectivity of the opened water mask); inland water keeps the 3DEP surface; sub-resolution sea-level pockets filled; regional heights and everything derived re-baked | verify `no inland pits in regional heights`: 0 closed areas at or below 0.5 m under a rim > 10 m on 10,499 tiles of levels 8-12 (the review's own per-tile scan finds 4 strips that a tile edge cuts off from their sea floor in the next tile; none in the 3 x 3 check); Lake Waiau a flat crater lake at all levels |
+| 2 (major) | Global de-shading inverted the relief shading (fit on coarse normals, all land) | Fit with the level-7 tile normals the correction uses, on bare / sparse ground, per band and local-brightness class, clipped to the physical sun box; global albedo, albedoLowRes, land cover, regional albedo re-baked | verify `no relief shading in the global imagery`: E/W and N/S on 8 hyper-arid ranges 0.949-1.038 (were 0.69-1.18, inverted); gate 6 % against the proposed "about 5 %" (section 8, item 3); Mauna Kea level 7 flank ratio 1.006 (was 0.936) |
+| 3 (major) | Regional water mask stale (built before the height re-bake, no dependency) | Mask config holds the build hashes of the regional height and global mask; mask = height sign + inland water; re-baked, then land cover and regional albedo (which track the mask) | verify `regional coastline` at every regional level: 0 disagreements outside deliberate inland water / global-dry ground (the stale mask failed this check with 35 at level 12) |
+| 4 (minor) | Coastline check could not fail; fjords MODIS misses turned to land | Dry override only where the ground is not connected to the ocean (global texel connectivity); the check accepts a departure only with that evidence or at water above sea level, and probes the review's three fjords | verify `coastline agreement`: 0 other disagreements, all three fjord points water |
+| 5 (minor) | Near-shore shelf at ~0 m then a 30-40 deg wall; sea texels stored as 0.00 m | 1:10 slope from the coastline (ETOPO where shallower); ocean at most -0.2 m, land at least +0.2 m; no vertex stored as 0 m | verify `near-shore sea floor` (INFO) and the zero-vertex count (0) in the pit check |

@@ -121,14 +121,40 @@ def coverage_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
 
 
 def source_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
-    """Tiles of `level` that touch the area of interest itself (no feather, no margin): where the level holds
-    regional data genuinely finer than its parent (the manifest's `sourceCoverage`, requested in
-    docs/requests/terrain-core-1.md; a subset of the coverage)."""
-    return _tiles_within(region, level, radius_km(region, level) * 1000.0)
+    """Tiles of `level` that touch the area where the regional source has non-zero weight (the area of interest
+    plus the source feather, no margin): the candidates for the manifest's `sourceCoverage`
+    (docs/requests/terrain-core-1.md, -4.md; a subset of the coverage). heights.layer_manifest keeps those
+    that hold land."""
+    return _tiles_within(region, level, (radius_km(region, level) + float(region["featherKm"])) * 1000.0)
 
 
-def source_rects(region: dict, level: int) -> list[dict]:
-    return cube.rects_from_tiles(source_tiles(region, level))
+def tile_set_rects(tiles: list[tuple[int, int, int]]) -> list[dict]:
+    """An exact cover of an arbitrary tile set by manifest TileRects: runs of consecutive x per row, merged
+    downwards while the run repeats."""
+    out: list[dict] = []
+    for face in sorted({t[0] for t in tiles}):
+        s = {(x, y) for f, x, y in tiles if f == face}
+        ys = [y for _, y in s]
+        prev: dict = {}
+        for y in range(min(ys), max(ys) + 1):
+            xs = sorted(x for x, yy in s if yy == y)
+            runs = []
+            for x in xs:
+                if runs and x == runs[-1][1] + 1:
+                    runs[-1][1] = x
+                else:
+                    runs.append([x, x])
+            cur: dict = {}
+            for x0, x1 in runs:
+                rect = prev.get((x0, x1))
+                if rect is None:
+                    rect = {"face": face, "x0": x0, "y0": y, "x1": x1, "y1": y}
+                    out.append(rect)
+                else:
+                    rect["y1"] = y
+                cur[(x0, x1)] = rect
+            prev = cur
+    return out
 
 
 def _tiles_within(region: dict, level: int, grow: float) -> list[tuple[int, int, int]]:

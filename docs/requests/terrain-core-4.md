@@ -1,4 +1,4 @@
-Status: open (Moon part resolved by bake-moon-sky, commit 4f89577; the Earth part is bake-earth's)
+Status: resolved (Moon part by bake-moon-sky, commit 4f89577; Earth part by bake-earth, see below)
 From: terrain-core
 Owner path: tools/bake/moon (region.py, sourceCoverage of the SLDEM band) and tools/bake/earth (heights.py, sourceCoverage over the regional sea floor)
 Blocking: no
@@ -49,3 +49,14 @@ unchanged. Level 8 stays listed: SLDEM resolves ~118-186 m, most of level 8's 93
 was already "tiles touching the area where the source has non-zero weight". `verify.py` checks it (levels
 without finer source detail listed empty, all others covering every tile where their source has weight). The
 manifest is re-written by the region bake; re-run the realData suite.
+
+## Resolution (Earth; bake-earth)
+`tools/bake/earth/heights.py` (`source_land_tiles`, `layer_manifest`) lists in `sourceCoverage[L]` exactly the
+tiles of regional level L that touch the area where the regional source has non-zero weight (the 100 km area
+of interest plus the 5 km source feather, `region.source_tiles`: the Moon's definition) AND hold land (a stored
+vertex above sea level; every regional land vertex is at least one quantum above 0, every sea vertex below).
+Sea-only tiles (ETOPO 15" sea floor) stay in `coverage` only. The tile sets are written as an exact cover of
+rectangles (`region.tile_set_rects`): levels 8-12 list 12 / 36 / 112 / 406 / 1,521 tiles in 2 / 5 / 11 / 22 /
+43 rectangles on face 1 (previously one bounding rectangle per level around the 100 km disc; level 12: x
+2936..3018, y 2782..2861, 6,640 tiles). `verify.py` checks it (`height sourceCoverage`: listed = expected, all inside the coverage). Manifest
+contentHash `5a9f0db7c755fdf8`; re-run the realData suite.

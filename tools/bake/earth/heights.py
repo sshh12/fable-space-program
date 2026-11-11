@@ -298,6 +298,19 @@ def bake_region(region_id: str) -> None:
     manifest.mark("height", region_id)
 
 
+def source_land_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
+    """Tiles of a regional level that touch the area where the regional source has weight and hold land (a
+    stored interior vertex above sea level: 3DEP; every regional land vertex is at least one quantum above 0)."""
+    out = []
+    for f, x, y in regmod.source_tiles(region, level):
+        h = tiles.read_height(f, level, x, y)
+        if h is None:
+            raise FileNotFoundError(f"regional height tile {f}/{level}/{x}/{y} missing")
+        if (h[1:258, 1:258] > 0.0).any():
+            out.append((f, x, y))
+    return out
+
+
 def layer_manifest(regions: list[dict]) -> dict:
     max_level = max([paths.GLOBAL_MAX_LEVEL] + [regmod.levels(r)[-1] for r in regions])
     scales = []
@@ -310,13 +323,14 @@ def layer_manifest(regions: list[dict]) -> dict:
     for reg in regions:
         for L in regmod.levels(reg):
             coverage.setdefault(str(L), []).extend(regmod.coverage_rects(reg, L))
-            source_coverage.setdefault(str(L), []).extend(regmod.source_rects(reg, L))
+            source_coverage.setdefault(str(L), []).extend(regmod.tile_set_rects(source_land_tiles(reg, L)))
         s = ("AWS Terrain Tiles (Terrarium; USGS 3DEP 10 m in Hawai'i), attribution: "
              "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
         if s not in sources:
             sources.append(s)
-    # sourceCoverage (docs/requests/terrain-core-1.md, optional, additive): the rectangles of tiles that touch
-    # each region's area of interest, where the regional source has full weight. Outside them, in the feather
-    # and margin ring of the coverage, the regional levels hold data that converges on the parent's.
+    # sourceCoverage (docs/requests/terrain-core-1.md and -4.md, optional, additive): the rectangles of the
+    # tiles where a regional level holds data genuinely finer than its parent: tiles that touch the area where
+    # the regional source has non-zero weight AND hold land (3DEP). Sea-only tiles hold the ETOPO 15" sea floor
+    # (~900 m shortest wavelength) and stay in `coverage` only.
     return {"encoding": "frt1-height", "ext": "hgt", "globalMaxLevel": paths.GLOBAL_MAX_LEVEL,
             "coverage": coverage, "sourceCoverage": source_coverage, "heightScales": scales, "sources": sources}

@@ -58,7 +58,8 @@ def run() -> None:
         freed += _rm(src / "worldcover")
         for p in list(src.glob("s2cloudless-*")):
             freed += _rm(p)
-        for p in list(work.glob("stack-*")) + list(work.glob("coastdist-*")) + list(work.glob("worldcover-*")):
+        for p in (list(work.glob("stack-*")) + list(work.glob("coastdist-*")) + list(work.glob("worldcover-*"))
+                  + list(work.glob("ocean10-*"))):
             freed += _rm(p)
         freed += _rm(work / "regmask-base")
     log(f"cleanup: freed {freed / 1e9:.2f} GB")
