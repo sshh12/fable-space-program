@@ -98,8 +98,8 @@ refines the ground under it), `frame.snapshot.patches.current[].markers` (kind `
 GPU `terrain.gbuffer`, `terrain.shadow`, `terrain.mipgen`; CPU `terrain.select`, `terrain.stream`; counters
 `terrain.tiles`, `terrain.queue`.
 
-Four things the feature does to shared state, within what RENDER_API allows (the last two are uses of
-G-buffer channels RENDER_API does not describe: they are named in request `terrain-render-4`):
+Five things the feature does to shared state, within what RENDER_API allows (RENDER_API section 6 describes
+the G-buffer channels since request `terrain-render-4`):
 - It registers the shader chunk `brdf_regolith` (an override of the render core's default) when a body with
   `brdf: 'hapke'` has terrain, and `brdf_terrain` when a body with another BRDF has (`shaders/lighting.ts`).
 - For `MATERIAL_TERRAIN` and `MATERIAL_REGOLITH` it writes into G-buffer RT4.b (clear-coat weight, unused by
@@ -109,6 +109,11 @@ G-buffer channels RENDER_API does not describe: they are named in request `terra
 - For `MATERIAL_REGOLITH` it writes into the G-buffer's metallic channel 2 x the RMS slope of the facets
   within the pixel (regolith has no metal). Any other writer of that material leaves 0 there and gets the
   default behaviour exactly.
+- For both materials it writes into RT4.a the smallest filter radius of the sun-shadow lookup
+  (`encodeShadowSoftness`, render core, request `terrain-render-4`): one render quad of the tile's level, from
+  160 m of the eye outwards (0 within 40 m). The terrain casts from its own tiles, so a crater rim's shadow on
+  its floor is drawn by quads of that size; filtered over one quad its edge is the rim's curve, not the
+  polygon.
 
 ## 3. How it works (what a maintainer needs)
 
@@ -204,14 +209,21 @@ imagery is finer than the body-wide mosaic (`imageryCalibrationLevel`; -1 = ever
 `imagerySaturation` of its saturation, and the ground takes the albedo of the material it is made of
 (`set.json` `anchorAlbedo`, default the material's mean) times the imagery's luminance relative to
 `imageryRefLuminance`, to the power `imageryContrast`, bounded to 0.6 .. 1.3: by the share `anchorNear` where
-a pixel is finer than the imagery, `anchorFar` where it is coarser. So lava is charcoal, dry grass olive and
+a pixel is finer than the imagery, `anchorFar` where it is coarser. The share the imagery keeps is bounded
+in luminance to 1.6 times the material's (on a body with `anchorNear` > 0): the mosaic paints a strip along
+this coast cream (sRGB 211, 180, 125), which was three times as bright as the sea beside it. So lava is charcoal, dry grass olive and
 the concrete 3 to 4 times brighter than either, at every distance, and the imagery still decides where the
 ground is lighter or darker. Material weights: land-cover class, the bake's channel, slope (steep ground is
 clinker), macro noise, darkness and greenness of the imagery (`albedoGain`; its saturation is no longer
 used), and `shoreGain` on low, level ground at the water's edge (black sand). The class lookup is displaced
-by the same band-limited noise as the imagery and its weights are sharpened: a class boundary is a ragged
-line. A material keeps `chroma` of its texture's colour variation (rock is grey), and what stands above a
-layer's mean can be glossier (`gloss`: the crests of ropy lava).
+by the same band-limited noise as the imagery and by octaves of 45, 14 and 5 m (each only where the pixel
+resolves it), and its weights are sharpened where a class texel spans more than a few pixels (bilinear
+where it spans fewer: sharpened there the raster drew a staircase): a class boundary is a ragged line.
+Built-up cells of the land cover are dirt and cinder (`scrub-soil`, `black-sand`), never concrete: on this
+coast they are tracks and yards, and as concrete they were stray white cells. A material keeps `chroma` of its texture's colour variation (rock is grey), and what stands above a
+layer's mean can be glossier (`gloss`: the crests of ropy lava; near and mid layers only, the far layer's
+swells as gloss were sky-mirroring patches tens of metres wide). The terrain BRDF uses a reflectance of 0.04
+(rock and glass), not water's 0.02.
 
 **Launch site.** `sitePlan.ts` derives a ground plan from `LaunchSiteDef.structures` by the names of their
 footprint parameters (never by model id): `halfX`/`halfZ` and `sizeX`/`sizeZ` are concrete slabs (plus
@@ -237,7 +249,8 @@ instance by instance in the chunks around the camera. An instance is drawn withi
 Chunks are built within 0.5 ms per frame, in view first; a chunk built in view fades in over 0.5 s;
 `isIdle()` waits for both. Records are appended to one GPU buffer (524,288 instances; holes are closed when
 its end is reached). Shadows: every cascade whose texel is at most the instance's diameter, from the
-coarsest mesh (the middle one from 24 texels). Meshes (`coverMesh.ts`): tussocks of 46 / 18 / 8 blades
+coarsest mesh (the middle one from 24 texels across, the finest from 96: a crown near the eye cast a few
+large polygons with the coarser ones). Meshes (`coverMesh.ts`): tussocks of 46 / 18 / 8 blades
 (nested levels); crowns of leaf clusters ("puffs": flattened octahedra, 230 / 60 / 14 per unit crown) whose
 normals lean away from the crown's middle, with fine gaps cut by noise when large on screen; four crowns on
 stems for a tree, eight without stems for a stand; loose stones are rock meshes without the banked foot.
@@ -258,7 +271,9 @@ facets' mean cosine of incidence is mu0 + sigma phi / Phi. Under a low sun a det
 between lit and black from pixel to pixel is then a grey of the right mean; resolved slopes (sigma near 0)
 keep their hard shadows. In addition the terrain shader lets the detail normals give way as the terrain's own
 normal reaches the terminator (cosine -0.02 to 0.1): without a sky nothing lights a slope the sun has set
-on, and normal-map relief would still light single pixels of it. Regolith is rough at every size a pixel
+on, and normal-map relief would still light single pixels of it. The slopes it takes out go into sigma
+(their squared magnitude is added to the variance), so a hillside at the terminator is a grey of lit and
+shaded grains that darkens smoothly, not black specks. Regolith is rough at every size a pixel
 holds: sigma has a floor of 3 degrees. Its ambient term adds the light bounced off the sunlit ground (an
 airless body has no sky): the sun's illuminance on level ground times `bounceFlat` (0.28) for level ground in
 a shadow, rising with (1 - n . up) / 2 to `bounceDown` (0.36) for a face that looks straight down; constants
@@ -279,7 +294,10 @@ radius. Meshes: a welded sphere of directions (1280 / 320 / 80 triangles) pushed
 polyhedra in 4 classes (blocks, slabs, wedges, boulders), worn, then broken: scoops where pieces spalled off
 (the solid is not convex), a crack, ridged lumps, a foot that flares 8 % where soil is banked against it
 (vertex soil share; the shader colours it as soil, higher in the hollows of the face). The unit ball stays
-inside (the collision cap). Shading keeps 70 % of the face normal. Instance lists are prefixes of each
+inside (the collision cap). Wear: 10 % of the stand-off on blocks, slabs and wedges, 30 % on boulders (edges
+stay sharp). Shading is the smooth vertex normal with 30 % of the triangle's own normal (with 70 %, as
+before, the tessellation showed as a net of facets near the eye), the material's grain at full contrast and
+its normal map at 1.5 times its slopes; level faces on the Moon carry a 30 % dust film. Instance lists are prefixes of each
 chunk's rocks: only rocks large enough for a finer LOD, and the chunks within 80 m, are looked at one by one;
 the vertex shader applies range and scale exactly. The G-buffer lists are kept between frames until an
 observer has moved 2 cm, a chunk has changed or the pixel scale has; shadow lists are prefixes of the same
@@ -333,9 +351,15 @@ prefixes.
 | `terrain-render-2` (1.1 km needle in the Earth heights near the pad) | resolved b8ea6a7, data repaired; pad views re-rendered |
 | `terrain-render-3` (blocky night-light cells) | declined: in the source; handled in the shader (section 3) |
 | `terrain-render-cs-1` (from core-support: sea sheet missing near a low camera over deep ocean, water material at the seabed inside the near field, lines along sheet tile edges) | resolved d43e8fd, see the request's resolution |
+| `terrain-render-4` (sun-shadow filter at least a caster quad wide for terrain pixels: gear-tooth crater shadows from orbit) | resolved c417fb0 (RT4.a, `encodeShadowSoftness`); used by the terrain shader since round 1 (section 2) |
+| `terrain-render-5` (strips of different exposure and a blue cast in the regional lunar imagery) | open (bake-moon); the shader keeps 40 % of the lunar imagery's saturation meanwhile |
+| `terrain-render-6` (the site flattens a 450 m disc: a perfect plane with a circular edge) | open (site data / terrain core) |
+| `terrain-render-7` (dark tile-shaped region by the shore with ocean and atmosphere) | withdrawn: the cloud shadow map's staircase, removed by atmosphere-clouds in 6587a0d |
 | `terrain-render-cs-2` (from core-support: no crater shadows at the lunar terminator from 20,000 and 5,000 km, a shadow step at 1,500 km on approach) | resolved d3bac0a and closed by the filer (25b92c5, its bound lowered from 0.4 % to 0.2 % of the lit pixels): the relief floor gives the terminator its shadows. `tests/browser/integration/shadows.spec.ts -g "terminator|approach"` on the final code of this package: 3 of 3, 0.53 % of the lit pixels in a terrain shadow at 5,000 km and 0.36 % at 20,000 km (0.45 % and 0.31 % in the reviewer's run, before the regolith BRDF of section 3), no shadow pop on the approach through 1,500 km |
 
-No request against this package's paths is open.
+Against this package's paths: `vehicle-pad-3` (the apron disc) resolved by the site ground plan (item 1 in
+part declined, see its resolution); `map-view-6` names the Moon's far field among three owners: the terrain's
+part is answered in its resolution section (the request stays open for the clouds and the stars).
 
 ## 6. Tunables (`data/defs/render/<body>.surface.json`, all required)
 
@@ -462,11 +486,14 @@ material arrays, which the brief's 1.1 GB does not count).
 `out/screens/terrain/`: `earth-400000km`, `earth-leo-pacific`, `earth-leo-hawaii`, `earth-leo-nadir-day`,
 `earth-leo-nadir-day-2`, `earth-leo-lowland-coast`, `earth-leo-nadir-night`, `earth-night-side`,
 `earth-40km`, `earth-10km`, `pad-inland`, `pad-coast`, `pad-apron-down`, `pad-off-apron`,
-`pad-ground-close`, `pad-30m`, `earth-1km`, `earth-stony-ground`, `shoreline-200m`, `earth-edge-5km`,
+`pad-ground-close`, `pad-30m`, `grass-eye`, `kiawe-eye`, `kiawe-120m`, `earth-1km`, `earth-stony-ground`,
+`shoreline-200m`, `earth-edge-5km`,
 `earth-edge-50km`, `moon-60000km`, `moon-terminator-20000km`, `moon-terminator-5000km`, `moon-orbit-100km`,
 `moon-2km`, `moon-300m`, `moon-50m`, `moon-standing`, `moon-standing-upsun`, `moon-standing-down`,
 `moon-edge-5km`, `moon-edge-50km`; `integrated-apron-eye`, `-off-apron-eye`, `-ground-close`, `-30m`,
-`-200m`, `-1km` (with sky, atmosphere and ocean); `perf-*.png` and `warp-*.png` at 1440p.
+`-200m`, `-1km`, `-grass-eye`, `-kiawe-eye`, `-kiawe-120m`, `-stony-ground`, `-10km`, `-40km`,
+`-leo-hawaii` (with sky, clouds, atmosphere and ocean); `perf-*.png` and `warp-*.png` at 1440p. The
+judgement of round 1 is in section 12; the paragraph below is the review stage's.
 
 What holds up as a photograph: the Moon from 100 km at a 10 degree sun (wrinkle ridges, long crater
 shadows), the lunar terminator views, the full disc; the lunar surface from 2 km, 300 m and 50 m (craters of
@@ -533,3 +560,87 @@ ground 1 km from the pad the rock buffer overflowed (48k rocks) and the terrain 
   through a dense field (they are kept only while it stands within 2 cm).
 - **Earth material photographs are not in the repository** (deviation 7).
 - **VRAM**: the detail material arrays add 187 MiB to the 1,046 MiB of tile pools.
+
+## 12. Visual close-out, round 1 (2026-11-11)
+
+Work list: `out/qa/wave2/terrain-render.r0.photo.json` (photo 5/10, 18 items) and
+`terrain-render.r0.artifact.json` (artifact 4.5/10, 21 items). Round 1 was done by two agents in turn: the
+first (commits 4d55e12, 34548f5: ground cover, ground colour from materials, site ground plan, relief
+shadows, lunar bounce light, broken-rock meshes, new lunar layers, ponds, night-light footprint) ran out of
+budget mid-work; the second finished it (d2725ec and the commit of this section). Every screenshot named
+below was re-rendered on the final code and looked at; integration-lab views (`integrated-*`) are the ones to
+judge colour by (sky, atmosphere, clouds and ocean present), the terrain lab's views have a black sky
+stand-in.
+
+### Photo critic
+
+| # | Item | Done | Look at |
+|---|---|---|---|
+| 1 blocker | Ground at eye height a flat printed plane, nothing stands up | Ground cover (section 3): tussocks, wind-shaped scrub, kiawe trees, stands of kiawe to 7 km, loose clinker, by land-cover class, instanced with shadows in every cascade fine enough for them; shadows of the detail relief along the sun (section 3, "Relief shadows"); lava where the land cover says rock. The horizon is broken by trees and scrub. Not done: the plane itself (the site flattens 450 m of ground in the height authority: request `terrain-render-6`), parallax displacement of the detail layers | `integrated-off-apron-eye`, `integrated-grass-eye`, `integrated-kiawe-eye`, `integrated-kiawe-120m`, `grass-eye`, `kiawe-eye`, `kiawe-120m` |
+| 2 major | Wrong colours: rust ground, cream strip brighter than concrete, salmon slopes | Ground takes its material's albedo where the imagery is a graded mosaic (section 3, "Ground colour"; `anchorAlbedo`: lava neutral to cool, soil grey-brown), imagery keeps 70 % of its saturation there and its luminance is bounded to 1.6 x the material's; built-up cells are dirt, not concrete. Measured in `integrated-30m`: concrete Y 0.41, lava around it 0.11 (3.7 x), ground R/B 1.17 (was 2.9) | `integrated-30m`, `integrated-200m`, `integrated-1km`, `integrated-40km` |
+| 3 major | Apron a perfect 280 m disc, no joints | Site ground plan from the structures (`sitePlan.ts`): concrete slabs under every structure with a footprint, bays with joints, a tone per bay, dirt along joints, stains, scorch towards the pad, kerb; gravel lane bed under the crawlerway; compacted shoulder with a ragged edge. In the game the vehicle-pad package's groundworks cover it (request `vehicle-pad-3`, resolved) | `pad-30m`, `integrated-30m`, `integrated-apron-eye`, `pad-apron-down` |
+| 4 major | Flat grey "ponds" on a slope near the pad | Mask water above sea level only on level ground (slope below 0.03-0.07), dark with wet margins and the deep colour towards the middle; the fill rule tests hue (blue), not darkness | `integrated-1km`, `earth-1km` |
+| 5 major | Broken ground: soil print on hummocks, no lava | Rock classes resolve to pahoehoe / a'a with their own albedos; ropy-lava photographs regenerated (34548f5); crests glossier (near and mid layers); relief shadows; rocks with a banked foot. Not done: ridged amplification of the height function (terrain core) | `earth-stony-ground`, `integrated-stony-ground` |
+| 6 major | 200 m - 6 km a watercolour, no shrub or tree | Scrub to 700 m, kiawe to 1.8 km, stands of kiawe to 7 km, each with its shadow; class boundaries ragged (warped lookup) | `integrated-kiawe-120m`, `integrated-1km`, `integrated-200m` |
+| 7 major | Parallelogram on the shore (raster cell) | It was a built-up cell of the land cover drawn as concrete (weight 0.6) and cut along its texel edges: built-up is dirt and cinder now; class lookup displaced at 45, 14 and 5 m in addition to the imagery warp | `integrated-200m`, `shoreline-200m` |
+| 8 major | Cliffs and shore olive and cream, no basalt or black sand | Steep ground is clinker (`slopeGain`), low level shore black sand (`shoreGain`), wet band to 2.5 m above the sea, patchy; the bright imagery strip bounded (item 2) | `integrated-200m`, `shoreline-200m` |
+| 9 major | Lunar rocks: flat-faced polyhedra, no fillet, detached shadows | Broken-rock meshes (welded sphere of directions pushed to a polyhedron, scoops, crack, lumps, soil banked at the foot), smooth vertex normals with 30 % of the facet normal (no tessellation net), grain at full contrast, a thin crack, sharper wear (10 % / 30 %); loose rocks stand 0.55-1.1 of their radius high (were 0.4-0.8: half-buried domes). Sunlit faces 1.5 x the regolith in `moon-standing` (reference 1.3-1.7 x). Not fully: from a few metres on, the coarser meshes read as smooth pale lumps rather than fractured blocks, and collidable rocks are as low as the height function's caps | `moon-standing`, `moon-standing-down`, `moon-standing-upsun` |
+| 10 major | Lunar slopes under a low sun: ink blots and black specks | Relief shadows of the detail layers; slopes taken out at the terminator go into the facet spread of the regolith BRDF. Better, not gone: the dark slope in `moon-300m` (a crater wall turned from the 11 degree sun) is still a mottled patch | `moon-300m`, `moon-standing-down`, `moon-2km` |
+| 11 major | Lunar surface 50 m - 20 km looks generated: one crater size, soft dimples, ripples | Lunar layers regenerated: craters of overlapping size ranges per layer (a decade of overlap), worn and fresh profiles (bowls, rims only on fresh ones), clustered, no fBm swell under them | `moon-2km`, `moon-300m`, `moon-50m`, `moon-edge-5km` |
+| 12 major | Lunar shadows zero signal | Bounce light off the sunlit ground in the regolith BRDF (`bounceFlat` 0.28, `bounceDown` 0.36). Measured in `moon-standing-down`: a rock's shadow on the regolith 0.13 x the lit ground (target 5-15 %) | `moon-standing-down`, `moon-standing-upsun` |
+| 13 major | Scalloped crater shadows from orbit | Request `terrain-render-4` (resolved c417fb0): the terrain writes a shadow filter of one render quad into RT4.a (section 2). The gear teeth and polygons are gone; the price is a soft edge where a photograph has a crisp crescent | `moon-orbit-100km`, `moon-edge-50km` |
+| 14 minor | Combed regolith at eye height; ruler-straight horizon | Footprint shortening limited to a quarter (was a half); the horizon at the lunar site is the height function's mare (not changed) | `moon-standing` |
+| 15 minor | Night lights streaked near the limb | Lights sampled with the footprint's own shape (`textureSampleGrad` with the night uv derivatives), grain fades by the long axis | `earth-night-side`, `earth-leo-nadir-night` |
+| 16 minor | Lunar strips of different tint near the coverage edge | Request `terrain-render-5` (bake-moon, open); lunar imagery keeps 40 % of its saturation | (integration lab, coverage-edge views) |
+| 17 minor | Far Earth views only in the terrain lab | `integrated.spec.ts` renders 10 km, 40 km and LEO over Hawai'i in the integration lab | `integrated-10km`, `integrated-40km`, `integrated-leo-hawaii` |
+| 18 minor | Stale `perf-shore-rocks.png` | Deleted; the perf spec writes `perf-stony-ground`, `perf-kiawe`, `perf-thickets-120-m` | - |
+
+### Artifact critic
+
+| # | Item | Done | Look at |
+|---|---|---|---|
+| 1 blocker | Ground off the apron a flat textured plane | Photo 1 | as photo 1 |
+| 2 major | Ground colours (rust, neon green) | Photo 2 | as photo 2 |
+| 3 major | Apron a featureless pale disc | Photo 3 | as photo 3 |
+| 4 major | Water where there is land (cobalt on lava, grey blobs) | Photo 4: fill colour by hue (b > 1.6-2.6 r and > g), lakes only on level ground | `earth-edge-50km`, `earth-leo-lowland-coast`, `integrated-1km` |
+| 5 major | Coasts outlined dark, islands two-toned, saw-tooth rim | Shallow water modelled where the imagery holds the fill colour (lighter towards the shore), continuous repair weight instead of a boolean | `earth-10km`, `integrated-10km`, `earth-leo-hawaii` |
+| 6 major | Straight-edged facet on the bluff | Photo 7 (a built-up cell drawn as concrete) | `integrated-200m` |
+| 7 major | Stony ground: wax hummocks, black blotches, perched rocks | Photo 5; the view is in the integration lab as well (`integrated-stony-ground`) | `integrated-stony-ground` |
+| 8 major | Lunar rocks pale, flat-shaded, seams, blurred shadows | Photo 9; meshes are welded (no seams) | `moon-standing` |
+| 9 major | Lunar weave, dashes, black specks | Photo 10, 11, 14 | `moon-50m`, `moon-standing` |
+| 10 major | Crater "pills" of one profile | Photo 11 | `moon-2km`, `moon-300m` |
+| 11 major | Mare like rippled water | Photo 11 (no swell in the far and aerial lunar layers) | `moon-edge-5km` |
+| 12 major | Crater shadows not crater-shaped from orbit | Photo 13 | `moon-orbit-100km` |
+| 13 major | 30 m: one grain size, no patches | Clinker and tussocks stand on it with shadows, the ropy-lava photographs carry lobes of 0.3-3 m, the shoulder and the concrete break it up. Not done: a second material in patches of 2-10 m (macro noise is 160 m) | `integrated-30m`, `pad-30m` |
+| 14 minor | Ghosting at one's feet | Not changed (the hexagon pattern's height blend) | `integrated-ground-close` |
+| 15 minor | LEO nadir close-ups soft | Not changed: the global imagery is the limit at 250 km; orbital detail as before | `earth-leo-nadir-day` |
+| 16 minor | Everglades blocks and moire | Photo 4 (fill by hue, continuous repair): no pale blocks left | `earth-leo-lowland-coast` |
+| 17 minor | Night lights streaked near the limb | Photo 15 | `earth-night-side` |
+| 18 minor | Stipple near the lunar terminator | Not changed | `moon-terminator-5000km` |
+| 19 minor | Lunar colour cast, halos round small craters | Lunar imagery 40 % saturation; fresh-material boost 0.22 -> 0.14 | `moon-orbit-100km`, `moon-edge-50km` |
+| 20 minor | Notches where the seabed meets the sheet | Not changed (low priority, as the critic says) | `handover-with-nearfield` |
+| 21 minor | Evidence gaps (stale file, warp shots over sea) | Stale file deleted; the warp shots still show whatever the ground track is over (sea, mostly) | - |
+
+### Not fixed, and why
+
+- **The flattened plain around the pad** (photo 1, artifact 1): 450 m of geometrically level ground with a
+  circular edge is in the site data and the height authority, not in this package (request
+  `terrain-render-6`, open). The ground cover, clinker and relief shadows carry the eye-height views; the
+  plane is still visible as a plane beyond about 50 m.
+- **Parallax displacement of the detail layers** within 30 m (both critics): not done. The relief shadows
+  march the same height maps towards the sun; displacement would be a second march per pixel on the most
+  expensive views (stony ground is the tightest G-buffer line).
+- **Lunar ground under a low sun** (photo 10): the mottled dark slope in `moon-300m` remains (a crater wall
+  turned from an 11 degree sun, between the cascade's soft shadow and the facet terminator); softer than
+  in round 0, not the crisp black of an Apollo frame.
+- **Lunar rock silhouettes**: the finest mesh is broken and pitted; the coarser two are rounded, and
+  collidable rocks are as low as the height function's caps.
+- **Ridged amplification on rock classes** (photo 5): terrain core's height function; not requested this
+  round.
+- **Minor, not changed**: ghosting where hexagon copies cross-fade at one's feet (artifact 14), LEO nadir
+  softness (artifact 15: the body-wide imagery at 250 km), stipple at the lunar terminator from 5,000 km
+  (artifact 18), seabed notches at the near-field radius (artifact 20), warp screenshots over land
+  (artifact 21).
+- Seen in the integration lab and not this package's: horizontal scan-line stripes over the far hills and the
+  sea horizon in `integrated-30m` (atmosphere / clouds, work in progress of atmosphere-clouds at the time of
+  the run; the terrain alone draws no such lines).

@@ -348,14 +348,16 @@ struct ClassBlend {
 }
 
 /// Land-cover classes around a point of an image tile, blended as weight vectors (class ids themselves
-/// cannot be filtered). The weights are bilinear ones sharpened with a smoothstep: between two classes the
-/// change takes the middle third of a texel, not all of it. The caller displaces the lookup by band-limited
-/// noise (imageryWarp), so the line between two classes is ragged like the edge of a thicket, never the
-/// straight side of a raster cell.
-fn classBlendAt(uvI: vec2f, layer: i32) -> ClassBlend {
+/// cannot be filtered). Where a class texel spans many pixels the bilinear weights are sharpened with a
+/// smoothstep ('sharp' = 1: between two classes the change takes the middle third of a texel, not all of
+/// it), and the caller displaces the lookup by band-limited noise, so the line between two classes is
+/// ragged like the edge of a thicket, never the straight side of a raster cell. Where a texel spans a few
+/// pixels only ('sharp' = 0) the weights stay bilinear: sharpened there, the raster's cells drew a staircase.
+fn classBlendAt(uvI: vec2f, layer: i32, sharp: f32) -> ClassBlend {
   let st = uvI * 256.0 - 0.5;
   let i0 = floor(st);
-  let f = smoothstep(vec2f(0.3), vec2f(0.7), st - i0);
+  let fl = st - i0;
+  let f = mix(fl, smoothstep(vec2f(0.3), vec2f(0.7), fl), sharp);
   var o: ClassBlend;
   o.w0 = vec4f(0.0);
   o.w1 = vec4f(0.0);
@@ -373,10 +375,10 @@ fn classBlendAt(uvI: vec2f, layer: i32) -> ClassBlend {
   return o;
 }
 
-fn classBlend(t: TileRecord, uv: vec2f, k: f32, warp: vec2f) -> ClassBlend {
-  var o = classBlendAt(t.imageUv.xy + (uv + warp) * t.imageUv.z, t.images.x);
+fn classBlend(t: TileRecord, uv: vec2f, k: f32, warp: vec2f, sharp: f32) -> ClassBlend {
+  var o = classBlendAt(t.imageUv.xy + (uv + warp) * t.imageUv.z, t.images.x, sharp);
   if (k > 0.0 && (t.flags.x & 1) != 0) {
-    let p = classBlendAt(t.parentImageUv.xy + (uv + warp) * t.parentImageUv.z, t.images.y);
+    let p = classBlendAt(t.parentImageUv.xy + (uv + warp) * t.parentImageUv.z, t.images.y, sharp);
     o.w0 = mix(o.w0, p.w0, k);
     o.w1 = mix(o.w1, p.w1, k);
     o.orb = mix(o.orb, p.orb, k);
@@ -588,7 +590,9 @@ fn detailSample(scale: i32, material: i32, meanLod: f32, p: vec3f, dpx: vec3f, d
       let l2 = length(s2);
       if (l2 > 0.05) { sunP = vec3f(s2 / l2, sun.w / max(info.a, 1e-4)); }
     }
-    let d = detailPlane(scale, material, info.rgb, meanH, infoB.y, meanLod, st, dx, dy, sunP);
+    // (Gloss is of the crests of lobes and ropes, the near and mid layers' sizes: on the far layer's metre-high
+    // swells it made glossy patches tens of metres wide that mirrored the sky like salt pans.)
+    let d = detailPlane(scale, material, info.rgb, meanH, select(1.0, infoB.y, scale < 2), meanLod, st, dx, dy, sunP);
     o.shadow = max(o.shadow, d.shadow);
     o.ratio += wa * d.ratio;
     o.height += wa * (d.height - meanH);
@@ -991,10 +995,11 @@ ${DETAIL_WGSL}
   let cn0 = noiseAt(classLattice.zxy * c0 + vec3f(3.9, 5.2, 0.7));
   let cn1 = noiseAt(classLattice * c1 + vec3f(7.3, 1.9, 4.4));
   let cn2 = noiseAt(classLattice.yzx * (3.0 * c1) + vec3f(2.1, 8.7, 6.3));
-  let classWarp = (min(0.8 * classTexel, 12.0) * vec2f(cn0.a, clamp(0.5 * cn0.r, -1.0, 1.0)) +
-                   min(0.55 * classTexel, 5.6) * vec2f(cn1.a, clamp(0.5 * cn1.r, -1.0, 1.0)) +
-                   min(0.3 * classTexel, 1.9) * vec2f(cn2.a, clamp(0.5 * cn2.r, -1.0, 1.0))) / tileSize;
-  let cb = classBlend(t, uv, k, warp + classWarp);
+  // (Each octave only where the pixel resolves it: read unfiltered, a shorter one is per-pixel noise.)
+  let classWarp = (min(0.8 * classTexel, 12.0) * smoothstep(1.5, 3.0, 45.0 / footLong) * vec2f(cn0.a, clamp(0.5 * cn0.r, -1.0, 1.0)) +
+                   min(0.55 * classTexel, 5.6) * smoothstep(1.5, 3.0, 14.0 / footLong) * vec2f(cn1.a, clamp(0.5 * cn1.r, -1.0, 1.0)) +
+                   min(0.3 * classTexel, 1.9) * smoothstep(1.5, 3.0, 4.7 / footLong) * vec2f(cn2.a, clamp(0.5 * cn2.r, -1.0, 1.0))) / tileSize;
+  let cb = classBlend(t, uv, k, warp + classWarp, smoothstep(3.0, 8.0, classTexel / footLong));
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
   let imageTexel = levelSize * exp2(-min(s.imageLevel, lv)) / 256.0;
@@ -1054,7 +1059,12 @@ ${DETAIL_WGSL}
   let finer = smoothstep(1.0, 4.0, imageTexel / footprint);
   let anchor = max(calibrated * mix(mat.p7.y, mat.p7.x, finer), fillLand);
   let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.3);
-  let ground = mix(image, detail.matAlbedo * mix(rel, 1.0, fillLand), anchor);
+  // Where the body anchors its ground to materials, the share the imagery keeps is bounded in brightness too
+  // (to 1.6 times the material's): a strip the mosaic paints cream along this coast (sRGB 211, 180, 125) is
+  // dry grass and weathered rock, about as bright as the sea beside it, not three times brighter.
+  let lumM = luminance(detail.matAlbedo);
+  let bounded = image * min(1.0, 1.6 * lumM / max(lumI, 1e-4));
+  let ground = mix(select(image, mix(image, bounded, calibrated), mat.p7.x > 0.0), detail.matAlbedo * mix(rel, 1.0, fillLand), anchor);
   // The detail mostly modulates brightness on imagery colour; on the material's own colour it is the material.
   let lumR = max(luminance(detail.albedoRatio), 1e-3);
   // The orbital noise stands in for structure nobody has data for; where the aerial layer shows, it has it.
@@ -1160,6 +1170,12 @@ ${DETAIL_WGSL}
   // RT4.b of the terrain materials: the share of the sun that relief below the mesh keeps off the pixel
   // (read by this package's brdf_terrain and brdf_regolith; every other writer of these materials leaves 0).
   packed.extra.b = saturate(detail.shadow * mat.p8.a);
+  // RT4.a: the smallest filter of the sun-shadow lookup, in metres on the ground (request terrain-render-4).
+  // The terrain casts from its own tiles, so the shadow of a crater rim on its floor is drawn by a mesh of
+  // quads of this tile's level: filtered over one such quad its edge is the smooth curve of the rim, not the
+  // polygon (no gear teeth from orbit). Near the eye it is left to the lookup's own filter: a vessel's or a
+  // tower's shadow there stays as sharp as the sun makes it.
+  packed.extra.a = encodeShadowSoftness(4.0 * normalTexel * smoothstep(40.0, 160.0, dist));
   return packed;
 }
 `;

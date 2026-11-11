@@ -28,3 +28,26 @@ Each owner, for the camera kind `map` at the distances above: cloud coverage at 
 Moon's far-field texture sampled without the radial smear at the limb and with terminator relief; stars in the
 map camera at its exposure. The map overlay draws over whatever is rendered and needs no API change; map-view's
 `real-planet.spec.ts` stays the acceptance view (it fails when a render package breaks the lab).
+
+## Resolution (terrain-render's part: the Moon's far field)
+The request stays open for the clouds and the stars. On the terrain side (commit of terrain-render's visual
+close-out, round 1):
+- **Radial smear at the limb.** The orbital-scale noise and the grain of the night lights are read
+  unfiltered, and their octaves were faded by the pixel's size from its distance alone; towards the limb the
+  footprint on the ground is many times longer than that, so octaves the pixel cannot resolve along the line
+  of sight aliased into streaks there. Both now fade by the footprint's long axis (`footLong` in
+  `src/render/terrain/shaders/surface.ts`), and the class lookup's warp octaves likewise.
+- **Terminator relief.** Within 16 body radii (map distances included) the whole near side is drawn at
+  level 3 and casts into the whole-body shadow cascade (hand-off section 3, "Relief floor"): craters wider
+  than about 20 km cast shadows at the terminator. Since request `terrain-render-4` (c417fb0) the terrain
+  asks the lookup to filter its own shadows over one render quad, so those shadows are smooth crescents,
+  not polygons of the 5.3 km quads. Craters smaller than that cannot cast from level 3 (hand-off deviation
+  1a: level 4 for the whole disc does not fit the pools); their relief shows through the normal maps.
+- Looked at in the terrain lab at map distances: `out/screens/terrain/moon-60000km.png` (limb: foreshortened
+  maria and craters, no streaks across them), `moon-terminator-20000km.png` and `moon-terminator-5000km.png`
+  (crater shadows along the terminator). `real-planet.spec.ts` was not re-run by terrain-render (its
+  screenshots belong to map-view); the map view draws the same feature, so the next run of it shows this.
+- The "blue dotted speckle" and the "teal squiggle" of the low-orbit views: the squiggle at x 743-750,
+  y 113-140 of `real-lowOrbit-dayside.png` is a small island group with its shelf, which the imagery holds;
+  the speckle near the limb is not identified on the terrain side (water there is the far sheet's single
+  deep colour, which has no speckle of its own).

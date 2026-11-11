@@ -479,8 +479,9 @@ export class RockRenderer {
       const u1 = hashToUnit(hash4(rock.seed, 1, 0, 0));
       const u2 = hashToUnit(hash4(rock.seed, 2, 0, 0));
       const u3 = hashToUnit(hash4(rock.seed, 3, 0, 0));
-      // Vertical semi-axis: the cap the height function carries for a collidable rock, else from the seed.
-      let cap = rock.radius * (0.4 + 0.4 * u1);
+      // Vertical semi-axis: the cap the height function carries for a collidable rock, else from the seed
+      // (a loose block stands about as high as it is wide: 0.4 - 0.8 of its radius drew half-buried domes).
+      let cap = rock.radius * (0.55 + 0.55 * u1);
       if (rock.radius >= collideRadius) {
         const bump = this.provider.heightAt(id, rock.dir, band) - rock.baseHeight;
         if (bump > 0.1 * rock.radius) cap = bump;

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (6587a0d, by atmosphere-clouds; withdrawn by the filer)
 From: terrain-render
 Owner path: src/render/ocean/** or src/render/atmosphere/** (bisected to the pair: the picture is right with either one alone)
 Blocking: no
@@ -29,3 +29,12 @@ Find which pass darkens those pixels when both features are loaded (the terrain 
 all four runs) and make the ground beside the shore evenly lit: no tile-shaped steps in the lighting of
 land that is above sea level. Must not change: the near-field hand-over (the terrain discards its sea sheet
 and writes no water inside `fadeStart`), the cloud shadows themselves where they are right.
+
+## Resolution
+Withdrawn by terrain-render. The region was the staircase of the cloud shadow map under a low sun, which
+atmosphere-clouds removed in 6587a0d ("the map the render core reads is the marched one filtered as mean
+transmittance over a tent ... no texel staircase from orbit, no combs or saw teeth at low sun"), committed
+while this request was being written. The bisection above was misleading: the clouds' shadow over that
+ground differed between runs. Re-rendered on 6587a0d with all four features (`INTEGRATED_VIEWS=30m`): the
+ground south-east of the pad is evenly lit, no tile-shaped step (`out/screens/terrain/integrated-30m.png`).
+Nothing to do for the owners.
