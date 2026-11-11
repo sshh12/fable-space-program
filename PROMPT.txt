@@ -30,3 +30,35 @@ Resources
 - The .env file has keys for OpenAI, Hugging Face, and ElevenLabs. The Modal CLI is logged in for GPU jobs; leave the existing Modal apps alone. Use any of these if they help (textures, sound effects, GPU jobs), up to $500 per provider. Never commit the keys or ship them to the client.
 
 Done means I can launch from the pad, reach orbit, land on the Moon, return to Earth, and survive reentry and splashdown, all in one session.
+
+--- expansion ---
+
+These requirements extend the original scope; exceptions below apply only where stated.
+
+World & vehicles
+- Expand to the entire solar system at true scale, with all planets and major moons on real orbits. Keep the Earth and Moon detail above; other bodies may use placeholder visuals and simple surfaces for now, overriding the original terrain and no-placeholder requirements for those bodies only. Players must be able to reach and orbit them. Design for landing in a future update.
+- Offer a varied fleet of plausible rockets and spacecraft for different capabilities and flight profiles. Players freely choose a vehicle and launch from Earth; don't tie vehicles to prescribed missions.
+
+Live multiplayer
+- Design and implement the backend, networking, and hosting. Choose Modal, Netlify, Railway, or a combination to fit the architecture; credentials are already set up. Create a GitHub repo called fable-space-program for the project.
+- Build around lobbies, but put everyone in one shared mega-lobby for now. Architect for front-page-of-Hacker-News traffic, with basic load tests and documented capacity, bottlenecks, and a scaling path.
+- Players share a live universe and can rendezvous, dock with each other, undock, and crash into each other freely. Support multiple Earth launch pads and concurrent launches. Decide how docked craft share control.
+- Persist ships and docked assemblies across logout, reconnects, and server restarts. Choose sensible, configurable universe-timeout and cleanup rules for abandoned ships and debris; define the clock used and how activity and docking affect expiry, and make the rules visible to players.
+- Choose and implement the most fun workable multiplayer time-warp model. Resolve how players at different flight stages coexist, synchronize for encounters, and handle collisions, docking, and persistent ships through warp.
+- Extend the KSP-style map with live player craft, predicted intercepts, closest approaches, relative motion, and maneuver planning for rendezvous across spheres of influence.
+
+Presentation & access
+- Give the front end AAA polish: a Battlefield 1-inspired menu over a live Earth and space view, with vehicle selection and a seamless transition into spawning and launch.
+- Detect WebGPU/device capabilities and run a short performance benchmark to automatically choose graphics settings; allow manual adjustment. Clearly block mobile and unsupported devices with an explanation. Keep the desktop WebGPU target.
+
+Don't cut corners
+- Shared simulation: use server-authoritative state and a coherent time model. Handle latency, reconnects, and simultaneous interactions; nearby players must agree on positions, burns, collisions, and damage. Don't fake multiplayer with cosmetic ghost ships or client-only outcomes.
+- Docking and collisions: implement relative-velocity contact, collision response, docking-port alignment, persistent physical assemblies, and undocking with consistent momentum and control. No overlapping ships disguised as docking. Keep fast-moving craft from tunneling through each other, and handle launch-pad contention.
+- Time warp: implement the synchronization rules end to end, including entering and leaving warp near other craft, burns, SOI transitions, logout, and cleanup. No divergent timelines silently merged by teleporting ships, or a global warp control that makes everyone else's flight unplayable.
+- Map and scale: derive trajectories and intercepts from the actual simulation and its time model, including moving targets and SOI changes. Preserve precision for close docking anywhere in the solar system. No decorative orbit lines, scripted rendezvous, or shrinking distances.
+- Persistence and capacity: save authoritative state durably and recover it after a restart, including docked assemblies. Scale simulation and network updates by proximity and relevance while keeping the mega-lobby coherent; don't broadcast every object every frame. Bound abandoned-object growth and measure load with simulated active players, not just idle connections or HTTP requests.
+- Verification: test with separate clients flying, docking, colliding, warping, disconnecting, and reconnecting, including under latency. Demonstrate restart recovery, expiry behavior, an interplanetary flight into orbit, and concurrent launches. Report measured load-test limits honestly; architecture alone isn't proof of capacity.
+
+Resources & completion
+- The original $500 per provider allowance is for R&D, not a hosting budget cap. Estimate ongoing hosting costs and ask for additional funds when needed. Keep credentials out of GitHub and the client.
+- The original Earth-Moon-return flight still needs to work. Completion also requires the deployed multiplayer experience, freely selectable vehicles, persistent ships, working rendezvous and docking between real clients, reachable solar-system destinations, and the polished menu and automatic graphics setup above.
