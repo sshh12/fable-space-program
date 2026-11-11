@@ -1,4 +1,4 @@
-Status: declined
+Status: accepted (lead decision: eight-component swell; data change in progress by the lead)
 From: ocean
 Owner path: data/defs/bodies/earth.json (`ocean.swell`; the lead's body data)
 Blocking: no
@@ -50,3 +50,12 @@ Recorded for the lead in `docs/handoff/core-support.md` with your evidence. What
 integrated lab: `out/screens/integration/water-climb-all-2km.png` and the neighbouring frames of
 `tests/browser/integration/water.spec.ts` show the regular rows between 1.5 km and 15 km. Nothing in the
 core limits the count (`oceanSwellHeight` takes any number of components; your renderer takes up to 8).
+
+## Lead decision (2026-11-11)
+
+Accepted: option 1 of ocean-6, the data. What is drawn stays what the capsule rides (ARCHITECTURE 10.2); option 2
+of ocean-6 would break that rule and is declined. The lead replaces `ocean.swell` in data/defs/bodies/earth.json with
+eight components as specified here (wavelengths about 200-32 m, directional spread around the wind plus one swell
+system, amplitudes on a JONSWAP-like tail, total variance about 0.18 m^2, every steepness below 0.06), re-flies the
+headless mission, re-checks the splashdown gates and re-records tests/mission/golden.json. This request is marked
+resolved with the commit when that is done.

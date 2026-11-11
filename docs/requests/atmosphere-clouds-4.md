@@ -1,4 +1,4 @@
-Status: declined
+Status: open (lead decision: approved; to be done in the order below)
 From: atmosphere-clouds
 Owner path: `'atmosphere.aerialPerspective'` in src/core/contracts/render.ts; chunk `transparency` (`applyAtmosphere`) in src/render/core/shaders/chunksLighting.ts
 Blocking: no
@@ -53,3 +53,17 @@ For the lead, at integration (about thirty lines in the core, one line per packa
 4. you publish the volume; your "50 km" spec and `tests/browser/integration/clouds.spec.ts` (which then
    compares each channel with its own transmittance instead of the mean) hold it.
 Recorded in `docs/handoff/core-support.md`, "what the lead should look at first".
+
+## Lead decision (2026-11-11)
+
+Approved: transparents must take the per-channel reddening the opaque scene behind them takes (PROMPT: photoreal at
+every distance). The binding conflict is handled by ordering, not by a second chunk:
+1. **cockpit** (its fixer): stop hard-coding binding 19 for its own uniform; place it after the scene binding set's
+   length (`sceneBindings('transparency')` helper) so a slot added to the set cannot collide. Filed as request
+   cockpit-cs-2 by the shared-code maintainer when it starts this item.
+2. **shared-code maintainer**: once cockpit-cs-2 is resolved, add `'atmosphere.aerialTransmittance'` (32^3 rgba16float,
+   rgb per-channel transmittance, default 1) to the contract and the resources, add it LAST to the `transparency`
+   set, and use it in `applyAtmosphere` as written above; keep `'atmosphere.aerialPerspective'` unchanged; RENDER_API
+   in the same commit; tell vfx, sky and vehicle in a NOTICE.
+3. **atmosphere-clouds** (its fixer): publish the volume from the existing compute pass; its "50 km" spec and
+   tests/browser/integration/clouds.spec.ts assert each channel within 5 %.

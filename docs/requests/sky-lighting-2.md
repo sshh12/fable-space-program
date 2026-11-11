@@ -1,4 +1,4 @@
-Status: declined
+Status: resolved (lead decision: full cube)
 From: sky-lighting
 Owner path: docs/ARCHITECTURE.md section 17 (VRAM line "sky 0.1"), lead decision
 Blocking: no
@@ -41,3 +41,10 @@ cube, about 0.14 GB for the sky). The decision and its evidence (the 1024 / 2048
 above: indistinguishable at a 70 degree field, soft background stars at 24 degrees) are listed for the lead
 in `docs/handoff/core-support.md` under "what the lead should look at first". If the lead raises the line
 to 0.15 GB, the app shell passes the option; no code changes are needed in the sky or in the core.
+
+## Lead decision (2026-11-11)
+
+Approved. The sky's VRAM line becomes 0.15 GB in docs/ARCHITECTURE.md section 17 (and in ARCHITECTURE_V2): the
+faint-star background at 2048 per face matches the pixel in narrow fields, and 50 MB more on a 32 GB card is not
+worth soft stars. The sky package makes 2048 its default (`MILKY_WAY_FACE_SIZE`) in its next commit; until then the
+app shell passes `createSkyFeature({ milkyWayFaceSize: 2048 })`.

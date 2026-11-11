@@ -1,4 +1,4 @@
-Status: declined
+Status: resolved (lead decision: 45 minutes accepted)
 From: sim-world-pilot
 Owner path: docs/ARCHITECTURE.md (section 18.2)
 Blocking: no
@@ -40,3 +40,10 @@ Recorded for the lead in `docs/handoff/core-support.md` ("what the lead should l
 numbers: 44.9 minutes of real time at 60 Hz through `Sim.advance` (26.6 minutes of frames that integrate
 82.5 minutes of flight, 18.3 minutes on rails), against "about 20-25 minutes" in the text; the levers
 (the 4 s look-ahead of sim-design 5.3, the 4x cap of physics warp) are rule changes for the lead.
+
+## Lead decision (2026-11-11)
+
+Accepted as measured. Section 18.2 of both architecture documents now says about 45 minutes at 60 Hz and points
+at the per-phase table. The warp rules stay as they are (the 4 s look-ahead and the 4x physics-warp cap are what
+keep burns and terrain safe; shortening a test is not a reason to loosen them). The Playwright `mission` project's
+3-hour timeout covers it.

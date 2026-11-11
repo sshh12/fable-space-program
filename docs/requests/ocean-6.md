@@ -1,4 +1,4 @@
-Status: declined
+Status: accepted (lead decision: option 1, the data; option 2 declined; see ocean-5)
 From: ocean
 Owner path: data/defs/bodies/earth.json (`ocean.swell`), and the ocean brief's rule that the swell is the only wave HEIGHT longer than 25 m (lead)
 Blocking: no        (the visual critique's items 5 and 15 cannot be closed without it; everything else in the package can)
@@ -71,3 +71,11 @@ If asked for a recommendation: option 1. It is data, it keeps one sea for physic
 price is a mission re-run, which the lead will do when integrating anyway.
 
 Recorded in `docs/handoff/core-support.md` (decisions asked of the lead) together with `ocean-5`.
+
+## Lead decision (2026-11-11)
+
+Option 1 is taken (see ocean-5): eight swell components in data/defs/bodies/earth.json, done by the lead together
+with the mission re-check. Option 2 (render-only long-wave heights away from vessels) is declined: it would make the
+drawn sea differ from the surface the physics knows, against ARCHITECTURE 10.2. The ocean needs no code change; its
+swell-agreement spec compares against whatever the data holds. Items 5 and 15 of the ocean critique are closed by
+the data change.

@@ -791,7 +791,7 @@ Nothing below is a stub in shipped code; these are the seams that make EVA addit
 | rAF delta with vsync | p99 <= 17.5 ms, no delta >= 33 ms in steady flight |
 | CPU main thread per frame | p99 <= 6 ms (sim <= 1.5 ms at 4x physics warp, quadtree + cascades <= 1 ms, uploads <= 2 ms, UI <= 0.5 ms) |
 | Tile generation | 6-12 ms per tile in workers; <= 8 uploads or 2 ms per frame |
-| VRAM | about 3 GB (terrain 1.1, vehicle + materials 0.6, G-buffer/history 0.5, clouds/LUTs 0.2, shadows 0.13, sky 0.1) |
+| VRAM | about 3 GB (terrain 1.1, vehicle + materials 0.6, G-buffer/history 0.5, clouds/LUTs 0.2, shadows 0.13, sky 0.15: the full 2048-per-face Milky Way cube, lead decision on sky-lighting-2) |
 | Headless full mission | < 5 min wall-clock (target 90 s) |
 | Baked data on disk | < 20 GB including caches |
 
@@ -875,7 +875,7 @@ buoyancy, SAS convergence, warp never steps past an event.
 ### 18.2 Browser mission (Playwright `mission` project)
 
 `/?scenario=lunar-direct&pilot=1` in real Chrome on the RTX 5090: the same pilot, driven through
-`Sim.advance(realDt, onControlTick)`, in real time with the allowed warp levels (about 20-25 minutes).
+`Sim.advance(realDt, onControlTick)`, in real time with the allowed warp levels (about 45 minutes at 60 Hz: 26.6 minutes of frames that integrate 82.5 minutes of flight and 18.3 minutes on rails; per-phase table in docs/handoff/sim-world-pilot.md; lead decision on sim-world-pilot-2).
 Short segments are additionally flown with real key presses to prove the bindings (throttle up, Space to
 stage, SAS mode keys, M for the map, a node drag with the mouse - including a Shift-drag on a node handle
 that must leave the throttle at 0). Judged on: the same milestone list and
