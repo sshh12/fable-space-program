@@ -1,8 +1,11 @@
-import { appUrl, assertDiscreteGpu, expect, expectNoErrors, openPage, pngStats, test } from '../harness';
+import { appUrl, assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, pngStats, test } from '../harness';
 
 test.describe('app shell', () => {
-  test('boots on the discrete GPU, loads definitions and presents frames', async ({ page, pageLog }) => {
-    await openPage(page, '/');
+  test('boots on the discrete GPU, loads definitions and presents frames', async ({ page, pageLog, request }) => {
+    // Since app integration v1 the page at / is the game (request app-integration-2): it waits for the pad
+    // terrain, every feature's start-up and the sound assets. No fullscreen capture on a key press.
+    test.setTimeout(6 * 60_000);
+    await openPage(page, '/?capture=0', { timeoutMs: 240_000 });
     const adapter = await assertDiscreteGpu(page);
     expect(adapter.features).toContain('float32-filterable');
     expect(adapter.features).toContain('timestamp-query');
@@ -10,15 +13,17 @@ test.describe('app shell', () => {
 
     expect(await page.evaluate(() => window.crossOriginIsolated)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.dataset['bodies'])).toBe('earth,moon,sun');
-    expect(await page.evaluate(() => window.__test!.page)).toEqual({ kind: 'app', name: 'main', scenarioId: null });
+    const scenarios = ((await (await request.get(appUrl('/defs/index.json'))).json()) as { files: string[] }).files.filter((f) => f.startsWith('scenarios/')).map((f) => f.replace(/^scenarios\/|\.json$/g, ''));
+    const info = (await page.evaluate(() => window.__test!.page)) as { kind: string; name: string; scenarioId: string | null };
+    expect({ kind: info.kind, name: info.name }).toEqual({ kind: 'app', name: 'main' });
+    expect(scenarios).toContain(info.scenarioId);
 
     await page.evaluate(() => window.__test!.waitFrames(5));
     const stats = pngStats(await page.screenshot());
     expect(stats.width).toBe(1280);
     expect(stats.height).toBe(720);
-    // The shell clears to a dark blue-grey: non-zero and uniform. Real scenes use assertRealImage instead.
-    expect(stats.maxLuma).toBeGreaterThan(2);
-    expect(stats.center[2]).toBeGreaterThan(stats.center[0]);
+    // The game shows the pad: a real picture.
+    assertRealImage(stats, 'the game at boot');
     await expectNoErrors(page, pageLog);
   });
 
