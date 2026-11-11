@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit ecc9238)
 From: map-view
 Owner path: src/core/fakes/fakeSim.ts (core-support), labs/integration/** (core-support)
 Blocking: no   (round-4 photo critic of the map view, `out/qa/wave2/map-view.r4.photo.json` finding 10, minor)
@@ -25,3 +25,11 @@ text. The synthetic scene already calls its craft "Kestrel".
    synthetic map scene uses) when the integration lab builds its FakeSim, so pictures of the composed frame do not
    show "Fake vessel".
 Not to change: the vessel id (`fake-vessel`), which tests look up.
+
+## Resolution
+
+Done (`ecc9238`): `FakeSimOptions.vesselName?: string` (default 'Fake vessel', so nothing else moves; the id stays
+`fake-vessel`), and the integration lab names the vessel after its vehicle definition, as the real
+simulation does (`src/sim/vessel/assemble.ts` gives a vessel its vehicle's `name`): "Meridian / Heron / Kestrel
+lunar stack" for the mission vehicle. `src/core/fakes/fakeSim.test.ts` holds the option. Re-shoot your
+`real-*` pictures.
