@@ -4,7 +4,8 @@
  * the full TestApi wiring (isIdle, perf, hdrStats, setDeterministic, setPaused). Used by every render lab.
  *
  * Query parameters (all optional): scene=<FakeScene>, the camera parameters of labCameraFromQuery,
- * perf=features (attribution mode), scale=<render scale>, governor=off, ev=<forced EV100>, deterministic=1, paused=1.
+ * perf=features (attribution mode), scale=<render scale>, governor=off, ev=<forced EV100>, deterministic=1
+ * (with noise=cycle: the blue-noise offset keeps cycling), paused=1.
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -58,7 +59,8 @@ export interface LabApp {
   snapshot(): SimSnapshot;
   cameraState(): CameraState;
   setPaused(paused: boolean): void;
-  setDeterministic(on: boolean): void;
+  /** Fixed time step and the renderer's deterministic mode; `cycleNoise` as in CoreRenderer.setDeterministic. */
+  setDeterministic(on: boolean, opts?: { cycleNoise?: boolean }): void;
   /** Replace the per-frame callback. */
   onFrame(cb: ((snapshot: SimSnapshot, realDt: number) => void) | null): void;
   /** Render one frame now (outside requestAnimationFrame), e.g. to step while the loop is stopped. */
@@ -181,9 +183,9 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       setPaused(p) {
         paused = p;
       },
-      setDeterministic(on) {
+      setDeterministic(on, o) {
         deterministic = on;
-        renderer.setDeterministic(on);
+        renderer.setDeterministic(on, o);
       },
       onFrame(cb) {
         onFrame = cb;
@@ -221,7 +223,7 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
         camera.settings.kind = mode === 'cockpit' ? 'interior' : mode === 'map' ? 'map' : 'external';
       },
     });
-    if (query.get('deterministic') === '1') app.setDeterministic(true);
+    if (query.get('deterministic') === '1') app.setDeterministic(true, { cycleNoise: query.get('noise') === 'cycle' });
 
     requestAnimationFrame(loop);
     await testApi.api.waitFrames(3);

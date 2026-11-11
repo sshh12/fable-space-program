@@ -146,3 +146,49 @@ test('sub-millimetre stability: moving the camera in 1 mm steps moves the image 
   await saveScreenshot(page, 'render-core', 'stability-after-sweep');
   await expectNoErrors(page, pageLog);
 });
+
+test('deterministic mode: the blue-noise offset is fixed, or cycles reproducibly with cycleNoise (request vfx-6)', async ({ page, pageLog }) => {
+  await openPage(page, '/labs/render-core/?scene=pad&hud=0&paused=1&ev=14');
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 20);
+  /** Enter deterministic mode afresh, render `frames` frames by hand and return the canvas. */
+  const after = async (cycleNoise: boolean, frames: number): Promise<Buffer> => {
+    await page.evaluate(
+      ([cycle, n]) => {
+        const lab = window.__lab!;
+        lab.setLoop(false);
+        lab.renderer.setJitter(false);
+        lab.setDeterministic(false);
+        lab.setDeterministic(true, { cycleNoise: cycle as boolean });
+        for (let i = 0; i < (n as number); i++) lab.renderFrame(1 / 60);
+      },
+      [cycleNoise, frames] as const,
+    );
+    return page.screenshot();
+  };
+  // Fixed noise: once the resolve has converged, consecutive frames are the same picture (the dither and
+  // every blue-noise jitter stand still), and so are two runs.
+  const fixed60 = await after(false, 60);
+  const fixed61 = await after(false, 61);
+  const fixedStep = pngDiff(fixed60, fixed61);
+  expect(pngDiff(fixed60, await after(false, 60)).maxAbsDiff).toBe(0);
+  // Cycling noise: consecutive frames differ (the dither alone moves many values by a level) ...
+  const cycle60 = await after(true, 60);
+  const cycle61 = await after(true, 61);
+  const step = pngDiff(cycle60, cycle61);
+  // ... and the same number of frames after the call gives the same picture, run after run.
+  const again60 = await after(true, 60);
+  console.log(
+    `deterministic noise: fixed, frames 60 and 61 differ in ${(100 * fixedStep.differingFraction).toFixed(2)} % of the values (max ${fixedStep.maxAbsDiff}); cycling: ${(100 * step.differingFraction).toFixed(1)} % (max ${step.maxAbsDiff}); ` +
+      `frame 60 of a second run: fixed identical, cycling max difference ${pngDiff(cycle60, again60).maxAbsDiff}`,
+  );
+  expect(fixedStep.differingFraction).toBeLessThan(0.002);
+  expect(step.differingFraction).toBeGreaterThan(0.05);
+  expect(pngDiff(cycle60, again60).maxAbsDiff).toBe(0);
+  await page.evaluate(() => {
+    window.__lab!.setDeterministic(false);
+    window.__lab!.setLoop(true);
+  });
+  await expectNoErrors(page, pageLog);
+});
+

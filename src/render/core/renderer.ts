@@ -80,8 +80,15 @@ export interface CoreRenderer extends Renderer {
   readonly core: CoreApi;
   readonly resources: CoreSharedResources;
   readonly canvas: HTMLCanvasElement;
-  /** Freeze presentation-only animation: fixed jitter-free noise, qualityScale 1, maximum render scale. */
-  setDeterministic(on: boolean): void;
+  /**
+   * Freeze presentation-only animation: `frame.animate` false, the blue-noise offset fixed at [0, 0],
+   * qualityScale 1, maximum render scale. With `cycleNoise` the blue-noise offset (`frame.misc.zw`, what
+   * `blueNoise()` and a jittered march read) keeps cycling, from the count of frames rendered since this
+   * call: a ray-marched volume then gets a new jitter every frame and the temporal resolve averages it, as
+   * in the running game, and two runs that render the same number of frames after the call still produce
+   * identical pictures. `frame.animate` stays false (features keep their own animated noise frozen).
+   */
+  setDeterministic(on: boolean, opts?: { cycleNoise?: boolean }): void;
   /** Switch the sub-pixel TAA jitter off / on (off: consecutive frames are pixel-identical, for A/B readbacks). */
   setJitter(enabled: boolean): void;
   /** Force EV100 (null = automatic). */
@@ -321,6 +328,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const governorCfg: GovernorConfig = { ...DEFAULT_GOVERNOR, renderScaleMin: quality.renderScaleMin, renderScaleMax: quality.renderScaleMax, ...opts.governor };
   let governor: GovernorState = initialGovernorState(governorCfg);
   let deterministic = false;
+  let cycleNoise = false;
 
   const tex = (label: string, format: GPUTextureFormat, w: number, h: number, usage: GPUTextureUsageFlags): GPUTexture =>
     createTextureChecked(device, { label, format, size: [w, h], usage }, reportError);
@@ -615,7 +623,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       basis,
       renderScale: governor.renderScale,
       sunVisibility,
-      noiseOffset: animate ? [(frameIndex * 37) % BLUE_NOISE_SIZE, (frameIndex * 23) % BLUE_NOISE_SIZE] : [0, 0],
+      noiseOffset: animate ? [(frameIndex * 37) % BLUE_NOISE_SIZE, (frameIndex * 23) % BLUE_NOISE_SIZE] : cycleNoise ? [(jitterIndex * 37) % BLUE_NOISE_SIZE, (jitterIndex * 23) % BLUE_NOISE_SIZE] : [0, 0],
       cloudShadow,
       shine,
       defs,
@@ -895,9 +903,11 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       const { width, height } = targets;
       return { width, height, data: new Float32Array(await readTexturePixels(device, targets.depthCopy, { x: 0, y: 0, width, height }, 4)) };
     },
-    setDeterministic(on) {
-      if (deterministic === on) return;
+    setDeterministic(on, o) {
+      const cycle = on && Boolean(o?.cycleNoise);
+      if (deterministic === on && cycleNoise === cycle) return;
       deterministic = on;
+      cycleNoise = cycle;
       jitterIndex = 0;
       historyReset = true;
     },
