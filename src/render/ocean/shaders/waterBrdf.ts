@@ -5,11 +5,11 @@
  * plus waterAlpha(s) and waterBodyColor(s).
  *
  * Model
- *  - Specular: GGX, F0 = 0.02. The slope variance not carried by the shading normal is unresolved and goes into
- *    the lobe: sigma^2_unresolved = (1 - resolved fraction) x (0.003 + 0.00512 U10) (Cox-Munk mean square slope)
- *    x the roughness field, alpha = GGX_KAPPA x sigma, which gives the GGX lobe the half-maximum width of the
- *    Gaussian Cox-Munk slope distribution. One formula for the broad glint from orbit and the glitter path at the
- *    surface.
+ *  - Specular, F0 = 0.02. The slope variance not carried by the shading normal is unresolved and goes into the
+ *    lobe: sigma^2_unresolved = (1 - resolved fraction) x (0.003 + 0.00512 U10) (Cox-Munk mean square slope) x the
+ *    roughness field. The sun and the other lights are mirrored with the Gaussian slope distribution of that
+ *    variance itself (Beckmann, Smith shadowing); the sky reflection's lobe is a GGX alpha = GGX_KAPPA x sigma of
+ *    the same half-maximum width. One formula for the broad glint from orbit and the glitter path at the surface.
  *  - Glitter: the lobe is the EXPECTATION of the sun's image in the unresolved facets. A cell of the sea that
  *    holds N facets (its area / glintFacetSizeM^2) has on average k = N x P(slope) (n.h) Omega_sun / (4 l.h) of
  *    them mirroring the sun (P = the sea's Gaussian slope distribution); the lobe is multiplied by a factor of
@@ -180,11 +180,13 @@ fn waterFieldRaw(ch: WaterChart, q: vec4f, footprint: f32) -> f32 {
   w += vec2f(waterChartNoise(ch, z, vec2f(${f(FIELD.warp1)}), vec2f(4.4, 2.9), 22), waterChartNoise(ch, z, vec2f(${f(FIELD.warp1)}), vec2f(6.3, 8.1), 23)) * ${f(FIELD.warp1Amp)};
   let n0 = waterChartNoise(ch, 0.5 * w, vec2f(${f(FIELD.wind)}), z, 11);
   let wind = exp(1.3 * q.x * n0);
-  // Surface films survive where the wind is light.
+  // Surface films survive where the wind is light: calm pools only there, filaments (swept together by the
+  // currents) over a wider range of wind.
   let calm = smoothstep(0.35, -0.1, n0);
+  let calmL = smoothstep(0.65, 0.0, n0);
   var slick = 0.0;
   var pool = 0.0;
-  if (calm > 0.0) {
+  if (calmL > 0.0) {
     // Slick filaments: the ZERO SET of a flow-warped noise stretched along the wind: single lines that meander
     // along the wind, end and rejoin (never the nested rings of a contour map), their width and strength varying
     // along them with a gate; antialiased by the footprint.
@@ -195,7 +197,11 @@ fn waterFieldRaw(ch: WaterChart, q: vec4f, footprint: f32) -> f32 {
     let t2 = waterChartNoise(ch, 0.7 * w, vec2f(${f(FIELD.line2Along)}, ${f(FIELD.line2Across)}), z, 17);
     let g2 = ${f(0.9 / FIELD.line2Across)};
     let l2 = waterLineCover(abs(t2), ${f(FIELD.line2Half)} * g2 * (0.6 + 0.8 * smoothstep(0.5, -0.5, gate)), fp * g2) * smoothstep(0.25, -0.35, gate);
-    slick = max(l1, 0.8 * l2) * calm;
+    // Fine threads wound more tightly by the flow (the marbling of a glint seen from orbit).
+    let t3 = waterChartNoise(ch, 1.25 * w, vec2f(${f(FIELD.line3Along)}, ${f(FIELD.line3Across)}), z, 25);
+    let g3 = ${f(0.9 / FIELD.line3Across)};
+    let l3 = waterLineCover(abs(t3), ${f(FIELD.line3Half)} * g3, fp * g3) * smoothstep(-0.3, 0.2, gate);
+    slick = max(max(l1, 0.8 * l2), 0.6 * l3) * calmL;
     // Calm pools: hard-edged tongues of the same flow, their edges frayed into streaks by the finer line noise.
     let tp = waterChartNoise(ch, w, vec2f(${f(FIELD.poolAlong)}, ${f(FIELD.poolAcross)}), z, 18) + 0.15 * t2;
     let ep = 0.012 + ${f((0.5 * 0.9) / FIELD.poolAcross)} * fp;
@@ -221,7 +227,9 @@ fn waterFieldRaw(ch: WaterChart, q: vec4f, footprint: f32) -> f32 {
     let packet = smoothstep(0.45, 0.6, waterChartNoise(ch, z, vec2f(${f(FIELD.internalPatch)}), vec2f(5.5, 2.5), 21));
     if (packet > 0.0) {
       let crest = pow(0.5 + 0.5 * sin(TWO_PI * (fract(ch.base.x / ${f(FIELD.internalWave)}) + (ch.d.x + w.x) / ${f(FIELD.internalWave)})), 6.0);
-      iw = (crest - 0.2256) * 1.5 * packet * oi;
+      // Trains of eight crests, the leading one strongest (a soliton packet), not an endless grating.
+      let train = exp(-3.0 * fract(fract(ch.base.x / ${f(8 * FIELD.internalWave)}) + (ch.d.x + w.x) / ${f(8 * FIELD.internalWave)}));
+      iw = (crest - 0.2256) * 1.5 * packet * oi * train;
     }
   }
   return wind * exp(1.5 * q.z * rows) * (1.0 + 0.25 * iw) * (1.0 - 0.9 * q.w * slick) * (1.0 - 0.55 * q.y * pool);

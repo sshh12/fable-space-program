@@ -13,6 +13,14 @@ culling, per-layer FFT skipping, the long-wave normals layer, gust and filament 
 whitecap calibration, a view-independent seabed depth, continuous refraction blending, the perf spec against each
 17.1 line, the LEO glint located in 2-D slope space. Section 13 lists every finding and what was done.
 
+Revision after the first visual critique (wave 2, round 1, 2026-11-11; `out/qa/wave2/ocean.md`): glitter from
+sea-anchored facet statistics, the sun mirrored with the Gaussian (Cox-Munk) slope distribution, the roughness
+field in a planet-wide wind chart (slick filaments, calm pools, gusts, wind rows, internal waves), the far-wave
+bank on the far sheet, whitecaps from a camera-centred foam map of the combined surface drawn through a foam
+lace, surf bores, caustics, vessel reflections, a seabed depth that ignores objects, the forward pass lit under
+cloud as the deferred pass is, lab views at the meter's exposure. Section 14 goes through the critique item by
+item.
+
 ## 1. Where things are
 
 ```
@@ -23,7 +31,11 @@ src/render/ocean/spectrum.ts         JONSWAP + spreading, high-pass, cascade ban
 src/render/ocean/cascades.ts         the four cascade spectra and the long-wave layer of a body (no GPU dependency)
 src/render/ocean/swell.ts            float64 phase preparation of the shared swell + float32 emulation for tests
 src/render/ocean/nearField.ts        near-field uniform, planet-fixed chart, CDLOD patch selection, horizon distance
-src/render/ocean/fft.ts              GPU: spectrum evolution, 2 x 256-point IFFT passes, assembly, foam, mips (5 layers, masked)
+src/render/ocean/fft.ts              GPU: spectrum evolution, 2 x 256-point IFFT passes, assembly, mips (5 layers, masked)
+src/render/ocean/fieldModel.ts       the roughness field (wind chart, slicks, gusts, rows, internal waves): CPU reference of the WGSL
+src/render/ocean/farWaves.ts         the far-wave bank (10 plane waves around the JONSWAP peak) shaded on the far sheet
+src/render/ocean/foamMap.ts          GPU: whitecaps of the combined surface in 3 camera-centred levels, with history
+src/render/ocean/foamLace.ts         the foam lace texture (uniform T, E[T], E[T^2] mips): density -> foam picture
 src/render/ocean/vessels.ts          damping zones, splash ripples, wake texture, 'ocean.wetness' slots
 src/render/ocean/uniforms.ts         CPU mirror of the WGSL OceanUniforms block
 src/render/ocean/shaders/waves.ts    chunk "ocean_waves": chart, swell, cascades, displaced-surface function
@@ -34,7 +46,7 @@ src/render/ocean/shaders/fieldWgsl.ts  bake of the roughness field into a mip-ma
 src/render/ocean/shaders/fftWgsl.ts  FFT compute shaders
 data/defs/render/earth.ocean.json    tunables (section 7)
 labs/ocean/                          lab: main.ts (presets, window.__ocean), labSky.ts, labSim.ts, props.ts, ballast.ts
-tests/unit/ocean/                    swellPhases, spectrum, nearField (vitest)
+tests/unit/ocean/                    swellPhases, spectrum, nearField, field (roughness field, far waves, foam lace) (vitest)
 tests/browser/ocean/                 swell, handover, glint, stability, foam, screens (functional); ocean.perf (perf)
 ```
 
@@ -48,7 +60,7 @@ interface OceanDebug {
   nearField(): OceanNearFieldValue;                       // what 'ocean.nearField' holds this frame
   forceNearFieldOff(off: boolean): void;                  // deferred water only (A/B checks)
   setChopScale(scale: number): void;                      // FFT chop and long-wave layer x scale (0 = swell alone)
-  setDebugView(view: 'none' | 'skyReflection' | 'body' | 'sunSpecular' | 'foam' | 'normal' | 'roughness'): void;
+  setDebugView(view: 'none' | 'skyReflection' | 'body' | 'sunSpecular' | 'foam' | 'normal' | 'roughness' | 'foamMap' | 'refraction'): void;
   setRefractionScale(scale: number): void;
   setReactiveScale(scale: number): void;                  // x the TAA reactive values (0 = no mask)
   setDirectSpecular(on: boolean): void;                   // re-registers brdf_water without the direct specular
@@ -65,6 +77,7 @@ nearFieldValue(bodyIndex, hasOcean, altitudeAboveSea, fadeStart, fadeEnd): Ocean
 packNearField(v: OceanNearFieldValue, out?: ArrayBuffer): ArrayBuffer      // the 16-byte contract layout
 horizonDistance(camH: number, waveMargin: number, seaRadius: number): number   // patches beyond are culled
 physicsWaterHeight(t: OceanTunables, seaLevel: number, dirFixed: Vec3, ut: number): number   // = sim/world environment
+oceanRoughnessField(t: OceanTunables): (dirFixed: Vec3, footprint: number) => number   // the field brdf_water uses (mean 1)
 ```
 
 The debug hooks are for labs and specs; the app never needs them.
@@ -84,41 +97,62 @@ forward pass includes its variant `"ocean_water_forward"` (identical but for the
 ## 3. The shared water shading (`brdf_water`)
 
 One chunk, compiled into the deferred lighting module and into the forward pass; the forward pass replicates
-the deferred lighting terms exactly (sun x `sunVisibility` x `atmosphereSunTransmittance` x cloud shadow
-(documented placement) x `sampleSunShadow`, sky irradiance tilted by `0.5 + 0.5 n.up`, planetshine of the
-same receiver, local lights, map fill light). Not replicated: screen-space AO and the contact-shadow term
+the deferred lighting terms exactly (sun x `sunVisibility` x `atmosphereSunTransmittance` x the clouds' beam
+share (`cloudLight`) x `sampleSunShadow`, sky irradiance x mix(0.35, 1, beam share) + the cloud base, tilted by
+`0.5 + 0.5 n.up`, planetshine of the same receiver, local lights, map fill light). Not replicated: screen-space AO and the contact-shadow term
 (water ignores `s.ao`; the contact term is 1 on open water).
 
-- **Specular**: GGX, F0 0.02, alpha^2 = KAPPA^2 x (0.003 + 0.00512 U10) x m(p) x (1 - s.roughness) +
-  lightAlpha^2. KAPPA gives the GGX lobe the half-maximum width of the Gaussian Cox-Munk slope distribution;
-  its peak is 1/KAPPA^2 = 0.60 of the Gaussian's.
-- **Roughness field m(p)** (`WATER_FIELD_WGSL`, planet-fixed, mean about 1), which gives the glint from altitude
-  its structure from about 100 m up: mesoscale wind (25-90 km, log amplitude `windVariability`), broad slicks
-  (30 km x 2.5 km bands along the wind, depth `slickStrength`) where the wind is light, **gusts** ("cat's paws",
-  1.5 km and 0.5 km octaves stretched 1.4 : 1 downwind, log amplitude `gustVariability`) and **slick filaments**
-  (about 150 m wide, km long, depth `filamentStrength`) in the calmer regions. Octaves finer than the footprint
-  fade out (`waterOctave`: 1 below 0.25 x their period, 0 above 0.6 x), so nothing aliases at any distance. The
-  deferred path evaluates it once per pixel with the footprint across the view (distance x pixel angle; six
-  gradient-noise calls where everything is resolved, four from orbit); the forward pass reads it from a 2048^2
-  r16float texture baked over the near field (75 km, 37 m texels, the texel as footprint) with a 10-level box mip
-  chain, sampled with the pixel's own derivatives (4x anisotropic), re-baked when the reference moves 1.9 km,
-  the chart or the body changes.
+- **Unresolved slope variance**: sigma^2 = (0.003 + 0.00512 U10) x m(p) x (1 - s.roughness) (+ the light's own
+  angular size); `waterAlpha` = KAPPA x sigma is the GGX alpha of the same half-maximum width.
+- **Sun, Moon and lamps (direct specular)**: the Gaussian slope distribution of that variance (Beckmann D with
+  m^2 = sigma^2, Smith shadowing of the same distribution), F0 0.02. Deviation from "GGX" (section 9): the GGX
+  tail is energy no real sea has, and with the sun's radiance a tail of 1e-4 of the peak is visible (it gave a
+  tan sheen of a sun 60 deg behind the camera on steep faces and a grey halo around the moon path).
+- **Glitter** (the same lobe, drawn): the lobe is the EXPECTATION of the sun's image in the unresolved facets. A
+  pixel whose footprint holds N facets (footprint area / `glintFacetSizeM`^2; at least one sea-anchored cell)
+  has on average k = N x P(slope) x pi r_sun^2 / (4 l.h) of them mirroring the sun; the lobe is multiplied by a
+  factor of expectation 1 drawn per cell, (1 + k)/k x u^(1/k): for k << 1 nearly every pixel is dark and a few
+  carry the whole energy (sparkles of the sun's own radiance), for k >> 1 every pixel is near the mean (a sheen
+  from 10 km and from orbit). Cells are squares of 2^n / 64 m no larger than the pixel's width, two levels
+  blended, each re-drawn at its own instants about 14 times a second; inside the glitter path the TAA reactive
+  value is `glintReactive`. Continuous in k: the forward and the deferred pass shade the same at the hand-over.
+- **Roughness field m(p)** (`fieldModel.ts` = CPU reference, `WATER_FIELD_WGSL`; planet-fixed in a Mercator WIND
+  CHART of the body, x along the wind; mean 1 over the planet): mesoscale wind (110 km, log amplitude
+  `windVariability`) carried by a two-octave flow warp (45 km, 11 km) that everything else follows; where the wind
+  is light, **slick filaments** (the zero set of a flow-warped noise stretched 5-6 : 1 along the wind: single
+  meandering lines 50-300 m wide and kilometres long that end and rejoin, width and presence varying along them;
+  depth `filamentStrength`) and **calm pools** (hard-edged tongues 140 x 7 km, depth `slickStrength`); **gusts
+  and wind rows** (3.2 x 0.8 km, 2.6 x 0.23 km, 0.8 x 0.075 km along the wind, log amplitude `gustVariability`);
+  **internal-wave packets** (narrow rough bands 1.3 km apart, bent by the flow, in a few places). Every term is
+  filtered with the pixel's footprint (octaves fade out before they alias, lines contribute their covered
+  fraction). The deferred path evaluates it per pixel; the forward pass reads it from a 2048^2 texture baked over
+  the near field (as before) and evaluates it itself towards fadeStart.
+- **Far-wave bank** (`farWaves.ts`): on the far sheet (and as the near field's own waves fade) the shading normal
+  is tilted by 10 plane waves of 0.44-3.2 x the JONSWAP peak wavelength, directions within 38 deg of the wind,
+  carrying the long-wave slope variance the near field resolves (swell + long-wave layer). Each is band-limited by
+  the footprint along its own direction, has its own envelope (wave groups) and bent crests (both from two slow
+  noises), and its variance leaves the lobe.
 - **Surface fields for MATERIAL_WATER** (what the far sheet writes leaves the extras 0): `roughness` = the
   FRACTION of the Cox-Munk slope variance the shading normal already carries (0 for the flat sheet: full lobe),
   `albedo` = imagery colour, `param` = `encodeWaterDepth(depth)`, `metallic` = foam coverage and
   `clearcoatRoughness` its weight against the statistical whitecaps (0 far; the forward pass passes its complete
   coverage with weight 1). The terrain renderer needs no change: RT2.r = 0, metallic 0, RT4 neutral.
-- **Sky reflection**: the environment probe when one is published (`env.sh9` DC non-zero; mip = sqrt(alpha) x
-  (levels - 1)), else the sky-view table: one tap where the lobe is narrow (spread under 0.03 rad: the near
-  field's resolved waves leave a few hundredths), the four-tap ring blended in up to 0.08 rad; within 50 km of the
+- **Sky reflection**: the mean Fresnel of the visible facets (Schlick at the incidence cosine the roughness
+  leaves at grazing angles, at least about 1.1 sigma) x the sky along the mirror direction of the mean visible
+  facet (lifted from the horizon by the roughness): the environment probe when one is published (`env.sh9` DC
+  non-zero; mip = sqrt(alpha) x (levels - 1), the lookup kept above the horizon by the filter's reach), else the
+  sky-view table (one tap for narrow lobes, a four-tap ring blended in up to 0.08 rad); within 50 km of the
   camera; the local sky irradiance / pi beyond (the core's rule). Directions reflected below the horizon are
-  folded above it (x 0.85).
+  folded above it (x 0.85). Not dimmed under cloud in either pass (request ocean-cs-2, section 12).
 - **Body colour**: Lee et al. (1998/1999) shallow-water remote-sensing reflectance with per-channel absorption
   and backscatter: rrs = rrs_deep (1 - e^-(1/muW + Du/muV) K H) + (rho_b/pi) e^-(1/muW + Db/muV) K H,
   Rrs = 0.5 rrs / (1 - 1.5 rrs), refracted sun and view cosines, Fresnel transmission. H = decoded depth; the
   bottom albedo rho_b is the imagery colour, whose chroma also tints the deep term (`imageryTint`).
 - **Foam**: statistical whitecaps 3.84e-6 U^3.41 (Monahan & O'Muircheartaigh) x 0.4 (aged foam) = 0.117 % at
-  7 m/s on the far water; the resolved foam of the near field is calibrated to the same mean (section 8).
+  7 m/s on the far water; the resolved foam of the near field is calibrated to the same mean (section 8). Foam
+  is a diffuse layer lit on the slope of the wave it rides; it hides the specular and the body under it; the
+  forward pass hands in its coverage (`metallic`) and its albedo relative to fresh foam (`clearcoat`: thin lace
+  is greyer, bubbles vary it).
 
 ## 4. Waves
 
@@ -134,14 +168,20 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
   18 m to the patch size): the same spectrum where the cascades' high-pass does NOT pass it, with its amplitudes
   scaled so that its slope variance is the spectrum's long-wave slope variance LESS what the physics swell
   carries (0.00323 against the swell's 0.00124; gain 0.85, height RMS 0.47 m that is NOT drawn). Drawn as SLOPES
-  only, two copies rotated by -/+ `longWaveSpreadDeg` (20 deg) at half variance each: the two lattices are
+  only, two copies rotated by -/+ `longWaveSpreadDeg` (8 deg; 20 deg until round 1 widened its spread) at half variance each: the two lattices are
   incommensurate, so the sum does not repeat, and each copy's waves travel along their own rotated direction with
   the true dispersion. TMA-attenuated in shallow water, faded with the wave detail, in the variance bookkeeping
   (the capillary layers carry correspondingly less: 0.0152). The drawn heights stay exactly the physics swell.
   It replaces the regular crossing pattern of the four swell components with an irregular short-crested sea in
   the glint from 1-15 km (screenshots `alt3k`, `alt10k`).
 - **Capillary layers**: two compressed, rotated copies of the finest cascade (x 4.2 and x 17.6) carry what
-  Cox-Munk has beyond swell + cascades + long waves (less 0.0025 left to the lobe), normals only.
+  Cox-Munk has beyond swell + cascades + long waves (less `unresolvedSlopeVariance` 0.0008 left to the lobe), normals only.
+- **Shading slope**: the cascades' own slopes are divided by their own Jacobian (they pinch at their crests); the
+  capillary, long-wave and ripple slopes are added unpinched, and the sum is limited softly from a slope of 0.4
+  (a steeper wave breaks): no facet spikes out of the lobe along a crest (the dark hairlines of the critique).
+- **Band limits**: a layer's mip follows the pixel footprint, the long axis filtered twice as wide once the
+  footprint is elongated (no row-locked stripes at grazing angles); swell components exp(-(k w)^2 / 2) along their
+  own direction (under 1 % at the Nyquist limit).
 - **Layer skipping**: no pixel sees the sea sharper than the nadir does (footprint = (height - wave bound) x
   pixel angle). A layer filtered there beyond `OCEAN_LOD_CUT` + 0.75 mip is not updated that frame (FFT passes
   return at once for it) and has amplitude 0 in every shader; one that comes back starts a new history. At 1440p
@@ -151,15 +191,31 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
   variance returns to the lobe through the same bookkeeping.
 - **Chart**: gnomonic chart of the sea-level sphere anchored at the centre of the level-5 cube tile under the
   camera when the near field switches on; kept while active unless the nadir drifts beyond 400 km.
-- **Foam**: per cascade, fresh foam where its Jacobian falls more than `foamSigma` standard deviations below 1
-  (ramp `foamRampSigma`), decay `foamDecayPerS`, in texture space. Coverage weights (0.55, 0.85, 0.45, 0) over
-  the cascades: cascade 0 (13-25 m, long crests) only adds to what the shorter breaking crests of cascade 1 start.
-  Lace from the convergence of cascades 1-3 (cascade 1 cuts long crests into breaking-crest lengths of 5-10 m);
-  the lace threshold never drops below 0.22 and the brightness varies with the bubbles, so no whitecap is a
-  uniform white disc. Where the footprint averages the lace away, the threshold widens by the lost spread (the
-  pixel gets its expected partial coverage instead of a hard-edged blob), and where a cascade's foam is filtered
-  beyond 2.5 mips its share is the statistical coverage. Shore (swash) foam where the water over the SEABED is
-  under `shoreFoamDepthM`; wake foam from the wake texture; both lace-modulated.
+- **Whitecaps: the foam map** (`foamMap.ts`): three levels of 512^2 texels (0.25 m, 1 m, 4 m: windows of 128 m,
+  512 m, 2 km around the camera's nadir, snapped to their texel grids in chart coordinates, so the content is fixed
+  to the sea and a moving camera only scrolls it). Per texel, a breaking criterion of the COMBINED surface: the
+  convergence of the long-wave layer, cascade 0 and cascade 1 low-passed to about 2 m (long-crested, so its rare
+  excursions are bars along the dominant crests, not round specks), plus a fine part that only frays the edges,
+  normalised to unit variance; fresh foam above `foamSigma` (ramp `foamRampSigma`). Two states: the breaker
+  (decay `foamDecayPerS`) and what it leaves (decay `foamResidualDecayPerS`, shown at `foamResidualDensity` and
+  thinning into lace). Lagrangian texels: the crest moves through them at its phase speed and the foam stays on
+  the water, so it trails behind the breaker. A texel without history (a level starting as the camera descends,
+  a texel scrolling in) takes what the breakers of the last 3 s would have left there (the crests that are now
+  downwind of it at 4.5 m/s, `FOAM_CREST_SPEED`). A level no pixel resolves is not updated; beyond the levels the
+  statistical coverage. The surface pass reads the map with a cubic B-spline (four bilinear taps), so a level
+  magnified beyond its texels gives rounded patches, not texel squares.
+- **Foam picture: the lace** (`foamLace.ts`): a tileable field T with a uniform distribution, built from holes at
+  three scales (2.3, 0.76, 0.3 m) torn by a displacement; foam of density rho is where T > 1 - rho, so thin foam
+  is curved strands with water showing through, dense foam closes from the rims, and the covered area equals rho
+  exactly. The texture holds E[T] and E[T^2] per texel with box mips: a pixel gets the covered FRACTION of its
+  footprint (sharp at 3 m, the right mean from 3 km). A second, nine times finer lookup adds bubbles near the
+  camera. Every foam source (whitecaps, surf, wake) is one density drawn through it; fresh foam is thick and
+  white, residual foam thin and greyer (`foamLaceAlbedo`) except well inside the lace.
+- **Surf**: where the seabed is shallower than `surfBreakDepthM` the swell breaks: bores run shoreward at
+  sqrt(g h) (lines of equal travel time to the shore, one every `surfPeriodS`, made irregular along the shore by
+  the swell's height), a sharp front with the foam it leaves behind, and the swash over the last `shoreFoamDepthM`.
+- **Wake**: the wake texture (vessels.ts) as foam density: fresh only where the hull keeps churning it, lace
+  further out.
 
 ## 5. Near field and hand-over (ARCHITECTURE 10.2)
 
@@ -188,15 +244,27 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
   colour, no refraction, no TMA or shore foam from it. Before this fix such fragments turned into a flat,
   wave-less band 1-2 km from a low camera in the integrated app.
 - Inside fadeStart the forward pass uses the seabed: water depth **straight below the water point**
-  (`oceanDepthBelow`: the vertical is marched down through the depth copy over about twice the along-ray depth,
-  refined between the last two steps; for a shelf that only rises or falls the bed under the point is in view),
-  so shore foam and TMA no longer depend on where the camera stands; the along-ray depth is used where the
-  vertical leaves the frame. The imagery colour from the seabed's `gbuffer.albedo`.
-- Refraction: a 6-step march of the refracted ray through the depth copy (at least 4 m deep), refined at the
-  crossing, sampling 'scene.colorCopy' with a chromatic offset in the shallows; the in-water path attenuates the
-  seen radiance; it replaces the modelled bottom term with a **confidence** that fades to the model as the hit
-  nears the end of the march or the frame border (12 % of the frame), so neighbouring pixels never switch between
-  the two looks.
+  (`oceanDepthBelow`: the vertical is marched down through the depth copy, samples that show anything but the
+  seabed (an object in the water, a stray fragment) are skipped, the crossing is bisected), so shore foam, TMA,
+  surf and body colour depend neither on where the camera stands nor on what floats or lies in the water (an
+  object in the water no longer changes the water's own look: the "stencil" of the critique). Where the object
+  hides the whole vertical, the depth is that of the seabed seen beside it on screen (`oceanBedBeside`: 12-96 px to
+  the left and right), else a few metres below the object. The vertex stage does the same. The imagery colour
+  from the seabed's `gbuffer.albedo`.
+- **The bed through the water from the scene itself**: where the pixel shows the seabed, the bed as the deferred
+  pass lit it, attenuated along the column; the refracted image (a 6-step march of the refracted ray through the
+  depth copy, bisected at the crossing, chromatic offset in the shallows) replaces it with a confidence that fades
+  as the hit nears the end of the march or the frame border; one depth for the body colour and the bed. The
+  modelled bottom of brdf_water takes over only as the detail fades. A ray that passes behind an object takes the
+  bed it passed. **Caustics**: the bed is multiplied by 1 / |1 + a H| (a = (1 - 1/n) x path along the refracted
+  sun, H from the convergence of cascades 2-3 at the point where the sunlight entered), softened at focus, fading
+  out by about 8 m and with the sun's share of the light.
+- **Vessels in the water**: within 4-9 hull radii of a vessel slot, a 12-step march of the mirrored ray through
+  the scene copies (jittered by the unresolved slopes) puts the hull's image in the water; where the march finds
+  nothing but the ray passes through the hull's bulk, the hull's shaded side replaces the sky (the water beside
+  the hull darkens). Only what stands in the air is mirrored.
+- **Clouds** (request ocean-cs-2): the forward pass lights with the core's `cloudLight` exactly as the deferred
+  pass lights the far sheet: the sun term x the beam share, sky irradiance x mix(0.35, 1, beam) + the cloud base.
 - TMA depth attenuation per band with the vertical seabed depth (vertex and fragment); the long-wave layer too.
 - Motion vectors from float64 previous-frame poses, previous FFT field and previous swell phases.
 - TAA reactive mask ('post.reactive', request ocean-4): taaReactive x (1 - e^(-phase / 0.1 rad)) x the detail
@@ -214,12 +282,16 @@ same receiver, local lights, map fill light). Not replicated: screen-space AO an
 ## 7. Data (`data/defs/render/earth.ocean.json`)
 
 `windSpeed` 7 m/s, `windDirDeg` 60 (toward), `absorption` (0.45, 0.06, 0.028) /m, and params: cascade period and
-divisors, fetch, JONSWAP gamma, high-pass wavelength, **longWaveDivisor 5, longWaveSpreadDeg 20**, choppiness
+divisors, fetch, JONSWAP gamma, high-pass wavelength, longWaveDivisor 5, **longWaveSpreadDeg 8**, choppiness
 0.85, repeat period 3600 s, seed, nearFieldFadeStartM 15000 / nearFieldFadeEndM 30000, detailFadeFraction 0.7,
-backscatter, imageryTint 0.5, foam (decay 0.6/s, sigma 3.0, ramp 0.8, albedo 0.72), shoreFoamDepthM 0.8,
-refractionDistortion 1, chromaticOffset 0.012, vesselDampingHullRadii 3, wake / splash / ripple / wet-line
-values, capillaryScale 4.2, unresolvedSlopeVariance 0.0025, windVariability 0.35, slickStrength 0.35,
-**gustVariability 0.3, filamentStrength 0.45**, taaReactive 0.45. Every value is validated at load.
+backscatter, imageryTint 0.5, **foam map** (foamDecayPerS 1.4, foamResidualDecayPerS 0.4, foamSigma 2.82,
+foamRampSigma 0.6, foamOldDropSigma 0.6, foamOldDensity 0.6, foamAlbedo 0.85, foamLaceAlbedo 0.5,
+foamResidualDensity 0.9), **surf** (shoreFoamDepthM 0.35, surfBreakDepthM 2.2, surfPeriodS 9, surfBedSlope
+0.04), refractionDistortion 1, chromaticOffset 0.012, vesselDampingHullRadii 3, wake / splash / ripple / wet-line
+values, capillaryScale 4.2, **unresolvedSlopeVariance 0.0008**, roughness field (**windVariability 0.18,
+slickStrength 0.45, gustVariability 0.3, filamentStrength 0.8**), **glintFacetSizeM 0.015, glintReactive 0.8**,
+taaReactive 0.45. Every value is validated at load. The field's scales (FIELD in `fieldModel.ts`) and the far
+bank's shape (`farWaves.ts`) are code constants: they are the recipe, the data sets its strengths.
 Swell (physics) stays in `data/defs/bodies/earth.json` (lead-owned, request ocean-5).
 
 ## 8. How to run and verify, and what was measured
@@ -231,37 +303,40 @@ node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/ocean 
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/ocean --project=perf          # GPU lock
 ```
 
-Lab: `/labs/ocean/?preset=midday|sunset|overcast|alt500|alt3k|alt10k|alt30k|alt100k|leo|shore|shoreAlong|refraction|splash|night`,
+Lab: `/labs/ocean/?preset=midday|sunset|overcast|down150|alt500|alt3k|alt10k|alt30k|alt100k|leo|shore|shoreAlong|coast60|refraction|splash|night`
+(daylight presets exposed by the renderer's meter, `night` at a fixed EV -1.5; `&ev=<EV>` overrides),
 plus `&ocean=0` (feature removed), `&near=0` (near field off), `&stray=1` (stray water fragments inside fadeStart),
 `&chop=<s>`, `&ballast=<iterations>`, and every createLabApp parameter. `window.__ocean` (lab handle):
 `applyPreset`, `setCamera({east, north, alt, heading, pitch, fov})`, `setSun([az, el])`, `dirAt`, `waterAt`,
 `seaHit(x, y)`, `altitudeAlong`, `dirAlong`, `project`, `world`, `props` (incl. `strayWater`), `sky`, `ballast`,
 `ocean` (the feature).
 
-Machine: RTX 5090, Chrome headless, 1280 x 720 unless noted, 2026-11-11, other agents' GPU jobs running in the
-other GPU slots throughout (vfx, terrain, atmosphere, core-support).
+Machine: RTX 5090, Chrome headless, 1280 x 720 unless noted, 2026-11-11 (re-measured at the end of visual round
+1), other agents' GPU jobs running in the other GPU slots throughout (vfx, terrain, atmosphere, sky, core-support).
+Other packages editing shared core files during the runs twice broke page start-up for a few seconds (a parse
+error in `chunksLighting.ts`, a material uniform of the wrong size); the specs hit by that were re-run.
 
 | Criterion | Result | Spec |
 |---|---|---|
-| GPU readback of the displaced surface = `oceanSwellHeight` within 2 cm at 200 points and 3 times; FFT separately | worst 0.023 mm; FFT term rms 0.11-0.12 m, max 0.32 m; total = swell + fft + ripple to 6e-8 m | swell.spec |
-| Inside the vessel damping zone the total within 5 cm of the swell | worst 3.2 / 3.8 / 3.5 cm at 3 times; outside rms 0.11-0.13 m | swell.spec |
-| Markers at the physics height sit on the rendered surface | rasterised surface (depth buffer, 120 px): chop off worst 0.010 mm from `oceanSwellHeight`; chop on worst 6.4 mm from the readback | swell.spec |
+| GPU readback of the displaced surface = `oceanSwellHeight` within 2 cm at 200 points and 3 times; FFT separately | worst 0.022 mm; FFT term rms 0.11-0.12 m, max 0.32 m; total = swell + fft + ripple to 6e-8 m | swell.spec |
+| Inside the vessel damping zone the total within 5 cm of the swell | worst 3.2 / 4.0 / 3.6 cm at 3 times; outside rms 0.11-0.13 m | swell.spec |
+| Markers at the physics height sit on the rendered surface | rasterised surface (depth buffer, 120 px): chop off worst 0.011 mm from `oceanSwellHeight`; chop on worst 6.4 mm from the readback | swell.spec |
 | Inside fadeStart the depth copy holds the seabed; a submerged object is refracted | depth copy altitude -200.00 m at 24 px (0.000 with the near field off); the submerged ball's image moves 22.8 px against the unrefracted lookup, overlap 0.41 | handover.spec |
 | **Stray water fragments inside fadeStart leave the waves intact** (new) | annulus of water material 150 m deep, 0.2-4 km out (`props.strayWater`), confirmed in the depth copy at 15 of 24 sampled px: relative detail 6.372e-2 vs 6.371e-2 (ratio 1.000), mean luminance equal, 88,437 px. With the old per-pixel material test the same check gives ratio 0.563 and +21 % brightness (the flat band) | handover.spec |
-| At fadeStart the forward pixel equals the deferred pixel within 2 % | worst 0.18 %, mean 0.03 % over 519 px | handover.spec |
-| Across the band two equal images; slow dolly shows no line | band worst 0.11 % (12,345 px); dolly change at fadeStart 6e-4 vs 6.6e-3 elsewhere | handover.spec |
+| At fadeStart the forward pixel equals the deferred pixel within 2 % | worst 0.31 %, mean 0.05 % over 519 px (from 500 m: worst 0.20 %) | handover.spec |
+| Across the band two equal images; slow dolly shows no line | band worst 0.12 % (12,345 px); dolly: no line at fadeStart | handover.spec |
 | Beyond fadeEnd nothing is drawn | 9,857 / 9,857 px bit-identical to the deferred-only frame | handover.spec |
-| Climb 2 m -> 400 km, no ring or pop | 150 log-spaced steps: largest step / local median 1.56 (99 km, deferred only); ring = change on the radius (+-4 %) against the bands on both sides (4-15 %): worst 1.09 over 56 steps | handover.spec |
+| Climb 2 m -> 400 km, no ring or pop | 150 log-spaced steps: largest step / local median 1.47 (99 km, deferred only); ring = change on the radius (+-4 %) against the bands on both sides (4-15 %): worst 1.21 over 47 steps (bound 1.6) | handover.spec |
 | Feature removed: far water alone complete | 16,188 sea px, 0 holes | handover.spec |
-| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | half maximum at tan(beta) 0.188 vs 0.164 (ratio 1.14); in facet-slope space over fully covered discs (64/64 cells) of radius 0.08 / 0.12 / 0.16: centroid 0.0042 / 0.0044 / 0.0037 (bound 0.02), least-squares paraboloid peak 0.0065 / 0.019 at 0.12 / 0.16 (bound 0.03; the 0.08 disc is too flat to fit) | glint.spec |
-| 2 m: glitter path toward the sun, same function | centroid 640.0 px vs the sun's 640.0; coefficient of variation 2.16; 2.6 % of the energy off the path | glint.spec |
+| LEO: broad glint at the mirror point, Cox-Munk width within 20 % | half maximum at tan(beta) 0.1582 vs Cox-Munk 0.1588 (ratio 0.996, the Gaussian lobe; GGX gave 1.14); in facet-slope space over fully covered discs (64/64 cells) of radius 0.08 / 0.12 / 0.16: centroid 0.0014 / 0.0032 / 0.0038 (bound 0.02), paraboloid peak 0.0043 / 0.011 / 0.018 (bound 0.03) | glint.spec |
+| 2 m: glitter path toward the sun, same function | centroid 644.1 px vs the sun's 640.0; coefficient of variation in the path 13.2 (discrete sparkles; 2.2 with the smooth lobe); 0.00 % of the energy off the path | glint.spec |
 | Sun on the horizon: no pixel above HDR_MAX, nanPixels 0 | elevations +0.4, 0, -0.3 deg at EV 13 and 4: max 56,220 (saturating glint at EV 4), NaN 0 | glint.spec |
 | Whitecaps calibrated (new) | resolved foam coverage looking down from 150 m at 9 places: 0.095-0.135 %, mean 0.117 %, against the far water's statistical 0.117 % (ratio 1.00) | foam.spec |
 | No swimming when the camera translates | 64 planet-fixed points from two camera positions 3 km apart: worst 0.53 mm; 250 m away and back: bit-identical | stability.spec |
 | Triplanar blend zones not visible | not applicable: one planet-fixed chart (section 9.1) | - |
-| Correct motion vectors | TAA / single-frame gradient energy, camera flying 5 m/s over a frozen sea 0.64 of still; animated sea 0.85 with the reactive mask, 0.41 without | stability.spec |
+| Correct motion vectors | TAA / single-frame gradient energy, camera flying 5 m/s over a frozen sea 0.64 of still; animated sea 0.88 with the reactive mask, 0.41 without | stability.spec |
 | Reviewed screenshots | `out/screens/ocean/` (section 10) | screens.spec |
-| Unit tests | 22 ocean tests (long-wave layer: complement of the high-pass, swell + layer = the spectrum's long-wave slopes within 10 %; horizon culling keeps every visible point exactly once) + boundaries | tests/unit/ocean |
+| Unit tests | 36 tests in 5 files: swell phases, spectrum, near field, field (roughness field mean 1 and a decade of range, footprint filtering; far-wave bank around the peak; foam lace uniform, coverage = density at every mip) + boundaries | tests/unit/ocean |
 | `expectNoErrors` | in every spec | all |
 
 ### 8.1 Performance (ARCHITECTURE 17.1: 0.9 splashdown, 0.8 pad, 0.3 ascent 10-40 km, 0.1 LEO; brief: FFT < 0.3, near pass < 0.6)
@@ -301,10 +376,18 @@ the rest (G-buffer and depth reads, amplitudes, ripples, wake, field, transmitta
 
 1. **Planet-fixed chart instead of triplanar sampling** (exact to 0.4 % scale over the 30 km near field, the
    wind direction is the data's everywhere, no blend zones, one FFT per cascade).
-2. **GGX alpha = 1.2936 sigma** (half-maximum width of the Gaussian Cox-Munk distribution).
+2. **GGX alpha = 1.2936 sigma** (half-maximum width of the Gaussian Cox-Munk distribution) for the sky
+   reflection's lobe; **the direct lights (sun, Moon, lamps) are mirrored with the Gaussian slope distribution
+   itself** (Beckmann with m^2 = sigma^2), not GGX: the slopes of a real sea are Gaussian (Cox and Munk), and the
+   GGX tail, multiplied by the sun's radiance, painted a sheen of a sun 60 deg behind the camera onto steep faces
+   and a grey halo around the moon path (round-1 critique items 2 and 9). Same half-maximum width, so the LEO
+   width check is unaffected; the peak is 1.67 times the GGX peak.
+2a. **Glitter** (section 3): the lobe is drawn per sea-anchored cell as a Poisson-like factor of expectation 1;
+   energy is kept on average, not per pixel.
 3. **Capillary detail layers** (without them half the Cox-Munk variance is GGX roughness at 2 m: milky sea).
-4. **Roughness field** in `brdf_water` (mesoscale wind, slicks, gusts, filaments): the glint from altitude
-   would be a featureless blob otherwise.
+4. **Roughness field** in `brdf_water` (mesoscale wind, slick filaments, pools, gusts, wind rows, internal
+   waves) and the **far-wave bank** on the far sheet: the glint from altitude would be a featureless blob
+   otherwise, and the sea beyond the near field a gradient.
 5. **Body colour model**: Lee et al. shallow-water reflectance.
 6. **Surface field semantics for water** (section 3).
 7. **Wetness slots** follow the core-support resolution of ocean-3.
@@ -327,12 +410,12 @@ the rest (G-buffer and depth reads, amplitudes, ripples, wake, field, transmitta
 
 ## 10. Screenshots (looked at)
 
-`out/screens/ocean/`: `midday` (deep blue, glitter path, long-wave texture, breaking crests of 5-10 m), `sunset`,
-`overcast`, `alt500`, `alt3k` (irregular short-crested sea in the glint where the four-component lattice was),
-`alt10k` (wave texture near, gust mottling in the far glint), `alt30k` and `alt100k` (mottled glint), `leo`,
-`shore`, `shoreAlong` (standing in the shallows looking along the beach: sand bars as soft patches, no switching
-between looks), `refraction`, `splash`, `night` (moon path), `foam-coverage-*`, `handover-*` (incl.
-`handover-stray-water`), `glint-*`, `climb-*`, `markers-*`, `stability-animated`, `far-water-alone`, `perf-*`.
+`out/screens/ocean/` (all re-shot after the last shader change of round 1; section 14 says what each shows):
+`midday`, `sunset`, `overcast`, `down150`, `alt500`, `alt3k`, `alt10k`, `alt30k`, `alt100k`, `leo`, `shore`,
+`shoreAlong`, `coast60`, `refraction`, `splash`, `night` (screens.spec, exposed by the renderer's meter except
+`night`); `splash-1440p`, `shore-1440p`, `alt10k-1440p` (the same at 2560 x 1440); `foam-coverage-*`,
+`foam-running-debug`, `handover-*`, `glint-*`, `climb-*`, `markers-*`, `stability-animated`, `far-water-alone`
+(the functional specs); `perf-*-1440p` (perf spec).
 
 ## 11. Known weaknesses (plainly)
 
@@ -341,21 +424,30 @@ between looks), `refraction`, `splash`, `night` (moon path), `foam-coverage-*`, 
   10 km scene has no margin: between fadeStart 15 km and the 10 km camera the forward pass shades the whole
   detail region. Further cuts would be the shadow lookup (0.04 ms, the core's PCSS on every lit pixel; a water
   pixel cannot know whether a caster is near without the core's help) and the swell evaluation per pixel.
-- **Lab sky**: the lab draws its own single-scattering sky with no clouds; its haze dominates the 10-100 km
-  views. Re-judge those views in the integrated app (core-support's water spec).
-- **Swell data**: the heights the capsule floats on are still the four sinusoids of `bodies/earth.json`; the
-  long-wave layer hides their lattice in the shading (request ocean-5, escalated to the lead).
-- **Detail fade**: as the contract requires, wave detail (including the long-wave layer) is gone at fadeStart;
-  from 5-15 km altitude the wave texture of the near part changes into the field-only texture of the far sheet
-  over 10.5-15 km (gradual, no line, but visible as a change of texture).
-- **Shallow water**: the modelled bottom term and the screen-space refracted bed still differ somewhat in
-  colour in very shallow water; the blend between them is now continuous (by march and frame-border
-  confidence), so it shows as soft sand-bar-like patches, not edges.
+- **Haze from 10 km to orbit**: the lab's single-scattering sky (Rayleigh + Mie of `bodies/earth.json` plus an
+  isotropic multiple-scattering estimate) and the real atmosphere of the integration lab
+  (`out/screens/integration/water-climb-all-14km.png`, `-400km.png`) both lay a bright blue-grey veil over the
+  open sea from 10 km up, so the off-glint sea is mid-blue, not the dark navy of ISS photographs (which are
+  exposed for clouds). The water under the veil is not the cause; the veil and the exposure of cloudless frames
+  are the atmosphere's and the camera's.
+- **Swell data**: the HEIGHTS the capsule floats on are still the four sinusoids of `bodies/earth.json`: from 2 m
+  the horizon is a ruled line and no crest hides the capsule's base. The lead accepted the data change (ocean-5 /
+  ocean-6, eight components, commit 1ccd5e0) but had not made it when round 1 closed; the long-wave layer, the
+  far-wave bank and the foam map give the wind sea in the SHADING only until then. When the data lands, re-run
+  `swell.spec` (agreement) and re-shoot `midday`, `splash`, `alt500`, `alt3k`; the far-wave bank and the long-wave
+  layer's variance (swell + layer = the spectrum's long-wave slopes) adapt to the data at start-up.
+- **Detail fade**: as the contract requires, the resolved wave detail is gone at fadeStart; the far-wave bank
+  takes over as it fades (same function on both sides), so the texture no longer stops at an arc, but from 5-15 km
+  the near part is still finer than the far sheet.
 - **Seabed depth** is marched down the vertical through the depth copy: where the bed directly below a water
   point is hidden behind a nearer bump of the bed (an irregular, non-monotonic shelf) the march stops early and
   the depth reads too shallow there.
-- **Whitecaps**: calibrated in mean coverage only; their persistence and lace are tuned by eye. Seen at grazing
-  angles near the horizon they still read as short smooth streaks.
+- **Whitecaps**: calibrated in mean coverage (Monahan) and checked for patch size and repetition; their
+  persistence, trail and lace are tuned by eye. At 7 m/s they are rare (0.12 % of the sea), so most close-up
+  frames hold none or one; seen from 150 m they are compact patches a few metres across rather than long
+  crescents with streaks.
+- **Wet sand** behind the surf is not drawn: it needs a shore wetness band in a contract and the terrain's
+  cooperation (not requested in round 1).
 - **Refraction** is screen-space; **underwater views** (eye below the surface) are not handled.
 - **Stale wave layers**: a layer skipped for being unresolvable keeps old content in 'ocean.displacement' /
   'ocean.derivatives'; external readers must not rely on it above about 3 km (finest cascade) / 12 km.
@@ -368,14 +460,22 @@ between looks), `refraction`, `splash`, `night` (moon path), `foam-coverage-*`, 
 | `ocean-2` LabPlanet seabed = the water its sheet describes | core lab | resolved 9debd1f |
 | `ocean-3` `'ocean.wetness'` shared uniform | contracts | resolved 9debd1f |
 | `ocean-4` TAA reactive mask | core TAA | resolved 2cc2aea |
-| `ocean-5` eight swell components with directional spread | `data/defs/bodies/earth.json` (lead) | declined by core-support as not its path: escalated to the lead (recorded in core-support's hand-off) |
+| `ocean-5` eight swell components with directional spread | `data/defs/bodies/earth.json` (lead) | ACCEPTED by the lead (commit 1ccd5e0, 2026-11-11 14:00): the lead replaces `ocean.swell` with eight components and re-flies the mission; the data was not yet changed when round 1 closed |
+| `ocean-6` the same, or permission to draw the long-wave layer's height away from vessels | lead | option 1 (the data) accepted, option 2 (render-only heights) declined; same data change as ocean-5. The ocean needs no code change (MAX_SWELL is 8; the swell spec compares against whatever the data holds) |
+
+Requests against the ocean's paths, answered in round 1:
+
+| Request | From | Resolution |
+|---|---|---|
+| `ocean-cs-2` forward pass lit under cloud like the deferred pass | core-support | done: `cloudLight` beam share for the sun, sky irradiance x mix(0.35, 1, beam) + cloud base; the sky REFLECTION stays undimmed in both passes (needs a decision on the sky-view table's cloud content) |
+| `atmosphere-clouds-5` `tests/browser/ocean/diag.spec.ts` deleted by another package's commit | atmosphere-clouds | the spec was a temporary diagnosis: deletion stands, nothing restored |
 
 Interaction with **terrain-render-cs-1** (open, core-support against the terrain): the terrain leaves water
 fragments at the seabed's altitude inside fadeStart (29.8 % of the near field at 200 m). The ocean no longer
 depends on that being fixed: such fragments are now shaded as open deep water with their waves (section 5,
 `handover.spec` "stray water"). They still make the refraction and seabed depth of those pixels unknown (deep),
 so the request stays needed for shallow water. The request file is core-support's; this note is here instead.
-No request against the ocean's paths is open.
+No request against the ocean's paths is open after round 1.
 
 ## 13. Review findings and what was done
 
@@ -389,3 +489,30 @@ No request against the ocean's paths is open.
 | Minor: lighting-pass share not reported | Measured and reported in the perf spec and section 8.1 (+0.13 ms p50); octave count kept down (slick fine octave dropped, octaves skipped below the footprint) |
 | Minor: LEO glint check weakened | 2-D facet-slope centroid over fully covered discs (bound 0.02) and an unbiased paraboloid-fit peak (bound 0.03) replace the radial-profile peak |
 | Minor: plastic foam | Lace at every distance with the threshold widened by the lost lace spread (partial coverage instead of blobs), breakup in the cores, cascade 1 in the lace and cascade 0's weight lowered (no long bars), statistical share where unresolved, calibrated to Monahan (ratio 1.00) |
+
+## 14. Visual close-out, round 1
+
+The first visual critique (`out/qa/wave2/ocean.md`, photo 4/10, artifact 4/10, 17 items) was worked in two parts:
+part 1 (commit 707a928, the previous owner of the package, cut short by a spend limit before its hand-off) and
+part 2 (this note's revision). Every screenshot in `out/screens/ocean/` was re-shot after the last shader change
+and looked at against the reference photographs in `out/qa/ref/` (sea-surface-close, earth-orbit-ocean).
+
+| # | Item (critique severity) | What was done | Where to look | State |
+|---|---|---|---|---|
+| 1 | Near whitecaps are soft white smudges (blocker) | Foam is a density drawn through the foam lace (sharp, binary at pixel scale, holes and strands, bubbles near the camera); fresh foam thick and white, residual foam thin, greyer lace; foam hides the specular; the capsule's wake is lace except right at the hull | `splash-1440p`, `shoreAlong`, `overcast` | Fixed as a picture; at 7 m/s whitecaps are rare (0.12 %), so the close-up views hold few. Foam has no normal of its own (lit on the wave's slope) |
+| 2 | 100 m - 3 km sun path is a matt grey plate with dark worms (blocker) | Glitter: the lobe drawn per sea-anchored cell with the facet count of the pixel's footprint (sparkles of the sun's radiance on dark water, densest at the mirror point, a sheen from 10 km up); the sun mirrored with the Gaussian slope distribution (no GGX tail: no stray stars, no sheen far off the path); slopes limited softly, cascades pinched by their own Jacobian only (no worm lines) | `alt500`, `climb-273m`, `handover-stray-water`, `down150`, `night` | Fixed |
+| 3 | 5-30 km: gradient + smudge, texture stops at an arc (blocker) | Far-wave bank on the far sheet (same function on both sides of fadeStart: no arc), its spread narrow at the long components (no plaid of two trains crossing at 60 deg on the glint's flank), each component with its own envelope and bent crests; roughness field with slick filaments in three families (zero sets of flow-warped noise along the wind, not the nested contour rings part 1 had), calm pools, gusts, wind rows, internal-wave trains; glint peak 1.67 x higher (Gaussian lobe) | `alt3k`, `climb-4796m`, `alt10k`, `alt10k-1440p`, `alt30k`, `climb-16389m` | Mostly fixed: structure everywhere, contrast flips in the glint (slicks bright in the core, dark outside). The frames are veiled by the atmosphere's haze (section 11); the gust streaks read as brush strokes on the glint's flank |
+| 4 | Capsule pasted onto the sea (major) | Vessel reflections (12-step march of the mirrored ray, jittered by the unresolved slopes) and the hull's bulk darkening the sky reflection beside it; wake as lace | `splash`, `splash-1440p` | Partly: the hull's reflection breaks into a shimmering streak; no aqua glow of the submerged hull, the wet band is the vehicle's material (the lab hull is an untextured prop) |
+| 5 | No wind-sea heights (major) | Long-wave layer copies 8 deg apart (its own spread), whitecaps break on its crests, far bank in the far shading | `midday`, `splash` | Not fixed in the heights: they are the four-sinusoid physics swell. The lead accepted eight components (ocean-5 / ocean-6, commit 1ccd5e0) and will change the data; no ocean code change is needed. Until then the horizon from 2 m is a ruled line |
+| 6 | Orbital glint a dim disc with soft blobs (major) | Gaussian lobe (brighter core), slick filaments and calm tongues that flip contrast across the glint, gusts, internal-wave packets | `alt100k`, `leo`, `glint-leo` | Fixed in the water; the LEO frame is dominated by the lab sky's haze at the meter's exposure |
+| 7 | Whitecaps from above are a star field of specks (major) | Foam map of the combined surface (breaking on long-crested crests, statistical specks gone), foam left behind breakers, residual lace; texels without history get the trail of the last 3 s; the map is reconstructed with a cubic B-spline (no texel squares where a coarse level is magnified) | `down150`, `handover-stray-water`, `foam-*` | Partly: patches of 2-4 m, calibrated, no specks; they are compact rounded patches, not long crescents with streaks |
+| 8 | Row-locked stripes in the middle distance (major) | Long axis of elongated footprints filtered twice as wide; swell band limit exp(-(kw)^2/2) | `splash-1440p` (rows 560-840) | Fixed: soft irregular bands; row-to-row luma change 7.8 against 1.7 across (natural foreshortening, no alternating rows) |
+| 9 | Dark hairlines along crests; dull far band (major) | Slope limit and Jacobian on the cascades only; normals bent into the visible hemisphere; mean Fresnel of the visible facets and a lifted mirror direction for the sky reflection | `shore`, `refraction`, `overcast`, `midday` | Fixed (no hairlines in the re-shot views) |
+| 10 | Shallow water in contour bands (major) | Exact (not 8-bit) depth inside fadeStart; the bed taken from the scene itself through one column, one depth for body colour and bed; seabed depth straight below the point, ignoring objects | `shoreAlong`, `coast60`, `shore-1440p` | Fixed: a continuous turquoise shelf, no terraces |
+| 11 | No surf (major) | Bores from the swell phase where the bed is shallower than 2.2 m, travelling at sqrt(g h), fronts and their foam, swash | `shoreAlong`, `coast60`, `shore` | Partly: breaking lines and run-up foam; no wet sand (needs a contract entry and the terrain) |
+| 12 | Hard stencil of a submerged object (major) | The object no longer changes the water's depth, waves, foam or colour: the seabed is found straight below, skipping the object, and where the object hides the whole vertical the depth is the bed's beside it on screen (part 1 fell back to "a few metres below the object", which painted a navy deep-water patch at the object's straight-line position); the object shows through the refraction path only | `refraction`, `handover-refraction` | See section 14.1 |
+| 13 | Flat teal shallows, no caustics (major) | Caustics 1 / abs(det(1 + a H)) from the short waves' curvature, the bed through the column | `refraction`, `handover-refraction`, `shoreAlong` | Partly: soft moving caustic patterns; not the sharp bright net of strong sun over sand |
+| 14 | Sunset foreground crushed to black (minor) | Sky reflection of the mean visible facet, Gaussian lobe | `sunset`, `glint-surface` | Fixed: slate-blue and orange facets, readable |
+| 15 | Corduroy stripes 300 m - 10 km (minor) | Steeper swell band limit; far bank with bent crests | `alt10k`, `climb-4796m` | Fixed |
+| 16 | 72.5 m repetition of whitecaps (minor) | Whitecaps from the camera-centred foam map (no tile), lace tile 18 m sampled through a density that does not repeat | `foam-coverage-150m` | Fixed (foam.spec: correlation at the cascade period under 0.05) |
+| 17 | Screenshot hygiene (minor) | Meter exposure (fixed only at night), "not above a sea" instead of NaN, converged `handover-refraction`, stale `refr-diag`/probe images removed, 1440p shots of splash, shore and alt10k | all | Fixed |

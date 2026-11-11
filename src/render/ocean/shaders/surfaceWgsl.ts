@@ -142,6 +142,56 @@ fn oceanDepthBelow(posRel: vec3f, up: vec3f, guess: f32, fallback: f32) -> f32 {
   return mix(tAbove, tBelow, saturate(gapAbove / max(gapAbove - gapBelow, 1e-4)));
 }
 
+/// The seabed seen BESIDE pixel 'px' (to its left and right, 12 to 96 px out), for a water point whose vertical is
+/// hidden by an object in the water: the shelf varies slowly, so the bed beside the object is the bed under it.
+/// x = its depth (m; OCEAN_DEEP when no seabed is in view beside it), yz = screen uv of one such bed pixel.
+fn oceanBedBeside(px: vec2i) -> vec3f {
+  let size = vec2i(textureDimensions(sceneDepthOpaqueTex));
+  for (var k = 0u; k < 4u; k++) {
+    let off = 12 << k;
+    var sum = 0.0;
+    var n = 0.0;
+    var uv = vec2f(0.0);
+    for (var s = 0u; s < 2u; s++) {
+      let q = vec2i(clamp(px.x + select(-off, off, s == 1u), 0, size.x - 1), px.y);
+      let id = u32(textureLoad(gbufferMaterialTex, q, 0).b * 255.0 + 0.5);
+      if (id != MATERIAL_TERRAIN && id != MATERIAL_REGOLITH) { continue; }
+      let qu = (vec2f(q) + 0.5) / vec2f(size);
+      let h = oceanColumnDepth(qu, textureLoad(sceneDepthOpaqueTex, q, 0), 0.0);
+      if (h > 0.0 && h < 0.5 * OCEAN_DEEP) {
+        sum += h;
+        n += 1.0;
+        uv = qu;
+      }
+    }
+    if (n > 0.0) { return vec3f(sum / n, uv); }
+  }
+  return vec3f(OCEAN_DEEP, 0.0, 0.0);
+}
+
+/// The foam map of level 'layer' at texture coordinate uv, reconstructed with a cubic B-spline (four bilinear taps):
+/// a level whose texels are larger than the pixel is magnified into smooth rounded patches, not texel squares.
+fn oceanFoamSample(uv: vec2f, layer: i32) -> vec2f {
+  let st = uv * OCEAN_FOAM_SIZE - 0.5;
+  let i = floor(st);
+  let f = st - i;
+  let f2 = f * f;
+  let f3 = f2 * f;
+  let w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  let w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  let w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+  let w3 = f3 / 6.0;
+  let g0 = w0 + w1;
+  let g1 = w2 + w3;
+  let h0 = (i - 0.5 + w1 / g0) / OCEAN_FOAM_SIZE;
+  let h1 = (i + 1.5 + w3 / g1) / OCEAN_FOAM_SIZE;
+  let a = textureSampleLevel(oceanFoam, linearClamp, vec2f(h0.x, h0.y), layer, 0.0).rg;
+  let b = textureSampleLevel(oceanFoam, linearClamp, vec2f(h1.x, h0.y), layer, 0.0).rg;
+  let c = textureSampleLevel(oceanFoam, linearClamp, vec2f(h0.x, h1.y), layer, 0.0).rg;
+  let d = textureSampleLevel(oceanFoam, linearClamp, vec2f(h1.x, h1.y), layer, 0.0).rg;
+  return g0.y * (g0.x * a + g1.x * b) + g1.y * (g0.x * c + g1.x * d);
+}
+
 /// Where to look for the seabed below a water point whose pixel shows an OBJECT in the water at vertical depth
 /// 'objectDepth' along the view ray: a few metres below the object (the march then reaches about twice that; a bed
 /// it does not find is deeper than its reach, which is all that the waves and the foam need to know).
@@ -157,8 +207,10 @@ fn oceanColumnDepthAt(posRel: vec3f, up: vec3f) -> f32 {
   let id = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
   let along = oceanColumnDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0), length(posRel));
   if (id == MATERIAL_TERRAIN || id == MATERIAL_REGOLITH) { return oceanDepthBelow(posRel, up, along, along); }
-  let guess = oceanObjectGuess(along);
-  return oceanDepthBelow(posRel, up, guess, 2.0 * guess + 2.0);
+  // An object hides the vertical: the bed beside it, or a few metres below the object when none is in view.
+  let beside = oceanBedBeside(px).x;
+  let guess = select(oceanObjectGuess(along), beside, beside < 0.5 * OCEAN_DEEP);
+  return oceanDepthBelow(posRel, up, guess, select(2.0 * guess + 2.0, beside, beside < 0.5 * OCEAN_DEEP));
 }
 
 struct VsOut {
@@ -287,10 +339,19 @@ struct FsOut {
   // object under the pixel is not the bottom and does not change the waves, the foam or the colour of the water
   // above it).
   var seaDepth = OCEAN_DEEP;
+  // The seabed beside an object in the water (depth, screen uv; x = OCEAN_DEEP: none in view).
+  var beside = vec3f(OCEAN_DEEP, 0.0, 0.0);
   if (!sheet && !strayWater && dOpaque > 0.0) {
     if (detail > 0.0) {
-      let guess = select(oceanObjectGuess(column), column, seabedPix);
-      seaDepth = oceanDepthBelow(posRel - upR * in.height, upR, guess, select(2.0 * guess + 2.0, column, seabedPix));
+      var guess = column;
+      var fallback = column;
+      if (!seabedPix) {
+        // An object in the water hides the vertical: the bed beside it, or a few metres below the object.
+        beside = oceanBedBeside(vec2i(pix));
+        guess = select(oceanObjectGuess(column), beside.x, beside.x < 0.5 * OCEAN_DEEP);
+        fallback = select(2.0 * guess + 2.0, beside.x, beside.x < 0.5 * OCEAN_DEEP);
+      }
+      seaDepth = oceanDepthBelow(posRel - upR * in.height, upR, guess, fallback);
     } else if (seabedPix) {
       seaDepth = column;
     }
@@ -493,6 +554,11 @@ struct FsOut {
       if (bedUv.x >= 0.0 && seaDepth < 0.5 * OCEAN_DEEP) {
         hitUv = bedUv;
         tHit = clamp(seaDepth, 0.2, 60.0) / max(cosT, 0.15);
+      } else if (beside.x < 0.5 * OCEAN_DEEP && seaDepth < 0.5 * OCEAN_DEEP) {
+        // The ray passed behind the object and saw no bed on the way: the bed beside the object, through the column
+        // of the water here (never the object's own image a second time, never a deep-water hole).
+        hitUv = beside.yz;
+        tHit = clamp(seaDepth, 0.2, 60.0) / max(cosT, 0.15);
       } else {
         hitUv = lastUv;
         tHit = tLast;
@@ -524,7 +590,7 @@ struct FsOut {
       // A level is used inside its window (fading over the outer sixteenth) while the pixel resolves its texels.
       let w = saturate(min(m.x, m.y) * 16.0) * (1.0 - smoothstep(1.0, 2.5, fpTex / lv.z));
       if (w <= 0.0) { continue; }
-      wc = mix(wc, textureSampleLevel(oceanFoam, linearClamp, fuv, l, 0.0).rg, w);
+      wc = mix(wc, oceanFoamSample(fuv, l), w);
       mapped = mix(mapped, 1.0, w);
     }
     mapped *= detail;
@@ -585,6 +651,8 @@ struct FsOut {
   // Imagery colour: the sheet's (band), the seabed's (the terrain draws it with its albedo layer) or that of a stray
   // water fragment.
   s.albedo = select(vec3f(0.0), ga.rgb, sheet || strayWater || seabedPix);
+  // Over an object in the water: the imagery colour of the seabed beside it (the water keeps its own colour).
+  if (beside.x < 0.5 * OCEAN_DEEP) { s.albedo = textureLoad(gbufferAlbedoTex, vec2i(beside.yz * size), 0).rgb; }
   if (sheet) {
     // The band next to fadeStart: exactly the deferred pixel's inputs (detail is zero here), its own point included.
     s.pos = positionFromDepth(uv, dOpaque);

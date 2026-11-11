@@ -47,6 +47,9 @@ export const FIELD = {
   line2Along: 12000,
   line2Across: 2000,
   line2Half: 28,
+  line3Along: 4500,
+  line3Across: 800,
+  line3Half: 14,
   poolAlong: 140000,
   poolAcross: 7000,
   row1Along: 2600,
@@ -124,11 +127,13 @@ export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number
   wy += fieldNoise2(x / F.warp1 + 6.3, y / F.warp1 + 8.1, 23) * F.warp1Amp;
   const n0 = fieldNoise2((x + 0.5 * wx) / F.wind, (y + 0.5 * wy) / F.wind, 11);
   const wind = Math.exp(1.3 * p.windVariability * n0);
-  // Surface films survive where the wind is light.
+  // Surface films survive where the wind is light: calm pools only there, filaments (swept together by the
+  // currents) over a wider range of wind.
   const calm = smoothstep(0.35, -0.1, n0);
+  const calmL = smoothstep(0.65, 0, n0);
   let slick = 0;
   let pool = 0;
-  if (calm > 0) {
+  if (calmL > 0) {
     // Slick filaments: the ZERO SET of a flow-warped noise stretched along the wind (single lines that meander along
     // the wind, end and rejoin; never the nested rings of a contour map), width and strength varying along them
     // with a gate, antialiased by the footprint.
@@ -139,7 +144,11 @@ export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number
     const t2 = fieldNoise2((x + 0.7 * wx) / F.line2Along, (y + 0.7 * wy) / F.line2Across, 17);
     const g2 = 0.9 / F.line2Across;
     const l2 = lineCover(Math.abs(t2), F.line2Half * g2 * (0.6 + 0.8 * smoothstep(0.5, -0.5, gate)), footprint * g2) * smoothstep(0.25, -0.35, gate);
-    slick = Math.max(l1, 0.8 * l2) * calm;
+    // Fine threads wound more tightly by the flow (the marbling of a glint seen from orbit).
+    const t3 = fieldNoise2((x + 1.25 * wx) / F.line3Along, (y + 1.25 * wy) / F.line3Across, 25);
+    const g3 = 0.9 / F.line3Across;
+    const l3 = lineCover(Math.abs(t3), F.line3Half * g3, footprint * g3) * smoothstep(-0.3, 0.2, gate);
+    slick = Math.max(l1, 0.8 * l2, 0.6 * l3) * calmL;
     // Calm pools: hard-edged tongues of the same flow.
     // (The finer line noise frays their edges into streaks.)
     const tp = fieldNoise2((x + wx) / F.poolAlong, (y + wy) / F.poolAcross, 18) + 0.15 * t2;
@@ -164,7 +173,12 @@ export function fieldRaw(x: number, y: number, p: FieldParams, footprint: number
   let iw = 0;
   if (oi > 0) {
     const patch = smoothstep(0.45, 0.6, fieldNoise2(x / F.internalPatch + 5.5, y / F.internalPatch + 2.5, 21));
-    if (patch > 0) iw = ((0.5 + 0.5 * Math.sin((6.283185307 * (x + wx)) / F.internalWave)) ** 6 - 0.2256) * 1.5 * patch * oi;
+    if (patch > 0) {
+      // Trains of eight crests, the leading one strongest (a soliton packet), not an endless grating.
+      const u = (x + wx) / (8 * F.internalWave);
+      const train = Math.exp(-3 * (u - Math.floor(u)));
+      iw = ((0.5 + 0.5 * Math.sin((6.283185307 * (x + wx)) / F.internalWave)) ** 6 - 0.2256) * 1.5 * patch * oi * train;
+    }
   }
   return wind * Math.exp(1.5 * p.gustVariability * rows) * (1 + 0.25 * iw) * (1 - 0.9 * p.filamentStrength * slick) * (1 - 0.55 * p.slickStrength * pool);
 }

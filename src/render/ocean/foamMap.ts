@@ -112,8 +112,10 @@ fn foamCriterion(p: vec2f, texel: f32, level: u32) -> f32 {
   return c * fm.sigma[level] * amp[0];
 }
 
-// Ages (s) at which a texel without history looks for the breaker that passed over it.
-const FOAM_TRAIL_AGES = array<f32, 6>(0.3, 0.65, 1.05, 1.5, 2.1, 2.9);
+// A texel without history looks for the breaker that passed over it at these ages: every FOAM_TRAIL_STEP s up to
+// FOAM_TRAIL_STEPS steps (closer than a breaker is wide, so the trail is a continuous streak, not a string of beads).
+const FOAM_TRAIL_STEP = 0.2;
+const FOAM_TRAIL_STEPS = 14u;
 
 @compute @workgroup_size(8, 8, 1)
 fn foam(@builtin(global_invocation_id) id: vec3u) {
@@ -135,9 +137,9 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
     // have left here. A crest that breaks now at p + v t passed over p t seconds ago (as it is now: the shape of a
     // breaking crest changes more slowly than it travels), so foam trails behind every breaker, and around it lies
     // the old foam such breakers leave on average.
-    left = max(fresh, fm.misc.w * saturate((c - (fm.rates.z - fm.misc.z)) / fm.rates.w) * 0.5);
-    for (var k = 0u; k < 6u; k++) {
-      let age = FOAM_TRAIL_AGES[k];
+    left = max(fresh, fm.misc.w * saturate((c - (fm.rates.z - fm.misc.z)) / fm.rates.w));
+    for (var k = 1u; k <= FOAM_TRAIL_STEPS; k++) {
+      let age = FOAM_TRAIL_STEP * f32(k);
       let was = saturate((foamCriterion(p + fm.trail.xy * age, lv.z, id.z) - fm.rates.z) / fm.rates.w);
       breaker = max(breaker, was * exp(-fm.trail.z * age));
       left = max(left, was * exp(-fm.trail.w * age));

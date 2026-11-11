@@ -28,18 +28,23 @@ export interface FarWave {
   phase: number;
 }
 
-/** Wavelength / peak wavelength, share of the slope variance, direction off the wind (deg) of each component. */
+/**
+ * Wavelength / peak wavelength, share of the slope variance, direction off the wind (deg) of each component. The
+ * spread widens with frequency, as a wind sea's does (narrow about the peak, cos^2s with falling s above it): the
+ * long components, the only ones a coarse footprint resolves, cross at small angles (long-crested swell lines, not a
+ * plaid of two trains 60 deg apart).
+ */
 const SHAPE: readonly [number, number, number][] = [
-  [3.2, 0.03, -38],
-  [2.45, 0.05, 22],
-  [1.9, 0.07, -9],
-  [1.5, 0.09, 6],
-  [1.2, 0.12, -14],
-  [1.0, 0.16, 3],
-  [0.82, 0.14, 19],
-  [0.66, 0.13, -24],
-  [0.54, 0.11, 31],
-  [0.44, 0.1, -36],
+  [3.2, 0.03, -7],
+  [2.45, 0.05, 10],
+  [1.9, 0.07, -13],
+  [1.5, 0.09, 4],
+  [1.2, 0.12, -18],
+  [1.0, 0.16, 15],
+  [0.82, 0.14, -24],
+  [0.66, 0.13, 27],
+  [0.54, 0.11, -33],
+  [0.44, 0.1, 36],
 ];
 
 /** Peak wavelength of the body's wind sea (JONSWAP, deep water), m. */
