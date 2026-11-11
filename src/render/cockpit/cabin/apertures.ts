@@ -151,12 +151,15 @@ export function buildWindows(ctx: CabinContext): void {
   }
 }
 
-/** Roller shade: cassette along the aft (-v) edge, guide rails, pull bar; the fabric covers `extension` of the window. */
+/**
+ * Roller shade: cassette along the apex-side (+v) edge (clear of the crew's oblique line of sight, which
+ * comes from the aft side), guide rails, pull bar; the fabric covers `extension` of the window.
+ */
 function shade(ctx: CabinContext, g: OpeningGeom, o: Opening, extension: number): void {
   const w = ctx.layout.windows;
   const f = g.plane(w.bezelDepth);
   const hw = o.width / 2 + w.bezelWidth * 0.55;
-  const v0 = -(o.height / 2) - w.bezelWidth * 0.35;
+  const v0 = o.height / 2 + w.bezelWidth * 0.35;
   const cassette = offsetFrame(f, 0, v0, 0.011);
   ctx.b.box(cassette, hw, 0.011, 0.011, 0.004, ctx.m('closeout'));
   for (const s of [-1, 1]) {
@@ -164,13 +167,13 @@ function shade(ctx: CabinContext, g: OpeningGeom, o: Opening, extension: number)
     ctx.b.box(rail, 0.004, o.height / 2, 0.004, 0.001, ctx.m('aluminium'));
   }
   const ext = Math.max(0, Math.min(1, extension));
-  const vBar = v0 + 0.012 + ext * (o.height + w.bezelWidth * 0.3);
+  const vBar = v0 - 0.012 - ext * (o.height + w.bezelWidth * 0.3);
   ctx.b.box(offsetFrame(f, 0, vBar, 0.009), o.width / 2 + 0.003, 0.006, 0.005, 0.002, ctx.m('aluminium'));
-  ctx.b.box(offsetFrame(f, 0, vBar + 0.012, 0.012), 0.022, 0.006, 0.004, 0.002, ctx.m('webbingOrange'));
+  ctx.b.box(offsetFrame(f, 0, vBar - 0.012, 0.012), 0.022, 0.006, 0.004, 0.002, ctx.m('webbingOrange'));
   if (ext > 0.02) {
     const fabric = ctx.m('shade');
     const p = (u: number, v: number): Vec3 => local(f, u, v, 0.006);
-    ctx.b.flatQuad(p(-o.width / 2, v0 + 0.012), p(o.width / 2, v0 + 0.012), p(o.width / 2, vBar), p(-o.width / 2, vBar), fabric);
+    ctx.b.flatQuad(p(-o.width / 2, vBar), p(o.width / 2, vBar), p(o.width / 2, v0 - 0.012), p(-o.width / 2, v0 - 0.012), fabric);
   }
 }
 
@@ -277,7 +280,7 @@ export function buildHatch(ctx: CabinContext): void {
   }
   // Hinges on the +u side.
   for (const v of [-hh * 0.6, hh * 0.6]) {
-    const p = g.at(-side * (hatch.width / 2 + 0.03), v, 0.02);
+    const p = g.at(-side * (hatch.width / 2 + 0.03), v, 0.026);
     b.cylinder(v3.addScaled(p, g.frame.g, -0.05), g.frame.g, 0.018, 0.1, 16, ctx.m('aluminium'));
   }
   // Pressure-equalisation valve.

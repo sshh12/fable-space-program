@@ -296,7 +296,11 @@ fn vnoise2(p: vec2f, seed: i32) -> f32 { return valueNoise3(vec3f(p, 0.37), seed
 
 /// Procedural surface detail from metric surface coordinates: an albedo factor, a roughness offset, a
 /// tangent-space slope (bump) and a cavity term.
-fn surfaceDetail(kind: u32, strength: f32, uv: vec2f) -> Detail {
+/// Fade of a pattern of spatial frequency f (cycles per metre) given the pixel footprint fw (m): patterns
+/// finer than about two pixels are filtered out instead of aliasing into moire.
+fn aaFade(f: f32, fw: f32) -> f32 { return 1.0 - smoothstep(0.2, 0.45, f * fw); }
+
+fn surfaceDetail(kind: u32, strength: f32, uv: vec2f, fw: f32) -> Detail {
   var d: Detail;
   d.albedo = 1.0;
   d.rough = 0.0;
@@ -306,12 +310,12 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f) -> Detail {
   let grime = vnoise2(uv * 3.1, 11) * 0.6 + vnoise2(uv * 11.0, 12) * 0.4;
   switch (kind) {
     case 1u: { // paint: orange peel and soft wear
-      d.bump = vec2f(gradientNoise3(vec3f(uv * 190.0, 1.5), 22), gradientNoise3(vec3f(uv * 190.0, 0.5), 21)) * 0.03 * strength;
+      d.bump = vec2f(gradientNoise3(vec3f(uv * 190.0, 1.5), 22), gradientNoise3(vec3f(uv * 190.0, 0.5), 21)) * 0.03 * strength * aaFade(190.0, fw);
       d.albedo = 1.0 - 0.12 * strength * smoothstep(0.55, 0.85, grime);
       d.rough = 0.08 * strength * (grime - 0.5);
     }
     case 2u: { // brushed metal: fine streaks along u
-      let s = vnoise2(vec2f(uv.x * 4.0, uv.y * 900.0), 31) - 0.5;
+      let s = (vnoise2(vec2f(uv.x * 4.0, uv.y * 900.0), 31) - 0.5) * aaFade(900.0, fw);
       d.bump = vec2f(0.0, s) * 0.05 * strength;
       d.rough = 0.06 * s * strength;
       d.albedo = 1.0 - 0.06 * strength * smoothstep(0.6, 0.9, grime);
@@ -325,7 +329,7 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f) -> Detail {
       d.ao = mix(0.8, 1.0, puff);
       // Slope of the puffed quilt: toward the seams the surface dips a little.
       d.bump = vec2f(f.x + f.y, f.x - f.y) * (1.0 - puff) * 0.18 * strength;
-      let weave = sin(uv.x * 2200.0) * sin(uv.y * 2200.0);
+      let weave = sin(uv.x * 2200.0) * sin(uv.y * 2200.0) * aaFade(350.0, fw);
       d.bump += vec2f(weave, -weave) * 0.03;
       d.albedo = (0.93 + 0.07 * puff) * (1.0 - 0.1 * smoothstep(0.6, 0.9, grime));
       // Stitch line: short dashes along each seam.
@@ -333,28 +337,30 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f) -> Detail {
       d.albedo *= 1.0 - 0.3 * stitch;
     }
     case 4u: { // woven fabric
-      let w = sin(uv.x * 1500.0) * sin(uv.y * 1500.0);
-      d.bump = vec2f(cos(uv.x * 1500.0), cos(uv.y * 1500.0)) * 0.08 * strength;
+      let k = aaFade(240.0, fw);
+      let w = sin(uv.x * 1500.0) * sin(uv.y * 1500.0) * k;
+      d.bump = vec2f(cos(uv.x * 1500.0), cos(uv.y * 1500.0)) * 0.08 * strength * k;
       d.albedo = 0.95 + 0.05 * w - 0.1 * smoothstep(0.65, 0.95, grime);
     }
     case 5u: { // webbing: herringbone along the strap
+      let k = aaFade(260.0, fw);
       let w = fract(uv.x * 260.0 + abs(fract(uv.y * 50.0) - 0.5) * 2.0);
-      d.bump = vec2f(w - 0.5, 0.0) * 0.12 * strength;
-      d.albedo = 0.9 + 0.1 * w;
+      d.bump = vec2f(w - 0.5, 0.0) * 0.12 * strength * k;
+      d.albedo = 0.9 + 0.1 * mix(0.5, w, k);
     }
     case 6u: { // velcro loops: dense random fuzz
-      let f = vnoise2(uv * 900.0, 61);
-      d.bump = vec2f(f - 0.5, vnoise2(uv * 900.0, 62) - 0.5) * 0.3 * strength;
+      let f = mix(0.5, vnoise2(uv * 900.0, 61), aaFade(900.0, fw));
+      d.bump = vec2f(f - 0.5, vnoise2(uv * 900.0, 62) - 0.5) * 0.3 * strength * aaFade(900.0, fw);
       d.albedo = 0.85 + 0.25 * f;
       d.ao = 0.8 + 0.2 * f;
     }
     case 7u: { // ribbed duct: ribs along the tube
-      let r = sin(uv.x * 260.0);
+      let r = sin(uv.x * 260.0) * aaFade(41.0, fw);
       d.bump = vec2f(r * 0.35 * strength, 0.0);
       d.ao = 0.85 + 0.15 * r;
     }
     case 8u: { // knurled grip
-      let k = sin((uv.x + uv.y) * 1800.0) * sin((uv.x - uv.y) * 1800.0);
+      let k = sin((uv.x + uv.y) * 1800.0) * sin((uv.x - uv.y) * 1800.0) * aaFade(400.0, fw);
       d.bump = vec2f(k, -k) * 0.2 * strength;
       d.rough = 0.1;
     }
@@ -381,7 +387,8 @@ fn surfaceDetail(kind: u32, strength: f32, uv: vec2f) -> Detail {
   var albedo = mat.a.rgb;
   var roughness = mat.a.w;
   var metallic = mat.b.x;
-  let det = surfaceDetail(u32(mat.c.x + 0.5), mat.c.y, in.uv0);
+  let fw = max(length(dpdx(in.uv0)), length(dpdy(in.uv0)));
+  let det = surfaceDetail(u32(mat.c.x + 0.5), mat.c.y, in.uv0, fw);
   albedo *= det.albedo;
   roughness = clamp(roughness + det.rough, 0.04, 1.0);
   let bakedAo = (f32(in.misc.y) / 255.0) * det.ao;

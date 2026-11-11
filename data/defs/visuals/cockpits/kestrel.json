@@ -18,7 +18,7 @@
     "cushion": { "shading": "standard", "albedo": [0.085, 0.092, 0.11], "roughness": 0.9, "detail": "weave", "detailStrength": 1.0, "translucency": 0.0 },
     "couchFrame": { "shading": "standard", "albedo": [0.17, 0.18, 0.19], "roughness": 0.46, "detail": "paint", "detailStrength": 0.7 },
     "webbing": { "shading": "standard", "albedo": [0.05, 0.06, 0.09], "roughness": 0.82, "detail": "webbing", "detailStrength": 1.0 },
-    "panel": { "shading": "standard", "albedo": [0.052, 0.056, 0.06], "roughness": 0.56, "detail": "paint", "detailStrength": 0.8 },
+    "panel": { "shading": "standard", "albedo": [0.085, 0.09, 0.096], "roughness": 0.58, "detail": "paint", "detailStrength": 0.8 },
     "consoleBody": { "shading": "standard", "albedo": [0.28, 0.29, 0.29], "roughness": 0.6, "detail": "paint", "detailStrength": 0.5 },
     "cavity": { "shading": "standard", "albedo": [0.006, 0.006, 0.006], "roughness": 0.9 },
     "keycap": { "shading": "standard", "albedo": [0.028, 0.028, 0.03], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.5 },
@@ -58,9 +58,9 @@
     "hipU": -0.68,
     "thighLength": 0.42,
     "seats": {
-      "cdr": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": true, "halfWidth": 0.21, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.16, 0.25] },
+      "cdr": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": true, "halfWidth": 0.2, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.145, 0.25] },
       "plt": { "thighDeg": 100, "kneeDeg": 70, "kneeShift": 0, "controllers": true, "halfWidth": 0.22, "legHalfWidth": 0.17, "shinLength": 0.38, "armrests": [-0.25, 0.25] },
-      "ms": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": false, "halfWidth": 0.21, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.25, 0.16] }
+      "ms": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": false, "halfWidth": 0.2, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.25, 0.145] }
     }
   },
   "console": {
@@ -70,7 +70,7 @@
       { "id": "left", "x": [-0.8, -0.27], "u": [-0.17, 0.22] },
       { "id": "centre", "x": [-0.27, 0.27], "u": [-0.17, 0.17] },
       { "id": "right", "x": [0.27, 0.8], "u": [-0.17, 0.22] },
-      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14 },
+      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14, "depth": 0.07 },
       { "id": "lower", "x": [-0.78, 0.78], "u": [-0.36, -0.17], "tiltDeg": -30 }
     ],
     "displays": [
@@ -209,8 +209,8 @@
   ],
   "windows": {
     "bezelWidth": 0.045,
-    "bezelDepth": 0.05,
-    "panes": [0.006, 0.038],
+    "bezelDepth": 0.032,
+    "panes": [0.005, 0.022],
     "tint": [0.935, 0.955, 0.925],
     "ior": 1.47,
     "dust": 0.35,
@@ -232,7 +232,7 @@
     "displayFullAmbient": 3000,
     "legendLuminance": 2.5,
     "legendColor": [1.0, 0.93, 0.8],
-    "cabinAlbedo": 0.4,
+    "cabinAlbedo": 0.5,
     "cabinArea": 29,
     "plasmaLuminance": 25000,
     "plasmaColor": [1.0, 0.42, 0.24]

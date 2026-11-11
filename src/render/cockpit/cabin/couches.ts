@@ -109,6 +109,7 @@ export function buildCouches(ctx: CabinContext): void {
       for (const side of [-1, 1]) cushion(ctx, faceL(local(backF, side * (hw - 0.02), 0, 0.004), s), 0.03, backHy - 0.02, c.cushion + 0.025, cush);
     }
     ctx.proxy(backF, [hw, backHy, 0.05], 0.12);
+    if (d === 0) ctx.couches.push({ seat: s.id, headrest: local(headF, 0, 0, hr.depth), backCentre: local(backF, 0, 0, c.cushion), backNormal: backF.n });
     // ---- hip (seat) cushion bridging back and thigh pans
     const hipN = v3.normalize(v3.add(s.L, pts.thighN));
     const hipFrame: Frame = { o: v3.addScaled(pts.hip, hipN, -0.01), x: s.R, y: v3.normalize(v3.cross(hipN, s.R)), n: hipN };
@@ -216,7 +217,7 @@ function pallet(ctx: CabinContext, seats: SeatFrame[]): void {
     const f = frameAt(p, { x: 1, y: 0, z: 0 }, s.U);
     ctx.b.box(f, half, 0.03, 0.025, 0.004, ctx.m('couchFrame'));
     if (ctx.detail === 0) {
-      for (const side of [-1, 1]) ctx.b.box(frameAt({ x: side * (half + 0.04), y: p.y, z: p.z }, { x: 1, y: 0, z: 0 }, s.U), 0.04, 0.04, 0.03, 0.004, ctx.m('aluminium'));
+      for (const side of [-1, 1]) ctx.b.box(frameAt({ x: side * (half + 0.035), y: p.y, z: p.z }, { x: 1, y: 0, z: 0 }, s.U), 0.035, 0.035, 0.025, 0.004, ctx.m('aluminium'));
     }
   }
 }

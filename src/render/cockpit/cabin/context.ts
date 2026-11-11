@@ -67,6 +67,14 @@ export interface WindowMeta {
   panes: PaneMeta[];
 }
 
+export interface CouchMeta {
+  seat: string;
+  /** Centre of the head cushion surface and of the back cushion's plane, the plane's normal (toward the occupant). */
+  headrest: Vec3;
+  backCentre: Vec3;
+  backNormal: Vec3;
+}
+
 export interface FloodMeta {
   /** Emitting strip from p0 to p1, facing `n`; aim point; luminous flux and colour. */
   p0: Vec3;
@@ -125,6 +133,7 @@ export class CabinContext {
   navball: { frame: Frame; radius: number } | null = null;
   readonly windows: WindowMeta[] = [];
   readonly floods: FloodMeta[] = [];
+  readonly couches: CouchMeta[] = [];
   readonly proxies: ProxyBox[] = [];
   readonly labels: LabelAlloc[] = [];
   private readonly labelByKey = new Map<string, LabelAlloc>();

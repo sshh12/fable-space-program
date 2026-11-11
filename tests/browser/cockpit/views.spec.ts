@@ -7,12 +7,20 @@ import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, s
 
 test.use({ viewport: { width: 1600, height: 900 } });
 
-async function settle(page: Page, frames = 90): Promise<void> {
+/** Deterministic frames until the exposure has adapted (it moves 0.8 EV/s toward darker scenes) and TAA has converged. */
+async function settle(page: Page, frames = 60): Promise<void> {
   await waitIdle(page, 8);
-  await page.evaluate(async (n) => {
-    window.__test!.setDeterministic(true);
-    await window.__test!.waitFrames(n);
-  }, frames);
+  await page.evaluate(() => window.__test!.setDeterministic(true));
+  await page.waitForFunction(
+    async () => {
+      await window.__test!.waitFrames(30);
+      const e = window.__cockpit!.debug().exposure;
+      return Math.abs(e.ev100 - e.targetEv100) < 0.05;
+    },
+    undefined,
+    { timeout: 120_000, polling: 100 },
+  );
+  await page.evaluate((n) => window.__test!.waitFrames(n), frames);
 }
 
 const shots: { name: string; url: string; setup?: (page: Page) => Promise<void>; dark?: boolean }[] = [
@@ -22,7 +30,7 @@ const shots: { name: string; url: string; setup?: (page: Page) => Promise<void>;
   { name: 'night-displays-floods', url: 'scene=night', dark: true },
   { name: 'reentry-plasma', url: 'scene=reentry', dark: true },
   { name: 'moon-horizon', url: 'scene=moon' },
-  { name: 'look-back-couches-hatch', url: 'scene=leo&look=118,-48' },
+  { name: 'look-back-couches-hatch', url: 'scene=leo&look=104,-30&fov=85' },
   { name: 'closeup-mfd', url: 'scene=leo&aim=mfd0&fov=24' },
   { name: 'closeup-fdai', url: 'scene=leo&aim=fdai&fov=22' },
   { name: 'closeup-switches', url: 'scene=leo&aim=switches&fov=26' },

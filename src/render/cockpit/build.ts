@@ -7,7 +7,7 @@ import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
 import type { BuiltMesh } from './mesh';
 import { buildDockingHatch, buildHatch, buildWindows } from './cabin/apertures';
 import { buildConsole } from './cabin/console';
-import { CabinContext, type ControlMeta, type DisplayMeta, type FloodMeta, type LabelAlloc, type ProxyBox, type WindowMeta } from './cabin/context';
+import { CabinContext, type ControlMeta, type CouchMeta, type DisplayMeta, type FloodMeta, type LabelAlloc, type ProxyBox, type WindowMeta } from './cabin/context';
 import { buildCouches } from './cabin/couches';
 import { buildFixtures } from './cabin/fixtures';
 import { buildShell, type Region } from './cabin/shell';
@@ -28,6 +28,7 @@ export interface CockpitModel {
   navball: { frame: Frame; radius: number };
   windows: WindowMeta[];
   floods: FloodMeta[];
+  couches: CouchMeta[];
   proxies: ProxyBox[];
   labels: LabelAlloc[];
   regions: Region[];
@@ -64,6 +65,7 @@ export function buildCockpitModelFrom(layoutId: string, layout: CockpitLayoutDef
     navball: ctx.navball,
     windows: ctx.windows,
     floods: ctx.floods,
+    couches: ctx.couches,
     proxies: ctx.proxies,
     labels: ctx.labels,
     regions,

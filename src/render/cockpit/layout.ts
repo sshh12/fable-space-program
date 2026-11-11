@@ -104,6 +104,8 @@ export interface ConsoleSectionDef {
   /** Extra distance of this section from the eyes (m, + = farther) and tilt about x (deg, + = top toward the crew). */
   offset?: number;
   tiltDeg?: number;
+  /** Body depth behind the face for this section (default: the console's depth). */
+  depth?: number;
 }
 
 export interface ConsoleDef {

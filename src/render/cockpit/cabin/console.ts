@@ -71,7 +71,7 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame): void {
   const [x0, x1] = sec.def.x;
   const [u0, u1] = sec.def.u;
   const f = sec.frame;
-  const depth = ctx.layout.console.depth;
+  const depth = sec.def.depth ?? ctx.layout.console.depth;
   const pt = (x: number, u: number, c = 0): Vec3 => local(f, x, u - sec.uHinge, c);
   // Corners of the face, each pulled toward the section centre if the wall is in the way; edges are
   // sampled so a corner that is cut becomes two points.
@@ -308,13 +308,12 @@ export function toggleSwitch(ctx: CabinContext, f: Frame, sw: SwitchDef, key: st
     // U-shaped guard hinged below the switch: open (swung down) while the switch is on.
     const hinge = local(f, 0, -0.012, 0.004);
     const g = ctx.control(`${key}:guard`, () => ({ kind: 'guard', pivot: hinge, axis: f.x, binding: sw.binding, angles: [-115 * DEG, 0] }));
+    // Bail guard: two side cheeks joined by a rounded bar over the lever tip.
     const ga = ctx.m('guard', { ctl: g.index });
-    const gf = offsetFrame(f, 0, 0.004, 0.012);
-    b.box(offsetFrame(gf, -0.0105, 0, 0), 0.0012, 0.016, 0.012, 0.0005, ga);
-    b.box(offsetFrame(gf, 0.0105, 0, 0), 0.0012, 0.016, 0.012, 0.0005, ga);
-    b.box(offsetFrame(gf, 0, 0.0148, 0.0005), 0.0105, 0.0012, 0.0115, 0.0005, ga);
-    b.box(offsetFrame(gf, 0, 0, 0.0115), 0.0105, 0.016, 0.0009, 0.0004, ga);
-    b.cylinder(v3.addScaled(hinge, f.x, -0.012), f.x, 0.0016, 0.024, 8, ctx.m('steel'));
+    const gf = offsetFrame(f, 0, 0.002, 0.0115);
+    for (const s of [-1, 1]) b.box(offsetFrame(gf, s * 0.0095, 0, 0), 0.001, 0.014, 0.0105, 0.0004, ga);
+    b.cylinder(local(gf, -0.0095, 0.012, 0.0095), f.x, 0.0016, 0.019, 8, ga);
+    b.cylinder(v3.addScaled(hinge, f.x, -0.011), f.x, 0.0018, 0.022, 8, ctx.m('steel'));
   }
 }
 

@@ -28,6 +28,10 @@ export interface DisplayStats {
   /** Pages painted and their main-thread cost (paint + copy + mip encode), ms. */
   paints: number;
   cpuMs: number;
+  /** Split of cpuMs: Canvas 2D painting, the copy into the texture, the mip encode. */
+  paintMs: number;
+  copyMs: number;
+  mipMs: number;
   /** Frames over which the stats were collected. */
   frames: number;
 }
@@ -48,7 +52,7 @@ export class MfdDisplays {
   private readonly period: number;
   /** Page each layer shows and the snapshot tick it was painted from. */
   readonly painted: { page: MfdPage | null; tick: number; at: number }[] = [];
-  stats: DisplayStats = { paints: 0, cpuMs: 0, frames: 0 };
+  stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
 
   constructor(
     private readonly device: GPUDevice,
@@ -131,9 +135,15 @@ export class MfdDisplays {
       this.dirty.delete(i);
       this.next[i] = Math.max(this.next[i]! + this.period, time + this.period * 0.5);
       const page = pageOf(i);
+      const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
+      const b = performance.now();
       this.device.queue.copyExternalImageToTexture({ source: this.canvases[i]! }, { texture: this.texture, origin: [0, 0, i] }, [this.width, this.height]);
+      const c = performance.now();
       this.encodeMips(i, encoder);
+      this.stats.paintMs += b - a;
+      this.stats.copyMs += c - b;
+      this.stats.mipMs += performance.now() - c;
       this.painted[i] = { page, tick: snapshot.tick, at: time };
       this.stats.paints++;
     }
@@ -159,7 +169,7 @@ export class MfdDisplays {
   }
 
   resetStats(): void {
-    this.stats = { paints: 0, cpuMs: 0, frames: 0 };
+    this.stats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
   }
 
   dispose(): void {

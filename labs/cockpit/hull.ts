@@ -32,7 +32,23 @@ function toMeshData(ctx: CabinContext): MeshData {
     tangents.set([i16[o2 + 10]! / 32767, i16[o2 + 11]! / 32767, i16[o2 + 12]! / 32767, i16[o2 + 13]! >= 0 ? 1 : -1], i * 4);
     uvs.set([f32[o + 7]!, f32[o + 8]!], i * 2);
   }
-  return { positions, normals, tangents, uvs, indices: built.indices, groups: [{ material: 0, start: 0, count: built.indices.length }], bounds: { min: [built.bounds.min.x, built.bounds.min.y, built.bounds.min.z], max: [built.bounds.max.x, built.bounds.max.y, built.bounds.max.z] } };
+  // Wind every triangle counter-clockwise around its vertex normals (the builder's patches do not all agree),
+  // so the mesh system's back-face culling keeps the faces that look out of the hull.
+  const idx = built.indices;
+  for (let k = 0; k < idx.length; k += 3) {
+    const [a, b, c] = [idx[k]!, idx[k + 1]!, idx[k + 2]!];
+    const p = (i: number): [number, number, number] => [positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!];
+    const [pa, pb, pc] = [p(a), p(b), p(c)];
+    const e1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    const e2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+    const fn = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+    const vn = [normals[a * 3]! + normals[b * 3]! + normals[c * 3]!, normals[a * 3 + 1]! + normals[b * 3 + 1]! + normals[c * 3 + 1]!, normals[a * 3 + 2]! + normals[b * 3 + 2]! + normals[c * 3 + 2]!];
+    if (fn[0]! * vn[0]! + fn[1]! * vn[1]! + fn[2]! * vn[2]! < 0) {
+      idx[k + 1] = c;
+      idx[k + 2] = b;
+    }
+  }
+  return { positions, normals, tangents, uvs, indices: idx, groups: [{ material: 0, start: 0, count: built.indices.length }], bounds: { min: [built.bounds.min.x, built.bounds.min.y, built.bounds.min.z], max: [built.bounds.max.x, built.bounds.max.y, built.bounds.max.z] } };
 }
 
 export function buildLabHull(layout: CockpitLayoutDef, mould: CapsuleMouldLineDef): ModelData {

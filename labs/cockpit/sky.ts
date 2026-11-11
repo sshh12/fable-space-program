@@ -18,6 +18,7 @@ import { v3, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, f32ToF16, type SceneBindings, type Tracked } from '@/render/core';
 
 const COMPOSITE_FS = (bindings: string): string => /* wgsl */ `
+#include "noise"
 ${bindings}
 fn hitSphere(o: vec3f, d: vec3f, c: vec3f, r: f32) -> vec2f {
   let oc = o - c;
@@ -102,11 +103,21 @@ fn march(uv: vec2f, depth: f32) -> array<vec3f, 2> {
   let r = march(in.uv, depth);
   return Out(vec4f(r[0], 1.0));
 }
+struct LabPlasma { v: vec4f }   // rgb = shock-layer radiance (cd/m^2), w = intensity
+@group(2) @binding(0) var<uniform> plasma: LabPlasma;
 @fragment fn fsAdd(in: FullscreenOut) -> Out {
   let depth = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
   if (depth > 0.0 && length(positionFromDepth(in.uv, depth)) < 30.0) { return Out(vec4f(0.0)); }
   let r = march(in.uv, depth);
-  return Out(vec4f(writeHdr(r[1] * frame.exposure.x), 0.0));
+  // Stand-in for the vfx shock layer seen through the windows during entry: a glowing sheath with streaks
+  // streaming past (the real one is the vfx package's plasma volume).
+  var glow = vec3f(0.0);
+  if (plasma.v.w > 0.0) {
+    let d = normalize(viewRay(in.uv));
+    let streak = 0.6 + 0.4 * valueNoise3(vec3f(d * 18.0 + vec3f(0.0, frame.time.x * 9.0, 0.0)), 7) + 0.3 * valueNoise3(vec3f(d * 70.0 + vec3f(0.0, frame.time.x * 31.0, 0.0)), 8);
+    glow = plasma.v.rgb * streak;
+  }
+  return Out(vec4f(writeHdr((r[1] + glow) * frame.exposure.x), 0.0));
 }
 `;
 
@@ -233,6 +244,9 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
   let add: Tracked<GPURenderPipeline>;
   let sun: Tracked<GPURenderPipeline>;
   let layout: GPUBindGroupLayout;
+  let plasmaLayout: GPUBindGroupLayout;
+  let plasmaGroup: GPUBindGroup;
+  let plasmaBuf: GPUBuffer;
   let bindings: SceneBindings;
   let group: GPUBindGroup | null = null;
   let version = -1;
@@ -313,9 +327,12 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
       const core = coreOf(c);
       bindings = createSceneBindings(c, 1, 0, ['sceneDepth']);
       layout = c.device.createBindGroupLayout({ label: 'labSky', entries: bindings.layoutEntries });
+      plasmaLayout = c.device.createBindGroupLayout({ label: 'labSky.plasma', entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
+      plasmaBuf = c.device.createBuffer({ label: 'labSky.plasma', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      plasmaGroup = c.device.createBindGroup({ label: 'labSky.plasma', layout: plasmaLayout, entries: [{ binding: 0, resource: { buffer: plasmaBuf } }] });
       const fs = COMPOSITE_FS(bindings.wgsl);
-      mul = core.fullscreenPipeline({ label: 'labSky.mul', fragment: fs.replace('fn fsMul', 'fn fs').replace('fn fsAdd', 'fn fsAddUnused'), layouts: [layout], targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'zero', dstFactor: 'src', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }] });
-      add = core.fullscreenPipeline({ label: 'labSky.add', fragment: fs.replace('fn fsAdd', 'fn fs').replace('fn fsMul', 'fn fsMulUnused'), layouts: [layout], targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }] });
+      mul = core.fullscreenPipeline({ label: 'labSky.mul', fragment: fs.replace('fn fsMul', 'fn fs').replace('fn fsAdd', 'fn fsAddUnused'), layouts: [layout, plasmaLayout], targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'zero', dstFactor: 'src', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }] });
+      add = core.fullscreenPipeline({ label: 'labSky.add', fragment: fs.replace('fn fsAdd', 'fn fs').replace('fn fsMul', 'fn fsMulUnused'), layouts: [layout, plasmaLayout], targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }] });
       sun = core.fullscreenPipeline({ label: 'labSky.sun', fragment: SUN_FS, targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }], depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'equal' } });
       cube = core.createTextureChecked({ label: 'labSky.probe', format: 'rgba16float', size: [SIZE, SIZE, 6], mipLevelCount: Math.log2(SIZE) + 1, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
       sh = c.device.createBuffer({ label: 'labSky.sh9', size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -324,6 +341,10 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
     },
     prepare(frame) {
       updateProbe(frame);
+      const v = frame.snapshot.vessels.find((x) => x.id === frame.snapshot.activeVesselId);
+      const k = v?.aero.plasmaIntensity ?? 0;
+      const L = 25000 * Math.max(0, k) ** 1.5;
+      ctx.device.queue.writeBuffer(plasmaBuf, 0, new Float32Array([L, L * 0.42, L * 0.24, k]));
     },
     drawBackground(_frame, pass) {
       pass.setPipeline(sun.get());
@@ -339,6 +360,7 @@ export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refresh
         pass.setBindGroup(0, _frame.frameBindGroup);
         pass.setPipeline(pipe.get());
         pass.setBindGroup(1, group);
+        pass.setBindGroup(2, plasmaGroup);
         pass.draw(3);
         pass.end();
       }
