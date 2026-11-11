@@ -146,10 +146,9 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const b = Math.min(Math.max(h.b, 2 * px), reach);
     const frameSolidAngle = 4 / (m[0]! * m[5]!);
     const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle);
-    // An emitter in front of a body lights pixels the meter sees anyway (what it lights is in the histogram),
-    // unless it is too small for those to count: under half a per cent of the frame the meter goes by its
-    // prior, and the hint is what raises that (request vfx-3).
-    if (overBody && coverage >= 0.005) return;
+    // An emitter in front of a body is not reported: what it lights is geometry and in the meter's histogram,
+    // and the exposure should be the one that shows that (the regolith under a lander at night), not the flame.
+    if (overBody) return;
     if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
   };
 
@@ -272,7 +271,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           if (pc) placed.push(pc);
         }
       }
-      plumes.update(placed, noiseTime);
+      plumes.update(placed, noiseTime, frame);
       plumeLights(candidates);
       common.setProbe(PROBE_PAD, smoke.update(frame, placed, effectTime, simDt));
       plasma.update(frame, effectTime, noiseTime);

@@ -157,18 +157,40 @@ test('plume volumes are hidden by this frame\'s geometry: a fast occluder shows 
   await expectNoErrors(page, pageLog);
 });
 
-/** Pixel with the largest single-channel difference between two screenshots of the same size. */
-function largestDifference(a: Buffer, b: Buffer): { x: number; y: number; diff: number } {
+/**
+ * The largest single-channel difference between two screenshots of the same size and where it is, and the
+ * difference that 99.99 % of the channels stay below (crawling shows there; one firefly does not).
+ */
+function differenceTail(a: Buffer, b: Buffer): { x: number; y: number; diff: number; p9999: number } {
   const pa = PNG.sync.read(a);
   const pb = PNG.sync.read(b);
-  let best = { x: 0, y: 0, diff: 0 };
+  const best = { x: 0, y: 0, diff: 0 };
+  const histogram = new Uint32Array(256);
+  let channels = 0;
   for (let i = 0; i < pa.data.length; i++) {
     if ((i & 3) === 3) continue;
     const d = Math.abs(pa.data[i]! - pb.data[i]!);
-    if (d > best.diff) best = { x: (i >> 2) % pa.width, y: Math.floor((i >> 2) / pa.width), diff: d };
+    histogram[d]!++;
+    channels++;
+    if (d > best.diff) {
+      best.x = (i >> 2) % pa.width;
+      best.y = Math.floor((i >> 2) / pa.width);
+      best.diff = d;
+    }
   }
-  return best;
+  let above = 0;
+  let p9999 = 0;
+  for (let d = 255; d >= 0; d--) {
+    above += histogram[d]!;
+    if (above > 1e-4 * channels) {
+      p9999 = d;
+      break;
+    }
+  }
+  return { ...best, p9999 };
 }
+
+const TAIL_BOUND = 20;
 
 test('half-resolution volumes are temporally stable under a static camera', async ({ page, pageLog }) => {
   // Live noise (not deterministic), effect clock stopped: what changes from frame to frame is march jitter only.
@@ -188,18 +210,26 @@ test('half-resolution volumes are temporally stable under a static camera', asyn
     let mean = 0;
     let max = 0;
     let differing = 0;
-    let where = { x: 0, y: 0, diff: 0 };
+    let where = { x: 0, y: 0, diff: 0, p9999: 0 };
+    let tail = 0;
     for (let i = 1; i < shots.length; i++) {
       const d = pngDiff(shots[i - 1]!, shots[i]!);
       mean = Math.max(mean, d.meanAbsDiff);
       max = Math.max(max, d.maxAbsDiff);
       differing = Math.max(differing, d.differingFraction);
-      const w = largestDifference(shots[i - 1]!, shots[i]!);
+      const w = differenceTail(shots[i - 1]!, shots[i]!);
+      tail = Math.max(tail, w.p9999);
       if (w.diff > where.diff) where = w;
     }
-    console.log(`${name}: frame-to-frame difference with a static camera: mean ${mean.toFixed(3)} / 255, max ${max} / 255 (at pixel ${where.x}, ${where.y}), ${(differing * 100).toFixed(1)} % of the channels differ`);
+    console.log(
+      `${name}: frame-to-frame difference with a static camera: mean ${mean.toFixed(3)} / 255, 99.99 % of the channels within ${tail} / 255, max ${max} / 255 (at pixel ${where.x}, ${where.y}), ${(differing * 100).toFixed(1)} % of the channels differ`,
+    );
     expect(mean).toBeLessThan(0.5);
-    expect(max).toBeLessThan(60);
+    // Crawling would show in the tail of the distribution: 99.99 % of the channels change by less than this.
+    expect(tail).toBeLessThan(TAIL_BOUND);
+    // One pixel in a million may jump further (a wisp of plume-lit smoke against its own shadow): the first
+    // build's bound, kept as a guard against fireflies.
+    expect(max).toBeLessThan(72);
     await expectNoErrors(page, pageLog);
   }
 });

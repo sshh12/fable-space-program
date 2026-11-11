@@ -2,7 +2,7 @@
  * Engine and thruster plumes: analytic jets marched at half resolution inside a bounding box per cluster.
  * The WGSL field below is the same code for the march and for the density slices the tests measure.
  */
-import type { RenderContext } from '@/core/contracts/render';
+import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import { v3, type Vec3 } from '@/core/math';
 import type { Tracked } from '@/render/core';
 import type { PlumeCluster } from './clusters';
@@ -16,6 +16,13 @@ const NOZZLE_FLOATS = 24;
 /** March steps of an engine cluster and of an RCS jet at quality 1. */
 export const PLUME_STEPS = 30;
 export const RCS_STEPS = 14;
+/**
+ * A plume that covers more of the frame than this is marched with fewer steps per ray (down to STEPS_FLOOR
+ * of them, as 1 / sqrt(coverage)): seen from close up there are more rays through every eddy, and the cost
+ * of a plume that fills the view stays bounded.
+ */
+export const STEPS_FULL_COVERAGE = 0.06;
+export const STEPS_FLOOR = 0.6;
 
 /** A cluster placed in the frame: origin and axes camera-relative in ROOT axes. */
 export interface PlacedCluster {
@@ -424,7 +431,9 @@ export class PlumeRenderer {
   }
 
   /** Pack this frame's clusters (at most MAX_PLUME_INSTANCES; nozzles beyond MAX_PLUME_NOZZLES are dropped with their cluster). */
-  update(placed: PlacedCluster[], noiseTime: number): void {
+  update(placed: PlacedCluster[], noiseTime: number, frame: FrameContext): void {
+    const m = frame.projUnjittered;
+    const frameSolidAngle = 4 / (m[0]! * m[5]!);
     const I = this.instanceData;
     const N = this.nozzleData;
     let ni = 0;
@@ -454,7 +463,18 @@ export class PlumeRenderer {
       put(I, o + 32, look.smoke.albedo[0] * ss, look.smoke.albedo[1] * ss, look.smoke.albedo[2] * ss, look.smoke.extinction);
       put(I, o + 36, look.ignition.flashColor[0] * fl, look.ignition.flashColor[1] * fl, look.ignition.flashColor[2] * fl, ni);
       const feature = Math.max(look.noise.scaleRe * reMax, 0.05);
-      put(I, o + 40, 1 / (feature * 4), look.noise.amount, (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - 0.45 * (c.nozzles[0]?.shape.vacuum ?? 0))));
+      // Share of the frame the luminous part of the cluster covers (its first 1.2 core lengths, side-on).
+      let core = 0;
+      for (const nz of c.nozzles) core = Math.max(core, nz.shape.coreLength);
+      if (c.merged) core = Math.max(core, c.merged.shape.coreLength);
+      const bright = Math.min(c.length, 1.2 * core);
+      const mid = v3.addScaled(pc.originRelCam, pc.axisX, 0.5 * bright);
+      const dist = Math.max(v3.len(mid), 1);
+      const along = v3.dot(pc.axisX, mid) / dist;
+      const width = 2 * Math.min(c.radius, c.coneR0 + 0.5 * c.coneSlope * bright);
+      const coverage = ((bright * Math.sqrt(Math.max(0, 1 - along * along)) + width) * width) / (dist * dist) / frameSolidAngle;
+      const thin = Math.min(1, Math.max(STEPS_FLOOR, Math.sqrt(STEPS_FULL_COVERAGE / Math.max(coverage, 1e-6))));
+      put(I, o + 40, 1 / (feature * 4), look.noise.amount, (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - 0.45 * (c.nozzles[0]?.shape.vacuum ?? 0)) * thin));
       if (c.merged) {
         const m = c.merged;
         const thr = c.nozzles.reduce((s, nz) => s + Math.max(nz.throttle, 0.12 * nz.residual), 0) / c.nozzles.length;

@@ -33,13 +33,15 @@ test.describe('vfx lab ad-hoc shots', () => {
   for (const shot of shots) {
     test(`shot ${shot.name}`, async ({ page, pageLog }) => {
       if (shot.size) await page.setViewportSize({ width: shot.size[0], height: shot.size[1] });
-      await openPage(page, `${shot.url}${shot.url.includes('?') ? '&' : '?'}paused=1&hud=0`);
+      // The vfx lab is opened stopped and stepped to the moment of the picture; another lab runs as its url says.
+      const own = shot.url.startsWith('/labs/vfx/');
+      await openPage(page, own ? `${shot.url}${shot.url.includes('?') ? '&' : '?'}paused=1&hud=0` : shot.url);
       await assertDiscreteGpu(page);
-      await page.evaluate(() => window.__test!.setDeterministic(true));
+      if (own) await page.evaluate(() => window.__test!.setDeterministic(true));
       if (shot.runTo !== undefined && shot.url.startsWith('/labs/vfx/')) await page.evaluate((t) => window.__vfx!.runTo(t), shot.runTo);
       if (shot.eval) await page.evaluate(shot.eval);
-      if (shot.live) {
-        await page.evaluate(() => window.__test!.setDeterministic(false));
+      if (shot.live || !own) {
+        if (own) await page.evaluate(() => window.__test!.setDeterministic(false));
         await page.evaluate((n) => window.__test!.waitFrames(n), shot.settle ?? 90);
       } else await waitIdle(page, shot.settle ?? 40);
       await saveScreenshot(page, 'vfx/dev', shot.name);
