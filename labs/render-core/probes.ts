@@ -51,6 +51,15 @@ export interface CascadeLogEntry {
   aspect: number;
 }
 
+export interface PointLightProbe {
+  intensity: number;
+  height: number;
+  at: [number, number];
+  radius?: number;
+  range?: number;
+  spot?: { dir: [number, number, number]; cone: [number, number] };
+}
+
 /** Setters of the `inputs` probe: constant lighting inputs published through SharedResources (null = back to the default). */
 export interface LightingInputsProbe {
   /** 'atmosphere.transmittanceLut' filled with one value. */
@@ -71,8 +80,12 @@ export interface LightingInputsProbe {
    * of a map that does not tell beam from diffuse light: the whole shadow is cast in the beam).
    */
   setCloudNear(v: { opticalDepth: number; top?: number; thickness?: number; beam?: number } | null): void;
-  /** One point light (cd, white) `height` metres above the site-frame point `at`. */
-  setPointLight(v: { intensity: number; height: number; at: [number, number] } | null): void;
+  /**
+   * One local light (cd, white) `height` metres above the site-frame point `at`: a point light, or with
+   * `spot` a spot light whose beam axis is `spot.dir` (site ENU) with half angles `spot.cone` (rad); `radius`
+   * is the source radius (requests vfx-5, vehicle-pad-2); `range` defaults to 4 x height.
+   */
+  setPointLight(v: PointLightProbe | null): void;
   /** 'ocean.nearField' for the site's body (what the ocean feature will publish). */
   setNearField(v: { fadeStart: number; fadeEnd: number } | null): void;
   /**
@@ -855,7 +868,7 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
     let ctx: RenderContext;
     let cloudFar: { coverage: number; opticalDepth: number } | null = null;
     let cloudNear: { opticalDepth: number; top?: number; thickness?: number; beam?: number } | null = null;
-    let light: { intensity: number; height: number; at: [number, number] } | null = null;
+    let light: PointLightProbe | null = null;
     let wetness: { at: [number, number, number]; radius: number; wetLine: number } | null = null;
     let wetnessBuffer: GPUBuffer | null = null;
     const wetnessData = new ArrayBuffer(OCEAN_WETNESS_BYTES);
@@ -946,10 +959,12 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
         });
         if (light) {
           frame.lights.push({
-            kind: 'point',
+            kind: light.spot ? 'spot' : 'point',
             posRelCam: v3.add(pose.originRelCam, quat.rotate(pose.q, { x: light.at[0], y: light.at[1], z: light.height })),
             intensity: [light.intensity, light.intensity, light.intensity],
-            range: light.height * 4,
+            range: light.range ?? light.height * 4,
+            ...(light.radius !== undefined ? { radius: light.radius } : {}),
+            ...(light.spot ? { dirRelCam: quat.rotate(pose.q, v3.fromTuple(light.spot.dir)), cone: light.spot.cone } : {}),
           });
         }
       },

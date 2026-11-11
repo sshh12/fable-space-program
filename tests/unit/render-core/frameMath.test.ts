@@ -21,7 +21,7 @@ import {
   sunVisibilityAt,
   taaJitter,
 } from '@/render/core/frame/math';
-import { FRAME_UNIFORM_FLOATS, OFFSET } from '@/render/core/frame/uniforms';
+import { FRAME_UNIFORM_FLOATS, OFFSET, octEncodeUnit } from '@/render/core/frame/uniforms';
 import { expandIncludes } from '@/render/core/shaders/library';
 import { FRAME_WGSL } from '@/render/core/shaders/chunksFrame';
 import { f16ToF32, f32ToF16, generateBlueNoise } from '@/render/core/util/gpu';
@@ -256,12 +256,26 @@ describe('shader library and utilities', () => {
       if (!m) continue;
       const t = m[1]!;
       const arr = /^array<(\w+),\s*(\d+)>$/.exec(t);
-      const size = (name: string): number => ({ mat4x4f: 16, vec4f: 4, vec4u: 4, BodyUniform: 64, ShineLight: 8, LightUniform: 12 })[name] ?? NaN;
+      const size = (name: string): number => ({ mat4x4f: 16, vec4f: 4, vec4u: 4, BodyUniform: 64, ShineLight: 8, LightUniform: 16 })[name] ?? NaN;
       floats += arr ? size(arr[1]!) * Number(arr[2]) : size(t);
     }
     expect(floats).toBe(FRAME_UNIFORM_FLOATS);
     expect(OFFSET.bodies).toBe(164);
-    expect(FRAME_UNIFORM_FLOATS * 4).toBe(2768);
+    // 2768 bytes until the LightUniform gained its shape vector (requests vfx-5, vehicle-pad-2).
+    expect(FRAME_UNIFORM_FLOATS * 4).toBe(3024);
+  });
+  it('packs local lights: spots keep their position in endKind (old copies of the loop see a point), axis octahedral, radius in intensity.a (requests vfx-5, vehicle-pad-2)', () => {
+    // The WGSL lightAxisDecode, on the CPU.
+    const decode = (e: [number, number]): Vec3 => {
+      const a = { x: e[0], y: e[1], z: 1 - Math.abs(e[0]) - Math.abs(e[1]) };
+      const t = Math.max(-a.z, 0);
+      a.x += a.x >= 0 ? -t : t;
+      a.y += a.y >= 0 ? -t : t;
+      return v3.normalize(a);
+    };
+    for (const d of [{ x: 0, y: 0, z: -1 }, { x: 0.3, y: -0.8, z: 0.2 }, { x: -0.1, y: 0.2, z: -0.97 }, { x: 1, y: 0, z: 0 }, { x: -0.5, y: -0.5, z: -0.7 }]) {
+      expect(v3.dot(decode(octEncodeUnit(d)), v3.normalize(d))).toBeCloseTo(1, 12);
+    }
   });
   it('converts half floats both ways', () => {
     for (const v of [0, 1, -1, 0.5, 2, 60000, 1 / 3, 6.1e-5, 0.02]) expect(f16ToF32(f32ToF16(v))).toBeCloseTo(v, v > 100 ? -2 : 3);

@@ -165,7 +165,7 @@ test('display material: the emitted image is scaled by the brightness parameter 
   await expectNoErrors(page, pageLog);
 });
 
-test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH and cube, local lights match hand calculations', async ({ page, pageLog }) => {
+test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH and cube, local lights (point, sphere, spot) match hand calculations', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?sun=180,60&hud=0&ev=15&paused=1&probe=inputs');
   await assertDiscreteGpu(page);
   await page.evaluate(() => {
@@ -286,6 +286,54 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   console.log(`point light adds ${lit.toFixed(5)} (expected ${expectLight.toFixed(5)})`);
   expect(lit / expectLight).toBeGreaterThan(0.95);
   expect(lit / expectLight).toBeLessThan(1.08);
+
+  // Source radius (request vfx-5): the same light as a sphere of 3 m radius 1 m above the card (the card is
+  // inside it) gives the illuminance at the source's surface, I / R^2, not I / d^2: nine times less.
+  await page.evaluate(() => {
+    const c = window.__rc!.stand!.whiteCard.pos;
+    window.__rc!.probes.inputs.setPointLight({ intensity: 1e6, height: 1, at: [c[0], c[1]], radius: 3, range: 4 });
+  });
+  const sphere = g(await centre()) - g(base);
+  const expectSphere = ((albedo * (1e6 / 9)) / Math.PI) * (1 - (1 / 4) ** 4) ** 2 * exposure;
+  console.log(`sphere light (R 3 m, 1 m above) adds ${sphere.toFixed(5)} (expected ${expectSphere.toFixed(5)}; a point source would give ${(9 * expectSphere).toFixed(5)})`);
+  expect(sphere / expectSphere).toBeGreaterThan(0.95);
+  expect(sphere / expectSphere).toBeLessThan(1.08);
+  // Horizon: a sphere of 1 m radius whose centre is 0.5 m BELOW the card's plane, 1.5 m to the side, still
+  // lights it with the part above the horizon; the point light there gives nothing.
+  const beside = async (radius: number): Promise<number> => {
+    await page.evaluate((r) => {
+      const c = window.__rc!.stand!.whiteCard.pos;
+      window.__rc!.probes.inputs.setPointLight({ intensity: 1e5, height: c[2] - 0.5, at: [c[0] + 1.5, c[1]], radius: r, range: 6 });
+    }, radius);
+    return g(await centre()) - g(base);
+  };
+  const besideSphere = await beside(1);
+  const besidePoint = await beside(0);
+  console.log(`light 0.5 m under the card's plane, 1.5 m aside: sphere R 1 m adds ${besideSphere.toFixed(5)}, point ${besidePoint.toExponential(2)}`);
+  expect(besidePoint).toBeLessThan(1e-6);
+  expect(besideSphere).toBeGreaterThan(0.02 * ((albedo * (1e5 / 2.5)) / Math.PI) * exposure);
+
+  // Spot light (request vehicle-pad-2), 4 m above the card, cone 10 / 20 deg: on the axis the point light's
+  // value; the card 15 deg off the axis gets the smoothstep in the cosine (0.62); 30 deg off it gets nothing.
+  const spot = async (tiltDeg: number): Promise<number> => {
+    await page.evaluate((tilt) => {
+      const c = window.__rc!.stand!.whiteCard.pos;
+      const a = (tilt * Math.PI) / 180;
+      window.__rc!.probes.inputs.setPointLight({ intensity: 1e6, height: 4, at: [c[0], c[1]], spot: { dir: [Math.sin(a), 0, -Math.cos(a)], cone: [(10 * Math.PI) / 180, (20 * Math.PI) / 180] } });
+    }, tiltDeg);
+    return g(await centre()) - g(base);
+  };
+  const deg = Math.PI / 180;
+  const sm = (x: number): number => x * x * (3 - 2 * x);
+  const spotAxis = await spot(0);
+  const spotEdge = await spot(15);
+  const spotOut = await spot(30);
+  const expectEdge = sm((Math.cos(15 * deg) - Math.cos(20 * deg)) / (Math.cos(10 * deg) - Math.cos(20 * deg)));
+  console.log(`spot light: on the axis ${spotAxis.toFixed(5)} (point ${expectLight.toFixed(5)}), 15 deg off ${(spotEdge / spotAxis).toFixed(3)} of it (expected ${expectEdge.toFixed(3)}), 30 deg off ${spotOut.toExponential(2)}`);
+  expect(spotAxis / expectLight).toBeGreaterThan(0.95);
+  expect(spotAxis / expectLight).toBeLessThan(1.08);
+  expect(Math.abs(spotEdge / spotAxis - expectEdge)).toBeLessThan(0.08);
+  expect(spotOut).toBeLessThan(1e-6);
   await page.evaluate(() => window.__rc!.probes.inputs.setPointLight(null));
 
   // Environment probe on standard materials. Top of the step (rough dielectric, albedo 0.5 in green):

@@ -49,8 +49,9 @@ struct BodyUniform {
 
 struct LightUniform {
   posRange: vec4f,      // xyz = camera-relative position, w = influence radius (m)
-  endKind: vec4f,       // xyz = second end point (capsule), w = 0 point / 1 capsule
-  intensity: vec4f,     // rgb = linear-sRGB luminous intensity (cd)
+  endKind: vec4f,       // xyz = second end point (capsule; the position itself for point and spot), w = 0 point / 1 capsule / 2 spot
+  intensity: vec4f,     // rgb = linear-sRGB luminous intensity (cd; on the beam axis for a spot), a = source radius (m)
+  shape: vec4f,         // xy = octahedral-encoded unit beam axis (spot), z = cos(inner half angle), w = cos(outer half angle)
 }
 
 struct ShineLight {

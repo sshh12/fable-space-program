@@ -430,14 +430,32 @@ export interface VesselPose {
 }
 
 export interface LocalLight {
-  kind: 'point' | 'capsule';
+  /**
+   * 'point': omni. 'capsule': a line source from posRelCam to endRelCam (the nearest point of the segment
+   * lights). 'spot' (request vehicle-pad-2): a point source whose beam is `dirRelCam` with the half angles
+   * `cone`; `intensity` is the value on the axis.
+   */
+  kind: 'point' | 'capsule' | 'spot';
   /** Camera-relative position (and second end point for capsules), ROOT axes. */
   posRelCam: Vec3;
   endRelCam?: Vec3;
-  /** Linear-sRGB colour times luminous intensity, cd. */
+  /** Linear-sRGB colour times luminous intensity, cd (on the beam axis for a spot). */
   intensity: Vec3Tuple;
   /** Influence radius, m. */
   range: number;
+  /**
+   * Radius of the emitting sphere (point, spot) or tube (capsule), m; default 0 (request vfx-5). The
+   * illuminance is floored at that of the source's surface (1 / max(d^2, radius^2)) and a surface whose
+   * horizon cuts the source still receives the part above it. 0 gives exactly the point / line behaviour.
+   */
+  radius?: number;
+  /** Spot only: unit beam axis (camera-relative ROOT axes; direction the light travels). */
+  dirRelCam?: Vec3;
+  /**
+   * Spot only: [inner, outer] half angles of the beam, radians: full intensity inside `inner`, a smoothstep
+   * in the cosine to 0 at `outer`. Default [0, PI / 4].
+   */
+  cone?: [inner: number, outer: number];
 }
 
 /**

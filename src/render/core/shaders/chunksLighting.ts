@@ -328,6 +328,50 @@ fn shineVisibility(posRelCam: vec3f, sh: ShineLight) -> f32 {
 }
 `;
 
+export const LOCAL_LIGHTS_WGSL = /* wgsl */ `
+#include "frame"
+/// Local light i (frame.lights) at a camera-relative point with unit normal n (requests vfx-5, vehicle-pad-2):
+/// xyz = the unit direction to hand to the BRDF, w = the factor so that
+///   lit += brdfDirect(s, l.xyz) * frame.lights[i].intensity.rgb * l.w.
+/// Point, capsule (nearest point of the segment) and spot (smoothstep in the cosine between the outer and
+/// the inner half angle, about the beam axis) lights; inverse square with a smooth window at the influence
+/// radius. A source with a radius R floors the falloff at 1 / R^2 (never brighter than its own surface) and
+/// its direction is tilted towards the normal by R (the point of the sphere or tube nearest the normal's
+/// side): a surface whose horizon cuts the source receives the part above it. R = 0 is the point source
+/// exactly. Pass n = vec3f(0.0) for a volume (no tilt). w = 0 outside the influence radius or the cone.
+/// Unit beam axis of a spot light from LightUniform.shape.xy (octahedral; octEncodeUnit() packs it).
+fn lightAxisDecode(e: vec2f) -> vec3f {
+  var a = vec3f(e, 1.0 - abs(e.x) - abs(e.y));
+  let t = max(-a.z, 0.0);
+  a.x += select(t, -t, a.x >= 0.0);
+  a.y += select(t, -t, a.y >= 0.0);
+  return normalize(a);
+}
+fn localLightSample(i: u32, posRelCam: vec3f, n: vec3f) -> vec4f {
+  let L = frame.lights[i];
+  let kind = L.endKind.w;
+  var toL = L.posRange.xyz - posRelCam;
+  if (kind > 0.5 && kind < 1.5) {
+    let ab = L.endKind.xyz - L.posRange.xyz;
+    let t = saturate(dot(posRelCam - L.posRange.xyz, ab) / max(dot(ab, ab), 1e-6));
+    toL = L.posRange.xyz + ab * t - posRelCam;
+  }
+  let d2 = dot(toL, toL);
+  let range2 = L.posRange.w * L.posRange.w;
+  if (d2 >= range2) { return vec4f(0.0); }
+  var w = sq(saturate(1.0 - sq(d2 / range2)));
+  let radius = L.intensity.a;
+  let toLn = toL * inverseSqrt(max(d2, 1e-8));
+  if (kind > 1.5) {
+    w *= smoothstep(L.shape.w, L.shape.z, dot(-toLn, lightAxisDecode(L.shape.xy)));
+    if (w <= 0.0) { return vec4f(0.0); }
+  }
+  var l = toLn;
+  if (radius > 0.0) { l = normalize(toL + n * radius); }
+  return vec4f(l, w / max(d2, max(radius * radius, 1e-4)));
+}
+`;
+
 export const ATMOSPHERE_COMMON_WGSL = /* wgsl */ `
 #include "frame"
 const TRANSMITTANCE_LUT_SIZE = vec2f(256.0, 64.0);

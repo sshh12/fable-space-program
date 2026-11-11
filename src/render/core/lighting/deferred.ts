@@ -68,6 +68,7 @@ const LIGHTING_FS = (bindings: string): string => /* wgsl */ `
 #include "gbuffer"
 #include "brdf"
 #include "eclipse"
+#include "local_lights"
 #include "atmosphere_common"
 #include "shadows"
 ${bindings}
@@ -290,21 +291,10 @@ fn envIrradiance(n: vec3f) -> vec3f {
     }
   }
 
-  // ---- local lights (point and capsule, inverse square, smooth window at the influence radius)
+  // ---- local lights (point, capsule and spot; source radius; chunk local_lights)
   for (var i = 0u; i < min(frame.counts.y, MAX_LIGHTS); i++) {
-    let L = frame.lights[i];
-    var toL = L.posRange.xyz - pos;
-    if (L.endKind.w > 0.5) {
-      let ab = L.endKind.xyz - L.posRange.xyz;
-      let t = saturate(dot(pos - L.posRange.xyz, ab) / max(dot(ab, ab), 1e-6));
-      toL = L.posRange.xyz + ab * t - pos;
-    }
-    let d2 = dot(toL, toL);
-    let range2 = L.posRange.w * L.posRange.w;
-    if (d2 < range2) {
-      let window = sq(saturate(1.0 - sq(d2 / range2)));
-      lit += brdfDirect(s, toL * inverseSqrt(max(d2, 1e-8))) * L.intensity.rgb * (window / max(d2, 1e-4));
-    }
+    let ll = localLightSample(i, pos, s.n);
+    if (ll.w > 0.0) { lit += brdfDirect(s, ll.xyz) * frame.lights[i].intensity.rgb * ll.w; }
   }
 
   // ---- map-view fill light (declared ambient, unshadowed)

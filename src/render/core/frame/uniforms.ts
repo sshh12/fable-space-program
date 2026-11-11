@@ -37,7 +37,9 @@ export const OFFSET = {
   shine: 164 + MAX_BODIES * BODY_UNIFORM_FLOATS,
   lights: 164 + MAX_BODIES * BODY_UNIFORM_FLOATS + SHINE_RECEIVERS * SHINE_PER_RECEIVER * 8,
 } as const;
-export const FRAME_UNIFORM_FLOATS = OFFSET.lights + MAX_LIGHTS * 12;
+/** Floats of one LightUniform (posRange, endKind, intensity, shape). */
+export const LIGHT_UNIFORM_FLOATS = 16;
+export const FRAME_UNIFORM_FLOATS = OFFSET.lights + MAX_LIGHTS * LIGHT_UNIFORM_FLOATS;
 
 /** Near-field cloud shadow map placement, set by the cloud feature every frame (see setCloudShadowParams). */
 export interface CloudShadowNear {
@@ -88,6 +90,15 @@ export interface FrameUniformExtras {
   shine: ShineLight[][];
   defs: DefLibrary;
   near: number;
+}
+
+/** Octahedral encoding of a direction (normalised here) into [-1, 1]^2; the WGSL `lightAxisDecode` of chunk local_lights inverts it. */
+export function octEncodeUnit(v: Vec3): [number, number] {
+  const s = Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z) || 1;
+  const x = v.x / s;
+  const y = v.y / s;
+  if (v.z >= 0) return [x, y];
+  return [(1 - Math.abs(y)) * (x >= 0 ? 1 : -1), (1 - Math.abs(x)) * (y >= 0 ? 1 : -1)];
 }
 
 function put3(f: Float32Array, o: number, v: Vec3, w: number): void {
@@ -211,9 +222,14 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
   }
   for (let i = 0; i < lightCount; i++) {
     const l = frame.lights[i]!;
-    const o = OFFSET.lights + i * 12;
+    const o = OFFSET.lights + i * LIGHT_UNIFORM_FLOATS;
     put3(f, o, l.posRelCam, l.range);
-    put3(f, o + 4, l.endRelCam ?? l.posRelCam, l.kind === 'capsule' ? 1 : 0);
-    f.set([l.intensity[0], l.intensity[1], l.intensity[2], 0], o + 8);
+    // A spot keeps its position in endKind.xyz: a shader with its own copy of the old loop sees a point light.
+    put3(f, o + 4, l.kind === 'capsule' ? (l.endRelCam ?? l.posRelCam) : l.posRelCam, l.kind === 'capsule' ? 1 : l.kind === 'spot' ? 2 : 0);
+    f.set([l.intensity[0], l.intensity[1], l.intensity[2], Math.max(l.radius ?? 0, 0)], o + 8);
+    const [inner, outer] = l.cone ?? [0, Math.PI / 4];
+    const cosOuter = Math.cos(Math.min(Math.max(outer, 1e-4), Math.PI));
+    const axis = octEncodeUnit(l.kind === 'spot' && l.dirRelCam ? l.dirRelCam : { x: 0, y: 0, z: -1 });
+    f.set([axis[0], axis[1], Math.max(Math.cos(Math.max(inner, 0)), cosOuter + 1e-6), cosOuter], o + 12);
   }
 }
