@@ -43,6 +43,7 @@ const FIELDS = [
   ['cloudPhase', 'vec4f', 'forward g, backward g, lobe mix, sun reach of the cone samples (m)'],
   ['cloudMarch', 'vec4f', 'step factor (step = distance x factor), min step (m), max step (m), angle of a half-resolution pixel (rad)'],
   ['cloudWind', 'vec4f', 'xyz = noise shear per metre of altitude (noise frame), w = scroll of the detail noise (m)'],
+  ['tile', 'vec4f', 'full-resolution march of a small shell: xy = render-target pixel of texel (0, 0) of the tile targets, zw = size of the marched rectangle (px)'],
 ] as const satisfies readonly (readonly [string, FieldType, string])[];
 
 export type AtmoField = (typeof FIELDS)[number][0];

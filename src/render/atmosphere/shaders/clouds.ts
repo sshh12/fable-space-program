@@ -313,13 +313,18 @@ ${ATMO_UNIFORM_WGSL}
  *   ambient           sky irradiance from above and the sunlit ground from below, each attenuated by the
  *                     cloud in between (two-stream).
  * The sun's colour is the transmittance table at the sample (red tops at the terminator).
+ *
+ * `fine` = true: one ray per FULL-resolution pixel of the rectangle `atmo.tile` (binding 7 = 'scene.depth'),
+ * no checkerboard and no step-phase noise, into tile targets: the cloud layer of a planet seen from afar
+ * (see marchFsWgsl).
  */
-export const CLOUD_MARCH_FS_WGSL = /* wgsl */ `
+export function cloudMarchFsWgsl(fine: boolean): string {
+  return /* wgsl */ `
 ${CLOUD_HEADER}
 @group(1) @binding(4) var transLut: texture_2d_array<f32>;
 @group(1) @binding(5) var irradianceLut: texture_2d_array<f32>;
 @group(1) @binding(6) var atmoShadowTex: texture_2d<f32>;
-@group(1) @binding(7) var depthHalfTex: texture_2d<f32>;
+${fine ? '@group(1) @binding(7) var sceneDepthTex: texture_depth_2d;' : '@group(1) @binding(7) var depthHalfTex: texture_2d<f32>;'}
 #include "atmosphere_cloud_shadow"
 
 struct CloudMarchOut {
@@ -358,8 +363,20 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   o.color = vec4f(0.0, 0.0, 0.0, 1.0);
   o.depth = vec4f(3.0e38, 3.0e38, 3.0e38, 0.0);
   let bi = u32(atmo.bodies.z);
-  let hp = min(vec2i(in.position.xy) * 2 + CLOUD_OFFSETS[atmo.layers.w], vec2i(atmo.halfSize.xy) - 1);
+${
+  fine
+    ? `  let hp = vec2i(in.position.xy) + vec2i(atmo.tile.xy);
+  let rayDir = viewRay((vec2f(hp) + 0.5) * frame.renderSize.zw);
+  let sceneZ = viewZFromDepth(textureLoad(sceneDepthTex, hp, 0));
+  let xi = 0.5;
+  let pixelAngle = 0.5 * atmo.cloudMarch.w;`
+    : `  let hp = min(vec2i(in.position.xy) * 2 + CLOUD_OFFSETS[atmo.layers.w], vec2i(atmo.halfSize.xy) - 1);
   let rayDir = cloudViewRay((vec2f(hp) + 0.5) * atmo.halfSize.zw);
+  let sceneZ = viewZFromDepth(textureLoad(depthHalfTex, hp, 0).r);
+  // Step phase: blue noise while frames accumulate; the middle of the step when noise is frozen.
+  let xi = 0.5 + (blueNoise(vec2u(hp)).y - 0.5) * atmo.misc.z;
+  let pixelAngle = atmo.cloudMarch.w;`
+}
   let len = length(rayDir);
   let d = rayDir / len;
   // Everything below is measured along the ray from where it enters the atmosphere shell (the eye when it
@@ -368,7 +385,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   if (ray.len <= 0.0) { return o; }
   let rb = frame.bodies[bi].center.w;
   let rt = frame.bodies[bi].prevCenter.w;
-  let sMax = min(ray.len, viewZFromDepth(textureLoad(depthHalfTex, hp, 0).r) * len - ray.t0);
+  let sMax = min(ray.len, sceneZ * len - ray.t0);
   var spans = cloudSpans(ray);
   // Path length in the low shell and above it; two thirds of the step budget go to the low shell.
   var total = vec2f(0.0);
@@ -395,9 +412,6 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
     }
     coarsen = max(vec2f(1.0), vec2f(need.x / (budget * 0.667), need.y / budget));
   }
-  // Step phase: blue noise while frames accumulate; the middle of the step when noise is frozen.
-  let xi = 0.5 + (blueNoise(vec2u(hp)).y - 0.5) * atmo.misc.z;
-  let pixelAngle = atmo.cloudMarch.w;
   let sunDir = frame.bodies[bi].sunDir.xyz;
   let sunNoise = cloudNoiseVec(bi, sunDir);
   let cosTheta = dot(d, sunDir);
@@ -643,6 +657,7 @@ fn cloudStepCount(a: f32, b: f32, m: f32) -> f32 {
   return o;
 }
 `;
+}
 
 /**
  * Temporal checkerboard resolve to the half-resolution cloud buffers. Bindings (group 1): 0 = AtmoU,

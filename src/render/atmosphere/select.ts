@@ -125,6 +125,19 @@ export function selectMarchBodies(layers: readonly AtmosphereLayer[], bodies: re
   return { bodies: picked, bounds: rect };
 }
 
+/**
+ * Side (px) of the tile targets of the full-resolution march. While the screen rectangle of the selected
+ * shells fits into it, the atmosphere and its clouds are marched once per full-resolution pixel of that
+ * rectangle instead of at half resolution (see marchFsWgsl): a planet seen from afar, where one
+ * half-resolution texel spans more than the atmosphere is deep.
+ */
+export const FINE_TILE_SIZE = 512;
+
+/** Whether a full-resolution scissor rectangle [x, y, w, h] is marched in the full-resolution tile. */
+export function fitsFineTile(scissor: readonly [number, number, number, number]): boolean {
+  return scissor[2] > 0 && scissor[3] > 0 && scissor[2] <= FINE_TILE_SIZE && scissor[3] <= FINE_TILE_SIZE;
+}
+
 /** Pixel scissor rectangle [x, y, w, h] (y down) of an NDC rectangle on a target, grown by `margin` px. */
 export function scissorOf(bounds: readonly [number, number, number, number], width: number, height: number, margin: number): [number, number, number, number] {
   const x0 = Math.max(0, Math.floor((bounds[0] * 0.5 + 0.5) * width) - margin);

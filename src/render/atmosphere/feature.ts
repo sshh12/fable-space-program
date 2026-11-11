@@ -16,8 +16,8 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
-import { atmosphereLayers, scissorOf, selectMarchBodies, type AtmosphereLayer, type MarchSelection } from './select';
-import { CLOUD_SHADOW_WGSL, COMPOSITE_BLEND, compositeFsWgsl, MARCH_FS_WGSL } from './shaders/march';
+import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchBodies, type AtmosphereLayer, type MarchSelection } from './select';
+import { CLOUD_SHADOW_WGSL, COMPOSITE_BLEND, compositeFineFsWgsl, compositeFsWgsl, marchFsWgsl } from './shaders/march';
 import { ATMOSPHERE_MODEL_WGSL } from './shaders/model';
 import { AtmosphereTables } from './tables';
 import { ATMO_UNIFORM_BYTES, AtmoUniforms } from './uniforms';
@@ -28,6 +28,12 @@ export interface AtmosphereFeatureOptions {
   order?: number;
   /** Draw volumetric clouds on bodies that define them (default true). */
   clouds?: boolean;
+  /**
+   * March a shell whose screen rectangle fits into the tile (FINE_TILE_SIZE) at full resolution (default
+   * true). False keeps the half-resolution march at every distance: an A/B switch for labs and for the
+   * spec that proves the difference, never for the app.
+   */
+  fineTile?: boolean;
   /**
    * Coverage maps supplied by the caller instead of the tile set's global map, by body id (labs and tests):
    * equirectangular, row 0 = north, column 0 = longitude -180 deg, two bytes per texel
@@ -41,8 +47,8 @@ export type AtmosphereTableName = 'transmittance' | 'multiScatter' | 'irradiance
 export interface AtmosphereDebug {
   /** Read a table back: rgba float32, layer by layer (aerial: slice by slice), row 0 first. */
   readTable(name: AtmosphereTableName): Promise<{ width: number; height: number; layers: number; data: Float32Array }>;
-  /** What the last frame marched. */
-  selection(): { bodies: { bodyId: string; bodyIndex: number; layer: number; steps: number }[]; cloudBodyId: string | null; scissor: [number, number, number, number] | null };
+  /** What the last frame marched; `fine` = at full resolution in the tile (a small shell) instead of at half resolution. */
+  selection(): { bodies: { bodyId: string; bodyIndex: number; layer: number; steps: number }[]; cloudBodyId: string | null; scissor: [number, number, number, number] | null; fine: boolean };
   /** The cloud system (null when clouds are off or no frame body has clouds). */
   clouds(): CloudSystem | null;
 }
@@ -80,6 +86,17 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
   let marchGroup: GPUBindGroup | null = null;
   let compositeGroup: GPUBindGroup | null = null;
   let groupKey = '';
+
+  // Full-resolution march of a small shell (see marchFsWgsl): tile targets and their own pipelines.
+  let fineTargets: GPUTexture[] = [];
+  let fineViews: GPUTextureView[] = [];
+  let compositeFineLayout: GPUBindGroupLayout;
+  let marchFinePipeline: Tracked<GPURenderPipeline>;
+  let compositeFinePipelines: Tracked<GPURenderPipeline>[] = [];
+  let marchFineGroup: GPUBindGroup | null = null;
+  let compositeFineGroup: GPUBindGroup | null = null;
+  let fine = false;
+  let fullScissor: [number, number, number, number] = [0, 0, 0, 0];
 
   // Neutral stand-ins for the cloud inputs of the atmosphere passes.
   let neutralCloudScreen: GPUTextureView;
@@ -150,6 +167,30 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 5, resource: ctx.resources.get('scene.depth') },
       ],
     });
+    marchFineGroup = device.createBindGroup({
+      label: `${id}.marchFine`,
+      layout: marchLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: tables.transmittanceView! },
+        { binding: 2, resource: tables.multiScatterView! },
+        { binding: 3, resource: clouds ? clouds.shadowView : neutralShadow },
+        { binding: 4, resource: clouds ? clouds.coverageView : neutralCoverage },
+        { binding: 5, resource: ctx.resources.get('scene.depthHalf') },
+        { binding: 6, resource: cloudsOn ? clouds!.fineColorView : neutralCloudScreen },
+        { binding: 7, resource: cloudsOn ? clouds!.fineGeomView : neutralCloudGeom },
+        { binding: 8, resource: ctx.resources.get('scene.depth') },
+      ],
+    });
+    compositeFineGroup = device.createBindGroup({
+      label: `${id}.compositeFine`,
+      layout: compositeFineLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: fineViews[0]! },
+        { binding: 2, resource: fineViews[1]! },
+      ],
+    });
   };
 
   const feature: AtmosphereFeature = {
@@ -204,11 +245,26 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       });
       marchPipeline = core.fullscreenPipeline({
         label: `${id}.march`,
-        fragment: MARCH_FS_WGSL,
+        fragment: marchFsWgsl(false),
         layouts: [marchLayout],
         targets: marchTargets.map(() => ({ format: HALF_FORMAT })),
       });
       marchPipeline.get();
+      fineTargets = ['add', 'mul'].map((n) =>
+        core.createTextureChecked({ label: `${id}.marchFine.${n}`, format: HALF_FORMAT, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }),
+      );
+      fineViews = fineTargets.map((t) => t.createView());
+      compositeFineLayout = device.createBindGroupLayout({
+        label: `${id}.compositeFine`,
+        entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, tex(1, 'unfilterable-float'), tex(2, 'unfilterable-float')],
+      });
+      marchFinePipeline = core.fullscreenPipeline({
+        label: `${id}.marchFine`,
+        fragment: marchFsWgsl(true),
+        layouts: [marchLayout],
+        targets: fineTargets.map(() => ({ format: HALF_FORMAT })),
+      });
+      marchFinePipeline.get();
 
       // One blend into the HDR target: add + mul x destination. Dual-source blending does it in one draw;
       // without the feature the same result takes a multiply draw followed by an add draw in the same pass.
@@ -226,6 +282,19 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         }),
       );
       for (const p of compositePipelines) p.get();
+      compositeFinePipelines = modes.map((mode) =>
+        core.shaders.tracked(() => {
+          const module = c.shaders.createModule(`${id}.compositeFine.${mode}`, compositeFineFsWgsl(mode));
+          return device.createRenderPipeline({
+            label: `${id}.compositeFine.${mode}`,
+            layout: device.createPipelineLayout({ label: `${id}.compositeFine`, bindGroupLayouts: [c.frameBindGroupLayout, compositeFineLayout] }),
+            vertex: { module, entryPoint: 'fullscreenVs' },
+            fragment: { module, entryPoint: 'fs', targets: [{ format: RENDER_FORMATS.hdr, blend: COMPOSITE_BLEND[mode] }] },
+            primitive: { topology: 'triangle-list' },
+          });
+        }),
+      );
+      for (const p of compositeFinePipelines) p.get();
 
       if (opts.clouds !== false) {
         const hasClouds = Object.values(c.defs.bodies).some((b) => b.render.clouds && b.render.atmosphere);
@@ -263,6 +332,11 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       u.set('lutBody', layers[0]?.bodyIndex ?? 0, layers[1]?.bodyIndex ?? 0, layers[2]?.bodyIndex ?? 0, layers[3]?.bodyIndex ?? 0);
       u.set('steps', b0 ? b0.steps : 0, b1 ? b1.steps : 0, 32, clouds ? clouds.stepBudget(frame) : 0);
       u.set('halfSize', halfW, halfH, 1 / halfW, 1 / halfH);
+      // The shells of the selected bodies bound everything the composite hook draws. A rectangle that fits
+      // into the tile is marched at full resolution there.
+      fullScissor = selection.bounds ? scissorOf(selection.bounds, rw, rh, 2) : [0, 0, 0, 0];
+      fine = active && opts.fineTile !== false && fitsFineTile(fullScissor);
+      u.set('tile', fullScissor[0], fullScissor[1], fullScissor[2], fullScissor[3]);
       if (cloudBodyIndex < 0) u.set('misc', 1, 0, frame.animate ? 1 : 0, 1);
       device.queue.writeBuffer(uniformBuffer, 0, u.buffer);
 
@@ -288,10 +362,9 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       const halfW = Math.ceil(rw / 2);
       const halfH = Math.ceil(rh / 2);
       const bounds = selection.bounds!;
-      // The shells of the selected bodies bound everything this hook draws; elsewhere the buffers keep
-      // their neutral clear values and the HDR target is left untouched.
+      // Outside the rectangle of the shells the buffers keep their neutral clear values and the HDR target
+      // is left untouched.
       const halfScissor = scissorOf(bounds, halfW, halfH, 2);
-      const fullScissor = scissorOf(bounds, rw, rh, 2);
       lastScissor = fullScissor;
       if (halfScissor[2] === 0 || halfScissor[3] === 0 || fullScissor[2] === 0 || fullScissor[3] === 0) return;
 
@@ -300,6 +373,42 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       ensureGroups();
 
       const clear = (view: GPUTextureView, value: number): GPURenderPassColorAttachment => ({ view, clearValue: { r: value, g: value, b: value, a: 1 }, loadOp: 'clear', storeOp: 'store' });
+      if (fine) {
+        // A small shell: clouds and atmosphere once per full-resolution pixel of its rectangle, composited
+        // texel for texel. (The half-resolution cloud buffers above are for the transparents.)
+        const [, , tw, th] = fullScissor;
+        if (cloudsOn) clouds!.marchFine(frame, encoder, tw, th);
+        {
+          const pass = encoder.beginRenderPass({
+            label: `${id}.march`,
+            colorAttachments: [clear(fineViews[0]!, 0), clear(fineViews[1]!, 1)],
+            timestampWrites: ctx.perf.gpuPass(`${id}.march`) as GPURenderPassTimestampWrites | undefined,
+          });
+          pass.setBindGroup(0, frame.frameBindGroup);
+          pass.setPipeline(marchFinePipeline.get());
+          pass.setBindGroup(1, marchFineGroup!);
+          pass.setScissorRect(0, 0, tw, th);
+          pass.draw(3);
+          pass.end();
+        }
+        {
+          const pass = encoder.beginRenderPass({
+            label: `${id}.composite`,
+            colorAttachments: [{ view: hdrTarget, loadOp: 'load', storeOp: 'store' }],
+            timestampWrites: ctx.perf.gpuPass(`${id}.composite`) as GPURenderPassTimestampWrites | undefined,
+          });
+          pass.setBindGroup(0, frame.frameBindGroup);
+          pass.setBindGroup(1, compositeFineGroup!);
+          pass.setScissorRect(...fullScissor);
+          for (const p of compositeFinePipelines) {
+            pass.setPipeline(p.get());
+            pass.draw(3);
+          }
+          pass.end();
+        }
+        if (cloudsOn) clouds!.endFrame(frame, encoder);
+        return;
+      }
       {
         const pass = encoder.beginRenderPass({
           label: `${id}.march`,
@@ -339,6 +448,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       tables.dispose();
       clouds?.dispose();
       for (const t of marchTargets) t.destroy();
+      for (const t of fineTargets) t.destroy();
       uniformBuffer.destroy();
     },
 
@@ -371,6 +481,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
           bodies: selection.bodies.map((b) => ({ bodyId: b.bodyId, bodyIndex: b.bodyIndex, layer: b.layer, steps: b.steps })),
           cloudBodyId: cloudBodyIndex >= 0 ? (layers.find((l) => l.bodyIndex === cloudBodyIndex)?.bodyId ?? null) : null,
           scissor: lastScissor,
+          fine,
         };
       },
       clouds: () => clouds,

@@ -11,8 +11,8 @@ import { DEG, mat3, quat, v3, type Vec3 } from '@/core/math';
 import { coreOf, f16ToF32, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
 import { resolveCloudParams, type CloudParams } from './params';
 import type { MarchBody } from './select';
-import { scissorOf } from './select';
-import { CLOUD_DENSITY_WGSL, CLOUD_MARCH_FS_WGSL, CLOUD_NOISE_COMPUTE_WGSL, CLOUD_RESOLVE_FS_WGSL, CLOUD_SHADOW_FS_WGSL } from './shaders/clouds';
+import { FINE_TILE_SIZE, scissorOf } from './select';
+import { CLOUD_DENSITY_WGSL, cloudMarchFsWgsl, CLOUD_NOISE_COMPUTE_WGSL, CLOUD_RESOLVE_FS_WGSL, CLOUD_SHADOW_FS_WGSL } from './shaders/clouds';
 import type { AtmoUniforms } from './uniforms';
 
 /** Equirectangular coverage map: row 0 = north, column 0 = longitude -180 deg; two bytes per texel (coverage, cloud top / 50 m). */
@@ -139,6 +139,10 @@ export class CloudSystem {
   private readonly historyColor: ManagedTarget;
   private readonly geom: ManagedTarget;
   private readonly historyGeom: ManagedTarget;
+  private readonly fineColor: GPUTexture;
+  private readonly fineGeom: GPUTexture;
+  private readonly fineColorTexView: GPUTextureView;
+  private readonly fineGeomTexView: GPUTextureView;
   private shadowTex: GPUTexture;
   private shadowScratch: GPUTexture;
   private shadowTexView: GPUTextureView;
@@ -147,12 +151,15 @@ export class CloudSystem {
 
   // --- pipelines
   private readonly marchLayout: GPUBindGroupLayout;
+  private readonly marchFineLayout: GPUBindGroupLayout;
   private readonly resolveLayout: GPUBindGroupLayout;
   private readonly shadowLayout: GPUBindGroupLayout;
   private readonly marchPipeline: Tracked<GPURenderPipeline>;
+  private readonly marchFinePipeline: Tracked<GPURenderPipeline>;
   private readonly resolvePipeline: Tracked<GPURenderPipeline>;
   private readonly shadowPipeline: Tracked<GPURenderPipeline>;
   private marchGroup: GPUBindGroup | null = null;
+  private marchFineGroup: GPUBindGroup | null = null;
   private resolveGroup: GPUBindGroup | null = null;
   private shadowGroup: GPUBindGroup | null = null;
   private groupKey = '';
@@ -211,6 +218,11 @@ export class CloudSystem {
     this.geom = this.core.createTarget(`${id}.cloud.geom`, 'rgba32float', 0.5, RT | GPUTextureUsage.COPY_SRC);
     this.historyColor = this.core.createTarget(`${id}.cloud.history`, 'rgba16float', 0.5, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
     this.historyGeom = this.core.createTarget(`${id}.cloud.historyGeom`, 'rgba32float', 0.5, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST);
+    const tile = (label: string, format: GPUTextureFormat): GPUTexture => this.core.createTextureChecked({ label, format, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: RT });
+    this.fineColor = tile(`${id}.cloud.fine`, 'rgba16float');
+    this.fineGeom = tile(`${id}.cloud.fineGeom`, 'rgba32float');
+    this.fineColorTexView = this.fineColor.createView();
+    this.fineGeomTexView = this.fineGeom.createView();
     this.shadowTex = this.shadowScratch = null as unknown as GPUTexture;
     this.shadowTexView = this.shadowScratchView = null as unknown as GPUTextureView;
     this.allocateShadow(1024);
@@ -222,6 +234,10 @@ export class CloudSystem {
       label: `${id}.cloudMarch`,
       entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'unfilterable-float')],
     });
+    this.marchFineLayout = device.createBindGroupLayout({
+      label: `${id}.cloudMarchFine`,
+      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'depth')],
+    });
     this.resolveLayout = device.createBindGroupLayout({
       label: `${id}.cloudResolve`,
       entries: [uniform, tex(1, 'unfilterable-float'), tex(2, 'unfilterable-float'), tex(3), tex(4, 'unfilterable-float')],
@@ -230,10 +246,12 @@ export class CloudSystem {
       label: `${id}.cloudShadow`,
       entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'unfilterable-float')],
     });
-    this.marchPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarch`, fragment: CLOUD_MARCH_FS_WGSL, layouts: [this.marchLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
+    this.marchPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarch`, fragment: cloudMarchFsWgsl(false), layouts: [this.marchLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
+    this.marchFinePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarchFine`, fragment: cloudMarchFsWgsl(true), layouts: [this.marchFineLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
     this.resolvePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudResolve`, fragment: CLOUD_RESOLVE_FS_WGSL, layouts: [this.resolveLayout], targets: [{ format: 'rgba16float' }, { format: 'r32float' }, { format: 'rgba32float' }] });
     this.shadowPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadow`, fragment: CLOUD_SHADOW_FS_WGSL, layouts: [this.shadowLayout], targets: [{ format: 'rgba32float' }] });
     this.marchPipeline.get();
+    this.marchFinePipeline.get();
     this.resolvePipeline.get();
     this.shadowPipeline.get();
 
@@ -255,6 +273,13 @@ export class CloudSystem {
   /** Half-resolution cloud geometry along each ray (begin, end, mean distance; 3.0e38 = none), for the atmosphere march. */
   get geomView(): GPUTextureView {
     return this.geom.view;
+  }
+  /** Tile targets of the full-resolution cloud march (radiance / transmittance, geometry), texel (0, 0) = `atmo.tile.xy`. */
+  get fineColorView(): GPUTextureView {
+    return this.fineColorTexView;
+  }
+  get fineGeomView(): GPUTextureView {
+    return this.fineGeomTexView;
   }
   get shadowView(): GPUTextureView {
     return this.shadowTexView;
@@ -699,6 +724,7 @@ export class CloudSystem {
       this.screen.version,
       this.historyColor.version,
       this.ctx.resources.version('scene.depthHalf'),
+      this.ctx.resources.version('scene.depth'),
       this.ctx.resources.version('atmosphere.transmittanceLut'),
       this.ctx.resources.version('atmosphere.skyIrradianceLut'),
     ].join(':');
@@ -717,6 +743,20 @@ export class CloudSystem {
         { binding: 5, resource: tables.irradiance },
         { binding: 6, resource: this.shadowTexView },
         { binding: 7, resource: this.ctx.resources.get('scene.depthHalf') },
+      ],
+    });
+    this.marchFineGroup = this.device.createBindGroup({
+      label: `${this.id}.cloudMarchFine`,
+      layout: this.marchFineLayout,
+      entries: [
+        u,
+        { binding: 1, resource: this.coverageNow },
+        { binding: 2, resource: this.baseNoise },
+        { binding: 3, resource: this.detailNoise },
+        { binding: 4, resource: tables.transmittance },
+        { binding: 5, resource: tables.irradiance },
+        { binding: 6, resource: this.shadowTexView },
+        { binding: 7, resource: this.ctx.resources.get('scene.depth') },
       ],
     });
     this.resolveGroup = this.device.createBindGroup({
@@ -788,6 +828,28 @@ export class CloudSystem {
     }
   }
 
+  /**
+   * Full-resolution cloud march of the rectangle `atmo.tile` (width x height px) into the tile targets:
+   * what the atmosphere march composites while the shells in view fit into the tile. The half-resolution
+   * buffers of `march` are still rendered: they are what transparents read.
+   */
+  marchFine(frame: FrameContext, encoder: GPUCommandEncoder, width: number, height: number): void {
+    const pass = encoder.beginRenderPass({
+      label: `${this.id}.cloudMarchFine`,
+      colorAttachments: [
+        { view: this.fineColorTexView, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' },
+        { view: this.fineGeomTexView, clearValue: { r: 3.0e38, g: 3.0e38, b: 3.0e38, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+      ],
+      timestampWrites: this.ctx.perf.gpuPass(`${this.id}.cloudMarchFine`) as GPURenderPassTimestampWrites | undefined,
+    });
+    pass.setBindGroup(0, frame.frameBindGroup);
+    pass.setPipeline(this.marchFinePipeline.get());
+    pass.setBindGroup(1, this.marchFineGroup!);
+    pass.setScissorRect(0, 0, width, height);
+    pass.draw(3);
+    pass.end();
+  }
+
   /** Keep this frame's cloud buffers as the history of the next one. */
   endFrame(frame: FrameContext, encoder: GPUCommandEncoder): void {
     encoder.copyTextureToTexture({ texture: this.screen.texture }, { texture: this.historyColor.texture }, this.screen.size);
@@ -818,6 +880,8 @@ export class CloudSystem {
 
   dispose(): void {
     for (const t of [this.quarterColor, this.quarterGeom, this.screen, this.depth, this.geom, this.historyColor, this.historyGeom]) t.destroy();
+    this.fineColor.destroy();
+    this.fineGeom.destroy();
     this.shadowTex.destroy();
     this.shadowScratch.destroy();
     for (const e of this.coverage.values()) e.texture?.destroy();

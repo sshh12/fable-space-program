@@ -62,11 +62,19 @@ fn atmoCloudShadowOnRay(bi: u32, d: vec3f, ray: AtmoRay, s: f32) -> f32 {
 `;
 
 /**
- * Bindings (group 1): 0 = AtmoU, 1 = transmittance, 2 = multi-scattering (texture_2d_array), 3 = cloud
- * shadow map, 4 = coverage map, 5 = 'scene.depthHalf', 6 = cloud radiance / transmittance (half res),
- * 7 = cloud geometry (half res: begin, end, mean distance), 8 = 'scene.depth'.
+ * The march. Bindings (group 1): 0 = AtmoU, 1 = transmittance, 2 = multi-scattering (texture_2d_array),
+ * 3 = cloud shadow map, 4 = coverage map, 5 = 'scene.depthHalf', 6 = cloud radiance / transmittance,
+ * 7 = cloud geometry (begin, end, mean distance), 8 = 'scene.depth'.
+ *
+ * `fine` = false: the half-resolution march described above (four targets: far and near candidates).
+ * `fine` = true: one ray per FULL-resolution pixel of the rectangle `atmo.tile` into two tile targets
+ * (add, mul), to the pixel's own depth, with the buffers of the full-resolution cloud march read texel for
+ * texel. Used while the shells in view fit into the tile (a planet seen from afar): there one
+ * half-resolution texel spans hundreds of kilometres, more than the whole atmosphere is deep, and neither
+ * the two-candidate interpolation nor a bilinear cloud lookup across the silhouette means anything.
  */
-export const MARCH_FS_WGSL = /* wgsl */ `
+export function marchFsWgsl(fine: boolean): string {
+  return /* wgsl */ `
 #include "atmosphere_model"
 ${ATMO_UNIFORM_WGSL}
 @group(1) @binding(0) var<uniform> atmo: AtmoU;
@@ -110,12 +118,30 @@ const HDR_SLACK = 8.0;
 struct MarchOut {
   @location(0) addFar: vec4f,
   @location(1) mulFar: vec4f,
-  @location(2) addNear: vec4f,
-  @location(3) mulNear: vec4f,
+${
+  fine
+    ? ''
+    : `  @location(2) addNear: vec4f,
+  @location(3) mulNear: vec4f,`
+}
 }
 
 @fragment fn fs(in: FullscreenOut) -> MarchOut {
-  let pix = vec2i(in.position.xy);
+${
+  fine
+    ? `  // The full-resolution pixel of this tile texel, its own ray and its own depth.
+  let tp = vec2i(in.position.xy);
+  let pix = tp + vec2i(atmo.tile.xy);
+  let ray = viewRay((vec2f(pix) + 0.5) * frame.renderSize.zw);
+  let len = length(ray);
+  let d = ray / len;
+  let tFar = viewZFromDepth(textureLoad(sceneDepthTex, pix, 0)) * len;
+  let tNear = tFar;
+  let cloudSize = vec2i(textureDimensions(cloudGeomTex));
+  let ctp = min(tp, cloudSize - 1);
+  let cloud = textureLoad(cloudTex, ctp, 0);
+  let cloudGeom = textureLoad(cloudGeomTex, ctp, 0).rgb;`
+    : `  let pix = vec2i(in.position.xy);
   let dh = textureLoad(depthHalfTex, pix, 0).rg;
   let ray = viewRay(in.uv);
   let len = length(ray);
@@ -151,7 +177,8 @@ struct MarchOut {
   let cloudSize = vec2i(textureDimensions(cloudGeomTex));
   let cloud = textureSampleLevel(cloudTex, linearClamp, uvCloud, 0.0);
   // r = where the cloud begins along the ray, g = where it ends, b = its opacity-weighted mean distance.
-  let cloudGeom = textureLoad(cloudGeomTex, clamp(vec2i(uvCloud * vec2f(cloudSize)), vec2i(0), cloudSize - 1), 0).rgb;
+  let cloudGeom = textureLoad(cloudGeomTex, clamp(vec2i(uvCloud * vec2f(cloudSize)), vec2i(0), cloudSize - 1), 0).rgb;`
+}
   let tCloud = cloudGeom.b;
   let xi = blueNoise(vec2u(pix)).x;
 
@@ -229,7 +256,17 @@ struct MarchOut {
   let mulFar = T * cloud.a;
   let addFar = (Lc + (L - Lc) * cloud.a) * ex + Tc * cloud.rgb;
 
-  // Near candidate: the path up to the nearest surface of the block; the cloud only if it lies in front of it.
+  var o: MarchOut;
+  // add + mul x HDR_MAX never exceeds HDR_MAX by more than HDR_SLACK: the blended result stays inside the
+  // HDR range (the half-float target has steps of 32 at HDR_MAX, so the slack cannot even be stored). The
+  // slack is there for the thinnest air: where 1 - mul is below float32 resolution a bound without it would
+  // erase the glow of the upper atmosphere one colour channel at a time.
+  o.mulFar = vec4f(saturate3(mulFar), 1.0);
+  o.addFar = vec4f(min(writeHdr(addFar), max(cap * (vec3f(1.0) - o.mulFar.rgb), vec3f(HDR_SLACK))), 1.0);
+${
+  fine
+    ? ''
+    : `  // Near candidate: the path up to the nearest surface of the block; the cloud only if it lies in front of it.
   let Ln = evL[iNear];
   let Tn = evTr[iNear];
   // Is the nearest surface behind the cloud? By distance: it lies beyond where the cloud ends (with a
@@ -246,18 +283,45 @@ struct MarchOut {
   let mulNear = Tn * (1.0 + (cloud.a - 1.0) * behind);
   let addNear = mix(Ln * ex, (Lcn + (Ln - Lcn) * cloud.a) * ex + Tcn * cloud.rgb, behind);
 
-  var o: MarchOut;
-  // add + mul x HDR_MAX never exceeds HDR_MAX by more than HDR_SLACK: the blended result stays inside the
-  // HDR range (the half-float target has steps of 32 at HDR_MAX, so the slack cannot even be stored). The
-  // slack is there for the thinnest air: where 1 - mul is below float32 resolution a bound without it would
-  // erase the glow of the upper atmosphere one colour channel at a time.
-  o.mulFar = vec4f(saturate3(mulFar), 1.0);
-  o.addFar = vec4f(min(writeHdr(addFar), max(cap * (vec3f(1.0) - o.mulFar.rgb), vec3f(HDR_SLACK))), 1.0);
   o.mulNear = vec4f(saturate3(mulNear), 1.0);
-  o.addNear = vec4f(min(writeHdr(addNear), max(cap * (vec3f(1.0) - o.mulNear.rgb), vec3f(HDR_SLACK))), 1.0);
+  o.addNear = vec4f(min(writeHdr(addNear), max(cap * (vec3f(1.0) - o.mulNear.rgb), vec3f(HDR_SLACK))), 1.0);`
+}
   return o;
 }
 `;
+}
+
+function compositeOutWgsl(mode: 'dual' | 'mul' | 'add'): string {
+  return mode === 'dual'
+    ? /* wgsl */ `struct CompositeOut {
+  @location(0) @blend_src(0) add: vec4f,
+  @location(0) @blend_src(1) mul: vec4f,
+}
+fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(add, 1.0), vec4f(mul, 1.0)); }`
+    : /* wgsl */ `struct CompositeOut { @location(0) color: vec4f }
+fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(${mode === 'mul' ? 'mul' : 'add'}, 1.0)); }`;
+}
+
+/**
+ * Composite of the full-resolution tile march: the tile texel of the pixel, as it is. Bindings (group 1):
+ * 0 = AtmoU, 1 = add, 2 = mul (tile targets). `mode` as for compositeFsWgsl.
+ */
+export function compositeFineFsWgsl(mode: 'dual' | 'mul' | 'add'): string {
+  return /* wgsl */ `${mode === 'dual' ? 'enable dual_source_blending;' : ''}
+#include "frame"
+#include "fullscreen"
+${ATMO_UNIFORM_WGSL}
+@group(1) @binding(0) var<uniform> atmo: AtmoU;
+@group(1) @binding(1) var addTex: texture_2d<f32>;
+@group(1) @binding(2) var mulTex: texture_2d<f32>;
+${compositeOutWgsl(mode)}
+
+@fragment fn fs(in: FullscreenOut) -> CompositeOut {
+  let tp = vec2i(in.position.xy) - vec2i(atmo.tile.xy);
+  return pack(textureLoad(addTex, tp, 0).rgb, textureLoad(mulTex, tp, 0).rgb);
+}
+`;
+}
 
 /**
  * Composite fragment shader. Bindings (group 1): 0..3 = addFar, mulFar, addNear, mulNear (half res),
@@ -265,15 +329,7 @@ struct MarchOut {
  * 'mul' / 'add' = the two draws of the fallback.
  */
 export function compositeFsWgsl(mode: 'dual' | 'mul' | 'add'): string {
-  const out =
-    mode === 'dual'
-      ? /* wgsl */ `struct CompositeOut {
-  @location(0) @blend_src(0) add: vec4f,
-  @location(0) @blend_src(1) mul: vec4f,
-}
-fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(add, 1.0), vec4f(mul, 1.0)); }`
-      : /* wgsl */ `struct CompositeOut { @location(0) color: vec4f }
-fn pack(add: vec3f, mul: vec3f) -> CompositeOut { return CompositeOut(vec4f(${mode === 'mul' ? 'mul' : 'add'}, 1.0)); }`;
+  const out = compositeOutWgsl(mode);
   return /* wgsl */ `${mode === 'dual' ? 'enable dual_source_blending;' : ''}
 #include "frame"
 #include "fullscreen"

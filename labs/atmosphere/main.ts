@@ -7,6 +7,7 @@
  *   &view=lat,lon,alt,heading,pitch   camera on the root body (deg, m); default: 2 m above the site, looking north-east
  *   &atmosphere=0             no atmosphere feature at all (A/B against the bare backdrop)
  *   &clouds=0                 atmosphere only
+ *   &fine=0                   half-resolution march at every distance (A/B against the full-resolution tile of small shells)
  *   &cover=c[,topKm]          replace the baked coverage map by a uniform one (c in 0..1, cloud top in km)
  *   &cp=key:value;key:value   override cloud tunables of the root body (CloudRenderDef.params) for this page
  *   &ap=key:value;...         override scalar atmosphere tunables of the root body (AtmosphereRenderDef)
@@ -161,6 +162,7 @@ async function boot(): Promise<void> {
       const cover = numbers('cover');
       feature = createAtmosphereFeature({
         clouds: query.get('clouds') !== '0',
+        fineTile: query.get('fine') !== '0',
         coverageMaps: cover ? { [defs.rootBodyId]: uniformCoverage(cover[0]!, cover[1] ?? 3) } : undefined,
       });
       if (query.get('atmosphere') !== '0') list.push(feature);
