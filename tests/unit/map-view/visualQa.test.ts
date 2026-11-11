@@ -385,8 +385,8 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
       const sc = map.currentScene!;
       const plates = list.icons[0].filter((i) => i.shape === ICON.plate);
       const plateOf = (t: { x: number; y: number }) => plates.find((p) => t.x + 1 > p.x - p.hx && t.x + 1 < p.x + p.hx && t.y + 1 > p.y - p.hy && t.y + 1 < p.y + p.hy);
-      // every text run of layer 0 except the count badges lies on a plate
-      for (const t of list.texts[0]) if (!/^\+\d+$/.test(t.text)) expect(plateOf(t), `plate under "${t.text}"`).toBeDefined();
+      // every text run of layer 0 except the count badges and the body names (tracked capitals) lies on a plate
+      for (const t of list.texts[0]) if (!/^\+\d+$/.test(t.text) && t.tracking === 0) expect(plateOf(t), `plate under "${t.text}"`).toBeDefined();
       const v = sc.verts;
       for (const m of sc.markers) {
         const run = m.label[0] ? list.texts[0].find((t) => t.text === m.label[0]) : undefined;
@@ -404,7 +404,7 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
     expect(checked).toBeGreaterThan(1);
   });
 
-  it('at the Earth-Moon overview the Earth is named and nothing is drawn over its disc', () => {
+  it('at the Earth-Moon overview the Earth is a shaded disc icon above the lines, named, owning its cluster', () => {
     const fx = createSyntheticFixture(defs);
     const s = fx.snapshot;
     const active = s.vessels.find((v) => v.id === s.activeVesselId)!;
@@ -412,12 +412,25 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
     const dir = v3.normalize(v3.add(moon.orbit!.W, v3.scale(v3.normalize(active.rRoot), -0.35)));
     const earth = s.bodies.find((b) => b.id === fx.rootId)!;
     const map = controller();
+    for (const dist of [1.15e9, 5.5e8]) {
+      const list = map.frame(s, orbitCamera(earth.rRoot, Math.atan2(dir.y, dir.x), Math.asin(dir.z), dist), CSS)!;
+      const e = map.currentScene!.bodies.find((b) => b.bodyId === fx.rootId)!;
+      expect(e.radiusPx).toBeLessThan(12);
+      // the only icon over the Earth is the Earth's own disc, at least as large as the planet; the lines pass under it
+      const over = list.icons[0].filter((i) => i.shape !== ICON.plate && i.shape !== ICON.bar && i.shape !== ICON.roundRect && Math.hypot(i.x - e.x, i.y - e.y) < e.radiusPx + 3);
+      expect(over.map((i) => i.shape)).toEqual([ICON.bodyDisc]);
+      expect(over[0]!.hx).toBeGreaterThanOrEqual(e.radiusPx);
+      // lit from the sun: the icon frame points at the sun on screen
+      expect(Math.abs(over[0]!.rot - Math.atan2(-e.sunY, e.sunX))).toBeLessThan(1e-9);
+      expect(list.texts[0].some((t) => t.text === defs.bodies[fx.rootId]!.name.toUpperCase())).toBe(true);
+      // a count badge sits on the icon's upper-right corner (overlapping it)
+      const badge = list.icons[0].find((i) => i.shape === ICON.roundRect && Math.hypot(i.x - e.x, i.y - e.y) < 40);
+      if (badge) {
+        expect(badge.x - badge.hx).toBeLessThan(e.x + over[0]!.hx);
+        expect(badge.y + badge.hy).toBeGreaterThan(e.y - over[0]!.hx);
+      }
+    }
     const list = map.frame(s, orbitCamera(earth.rRoot, Math.atan2(dir.y, dir.x), Math.asin(dir.z), 1.15e9), CSS)!;
-    const e = map.currentScene!.bodies.find((b) => b.bodyId === fx.rootId)!;
-    expect(e.radiusPx).toBeLessThan(6);
-    const over = list.icons[0].filter((i) => i.shape !== ICON.plate && i.shape !== ICON.bar && i.shape !== ICON.roundRect && Math.hypot(i.x - e.x, i.y - e.y) < e.radiusPx + 3);
-    expect(over.map((i) => i.shape)).toEqual(over.length ? [ICON.bodyRing] : []);
-    expect(list.texts[0].some((t) => t.text === defs.bodies[fx.rootId]!.name)).toBe(true);
     // the folded icons are listed in the tooltip of the cluster
     const clustered = list.texts[0].find((t) => /^\+\d+$/.test(t.text));
     expect(clustered).toBeDefined();
@@ -464,6 +477,6 @@ describe('formats (item 19)', () => {
     expect(formatDistance(358_176_000)).toBe('358 176 km');
     expect(formatTimeTo(0.4)).toBe('now');
     expect(formatTimeTo(-0.4)).toBe('now');
-    expect(formatTimeTo(90)).toBe('T-1m 30s');
+    expect(formatTimeTo(90)).toBe('T− 1:30');
   });
 });

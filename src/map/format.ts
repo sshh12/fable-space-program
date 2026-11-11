@@ -58,19 +58,39 @@ export function formatDuration(s: number): string {
   return `${sign}${m}m ${p2(sec)}s`;
 }
 
-/** Time relative to now: "T-3m 04s" before the event, "T+12s" after it, "now" within a second. */
-export function formatTimeTo(dt: number): string {
-  if (Math.abs(dt) < 1) return 'now';
-  return dt >= 0 ? `T-${formatDuration(dt)}` : `T+${formatDuration(-dt)}`;
+/** Minus sign and no-break space of the HUD's countdowns ("T− 44:10"). */
+export const MINUS = '−';
+export const NBSP = ' ';
+
+/** Clock form of a duration, as the HUD writes countdowns: "3d 18:51", "1:32:00", "44:10", "0:09". */
+export function formatClock(s: number): string {
+  if (!Number.isFinite(s)) return '--';
+  const a = Math.floor(Math.abs(s));
+  const d = Math.floor(a / 86400);
+  const h = Math.floor((a % 86400) / 3600);
+  const m = Math.floor((a % 3600) / 60);
+  const sec = a % 60;
+  const p2 = (n: number): string => n.toString().padStart(2, '0');
+  if (d > 0) return `${d}d${NBSP}${p2(h)}:${p2(m)}`;
+  if (h > 0) return `${h}:${p2(m)}:${p2(sec)}`;
+  return `${m}:${p2(sec)}`;
 }
 
 /**
- * Duration for an editable field, to a tenth of a second and readable back by parseDuration:
- * "2d 03h 04m 05.0s", "1h 02m 03.4s", "4m 05.0s", "12.5s".
+ * Time relative to now, in the HUD's countdown notation (one notation for labels, tooltips and the panel):
+ * "T− 3d 18:51" / "T− 1:32:00" / "T− 0:09" before the event, "T+ 0:12" after it, "now" within a second.
+ */
+export function formatTimeTo(dt: number): string {
+  if (Math.abs(dt) < 1) return 'now';
+  return dt >= 0 ? `T${MINUS}${NBSP}${formatClock(dt)}` : `T+${NBSP}${formatClock(-dt)}`;
+}
+
+/**
+ * Time to an event for the panel's editable field: the countdown notation to a tenth of a second, readable back
+ * by parseDuration: "T− 2d 03:04:05.0", "T− 1:02:03.4", "T− 4:05.0", "T− 0:12.5".
  */
 export function formatDurationField(s: number): string {
   if (!Number.isFinite(s)) return '--';
-  const sign = s < 0 ? '-' : '';
   const tenths = Math.round(Math.abs(s) * 10);
   const d = Math.floor(tenths / 864000);
   const h = Math.floor((tenths % 864000) / 36000);
@@ -78,24 +98,52 @@ export function formatDurationField(s: number): string {
   const sec = (tenths % 600) / 10;
   const p2 = (n: number): string => n.toString().padStart(2, '0');
   const ss = sec.toFixed(1).padStart(4, '0');
-  if (d > 0) return `${sign}${d}d ${p2(h)}h ${p2(m)}m ${ss}s`;
-  if (h > 0) return `${sign}${h}h ${p2(m)}m ${ss}s`;
-  if (m > 0) return `${sign}${m}m ${ss}s`;
-  return `${sign}${sec.toFixed(1)}s`;
+  const body = d > 0 ? `${d}d ${p2(h)}:${p2(m)}:${ss}` : h > 0 ? `${h}:${p2(m)}:${ss}` : `${m}:${ss}`;
+  return s < 0 ? `T+${NBSP}${body}` : `T${MINUS}${NBSP}${body}`;
+}
+
+/** J2000.0 epoch (2000-01-01 12:00:00, treated as UTC as the HUD does), ms since the Unix epoch. */
+const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+
+/** Calendar time of a UT (s since J2000) as the HUD's clock shows it, without the zone: "2028-03-03 20:26:40". */
+export function formatUtDate(ut: number): string {
+  if (!Number.isFinite(ut)) return '--';
+  const d = new Date(J2000_MS + Math.floor(ut) * 1000);
+  const p2 = (n: number): string => n.toString().padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`;
+}
+
+/**
+ * A typed calendar time "YYYY-MM-DD HH:MM[:SS[.s]]" (optionally ending in "UTC", a "T" between date and time
+ * accepted) as UT in s since J2000, or NaN.
+ */
+export function parseUtDate(text: string): number {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ t]+(\d{1,2}):(\d{2})(?::(\d{2}(?:[.,]\d+)?))?(?:\s*utc)?$/i.exec(text.trim());
+  if (!m) return NaN;
+  const [y, mo, d, h, mi] = [m[1], m[2], m[3], m[4], m[5]].map(Number) as [number, number, number, number, number];
+  const sec = m[6] ? Number(m[6].replace(',', '.')) : 0;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || !(sec < 60)) return NaN;
+  return (Date.UTC(y, mo - 1, d, h, mi, 0) - J2000_MS) / 1000 + sec;
 }
 
 const UNIT_SECONDS: Record<string, number> = { d: 86400, h: 3600, m: 60, min: 60, s: 1 };
 
 /**
  * A typed duration in seconds, or NaN. Accepts plain seconds ("90", "12.5"), clock form ("1:30",
- * "2:03:04.5", "1:02:03:04" with days), and unit form ("1h 30m", "2d4h", "90 s", "1.5h"), each optionally
- * prefixed by "T-" or "in". A comma works as the decimal separator.
+ * "2:03:04.5", "1:02:03:04" with days, "2d 03:04:05" as the panel writes it), and unit form ("1h 30m",
+ * "2d4h", "90 s", "1.5h"), each optionally prefixed by "T-" / "T−" or "in". A comma works as the decimal
+ * separator.
  */
 export function parseDuration(text: string): number {
-  let t = text.trim().toLowerCase().replace(/,/g, '.');
+  let t = text.trim().toLowerCase().replace(/,/g, '.').replace(/ /g, ' ');
   t = t.replace(/^(t\s*[-−]|in\s)\s*/, '');
   if (t === '') return NaN;
   if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  const dayClock = /^(\d+)\s*d\s+(\d+(?::\d+){1,2}(?:\.\d+)?)$/.exec(t);
+  if (dayClock) {
+    const rest = parseDuration(dayClock[2]!);
+    return Number.isFinite(rest) ? Number(dayClock[1]) * 86400 + rest : NaN;
+  }
   if (/^\d+(:\d+){1,3}(\.\d+)?$/.test(t)) {
     const parts = t.split(':').map(Number);
     const weights = [1, 60, 3600, 86400];
@@ -134,5 +182,5 @@ export function formatLatLon(lat: number, lon: number): string {
 export const LABEL_CHARSET = (() => {
   let s = '';
   for (let c = 32; c < 127; c++) s += String.fromCharCode(c);
-  return `${s}°Δ±·→ `;
+  return `${s}°Δ±·→ ${MINUS}${NBSP}`;
 })();

@@ -3,7 +3,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
-import { formatAngleDeg, formatDistance, formatDuration, formatLatLon, formatSpeed, formatTimeTo } from './format';
+import { formatAngleDeg, formatDistance, formatLatLon, formatSpeed, formatTimeTo } from './format';
 import type { LabelSource, MarkerItem } from './scene';
 
 const NAMES: Record<MarkerItem['kind'], string> = {
@@ -19,6 +19,7 @@ const NAMES: Record<MarkerItem['kind'], string> = {
   maneuverNode: 'Maneuver node',
   impactSurface: 'Impact point',
   entrySurface: 'Entry point',
+  patchStart: 'Patch start',
 };
 
 const SHORT: Record<MarkerItem['kind'], string> = {
@@ -34,6 +35,7 @@ const SHORT: Record<MarkerItem['kind'], string> = {
   maneuverNode: 'Node',
   impactSurface: 'Impact',
   entrySurface: 'Entry',
+  patchStart: 'Start',
 };
 
 const bodyName = (defs: DefLibrary, id: string | undefined): string => (id ? defs.bodies[id]?.name ?? id : '');
@@ -106,7 +108,7 @@ export const markerLabels: LabelSource = {
       case 'maneuverNode':
         break;
     }
-    details.push(`${dt >= 0 ? 'In' : 'Ago'} ${formatDuration(Math.abs(dt))}`);
+    details.push(when);
     const label = item.kind === 'impactSurface' || item.kind === 'entrySurface' ? [] : [head, when];
     return { label, details };
   },
@@ -149,6 +151,23 @@ export interface LabelBox {
 
 /** The outer ring of candidates lies this many device px (per CSS px) further out. */
 export const FAR_RING_PX = 22;
+/** Cost of a candidate per unit of covered line weight (LineGrid.cost): one trajectory across a label ~ 5 places. */
+const LINE_COST = 0.1;
+/** Cost of a candidate that lies nearer to another icon than to its own anchor (it would read as that icon's). */
+const FOREIGN_COST = 9;
+
+/** A disc labels keep clear of; `own` marks the icons a label can be mistaken to belong to (markers, vessels...). */
+export interface ClearDisc {
+  x: number;
+  y: number;
+  r: number;
+  pair: boolean;
+}
+
+/** Line cost of a screen rectangle (device px): LineGrid.cost. */
+export interface LineCost {
+  cost(x0: number, y0: number, x1: number, y1: number): number;
+}
 
 /** Unit directions of the eight candidates (index = candidate). */
 const S = Math.SQRT1_2;
@@ -173,21 +192,32 @@ const ensureRects = (n: number): void => {
 };
 const order: number[] = [];
 
+/** Distance from (x, y) to the rectangle [x0, x1] x [y0, y1] (0 inside). */
+const rectDist = (x: number, y: number, x0: number, y0: number, x1: number, y1: number): number => {
+  const dx = x < x0 ? x0 - x : x > x1 ? x - x1 : 0;
+  const dy = y < y0 ? y0 - y : y > y1 ? y - y1 : 0;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
 /**
- * Greedy de-cluttering: labels are placed in priority order at the first free one of sixteen candidate
+ * Greedy de-cluttering: labels are placed in priority order at the best free one of sixteen candidate
  * positions around their anchor: eight beside it, ordered by the anchor's preferred side (LabelBox.nx / ny),
- * then the same eight on an outer ring `farRing` further out, which get a leader line. A candidate must
- * overlap neither an earlier label, nor any icon, nor a blocked rectangle (node panel, tooltip, badges, HUD
- * panels), and lie inside the viewport. Labels with no free position are hidden (their icon stays and the hover
- * tooltip still shows the details). Lines that still pass under a label are masked by its backing plate.
+ * then the same eight on an outer ring `farRing` further out. A candidate must overlap neither an earlier
+ * label, nor any icon, nor a blocked rectangle (node panel, tooltip, badges, HUD panels), and lie inside the
+ * viewport. Among the free ones the cost is the candidate's rank plus the drawn lines it would cover
+ * (`lines`, trajectories weigh most) plus a penalty when another marker's icon lies nearer to it than its
+ * own anchor (it would be read as that marker's label). Candidates are visited by rank, so the search stops
+ * as soon as no later one can be cheaper. Labels with no free position are hidden (their icon stays and the
+ * hover tooltip still shows the details). Plates are opaque: a line that still passes under one is masked.
  */
 export function declutter(
   labels: readonly LabelBox[],
-  icons: readonly { x: number; y: number; r: number }[],
+  icons: readonly ClearDisc[],
   viewport: { width: number; height: number },
   gap: number,
   blocked: readonly BlockedRect[] = [],
   farRing = 0,
+  lines: LineCost | null = null,
 ): void {
   // Fixed obstacles first (icons, blocked rectangles), then the labels as they are placed.
   const nFixed = icons.length + blocked.length;
@@ -237,12 +267,17 @@ export function declutter(
       seq = ranked;
     }
     let found = false;
+    let best = Infinity;
     let bx = 0;
     let by = 0;
-    for (let ring = 0; ring < rings && !found; ring++) {
+    let bfar = false;
+    for (let ring = 0; ring < rings && best > ring * 8; ring++) {
       const d = l.clear + gap + ring * farRing;
       const e = d * 0.75;
       for (let r = 0; r < 8; r++) {
+        const rank = ring * 8 + r;
+        // a later candidate costs at least its rank: nothing left can beat the best so far
+        if (best <= rank) break;
         const c = seq[r]!;
         let x: number;
         let y: number;
@@ -291,14 +326,30 @@ export function declutter(
           }
         }
         if (!free) continue;
-        found = true;
-        bx = x;
-        by = y;
-        l.far = ring > 0;
-        break;
+        let cost = rank;
+        if (lines) cost += LINE_COST * lines.cost(x, y, x1, y1);
+        if (cost < best) {
+          // another marker's icon nearer to the plate than its own anchor: it would read as that marker's label
+          const own = rectDist(l.ax, l.ay, x, y, x1, y1);
+          for (const ic of icons) {
+            if (!ic.pair || (Math.abs(ic.x - l.ax) < 0.5 && Math.abs(ic.y - l.ay) < 0.5)) continue;
+            if (rectDist(ic.x, ic.y, x, y, x1, y1) + ic.r * 0.5 + 2 < own) {
+              cost += FOREIGN_COST;
+              break;
+            }
+          }
+        }
+        if (cost < best) {
+          best = cost;
+          found = true;
+          bx = x;
+          by = y;
+          bfar = ring > 0;
+        }
       }
     }
     if (!found) continue;
+    l.far = bfar;
     l.x = Math.round(bx);
     l.y = Math.round(by);
     l.placed = true;

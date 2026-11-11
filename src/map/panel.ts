@@ -1,8 +1,10 @@
 /**
  * The numeric maneuver-node panel, in the flight HUD's type and panel style (theme.ts): the three delta-v
  * components, each between the two axis glyphs of the gizmo as nudge buttons (1 m/s per click, Shift 0.1,
- * Ctrl 10), the total (rescales the burn, keeping its direction), the node time as time from now ("1h 02m
- * 03.4s", "T-90s", "1:30") and as UT, +/- one orbit, delete, and previous/next node. A DOM element placed by the
+ * Ctrl 10), the total (rescales the burn, keeping its direction), the node time as a countdown in the HUD's
+ * notation ("T− 1:32:00.5"; typed also as "1h 30m", "90", "2d 03:04:05") and as calendar time in the HUD
+ * clock's format ("2028-03-03 20:26:40" UTC; typed in the same form), +/- one orbit, delete, and
+ * previous/next node. Every field is editable (the total and both times too). A DOM element placed by the
  * controller (off the trajectory and the gizmo); all state lives in the controller (panelState /
  * panelSetValue / panelNudge / panelAction). The panel is opaque: nothing shows through behind its fields.
  *
@@ -11,7 +13,7 @@
  * window-level key bindings never see them.
  */
 import type { DvComponent, MapController, PanelField, PanelState } from './controller';
-import { formatDuration, formatDurationField, parseDuration, parseNumber } from './format';
+import { formatDurationField, formatUtDate, parseDuration, parseNumber, parseUtDate } from './format';
 import { HUD, MAP_FONT_FAMILY } from './theme';
 
 /** Axis glyphs of the gizmo handles (gpu/shaders.ts shapes 14-19) as inline SVG, 14 px. */
@@ -31,7 +33,7 @@ const ICONS = {
 };
 
 const STYLE = `
-.fable-map-panel { position: absolute; z-index: 20; width: 236px; padding: 9px 10px 8px; box-sizing: border-box;
+.fable-map-panel { position: absolute; z-index: 20; width: 248px; padding: 9px 10px 8px; box-sizing: border-box;
   background: ${HUD.panel}; border: 1px solid ${HUD.line}; border-radius: 7px;
   font: 600 13px/1.25 ${MAP_FONT_FAMILY}; font-variant-numeric: tabular-nums; color: ${HUD.text}; user-select: none;
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45); }
@@ -40,7 +42,7 @@ const STYLE = `
 .fable-map-panel .cap { font-size: 10px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: ${HUD.label}; }
 .fable-map-panel .hdr .cap { flex: 1; }
 .fable-map-panel .hdr .title { color: ${HUD.accent}; letter-spacing: 0.04em; }
-.fable-map-panel .row { display: grid; grid-template-columns: 62px 20px 1fr 20px 24px; align-items: center; gap: 3px; margin: 3px 0; }
+.fable-map-panel .row { display: grid; grid-template-columns: 58px 24px 1fr 24px 26px; align-items: center; gap: 3px; margin: 3px 0; }
 .fable-map-panel .row .cap { display: flex; align-items: center; gap: 4px; }
 .fable-map-panel .row .u { font-size: 11px; font-weight: 500; color: ${HUD.dim}; }
 .fable-map-panel .row.pro .k { color: #d7e85a; } .fable-map-panel .row.nrm .k { color: #e35cf5; } .fable-map-panel .row.rad .k { color: #47c8ff; }
@@ -55,18 +57,26 @@ const STYLE = `
   letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
 .fable-map-panel button:hover:not(:disabled) { background: #1a2738; border-color: ${HUD.accent}; }
 .fable-map-panel button:disabled { opacity: 0.35; cursor: default; }
-.fable-map-panel .row button { width: 20px; height: 20px; color: inherit; }
+.fable-map-panel .row button { width: 24px; height: 24px; color: inherit; }
+.fable-map-panel .row button svg { width: 16px; height: 16px; }
 .fable-map-panel .row.pro button { color: #d7e85a; } .fable-map-panel .row.nrm button { color: #e35cf5; } .fable-map-panel .row.rad button { color: #47c8ff; }
 .fable-map-panel .hdr button { flex: 0 0 22px; font-size: 14px; }
 .fable-map-panel .btns { display: grid; grid-template-columns: 1fr 1fr 34px; gap: 5px; margin-top: 8px; }
 .fable-map-panel .btns [data-action="delete"] { color: ${HUD.warning}; }
-.fable-map-panel .hint { margin-top: 6px; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; color: ${HUD.dim}; text-align: center; }
+.fable-map-panel .hint { margin-top: 6px; font-size: 10px; line-height: 1.35; font-weight: 500; letter-spacing: 0.04em; color: ${HUD.dim}; text-align: center; }
 `;
 
 const FIELDS: readonly PanelField[] = ['prograde', 'normal', 'radial', 'total', 'ut', 'timeTo'];
 
-/** Text of a typed field -> value (NaN when it does not parse). */
-const parseField = (field: PanelField, text: string): number => (field === 'timeTo' ? parseDuration(text) : parseNumber(text, field === 'ut' ? 's' : 'm/s'));
+/** Text of a typed field -> value (NaN when it does not parse). UT: a calendar time, or seconds since J2000. */
+const parseField = (field: PanelField, text: string): number => {
+  if (field === 'timeTo') return parseDuration(text);
+  if (field === 'ut') {
+    const date = parseUtDate(text);
+    return Number.isFinite(date) ? date : parseNumber(text, 's');
+  }
+  return parseNumber(text, 'm/s');
+};
 
 export class NodePanel {
   readonly element: HTMLDivElement;
@@ -109,10 +119,10 @@ export class NodePanel {
       ${axisRow('rad', 'radial', 'Radial', 'radialIn', 'radialOut')}
       <div class="row tot"><span class="cap">Total Δv</span>${input('total', 'Total delta-v, m/s: rescales the burn, keeping its direction', 'span3')}<span class="u">m/s</span></div>
       <div class="sep"></div>
-      <div class="row time"><span class="cap">In</span>${input('timeTo', 'Time to the node: 1h 02m 03s, 1:02:03, 90 (seconds)', 'span4')}</div>
-      <div class="row time"><span class="cap">UT</span>${input('ut', 'Node time, s since J2000', 'span3')}<span class="u">s</span></div>
+      <div class="row time"><span class="cap">In</span>${input('timeTo', 'Time to the node: T− 1:02:03, 1h 02m 03s, 90 (seconds)', 'span4')}</div>
+      <div class="row time"><span class="cap">UT</span>${input('ut', 'Node time (UTC): 2028-03-03 20:26:40', 'span3')}<span class="u">UTC</span></div>
       <div class="btns"><button data-action="minusOrbit" title="One orbit earlier">${ICONS.minusOrbit}<span>&minus;1 orbit</span></button><button data-action="plusOrbit" title="One orbit later"><span>+1 orbit</span>${ICONS.plusOrbit}</button><button data-action="delete" title="Delete node">${ICONS.delete}</button></div>
-      <div class="hint">Drag a handle · Shift fine · Ctrl coarse · Wheel 0.1</div>`;
+      <div class="hint">Drag a handle &middot; Wheel 0.1 m/s<br>Shift fine &middot; Ctrl coarse</div>`;
     root.appendChild(el);
     this.element = el;
     const q = <T extends Element>(sel: string): T => el.querySelector(sel) as T;
@@ -197,8 +207,8 @@ export class NodePanel {
     this.setField('normal', st.dv.normal.toFixed(1));
     this.setField('radial', st.dv.radial.toFixed(1));
     this.setField('total', st.total.toFixed(1));
-    this.setField('ut', st.ut.toFixed(1));
-    this.setField('timeTo', st.timeTo >= 0 ? formatDurationField(st.timeTo) : `${formatDuration(st.timeTo)} ago`);
+    this.setField('ut', formatUtDate(st.ut));
+    this.setField('timeTo', formatDurationField(st.timeTo));
     this.buttons.plusOrbit.disabled = st.period === null;
     this.buttons.minusOrbit.disabled = !st.canMinusOrbit;
     this.buttons.next.disabled = st.count < 2;

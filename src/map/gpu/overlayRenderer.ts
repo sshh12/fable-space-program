@@ -4,14 +4,18 @@
  * to camera-relative float32 only here, as the last step.
  */
 import type { ShaderLibrary } from '@/core/contracts/render';
-import { CASING_PX, COLORS, DASH_ON_PX, DASH_PERIOD_PX, FADE_FLOOR, FADE_TINT, OCCLUSION_FADE_PX, type Rgba } from '../constants';
+import { CASING_PX, COLORS, DASH_ON_PX, DASH_PERIOD_PX, FADE_FLOOR, OCCLUSION_FADE_PX, type Rgba } from '../constants';
 import { isBlank, type DrawList, type IconInstance, type TextRun } from '../drawList';
 import { GlyphAtlas } from './glyphAtlas';
 import { GLYPH_WGSL, ICON_WGSL, LINE_WGSL, MAX_OCCLUDERS } from './shaders';
 
-const UNIFORM_BYTES = 64 + 4 * 16 + MAX_OCCLUDERS * 16;
-const POINT_WORDS = 8;
-const ICON_BYTES = 32;
+/** proj (64) + viewport, params, style (48) + bodies (16 per occluder) + visible-limb radii (4 per occluder). */
+const UNIFORM_BYTES = 64 + 3 * 16 + MAX_OCCLUDERS * 16 + MAX_OCCLUDERS * 4;
+const BODIES_F32 = 28;
+const VIS_F32 = BODIES_F32 + 4 * MAX_OCCLUDERS;
+/** LinePoint in shaders.ts: pos, phase, color, flags, seglen, slack, phase2, octave, two pad words. */
+const POINT_WORDS = 12;
+const ICON_BYTES = 36;
 const GLYPH_BYTES = 32;
 
 const packColor = (c: Rgba, alpha: number): number => {
@@ -31,6 +35,8 @@ export class OverlayRenderer {
   private readonly uniformData = new ArrayBuffer(UNIFORM_BYTES);
   private readonly uniformF32 = new Float32Array(this.uniformData);
   private readonly linePipeline: GPURenderPipeline;
+  /** All casings first, then all cores (same vertex stage and bind group layout). */
+  private readonly casingPipeline: GPURenderPipeline;
   private readonly iconPipeline: GPURenderPipeline;
   private readonly glyphPipeline: GPURenderPipeline;
   private pointBuf: GPUBuffer | null = null;
@@ -70,11 +76,27 @@ export class OverlayRenderer {
     const lineModule = shaders.createModule('map.lines', LINE_WGSL);
     const iconModule = shaders.createModule('map.icons', ICON_WGSL);
     const glyphModule = shaders.createModule('map.glyphs', GLYPH_WGSL);
+    // One explicit layout for both line passes, so one bind group serves them.
+    const lineLayout = device.createBindGroupLayout({
+      label: 'map.lines',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+      ],
+    });
+    const linePipelineLayout = device.createPipelineLayout({ label: 'map.lines', bindGroupLayouts: [lineLayout] });
+    this.casingPipeline = device.createRenderPipeline({
+      label: 'map.lineCasings',
+      layout: linePipelineLayout,
+      vertex: { module: lineModule, entryPoint: 'vsLine' },
+      fragment: { module: lineModule, entryPoint: 'fsLineCasing', targets },
+      primitive: { topology: 'triangle-list' },
+    });
     this.linePipeline = device.createRenderPipeline({
       label: 'map.lines',
-      layout: 'auto',
+      layout: linePipelineLayout,
       vertex: { module: lineModule, entryPoint: 'vsLine' },
-      fragment: { module: lineModule, entryPoint: 'fsLine', targets },
+      fragment: { module: lineModule, entryPoint: 'fsLineCore', targets },
       primitive: { topology: 'triangle-list' },
     });
     this.iconPipeline = device.createRenderPipeline({
@@ -94,6 +116,7 @@ export class OverlayRenderer {
               { shaderLocation: 3, offset: 20, format: 'uint32' },
               { shaderLocation: 4, offset: 24, format: 'unorm8x4' },
               { shaderLocation: 5, offset: 28, format: 'float32' },
+              { shaderLocation: 6, offset: 32, format: 'float32' },
             ],
           },
         ],
@@ -167,10 +190,11 @@ export class OverlayRenderer {
     f[27] = CASING_PX * k;
     for (let i = 0; i < nOcc; i++) {
       const o = scene.occluders[i]!;
-      f[28 + 4 * i] = o.x;
-      f[29 + 4 * i] = o.y;
-      f[30 + 4 * i] = o.z;
-      f[31 + 4 * i] = o.radius;
+      f[BODIES_F32 + 4 * i] = o.x;
+      f[BODIES_F32 + 1 + 4 * i] = o.y;
+      f[BODIES_F32 + 2 + 4 * i] = o.z;
+      f[BODIES_F32 + 3 + 4 * i] = o.radius;
+      f[VIS_F32 + i] = o.vis;
     }
     this.device.queue.writeBuffer(this.uniform, 0, this.uniformData);
 
@@ -183,11 +207,7 @@ export class OverlayRenderer {
     const pu = this.pointU32;
     let j = 0;
     for (const l of scene.lines) {
-      const style = (l.dashed ? 2 : 0) | (Math.min(65535, Math.round(l.width * 64)) << 16);
-      // colour in 0..255; the fade toward white works on these
-      const r = l.color[0] * 255;
-      const g = l.color[1] * 255;
-      const b = l.color[2] * 255;
+      const style = (l.dashed ? 2 : 0) | (l.casing ? 0 : 8) | (Math.min(65535, Math.round(l.width * 64)) << 16);
       const a = l.color[3] * 255;
       const base = packColor(l.color, 0);
       const end = l.start + l.count;
@@ -197,18 +217,22 @@ export class OverlayRenderer {
         pf[o + 1] = verts.vy[s]!;
         pf[o + 2] = verts.vz[s]!;
         const len = verts.len[s]!;
-        pf[o + 3] = len - Math.floor(len / period) * period;
-        // Fade with time ahead: toward a lighter tint of the line's own hue at a lower alpha (constants.ts).
-        const fade = verts.fade[s]!;
-        const alpha = (a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * fade) + 0.5) | 0;
-        if (fade > 0) {
-          const tint = FADE_TINT * fade;
-          const cr = (r + (255 - r) * tint + 0.5) | 0;
-          const cg = (g + (255 - g) * tint + 0.5) | 0;
-          const cb = (b + (255 - b) * tint + 0.5) | 0;
-          pu[o + 4] = (cr | (cg << 8) | (cb << 16) | (alpha << 24)) >>> 0;
-        } else pu[o + 4] = (base | (alpha << 24)) >>> 0;
-        const drawn = verts.seg[s] === 1;
+        if (l.dashed) {
+          // arc length from the node modulo the world periods of the segment's octave and the next (scene.ts)
+          const n = verts.oct[s]!;
+          const p1 = Math.pow(2, n);
+          pf[o + 3] = len - Math.floor(len / p1) * p1;
+          pf[o + 8] = len - Math.floor(len / (2 * p1)) * (2 * p1);
+          pf[o + 9] = n;
+        } else {
+          pf[o + 3] = len - Math.floor(len / period) * period;
+          pf[o + 8] = 0;
+          pf[o + 9] = 0;
+        }
+        // Fade with time ahead: alpha alone falls toward FADE_FLOOR, the hue is kept (constants.ts).
+        const alpha = (a * verts.alpha[s]! * (1 - (1 - FADE_FLOOR) * verts.fade[s]!) + 0.5) | 0;
+        pu[o + 4] = (base | (alpha << 24)) >>> 0;
+        const drawn = verts.seg[s] === 1 && verts.cover[s] === 0;
         pu[o + 5] = (style | (drawn ? 1 : 0) | (verts.join[s] === 1 ? 4 : 0)) >>> 0;
         pf[o + 6] = drawn ? verts.len[s + 1]! - len : 0;
         pf[o + 7] = l.occlusionSlack;
@@ -253,8 +277,11 @@ export class OverlayRenderer {
   /** Record the overlay draws into the LDR pass. */
   draw(pass: GPURenderPassEncoder): void {
     if (this.nPoints > 1 && this.lineGroup) {
-      pass.setPipeline(this.linePipeline);
+      // every casing, then every core: a line crossing another never cuts it with its casing
+      pass.setPipeline(this.casingPipeline);
       pass.setBindGroup(0, this.lineGroup);
+      pass.draw(6, this.nPoints - 1);
+      pass.setPipeline(this.linePipeline);
       pass.draw(6, this.nPoints - 1);
     }
     if (this.icons0 > 0) {
@@ -303,6 +330,7 @@ export class OverlayRenderer {
     u[o + 5] = icon.shape;
     u[o + 6] = packColor(icon.color, 1);
     f[o + 7] = icon.alpha;
+    f[o + 8] = icon.aux;
   }
 
   private writeRun(f: Float32Array, u: Uint32Array, g: number, run: TextRun, atlas: GlyphAtlas, halo: boolean): number {
@@ -317,7 +345,7 @@ export class OverlayRenderer {
       const code = text.charCodeAt(i);
       const cell = atlas.cell(code);
       const x = x0 + Math.round(pen);
-      pen += cell.advance;
+      pen += cell.advance + run.tracking;
       if (isBlank(code)) continue;
       const o = g * (GLYPH_BYTES / 4);
       f[o] = x;

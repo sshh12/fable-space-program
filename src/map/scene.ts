@@ -19,23 +19,31 @@ import { isFullRevolution } from './anomalyTime';
 import { ViewConic } from './conicCurve';
 import {
   AFTER_NODE_DIM,
+  BODY_ICON_MAX_RADIUS_PX,
   CHORD_TOLERANCE_PX,
   CLIP_DEPTH_REL,
+  COINCIDENT_PX,
   COLORS,
+  DASH_PERIOD_PX,
   DEBRIS_CHORD_TOLERANCE_PX,
   FAINT_CHORD_TOLERANCE_PX,
   FAINT_LINE_WIDTH_PX,
+  HOVER_ORBIT_WIDTH_PX,
+  LIMB_DAY_FACTOR,
+  LIMB_WIDTH_PX,
   LINE_WIDTH_PX,
   MAX_POINTS_PER_CURVE,
   OCCLUSION_FADE_PX,
+  ORBIT_MIN_SPAN_PX,
   SMALL_OBJECT_PX,
   SURFACE_SLACK_MARGIN,
   TARGET_MIN_BODY_PX,
+  VISIBLE_LIMB_OPTICAL_DEPTH,
   ZONE_LINE_WIDTH_PX,
   type Rgba,
 } from './constants';
 import { locateNode, type NodeLocation, type PatchKey, type PatchList } from './nodes';
-import { occlusionWeight, type Occluder } from './occlusion';
+import { occlusionWeight, visibleAtmosphereHeight, type Occluder } from './occlusion';
 import { Projector, type Viewport } from './projection';
 import { FAINT_MAX_TURN, Sampler, type SampledCurve } from './sampler';
 
@@ -84,7 +92,7 @@ const REUSE_PARAM_EPS = 1e-9;
 /** Unused entries are swept every this many builds. */
 const REUSE_SWEEP_BUILDS = 256;
 
-export type LineKind = 'current' | 'planned' | 'vesselOrbit' | 'debrisOrbit' | 'bodyOrbit' | 'soi' | 'recoveryZone' | 'ghostBody';
+export type LineKind = 'current' | 'planned' | 'vesselOrbit' | 'debrisOrbit' | 'bodyOrbit' | 'soi' | 'recoveryZone' | 'ghostBody' | 'limb';
 
 export interface LineRecord {
   kind: LineKind;
@@ -122,6 +130,8 @@ export interface LineRecord {
    * tested against the sphere shrunk by this much, so the allowance does not grow toward the limb.
    */
   occlusionSlack: number;
+  /** Drawn with the dark casing (every line except the body silhouettes, which lie on a bright limb). */
+  casing: boolean;
 }
 
 /** A line sampled from a conic (every line except a radial patch). */
@@ -155,7 +165,8 @@ export interface PointItem {
 }
 
 export interface MarkerItem extends PointItem {
-  kind: MarkerKind | 'impactSurface' | 'entrySurface';
+  /** A trajectory marker, the ground point of an impact / entry, or the first point of a patch in a new frame. */
+  kind: MarkerKind | 'impactSurface' | 'entrySurface' | 'patchStart';
   marker: Marker;
   patchKey: PatchKey;
   shape: MarkerShape;
@@ -191,6 +202,14 @@ export interface BodyItem extends PointItem {
   small: boolean;
   ghost: boolean;
   label: string;
+  /** Unit direction to the sun in view space (x right, y up, z toward the eye); 0, 0, 0 for the star itself. */
+  sunX: number;
+  sunY: number;
+  sunZ: number;
+  /** Display colour of the lit disc (the body's mean albedo colour, brightened), for its icon. */
+  tint: Rgba;
+  /** The body emits its own light (a star): its icon is not shaded. */
+  star: boolean;
 }
 
 export interface VesselItem extends PointItem {
@@ -233,8 +252,10 @@ export class VertexArrays {
   u = new Float64Array(0);
   /** UT at the vertex (NaN when not meaningful). */
   t = new Float64Array(0);
-  /** Cumulative screen length along the polyline over its drawn segments, device px (the dash phase). */
+  /** Cumulative screen length along the polyline over its drawn segments, device px; for a dashed patch the arc length in metres from the node (SceneBuilder.dashAlongPath). */
   len = new Float64Array(0);
+  /** Dashed patches: the dash octave of the segment from this vertex (log2 of the world dash period, metres). */
+  oct = new Float64Array(0);
   /** Per-vertex alpha multiplier (dimming after the first node). */
   alpha = new Float64Array(0);
   /** Fade with time ahead, 0 (now) .. 1 (far future): lowers alpha toward FADE_FLOOR and tints toward white. */
@@ -248,6 +269,11 @@ export class VertexArrays {
    * ring): the GPU joins the drawn segments there instead of capping them.
    */
   join = new Uint8Array(0);
+  /**
+   * 1 when the segment to the next vertex lies on a higher-priority line and is not drawn (SceneBuilder.
+   * suppressCoincident). It stays a segment for hit-testing and node sliding (`seg` is unchanged).
+   */
+  cover = new Uint8Array(0);
 
   reserve(extra: number): void {
     const need = this.n + extra;
@@ -271,11 +297,13 @@ export class VertexArrays {
     this.u = grow(this.u);
     this.t = grow(this.t);
     this.len = grow(this.len);
+    this.oct = grow(this.oct);
     this.alpha = grow(this.alpha);
     this.fade = grow(this.fade);
     this.front = grow8(this.front);
     this.seg = grow8(this.seg);
     this.join = grow8(this.join);
+    this.cover = grow8(this.cover);
     this.capacity = cap;
   }
 
@@ -375,12 +403,14 @@ export class VertexArrays {
     const alpha = this.alpha;
     const fade = this.fade;
     const join = this.join;
+    const cover = this.cover;
     for (let q = start; q < j; q++) {
       tt[q] = NaN;
       alpha[q] = 1;
       fade[q] = 0;
       seg[q] = 0;
       join[q] = 0;
+      cover[q] = 0;
       if (front[q] !== 1) {
         len[q] = L;
         continue;
@@ -465,12 +495,17 @@ interface BodyInfo {
   id: string;
   name: string;
   radius: number;
+  /** Radius of the visible limb (the top of the atmosphere glow), m. */
+  vis: number;
   pos: Vec3;
   q: SimSnapshot['bodies'][number]['qFixedToRoot'];
   soi: number | null;
   orbit: ConicElements | null;
   parent: string | null;
   attractor: boolean;
+  star: boolean;
+  sunDir: Vec3;
+  tint: Rgba;
 }
 
 const MARKER_STYLE: Record<MarkerKind, { shape: MarkerShape; color: Rgba; priority: number }> = {
@@ -531,6 +566,11 @@ export class SceneBuilder {
   private bc = new Float64Array(64);
   private bs = new Float64Array(64);
   private builds = 0;
+  /** Per body: visible-limb radius and icon colour (from the definitions; computed once). */
+  private readonly bodyStyles = new Map<string, { radius: number; vis: number; tint: Rgba }>();
+  /** Occupancy bitmap of the coincidence test (suppressCoincident), reused. */
+  private occ = new Uint8Array(0);
+  private readonly dash = new Float64Array(4);
   /** Lines of the last build that re-used breakpoints / were sampled afresh (lab statistics and tests). */
   reuse = { resampled: 0, fresh: 0 };
 
@@ -569,17 +609,18 @@ export class SceneBuilder {
     const bodies = this.bodyInfo(snapshot);
     const anchors = options.atIntercept ? this.encounterAnchors(snapshot, bodies, scene) : null;
 
-    // Occluders: every body at its current position, plus ghosts at their anchors.
+    // Occluders: every body at its current position (its visible limb includes the atmosphere glow), plus
+    // ghosts at their anchors (outlines of the solid sphere).
     for (const b of bodies.values()) {
       if (!(b.radius > 0)) continue;
       const c = proj.toView(b.pos);
-      scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius });
+      scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius, vis: b.vis });
     }
     for (const g of scene.ghosts) {
       const b = bodies.get(g.bodyId);
       if (!b || !(b.radius > 0)) continue;
       const c = proj.toView(g.pos);
-      scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius });
+      scene.occluders.push({ x: c.x, y: c.y, z: c.z, radius: b.radius, vis: b.radius });
     }
 
     const patchOrigin = (p: Patch): Vec3 => anchors?.get(p) ?? bodies.get(p.bodyId)?.pos ?? ORIGIN;
@@ -595,6 +636,7 @@ export class SceneBuilder {
       if (!(b.soi && b.soi > 0)) continue;
       this.addSoiLine(scene, b);
     }
+    for (const b of bodies.values()) if (b.attractor && b.radius > 0) this.addLimbLine(scene, b);
     for (const g of scene.ghosts) {
       const b = bodies.get(g.bodyId);
       if (!b || !(b.radius > 0)) continue;
@@ -630,6 +672,7 @@ export class SceneBuilder {
     };
     drawPatches('current', snapshot.patches.current);
     drawPatches('planned', snapshot.patches.planned);
+    this.suppressCoincident(scene, firstNodeUt);
 
     // ---------------------------------------------------------------------------------- markers
     const target = snapshot.readouts.targetBodyId;
@@ -656,6 +699,10 @@ export class SceneBuilder {
         if (list === 'planned' && p.afterNodeId === undefined) continue;
         const origin = patchOrigin(p);
         const markers = p.markers;
+        // Apsides take the colour of their own patch line: the current orbit's and a planned orbit's Ap differ
+        // at a glance.
+        let lineColor: Rgba | null = null;
+        for (const l of scene.lines) if (l.patchKey && l.patchKey.list === list && l.patchKey.index === index) lineColor = l.color;
         for (let mi = 0; mi < markers.length; mi++) {
           const m = markers[mi]!;
           if (m.kind === 'maneuverNode') continue;
@@ -666,7 +713,8 @@ export class SceneBuilder {
           const frameOrigin = m.bodyId === p.bodyId ? origin : bodies.get(m.bodyId)?.pos ?? origin;
           const style = MARKER_STYLE[m.kind];
           const patchKey: PatchKey = { list, index };
-          const item = this.markerItem(scene, id, v3.add(frameOrigin, m.r), m.kind, m, patchKey, style.shape, style.color, style.priority);
+          const apsis = m.kind === 'apoapsis' || m.kind === 'periapsis';
+          const item = this.markerItem(scene, id, v3.add(frameOrigin, m.r), m.kind, m, patchKey, style.shape, apsis && lineColor ? lineColor : style.color, style.priority);
           labelOf(item);
           scene.markers.push(item);
           // Impact and entry points also sit on the ground, on the body as it is now (body-fixed lat/lon).
@@ -681,6 +729,20 @@ export class SceneBuilder {
               labelOf(sItem);
               scene.markers.push(sItem);
             }
+          }
+        }
+        // A patch in another body's frame than the one before it starts with a small entry tick: drawn around
+        // its body's current position, its first point lies away from the SOI marker of the previous patch.
+        const prev = patches[index - 1];
+        if (prev && prev.bodyId !== p.bodyId && p.conic.p > 0) {
+          let parent: MarkerItem | undefined;
+          for (const m of scene.markers) if (m.patchKey.list === list && m.patchKey.index === index - 1 && (m.kind === 'soiExit' || m.kind === 'soiEnter')) parent = m;
+          if (parent) {
+            const start = v3.add(origin, conicPosition(p.conic, p.nuStart));
+            const tick = this.markerItem(scene, `${list}/${index}/start`, start, 'patchStart', parent.marker, { list, index }, 'soiEnter', parent.color, 2);
+            tick.parent = parent;
+            tick.details = parent.details;
+            scene.markers.push(tick);
           }
         }
       }
@@ -715,12 +777,12 @@ export class SceneBuilder {
     const pxScale = viewport.pxScale;
     for (const b of bodies.values()) {
       if (!(b.radius > 0)) continue;
-      scene.bodies.push(this.bodyItem(scene, b.id, b.id, b.name, b.pos, b.radius, false, pxScale, b.name));
+      scene.bodies.push(this.bodyItem(scene, b.id, b, b.pos, false, pxScale, b.name));
     }
     for (const g of scene.ghosts) {
       const b = bodies.get(g.bodyId);
       if (!b) continue;
-      scene.bodies.push(this.bodyItem(scene, g.id, g.bodyId, b.name, g.pos, b.radius, true, pxScale, `${b.name} (${g.plannedOnly ? 'planned encounter' : 'encounter'})`));
+      scene.bodies.push(this.bodyItem(scene, g.id, b, g.pos, true, pxScale, `${b.name} (${g.plannedOnly ? 'planned encounter' : 'encounter'})`));
     }
     for (const v of snapshot.vessels) {
       const view = proj.toView(v.rRoot);
@@ -806,16 +868,26 @@ export class SceneBuilder {
     const out = new Map<string, BodyInfo>();
     for (const b of s.bodies) {
       const def = this.defs.bodies[b.id];
+      const radius = def?.radius ?? 0;
+      let style = this.bodyStyles.get(b.id);
+      if (!style || style.radius !== radius) {
+        style = { radius, vis: radius + visibleAtmosphereHeight(radius, def?.render.atmosphere, VISIBLE_LIMB_OPTICAL_DEPTH), tint: bodyTint(def?.render.meanColor) };
+        this.bodyStyles.set(b.id, style);
+      }
       out.set(b.id, {
         id: b.id,
         name: def?.name ?? b.id,
-        radius: def?.radius ?? 0,
+        radius,
+        vis: style.vis,
         pos: b.rRoot,
         q: b.qFixedToRoot,
         soi: b.soiRadius,
         orbit: b.orbit,
         parent: def?.parent ?? null,
         attractor: def?.gravityRole === 'attractor',
+        star: def?.emission != null,
+        sunDir: b.sunDir,
+        tint: style.tint,
       });
     }
     return out;
@@ -872,13 +944,33 @@ export class SceneBuilder {
     return l > 0 ? { dx: dxs / l, dy: dys / l, extent } : { dx: 1, dy: 0, extent: 0 };
   }
 
-  private bodyItem(scene: MapScene, id: string, bodyId: string, name: string, pos: Vec3, radius: number, ghost: boolean, pxScale: number, label: string): BodyItem {
+  private bodyItem(scene: MapScene, id: string, b: BodyInfo, pos: Vec3, ghost: boolean, pxScale: number, label: string): BodyItem {
     const proj = scene.proj;
+    const radius = b.radius;
     const view = proj.toView(pos);
     const L = Math.hypot(view.x, view.y, view.z);
     const ang = L > radius ? Math.asin(radius / L) : Math.PI / 2;
     const radiusPx = Math.tan(Math.min(ang, 1.5)) * proj.focal;
-    const item: BodyItem = { id, x: NaN, y: NaN, front: false, hidden: 1, view, bodyId, name, radiusPx, small: 2 * radiusPx < SMALL_OBJECT_PX * pxScale, ghost, label };
+    const sun = b.star ? null : proj.rotate(b.sunDir);
+    const item: BodyItem = {
+      id,
+      x: NaN,
+      y: NaN,
+      front: false,
+      hidden: 1,
+      view,
+      bodyId: b.id,
+      name: b.name,
+      radiusPx,
+      small: 2 * radiusPx < SMALL_OBJECT_PX * pxScale,
+      ghost,
+      label,
+      sunX: sun ? sun.x : 0,
+      sunY: sun ? sun.y : 0,
+      sunZ: sun ? sun.z : 0,
+      tint: b.tint,
+      star: b.star,
+    };
     const depth = -view.z;
     if (depth > proj.near) {
       const k = proj.focal / depth;
@@ -929,7 +1021,7 @@ export class SceneBuilder {
     // (bulk debris rings at 20 % alpha are left open: a cap there does not show)
     const closed = kind !== 'debrisOrbit' && curve.kind === 'E' && Math.abs(u1 - u0 - TWO_PI) <= REUSE_PARAM_EPS;
     this.verts.appendLine(proj, s.count, s.vx, s.vy, s.vz, s.u, out, closed);
-    const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, seam: out.seam, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0 };
+    const rec: PatchCurveLine = { kind, id, start: out.start, count: out.count, seam: out.seam, color, width: widthPx * proj.pxScale, dashed, curve, visibleVertices: out.visible, span: out.span, capped: s.capped, evaluations: s.evaluations, occlusionSlack: 0, casing: true };
     scene.lines.push(rec);
     return rec;
   }
@@ -1069,6 +1161,7 @@ export class SceneBuilder {
     if (!rec) return;
     rec.patchKey = { list, index };
     rec.patch = p;
+    if (dashed) this.dashAlongPath(scene, rec);
     // Time at every vertex (first lap for multi-revolution patches) and the fade with time ahead. With the
     // eccentric/hyperbolic anomaly as the parameter this is Kepler's equation itself: dt = dM / n.
     const verts = this.verts;
@@ -1110,7 +1203,153 @@ export class SceneBuilder {
     const b = proj.toView(v3.addScaled(origin, dir, r1));
     const out = this.span;
     this.verts.appendLine(proj, 2, [a.x, b.x], [a.y, b.y], [a.z, b.z], [r0, r1], out);
-    scene.lines.push({ kind: list, id: `${list}/${index}`, start: out.start, count: out.count, seam: out.seam, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: out.visible, span: out.span, capped: false, evaluations: 0, occlusionSlack: 0 });
+    const rec: LineRecord = { kind: list, id: `${list}/${index}`, start: out.start, count: out.count, seam: out.seam, color, width: LINE_WIDTH_PX * proj.pxScale, dashed, curve: null, visibleVertices: out.visible, span: out.span, capped: false, evaluations: 0, occlusionSlack: 0, casing: true };
+    scene.lines.push(rec);
+    if (dashed) this.dashAlongPath(scene, rec);
+  }
+
+  /**
+   * Lay the dash pattern of a planned patch out along the path itself. Every vertex carries its arc length from
+   * the patch start (the node) in metres, integrated exactly from the conic (Simpson over the sampling
+   * parameter, so it does not depend on where the sampler put the vertices), and every segment the octave of
+   * its world dash period: floor(log2(DASH_PERIOD_PX x metres per pixel at the segment's depth)). The GPU draws
+   * the patterns of that octave and the next one, each fixed to the path, and cross-fades between them by the
+   * depth of the fragment (as a texture blends its mip levels): the dashes never slide along the path when the
+   * camera turns, zooms or follows the vessel, and stay close to DASH_PERIOD_PX on screen on a near stretch and
+   * a far one alike.
+   */
+  private dashAlongPath(scene: MapScene, rec: LineRecord): void {
+    const proj = scene.proj;
+    const v = this.verts;
+    const k = (DASH_PERIOD_PX * proj.pxScale) / proj.focal;
+    const curve = rec.curve;
+    let arc = 0;
+    const end = rec.start + rec.count;
+    for (let j = rec.start; j < end; j++) {
+      if (j > rec.start) {
+        if (curve) arc += arcLength(curve, v.u[j - 1]!, v.u[j]!, this.dash);
+        else arc += Math.hypot(v.vx[j]! - v.vx[j - 1]!, v.vy[j]! - v.vy[j - 1]!, v.vz[j]! - v.vz[j - 1]!);
+      }
+      v.len[j] = arc;
+      v.oct[j] = Math.floor(Math.log2(Math.max(1e-3, k * -v.vz[j]!)));
+    }
+  }
+
+  /**
+   * Patches lying on one another are drawn once: a fine occupancy bitmap (COINCIDENT_PX / 2 cells over the
+   * screen box of the trajectories) holds what has been drawn, in priority order: the current trajectory up to
+   * the first node (the path the vessel is on), then the planned patches in time order, then the current
+   * trajectory after the first node (the path it leaves). A segment of a later line that runs within about
+   * COINCIDENT_PX of drawn cells for most of its length is not drawn (its `seg` flag is cleared), so coincident
+   * laps read as one stroke and a node with little delta-v shows one orbit, not interleaved dashes. The segment
+   * is only hidden (VertexArrays.cover): it can still be clicked and a node still slides along it.
+   */
+  private suppressCoincident(scene: MapScene, firstNodeUt: number): void {
+    const lines = scene.lines;
+    let planned = 0;
+    for (const l of lines) if (l.kind === 'planned') planned++;
+    if (planned === 0) return;
+    const v = this.verts;
+    const W = scene.proj.width;
+    const H = scene.proj.height;
+    const cs = (COINCIDENT_PX / 2) * scene.proj.pxScale;
+    // screen box of the trajectories' drawn vertices
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const l of lines) {
+      if (l.kind !== 'current' && l.kind !== 'planned') continue;
+      for (let i = l.start; i < l.start + l.count; i++) {
+        if (v.front[i] !== 1) continue;
+        const x = v.sx[i]!;
+        const y = v.sy[i]!;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    x0 = Math.max(0, x0) - 2 * cs;
+    y0 = Math.max(0, y0) - 2 * cs;
+    x1 = Math.min(W, x1) + 2 * cs;
+    y1 = Math.min(H, y1) + 2 * cs;
+    if (!(x1 > x0 && y1 > y0)) return;
+    const cols = Math.ceil((x1 - x0) / cs);
+    const rows = Math.ceil((y1 - y0) / cs);
+    const n = cols * rows;
+    if (n > 4e6) return;
+    if (this.occ.length < n) this.occ = new Uint8Array(Math.ceil(n * 1.25));
+    const occ = this.occ;
+    occ.fill(0, 0, n);
+    const cellOf = (x: number, y: number): number => {
+      const i = Math.floor((x - x0) / cs);
+      const j = Math.floor((y - y0) / cs);
+      return i < 0 || j < 0 || i >= cols || j >= rows ? -1 : j * cols + i;
+    };
+    const mark = (i: number): void => {
+      const ax = v.sx[i]!;
+      const ay = v.sy[i]!;
+      const dx = v.sx[i + 1]! - ax;
+      const dy = v.sy[i + 1]! - ay;
+      const steps = Math.min(4096, Math.ceil(Math.hypot(dx, dy) / (0.7 * cs)));
+      for (let s = 0; s <= steps; s++) {
+        const c = cellOf(ax + (dx * s) / steps, ay + (dy * s) / steps);
+        if (c >= 0) occ[c] = 1;
+      }
+    };
+    // most of the segment within one cell of drawn cells
+    const covered = (i: number): boolean => {
+      const ax = v.sx[i]!;
+      const ay = v.sy[i]!;
+      const dx = v.sx[i + 1]! - ax;
+      const dy = v.sy[i + 1]! - ay;
+      const steps = Math.min(4096, Math.max(2, Math.ceil(Math.hypot(dx, dy) / cs)));
+      let hit = 0;
+      let off = 0;
+      for (let s = 0; s <= steps; s++) {
+        const x = ax + (dx * s) / steps;
+        const y = ay + (dy * s) / steps;
+        if (x < 0 || y < 0 || x > W || y > H) {
+          off++;
+          continue;
+        }
+        const ci = Math.floor((x - x0) / cs);
+        const cj = Math.floor((y - y0) / cs);
+        let near = false;
+        for (let b = Math.max(0, cj - 1); b <= Math.min(rows - 1, cj + 1) && !near; b++) {
+          const row = b * cols;
+          for (let a = Math.max(0, ci - 1); a <= Math.min(cols - 1, ci + 1); a++) {
+            if (occ[row + a] === 1) {
+              near = true;
+              break;
+            }
+          }
+        }
+        if (near) hit++;
+      }
+      const on = steps + 1 - off;
+      return on > 0 && hit >= 0.75 * on;
+    };
+    // 1. the current trajectory up to the first node: drawn as it is, and the reference for everything else
+    for (const l of lines) {
+      if (l.kind !== 'current') continue;
+      for (let i = l.start; i < l.start + l.count - 1; i++) if (v.seg[i] === 1 && !(v.t[i + 1]! > firstNodeUt)) mark(i);
+    }
+    // 2. planned patches in time order, 3. the current trajectory after the first node
+    for (let pass = 0; pass < 2; pass++) {
+      for (const l of lines) {
+        if (l.kind !== (pass === 0 ? 'planned' : 'current')) continue;
+        const end = l.start + l.count - 1;
+        for (let i = l.start; i < end; i++) {
+          if (v.seg[i] !== 1) continue;
+          if (pass === 1 && !(v.t[i + 1]! > firstNodeUt)) continue;
+          if (covered(i)) v.cover[i] = 1;
+        }
+        this.cleanCover(l, (DASH_PERIOD_PX * scene.proj.pxScale) | 0);
+        if (pass === 0) for (let i = l.start; i < end; i++) if (v.seg[i] === 1 && v.cover[i] === 0) mark(i);
+      }
+    }
   }
 
   /** Orbit of another vessel from its state (cached while the state and time are unchanged). */
@@ -1154,9 +1393,86 @@ export class SceneBuilder {
       nu1 = cross === null ? lim : Math.min(cross, lim);
       if (!(nu1 > nu0)) return;
     }
-    // Debris drawn in bulk (setDebrisOrbits) are faint and coarser; the hovered one is drawn like a vessel's orbit.
-    const bulk = !v.controllable && v.id !== scene.options.highlightVesselId;
-    this.addConicLine(scene, `vessel:${v.id}`, bulk ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, bulk ? COLORS.debrisOrbit : COLORS.vesselOrbit, FAINT_LINE_WIDTH_PX, false);
+    // Debris drawn in bulk (setDebrisOrbits) are faint and coarser; the hovered vessel's or debris' orbit is
+    // drawn in the hover colour, one step wider, so it reads as the one the tooltip describes.
+    const hovered = v.id === scene.options.highlightVesselId;
+    const bulk = !v.controllable && !hovered;
+    const rec = this.addConicLine(scene, `vessel:${v.id}`, bulk ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, hovered ? COLORS.hoverOrbit : bulk ? COLORS.debrisOrbit : COLORS.vesselOrbit, hovered ? HOVER_ORBIT_WIDTH_PX : FAINT_LINE_WIDTH_PX, false);
+    // Another vessel's orbit a few pixels across says nothing at this zoom and buries the body it circles.
+    if (rec && !bulk && !hovered && rec.span < ORBIT_MIN_SPAN_PX * scene.proj.pxScale) {
+      scene.lines.pop();
+      this.verts.n = rec.start;
+    }
+  }
+
+  /**
+   * Hidden stretches of a line (suppressCoincident) without flicker along it: where two lines drift apart
+   * slowly the test flips from segment to segment. A visible run shorter than two dash periods between hidden
+   * ones is hidden too, a hidden run shorter than one period between visible ones is shown (screen length).
+   */
+  private cleanCover(l: LineRecord, periodPx: number): void {
+    const v = this.verts;
+    const end = l.start + l.count - 1;
+    for (let pass = 0; pass < 2; pass++) {
+      const target = pass === 0 ? 0 : 1; // pass 0: short visible runs; pass 1: short hidden runs
+      const limit = pass === 0 ? 2 * periodPx : periodPx;
+      let i = l.start;
+      while (i < end) {
+        if (v.seg[i] !== 1 || v.cover[i] !== target) {
+          i++;
+          continue;
+        }
+        const runStart = i;
+        let len = 0;
+        while (i < end && v.seg[i] === 1 && v.cover[i] === target) {
+          len += Math.hypot(v.sx[i + 1]! - v.sx[i]!, v.sy[i + 1]! - v.sy[i]!);
+          i++;
+        }
+        const before = runStart > l.start && v.seg[runStart - 1] === 1 && v.cover[runStart - 1] !== target;
+        const after = i < end && v.seg[i] === 1 && v.cover[i] !== target;
+        if (before && after && len < limit) for (let q = runStart; q < i; q++) v.cover[q] = 1 - target;
+      }
+    }
+  }
+
+  /**
+   * Silhouette ring of a body whose disc the renderer draws (projected radius from BODY_ICON_MAX_RADIUS_PX;
+   * below that the map draws the body as an icon): the outline of the solid sphere seen from the eye, strong on
+   * the night side, faint on the lit side (alpha per vertex from the sun direction at that point of the limb).
+   * Its chords dip below the sphere between vertices, so it is tested against the sphere shrunk by that depth
+   * (as the zone rings are): the body never hides its own outline.
+   */
+  private addLimbLine(scene: MapScene, b: BodyInfo): void {
+    const proj = scene.proj;
+    const c = proj.toView(b.pos);
+    const L = Math.hypot(c.x, c.y, c.z);
+    if (!(L > b.radius * 1.0001) || -c.z <= 0) return;
+    const radiusPx = Math.tan(Math.min(Math.asin(b.radius / L), 1.5)) * proj.focal;
+    if (radiusPx < BODY_ICON_MAX_RADIUS_PX * proj.pxScale) return;
+    const rec = this.addSphereOutline(scene, `limb:${b.id}`, 'limb', c, b.radius, COLORS.limb, LIMB_WIDTH_PX);
+    if (!rec) return;
+    rec.casing = false;
+    const v = this.verts;
+    const s = proj.rotate(b.sunDir, this.tmpV);
+    const sx = s.x;
+    const sy = s.y;
+    const sz = s.z;
+    let depth = 0;
+    for (let i = rec.start; i < rec.start + rec.count; i++) {
+      const nx = (v.vx[i]! - c.x) / b.radius;
+      const ny = (v.vy[i]! - c.y) / b.radius;
+      const nz = (v.vz[i]! - c.z) / b.radius;
+      // lit side of the limb (cos of the angle to the sun), smoothly to the faint day value
+      const lit = Math.min(1, Math.max(0, (nx * sx + ny * sy + nz * sz + 0.05) / 0.3));
+      v.alpha[i] = 1 - (1 - LIMB_DAY_FACTOR) * lit * lit * (3 - 2 * lit);
+      if (i < rec.start + rec.count - 1 && v.seg[i] === 1) {
+        const mx = (v.vx[i]! + v.vx[i + 1]!) / 2 - c.x;
+        const my = (v.vy[i]! + v.vy[i + 1]!) / 2 - c.y;
+        const mz = (v.vz[i]! + v.vz[i + 1]!) / 2 - c.z;
+        depth = Math.max(depth, b.radius - Math.sqrt(mx * mx + my * my + mz * mz));
+      }
+    }
+    rec.occlusionSlack = depth + SURFACE_SLACK_MARGIN * b.radius;
   }
 
   /**
@@ -1170,9 +1486,9 @@ export class SceneBuilder {
   }
 
   /** Silhouette circle of a sphere seen from the eye (nothing when the eye is inside it). */
-  private addSphereOutline(scene: MapScene, id: string, kind: LineKind, c: Vec3, R: number, color: Rgba, widthPx: number): void {
+  private addSphereOutline(scene: MapScene, id: string, kind: LineKind, c: Vec3, R: number, color: Rgba, widthPx: number): PatchCurveLine | null {
     const L = Math.hypot(c.x, c.y, c.z);
-    if (!(L > R)) return;
+    if (!(L > R)) return null;
     const k = 1 - (R * R) / (L * L);
     const centre = v3.scale(c, k);
     const radius = R * Math.sqrt(k);
@@ -1180,7 +1496,7 @@ export class SceneBuilder {
     const u = v3.anyOrthogonal(n);
     const w = v3.cross(n, u);
     const curve = this.nextCurve().setCircle(centre, u, w, radius);
-    this.addCurve(scene, id, kind, curve, 0, TWO_PI, color, widthPx, false);
+    return this.addCurve(scene, id, kind, curve, 0, TWO_PI, color, widthPx, false);
   }
 
   /** A recovery zone: the small circle of the zone radius lying on the body sphere (body-fixed, rotates with it). */
@@ -1226,9 +1542,46 @@ function sameShape(e: number, curve: ViewConic): boolean {
   return Math.abs(curve.e - e) <= REUSE_SHAPE_TOLERANCE * Math.abs(1 - curve.e * curve.e);
 }
 
+/**
+ * Arc length (m) of a placed conic between sampling parameters u0 and u1: composite Simpson over panels of at
+ * most ARC_PANEL in the parameter, of the speed |dr/du| (exact for a circle; for e = 0.97 the relative error of
+ * a 0.05 rad panel is below 1e-6). `scratch` holds four floats.
+ */
+const ARC_PANEL = 0.05;
+function arcLength(curve: ViewConic, u0: number, u1: number, scratch: Float64Array): number {
+  const span = u1 - u0;
+  if (!(Math.abs(span) > 0)) return 0;
+  const n = Math.min(4096, Math.max(1, Math.ceil(Math.abs(span) / ARC_PANEL)));
+  const h = span / n;
+  let sum = conicSpeed(curve, u0, scratch) + conicSpeed(curve, u1, scratch);
+  for (let i = 1; i < n; i++) sum += 2 * conicSpeed(curve, u0 + i * h, scratch);
+  for (let i = 0; i < n; i++) sum += 4 * conicSpeed(curve, u0 + (i + 0.5) * h, scratch);
+  return Math.abs((h / 6) * sum);
+}
+
+/** |dr/du| of a placed conic at parameter u (m per unit parameter). */
+function conicSpeed(curve: ViewConic, u: number, scratch: Float64Array): number {
+  curve.perifocalWithDerivative(u, scratch);
+  return Math.sqrt(scratch[2]! * scratch[2]! + scratch[3]! * scratch[3]!);
+}
+
+/**
+ * Display colour of a body's icon: its mean albedo colour (linear) scaled so the brightest channel is 0.8, then
+ * encoded to sRGB: the Earth a light blue, the Moon a warm light grey.
+ */
+function bodyTint(mean: readonly number[] | undefined): Rgba {
+  const m = mean && mean.length >= 3 ? mean : [0.5, 0.5, 0.5];
+  const peak = Math.max(m[0]!, m[1]!, m[2]!, 1e-6);
+  const enc = (c: number): number => {
+    const x = Math.max(0, Math.min(1, (0.8 * c) / peak));
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+  };
+  return [enc(m[0]!), enc(m[1]!), enc(m[2]!), 1];
+}
+
 /** A one-element occluder list (reused: occlusionWeight only reads it). */
 const ONE_OCCLUDER = (() => {
-  const list: Occluder[] = [{ x: 0, y: 0, z: 0, radius: 0 }];
+  const list: Occluder[] = [{ x: 0, y: 0, z: 0, radius: 0, vis: 0 }];
   return (o: Occluder): Occluder[] => {
     list[0] = o;
     return list;

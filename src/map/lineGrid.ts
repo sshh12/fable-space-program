@@ -1,10 +1,9 @@
 /**
- * Coarse occupancy grid of the drawn lines on screen, so the node panel can be placed off the trajectory it
- * edits instead of on top of it. Each cell holds the largest weight of the lines through it (trajectories weigh
- * more than reference orbits); a rectangle's cost is the sum over the cells it covers. Built for draw lists with
- * a selected node, from the scene's projected vertices: one pass over the drawn segments, clipped to the
- * screen, marking the cells along each at one step per cell. (Labels do not use it: they take the side of
- * their own line away from its body and sit on a plate that masks any other line.)
+ * Coarse occupancy grid of the drawn lines on screen, so labels, the hover tooltip and the node panel can be
+ * placed off the trajectories instead of on top of them. Each cell holds the largest weight of the lines
+ * through it (trajectories weigh more than reference orbits); a rectangle's cost is the sum over the cells it
+ * covers. Built once per draw list from the scene's projected vertices: one pass over the drawn segments,
+ * clipped to the screen, marking the cells along each at one step per cell.
  */
 import type { LineKind, MapScene } from './scene';
 
@@ -24,6 +23,7 @@ export function lineWeight(kind: LineKind): number {
     case 'soi':
     case 'ghostBody':
     case 'debrisOrbit':
+    case 'limb':
       return 0;
   }
 }
@@ -50,7 +50,7 @@ export class LineGrid {
       if (weight === 0) continue;
       const end = line.start + line.count - 1;
       for (let i = line.start; i < end; i++) {
-        if (v.seg[i] !== 1) continue;
+        if (v.seg[i] !== 1 || v.cover[i] === 1) continue;
         this.segment(v.sx[i]!, v.sy[i]!, v.sx[i + 1]!, v.sy[i + 1]!, width, height, weight);
       }
     }

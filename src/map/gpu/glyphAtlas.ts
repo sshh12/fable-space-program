@@ -1,9 +1,10 @@
 /**
  * Glyph atlas rasterised with Canvas 2D at the exact device pixel size, in the HUD's type family (theme.ts),
  * so map labels match the flight HUD and text is copied 1:1 to whole-pixel positions (no resampling, no SDF
- * blur). Glyphs are proportional, each with its own advance; the ten digits share one advance (tabular
- * figures, as in the HUD), so numbers that change do not shift. Two channels: R = glyph coverage, G =
- * coverage of a thin dark halo that separates the letters from whatever is behind their backing plate.
+ * blur). Glyphs are proportional, digits included: labels are running text (tabular figures left holes
+ * around every "1"); the node panel's fields, where values change in place, keep the HUD's tabular figures.
+ * Two channels: R = glyph coverage, G = coverage of a thin dark halo that separates the letters from whatever
+ * is behind them.
  */
 import { FONT_PX, LABEL_LINE_PX } from '../constants';
 import type { TextMetricsLike } from '../drawList';
@@ -18,8 +19,6 @@ export interface GlyphCell {
   /** Pen advance in device px. */
   advance: number;
 }
-
-const isDigit = (code: number): boolean => code >= 48 && code <= 57;
 
 export class GlyphAtlas {
   readonly texture: GPUTexture;
@@ -42,11 +41,7 @@ export class GlyphAtlas {
     probe.font = font;
     const chars = [...LABEL_CHARSET];
     const own = chars.map((ch) => probe.measureText(ch).width);
-    let digit = 0;
-    chars.forEach((ch, i) => {
-      if (isDigit(ch.charCodeAt(0))) digit = Math.max(digit, own[i]!);
-    });
-    const advances = chars.map((ch, i) => (isDigit(ch.charCodeAt(0)) ? digit : own[i]!));
+    const advances = own;
     const lineHeight = Math.round(LABEL_LINE_PX * pxScale);
     this.margin = Math.ceil(2 * pxScale);
     this.cellH = lineHeight + 2 * this.margin;
@@ -80,8 +75,7 @@ export class GlyphAtlas {
       ctx.lineWidth = 2.4 * pxScale;
       chars.forEach((ch, i) => {
         const c = cells[i]!;
-        // digits are centred in the shared tabular advance
-        const gx = c.u + this.margin + (advances[i]! - own[i]!) / 2;
+        const gx = c.u + this.margin;
         const gy = c.v + this.margin + lineHeight / 2 + 0.5 * pxScale;
         if (halo) ctx.strokeText(ch, gx, gy);
         ctx.fillText(ch, gx, gy);

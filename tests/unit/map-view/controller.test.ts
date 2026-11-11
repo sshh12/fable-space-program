@@ -150,11 +150,11 @@ describe('hit-testing', () => {
     expect(along(8 + 6)?.type).toBe('node');
     expect(along(sep - 9 - 6)?.type).toBe('handle');
     expect(along(sep / 2 + 0.5 * (8 - 9))).toBeNull(); // equidistant from both edges and more than 10 px from each
-    // The vessel icon: inside the tolerance at 9.9 px from its edge, outside at 10.1 px (handles deselected)
+    // The vessel icon (9.5 px chevron): inside the tolerance at 9.9 px from its edge, outside at 10.1 px (handles deselected)
     r.map.selectNode(null);
     const v = scene.vessels[0]!;
     const out = v3.normalize({ x: v.x - 640, y: v.y - 360, z: 0 });
-    const at = (d: number) => r.map.hitTest(scene, v.x + out.x * (7 + d), v.y + out.y * (7 + d), false, false);
+    const at = (d: number) => r.map.hitTest(scene, v.x + out.x * (9.5 + d), v.y + out.y * (9.5 + d), false, false);
     expect(at(9.9)?.type).toBe('vessel');
     expect(at(10.1)).toBeNull();
   });
@@ -668,8 +668,9 @@ describe('surface targets and occlusion', () => {
     expect(pe.hidden).toBe(0);
     expect(el(r.map, 'marker', ap.id).visible).toBe(false);
     expect(el(r.map, 'marker', pe.id).visible).toBe(true);
-    // the soft ramp: points just inside the limb are partially hidden
-    const occ = scene.occluders[0]!;
+    // the soft ramp: points just inside the limb are partially hidden (the solid sphere alone: the visible
+    // limb of the atmosphere is checked in visualQa.test.ts)
+    const occ = { ...scene.occluders[0]!, vis: scene.occluders[0]!.radius };
     const L = Math.hypot(occ.x, occ.y, occ.z);
     const alpha = Math.asin(occ.radius / L);
     const centreDir = v3.normalize(occ);
@@ -677,7 +678,7 @@ describe('surface targets and occlusion', () => {
     const behindAt = (pxInside: number) => {
       const a = alpha - pxInside / scene.proj.focal;
       const dir = v3.add(v3.scale(centreDir, Math.cos(a)), v3.scale(side, Math.sin(a)));
-      return occlusionWeight(v3.scale(dir, L * 1.5), scene.occluders, scene.proj.focal, 6);
+      return occlusionWeight(v3.scale(dir, L * 1.5), [occ], scene.proj.focal, 6);
     };
     expect(behindAt(-1)).toBe(0); // outside the limb
     expect(behindAt(3)).toBeCloseTo(0.5, 6); // half-way through the 6 px fade

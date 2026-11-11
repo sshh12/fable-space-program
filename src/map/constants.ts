@@ -38,6 +38,15 @@ export const LINE_WIDTH_PX = 2.5;
 export const FAINT_LINE_WIDTH_PX = 1.5;
 /** Zone outlines lying on a body. */
 export const ZONE_LINE_WIDTH_PX = 2;
+/** Orbit of the hovered vessel or debris: one step wider than the faint orbits, in the hover colour. */
+export const HOVER_ORBIT_WIDTH_PX = 2;
+/**
+ * Silhouette of every body whose disc is drawn by the renderer (projected radius from BODY_ICON_MAX_RADIUS_PX):
+ * a thin ring on the limb, strong on the night side (where the planet is as black as space and a trajectory
+ * would otherwise end in mid-air) and faint on the lit side (where the real limb shows).
+ */
+export const LIMB_WIDTH_PX = 1.25;
+export const LIMB_DAY_FACTOR = 0.28;
 /** Dark casing on both sides of every line (keeps it legible over a lit planet), width and peak alpha. */
 export const CASING_PX = 1.25;
 export const CASING_ALPHA = 0.6;
@@ -48,9 +57,25 @@ export const OCCLUSION_FADE_PX = 1.5;
  * below the surface plus this fraction of the radius (float32 rounding of the vertices).
  */
 export const SURFACE_SLACK_MARGIN = 1e-4;
-/** Dashes of patches downstream of a maneuver node: period and lit length (phase anchored at the node). */
+/**
+ * Lines behind a body with an atmosphere end at its VISIBLE limb: the height where the grazing optical depth of
+ * the strongest Rayleigh channel falls to this value (about 50 km for the Earth: the top of the limb glow).
+ * Points inside that shell (an entry trajectory, a low orbit seen past the limb) are tested against the solid
+ * sphere only, so the translucent glow never hides a line that runs through it.
+ */
+export const VISIBLE_LIMB_OPTICAL_DEPTH = 0.03;
+/**
+ * Dashes of patches downstream of a maneuver node: period and lit length on screen. The pattern is laid out
+ * along the path itself (arc length in metres from the node, period a power of two of metres chosen from the
+ * line's depth on screen), so it stays on the path while the camera turns and changes only at octave steps.
+ */
 export const DASH_PERIOD_PX = 20;
 export const DASH_ON_PX = 12;
+/**
+ * Patches that run within this distance of an earlier-drawn, higher-priority patch (planned over current, nearer
+ * in time over later) are not drawn there: coincident laps read as one stroke instead of interleaved dashes.
+ */
+export const COINCIDENT_PX = 3;
 
 /** Hit-testing tolerance for every interactive element. */
 export const HIT_TOLERANCE_PX = 10;
@@ -67,14 +92,29 @@ export const DOUBLE_CLICK_MS = 500;
  * Node panel: nominal size (the DOM panel reports its real size once shown) and the clearance between the node
  * and the panel's nearest edge (outside the gizmo: handle distance + handle radius + margin).
  */
-export const PANEL_WIDTH_PX = 236;
+export const PANEL_WIDTH_PX = 248;
 export const PANEL_HEIGHT_PX = 286;
 export const PANEL_GAP_PX = 86;
 /** Hover tooltip offset from the pointer. */
 export const TOOLTIP_OFFSET_PX = 18;
+/**
+ * The tooltip keeps this clearance from the trajectories (its border on a line hides the line); the cost of a
+ * covered line cell, in CSS px^2 of covered UI per unit of line weight (LineGrid).
+ */
+export const TOOLTIP_LINE_CLEARANCE_PX = 6;
+export const TOOLTIP_LINE_COST = 15;
 
 /** Icons drawn for bodies and vessels whose projected diameter is below this. */
 export const SMALL_OBJECT_PX = 6;
+/**
+ * A body whose projected radius is below this is drawn as a shaded disc icon (its own mean colour, lit from
+ * its sun, a dark casing) above every line, at least BODY_ICON_MIN_RADIUS_PX: at the Earth-Moon overview a
+ * 9 px planet would otherwise vanish under the lines that start and end at it. It owns its icon cluster.
+ */
+export const BODY_ICON_MAX_RADIUS_PX = 12;
+export const BODY_ICON_MIN_RADIUS_PX = 5.5;
+/** Other vessels' orbits are drawn only while their screen size reaches this (or the vessel is hovered). */
+export const ORBIT_MIN_SPAN_PX = 60;
 /** Bodies are named while their projected radius is below this (above it the planet itself is recognisable). */
 export const BODY_LABEL_MAX_RADIUS_PX = 40;
 /** Surface targets appear once their body's projected radius reaches this; their labels from the second value. */
@@ -88,17 +128,21 @@ export const TARGET_LABEL_BODY_PX = 70;
  * of it; unselected nodes are drawn small so a node at periapsis does not cover a small planet.
  */
 export const CLUSTER_PX = 11;
-/** A body takes part in clustering while its projected radius is below this (a speck, not a disc). */
-export const BODY_CLUSTER_MAX_RADIUS_PX = 6;
+/** A body takes part in clustering while it is drawn as an icon (BODY_ICON_MAX_RADIUS_PX). */
+export const BODY_CLUSTER_MAX_RADIUS_PX = BODY_ICON_MAX_RADIUS_PX;
 export const MARKER_MIN_PATCH_PX = 40;
 export const SURFACE_TWIN_MIN_PX = 12;
 export const NODE_SMALL_RADIUS_PX = 5.5;
-/** Line occupancy grid cell for label and panel placement. */
-export const GRID_CELL_PX = 14;
+/** Line occupancy grid cell for label, tooltip and panel placement. */
+export const GRID_CELL_PX = 8;
 /** Label plate padding (horizontal, vertical) and leader line width. */
 export const PLATE_PAD_X_PX = 4;
 export const PLATE_PAD_Y_PX = 1;
 export const LEADER_WIDTH_PX = 1;
+/** A label whose plate is further than this from its icon's edge is tied to it by a leader line. */
+export const LEADER_GAP_PX = 11;
+/** Letter spacing of body names (tracked capitals, no plate). */
+export const BODY_NAME_TRACKING_PX = 1.4;
 
 /** Maneuver-node editing: 1 m/s per 10 px of drag along a handle, Shift x0.1, Ctrl x10. */
 export const DV_PER_PX = 0.1;
@@ -122,11 +166,10 @@ export const NODE_RADIUS_PX = 8;
 export const MARKER_RADIUS_PX = 6.5;
 
 /**
- * Fade of trajectories with time ahead: alpha falls toward FADE_FLOOR while the colour moves FADE_TINT of the
- * way toward white, so a far-future patch keeps its hue (a lighter, quieter tint) instead of turning muddy.
+ * Fade of trajectories with time ahead: alpha alone falls toward FADE_FLOOR, the hue is kept, so a far-future
+ * patch is quieter but still the saturated colour of its patch.
  */
-export const FADE_FLOOR = 0.5;
-export const FADE_TINT = 0.45;
+export const FADE_FLOOR = 0.72;
 /** Current trajectory after the first maneuver node is drawn at this fraction of its alpha. */
 export const AFTER_NODE_DIM = 0.45;
 
@@ -148,6 +191,10 @@ export const COLORS = {
   planned: [hex('#ffd166'), hex('#ff8a65'), hex('#f48fb1'), hex('#c5e1a5')] as readonly Rgba[],
   vesselOrbit: hex('#b8c4d6', 0.45),
   debrisOrbit: hex('#7d879a', 0.2),
+  /** Orbit of the hovered vessel or debris. */
+  hoverOrbit: hex('#f2f7ff', 0.85),
+  /** Body silhouette ring (alpha on the night side; LIMB_DAY_FACTOR of it on the lit side). */
+  limb: hex('#a9bad3', 0.55),
   bodyOrbit: hex('#9aa6e0', 0.55),
   soi: hex('#9aa6e0', 0.28),
   ghost: hex('#9aa6e0', 0.6),
@@ -165,15 +212,18 @@ export const COLORS = {
   prograde: hex('#d7e85a'),
   normal: hex('#e35cf5'),
   radial: hex('#47c8ff'),
-  vessel: hex('#ffffff'),
+  /** The active vessel's chevron: the colour of its own trajectory (COLORS.current[0]). */
+  vessel: hex('#4fc3f7'),
   otherVessel: hex('#c9d3e0'),
   debris: hex('#8a94a6', 0.85),
   body: hex('#c9d3e0'),
   text: hex('#eef4fb'),
   textDim: hex('#aab6c8'),
   halo: hex('#05070b', 0.85),
-  /** Backing plate of every label: masks the lines behind the text. */
-  plate: hex('#070b11', 0.7),
+  /** Backing plate of every label (opaque: nothing behind it reads through the text). */
+  plate: hex('#060a10', 0.95),
+  /** Interior of outline markers (rings, diamonds, the pad square): the line they sit on stops at the glyph. */
+  iconFill: hex('#060a10', 1),
   leader: hex('#aab6c8', 0.55),
   tooltipBg: hex('#0a0f16', 0.96),
   tooltipEdge: hex('#3a4a60', 0.95),

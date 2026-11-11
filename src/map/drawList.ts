@@ -34,6 +34,10 @@ export const ICON = {
   periapsis: 24,
   soiExit: 25,
   nodeHidden: 26,
+  /** A body drawn as an icon: a disc in its own colour, shaded from its sun (aux = the sun's view-space z). */
+  bodyDisc: 27,
+  /** Ring around the hovered object. */
+  hoverRing: 28,
 } as const;
 export type IconId = (typeof ICON)[keyof typeof ICON];
 
@@ -48,6 +52,8 @@ export interface IconInstance {
   color: Rgba;
   /** Multiplies color alpha (occlusion and fades). */
   alpha: number;
+  /** Shape parameter (bodyDisc: view-space z of the sun direction; the rotation points at the sun on screen). */
+  aux: number;
 }
 
 export interface TextRun {
@@ -57,6 +63,8 @@ export interface TextRun {
   text: string;
   color: Rgba;
   alpha: number;
+  /** Extra advance after every glyph, device px (tracked capitals of body names; 0 otherwise). */
+  tracking: number;
 }
 
 /**
@@ -65,7 +73,10 @@ export interface TextRun {
  */
 export interface DrawList {
   scene: MapScene;
-  /** Layer 0: everything; layer 1: hover tooltip on top of everything. */
+  /**
+   * Layer 0, in drawing order: debris dots, label plates and leaders, icons, the gizmo (labels' text after
+   * them); layer 1: the hover tooltip on top of everything.
+   */
   icons: [IconInstance[], IconInstance[]];
   texts: [TextRun[], TextRun[]];
 }
@@ -77,12 +88,12 @@ export interface TextMetricsLike {
   lineHeight: number;
 }
 
-/** Width of a single-line string in device px (sum of the advances, as the renderer lays it out). */
-export function measureText(m: TextMetricsLike, text: string): number {
+/** Width of a single-line string in device px (sum of the advances plus tracking, as the renderer lays it out). */
+export function measureText(m: TextMetricsLike, text: string, tracking = 0): number {
   let w = 0;
   for (let i = 0; i < text.length; i++) w += m.advance(text.charCodeAt(i));
-  return w;
+  return w + tracking * Math.max(0, text.length - 1);
 }
 
 /** Whitespace code units the renderer advances over without drawing a glyph. */
-export const isBlank = (code: number): boolean => code === 32 || code === 0x202f || code === 0x2009;
+export const isBlank = (code: number): boolean => code === 32 || code === 0x202f || code === 0x2009 || code === 0xa0;

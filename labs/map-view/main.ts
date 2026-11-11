@@ -136,7 +136,8 @@ async function boot(): Promise<void> {
     (sceneName === 'lowOrbit' || sceneName === 'lunarOrbit') && orbitW
       ? v3.normalize(v3.add(v3.scale(orbitW, 0.8), v3.scale(v3.normalize(active0.r), 0.6)))
       : v3.normalize(v3.add(moon?.orbit?.W ?? { x: 0, y: 0, z: 1 }, v3.scale(v3.normalize(active0.rRoot), -0.35)));
-  const defaults: Record<string, number> = { lowOrbit: 2.4e7, translunar: 1.25e9, lunarOrbit: 7e6, synthetic: 1.15e9 };
+  // The synthetic overview frames the Moon's orbit to the height of the view (the mission fills the frame).
+  const defaults: Record<string, number> = { lowOrbit: 2.4e7, translunar: 1.25e9, lunarOrbit: 7e6, synthetic: 8.2e8 };
   const cam = {
     focus: { bodyId: focusBody0 as string | undefined, vesselId: undefined as string | undefined },
     yaw: Number(params.get('yaw') ?? Math.atan2(viewDir.y, viewDir.x)),

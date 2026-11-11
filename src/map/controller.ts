@@ -22,7 +22,10 @@ import {
   ARM_ALPHA,
   ARM_WIDTH_PX,
   BODY_CLUSTER_MAX_RADIUS_PX,
+  BODY_ICON_MAX_RADIUS_PX,
+  BODY_ICON_MIN_RADIUS_PX,
   BODY_LABEL_MAX_RADIUS_PX,
+  BODY_NAME_TRACKING_PX,
   CLICK_SLOP_PX,
   CLUSTER_PX,
   COARSE_FACTOR,
@@ -37,6 +40,7 @@ import {
   HIT_TOLERANCE_PX,
   LABEL_GAP_PX,
   LABEL_LINE_PX,
+  LEADER_GAP_PX,
   LEADER_WIDTH_PX,
   MARKER_MIN_PATCH_PX,
   MARKER_RADIUS_PX,
@@ -54,18 +58,20 @@ import {
   SURFACE_TWIN_MIN_PX,
   TARGET_LABEL_BODY_PX,
   TARGET_MIN_BODY_PX,
+  TOOLTIP_LINE_CLEARANCE_PX,
+  TOOLTIP_LINE_COST,
   TOOLTIP_OFFSET_PX,
   WHEEL_DV,
   type Rgba,
 } from './constants';
 import { ICON, measureText, type DrawList, type IconId, type IconInstance, type TextMetricsLike, type TextRun } from './drawList';
-import { formatDistance, formatDuration, formatDv, formatTimeTo } from './format';
+import { formatDistance, formatDv, formatTimeTo } from './format';
 import { layoutGizmo } from './gizmo';
-import { declutter, FAR_RING_PX, markerLabels, type BlockedRect, type LabelBox } from './labels';
+import { declutter, FAR_RING_PX, markerLabels, type BlockedRect, type ClearDisc, type LabelBox } from './labels';
 import { LineGrid } from './lineGrid';
 import { occlusionWeight } from './occlusion';
 import { closestParam2D } from './sampler';
-import { SceneBuilder, type LineRecord, type MapScene, type MarkerItem, type MarkerShape, type NodeItem } from './scene';
+import { SceneBuilder, type LineRecord, type MapScene, type MarkerItem, type MarkerShape, type NodeItem, type VesselItem } from './scene';
 
 export type DvComponent = keyof ManeuverNode['dv'];
 export type HandleName = 'prograde' | 'retrograde' | 'normal' | 'antinormal' | 'radialOut' | 'radialIn';
@@ -197,7 +203,6 @@ export const defaultTextMetrics = (pxScale: number): TextMetricsLike => ({
   advance: (c) => pxScale * (c === 32 ? 3.2 : c === 0x202f ? 1.9 : c >= 48 && c <= 57 ? 7.2 : c >= 65 && c <= 90 ? 7.6 : c >= 97 && c <= 122 ? 6.6 : 5),
 });
 
-/** One icon-with-label candidate of the draw list (bodies, vessels, markers, unselected nodes). */
 /** A cluster of icons: the members' summaries (representative first) and how many debris folded in. */
 interface ClusterGroup {
   summaries: string[];
@@ -209,6 +214,10 @@ interface ClusterGroup {
 /** What a point entry stands for (hover type): body, vessel, marker, node. */
 type PointKind = 'b' | 'v' | 'm' | 'n';
 
+/** Label style: a marker / vessel / node label on an opaque plate, or a body name (tracked capitals, no plate). */
+type LabelStyle = 'plate' | 'body';
+
+/** One icon-with-label candidate of the draw list (bodies, vessels, markers, unselected nodes). */
 interface PointEntry {
   /** Hover identity: kind and the body / vessel / marker / node id. */
   kind: PointKind;
@@ -225,16 +234,18 @@ interface PointEntry {
   color: Rgba;
   alpha: number;
   rot: number;
+  /** Icon shape parameter (IconInstance.aux). */
+  aux: number;
   priority: number;
   label: string[];
   labelColor: Rgba;
-  labelAlpha: number;
+  labelStyle: LabelStyle;
   clear: number;
   /** Takes part in clustering. */
   cluster: boolean;
   /** Preference as a cluster's representative: a body, then the active vessel, then the label priority. */
   rank: number;
-  /** A debris dot: folds into clusters silently (counted in the tooltip, not in the badge). */
+  /** A debris dot: folds into clusters silently (counted in the tooltip, not in the badge), drawn under the plates. */
   debris: boolean;
   /** One line for a cluster tooltip. */
   summary: string;
@@ -248,7 +259,19 @@ interface LabelEntry {
   box: LabelBox;
   lines: string[];
   color: Rgba;
-  alpha: number;
+  style: LabelStyle;
+}
+
+/** A label's first line in the colour of its marker, lightened toward white so it stays legible (cached per colour). */
+const LABEL_TINTS = new Map<Rgba, Rgba>();
+function labelTint(c: Rgba): Rgba {
+  let t = LABEL_TINTS.get(c);
+  if (!t) {
+    const m = 0.5;
+    t = [c[0] + (1 - c[0]) * m, c[1] + (1 - c[1]) * m, c[2] + (1 - c[2]) * m, 1];
+    LABEL_TINTS.set(c, t);
+  }
+  return t;
 }
 
 const NO_LINES: string[] = [];
@@ -305,7 +328,7 @@ export class MapController implements MapView {
     nIcons: 0,
     texts: [] as TextRun[],
     nTexts: 0,
-    discs: [] as { x: number; y: number; r: number }[],
+    discs: [] as ClearDisc[],
     nDiscs: 0,
     entries: [] as LabelEntry[],
     nBoxes: 0,
@@ -320,7 +343,8 @@ export class MapController implements MapView {
     pi: new Int32Array(64),
     groups: [] as ClusterGroup[],
     stamp: 0,
-    /** icons, gizmo, top layer, plates, and layer 0 in drawing order (plates, icons, gizmo) */
+    /** debris dots, icons, gizmo, top layer, plates, and layer 0 in drawing order (dots, plates, icons, gizmo) */
+    dots: [] as IconInstance[],
     icons0: [] as IconInstance[],
     gizmo: [] as IconInstance[],
     top: [] as IconInstance[],
@@ -330,8 +354,12 @@ export class MapController implements MapView {
     topTexts: [] as TextRun[],
     labels: [] as LabelEntry[],
     boxes: [] as LabelBox[],
-    clearIcons: [] as { x: number; y: number; r: number }[],
+    clearIcons: [] as ClearDisc[],
   };
+  /** Label lines of the active vessel with an apsis folded in, by text (kept: no per-frame arrays). */
+  private readonly vesselLines = new Map<string, string[]>();
+  /** Upper-case body names, by name. */
+  private readonly bodyNames = new Map<string, string[]>();
   /** Hover tooltip of the last draw list (CSS px), for tests. */
   private tooltip: ScreenRect | null = null;
   private consumed = false;
@@ -687,7 +715,7 @@ export class MapController implements MapView {
     const sel = this.selected ? scene.nodes.find((n) => n.id === this.selected) : undefined;
     if (sel && sel.front) for (const h of this.handleLayout(sel, scene)) consider({ type: 'handle', d: edge(h.x, h.y, HANDLE_RADIUS_PX), handle: h, node: sel });
     for (const n of scene.nodes) if (n.front && (n.hidden < 0.5 || n.id === this.selected)) consider({ type: 'node', d: edge(n.x, n.y, n.id === this.selected ? NODE_RADIUS_PX : NODE_SMALL_RADIUS_PX + 1), node: n });
-    for (const v of scene.vessels) if (v.front && v.hidden < 0.5) consider({ type: 'vessel', d: edge(v.x, v.y, v.active ? 7 : 4), id: v.vesselId });
+    for (const v of scene.vessels) if (v.front && v.hidden < 0.5) consider({ type: 'vessel', d: edge(v.x, v.y, v.active ? 9.5 : v.debris ? 3 : 7), id: v.vesselId });
     if (withMarkers) {
       for (const m of scene.markers) {
         if (m.front && m.hidden < 0.5 && m.details.length > 0) consider({ type: 'marker', d: edge(m.x, m.y, MARKER_RADIUS_PX), id: m.id });
@@ -1024,7 +1052,8 @@ export class MapController implements MapView {
       const x = Math.max(8, Math.min(W - pw - 8, raw[c]![0]));
       const y = Math.max(8, Math.min(H - ph - 8, raw[c]![1]));
       const r: BlockedRect = { x0: x * k, y0: y * k, x1: (x + pw) * k, y1: (y + ph) * k };
-      let score = this.grid.cost(r.x0, r.y0, r.x1, r.y1);
+      // covered line weight per 14 px cell (the weights below were set for that cell size)
+      let score = this.grid.cost(r.x0, r.y0, r.x1, r.y1) * (GRID_CELL_PX / 14) ** 2;
       // the gizmo (a disc around the node) and every handle must stay uncovered
       const cx = Math.max(x, Math.min(nx, x + pw));
       const cy = Math.max(y, Math.min(ny, y + ph));
@@ -1054,10 +1083,10 @@ export class MapController implements MapView {
   }
 
   /** Pooled icon of the draw list being built (valid until the next draw list). */
-  private icon(list: IconInstance[], x: number, y: number, hx: number, hy: number, rot: number, shape: IconId, color: Rgba, alpha: number): void {
+  private icon(list: IconInstance[], x: number, y: number, hx: number, hy: number, rot: number, shape: IconId, color: Rgba, alpha: number, aux = 0): void {
     const p = this.pool;
     let o = p.icons[p.nIcons];
-    if (!o) p.icons.push((o = { x, y, hx, hy, rot, shape, color, alpha }));
+    if (!o) p.icons.push((o = { x, y, hx, hy, rot, shape, color, alpha, aux }));
     p.nIcons++;
     o.x = x;
     o.y = y;
@@ -1067,37 +1096,44 @@ export class MapController implements MapView {
     o.shape = shape;
     o.color = color;
     o.alpha = alpha;
+    o.aux = aux;
     list.push(o);
   }
 
-  private text(list: TextRun[], x: number, y: number, text: string, color: Rgba, alpha: number): void {
+  private text(list: TextRun[], x: number, y: number, text: string, color: Rgba, alpha: number, tracking = 0): void {
     const p = this.pool;
     let o = p.texts[p.nTexts];
-    if (!o) p.texts.push((o = { x, y, text, color, alpha }));
+    if (!o) p.texts.push((o = { x, y, text, color, alpha, tracking }));
     p.nTexts++;
     o.x = x;
     o.y = y;
     o.text = text;
     o.color = color;
     o.alpha = alpha;
+    o.tracking = tracking;
     list.push(o);
   }
 
-  /** A disc labels keep clear of (pooled). */
-  private clear(x: number, y: number, r: number): void {
+  /** A disc labels keep clear of (pooled); `pair`: an icon a nearby label could be mistaken to belong to. */
+  private clear(x: number, y: number, r: number, pair = false): void {
     const p = this.pool;
     let o = p.discs[p.nDiscs];
-    if (!o) p.discs.push((o = { x, y, r }));
+    if (!o) p.discs.push((o = { x, y, r, pair }));
     p.nDiscs++;
     o.x = x;
     o.y = y;
     o.r = r;
+    o.pair = pair;
     p.clearIcons.push(o);
   }
 
   /**
    * The draw list of a scene. Its arrays and the icon and text objects in them are pooled: a draw list is valid
    * until the next one is built (the renderer uploads it in the same prepare()).
+   *
+   * Visibility is binary: an icon or label is drawn at full strength while its anchor is in front and not
+   * behind a body (hidden < 0.5), otherwise not at all (a selected node keeps its gizmo, an unselected one a
+   * dashed ring). Only the lines fade over the 1.5 px limb ramp.
    */
   private buildDrawList(scene: MapScene): DrawList {
     const proj = scene.proj;
@@ -1109,8 +1145,8 @@ export class MapController implements MapView {
     pool.nTexts = 0;
     pool.nDiscs = 0;
     pool.nBoxes = 0;
-    const { icons0: icons, gizmo, top, plates, all, texts0: texts, topTexts } = pool;
-    for (const l of [icons, gizmo, top, plates, all]) l.length = 0;
+    const { dots, icons0: icons, gizmo, top, plates, all, texts0: texts, topTexts } = pool;
+    for (const l of [dots, icons, gizmo, top, plates, all]) l.length = 0;
     texts.length = 0;
     topTexts.length = 0;
     const labels = pool.labels;
@@ -1122,6 +1158,7 @@ export class MapController implements MapView {
     const onScreen = (x: number, y: number, front: boolean): boolean => front && proj.onScreen(x, y, 24 * k);
     const padX = PLATE_PAD_X_PX * k;
     const padY = PLATE_PAD_Y_PX * k;
+    const bodyTracking = BODY_NAME_TRACKING_PX * k;
     // label widths by text (the strings come from caches, so the same ones recur frame after frame)
     if (this.widthScale !== k || this.widths.size > 1024) {
       this.widths.clear();
@@ -1132,12 +1169,13 @@ export class MapController implements MapView {
       if (w === undefined) this.widths.set(text, (w = measureText(tm, text)));
       return w;
     };
-    const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, alpha: number, nx = 0, ny = 0): void => {
-      if (lines.length === 0 || alpha < 0.05) return;
+    const addLabel = (ax: number, ay: number, clear: number, lines: string[], priority: number, color: Rgba, style: LabelStyle, nx = 0, ny = 0): void => {
+      if (lines.length === 0) return;
+      const tracking = style === 'body' ? bodyTracking : 0;
       let width = 0;
-      for (const l of lines) width = Math.max(width, widthOf(l));
+      for (const l of lines) width = Math.max(width, widthOf(l) + tracking * Math.max(0, l.length - 1));
       let e = pool.entries[pool.nBoxes];
-      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false, nx: 0, ny: 0 }, lines, color, alpha }));
+      if (!e) pool.entries.push((e = { box: { ax, ay, clear, width: 0, height: 0, priority, x: 0, y: 0, placed: false, far: false, nx: 0, ny: 0 }, lines, color, style }));
       pool.nBoxes++;
       const box = e.box;
       box.ax = ax;
@@ -1152,13 +1190,15 @@ export class MapController implements MapView {
       box.ny = ny;
       e.lines = lines;
       e.color = color;
-      e.alpha = alpha;
+      e.style = style;
       boxes.push(box);
       labels.push(e);
     };
 
     // ---- other UI (HUD panels) the map keeps clear of
     const rects: BlockedRect[] = this.obstacles.map((o) => ({ x0: o.x0 * k, y0: o.y0 * k, x1: o.x1 * k, y1: o.y1 * k }));
+    // ---- where the lines are: labels, the tooltip and the node panel keep off the trajectories
+    this.grid.build(scene, GRID_CELL_PX * k);
 
     // ---- the selected node: gizmo layout, then the node panel placed off it and off the trajectory
     const selNode = this.selected ? s.nodes.find((n) => n.id === this.selected) : undefined;
@@ -1168,18 +1208,17 @@ export class MapController implements MapView {
     let panel: BlockedRect | null = null;
     this.panelAt = null;
     if (selNode) {
-      this.grid.build(scene, GRID_CELL_PX * k);
       const at = this.placePanel(scene, selShown ? sel : undefined, handles, rects);
       this.panelAt = at;
       panel = { x0: at.x * k, y0: at.y * k, x1: (at.x + this.panelSize[0]) * k, y1: (at.y + this.panelSize[1]) * k };
       rects.push(panel);
     }
     const underPanel = (x: number, y: number): boolean => panel !== null && x > panel.x0 && x < panel.x1 && y > panel.y0 && y < panel.y1;
-    // Icons the selected node's disc covers are left out (their tooltip is unreachable there anyway).
+    // Icons the selected node's disc would overlap are left out (their tooltip is unreachable there anyway).
     const selX = selShown ? sel.x : NaN;
     const selY = selShown ? sel.y : NaN;
-    const selR2 = ((NODE_RADIUS_PX + 3) * k) ** 2;
-    const underSelected = (x: number, y: number): boolean => selShown && (x - selX) ** 2 + (y - selY) ** 2 < selR2;
+    const selR = (NODE_RADIUS_PX * 1.1 + 1.5) * k;
+    const underSelected = (x: number, y: number, r: number): boolean => selShown && (x - selX) ** 2 + (y - selY) ** 2 < (selR + r) ** 2;
 
     // ---- point entries: bodies, vessels, markers, unselected nodes (pooled objects, no per-frame strings)
     const pts = pool.pts;
@@ -1187,7 +1226,7 @@ export class MapController implements MapView {
     pool.nPoints = 0;
     const point = (kind: PointKind, id: string, bodyId: string, x: number, y: number, r: number, shape: IconId, color: Rgba, alpha: number, rank: number, summary: string): PointEntry => {
       let e = pool.points[pool.nPoints];
-      if (!e) pool.points.push((e = { kind, id, bodyId, tx: 0, ty: 0, x, y, r, shape, color, alpha, rot: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelAlpha: 0, clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
+      if (!e) pool.points.push((e = { kind, id, bodyId, tx: 0, ty: 0, x, y, r, shape, color, alpha, rot: 0, aux: 0, priority: 0, label: NO_LINES, labelColor: COLORS.text, labelStyle: 'plate', clear: 0, cluster: true, rank, debris: false, summary, others: 0, group: null }));
       e.kind = kind;
       e.id = id;
       e.bodyId = bodyId;
@@ -1200,10 +1239,11 @@ export class MapController implements MapView {
       e.color = color;
       e.alpha = alpha;
       e.rot = 0;
+      e.aux = 0;
       e.priority = 0;
       e.label = NO_LINES;
       e.labelColor = COLORS.text;
-      e.labelAlpha = 0;
+      e.labelStyle = 'plate';
       e.clear = r;
       e.cluster = true;
       e.rank = rank;
@@ -1214,7 +1254,7 @@ export class MapController implements MapView {
       return e;
     };
     const commit = (e: PointEntry): void => {
-      if (underPanel(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y))) return;
+      if (underPanel(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y, e.r))) return;
       pool.nPoints++;
       pts.push(e);
     };
@@ -1227,69 +1267,101 @@ export class MapController implements MapView {
       return l;
     };
     for (const b of scene.bodies) {
-      if (!onScreen(b.x, b.y, b.front)) continue;
-      const a = 1 - b.hidden;
-      if (a < 0.05) continue;
+      if (!onScreen(b.x, b.y, b.front) || b.hidden >= 0.5) continue;
+      // A body too small to recognise is a shaded disc icon above every line (its own colour, lit from its sun).
+      const iconBody = !b.ghost && b.radiusPx < BODY_ICON_MAX_RADIUS_PX * k;
       const named = b.radiusPx < BODY_LABEL_MAX_RADIUS_PX * k;
-      if (!b.small && !named && !b.ghost) continue;
-      const r = b.small ? 6 * k : 0;
-      const e = point('b', b.bodyId, b.bodyId, b.x, b.y, r, ICON.bodyRing, b.ghost ? COLORS.ghost : COLORS.body, a, 1000, b.label);
+      if (!iconBody && !named && !b.ghost) continue;
+      const r = iconBody ? Math.max(BODY_ICON_MIN_RADIUS_PX * k, b.radiusPx + 0.75 * k) : b.small ? 6 * k : 0;
+      const e = point('b', b.bodyId, b.bodyId, b.x, b.y, r, iconBody ? ICON.bodyDisc : ICON.bodyRing, iconBody ? b.tint : COLORS.ghost, 1, 1000, b.label);
+      if (iconBody) {
+        // the icon frame's +x points at the sun on screen; aux is the sun's depth component (2 = a star: unshaded)
+        e.rot = Math.atan2(-b.sunY, b.sunX);
+        e.aux = b.star ? 2 : b.sunZ;
+      }
       e.priority = b.ghost ? 2 : 9.5;
-      e.label = oneLine(b.label);
-      e.labelColor = b.ghost ? COLORS.textDim : COLORS.text;
-      e.labelAlpha = a;
+      if (b.ghost) {
+        e.label = oneLine(b.label);
+        e.labelColor = COLORS.textDim;
+      } else {
+        let name = this.bodyNames.get(b.label);
+        if (!name) this.bodyNames.set(b.label, (name = [b.label.toUpperCase()]));
+        e.label = name;
+        e.labelStyle = 'body';
+      }
       e.clear = Math.max(r, b.radiusPx + 2 * k);
-      // A body takes part while it is a speck: what sits on it then folds into it instead of hiding it.
-      e.cluster = b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k;
+      // A body takes part while it is an icon: what sits on it then folds into it instead of hiding it.
+      e.cluster = b.radiusPx < BODY_CLUSTER_MAX_RADIUS_PX * k && r > 0;
       commit(e);
     }
+    let activeEntry: PointEntry | null = null;
+    let activeVessel: VesselItem | null = null;
+    const hoveredId = this.hover?.type === 'vessel' ? this.hover.id : null;
     for (const v of scene.vessels) {
-      if (!onScreen(v.x, v.y, v.front)) continue;
-      const a = 1 - v.hidden;
+      if (!onScreen(v.x, v.y, v.front) || v.hidden >= 0.5) continue;
       if (v.debris) {
-        // Debris are dots (their orbit is drawn on hover); labels may pass over them.
-        const e = point('v', v.vesselId, v.bodyId, v.x, v.y, 3 * k, ICON.debris, COLORS.debris, a, 0, v.name);
+        // Debris are dots under the label plates (their orbit is drawn on hover); labels may pass over them.
+        const e = point('v', v.vesselId, v.bodyId, v.x, v.y, 3 * k, ICON.debris, COLORS.debris, 1, 0, v.name);
         e.clear = 0;
         e.debris = true;
         commit(e);
         continue;
       }
-      const r = (v.active ? 7.5 : 6) * k;
-      const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? a : a * 0.85, v.active ? 500 : 1, v.name);
+      const r = (v.active ? 9.5 : 7) * k;
+      const e = point('v', v.vesselId, v.bodyId, v.x, v.y, r, ICON.vessel, v.active ? COLORS.vessel : COLORS.otherVessel, v.active ? 1 : 0.9, v.active ? 500 : 1, v.name);
       e.rot = v.dirX === 0 && v.dirY === 0 ? -Math.PI / 2 : Math.atan2(v.dirY, v.dirX);
       e.tx = v.dirX;
       e.ty = v.dirY;
-      e.priority = v.active ? 5 : 1;
+      e.priority = v.active ? 8.5 : 1;
       e.label = oneLine(v.name);
-      e.labelAlpha = e.alpha;
+      if (v.active) {
+        e.labelColor = labelTint(COLORS.vessel);
+        activeEntry = e;
+        activeVessel = v;
+      }
       commit(e);
     }
+    let vesselApsis: string[] | null = null;
     for (const m of scene.markers) {
-      if (!onScreen(m.x, m.y, m.front)) continue;
-      const a = 1 - m.hidden;
-      if (a < 0.01) continue;
+      if (!onScreen(m.x, m.y, m.front) || m.hidden >= 0.5) continue;
       // Apsis and node-line markers of a patch a few pixels across say nothing and bury its body.
       if (m.kind === 'apoapsis' || m.kind === 'periapsis' || m.kind === 'ascendingNode' || m.kind === 'descendingNode') {
         const line = patchLine(scene, m.patchKey.list, m.patchKey.index);
         if (line && line.span < MARKER_MIN_PATCH_PX * k) continue;
       }
-      const surface = m.kind === 'impactSurface' || m.kind === 'entrySurface';
-      if (surface) {
+      const twin = m.kind === 'impactSurface' || m.kind === 'entrySurface' || m.kind === 'patchStart';
+      if (twin) {
+        // ground points and patch-start ticks next to their trajectory marker add nothing
         const parent = m.parent;
         if (parent && parent.front && parent.hidden < 0.5 && (parent.x - m.x) ** 2 + (parent.y - m.y) ** 2 < (SURFACE_TWIN_MIN_PX * k) ** 2) continue;
       }
-      const r = (surface ? 5 : MARKER_RADIUS_PX) * k;
-      const e = point('m', m.id, m.marker.bodyId, m.x, m.y, r, shapeIcon(m.shape), m.color, a, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
+      // The apsis the active vessel sits at is not folded into its icon: it is printed as the vessel label's
+      // second line (in a near-circular orbit the vessel is often at its periapsis).
+      if (activeEntry && activeVessel && (m.kind === 'periapsis' || m.kind === 'apoapsis') && m.patchKey.list === 'current' && m.marker.bodyId === activeVessel.bodyId && m.label.length > 0 && (m.x - activeEntry.x) ** 2 + (m.y - activeEntry.y) ** 2 < (CLUSTER_PX * k) ** 2) {
+        if (!vesselApsis) {
+          const second = `${m.label[0]}  ${m.label[1] ?? ''}`.trim();
+          const key = `${activeVessel.name}\n${second}`;
+          vesselApsis = this.vesselLines.get(key) ?? null;
+          if (!vesselApsis) {
+            if (this.vesselLines.size > 64) this.vesselLines.clear();
+            this.vesselLines.set(key, (vesselApsis = [activeVessel.name, second]));
+          }
+        }
+        continue;
+      }
+      const r = (m.kind === 'patchStart' ? 4.5 : twin ? 5 : MARKER_RADIUS_PX) * k;
+      const e = point('m', m.id, m.marker.bodyId, m.x, m.y, r, shapeIcon(m.shape), m.color, 1, m.priority, m.label[0] ?? m.details[0] ?? m.kind);
       e.priority = m.priority;
-      if (!surface) {
+      if (!twin) {
         this.tangentAt(scene, m.patchKey.list, m.patchKey.index, m.marker.ut);
         e.tx = this.tangent.x;
         e.ty = this.tangent.y;
       }
       e.label = m.label;
-      e.labelAlpha = a;
+      e.labelColor = labelTint(m.color);
       commit(e);
     }
+    if (activeEntry && vesselApsis) activeEntry.label = vesselApsis;
     const sortedNodes = this.nodesByTime(s);
     const nodeLabel = (n: NodeItem): string[] => {
       const node = n.loc.node;
@@ -1303,15 +1375,15 @@ export class MapController implements MapView {
     };
     for (const n of scene.nodes) {
       if (n.id === this.selected || !onScreen(n.x, n.y, n.front)) continue;
-      const a = Math.max(0.35, 1 - n.hidden);
+      const behind = n.hidden >= 0.5;
       const label = nodeLabel(n);
-      const e = point('n', n.id, n.loc.patch.bodyId, n.x, n.y, NODE_SMALL_RADIUS_PX * k, n.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, a, 9, label[0]!);
+      const e = point('n', n.id, n.loc.patch.bodyId, n.x, n.y, NODE_SMALL_RADIUS_PX * k, behind ? ICON.nodeHidden : ICON.node, COLORS.node, behind ? 0.6 : 1, 9, label[0]!);
       e.priority = 9;
       this.tangentAt(scene, n.loc.key.list, n.loc.key.index, n.loc.node.ut);
       e.tx = this.tangent.x;
       e.ty = this.tangent.y;
       e.label = label;
-      e.labelAlpha = a;
+      e.labelColor = labelTint(COLORS.node);
       commit(e);
     }
 
@@ -1357,13 +1429,17 @@ export class MapController implements MapView {
     for (let a = 0; a < m; a++) {
       const ax = qx[a]!;
       const ay = qy[a]!;
+      // a body icon is larger than the others: its cluster reaches to its edge
+      const ra = pts[qi[a]!]!.shape === ICON.bodyDisc ? pts[qi[a]!]!.r : 0;
       for (let b = a + 1; b < m; b++) {
         const dx = ax - qx[b]!;
         const dy = ay - qy[b]!;
-        if (dx * dx + dy * dy < reach2) {
-          const ra = find(qi[a]!);
-          const rb = find(qi[b]!);
-          if (ra !== rb) parent[rb] = ra;
+        const rb = pts[qi[b]!]!.shape === ICON.bodyDisc ? pts[qi[b]!]!.r : 0;
+        const lim = reach + ra + rb;
+        if (dx * dx + dy * dy < (ra + rb > 0 ? lim * lim : reach2)) {
+          const r0 = find(qi[a]!);
+          const r1 = find(qi[b]!);
+          if (r0 !== r1) parent[r1] = r0;
         }
       }
     }
@@ -1402,40 +1478,51 @@ export class MapController implements MapView {
       if (g.stamp === stamp && parent[i] === i) pts[rep[i]!]!.others = size[i]! - 1 - g.debris;
     }
 
-    // ---- icons and labels of what is left; a count badge on each cluster
-    for (const p of pts) {
-      if (p.others < 0) continue;
-      if (p.r > 0 && p.alpha >= 0.01) {
-        this.icon(icons, p.x, p.y, p.r, p.r, p.rot, p.shape, p.color, p.alpha);
-        if (!p.debris) this.clear(p.x, p.y, p.r * 0.95);
+    // ---- icons and labels of what is left; a count badge on the upper-right corner of each cluster's icon. An
+    // event folded into a cluster (an impact or atmosphere entry on a body drawn as an icon, a node) keeps its
+    // label, set beside the cluster's icon.
+    for (let i = 0; i < n; i++) {
+      const p = pts[i]!;
+      if (p.others < 0) {
+        if (p.priority >= 7.5 && p.label.length > 0) {
+          const r = pts[rep[find(i)]!]!;
+          const side = this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
+          addLabel(r.x, r.y, r.clear, p.label, p.priority - 0.5, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
+        }
+        continue;
+      }
+      if (p.r > 0) {
+        this.icon(p.debris ? dots : icons, p.x, p.y, p.r, p.r, p.rot, p.shape, p.color, p.alpha, p.aux);
+        if (p.debris && p.kind === 'v' && p.id === hoveredId) this.icon(icons, p.x, p.y, 7 * k, 7 * k, 0, ICON.hoverRing, COLORS.hover, 1);
+        if (!p.debris) this.clear(p.x, p.y, p.r * 0.95, true);
       }
       if (p.others > 0) {
         const text = BADGES[p.others] ?? `+${p.others}`;
         const w = widthOf(text) + 6 * k;
         const h = tm.lineHeight - 2 * k;
-        const bx = p.x + Math.max(p.r, 3 * k) + 2 * k;
-        const by = p.y - Math.max(p.r, 3 * k) - h + 4 * k;
+        // its lower-left corner 2 px inside the icon's bounding box: it sits on the icon it counts for
+        const corner = Math.max(p.r, 3 * k);
+        const bx = p.x + corner - 2 * k;
+        const by = p.y - corner - h + 2 * k;
         this.icon(icons, bx + w / 2, by + h / 2, w / 2, h / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
         this.text(texts, bx + 3 * k, by - 1 * k, text, COLORS.node, 1);
         rects.push({ x0: bx, y0: by, x1: bx + w, y1: by + h });
       }
       const side = p.kind === 'b' ? null : this.labelSide(scene, p.bodyId, p.x, p.y, p.tx, p.ty);
-      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelAlpha, side ? side.x : 0, side ? side.y : 0);
+      addLabel(p.x, p.y, p.clear, p.label, p.priority, p.labelColor, p.labelStyle, side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- surface targets, once their body is big enough on screen to place them meaningfully
     for (const t of scene.targets) {
-      if (!onScreen(t.x, t.y, t.front) || underPanel(t.x, t.y)) continue;
+      if (!onScreen(t.x, t.y, t.front) || t.hidden >= 0.5 || underPanel(t.x, t.y)) continue;
       const rPx = this.bodyRadiusCss(scene, t.target.bodyId);
       if (rPx < TARGET_MIN_BODY_PX) continue;
-      const a = (1 - t.hidden) * Math.min(1, (rPx - TARGET_MIN_BODY_PX) / 10);
-      if (a < 0.01) continue;
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
       const r = (t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5) * k;
       const y = t.shape === 'pin' ? t.y - 9 * k : t.y;
-      this.icon(icons, t.x, y, r, r, 0, shape, t.color, a);
-      this.clear(t.x, y, r * 0.9);
-      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r, [t.target.name], t.target.kind === 'landing' ? 7 : 1, COLORS.text, a);
+      this.icon(icons, t.x, y, r, r, 0, shape, t.color, 1);
+      this.clear(t.x, y, r * 0.9, true);
+      if (rPx >= TARGET_LABEL_BODY_PX || t.target.kind === 'landing') addLabel(t.x, t.y, r, oneLine(t.target.name), t.target.kind === 'landing' ? 7 : 1, labelTint(t.color), 'plate');
     }
 
     // ---- the selected node: an interface control, always on top at full strength. That it lies behind a
@@ -1460,10 +1547,10 @@ export class MapController implements MapView {
       }
       const r = NODE_RADIUS_PX * 1.1 * k;
       this.icon(gizmo, sel.x, sel.y, r, r, 0, sel.hidden >= 0.5 ? ICON.nodeHidden : ICON.node, COLORS.node, 1);
-      this.clear(sel.x, sel.y, r);
+      this.clear(sel.x, sel.y, r, true);
       this.tangentAt(scene, sel.loc.key.list, sel.loc.key.index, sel.loc.node.ut);
       const side = this.labelSide(scene, sel.loc.patch.bodyId, sel.x, sel.y, this.tangent.x, this.tangent.y);
-      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
+      addLabel(sel.x, sel.y, r, nodeLabel(sel), 9.5, labelTint(COLORS.node), 'plate', side ? side.x : 0, side ? side.y : 0);
     }
 
     // ---- add-maneuver preview where the pointer hovers a trajectory
@@ -1478,12 +1565,12 @@ export class MapController implements MapView {
         const ut = utAtTrueAnomaly(line.patch, line.curve.uToNu(hv.u));
         this.tangentAt(scene, line.patchKey!.list, line.patchKey!.index, ut);
         const side = this.labelSide(scene, line.patch.bodyId, p.x, p.y, this.tangent.x, this.tangent.y);
-        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 1, side ? side.x : 0, side ? side.y : 0);
+        addLabel(p.x, p.y, r, ['Add maneuver', formatTimeTo(ut - s.ut)], 10, COLORS.text, 'plate', side ? side.x : 0, side ? side.y : 0);
       }
     }
 
     // ---- hover tooltip: in the quadrant around the pointer that covers neither the panel, nor a handle, nor
-    // other UI; labels then keep clear of it (none is cut through)
+    // other UI, and keeps its edges off the drawn trajectories; labels then keep clear of it (none is cut through)
     this.tooltip = null;
     const tip = this.tooltipLines(scene);
     if (tip && this.hoverPos) {
@@ -1494,12 +1581,13 @@ export class MapController implements MapView {
       const off = TOOLTIP_OFFSET_PX * k;
       const hx = this.hoverPos.x;
       const hy = this.hoverPos.y;
+      const clearance = TOOLTIP_LINE_CLEARANCE_PX * k;
       let best = Infinity;
       let tx = 0;
       let ty = 0;
       // The four quadrants beside the pointer, then further out (past a gizmo the pointer is inside of).
       for (const reach of [off, off + 40 * k, off + 80 * k]) {
-        for (const [qx, qy] of [
+        for (const [cx, cy] of [
           [hx + reach, hy + off],
           [hx - reach - width, hy + off],
           [hx + reach, hy - off - height],
@@ -1507,13 +1595,15 @@ export class MapController implements MapView {
           [hx + off, hy + reach],
           [hx - off - width, hy - reach - height],
         ] as const) {
-          const x = Math.round(Math.max(0, Math.min(proj.width - width, qx)));
-          const y = Math.round(Math.max(0, Math.min(proj.height - height, qy)));
+          const x = Math.round(Math.max(0, Math.min(proj.width - width, cx)));
+          const y = Math.round(Math.max(0, Math.min(proj.height - height, cy)));
           const r: BlockedRect = { x0: x, y0: y, x1: x + width, y1: y + height };
           // clamping that moved the box over the pointer counts against it
           let cover = hx > x - 4 * k && hx < x + width + 4 * k && hy > y - 4 * k && hy < y + height + 4 * k ? 1e6 : 0;
           for (const o of rects) cover += rectsOverlap(r, o);
           for (const h of handles) cover += rectsOverlap(r, { x0: h.x - 12 * k, y0: h.y - 12 * k, x1: h.x + 12 * k, y1: h.y + 12 * k });
+          // trajectories under the box or within a few pixels of its edges (a border on a line hides the line)
+          cover += TOOLTIP_LINE_COST * k * k * this.grid.cost(x - clearance, y - clearance, x + width + clearance, y + height + clearance);
           if (cover < best) {
             best = cover;
             tx = x;
@@ -1529,29 +1619,31 @@ export class MapController implements MapView {
     }
 
     // ---- de-clutter: labels keep clear of icons, of each other and of every blocked rectangle, and off the lines
-    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, FAR_RING_PX * k);
+    declutter(boxes, clearIcons, proj, LABEL_GAP_PX * k, rects, FAR_RING_PX * k, this.grid);
+    const leaderGap = LEADER_GAP_PX * k;
     for (const l of labels) {
       const b = l.box;
       if (!b.placed) continue;
-      this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, COLORS.plate, l.alpha);
-      if (b.far) {
-        // Leader from the anchor's edge to the nearest point of the plate.
-        const nx = Math.max(b.x, Math.min(b.ax, b.x + b.width));
-        const ny = Math.max(b.y, Math.min(b.ay, b.y + b.height));
-        const dx = nx - b.ax;
-        const dy = ny - b.ay;
-        const d = Math.hypot(dx, dy);
-        const r0 = b.clear + 2 * k;
-        if (d > r0 + 2 * k) {
-          const ux = dx / d;
-          const uy = dy / d;
-          this.icon(plates, b.ax + ux * (r0 + d) * 0.5, b.ay + uy * (r0 + d) * 0.5, (d - r0) / 2, (LEADER_WIDTH_PX / 2) * k, Math.atan2(uy, ux), ICON.bar, COLORS.leader, l.alpha);
-        }
+      const body = l.style === 'body';
+      if (!body) this.icon(plates, b.x + b.width / 2, b.y + b.height / 2, b.width / 2, b.height / 2, 0, ICON.plate, COLORS.plate, 1);
+      // A label set away from its icon is tied to it: a leader from the icon's edge to the nearest point of the plate.
+      const nx = Math.max(b.x, Math.min(b.ax, b.x + b.width));
+      const ny = Math.max(b.y, Math.min(b.ay, b.y + b.height));
+      const dx = nx - b.ax;
+      const dy = ny - b.ay;
+      const d = Math.hypot(dx, dy);
+      const r0 = b.clear + 1.5 * k;
+      if (d - b.clear > leaderGap && d > r0 + 2 * k) {
+        const ux = dx / d;
+        const uy = dy / d;
+        this.icon(plates, b.ax + ux * (r0 + d) * 0.5, b.ay + uy * (r0 + d) * 0.5, (d - r0) / 2, (LEADER_WIDTH_PX / 2) * k, Math.atan2(uy, ux), ICON.bar, COLORS.leader, 1);
       }
+      const tracking = body ? bodyTracking : 0;
       for (let i = 0; i < l.lines.length; i++) {
-        this.text(texts, b.x + padX, b.y + padY + i * tm.lineHeight, l.lines[i]!, i === 0 ? l.color : COLORS.textDim, l.alpha);
+        this.text(texts, b.x + padX, b.y + padY + i * tm.lineHeight, l.lines[i]!, i === 0 ? l.color : COLORS.textDim, 1, tracking);
       }
     }
+    for (const o of dots) all.push(o);
     for (const o of plates) all.push(o);
     for (const o of icons) all.push(o);
     for (const o of gizmo) all.push(o);
@@ -1601,7 +1693,7 @@ export class MapController implements MapView {
         `Normal ${formatDv(node.dv.normal)}`,
         `Radial ${formatDv(node.dv.radial)}`,
         `Total ${formatDv(Math.hypot(node.dv.prograde, node.dv.normal, node.dv.radial))}`,
-        `In ${formatDuration(node.ut - s.ut)}`,
+        formatTimeTo(node.ut - s.ut),
         'Click to edit',
       ];
     }

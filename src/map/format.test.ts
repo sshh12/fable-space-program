@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDurationField, parseDuration, parseNumber } from './format';
+import { formatDurationField, formatTimeTo, formatUtDate, parseDuration, parseNumber, parseUtDate } from './format';
 
 describe('panel field parsing', () => {
   it('reads durations in seconds, clock form and unit form, with an optional T- or "in" prefix', () => {
@@ -24,9 +24,29 @@ describe('panel field parsing', () => {
       const text = formatDurationField(s);
       expect(parseDuration(text), text).toBeCloseTo(Math.round(s * 10) / 10, 6);
     }
-    expect(formatDurationField(3723.4)).toBe('1h 02m 03.4s');
-    expect(formatDurationField(245)).toBe('4m 05.0s');
-    expect(formatDurationField(12.5)).toBe('12.5s');
+    // the HUD's countdown notation (minus sign, no-break space), to a tenth of a second
+    expect(formatDurationField(3723.4)).toBe('T− 1:02:03.4');
+    expect(formatDurationField(245)).toBe('T− 4:05.0');
+    expect(formatDurationField(12.5)).toBe('T− 0:12.5');
+    expect(formatDurationField(2 * 86400 + 3 * 3600 + 4 * 60 + 5)).toBe('T− 2d 03:04:05.0');
+    expect(parseDuration('2d 03:04:05')).toBe(2 * 86400 + 3 * 3600 + 4 * 60 + 5);
+  });
+
+  it('writes time-to-event in one notation everywhere (labels, tooltips, panel): the HUD countdown', () => {
+    expect(formatTimeTo(90)).toBe('T− 1:30');
+    expect(formatTimeTo(5400)).toBe('T− 1:30:00');
+    expect(formatTimeTo(3 * 86400 + 18 * 3600 + 51 * 60 + 7)).toBe('T− 3d 18:51');
+    expect(formatTimeTo(-12)).toBe('T+ 0:12');
+    expect(formatTimeTo(0.4)).toBe('now');
+  });
+
+  it('shows and reads the node time as calendar time in the HUD clock format (UTC, J2000 = 2000-01-01 12:00)', () => {
+    expect(formatUtDate(0)).toBe('2000-01-01 12:00:00');
+    expect(formatUtDate(889001500)).toBe('2028-03-03 20:51:40');
+    expect(parseUtDate('2028-03-03 20:51:40')).toBe(889001500);
+    expect(parseUtDate('2028-03-03T20:51:40.5 UTC')).toBe(889001500.5);
+    expect(parseUtDate('2028-03-03 20:51')).toBe(889001460);
+    for (const bad of ['', '2028-13-01 00:00', '2028-03-03', 'tomorrow', '2028-03-03 25:00']) expect(parseUtDate(bad), bad).toBeNaN();
   });
 
   it('reads numbers with a comma or point and an optional unit', () => {
