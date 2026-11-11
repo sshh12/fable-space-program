@@ -11,7 +11,7 @@
 import { DEG, v3, type Vec3 } from '@/core/math';
 import type { SeatLayoutDef } from '../layout';
 import { frameAt, local, type Attr, type Frame } from '../mesh';
-import { seatFrames, seatPoint, type CabinContext, type SeatFrame } from './context';
+import { FLAG_OVERLAY, seatFrames, seatPoint, type CabinContext, type SeatFrame } from './context';
 
 /** Frame at p whose normal faces the occupant (+L); x = -R so that (x, y = U, n = L) is right-handed. */
 export const faceL = (p: Vec3, s: SeatFrame): Frame => frameAt(p, v3.neg(s.R), s.U);
@@ -48,14 +48,12 @@ export function couchPoints(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef)
 /**
  * Upholstered pad over a rectangle of a frame (half sizes hx, hy, thickness `thick` along f.n): a squircle
  * outline, a crowned (or dished) top panel, the cover rolling over a foam edge into a vertical side panel,
- * a piping cord sewn into the seam between them, and optionally `channels` stitched channels across the
- * top (each a pulled-down seam line). One closed surface: s runs around the outline, t from the top's
- * centre over the roll and down the side.
+ * and a piping cord sewn into the seam between them. One closed surface: s runs around the outline, t from
+ * the top's centre over the roll and down the side.
  */
-function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number; channels?: number } = {}): void {
+function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: number, attr: Attr, opts: { dish?: number } = {}): void {
   const full = ctx.detail === 0;
   const dish = opts.dish ?? 0;
-  const channels = full ? (opts.channels ?? 0) : 0;
   const roll = Math.min(thick * 0.6, hx * 0.4, hy * 0.4);
   const ax = hx - roll;
   const ay = hy - roll;
@@ -74,21 +72,13 @@ function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: num
   };
   const tTop = 0.55;
   const tRoll = 0.88;
-  const seam = (y: number): number => {
-    let d = 0;
-    for (let k = 1; k <= channels; k++) {
-      const ys = -ay + (2 * ay * k) / (channels + 1);
-      d += Math.exp(-(((y - ys) / 0.006) ** 2));
-    }
-    return d;
-  };
   const at = (s: number, t: number): Vec3 => {
     const [x, y, nx, ny] = outline(s);
     if (t <= tTop) {
       const rho = t / tTop;
       const px = x * rho;
       const py = y * rho;
-      const crown = 1 - dish * 0.5 * (1 - rho * rho) - 0.18 * seam(py) * Math.min(1, rho * 3);
+      const crown = 1 - dish * 0.5 * (1 - rho * rho);
       return local(f, px, py, thick * crown);
     }
     if (t <= tRoll) {
@@ -110,7 +100,7 @@ function cushion(ctx: CabinContext, f: Frame, hx: number, hy: number, thick: num
   };
   ctx.b.patch(at, ns, nt, attr, {
     normalAt,
-    aoAt: (s, t) => (t <= tTop ? 1 - 0.35 * seam(outline(s)[1] * (t / tTop)) : t > tRoll ? 0.75 : 1),
+    aoAt: (_s, t) => (t > tRoll ? 0.75 : 1),
   });
   if (!full) return;
   // Piping cord in the seam between the top panel and the side panel.
@@ -154,7 +144,7 @@ export function buildCouches(ctx: CabinContext): void {
     const backBot = c.hipU + 0.03;
     const backF = faceL(seatPoint(s, 0, (backTop + backBot) / 2, backPlane - 0.008), s);
     const backHy = (backTop - backBot) / 2;
-    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, cush, { dish: 0.25, channels: 4 });
+    if (d < 2) cushion(ctx, backF, hw - 0.035, backHy, c.cushion, cush, { dish: 0.25 });
     pan(ctx, { ...backF, o: local(backF, 0, 0, -0.002) }, hw + 0.008, backHy + 0.02, c.pan);
     if (d === 0) {
       for (const side of [-1, 1]) cushion(ctx, faceL(local(backF, side * (hw - 0.02), 0, 0.004), s), 0.03, backHy - 0.02, c.cushion + 0.025, cush);
@@ -163,7 +153,7 @@ export function buildCouches(ctx: CabinContext): void {
     // ---- hip (seat) cushion bridging back and thigh pans
     const hipN = v3.normalize(v3.add(s.L, pts.thighN));
     const hipFrame: Frame = { o: v3.addScaled(pts.hip, hipN, -0.01), x: s.R, y: v3.normalize(v3.cross(hipN, s.R)), n: hipN };
-    if (d < 2) cushion(ctx, hipFrame, hw - 0.04, 0.06, c.cushion * 0.9, cush, { channels: 1 });
+    if (d < 2) cushion(ctx, hipFrame, hw - 0.04, 0.06, c.cushion * 0.9, cush);
     // ---- thigh and shin pans
     const tMid = v3.lerp(pts.hip, pts.knee, 0.5);
     // The thigh pan runs from the hip to the (possibly inboard-shifted) knee.
@@ -172,12 +162,12 @@ export function buildCouches(ctx: CabinContext): void {
     const thighFs: Frame = { o: v3.addScaled(tMid, thighNn, -0.012), x: v3.cross(thighY, thighNn), y: thighY, n: thighNn };
     const tl = v3.dist(pts.hip, pts.knee) / 2;
     const legHw = cfg.legHalfWidth;
-    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.02, c.cushion * 0.8, cush, { channels: 2 });
+    if (d < 2) cushion(ctx, thighFs, legHw, tl - 0.02, c.cushion * 0.8, cush);
     pan(ctx, { ...thighFs, o: local(thighFs, 0, 0, -0.002) }, legHw + 0.008, tl, c.pan);
     const sMid = v3.lerp(pts.knee, pts.foot, 0.5);
     const shinF: Frame = { o: v3.addScaled(sMid, pts.shinN, -0.012), x: s.R, y: pts.shin, n: pts.shinN };
     const sl = cfg.shinLength / 2;
-    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.02, c.cushion * 0.7, cush, { channels: 2 });
+    if (d < 2) cushion(ctx, shinF, legHw - 0.01, sl - 0.02, c.cushion * 0.7, cush);
     pan(ctx, { ...shinF, o: local(shinF, 0, 0, -0.002) }, legHw, sl, c.pan);
     if (d === 0) {
       // Heel cups and toe strap at the foot end.
@@ -218,7 +208,7 @@ export function buildCouches(ctx: CabinContext): void {
         const p0 = seatPoint(s, x, -0.28, backPlane + 0.07);
         const p1 = seatPoint(s, x, c.hipU + 0.02, backPlane + 0.07);
         const armF = faceL(v3.lerp(p0, p1, 0.5), s);
-        cushion(ctx, { ...armF, o: local(armF, 0, 0, -0.022) }, 0.03, v3.dist(p0, p1) / 2, 0.044, cush, { channels: 0 });
+        cushion(ctx, { ...armF, o: local(armF, 0, 0, -0.022) }, 0.03, v3.dist(p0, p1) / 2, 0.044, cush);
         if (d === 0) {
           // Brackets from the rail to the armrest.
           for (const at of [p0, p1]) {
@@ -274,7 +264,7 @@ function pallet(ctx: CabinContext, seats: SeatFrame[]): void {
 /** Five-point harness lying on an empty couch: shoulder straps, lap belts, crotch strap and rotary buckle. */
 function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Frame, backHy: number, pts: CouchPoints): void {
   const c = ctx.layout.couches;
-  const web = ctx.m('webbing');
+  const web = ctx.m('webbing', { flags: FLAG_OVERLAY });
   const b = ctx.b;
   const lift = c.cushion + 0.004;
   const buckle = local(backF, 0, -backHy + 0.1, lift + 0.006);

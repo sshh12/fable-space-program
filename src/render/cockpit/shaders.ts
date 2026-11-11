@@ -367,25 +367,30 @@ fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, occIn: 
       // Emitters light only the side they face.
       continue;
     }
+    var vis: f32;
+    let index = u32(P.p1.w);
+    if (kind == POLY_WINDOW) {
+      vis = occ.w[min(index, ${MAX_WINDOWS - 1}u)];
+    } else if (kind == POLY_DISPLAY) {
+      vis = occ.d[min(index, ${MAX_DISPLAYS - 1}u)];
+    } else if (kind == POLY_PATCH) {
+      vis = occ.ao;
+    } else {
+      vis = occ.flood;
+    }
+    // A source this point cannot see (baked) costs nothing.
+    if (vis <= 0.004) { continue; }
     let V = polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz);
     let lenV = length(V);
     if (lenV < 1e-7) { continue; }
     let ff = max(dot(n, V), 0.0);
     var L: vec3f;
-    var vis: f32;
-    let index = u32(P.p1.w);
-    if (kind == POLY_WINDOW) {
+    if (kind == POLY_WINDOW || kind == POLY_DISPLAY) {
       L = cabinPolyRadiance(i);
-      vis = occ.w[min(index, ${MAX_WINDOWS - 1}u)];
-    } else if (kind == POLY_DISPLAY) {
-      L = cabinPolyRadiance(i);
-      vis = occ.d[min(index, ${MAX_DISPLAYS - 1}u)];
     } else if (kind == POLY_PATCH) {
       L = P.radiance.rgb * sunScale;
-      vis = occ.ao;
     } else {
       L = P.radiance.rgb;
-      vis = occ.flood;
     }
     let E = L * (PI * ff) * vis;
     o.diffuse += E;
@@ -415,12 +420,11 @@ fn cabinLight(pos: vec3f, n: vec3f, v: vec3f, roughness: f32, f0: vec3f, occIn: 
  */
 const SUN_WGSL = /* wgsl */ `
 /// Poisson disc (unit radius) of the shadow map's blocker search.
-const SUN_TAPS = array<vec2f, 24>(
-  vec2f(0.0, 0.0), vec2f(0.2846, 0.1294), vec2f(-0.1524, 0.3537), vec2f(-0.3657, -0.1683), vec2f(0.1036, -0.4339),
-  vec2f(0.5183, -0.1975), vec2f(0.4122, 0.4402), vec2f(-0.0619, 0.6466), vec2f(-0.5683, 0.3426), vec2f(-0.6439, -0.2342),
-  vec2f(-0.2706, -0.6466), vec2f(0.3075, -0.7004), vec2f(0.7428, 0.1121), vec2f(0.6311, 0.5862), vec2f(0.1729, 0.8396),
-  vec2f(-0.4089, 0.7871), vec2f(-0.8282, 0.2391), vec2f(-0.8565, -0.3214), vec2f(-0.5321, -0.7957), vec2f(0.0247, -0.9442),
-  vec2f(0.6189, -0.7187), vec2f(0.9452, -0.2565), vec2f(0.9013, 0.4110), vec2f(0.4790, 0.8538));
+const SUN_TAPS = array<vec2f, 16>(
+  vec2f(0.1036, -0.4339), vec2f(0.5183, -0.1975), vec2f(0.4122, 0.4402), vec2f(-0.0619, 0.6466), vec2f(-0.5683, 0.3426),
+  vec2f(-0.6439, -0.2342), vec2f(-0.2706, -0.6466), vec2f(0.3075, -0.7004), vec2f(0.7428, 0.1121), vec2f(0.6311, 0.5862),
+  vec2f(0.1729, 0.8396), vec2f(-0.4089, 0.7871), vec2f(-0.8282, 0.2391), vec2f(-0.8565, -0.3214), vec2f(-0.5321, -0.7957),
+  vec2f(0.0247, -0.9442));
 
 /// Sun-map coordinates (u, v, depth) of a part-frame point.
 fn sunCoord(p: vec3f) -> vec3f {
@@ -505,18 +509,19 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, sc: vec3f, scdx: vec3f, scdy:
   var dzduv = vec2f(0.0);
   if (abs(det) > 1e-14) { dzduv = vec2f(scdy.y * scdx.z - scdx.y * scdy.z, scdx.x * scdy.z - scdy.x * scdx.z) / det; }
   // Bounded: at grazing incidence a tap must not compare against a depth far off the receiver.
-  let maxSlope = 4.0 * mPerUv / range;
+  let maxSlope = 12.0 * mPerUv / range;
   dzduv = clamp(dzduv, vec2f(-maxSlope), vec2f(maxSlope));
   let sinL = sqrt(max(1.0 - NoL * NoL, 0.0));
-  let q = sunCoord(p + ng * texel * (0.5 + 1.5 * sinL));
-  let bias = 1.5 * texel / range;
+  // Normal offset (part frame) and constant bias grow toward grazing incidence, where a texel spans more depth.
+  let q = sunCoord(p + ng * texel * (0.5 + 3.0 * sinL));
+  let bias = (1.5 + 2.0 * sinL) * texel / range;
   // Blocker search over the widest penumbra a cabin-sized blocker distance gives (3 m).
   let slope = cabin.sunPart.w;
   let searchUv = max(3.0 * slope, 3.0 * texel) / mPerUv;
   var zBlock = 0.0;
   var nBlock = 0.0;
   for (var k = 0u; k < 16u; k++) {
-    let o = SUN_TAPS[k + 4u] * searchUv;
+    let o = SUN_TAPS[k] * searchUv;
     let zr = q.z + dot(o, dzduv) - bias;
     let d4 = textureGather(cabinSunMap, nearestClamp, q.xy + o);
     let m = select(vec4f(0.0), vec4f(1.0), d4 < vec4f(zr));
@@ -666,8 +671,9 @@ fn materialDetail(mat: Material, uv: vec2f, dx: vec2f, dy: vec2f, fw: f32, seed:
     let tile = mat.d.x;
     let shift = vec2f(partHash(seed, 2), partHash(seed, 3));
     let t = uv / tile + shift;
-    let tN = textureSampleGrad(detailN, anisoRepeat, t, layer, dx / tile, dy / tile);
-    let tM = textureSampleGrad(detailM, anisoRepeat, t, layer, dx / tile, dy / tile);
+    // Trilinear: the detail is fine and low in contrast, anisotropic filtering would cost more than it shows.
+    let tN = textureSampleGrad(detailN, linearRepeat, t, layer, dx / tile, dy / tile);
+    let tM = textureSampleGrad(detailM, linearRepeat, t, layer, dx / tile, dy / tile);
     d.slope = (tN.xy * 2.0 - 1.0) * strength;
     d.cavity = mix(1.0, tN.z, strength);
     d.albedo *= mix(1.0, tM.r * 2.0, strength);
@@ -715,7 +721,19 @@ fn materialDetail(mat: Material, uv: vec2f, dx: vec2f, dy: vec2f, fw: f32, seed:
   return d;
 }
 
-/// Depth pre-pass: the shading pass then runs once per visible pixel (depth test 'equal', no overdraw).
+/// Depth pre-pass: the shading pass then runs once per visible pixel (depth test 'equal', no overdraw). Its
+/// vertex shader reads only the position and the control (the same expressions as vs, both invariant).
+struct VDepth { @invariant @builtin(position) clip: vec4f }
+@vertex fn vsDepth(@location(0) pos: vec3f, @location(6) ctl: vec2u) -> VDepth {
+  var p = pos;
+  if (ctl.x > 0u) {
+    let C = controls[ctl.x - 1u];
+    p = C.pivot.xyz + qrot(C.rot, pos - C.pivot.xyz) + C.offset.xyz;
+  }
+  var o: VDepth;
+  o.clip = frame.viewProj * vec4f(toRoot(cabin.m0, cabin.m1, cabin.m2, p), 1.0);
+  return o;
+}
 @fragment fn fsDepth() -> GBufferOut {
   var o: GBufferOut;
   return o;

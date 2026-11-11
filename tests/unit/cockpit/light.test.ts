@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { v3, type Vec3 } from '@/core/math';
 import { bvhRay } from '@/render/cockpit/bvh';
 import { meshPositions, sunRange, type CockpitModel } from '@/render/cockpit/build';
-import { FLAG_ENCLOSURE, seatFrames } from '@/render/cockpit/cabin/context';
+import { FLAG_ENCLOSURE, FLAG_OVERLAY, seatFrames } from '@/render/cockpit/cabin/context';
 import { castCabinRay } from '@/render/cockpit/lighting';
 import { insideDistance } from '@/render/cockpit/mould';
 import { occlusionAt, occlusionSources, type OccSources } from '@/render/cockpit/occlusion';
@@ -22,14 +22,16 @@ beforeAll(async () => {
   sources = occlusionSources(model);
 });
 
-/** Brute-force closest hit over the full-detail triangles. */
+/** Brute-force closest hit over the full-detail triangles, overlays left out as in the bake's BVH. */
 function bruteClosest(o: Vec3, d: Vec3): number {
   const pos = meshPositions(model.mesh);
   const r = model.mesh.ranges.lod0!;
   const idx = model.mesh.indices;
   const P = (k: number): Vec3 => ({ x: pos[k * 3]!, y: pos[k * 3 + 1]!, z: pos[k * 3 + 2]! });
+  const u8 = new Uint8Array(model.mesh.vertices);
   let best = Infinity;
   for (let i = r.start; i < r.start + r.count; i += 3) {
+    if ((u8[idx[i]! * 48 + 42]! & FLAG_OVERLAY) !== 0) continue;
     const a = P(idx[i]!);
     const e1 = v3.sub(P(idx[i + 1]!), a);
     const e2 = v3.sub(P(idx[i + 2]!), a);

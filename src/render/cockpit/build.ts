@@ -10,7 +10,7 @@ import { v3 } from '@/core/math';
 import { buildBvh, type Bvh } from './bvh';
 import { buildDockingHatch, buildHatch, buildPlugs, buildWindows } from './cabin/apertures';
 import { buildConsole } from './cabin/console';
-import { CabinContext, FLAG_EMISSIVE, FLAG_ENCLOSURE, type ControlMeta, type CouchMeta, type DisplayMeta, type FloodMeta, type LabelAlloc, type WindowMeta } from './cabin/context';
+import { CabinContext, FLAG_EMISSIVE, FLAG_ENCLOSURE, FLAG_OVERLAY, type ControlMeta, type CouchMeta, type DisplayMeta, type FloodMeta, type LabelAlloc, type WindowMeta } from './cabin/context';
 import { buildCouches } from './cabin/couches';
 import { buildFixtures } from './cabin/fixtures';
 import { buildShell, type Region } from './cabin/shell';
@@ -50,11 +50,18 @@ export function meshPositions(mesh: BuiltMesh): Float32Array {
   return out;
 }
 
-/** BVH over one detail level of a built mesh; triangles carry their first vertex's material index. */
+/**
+ * BVH over one detail level of a built mesh, without its thin overlays (FLAG_OVERLAY: they do not occlude in
+ * the bake); triangles carry their first vertex's material index.
+ */
 export function meshBvh(mesh: BuiltMesh, lod: LodName, positions = meshPositions(mesh)): Bvh {
   const u8 = new Uint8Array(mesh.vertices);
   const r = mesh.ranges[lod]!;
-  return buildBvh(positions, mesh.indices, r.start, r.count, (v) => u8[v * VERTEX_STRIDE + 40]!);
+  const kept: number[] = [];
+  for (let i = r.start; i < r.start + r.count; i += 3) {
+    if ((u8[mesh.indices[i]! * VERTEX_STRIDE + 42]! & FLAG_OVERLAY) === 0) kept.push(mesh.indices[i]!, mesh.indices[i + 1]!, mesh.indices[i + 2]!);
+  }
+  return buildBvh(positions, Uint32Array.from(kept), 0, kept.length, (v) => u8[v * VERTEX_STRIDE + 40]!);
 }
 
 export function buildCockpitModelFrom(layoutId: string, layout: CockpitLayoutDef, mould: CapsuleMouldLineDef): CockpitModel {

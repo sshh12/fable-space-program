@@ -265,6 +265,11 @@ export const FLAG_SEGMENT = 16;
  * cabin's sun map (sunmap.ts), which holds the interior's occluders only.
  */
 export const FLAG_ENCLOSURE = 32;
+/**
+ * Vertex flag: a thin overlay lying on another surface (harness webbing, velcro patches): it is drawn and
+ * shaded but does not occlude in the occlusion bake, where the vertices under it would bake as buried.
+ */
+export const FLAG_OVERLAY = 64;
 
 export interface SeatFrame {
   id: string;

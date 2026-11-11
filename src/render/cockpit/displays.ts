@@ -45,7 +45,7 @@ export interface DisplayStats {
   /** Pages painted and their main-thread cost (paint + copy + mip encode), ms. */
   paints: number;
   cpuMs: number;
-  /** Split of cpuMs: Canvas 2D painting, the copy into the texture, the mip encode. */
+  /** Split of cpuMs: Canvas 2D painting, the upload (frame import and pass encode), the mip encode. */
   paintMs: number;
   copyMs: number;
   mipMs: number;
@@ -94,7 +94,7 @@ export class MfdDisplays {
       size: [width, height, count],
       mipLevelCount: levels,
       // COPY_SRC: tests and tools read the published pages back.
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.view = this.texture.createView({ dimension: '2d-array' });
     const module = device.createShaderModule({ label: 'cockpit.mfdMips', code: MIP_WGSL });

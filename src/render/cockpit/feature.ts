@@ -303,7 +303,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
           return device.createRenderPipeline({
             label,
             layout: plLayout,
-            vertex: { module, entryPoint: 'vs', buffers },
+            // The depth pre-pass reads positions and controls only.
+            vertex: pass === 'depth' ? { module, entryPoint: 'vsDepth', buffers: [vtx([[0, 'float32x3', 0], [6, 'uint16x2', 44]], VERTEX_STRIDE)] } : { module, entryPoint: 'vs', buffers },
             fragment:
               pass === 'depth'
                 ? { module, entryPoint: INTERIOR_DEPTH_ENTRY, targets: gbufferTargets.map((x) => ({ ...x, writeMask: 0 })) }
@@ -606,10 +607,10 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const range = gm.model.mesh.ranges[active.lod]!;
       pass.setBindGroup(1, gm.group);
       pass.setVertexBuffer(0, gm.vertex);
-      pass.setVertexBuffer(1, gm.occlusion);
       pass.setIndexBuffer(gm.index, 'uint32');
       pass.setPipeline(interiorDepth.get());
       pass.drawIndexed(range.count, 1, range.start);
+      pass.setVertexBuffer(1, gm.occlusion);
       pass.setPipeline(interior.get());
       pass.drawIndexed(range.count, 1, range.start);
       const labels = gm.model.mesh.ranges.labels!;
