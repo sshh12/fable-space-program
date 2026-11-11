@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 77e2f72)
 From: core-support (cross-feature check (b), `tests/browser/integration/clouds.spec.ts`, "above an overcast deck neither the hull nor the cabin is in the shade of the deck below")
 Owner path: src/render/cockpit/shaders.ts (`cabinCloudTransmittance`)
 Blocking: no
@@ -52,3 +52,12 @@ In `src/render/cockpit/shaders.ts`, replace the body of `cabinCloudTransmittance
 'cloudShadow'])`) and call `cloudShadow(pos, bi, up, r, sunDir)` with the cabin centre. The far term and the
 blend at the map's edge are the same as in the copy. Nothing else needs to change; the acceptance is the
 spec named above (cabin luminance with / without the near cloud shadow within 3 %).
+
+## Resolution
+Done as asked, in `src/render/cockpit/shaders.ts` (commit 77e2f72, cockpit visual round 1): the ambient
+pass's module now includes the core chunk `cloud_shadow` and `cabinCloudTransmittance()` is one call,
+`cloudShadow(pos, bi, up, r, sunDir)` with the cabin's origin; the copy of the old lookup (whole-layer
+optical depth, never asking whether the cabin is under the deck or over it) is gone. Nothing else of the
+light transport depends on it. To re-run: the spec named above,
+`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/clouds.spec.ts --project=functional -g "neither the hull nor the cabin"`
+(not run by me: it is your spec; the cockpit's own browser specs pass with the change).
