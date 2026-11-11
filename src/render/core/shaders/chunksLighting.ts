@@ -528,6 +528,49 @@ fn shadowCascadeIndex(posRelCam: vec3f) -> i32 {
 }
 `;
 
+export const CLOUD_SHADOW_WGSL = /* wgsl */ `
+#include "frame"
+// Requires the including module to declare (see sceneBindings 'cloudShadow'):
+//   cloudShadowMapTex: texture_2d<f32>     ('clouds.shadowMap')
+//   cloudCoverageMapTex: texture_2d<f32>   ('clouds.coverageMap')
+
+/// Cloud transmittance towards the sun at a camera-relative point 'pos' of body 'bodyIndex' ('up' = local
+/// vertical there, 'r' = its distance from the body centre): the near map around the camera, the coverage
+/// map beyond it. The near map is depth-resolved: a receiver above the cloud is not shadowed by it, one
+/// inside it by the part above it only. Exactly 1 with the default resources and parameters.
+fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> f32 {
+  let muS = max(dot(up, sunDir), 0.05);
+  var far = 1.0;
+  if (i32(frame.cloudFar.x) == bodyIndex && r < frame.cloudFar.y) {
+    // Point where the sun ray crosses the layer mid-height.
+    let b = frame.bodies[bodyIndex];
+    let rel = pos - b.center.xyz;
+    let bq = dot(rel, sunDir);
+    let t = -bq + sqrt(max(bq * bq - (r * r - frame.cloudFar.y * frame.cloudFar.y), 0.0));
+    let d = normalize(rootToFixed(u32(bodyIndex), rel + sunDir * t));
+    let lon = atan2(d.y, d.x) + frame.cloudFar.w;
+    let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(d.z, -1.0, 1.0)) / PI);
+    far = exp(-textureSampleLevel(cloudCoverageMapTex, linearClamp, uv, 0.0).r * frame.cloudFar.z / muS);
+  }
+  let he = frame.cloudNear0.w;
+  if (he > 0.0 && i32(frame.cloudNear1.w) == bodyIndex) {
+    let rel = pos - frame.cloudNear0.xyz;
+    let q = vec2f(dot(rel, frame.cloudNear1.xyz), dot(rel, frame.cloudNear2.xyz)) / he;
+    let edge = 1.0 - max(abs(q.x), abs(q.y));
+    if (edge > 0.0) {
+      // The map's projection direction (unit, towards the sun) and the receiver's place along it.
+      let s = dot(rel, cross(frame.cloudNear1.xyz, frame.cloudNear2.xyz));
+      // r = optical depth of the whole layer on this line, g = where the cloud begins on the sun side
+      // (distance along the projection direction from the map plane), b = mean extinction behind that point.
+      let m = textureSampleLevel(cloudShadowMapTex, linearClamp, q * 0.5 + 0.5, 0.0);
+      let tau = clamp((m.g - s) * m.b, 0.0, m.r) * frame.cloudNear2.w;
+      return mix(far, exp(-tau / muS), saturate(edge * 8.0));
+    }
+  }
+  return far;
+}
+`;
+
 export const TRANSPARENCY_WGSL = /* wgsl */ `
 #include "frame"
 #include "atmosphere_common"

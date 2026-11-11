@@ -214,8 +214,16 @@ export interface SharedResourceMap {
    */
   'atmosphere.aerialPerspective': GPUTextureView;
   /**
-   * Orthographic cloud optical-depth map around the camera for near-field cloud shadows (r = optical depth
-   * along the local vertical).
+   * Orthographic cloud map around the camera for near-field cloud shadows, projected along the direction
+   * L = cross(axisU, axisV) of its placement (unit, towards the sun; kept a few degrees above the horizon):
+   *   r = optical depth of the whole layer along the line through the texel;
+   *   g = where the cloud BEGINS on the sun side: distance along L from the map plane through
+   *       `originRelCam`, m (the highest cloud point of the line; -3.0e30 where the line misses the layer);
+   *   b = mean extinction along the line behind that point, 1/m (0 where there is no cloud).
+   * A receiver at distance s along L from the map plane has tau = clamp((g - s) * b, 0, r) x
+   * opticalDepthScale above it: none above the cloud, all of r deep under it, the part above it inside.
+   * Readers use the core's chunk "cloud_shadow" (`cloudShadow(pos, bodyIndex, up, r, sunDir)`), never the
+   * r channel by itself. A single-channel map (g = b = 0) casts no shadow; the default is r = 0.
    *
    * PLACEMENT of both cloud shadow maps is not a shared resource: it is CPU data that changes every frame
    * (the near map follows the camera), so the publishing feature passes it to the render core in `prepare`,

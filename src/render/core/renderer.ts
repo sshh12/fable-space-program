@@ -36,7 +36,7 @@ import { Tonemap } from './post/tonemap';
 import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
-import { ATMOSPHERE_COMMON_WGSL, BRDF_REGOLITH_WGSL, BRDF_TERRAIN_WGSL, BRDF_WATER_WGSL, BRDF_WGSL, ECLIPSE_WGSL, SHADOWS_WGSL, TRANSPARENCY_WGSL, UPSAMPLE_WGSL } from './shaders/chunksLighting';
+import { ATMOSPHERE_COMMON_WGSL, BRDF_REGOLITH_WGSL, BRDF_TERRAIN_WGSL, BRDF_WATER_WGSL, BRDF_WGSL, CLOUD_SHADOW_WGSL, ECLIPSE_WGSL, SHADOWS_WGSL, TRANSPARENCY_WGSL, UPSAMPLE_WGSL } from './shaders/chunksLighting';
 import { createShaderLibrary, type CoreShaderLibrary } from './shaders/library';
 import { ShadowSystem } from './shadows/shadowSystem';
 import { createTextureChecked, f16ToF32, generateBlueNoise, MipGenerator, readTexturePixels } from './util/gpu';
@@ -173,6 +173,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   shaders.register('atmosphere_common', ATMOSPHERE_COMMON_WGSL);
   shaders.register('shadows', SHADOWS_WGSL);
   shaders.register('shadow_pass', SHADOW_PASS_WGSL);
+  shaders.register('cloud_shadow', CLOUD_SHADOW_WGSL);
   shaders.register('transparency', TRANSPARENCY_WGSL);
   shaders.register('upsample', UPSAMPLE_WGSL);
 

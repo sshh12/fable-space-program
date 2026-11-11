@@ -123,33 +123,7 @@ fn sampleAo(uv: vec2f, depth: f32) -> vec2f {
   return sum / wsum;
 }
 
-/// Cloud transmittance towards the sun: near-field optical-depth map around the camera, coverage map beyond.
-fn cloudShadow(pos: vec3f, bodyIndex: i32, up: vec3f, r: f32, sunDir: vec3f) -> f32 {
-  let muS = max(dot(up, sunDir), 0.05);
-  var far = 1.0;
-  if (i32(frame.cloudFar.x) == bodyIndex && r < frame.cloudFar.y) {
-    // Point where the sun ray crosses the layer mid-height.
-    let b = frame.bodies[bodyIndex];
-    let rel = pos - b.center.xyz;
-    let bq = dot(rel, sunDir);
-    let t = -bq + sqrt(max(bq * bq - (r * r - frame.cloudFar.y * frame.cloudFar.y), 0.0));
-    let d = normalize(rootToFixed(u32(bodyIndex), rel + sunDir * t));
-    let lon = atan2(d.y, d.x) + frame.cloudFar.w;
-    let uv = vec2f(fract(lon / TWO_PI + 0.5), acos(clamp(d.z, -1.0, 1.0)) / PI);
-    far = exp(-textureSampleLevel(cloudCoverageMapTex, linearClamp, uv, 0.0).r * frame.cloudFar.z / muS);
-  }
-  let he = frame.cloudNear0.w;
-  if (he > 0.0 && i32(frame.cloudNear1.w) == bodyIndex) {
-    let rel = pos - frame.cloudNear0.xyz;
-    let q = vec2f(dot(rel, frame.cloudNear1.xyz), dot(rel, frame.cloudNear2.xyz)) / he;
-    let edge = 1.0 - max(abs(q.x), abs(q.y));
-    if (edge > 0.0) {
-      let tau = textureSampleLevel(cloudShadowMapTex, linearClamp, q * 0.5 + 0.5, 0.0).r * frame.cloudNear2.w;
-      return mix(far, exp(-tau / muS), saturate(edge * 8.0));
-    }
-  }
-  return far;
-}
+#include "cloud_shadow"
 
 fn envIrradiance(n: vec3f) -> vec3f {
   let c = envSh9.c;

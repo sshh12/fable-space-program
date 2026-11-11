@@ -201,9 +201,17 @@ test('lighting inputs: transmittance, cloud shadows, sky irradiance, probe SH an
   expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-1 / muS), 2);
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudFar(null));
 
-  // Near cloud shadow map (takes over from the far term inside its footprint): exp(-map x scale / mu_s).
+  // Near cloud shadow map (takes over from the far term inside its footprint), with the layer far above
+  // the ground: exp(-map x scale / mu_s).
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5 }));
   expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-0.5 / muS), 2);
+  // The map is depth-resolved (request atmosphere-clouds-3). The ground INSIDE the layer, a quarter of its
+  // depth below the top (top 2 m above the ground, 8 m deep): a quarter of the optical depth above it.
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, top: 2, thickness: 8 }));
+  expect(g(await centre()) / g(base)).toBeCloseTo(Math.exp(-0.125 / muS), 2);
+  // The ground ABOVE the layer (top 5 m below it): a cloud underneath casts no shadow upwards.
+  await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear({ opticalDepth: 0.5, top: -5, thickness: 8 }));
+  expect(g(await centre()) / g(base)).toBeCloseTo(1, 3);
   await page.evaluate(() => window.__rc!.probes.inputs.setCloudNear(null));
   expect(g(await centre())).toBeCloseTo(g(base), 4);
 

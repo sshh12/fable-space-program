@@ -45,12 +45,18 @@ export interface CloudShadowNear {
   bodyIndex: number;
   /** Centre of the orthographic map relative to the camera (ROOT axes, float64). */
   originRelCam: Vec3;
-  /** Unit world directions of +u and +v of the map (ROOT axes); the map looks along the local vertical. */
+  /**
+   * Unit world directions of +u and +v of the map (ROOT axes), perpendicular to each other. The map is
+   * projected along cross(axisU, axisV), which points towards the sun: build axisV as cross(L, axisU).
+   */
   axisU: Vec3;
   axisV: Vec3;
   /** Half the width of the map, m. */
   halfExtent: number;
-  /** Optical depth per unit stored in the map (transmittance = exp(-texel * opticalDepthScale / max(mu_s, 0.05))). */
+  /**
+   * Optical depth per unit stored in the map: transmittance = exp(-tau * opticalDepthScale / max(mu_s, 0.05))
+   * with tau = clamp((g - s) * b, 0, r) of the texel (see 'clouds.shadowMap' in the render contract).
+   */
   opticalDepthScale: number;
 }
 
