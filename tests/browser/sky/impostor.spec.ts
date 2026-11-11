@@ -145,7 +145,31 @@ test('crescent Earth: a point far beyond the Moon, resolving on approach to luna
         sheet.data[o + 3] = 255;
       }
     }
-    labels.push(`${(distances[k]! / 1e6).toFixed(0)} Mm: ${at.diameterPx.toFixed(1)} px`);
+    // Flux in the resolved (TAA) image against the HDR target averaged over the jitter cycle: what the resolve keeps
+    // of the body (thin, aliased geometry is pulled towards its dark samples; the PSF impostor is not).
+    const kept = await page.evaluate(
+      async ([cx, cy]) => {
+        const lab = window.__lab!;
+        const half = 24;
+        const rect = { x: Math.round(cx!) - half, y: Math.round(cy!) - half, width: 2 * half + 1, height: 2 * half + 1 };
+        const sum = (d: Float32Array) => {
+          let s = 0;
+          for (let i = 0; i < d.length; i += 4) s += 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!;
+          return s;
+        };
+        lab.setLoop(false);
+        let hdr = 0;
+        for (let i = 0; i < 16; i++) {
+          lab.renderFrame();
+          hdr += sum((await lab.renderer.readHdrPixels('hdr', rect)).data) / 16;
+        }
+        const resolved = sum((await lab.renderer.readHdrPixels('resolved', rect)).data);
+        lab.setLoop(true);
+        return resolved / hdr;
+      },
+      [at.x, at.y],
+    );
+    labels.push(`${(distances[k]! / 1e6).toFixed(0)} Mm: ${at.diameterPx.toFixed(1)} px (TAA keeps ${(kept * 100).toFixed(0)} %)`);
     if (k === distances.length - 1) await page.screenshot({ path: path.join(outDir, 'crescent-earth-lunar-distance.png') });
   }
   fs.mkdirSync(outDir, { recursive: true });
