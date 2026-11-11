@@ -19,6 +19,8 @@ interface Shot {
   url: string;
   runTo?: number;
   eval?: string;
+  /** An expression evaluated in the page after the settle; its JSON is printed (exposure read-outs, light lists). */
+  after?: string;
   settle?: number;
   size?: [number, number];
   live?: boolean;
@@ -39,7 +41,15 @@ test.describe('vfx lab ad-hoc shots', () => {
       await assertDiscreteGpu(page);
       if (own) await page.evaluate(() => window.__test!.setDeterministic(true));
       if (shot.runTo !== undefined && shot.url.startsWith('/labs/vfx/')) await page.evaluate((t) => window.__vfx!.runTo(t), shot.runTo);
-      if (shot.eval) await page.evaluate(shot.eval);
+      if (shot.eval) {
+        const result: unknown = await page.evaluate(shot.eval);
+        if (result !== undefined && result !== null) console.log(`${shot.name}: ${typeof result === 'string' ? result : JSON.stringify(result)}`);
+      }
+      if (shot.after) {
+        // Evaluated after the picture has settled (read-outs of the frame that is saved).
+        await (shot.live || !own ? page.evaluate((n) => window.__test!.waitFrames(n), 4) : waitIdle(page, 4));
+        console.log(`${shot.name}: ${JSON.stringify(await page.evaluate(shot.after))}`);
+      }
       if (shot.live || !own) {
         if (own) await page.evaluate(() => window.__test!.setDeterministic(false));
         await page.evaluate((n) => window.__test!.waitFrames(n), shot.settle ?? 90);

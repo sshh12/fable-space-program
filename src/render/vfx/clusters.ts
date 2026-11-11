@@ -8,7 +8,10 @@ import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { quat, v3, type Vec3 } from '@/core/math';
 import type { PlumeLookDef, VfxData } from './data';
-import { DEFAULT_VISIBLE_FRACTION, engineEmissionState, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
+import { DEFAULT_VISIBLE_FRACTION, engineEmissionState, farVisibleAngle, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
+
+/** The start-up puff is a soft ball: nothing of it is left beyond this many of its radii. */
+const PUFF_REACH = 2.65;
 
 /** Jets marched per cluster volume (larger groups are split). */
 export const MAX_CLUSTER_NOZZLES = 12;
@@ -28,6 +31,8 @@ export interface NozzleInstance {
   throttle: number;
   front: number;
   flash: number;
+  /** Radius of the start-up puff (m): it grows with the front, up to the reach of the look at this pressure. */
+  flashRadius: number;
   residual: number;
   /** Thrust of this nozzle, N. */
   thrust: number;
@@ -99,9 +104,13 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFractio
     const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
     length = Math.max(length, along + nz.shape.visibleLength * cosA + nz.shape.visibleRadius * sinA);
     radius = Math.max(radius, lateral + nz.shape.visibleLength * sinA + nz.shape.visibleRadius);
-    // The start-up flash reaches 3.2 of its widths (see the bounding cone below).
-    if (nz.flash > 0.01) radius = Math.max(radius, lateral + 3.2 * (1.3 * jetBulkRadius(nz.shape, nz.exitRadius, 30 * nz.exitRadius) + nz.exitRadius));
     xMin = Math.min(xMin, along - 0.6 * nz.exitRadius - nz.shape.visibleRadius * sinA);
+    // The start-up puff: a soft ball of 2.65 of its radii, centred half a radius downstream of the exit.
+    if (nz.flash > 0.001) {
+      radius = Math.max(radius, lateral + PUFF_REACH * nz.flashRadius);
+      xMin = Math.min(xMin, along - (PUFF_REACH - 0.5) * nz.flashRadius);
+      length = Math.max(length, along + (PUFF_REACH + 0.5) * nz.flashRadius);
+    }
     ringRadius = Math.max(ringRadius, lateral);
     divergence = Math.max(divergence, sinA);
     reMax = Math.max(reMax, nz.exitRadius);
@@ -141,6 +150,8 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFractio
   c.xMin = xMin;
 
   // Bounding cone: the largest radius anything visible reaches at 24 stations along the axis.
+  const smoky = c.look.smoke.extinction > 0.05 || c.look.smoke.sunScatter > 0.05;
+  const fanSlope = (shape: JetShape): number => Math.tan(Math.min(1.35, farVisibleAngle(c.look, shape.thetaLimit)));
   const need = (x: number): number => {
     let r = 0;
     for (const nz of c.nozzles) {
@@ -151,15 +162,22 @@ function finishCluster(c: PlumeCluster, geometry: NozzleGeometry, visibleFractio
       const xi = Math.max(0, (x - along) / cosA);
       const rb = jetBoundaryRadius(nz.shape, nz.exitRadius, xi);
       const core = 2.3 * c.look.core.radius * jetBulkRadius(nz.shape, nz.exitRadius, xi);
-      const burn = nz.shape.oxygen > 0.002 ? 1.9 * rb + nz.exitRadius : 0;
-      // The start-up flash is a Gaussian ball of width 1.3 bulk radii + re: 3.2 widths hold all of it.
-      const flash = nz.flash > 0.01 && xi < 30 * nz.exitRadius ? 3.2 * (1.3 * jetBulkRadius(nz.shape, nz.exitRadius, xi) + nz.exitRadius) : 0;
-      r = Math.max(r, lateral + xi * Math.sqrt(1 - cosA * cosA) + Math.max(core, burn, flash, 1.5 * nz.exitRadius));
+      // Flame and smoke are pushed out to 2.5 boundary radii by the large eddies.
+      const burn = nz.shape.oxygen > 0.002 ? 2.6 * rb + 2 * nz.exitRadius : 0;
+      const smoke = smoky && nz.shape.far < 0.999 ? 2.6 * rb + 2 * nz.exitRadius : 0;
+      const fan = nz.shape.far > 0 ? xi * fanSlope(nz.shape) + 2 * nz.exitRadius : 0;
+      const flash = nz.flash > 0.001 && xi < (PUFF_REACH + 0.5) * nz.flashRadius ? PUFF_REACH * nz.flashRadius : 0;
+      r = Math.max(r, lateral + xi * Math.sqrt(1 - cosA * cosA) + Math.max(core, burn, smoke, fan, flash, 1.5 * nz.exitRadius));
     }
     if (c.merged) {
       const m = c.merged;
       const rb = jetBoundaryRadius(m.shape, m.exitRadius, x);
-      r = Math.max(r, 2.3 * c.look.core.radius * jetBulkRadius(m.shape, m.exitRadius, x), m.shape.oxygen > 0.002 ? 1.9 * rb + reMax : 0);
+      r = Math.max(
+        r,
+        2.3 * c.look.core.radius * jetBulkRadius(m.shape, m.exitRadius, x),
+        m.shape.oxygen > 0.002 || (smoky && m.shape.far < 0.999) ? 2.6 * rb + 2 * reMax : 0,
+        m.shape.far > 0 ? x * fanSlope(m.shape) + 2 * m.exitRadius : 0,
+      );
     }
     return r;
   };
@@ -226,14 +244,17 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
           }
           const drawThrottle = Math.max(es.throttle, 0.12 * es.residual);
           const g = state.gimbal;
+          const shape = jetShape(look, geometry, drawThrottle, state.ambientPressure, { visibleFraction: fractionOf(look) });
+          const reach = look.ignition.reachRe[0] + (look.ignition.reachRe[1] - look.ignition.reachRe[0]) * shape.vacuum * shape.vacuum;
           entry.cluster.nozzles.push({
             posVes: partToVes(part, gimbal(v3.fromTuple(nd.pos), g[0], g[1])),
             dirVes: v3.normalize(quat.rotate(part.localRot, gimbal(v3.fromTuple(nd.dir), g[0], g[1]))),
             exitRadius: geometry.exitRadius,
-            shape: jetShape(look, geometry, drawThrottle, state.ambientPressure, { visibleFraction: fractionOf(look) }),
+            shape,
             throttle: es.throttle,
             front: es.front,
             flash: es.flash,
+            flashRadius: geometry.exitRadius * 2 + Math.min(0.6 * es.front, reach * geometry.exitRadius),
             residual: es.residual,
             thrust: state.thrust / mdef.nozzles.length,
             seed: (out.length * 31 + entry.cluster.nozzles.length * 7 + ni) % 97,
@@ -266,6 +287,7 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
                 throttle: level,
                 front: 1e9,
                 flash: 0,
+                flashRadius: 1,
                 residual: 0,
                 thrust: td.thrust * level,
                 seed: (ti * 13 + mi * 5) % 97,

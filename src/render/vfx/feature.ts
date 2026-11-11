@@ -78,6 +78,23 @@ interface LightCandidate {
 const lum = (c: Vec3Tuple): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 /** Luminance of a sunlit grey surface, cd/m^2: what a daylight exposure is set for. */
 const DAYLIGHT_WHITE = 12000;
+/** The same for a frame the sun does not reach: the camera opens up until what the flame lights is seen, and the flame clips by many stops. */
+const NIGHT_WHITE = 1500;
+/** Illuminance of the sun (lux) from which the daylight cap applies in full, and below which the night cap does. */
+const DAYLIGHT_LUX = 20000;
+const NIGHT_LUX = 200;
+/** The plume light starts this many exit radii downstream of the nozzles. */
+const LIGHT_START_RE = 6;
+/** Lines of light along the luminous length of a plume: [share of the intensity, end of the line as a fraction of the length]. */
+const LIGHT_SEGMENTS: [number, number][] = [
+  [0.04, 0.1],
+  [0.26, 0.4],
+  [0.7, 1],
+];
+/** The flame the ground cuts off: share of its light that still shines (spread flame, lit cloud), height of that light as a fraction of the cut-off length, and its largest height (m). */
+const GROUND_LIGHT_SHARE = 0.6;
+const GROUND_LIGHT_HEIGHT = 0.3;
+const GROUND_LIGHT_MAX_HEIGHT = 30;
 
 /**
  * The vfx feature. `ctx` is optional: the feature receives its RenderContext in `init` (pass
@@ -112,13 +129,44 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   const stats: Record<string, number> = {};
 
   /**
-   * Tell the exposure meter about an emitter seen against the sky (it meters geometry only; an emitter in
-   * front of geometry is in its histogram already). Coverage = the ellipse's solid angle over the frame's.
+   * Illuminance of the star at the camera (lux): zero behind a body, fading through twilight (a few degrees
+   * either side of the limb).
+   */
+  const sunAtCamera = (frame: FrameContext): number => {
+    let visible = 1;
+    for (const body of frame.snapshot.bodies) {
+      const def = ctx.defs.bodies[body.id];
+      if (!def || body.id === frame.sun.bodyId) continue;
+      const c = frame.bodyPose(body.id).centerRelCam;
+      const dist = v3.len(c);
+      if (dist < 1) continue;
+      const fromCentre = Math.acos(Math.max(-1, Math.min(1, v3.dot(c, frame.sun.dirRoot) / dist)));
+      const limb = Math.asin(Math.min(1, def.radius / dist));
+      const t = Math.max(0, Math.min(1, (fromCentre - limb + 0.1) / 0.15));
+      visible = Math.min(visible, t * t * (3 - 2 * t));
+    }
+    return frame.sun.illuminance * visible;
+  };
+
+  /**
+   * The largest luminance the meter is told about for a flame: by day a sunlit grey surface (the flame leaves
+   * the exposure where the sun puts it and clips), with the sun down a tenth of that (the camera opens up
+   * for what the flame lights and the flame itself clips by many stops, as in every night launch photograph).
+   */
+  const flameCap = (frame: FrameContext): number => {
+    const lux = Math.max(sunAtCamera(frame), 1e-3);
+    const t = Math.max(0, Math.min(1, Math.log(lux / NIGHT_LUX) / Math.log(DAYLIGHT_LUX / NIGHT_LUX)));
+    return NIGHT_WHITE * (DAYLIGHT_WHITE / NIGHT_WHITE) ** (t * t * (3 - 2 * t));
+  };
+
+  /**
+   * Tell the exposure meter about an emitter (it meters lit geometry; what a volume emits is not for it to
+   * expose for, but a frame that holds nothing else must not be exposed as if it were dark). Coverage = the
+   * ellipse's solid angle over the frame's.
    */
   const emissiveHint = (frame: FrameContext, h: EmitterHint): void => {
     const d = v3.len(h.rel);
     if (!(h.luminance > 0) || d < 1e-3) return;
-    const dir = v3.scale(h.rel, 1 / d);
     const vw = frame.view;
     const vx = vw[0]! * h.rel.x + vw[4]! * h.rel.y + vw[8]! * h.rel.z;
     const vy = vw[1]! * h.rel.x + vw[5]! * h.rel.y + vw[9]! * h.rel.z;
@@ -126,19 +174,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const m = frame.projUnjittered;
     const size = Math.max(h.a, h.b) / d;
     if (vz >= 0 || Math.abs((m[0]! * vx) / -vz) > 1 + m[0]! * size || Math.abs((m[5]! * vy) / -vz) > 1 + m[5]! * size) return;
-    let overBody = false;
-    for (const body of frame.snapshot.bodies) {
-      const def = ctx.defs.bodies[body.id];
-      if (!def) continue;
-      const c = frame.bodyPose(body.id).centerRelCam;
-      const along = v3.dot(c, dir);
-      if (along > 0 && v3.lenSq(v3.addScaled(c, dir, -along)) < def.radius * def.radius) overBody = true;
-    }
     // As the image shows it: a streak thinner than a pixel is drawn a pixel wide and that much dimmer, and
     // the glare of a small bright thing spreads over a few pixels around it; nothing is wider than the frame.
     const px = (2 * d) / (m[5]! * frame.renderSize[1]);
     // A flame is meant to clip: the meter is asked to hold it three stops over its white, not under it.
-    let luminance = Math.min(h.luminance / 2 ** (h.clipStops ?? 3), h.cap ?? Infinity);
+    let luminance = Math.min(h.luminance / 2 ** (h.clipStops ?? 3), h.cap ?? flameCap(frame));
     if (h.a < 0.5 * px) luminance *= h.a / (0.5 * px);
     if (h.b < 0.5 * px) luminance *= h.b / (0.5 * px);
     const reach = d * Math.hypot(1 / m[0]!, 1 / m[5]!);
@@ -146,9 +186,6 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const b = Math.min(Math.max(h.b, 2 * px), reach);
     const frameSolidAngle = 4 / (m[0]! * m[5]!);
     const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle);
-    // An emitter in front of a body is not reported: what it lights is geometry and in the meter's histogram,
-    // and the exposure should be the one that shows that (the regolith under a lander at night), not the flame.
-    if (overBody) return;
     if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
   };
 
@@ -170,9 +207,9 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const along = v3.dot(pc.axisX, v3.normalize(rel));
     const luminance = 0.35 * throttle * c.look.core.luminance * (1 + (c.look.core.vacuumGain - 1) * shape.vacuum);
     // A thruster puff is a faint cone, not a flame: it is held at the meter's white so that its shape survives.
-    // An engine flame is held three stops over the meter's white, and never reported brighter than a sunlit
-    // white surface: by day the plume leaves the exposure where the sun puts it and clips.
-    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance, clipStops: c.kind === 'rcs' ? 0 : 3, cap: c.kind === 'rcs' ? undefined : DAYLIGHT_WHITE };
+    // An engine flame is held three stops over the meter's white, and never reported brighter than the cap
+    // of the hour (flameCap).
+    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance, clipStops: c.kind === 'rcs' ? 0 : 3 };
   };
 
   const placeCluster = (frame: FrameContext, cluster: PlumeCluster): PlacedCluster | null => {
@@ -196,30 +233,59 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     };
   };
 
-  const plumeLights = (candidates: LightCandidate[]): void => {
+  /**
+   * The light of the plumes. A flame is a line of light tens of metres long, not a point at the nozzles: its
+   * intensity (proportional to thrust) is spread along the luminous length of the jet, little of it near the
+   * nozzles (the gas there is dim and a point light close to the bells would burn them out), most of it in
+   * the body of the flame. Where the jet meets the ground the line ends above it and what the ground cuts
+   * off shines from the flame that spreads over the surface and the cloud it lights: a point above the foot.
+   * `ground(pc)` = distance along the jet axis to the ground (Infinity: none), `up` = local vertical (ROOT axes).
+   */
+  const plumeLights = (candidates: LightCandidate[], ground: (pc: PlacedCluster) => number, up: Vec3 | null): void => {
     const L = data.lights;
     for (const pc of placed) {
       const c = pc.cluster;
-      const intensity = plumeLightIntensity(c.look, c.thrust);
-      const power = lum(intensity);
+      const total = plumeLightIntensity(c.look, c.thrust);
+      const power = lum(total);
       if (power < L.minIntensity) continue;
       let reMax = 0;
-      let core = 0;
-      for (const nz of c.nozzles) {
-        reMax = Math.max(reMax, nz.exitRadius);
-        core = Math.max(core, nz.shape.coreLength);
+      for (const nz of c.nozzles) reMax = Math.max(reMax, nz.exitRadius);
+      const shape = c.merged?.shape ?? c.nozzles[0]!.shape;
+      // Luminous length: the flame where there is air to burn with, the glowing particulates of a solid motor,
+      // else the short bright core at the exit.
+      const flame = shape.oxygen > 0.01 && c.look.afterburn.luminance > c.look.core.luminance * 0.2 ? 0.85 * shape.afterLength * Math.min(1, 3 * shape.oxygen) : 0;
+      const glow = c.look.smoke.glow > 0 ? 1.2 * c.look.smoke.glowLengthRe * reMax : 0;
+      const length = Math.max(flame, glow, 2 * c.look.core.vacuumCoreRe * reMax, 4 * reMax);
+      const start = Math.min(LIGHT_START_RE * reMax, 0.25 * length);
+      const tg = ground(pc);
+      const end = Math.min(start + length, tg - Math.max(1, reMax));
+      const cut = Math.min(1, Math.max(0, (start + length - end) / length));
+      const range = (p: number): number => Math.min(L.maxRange, Math.sqrt(p / L.rangeIlluminance));
+      const scaled = (k: number): Vec3Tuple => [total[0] * k, total[1] * k, total[2] * k];
+      if (end > start + 0.5) {
+        const span = end - start;
+        let from = 0;
+        for (let i = 0; i < LIGHT_SEGMENTS.length; i++) {
+          const [share, to] = LIGHT_SEGMENTS[i]!;
+          const k = share * (1 - cut);
+          // (A cluster too weak to be worth several lights keeps one line with all of its intensity.)
+          if (power < 50 * L.minIntensity) {
+            candidates.push({ power: power * (1 - cut), light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, end), intensity: scaled(1 - cut), range: range(power) } });
+            break;
+          }
+          candidates.push({
+            power: power * k,
+            light: { kind: 'capsule', posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + from * span), endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, start + to * span), intensity: scaled(k), range: range(power) },
+          });
+          from = to;
+        }
       }
-      if (c.merged) core = Math.max(core, c.merged.shape.coreLength);
-      candidates.push({
-        power,
-        light: {
-          kind: 'capsule',
-          posRelCam: v3.addScaled(pc.originRelCam, pc.axisX, reMax),
-          endRelCam: v3.addScaled(pc.originRelCam, pc.axisX, reMax + 1.2 * core),
-          intensity,
-          range: Math.min(L.maxRange, Math.sqrt(power / L.rangeIlluminance)),
-        },
-      });
+      if (cut > 0.01 && up && Number.isFinite(tg)) {
+        const foot = v3.addScaled(pc.originRelCam, pc.axisX, tg);
+        const height = Math.min(GROUND_LIGHT_MAX_HEIGHT, Math.max(3 * reMax, GROUND_LIGHT_HEIGHT * cut * length));
+        const k = cut * GROUND_LIGHT_SHARE;
+        candidates.push({ power: power * k, light: { kind: 'point', posRelCam: v3.addScaled(foot, up, height), intensity: scaled(k), range: range(power) } });
+      }
     }
   };
 
@@ -272,7 +338,6 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         }
       }
       plumes.update(placed, noiseTime, frame);
-      plumeLights(candidates);
       common.setProbe(PROBE_PAD, smoke.update(frame, placed, effectTime, simDt));
       plasma.update(frame, effectTime, noiseTime);
       candidates.push(...plasma.lights);
@@ -363,7 +428,21 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         candidates.push(...fireballs.lights);
         for (const h of fireballs.hints) emissiveHint(frame, h);
         stats.ground = out.ground ?? NaN;
-      } else dust.clear();
+        const level = out.ground;
+        plumeLights(
+          candidates,
+          (pc) => {
+            if (level === null) return Infinity;
+            const height = v3.dot(d.up, quat.rotateInv(d.q, v3.sub(pc.originRelCam, originRel))) - level;
+            const down = -v3.dot(d.up, quat.rotateInv(d.q, pc.axisX));
+            return down > 0.05 && height > -50 ? Math.max(height, 0) / down : Infinity;
+          },
+          quat.rotate(d.q, d.up),
+        );
+      } else {
+        dust.clear();
+        plumeLights(candidates, () => Infinity, null);
+      }
       // Trails last: they also take what the burning fragments of this frame leave behind.
       trails.update(frame, placed, effectTime, focus ? fireballs.trails : []);
       for (const h of trails.hints) emissiveHint(frame, h);

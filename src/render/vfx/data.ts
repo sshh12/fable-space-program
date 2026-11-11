@@ -53,10 +53,38 @@ export interface PlumeLookDef {
    * core: a condensing thruster puff is a filled cone, the soot of a booster a core), and their e-folding
    * length along the jet in exit radii.
    */
-  smoke: { extinction: number; albedo: Vec3Tuple; sunScatter: number; halo: number; lengthRe: number };
+  smoke: {
+    extinction: number;
+    albedo: Vec3Tuple;
+    sunScatter: number;
+    halo: number;
+    lengthRe: number;
+    /**
+     * Incandescent particulates (solid motors): the luminance of an opaque column of them at the exit, cd/m^2
+     * (0: the particulates do not glow), its colour there, and the e-folding length over which they cool from
+     * that colour through orange to dark, exit radii.
+     */
+    glow: number;
+    glowColor: Vec3Tuple;
+    glowLengthRe: number;
+    /** Exponent with which the particulates thin as the jet widens: 2 for soot that rides with the gas, about 1 for the smoke of a solid motor, which stays opaque. */
+    dilution: number;
+  };
+  /**
+   * The free expansion of the jet at high altitude and in vacuum: density ~ cos^exponent of the scaled angle
+   * from the axis (about 2 / (gamma - 1) for gas, less for a short thruster nozzle), the optical depth of
+   * condensed exhaust that scatters sunlight across the exit diameter, and the strength 0..1 of the faint
+   * radial striations in the fan.
+   */
+  farField: { exponent: number; scatter: number; striation: number };
   /** Turbulent break-up: feature size in exit radii, convection speed m/s, strength 0..1. */
   noise: { scaleRe: number; speed: number; amount: number };
-  ignition: { frontSpeed: number; flash: number; flashColor: Vec3Tuple; flashTime: number };
+  /**
+   * Start-up: speed of the front that lights the jet, and the puff of burning propellant at the nozzle: its
+   * gain over the core luminance, colour, life (s; gone after it) and the radius it may reach at sea level
+   * and in vacuum, exit radii.
+   */
+  ignition: { frontSpeed: number; flash: number; flashColor: Vec3Tuple; flashTime: number; reachRe: Range };
   shutdown: { fadeTime: number };
   /** Local light: luminous intensity per newton of thrust (cd/N) and colour. */
   light: { efficacy: number; color: Vec3Tuple };
@@ -270,9 +298,10 @@ const LOOK: Schema = {
   diamonds: { color: 'c', gain: 'n', cells: 'p' },
   shear: { color: 'c', luminance: 'n', lengthRe: 'p' },
   afterburn: { color: 'c', luminance: 'n', lengthRe: 'p' },
-  smoke: { extinction: 'n', albedo: 'c', sunScatter: 'n', halo: 'u', lengthRe: 'p' },
+  smoke: { extinction: 'n', albedo: 'c', sunScatter: 'n', halo: 'u', lengthRe: 'p', glow: 'n', glowColor: 'c', glowLengthRe: 'p', dilution: 'p' },
+  farField: { exponent: 'p', scatter: 'n', striation: 'u' },
   noise: { scaleRe: 'p', speed: 'n', amount: 'u' },
-  ignition: { frontSpeed: 'p', flash: 'n', flashColor: 'c', flashTime: 'p' },
+  ignition: { frontSpeed: 'p', flash: 'n', flashColor: 'c', flashTime: 'p', reachRe: 'r' },
   shutdown: { fadeTime: 'p' },
   light: { efficacy: 'n', color: 'c' },
   trail: { smoke: 'u', contrail: 'u' },

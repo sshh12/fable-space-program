@@ -26,6 +26,9 @@ export const MIXING_SPREAD = 0.09;
 /** Shock cells are drawn for pressure ratios inside this window (faded in and out at its edges). */
 export const CELL_ETA_MIN = 0.25;
 export const CELL_ETA_MAX = 4;
+/** Pressure ratios between which a jet goes over from a column held by the ambient air to a free expansion. */
+export const FAR_ETA_MIN = 4;
+export const FAR_ETA_MAX = 40;
 
 export interface NozzleGeometry {
   /** Exit radius, m. */
@@ -55,7 +58,17 @@ export interface JetShape {
   oxygen: number;
   /** 0 at sea level .. 1 in vacuum. */
   vacuum: number;
-  /** e-folding lengths of the three emission terms, m. */
+  /**
+   * 0..1: how far the jet has become a free expansion (a jet at more than about forty times the ambient
+   * pressure, and every jet in vacuum). The gas of such a jet is spread by angle from the nozzle,
+   * density ~ farAmp (re / R)^2 cos^k(theta pi / (2 thetaLimit)), instead of filling a column.
+   */
+  far: number;
+  /** On-axis density of the free expansion relative to (re / R)^2 (from the conservation of mass flow). */
+  farAmp: number;
+  /** Limiting angle of the free expansion, rad. */
+  thetaLimit: number;
+  /** e-folding lengths of the core and shear emission and the LENGTH of the turbulent flame (its ragged tip), m. */
   coreLength: number;
   shearLength: number;
   afterLength: number;
@@ -97,6 +110,9 @@ export function jetBoundaryRadius(shape: JetShape, exitRadius: number, x: number
 
 /** Luminance of a sunlit column of particulates per unit of scattering optical depth: 128,000 lx / 4 pi, cd/m^2. */
 export const SUN_SCATTER_LUMINANCE = 128000 / (4 * Math.PI);
+
+/** The fan of a free expansion is never followed further than this many exit radii. */
+export const FAR_REACH_RE = 400;
 
 /** Default cut-off of the visible extent: fraction of the exit column brightness. */
 export const DEFAULT_VISIBLE_FRACTION = 5e-4;
@@ -141,6 +157,15 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   const jetMach = Math.max(1.05, machFromPressureRatio((nozzle.chamberPressure * thr) / pa, g));
   const theta = Math.min(Math.min(THETA_MAX, look.maxExpansionDeg * DEG), Math.max(THETA_MIN, prandtlMeyer(jetMach, g) - prandtlMeyer(exitMach, g) + look.nozzleHalfAngleDeg * DEG));
   const tanTheta = Math.tan(theta);
+  const far = smoothstep(Math.log(FAR_ETA_MIN), Math.log(FAR_ETA_MAX), Math.log(Math.max(eta, 1e-6)));
+  const thetaLimit = Math.max(theta, 8 * DEG);
+  // Mass flow through the exit = mass flow through a far sphere: A = 1 / (2 int cos^k(theta pi / 2 thetaLimit) sin(theta) dtheta).
+  let integral = 0;
+  for (let i = 0; i < 48; i++) {
+    const th = ((i + 0.5) / 48) * thetaLimit;
+    integral += Math.pow(Math.cos((th * Math.PI) / (2 * thetaLimit)), look.farField.exponent) * Math.sin(th) * (thetaLimit / 48);
+  }
+  const farAmp = 1 / (2 * Math.max(integral, 1e-4));
   let lExp: number;
   if (theta < -0.5 * DEG) {
     // Over-expanded: the jet contracts to its fully expanded radius re sqrt(eta).
@@ -148,6 +173,10 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     lExp = Math.min(12 * re, Math.max(0.5 * re, (re - rInf) / -tanTheta));
   } else {
     lExp = 6 * re * Math.sqrt(Math.max(eta, 1));
+    // A strongly under-expanded jet balloons to about 1.3 re sqrt(eta) before the ambient pressure holds it
+    // (30 km: ten exit radii; 60 km: seventy; vacuum: no boundary within sight).
+    const held = (1.3 * re * Math.sqrt(eta)) / Math.max(tanTheta, 0.05);
+    lExp += (Math.min(lExp, held) - lExp) * far;
   }
   const pRel = Math.min(1, pa / SEA_LEVEL_PRESSURE);
   const mixSlope = MIXING_SPREAD * Math.pow(pRel, 0.25) * (ambientPressure > 1 ? 1 : 0);
@@ -175,6 +204,9 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     cellAmp,
     oxygen,
     vacuum,
+    far,
+    farAmp,
+    thetaLimit,
     coreLength,
     shearLength,
     afterLength,
@@ -190,11 +222,14 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   const nearLength = look.core.vacuumCoreRe * re;
   // What is seen of a jet is its glowing core or, for a smoky one, its particulates in sunlight (taken at
   // full sun: the extent is a bound), whichever is brighter relative to the exit brightness of the core.
-  const smokeGain = (look.smoke.sunScatter * SUN_SCATTER_LUMINANCE) / Math.max(look.core.luminance, 1);
+  const smokeGain = (Math.max(look.smoke.sunScatter, (look.smoke.glow * look.smoke.extinction) / SUN_SCATTER_LUMINANCE) * SUN_SCATTER_LUMINANCE) / Math.max(look.core.luminance, 1);
   const smokeAt = (x: number): number => smokeGain * (re / jetBulkRadius(shape, re, x)) * Math.exp(-x / (look.smoke.lengthRe * re));
-  const brightness = (x: number): number => Math.max(columnBrightness(shape, re, x, exponent, farGain, nearLength), smokeAt(x));
+  // A free expansion in sunlight: the column through the fan at distance x holds about 0.75 farAmp re^2 / x of gas.
+  const fanGain = (far * look.farField.scatter * SUN_SCATTER_LUMINANCE * 0.38 * farAmp) / Math.max(look.core.luminance, 1);
+  const fanAt = (x: number): number => (fanGain * re) / Math.max(x, re);
+  const brightness = (x: number): number => Math.max(columnBrightness(shape, re, x, exponent, farGain, nearLength), smokeAt(x), fanAt(x));
   let lo = 0;
-  let hi = Math.max(8 * coreLength, smokeGain > EPS ? 4 * look.smoke.lengthRe * re : 0);
+  let hi = Math.max(8 * coreLength, smokeGain > EPS ? 4 * look.smoke.lengthRe * re : 0, Math.min(FAR_REACH_RE * re, (fanGain * re) / EPS));
   if (brightness(hi) > EPS) lo = hi;
   else {
     for (let i = 0; i < 40; i++) {
@@ -203,8 +238,8 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
       else hi = mid;
     }
   }
-  const burn = oxygen > 0.01 ? 3 * Math.max(look.shear.luminance > 0 ? shearLength : 0, look.afterburn.luminance > 0 ? afterLength : 0) * Math.min(1, 0.35 + oxygen) : 0;
-  shape.visibleLength = Math.max(lo, burn, 3 * re);
+  const burn = oxygen > 0.01 ? Math.max(look.shear.luminance > 0 ? 3 * shearLength * Math.min(1, 0.35 + oxygen) : 0, look.afterburn.luminance > 0 ? 1.35 * afterLength : 0) : 0;
+  shape.visibleLength = Math.min(Math.max(lo, burn, 3 * re), Math.max(FAR_REACH_RE * re, burn, 8 * coreLength));
   let radius = re * 1.5;
   for (let i = 1; i <= 24; i++) {
     const x = (shape.visibleLength * i) / 24;
@@ -215,11 +250,18 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     const shear = x < burn ? rb * 1.5 : 0;
     // Particulates: a core 1.3 times as wide as the glow, or the whole cross-section of the jet.
     const s = smokeAt(x);
-    const smoke = s > EPS ? (look.smoke.halo > 0.5 ? 1.1 * rb : 1.3 * look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(s / EPS))) : 0;
-    radius = Math.max(radius, core, shear, smoke);
+    const smoke = s > EPS ? (look.smoke.halo > 0.5 ? 1.5 * rb : Math.max(1.3 * look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(s / EPS)), look.smoke.halo > 0 ? 1.5 * Math.min(rb, 2 * re + BULK_SLOPE * x) : 0)) : 0;
+    // The fan of a free expansion: out to the angle where its density is a hundredth of that on the axis.
+    const fan = far > 0 && fanAt(x) > EPS ? x * Math.tan(Math.min(1.35, farVisibleAngle(look, thetaLimit))) + 2 * re : 0;
+    radius = Math.max(radius, core, shear, Math.min(smoke, 1.5 * rb + re), fan);
   }
   shape.visibleRadius = radius;
   return shape;
+}
+
+/** Angle from the axis at which the density of a free expansion has fallen to a hundredth of its on-axis value, rad. */
+export function farVisibleAngle(look: PlumeLookDef, thetaLimit: number): number {
+  return (Math.acos(Math.pow(0.01, 1 / look.farField.exponent)) * 2 * thetaLimit) / Math.PI;
 }
 
 /** Luminous intensity of the light a plume casts (linear sRGB x cd): proportional to thrust. */
@@ -241,6 +283,7 @@ export function engineEmissionState(
   if (throttle < 0.002 && residual < 0.02) return { throttle: 0, front: 0, flash: 0, residual: 0 };
   // The start-up front runs down the jet; while running the whole jet is lit.
   const front = s.ignitionAge >= 0 && throttle >= 0.002 ? look.ignition.frontSpeed * (s.ignitionAge + 1 / 120) : 1e9;
-  const flash = s.ignitionAge >= 0 ? look.ignition.flash * Math.exp(-s.ignitionAge / look.ignition.flashTime) : 0;
+  // The start-up puff is gone, exactly, after flashTime.
+  const flash = s.ignitionAge >= 0 && s.ignitionAge < look.ignition.flashTime ? look.ignition.flash * (1 - s.ignitionAge / look.ignition.flashTime) ** 2 : 0;
   return { throttle, front, flash, residual };
 }
