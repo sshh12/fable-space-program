@@ -18,7 +18,7 @@ import type { Tracked } from '@/render/core';
 import type { VfxCommon } from './common';
 import type { VfxData } from './data';
 import type { PlacedCluster } from './plumes';
-import type { VolumeItem } from './volumes';
+import type { EmitterHint, VolumeItem } from './volumes';
 
 const SEG_FLOATS = 32;
 const CHUNK = 8;
@@ -215,6 +215,8 @@ export class TrailSystem {
   private readonly group: GPUBindGroup;
   private readonly pipeline: Tracked<GPURenderPipeline>;
   private chunks: { first: number; count: number; distance: number }[] = [];
+  /** One per trail with a glowing part (a reentry wake): its projected area and mean luminance. */
+  readonly hints: EmitterHint[] = [];
   /** Segments drawn in the last frame. */
   segments = 0;
 
@@ -343,6 +345,7 @@ export class TrailSystem {
     const S = this.segData;
     let count = 0;
     this.chunks = [];
+    this.hints.length = 0;
     for (const t of this.trails.values()) {
       if (!frame.snapshot.bodies.some((b) => b.id === t.bodyId)) continue;
       const pose = frame.bodyPose(t.bodyId);
@@ -357,6 +360,28 @@ export class TrailSystem {
         const albedo: Vec3Tuple = total > 1e-9 ? ([0, 1, 2].map((i) => (D.smokeAlbedo[i]! * s + D.contrailAlbedo[i]! * c) / total) as Vec3Tuple) : D.smokeAlbedo;
         return { radius: trailRadius(D, n, age), tau: total, glow: g, albedo };
       });
+      // The glowing part as the exposure meter should see it: area of the tubes across the line of sight.
+      let area = 0;
+      let lumArea = 0;
+      let lengthAcross = 0;
+      let centre = v3.zero();
+      for (let i = 0; i + 1 < list.length; i++) {
+        const glow = 0.5 * (state[i]!.glow + state[i + 1]!.glow);
+        if (glow < 1) continue;
+        const mid = v3.scale(v3.add(rel[i]!, rel[i + 1]!), 0.5);
+        const seg = v3.sub(rel[i + 1]!, rel[i]!);
+        const across = v3.len(v3.reject(seg, v3.normalize(mid)));
+        const a = across * 0.6 * (state[i]!.radius + state[i + 1]!.radius);
+        area += a;
+        lengthAcross += across;
+        lumArea += a * 0.6 * glow;
+        centre = v3.addScaled(centre, mid, a);
+      }
+      if (area > 0) {
+        // A long thin ellipse of the same length and area.
+        const a = Math.max(0.5 * lengthAcross, 1e-3);
+        this.hints.push({ rel: v3.scale(centre, 1 / area), a, b: area / (Math.PI * a), luminance: lumArea / area });
+      }
       const reverse = v3.lenSq(rel[0]!) < v3.lenSq(rel[rel.length - 1]!);
       const first = count;
       for (let k = 0; k + 1 < list.length && count < this.maxSegs; k++) {
@@ -376,7 +401,8 @@ export class TrailSystem {
         const frac = (x: number): number => x * scale - Math.floor(x * scale);
         S.set([frac(nodeA.pos.x), frac(nodeA.pos.y), frac(nodeA.pos.z), scale], o + 24);
         const gc = nodeA.glow0 > 0 ? nodeA.glowColor : list[i + 1]!.glowColor;
-        S.set([gc[0], gc[1], gc[2], D.noiseAmount], o + 28);
+        // A glowing wake is smooth gas, not a billowing cloud.
+        S.set([gc[0], gc[1], gc[2], nodeA.glow0 > 0 ? 0.2 * D.noiseAmount : D.noiseAmount], o + 28);
         count++;
       }
       for (let c0 = first; c0 < count; c0 += CHUNK) {

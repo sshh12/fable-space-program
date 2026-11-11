@@ -8,8 +8,21 @@
  * drawTransparent: one fullscreen composite with the core's depth-aware upsample.
  */
 import { RENDER_FORMATS, type FrameContext, type RenderContext } from '@/core/contracts/render';
+import type { Vec3 } from '@/core/math';
 import type { ManagedTarget, Tracked } from '@/render/core';
 import type { VfxCommon } from './common';
+
+/**
+ * A luminous thing the exposure meter should know about (CoreApi.addEmissiveHint): an ellipse with half-axes
+ * `a` x `b` metres facing the camera at `rel` (relative to the camera, ROOT axes), of mean luminance
+ * `luminance` (cd/m^2, not pre-exposed).
+ */
+export interface EmitterHint {
+  rel: Vec3;
+  a: number;
+  b: number;
+  luminance: number;
+}
 
 export interface VolumeItem {
   /** Distance from the eye, m (items are drawn far to near). */

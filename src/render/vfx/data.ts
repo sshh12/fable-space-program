@@ -29,6 +29,8 @@ export interface PlumeLookDef {
     /** e-folding length of the core emission in the atmosphere / in vacuum, exit radii. */
     lengthRe: number;
     vacuumLengthRe: number;
+    /** Core luminance in vacuum as a fraction of `luminance` (thin gas radiates little; blended by the vacuum factor). */
+    vacuumGain: number;
     /** Radius of the luminous core as a fraction of the jet boundary. */
     radius: number;
     /** Emission ~ (relative gas density)^exponent. */
@@ -82,7 +84,7 @@ export interface CanopyStyleDef {
 export interface VfxData {
   version: number;
   plumes: Record<string, PlumeLookDef>;
-  rcs: { plume: string; exitDiameterPerSqrtNewton: number; exitPressure: number; chamberPressure: number; minLevel: number; puffRate: number };
+  rcs: { plume: string; exitDiameterPerSqrtNewton: number; exitPressure: number; chamberPressure: number; minLevel: number };
   lights: { maxLights: number; rangeIlluminance: number; maxRange: number; minIntensity: number };
   trail: {
     maxNodes: number;
@@ -202,7 +204,7 @@ const LOOK: Schema = {
   gamma: 'p',
   nozzleHalfAngleDeg: 'n',
   maxExpansionDeg: 'p',
-  core: { color: 'c', luminance: 'n', lengthRe: 'p', vacuumLengthRe: 'p', radius: 'p', densityExponent: 'p' },
+  core: { color: 'c', luminance: 'n', lengthRe: 'p', vacuumLengthRe: 'p', vacuumGain: 'u', radius: 'p', densityExponent: 'p' },
   diamonds: { color: 'c', gain: 'n', cells: 'p' },
   shear: { color: 'c', luminance: 'n', lengthRe: 'p' },
   afterburn: { color: 'c', luminance: 'n', lengthRe: 'p' },
@@ -234,7 +236,7 @@ const CANOPY: Schema = {
 
 const ROOT: Schema = {
   version: 'i',
-  rcs: { plume: 's', exitDiameterPerSqrtNewton: 'p', exitPressure: 'p', chamberPressure: 'p', minLevel: 'u', puffRate: 'n' },
+  rcs: { plume: 's', exitDiameterPerSqrtNewton: 'p', exitPressure: 'p', chamberPressure: 'p', minLevel: 'u' },
   lights: { maxLights: 'i', rangeIlluminance: 'p', maxRange: 'p', minIntensity: 'n' },
   trail: {
     maxNodes: 'i',

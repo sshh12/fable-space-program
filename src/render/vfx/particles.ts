@@ -189,12 +189,12 @@ fn glow(T: f32) -> vec3f {
 
   // Per kind: drag area per mass (m^2/kg), turbulence (m/s at sea-level density), weight (fraction of gravity).
   var k = 40.0; var turb = 2.5; var weight = 1.0;
-  if (kind == KIND_ICE) { k = 5.0; turb = 1.2; }
+  if (kind == KIND_ICE) { k = 0.6; turb = 0.6; }
   else if (kind == KIND_GAS) { k = 300.0; turb = 3.0; weight = 0.0; }
-  else if (kind == KIND_SPARK) { k = 1.5; turb = 0.0; }
-  else if (kind == KIND_CHIP) { k = 1.2; turb = 0.0; }
-  else if (kind == KIND_DROPLET) { k = 2.2; turb = 0.0; }
-  else if (kind == KIND_MIST) { k = 200.0; turb = 2.2; weight = 0.12; }
+  else if (kind == KIND_SPARK) { k = 0.15; turb = 0.0; }
+  else if (kind == KIND_CHIP) { k = 0.03; turb = 0.0; }
+  else if (kind == KIND_DROPLET) { k = 0.09; turb = 0.0; }
+  else if (kind == KIND_MIST) { k = 7.0; turb = 1.6; weight = 0.3; }
 
   if (dt > 0.0) {
     var v = p.vel;

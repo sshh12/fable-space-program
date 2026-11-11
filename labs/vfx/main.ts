@@ -41,6 +41,8 @@ export interface VfxLab {
    * or not. The loop stays stopped (for exact readbacks); `resume()` starts it again.
    */
   renderExact(frames: number, advance: boolean): Promise<void>;
+  /** Unit direction to the sun in the site frame (east, north, up). */
+  sunEnu(): Vec3;
   resume(): void;
   /** Pixel of the internal render target that a site-frame point projects to (null behind the camera) and its distance from the eye. */
   project(enu: Vec3): { x: number; y: number; distance: number } | null;
@@ -170,6 +172,12 @@ async function boot(): Promise<void> {
     },
     resume() {
       app.setLoop(true);
+    },
+    sunEnu() {
+      const snap = app.snapshot();
+      const f = sim.siteFrame(snap);
+      const body = snap.bodies.find((b) => b.id === sim.site.bodyId)!;
+      return { x: v3.dot(body.sunDir, f.east), y: v3.dot(body.sunDir, f.north), z: v3.dot(body.sunDir, f.up) };
     },
     project(enu) {
       const fc = app.renderer.frameContext;

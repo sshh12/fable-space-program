@@ -125,18 +125,34 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   // Radial tapes along the gore seams, hems at the ring edges.
   let tape = max(1.0 - smoothstep(0.02, 0.05, min(u, 1.0 - u)), 1.0 - smoothstep(0.03, 0.09, min(w, 1.0 - w)));
   albedo = mix(albedo, style.band.rgb, tape * 0.8);
+  // The canopy mesh is wound clockwise seen from outside: front-facing fragments are the inside of the cloth.
+  let outside = !front;
   var n = normalize(v.n);
-  if (!front) { n = -n; }
+  if (!outside) { n = -n; }
   // Cloth is a little rougher and denser under the tapes; fine pleats run along the gores.
   let pleat = sin(u * TWO_PI * 7.0) * 0.05 * (1.0 - tape);
   let translucency = style.params.w * (1.0 - 0.55 * tape);
   // The canopy is a lantern: sunlight that came in through the cloth on the sunny side fills the cavity and
   // shines out through every surface turned away from the sun (the deferred pass only knows the first pass
   // through one layer). Emitted here as cloth-coloured light, strongest where the surface faces away.
+  //  - inside face, sun beyond the sheet: sunlight straight through one layer (the bright, saturated glow of
+  //    a canopy seen from below against the light);
+  //  - inside face turned to the sun: lit by what came in through the far wall;
+  //  - outside face turned away from the sun: cavity light through one more layer.
+  // The outside face in the sun is the deferred pass's business. The G-buffer gets translucency 0, so that
+  // nothing of this is counted twice where the shadow map lets the core's own transmission term through.
   let sun = frame.sunIlluminance.rgb * frame.misc.y;
-  let away = saturate(0.55 - 0.6 * dot(n, frame.sunDir.xyz));
-  let cavity = albedo * sun * (translucency * 0.2 * away * (0.4 + 0.6 * smoothstep(0.02, 0.5, I.axisX.w)) / PI);
-  return gbufferPack(albedo * (1.0 + pleat), 1.0, n, style.params.z, 0.0, MATERIAL_CLOTH, translucency, velocityFromClip(v.currClip, v.prevClip), cavity * frame.exposure.x);
+  let NoL = dot(n, frame.sunDir.xyz);
+  let T = translucency;
+  let forward = 0.75 + 0.9 * pow(saturate(dot(normalize(viewRay(v.clip.xy * frame.renderSize.zw)), frame.sunDir.xyz)), 4.0);
+  var g = 0.0;
+  if (outside) { g = T * T * saturate(-NoL); }
+  else { g = T * (saturate(-NoL) * forward + 0.8 * saturate(NoL)); }
+  // Light that crossed the cloth takes its colour.
+  let tint = albedo * mix(vec3f(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3), 0.6);
+  let filled = 0.35 + 0.65 * smoothstep(0.02, 0.5, I.axisX.w);
+  let cavity = tint * sun * (g * filled / PI);
+  return gbufferPack(albedo * ((1.0 + pleat) * (1.0 - 0.5 * T)), 1.0, n, style.params.z, 0.0, MATERIAL_CLOTH, 0.0, velocityFromClip(v.currClip, v.prevClip), cavity * frame.exposure.x);
 }
 `;
 

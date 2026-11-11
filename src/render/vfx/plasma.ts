@@ -15,7 +15,7 @@ import { hashToUnit, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core
 import type { Tracked } from '@/render/core';
 import type { VfxCommon } from './common';
 import type { VfxData } from './data';
-import { createVolumePipeline, type VolumeItem } from './volumes';
+import { createVolumePipeline, type EmitterHint, type VolumeItem } from './volumes';
 
 export const MAX_PLASMA = 4;
 const INST_FLOATS = 32;
@@ -168,7 +168,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
       let n = vfxNoiseLod(p * (0.6 / Rb) - vec3f(I.params.x * 0.4 / Rb, 0.0, 0.0) + vec3f(I.params.z), dt * 0.6 / Rb);
       let layer = smoothstep(1.25 * delta, 0.9 * delta, sd);
       let front = exp(-sq((sd - 0.95 * delta) / (0.2 * delta)));
-      let k = (0.35 * layer + 1.0 * front) * pow(smoothstep(0.12, 1.0, e), 1.4) * (0.7 + 0.6 * n.g);
+      let k = (0.16 * layer + 1.0 * front) * pow(smoothstep(0.12, 1.0, e), 1.4) * (0.7 + 0.6 * n.g);
       j += mix(I.color.rgb, hot, e * e) * (k / d0s);
     }
     // Wake: the layer spills over the shoulder into a sheath that necks down behind the body, then a long streaked core.
@@ -208,6 +208,7 @@ export class PlasmaRenderer {
   private readonly pipeline: Tracked<GPURenderPipeline>;
   private placed: PlacedPlasma[] = [];
   readonly lights: { light: LocalLight; power: number }[] = [];
+  readonly hints: EmitterHint[] = [];
 
   constructor(
     private readonly ctx: RenderContext,
@@ -228,6 +229,7 @@ export class PlasmaRenderer {
     const D = this.data;
     this.placed = [];
     this.lights.length = 0;
+    this.hints.length = 0;
     const list = frame.snapshot.vessels.filter((v) => v.aero.plasmaIntensity >= R.minIntensity && v3.len(v.aero.airVelocity) > 500).sort((x, y) => y.aero.plasmaIntensity - x.aero.plasmaIntensity);
     for (const vessel of list.slice(0, MAX_PLASMA)) {
       const pose = frame.vesselPose(vessel.id);
@@ -251,6 +253,7 @@ export class PlasmaRenderer {
       const extent = Math.hypot(proxy.radius, proxy.halfLength);
       const standoff = R.standoff * proxy.noseRadius;
       const wakeLength = R.wakeLengthRadii * proxy.radius;
+      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance });
       const o = this.placed.length * INST_FLOATS;
       D.set([origin.x, origin.y, origin.z, extent + 3 * wakeLength], o);
       D.set([wind.x, wind.y, wind.z, 2.2 * extent + 4 * standoff], o + 4);

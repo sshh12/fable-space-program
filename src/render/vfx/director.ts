@@ -496,14 +496,16 @@ export class EffectDirector {
         droplets(W.count * 0.3, 'ring', radius * 1.2, [50 * DEG, 82 * DEG], [0.25 * v0, 0.95 * v0], 2);
         droplets(W.count * 0.1, 'disc', radius * 0.45, [0, 0.16], [0.4 * v0, 1.35 * v0], 3);
         out.emitters.push({
+          // The fine spray that gives the crown its body: thrown up with the sheet, stopped by the air within
+          // a few metres, then hanging and settling.
           kind: 'mist',
-          shape: 'sphere',
-          pos: v3.addScaled(pos, up, 0.6 * radius),
+          shape: 'ring',
+          pos: v3.addScaled(pos, up, 0.4),
           axis: up,
-          radius: 1.3 * radius,
+          radius: 1.05 * radius,
           vel: v3.scale(horizontal, 0.3),
-          speed: [0.5, 0.45 * v0],
-          polar: [0, 1.4],
+          speed: [0.5 * v0, 1.9 * v0],
+          polar: [(90 - C.crownAngleDeg[1]) * DEG, (90 - C.crownAngleDeg[0] + 8) * DEG],
           life: [W.life[0] * 1.5, W.life[1] * 2],
           size: W.mistSize,
           growth: 1.1,

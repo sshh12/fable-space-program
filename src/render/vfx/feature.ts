@@ -7,6 +7,7 @@
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
+import { coreOf } from '@/render/core';
 import { ChuteSystem } from './chutes';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
 import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
@@ -21,7 +22,7 @@ import { PlumeRenderer, type PlacedCluster, type PlumeSlice } from './plumes';
 import { SmokeSystem } from './smoke';
 import { FoamRenderer } from './splash';
 import { TrailSystem } from './trail';
-import { VolumePass, type VolumeItem } from './volumes';
+import { VolumePass, type EmitterHint, type VolumeItem } from './volumes';
 
 export const VFX_FEATURE_ID = 'vfx';
 
@@ -105,6 +106,63 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let myLights: LocalLight[] = [];
   let dom: DomainFrame | null = null;
   const stats: Record<string, number> = {};
+
+  /**
+   * Tell the exposure meter about an emitter seen against the sky (it meters geometry only; an emitter in
+   * front of geometry is in its histogram already). Coverage = the ellipse's solid angle over the frame's.
+   */
+  const emissiveHint = (frame: FrameContext, h: EmitterHint): void => {
+    const d = v3.len(h.rel);
+    if (!(h.luminance > 0) || d < 1e-3) return;
+    const dir = v3.scale(h.rel, 1 / d);
+    const vw = frame.view;
+    const vx = vw[0]! * h.rel.x + vw[4]! * h.rel.y + vw[8]! * h.rel.z;
+    const vy = vw[1]! * h.rel.x + vw[5]! * h.rel.y + vw[9]! * h.rel.z;
+    const vz = vw[2]! * h.rel.x + vw[6]! * h.rel.y + vw[10]! * h.rel.z;
+    const m = frame.projUnjittered;
+    const size = Math.max(h.a, h.b) / d;
+    if (vz >= 0 || Math.abs((m[0]! * vx) / -vz) > 1 + m[0]! * size || Math.abs((m[5]! * vy) / -vz) > 1 + m[5]! * size) return;
+    for (const body of frame.snapshot.bodies) {
+      const def = ctx.defs.bodies[body.id];
+      if (!def) continue;
+      const c = frame.bodyPose(body.id).centerRelCam;
+      const along = v3.dot(c, dir);
+      if (along > 0 && v3.lenSq(v3.addScaled(c, dir, -along)) < def.radius * def.radius) return;
+    }
+    // As the image shows it: a streak thinner than a pixel is drawn a pixel wide and that much dimmer, and
+    // the glare of a small bright thing spreads over a few pixels around it; nothing is wider than the frame.
+    const px = (2 * d) / (m[5]! * frame.renderSize[1]);
+    // A flame is meant to clip: the meter is asked to hold it three stops over its white, not under it.
+    let luminance = h.luminance / 8;
+    if (h.a < 0.5 * px) luminance *= h.a / (0.5 * px);
+    if (h.b < 0.5 * px) luminance *= h.b / (0.5 * px);
+    const reach = d * Math.hypot(1 / m[0]!, 1 / m[5]!);
+    const a = Math.min(Math.max(h.a, 2 * px), reach);
+    const b = Math.min(Math.max(h.b, 2 * px), reach);
+    const frameSolidAngle = 4 / (m[0]! * m[5]!);
+    const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle);
+    if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
+  };
+
+  /** The bright part of a plume cluster as an exposure hint. */
+  const plumeHint = (pc: PlacedCluster): EmitterHint | null => {
+    const c = pc.cluster;
+    const shape = c.nozzles[0]?.shape;
+    if (!shape) return null;
+    let throttle = 0;
+    let reMax = 0;
+    for (const nz of c.nozzles) {
+      throttle += nz.throttle / c.nozzles.length;
+      reMax = Math.max(reMax, nz.exitRadius);
+    }
+    if (throttle <= 0) return null;
+    const length = Math.min(c.length, 2 * shape.coreLength);
+    const radius = Math.min(c.radius, Math.max(2 * reMax, 0.12 * length));
+    const rel = v3.addScaled(pc.originRelCam, pc.axisX, 0.5 * length);
+    const along = v3.dot(pc.axisX, v3.normalize(rel));
+    const luminance = 0.35 * throttle * c.look.core.luminance * (1 + (c.look.core.vacuumGain - 1) * shape.vacuum);
+    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance };
+  };
 
   const placeCluster = (frame: FrameContext, cluster: PlumeCluster): PlacedCluster | null => {
     const pose = frame.vesselPose(cluster.vesselId);
@@ -207,6 +265,12 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       trails.update(frame, placed, effectTime);
       plasma.update(frame, effectTime, noiseTime);
       candidates.push(...plasma.lights);
+      for (const pc of placed) {
+        const h = plumeHint(pc);
+        if (h) emissiveHint(frame, h);
+      }
+      for (const h of trails.hints) emissiveHint(frame, h);
+      for (const h of plasma.hints) emissiveHint(frame, h);
 
       // ---- effect domain, director, particles
       const g = common.globals;
@@ -286,6 +350,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         }
         fireballs.update(frame, d, effectTime, simDt, density);
         candidates.push(...fireballs.lights);
+        for (const h of fireballs.hints) emissiveHint(frame, h);
         stats.ground = out.ground ?? NaN;
       }
 

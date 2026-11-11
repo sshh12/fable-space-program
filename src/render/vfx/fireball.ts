@@ -11,7 +11,7 @@ import type { VfxCommon } from './common';
 import type { VfxData } from './data';
 import type { FireballSpawn } from './director';
 import { applyRebase, type DomainFrame, type DomainRebase } from './domain';
-import { createVolumePipeline, type VolumeItem } from './volumes';
+import { createVolumePipeline, type EmitterHint, type VolumeItem } from './volumes';
 
 export const MAX_FIREBALLS = 8;
 const INST_FLOATS = 16;
@@ -75,10 +75,12 @@ const AZ = vec3f(0.0, 0.0, 1.0);
     let n = vfxNoiseLod(q * 0.45 + seed + vec3f(0.0, 0.0, -I.smoke.w / R * 0.2), dt / R * 0.45);
     let n2 = vfxNoiseLod(q * 1.3 + seed * 3.1, dt / R * 1.3);
     // A sphere with a boiling surface.
-    let shape = 1.0 - smoothstep(0.55, 0.95, rr + (n.g - 0.5) * 0.9 + (n2.b - 0.5) * 0.45);
+    let lobes = vfxNoiseLod(q * 0.35 + seed * 1.7, dt / R * 0.35);
+    let shape = 1.0 - smoothstep(0.55, 0.95, rr * (0.66 + 0.7 * smoothstep(0.3, 0.7, lobes.r)) + (n.g - 0.5) * 1.0 + (n2.b - 0.5) * 0.45);
     if (shape <= 0.0) { continue; }
     // Hot in the middle and in the folds; the fire dies from the outside in.
-    let local = saturate(heat * (1.35 - rr) * (0.45 + 1.1 * n.r) * (0.6 + 0.8 * n2.g));
+    // While the ball is young it is hot right out to its surface.
+    let local = saturate(heat * (1.35 - rr * (1.0 - 0.5 * heat)) * (0.45 + 1.1 * n.r) * (0.6 + 0.8 * n2.g));
     let fire = I.color.rgb * (local * local * local * 4.0) + I.color.rgb * vec3f(1.0, 1.6, 3.2) * (pow(local, 6.0) * 2.5);
     let sigma = shape * (2.5 * heat + 5.0 * smokeAmount * (0.3 + 1.4 * n.g * (0.5 + n2.b))) / R;
     // Smoke shades itself: one more look at the shape a quarter radius towards the sun.
@@ -110,6 +112,7 @@ export class FireballRenderer {
   private balls: Fireball[] = [];
   private distances: number[] = [];
   readonly lights: { light: LocalLight; power: number }[] = [];
+  readonly hints: EmitterHint[] = [];
 
   constructor(
     ctx: RenderContext,
@@ -162,6 +165,7 @@ export class FireballRenderer {
     const E = this.vfx.explosion;
     const D = this.data;
     this.lights.length = 0;
+    this.hints.length = 0;
     this.distances = [];
     const air = Math.min(1, density / 1.2);
     const originRel = v3.sub(dom.originRoot, frame.camera.positionRoot);
@@ -186,6 +190,7 @@ export class FireballRenderer {
       D.set([E.color[0] * E.luminance, E.color[1] * E.luminance, E.color[2] * E.luminance, E.steps], o + 8);
       D.set([E.smokeAlbedo[0], E.smokeAlbedo[1], E.smokeAlbedo[2], age * 4], o + 12);
       this.distances.push(v3.len(rel));
+      if (heat > 0.05) this.hints.push({ rel, a: 0.8 * radius, b: 0.8 * radius, luminance: E.luminance * heat * heat * heat });
       const power = E.lightEfficacy * E.luminance * heat * heat * Math.PI * radius * radius;
       if (power > 1) this.lights.push({ power, light: { kind: 'point', posRelCam: rel, intensity: [E.color[0] * power, E.color[1] * power, E.color[2] * power], range: Math.min(20000, 60 * radius) } });
     });

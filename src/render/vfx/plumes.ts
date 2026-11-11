@@ -408,7 +408,8 @@ export class PlumeRenderer {
       put(I, o + 4, pc.axisX.x, pc.axisX.y, pc.axisX.z, c.radius);
       put(I, o + 8, pc.axisY.x, pc.axisY.y, pc.axisY.z, c.xMin);
       put(I, o + 12, pc.axisZ.x, pc.axisZ.y, pc.axisZ.z, c.nozzles.length);
-      const cl = look.core.luminance;
+      const fl = look.core.luminance;
+      const cl = fl * (1 + (look.core.vacuumGain - 1) * (c.nozzles[0]?.shape.vacuum ?? 0));
       put(I, o + 16, look.core.color[0] * cl, look.core.color[1] * cl, look.core.color[2] * cl, look.core.radius);
       put(I, o + 20, look.diamonds.color[0] * cl, look.diamonds.color[1] * cl, look.diamonds.color[2] * cl, look.diamonds.gain);
       const sl = look.shear.luminance;
@@ -417,9 +418,9 @@ export class PlumeRenderer {
       put(I, o + 28, look.afterburn.color[0] * al, look.afterburn.color[1] * al, look.afterburn.color[2] * al, look.core.densityExponent);
       const ss = look.smoke.sunScatter;
       put(I, o + 32, look.smoke.albedo[0] * ss, look.smoke.albedo[1] * ss, look.smoke.albedo[2] * ss, look.smoke.extinction);
-      put(I, o + 36, look.ignition.flashColor[0] * cl, look.ignition.flashColor[1] * cl, look.ignition.flashColor[2] * cl, ni);
+      put(I, o + 36, look.ignition.flashColor[0] * fl, look.ignition.flashColor[1] * fl, look.ignition.flashColor[2] * fl, ni);
       const feature = Math.max(look.noise.scaleRe * reMax, 0.05);
-      put(I, o + 40, 1 / (feature * 4), look.noise.amount, (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : PLUME_STEPS);
+      put(I, o + 40, 1 / (feature * 4), look.noise.amount, (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - 0.45 * (c.nozzles[0]?.shape.vacuum ?? 0))));
       if (c.merged) {
         const m = c.merged;
         const thr = c.nozzles.reduce((s, nz) => s + Math.max(nz.throttle, 0.12 * nz.residual), 0) / c.nozzles.length;

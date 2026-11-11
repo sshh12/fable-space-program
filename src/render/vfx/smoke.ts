@@ -84,8 +84,13 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   v += vec3f(su.flow2.z, 0.0, su.flow2.w) * windShare;
   // Turbulence: two octaves of divergence-free noise that drift up with the cloud, stronger where the gas is fast.
   let t = su.misc.y;
-  let c = vfxCurl(p * 0.0042 + vec3f(0.0, -t * 0.012, 0.0)) + 0.55 * vfxCurl(p * 0.0137 + vec3f(t * 0.008, -t * 0.03, 0.0));
-  v += c.xzy * (su.flow2.x * (2.5 + 0.3 * length(v))) * vec3f(1.0, 0.6 + 0.4 * saturate(p.y / 20.0), 1.0);
+  // The noise texture is trilinear: its slope jumps at every texel, and a flow with such creases shears the
+  // smoke into shelves along the texel planes. Two taps half a texel apart along the diagonal soften them.
+  let h = vec3f(0.5 / 32.0);
+  let q0 = p * 0.0042 + vec3f(0.0, -t * 0.012, 0.0);
+  let q1 = p * 0.0137 + vec3f(t * 0.008, -t * 0.03, 0.0);
+  let c = 0.5 * (vfxCurl(q0 + h) + vfxCurl(q0 - h)) + 0.275 * (vfxCurl(q1 + h) + vfxCurl(q1 - h));
+  v += c.xzy * (su.flow2.x * (2.5 + 0.12 * length(v))) * vec3f(1.0, 0.6 + 0.4 * saturate(p.y / 20.0), 1.0);
   return v;
 }
 
@@ -127,7 +132,8 @@ fn sigmaAt(p: vec3f) -> f32 {
   return s.r + s.g;
 }
 
-/// Light volume: r = optical depth towards the sun, g = optical depth towards the plume light.
+/// Light volume: r = transmittance towards the sun, g = towards the plume light, b = occupancy (largest
+/// density within reach of the march's displacement), a = exp(-0.3 x sun optical depth) for the wide octaves.
 @compute @workgroup_size(4, 4, 4) fn light(@builtin(global_invocation_id) id: vec3u) {
   let dims = textureDimensions(dst);
   if (any(id >= dims)) { return; }
@@ -140,12 +146,37 @@ fn sigmaAt(p: vec3f) -> f32 {
     tau += sigmaAt(q) * step;
     step *= 1.7;
   }
+  // Towards the plume light: steps that start below the cell size and grow, so that the nearby gas (which
+  // decides the local shading) is resolved and the result varies smoothly from cell to cell.
   let toL = su.lightPos.xyz - p;
+  let distL = length(toL);
+  let dirL = toL / max(distL, 1.0);
   var tauL = 0.0;
-  for (var i = 0; i < 5; i++) {
-    tauL += sigmaAt(p + toL * ((f32(i) + 0.5) / 5.0)) * (length(toL) / 5.0);
+  var hL = 2.5;
+  var tL = 0.0;
+  for (var i = 0; i < 9; i++) {
+    let h = min(hL, distL - tL);
+    if (h <= 0.0) { break; }
+    tauL += sigmaAt(p + dirL * (tL + 0.5 * h)) * h;
+    tL += h;
+    hL *= 1.65;
   }
-  textureStore(dst, id, vec4f(tau, tauL, 0.0, 0.0));
+  // Occupancy: the largest density within the reach of the march's noise displacement. The march looks for
+  // gas in this (dilated, smooth) field: testing the density itself would cut the displaced billows off along
+  // the cell faces where the stored field ends.
+  let reach = 0.42 / su.steamAlbedo.w;
+  var occ = sigmaAt(p);
+  for (var i = 0; i < 6; i++) {
+    let axis = vec3f(f32(i / 2 == 0), f32(i / 2 == 1), f32(i / 2 == 2)) * select(-1.0, 1.0, (i & 1) == 0);
+    occ = max(occ, sigmaAt(p + axis * reach));
+  }
+  for (var i = 0; i < 8; i++) {
+    let corner = vec3f(select(-1.0, 1.0, (i & 1) == 0), select(-1.0, 1.0, (i & 2) == 0), select(-1.0, 1.0, (i & 4) == 0));
+    occ = max(occ, sigmaAt(p + corner * (0.6 * reach)));
+  }
+  // Stored as transmittances: the march interpolates them between cells, and a linearly interpolated
+  // optical depth put through exp() turns the surface of a dense cloud into terraces along the cell faces.
+  textureStore(dst, id, vec4f(exp(-tau), exp(-tauL), occ, exp(-0.3 * tau)));
 }
 `;
 
@@ -231,14 +262,14 @@ ${GRID_WGSL}
     let base = (d0 + abs(t - tc)) * dw;
     let dt = base * select(1.0, 0.25, fine > 0.0);
     let p = ro + rd * (t + 0.5 * dt);
-    let coarse = textureSampleLevel(densityTex, linearClamp, smokeToUvw(p), 0.0);
-    var sigma = coarse.r + coarse.g;
+    let uvw = smokeToUvw(p);
+    var sigma = textureSampleLevel(lightTex, linearClamp, uvw, 0.0).b;
     if (sigma > 1e-5 && fine <= 0.0) {
       // Entering gas: redo this stretch finely.
       fine = 6.0;
       continue;
     }
-    var cell = coarse;
+    var cell = vec4f(0.0);
     if (sigma > 1e-5) {
       // Billows: the density is looked up at a position displaced by two octaves of noise that ride up with
       // the cloud (lumpy edges however smooth the advected field is), then thin gas is eroded.
@@ -260,11 +291,12 @@ ${GRID_WGSL}
       let lt = textureSampleLevel(lightTex, linearClamp, smokeToUvw(p), 0.0);
       let albedo = (su.smokeAlbedo.rgb * cell.r + su.steamAlbedo.rgb * cell.g) / max(cell.r + cell.g, 1e-6);
       // Sun: single scattering plus two wide octaves standing in for multiple scattering.
-      let sun = sunE * (phase * exp(-lt.r) + 1.5 * exp(-0.3 * lt.r) + 1.1 * exp(-0.025 * lt.r)) * (1.0 / (4.0 * PI));
+      let wide = pow(lt.a, 0.0833);
+      let sun = sunE * (phase * lt.r + 1.5 * lt.a + 1.1 * wide) * (1.0 / (4.0 * PI));
       let toL = su.lightPos.xyz - p;
       let dl2 = max(dot(toL, toL), 25.0);
-      let plume = su.lightColor.rgb * ((exp(-lt.g) + 0.5 * exp(-0.3 * lt.g)) / (dl2 * PI));
-      let sky = amb * ((0.45 + 0.55 * exp(-0.25 * lt.r)) / PI);
+      let plume = su.lightColor.rgb * ((lt.g + 0.5 * pow(lt.g, 0.3)) / (dl2 * PI));
+      let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
       // Gas fresh from the plume still glows.
       let h2 = cell.b * cell.b;
       let glow = su.glow.rgb * (h2 * h2 * h2 * h2);
@@ -320,6 +352,8 @@ export class SmokeSystem implements VolumeCombiner {
   private isActive = false;
   private needsClear = true;
   private stepped = false;
+  /** Advection steps taken: the light volume is refreshed on every second one. */
+  private stepIndex = 0;
   /** Total source this frame (m^2/s) for diagnostics. */
   sourceRate = 0;
 
@@ -504,6 +538,7 @@ export class SmokeSystem implements VolumeCombiner {
   /** compute hook: one advection step and the light volume. */
   compute(frame: FrameContext, encoder: GPUCommandEncoder): void {
     if (!this.isActive || !this.stepped) return;
+    if (this.needsClear) this.stepIndex = 0;
     this.needsClear = false;
     const pass = encoder.beginComputePass({ label: 'vfx.smoke', timestampWrites: this.ctx.perf.gpuPass('vfx.smoke.sim') as GPUComputePassTimestampWrites | undefined });
     pass.setBindGroup(0, frame.frameBindGroup);
@@ -512,9 +547,12 @@ export class SmokeSystem implements VolumeCombiner {
     pass.setBindGroup(2, this.advectGroups[this.cur]!);
     pass.dispatchWorkgroups(Math.ceil(this.dims[0] / 4), Math.ceil(this.dims[1] / 4), Math.ceil(this.dims[2] / 4));
     this.cur = 1 - this.cur;
-    pass.setPipeline(this.lightPipeline);
-    pass.setBindGroup(2, this.lightGroups[this.cur]!);
-    pass.dispatchWorkgroups(Math.ceil(this.dims[0] / 8), Math.ceil(this.dims[1] / 8), Math.ceil(this.dims[2] / 8));
+    // The light volume (optical depths and occupancy) changes slowly: every second step is enough.
+    if ((this.stepIndex++ & 1) === 0) {
+      pass.setPipeline(this.lightPipeline);
+      pass.setBindGroup(2, this.lightGroups[this.cur]!);
+      pass.dispatchWorkgroups(Math.ceil(this.dims[0] / 8), Math.ceil(this.dims[1] / 8), Math.ceil(this.dims[2] / 8));
+    }
     pass.end();
   }
 

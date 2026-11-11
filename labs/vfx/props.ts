@@ -10,8 +10,11 @@ import { DEG, quat, v3, type Quat, type Vec3, type Vec3Tuple } from '@/core/math
 import { boxMesh, coreOf, f32ToF16, instanceInFrame, type ManagedTarget, type MeshBatch, type ModelHandle, type ParentPose, type Tracked } from '@/render/core';
 import type { LabSim } from './labSim';
 
-/** Surface of revolution about +Y from a profile of [radius, y] points (bottom to top), closed with flat caps. */
-export function latheMesh(profile: [number, number][], segments = 48): MeshData {
+/**
+ * Surface of revolution about +Y from a profile of [radius, y] points (bottom to top), closed with flat caps
+ * (`openBottom`: no cap at the first point, for a nozzle's exit).
+ */
+export function latheMesh(profile: [number, number][], segments = 48, openBottom = false): MeshData {
   const p: number[] = [];
   const n: number[] = [];
   const t: number[] = [];
@@ -52,7 +55,7 @@ export function latheMesh(profile: [number, number][], segments = 48): MeshData 
   }
   for (const end of [0, profile.length - 1]) {
     const [r, y] = profile[end]!;
-    if (r < 1e-6) continue;
+    if (r < 1e-6 || (end === 0 && openBottom)) continue;
     const s = end === 0 ? -1 : 1;
     const centre = vertex([0, y, 0], [0, s, 0], [1, 0, 0], 0.5, 0.5);
     const first = p.length / 3;
@@ -86,7 +89,7 @@ const MATERIALS: Record<string, PbrMaterialDef> = {
   occluder: { name: 'occluder', shading: 'standard', baseColor: [0.6, 0.1, 0.1], metallic: 0, roughness: 0.8 },
 };
 
-function partProfile(def: PartDef): { profile: [number, number][]; material: string } | null {
+function partProfile(def: PartDef): { profile: [number, number][]; material: string; open?: boolean } | null {
   const b = def.bounds;
   const h = b.yMax - b.yMin;
   const R = b.radius;
@@ -98,7 +101,7 @@ function partProfile(def: PartDef): { profile: [number, number][]; material: str
     return { profile: [[0.82 * R, b.yMin], [R, b.yMin + 0.14 * h], [0.34 * R, b.yMax]], material: 'shield' };
   }
   if (def.category === 'engine') {
-    return { profile: [[R, b.yMin], [0.8 * R, b.yMin + 0.3 * h], [0.42 * R, b.yMin + 0.72 * h], [0.5 * R, b.yMax]], material: 'metal' };
+    return { profile: [[R, b.yMin], [0.8 * R, b.yMin + 0.3 * h], [0.42 * R, b.yMin + 0.72 * h], [0.5 * R, b.yMax]], material: 'metal', open: true };
   }
   if (def.modules.some((m) => m.type === 'fairing')) return { profile: [[R, b.yMin], [R, b.yMin + 0.7 * h], [0.62 * R, b.yMax]], material: 'paint' };
   return { profile: [[R, b.yMin], [R, b.yMax]], material: def.category === 'structural' || def.category === 'decoupler' ? 'steel' : 'paint' };
@@ -133,7 +136,7 @@ export function createLabProps(sim: LabSim, defs: DefLibrary, options: LabPropsO
   const modelFor = (def: PartDef): ModelHandle | null => {
     if (models.has(def.id)) return models.get(def.id)!;
     const spec = options.hideParts?.includes(def.id) ? null : partProfile(def);
-    const model = spec ? coreOf(ctx).meshes.createModel({ name: `lab.${def.id}`, lods: [latheMesh(spec.profile)], materials: [MATERIALS[spec.material]!] }) : null;
+    const model = spec ? coreOf(ctx).meshes.createModel({ name: `lab.${def.id}`, lods: [latheMesh(spec.profile, 48, spec.open === true)], materials: [MATERIALS[spec.material]!] }) : null;
     models.set(def.id, model);
     return model;
   };
