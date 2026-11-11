@@ -1,4 +1,4 @@
-Status: open
+Status: declined
 From: atmosphere-clouds
 Owner path: tools/bake/earth (clouds.py), data/tiles/earth/globals/cloudCoverage.png
 Blocking: no        (the renderer reads the present map as an opacity with a wide range; a better map would lift the deep-space views further)
@@ -30,3 +30,23 @@ A re-bake of `cloudCoverage` (same file, same size, same two channels, so nothin
   cloud-top-temperature product; MODIS / VIIRS L3 are public domain), so that low decks and thin cirrus
   exist. Where no such source is available, say so in the hand-off and leave the channel as it is.
 Must not change: the manifest entry, the channel order, the size, the licence situation of the tile set.
+
+## Resolution
+
+Declined for this pass, with the reasons and what it would take (recorded for the lead in
+`docs/handoff/core-support.md`):
+
+- Channel 0 (coverage with dynamic range): the clipping is made by the bake itself, `coverage =
+  smoothstep(0.06, 0.80, c)` of the infrared contrast c (`tools/bake/earth/clouds.py`), so a re-bake with a
+  gentler mapping (`1 - exp(-tau / 12)` of an optical-depth estimate, or c itself above 0.8) would give the
+  systems their inside. But the source is a REAL-TIME snapshot (clouds.matteason.co.uk, taken at bake time)
+  and the raw file is no longer in `data/cache/earth/src` (deleted for disk space after the wave-1 bake). A
+  re-bake would download today's weather: every cloud on the planet moves, so every package's calibrated views
+  and the integration checks' chosen places (the clear sky at 12 N 33 W, the overcast at 42 S 19 E) would
+  change in the middle of the visual close-out. Not worth that for a non-blocking item now.
+- Channel 1 (cloud top independent of coverage): the public-domain products that carry it (MODIS / VIIRS L3
+  cloud-top pressure, MOD08 / VNP L3) are served by LAADS DAAC behind an Earthdata login, which this
+  machine's tools do not have. As the request says for that case: the channel stays as it is.
+- For the lead (wave 3): keep the raw composite with the bake (it is 30 MB), re-bake channel 0 with an
+  optical-depth index, and get an Earthdata token for an L3 cloud-top source for channel 1; the manifest
+  entry, channel order and size stay as they are, so nothing downstream changes.
