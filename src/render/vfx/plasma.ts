@@ -320,7 +320,7 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       // A camera that rides inside the wake sees the sheath where it leaves the body; the gas within a few
       // radii of the camera itself, on whatever side, is left out, or it would be a veil over the frame.
       let aroundEye = eyeInside * (1.0 - smoothstep(2.0 * Rb, 7.0 * Rb, t));
-      j += tint * ((0.9 * sheath + (0.5 + 0.9 * k) * core) * fade * streak * (0.2 + 0.8 * k) * (1.0 - aroundEye) * (0.4 / Rb));
+      j += tint * ((0.9 * sheath + (0.5 + 0.9 * k) * core) * fade * streak * (0.2 + 0.8 * k) * (1.0 - aroundEye) * (0.26 / Rb));
     }
     // Only what touches the lens is left out (a camera riding in the wake looks down a streaming sheath).
     let c = j * (I.color.w * dt * smoothstep(0.3 * Rb, 2.0 * Rb, t));

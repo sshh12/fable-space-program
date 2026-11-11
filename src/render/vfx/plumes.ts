@@ -217,7 +217,7 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
     let ring = exp(-sq((rr - (g.rb - 0.35 * g.mixing)) / ringW)) * sqrt(min(2.0, 0.25 * re / ringW));
     o.e += inst.shearColor.rgb * (k * ox * ring * smoothstep(0.0, 2.5 * re, xc) * exp(-xc / lens.x) * fil);
     let s = xc / lens.y;
-    let tip = 1.0 - smoothstep(0.5, 1.0, s + (n3.g - 0.5) * 0.7 * grow + (n.r - 0.5) * 0.3 * turb);
+    let tip = 1.0 - smoothstep(0.45, 1.0, s + (n3.r - 0.5) * 1.3 * grow + (n3.a - 0.5) * 0.5 * grow + (n.r - 0.5) * 0.3 * turb);
     if (tip > 0.0) {
       let rf = g.rb * (1.0 + 0.55 * big * grow);
       let body = 1.0 - smoothstep(0.4 * rf, 1.12 * rf, rr);
@@ -258,7 +258,8 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   o.scs = o.sc * exp(-meanExt * chord);
   let cooled = 1.0 - exp(-2.0 * xc * inst.glowColor.w);
   // (In a free expansion the particulates cool by radiation alone and nothing burns after them: their glow goes with the density.)
-  o.e += inst.glowColor.rgb * mix(vec3f(1.0), vec3f(1.0, 0.5, 0.16), cooled) * (exp(-xc * inst.glowColor.w) * mix(1.0, dFar, far) * o.s);
+  // (They cool faster and faster: beyond two cooling lengths nothing of the glow is left in the smoke.)
+  o.e += inst.glowColor.rgb * mix(vec3f(1.0), vec3f(1.0, 0.5, 0.16), cooled) * (exp(-sq(xc * inst.glowColor.w / 1.5)) * mix(1.0, dFar, far) * o.s);
   return o;
 }
 

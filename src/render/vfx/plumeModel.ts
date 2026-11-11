@@ -238,7 +238,7 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
       else hi = mid;
     }
   }
-  const burn = oxygen > 0.01 ? Math.max(look.shear.luminance > 0 ? 3 * shearLength * Math.min(1, 0.35 + oxygen) : 0, look.afterburn.luminance > 0 ? 1.35 * afterLength : 0) : 0;
+  const burn = oxygen > 0.01 ? Math.max(look.shear.luminance > 0 ? 3 * shearLength * Math.min(1, 0.35 + oxygen) : 0, look.afterburn.luminance > 0 ? 2.1 * afterLength : 0) : 0;
   shape.visibleLength = Math.min(Math.max(lo, burn, 3 * re), Math.max(FAR_REACH_RE * re, burn, 8 * coreLength));
   let radius = re * 1.5;
   for (let i = 1; i <= 24; i++) {
@@ -247,7 +247,8 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     const b = brightness(x);
     // Gaussian core of width core.radius x bulk radius: radius where it has dropped to EPS of the exit brightness.
     const core = b > EPS ? look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(b / EPS)) : 0;
-    const shear = x < burn ? rb * 1.5 : 0;
+    // (The flame is pushed out to 2.6 boundary radii by its large eddies.)
+    const shear = x < burn ? 2.6 * rb + 2 * re : 0;
     // Particulates: a core 1.3 times as wide as the glow, or the whole cross-section of the jet.
     const s = smokeAt(x);
     const smoke = s > EPS ? (look.smoke.halo > 0.5 ? 1.5 * rb : Math.max(1.3 * look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(s / EPS)), look.smoke.halo > 0 ? 1.5 * Math.min(rb, 2 * re + BULK_SLOPE * x) : 0)) : 0;

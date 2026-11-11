@@ -83,6 +83,10 @@ const NIGHT_WHITE = 1500;
 /** Illuminance of the sun (lux) from which the daylight cap applies in full, and below which the night cap does. */
 const DAYLIGHT_LUX = 20000;
 const NIGHT_LUX = 200;
+/** Half-size of the glare of a small emitter in a dark frame, as a share of the frame's height. */
+const GLARE_FRAME_SHARE = 0.08;
+/** Length of the light of a thruster's puff, exit radii. */
+const THRUSTER_LIGHT_RE = 40;
 /** The plume light starts this many exit radii downstream of the nozzles. */
 const LIGHT_START_RE = 6;
 /** Lines of light along the luminous length of a plume: [share of the intensity, end of the line as a fraction of the length]. */
@@ -170,8 +174,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     if (h.a < 0.5 * px) luminance *= h.a / (0.5 * px);
     if (h.b < 0.5 * px) luminance *= h.b / (0.5 * px);
     const reach = d * Math.hypot(1 / m[0]!, 1 / m[5]!);
-    const a = Math.min(Math.max(h.a, 2 * px), reach);
-    const b = Math.min(Math.max(h.b, 2 * px), reach);
+    // In a dark frame a small bright emitter is seen as its glare, which is far larger than the emitter (a
+    // thruster flash, a distant flame): it counts with at least that much of the frame.
+    const glare = (GLARE_FRAME_SHARE * 2 * d) / m[5]!;
+    const a = Math.min(Math.max(h.a, 2 * px, glare), reach);
+    const b = Math.min(Math.max(h.b, 2 * px, glare), reach);
     const frameSolidAngle = 4 / (m[0]! * m[5]!);
     const coverage = Math.min(1, (Math.PI * a * b) / (d * d) / frameSolidAngle) * (1 - day);
     if (coverage > 0 && luminance > 0) coreOf(ctx).addEmissiveHint(luminance, coverage);
@@ -193,11 +200,11 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const radius = Math.min(c.radius, Math.max(2 * reMax, 0.12 * length));
     const rel = v3.addScaled(pc.originRelCam, pc.axisX, 0.5 * length);
     const along = v3.dot(pc.axisX, v3.normalize(rel));
-    const luminance = 0.35 * throttle * c.look.core.luminance * (1 + (c.look.core.vacuumGain - 1) * shape.vacuum);
-    // A thruster puff is a faint cone, not a flame: it is held at the meter's white so that its shape survives.
-    // An engine flame is held three stops over the meter's white, and never reported brighter than the cap
-    // of the hour (flameCap).
-    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance, clipStops: c.kind === 'rcs' ? 0 : 3 };
+    // What the meter is to hold: the flame of an engine as it is (dim where the gas is thin); the bright root of a thruster's puff.
+    const luminance = 0.35 * throttle * c.look.core.luminance * (c.kind === 'rcs' ? 1 : 1 + (c.look.core.vacuumGain - 1) * shape.vacuum);
+    // A flame is held three stops over the meter's white, and never reported brighter than the cap of the
+    // hour (flameCap).
+    return { rel, a: 0.5 * length * Math.sqrt(Math.max(0, 1 - along * along)) + radius, b: radius, luminance, clipStops: 3 };
   };
 
   const placeCluster = (frame: FrameContext, cluster: PlumeCluster): PlacedCluster | null => {
@@ -243,8 +250,10 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       // else the short bright core at the exit.
       const flame = shape.oxygen > 0.01 && c.look.afterburn.luminance > c.look.core.luminance * 0.2 ? 0.85 * shape.afterLength * Math.min(1, 3 * shape.oxygen) : 0;
       const glow = c.look.smoke.glow > 0 ? 1.2 * c.look.smoke.glowLengthRe * reMax : 0;
-      const length = Math.max(flame, glow, 2 * c.look.core.vacuumCoreRe * reMax, 4 * reMax);
-      const start = Math.min(LIGHT_START_RE * reMax, 0.25 * length);
+      // (A thruster's light is its whole puff, a metre of glowing gas, not the nozzle: a point of light a few
+      // centimetres from the hull would be one burnt-out spot on it and darkness around.)
+      const length = Math.max(flame, glow, 2 * c.look.core.vacuumCoreRe * reMax, 4 * reMax, c.kind === 'rcs' ? THRUSTER_LIGHT_RE * reMax : 0);
+      const start = Math.min(c.kind === 'rcs' ? length : LIGHT_START_RE * reMax, 0.25 * length);
       const tg = ground(pc);
       const end = Math.min(start + length, tg - Math.max(1, reMax));
       const cut = Math.min(1, Math.max(0, (start + length - end) / length));

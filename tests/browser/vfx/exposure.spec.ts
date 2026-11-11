@@ -55,7 +55,8 @@ test('by day the sky of the pad scene keeps its exposure when nine engines are l
 });
 
 test('the sky keeps its value through the splash sequence (within 5 % once the capsule is in the water)', async ({ page, pageLog }) => {
-  await openLab(page, 'scene=splash');
+  // (The lab holds the camera of a sea scene at the exposure of a real sea; here the meter is left to itself.)
+  await openLab(page, 'scene=splash&minev=-10');
   const sky = await skyPixel(page);
   const rows: { t: number; value: number; ev100: number }[] = [];
   // Just before the impact (2.05 s of lab time), then +0.1, +0.4, +1, +1.8 and +2.5 s.
