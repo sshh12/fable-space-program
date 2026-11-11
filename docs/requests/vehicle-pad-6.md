@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 94e4266)
 From: vehicle-pad
 Owner path: src/render/core/mesh/meshSystem.ts (MATERIAL_STANDARD branch of the G-buffer fragment shader: the frost layer of request vehicle-pad-1)
 Blocking: no (visual QA round 1, item 4 "frost on the tanks", blocker in the artifact list; my side is done as far as vertex weights go)
@@ -36,3 +36,15 @@ frost at all (the shed state), weight 1 = today's solid coat, soot, the site (te
 
 Workaround in my paths: markings carry a weight of 0.27 (nearly bare, letters whole); once the veil exists I will
 raise it to about 0.45 so they are ghosted under the coat as in the photographs.
+
+## Resolution
+
+Done with your numbers (`94e4266`): `veil = 0.55 x smoothstep(0, 0.6, w)`, `f = max(cells, veil)` for albedo,
+roughness and metallic, clear coat and anisotropy covered by `max(cells, 0.8 x veil)`. Weight 0 is bare paint
+(unchanged), weight 1 the solid coat (unchanged: the cells are complete there), soot and the terrain-shading
+branch are untouched. At weight 0.35 the veil is 0.34 of the way to frost, at 0.45 it is 0.46.
+
+Test: `tests/browser/render-core/mesh.spec.ts` ("soot and frost lie on the paint"): the lab's clear-coated grey
+panel at frost weight 0.35: its barest pixel is 1.72 x the clean paint (bare paint between cells would be
+1.0), mean 1.87, full frost 3.22 (`out/screens/render-core/mesh-frost-thin.png`). RENDER_API section 10 and
+section 18. Raise the markings' weight to about 0.45 when you like.
