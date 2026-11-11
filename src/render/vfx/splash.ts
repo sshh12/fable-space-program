@@ -194,13 +194,16 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     // Nothing about the crown is the same all the way round: here the wall stands high and far out and leans
     // over, there it is low and steep (slow noise in the angle), and its rim is a row of fingers (fast noise).
     let slow = vfxNoiseLod(vec3f(ang * 0.42, seed), lod * 0.3);
+    let mid = vfxNoiseLod(vec3f(ang * 0.95, seed * 1.9 + 0.6), lod * 0.6);
     let fast = vfxNoiseLod(vec3f(ang * 1.9, seed * 2.7 + 0.3), lod);
-    let rim = H * (0.3 + 1.1 * slow.r + 0.5 * (fast.g - 0.5));
+    // (Three scales round the rim: where the wall stands, tongues a few to a side, and fingers.)
+    let rim = H * (0.28 + 1.1 * slow.r + 0.55 * (mid.r - 0.5) + 0.8 * (fast.g - 0.5));
     let leanA = lean * (0.55 + 0.95 * slow.a);
     let footA = foot * (0.9 + 0.22 * slow.g);
     let s = p.y / max(rim, 0.05);
     var sigma = 0.0;
     var toSun = 0.0;
+    var relief = 1.0;
     if (s < 1.0 && C.look.x > 0.0) {
       // The sheet is a wall of water with lumps: thick at its root, thin between the lumps, and it tears from
       // the rim downwards into ligaments (holes where the noise is low, more of them with time).
@@ -218,6 +221,8 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
         // (with a low sun) the wall across the crown for the side that faces away.
         let side = dot(ang, sunH);
         toSun = sigma * w * (1.3 - clamp(across, -1.3, 1.3) * sign(side)) + C.look.x * low * saturate(-side) * (1.0 - s);
+        // The lumps stand out of the wall and shade the water between them: white water is never one flat white.
+        relief = 0.62 + 0.55 * smoothstep(0.2, 0.8, lump.g) + 0.2 * (fine.b - 0.5);
       }
     }
     var mist = 0.0;
@@ -237,7 +242,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     // White water: sunlight that has come through little of it is bright, the lee of a thick wall is grey; what
     // is scattered about inside keeps a floor under it. Never brighter than a sunlit white surface, except
     // against the sun, where thin spray shines.
-    let lit = 0.3 + 0.7 * exp(-toSun);
+    let lit = (0.3 + 0.7 * exp(-toSun)) * mix(1.0, relief, sigma / max(total, 1e-6));
     let glare = 1.0 + 1.6 * forward * exp(-1.5 * toSun);
     let J = crownU.albedo.rgb * (probe.sun.rgb * (lit * glare) + amb) * (1.0 / PI);
     let c = J * (1.0 - stepT);
@@ -377,9 +382,9 @@ export class FoamRenderer {
       C.set([p.pos.x, p.pos.y, p.pos.z, foot], o);
       C.set([height, lean, thick, age], o + 4);
       C.set([life < 1 ? K.opticalDepth * p.strength * (1 - 0.6 * life * life) : 0, Math.min(1, K.breakup * Math.pow(Math.min(1, life), 0.8)), p.seed, K.steps], o + 8);
-      // The rim reaches 1.65 heights where the noise stands it highest; the sheet leans out by up to twice lean x
+      // The rim reaches 1.8 heights where the noise stands it highest; the sheet leans out by up to twice lean x
       // height and stands up to 1.12 foot radii out; the mist reaches three of its scale heights and widths.
-      const top = 1.65 * Math.max(height, 0.05);
+      const top = 1.8 * Math.max(height, 0.05);
       const mistHeight = 3 * 0.38 * peak;
       const mistReach = foot + 0.5 * lean * peak + 2.6 * (0.45 * p.bodyRadius + 0.25 * lean * peak);
       C.set([Math.max(1.12 * foot + 2.0 * lean * top + 4.6 * thick + 0.1, mistReach), Math.max(top, mistHeight) + 0.2, flight, peak], o + 12);
