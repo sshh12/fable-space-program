@@ -12,9 +12,10 @@ async function probe(page: Page, enu: { x: number; y: number; z: number }, dx: n
       const p = lab.project(enu);
       if (!p) return null;
       const size = lab.app.renderer.frameContext!.renderSize;
-      // Mean of a block of 11 x 11 pixels: from 2 km a flame is two or three pixels wide, and a smaller block
-      // would hold more or less of it as the sub-pixel jitter of the frame moves it.
-      const N = 11;
+      // Mean of a block of 9 x 9 pixels: from 2 km a flame is two or three pixels wide, and a 3 x 3 block
+      // would hold more or less of it as the sub-pixel jitter of the frame moves it; a much larger block is
+      // mostly sky beside the flame.
+      const N = 9;
       const block = async (cx: number, cy: number): Promise<number[]> => {
         const x = Math.min(size[0] - N, Math.max(0, Math.round(cx) - (N >> 1)));
         const y = Math.min(size[1] - N, Math.max(0, Math.round(cy) - (N >> 1)));
