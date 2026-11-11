@@ -32,7 +32,11 @@ const ICONS = {
   delete: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.8h9M5.6 3.8V2.4h2.8v1.4M3.6 3.8l.6 7.8h5.6l.6-7.8M5.8 5.8v4M8.2 5.8v4"/></svg>',
 };
 
-const STYLE = `
+/**
+ * Sizes are written in interface px and multiplied by the custom property --mu (CSS px per interface px, the
+ * map's interface scale: 1 at 720p, 1.5 at 1080p), so the panel keeps its size relative to the HUD beside it.
+ */
+const STYLE_UI = `
 .fable-map-panel { position: absolute; z-index: 20; width: 248px; padding: 9px 10px 8px; box-sizing: border-box;
   background: ${HUD.panel}; border: 1px solid ${HUD.line}; border-radius: 7px;
   font: 600 13px/1.25 ${MAP_FONT_FAMILY}; font-variant-numeric: tabular-nums; color: ${HUD.text}; user-select: none;
@@ -63,8 +67,10 @@ const STYLE = `
 .fable-map-panel .hdr button { flex: 0 0 22px; font-size: 14px; }
 .fable-map-panel .btns { display: grid; grid-template-columns: 1fr 1fr 34px; gap: 5px; margin-top: 8px; }
 .fable-map-panel .btns [data-action="delete"] { color: ${HUD.warning}; }
+.fable-map-panel svg { width: 14px; height: 14px; }
 .fable-map-panel .hint { margin-top: 6px; font-size: 10px; line-height: 1.35; font-weight: 500; letter-spacing: 0.04em; color: ${HUD.dim}; text-align: center; }
 `;
+const STYLE = STYLE_UI.replace(/(\d+(?:\.\d+)?)px/g, 'calc($1 * var(--mu, 1px))');
 
 const FIELDS: readonly PanelField[] = ['prograde', 'normal', 'radial', 'total', 'ut', 'timeTo'];
 
@@ -87,6 +93,8 @@ export class NodePanel {
   private readonly committed = new Map<PanelField, string>();
   private visible = false;
   private nodeId: string | null = null;
+  /** Interface scale the panel is laid out at (--mu). */
+  private scale = 1;
 
   constructor(
     private readonly controller: MapController,
@@ -213,10 +221,15 @@ export class NodePanel {
     this.buttons.minusOrbit.disabled = !st.canMinusOrbit;
     this.buttons.next.disabled = st.count < 2;
     this.buttons.previous.disabled = st.count < 2;
-    if (!this.visible) {
+    const rescaled = st.scale !== this.scale;
+    if (rescaled) {
+      this.scale = st.scale;
+      this.element.style.setProperty('--mu', `${st.scale}px`);
+    }
+    if (!this.visible || rescaled) {
       this.element.style.display = 'block';
       this.visible = true;
-      // Its real size, for the placement and for keeping map labels out from under it.
+      // Its real size (CSS px), for the placement and for keeping map labels out from under it.
       this.controller.setPanelSize(this.element.offsetWidth, this.element.offsetHeight);
     }
   }

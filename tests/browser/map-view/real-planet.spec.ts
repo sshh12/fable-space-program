@@ -16,7 +16,7 @@ import { expectClean, freeze, openIntegration, settle } from '../integration/hel
 test.describe.configure({ timeout: 600_000 });
 
 interface SceneLike {
-  proj: { pxScale: number };
+  proj: { cssScale: number };
   lines: { id: string; kind: string; start: number; count: number }[];
   verts: { sx: Float64Array; sy: Float64Array; alpha: Float64Array; seg: Uint8Array };
   bodies: { bodyId: string; ghost: boolean; x: number; y: number; radiusPx: number }[];
@@ -103,7 +103,7 @@ async function expectClearOfHud(page: Page): Promise<number> {
 async function nightLimbContrast(page: Page, png: PNG, bodyId: string): Promise<{ samples: number; visible: number }> {
   const pts = await page.evaluate((id) => {
     const sc = window.__realMap!.view.controller.currentScene!;
-    const k = sc.proj.pxScale;
+    const k = sc.proj.cssScale;
     const line = sc.lines.find((l) => l.id === `limb:${id}`);
     const body = sc.bodies.find((b) => b.bodyId === id && !b.ghost);
     if (!line || !body) return [];
@@ -161,14 +161,19 @@ async function mountMap(page: Page): Promise<void> {
 
 /**
  * Put the lab camera where the map lab's orbit camera would be: `dist` m from the focus body along the
- * direction given by yaw / pitch (ROOT axes), looking at it, 50 degree field of view, map camera kind.
+ * direction given by yaw / pitch (ROOT axes), looking at it, 50 degree field of view, map camera kind. With
+ * `moonAt` (degrees clockwise from screen up) the camera rolls about its view axis so the focus body's
+ * satellite appears in that direction (the player turns the map camera so; the HUD's navball and panels cover
+ * the bottom of the frame).
  */
-async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' | 'sun' | 'side' | { yaw: number; pitch: number }, dist: number): Promise<void> {
+async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' | 'sun' | 'side' | { yaw: number; pitch: number; moonAt?: number }, dist: number): Promise<void> {
   await page.evaluate(
     async ([bodyId, d, distance]) => {
       const app = window.__integration!.app;
       const url = '/src/map/testing/camera.ts';
-      const cam = (await import(/* @vite-ignore */ url)) as { orbitCamera(focus: unknown, yaw: number, pitch: number, distance: number): { positionRoot: { x: number; y: number; z: number }; qViewToRoot: unknown } };
+      type Vec = { x: number; y: number; z: number };
+      type Cam = { positionRoot: Vec; qViewToRoot: unknown };
+      const cam = (await import(/* @vite-ignore */ url)) as { orbitCamera(focus: unknown, yaw: number, pitch: number, distance: number): Cam; lookAtCamera(eye: Vec, target: Vec, fovY: number, upHint: Vec): Cam };
       const s = app.snapshot();
       const active = s.vessels.find((v) => v.id === s.activeVesselId)!;
       const body = s.bodies.find((b) => b.id === (bodyId ?? active.bodyId))!;
@@ -203,7 +208,21 @@ async function orbitView(page: Page, focusBodyId: string | null, dir: 'default' 
         yaw = d.yaw;
         pitch = d.pitch;
       }
-      const c = cam.orbitCamera(body.rRoot, yaw, pitch, distance);
+      let c = cam.orbitCamera(body.rRoot, yaw, pitch, distance);
+      const moonAt = typeof d === 'object' ? d.moonAt : undefined;
+      const moon = s.bodies.find((b) => b.id !== body.id && b.orbit !== null);
+      if (moonAt !== undefined && moon) {
+        const o = { x: Math.cos(pitch) * Math.cos(yaw), y: Math.cos(pitch) * Math.sin(yaw), z: Math.sin(pitch) };
+        const eye = { x: body.rRoot.x + o.x * distance, y: body.rRoot.y + o.y * distance, z: body.rRoot.z + o.z * distance };
+        const m = norm({ x: moon.rRoot.x - body.rRoot.x, y: moon.rRoot.y - body.rRoot.y, z: moon.rRoot.z - body.rRoot.z });
+        const k = m.x * o.x + m.y * o.y + m.z * o.z;
+        // a: the satellite's direction in the view plane; b = forward x a (screen right when a is up)
+        const a = norm({ x: m.x - k * o.x, y: m.y - k * o.y, z: m.z - k * o.z });
+        const b = norm({ x: -o.y * a.z + o.z * a.y, y: -o.z * a.x + o.x * a.z, z: -o.x * a.y + o.y * a.x });
+        const th = (moonAt * Math.PI) / 180;
+        const up = { x: Math.cos(th) * a.x - Math.sin(th) * b.x, y: Math.cos(th) * a.y - Math.sin(th) * b.y, z: Math.cos(th) * a.z - Math.sin(th) * b.z };
+        c = cam.lookAtCamera(eye, body.rRoot, (50 * Math.PI) / 180, up);
+      }
       // The lab's own camera placement (if any) would move the camera back every frame.
       window.__integration!.release();
       app.camera.settings.kind = 'map';
@@ -314,7 +333,8 @@ for (const [tag, viewport, dpr] of [
         const s = window.__integration!.app.snapshot();
         const moon = s.bodies.find((b) => b.orbit !== null)!;
         const W = moon.orbit!.W;
-        return { yaw: Math.atan2(W.y, W.x), pitch: Math.asin(W.z) - 0.35 };
+        // the Moon in the upper right, clear of the navball and the HUD's bottom cluster
+        return { yaw: Math.atan2(W.y, W.x), pitch: Math.asin(W.z) - 0.35, moonAt: 45 };
       });
       await orbitView(page, null, moonOrbitView, 1.0e9);
       await shoot(page, 'real-hud-translunar', 0.002);

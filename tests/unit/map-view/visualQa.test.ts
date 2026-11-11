@@ -468,13 +468,19 @@ describe('labels, clusters, SOI (items 6, 7, 10, 18)', () => {
   });
 });
 
-describe('formats (item 19)', () => {
-  it('distances in km with grouped digits, never megametres; "now" within a second', () => {
-    expect(formatDistance(8450)).toBe('8 450 m');
-    expect(formatDistance(200e3)).toBe('200.0 km');
-    expect(formatDistance(6087.9e3)).toBe('6 087.9 km');
-    expect(formatDistance(425.6e6)).toBe('425 600 km');
-    expect(formatDistance(358_176_000)).toBe('358 176 km');
+describe("formats (item 19; round 3: the HUD's units)", () => {
+  it("lengths in the flight HUD's units (src/ui/format.ts formatLength): one quantity, one unit in a frame; 'now' within a second", () => {
+    const n = ' ';
+    expect(formatDistance(8450)).toBe(`8${n}450${n}m`);
+    expect(formatDistance(22_700)).toBe(`22.70${n}km`);
+    expect(formatDistance(200e3, 'apsis')).toBe(`200.0${n}km`);
+    expect(formatDistance(1_839_100, 'apsis')).toBe(`1${n}839.1${n}km`);
+    expect(formatDistance(6087.9e3)).toBe(`6${n}088${n}km`);
+    expect(formatDistance(180e6, 'apsis')).toBe(`180.0${n}Mm`);
+    expect(formatDistance(425.586e6, 'apsis')).toBe(`425.6${n}Mm`);
+    expect(formatDistance(35.786e6, 'apsis')).toBe(`35.79${n}Mm`);
+    expect(formatDistance(358_176_000)).toBe(`358.2${n}Mm`);
+    expect(formatDistance(-1500, 'altitude')).toBe(`−1${n}500${n}m`);
     expect(formatTimeTo(0.4)).toBe('now');
     expect(formatTimeTo(-0.4)).toBe('now');
     expect(formatTimeTo(90)).toBe('T− 1:30');

@@ -1475,8 +1475,9 @@ export class SceneBuilder {
     const hovered = v.id === scene.options.highlightVesselId;
     const bulk = !v.controllable && !hovered;
     const rec = this.addConicLine(scene, `vessel:${v.id}`, bulk ? 'debrisOrbit' : 'vesselOrbit', c, b.pos, nu0, nu1, hovered ? COLORS.hoverOrbit : bulk ? COLORS.debrisOrbit : COLORS.vesselOrbit, hovered ? HOVER_ORBIT_WIDTH_PX : FAINT_LINE_WIDTH_PX, false);
-    // Another vessel's orbit a few pixels across says nothing at this zoom and buries the body it circles.
-    if (rec && !bulk && !hovered && rec.span < ORBIT_MIN_SPAN_PX * scene.proj.pxScale) {
+    // Another vessel's or a debris' orbit a few pixels across says nothing at this zoom and buries the body it
+    // circles (twenty debris orbits around an 11 px planet icon read as a scribble); the hovered one stays.
+    if (rec && !hovered && rec.span < ORBIT_MIN_SPAN_PX * scene.proj.pxScale) {
       scene.lines.pop();
       this.verts.n = rec.start;
     }

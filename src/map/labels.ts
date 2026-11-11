@@ -53,8 +53,8 @@ export const markerLabels: LabelSource = {
       case 'apoapsis':
       case 'periapsis':
         if (m.altitude !== undefined) {
-          head += ` ${formatDistance(m.altitude)}`;
-          details.push(`Altitude ${formatDistance(m.altitude)} (${body})`);
+          head += ` ${formatDistance(m.altitude, 'apsis')}`;
+          details.push(`Altitude ${formatDistance(m.altitude, 'apsis')} (${body})`);
         }
         break;
       case 'ascendingNode':
@@ -92,9 +92,9 @@ export const markerLabels: LabelSource = {
         if (item.kind === 'atmosphereEntry' && m.value !== undefined) head += ` ${formatSpeed(m.value)}`;
         if (m.value !== undefined) details.push(`Speed ${formatSpeed(m.value)}`);
         if (m.flightPathAngle !== undefined) details.push(`Flight-path angle ${formatAngleDeg(m.flightPathAngle, 2)}`);
-        if (m.vacuumPeriapsisAltitude !== undefined) details.push(`Vacuum periapsis ${formatDistance(m.vacuumPeriapsisAltitude)}`);
+        if (m.vacuumPeriapsisAltitude !== undefined) details.push(`Vacuum periapsis ${formatDistance(m.vacuumPeriapsisAltitude, 'apsis')}`);
         if (m.latitude !== undefined && m.longitude !== undefined) details.push(`${body} ${formatLatLon(m.latitude, m.longitude)}`);
-        if (m.altitude !== undefined) details.push(`Interface altitude ${formatDistance(m.altitude)}`);
+        if (m.altitude !== undefined) details.push(`Interface altitude ${formatDistance(m.altitude, 'altitude')}`);
         const miss = missFor(snapshot, 'entry', m.bodyId, m.ut);
         if (miss) details.push(`Miss to ${miss.name}: ${formatDistance(miss.missDistance)}, bearing ${miss.missBearingDeg.toFixed(0)}°`);
         break;
@@ -149,7 +149,7 @@ export interface LabelBox {
   ny: number;
 }
 
-/** The outer ring of candidates lies this many device px (per CSS px) further out. */
+/** The outer ring of candidates lies this many device px (per interface px) further out. */
 export const FAR_RING_PX = 22;
 /** Cost of a candidate per unit of covered line weight (LineGrid.cost): one trajectory across a label ~ 5 places. */
 const LINE_COST = 0.15;

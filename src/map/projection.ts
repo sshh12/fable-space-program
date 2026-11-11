@@ -13,11 +13,33 @@ import { NEAR_PLANE } from '@/core/contracts/render';
 import { mat4, type Mat4 } from '@/core/math/mat';
 import type { Vec3 } from '@/core/math/vec3';
 
-/** Size of the target in device pixels and the number of device pixels per CSS pixel. */
+/**
+ * Size of the target in device pixels; `pxScale` = device pixels per INTERFACE pixel (every pixel constant of
+ * the map: line widths, icons, labels, the gizmo), `cssScale` = device pixels per CSS pixel (the pointer, the
+ * DOM panel, describe()). They differ by the interface scale (`uiScale`), which follows the flight HUD's unit
+ * (one hundredth of the height of a 16:9 frame): 1 at 1280 x 720, 1.5 at 1920 x 1080 CSS px. Without
+ * `cssScale` the two are equal (interface scale 1).
+ */
 export interface Viewport {
   width: number;
   height: number;
   pxScale: number;
+  cssScale?: number;
+}
+
+const UI_SCALE_STEPS = 16;
+
+/**
+ * Interface scale of a canvas of `cssWidth` x `cssHeight` CSS px: the flight HUD's unit
+ * `min(1vh, 0.5625vw)` (src/ui/hud/hudStyles.ts) relative to 720p, so map labels, icons, the gizmo and the
+ * node panel keep their size relative to the HUD panels beside them at every resolution. Floored at 0.8 (the
+ * HUD's smallest text, 10 px at 720p, would fall under 8 px) and quantised to steps of 1/16 (exact at 720p,
+ * 1080p and 4K; while a window is resized the glyph atlas is rebuilt only at those steps).
+ */
+export function uiScale(cssWidth: number, cssHeight: number): number {
+  const raw = Math.max(0.8, Math.min(cssHeight, 0.5625 * cssWidth) / 720);
+  if (!Number.isFinite(raw)) return 1;
+  return Math.round(raw * UI_SCALE_STEPS) / UI_SCALE_STEPS;
 }
 
 export interface ScreenPoint {
@@ -33,7 +55,10 @@ export class Projector {
   readonly eye: Vec3;
   readonly width: number;
   readonly height: number;
+  /** Device px per interface px (pixel constants of the map). */
   readonly pxScale: number;
+  /** Device px per CSS px (pointer, DOM, describe()). */
+  readonly cssScale: number;
   /** Device pixels per unit of tan(angle) from the view axis (focal length in pixels). */
   readonly focal: number;
   readonly cx: number;
@@ -58,6 +83,7 @@ export class Projector {
     this.width = viewport.width;
     this.height = viewport.height;
     this.pxScale = viewport.pxScale;
+    this.cssScale = viewport.cssScale ?? viewport.pxScale;
     this.fovY = camera.fovY;
     const t = Math.tan(camera.fovY / 2);
     this.focal = this.height / 2 / t;

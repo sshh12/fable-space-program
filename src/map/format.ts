@@ -20,13 +20,24 @@ export function formatGrouped(x: number, decimals = 0): string {
   return `${x < 0 && Number(s) !== 0 ? '-' : ''}${out}${dot < 0 ? '' : s.slice(dot)}`;
 }
 
-/** Distance: metres below 10 km, km with one decimal below 10,000 km, whole grouped km above (never Mm). */
-export function formatDistance(m: number): string {
-  const a = Math.abs(m);
+/**
+ * A length as the flight HUD writes it (the same rule as src/ui/format.ts formatLength, which src/map may not
+ * import), so a map label and the HUD panel beside it never show one quantity in two units: m below 10 km
+ * (0.1 m below 100 m), km below 10,000 km (a `distance` with two decimals below 100 km and none from 1,000 km),
+ * Mm below 10 million km (two decimals below 100 Mm), Gm above. `apsis` (apoapsis / periapsis altitude) never
+ * uses metres and keeps one decimal in km up to 10,000 km; `altitude` keeps metres up to 50 km.
+ */
+export function formatDistance(m: number, style: 'distance' | 'altitude' | 'apsis' = 'distance'): string {
   if (!Number.isFinite(m)) return '--';
-  if (a < 1e4) return `${formatGrouped(m)} m`;
-  if (a < 1e7) return `${formatGrouped(m / 1e3, 1)} km`;
-  return `${formatGrouped(m / 1e3)} km`;
+  const a = Math.abs(m);
+  const num = (x: number, decimals: number): string => formatGrouped(x, decimals).replace('-', MINUS);
+  const meterLimit = style === 'altitude' ? 5e4 : style === 'apsis' ? 0 : 1e4;
+  if (a < meterLimit) return `${num(m, a < 100 ? 1 : 0)}${GROUP}m`;
+  if (a < 1e5 && style === 'distance') return `${num(m / 1e3, 2)}${GROUP}km`;
+  if (a < 1e6 || (a < 1e7 && style !== 'distance')) return `${num(m / 1e3, 1)}${GROUP}km`;
+  if (a < 1e7) return `${num(m / 1e3, 0)}${GROUP}km`;
+  if (a < 1e10) return `${num(m / 1e6, a < 1e8 ? 2 : 1)}${GROUP}Mm`;
+  return `${num(m / 1e9, 3)}${GROUP}Gm`;
 }
 
 export function formatSpeed(v: number): string {

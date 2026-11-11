@@ -1,6 +1,8 @@
 /**
- * Tunables of the map view. Pixel values are CSS pixels unless the name says "Device"; the scene builder
- * multiplies them by the viewport's pxScale (device pixels per CSS pixel).
+ * Tunables of the map view. Pixel values are INTERFACE pixels unless the name says "Device": CSS pixels at
+ * 1280 x 720, scaled with the flight HUD's unit above it (projection.ts uiScale: 1.5 at 1920 x 1080 CSS px);
+ * the scene builder multiplies them by the viewport's pxScale (device pixels per interface pixel). The click
+ * slop is in CSS pixels (pointer motion).
  */
 
 /** Maximum screen-space distance (device px) between a sampled polyline and the exact conic. */

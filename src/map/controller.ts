@@ -70,6 +70,7 @@ import { layoutGizmo } from './gizmo';
 import { declutter, FAR_RING_PX, markerLabels, type BlockedRect, type ClearDisc, type LabelBox } from './labels';
 import { LineGrid } from './lineGrid';
 import { occlusionWeight } from './occlusion';
+import { uiScale } from './projection';
 import { closestParam2D } from './sampler';
 import { SceneBuilder, type LineRecord, type MapScene, type MarkerItem, type MarkerShape, type NodeItem, type VesselItem } from './scene';
 
@@ -160,6 +161,8 @@ export interface PanelState {
   /** Top-left corner (CSS px), placed off the trajectory, the gizmo and the body, inside the viewport. */
   x: number;
   y: number;
+  /** Interface scale (CSS px per interface px, projection.ts uiScale): the panel's sizes are multiplied by it. */
+  scale: number;
 }
 
 /**
@@ -293,7 +296,8 @@ export class MapController implements MapView {
   private readonly builder: SceneBuilder;
   private scene: MapScene | null = null;
   private sceneCssSize: [number, number] = [0, 0];
-  private pxScale = 1;
+  /** Device px per CSS px of the last scene (used when update() builds one without a device size). */
+  private cssScale = 1;
   private selected: string | null = null;
   private selectedMissing = 0;
   private drag: DragState | null = null;
@@ -437,7 +441,7 @@ export class MapController implements MapView {
     if (!this.active) return { consumed: false };
     this.sceneCssSize = [displaySize[0], displaySize[1]];
     const scene = this.sceneFor(snapshot, camera, displaySize);
-    const k = scene.proj.pxScale;
+    const k = scene.proj.cssScale;
     const px = pointer.x * k;
     const py = pointer.y * k;
     const tMs = this.now();
@@ -507,7 +511,7 @@ export class MapController implements MapView {
   describe(): MapElementInfo[] {
     const scene = this.scene;
     if (!scene) return [];
-    const k = scene.proj.pxScale;
+    const k = scene.proj.cssScale;
     const out: MapElementInfo[] = [];
     const vis = (x: number, y: number, front: boolean, hidden: number): boolean => front && hidden < 0.5 && scene.proj.onScreen(x, y);
     const push = (kind: MapElementInfo['kind'], id: string, x: number, y: number, visible: boolean): void => {
@@ -520,7 +524,7 @@ export class MapController implements MapView {
     }
     for (const b of scene.bodies) push('body', b.id, b.x, b.y, vis(b.x, b.y, b.front, b.hidden));
     for (const v of scene.vessels) push('vessel', v.id, v.x, v.y, vis(v.x, v.y, v.front, v.hidden));
-    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden) && this.bodyRadiusCss(scene, t.target.bodyId) >= TARGET_MIN_BODY_PX);
+    for (const t of scene.targets) push('surfaceTarget', t.id, t.x, t.y, vis(t.x, t.y, t.front, t.hidden) && this.bodyRadiusUi(scene, t.target.bodyId) >= TARGET_MIN_BODY_PX);
     return out;
   }
 
@@ -562,6 +566,7 @@ export class MapController implements MapView {
       canMinusOrbit: period !== null && node.ut - period > s.ut,
       x: at.x,
       y: at.y,
+      scale: scene.proj.pxScale / scene.proj.cssScale,
     };
   }
 
@@ -628,15 +633,17 @@ export class MapController implements MapView {
    * camera pose and time), else a fresh build. `cssSize` is the display size in CSS px.
    */
   sceneFor(snapshot: SimSnapshot, camera: CameraState, cssSize: [number, number], deviceSize?: [number, number]): MapScene {
-    const k = deviceSize ? deviceSize[0] / Math.max(1, cssSize[0]) : this.pxScale;
+    const k = deviceSize ? deviceSize[0] / Math.max(1, cssSize[0]) : this.cssScale;
     const w = Math.round(cssSize[0] * k);
     const h = Math.round(cssSize[1] * k);
+    const ui = uiScale(cssSize[0], cssSize[1]);
     const s = this.scene;
     const highlight = this.highlightVessel();
     if (
       s &&
       s.proj.width === w &&
       s.proj.height === h &&
+      s.proj.pxScale === k * ui &&
       s.options.atIntercept === this.atIntercept &&
       s.options.debrisOrbits === this.debrisOrbits &&
       s.options.highlightVesselId === highlight &&
@@ -645,8 +652,8 @@ export class MapController implements MapView {
     ) {
       return s;
     }
-    this.pxScale = k;
-    this.scene = this.builder.build(snapshot, camera, { width: w, height: h, pxScale: k }, { atIntercept: this.atIntercept, debrisOrbits: this.debrisOrbits, highlightVesselId: highlight });
+    this.cssScale = k;
+    this.scene = this.builder.build(snapshot, camera, { width: w, height: h, pxScale: k * ui, cssScale: k }, { atIntercept: this.atIntercept, debrisOrbits: this.debrisOrbits, highlightVesselId: highlight });
     return this.scene;
   }
 
@@ -845,7 +852,7 @@ export class MapController implements MapView {
   private advancePending(scene: MapScene, pointer: PointerState, px: number, py: number, tMs: number): void {
     const p = this.pending!;
     p.moved = Math.max(p.moved, Math.hypot(px - p.x, py - p.y));
-    const slop = CLICK_SLOP_PX * scene.proj.pxScale;
+    const slop = CLICK_SLOP_PX * scene.proj.cssScale;
     if (p.type === 'node' && p.moved > slop && (pointer.buttons & 1) !== 0) {
       const node = scene.snapshot.nodes.find((n) => n.id === p.nodeId);
       this.pending = null;
@@ -889,8 +896,12 @@ export class MapController implements MapView {
     if (!d || !this.commands) return;
     if (d.type === 'handle') {
       const factor = modifierFactor(pointer);
-      const along = pointer.dx * d.dirX + pointer.dy * d.dirY;
-      let value = d.value + dragDelta(pointer.dx, pointer.dy, d.dirX, d.dirY, d.sign, factor);
+      // Pointer motion in interface px (the gizmo's own scale), so the dragged handle stays under the pointer.
+      const toUi = scene.proj.cssScale / scene.proj.pxScale;
+      const dx = pointer.dx * toUi;
+      const dy = pointer.dy * toUi;
+      const along = dx * d.dirX + dy * d.dirY;
+      let value = d.value + dragDelta(dx, dy, d.dirX, d.dirY, d.sign, factor);
       d.travel += along;
       const dt = Math.max(0, (tMs - d.lastMs) / 1000);
       d.lastMs = tMs;
@@ -995,13 +1006,13 @@ export class MapController implements MapView {
     return this.side;
   }
 
-  private bodyRadiusCss(scene: MapScene, bodyId: string): number {
+  private bodyRadiusUi(scene: MapScene, bodyId: string): number {
     for (const b of scene.bodies) if (!b.ghost && b.bodyId === bodyId) return b.radiusPx / scene.proj.pxScale;
     return 0;
   }
 
   private cssSize(scene: MapScene): [number, number] {
-    const k = scene.proj.pxScale;
+    const k = scene.proj.cssScale;
     return this.sceneCssSize[0] > 0 ? this.sceneCssSize : [scene.proj.width / k, scene.proj.height / k];
   }
 
@@ -1023,12 +1034,13 @@ export class MapController implements MapView {
       this.panelSide = -1;
       return this.dockedPanel(scene);
     }
-    const k = scene.proj.pxScale;
+    const k = scene.proj.cssScale;
+    const u = scene.proj.pxScale / k;
     const [W, H] = this.cssSize(scene);
     const [pw, ph] = this.panelSize;
     const nx = sel.x / k;
     const ny = sel.y / k;
-    const G = PANEL_GAP_PX;
+    const G = PANEL_GAP_PX * u;
     const D = G * 0.72;
     const raw: [number, number][] = [
       [nx + G, ny - ph / 2],
@@ -1058,12 +1070,13 @@ export class MapController implements MapView {
       // the gizmo (a disc around the node) and every handle must stay uncovered
       const cx = Math.max(x, Math.min(nx, x + pw));
       const cy = Math.max(y, Math.min(ny, y + ph));
-      const inGizmo = G - 4 - Math.hypot(cx - nx, cy - ny);
+      const inGizmo = G - 4 * u - Math.hypot(cx - nx, cy - ny);
       if (inGizmo > 0) score += 1e4 + 100 * inGizmo;
       for (const h of handles) {
         const hx = h.x / k;
         const hy = h.y / k;
-        if (hx > x - HANDLE_RADIUS_PX - 4 && hx < x + pw + HANDLE_RADIUS_PX + 4 && hy > y - HANDLE_RADIUS_PX - 4 && hy < y + ph + HANDLE_RADIUS_PX + 4) score += 1e4;
+        const hr = (HANDLE_RADIUS_PX + 4) * u;
+        if (hx > x - hr && hx < x + pw + hr && hy > y - hr && hy < y + ph + hr) score += 1e4;
       }
       for (const o of obstacles) score += (5000 * rectsOverlap(r, o)) / (pw * ph * k * k);
       if (toBody > 1) {
@@ -1197,7 +1210,18 @@ export class MapController implements MapView {
     };
 
     // ---- other UI (HUD panels) the map keeps clear of
-    const rects: BlockedRect[] = this.obstacles.map((o) => ({ x0: o.x0 * k, y0: o.y0 * k, x1: o.x1 * k, y1: o.y1 * k }));
+    const css = proj.cssScale;
+    const rects: BlockedRect[] = this.obstacles.map((o) => ({ x0: o.x0 * css, y0: o.y0 * css, x1: o.x1 * css, y1: o.y1 * css }));
+    // An anchor under other UI (a body or marker behind the navball or a HUD panel) is covered there: no icon,
+    // and no label set beside the panel with a leader pointing into it.
+    const nUi = rects.length;
+    const underUi = (x: number, y: number): boolean => {
+      for (let i = 0; i < nUi; i++) {
+        const r = rects[i]!;
+        if (x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1) return true;
+      }
+      return false;
+    };
     // ---- where the lines are: labels, the tooltip and the node panel keep off the trajectories
     this.grid.build(scene, GRID_CELL_PX * k);
 
@@ -1211,7 +1235,7 @@ export class MapController implements MapView {
     if (selNode) {
       const at = this.placePanel(scene, selShown ? sel : undefined, handles, rects);
       this.panelAt = at;
-      panel = { x0: at.x * k, y0: at.y * k, x1: (at.x + this.panelSize[0]) * k, y1: (at.y + this.panelSize[1]) * k };
+      panel = { x0: at.x * css, y0: at.y * css, x1: (at.x + this.panelSize[0]) * css, y1: (at.y + this.panelSize[1]) * css };
       rects.push(panel);
     }
     const underPanel = (x: number, y: number): boolean => panel !== null && x > panel.x0 && x < panel.x1 && y > panel.y0 && y < panel.y1;
@@ -1255,7 +1279,7 @@ export class MapController implements MapView {
       return e;
     };
     const commit = (e: PointEntry): void => {
-      if (underPanel(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y, e.r))) return;
+      if (underPanel(e.x, e.y) || underUi(e.x, e.y) || (e.rank < 1000 && underSelected(e.x, e.y, e.r))) return;
       pool.nPoints++;
       pts.push(e);
     };
@@ -1518,8 +1542,8 @@ export class MapController implements MapView {
 
     // ---- surface targets, once their body is big enough on screen to place them meaningfully
     for (const t of scene.targets) {
-      if (!onScreen(t.x, t.y, t.front) || t.hidden >= 0.5 || underPanel(t.x, t.y)) continue;
-      const rPx = this.bodyRadiusCss(scene, t.target.bodyId);
+      if (!onScreen(t.x, t.y, t.front) || t.hidden >= 0.5 || underPanel(t.x, t.y) || underUi(t.x, t.y)) continue;
+      const rPx = this.bodyRadiusUi(scene, t.target.bodyId);
       if (rPx < TARGET_MIN_BODY_PX) continue;
       const shape = t.shape === 'pin' ? ICON.pin : t.shape === 'pad' ? ICON.pad : ICON.zone;
       const r = (t.shape === 'pin' ? 9 : t.shape === 'pad' ? 6.5 : 3.5) * k;
@@ -1615,7 +1639,7 @@ export class MapController implements MapView {
         }
         if (best === 0) break;
       }
-      this.tooltip = { x: tx / k, y: ty / k, width: width / k, height: height / k };
+      this.tooltip = { x: tx / css, y: ty / css, width: width / css, height: height / css };
       this.icon(top, tx + width / 2, ty + height / 2, width / 2, height / 2, 0, ICON.roundRect, COLORS.tooltipBg, 1);
       tip.forEach((line, i) => this.text(topTexts, tx + 8 * k, ty + 5 * k + i * tm.lineHeight, line, i === 0 ? COLORS.text : COLORS.textDim, 1));
       rects.push({ x0: tx, y0: ty, x1: tx + width, y1: ty + height });
@@ -1708,7 +1732,7 @@ export class MapController implements MapView {
       if (!v) return null;
       const body = this.defs.bodies[v.bodyId];
       const alt = body ? Math.hypot(v.r.x, v.r.y, v.r.z) - body.radius : NaN;
-      return [v.name, `${v.controllable ? 'Vessel' : 'Debris'} around ${body?.name ?? v.bodyId}`, `Altitude ${formatDistance(alt)}`];
+      return [v.name, `${v.controllable ? 'Vessel' : 'Debris'} around ${body?.name ?? v.bodyId}`, `Altitude ${formatDistance(alt, 'altitude')}`];
     }
     return null;
   }
