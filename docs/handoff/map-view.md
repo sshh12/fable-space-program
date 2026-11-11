@@ -293,10 +293,11 @@ body (and for surface targets: body at least 18 px).
 
 ## Acceptance: measured
 
-106 unit tests (11 files incl. boundaries) and 27 functional browser specs pass (2026-11-11, round 3). The 2
-perf specs pass on the quiet machine (round 3: overview CPU p99 0.435 ms, close-up 0.495 ms, GPU p99 0.008 /
-0.012 ms; tables in "Visual close-out, round 2" and "round 3"). The rows below are the original acceptance
-runs of 2026-11-10.
+119 unit tests (12 files incl. boundaries) and 29 functional browser specs pass (2026-11-11, round 5). The 2
+perf specs: GPU p99 0.003-0.006 ms (line 0.1 ms); the CPU line (0.5 ms p99) is NOT met by the round-5 code: under
+heavy load overview p99 0.61 ms, close-up 0.78 ms, and side by side with the pre-session code the frame costs
+about 20-25 % more (table in "Visual close-out, round 5"). Round 3 passed on the quiet machine (overview 0.435,
+close-up 0.495 ms). The rows below are the original acceptance runs of 2026-11-10.
 
 | Criterion | Result |
 |---|---|
@@ -323,7 +324,7 @@ runs of 2026-11-10.
 | Browser: synthetic chain, at-intercept, every marker kind, both nodes | all via describe(); at intercept the impact lies on the ghost Moon, one ghost |
 | Browser: panel fields show their whole text | `scrollWidth <= clientWidth` for all six fields in the three synthetic close-ups (multi-day times) |
 | Overlay GPU < 0.1 ms (8 patches, 20 debris) | met: p99 <= 0.016 ms in every run (round 3: 0.008 / 0.012 ms) |
-| Overlay CPU < 0.5 ms per frame | round 3, ~1 % load: overview p99 0.435 ms, Earth close-up p99 0.495 ms (met, the close-up near the line); under the other agents' load the p99 has missed in earlier runs (tables below) |
+| Overlay CPU < 0.5 ms per frame | round 3, ~1 % load: overview p99 0.435 ms, Earth close-up p99 0.495 ms (met, the close-up near the line). Round 5: NOT met; under heavy load p99 0.61 / 0.78 ms, and about 20-25 % per frame over the round-3 code side by side (the label placement off the lines, the dash alignment, the sub-span corridor; "Visual close-out, round 5") |
 
 ### Overlay cost
 
@@ -690,3 +691,93 @@ Photo lens about 7: the composed frames now read as one interface at 720p and 4K
 nothing hiding under the HUD), but the planet the overlay sits on still gives the composite away next to a
 photograph, and that is outside this package. Artifact lens about 8: no defect of the overlay itself is left
 that I could find in the 38 pictures at 2-6x; the open points are the parallel dashed pair and the lab sphere.
+
+## Visual close-out, round 5 (2026-11-11)
+
+Work lists: `out/qa/wave2/map-view.r4.photo.json` (photo 6.5/10) and `out/qa/wave2/map-view.r4.artifact.json`
+(artifact 7/10). Commits 3696a2a, ef0cb0f, 284b0db, 5afa6d8, 9c0961a and the close-out commit. Each item was changed at its cause,
+the pictures regenerated and looked at (crops at 3-6x). New unit tests: `tests/unit/map-view/visualQa5.test.ts`
+(12); new browser check: binary dashes along every planned patch of the overview (`screens.spec.ts`); new
+picture: `real-lowOrbit-panel.png` (the node-panel acceptance step over the real planet).
+
+| Item (photo P / artifact A, round-4 lists) | What was done | Evidence |
+|---|---|---|
+| A1 / P7 / photo 2 / artifact 3 (major): two planned legs converging into the entry point interleave their dashes over the Earth disc (the "lightning bolt"), pairs of dashed lines 3-8 px apart with unrelated phases below it | (1) The coincidence test is exact and per sub-span: the occupancy grid holds the drawn segment through each corridor-wide cell and the distance to it is computed; a segment covered in part keeps the range `cut0..cut1`, which the line shader hides with anti-aliased flat ends; the 1-D cleaning works in screen length (a steep crossing is not cut). Corridor 3.75 px (1.5 line widths). (2) A dashed patch beside an earlier one (12 px, within 15 degrees, the same way) takes its dash phase and the depth its octave is chosen from (`alignDashes`), so legs side by side show their dashes side by side. (3) Planned palette with clearly distinct hues: yellow, orange #ff7a3d, magenta #ee66e0, lime | `synthetic-earth.png` (one orange stroke over the disc, the magenta leg peels off where it leaves the corridor, the two pairs below with dashes side by side), `hover-debris-orbit.png`, `synthetic-8-patches-earth.png`, `scene-synthetic.png` (two strands); unit tests: no drawn stretch of the later leg within the corridor of the earlier one (crossings aside), dash phases of side-by-side legs equal to 4 % of a cell |
+| artifact 1 (major): on the long-range planned patches each dash is "dash, half-dash, ghost" (two octaves cross-faded) | The octave is chosen per world cell (`dashOctave` in shaders.ts): the largest power-of-two period at most 26 px on screen, judged at the centre of the octave's own cell, so every fragment of a cell agrees and cells of two octaves meet at multiples of the coarser period where both begin a dash. Every pixel is dash or gap; still fixed to the path | `scene-synthetic.png`, `synthetic-moon-intercept.png` (6x crop of the orange strand: one rhythm, empty gaps); browser check: along every planned patch of the overview, mid-tone runs over 3 px at most 2 per patch (crossings) |
+| P5 / artifact 2 (major, not this package): the planet under the overlay | Request `map-view-6` updated with the round-4 measurements (clouds about 5x the ocean against 13-16x, 4K cloud texel steps, grey-blue sea, earthshine 1/57 of the crescent) and the ocean owner added; terrain-render answered its part (limb smear, terminator relief) | `docs/requests/map-view-6.md`; `real-*.png` re-taken on the current tree |
+| P4 (major, still open) / photo 6 / artifact 4: the at-intercept encounter knot, a "+1" badge between two icons, a badge over the SOI-entry glyph | An encounter ghost whose SOI is under 64 px on screen takes in everything inside that circle ("Moon (encounter) +7", members in its tooltip); badges go on the corner of their own icon clearest of other icons, the gizmo and other UI; clustering by glyph extents (two glyphs that would touch collapse) | `scene-synthetic-intercept.png`, `synthetic-chain-intercept.png`, `scene-synthetic.png`; unit tests: no icon inside the folded encounter but the ghost, no badge over a foreign icon |
+| A5 / photo 4: the two Ap labels read crosswise (each level with the other marker) | Of two neighbouring markers on lines side by side the inner one's label takes the inner side; a label pays for reversing its neighbour's order along either axis and for lying toward a neighbouring marker | `accept-panel.png` (current Ap label above, planned Ap label below, each level with its own marker); unit test on the accept-panel geometry |
+| A6 / P8 / photo 3, 5 / artifact 5: labels on lines (the Impact plate over the patch bending round the Moon, "Central Pacific" over its own ring, "MOON" struck through, a dash under a 0.95 plate) | Label cost by the exact drawn length under the plate (`LineGrid.length`, per-cell segment lists; trajectories 1 per px, zone rings 0.6, orbits 0.5, SOI 0.35): a line across a label costs more than the whole candidate ring. Body names get a black knockout (invisible on space, masks a line the placement could not avoid) and a 1.6 px halo; plates fully opaque | `synthetic-moon.png`, `hover-impact-details.png`, `dpr2-synthetic-moon.png` (Impact and MOON clear of the dashed patch), `scene-synthetic.png`, `real-hud-lowOrbit-node-4k.png`; unit test: MOON and Impact cover no trajectory |
+| photo 7: entry marker gone under the selected node, unexplained X and pad on the disc, the pad name never fits | A marker the selected node's disc would cover moves clear of it along its own line; ground twins say "Entry point" / "Impact point"; long site names have a short form used when the full one finds no room ("Ka Lae LC-1", `shortSiteName`); ground marks only with the whole glyph inside the limb | `synthetic-earth.png` (entry triangle beside the node with its label, "Entry point" on the X); unit tests (marker moved, short form placed) |
+| photo 8: the active vessel would vanish under a HUD panel | The active vessel is exempt from the under-UI drop: its chevron stays, its label is set clear of the panel | unit test (visualQa3, rewritten: icon kept, label clear of the obstacle) |
+| photo 9 / artifact 6: the pad label jumps 144 px during a drag; a leader under a gizmo handle | Hysteresis: each label's place (by key) of the previous draw list is tried first with a bonus of 3 ranks; connectors that cross an icon, a gizmo arm or handle, or another connector pay a penalty | `accept-node-added.png` -> `accept-prograde-drag.png` (pad label in the same place); unit test: over an 11-step prograde drag no label of an unmoved anchor moves |
+| photo 10: "Fake vessel" | Request `map-view-7`, answered by core-support (ecc9238: `FakeSimOptions.vesselName`, the integration lab names the craft after its vehicle); the map lab passes "Kestrel" | `accept-*.png`, `real-*.png` |
+| photo 11 / artifact 7: "now" beside the HUD's "T− 0:00"; narrow spaces collapse at 720p ("1839.1km") | `formatTimeTo` writes "T− 0:00" within the last second (as `formatCountdown`); U+202F advances at least 0.25 em (3.25 px at 720p) in the atlas and the CPU metrics | `real-hud-lowOrbit-node-720p.png`, `synthetic-moon.png` ("Pe 2 911.9 km"); unit tests |
+| photo 12: an unlabelled SOI arc of an off-screen Moon | A body off screen whose SOI is drawn on screen gets an edge chevron toward it with its name | `accept-occlusion.png` ("MOON" at the left edge); unit test |
+| artifact 8: ghost ring hollow and overlapped by the impact icon; line stubs above Node 2 | Ghost ring filled like the other outline glyphs; clustering by glyph extents; the stubs were the later patch's start lying on the earlier one, now hidden by the sub-span corridor | `synthetic-moon-intercept.png`, `hover-debris-orbit.png` |
+| artifact 9: 25 of 39 pictures over the lab sphere, whose lit night side hid what the silhouette ring is for | The lab sphere's night side is now as black as space (no ambient term), as the real renderer shows it; the node-panel step is repeated over the real renderer (`real-lowOrbit-panel.png`); the other acceptance steps stay on the lab (see below) | `real-lowOrbit-panel.png`, `accept-*.png` (night limb outlined by the ring) |
+| artifact 10: the South Pacific centre dot straddling the limb | Pad and zone centres are drawn only with the whole glyph inside the visible disc | `zone-near-limb.png` (no half dot, no label beside the planet) |
+
+Not fixed, or only in part, and why:
+- The planet under the overlay (P5 / artifact 2): other packages' code; `map-view-6` carries the measurements.
+- Artifact 9: only the node-panel step was repeated over the real renderer. The other acceptance specs drive the
+  FakeSim of the map lab step by step (clicks, drags, typed values) and assert on `describe()`; the integration
+  lab does not host the map yet (`map-view-5`, its labs/integration part open), so moving them means re-building
+  that harness in `real-planet.spec.ts`. The lab sphere stays the backdrop of the functional specs.
+- Artifact 10, the ring folded at the limb: the zone circle crossing the limb is a thin sliver near the tangent
+  point (its near-side arc returns along the limb); it is drawn as the true geometry, cut at the limb.
+- Aligned dashes of two legs that are near only in projection follow the parallax while the view turns (Known
+  limits).
+
+### Overlay cost (perf spec under the GPU lock)
+
+**Not met.** All runs were taken under heavy machine load (four GPU slots busy with other packages' suites, a
+Moon colour bake running: provisional per PACKAGE_RULES 16). Under that load the pre-session code misses the
+line too, so the regression was measured side by side: a temporary A/B spec loaded the pre-session `src/map`
+(commit d48e735) and the current one alternately in the same lab, under one GPU lock, three rounds of 400 frames
+each (the 8-patch + 20-debris load case, camera orbiting every frame).
+
+| Run (2026-11-11, round 5) | Overview CPU p50 / p99 | Close-up CPU p50 / p99 | GPU p99 (ov / cu) |
+|---|---|---|---|
+| perf spec, run 1 (after the first label changes) | 0.370 / 0.685 | 0.405 / 0.680 | 0.003 / 0.005 ms |
+| perf spec, run 2 (after the first trims) | 0.385 / 0.680 | 0.440 / 0.765 | 0.004 / 0.005 ms |
+| perf spec, final code | 0.365 / 0.610 | 0.440 / 0.780 | 0.003 / 0.006 ms |
+| A/B, pre-session code (3 rounds) | 0.325-0.350 / 0.545-0.690 | 0.390-0.405 / 0.690-0.855 | |
+| A/B, current code (3 rounds) | 0.390-0.420 / 0.750-0.785 | 0.435-0.580 / 0.790-1.055 | |
+
+Node, same process, interleaved, best of three means (scene + draw list per frame): overview 0.108 ms against
+0.087 ms pre-session (+24 %), close-up 0.192 against 0.159 ms (+21 %). The GPU line (0.1 ms) holds with a wide
+margin. On the quiet machine the pre-session code measured p99 0.435 / 0.495 ms (round 3); with +20-25 % the
+close-up would be over the line there too, so the CPU line is not met by this round's code and the lead's
+quiet-machine re-measure should expect a miss in the close-up.
+
+Where the extra time goes (CPU profiles of the close-up and the overview): the exact label line length
+(`LineGrid` segment lists and `length`, about 5-7 % of a frame), the label search that now really leaves the
+lines (more candidates evaluated, about 3-4 %), the dash alignment (about 3 %), the sub-span corridor and the
+1-D cleaning (about 2 % over the old coincidence pass), and small additions in the draw list (badge corners,
+edge chevrons, encounter folding). Already trimmed in this round: one corridor sample per three corridor widths
+with the shared endpoint reused, one marking walk for both grids, alignment probes thinned where no partner is
+near, the alignment's rare branches moved out of its loop (it deoptimised 33 times per run before), the
+declutter testing each candidate only against the obstacles and icons within its reach, a free and clean place
+beside the anchor kept without a search. Next levers, in order of yield: the bulk debris orbits (about a fifth
+of the close-up frame: a coarser tolerance or a cheaper verification of their kept breakpoints), building the
+label segment lists only for the cells that labels can reach, and evaluating the declutter's foreign-icon and
+connector tests only for the best few candidates.
+
+### Tests
+
+Unit: 112 in 11 files plus boundaries (119 with the boundaries test's 7); new `tests/unit/map-view/visualQa5.test.ts`
+(12), `visualQa3` (active vessel kept under a HUD panel) and `visualQa`/`format.test.ts` (the HUD's "T− 0:00",
+short site names) rewritten where the behaviour changed on purpose. Browser (functional): 29 specs, all passing
+(new: the binary-dash pixel check, the real-planet node-panel picture). Perf: 2, both over the CPU line under
+the load of this run (above).
+
+### Own assessment
+
+Photo lens about 7: the overlay no longer has a stroke that reads as broken (one rhythm of binary dashes, legs
+merging or running side by side with their dashes paired, labels off the lines, names knocked out of lines), and
+the composed frames hold at 720p and 4K; the planet under it still gives the frame away next to a photograph
+(clouds and sea, request map-view-6, partly answered). Artifact lens about 8 for the pictures: every item of both
+lists was changed at its cause and is visible in the pictures, the encounter knot is one marker, the Ap labels
+read in order; what keeps it from a clean 8 is the CPU budget line, which this round's code does not meet (about
++20-25 % per frame), and the acceptance steps that still run over the lab sphere.

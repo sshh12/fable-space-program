@@ -1706,6 +1706,18 @@ export class SceneBuilder {
       lastFound = true;
     }
     if (nKnown === 0) return;
+    this.spreadOffsets(scene, lo, n);
+  }
+
+  /**
+   * The second half of alignDashes (its rarely taken branches kept out of the measuring loop, so that loop stays
+   * optimized): spread the offsets measured at the vertices [lo, lo + n) of a line over all of them.
+   */
+  private spreadOffsets(scene: MapScene, lo: number, n: number): void {
+    const v = this.verts;
+    const delta = this.delta;
+    const zr = this.zr;
+    const known = this.known;
     // An offset matters only modulo the coarsest dash cell in use where it was measured (a whole number of cells
     // moves no dash): each measured offset is brought within half that modulus of the one before (the shift
     // carries on to the later ones), then interpolated along the arc in between, held beyond the first and the
