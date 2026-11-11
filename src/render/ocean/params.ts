@@ -1,0 +1,136 @@
+/**
+ * Ocean tunables: BodyDef.ocean (physics: sea level, swell) + BodyDef.render.ocean (look: wind, absorption,
+ * params). Validated here; every number the ocean package uses comes from these two sections.
+ */
+import type { BodyDef, OceanDef, OceanRenderDef } from '@/core/contracts/defs';
+import type { SwellComponent } from '@/core/geo/oceanSwell';
+import { DEG, type Vec3Tuple } from '@/core/math';
+
+export interface OceanTunables {
+  bodyId: string;
+  /** Reference radius and sea-level radius (radius + seaLevel), m. */
+  radius: number;
+  seaRadius: number;
+  /** Surface gravity used by the swell dispersion: mu / radius^2 (what the physics passes to oceanSwellHeight). */
+  gravity: number;
+  swell: readonly SwellComponent[];
+  /** U10 wind speed (m/s) and the compass direction the wind blows TOWARD (rad, clockwise from north). */
+  windSpeed: number;
+  windDir: number;
+  /** Absorption and backscatter per metre, linear RGB. */
+  absorption: Vec3Tuple;
+  backscatter: Vec3Tuple;
+  /** FFT: planet-fixed period (m) and the divisors that give the four cascade patch lengths. */
+  cascadePeriod: number;
+  cascadeDivisors: [number, number, number, number];
+  fetch: number;
+  jonswapGamma: number;
+  /** Wavelengths at or above this carry no FFT energy (they belong to the shared swell), m. */
+  highPassWavelength: number;
+  choppiness: number;
+  /** Dispersion is quantised to multiples of 2 pi / repeatPeriod so phases are exact in float32. */
+  repeatPeriod: number;
+  seed: number;
+  fadeStart: number;
+  fadeEnd: number;
+  /** Wave detail is complete inside detailFadeFraction x fadeStart and zero at fadeStart. */
+  detailFadeFraction: number;
+  /** 0..1: how strongly the imagery colour tints the deep-water colour. */
+  imageryTint: number;
+  foamDecay: number;
+  foamJacobianThreshold: number;
+  foamGain: number;
+  foamAlbedo: number;
+  shoreFoamDepth: number;
+  refractionDistortion: number;
+  chromaticOffset: number;
+  vesselDampingHullRadii: number;
+  wakeExtent: number;
+  wakeFoamPerSplash: number;
+  rippleWavelength: number;
+  rippleAmplitude: number;
+  rippleLifetime: number;
+  wetLineDryingRate: number;
+}
+
+const need = (file: string, params: Record<string, number>, name: string, check: (v: number) => boolean = Number.isFinite): number => {
+  const v = params[name];
+  if (typeof v !== 'number' || !check(v)) throw new Error(`${file}: params.${name} is missing or invalid (${String(v)})`);
+  return v;
+};
+const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
+const fraction = (v: number): boolean => Number.isFinite(v) && v >= 0 && v <= 1;
+
+/** Tunables of a body with an ocean, or null when it has none (bodies without an ocean cost nothing). */
+export function oceanTunables(body: BodyDef): OceanTunables | null {
+  const phys: OceanDef | null = body.ocean;
+  const look: OceanRenderDef | null = body.render.ocean;
+  if (!phys || !look) return null;
+  const file = `data/defs/render/${body.id}.ocean.json`;
+  const p = look.params;
+  if (!positive(look.windSpeed)) throw new Error(`${file}: windSpeed must be > 0`);
+  if (!Number.isFinite(look.windDirDeg)) throw new Error(`${file}: windDirDeg is missing`);
+  if (!look.absorption || look.absorption.length !== 3 || look.absorption.some((a) => !positive(a))) throw new Error(`${file}: absorption must be three positive numbers`);
+  const divisors: [number, number, number, number] = [
+    need(file, p, 'cascadeDivisor0', positive),
+    need(file, p, 'cascadeDivisor1', positive),
+    need(file, p, 'cascadeDivisor2', positive),
+    need(file, p, 'cascadeDivisor3', positive),
+  ];
+  for (let i = 0; i < 4; i++) {
+    if (!Number.isInteger(divisors[i]) || (i > 0 && divisors[i]! <= divisors[i - 1]!)) throw new Error(`${file}: cascade divisors must be increasing integers`);
+  }
+  const fadeStart = need(file, p, 'nearFieldFadeStartM', positive);
+  const fadeEnd = need(file, p, 'nearFieldFadeEndM', positive);
+  if (fadeEnd <= fadeStart) throw new Error(`${file}: nearFieldFadeEndM must exceed nearFieldFadeStartM`);
+  for (const c of phys.swell) {
+    if (!positive(c.wavelength) || !(c.amplitude >= 0)) throw new Error(`data/defs/bodies/${body.id}.json: swell component with wavelength ${c.wavelength} / amplitude ${c.amplitude}`);
+  }
+  return {
+    bodyId: body.id,
+    radius: body.radius,
+    seaRadius: body.radius + phys.seaLevel,
+    gravity: body.mu / (body.radius * body.radius),
+    swell: phys.swell,
+    windSpeed: look.windSpeed,
+    windDir: look.windDirDeg * DEG,
+    absorption: [look.absorption[0], look.absorption[1], look.absorption[2]],
+    backscatter: [need(file, p, 'backscatterR', positive), need(file, p, 'backscatterG', positive), need(file, p, 'backscatterB', positive)],
+    cascadePeriod: need(file, p, 'cascadePeriodM', positive),
+    cascadeDivisors: divisors,
+    fetch: need(file, p, 'fetchM', positive),
+    jonswapGamma: need(file, p, 'jonswapGamma', positive),
+    highPassWavelength: need(file, p, 'highPassWavelengthM', positive),
+    choppiness: need(file, p, 'choppiness', (v) => v >= 0 && v <= 2),
+    repeatPeriod: need(file, p, 'repeatPeriodS', positive),
+    seed: need(file, p, 'seed', Number.isInteger),
+    fadeStart,
+    fadeEnd,
+    detailFadeFraction: need(file, p, 'detailFadeFraction', (v) => v > 0 && v < 1),
+    imageryTint: need(file, p, 'imageryTint', fraction),
+    foamDecay: need(file, p, 'foamDecayPerS', positive),
+    foamJacobianThreshold: need(file, p, 'foamJacobianThreshold', positive),
+    foamGain: need(file, p, 'foamGain', positive),
+    foamAlbedo: need(file, p, 'foamAlbedo', fraction),
+    shoreFoamDepth: need(file, p, 'shoreFoamDepthM', positive),
+    refractionDistortion: need(file, p, 'refractionDistortion', (v) => v >= 0),
+    chromaticOffset: need(file, p, 'chromaticOffset', (v) => v >= 0),
+    vesselDampingHullRadii: need(file, p, 'vesselDampingHullRadii', positive),
+    wakeExtent: need(file, p, 'wakeExtentM', positive),
+    wakeFoamPerSplash: need(file, p, 'wakeFoamPerSplash', (v) => v >= 0),
+    rippleWavelength: need(file, p, 'rippleWavelengthM', positive),
+    rippleAmplitude: need(file, p, 'rippleAmplitudeM', (v) => v >= 0),
+    rippleLifetime: need(file, p, 'rippleLifetimeS', positive),
+    wetLineDryingRate: need(file, p, 'wetLineDryingRateMps', positive),
+  };
+}
+
+/** Cox-Munk mean square slope (both axes summed) for a U10 wind speed: 0.003 + 0.00512 U. */
+export const coxMunkVariance = (windSpeed: number): number => 0.003 + 0.00512 * windSpeed;
+
+/**
+ * GGX alpha per unit Gaussian slope standard deviation. A GGX lobe with alpha = KAPPA x sigma has the same
+ * half-maximum width in slope space as the Gaussian (Cox-Munk) slope distribution of mean square slope
+ * sigma^2: GGX halves at tan = 0.6436 alpha, the Gaussian at tan = sqrt(ln 2) sigma = 0.8326 sigma.
+ */
+export const GGX_KAPPA = Math.sqrt(Math.LN2) / Math.sqrt(Math.SQRT2 - 1);

@@ -1,0 +1,201 @@
+/**
+ * GPU side of the wave cascades: uploads the initial spectra once, then per frame (only while the near field
+ * is active) evolves them, runs the inverse FFTs, assembles displacement / derivatives / foam into texture
+ * arrays (one layer per cascade, full mip chain) and keeps the previous frame's displacement for motion
+ * vectors. Published as 'ocean.displacement' and 'ocean.derivatives'.
+ */
+import type { RenderContext } from '@/core/contracts/render';
+import { coreOf } from '@/render/core';
+import type { OceanCascadeSet } from './cascades';
+import type { OceanTunables } from './params';
+import { CASCADE_COUNT, CASCADE_MIPS, FFT_SIZE } from './spectrum';
+import { FFT_COLUMNS_WGSL, FFT_MIP_WGSL, FFT_ROWS_WGSL, FFT_SPECTRUM_WGSL } from './shaders/fftWgsl';
+
+export class OceanFft {
+  readonly disp: GPUTexture;
+  readonly dispPrev: GPUTexture;
+  readonly deriv: GPUTexture;
+  readonly foam: [GPUTexture, GPUTexture];
+  readonly dispView: GPUTextureView;
+  readonly dispPrevView: GPUTextureView;
+  readonly derivView: GPUTextureView;
+  readonly foamViews: [GPUTextureView, GPUTextureView];
+  /** Index of the foam texture written by the latest update (the one to sample). */
+  foamCurrent = 0;
+  private readonly params: GPUBuffer;
+  private readonly paramData = new Float32Array(12);
+  private readonly h0: GPUBuffer;
+  private readonly omega: GPUBuffer;
+  private readonly work: GPUBuffer;
+  private readonly spectrumPipe: GPUComputePipeline;
+  private readonly rowsPipe: GPUComputePipeline;
+  private readonly colsPipe: GPUComputePipeline;
+  private readonly mipPipe: GPUComputePipeline;
+  private readonly spectrumGroup: GPUBindGroup;
+  private readonly rowsGroup: GPUBindGroup;
+  private readonly colsGroups: [GPUBindGroup, GPUBindGroup];
+  private readonly mipGroups: [GPUBindGroup[], GPUBindGroup[]];
+  private primed = false;
+
+  constructor(
+    private readonly ctx: RenderContext,
+    readonly cascades: OceanCascadeSet,
+    private readonly tunables: OceanTunables,
+  ) {
+    const device = ctx.device;
+    const core = coreOf(ctx);
+    const n = FFT_SIZE;
+    const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
+    const texDesc = (label: string): GPUTextureDescriptor => ({ label, format: 'rgba16float', size: [n, n, CASCADE_COUNT], mipLevelCount: CASCADE_MIPS, usage });
+    this.disp = core.createTextureChecked(texDesc('ocean.displacement'));
+    this.dispPrev = core.createTextureChecked(texDesc('ocean.displacementPrev'));
+    this.deriv = core.createTextureChecked(texDesc('ocean.derivatives'));
+    this.foam = [core.createTextureChecked(texDesc('ocean.foam0')), core.createTextureChecked(texDesc('ocean.foam1'))];
+    const arr = (t: GPUTexture): GPUTextureView => t.createView({ dimension: '2d-array' });
+    this.dispView = arr(this.disp);
+    this.dispPrevView = arr(this.dispPrev);
+    this.derivView = arr(this.deriv);
+    this.foamViews = [arr(this.foam[0]), arr(this.foam[1])];
+
+    // Initial spectra and quantised dispersion indices, one block per cascade.
+    const h0 = new Float32Array(CASCADE_COUNT * n * n * 4);
+    const om = new Float32Array(CASCADE_COUNT * n * n);
+    cascades.spectra.forEach((s, c) => {
+      h0.set(s.h0, c * n * n * 4);
+      om.set(s.omegaIndex, c * n * n);
+    });
+    this.h0 = device.createBuffer({ label: 'ocean.h0', size: h0.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.h0, 0, h0);
+    this.omega = device.createBuffer({ label: 'ocean.omegaIndex', size: om.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.omega, 0, om);
+    this.work = device.createBuffer({ label: 'ocean.fftWork', size: CASCADE_COUNT * 4 * n * n * 8, usage: GPUBufferUsage.STORAGE });
+    this.params = device.createBuffer({ label: 'ocean.fftParams', size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+    const C = GPUShaderStage.COMPUTE;
+    const storageTex = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: C, storageTexture: { access: 'write-only', format: 'rgba16float', viewDimension: '2d-array' } });
+    const sampledTex = (binding: number): GPUBindGroupLayoutEntry => ({ binding, visibility: C, texture: { sampleType: 'unfilterable-float', viewDimension: '2d-array' } });
+    const spectrumLayout = device.createBindGroupLayout({
+      label: 'ocean.fft.spectrum',
+      entries: [
+        { binding: 0, visibility: C, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: C, buffer: { type: 'read-only-storage' } },
+        { binding: 2, visibility: C, buffer: { type: 'read-only-storage' } },
+        { binding: 3, visibility: C, buffer: { type: 'storage' } },
+      ],
+    });
+    const rowsLayout = device.createBindGroupLayout({ label: 'ocean.fft.rows', entries: [{ binding: 3, visibility: C, buffer: { type: 'storage' } }] });
+    const colsLayout = device.createBindGroupLayout({
+      label: 'ocean.fft.columns',
+      entries: [{ binding: 0, visibility: C, buffer: { type: 'uniform' } }, { binding: 3, visibility: C, buffer: { type: 'storage' } }, storageTex(4), storageTex(5), storageTex(6), sampledTex(7)],
+    });
+    const mipLayout = device.createBindGroupLayout({ label: 'ocean.fft.mip', entries: [sampledTex(0), sampledTex(1), sampledTex(2), storageTex(3), storageTex(4), storageTex(5)] });
+    const pipe = (label: string, code: string, entry: string, layout: GPUBindGroupLayout): GPUComputePipeline =>
+      device.createComputePipeline({ label, layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }), compute: { module: ctx.shaders.createModule(label, code), entryPoint: entry } });
+    this.spectrumPipe = pipe('ocean.fft.spectrum', FFT_SPECTRUM_WGSL, 'spectrum', spectrumLayout);
+    this.rowsPipe = pipe('ocean.fft.rows', FFT_ROWS_WGSL, 'rows', rowsLayout);
+    this.colsPipe = pipe('ocean.fft.columns', FFT_COLUMNS_WGSL, 'columns', colsLayout);
+    this.mipPipe = pipe('ocean.fft.mip', FFT_MIP_WGSL, 'mip', mipLayout);
+
+    this.spectrumGroup = device.createBindGroup({
+      label: 'ocean.fft.spectrum',
+      layout: spectrumLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.params } },
+        { binding: 1, resource: { buffer: this.h0 } },
+        { binding: 2, resource: { buffer: this.omega } },
+        { binding: 3, resource: { buffer: this.work } },
+      ],
+    });
+    this.rowsGroup = device.createBindGroup({ label: 'ocean.fft.rows', layout: rowsLayout, entries: [{ binding: 3, resource: { buffer: this.work } }] });
+    const level = (t: GPUTexture, mip: number): GPUTextureView => t.createView({ dimension: '2d-array', baseMipLevel: mip, mipLevelCount: 1 });
+    const cols = (k: 0 | 1): GPUBindGroup =>
+      device.createBindGroup({
+        label: `ocean.fft.columns${k}`,
+        layout: colsLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.params } },
+          { binding: 3, resource: { buffer: this.work } },
+          { binding: 4, resource: level(this.disp, 0) },
+          { binding: 5, resource: level(this.deriv, 0) },
+          { binding: 6, resource: level(this.foam[k], 0) },
+          { binding: 7, resource: level(this.foam[1 - k]!, 0) },
+        ],
+      });
+    this.colsGroups = [cols(0), cols(1)];
+    const mips = (k: 0 | 1): GPUBindGroup[] => {
+      const out: GPUBindGroup[] = [];
+      for (let m = 1; m < CASCADE_MIPS; m++) {
+        out.push(
+          device.createBindGroup({
+            label: `ocean.fft.mip${m}.${k}`,
+            layout: mipLayout,
+            entries: [
+              { binding: 0, resource: level(this.disp, m - 1) },
+              { binding: 1, resource: level(this.deriv, m - 1) },
+              { binding: 2, resource: level(this.foam[k], m - 1) },
+              { binding: 3, resource: level(this.disp, m) },
+              { binding: 4, resource: level(this.deriv, m) },
+              { binding: 5, resource: level(this.foam[k], m) },
+            ],
+          }),
+        );
+      }
+      return out;
+    };
+    this.mipGroups = [mips(0), mips(1)];
+    for (let c = 0; c < CASCADE_COUNT; c++) this.paramData[8 + c] = cascades.spectra[c]!.band.length;
+  }
+
+  /** The near field switched off: the next update starts a new history (no stale previous frame or foam). */
+  reset(): void {
+    this.primed = false;
+  }
+
+  /**
+   * Evolve to time tau = frac(t / T) (prepared in float64 by the caller). `dt` drives the foam decay.
+   * Records into `encoder`; `timestamp` is the core's timestampWrites for the pass.
+   */
+  update(encoder: GPUCommandEncoder, tau: number, dt: number, timestamp: GPUComputePassTimestampWrites | undefined): void {
+    const device = this.ctx.device;
+    const n = FFT_SIZE;
+    // The previous frame's displacement (all mips) for motion vectors.
+    if (this.primed) for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, CASCADE_COUNT]);
+    const p = this.paramData;
+    p[0] = tau;
+    p[1] = this.tunables.choppiness;
+    // A new history starts without the foam of an earlier session (decay to zero).
+    p[2] = this.primed ? dt : 1e4;
+    p[3] = this.tunables.foamDecay;
+    p[4] = this.tunables.foamJacobianThreshold;
+    p[5] = this.tunables.foamGain;
+    device.queue.writeBuffer(this.params, 0, p);
+    const k = (1 - this.foamCurrent) as 0 | 1;
+    const pass = encoder.beginComputePass({ label: 'ocean.fft', timestampWrites: timestamp });
+    pass.setPipeline(this.spectrumPipe);
+    pass.setBindGroup(0, this.spectrumGroup);
+    pass.dispatchWorkgroups(n / 16, n / 16, CASCADE_COUNT);
+    pass.setPipeline(this.rowsPipe);
+    pass.setBindGroup(0, this.rowsGroup);
+    pass.dispatchWorkgroups(n, CASCADE_COUNT);
+    pass.setPipeline(this.colsPipe);
+    pass.setBindGroup(0, this.colsGroups[k]);
+    pass.dispatchWorkgroups(n, CASCADE_COUNT);
+    pass.setPipeline(this.mipPipe);
+    for (let m = 1; m < CASCADE_MIPS; m++) {
+      pass.setBindGroup(0, this.mipGroups[k][m - 1]!);
+      const size = n >> m;
+      pass.dispatchWorkgroups(Math.ceil(size / 8), Math.ceil(size / 8), CASCADE_COUNT);
+    }
+    pass.end();
+    this.foamCurrent = k;
+    if (!this.primed) {
+      for (let m = 0; m < CASCADE_MIPS; m++) encoder.copyTextureToTexture({ texture: this.disp, mipLevel: m }, { texture: this.dispPrev, mipLevel: m }, [n >> m, n >> m, CASCADE_COUNT]);
+      this.primed = true;
+    }
+  }
+
+  dispose(): void {
+    for (const t of [this.disp, this.dispPrev, this.deriv, ...this.foam]) t.destroy();
+    for (const b of [this.h0, this.omega, this.work, this.params]) b.destroy();
+  }
+}
