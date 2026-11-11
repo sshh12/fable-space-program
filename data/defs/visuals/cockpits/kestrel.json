@@ -1,0 +1,246 @@
+{
+  "mouldLine": "visuals/shared/kestrel-mouldline",
+  "materials": {
+    "structure": { "shading": "standard", "albedo": [0.5, 0.515, 0.49], "roughness": 0.48, "detail": "paint", "detailStrength": 0.6 },
+    "floor": { "shading": "standard", "albedo": [0.07, 0.075, 0.08], "roughness": 0.78, "detail": "paint", "detailStrength": 1.0 },
+    "aluminium": { "shading": "standard", "albedo": [0.91, 0.92, 0.92], "roughness": 0.3, "metallic": 1, "anisotropy": 0.55, "detail": "brushed", "detailStrength": 0.8 },
+    "steel": { "shading": "standard", "albedo": [0.66, 0.65, 0.63], "roughness": 0.24, "metallic": 1, "detail": "brushed", "detailStrength": 0.4 },
+    "blanket": { "shading": "standard", "albedo": [0.7, 0.67, 0.6], "roughness": 0.86, "detail": "quilt", "detailStrength": 1.0, "translucency": 0.0 },
+    "closeout": { "shading": "standard", "albedo": [0.6, 0.615, 0.61], "roughness": 0.42, "detail": "paint", "detailStrength": 0.7 },
+    "bezel": { "shading": "standard", "albedo": [0.03, 0.032, 0.035], "roughness": 0.42, "detail": "paint", "detailStrength": 0.5 },
+    "rubber": { "shading": "standard", "albedo": [0.022, 0.022, 0.022], "roughness": 0.78, "detail": "rubber", "detailStrength": 1.0 },
+    "webbingOrange": { "shading": "standard", "albedo": [0.62, 0.17, 0.025], "roughness": 0.8, "detail": "webbing", "detailStrength": 1.0 },
+    "shade": { "shading": "standard", "albedo": [0.1, 0.1, 0.11], "roughness": 0.9, "detail": "weave", "detailStrength": 0.8, "translucency": 0.05 },
+    "hatch": { "shading": "standard", "albedo": [0.56, 0.57, 0.56], "roughness": 0.38, "detail": "paint", "detailStrength": 0.6 },
+    "anodized": { "shading": "standard", "albedo": [0.018, 0.018, 0.02], "roughness": 0.34, "detail": "cast", "detailStrength": 0.5 },
+    "caution": { "shading": "standard", "albedo": [0.74, 0.48, 0.02], "roughness": 0.38, "detail": "paint", "detailStrength": 0.5 },
+    "warning": { "shading": "standard", "albedo": [0.42, 0.02, 0.015], "roughness": 0.36, "detail": "paint", "detailStrength": 0.5 },
+    "cushion": { "shading": "standard", "albedo": [0.085, 0.092, 0.11], "roughness": 0.9, "detail": "weave", "detailStrength": 1.0, "translucency": 0.0 },
+    "couchFrame": { "shading": "standard", "albedo": [0.17, 0.18, 0.19], "roughness": 0.46, "detail": "paint", "detailStrength": 0.7 },
+    "webbing": { "shading": "standard", "albedo": [0.05, 0.06, 0.09], "roughness": 0.82, "detail": "webbing", "detailStrength": 1.0 },
+    "panel": { "shading": "standard", "albedo": [0.052, 0.056, 0.06], "roughness": 0.56, "detail": "paint", "detailStrength": 0.8 },
+    "consoleBody": { "shading": "standard", "albedo": [0.28, 0.29, 0.29], "roughness": 0.6, "detail": "paint", "detailStrength": 0.5 },
+    "cavity": { "shading": "standard", "albedo": [0.006, 0.006, 0.006], "roughness": 0.9 },
+    "keycap": { "shading": "standard", "albedo": [0.028, 0.028, 0.03], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.5 },
+    "lens": { "shading": "standard", "albedo": [0.018, 0.018, 0.018], "roughness": 0.14 },
+    "guard": { "shading": "standard", "albedo": [0.3, 0.018, 0.012], "roughness": 0.34, "detail": "cast", "detailStrength": 0.4 },
+    "knob": { "shading": "standard", "albedo": [0.02, 0.02, 0.021], "roughness": 0.45, "detail": "knurl", "detailStrength": 1.0 },
+    "pointer": { "shading": "standard", "albedo": [0.8, 0.8, 0.78], "roughness": 0.5 },
+    "smoked": { "shading": "standard", "albedo": [0.02, 0.006, 0.005], "roughness": 0.07 },
+    "segment": { "shading": "standard", "albedo": [0.03, 0.012, 0.01], "roughness": 0.35 },
+    "breakerBand": { "shading": "standard", "albedo": [0.8, 0.8, 0.78], "roughness": 0.5 },
+    "breakerCap": { "shading": "standard", "albedo": [0.02, 0.02, 0.02], "roughness": 0.38, "detail": "cast", "detailStrength": 0.4 },
+    "floodLens": { "shading": "standard", "albedo": [0.75, 0.75, 0.73], "roughness": 0.35 },
+    "handhold": { "shading": "standard", "albedo": [0.63, 0.63, 0.61], "roughness": 0.4, "metallic": 1, "detail": "brushed", "detailStrength": 0.5 },
+    "duct": { "shading": "standard", "albedo": [0.72, 0.72, 0.68], "roughness": 0.75, "detail": "ribbed", "detailStrength": 1.0 },
+    "grille": { "shading": "standard", "albedo": [0.15, 0.15, 0.16], "roughness": 0.5, "detail": "cast", "detailStrength": 0.6 },
+    "cable": { "shading": "standard", "albedo": [0.76, 0.76, 0.72], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.6 },
+    "cableBlack": { "shading": "standard", "albedo": [0.03, 0.03, 0.03], "roughness": 0.55, "detail": "rubber", "detailStrength": 0.6 },
+    "cableGrey": { "shading": "standard", "albedo": [0.3, 0.31, 0.32], "roughness": 0.5, "detail": "rubber", "detailStrength": 0.6 },
+    "extinguisher": { "shading": "standard", "albedo": [0.48, 0.045, 0.03], "roughness": 0.32, "detail": "paint", "detailStrength": 0.6, "clearcoat": 0.6 },
+    "pouch": { "shading": "standard", "albedo": [0.52, 0.5, 0.43], "roughness": 0.85, "detail": "weave", "detailStrength": 1.0 },
+    "velcro": { "shading": "standard", "albedo": [0.6, 0.58, 0.52], "roughness": 0.95, "detail": "velcro", "detailStrength": 1.0 }
+  },
+  "shell": {
+    "ringFramesY": [0.6, 0.95, 1.3, 1.65, 2.0],
+    "stringers": 24,
+    "frame": { "depth": 0.045, "width": 0.034 },
+    "stringer": { "depth": 0.02, "width": 0.016 },
+    "closeoutTopY": 0.95,
+    "blanket": { "thickness": 0.016, "quilt": 0.07, "inset": 0.004 },
+    "openingMargin": 0.07
+  },
+  "couches": {
+    "backOffset": 0.12,
+    "cushion": 0.055,
+    "pan": 0.012,
+    "headrest": { "width": 0.26, "height": 0.2, "depth": 0.06 },
+    "hipU": -0.68,
+    "thighLength": 0.42,
+    "seats": {
+      "cdr": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": true, "halfWidth": 0.21, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.16, 0.25] },
+      "plt": { "thighDeg": 100, "kneeDeg": 70, "kneeShift": 0, "controllers": true, "halfWidth": 0.22, "legHalfWidth": 0.17, "shinLength": 0.38, "armrests": [-0.25, 0.25] },
+      "ms": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": false, "halfWidth": 0.21, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.25, 0.16] }
+    }
+  },
+  "console": {
+    "distance": 0.55,
+    "depth": 0.16,
+    "sections": [
+      { "id": "left", "x": [-0.8, -0.27], "u": [-0.17, 0.22] },
+      { "id": "centre", "x": [-0.27, 0.27], "u": [-0.17, 0.17] },
+      { "id": "right", "x": [0.27, 0.8], "u": [-0.17, 0.22] },
+      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14 },
+      { "id": "lower", "x": [-0.78, 0.78], "u": [-0.36, -0.17], "tiltDeg": -30 }
+    ],
+    "displays": [
+      { "x": -0.43, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 5 },
+      { "x": 0.0, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 5 },
+      { "x": 0.43, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 5 }
+    ],
+    "navball": { "x": -0.69, "u": 0.0, "ballRadius": 0.05, "housing": 0.148 },
+    "annunciator": {
+      "x": 0.0,
+      "u": 0.25,
+      "columns": 6,
+      "cell": [0.038, 0.021],
+      "lamps": [
+        { "label": "SAS ACTIVE", "binding": "sas", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "RCS ARMED", "binding": "rcs", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "FINE CTL", "binding": "fine", "color": [0.85, 0.95, 1.0], "luminance": 220 },
+        { "label": "GEAR DOWN", "binding": "gear", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "EXT LIGHTS", "binding": "lights", "color": [0.85, 0.95, 1.0], "luminance": 220 },
+        { "label": "ENG ARMED", "binding": "engineArmed", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "ENG FIRING", "binding": "engineFiring", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "STAGE LOCK", "binding": "stagingLocked", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "ABORT ARMED", "binding": "abortArmed", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "OVER HEAT", "binding": "overheat", "color": [1.0, 0.12, 0.06], "luminance": 320 },
+        { "label": "G LIMIT", "binding": "gLimit", "color": [1.0, 0.12, 0.06], "luminance": 320 },
+        { "label": "COMM BLK", "binding": "plasma", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "CHUTE ARM", "binding": "chuteArmed", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "DROGUES", "binding": "drogueDeployed", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "MAINS", "binding": "mainDeployed", "color": [0.25, 1.0, 0.45], "luminance": 220 },
+        { "label": "LIFT UP", "binding": "liftUp", "color": [0.85, 0.95, 1.0], "luminance": 220 },
+        { "label": "LOW RCS", "binding": "lowRcs", "color": [1.0, 0.62, 0.1], "luminance": 260 },
+        { "label": "TERR LOAD", "binding": "terrainLoading", "color": [1.0, 0.62, 0.1], "luminance": 260 }
+      ]
+    },
+    "masterAlarms": [
+      { "x": -0.585, "u": 0.165, "size": 0.04 },
+      { "x": 0.66, "u": 0.165, "size": 0.04 }
+    ],
+    "switchRows": [
+      {
+        "x": -0.72,
+        "u": -0.215,
+        "pitch": 0.042,
+        "switches": [
+          { "label": "SAS", "binding": "sas", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "RCS", "binding": "rcs", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "FINE", "binding": "fine", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "GEAR", "binding": "gear", "kind": "toggle", "up": "DN", "down": "UP" },
+          { "label": "LIGHTS", "binding": "lights", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "ENG ARM", "binding": "engineArmed", "kind": "guarded", "up": "ARM", "down": "SAFE" },
+          { "label": "LES ARM", "binding": "abortArmed", "kind": "guarded", "up": "ARM", "down": "SAFE" },
+          { "label": "CHUTE", "binding": "chuteArmed", "kind": "guarded", "up": "ARM", "down": "SAFE" }
+        ]
+      },
+      {
+        "x": 0.42,
+        "u": -0.215,
+        "pitch": 0.042,
+        "switches": [
+          { "label": "BUS A", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "BUS B", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "FANS", "binding": "none", "kind": "toggle", "up": "HI", "down": "LO" },
+          { "label": "H2O", "binding": "none", "kind": "toggle", "up": "OPEN", "down": "SHUT" },
+          { "label": "CAB P", "binding": "none", "kind": "toggle", "up": "AUTO", "down": "MAN" },
+          { "label": "COMM", "binding": "none", "kind": "toggle", "up": "S-BD", "down": "VHF" },
+          { "label": "TLM", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF" }
+        ]
+      }
+    ],
+    "rotaries": [
+      { "x": -0.32, "u": -0.29, "radius": 0.011, "selector": { "label": "NAV REF", "binding": "navballMode", "positions": ["SURF", "ORB", "TGT"] } },
+      { "x": 0.34, "u": -0.29, "radius": 0.011, "selector": { "label": "SAS MODE", "binding": "sasMode", "positions": ["STB", "PRO", "RET", "NML", "ANT", "ROUT", "RIN", "MNV"] } },
+      { "x": 0.5, "u": -0.29, "radius": 0.011, "selector": { "label": "FLOOD DIM", "binding": "none", "positions": ["OFF", "1", "2", "3", "4"], "fixed": 3 } },
+      { "x": 0.64, "u": -0.29, "radius": 0.011, "selector": { "label": "PANEL DIM", "binding": "none", "positions": ["OFF", "1", "2", "3"], "fixed": 2 } }
+    ],
+    "readouts": [
+      { "x": 0.0, "u": -0.215, "digitHeight": 0.017, "readout": { "label": "MISSION ELAPSED", "binding": "met", "digits": 9, "colons": [2, 4, 6], "color": [1.0, 0.24, 0.06], "luminance": 140 } },
+      { "x": 0.0, "u": -0.3, "digitHeight": 0.017, "readout": { "label": "EVENT", "binding": "eventTimer", "digits": 4, "colons": [1], "color": [1.0, 0.24, 0.06], "luminance": 140 } },
+      { "x": -0.17, "u": -0.3, "digitHeight": 0.017, "readout": { "label": "G", "binding": "gLoad", "digits": 3, "points": [1], "color": [1.0, 0.24, 0.06], "luminance": 140 } },
+      { "x": 0.17, "u": -0.3, "digitHeight": 0.017, "readout": { "label": "DELTA-V", "binding": "deltaV", "digits": 4, "color": [1.0, 0.24, 0.06], "luminance": 140 } }
+    ],
+    "lamps": [
+      { "x": -0.75, "u": 0.165, "size": 0.03, "lamp": { "label": "SAS", "binding": "sas", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
+      { "x": -0.71, "u": 0.165, "size": 0.03, "lamp": { "label": "RCS", "binding": "rcs", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
+      { "x": -0.67, "u": 0.165, "size": 0.03, "lamp": { "label": "ENG", "binding": "engineFiring", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.72, "u": 0.1, "size": 0.03, "lamp": { "label": "CAB P", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.72, "u": 0.06, "size": 0.03, "lamp": { "label": "CO2 HI", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.72, "u": 0.02, "size": 0.03, "lamp": { "label": "O2 FLOW", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.72, "u": -0.02, "size": 0.03, "lamp": { "label": "ABLATOR", "binding": "heatShield", "color": [1.0, 0.12, 0.06], "luminance": 320 } }
+    ]
+  },
+  "wallPanels": [
+    {
+      "id": "left",
+      "azDeg": -114,
+      "y": 0.95,
+      "width": 0.36,
+      "height": 0.2,
+      "title": "CIRCUIT BREAKERS · BUS A",
+      "breakers": [
+        { "v": 0.035, "pitch": 0.04, "labels": ["SAS", "RCS A", "RCS B", "FDAI", "MFD 1", "MFD 2", "FLOOD", "COMM"] },
+        { "v": -0.04, "pitch": 0.04, "labels": ["ECLSS", "FANS", "H2O", "PYRO A", "PYRO B", "CHUTE", "HTR", "SPARE"] }
+      ],
+      "switchRows": []
+    },
+    {
+      "id": "right",
+      "azDeg": 114,
+      "y": 0.95,
+      "width": 0.36,
+      "height": 0.2,
+      "title": "CIRCUIT BREAKERS · BUS B",
+      "breakers": [
+        { "v": 0.035, "pitch": 0.04, "labels": ["MFD 3", "NAV", "RADAR", "S-BAND", "VHF", "TLM", "CAM", "LTG"] },
+        { "v": -0.04, "pitch": 0.04, "labels": ["O2", "N2", "CO2 SCRB", "BATT 1", "BATT 2", "BATT 3", "INV", "SPARE"] }
+      ],
+      "switchRows": []
+    },
+    {
+      "id": "aft",
+      "azDeg": 180,
+      "y": 0.5,
+      "width": 0.3,
+      "height": 0.12,
+      "title": "POST-LANDING",
+      "breakers": [],
+      "switchRows": [
+        { "v": -0.015, "pitch": 0.05, "switches": [
+          { "label": "VENT", "binding": "none", "kind": "guarded", "up": "OPEN", "down": "CLOSE" },
+          { "label": "BEACON", "binding": "landed", "kind": "toggle", "up": "ON", "down": "OFF" },
+          { "label": "UPRIGHT", "binding": "none", "kind": "guarded", "up": "FILL", "down": "SAFE" },
+          { "label": "DYE", "binding": "none", "kind": "toggle", "up": "REL", "down": "OFF" }
+        ] }
+      ]
+    }
+  ],
+  "windows": {
+    "bezelWidth": 0.045,
+    "bezelDepth": 0.05,
+    "panes": [0.006, 0.038],
+    "tint": [0.935, 0.955, 0.925],
+    "ior": 1.47,
+    "dust": 0.35,
+    "scratches": 0.25,
+    "shades": {}
+  },
+  "hatch": { "thickness": 0.075, "latches": 10, "handleSide": 1, "dockingHatchY": 2.4 },
+  "lighting": {
+    "floods": [
+      { "azDeg": 32, "y": 2.02, "length": 0.22, "aim": [0.1, 1.55, 0.35], "lumens": 420, "cct": 4600 },
+      { "azDeg": -32, "y": 2.02, "length": 0.22, "aim": [-0.1, 1.55, 0.35], "lumens": 420, "cct": 4600 },
+      { "azDeg": 148, "y": 1.98, "length": 0.22, "aim": [0.35, 1.05, 0.0], "lumens": 420, "cct": 4600 },
+      { "azDeg": -148, "y": 1.98, "length": 0.22, "aim": [-0.35, 1.05, 0.0], "lumens": 420, "cct": 4600 },
+      { "azDeg": 90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 220, "cct": 4600 },
+      { "azDeg": -90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 220, "cct": 4600 }
+    ],
+    "displayLuminance": 450,
+    "displayMinBrightness": 0.06,
+    "displayFullAmbient": 3000,
+    "legendLuminance": 2.5,
+    "legendColor": [1.0, 0.93, 0.8],
+    "cabinAlbedo": 0.4,
+    "cabinArea": 29,
+    "plasmaLuminance": 25000,
+    "plasmaColor": [1.0, 0.42, 0.24]
+  },
+  "experience": {
+    "tunnel": { "onsetG": 6, "fullG": 11, "tau": 2.5, "maxDarken": 0.85 },
+    "vibration": { "perAccel": 0.00008, "perKpa": 0.00006, "maxAmplitude": 0.004, "frequencies": [7.3, 11.9, 17.6] }
+  },
+  "displays": { "width": 1024, "height": 768, "rateHz": 15, "pages": ["flight", "orbit", "systems"] },
+  "farLodPixels": 140
+}
