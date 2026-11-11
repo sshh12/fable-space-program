@@ -333,6 +333,12 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
 | `vehicle-pad-6` | no | resolved `94e4266` | Frost veil under the break-up cells |
 | `cockpit-12` | no | part 1 resolved `6e0c7a2`, part 2 declined | Interior bright areas of 1-8 % of the frame brought into the shoulder; no camera-dependent tone curve |
 | `vehicle-pad-5` | no | resolved `f184651` | `FakeSimOptions.legsDeployed`; integration lab `lunarSurface` stands on deployed legs (`&legs=0`) |
+| `lead-1` | no | resolved `bc3e291` | Loader test holds the swell count to 1..8 (lead's data change: eight components) |
+| `app-integration-1` | no | resolved `fdf3cde` | `PerfSnapshot.cpu` is the caller's whole `'frame'` zone |
+| `app-integration-2` | no | resolved `37932b8` | Shell spec boots the game at `/` |
+| `cockpit-13` | no | core part resolved `4cdeb62` | `'vfx.plasmaWindow'` key, default, binding set `plasmaWindow`; vfx publishes (NOTICE-core-1) |
+| `atmosphere-clouds-4` | no | core part resolved `3e69d76` (lead decision) | `'atmosphere.aerialTransmittance'`, last in the `transparency` set; `applyAtmosphere` per channel when published (NOTICE-core-2) |
+| `sky-lighting-10` | no | resolved `7e953e8` | Camera in space: meter's sun illuminance after the air (`atmosphereTransmittanceAlong`); sun in the frame = exposure floor |
 
 ### Open items of this pass
 
@@ -346,3 +352,8 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
 - 14:00. `cockpit-10`, `terrain-render-4` (render-core suite 36 of 36), `vehicle-pad-4`, `atmosphere-clouds-9`.
 - 14:10. `vehicle-pad-6`, `cockpit-12` (unit suite of the meter 31 of 31; render-core exposure specs 6 of 6),
   `vehicle-pad-5` (integration landing-site check passes with the legs out).
+- 14:15-14:45. `lead-1`, `app-integration-1` (render-core perf: CPU p50 0.52 / p99 0.85 ms with the lab's frame
+  zone), `app-integration-2`, `cockpit-13` (core part), NOTICE-core-1, `atmosphere-clouds-4` (core part; the
+  cockpit-cs-2 step of the lead's plan was not needed: the cockpit's own bindings are below the scene sets
+  since its restructure; integration lab spec 3 of 3), NOTICE-core-2, `sky-lighting-10` (integration exposure
+  specs unchanged: vehicle in space 15.09, crescent 15.07).
