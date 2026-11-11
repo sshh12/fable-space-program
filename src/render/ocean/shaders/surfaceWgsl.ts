@@ -22,6 +22,11 @@ import { LOD_RANGE, MORPH_FRACTION, PATCH_CELLS } from '../nearField';
 export const OCEAN_LOD_CUT = 4.5;
 /** The lace is sampled a second time this many times smaller (the tile stays periodic): bubbles close to the camera. */
 export const LACE_FINE = 9;
+/**
+ * Lace tiles per long-wave patch (a whole number, so the tile stays fixed to the planet: 1638.4 m / 97 = 16.9 m,
+ * against cascade periods of 1170, 282, 72.5 and 18.2 m).
+ */
+export const LACE_TILES = 97;
 
 export const SURFACE_PIPELINE_WGSL = (sceneBindings: string): string => /* wgsl */ `
 #include "frame"
@@ -59,6 +64,7 @@ const OCEAN_FOAM_LEVELS = ${FOAM_LEVELS};
 const OCEAN_FOAM_SIZE = ${FOAM_SIZE}.0;
 const OCEAN_LACE_SIZE = ${LACE_SIZE}.0;
 const OCEAN_LACE_FINE = ${LACE_FINE}.0;
+const OCEAN_LACE_TILES = ${LACE_TILES}.0;
 // Slopes of the summed wave layers are limited softly from this slope on (a wave steeper than about 0.45 breaks).
 const OCEAN_SLOPE_KNEE = 0.4;
 
@@ -282,11 +288,17 @@ struct FsOut {
   let fpMaj = max(lx, ly) * widen;
   // What the 4x anisotropic filter keeps: the minor axis, or a quarter of the major one.
   let fpTex = max(fpMin, fpMaj / 4.0);
-  // The foam lace: mean and second moment of T over the footprint, and T again much finer for the bubbles.
-  let g3 = oceanU.cascades[3].geom.y;
-  let laceUv = oceanCascadeUv(3u, in.plane0);
-  let laceM = textureSampleGrad(oceanLace, oceanSampler, laceUv, dpx * g3, dpy * g3).rg;
-  let laceFine = textureSampleGrad(oceanLace, oceanSampler, laceUv * OCEAN_LACE_FINE, dpx * (g3 * OCEAN_LACE_FINE), dpy * (g3 * OCEAN_LACE_FINE)).r;
+  // The foam lace: mean and second moment of T over the footprint, and T again much finer for the bubbles. Its tile
+  // is a whole fraction (1 / OCEAN_LACE_TILES) of the first long-wave copy's patch, in that copy's rotated axes: fixed
+  // to the planet like the copy, and incommensurate with every cascade, so thin foam (the lace's highest values)
+  // never repeats at a cascade's period.
+  let lr = mat2x2f(oceanU.longRot.x, oceanU.longRot.y, -oceanU.longRot.y, oceanU.longRot.x);
+  let g3 = oceanU.long.geom.y * OCEAN_LACE_TILES;
+  let laceUv = (oceanU.longOrigin.xy + (lr * in.plane0) * oceanU.long.geom.y) * OCEAN_LACE_TILES;
+  let ldx = lr * dpx;
+  let ldy = lr * dpy;
+  let laceM = textureSampleGrad(oceanLace, oceanSampler, laceUv, ldx * g3, ldy * g3).rg;
+  let laceFine = textureSampleGrad(oceanLace, oceanSampler, laceUv * OCEAN_LACE_FINE, ldx * (g3 * OCEAN_LACE_FINE), ldy * (g3 * OCEAN_LACE_FINE)).r;
   let bubbles = 1.0 - smoothstep(0.0, 1.5, log2(max(fpTex * g3 * OCEAN_LACE_FINE * OCEAN_LACE_SIZE, 1e-6)));
   let laceT = laceM.x + 0.15 * (laceFine - 0.5) * bubbles;
   // Half-width of the foam edge: T's spread inside the footprint, at least the change of T across a pixel.
@@ -582,7 +594,10 @@ struct FsOut {
   var mapped = 0.0;    // how far the whitecaps are those of the foam map (the rest: the statistical coverage)
   if (detail > 0.0) {
     var wc = vec2f(0.0);
-    for (var l = OCEAN_FOAM_LEVELS - 1; l >= 0; l--) {
+    // Finest level first: a finer level overrides the coarser ones by its weight, so once one covers the pixel
+    // fully the coarser are not read.
+    var rest = 1.0;
+    for (var l = 0; l < OCEAN_FOAM_LEVELS; l++) {
       let lv = oceanU.foamLevel[l];
       if (lv.w < 0.5) { continue; }
       let fuv = (in.plane0 - lv.xy) / (lv.z * OCEAN_FOAM_SIZE) + 0.5 / OCEAN_FOAM_SIZE;
@@ -590,8 +605,13 @@ struct FsOut {
       // A level is used inside its window (fading over the outer sixteenth) while the pixel resolves its texels.
       let w = saturate(min(m.x, m.y) * 16.0) * (1.0 - smoothstep(1.0, 2.5, fpTex / lv.z));
       if (w <= 0.0) { continue; }
-      wc = mix(wc, oceanFoamSample(fuv, l), w);
-      mapped = mix(mapped, 1.0, w);
+      // Magnified (texels larger than the pixel): the B-spline; otherwise one bilinear tap does.
+      var fs: vec2f;
+      if (fpTex < lv.z) { fs = oceanFoamSample(fuv, l); } else { fs = textureSampleLevel(oceanFoam, linearClamp, fuv, l, 0.0).rg; }
+      wc += fs * (w * rest);
+      mapped += w * rest;
+      rest *= 1.0 - w;
+      if (rest <= 0.0) { break; }
     }
     mapped *= detail;
     // Shallow water damps the chop that breaks.
@@ -823,11 +843,18 @@ struct FsOut {
     let bn = blueNoise(pix).xy - 0.5;
     let tf = tangentFrame(m.xyz);
     m = vec4f(normalize(m.xyz + (tf[0] * bn.x + tf[1] * bn.y) * (1.2 * alpha / WATER_GGX_KAPPA)), m.w);
-    let reach = 7.0 * hull.z;
+    // Closest approach of the mirrored ray to the hull's bounding sphere: a ray that passes well clear of it mirrors
+    // the sky (no march at all: most of the water around a vessel).
+    let cRel = oceanU.refRel.xyz + oceanRot(oceanSphereOffset(hull.xy)) + upR * (hull.w + 0.55 * hull.z);
+    let oc = cRel - posRel;
+    let tc = max(dot(oc, m.xyz), 0.0);
+    let miss = length(oc - m.xyz * tc);
+    let reach = select(0.0, 7.0 * hull.z, miss < 1.6 * hull.z);
     var hit = false;
     var tPrev = 0.0;
     var tHit = 0.0;
     for (var i = 1u; i <= 12u; i++) {
+      if (reach <= 0.0) { break; }
       let t = reach * sq(f32(i) / 12.0);
       let pu = projectToUv(posRel + m.xyz * t);
       if (pu.w <= 0.0 || any(pu.xy < vec2f(0.0)) || any(pu.xy > vec2f(1.0))) { break; }
@@ -848,7 +875,8 @@ struct FsOut {
       }
       tPrev = t;
     }
-    let sky = waterSkyRadiance(s, m.xyz, alpha);
+    var sky = vec3f(0.0);
+    if (reach > 0.0) { sky = waterSkyRadiance(s, m.xyz, alpha); }
     if (hit) {
       let hu = projectToUv(posRel + m.xyz * tHit).xy;
       let hp = vec2i(clamp(hu * size, vec2f(0.0), size - 1.0));
@@ -862,10 +890,6 @@ struct FsOut {
     } else {
       // The mirrored ray misses on screen but passes through the hull's bulk: the hull, not the sky, is mirrored
       // there (its shaded side, about a quarter of the sky).
-      let cRel = oceanU.refRel.xyz + oceanRot(oceanSphereOffset(hull.xy)) + upR * (hull.w + 0.55 * hull.z);
-      let oc = cRel - posRel;
-      let tc = max(dot(oc, m.xyz), 0.0);
-      let miss = length(oc - m.xyz * tc);
       let block = (1.0 - smoothstep(0.45 * hull.z, 0.8 * hull.z, miss)) * near;
       lit -= sky * (0.75 * block * m.w * (1.0 - cov));
     }

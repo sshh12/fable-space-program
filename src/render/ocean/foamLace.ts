@@ -16,7 +16,7 @@
 import { hash4, hashToUnit } from '@/core/math';
 
 export const LACE_SIZE = 512;
-/** Holes per tile side at the three scales (the tile is the finest cascade's patch, about 18 m: 2.3 m, 0.76 m, 0.3 m apart). */
+/** Holes per tile side at the three scales (the tile is 16.9 m, surfaceWgsl.ts LACE_TILES: 2.1 m, 0.70 m, 0.28 m apart). */
 export const LACE_CELLS = [8, 24, 60] as const;
 
 export interface FoamLace {

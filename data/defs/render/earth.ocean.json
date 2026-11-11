@@ -28,7 +28,7 @@
     "foamSigma": 2.82,
     "foamRampSigma": 0.6,
     "foamOldDropSigma": 0.6,
-    "foamOldDensity": 0.6,
+    "foamOldDensity": 0.45,
     "foamAlbedo": 0.85,
     "foamLaceAlbedo": 0.5,
     "foamResidualDensity": 0.9,

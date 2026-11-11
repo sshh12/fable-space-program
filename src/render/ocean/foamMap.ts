@@ -5,7 +5,7 @@
  * layer) carrying a crest of the 3-25 m chop. Per texel of each level the pass forms the breaking criterion
  *   c = [ wL x conv(long layer) + w0 x conv(cascade 0) + w1 x conv(cascade 1, low-passed to about 2 m) ] + fine part
  * (conv = -div D, the horizontal convergence of a layer in units of its own standard deviation; the fine part,
- * the rest of cascade 1 and cascade 2 at a small weight, only makes the edges ragged), normalised to unit variance.
+ * the rest of cascade 1 at a small weight, only makes the edges ragged), normalised to unit variance.
  * Because the smooth part is long-crested and band-limited, its rare excursions above the threshold are bars along
  * the dominant crests a few metres long, not the round specks that the excursions of the short chop alone are.
  *   active   = max(active x e^(-dt / tauA), ramp(c - threshold))     the breaker itself: thick, bright
@@ -16,7 +16,7 @@
  * Three levels of FOAM_SIZE^2 texels, 0.25 m, 1 m and 4 m per texel (windows of 128 m, 512 m and 2 km around the
  * camera's nadir), each snapped to its own texel grid in chart coordinates, so the content is fixed to the planet
  * and a moving camera only scrolls it. A texel that scrolls in (or a level that starts: a descending camera) has no
- * history: it takes what the breakers of the last three seconds would have left there, looking downwind for the
+ * history: it takes what the breakers of the last 2.4 s would have left there, looking downwind for the
  * crests that passed over it (FOAM_CREST_SPEED), so a whitecap seen right after a level starts already trails its
  * foam upwind of the crest. A level no pixel can resolve is not updated.
  */
@@ -32,7 +32,7 @@ export const FOAM_SIZE = 512;
 export const FOAM_TEXEL = 0.25;
 export const FOAM_RATIO = 4;
 /** Weights of the long-wave layer, cascade 0 and the low-passed cascade 1 in the smooth criterion; of the fine part. */
-export const FOAM_WEIGHTS = { long: 0.8, c0: 1.0, c1: 0.9, c2: 0.5, fine: 0.45 } as const;
+export const FOAM_WEIGHTS = { long: 0.8, c0: 1.0, c1: 0.9, fine: 0.45 } as const;
 /** Width of the low-pass of cascade 1 in the smooth criterion, m. */
 export const FOAM_LOWPASS = 2.2;
 /** A level is updated while the sharpest pixel of the frame is no larger than this many of its texels. */
@@ -59,7 +59,7 @@ export const FOAM_MAP_WGSL = /* wgsl */ `
 struct FoamParams {
   rates: vec4f,     // x = factor on active foam over this frame, y = on residual foam, z = threshold, w = ramp (criterion sigmas)
   weights: vec4f,   // long-wave layer, cascade 0, cascade 1 low-passed, fine part
-  misc: vec4f,      // x = mip of cascade 1's low-pass, y = weight of cascade 2 in the fine part, z = threshold drop of the old-foam proxy, w = its density
+  misc: vec4f,      // x = mip of cascade 1's low-pass, y = 0, z = threshold drop of the old-foam proxy, w = its density
   sigma: vec4f,     // 1 / standard deviation of the criterion at levels 0..2
   trail: vec4f,     // xy = velocity of the breaking crests (plane axes, m/s), z = decay rate of active foam, w = of residual foam (1/s)
   levels: array<vec4f, ${FOAM_LEVELS}>,   // xy = plane offset of texel (0, 0)'s centre from the reference point (m), z = texel (m), w = 0 no update / 1 new history / 2 with history
@@ -100,22 +100,21 @@ fn foamCriterion(p: vec2f, texel: f32, level: u32) -> f32 {
   }
   let s0 = lam * sqrt(oceanU.cascades[0].stats.x);
   let s1 = lam * sqrt(oceanU.cascades[1].stats.x);
-  let s2 = lam * sqrt(oceanU.cascades[2].stats.x);
   c += fm.weights.y * amp[0] * foamConv(0u, oceanCascadeUv(0u, p), 0.0, s0);
   let uv1 = oceanCascadeUv(1u, p);
   let low1 = foamConv(1u, uv1, fm.misc.x, s1);
   c += fm.weights.z * amp[1] * low1;
-  // Fine part: what the low-pass took from cascade 1, and cascade 2, as this level's texel resolves them.
+  // Fine part: what the low-pass took from cascade 1, as this level's texel resolves it. (Not cascade 2: its 72.5 m
+  // patch would make the thin foam at the edges of every breaker repeat at that period.)
   let lod1 = max(log2(texel * ${FFT_SIZE}.0 * oceanU.cascades[1].geom.y), 0.0);
-  let lod2 = max(log2(texel * ${FFT_SIZE}.0 * oceanU.cascades[2].geom.y), 0.0);
-  c += fm.weights.w * (amp[1] * (foamConv(1u, uv1, min(lod1, fm.misc.x), s1) - low1) + fm.misc.y * amp[2] * foamConv(2u, oceanCascadeUv(2u, p), lod2, s2));
+  c += fm.weights.w * amp[1] * (foamConv(1u, uv1, min(lod1, fm.misc.x), s1) - low1);
   return c * fm.sigma[level] * amp[0];
 }
 
 // A texel without history looks for the breaker that passed over it at these ages: every FOAM_TRAIL_STEP s up to
 // FOAM_TRAIL_STEPS steps (closer than a breaker is wide, so the trail is a continuous streak, not a string of beads).
 const FOAM_TRAIL_STEP = 0.2;
-const FOAM_TRAIL_STEPS = 14u;
+const FOAM_TRAIL_STEPS = 12u;
 
 @compute @workgroup_size(8, 8, 1)
 fn foam(@builtin(global_invocation_id) id: vec3u) {
@@ -220,15 +219,13 @@ export class OceanFoamMap {
 
     // Standard deviation of the criterion per level, from the layers' filtered variances.
     const c1 = cascades.spectra[1]!;
-    const c2 = cascades.spectra[2]!;
     this.lowLod = Math.max(0, Math.log2((FOAM_LOWPASS * FFT_SIZE) / c1.band.length));
     const W = FOAM_WEIGHTS;
     const low = filtered(c1, this.lowLod);
     this.sigma = Array.from({ length: FOAM_LEVELS }, (_, l) => {
       const t = foamTexel(l);
       const f1 = filtered(c1, Math.min(Math.max(0, Math.log2((t * FFT_SIZE) / c1.band.length)), this.lowLod));
-      const f2 = filtered(c2, Math.max(0, Math.log2((t * FFT_SIZE) / c2.band.length)));
-      return Math.sqrt(W.long ** 2 + W.c0 ** 2 + W.c1 ** 2 * low + W.fine ** 2 * (Math.max(0, f1 - low) + W.c2 ** 2 * f2));
+      return Math.sqrt(W.long ** 2 + W.c0 ** 2 + W.c1 ** 2 * low + W.fine ** 2 * Math.max(0, f1 - low));
     });
   }
 
@@ -253,7 +250,7 @@ export class OceanFoamMap {
     const i = new Int32Array(this.data);
     f.set([Math.exp(-t.foamDecay * dt), Math.exp(-t.foamResidualDecay * dt), t.foamSigma, t.foamRampSigma], 0);
     f.set([FOAM_WEIGHTS.long, FOAM_WEIGHTS.c0, FOAM_WEIGHTS.c1, FOAM_WEIGHTS.fine], 4);
-    f.set([this.lowLod, FOAM_WEIGHTS.c2, t.foamOldDrop, t.foamOldDensity], 8);
+    f.set([this.lowLod, 0, t.foamOldDrop, t.foamOldDensity], 8);
     f.set([1 / this.sigma[0]!, 1 / this.sigma[1]!, 1 / this.sigma[2]!, 0], 12);
     // Breaking crests travel downwind at about the phase speed of the waves that carry the criterion.
     f.set([Math.sin(t.windDir) * FOAM_CREST_SPEED, Math.cos(t.windDir) * FOAM_CREST_SPEED, t.foamDecay, t.foamResidualDecay], 16);
