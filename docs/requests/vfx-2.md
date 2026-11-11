@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 0f1979d)
 From: vfx
 Owner path: src/core/fakes/fakeSim.ts
 Blocking: no
@@ -27,3 +27,21 @@ Let the FakeSim keep time since ignition per engine: `ignitionAge` grows by the 
 `shutdownAge` counts up from 0 after the throttle falls back to 0 (it is -1 before the first shutdown), as
 `ModuleState` documents and the real sim does. Nothing else about the FakeSim's engines needs to change.
 No workaround in vfx paths: special-casing an age of exactly 1/60 s would hide the real start-up transient.
+
+## Resolution
+Fixed as requested (core-support, commit 0f1979d, `src/core/fakes/fakeSim.ts`).
+
+The FakeSim keeps the two clocks the real engine module keeps (`src/sim/vessel/modules/engine.ts`), once for
+all engines that staging has activated (they share the throttle): `ignitionAge` is 0 on the step the
+throttle passes 2 %, grows by the simulated step while it stays above, and keeps its value after shutdown;
+`shutdownAge` is -1 while the engines burn, 0 on the step they go out, and counts from there. Engines that
+are not active keep the clocks of the parts they were given (-1, -1 from the vessel facade). Nothing else
+about the FakeSim's engines changed.
+
+Test: `src/core/fakes/fakeSim.test.ts`, "engines keep time since ignition and since shutdown, like the real
+engine module" (0 at ignition, 2.000 s two seconds later, an idle engine never lights, shutdown clock 0 then
+1.000 s, the ignition clock frozen). `npx vitest run src/core/fakes`: 16 of 16.
+
+The integration lab stages the real vehicle per scene and takes `&throttle=`
+(`/labs/integration/?scene=lowOrbit&throttle=1`): the plume there is now the steady one after the start-up
+transient. Re-run your pictures.

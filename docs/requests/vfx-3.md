@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit aa8fd79)
 From: vfx
 Owner path: src/render/core/post (exposure adaptation)
 Blocking: no
@@ -25,3 +25,34 @@ second, a 2 EV step behaves as today), or any other law with the same two proper
 or more is mostly taken within about half a second, small changes keep today's gentle 2.5 EV/s. The rate
 towards darker scenes (0.8 EV/s) and the metering itself should not change. No workaround in vfx paths: a
 feature cannot set the exposure, and dimming the plume would break its photometric values.
+
+## Resolution
+Resolved, but not where the request points: the adaptation law was not the brake. Measured in your lab
+(`/labs/vfx/?scene=pad&night=1`, `renderer.exposureInfo()` every quarter second through the ignition): the
+adapted EV100 follows its TARGET within 2 EV at every moment; it is the target that climbs slowly
+(-1.4 at 1.25 s, 0.05 at 3.25 s, 1.99 at 6.25 s, 13.9 at 9.25 s) while the histogram of the lit pixels reads
+14.5 to 20 from the first second. `adaptEv100` already moves by `max(2.5 EV/s, gap x (1 - exp(-2.5 dt)) / dt)`
+towards brighter scenes: a 15 EV jump is 70 % done in half a second, faster than the law you proposed.
+
+The cause: between 0.5 % and 10 % of the frame lit, the target was a mix of the photometric prior and the
+histogram, and at night the prior is the dark floor (-3). Your plume and its cloud lit 2.3 % of the frame at
+ignition (weight 0.09) and 8 % ten seconds later (0.9). Your hints did not raise the prior in that view: the
+feature drops a hint whose line of sight ends on a body, and from the pad camera the ground is behind the
+plume (correct: those pixels are in the histogram).
+
+Fix (core-support, commit aa8fd79, `src/render/core/post/exposure.ts`): a lit area that is BRIGHTER than the
+prior takes the target over from 2 % of the frame (`LIT_FULL_BRIGHT`), not from 10 %; one that is dimmer
+than the prior keeps the slow ramp (a few shaded pixels in a sunlit frame must not open the exposure).
+Adaptation rates and the rest of the metering are unchanged.
+
+Measured after it: `tests/browser/vfx/liftoff.spec.ts`, night, both cameras: EV100 16.5 at T+2 s, T+4 s,
+T+6 s and T+8 s (was 1.6 / 4.6 / 13.3 / 16.5); 4 of 4 pass. Unit test:
+`tests/unit/render-core/exposureGovernor.test.ts`, "a bright area in a dark frame is exposed for as soon as
+it covers 2 %". The core's exposure spec and the integration lab's (`tests/browser/integration/exposure.spec.ts`:
+vehicle in space, crescent Earth, the sun into a dark-adapted frame) pass unchanged. RENDER_API section 11
+and section 18 have the rule.
+
+Under 0.5 % of the frame the prior still rules, so a distant night plume over the ground that covers less
+than that is exposed at the dark floor: if that view matters, send the hint for it as well (drop the
+"ground behind it" test when the emitter covers less than 0.5 % of the frame; the hint then raises the
+prior, full from 1 %).
