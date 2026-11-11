@@ -11,7 +11,7 @@
  *
  * Classes and concurrent slots (override with HEAVY_CAP_CPU / HEAVY_CAP_GPU / HEAVY_CAP_BAKE):
  *   cpu   3  vitest, tsc over many paths, node benchmarks, headless mission runs
- *   gpu   2  Playwright / Chrome with WebGPU (functional); perf specs still take withGpuLock inside
+ *   gpu   3  Playwright / Chrome with WebGPU (functional); perf specs still take withGpuLock inside
  *   bake  1  Python or Node data bakes with worker pools (keep each pool at 6 workers or fewer)
  *
  * A job waits for a free slot of its class AND for free physical memory above HEAVY_MIN_FREE_GB
@@ -29,7 +29,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const lockDir = path.join(repoRoot, 'out', 'locks');
 const CAPS = {
   cpu: Number(process.env.HEAVY_CAP_CPU ?? 3),
-  gpu: Number(process.env.HEAVY_CAP_GPU ?? 2),
+  gpu: Number(process.env.HEAVY_CAP_GPU ?? 3),
   bake: Number(process.env.HEAVY_CAP_BAKE ?? 1),
 };
 const MIN_FREE_GB = Number(process.env.HEAVY_MIN_FREE_GB ?? 12);
