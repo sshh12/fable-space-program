@@ -1,0 +1,13 @@
+{
+  "generator": "stage.ring",
+  "params": {
+    "rBottom": 3.16,
+    "rTop": 3,
+    "wall": 0.04,
+    "flange": 0.1,
+    "skin": "alu-machined",
+    "inner": "primer",
+    "stringers": 60,
+    "fittings": 8
+  }
+}

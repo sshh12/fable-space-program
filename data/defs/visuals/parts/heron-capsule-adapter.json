@@ -1,0 +1,14 @@
+{
+  "generator": "stage.ring",
+  "params": {
+    "wall": 0.04,
+    "flange": 0.1,
+    "skin": "paint-white",
+    "inner": "primer",
+    "fittings": 6,
+    "seat": "visuals/shared/kestrel-mouldline",
+    "seatWidth": 0.22,
+    "umbilicals": "180,0.3,0.4,0.3,2",
+    "fittingScale": 0.6
+  }
+}

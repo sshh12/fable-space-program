@@ -1,0 +1,14 @@
+{
+  "generator": "motor.pack",
+  "params": {
+    "caseRadius": 0.1,
+    "caseLength": 0.42,
+    "nozzleLength": 0.14,
+    "pod": "paint-white",
+    "skinRadius": 0.27,
+    "collarRadius": 0.262,
+    "collarThickness": 0.04,
+    "collarY0": -0.3,
+    "collarY1": 0.1
+  }
+}

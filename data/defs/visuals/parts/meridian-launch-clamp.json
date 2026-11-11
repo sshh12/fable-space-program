@@ -1,0 +1,6 @@
+{
+  "generator": "pad.clamp",
+  "params": {
+    "swingDeg": 52
+  }
+}

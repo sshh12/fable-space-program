@@ -1,0 +1,18 @@
+{
+  "generator": "engine.liquid",
+  "params": {
+    "expansion": 80,
+    "contraction": 1.7,
+    "pumps": 2,
+    "bands": 7,
+    "hotFrom": 0.42,
+    "hotScale": 1,
+    "exitAngleDeg": 10,
+    "bootRadius": 1.35,
+    "bootY": -1,
+    "bell": "nozzle-wall",
+    "extension": "nozzle-ext",
+    "lod1Pixels": 170,
+    "lod2Pixels": 40
+  }
+}

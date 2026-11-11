@@ -1,0 +1,15 @@
+{
+  "generator": "capsule.mouldline",
+  "params": {
+    "mouldLine": "visuals/shared/kestrel-mouldline",
+    "backShell": "tile-white",
+    "heatShield": "ablator",
+    "windowFrame": 0.022,
+    "placards": "kestrel@55,0.72,0.17;kestrel@235,0.72,0.17;flag@125,0.78,0.24;flag@305,0.78,0.24;rescue@180,0.47,0.11;hatch@148,1.2,0.045"
+  },
+  "reentryShape": {
+    "noseRadius": 4.8,
+    "baseRadius": 2,
+    "length": 3.3
+  }
+}

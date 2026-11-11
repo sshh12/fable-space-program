@@ -1,0 +1,16 @@
+{
+  "generator": "lander.descent",
+  "params": {
+    "tankRadius": 1,
+    "tankDistance": 1.9,
+    "coreRadius": 1.72,
+    "lobes": 4,
+    "wellRadius": 0.96,
+    "foil": "mli-gold",
+    "foilAlt": "mli-silver",
+    "ladderAzimuthDeg": 180,
+    "outriggerRadius": 2.78,
+    "outriggerY": 1.8,
+    "rcsExitRadius": 0.05
+  }
+}

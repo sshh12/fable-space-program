@@ -1,0 +1,13 @@
+{
+  "generator": "lander.ascent",
+  "params": {
+    "skinInset": 0.07,
+    "foil": "mli-silver",
+    "foilAlt": "mli-gold",
+    "ladderAzimuthDeg": 180,
+    "antennaAzimuthDeg": 300,
+    "rcsExitRadius": 0.042,
+    "platformLength": 0.85,
+    "platformWidth": 0.8
+  }
+}

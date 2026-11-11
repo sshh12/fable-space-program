@@ -1,0 +1,13 @@
+{
+  "generator": "lander.legs",
+  "params": {
+    "upperLength": 2.7,
+    "lowerLength": 2.25,
+    "collar": 2.55,
+    "braceLength": 2.6,
+    "anchorRadius": 2.9,
+    "anchorY": 0.1,
+    "anchorSpreadDeg": 28,
+    "strutRadius": 0.085
+  }
+}

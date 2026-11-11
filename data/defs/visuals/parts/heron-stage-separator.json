@@ -1,0 +1,11 @@
+{
+  "generator": "stage.ring",
+  "params": {
+    "wall": 0.045,
+    "flange": 0.1,
+    "skin": "steel-brushed",
+    "inner": "steel-dark",
+    "fittings": 8,
+    "fittingScale": 0.7
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "generator": "motor.pack",
+  "params": {
+    "caseRadius": 0.105,
+    "caseLength": 0.6,
+    "nozzleLength": 0.19,
+    "pod": "paint-white",
+    "skinRadius": 4.5
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "generator": "stage.interstage",
+  "params": {
+    "skin": "carbon",
+    "inner": "primer",
+    "wall": 0.05,
+    "gridPitch": 0.5,
+    "vents": 8,
+    "ventPhase": 22.5,
+    "springs": 12,
+    "decals": "wordmark-dark@90,1.0,0.5;wordmark-dark@270,1.0,0.5",
+    "doors": "150,1.0,0.6,0.45;330,1.0,0.6,0.45",
+    "umbilicals": "180,1.0,0.8,0.55,4"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "generator": "stage.tank",
+  "params": {
+    "skin": "foam-white",
+    "skinAlt": "foam-white",
+    "aftSkirt": "steel-brushed",
+    "fwdSkirt": "paint-white",
+    "intertank": "foam-white",
+    "dome": "foam-white",
+    "ringSpacing": 2.6,
+    "seamsPerRing": 0,
+    "frost": 0.1,
+    "sootTop": 3,
+    "baseShieldY": 2.55,
+    "domeAft": 0.5,
+    "aftDomeEquator": 4.9,
+    "domeFwd": 1.5,
+    "fwdDomeApex": 10.6,
+    "fwdSkirtBottom": 10.1,
+    "aftStringers": 0,
+    "fwdStringers": 0,
+    "bands": "paint-black@0..360,3.35..3.7",
+    "decals": "m3@42,10.55,0.5;flag@132,10.55,0.5;m3@222,10.55,0.5;flag@312,10.55,0.5",
+    "raceways": "steel-brushed@196,3.9,10.0,0.4,0.11",
+    "lines": "steel-brushed@206,4.0,9.8,0.045;steel-bare@186,4.0,5.6,0.03",
+    "umbilicals": "180,1.9,0.8,0.6,4",
+    "vents": "165,10.5,0.06,0.12;150,2.9,0.05,0.1",
+    "doors": "20,1.7,0.8,0.6;250,1.7,0.8,0.6;110,1.7,0.8,0.6",
+    "fwdFlange": 0.36
+  }
+}

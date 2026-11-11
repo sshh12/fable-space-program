@@ -1,0 +1,18 @@
+{
+  "generator": "les.tower",
+  "params": {
+    "mouldLine": "visuals/shared/kestrel-mouldline",
+    "coverClearance": 0.03,
+    "coverWall": 0.03,
+    "apexCoverRadius": 0.55,
+    "cover": "paint-white",
+    "tower": "paint-white",
+    "motorRadius": 0.45,
+    "motorTop": 6.6,
+    "nozzleLength": 0.55,
+    "skirtRadius": 0.26,
+    "decals": "kestrel@90,-2.2,0.26;kestrel@270,-2.2,0.26;flag@0,-2.25,0.34",
+    "motorDecals": "danger@20,5.6,0.12;danger@200,5.6,0.12",
+    "motorBands": "paint-red@0..360,6.3..6.42"
+  }
+}

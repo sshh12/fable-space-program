@@ -1,0 +1,17 @@
+{
+  "generator": "fairing.petals",
+  "params": {
+    "shoulderY": 8.45,
+    "topRadius": 2.17,
+    "wall": 0.06,
+    "edgeGap": 0.012,
+    "skin": "paint-white",
+    "shoulder": "cork",
+    "liner": "blanket",
+    "variants": 2,
+    "decals0": "wordmark@45,6.2,0.62;flag@22,7.5,0.62;roundel@68,7.45,0.9",
+    "bands0": "paint-navy@1..89,5.35..5.47",
+    "decals1": "heron@45,6.2,0.6;serial@45,5.0,0.3",
+    "bands1": "paint-navy@1..89,5.35..5.47"
+  }
+}

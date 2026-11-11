@@ -1,0 +1,10 @@
+{
+  "generator": "rcs.pod",
+  "params": {
+    "halfDepth": 0.33,
+    "halfHeight": 0.36,
+    "halfWidth": 0.4,
+    "exitRadius": 0.055,
+    "skin": "steel-brushed"
+  }
+}
