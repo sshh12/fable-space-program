@@ -24,7 +24,9 @@ describe('definition loader', () => {
     expect(rayleigh[2]).toBeGreaterThan(rayleigh[1]);
     expect(rayleigh[1]).toBeGreaterThan(rayleigh[0]);
     expect(earth.terrain?.amplification.model).toBe('earth-landcover');
-    expect(earth.ocean?.swell.length).toBe(4);
+    // The count is the lead's data (ocean-5 / ocean-6: eight); the consumers take 1 to MAX_SWELL = 8 (request lead-1).
+    expect(earth.ocean?.swell.length).toBeGreaterThan(0);
+    expect(earth.ocean!.swell.length).toBeLessThanOrEqual(8);
     for (const c of earth.ocean!.swell) expect(Math.hypot(...c.dir)).toBeCloseTo(1, 9);
     expect(earth.warpAltitudeLimits.length).toBe(7);
     expect(lib.bodies['moon']!.parent).toBe('earth');
