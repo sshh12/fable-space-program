@@ -1178,8 +1178,11 @@ the capture) or of a history the core owns (`'scene.colorCopy'`, the TAA history
 exposure). A feature whose history is keyed on frame continuity (`valid = last === frameIndex - 1`) and
 whose phases are powers of two of `frame.frameIndex` is restarted by the step of 1 alone: its state in the
 capture is that of the lead-in's frames (16, or 16 + 64 per extra round) and the capture's, from nothing.
-`resetTemporal()` is called at every restart (before each metering and before the frames), so it must leave
-the feature idle: what it restarts is a function of the frames since, not work in flight. Work that the
+`resetTemporal()` is called at every restart (before each metering and before the frames), so what it
+restarts must be a function of the frames since, not work in flight. The core asks who is at work at the
+end of the lead-in and after the capture's frames, never between a `resetTemporal()` and the frame after
+it: a feature may stand at an origin there that its own `isIdle()` calls busy until its next frame (the
+terrain's level ranges, snapped by the next selection; request `atmosphere-clouds-13`). Work that the
 step itself starts (a fade, a map that is baked again) makes `isIdle()` false until it is done: the core
 repeats the lead-in for it (step 2) and names the feature in `exactInfo().busyLeadIn`; a feature that is
 still busy when the rounds are used up makes the capture `idle: false`, and the harness waits and asks
