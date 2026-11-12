@@ -170,16 +170,12 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
     col.relief = 0.0;
     return col;
   }
-  // (The cell channels have creases along the cell walls, which a lookup at the pixel's own level draws as
-  // hairlines: veins on a deck seen from above. They are read a level or more above the footprint's own.)
+  // (The weather-scale lookup a level above the footprint's own: its cell channel has creases along the cell
+  // walls, which a lookup at the pixel's own level draws as hairlines.)
   let large = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseLarge.xyz + q) * atmo.noiseLarge.w, log2(max(footprint * atmo.noiseLarge.w * 128.0, 1.0)) + 1.0);
   // (The mesoscale lookup is warped by the weather-scale one: the outlines of its cells wander.)
   let mesoWarp = (vec3f(large.g, large.b, large.r) - 0.5) * (0.35 / atmo.noiseMeso.w);
-  let mesoPos = (atmo.noiseMeso.xyz + q + mesoWarp) * atmo.noiseMeso.w;
-  let mesoLod = log2(max(footprint * atmo.noiseMeso.w * 128.0, 1.0));
-  let mesoShape = textureSampleLevel(cloudBaseNoise, linearRepeat, mesoPos, mesoLod);
-  let mesoCell = textureSampleLevel(cloudBaseNoise, linearRepeat, mesoPos, mesoLod + 1.5);
-  let meso = vec4f(mesoShape.r, mesoCell.g, mesoShape.b, mesoCell.a);
+  let meso = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseMeso.xyz + q + mesoWarp) * atmo.noiseMeso.w, log2(max(footprint * atmo.noiseMeso.w * 128.0, 1.0)));
   // Every modulation averages out to nothing once the pixel is as large as its features: it is faded to its
   // mean there instead of being sampled from the last few texels of a mip chain.
   let mesoKeep = 1.0 - smoothstep(0.03, 0.12, footprint * atmo.noiseMeso.w);
@@ -226,7 +222,7 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
     // (Their outlines are those of the cells, rounded polygons, until the shape noise - the same field that
     // makes the single clouds, at twice its size - is added to what is cut: ragged edges, lobes, stragglers.)
     let rag = textureSampleLevel(cloudBaseNoise, linearRepeat, (atmo.noiseBase.xyz + q) * (0.5 * atmo.noiseBase.w), max(lodShape - 1.0, 0.0)).r;
-    let cellField = mix(mix(0.5, mesoShape.a, mesoFineKeep), mix(0.5, mesoShape.g, mesoKeep), clumps) + (rag - 0.5) * 0.4 * cloudNoiseKeep(lodShape - 1.0);
+    let cellField = mix(mix(0.5, meso.a, mesoFineKeep), mix(0.5, meso.g, mesoKeep), clumps) + (rag - 0.5) * 0.4 * cloudNoiseKeep(lodShape - 1.0);
     let cellEdge = clamp(footprint * atmo.noiseMeso.w * mix(10.0, 4.0, clumps), 0.03, 0.5);
     // (Cells too small for the pixel are a share of it, not a pattern.)
     let cell = mix(share, smoothstep(1.0 - share - cellEdge, 1.0 - share + cellEdge, cellField), mix(mesoFineKeep, mesoKeep, clumps));
@@ -247,7 +243,7 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
   // Extinction of the low layer: fair-weather cumulus are dense whatever the map says; cloud the map
   // itself shows is as thin as its opacity is low. Both are mottled at the mesoscale.
   let thin = mix(mix(atmo.cloudLow3.x, 1.0, smoothstep(0.0, 0.6, c)), 1.0, saturate(fair / max(c0, 1e-4)));
-  col.dens = thin * exp2(((mix(0.5, meso.g, mesoKeep) - 0.5) + (nLarge - 0.5) * 0.8) * 2.0 * atmo.cloudLow3.y) * mix(1.0, 0.25 + 1.5 * cells * cells, deckness);
+  col.dens = thin * exp2(((mix(0.5, meso.g, mesoKeep) - 0.5) + (nLarge - 0.5) * 0.8) * 2.0 * atmo.cloudLow3.y) * mix(1.0, 0.4 + 1.2 * cells * cells, deckness);
 
   // The upper body: only where the map's top leaves room above the low layer. Its outline wanders with the
   // weather-scale and mesoscale noise: veils with irregular edges instead of the map's contour lines.
@@ -712,7 +708,10 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
       m *= 1.0 + 0.25 * max(steps - budget, 0.0);
       // (From far away a pixel is wider than the whole layer is deep: a step a third of its footprint is
       // all the depth it can show.)
-      var dt = clamp((ray.t0 + s) * atmo.cloudMarch.x * m, atmo.cloudMarch.y, max(atmo.cloudMarch.z, 0.3 * (ray.t0 + s) * pixelAngle) * m);
+      // (And where a pixel is several hundred metres wide the cloud is a layer of fractions, integrated over
+      // the altitudes of each step: steps up to twice as long carry it as well.)
+      let wideStep = 1.0 + smoothstep(300.0, 1000.0, (ray.t0 + s) * pixelAngle);
+      var dt = clamp((ray.t0 + s) * atmo.cloudMarch.x * m, atmo.cloudMarch.y, max(atmo.cloudMarch.z * wideStep, 0.3 * (ray.t0 + s) * pixelAngle) * m);
       if (inCloud && halfSteps) { dt *= 0.5; }
       dt = min(dt, max(sEnd - s, 1.0));
       // In clear air the sample sits at the pixel's own phase of the step (a thin cloud is met by some
@@ -849,7 +848,10 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           let colSun = cloudColumnAt(bi, posL + sunDir * cFar, ql + sunNoise * cFar, max(footprint, 0.1 * reach), min(hl, hl + qFar / (sqrt(max(r * r + qFar, 1.0)) + r)));
           var tau = 0.0;
           var cPrev = 0.0;
-          for (var j = 0; j < 6; j++) {
+          // (A layer - a deck or a field too far away for its shapes - has no billows for the near samples to
+          // see: three samples over the same reach.)
+          let coneStride = select(1, 2, den.layer > 0.98);
+          for (var j = coneStride - 1; j < 6; j += coneStride) {
             let cNext = reach * CLOUD_CONE[j];
             let cm = 0.5 * (cPrev + cNext);
             let qq = 2.0 * r * muS * cm + cm * cm;
@@ -915,11 +917,13 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
             // of a cumulus have a lit and a shaded side each - not of every wisp on it. The wisps are shaded by
             // the cone samples.)
             let fq = max(footprint, 0.5 * dq);
-            let d0 = cloudDensityAt(col, hl, ql, fq, 1);
+            // (With the quality scale lowered by the governor: of the shapes without it, four lookups cheaper.)
+            let dn = select(1, 0, atmo.cloudLight.w < 0.85);
+            let d0 = cloudDensityAt(col, hl, ql, fq, dn);
             let hSun = hl + muS * dq;
-            let dS = cloudDensityAt(col, hSun, ql + sunNoise * dq, fq, 1);
-            let dA = cloudDensityAt(col, hl + dot(across, up) * dq, ql + cloudNoiseVec(bi, across) * dq, fq, 1);
-            let dT = cloudDensityAt(col, hl + dot(third, up) * dq, ql + cloudNoiseVec(bi, third) * dq, fq, 1);
+            let dS = cloudDensityAt(col, hSun, ql + sunNoise * dq, fq, dn);
+            let dA = cloudDensityAt(col, hl + dot(across, up) * dq, ql + cloudNoiseVec(bi, across) * dq, fq, dn);
+            let dT = cloudDensityAt(col, hl + dot(third, up) * dq, ql + cloudNoiseVec(bi, third) * dq, fq, dn);
             let s0 = d0.sigma * d0.frac;
             let grad = vec3f(dS.sigma * dS.frac - s0, dA.sigma * dA.frac - s0, dT.sigma * dT.frac - s0);
             let gl = length(grad);

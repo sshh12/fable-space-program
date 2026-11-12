@@ -211,6 +211,8 @@ export class CloudSystem {
   private momentScratchView: GPUTextureView;
   private momentMipGroups: GPUBindGroup[] = [];
   private shadowSize = 0;
+  /** Density steps per line of the shadow map as it was last marched (a change re-marches the whole map). */
+  private shadowSteps = 0;
 
   // --- pipelines
   private readonly marchLayout: GPUBindGroupLayout;
@@ -1003,8 +1005,20 @@ export class CloudSystem {
     // exchange half of the texels per frame. A frame that re-marches the whole map uses the same count: a
     // map whose texels were marched with two different counts shows the 4 x 4 refresh pattern as a lattice
     // (stripes along the sun's azimuth) until the incremental refresh has gone round once.
-    const steps = Math.min(Math.max(Math.round(params.shadowSteps / Math.max(scale, 1 / 2)), params.shadowSteps), 2 * params.shadowSteps);
-    const rounds = steps > 1.5 * params.shadowSteps ? 2 : 1;
+    // What one half-resolution pixel covers on the ground under the camera, once and a half: the finest
+    // cloud shadow the frame can show.
+    const pixelOnGround = (1.5 * Math.max(pose.cameraAltitude, 0) * 2 * Math.tan(frame.camera.fovY / 2)) / Math.ceil(frame.renderSize[1] / 2);
+    let steps = Math.min(Math.max(Math.round(params.shadowSteps / Math.max(scale, 1 / 2)), params.shadowSteps), 2 * params.shadowSteps);
+    // (A third of the lines per frame with the long count: the cost of a frame stays that of a high sun.)
+    const rounds = steps > 1.5 * params.shadowSteps ? 3 : 1;
+    // From so far away that a pixel covers several texels of the map the density is read as wide as the pixel
+    // and has no detail that half the steps would miss.
+    if (pixelOnGround > 4 * texel) steps = Math.max(8, Math.round(steps / 2));
+    // (One step count per map: see above.)
+    if (steps !== this.shadowSteps) {
+      this.shadowSteps = steps;
+      full = true;
+    }
     u.set('shadowOrigin', originRelCam.x, originRelCam.y, originRelCam.z, he);
     u.set('shadowU', axisU.x, axisU.y, axisU.z, steps);
     u.set('shadowV', axisV.x, axisV.y, axisV.z, scale);
@@ -1012,9 +1026,7 @@ export class CloudSystem {
     this.shadowFull = full;
     this.shadowShifted = !full && (shift[0] !== 0 || shift[1] !== 0);
     u.set('shadowShift', shift[0], shift[1], frame.frameIndex % (16 * rounds), n);
-    // What one half-resolution pixel covers on the ground under the camera, once and a half: the finest
-    // cloud shadow the frame can show.
-    u.set('shadowFilter', (1.5 * Math.max(pose.cameraAltitude, 0) * 2 * Math.tan(frame.camera.fovY / 2)) / Math.ceil(frame.renderSize[1] / 2), vScale, rounds, vScale / Math.max(sinDir, 0.02));
+    u.set('shadowFilter', pixelOnGround, vScale, rounds, vScale / Math.max(sinDir, 0.02));
     // The tent of the map the core reads: a texel either way, and up to three across the sun's azimuth as
     // the sun gets low (the shadows of single cloudlets then run tens of kilometres along it: hairlines of
     // one texel's width without it).
