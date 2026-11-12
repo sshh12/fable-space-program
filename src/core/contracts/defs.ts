@@ -725,9 +725,11 @@ export interface PartDef {
 
 export interface VehiclePartPlacement {
   /**
-   * Instance id, unique within the vehicle (referenced by stage actions). It may not contain '/' or '~':
-   * '/' is the separator of the part key `craftId/instanceId` and '~' that of derived runtime ids
-   * (contracts/sim.ts, "Ids"); the same holds for the prefixed ids of a sub-assembly (`VehicleUseDef.prefix`).
+   * Instance id, unique within the vehicle (referenced by stage actions). It may contain none of '/', '~'
+   * and '.': '/' is the separator of the part key `craftId/instanceId`, '~' that of derived vessel ids and
+   * '.' that of the id of a craft that left another as a piece (contracts/sim.ts, "Ids"). The same holds for
+   * a vehicle id and for the prefixed ids of a sub-assembly (`VehicleUseDef.prefix`); the loader refuses
+   * an id that contains one.
    */
   id: string;
   def: PartDefId;

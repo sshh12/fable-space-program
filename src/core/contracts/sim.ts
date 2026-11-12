@@ -20,10 +20,19 @@
  *
  * Ids (docs/ARCHITECTURE.md section 3). A CRAFT id (`CraftSnapshot.id`) is unique in the universe, never
  * changes and is never reused. A part's INSTANCE id (`PartSnapshot.instanceId`) is unique within its craft
- * only. Neither may contain '/' or '~': '/' joins the two into the PART KEY `craftId/instanceId`, which is
- * how a part is addressed outside its craft, and '~' separates the fields of the ids that are DERIVED from
- * them (the vessel id of a piece of a craft, of a vessel of several craft, a lineage id). A string with a
- * '/' is therefore always a part key and both kinds parse without a table. Event part ids: see `SimEvent`.
+ * only. Three characters compose ids, and an id issued for a launched craft, a vehicle id and an instance id
+ * contain none of them:
+ *   '/'  joins a craft id and an instance id into the PART KEY `craftId/instanceId`, which is how a part is
+ *        addressed outside its craft;
+ *   '.'  joins the id of a craft that left another as a piece: `<parent craft id>.<instance id of its root
+ *        part>`. So a craft id may contain '.', and never '/' or '~';
+ *   '~'  separates the fields of derived VESSEL ids: the vessel of one piece craft is `<launched craft at
+ *        the top of its lineage>~<instance id of its root part>` (not its craft id), a vessel of several
+ *        craft is `a~<vessel id>~<tick>`. The vessel of one launched craft has that craft's id.
+ * The simulation composes these forms; A CONSUMER NEVER TAKES AN ID APART. Ids are compared, and what an id
+ * would tell is a field: the craft a piece left is `CraftSnapshot.parent`, the craft of a part is
+ * `PartSnapshot.craftId`, the craft of a vessel are `VesselSnapshot.crafts`. The one test on a string that
+ * the contract allows is of an event part id while it has two forms (see `SimEvent`).
  *
  * v2 fields (MIGRATION_V2 section 4). Fields marked "v2, optional until the tighten step" were added
  * before their producers exist: the session fills them from MIGRATION_V2 step 3.5 on, a hand-built snapshot
@@ -237,7 +246,7 @@ export interface PartSnapshot {
   /**
    * Instance id from VehicleDef.parts: unique within its CRAFT and stable through staging and docking. Outside
    * a vessel a part is addressed by the part key `craftId/instanceId` (two craft of one vehicle in an
-   * assembly share instance ids). It contains neither '/' nor '~' (the header's "Ids").
+   * assembly share instance ids). It contains none of '/', '~' and '.' (the header's "Ids").
    */
   instanceId: string;
   /** v2, optional until the tighten step: the craft this part belongs to (`VesselSnapshot.crafts[].id`). Absent = the vessel's only craft. */
@@ -311,11 +320,22 @@ export interface CraftSnapshot {
   /**
    * Unique in the universe: no two craft share it, whatever vessels they are part of. It never changes
    * (through staging, docking, undocking and every hand-over between islands and processes) and is never
-   * reused. It contains neither '/' nor '~' (the header's "Ids"). At a separation the piece that keeps the
-   * craft's command root keeps the id; every departing piece is a new craft with a new id that records its
-   * lineage (ARCHITECTURE 7.2, "Craft identity").
+   * reused. It contains neither '/' nor '~' (the header's "Ids"). At a separation the piece that holds the
+   * craft's root part keeps the craft and its id; every other piece that takes parts of it away is a new
+   * craft with the id `<parent craft id>.<instance id of its root part>` (a function of ids, so a replay
+   * issues the same one) and `parent` set (ARCHITECTURE 7.2, "Craft identity"). It is not the vessel's id
+   * in general and is never parsed.
    */
   id: string;
+  /**
+   * v2, optional until the tighten step: lineage. The id of the craft this one separated from; null for a
+   * craft that was launched. A piece of debris is a craft of its own, and this is how a consumer finds what
+   * it came from (to carry per-part presentation state across a separation, to name it) without taking an
+   * id apart. The parent may itself be a piece (follow `parent` to the launched craft) and need not be in
+   * the snapshot any more. No separation tick is recorded. Absent = not produced (a hand-built snapshot):
+   * treat as null.
+   */
+  parent?: string | null;
   /** Vehicle the craft was built from: for labels and icons only (never index `defs.vehicles` with it for behaviour). */
   vehicleId: string;
   name: string;
@@ -723,8 +743,8 @@ export type CaptureLimit = 'lateral' | 'angle' | 'roll' | 'closing' | 'lateralSp
  *    is one craft, which is what every v1 consumer compares with `PartSnapshot.instanceId`, and by its PART
  *    KEY `craftId/instanceId` in a vessel of several craft, where instance ids repeat between craft;
  *  - the v2 events (`SimEventV2`) carry part keys always.
- * A consumer written now accepts both: a string with a '/' is a part key (neither id may contain one), a
- * string without is an instance id of the vessel's only craft. At the tighten step every event part id
+ * A consumer written now accepts both: a string with a '/' is a part key (no craft id and no instance id
+ * contains one), a string without is an instance id of the vessel's only craft. At the tighten step every event part id
  * becomes the part key, in that one form, and this paragraph goes.
  */
 export type SimEvent =

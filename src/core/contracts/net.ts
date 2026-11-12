@@ -71,8 +71,8 @@ export interface LendPolicy {
  * A rules file is stored as OVERRIDES of the default document: it states its id, its version and the
  * fields in which it differs, and the library holds the complete document (the default with the file's
  * values over it), so a field this contract gains is the default's value in every document without a
- * change to a file. A file may state only fields of this interface. (Until the loader reads files that way
- * it holds each file to every field of the default document; see `DEFAULT_PAD_CLASS_LIMITS`.)
+ * change to a file. A file may state only fields of this interface (`completeRules` of src/core/defs/loader.ts;
+ * a key that starts with `$` annotates a file and is dropped).
  *
  * Units: seconds, metres, m/s, kg unless a name says otherwise. The timer base of every duration is in
  * UNIVERSE_RULE_TIMERS (same paths).
@@ -263,12 +263,10 @@ export interface UniverseRules {
      * Largest lift-off mass (kg) and stack diameter (m) by pad class. A pad's own `maxLiftoffMass` and
      * `maxDiameter` (PadDef) override them, each on its own; a spawn is refused at a pad whose limit the
      * vehicle exceeds. Every value is a positive finite number: no class and no pad is without a limit.
-     * Defaults: `DEFAULT_PAD_CLASS_LIMITS` (provisional).
-     *
-     * v2, optional until the lead step that follows the loader reading rules files as overrides of the
-     * default: absent = `DEFAULT_PAD_CLASS_LIMITS`, which then becomes this field of the default document.
+     * Defaults: `DEFAULT_PAD_CLASS_LIMITS` (provisional): heavy 3,000 t and 9.5 m, medium 700 t and 7 m,
+     * light 70 t and 2.5 m.
      */
-    classLimits?: Record<PadClass, PadClassLimits>;
+    classLimits: Record<PadClass, PadClassLimits>;
     /** Anything at rest inside a keep-out radius is recovered after this long. Default 60 s. */
     restRecoveryTime: number;
     /** Range safety acts on a vehicle below this altitude whose instantaneous impact point enters another pad's keep-out radius. Default 5 km. */
@@ -351,12 +349,9 @@ export interface UniverseRules {
  * research's vehicle sheets rounded up (docs/research/v2/fleet-docking.md section 2: Azimuth 60.5 t and
  * 2.2 m, Solstice up to 610.5 t and 6.6 m; 16 % and 15 % over in mass); no vehicle of those classes exists.
  *
- * Why it is not yet a field of DEFAULT_UNIVERSE_RULES: the definitions loader holds every rules file to
- * exactly the fields of that document (src/core/defs/loader.ts, `validateRules`), so a field added there
- * fails the load of the whole library until all three files state it. Once the loader reads rules files as
- * overrides of the default, the lead moves this into `DEFAULT_UNIVERSE_RULES.pads.classLimits` and makes
- * the field required (MIGRATION_V2, lead steps); until then a reader takes
- * `rules.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS`.
+ * These ARE the values of `DEFAULT_UNIVERSE_RULES.pads.classLimits` (net.test.ts holds the two equal), under
+ * a name of their own for code that has a pad and no rules document at hand (`padLimitsOf(pad)` of
+ * src/core/defs/sites.ts). With a document, read the document: a universe may state other limits.
  */
 export const DEFAULT_PAD_CLASS_LIMITS: Readonly<Record<PadClass, PadClassLimits>> = {
   light: { maxLiftoffMass: 70_000, maxDiameter: 2.5 },
@@ -473,6 +468,11 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     clearDistance: 1000,
     safingTime: 20,
     keepOutRadius: { light: 300, medium: 450, heavy: 600 },
+    classLimits: {
+      light: { ...DEFAULT_PAD_CLASS_LIMITS.light },
+      medium: { ...DEFAULT_PAD_CLASS_LIMITS.medium },
+      heavy: { ...DEFAULT_PAD_CLASS_LIMITS.heavy },
+    },
     restRecoveryTime: 60,
     rangeSafetyAltitude: 5000,
   },

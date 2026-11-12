@@ -81,9 +81,11 @@ describe('UniverseRules: the default document', () => {
 
   it('pad class limits: positive finite numbers that rise with the class; heavy is what LC-1 states today', () => {
     const order: PadClass[] = ['light', 'medium', 'heavy'];
-    const limits = DEFAULT_UNIVERSE_RULES.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS;
-    // The field of the default document, once it is one, IS the constant.
+    const limits = DEFAULT_UNIVERSE_RULES.pads.classLimits;
+    // The field of the default document IS the constant, in objects of its own (changing one changes no other).
     expect(limits).toEqual(DEFAULT_PAD_CLASS_LIMITS);
+    expect(limits).not.toBe(DEFAULT_PAD_CLASS_LIMITS);
+    for (const c of order) expect(limits[c], c).not.toBe(DEFAULT_PAD_CLASS_LIMITS[c]);
     expect(Object.keys(limits).sort()).toEqual([...order].sort());
     for (const c of order) {
       for (const v of [limits[c].maxLiftoffMass, limits[c].maxDiameter]) {

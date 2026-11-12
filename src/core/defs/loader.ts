@@ -281,10 +281,13 @@ function checkClassLimits(value: unknown, file: string, at: string): void {
 }
 
 /**
- * Fields of UniverseRules that the default document does not state (optional in the contract until the
- * lead moves their default into it), by path, each with its own check.
+ * Fields of UniverseRules with a check of their own, by path. Such a field is stated WHOLE by a file that
+ * states it (it replaces the default's value instead of being laid over it field by field) and is held to
+ * its check, not to the shape of the default's value. The table is asked first, whether or not the
+ * default document states the field: the class limits were optional in the contract until the lead moved
+ * their default into the document, and a file that states them is read the same way before and after.
  */
-const OPTIONAL_RULE_FIELDS: Readonly<Record<string, (value: unknown, file: string, at: string) => void>> = {
+const RULE_FIELD_CHECKS: Readonly<Record<string, (value: unknown, file: string, at: string) => void>> = {
   'pads.classLimits': checkClassLimits,
 };
 
@@ -319,11 +322,12 @@ export function completeRules(stated: unknown, file: string): UniverseRules {
   const overlay = (target: Record<string, unknown>, value: Record<string, unknown>, model: Record<string, unknown>, at: string): void => {
     for (const k of Object.keys(value)) {
       const path = at === '' ? k : `${at}.${k}`;
-      if (!(k in model)) {
-        const optional = OPTIONAL_RULE_FIELDS[path];
-        if (!optional) throw new DefError(file, `"${path}" is not a field of UniverseRules`);
-        optional(value[k], file, path);
+      const own = RULE_FIELD_CHECKS[path];
+      if (own) {
+        own(value[k], file, path);
         target[k] = value[k];
+      } else if (!(k in model)) {
+        throw new DefError(file, `"${path}" is not a field of UniverseRules`);
       } else if (isObject(model[k])) {
         if (!isObject(value[k])) throw new DefError(file, `"${path}" must be an object`);
         overlay(target[k] as Record<string, unknown>, value[k], model[k], path);
@@ -339,8 +343,8 @@ export function completeRules(stated: unknown, file: string): UniverseRules {
 
 /**
  * A COMPLETE rules document (as the library holds it, or as a test builds one): every field of the
- * contract's default document, nothing else but the optional fields, a finite number wherever the default
- * has a number, and a version from 1.
+ * contract's default document and nothing else, a finite number wherever the default has a number, a
+ * field with a check of its own (RULE_FIELD_CHECKS) held to that check, and a version from 1.
  */
 export function validateRules(doc: UniverseRules, file: string): void {
   const walk = (value: unknown, model: unknown, at: string): void => {
@@ -349,13 +353,15 @@ export function validateRules(doc: UniverseRules, file: string): void {
       const path = (k: string): string => (at === '' ? k : `${at}.${k}`);
       for (const k of Object.keys(model)) {
         if (!(k in value)) throw new DefError(file, `"${path(k)}" is missing from the complete document`);
-        walk(value[k], model[k], path(k));
+        const own = RULE_FIELD_CHECKS[path(k)];
+        if (own) own(value[k], file, path(k));
+        else walk(value[k], model[k], path(k));
       }
       for (const k of Object.keys(value)) {
         if (k in model) continue;
-        const optional = OPTIONAL_RULE_FIELDS[path(k)];
-        if (!optional) throw new DefError(file, `"${path(k)}" is not a field of UniverseRules`);
-        optional(value[k], file, path(k));
+        const own = RULE_FIELD_CHECKS[path(k)];
+        if (!own) throw new DefError(file, `"${path(k)}" is not a field of UniverseRules`);
+        own(value[k], file, path(k));
       }
     } else checkRuleValue(value, model, file, at);
   };

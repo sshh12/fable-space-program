@@ -80,6 +80,8 @@ export function craftSnapshots(vessel: Vessel, stages?: (craft: number) => Stage
     const chase = c.vehicle.cameras.chase;
     return {
       id: c.craftId,
+      // Lineage: the craft this one left as a piece; null for a launched craft (a consumer never takes an id apart).
+      parent: c.parent,
       vehicleId: c.vehicleId,
       name: c.name,
       ownerId: c.ownerId,
