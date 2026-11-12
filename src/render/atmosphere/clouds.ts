@@ -1071,9 +1071,7 @@ export class CloudSystem {
     this.anchorFixed = null;
     this.lightChange.fill(0);
     this.lastSunFixed = null;
-    // (The cloud clock follows simulation time with a rate limit: without a time given it is snapped to it.)
     if (cloudTime !== undefined) this.cloudTime = cloudTime;
-    else this.lastUt = null;
   }
 
   /** The pipelines of the cloud passes, for `shaders.warm` (created ahead, off the GPU process's main thread). */

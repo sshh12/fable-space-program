@@ -73,8 +73,10 @@ export interface AtmosphereFeature extends RenderFeature, TemporalFeature {
    * Start everything that is refined over frames again (the core calls it at every restart of the temporal
    * sequences: frame-exact captures, RENDER_API section 13): the clouds' radiance and geometry history, the
    * cloud shadow map (marched whole in the next frame, with its extent and axes chosen from the scene as on
-   * a fresh page), the light-change detection, the cloud clock (snapped to simulation time). The frames after
-   * it depend on the scene and on their count alone. Starts no work: `isIdle()` is what it was.
+   * a fresh page), the light-change detection, the cloud clock (set to 0, where it stands when the clouds of
+   * a freshly loaded page first draw: the clock counts simulation time from there, so on a page that has run
+   * it holds how long, which is not the scene's). The frames after it depend on the scene and on their count
+   * alone. Starts no work: `isIdle()` is what it was.
    */
   resetTemporal(): void;
   /** Progress of the one-off work (tables, cloud noise, coverage maps). Does not change `isIdle()`. */
@@ -516,7 +518,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     },
 
     resetTemporal() {
-      clouds?.resetTemporal();
+      clouds?.resetTemporal(0);
     },
 
     status() {
