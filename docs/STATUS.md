@@ -2,6 +2,7 @@
 
 Living checkpoint, kept current by the lead. Read this first when picking the work up in a new session.
 Last updated: 2026-11-11, 16:45 Pacific: end of the week's budget. Checkpoint: the original mission flies end to end in real Chrome.
+The v2 rows, the crash paragraph and the next steps were updated on 2026-11-12, 00:35 Pacific, by the lead step `lead-baseline-v2`.
 
 ## Where the project is
 
@@ -63,8 +64,10 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
 ## Next steps, in order
 
 1. Visual close-out to 8/8 for every package (table above), now also against the browser-mission pictures.
-2. App integration: requests app-integration-7 (main-thread cost near terrain) and -8 (a real 60 Hz clock for the
-   headless mission's rAF lines), attribute the main-thread cost during burns (the spec now records per-feature
+2. App integration: request app-integration-7 (main-thread cost near terrain); request -8 is RESOLVED (the
+   57.5 Hz clock was the monitor asleep: `withGpuLock` now keeps the display awake, and the mission and app perf
+   specs are to call `measureHarnessClock` / `expectNominalClock` before they judge rAF lines:
+   `docs/requests/app-integration-8.md`); attribute the main-thread cost during burns (the spec now records per-feature
    CPU; not yet run), and the boot-time sea around the pad; then the browser mission green on every line.
 3. User feedback from playing the build (2026-11-11), for the next batch:
    - **Loading progress.** Entering the game takes a while (terrain tiles, LODs, the Milky Way cube, the sky probe)

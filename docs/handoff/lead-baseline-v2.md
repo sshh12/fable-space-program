@@ -21,7 +21,10 @@ It changed no behaviour: the suites give the results they gave before it (sectio
   overtaken three times by later arrivals. 23:35 the documents swapped, PACKAGE_RULES with the v2 rules
   (1fa34fa, b2b219a). The renames of the swap (`git mv`) were staged for a minute and were carried by another
   agent's commit (7d9c765): the index is shared; rule 10 of PACKAGE_RULES now says how to commit.
-- 23:54 the two GPU specs ran (frame clock; reference-image proof on two checkpoints): both green.
+- 23:54 the two GPU specs ran (frame clock; reference-image proof on two checkpoints): both green. The
+  frame clock was 60 Hz in every case this time, so the cause was still only inferred.
+- 2026-11-12 00:31 the display experiment (monitor switched off, then woken): 57.5 Hz off, 60.00 Hz on.
+  Request app-integration-8 resolved.
 
 ## 1. What wave 3.1 can rely on (short form)
 
@@ -298,11 +301,17 @@ holder's slot is reclaimed; `--status` shows the holder. GPU stays at ONE slot.
 
 ## 8. Request app-integration-8 (the 57.5 Hz clock)
 
-Cause, fix and numbers are in `docs/requests/app-integration-8.md` ("Resolution") and
+Resolved. Cause, fix and numbers are in `docs/requests/app-integration-8.md` ("Resolution") and
 `docs/research/webgpu-harness.md` (section 3a). In short: while the monitor sleeps, Chrome on Windows paces
-frames with a 17 ms sleep instead of the vertical blank, so every presenting page runs at about 57.5 Hz.
-`withGpuLock` now keeps the display awake; `measureHarnessClock` and `expectNominalClock` let a spec refuse
-to judge pacing on a clock that is not 60 Hz. No budget was changed.
+frames with a 17 ms sleep instead of the vertical blank, so every page runs at about 57.5 Hz, headless or
+headed, at any size, whatever it draws. Measured on bare pages: display off 17.3-17.4 ms p50, 18.0 p95
+(57.4-57.5 Hz); display on 16.70 p50, 16.80 p95 (60.00 Hz); the experiment switches the monitor off and on
+and reads the display state back. `withGpuLock` now keeps the display awake (`keepDisplayAwake`);
+`measureHarnessClock(page)` and `expectNominalClock(clock)` let a spec judge pacing only on a 60 Hz clock.
+No budget was changed and no Chrome flag is involved. Still to do by app-integration: call the two helpers in
+the mission and app perf specs (their rAF columns of 2026-11-11 were taken on the sleep-paced clock).
+
+A side effect to know: a perf run now wakes the monitor and keeps it on while it measures.
 
 ## 9. Suites before and after
 
@@ -311,7 +320,7 @@ to judge pacing on a clock that is not 60 Hz. No budget was changed.
 | `npm run typecheck` | passes (one configuration) | passes (two configurations) |
 | Unit (`npx vitest run`) | 104 files, 1109 tests: 1107 pass, 2 fail | 113 files, 1263 tests: 1262 pass, 1 fail (the same `realData` pad test); 58 s |
 | Headless mission (`npm run test:mission`) | 31 tests: 30 pass, 1 fail (stale tile hash in `golden.json`); state hash 3f3a131cdd88eba7 | 31 tests, all pass; state hash 3f3a131cdd88eba7, 593,636 steps (unchanged); 68 s |
-| Browser, `tests/browser/shell` frame clock (perf) and reference-image tooling (functional) | - | 2 + 7 tests pass |
+| Browser, `tests/browser/shell` frame clock (perf: awake against as found, the helper, the display experiment) and reference-image tooling (functional) | - | 3 + 7 tests pass |
 
 The unit suite grew by the tests of this step (boundaries 62, root configuration 11, rules 4, frame 9, terrain
 guard 4) and by other agents' new tests. The whole functional browser project was not run (section 10).

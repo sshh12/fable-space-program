@@ -158,7 +158,8 @@ agree within noise).
 
 Conclusions:
 
-- **Vsync caps measurement**: both headless (synthetic 60 Hz) and headed (60 Hz monitor; `Win32_VideoController` reports 59) give
+- **Vsync caps measurement** (the headless clock is NOT synthetic, see 3a: both modes use the monitor's vertical blank and both
+  fall to about 57.5 Hz while the monitor sleeps): both headless (called "synthetic 60 Hz" when this was written) and headed (60 Hz monitor; `Win32_VideoController` reports 59) give
   rAF = 16.667 ms, p99 16.73, max 16.74. Under load rAF quantises to multiples of 16.67 (the 31.5 ms scene reports 33.33).
 - **To uncap**: `--disable-frame-rate-limit` (alone is sufficient: 4 160-4 380 fps on the light scene).
   `--disable-gpu-vsync` alone changes nothing (still 60.0). The spike's `uncapped: true` passes both.
@@ -218,14 +219,29 @@ Second run, 23:54, same machine, same Chrome, same flags: every case at 60.00 Hz
 mean 16.668 ms), fixture and launched, 720p and 1440p, headless and headed. So the harness clock has two states, and
 which one a run gets is a state of the machine, not of the page.
 
-Cause (inferred from the numbers and from Chromium's source as the author knows it; the controlled experiment is
-`frame-clock.perf.spec.ts`, "display off", and its result is recorded at the end of this section). Chrome's GPU
-process paces frames from a vsync thread that waits for the primary output's vertical blank
-(`IDXGIOutput::WaitForVBlank`, `ui/gl/vsync_thread_win.cc`). When the monitor is asleep that wait returns at once;
-Chrome detects the early return and sleeps one frame interval instead, rounded UP to a whole millisecond:
-`Sleep(17)`. Seventeen milliseconds plus the scheduling overhead of each wake-up is the steady 17.4 ms: about
-57.5 Hz, with the p95 near 18.0 ms, independent of what the page draws. In the first run the machine had been without
-input for five minutes when the clock changed, which is this machine's display power-off timeout (300 s).
+Cause, confirmed by a controlled experiment (third run, 00:31, `frame-clock.perf.spec.ts`, "display off": the test
+switches the monitor off with the SC_MONITORPOWER message, reads the console display state Windows reports
+(0 = off, 1 = on), launches a fresh headless browser and measures; then wakes the display, launches another and
+measures again):
+
+| Display | Case | p50 | p95 | p99 | max | mean | Hz |
+|---|---|---|---|---|---|---|---|
+| off (state 0) | `raf` | 17.30 | 18.00 | 18.20 | 18.20 | 17.383 | 57.53 |
+| off (state 0) | `dom` | 17.30 | 18.00 | 18.20 | 18.40 | 17.383 | 57.53 |
+| off (state 0) | `webgpu` | 17.40 | 18.00 | 18.20 | 18.20 | 17.411 | 57.43 |
+| on (state 1) | `raf` | 16.70 | 16.80 | 16.80 | 16.90 | 16.668 | 59.99 |
+| on (state 1) | `dom` | 16.70 | 16.80 | 16.80 | 16.90 | 16.668 | 60.00 |
+| on (state 1) | `webgpu` | 16.70 | 16.80 | 16.80 | 17.00 | 16.668 | 59.99 |
+
+The monitor being off is the whole difference. The mechanism, as the author knows Chromium's source (not re-read
+against the 157 tree): the GPU process paces frames from a vsync thread that waits for the primary output's
+vertical blank (`IDXGIOutput::WaitForVBlank`, `ui/gl/vsync_thread_win.cc`). When the monitor is asleep that wait
+returns at once; Chrome detects the early return and sleeps one frame interval instead, rounded UP to a whole
+millisecond: `Sleep(17)`. Seventeen milliseconds plus the scheduling overhead of each wake-up is the steady 17.4 ms,
+with the p95 near 18.0 ms, independent of what the page draws. In the first run the machine had been without input
+for five minutes when the clock changed, which is this machine's display power-off timeout (300 s): the display
+went to sleep ten seconds into the run. (Whether an idle display actually sleeps depends on what else holds a
+display request at the time; at 00:03 the display was still on after 486 s without input.)
 
 What the harness does about it (`tests/browser/harness.ts`):
 

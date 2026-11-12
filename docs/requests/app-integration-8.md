@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead-baseline-v2: commits 870d19e, 050b2b3, 37c6668 and the one that carries this resolution)
 From: app-integration-v1
 Owner path: tests/browser/chromeArgs.ts, tests/browser/harness.ts, docs/research/webgpu-harness.md (lead harness)
 Blocking: yes (the rAF lines of ARCHITECTURE 17 and 18.2 cannot be judged in the harness as it is)
@@ -30,3 +30,54 @@ also runs at ~17.4 ms, state how the rAF lines of ARCHITECTURE 17 / 18.2 are to 
 accordingly; if the bare page gives 16.67 ms, send the request on to render-core (the app's present path) with
 that measurement. Must NOT change: the budgets themselves, vsync-on measurement (uncapped rAF is meaningless,
 research section 3), the GPU timestamp measurement.
+
+## Resolution (2026-11-12, lead-baseline-v2)
+
+**Cause.** Not the app's present path, not the canvas size, not WebGPU, not headless mode: the monitor. Chrome on
+Windows paces frames from the primary monitor's vertical blank, headless and headed alike. While the monitor is
+asleep (this machine switches it off after 300 s without input, so an unattended 45-minute mission is on it) Chrome
+falls back to a 17 ms sleep per frame, and every page runs at about 57.5 Hz whatever it draws.
+
+**Measured** (`tests/browser/shell/frame-clock.perf.spec.ts`, bare pages with the harness flags: `raf` = an empty
+page, `dom` = one text node per frame, `webgpu` = a full-viewport canvas, clear and present; rAF timestamp deltas,
+ms; Chrome 157.0.8103.78, RTX 5090):
+
+| Display | Case | Size | p50 | p95 | p99 | mean | Hz |
+|---|---|---|---|---|---|---|---|
+| off (switched off by the test, state read back as 0) | raf / dom / webgpu, fresh headless browser | 1280 x 720 | 17.30 / 17.30 / 17.40 | 18.00 | 18.20 | 17.383 / 17.383 / 17.411 | 57.53 / 57.53 / 57.43 |
+| asleep (first run, unattended) | webgpu, headless | 1280 x 720 | 17.40 | 18.00 | 18.20 | 17.399 | 57.47 |
+| asleep (first run) | webgpu, headless | 2560 x 1440 | 17.40 | 18.00 | 18.10 | 17.406 | 57.45 |
+| asleep (first run) | webgpu, HEADED on the monitor | 1280 x 720 | 17.40 | 18.00 | 18.30 | 17.423 | 57.40 |
+| on (woken by the harness, state 1) | raf / dom / webgpu, fresh headless browser | 1280 x 720 | 16.70 | 16.80 | 16.80 | 16.668 | 60.00 |
+| on | webgpu, headless | 2560 x 1440 | 16.70 | 16.80 | 16.80 | 16.668 | 60.00 |
+| on | webgpu, headed | 1280 x 720 | 16.70 | 16.80 | 16.80 | 16.668 | 59.99 |
+
+So the bare page itself runs at 17.4 ms when the display is off and at 16.67 ms when it is on: the request does
+not go on to render-core.
+
+**Fix** (`tests/browser/harness.ts`; no Chrome flag, no budget changed):
+
+1. `withGpuLock` keeps the display awake for as long as the lock is held (`keepDisplayAwake`: a PowerShell helper
+   that wakes the display with a pointer movement of +1 and -1 pixel and holds a display power request until
+   released). The mission spec and every perf spec measure inside the lock, so they now run on the monitor's real
+   60 Hz clock, unattended too. `E2E_NO_DISPLAY_WAKE=1` switches it off.
+2. `measureHarnessClock(page): Promise<FrameClockStats>` measures the clock a bare presenting page gets in the same
+   browser context (240 frames after 45), and `expectNominalClock(clock, label?)` fails with the reason when its
+   median period is not within 0.2 ms of 16.667 ms; `isNominalClock(clock)` is the same as a boolean.
+
+**How the rAF lines are judged** (ARCHITECTURE 29 and 31.2: "rAF p95 < 16.7 ms", "rAF p99 <= 17.5 ms"): as written,
+on the 60 Hz clock. A spec that asserts one calls `measureHarnessClock` under the lock before (and, for a long run,
+after) its measurement and `expectNominalClock` on the result. If the clock is not nominal (a machine without a
+monitor, a remote session) the pacing lines are NOT judged in that run and the spec says so as a failure of the
+precondition; they are never compared with a slower clock using a wider number, and never passed unjudged. The GPU
+and main-thread lines do not depend on the clock and are judged in any case.
+
+**For the owner of `tests/browser/mission/lunar-direct.spec.ts` and `tests/browser/app/*.perf.spec.ts`**
+(app-integration): add the two calls; with the lock's keep-awake the next mission run should show rAF p50 16.67 ms.
+The numbers of the 2026-11-11 mission record (`docs/qa/mission/browser-mission-2026-11-11.json`) were taken on the
+sleep-paced clock: its rAF columns say nothing about the app, its GPU and CPU columns stand.
+
+Details and the full tables: `docs/research/webgpu-harness.md` section 3a. Re-run:
+`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/frame-clock.perf.spec.ts --project=perf`
+(add `FRAME_CLOCK_DISPLAY_EXPERIMENT=1` for the display off / on experiment; it switches the monitor off for about
+twenty seconds).
