@@ -178,3 +178,27 @@ config change only (levels, sources, landmarks).
    `lonPositive` describes the pixel layout, and every USGS file used is east-increasing.
 10. **Landmark kinds**: `demHeight`, `albedoContrast`, `albedoCompare`, `craterDepth` and `albedoTexture`
     (luminance standard deviation, for craters in shaded mosaics where the mean says nothing).
+
+## 6. Known limits (say plainly)
+
+- **Placeholder-quality surfaces, by the expansion's allowance**: global levels only (albedo 2-6, height
+  2-5); no regional pyramids, no de-shading (decision 8), shaded mosaics double-shade under the renderer's
+  normals on DEM bodies.
+- **Unobserved terrain is filled, not invented**: Pluto (DEM 46 % and map 68 % covered by New Horizons),
+  Charon (DEM 46 %, map 66 %), Triton (Voyager saw 61 %), Venus' DEM (92 %): nodata pixels are filled by
+  pull-push from the mip chain (smooth, uniform colour; `validFraction` in each source's prepare log). Giants:
+  Uranus south of -25 deg and Neptune north of +32 deg are zonal fills of the nearest clean latitude.
+- **Colour**: mono maps carry an approximate per-body tint (in the configs); Triton's Voyager colour is
+  greenish as composited; Neptune's OPAL map is strongly cyan as composited (planet-render may regrade);
+  Venus' surface is the Magellan RADAR backscatter as luminance (the visible surface is under the clouds).
+- **Bright icy bodies**: the gain cap (decision 7) keeps detail at the cost of a lower mean than the
+  geometric albedo where the mosaic's range is narrow (the manifest's `layers.albedo.calibration` has the
+  gain; verify reports the achieved values).
+- **Mercury and Mars albedo** are read at 332 m and 464 m (decimated by 2, disk floor), so their finest
+  level's texels near cube corners (206 m and 143 m) are upsampled; at face centres (468 m, 325 m) they are not.
+- **Jupiter's** map longitude origin is as NASA published PIA07782 (System III not confirmed by the source);
+  giant features drift relative to any rotation model anyway.
+- **Mars' areoid** is replaced by the IAU ellipsoid (the brief's rule): heights relative to the true geoid
+  are off by up to about 2 km at long wavelengths; Olympus Mons still reads its 21 km DEM part.
+- **Procedural bodies** have no landmark (nothing to flip); Mimas has Herschel (a craterDepth landmark).
+- **No Venus cloud-top map** (decision 2).
