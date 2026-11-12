@@ -9,7 +9,7 @@ import { MATERIAL_ID, RENDER_FORMATS, type BodyPose, type FrameContext, type Ren
 import { TILE_LAYER, type TileManifest } from '@/core/contracts/terrain';
 import { dirToTile, latLonToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
-import { coreOf, MAX_BODIES, type SceneBindings, type Tracked } from '@/render/core';
+import { coreOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
@@ -146,7 +146,7 @@ export interface TerrainDebug {
   residency(bodyId: string): { wantedLevel: number; residentLevel: number; wanted: number[]; resident: number[] } | null;
 }
 
-export interface TerrainFeature extends RenderFeature {
+export interface TerrainFeature extends RenderFeature, TemporalFeature {
   readonly debug: TerrainDebug;
   /** With `rocksSeparate`: the feature that draws the rock field (add it after this one); else null. */
   readonly rocks: RenderFeature | null;
@@ -274,6 +274,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   const visKey = new Float64Array(MAX_INSTANCES >> 2);
   let instanceCount = 0;
   let frameIndex = 0;
+  // After resetTemporal: the frame index of the last selection before it (SelectParams.resume), for one frame.
+  let resumeFrame: number | undefined;
   let initialised = false;
   let overflowReported = false;
   let fastFadeUntil = -1;
@@ -569,6 +571,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const frustum = frustumOf(frame, pose);
     const base: SelectParams = {
       frameIndex,
+      resume: resumeFrame,
       time: clock,
       observers: obs,
       K: b.K,
@@ -988,6 +991,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         selectBody(b, frame, pose);
       }
       ctx.perf.cpuEnd('terrain.select');
+      resumeFrame = undefined;
       const t1 = performance.now();
       selectMs = t1 - t0 - prefetchMs;
       ctx.perf.cpuBegin('terrain.stream');
@@ -1125,6 +1129,27 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         cpu.cover += performance.now() - t2;
       }
       drawMs += performance.now() - t0;
+    },
+
+    /**
+     * The temporal sequences start again (RENDER_API section 13: before a frame-exact capture, with a step in
+     * the frame index). What the terrain carries from frame to frame and what a restart does with it:
+     *  - the level ranges ease towards their target (K): snapped by the next selection;
+     *  - a tile fades in when it was not drawn the frame before: the frame before is, once, the last frame
+     *    before the restart (SelectParams.resume), and fades that were running are done;
+     *  - chunks of ground cover fade in by the feature's clock: done as well.
+     * Everything else that is stamped with a frame index is an age that a step only shortens (requests,
+     * eviction, retries) or a phase of eight frames (the request-only passes). After the call the feature is
+     * idle when nothing is streaming.
+     */
+    resetTemporal() {
+      if (!initialised) return;
+      resumeFrame = frameIndex;
+      for (const b of bodies) {
+        b.K = 0;
+        for (const n of b.tree.allNodes()) n.fadeSeconds = 0;
+      }
+      cover?.resetTemporal();
     },
 
     isIdle() {

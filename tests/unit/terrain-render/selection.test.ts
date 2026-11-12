@@ -39,6 +39,46 @@ describe('CDLOD selection', () => {
     });
   }
 
+  it('a step in the frame index is not a cut when the selection is told the frame before it (resetTemporal)', () => {
+    const obs = [observer(12, 31, 400e3)];
+    const K = lodK(1440, Math.PI / 3, 8);
+    const key = (tree: BodyQuadtree): string[] => tree.items.map((it) => `${it.node.key.face}/${it.node.level}/${it.node.key.x}/${it.node.key.y}/${it.quadrant}`);
+    /** A view at rest: every tile resident, 200 frames at 60 Hz with fade-ins of 0.35 s. Returns the next frame and time. */
+    const settle = (tree: BodyQuadtree): { p: SelectParams; frame: number; time: number } => {
+      const p = { ...params(obs, K, 12), fadeSeconds: 0.35 };
+      converge(tree, p);
+      let frame = 1000;
+      let time = 5000;
+      for (let i = 0; i < 200; i++) {
+        tree.select({ ...p, frameIndex: frame++, time });
+        time += 1 / 60;
+      }
+      expect(tree.fading).toBe(0);
+      return { p, frame, time };
+    };
+    // Untold, a step of 37 frames is a cut: the drawn tiles fade in again, and only level by level (the
+    // children of a tile that fades are left to it), so the view is its coarse levels for a while.
+    const cut = new BodyQuadtree(R, -9130, 10790);
+    const a = settle(cut);
+    const before = key(cut);
+    const deepest = Math.max(...cut.items.map((it) => it.node.level));
+    expect(deepest).toBeGreaterThanOrEqual(4);
+    cut.select({ ...a.p, frameIndex: a.frame + 37, time: a.time });
+    expect(cut.fading).toBeGreaterThan(0);
+    expect(Math.max(...cut.items.map((it) => it.node.level))).toBeLessThan(deepest);
+    // Told which frame came before, the selection is what it was and nothing fades; the frame after is an
+    // ordinary frame.
+    const told = new BodyQuadtree(R, -9130, 10790);
+    const b = settle(told);
+    expect(key(told)).toEqual(before);
+    told.select({ ...b.p, frameIndex: b.frame + 37, time: b.time, resume: b.frame - 1 });
+    expect(told.fading).toBe(0);
+    expect(key(told)).toEqual(before);
+    told.select({ ...b.p, frameIndex: b.frame + 38, time: b.time + 1 / 60 });
+    expect(told.fading).toBe(0);
+    expect(key(told)).toEqual(before);
+  });
+
   it('selects by the range of each level: a tile is never closer than the range of its children allows', () => {
     const tree = new BodyQuadtree(R, -9130, 10790);
     const obs = [observer(0.7, 23.4, 1500)];

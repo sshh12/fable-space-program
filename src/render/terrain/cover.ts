@@ -1499,6 +1499,14 @@ export class CoverRenderer {
     return this.unbuilt === 0 && this.fading === 0 && !this.bodies.some((b) => b.loading);
   }
 
+  /** The temporal sequences start again (frame-exact capture): chunks that were fading in are in. */
+  resetTemporal(): void {
+    for (const b of this.bodies) {
+      b.rest = null;
+      for (const tier of b.tiers) for (const c of tier.chunks.values()) if (c.built) c.born = -Infinity;
+    }
+  }
+
   stats(): { instances: number; chunks: number; triangles: number } {
     return { instances: this.instanceCount, chunks: this.bodies.reduce((a, b) => a + b.tiers.reduce((n, t) => n + t.chunks.size, 0), 0), triangles: Math.round(this.triangles) };
   }

@@ -185,6 +185,14 @@ export interface SelectParams {
    * the whole chain at once asked for twice the tiles of the pad view.
    */
   eager?: boolean;
+  /**
+   * A frame index that counts as "the frame before" besides `frameIndex - 1`: after the temporal sequences
+   * have been restarted with a step in the frame index (RENDER_API section 13, frame-exact capture), the
+   * frame of the last selection before the step. Without it every drawn tile above level 0 took the step
+   * for a cut and faded in again, level by level (a tile's children are not drawn while it fades): 21 frames
+   * per level of the view, 150 frames in low orbit.
+   */
+  resume?: number;
 }
 
 export interface DrawItem {
@@ -473,7 +481,7 @@ export class BodyQuadtree {
     if (emitting) {
       n.cap = capDraw;
       n.capFrame = p.frameIndex;
-      if (n.lastCovered !== p.frameIndex - 1 && n.lastCovered !== p.frameIndex) {
+      if (n.lastCovered !== p.frameIndex - 1 && n.lastCovered !== p.frameIndex && (p.resume === undefined || n.lastCovered !== p.resume)) {
         n.activatedAt = p.time;
         n.fadeSeconds = n.level === 0 ? 0 : p.fadeSeconds;
       }
