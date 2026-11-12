@@ -19,6 +19,8 @@
  *                                        that window's outward axis (an orbital view down through it)
  *   g=<gLoad>, throttle=<0..1>, lights=0|1   lab decorations: g-load shown to the cabin, throttle, lights
  *   ballast=<n>                          GPU ballast iterations (the perf spec keeps the GPU busy, ballast.ts)
+ *   ablate=<mask>, without=<family,..>   cost attribution: terms and draws switched off (ABLATE in feature.ts),
+ *                                        assembly families left out (console, skin, couch, ...)
  * Plus every createLabApp parameter (perf=features, scale=, governor=off, deterministic=1, ...).
  *
  * Keys 9 / 0 / minus cycle the pages of the three displays through a minimal mapping (the app shell does the
@@ -83,7 +85,7 @@ interface CockpitLabApi {
   aim(target: string, fovDeg?: number): [number, number];
   chase(windowId: string, distance: number, offsetDeg?: number, target?: string): void;
   cockpit(): void;
-  stats(): ReturnType<CockpitFeature['stats']> & { displays: { paints: number; cpuMs: number; frames: number }; painted: { page: MfdPage | null; tick: number; at: number }[] };
+  stats(): ReturnType<CockpitFeature['stats']> & { displays: { paints: number; cpuMs: number; frames: number; perDisplay: number[] }; painted: { page: MfdPage | null; tick: number; at: number }[] };
   resetDisplayStats(): void;
   page(i: number): MfdPage;
   setPage(i: number, p: MfdPage): void;
@@ -99,6 +101,8 @@ interface CockpitLabApi {
    * over the mesh: per channel (ao, all floods, each window, each display, each flood) the mean and largest absolute difference.
    */
   occlusionCheck(count: number): Promise<{ vertices: number; values: number; mean: number; p995: number; max: number; flips: number; meanAo: number }>;
+  /** Cost attribution: CockpitFeature.setAblation (terms and draws switched off, assembly families left out). */
+  setAblation(mask: number, families?: string[]): void;
   /** GPU ballast iterations per pixel (0 = off). */
   setBallast(iterations: number): void;
   debug(): { navballDefault: boolean; mfdDefault: boolean; exposure: ReturnType<typeof window.__lab extends undefined ? never : NonNullable<typeof window.__lab>['renderer']['exposureInfo']> };
@@ -273,6 +277,7 @@ async function boot(): Promise<void> {
   const controls = created.controls;
   await app.renderer.addFeature(feature);
   if (params.has('dbg')) feature.setDebugView(Number(params.get('dbg')));
+  if (params.has('ablate')) feature.setAblation(Number(params.get('ablate')), params.get('without')?.split(',') ?? []);
   const ballast = createBallastFeature(Number(params.get('ballast') ?? 0));
   if (params.has('ballast')) await app.renderer.addFeature(ballast);
   const model = feature.model(vehicle.cockpit!)!;
@@ -378,7 +383,7 @@ async function boot(): Promise<void> {
     cockpit() {
       mode = 'cockpit';
     },
-    stats: () => ({ ...feature!.stats(), displays: { ...feature!.displays!.stats }, painted: feature!.displays!.painted.map((p) => ({ ...p })) }),
+    stats: () => ({ ...feature!.stats(), displays: { ...feature!.displays!.stats, perDisplay: feature!.displays!.stats.perDisplay.slice() }, painted: feature!.displays!.painted.map((p) => ({ ...p })) }),
     resetDisplayStats: () => feature!.displays!.resetStats(),
     page: (i) => controls.page(i),
     setPage: (i, p) => controls.setPage(i, p),
@@ -448,6 +453,9 @@ async function boot(): Promise<void> {
       }
       diffs.sort((x, y) => x - y);
       return { vertices: count, values: n, mean: sum / n, p995: diffs[Math.min(diffs.length - 1, Math.floor(diffs.length * 0.995))] ?? 0, max, flips: diffs.filter((d) => d > 0.5).length, meanAo: aoSum / count };
+    },
+    setAblation(mask, families) {
+      feature!.setAblation(mask, families ?? []);
     },
     setBallast(n) {
       ballast.iterations = n;

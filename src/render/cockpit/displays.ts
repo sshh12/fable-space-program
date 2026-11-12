@@ -1,6 +1,7 @@
 /**
- * The three MFDs: each paints its MfdPainter page into its own OffscreenCanvas (1024 x 768) at 15 Hz,
- * staggered so that at most one display paints per frame, and is copied into one layer of an
+ * The three MFDs: each paints its MfdPainter page into its own OffscreenCanvas (1024 x 768) when the pacing
+ * rule says so (pacing.ts: fast flight-data pages at 15 Hz or better, other pages within a main-thread
+ * budget, staggered so that one display paints per frame), and is copied into one layer of an
  * rgba8unorm-srgb texture array with a full mip chain (the smallest mip is the image's mean, which the
  * cabin light uses for the display glow). The array is published as 'ui.mfd'. A page change repaints that
  * display on the next frame.
@@ -14,6 +15,7 @@ import type { PerfRecorder } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { mipCount } from '@/render/core';
+import { DisplayPacer, type PacingRule } from './pacing';
 
 export const MFD_FORMAT: GPUTextureFormat = 'rgba8unorm-srgb';
 
@@ -51,11 +53,14 @@ export interface DisplayStats {
   mipMs: number;
   /** Frames over which the stats were collected. */
   frames: number;
+  /** Paints of each display. */
+  perDisplay: number[];
 }
 
 /**
  * Main-thread time the displays may take per second of wall time, all of them together (ms): 0.36 ms per
- * frame at 60 frames a second, under the 0.4 ms line of the brief.
+ * frame at 60 frames a second, under the 0.4 ms line of the brief. Displays showing fast flight-data pages
+ * are painted at the full rate whatever they cost; the others share what those leave of this (pacing.ts).
  */
 export const DISPLAY_CPU_BUDGET = 21.6;
 
@@ -66,8 +71,6 @@ export class MfdDisplays {
   readonly height: number;
   private readonly canvases: OffscreenCanvas[] = [];
   private readonly contexts: OffscreenCanvasRenderingContext2D[] = [];
-  private readonly next: number[] = [];
-  private readonly dirty = new Set<number>();
   private readonly pipeline: GPURenderPipeline;
   private readonly upload: GPURenderPipeline;
   private readonly sampler: GPUSampler;
@@ -75,30 +78,25 @@ export class MfdDisplays {
   private frames: VideoFrame[] = [];
   private readonly mipViews: GPUTextureView[][] = [];
   private readonly mipGroups: GPUBindGroup[][] = [];
-  private readonly period: number;
-  /**
-   * Main-thread cost of the last few paints of each display (paint, upload, mips; ms). Their MEDIAN paces
-   * the display once there are three: one slow paint (the first of a page: fonts, a cold code path) must
-   * not slow the display down for seconds.
-   */
-  private readonly costs: number[][] = [];
+  /** When each display is painted (the rule is pacing.ts's). */
+  readonly pacer: DisplayPacer;
   /** Page each layer shows and the snapshot tick it was painted from. */
   readonly painted: { page: MfdPage | null; tick: number; at: number }[] = [];
-  stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
+  stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0, perDisplay: [] };
 
   constructor(
     private readonly device: GPUDevice,
     count: number,
     width: number,
     height: number,
-    rateHz: number,
+    rule: PacingRule,
     private readonly painter: MfdPainter,
     private readonly defs: DefLibrary,
     private readonly perf: PerfRecorder,
   ) {
     this.width = width;
     this.height = height;
-    this.period = 1 / rateHz;
+    this.pacer = new DisplayPacer(count, rule);
     const levels = mipCount(width, height);
     this.texture = device.createTexture({
       label: 'cockpit.mfd',
@@ -130,10 +128,6 @@ export class MfdDisplays {
       if (!ctx) throw new Error('cockpit displays: no 2D context for an OffscreenCanvas');
       this.canvases.push(c);
       this.contexts.push(ctx);
-      // Staggered: display i first paints i / count of a period after start.
-      this.next.push((i / count) * this.period);
-      this.costs.push([]);
-      this.dirty.add(i);
       this.painted.push({ page: null, tick: -1, at: -1 });
       const views: GPUTextureView[] = [];
       const groups: GPUBindGroup[] = [];
@@ -155,48 +149,32 @@ export class MfdDisplays {
   }
 
   markDirty(display: number): void {
-    this.dirty.add(display);
+    this.pacer.markDirty(display);
   }
 
   /**
-   * Paint what is due this frame: AT MOST ONE display (a paint is a main-thread cost of half a millisecond
-   * and more: never two in one frame). A dirty display first (a page change, the first frame, a cabin that
-   * comes back into view), else the display whose slot has come. Encodes the mip passes on `encoder`.
+   * Paint what the pacing rule (pacing.ts) says is due this frame: one display, a dirty one first (a page
+   * change, the first frame, a cabin that comes back into view), else the one whose slot has come; a display
+   * showing a fast flight-data page that is a whole period late is painted in the same frame. Encodes the
+   * upload and mip passes on `encoder`.
    *
-   * `visible` false (no camera can see the screens: the cabin is drawn at a far detail level, or not at
-   * all): nothing is painted; every display is marked dirty, so the pages are current again within three
-   * frames of the cabin coming back into view (request app-integration-12).
-   *
-   * Pacing: a display's slot comes every 1 / rateHz, or later when its page is dear to paint: its paints are
-   * spaced so that their typical cost (the median of the last five) stays within DISPLAY_CPU_BUDGET of
-   * main-thread time per second of wall time. A page that paints in half a millisecond keeps its 15 Hz; one that takes five is painted
-   * about once a second (and should be made cheaper: the painter is src/ui's).
+   * `visible` false (no camera can read the screens: the cabin is drawn at a far detail level, or not at
+   * all, or the view is the map): nothing is painted; every display is repainted within three frames of the
+   * cabin coming back into view (request app-integration-12).
    */
   update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder, visible = true): void {
     this.stats.frames++;
     for (const f of this.frames) f.close();
     this.frames = [];
     if (!visible) {
-      for (let i = 0; i < this.next.length; i++) this.dirty.add(i);
+      this.pacer.hidden();
       return;
     }
-    const due: number[] = [];
-    for (const i of this.dirty) {
-      due.push(i);
-      break;
-    }
-    if (due.length === 0) {
-      let best = -1;
-      for (let i = 0; i < this.next.length; i++) if (time >= this.next[i]! && (best < 0 || this.next[i]! < this.next[best]!)) best = i;
-      if (best >= 0) due.push(best);
-    }
+    const due = this.pacer.due(time, pageOf);
     if (due.length === 0) return;
     const t0 = performance.now();
     for (const i of due) {
-      this.dirty.delete(i);
       const page = pageOf(i);
-      // A page other than the one painted last starts from the plain rate (its cost is not known yet).
-      if (this.painted[i]!.page !== page) this.costs[i]!.length = 0;
       const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
       const b = performance.now();
@@ -208,12 +186,8 @@ export class MfdDisplays {
       this.stats.mipMs += performance.now() - c;
       this.painted[i] = { page, tick: snapshot.tick, at: time };
       this.stats.paints++;
-      const recent = this.costs[i]!;
-      recent.push(performance.now() - a);
-      if (recent.length > 5) recent.shift();
-      const typical = recent.length >= 3 ? [...recent].sort((x, y) => x - y)[recent.length >> 1]! : 0;
-      const interval = Math.max(this.period, typical / (DISPLAY_CPU_BUDGET / this.next.length));
-      this.next[i] = Math.max(this.next[i]! + interval, time + interval * 0.5);
+      this.stats.perDisplay[i] = (this.stats.perDisplay[i] ?? 0) + 1;
+      this.pacer.painted(i, time, page, performance.now() - a, pageOf);
     }
     this.stats.cpuMs += performance.now() - t0;
   }
@@ -260,7 +234,7 @@ export class MfdDisplays {
   }
 
   resetStats(): void {
-    this.stats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
+    this.stats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0, perDisplay: [] };
   }
 
   dispose(): void {

@@ -241,6 +241,158 @@ const layers: Layer[] = [];
   });
 }
 
+// ---- photographic layers: tone, relief and gloss from the generated photographs (tools/cockpit/photo-source.ts)
+/** How a photograph becomes a detail layer. */
+interface PhotoSpec {
+  /** Height (m) of the fine structure per unit of high-passed relative luminance (+: bright stands high; -: bright lies low). */
+  relief: number;
+  /** The high pass that separates relief from tone: radius in texels of the output. */
+  reliefRadius: number;
+  /** Contrast of the photographed tone (1 = as photographed). */
+  tone: number;
+  /** Roughness offset per unit of relative tone, smoothed over a few texels (+: darker is rougher). */
+  rough: number;
+  /** Cavity strength (per metre of depth below the surroundings) and its radius in texels. */
+  cavity: [radius: number, strength: number];
+}
+const PHOTO: Record<string, PhotoSpec> = {
+  paint: { relief: -0.00003, reliefRadius: 3, tone: 1.0, rough: 0.5, cavity: [2, 900] },
+  brushed: { relief: 0.000012, reliefRadius: 2, tone: 0.8, rough: 0.6, cavity: [1, 1500] },
+  fabric: { relief: 0.0005, reliefRadius: 4, tone: 1.0, rough: 0.2, cavity: [1, 1200] },
+  nomex: { relief: 0.0006, reliefRadius: 10, tone: 1.0, rough: 0.2, cavity: [3, 400] },
+  webbing: { relief: 0.0004, reliefRadius: 4, tone: 1.0, rough: 0.2, cavity: [1, 1500] },
+  velcro: { relief: 0.0008, reliefRadius: 5, tone: 1.0, rough: 0.0, cavity: [1, 1200] },
+  rubber: { relief: 0.00006, reliefRadius: 3, tone: 1.0, rough: 0.6, cavity: [1, 3000] },
+  cast: { relief: -0.00003, reliefRadius: 3, tone: 1.0, rough: 0.6, cavity: [1, 3000] },
+};
+const photoDir = path.resolve(outDir, '..', '..', '..', 'data', 'cache', 'cockpit', 'photo');
+
+/** Periodic box blur of a square field, `passes` times (three passes are close to a Gaussian). */
+function blurField(src: Float32Array, n: number, radius: number, passes = 3): Float32Array {
+  let a = src;
+  const r = Math.max(1, Math.round(radius));
+  for (let p = 0; p < passes; p++) {
+    for (const horizontal of [true, false]) {
+      const out = new Float32Array(n * n);
+      for (let j = 0; j < n; j++) {
+        let s = 0;
+        const at = (k: number): number => (horizontal ? a[j * n + mod(k, n)]! : a[mod(k, n) * n + j]!);
+        for (let k = -r; k <= r; k++) s += at(k);
+        for (let i = 0; i < n; i++) {
+          if (horizontal) out[j * n + i] = s / (2 * r + 1);
+          else out[i * n + j] = s / (2 * r + 1);
+          s += at(i + r + 1) - at(i - r);
+        }
+      }
+      a = out;
+    }
+  }
+  return a;
+}
+
+/**
+ * The relative tone (mean 1) of a photograph as a seamless tile of S x S: linear luminance; residual shading
+ * divided out (a wide blur); four copies of the image shifted by about half a tile along neither, one or both
+ * axes, each weighted so that it vanishes on its own seam (the weights sum to one everywhere;
+ * variance-preserving, so the blend keeps the photograph's contrast); reduced to the layer's size.
+ */
+function photoTone(file: string): Field {
+  const png = PNG.sync.read(fs.readFileSync(file));
+  const n = png.width;
+  if (png.height !== n || n % (2 * S) !== 0) throw new Error(`${file}: ${png.width} x ${png.height}, expected a square of a multiple of ${2 * S}`);
+  const lin = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const Y = new Float32Array(n * n);
+  let mean = 0;
+  for (let i = 0; i < n * n; i++) {
+    Y[i] = 0.2126 * lin(png.data[i * 4]! / 255) + 0.7152 * lin(png.data[i * 4 + 1]! / 255) + 0.0722 * lin(png.data[i * 4 + 2]! / 255);
+    mean += Y[i]! / (n * n);
+  }
+  // Residual shading of the photograph (its light is never perfectly even): divided out before the copies
+  // are blended, so a bright corner does not come back as a blotch in the middle of the tile.
+  const shade = blurField(Y, n, n * 0.12);
+  const flat = new Float32Array(n * n);
+  for (let i = 0; i < n * n; i++) flat[i] = (Y[i]! / Math.max(shade[i]!, 1e-4)) * mean;
+  // The shift along each axis: about half a tile, at the lag where the image best matches itself (a weave's
+  // yarns then fall on yarns where two copies are blended; for a material without a pattern any lag does).
+  const bestLag = (alongX: boolean): number => {
+    let best = n / 2;
+    let bestC = -Infinity;
+    for (let lag = Math.round(n * 0.42); lag <= Math.round(n * 0.58); lag++) {
+      let c = 0;
+      for (let j = 8; j < n; j += 16) {
+        for (let i = 0; i + lag < n; i += 2) {
+          const p = alongX ? flat[j * n + i]! : flat[i * n + j]!;
+          const q = alongX ? flat[j * n + i + lag]! : flat[(i + lag) * n + j]!;
+          c += (p - mean) * (q - mean);
+        }
+      }
+      c /= n - lag;
+      if (c > bestC) {
+        bestC = c;
+        best = lag;
+      }
+    }
+    return best;
+  };
+  const hx = bestLag(true);
+  const hy = bestLag(false);
+  // Each copy's weight vanishes on its own seam: the unshifted copy's at the tile's border, a shifted copy's
+  // where its wrap falls (n - shift).
+  const weight = (t: number, shift: number): [number, number] => {
+    const a = Math.sin((Math.PI * (t + 0.5)) / n) ** 2;
+    const b = Math.sin((Math.PI * (t + 0.5 + shift)) / n) ** 2;
+    return [a / (a + b), b / (a + b)];
+  };
+  const seamless = new Float32Array(n * n);
+  for (let y = 0; y < n; y++) {
+    const [ay, by] = weight(y, hy);
+    for (let x = 0; x < n; x++) {
+      const [ax, bx] = weight(x, hx);
+      const w = [ax * ay, bx * ay, ax * by, bx * by];
+      const v = [flat[y * n + x]!, flat[y * n + ((x + hx) % n)]!, flat[((y + hy) % n) * n + x]!, flat[((y + hy) % n) * n + ((x + hx) % n)]!];
+      let s = 0;
+      let w2 = 0;
+      for (let k = 0; k < 4; k++) {
+        s += w[k]! * (v[k]! - mean);
+        w2 += w[k]! * w[k]!;
+      }
+      seamless[y * n + x] = mean + s / Math.sqrt(w2);
+    }
+  }
+  const k = n / S;
+  return F((_u, _v, x, y) => {
+    let s = 0;
+    for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) s += seamless[(y * k + j) * n + x * k + i]!;
+    return Math.max(0.02, s / (k * k) / mean);
+  });
+}
+
+const photographic: string[] = [];
+const procedural: string[] = [];
+for (const l of layers) {
+  const file = path.join(photoDir, `${l.name}.png`);
+  const spec = PHOTO[l.name];
+  if (!spec || !fs.existsSync(file)) {
+    procedural.push(l.name);
+    continue;
+  }
+  photographic.push(l.name);
+  const tone = photoTone(file);
+  const low = new Field(S, S);
+  low.data.set(blurField(tone.data, S, spec.reliefRadius));
+  const soft = new Field(S, S);
+  soft.data.set(blurField(tone.data, S, 3, 2));
+  l.height = F((_u, _v, x, y) => spec.relief * (tone.at(x, y) - low.at(x, y)));
+  l.cavity = cavityOf(l.height, spec.cavity[0], spec.cavity[1]);
+  l.albedo = F((_u, _v, x, y) => 0.5 * clamp(1 + spec.tone * (tone.at(x, y) - 1), 0.3, 1.9));
+  l.rough = F((_u, _v, x, y) => clamp(0.5 - spec.rough * (soft.at(x, y) - 1), 0.1, 0.9));
+}
+// Every layer has a photograph or none has: a half-photographic set would mix two looks without saying so.
+if (photographic.length > 0 && procedural.length > 0 && !process.argv.includes('--mixed')) {
+  throw new Error(`photographs for ${photographic.join(', ')} but none for ${procedural.join(', ')} in ${photoDir}: run tools/cockpit/photo-source.ts, or pass --mixed`);
+}
+console.log(photographic.length > 0 ? `photographic layers: ${photographic.join(', ')}${procedural.length > 0 ? `; procedural: ${procedural.join(', ')}` : ''}` : 'procedural layers only (no photographs in data/cache/cockpit/photo)');
+
 // ---- encode
 function strip(pixel: (l: Layer, x: number, y: number) => [number, number, number, number]): Buffer {
   const png = new PNG({ width: S, height: S * layers.length, colorType: 6 });

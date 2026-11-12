@@ -131,7 +131,7 @@ export const LABEL_COLORS: [number, number, number][] = [
 ];
 
 export const ATLAS_WIDTH = 2048;
-export const ATLAS_HEIGHT = 2048;
+export const ATLAS_HEIGHT = 4096;
 /** Atlas pixels per metre of label height. */
 export const ATLAS_PX_PER_M = 4200;
 

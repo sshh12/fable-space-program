@@ -20,15 +20,16 @@ import type { VehicleDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { CockpitControls, MfdPainter, NavballRenderer } from '@/core/contracts/ui';
-import { mat3, quat, v3, type Quat, type Vec3 } from '@/core/math';
+import { mat3, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type Tracked } from '@/render/core';
 import { BALL_RADIUS_FRACTION } from '@/ui';
 import { paintLabelAtlas } from './atlas';
 import { buildCockpitModel, displayVertices, meshBvh, meshPositions, sunRange, type CockpitModel, type LodName } from './build';
 import { ATLAS_HEIGHT, ATLAS_WIDTH, seatFrames } from './cabin/context';
 import { createCockpitControls, type CockpitControlsImpl } from './controls';
-import { MfdDisplays } from './displays';
+import { DISPLAY_CPU_BUDGET, MfdDisplays } from './displays';
 import { controlStates, instrumentSource, updateMemory, type ControlState, type InstrumentMemory } from './instruments';
+import { CabinLampMaps, lampMatrix } from './lampmap';
 import { cockpitLayouts, DETAIL_KINDS, MAX_WINDOWS } from './layout';
 import { CabinProbe, PROBE_DEPTH_FORMAT, PROBE_FORMAT } from './probe';
 import { cabinSources, coveredWindows, floodLevel, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
@@ -81,6 +82,8 @@ export interface CockpitFrameStats {
   inside: boolean;
   triangles: number;
   shadowTriangles: number;
+  /** Triangles of the interior's opaque draw after frustum culling (the full detail level is drawn in chunks). */
+  drawnTriangles: number;
   polys: number;
   patches: number;
   /** Whether the sun reaches the cabin this frame (the cabin sun map was rendered). */
@@ -109,7 +112,46 @@ export interface CockpitFeature extends RenderFeature {
    * 6 bounce light, 7 sunlight, 8 emission, 9 face normals, 10 baked ambient occlusion, 11 albedo.
    */
   setDebugView(view: number): void;
+  /**
+   * Cost attribution (cockpit lab `&ablate=<mask>`, tests/browser/cockpit/attribution.perf.spec.ts): switches
+   * single terms of the interior's shading and single draws off (ABLATE), and leaves out the assemblies of the
+   * named families (the part of MeshBuilder.group names before the first ':'). 0 and no families = the picture.
+   */
+  setAblation(mask: number, families?: readonly string[]): void;
 }
+
+/** Bits of CockpitFeature.setAblation: the low eight are read by the interior's shader (cabin.tint.w). */
+export const ABLATE = {
+  polygonSources: 1,
+  sun: 2,
+  reflections: 4,
+  detailTextures: 8,
+  patterns: 16,
+  bounce: 32,
+  /** The whole fragment: a constant written to the G-buffer (what the pass costs without any shading). */
+  shading: 64,
+  /** The lamps' shadow maps (the floods then light through their baked visibility alone). */
+  lampShadows: 128,
+  /** Draws: the shading draw (depth pre-pass only), the label decals, the screens and the attitude ball. */
+  shadeDraw: 256,
+  decals: 512,
+  screens: 1024,
+  /** Every chunk drawn, in view or not. */
+  frustumCulling: 2048,
+} as const;
+
+/** A run of consecutive triangles of one assembly of the full detail level, with its bounding sphere (part frame). */
+interface Chunk {
+  start: number;
+  count: number;
+  centre: Vec3;
+  radius: number;
+  family: string;
+}
+/** Triangles per chunk of the full detail level (frustum culling granularity). */
+const CHUNK_TRIANGLES = 768;
+/** Margin of a chunk's bounding sphere for its animated controls (levers, guards, hand controllers), m. */
+const CHUNK_MARGIN = 0.04;
 
 interface GpuModel {
   model: CockpitModel;
@@ -143,6 +185,11 @@ interface GpuModel {
   ambientVersion: number;
   shadowGroup: GPUBindGroup;
   sunGroup: GPUBindGroup;
+  /** The flood lights' shadow maps (lampmap.ts): this model's group and matrices, and how many layers are still to be rendered again after a control moved. */
+  lampGroup: GPUBindGroup;
+  lampMatrices: Float64Array[];
+  lampStale: number;
+  lampCursor: number;
   /** Sphere the cabin sun map covers (part frame). */
   sunCentre: Vec3;
   sunRadius: number;
@@ -153,6 +200,8 @@ interface GpuModel {
   controlData: Float32Array<ArrayBuffer>;
   prevControls: ControlState[] | null;
   memory: InstrumentMemory;
+  /** The full detail level in chunks (drawn only where the camera's frustum reaches them). */
+  chunks: Chunk[];
 }
 
 /** The detail texture arrays and their layers (public/assets/cockpit/detail.json). */
@@ -196,6 +245,9 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let tunnelBuffer: GPUBuffer;
   let tunnelGroup: GPUBindGroup;
   let sunMap: CabinSunMap;
+  let lampMaps: CabinLampMaps;
+  /** The model whose lamps the shadow maps hold. */
+  let lampModel: GpuModel | null = null;
   let probe: CabinProbe;
   let interiorProbe: Tracked<GPURenderPipeline>;
   let displayProbe: Tracked<GPURenderPipeline>;
@@ -206,7 +258,9 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let navballVersion = -1;
 
   // Per-frame state.
-  let active: { gm: GpuModel; lod: LodName; vessel: VesselSnapshot; interiorView: boolean; centre: Vec3; sun: SunMapLayout | null } | null = null;
+  let active: { gm: GpuModel; lod: LodName; vessel: VesselSnapshot; interiorView: boolean; centre: Vec3; sun: SunMapLayout | null; runs: { start: number; count: number }[] } | null = null;
+  let ablation = 0;
+  let ablatedFamilies: readonly string[] = [];
   let clock = 0;
   /** Frames since the cabin's light passes last ran while the cabin is drawn at a far detail level. */
   let farFrames = 0;
@@ -216,7 +270,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let lastLod: LodName | null = null;
   let lastStates: ControlState[] = [];
   let debugView = 0;
-  const st: CockpitFrameStats = { active: false, layout: null, vesselId: null, vesselActive: false, lod: null, inside: false, triangles: 0, shadowTriangles: 0, polys: 0, patches: 0, sunLit: false, covered: [], tunnel: 0, vibration: 0, displayBrightness: 0, prepareMs: 0 };
+  const st: CockpitFrameStats = { active: false, layout: null, vesselId: null, vesselActive: false, lod: null, inside: false, triangles: 0, shadowTriangles: 0, drawnTriangles: 0, polys: 0, patches: 0, sunLit: false, covered: [], tunnel: 0, vibration: 0, displayBrightness: 0, prepareMs: 0 };
 
   const pick = (frame: FrameContext): { gm: GpuModel; vessel: VesselSnapshot; part: PartSnapshot; vehicle: VehicleDef } | null => {
     const s = frame.snapshot;
@@ -248,6 +302,10 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     controlStates: () => lastStates,
     setDebugView(view) {
       debugView = view;
+    },
+    setAblation(mask, families = []) {
+      ablation = mask;
+      ablatedFamilies = families;
     },
 
     async init(c) {
@@ -289,6 +347,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
           { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
           { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
           { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
+          { binding: 11, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
           ...scene.layoutEntries,
         ],
       });
@@ -424,14 +483,15 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // Displays: one array for every layout (the largest display count).
       const all = layoutIds.map((id) => cockpitLayouts(defs)[id]!);
       if (first) {
-        displays = new MfdDisplays(device, Math.max(1, ...all.map((l) => l.console.displays.length)), first.displays.width, first.displays.height, first.displays.rateHz, opts.mfdPainter, defs, c.perf);
+        displays = new MfdDisplays(device, Math.max(1, ...all.map((l) => l.console.displays.length)), first.displays.width, first.displays.height, { rateHz: first.displays.rateHz, fastPages: first.displays.fastPages, cpuBudget: DISPLAY_CPU_BUDGET, slowMinHz: first.displays.slowMinHz }, opts.mfdPainter, defs, c.perf);
         c.resources.publish('ui.mfd', displays.view);
         controls.onChange((d) => displays?.markDirty(d));
       }
       if (c.resources.version('ui.navball') === 0) c.resources.publish('ui.navball', opts.navball.view);
       sunMap = new CabinSunMap(device, Math.max(256, ...all.map((l) => l.transport.sunMapSize)), (label, code) => c.shaders.createModule(label, code), (desc) => core.createTextureChecked(desc));
+      lampMaps = new CabinLampMaps(device, Math.max(256, ...all.map((l) => l.transport.lampMapSize)), (label, code) => c.shaders.createModule(label, code), (desc) => core.createTextureChecked(desc));
       detail = await loadDetailTextures(c);
-      for (const id of layoutIds) models.set(id, uploadModel(c, buildCockpitModel(defs, id), detail, sunMap));
+      for (const id of layoutIds) models.set(id, uploadModel(c, buildCockpitModel(defs, id), detail, sunMap, lampMaps));
       // Compile now so that shader errors surface before the first frame.
       ambientPipe.get();
       interiorDepth.get();
@@ -514,7 +574,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // The floods: full with the lights command of the active vessel, at their standby level otherwise.
       const floods = floodLevel(model, src.active && frame.snapshot.readouts.lightsOn);
       const states = controlStates(model.controls, src, defs, model.layout.alarms, clock, gm.memory, (id) => seats.get(id)!, (i) => floodLuminance(model, i, floods));
-      writeControls(ctx, gm, states);
+      if (writeControls(ctx, gm, states)) gm.lampStale = gm.lampMatrices.length;
       lastStates = states;
 
       // ---- cabin light
@@ -572,6 +632,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         camPart,
         inside,
         debugView,
+        ablation,
         covered,
       });
       ctx.device.queue.writeBuffer(gm.cabin, 0, gm.cabinData);
@@ -622,6 +683,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
               { binding: 8, resource: detail.n.createView({ dimension: '2d-array' }) },
               { binding: 9, resource: detail.m.createView({ dimension: '2d-array' }) },
               { binding: 10, resource: cube },
+              { binding: 11, resource: lampMaps.view },
               ...scene.entries(),
             ],
           });
@@ -644,7 +706,12 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         });
       }
       const centre = v3.add(origin, quat.rotate(q, { x: 0, y: 1.1, z: 0 }));
-      active = { gm, lod, vessel, interiorView, centre, sun };
+      // ---- what is drawn: the full detail level in the chunks the camera's frustum reaches (from a couch
+      // four fifths of the cabin's triangles lie beside or behind the view), the reduced levels whole.
+      const whole = model.mesh.ranges[lod]!;
+      const runs = lod === 'lod0' ? visibleRuns(gm.chunks, mat4.mul(frame.proj, frame.view), mat3.fromQuat(q), origin, (ablation & ABLATE.frustumCulling) === 0, ablatedFamilies) : [{ start: whole.start, count: whole.count }];
+      active = { gm, lod, vessel, interiorView, centre, sun, runs };
+      st.drawnTriangles = runs.reduce((n, r) => n + r.count, 0) / 3;
       st.active = true;
       st.layout = model.layoutId;
       st.vesselId = vessel.id;
@@ -663,6 +730,20 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // the full detail level (request app-integration-12: not in the chase view, not in the map).
       displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map');
       const gm = active.gm;
+      // The flood lights' shadow maps: every layer when this model's lamps are not the ones in the maps (the
+      // first frame), then one layer a frame while a lever, a guard or a hand controller has moved.
+      const lamps = gm.lampMatrices.length;
+      const casters = [gm.model.mesh.ranges[sunRange('lod0')]!];
+      if (lampModel !== gm) {
+        lampModel = gm;
+        lampMaps.setLamps(gm.lampMatrices);
+        for (let i = 0; i < lamps; i++) lampMaps.render(encoder, i, gm.lampGroup, gm.vertex, gm.index, casters, ctx.perf.gpuPass('cockpit.lampMap') as GPURenderPassTimestampWrites | undefined);
+        gm.lampStale = 0;
+      } else if (gm.lampStale > 0 && lamps > 0) {
+        gm.lampCursor = (gm.lampCursor + 1) % lamps;
+        lampMaps.render(encoder, gm.lampCursor, gm.lampGroup, gm.vertex, gm.index, casters, ctx.perf.gpuPass('cockpit.lampMap') as GPURenderPassTimestampWrites | undefined);
+        gm.lampStale--;
+      }
       // Seen from outside at a far detail level the cabin is a few lit pixels behind its windows: its sun map,
       // ambient pass and probe run every FAR_LIGHT_INTERVAL-th frame there (request app-integration-12).
       if (active.lod !== 'lod0' && farFrames++ % FAR_LIGHT_INTERVAL !== 0) {
@@ -739,20 +820,22 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     drawGBuffer(_frame, pass) {
       if (!active?.gm.group) return;
       const gm = active.gm;
-      const range = gm.model.mesh.ranges[active.lod]!;
       pass.setBindGroup(1, gm.group);
       pass.setVertexBuffer(0, gm.vertex);
       pass.setIndexBuffer(gm.index, 'uint32');
       pass.setPipeline(interiorDepth.get());
-      pass.drawIndexed(range.count, 1, range.start);
+      for (const r of active.runs) pass.drawIndexed(r.count, 1, r.start);
       pass.setVertexBuffer(1, gm.occlusion);
-      pass.setPipeline(interior.get());
-      pass.drawIndexed(range.count, 1, range.start);
+      if ((ablation & ABLATE.shadeDraw) === 0) {
+        pass.setPipeline(interior.get());
+        for (const r of active.runs) pass.drawIndexed(r.count, 1, r.start);
+      }
       const labels = gm.model.mesh.ranges.labels!;
-      if (active.lod === 'lod0' && labels.count > 0) {
+      if (active.lod === 'lod0' && labels.count > 0 && (ablation & (ABLATE.decals | ABLATE.shadeDraw)) === 0) {
         pass.setPipeline(decals.get());
         pass.drawIndexed(labels.count, 1, labels.start);
       }
+      if ((ablation & (ABLATE.screens | ABLATE.shadeDraw)) !== 0) return;
       pass.setPipeline(display.get());
       pass.setVertexBuffer(0, gm.display);
       pass.draw(gm.displayCount);
@@ -793,6 +876,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       }
       displays?.dispose();
       sunMap?.dispose();
+      lampMaps?.dispose();
       probe?.dispose();
       detail?.n.destroy();
       detail?.m.destroy();
@@ -801,6 +885,84 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     },
   };
   return { feature, controls };
+}
+
+/**
+ * The chunks of the full detail level: runs of at most CHUNK_TRIANGLES consecutive triangles of one assembly
+ * (the builders emit part after part, so a run is a patch of wall, a row of switches, one couch pad), each
+ * with the sphere that holds it.
+ */
+export function buildChunks(model: CockpitModel): Chunk[] {
+  const mesh = model.mesh;
+  const f32 = new Float32Array(mesh.vertices);
+  const r = mesh.ranges.lod0!;
+  const chunks: Chunk[] = [];
+  const close = (start: number, end: number, group: number): void => {
+    if (end <= start) return;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (let i = start; i < end; i++) {
+      const o = (mesh.indices[i]! * VERTEX_STRIDE) / 4;
+      for (let k = 0; k < 3; k++) {
+        const x = f32[o + k]!;
+        if (x < min[k]!) min[k] = x;
+        if (x > max[k]!) max[k] = x;
+      }
+    }
+    const centre = { x: (min[0]! + max[0]!) / 2, y: (min[1]! + max[1]!) / 2, z: (min[2]! + max[2]!) / 2 };
+    let r2 = 0;
+    for (let i = start; i < end; i++) {
+      const o = (mesh.indices[i]! * VERTEX_STRIDE) / 4;
+      r2 = Math.max(r2, (f32[o]! - centre.x) ** 2 + (f32[o + 1]! - centre.y) ** 2 + (f32[o + 2]! - centre.z) ** 2);
+    }
+    chunks.push({ start, count: end - start, centre, radius: Math.sqrt(r2) + CHUNK_MARGIN, family: mesh.groupNames[group]!.split(':')[0]! });
+  };
+  let start = r.start;
+  let group = -1;
+  for (let i = r.start; i < r.start + r.count; i += 3) {
+    const g = mesh.vertexGroup[mesh.indices[i]!]!;
+    if (g !== group || i - start >= CHUNK_TRIANGLES * 3) {
+      close(start, i, group);
+      start = i;
+      group = g;
+    }
+  }
+  close(start, r.start + r.count, group);
+  return chunks;
+}
+
+/**
+ * The index runs to draw: the chunks whose sphere reaches into the view frustum (the four side planes of
+ * `viewProj`, camera-relative ROOT; part frame -> ROOT by the rotation rows `rot` and `origin`), neighbours
+ * merged into one draw. `cull` false: every chunk; chunks of the `without` families are left out.
+ */
+export function visibleRuns(chunks: readonly Chunk[], viewProj: ArrayLike<number>, rot: ArrayLike<number>, origin: Vec3, cull: boolean, without: readonly string[] = []): { start: number; count: number }[] {
+  const m = viewProj;
+  // Planes row3 +- row0, row3 +- row1 of the column-major matrix, normalised.
+  const planes: [number, number, number, number][] = [];
+  for (const [row, sign] of [[0, 1], [0, -1], [1, 1], [1, -1]] as const) {
+    const a = m[3]! + sign * m[row]!;
+    const b = m[7]! + sign * m[4 + row]!;
+    const c = m[11]! + sign * m[8 + row]!;
+    const d = m[15]! + sign * m[12 + row]!;
+    const l = Math.hypot(a, b, c) || 1;
+    planes.push([a / l, b / l, c / l, d / l]);
+  }
+  const runs: { start: number; count: number }[] = [];
+  for (const ch of chunks) {
+    if (without.length > 0 && without.includes(ch.family)) continue;
+    if (cull) {
+      const p = ch.centre;
+      const x = rot[0]! * p.x + rot[1]! * p.y + rot[2]! * p.z + origin.x;
+      const y = rot[3]! * p.x + rot[4]! * p.y + rot[5]! * p.z + origin.y;
+      const z = rot[6]! * p.x + rot[7]! * p.y + rot[8]! * p.z + origin.z;
+      if (planes.some((pl) => pl[0] * x + pl[1] * y + pl[2] * z + pl[3] < -ch.radius)) continue;
+    }
+    const last = runs[runs.length - 1];
+    if (last && last.start + last.count === ch.start) last.count += ch.count;
+    else runs.push({ start: ch.start, count: ch.count });
+  }
+  return runs;
 }
 
 /** Camera-relative ROOT position of a part-frame point with this frame's cabin transform. */
@@ -857,7 +1019,7 @@ function packOcclusion(o: VertexOcclusion): Float32Array {
   return new Float32Array([o.ao, o.flood, w(0), w(1), w(2), w(3), w(4), w(5), w(6), w(7), d(0), d(1), d(2), d(3), 0, 0, f(0), f(1), f(2), f(3), f(4), f(5), f(6), f(7)]);
 }
 
-function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailTextures, sunMap: CabinSunMap): GpuModel {
+function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailTextures, sunMap: CabinSunMap, lampMaps: CabinLampMaps): GpuModel {
   const device = ctx.device;
   const core = coreOf(ctx);
   const id = model.layoutId;
@@ -1029,6 +1191,10 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   const yTop = mo.tunnelJoinY - 1e-3;
   const slope = (mo.innerRadius(mo.floorY) - mo.innerRadius(yTop)) / (yTop - mo.floorY);
   const proxy: [number, number, number, number] = [mo.innerRadius(mo.floorY) + slope * mo.floorY, slope, mo.floorY, mo.tunnelJoinY];
+  // The flood lights' shadow-map matrices: static in the part frame, written into the cabin uniform once.
+  const cabinData = new Float32Array(CABIN_UNIFORM_FLOATS);
+  const lampMatrices = model.floods.map((f) => lampMatrix(f));
+  lampMatrices.forEach((m, i) => cabinData.set(m, (CABIN.lamps + 4 * i) * 4));
   return {
     model,
     vertex,
@@ -1056,14 +1222,19 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
     ambientVersion: -1,
     shadowGroup,
     sunGroup: sunMap.group(controls),
+    lampGroup: lampMaps.group(controls),
+    lampMatrices,
+    lampStale: 0,
+    lampCursor: 0,
     sunCentre,
     sunRadius: boundingRadius(mesh.vertices, mesh.vertexCount, sunCentre) + model.layout.transport.sunMapMargin,
     ballOcc,
     apertures,
-    cabinData: new Float32Array(CABIN_UNIFORM_FLOATS),
+    cabinData,
     controlData: new Float32Array(controlCount * CONTROL_FLOATS),
     prevControls: null,
     memory: { lastStageUt: null },
+    chunks: buildChunks(model),
   };
 }
 
@@ -1081,13 +1252,19 @@ function shadowLayoutFor(ctx: RenderContext): GPUBindGroupLayout {
   return l;
 }
 
-function writeControls(ctx: RenderContext, gm: GpuModel, states: ControlState[]): void {
+/** Control kinds whose parts are large enough to throw a shadow worth re-rendering the lamps' maps for. */
+const SHADOW_CONTROLS: readonly string[] = ['toggle', 'guard', 'rotary', 'rhc', 'thc', 'throttle'];
+
+/** Upload the controls' poses and lights; returns whether a shadow-casting control moved since the last frame. */
+function writeControls(ctx: RenderContext, gm: GpuModel, states: ControlState[]): boolean {
   const d = gm.controlData;
   const u = new Uint32Array(d.buffer);
   const prev = gm.prevControls ?? states;
+  let moved = false;
   gm.model.controls.forEach((c, i) => {
     const s = states[i]!;
     const p = prev[i]!;
+    if (SHADOW_CONTROLS.includes(c.kind) && (s.rot.x !== p.rot.x || s.rot.y !== p.rot.y || s.rot.z !== p.rot.z || s.rot.w !== p.rot.w || s.offset.x !== p.offset.x || s.offset.y !== p.offset.y || s.offset.z !== p.offset.z)) moved = true;
     const o = i * CONTROL_FLOATS;
     d.set([c.pivot.x, c.pivot.y, c.pivot.z, 0, s.rot.x, s.rot.y, s.rot.z, s.rot.w, s.offset.x, s.offset.y, s.offset.z, 0], o);
     u[o + 11] = s.mask >>> 0;
@@ -1095,6 +1272,7 @@ function writeControls(ctx: RenderContext, gm: GpuModel, states: ControlState[])
   });
   gm.prevControls = states;
   if (gm.model.controls.length > 0) ctx.device.queue.writeBuffer(gm.controls, 0, d);
+  return moved;
 }
 
 interface CabinFrameInput {
@@ -1123,6 +1301,8 @@ interface CabinFrameInput {
   camPart: Vec3;
   inside: boolean;
   debugView: number;
+  /** CockpitFeature.setAblation's mask (its low eight bits reach the shader). */
+  ablation: number;
   /** Per window: covered by another part of the vessel (lets nothing in). */
   covered: readonly boolean[];
 }
@@ -1168,7 +1348,7 @@ function writeCabin(gm: GpuModel, f: CabinFrameInput): void {
   const n = L.windows.panes.length;
   const per = T.map((x) => x ** (1 / n));
   at(CABIN.misc, [(T[0] + T[1] + T[2]) / 3, L.windows.dust, L.windows.scratches, L.windows.ior]);
-  at(CABIN.tint, [per[0]!, per[1]!, per[2]!, 0]);
+  at(CABIN.tint, [per[0]!, per[1]!, per[2]!, f.ablation & 255]);
   at(CABIN.view, [f.camPart.x, f.camPart.y, f.camPart.z, f.inside ? 1 : 0]);
   at(CABIN.glare, [L.windows.coverGlass.reflectance, L.windows.coverGlass.roughness, L.displays.pixelStructure[1], f.debugView]);
   at(CABIN.ballOcc, gm.ballOcc);

@@ -663,23 +663,33 @@ export class MeshBuilder {
     }
   }
 
-  /** Disc or annulus in a frame (z = c), facing +n (or -n with flip). */
+  /**
+   * Disc or annulus in a frame (z = c), facing +n (or -n with flip): concentric rings no wider than `maxEdge`
+   * (a wide disc as one ring of quads to its centre is a fan, and whatever is baked per vertex then runs along
+   * its spokes).
+   */
   disc(f: Frame, rOuter: number, rInner: number, sides: number, a: Attr, opts: { c?: number; flip?: boolean } = {}): void {
     this.part();
     const c = opts.c ?? 0;
     const n = opts.flip ? v3.neg(f.n) : f.n;
+    const rings = Math.max(1, Math.min(32, Math.ceil((rOuter - rInner) / this.maxEdge)));
     const base0 = this.vertexCount;
-    for (let i = 0; i <= sides; i++) {
-      const ang = (i / sides) * 2 * Math.PI;
-      const cx = Math.cos(ang);
-      const sy = Math.sin(ang);
-      this.vertex(local(f, cx * rOuter, sy * rOuter, c), n, f.x, [cx * rOuter, sy * rOuter], a);
-      this.vertex(local(f, cx * rInner, sy * rInner, c), n, f.x, [cx * rInner, sy * rInner], a);
+    const row = sides + 1;
+    for (let k = 0; k <= rings; k++) {
+      const r = rOuter + ((rInner - rOuter) * k) / rings;
+      for (let i = 0; i <= sides; i++) {
+        const ang = (i / sides) * 2 * Math.PI;
+        const cx = Math.cos(ang);
+        const sy = Math.sin(ang);
+        this.vertex(local(f, cx * r, sy * r, c), n, f.x, [cx * r, sy * r], a);
+      }
     }
-    for (let i = 0; i < sides; i++) {
-      const k = base0 + i * 2;
-      if (opts.flip) this.quad(k, k + 1, k + 3, k + 2);
-      else this.quad(k, k + 2, k + 3, k + 1);
+    for (let k = 0; k < rings; k++) {
+      for (let i = 0; i < sides; i++) {
+        const o = base0 + k * row + i;
+        if (opts.flip) this.quad(o, o + row, o + row + 1, o + 1);
+        else this.quad(o, o + 1, o + row + 1, o + row);
+      }
     }
   }
 

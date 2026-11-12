@@ -278,8 +278,8 @@
     "tunnel": { "onsetG": 6, "fullG": 11, "tau": 2.5, "maxDarken": 0.85 },
     "vibration": { "perAccel": 0.00008, "perKpa": 0.00006, "maxAmplitude": 0.004, "frequencies": [7.3, 11.9, 17.6], "buffet": { "peak": 2.0, "mach": 1.0, "width": 0.25 } }
   },
-  "displays": { "width": 1024, "height": 768, "rateHz": 15, "pages": ["flight", "orbit", "systems"], "pixelStructure": [2.5, 6.0], "tabSpan": 0.66 },
-  "transport": { "maxEdge": 0.035, "aoRays": 96, "aoDistance": 0.45, "sourceRays": 24, "sunMapSize": 2048, "sunMapMargin": 0.05, "probeSize": 128 },
+  "displays": { "width": 1024, "height": 768, "rateHz": 15, "pages": ["flight", "orbit", "systems"], "fastPages": ["flight", "entry", "landing"], "slowMinHz": 2, "pixelStructure": [2.5, 6.0], "tabSpan": 0.66 },
+  "transport": { "maxEdge": 0.035, "aoRays": 96, "aoDistance": 0.45, "sourceRays": 24, "sunMapSize": 2048, "sunMapMargin": 0.05, "lampMapSize": 1024, "probeSize": 128 },
   "alarms": { "overheatFraction": 0.85, "gLimit": 8, "gDoseFraction": 0.4, "plasmaBlackout": 0.2, "ablatorLow": 0.3, "rcsLow": 0.15 },
   "farLodPixels": 140
 }

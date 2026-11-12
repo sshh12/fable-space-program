@@ -292,6 +292,13 @@ export interface DisplaysDef {
   height: number;
   rateHz: number;
   pages: MfdPage[];
+  /**
+   * Pages that show fast flight data (attitude, rates, speeds, altitude): a display showing one is painted
+   * `rateHz` times a second or better whenever a camera can read it; the other pages may be painted less
+   * often to stay within the displays' main-thread budget, but never under `slowMinHz` (pacing.ts).
+   */
+  fastPages: MfdPage[];
+  slowMinHz: number;
   /** Screen pixels per display texel at which the RGB stripe structure starts and is fully resolved. */
   pixelStructure: [number, number];
   /**
@@ -312,6 +319,8 @@ export interface LightTransportDef {
   sourceRays: number;
   /** Cabin sun shadow map: resolution (texels) and the extra radius around the interior's bounds (m). */
   sunMapSize: number;
+  /** Side of one flood light's shadow map (lampmap.ts), texels. */
+  lampMapSize: number;
   sunMapMargin: number;
   /** Cabin probe (probe.ts): texels per side of a cube face. */
   probeSize: number;
@@ -389,6 +398,10 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   for (const id of Object.keys(l.windows.shades)) if (!mould.windows.some((w) => w.id === id)) fail(`windows.shades."${id}" is not a window of the mould line`);
   if (l.displays.pages.length !== l.console.displays.length) fail('displays.pages needs one default page per console display');
   for (const p of l.displays.pages) if (!MFD_PAGE_NAMES.includes(p)) fail(`displays.pages: unknown MFD page "${p}"`);
+  if (!Array.isArray(l.displays.fastPages)) fail('displays.fastPages: the pages painted at the full rate whatever they cost (may be empty)');
+  for (const p of l.displays.fastPages) if (!MFD_PAGE_NAMES.includes(p)) fail(`displays.fastPages: unknown MFD page "${p}"`);
+  if (!(l.displays.rateHz > 0)) fail('displays.rateHz: positive');
+  if (!(l.displays.slowMinHz > 0 && l.displays.slowMinHz <= l.displays.rateHz)) fail('displays.slowMinHz: in (0, rateHz]');
   if (l.windows.panes.length < 1 || l.windows.panes.length > 3) fail('windows.panes: one to three panes');
   if (!(l.lighting.cabinAlbedo > 0 && l.lighting.cabinAlbedo < 0.95)) fail('lighting.cabinAlbedo must be in (0, 0.95)');
   if (l.experience.vibration.frequencies.length === 0) fail('experience.vibration.frequencies: at least one frequency');
@@ -397,6 +410,7 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   const t = l.transport;
   if (!(t.maxEdge > 0.005) || !(t.aoRays >= 4 && t.aoRays <= 256) || !(t.sourceRays >= 1 && t.sourceRays <= 64) || !(t.aoDistance > 0)) fail('transport: maxEdge > 5 mm, aoRays 4..256, sourceRays 1..64, aoDistance > 0');
   if (!Number.isInteger(Math.log2(t.sunMapSize)) || t.sunMapSize < 256 || t.sunMapSize > 4096) fail('transport.sunMapSize: a power of two in 256..4096');
+  if (!Number.isInteger(Math.log2(t.lampMapSize)) || t.lampMapSize < 256 || t.lampMapSize > 2048) fail('transport.lampMapSize: a power of two in 256..2048');
   if (!Number.isInteger(Math.log2(t.probeSize)) || t.probeSize < 32 || t.probeSize > 512) fail('transport.probeSize: a power of two in 32..512');
   const cg = l.windows.coverGlass;
   if (!(cg.reflectance >= 0 && cg.reflectance <= 1) || !(cg.roughness >= 0 && cg.roughness <= 1)) fail('windows.coverGlass: reflectance and roughness in 0..1');

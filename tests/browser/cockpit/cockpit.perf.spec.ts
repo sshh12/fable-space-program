@@ -46,7 +46,8 @@ function summary(s: Stats): { interior: number; shadowP99: number; shadowMean: n
   const ambient = g('cockpit.ambient').p99;
   const sunMap = g('cockpit.sunMap').p99;
   const probe = g('cockpit.probe').p99 + g('cockpit.probeFilter').p99;
-  const interior = gbuffer + shadow.p99 + ambient + sunMap + probe;
+  // (The flood lights' shadow maps are rendered at start and after a control moved: nothing in a cabin at rest.)
+  const interior = gbuffer + shadow.p99 + ambient + sunMap + probe + g('cockpit.lampMap').p99;
   return { interior, shadowP99: shadow.p99, shadowMean: shadow.mean, gbuffer, ambient, sunMap, probe, glass, overlay, uploadMean: upload.mean, uploadP99: upload.p99, total: interior + glass + overlay + upload.mean };
 }
 

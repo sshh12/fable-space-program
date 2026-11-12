@@ -1,6 +1,7 @@
 /**
  * Functional checks of the cockpit in the lab (real renderer, FakeSim with the Kestrel stack):
- *  - the interior is drawn from the seat with the three displays painting at 15 Hz, no errors;
+ *  - the interior is drawn from the seat, the display showing the flight page painting at 15 Hz and the slow
+ *    pages paced within the displays' main-thread budget (pacing.ts), no errors;
  *  - CockpitControls: cyclePage walks every page and wraps; setPage shows up in 'ui.mfd' within 100 ms
  *    (read back from the texture: the accent underline sits under the new page's tab);
  *  - the lab forwards real key presses 9 / 0 / minus to cyclePage(0 / 1 / 2);
@@ -46,7 +47,7 @@ async function activeTab(page: Page, layer: number): Promise<number> {
   return found;
 }
 
-test('draws the interior from the seat, three displays painting at 15 Hz, no errors', async ({ page, pageLog }) => {
+test('draws the interior from the seat, the flight page painting at 15 Hz and the slow pages within the budget, no errors', async ({ page, pageLog }) => {
   test.setTimeout(240_000);
   await open(page, 'scene=leo');
   const geo = await page.evaluate(() => window.__cockpit!.geometry());
@@ -64,18 +65,25 @@ test('draws the interior from the seat, three displays painting at 15 Hz, no err
   expect(st.inside).toBe(true);
   expect(st.lod).toBe('lod0');
   expect(st.layout).toBe('kestrel');
-  const rate = st.displays.paints / 3 / (seconds / 1000);
-  // 15 Hz each, unless a paint costs more main-thread time than the displays' budget allows at 15 Hz (round 4,
-  // request app-integration-12: the displays together stay within DISPLAY_CPU_BUDGET of main-thread time
-  // per second, so a page that paints in up to 0.48 ms keeps its 15 Hz and a dearer one is paced down).
+  // The pacing rule (src/render/cockpit/pacing.ts; the lead's decision of round 5): a display showing a fast
+  // flight-data page (here display 0: the flight page) is painted 15 times a second or better whenever a
+  // camera can read it; the others (orbit, systems) share what it leaves of DISPLAY_CPU_BUDGET of main-thread
+  // time per second, by their cost per paint, never under the layout's floor.
+  const pages = await page.evaluate(() => [0, 1, 2].map((i) => window.__cockpit!.page(i)));
+  expect(pages).toEqual(['flight', 'orbit', 'systems']);
+  const rates = st.displays.perDisplay.map((n) => n / (seconds / 1000));
   const costPerPaint = st.displays.cpuMs / Math.max(1, st.displays.paints);
-  const paced = Math.min(15, DISPLAY_CPU_BUDGET / 3 / costPerPaint);
-  console.log(`displays: ${rate.toFixed(1)} paints per display per second, ${costPerPaint.toFixed(2)} ms per paint (the budget allows ${paced.toFixed(1)} Hz), ${((st.displays.cpuMs / (seconds / 1000)) / 60).toFixed(3)} ms per 60 Hz frame`);
-  expect(rate, 'paints per display per second').toBeGreaterThan(0.75 * paced);
-  expect(rate).toBeLessThan(16.5);
+  const paced = Math.min(15, Math.max(2, (DISPLAY_CPU_BUDGET - 15 * costPerPaint) / 2 / costPerPaint));
+  console.log(`displays: ${rates.map((r) => r.toFixed(1)).join(' / ')} paints per second (flight / orbit / systems), ${costPerPaint.toFixed(2)} ms per paint (the budget leaves the slow pages ${paced.toFixed(1)} Hz each), ${((st.displays.cpuMs / (seconds / 1000)) / 60).toFixed(3)} ms per 60 Hz frame`);
+  expect(rates[0], 'the flight page: paints per second').toBeGreaterThan(14.5);
+  expect(rates[0]).toBeLessThan(16.5);
+  for (const i of [1, 2]) {
+    expect(rates[i], `display ${i} (a slow page): paints per second`).toBeGreaterThan(0.75 * paced);
+    expect(rates[i]).toBeLessThan(16.5);
+  }
   // The brief's CPU line, here too: under 0.4 ms of main-thread time per frame at 60 frames a second.
   expect(st.displays.cpuMs / (seconds / 1000) / 60, 'display paint + upload + mips, ms of main thread per 60 Hz frame').toBeLessThan(0.4);
-  // Staggered: never more than one display per frame except for page changes (none here).
+  // Staggered: one display per frame (a fast page that has waited a frame may share one; not at this frame rate).
   expect(st.displays.paints).toBeLessThanOrEqual(st.displays.frames);
   const dbg = await page.evaluate(() => window.__cockpit!.debug());
   expect(dbg.mfdDefault).toBe(false);

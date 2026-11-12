@@ -28,11 +28,15 @@ import { MAX_DISPLAYS, MAX_FLOODS, MAX_WINDOWS } from './layout';
 import { MAX_CABIN_POLYS } from './lighting';
 import { EDGE_SPAN } from './mesh';
 
+/** A flood light's shadow map (lampmap.ts): the half angle of its frustum (the beam is dark beyond it) and its near plane, m. */
+export const LAMP_HALF_ANGLE = Math.acos(0.45);
+export const LAMP_NEAR = 0.02;
+
 export const CONTROL_FLOATS = 24;
 /** vec4s of one occlusion record as the shaders unpack it (occlusion.ts: 24 bytes per vertex). */
 export const OCC_VEC4 = 6;
 /** vec4s of the cabin uniform's header (CabinFrame in CABIN_CHUNK, before `polys`). */
-export const CABIN_HEADER_VEC4 = 24 + OCC_VEC4 + 7 * MAX_WINDOWS;
+export const CABIN_HEADER_VEC4 = 24 + OCC_VEC4 + 7 * MAX_WINDOWS + 4 * MAX_FLOODS;
 export const CABIN_HEADER_FLOATS = 4 * CABIN_HEADER_VEC4;
 export const CABIN_POLY_FLOATS = 4 * 6;
 export const CABIN_UNIFORM_FLOATS = CABIN_HEADER_FLOATS + MAX_CABIN_POLYS * CABIN_POLY_FLOATS;
@@ -66,6 +70,7 @@ export const CABIN = {
   ballOcc: 24,
   apertures: 24 + OCC_VEC4,
   sunTiles: 24 + OCC_VEC4 + 4 * MAX_WINDOWS,
+  lamps: 24 + OCC_VEC4 + 7 * MAX_WINDOWS,
 } as const;
 
 /** Declarations of group 1 (prefix of every cabin module); `scene` is the createSceneBindings WGSL. */
@@ -85,6 +90,30 @@ export const CABIN_DECLS = (scene: string): string => /* wgsl */ `
 /// The cabin probe (probe.ts): the lit interior seen from the cabin's centre, part-frame axes, prefiltered
 /// mips, luminance x cabin.probe.w^-1. While the probe itself is rendered a black cube is bound here.
 @group(1) @binding(10) var cabinProbe: texture_cube<f32>;
+/// The flood lights' shadow maps (lampmap.ts): one layer per lamp, depth 0 at the lens .. 1.
+@group(1) @binding(11) var cabinLampMaps: texture_depth_2d_array;
+/// Share of flood light i seen from a part-frame point with unit normal n (part frame) past the cabin's own
+/// parts: the lamp's shadow map, four bilinear comparisons three quarters of a texel apart about the point,
+/// which is first moved off its surface by a texel and a half of the map at its distance (no surface shades
+/// itself; a part's contact shadow starts that far from it).
+fn lampVisibility(i: u32, p: vec3f, n: vec3f) -> f32 {
+  if ((u32(cabin.tint.w + 0.5) & 128u) != 0u) { return 1.0; }
+  let m = cabin.lamps[i];
+  let size = f32(textureDimensions(cabinLampMaps).x);
+  let c0 = m * vec4f(p, 1.0);
+  if (c0.w <= ${LAMP_NEAR}) { return 1.0; }
+  let texel = c0.w * ${(2 * Math.tan(LAMP_HALF_ANGLE)).toFixed(5)} / size;
+  let c = m * vec4f(p + n * (1.5 * texel + 0.0006), 1.0);
+  let ndc = c.xyz / max(c.w, 1e-4);
+  let uv = vec2f(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
+  if (any(uv <= vec2f(0.0)) || any(uv >= vec2f(1.0))) { return 1.0; }
+  let o = 0.75 / size;
+  let lit = textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(-o, -0.4 * o), i, ndc.z)
+          + textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(0.4 * o, -o), i, ndc.z)
+          + textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(o, 0.4 * o), i, ndc.z)
+          + textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(-0.4 * o, o), i, ndc.z);
+  return 0.25 * lit;
+}
 fn cabinAmbient() -> CabinAmbient {
   var o: CabinAmbient;
   o.brightness = cabinAmb[0].w;
@@ -105,8 +134,8 @@ fn cabinBounce(n: vec3f) -> vec3f {
 ${scene}
 `;
 
-/** First binding of the scene sets in the cabin group (after the cabin's own bindings 0..10). */
-export const CABIN_SCENE_BINDING = 11;
+/** First binding of the scene sets in the cabin group (after the cabin's own bindings 0..11). */
+export const CABIN_SCENE_BINDING = 12;
 
 /**
  * One invocation per frame: the cabin quantities every pixel shares (uniform inter-reflection irradiance,
@@ -120,6 +149,8 @@ export const AMBIENT_WGSL = (scene: string): string => /* wgsl */ `
 @group(1) @binding(1) var mfdTex: texture_2d_array<f32>;
 @group(1) @binding(2) var<storage, read_write> outAmb: array<vec4f, ${AMBIENT_VEC4S}>;
 fn cabinPolyRadiance(i: u32) -> vec3f { return outAmb[2u + i].xyz; }
+// (The chunk's cabinLight looks the lamps' shadow maps up; this pass lights nothing and binds no map.)
+fn lampVisibility(i: u32, p: vec3f, n: vec3f) -> f32 { return 1.0; }
 ${scene}
 #include "cockpit_cabin"
 #include "cloud_shadow"
@@ -292,13 +323,14 @@ struct CabinFrame {
   sunMap: vec4f,                       // x = size of one window's tile in atlas uv, y = depth range (m), z = atlas size (texels), w = 1 when the sun lights the cabin this frame
   sunPart: vec4f,                      // xyz = unit direction to the sun (part frame), w = penumbra slope 2 tan(angular radius)
   misc: vec4f,                         // x = glass transmittance (mean), y = dust density, z = scratch density, w = pane ior
-  tint: vec4f,                         // rgb = transmittance of one pane (tint and Fresnel at normal incidence)
+  tint: vec4f,                         // rgb = transmittance of one pane (tint and Fresnel at normal incidence), w = cost attribution: terms switched off (CockpitFeature.setAblation; 0 = none)
   view: vec4f,                         // xyz = camera position in the part frame, w = 1 when the camera is inside the cabin
   glare: vec4f,                        // x = display cover glass reflectance (relative to bare glass), y = its anti-glare roughness, z = screen px per texel where the pixel structure is resolved, w = diagnostic view (0 = none)
   glassSun: vec4f,                     // rgb = the glazing's transmittance at normal incidence (all panes), w = panes
   ballOcc: array<vec4f, ${OCC_VEC4}>,  // the occlusion record (occlusion.ts) at the front of the attitude ball
   apertures: array<vec4f, ${4 * MAX_WINDOWS}>,  // per window (WindowMeta.aperture): outer-end centre + half width, inward normal + half height, tangent + corner radius, generator + prism length
   sunTiles: array<vec4f, ${3 * MAX_WINDOWS}>,   // per window, its tile of the cabin sun map: atlas u = dot(xyz, p_part) + w; atlas v likewise; x, y = metres per unit of atlas u, v (0 = the sun does not enter here), z, w = the tile's first atlas u, v
+  lamps: array<mat4x4f, ${MAX_FLOODS}>,         // per flood light: part frame -> clip space of its shadow map (lampmap.ts)
   polys: array<CabinPoly, ${MAX_CABIN_POLYS}>,
 }
 
@@ -488,13 +520,25 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
       let Lmax = select(luminance(cabinPolyRadiance(i)), luminance(P.radiance.rgb) * FLOOD_BEAM_GAIN, kind == POLY_FLOOD);
       if (Lmax * P.radiance.w * vis < CABIN_NEGLIGIBLE * (eKnown + luminance(diffuse)) * max(d2, 0.01)) { continue; }
     }
+    // Cosine at the source toward this point.
+    let inv = inverseSqrt(d2);
+    let cs = max(-dot(toC, P.normal.xyz) * inv, 0.0);
+    var beam = 1.0;
+    if (kind == POLY_FLOOD) {
+      // Nothing arrives outside the lamp's beam; inside it the lamp's shadow map (lampmap.ts) says what of
+      // the lamp this pixel sees past the cabin's parts, in place of the vertex's baked visibility (which
+      // has decided above whether the lamp reaches this surface at all): a lever, a strap, the console's
+      // edge throw their shadows, and what stands on a wall sits in its contact shadow.
+      beam = floodBeam(cs);
+      if (beam <= 0.0) { continue; }
+      vis = lampVisibility(index, posPart, nPart);
+      if (vis <= 0.0) { continue; }
+    }
     if ((kind == POLY_FLOOD && d2 > FLOOD_FAR2) || (kind == POLY_DISPLAY && d2 > DISPLAY_FAR2)) {
       // A flood's lens is a strip a hand long, a screen a hand and a half across: from more than twice its
       // size away it is a small source, E = L A cos(source) cos(receiver) / d^2 (within a few per cent of
       // the polygon's integral); a flood with the same beam about its lens normal as below.
-      let inv = inverseSqrt(d2);
-      let cs = max(-dot(toC, P.normal.xyz) * inv, 0.0);
-      let Lf = select(cabinPolyRadiance(i), P.radiance.rgb * floodBeam(cs), kind == POLY_FLOOD);
+      let Lf = select(cabinPolyRadiance(i), P.radiance.rgb * beam, kind == POLY_FLOOD);
       diffuse += Lf * (P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
       continue;
     }
@@ -507,8 +551,7 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     } else if (kind == POLY_PATCH) {
       L = P.radiance.rgb * sunScale;
     } else {
-      let c = dot(normalize(pos - (P.p0.xyz + P.p2.xyz) * 0.5), P.normal.xyz);
-      L = P.radiance.rgb * floodBeam(c);
+      L = P.radiance.rgb * beam;
     }
     diffuse += L * (PI * ff) * vis;
   }
@@ -908,7 +951,8 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
   d.wear = 0.0;
   d.grime = 0.0;
   let layer = i32(mat.c.w + 0.5) - 1;
-  if (layer >= 0) {
+  let off = u32(cabin.tint.w + 0.5);
+  if (layer >= 0 && (off & 8u) == 0u) {
     let tile = mat.d.x;
     let shift = vec2f(partHash(seed, 2), partHash(seed, 3));
     let t = uv / tile + shift;
@@ -930,7 +974,7 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
     }
     d.grime = tM.a;
   }
-  switch (pattern) {
+  switch (select(pattern, 0u, (off & 16u) != 0u)) {
     case 1u: { // quilted blanket: every diamond cell a pillow pinched along its stitched seams
       let a = vec2f(uvIn.x + uvIn.y, uvIn.x - uvIn.y) * 0.7071;
       let f = fract(a) - 0.5;
@@ -1048,6 +1092,16 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let shading = u32(mat.b.y + 0.5);
   let flags = in.misc.z;
   let isLabel = (flags & FLAG_LABEL) != 0u;
+  // Cost attribution (CockpitFeature.setAblation): terms switched off; bit 6 = the whole fragment.
+  let off = u32(cabin.tint.w + 0.5);
+  if ((off & 64u) != 0u) {
+    var plain: Shaded;
+    plain.n = normalize(in.n);
+    plain.t = normalize(in.t.xyz);
+    plain.roughness = 1.0;
+    plain.luminance = mat.a.rgb * 40.0;
+    return plain;
+  }
   let world = toRoot(cabin.m0, cabin.m1, cabin.m2, in.part);
   // Screen derivatives in uniform control flow: detail filtering, label filtering, the face normal.
   let duvx = dpdx(in.uv.xy);
@@ -1142,8 +1196,10 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let materialId = select(MATERIAL_STANDARD, MATERIAL_CLOTH, shading == 1u);
   let nPart = dirPart(n);
   let NoV = max(dot(n, viewDir), 1e-3);
-  let Ebounce = cabinBounce(nPart) * (occ.ao * cavity);
-  let Edirect = cabinLight(world, n, in.part, nPart, occ, amb.sunT * amb.cloudT, luminance(Ebounce));
+  var Ebounce = vec3f(0.0);
+  if ((off & 32u) == 0u) { Ebounce = cabinBounce(nPart) * (occ.ao * cavity); }
+  var Edirect = vec3f(0.0);
+  if ((off & 1u) == 0u) { Edirect = cabinLight(world, n, in.part, nPart, occ, amb.sunT * amb.cloudT, luminance(Ebounce)); }
   let E = Edirect + Ebounce;
   // In the probe a metal counts as a diffuse reflector of its own colour (it holds no specular light).
   let diffuseColor = select(albedo * (1.0 - metallic), albedo, probe);
@@ -1156,7 +1212,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
     if (shading == 1u) {
       // Cloth: fibres standing off the weave scatter light toward a grazing eye.
       reflected += mix(vec3f(0.07), albedo, 0.35) * E * (sq(1.0 - NoV) * 1.6 / PI);
-    } else {
+    } else if ((off & 4u) == 0u) {
       let vPart = dirPart(viewDir);
       var rn = nPart;
       if (mat.b.z > 0.0) {
@@ -1182,7 +1238,8 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   // Soft goods take the sun on their smooth surface (the interpolated normal): the facets of a blanket's
   // mesh are coarser than its quilting.
   let ngPart = dirPart(select(faceN, N, shading == 1u));
-  let sunVis = cabinSun(in.part, ngPart, shading == 1u);
+  var sunVis = vec3f(0.0);
+  if ((off & 2u) == 0u) { sunVis = cabinSun(in.part, ngPart, shading == 1u); }
   if (max(sunVis.r, max(sunVis.g, sunVis.b)) > 0.0) {
     var s: Surface;
     s.pos = world;
@@ -1328,6 +1385,17 @@ ${CASTER_COMMON}
   let u = dot(xf.u.xyz, p) + xf.u.w;
   let v = dot(xf.v.xyz, p) + xf.v.w;
   return vec4f(u * 2.0 - 1.0, 1.0 - v * 2.0, dot(xf.l.xyz, p) + xf.l.w, 1.0);
+}
+`;
+
+/** A flood light's shadow map (lampmap.ts): perspective from the lens over its beam, part frame -> clip. */
+export const LAMPMAP_WGSL = /* wgsl */ `
+struct LampXf { viewProj: mat4x4f }
+@group(0) @binding(0) var<uniform> xf: LampXf;
+@group(0) @binding(1) var<storage, read> controls: array<Control>;
+${CASTER_COMMON}
+@vertex fn vs(@location(0) pos: vec3f, @location(6) ctl: vec2u) -> @builtin(position) vec4f {
+  return xf.viewProj * vec4f(animated(pos, ctl), 1.0);
 }
 `;
 

@@ -267,10 +267,19 @@ export function buildFixtures(ctx: CabinContext): void {
   b.group('fdfPouch');
   const fp = L.fixtures.dataFile;
   const fdf = seatedFrame(ctx, fp.azDeg, fp.y, 0.22, 0.26, 0.05);
-  b.box(offsetFrame(fdf, 0, 0, -0.025), 0.11, 0.13, 0.025, 0.012, ctx.m('pouch'));
-  b.box(offsetFrame(fdf, 0, 0.11, 0.002), 0.105, 0.012, 0.004, 0.003, ctx.m('velcro', { flags: FLAG_OVERLAY }));
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) standoff(ctx, 'fdfPouch', local(fdf, sx * 0.08, sy * 0.1, -0.049), fdf.n, 0.006, 'webbing');
-  ctx.labelQuad(fdf, 0, -0.03, 0.12, 0.016, 'FLIGHT DATA FILE', 'pouch', { color: 1 });
+  // A sewn document pouch: a flat padded envelope (the books in it give it its lumps), its flap held down by
+  // a hook-and-loop strip, a corner tab on each side sewn to the wall's hard points.
+  {
+    const cover = softCover(ctx, fdf, 0.22, 0.26, 0.05, 'pouch', [], 0.4, 3);
+    const flapV = 0.075;
+    b.surface(18, 1, (i, j) => {
+      const u = -0.1 + (0.2 * i) / 18;
+      const v = flapV + (j - 0.5) * 0.022;
+      return { p: local(fdf, u, v, cover(u, v) + 0.0016), uv: [u, v] };
+    }, ctx.m('velcro', { flags: FLAG_OVERLAY }));
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) standoff(ctx, 'fdfPouch', local(fdf, sx * 0.1, sy * 0.12, -0.049), fdf.n, 0.006, 'webbing');
+    ctx.labelQuad(offsetFrame(fdf, 0, -0.03, Math.max(cover(0, -0.03), cover(-0.06, -0.03), cover(0.06, -0.03)) + 0.0012), 0, 0, 0.12, 0.016, 'FLIGHT DATA FILE', 'pouch', { color: 1 });
+  }
   // (The hook-and-loop squares on the blankets are part of the blankets: cabin/shell.ts.)
 
   // ---- stowage: soft bags strapped to the upper wall, a checklist card on hook-and-loop by the commander
@@ -294,40 +303,107 @@ export function buildFixtures(ctx: CabinContext): void {
 }
 
 /**
- * A soft stowage bag on the wall: a padded fabric box whose front bulges, held by two webbing straps that run
- * round it to the wall with a cam buckle each, a name tag on hook-and-loop.
+ * The sewn cover of a soft pack on the wall (a stowage bag, a document pouch) as one displaced surface: a
+ * pillow that bulges from its seam at the wall side to `depth` over its middle, cinched where a strap runs
+ * over it (`straps`: their u positions), gathered into ripples beside each strap, lumpy with what is packed
+ * in it (`fill` 0..1). Frame f: the front plane of the pack's envelope (z = 0), the wall side at z = -depth.
+ * Returns the cover's height z(u, v) in that frame, for what is sewn or strapped onto it.
+ */
+function softCover(ctx: CabinContext, f: Frame, w: number, h: number, depth: number, mat: string, straps: number[], fill: number, seed: number): (u: number, v: number) => number {
+  const edge = (t: number): number => Math.pow(Math.max(0, 1 - Math.min(1, Math.abs(t)) ** 4), 0.45);
+  const z = (u: number, v: number): number => {
+    const a = (2 * u) / w;
+    const c = (2 * v) / h;
+    const rim = edge(a) * edge(c);
+    let t = depth * rim * (0.8 + 0.2 * (1 - a * a) * (1 - c * c));
+    // What is packed in it: broad lumps, more of them the fuller the pack.
+    t += depth * 0.11 * fill * rim * (Math.sin(u * 23 + seed * 1.3) * Math.sin(v * 17 + seed * 0.7) + 0.5 * Math.sin(u * 41 + v * 29 + seed));
+    for (const us of straps) {
+      const d = u - us;
+      const g = Math.exp(-((d / 0.014) ** 2));
+      // The strap's groove, and the cloth gathered into ripples on either side of it.
+      t -= 0.011 * g * Math.pow(rim, 0.35);
+      t += 0.0026 * Math.sin(v / 0.0115 + 9 * us + 2.5 * Math.sin(v / 0.047 + seed)) * Math.exp(-Math.abs(d) / 0.032) * (1 - g) * rim;
+    }
+    return -depth + Math.max(0, t);
+  };
+  const ni = Math.max(8, Math.round(w / 0.011));
+  const nj = Math.max(8, Math.round(h / 0.011));
+  ctx.b.surface(ni, nj, (i, j) => {
+    const u = -w / 2 + (w * i) / ni;
+    const v = -h / 2 + (h * j) / nj;
+    return { p: local(f, u, v, z(u, v)), uv: [u, v] };
+  }, ctx.m(mat));
+  // The seam round the pack at the wall side: a piping cord.
+  const loop: Vec3[] = [];
+  const r = Math.min(w, h) * 0.18;
+  for (let k = 0; k <= 48; k++) {
+    const a = (k / 48) * 2 * Math.PI;
+    const cu = Math.cos(a);
+    const su = Math.sin(a);
+    // A rounded rectangle just inside the footprint.
+    const px = Math.sign(cu) * (w / 2 - r - 0.004) + cu * r;
+    const py = Math.sign(su) * (h / 2 - r - 0.004) + su * r;
+    loop.push(local(f, px, py, z(px, py) + 0.0015));
+  }
+  ctx.b.tube(loop, 0.0022, 6, ctx.m(mat, { ao: 0.8 }));
+  return z;
+}
+
+/**
+ * A soft stowage bag on the wall: a sewn, packed bag (softCover) under two webbing straps that are pulled
+ * tight over it (they lie in the grooves they press into it, down to the wall above and below the bag) with
+ * a cam buckle each, a zip across its upper third, a name tag on hook-and-loop.
  */
 function stowageBag(ctx: CabinContext, az: number, y: number, w: number, h: number, strapMat: string, label: string): void {
   const b = ctx.b;
   const name = b.groupName;
   const depth = 0.085;
   const f = seatedFrame(ctx, az, y, w, h, depth);
-  // Body: the back half square to the wall, the front a rounder, softer half that bulges a little.
-  b.box(offsetFrame(f, 0, 0, -depth * 0.75), w / 2, h / 2, depth * 0.25, 0.012, ctx.m('pouch', { ao: 0.8 }));
-  b.box(offsetFrame(f, 0, 0, -depth * 0.32), w / 2 - 0.004, h / 2 - 0.004, depth * 0.32, 0.03, ctx.m('pouch'));
-  // Zip along the top seam.
-  b.box(offsetFrame(f, 0, h / 2 - 0.006, -depth * 0.35), w / 2 - 0.02, 0.0035, 0.004, 0.0015, ctx.m('cableBlack'));
-  for (const s of [-1, 1]) {
-    const x = s * w * 0.28;
-    // The strap over the front and back to the wall above and below the bag.
-    b.box(offsetFrame(f, x, 0, 0.0012), 0.0125, h / 2 - 0.012, 0.0012, 0.0006, ctx.m(strapMat, { flags: FLAG_OVERLAY }));
+  const strapU = [-w * 0.28, w * 0.28];
+  const seed = label.length + label.charCodeAt(0);
+  const cover = softCover(ctx, f, w, h, depth, 'pouch', strapU, 0.8, seed);
+  // Zip across the upper third: its tape follows the cover.
+  const zipV = h * 0.31;
+  b.surface(28, 1, (i, j) => {
+    const u = -w * 0.4 + (w * 0.8 * i) / 28;
+    const v = zipV + (j - 0.5) * 0.007;
+    return { p: local(f, u, v, cover(u, v) + 0.0012), uv: [u, v] };
+  }, ctx.m('cableBlack', { flags: FLAG_OVERLAY }));
+  b.box(offsetFrame(f, w * 0.4, zipV, cover(w * 0.4, zipV) + 0.003), 0.007, 0.004, 0.002, 0.001, ctx.m('steel'));
+  for (const x of strapU) {
+    // The strap in its groove, from the wall side below the bag over the front to the wall side above it.
+    const half = 0.0125;
+    const nj = Math.max(12, Math.round(h / 0.012));
+    b.surface(1, nj, (i, j) => {
+      const v = -h / 2 + (h * j) / nj;
+      return { p: local(f, x + (i - 0.5) * 2 * half, v, cover(x, v) + 0.0016), uv: [(i - 0.5) * 2 * half, v] };
+    }, ctx.m(strapMat, { flags: FLAG_OVERLAY }));
     b.group(`mount:${name}`);
     for (const sy of [-1, 1]) {
-      const top = local(f, x, sy * (h / 2 - 0.012), 0.0012);
+      // From where the strap leaves the bag to its footman loop on the wall.
+      const top = local(f, x, sy * (h / 2), -depth + 0.0016);
       const atWall = fitWall(ctx, local(f, x, sy * (h / 2 + 0.03), -depth), v3.neg(f.n));
       // (Ends a few millimetres off the wall: the strap's own thickness must not reach into it.)
       const wallEnd = v3.addScaled(atWall, v3.normalize(v3.sub(top, atWall)), 0.004);
       const dir = v3.normalize(v3.sub(wallEnd, top));
       const side = v3.normalize(v3.cross(dir, f.n));
       const ff = frameAt(v3.lerp(top, wallEnd, 0.5), side, dir);
-      b.box(ff, 0.0125, v3.dist(top, wallEnd) / 2, 0.0012, 0.0006, ctx.m(strapMat));
+      b.box(ff, half, v3.dist(top, wallEnd) / 2, 0.0012, 0.0006, ctx.m(strapMat));
+      b.tube([v3.addScaled(wallEnd, side, -half - 0.003), v3.addScaled(wallEnd, side, half + 0.003)], 0.0022, 6, ctx.m('steel'), { caps: true });
     }
     b.group(name);
-    // Cam buckle on the front.
-    b.box(offsetFrame(f, x, -h * 0.18, 0.004), 0.016, 0.011, 0.0028, 0.0012, ctx.m('aluminium'));
+    // Cam buckle where the strap crosses the front.
+    const bv = -h * 0.18;
+    b.box(offsetFrame(f, x, bv, cover(x, bv) + 0.0045), 0.016, 0.011, 0.0028, 0.0012, ctx.m('aluminium'));
+    b.box(offsetFrame(f, x, bv - 0.006, cover(x, bv) + 0.0078), 0.013, 0.0035, 0.0012, 0.0006, ctx.m('steel'));
   }
-  b.box(offsetFrame(f, 0, h * 0.12, 0.0015), w * 0.16, 0.016, 0.0015, 0.0008, ctx.m('velcro', { flags: FLAG_OVERLAY }));
-  ctx.labelQuad(offsetFrame(f, 0, h * 0.12, 0.003), 0, 0, w * 0.3, 0.012, label, 'pouch', { color: 1 });
+  // Name tag on hook-and-loop, sewn on over the bag's crown.
+  const tagV = h * 0.1;
+  let top = -Infinity;
+  for (const du of [-1, 0, 1]) for (const dv of [-1, 0, 1]) top = Math.max(top, cover(du * w * 0.15, tagV + dv * 0.015));
+  b.box(offsetFrame(f, 0, tagV, top + 0.0015), w * 0.16, 0.016, 0.0015, 0.0008, ctx.m('velcro', { flags: FLAG_OVERLAY }));
+  ctx.labelQuad(offsetFrame(f, 0, tagV, top + 0.003), 0, 0, w * 0.3, 0.012, label, 'pouch', { color: 1 });
 }
 
 /**

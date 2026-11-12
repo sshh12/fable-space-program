@@ -186,14 +186,35 @@ function shade(ctx: CabinContext, g: OpeningGeom, o: Opening, extension: number)
   const v0 = o.height / 2 + w.bezelWidth * 0.35;
   const cassette = offsetFrame(f, 0, v0, 0.011);
   ctx.b.box(cassette, hw, 0.011, 0.011, 0.004, ctx.m('closeout'));
+  // Guide rails from under the cassette to a foot block on the bezel's lower edge (no rail ends in the air).
+  const railTop = v0 - 0.011;
+  const railBottom = -(o.height / 2 + w.bezelWidth * 0.3);
   for (const s of [-1, 1]) {
-    const rail = offsetFrame(f, s * (o.width / 2 + w.bezelWidth * 0.5), 0, 0.004);
-    ctx.b.box(rail, 0.004, o.height / 2, 0.004, 0.001, ctx.m('aluminium'));
+    const u = s * (o.width / 2 + w.bezelWidth * 0.5);
+    ctx.b.box(offsetFrame(f, u, (railTop + railBottom) / 2, 0.004), 0.004, (railTop - railBottom) / 2, 0.004, 0.001, ctx.m('aluminium'));
+    ctx.b.box(offsetFrame(f, u, railBottom - 0.004, 0.005), 0.008, 0.006, 0.005, 0.0015, ctx.m('closeout'));
+    ctx.b.cylinder(local(f, u, railBottom - 0.004, 0.0095), f.n, 0.0025, 0.0012, 8, ctx.m('steel'), { caps: 'top' });
   }
   const ext = Math.max(0, Math.min(1, extension));
   const vBar = v0 - 0.012 - ext * (o.height + w.bezelWidth * 0.3);
   ctx.b.box(offsetFrame(f, 0, vBar, 0.009), o.width / 2 + 0.003, 0.006, 0.005, 0.002, ctx.m('aluminium'));
-  ctx.b.box(offsetFrame(f, 0, vBar - 0.012, 0.012), 0.022, 0.006, 0.004, 0.002, ctx.m('webbingOrange'));
+  // The pull tab: a loop of flat webbing sewn round the bar, hanging a thumb's length below it.
+  {
+    const tab = ctx.m('webbingOrange');
+    const half = 0.011;
+    const drop = 0.03;
+    const loop: Vec3[] = [];
+    for (let k = 0; k <= 12; k++) {
+      const t = k / 12;
+      // Down the front of the bar, round the end of the loop, back up behind.
+      const a = Math.PI * t;
+      loop.push(local(f, 0, vBar - 0.006 - drop * Math.sin(a) * (0.6 + 0.4 * Math.sin(a)), 0.0145 + 0.0035 * Math.cos(a)));
+    }
+    ctx.b.surface(1, loop.length - 1, (i, j) => {
+      const p = loop[j]!;
+      return { p: v3.addScaled(p, f.x, (i - 0.5) * 2 * half), uv: [i * 2 * half, j * (drop * 2) / (loop.length - 1)] };
+    }, tab);
+  }
   if (ext > 0.02) {
     const fabric = ctx.m('shade');
     const p = (u: number, v: number): Vec3 => local(f, u, v, 0.006);
@@ -259,7 +280,7 @@ export function buildHatch(ctx: CabinContext): void {
   const floorF = g.plane(T - pocket);
   // In rings a few centimetres apart (the light baked per vertex then falls off smoothly over the floor, not
   // in streaks along long radial quads).
-  const floorRings = ctx.detail === 0 ? 7 : 1;
+  const floorRings = ctx.detail === 0 ? 12 : 1;
   for (let k = 0; k < floorRings; k++) {
     const ring = (t: number): Vec3[] => pocketLoop.map(([u, v], i) => local(floorF, u + (holeLoop[i]![0] - u) * t, v + (holeLoop[i]![1] - v) * t));
     ringBetween(ctx, ring(k / floorRings), ring((k + 1) / floorRings), ctx.m('hatch', { ao: 0.7 }), () => g.inward, (i) => v3.normalize(localDirOf(floorF, -pocketLoop[i]![1], pocketLoop[i]![0])));

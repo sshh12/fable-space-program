@@ -298,7 +298,8 @@ export function buildShell(ctx: CabinContext): Region[] {
   b.patch(
     (s, t) => revPoint(m.tunnelInnerRadius, yTop + (yDock - yTop) * t, s * TWO_PI),
     detail === 0 ? 64 : 24,
-    1,
+    // (In rows a few centimetres high at full detail: what is baked per vertex does not run down the tunnel in streaks.)
+    detail === 0 ? Math.max(1, Math.ceil((yDock - yTop) / (1.5 * layout.transport.maxEdge))) : 1,
     structure,
     { flip: true, normalAt: (s) => v3.neg(radialDir(s * TWO_PI)) },
   );
@@ -430,6 +431,21 @@ function ringFrameArc(ctx: CabinContext, y: number, a0: number, a1: number, dept
     const p2 = at(a, rIn, y + hf);
     const p3 = at(a, m.innerRadius(y + hf), y + hf);
     b.strip(p0, p1, p2, p3, n, { x: 0, y: 1, z: 0 }, attr);
+  }
+  // Stencilled on the flange every third bay: the frame's number and station, or its part number.
+  if (ctx.detail > 0) return;
+  const ring = ctx.layout.shell.ringFramesY.indexOf(y) + 1;
+  const ns = ctx.layout.shell.stringers;
+  for (let k = 0; k < ns; k++) {
+    if ((k + ring) % 3 !== 0) continue;
+    const a = ((k + 1) / ns) * TWO_PI;
+    const half = 0.05 / rIn;
+    if (a - half < a0 || a + half > a1) continue;
+    const n = v3.neg(radialDir(a));
+    const f = frameAt(at(a, rIn, y), v3.cross(up, n), up);
+    // (One atlas entry per text: a frame carries its number and station, and its part number, alternately.)
+    const text = (k + ring) % 2 === 0 ? `FR ${ring}  STA ${Math.round(y * 1000)}` : `81K${ring}04-101`;
+    ctx.labelQuad(f, 0, 0, 0.074, 0.0085, text, 'structure', { color: 1, lift: 0.0006, style: { weight: 500 } });
   }
 }
 
@@ -644,5 +660,17 @@ function closeoutPanel(ctx: CabinContext, a0: number, a1: number, y0: number, y1
     const y = y0 + (y1 - y0) * tt;
     const n = wallInward(ctx, a, y);
     b.cylinder(wallPoint(ctx, a, y, inset - 0.0005), n, 0.0042, 0.0018, 10, steel, { radius1: 0.0034, caps: 'top' });
+  }
+  // Stencilled access-panel number and part number, low on the panel.
+  const am = (a0 + a1) / 2;
+  const width = (a1 - a0) * m.innerRadius((y0 + y1) / 2);
+  if (width > 0.16 && y1 - y0 > 0.12) {
+    const ys = y0 + (y1 - y0) * 0.24;
+    const n = wallInward(ctx, am, ys);
+    const upDir = v3.normalize(v3.reject({ x: 0, y: 1, z: 0 }, n));
+    const f = frameAt(wallPoint(ctx, am, ys, inset), v3.cross(upDir, n), upDir);
+    const id = Math.round((am / TWO_PI) * 24 + 24) % 24;
+    ctx.labelQuad(f, 0, 0.012, 0.09, 0.011, `ACCESS ${String.fromCharCode(65 + (id % 6))}${1 + (id % 4)}`, 'closeout', { color: 1, lift: 0.0006, style: { weight: 600 } });
+    ctx.labelQuad(f, 0, -0.002, 0.09, 0.0065, '81K710-3  TORQUE 2.5 N·m', 'closeout', { color: 4, lift: 0.0006, style: { weight: 500 } });
   }
 }
