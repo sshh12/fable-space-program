@@ -22,8 +22,8 @@ launch is announced. Caveats and the rerun command: `docs/capacity/2026-11-12-pl
   secret, a planted TODO and a planted boundary violation (three throwaway branches, deleted).
 - **Cloud: the stage-0 skeleton is up on the Hobby plan** (game, shell with CDN, postgres 18, hourly dump, two
   buckets; Modal environment `fsp`), and costs U + $5 = $8.75 against the $30 idle ceiling on the first reading.
-- **Not done**: the 6-hour and 72-hour idle cost readings (time), the cloud derating benchmark D7 (not built),
-  the compose suites (Docker not allowed this round). Section 7.
+- **Not done**: the 6-hour and 72-hour idle cost readings (time), the compose suites (Docker not allowed
+  this round). Section 7.
 - **Findings that change figures of ARCHITECTURE**: the boot pack cannot hold levels 0-3 (122 MB); Railway's CDN
   never caches a ranged response, so the mirror serves 256 KiB slices; a first session is 461-577 MB, not 300.
 
@@ -210,7 +210,11 @@ Details and tables: `docs/capacity/2026-11-12-platform.md`.
   services: see the running log.
 - D6 bucket from Modal, 15 minutes per level: 20 fetchers pass (p95 378 ms, 0 errors); 500 pass (p95 233 ms,
   0.018 % errors, 1.07 Gbit/s); **2,000 FAIL** (p95 553 ms, 2.74 % errors, 1.40 Gbit/s).
-- D7 derating: not measured.
+- D7 derating (job role `derating`, six real regimes of createSim with real terrain, 1/2/4/8 synchronised
+  sleep-scheduled workers, 30 s each): Railway (Xeon Gold 5520+, 8 vCPU replica, temporary) per-thread p50 /
+  p99 per tick of six world steps 667 / 6,786 us at 1 worker, 625 / 7,126 at 8; this machine 204 / 2,394 and
+  397 / 4,319: derating about 3x at one worker, 1.6x at eight; 0.022-0.027 vCPU-seconds per vessel-second on
+  Railway (0.010-0.016 here); idle CPU 0.00004 vCPU.
 - D8 first session: 577 MB as the browser loads today (tiles 304, sky 135, assets 136), 461 MB with the OPFS
   cache; per-visitor and front-page figures recomputed in the capacity report (23-29 TB and $1,590-1,990 for
   the all-miss mirror day instead of 15 TB and $750-1,125).
@@ -220,12 +224,11 @@ Details and tables: `docs/capacity/2026-11-12-platform.md`.
 - **The 6-hour and 72-hour idle cost readings (D1).** They need the skeleton untouched for that long after the
   measurement traffic; this session cannot wait three days. The skeleton is left running at its idle floor
   (as the brief asks); `node deploy/railway/usage.mjs snapshot` at +6 h and +72 h, then `report`.
-- **The cloud derating benchmark (D7).** Not built: a faithful harness needs the real stepVessel regimes of
-  codebase-audit 3.3 (vessels assembled in each regime's state, the world environment, flat ground for
-  touchdown) run by 1, 2, 4 and 8 synchronised, sleep-scheduled worker threads on the game replica with its
-  limit raised to 8 vCPU / 8 GB and put back. The budget went to the measurements that decide the delivery
-  design (CDN, mirror mode, first session, bucket). It belongs with `server-persistence` or `deploy-loadtest`,
-  whose shard code it would measure; nothing in stage 0 depends on it.
+- **D7 measured on a temporary replica, not on `game` itself**: the benchmark ran in the `ops` service at
+  8 vCPU / 8 GB (same hardware class), deleted afterwards, so `game`'s limit never had to be raised and put
+  back. Its regimes are whole `createSim` world steps of the six mission states (stepVessel plus the world
+  around it), not stepVessel alone as in codebase-audit 3.3, whose touchdown regime on flat stand-in ground is
+  not reproduced.
 - **The compose suites** (dump and restore in the pinned image, compose Postgres encoding, the VM cap): built,
   not run, by the coordinator's rule (no `.wslconfig` cap).
 - **The recorded trace is 4 minutes, not 10**: the pilot reached orbit in 237 s; the session ends there by
@@ -427,3 +430,6 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   cross-origin isolated. The run waited 63 minutes for the one GPU slot.
 - 03:20 `npm run stack -- status` of the build-page stack: launcher 75 MB, game 71 MB, shell 86 MB, Postgres
   143 MB: 375 MB.
+- 03:20-03:30 D7 derating built and run: this machine (bundle, data/tiles) and Railway (`ops` at 8 vCPU / 8 GB,
+  terrain through the pack source from the bucket, buildId d85310b07e61351a; the `ops` service
+  cbd6d484-99b0-42b3-99a2-0ae58596a37b deleted after the run). Numbers in section 6 and the capacity report.
