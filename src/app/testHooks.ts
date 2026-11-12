@@ -56,6 +56,8 @@ export interface AppDebug {
   groundSamples(distances: number[], bearings: number): Promise<{ distance: number; bearingDeg: number; kind: string; heightAboveSea: number | null; x: number | null; y: number | null }[]>;
   /** Wall time of `renderer.warm()` before the first frame, ms. */
   warmMs(): number;
+  /** Of the last frame-exact capture: who was busy before and after its frames, and how many meterings its lead-in took. */
+  exactInfo(): { busyBefore: string[]; busyAfter: string[]; rounds: number; busyLeadIn: string[] } | null;
   /**
    * Bodies whose disc is at least partly inside the presented frame (framing.ts): id, whether it is the star,
    * angular radius (rad), centre in normalised device coordinates (x right, y up, -1..1 inside; null when the
@@ -139,6 +141,9 @@ export interface AppBrief {
   warpIndex: number;
   warpFactor: number;
   navballMode: string;
+  /** Attitude against the navball's horizon, degrees (roll 0 = heads up, 180 = heads down). */
+  pitchDeg: number;
+  rollDeg: number;
   milestones: string[];
   cameraKind: string;
   viewMode: string;
@@ -208,6 +213,10 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     resumeFromPictureStop: () => game.resumeFromPictureStop(),
     pictureStopsFired: () => game.pictureStopsFired(),
     warmMs: () => game.warmMs,
+    exactInfo: () => {
+      const e = game.renderer.exactInfo();
+      return e ? { busyBefore: [...e.busyBefore], busyAfter: [...e.busyAfter], rounds: e.rounds, busyLeadIn: [...e.busyLeadIn] } : null;
+    },
     groundSamples: async (distances, bearings) => {
       const s = game.snapshot();
       const cam = game.camera();
@@ -337,6 +346,8 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         warpIndex: s.warp.index,
         warpFactor: s.warp.factor,
         navballMode: s.navball.mode,
+        pitchDeg: s.navball.pitchDeg,
+        rollDeg: s.navball.rollDeg,
         milestones: s.milestones.map((m) => m.id),
         cameraKind: game.camera().kind,
         viewMode: game.views.mode,

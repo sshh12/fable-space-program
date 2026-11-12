@@ -8,10 +8,13 @@
  * windowed and uncaptured (the viewport stays 1280 x 720); `window.__test.ready` resolves when the loading screen
  * has gone, i.e. when the view at the start position is final.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
 import type { LoadingReport } from '../../../src/app/loading';
 import type { AppBrief } from '../../../src/app/testHooks';
+import type { FrameBreakdown } from '../../../src/app/timing';
 import { appUrl, assertDiscreteGpu, assertRealImage, captureDeterministic, expect, expectNoErrors, openPage, pngDiff, saveScreenshot, test, waitIdle } from '../harness';
 
 test.setTimeout(12 * 60_000);
@@ -73,11 +76,15 @@ async function openGame(page: Page, query = ''): Promise<void> {
 
 /**
  * How water-like the picture is around a point: the share of the pixels of a 13 x 13 patch that are both smooth
- * (luminance within 2 of 255 of the right and lower neighbours together) and bluish (blue at least 3 above red).
- * Open water under a daylight sky is both; lava plain and scrub are textured and neutral to brown. Measured on
- * this spec's and the browser mission's pictures: 0.40-0.49 on sea (the frame of 2026-11-11 in which the land
- * around the pad was drawn as sea, and the real sea off the pad's coast outside the sun's glitter), 0.00-0.07 on
- * land in three different looks of the ground. Colour alone does not tell them apart (fresh lava is blue-grey).
+ * (the luminance steps to the right and the lower neighbour together within 4 % of the pixel's luminance, taken
+ * as 16 of 255 at least) and bluish (blue at least 3 above red). Open water under a daylight sky is both; lava
+ * plain and scrub are textured and neutral to brown. Measured on this spec's and the browser mission's pictures:
+ * 0.37-0.65 on sea (the frame of 2026-11-11 in which the land around the pad was drawn as sea: 0.62-0.65; the real
+ * sea off the pad's coast outside the sun's glitter: 0.37-0.45), 0.00-0.06 on land, 0.11 on the pad's concrete in
+ * shadow. Colour alone does not tell them apart (fresh lava is blue-grey), and a smoothness in absolute levels
+ * takes dark ground in shadow for water (0.19-0.42 with a step of 2 of 255). Two things it cannot tell from
+ * water: the sun's glitter on real water (bright, warm, rough: 0.00) and the white of the vehicle in shade
+ * (0.67), so a land point hidden behind the stack reads as water: the limit on the share of points leaves room.
  */
 function waterLikeAt(img: PNG, cx: number, cy: number): number {
   const lum = (i: number): number => 0.2126 * img.data[i]! + 0.7152 * img.data[i + 1]! + 0.0722 * img.data[i + 2]!;
@@ -87,7 +94,7 @@ function waterLikeAt(img: PNG, cx: number, cy: number): number {
     for (let x = Math.max(0, Math.round(cx) - 6); x <= Math.min(img.width - 2, Math.round(cx) + 6); x++) {
       const i = (y * img.width + x) * 4;
       const l = lum(i);
-      if (Math.abs(l - lum(i + 4)) + Math.abs(l - lum(i + img.width * 4)) <= 2 && img.data[i + 2]! - img.data[i]! >= 3) water++;
+      if (Math.abs(l - lum(i + 4)) + Math.abs(l - lum(i + img.width * 4)) <= 0.04 * Math.max(l, 16) && img.data[i + 2]! - img.data[i]! >= 3) water++;
       n++;
     }
   }
@@ -109,13 +116,36 @@ interface GroundSample {
  * like water (waterLikeAt at 0.25 or more). The same for the points the authority calls water, as a reading of
  * the statistic on real sea when the view has some.
  */
-function landAsWater(png: Buffer, samples: GroundSample[]): { land: number; landAsWater: number; water: number; waterAsWater: number } {
+function landAsWater(png: Buffer, samples: GroundSample[], annotated?: string): { land: number; landAsWater: number; water: number; waterAsWater: number; flagged: string[] } {
   const img = PNG.sync.read(png);
   const inFrame = samples.filter((p) => p.x !== null && p.y !== null);
   const land = inFrame.filter((p) => p.kind === 'land' && (p.heightAboveSea === null || p.heightAboveSea >= 3));
   const water = inFrame.filter((p) => p.kind === 'water');
-  const share = (list: GroundSample[]): number => (list.length === 0 ? 0 : list.filter((p) => waterLikeAt(img, p.x!, p.y!) >= 0.25).length / list.length);
-  return { land: land.length, landAsWater: share(land), water: water.length, waterAsWater: share(water) };
+  const looksLikeWater = new Map(inFrame.map((p) => [p, waterLikeAt(img, p.x!, p.y!) >= 0.25]));
+  const share = (list: GroundSample[]): number => (list.length === 0 ? 0 : list.filter((p) => looksLikeWater.get(p)).length / list.length);
+  if (annotated !== undefined) {
+    // The points on the picture, to look at: land green (red where it reads as water), water blue (white where it
+    // reads as water), land under 3 m above the sea grey.
+    const out = PNG.sync.read(png);
+    for (const p of inFrame) {
+      const isLand = land.includes(p);
+      const colour = isLand ? (looksLikeWater.get(p) ? [255, 40, 40] : [60, 255, 90]) : p.kind === 'water' ? (looksLikeWater.get(p) ? [255, 255, 255] : [60, 140, 255]) : [150, 150, 150];
+      for (let y = Math.round(p.y!) - 4; y <= Math.round(p.y!) + 4; y++) {
+        for (let x = Math.round(p.x!) - 4; x <= Math.round(p.x!) + 4; x++) {
+          if (x < 0 || y < 0 || x >= out.width || y >= out.height) continue;
+          // A ring: the picture under the point stays visible.
+          if (Math.max(Math.abs(x - Math.round(p.x!)), Math.abs(y - Math.round(p.y!))) < 3) continue;
+          const i = (y * out.width + x) * 4;
+          out.data[i] = colour[0]!;
+          out.data[i + 1] = colour[1]!;
+          out.data[i + 2] = colour[2]!;
+        }
+      }
+    }
+    fs.writeFileSync(annotated, PNG.sync.write(out));
+  }
+  const flagged = land.filter((p) => looksLikeWater.get(p)).map((p) => `${p.distance} m at ${p.bearingDeg} deg (${p.x!.toFixed(0)}, ${p.y!.toFixed(0)})`);
+  return { land: land.length, landAsWater: share(land), water: water.length, waterAsWater: share(water), flagged };
 }
 
 test('the loading screen shows real progress and stays until the view at the pad is final; the first frame has land', async ({ page, pageLog }) => {
@@ -196,6 +226,22 @@ test('the loading screen shows real progress and stays until the view at the pad
   console.log(`  reveal: ${JSON.stringify(report.reveal)}`);
   const inits = await page.evaluate(() => ({ features: window.__app!.featureInitMs(), warm: window.__app!.warmMs() }));
   console.log(`  feature start-up, s: ${Object.entries(inits.features).map(([id, t]) => `${id} ${sec(t)}`).join(', ')}; pipelines created ahead (renderer.warm) ${sec(inits.warm)} s`);
+  // The first frames (pipelines were created ahead by `renderer.warm()`): how far the frame counter was at each
+  // sample up to frame 40, and the slowest frames since the start with what their main-thread time was made of.
+  // A gap between two samples is the page not answering: one long task.
+  for (const s of samples.filter((x) => x.game && x.game.frames <= 40)) {
+    const g = s.game!;
+    console.log(`  t ${sec(s.boot.elapsedMs).padStart(5)} s: frame ${String(g.frames).padStart(3)}; shaders ${g.loads.shaders.total - g.loads.shaders.pending} / ${g.loads.shaders.total}, textures ${g.loads.textures.total - g.loads.textures.pending} / ${g.loads.textures.total}, atmosphere ${g.loads.atmosphere.done} / ${g.loads.atmosphere.total}; busy ${g.busy.join(' ')}`);
+  }
+  const slowest: FrameBreakdown[] = await page.evaluate(() => window.__app!.cpuSlowest());
+  const top = (o: Record<string, number>, n: number): string =>
+    Object.entries(o)
+      .filter(([, v]) => v >= 1)
+      .sort((a, c) => c[1] - a[1])
+      .slice(0, n)
+      .map(([k, v]) => `${k} ${v.toFixed(0)}`)
+      .join(', ');
+  for (const b of slowest.slice(0, 6)) console.log(`  slow frame ${b.frame} under the loading screen: ${b.total.toFixed(0)} ms = ${top(b.stages, 4)}; features: ${top(b.features, 5)}; hooks: ${top(b.hooks, 6)}`);
   // The terrain under the screen, about every two seconds: resident / queued / baking / uploading tiles and frames.
   let lastPrinted = -1e9;
   for (const s of samples) {
@@ -280,7 +326,7 @@ test('the loading screen shows real progress and stays until the view at the pad
   //    looked for where those points fall in the frame, so the check holds whichever way the default view looks
   //    (it has turned twice since it was written).
   const ground: GroundSample[] = await page.evaluate(() => window.__app!.groundSamples([300, 500, 800, 1200, 1800], 24));
-  const seaFirst = landAsWater(first.buffer, ground);
+  const seaFirst = landAsWater(first.buffer, ground, path.join(path.dirname(first.file), 'loading-revealed-first-land-points.png'));
   assertRealImage(first.stats, 'loading-revealed-first');
   await page.evaluate(() => window.__test!.waitFrames(600));
   const later = await saveScreenshot(page, 'app', 'loading-revealed-later');
@@ -291,7 +337,8 @@ test('the loading screen shows real progress and stays until the view at the pad
     `first revealed frame: ${seaFirst.land} land points in the frame, ${(seaFirst.landAsWater * 100).toFixed(1)} % of them look like water (10 s later ${(seaLater.landAsWater * 100).toFixed(1)} %); ${seaFirst.water} water points in the frame, ${(seaFirst.waterAsWater * 100).toFixed(1)} % of them look like water; mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
   );
   expect(seaFirst.land, 'land points of the pad surroundings in the first revealed frame').toBeGreaterThanOrEqual(15);
-  expect(seaFirst.landAsWater, 'share of the land points that look like water in the first revealed frame').toBeLessThan(0.15);
+  if (seaFirst.flagged.length > 0) console.log(`  land points that read as water in the first frame: ${seaFirst.flagged.join('; ')}`);
+  expect(seaFirst.landAsWater, 'share of the land points that look like water in the first revealed frame').toBeLessThan(0.25);
   expect(Math.abs(seaLater.landAsWater - seaFirst.landAsWater), 'the land does not change after the reveal').toBeLessThan(0.1);
   expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);
   expect(after.ut, 'the simulation runs once the screen has gone').toBeGreaterThan([...uts][0] ?? 0);
@@ -566,8 +613,45 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   expect(back.auto && Math.abs(back.pitch) < 1e-9 && Math.abs(back.zoom - 1) < 1e-9, `default framing after the reset (${JSON.stringify(back)})`).toBe(true);
   expect(await earthInFrame(), 'the Earth in the frame again after the reset').toBe(true);
   await shoot(page, 'leo-chase-reset', { minNonBlack: 0.2 });
+  // The scenario starts heads-up (roll 0: the forward windows look at space). A crew flies this orbit heads-down
+  // to have the Earth in the forward windows: SAS on, roll with the E key until the navball reads 180 degrees, as
+  // a player would (RCS as well if the reaction wheels do not turn the stack).
+  const roll = async (): Promise<number> => (await brief(page)).rollDeg;
+  if (!(await brief(page)).sasEnabled) await press(page, 'KeyT');
+  await until(page, 'b.sasEnabled', 5_000);
+  const roll0 = await roll();
+  await page.keyboard.down('KeyE');
+  await page.evaluate(() => window.__test!.waitFrames(180));
+  if (Math.abs((await roll()) - roll0) < 2) {
+    await page.keyboard.press('KeyR');
+    await until(page, 'b.rcsEnabled', 5_000);
+  }
+  await page.waitForFunction(() => Math.abs(window.__app!.brief().rollDeg) > 168, undefined, { polling: 50, timeout: 240_000 });
+  await page.keyboard.up('KeyE');
+  // SAS takes the roll rate out and holds what is left.
+  await page.waitForFunction(
+    async () => {
+      const a = window.__app!.brief().rollDeg;
+      await window.__test!.waitFrames(30);
+      return Math.abs(window.__app!.brief().rollDeg - a) < 0.05;
+    },
+    undefined,
+    { polling: 500, timeout: 120_000 },
+  );
+  const headsDown = await brief(page);
+  console.log(`low orbit, heads down: roll ${roll0.toFixed(1)} -> ${headsDown.rollDeg.toFixed(1)} deg, pitch ${headsDown.pitchDeg.toFixed(1)} deg, SAS ${headsDown.sasMode}, RCS ${headsDown.rcsEnabled}`);
+  expect(Math.abs(headsDown.rollDeg), 'the stack is heads-down').toBeGreaterThan(150);
+  await shoot(page, 'leo-chase-heads-down', { minNonBlack: 0.2 });
   await viewKey(page, 'KeyC', 'interior');
   await waitIdle(page, 60, BOOT_MS);
+  await page.waitForFunction(
+    () => {
+      const x = window.__app!.exposure();
+      return Math.abs(x.ev100 - x.targetEv100) < 0.1;
+    },
+    undefined,
+    { polling: 100, timeout: 30_000 },
+  );
   const e = await page.evaluate(() => window.__app!.exposure());
   console.log(`leo cockpit: EV100 ${e.ev100.toFixed(2)} (target ${e.targetEv100.toFixed(2)}), sun visibility ${e.sunVisibility.toFixed(2)}, outside ${e.outsideFraction.toFixed(3)}`);
   await shoot(page, 'leo-cockpit', { minNonBlack: 0.03 });
@@ -676,13 +760,36 @@ test('frame-exact capture: renderExact renders the frames asked for and holds th
   expect(after.ut).toBe(before.ut);
   const still = await page.screenshot();
   expect(pngDiff(first, still).maxAbsDiff, 'the held frame stays on screen').toBe(0);
-  // A second capture of the same state. How far it is from the first is recorded, not asserted: the features'
-  // `resetTemporal` make it the same picture, and the clouds' sequence is still open (request core-4).
+  // A second capture of the same state, after a different history (the hold, 40 display frames): the same
+  // picture to the bit, because every temporal sequence restarts (the core's, and each feature's `resetTemporal`
+  // through the app's feature wrapper, request core-5). When it is not, the log says where the pictures differ
+  // (a 4 x 4 grid of the frame, row by row from the top) and the difference is saved as a picture to look at.
   const second = await captureDeterministic(page, 64);
   const d = pngDiff(first, second);
-  console.log(`renderExact at the pad: two captures of 64 frames differ by max ${d.maxAbsDiff}, mean ${d.meanAbsDiff.toFixed(4)} of 255 (${(d.differingFraction * 100).toFixed(2)} % of the values)`);
+  const info = await page.evaluate(() => window.__app!.exactInfo());
+  console.log(`renderExact at the pad: two captures of 64 frames differ by max ${d.maxAbsDiff}, mean ${d.meanAbsDiff.toFixed(4)} of 255 (${(d.differingFraction * 100).toFixed(2)} % of the values); last capture: ${JSON.stringify(info)}`);
   const dir = await saveScreenshot(page, 'app', 'exact-pad');
   assertRealImage(dir.stats, 'exact-pad');
+  if (d.maxAbsDiff > 0) {
+    const [A, B] = [PNG.sync.read(first), PNG.sync.read(second)];
+    const out = new PNG({ width: A.width, height: A.height });
+    const cells = Array.from({ length: 16 }, () => ({ sum: 0, n: 0, max: 0 }));
+    for (let y = 0; y < A.height; y++) {
+      for (let x = 0; x < A.width; x++) {
+        const i = (y * A.width + x) * 4;
+        const e = Math.max(Math.abs(A.data[i]! - B.data[i]!), Math.abs(A.data[i + 1]! - B.data[i + 1]!), Math.abs(A.data[i + 2]! - B.data[i + 2]!));
+        const c = cells[Math.min(3, Math.floor((4 * y) / A.height)) * 4 + Math.min(3, Math.floor((4 * x) / A.width))]!;
+        c.sum += e;
+        c.n++;
+        if (e > c.max) c.max = e;
+        // The difference sixteen times over, so that one level shows.
+        out.data[i] = out.data[i + 1] = out.data[i + 2] = Math.min(255, e * 16);
+        out.data[i + 3] = 255;
+      }
+    }
+    fs.writeFileSync(path.join(path.dirname(dir.file), 'exact-pad-difference.png'), PNG.sync.write(out));
+    for (let r = 0; r < 4; r++) console.log(`  difference, row ${r + 1} of 4 from the top (mean / max per cell, left to right): ${cells.slice(r * 4, r * 4 + 4).map((c) => `${(c.sum / c.n).toFixed(3)} / ${c.max}`).join('   ')}`);
+  }
   // Leaving deterministic mode ends the hold: the game runs again.
   await page.evaluate(() => {
     window.__test!.setDeterministic(false);
@@ -691,6 +798,7 @@ test('frame-exact capture: renderExact renders the frames asked for and holds th
   await page.waitForFunction((ut) => window.__app!.brief().ut > ut, after.ut, { polling: 100, timeout: 10_000 });
   expect(await page.evaluate(() => window.__app!.frames())).toBeGreaterThan(after.game);
   await expectNoErrors(page, pageLog);
+  expect(d.maxAbsDiff, 'two frame-exact captures of the same state are the same picture (out/screens/app/exact-pad-difference.png shows where they are not)').toBe(0);
 });
 
 test('keyboard capture and fullscreen are opt-in: off by default, on and off with the HUD control, ?capture=1, footage switches', async ({ page, pageLog }) => {
