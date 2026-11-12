@@ -29,7 +29,7 @@ test.describe.configure({ timeout: 40 * 60_000 });
 
 const NEAR_PLANE = 0.05;
 const WATER_ID = 3;
-const SITE = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae-lc1.location.json'), 'utf8')) as { latDeg: number; lonDeg: number };
+const SITE = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae.location.json'), 'utf8')) as { latDeg: number; lonDeg: number };
 const OCEAN = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'render', 'earth.ocean.json'), 'utf8')) as { params: { nearFieldFadeStartM: number; nearFieldFadeEndM: number } };
 const EARTH_RADIUS = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'tiles', 'earth', 'manifest.json'), 'utf8')) as { radius: number }).radius;
 const CLOUDS = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'render', 'earth.clouds.json'), 'utf8')) as { bottomAltitude: number; topAltitude: number; params: { coverageDriftMps: number } };

@@ -26,7 +26,7 @@ import { expectClean, frameDiff, freeze, grab, openIntegration, periodStrength, 
 test.describe.configure({ timeout: 30 * 60_000 });
 
 const MOON_RADIUS = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'tiles', 'moon', 'manifest.json'), 'utf8')) as { radius: number }).radius;
-const SITE = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae-lc1.location.json'), 'utf8')) as { latDeg: number; lonDeg: number };
+const SITE = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae.location.json'), 'utf8')) as { latDeg: number; lonDeg: number };
 
 interface Luma {
   width: number;

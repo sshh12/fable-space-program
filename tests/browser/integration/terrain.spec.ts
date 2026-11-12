@@ -183,7 +183,7 @@ for (const [bodyId, tileset] of [
 }
 
 test('(e) image decode: the land of a coastal albedo tile is in the G-buffer undarkened', async ({ page, pageLog }) => {
-  const defs = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae-lc1.location.json'), 'utf8')) as { latDeg?: number; lonDeg?: number; location?: { latDeg: number; lonDeg: number } };
+  const defs = JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'sites', 'ka-lae.location.json'), 'utf8')) as { latDeg?: number; lonDeg?: number; location?: { latDeg: number; lonDeg: number } };
   const lat = defs.location?.latDeg ?? defs.latDeg ?? 18.987556;
   const lon = defs.location?.lonDeg ?? defs.lonDeg ?? -155.603239;
   const manifest = manifestOf('earth');
