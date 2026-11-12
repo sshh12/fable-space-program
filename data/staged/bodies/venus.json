@@ -9,23 +9,23 @@
     "kind": "kepler",
     "frame": "ecliptic",
     "a": 108208878951.535,
-    "e": 0.00675053712707448,
-    "iDeg": 3.39424857154461,
-    "lanDeg": 76.5972627103405,
-    "argPeDeg": 54.9634344919183,
-    "meanAnomalyDeg": 168.38540665422,
+    "e": 0.00675053712715379,
+    "iDeg": 3.39424857154454,
+    "lanDeg": 76.597262704239,
+    "argPeDeg": 54.9634344991631,
+    "meanAnomalyDeg": 168.386689544098,
     "epochUt": 938240818,
     "rates": {
       "lanDeg": -0.27769418,
       "argPeDeg": 0.28037747
     },
-    "meanMotionDegPerDay": 1.60213037713253
+    "meanMotionDegPerDay": 1.60213037713254
   },
   "rotation": {
     "mode": "fixedRate",
     "poleRaDeg": 272.76,
     "poleDecDeg": 67.16,
-    "w0Deg": 273.618117225946,
+    "w0Deg": 273.616931033441,
     "rateDegPerDay": -1.4813688,
     "epochUt": 938240818
   },

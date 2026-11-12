@@ -5,7 +5,9 @@
 //   DEC = DEC0 + DEC1 T + DEC2 T^2 + sum d_i cos theta_i
 //   W   = W0 + W1 d + W2 d^2 + sum w_i sin theta_i,   d = days of TDB from J2000
 // The body contract has a fixed pole and a uniform prime-meridian rate (RotationDef 'fixedRate'), so the
-// generator evaluates the full model at one epoch and keeps the mean rate W1 + 2 W2 d there.
+// generator evaluates the full model at one epoch and keeps the mean rate W1 + 2 W2 d there. `ut` is the game's
+// clock (seconds since J2000 treated as UTC); the model is evaluated at the TDB instant (kepler.mjs utToJd).
+import { JD_J2000, utToJd } from './kepler.mjs';
 
 export function pckRotation(vars, naif) {
   const get = (k) => vars[`BODY${naif}_${k}`];
@@ -30,7 +32,7 @@ export function pckRotation(vars, naif) {
     naif,
     /** Pole (deg) and prime meridian (deg) at `ut` seconds of TDB from J2000, with the mean rate (deg/day). */
     at(ut) {
-      const d = ut / 86400;
+      const d = utToJd(ut) - JD_J2000;
       const T = d / 36525;
       const theta = angles.map((c) => (poly(c, T) * Math.PI) / 180);
       const sum = (coef, f) => coef.reduce((s, v, i) => s + v * f(theta[i]), 0);

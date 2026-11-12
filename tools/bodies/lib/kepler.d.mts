@@ -18,6 +18,8 @@ export const AU_M: number;
 export const DAY_S: number;
 export const CENTURY_S: number;
 export const JD_J2000: number;
+/** TT - UTC (s): the game's clock is UTC-like, the ephemerides are TDB. */
+export const TT_MINUS_UTC_S: number;
 export function utToJd(ut: number): number;
 export function jdToUt(jd: number): number;
 export function len(a: V3): number;

@@ -4,8 +4,10 @@
 // HP-SSA-HASI-2-3-4-MISSION-V1.1, hphasi_0001), entry (1,380 to 157 km: pressure and temperature) and descent
 // (147 km to the surface: pressure, temperature, density). The entry file has no density: it is p M / (R T)
 // with the molar mass M the descent file itself implies over its top 10 km (mean of rho R T / p there).
-// Each table row is the average of the samples within a window about the row's altitude (log-average of
-// pressure and density, mean temperature), the windows narrow below 150 km and wider in the noisier entry part.
+// Each table row is a local least-squares line through the samples within a window about the row's altitude
+// (log pressure, log density and temperature against altitude), evaluated AT the row's altitude, so a row at the
+// edge of the data (the surface) is not biased by a one-sided average; windows +-0.5 km below 150 km and +-5 km
+// in the noisier entry part.
 import { R_UNIVERSAL } from './atmospheres.mjs';
 
 export const TITAN_ROWS_KM = [0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 180, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 800, 900, 1000, 1100, 1200, 1300];
@@ -45,8 +47,18 @@ export function titanTable(entryText, descentText) {
       const lg = (a, b) => Math.exp(Math.log(a) + t * (Math.log(b) - Math.log(a)));
       win = [{ hKm: h, p: lg(below.p, above.p), rho: lg(below.rho, above.rho), T: below.T + t * (above.T - below.T) }];
     }
-    const mlog = (k) => Math.exp(win.reduce((s, r) => s + Math.log(r[k]), 0) / win.length);
-    out.push({ hKm: h, rho: Number(mlog('rho').toPrecision(5)), p: Number(mlog('p').toPrecision(5)), T: Number((win.reduce((s, r) => s + r.T, 0) / win.length).toFixed(2)), samples: win.length });
+    const at = (f) => {
+      const n = win.length;
+      const xs = win.map((r) => r.hKm - h);
+      const ys = win.map(f);
+      const mx = xs.reduce((a, b) => a + b, 0) / n;
+      const my = ys.reduce((a, b) => a + b, 0) / n;
+      const sxx = xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+      if (n < 3 || sxx === 0) return my;
+      const slope = xs.reduce((a, x, k) => a + (x - mx) * (ys[k] - my), 0) / sxx;
+      return my - slope * mx;
+    };
+    out.push({ hKm: h, rho: Number(Math.exp(at((r) => Math.log(r.rho))).toPrecision(5)), p: Number(Math.exp(at((r) => Math.log(r.p))).toPrecision(5)), T: Number(at((r) => r.T).toFixed(2)), samples: win.length });
   }
   return { rows: out, molarMassKgPerMol: molarMass, descentRows: descent.length, entryRows: entry.length };
 }

@@ -7,26 +7,31 @@
   "soiRadius": "auto",
   "orbit": {
     "kind": "kepler",
-    "frame": "parentEquator",
-    "a": 19595764.4819141,
-    "e": 0.000160871364259786,
-    "iDeg": 0.0826600388156809,
-    "lanDeg": 11.4759402038709,
-    "argPeDeg": 143.900014762374,
-    "meanAnomalyDeg": 204.610921769585,
+    "frame": {
+      "pole": {
+        "raDeg": 132.993,
+        "decDeg": -6.163
+      }
+    },
+    "a": 19595764.4819207,
+    "e": 0.000160871372257346,
+    "iDeg": 0.082660039080796,
+    "lanDeg": 11.4759414688083,
+    "argPeDeg": 143.899812043237,
+    "meanAnomalyDeg": 204.656254999144,
     "epochUt": 938240818,
     "rates": {
-      "lanDeg": 3.21459125256634,
-      "argPeDeg": -3.15335895804676
+      "lanDeg": 3.21458500791559,
+      "argPeDeg": -3.15188149531396
     },
-    "meanMotionDegPerDay": 56.3625288810189
+    "meanMotionDegPerDay": 56.362528840739
   },
   "rotation": {
     "mode": "fixedRate",
     "poleRaDeg": 132.993,
     "poleDecDeg": -6.163,
-    "w0Deg": 178.472950733732,
-    "rateDegPerDay": 56.3625225,
+    "w0Deg": 178.518082500319,
+    "rateDegPerDay": 56.3625225000001,
     "epochUt": 938240818
   },
   "gravityRole": "attractor",

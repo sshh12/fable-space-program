@@ -1,9 +1,13 @@
 // Orbit and frame maths of tools/bodies, written to the semantics of the v2 body contract
 // (src/core/contracts/defs.ts) and of the v1 runtime (src/sim/bodies): the generator's validation evaluates the
-// staged definitions exactly as the body system will.
+// staged definitions exactly as the body system will. It is the REFERENCE for solar-system-sim's runtime.
 //
+//   time            ut = seconds since J2000.0 treated as UTC (the game's clock); every ephemeris is evaluated
+//                   in TDB at JD = 2451545 + (ut + 69.184) / 86400 (utToJd: TT - UTC with the leap seconds in
+//                   force since 2017, constant; later leap seconds are not followed).
 //   KeplerOrbitDef  element(ut) = element0 + rate x (ut - epochUt) / (36525 d), M(ut) = M0 + n (ut - epochUt),
-//                   n = meanMotionDegPerDay (else sqrt(mu / a^3)); plane frames:
+//                   n = meanMotionDegPerDay (else sqrt(mu / a^3)); the velocity is the EXACT time derivative of
+//                   the position, the rates' terms included (stateFromElements); plane frames:
 //                     'ecliptic'       Rx(+obliquity J2000), the runtime's Q_ECLIPTIC_TO_EQUATORIAL
 //                     'parentEquator'  the parent's spin pole (RotationDef.poleRaDeg / poleDecDeg)
 //                     { pole }         an explicit plane normal in ICRF
@@ -21,8 +25,15 @@ export const DAY_S = 86400;
 export const CENTURY_S = 36525 * DAY_S;
 export const JD_J2000 = 2451545.0;
 
-export const utToJd = (ut) => JD_J2000 + ut / DAY_S;
-export const jdToUt = (jd) => (jd - JD_J2000) * DAY_S;
+/**
+ * The game's clock (ARCHITECTURE 3): `ut` = seconds since J2000.0 (2000-01-01T12:00:00) treated as UTC. The
+ * ephemeris sources and Horizons are in TDB. The instant `ut` is JD(TDB) = 2451545 + (ut + TT_MINUS_UTC_S)/86400:
+ * a constant offset, TT - UTC with the 37 leap seconds in force since 2017-01-01 (TDB - TT, under 2 ms, is
+ * ignored). Leap seconds announced after 2017 are not followed: the game's clock has none.
+ */
+export const TT_MINUS_UTC_S = 69.184;
+export const utToJd = (ut) => JD_J2000 + (ut + TT_MINUS_UTC_S) / DAY_S;
+export const jdToUt = (jd) => (jd - JD_J2000) * DAY_S - TT_MINUS_UTC_S;
 
 // ------------------------------------------------------------------------------------------------- vectors
 
@@ -80,26 +91,43 @@ export const wrap360 = (d) => ((d % 360) + 360) % 360;
 
 /**
  * State (m, m/s) in the elements' plane frame rotated to ICRF by `plane`, for elements
- * { a (m), e, iDeg, lanDeg, argPeDeg, M (rad) } and the mean anomaly rate n (rad/s).
+ * { a (m), e, iDeg, lanDeg, argPeDeg, M (rad) }, the mean-anomaly rate n (rad/s) and the element rates
+ * `drift` = { a (m/s), e (1/s), i, node, argPe (rad/s) } (absent = 0). The velocity is the EXACT time derivative
+ * of the position, the precession of node and apsis and the drift of a, e and i included (the convention of the
+ * v2 body contract; the v1 Almanac Sun is differentiated the same way).
  */
-export function stateFromElements(el, n, plane) {
-  const E = eccentricFromMean(el.e, el.M);
+export function stateFromElements(el, n, plane, drift = {}) {
+  const aD = drift.a ?? 0;
+  const eD = drift.e ?? 0;
+  const iD = drift.i ?? 0;
+  const OD = drift.node ?? 0;
+  const wD = drift.argPe ?? 0;
+  const e = el.e;
+  const E = eccentricFromMean(e, el.M);
   const cE = Math.cos(E);
   const sE = Math.sin(E);
-  const b = el.a * Math.sqrt(1 - el.e * el.e);
-  const x = el.a * (cE - el.e);
-  const y = b * sE;
-  const Edot = n / (1 - el.e * cE);
-  const vx = -el.a * sE * Edot;
-  const vy = b * cE * Edot;
+  const sq = Math.sqrt(1 - e * e);
+  const x = el.a * (cE - e);
+  const y = el.a * sq * sE;
+  // M = E - e sin E, dM/dt = n  =>  dE/dt = (n + de/dt sin E) / (1 - e cos E)
+  const ED = (n + eD * sE) / (1 - e * cE);
+  const xD = aD * (cE - e) + el.a * (-sE * ED - eD);
+  const yD = aD * sq * sE + el.a * ((-e * eD) / sq) * sE + el.a * sq * cE * ED;
   const O = el.lanDeg * DEG;
   const w = el.argPeDeg * DEG;
   const i = el.iDeg * DEG;
   const cO = Math.cos(O), sO = Math.sin(O), cw = Math.cos(w), sw = Math.sin(w), ci = Math.cos(i), si = Math.sin(i);
   const P = [cO * cw - sO * sw * ci, sO * cw + cO * sw * ci, sw * si];
   const Q = [-cO * sw - sO * cw * ci, -sO * sw + cO * cw * ci, cw * si];
-  const r = add(scale(P, x), scale(Q, y));
-  const v = add(scale(P, vx), scale(Q, vy));
+  const dPdO = [-sO * cw - cO * sw * ci, cO * cw - sO * sw * ci, 0];
+  const dQdO = [sO * sw - cO * cw * ci, -cO * sw - sO * cw * ci, 0];
+  const dPdi = [sO * sw * si, -cO * sw * si, sw * ci];
+  const dQdi = [sO * cw * si, -cO * cw * si, cw * ci];
+  // dP/dw = Q, dQ/dw = -P
+  const PD = [0, 1, 2].map((k) => dPdO[k] * OD + Q[k] * wD + dPdi[k] * iD);
+  const QD = [0, 1, 2].map((k) => dQdO[k] * OD - P[k] * wD + dQdi[k] * iD);
+  const r = [0, 1, 2].map((k) => P[k] * x + Q[k] * y);
+  const v = [0, 1, 2].map((k) => PD[k] * x + QD[k] * y + P[k] * xD + Q[k] * yD);
   return { r: matVec(plane, r), v: matVec(plane, v) };
 }
 
@@ -125,7 +153,9 @@ export function keplerState(def, ut, { muSum, parentPole } = {}) {
     if (!parentPole) throw new Error('keplerState: parentEquator needs the parent pole');
     plane = poleFrame(parentPole.raDeg, parentPole.decDeg);
   } else plane = poleFrame(def.frame.pole.raDeg, def.frame.pole.decDeg);
-  return stateFromElements(el, n, plane);
+  const perCentury = (x) => (x ?? 0) / CENTURY_S;
+  const drift = { a: perCentury(r.a), e: perCentury(r.e), i: perCentury(r.iDeg) * DEG, node: perCentury(r.lanDeg) * DEG, argPe: perCentury(r.argPeDeg) * DEG };
+  return stateFromElements(el, n, plane, drift);
 }
 
 /** src/sim/bodies/ephemeris.ts sunLowPrecisionState, verbatim (geocentric Sun, m, m/s). */

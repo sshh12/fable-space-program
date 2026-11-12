@@ -46,42 +46,28 @@ for (const id of BODY_ORDER) {
 }
 write('horizons-objdata', { description: 'JPL Horizons object-data headers (OBJ_DATA): the geometric albedo line of each body', bodies: objdata });
 
-// Horizons states the generator needs (committed so generation never goes to the network):
-//  - calibration: every satellite at ten epochs from 2010-01-01 to 2029-09-01 TDB (before the validation
-//    window), to choose the reading of each satellite-table row (lib/orbits.mjs);
-//  - fitSpans: the Saturnian satellites over +-3 periods about the lobby epoch at a 24th of a period, for the
-//    brief's fit path.
+// Horizons states fit-orbits.mjs needs to choose the reading of each satellite-table row (lib/orbits.mjs):
+// every satellite at ten epochs from 2010-01-01 to 2029-09-01 TDB, before the validity window (committed).
 {
-  const { vectorsAt, vectorsRange } = await import('./lib/horizons.mjs');
+  const { vectorsAt } = await import('./lib/horizons.mjs');
   const { horizonsCenter } = await import('./lib/catalogue.mjs');
   const { LOBBY_EPOCH_UT } = await import('./lib/orbits.mjs');
-  const { utToJd } = await import('./lib/kepler.mjs');
-  const satElem = JSON.parse((await import('node:fs')).readFileSync(join(OUT, 'jpl-sat-elem.json'), 'utf8')).rows;
   const C0 = 2455197.5; // 2010-01-01 TDB
   const C1 = 2462380.5; // 2029-09-01 TDB
   const calJds = Array.from({ length: 10 }, (_, k) => C0 + (k * (C1 - C0)) / 9);
   const calibration = {};
-  const fitSpans = {};
-  const jdL = utToJd(LOBBY_EPOCH_UT);
   for (const id of BODY_ORDER) {
     const c = CATALOGUE[id];
     if (c.kind !== 'moon' || id === 'moon') continue;
     const center = horizonsCenter(id);
     const cal = await vectorsAt(c.horizons, center, calJds, `cal-${id}`);
     calibration[id] = { command: c.horizons, center, source: src(cal.meta), rows: cal.rows };
-    if (c.parent === 'saturn') {
-      const P = satElem[c.satName].periodDays;
-      const stepMin = Math.max(1, Math.round((P * 1440) / 24));
-      const span = await vectorsRange(c.horizons, center, (jdL - 3 * P).toFixed(6), (jdL + 3 * P).toFixed(6), `${stepMin} m`, `fit-${id}`);
-      fitSpans[id] = { command: c.horizons, center, stepMinutes: stepMin, source: src(span.meta), rows: span.rows };
-    }
   }
   write('horizons-states', {
-    description: 'JPL Horizons state vectors (ICRF axes, geometric, TDB; position m, velocity m/s, relative to the parent body centre) used by the generator: calibration epochs of every satellite and the fit spans of the Saturnian satellites about the lobby epoch',
+    description: 'JPL Horizons state vectors (ICRF axes, geometric, TDB; position m, velocity m/s, relative to the parent body centre): every satellite at the calibration epochs that choose the reading of its table row',
     lobbyEpochUt: LOBBY_EPOCH_UT,
     calibrationJds: calJds,
     calibration,
-    fitSpans,
   });
 }
 

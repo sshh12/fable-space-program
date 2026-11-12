@@ -13,25 +13,25 @@
         "decDeg": 64.5
       }
     },
-    "a": 671060258.684261,
-    "e": 0.00928603861089706,
-    "iDeg": 0.466705353199805,
-    "lanDeg": 189.521848510042,
-    "argPeDeg": 288.866003823343,
-    "meanAnomalyDeg": 71.4722357581327,
+    "a": 671060258.716683,
+    "e": 0.00928603923178953,
+    "iDeg": 0.466705372215156,
+    "lanDeg": 189.521813180441,
+    "argPeDeg": 288.865396343535,
+    "meanAnomalyDeg": 71.5540534620635,
     "epochUt": 938240818,
     "rates": {
-      "lanDeg": -1194.76858304279,
-      "argPeDeg": -25815.1906367479
+      "lanDeg": -1194.76851972252,
+      "argPeDeg": -25815.1903497399
     },
-    "meanMotionDegPerDay": 102.114214060049
+    "meanMotionDegPerDay": 102.114214050454
   },
   "rotation": {
     "mode": "fixedRate",
-    "poleRaDeg": 267.853133768,
-    "poleDecDeg": 64.9463790035,
-    "w0Deg": 11.5892536544707,
-    "rateDegPerDay": 101.3747235,
+    "poleRaDeg": 267.853134257,
+    "poleDecDeg": 64.9463790422,
+    "w0Deg": 11.6704280946869,
+    "rateDegPerDay": 101.374721678942,
     "epochUt": 938240818
   },
   "gravityRole": "attractor",

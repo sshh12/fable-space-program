@@ -95,7 +95,7 @@
       "startFrom": "JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node advancing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
       "ratesFitted": true,
       "residual": {
-        "maxAngleDeg": 0.2357,
+        "maxAngleDeg": 0.2358,
         "maxRadial": 0.000118,
         "rmsAngleDeg": 0.1023,
         "samples": 1901
@@ -162,7 +162,7 @@
       "ratesFitted": true,
       "residual": {
         "maxAngleDeg": 0.4746,
-        "maxRadial": 0.0001682,
+        "maxRadial": 0.0001681,
         "rmsAngleDeg": 0.224,
         "samples": 1846
       }
@@ -173,7 +173,7 @@
       "ratesFitted": true,
       "residual": {
         "maxAngleDeg": 0.4793,
-        "maxRadial": 0.0001184,
+        "maxRadial": 0.0001185,
         "rmsAngleDeg": 0.1634,
         "samples": 1819
       }
@@ -228,7 +228,7 @@
       "ratesFitted": true,
       "residual": {
         "maxAngleDeg": 1.739,
-        "maxRadial": 0.0004338,
+        "maxRadial": 0.0004352,
         "rmsAngleDeg": 1.003,
         "samples": 1819
       }
@@ -283,7 +283,7 @@
       "ratesFitted": true,
       "residual": {
         "maxAngleDeg": 0.01298,
-        "maxRadial": 7.794e-7,
+        "maxRadial": 7.793e-7,
         "rmsAngleDeg": 0.004038,
         "samples": 2000
       }
@@ -316,7 +316,7 @@
       "ratesFitted": true,
       "residual": {
         "maxAngleDeg": 0.0009778,
-        "maxRadial": 6.944e-7,
+        "maxRadial": 6.949e-7,
         "rmsAngleDeg": 0.0003737,
         "samples": 2000
       }
@@ -357,7 +357,7 @@
           "mode": "fixedRate",
           "poleRaDeg": 286.13,
           "poleDecDeg": 63.87,
-          "w0Deg": 36.3873291574128,
+          "w0Deg": 36.398687185836,
           "rateDegPerDay": 14.1844,
           "epochUt": 938240818
         },
@@ -396,9 +396,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 281.000548213,
-          "poleDecDeg": 61.4140431782,
-          "w0Deg": 29.3335828190902,
+          "poleRaDeg": 281.000548212,
+          "poleDecDeg": 61.4140431781,
+          "w0Deg": 29.3384986432648,
           "rateDegPerDay": 6.1385108,
           "epochUt": 938240818
         },
@@ -459,6 +459,10 @@
         "value": "rocky-generic seed 4101 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/mercury.json over data/defs/terrain/rocky-generic.amplification.json"
       },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 5): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
+      },
       "terrain.surfaceFriction": {
         "value": 0.7,
         "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
@@ -494,7 +498,7 @@
           "mode": "fixedRate",
           "poleRaDeg": 272.76,
           "poleDecDeg": 67.16,
-          "w0Deg": 273.618117225946,
+          "w0Deg": 273.616931033441,
           "rateDegPerDay": -1.4813688,
           "epochUt": 938240818
         },
@@ -586,6 +590,10 @@
         "value": "rocky-generic seed 4102 overrides {\"craterEquilibriumFraction\":0.0002}",
         "note": "planet-bake: tools/bake/planet/bodies/venus.json over data/defs/terrain/rocky-generic.amplification.json"
       },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 4): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
+      },
       "terrain.surfaceFriction": {
         "value": 0.7,
         "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
@@ -619,9 +627,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 317.649140876,
-          "poleDecDeg": 52.8680276327,
-          "w0Deg": 6.9630765854381,
+          "poleRaDeg": 317.649140874,
+          "poleDecDeg": 52.8680276334,
+          "w0Deg": 7.24405012698844,
           "rateDegPerDay": 350.891982443297,
           "epochUt": 938240818
         },
@@ -731,6 +739,10 @@
         "value": "rocky-generic seed 4103 overrides {\"craterEquilibriumFraction\":0.004}",
         "note": "planet-bake: tools/bake/planet/bodies/mars.json over data/defs/terrain/rocky-generic.amplification.json"
       },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 5): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
+      },
       "terrain.surfaceFriction": {
         "value": 0.7,
         "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
@@ -764,9 +776,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 268.057415879,
-          "poleDecDeg": 64.4965415226,
-          "w0Deg": 69.3103987015784,
+          "poleRaDeg": 268.057415878,
+          "poleDecDeg": 64.4965415225,
+          "w0Deg": 70.0074724331498,
           "rateDegPerDay": 870.536,
           "epochUt": 938240818
         },
@@ -891,9 +903,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 40.5782968193,
-          "poleDecDeg": 83.5358107577,
-          "w0Deg": 147.768254492432,
+          "poleRaDeg": 40.5782968185,
+          "poleDecDeg": 83.5358107576,
+          "w0Deg": 148.417490286753,
           "rateDegPerDay": 810.7939024,
           "epochUt": 938240818
         },
@@ -1036,7 +1048,7 @@
           "mode": "fixedRate",
           "poleRaDeg": 257.311,
           "poleDecDeg": -15.175,
-          "w0Deg": 91.6871107881889,
+          "w0Deg": 91.285811431706,
           "rateDegPerDay": -501.1600928,
           "epochUt": 938240818
         },
@@ -1161,9 +1173,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 299.522272259,
-          "poleDecDeg": 42.963892761,
-          "w0Deg": 352.109842228703,
+          "poleRaDeg": 299.522272273,
+          "poleDecDeg": 42.9638927634,
+          "w0Deg": 352.543154940009,
           "rateDegPerDay": 541.1397757,
           "epochUt": 938240818
         },
@@ -1290,24 +1302,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 319.261708399,
-          "poleDecDeg": 53.3514317417,
-          "w0Deg": 104.23036243394,
-          "rateDegPerDay": 1128.84496639095,
+          "poleRaDeg": 319.261713188,
+          "poleDecDeg": 53.3514258304,
+          "w0Deg": 105.149291651323,
+          "rateDegPerDay": 1128.84505952187,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY401 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY401 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 1.95 deg of Horizons + the full pck model over the window; the other candidate 2.46 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.312627%27&STOP_TIME=%27JD+2462405.224827%27&STEP_SIZE=%2719+m%27",
-            "retrievedAt": "2026-11-12T09:48:01.131Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.313428%27&STOP_TIME=%27JD+2462405.225628%27&STEP_SIZE=%2719+m%27",
+            "retrievedAt": "2026-11-12T10:17:44.620Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278436+m%27",
@@ -1335,11 +1347,15 @@
       },
       "terrain.elevation": {
         "value": [-1987, 1922],
-        "note": "ellipsoid -1980..1920 m; run-time craters to 34 m"
+        "note": "ellipsoid -1980..1920 m; run-time craters to 34 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4104 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/phobos.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1376,24 +1392,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 314.728428145,
-          "poleDecDeg": 54.9092261648,
-          "w0Deg": 10.5033695679158,
-          "rateDegPerDay": 285.16188899,
+          "poleRaDeg": 314.728428788,
+          "poleDecDeg": 54.9092266536,
+          "w0Deg": 10.7317096251063,
+          "rateDegPerDay": 285.161897021762,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY402 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY402 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.26 deg of Horizons + the full pck model over the window; the other candidate 4.19 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.481227%27&STOP_TIME=%27JD+2462408.056227%27&STEP_SIZE=%2776+m%27",
-            "retrievedAt": "2026-11-12T09:48:10.238Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.482028%27&STOP_TIME=%27JD+2462408.057028%27&STEP_SIZE=%2776+m%27",
+            "retrievedAt": "2026-11-12T10:17:45.046Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278396+m%27",
@@ -1426,6 +1442,10 @@
       "terrain.amplification": {
         "value": "rocky-generic seed 4105 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/deimos.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 2,
+        "note": "min(3, the pyramid's depth 2): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1462,24 +1482,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 267.952821491,
-          "poleDecDeg": 64.52279306,
-          "w0Deg": 261.707766518928,
-          "rateDegPerDay": 203.4889538,
+          "poleRaDeg": 267.95282155,
+          "poleDecDeg": 64.5227931323,
+          "w0Deg": 261.870708382688,
+          "rateDegPerDay": 203.488958249787,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY501 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY501 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.07 deg of Horizons + the full pck model over the window; the other candidate 0.13 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.980531%27&STOP_TIME=%27JD+2462409.556923%27&STEP_SIZE=%27106+m%27",
-            "retrievedAt": "2026-11-12T09:48:01.768Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.981332%27&STOP_TIME=%27JD+2462409.557724%27&STEP_SIZE=%27106+m%27",
+            "retrievedAt": "2026-11-12T10:17:45.529Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278585+m%27",
@@ -1506,11 +1526,15 @@
       },
       "terrain.elevation": {
         "value": [-6886, 8112],
-        "note": "ellipsoid -5790..7910 m; run-time craters to 5588 m"
+        "note": "ellipsoid -5790..7910 m; run-time craters to 5588 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4106 overrides {\"craterEquilibriumFraction\":0.000001}",
         "note": "planet-bake: tools/bake/planet/bodies/io.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1547,24 +1571,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 267.853133768,
-          "poleDecDeg": 64.9463790035,
-          "w0Deg": 11.5892536544707,
-          "rateDegPerDay": 101.3747235,
+          "poleRaDeg": 267.853134257,
+          "poleDecDeg": 64.9463790422,
+          "w0Deg": 11.6704280946869,
+          "rateDegPerDay": 101.374721678942,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY502 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY502 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.15 deg of Horizons + the full pck model over the window; the other candidate 1.16 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.692338%27&STOP_TIME=%27JD+2462414.845116%27&STEP_SIZE=%27212+m%27",
-            "retrievedAt": "2026-11-12T09:48:10.963Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.693139%27&STOP_TIME=%27JD+2462414.845917%27&STEP_SIZE=%27212+m%27",
+            "retrievedAt": "2026-11-12T10:17:45.891Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278214+m%27",
@@ -1587,11 +1611,15 @@
       },
       "terrain.elevation": {
         "value": [-2258, 1992],
-        "note": "ellipsoid -1300..1800 m; run-time craters to 4788 m"
+        "note": "ellipsoid -1300..1800 m; run-time craters to 4788 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4107 overrides {\"craterEquilibriumFraction\":0.0005}",
         "note": "planet-bake: tools/bake/planet/bodies/europa.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1628,24 +1656,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 267.98691506,
-          "poleDecDeg": 64.3640355083,
-          "w0Deg": 336.681900743977,
-          "rateDegPerDay": 50.3176081,
+          "poleRaDeg": 267.986915001,
+          "poleDecDeg": 64.3640355137,
+          "w0Deg": 336.722192160669,
+          "rateDegPerDay": 50.3176080508495,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY503 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY503 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.13 deg of Horizons + the full pck model over the window; the other candidate 0.39 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.801963%27&STOP_TIME=%27JD+2462425.735491%27&STEP_SIZE=%27429+m%27",
-            "retrievedAt": "2026-11-12T09:48:11.479Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.802764%27&STOP_TIME=%27JD+2462425.736292%27&STEP_SIZE=%27429+m%27",
+            "retrievedAt": "2026-11-12T10:17:46.187Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
@@ -1672,11 +1700,15 @@
       },
       "terrain.elevation": {
         "value": [-1615, 323],
-        "note": "ellipsoid 0..0 m; run-time craters to 8072 m"
+        "note": "ellipsoid 0..0 m; run-time craters to 8072 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4108 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/ganymede.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1713,24 +1745,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 268.19646142,
-          "poleDecDeg": 64.7690106507,
-          "w0Deg": 146.042848485784,
-          "rateDegPerDay": 21.5710715,
+          "poleRaDeg": 268.19646141,
+          "poleDecDeg": 64.7690106639,
+          "w0Deg": 146.06685737113,
+          "rateDegPerDay": 21.5710706053543,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY504 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY504 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.04 deg of Horizons + the full pck model over the window; the other candidate 0.05 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.197407%27&STOP_TIME=%27JD+2462454.340047%27&STEP_SIZE=%271001+m%27",
-            "retrievedAt": "2026-11-12T09:48:11.919Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.198208%27&STOP_TIME=%27JD+2462454.340848%27&STEP_SIZE=%271001+m%27",
+            "retrievedAt": "2026-11-12T10:17:46.518Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -1753,11 +1785,15 @@
       },
       "terrain.elevation": {
         "value": [-1479, 296],
-        "note": "ellipsoid 0..0 m; run-time craters to 7395 m"
+        "note": "ellipsoid 0..0 m; run-time craters to 7395 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4109 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/callisto.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1794,24 +1830,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 51.9004565165,
-          "poleDecDeg": 84.3727996477,
-          "w0Deg": 180.898146326188,
-          "rateDegPerDay": 381.994555,
+          "poleRaDeg": 51.9005622348,
+          "poleDecDeg": 84.3727819151,
+          "w0Deg": 181.203922406305,
+          "rateDegPerDay": 382.003099885192,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY601 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY601 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 4.04 deg of Horizons + the full pck model over the window; the other candidate 13.24 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27",
-            "retrievedAt": "2026-11-12T09:48:12.309Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.442262%27&STOP_TIME=%27JD+2462407.096794%27&STEP_SIZE=%2757+m%27",
+            "retrievedAt": "2026-11-12T10:17:46.825Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278661+m%27",
@@ -1839,6 +1875,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4110 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/mimas.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1875,9 +1915,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 40.6492968193,
-          "poleDecDeg": 83.5188107577,
-          "w0Deg": 82.62087266054,
+          "poleRaDeg": 40.6492968185,
+          "poleDecDeg": 83.5188107576,
+          "w0Deg": 82.8312527928501,
           "rateDegPerDay": 262.7318996,
           "epochUt": 938240818
         },
@@ -1885,14 +1925,14 @@
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY602 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY602 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.47 deg of Horizons + the full pck model over the window; the other candidate 0.48 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27",
-            "retrievedAt": "2026-11-12T09:48:12.699Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158874%27&STOP_TIME=%27JD+2462408.380182%27&STEP_SIZE=%2782+m%27",
+            "retrievedAt": "2026-11-12T10:17:47.138Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278646+m%27",
@@ -1920,11 +1960,15 @@
       },
       "terrain.elevation": {
         "value": [-3955, 4531],
-        "note": "ellipsoid -3800..4500 m; run-time craters to 773 m"
+        "note": "ellipsoid -3800..4500 m; run-time craters to 773 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4111 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/enceladus.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -1961,24 +2005,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 33.4326820703,
-          "poleDecDeg": 82.794227969,
-          "w0Deg": 138.0889846629,
-          "rateDegPerDay": 190.6979085,
+          "poleRaDeg": 33.432664315,
+          "poleDecDeg": 82.7942302203,
+          "w0Deg": 138.241701785475,
+          "rateDegPerDay": 190.697496020396,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY603 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY603 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.26 deg of Horizons + the full pck model over the window; the other candidate 7.67 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27",
-            "retrievedAt": "2026-11-12T09:48:13.130Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.606122%27&STOP_TIME=%27JD+2462409.932934%27&STEP_SIZE=%27113+m%27",
+            "retrievedAt": "2026-11-12T10:17:47.425Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -2006,11 +2050,15 @@
       },
       "terrain.elevation": {
         "value": [-5126, 7366],
-        "note": "ellipsoid -4800..7300 m; run-time craters to 1629 m"
+        "note": "ellipsoid -4800..7300 m; run-time craters to 1629 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4112 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/tethys.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2047,9 +2095,9 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 40.6492968193,
-          "poleDecDeg": 83.5188107577,
-          "w0Deg": 250.769212477375,
+          "poleRaDeg": 40.6492968185,
+          "poleDecDeg": 83.5188107576,
+          "w0Deg": 250.874537856318,
           "rateDegPerDay": 131.5349316,
           "epochUt": 938240818
         },
@@ -2057,14 +2105,14 @@
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY604 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY604 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.07 deg of Horizons + the full pck model over the window; the other candidate 0.07 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27",
-            "retrievedAt": "2026-11-12T09:48:13.626Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.058780%27&STOP_TIME=%27JD+2462412.480276%27&STEP_SIZE=%27164+m%27",
+            "retrievedAt": "2026-11-12T10:17:47.748Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -2092,11 +2140,15 @@
       },
       "terrain.elevation": {
         "value": [-2145, 2069],
-        "note": "ellipsoid -1800..2000 m; run-time craters to 1722 m"
+        "note": "ellipsoid -1800..2000 m; run-time craters to 1722 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4113 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/dione.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2133,24 +2185,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 42.4852030642,
-          "poleDecDeg": 83.293017274,
-          "w0Deg": 168.701660632272,
-          "rateDegPerDay": 79.6900478,
+          "poleRaDeg": 42.4852021824,
+          "poleDecDeg": 83.293017181,
+          "w0Deg": 168.765472583938,
+          "rateDegPerDay": 79.690045241302,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY605 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY605 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.05 deg of Horizons + the full pck model over the window; the other candidate 3.86 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27",
-            "retrievedAt": "2026-11-12T09:48:14.132Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.717019%27&STOP_TIME=%27JD+2462417.822037%27&STEP_SIZE=%27271+m%27",
+            "retrievedAt": "2026-11-12T10:17:48.136Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -2178,11 +2230,15 @@
       },
       "terrain.elevation": {
         "value": [-1569, 1594],
-        "note": "ellipsoid -1100..1500 m; run-time craters to 2342 m"
+        "note": "ellipsoid -1100..1500 m; run-time craters to 2342 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4114 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/rhea.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2221,22 +2277,22 @@
           "mode": "fixedRate",
           "poleRaDeg": 39.4827,
           "poleDecDeg": 83.4279,
-          "w0Deg": 196.043611099769,
-          "rateDegPerDay": 22.5769768,
+          "w0Deg": 196.061689407245,
+          "rateDegPerDay": 22.5769768834865,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY606 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY606 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 0.03 deg of Horizons + the full pck model over the window; the other candidate 0.03 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27",
-            "retrievedAt": "2026-11-12T09:48:14.602Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.433184%27&STOP_TIME=%27JD+2462452.105872%27&STEP_SIZE=%27957+m%27",
+            "retrievedAt": "2026-11-12T10:17:48.482Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278770+m%27",
@@ -2306,11 +2362,15 @@
       },
       "terrain.elevation": {
         "value": [-1080, 548],
-        "note": "ellipsoid -290..390 m; run-time craters to 3950 m"
+        "note": "ellipsoid -290..390 m; run-time craters to 3950 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4115 overrides {\"craterEquilibriumFraction\":0.0005}",
         "note": "planet-bake: tools/bake/planet/bodies/titan.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 4): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2347,24 +2407,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 316.985920542,
-          "poleDecDeg": 74.6901740136,
-          "w0Deg": 314.096705752192,
-          "rateDegPerDay": 4.5379572,
+          "poleRaDeg": 316.985920455,
+          "poleDecDeg": 74.6901739885,
+          "w0Deg": 314.100339479875,
+          "rateDegPerDay": 4.53794830912031,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY608 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY608 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 1.10 deg of Horizons + the full pck model over the window; the other candidate 1.20 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27",
-            "retrievedAt": "2026-11-12T09:48:15.023Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.276522%27&STOP_TIME=%27JD+2462642.262534%27&STEP_SIZE=%274760+m%27",
+            "retrievedAt": "2026-11-12T10:17:48.767Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -2398,11 +2458,15 @@
       },
       "terrain.elevation": {
         "value": [-22651, 11491],
-        "note": "ellipsoid -22200..11400 m; run-time craters to 2253 m"
+        "note": "ellipsoid -22200..11400 m; run-time craters to 2253 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4116 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/iapetus.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2439,24 +2503,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 254.531835742,
-          "poleDecDeg": -18.3193458076,
-          "w0Deg": 153.971309096552,
-          "rateDegPerDay": -254.6906892,
+          "poleRaDeg": 254.531838353,
+          "poleDecDeg": -18.319347972,
+          "w0Deg": 153.767368180212,
+          "rateDegPerDay": -254.690624483507,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY705 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY705 at the lobby epoch; prime meridian by A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch (sub-parent longitude within 1.72 deg of Horizons + the full pck model over the window; the other candidate 1.94 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.028290%27&STOP_TIME=%27JD+2462408.509164%27&STEP_SIZE=%2785+m%27",
-            "retrievedAt": "2026-11-12T09:48:15.448Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.029091%27&STOP_TIME=%27JD+2462408.509965%27&STEP_SIZE=%2785+m%27",
+            "retrievedAt": "2026-11-12T10:17:49.073Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
@@ -2484,6 +2548,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4117 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/miranda.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2520,24 +2588,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 257.155095042,
-          "poleDecDeg": -15.0108410626,
-          "w0Deg": 305.290453107329,
-          "rateDegPerDay": -142.8356681,
+          "poleRaDeg": 257.15509504,
+          "poleDecDeg": -15.0108410678,
+          "w0Deg": 305.125170171261,
+          "rateDegPerDay": -142.835667997286,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY701 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY701 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.13 deg of Horizons + the full pck model over the window; the other candidate 0.37 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.707590%27&STOP_TIME=%27JD+2462411.829864%27&STEP_SIZE=%27151+m%27",
-            "retrievedAt": "2026-11-12T09:48:15.904Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.708391%27&STOP_TIME=%27JD+2462411.830665%27&STEP_SIZE=%27151+m%27",
+            "retrievedAt": "2026-11-12T10:17:49.409Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278645+m%27",
@@ -2565,6 +2633,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4118 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/ariel.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2601,24 +2673,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 257.22386499,
-          "poleDecDeg": -15.0618053966,
-          "w0Deg": 335.255675329827,
-          "rateDegPerDay": -86.8688923,
+          "poleRaDeg": 257.223864988,
+          "poleDecDeg": -15.0618054036,
+          "w0Deg": 335.275694463868,
+          "rateDegPerDay": -86.8688930092855,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY702 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY702 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.14 deg of Horizons + the full pck model over the window; the other candidate 0.24 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836196%27&STOP_TIME=%27JD+2462416.701258%27&STEP_SIZE=%27249+m%27",
-            "retrievedAt": "2026-11-12T09:48:16.419Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836997%27&STOP_TIME=%27JD+2462416.702059%27&STEP_SIZE=%27249+m%27",
+            "retrievedAt": "2026-11-12T10:17:49.810Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278247+m%27",
@@ -2646,6 +2718,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4119 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/umbriel.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2682,24 +2758,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 257.237561976,
-          "poleDecDeg": -14.8905303573,
-          "w0Deg": 311.378929215076,
-          "rateDegPerDay": -41.3514316,
+          "poleRaDeg": 257.237561969,
+          "poleDecDeg": -14.8905303627,
+          "w0Deg": 311.345011587546,
+          "rateDegPerDay": -41.3514333282414,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY703 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY703 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.17 deg of Horizons + the full pck model over the window; the other candidate 0.38 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151120%27&STOP_TIME=%27JD+2462430.386334%27&STEP_SIZE=%27522+m%27",
-            "retrievedAt": "2026-11-12T09:48:16.881Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151921%27&STOP_TIME=%27JD+2462430.387135%27&STEP_SIZE=%27522+m%27",
+            "retrievedAt": "2026-11-12T10:17:50.108Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
@@ -2732,6 +2808,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4120 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/titania.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2768,24 +2848,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 257.581233219,
-          "poleDecDeg": -15.1522351754,
-          "w0Deg": 155.465529676992,
-          "rateDegPerDay": -26.7394932,
+          "poleRaDeg": 257.581233229,
+          "poleDecDeg": -15.1522351462,
+          "w0Deg": 155.459304232325,
+          "rateDegPerDay": -26.7394999471481,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY704 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY704 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.19 deg of Horizons + the full pck model over the window; the other candidate 0.28 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879016%27&STOP_TIME=%27JD+2462444.658438%27&STEP_SIZE=%27808+m%27",
-            "retrievedAt": "2026-11-12T09:48:17.336Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879817%27&STOP_TIME=%27JD+2462444.659239%27&STEP_SIZE=%27808+m%27",
+            "retrievedAt": "2026-11-12T10:17:50.439Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
@@ -2818,6 +2898,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4121 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/oberon.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2854,24 +2938,24 @@
       "rotation": {
         "value": {
           "mode": "fixedRate",
-          "poleRaDeg": 304.982788119,
-          "poleDecDeg": 20.767945769,
-          "w0Deg": 4.4028552272357,
-          "rateDegPerDay": -61.2572637,
+          "poleRaDeg": 304.982788593,
+          "poleDecDeg": 20.7679458504,
+          "w0Deg": 4.35845154360868,
+          "rateDegPerDay": -61.2575903559722,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY801 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY801 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 2.51 deg of Horizons + the full pck model over the window; the other candidate 31.21 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631127%27&STOP_TIME=%27JD+2462421.906327%27&STEP_SIZE=%27353+m%27",
-            "retrievedAt": "2026-11-12T09:48:17.795Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631928%27&STOP_TIME=%27JD+2462421.907128%27&STEP_SIZE=%27353+m%27",
+            "retrievedAt": "2026-11-12T10:17:50.776Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
@@ -2899,11 +2983,15 @@
       },
       "terrain.elevation": {
         "value": [-830, 166],
-        "note": "ellipsoid 0..0 m; run-time craters to 4150 m"
+        "note": "ellipsoid 0..0 m; run-time craters to 4150 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4122 overrides {\"craterEquilibriumFraction\":0.002}",
         "note": "planet-bake: tools/bake/planet/bodies/triton.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 3): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -2940,7 +3028,7 @@
           "mode": "fixedRate",
           "poleRaDeg": 291.418,
           "poleDecDeg": 66.764,
-          "w0Deg": 298.117931915447,
+          "w0Deg": 298.880359873176,
           "rateDegPerDay": 952.1532,
           "epochUt": 938240818
         },
@@ -3001,6 +3089,10 @@
         "value": "rocky-generic seed 4125 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/ceres.json over data/defs/terrain/rocky-generic.amplification.json"
       },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 4): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
+      },
       "terrain.surfaceFriction": {
         "value": 0.7,
         "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
@@ -3024,19 +3116,19 @@
         "note": "JPL mean radius"
       },
       "render.geometricAlbedo": {
-        "value": 0.3,
+        "value": 0.52,
         "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
-          "retrievedAt": "2026-11-12T08:45:00.055Z"
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html",
+          "retrievedAt": "2026-11-12T08:45:01.887Z"
         },
-        "note": "JPL planetary physical parameters (Horizons header: none)"
+        "note": "NASA NSSDC Pluto fact sheet (0.52): JPL's dwarf-planet table lists 0.3, a pre-New Horizons value that would draw Pluto darker than Charon (0.42 on the same NSSDC sheet)"
       },
       "rotation": {
         "value": {
           "mode": "fixedRate",
           "poleRaDeg": 132.993,
           "poleDecDeg": -6.163,
-          "w0Deg": 358.472950733732,
+          "w0Deg": 358.518082507653,
           "rateDegPerDay": 56.3625225,
           "epochUt": 938240818
         },
@@ -3061,13 +3153,13 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.3379, 0.2946, 0.2417],
+        "value": [0.5857, 0.5107, 0.4189],
         "source": {
           "url": "https://arxiv.org/pdf/astro-ph/0512491v2",
           "retrievedAt": "2026-11-12T09:34:44.577Z",
           "sha256": "fe2a7ad5dd9cdc6c25be99bb1d288ed8aa473207bd778fc46782bfec2eedf181"
         },
-        "note": "B-V 0.868, red from the B-V slope (Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.3 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.868, red from the B-V slope (Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.52 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 18,
@@ -3085,6 +3177,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4123 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/pluto.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 5): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,
@@ -3121,22 +3217,22 @@
           "mode": "fixedRate",
           "poleRaDeg": 132.993,
           "poleDecDeg": -6.163,
-          "w0Deg": 178.472950733732,
-          "rateDegPerDay": 56.3625225,
+          "w0Deg": 178.518082500319,
+          "rateDegPerDay": 56.3625225000001,
           "epochUt": 938240818
         },
         "source": {
           "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
           "retrievedAt": "2026-11-12T08:45:00.256Z"
         },
-        "note": "pck00011 BODY901 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+        "note": "synchronous: pole of pck00011 BODY901 at the lobby epoch; prime meridian by B: least-squares line through the full pck W over the window (sub-parent longitude within 0.00 deg of Horizons + the full pck model over the window; the other candidate 0.09 deg)"
       },
       "orbit": {
         "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
         "source": [
           {
-            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107061%27&STOP_TIME=%27JD+2462423.430393%27&STEP_SIZE=%27383+m%27",
-            "retrievedAt": "2026-11-12T09:48:18.766Z"
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107862%27&STOP_TIME=%27JD+2462423.431194%27&STEP_SIZE=%27383+m%27",
+            "retrievedAt": "2026-11-12T10:17:51.155Z"
           },
           {
             "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
@@ -3174,6 +3270,10 @@
       "terrain.amplification": {
         "value": "icy-generic seed 4124 overrides {}",
         "note": "planet-bake: tools/bake/planet/bodies/charon.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.residentLevel": {
+        "value": 3,
+        "note": "min(3, the pyramid's depth 4): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)"
       },
       "terrain.surfaceFriction": {
         "value": 0.7,

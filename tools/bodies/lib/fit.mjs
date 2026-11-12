@@ -1,7 +1,4 @@
-// Least-squares fit of orbit elements to Horizons state vectors (the brief's fallback path for the moons whose
-// mean-element convention does not reproduce): the plane (inclination and node on the moon's reference plane),
-// the periapsis and the phase are fitted at an epoch; a, e, the period and the precession rates stay the table's.
-import { DEG, elementsFromState, jdToUt, keplerState, matVec, transpose, poleFrame, len, sub } from './kepler.mjs';
+// Levenberg-Marquardt least squares with numerical derivatives (used by lib/ellipseFit.mjs).
 
 /** Gauss-Newton with Levenberg damping and numerical derivatives. `resid(p)` returns an array of residuals. */
 export function leastSquares(resid, p0, { steps = [1e-6], iterations = 60 } = {}) {
@@ -58,42 +55,4 @@ function solve(A, b) {
     }
   }
   return M.map((row, i) => row[n] / row[i]);
-}
-
-/**
- * Fit iDeg, lanDeg, argPeDeg and meanAnomalyDeg of `base` (a KeplerOrbitDef whose frame is a pole frame, with
- * a, e, meanMotionDegPerDay and rates already set) at base.epochUt to Horizons samples [{ jd, r, v }] given in
- * ICRF axes relative to the parent. Returns the fitted def and the rms / max position residual (m).
- */
-export function fitPlanePhase(base, samples, { muSum }) {
-  const plane = poleFrame(base.frame.pole.raDeg, base.frame.pole.decDeg);
-  const toPlane = transpose(plane);
-  // Initial guess: osculating elements of the sample nearest the epoch, in the reference plane.
-  const s0 = samples.reduce((best, s) => (Math.abs(jdToUt(s.jd) - base.epochUt) < Math.abs(jdToUt(best.jd) - base.epochUt) ? s : best));
-  const el = elementsFromState(matVec(toPlane, s0.r), matVec(toPlane, s0.v), muSum);
-  const dt0 = jdToUt(s0.jd) - base.epochUt;
-  const n = (base.meanMotionDegPerDay * DEG) / 86400;
-  const p0 = [el.i / DEG, el.O / DEG, el.w / DEG, (el.M - n * dt0) / DEG];
-  const make = (p) => ({ ...base, iDeg: p[0], lanDeg: p[1], argPeDeg: p[2], meanAnomalyDeg: p[3] });
-  const resid = (p) => {
-    const d = make(p);
-    const out = [];
-    for (const s of samples) {
-      const m = keplerState(d, jdToUt(s.jd), { muSum });
-      const e = sub(m.r, s.r);
-      out.push(e[0] / base.a, e[1] / base.a, e[2] / base.a);
-    }
-    return out;
-  };
-  const res = leastSquares(resid, p0, { steps: [1e-5, 1e-5, 1e-5, 1e-5] });
-  const def = make(res.p.map((x, k) => (k === 0 ? x : ((x % 360) + 360) % 360)));
-  let max = 0;
-  let sum = 0;
-  for (const s of samples) {
-    const m = keplerState(def, jdToUt(s.jd), { muSum });
-    const d = len(sub(m.r, s.r));
-    max = Math.max(max, d);
-    sum += d * d;
-  }
-  return { def, rms: Math.sqrt(sum / samples.length), max };
 }

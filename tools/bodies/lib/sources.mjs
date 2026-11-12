@@ -32,7 +32,8 @@ export function loadSources() {
 /**
  * planet-bake's body configs (tools/bake/planet/bodies/<id>.json) and model parameter files
  * (data/defs/terrain/<model>.amplification.json), read only: the terrain sections take the amplification of
- * the bake (seed, overrides) so the baked and the run-time crater populations are one.
+ * the bake (seed, overrides) so the baked and the run-time crater populations are one. The baked manifests
+ * (data/tiles/<id>/manifest.json), where they exist, give the terrain sections their height range.
  */
 export function loadBake() {
   const dir = join(REPO_ROOT, 'tools/bake/planet/bodies');
@@ -43,7 +44,12 @@ export function loadBake() {
     const p = join(LIVE_DEFS, 'terrain', `${m}.amplification.json`);
     if (existsSync(p)) models[m] = readJson(p);
   }
-  return { configs, models };
+  const manifests = {};
+  for (const id of Object.keys(configs)) {
+    const p = join(REPO_ROOT, 'data/tiles', id, 'manifest.json');
+    if (existsSync(p)) manifests[id] = readJson(p);
+  }
+  return { configs, models, manifests };
 }
 
 /** The live v1 files (raw text and parsed), which the staged Earth, Moon and Sun derive from. */

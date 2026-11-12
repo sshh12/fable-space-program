@@ -5,12 +5,12 @@
       "startFrom": "JPL Table 1 row \"Mercury\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 57909242998.02507,
-        "e": 0.20564159673954643,
-        "iDeg": 7.0032107683323686,
-        "lanDeg": 48.2935007817938,
-        "argPeDeg": 29.21200697453636,
-        "meanAnomalyDeg": 44614.55140029247,
+        "a": 57909242998.02628,
+        "e": 0.2056415967399643,
+        "iDeg": 7.003210768201981,
+        "lanDeg": 48.29350077904594,
+        "argPeDeg": 29.212006980802368,
+        "meanAnomalyDeg": 44614.55467719134,
         "meanMotionDegPerDay": 4.092334391098151,
         "nodeRateDegPerDay": -0.0000034316443531827513,
         "apsisRateDegPerDay": 0.000004393617796030117
@@ -18,26 +18,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 57909119087.1691,
-        "e": 0.205641621450473,
-        "iDeg": 7.00230576763538,
-        "lanDeg": 48.293634001826,
-        "argPeDeg": 29.2094571366708,
-        "meanAnomalyDeg": 334.554562622379,
+        "a": 57909119087.1736,
+        "e": 0.205641621450192,
+        "iDeg": 7.00230576763463,
+        "lanDeg": 48.2936339990146,
+        "argPeDeg": 29.2094571430044,
+        "meanAnomalyDeg": 334.557839520955,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": -0.12534081,
           "argPeDeg": 0.2858177
         },
-        "meanMotionDegPerDay": 4.09233439474198
+        "meanMotionDegPerDay": 4.09233439474202
       },
       "residual": {
-        "maxAngleDeg": 0.0067253009121409114,
-        "maxRadial": 0.000030088567443136262,
-        "rmsAngleDeg": 0.0018343207035030936,
+        "maxAngleDeg": 0.006725300827006982,
+        "maxRadial": 0.000030088567490606967,
+        "rmsAngleDeg": 0.0018343207022777663,
         "samples": 1819
       },
-      "precessionFraction": 0.0000019121756421633398,
+      "precessionFraction": 0.000001912175642163321,
       "horizons": [
         {
           "kind": "window",
@@ -53,12 +53,12 @@
       "startFrom": "JPL Table 1 row \"Jupiter\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 778335654243.9717,
-        "e": 0.048346837429586044,
-        "iDeg": 1.3038507488515032,
-        "lanDeg": 100.53476590660573,
-        "argPeDeg": -85.74309964731769,
-        "meanAnomalyDeg": 921.866888391994,
+        "a": 778335654243.5911,
+        "e": 0.048346837426680576,
+        "iDeg": 1.3038507488112274,
+        "lanDeg": 100.53476591109319,
+        "argPeDeg": -85.74309964714591,
+        "meanAnomalyDeg": 921.8669549183372,
         "meanMotionDegPerDay": 0.0830810020826831,
         "nodeRateDegPerDay": 0.000005604135797399042,
         "apsisRateDegPerDay": 0.000005818663381245722
@@ -66,26 +66,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 778353899282.75,
-        "e": 0.0481501979775371,
-        "iDeg": 1.30350107489821,
-        "lanDeg": 100.537306526843,
-        "argPeDeg": 274.57336760783,
-        "meanAnomalyDeg": 201.572668918981,
+        "a": 778353899282.76,
+        "e": 0.0481501979775856,
+        "iDeg": 1.30350107489899,
+        "lanDeg": 100.537306531309,
+        "argPeDeg": 274.573367608274,
+        "meanAnomalyDeg": 201.572735437022,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": 0.20469106,
           "argPeDeg": 0.00783561999999997
         },
-        "meanMotionDegPerDay": 0.0830709317045575
+        "meanMotionDegPerDay": 0.0830709317045551
       },
       "residual": {
-        "maxAngleDeg": 0.09109930118845141,
-        "maxRadial": 0.0006810581413315612,
-        "rmsAngleDeg": 0.0377379349634042,
+        "maxAngleDeg": 0.09109930122037775,
+        "maxRadial": 0.0006810581415471519,
+        "rmsAngleDeg": 0.037737934963042875,
         "samples": 2000
       },
-      "precessionFraction": 0.0001375065735300773,
+      "precessionFraction": 0.00013750657353008125,
       "horizons": [
         {
           "kind": "window",
@@ -108,11 +108,11 @@
       "start": {
         "a": 9375000,
         "e": 0.015,
-        "iDeg": 1.037285537145795,
-        "lanDeg": 116.10981460407041,
-        "argPeDeg": 314.2705458393206,
-        "meanAnomalyDeg": 214.45242558395444,
-        "meanMotionDegPerDay": 1127.8756952682888,
+        "iDeg": 1.0372857809515397,
+        "lanDeg": 116.1098100916039,
+        "argPeDeg": 314.24924108099566,
+        "meanAnomalyDeg": 215.3776738371543,
+        "meanMotionDegPerDay": 1127.877558291944,
         "nodeRateDegPerDay": -0.42853316668154634,
         "apsisRateDegPerDay": 0.4674907272889595
       },
@@ -124,33 +124,33 @@
             "decDeg": 52.9
           }
         },
-        "a": 9374907.26591751,
-        "e": 0.0151341547798316,
-        "iDeg": 1.07126845204621,
-        "lanDeg": 116.530168184558,
-        "argPeDeg": 314.798861149331,
-        "meanAnomalyDeg": 213.361997081862,
+        "a": 9374907.26724867,
+        "e": 0.0151341542521956,
+        "iDeg": 1.07126846274829,
+        "lanDeg": 116.529835245311,
+        "argPeDeg": 314.799545913942,
+        "meanAnomalyDeg": 214.265557953792,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -15916.3024121915,
-          "argPeDeg": 31811.6363378555
+          "lanDeg": -15916.3025029809,
+          "argPeDeg": 31811.6364382799
         },
-        "meanMotionDegPerDay": 1128.40986899692
+        "meanMotionDegPerDay": 1128.40986899661
       },
       "residual": {
-        "maxAngleDeg": 0.23560848833057435,
-        "maxRadial": 0.0001559772311353863,
-        "rmsAngleDeg": 0.09904555415663309,
+        "maxAngleDeg": 0.2356084557610278,
+        "maxRadial": 0.00015597582105287625,
+        "rmsAngleDeg": 0.09904560560795712,
         "samples": 1892
       },
-      "precessionFraction": 0.0007718428913155453,
+      "precessionFraction": 0.0007718428937523456,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "19 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.312627%27&STOP_TIME=%27JD+2462405.224827%27&STEP_SIZE=%2719+m%27",
-          "retrievedAt": "2026-11-12T09:48:01.131Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.313428%27&STOP_TIME=%27JD+2462405.225628%27&STEP_SIZE=%2719+m%27",
+          "retrievedAt": "2026-11-12T10:17:44.620Z"
         },
         {
           "kind": "window",
@@ -159,7 +159,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278436+m%27",
           "retrievedAt": "2026-11-12T09:48:01.320Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 105.14929165132344,
+        "rateDegPerDay": 1128.8450595218749,
+        "maxSubParentErrorDeg": 1.9545829568008912,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 2.459198602276274
+        },
+        "pckMeanRateDegPerDay": 1128.8449663909646
+      }
     },
     "io": {
       "frame": {
@@ -173,10 +184,10 @@
       "start": {
         "a": 421800000,
         "e": 0.004,
-        "iDeg": 0.05622208604419248,
-        "lanDeg": 256.45054877882865,
-        "argPeDeg": 48.34523872101482,
-        "meanAnomalyDeg": 136.40108026816088,
+        "iDeg": 0.056222044134227316,
+        "lanDeg": 256.45054315331123,
+        "argPeDeg": 48.32404865226085,
+        "meanAnomalyDeg": 136.58522624163442,
         "meanMotionDegPerDay": 204.22843631363133,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": -0.739404563666584
@@ -189,33 +200,33 @@
             "decDeg": 64.5
           }
         },
-        "a": 421765680.383264,
-        "e": 0.00412956024877269,
-        "iDeg": 0.0377777257447013,
-        "lanDeg": 263.089714392814,
-        "argPeDeg": 35.5715654659001,
-        "meanAnomalyDeg": 142.528727210264,
+        "a": 421765680.417295,
+        "e": 0.00412956019770826,
+        "iDeg": 0.0377777257889097,
+        "lanDeg": 263.08965608838,
+        "argPeDeg": 35.5710447302868,
+        "meanAnomalyDeg": 142.692248110372,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -4887.53428005661,
-          "argPeDeg": -22123.9483109846
+          "lanDeg": -4887.53449041424,
+          "argPeDeg": -22123.9481989763
         },
-        "meanMotionDegPerDay": 204.228492338517
+        "meanMotionDegPerDay": 204.228492341215
       },
       "residual": {
-        "maxAngleDeg": 0.03506198408399624,
-        "maxRadial": 0.00009661084493842866,
-        "rmsAngleDeg": 0.018930382686885024,
+        "maxAngleDeg": 0.035062009244231,
+        "maxRadial": 0.00009661153046355859,
+        "rmsAngleDeg": 0.018930382570353687,
         "samples": 1859
       },
-      "precessionFraction": 0.004276325376995608,
+      "precessionFraction": 0.00427632541832382,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "106 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.980531%27&STOP_TIME=%27JD+2462409.556923%27&STEP_SIZE=%27106+m%27",
-          "retrievedAt": "2026-11-12T09:48:01.768Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.981332%27&STOP_TIME=%27JD+2462409.557724%27&STEP_SIZE=%27106+m%27",
+          "retrievedAt": "2026-11-12T10:17:45.529Z"
         },
         {
           "kind": "window",
@@ -224,19 +235,30 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278585+m%27",
           "retrievedAt": "2026-11-12T09:48:01.964Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 261.87070838268846,
+        "rateDegPerDay": 203.48895824978746,
+        "maxSubParentErrorDeg": 0.0701977483245173,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 0.12766896387370252
+        },
+        "pckMeanRateDegPerDay": 203.4889538
+      }
     },
     "venus": {
       "frame": "ecliptic",
       "startFrom": "JPL Table 1 row \"Venus\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 108209647997.7917,
-        "e": 0.006764509454712887,
-        "iDeg": 3.3944415016879232,
-        "lanDeg": 76.59728113386029,
-        "argPeDeg": 55.005983816630646,
-        "meanAnomalyDeg": 17448.341134998198,
+        "a": 108209647997.80449,
+        "e": 0.006764509453812506,
+        "iDeg": 3.394441501670628,
+        "lanDeg": 76.59728112777239,
+        "argPeDeg": 55.00598382277739,
+        "meanAnomalyDeg": 17448.34241788928,
         "meanMotionDegPerDay": 1.6021303957289528,
         "nodeRateDegPerDay": -0.0000076028522929500345,
         "apsisRateDegPerDay": 7.346447638603709e-8
@@ -245,25 +267,25 @@
         "kind": "kepler",
         "frame": "ecliptic",
         "a": 108208878951.535,
-        "e": 0.00675053712707448,
-        "iDeg": 3.39424857154461,
-        "lanDeg": 76.5972627103405,
-        "argPeDeg": 54.9634344919183,
-        "meanAnomalyDeg": 168.38540665422,
+        "e": 0.00675053712715379,
+        "iDeg": 3.39424857154454,
+        "lanDeg": 76.597262704239,
+        "argPeDeg": 54.9634344991631,
+        "meanAnomalyDeg": 168.386689544098,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": -0.27769418,
           "argPeDeg": 0.28037747
         },
-        "meanMotionDegPerDay": 1.60213037713253
+        "meanMotionDegPerDay": 1.60213037713254
       },
       "residual": {
-        "maxAngleDeg": 0.0074757072184025415,
-        "maxRadial": 0.000048796081211474325,
-        "rmsAngleDeg": 0.0030562049100025987,
+        "maxAngleDeg": 0.0074757072696523584,
+        "maxRadial": 0.000048796081157955714,
+        "rmsAngleDeg": 0.0030562049100017925,
         "samples": 2000
       },
-      "precessionFraction": 0.00000479131840885199,
+      "precessionFraction": 0.00000479131840885196,
       "horizons": [
         {
           "kind": "window",
@@ -279,12 +301,12 @@
       "startFrom": "JPL Table 1 row \"Mars\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 227944643918.296,
-        "e": 0.0934175340194675,
-        "iDeg": 1.8472738955539676,
-        "lanDeg": 49.47255373549742,
-        "argPeDeg": -73.28405527153282,
-        "meanAnomalyDeg": 5709.872453321503,
+        "a": 227944643918.35657,
+        "e": 0.09341753402119547,
+        "iDeg": 1.8472738953757042,
+        "lanDeg": 49.47255372908331,
+        "argPeDeg": -73.28405525537586,
+        "meanAnomalyDeg": 5709.872872926275,
         "meanMotionDegPerDay": 0.5240207604136893,
         "nodeRateDegPerDay": -0.000008010223956194387,
         "apsisRateDegPerDay": 0.000012167306776180697
@@ -292,26 +314,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 227940333990.569,
-        "e": 0.0934371159676395,
+        "a": 227940333990.559,
+        "e": 0.0934371159678884,
         "iDeg": 1.84605116067859,
-        "lanDeg": 49.4707538840665,
-        "argPeDeg": 286.722238212015,
-        "meanAnomalyDeg": 309.867083400499,
+        "lanDeg": 49.4707538776855,
+        "argPeDeg": 286.722238228424,
+        "meanAnomalyDeg": 309.867503005101,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": -0.29257343,
           "argPeDeg": 0.73698431
         },
-        "meanMotionDegPerDay": 0.524020764011067
+        "meanMotionDegPerDay": 0.524020764011054
       },
       "residual": {
-        "maxAngleDeg": 0.027409465218657145,
-        "maxRadial": 0.0001705105002613349,
-        "rmsAngleDeg": 0.008877841502420972,
+        "maxAngleDeg": 0.02740946516153742,
+        "maxRadial": 0.00017051050019431586,
+        "rmsAngleDeg": 0.008877841502164155,
         "samples": 2000
       },
-      "precessionFraction": 0.00003850521223229419,
+      "precessionFraction": 0.000038505212232295145,
       "horizons": [
         {
           "kind": "window",
@@ -327,12 +349,12 @@
       "startFrom": "JPL Table 1 row \"Saturn\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 1426610791207.636,
-        "e": 0.053710188365051086,
-        "iDeg": 2.486567490029825,
-        "lanDeg": 113.57659747586655,
-        "argPeDeg": -21.102284019378107,
-        "meanAnomalyDeg": 320.94021162961127,
+        "a": 1426610791203.5344,
+        "e": 0.053710188353872285,
+        "iDeg": 2.4865674900722703,
+        "lanDeg": 113.57659746953784,
+        "argPeDeg": -21.10228402223456,
+        "meanAnomalyDeg": 320.9402384396301,
         "meanMotionDegPerDay": 0.03348152208542095,
         "nodeRateDegPerDay": -0.000007903571252566737,
         "apsisRateDegPerDay": -0.000011470832580424366
@@ -340,26 +362,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 1426590724154.09,
-        "e": 0.0540686556849236,
-        "iDeg": 2.48720006996395,
-        "lanDeg": 113.57354758977,
-        "argPeDeg": 338.710630094839,
-        "meanAnomalyDeg": 321.074646937067,
+        "a": 1426590724154.23,
+        "e": 0.0540686556849812,
+        "iDeg": 2.48720006996643,
+        "lanDeg": 113.573547583604,
+        "argPeDeg": 338.710630091824,
+        "meanAnomalyDeg": 321.074673770442,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": -0.28867794,
           "argPeDeg": -0.13029422
         },
-        "meanMotionDegPerDay": 0.0335107273755985
+        "meanMotionDegPerDay": 0.0335107273756023
       },
       "residual": {
-        "maxAngleDeg": 0.03283061478704913,
-        "maxRadial": 0.0015252121490616055,
-        "rmsAngleDeg": 0.01037226123735724,
+        "maxAngleDeg": 0.03283061480038929,
+        "maxRadial": 0.001525212149016434,
+        "rmsAngleDeg": 0.010372261234562976,
         "samples": 2000
       },
-      "precessionFraction": 0.0005781552759460231,
+      "precessionFraction": 0.0005781552759459575,
       "horizons": [
         {
           "kind": "window",
@@ -375,12 +397,12 @@
       "startFrom": "JPL Table 1 row \"Uranus\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 2870570917399.6074,
-        "e": 0.04724436725404737,
-        "iDeg": 0.7719155466638651,
-        "lanDeg": 74.02953274951022,
-        "argPeDeg": 97.04606196578169,
-        "meanAnomalyDeg": 269.5547475784061,
+        "a": 2870570917393.174,
+        "e": 0.04724436725308341,
+        "iDeg": 0.7719155466106054,
+        "lanDeg": 74.0295327504399,
+        "argPeDeg": 97.04606197379779,
+        "meanAnomalyDeg": 269.55475696310896,
         "meanMotionDegPerDay": 0.011720026695140315,
         "nodeRateDegPerDay": 0.000001161009993155373,
         "apsisRateDegPerDay": 0.000011171877070499658
@@ -388,26 +410,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 2870324181340.28,
-        "e": 0.047251542905873,
-        "iDeg": 0.77160101218179,
-        "lanDeg": 73.9933212374052,
-        "argPeDeg": 97.2196257567035,
-        "meanAnomalyDeg": 269.408249867935,
+        "a": 2870324181291.09,
+        "e": 0.0472515428934453,
+        "iDeg": 0.771601012228904,
+        "lanDeg": 73.9933212367742,
+        "argPeDeg": 97.2196257711265,
+        "meanAnomalyDeg": 269.408259251605,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": 0.04240589,
           "argPeDeg": 0.36564692
         },
-        "meanMotionDegPerDay": 0.0117267032338341
+        "meanMotionDegPerDay": 0.0117267032342424
       },
       "residual": {
-        "maxAngleDeg": 0.02585685744904754,
-        "maxRadial": 0.00034584476645067684,
-        "rmsAngleDeg": 0.010868272192949469,
+        "maxAngleDeg": 0.02585685930812704,
+        "maxRadial": 0.00034584476251780323,
+        "rmsAngleDeg": 0.010868272170346423,
         "samples": 2000
       },
-      "precessionFraction": 0.0010516926042838672,
+      "precessionFraction": 0.0010516926042472494,
       "horizons": [
         {
           "kind": "window",
@@ -423,12 +445,12 @@
       "startFrom": "JPL Table 1 row \"Neptune\" carried to the epoch",
       "ratesFitted": false,
       "start": {
-        "a": 4498408110465.123,
-        "e": 0.008605657704818775,
-        "iDeg": 1.7701486346963466,
-        "lanDeg": 131.78271342814028,
-        "argPeDeg": -86.91380843992621,
-        "meanAnomalyDeg": -35.03862916793675,
+        "a": 4498408110465.985,
+        "e": 0.008605657705937948,
+        "iDeg": 1.7701486347041013,
+        "lanDeg": 131.78271342802876,
+        "argPeDeg": -86.91380844688302,
+        "meanAnomalyDeg": -35.03862437156289,
         "meanMotionDegPerDay": 0.005989921092128679,
         "nodeRateDegPerDay": -1.3926461327857632e-7,
         "apsisRateDegPerDay": -0.00000882723175906913
@@ -436,26 +458,26 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 4503161730362.62,
-        "e": 0.00970675150915111,
-        "iDeg": 1.77026079366842,
-        "lanDeg": 131.790354017913,
-        "argPeDeg": 272.395599151194,
-        "meanAnomalyDeg": 325.712953479736,
+        "a": 4503161730336.77,
+        "e": 0.00970675150313539,
+        "iDeg": 1.77026079366851,
+        "lanDeg": 131.790354017723,
+        "argPeDeg": 272.395599143598,
+        "meanAnomalyDeg": 325.712958265467,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": -0.00508664,
           "argPeDeg": -0.317328
         },
-        "meanMotionDegPerDay": 0.00597625488555069
+        "meanMotionDegPerDay": 0.00597625488562081
       },
       "residual": {
-        "maxAngleDeg": 0.012914985695170822,
-        "maxRadial": 0.00018051573717709545,
-        "rmsAngleDeg": 0.0069042218655652144,
+        "maxAngleDeg": 0.012914985691903585,
+        "maxRadial": 0.00018051573742851153,
+        "rmsAngleDeg": 0.006904221864074349,
         "samples": 2000
       },
-      "precessionFraction": 0.0015003537406054722,
+      "precessionFraction": 0.0015003537405878687,
       "horizons": [
         {
           "kind": "window",
@@ -478,11 +500,11 @@
       "start": {
         "a": 23457000,
         "e": 0.0001,
-        "iDeg": 1.7859131935351273,
-        "lanDeg": 217.09159089854438,
-        "argPeDeg": 242.939201083046,
-        "meanAnomalyDeg": 88.97467708489796,
-        "meanMotionDegPerDay": 285.1139562516045,
+        "iDeg": 1.785913793171849,
+        "lanDeg": 217.09158218202703,
+        "argPeDeg": 242.9514008714015,
+        "meanAnomalyDeg": 89.19081072644695,
+        "meanMotionDegPerDay": 285.1139235486906,
         "nodeRateDegPerDay": 0.017537834223622,
         "apsisRateDegPerDay": 0.017537834223622
       },
@@ -494,33 +516,33 @@
             "decDeg": 53.5
           }
         },
-        "a": 23457504.8119708,
-        "e": 0.000286896723756697,
-        "iDeg": 1.80046143356999,
-        "lanDeg": 217.635441644517,
-        "argPeDeg": 228.526563956409,
-        "meanAnomalyDeg": 102.663041236985,
+        "a": 23457504.8205787,
+        "e": 0.000286895261272665,
+        "iDeg": 1.80046146730295,
+        "lanDeg": 217.635426183287,
+        "argPeDeg": 228.582892976523,
+        "meanAnomalyDeg": 102.835069853129,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -658.354002685611,
-          "argPeDeg": 1285.3891656495
+          "lanDeg": -658.353997991178,
+          "argPeDeg": 1284.92645985801
         },
-        "meanMotionDegPerDay": 285.14472973484
+        "meanMotionDegPerDay": 285.144742402683
       },
       "residual": {
-        "maxAngleDeg": 0.23572976652616695,
-        "maxRadial": 0.00011797315427170368,
-        "rmsAngleDeg": 0.10228040800315696,
+        "maxAngleDeg": 0.2357744869756564,
+        "maxRadial": 0.0001179644331737123,
+        "rmsAngleDeg": 0.10228065213068772,
         "samples": 1901
       },
-      "precessionFraction": 0.00012341815828814773,
+      "precessionFraction": 0.0001233737255642984,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "76 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.481227%27&STOP_TIME=%27JD+2462408.056227%27&STEP_SIZE=%2776+m%27",
-          "retrievedAt": "2026-11-12T09:48:10.238Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.482028%27&STOP_TIME=%27JD+2462408.057028%27&STEP_SIZE=%2776+m%27",
+          "retrievedAt": "2026-11-12T10:17:45.046Z"
         },
         {
           "kind": "window",
@@ -529,7 +551,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278396+m%27",
           "retrievedAt": "2026-11-12T09:48:10.481Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 10.731709625106305,
+        "rateDegPerDay": 285.1618970217622,
+        "maxSubParentErrorDeg": 0.26319277358084037,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 4.190354337240933
+        },
+        "pckMeanRateDegPerDay": 285.16188899
+      }
     },
     "europa": {
       "frame": {
@@ -543,10 +576,10 @@
       "start": {
         "a": 671100000,
         "e": 0.009,
-        "iDeg": 0.45451028485512157,
-        "lanDeg": 192.36569050541513,
-        "argPeDeg": 286.87155773025796,
-        "meanAnomalyDeg": 70.65264838504152,
+        "iDeg": 0.45451024577888194,
+        "lanDeg": 192.36569042109053,
+        "argPeDeg": 286.8728962362101,
+        "meanAnomalyDeg": 70.73248153894599,
         "meanMotionDegPerDay": 102.11424712158376,
         "nodeRateDegPerDay": -0.03263447067636436,
         "apsisRateDegPerDay": -0.7396834544407521
@@ -559,33 +592,33 @@
             "decDeg": 64.5
           }
         },
-        "a": 671060258.684261,
-        "e": 0.00928603861089706,
-        "iDeg": 0.466705353199805,
-        "lanDeg": 189.521848510042,
-        "argPeDeg": 288.866003823343,
-        "meanAnomalyDeg": 71.4722357581327,
+        "a": 671060258.716683,
+        "e": 0.00928603923178953,
+        "iDeg": 0.466705372215156,
+        "lanDeg": 189.521813180441,
+        "argPeDeg": 288.865396343535,
+        "meanAnomalyDeg": 71.5540534620635,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -1194.76858304279,
-          "argPeDeg": -25815.1906367479
+          "lanDeg": -1194.76851972252,
+          "argPeDeg": -25815.1903497399
         },
-        "meanMotionDegPerDay": 102.114214060049
+        "meanMotionDegPerDay": 102.114214050454
       },
       "residual": {
-        "maxAngleDeg": 0.14103592720002736,
-        "maxRadial": 0.0006521007454724347,
-        "rmsAngleDeg": 0.06778271752965441,
+        "maxAngleDeg": 0.14103616338030683,
+        "maxRadial": 0.0006521007480172482,
+        "rmsAngleDeg": 0.06778272047644364,
         "samples": 1943
       },
-      "precessionFraction": 0.007562153508856694,
+      "precessionFraction": 0.007562153398661251,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "212 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.692338%27&STOP_TIME=%27JD+2462414.845116%27&STEP_SIZE=%27212+m%27",
-          "retrievedAt": "2026-11-12T09:48:10.963Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.693139%27&STOP_TIME=%27JD+2462414.845917%27&STEP_SIZE=%27212+m%27",
+          "retrievedAt": "2026-11-12T10:17:45.891Z"
         },
         {
           "kind": "window",
@@ -594,7 +627,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278214+m%27",
           "retrievedAt": "2026-11-12T09:48:11.178Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 11.67042809468694,
+        "rateDegPerDay": 101.37472167894236,
+        "maxSubParentErrorDeg": 0.1463184617243769,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 1.1605731602638798
+        },
+        "pckMeanRateDegPerDay": 101.3747235
+      }
     },
     "ganymede": {
       "frame": {
@@ -608,10 +652,10 @@
       "start": {
         "a": 1070400000,
         "e": 0.001,
-        "iDeg": 0.2528357429735952,
-        "lanDeg": 339.63242013660954,
-        "argPeDeg": 359.23931001527825,
-        "meanAnomalyDeg": 175.18715978190232,
+        "iDeg": 0.2528357136892656,
+        "lanDeg": 339.632420877904,
+        "argPeDeg": 359.2341360773999,
+        "meanAnomalyDeg": 175.23262654043444,
         "meanMotionDegPerDay": 50.31033089104627,
         "nodeRateDegPerDay": -0.00715196269822335,
         "apsisRateDegPerDay": 0.007278664721105159
@@ -624,33 +668,33 @@
             "decDeg": 64.6
           }
         },
-        "a": 1070429833.87008,
-        "e": 0.00216989017045075,
-        "iDeg": 0.235150778106887,
-        "lanDeg": 335.96085769085,
-        "argPeDeg": 8.40373993538776,
-        "meanAnomalyDeg": 169.708359874061,
+        "a": 1070429833.5514,
+        "e": 0.00216989007561513,
+        "iDeg": 0.235150767280874,
+        "lanDeg": 335.960847369417,
+        "argPeDeg": 8.40369777895603,
+        "meanAnomalyDeg": 169.748703542005,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -207.776587470775,
-          "argPeDeg": 419.995699209285
+          "lanDeg": -207.776584241999,
+          "argPeDeg": 419.995874088684
         },
-        "meanMotionDegPerDay": 50.3117978082057
+        "meanMotionDegPerDay": 50.311797803352
       },
       "residual": {
-        "maxAngleDeg": 0.12598761590988936,
-        "maxRadial": 0.0009485000072320636,
-        "rmsAngleDeg": 0.054875377410810625,
+        "maxAngleDeg": 0.12598795147935302,
+        "maxRadial": 0.000948501886262379,
+        "rmsAngleDeg": 0.05487538533374401,
         "samples": 2000
       },
-      "precessionFraction": 0.00022855187168141614,
+      "precessionFraction": 0.00022855196686875852,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "429 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.801963%27&STOP_TIME=%27JD+2462425.735491%27&STEP_SIZE=%27429+m%27",
-          "retrievedAt": "2026-11-12T09:48:11.479Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.802764%27&STOP_TIME=%27JD+2462425.736292%27&STEP_SIZE=%27429+m%27",
+          "retrievedAt": "2026-11-12T10:17:46.187Z"
         },
         {
           "kind": "window",
@@ -659,7 +703,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
           "retrievedAt": "2026-11-12T09:48:11.658Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 336.7221921606688,
+        "rateDegPerDay": 50.317608050849515,
+        "maxSubParentErrorDeg": 0.1256394217699608,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 0.39063485919973573
+        },
+        "pckMeanRateDegPerDay": 50.3176081
+      }
     },
     "callisto": {
       "frame": {
@@ -673,10 +728,10 @@
       "start": {
         "a": 1882700000,
         "e": 0.007,
-        "iDeg": 0.21085316264689222,
-        "lanDeg": 279.17018255863644,
-        "argPeDeg": 96.25127647008001,
-        "meanAnomalyDeg": 311.0611662380944,
+        "iDeg": 0.21085310220026826,
+        "lanDeg": 279.1701654119868,
+        "argPeDeg": 96.25289260615304,
+        "meanAnomalyDeg": 311.07682505685676,
         "meanMotionDegPerDay": 21.56923364512859,
         "nodeRateDegPerDay": -0.0017074099257316522,
         "apsisRateDegPerDay": 0.0018390161571032414
@@ -689,33 +744,33 @@
             "decDeg": 64.8
           }
         },
-        "a": 1882744037.01836,
-        "e": 0.00721354258274862,
-        "iDeg": 0.209344320050267,
-        "lanDeg": 278.752890975144,
-        "argPeDeg": 95.0631230234688,
-        "meanAnomalyDeg": 312.654180232467,
+        "a": 1882744037.02675,
+        "e": 0.00721354255571554,
+        "iDeg": 0.209344321143571,
+        "lanDeg": 278.752889032713,
+        "argPeDeg": 95.0631232079671,
+        "meanAnomalyDeg": 312.671454830714,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -45.1941014020927,
-          "argPeDeg": 107.794231204215
+          "lanDeg": -45.1940965777943,
+          "argPeDeg": 107.794248087639
         },
-        "meanMotionDegPerDay": 21.5693581835747
+        "meanMotionDegPerDay": 21.5693581829798
       },
       "residual": {
-        "maxAngleDeg": 0.04669524370050083,
-        "maxRadial": 0.0002207568046833997,
-        "rmsAngleDeg": 0.02306508433563886,
+        "maxAngleDeg": 0.046695257025713116,
+        "maxRadial": 0.00022075671086978698,
+        "rmsAngleDeg": 0.02306508423027032,
         "samples": 1819
       },
-      "precessionFraction": 0.00013682582404120873,
+      "precessionFraction": 0.0001368258454755208,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "1001 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.197407%27&STOP_TIME=%27JD+2462454.340047%27&STEP_SIZE=%271001+m%27",
-          "retrievedAt": "2026-11-12T09:48:11.919Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.198208%27&STOP_TIME=%27JD+2462454.340848%27&STEP_SIZE=%271001+m%27",
+          "retrievedAt": "2026-11-12T10:17:46.518Z"
         },
         {
           "kind": "window",
@@ -724,7 +779,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:12.094Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 146.06685737113003,
+        "rateDegPerDay": 21.571070605354315,
+        "maxSubParentErrorDeg": 0.04386545253623808,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.04697356400697572
+        },
+        "pckMeanRateDegPerDay": 21.5710715
+      }
     },
     "mimas": {
       "frame": {
@@ -738,10 +804,10 @@
       "start": {
         "a": 186000000,
         "e": 0.02,
-        "iDeg": 1.5919750049695418,
-        "lanDeg": 120.6598343593119,
-        "argPeDeg": 97.00885732102066,
-        "meanAnomalyDeg": 163.47081343872117,
+        "iDeg": 1.5919645153762754,
+        "lanDeg": 120.65842659814258,
+        "argPeDeg": 96.97074469525235,
+        "meanAnomalyDeg": 163.81618586132282,
         "meanMotionDegPerDay": 378.9956151264619,
         "nodeRateDegPerDay": 0.9996209770462032,
         "apsisRateDegPerDay": 2.9988629311386097
@@ -754,33 +820,33 @@
             "decDeg": 83.5
           }
         },
-        "a": 185223059.21734,
-        "e": 0.0196819483704849,
-        "iDeg": 1.58070462972994,
-        "lanDeg": 119.769511090183,
-        "argPeDeg": 95.1425707314702,
-        "meanAnomalyDeg": 163.914858957087,
+        "a": 185223059.323007,
+        "e": 0.0196819921296395,
+        "iDeg": 1.58070464314829,
+        "lanDeg": 119.768682163364,
+        "argPeDeg": 95.1449539726429,
+        "meanAnomalyDeg": 164.219151527898,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -36510.6381511336,
-          "argPeDeg": 73068.3155885825
+          "lanDeg": -36510.6380322255,
+          "argPeDeg": 73068.3100589923
         },
-        "meanMotionDegPerDay": 381.002205220617
+        "meanMotionDegPerDay": 381.00220537385
       },
       "residual": {
-        "maxAngleDeg": 10.172450516047737,
-        "maxRadial": 0.005088670188907026,
-        "rmsAngleDeg": 3.379104283978319,
+        "maxAngleDeg": 10.172495993237636,
+        "maxRadial": 0.005088970429774566,
+        "rmsAngleDeg": 3.379102180607505,
         "samples": 1843
       },
-      "precessionFraction": 0.00525062959236101,
+      "precessionFraction": 0.005250629192897446,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "57 min",
           "rows": 143,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27",
-          "retrievedAt": "2026-11-12T09:48:12.309Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.442262%27&STOP_TIME=%27JD+2462407.096794%27&STEP_SIZE=%2757+m%27",
+          "retrievedAt": "2026-11-12T10:17:46.825Z"
         },
         {
           "kind": "window",
@@ -789,7 +855,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278661+m%27",
           "retrievedAt": "2026-11-12T09:48:12.478Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 181.20392240630463,
+        "rateDegPerDay": 382.003099885192,
+        "maxSubParentErrorDeg": 4.03805679799234,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 13.235675163053429
+        },
+        "pckMeanRateDegPerDay": 381.994555
+      }
     },
     "enceladus": {
       "frame": {
@@ -803,10 +880,10 @@
       "start": {
         "a": 238400000,
         "e": 0.005,
-        "iDeg": 0.04228553314202316,
-        "lanDeg": 182.4043730245622,
-        "argPeDeg": 61.819292649182415,
-        "meanAnomalyDeg": 14.107287068259252,
+        "iDeg": 0.042285513240433906,
+        "lanDeg": 182.4042826334282,
+        "argPeDeg": 61.87131209907427,
+        "meanAnomalyDeg": 14.265746056725988,
         "meanMotionDegPerDay": 262.3939093813618,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": 0.33800627001630884
@@ -819,33 +896,33 @@
             "decDeg": 83.5
           }
         },
-        "a": 238034130.601484,
-        "e": 0.00474528621219927,
-        "iDeg": 0.0359888145901261,
-        "lanDeg": 184.017522445057,
-        "argPeDeg": 57.5149731453719,
-        "meanAnomalyDeg": 16.958712793012,
+        "a": 238034130.613079,
+        "e": 0.00474528496519296,
+        "iDeg": 0.035988769281877,
+        "lanDeg": 184.016300808408,
+        "argPeDeg": 57.5160344679007,
+        "meanAnomalyDeg": 17.1692551652729,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": 15.2321155554757,
-          "argPeDeg": 12329.5807307127
+          "lanDeg": 15.2568713258714,
+          "argPeDeg": 12329.5591530788
         },
-        "meanMotionDegPerDay": 262.393924145348
+        "meanMotionDegPerDay": 262.393924058069
       },
       "residual": {
-        "maxAngleDeg": 0.47462148771938434,
-        "maxRadial": 0.00016816039263927154,
-        "rmsAngleDeg": 0.22403993033835962,
+        "maxAngleDeg": 0.4746233911327745,
+        "maxRadial": 0.00016814345301427322,
+        "rmsAngleDeg": 0.22403983003381814,
         "samples": 1846
       },
-      "precessionFraction": 0.0012896624393243213,
+      "precessionFraction": 0.0012896653544118295,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "82 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27",
-          "retrievedAt": "2026-11-12T09:48:12.699Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158874%27&STOP_TIME=%27JD+2462408.380182%27&STEP_SIZE=%2782+m%27",
+          "retrievedAt": "2026-11-12T10:17:47.138Z"
         },
         {
           "kind": "window",
@@ -854,7 +931,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278646+m%27",
           "retrievedAt": "2026-11-12T09:48:12.879Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 82.83125279285014,
+        "rateDegPerDay": 262.73189960000025,
+        "maxSubParentErrorDeg": 0.467317551122278,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.4836338278252015
+        },
+        "pckMeanRateDegPerDay": 262.7318996
+      }
     },
     "tethys": {
       "frame": {
@@ -868,10 +956,10 @@
       "start": {
         "a": 295000000,
         "e": 0.001,
-        "iDeg": 1.0956575690950432,
-        "lanDeg": 269.42382545657443,
-        "argPeDeg": 37.81330925022749,
-        "meanAnomalyDeg": 2.9345644723723243,
+        "iDeg": 1.0956547692094438,
+        "lanDeg": 269.42370992517067,
+        "argPeDeg": 37.95700063826295,
+        "meanAnomalyDeg": 2.943691150127815,
         "meanMotionDegPerDay": 190.5001276751974,
         "nodeRateDegPerDay": 0.1978374715711675,
         "apsisRateDegPerDay": 0.1978374715711675
@@ -884,33 +972,33 @@
             "decDeg": 83.5
           }
         },
-        "a": 294672338.912971,
-        "e": 0.000135492891772893,
-        "iDeg": 1.0920735575508,
-        "lanDeg": 270.904704645544,
-        "argPeDeg": 22.5857583863099,
-        "meanAnomalyDeg": 16.7989422774285,
+        "a": 294672338.874379,
+        "e": 0.00013548840792213,
+        "iDeg": 1.09207358547611,
+        "lanDeg": 270.904557206752,
+        "argPeDeg": 22.8066203065126,
+        "meanAnomalyDeg": 16.7309284059043,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -7224.56142213018,
-          "argPeDeg": 14449.4880651243
+          "lanDeg": -7224.56147839585,
+          "argPeDeg": 14448.4366229373
         },
-        "meanMotionDegPerDay": 190.499688309636
+        "meanMotionDegPerDay": 190.49971709789
       },
       "residual": {
-        "maxAngleDeg": 0.4792699360815724,
-        "maxRadial": 0.00011837559053744127,
-        "rmsAngleDeg": 0.1633696516960617,
+        "maxAngleDeg": 0.4792532703631541,
+        "maxRadial": 0.00011847146524560483,
+        "rmsAngleDeg": 0.1633695564285892,
         "samples": 1819
       },
-      "precessionFraction": 0.0020766722834976623,
+      "precessionFraction": 0.002076520857015767,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "113 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27",
-          "retrievedAt": "2026-11-12T09:48:13.130Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.606122%27&STOP_TIME=%27JD+2462409.932934%27&STEP_SIZE=%27113+m%27",
+          "retrievedAt": "2026-11-12T10:17:47.425Z"
         },
         {
           "kind": "window",
@@ -919,7 +1007,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:13.303Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 138.24170178547502,
+        "rateDegPerDay": 190.69749602039627,
+        "maxSubParentErrorDeg": 0.26376477974099544,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 7.672388085775083
+        },
+        "pckMeanRateDegPerDay": 190.6979085
+      }
     },
     "dione": {
       "frame": {
@@ -933,10 +1032,10 @@
       "start": {
         "a": 377700000,
         "e": 0.002,
-        "iDeg": 0.048826931218690875,
-        "lanDeg": 147.26288023633143,
-        "argPeDeg": 266.7994081246944,
-        "meanAnomalyDeg": 16.008804492060886,
+        "iDeg": 0.0488269385860737,
+        "lanDeg": 147.26283787106055,
+        "argPeDeg": 266.8238440296044,
+        "meanAnomalyDeg": 16.089739929034966,
         "meanMotionDegPerDay": 131.61916606129907,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": -0.08425596541011765
@@ -949,33 +1048,33 @@
             "decDeg": 83.5
           }
         },
-        "a": 377414621.00082,
-        "e": 0.00218784941012944,
-        "iDeg": 0.0362677963471671,
-        "lanDeg": 176.98947685715,
-        "argPeDeg": 232.792460406916,
-        "meanAnomalyDeg": 20.2815393012229,
+        "a": 377414620.899447,
+        "e": 0.00218784970880413,
+        "iDeg": 0.0362677667229258,
+        "lanDeg": 176.990349688916,
+        "argPeDeg": 232.791611366028,
+        "meanAnomalyDeg": 20.3868408784668,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": 103.445897968809,
-          "argPeDeg": 2974.58222078759
+          "lanDeg": 103.440985489908,
+          "argPeDeg": 2974.5874280678
         },
-        "meanMotionDegPerDay": 131.450658048698
+        "meanMotionDegPerDay": 131.450658040631
       },
       "residual": {
-        "maxAngleDeg": 0.06782664629740108,
-        "maxRadial": 0.0002330890852267372,
-        "rmsAngleDeg": 0.029106607676794894,
+        "maxAngleDeg": 0.06782666131817988,
+        "maxRadial": 0.0002330901824851549,
+        "rmsAngleDeg": 0.02910658869243535,
         "samples": 1819
       },
-      "precessionFraction": 0.0006626365565780988,
+      "precessionFraction": 0.0006626355948501114,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "164 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27",
-          "retrievedAt": "2026-11-12T09:48:13.626Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.058780%27&STOP_TIME=%27JD+2462412.480276%27&STEP_SIZE=%27164+m%27",
+          "retrievedAt": "2026-11-12T10:17:47.748Z"
         },
         {
           "kind": "window",
@@ -984,7 +1083,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:13.799Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 250.87453785631806,
+        "rateDegPerDay": 131.5349315999999,
+        "maxSubParentErrorDeg": 0.06779798053844388,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.06867434378182224
+        },
+        "pckMeanRateDegPerDay": 131.5349316
+      }
     },
     "rhea": {
       "frame": {
@@ -998,10 +1108,10 @@
       "start": {
         "a": 527200000,
         "e": 0.001,
-        "iDeg": 0.2771076492664568,
-        "lanDeg": 56.51329591877014,
-        "argPeDeg": 170.91389848794546,
-        "meanAnomalyDeg": 120.36772735570293,
+        "iDeg": 0.27710773922567167,
+        "lanDeg": 56.51324795506508,
+        "argPeDeg": 170.90845369676208,
+        "meanAnomalyDeg": 120.43702722724005,
         "meanMotionDegPerDay": 79.69004115769265,
         "nodeRateDegPerDay": 0.027550699744725547,
         "apsisRateDegPerDay": -0.0014904117602556402
@@ -1014,33 +1124,33 @@
             "decDeg": 83.5
           }
         },
-        "a": 527067673.798142,
-        "e": 0.00096575808802994,
-        "iDeg": 0.337792832069986,
-        "lanDeg": 44.4350369728972,
-        "argPeDeg": 176.503427828946,
-        "meanAnomalyDeg": 126.851467875959,
+        "a": 527067673.718053,
+        "e": 0.000965757864030604,
+        "iDeg": 0.337792926675125,
+        "lanDeg": 44.4350353504207,
+        "argPeDeg": 176.503260744612,
+        "meanAnomalyDeg": 126.915447606435,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -959.739654625695,
-          "argPeDeg": 1010.43256404499
+          "lanDeg": -959.739754089331,
+          "argPeDeg": 1010.43365969285
         },
-        "meanMotionDegPerDay": 79.6886573450767
+        "meanMotionDegPerDay": 79.6886573178084
       },
       "residual": {
-        "maxAngleDeg": 0.09068159794547243,
-        "maxRadial": 0.00030286592820073685,
-        "rmsAngleDeg": 0.03927886524675897,
+        "maxAngleDeg": 0.09068155281442748,
+        "maxRadial": 0.00030286730556117745,
+        "rmsAngleDeg": 0.03927887009438699,
         "samples": 1819
       },
-      "precessionFraction": 0.0003471527420565076,
+      "precessionFraction": 0.0003471531186053269,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "271 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27",
-          "retrievedAt": "2026-11-12T09:48:14.132Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.717019%27&STOP_TIME=%27JD+2462417.822037%27&STEP_SIZE=%27271+m%27",
+          "retrievedAt": "2026-11-12T10:17:48.136Z"
         },
         {
           "kind": "window",
@@ -1049,7 +1159,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:14.336Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 168.7654725839384,
+        "rateDegPerDay": 79.690045241302,
+        "maxSubParentErrorDeg": 0.052694111216169404,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 3.858346254501157
+        },
+        "pckMeanRateDegPerDay": 79.6900478
+      }
     },
     "titan": {
       "frame": {
@@ -1063,10 +1184,10 @@
       "start": {
         "a": 1221900000,
         "e": 0.029,
-        "iDeg": 0.33541741372249934,
-        "lanDeg": 10.546198329087309,
-        "argPeDeg": 213.19990104766822,
-        "meanAnomalyDeg": 157.4246008800031,
+        "iDeg": 0.3354173974940282,
+        "lanDeg": 10.546197732614623,
+        "argPeDeg": 213.19984530161338,
+        "meanAnomalyDeg": 157.44273669826444,
         "meanMotionDegPerDay": 22.57697620035511,
         "nodeRateDegPerDay": -0.0014339093695790572,
         "apsisRateDegPerDay": -0.004276952762239598
@@ -1079,33 +1200,33 @@
             "decDeg": 84
           }
         },
-        "a": 1221865021.51857,
-        "e": 0.0286803064930753,
-        "iDeg": 0.350556013836303,
-        "lanDeg": 8.62935613182555,
-        "argPeDeg": 214.934933061566,
-        "meanAnomalyDeg": 157.607874823895,
+        "a": 1221865021.5149,
+        "e": 0.0286803064932319,
+        "iDeg": 0.350556013860425,
+        "lanDeg": 8.62935410274906,
+        "argPeDeg": 214.934936369336,
+        "meanAnomalyDeg": 157.625951854011,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -41.4901916550995,
-          "argPeDeg": 93.2534740172511
+          "lanDeg": -41.4901858866494,
+          "argPeDeg": 93.2534671628655
         },
-        "meanMotionDegPerDay": 22.5755596820533
+        "meanMotionDegPerDay": 22.5755596820826
       },
       "residual": {
-        "maxAngleDeg": 0.03173837379956464,
-        "maxRadial": 0.00009887348326150408,
-        "rmsAngleDeg": 0.01589906737781497,
+        "maxAngleDeg": 0.03173836931890076,
+        "maxRadial": 0.00009887343453793679,
+        "rmsAngleDeg": 0.015899067301714375,
         "samples": 1820
       },
-      "precessionFraction": 0.00011309314180321241,
+      "precessionFraction": 0.00011309313349041016,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "957 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27",
-          "retrievedAt": "2026-11-12T09:48:14.602Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.433184%27&STOP_TIME=%27JD+2462452.105872%27&STEP_SIZE=%27957+m%27",
+          "retrievedAt": "2026-11-12T10:17:48.482Z"
         },
         {
           "kind": "window",
@@ -1114,7 +1235,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278770+m%27",
           "retrievedAt": "2026-11-12T09:48:14.761Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 196.06168940724456,
+        "rateDegPerDay": 22.576976883486466,
+        "maxSubParentErrorDeg": 0.030175635336490814,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 0.03056109579506483
+        },
+        "pckMeanRateDegPerDay": 22.5769768
+      }
     },
     "iapetus": {
       "frame": {
@@ -1128,10 +1260,10 @@
       "start": {
         "a": 3561700000,
         "e": 0.028,
-        "iDeg": 7.546688549357896,
-        "lanDeg": 71.19400561675347,
-        "argPeDeg": 284.6179474506772,
-        "meanAnomalyDeg": 163.25537858186158,
+        "iDeg": 7.5466885839030375,
+        "lanDeg": 71.19401806483573,
+        "argPeDeg": 284.6177411447553,
+        "meanAnomalyDeg": 163.25921694965749,
         "meanMotionDegPerDay": 4.53794848072132,
         "nodeRateDegPerDay": 0.000314866196094676,
         "apsisRateDegPerDay": 0.0009075815027081563
@@ -1144,33 +1276,33 @@
             "decDeg": 78.9
           }
         },
-        "a": 3560843232.85538,
-        "e": 0.0285069532873655,
-        "iDeg": 7.5881181795223,
-        "lanDeg": 71.2355374976165,
-        "argPeDeg": 283.397222024167,
-        "meanAnomalyDeg": 164.390114854358,
+        "a": 3560843232.72373,
+        "e": 0.0285069532686546,
+        "iDeg": 7.58811818619693,
+        "lanDeg": 71.2355381037396,
+        "argPeDeg": 283.397223143114,
+        "meanAnomalyDeg": 164.393746975451,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -10.6491199273383,
-          "argPeDeg": 18.8594337439395
+          "lanDeg": -10.6491252228428,
+          "argPeDeg": 18.8594304512019
         },
-        "meanMotionDegPerDay": 4.53772352299907
+        "meanMotionDegPerDay": 4.53772352321399
       },
       "residual": {
-        "maxAngleDeg": 0.1291350197454492,
-        "maxRadial": 0.0006407519749140021,
-        "rmsAngleDeg": 0.059746626243614785,
+        "maxAngleDeg": 0.12913505630605898,
+        "maxRadial": 0.0006407523543066028,
+        "rmsAngleDeg": 0.05974663602119623,
         "samples": 1819
       },
-      "precessionFraction": 0.00011378902936462808,
+      "precessionFraction": 0.00011378900949239533,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "4760 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27",
-          "retrievedAt": "2026-11-12T09:48:15.023Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.276522%27&STOP_TIME=%27JD+2462642.262534%27&STEP_SIZE=%274760+m%27",
+          "retrievedAt": "2026-11-12T10:17:48.767Z"
         },
         {
           "kind": "window",
@@ -1179,7 +1311,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:15.203Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 314.1003394798754,
+        "rateDegPerDay": 4.537948309120311,
+        "maxSubParentErrorDeg": 1.0998396919218294,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 1.1978433266099273
+        },
+        "pckMeanRateDegPerDay": 4.5379572
+      }
     },
     "miranda": {
       "frame": {
@@ -1193,10 +1336,10 @@
       "start": {
         "a": 129846000,
         "e": 0.001,
-        "iDeg": 4.424251265133457,
-        "lanDeg": 219.11356238156588,
-        "argPeDeg": 276.7989531270182,
-        "meanAnomalyDeg": 68.55196596501071,
+        "iDeg": 4.424252555244788,
+        "lanDeg": 219.11355884216852,
+        "argPeDeg": 276.80834885840875,
+        "meanAnomalyDeg": 68.74651253681635,
         "meanMotionDegPerDay": 254.63588254217964,
         "nodeRateDegPerDay": -0.05541273308413766,
         "apsisRateDegPerDay": 0.05484862538633514
@@ -1209,33 +1352,33 @@
             "decDeg": 15.175
           }
         },
-        "a": 129827788.192904,
-        "e": 0.00134875022798358,
-        "iDeg": 4.4272500842674,
-        "lanDeg": 219.10310144337,
-        "argPeDeg": 273.008913790356,
-        "meanAnomalyDeg": 71.2143055943329,
+        "a": 129827789.035383,
+        "e": 0.00134875662954533,
+        "iDeg": 4.42725007340907,
+        "lanDeg": 219.103082337208,
+        "argPeDeg": 273.067864389456,
+        "meanAnomalyDeg": 71.3593424177351,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -2023.95917845372,
-          "argPeDeg": 4020.44751094674
+          "lanDeg": -2023.95929989979,
+          "argPeDeg": 4020.04723160697
         },
-        "meanMotionDegPerDay": 254.635963615502
+        "meanMotionDegPerDay": 254.635974574357
       },
       "residual": {
-        "maxAngleDeg": 1.7394810769040918,
-        "maxRadial": 0.0004337527163224631,
-        "rmsAngleDeg": 1.0033145404635255,
+        "maxAngleDeg": 1.739426758563064,
+        "maxRadial": 0.0004351592515268744,
+        "rmsAngleDeg": 1.0033168754313968,
         "samples": 1819
       },
-      "precessionFraction": 0.00043227929103878984,
+      "precessionFraction": 0.00043223623432475325,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "85 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.028290%27&STOP_TIME=%27JD+2462408.509164%27&STEP_SIZE=%2785+m%27",
-          "retrievedAt": "2026-11-12T09:48:15.448Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.029091%27&STOP_TIME=%27JD+2462408.509965%27&STEP_SIZE=%2785+m%27",
+          "retrievedAt": "2026-11-12T10:17:49.073Z"
         },
         {
           "kind": "window",
@@ -1244,7 +1387,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
           "retrievedAt": "2026-11-12T09:48:15.628Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+        "w0Deg": 153.76736818021163,
+        "rateDegPerDay": -254.6906244835071,
+        "maxSubParentErrorDeg": 1.7168860054380275,
+        "otherCandidate": {
+          "method": "B: least-squares line through the full pck W over the window",
+          "maxSubParentErrorDeg": 1.9379410665521846
+        },
+        "pckMeanRateDegPerDay": -254.6906892
+      }
     },
     "ariel": {
       "frame": {
@@ -1258,10 +1412,10 @@
       "start": {
         "a": 190929000,
         "e": 0.001,
-        "iDeg": 0.017617238543392675,
-        "lanDeg": 75.04815058796336,
-        "argPeDeg": 216.56871643377423,
-        "meanAnomalyDeg": 122.09509527267267,
+        "iDeg": 0.01761724181209004,
+        "lanDeg": 75.04814610752776,
+        "argPeDeg": 216.54946185906002,
+        "meanAnomalyDeg": 122.2287235331164,
         "meanMotionDegPerDay": 142.80155729156664,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": 0.03410353563432257
@@ -1274,33 +1428,33 @@
             "decDeg": 15.175
           }
         },
-        "a": 190929254.549727,
-        "e": 0.00105615049437139,
-        "iDeg": 0.023501180597206,
-        "lanDeg": 103.451341824713,
-        "argPeDeg": 199.81494138838,
-        "meanAnomalyDeg": 110.541919604156,
+        "a": 190929254.285655,
+        "e": 0.00105614964501971,
+        "iDeg": 0.0235011898934045,
+        "lanDeg": 103.451125037274,
+        "argPeDeg": 199.814877466551,
+        "meanAnomalyDeg": 110.656574547211,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -220.52221068799,
-          "argPeDeg": 837.172267215452
+          "lanDeg": -220.521178637431,
+          "argPeDeg": 837.167803001057
         },
-        "meanMotionDegPerDay": 142.818763868018
+        "meanMotionDegPerDay": 142.818763961997
       },
       "residual": {
-        "maxAngleDeg": 0.17524452631137932,
-        "maxRadial": 0.0008164300965152704,
-        "rmsAngleDeg": 0.07823762752200006,
+        "maxAngleDeg": 0.17524422247937446,
+        "maxRadial": 0.0008164222677820356,
+        "rmsAngleDeg": 0.07823764240223809,
         "samples": 1846
       },
-      "precessionFraction": 0.00016048680780342896,
+      "precessionFraction": 0.00016048595190321004,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "151 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.707590%27&STOP_TIME=%27JD+2462411.829864%27&STEP_SIZE=%27151+m%27",
-          "retrievedAt": "2026-11-12T09:48:15.904Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.708391%27&STOP_TIME=%27JD+2462411.830665%27&STEP_SIZE=%27151+m%27",
+          "retrievedAt": "2026-11-12T10:17:49.409Z"
         },
         {
           "kind": "window",
@@ -1309,7 +1463,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278645+m%27",
           "retrievedAt": "2026-11-12T09:48:16.106Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 305.12517017126083,
+        "rateDegPerDay": -142.8356679972863,
+        "maxSubParentErrorDeg": 0.12601889275833855,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.37158928245844436
+        },
+        "pckMeanRateDegPerDay": -142.8356681
+      }
     },
     "umbriel": {
       "frame": {
@@ -1323,10 +1488,10 @@
       "start": {
         "a": 265986000,
         "e": 0.004,
-        "iDeg": 0.08043275679380614,
-        "lanDeg": 92.04478675104431,
-        "argPeDeg": 345.2752895561808,
-        "meanAnomalyDeg": 306.4226016845607,
+        "iDeg": 0.08043276587905936,
+        "lanDeg": 92.0447713765025,
+        "argPeDeg": 345.27463435535793,
+        "meanAnomalyDeg": 306.4928268130946,
         "meanMotionDegPerDay": 86.86109129724198,
         "nodeRateDegPerDay": -0.007584949658452088,
         "apsisRateDegPerDay": 0.00778520103498827
@@ -1339,33 +1504,33 @@
             "decDeg": 15.175
           }
         },
-        "a": 265980997.144766,
-        "e": 0.00378122297409111,
-        "iDeg": 0.0882795984697097,
-        "lanDeg": 90.316774605801,
-        "argPeDeg": 348.436342508709,
-        "meanAnomalyDeg": 304.951870104531,
+        "a": 265980996.82742,
+        "e": 0.00378122103499073,
+        "iDeg": 0.0882796002056732,
+        "lanDeg": 90.3167532378629,
+        "argPeDeg": 348.436221352241,
+        "meanAnomalyDeg": 305.021572580809,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -227.074263585815,
-          "argPeDeg": 530.040461810507
+          "lanDeg": -227.074159267959,
+          "argPeDeg": 530.041273901413
         },
-        "meanMotionDegPerDay": 86.8605775661595
+        "meanMotionDegPerDay": 86.8605775410008
       },
       "residual": {
-        "maxAngleDeg": 0.11880283699437175,
-        "maxRadial": 0.0007368932553048025,
-        "rmsAngleDeg": 0.047317190932410186,
+        "maxAngleDeg": 0.11880387325978115,
+        "maxRadial": 0.0007368924962591937,
+        "rmsAngleDeg": 0.047317204989256234,
         "samples": 1935
       },
-      "precessionFraction": 0.0001670690819980374,
+      "precessionFraction": 0.00016706933801798494,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "249 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836196%27&STOP_TIME=%27JD+2462416.701258%27&STEP_SIZE=%27249+m%27",
-          "retrievedAt": "2026-11-12T09:48:16.419Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836997%27&STOP_TIME=%27JD+2462416.702059%27&STEP_SIZE=%27249+m%27",
+          "retrievedAt": "2026-11-12T10:17:49.810Z"
         },
         {
           "kind": "window",
@@ -1374,7 +1539,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278247+m%27",
           "retrievedAt": "2026-11-12T09:48:16.617Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 335.2756944638677,
+        "rateDegPerDay": -86.8688930092855,
+        "maxSubParentErrorDeg": 0.1371871203067485,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.23828406306313354
+        },
+        "pckMeanRateDegPerDay": -86.8688923
+      }
     },
     "titania": {
       "frame": {
@@ -1388,10 +1564,10 @@
       "start": {
         "a": 436298000,
         "e": 0.002,
-        "iDeg": 0.03675057142930862,
-        "lanDeg": 9.616268651339729,
-        "argPeDeg": 223.7750220969636,
-        "meanAnomalyDeg": 174.29727107814713,
+        "iDeg": 0.03675057635818343,
+        "lanDeg": 9.616274499414372,
+        "argPeDeg": 223.7704632407111,
+        "meanAnomalyDeg": 174.3349412722774,
         "meanMotionDegPerDay": 41.349115916051794,
         "nodeRateDegPerDay": 0.0005992927873166594,
         "apsisRateDegPerDay": 0.0022988594289817567
@@ -1404,33 +1580,33 @@
             "decDeg": 15.175
           }
         },
-        "a": 436282149.047685,
-        "e": 0.00110771218543843,
-        "iDeg": 0.0553043729426711,
-        "lanDeg": 19.9455051329019,
-        "argPeDeg": 240.775062221369,
-        "meanAnomalyDeg": 146.979608056937,
+        "a": 436282148.384878,
+        "e": 0.00110771079637326,
+        "iDeg": 0.0553043662049667,
+        "lanDeg": 19.9465618984539,
+        "argPeDeg": 240.773071444747,
+        "meanAnomalyDeg": 147.013653461143,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": 143.558911523734,
-          "argPeDeg": 34.9671394990622
+          "lanDeg": 143.542205555892,
+          "argPeDeg": 34.9877195262245
         },
-        "meanMotionDegPerDay": 41.3465257636538
+        "meanMotionDegPerDay": 41.3465256576378
       },
       "residual": {
-        "maxAngleDeg": 0.18802692665710238,
-        "maxRadial": 0.0014815240283300461,
-        "rmsAngleDeg": 0.0755965547040413,
+        "maxAngleDeg": 0.18802699528567732,
+        "maxRadial": 0.001481525513575306,
+        "rmsAngleDeg": 0.07559659959487279,
         "samples": 2000
       },
-      "precessionFraction": 0.00021327561432177376,
+      "precessionFraction": 0.00021326711793925437,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "522 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151120%27&STOP_TIME=%27JD+2462430.386334%27&STEP_SIZE=%27522+m%27",
-          "retrievedAt": "2026-11-12T09:48:16.881Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151921%27&STOP_TIME=%27JD+2462430.387135%27&STEP_SIZE=%27522+m%27",
+          "retrievedAt": "2026-11-12T10:17:50.108Z"
         },
         {
           "kind": "window",
@@ -1439,7 +1615,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
           "retrievedAt": "2026-11-12T09:48:17.058Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 311.34501158754574,
+        "rateDegPerDay": -41.351433328241384,
+        "maxSubParentErrorDeg": 0.16935055305884816,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.3825589788502839
+        },
+        "pckMeanRateDegPerDay": -41.3514316
+      }
     },
     "oberon": {
       "frame": {
@@ -1453,10 +1640,10 @@
       "start": {
         "a": 583511000,
         "e": 0.002,
-        "iDeg": 0.19330756825884698,
-        "lanDeg": 21.619533891388652,
-        "argPeDeg": 207.7872795223561,
-        "meanAnomalyDeg": 334.37119217942006,
+        "iDeg": 0.1933075545876865,
+        "lanDeg": 21.61953372176748,
+        "argPeDeg": 207.78159666348526,
+        "meanAnomalyDeg": 334.3982815329216,
         "meanMotionDegPerDay": 26.738381069034208,
         "nodeRateDegPerDay": -0.00511222255089553,
         "apsisRateDegPerDay": 0.0011021622273418184
@@ -1469,33 +1656,33 @@
             "decDeg": 15.175
           }
         },
-        "a": 583449518.670418,
-        "e": 0.00185696199967227,
-        "iDeg": 0.200056974801604,
-        "lanDeg": 21.7103212163436,
-        "argPeDeg": 176.21599831014,
-        "meanAnomalyDeg": 5.87056651990412,
+        "a": 583449518.257509,
+        "e": 0.00185696230316393,
+        "iDeg": 0.200056974823164,
+        "lanDeg": 21.7103196671421,
+        "argPeDeg": 176.215993900696,
+        "meanAnomalyDeg": 5.89198366209405,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": -70.4257090289768,
-          "argPeDeg": 162.940564931085
+          "lanDeg": -70.4257087668214,
+          "argPeDeg": 162.940752275842
         },
-        "meanMotionDegPerDay": 26.7369474677616
+        "meanMotionDegPerDay": 26.7369474626536
       },
       "residual": {
-        "maxAngleDeg": 0.14879550132011943,
-        "maxRadial": 0.0011268134836408647,
-        "rmsAngleDeg": 0.07052847392066688,
+        "maxAngleDeg": 0.14879532755398706,
+        "maxRadial": 0.0011268132344619678,
+        "rmsAngleDeg": 0.0705284762561116,
         "samples": 2000
       },
-      "precessionFraction": 0.00016685036857338304,
+      "precessionFraction": 0.0001668505604454052,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "808 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879016%27&STOP_TIME=%27JD+2462444.658438%27&STEP_SIZE=%27808+m%27",
-          "retrievedAt": "2026-11-12T09:48:17.336Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879817%27&STOP_TIME=%27JD+2462444.659239%27&STEP_SIZE=%27808+m%27",
+          "retrievedAt": "2026-11-12T10:17:50.439Z"
         },
         {
           "kind": "window",
@@ -1504,53 +1691,74 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
           "retrievedAt": "2026-11-12T09:48:17.532Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 155.45930423232494,
+        "rateDegPerDay": -26.73949994714812,
+        "maxSubParentErrorDeg": 0.1882796574770964,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.27529128244918866
+        },
+        "pckMeanRateDegPerDay": -26.7394932
+      }
     },
     "triton": {
-      "frame": "parentEquator",
+      "frame": {
+        "pole": {
+          "raDeg": 299.522272273,
+          "decDeg": 42.9638927634
+        }
+      },
       "startFrom": "JPL satellite mean elements (NEP098; P=sidereal, apsis regressing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
       "ratesFitted": true,
       "start": {
         "a": 354800000,
         "e": 0.0001,
-        "iDeg": 157.33298681564537,
-        "lanDeg": 193.33017483509866,
-        "argPeDeg": 94.55502793247614,
-        "meanAnomalyDeg": 268.6689096796804,
-        "meanMotionDegPerDay": 61.254603628216174,
+        "iDeg": 157.33298687891343,
+        "lanDeg": 193.33017481270693,
+        "argPeDeg": 94.5550914436646,
+        "meanAnomalyDeg": 268.71789827467774,
+        "meanMotionDegPerDay": 61.254603664279685,
         "nodeRateDegPerDay": -0.0032920049544674567,
         "apsisRateDegPerDay": -0.004751759521066326
       },
       "def": {
         "kind": "kepler",
-        "frame": "parentEquator",
-        "a": 354759071.877029,
-        "e": 0.000126515913958466,
-        "iDeg": 157.327625550771,
-        "lanDeg": 193.331248788893,
-        "argPeDeg": 104.810347971323,
-        "meanAnomalyDeg": 258.414828927572,
+        "frame": {
+          "pole": {
+            "raDeg": 299.522272273,
+            "decDeg": 42.9638927634
+          }
+        },
+        "a": 354759071.876887,
+        "e": 0.000126515913007342,
+        "iDeg": 157.327625552018,
+        "lanDeg": 193.331249976561,
+        "argPeDeg": 104.810423761651,
+        "meanAnomalyDeg": 258.463805516305,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": 53.4534691701799,
-          "argPeDeg": 94.3637097574033
+          "lanDeg": 53.4534689265436,
+          "argPeDeg": 94.3631829705588
         },
-        "meanMotionDegPerDay": 61.2561426047503
+        "meanMotionDegPerDay": 61.2561426191666
       },
       "residual": {
-        "maxAngleDeg": 0.012984306299891082,
-        "maxRadial": 7.793941718547273e-7,
-        "rmsAngleDeg": 0.004037790055259926,
+        "maxAngleDeg": 0.012984304704430143,
+        "maxRadial": 7.792902866604604e-7,
+        "rmsAngleDeg": 0.00403778940625308,
         "samples": 2000
       },
-      "precessionFraction": 0.00008995816237999878,
+      "precessionFraction": 0.00008995792669301602,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "353 min",
           "rows": 144,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631127%27&STOP_TIME=%27JD+2462421.906327%27&STEP_SIZE=%27353+m%27",
-          "retrievedAt": "2026-11-12T09:48:17.795Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631928%27&STOP_TIME=%27JD+2462421.907128%27&STEP_SIZE=%27353+m%27",
+          "retrievedAt": "2026-11-12T10:17:50.776Z"
         },
         {
           "kind": "window",
@@ -1559,7 +1767,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
           "retrievedAt": "2026-11-12T09:48:17.971Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 4.35845154360868,
+        "rateDegPerDay": -61.25759035597224,
+        "maxSubParentErrorDeg": 2.509250646303485,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 31.2065818108357
+        },
+        "pckMeanRateDegPerDay": -61.2572637
+      }
     },
     "ceres": {
       "frame": "ecliptic",
@@ -1571,7 +1790,7 @@
         "iDeg": 10.58802780183462,
         "lanDeg": 80.24862682043221,
         "argPeDeg": 73.29421453021587,
-        "meanAnomalyDeg": 532.3923420918802,
+        "meanAnomalyDeg": 532.3925136941848,
         "meanMotionDegPerDay": 0.21430445064843,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": 0
@@ -1579,23 +1798,23 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 414049139753.143,
-        "e": 0.0773237656178187,
-        "iDeg": 10.5907530311412,
-        "lanDeg": 79.9030748267584,
-        "argPeDeg": 73.7075925346865,
-        "meanAnomalyDeg": 172.129937134257,
+        "a": 414049139753.387,
+        "e": 0.0773237656150153,
+        "iDeg": 10.5907530311381,
+        "lanDeg": 79.9030748265961,
+        "argPeDeg": 73.7075925307064,
+        "meanAnomalyDeg": 172.130108543237,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": 0,
           "argPeDeg": 0
         },
-        "meanMotionDegPerDay": 0.214058288871114
+        "meanMotionDegPerDay": 0.214058288871156
       },
       "residual": {
-        "maxAngleDeg": 0.45137412530556864,
-        "maxRadial": 0.002868483461574556,
-        "rmsAngleDeg": 0.17785194848344543,
+        "maxAngleDeg": 0.45137412609749555,
+        "maxRadial": 0.002868483460272128,
+        "rmsAngleDeg": 0.17785194849106198,
         "samples": 2000
       },
       "precessionFraction": 0,
@@ -1619,7 +1838,7 @@
         "iDeg": 17.14771140999114,
         "lanDeg": 110.2923840543057,
         "argPeDeg": 113.7090015158565,
-        "meanAnomalyDeg": 57.738884772523235,
+        "meanAnomalyDeg": 57.738887940925395,
         "meanMotionDegPerDay": 0.003956838955553025,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": 0
@@ -1627,23 +1846,23 @@
       "def": {
         "kind": "kepler",
         "frame": "ecliptic",
-        "a": 5917333767765.9,
-        "e": 0.249065725722739,
-        "iDeg": 17.1396640086232,
-        "lanDeg": 110.299661560041,
-        "argPeDeg": 114.153462101042,
-        "meanAnomalyDeg": 57.6756073358532,
+        "a": 5917333768244.33,
+        "e": 0.249065725723833,
+        "iDeg": 17.1396640086177,
+        "lanDeg": 110.299661560069,
+        "argPeDeg": 114.153462119066,
+        "meanAnomalyDeg": 57.6756104916807,
         "epochUt": 938240818,
         "rates": {
           "lanDeg": 0,
           "argPeDeg": 0
         },
-        "meanMotionDegPerDay": 0.00396096083703012
+        "meanMotionDegPerDay": 0.00396096083640264
       },
       "residual": {
-        "maxAngleDeg": 0.011449644452369448,
-        "maxRadial": 0.00015586058259964798,
-        "rmsAngleDeg": 0.005661740864988737,
+        "maxAngleDeg": 0.011449644458671825,
+        "maxRadial": 0.00015586058240049162,
+        "rmsAngleDeg": 0.005661740873633231,
         "samples": 2000
       },
       "precessionFraction": 0,
@@ -1658,50 +1877,60 @@
       ]
     },
     "charon": {
-      "frame": "parentEquator",
+      "frame": {
+        "pole": {
+          "raDeg": 132.993,
+          "decDeg": -6.163
+        }
+      },
       "startFrom": "JPL satellite mean elements (PLU060; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
       "ratesFitted": true,
       "start": {
         "a": 19600000,
         "e": 0.0001,
-        "iDeg": 0.08204711219145323,
-        "lanDeg": 11.369879889985171,
-        "argPeDeg": 139.26348848966038,
-        "meanAnomalyDeg": 209.3531837844482,
+        "iDeg": 0.08204711214703182,
+        "lanDeg": 11.36987989676638,
+        "argPeDeg": 139.25537132009526,
+        "meanAnomalyDeg": 209.4064327501787,
         "meanMotionDegPerDay": 56.36253131643146,
         "nodeRateDegPerDay": 0,
         "apsisRateDegPerDay": 0
       },
       "def": {
         "kind": "kepler",
-        "frame": "parentEquator",
-        "a": 19595764.4819141,
-        "e": 0.000160871364259786,
-        "iDeg": 0.0826600388156809,
-        "lanDeg": 11.4759402038709,
-        "argPeDeg": 143.900014762374,
-        "meanAnomalyDeg": 204.610921769585,
+        "frame": {
+          "pole": {
+            "raDeg": 132.993,
+            "decDeg": -6.163
+          }
+        },
+        "a": 19595764.4819207,
+        "e": 0.000160871372257346,
+        "iDeg": 0.082660039080796,
+        "lanDeg": 11.4759414688083,
+        "argPeDeg": 143.899812043237,
+        "meanAnomalyDeg": 204.656254999144,
         "epochUt": 938240818,
         "rates": {
-          "lanDeg": 3.21459125256634,
-          "argPeDeg": -3.15335895804676
+          "lanDeg": 3.21458500791559,
+          "argPeDeg": -3.15188149531396
         },
-        "meanMotionDegPerDay": 56.3625288810189
+        "meanMotionDegPerDay": 56.362528840739
       },
       "residual": {
-        "maxAngleDeg": 0.000977828672946967,
-        "maxRadial": 6.944437118556137e-7,
-        "rmsAngleDeg": 0.00037371650104241845,
+        "maxAngleDeg": 0.0009778107946249526,
+        "maxRadial": 6.948567570651603e-7,
+        "rmsAngleDeg": 0.00037371646063964856,
         "samples": 2000
       },
-      "precessionFraction": 0.0000015912550864827205,
+      "precessionFraction": 0.0000015919667091075512,
       "horizons": [
         {
           "kind": "dense span about the epoch",
           "step": "383 min",
           "rows": 145,
-          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107061%27&STOP_TIME=%27JD+2462423.430393%27&STEP_SIZE=%27383+m%27",
-          "retrievedAt": "2026-11-12T09:48:18.766Z"
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107862%27&STOP_TIME=%27JD+2462423.431194%27&STEP_SIZE=%27383+m%27",
+          "retrievedAt": "2026-11-12T10:17:51.155Z"
         },
         {
           "kind": "window",
@@ -1710,7 +1939,18 @@
           "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
           "retrievedAt": "2026-11-12T09:48:18.941Z"
         }
-      ]
+      ],
+      "rotation": {
+        "method": "B: least-squares line through the full pck W over the window",
+        "w0Deg": 178.518082500319,
+        "rateDegPerDay": 56.3625225000001,
+        "maxSubParentErrorDeg": 0.0004601912582984369,
+        "otherCandidate": {
+          "method": "A: rate = the fitted mean-longitude rate, W0 = the full pck W at the epoch",
+          "maxSubParentErrorDeg": 0.08860435041844994
+        },
+        "pckMeanRateDegPerDay": 56.3625225
+      }
     }
   },
   "description": "Orbits fitted to JPL Horizons over the validity window (tools/bodies/fit-orbits.mjs): KeplerOrbitDef elements at the lobby epoch with mean motion and linear node and apsis rates, the starting values they were fitted from, and the residuals over the window",

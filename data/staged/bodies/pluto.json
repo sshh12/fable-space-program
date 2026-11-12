@@ -8,24 +8,24 @@
   "orbit": {
     "kind": "kepler",
     "frame": "ecliptic",
-    "a": 5917333767765.9,
-    "e": 0.249065725722739,
-    "iDeg": 17.1396640086232,
-    "lanDeg": 110.299661560041,
-    "argPeDeg": 114.153462101042,
-    "meanAnomalyDeg": 57.6756073358532,
+    "a": 5917333768244.33,
+    "e": 0.249065725723833,
+    "iDeg": 17.1396640086177,
+    "lanDeg": 110.299661560069,
+    "argPeDeg": 114.153462119066,
+    "meanAnomalyDeg": 57.6756104916807,
     "epochUt": 938240818,
     "rates": {
       "lanDeg": 0,
       "argPeDeg": 0
     },
-    "meanMotionDegPerDay": 0.00396096083703012
+    "meanMotionDegPerDay": 0.00396096083640264
   },
   "rotation": {
     "mode": "fixedRate",
     "poleRaDeg": 132.993,
     "poleDecDeg": -6.163,
-    "w0Deg": 358.472950733732,
+    "w0Deg": 358.518082507653,
     "rateDegPerDay": 56.3625225,
     "epochUt": 938240818
   },
@@ -38,8 +38,8 @@
   },
   "navballSwitchAltitude": 13679.1,
   "render": {
-    "meanColor": [0.3379, 0.2946, 0.2417],
-    "geometricAlbedo": 0.3,
+    "meanColor": [0.5857, 0.5107, 0.4189],
+    "geometricAlbedo": 0.52,
     "surface": null,
     "atmosphere": null,
     "clouds": null,

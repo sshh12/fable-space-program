@@ -40,6 +40,42 @@ describe("Earth's staged orbit reproduces the v1 Sun direction", () => {
   });
 });
 
+describe('the velocity is the exact time derivative of the position', () => {
+  const ids = ['mercury', 'jupiter', 'neptune', 'phobos', 'io', 'europa', 'mimas', 'enceladus', 'tethys', 'miranda', 'triton', 'ceres', 'pluto', 'charon'];
+  it.each(ids)('%s: a central difference of the position equals the stated velocity (node and apsis rates included)', (id) => {
+    const b = staged(id);
+    const p = staged(b.parent);
+    const ctx = { muSum: p.mu + b.mu };
+    for (const ut of [938240818, 1.2e9, 1.5e9, 1.89e9]) {
+      // a step of 1e-5 of the period: truncation and rounding both far below the tolerance
+      const h = ((360 / (b.orbit as KeplerOrbitDef).meanMotionDegPerDay!) * 86400) * 1e-5;
+      const a = orbitState(b.orbit, ut - h, ctx).r;
+      const c = orbitState(b.orbit, ut + h, ctx).r;
+      const fd: V3 = [(c[0] - a[0]) / (2 * h), (c[1] - a[1]) / (2 * h), (c[2] - a[2]) / (2 * h)];
+      const v = orbitState(b.orbit, ut, ctx).v;
+      const speed = Math.hypot(...v);
+      // 1e-6: the rounding of the phase at a late ut (Mimas: 4e6 deg of mean anomaly) is 1e-7; a missing
+      // precession term would be 1e-3 to 1e-2 of the speed
+      expect(Math.hypot(fd[0] - v[0], fd[1] - v[1], fd[2] - v[2]) / speed).toBeLessThan(1e-6);
+    }
+  });
+
+  it('the precession terms matter: without them Europa would be off by tens of m/s', () => {
+    const b = staged('europa');
+    const def = b.orbit as KeplerOrbitDef;
+    const ut = 1.4e9;
+    const full = orbitState(def, ut, {}).v;
+    const frozenRates = keplerState({ ...def, rates: undefined }, ut, {}).v;
+    // same position at this instant needs the rates' angles: compare the speeds' difference only as a scale
+    expect(Math.hypot(...full)).toBeGreaterThan(0);
+    const T = (ut - def.epochUt) / (36525 * 86400);
+    const shifted = keplerState({ ...def, rates: undefined, lanDeg: def.lanDeg + (def.rates!.lanDeg ?? 0) * T, argPeDeg: def.argPeDeg + (def.rates!.argPeDeg ?? 0) * T }, ut, {}).v;
+    const kick = Math.hypot(full[0] - shifted[0], full[1] - shifted[1], full[2] - shifted[2]);
+    expect(kick).toBeGreaterThan(50);
+    expect(frozenRates.length).toBe(3);
+  });
+});
+
 describe('tool orbit evaluator = runtime KeplerEphemeris', () => {
   it('frames: the pole frame and the ecliptic rotation equal the runtime quaternions', () => {
     for (const [ra, dec] of [[268.05, 64.49], [77.311, 15.175], [40.589, 83.537], [299.36, 43.46]] as const) {

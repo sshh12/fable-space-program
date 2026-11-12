@@ -1,14 +1,11 @@
-// Orbit definitions of the staged bodies, by source (ARCHITECTURE 8.2 and the brief):
+// The published orbit tables read as KeplerOrbitDefs: the STARTING VALUES of the fit (fit-orbits.mjs; the lead's
+// decision on request bodies-ephemeris-4) and their provenance.
 //
 //   approx-pos  JPL Table 1 (planets): ecliptic elements at J2000 with their six rates; M = L - long.peri.,
 //               argPe = long.peri. - node; the mean motion is the table's (L rate - long.peri. rate).
-//   sun-v1      Earth: { kind: 'sunLowPrecision', inverted: true } (the v1 Almanac Sun, negated).
-//   frozen-v1   the Moon: the orbit block of data/defs/bodies/moon.json, byte for byte.
-//   sat-table   JPL satellite mean elements at their epoch (2000-01-01.5 TDB = ut 0), plane frames: Laplace
-//               -> { pole } (the table's Laplace pole); 'equatorial' -> 'parentEquator', except Uranus, whose
-//               moons use the POSITIVE pole (the antipode of the IAU north pole) as an explicit { pole }.
-//   sat-fit     the brief's path for Saturn's moons: plane, node, periapsis and phase fitted to Horizons states
-//               at the lobby epoch; a, e, the period and the precession periods are the table's.
+//   sat-table   JPL satellite mean elements at their epoch (2000-01-01.5 TDB), plane frames: Laplace -> { pole }
+//               (the table's Laplace pole); 'equatorial' -> the parent's equator, except Uranus, whose moons use
+//               the POSITIVE pole (the antipode of the IAU north pole).
 //   sbdb        osculating heliocentric ecliptic elements of the JPL Small-Body Database, at their own epoch.
 //
 // The satellite table gives P, P apsis and P node without saying which mean rate P is the period of, nor the
@@ -16,8 +13,7 @@
 // longitude rate; apsis and node advancing or regressing). The generator takes, for every moon, the reading
 // that reproduces Horizons best over a CALIBRATION window (ten epochs from 2010-01-01 to 2029-09-01, before
 // the validation window 2030-2060, so the validation stays independent), and records it.
-import { DAY_S, DEG, angleBetween, jdToUt, keplerState } from './kepler.mjs';
-import { fitPlanePhase } from './fit.mjs';
+import { DAY_S, DEG, JD_J2000, angleBetween, jdToUt, keplerState } from './kepler.mjs';
 
 export const JULIAN_YEAR_D = 365.25;
 /** Default lobby epoch (ARCHITECTURE 5.2: the start of lunar-direct, 2029-09-24T18:26:58), whole seconds. */
@@ -52,7 +48,7 @@ export function approxPosOrbit(t, AU) {
     lanDeg: t.longNode,
     argPeDeg: t.longPeri - t.longNode,
     meanAnomalyDeg: t.L - t.longPeri,
-    epochUt: 0,
+    epochUt: jdToUt(JD_J2000),
     rates: { a: r.a * AU, e: r.e, iDeg: r.I, lanDeg: r.longNode, argPeDeg: r.longPeri - r.longNode },
     meanMotionDegPerDay: (r.L - r.longPeri) / 36525,
   };
@@ -91,7 +87,7 @@ function tableOrbit(row, frame, rates) {
     lanDeg: row.nodeDeg,
     argPeDeg: row.argPeDeg,
     meanAnomalyDeg: row.meanAnomalyDeg,
-    epochUt: 0,
+    epochUt: jdToUt(JD_J2000),
     rates: { argPeDeg: rates.w * 36525, lanDeg: rates.O * 36525 },
     meanMotionDegPerDay: rates.n,
   };
@@ -105,10 +101,10 @@ export function maxAngleDeg(def, rows, ctx) {
 }
 
 /**
- * Build a satellite orbit on the table or fit path, choosing the reading over the calibration rows.
+ * The starting orbit of a satellite from its table row, under the reading that reproduces Horizons best over the calibration rows.
  * `frame` is a resolved KeplerOrbitDef frame; `ctx.parentPole` serves 'parentEquator'.
  */
-export function satelliteOrbit({ row, frame, path, calibration, fitSpan, muSum, ctx }) {
+export function satelliteOrbit({ row, frame, calibration, ctx }) {
   // A listed apsidal period too short for a slowly precessing ellipse (Tethys: 0.005 yr for e = 0.001, the
   // circulation of an ill-defined periapsis) cannot be carried; the apsis is then held fixed, which moves the
   // position by at most e x a. Recorded as `apsisDropped`.
@@ -117,16 +113,8 @@ export function satelliteOrbit({ row, frame, path, calibration, fitSpan, muSum, 
   for (const reading of READINGS) {
     const rates = readingRates(row, reading, { dropApsis });
     if (!rates) continue;
-    let def = tableOrbit(row, frame, rates);
-    let fit = null;
-    if (path === 'sat-fit') {
-      const pole = frame.pole ?? ctx.parentPole;
-      const base = { ...def, frame: { pole }, epochUt: LOBBY_EPOCH_UT };
-      const f = fitPlanePhase(base, fitSpan, { muSum });
-      def = { ...f.def, frame };
-      fit = { rmsKm: f.rms / 1e3, maxKm: f.max / 1e3, samples: fitSpan.length };
-    }
-    candidates.push({ reading, rates, def, fit, apsisDropped: dropApsis, calibrationMaxDeg: maxAngleDeg(def, calibration, ctx) });
+    const def = tableOrbit(row, frame, rates);
+    candidates.push({ reading, rates, def, apsisDropped: dropApsis, calibrationMaxDeg: maxAngleDeg(def, calibration, ctx) });
   }
   if (candidates.length === 0) throw new Error(`no reading of the ${row.satellite} row is a slowly precessing ellipse`);
   candidates.sort((a, b) => a.calibrationMaxDeg - b.calibrationMaxDeg);

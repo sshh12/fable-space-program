@@ -9,10 +9,16 @@ import { buildAtmosphere } from './atmospheres.mjs';
 import { meanColourFromIndices } from './colour.mjs';
 
 const capital = (s) => s[0].toUpperCase() + s.slice(1);
+/** Geometric albedos taken from the NSSDC sheet instead of JPL's table, with the reason. */
+const ALBEDO_FROM_NSSDC = {
+  pluto: "NASA NSSDC Pluto fact sheet (0.52): JPL's dwarf-planet table lists 0.3, a pre-New Horizons value that would draw Pluto darker than Charon (0.42 on the same NSSDC sheet)",
+};
 const src = (s) => ({ url: s.url, retrievedAt: s.retrievedAt });
 
 /** Tile edge of the deepest render level, metres: the Earth (level 20) and Moon (level 18) precedent. */
 const DEEPEST_TILE_EDGE_M = 10;
+/** BodyTerrainDef.residentLevel of a generated body (the contract's rule, request bodies-ephemeris-3). */
+const RESIDENT_LEVEL = 3;
 
 export function buildLibrary(S, live, bake) {
   const bodies = {};
@@ -79,7 +85,10 @@ export function buildLibrary(S, live, bake) {
     // for satellites; the NASA NSSDC fact sheet where JPL lists none.
     const h = S.objdata.bodies[id];
     const c = CATALOGUE[id];
-    if (c.kind === 'planet' || c.kind === 'dwarf') {
+    if (ALBEDO_FROM_NSSDC[id]) {
+      albedo[id] = Number(S.nssdc.geometricAlbedo[id].value);
+      prov(id, 'render.geometricAlbedo', albedo[id], src(S.nssdc.geometricAlbedo[id].source), ALBEDO_FROM_NSSDC[id]);
+    } else if (c.kind === 'planet' || c.kind === 'dwarf') {
       const name = capital(id);
       const pp = c.kind === 'planet' ? S.planetPhys.planets[name] : S.planetPhys.dwarfPlanets[name];
       albedo[id] = pp.geometricAlbedo;
@@ -102,7 +111,15 @@ export function buildLibrary(S, live, bake) {
     if (id === 'earth' || id === 'moon') continue;
     const r = rot(id);
     rotation[id] = { mode: 'fixedRate', poleRaDeg: round(r.poleRaDeg, 12), poleDecDeg: round(r.poleDecDeg, 12), w0Deg: round(((r.wDeg % 360) + 360) % 360), rateDegPerDay: round(r.rateDegPerDay), epochUt: LOBBY_EPOCH_UT };
-    prov(id, 'rotation', rotation[id], pckSrc, `pck00011 BODY${CATALOGUE[id].naif} pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut ${LOBBY_EPOCH_UT}; rate = the mean rate W1 + 2 W2 d there`);
+    const sync = S.orbitFits.bodies[id]?.rotation;
+    if (sync) {
+      // A synchronous satellite (fit-orbits.mjs synchronousRotation): W0 and rate keep its face to the parent on
+      // the fitted orbit; the pole stays the full model's at the epoch.
+      rotation[id] = { ...rotation[id], w0Deg: round(sync.w0Deg), rateDegPerDay: round(sync.rateDegPerDay) };
+      prov(id, 'rotation', rotation[id], pckSrc, `synchronous: pole of pck00011 BODY${CATALOGUE[id].naif} at the lobby epoch; prime meridian by ${sync.method} (sub-parent longitude within ${sync.maxSubParentErrorDeg.toFixed(2)} deg of Horizons + the full pck model over the window; the other candidate ${sync.otherCandidate.maxSubParentErrorDeg.toFixed(2)} deg)`);
+    } else {
+      prov(id, 'rotation', rotation[id], pckSrc, `pck00011 BODY${CATALOGUE[id].naif} pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut ${LOBBY_EPOCH_UT}; rate = the mean rate W1 + 2 W2 d there`);
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- orbits
@@ -232,14 +249,20 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
   const amplification = { model: a.model, seed: a.seed, params: { ...base.params, ...a.params } };
   if (Math.abs(cfg.radii.mean - R) > 0.5) throw new Error(`${id}: planet-bake mean radius ${cfg.radii.mean} differs from the definition's ${R}`);
 
-  // Elevation bounds (m, relative to the datum sphere R).
+  // Elevation bounds (m, relative to the datum sphere R). Once planet-bake has baked the body, its manifest's
+  // recorded height range is the basis; before that, the bake's inputs bound what it can produce.
   const p = amplification.params;
   const h = cfg.height;
   const ref = h.reference;
   let lo;
   let hi;
   const parts = [];
-  if (ref === 'ellipsoid') {
+  const baked = bake.manifests[id]?.layers?.height?.elevation;
+  if (baked) {
+    lo = baked.min;
+    hi = baked.max;
+    parts.push(`the baked height range of data/tiles/${id}/manifest.json (${lo}..${hi} m)`);
+  } else if (ref === 'ellipsoid') {
     const r = pck[`BODY${c.naif}_RADII`].map((x) => x * 1e3);
     lo = Math.min(...r) - R;
     hi = Math.max(...r) - R;
@@ -248,14 +271,16 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
     lo = hi = ref.sphere - R;
     parts.push(`DEM sphere ${ref.sphere} m (${lo.toFixed(0)} m)`);
   }
-  if (h.dem) {
+  if (h.dem && !baked) {
     const d = relief[id];
     if (!d) throw new Error(`${id}: the bake has a DEM but tools/bodies/sources/dem-relief.json has no range for it`);
     lo += d.min * h.dem.scale + h.dem.offset;
     hi += d.max * h.dem.scale + h.dem.offset;
     parts.push(`DEM ${d.min}..${d.max} (x ${h.dem.scale} + ${h.dem.offset})`);
   }
-  if (h.craters) {
+  if (h.craters && !baked) {
+    // the bake's crater population uses the same depth-to-diameter ratio at every size (src/terrain/craters.ts),
+    // so its largest craters are that deep; request bodies-ephemeris-5 asks planet-bake about complex craters
     const D = h.craters.maxDiameterRadii * R;
     lo -= p.freshDepthToDiameter * D;
     hi += p.rimHeightToDiameter * D;
@@ -266,12 +291,14 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
   lo -= p.freshDepthToDiameter * Dr;
   hi += p.rimHeightToDiameter * Dr;
   parts.push(`run-time craters to ${Dr.toFixed(0)} m`);
+  if (!baked && !h.dem && !h.craters) parts.push('no DEM and no baked craters: the ellipsoid and the run-time craters only');
 
   const def = {
     tileset: id,
     maxElevation: Math.ceil(hi),
     minElevation: Math.floor(lo),
     maxRenderLevel: level,
+    residentLevel: Math.min(RESIDENT_LEVEL, h.maxLevel),
     modifiers: [],
     surfaceFriction: friction,
     amplification,
@@ -279,6 +306,7 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
   prov('terrain.maxRenderLevel', level, null, `round(log2(R pi/2 / ${DEEPEST_TILE_EDGE_M} m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent`);
   prov('terrain.elevation', [def.minElevation, def.maxElevation], h.dem ? relief[id].source : null, parts.join('; '));
   prov('terrain.amplification', `${a.model} seed ${a.seed} overrides ${JSON.stringify(a.params)}`, null, `planet-bake: tools/bake/planet/bodies/${id}.json over data/defs/terrain/${a.model}.amplification.json`);
+  prov('terrain.residentLevel', def.residentLevel, null, `min(${RESIDENT_LEVEL}, the pyramid's depth ${h.maxLevel}): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)`);
   prov('terrain.surfaceFriction', friction, null, "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces");
   return def;
 }

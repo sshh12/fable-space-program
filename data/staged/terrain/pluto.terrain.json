@@ -3,6 +3,7 @@
   "maxElevation": 32804,
   "minElevation": -32950,
   "maxRenderLevel": 18,
+  "residentLevel": 3,
   "modifiers": [],
   "surfaceFriction": 0.7,
   "amplification": {
