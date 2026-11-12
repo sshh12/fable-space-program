@@ -179,62 +179,6 @@ config change only (levels, sources, landmarks).
 10. **Landmark kinds**: `demHeight`, `albedoContrast`, `albedoCompare`, `craterDepth` and `albedoTexture`
     (luminance standard deviation, for craters in shaded mosaics where the mean says nothing).
 
-## 6. Known limits (say plainly)
-
-- **Placeholder-quality surfaces, by the expansion's allowance**: global levels only (albedo 2-6, height
-  2-5); no regional pyramids, no de-shading (decision 8), shaded mosaics double-shade under the renderer's
-  normals on DEM bodies.
-- **Unobserved terrain is filled, not invented**: Pluto (DEM 46 % and map 68 % covered by New Horizons),
-  Charon (DEM 46 %, map 66 %), Triton (Voyager saw 61 %), Venus' DEM (92 %): nodata pixels are filled by
-  pull-push from the mip chain (smooth, uniform colour; `validFraction` in each source's prepare log). Giants:
-  Uranus south of -25 deg and Neptune north of +32 deg are zonal fills of the nearest clean latitude.
-- **Colour**: mono maps carry an approximate per-body tint (in the configs); Triton's Voyager colour is
-  greenish as composited; Neptune's OPAL map is strongly cyan as composited (planet-render may regrade);
-  Venus' surface is the Magellan RADAR backscatter as luminance (the visible surface is under the clouds).
-- **Bright icy bodies**: the gain cap (decision 7) keeps detail at the cost of a lower mean than the
-  geometric albedo where the mosaic's range is narrow (the manifest's `layers.albedo.calibration` has the
-  gain; verify reports the achieved values).
-- **Mercury and Mars albedo** are read at 332 m and 464 m (decimated by 2, disk floor), so their finest
-  level's texels near cube corners (206 m and 143 m) are upsampled; at face centres (468 m, 325 m) they are not.
-- **Jupiter's** map longitude origin is as NASA published PIA07782 (System III not confirmed by the source);
-  giant features drift relative to any rotation model anyway.
-- **Mars' areoid** is replaced by the IAU ellipsoid (the brief's rule): heights relative to the true geoid
-  are off by up to about 2 km at long wavelengths; Olympus Mons still reads its 21 km DEM part.
-- **Procedural bodies** have no landmark (nothing to flip); Mimas has Herschel (a craterDepth landmark).
-- **No Venus cloud-top map** (decision 2).
-
-## 7. For the next packages
-
-**bodies-ephemeris / solar-system-sim (terrain sections, lazy residency).** Each terrain section must name
-`tileset` = body id and carry exactly the resolved amplification of `data/tiles/<id>/manifest.json`
-`body.amplification` (= `procedural.resolved_amplification`, request bodies-ephemeris-2, resolved);
-`min/maxElevation` must contain `layers.height.elevation` (plus the amplification's amplitude: a few hundred
-metres at most). Resident levels are `residentHeightLevel` = min(3, height levels): 510 height tiles per body
-at level 3 (Deimos 126 at level 2). The tile sets load through today's `createTerrainProvider(defs, src,
-{ bodies: [id] })` one body at a time (`tests/unit/planet-bake/tilesets.test.ts`, with a BodyDef built from
-the config and the manifest); the lazy per-body residency of ARCHITECTURE 10.2 is solar-system-sim's.
-`BodyDef.radius` must be the config's mean radius (the provider rejects a manifest radius that differs by
-more than 1 m), and `BodyDef.shape` (spheroid) is NOT to be added to these heights: the height layer already
-carries the reference surface (ellipsoid or the DEM's sphere) relative to the mean radius.
-
-**planet-render.** Small pyramids (albedo 2-6, height 2-5 levels): the renderer's pools and LOD selection
-must stop subdividing data at `globalMaxLevel` and let the amplification model carry detail below
-(`rocky-generic` / `icy-generic`). `globals.albedoLowRes` (1024 x 512) for far impostors as on the Moon.
-Mean colours for the far disc: take them from `albedoLowRes` (area-weighted). Giants: the maps under
-`data/staged/render/` with their descriptors (conventions, credit, licence, filled fractions); Saturn's
-ring strip `saturn-rings` (alpha = normal opacity, 74,658-136,780 km). Titan's tiles are the 938 nm
-surface (the haze shell is yours); Venus' tiles are the radar surface under the clouds; no Venus cloud-top
-map exists under an open licence (decision 2). Every source and licence line is in
-`data/staged/credits.json` (the planet-render acceptance "every source of every new body appears in
-data/defs/visuals/credits.json" holds once bodies-activation merges it).
-
-**bodies-activation.** Merge `data/staged/credits.json` (format in section 1) into
-`data/defs/visuals/credits.json`; register `data/staged/render/<id>.maps.json` with the giants' render
-sections; cross-check the radii of `tools/bake/planet/bodies/<id>.json` (`radii.mean/a/b/c`, metres)
-against the activated body files (`tools/bake/planet/verify.py` does it against
-`data/staged/bodies/radii.json` when that exists). The tile sets live under `data/tiles/<id>/` (git-ignored,
-reproducible with the commands of section 2); the packer (platform-delivery) picks them up like earth/moon.
-
 ## 4. Measured against the acceptance criteria
 
 | Criterion | Result |
@@ -294,6 +238,62 @@ the credit line. Nothing from Bjorn Jonsson (no-copy request) or Solar System Sc
 Timings (6 workers, other agents' jobs running): small bodies 3-60 s each, Ganymede 3.7 min, Mercury 1.2 +
 3.6 min, Mars 4.3 + 14.7 min, Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
 Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-resolution copy, minutes).
+
+## 6. Known limits (say plainly)
+
+- **Placeholder-quality surfaces, by the expansion's allowance**: global levels only (albedo 2-6, height
+  2-5); no regional pyramids, no de-shading (decision 8), shaded mosaics double-shade under the renderer's
+  normals on DEM bodies.
+- **Unobserved terrain is filled, not invented**: Pluto (DEM 46 % and map 68 % covered by New Horizons),
+  Charon (DEM 46 %, map 66 %), Triton (Voyager saw 61 %), Venus' DEM (92 %): nodata pixels are filled by
+  pull-push from the mip chain (smooth, uniform colour; `validFraction` in each source's prepare log). Giants:
+  Uranus south of -25 deg and Neptune north of +32 deg are zonal fills of the nearest clean latitude.
+- **Colour**: mono maps carry an approximate per-body tint (in the configs); Triton's Voyager colour is
+  greenish as composited; Neptune's OPAL map is strongly cyan as composited (planet-render may regrade);
+  Venus' surface is the Magellan RADAR backscatter as luminance (the visible surface is under the clouds).
+- **Bright icy bodies**: the gain cap (decision 7) keeps detail at the cost of a lower mean than the
+  geometric albedo where the mosaic's range is narrow (the manifest's `layers.albedo.calibration` has the
+  gain; verify reports the achieved values).
+- **Mercury and Mars albedo** are read at 332 m and 464 m (decimated by 2, disk floor), so their finest
+  level's texels near cube corners (206 m and 143 m) are upsampled; at face centres (468 m, 325 m) they are not.
+- **Jupiter's** map longitude origin is as NASA published PIA07782 (System III not confirmed by the source);
+  giant features drift relative to any rotation model anyway.
+- **Mars' areoid** is replaced by the IAU ellipsoid (the brief's rule): heights relative to the true geoid
+  are off by up to about 2 km at long wavelengths; Olympus Mons still reads its 21 km DEM part.
+- **Procedural bodies** have no landmark (nothing to flip); Mimas has Herschel (a craterDepth landmark).
+- **No Venus cloud-top map** (decision 2).
+
+## 7. For the next packages
+
+**bodies-ephemeris / solar-system-sim (terrain sections, lazy residency).** Each terrain section must name
+`tileset` = body id and carry exactly the resolved amplification of `data/tiles/<id>/manifest.json`
+`body.amplification` (= `procedural.resolved_amplification`, request bodies-ephemeris-2, resolved);
+`min/maxElevation` must contain `layers.height.elevation` (plus the amplification's amplitude: a few hundred
+metres at most). Resident levels are `residentHeightLevel` = min(3, height levels): 510 height tiles per body
+at level 3 (Deimos 126 at level 2). The tile sets load through today's `createTerrainProvider(defs, src,
+{ bodies: [id] })` one body at a time (`tests/unit/planet-bake/tilesets.test.ts`, with a BodyDef built from
+the config and the manifest); the lazy per-body residency of ARCHITECTURE 10.2 is solar-system-sim's.
+`BodyDef.radius` must be the config's mean radius (the provider rejects a manifest radius that differs by
+more than 1 m), and `BodyDef.shape` (spheroid) is NOT to be added to these heights: the height layer already
+carries the reference surface (ellipsoid or the DEM's sphere) relative to the mean radius.
+
+**planet-render.** Small pyramids (albedo 2-6, height 2-5 levels): the renderer's pools and LOD selection
+must stop subdividing data at `globalMaxLevel` and let the amplification model carry detail below
+(`rocky-generic` / `icy-generic`). `globals.albedoLowRes` (1024 x 512) for far impostors as on the Moon.
+Mean colours for the far disc: take them from `albedoLowRes` (area-weighted). Giants: the maps under
+`data/staged/render/` with their descriptors (conventions, credit, licence, filled fractions); Saturn's
+ring strip `saturn-rings` (alpha = normal opacity, 74,658-136,780 km). Titan's tiles are the 938 nm
+surface (the haze shell is yours); Venus' tiles are the radar surface under the clouds; no Venus cloud-top
+map exists under an open licence (decision 2). Every source and licence line is in
+`data/staged/credits.json` (the planet-render acceptance "every source of every new body appears in
+data/defs/visuals/credits.json" holds once bodies-activation merges it).
+
+**bodies-activation.** Merge `data/staged/credits.json` (format in section 1) into
+`data/defs/visuals/credits.json`; register `data/staged/render/<id>.maps.json` with the giants' render
+sections; cross-check the radii of `tools/bake/planet/bodies/<id>.json` (`radii.mean/a/b/c`, metres)
+against the activated body files (`tools/bake/planet/verify.py` does it against
+`data/staged/bodies/radii.json` when that exists). The tile sets live under `data/tiles/<id>/` (git-ignored,
+reproducible with the commands of section 2); the packer (platform-delivery) picks them up like earth/moon.
 
 ## 8. Requests, contract changes, open items
 
