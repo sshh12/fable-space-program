@@ -51,7 +51,7 @@ struct TerrainMaterial {
   p7: vec4f,                                  // share of the material's own hue in the ground colour where a pixel is a few metres, and where it is tens of metres; joint spacing of concrete slabs (m); gravel material (-1 = none)
   p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
   p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); number of regions; taps of the relief-shadow march
-  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; reach of the patches along a class boundary (m; 0 = none); unused
+  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; reach of the patches along a class boundary (m; 0 = none); 1 = the far and aerial layers' relief casts shadows too; unused
   anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
   siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
   siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
@@ -490,7 +490,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, mean
   w = w * w;
   w /= w.x + w.y + w.z;
   // A copy with a small share is not sampled; its share goes to zero continuously on the way there.
-  w = max(w - vec3f(0.04), vec3f(0.0));
+  w = max(w - vec3f(0.07), vec3f(0.0));
   w /= w.x + w.y + w.z;
   let b = vec2i(base);
   let iu = i32(up);
@@ -745,7 +745,9 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   // The second material shows (and is sampled) only where it has more than a quarter of the two weights:
   // patches of one material with bands of mixture between them, not a mixture everywhere.
   var blend = 0.0;
-  if (ws > 0.0) { blend = 0.5 * saturate(4.0 * ws / (wf + ws) - 1.0); }
+  // (From a third of the two weights, not a quarter: on ground of two rock materials in the ratio 6 : 4 both
+  // were sampled on every pixel, which was most of the 1.9 ms the detail layers cost on broken lava.)
+  if (ws > 0.0) { blend = 0.5 * saturate(6.0 * ws / (wf + ws) - 2.0); }
   let apronM = i32(mat.p0.z);
   let gravelM = i32(mat.p7.w);
   var slab = false;
@@ -792,7 +794,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   var tw = pow(abs(facing), vec3f(8.0));
   tw /= tw.x + tw.y + tw.z;
   // A plane with a small share is not sampled; its share goes to zero continuously on the way there.
-  tw = max(tw - vec3f(0.12), vec3f(0.0));
+  tw = max(tw - vec3f(0.18), vec3f(0.0));
   tw /= tw.x + tw.y + tw.z;
 
   var ratioA = vec3f(1.0);
@@ -831,7 +833,9 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
     let dpy = dly * inv;
     // Shadows of the relief: only of relief that shows, and only while the sun stands low over the ground.
     var sunS = vec4f(0.0);
-    if (sun.w > 0.0 && relief > 0.05) { sunS = vec4f(sun.xyz, sun.w * period); }
+    // (The far and aerial layers' relief casts shadows only where the body asks for it, mat.p10.z: craters
+    // of tens of metres on the Moon; a march per scale was 0.13 to 0.31 ms on the Earth's ground views.)
+    if (sun.w > 0.0 && relief > 0.05 && (s < 2 || mat.p10.z > 0.5)) { sunS = vec4f(sun.xyz, sun.w * period); }
     let a = detailSample(s, first, meanLod, p, dpx, dpy, tw, sunS);
     ratioA *= mix(vec3f(1.0), a.ratio, f * mat.p1.x);
     gradA += a.grad * relief;
@@ -1256,6 +1260,14 @@ ${DETAIL_WGSL}
     let gt = g - tn.n * dot(g, tn.n);
     unresolved = (1.0 - keep * keep) * dot(gt, gt);
     g *= keep;
+    // The ink blot (established with one term switched off at a time: it stays without cast shadows, relief
+    // march, detail layers and orbital relief): what goes to zero is the cosine between the sun and the
+    // TILE's own normal on a slope turned from a low sun, and the stain's mottle is the slope noise of the
+    // height function in that normal map. With facets spread by 3 degrees the lit share of a pixel swings
+    // from 0.06 to 0.94 across the eight hundredths that this noise moves the cosine by. Soil is rougher
+    // than that below what any map holds: where the sun grazes the slope the spread is 11 degrees, and the
+    // slope is an even half-shade with its texture in it.
+    unresolved += 0.04 * (1.0 - smoothstep(0.03, 0.14, muTerrain));
   }
   g -= tn.n * dot(g, tn.n);
   let nFixed = normalize(tn.n - g);

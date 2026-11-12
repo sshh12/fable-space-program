@@ -448,7 +448,9 @@ function leafyCrown(b: Builder, crown: Crown, hub: P3, lod: number, seed: number
         face = unit(sub(face, mul(d, dot(face, d))), perpendicular(d));
         const length = plan.sprayLength * (0.75 + 0.5 * u()) * (m.size / 0.2);
         const cell = plan.cells[u() < 0.6 ? 0 : 1];
-        spray(b, crown, sub(m.p, mul(d, 0.22 * length)), d, face, length, 0.92 * length, lod < 2, m.shell, cell, lod, u());
+        // (Bent along its length only at the finest level: from where the middle level is drawn the droop of a
+        // spray is under a pixel, and its two more triangles were half of that level's.)
+        spray(b, crown, sub(m.p, mul(d, 0.22 * length)), d, face, length, 0.92 * length, lod === 0, m.shell, cell, lod, u());
       }
     }
   }
@@ -481,7 +483,7 @@ function extent(b: Builder): { reach: number; top: number } {
 
 /** Sprays per twig end and how much larger they are at the coarser levels (fewer twig ends carry the same leaves). */
 const SPRAYS = [4, 3, 2];
-const SPRAY_SCALE = [1, 1.9, 3.4];
+const SPRAY_SCALE = [1, 1.9, 4.2];
 
 function rawBush(variant: number, lod: number): Builder {
   const b = new Builder();

@@ -60,6 +60,7 @@
     "anchorFar": 0.8,
     "reliefShadow": 1,
     "reliefShadowTaps": 4,
+    "reliefShadowFar": 0,
     "shoreReachM": 4
   }
 }

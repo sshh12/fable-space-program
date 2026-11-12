@@ -186,16 +186,23 @@ const SHAPE_MODE: Record<CoverShape, number> = { tuft: 0, bush: 1, tree: 1, grov
 /** Shapes whose leaves are sprays of the leaf atlas: their shadows are cast through its coverage. */
 const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree: true, grove: false, stone: false };
 /**
- * An instance casts into a cascade from its finest mesh when its radius is this many texels, from the middle
- * one from this many, and not at all below the last: the shadow of a crown beside the eye is then drawn by
- * its sprays, not by the few large ones of a coarser level, and a tussock under two texels across is left out.
+ * An instance casts into a cascade from its finest mesh when its radius is this many texels (never: a crown's
+ * shadow is as dappled from its middle level, whose sprays pass the same coverage test), from the middle one
+ * from this many, and not at all below the last. Measured (perf spec, 1440p, the views among kiawe and over
+ * the thickets): with 48 / 8 / 1 the cover's shadows cost 2.1 and 1.6 ms, with never / 16 / 3 they cost 0.48
+ * and 0.37 ms; a tussock under six texels across leaves no shadow that a map of those texels could show.
  */
-const SHADOW_FINE_TEXELS = 48;
-const SHADOW_MIDDLE_TEXELS = 8;
-const SHADOW_MIN_TEXELS = 1;
-/** An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one from this many. */
+const SHADOW_FINE_TEXELS = 1e9;
+const SHADOW_MIDDLE_TEXELS = 24;
+const SHADOW_MIN_TEXELS = 3;
+/**
+ * An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one
+ * from this many (20: a tree 40 pixels across; below that its sprays are a few pixels each and the coarsest
+ * level's larger ones show the same crown. Over the thickets the middle level of some hundreds of trees was
+ * most of 5.5 million triangles a frame).
+ */
 const FINE_PIXELS = 55;
-const MIDDLE_PIXELS = 14;
+const MIDDLE_PIXELS = 20;
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
