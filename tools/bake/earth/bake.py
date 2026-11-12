@@ -88,6 +88,11 @@ def main(argv: list[str]) -> int:
                          "bed, a road, a borrow pit); repeatable, recorded in the pads file")
     ap.add_argument("--dry-run", action="store_true",
                     help="pads: write the result to out/bake/earth/site-bake only (e.g. the Q8 fall-back trial)")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="pads: place as many pads as fit and report the rest (an incomplete layout is written to out/ only)")
+    ap.add_argument("--dry-any-land", action="store_true",
+                    help="pads: a measurement (out/ only): 'dry' as any land cover but water, wetland and built-up "
+                         "instead of bare ground")
     ap.add_argument("--replace", action="store_true",
                     help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)

@@ -16,7 +16,9 @@ Reads data/staged/sites/<site>.pads.json (padresolve.py) and, for the first pad 
     imagery | hillshade (relief x3, sun from the north-west, 45 deg) | imagery lit by that sun (relief x1) | land
     cover, the 500 m disc of
     the pad rule in red and the other pads in yellow;
-and an overview of every pad of the site. Writes out/bake/earth/site-bake/quality-<site>*.png and quality-<site>.json.
+an overview of every pad of the site; and the sheets to LOOK at every pad before it is accepted (pad_sheet:
+pads-<site>-sheet.png, pads-<site>-corridors.png). Writes out/bake/earth/site-bake/quality-<site>*.png and
+quality-<site>.json.
 """
 from __future__ import annotations
 
@@ -134,6 +136,75 @@ def save(img: np.ndarray, name: str, label: str) -> str:
     return p.relative_to(paths.REPO).as_posix()
 
 
+def pad_sheet(lv: int, doc: dict, site: str) -> list[str]:
+    """Every pad, to LOOK at before it is accepted: level-12 imagery 2.6 km across (5 m pixels) with built-up land
+    tinted red, the flat radius (white), the blend radius (yellow), the built-up exclusion radius (red) and the
+    launch corridor's edges (cyan, 60 and 130 deg); and an overview of the field with every corridor to 12 km."""
+    from earth.padresolve import BUILT, CORRIDOR_AZ, CORRIDOR_KM, PAD_RADII, built_radius
+    pads = doc["pads"]
+    n, half = 521, 1300.0
+    px = 2 * half / (n - 1)
+    crops = []
+    for p in pads:
+        la, lo, E, N = _grid(p["latDeg"], p["lonDeg"], half, n)
+        d = cube.lat_lon_to_dir(np.radians(la), np.radians(lo))
+        img = Sampler("albedo", lv)(d).reshape(n, n, 3).astype(np.float64)
+        built = (Field("landcover", lv)(la, lo).reshape(n, n) == BUILT)
+        img[built] = 0.4 * img[built] + 0.6 * np.array([255.0, 0.0, 0.0])
+        im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+        dr = ImageDraw.Draw(im)
+        c = (n - 1) / 2
+        for rad, col in ((PAD_RADII[p["class"]]["flat"], (255, 255, 255)), (PAD_RADII[p["class"]]["blend"], (255, 230, 0)),
+                         (built_radius(p["class"]), (255, 60, 60))):
+            rp = rad / px
+            dr.ellipse([c - rp, c - rp, c + rp, c + rp], outline=col, width=2)
+        for az in CORRIDOR_AZ:
+            a = math.radians(az)
+            dr.line([c, c, c + half / px * math.sin(a), c - half / px * math.cos(a)], fill=(0, 230, 255), width=2)
+        lab = f"{p['id']} {p['class']} {p['latDeg']:.4f} {p['lonDeg']:.4f}"
+        dr.rectangle([0, 0, 8 + 6 * len(lab), 14], fill=(0, 0, 0))
+        dr.text((4, 1), lab, fill=(255, 255, 0))
+        crops.append(np.asarray(im))
+    cols = 4
+    rows = (len(crops) + cols - 1) // cols
+    sheet = np.full((rows * (n + 6), cols * (n + 6), 3), 255, np.uint8)
+    for i, cimg in enumerate(crops):
+        r_, c_ = divmod(i, cols)
+        sheet[r_ * (n + 6):r_ * (n + 6) + n, c_ * (n + 6):c_ * (n + 6) + n] = cimg
+    out = [save(sheet, f"pads-{site}-sheet.png", f"{site}: every pad, 2.6 km across, level {lv} imagery (built-up red; "
+                                                 f"flat white, blend yellow, built-up limit red; corridor edges cyan)")]
+    cla = float(np.mean([q["latDeg"] for q in pads]))
+    clo = float(np.mean([q["lonDeg"] for q in pads]))
+    halfo = max(8000.0, max(gc_distance_m(cla, clo, q["latDeg"], q["lonDeg"]) for q in pads) + CORRIDOR_KM * 1000.0 * 0.6)
+    no = 1601
+    pxo = 2 * halfo / (no - 1)
+    la, lo, E, N = _grid(cla, clo, halfo, no)
+    d = cube.lat_lon_to_dir(np.radians(la), np.radians(lo))
+    img = Sampler("albedo", lv)(d).reshape(no, no, 3).astype(np.float64)
+    built = (Field("landcover", lv)(la, lo).reshape(no, no) == BUILT)
+    img[built] = 0.3 * img[built] + 0.7 * np.array([255.0, 0.0, 0.0])
+    im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    dr = ImageDraw.Draw(im)
+    for p in pads:
+        dist = gc_distance_m(cla, clo, p["latDeg"], p["lonDeg"])
+        az = math.atan2(math.sin(math.radians(p["lonDeg"] - clo)) * math.cos(math.radians(p["latDeg"])),
+                        math.cos(math.radians(cla)) * math.sin(math.radians(p["latDeg"]))
+                        - math.sin(math.radians(cla)) * math.cos(math.radians(p["latDeg"])) * math.cos(math.radians(p["lonDeg"] - clo)))
+        cx = (no - 1) / 2 + dist * math.sin(az) / pxo
+        cy = (no - 1) / 2 - dist * math.cos(az) / pxo
+        rk = PAD_RADII[p["class"]]["keepOut"] / pxo
+        dr.ellipse([cx - rk, cy - rk, cx + rk, cy + rk], outline=(255, 255, 0), width=2)
+        for a_ in CORRIDOR_AZ:
+            a = math.radians(a_)
+            dr.line([cx, cy, cx + CORRIDOR_KM * 1000.0 / pxo * math.sin(a), cy - CORRIDOR_KM * 1000.0 / pxo * math.cos(a)],
+                    fill=(0, 230, 255), width=1)
+        dr.text((cx + rk + 2, cy - 6), p["id"], fill=(255, 255, 0))
+    out.append(save(np.asarray(im), f"pads-{site}-corridors.png",
+                    f"{site}: keep-out discs (yellow) and launch corridors {CORRIDOR_AZ[0]:g}-{CORRIDOR_AZ[1]:g} deg to "
+                    f"{CORRIDOR_KM:g} km (cyan); built-up land red; {2 * halfo / 1000:.0f} km across"))
+    return out
+
+
 def run(region_id: str, args) -> dict:
     if not args.site:
         raise ValueError("bake.py quality needs --site")
@@ -174,5 +245,6 @@ def run(region_id: str, args) -> dict:
     img = panels(lv, h, cla, clo, half, 1601, marks_all)
     res["pictures"].append(save(img, f"quality-{args.site}-overview.png",
                                 f"{args.site}: every pad (yellow: 500 m discs), {2 * half / 1000:.0f} km across, centred on the pads"))
+    res["pictures"] += pad_sheet(lv, doc, args.site)
     write_json(OUT / f"quality-{args.site}.json", res)
     return res
