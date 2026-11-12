@@ -13,7 +13,8 @@
  *   OPTIONS  any of the above            CORS preflight.
  *   POST /_ctl/faults                    switches for the failover tests: {"add": [{"target": "bucket"|"mirror",
  *                                        "status": 403|404|429|500|503, "count": n, "hash"?: "<hash>"}]} answers
- *                                        the next n matching requests with that status; {"clear": true}.
+ *                                        the next n matching requests with that status (bucket faults hit the
+ *                                        presigned client requests, not the roles' S3 requests); {"clear": true}.
  *   GET  /_ctl/stats                     requests and bytes per target, faults served.
  *
  * Objects are found by hash in data/packs/<set>/<hash>.pack|.idx and in data/packs/boot/<hash>.pack. CORS:
@@ -228,7 +229,10 @@ export function startBucketStandIn(o: StandInOptions): Promise<StandIn> {
           return;
         }
       }
-      const fault = takeFault('bucket', hash);
+      // Faults stand for the bucket failing the CLIENTS' presigned path (a CORS break, an incident, a rate
+      // limit): the S3 requests of the roles (the shell's mirror, the boot load) still go through, which is the
+      // case the mirror exists for.
+      const fault = auth ? null : takeFault('bucket', hash);
       if (fault !== null) {
         // A planted 403 behaves like the bucket's own (no CORS headers); the other statuses carry them.
         res.writeHead(fault, { ...(fault === 403 ? {} : CORS), 'Content-Length': '0' }).end();
