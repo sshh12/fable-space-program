@@ -868,8 +868,9 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   sun at the camera: above every atmosphere after the air on the way (request `sky-lighting-10`), inside one
   after its air less what a clear air mass under a high sun takes (`sunThroughAir`: the transmittance
   towards the sun, luminance-weighted, over `SUN_AIR_CLEAR` = 0.75, capped at 1; request
-  `atmosphere-clouds-10`): unchanged with the sun 35 degrees up and more, a stop lower at 10 degrees, two at
-  1 degree seen from 7 km, five on the ground at sunrise, so a frame of dawn sky is not exposed as noon. `CameraState.exposureCompensation` (EV, positive = brighter),
+  `atmosphere-clouds-10`): unchanged with the sun 35 degrees up and more (0.03 EV at the 31 degrees of the
+  mission's launch), 0.8 EV lower at 10 degrees, 1.6 at 1 degree seen from 7 km, five on the ground at
+  sunrise, so a frame of dawn sky is not exposed as noon. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
   (request `cockpit-3`), with two terms on top (requests `cockpit-5`, `cockpit-6`): a night key (the target
@@ -1069,7 +1070,7 @@ anyway). Precondition: deterministic mode, presentation time frozen, `isIdle()`.
 
 What the core does, in this order:
 
-1. **Restart.** `frame.frameIndex` moves to the next multiple of `SEQUENCE_ALIGN` (4096): it stays monotonic
+1. **Restart.** `frame.frameIndex` moves to a multiple of `SEQUENCE_ALIGN` (64; a step of 2 to 65 frames): it stays monotonic
    (caches are stamped with it), a phase taken from it with a power of two (`frameIndex & 3`,
    `frameIndex % 64`) starts at 0, and a continuity test (`last === frameIndex - 1`) fails once. The frame
    uniforms' `time.z` / `counts.z` count from 0 (they are the frames since the restart; the same as the frame
@@ -1492,7 +1493,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | Change | Request | Affects | Migration |
 |---|---|---|---|
 | `CoreShaderLibrary.warm(items)`, `warmed()`, `warming()`; `pendingCompilations()` / `compilations()` count pipelines that are being created ahead; `CoreRenderer.warm()`; `RendererOptions.pipelineWarm` and `warm=0` in a page's address; the core's own pipelines are created ahead (the lighting stage exists from `createRenderer` on), sections 5 and 17.8 | `app-integration-11` | every package that creates pipelines; src/app (the loading screen waits for them through `pendingCompilations()`) | None forced. To adopt: `await coreOf(ctx).shaders.warm([...])` where the forcing `get()`s of `init` stood (17.8) |
-| Frame-exact capture: `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `window.__test.renderExact` on every `createLabApp` page; `TemporalFeature.resetTemporal?()`; at a restart `frame.frameIndex` moves to the next multiple of `SEQUENCE_ALIGN` (4096), the frame uniforms' `time.z` / `counts.z` count from 0 and `frame.realTime` is 0; section 13 | `lead-3` | every feature with accumulation of its own (reprojection, progressive maps, round robins); src/app (its test hook) | None without a history of your own. With one: add `resetTemporal()` (what must reset: section 13); a shader that used `frame.time.z` as an absolute frame count now gets frames since the last restart (the same number until a restart) |
+| Frame-exact capture: `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `window.__test.renderExact` on every `createLabApp` page; `TemporalFeature.resetTemporal?()`; at a restart `frame.frameIndex` moves to a multiple of `SEQUENCE_ALIGN` (64), the frame uniforms' `time.z` / `counts.z` count from 0 and `frame.realTime` is 0; section 13 | `lead-3` | every feature with accumulation of its own (reprojection, progressive maps, round robins); src/app (its test hook) | None without a history of your own. With one: add `resetTemporal()` (what must reset: section 13); a shader that used `frame.time.z` as an absolute frame count now gets frames since the last restart (the same number until a restart) |
 | Interior views: a bright outside in the windows keys the cabin up to `INTERIOR_OUTSIDE_KEY_EV` (2.25) lower and is shown at its own exposure (pass `core.interiorFar`: a gain on the pixels beyond `INTERIOR_RANGE`, sky included, before the resolve and the bloom); a third histogram of sky pixels (`MeterInput.histogramSky`, `SKY_METER_MAX`); `MeterResult.farLevel / farWeight`, `interiorFarGain`, `exposureInfo().farGain / farLevel / farWeight`; section 13 | `cockpit-16` | cockpit (the seat's view shows the world in the windows; the cabin is about two stops darker there); anything drawn in `drawTransparent` over far pixels of an interior view is scaled with them | None in code; tests that read the HDR target of an interior view read the scaled values beyond 8 m |
 | Mesh G-buffer shader, `standard` shading: soot is a density (continuous in the weight: a brown veil when thin, near black when thick, streaks of 6 cm x 1.5 m), `layerStreaks`; roughness, metalness and clear coat follow the density; section 10 | `vehicle-pad-7` | vehicle-pad (graded deposits instead of a mask); every `standard` material with a soot weight | None in code; a weight that had an edge at 0.36-0.63 by the old mask is graded (0.25: tan veil, 0.5: brown, 1: near black) |
 | The meter's sun inside an atmosphere: the prior and the bounds under the sun use the sun through the camera's air, less what clear air under a high sun takes (`sunThroughAir`, `SUN_AIR_CLEAR` = 0.75) | `atmosphere-clouds-10` (part 1) | atmosphere, vfx, every daylight view at a low sun | None; unchanged with the sun 35 degrees up and more, up to a stop brighter at 10 degrees, two to five at dawn |

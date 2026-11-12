@@ -198,7 +198,10 @@ export const SUN_IN_FRAME_MARGIN_EV = 1;
  * only what it takes beyond a clear air mass under a high sun: the transmittance towards the sun from the
  * camera (luminance-weighted) divided by SUN_AIR_CLEAR and capped at 1. With the sun 35 degrees up and more
  * over clear air nothing changes (pad, ascent: the daylight rules were tuned on those frames); at 10 degrees
- * the prior is a stop lower, at 1 degree from 7 km two, on the ground at sunrise four and more.
+ * the prior is 0.8 EV lower, at 1 degree from 7 km 1.6, on the ground at sunrise five (the luminance-weighted
+ * transmittance of the Earth's air towards the sun: 0.85 at the zenith, 0.76 at 35 degrees, 0.73 at the 31
+ * degrees of the mission's launch, 0.42 at 10 degrees and 0.02 at 1 degree from the ground; 0.24 at 1 degree
+ * from 7 km).
  */
 export const SUN_AIR_CLEAR = 0.75;
 export function sunThroughAir(illuminance: number, transmittance: number, aboveTheAir: boolean): number {

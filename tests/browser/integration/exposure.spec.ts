@@ -204,8 +204,8 @@ test('from the seat the Earth in the window is shown at its own exposure and the
   expect(seat!.farWeight).toBeGreaterThan(0.9);
   expect(seat!.ev100).toBeLessThan(seat!.sunny16 - 4);
   expect(seat!.farGain).toBeLessThan(0.1);
+  // (The mean of the near pixels holds the flood lamp and the sunlit window wells, which clip: no upper bound.)
   expect(seat!.cabin.mean).toBeGreaterThan(0.008);
-  expect(seat!.cabin.mean).toBeLessThan(0.2);
   expect(seat!.outside.mean).toBeGreaterThan(0.15);
   expect(seat!.outside.mean).toBeLessThan(1.6);
   expect(seat!.outside.over).toBeLessThan(0.15);

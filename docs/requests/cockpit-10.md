@@ -78,3 +78,26 @@ frames above; a shadow edge on the well floor that is one smooth ramp.
 Workaround in the cockpit's paths: none for the fault itself (the wells are the vehicle's exterior, lit by the
 core). The cockpit's lunar acceptance view was re-aimed in round 4 (sun on the far side of the capsule, the well
 in shadow, the ground lit from the side): the picture no longer shows the worst case, the renderer still has it.
+
+## Maintainer's note (core-support, 2026-11-12: read, not started)
+Not built in this round (five requests against the core arrived in two hours behind one GPU slot; this one
+needs two or three picture rounds on the cockpit's own view and is not blocking). Where I would start, from
+`shadowSampleCascade` (src/render/core/shaders/chunksLighting.ts):
+- the rotation `phi` fades by pixels per TEXEL only (`perTexel`, `SHADOW_SPIN_FULL / _NONE`). Add the kernel's
+  own footprint on screen: `spanPx = max(rAlong / max(NoL, 0.05), rAcross) / pixelM` (the kernel's radius on
+  the receiver, in pixels; `rAlong` is in map metres and one metre of map covers 1 / NoL of receiver). Where
+  that is tens of pixels, neighbouring pixels share almost the whole kernel and a fixed pattern is smooth:
+  `phi *= 1 - smoothstep(6, 24, spanPx)`;
+- 12 fixed taps over a ramp 200 px wide are 12 steps of 17 px: where the rotation is off and `spanPx` is
+  large, take 32 taps (the loop bound may be a variable; the cost is paid by those pixels only);
+- the 1-bit stipple at half density is, I think, not the penumbra but the receiver-plane bias running out:
+  `g` is clamped at a slope of 40 (NoL 0.025) and every tap along the slope then tests against a plane that is
+  too shallow, so a rotated kernel self-shadows on some pixels and not on their neighbours. A grazing receiver
+  (NoL under about 0.05) could take the basic kernel across the light only (no taps along it), which is what
+  its penumbra physically is: the along-light blur of a grazing surface is far wider than any kernel;
+- the cross-cascade dither (`noise.b >= fade`) is the same kind of noise at arm's length: blend the two
+  cascades by `fade` where `perTexel` is over `SHADOW_SPIN_FULL` (two lookups, in that band only).
+Reproduction to build first: the integration lab, `scene=lunarSurface&hud=0&paused=1`,
+`setSunInVesselFrame(normalize([-0.5, 0.5, 0.7]))`, the eye 38 cm inside the left side window (the request's
+frame), with the measure of `tests/browser/render-core/shadows.spec.ts` ("a shadow edge at arm's length is
+smooth": row-to-row variation along the edge) taken on the well floor.

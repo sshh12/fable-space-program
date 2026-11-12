@@ -47,8 +47,8 @@ test('renderExact: the same picture after different histories and on a fresh loa
   expect(a.stats.fractionNonBlack, 'the held frame is a picture').toBeGreaterThan(0.2);
   const s0 = await state(page);
   expect(s0.holding).toBe(true);
-  // The sequences started at a multiple of the alignment and exactly FRAMES frames followed.
-  expect((s0.frameIndex - (FRAMES - 1)) % 4096).toBe(0);
+  // The sequences started at a multiple of the alignment (SEQUENCE_ALIGN) and exactly FRAMES frames followed.
+  expect((s0.frameIndex - (FRAMES - 1)) % 64).toBe(0);
 
   // Held: the display's frames pass (waitFrames still returns), nothing is rendered, the picture stays.
   await page.evaluate(() => window.__test!.waitFrames(20));

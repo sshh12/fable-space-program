@@ -38,7 +38,7 @@ requests named below.
   (`createLabApp` does it; for src/app it is one line before the frame loop starts, the lead's decision).
 - **Frame-exact capture: `window.__test.renderExact(frames)`** (request lead-3; every `createLabApp` page has it).
   It restarts every temporal sequence, renders exactly `frames` frames and holds the last. What reaches you:
-  - `frame.frameIndex` moves to the next multiple of 4096 at a restart (still monotonic): a phase you take
+  - `frame.frameIndex` moves to a multiple of 64 at a restart (a step of 2 to 65 frames, still monotonic): a phase you take
     from it with a power of two starts at 0, and `last === frame.frameIndex - 1` is false once. The frame
     uniforms' `time.z` / `counts.z` are the frames SINCE the restart (identical to the frame index until one
     happens). `frame.realTime` is 0 after a restart.

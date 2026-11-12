@@ -212,11 +212,14 @@ struct Out { @location(0) minMax: vec4f }
 `;
 
 /**
- * `frame.frameIndex` moves to the next multiple of this when the temporal sequences restart (renderExact):
- * it stays monotonic for the features that stamp caches with it, a phase taken from it by a power of two up
- * to this starts at 0, and "the frame after my last one" is false once.
+ * `frame.frameIndex` moves to a multiple of this when the temporal sequences restart (renderExact): it stays
+ * monotonic for the features that stamp caches with it, a phase taken from it by a power of two up to this
+ * starts at 0, and "the frame after my last one" is false once (the step is 2 to 65 frames). Not larger: a
+ * step is time passing for everything that ages by frames. With 4096 the terrain retried, at every restart,
+ * the tiles it had given up for want of room (STALL_RETRY_FRAMES = 900) and was busy for the next 240
+ * frames: the low-orbit page could never be captured.
  */
-export const SEQUENCE_ALIGN = 4096;
+export const SEQUENCE_ALIGN = 64;
 /** Frames over which the exposure of a frame-exact capture is metered before it is held. */
 export const EXACT_METER_FRAMES = 16;
 /** Time constant with which the gain on the outside of an interior view follows its target, s. */
@@ -637,7 +640,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
    * the exposure metered over the lead-in.
    */
   const restartTemporal = (meterToo: boolean): void => {
-    frameIndex = (Math.floor(frameIndex / SEQUENCE_ALIGN) + 1) * SEQUENCE_ALIGN;
+    frameIndex = (Math.floor((frameIndex + 1) / SEQUENCE_ALIGN) + 1) * SEQUENCE_ALIGN;
     sequenceStart = frameIndex;
     jitterIndex = 0;
     realTime = 0;
