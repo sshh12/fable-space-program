@@ -37,3 +37,42 @@ the voices ahead, or schedule the node graph work off the frame.
 
 Must not change: the physics of the lift-off step (the mission's gates: surface speed at lift-off, the golden
 hash of the headless mission), the plume's and the sound's start as seen and heard.
+
+## Answer on the sim share (sim-core-v2, 2026-11-12)
+
+Measured headless on the tick-grid tree (`lunar-direct`, real tiles, the scripted pilot; one `step()` and
+one `snapshot()` timed per step; four sessions flown one after the other in ONE Node process, so the
+first is cold and the others warm):
+
+| Session in the process | Lift-off step (`clampsReleased`, one vessel becomes two) | Step after it | Snapshot of the lift-off step | First decoupling (T+160 s) |
+|---|---|---|---|---|
+| 1st (cold) | **5.54 ms** | 1.45 ms | 1.22 ms | 0.88 ms |
+| 2nd | 1.22 ms | 0.61 ms | 0.24 ms | 0.46 ms |
+| 3rd | 0.72 ms | 0.74 ms | 0.12 ms | 0.40 ms |
+| 4th | 0.63 ms | 0.52 ms | 0.13 ms | 0.37 ms |
+
+For scale: over the 5,760 steps from the pad to T+20 s the step median is 0.014 ms and its 99th percentile
+0.12 ms; the snapshot median 0.025 ms.
+
+So the 5.9-6.4 ms of the request reproduce without a browser (5.5-5.7 ms), and **about 85 % of it is the
+first execution of that code in the process, not work the step has to do**: the same step with the same
+state costs 0.6-0.7 ms once the engine has compiled the path. What the step runs that no earlier step ran:
+the release of the clamps (the component pass over the part tree, the weld of the clamp pieces into one
+held structure, the mass properties and collision structures of both vessels), the adoption of the new
+vessel by the world, the first free step of the stack with contact probes against the mount, and the first
+trajectory prediction of a vessel that is no longer held (the snapshot's 1.2 ms). The engine start in lunar
+orbit (1.8 ms) is the same kind of first run: the first hand-over from rails to integration with a burn and
+its patch refresh.
+
+The warm cost (0.6-0.7 ms for the step, 0.13 ms for the snapshot) is inside the 1.5 ms line of the
+simulation stage; nothing in the step needs to be spread over later steps.
+
+What removes the cold cost: a rehearsal while the loading screen is up. The session flies the first seconds
+of its own scenario on a COPY of the start vessel (the stage presses up to the release, a few free steps, one
+prediction) and throws the copy away, so the engine has compiled those paths before the player's lift-off.
+The copy shares nothing with the session's state, takes no id from the id source and emits no event, so
+the physics of the lift-off step, the golden hash and the mission's gates are untouched by construction.
+Planned as its own commit AFTER this package's vessel-model step (MIGRATION_V2 step 3.3), which rewrites the
+split and the per-craft stage state the rehearsal has to exercise; `docs/handoff/sim-core-v2.md` says whether
+it landed. The cockpit's 16-26 ms in the same frames (request app-integration-12) is the larger share and
+is not the sim's.
