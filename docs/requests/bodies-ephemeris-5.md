@@ -24,3 +24,17 @@ Iapetus, Mimas, Miranda, Ariel and Umbriel (and Io and Ganymede as a cross-check
 under your paths or in your hand-off. The owner of `tools/bodies` (bodies-ephemeris now, solar-system-sim in
 wave 4) then reads it into `tools/bodies/sources/colours.json` and regenerates; the generator keeps the
 chromaticity and scales the luminance to the body's geometric albedo.
+
+## Addendum (after the review of bodies-ephemeris)
+1. Iapetus: its staged geometric albedo is the JPL Horizons value 0.6, its bright hemisphere only (NSSDC lists
+   0.05 / 0.5 for the two hemispheres). Please include in the report its DISC-mean linear colour AND the
+   disc-mean albedo of the baked level-0 map (solid-angle weighted), so the far impostor carries the
+   two-tone body's mean rather than its bright side.
+2. Large procedural craters: the generic models' crater population uses one depth-to-diameter ratio at every
+   size (`freshDepthToDiameter` 0.196 x D, src/terrain/craters.ts), and your configs extend it to
+   `maxDiameterRadii` 0.4 R; on Titania, Oberon, Ariel and Umbriel that is a 300-316 km basin 47-62 km deep,
+   while basins that size are complex craters a few km deep. The staged terrain sections' `minElevation`
+   follows what the bake produces (Titania -63.6 km, Oberon -61.4, Ariel -47.9, Umbriel -47.1), so it is right
+   for your bake but the relief is not. If you move large craters to a complex-crater depth (or cap the depth),
+   say so; the generator recomputes the bounds from your parameters, and from your manifests'
+   `layers.height.elevation` as soon as they exist.
