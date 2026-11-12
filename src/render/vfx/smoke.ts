@@ -120,7 +120,8 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let rh = d / max(r, 0.5);
   // Wall jet from the foot of the plume: 1 / r decay, thickening with distance, focused along the trench.
   let F = su.rate.w;
-  let lobe = pow(max(dot(rh, su.trench.xy), 0.0), 3.0);
+  // (Both ways along the trench: the deflector under the mount is a double wedge.)
+  let lobe = pow(abs(dot(rh, su.trench.xy)), 3.0);
   let w = (1.0 - F) + F * 2.6 * lobe;
   let r0 = su.flow.y;
   let delta = 5.0 + 0.14 * r;
@@ -172,12 +173,14 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   // down the duct, the foot of the jet once it spreads over the open pad), close to the ground.
   let R = su.rate.z;
   let H = 2.5;
-  let out = su.source.xz + su.trench.xy * (su.trench.z * su.rate.w);
-  let dSmoke = p.xz - out;
-  let gSmoke = exp(-dot(dSmoke, dSmoke) / (R * R)) * exp(-p.y / H) / (PI * R * R * H);
+  let reachT = su.trench.xy * (su.trench.z * su.rate.w);
+  let dSmoke = p.xz - (su.source.xz + reachT);
+  let dSmoke2 = p.xz - (su.source.xz - reachT);
+  let gSmoke = 0.5 * (exp(-dot(dSmoke, dSmoke) / (R * R)) + exp(-dot(dSmoke2, dSmoke2) / (R * R))) * exp(-p.y / H) / (PI * R * R * H);
   let Rw = 1.5 * R;
-  let dSteam = p.xz - mix(su.source.xz, out, 0.8);
-  let gSteam = exp(-dot(dSteam, dSteam) / (Rw * Rw)) * exp(-p.y / (1.6 * H)) / (PI * Rw * Rw * 1.6 * H);
+  let dSteam = p.xz - (su.source.xz + 0.8 * reachT);
+  let dSteam2 = p.xz - (su.source.xz - 0.8 * reachT);
+  let gSteam = 0.5 * (exp(-dot(dSteam, dSteam) / (Rw * Rw)) + exp(-dot(dSteam2, dSteam2) / (Rw * Rw))) * exp(-p.y / (1.6 * H)) / (PI * Rw * Rw * 1.6 * H);
   // The jet itself is clear, fast gas: nothing condenses in it and what strays into it is torn apart.
   let core = jetAt(p).core;
   s.r += su.rate.x * dt * gSmoke * (1.0 - core);
@@ -428,7 +431,9 @@ struct MarchOut {
       let towards = vfxNoiseLod(noiseQ + su.sunSite.xyz * 0.1, noiseFoot);
       // (The small cells of the detail noise are crevices between their feature points: darker there.)
       let relief = clamp(1.0 - 7.0 * (towards.g - ng) * hard, 0.2, 1.7) * mix(1.0, 0.5 + 0.75 * smoothstep(0.15, 0.7, cavity), hard);
-      let sun = sunE * ((0.7 + 0.3 * phase) * 2.2 * lt.r * relief + (0.45 * lt.a + 0.3 * wide) * (0.5 + 0.5 * relief)) * (1.0 / (4.0 * PI));
+      // (Sunlit steam is the brightest diffuse thing in a launch photograph: as bright as a white surface in
+      // the sun, with a floor of light scattered about inside it, so that its shaded folds are grey, not brown.)
+      let sun = sunE * ((0.7 + 0.3 * phase) * 3.6 * lt.r * relief + (0.7 * lt.a + 0.45 * wide) * (0.5 + 0.5 * relief)) * (1.0 / (4.0 * PI));
       // Plume: the jet is a line of light; gas next to it glows from the light that has been scattered about
       // inside the cloud as well as from what reaches it directly.
       let toL = plumeLightPoint(p) - p;

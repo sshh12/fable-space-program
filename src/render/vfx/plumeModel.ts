@@ -232,7 +232,12 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   const fanAt = (x: number): number => (fanGain * re) / Math.max(x, re);
   const brightness = (x: number): number => Math.max(columnBrightness(shape, re, x, exponent, farGain, nearLength), smokeAt(x), fanAt(x));
   let lo = 0;
-  let hi = Math.max(8 * coreLength, smokeGain > EPS ? 4 * look.smoke.lengthRe * re : 0, Math.min(FAR_REACH_RE * re, (fanGain * re) / EPS));
+  // (The fan of a dense, smoky jet in vacuum is followed less far: its particulates stop glowing within a few
+  // tens of exit radii and what is left of them in sunlight is far too thin to see. Followed to 400 radii,
+  // four small separation motors cost more GPU time than the six engines beside them.)
+  const smoky = far > 0.5 && look.smoke.extinction > 1;
+  const reachRe = FAR_REACH_RE * (1 - 0.6 * far * Math.min(1, look.smoke.extinction / 3));
+  let hi = Math.max((smoky ? 4 : 8) * coreLength, smokeGain > EPS ? 4 * look.smoke.lengthRe * re : 0, Math.min(reachRe * re, (fanGain * re) / EPS));
   if (brightness(hi) > EPS) lo = hi;
   else {
     for (let i = 0; i < 40; i++) {
@@ -242,7 +247,7 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     }
   }
   const burn = oxygen > 0.01 ? Math.max(look.shear.luminance > 0 ? 3 * shearLength * Math.min(1, 0.35 + oxygen) : 0, look.afterburn.luminance > 0 ? 2.1 * afterLength : 0) : 0;
-  shape.visibleLength = Math.min(Math.max(lo, burn, 3 * re), Math.max(FAR_REACH_RE * re, burn, 8 * coreLength));
+  shape.visibleLength = Math.min(Math.max(lo, burn, 3 * re), Math.max(reachRe * re, burn, (smoky ? 4 : 8) * coreLength));
   let radius = re * 1.5;
   for (let i = 1; i <= 24; i++) {
     const x = (shape.visibleLength * i) / 24;

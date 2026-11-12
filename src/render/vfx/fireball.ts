@@ -298,7 +298,7 @@ export class FireballRenderer {
         burn: E.fragmentBurn[0] + (E.fragmentBurn[1] - E.fragmentBurn[0]) * rand(seed, 171 + i),
         radius: radius * (0.002 + 0.003 * rand(seed, 191 + i)),
         seed: seed + i,
-        drag: 0.003 * Math.pow(12, rand(seed, 211 + i)),
+        drag: 0.012 * Math.pow(12, rand(seed, 211 + i)),
       });
     }
     if (this.fragments.length > 4 * MAX_FIREBALLS) this.fragments.splice(0, this.fragments.length - 4 * MAX_FIREBALLS);

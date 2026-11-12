@@ -233,9 +233,10 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
     let ring = exp(-sq((rr - (g.rb - 0.35 * g.mixing)) / ringW)) * sqrt(min(2.0, 0.25 * re / ringW));
     o.e += inst.shearColor.rgb * (k * ox * ring * smoothstep(0.0, 2.5 * re, xc) * exp(-xc / lens.x) * fil);
     let s = xc / lens.y;
-    let tip = 1.0 - smoothstep(0.45, 1.0, s + (n3.r - 0.5) * 1.3 * grow + (n3.a - 0.5) * 0.5 * grow + (n.r - 0.5) * 0.3 * turb);
+    // (The tip is ragged, not a row of islands: the large eddies move it by a quarter of the flame's length at most.)
+    let tip = 1.0 - smoothstep(0.45, 1.0, s + (n3.r - 0.5) * 0.55 * grow + (n3.a - 0.5) * 0.3 * grow + (n.r - 0.5) * 0.3 * turb);
     if (tip > 0.0) {
-      let rf = g.rb * (1.0 + 0.55 * big * grow);
+      let rf = g.rb * (1.0 + 0.3 * big * grow);
       // (The flame has an edge: it ends within a third of its radius, on an outline that the eddies and the
       // fine turbulence move about. Fading over most of the radius it was a soft glow with no outline at all.)
       let body = 1.0 - smoothstep(0.66 * rf, 1.1 * rf, rr);
@@ -249,7 +250,9 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
       // The middle of the flame is the hottest and brightest (white-yellow); its skin is the colour of the look.
       let heart = saturate(1.4 * body - 0.45) * (1.0 - saturate(1.2 * s));
       let colour = mix(inst.afterColor.rgb * cool, vec3f(1.9, 1.7, 1.25) * luminance(inst.afterColor.rgb), heart);
-      o.e += colour * (1.3 * k * ox * body * tip * begin * sqrt(g.dil) * tex);
+      // (The flame is brightest in its first third and falls by more than a stop towards its tip: the far
+      // flame is yellow-orange with its eddies showing, not one white stick from the nozzles to the ground.)
+      o.e += colour * (1.3 * k * ox * body * tip * begin * sqrt(g.dil) * tex * mix(1.0, 0.3, smoothstep(0.25, 0.9, s)));
     }
   }
 
@@ -616,7 +619,7 @@ export class PlumeRenderer {
       const thin = Math.min(1, Math.max(STEPS_FLOOR, Math.sqrt(STEPS_FULL_COVERAGE / Math.max(coverage, 1e-6))));
       // A free expansion has no turbulence to show (nothing to mix with): the noise fades with it.
       const far = c.nozzles[0]?.shape.far ?? 0;
-      put(I, o + 40, 1 / (feature * 4), look.noise.amount * (1 - 0.9 * far), (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - FAR_STEPS_SAVED * far) * thin));
+      put(I, o + 40, 1 / (feature * 4), look.noise.amount * (1 - far), (look.noise.speed * noiseTime) % (feature * 4), c.kind === 'rcs' ? RCS_STEPS : Math.round(PLUME_STEPS * (1 - FAR_STEPS_SAVED * far) * thin));
       if (c.merged) {
         const m = c.merged;
         const thr = c.nozzles.reduce((s, nz) => s + Math.max(nz.throttle, 0.12 * nz.residual), 0) / c.nozzles.length;

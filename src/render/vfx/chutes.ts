@@ -548,9 +548,8 @@ export class ChuteSystem {
         d.vel = v3.add(d.vel, v3.scale(v3.sub(target, d.vel), 1 - Math.exp(-dt / 1.2)));
         // Tip over about a horizontal axis: the released canopy keels over within a second or two and streams.
         const axis = v3.normalize(v3.cross(dom.up, v3.lenSq(v3.reject(d.X, dom.up)) > 1e-6 ? d.X : d.Z));
-        // (A canopy that was cut away settles nearly upright, rocking; one that failed streams and keels over.)
-        const keel = d.mode === 'failed' ? 0.2 : 0.8;
-        const rot = quat.fromAxisAngle(axis, v3.dot(d.Y, dom.up) > keel ? (d.mode === 'failed' ? 0.9 : 0.25) * dt * Math.min(1, 2 * age) : 0);
+        // (Released, the crown collapses and the cloth keels over on its side within a couple of seconds.)
+        const rot = quat.fromAxisAngle(axis, v3.dot(d.Y, dom.up) > 0.15 ? (d.mode === 'failed' ? 0.9 : 0.6) * dt * Math.min(1, 2 * age) : 0);
         d.X = quat.rotate(rot, d.X);
         d.Y = quat.rotate(rot, d.Y);
         d.Z = quat.rotate(rot, d.Z);
@@ -573,7 +572,7 @@ export class ChuteSystem {
       const collapse = Math.exp(-age / C.collapseTime);
       const settled = d.downAt >= 0 ? Math.min(1, (effectTime - d.downAt) / 2.5) : 0;
       const flat = settled * settled * (3 - 2 * settled);
-      const adrift = Math.max(0.03, d.inflation0 * (0.3 + 0.7 * collapse));
+      const adrift = Math.max(0.03, d.inflation0 * (0.08 + 0.92 * collapse));
       const inflation = d.mode === 'failed' ? Math.max(0.004, d.inflation0 * Math.exp(-age / (0.3 * S.time))) : adrift + (Math.max(adrift, 0.7 * d.inflation0) - adrift) * flat;
       const Y = v3.scale(Yunit, d.mode === 'failed' ? 1 : 1 - 0.93 * flat);
       // One frame ago: it has moved with the domain and by its own velocity, the eye by prevEyeOffset.
@@ -591,11 +590,12 @@ export class ChuteSystem {
         prevZ: Z,
         // The lines carry nothing any more: they hang from the skirt in a loose bundle that swings a little.
         confluence: v3.add(
-          v3.addScaled(v3.addScaled(origin, Yunit, -0.2 * p.suspension), quat.rotate(dom.q, dom.up), -0.7 * p.suspension * (1 - flat)),
+          // (The lines trail above and behind the falling cloth: nothing hangs from them any more.)
+          v3.addScaled(v3.addScaled(origin, Yunit, -0.25 * p.suspension), quat.rotate(dom.q, dom.up), 0.55 * p.suspension * (1 - flat)),
           v3.scale(X, 0.12 * p.suspension * Math.sin(0.9 * age + 7 * p.seed)),
         ),
         attach: null,
-        slackDown: v3.neg(quat.rotate(dom.q, dom.up)),
+        slackDown: quat.rotate(dom.q, dom.up),
         shred: d.mode === 'failed' ? Math.min(0.92, 0.25 + 0.7 * (age / S.time)) : 0,
         fade: 1 - Math.min(1, Math.max(0, (age - 0.7 * C.fadeTime) / (0.3 * C.fadeTime))),
         lineFade: 1 - flat,

@@ -321,7 +321,7 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.6)) * (1.2 / Rb) + seed, lod);
       let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.6)) * (1.2 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
       let stream = 1.0 - e;
-      let tex = 1.0 + (0.35 + 0.6 * stream) * (mix(nb.g, na.g, wa) - 0.5) + (0.25 + 0.5 * stream) * (mix(nb.r, na.r, wa) - 0.5);
+      let tex = max(0.15, 1.0 + (0.6 + 1.0 * stream) * (mix(nb.g, na.g, wa) - 0.5) + (0.45 + 0.9 * stream) * (mix(nb.r, na.r, wa) - 0.5));
       let face = e * e * e;
       // (Beyond the shock the air is cold: the glow ends within a couple of standoffs, softly, and what is seen
       // round it is the bloom of the clipped layer, not a long exponential tail that clips metres out.)
@@ -467,7 +467,7 @@ export class PlasmaRenderer {
       // white whatever the hour, so that the stagnation region clips and the layer round it keeps its colour
       // and its streaks. Capped like a flame, at a night exposure it was six hundred times over: one white
       // ball of glare a quarter of the frame wide.)
-      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance, clipStops: 2, cap: Infinity });
+      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance, clipStops: 1.2, cap: Infinity });
       const o = this.placed.length * INST_FLOATS;
       D.set([origin.x, origin.y, origin.z, boxLength], o);
       D.set([wind.x, wind.y, wind.z, boxRadius], o + 4);
