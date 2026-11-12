@@ -216,6 +216,8 @@ const shellRole: RoleModule = {
         return true;
       }
       if (p.startsWith('/p/')) return false; // the mirror handler, added below
+      // Source maps hold the private sources: never served unless the local stack asks for them.
+      if (p.endsWith('.map') && env.SHELL_SOURCE_MAPS !== '1') return empty(res, 404, ISOLATION);
       if (p === '/' || p === '/index.html') return sendStatic(req, res, 'index.html', 'no-cache', false);
       const hashed = HASHED_ASSET.test(p);
       if (hashed && query !== null) return empty(res, 404, ISOLATION);

@@ -185,7 +185,9 @@ await build({
   root: repoRoot,
   configFile: path.join(repoRoot, 'vite.config.ts'),
   logLevel: 'warn',
-  build: { outDir: tmpDir, emptyOutDir: true },
+  // Source maps carry the private repository's sources: the stack's build keeps them (local only), the CI and
+  // image build has none and no sourceMappingURL comment (lead decision, platform-delivery fix round item 1).
+  build: { outDir: tmpDir, emptyOutDir: true, sourcemap: target === 'stack' },
 });
 const stats = dirStats(tmpDir);
 const seconds = (Date.now() - t0) / 1000;

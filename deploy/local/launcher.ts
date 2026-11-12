@@ -599,6 +599,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
       if (spec.db) env.DATABASE_URL = pgUrl();
       if (spec.packs) Object.assign(env, packsEnv);
       if (spec.name === 'shell' && clientDir) env.STATIC_DIR = clientDir;
+      if (spec.name === 'shell') env.SHELL_SOURCE_MAPS = '1'; // the local stack only: production never sets it
       const out = fs.openSync(path.join(logsDir, `${spec.name}.log`), 'a');
       const child = spawn(process.execPath, [bundle], { cwd: REPO, env, stdio: ['ignore', out, out], windowsHide: true });
       children.push({ name: spec.name, child, port: spec.port, roles: spec.roles });

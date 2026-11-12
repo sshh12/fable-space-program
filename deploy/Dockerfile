@@ -19,6 +19,8 @@ COPY . .
 RUN node deploy/build/build-server.mjs --out=/out/server \
  && node tools/dev/build-client.mjs --target=ci \
  && mkdir -p /out && cp -r out/ci/client /out/client \
+ && find /out/client -name '*.map' -delete \
+ && if grep -rl 'sourceMappingURL' /out/client --include='*.js' --include='*.css'; then echo 'a source map reference reached the image' >&2; exit 1; fi \
  && cp deploy/build/stamp.mjs /out/server/stamp.mjs
 
 FROM ${NODE_IMAGE}
