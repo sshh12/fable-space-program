@@ -56,7 +56,7 @@ of the frame):
 | | no hint | with the hint |
 |---|---|---|
 | the cabin's exposure | keyed at mid-grey | 2.25 EV lower (its log-average at about Y 0.04) |
-| the panes | 6.9 stops over mid-grey (clipped) | 3 stops over mid-grey (gain 0.29 on what lies beyond the cabin) |
+| the panes | 7.0 stops over mid-grey (clipped) | 3 stops over mid-grey (4.8 by the key alone; gain 0.29 on what lies beyond the cabin) |
 
 At 0.2 % of the frame nothing, at 0.5 % half; a glow no brighter than the cabin (40 cd/m^2) changes
 nothing; with a sunlit Earth in other panes the brighter of the two sets the level.
