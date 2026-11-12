@@ -1,7 +1,7 @@
 /**
  * Browser-safe keyboard / mouse / wheel input (docs/ARCHITECTURE.md section 11).
  *
- *   const input = createInputSystem(canvas, { captureKeyboard: true });
+ *   const input = createInputSystem(canvas);
  *   every frame:  const frame = input.sample();      // InputFrame (+ HUD-only `ui` actions)
  *
  * - Keys by `event.code` through the binding table; every bound code calls preventDefault (Tab, Space,
@@ -16,9 +16,11 @@
  *   steps reported with it. A drag that starts on the canvas captures the pointer, so it stays a scene drag
  *   (overUi false) until release wherever the pointer goes.
  * - Release-all on window blur, when the page is hidden, and when fullscreen is left.
- * - With `captureKeyboard` (default true), the first real user gesture requests fullscreen and
- *   `navigator.keyboard.lock()`; `keyboardLocked` reports the outcome and is re-evaluated on every
- *   fullscreenchange. A refusal is never an error.
+ * - Keyboard capture (fullscreen + `navigator.keyboard.lock()`) is the player's choice: the page starts windowed
+ *   and uncaptured, every binding works so (no default binding uses Control, Alt or Meta), and the HUD's capture
+ *   control calls `requestKeyboardCapture()` / `releaseKeyboardCapture()`; Esc also leaves it. Only an app that
+ *   opts in with `captureKeyboard: true` has the first real gesture request it. `keyboardLocked` reports the
+ *   outcome and is re-evaluated on every fullscreenchange. A refusal is never an error.
  */
 import type { ButtonAction } from '@/core/contracts/controls';
 import { DEFAULT_BINDINGS, type Binding, type UiAction } from './bindings';
@@ -27,7 +29,10 @@ import { createKeyboardCapture } from './keyboardCapture';
 
 export interface InputSystemOptions {
   bindings?: readonly Binding[];
-  /** Request fullscreen + keyboard lock on the first real user gesture (default true). */
+  /**
+   * Opt-in: request fullscreen + keyboard lock on the first real user gesture (default false: nothing here asks
+   * for it by itself; the player uses the HUD's capture control).
+   */
   captureKeyboard?: boolean;
   /** Element made fullscreen (default document.documentElement, so the HUD stays visible). */
   fullscreenElement?: () => Element;
@@ -39,14 +44,18 @@ export interface InputSystem {
   readonly bindings: readonly Binding[];
   /** True while fullscreen keyboard lock is active. */
   readonly keyboardLocked: boolean;
+  /** True while the page is fullscreen (the capture is on, whether or not the browser granted the lock). */
+  readonly fullscreen: boolean;
   /** Build the InputFrame for this frame and reset the per-frame edges and deltas. */
   sample(): FlightInputFrame;
   /** Inject a discrete action from an on-screen control (HUD button); it appears in the next sample. */
   trigger(action: ButtonAction | UiAction): void;
   /** Ask for fullscreen + keyboard lock (call from a click handler: needs user activation). Never rejects. */
   requestKeyboardCapture(): Promise<boolean>;
-  /** Listen for keyboard-lock changes; returns an unsubscribe function. */
-  onKeyboardLockChange(listener: (locked: boolean) => void): () => void;
+  /** Leave fullscreen and release the keyboard lock (the capture control's second click). Never throws. */
+  releaseKeyboardCapture(): void;
+  /** Listen for keyboard-lock and fullscreen changes; returns an unsubscribe function. */
+  onKeyboardLockChange(listener: (locked: boolean, fullscreen: boolean) => void): () => void;
   /** Codes currently held (diagnostics / tests). */
   heldCodes(): string[];
   dispose(): void;
@@ -70,13 +79,15 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
   const bindings = opts.bindings ?? DEFAULT_BINDINGS;
   const core = createInputCore(bindings);
   const isOverUi = opts.isOverUi ?? ((target: EventTarget | null): boolean => target instanceof Element && target !== canvas && !canvas.contains(target));
-  const listeners = new Set<(locked: boolean) => void>();
-  const capture = createKeyboardCapture(opts.fullscreenElement ?? (() => document.documentElement), (locked) => {
+  const listeners = new Set<(locked: boolean, fullscreen: boolean) => void>();
+  let lockedSeen = false;
+  const capture = createKeyboardCapture(opts.fullscreenElement ?? (() => document.documentElement), (locked, fullscreen) => {
     core.setKeyboardLocked(locked);
-    if (!locked) core.releaseAll();
-    for (const l of listeners) l(locked);
+    if (lockedSeen && !locked) core.releaseAll();
+    lockedSeen = locked;
+    for (const l of listeners) l(locked, fullscreen);
   });
-  let autoCapturePending = opts.captureKeyboard ?? true;
+  let autoCapturePending = opts.captureKeyboard ?? false;
   let disposed = false;
 
   let rect = canvas.getBoundingClientRect();
@@ -176,11 +187,18 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
     get keyboardLocked() {
       return capture.locked;
     },
+    get fullscreen() {
+      return capture.fullscreen;
+    },
     sample: () => core.sample(),
     trigger: (action) => core.trigger(action),
     requestKeyboardCapture() {
       autoCapturePending = false;
       return capture.request();
+    },
+    releaseKeyboardCapture() {
+      autoCapturePending = false;
+      capture.release();
     },
     onKeyboardLockChange(listener) {
       listeners.add(listener);

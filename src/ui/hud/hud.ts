@@ -41,7 +41,7 @@ import type { SimEvent, SimSnapshot } from '@/core/contracts/sim';
 import type { Hud } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
 import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt, type VerticalTrend } from '../format';
-import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS, UNLOCK_ICON } from '../icons';
+import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS } from '../icons';
 import {
   ablatorTone,
   activeVesselOf,
@@ -63,6 +63,10 @@ import {
   isPredictionRow,
   landingTargetExpanded,
   landingTargetRows,
+  describeAirData,
+  describeChuteEnvelope,
+  milestoneSoiBody,
+  milestoneTitle,
   orbitPhase,
   RADAR_ALTITUDE_SWITCH,
   summarizeResources,
@@ -91,8 +95,16 @@ export interface HudOptions {
   navball: NavballRendererImpl;
   /** On-screen controls fire ButtonActions here (the app connects InputSystem.trigger). */
   dispatch: (action: ButtonAction) => void;
-  /** Click-to-capture control (InputSystem.requestKeyboardCapture, called inside the click handler). */
+  /**
+   * The keyboard-capture switch (top right): off, a click calls this inside the click handler
+   * (InputSystem.requestKeyboardCapture: fullscreen + keyboard lock); on, a click calls releaseKeyboardCapture.
+   * Esc leaves the capture as well (the browser's fullscreen exit). The HUD never asks for the capture by itself.
+   */
   requestKeyboardCapture?: () => void;
+  /** Leave fullscreen and release the lock (InputSystem.releaseKeyboardCapture): the switch's second click. */
+  releaseKeyboardCapture?: () => void;
+  /** Show the keyboard-capture switch (default true; false for clean footage, see setCaptureControlVisible). */
+  showCaptureControl?: boolean;
   /** Key-help content generated from the binding table (keyHelpEntries(input.bindings)). */
   keyHelp: readonly HudKeyHelpEntry[];
   /** Key label per ButtonAction for hints on buttons (e.g. { stage: 'Space' }). */
@@ -119,7 +131,13 @@ export interface HudFailureAction {
 export interface HudImpl extends Hud {
   readonly root: HTMLElement;
   readonly visible: boolean;
-  setKeyboardLocked(locked: boolean): void;
+  /**
+   * The capture state for the switch: `locked` (fullscreen with the keyboard lock held) and `fullscreen` (the
+   * capture is on; without the lock when the browser refused it). Default for `fullscreen`: `locked`.
+   */
+  setKeyboardLocked(locked: boolean, fullscreen?: boolean): void;
+  /** Show or hide the keyboard-capture switch (clean footage); the key-help button stays. */
+  setCaptureControlVisible(visible: boolean): void;
   toggleKeyHelp(force?: boolean): void;
   readonly keyHelpOpen: boolean;
   /** CPU time of the last update and its running mean, ms (JavaScript only; see the hand-off for the full cost). */
@@ -173,13 +191,6 @@ const GLYPH_CAPS = new Set(['[', ']', '←', '→', '↑', '↓']);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TOAST_SECONDS = 4.5;
 const MAX_TOASTS = 4;
-
-const titleCase = (id: string): string =>
-  id
-    .toLowerCase()
-    .split(/[_\s-]+/)
-    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
-    .join(' ');
 
 function row(label: string, value: TextSlot, valueCls = ''): { root: HTMLDivElement; label: TextSlot; valueEl: HTMLSpanElement } {
   const l = new TextSlot(label);
@@ -376,19 +387,41 @@ export function createHud(opts: HudOptions): HudImpl {
   const tc = el('div', 'tc', [el('div', '', [altPanel], { 'data-show': 'external map' }), notice, toastsEl]);
 
   // ------------------------------------------------------------------------- top right: keyboard + help
+  // One labelled switch, off by default: every flight key works uncaptured; on, the page is fullscreen with the
+  // keyboard lock (browser shortcuts such as Ctrl+W reach the game, Left Ctrl lowers the throttle too).
+  let captureOn = false;
+  const kbState = new TextSlot('OFF');
   const kbCapture = hudButton(
-    [svgIcon(UNLOCK_ICON), el('b', '', ['Capture keyboard'])],
+    [el('span', 'sw', [el('i')]), el('span', 'kbl', ['Keyboard capture']), el('span', 'kbs', [kbState.node])],
     'pill kbcap',
-    'Browser shortcuts are active. Click for fullscreen with keyboard lock: Ctrl+W and similar shortcuts then reach the game, and Left Ctrl becomes an extra throttle-down key',
-    () => opts.requestKeyboardCapture?.(),
+    '',
+    () => (captureOn ? opts.releaseKeyboardCapture?.() : opts.requestKeyboardCapture?.()),
   );
-  const kbOk = el('div', 'pill kbok', [svgIcon(LOCK_ICON), el('span', '', ['Keyboard captured'])]);
+  kbCapture.setAttribute('role', 'switch');
+  const kbChecked = new AttrSlot(kbCapture, 'aria-checked');
+  const kbTitle = new AttrSlot(kbCapture, 'title');
+  const kbOn = classFlag(kbCapture, 'on');
+  const kbNoLock = classFlag(kbCapture, 'nolock');
   const kbCaptureShow = hiddenFlag(kbCapture);
-  const kbOkShow = hiddenFlag(kbOk);
-  kbOkShow.set(false);
+  const setCapture = (locked: boolean, fullscreen: boolean): void => {
+    captureOn = fullscreen;
+    kbOn.set(fullscreen);
+    kbNoLock.set(fullscreen && !locked);
+    kbChecked.set(String(fullscreen));
+    kbState.set(!fullscreen ? 'OFF' : locked ? 'ON' : 'NO LOCK');
+    kbTitle.set(
+      !fullscreen
+        ? 'Keyboard capture is off: the browser keeps its shortcuts (Ctrl+W, Ctrl+T...) and every flight key works. Click for fullscreen with keyboard lock; click again or press Esc to leave.'
+        : locked
+          ? 'Fullscreen with keyboard lock: browser shortcuts such as Ctrl+W reach the game, and Left Ctrl also lowers the throttle. Click or press Esc to leave.'
+          : 'Fullscreen, but the browser did not grant the keyboard lock: its shortcuts stay active. Click or press Esc to leave.',
+    );
+  };
+  setCapture(false, false);
+  kbCaptureShow.set(opts.showCaptureControl ?? true);
   let helpOpen = false;
   const helpBtn = hudButton(['?'], 'helpbtn', 'Key help (`)', () => toggleKeyHelp());
-  const tr = el('div', 'tr', [kbCapture, kbOk, helpBtn], { 'data-show': 'external interior map' });
+  const tr = el('div', 'tr', [kbCapture, helpBtn], { 'data-show': 'external interior map' });
 
   // ----------------------------------------------------------------------------------- left column
   const orbit = { ap: new TextSlot(), apT: new TextSlot(), pe: new TextSlot(), peT: new TextSlot(), inc: new TextSlot(), per: new TextSlot() };
@@ -439,7 +472,10 @@ export function createHud(opts: HudOptions): HudImpl {
   const liftShow = hiddenFlag(liftRow);
   const chuteLight = el('span', 'light', [entry.chute.node]);
   const chuteTone = new ToneSlot(chuteLight);
-  const chuteRow = el('div', 'row', [el('span', 'lbl', ['Chute envelope']), chuteLight]);
+  // Named for the chutes the light is about (the next chute stage: the mains once the drogues are out).
+  const chuteLabel = new TextSlot('Chute deploy');
+  const chuteRow = el('div', 'row', [el('span', 'lbl', [chuteLabel.node]), chuteLight]);
+  const chuteTitle = new AttrSlot(chuteRow, 'title');
   const chuteShow = hiddenFlag(chuteRow);
   const fluxRow = row('Heat flux', entry.flux);
   const fluxShow = hiddenFlag(fluxRow.root);
@@ -731,7 +767,7 @@ export function createHud(opts: HudOptions): HudImpl {
   const toasts: Toast[] = [];
   /** Incremented at the end of every update: notifications between two updates belong to one frame. */
   let frameNo = 0;
-  const notify = (message: string, tone: 'caution' | 'info' = 'caution'): void => {
+  const notify = (message: string, tone: 'caution' | 'info' = 'caution'): Toast => {
     const existing = toasts.find((t) => t.text === message);
     if (existing) {
       // The same message reported twice for one event (e.g. a command result and a sim event) is one toast.
@@ -745,13 +781,29 @@ export function createHud(opts: HudOptions): HudImpl {
         existing.fading = false;
         existing.el.classList.remove('fade');
       }
-      return;
+      return existing;
     }
     const countSlot = new TextSlot('');
     const t: Toast = { text: message, count: 1, life: TOAST_SECONDS, frame: frameNo, el: el('div', `toast ${tone === 'info' ? 'info' : ''}`.trim(), [message, el('span', 'count', [countSlot.node])]), countSlot, fading: false };
     toasts.push(t);
     toastsEl.append(t.el);
     while (toasts.length > MAX_TOASTS) toasts.shift()!.el.remove();
+    return t;
+  };
+  const dropToast = (t: Toast): void => {
+    const i = toasts.indexOf(t);
+    if (i < 0) return;
+    toasts.splice(i, 1);
+    t.el.remove();
+  };
+  /**
+   * A sphere-of-influence change and the milestone a scenario hangs on it come together: one toast. The
+   * milestone's (it names the mission step) replaces the change's, and a change after its milestone adds none.
+   */
+  const soiToasts = new Map<string, { toast: Toast; milestone: boolean }>();
+  const liveSoiToast = (bodyId: string): { toast: Toast; milestone: boolean } | null => {
+    const e = soiToasts.get(bodyId);
+    return e && toasts.includes(e.toast) ? e : null;
   };
 
   /** Warp index of the previous snapshot (null before the first update). */
@@ -759,12 +811,21 @@ export function createHud(opts: HudOptions): HudImpl {
 
   const eventToast = (e: SimEvent, s: SimSnapshot): void => {
     switch (e.type) {
-      case 'milestone':
-        notify(titleCase(e.milestone.id), 'info');
+      case 'milestone': {
+        const soiBody = milestoneSoiBody(e.milestone.id, s, defs);
+        const prior = soiBody !== null ? liveSoiToast(soiBody) : null;
+        if (prior && !prior.milestone) dropToast(prior.toast);
+        const t = notify(milestoneTitle(e.milestone.id, s, defs), 'info');
+        if (soiBody !== null) soiToasts.set(soiBody, { toast: t, milestone: true });
         break;
-      case 'soiChange':
-        notify(`Entering ${defs.bodies[e.toBodyId]?.name ?? e.toBodyId} sphere of influence`, 'info');
+      }
+      case 'soiChange': {
+        if (liveSoiToast(e.toBodyId)?.milestone || liveSoiToast(e.fromBodyId)?.milestone) break;
+        const t = notify(`Entered the ${defs.bodies[e.toBodyId]?.name ?? e.toBodyId} sphere of influence`, 'info');
+        soiToasts.set(e.toBodyId, { toast: t, milestone: false });
+        soiToasts.set(e.fromBodyId, { toast: t, milestone: false });
         break;
+      }
       case 'crewLost':
         notify(`Crew lost: ${e.cause}`);
         break;
@@ -991,7 +1052,8 @@ export function createHud(opts: HudOptions): HudImpl {
 
     // Panel visibility. The orbit leaves during an entry or while falling through the air on a suborbital path.
     const showOrbit = !landed && (kind === 'map' || (kind === 'external' && phase.show && !heating));
-    const inAir = !landed && (r.dynamicPressure > 1 || r.mach > 0.02);
+    // Air data in air only: the sim's Mach number keeps a nominal speed of sound in vacuum (describeAirData).
+    const inAir = airborne && (r.dynamicPressure > 1 || r.mach > 0.02);
     // The chute light matters while the next chute stage could be fired: coming down through the air.
     const chuteRelevant = r.chuteEnvelope !== null && airborne && r.verticalSpeed < 0;
     const showEntry = heating || chuteRelevant || r.liftVectorUp !== null || thermalWarn;
@@ -1137,9 +1199,10 @@ export function createHud(opts: HudOptions): HudImpl {
 
     // Atmospheric flight.
     if (show.inAir) {
-      atm.q.set(formatPressure(r.dynamicPressure));
-      atm.mach.set(formatMach(r.mach));
-      atm.aoa.set(formatRadAsDeg(r.angleOfAttack));
+      const air = describeAirData(s, defs);
+      atm.q.set(air.q);
+      atm.mach.set(air.mach);
+      atm.aoa.set(air.aoa);
     }
 
     // Entry: heat shield, skin temperature, lift vector, chute envelope. Each bar is coloured as a whole by the
@@ -1155,9 +1218,12 @@ export function createHud(opts: HudOptions): HudImpl {
       tempRow.fill.set(r.maxTempFraction);
       tempRow.tone.set(r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > SKIN_CAUTION ? 'caution' : 'good');
       entry.lift.set(r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN');
-      if (r.chuteEnvelope) {
-        entry.chute.set(r.chuteEnvelope.toUpperCase());
-        chuteTone.set(r.chuteEnvelope === 'safe' ? 'good' : r.chuteEnvelope === 'risky' ? 'caution' : 'warning');
+      const chute = describeChuteEnvelope(s, defs);
+      if (chute) {
+        chuteLabel.set(chute.label);
+        entry.chute.set(chute.light);
+        chuteTone.set(chute.tone);
+        chuteTitle.set(chute.detail);
       }
     }
 
@@ -1266,9 +1332,11 @@ export function createHud(opts: HudOptions): HudImpl {
       root.hidden = !v;
     },
     notify: (m) => notify(m),
-    setKeyboardLocked(locked) {
-      kbCaptureShow.set(!locked);
-      kbOkShow.set(locked);
+    setKeyboardLocked(locked, fullscreen = locked) {
+      setCapture(locked, fullscreen);
+    },
+    setCaptureControlVisible(v) {
+      kbCaptureShow.set(v);
     },
     toggleKeyHelp,
     landingTargetRows: () => ltCurrentRows,

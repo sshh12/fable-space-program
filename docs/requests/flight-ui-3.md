@@ -1,4 +1,4 @@
-Status: open (the map-view part is resolved, see the Resolution below; the app shell part stays with app-integration)
+Status: open (the map-view part is resolved, see the Resolution below; the app shell part stays with app-integration and is repeated in flight-ui-7, which the app fixer has open for the same file)
 From: flight-ui
 Owner path: tests/browser/map-view/real-planet.spec.ts (map-view), and the app shell's map obstacles (src/app, app-integration)
 Blocking: no

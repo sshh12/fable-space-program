@@ -40,7 +40,21 @@ import { LAB_STAGES, labVehicleParts, tagLabVehicle, withLabVehicle } from '../.
 import { UI_COLORS } from '@/core/ui/theme';
 import { balanceColumns } from '@/ui/hud/hud';
 import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
-import { isEntering, landingTargetExpanded, stageActionText, stageBurnLabel, summarizeResources, zoneStatus } from '@/ui/model';
+import {
+  describeAirData,
+  describeChuteEnvelope,
+  isEntering,
+  landingTargetExpanded,
+  milestoneSoiBody,
+  milestoneTitle,
+  stageActionText,
+  stageBurnLabel,
+  summarizeResources,
+  zoneStatus,
+} from '@/ui/model';
+import type { PartSnapshot } from '@/core/contracts/sim';
+import { quat } from '@/core/math/quat';
+import { v3 } from '@/core/math/vec3';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -578,13 +592,13 @@ describe('round-2 display rules', () => {
 
   it('folds the full resource groups into one line and shows the groups in use', () => {
     const groups = [
-      { id: 'a', label: 'Booster', bars: [{ resourceId: 'x', name: 'X', fraction: 0.62, amount: '62 %' }] },
-      { id: 'b', label: 'Upper', bars: [{ resourceId: 'x', name: 'X', fraction: 1, amount: '100 %' }] },
-      { id: 'c', label: 'Capsule', bars: [{ resourceId: 'y', name: 'Y', fraction: 1, amount: '100 %' }] },
+      { id: 'a', label: 'Booster', bars: [{ resourceId: 'x', name: 'X', fraction: 0.62, amount: '62 %', primary: true }] },
+      { id: 'b', label: 'Upper', bars: [{ resourceId: 'x', name: 'X', fraction: 1, amount: '100 %', primary: true }] },
+      { id: 'c', label: 'Capsule', bars: [{ resourceId: 'y', name: 'Y', fraction: 1, amount: '100 %', primary: true }] },
     ];
     expect(summarizeResources(groups)).toEqual({ inUse: [{ id: 'a', label: 'Booster', fraction: 0.62, amount: '62 %', detail: 'X 62 %' }], full: ['Upper', 'Capsule'] });
     // A group is one line: the resource that runs out first.
-    const two = [{ ...groups[0]!, bars: [...groups[0]!.bars, { resourceId: 'z', name: 'Z', fraction: 0.55, amount: '55 %' }] }];
+    const two = [{ ...groups[0]!, bars: [...groups[0]!.bars, { resourceId: 'z', name: 'Z', fraction: 0.55, amount: '55 %', primary: true }] }];
     expect(summarizeResources(two).inUse[0]).toMatchObject({ fraction: 0.55, amount: '55 %', detail: 'X 62 % · Z 55 %' });
     // All full (on the pad): one folded line.
     const full = groups.map((g) => ({ ...g, bars: g.bars.map((b) => ({ ...b, fraction: 1 })) }));
@@ -655,5 +669,112 @@ describe('round-2 display rules', () => {
     for (const c of cols) expect(c).toEqual([...c].sort((a, b) => a - b));
     expect(cols[0]![0]).toBe(0);
     expect(Math.max(...sums) - Math.min(...sums)).toBeLessThanOrEqual(3);
+  });
+});
+
+/**
+ * Round 6: what the whole-mission flight in the real app showed wrong (out/screens/mission/): title-cased milestone
+ * ids, a stage read as empty while its tanks were full, a chute light read against the wrong chutes, Mach in vacuum.
+ */
+describe('round-6 mission read-outs', () => {
+  const MISSION_VEHICLE = 'meridian-lunar';
+  /** The lab snapshot flying the mission vehicle with the parts of the given stage groups and fills (kg by resource). */
+  const missionSnap = (scene: FakeScene, groups: readonly string[], fill: (partId: string, resource: string, capacity: number) => number, patch: Partial<SimSnapshot> = {}): SimSnapshot => {
+    const base = snap(scene);
+    const vehicle = defs.vehicles[MISSION_VEHICLE]!;
+    const parts: PartSnapshot[] = vehicle.parts
+      .filter((p) => groups.includes(p.stageGroup))
+      .map((p) => ({
+        instanceId: p.id,
+        def: p.def,
+        localPos: v3.new(0, 0, 0),
+        localRot: quat.identity(),
+        tempSkin: 290,
+        maxTemp: 1400,
+        resources: Object.fromEntries((defs.parts[p.def]!.resources ?? []).map((r) => [r.resource, fill(p.id, r.resource, r.capacity)])),
+        modules: [],
+        shielded: false,
+      }));
+    return {
+      ...base,
+      ...patch,
+      vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, parts } : v)),
+    };
+  };
+
+  it('reads a stage group by its main supply, not by its spent ullage motors or the ablator', () => {
+    // M-2 a few seconds after ignition (out/screens/mission/04: "Meridian M-2 0 %" while the tanks held 95 %):
+    // the ullage motors' solid propellant is gone by design, the tanks are nearly full.
+    const s = missionSnap('ascent', ['m2', 'capsule'], (_part, res, cap) => (res === 'SolidProp' ? 0 : res === 'Ablator' ? 0.58 * cap : res === 'RCSProp' ? 0.93 * cap : 0.95 * cap));
+    const groups = describeResources(s, defs);
+    const m2 = groups.find((g) => g.id === 'm2')!;
+    expect(m2.bars.filter((b) => b.primary).map((b) => b.resourceId).sort()).toEqual(['LH2', 'LOX']);
+    const lines = summarizeResources(groups).inUse;
+    const m2Line = lines.find((l) => l.id === 'm2')!;
+    expect(n(m2Line.amount)).toBe('95 %');
+    expect(n(m2Line.detail)).toContain('Solid propellant 0 %');
+    // The capsule's line is its RCS supply; the ablator is the entry panel's heat shield (58 %), not a tank.
+    const cap = lines.find((l) => l.id === 'capsule')!;
+    expect(n(cap.amount)).toBe('93 %');
+    expect(n(cap.detail)).toContain('Ablator 58 %');
+  });
+
+  it('names the chutes the envelope light is about: the mains once the drogues are out', () => {
+    // At the drogue deploy (7 256 m, 111 m/s): the sim's light is the NEXT chute stage's, the mains' (RISKY above
+    // 4 500 m), while the drogues opened inside their envelope (flight record: chuteEnvelope 0 = safe).
+    const base = snap('chutes');
+    const at = (nextStage: number, env: 'safe' | 'risky' | 'unsafe'): SimSnapshot =>
+      missionSnap('chutes', ['capsule'], (_p, _r, c) => c, { staging: { ...base.staging, nextStage }, readouts: { ...base.readouts, chuteEnvelope: env } });
+    const mains = describeChuteEnvelope(at(9, 'risky'), defs)!;
+    expect(mains.label).toBe('Main deploy');
+    expect(mains.light).toBe('RISKY');
+    expect(mains.tone).toBe('caution');
+    expect(n(mains.detail)).toBe(
+      'Deploying the mains now: RISKY. Safe below 4 500 m, under 95.0 m/s and under 2.8 kPa dynamic pressure; the canopies fail above 130.0 m/s or above 4.5 kPa dynamic pressure.',
+    );
+    const drogues = describeChuteEnvelope(at(8, 'unsafe'), defs)!;
+    expect([drogues.label, drogues.light, drogues.tone]).toEqual(['Drogue deploy', 'UNSAFE', 'warning']);
+    expect(describeChuteEnvelope({ ...base, readouts: { ...base.readouts, chuteEnvelope: null } }, defs)).toBeNull();
+  });
+
+  it('shows no Mach number or angle of attack outside an atmosphere', () => {
+    // The sim keeps a nominal 275 m/s speed of sound in vacuum: M 26.8 at 184 km, M 4 at the Moon.
+    const orbit = snap('lowOrbit');
+    expect(orbit.readouts.altitudeAsl).toBeGreaterThan(defs.bodies.earth!.atmosphere!.simTop);
+    const vac = describeAirData({ ...orbit, readouts: { ...orbit.readouts, mach: 26.8 } }, defs);
+    expect([vac.mach, vac.aoa]).toEqual(['—', '—']);
+    const moon = snap('lunarOrbit');
+    expect(describeAirData({ ...moon, readouts: { ...moon.readouts, mach: 3.99 } }, defs).mach).toBe('—');
+    const asc = snap('ascent');
+    expect(asc.readouts.altitudeAsl).toBeLessThan(defs.bodies.earth!.atmosphere!.simTop);
+    expect(n(describeAirData({ ...asc, readouts: { ...asc.readouts, mach: 1.17 } }, defs).mach)).toBe('M 1.17');
+  });
+
+  it('words milestones from their trigger and the definitions, never from the id', () => {
+    const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 } });
+    const t = (id: string): string => n(milestoneTitle(id, s, defs));
+    expect(t('LIFTOFF')).toBe('Lift-off');
+    expect(t('STAGE_SEP_1')).toBe('M-1 separation');
+    expect(t('EARTH_ORBIT')).toBe('Earth orbit reached');
+    expect(t('TLI_COMPLETE')).toBe('Moon encounter predicted');
+    expect(t('MOON_SOI_ENTER')).toBe('Entered the Moon sphere of influence');
+    expect(t('LUNAR_TOUCHDOWN')).toBe('Moon touchdown');
+    expect(t('EARTH_PERIGEE_TARGETED')).toBe('Earth periapsis targeted · 30.0 km to 60.0 km');
+    expect(t('ENTRY_INTERFACE')).toBe('Down through 122.0 km');
+    expect(t('DROGUE_DEPLOY')).toBe('Drogues deployed');
+    expect(t('SPLASHDOWN')).toBe('Splashdown');
+    expect(t('NOT_A_RULE')).toBe('Milestone reached');
+    // No title-cased ids ("Tli Complete", "Moon Soi Enter") anywhere in the scenario.
+    for (const m of defs.scenarios['lunar-direct']!.milestones) {
+      const munged = m.id
+        .toLowerCase()
+        .split('_')
+        .map((w) => w[0]!.toUpperCase() + w.slice(1))
+        .join(' ');
+      // (Two ids happen to title-case into their right name.)
+      if (munged !== 'Splashdown' && munged !== 'Max Q') expect(t(m.id)).not.toBe(munged);
+    }
+    expect(milestoneSoiBody('MOON_SOI_ENTER', s, defs)).toBe('moon');
+    expect(milestoneSoiBody('TLI_COMPLETE', s, defs)).toBeNull();
   });
 });

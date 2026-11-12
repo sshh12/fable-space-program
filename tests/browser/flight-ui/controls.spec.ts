@@ -219,18 +219,51 @@ test.describe('flight-ui controls', () => {
     await expectNoErrors(page, pageLog);
   });
 
-  test('with captureKeyboard on, a real click leaves keyboardLocked a boolean without errors', async ({ page, pageLog }) => {
-    await open(page, 'scene=lowOrbit&capture=1');
-    expect(await page.evaluate(() => window.__flightUi!.keyboardLocked())).toBe(false);
+  test('keyboard capture is opt-in: keys and clicks capture nothing, and every binding works uncaptured', async ({ page, pageLog }) => {
+    await open(page, 'scene=lowOrbit');
+    const sw = page.locator('.hud .kbcap');
+    await expect(sw).toBeVisible();
+    await expect(sw).toHaveAttribute('role', 'switch');
+    await expect(sw).toHaveAttribute('aria-checked', 'false');
+    await expect(sw.locator('.kbs')).toHaveText('OFF');
     await page.mouse.click(640, 300);
-    await page.evaluate(() => window.__test!.waitFrames(10));
-    const locked = await page.evaluate(() => window.__flightUi!.keyboardLocked());
-    expect(typeof locked).toBe('boolean');
-    // The HUD shows the matching indicator, and keys still work either way.
-    await expect(page.locator(locked ? '.hud .kbok' : '.hud .kbcap')).toBeVisible();
     await page.keyboard.down('KeyS');
     await page.waitForFunction(() => window.__test!.state()!.appliedControls.pitch === 1);
     await page.keyboard.up('KeyS');
+    await page.keyboard.press('KeyT');
+    await page.evaluate(() => window.__test!.waitFrames(10));
+    expect(await page.evaluate(() => [document.fullscreenElement === null, window.__flightUi!.keyboardLocked()])).toEqual([true, false]);
+    await expect(sw).toHaveAttribute('aria-checked', 'false');
+    await expectNoErrors(page, pageLog);
+  });
+
+  test('the capture switch asks on a click and leaves on the second, whichever way the browser answers', async ({ page, pageLog }) => {
+    // capture=1 (the app's opt-in) asks on the first real gesture: keyboardLocked stays a boolean, no error.
+    await open(page, 'scene=lowOrbit&capture=1');
+    expect(await page.evaluate(() => window.__flightUi!.keyboardLocked())).toBe(false);
+    const sw = page.locator('.hud .kbcap');
+    await sw.click();
+    await page.evaluate(() => window.__test!.waitFrames(10));
+    const locked = await page.evaluate(() => window.__flightUi!.keyboardLocked());
+    expect(typeof locked).toBe('boolean');
+    const fullscreen = await page.evaluate(() => document.fullscreenElement !== null);
+    // The switch shows the state the browser granted; keys work either way.
+    await expect(sw).toHaveAttribute('aria-checked', String(fullscreen));
+    await expect(sw.locator('.kbs')).toHaveText(!fullscreen ? 'OFF' : locked ? 'ON' : 'NO LOCK');
+    await page.keyboard.down('KeyS');
+    await page.waitForFunction(() => window.__test!.state()!.appliedControls.pitch === 1);
+    await page.keyboard.up('KeyS');
+    if (fullscreen) {
+      await sw.click();
+      await page.waitForFunction(() => document.fullscreenElement === null);
+      await expect(sw).toHaveAttribute('aria-checked', 'false');
+      expect(await page.evaluate(() => window.__flightUi!.keyboardLocked())).toBe(false);
+    }
+    await expectNoErrors(page, pageLog);
+    // Clean footage: the switch can be hidden.
+    await open(page, 'scene=lowOrbit&capturepill=0');
+    await expect(page.locator('.hud .kbcap')).toBeHidden();
+    await expect(page.locator('.hud .helpbtn')).toBeVisible();
     await expectNoErrors(page, pageLog);
   });
 

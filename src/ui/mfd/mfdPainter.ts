@@ -47,6 +47,8 @@ import {
 import {
   activeVesselOf,
   describeFlight,
+  describeAirData,
+  describeChuteEnvelope,
   describeLandingTarget,
   describeNodeBurn,
   describeOrbit,
@@ -239,17 +241,20 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
     }
     case 'entry': {
       const doseFrac = r.gDoseLimit > 0 ? r.gDose / r.gDoseLimit : 0;
+      const air = describeAirData(s, defs);
+      const chute = describeChuteEnvelope(s, defs);
       const rows: MfdRow[] = [
         { label: 'G load', value: formatG(r.gLoad), tone: r.gLoad >= G_SCALE.limit ? 'warning' : r.gLoad >= G_SCALE.caution ? 'caution' : 'accent' },
         { label: 'G dose', value: `${formatNumber(r.gDose, 1)} / ${formatNumber(r.gDoseLimit, 0)}${NBSP}g·s`, tone: doseFrac > 0.7 ? 'warning' : doseFrac > 0.4 ? 'caution' : 'normal' },
         { label: 'Heat flux', value: formatHeatFlux(r.heatFlux) },
         { label: 'Ablator', value: r.ablatorFraction !== null ? formatPercent(r.ablatorFraction) : 'no shield', tone: r.ablatorFraction === null ? 'dim' : ablatorTone(r.ablatorFraction) === 'warning' ? 'warning' : 'normal' },
         { label: 'Skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
-        { label: 'Dyn. pressure', value: formatPressure(r.dynamicPressure) },
-        { label: 'Mach', value: formatMach(r.mach) },
-        { label: 'Angle of attack', value: formatRadAsDeg(r.angleOfAttack) },
+        { label: 'Dyn. pressure', value: air.q },
+        { label: 'Mach', value: air.mach, tone: air.mach === '—' ? 'dim' : 'normal' },
+        { label: 'Angle of attack', value: air.aoa, tone: air.aoa === '—' ? 'dim' : 'normal' },
         { label: 'Lift vector', value: r.liftVectorUp === null ? '—' : r.liftVectorUp ? 'LIFT UP' : 'LIFT DOWN', tone: r.liftVectorUp === null ? 'dim' : 'accent' },
-        { label: 'Chutes', value: r.chuteEnvelope === null ? '—' : r.chuteEnvelope.toUpperCase(), tone: r.chuteEnvelope === 'safe' ? 'good' : r.chuteEnvelope === 'risky' ? 'caution' : r.chuteEnvelope === 'unsafe' ? 'warning' : 'dim' },
+        // Named for the chutes the light is about (the next chute stage), as on the HUD.
+        { label: chute?.label ?? 'Chutes', value: chute?.light ?? '—', tone: chute?.tone ?? 'dim' },
       ];
       return { page, title: TITLE[page], rows, section: ltSection, status };
     }

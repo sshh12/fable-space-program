@@ -512,6 +512,7 @@ async function boot(): Promise<void> {
   };
 
   const notifySink: { fn: (m: string) => void } = { fn: () => undefined };
+  // Keyboard capture is the player's choice (the HUD's switch); capture=1 is the app's opt-in to ask on the first gesture.
   const input = createInputSystem(canvas, { captureKeyboard: params.get('capture') === '1' });
   if (params.get('guard') === '1') installUnloadGuard(() => true);
   const controller = createFlightController({ notify: (m) => notifySink.fn(m) });
@@ -563,6 +564,9 @@ async function boot(): Promise<void> {
     navball,
     dispatch: (a) => input.trigger(a),
     requestKeyboardCapture: () => void input.requestKeyboardCapture(),
+    releaseKeyboardCapture: () => input.releaseKeyboardCapture(),
+    // capturepill=0: clean footage without the capture switch.
+    showCaptureControl: params.get('capturepill') !== '0',
     keyHelp: keyHelpEntries(input.bindings),
     keyFor,
     commands: () => sim.commands,
@@ -584,8 +588,8 @@ async function boot(): Promise<void> {
     await img.decode();
   }
   notifySink.fn = (m) => hud.notify(m);
-  hud.setKeyboardLocked(input.keyboardLocked);
-  input.onKeyboardLockChange((locked) => hud.setKeyboardLocked(locked));
+  hud.setKeyboardLocked(input.keyboardLocked, input.fullscreen);
+  input.onKeyboardLockChange((locked, fullscreen) => hud.setKeyboardLocked(locked, fullscreen));
   if (params.get('help') === '1') hud.toggleKeyHelp(true);
   const backdrop = createLabBackdrop(gpu, defs, () => labCylinders(defs, parts), { bright: params.get('backdrop') === 'bright', ...(groundOverride ? { ground: groundOverride } : {}) });
 

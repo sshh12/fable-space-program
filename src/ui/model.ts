@@ -2,7 +2,7 @@
  * Display models built from a SimSnapshot: the exact strings the HUD panels and the MFD pages show. Both
  * render from these functions, so a number can never read differently on the two.
  */
-import type { DefLibrary } from '@/core/contracts/defs';
+import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import {
   formatAltitude,
@@ -15,8 +15,10 @@ import {
   formatDuration,
   formatG,
   formatLatLon,
+  formatMach,
   formatNumber,
   formatPercent,
+  formatPressure,
   formatRadAsDeg,
   formatSignedRange,
   formatSpeed,
@@ -531,6 +533,12 @@ export interface ResourceBarView {
   name: string;
   fraction: number;
   amount: string;
+  /**
+   * Part of the group's main supply: what its main engines burn (not the solid propellant of ullage or
+   * separation motors, which is spent in seconds by design); in a group without main engines every resource but
+   * a heat shield's ablator (the entry panel shows that). The HUD's one line per group reads these.
+   */
+  primary: boolean;
 }
 
 export interface ResourceGroupView {
@@ -550,10 +558,23 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
   const groupOf = new Map<string, string>();
   if (vehicle) for (const p of vehicle.parts) groupOf.set(p.id, p.stageGroup);
   const sums = new Map<string, Map<string, { amount: number; capacity: number }>>();
+  /** Per group: what its main engines burn, and what only fixed-burn motors or heat shields use. */
+  const mainFeed = new Map<string, Set<string>>();
+  const minor = new Map<string, Set<string>>();
+  const add = (m: Map<string, Set<string>>, g: string, rid: string): void => {
+    let set = m.get(g);
+    if (!set) m.set(g, (set = new Set()));
+    set.add(rid);
+  };
   for (const part of v.parts) {
     const def = defs.parts[part.def];
-    if (!def?.resources) continue;
+    if (!def) continue;
     const g = groupOf.get(part.instanceId) ?? v.id;
+    for (const md of def.modules) {
+      if (md.type === 'engine') for (const p of md.propellants) add(md.fixedBurn ? minor : mainFeed, g, p.resource);
+      else if (md.type === 'heatShield') add(minor, g, md.ablatorResource);
+    }
+    if (!def.resources) continue;
     let m = sums.get(g);
     if (!m) sums.set(g, (m = new Map()));
     for (const r of def.resources) {
@@ -569,26 +590,36 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
     const ib = order.indexOf(b);
     return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
   });
-  return ids.map((id) => ({
-    id,
-    label: vehicle?.stageGroups.find((g) => g.id === id)?.label ?? v.name,
-    bars: [...sums.get(id)!.entries()].map(([rid, e]) => ({
-      resourceId: rid,
-      name: defs.resources[rid]?.name ?? rid,
-      fraction: e.capacity > 0 ? Math.max(0, Math.min(1, e.amount / e.capacity)) : 0,
-      amount: e.capacity > 0 ? formatPercent(e.amount / e.capacity) : '—',
-    })),
-  }));
+  return ids.map((id) => {
+    const entries = [...sums.get(id)!.entries()];
+    const main = mainFeed.get(id);
+    const held = (rid: string): boolean => main?.has(rid) === true;
+    const notMinor = (rid: string): boolean => !(minor.get(id)?.has(rid) ?? false);
+    // Main engines with a tank of their own in the group: their propellants; otherwise all but the minor ones;
+    // a group of nothing but minor resources (a solid motor alone) keeps them all.
+    const isPrimary = entries.some(([rid]) => held(rid)) ? held : entries.some(([rid]) => notMinor(rid)) ? notMinor : (): boolean => true;
+    return {
+      id,
+      label: vehicle?.stageGroups.find((g) => g.id === id)?.label ?? v.name,
+      bars: entries.map(([rid, e]) => ({
+        resourceId: rid,
+        name: defs.resources[rid]?.name ?? rid,
+        fraction: e.capacity > 0 ? Math.max(0, Math.min(1, e.amount / e.capacity)) : 0,
+        amount: e.capacity > 0 ? formatPercent(e.amount / e.capacity) : '—',
+        primary: isPrimary(rid),
+      })),
+    };
+  });
 }
 
-/** One stage group in use on the HUD: one bar, the resource that runs out first. */
+/** One stage group in use on the HUD: one bar, the main-supply resource that runs out first. */
 export interface ResourceGroupLine {
   id: string;
   label: string;
-  /** Lowest fraction of the group's resources, 0..1, and its percentage string. */
+  /** Lowest fraction of the group's main supply (ResourceBarView.primary), 0..1, and its percentage string. */
   fraction: number;
   amount: string;
-  /** "RP-1 62 % · Liquid oxygen 62 %" (every resource of the group; the line's tooltip). */
+  /** "Liquid oxygen 62 % · Liquid hydrogen 62 % · Solid propellant 0 %" (every resource; the line's tooltip). */
   detail: string;
 }
 
@@ -600,14 +631,16 @@ export interface ResourceSummary {
 }
 
 /**
- * What the HUD's resource panel shows: one bar per stage group in use (aggregated: the resource of the group
- * that runs out first) and the untouched groups folded into one "full" line, so a ten-tank stack does not fill
- * the screen with bars at 100 %. The MFD systems page keeps every resource of every group.
+ * What the HUD's resource panel shows: one bar per stage group in use (aggregated: the resource of the group's
+ * main supply that runs out first, so a stage whose ullage motors burned out still reads what its tanks hold)
+ * and the untouched groups folded into one "full" line, so a ten-tank stack does not fill the screen with bars
+ * at 100 %. The MFD systems page keeps every resource of every group.
  */
 export function summarizeResources(groups: readonly ResourceGroupView[]): ResourceSummary {
   const used = groups.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
   const inUse = used.map((g): ResourceGroupLine => {
-    const low = g.bars.reduce((a, b) => (b.fraction < a.fraction ? b : a));
+    const main = g.bars.filter((b) => b.primary);
+    const low = (main.length > 0 ? main : g.bars).reduce((a, b) => (b.fraction < a.fraction ? b : a));
     return { id: g.id, label: g.label, fraction: low.fraction, amount: low.amount, detail: g.bars.map((b) => `${b.name} ${b.amount}`).join(' · ') };
   });
   return { inUse, full: groups.filter((g) => !used.includes(g)).map((g) => g.label) };
@@ -655,6 +688,137 @@ export function isEntering(s: SimSnapshot, defs: DefLibrary): boolean {
   const v = activeVesselOf(s);
   const top = v ? (defs.bodies[v.bodyId]?.atmosphere?.simTop ?? 0) : 0;
   return r.thrust <= 0 && r.throttle <= 0 && r.apoapsisAltitude < top;
+}
+
+// ------------------------------------------------------------------------------------------ air data
+
+export interface AirDataView {
+  q: string;
+  mach: string;
+  aoa: string;
+}
+
+/**
+ * Dynamic pressure, Mach number and angle of attack. Mach and angle of attack exist only in air: outside an
+ * atmosphere (above its simulated top, or on a body without one) they read "—". The sim keeps a nominal speed of
+ * sound in vacuum, so its Mach number there is the speed over 275 m/s (M 37.8 in a 300 km parking orbit, M 4 at
+ * the Moon), which is not a reading.
+ */
+export function describeAirData(s: SimSnapshot, defs: DefLibrary): AirDataView {
+  const r = s.readouts;
+  const air = inAtmosphere(s, defs);
+  return {
+    q: formatPressure(r.dynamicPressure),
+    mach: air ? formatMach(r.mach) : '—',
+    aoa: air ? formatRadAsDeg(r.angleOfAttack) : '—',
+  };
+}
+
+// ------------------------------------------------------------------------------------ chute envelope
+
+export interface ChuteEnvelopeView {
+  /** The chutes the light is about, by the stage that deploys them: "Drogue deploy", "Main deploy". */
+  label: string;
+  /** "SAFE" | "RISKY" | "UNSAFE". */
+  light: string;
+  tone: 'good' | 'caution' | 'warning';
+  /** Tooltip: the envelope itself, from the parachute's data ("safe below 4 500 m, under 95 m/s and 2.8 kPa..."). */
+  detail: string;
+}
+
+const CHUTE_DEPLOY_LABEL = { drogue: 'Drogue deploy', main: 'Main deploy' } as const;
+
+/** "below 4 500 m, under 95 m/s and under 2.8 kPa" (inside) or "above 130 m/s or 4.5 kPa" (outside the limits). */
+function envelopeWords(e: ParachuteEnvelope, inside: boolean): string {
+  const w: string[] = [];
+  const [lo, hi] = inside ? ['below', 'under'] : ['above', 'above'];
+  if (e.maxAlt !== undefined) w.push(`${lo} ${formatAltitude(e.maxAlt)}`);
+  if (e.maxMach !== undefined) w.push(`${hi} ${formatMach(e.maxMach)}`);
+  if (e.maxSpeed !== undefined) w.push(`${hi} ${formatSpeed(e.maxSpeed)}`);
+  w.push(`${hi} ${formatPressure(e.maxQ)} dynamic pressure`);
+  return w.length > 1 ? `${w.slice(0, -1).join(', ')} ${inside ? 'and' : 'or'} ${w[w.length - 1]}` : w[0]!;
+}
+
+/**
+ * The chute envelope light (Readouts.chuteEnvelope) with the chutes it is about. The sim reports it for the NEXT
+ * chute stage that has not fired, so once the drogues are out the light is about the mains: at 7.4 km and
+ * 130 m/s it reads RISKY for them while the drogues opened safely. The row therefore names the chute (from
+ * the vehicle's stage actions, the same stage the sim looks at) and its tooltip spells out the envelope.
+ * Null when no chute stage remains.
+ */
+export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEnvelopeView | null {
+  const env = s.readouts.chuteEnvelope;
+  if (env === null) return null;
+  const light = env.toUpperCase();
+  const tone = env === 'safe' ? 'good' : env === 'risky' ? 'caution' : 'warning';
+  const v = activeVesselOf(s);
+  const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
+  if (vehicle) {
+    for (let i = s.staging.nextStage; i < vehicle.stages.length; i++) {
+      for (const a of vehicle.stages[i]!.actions) {
+        if (a.kind !== 'deployParachute') continue;
+        const partDef = defs.parts[vehicle.parts.find((p) => a.parts.includes(p.id))?.def ?? ''];
+        const md = partDef?.modules.find((m) => m.type === 'parachute' && m.mode === a.mode);
+        const name = CHUTE_NAMES[a.mode];
+        const detail =
+          md?.type === 'parachute'
+            ? `Deploying the ${name} now: ${light}. Safe ${envelopeWords(md.safe, true)}; the canopies fail ${envelopeWords(md.destroy, false)}.`
+            : `Deploying the ${name} now: ${light}.`;
+        return { label: CHUTE_DEPLOY_LABEL[a.mode], light, tone, detail };
+      }
+    }
+  }
+  return { label: 'Chute deploy', light, tone, detail: `Deploying the next chutes now: ${light}.` };
+}
+
+// ---------------------------------------------------------------------------------------- milestones
+
+/**
+ * What a mission milestone is called on screen. The scenario's milestone rules (ScenarioDef.milestones) give
+ * each an id and a generic trigger; the words come from the trigger and the names in the definitions (bodies,
+ * the vehicle's stages), never from the id: "Moon encounter predicted", "Entered the Moon sphere of influence",
+ * "M-1 separation", "Splashdown". A rule the HUD cannot find is announced as "Milestone reached".
+ */
+export function milestoneTitle(id: string, s: SimSnapshot, defs: DefLibrary): string {
+  const rule = defs.scenarios[s.scenario.id]?.milestones.find((m) => m.id === id);
+  if (!rule) return 'Milestone reached';
+  const t = rule.trigger;
+  const body = (bodyId: string): string => defs.bodies[bodyId]?.name ?? bodyId;
+  switch (t.kind) {
+    case 'liftoff':
+      return 'Lift-off';
+    case 'maxQ':
+      return 'Max Q';
+    case 'stageFired': {
+      const v = activeVesselOf(s);
+      const label = v ? defs.vehicles[v.vehicleId]?.stages[t.stageIndex]?.label : undefined;
+      return label ?? `Stage ${t.stageIndex + 1} fired`;
+    }
+    case 'orbit':
+      return `${body(t.bodyId)} orbit reached`;
+    case 'encounterPredicted':
+      return `${body(t.bodyId)} encounter predicted`;
+    case 'soiEnter':
+      return `Entered the ${body(t.bodyId)} sphere of influence`;
+    case 'soiExit':
+      return `Left the ${body(t.bodyId)} sphere of influence`;
+    case 'touchdown':
+      return t.surface === 'water' ? 'Splashdown' : `${body(t.bodyId)} touchdown`;
+    case 'liftoffFromSurface':
+      return `${body(t.bodyId)} lift-off`;
+    case 'predictedPeriapsis':
+      return `${body(t.bodyId)} periapsis targeted · ${formatApsis(t.minAltitude)} to ${formatApsis(t.maxAltitude)}`;
+    case 'altitudeCrossing':
+      return `${t.direction === 'descending' ? 'Down through' : 'Up through'} ${formatApsis(t.altitude)}`;
+    case 'chuteDeployed':
+      return t.mode === 'drogue' ? 'Drogues deployed' : 'Mains deployed';
+  }
+}
+
+/** The body whose sphere of influence a milestone is about (its trigger enters or leaves it), else null. */
+export function milestoneSoiBody(id: string, s: SimSnapshot, defs: DefLibrary): string | null {
+  const t = defs.scenarios[s.scenario.id]?.milestones.find((m) => m.id === id)?.trigger;
+  return t && (t.kind === 'soiEnter' || t.kind === 'soiExit') ? t.bodyId : null;
 }
 
 /**

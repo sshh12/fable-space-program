@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commits d9f9413, 2bd0a88)
 From: app-integration-v1
 Owner path: src/ui/hud/hud.ts (flight-ui)
 Blocking: no
@@ -24,3 +24,16 @@ flux threshold that the ascent does not reach (measure the mission vehicle's asc
 entry from the Moon is orders of magnitude above it). Keep a skin-temperature or ablator
 warning visible whenever a limit is approached, whatever the phase. Must not change: the entry panel during an
 entry, the orbit panel's phase rules otherwise.
+
+## Resolution
+`src/ui/model.ts` `isEntering(s, defs)` decides the ENTRY panel instead of the bare heat flux: heating (above
+`ENTRY_HEAT_FLUX`, 1 kW/m^2) counts as an entry only while coming down (vertical speed below 0), or while rising
+UNPOWERED (no thrust, throttle 0) on a path whose apoapsis stays inside the atmosphere (a skip). A powered ascent
+keeps its ORBIT panel (with the air-data strip) however hot it runs. Kept whatever the phase: the heat-shield and
+skin-temperature rows appear (the entry panel opens) once the skin passes 70 % of its limit or the ablator its
+redline (`thermalWarn` in `src/ui/hud/hud.ts`). Unchanged: the entry panel during an entry, the orbit panel's phase
+rules. Test: `tests/unit/flight-ui/displays.test.ts` "opens the entry panel for an entry, not for the heating of an
+ascent" (2 kW/m^2 at +202 m/s under thrust: no entry; the same falling: entry; unpowered with Ap 90 km: entry).
+Seen in the real app: the browser mission's pictures `out/screens/mission/03-stage-sep-1-chase.png` (76.9 km) and
+`04-fairing-jettison-chase.png` (96.8 km) show the ORBIT panel with Ap/Pe and the air strip during the climb;
+`14-entry-interface-chase.png` shows ENTRY. Nothing to re-run in src/app.

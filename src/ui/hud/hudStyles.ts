@@ -249,9 +249,18 @@ export const HUD_CSS = /* css */ `
 /* ---------------------------------------------------------------- top right */
 .hud .pill { display: flex; align-items: center; gap: 0.5em; border-radius: 999px; padding: calc(var(--u) * 0.35) calc(var(--u) * 1.1); font-size: 0.84em; font-weight: 500; }
 .hud .pill svg { width: 1.2em; height: 1.2em; flex: none; }
-.hud .kbcap { background: rgba(58, 38, 8, 0.96); border-color: rgba(255, 187, 77, 0.6); color: #ffe2b0; box-shadow: var(--edge); }
-.hud .kbcap b { color: var(--caution); font-weight: 700; }
-.hud .kbok { background: var(--bg-strong); color: var(--good); border: 1px solid var(--line); box-shadow: var(--edge); }
+/* Keyboard capture: a labelled switch (track and knob), off by default; the state word after the label. */
+.hud .kbcap { background: var(--bg-strong); color: var(--text); box-shadow: var(--edge); gap: 0.6em; padding-left: calc(var(--u) * 0.7); }
+.hud .kbcap .sw { position: relative; flex: none; width: 2.1em; height: 1.15em; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(170, 198, 235, 0.38); transition: background-color 150ms, border-color 150ms; }
+.hud .kbcap .sw i { position: absolute; top: 50%; left: 0.12em; width: 0.8em; height: 0.8em; border-radius: 50%; background: #9fb0c6; transform: translateY(-50%); transition: transform 150ms, background-color 150ms; }
+.hud .kbcap .kbl { font-weight: 500; letter-spacing: 0.02em; }
+.hud .kbcap .kbs { min-width: 2.3em; font-size: 0.86em; font-weight: 700; letter-spacing: 0.08em; color: var(--label); }
+.hud .kbcap.on .sw { background: rgba(95, 227, 154, 0.3); border-color: rgba(95, 227, 154, 0.85); }
+.hud .kbcap.on .sw i { background: var(--good); transform: translate(1.04em, -50%); }
+.hud .kbcap.on .kbs { color: var(--good); }
+.hud .kbcap.nolock .sw { background: rgba(255, 187, 77, 0.25); border-color: rgba(255, 187, 77, 0.8); }
+.hud .kbcap.nolock .sw i { background: var(--caution); }
+.hud .kbcap.nolock .kbs { color: var(--caution); }
 .hud .helpbtn { font-weight: 700; min-width: 2.2em; background: var(--bg-strong); box-shadow: var(--edge); }
 .hud .warp button { background: var(--bg-strong); }
 
