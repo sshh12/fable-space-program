@@ -2,19 +2,23 @@
  * Dust under a lander on the Moon, in the integration lab (the real terrain, the real lander, every feature).
  * Without air the dust leaves in a flat sheet along the ground: it does not rise in front of the sky and it
  * does not hide the ground (critics of round 2: "a haze glow 8 to 9 degrees above the horizon and a full
- * grey-out in the hover"). Measured against the same view with the engine off, with the sun behind the camera
- * (a camera that looks into the low sun of that site is washed out by the lens with the engine off as well:
- * that veil is not the dust's).
+ * grey-out in the hover"). Measured against the same view with the engine off, under a pinned low sun (the
+ * grey-out the critics saw was the lab's own: its site lies in the dark, and a camera that looks towards the
+ * sun below that horizon is washed out by the lens flare with the engine off as well; request vfx-10).
  */
 import { PNG } from 'pngjs';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test } from '../harness';
 
 test.describe.configure({ timeout: 600_000 });
 
-const VIEW = 'window.__integration.orbitVesselPoint(220, 12, 34, -2)';
+// The sun of the lab's landing site is pinned 12 degrees up in the east-south-east (an Apollo morning: by
+// default the site lies in the dark at the lab's epoch, exposed at EV100 -0.6, where the lander's own light
+// decides the exposure). The eye stands south of the lander, the sun to its right and behind it.
+const SUN = 'sun=110,12&sunsite=moon,0.661471,23.435999';
+const VIEW = 'window.__integration.orbitVesselPoint(170, 12, 34, -2)';
 
 async function hover(page: import('@playwright/test').Page, throttle: number, name: string): Promise<PNG> {
-  await openPage(page, `/labs/integration/?scene=lunarSurface&features=all&hud=0&hover=8&throttle=${throttle}`);
+  await openPage(page, `/labs/integration/?scene=lunarSurface&features=all&hud=0&hover=8&throttle=${throttle}&${SUN}`);
   await assertDiscreteGpu(page);
   await page.evaluate(VIEW);
   await page.evaluate((n) => window.__test!.waitFrames(n), 240);

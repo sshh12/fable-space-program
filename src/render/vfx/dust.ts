@@ -96,8 +96,6 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let dW = normalize(ray);
   let cosT = dot(dW, frame.sunDir.xyz);
   let g = 0.55;
-  // (Against a low sun the sheet is brighter than the ground under it, about twice: more, and a hover seen
-  // towards the sun is a white-out.)
   let phase = mix(1.0, (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5), 0.45);
   let amb = vfxProbeAmbient(0u);
   let seed = S.look.w;
@@ -147,8 +145,10 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let stepT = exp(-tau);
     let rel = f.origin + f.X * p.x + f.Y * p.y + f.Z * p.z;
     let lit = sampleSunShadow(rel, frame.sunDir.xyz, vec2u(in.pos.xy));
-    // Dust this fine and this thick sends back about what the ground under it does, and more towards a low sun.
-    let J = S.look.rgb * ((probe.sun.rgb * (lit * (0.6 + 0.4 * phase)) + vfxLocalLights(rel)) * (1.0 / (2.0 * PI)) + amb * (1.0 / PI) * 0.25);
+    // Single scattering by dark grains: albedo x phase / 4 pi of the light that falls on them. Seen down-sun a
+    // half-opaque veil of it is about as bright as the ground under a low sun (it softens the ground, it is
+    // no white patch); against the sun the grains throw the light forwards and the sheet shines.
+    let J = S.look.rgb * ((probe.sun.rgb * (lit * phase) + vfxLocalLights(rel)) * (1.0 / (4.0 * PI)) + amb * (1.0 / PI) * 0.25);
     let c = J * (1.0 - stepT);
     let lw = T * luminance(c) + 1e-12;
     L += T * c;

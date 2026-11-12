@@ -162,7 +162,7 @@
       "elevationDeg": [0.4, 4],
       "life": [0.3, 1.0],
       "size": [0.03, 0.1],
-      "albedo": [0.62, 0.6, 0.57],
+      "albedo": [0.36, 0.34, 0.31],
       "opacity": 0.12,
       "sheetDepth": 1.6,
       "sheetMinReach": 150,

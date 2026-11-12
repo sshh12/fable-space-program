@@ -65,3 +65,8 @@ It scales with the heat flux as flux^1.3 through `plasmaLuminance` and with the 
 base-flow part, so between intensity 0.6 and 1.0 it grows about 4.5 times (1,536 -> 6,875 cd/m^2 in the lab's
 numbers); if that is too steep for the cabin, the place to flatten it is `BASE_GLOW` in `src/render/vfx/plasma.ts`
 (say so here), not a clamp on your side, so that the panes and the light they throw keep agreeing.
+
+Round 3 of the vfx close-out changed the wake of the reentry (its glow a little stronger against the layer,
+`reentry.wakeGain` 0.05 -> 0.12; the layer itself is thinner and has an edge now, which a lee-side window does
+not see). The published radiance follows: 317 / 1,664 / 7,288 cd/m^2 at intensity 0.3 / 0.6 / 1.0 in the lab's
+numbers (was 280 / 1,536 / 6,875), same colour, same meaning as described above.

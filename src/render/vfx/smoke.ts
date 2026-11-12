@@ -453,7 +453,10 @@ struct MarchOut {
       let dl2 = max(dot(toL, toL), 25.0);
       // (What is scattered about inside the cloud reaches round its billows, but not through the whole of it:
       // the side of the cloud away from the flame stays dark brown, as in every night-launch photograph.)
-      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) / (dl2 * PI));
+      // (Droplets scatter forwards: gas that lies between the eye and the flame glows more than gas beside it.
+      // An eye inside the cloud at night sees where the flame is, not one flat fill.)
+      let towardsFlame = saturate(dot(rd, toL) * inverseSqrt(max(dot(toL, toL), 1e-4)));
+      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * (0.7 + 0.9 * towardsFlame * towardsFlame) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;
@@ -570,7 +573,11 @@ struct CombineOut {
     if (near) { fr = textureLoad(frontNearTex, ip, 0); bk = textureLoad(backNearTex, ip, 0); }
     else { fr = textureLoad(frontFarTex, ip, 0); bk = textureLoad(backFarTex, ip, 0); }
     let col = vec4f(fr.rgb + fr.a * (E.rgb + TE * bk.rgb), 1.0 - fr.a * TE * bk.a);
-    let mom = vec2f((1.0 - fr.a) * a.b + fr.a * m.r, (1.0 - fr.a) + fr.a * m.g);
+    // (The smoke behind the emitters counts too, at their distance: without it the image had no distance
+    // where a flame stood in front of the cloud, and the composite fell back on the depth of the scene
+    // behind: the level edge along the horizon again, beside the flame.)
+    let behind = fr.a * TE * (1.0 - bk.a);
+    let mom = vec2f((1.0 - fr.a) * a.b + fr.a * m.r + behind * (m.r / max(m.g, 1e-6)), (1.0 - fr.a) + fr.a * m.g + behind);
     // Depth steps of a few per cent are the slope of the ground under the cloud, not an edge: only a real
     // discontinuity may take a ray's weight away, or the cloud is drawn in blocks of quarter-resolution pixels.
     let w = wx[o.x + 1] * wy[o.y + 1] / (1.0 + sq(diff * 12.0));
@@ -895,7 +902,10 @@ export class SmokeSystem implements VolumeCombiner {
     // The trench of this site, from its structures; the focus fades as the vehicle climbs and its jet hits the open pad.
     const trench = best.site.structures.find((s) => S.trenchModels.includes(s.model));
     const th = (trench?.headingDeg ?? 0) * DEG;
-    const focus = trench ? S.trenchFocus * Math.exp(-Math.max(0, nozzleHeight - best.site.pad.clampHeight * 1.5) / 40) : 0;
+    // (Slowly: the jet still goes down the flame hole when the vehicle is a hundred metres up. Faded within
+    // forty metres, the exhaust of the first seconds was left standing round the pad as a ring that rose
+    // into an arch behind the vehicle.)
+    const focus = trench ? S.trenchFocus * Math.exp(-Math.max(0, nozzleHeight - best.site.pad.clampHeight * 1.5) / 150) : 0;
     const deluge = Math.min(1, (effectTime - this.firstSource) / S.deluge.ramp) * (effectTime - this.firstSource < S.deluge.duration ? 1 : Math.exp(-(effectTime - this.firstSource - S.deluge.duration) / 2));
     const wh = S.wind.headingDeg * DEG;
     const horizontalScale = (S.centerCell * S.grid[0]) / 2;

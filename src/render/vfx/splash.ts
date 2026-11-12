@@ -326,9 +326,10 @@ fn sheetGeom(C: Crown, p: vec3f, lod: f32) -> SheetGeom {
   let forward = pow(saturate(dot(rd, sunL)), 6.0);
   // Size of a pixel at one metre.
   let fp = 2.0 * frame.cameraUp.w * frame.renderSize.w;
-  const STEPS = 28.0;
+  const STEPS = 36.0;
   let dt = (t1 - t0) / STEPS;
-  let start = t0 + dt * (blueNoise(vec2u(in.pos.xy)).g - 0.5) * 0.5;
+  // (A whole step of jitter: where the ray grazes the sheet the steps would otherwise show as ribs.)
+  let start = t0 + dt * (blueNoise(vec2u(in.pos.xy)).g - 0.5);
   var prev = sheetGeom(C, ro + rd * start, start * fp / foot);
   var L = vec3f(0.0);
   var T = 1.0;
