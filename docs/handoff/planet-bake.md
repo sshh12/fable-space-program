@@ -234,3 +234,63 @@ sections; cross-check the radii of `tools/bake/planet/bodies/<id>.json` (`radii.
 against the activated body files (`tools/bake/planet/verify.py` does it against
 `data/staged/bodies/radii.json` when that exists). The tile sets live under `data/tiles/<id>/` (git-ignored,
 reproducible with the commands of section 2); the packer (platform-delivery) picks them up like earth/moon.
+
+## 4. Measured against the acceptance criteria
+
+| Criterion | Result |
+|---|---|
+| Terrain guard green before and after; no earth/moon file changed | Before: 4 of 4 (00:41, as recorded then). After all bakes: 6 of 6 (`tests/unit/terrain-core/terrain-guard.test.ts`, re-recorded by the coordinator on stored directions in between, cde7b30): heights at the fixed points bit-exact, file counts and names of every earth/moon directory unchanged. The tool cannot write them (`rt.FORBIDDEN_TILESETS`; configs named earth/moon are rejected). |
+| Landmark tests per baked body catch a flipped or shifted map | 35 landmark tests over the 18 map bodies + Mimas' Herschel, all pass (verify.py; the DEM ones also through the TerrainProvider in `tilesets.test.ts`). Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. |
+| Manifests promise only tiles that exist; no zero-length tile | verify.py: for every body and layer, promised = on disk exactly (no missing, no extra, no empty, no stray or `.partial` file); every height tile decodes to finite heights and shares its in-face edges with its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque RGB WebP |
+| Every tile set loads through the TerrainProvider, lazily, one body at a time | `tests/unit/planet-bake/tilesets.test.ts`: for each of the 25 bodies a provider for that body alone, collision and band-limited heights at 24 points finite and inside the recorded range, residency complete after `ensureLoaded`, only that body's tiles cached; with `PLANET_BAKE_REQUIRE=1` a configured body that is not baked fails. 77 of 77 tests pass (with the generic-model and staged-output tests and the terrain guard) |
+| data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 16.8 GB, of which the 25 new tile sets 2.97 GB (planned about 2.8); every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
+| Bakes through the gate, at most 6 worker processes | Every bake ran as `node tools/dev/heavy.mjs --class=bake -- ...` (three batches plus the Mars albedo re-run), pools of 6 below-normal workers (`moon/rt.pool`); downloads, verification, sheets and the giants' maps (single processes) under `--class=cpu` |
+| Self-verify | `python -I tools/bake/planet/verify.py --all`: see section 5 for the final count; `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts`: 77 of 77 |
+
+Also checked (verify.py): radii of every config = `data/staged/bodies/radii.json` (mean, a, b, c, to 0.5 m);
+every staged terrain section of bodies-ephemeris names the tile set and carries exactly the resolved
+amplification (model, seed, every parameter) and an elevation range containing the baked one; credits list
+every source with a public-domain or CC BY licence.
+
+## 5. Bodies, sources, sizes
+
+Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile files (`du`).
+
+| Body | Height levels | Albedo levels | Height tiles / MB | Albedo tiles / MB | Albedo source (USGS unless noted) | Height source | Model |
+|---|---|---|---|---|---|---|---|
+| Mercury | 0-5 | 0-5 | 8,190 / 491.8 | 8,190 / 189.4 | MDIS BDR 166 m mono (read at 332 m), tint | MESSENGER DEM 665 m (sphere 2,439.4 km) | rocky |
+| Venus | 0-4 | 0-4 | 2,046 / 158.2 | 2,046 / 15.3 | Magellan C3-MDIR 2,025 m radar, tint | Magellan topography 4,641 m (sphere 6,051.0 km) | rocky |
+| Mars | 0-5 | 0-6 | 8,190 / 564.8 | 32,766 / MARS_ALBEDO_MB | Viking colour 925 m x MDIM 2.1 232 m detail (read at 464 m) | MGS MOLA 463 m on the IAU ellipsoid | rocky |
+| Phobos | 0-3 | 0-3 | 510 / 2.3 | 510 / 4.5 | Viking 40 ppd (DLR), tint | ellipsoid 13.0 x 11.4 x 9.1 km | rocky |
+| Deimos | 0-2 | 0-2 | 126 / 1.6 | 126 / 0.1 | procedural | ellipsoid + procedural craters | rocky |
+| Io | 0-3 | 0-5 | 510 / 3.7 | 8,190 / 21.0 | Galileo SSI / Voyager colour 1 km | ellipsoid | rocky |
+| Europa | 0-3 | 0-5 | 510 / 2.4 | 8,190 / 50.1 | Voyager / Galileo 500 m mono, tint | ellipsoid | icy |
+| Ganymede | 0-3 | 0-5 | 510 / 0.1 | 8,190 / 59.5 | Voyager / Galileo 1 km mono x colour 1,435 m | sphere | icy |
+| Callisto | 0-3 | 0-5 | 510 / 0.1 | 8,190 / 49.6 | Voyager / Galileo 1 km mono, tint | sphere | icy |
+| Mimas | 0-3 | 0-3 | 510 / 22.3 | 510 / 1.2 | procedural | ellipsoid + procedural craters + Herschel | icy |
+| Enceladus | 0-3 | 0-4 | 510 / 3.1 | 2,046 / 35.9 | Cassini ISS 100 m (high-pass), tint | ellipsoid | icy |
+| Tethys | 0-3 | 0-4 | 510 / 3.7 | 2,046 / 20.1 | Cassini 293 m, tint | ellipsoid | icy |
+| Dione | 0-3 | 0-4 | 510 / 2.4 | 2,046 / 24.7 | Cassini / Voyager 154 m, tint | ellipsoid | icy |
+| Rhea | 0-3 | 0-4 | 510 / 2.3 | 2,046 / 13.9 | Cassini / Voyager 417 m, tint | ellipsoid | icy |
+| Titan | 0-4 | 0-4 | 2,046 / 4.1 | 2,046 / 8.4 | Cassini ISS 938 nm 4 km, tint | ellipsoid | icy |
+| Iapetus | 0-3 | 0-4 | 510 / 4.2 | 2,046 / 13.7 | Cassini / Voyager 783 m, tint, two-tone restored | ellipsoid 745.7 x 745.7 x 712.1 km | icy |
+| Miranda | 0-3 | 0-3 | 510 / 23.0 | 510 / 1.0 | procedural | ellipsoid + procedural craters | icy |
+| Ariel | 0-3 | 0-3 | 510 / 28.2 | 510 / 1.2 | procedural | ellipsoid + procedural craters | icy |
+| Umbriel | 0-3 | 0-3 | 510 / 28.0 | 510 / 0.8 | procedural | sphere + procedural craters | icy |
+| Titania | 0-3 | 0-3 | 510 / 29.9 | 510 / 0.9 | procedural | sphere + procedural craters | icy |
+| Oberon | 0-3 | 0-3 | 510 / 29.5 | 510 / 0.9 | procedural | sphere + procedural craters | icy |
+| Triton | 0-3 | 0-4 | 510 / 0.1 | 2,046 / 7.4 | Voyager 2 colour 600 m (filled) | sphere | icy |
+| Pluto | 0-5 | 0-5 | 8,190 / 285.9 | 8,190 / 40.6 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 1,188.3 km) | icy |
+| Charon | 0-4 | 0-4 | 2,046 / 56.1 | 2,046 / 8.7 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 606.0 km) | icy |
+| Ceres | 0-4 | 0-4 | 2,046 / 145.0 | 2,046 / 13.7 | Dawn FC 20 ppd (DLR) | Dawn HAMO DTM 60 ppd (sphere 470.0 km) | rocky |
+| **25 bodies** | | | **41,550 / 1,893** | **106,062 / TOTAL_ALBEDO_MB** | | | |
+
+Plus `globals/albedo-lowres.png` per body (15.7 MB in all). Giants (`data/staged/render`, 8.3 MB, tracked):
+Jupiter 4096 x 2048 WebP (NASA PIA07782), Saturn 4096 x 2048 WebP (Cassini ISS, PDS), Uranus and Neptune
+1024 x 512 PNG (Hubble OPAL, CC BY 4.0), `saturn-rings` 2048 x 1 RGBA PNG (Cassini UVIS, PDS + NSSDC).
+Licences: every USGS / NASA / PDS product public domain; OPAL CC BY 4.0 with its required acknowledgement in
+the credit line. Nothing from Bjorn Jonsson (no-copy request) or Solar System Scope is used.
+
+Timings (6 workers, other agents' jobs running): small bodies 3-60 s each, Ganymede 3.7 min, Mercury 1.2 +
+3.6 min, Mars 4.3 + 14.7 min, Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
+Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-resolution copy, minutes).
