@@ -1,4 +1,4 @@
-Status: open (parts 2-6 done in 1e5bceb; part 1, asynchronous pipeline creation, not started: plan below; part 7 is the atmosphere's)
+Status: open (parts 2-6 done in 189d1e2, aea5efa, 1e5bceb; part 1, asynchronous pipeline creation: measured and planned below, not built; part 7 is the atmosphere's)
 From: app-integration-v1
 Owner path: src/render/core (pipeline creation, shader library, mesh system; shared-code maintainer), src/render/terrain (streamer.ts, feature.ts; terrain-render), src/render/atmosphere (feature.ts; atmosphere-clouds)
 Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for a shorter load and for the numbers the screen lacks)
