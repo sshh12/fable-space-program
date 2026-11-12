@@ -4,13 +4,15 @@
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app --project=functional
  *
- * Screenshots: out/screens/app/ (every one is looked at; see docs/handoff/app-integration-v1.md). The page is
- * opened with ?capture=0 (no fullscreen request on the first key press, so the viewport stays 1280 x 720);
- * one test keeps the game's default and checks that a key press asks for the keyboard capture.
+ * Screenshots: out/screens/app/ (every one is looked at; see docs/handoff/app-integration-v1.md). The game starts
+ * windowed and uncaptured (the viewport stays 1280 x 720); `window.__test.ready` resolves when the loading screen
+ * has gone, i.e. when the view at the start position is final.
  */
+import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
+import type { LoadingReport } from '../../../src/app/loading';
 import type { AppBrief } from '../../../src/app/testHooks';
-import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, waitIdle } from '../harness';
+import { appUrl, assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, pngDiff, saveScreenshot, test, waitIdle } from '../harness';
 
 test.setTimeout(12 * 60_000);
 
@@ -41,10 +43,196 @@ async function viewKey(page: Page, code: string, kind: string): Promise<void> {
   await page.evaluate(() => window.__test!.waitFrames(10));
 }
 
-async function openGame(page: Page, query = '?capture=0'): Promise<void> {
-  await openPage(page, `/${query}`, { timeoutMs: BOOT_MS });
+/**
+ * Open the game and wait for `ready` (the loading screen gone). A boot that does not finish in time fails with
+ * what the loading screen was waiting for, instead of running into the test's timeout.
+ */
+async function openWithin(page: Page, pathAndQuery: string, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      page
+        .evaluate(() => window.__boot?.().steps.map((x) => `${x.id} ${x.state}${x.done !== null ? ` ${x.done}/${x.total}` : ''} ${x.detail}`))
+        .then(
+          (steps) => reject(new Error(`the game was not ready after ${timeoutMs / 1000} s; loading screen: ${JSON.stringify(steps)}`)),
+          () => reject(new Error(`the game was not ready after ${timeoutMs / 1000} s (page not responding)`)),
+        );
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([openPage(page, pathAndQuery, { timeoutMs }), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function openGame(page: Page, query = ''): Promise<void> {
+  await openWithin(page, `/${query}`, BOOT_MS);
   await assertDiscreteGpu(page);
 }
+
+/**
+ * Share of blue-dominant pixels (open water under a daylight sky) in the band of the pad view between the horizon
+ * and the site, left and right of the stack and the tower: lava plain and scrub there, never sea.
+ */
+function seaShare(png: Buffer): number {
+  const img = PNG.sync.read(png);
+  let sea = 0;
+  let n = 0;
+  for (const [x0, x1] of [
+    [0.3, 0.45],
+    [0.69, 0.98],
+  ] as const) {
+    for (let y = Math.floor(0.36 * img.height); y < Math.floor(0.5 * img.height); y++) {
+      for (let x = Math.floor(x0 * img.width); x < Math.floor(x1 * img.width); x++) {
+        const i = (y * img.width + x) * 4;
+        if (img.data[i + 2]! > img.data[i]! + 8) sea++;
+        n++;
+      }
+    }
+  }
+  return sea / n;
+}
+
+test('the loading screen shows real progress and stays until the view at the pad is final; the first frame has land', async ({ page, pageLog }) => {
+  test.setTimeout(15 * 60_000);
+  // No HUD: the pictures of the revealed view are compared pixel by pixel.
+  await page.goto(appUrl('/?hud=0'));
+  await page.waitForFunction(() => window.__boot !== undefined, undefined, { timeout: 60_000 });
+
+  interface Sample {
+    boot: LoadingReport;
+    overlay: { opacity: number; covers: boolean } | null;
+    /** Once the game exists: what the renderer and the terrain say at the same instant. */
+    game: { idle: boolean; busy: string[]; stream: Record<string, number>; audio: { loaded: number; total: number }; ut: number; frames: number } | null;
+  }
+  const sample = (): Promise<Sample> =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-app-loading]');
+      const r = el?.getBoundingClientRect();
+      const app = window.__app;
+      const audio = window.__test!.audio();
+      return {
+        boot: window.__boot!(),
+        overlay: el && r ? { opacity: Number(getComputedStyle(el).opacity), covers: r.left <= 0 && r.top <= 0 && r.right >= innerWidth && r.bottom >= innerHeight } : null,
+        game: app ? { idle: window.__test!.isIdle(), busy: app.busyFeatures(), stream: app.terrainStats().stream, audio: { loaded: audio?.assetsLoaded ?? 0, total: audio?.assetsTotal ?? 0 }, ut: app.brief().ut, frames: app.frames() } : null,
+      };
+    });
+  const step = (s: Sample, id: string): LoadingReport['steps'][number] => s.boot.steps.find((x) => x.id === id)!;
+
+  // Poll until the screen has gone; a picture of the screen the first time each of these steps is seen active.
+  const stages = ['defs', 'pipelines', 'terrain', 'view'];
+  const shot = new Set<string>();
+  const samples: Sample[] = [];
+  const t0 = Date.now();
+  await saveScreenshot(page, 'app', 'loading-0-first');
+  for (;;) {
+    const s = await sample();
+    samples.push(s);
+    if (!s.boot.active) break;
+    if (!s.boot.fading) {
+      const stage = stages.find((id) => step(s, id).state === 'active' && !shot.has(id));
+      if (stage) {
+        shot.add(stage);
+        await saveScreenshot(page, 'app', `loading-${stages.indexOf(stage) + 1}-${stage}`);
+      }
+    }
+    if (Date.now() - t0 > BOOT_MS) throw new Error(`still loading after ${BOOT_MS / 1000} s: ${JSON.stringify(s.boot.steps.map((x) => `${x.id} ${x.state} ${x.detail}`))}`);
+    await page.waitForTimeout(150);
+  }
+  expect(await page.evaluate(() => window.__test!.ready)).toBe(true);
+  const first = await saveScreenshot(page, 'app', 'loading-revealed-first');
+  await assertDiscreteGpu(page);
+  const report = await page.evaluate(() => window.__app!.loading());
+
+  // The timeline, for the hand-off.
+  const sec = (ms: number | null): string => (ms === null ? '-' : (ms / 1000).toFixed(1));
+  console.log(`loading: ${sec(report.elapsedMs)} s to the revealed view; ${samples.length} samples; pictures of ${[...shot].join(', ')}`);
+  for (const x of report.steps) console.log(`  ${x.label.padEnd(24)} ${sec(x.startMs).padStart(6)} -> ${sec(x.endMs).padStart(6)} s  ${x.done ?? ''}${x.total !== null ? ` / ${x.total}` : ''}  ${x.detail}`);
+  console.log(`  reveal: ${JSON.stringify(report.reveal)}`);
+  // The terrain under the screen, about every two seconds: resident / queued / baking / uploading tiles and frames.
+  let lastPrinted = -1e9;
+  for (const s of samples) {
+    if (!s.game || s.boot.elapsedMs - lastPrinted < 2000) continue;
+    lastPrinted = s.boot.elapsedMs;
+    const st = s.game.stream;
+    console.log(`  t ${sec(s.boot.elapsedMs).padStart(5)} s: frame ${String(s.game.frames).padStart(4)}, tiles ${st['ready']} resident, ${st['queued']} queued, ${st['loading']} baking, ${st['uploading']} uploading; ${step(s, 'pipelines').detail}; busy ${s.game.busy.join(' ')}`);
+  }
+
+  // 1. While the screen is up it covers the page, fully opaque, and the game does not run underneath.
+  const up = samples.filter((s) => s.boot.active && !s.boot.fading);
+  expect(up.length).toBeGreaterThan(5);
+  for (const s of up) expect(s.overlay, 'loading screen present, opaque, covering the page').toEqual({ opacity: 1, covers: true });
+  const uts = new Set(up.filter((s) => s.game).map((s) => s.game!.ut));
+  expect(uts.size, 'simulation time held under the loading screen').toBeLessThanOrEqual(1);
+  expect(up.filter((s) => s.game && s.game.frames > 0).length, 'frames rendered under the loading screen').toBeGreaterThan(0);
+
+  // 2. It was up whenever something was still pending: no sample without the screen (or fading) has work left,
+  //    and the frame loop's own record of the moment it let go says the same.
+  const poolFull = report.reveal?.terrain.poolFull ?? false;
+  expect(report.reveal).not.toBeNull();
+  for (const s of samples.filter((x) => (!x.boot.active || x.boot.fading) && x.game)) {
+    expect.soft(s.game!.stream['queued']! + s.game!.stream['loading']!, 'no tile queued or baking in a sample taken while the screen fades or right after').toBe(0);
+    expect.soft(s.game!.busy.filter((id) => !(poolFull && id === 'terrain')), 'no feature busy in a sample taken while the screen fades or right after').toEqual([]);
+  }
+  expect(report.reveal!.busy.filter((id) => !(poolFull && id === 'terrain'))).toEqual([]);
+  expect(report.reveal!.terrain.queued + report.reveal!.terrain.baking).toBe(0);
+  if (!poolFull) expect(report.reveal!.terrain.uploading).toBe(0);
+  expect(report.reveal!.settledFrames).toBeGreaterThanOrEqual(12);
+  expect(Math.abs(report.reveal!.ev100 - report.reveal!.targetEv100)).toBeLessThanOrEqual(0.25);
+  expect(report.reveal!.terrain.levelUnderVehicle, 'ground under the vehicle resident').not.toBeNull();
+  expect(report.reveal!.terrain.levelUnderVehicle!).toBeGreaterThanOrEqual(12);
+
+  // 3. The numbers are the subsystems' numbers: the terrain row is the streamer's counters and the sound row the
+  //    engine's count, read in the same instant; counts never run past their totals; every step finished.
+  let terrainRows = 0;
+  for (const s of up) {
+    for (const x of s.boot.steps) if (x.done !== null && x.total !== null) expect(x.done, `${x.id}: count within its total`).toBeLessThanOrEqual(x.total);
+    if (!s.game) continue;
+    const t = step(s, 'terrain');
+    if (t.state === 'active' && !t.detail.includes('pool full')) {
+      terrainRows++;
+      expect(t.done, 'terrain row: resident tiles').toBe(s.game.stream['ready']);
+      expect(t.total, 'terrain row: resident + pending').toBe(s.game.stream['ready']! + s.game.stream['queued']! + s.game.stream['loading']! + s.game.stream['uploading']!);
+    }
+    const a = step(s, 'audio');
+    if (a.state === 'active') expect(a.done, 'sound row: decoded assets').toBe(s.game.audio.loaded);
+  }
+  expect(terrainRows, 'samples with the terrain streaming under the screen').toBeGreaterThan(0);
+  const residentSeen = up.map((s) => step(s, 'terrain').done ?? 0);
+  expect(Math.max(...residentSeen), 'tiles became resident while the screen was up').toBeGreaterThan(Math.min(...residentSeen));
+  for (const x of report.steps) {
+    expect(x.state, `${x.id} finished`).toBe('done');
+    expect(x.endMs! >= x.startMs!, `${x.id} times`).toBe(true);
+  }
+  const defs = report.steps.find((x) => x.id === 'defs')!;
+  const audio = report.steps.find((x) => x.id === 'audio')!;
+  const pipelines = report.steps.find((x) => x.id === 'pipelines')!;
+  const info = await page.evaluate(() => ({ audio: window.__test!.audio()!, features: window.__app!.features().length }));
+  expect(audio.done).toBe(info.audio.assetsTotal);
+  expect(audio.total).toBe(info.audio.assetsTotal);
+  expect(pipelines.done).toBe(info.features + 1);
+  expect(pipelines.total).toBe(info.features + 1);
+  expect(defs.total).toBeGreaterThan(10);
+
+  // 4. The first revealed frame has land where land is (it was sea for 40 s after boot at 1440p before), and is
+  //    the picture the view keeps: ten seconds later, idle again, the same ground.
+  const seaFirst = seaShare(first.buffer);
+  assertRealImage(first.stats, 'loading-revealed-first');
+  await page.evaluate(() => window.__test!.waitFrames(600));
+  const later = await saveScreenshot(page, 'app', 'loading-revealed-later');
+  const seaLater = seaShare(later.buffer);
+  const diff = pngDiff(first.buffer, later.buffer);
+  const after = await page.evaluate(() => ({ stream: window.__app!.terrainStats().stream, busy: window.__app!.busyFeatures(), ut: window.__app!.brief().ut }));
+  console.log(
+    `first revealed frame: sea share ${seaFirst.toFixed(4)} of the land band (10 s later ${seaLater.toFixed(4)}); mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
+  );
+  expect(seaFirst, 'sea-coloured share of the land band in the first revealed frame').toBeLessThan(0.1);
+  expect(Math.abs(seaLater - seaFirst), 'the land band does not change after the reveal').toBeLessThan(0.05);
+  expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);
+  expect(after.ut, 'the simulation runs once the screen has gone').toBeGreaterThan([...uts][0] ?? 0);
+  await expectNoErrors(page, pageLog);
+});
 
 test('boots on the pad with every feature, the real sim and no error', async ({ page, pageLog }) => {
   await openGame(page);
@@ -201,12 +389,14 @@ test('a short real flight: ignite, lift off and climb a few kilometres, in every
 });
 
 test('the scripted test pilot flies inside the page through the controls', async ({ page, pageLog }) => {
-  await openGame(page, '?capture=0&pilot=1');
+  await openGame(page, '?pilot=1');
   // The pilot waits for the launch window on the pad (warping), lights the engines and climbs.
   await page.waitForFunction(() => window.__test!.pilot!.phase() !== null, undefined, { timeout: 10_000 });
   const b = await until(page, `b.milestones.includes('LIFTOFF') && b.altitudeAsl > 2000`, 8 * 60_000);
   const phase = await page.evaluate(() => window.__test!.pilot!.phase());
   expect(await page.evaluate(() => window.__test!.pilot!.failure())).toBeNull();
+  // The shell's status line names the pilot and its phase.
+  expect(await page.evaluate(() => document.querySelector('[data-app-status]')!.textContent)).toContain('TEST PILOT');
   await shoot(page, 'pilot-climb-chase');
   await page.evaluate(() => window.__test!.pilot!.stop());
   const s = await page.evaluate(() => window.__test!.state()!);
@@ -216,13 +406,133 @@ test('the scripted test pilot flies inside the page through the controls', async
   await expectNoErrors(page, pageLog);
 });
 
-test('the first key press asks for fullscreen and the keyboard lock (game default)', async ({ page, pageLog }) => {
-  await openGame(page, '');
+test('in low orbit: the map takes the pointer, a node is added and Shift-dragged, the throttle stays at 0', async ({ page, pageLog }) => {
+  // The QA scenario in the parking orbit (a state start: not a mission proof, recorded as such in the snapshot).
+  await openGame(page, '?scenario=qa-leo');
+  await waitIdle(page, 8, BOOT_MS);
+  await shoot(page, 'leo-chase', { minNonBlack: 0.2 });
+  await viewKey(page, 'KeyC', 'interior');
+  await waitIdle(page, 60, BOOT_MS);
+  const e = await page.evaluate(() => window.__app!.exposure());
+  console.log(`leo cockpit: EV100 ${e.ev100.toFixed(2)} (target ${e.targetEv100.toFixed(2)}), sun visibility ${e.sunVisibility.toFixed(2)}, outside ${e.outsideFraction.toFixed(3)}`);
+  await shoot(page, 'leo-cockpit', { minNonBlack: 0.03 });
+  await viewKey(page, 'KeyC', 'external');
+  await viewKey(page, 'KeyM', 'map');
+  const marker = async (kind: string, id: string): Promise<{ x: number; y: number; visible: boolean }> => {
+    const e = (await page.evaluate(() => window.__test!.map())).find((x) => x.kind === kind && x.id === id);
+    if (!e) throw new Error(`no map element ${kind} ${id}`);
+    return e;
+  };
+  // The parking orbit runs 180-260 km above the limb, so its far side is behind the Earth from most directions:
+  // turn the map camera until the apoapsis marker is on the near side, on the scene and clear of the HUD.
+  let ap: { x: number; y: number; visible: boolean } | null = null;
+  const tried: string[] = [];
+  for (const yaw of [0, 1.05, 2.1, 3.14, 4.19, 5.24]) {
+    await page.evaluate((y) => window.__test!.setCameraOrbit(y, 0.7, 2.2e7), yaw);
+    await page.evaluate(() => window.__test!.waitFrames(90));
+    const m = await marker('marker', 'current/0/apoapsis');
+    const onScene = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === document.getElementById('viewport'), m);
+    tried.push(`yaw ${yaw}: visible ${m.visible}, at ${m.x.toFixed(0)},${m.y.toFixed(0)}, on the scene ${onScene}`);
+    if (m.visible && onScene) {
+      ap = m;
+      break;
+    }
+  }
+  if (!ap) throw new Error(`the apoapsis marker is never visible on the scene: ${tried.join('; ')}`);
+  await waitIdle(page, 8, BOOT_MS);
+  await page.mouse.click(ap.x, ap.y);
+  await page.waitForFunction(() => window.__test!.state()!.nodes.length === 1, undefined, { timeout: 10_000 });
+  await page.evaluate(() => window.__test!.waitFrames(4));
+  const id = (await page.evaluate(() => window.__test!.state()!)).nodes[0]!.id;
+  // Shift-drag on the prograde handle: the map owns the pointer, Shift is the editor's fine modifier, and the lever
+  // must not move (ARCHITECTURE 11 and 18.2).
+  const n = await marker('node', id);
+  const h = await marker('nodeHandle', `${id}/prograde`);
+  const l = Math.hypot(h.x - n.x, h.y - n.y);
+  const [ux, uy] = [(h.x - n.x) / l, (h.y - n.y) / l];
+  const before = (await page.evaluate(() => window.__test!.state()!)).nodes[0]!.dv.prograde;
+  await page.mouse.move(h.x, h.y);
+  await page.evaluate(() => window.__test!.waitFrames(2));
+  await page.keyboard.down('ShiftLeft');
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(h.x + ux * 10 * i, h.y + uy * 10 * i);
+    await page.evaluate(() => window.__test!.waitFrames(1));
+  }
+  await page.mouse.up();
+  await page.keyboard.up('ShiftLeft');
+  await page.evaluate(() => window.__test!.waitFrames(30));
+  const s = await page.evaluate(() => window.__test!.state()!);
+  const fine = s.nodes[0]!.dv.prograde - before;
+  console.log(`node ${id}: prograde +${fine.toFixed(3)} m/s from a 100 px Shift-drag; lever ${await page.evaluate(() => window.__app!.lever())}`);
+  expect(fine).toBeGreaterThan(0.5);
+  expect(fine).toBeLessThan(2);
+  expect(await page.evaluate(() => window.__app!.lever())).toBe(0);
+  expect(s.appliedControls.throttle).toBe(0);
+  expect(s.patches.planned.length).toBeGreaterThan(0);
+  await shoot(page, 'leo-map-node', { minNonBlack: 0.05 });
+  expect(s.scenario.startKind).toBe('state');
+  expect(s.cheatCounter).toBe(0);
+  await expectNoErrors(page, pageLog);
+});
+
+test('keyboard capture and fullscreen are opt-in: off by default, on and off with the HUD control, ?capture=1, footage switches', async ({ page, pageLog }) => {
+  const captured = (): Promise<{ locked: boolean; fullscreen: boolean }> => page.evaluate(() => ({ locked: window.__app!.keyboardLocked(), fullscreen: document.fullscreenElement !== null }));
+  const visible = (selector: string): Promise<boolean> =>
+    page.evaluate((sel) => {
+      const e = document.querySelector(sel);
+      return e !== null && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+    }, selector);
+
+  // Default: keys and clicks on the scene fly the vehicle and capture nothing.
+  await openGame(page);
   await press(page, 'KeyT');
-  await page.evaluate(() => window.__test!.waitFrames(10));
-  const locked = await page.evaluate(() => window.__app!.keyboardLocked());
-  const fullscreen = await page.evaluate(() => document.fullscreenElement !== null);
-  console.log(`capture: fullscreen ${fullscreen}, keyboard lock ${locked}`);
-  expect((await brief(page)).sasEnabled).toBe(true);
+  await page.mouse.click(640, 300);
+  await press(page, 'KeyZ');
+  await page.evaluate(() => window.__test!.waitFrames(20));
+  expect(await captured()).toEqual({ locked: false, fullscreen: false });
+  const b = await brief(page);
+  expect(b.sasEnabled).toBe(true);
+  expect(b.throttle).toBe(1);
+  await press(page, 'KeyX');
+  // The HUD's control: fullscreen and the keyboard lock on a click...
+  expect(await visible('.hud .kbcap')).toBe(true);
+  await page.click('.hud .kbcap');
+  await page.waitForFunction(() => document.fullscreenElement !== null, undefined, { timeout: 10_000 });
+  await page.evaluate(() => window.__test!.waitFrames(20));
+  const on = await captured();
+  console.log(`capture by the HUD control: fullscreen ${on.fullscreen}, keyboard lock ${on.locked}`);
+  expect(on.fullscreen).toBe(true);
+  await shoot(page, 'capture-on');
+  expect(await page.getAttribute('.hud .kbcap', 'aria-checked')).toBe('true');
+  // ...and off again with a second click on the same switch (Esc does the same).
+  await page.click('.hud .kbcap');
+  await page.waitForFunction(() => document.fullscreenElement === null, undefined, { timeout: 10_000 });
+  await page.evaluate(() => window.__test!.waitFrames(20));
+  expect(await captured()).toEqual({ locked: false, fullscreen: false });
+  expect(await visible('.hud .kbcap')).toBe(true);
+  expect(await page.getAttribute('.hud .kbcap', 'aria-checked')).toBe('false');
+  await press(page, 'KeyT');
+  expect((await brief(page)).sasEnabled).toBe(false);
+  await expectNoErrors(page, pageLog);
+
+  // ?capture=1: the first key press asks; the footage switches hide the capture control and the pilot's label.
+  await openGame(page, '?capture=1&pilot=1&capturepill=0&pilotlabel=0');
+  await page.waitForFunction(() => window.__test!.pilot!.phase() !== null, undefined, { timeout: 10_000 });
+  expect(await visible('.hud .kbcap')).toBe(false);
+  expect(await visible('.hud .helpbtn')).toBe(true);
+  expect(await visible('[data-app-status]')).toBe(false);
+  await press(page, 'F9');
+  await page.waitForFunction(() => document.fullscreenElement !== null, undefined, { timeout: 10_000 });
+  const auto = await captured();
+  console.log(`?capture=1, first key: fullscreen ${auto.fullscreen}, keyboard lock ${auto.locked}`);
+  expect(auto.fullscreen).toBe(true);
+  // PAUSED still shows with the pilot's label switched off.
+  await page.evaluate(() => window.__test!.setPaused(true));
+  await page.evaluate(() => window.__test!.waitFrames(4));
+  expect(await visible('[data-app-status]')).toBe(true);
+  expect(await page.evaluate(() => document.querySelector('[data-app-status]')!.textContent)).not.toContain('TEST PILOT');
+  await shoot(page, 'footage-switches');
+  await page.evaluate(() => window.__test!.pilot!.stop());
   await expectNoErrors(page, pageLog);
 });

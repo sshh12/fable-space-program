@@ -28,6 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import type { AppBrief } from '../../../src/app/testHooks';
+import type { FrameBreakdown } from '../../../src/app/timing';
 import type { MilestoneRecord } from '../../../src/core/contracts/sim';
 import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, withGpuLock } from '../harness';
 
@@ -67,8 +68,13 @@ interface PerfWindow {
   coreCpuP99: number;
   stages: Record<string, number>;
   features: Record<string, number>;
-  /** Main-thread time of each feature's hooks, p99 (added after the first full run). */
+  /**
+   * Main-thread time of each feature's hooks, p99 over the window, from the app's per-frame hook timers
+   * (`core` = the render stage minus the hooks); added after the first full run.
+   */
   featuresCpu: Record<string, number>;
+  /** The two slowest frames of the window with their breakdown (stages, features, hooks, the app's note). */
+  slowest: FrameBreakdown[];
   qualityScale: number;
   renderScale: number;
 }
@@ -146,7 +152,8 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
       coreCpuP99: p.cpu.p99,
       stages: Object.fromEntries(Object.entries(c.stages).map(([k, v]) => [k, v.p99])),
       features: Object.fromEntries(Object.entries(p.features).map(([k, v]) => [k, v.gpuMs])),
-      featuresCpu: Object.fromEntries(Object.entries(p.features).map(([k, v]) => [k, v.cpuMs])),
+      featuresCpu: Object.fromEntries(Object.entries(c.features).map(([k, v]) => [k, v.p99])),
+      slowest: window.__app!.cpuSlowest().slice(0, 2),
       qualityScale: p.qualityScale,
       renderScale: p.renderScale,
     };
@@ -281,7 +288,8 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   };
 
   await withGpuLock(async () => {
-    await openPage(page, `/?scenario=${SCENARIO}&pilot=1&view=chase&capture=0&scale=1&governor=off`, { timeoutMs: 240_000 });
+    // `ready` resolves when the loading screen has gone (the view at the pad final); the pilot starts with it.
+    await openPage(page, `/?scenario=${SCENARIO}&pilot=1&view=chase&scale=1&governor=off`, { timeoutMs: 240_000 });
     await assertDiscreteGpu(page);
     t0 = Date.now();
     const pageInfo = await page.evaluate(() => window.__test!.page);

@@ -7,7 +7,8 @@ import type { TestApi } from '@/core/contracts/testApi';
 import type { TestApiController } from '@/core/testing/testApi';
 import type { ExposureInfo } from '@/render/core';
 import type { Game } from './game';
-import type { FrameStage, WindowStats } from './timing';
+import type { LoadingReport } from './loading';
+import type { FrameBreakdown, FrameStage, FrameTrace, WindowStats } from './timing';
 
 /** What the app's own specs read besides window.__test. */
 export interface AppDebug {
@@ -15,14 +16,26 @@ export interface AppDebug {
   features(): { id: string; pkg: string }[];
   /** Feature ids in the order the core calls a hook (sorted by `order`, then registration). */
   featureOrder(): string[];
-  /** Main-thread time of the frame function and its stages over the last 300 frames, ms. */
-  cpu(): { frame: WindowStats; stages: Record<FrameStage, WindowStats> };
+  /**
+   * Main-thread time over the last 300 frames, ms: the frame function, its stages, and every render feature's
+   * hooks (`core` = the render stage minus the features' hooks).
+   */
+  cpu(): { frame: WindowStats; stages: Record<FrameStage, WindowStats>; features: Record<string, WindowStats> };
   resetCpu(): void;
+  /** The slowest frames since the last reset with their breakdown (stages, features, hooks), slowest first. */
+  cpuSlowest(): FrameBreakdown[];
+  /** Record every frame's main-thread breakdown from now on (at most `frames`); `takeCpuTrace` returns and ends it. */
+  startCpuTrace(frames: number): void;
+  takeCpuTrace(): FrameTrace | null;
+  /** The loading screen: its steps with their counts and times, and what the frame loop found at the reveal. */
+  loading(): LoadingReport;
   exposure(): ExposureInfo;
   viewMode(): string;
   viewBlending(): boolean;
   hudVisible(): boolean;
   keyboardLocked(): boolean;
+  /** What the HUD's capture control does: fullscreen + keyboard lock on (needs a user gesture) or off. */
+  toggleKeyboardCapture(): void;
   heldCodes(): string[];
   paused(): boolean;
   frames(): number;
@@ -38,6 +51,13 @@ export interface AppDebug {
   pilotReport(): Record<string, number> | null;
   /** Pages of the cockpit's displays (left, centre, right). */
   mfdPages(): string[];
+  /**
+   * The cockpit displays' painting since the last `reset`: pages painted, frames, and the main-thread time of
+   * the Canvas 2D painting, the upload and the mip encode, ms (null before the cockpit has displays).
+   */
+  mfdPaintStats(reset?: boolean): { paints: number; frames: number; cpuMs: number; paintMs: number; copyMs: number; mipMs: number } | null;
+  /** What the cockpit feature drew in the last frame: its detail level, whether the eye is inside. */
+  cockpitFrame(): { active: boolean; lod: string | null; inside: boolean };
   /** A few numbers of the latest snapshot, cheap enough to poll every frame (state() copies everything). */
   brief(): AppBrief;
   /** Local lights of the last rendered frame: kind, peak intensity (cd), distance from the eye and range, m. */
@@ -126,11 +146,16 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     featureOrder: () => game.renderer.featureOrder(),
     cpu: () => game.timings.stats(),
     resetCpu: () => game.timings.reset(),
+    cpuSlowest: () => game.timings.slowest(),
+    startCpuTrace: (frames) => game.timings.startTrace(frames),
+    takeCpuTrace: () => game.timings.takeTrace(),
+    loading: () => game.loadingReport(),
     exposure: () => game.renderer.exposureInfo(),
     viewMode: () => game.views.mode,
     viewBlending: () => game.views.blending,
     hudVisible: () => game.hud.visible,
     keyboardLocked: () => game.input.keyboardLocked,
+    toggleKeyboardCapture: () => game.toggleKeyboardCapture(),
     heldCodes: () => game.input.heldCodes(),
     paused: () => game.paused,
     frames: () => game.frames,
@@ -140,6 +165,17 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     notifications: () => game.hud.notifications(),
     pilotReport: () => (game.pilot.pilot ? { ...game.pilot.pilot.report } : null),
     mfdPages: () => Array.from({ length: game.features.cockpitControls.displayCount }, (_, i) => game.features.cockpitControls.page(i)),
+    mfdPaintStats: (reset = false) => {
+      const d = game.features.cockpit.displays;
+      if (!d) return null;
+      const s = { ...d.stats };
+      if (reset) d.resetStats();
+      return s;
+    },
+    cockpitFrame: () => {
+      const s = game.features.cockpit.stats();
+      return { active: s.active, lod: s.lod, inside: s.inside };
+    },
     brief: () => {
       const s = game.snapshot();
       const r = s.readouts;

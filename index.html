@@ -29,6 +29,32 @@
         inset: 0;
         pointer-events: none;
       }
+      /* First paint, before the program has loaded: the look of the loading screen (src/app/loading.ts), which
+         replaces it as soon as it runs. Colours and type are those of src/core/ui/theme.ts. */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(120% 90% at 50% 30%, #0c1522 0%, #070b12 55%, #04060a 100%);
+        font-family: Bahnschrift, 'DIN Alternate', 'Segoe UI', system-ui, sans-serif;
+        color: #eef4fb;
+      }
+      #boot-splash div div:first-child {
+        font-size: calc(min(1vh, 0.5625vw) * 1.5);
+        letter-spacing: 0.24em;
+        color: #55d4ff;
+      }
+      #boot-splash div div:last-child {
+        font-size: calc(min(1vh, 0.5625vw) * 3.3);
+        font-weight: 600;
+        margin-top: calc(min(1vh, 0.5625vw) * 0.9);
+      }
+      #boot-splash > div {
+        width: calc(min(1vh, 0.5625vw) * 92);
+        max-width: 92vw;
+      }
       #fatal {
         position: fixed;
         inset: 0;
@@ -59,6 +85,12 @@
   <body>
     <canvas id="viewport" tabindex="0"></canvas>
     <div id="ui-root"></div>
+    <div id="boot-splash" role="status">
+      <div>
+        <div>MERIDIAN</div>
+        <div>Loading the program</div>
+      </div>
+    </div>
     <div id="fatal" role="alert">
       <div>
         <h1>Cannot start the simulator</h1>

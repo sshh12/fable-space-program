@@ -20,19 +20,22 @@ See "Browser mission". Eight requests filed; four resolved.
 
 | File | What |
 |---|---|
-| `main.ts` | Entry: `installTestApi` first, `acquireGpu`, `loadDefs`, scenario choice, `createGame`, `installGameTestHooks`; `window.__test.ready` after three presented frames (false, with the error in `errors` and the `#fatal` box shown, when boot fails) |
+| `main.ts` | Entry: `installTestApi` and the loading screen first (`window.__boot()` = its report), `acquireGpu`, `loadDefs` (through a counting `DefSource`), scenario choice, `createGame`, `installGameTestHooks`; `window.__test.ready` three presented frames after the loading screen has gone (false, with the error in `errors` and the `#fatal` box shown, when boot fails) |
+| `loading.ts` | `createLoadingScreen(container): LoadingScreen`: the ten steps (`LOAD_STEPS`) with `begin` / `update` / `finish` / `watch(id, read)`, `reveal(record)` + `frame(now)` (the 450 ms fade, driven by the frame loop), `abort()`, `report(): LoadingReport` (steps with counts and times, the `RevealRecord`), `revealed: Promise<void>`. See "Loading" |
+| `featureTiming.ts` | `timedFeature(feature, sink): RenderFeature`: forwards every hook of the contract and books its main-thread time (the per-feature attribution; the wrapped feature is untouched) |
 | `settings.ts` | `readSettings(query): AppSettings`; `isMissionScenario(s)`; `defaultScenario(defs)` (first scenario in id order that is a mission proof: pad start, nothing fired, milestone rules, i.e. `lunar-direct` today, chosen by the data: no id in code); `resolveScenario(defs, requested)` (unknown id: error naming the defined ones) |
-| `game.ts` | `createGame(deps: GameDeps): Promise<Game>`: builds and owns every subsystem and runs the frame loop. `Game` exposes the subsystems plus `snapshot()`, `camera()`, `paused` / `setPaused`, `setDeterministic`, `setTestControls`, `setView`, `setCameraOrbit`, `frames`, `inFlight()`, `stop()` |
+| `game.ts` | `createGame(deps: GameDeps): Promise<Game>`: builds and owns every subsystem and runs the frame loop. `Game` exposes the subsystems plus `snapshot()`, `camera()`, `paused` / `setPaused`, `setDeterministic`, `setTestControls`, `setView`, `setCameraOrbit`, `frames`, `loading`, `revealed`, `loadingReport()`, `toggleKeyboardCapture()`, `inFlight()`, `stop()`; `SETTLE_FRAMES = 12` |
 | `features.ts` | `createGameFeatures(deps: FeatureDeps): GameFeatures`: every RenderFeature through its factory, in registration order, with the cockpit's `CockpitControls`, the map's `MapViewApi` and `packageOf`; `MILKY_WAY_FACE_SIZE = 2048` |
 | `pilot.ts` | `createPilotDriver(defs, sim): PilotDriver` (`engaged`, `pilot`, `start()`, `stop()`, `onControlTick`, `afterFrame()`): the mission pilot of `src/pilot` in `Sim.advance`'s control ticks |
-| `statusLine.ts` | the shell's own line, centred under the HUD's top column: PAUSED (amber), and "TEST PILOT · <phase>" while the pilot flies; hidden with the HUD |
-| `timing.ts` | main-thread time of the frame function and of its stages input, map, controls, sim, views, hud, audio, render (rolling 300 frames) |
+| `statusLine.ts` | the shell's own line, centred under the HUD's top column: PAUSED (amber), and "TEST PILOT · <phase>" while the pilot flies (not with `?pilotlabel=0`); hidden with the HUD |
+| `timing.ts` | main-thread time of the frame function, of its stages (input, map, controls, sim, views, hud, audio, render) and of every render feature's hooks (rolling 300 frames; `core` = the render stage minus the hooks); the 12 slowest frames since the last reset with their whole breakdown (`slowest()`); a trace of consecutive frames (`startTrace` / `takeTrace`) |
 | `testHooks.ts` | `installGameTestHooks(testApi, game)`: `window.__test` (TestApi) and `window.__app` (`AppDebug`, `AppBrief`) |
 
-Query parameters (all optional): `scenario=<id>`, `pilot=1` (the test pilot starts when the page is ready),
-`view=chase|cockpit|map`, `capture=0` (no fullscreen / keyboard-lock request on the first gesture; the specs use
-it to keep the viewport), `perf=features` (render-core attribution mode), `scale=<0.25..1>` (pinned render
-scale), `governor=off`, `hud=0`, `mute=1`. None of them touches physics; the scenario is recorded in
+Query parameters (all optional): `scenario=<id>`, `pilot=1` (the test pilot starts when the loading screen has
+gone), `view=chase|cockpit|map`, `capture=1` (ask for fullscreen + keyboard lock on the first key press or click;
+the default is windowed and uncaptured), `pilotlabel=0` (no "TEST PILOT" line) and `capturepill=0` (no capture
+control in the HUD) for clean footage, `perf=features` (render-core attribution mode), `scale=<0.25..1>` (pinned
+render scale), `governor=off`, `hud=0`, `mute=1`. None of them touches physics; the scenario is recorded in
 `SimSnapshot.scenario` (only a pad start with nothing fired and `cheatCounter` 0 is a mission proof).
 
 ### Boot

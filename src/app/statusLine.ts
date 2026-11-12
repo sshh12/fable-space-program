@@ -2,7 +2,8 @@
  * The app shell's own line over the scene, for the two states the HUD does not know about: the game is paused
  * (P), and the scripted test pilot is flying (with its phase). Drawn in the HUD's type and colours
  * (src/core/ui/theme.ts), centred, under the HUD's altitude plate and its toasts (the top centre column of the
- * HUD ends about 17 interface units down); hidden when neither applies or the HUD is hidden.
+ * HUD ends about 17 interface units down); hidden when neither applies or the HUD is hidden. The pilot's part
+ * can be switched off for clean footage (`?pilotlabel=0`); PAUSED always shows.
  */
 import { UI_COLORS, UI_FONT_FAMILY } from '@/core/ui/theme';
 
@@ -11,7 +12,8 @@ export interface StatusLine {
   readonly element: HTMLElement;
 }
 
-export function createStatusLine(container: HTMLElement): StatusLine {
+export function createStatusLine(container: HTMLElement, options: { pilotLabel?: boolean } = {}): StatusLine {
+  const showPilot = options.pilotLabel ?? true;
   const el = document.createElement('div');
   el.setAttribute('data-app-status', '');
   el.setAttribute('role', 'status');
@@ -47,7 +49,8 @@ export function createStatusLine(container: HTMLElement): StatusLine {
   let last = '';
   return {
     element: el,
-    update({ paused: isPaused, pilotPhase, hudVisible }) {
+    update({ paused: isPaused, pilotPhase: phase, hudVisible }) {
+      const pilotPhase = showPilot ? phase : null;
       const key = `${isPaused}|${pilotPhase}|${hudVisible}`;
       if (key === last) return;
       last = key;
