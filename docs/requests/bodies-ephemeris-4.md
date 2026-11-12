@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead decision; implemented in commit fad4aec)
 From: bodies-ephemeris
 Owner path: docs/ARCHITECTURE.md 8.2 and the bodies-ephemeris brief (the lead: tolerances and sources of the ephemerides)
 Blocking: yes (acceptance "passes the Horizons validation" cannot be met for every body with the design's sources)
@@ -80,3 +80,20 @@ degree of an almanac wherever the model can do that), not an ephemeris service.
    or computed from the same source maps); radiative heating of non-air atmospheres stays unmodelled and is
    recorded as a seam for the landing update.
 Requests -1 and -3 are passed to their owners by the lead.
+
+## Implementation (bodies-ephemeris)
+- `tools/bodies/fit-orbits.mjs` fits every orbit but Earth's and the Moon's to Horizons over 2029-09-01..
+  2060-01-01 (about 2,000 states per body at a golden-ratio step, plus a dense span about the epoch for the
+  satellites; fetched once into data/cache/bodies/horizons), epoch 938240818, from the table values; Phobos,
+  Deimos and Triton start from Horizons' osculating mean motion. Heliocentric bodies keep their starting node
+  and apsis rates: over a fraction of an orbit a fitted apsis rate takes up part of the mean-longitude rate
+  (Neptune's came out at 45 % of its mean motion, which would have made its velocity 30 % wrong).
+- `tools/bodies/tolerances.json`: the class tolerances and one row per body; two reasoned exceptions, Mimas
+  (10.5 deg: the Mimas-Tethys 4:2 resonance libration) and Miranda (1.8 deg: the near-commensurability
+  lambda(M) - 3 lambda(A) + 2 lambda(U), 12.5-year period, which its residual follows).
+- `node tools/bodies/validate.mjs`: 27 pass, 2 reasoned exceptions, 0 failed; Earth and the Moon reported.
+  The residual table per body is in `docs/handoff/bodies-ephemeris.md` section 3; the Earth and Moon
+  discrepancies for bodies-activation in section 6.
+- Mean colours: Io and Ganymede from their global colour maps; the seven bodies without one wait on request
+  bodies-ephemeris-5 (planet-bake). Radiative heating of non-air gases recorded as a seam; drag and convective
+  heating are tested to work for every new atmosphere.
