@@ -142,22 +142,10 @@ fn latticeNoise2(p: vec2f, seed: i32) -> f32 {
   let u = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash2f(i, seed), hash2f(i + vec2i(1, 0), seed), u.x), mix(hash2f(i + vec2i(0, 1), seed), hash2f(i + vec2i(1, 1), seed), u.x), u.y);
 }
-/// A layer on a painted surface (soot, frost) from its weight w = instance value x vertex mask, broken up in
-/// texture space: 'uvm' is the mesh UV before the material's scale (metres on a vehicle: u round the part, v
-/// along it). The layer arrives as streaks and patches along v with a soft edge (cells 3 cm x 25 cm and an
-/// octave four times that), 0 at w = 0 and 1 at w = 1. Where a cell is smaller than a pixel the pattern
-/// gives way to its mean, so far away the layer is the plain blend again and does not shimmer.
-fn layerCoverage(w: f32, uvm: vec2f, seed: i32) -> f32 {
-  // (No early return on w: the derivatives below need uniform control flow.)
-  let p = uvm / vec2f(0.03, 0.25);
-  let footprint = max(fwidth(p.x), fwidth(p.y));
-  let fine = mix(latticeNoise2(p, seed), 0.5, smoothstep(0.5, 2.0, footprint));
-  let coarse = mix(latticeNoise2(p * 0.25, seed + 31), 0.5, smoothstep(0.5, 2.0, footprint * 0.25));
-  let g = 0.6 * fine + 0.4 * coarse;
-  return select(smoothstep(g - 0.18, g + 0.18, 1.35 * w - 0.17), 0.0, w <= 0.0);
-}
-/// Streak noise of a layer in texture space, in [0, 1] about 0.5: cells of 'cell' metres, long along v, and an
-/// octave four times larger; gives way to its mean where a cell is under a pixel (no shimmer far away).
+/// Streak noise of a layer on a painted surface (soot, frost) in texture space, in [0, 1] about 0.5: 'uvm' is
+/// the mesh UV before the material's scale (metres on a vehicle: u round the part, v along it); cells of
+/// 'cell' metres, long along v, and an octave four times larger; gives way to its mean where a cell is under
+/// a pixel (no shimmer far away).
 fn layerStreaks(uvm: vec2f, cell: vec2f, seed: i32) -> f32 {
   let p = uvm / cell;
   let footprint = max(fwidth(p.x), fwidth(p.y));
@@ -211,8 +199,8 @@ fn blackbody(T: f32) -> vec3f {
   // What lies ON the paint (soot, frost) covers its clear coat and its brushed highlight: 1 = bare.
   var coat = 1.0;
   if (shading == MATERIAL_STANDARD) {
-    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance: frost arrives as
-    // streaks and patches in texture space (request vehicle-pad-1), soot as a density (request vehicle-pad-7).
+    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance, each as a density
+    // (requests vehicle-pad-7, vehicle-pad-11).
     let wear = v.masks.r * 0.6;
     albedo = mix(albedo, vec3f(0.56, 0.57, 0.58), wear);
     metallic = mix(metallic, 1.0, wear);
@@ -228,17 +216,17 @@ fn blackbody(T: f32) -> vec3f {
     albedo = mix(albedo * mix(vec3f(1.0), vec3f(0.50, 0.38, 0.26), sootVeil), vec3f(0.030, 0.024, 0.019), soot * 0.94);
     roughness = mix(roughness, 0.92, smoothstep(0.0, 0.7, sootDensity));
     metallic *= 1.0 - smoothstep(0.15, 0.9, sootDensity);
+    // Frost is a coat with a thickness, not a mask (request vehicle-pad-11): the weight, modulated by a
+    // quarter in runnels of 8 cm x 1.2 m. A thin coat is a translucent haze (the paint and its markings show
+    // through, greyed); from a weight of about 0.6 the coat is opaque rime, cool white and dead matte.
+    // Nothing has an edge unless the weight has one.
     let frostWeight = saturate(I.params.z * v.masks.a);
-    let frost = layerCoverage(frostWeight, uvm, 19);
-    // A thin coat is a veil under the cells (request vehicle-pad-6): an even matte haze that follows the
-    // weight (0.34 of the way to frost at weight 0.35, 0.55 at 0.6 and above), so markings under it lose
-    // contrast instead of being cut into stripes. Weight 0: none; weight 1: the solid coat as before.
-    let veil = 0.55 * smoothstep(0.0, 0.6, frostWeight);
-    let frostCover = max(frost, veil);
-    albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frostCover);
-    roughness = mix(roughness, 0.85, frostCover);
+    let frostDensity = saturate(frostWeight * (0.75 + 0.5 * layerStreaks(uvm, vec2f(0.08, 1.2), 19)));
+    let frostCover = smoothstep(0.0, 0.6, frostDensity);
+    albedo = mix(albedo, vec3f(0.90, 0.94, 1.0), frostCover);
+    roughness = mix(roughness, 0.95, frostCover);
     metallic *= 1.0 - frostCover;
-    coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - max(frost, 0.8 * veil));
+    coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - frostCover);
     param = max(param, max(I.params.w, hullWetness(v.pos)));
   } else if (shading == MATERIAL_TERRAIN) {
     // Site structures: soot is grime and frost is rime, plain blends of the vertex masks.
@@ -516,29 +504,6 @@ class Group {
   }
 }
 
-/**
- * The G-buffer shader with frost as a thickness (request vehicle-pad-11, the requester's text): the weight,
- * modulated by a quarter in runnels of 8 cm x 1.2 m, is a density; a thin coat is a translucent haze, from
- * about 0.6 it is opaque rime, cool white and dead matte; nothing has an edge unless the weight has one.
- * Six edits of the frost lines of MATERIAL_STANDARD; '' if one of them finds nothing to replace.
- */
-function frostCoatShader(): string {
-  const edits: [string, string][] = [
-    ['let frost = layerCoverage(frostWeight, uvm, 19);', 'let frostDensity = saturate(frostWeight * (0.75 + 0.5 * layerStreaks(uvm, vec2f(0.08, 1.2), 19)));'],
-    ['let veil = 0.55 * smoothstep(0.0, 0.6, frostWeight);', ''],
-    ['let frostCover = max(frost, veil);', 'let frostCover = smoothstep(0.0, 0.6, frostDensity);'],
-    ['albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frostCover);', 'albedo = mix(albedo, vec3f(0.90, 0.94, 1.0), frostCover);'],
-    ['roughness = mix(roughness, 0.85, frostCover);', 'roughness = mix(roughness, 0.95, frostCover);'],
-    ['coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - max(frost, 0.8 * veil));', 'coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - frostCover);'],
-  ];
-  let out = GBUFFER_SHADER;
-  for (const [from, to] of edits) {
-    if (out.split(from).length !== 2) return '';
-    out = out.replace(from, to);
-  }
-  return out;
-}
-
 export function createMeshSystem(args: {
   device: GPUDevice;
   shaders: CoreShaderLibrary;
@@ -548,16 +513,8 @@ export function createMeshSystem(args: {
   /** For 'ocean.wetness' (the wet line on hulls). */
   resources: SharedResources;
   reportError: (m: string) => void;
-  /** Frost as a thickness (the candidate text of request vehicle-pad-11) instead of the coverage mask. */
-  frostCoat?: boolean;
 }): MeshSystem {
   const { device, shaders, frameLayout, shadowPassLayout, textures, resources, reportError } = args;
-  let gbufferShader = GBUFFER_SHADER;
-  if (args.frostCoat) {
-    const coat = frostCoatShader();
-    if (coat === '') reportError('render core: the frost-coat shader could not be made from the mesh shader text; frost stays a mask');
-    else gbufferShader = coat;
-  }
 
   const batchLayout = device.createBindGroupLayout({
     label: 'mesh.batch',
@@ -597,7 +554,7 @@ export function createMeshSystem(args: {
     { format: RENDER_FORMATS.hdr },
   ];
   const gbufferPipelines: Tracked<{ back: GPURenderPipeline; none: GPURenderPipeline }> = shaders.tracked(() => {
-    const module = shaders.createModule('mesh.gbuffer', gbufferShader);
+    const module = shaders.createModule('mesh.gbuffer', GBUFFER_SHADER);
     const layout = device.createPipelineLayout({ label: 'mesh.gbuffer', bindGroupLayouts: [frameLayout, batchLayout, materialLayout] });
     const make = (cullMode: GPUCullMode): GPURenderPipeline =>
       device.createRenderPipeline({

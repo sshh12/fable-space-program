@@ -66,9 +66,9 @@ export interface RendererOptions {
   pipelineWarm?: boolean;
   /**
    * The shader of the contact shadow (lighting/ao.ts; requests cockpit-10, vehicle-pad-10): 'near' (the
-   * default: the rules for the near field), 'first' (the first rule alone, the pass as it was: for A/B) or
-   * 'cross' (a candidate rule). Also by the page's address, `contact=first` / `contact=v5`, and by the env
-   * of the page's server, VITE_CORE_CONTACT=first / v5 (a test run that exercises a suite with one).
+   * default: the rules for the near field) or 'first' (the first rule alone, the pass as it was: for A/B).
+   * Also by the page's address, `contact=first`, and by the env of the page's server, VITE_CORE_CONTACT=first
+   * (a test run that exercises a whole suite with it).
    */
   contactShader?: ContactShader;
 }
@@ -79,11 +79,8 @@ const VITE_ENV: Record<string, string | undefined> | undefined = (import.meta as
 /**
  * The sun-shadow chunk with switches for A/B pictures of its filter, read from ShadowUniforms.count.y
  * (ShadowSystem.debugFlags): 1 = the kernel is not turned per pixel, 2 = no dithered cross-fade between
- * cascades, 4 = a candidate: every tap's reference depth is lifted by what the receiver's plane rises over
- * half a texel, where a texel covers several pixels (the bilinear comparison reads the depths of texel
- * CENTRES; on a face the sun grazes they differ from the plane's depth at the tap by more than the fixed
- * bias), 8 = no cascade shadow at all (what of a picture's grain is the shadow's). Only pages that ask for
- * it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
+ * cascades, 8 = no cascade shadow at all (what of a picture's grain is the shadow's). Only pages that ask
+ * for it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
  */
 function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): string {
   const edits: [string, string][] = [
@@ -92,10 +89,6 @@ function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): st
       'let phi = noise.x * TWO_PI * (1.0 - smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel)) * select(1.0, 0.0, (shadowU.count.y & 1u) != 0u);',
     ],
     ['if (fade < 1.0 && noise.b >= fade) { continue; }', 'if (fade < 1.0 && noise.b >= fade && (shadowU.count.y & 2u) == 0u) { continue; }'],
-    [
-      'let zref = zr + dot(g, w) - bias / zRange;',
-      'let zref = zr + dot(g, w) - bias / zRange - select(0.0, 0.5 * (abs(g.x) * texel.x + abs(g.y) * texel.y) * smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel), (shadowU.count.y & 4u) != 0u);',
-    ],
     ['if (blockers == 0.0) { return 1.0; }', 'if (blockers == 0.0 || (shadowU.count.y & 8u) != 0u) { return 1.0; }'],
   ];
   let out = wgsl;
@@ -320,7 +313,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const pageQuery = new URLSearchParams(globalThis.location?.search ?? '');
   const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
   const contactAsked = pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT;
-  const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : contactAsked === 'v5' ? 'cross' : 'near');
+  const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : 'near');
   const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
@@ -405,8 +398,6 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     textures,
     resources,
     reportError,
-    // A candidate while it is being proved: only pages that ask for it compile its text.
-    frostCoat: (pageQuery.get('frost') ?? VITE_ENV?.VITE_CORE_FROST) === 'v2',
   });
 
   const managed: { make: () => void; target: { texture: GPUTexture; view: GPUTextureView; size: [number, number]; version: number; alive: boolean } }[] = [];

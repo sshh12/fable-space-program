@@ -18,14 +18,15 @@
  *    by which it is behind THERE decides, not the depth at whichever sample the jitter gave (`refine`);
  *  - an occluder counts as `thicknessTexels` texels of the finest sun cascade thick (what the cascade cannot
  *    draw; the cascade draws the rest), and only if it touches the receiver (the ray is behind it within one
- *    thickness of its start: a contact line) or is thin (the ray is seen again within `thinFactor`
- *    thicknesses: a rail, a cable, a handle) (`thinOnly`);
+ *    thickness of its start: a contact line), is thin (the ray is seen again within `thinFactor`
+ *    thicknesses: a rail, a cable, a handle) or the ray enters its visible face (it is behind the surface by
+ *    less than `crossShare` of the thickness where it goes behind: the foot of a wall, where the cascades
+ *    leak light) (`thinOnly`);
  *  - the march takes `nearSteps` samples, so that a caster as thin as the step is not jumped over.
  *
- * Shaders: the one with the near field's rules is the pass (run 2026-11-12 17:00: the cockpit's and the
- * vehicle's frames, the core's suite); the first rule alone, the pass as it was to the letter, is kept for
- * A/B (`contact=first`); and a candidate with one more rule, `crossShare` (under `thinOnly`, an occluder
- * whose visible face the ray enters counts too), is compiled only by a page that asks for it (`contact=v5`).
+ * Shaders: the one with the near field's rules is the pass (runs of 2026-11-12, 17:00 and 19:00: the
+ * cockpit's and the vehicle's frames under every rule set, the core's suite); the first rule alone, the pass
+ * as it was to the letter, is kept for A/B (`contact=first`).
  */
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { CoreApi } from '../coreApi';
@@ -60,15 +61,15 @@ export interface ContactShadowParams {
   /** An occluder is thin when the ray is seen again within this many thicknesses. */
   thinFactor: number;
   /**
-   * Candidate (shader `cross` only): under `thinOnly`, a ray that enters the visible face of an occluder (it
-   * is behind the surface by less than this share of the thickness where it goes behind) is shadowed too,
-   * however thick the occluder: the light leak of the cascades along a contact line. 0 = off.
+   * Under `thinOnly`, a ray that enters the visible face of an occluder (it is behind the surface by less
+   * than this share of the thickness where it goes behind) is shadowed too, however thick the occluder: the
+   * light leak of the cascades along a contact line. 0 = off.
    */
   crossShare: number;
 }
 
 /** Which shader the pass runs (see the file comment). */
-export type ContactShader = 'first' | 'near' | 'cross';
+export type ContactShader = 'first' | 'near';
 
 /** The first rule everywhere: 10 samples, every sample on its own, 0.6 x the march length thick. */
 export const CONTACT_SHADOW_LEGACY: ContactShadowParams = {
@@ -89,18 +90,20 @@ export const CONTACT_SHADOW_LEGACY: ContactShadowParams = {
 };
 
 /**
- * The game's rules: the plane and the bisection, every occluder two texels thick. Chosen on the pictures of
- * 2026-11-12 17:00 (out/screens/integration/contact-*-sheet*.png): the stipple on a window well's floor
- * from the cabin is gone and its shadow edge is one clean line (4.4 % isolated dark pixels -> 0.00 %); the
- * band beside a grab rail from 2.5 m is 18.5 px wide instead of 22.5 and stands off the rail. `thinOnly`
- * makes that band a line (16 px), but lets the cascades' light leak through along the foot of a wall seen
- * from the cabin, so it waits for `crossShare`.
+ * The game's rules: the plane, the bisection, occluders two texels thick that touch the receiver, are thin
+ * or are entered through their visible face. Chosen on the pictures of 2026-11-12 (17:00:
+ * out/screens/integration/contact-run1/; 19:00: out/screens/integration/contact-*-sheet*.png). The stipple
+ * on a window well's floor from the cabin is gone and its shadow edge is one clean line (isolated dark
+ * pixels 4.41 % -> 0.00 % in the first run's frame, 1.16 % -> 0.00 % in the second's). The band beside a
+ * grab bar from 2.5 m is a line that stands off the bar (28.5 px wide and ragged -> 15.3 px). Without
+ * `thinOnly` that band is 23.6 px with a speckled gap; with it and without `crossShare` the cascades' light
+ * leak shows along the foot of the well's wall from the cabin.
  */
 export const CONTACT_SHADOW_DEFAULT: ContactShadowParams = {
   enabled: true,
   planeReject: true,
   refine: true,
-  thinOnly: false,
+  thinOnly: true,
   nearSteps: 20,
   nearRange: 8,
   thicknessTexels: 2,
@@ -110,7 +113,7 @@ export const CONTACT_SHADOW_DEFAULT: ContactShadowParams = {
   fade: null,
   interiorFade: null,
   thinFactor: 2,
-  crossShare: 0,
+  crossShare: 0.3,
 };
 
 /** Occluder thickness near the camera when no sun cascade exists (m). */
@@ -140,6 +143,7 @@ struct ContactParams {
   a: vec4f,   // x = rules near the camera (1 plane, 2 bisection, 4 thin or touching only), y = samples near the camera, z = how far "near" reaches (m), w = 0: no contact shadow
   b: vec4f,   // x = occluder thickness near the camera (m), y, z = distances between which it gives way to 0.6 x the march length (m), w = plane margin
   c: vec4f,   // x, y = pixels per texel of the finest cascade between which the contact shadow fades out, z = that texel (m), w = thin: seen again within this many thicknesses
+  d: vec4f,   // x = share of the thickness within which a ray that goes behind a surface has entered its visible face
 }
 @group(1) @binding(2) var<uniform> contactU: ContactParams;
 
@@ -309,9 +313,10 @@ const CONTACT_NEAR = /* wgsl */ `
           }
         }
         if (first.delta < thickness) {
-          // As deep as an occluder is taken to be thick. One that touches the receiver shadows it; any
-          // other has to prove thin (the cascade draws the shadows of the rest).
-          if ((rules & 4u) == 0u || hi < thickness) {
+          // As deep as an occluder is taken to be thick. One that touches the receiver shadows it, and so
+          // does one whose visible face the ray enters; any other has to prove thin (the cascade draws the
+          // shadows of the rest).
+          if ((rules & 4u) == 0u || hi < thickness || first.delta < 0.002 * first.w + 0.001 + contactU.d.x * thickness) {
             contact = 0.0;
             break;
           }
@@ -345,24 +350,6 @@ const AO_END = /* wgsl */ `
 const AO_FS_FIRST = AO_HEAD + AO_MAIN + CONTACT_FIRST + AO_END;
 const AO_FS_NEAR = AO_HEAD + CONTACT_NEAR_DECLS + AO_MAIN + CONTACT_NEAR + AO_END;
 
-/** The candidate: the near field's shader with the rule of `crossShare`. Two edits of its text; '' if either finds nothing to replace. */
-function crossShader(): string {
-  const edits: [string, string][] = [
-    // (After `c`: the uniform's fourth vector.)
-    [
-      'w = thin: seen again within this many thicknesses\n}',
-      'w = thin: seen again within this many thicknesses\n  d: vec4f,   // x = share of the thickness within which a ray that goes behind a surface has entered its visible face\n}',
-    ],
-    ['if ((rules & 4u) == 0u || hi < thickness) {', 'if ((rules & 4u) == 0u || hi < thickness || first.delta < 0.002 * first.w + 0.001 + contactU.d.x * thickness) {'],
-  ];
-  let out = AO_FS_NEAR;
-  for (const [from, to] of edits) {
-    if (out.split(from).length !== 2) return '';
-    out = out.replace(from, to);
-  }
-  return out;
-}
-
 export class AmbientOcclusion {
   view!: GPUTextureView;
   depthView!: GPUTextureView;
@@ -374,7 +361,7 @@ export class AmbientOcclusion {
   private readonly pipeline: Tracked<GPURenderPipeline>;
   private readonly contactBuffer: GPUBuffer | null;
   private readonly contactData = new Float32Array(16);
-  /** The shader the pass runs: 'cross' falls back to 'near' if its text could not be made. */
+  /** The shader the pass runs. */
   readonly shader: ContactShader;
   private group: GPUBindGroup | null = null;
   private groupKey = -1;
@@ -386,14 +373,7 @@ export class AmbientOcclusion {
     private readonly core: CoreApi,
     shader: ContactShader = 'near',
   ) {
-    let fragment = shader === 'first' ? AO_FS_FIRST : AO_FS_NEAR;
-    if (shader === 'cross') {
-      const cross = crossShader();
-      if (cross === '') {
-        core.reportError("render core: the contact shadow's candidate shader could not be made from the near field's text; running the near field's");
-        shader = 'near';
-      } else fragment = cross;
-    }
+    const fragment = shader === 'first' ? AO_FS_FIRST : AO_FS_NEAR;
     this.shader = shader;
     const entries: GPUBindGroupLayoutEntry[] = [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },

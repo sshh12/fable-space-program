@@ -166,7 +166,7 @@ test("mesh system: 'ocean.wetness' wets a hull below its wet line and nothing ab
   await expectNoErrors(page, pageLog);
 });
 
-test('soot and frost lie on the paint: frost in streaks and patches, soot as a graded density, and the clear coat under them is covered (requests vehicle-pad-1, -7)', async ({ page, pageLog }) => {
+test('soot and frost lie on the paint, each as a graded density, and the clear coat under them is covered (requests vehicle-pad-1, -7, -11)', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?probe=inputs,layers&sun=180,40&hud=0&paused=1&ev=13');
   await assertDiscreteGpu(page);
   await page.evaluate(() => {
@@ -299,7 +299,7 @@ test('soot and frost lie on the paint: frost in streaks and patches, soot as a g
   await expectNoErrors(page, pageLog);
 });
 
-test('frost as a coat with a thickness (request vehicle-pad-11, the candidate shader `frost=v2`) beside the coverage mask: no edge that the weight does not have', async ({ page, pageLog }) => {
+test('frost is a coat with a thickness (request vehicle-pad-11): it grows with the weight everywhere at once, with no edge that the weight does not have', async ({ page, pageLog }) => {
   /** The sunlit face of the layers panel under frost of the given weights: mean, darkest and brightest pixel against the clean paint, and the 99th percentile of the step between neighbours across the runnels. */
   const measure = async (query: string, tag: string): Promise<Record<string, { mean: number; min: number; max: number; step99: number; bare: number; full: number }>> => {
     await openPage(page, `/labs/render-core/?probe=inputs,layers&sun=180,40&hud=0&paused=1&ev=13${query}`);
@@ -355,23 +355,26 @@ test('frost as a coat with a thickness (request vehicle-pad-11, the candidate sh
     await expectNoErrors(page, pageLog);
     return out;
   };
-  const mask = await measure('', 'mask');
-  const coat = await measure('&frost=v2', 'coat');
-  for (const [name, r] of [['mask', mask], ['coat', coat]] as const) {
-    console.log(
-      `frost as a ${name}: ` +
-        Object.entries(r)
-          .map(([w, v]) => `weight ${w}: mean ${v.mean.toFixed(2)} (${v.min.toFixed(2)} .. ${v.max.toFixed(2)}), bare ${(100 * v.bare).toFixed(0)} %, full ${(100 * v.full).toFixed(0)} %, 99 % of the steps between neighbours under ${v.step99.toFixed(3)}`)
-          .join('; '),
-    );
-  }
+  // (Measured beside the coverage mask it replaced, 2026-11-12 19:05: at weight 0.35 the mask had its darkest
+  // pixel at 1.72 and its brightest at 3.23 of the clean level, the full coat's, and 99 % of the steps
+  // between neighbours under 0.47 of the way from paint to coat: dashes. The coat: 1.96 .. 2.72 and 0.046.)
+  const coat = await measure('', 'coat');
+  console.log(
+    'frost as a coat: ' +
+      ['0.12', '0.35', '0.5', '0.75', '1']
+        .map((w) => [w, coat[w]!] as const)
+        .map(([w, v]) => `weight ${w}: mean ${v.mean.toFixed(2)} (${v.min.toFixed(2)} .. ${v.max.toFixed(2)}), bare ${(100 * v.bare).toFixed(0)} %, full ${(100 * v.full).toFixed(0)} %, 99 % of the steps between neighbours under ${v.step99.toFixed(3)}`)
+        .join('; '),
+  );
   // The coat grows with the weight, everywhere at once: brighter with every weight, and at an in-between
   // weight no pixel bare beside pixels of the full coat (the mask's dashes).
-  const weights = Object.keys(coat);
+  const weights = ['0.12', '0.35', '0.5', '0.75', '1'];
   for (let i = 1; i < weights.length; i++) expect.soft(coat[weights[i]!]!.mean, `weight ${weights[i]}`).toBeGreaterThanOrEqual(coat[weights[i - 1]!]!.mean - 0.01);
   expect.soft(Math.min(coat['0.35']!.bare, coat['0.35']!.full), 'bare paint beside full coat at weight 0.35').toBeLessThan(0.02);
   expect.soft(Math.min(coat['0.5']!.bare, coat['0.5']!.full), 'bare paint beside full coat at weight 0.5').toBeLessThan(0.02);
-  expect.soft(coat['0.5']!.step99, 'steps between neighbours at half weight').toBeLessThan(mask['0.5']!.step99);
+  // (Measured 2026-11-12: 99 % of the steps between neighbours under 0.046 of the way from paint to full coat, 0.48 with the mask.)
+  expect.soft(coat['0.35']!.step99, 'steps between neighbours under a thin coat').toBeLessThan(0.1);
+  expect.soft(coat['0.5']!.step99, 'steps between neighbours at half weight').toBeLessThan(0.1);
   // The full coat is the brightest thing on the panel and dead matte; a thin one hazes every pixel.
   expect.soft(coat['1']!.mean).toBeGreaterThan(2.3);
   expect.soft(coat['0.35']!.min, 'the barest pixel under a thin coat').toBeGreaterThan(1.2);

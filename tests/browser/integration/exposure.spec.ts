@@ -196,11 +196,13 @@ test('from the seat the Earth in the window is shown at its own exposure and the
     `EV100 ${v.ev100.toFixed(2)}, outside ${(100 * v.outsideFraction).toFixed(1)} % of the frame (weight ${v.outsideWeight.toFixed(2)}), gain on it ${v.farGain.toFixed(4)} (weight ${v.farWeight.toFixed(2)}), outside shown at ${v.outside.mean.toFixed(2)} (${(100 * v.outside.over).toFixed(1)} % above 2), cabin at ${v.cabin.mean.toFixed(4)}`;
   console.log(`window metering [${info.loaded.join(', ')}], sunny 16 = ${seat!.sunny16.toFixed(2)}: from the seat ${line(seat!)}; leaning to the window ${line(leaning!)}; back in the seat ${line(back!)}`);
   record('f.windowMetering', { loaded: info.loaded, seat, leaning, back });
-  // From the seat the windows are a twentieth of the frame: the cabin is metered and keyed low (two stops and
-  // a quarter under mid-grey at most), and what shows through the windows has its own exposure: nine stops
-  // over the cabin without it (every pixel far above white), now with its brightest tenth just under white.
-  expect(seat!.outsideFraction).toBeLessThan(0.1);
-  expect(seat!.outsideWeight).toBe(0);
+  // From the seat the windows are a seventh of the frame (the pilot's centre couch since 01c4d2f: both forward
+  // windows; from the commander's it was a twentieth): the cabin is metered and keyed low (two stops and a
+  // quarter under mid-grey at most), the rule for windows that fill the frame (request cockpit-7, from a
+  // tenth of it) has barely begun, and what shows through the windows has its own exposure: nine stops over
+  // the cabin without it (every pixel far above white), now with its brightest tenth just under white.
+  expect(seat!.outsideFraction).toBeLessThan(0.2);
+  expect(seat!.outsideWeight).toBeLessThan(0.15);
   expect(seat!.farWeight).toBeGreaterThan(0.9);
   expect(seat!.ev100).toBeLessThan(seat!.sunny16 - 4);
   expect(seat!.farGain).toBeLessThan(0.1);
@@ -222,7 +224,7 @@ test('from the seat the Earth in the window is shown at its own exposure and the
   expect(leaning!.outside.over).toBeLessThan(0.02);
   expect(leaning!.cabin.mean).toBeLessThan(0.02);
   // Back in the seat the cabin is readable again, and the window has its own exposure again.
-  expect(back!.outsideWeight).toBe(0);
+  expect(back!.outsideWeight).toBeLessThan(0.15);
   expect(back!.cabin.mean).toBeGreaterThan(0.008);
   expect(back!.farGain).toBeLessThan(0.1);
   await expectClean(page, pageLog, info);
