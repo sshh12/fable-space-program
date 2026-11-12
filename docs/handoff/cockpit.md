@@ -929,9 +929,14 @@ the seat, the older open items, and three items to track that belong to other pa
     `look-*.png`, `perf-1440p-leo-seat.png`, `attribution/*.png` (the cockpit lab): **the layout's
     `camera.defaultSeat`** (the pilot's centre couch), except where a recipe places the eye by an absolute
     point (`world-moon-horizon`, `hatch-mechanism`).
-  - `app-*.png` (the real app): **the rig's seat**. The rig (src/camera, not the cockpit's) takes the craft's
-    own camera seat, the commander's, until request `cockpit-21` is answered; `app.spec.ts` is aimed for
-    either couch and logs which one each picture was taken from and why.
+  - `app-*.png` (the real app): **the layout's `camera.defaultSeat`, read by the rig**. The shared-code
+    maintainer answered request `cockpit-21` during the round (b2406ef: the rig sits in the layout's default
+    seat and has `cycleSeat()`); the final run's log says for all six app pictures "eye at the plt couch (the
+    cockpit layout's camera.defaultSeat, read by the rig)". `app.spec.ts` stays aimed for either couch and
+    logs the seat and its source. The cycle-seat KEY and its wiring are not in yet (request `core-6`, the
+    maintainer's, to flight-ui / the lead).
+  - No final picture was taken with the vehicle's seat changed: the second of the three GPU runs of this round
+    straddled the revert and was discarded; every picture in `out/screens/cockpit` is from the third.
 - Unit: the centre couch's line of sight through BOTH forward windows and to all three displays
   (`geometry.test.ts`), the default seat and its fallback.
 - Lab scenes, world recipes and the perf view are aimed for the centre couch at the rig's rest pitch (20 deg).
@@ -945,8 +950,11 @@ the seat, the older open items, and three items to track that belong to other pa
   down to NoL 0.12 (was 0.25).
 - Clipping: `sunShoulder` (shaders.ts): sunlit luminance above 0.7 of the frame's exposed white is laid on a
   logarithmic shoulder (each stop adds 0.4 ln 2 of the knee); not in the cabin probe (the patch's bounce is its
-  true light). First pass (knee 0.8, gain 0.5), `world-leo-pilot-seat.png`: bezel in the patch 197 (round 5:
-  245), screen 190 with its page readable, no pixel at 250 or more in the patch.
+  true light). `world-leo-pilot-seat.png` (final): bezel in the patch 186-192 (round 5: 245), the screen in
+  the patch 186 with its page readable, no pixel at 250 or more in the patch.
+- Left over, seen at full size: the penumbra on a panel the sun grazes is finely grained, and a cluster of
+  three or four teeth remains at one corner of the bezel's shadow (`closeup-mfd.png` x 1040-1090, y 490-520;
+  `world-leo-pilot-seat.png` x 520-560, y 700-750).
 
 ### 12.3 New faults
 - Harness: adjusters, guide bars and anchor plates are placed by `threaded()` on the strap's own top surface
@@ -977,7 +985,10 @@ the seat, the older open items, and three items to track that belong to other pa
 - Hatch door bands: the pocket floor has cells of about a centimetre (24 rings, twice the points round the
   loop). `hatch-mechanism.png`, `attribution/night-hatch-lamp-shadows.png`: no wedges; a faint mottling stays.
 - Apex starburst: `MeshBuilder.disc` builds rings whose vertex counts follow the circumference and stitches
-  neighbours by angle (near-square cells to the centre). New view `look-up-docking-hatch.png`.
+  neighbours by angle (near-square cells to the centre). New view `look-up-docking-hatch.png` (the seat's
+  look pitched 78 degrees up): the apex is at the frame's top edge, smooth, no spokes in the part in view; the
+  hatch's centre is beyond the look limit of that view, so the face as a whole is not shown from inside.
+  `lab/chase-window-night.png` (through the window) is unchanged against the first pass.
 - Members in mid-air: ring frames end in a riveted fitting where they stop at an opening's surround (the bars
   the critic took for stringers); the flood's swivel barrel is centred on the housing (it stood out 3 cm to one
   side as an open tube end); every aluminium post has a collar at the wall.
@@ -999,4 +1010,37 @@ the seat, the older open items, and three items to track that belong to other pa
 
 ### 12.7 Performance (1440p, perf spec, GPU kept busy by 7 ms of ballast)
 The perf spec now measures the same lines with the cabin's sun map rendered in every frame
-(`ABLATE.sunMapCache`), as it is while the vessel turns, and asserts both states.
+(`ABLATE.sunMapCache`), as it is while the vessel turns, and asserts both states. Three runs this round, all
+passing (line: interior under 0.8 ms, total under 1.2 ms):
+
+| run | interior p99, vessel still | interior p99, turning | total still / turning | sun map while turning |
+|---|---|---|---|---|
+| 1 | 0.699 | 0.721 | 0.757 / 0.779 | 0.039 |
+| 2 | 0.701 | 0.743 | 0.761 / 0.803 | 0.038 |
+| 3 (final) | 0.455 | 0.731 | 0.515 / 0.791 | 0.038 |
+
+The G-buffer pass's median is 0.36-0.38 ms in every run; its p99 moves between 0.38 and 0.64 ms with single
+slow frames (cause still not found, as in round 5), so the interior's p99 holds the line with a margin of
+0.06-0.10 ms, not more. Glass p99 0.044-0.046, display uploads 0.014-0.015 GPU and 0.363 ms/frame CPU (line
+0.4), the feature's `prepare` 0.54-0.67 ms/frame of main thread including the displays.
+
+### 12.8 What was looked at
+All 43 pictures of the first run (22 in the folder, 8 in `lab/`, 12 A/B pictures in `attribution/`, the new
+tunnel view) as contact sheets of four at 784 px per picture, with full-size crops of the sun patch. The
+third (final) run was compared with the first pixel by pixel: 39 pictures differ by under 1 level on average
+(under 0.2 % of pixels by more than 12 levels), the four that differ (`closeup-mfd`, `world-leo-pilot-seat`,
+`world-reentry-plasma`, `look-up-docking-hatch`) and the regions the fixes touch (patch edges, seat fabric,
+the frame's end at the console) were looked at again at full size. The 13 stale probe framings of round 5
+were deleted from `attribution/probe/`.
+
+### 12.9 Verification at the end of the round
+Scoped typecheck of the package's paths; `tests/unit/cockpit`, `src/core/defs` and
+`tools/dev/boundaries.test.ts`: 174 tests passing; penetration check at zero pairs, overlays against their
+own hardware included; browser: 15 of 15 (attribution, 12 A/B pictures, the functional suite's 36 and the
+perf spec in one GPU slot).
+
+### 12.10 Honest score
+Photo 6.5, artifact 7. What still caps the photo lens is mostly in the panes and not the cockpit's (popcorn
+Earth, flat re-entry panes, well grain), plus the cockpit's own: a clean, sparse set (the parked items are
+small), a hatch area still built of plain parts, a night cabin that is graded but not pooled, lockers at odd
+angles, a stiff cue card.
