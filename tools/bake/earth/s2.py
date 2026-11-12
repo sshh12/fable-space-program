@@ -22,9 +22,24 @@ OCEAN_ZOOM = 12
 
 
 def tile_sets(region: dict) -> tuple[list[tuple[int, int]], list[tuple[int, int]], int]:
-    """(z14 tiles, z12 tiles, z14) for a region: computed from the Terrarium survey mosaic."""
+    """(z14 tiles, z12 tiles, z14) for a region: computed from the Terrarium survey mosaic, cached in
+    data/cache/earth/work (every worker process asks for them; the survey's distance transform costs about 2 GB on a
+    long coast)."""
+    import json
     z_land = int(region["sources"]["albedo"]["zoom"])
     lat0, lat1, lon0, lon1 = regmod.source_bbox(region, 2.0)
+    p = paths.WORK / f"s2-tilesets-z{z_land}-{lat0:.4f}-{lat1:.4f}-{lon0:.4f}-{lon1:.4f}-{LAND_BUFFER_KM:g}.json"
+    if p.is_file():
+        d = json.loads(p.read_text(encoding="utf-8"))
+        return [tuple(t) for t in d["land"]], [tuple(t) for t in d["ocean"]], int(d["z"])
+    land, ocean, z = _tile_sets(region, z_land, lat0, lat1, lon0, lon1)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"land": land, "ocean": ocean, "z": z}), encoding="utf-8")
+    tmp.replace(p)
+    return land, ocean, z
+
+
+def _tile_sets(region: dict, z_land: int, lat0: float, lat1: float, lon0: float, lon1: float):
     zs = OCEAN_ZOOM
     x0, y0, x1, y1 = merc.tile_range(lat0, lat1, lon0, lon1, zs)
     ocean = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
