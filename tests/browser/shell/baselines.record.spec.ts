@@ -7,8 +7,10 @@
  *
  * records every checkpoint of tests/browser/baselines.manifest.json that has a page (BASELINE_ONLY=a,b
  * limits it to the named ones; a checkpoint that is already recorded is re-recorded only when it is named
- * there): two fresh loads, the first capture into data/baselines/<name>.png, the tolerance three times the
- * difference between the two (at least the manifest's floor), the note into the manifest. The lead then
+ * there): three fresh loads captured frame-exactly (window.__test.renderExact), the first capture into
+ * data/baselines/<name>.png, the tolerance three times the largest difference between any two of them (at
+ * least the manifest's floor), the note into the manifest. A checkpoint whose loads differ visibly is not a
+ * reference yet: find what varies first. The lead then
  * LOOKS at every PNG, commits the manifest and keeps a copy of data/baselines outside the working tree.
  * A checkpoint whose `page` is null is framed first (the lab parameters are in labs/integration/main.ts).
  *
@@ -37,7 +39,7 @@ test.describe('reference images: record', () => {
     test(`record ${name}`, async ({ page }) => {
       test.setTimeout(15 * 60_000);
       test.skip(c.page === null, `${name} has no page yet: frame it in the manifest first (${c.what})`);
-      const { entry, selfDifference } = await recordBaseline(
+      const { entry, selfDifference, loads } = await recordBaseline(
         page,
         name,
         async (p) => {
@@ -46,7 +48,7 @@ test.describe('reference images: record', () => {
         },
         { note },
       );
-      console.log(`[baseline] ${name}: recorded ${entry.file} (${entry.width} x ${entry.height}, sha256 ${entry.sha256!.slice(0, 16)}); two recordings differ by mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}; tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
+      console.log(`[baseline] ${name}: recorded ${entry.file} (${entry.width} x ${entry.height}, sha256 ${entry.sha256!.slice(0, 16)}); ${loads} loads differ by at most mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}; tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
     });
   }
 });

@@ -424,11 +424,16 @@ export function expectNominalClock(clock: FrameClockStats, label = 'harness cloc
  * is captured from, the file, its sha256 and its tolerance. Packages that touch the renderer compare with
  * compareToBaseline / expectBaseline and never record.
  *
- * Deterministic mode: the page is opened with frozen presentation time (the labs' `deterministic=1&paused=1`,
- * the app's window.__test.setDeterministic / setPaused), streaming is idle (window.__test.isIdle()), and
- * `frames` further frames have been presented so temporal accumulation has converged. The site data a
- * recording was made on (the tile sets' content hashes) is stored with it: a comparison against other data
- * says so.
+ * Deterministic, FRAME-EXACT capture. The page is opened with frozen presentation time (the labs'
+ * `deterministic=1&paused=1`, the app's window.__test.setDeterministic / setPaused). When streaming is idle
+ * the harness calls window.__test.renderExact(frames): the page restarts every temporal sequence (jitter,
+ * noise, histories, exposure), renders exactly `frames` frames and holds the last one on screen; the
+ * screenshot is of that held frame. Waiting "about N frames" and then taking a screenshot from Node is NOT
+ * a capture: anything that integrates over frames is then at a different phase on every load (measured:
+ * 18 % of the pixels of a low-orbit view differed between two loads, which forced a tolerance a 130 x 130
+ * pixel change could pass under). A page without renderExact cannot be a source of reference images.
+ * The environment a recording was made in (the tile sets' content hashes, the Chrome version, the adapter)
+ * is stored with it: a comparison made in another environment says so.
  *
  * Difference measure, on 8-bit sRGB values, alpha ignored:
  *   meanAbs  mean over all pixels and the three channels of |a - b|
@@ -436,8 +441,10 @@ export function expectNominalClock(clock: FrameClockStats, label = 'harness cloc
  * so that a change of one pixel row of a 720-row image (0.139 % of the pixels) moves p999, and a faint
  * change everywhere moves meanAbs.
  *
- * Tolerance: each checkpoint is recorded twice (two fresh page loads); its tolerance is three times the
- * difference between the two recordings, and never below the manifest's floor.
+ * Tolerance: each checkpoint is captured from three or more fresh page loads; its tolerance is three times
+ * the largest difference between any two of them, and never below the manifest's floor. With a frame-exact
+ * capture that difference is what the GPU itself does not repeat, which is nothing or nearly nothing; a
+ * checkpoint whose loads differ visibly is not accepted as a reference until the cause is found.
  */
 export interface BaselineTolerance {
   meanAbs: number;
@@ -458,8 +465,9 @@ export interface BaselineCheckpoint {
   width?: number;
   height?: number;
   tolerance?: BaselineTolerance;
-  /** Difference between the two recordings the tolerance was derived from. */
+  /** Largest difference between any two of the recording's loads, which the tolerance was derived from, and how many loads there were. */
   selfDifference?: BaselineTolerance;
+  loads?: number;
   recorded?: { at: string; commit: string; chrome: string; adapter: string; tiles: Record<string, string>; note: string };
 }
 
@@ -490,6 +498,8 @@ export interface BaselineComparison extends ImageDifference {
   pass: boolean;
   /** Tile sets whose content hash differs from the recording's ("earth ab20... -> 77c1..."); empty when the data is the recorded snapshot. */
   dataChanged: string[];
+  /** What else differs from the recording's environment: the Chrome version, the adapter ("chrome 157.0.8103.78 -> 158.0.8200.10"). */
+  environmentChanged: string[];
   /** Written when the comparison fails: the capture and a difference image (differences amplified 8x), for looking at. */
   actualFile: string | null;
   diffFile: string | null;
@@ -562,17 +572,45 @@ export function imageDifference(a: Buffer, b: Buffer): ImageDifference & { diff:
   return { meanAbs: sum / (n * 3), p999, maxAbs: max, differingFraction: differing / n, width: A.width, height: A.height, diff: PNG.sync.write(out) };
 }
 
+/** Loads a frame-exact capture may need before streaming stays idle through its frames. */
+const EXACT_ATTEMPTS = 5;
+
 /**
- * Bring the page to its deterministic, converged state and take the screenshot. The page must already be
- * open in deterministic mode (see above); this waits for idle streaming and `frames` presented frames.
+ * The frame-exact capture of a reference image: wait for idle, have the page restart its temporal sequences,
+ * render exactly `frames` frames and hold the last (window.__test.renderExact), then take the screenshot of
+ * the held frame. If work arrived while the frames were rendered the frame is not the reference frame: wait
+ * for idle and ask again. The page must already be open in deterministic mode.
  */
 export async function captureDeterministic(page: Page, frames = 64, timeoutMs = 180_000): Promise<Buffer> {
+  await page.waitForFunction(() => window.__test !== undefined, undefined, { timeout: timeoutMs });
+  if (!(await page.evaluate(() => typeof window.__test!.renderExact === 'function'))) {
+    throw new Error('this page has no window.__test.renderExact (request lead-3): a reference image cannot be captured frame-exactly from it. For a screenshot that is not a reference use captureSettled.');
+  }
+  for (let attempt = 1; attempt <= EXACT_ATTEMPTS; attempt++) {
+    await page.waitForFunction(() => window.__test!.isIdle(), undefined, { timeout: timeoutMs });
+    const held = await page.evaluate((n) => window.__test!.renderExact!(n), frames);
+    if (held.frames !== frames) throw new Error(`renderExact(${frames}) held frame ${held.frames}`);
+    if (held.idle) return page.screenshot();
+  }
+  throw new Error(`streaming did not stay idle through ${frames} frames in ${EXACT_ATTEMPTS} attempts: the page is not settled enough for a reference image`);
+}
+
+/**
+ * A screenshot of a settled page for looking at, NOT a reference image: waits for idle, lets `frames` frames
+ * pass and takes the picture. Which frame it shows differs from load to load.
+ */
+export async function captureSettled(page: Page, frames = 64, timeoutMs = 180_000): Promise<Buffer> {
   await page.waitForFunction(() => window.__test !== undefined && window.__test.isIdle(), undefined, { timeout: timeoutMs });
   await page.evaluate((n) => window.__test!.waitFrames(n), frames);
-  // Streaming may have resumed while the frames were presented (a tile finished decoding): settle once more.
   await page.waitForFunction(() => window.__test!.isIdle(), undefined, { timeout: timeoutMs });
   await page.evaluate(() => window.__test!.waitFrames(4));
   return page.screenshot();
+}
+
+/** The Chrome version and the adapter of a page, as stored with a recording. */
+async function environmentOf(page: Page): Promise<{ chrome: string; adapter: string }> {
+  const adapter = await page.evaluate(() => window.__test?.adapter ?? null);
+  return { chrome: page.context().browser()?.version() ?? 'unknown', adapter: adapter ? `${adapter.vendor} ${adapter.description}`.trim() : 'unknown' };
 }
 
 function baselineEntry(m: BaselineManifest, name: string): BaselineCheckpoint {
@@ -604,6 +642,10 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
     .sort()
     .filter((k) => then[k] !== now[k])
     .map((k) => `${k} ${then[k] ?? 'absent'} -> ${now[k] ?? 'absent'}`);
+  const env = await environmentOf(page);
+  const environmentChanged: string[] = [];
+  if (entry.recorded && entry.recorded.chrome !== env.chrome) environmentChanged.push(`chrome ${entry.recorded.chrome} -> ${env.chrome}`);
+  if (entry.recorded && entry.recorded.adapter !== env.adapter) environmentChanged.push(`adapter ${entry.recorded.adapter} -> ${env.adapter}`);
   let actualFile: string | null = null;
   let diffFile: string | null = null;
   if (!pass) {
@@ -614,7 +656,7 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
     fs.writeFileSync(actualFile, actual);
     fs.writeFileSync(diffFile, d.diff);
   }
-  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, pass, dataChanged, actualFile, diffFile };
+  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, pass, dataChanged, environmentChanged, actualFile, diffFile };
 }
 
 /** One line for logs and failure messages. */
@@ -623,6 +665,7 @@ export function describeComparison(c: BaselineComparison): string {
     `${c.name}: mean |diff| ${c.meanAbs.toFixed(4)} (tolerance ${c.tolerance.meanAbs.toFixed(4)}), 99.9th percentile ${c.p999} (tolerance ${c.tolerance.p999}), ` +
     `max ${c.maxAbs}, ${(c.differingFraction * 100).toFixed(3)} % of pixels differ` +
     (c.dataChanged.length > 0 ? `; SITE DATA CHANGED since the recording: ${c.dataChanged.join(', ')}` : '') +
+    (c.environmentChanged.length > 0 ? `; ENVIRONMENT CHANGED since the recording: ${c.environmentChanged.join(', ')}` : '') +
     (c.actualFile ? `; see ${path.relative(repoRoot, c.actualFile)} and ${path.relative(repoRoot, c.diffFile!)}` : '')
   );
 }
@@ -634,28 +677,43 @@ export async function expectBaseline(page: Page, name: string, opts: BaselineSto
   return c;
 }
 
+/** Fresh page loads a recording is made from (the tolerance comes from their largest pairwise difference). */
+export const BASELINE_LOADS = 3;
+
 /**
  * Record the reference image of checkpoint `name` (THE LEAD'S ACT: `note` is the signed note that goes into
  * the manifest; a package never calls this). `open` navigates the page to the checkpoint in deterministic
- * mode; it is called twice, for two fresh loads. The first capture becomes the reference; the tolerance is
- * three times the difference between the two captures, at least the manifest's floor.
+ * mode; it is called once per load, `loads` times (at least three), each a fresh navigation. The first
+ * capture becomes the reference; the tolerance is three times the largest difference between any two of the
+ * captures, at least the manifest's floor.
  */
 export async function recordBaseline(
   page: Page,
   name: string,
   open: (page: Page) => Promise<void>,
-  opts: BaselineStore & { note: string },
-): Promise<{ entry: BaselineCheckpoint; selfDifference: ImageDifference }> {
+  opts: BaselineStore & { note: string; loads?: number },
+): Promise<{ entry: BaselineCheckpoint; selfDifference: ImageDifference; loads: number }> {
   if (!opts.note || opts.note.trim().length < 8) throw new Error('recordBaseline needs the lead-signed note (who, when, why)');
+  const loads = opts.loads ?? BASELINE_LOADS;
+  if (loads < BASELINE_LOADS) throw new Error(`a reference image is recorded from at least ${BASELINE_LOADS} loads (asked for ${loads})`);
   const manifestFile = opts.manifestFile ?? BASELINE_MANIFEST_FILE;
   const m = readBaselineManifest(opts);
   const entry = baselineEntry(m, name);
-  await open(page);
-  const first = await captureDeterministic(page, entry.frames);
-  await page.goto('about:blank');
-  await open(page);
-  const second = await captureDeterministic(page, entry.frames);
-  const self = imageDifference(first, second);
+  const captures: Buffer[] = [];
+  for (let k = 0; k < loads; k++) {
+    if (k > 0) await page.goto('about:blank');
+    await open(page);
+    captures.push(await captureDeterministic(page, entry.frames));
+  }
+  const first = captures[0]!;
+  // The largest difference between any two loads, statistic by statistic.
+  let self = imageDifference(first, first);
+  for (let a = 0; a < captures.length; a++) {
+    for (let b = a + 1; b < captures.length; b++) {
+      const d = imageDifference(captures[a]!, captures[b]!);
+      self = { ...d, meanAbs: Math.max(self.meanAbs, d.meanAbs), p999: Math.max(self.p999, d.p999), maxAbs: Math.max(self.maxAbs, d.maxAbs), differingFraction: Math.max(self.differingFraction, d.differingFraction) };
+    }
+  }
   const tolerance: BaselineTolerance = {
     meanAbs: Math.max(m.floor.meanAbs, 3 * self.meanAbs),
     p999: Math.max(m.floor.p999, 3 * self.p999),
@@ -664,7 +722,7 @@ export async function recordBaseline(
   fs.mkdirSync(dir, { recursive: true });
   const file = `${name}.png`;
   fs.writeFileSync(path.join(dir, file), first);
-  const adapter = await page.evaluate(() => window.__test?.adapter ?? null);
+  const env = await environmentOf(page);
   const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' });
   const recorded: BaselineCheckpoint = {
     ...entry,
@@ -675,16 +733,17 @@ export async function recordBaseline(
     height: self.height,
     tolerance,
     selfDifference: { meanAbs: self.meanAbs, p999: self.p999 },
+    loads,
     recorded: {
       at: new Date().toISOString(),
       commit: head.status === 0 ? head.stdout.trim() : 'unknown',
-      chrome: page.context().browser()?.version() ?? 'unknown',
-      adapter: adapter ? `${adapter.vendor} ${adapter.description}`.trim() : 'unknown',
+      chrome: env.chrome,
+      adapter: env.adapter,
       tiles: tileSnapshot(),
       note: opts.note.trim(),
     },
   };
   m.checkpoints[name] = recorded;
   fs.writeFileSync(manifestFile, `${JSON.stringify(m, null, 1)}\n`);
-  return { entry: recorded, selfDifference: self };
+  return { entry: recorded, selfDifference: self, loads };
 }

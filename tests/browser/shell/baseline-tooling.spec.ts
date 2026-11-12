@@ -5,7 +5,9 @@
  *     faint change everywhere, a one-pixel-row change, a size mismatch; and the tracked manifest's shape.
  *  2. With BASELINE_TOOLING_PROOF=1 (the lead's proof, minutes of GPU): on a PROOF manifest under
  *     out/qa/baseline-proof/ (never the tracked one), for the checkpoints named in BASELINE_PROOF_CHECKPOINTS
- *     (default leo-day and translunar-earth): record twice, derive the tolerance, compare a third capture
+ *     (default leo-day and translunar-earth): record from three fresh loads with the frame-exact capture
+ *     (window.__test.renderExact, request lead-3: until the render core has it this part fails with that
+ *     message, and nothing is recorded), derive the tolerance, compare one more capture
  *     (must be clean), then change one pixel row of that capture and compare again (must fail), and check
  *     that a modified reference file is refused.
  *
@@ -30,6 +32,7 @@ import {
   readBaselineManifest,
   recordBaseline,
   test,
+  type BaselineComparison,
   type BaselineManifest,
 } from '../harness';
 
@@ -99,6 +102,19 @@ test.describe('reference images: the difference measure', () => {
     expect(() => imageDifference(base, image(W, H - 1, () => [0, 0, 0]))).toThrow(/size mismatch/);
   });
 
+  test('a comparison names what changed around it: tile sets, the Chrome version, the adapter', () => {
+    const c: BaselineComparison = {
+      name: 'leo-day', meanAbs: 0.5, p999: 9, maxAbs: 40, differingFraction: 0.2, width: W, height: H, tolerance: { meanAbs: 0.02, p999: 1 }, pass: false,
+      dataChanged: ['moon d250015b4e1a23f8 -> 597c5d666b132450'],
+      environmentChanged: ['chrome 157.0.8103.78 -> 158.0.8200.10', 'adapter nvidia RTX 5090 -> nvidia RTX 5090 (driver 620.10)'],
+      actualFile: null, diffFile: null,
+    };
+    const text = describeComparison(c);
+    expect(text).toContain('SITE DATA CHANGED since the recording: moon d250015b4e1a23f8 -> 597c5d666b132450');
+    expect(text).toContain('ENVIRONMENT CHANGED since the recording: chrome 157.0.8103.78 -> 158.0.8200.10, adapter nvidia RTX 5090 -> nvidia RTX 5090 (driver 620.10)');
+    expect(describeComparison({ ...c, dataChanged: [], environmentChanged: [] })).not.toMatch(/CHANGED/);
+  });
+
   test('the tracked manifest lists the checkpoints of ARCHITECTURE 31.3 and is well formed', () => {
     const m = readBaselineManifest();
     expect(m.dir).toBe('data/baselines');
@@ -119,7 +135,8 @@ test.describe('reference images: the difference measure', () => {
         expect(c.sha256, name).toMatch(/^[0-9a-f]{64}$/);
         expect(c.tolerance!.meanAbs, name).toBeGreaterThanOrEqual(m.floor.meanAbs);
         expect(c.tolerance!.p999, name).toBeGreaterThanOrEqual(m.floor.p999);
-        // At least three times the difference between the two recordings.
+        // At least three times the largest difference between any two of its loads, of which there are three or more.
+        expect(c.loads, name).toBeGreaterThanOrEqual(3);
         expect(c.tolerance!.meanAbs, name).toBeGreaterThanOrEqual(3 * c.selfDifference!.meanAbs);
         expect(c.tolerance!.p999, name).toBeGreaterThanOrEqual(3 * c.selfDifference!.p999);
         expect(c.recorded!.note.length, name).toBeGreaterThan(8);
@@ -131,7 +148,7 @@ test.describe('reference images: the difference measure', () => {
   });
 });
 
-test.describe('reference images: record twice, compare a third capture, catch one pixel row', () => {
+test.describe('reference images: record from three loads, compare one more capture, catch one pixel row', () => {
   test.skip(!process.env.BASELINE_TOOLING_PROOF, 'the proof costs minutes of GPU: BASELINE_TOOLING_PROOF=1');
   const proofDir = path.join(repoRoot, 'out', 'qa', 'baseline-proof');
   const manifestFile = path.join(proofDir, 'manifest.json');
@@ -159,9 +176,10 @@ test.describe('reference images: record twice, compare a third capture, catch on
         await assertDiscreteGpu(p);
       };
 
-      // Record twice (two fresh loads); the tolerance comes from their difference.
-      const { entry, selfDifference } = await recordBaseline(page, name, open, { ...store, note: 'tooling proof by lead-baseline-v2 (not a reference of the game)' });
-      console.log(`[baseline proof] ${name}: two recordings differ by mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}, max ${selfDifference.maxAbs} (${(selfDifference.differingFraction * 100).toFixed(3)} % of pixels); tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
+      // Record from three fresh loads; the tolerance comes from the largest difference between any two.
+      const { entry, selfDifference, loads } = await recordBaseline(page, name, open, { ...store, note: 'tooling proof by lead-baseline-v2 (not a reference of the game)' });
+      expect(loads).toBeGreaterThanOrEqual(3);
+      console.log(`[baseline proof] ${name}: ${loads} loads differ by at most mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}, max ${selfDifference.maxAbs} (${(selfDifference.differingFraction * 100).toFixed(3)} % of pixels); tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
       expect(entry.tolerance!.meanAbs).toBeGreaterThanOrEqual(3 * selfDifference.meanAbs);
       expect(entry.tolerance!.p999).toBeGreaterThanOrEqual(3 * selfDifference.p999);
 
