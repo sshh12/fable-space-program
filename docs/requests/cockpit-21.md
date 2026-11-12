@@ -1,4 +1,4 @@
-Status: open
+Status: resolved for the rig and the labs (the seat is the cockpit layout's camera.defaultSeat, read by the rig; rig.cycleSeat(); unit-tested, not run in the browser); the key and its wiring: request core-6 (flight-ui, the lead)
 From: cockpit
 Owner path: src/camera/cockpitRig.ts (the seat the rig sits in), src/input/bindings.ts (a cycle-seat action), src/app/game.ts (its wiring); shared-code maintainer
 Blocking: no   (the cockpit's own pictures select the seat through the layout already; the app's cockpit view does not until the rig does)
@@ -56,3 +56,34 @@ commander's couch again: `out/screens/cockpit/app-leo-seat.png`.
 `out/screens/cockpit/app-leo-seat.png` shows the three displays under both forward windows (as
 `world-leo-pilot-seat.png` does), the app spec's log says "the cockpit layout's camera.defaultSeat, read by
 the rig", and the cycle-seat key moves the eye to the commander's and the specialist's couch and back.
+
+## Resolution (shared-code maintainer, 2026-11-12 21:40): the rig's and the lab's half; the key is two other owners' (request core-6)
+
+1. **The seat the rig sits in** (`src/camera/cockpitRig.ts`), in your order: the seat chosen with
+   `cycleSeat` while the active vessel is the same; the cockpit layout's `camera.defaultSeat`; the craft's
+   own camera seat. src/camera may import src/core only, so the layout is read with the loader
+   (`listSections(defs, 'visuals/cockpits/')[cockpitId]?.camera?.defaultSeat`), as you offered. The command
+   part and the cabin come from the snapshot's craft (`CraftSnapshot.commandPart` and `.cockpit`: the craft
+   at the helm first, then the vessel's other craft with a cabin); a snapshot without craft (the FakeSim,
+   hand-built ones) is still resolved through `VehicleDef.cameras.cockpit` and `VehicleDef.cockpit`,
+   because `crafts` is optional in the contract until its tighten step. New exports of `@/camera`:
+   `cockpitHost`, `cockpitDefaultSeatId`, `cockpitSeatOrder`, `CockpitRig`, `CockpitHost`, `CockpitSeat`;
+   `findCockpitSeat(defs, vessel, seatId?)` and `resolveSeatPose(defs, vessel, seatId?)` take a seat and
+   `findCockpitSeat` no longer returns the vehicle (it returns `seatId` and `cockpitId`).
+2. **`rig.cycleSeat()`**: the next seat, wrapping round, the look back at the rest view (`restPitch`, yaw
+   0); it returns the seat's id; `rig.seatId` is the seat of the last update. The order is the command
+   part's own seats in the order of the layout's mould line where it lists them (cdr, plt, ms for the
+   Kestrel), read from the layout's `mouldLine` section; I did not import `cockpitSeatIds` (the boundary
+   above). Another vessel starts at its default again; taking the view again in the same vessel keeps the
+   chosen seat.
+   The action `cockpitSeat:next` and its wiring are not mine to write (`src/input/bindings.ts` is
+   flight-ui's, `src/app/game.ts` the lead's): filed as request `core-6` with your two lines.
+3. **The labs**: `labs/integration/main.ts` (`sitInCockpit`, `seatView`, the cabin's axes) takes the seat
+   from the rig's `findCockpitSeat`; `labs/flight-ui/main.ts` creates the same rig and needed no change.
+
+Checked: `tests/unit/flight-ui/camera.test.ts` (two new tests: the layout's default seat, the cycle, another
+vessel, no layout; the craft path), `tests/unit/camera`, your `tests/unit/cockpit/geometry.test.ts`: 66 of
+66. **Not run in the browser**: the GPU slot was more than an hour away when this went in. Your acceptance
+(`app-leo-seat.png` with the three displays under both forward windows, the app spec's log line) is yours
+to run; my integration seat test (`tests/browser/integration/exposure.spec.ts`, restated for the pilot's
+couch earlier today) will sit in the layout's seat too.

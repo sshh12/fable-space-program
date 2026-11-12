@@ -14,7 +14,11 @@ import {
   chaseDistanceLimits,
   COCKPIT_REST_PITCH,
   createChaseRig,
+  cockpitDefaultSeatId,
+  cockpitHost,
+  cockpitSeatOrder,
   createCockpitRig,
+  findCockpitSeat,
   createMapRig,
   createViewManager,
   MAP_MAX_DISTANCE,
@@ -305,6 +309,65 @@ describe('cockpit rig', () => {
     expect(rig.lookYaw).toBe(0);
     // A rest pitch beyond the limits is held at them.
     expect(createCockpitRig({ defs, restPitch: 2 }).lookPitch).toBeCloseTo(75 * DEG, 9);
+  });
+
+  it("sits in the cockpit layout's default seat, steps through the seats with cycleSeat, and starts at the default again in another vessel (request cockpit-21)", () => {
+    const s = sim('lowOrbit').snap();
+    const v = s.vessels[0]!;
+    // The lab vehicle's cabin is 'lab' and its own camera seat the commander's; a layout for it names the pilot's.
+    const withLayout: DefLibrary = {
+      ...defs,
+      sections: { ...defs.sections, 'visuals/cockpits/lab': { camera: { defaultSeat: 'plt' }, mouldLine: 'visuals/shared/lab-mould' }, 'visuals/shared/lab-mould': { seats: [{ id: 'cdr' }, { id: 'plt' }, { id: 'ms' }] } },
+    };
+    const eyeRoot = (id: string): Vec3 => v3.add(v.rRoot, quat.rotate(v.q, resolveSeatPose(withLayout, v, id)!.eyeVes));
+    expect(v3.dist(eyeRoot('plt'), eyeRoot('cdr'))).toBeGreaterThan(0.3);
+    const rig = createCockpitRig({ defs: withLayout });
+    expect(rig.seatId).toBeNull();
+    expect(rig.cycleSeat()).toBeNull();
+    rig.activate(null, s);
+    expect(v3.dist(rig.update(s, IDLE, DT).positionRoot, eyeRoot('plt'))).toBeLessThan(1e-6);
+    expect(rig.seatId).toBe('plt');
+    // The next seat in the mould line's order, with the look back at the rest view; then round.
+    rig.update(s, { yaw: 0.4, pitch: 0.2, zoom: 1 }, DT);
+    expect(rig.cycleSeat()).toBe('ms');
+    expect(rig.lookYaw).toBe(0);
+    expect(rig.lookPitch).toBe(COCKPIT_REST_PITCH);
+    expect(v3.dist(rig.update(s, IDLE, DT).positionRoot, eyeRoot('ms'))).toBeLessThan(1e-6);
+    expect(rig.seatId).toBe('ms');
+    expect(rig.cycleSeat()).toBe('cdr');
+    expect(rig.cycleSeat()).toBe('plt');
+    expect(rig.cycleSeat()).toBe('ms');
+    // Taking the view again keeps the chosen seat; another vessel starts at its default.
+    rig.activate(null, s);
+    rig.update(s, IDLE, DT);
+    expect(rig.seatId).toBe('ms');
+    const other: SimSnapshot = { ...s, activeVesselId: 'other', vessels: [{ ...v, id: 'other' }] };
+    expect(rig.isAvailable(other)).toBe(true);
+    rig.update(other, IDLE, DT);
+    expect(rig.seatId).toBe('plt');
+    // Without a layout the seat is the craft's own, and the cycle follows the part's seats.
+    const plain = createCockpitRig({ defs });
+    plain.update(s, IDLE, DT);
+    expect(plain.seatId).toBe('cdr');
+    expect(plain.cycleSeat()).toBe('plt');
+  });
+
+  it('finds the cabin through the craft of a snapshot that has them: its command part, its cabin, its own camera seat (request cockpit-21)', () => {
+    const s = sim('lowOrbit').snap();
+    const v = s.vessels[0]!;
+    // A vessel of a design the library does not know, whose craft names the part and the seat itself.
+    const craft = { id: 'c1', vehicleId: 'not-in-the-library', commandPart: 'capsule', cockpit: { id: 'lab', cameraSeat: 'ms', sensorMount: null } } as unknown as NonNullable<typeof v.crafts>[number];
+    const flown = { ...v, vehicleId: 'not-in-the-library', crafts: [craft] };
+    const host = cockpitHost(defs, flown)!;
+    expect(host.part.instanceId).toBe('capsule');
+    expect(host.cockpitId).toBe('lab');
+    expect(cockpitDefaultSeatId(defs, host)).toBe('ms');
+    expect(cockpitSeatOrder(defs, host)).toEqual(['cdr', 'plt', 'ms']);
+    expect(findCockpitSeat(defs, flown)!.seatId).toBe('ms');
+    expect(findCockpitSeat(defs, flown, 'cdr')!.seatId).toBe('cdr');
+    expect(findCockpitSeat(defs, flown, 'no-such-seat')).toBeNull();
+    // A craft without a cabin, and a design the library does not know: no cockpit view.
+    expect(cockpitHost(defs, { ...flown, crafts: [{ ...craft, cockpit: { id: null, cameraSeat: null, sensorMount: null } }] })).toBeNull();
   });
 
   it('limits mouse look and sways the head under a sudden acceleration, then settles', () => {

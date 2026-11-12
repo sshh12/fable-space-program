@@ -43,6 +43,7 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { DEG, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
+import { findCockpitSeat } from '@/camera';
 import { coreOf, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
@@ -639,10 +640,11 @@ async function boot(): Promise<void> {
     const s = app.snapshot();
     const v = s.vessels.find((x) => x.id === s.activeVesselId);
     const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
-    const part = v?.parts.find((p) => p.instanceId === vehicle?.cameras.cockpit.part);
-    const seats = part ? (defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : [])) ?? []) : [];
-    const seat = seats.find((x) => x.id === vehicle?.cameras.cockpit.seat);
-    if (!v || !part || !seat) return null;
+    // The seat the game's cockpit rig sits in: the cockpit layout's default couch (request cockpit-21).
+    const found = v ? findCockpitSeat(defs, v) : null;
+    if (!v || !found) return null;
+    const { part, seat } = found;
+    const seats = found.partDef.modules.flatMap((m) => (m.type === 'command' ? m.seats : []));
     const cockpit = (built.handles['cockpit.createCockpitFeature'] as { feature?: { model?(id: string): { windows?: { id: string; centre: Vec3 }[] } | undefined } } | undefined)?.feature;
     const L = v3.normalize(v3.fromTuple(seat.lookDir));
     const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
@@ -663,12 +665,17 @@ async function boot(): Promise<void> {
   const seatView = (yawDeg: number, pitchDeg: number, eyePart: Vec3 | null): boolean => {
     const find = (snapshot: SimSnapshot): { positionRoot: Vec3; qViewToRoot: ReturnType<typeof lookRotation> } | null => {
       const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
-      const camera = Object.values(defs.vehicles).find((d) => v?.parts.some((p) => p.instanceId === d.cameras.cockpit.part))?.cameras.cockpit;
-      const part = v?.parts.find((p) => p.instanceId === camera?.part);
-      if (!v || !camera || !part) return null;
-      const seats = defs.parts[part.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : []));
-      const seat = seats?.find((s) => s.id === camera.seat);
-      if (!seat) return null;
+      // The seat the game's cockpit rig sits in (the cockpit layout's default couch: request cockpit-21); a
+      // vessel whose vehicle id the library does not know is found by its cockpit part, as before.
+      let found: { part: PartSnapshot; seat: { pos: [number, number, number]; lookDir: [number, number, number]; upDir: [number, number, number] } } | null = v ? findCockpitSeat(defs, v) : null;
+      if (v && !found) {
+        const camera = Object.values(defs.vehicles).find((d) => v.parts.some((p) => p.instanceId === d.cameras.cockpit.part))?.cameras.cockpit;
+        const p = v.parts.find((x) => x.instanceId === camera?.part);
+        const s = p ? defs.parts[p.def]?.modules.flatMap((m) => (m.type === 'command' ? m.seats : [])).find((x) => x.id === camera?.seat) : undefined;
+        if (p && s) found = { part: p, seat: s };
+      }
+      if (!v || !found) return null;
+      const { part, seat } = found;
       const L = v3.normalize(v3.fromTuple(seat.lookDir));
       const U = v3.normalize(v3.reject(v3.fromTuple(seat.upDir), L));
       const qLook = quat.mul(quat.fromAxisAngle(v3.unitY(), -yawDeg * DEG), quat.fromAxisAngle(v3.unitX(), pitchDeg * DEG));

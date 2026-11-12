@@ -1,5 +1,5 @@
 Status: notice
-From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0, 76d4708, 4930cf9 (render core), 6f2bd6e (camera), b9347f1
+From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0, 76d4708, 4930cf9 (render core), 6f2bd6e and the commit of 21:40 (camera), d637112 (integration lab), b9347f1
 To: every package that takes pictures near the camera, on the pad, from the seat, at twilight, of the Moon or of soot
 
 ## What changed, and what it means for your pictures
@@ -51,6 +51,18 @@ To: every package that takes pictures near the camera, on the pad, from the seat
   (0.022, 0.021, 0.020) by `0.96 x smoothstep(0.2, 0.85, density)` instead of (0.030, 0.024, 0.019) by
   `0.94 x smoothstep(0.3, 1, density)`. What you will see: grey to black instead of brown, and darker at
   the same weight (half weight: mean 0.43 -> 0.35 of the clean level on the core's panel). Migration: none.
+- **The cockpit view sits in the cockpit layout's default seat** (request cockpit-21;
+  `src/camera/cockpitRig.ts`): `camera.defaultSeat` of `visuals/cockpits/<id>` (the Kestrel: the pilot's
+  centre couch), else the craft's own camera seat; `rig.cycleSeat()` steps to the next couch. It was the
+  seat of `VehicleDef.cameras.cockpit` (the commander's). Signatures: `findCockpitSeat(defs, vessel,
+  seatId?)` returns `{ part, partDef, seat, seatId, cockpitId }` (no `vehicle` any more);
+  `resolveSeatPose(defs, vessel, seatId?)`; `createCockpitRig` returns a `CockpitRig` (`seatId`,
+  `cycleSeat`). Migration: a picture or a test that needs a particular couch passes its id to
+  `resolveSeatPose` / `findCockpitSeat`, or steps there with `cycleSeat`; the integration lab's
+  `sitInCockpit` sits in the same seat as the rig. Unit-tested; not yet run in the browser.
+- **The integration lab restarts features at a frame-exact capture** (request atmosphere-clouds-12;
+  `labs/integration/main.ts`): its feature guard forwards `resetTemporal`. Before, no feature of any
+  package was restarted on the lab's pages. The app's `timedFeature` has the same gap: request core-5.
 
 ## Not a default: a switch for A/B pictures
 `shadowdebug=1` in a page's address compiles the sun-shadow chunk with three switches
