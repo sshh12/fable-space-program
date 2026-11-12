@@ -21,7 +21,7 @@
    "format": "png",
    "kind": "equirect",
    "note": "Hubble OPAL 2014 (F467M, F547M, F658N); outside -25.0..90.0 deg the observation is smeared at the limb and is replaced by a zonal fill from the nearest clean latitude",
-   "credit": "Uranus map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)",
+   "credit": "Uranus map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593; modified by the game (regridded, limb latitudes cut and filled zonally, hemisphere seam feathered) (CC BY 4.0)",
    "licence": "CC BY 4.0",
    "rowZero": "north",
    "columnZeroLonDeg": -180.0,

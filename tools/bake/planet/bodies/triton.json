@@ -54,13 +54,18 @@
   "source": "albedo",
   "colourSource": null,
   "transfer": "srgb",
-  "tint": null,
+  "tint": [
+   1.115,
+   1.0,
+   1.3531
+  ],
   "calibration": {
    "meanAlbedo": 0.76,
    "region": null,
    "ref": "geometric albedo [unverified in solar-system.md 2.5]"
   },
-  "procedural": null
+  "procedural": null,
+  "tintRef": "white balance of the Voyager 2 colour composite (its violet/green/orange filters give the map a green cast): per-channel factors that turn the map's mean linear colour (0.4385, 0.4709, 0.3323, planet-bake albedo-means before the balance) into the disc-integrated colour B-V 0.70 +- 0.01 (Pascu et al., HST BVI photometry of Triton; Buratti et al. 1994, Icarus 110, for its secular colour changes): rho_B/rho_V = 10^(-0.4 ((B-V) - 0.65)) = 0.9550, rho_R/rho_V = (rho_V/rho_B)^(90/110) = 1.0384 (no V-R used: the B-V slope continued linearly in wavelength, as for Europa)"
  },
  "landmarks": [
   {

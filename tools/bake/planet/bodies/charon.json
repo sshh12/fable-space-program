@@ -102,6 +102,24 @@
    },
    "minRatio": 1.1,
    "ref": "IAU Gazetteer of Planetary Nomenclature, feature 16443 Neverland Regio (85 N, 60 E): the dark reddish north polar region (NASA, 'Mordor Macula')"
+  },
+  {
+   "name": "Dorothy crater",
+   "kind": "craterDepth",
+   "latDeg": 58.53,
+   "lonDegE": 40.58,
+   "diameterKm": 261,
+   "minDepthM": 1500,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15738 Dorothy (58.53 N, 40.58 E, 261 km), the largest crater on Charon's encounter hemisphere (Schenk et al. 2018, Icarus 315); this bake gives 3.5 km rim-to-floor, -0.2 km mirrored and 1.1 km shifted by 180 deg"
+  },
+  {
+   "name": "Argo Chasma",
+   "kind": "demHeight",
+   "latDeg": 27.8,
+   "lonDegE": 80.4,
+   "expectM": -4500,
+   "toleranceM": 2500,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15734 Argo Chasma (27.8 N, 80.4 E, 355 km), a canyon up to about 9 km deep (NASA New Horizons, 2015); this bake reads -4.6 km at the Gazetteer centre, +3.0 km mirrored and +0.3 km shifted by 180 deg"
   }
  ]
 }

@@ -38,6 +38,81 @@ DATA_CAP_GB = 22.0
 GUARD_TILES = rt.REPO_ROOT / "tests" / "unit" / "terrain-core" / "terrain-guard.tiles.json"
 
 
+class Silent:
+    """A Report that only records (for the mirrored and shifted landmark self-test)."""
+
+    def __init__(self):
+        self.rows: list[dict] = []
+
+    def check(self, body: str, name: str, ok: bool, detail: str = "", **data) -> bool:
+        self.rows.append({"ok": bool(ok)})
+        return ok
+
+
+def moved(lm: dict, fn) -> dict:
+    """A landmark with every longitude it names passed through fn."""
+    out = dict(lm)
+    if "lonDegE" in out:
+        out["lonDegE"] = fn(out["lonDegE"]) % 360.0
+    for side in ("brighter", "darker"):
+        if side in out:
+            out[side] = dict(out[side], lonDegE=fn(out[side]["lonDegE"]) % 360.0)
+    return out
+
+
+def landmark_self_test(body: config.Body, lms: list, hr, ar, rep) -> None:
+    """The landmarks must FAIL on the map mirrored east-west and on the map shifted by 180 degrees: a set that
+    passes either way cannot catch the errors it exists for (review finding 2)."""
+    for label, fn in (("mirrored east-west", lambda lon: -lon), ("shifted by 180 deg", lambda lon: lon + 180.0)):
+        silent = Silent()
+        for lm in lms:
+            landmark(body, moved(lm, fn), hr, ar, silent)
+        fails = sum(1 for r in silent.rows if not r["ok"])
+        rep.check(body.id, f"landmarks reject the map {label}", fails > 0, f"{fails} of {len(silent.rows)} landmarks fail on it")
+
+
+def wrap_seams(body: config.Body, ar):
+    """Luminance along the +-180 and 0 meridians against three finest-level texels either side: a source's edge
+    column (a nodata or dark first column) shows as a seam from pole to pole (review finding 1)."""
+    A = int(body.albedo["maxLevel"])
+    off = 3.0 * 90.0 / (2 ** A * 256)
+    lat = np.radians(np.arange(-80.0, 80.01, 0.5))
+    for lon0 in (180.0, 0.0):
+        vals = []
+        for dl in (-off, 0.0, off):
+            d = cube.lat_lon_to_dir(lat, np.full(lat.shape, np.radians(lon0 + dl)))
+            vals.append(ar.luminance(d, A))
+        ratio = float(vals[1].mean() / max(1e-9, 0.5 * (vals[0].mean() + vals[2].mean())))
+        # a brightness step across the meridian (two source images meeting there) is reported, not failed
+        step = float(abs(np.mean(vals[2] - vals[0])) / max(1e-9, 0.5 * (vals[0].mean() + vals[2].mean())))
+        yield lon0, ratio, step, 0.92 <= ratio <= 1.08
+
+
+CLIP_DN = 254
+CLIP_MAX_FRACTION = 0.005
+
+
+def clip_fraction(bid: str, level: int, stride: int = 3) -> float:
+    """Solid-angle-weighted fraction of the finest albedo level with any channel at or above CLIP_DN (8-bit
+    ceiling), over every stride-th tile of each face (a regular subsample; the weights are the gnomonic texel
+    solid angles)."""
+    n = 2 ** level
+    k = (np.arange(256) + 0.5) / 256.0
+    clipped = total = 0.0
+    for f in range(6):
+        for x in range(n):
+            for y in range(n):
+                if (x * n + y) % stride:
+                    continue
+                u = -1.0 + 2.0 * (x + k) / n
+                v = -1.0 + 2.0 * (y + k) / n
+                wgt = (1.0 + u[None, :] ** 2 + v[:, None] ** 2) ** -1.5
+                a = np.asarray(Image.open(layout.tile_file(bid, "albedo", f, level, x, y, "webp")).convert("RGB"))
+                clipped += float((wgt * (a.max(axis=-1) >= CLIP_DN)).sum())
+                total += float(wgt.sum())
+    return clipped / total
+
+
 class Report:
     def __init__(self):
         self.rows: list[dict] = []
@@ -257,6 +332,14 @@ def verify_solid(body: config.Body, rep: Report, quick: bool) -> dict:
               bool(lms) or not needs, f"{len(lms)} landmarks")
     for lm in lms:
         landmark(body, lm, hr, ar, rep)
+    if lms:
+        landmark_self_test(body, lms, hr, ar, rep)
+    cf = clip_fraction(bid, int(al["globalMaxLevel"]))
+    rep.check(bid, f"albedo: at most {CLIP_MAX_FRACTION:.1%} of the surface at the 8-bit ceiling (any channel >= {CLIP_DN} DN, finest level)",
+              cf <= CLIP_MAX_FRACTION, f"{cf:.3%} (solid-angle weighted)", value=cf)
+    for lon0, ratio, step, ok in wrap_seams(body, ar):
+        rep.check(bid, f"albedo: no seam along the {lon0:.0f} deg meridian", ok,
+                  f"luminance on it / beside it = {ratio:.3f} (0.92-1.08); mean step across it {step:.1%} (reported)", value=ratio, step=step)
     if body.height["craters"] is not None:
         F = hl["globalMaxLevel"]
         d = cap_points(0.0, 0.0, body.radius * 3.0, body.radius, n=4000)
@@ -297,6 +380,19 @@ def verify_giant(body: config.Body, rep: Report) -> dict:
             ok = im.size == (g["width"], g["height"])
             total += f.stat().st_size
         rep.check(body.id, f"map {g['name']} staged at {g['width']} x {g['height']}", ok)
+        if ok and g["kind"] == "equirect":
+            # a seam at the wrap (+-180) or at 0 deg (a source's own wrap, or OPAL's hemisphere join): the step
+            # across it and a line along it (a dark first column), each against the map's typical column step
+            lum = np.asarray(Image.open(f).convert("RGB"), dtype=np.float64) @ LUMA / 255.0
+            w = lum.shape[1]
+            typical = float(np.median(np.abs(np.diff(lum, axis=1)).mean(axis=0)))
+            col = lambda k: lum[:, k % w]  # noqa: E731
+            for name, c in (("+-180 deg (wrap)", 0), ("0 deg", w // 2)):
+                step = float(np.abs(0.5 * (col(c) + col(c + 1)) - 0.5 * (col(c - 1) + col(c - 2))).mean())
+                line = float(np.abs(0.5 * (col(c - 1) + col(c)) - 0.5 * (col(c - 3) + col(c + 2))).mean())
+                lim = 4.0 * typical + 0.0005
+                rep.check(body.id, f"map {g['name']}: no seam at {name}", step <= lim and line <= lim,
+                          f"step {step:.4f}, line {line:.4f}, limit {lim:.4f} (4 x the typical column step {typical:.4f} + 0.0005)")
     return {"stagedBytes": total}
 
 
@@ -312,8 +408,10 @@ def verify_global(rep: Report, all_ids: list[str]) -> dict:
               all(e.get("licence") and e.get("attribution") for e in staged.get("entries", [])))
     for cid in need:
         c = credits[cid]
-        rep.check("all", f"credit {cid}: redistributable licence", "public domain" in c["licence"].lower() or "cc by" in c["licence"].lower(),
-                  c["licence"])
+        lic = c["licence"].lower()
+        # public domain, CC BY, or a product whose published metadata states no access or use constraints
+        rep.check("all", f"credit {cid}: redistributable licence",
+                  "public domain" in lic or "cc by" in lic or "no access or use constraints" in lic, c["licence"])
     # Earth and Moon untouched: manifests' contentHash and per-directory file counts from the terrain guard
     guard = rt.read_json(GUARD_TILES) if GUARD_TILES.is_file() else None
     for ts in ("earth", "moon"):

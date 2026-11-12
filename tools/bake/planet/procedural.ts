@@ -20,7 +20,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { TerrainAmplificationDef } from '../../../src/core/contracts/defs';
 import { tileUvToDir, type FaceId } from '../../../src/core/geo/cubeSphere';
-import { genericCraterParams, runtimeCraterLog2MaxD } from '../../../src/terrain/amplification/generic';
+import { bakeCraterWeight, genericCraterParams, runtimeCraterLog2MaxD } from '../../../src/terrain/amplification/generic';
 import { CRATER_O, CRATER_STRIDE, CraterField, profile, type CraterClass } from '../../../src/terrain/craters';
 import { smootherstep01 } from '../../../src/terrain/util';
 
@@ -120,7 +120,7 @@ interface Weighted {
 function weightedClasses(field: CraterField, log2MaxDRt: number, log2Lambda: number): Weighted[] {
   const out: Weighted[] = [];
   for (const c of field.classes) {
-    const w = (1 - smootherstep01(log2MaxDRt - c.log2DHi)) * smootherstep01(c.log2DLo - log2Lambda);
+    const w = bakeCraterWeight(c, log2MaxDRt, log2Lambda);
     if (w > 0) out.push({ c, w });
   }
   return out;

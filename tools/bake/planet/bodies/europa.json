@@ -29,7 +29,13 @@
     1
    ],
    "nodata": 0,
-   "credit": "usgs-europa-voyager-galileo"
+   "credit": "usgs-europa-voyager-galileo",
+   "polarSmooth": {
+    "southDeg": -60.0,
+    "northDeg": 60.0,
+    "pixels": "filled",
+    "meridionalDeg": 3.0
+   }
   }
  },
  "amplification": {

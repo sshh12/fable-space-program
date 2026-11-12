@@ -72,7 +72,11 @@
     "b"
    ],
    "format": "webp",
-   "note": "Cassini ISS RGB global map, 11 Aug 2011; ring-shadow and polar gaps filled zonally"
+   "note": "Cassini ISS RGB global map, 11 Aug 2011; ring-shadow and polar gaps filled zonally",
+   "featherSeamLonDeg": [
+    0.0
+   ],
+   "featherDeg": 10.0
   },
   {
    "name": "saturn-rings",

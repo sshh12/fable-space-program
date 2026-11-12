@@ -24,6 +24,12 @@ error, so a typo cannot silently change a bake. Schema (every key required unles
 
 Source: { url, bytes, md5, sha256, format: "geotiff" | "image", latitude: "planetocentric" | "planetographic",
           lonPositive: "east" | "west", lonLeftEdgeDeg, width, height, bands, nodata, credit }
+          nodata must be exactly the value the file declares (null only when it declares none).
+          optional: decimate (n: an n x n block mean as mip 0, streamed, never stored at full size),
+          nodataDilatePx (n: also drop the n pixels around every nodata pixel, a dark resampling fringe),
+          polarSmooth ({ southDeg, northDeg, pixels: "all" | "filled", meridionalDeg? }: smoothing toward the poles),
+          registration, table, validLatDeg (giants)
+          albedo.tint on a 3-band map is a white balance (per-channel factors)
 """
 from __future__ import annotations
 
@@ -63,7 +69,7 @@ SOURCE_KEYS = ("url", "bytes", "md5", "sha256", "format", "latitude", "lonPositi
                "height", "bands", "nodata", "credit")
 
 
-SOURCE_OPTIONAL = ("registration", "table", "validLatDeg", "decimate")
+SOURCE_OPTIONAL = ("registration", "table", "validLatDeg", "decimate", "nodataDilatePx", "polarSmooth")
 
 
 def _check_source(key: str, s: dict, where: str) -> None:
@@ -179,7 +185,7 @@ def validate(raw: dict, where: str) -> None:
     if kind == "giant":
         for i, g in enumerate(raw["globals"]):
             gw = f"{where}.globals[{i}]"
-            _keys(g, gw, ("name", "source", "kind", "width", "height", "channels", "format", "note"), ("innerKm", "outerKm", "albedoRegions"))
+            _keys(g, gw, ("name", "source", "kind", "width", "height", "channels", "format", "note"), ("innerKm", "outerKm", "albedoRegions", "featherSeamLonDeg", "featherDeg"))
             if g["kind"] not in ("equirect", "radial"):
                 raise ConfigError(f"{gw}.kind: equirect | radial")
             if g["kind"] == "radial":

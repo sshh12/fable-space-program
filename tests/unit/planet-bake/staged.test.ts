@@ -73,7 +73,7 @@ describe('planet-bake staged outputs', () => {
         const e = have.get(id);
         expect(e, `${c.id}: ${id}`).toBeDefined();
         expect(e!.bodies).toContain(c.name);
-        expect(/public domain|cc by/i.test(e!.licence), e!.licence).toBe(true);
+        expect(/public domain|cc by|no access or use constraints/i.test(e!.licence), e!.licence).toBe(true);
       }
     }
   });

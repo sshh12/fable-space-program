@@ -68,7 +68,8 @@ def linear_colour(body: config.Body, values: np.ndarray, colour: np.ndarray | No
     if _raster(body, al["source"]).channels == 3:
         if colour is not None:
             raise ValueError(f"{body.id}: a colour source needs a mono luminance source")
-        return lin
+        # on a colour map the tint is a white balance (per-channel factors, luminance-normalised)
+        return lin * _tint(body) if al["tint"] else lin
     if colour is not None:
         c = _to_linear_colour(body, colour)
         y = np.maximum(c @ LUMA, 1e-6)
@@ -112,17 +113,61 @@ def gain(body: config.Body) -> float:
             raise ValueError(f"{body.id}: albedo source mean is {mean}")
         g = cal["meanAlbedo"] / mean
         # never push more than half a per cent of the surface into the 8-bit ceiling: a bright icy body whose
-        # mosaic has a narrow range would otherwise lose its detail (it keeps a lower mean instead)
-        tmax = float(np.max(_tint(body))) if r.channels == 1 and rc is None else 1.0
-
-        def peak_fn(a):
-            lin = _to_linear_colour(body, a) if r is rc else _to_linear(body, al["source"], a)
-            return (lin.max(axis=-1) if lin.ndim == 3 else lin) * tmax
-        p995 = r.coarse_percentile(peak_fn, 99.5)
+        # mosaic has a narrow range would otherwise lose its detail (it keeps a lower mean instead). The peak is
+        # measured at the finest level's own sampling (a coarse mip averages the brightest spots away)
+        p995 = fine_peak(body, lambda d, fp: pre_gain_linear(body, d, fp))
         if p995 > 0 and g * p995 > CLIP_LIMIT:
             g = CLIP_LIMIT / p995
     _GAIN[body.id] = g
     return g
+
+
+PEAK_SAMPLES = 200_000
+_LF_CAP: dict = {}
+
+
+def fine_peak(body: config.Body, fn) -> float:
+    """99.5th percentile of the brightest channel of fn(dirs, footprint) over PEAK_SAMPLES directions spread
+    uniformly over the sphere (a Fibonacci lattice: equal areas), at the finest albedo level's footprint."""
+    n = PEAK_SAMPLES
+    k = np.arange(n) + 0.5
+    z = 1.0 - 2.0 * k / n
+    th = np.pi * (3.0 - np.sqrt(5.0)) * k
+    r = np.sqrt(1.0 - z * z)
+    d = np.stack([r * np.cos(th), r * np.sin(th), z], axis=-1)
+    fp = footprint_m(d, int(body.albedo["maxLevel"]), body.radius, cells=cube.IMAGE_TILE_SIZE)
+    out = np.empty(n)
+    for s0 in range(0, n, 20_000):
+        rgb = fn(d[s0:s0 + 20_000], fp[s0:s0 + 20_000])
+        out[s0:s0 + 20_000] = rgb.max(axis=-1)
+    return float(np.percentile(out, 99.5))
+
+
+def pre_gain_linear(body: config.Body, d: np.ndarray, fp: np.ndarray) -> np.ndarray:
+    """Linear RGB of a mapped body at directions d before the calibration gain (or the low-frequency factor)."""
+    al = body.albedo
+    v = _raster(body, al["source"]).sample(d, fp)
+    if not al["colourSource"]:
+        return linear_colour(body, v, None)
+    rc = _raster(body, al["colourSource"])
+    # chroma at the colour map's own resolution at least (no ringing from upsampling chroma)
+    fpc = np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius)
+    col = rc.sample(d, fpc)
+    if al.get("colourMode") == "detail":
+        # albedo and colour from the colour map; the mono map's detail as a ratio to itself at the colour
+        # map's resolution (for a mono mosaic whose brightness was normalised and lost the albedo pattern)
+        m_fine = _to_linear(body, al["source"], v)
+        m_low = _to_linear(body, al["source"], _raster(body, al["source"]).sample(d, fpc))
+        return _to_linear_colour(body, col) * (m_fine / np.maximum(m_low, 1e-4))[..., None]
+    return linear_colour(body, v, col)
+
+
+def lf_cap(body: config.Body) -> float:
+    """The low-frequency path's clip cap: the same at-most-0.5 %-clipped rule as the gain."""
+    if body.id not in _LF_CAP:
+        p = fine_peak(body, lambda d, fp: pre_gain_linear(body, d, fp) * low_frequency_factor(body, d)[..., None])
+        _LF_CAP[body.id] = min(1.0, CLIP_LIMIT / p) if p > 0 else 1.0
+    return _LF_CAP[body.id]
 
 
 CLIP_LIMIT = 0.97
@@ -181,24 +226,10 @@ def finest_linear(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
         return np.clip(rgb, 0.0, 1.0)
     d = cube.image_tile_dirs(face, A, x, y)
     fp = footprint_m(d, A, body.radius, cells=cube.IMAGE_TILE_SIZE)
-    v = _raster(body, al["source"]).sample(d, fp)
-    col = None
-    if al["colourSource"]:
-        rc = _raster(body, al["colourSource"])
-        # chroma at the colour map's own resolution at least (no ringing from upsampling chroma)
-        col = rc.sample(d, np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius))
-    if al["colourSource"] and al.get("colourMode") == "detail":
-        # albedo and colour from the colour map; the mono map's detail as a ratio to itself at the colour
-        # map's resolution (for a mono mosaic whose brightness was normalised and lost the albedo pattern)
-        rc = _raster(body, al["colourSource"])
-        fpc = np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius)
-        m_fine = _to_linear(body, al["source"], v)
-        m_low = _to_linear(body, al["source"], _raster(body, al["source"]).sample(d, fpc))
-        detail = m_fine / np.maximum(m_low, 1e-4)
-        return np.clip(_to_linear_colour(body, col) * detail[..., None] * gain(body), 0.0, 1.0)
+    lin = pre_gain_linear(body, d, fp)
     if al.get("lowFrequency"):
-        return np.clip(linear_colour(body, v, col) * low_frequency_factor(body, d)[..., None], 0.0, 1.0)
-    return np.clip(linear_colour(body, v, col) * gain(body), 0.0, 1.0)
+        return np.clip(lin * (low_frequency_factor(body, d) * lf_cap(body))[..., None], 0.0, 1.0)
+    return np.clip(lin * gain(body), 0.0, 1.0)
 
 
 def encode(lin: np.ndarray) -> bytes:

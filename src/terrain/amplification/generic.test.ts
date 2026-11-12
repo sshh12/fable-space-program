@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
 import { CraterField, type CraterRecord } from '../craters';
 import { smootherstep01 } from '../util';
-import { genericCraterParams, runtimeCraterLog2MaxD } from './generic';
+import { bakeCraterWeight, genericCraterParams, runtimeCraterLog2MaxD } from './generic';
 import { lunarCraterParams } from './lunarRegolith';
 import { amplificationModelNames, createAmplificationModel } from './registry';
 import type { BodyServices, ModelContext } from './types';
@@ -79,7 +79,7 @@ describe('generic amplification models', () => {
     }
   });
 
-  it('the bake extends the crater classes without changing the run-time ones, and the weights add to one', () => {
+  it('the bake extends the crater classes without changing the run-time ones', () => {
     const def = read('icy-generic');
     const rtField = new CraterField(lunarCraterParams(def, R, G, lambda0));
     const bakeField = new CraterField(genericCraterParams(def, R, G, lambda0, 0.4 * R));
@@ -95,12 +95,43 @@ describe('generic amplification models', () => {
       b.cellCraters(3, -2, 7, l2);
       expect(l2).toEqual(l1);
     }
-    const lmax = runtimeCraterLog2MaxD(def, lambda0, G);
-    for (const c of bakeField.classes) {
-      const wRt = smootherstep01(lmax - c.log2DHi);
-      const wBake = 1 - smootherstep01(lmax - c.log2DHi);
-      expect(wRt + wBake).toBeCloseTo(1, 15);
-      if (c.dLo > 2 ** lmax) expect(wRt).toBe(0);
+  });
+
+  it('run time (CraterField.add at E = globalMaxLevel) and bake (bakeCraterWeight, as procedural.ts uses it) together draw every crater exactly once', () => {
+    for (const name of ['rocky-generic', 'icy-generic']) {
+      const def = read(name);
+      const lmax = runtimeCraterLog2MaxD(def, lambda0, G);
+      // the helper is the limit the real model passes to CraterField.add (its longest scale at E = G is the crater limit)
+      const model = createAmplificationModel(def, ctx('w'));
+      expect(model.maxLengthLog2(Math.log2(lambda0) - G)).toBeCloseTo(lmax, 12);
+      const rtField = new CraterField(lunarCraterParams(def, R, G, lambda0));
+      const bakeField = new CraterField(genericCraterParams(def, R, G, lambda0, 0.4 * R));
+      const ext = bakeField.p.extentRadii;
+      for (const log2Lambda of [Math.log2(lambda0) - G - 3, Math.log2(lambda0) - G, Math.log2(lambda0) - G + 2]) {
+        const lam = new Float64Array([log2Lambda]);
+        let checked = 0;
+        for (let i = 0; i < 400; i++) {
+          const a = (i * 0.61803398875) % 1;
+          const b = (i * 0.41421356237) % 1;
+          const th = Math.acos(1 - 2 * a);
+          const ph = 2 * Math.PI * b;
+          const px = R * Math.sin(th) * Math.cos(ph);
+          const py = R * Math.sin(th) * Math.sin(ph);
+          const pz = R * Math.cos(th);
+          const rt = new Float64Array(1);
+          rtField.add(px, py, pz, lmax, lam, 1, rt, Infinity);
+          let bake = 0;
+          let all = 0;
+          for (const c of bakeField.classes) {
+            const h = c.heightAt(px, py, pz, ext);
+            bake += bakeCraterWeight(c, lmax, log2Lambda) * h;
+            all += smootherstep01(c.log2DLo - log2Lambda) * h;
+          }
+          if (all !== 0) checked++;
+          expect(rt[0]! + bake).toBeCloseTo(all, 6);
+        }
+        expect(checked).toBeGreaterThan(50);
+      }
     }
   });
 });

@@ -29,7 +29,13 @@
     1
    ],
    "nodata": 0,
-   "credit": "usgs-rhea-cassini-voyager"
+   "credit": "usgs-rhea-cassini-voyager",
+   "polarSmooth": {
+    "southDeg": -82.0,
+    "northDeg": 90.0,
+    "pixels": "all",
+    "meridionalDeg": 2.0
+   }
   }
  },
  "amplification": {

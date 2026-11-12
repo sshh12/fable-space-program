@@ -111,6 +111,15 @@
    "diameterKm": 1492,
    "minDepthM": 1000,
    "ref": "IAU Gazetteer feature 15669 (19.51 N, 178.69 E, 1,492 km); the ice sheet lies 2.5-3.5 km below the rim (Schenk et al. 2018, Icarus 314); this DEM at level 5 gives a 1.7 km floor-to-ring depth"
+  },
+  {
+   "name": "Burney basin",
+   "kind": "craterDepth",
+   "latDeg": 45.68,
+   "lonDegE": 133.79,
+   "diameterKm": 296,
+   "minDepthM": 1000,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15680 Burney (45.68 N, 133.79 E, 296 km), a multi-ring basin north-west of Sputnik Planitia (Schenk et al. 2018, Icarus 314); this bake gives 2.1 km rim-to-floor, 0.2 km mirrored and none shifted by 180 deg"
   }
  ]
 }

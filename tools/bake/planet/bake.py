@@ -30,34 +30,107 @@ from common import layout  # noqa: E402
 from planet import albedo, config, fetch, giants, heights, procedural, rt, source  # noqa: E402
 
 # Bump when the output of a step changes for the same config.
-CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 2, "manifest": 2}
+CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 3, "manifest": 3}
 SOLID_STEPS = ("fetch", "prepare", "procedural", "height", "albedo", "manifest")
 
 
-def fingerprint(body: config.Body, step: str, with_landmarks: bool = False) -> str:
-    """What a step's output depends on: the config (its landmark tests excepted: they only read the tiles), the
-    step's code version and, for the procedural relief and the manifest, the resolved amplification."""
+# Which steps a step's output depends on: a downstream fingerprint folds the upstream ones in, so a re-bake of
+# the height or the albedo always re-runs the manifest (build hashes, elevation, gain, albedo-lowres).
+UPSTREAM = {"procedural": (), "height": ("procedural",), "albedo": ("procedural",), "manifest": ("height", "albedo")}
+
+
+def _inputs(body: config.Body, step: str, prep: bool = True) -> dict:
+    """The part of the config a step reads (landmark tests read only the tiles and are in no step) and, with
+    prep, the prepared sources' fingerprints (source config, radii and the prepare code's version), so a change
+    of the prepare code re-runs the steps that read its output."""
+    r = body.raw
+
+    def srcs(keys):
+        out = {k: r["sources"][k] for k in keys if k}
+        if prep:
+            out = {k: {"cfg": v, "prepared": source.source_fingerprint(body, k)} for k, v in out.items()}
+        return out
+    if step == "procedural":
+        return {"radii": r["radii"], "amp": procedural.resolved_amplification(body), "craters": r["height"]["craters"],
+                "levels": [r["height"]["maxLevel"], r["albedo"]["maxLevel"]]}
+    if step == "height":
+        dem = r["height"]["dem"]
+        return {"radii": r["radii"], "height": r["height"], "src": srcs([dem["source"]] if dem else [])}
+    if step == "albedo":
+        al = r["albedo"]
+        return {"radii": r["radii"], "albedo": al, "src": srcs([al["source"], al["colourSource"]])}
+    return {"name": r["name"], "credits": r["credits"], "radii": r["radii"], "height": r["height"],
+            "amp": procedural.resolved_amplification(body), "src": r["sources"]}
+
+
+def fingerprint(body: config.Body, step: str, prep: bool = True) -> str:
+    """What a step's output depends on: its inputs, its code version and its upstream steps' fingerprints."""
     h = hashlib.sha256()
-    raw = body.raw if with_landmarks else {k: v for k, v in body.raw.items() if k != "landmarks"}
-    h.update(json.dumps(raw, sort_keys=True).encode("utf-8"))
+    h.update(json.dumps(_inputs(body, step, prep), sort_keys=True).encode("utf-8"))
     h.update(f"{step}:{CODE_VERSION.get(step, 1)}".encode("ascii"))
+    for up in UPSTREAM[step]:
+        h.update(fingerprint(body, up, prep).encode("ascii"))
+    return h.hexdigest()[:16]
+
+
+# The prepare version that wrote every state whose fingerprint has the chained form without the prepared
+# sources' fingerprints (the first chained states, before those were folded in).
+CHAINED_WITHOUT_PREP_VERSION = 4
+
+
+def _legacy_fingerprint(body: config.Body, step: str, code_version: int) -> str:
+    """The fingerprint of states written before the chaining (whole config without landmarks)."""
+    h = hashlib.sha256()
+    h.update(json.dumps({k: v for k, v in body.raw.items() if k != "landmarks"}, sort_keys=True).encode("utf-8"))
+    h.update(f"{step}:{code_version}".encode("ascii"))
     if step in ("procedural", "manifest"):
         h.update(json.dumps(procedural.resolved_amplification(body), sort_keys=True).encode("utf-8"))
     return h.hexdigest()[:16]
 
 
+LEGACY_VERSION = {"procedural": 1, "height": 1, "albedo": 2, "manifest": 2}
+
+
 def step_done(body: config.Body, step: str) -> bool:
-    """Done with the current fingerprint; a state written before landmarks left the fingerprint (it then
-    matches the old form on the same config) is accepted and rewritten."""
+    """Done with the current fingerprint. A state written before the chaining is accepted (and rewritten) only
+    when it matches the old form on the same config and that step's code is unchanged since."""
     fp = fingerprint(body, step)
     if rt.is_done(body.id, step, fp):
         return True
-    if rt.is_done(body.id, step, fingerprint(body, step, with_landmarks=True)):
+    if source.PREPARE_VERSION == CHAINED_WITHOUT_PREP_VERSION and rt.is_done(body.id, step, fingerprint(body, step, prep=False)):
+        st = rt.load_state(body.id)
+        st[step]["fingerprint"] = fp
+        rt.write_json(rt.state_path(body.id), st)
+        return True
+    if CODE_VERSION[step] == LEGACY_VERSION[step] and rt.is_done(body.id, step, _legacy_fingerprint(body, step, LEGACY_VERSION[step])):
         st = rt.load_state(body.id)
         st[step]["fingerprint"] = fp
         rt.write_json(rt.state_path(body.id), st)
         return True
     return False
+
+
+def accept_height(body: config.Body) -> None:
+    """Mark the height step done for the current config WITHOUT re-baking it, allowed only when the change since
+    the bake cannot alter a height tile: the DEM declares a nodata value the old config did not state, and the
+    whole DEM (streamed, hashed against the config) contains no such pixel."""
+    dem = body.height["dem"]
+    if not dem:
+        raise ValueError(f"{body.id}: no DEM")
+    src = body.source(dem["source"])
+    nd = src["nodata"]
+    count = {"n": 0}
+
+    def on_rows(arr):
+        count["n"] += int(np.count_nonzero(arr == nd))
+    source.stream_rows(src["url"], src["bytes"], on_rows, src["md5"], src["sha256"])
+    if count["n"]:
+        raise ValueError(f"{body.id}: the DEM has {count['n']} nodata pixels: the height must be re-baked")
+    st = rt.load_state(body.id)
+    st["height"]["fingerprint"] = fingerprint(body, "height")
+    st["height"]["accepted"] = f"DEM streamed and hashed: no {nd} pixel, so the declared nodata changes no height tile"
+    rt.write_json(rt.state_path(body.id), st)
+    rt.log(f"{body.id}: height accepted (no nodata pixel in the DEM)")
 
 
 def source_keys(body: config.Body, steps: list[str] | None = None) -> list[str]:
@@ -146,11 +219,29 @@ def bake_solid(body: config.Body, steps: list[str], record: bool, force: bool) -
     if pending or "prepare" in steps:
         # one source at a time (download, prepare, drop a decimated source's download) keeps the disk peak low
         for key in source_keys(body, need):
-            if not source.is_prepared(body, key):
-                fetch.ensure(body, key, record=record)
-                step_prepare_one(body, key)
+            if source.is_prepared(body, key):
+                continue
+            if body.source(key).get("decimate", 1) > 1:
+                # a decimated source is streamed: the full-resolution file never touches the disk
+                t0 = time.time()
+                meta = source.prepare_streamed(body, key, record=record)
+                body = config.load(body.id)
+                rt.log(f"{body.id}: prepared {key} (streamed) in {time.time() - t0:.0f} s (valid {meta['validFraction']:.4f})")
+                continue
+            fetch.ensure(body, key, record=record)
+            body = config.load(body.id)
+            step_prepare_one(body, key)
+            meta = rt.read_json(rt.work_dir(body.id) / f"src-{key}" / "meta.json")
+            if meta["mip0"]["kind"] != "tiff":
+                # sampled from the prepared copy only: the download is not needed again
+                rt.remove_tree(rt.dl_dir(body.id, key))
     elif "fetch" in steps:
         step_fetch(body, record, need)
+    if (body.height["craters"] is not None and {"height", "albedo"} & set(pending) and "procedural" not in pending
+            and not any((rt.work_dir(body.id) / "proc" / "h").glob("*.f32"))):
+        # the relief fields were cleaned after the last bake: recompute them (deterministic: same seed, same files)
+        rt.log(f"{body.id}: procedural relief fields missing (cleaned); recomputing them")
+        procedural.run(body)
     for step in compute:
         fp = fingerprint(body, step)
         if step not in pending:
@@ -206,6 +297,7 @@ def release(body: config.Body) -> None:
             del cache[k]
     albedo._GAIN.pop(body.id, None)
     albedo._LOWF.pop(body.id, None)
+    albedo._LF_CAP.pop(body.id, None)
     gc.collect()
 
 
@@ -233,6 +325,8 @@ def main() -> None:
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--credits", action="store_true")
     ap.add_argument("--clean", action="store_true")
+    ap.add_argument("--accept-height", action="store_true",
+                    help="mark the height step done after proving the config change cannot alter it (see accept_height)")
     ap.add_argument("--keep-going", action="store_true", help="bake the remaining bodies when one fails (exit 1 at the end)")
     ap.add_argument("--split-passes", action="store_true",
                     help="bake the height (with its DEM) and the albedo (with its maps) in two passes, cleaning after each: "
@@ -253,6 +347,9 @@ def main() -> None:
         body = config.load(bid)
         if a.clean:
             clean(body)
+            continue
+        if a.accept_height:
+            accept_height(body)
             continue
         try:
             if body.kind == "giant":

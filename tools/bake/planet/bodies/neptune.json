@@ -52,7 +52,11 @@
     "b"
    ],
    "format": "png",
-   "note": "Hubble OPAL 2015 (F467M, F547M, F657N), colours as composited by OPAL (strongly cyan); outside -90.0..32.0 deg the observation is smeared at the limb and is replaced by a zonal fill from the nearest clean latitude"
+   "note": "Hubble OPAL 2015 (F467M, F547M, F657N), colours as composited by OPAL (strongly cyan); outside -90.0..32.0 deg the observation is smeared at the limb and is replaced by a zonal fill from the nearest clean latitude",
+   "featherSeamLonDeg": [
+    180.0
+   ],
+   "featherDeg": 20.0
   }
  ]
 }

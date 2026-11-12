@@ -13,7 +13,8 @@
  * is drawn once.
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
-import type { CraterParams } from '../craters';
+import type { CraterClass, CraterParams } from '../craters';
+import { smootherstep01 } from '../util';
 import { createLunarRegolith, lunarCraterParams } from './lunarRegolith';
 import type { AmplificationModel, ModelContext } from './types';
 
@@ -81,4 +82,13 @@ export function runtimeCraterLog2MaxD(def: TerrainAmplificationDef, lambda0: num
   const postings = def.params['craterMaxDiameterInPostings'];
   if (typeof postings !== 'number') throw new Error(`terrain amplification "${def.model}": craterMaxDiameterInPostings missing`);
   return Math.log2(lambda0) - E + Math.log2(postings / 2);
+}
+
+/**
+ * Weight of a crater class in the bake of a procedural body (tools/bake/planet/procedural.ts): the complement
+ * of the run-time model's weight smootherstep(log2MaxD_rt - log2 D_hi) (CraterField.add), times the bake's own
+ * sampling fade smootherstep(log2 D_lo - log2 lambda), so run time and bake together draw each crater once.
+ */
+export function bakeCraterWeight(c: Pick<CraterClass, 'log2DLo' | 'log2DHi'>, log2MaxDRuntime: number, log2Lambda: number): number {
+  return (1 - smootherstep01(log2MaxDRuntime - c.log2DHi)) * smootherstep01(c.log2DLo - log2Lambda);
 }

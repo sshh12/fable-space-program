@@ -61,7 +61,7 @@ def georef(path: Path) -> dict:
     with rasterio.open(path) as ds:
         t = ds.transform
         if abs(t.b) > 1e-12 or abs(t.d) > 1e-12:
-            raise ValueError(f"{path.name}: rotated transform")
+            raise ValueError(f"{path}: rotated transform")
         crs = ds.crs
         info = {"width": ds.width, "height": ds.height, "count": ds.count, "dtype": ds.dtypes[0],
                 "nodata": ds.nodata, "crs": crs.to_wkt() if crs else None}
@@ -70,10 +70,10 @@ def georef(path: Path) -> dict:
         else:
             d = crs.to_dict()
             if d.get("proj") != "eqc":
-                raise ValueError(f"{path.name}: projection {d.get('proj')} is not equirectangular")
+                raise ValueError(f"{path}: projection {d.get('proj')} is not equirectangular")
             r = d.get("R") or d.get("a")
             if not r:
-                raise ValueError(f"{path.name}: no sphere radius in the CRS {d}")
+                raise ValueError(f"{path}: no sphere radius in the CRS {d}")
             k = math.cos(math.radians(d.get("lat_ts", 0.0)))
             lon_c = d.get("lon_0", 0.0)
             lon0 = lon_c + math.degrees((t.c - d.get("x_0", 0.0)) / (r * k))
@@ -109,6 +109,21 @@ def check_georef(body_id: str, key: str, src: dict, g: dict) -> bool:
                          f"{src['lonLeftEdgeDeg']} deg by {bad} pixels ({g})")
     exact = all(abs(v) <= 0.5 for v in errs.values()) and g["width"] == 2 * g["height"]
     return exact
+
+
+def check_nodata(body_id: str, key: str, configured, declared) -> None:
+    """The config must state exactly the nodata value the file declares (null only when the file declares none):
+    a declared value the config does not state would silently be drawn as data (review finding 1)."""
+    if (configured is None) != (declared is None) or (configured is not None and float(configured) != float(declared)):
+        raise ValueError(f"{body_id}.{key}: config nodata {configured} disagrees with the nodata {declared} the file declares")
+
+
+def _dilate_invalid(ok: np.ndarray, px: int) -> np.ndarray:
+    """Shrink the valid mask by px pixels around every invalid pixel (the dark fringe of resampled dropouts)."""
+    if px <= 0 or ok.all():
+        return ok
+    from scipy.ndimage import binary_erosion
+    return binary_erosion(ok, structure=np.ones((3, 3), bool), iterations=px, border_value=1)
 
 
 def _strip_memmap(path: Path, src: dict):
@@ -245,6 +260,207 @@ def _down2(a: np.ndarray, w: np.ndarray | None):
     return v, ws / 4.0
 
 
+def _decimate_rows(rows_src, r0: int, r1: int, dst: np.ndarray, dec: int, nodata) -> int:
+    """Decimated rows r0..r1 of dst: block means of the valid pixels; a block with none takes the nearest valid
+    block of its row (dropouts in otherwise complete mosaics). rows_src(a, b) gives full-resolution rows a..b.
+    Returns the number of blocks with data."""
+    w = dst.shape[1]
+    valid = 0
+    step = max(1, BAND_ROWS // dec)
+    for q0 in range(r0, r1, step):
+        q1 = min(r1, q0 + step)
+        blk = np.asarray(rows_src(q0 * dec, q1 * dec), dtype=np.float64)
+        if blk.ndim == 2:
+            blk = blk[..., None]
+        c = blk.shape[2]
+        ok = np.ones(blk.shape[:2], bool) if nodata is None else np.all(blk != nodata, axis=-1)
+        ws = ok.reshape(q1 - q0, dec, w, dec).sum(axis=(1, 3)).astype(np.float64)
+        vv = (blk * ok[..., None]).reshape(q1 - q0, dec, w, dec, c).sum(axis=(1, 3))
+        mean = np.where(ws[..., None] > 0, vv / np.maximum(ws, 1)[..., None], 0.0)
+        good = ws > 0
+        valid += int(good.sum())
+        for j in np.nonzero(~good.all(axis=1))[0]:
+            idx = np.nonzero(good[j])[0]
+            if idx.size == 0:
+                raise ValueError(f"decimated row {q0 + j} has no valid pixel")
+            for ch in range(c):
+                mean[j, :, ch] = np.interp(np.arange(w), idx, mean[j, idx, ch], period=w)
+        q = np.clip(np.floor(mean + 0.5), 0, 255).astype(np.uint8)
+        dst[q0:q1] = q[..., 0] if c == 1 else q
+    return valid
+
+
+class _HttpFile:
+    """Read-only, seekable view of a remote file through HTTP range requests (for parsing a TIFF header)."""
+
+    def __init__(self, url: str, size: int):
+        self.url, self.size, self.pos = url, size, 0
+        self.cache: dict = {}
+
+    def seek(self, off, whence=0):
+        self.pos = off if whence == 0 else (self.pos + off if whence == 1 else self.size + off)
+        return self.pos
+
+    def tell(self):
+        return self.pos
+
+    def read(self, n=-1):
+        from moon.fetch import read_range
+        n = self.size - self.pos if n is None or n < 0 else min(n, self.size - self.pos)
+        out = bytearray()
+        blk = 1 << 20
+        while n > 0:
+            b0 = (self.pos // blk) * blk
+            if b0 not in self.cache:
+                self.cache[b0] = read_range(self.url, b0, min(blk, self.size - b0))
+            chunk = self.cache[b0][self.pos - b0:self.pos - b0 + n]
+            out += chunk
+            self.pos += len(chunk)
+            n -= len(chunk)
+        return bytes(out)
+
+    def seekable(self):
+        return True
+
+    def readable(self):
+        return True
+
+
+def stream_rows(url: str, size: int, on_rows, expect_md5: str | None, expect_sha256: str | None) -> tuple[str, str, np.dtype]:
+    """Stream an uncompressed, strip-contiguous single-band TIFF from `url` in order (parallel 64 MB range reads),
+    hash every byte (md5 and sha256) and hand its rows to on_rows(rows_array) in order as they complete. Nothing
+    is written to disk. Raises when the hashes differ from the expected ones (when given)."""
+    import hashlib
+    from concurrent.futures import ThreadPoolExecutor
+    import tifffile
+    from moon.fetch import read_range
+
+    with tifffile.TiffFile(_HttpFile(url, size)) as tf:
+        p = tf.pages[0]
+        if p.compression != 1 or p.is_tiled or p.samplesperpixel != 1:
+            raise ValueError(f"{url}: streaming needs an uncompressed single-band strip TIFF")
+        off = np.asarray(p.dataoffsets, dtype=np.int64)
+        cnt = np.asarray(p.databytecounts, dtype=np.int64)
+        if not np.all(off[1:] == off[:-1] + cnt[:-1]):
+            raise ValueError(f"{url}: strips are not contiguous")
+        dtype = np.dtype(p.dtype).newbyteorder(tf.byteorder)
+        H, W = p.imagelength, p.imagewidth
+    row_bytes = W * dtype.itemsize
+    d0, d1 = int(off[0]), int(off[0]) + H * row_bytes
+    md5, sha = hashlib.md5(), hashlib.sha256()
+    ch = 64 << 20
+    starts = list(range(0, size, ch))
+    pending = bytearray()
+    got = 0
+    def chunks():
+        # at most 8 ranges in flight or waiting: memory stays bounded however slow the consumer is
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            futs = []
+            for st in starts:
+                futs.append((st, ex.submit(read_range, url, st, min(ch, size - st))))
+                if len(futs) >= 8:
+                    s, f = futs.pop(0)
+                    yield s, f.result()
+            for s, f in futs:
+                yield s, f.result()
+    if True:
+        for s0, data in chunks():
+            md5.update(data)
+            sha.update(data)
+            a, b = max(s0, d0), min(s0 + len(data), d1)
+            if a < b:
+                pending += data[a - s0:b - s0]
+                nrows = len(pending) // row_bytes
+                if nrows:
+                    on_rows(np.frombuffer(bytes(pending[:nrows * row_bytes]), dtype=dtype).reshape(nrows, W))
+                    got += nrows
+                    del pending[:nrows * row_bytes]
+    if got != H:
+        raise ValueError(f"{url}: streamed {got} of {H} rows")
+    m, sh = md5.hexdigest(), sha.hexdigest()
+    if expect_md5 and m != expect_md5:
+        raise ValueError(f"{url}: streamed md5 {m} != {expect_md5}")
+    if expect_sha256 and sh != expect_sha256:
+        raise ValueError(f"{url}: streamed sha256 {sh} != {expect_sha256}")
+    return m, sh, dtype
+
+
+def prepare_streamed(body: config.Body, key: str, record: bool = False) -> dict:
+    """prepare() for a decimated 8-bit source without a local copy of the full file: the georeference is read
+    from the remote header, the rows are streamed (every byte hashed against the config's md5 and sha256, or,
+    for a new source with --record-checksums, against the provider's .md5, then recorded) into the decimated
+    mip 0, then the mips are built. Peak disk: the decimated copy only."""
+    from planet import fetch
+    src = body.source(key)
+    url = src["url"]
+    want_md5 = src["md5"]
+    if want_md5 is None or src["sha256"] is None:
+        if not record:
+            raise RuntimeError(f"{body.id}.{key}: no md5/sha256 in the config (run with --record-checksums once)")
+        want_md5 = want_md5 or fetch.provider_md5(url)
+        if want_md5 is None:
+            raise RuntimeError(f"{body.id}.{key}: a streamed source needs the provider's .md5 to be pinned")
+    out = rt.work_dir(body.id) / f"src-{key}"
+    out.mkdir(parents=True, exist_ok=True)
+    dec = int(src.get("decimate", 1))
+    g = georef("/vsicurl/" + url)
+    if not check_georef(body.id, key, src, g) or g["height"] % dec:
+        raise ValueError(f"{body.id}.{key}: streamed decimation needs an exact global grid")
+    check_nodata(body.id, key, src["nodata"], g["nodata"])
+    H, W = g["height"], g["width"]
+    h, w = H // dec, W // dec
+    K = _mip_chain_depth(h)
+    rt.check_disk(int(h * w * (1 + 2 / 3)))
+    dst = np.memmap(out / "m0.u8", dtype=np.uint8, mode="w+", shape=(h, w))
+    st = {"buf": np.zeros((0, W), np.uint8), "row": 0, "valid": 0}
+    band = max(1, BAND_ROWS // dec) * dec
+
+    def drain(final: bool) -> None:
+        while st["buf"].shape[0] >= band or (final and st["buf"].shape[0] > 0):
+            take = min(band, st["buf"].shape[0])
+            rows = st["buf"][:take]
+            st["buf"] = st["buf"][take:]
+            r0 = st["row"] // dec
+            base = st["row"]
+            st["valid"] += _decimate_rows(lambda a, b: rows[a - base:b - base], r0, r0 + take // dec, dst, dec, src["nodata"])
+            st["row"] += take
+
+    def on_rows(arr):
+        st["buf"] = np.concatenate([st["buf"], arr]) if st["buf"].shape[0] else np.array(arr)
+        drain(False)
+
+    rt.log(f"{body.id}.{key}: streaming {src['bytes'] / 1e6:.0f} MB into a 1/{dec} 8-bit mip 0 (no local copy)")
+    m, sh, _ = stream_rows(url, src["bytes"], on_rows, want_md5, src["sha256"])
+    drain(True)
+    if src["sha256"] is None:
+        fetch._record(body, key, m, sh)
+        body = config.load(body.id)
+    dst.flush()
+    del dst
+    meta = {"width": w, "height": h, "channels": 1, "mips": K, "lonLeftEdgeDeg": g["lonLeftEdgeDeg"], "regridded": False,
+            "valueDtype": "float16", "fingerprint": source_fingerprint(body, key), "streamed": {"md5": m, "sha256": sh},
+            "georef": {k: v for k, v in g.items() if k != "crs"}, "mip0": {"kind": "u8", "decimate": dec},
+            "validFraction": st["valid"] / (h * w)}
+    m0 = np.memmap(out / "m0.u8", dtype=np.uint8, mode="r", shape=(h, w))
+
+    def prev_rows(r0, r1):
+        return np.asarray(m0[r0:r1], dtype=np.float32), None
+    for k in range(1, K + 1):
+        hk, wk = h >> k, w >> k
+        dk = np.memmap(out / f"m{k}.f32", dtype=np.float16, mode="w+", shape=(hk, wk))
+        for r0 in range(0, hk, BAND_ROWS):
+            r1 = min(hk, r0 + BAND_ROWS)
+            v, _ = _down2(*prev_rows(2 * r0, 2 * r1))
+            dk[r0:r1] = v
+        dk.flush()
+
+        def prev_rows(r0, r1, dk=dk):
+            return np.asarray(dk[r0:r1]), None
+    del m0
+    rt.write_json(out / "meta.json", meta)
+    return meta
+
+
 def prepare(body: config.Body, key: str, path: Path) -> dict:
     """Steps 1-3 of the module docstring. Writes work/src-<key>/meta.json last (the resume marker)."""
     src = body.source(key)
@@ -257,8 +473,7 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     bands = src["bands"][:3]
     c = len(bands)
     nodata = src["nodata"]
-    if nodata is not None and g["nodata"] is not None and float(g["nodata"]) != float(nodata):
-        raise ValueError(f"{body.id}.{key}: file nodata {g['nodata']} != config {nodata}")
+    check_nodata(body.id, key, nodata, g["nodata"])
     dec = int(src.get("decimate", 1))
     if dec > 1 and (not exact or g["height"] % dec or np.dtype(g["dtype"]) != np.uint8):
         raise ValueError(f"{body.id}.{key}: decimate needs an exact 8-bit grid whose height divides by {dec}")
@@ -284,33 +499,20 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
            f"grid {w} x {h}, {K} mips, mip 0 {'memory-mapped' if mm is not None else ('copied' if exact else 'regridded')}")
     level_w = None
     if dec > 1:
-        # area mean of dec x dec blocks into an 8-bit mip 0 (the full-resolution file is read in row bands and
-        # can be deleted as soon as this is written: the bake never needs it again)
+        # area mean of the valid pixels of dec x dec blocks into an 8-bit mip 0 (the full-resolution file is read
+        # in row bands; prepare_streamed never stores it at all)
         dst = np.memmap(out / "m0.u8", dtype=np.uint8, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
-        valid = 0
-        for r0 in range(0, h, BAND_ROWS // dec):
-            r1 = min(h, r0 + BAND_ROWS // dec)
-            blk = _read_band_rows(path, bands, r0 * dec, r1 * dec).astype(np.float64)
-            ok = np.ones(blk.shape[:2], bool) if nodata is None else np.all(blk != nodata, axis=-1)
-            wv = ok.reshape(r1 - r0, dec, w, dec).astype(np.float64)
-            vv = (blk * ok[..., None]).reshape(r1 - r0, dec, w, dec, c).sum(axis=(1, 3))
-            ws = wv.sum(axis=(1, 3))
-            mean = np.where(ws[..., None] > 0, vv / np.maximum(ws, 1)[..., None], 0.0)
-            valid += int((ws > 0).sum())
-            q = np.clip(np.floor(mean + 0.5), 0, 255).astype(np.uint8)
-            dst[r0:r1] = q[..., 0] if c == 1 else q
+        valid = _decimate_rows(lambda r0, r1: _read_band_rows(path, bands, r0, r1), 0, h, dst, dec, nodata)
         dst.flush()
         meta["mip0"] = {"kind": "u8", "decimate": dec}
         meta["validFraction"] = valid / (h * w)
-        if valid < h * w:
-            raise ValueError(f"{body.id}.{key}: decimated source has {h * w - valid} empty pixels; decimate assumes full coverage")
 
         def rows0(r0, r1):
             return np.asarray(dst[r0:r1], dtype=np.float32), None
     elif not exact:
         dst = np.memmap(out / "m0.f32", dtype=vdt, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
         mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="w+", shape=(h, w)) if nodata is not None else None
-        valid = _regrid(path, bands, g, nodata, dst, mask)
+        valid = _regrid(path, bands, g, nodata, dst, mask, int(src.get("nodataDilatePx", 0)))
         meta["mip0"] = {"kind": "f32"}
         meta["validFraction"] = valid / (h * w) if mask is not None else 1.0
 
@@ -331,9 +533,15 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
         valid = 0
         for r0 in range(0, h, BAND_ROWS):
             r1 = min(h, r0 + BAND_ROWS)
-            blk = _read_band_rows(path, bands, r0, r1).astype(np.float32)
+            dl = int(src.get("nodataDilatePx", 0))
+            q0, q1 = max(0, r0 - dl), min(h, r1 + dl)
+            blk = _read_band_rows(path, bands, q0, q1).astype(np.float32)
+            okd = None
             if mask is not None:
-                ok = np.all(blk != nodata, axis=-1) & np.all(np.isfinite(blk), axis=-1)
+                okd = _dilate_invalid(np.all(blk != nodata, axis=-1) & np.all(np.isfinite(blk), axis=-1), dl)[r0 - q0:r1 - q0]
+            blk = blk[r0 - q0:r1 - q0]
+            if mask is not None:
+                ok = okd
                 mask[r0:r1] = ok
                 valid += int(ok.sum())
                 blk[~ok] = 0.0
@@ -370,11 +578,87 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
             return np.asarray(dk[r0:r1]), (np.asarray(wkm[r0:r1]) if wkm is not None else None)
     if level_w is not None:
         _pull_push(out, h, w, c, K, meta)
+    if src.get("polarSmooth"):
+        _polar_smooth(out, meta, src["polarSmooth"])
     rt.write_json(out / "meta.json", meta)
     return meta
 
 
-def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask) -> int:
+def _zonal_box(row: np.ndarray, n: int) -> np.ndarray:
+    """Circular box mean of n pixels along a row (w, c)."""
+    w = row.shape[0]
+    if n >= w:
+        return np.repeat(row.mean(axis=0, keepdims=True), w, axis=0)
+    ext = np.concatenate([row[-(n // 2) - 1:], row, row[:n]], axis=0)
+    cs = np.concatenate([np.zeros((1, row.shape[1])), np.cumsum(ext, axis=0)], axis=0)
+    start = np.arange(w) + 1  # ext[start] is row[j - n // 2]
+    return (cs[start + n] - cs[start]) / n
+
+
+def _polar_smooth(out: Path, meta: dict, cfg: dict) -> None:
+    """Toward the poles, south of cfg["southDeg"] and north of cfg["northDeg"], mip 0 pixels are replaced by
+    their row's circular longitude box mean, the window growing linearly from nothing at the limit to the whole
+    row at the pole, then (cfg["meridionalDeg"], optional) by the mean of the rows within a latitude window
+    growing likewise to +-meridionalDeg at the pole: the source's radial streaks ('pinwheels', cfg["pixels"] =
+    "all") or the fill's flat polygons ("filled": only the pixels the nodata fill made) become a smooth cap,
+    without the rings that row-to-row differences of zonal means alone would leave. The mips are then rebuilt
+    from mip 0."""
+    h, w, c, K = meta["height"], meta["width"], meta["channels"], meta["mips"]
+    kind = meta["mip0"]["kind"]
+    if kind == "tiff":
+        raise ValueError("polarSmooth needs a copied mip 0 (a source with nodata, regridded or decimated)")
+    if cfg["pixels"] not in ("all", "filled"):
+        raise ValueError(f"polarSmooth.pixels {cfg['pixels']!r} is not 'all' or 'filled'")
+    vdt = np.dtype(np.uint8) if kind == "u8" else np.dtype(meta["valueDtype"])
+    shape = lambda k: ((h >> k, w >> k) if c == 1 else (h >> k, w >> k, c))  # noqa: E731
+    m0 = np.memmap(out / ("m0.u8" if kind == "u8" else "m0.f32"), dtype=vdt, mode="r+", shape=shape(0))
+    mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="r", shape=(h, w)) if cfg["pixels"] == "filled" else None
+    lat = 90.0 - (np.arange(h) + 0.5) * 180.0 / h
+    mer = float(cfg.get("meridionalDeg", 0.0))
+    rows = 0
+    # each zone: its rows, contiguous, the pole's first
+    for limit, zone in ((float(cfg["northDeg"]), np.nonzero(lat > float(cfg["northDeg"]))[0]),
+                        (float(cfg["southDeg"]), np.nonzero(lat < float(cfg["southDeg"]))[0][::-1])):
+        if zone.size == 0:
+            continue
+        t = (np.abs(lat[zone]) - abs(limit)) / (90.0 - abs(limit))
+        orig = [np.asarray(m0[i], dtype=np.float64) for i in zone]
+        orig = [r if r.ndim == 2 else r[:, None] for r in orig]
+        zon = np.stack([_zonal_box(r, int(round(tt * w))) if int(round(tt * w)) >= 2 else r for r, tt in zip(orig, t)]).astype(np.float32)
+        if mer > 0:
+            half = np.rint(t * mer / (180.0 / h)).astype(int)
+            cs = np.concatenate([np.zeros((1,) + zon.shape[1:], np.float64), np.cumsum(zon, axis=0, dtype=np.float64)], axis=0)
+            lo = np.maximum(0, np.arange(zone.size) - half)
+            hi = np.minimum(zone.size, np.arange(zone.size) + half + 1)
+            zon = ((cs[hi] - cs[lo]) / (hi - lo)[:, None, None]).astype(np.float32)
+        for j, i in enumerate(zone):
+            if int(round(t[j] * w)) < 2 and mer <= 0:
+                continue
+            sm = zon[j].astype(np.float64)
+            if mask is not None:
+                keep = np.asarray(mask[i]) > 0
+                sm[keep] = orig[j][keep]
+            sm = sm if c > 1 else sm[:, 0]
+            m0[i] = np.clip(np.floor(sm + 0.5), 0, 255).astype(np.uint8) if kind == "u8" else sm.astype(vdt)
+            rows += 1
+        del orig, zon
+    m0.flush()
+    for k in range(1, K + 1):
+        prev = np.memmap(out / ("m0.u8" if (k == 1 and kind == "u8") else ("m0.f32" if k == 1 else f"m{k - 1}.f32")),
+                         dtype=vdt if k == 1 else np.dtype(meta["valueDtype"]), mode="r", shape=shape(k - 1))
+        dk = np.memmap(out / f"m{k}.f32", dtype=np.dtype(meta["valueDtype"]), mode="r+", shape=shape(k))
+        for r0 in range(0, h >> k, BAND_ROWS):
+            r1 = min(h >> k, r0 + BAND_ROWS)
+            v, _ = _down2(np.asarray(prev[2 * r0:2 * r1], dtype=np.float32), None)
+            dk[r0:r1] = v
+        dk.flush()
+        del prev, dk
+    del m0, mask
+    meta["polarSmooth"] = dict(cfg)
+    meta["polarSmoothRows"] = rows
+
+
+def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask, dilate: int = 0) -> int:
     """Bilinear resampling of a nearly global grid onto the canonical one (row 0 at +90, column 0 at -180),
     read in row bands; nodata taps are left out of the weights. Returns the number of valid pixels."""
     h, w = dst.shape[:2]
@@ -393,10 +677,13 @@ def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask
         fy = sy - y0
         ya, yb = y0, np.minimum(y0 + 1, H - 1)
         lo, hi = int(ya.min()), int(yb.max()) + 1
-        band = _read_band_rows(path, bands, lo, hi).astype(np.float64)
+        m0, m1 = max(0, lo - dilate), min(H, hi + dilate)
+        band = _read_band_rows(path, bands, m0, m1).astype(np.float64)
         ok = np.all(np.isfinite(band), axis=-1)
         if nodata is not None:
             ok &= np.all(band != nodata, axis=-1)
+        ok = _dilate_invalid(ok, dilate)[lo - m0:hi - m0]
+        band = band[lo - m0:hi - m0]
         band[~ok] = 0.0
         okf = ok.astype(np.float64)
         acc = np.zeros((r1 - r0, w, band.shape[-1]))
@@ -472,7 +759,7 @@ def _upsample_rows(coarse: np.ndarray, r0: int, r1: int, wk: int) -> np.ndarray:
     return top * (1 - fy) + bot * fy
 
 
-PREPARE_VERSION = 3
+PREPARE_VERSION = 4
 
 
 def source_fingerprint(body: config.Body, key: str) -> str:

@@ -4,25 +4,37 @@
  "note": "Every source of the simple bodies' tile sets and the giants' global maps (planet-bake). Merged into data/defs/visuals/credits.json at activation; rendered by the Credits screen.",
  "entries": [
   {
+   "id": "dlr-phobos-hrsc-dem",
+   "title": "Phobos HRSC global DEM, 2 ppd (Willner et al. 2010)",
+   "author": "ESA/DLR/FU Berlin (Mars Express HRSC), DLR Institute of Planetary Research (K. Willner); NASA/JPL Viking Orbiter; USGS Astrogeology Science Center (distribution)",
+   "url": "https://planetarymaps.usgs.gov/mosaic/Phobos_ME_HRSC_DEM_Global_2ppd.tif",
+   "licence": "No access or use constraints (product metadata: Access_Constraints None, Use_Constraints None)",
+   "licenceUrl": "https://planetarymaps.usgs.gov/mosaic/Phobos_ME_HRSC_DEM_Global_2ppd.tif.xml",
+   "attribution": "Phobos shape: ESA/DLR/FU Berlin (Mars Express HRSC) and NASA/JPL Viking, DLR (Willner et al. 2010); USGS Astrogeology",
+   "bodies": [
+    "Phobos"
+   ]
+  },
+  {
    "id": "hst-opal-neptune-2015a",
-   "title": "Hubble OPAL global map of Neptune, 2015 (HLSP opal, doi:10.17909/T9G593)",
+   "title": "Hubble OPAL global map of Neptune, 2015 (HLSP opal, doi:10.17909/T9G593), modified (regridded, limb latitudes cut and filled, seam feathered)",
    "author": "NASA/ESA Hubble Space Telescope, OPAL programme (PI A. Simon, GO13937)",
    "url": "https://archive.stsci.edu/hlsps/opal/",
    "licence": "CC BY 4.0",
    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "attribution": "Neptune map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)",
+   "attribution": "Neptune map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593; modified by the game (regridded, limb latitudes cut and filled zonally, hemisphere seam feathered) (CC BY 4.0)",
    "bodies": [
     "Neptune"
    ]
   },
   {
    "id": "hst-opal-uranus-2014a",
-   "title": "Hubble OPAL global map of Uranus, 2014 (HLSP opal, doi:10.17909/T9G593)",
+   "title": "Hubble OPAL global map of Uranus, 2014 (HLSP opal, doi:10.17909/T9G593), modified (regridded, limb latitudes cut and filled, seam feathered)",
    "author": "NASA/ESA Hubble Space Telescope, OPAL programme (PI A. Simon, GO13937)",
    "url": "https://archive.stsci.edu/hlsps/opal/",
    "licence": "CC BY 4.0",
    "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "attribution": "Uranus map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)",
+   "attribution": "Uranus map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593; modified by the game (regridded, limb latitudes cut and filled zonally, hemisphere seam feathered) (CC BY 4.0)",
    "bodies": [
     "Uranus"
    ]
@@ -188,6 +200,18 @@
    ]
   },
   {
+   "id": "usgs-enceladus-bland-2020-shape",
+   "title": "Enceladus global shape model, 2 ppd (Bland, Weller, Mayer and Archinal 2020)",
+   "author": "USGS Astrogeology Science Center (M. T. Bland, L. A. Weller, D. P. Mayer, B. A. Archinal); NASA/JPL-Caltech/Space Science Institute (Cassini ISS)",
+   "url": "https://planetarymaps.usgs.gov/mosaic/Enceladus/enceladus_cassini_iss_shapemodel_bland_2019/enceladus_2019pm_radius.tif",
+   "licence": "Public domain (U.S. Government work)",
+   "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+   "attribution": "Enceladus shape: USGS Astrogeology (Bland et al. 2020, doi:10.5194/isprs-annals-V-3-2020-579-2020) from Cassini ISS images (NASA/JPL-Caltech/SSI)",
+   "bodies": [
+    "Enceladus"
+   ]
+  },
+  {
    "id": "usgs-enceladus-cassini",
    "title": "Enceladus Cassini ISS global mosaic, 100 m (high-pass filtered)",
    "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology Science Center",
@@ -308,13 +332,13 @@
    ]
   },
   {
-   "id": "usgs-mercury-mdis-bdr",
-   "title": "Mercury MESSENGER MDIS Basemap BDR global mosaic, 166 m",
+   "id": "usgs-mercury-mdis-loi",
+   "title": "Mercury MESSENGER MDIS Basemap LOI (low-incidence) global mosaic, 166 m",
    "author": "NASA/Johns Hopkins University Applied Physics Laboratory/Carnegie Institution of Washington; USGS Astrogeology Science Center",
-   "url": "https://planetarymaps.usgs.gov/mosaic/Mercury_MESSENGER_MDIS_Basemap_BDR_Mosaic_Global_166m.tif",
+   "url": "https://planetarymaps.usgs.gov/mosaic/Mercury_MESSENGER_MDIS_Basemap_LOI_Mosaic_Global_166m.tif",
    "licence": "Public domain (U.S. Government work)",
    "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
-   "attribution": "Mercury imagery: NASA/JHUAPL/Carnegie Institution of Washington (MESSENGER MDIS); USGS Astrogeology",
+   "attribution": "Mercury imagery: NASA/JHUAPL/Carnegie Institution of Washington (MESSENGER MDIS low-incidence basemap); USGS Astrogeology",
    "bodies": [
     "Mercury"
    ]

@@ -29,7 +29,13 @@
     1
    ],
    "nodata": 0,
-   "credit": "usgs-callisto-voyager-galileo"
+   "credit": "usgs-callisto-voyager-galileo",
+   "polarSmooth": {
+    "southDeg": -60.0,
+    "northDeg": 60.0,
+    "pixels": "filled",
+    "meridionalDeg": 3.0
+   }
   }
  },
  "amplification": {

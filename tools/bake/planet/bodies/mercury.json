@@ -11,15 +11,15 @@
  },
  "credits": [
   "naif-pck00011",
-  "usgs-mercury-mdis-bdr",
+  "usgs-mercury-mdis-loi",
   "usgs-mercury-dem"
  ],
  "sources": {
   "albedo": {
-   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_MESSENGER_MDIS_Basemap_BDR_Mosaic_Global_166m.tif",
-   "bytes": 4247470901,
-   "md5": "42d08e1ecfc400f547040f212c3903af",
-   "sha256": "d4c0880c39d062994a6f02c0462ec6c87f60fdcc504546915e076e2cd472b1da",
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_MESSENGER_MDIS_Basemap_LOI_Mosaic_Global_166m.tif",
+   "bytes": 4247471083,
+   "md5": null,
+   "sha256": null,
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",
@@ -29,8 +29,8 @@
    "bands": [
     1
    ],
-   "nodata": null,
-   "credit": "usgs-mercury-mdis-bdr",
+   "nodata": 0,
+   "credit": "usgs-mercury-mdis-loi",
    "decimate": 2
   },
   "dem": {
@@ -47,7 +47,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": -32768,
    "credit": "usgs-mercury-dem"
   }
  },

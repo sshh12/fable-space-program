@@ -30,7 +30,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-mars-viking-mdim21",
    "decimate": 2
   },
@@ -50,7 +50,7 @@
     2,
     3
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-mars-viking-colour"
   },
   "dem": {
@@ -67,7 +67,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": -32768,
    "credit": "usgs-mars-mola"
   }
  },

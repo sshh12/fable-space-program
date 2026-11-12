@@ -77,6 +77,13 @@ def _load(path, src: dict) -> tuple[np.ndarray, np.ndarray]:
     a = a[..., :3]
     if src["nodata"] is not None:
         valid &= ~np.all(np.abs(a - float(src["nodata"]) / 255.0) < 1e-9, axis=-1)
+    if src.get("registration", "cell") == "point" and a.shape[1] == 2 * (a.shape[0] - 1) + 1:
+        # the first and last columns of a global point-registered grid are the same meridian, sampled at the
+        # edge of the observation (Saturn's is dark in the south): it becomes the mean of its two neighbours
+        a = a.copy()
+        a[:, 0] = a[:, -1] = 0.5 * (a[:, 1] + a[:, -2])
+        valid = valid.copy()
+        valid[:, 0] = valid[:, -1] = valid[:, 1] & valid[:, -2]
     if "validLatDeg" in src:
         # rows outside the observation's clean latitude range (limb smear, polar night) count as uncovered
         H = a.shape[0]
@@ -153,6 +160,24 @@ def _zonal_fill(lin: np.ndarray, wgt: np.ndarray) -> tuple[np.ndarray, float]:
     return out, float(1.0 - cover.mean())
 
 
+def _feather_seams(lin: np.ndarray, seams_deg: list, feather_deg: float) -> np.ndarray:
+    """Remove the brightness step of a mosaic seam at the given east longitudes: per row and channel, half the
+    step between the two columns either side is taken off each side, fading linearly over feather_deg."""
+    h, w = lin.shape[:2]
+    out = lin.copy()
+    fw = max(1, int(round(feather_deg / 360.0 * w)))
+    ramp = 1.0 - np.arange(fw) / fw
+    for lon in seams_deg:
+        c = int(round(((lon + 180.0) % 360.0) / 360.0 * w)) % w
+        left = 0.5 * (lin[:, (c - 1) % w] + lin[:, (c - 2) % w])
+        right = 0.5 * (lin[:, c % w] + lin[:, (c + 1) % w])
+        step = right - left
+        for i in range(fw):
+            out[:, (c - 1 - i) % w] += 0.5 * step * ramp[i]
+            out[:, (c + i) % w] -= 0.5 * step * ramp[i]
+    return np.clip(out, 0.0, 1.0)
+
+
 def _read_table(path, spec: dict) -> tuple[np.ndarray, np.ndarray]:
     rows = []
     for line in path.read_text(encoding="ascii", errors="replace").splitlines():
@@ -208,6 +233,8 @@ def bake(body: config.Body, record: bool = False) -> None:
                 raise ValueError(f"{body.id}.{g['source']}: image is {a.shape[1]} x {a.shape[0]}, config says {src['width']} x {src['height']}")
             lin, wgt = _resample(a, valid, src, body, g["width"], g["height"])
             lin, filled = _zonal_fill(lin, wgt)
+            if g.get("featherSeamLonDeg"):
+                lin = _feather_seams(lin, g["featherSeamLonDeg"], g.get("featherDeg", 20.0))
             img = srgb_encode(np.clip(lin, 0, 1))
             extra = {"rowZero": "north", "columnZeroLonDeg": -180.0, "latitude": "planetocentric",
                      "longitude": "east-positive in the body-fixed frame of the rotation model",

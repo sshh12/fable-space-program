@@ -62,7 +62,8 @@ describe('planet-bake configs', () => {
       for (const id of c.credits) {
         const e = credits[id];
         expect(e, `${c.id}: credit ${id}`).toBeDefined();
-        expect(/public domain|cc by/i.test(e!.licence), `${id}: ${e!.licence}`).toBe(true);
+        // public domain, CC BY, or a product whose metadata states no access or use constraints (the Phobos DEM)
+        expect(/public domain|cc by|no access or use constraints/i.test(e!.licence), `${id}: ${e!.licence}`).toBe(true);
         expect(e!.attribution.length).toBeGreaterThan(10);
       }
     }

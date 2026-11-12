@@ -31,7 +31,13 @@
     3
    ],
    "nodata": 0,
-   "credit": "usgs-io-galileo-voyager"
+   "credit": "usgs-io-galileo-voyager",
+   "polarSmooth": {
+    "southDeg": -70.0,
+    "northDeg": 70.0,
+    "pixels": "all",
+    "meridionalDeg": 3.0
+   }
   }
  },
  "amplification": {

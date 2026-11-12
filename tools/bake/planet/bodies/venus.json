@@ -30,7 +30,8 @@
     1
    ],
    "nodata": 0,
-   "credit": "usgs-venus-magellan-mdir"
+   "credit": "usgs-venus-magellan-mdir",
+   "nodataDilatePx": 1
   },
   "dem": {
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Venus_Magellan_Topography_Global_4641m_v02.tif",
@@ -107,6 +108,15 @@
    "sense": "brighter",
    "minRatio": 1.05,
    "ref": "IAU Gazetteer of Planetary Nomenclature, feature 203 (25.5 S, 0.3 E, 1,897 km); radar-bright upland (PIA00147)"
+  },
+  {
+   "name": "Maat Mons",
+   "kind": "demHeight",
+   "latDeg": 0.5,
+   "lonDegE": 194.6,
+   "expectM": 8800,
+   "toleranceM": 2000,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3550 Maat Mons (0.5 N, 194.6 E, 395 km); the highest volcano of Venus, about 8 km above the mean radius (6051.8 km), i.e. about 8.8 km above this DEM's 6051 km datum (Magellan altimetry); this bake reads 9.0 km, the point mirrored 0.5 km and shifted by 180 deg -0.1 km"
   }
  ]
 }
