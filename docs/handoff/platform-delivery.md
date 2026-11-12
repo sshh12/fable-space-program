@@ -33,3 +33,16 @@ work lands.
 - 01:17 58d520c: roles, entry, launcher; the in-stack suite (9 tests) green: Postgres 18.0 (180006) UTF8 /
   builtin C.UTF-8 ready in 172-393 ms, production settings, advisory lock, fenced write, hard kill of
   Postgres, citext, non-1252 text, endpoint document, boot pack served and verified.
+- 01:25 Railway baseline (`railway usage --json`, read 09:25 UTC): workspace "Shrivu Shankar's Projects",
+  period 2026-11-02 to 2026-12-02, usage $4.61 so far, estimated bill $8.05, all of it `haulpoint-tms`
+  (memory $3.41, CPU $0.46, egress $0.64, volume $0.10). No workspace usage limit is set; an "Agent" target
+  (Railway's own agent feature) has a $5 hard limit, untouched.
+- 01:26 ABOUT TO CREATE (Hobby plan, approved): Railway project `fable-space-program` (environment
+  production); buckets `packs` and `dumps` in US East (iad), $0.015/GB-month: about $0.21-0.30 a month for
+  14-20 GB of packs, cents for dumps; services `game` (hello role, limit 2 vCPU / 2 GB), `shell` (static +
+  mirror, limit 0.5 vCPU / 0.25 GB, CDN on), `postgres` (Postgres 18 template image, limit 1 vCPU / 0.5 GB,
+  5 GB volume at $0.15/GB-month of used space), `dump` (hourly cron, seconds per run). Expected idle usage
+  $3-8 a month on the low side of ARCHITECTURE 30 (hello roles are lighter than the real game); this week's
+  share about $1-2. Budget guard: per-service replica limits (no hard workspace limit: it would stop
+  haulpoint-tms; no soft limit: it is an e-mail alert and the user wants none). Modal: environment `fsp`
+  (free), one volume for the pack copy (inside Modal's free storage), app `fsp-probe` on demand.

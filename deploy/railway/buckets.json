@@ -1,0 +1,14 @@
+{
+ "packs": {
+  "bucket": "stashed-holster-ydfr-q9etur",
+  "endpoint": "https://t3.storageapi.dev",
+  "region": "auto",
+  "pathStyle": false
+ },
+ "dumps": {
+  "bucket": "dumps-m-vbfvge4f0sw0fg63r",
+  "endpoint": "https://t3.storageapi.dev",
+  "region": "auto",
+  "pathStyle": false
+ }
+}

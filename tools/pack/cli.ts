@@ -42,7 +42,18 @@ const opts = Object.fromEntries(
 );
 const log = (line: string): void => console.log(`${new Date().toISOString().slice(11, 19)} ${line}`);
 
+/** PACKS_* from the tracked deploy/railway/buckets.json (not secret) and the git-ignored .env (the credential). */
 function loadDotEnv(): void {
+  const pub = path.join(repoRoot, 'deploy', 'railway', 'buckets.json');
+  if (fs.existsSync(pub)) {
+    const p = (JSON.parse(fs.readFileSync(pub, 'utf8')) as Record<string, { bucket: string; endpoint: string; region: string; pathStyle: boolean }>).packs;
+    if (p) {
+      process.env.PACKS_BUCKET ??= p.bucket;
+      process.env.PACKS_ENDPOINT ??= p.endpoint;
+      process.env.PACKS_REGION ??= p.region;
+      process.env.PACKS_PATH_STYLE ??= p.pathStyle ? '1' : '0';
+    }
+  }
   const f = path.join(repoRoot, '.env');
   if (!fs.existsSync(f)) return;
   for (const line of fs.readFileSync(f, 'utf8').split(/\r?\n/)) {

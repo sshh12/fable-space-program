@@ -1,0 +1,179 @@
+{
+ "v": 1,
+ "hash": "5b7c3d4fe9256522a06c637853572595",
+ "bytes": 19969602,
+ "budgetBytes": 25000000,
+ "clientBuild": {
+  "hash": "7bc21a26da2aba3d",
+  "firstPaintBytes": 2221065,
+  "files": [
+   "assets/main-ByWn3yR-.js",
+   "index.html"
+  ]
+ },
+ "defsBytes": 229510,
+ "included": [
+  {
+   "item": "earth/manifest.json",
+   "bytes": 15109,
+   "entries": 1
+  },
+  {
+   "item": "moon/manifest.json",
+   "bytes": 3427,
+   "entries": 1
+  },
+  {
+   "item": "sky/manifest.json",
+   "bytes": 935,
+   "entries": 1
+  },
+  {
+   "item": "sky/stars.f32",
+   "bytes": 285440,
+   "entries": 1
+  },
+  {
+   "item": "sky/named-stars.json",
+   "bytes": 13283,
+   "entries": 1
+  },
+  {
+   "item": "earth/albedo levels 0-2",
+   "bytes": 3759662,
+   "entries": 126
+  },
+  {
+   "item": "earth/watermask levels 0-2",
+   "bytes": 752384,
+   "entries": 126
+  },
+  {
+   "item": "earth/landcover levels 0-2",
+   "bytes": 391706,
+   "entries": 126
+  },
+  {
+   "item": "earth/night levels 0-2",
+   "bytes": 525200,
+   "entries": 126
+  },
+  {
+   "item": "earth/height levels 0-1",
+   "bytes": 3069479,
+   "entries": 30
+  },
+  {
+   "item": "sky/milkyway-px.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "sky/milkyway-nx.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "sky/milkyway-py.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "sky/milkyway-ny.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "sky/milkyway-pz.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "sky/milkyway-nz.rgb9e5 from byte 22020096",
+   "bytes": 349524,
+   "entries": 1
+  },
+  {
+   "item": "earth/globals/albedoLowRes.png",
+   "bytes": 374477,
+   "entries": 1
+  },
+  {
+   "item": "moon/globals/albedo-lowres.png",
+   "bytes": 382285,
+   "entries": 1
+  },
+  {
+   "item": "moon/albedo levels 0-2",
+   "bytes": 1315760,
+   "entries": 126
+  },
+  {
+   "item": "moon/height levels 0-1",
+   "bytes": 3276583,
+   "entries": 30
+  },
+  {
+   "item": "earth/watermask levels 3-3",
+   "bytes": 1413701,
+   "entries": 384
+  },
+  {
+   "item": "earth/landcover levels 3-3",
+   "bytes": 1003760,
+   "entries": 384
+  },
+  {
+   "item": "earth/night levels 3-3",
+   "bytes": 1128468,
+   "entries": 384
+  }
+ ],
+ "deferred": [
+  {
+   "item": "earth/height levels 2-2",
+   "bytes": 9376455,
+   "reason": "does not fit: 9.38 MB against 6.22 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "earth/albedo levels 3-3",
+   "bytes": 10560232,
+   "reason": "does not fit: 10.56 MB against 6.22 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "moon/height levels 2-2",
+   "bytes": 9891327,
+   "reason": "does not fit: 9.89 MB against 2.56 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "moon/albedo levels 3-3",
+   "bytes": 3373080,
+   "reason": "does not fit: 3.37 MB against 2.56 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "earth/height levels 3-3",
+   "bytes": 35456520,
+   "reason": "does not fit: 35.46 MB against 2.56 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "moon/height levels 3-3",
+   "bytes": 37196394,
+   "reason": "does not fit: 37.20 MB against 2.56 MB left of the 25 MB boot budget"
+  },
+  {
+   "item": "earth/globals/cloudCoverage.png low mips",
+   "bytes": null,
+   "reason": "no low-resolution cloud map is baked (the 8192 x 4096 PNG is 38 MB); a reduced copy is a bake product, not copied tile bytes: a request to the bake owner"
+  },
+  {
+   "item": "menu assets",
+   "bytes": null,
+   "reason": "the menu does not exist yet (capability-settings and app-integration-1, wave 4)"
+  }
+ ],
+ "builtFrom": {
+  "earth": "ab20fdfc579d4015",
+  "moon": "597c5d666b132450",
+  "sky": null
+ }
+}
