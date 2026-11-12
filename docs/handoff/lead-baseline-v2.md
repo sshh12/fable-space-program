@@ -447,3 +447,64 @@ Suites after the fixes (2026-11-12 01:50, sub-wave 3.1 running in the tree with 
 | Browser | None run (one GPU slot; nothing of the fixes needed one). The frame-exact proof waits for request lead-3 |
 | `node tools/dev/check-stubs.mjs`, `check-secrets.mjs` | OK (20 allowed uses); OK |
 
+## 13. Contract-owner work after the independent review of sim-core-v2 (2026-11-12, 03:45-04:00)
+
+The lead's decisions on that review, as far as they are in the lead's paths. sim-core-v2 implements its side
+and fills the new fields; nothing here touched its paths.
+
+| # | Item | What was done | Commit |
+|---|---|---|---|
+| 1a | The cockpit of a craft | `CraftSnapshot.cockpit?: CraftCockpit \| null` with `CraftCockpit { id: string \| null; cameraSeat: string \| null; sensorMount: { pos; lookDir; upDir } \| null }` (part frame, the def's tuples): the three fields of sim-core-v2's `CommandRuntime`. null = no command part; absent = not produced yet. Required at the tighten step | 537da5f |
+| 1b | Pad limits as rules data | `PadClassLimits { maxLiftoffMass; maxDiameter }`, `UniverseRules.pads.classLimits?: Record<PadClass, PadClassLimits>`, `DEFAULT_PAD_CLASS_LIMITS` (PROVISIONAL: heavy 3,000,000 kg / 9.5 m = LC-1's numbers, medium 700,000 / 7, light 70,000 / 2.5 from the research's sheets rounded up); `PadDef.maxLiftoffMass?` / `maxDiameter?` are optional overrides; "no Infinity" stated on both | 537da5f |
+| 1c | `advanceRails` | The comment says where it lands: the first tick at or after the target, or at or after the next event when that comes earlier; never between two ticks | 537da5f |
+| 1d | Id rules | Header of `sim.ts` ("Ids"), `CraftSnapshot.id`, `PartSnapshot.instanceId`, `VehiclePartPlacement.id`: craft ids are universe-unique; craft ids and instance ids contain neither '/' nor '~'. `SimEvent`: event part ids have two forms until the tighten step after 3.2, then the part key in one form | 537da5f |
+| 2 | ENVELOPE | Fails on a body or situation mismatch at a milestone; e and i judged like the event time and da/a (floors 1e-12; twice the controls' spread); every reason named; a control that is about another body there leaves the milestone without an envelope ("controls file unusable"). The header states what each check can and cannot catch with the reviewer's numbers. 16 tests | 7bfbcd5 |
+| 3 | ARCHITECTURE, MIGRATION_V2 | Tick-pure state (3, 5.2, 7.2's codec list: no clock base); craft identity (3 with the id table, 7.2, 7.5); pad class limits (9.3); rules files as overrides (12). MIGRATION: principle 3 (the envelope and what each check catches), principles 4 and 5 (one more re-record by lead authorisation: the golden is re-baselined five times in all), lead-steps rows "during sub-wave 3.1" and "with fleet-data", "after 3.2" (event part ids in one form, `CraftSnapshot.cockpit` required), section 4, section 8 (the pins). Request sim-core-v2-3 answered | b1a5f42 |
+| 4 | Briefs | LEAD NOTE (after the independent review of sim-core-v2) in `island-core` (tick-pure state, no clock base, the pinned files), `contact-docking` (craft identity, the crew flag), `fleet-data` (the corpus path, the pad class limits, the id characters) | 5f18684 |
+
+**Decisions taken here, and why.**
+
+- **`classLimits` is optional and its defaults are a constant beside `DEFAULT_UNIVERSE_RULES`, not yet a
+  field of it.** `validateRules` (src/core/defs/loader.ts, sim-core-v2's) holds every rules file to exactly
+  the fields of the default document, so adding a field to that document fails the load of the whole
+  library, for every agent and for the dev server, until the three files state it; those files are not the
+  lead's. A reader takes `rules.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS`. **Open lead step** (MIGRATION_V2,
+  "during sub-wave 3.1"): once sim-core-v2's loader reads rules files as overrides of the default, move the
+  constant into `DEFAULT_UNIVERSE_RULES.pads.classLimits` and make the field required; one commit,
+  `net.test.ts` already holds the two equal. At 04:00 the loader was still the strict one.
+- `net.test.ts`: the comparison of `data/defs/rules/default.json` with the default document is now "whatever
+  the file states equals the default and is a field of `UniverseRules`", which holds for the full file of
+  step 3.6 and for the override form.
+- The envelope's floors for e and i are 1e-12, as for da/a. Checked on data, not assumed: no control flight
+  has a body or situation mismatch at any milestone, and the present code (flown ONCE through the gate with
+  `--out` into the scratchpad, about a minute; state hash 7da3ffe86c85228d = the golden) is inside at all 17
+  milestones under the stricter comparison, so `tests/mission/full-mission.test.ts` ("envelope") still passes.
+  Nothing was recorded or re-recorded.
+- `tests/mission/baseline-v1.json` was NOT touched: its embedded `compare.envelope` text predates the e and
+  i check (the field is documentation; the code is the authority). The file may be among the pinned ones.
+- ARCHITECTURE and MIGRATION record the two decisions **as decided**: docs/handoff/sim-core-v2.md still
+  carried the superseded note ("the clock base is state") when this was written. The form of a departing
+  piece's new craft id and of its lineage record are not stated anywhere yet; the architecture names the
+  hand-off as their source and its 7.2 sketch has a comment line, not a field.
+
+**Open after this round.**
+
+- `tools/dev/guard-pins.test.ts` had not landed at 04:00: **not reviewed.** When it lands: it is in the
+  lead's path by the lead's authorisation; check that it pins by content hash, that a missing file fails,
+  that it lists what MIGRATION_V2 names, and that `tools/dev/boundaries.test.ts` and the stub scan accept it.
+- The wording of ARCHITECTURE 3 / 7.2 (craft identity: id form, lineage record, "command root") and of the
+  tick-pure rule is to be aligned with sim-core-v2's hand-off once it is updated.
+- **The corpus path.** The instruction and fleet-data's brief say `tests/unit/sim-vessel/corpus`; the tree
+  has `tests/unit/sim-vessel/codec-corpus` (sim-core-v2, step 3.4). The note in fleet-data's brief names the
+  former as the one path and tells the package what to do if it still finds the latter. If the decision
+  was the other way round (the brief's path is wrong), that note needs one sentence changed.
+- `CraftSnapshot` has no lineage field: not asked for; the presentation does not need it today.
+- `src/core/fakes/fakeSim.ts`: its `advanceRails` lands on the float instant, not on a tick (not the lead's
+  path; for whoever writes `FakeSession`'s conformance tests in sub-wave 3.2).
+- sim-core-v2's side of 1b: `checkPad` still requires both pad limits and `singlePadOf` still writes
+  `Infinity` in memory.
+
+Suites (03:50, sim-core-v2 not yet at work in the tree): `npm run typecheck` (both configurations) clean on
+the whole tree after each contract change; `src/core/contracts`, `src/core/defs/loader.test.ts`,
+`tools/dev/boundaries.test.ts` 120 tests pass; mission record 16, root configuration 12 pass;
+`check-secrets` OK. No browser run.
