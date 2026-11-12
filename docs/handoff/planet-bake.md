@@ -234,7 +234,7 @@ every source with a public-domain or CC BY licence.
 
 ## 5. Bodies, sources, sizes
 
-Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile files (`du`).
+Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile files (`du`), measured before the bodies-ephemeris-5 re-bake of nine bodies (each changed by under 3 MB; `out/bake/planet/verify.json` has the current ones).
 
 | Body | Height levels | Albedo levels | Height tiles / MB | Albedo tiles / MB | Albedo source (USGS unless noted) | Height source | Model |
 |---|---|---|---|---|---|---|---|
