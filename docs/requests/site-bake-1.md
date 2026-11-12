@@ -119,3 +119,13 @@ the site file, the rule "only points inside new flatten discs may change" will f
 change at Madrakah. A group about the new reference pad (and one further north in the medium and light
 field) can be appended with `--add-place` at any time before that; it was not done here, where the order
 was to re-record this group only.
+
+## Decisions (2026-11-12, lead), after the second round
+
+- **The golden hash.** The mission's state hash was `e7cdbc4b452f686d` after this round, not the golden
+  `b8221b0fd316207e`, and the tiles were not the cause: commit 01c4d2f changed only `cameras.cockpit.seat`, `cdr` -> `plt`, in `data/defs/vehicles/meridian-lunar.json`, on the lead's decision for request cockpit-18. That field is in the hashed state (the codec's vehicle reference hashes the whole `VehicleDef`, and the command part carries the camera seat) and in nothing the flight computes. The proof that the flight is the same: with that one field put back in memory, and everything else as the tree was, the flight ends at `b8221b0fd316207e` in 596,933 steps; the record of the flight after the change equals the record made before it in every number (all 17 milestones in every field: event time, capture time, position, velocity, mass, elements, read-outs and data; 596,933 steps, 65,670 rails advances, 214,908 control ticks, the simulated time, the splash point); and the flight makes 2,218 Earth tile requests, none of them in the Madrakah footprint, whose re-bake the same morning therefore changed nothing either. The lead re-baselined
+  the golden to `e7cdbc4b452f686d` (the sixth re-baseline, MIGRATION_V2 principle 5); steps, tiles and
+  every flight number are as they were. Mission through the gate on the re-baselined golden (10:52): 5 files, 36 of 36.
+- **Place groups**: not now. Once for both sites, when `ka-lae.pads.json` has landed: one group per site
+  covering the pad field as resolved, before fleet-data writes the site files (MIGRATION_V2, lead steps,
+  "with fleet-data").

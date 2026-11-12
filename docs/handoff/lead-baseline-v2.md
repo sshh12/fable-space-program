@@ -699,3 +699,36 @@ Suites (10:45): the terrain guard 9 of 9 through the gate (the 7 of section 15 a
 `tools/dev/guard-pins.test.ts` 3 of 3. Mission through the gate: 35 of 36. The one failure is not of this step: the determinism test gets the state hash e7cdbc4b452f686d where the golden has b8221b0fd316207e (596,933 steps both), because commit 01c4d2f (10:16, cockpit round 6) changed a field of the vehicle file that is in the hashed state; with that field put back in memory the flight on the new tiles ends at the golden exactly, and it asks for no tile of the Madrakah footprint (hand-off of lead-baseline-v2, section 16). The golden hash was not touched. `npm run typecheck:paths -- tests/unit/terrain-core`
 (both configurations) clean. The full form of the guard was not run a second time after the recording (the
 recording IS a full-form pass, and the bake slot is planet-bake's most of the time). No browser run.
+
+## 17. The sixth re-baseline of the golden, and two decisions recorded (2026-11-12, 10:50-11:00)
+
+**Golden re-baselined by the lead's decision: `tests/mission/golden.json` `hash` = `e7cdbc4b452f686d`**
+(before: `b8221b0fd316207e`). `steps` 596,933 and `tiles` are unchanged. The cause and the proof
+(section 16 found it): commit 01c4d2f changed only `cameras.cockpit.seat`, `cdr` -> `plt`, in `data/defs/vehicles/meridian-lunar.json`, on the lead's decision for request cockpit-18. That field is in the hashed state (the codec's vehicle reference hashes the whole `VehicleDef`, and the command part carries the camera seat) and in nothing the flight computes. The proof that the flight is the same: with that one field put back in memory, and everything else as the tree was, the flight ends at `b8221b0fd316207e` in 596,933 steps; the record of the flight after the change equals the record made before it in every number (all 17 milestones in every field: event time, capture time, position, velocity, mass, elements, read-outs and data; 596,933 steps, 65,670 rails advances, 214,908 control ticks, the simulated time, the splash point); and the flight makes 2,218 Earth tile requests, none of them in the Madrakah footprint, whose re-bake the same morning therefore changed nothing either.
+
+What was asserted before the field was changed, on three flights through the gate after the change of
+01c4d2f (the mission suite at 10:43, the diagnostic flight at 10:44, the recorder at 10:50): the state hash
+is `e7cdbc4b452f686d` every time, 596,933 steps. The recorder's record of 10:50 against the record of
+05:05 (the golden flight then): `record-mission-baseline.ts --exact` says all 17 milestones equal, and
+steps, rails advances (65,670), control ticks (214,908), simulated seconds, the start and the final state
+(the splash point) are the same values. Only the state hash and the Earth tile set's content hash differ
+between the two records. Mission through the gate on the re-baselined golden (10:52): 5 files, 36 of 36.
+
+Not changed: `tests/mission/baseline-v1.json`, the trajectory guard, the fixtures, the corpus, and every
+pin of `tools/dev/guard-pins.test.ts`.
+
+**Recorded, not done (the tighten step after sub-wave 3.2).** Presentation-only definition fields (cameras
+and seats, display names and labels, references to visuals and audio) leave the simulation projection of a
+`VehicleDef` that the codec's vehicle reference hashes, and leave the state hash: MIGRATION_V2 (lead steps
+"after 3.2", principle 5) and ARCHITECTURE 7.2 (the codec). It changes saved bytes: one codec version
+step, the corpus recorded once, the golden re-baselined once more behind the same EXACT comparison. Until
+then every edit of `meridian-lunar.json`, of any field, changes the golden hash: the comparison above
+(`--out`, then `--exact <record> --reference <record before>`) is how to tell whether the flight changed.
+
+**Place groups: decided, not done.** Once for both sites, when `ka-lae.pads.json` has landed and before
+fleet-data writes the site files: one group per site covering the pad field as resolved (points at and
+around every pad, inside and outside the future flatten discs). The recorder has no mode for a group laid
+over a list of pads (`--add-place` makes discs about one centre): to be written then.
+
+Suites (10:55): Mission through the gate on the re-baselined golden (10:52): 5 files, 36 of 36. The terrain guard and the pin test were not touched by this round (9 of 9 and
+3 of 3 at 10:41).
