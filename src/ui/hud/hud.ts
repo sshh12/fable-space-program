@@ -635,7 +635,9 @@ export function createHud(opts: HudOptions): HudImpl {
   const ball = el('div', 'ball', [ballCanvas, bezelCanvas]);
   const nbwrap = el('div', 'nbwrap bc', [speedPanel, ball], { 'data-show': 'external map' });
 
-  const thr = tapeGauge('thr', 'THROTTLE', [['0', 0], ['50', 0.5], ['100', 1]], 10, null);
+  // Captions short enough to stand apart under 2.2u tubes ("THR" as on a throttle quadrant); the tooltips name them.
+  const thr = tapeGauge('thr', 'THR', [['0', 0], ['50', 0.5], ['100', 1]], 10, null);
+  thr.root.title = 'Throttle lever, 0 to 100 % (the key help lists its keys)';
   const gG = tapeGauge('g', 'G LOAD', [['0', 0], ['4', 4 / G_SCALE.full], ['8', 8 / G_SCALE.full], ['12', 1]], G_SCALE.full, G_SCALE.limit / G_SCALE.full);
   const gTextTone = new ToneSlot(gG.valueEl);
   gG.root.title = `G load: green to ${G_SCALE.caution} g, amber to the ${G_SCALE.limit} g limit (above it the crew's g-dose builds up)`;
@@ -688,7 +690,7 @@ export function createHud(opts: HudOptions): HudImpl {
   for (const [g, entries] of groups) {
     const group = el('div', 'group', [el('h3', '', [g])]);
     for (const e of entries) {
-      const keys = el('span', 'keys', [...e.keys.map((k) => keyCap(k)), ...e.lockedKeys.map((k) => keyCap(k, 'kbd locked', 'Only while the keyboard is captured (fullscreen)'))]);
+      const keys = el('span', 'keys', [...e.keys.map((k) => keyCap(k)), ...e.lockedKeys.map((k) => keyCap(k, 'kbd locked', 'Only with Keyboard capture on (the switch at the top right)'))]);
       group.append(el('div', 'item', [el('span', '', [e.text]), keys]));
     }
     groupEls.push(group);
@@ -705,7 +707,7 @@ export function createHud(opts: HudOptions): HudImpl {
     [
       el('div', 'sheet', [
         el('div', 'head', [
-          el('div', '', [el('h2', '', ['Flight controls']), el('div', 'note', ['Keys with an amber outline work only while the keyboard is captured (fullscreen).'])]),
+          el('div', '', [el('h2', '', ['Flight controls']), el('div', 'note', ['Every key works without capture; keys with an amber outline also need Keyboard capture on (the switch at the top right: fullscreen with keyboard lock, Esc leaves it).'])]),
           hudButton(['Close'], '', 'Close key help (`)', () => toggleKeyHelp(false)),
         ]),
         cols,

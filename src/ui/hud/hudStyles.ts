@@ -401,14 +401,13 @@ export const HUD_CSS = /* css */ `
  * narrower tape beside the g tube (amber, red from two thirds of the fatal limit), always there. The gauges share one grid,
  * so tops, bottoms and values line up.
  */
-/* The three columns are wider than the cell (the THROTTLE caption): they stand on the panel's right edge and reach
-   left into the housing under the roll window (clear of the bezel), with a gap that keeps the captions three words. */
-.hud .gauges { display: grid; grid-template-columns: auto auto auto; justify-content: end; align-content: center; column-gap: calc(var(--u) * 1.15); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.5) calc(var(--u) * 0.45) calc(var(--u) * 0.3); }
+.hud .gauges { display: grid; grid-template-columns: auto auto auto; justify-content: center; align-content: center; column-gap: calc(var(--u) * 0.75); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.3) calc(var(--u) * 0.45) calc(var(--u) * 0.2); }
 .hud .gauge { display: contents; }
 .hud .gauge.thr > * { grid-column: 1; }
 .hud .gauge.g > * { grid-column: 2; }
 .hud .gauge.dose > * { grid-column: 3; }
 .hud .gauge .gv { grid-row: 1; font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 5.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
+.hud .gauge.thr .gv { width: calc(var(--u) * 4.6); }
 .hud .gauge.dose .gv { width: calc(var(--u) * 4.2); }
 .hud .gauge.dose .nums { display: none; }
 .hud .gauge.dose.nil .gv { color: var(--label); font-weight: 500; }
