@@ -5,9 +5,11 @@
  * landmark too small for that map, under 3 of its pixels in radius, or 8 for a texture test, is left to
  * verify.py and named in the test title). Then the self-test: the same landmarks on the map mirrored east-west
  * and on the map shifted by 180 degrees must fail, at least one each, or the set could not catch the errors it
- * exists for. Runs for the tile sets present under data/tiles (git-ignored data).
+ * exists for. data/tiles is git-ignored: each body's block is skipped explicitly (describe.skipIf, keyed on
+ * its manifest) where its tile set is absent, as in CI; with PLANET_BAKE_REQUIRE=1 nothing is skipped and a
+ * missing tile set fails. The helpers' own tests need tracked files only and run everywhere.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -93,10 +95,6 @@ class LowRes {
     }
   }
 
-  /** Pixels per degree of latitude. */
-  get pxPerDeg(): number {
-    return this.h / 180;
-  }
 
   at(d: V3): number {
     const lat = Math.asin(Math.max(-1, Math.min(1, d.z))) / DEG;
@@ -123,10 +121,13 @@ function albedoRadiusKm(l: FullLandmark): number | null {
   return null;
 }
 
-function resolvable(l: FullLandmark, c: BodyConfig, map: LowRes): boolean {
+/** Rows of globals/albedo-lowres.png (1024 x 512, planet-bake's albedo.lowres; checked when the map is read). */
+const LOWRES_H = 512;
+
+function resolvable(l: FullLandmark, c: BodyConfig): boolean {
   const r = albedoRadiusKm(l);
   if (r === null) return true;
-  const px = ((r * 1000) / c.radii.mean / DEG) * map.pxPerDeg;
+  const px = ((r * 1000) / c.radii.mean / DEG) * (LOWRES_H / 180);
   return px >= (l.kind === 'albedoTexture' ? 8 : 3);
 }
 
@@ -180,40 +181,78 @@ async function holds(l: FullLandmark, c: BodyConfig, tp: TerrainAuthority, map: 
   }
 }
 
-const baked = configs().filter((c) => c.kind === 'solid' && manifestOf(c.id) !== null && (c.landmarks ?? []).length > 0);
+const REQUIRE = process.env['PLANET_BAKE_REQUIRE'] === '1';
+const withLandmarks = configs().filter((c) => c.kind === 'solid' && (c.landmarks ?? []).length > 0);
+const isBaked = (id: string): boolean => existsSync(path.join(TILES, id, 'manifest.json'));
 
 let base: DefLibrary;
 beforeAll(async () => {
   base = await loadDefs(fsDefSource(path.join(REPO_ROOT, 'data/defs')));
 });
 
+describe('planet-bake landmark helpers (tracked files only)', () => {
+  it('cap points lie in the cap (or ring) and spread evenly by area', () => {
+    const R = 1000e3;
+    const c = latLonToDir(30 * DEG, 40 * DEG);
+    const pts = capPoints(30, 40, 100e3, R, 2000, 50e3);
+    const ang = pts.map((d) => Math.acos(Math.min(1, d.x * c.x + d.y * c.y + d.z * c.z)) * R);
+    expect(Math.min(...ang)).toBeGreaterThanOrEqual(50e3 - 1);
+    expect(Math.max(...ang)).toBeLessThanOrEqual(100e3 + 1);
+    // equal area: half the points within the radius that halves the ring's area
+    const rHalf = Math.acos(0.5 * (Math.cos(50e3 / R) + Math.cos(100e3 / R))) * R;
+    expect(Math.abs(ang.filter((a) => a < rHalf).length / pts.length - 0.5)).toBeLessThan(0.01);
+  });
+
+  it('the mirrored and shifted landmarks move every longitude they name', () => {
+    const l: FullLandmark = { name: 'x', kind: 'albedoCompare', minRatio: 1.1, brighter: { latDeg: 10, lonDegE: 30, radiusKm: 5 }, darker: { latDeg: -5, lonDegE: 300, radiusKm: 5 } };
+    const m = moved(l, (lon) => -lon);
+    expect([m.brighter!.lonDegE, m.darker!.lonDegE]).toEqual([-30, -300]);
+    const p = moved({ name: 'y', kind: 'demHeight', latDeg: 1, lonDegE: 20, expectM: 0, toleranceM: 1 }, (lon) => lon + 180);
+    expect(p.lonDegE).toBe(200);
+    expect(p.latDeg).toBe(1);
+  });
+
+  it('every configured landmark is of a known kind', () => {
+    const kinds = new Set(['demHeight', 'albedoContrast', 'albedoCompare', 'albedoTexture', 'craterDepth']);
+    for (const c of withLandmarks) for (const l of c.landmarks!) expect(kinds.has(l.kind), `${c.id}: ${l.name}`).toBe(true);
+  });
+});
+
 describe('planet-bake landmarks', () => {
-  for (const c of baked) {
-    const map = new LowRes(c.id);
+  for (const c of withLandmarks) {
     const all = (c.landmarks ?? []) as FullLandmark[];
-    const used = all.filter((l) => resolvable(l, c, map));
-    const left = all.filter((l) => !resolvable(l, c, map)).map((l) => l.name);
-    const provider = async (): Promise<TerrainAuthority> => {
-      const defs: DefLibrary = { ...base, bodies: { [c.id]: bodyDefFor(c, manifestOf(c.id)!) }, rootBodyId: c.id };
-      return createTerrainProvider(defs, createFsTileSource(TILES), { bodies: [c.id] });
-    };
+    const used = all.filter((l) => resolvable(l, c));
+    const left = all.filter((l) => !resolvable(l, c)).map((l) => l.name);
     const suffix = left.length ? ` (left to verify.py, too small for the low-res map: ${left.join(', ')})` : '';
 
-    it(`${c.id}: the landmarks hold${suffix}`, { timeout: 300_000 }, async () => {
-      const tp = await provider();
-      for (const l of used) {
-        const r = await holds(l, c, tp, map);
-        expect(r.ok, `${l.name}: ${r.detail}`).toBe(true);
-      }
-    });
+    describe.skipIf(!REQUIRE && !isBaked(c.id))(`${c.id} (baked tile set, data/tiles/${c.id})`, () => {
+      let map: LowRes;
+      const provider = async (): Promise<TerrainAuthority> => {
+        const defs: DefLibrary = { ...base, bodies: { [c.id]: bodyDefFor(c, manifestOf(c.id)!) }, rootBodyId: c.id };
+        return createTerrainProvider(defs, createFsTileSource(TILES), { bodies: [c.id] });
+      };
+      beforeAll(() => {
+        expect(manifestOf(c.id), `data/tiles/${c.id}/manifest.json`).not.toBeNull();
+        map = new LowRes(c.id);
+        expect([map.w, map.h]).toEqual([2 * LOWRES_H, LOWRES_H]);
+      });
 
-    it.runIf(used.length > 0)(`${c.id}: the landmarks fail on the map mirrored east-west and on the map shifted by 180 degrees`, { timeout: 300_000 }, async () => {
-      const tp = await provider();
-      for (const [label, fn] of [['mirrored', (lon: number) => -lon], ['shifted by 180 deg', (lon: number) => lon + 180]] as const) {
-        let fails = 0;
-        for (const l of used) if (!(await holds(moved(l, fn), c, tp, map)).ok) fails++;
-        expect(fails, `${c.id}: no landmark fails on the map ${label}`).toBeGreaterThan(0);
-      }
+      it(`${c.id}: the landmarks hold${suffix}`, { timeout: 300_000 }, async () => {
+        const tp = await provider();
+        for (const l of used) {
+          const r = await holds(l, c, tp, map);
+          expect(r.ok, `${l.name}: ${r.detail}`).toBe(true);
+        }
+      });
+
+      it.skipIf(used.length === 0)(`${c.id}: the landmarks fail on the map mirrored east-west and on the map shifted by 180 degrees`, { timeout: 300_000 }, async () => {
+        const tp = await provider();
+        for (const [label, fn] of [['mirrored', (lon: number) => -lon], ['shifted by 180 deg', (lon: number) => lon + 180]] as const) {
+          let fails = 0;
+          for (const l of used) if (!(await holds(moved(l, fn), c, tp, map)).ok) fails++;
+          expect(fails, `${c.id}: no landmark fails on the map ${label}`).toBeGreaterThan(0);
+        }
+      });
     });
   }
 });

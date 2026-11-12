@@ -3,8 +3,9 @@
  * created for that body only, used, and dropped before the next): manifests promise only tiles that exist and
  * none is empty, the collision surface and the band-limited height are finite and inside the recorded
  * elevation range, the DEM landmarks of the config hold through the height authority, and the provider
- * holds tiles of that body only. Runs for the tile sets present under data/tiles (git-ignored data); with
- * PLANET_BAKE_REQUIRE=1 a configured body that is not baked fails.
+ * holds tiles of that body only. data/tiles is git-ignored: each configured body's block is skipped
+ * explicitly (describe.skipIf, keyed on its manifest) where its tile set is absent, as in CI; with
+ * PLANET_BAKE_REQUIRE=1 nothing is skipped and a configured body that is not baked fails.
  */
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -20,8 +21,8 @@ import { createTerrainProvider } from '../../../src/terrain/provider';
 import { bodyDefFor, configs, manifestOf, referenceTerm, REPO_ROOT, TILES } from './shared';
 
 const solids = configs().filter((c) => c.kind === 'solid');
-const baked = solids.filter((c) => manifestOf(c.id) !== null);
 const REQUIRE = process.env['PLANET_BAKE_REQUIRE'] === '1';
+const isBaked = (id: string): boolean => existsSync(path.join(TILES, id, 'manifest.json'));
 
 let base: DefLibrary;
 beforeAll(async () => {
@@ -33,7 +34,11 @@ describe('planet-bake tile sets', () => {
     expect(solids.filter((c) => manifestOf(c.id) === null).map((c) => c.id)).toEqual([]);
   });
 
-  for (const c of baked) {
+  for (const c of solids) describe.skipIf(!REQUIRE && !isBaked(c.id))(`${c.id} (baked tile set, data/tiles/${c.id})`, () => {
+    it(`${c.id}: is baked`, () => {
+      expect(manifestOf(c.id), `data/tiles/${c.id}/manifest.json`).not.toBeNull();
+    });
+
     it(`${c.id}: the manifest promises only tiles that exist, none of them empty`, () => {
       const m = manifestOf(c.id)!;
       for (const [name, layer] of Object.entries(m.layers)) {
@@ -91,5 +96,5 @@ describe('planet-bake tile sets', () => {
         }
       });
     }
-  }
+  });
 });
