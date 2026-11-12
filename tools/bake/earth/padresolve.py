@@ -231,6 +231,11 @@ class Resolver:
             return {**out, "failures": f, "pass": False, "partial": True} if (f and not full) else None
         if (r_ := stop()) is not None:
             return r_
+        # LC-1's ocean rays before the windows: in strict mode they reject most of what the disc tests pass, and they
+        # cost a fifth of the shore and built-up windows (the record is the same either way)
+        out["oceanRays"] = self.rays(lat, lon)
+        if (r_ := stop()) is not None:
+            return r_
         k2 = np.arange(-3000.0, 3000.0 + 1e-6, 10.0)
         E2, N2 = np.meshgrid(k2, k2)
         la2, lo2 = destination(lat, lon, E2.ravel(), N2.ravel())
@@ -255,9 +260,6 @@ class Resolver:
         d4 = np.hypot(E4.ravel(), N4.ravel())
         out["builtUpM"] = float(d4[built].min()) if built.any() else None      # None: none within rb
         out["builtUpWindowM"] = rb
-        if (r_ := stop()) is not None:
-            return r_
-        out["oceanRays"] = self.rays(lat, lon)
         if (r_ := stop()) is not None:
             return r_
         out["corridorBuiltUp"] = self.corridor_built(lat, lon)
@@ -394,7 +396,11 @@ class Resolver:
                     for ox in (-1, 0, 1):
                         line[cy + oy, cx + ox] = 1.0
                 ocean &= signal.fftconvolve(water.astype(np.float32), line[::-1, ::-1], mode="same") > 0.5
+        excl = np.ones(E.shape, bool)              # ground rejected after looking (the explicit test, exactly)
+        for x in self.excludes:
+            excl &= (gc_distance_m(x[0], x[1], LA, LO) > x[2]).reshape(E.shape)
         tests = {
+            "excluded": excl,
             "ocean": ocean,
             "height": H >= c["minHeightM"],
             "shore": shore >= c["minShoreDistanceM"] - g,
@@ -468,7 +474,8 @@ def place(res: Resolver, grid: dict, classes: dict, fixed: list[dict], partial: 
                     for f in e["failures"]:
                         tally["rejected"][f] = tally["rejected"].get(f, 0) + 1
                     if tally["explicit"] % 500 == 0:
-                        log(f"pads: {tally['explicit']} explicit evaluations, now {grid['dist'][i] / 1000:.2f} km out")
+                        log(f"pads: {tally['explicit']} explicit evaluations, now {grid['dist'][i] / 1000:.2f} km out "
+                            f"(rejections so far {tally['rejected']})")
                 e = evaluated[i]
                 if e["pass"] and (e["builtUpM"] is None or e["builtUpM"] >= built_radius(cls)):
                     found = e

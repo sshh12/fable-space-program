@@ -7,10 +7,10 @@
     "latDeg": 19.0,
     "lonDeg": 57.8
   },
-  "ground": "baked tiles of earth-madrakah (staged when resolved): level-12 heights (bilinear on the vertex grid: the collision surface), water mask and land cover; global level 7 beyond the finest coverage",
-  "liveManifestContentHash": "ab20fdfc579d4015",
+  "ground": "baked tiles of earth-madrakah (live when resolved): level-12 heights (bilinear on the vertex grid: the collision surface), water mask and land cover; global level 7 beyond the finest coverage",
+  "tilesetContentHash": "f5e6ef420bda7cea",
   "rule": {
-    "searchRadiusKm": 20.0,
+    "searchRadiusKm": 45.0,
     "gridM": 30,
     "minShoreDistanceM": 600,
     "discRadiusM": 500,
@@ -25,8 +25,289 @@
     "openOceanKm": 100,
     "minAllowedFraction": 0.8,
     "maxLatDeg": 20.5,
-    "gates": "flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc bare ground: bareRock, sand, sparseScrub, i.e. WorldCover 60/100 as LC-1 was placed), clear of the shore (minShoreDistanceM to any water, minHeightM), latitude",
-    "reported": "the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm)",
+    "gates": "flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc bare ground: bareRock, sand, sparseScrub, i.e. WorldCover 60/100 as LC-1 was placed), clear of the shore (minShoreDistanceM to any water, minHeightM), on the coast (the sea within oceanReachKm), no built-up land within max(blend, keep-out) + 300 m, a launch corridor (60-130 deg to 12 km free of built-up land and of every other pad's keep-out disc, both ways), not excluded after looking, latitude; the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm): the full rule that placed LC-1",
+    "reported": "",
+    "strict": true,
+    "dry": "bareGround",
+    "padRadii": {
+      "heavy": {
+        "flat": 450.0,
+        "blend": 900.0,
+        "keepOut": 600.0
+      },
+      "medium": {
+        "flat": 300.0,
+        "blend": 600.0,
+        "keepOut": 450.0
+      },
+      "light": {
+        "flat": 150.0,
+        "blend": 300.0,
+        "keepOut": 300.0
+      }
+    },
+    "builtUpMarginM": 300.0,
+    "corridor": {
+      "azimuthDeg": [
+        60.0,
+        130.0
+      ],
+      "reachKm": 12.0
+    },
+    "excluded": [
+      {
+        "latDeg": 19.045056,
+        "lonDeg": 57.800571,
+        "radiusM": 800.0,
+        "reason": "a graded track crosses the disc (looked at, level-12 imagery)"
+      },
+      {
+        "latDeg": 19.096585,
+        "lonDeg": 57.772877,
+        "radiusM": 600.0,
+        "reason": "braided wadi channels across the disc"
+      },
+      {
+        "latDeg": 19.130041,
+        "lonDeg": 57.777155,
+        "radiusM": 600.0,
+        "reason": "in a braided wadi bed"
+      },
+      {
+        "latDeg": 19.140024,
+        "lonDeg": 57.786863,
+        "radiusM": 600.0,
+        "reason": "wadi channels converge at the centre"
+      },
+      {
+        "latDeg": 19.205577,
+        "lonDeg": 57.747432,
+        "radiusM": 800.0,
+        "reason": "road junction and the bright wadi fan at the coast"
+      },
+      {
+        "latDeg": 19.051531,
+        "lonDeg": 57.794862,
+        "radiusM": 800.0,
+        "reason": "the same graded track crosses the disc"
+      },
+      {
+        "latDeg": 19.099284,
+        "lonDeg": 57.778301,
+        "radiusM": 600.0,
+        "reason": "braided wadi channels across the south of the disc"
+      },
+      {
+        "latDeg": 19.135436,
+        "lonDeg": 57.77744,
+        "radiusM": 600.0,
+        "reason": "braided wadi channels across the disc"
+      },
+      {
+        "latDeg": 19.147038,
+        "lonDeg": 57.784863,
+        "radiusM": 600.0,
+        "reason": "broken ground: wadis and outcrops"
+      },
+      {
+        "latDeg": 19.159719,
+        "lonDeg": 57.790289,
+        "radiusM": 600.0,
+        "reason": "a gully through the centre, a wadi at the edge"
+      },
+      {
+        "latDeg": 19.212589,
+        "lonDeg": 57.738573,
+        "radiusM": 600.0,
+        "reason": "wadi channels through the centre"
+      },
+      {
+        "latDeg": 19.23741,
+        "lonDeg": 57.73542,
+        "radiusM": 600.0,
+        "reason": "a scarp along the south-east of the disc, wadi patches"
+      },
+      {
+        "latDeg": 19.119248,
+        "lonDeg": 57.774301,
+        "radiusM": 600.0,
+        "reason": "a wadi bed across the north-west of the disc"
+      },
+      {
+        "latDeg": 19.134898,
+        "lonDeg": 57.791433,
+        "radiusM": 600.0,
+        "reason": "wadi channels converge through the disc"
+      },
+      {
+        "latDeg": 19.150815,
+        "lonDeg": 57.780579,
+        "radiusM": 600.0,
+        "reason": "braided wadis and broken ground"
+      },
+      {
+        "latDeg": 19.163496,
+        "lonDeg": 57.786004,
+        "radiusM": 600.0,
+        "reason": "broken ground, outcrops and a gully"
+      },
+      {
+        "latDeg": 19.216098,
+        "lonDeg": 57.743143,
+        "radiusM": 600.0,
+        "reason": "rocky hummocky ground, a gully at the south-east edge"
+      },
+      {
+        "latDeg": 19.231472,
+        "lonDeg": 57.730565,
+        "radiusM": 600.0,
+        "reason": "a rocky knoll and its scarp on the east of the disc"
+      },
+      {
+        "latDeg": 19.140024,
+        "lonDeg": 57.794003,
+        "radiusM": 600.0,
+        "reason": "wadi channel network across the disc"
+      },
+      {
+        "latDeg": 19.155402,
+        "lonDeg": 57.784006,
+        "radiusM": 600.0,
+        "reason": "braided wadis through the disc"
+      },
+      {
+        "latDeg": 19.216095,
+        "lonDeg": 57.734,
+        "radiusM": 600.0,
+        "reason": "dense branching wadi channels"
+      },
+      {
+        "latDeg": 19.240645,
+        "lonDeg": 57.730561,
+        "radiusM": 600.0,
+        "reason": "a wadi channel network across the disc"
+      },
+      {
+        "latDeg": 19.15,
+        "lonDeg": 57.778,
+        "radiusM": 2500.0,
+        "reason": "wadi-dissected plain and outcrops between 19.13 and 19.17 N (eleven candidate pads looked at there)"
+      },
+      {
+        "latDeg": 19.213,
+        "lonDeg": 57.739,
+        "radiusM": 1500.0,
+        "reason": "wadi-dissected rocky ground between 19.20 and 19.23 N (five candidate pads looked at there)"
+      },
+      {
+        "latDeg": 19.149462,
+        "lonDeg": 57.754018,
+        "radiusM": 700.0,
+        "reason": "a graded road junction at the edge, an outcrop ridge through the disc"
+      },
+      {
+        "latDeg": 19.221219,
+        "lonDeg": 57.727426,
+        "radiusM": 600.0,
+        "reason": "outcrops and hummocks in the disc"
+      },
+      {
+        "latDeg": 19.155937,
+        "lonDeg": 57.754874,
+        "radiusM": 900.0,
+        "reason": "a graded road through the west of the disc and a junction (the same road as the last)"
+      },
+      {
+        "latDeg": 19.224998,
+        "lonDeg": 57.732282,
+        "radiusM": 600.0,
+        "reason": "a rocky outcrop in the north-east of the disc"
+      },
+      {
+        "latDeg": 19.244,
+        "lonDeg": 57.736,
+        "radiusM": 700.0,
+        "reason": "wadi channels cross the disc (four candidate pads looked at here)"
+      },
+      {
+        "latDeg": 19.278686,
+        "lonDeg": 57.727687,
+        "radiusM": 600.0,
+        "reason": "a track with a line of objects crosses the disc"
+      },
+      {
+        "latDeg": 19.243072,
+        "lonDeg": 57.725416,
+        "radiusM": 700.0,
+        "reason": "the same wadi crosses the centre with its branches"
+      },
+      {
+        "latDeg": 19.245,
+        "lonDeg": 57.716,
+        "radiusM": 1200.0,
+        "reason": "wadi-dissected ground west of the coastal strip, 19.23-19.26 N (three candidate pads looked at there)"
+      },
+      {
+        "latDeg": 19.285161,
+        "lonDeg": 57.72797,
+        "radiusM": 600.0,
+        "reason": "the same line of objects along a track crosses the disc"
+      },
+      {
+        "latDeg": 19.360712,
+        "lonDeg": 57.753102,
+        "radiusM": 500.0,
+        "reason": "a straight graded track to the shore crosses the disc, a rocky patch at its east edge"
+      },
+      {
+        "latDeg": 19.36017,
+        "lonDeg": 57.743951,
+        "radiusM": 500.0,
+        "reason": "the same track crosses the north of the disc, inside the light pad's blend radius"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.734,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.738,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.742,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.746,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.75,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.754,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      },
+      {
+        "latDeg": 19.3624,
+        "lonDeg": 57.758,
+        "radiusM": 400.0,
+        "reason": "the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it)"
+      }
+    ],
     "classes": {
       "heavy": {
         "count": 4,
@@ -48,9 +329,9 @@
     {
       "id": "lc-1",
       "class": "heavy",
-      "latDeg": 18.996043,
-      "lonDeg": 57.793818,
-      "padElevation": 37.04,
+      "latDeg": 19.078241,
+      "lonDeg": 57.786868,
+      "padElevation": 144.51,
       "azimuthDeg": 90.0,
       "offsetEnu": [
         0.0,
@@ -58,567 +339,762 @@
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 37.04,
-        "slopeDeg": 2.952,
-        "reliefM": 11.48,
-        "planeRmsM": 3.382,
-        "roughness10M": 0.679,
-        "shoreDistanceM": 1038.0,
+        "naturalHeightM": 144.51,
+        "slopeDeg": 1.325,
+        "reliefM": 5.23,
+        "planeRmsM": 1.151,
+        "roughness10M": 0.239,
+        "shoreDistanceM": 990.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 1.0,
-        "centreClass": "sand",
+        "bareFraction": 0.999,
+        "seaDistanceM": 1000.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 1200.0,
+        "centreClass": "bareRock",
         "oceanRays": {
           "ok": true,
-          "maxCoastDistanceM": 4980.0
+          "maxCoastDistanceM": 1755.0
         },
         "siteTests": {
           "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 785.0
+        "distanceFromNominalM": 8809.0
       }
     },
     {
       "id": "lc-2",
       "class": "heavy",
-      "latDeg": 19.009531,
-      "lonDeg": 57.774698,
-      "padElevation": 78.47,
+      "latDeg": 19.100904,
+      "lonDeg": 57.788294,
+      "padElevation": 114.06,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -2010.1,
-        1499.9
+        149.8,
+        2520.0
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 78.47,
-        "slopeDeg": 1.533,
-        "reliefM": 10.21,
-        "planeRmsM": 3.559,
-        "roughness10M": 0.525,
-        "shoreDistanceM": 3539.0,
+        "naturalHeightM": 114.06,
+        "slopeDeg": 0.702,
+        "reliefM": 5.0,
+        "planeRmsM": 1.45,
+        "roughness10M": 0.196,
+        "shoreDistanceM": 738.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.998,
+        "bareFraction": 1.0,
+        "seaDistanceM": 750.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 1200.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 92.0,
-          "reason": "land at 7.5 km"
+          "ok": true,
+          "maxCoastDistanceM": 945.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 2863.0
+        "distanceFromNominalM": 11287.0
       }
     },
     {
       "id": "lc-3",
       "class": "heavy",
-      "latDeg": 19.028688,
-      "lonDeg": 57.787538,
-      "padElevation": 122.19,
+      "latDeg": 19.121947,
+      "lonDeg": 57.779726,
+      "padElevation": 108.5,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -660.1,
-        3630.0
+        -750.4,
+        4859.9
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 122.19,
-        "slopeDeg": 1.297,
-        "reliefM": 11.94,
-        "planeRmsM": 4.383,
-        "roughness10M": 0.534,
-        "shoreDistanceM": 2889.0,
+        "naturalHeightM": 108.5,
+        "slopeDeg": 0.281,
+        "reliefM": 1.51,
+        "planeRmsM": 0.457,
+        "roughness10M": 0.105,
+        "shoreDistanceM": 1677.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.978,
-        "centreClass": "bareRock",
+        "bareFraction": 1.0,
+        "seaDistanceM": 1701.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 1200.0,
+        "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 112.0,
-          "reason": "land at 6.6 km"
+          "ok": true,
+          "maxCoastDistanceM": 2460.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 3449.0
+        "distanceFromNominalM": 13726.0
       }
     },
     {
       "id": "lc-4",
       "class": "heavy",
-      "latDeg": 18.981742,
-      "lonDeg": 57.772705,
-      "padElevation": 15.47,
+      "latDeg": 19.224994,
+      "lonDeg": 57.723139,
+      "padElevation": 89.86,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -2219.9,
-        -1590.1
+        -6691.2,
+        16319.5
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 15.47,
-        "slopeDeg": 1.364,
-        "reliefM": 8.87,
-        "planeRmsM": 3.158,
-        "roughness10M": 0.503,
-        "shoreDistanceM": 1511.0,
+        "naturalHeightM": 89.86,
+        "slopeDeg": 0.468,
+        "reliefM": 6.23,
+        "planeRmsM": 1.193,
+        "roughness10M": 0.162,
+        "shoreDistanceM": 2391.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.997,
+        "bareFraction": 1.0,
+        "seaDistanceM": 2405.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 1200.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 4620.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 3515.0
+        "distanceFromNominalM": 26289.0
       }
     },
     {
       "id": "lc-5",
       "class": "medium",
-      "latDeg": 18.996579,
-      "lonDeg": 57.761289,
-      "padElevation": 75.57,
+      "latDeg": 19.24739,
+      "lonDeg": 57.730272,
+      "padElevation": 97.54,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -3420.0,
-        59.9
+        -5941.4,
+        18809.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 75.57,
-        "slopeDeg": 1.271,
-        "reliefM": 9.73,
-        "planeRmsM": 3.374,
-        "roughness10M": 0.431,
-        "shoreDistanceM": 3793.0,
+        "naturalHeightM": 97.54,
+        "slopeDeg": 0.396,
+        "reliefM": 1.87,
+        "planeRmsM": 0.551,
+        "roughness10M": 0.113,
+        "shoreDistanceM": 1250.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "seaDistanceM": 1251.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 1920.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 4088.0
+        "distanceFromNominalM": 28467.0
       }
     },
     {
       "id": "lc-6",
       "class": "medium",
-      "latDeg": 19.026527,
-      "lonDeg": 57.768417,
-      "padElevation": 121.09,
+      "latDeg": 19.260073,
+      "lonDeg": 57.735411,
+      "padElevation": 96.74,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -2670.1,
-        3389.9
+        -5401.5,
+        20219.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 121.09,
-        "slopeDeg": 0.428,
-        "reliefM": 8.5,
-        "planeRmsM": 2.517,
-        "roughness10M": 0.443,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 96.74,
+        "slopeDeg": 0.295,
+        "reliefM": 6.23,
+        "planeRmsM": 0.586,
+        "roughness10M": 0.138,
+        "shoreDistanceM": 642.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.994,
+        "bareFraction": 1.0,
+        "seaDistanceM": 652.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 104.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 825.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 4441.0
+        "distanceFromNominalM": 29704.0
       }
     },
     {
       "id": "lc-7",
       "class": "medium",
-      "latDeg": 19.008988,
-      "lonDeg": 57.755579,
-      "padElevation": 90.85,
+      "latDeg": 19.271671,
+      "lonDeg": 57.727976,
+      "padElevation": 88.45,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -4020.1,
-        1439.9
+        -6181.6,
+        21509.5
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 90.85,
-        "slopeDeg": 0.854,
-        "reliefM": 5.29,
-        "planeRmsM": 1.728,
-        "roughness10M": 0.362,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 88.45,
+        "slopeDeg": 0.239,
+        "reliefM": 1.99,
+        "planeRmsM": 0.428,
+        "roughness10M": 0.086,
+        "shoreDistanceM": 1364.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.999,
+        "bareFraction": 1.0,
+        "seaDistanceM": 1400.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 1875.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 4776.0
+        "distanceFromNominalM": 31142.0
       }
     },
     {
       "id": "lc-8",
       "class": "medium",
-      "latDeg": 19.043527,
-      "lonDeg": 57.798668,
-      "padElevation": 161.13,
+      "latDeg": 19.283545,
+      "lonDeg": 57.73483,
+      "padElevation": 91.45,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        509.8,
-        5280.0
+        -5461.7,
+        22829.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 161.13,
-        "slopeDeg": 0.924,
-        "reliefM": 11.58,
-        "planeRmsM": 2.548,
-        "roughness10M": 0.407,
-        "shoreDistanceM": 1590.0,
+        "naturalHeightM": 91.45,
+        "slopeDeg": 0.141,
+        "reliefM": 1.45,
+        "planeRmsM": 0.506,
+        "roughness10M": 0.084,
+        "shoreDistanceM": 607.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.888,
-        "centreClass": "bareRock",
+        "bareFraction": 1.0,
+        "seaDistanceM": 608.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
+        "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 128.0,
-          "reason": "land at 6.5 km"
+          "ok": true,
+          "maxCoastDistanceM": 870.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 4842.0
+        "distanceFromNominalM": 32263.0
       }
     },
     {
       "id": "lc-9",
       "class": "medium",
-      "latDeg": 18.984976,
-      "lonDeg": 57.753874,
-      "padElevation": 54.19,
+      "latDeg": 19.295143,
+      "lonDeg": 57.727394,
+      "padElevation": 93.24,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -4200.0,
-        -1230.1
+        -6241.8,
+        24119.5
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 54.19,
-        "slopeDeg": 1.302,
-        "reliefM": 11.12,
-        "planeRmsM": 2.795,
-        "roughness10M": 0.464,
-        "shoreDistanceM": 2059.0,
+        "naturalHeightM": 93.24,
+        "slopeDeg": 0.049,
+        "reliefM": 1.18,
+        "planeRmsM": 0.27,
+        "roughness10M": 0.073,
+        "shoreDistanceM": 1421.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
-        "centreClass": "bareRock",
+        "seaDistanceM": 1450.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
+        "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 1815.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5129.0
+        "distanceFromNominalM": 33693.0
       }
     },
     {
       "id": "lc-10",
       "class": "medium",
-      "latDeg": 19.039748,
-      "lonDeg": 57.77241,
-      "padElevation": 122.94,
+      "latDeg": 19.306208,
+      "lonDeg": 57.735679,
+      "padElevation": 93.15,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -2250.2,
-        4859.9
+        -5371.9,
+        25349.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 122.94,
-        "slopeDeg": 0.422,
-        "reliefM": 7.59,
-        "planeRmsM": 1.892,
-        "roughness10M": 0.457,
-        "shoreDistanceM": 4214.0,
+        "naturalHeightM": 93.15,
+        "slopeDeg": 0.045,
+        "reliefM": 0.72,
+        "planeRmsM": 0.231,
+        "roughness10M": 0.07,
+        "shoreDistanceM": 610.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
-        "centreClass": "sand",
+        "seaDistanceM": 618.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 900.0,
+        "centreClass": "bareRock",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 116.0,
-          "reason": "land at 8.6 km"
+          "ok": true,
+          "maxCoastDistanceM": 780.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5286.0
+        "distanceFromNominalM": 34713.0
       }
     },
     {
       "id": "lc-11",
       "class": "light",
-      "latDeg": 19.02005,
-      "lonDeg": 57.75843,
-      "padElevation": 106.1,
+      "latDeg": 19.31754,
+      "lonDeg": 57.737676,
+      "padElevation": 92.72,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -3720.1,
-        2669.9
+        -5162.0,
+        26609.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 106.1,
-        "slopeDeg": 0.849,
-        "reliefM": 7.32,
-        "planeRmsM": 2.381,
-        "roughness10M": 0.425,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 92.72,
+        "slopeDeg": 0.092,
+        "reliefM": 1.91,
+        "planeRmsM": 0.294,
+        "roughness10M": 0.075,
+        "shoreDistanceM": 611.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.998,
+        "bareFraction": 1.0,
+        "seaDistanceM": 618.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 795.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 4906.0
+        "distanceFromNominalM": 35911.0
       }
     },
     {
       "id": "lc-12",
       "class": "light",
-      "latDeg": 19.044606,
-      "lonDeg": 57.78668,
-      "padElevation": 145.49,
+      "latDeg": 19.326444,
+      "lonDeg": 57.739102,
+      "padElevation": 91.71,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -750.2,
-        5400.0
+        -5012.1,
+        27599.6
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 145.49,
-        "slopeDeg": 1.643,
-        "reliefM": 7.65,
-        "planeRmsM": 2.069,
-        "roughness10M": 0.395,
-        "shoreDistanceM": 2784.0,
+        "naturalHeightM": 91.71,
+        "slopeDeg": 0.256,
+        "reliefM": 1.66,
+        "planeRmsM": 0.476,
+        "roughness10M": 0.084,
+        "shoreDistanceM": 611.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.993,
+        "bareFraction": 1.0,
+        "seaDistanceM": 618.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 124.0,
-          "reason": "land at 7.5 km"
+          "ok": true,
+          "maxCoastDistanceM": 915.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5154.0
+        "distanceFromNominalM": 36858.0
       }
     },
     {
       "id": "lc-13",
       "class": "light",
-      "latDeg": 18.973106,
-      "lonDeg": 57.758727,
-      "padElevation": 15.21,
+      "latDeg": 19.335078,
+      "lonDeg": 57.742244,
+      "padElevation": 85.64,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -3689.9,
-        -2550.1
+        -4682.1,
+        28559.7
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 15.21,
-        "slopeDeg": 1.853,
-        "reliefM": 11.81,
-        "planeRmsM": 3.356,
-        "roughness10M": 0.53,
-        "shoreDistanceM": 680.0,
+        "naturalHeightM": 85.64,
+        "slopeDeg": 0.294,
+        "reliefM": 1.58,
+        "planeRmsM": 0.369,
+        "roughness10M": 0.088,
+        "shoreDistanceM": 622.0,
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
-        "bareFraction": 0.996,
+        "bareFraction": 1.0,
+        "seaDistanceM": 626.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 990.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5270.0
+        "distanceFromNominalM": 37750.0
       }
     },
     {
       "id": "lc-14",
       "class": "light",
-      "latDeg": 18.999274,
-      "lonDeg": 57.74959,
-      "padElevation": 73.24,
+      "latDeg": 19.343713,
+      "lonDeg": 57.745672,
+      "padElevation": 83.51,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -4650.0,
-        359.8
+        -4322.2,
+        29519.7
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 73.24,
-        "slopeDeg": 0.853,
-        "reliefM": 7.8,
-        "planeRmsM": 2.455,
-        "roughness10M": 0.349,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 83.51,
+        "slopeDeg": 0.039,
+        "reliefM": 0.86,
+        "planeRmsM": 0.215,
+        "roughness10M": 0.072,
+        "shoreDistanceM": 615.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "seaDistanceM": 632.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 915.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5301.0
+        "distanceFromNominalM": 38643.0
       }
     },
     {
       "id": "lc-15",
       "class": "light",
-      "latDeg": 19.018429,
-      "lonDeg": 57.749013,
-      "padElevation": 97.7,
+      "latDeg": 19.352347,
+      "lonDeg": 57.748815,
+      "padElevation": 84.37,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -4710.1,
-        2489.8
+        -3992.3,
+        30479.7
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 97.7,
-        "slopeDeg": 0.736,
-        "reliefM": 5.98,
-        "planeRmsM": 1.6,
-        "roughness10M": 0.372,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 84.37,
+        "slopeDeg": 0.162,
+        "reliefM": 0.97,
+        "planeRmsM": 0.254,
+        "roughness10M": 0.072,
+        "shoreDistanceM": 622.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "seaDistanceM": 640.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 1110.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5739.0
+        "distanceFromNominalM": 39546.0
       }
     },
     {
       "id": "lc-16",
       "class": "light",
-      "latDeg": 19.006557,
-      "lonDeg": 57.74388,
-      "padElevation": 86.47,
+      "latDeg": 19.365568,
+      "lonDeg": 57.751956,
+      "padElevation": 88.52,
       "azimuthDeg": 90.0,
       "offsetEnu": [
-        -5250.0,
-        1169.8
+        -3662.4,
+        31949.7
       ],
       "fixed": false,
       "report": {
-        "naturalHeightM": 86.47,
-        "slopeDeg": 0.682,
-        "reliefM": 6.92,
-        "planeRmsM": 1.707,
-        "roughness10M": 0.355,
-        "shoreDistanceM": 3000.0,
-        "shoreBeyondWindow": true,
+        "naturalHeightM": 88.52,
+        "slopeDeg": 0.26,
+        "reliefM": 2.83,
+        "planeRmsM": 0.472,
+        "roughness10M": 0.096,
+        "shoreDistanceM": 790.0,
+        "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "seaDistanceM": 800.0,
+        "builtUpM": null,
+        "builtUpWindowM": 1500.0,
+        "builtUpRadiusM": 600.0,
         "centreClass": "sand",
         "oceanRays": {
-          "ok": false,
-          "failAzimuthDeg": 60.0,
-          "reason": "no sea within reach"
+          "ok": true,
+          "maxCoastDistanceM": 945.0
         },
         "siteTests": {
-          "oceanSector": false
+          "oceanSector": true
         },
         "passes": true,
         "failures": [],
-        "distanceFromNominalM": 5945.0
+        "distanceFromNominalM": 40961.0
       }
+    }
+  ],
+  "corridors": [
+    {
+      "id": "lc-1",
+      "clearAzimuthDeg": [
+        17.5,
+        130.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-2",
+      "clearAzimuthDeg": [
+        0.0,
+        156.5
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-3",
+      "clearAzimuthDeg": [
+        0.0,
+        145.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-4",
+      "clearAzimuthDeg": [
+        27.0,
+        141.5
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-5",
+      "clearAzimuthDeg": [
+        38.5,
+        180.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-6",
+      "clearAzimuthDeg": [
+        10.0,
+        160.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-7",
+      "clearAzimuthDeg": [
+        46.0,
+        131.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-8",
+      "clearAzimuthDeg": [
+        13.5,
+        168.5
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-9",
+      "clearAzimuthDeg": [
+        53.0,
+        131.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-10",
+      "clearAzimuthDeg": [
+        23.5,
+        171.5
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-11",
+      "clearAzimuthDeg": [
+        26.5,
+        168.5
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-12",
+      "clearAzimuthDeg": [
+        36.5,
+        171.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-13",
+      "clearAzimuthDeg": [
+        38.0,
+        180.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-14",
+      "clearAzimuthDeg": [
+        36.5,
+        180.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-15",
+      "clearAzimuthDeg": [
+        24.5,
+        180.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
+    },
+    {
+      "id": "lc-16",
+      "clearAzimuthDeg": [
+        0.0,
+        180.0
+      ],
+      "nearestPadInSector": null,
+      "nearestBuiltUpInSector30km": null
     }
   ]
 }
