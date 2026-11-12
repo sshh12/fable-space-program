@@ -18,12 +18,12 @@
   {"model":"pad.crawlerway","offsetEnu":[-228,0,0],"headingDeg":90,"params":{"length":330,"trackWidth":12,"median":14}},
   {"model":"pad.building","offsetEnu":[-150,-62,0],"headingDeg":0,"params":{"sizeX":32,"sizeZ":14,"height":7,"signDecal":"spaceport"}},
   {"model":"pad.building","offsetEnu":[-24,38,0],"headingDeg":90,"params":{"sizeX":12,"sizeZ":8,"height":4.5}},
-  {"model":"pad.floodlight","offsetEnu":[40,69.3,0],"headingDeg":210,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[80,0,0],"headingDeg":270,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[40,-69.3,0],"headingDeg":330,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-40,-69.3,0],"headingDeg":30,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-80,0,0],"headingDeg":90,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
-  {"model":"pad.floodlight","offsetEnu":[-40,69.3,0],"headingDeg":150,"params":{"height":34,"candela":12000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[40,69.3,0],"headingDeg":210,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[80,0,0],"headingDeg":270,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[40,-69.3,0],"headingDeg":330,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-40,-69.3,0],"headingDeg":30,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-80,0,0],"headingDeg":90,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
+  {"model":"pad.floodlight","offsetEnu":[-40,69.3,0],"headingDeg":150,"params":{"height":34,"candela":30000000,"range":170,"tiltDeg":24}},
   {"model":"pad.groundworks","offsetEnu":[0,0,0],"headingDeg":0,"params":{"radius":100,"lobes":0.04,"innerRadius":40,"pads":"-260,190,42,34,30;-300,-160,42,34,-20;-120,-110,22;-150,62,26,16,0","roads":"-372.0,-21.5>-372.0,-185.0>-325.0,-245.0>-150.0,-250.0>62.0,-222.0>168.0,-150.0>214.0,-44.0>214.0,52.0>160.0,152.0>44.0,214.0>-180.0,262.0>-335.0,255.0>-372.0,150.0>-372.0,21.5@6~30;-446,46>-62.5,46@7;-300,46>-300,112>-266,152@6~14;-372,-118>-337,-141@6;214,0>64,0@6","tracks":"70,20>86,-30>62,-80>12,-98>-48,-90;-66,58>-34,90>36,96>86,44;-62,46>-80,70>-70,96","berms":"-260,190,60,-14,20,3.2;-260,190,60,40,80,3.2;-300,-160,60,-78,-36,3.2;-300,-160,60,-10,22,3.2","poles":"-400,40,180;-352,40,180;-306,40,180;-260,40,180;-214,40,180;-168,40,180;-122,40,180;-84,40,180;170,-6,180;110,-6,180"}},
   {"model":"pad.fence","offsetEnu":[0,0,0],"headingDeg":0,"params":{"path":"-381.0,-188.1>-329.5,-253.9>-149.5,-259.0>65.3,-230.6>175.2,-156.0>223.0,-45.9>223.0,54.3>166.6,158.7>47.1,222.5>-179.2,271.0>-341.5,263.7>-381.0,151.5","closed":1,"fillet":34,"height":2.4,"gates":"-381,0,46,1;-381,46,10,0"}}
 ]

@@ -87,25 +87,51 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     });
 
   const engineNodes = def.attachNodes.filter((n) => n.id.startsWith('engine'));
+  /** Rings of a tank barrel (weld lands between them). */
+  const ringsOf = (t: { y0: number; y1: number }): number => Math.max(1, Math.round((t.y1 - t.y0) / ringStep));
   /**
-   * Frost weight of the skin: the barrels of the cryogenic tanks, with a frost line a hand's breadth above
-   * and below each tank (the domes inside the skirts chill the skin a little past the weld).
+   * Frost weight of the skin: the barrels of the cryogenic tanks from frost line to frost line. The line is
+   * not ruled: it stands a hand's breadth higher or lower from one place round the tank to the next (the
+   * domes inside the skirts chill the skin a little past the weld, more where a frame conducts).
    */
-  const frostAt = (y: number): number => {
+  const frostAt = (y: number, phi = 0): number => {
+    const wave = 0.11 * (noise2((phi * R) / 0.35, 7.5, 63) - 0.5) + 0.07 * (noise2((phi * R) / 1.3, 3.5, 65) - 0.5);
     let w = 0;
-    for (const t of tanks) w = Math.max(w, Math.min(1, (y - t.y0 + 0.12) / 0.14, (t.y1 + 0.12 - y) / 0.14));
+    for (const t of tanks) w = Math.max(w, Math.min(1, (y - t.y0 + 0.2 + wave) / 0.28, (t.y1 + 0.2 + wave - y) / 0.28));
     return Math.max(0, w) * frostW;
   };
   /**
-   * Frost weight of a loaded tank's skin between its frost lines (the mesh shader turns the weight into a
-   * matte white coat that breaks up into vertical streaks where it is thin): heavier low on a tank, varying
-   * softly round it, so that some of the barrel is solid white and some shows the paint in runs where slabs
-   * have slid off. It thins out by itself as the frost amount falls after lift-off.
+   * Thickness of the frost on a loaded tank between its frost lines (the mesh shader turns the weight into a
+   * matte white coat): heavier low on a tank and on the weld lands, where rime builds up in rings, and gone
+   * in vertical lanes a metre or so wide where a sheet has let go and slid off, showing the paint.
    */
   const frostFilm = (y: number, phi: number): number => {
     let low = 0;
-    for (const t of tanks) if (y >= t.y0 - 0.2 && y <= t.y1 + 0.2) low = 1 - Math.min(1, (y - t.y0) / Math.max(1, t.y1 - t.y0));
-    return Math.min(1, 0.8 + 0.2 * low + 0.36 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5));
+    let land = 0;
+    for (const t of tanks) {
+      if (y < t.y0 - 0.3 || y > t.y1 + 0.3) continue;
+      low = 1 - Math.min(1, (y - t.y0) / Math.max(1, t.y1 - t.y0));
+      const n = ringsOf(t);
+      const k = ((y - t.y0) / (t.y1 - t.y0)) * n;
+      land = Math.max(0, 1 - (Math.abs(k - Math.round(k)) * ((t.y1 - t.y0) / n)) / 0.2);
+    }
+    // Lanes where sheets slid off: each starts somewhere up the tank and runs down to its foot.
+    const lane = noise2((phi * R) / 1.1, 2.5, 61);
+    const top = 0.25 + 0.9 * noise2((phi * R) / 1.1, 9.5, 67);
+    const shed = Math.max(0, Math.min(1, (lane - 0.62) / 0.1)) * Math.max(0, Math.min(1, (top - (1 - low)) / 0.15 + 1));
+    const coat = 0.78 + 0.22 * low + 0.2 * land + 0.3 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5);
+    return Math.max(0.12, Math.min(1, coat * (1 - 0.85 * shed)));
+  };
+  /** Distance (m) from a point of the skin to the nearest marking; 0 on one. */
+  const markDistance = (phi: number, y: number): number => {
+    let best = Infinity;
+    for (const r of decalRegions) {
+      const d = ((((phi - (r.phi0 + r.phi1) / 2) % TAU) + TAU + Math.PI) % TAU) - Math.PI;
+      const dx = Math.max(0, Math.abs(d) - (r.phi1 - r.phi0) / 2) * R;
+      const dy = Math.max(0, r.y0 - y, y - r.y1);
+      best = Math.min(best, Math.hypot(dx, dy));
+    }
+    return best;
   };
   /** How high the soot of the base flow reaches at an azimuth: highest on the lee side. */
   const sootReach = (phi: number): number => sootTop * (0.7 + 0.75 * (0.5 + 0.5 * Math.cos(phi - sootLee)));
@@ -135,7 +161,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
         for (let i = 1; i < n; i++) ys.add(t.y0 + ((t.y1 - t.y0) * i) / n);
         // Frost lines at both ends of a frosting tank, and rings a metre apart for the patches of rime.
         if (frostW > 0) {
-          for (const dy of [-0.12, 0.02]) {
+          for (const dy of [-0.34, -0.06, 0.22]) {
             ys.add(Math.max(0, t.y0 + dy));
             ys.add(Math.min(H, t.y1 - dy));
           }
@@ -191,11 +217,15 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        // Over a marking the coat is thin: a veil that takes part of the letters' contrast and keeps their edges,
-        // with few solid cells (request vehicle-pad-6); it thickens raggedly over the cell round each marking.
-        m.frost = outer ? frostAt(y) * (markedAt(_phi, y, y) ? 0.33 : frostFilm(y, _phi)) : 0;
+        // Frost forms on the metal whatever is painted on it. Over a marking the coat is drawn a little thinner
+        // (a veil that keeps the letters readable: request vehicle-pad-6), and that thinning fades out over most
+        // of a metre round the marking, raggedly, so that no marking sits in a window of its own shape.
+        const feather = Math.min(1, markDistance(_phi, y) / (0.5 + 0.5 * noise2((_phi * R) / 0.4, y / 0.9, 69)));
+        m.frost = outer ? frostAt(y, _phi) * frostFilm(y, _phi) * (0.45 + 0.55 * feather * feather * (3 - 2 * feather)) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
-        m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : 0.7;
+        // Inside: the skirts are dim; the forward dome is lit at its crown and dark in the gutter at the wall.
+        const crown = y > fwdBottom - 0.5 && r < Ri - 1e-4 ? 0.5 + 0.45 * (1 - (r / Ri) ** 2) : 0.7;
+        m.ao = outer ? 1 : y < aftTop + 1 ? 0.55 : crown;
         m.wear = outer && (y < 0.02 || y > H - 0.02) ? 0.5 : 0;
       },
     });
@@ -239,8 +269,15 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       b.mat('steel-bare').masks(0.25, 1, 0.5, 0);
       band(b, R, 0.05, 0.1, 0.016, segs, 'frame');
       band(b, R, H - 0.05, 0.1, 0.016, segs, 'frame');
+      // (Bare metal at the end of a cryogenic tank carries the thickest rime.)
+      b.masks(0.25, 1, 0.5, frostW);
       if (aftTop > 0.6) band(b, R, aftTop, 0.08, 0.012, segs, 'frame');
       if (H - fwdBottom > 0.5) band(b, R, fwdBottom, 0.08, 0.012, segs, 'frame');
+      // Foam is closed out by hand at every flange: a trowelled band of darker, older foam.
+      if (skin.startsWith('foam')) {
+        b.mat('foam-aged').masks(0, 1, 0.2, 0);
+        for (const t of tanks) for (const y of [t.y0 + 0.16, t.y1 - 0.16]) band(b, R, y, 0.3, 0.014, segs, 'frame');
+      }
     }
     // ---- weld lands and longitudinal seams on the tank barrels
     if (b.lod === 0) {
@@ -297,7 +334,8 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       // (The stand-off is small: the line, its brackets and bellows stay inside the part's bounding radius.)
       const off = R + r + (e.n[4] ?? 0.035);
       const m = mat(e.name || 'foam-orange', where);
-      b.mat(m).masks(0.05, 1, 0.2, 0);
+      // (A cryogenic line: it frosts with the tank.)
+      b.mat(m).masks(0.05, 1, 0.2, frostW);
       pipe(b, [polar(R - 0.08, phi, y0 - r * 1.6), polar(off, phi, y0), polar(off, phi, y1), polar(R - 0.08, phi, y1 + r * 1.6)], r, r * 2.6, { segs: b.pick(20, 12, 8), tag: 'line' });
       const nb = Math.max(2, Math.round((y1 - y0) / 2.4));
       for (let i = 0; i <= nb; i++) {
@@ -309,7 +347,11 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
           for (const side of [-1, 1]) {
             const foot = polar(R - 0.005, phi + (side * (r + 0.2)) / R, y);
             rod(b, foot, add3(polar(off, phi, y), scale3([Math.cos(phi), 0, -Math.sin(phi)], side * r * 0.9)), 0.022, 6, 'bracket');
-            b.at(radialFrame(R - 0.004, phi + (side * (r + 0.2)) / R, y), () => box(b, 0.12, 0.02, 0.14, [0, 0.01, 0], 'bracket'));
+            // The foot is closed out in the skin's own finish: a hand-sprayed pad of older foam on a foam
+            // tank, a painted doubler on a painted one (never a bright plate standing on the insulation).
+            b.mat(skin.startsWith('foam') ? 'foam-aged' : skin).masks(0.05, 1, 0.2, 0);
+            b.at(radialFrame(R - 0.012, phi + (side * (r + 0.2)) / R, y), () => blister(b, 0.34, 0.26, 0.045));
+            b.mat('alu-machined').masks(0.2, 1, 0.2, 0);
           }
         }
         // Bellows joint above every second bracket: a short stack of convolutions in bare steel.
@@ -434,6 +476,41 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
         // Relief valve body on the vent line.
         b.mat('alu-cast');
         b.at(xf.translate(...polar(0.9, 35 * DEG, domeY(0.9) + 0.22)), () => frustum(b, 0.11, 0.11, -0.08, 0.14, 16, 'valve'));
+      }
+      // The dome's insulation is laid in gores: meridian seams from the manhole to the wall and two ring
+      // seams; and helium bottles stand on it on tripods, plumbed to the manhole.
+      {
+        const domeY = (r: number): number => eq + domeFwd * Math.sqrt(Math.max(0, 1 - (r / Ri) ** 2));
+        const gores = b.pick(16, 8, 0);
+        b.mat(domeMat === 'foam-orange' ? 'foam-aged' : 'tape-silver').masks(0, 0.8, 0, 0);
+        for (let g = 0; g < gores; g++) {
+          const phi = ((g + 0.5) / gores) * TAU;
+          const pts: Vec3Tuple[] = [];
+          for (const f of [0.14, 0.3, 0.45, 0.6, 0.72, 0.82, 0.9, 0.955]) pts.push(polar(Ri * f, phi, domeY(Ri * f) - 0.012));
+          pipe(b, pts, 0.03, 0.2, { segs: b.pick(6, 4, 4), tag: 'seam' });
+        }
+        for (const f of [0.45, 0.8]) b.at(xf.translate(0, domeY(Ri * f) - 0.014, 0), () => torus(b, Ri * f, 0.03, 0, b.pick(72, 36, 12), b.pick(6, 4, 3), 'seam'));
+        const nb = P.num('domeBottles', 3);
+        for (let i = 0; i < nb; i++) {
+          const phi = ((i + 0.6) / nb) * TAU;
+          const rb = Ri * 0.52;
+          const cy = domeY(rb) + 0.52;
+          b.mat('carbon').masks(0.05, 0.85, 0, 0.4);
+          b.at(xf.translate(...polar(rb, phi, cy)), () => ball(b, 0.34, 0, b.pick(24, 12, 6), b.pick(14, 7, 4), 0.34, 'bottle'));
+          if (b.lod === 0) {
+            b.mat('alu-machined').masks(0.2, 0.8, 0, 0);
+            const foot = polar(rb, phi, 0);
+            for (let k = 0; k < 3; k++) {
+              const a = phi + (k / 3) * TAU;
+              const fx = foot[0] + 0.42 * Math.sin(a);
+              const fz = foot[2] + 0.42 * Math.cos(a);
+              rod(b, [fx, domeY(Math.hypot(fx, fz)) - 0.02, fz], [foot[0] + 0.2 * Math.sin(a), cy - 0.22, foot[2] + 0.2 * Math.cos(a)], 0.018, 6, 'strut');
+            }
+            b.at(xf.translate(...polar(rb, phi, cy)), () => band(b, 0.34, 0, 0.04, 0.006, 24, 'strap'));
+            b.mat('steel-brushed').masks(0.1, 0.8, 0, 0);
+            pipe(b, [polar(rb, phi, cy + 0.33), polar(rb, phi, cy + 0.46), polar(rb * 0.55, phi, domeY(rb * 0.55) + 0.2), polar(0.5, phi, fwdApex + 0.1), polar(0.36, phi, fwdApex + 0.02)], 0.014, 0.06, { segs: 6, tag: 'line' });
+          }
+        }
       }
       // Pressurant bottles strapped round the dome on a shelf ring, and avionics boxes between them with
       // their cable harness: what fills a real forward skirt.

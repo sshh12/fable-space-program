@@ -548,8 +548,9 @@ export const padUmbilicalTower: SiteGenerator = ({ params, defs }) => {
   models['lamps'] = buildModel('pad.umbilicalTower.lamps', (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
     for (const y of lampHeights) for (const z of [-2.2, 2.2]) box(b, 0.05, 0.7, 1.1, [face - 0.17, y, z], 'lens');
-    // Work lights: a small fitting under the beam at two corners of every level, as on any working tower.
-    if (b.lod < 2) for (let l = 1; l <= levels; l++) for (const [sx, sz] of [[-1, -1], [1, 1]] as [number, number][]) box(b, 0.3, 0.07, 0.12, [sx * (col - 0.9), l * levelH - 0.58, sz * (col - 0.5)], 'work-light');
+    // Work lights: a fitting under the beam at every corner of every level, as on any working tower. At night
+    // the structure is drawn by them; they are large enough to hold a pixel from across the complex.
+    for (let l = 1; l <= levels; l++) for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(b, b.pick(0.5, 0.5, 0.7), b.pick(0.12, 0.16, 0.3), b.pick(0.22, 0.26, 0.5), [sx * (col - 0.9), l * levelH - 0.58, sz * (col - 0.5)], 'work-light');
   });
   models['beacons'] = buildModel('pad.umbilicalTower.beacons', (b) => {
     b.mat('lamp-red').masks(0, 1, 0, 0);

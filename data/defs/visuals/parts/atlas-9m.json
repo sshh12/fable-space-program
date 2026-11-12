@@ -12,7 +12,7 @@
     "bootY": -0.8,
     "bell": "nozzle-wall",
     "extension": "nozzle-ext",
-    "lod1Pixels": 110,
+    "lod1Pixels": 420,
     "lod2Pixels": 30
   }
 }

@@ -24,7 +24,7 @@ import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
-import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
+import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import { generatePart } from './parts';
 import { NEUTRAL_ANIM, type PartAnim, type PartVisual, type PoseInput, type PoseOpts } from './parts/types';
@@ -63,7 +63,7 @@ export interface VesselVisualStats {
   updateMs: number;
 }
 
-export interface VesselVisualFeature extends RenderFeature {
+export interface VesselVisualFeature extends RenderFeature, TemporalFeature {
   readonly stats: VesselVisualStats;
   /** The generated visual of a part definition (undefined before init or for a part without one). */
   partVisual(defId: string): PartVisual | undefined;
@@ -517,6 +517,15 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
+
+    /**
+     * Frame-exact capture (RENDER_API 13): every LOD is chosen afresh from where the camera stands, without
+     * the hysteresis of where it stood before and without a cross-fade in progress.
+     */
+    resetTemporal() {
+      for (const plan of plans.values()) for (const e of plan.entries) e.lodStates.length = 0;
+      for (const g of ghosts) for (const e of g.plan.entries) e.lodStates.length = 0;
+    },
 
     dispose() {
       batch.destroy();

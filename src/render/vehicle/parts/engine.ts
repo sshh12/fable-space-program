@@ -360,7 +360,7 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
       for (let i = 1; i <= folds * 2; i++) {
         const t = i / (folds * 2);
         const r = r0 + (bootR - r0) * t;
-        const y = -x0 + (bootY + x0) * t + (i % 2 === 1 ? -0.035 : 0.02) * s * (1 - 0.3 * t);
+        const y = -x0 + (bootY + x0) * t + (i % 2 === 1 ? -0.075 : 0.045) * s * (1 - 0.3 * t);
         p.to(r, y);
       }
       lathe(b, p, { segs: b.pick(64, 28, 12), closed: false, tag: 'boot' });
@@ -390,9 +390,9 @@ export const engineLiquid: PartGenerator = ({ def, params }) => {
     }
   };
 
-  // An engine keeps its full detail down to about a hundred pixels: the views a player has of an engine
-  // section (5 to 60 m) are nowhere near a switch.
-  const lodPixels = [P.num('lod1Pixels', 110), P.num('lod2Pixels', 30)];
+  // LOD 0 carries fasteners and weld beads of one to two centimetres. It is drawn only where they cover two
+  // pixels or more (the engine about 420 px across): smaller, they bead into rows of specks along the bands.
+  const lodPixels = [P.num('lod1Pixels', 420), P.num('lod2Pixels', 30)];
   const models = {
     engine: buildModel(`${def.id}.engine`, main, lodPixels),
     hotA: buildModel(`${def.id}.hotA`, hot(0), lodPixels),

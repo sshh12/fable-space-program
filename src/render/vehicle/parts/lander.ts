@@ -412,7 +412,9 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
 
   const pose = (input: PoseInput, emit: PoseSink): void => {
     emit('body', null, null);
-    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
+    // (A landing lamp's lens seen off its axis is a fraction of its beam's luminance: at full value the bloom
+    // was a white disc larger than the housing.)
+    emit('lamp', null, null, { emissive: input.anim.lamp * LENS_OFF_AXIS, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
@@ -423,7 +425,9 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
     return lampAz.map((phi) => {
       const p = lampAt(phi);
       const dir = norm3(polar(Math.sin(25 * DEG), phi, -Math.cos(25 * DEG)));
-      return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [20 * DEG, 36 * DEG] as [number, number], radius: 0.09, castShadow: true, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
+      // (The cone's edge is soft: full strength inside 16 degrees, nothing beyond 46, so the pool has no ruled rim
+      // and the legs' shadows fall well inside it.)
+      return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [16 * DEG, 46 * DEG] as [number, number], radius: 0.09, castShadow: true, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
     });
   };
   return { models: { body, lamp }, pose, lights };
@@ -603,17 +607,20 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
     };
     emit('antenna', antennaHinge, swing(out(antennaPhi), 112 * DEG * t));
     emit('platform', platformHinge, swing(out(ladderPhi), -90 * DEG * t));
-    emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
+    emit('lamp', null, null, { emissive: input.anim.lamp * LENS_OFF_AXIS, castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     const m = def.modules[lightIndex];
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
     const cd = lampCandela(m.params) * input.anim.lamp;
     const dir = norm3(polar(1, ladderPhi + 0.42, -0.6));
-    return [{ pos: add3(lampAt, scale3(dir, 0.1)), dir, cone: [18 * DEG, 30 * DEG], radius: 0.08, intensity: [cd, cd * 0.97, cd * 0.9], range: 30 }];
+    return [{ pos: add3(lampAt, scale3(dir, 0.1)), dir, cone: [14 * DEG, 38 * DEG], radius: 0.08, intensity: [cd, cd * 0.97, cd * 0.9], range: 30 }];
   };
   return { models: { body, antenna, platform, lamp }, pose, lights };
 };
+
+/** Luminance of a lamp's lens seen from outside its beam, as a share of the lamp material's (the filament's). */
+const LENS_OFF_AXIS = 0.06;
 
 // ---------------------------------------------------------------------------------------------- legs
 

@@ -755,10 +755,22 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       box(b, 4.4, 2.3, 0.35, [0, 0, 0.12], 'bank');
     });
   }, lodPixels);
+  // The bank: eight searchlights, each a drum with a deep reflector and a round lens (the lens is the lamp
+  // model; drums and bezels belong to the body, so an unlit bank is hardware, not white squares).
+  const lampAt = (i: number, j: number): Vec3Tuple => [(i - 1.5) * 1.05, (j - 0.5) * 1.05, -0.08];
   const lamps = buildModel('pad.floodlight.lamps', (b) => {
-    b.mat('lamp').masks(0, 1, 0, 0);
     b.at(xf.mul(xf.translate(lampC[0], lampC[1], lampC[2]), xf.rotX(-tilt)), () => {
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) box(b, 0.85, 0.85, 0.06, [(i - 1.5) * 1.05, (j - 0.5) * 1.05, -0.08], 'lens');
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 2; j++) {
+          const p = lampAt(i, j);
+          b.at(xf.mul(xf.translate(p[0], p[1], p[2]), xf.rotX(-Math.PI / 2)), () => {
+            b.mat('steel-dark').masks(0.2, 1, 0.3, 0);
+            ringSolid(b, 0.36, 0.44, -0.18, 0.2, b.pick(20, 10, 6), 'lamp-drum');
+            b.mat('lamp').masks(0, 1, 0, 0);
+            frustum(b, 0.36, 0.36, 0.0, 0.05, b.pick(20, 10, 6), 'lens');
+          });
+        }
+      }
     });
   });
   // Stand-in that casts the mast's shadow where the cascades cannot resolve its members.
@@ -786,6 +798,16 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       castShadow: true,
       intensity: [candela, candela * 0.98, candela * 0.94],
       range,
+    },
+    // The same pole lights the ground before it: a wide, soft pool on the apron (overlapping its neighbours'),
+    // at about a quarter of the light the vehicle gets.
+    {
+      pos: lens,
+      dir: [0, -0.8, -0.6],
+      cone: [numParam(params, 'apronInnerDeg', 28) * DEG, numParam(params, 'apronOuterDeg', 64) * DEG],
+      radius: 1.2,
+      intensity: [candela * 0.035, candela * 0.034, candela * 0.032],
+      range: 110,
     },
   ];
   return {

@@ -186,14 +186,16 @@ describe('soot, frost and damage', () => {
             const outside = tanks.every((k) => y < k.y0 - 0.2 || y > k.y1 + 0.2);
             if (inside) {
               onBarrel++;
-              // A coat everywhere on the barrel (thinner over markings), nowhere a hole in it.
+              // A coat over the barrel (thinner over markings), except in the lanes where a sheet has slid off.
               if (w >= 0.25 * amount) frosted++;
             }
             if (outside && w > 0) stray++;
           }
         }
         expect(onBarrel).toBeGreaterThan(100);
-        expect(frosted / onBarrel, `${def.id}: share of the barrel vertices with a frost coat`).toBeGreaterThan(0.98);
+        // (Visual close-out round 2: a loaded tank shows bare lanes; a coat without a single gap read as paint.)
+        expect(frosted / onBarrel, `${def.id}: share of the barrel vertices with a frost coat`).toBeGreaterThan(0.85);
+        expect(frosted / onBarrel, `${def.id}: the coat has bare lanes`).toBeLessThan(0.995);
         expect(stray, `${def.id}: frost beyond the frost lines`).toBe(0);
       }
     }

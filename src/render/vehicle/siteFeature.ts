@@ -20,7 +20,7 @@ import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } fr
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
-import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
+import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import './site';
 import { LEVEL_GROUND } from './site/survey';
@@ -45,7 +45,7 @@ export interface SiteFeatureOptions {
    * relief the survey describes does not exist.
    */
   levelGround?: boolean;
-  /** Most local lights registered per frame (default 8 of the core's 16). */
+  /** Most local lights registered per frame (default 12 of the core's 16; the vessel feature takes up to 4). */
   maxLights?: number;
   /** Camera distance beyond which a site is not drawn, m (default 80 km). */
   drawDistance?: number;
@@ -64,7 +64,7 @@ export interface SiteStats {
   updateMs: number;
 }
 
-export interface SiteFeature extends RenderFeature {
+export interface SiteFeature extends RenderFeature, TemporalFeature {
   readonly stats: SiteStats;
   /** Presentation state of a site (night, arm positions). */
   state(siteId: string): SiteState | undefined;
@@ -103,7 +103,7 @@ interface SiteRuntime {
 }
 
 export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature {
-  const maxLights = options.maxLights ?? 8;
+  const maxLights = options.maxLights ?? 12;
   const drawDistance = options.drawDistance ?? 80_000;
   let ctx: RenderContext;
   let defs: DefLibrary;
@@ -352,6 +352,18 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     },
 
     isIdle: () => coreOf(ctx).meshes.isIdle(),
+
+    /**
+     * Frame-exact capture (RENDER_API 13): every LOD is chosen afresh from where the camera stands (no
+     * hysteresis, no cross-fade in progress), and arms that were easing stand at their targets.
+     */
+    resetTemporal() {
+      for (const rt of sites) {
+        for (const pl of rt.placed) pl.lodStates.length = 0;
+        rt.state.arms = rt.target.arms;
+        rt.state.crewArm = rt.target.crewArm;
+      }
+    },
 
     dispose() {
       batch.destroy();
