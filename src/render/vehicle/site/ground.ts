@@ -120,9 +120,10 @@ export function stationsAlong(pts: [number, number][], spacing: number): Station
 /**
  * Grade line of a strip `halfWidth` wide along stations 2 m apart: over every station the highest ground
  * across the strip, then its running maximum over +-`reach` metres, smoothed over the same reach (the mean of
- * running maxima never falls under the ground it was taken from), never under `floor`.
+ * running maxima never falls under the ground it was taken from). The line follows the terrain down as well
+ * as up: a road is a hand's breadth of fill on the ground it crosses, not a causeway at the pad's level.
  */
-function gradeLine(ground: GroundField, st: Station[], halfWidth: number, reach: number, floor: number): number[] {
+function gradeLine(ground: GroundField, st: Station[], halfWidth: number, reach: number): number[] {
   const hi = st.map((q) => {
     let h = -Infinity;
     for (let k = -2; k <= 2; k++) h = Math.max(h, ground.hi(q.p[0] + (q.n[0] * halfWidth * k) / 2, q.p[1] + (q.n[1] * halfWidth * k) / 2));
@@ -142,7 +143,7 @@ function gradeLine(ground: GroundField, st: Station[], halfWidth: number, reach:
       sum += top[k]!;
       n++;
     }
-    return Math.max(floor, sum / n);
+    return sum / n;
   });
 }
 
@@ -184,14 +185,15 @@ function stoneField(b: MeshBuilder, ground: GroundField, cx: number, cz: number,
 }
 
 /**
- * Road along a plan path: a crowned asphalt strip on fill, stone shoulders that slope below the terrain,
- * and edge lines. `lift` lowers later roads by a hair where two meet (no two pavements in one plane).
+ * Road along a plan path: a crowned asphalt strip on `cover` metres of fill over its grade line, stone
+ * shoulders that slope below the terrain, and edge lines. `lift` lowers later roads by a hair where two
+ * meet (no two pavements in one plane).
  */
-function road(b: MeshBuilder, ground: GroundField, path: [number, number][], width: number, y: number, lift: number, grime: (x: number, z: number) => number): void {
+function road(b: MeshBuilder, ground: GroundField, path: [number, number][], width: number, cover: number, lift: number, grime: (x: number, z: number) => number): void {
   const hw = width / 2;
   const sh = 1.6;
   const fine = stationsAlong(path, 2);
-  const grade = gradeLine(ground, fine, hw + sh, 10, y);
+  const grade = gradeLine(ground, fine, hw + sh, 10);
   const every = b.pick(2, 4, 12);
   const pick: number[] = [];
   for (let i = 0; i < fine.length - 1; i += every) pick.push(i);
@@ -200,7 +202,7 @@ function road(b: MeshBuilder, ground: GroundField, path: [number, number][], wid
   const st = pick.map((i) => {
     let g = -Infinity;
     for (let k = Math.max(0, i - every + 1); k <= Math.min(fine.length - 1, i + every - 1); k++) g = Math.max(g, grade[k]!);
-    return { q: fine[i]!, y: g + 0.1 + lift };
+    return { q: fine[i]!, y: g + cover + lift };
   });
   // Offsets across the road and their heights over the grade: foot, shoulder top, edge, crown, edge, top, foot.
   const cross: [number, number][] = [
@@ -331,6 +333,9 @@ function berm(b: MeshBuilder, ground: GroundField, cx: number, cz: number, r: nu
   }
 }
 
+/** Fill and pavement of a road over the highest ground along it, m. */
+const ROAD_COVER = 0.25;
+
 /** Height of a road lamp post and the reach of its arm, m. */
 const POLE_HEIGHT = 9;
 const POLE_ARM = 1.8;
@@ -393,7 +398,8 @@ export const padGroundworks: SiteGenerator = ({ params, ground }) => {
       };
       stoneField(b, ground, p.x, p.z, 0.5, rr, y - 0.02, step, grime, 'stone');
     });
-    roads.forEach((r, i) => road(b, ground, r.path, r.width, y + 0.04, -0.014 * i, grime));
+    // (On the level areas the survey's upper bound is 5 cm, so a road meets a 0.3 m slab at its own height.)
+    roads.forEach((r, i) => road(b, ground, r.path, r.width, ROAD_COVER, -0.014 * i, grime));
     if (b.lod < 2) {
       b.mat('gravel-fill');
       tracks.forEach((t, i) => wheelTrack(b, ground, t, y, i));

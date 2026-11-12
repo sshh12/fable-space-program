@@ -844,7 +844,7 @@ export const padFloodlight: SiteGenerator = ({ params }) => {
       dir: [0, -0.8, -0.6],
       cone: [numParam(params, 'apronInnerDeg', 28) * DEG, numParam(params, 'apronOuterDeg', 64) * DEG],
       radius: 1.2,
-      intensity: [candela * 0.035, candela * 0.034, candela * 0.032],
+      intensity: [candela * 0.08, candela * 0.078, candela * 0.074],
       range: 110,
     },
   ];

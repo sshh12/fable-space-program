@@ -1010,7 +1010,7 @@ const recipes: Record<string, () => void> = {
     save('grate_orm', orm(S, S, (u, v) => [clamp(0.25 + 0.75 * bar(u, v)), 0.9, bar(u, v)]));
   },
 
-  // Chain-link fence fabric, tile 0.6 m: twelve 50 mm diamonds of 3.5 mm galvanised wire, woven (the wires
+  // Chain-link fence fabric, tile 0.6 m: twelve 50 mm diamonds of heavy galvanised wire, woven (the wires
   // of the two directions pass over and under each other at the knuckles).
   chainlink() {
     const S = 512;
@@ -1018,8 +1018,8 @@ const recipes: Record<string, () => void> = {
     const wire = (u: number, v: number): { k: number; over: number } => {
       const a = Math.abs(mod((u + v) * N, 1) - 0.5);
       const b = Math.abs(mod((u - v) * N, 1) - 0.5);
-      const wa = smooth(0.445, 0.47, a);
-      const wb = smooth(0.445, 0.47, b);
+      const wa = smooth(0.42, 0.45, a);
+      const wb = smooth(0.42, 0.45, b);
       return { k: Math.max(wa, wb), over: wa > wb ? 1 : 0.8 };
     };
     const h = Field.from(S, S, (u, v) => {

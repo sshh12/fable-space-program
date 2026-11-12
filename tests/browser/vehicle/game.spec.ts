@@ -52,6 +52,9 @@ async function padPoints(page: Page, offsets: [number, number, number][]): Promi
   }, offsets);
 }
 
+/** Structure models that are built on the site's ground survey (they stand off the level areas of the pad shape). */
+const SURVEYED_MODELS = ['pad.groundworks', 'pad.fence', 'pad.pipeRun', 'pad.cameraTower', 'pad.vehicle'];
+
 interface PadView {
   name: string;
   /** Eye and target as east / north / up offsets from the pad centre, m. */
@@ -164,9 +167,10 @@ test.describe('vehicle and launch complex in the integrated game', () => {
   test('the terrain under every structure of a site is at the height the structure stands at', async ({ page }) => {
     const loaded = await open(page, 'scene=pad');
     test.skip(!loaded.includes('terrain'), 'needs the terrain package in the integration lab');
-    // The site feature stands every structure on the pad plane. That is right only where the terrain is
-    // flattened to the pad's elevation: measured here on the baked terrain at every structure's origin.
-    const gaps = await page.evaluate(async () => {
+    // The site feature stands every structure's origin on the pad plane. That is right only where the terrain
+    // is flattened to the pad's elevation: measured here on the baked terrain at the origin of every structure
+    // that is not built on the ground survey (those are checked against the survey below).
+    const gaps = await page.evaluate(async (onSurvey) => {
       const lab = (window as Lab).__integration!;
       const out: { model: string; gap: number }[] = [];
       for (const site of Object.values(lab.app.defs.sites)) {
@@ -174,13 +178,14 @@ test.describe('vehicle and launch complex in the integrated game', () => {
         const rad = Math.PI / 180;
         const padAlt = typeof site.location.padElevation === 'number' ? site.location.padElevation : await lab.groundHeight(site.bodyId, site.location.latDeg, site.location.lonDeg);
         for (const s of site.structures) {
+          if (onSurvey.includes(s.model)) continue;
           const lat = site.location.latDeg + s.offsetEnu[1] / (body.radius * rad);
           const lon = site.location.lonDeg + s.offsetEnu[0] / (body.radius * rad * Math.cos(site.location.latDeg * rad));
           out.push({ model: s.model, gap: (await lab.groundHeight(site.bodyId, lat, lon)) - padAlt });
         }
       }
       return out;
-    });
+    }, SURVEYED_MODELS);
     // Roads, fences, berms and pipe supports stand off the level areas, on the site's ground survey: the live
     // terrain must lie inside the survey's bounds wherever it is sampled (the unit tests hold every earthwork
     // above the upper bound and every foot below the lower one).

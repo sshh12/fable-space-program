@@ -138,8 +138,12 @@ const SPECS = {
   /** Refractory brick lining of the flame trench and deflector. */
   refractory: { color: [0.36, 0.25, 0.19], metallic: 0, roughness: 0.92, tile: [2.4, 2.4], tex: { a: 'tile_albedo', n: 'tile_n', o: 'tile_orm' } },
   gravel: { color: [1, 1, 1], metallic: 0, roughness: 0.95, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
-  /** Compacted crushed-stone fill of the graded area round the hardstand (the same stone, darker and dustier). */
-  'gravel-fill': { color: [0.74, 0.7, 0.66], metallic: 0, roughness: 0.96, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
+  /**
+   * Compacted crushed-stone fill of earthworks (the graded area round the hardstand, road shoulders and
+   * embankments, berms): the aggregate of the place, crushed dark basalt, half the size of the crawlerway's
+   * river rock and without its warm tint, so that fill reads as worked ground of the lava field it lies on.
+   */
+  'gravel-fill': { color: [0.4, 0.425, 0.48], metallic: 0, roughness: 0.96, tile: [1.6, 1.6], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
   asphalt: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [6, 6], tex: { a: 'asphalt_albedo', n: 'asphalt_n', o: 'asphalt_orm' }, shading: 'terrain' },
   /** Painted steel deck plate of the launch mount and platforms. */
   'deck-plate': { color: [1, 1, 1], metallic: 0, roughness: 0.78, tile: [7.2, 7.2], tex: { a: 'deck_albedo', n: 'deck_n', o: 'deck_orm' } },
