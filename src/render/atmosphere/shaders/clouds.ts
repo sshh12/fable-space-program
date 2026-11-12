@@ -960,7 +960,7 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           // (A layer seen from so far that a pixel holds whole fields of cloud is not level inside the pixel:
           // its relief stands into a grazing sun and takes light that a level surface would not. Across the
           // terminator of a planet the tops of whole systems glow in the reddened light, not their thin edges alone.)
-          let rough = 0.2 * sqrt(max(1.0 - mu0 * mu0, 0.0)) * smoothstep(1500.0, 6000.0, footprint);
+          let rough = 0.12 * sqrt(max(1.0 - mu0 * mu0, 0.0)) * smoothstep(1500.0, 6000.0, footprint);
           let around = mix(0.3, mu0 + rough, den.flat);
           // (How deep the sample lies under the lit surface is counted along the surface's normal: under a
           // low sun the beam reaches a point one mean free path below a deck's top through six of them, and
