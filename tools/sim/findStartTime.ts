@@ -15,8 +15,9 @@
  * 5-35 deg, rising, disc fully visible. The numbers of (b) and (c) can be overridden with the flags above;
  * the values used are written to the output (`constraints`).
  *
- * Search: every plane crossing of the selected kind in [from, to) is a candidate (start = crossing - 600 s,
- * so (a) holds exactly); the first candidate that satisfies all constraints with a 1 deg margin on every
+ * Search: every plane crossing of the selected kind in [from, to) is a candidate (start = crossing - 600 s
+ * snapped to the nearest whole tick of 1/120 s, the grid every scenario start is on: ARCHITECTURE section 3;
+ * so (a) holds to half a tick); the first candidate that satisfies all constraints with a 1 deg margin on every
  * elevation bound is chosen (the first plain solution if none has the margin). When NO candidate in the
  * requested range [--from, --to) (default 2027-01-01 .. 2031-01-01) satisfies the constraints, the tool
  * says so, records the closest in-range near misses, and continues year by year (at most --extend-years,
@@ -38,6 +39,7 @@ import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
 import { DEG } from '../../src/core/math/scalar';
 import { createBodySystem } from '../../src/sim/bodies/bodySystem';
+import { nearestTick, snapToTick } from '../../src/sim/clock';
 import { computeLaunchWindow } from '../../src/sim/nav/launchWindow';
 import {
   checkStartConstraints,
@@ -162,7 +164,7 @@ async function main(): Promise<void> {
     while (t < b + delay) {
       const w = computeLaunchWindow({ system, bodyId: site.bodyId, latitude: sitePoint.latitude, longitude: sitePoint.longitude, elevation: padElevation, ut: t, targetBodyId, kind: launchWindowKind(kind) });
       if (!w || !w.coplanar) throw new Error(`site latitude ${site.location.latDeg} deg allows no coplanar launch into the ${targetBodyId} plane`);
-      const startUt = w.crossingUt - delay;
+      const startUt = snapToTick(w.crossingUt - delay);
       t = w.crossingUt + 1;
       if (startUt < a || startUt >= b) continue;
       candidates++;
@@ -279,6 +281,7 @@ async function main(): Promise<void> {
       landingSunElevationDeg: cons.landingSunElevationDeg,
     },
     startUt: chosen.startUt,
+    startTick: nearestTick(chosen.startUt),
     startUtc: iso(chosen.startUt),
     launch: {
       opportunityUt: r.launch.crossingUt,

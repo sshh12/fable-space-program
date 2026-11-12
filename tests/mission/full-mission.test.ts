@@ -9,11 +9,20 @@
  * the stored golden one (tests/mission/golden.json, which belongs to the content hashes of the tile sets
  * it was recorded on; `MISSION_UPDATE_GOLDEN=1 npm run test:mission` records it anew after a re-bake or an
  * intended change of the simulation).
+ *
+ * The flight is also held against the two references of the tick-grid step (MIGRATION_V2 step 3.1; lead
+ * decision in docs/requests/sim-core-v2-1.md): the ascent of the v1 clock from the same start, state by state
+ * (tests/mission/reference-v1-aligned.json), and the v1 baseline inside twice the spread of the v1 control
+ * flights (tests/mission/baseline-v1.json, tests/mission/controls-v1.json; tools/dev/mission-baseline.ts).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { isTickInstant } from '@/sim/clock';
+import { compareEnvelope, describeEnvelope, parseControls, type MissionRecord } from '../../tools/dev/mission-baseline';
+import { BASELINE_FILE, captureMilestones, readRecord } from '../../tools/dev/record-mission-baseline';
 import { ScenarioCapturer, scenarioFileText } from '../../tools/sim/qaScenarios';
+import { compareToReference, readReference, referenceRecorder, referenceTable, type ReferenceDifference } from '../../tools/sim/referenceFlight';
 import {
   CLEARANCE_SETTLE,
   deepestDataLevel,
@@ -45,6 +54,10 @@ interface Golden {
 let a: Flight;
 let b: Flight;
 let capturer: ScenarioCapturer;
+let record: MissionRecord;
+let sameStart: ReferenceDifference[];
+/** Control ticks of the nominal flight whose state time is not a whole tick (none on the tick grid). */
+let offGridTicks = 0;
 let delayed: ReturnType<typeof delayedSource> | null = null;
 const gates: { milestone: string; measured: string; gate: string }[] = [];
 const note = (id: string, measured: string, gate: string): void => {
@@ -55,7 +68,20 @@ const km = (m: number): string => `${(m / 1000).toFixed(1)} km`;
 beforeAll(async () => {
   const defs = await loadLibrary();
   capturer = new ScenarioCapturer(defs.scenarios[SCENARIO]!, (bodyId) => defs.bodies[bodyId]!.radius);
-  a = await fly({ scenario: SCENARIO, onPilotTick: (s, phase) => capturer.onTick(s, phase) });
+  const milestones = captureMilestones('this flight');
+  const reference = readReference();
+  const ascent = referenceRecorder(reference.lastMilestone);
+  a = await fly({
+    scenario: SCENARIO,
+    onPilotTick: (s, phase) => {
+      capturer.onTick(s, phase);
+      milestones.onPilotTick(s);
+      ascent.onTick(s);
+      if (!isTickInstant(s.simUt)) offGridTicks++;
+    },
+  });
+  record = milestones.finish(a, tileContentHashes(a.defs));
+  sameStart = compareToReference(reference, ascent.states((bodyId) => a.defs.bodies[bodyId]!.mu));
   b = await fly({ scenario: SCENARIO, replay: { inputLog: a.run.inputLog, ticks: a.run.stats.ticks }, wrapSource: (source) => (delayed = delayedSource(source)) });
 }, 900_000);
 
@@ -314,6 +340,66 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
       `the eight files are the captures of this flight; the landed start holds ${engineKg('qa-lunar-surface', 'descent-stage').toFixed(0)} kg of descent propellant, the trans-Earth start ${engineKg('qa-trans-earth', 'ascent-stage').toFixed(0)} kg in the ascent stage, the drogue start ${capsule['Ablator']!.toFixed(1)} kg of ablator`,
       'files equal the captures',
     );
+  });
+
+  it('the clock is on the tick grid: the start, every control tick and the end of the flight', () => {
+    expect(isTickInstant(a.scenario.startUt)).toBe(true);
+    expect(a.run.stats.ticks).toBeGreaterThan(100000);
+    expect(offGridTicks).toBe(0);
+    expect(isTickInstant(a.run.finalUt)).toBe(true);
+    note('tick grid', `start tick ${Math.round(a.scenario.startUt * 120)}; all ${a.run.stats.ticks} control ticks (${a.run.stats.railsAdvances} of them rails landings) on whole ticks`, 'no state time off the grid');
+  });
+
+  it('same-start equality: the ascent to EARTH_ORBIT is the one the v1 clock flew from this start', () => {
+    // tests/mission/reference-v1-aligned.json: the v1 clock from the same tick-aligned start, at every milestone
+    // up to EARTH_ORBIT and every 30 s of the ascent. The v1 clock summed float instants while it warped on the
+    // pad and lifted off 18.6 microseconds before the tick: the Earth turns 1.4e-9 rad in that time, which is
+    // the difference of the two flights in the plane angles and in the inertial position (9 mm).
+    const reference = readReference();
+    expect(a.scenario.startUt).toBe(reference.startUt);
+    expect(sameStart).toHaveLength(reference.states.length);
+    expect(sameStart.filter((r) => r.kind === 'milestone').map((r) => r.id)).toEqual(['LIFTOFF', 'MAX_Q', 'STAGE_SEP_1', 'FAIRING_JETTISON', 'STAGE_SEP_2', 'EARTH_ORBIT']);
+    const worst = (f: (r: ReferenceDifference) => number): number => Math.max(...sameStart.map((r) => Math.abs(f(r))));
+    for (const r of sameStart) {
+      expect(r.sameBody && r.sameControlTick, `${r.id}: same control tick, same body`).toBe(true);
+      expect(Math.abs(r.dUt), `${r.id}: event time`).toBeLessThan(1e-4);
+      expect(Math.abs(r.dCaptureUt), `${r.id}: capture time`).toBeLessThan(1e-4);
+      expect(r.da, `${r.id}: da/a`).toBeLessThan(1e-9);
+      expect(r.de, `${r.id}: de`).toBeLessThan(1e-9);
+      expect(r.dEnergy, `${r.id}: dE/E`).toBeLessThan(1e-9);
+      expect(r.dh, `${r.id}: dh/h`).toBeLessThan(1e-9);
+      expect(r.di, `${r.id}: di`).toBeLessThan(1e-8);
+      expect(r.dlan, `${r.id}: dLAN`).toBeLessThan(1e-8);
+      expect(r.dMass, `${r.id}: dm/m`).toBeLessThan(1e-12);
+      expect(Math.abs(r.dAltitude), `${r.id}: altitude`).toBeLessThan(1e-4);
+      expect(r.dPosition, `${r.id}: position`).toBeLessThan(0.05);
+      expect(r.dVelocity, `${r.id}: velocity`).toBeLessThan(1e-4);
+    }
+    const sci = (x: number): string => x.toExponential(2);
+    note(
+      'same start',
+      `${sameStart.length} states to EARTH_ORBIT at the same control ticks as the v1 clock from this start: event times within ${sci(worst((r) => r.dUt))} s, da/a ${sci(worst((r) => r.da))}, de ${sci(worst((r) => r.de))}, dE/E ${sci(worst((r) => r.dEnergy))}, dh/h ${sci(worst((r) => r.dh))}, di ${sci(worst((r) => r.di))} rad, dLAN ${sci(worst((r) => r.dlan))} rad, dm/m ${sci(worst((r) => r.dMass))}, altitude ${sci(worst((r) => r.dAltitude))} m, position ${sci(worst((r) => r.dPosition))} m`,
+      '1e-4 s; 1e-9 in a, e, E, h; 1e-8 rad in i and LAN; 1e-12 in mass; 0.1 mm; 5 cm',
+    );
+    console.log(`\nSame-start comparison (tests/mission/reference-v1-aligned.json):\n${referenceTable(sameStart)}`);
+  });
+
+  it('envelope: every milestone lies within twice the spread of the v1 control flights from the v1 baseline', () => {
+    const baseline = readRecord(BASELINE_FILE);
+    const controls = parseControls(JSON.parse(fs.readFileSync(path.join(repoRoot, 'tests', 'mission', 'controls-v1.json'), 'utf8')));
+    expect(controls.length).toBeGreaterThanOrEqual(4);
+    const rows = compareEnvelope(baseline, record, controls);
+    expect(rows).toHaveLength(17);
+    for (const r of rows) expect(r.pass, `${r.id}: ${r.why ?? ''}`).toBe(true);
+    // The touchdown point and the recovery zone are the baseline's.
+    expect(record.final.recoveryZone).toBe(baseline.final.recoveryZone);
+    const td = record.milestones.find((m) => m.id === 'LUNAR_TOUCHDOWN')!;
+    const btd = baseline.milestones.find((m) => m.id === 'LUNAR_TOUCHDOWN')!;
+    const cosang = Math.sin(td.latitude) * Math.sin(btd.latitude) + Math.cos(td.latitude) * Math.cos(btd.latitude) * Math.cos(td.longitude - btd.longitude);
+    const apart = Math.acos(Math.max(-1, Math.min(1, cosang))) * a.defs.bodies[td.bodyId]!.radius;
+    expect(apart).toBeLessThan(50);
+    note('envelope', `all 17 milestones inside twice the spread of ${controls.length} v1 control flights; touchdown ${apart.toFixed(2)} m from the baseline's point; splashdown in "${record.final.recoveryZone}"`, 'event time and da/a within 2 x the controls; 50 m; the same recovery zone');
+    console.log(`\nEnvelope against tests/mission/baseline-v1.json:\n${describeEnvelope(rows)}`);
   });
 
   it('cost: under 5 minutes of wall clock and under 100 microseconds per step', () => {

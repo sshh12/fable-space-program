@@ -42,12 +42,13 @@
       35
     ]
   },
-  "startUt": 938240818.839663,
-  "startUtc": "2029-09-24T18:26:58.839Z",
+  "startUt": 938240818.8416667,
+  "startTick": 112588898261,
+  "startUtc": "2029-09-24T18:26:58.841Z",
   "launch": {
-    "opportunityUt": 938241418.8396629,
+    "opportunityUt": 938241418.839663,
     "opportunityUtc": "2029-09-24T18:36:58.839Z",
-    "delaySeconds": 600,
+    "delaySeconds": 599.998,
     "ascending": false,
     "launchAzimuthDeg": 99.4021,
     "inertialAzimuthDeg": 98.8747
@@ -58,8 +59,8 @@
     "rising": true
   },
   "landingSun": {
-    "windowStartUtc": "2029-09-27T18:26:58.839Z",
-    "windowEndUtc": "2029-09-29T18:26:58.839Z",
+    "windowStartUtc": "2029-09-27T18:26:58.841Z",
+    "windowEndUtc": "2029-09-29T18:26:58.841Z",
     "startDeg": 7.4353,
     "endDeg": 31.8633,
     "minDeg": 7.4353,
@@ -70,15 +71,15 @@
   },
   "alternatives": [
     {
-      "startUt": 907652566.7012175,
-      "startUtc": "2028-10-05T17:42:46.701Z",
+      "startUt": 907652566.7,
+      "startUtc": "2028-10-05T17:42:46.700Z",
       "padSunDeg": 19.85,
       "landingSunStartDeg": 5.2,
       "landingSunEndDeg": 29.61
     },
     {
-      "startUt": 938240818.839663,
-      "startUtc": "2029-09-24T18:26:58.839Z",
+      "startUt": 938240818.8416667,
+      "startUtc": "2029-09-24T18:26:58.841Z",
       "padSunDeg": 30.87,
       "landingSunStartDeg": 7.44,
       "landingSunEndDeg": 31.86
@@ -99,8 +100,8 @@
         "opportunities": 1465,
         "solutionsInRequestedRange": 2,
         "chosen": {
-          "startUt": 938240818.839663,
-          "startUtc": "2029-09-24T18:26:58.839Z",
+          "startUt": 938240818.8416667,
+          "startUtc": "2029-09-24T18:26:58.841Z",
           "ascending": false,
           "launchAzimuthDeg": 99.4,
           "padSunDeg": 30.87,
@@ -109,8 +110,8 @@
         },
         "solutions": [
           {
-            "startUt": 907652566.7012175,
-            "startUtc": "2028-10-05T17:42:46.701Z",
+            "startUt": 907652566.7,
+            "startUtc": "2028-10-05T17:42:46.700Z",
             "ascending": false,
             "launchAzimuthDeg": 99.4,
             "padSunDeg": 19.85,
@@ -118,8 +119,8 @@
             "landingSunEndDeg": 29.61
           },
           {
-            "startUt": 938240818.839663,
-            "startUtc": "2029-09-24T18:26:58.839Z",
+            "startUt": 938240818.8416667,
+            "startUtc": "2029-09-24T18:26:58.841Z",
             "ascending": false,
             "launchAzimuthDeg": 99.4,
             "padSunDeg": 30.87,

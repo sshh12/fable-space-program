@@ -132,7 +132,8 @@ describe('lunar-direct', () => {
     expect(s.readouts.speedSurface).toBeLessThan(1e-6);
     expect(Math.abs(s.readouts.speedOrbital - 439)).toBeLessThan(2);
     expect(s.terrain).toEqual({ complete: true, pending: false, incompleteQueries: 0 });
-    expect(s.readouts.launchWindow!.timeToPlaneCrossing).toBeCloseTo(600, 3);
+    // (the start is the crossing minus 600 s snapped to the tick grid: half a tick from it at most)
+    expect(Math.abs(s.readouts.launchWindow!.timeToPlaneCrossing - 600)).toBeLessThanOrEqual(0.5 / 120 + 1e-6);
     expect(s.readouts.launchWindow!.launchAzimuthDeg).toBeCloseTo(st.launch.launchAzimuthDeg, 3);
     expect(s.surfaceTargets.map((t) => t.kind).sort()).toEqual(['landing', 'recovery', 'recovery', 'recovery', 'site']);
     // The base of the clamps stands on the launch mount: pad elevation + clamp height.

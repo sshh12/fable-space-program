@@ -3,7 +3,7 @@
   "name": "Lunar direct ascent: Ka Lae to Mare Tranquillitatis and back",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938240818.839663,
+  "startUt": 938240818.8416667,
   "start": { "kind": "pad" },
   "stagesAlreadyFired": 0,
   "target": "moon",

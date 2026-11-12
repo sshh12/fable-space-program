@@ -42,11 +42,14 @@ describe('rails', () => {
       worst = Math.max(worst, v3.dist(c.r, propagate(orbit, s.simUt).r));
     }
     const s1 = sim.peek();
-    expect(s1.simUt).toBeCloseTo(end, 6);
+    // The last advance lands on the first whole tick at or after the end of the period.
+    expect(s1.simUt - end).toBeGreaterThanOrEqual(0);
+    expect(s1.simUt - end).toBeLessThan(PHYSICS_DT);
     const c1 = comState(active(s1));
-    // Back where it started after exactly one period.
-    expect(v3.dist(c1.r, c0.r)).toBeLessThan(1);
-    expect(v3.dist(c1.r, c0.r)).toBeLessThan(1e-3);
+    // Back where it started after exactly one period: taken back along its velocity over the rest of that tick.
+    const closure = v3.dist(v3.addScaled(c1.r, c1.v, end - s1.simUt), c0.r);
+    expect(closure).toBeLessThan(1);
+    expect(closure).toBeLessThan(1e-3);
     expect(worst).toBeLessThan(1e-3);
     expect(active(s1).translationMode).toBe('rails');
     expect(s1.cheatCounter).toBe(0);

@@ -12,6 +12,7 @@ import type { ScenarioDef, ScenarioStart } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { timeSincePeriapsis } from '@/core/math/conic';
 import { conicStateAt } from '@/pilot/math';
+import { floorTick, utOfTick } from '@/sim/clock';
 
 interface Capture {
   id: string;
@@ -102,7 +103,10 @@ const CAPTURES: Capture[] = [
 
 export const QA_SCENARIO_IDS: readonly string[] = CAPTURES.map((c) => c.id);
 
-/** State on the current conic `lead` seconds before it comes down through the entry interface. */
+/**
+ * State on the current conic `lead` seconds before it comes down through the entry interface, at the last
+ * whole tick not after that instant (a scenario starts on the tick grid).
+ */
 function stateBeforeInterface(s: SimSnapshot, bodyRadius: number, lead: number): { ut: number; r: [number, number, number]; v: [number, number, number] } {
   const patch = s.patches.current[0]!;
   const c = patch.conic;
@@ -110,7 +114,7 @@ function stateBeforeInterface(s: SimSnapshot, bodyRadius: number, lead: number):
   const nu = -Math.acos(Math.max(-1, Math.min(1, (c.p / rInterface - 1) / c.e)));
   let tInterface = c.tPeriapsis + timeSincePeriapsis(c, nu);
   if (c.period !== null) while (tInterface < s.simUt) tInterface += c.period;
-  const ut = tInterface - lead;
+  const ut = utOfTick(floorTick(tInterface - lead));
   const st = conicStateAt(c, ut);
   return { ut, r: [st.r.x, st.r.y, st.r.z], v: [st.v.x, st.v.y, st.v.z] };
 }

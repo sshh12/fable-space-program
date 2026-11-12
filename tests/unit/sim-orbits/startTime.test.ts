@@ -103,7 +103,9 @@ describe('scenario start time', () => {
         const r = checkStartConstraints(sys, site, st.targetBodyId, landing, s.startUt, optionsOf(st, alt.launchKind));
         expect(r.ok).toBe(true);
         expect(r.launch.ascending).toBe(s.ascending);
-        expect(r.launch.delay!).toBeCloseTo(600, 6);
+        // (a start is the crossing minus 600 s snapped to the tick grid: half a tick at most from it)
+        expect(Math.abs(r.launch.delay! - 600)).toBeLessThanOrEqual(0.5 / 120 + 1e-6);
+        expect(Math.round(s.startUt * 120) / 120).toBe(s.startUt);
         expect(s.startUt).toBeGreaterThanOrEqual(from);
         expect(s.startUt).toBeLessThan(to);
         if (alt.launchKind === 'ascending') expect(s.ascending).toBe(true);

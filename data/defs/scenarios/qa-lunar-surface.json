@@ -3,7 +3,7 @@
   "name": "QA: landed at the Tranquillity target",
   "vehicle": "meridian-lunar",
   "site": "ka-lae-lc1",
-  "startUt": 938534815.4788127,
+  "startUt": 938534867.5083333,
   "start": {
     "kind": "landed",
     "bodyId": "moon",
@@ -19,12 +19,12 @@
     "ascent-stage": {
       "LOX": 8452.174,
       "CH4": 2347.826,
-      "RCSProp": 221.688
+      "RCSProp": 219.135
     },
     "descent-stage": {
-      "LOX": 3948.152,
-      "CH4": 1096.709,
-      "RCSProp": 102.231
+      "LOX": 3935.696,
+      "CH4": 1093.249,
+      "RCSProp": 96.415
     }
   },
   "target": "moon",

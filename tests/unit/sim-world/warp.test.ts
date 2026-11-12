@@ -6,7 +6,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
-import { MAX_PHYSICS_WARP_INDEX, WARP_LEVELS } from '@/core/contracts/defs';
+import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS } from '@/core/contracts/defs';
 import type { Sim } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
@@ -46,8 +46,8 @@ describe('warp never passes an event', () => {
       const s = sim.peek();
       const v = active(s);
       if (s.warp.index >= HIGH) sawHigh = true;
-      // The advance stops at the event; it is never jumped.
-      if (s.warp.onRails) expect(s.simUt).toBeLessThanOrEqual(Math.max(eventUt, before.simUt) + 1e-6);
+      // The advance stops on the tick that holds the event (the first whole tick at or after it); it is never jumped.
+      if (s.warp.onRails) expect(s.simUt).toBeLessThan(Math.max(eventUt, before.simUt) + PHYSICS_DT);
       if (!entered && v.bodyId === 'moon') {
         entered = true;
         expect(Math.abs(s.simUt - predicted)).toBeLessThan(1e-3 + 1e-9 * predicted);
