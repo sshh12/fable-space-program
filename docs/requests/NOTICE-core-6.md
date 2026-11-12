@@ -27,7 +27,7 @@ To: every package that takes pictures near the camera, on the pad, from the seat
   the frame than before.
 - **At twilight the sky counts in the exposure of an exterior view** (request atmosphere-clouds-11;
   `meterExposure`, `twilightSkyWeight`). Inside an atmosphere, once less than 5 % of the sun's light arrives
-  directly (over the Earth's ground: the sun under 2 degrees, its disc under the horizon, a mountain or the
+  directly (over the Earth's ground: the sun under 1.6 degrees, its disc under the horizon, a mountain or the
   Moon in front of it) and until the sun is 12 degrees under the horizon, the frame is also metered with the
   sky's pixels and the two targets are mixed. Migration: none; frames with the sun 2 degrees up and more,
   the night and views from above the air are metered as before, a dusk or dawn picture gets darker ground

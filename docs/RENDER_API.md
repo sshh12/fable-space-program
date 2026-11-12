@@ -876,8 +876,9 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   `atmosphere-clouds-10`): unchanged with the sun 35 degrees up and more (0.03 EV at the 31 degrees of the
   mission's launch), 0.8 EV lower at 10 degrees, 1.6 at 1 degree seen from 7 km, five on the ground at
   sunrise, so a frame of dawn sky is not exposed as noon. **At twilight the sky counts** (request
-  `atmosphere-clouds-11`): the sun's direct light dies in the last two degrees over the horizon (0.047 of it
-  through the Earth's air at 2.3 degrees, 0.008 at half a degree) while the sky loses a stop, and after
+  `atmosphere-clouds-11`): the sun's direct light dies in the last two degrees over the horizon (0.076 of it
+  through the Earth's air at 2.3 degrees, 0.023 at 1 degree, 0.010 at half a degree) while the sky loses a
+  stop, and after
   sunset the ground is lit by the sky alone, which is ten times brighter than the ground it lights: metered
   on geometry, the frame went to mid-grey ground under a white sky the moment the disc was gone. So where
   less than 5 % of the sun's light arrives directly (`SKY_SUN_NONE`; wholly from 0.5 %, `SKY_SUN_FULL`: the
@@ -886,8 +887,8 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   than their 90th percentile, the glow about the sun, at that level) and the rules under the sun let go, and
   the two targets are mixed by `twilightSkyWeight`; from 6 to 12 degrees under the horizon the sky hands
   back to the night's metering. The weight is 1 before the disc reaches the horizon: the target has no
-  step there. Frames with the sun 2 degrees up and more, the night and views from above the air are
-  untouched. `CameraState.exposureCompensation` (EV, positive = brighter),
+  step there (over the Earth's ground it comes in between 1.6 and 0.5 degrees). Frames with the sun 2
+  degrees up and more, the night and views from above the air are untouched. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
   (request `cockpit-3`), with two terms on top (requests `cockpit-5`, `cockpit-6`): a night key (the target

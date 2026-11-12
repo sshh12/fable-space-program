@@ -378,9 +378,11 @@ export const TWILIGHT_SKY_FULL = Math.sin((-6 * Math.PI) / 180);
 
 /**
  * The sky counts in an exterior view once less than this share of the star's clear light reaches the camera
- * directly, and fully from the lower one: over the Earth's ground that is the sun between 2 degrees and half
- * a degree over the horizon (transmittance 0.047 at 2.3 degrees, 0.023 at 1, 0.008 at a half), so the frames
- * with the sun 2 degrees up and more are metered as before.
+ * directly, and fully from the lower one. Over the Earth's ground (the game's air, luminance-weighted: 0.076
+ * of the sun at 2.3 degrees, 0.062 at 2, 0.041 at 1.5, 0.023 at 1, 0.010 at a half, 0.003 on the horizon)
+ * that is the sun between 1.6 degrees and half a degree over the horizon: the frames with the sun 2 degrees
+ * up and more are metered as before. From 7 km up 0.16 of it still arrives with the sun on the horizon: there
+ * the sky comes in as the disc sets.
  */
 export const SKY_SUN_FULL = 0.005;
 export const SKY_SUN_NONE = 0.05;
