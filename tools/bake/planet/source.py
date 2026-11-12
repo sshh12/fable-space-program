@@ -150,6 +150,7 @@ class Raster:
         meta = rt.read_json(self.dir / "meta.json")
         self.meta = meta
         h, w, c = meta["height"], meta["width"], meta["channels"]
+        vdt = np.dtype(meta.get("valueDtype", "float32"))
         mips: list = []
         m0 = meta["mip0"]
         if m0["kind"] == "tiff":
@@ -157,10 +158,10 @@ class Raster:
             mips.append(_Channels(base, m0["channels"]))
         else:
             shape = (h, w) if c == 1 else (h, w, c)
-            mips.append(np.memmap(self.dir / "m0.f32", dtype=np.float32, mode="r", shape=shape))
+            mips.append(np.memmap(self.dir / "m0.f32", dtype=vdt, mode="r", shape=shape))
         for k in range(1, meta["mips"] + 1):
             shape = (h >> k, w >> k) if c == 1 else (h >> k, w >> k, c)
-            mips.append(np.memmap(self.dir / f"m{k}.f32", dtype=np.float32, mode="r", shape=shape))
+            mips.append(np.memmap(self.dir / f"m{k}.f32", dtype=vdt, mode="r", shape=shape))
         self.pyramid = EquirectPyramid(mips, lon0=meta["lonLeftEdgeDeg"], lat0=90.0)
         self.channels = c
         self.west = self.src["lonPositive"] == "west"
@@ -249,14 +250,19 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
         w = 2 * h
         lon_left = -180.0
     K = _mip_chain_depth(h)
+    # 8-bit imagery keeps its mips (and any copy) in float16: exact to 1/8 of a level, half the disk of float32
+    vdt = np.dtype(np.float16) if np.dtype(g["dtype"]) == np.uint8 else np.dtype(np.float32)
+    est = int(h * w * c * vdt.itemsize * (0 if (nodata is None and exact) else 1) + h * w * c * vdt.itemsize / 3)
+    rt.check_disk(est)
     meta = {"width": w, "height": h, "channels": c, "mips": K, "lonLeftEdgeDeg": lon_left, "regridded": not exact,
+            "valueDtype": vdt.name,
             "georef": {k: v for k, v in g.items() if k != "crs"}, "fileBytes": path.stat().st_size}
     mm = _strip_memmap(path, src) if (nodata is None and exact) else None
     rt.log(f"{body.id}.{key}: {g['width']} x {g['height']} x {c} ({g['dtype']}), lon edge {g['lonLeftEdgeDeg']:.4f}, "
            f"grid {w} x {h}, {K} mips, mip 0 {'memory-mapped' if mm is not None else ('copied' if exact else 'regridded')}")
     level_w = None
     if not exact:
-        dst = np.memmap(out / "m0.f32", dtype=np.float32, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
+        dst = np.memmap(out / "m0.f32", dtype=vdt, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
         mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="w+", shape=(h, w)) if nodata is not None else None
         valid = _regrid(path, bands, g, nodata, dst, mask)
         meta["mip0"] = {"kind": "f32"}
@@ -274,7 +280,7 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
             return m0.rows(r0, r1).astype(np.float32), None
     else:
         shape = (h, w) if c == 1 else (h, w, c)
-        dst = np.memmap(out / "m0.f32", dtype=np.float32, mode="w+", shape=shape)
+        dst = np.memmap(out / "m0.f32", dtype=vdt, mode="w+", shape=shape)
         mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="w+", shape=(h, w)) if nodata is not None else None
         valid = 0
         for r0 in range(0, h, BAND_ROWS):
@@ -299,7 +305,7 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     for k in range(1, K + 1):
         hk, wk = h >> k, w >> k
         shape = (hk, wk) if c == 1 else (hk, wk, c)
-        dk = np.memmap(out / f"m{k}.f32", dtype=np.float32, mode="w+", shape=shape)
+        dk = np.memmap(out / f"m{k}.f32", dtype=vdt, mode="w+", shape=shape)
         wkm = np.memmap(out / f"m{k}.w", dtype=np.float32, mode="w+", shape=(hk, wk)) if level_w is not None else None
         step = BAND_ROWS
         for r0 in range(0, hk, step):
@@ -370,21 +376,22 @@ def _pull_push(out: Path, h: int, w: int, c: int, K: int, meta: dict) -> None:
     """Fill nodata: each level's invalid part takes the bilinear upsample of the filled level above it,
     from the coarsest mip (whose remaining holes take the mean of its valid pixels) down to mip 0."""
     shape = lambda k: ((h >> k, w >> k) if c == 1 else (h >> k, w >> k, c))  # noqa: E731
-    top = np.array(np.memmap(out / f"m{K}.f32", dtype=np.float32, mode="r", shape=shape(K)), dtype=np.float64)
+    vdt = np.dtype(meta.get("valueDtype", "float32"))
+    top = np.array(np.memmap(out / f"m{K}.f32", dtype=vdt, mode="r", shape=shape(K)), dtype=np.float64)
     wt = np.array(np.memmap(out / f"m{K}.w", dtype=np.float32, mode="r", shape=(h >> K, w >> K)), dtype=np.float64)
     if not np.any(wt > 0):
         raise ValueError("source has no valid pixel")
     wexp = wt if c == 1 else wt[..., None]
     mean = (top * wexp).sum(axis=(0, 1)) / max(wt.sum(), 1e-12)
     filled = top * wexp + mean * (1.0 - wexp)
-    np.memmap(out / f"m{K}.f32", dtype=np.float32, mode="r+", shape=shape(K))[:] = filled
+    np.memmap(out / f"m{K}.f32", dtype=vdt, mode="r+", shape=shape(K))[:] = filled
     del filled
     for k in range(K - 1, -1, -1):
         hk, wk = h >> k, w >> k
-        dst = np.memmap(out / f"m{k}.f32", dtype=np.float32, mode="r+", shape=shape(k))
+        dst = np.memmap(out / f"m{k}.f32", dtype=vdt, mode="r+", shape=shape(k))
         wm = (np.memmap(out / f"m{k}.w", dtype=np.float32, mode="r", shape=(hk, wk)) if k else
               np.memmap(out / "m0.mask", dtype=np.uint8, mode="r", shape=(hk, wk)))
-        coarse = np.memmap(out / f"m{k + 1}.f32", dtype=np.float32, mode="r", shape=shape(k + 1))
+        coarse = np.memmap(out / f"m{k + 1}.f32", dtype=vdt, mode="r", shape=shape(k + 1))
         for r0 in range(0, hk, BAND_ROWS):
             r1 = min(hk, r0 + BAND_ROWS)
             up = _upsample_rows(coarse, r0, r1, wk)
