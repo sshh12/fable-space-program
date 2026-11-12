@@ -41,7 +41,7 @@ export function formatNumber(x: number, decimals = 0): string {
 export function formatLength(m: number, style: 'distance' | 'altitude' | 'apsis' = 'distance'): string {
   if (!Number.isFinite(m)) return '—';
   const a = Math.abs(m);
-  const meterLimit = style === 'altitude' ? 5e4 : style === 'apsis' ? 0 : 1e4;
+  const meterLimit = style === 'altitude' ? 5e4 : style === 'apsis' ? 1e3 : 1e4;
   if (a < meterLimit) return `${formatNumber(m, a < 100 ? 1 : 0)}${NBSP}m`;
   if (a < 1e5 && style === 'distance') return `${formatNumber(m / 1e3, 2)}${NBSP}km`;
   // A ground distance of a thousand kilometres and more is read to the kilometre (a tenth would be noise).
@@ -53,7 +53,7 @@ export function formatLength(m: number, style: 'distance' | 'altitude' | 'apsis'
 
 export const formatAltitude = (m: number): string => formatLength(m, 'altitude');
 export const formatDistance = (m: number): string => formatLength(m, 'distance');
-/** Apoapsis / periapsis altitude: always km or larger (see formatLength). */
+/** Apoapsis / periapsis altitude: km or larger from 1 km (a hover or a lift-off reads "16.0 m", not "0.0 km"). */
 export const formatApsis = (m: number): string => formatLength(m, 'apsis');
 
 /** Speed in m/s with 0.1 m/s precision. */
@@ -154,7 +154,8 @@ export function formatHeatFlux(wpm2: number): string {
 }
 
 export const formatG = (g: number): string => `${formatNumber(g, 2)}${NBSP}g`;
-export const formatMach = (mach: number): string => `M${NBSP}${formatNumber(mach, 2)}`;
+/** Mach number: two decimals below Mach 10, one above (an entry at M 24.5 needs no hundredths). */
+export const formatMach = (mach: number): string => `M${NBSP}${formatNumber(mach, Math.abs(mach) < 10 ? 2 : 1)}`;
 export const formatTwr = (twr: number): string => formatNumber(twr, 2);
 
 export function formatMass(kg: number): string {

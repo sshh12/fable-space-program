@@ -90,7 +90,7 @@ export const HUD_CSS = /* css */ `
 .hud .lcol .panel > .ptitle > span:first-child::after, .hud .tc .alt > .ptitle > span:first-child::after, .hud .bottom .node > .ptitle > span:first-child::after, .hud .rcol .res > .ptitle > span:first-child::after, .hud .stagewrap .more > span:first-child::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(var(--u) * -0.34); height: max(1.5px, calc(var(--u) * 0.22)); background: var(--tab, var(--accent)); border-radius: 1px; }
 /* Machined gunmetal of the bottom housing: lit from above like the bezel (bright top chamfer, dark lower edge). */
 .hud .bottom .housing {
-  background: linear-gradient(180deg, #3d4652 0, #2c333c calc(var(--u) * 0.9), #22282f 30%, #1b2026 100%);
+  background: linear-gradient(180deg, #3d4652 0, #2c333c calc(var(--u) * 0.9), #252b32 30%, #21272d 100%);
   border: 1px solid rgba(0, 0, 0, 0.72);
   box-shadow: inset 0 1px 0 rgba(225, 235, 248, 0.42), inset 0 -1px 0 rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(225, 235, 248, 0.06), inset -1px 0 0 rgba(0, 0, 0, 0.35), 0 calc(var(--u) * 0.3) calc(var(--u) * 1.6) rgba(0, 0, 0, 0.38);
 }
@@ -335,7 +335,7 @@ export const HUD_CSS = /* css */ `
   --ball: calc(var(--u) * 24.5);
   --side: calc(var(--u) * 17);
   --win: calc(var(--u) * 5.2);
-  --hh: calc(var(--u) * 14.2);
+  --hh: calc(var(--u) * 14);
   position: absolute; left: 50%; bottom: calc(var(--u) * 0.9); transform: translateX(-50%);
   display: grid; grid-template-columns: var(--side) var(--win) var(--ball) var(--win) var(--side); grid-template-rows: auto; column-gap: calc(var(--u) * 0.45); align-items: end;
 }
@@ -356,7 +356,7 @@ export const HUD_CSS = /* css */ `
 .hud .toggles button.abort { color: var(--warning); border-color: rgba(255, 98, 98, 0.45); }
 /* SAS mode buttons: the marker icon fills the button (about 18 px at 720p); the key is in the tooltip and key help. */
 .hud .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 0.35); }
-.hud .modes button { height: calc(var(--u) * 3.15); padding: 8% 10%; display: flex; align-items: center; justify-content: center; }
+.hud .modes button { height: calc(var(--u) * 3.05); padding: 8% 10%; display: flex; align-items: center; justify-content: center; }
 .hud .modes button svg { width: 100%; height: 100%; }
 .hud .modes button.on { border-color: rgba(95, 227, 154, 0.95); background: rgba(95, 227, 154, 0.2); box-shadow: inset 0 0 0 1px rgba(95, 227, 154, 0.6); }
 .hud .modecap { font-size: 0.78em; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--label); text-align: center; white-space: nowrap; }
@@ -364,7 +364,7 @@ export const HUD_CSS = /* css */ `
 
 .hud .nbwrap { display: flex; flex-direction: column; align-items: center; }
 /* Speed (in the navball's frame, its mode named) and heading: one window on the bezel's top arc. */
-.hud .bottom .speed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); width: calc(var(--u) * 29); height: calc(var(--u) * 3.3); margin-bottom: calc(var(--u) * -0.9); padding: 0 calc(var(--u) * 0.9); border-radius: calc(var(--u) * 0.7); cursor: pointer; contain: size layout style; }
+.hud .bottom .speed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); width: calc(var(--u) * 29); height: calc(var(--u) * 3.05); margin-bottom: calc(var(--u) * -0.35); padding: 0 calc(var(--u) * 0.9); border-radius: calc(var(--u) * 0.7); cursor: pointer; contain: size layout style; }
 .hud .speed .spd { display: flex; align-items: baseline; gap: 0.5em; white-space: nowrap; }
 .hud .speed .mode { color: var(--accent); font-size: 0.78em; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .hud .speed .sv { font-size: 1.32em; font-weight: 600; letter-spacing: 0.01em; }
@@ -388,33 +388,33 @@ export const HUD_CSS = /* css */ `
  * Tape gauges. The zone colours are fixed to the scale (G: green to 6 g, amber to the 10 g limit, red above;
  * the sim's dose threshold and recovery level) and only revealed by the fill: an overflow-hidden window
  * translated down by (1 - f) with the scale-fixed colour layer translated back up (two composited transforms,
- * no layout or paint per frame). The fill has a flat top with a thin lighter line. Both gauges share one grid,
+ * no layout or paint per frame). The fill has a flat top with a thin lighter line. The crew's g-dose is a third,
+ * narrower tape beside the g tube (amber, red from two thirds of the fatal limit), always there. The gauges share one grid,
  * so tops, bottoms and values line up.
  */
-.hud .gauges { display: grid; grid-template-columns: auto auto; justify-content: center; align-content: center; column-gap: calc(var(--u) * 1); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.4) calc(var(--u) * 0.6) calc(var(--u) * 0.35) calc(var(--u) * 0.4); }
+.hud .gauges { display: grid; grid-template-columns: auto auto auto; justify-content: center; align-content: center; column-gap: calc(var(--u) * 0.55); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.5) calc(var(--u) * 0.45) calc(var(--u) * 0.3); }
 .hud .gauge { display: contents; }
 .hud .gauge.thr > * { grid-column: 1; }
 .hud .gauge.g > * { grid-column: 2; }
-.hud .gauge .gv { grid-row: 1; font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 6.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
+.hud .gauge.dose > * { grid-column: 3; }
+.hud .gauge .gv { grid-row: 1; font-weight: 700; font-size: 0.9em; display: block; width: calc(var(--u) * 5.4); text-align: center; white-space: nowrap; height: 1.25em; contain: size layout style; }
+.hud .gauge.dose .gv { width: calc(var(--u) * 4.2); }
+.hud .gauge.dose .nums { display: none; }
+.hud .gauge.dose.nil .gv { color: var(--label); font-weight: 500; }
 .hud .gauge .scale { grid-row: 2; position: relative; display: flex; gap: calc(var(--u) * 0.45); align-items: stretch; margin-top: calc(var(--u) * 0.35); }
-.hud .gauge .nums { position: relative; width: calc(var(--u) * 2.8); height: calc(var(--u) * 7.8); font-size: 0.78em; font-weight: 600; color: var(--label); }
+.hud .gauge .nums { position: relative; width: calc(var(--u) * 2.6); height: calc(var(--u) * 7.8); font-size: 0.78em; font-weight: 600; color: var(--label); }
 .hud .gauge .nums span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
-.hud .gauge .tube { position: relative; width: calc(var(--u) * 2.3); height: calc(var(--u) * 7.8); border-radius: calc(var(--u) * 0.3); background: rgba(6, 9, 14, 0.94); border: 1px solid var(--line); overflow: hidden; box-shadow: inset 0 calc(var(--u) * 0.25) calc(var(--u) * 0.6) rgba(0, 0, 0, 0.6); }
+.hud .gauge .tube { position: relative; width: calc(var(--u) * 2.2); height: calc(var(--u) * 7.8); border-radius: calc(var(--u) * 0.3); background: rgba(6, 9, 14, 0.94); border: 1px solid var(--line); overflow: hidden; box-shadow: inset 0 calc(var(--u) * 0.25) calc(var(--u) * 0.6) rgba(0, 0, 0, 0.6); }
 .hud .gauge .track { position: absolute; inset: 0; opacity: 0.2; }
 .hud .gauge .win { position: absolute; inset: 0; overflow: hidden; will-change: transform; transform: translateY(100%); }
 .hud .gauge .win > i { position: absolute; inset: 0; will-change: transform; transform: translateY(-100%); }
 .hud .gauge .win::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: max(1px, calc(var(--u) * 0.15)); background: rgba(255, 255, 255, 0.4); }
 .hud .gauge.thr .track, .hud .gauge.thr .win > i { background: linear-gradient(to top, #1f9fe6, #6fdcff); }
 .hud .gauge.g .track, .hud .gauge.g .win > i { background: linear-gradient(to top, #3cc97f 0%, #66e3a0 50%, #ffbb4d 50%, #ffc766 83.333%, #ff5a5a 83.333%, #ff7a7a 100%); }
+.hud .gauge.dose .track, .hud .gauge.dose .win > i { background: linear-gradient(to top, #e8a23f 0%, #ffc766 66.667%, #ff5a5a 66.667%, #ff7a7a 100%); }
 .hud .gauge .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0, transparent calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n) - 1px), rgba(255,255,255,0.24) calc(100% / var(--n))); }
 .hud .gauge .limit { position: absolute; left: -1px; right: -1px; height: 2px; background: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
-.hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.08em; color: var(--label); font-weight: 600; white-space: nowrap; }
-/* The crew's g-dose: label, bar and share of the fatal limit across the panel (always there; dim at 0 %). */
-.hud .gauges .doseline { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; display: grid; grid-template-columns: auto minmax(calc(var(--u) * 2.5), 1fr) auto; column-gap: calc(var(--u) * 0.6); align-items: center; margin-top: calc(var(--u) * 0.05); padding-top: calc(var(--u) * 0.3); border-top: 1px solid rgba(170, 198, 235, 0.16); height: calc(1.3em + var(--u) * 0.3); contain: size layout style; }
-.hud .gauges .doseline .bar { height: calc(var(--u) * 0.55); }
-.hud .gauges .doseline .dv { font-size: 0.86em; font-weight: 600; white-space: nowrap; }
-/* No dose yet: the line keeps its place, its reading dim. */
-.hud .gauges .doseline.nil .dv { color: var(--label); font-weight: 500; }
+.hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.04em; color: var(--label); font-weight: 600; white-space: nowrap; }
 
 .hud .bottom > .node { position: absolute; left: calc(50% + var(--u) * 15.3); bottom: calc(var(--hh) + var(--u) * 0.8); width: calc(var(--u) * 21); }
 .hud .node .nstart { font-size: 1.15em; font-variant-numeric: tabular-nums; }
@@ -425,8 +425,9 @@ export const HUD_CSS = /* css */ `
 @keyframes hud-pulse { 50% { opacity: 1; } }
 
 /* ---------------------------------------------------------------- left panels */
-.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.8); align-items: baseline; height: 1.34em; contain: size layout style; }
-.hud .orbit .apsis .sub { text-align: right; min-width: 4.2em; font-size: 0.8em; }
+.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.5); align-items: baseline; height: 1.34em; contain: size layout style; }
+.hud .orbit .apsis .lbl { letter-spacing: 0.04em; }
+.hud .orbit .apsis .sub { text-align: right; min-width: 4.2em; font-size: 0.78em; }
 /* A periapsis below the surface (long value, no time): both rows put the time after the label and the value at
    the panel's edge, so Ap and Pe keep one right-aligned value column. */
 .hud .orbit.wide .apsis { grid-template-columns: auto auto 1fr; }

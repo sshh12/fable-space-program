@@ -372,6 +372,31 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
   ball, unit-tested against the 10 px type floor), numerals on the 20 / 40 / 60 deg lines of the four columns
   between the meridians; markers keep full strength until their centre reaches the lip and are gone about two
   degrees later.
+  Round-6 changes (supersede the above where they differ): **the bottom cluster is one instrument** - a gunmetal
+  housing (`.housing`) symmetric about the ball carries the SAS controls (six toggles in 3 x 2, the eight mode
+  buttons with icons of about 18 px at 720p and no key digit: the key is in the tooltip and the key help) on the
+  left and the tape gauges on the right; the ball's read-outs are black-glass windows set into the instrument:
+  speed (mode word + value, click toggles the navball mode) and heading in one window on the bezel's top arc,
+  pitch at 9 o'clock and roll at 3 o'clock (`.prw`, two-line, over the bezel's rim); the maneuver readout is a
+  glass pane standing on the housing right of the ball (title row "MANEUVER" + the countdown to the burn, then
+  delta-v and burn time). The cluster tops out at about 29 % of the frame height (was 34 %). The g-dose line is
+  always there (dim "0 %" without a dose), so the tubes never move between flight phases (asserted on pad, ascent,
+  low orbit, entry and the high-g entry). The right column is glass like the left: the stage list under a header
+  strip ("STAGES" tab, total delta-v, or "2 left" / "all fired" when nothing can burn), resources with a tab title.
+  The landing-target panel names its target in the title row ("TARGET Tranquility Base", "RECOVERY South
+  Pacific"). The **entry panel shows for an entry, not for an ascent's heating** (`isEntering`: heat flux above
+  1 kW/m^2 while coming down, or rising unpowered on a path whose apoapsis stays inside the atmosphere; request
+  app-integration-4), and in any phase once the skin passes 70 % of its limit or the shield its redline. The
+  altimeter's vertical / horizontal speeds are in the navball's frame (`describeFlight`: in orbit mode the
+  horizontal part of the orbital velocity, so the two add up to the ORBIT speed; the MFD landing page keeps the
+  ground speed, `horizontalSpeedSurface`). Orbit rows: no time to periapsis and no period on a path that meets the
+  surface, no time to apoapsis while coming down on it (`describeOrbit`). Stage tiles: an engine-less stage names
+  its chutes ("separate · deploy drogues", "release drogues · deploy mains", `stageActionWords`); where local
+  gravity is below 0.5 m/s^2 (a translunar coast) the tile gives the full-throttle acceleration instead of a TWR
+  (`thrustLabel` / `thrustValue`; MFD "Stage accel"). Key caps show the key's glyph (". , / - `" drawn large, the
+  name in the tooltip). Target chips read "TARGET Moon". Mission failed: the panels are powered down (content
+  dimmed and desaturated with `filter`, plates as opaque as ever: no scene prints through). Navball labels fade
+  within about 0.012 R (one pixel at 720p) just before the lip: a still shows a label whole or not at all.
 - **HUD main-thread cost**: a changed text node costs a style / layout / paint / layerization pass (about 1 ms
   on this page), far more than the JavaScript formatting it. So the numeric readouts refresh at `HUD_TEXT_HZ`
   (10 Hz), all in one frame; the navball, the throttle and g gauges (composited transforms), every indicator
@@ -425,7 +450,14 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
   albedo map: land, sea and cloud on the Earth, maria on the Moon), or the mean colour with a faint mottle fixed by
   the body's id; it is re-shaded only when the size, the view or the light changes by about 0.3 deg. The landing
   rows of ENT and LND end with the zone light as a row ("Zone INSIDE · r 1 800 km"); the ENT g-dose gauge reads
-  in g·s; SYS splits a long stage-group name over two lines instead of squeezing it.
+  in g·s; SYS splits a long stage-group name over two lines instead of squeezing it. Round 6: the ORB body's
+  display gain is set from the mean of the surface actually drawn (the albedo map with its clouds), so every body's
+  day side reaches the same level; `MfdPainterOptions.bodyClouds(bodyId)` (a cloud cover map, red channel, e.g. the
+  tile set's coverage map named by `render.clouds.coverageMap` reduced to about 1024 x 512) lays the clouds over the
+  albedo map, and a body with an atmosphere gets the blue Rayleigh in-scatter of its `render.atmosphere`
+  (single scattering from its optical depth, stronger toward the limb). STG rows are at most 11.5 % of the page
+  tall, standing on the summary strip under a "STACK · n STAGES LEFT" heading. Raw "none" values are gone: "—",
+  "no gear", "no shield", "vertical" (ground track while moving straight up or down).
 
 ## 2. How the app wires it (ARCHITECTURE section 5)
 
@@ -478,7 +510,20 @@ HUD-legibility worst case: a near-white cloud deck / regolith and a pale sky), `
 (the crew g-dose), `lift=<bankDeg>` (a capsule lift-vector marker 30 deg off the nose), `still=<url>` (also
 `cabin=`: a still of the real renderer - the integration package's flight views, the cockpit package's seat
 view - shown in place of the backdrop), `met=<s>` (the mission time to show, to match a still),
-`predicted=impact|entry|none`. Round 5: every scene carries one coherent flight state (`SETUP` in main.ts): a
+`predicted=impact|entry|none`, and (round 6) the integration lab's own flight-state parameters so a still of the
+real renderer is shown with the state it was rendered in: `start=<m>` (ascent / chutes start altitude; the clock
+moves along the FakeSim's climb with it), `hover=<m>` (the lander's feet that high, flying on the descent
+engine), `throttle=<0..1>` (lever held from the start), `stage=<n>` (stages fired in place of the scene's own;
+`scene=pad&stage=1&throttle=1` is the lift-off), `ground=<m>` (the ground or sea under the vessel), plus
+`sas=<mode>` (SAS mode held from the start). Round 6 lab state (`flightState.ts`): the vessel's mass and every stage
+figure (delta-v at vacuum Isp, TWR at local gravity, burn time, propellant) are computed from the lab parts it
+carries, as the sim's `stagingInfo` does (the lander's engines resized so its numbers are plausible: descent 82 kN,
+ascent 30 kN); the surface scenes stand on the lab ground through the FakeSim's `ground` option (radar altitude 0
+when landed); the entry views are moments of one integrated ballistic entry (entry interface 120 km, 7.4 km/s,
+-3 deg, beta 400 kg/m^2: 0.68 g at 67.9 km / 7.37 km/s / -3.9 deg, 11.2 g 50 s later at 42.6 km / 5.16 km/s; peak
+12.3 g; the impact where the trajectory ends) with the osculating conic of that state (Pe below the surface);
+translunar is a 190 km x 380 000 km ellipse (climbing at 1.45 km/s); chutes has both chute stages fired (the
+mains: 8 m/s at 1 g, no chute envelope left); Mach from the US-76 speed of sound. Round 5: every scene carries one coherent flight state (`SETUP` in main.ts): a
 mission clock that runs (ascent T+ 00:01:10, low orbit 00:52, translunar 1d 02:21, lunar orbit 3d 04:25, landed
 4d 06:12, entry 8d 02:41, chutes 8d 02:52; the pad stays at 0 until the first stage fires; UT = launch + MET), a
 powered climb in the ascent (throttle 0.86, g from the active stage's TWR), an entry whose dynamic pressure,

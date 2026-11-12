@@ -315,7 +315,9 @@ export function describeOrbit(s: SimSnapshot): OrbitView {
   const r = s.readouts;
   const closed = r.eccentricity < 1 && Number.isFinite(r.apoapsisAltitude) && r.apoapsisAltitude > -1e30;
   const meetsSurface = r.periapsisAltitude < 0;
-  const comingDown = meetsSurface && r.verticalSpeed < 0;
+  // Past its apoapsis on this pass (falling, or more than half a period from the next one: the time from periapsis
+  // to apoapsis is half the period on every ellipse), the vessel meets the surface first.
+  const comingDown = meetsSurface && (r.verticalSpeed < 0 || (r.period !== null && r.timeToApoapsis !== null && r.timeToApoapsis > r.period / 2));
   return {
     apoapsis: closed ? formatApsis(r.apoapsisAltitude) : 'escape',
     apoapsisTime: r.timeToApoapsis !== null && !comingDown ? formatCountdown(r.timeToApoapsis) : '—',

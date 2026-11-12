@@ -198,14 +198,18 @@ async function expectTextFloor(page: Page, what: string): Promise<void> {
  */
 async function plateSpreads(page: Page, png: Buffer): Promise<{ cls: string; spread: number }[]> {
   const img = PNG.sync.read(png);
-  const plates = await page.locator('.hud .lcol .panel, .hud .rcol .panel, .hud .later, .hud .tile.next, .hud .tile.active, .hud .bottom .panel').evaluateAll((els) =>
-    els.filter((e) => e.getClientRects().length > 0).map((e) => ({ cls: e.className, r: e.getBoundingClientRect().toJSON() as DOMRect })),
+  // (The SAS controls and the gauges are regions of the housing, not plates: the housing is sampled instead.)
+  const plates = await page.locator('.hud .lcol .panel, .hud .rcol .panel, .hud .later, .hud .tile.next, .hud .tile.active, .hud .bottom .panel:not(.sas):not(.gauges), .hud .housing').evaluateAll((els) =>
+    els
+      .filter((e) => e.getClientRects().length > 0)
+      .map((e) => ({ cls: e.className, r: e.getBoundingClientRect().toJSON() as DOMRect, title: e.querySelector(':scope > .ptitle')?.getBoundingClientRect().bottom ?? -Infinity })),
   );
   return plates.map((p) => {
     const x = Math.round(p.r.left + 2);
     let lo = 255;
     let hi = 0;
-    for (let y = Math.ceil(p.r.top + p.r.height * 0.45); y < Math.floor(p.r.bottom - 4); y++) {
+    // Below the plate's lit top and below its title strip (a two-row panel is half title).
+    for (let y = Math.ceil(Math.max(p.r.top + p.r.height * 0.45, p.title + 2)); y < Math.floor(p.r.bottom - 4); y++) {
       const i = (y * img.width + x) * 4;
       const v = Math.max(img.data[i]!, img.data[i + 1]!, img.data[i + 2]!);
       lo = Math.min(lo, v);
@@ -272,12 +276,12 @@ for (const [w, h, tag] of [
       const st = await page.evaluate(() => window.__test!.state()!);
       expect(st.readouts.gLoad).toBeGreaterThan(11);
       expect(st.readouts.periapsisAltitude, 'an entry meets the surface').toBeLessThan(0);
-      // The dose has its own labelled line inside the gauges panel: 6.4 of the 15 g s limit.
-      const line = page.locator('.hud .gauges .doseline');
-      await expect(line).toBeVisible();
-      await expect(line.locator('.lbl')).toHaveText(/g dose/i);
-      await expect(line.locator('.dv')).toHaveText(/^43\s%$/);
-      const lb = (await line.boundingBox())!;
+      // The dose has its own labelled tape inside the gauges panel: 6.4 of the 15 g s limit.
+      const doseTube = page.locator('.hud .gauge.dose .tube');
+      await expect(doseTube).toBeVisible();
+      await expect(page.locator('.hud .gauge.dose .gl')).toHaveText(/dose/i);
+      await expect(page.locator('.hud .gauge.dose .gv')).toHaveText(/^43\s%$/);
+      const lb = (await page.locator('.hud .gauge.dose .gl').boundingBox())!;
       const pb = (await page.locator('.hud .gauges').boundingBox())!;
       expect(lb.x).toBeGreaterThanOrEqual(pb.x);
       expect(lb.x + lb.width).toBeLessThanOrEqual(pb.x + pb.width + 0.5);
