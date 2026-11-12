@@ -376,7 +376,7 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
    * own length, as a slack strap lies.
    */
   let strapSeed = 0;
-  const strap = (corners: [number, number][], w: number, minLift = 0): void => {
+  const strap = (corners: [number, number][], w: number, minLift = 0): { xy: [number, number][]; w: number; top: (i: number, across: number) => Vec3 } => {
     const seed = ++strapSeed * 1.7 + (s.id.charCodeAt(0) % 7);
     let path = corners;
     for (let round = 0; round < 3 && path.length > 2; round++) {
@@ -436,13 +436,55 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
       return { p: local(backF, x + sx * across, y + sy * across, h[i]! + up), uv: [i * 0.006, across + w / 2] };
     };
     b.surface(xy.length - 1, 3, at, web);
+    // The band's top face at sample i, `across` (m) from its centre line: what is threaded on the strap rests
+    // on that, never on the pad's height under it.
+    const top = (i: number, across: number): Vec3 => {
+      const [x, y] = xy[i]!;
+      const [xa, ya] = xy[Math.max(0, i - 1)]!;
+      const [xb, yb] = xy[Math.min(xy.length - 1, i + 1)]!;
+      const l = Math.hypot(xb - xa, yb - ya) || 1;
+      return local(backF, x - ((yb - ya) / l) * across, y + ((xb - xa) / l) * across, h[i]! + thickW + across * Math.tan(roll(i)));
+    };
+    return { xy, w, top };
+  };
+  type Laid = { xy: [number, number][]; w: number; top: (i: number, across: number) => Vec3 };
+  /**
+   * The frame of a fitting threaded on a laid strap at the strap's sample nearest (x, y): x across the band,
+   * y along it, n out of its top face, so the fitting rolls and lifts with the band. Its origin is the centre
+   * of a fitting hx x hy x half (half sizes): clear of the band's top over the fitting's whole footprint, and
+   * of the pad beside the band.
+   */
+  const threaded = (laid: Laid, x: number, y: number, hx: number, hy: number, half: number): Frame => {
+    let k = 0;
+    laid.xy.forEach(([px, py], i) => {
+      if (Math.hypot(px - x, py - y) < Math.hypot(laid.xy[k]![0] - x, laid.xy[k]![1] - y)) k = i;
+    });
+    const last = laid.xy.length - 1;
+    const centre = laid.top(k, 0);
+    const across = v3.sub(laid.top(k, laid.w / 2), laid.top(k, -laid.w / 2));
+    const along = v3.sub(laid.top(Math.min(last, k + 1), 0), laid.top(Math.max(0, k - 1), 0));
+    let f = frameAt(centre, across, along);
+    if (v3.dot(f.n, backF.n) < 0) f = frameAt(centre, v3.neg(across), along);
+    const reach = Math.ceil(hy / 0.006) + 1;
+    let lift = 0;
+    for (let i = Math.max(0, k - reach); i <= Math.min(last, k + reach); i++) {
+      for (const a of [-0.5, -0.25, 0, 0.25, 0.5]) lift = Math.max(lift, v3.dot(v3.sub(laid.top(i, a * laid.w), centre), f.n));
+    }
+    lift += 0.0006;
+    for (const [a, c2] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]] as [number, number][]) {
+      const q = v3.sub(v3.add(v3.addScaled(centre, f.n, lift), v3.add(v3.scale(f.x, a * hx), v3.scale(f.y, c2 * hy))), backF.o);
+      lift += Math.max(0, under(v3.dot(q, backF.x), v3.dot(q, backF.y)) + 0.001 - v3.dot(q, backF.n));
+    }
+    return { ...f, o: v3.addScaled(centre, f.n, lift + half) };
   };
   const yb = -backHy;
+  const shoulder: Laid[] = [];
+  const lap: Laid[] = [];
   for (const side of [-1, 1]) {
-    strap([[side * 0.1, backHy + 0.02], [side * 0.1, backHy - 0.02], [side * 0.07, -backHy * 0.2], [side * 0.02, yb + 0.12]], 0.045, 0.01);
-    strap([[side * (hw - 0.012), yb + 0.05], [side * 0.12, yb + 0.08], [side * 0.03, yb + 0.1]], 0.045);
+    shoulder.push(strap([[side * 0.1, backHy + 0.02], [side * 0.1, backHy - 0.02], [side * 0.07, -backHy * 0.2], [side * 0.02, yb + 0.12]], 0.045, 0.01));
+    lap.push(strap([[side * (hw - 0.012), yb + 0.05], [side * 0.12, yb + 0.08], [side * 0.03, yb + 0.1]], 0.045));
   }
-  strap([[0, yb + 0.03], [0, yb + 0.07]], 0.04, c.cushion * 0.9);
+  const crotch = strap([[0, yb + 0.03], [0, yb + 0.07]], 0.04, c.cushion * 0.9);
   // Rotary buckle: a brushed steel body with the four tongues' slots, a turning knob, a red release tab.
   const buckle = local(backF, 0, yb + 0.1, Math.max(under(0, yb + 0.1), under(0.03, yb + 0.1), under(-0.03, yb + 0.1)) + 0.0035);
   const bf = faceL(buckle, s);
@@ -453,32 +495,21 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   }
   b.lathe(v3.addScaled(buckle, backF.n, 0.0095), backF.n, [[0.02, 0], [0.02, 0.005], [0.017, 0.007], [0, 0.0074]], 28, ctx.m('aluminium'), { ref: bf.x });
   b.box({ ...bf, o: local(bf, 0, 0.012, 0.0172) }, 0.006, 0.0035, 0.0012, 0.0005, ctx.m('warning'));
-  // Adjusters on the shoulder straps: a buckle frame round the band.
-  for (const side of [-1, 1]) {
-    const x = side * 0.083;
-    const y = -backHy * 0.1;
-    b.box(faceL(local(backF, x, y, under(x, y) + 0.004), s), 0.028, 0.011, 0.0028, 0.0014, ctx.m('steel'));
-  }
-  // Where the straps start: each shoulder strap comes out of a guide slot at the top of the back (its reel
-  // is behind the couch), each lap belt from an anchor plate bolted down by the hip, the crotch strap from
-  // a plate on the seat.
+  // What is threaded on the straps sits ON them (placed from each band's own height, not the pad's: a band
+  // that lifts off the pad carries its fittings with it). Adjusters on the shoulder straps: a buckle frame
+  // round the band. Where the straps start: each shoulder strap comes out of a guide at the top of the back
+  // (its reel is behind the couch), each lap belt from an anchor plate bolted down by the hip, the crotch
+  // strap from a plate on the seat.
   const hardware = ctx.m('satinSteel');
-  const high = (x: number, y: number, r: number): number => Math.max(under(x, y), under(x + r, y), under(x - r, y), under(x, y + r), under(x, y - r));
-  for (const side of [-1, 1]) {
-    const gx = side * 0.1;
-    const gy = backHy - 0.004;
-    const gz = Math.max(high(gx, gy, 0.03), 0.01) + 0.0065;
-    b.box(faceL(local(backF, gx, gy, gz), s), 0.029, 0.006, 0.004, 0.002, hardware);
-    const ax = side * (hw - 0.012);
-    const ay = yb + 0.05;
-    const az = high(ax, ay, 0.014) + 0.0055;
-    b.box(faceL(local(backF, ax, ay, az), s), 0.013, 0.021, 0.0028, 0.0012, hardware);
-    b.cylinder(local(backF, ax, ay - 0.011, az + 0.0028), backF.n, 0.0055, 0.003, 6, ctx.m('steel'), { caps: 'top' });
-  }
-  {
-    const az = Math.max(high(0, yb + 0.03, 0.012), c.cushion * 0.9) + 0.0055;
-    b.box(faceL(local(backF, 0, yb + 0.026, az), s), 0.022, 0.009, 0.0028, 0.0012, hardware);
-  }
+  [-1, 1].forEach((side, n) => {
+    b.box(threaded(shoulder[n]!, side * 0.083, -backHy * 0.1, 0.028, 0.011, 0.0028), 0.028, 0.011, 0.0028, 0.0014, ctx.m('steel'));
+    b.box(threaded(shoulder[n]!, side * 0.1, backHy - 0.004, 0.029, 0.006, 0.004), 0.029, 0.006, 0.004, 0.002, hardware);
+    // The anchor plate lies along the belt, its bolt at the outboard end (where the belt starts).
+    const anchor = threaded(lap[n]!, side * (hw - 0.012), yb + 0.05, 0.024, 0.013, 0.0028);
+    b.box(anchor, 0.024, 0.013, 0.0028, 0.0012, hardware);
+    b.cylinder(local(anchor, 0, -0.005, 0.0028), anchor.n, 0.0055, 0.003, 6, ctx.m('steel'), { caps: 'top' });
+  });
+  b.box(threaded(crotch, 0, yb + 0.026, 0.022, 0.009, 0.0028), 0.022, 0.009, 0.0028, 0.0012, hardware);
 }
 
 /** Rubber bellows boot over a controller's gimbal: a cone of folds from rBottom to rTop over `height`. */

@@ -109,6 +109,10 @@ function standoff(ctx: CabinContext, group: string, from: Vec3, n: Vec3, radius:
   if (v3.dist(from, w) > 0.003) {
     b.group(`mount:${group}`);
     b.cylinder(w, v3.sub(from, w), radius, v3.dist(from, w), 8, ctx.m(mat));
+    // Its foot on the wall: a boss (a metal post ends in one, never as a bare tube on the cloth).
+    // (A millimetre and a half off the wall: the wall curves away under a foot this wide, and the post may
+    // meet it a few degrees off its normal.)
+    if (mat === 'aluminium' && v3.dist(from, w) > 0.012) b.cylinder(v3.addScaled(w, v3.normalize(v3.sub(from, w)), 0.0015), v3.sub(from, w), radius * 1.9, 0.003, 12, ctx.m(mat), { caps: 'top' });
     b.group(keep);
   }
 }
@@ -159,7 +163,9 @@ export function buildFixtures(ctx: CabinContext): void {
     if (d === 0) {
       b.box(offsetFrame(f, 0, 0, 0.0035), fl.length / 2, 0.018, 0.0035, 0.002, ctx.m('floodLens', { ctl: c.index, flags: FLAG_EMISSIVE }));
       for (const s of [-1, 1]) {
-        b.cylinder(local(f, s * (fl.length / 2 + 0.018), 0, -0.012), f.y, 0.008, 0.06, 10, ctx.m('aluminium'), { caps: 'both' });
+        // (The swivel barrel across each end of the housing, centred on it: it stood out 3 cm to one side,
+        // an open tube end beside a stringer.)
+        b.cylinder(local(f, s * (fl.length / 2 + 0.018), -0.03, -0.012), f.y, 0.008, 0.06, 10, ctx.m('aluminium'), { caps: 'both' });
         standoff(ctx, `flood:${i}`, local(f, s * (fl.length / 2 - 0.02), 0, -0.024), wf.n, 0.006);
       }
       const p0 = local(f, -fl.length / 2, 0, 0.008);
@@ -272,10 +278,11 @@ export function buildFixtures(ctx: CabinContext): void {
   {
     const cover = softCover(ctx, fdf, 0.22, 0.26, 0.05, 'pouch', [], 0.4, 3);
     const flapV = 0.075;
-    b.surface(18, 1, (i, j) => {
-      const u = -0.1 + (0.2 * i) / 18;
+    const flapU = cover.us.filter((u) => Math.abs(u) <= 0.1);
+    b.surface(flapU.length - 1, 1, (i, j) => {
+      const u = flapU[i]!;
       const v = flapV + (j - 0.5) * 0.022;
-      return { p: local(fdf, u, v, cover(u, v) + 0.0016), uv: [u, v] };
+      return { p: local(fdf, u, v, cover.colTop(u, flapV - 0.011, flapV + 0.011) + 0.0016), uv: [u, v] };
     }, ctx.m('velcro', { flags: FLAG_OVERLAY }));
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) standoff(ctx, 'fdfPouch', local(fdf, sx * 0.1, sy * 0.12, -0.049), fdf.n, 0.006, 'webbing');
     ctx.labelQuad(offsetFrame(fdf, 0, -0.03, Math.max(cover(0, -0.03), cover(-0.06, -0.03), cover(0.06, -0.03)) + 0.0012), 0, 0, 0.12, 0.016, 'FLIGHT DATA FILE', 'pouch', { color: 1 });
@@ -315,9 +322,43 @@ export function buildFixtures(ctx: CabinContext): void {
  * in it (`fill` 0..1). Frame f: the front plane of the pack's envelope (z = 0), the wall side at z = -depth.
  * Returns the cover's height z(u, v) in that frame, for what is sewn or strapped onto it.
  */
-function softCover(ctx: CabinContext, f: Frame, w: number, h: number, depth: number, mat: string, straps: number[], fill: number, seed: number): (u: number, v: number) => number {
+interface SoftCover {
+  /** Height of the cover's surface over the frame's plane at (u, v). */
+  (u: number, v: number): number;
+  /** The mesh's columns (u) and rows (v): what lies ON the cover takes its vertices from these. */
+  us: number[];
+  vs: number[];
+  /**
+   * The highest vertex of the cover's own mesh over [u0, u1] at row v (a value of `vs`), or over [v0, v1]
+   * at column u (a value of `us`): a band laid across the mesh with its vertices on the mesh's rows (or
+   * columns) at this height plus its lift is nowhere under the mesh between them either (the mesh is linear
+   * in each triangle, so its height between two rows is at most the blend of the rows' highest vertices).
+   */
+  rowTop(v: number, u0: number, u1: number): number;
+  colTop(u: number, v0: number, v1: number): number;
+}
+/** Half width (m) of the straps a soft cover is pulled down by. */
+const COVER_STRAP_HALF = 0.0125;
+function softCover(ctx: CabinContext, f: Frame, w: number, h: number, depth: number, mat: string, straps: number[], fill: number, seed: number): SoftCover {
   const edge = (t: number): number => Math.pow(Math.max(0, 1 - Math.min(1, Math.abs(t)) ** 4), 0.45);
-  const z = (u: number, v: number): number => {
+  const ni = Math.max(8, Math.round(w / 0.011));
+  const nj = Math.max(8, Math.round(h / 0.011));
+  // The strap presses a flat-bottomed groove: flat under the band and one cell of the mesh to either side
+  // (so the mesh under the band's edges is at the groove's floor), the cloth rising beside it.
+  const flat = COVER_STRAP_HALF + w / ni;
+  // Under a strap the pack has one height across the band's width (the band is flat across): the pack's own
+  // shape is read at the band's centre line there, and catches up with itself beside the groove.
+  const pressed = (u: number): number => {
+    let x = u;
+    const open = Math.max(0, Math.min(1, (w / 2 - Math.abs(u)) / 0.015));
+    for (const us of straps) {
+      const d = u - us;
+      x -= Math.sign(d) * Math.min(Math.abs(d), flat) * Math.exp(-Math.max(0, Math.abs(d) - flat) / 0.03) * open;
+    }
+    return x;
+  };
+  const z = (uTrue: number, v: number): number => {
+    const u = pressed(uTrue);
     const a = (2 * u) / w;
     const c = (2 * v) / h;
     const rim = edge(a) * edge(c);
@@ -325,16 +366,14 @@ function softCover(ctx: CabinContext, f: Frame, w: number, h: number, depth: num
     // What is packed in it: broad lumps, more of them the fuller the pack.
     t += depth * 0.11 * fill * rim * (Math.sin(u * 23 + seed * 1.3) * Math.sin(v * 17 + seed * 0.7) + 0.5 * Math.sin(u * 41 + v * 29 + seed));
     for (const us of straps) {
-      const d = u - us;
-      const g = Math.exp(-((d / 0.014) ** 2));
+      const d = uTrue - us;
+      const g = Math.exp(-((Math.max(0, Math.abs(d) - flat) / 0.008) ** 2));
       // The strap's groove, and the cloth gathered into ripples on either side of it.
       t -= 0.011 * g * Math.pow(rim, 0.35);
       t += 0.0026 * Math.sin(v / 0.0115 + 9 * us + 2.5 * Math.sin(v / 0.047 + seed)) * Math.exp(-Math.abs(d) / 0.032) * (1 - g) * rim;
     }
     return -depth + Math.max(0, t);
   };
-  const ni = Math.max(8, Math.round(w / 0.011));
-  const nj = Math.max(8, Math.round(h / 0.011));
   ctx.b.surface(ni, nj, (i, j) => {
     const u = -w / 2 + (w * i) / ni;
     const v = -h / 2 + (h * j) / nj;
@@ -353,7 +392,21 @@ function softCover(ctx: CabinContext, f: Frame, w: number, h: number, depth: num
     loop.push(local(f, px, py, z(px, py) + 0.0015));
   }
   ctx.b.tube(loop, 0.0022, 6, ctx.m(mat, { ao: 0.8 }));
-  return z;
+  const us = Array.from({ length: ni + 1 }, (_, i) => -w / 2 + (w * i) / ni);
+  const vs = Array.from({ length: nj + 1 }, (_, j) => -h / 2 + (h * j) / nj);
+  /** Grid lines of `grid` from the one at or before a to the one at or after b. */
+  const span = (grid: number[], a: number, b: number): number[] => {
+    const step = grid[1]! - grid[0]!;
+    const i0 = Math.max(0, Math.min(grid.length - 1, Math.floor((a - grid[0]!) / step + 1e-6)));
+    const i1 = Math.max(0, Math.min(grid.length - 1, Math.ceil((b - grid[0]!) / step - 1e-6)));
+    return grid.slice(i0, i1 + 1);
+  };
+  return Object.assign(z, {
+    us,
+    vs,
+    rowTop: (v: number, u0: number, u1: number): number => Math.max(...span(us, u0, u1).map((u) => z(u, v))),
+    colTop: (u: number, v0: number, v1: number): number => Math.max(...span(vs, v0, v1).map((v) => z(u, v))),
+  });
 }
 
 /**
@@ -371,19 +424,22 @@ function stowageBag(ctx: CabinContext, az: number, y: number, w: number, h: numb
   const cover = softCover(ctx, f, w, h, depth, 'pouch', strapU, 0.8, seed);
   // Zip across the upper third: its tape follows the cover.
   const zipV = h * 0.31;
-  b.surface(28, 1, (i, j) => {
-    const u = -w * 0.4 + (w * 0.8 * i) / 28;
+  const zipU = cover.us.filter((u) => Math.abs(u) <= w * 0.4);
+  b.surface(zipU.length - 1, 1, (i, j) => {
+    const u = zipU[i]!;
     const v = zipV + (j - 0.5) * 0.007;
-    return { p: local(f, u, v, cover(u, v) + 0.0012), uv: [u, v] };
+    return { p: local(f, u, v, cover.colTop(u, zipV - 0.0035, zipV + 0.0035) + 0.0012), uv: [u, v] };
   }, ctx.m('cableBlack', { flags: FLAG_OVERLAY }));
-  b.box(offsetFrame(f, w * 0.4, zipV, cover(w * 0.4, zipV) + 0.003), 0.007, 0.004, 0.002, 0.001, ctx.m('steel'));
+  const pullU = zipU[zipU.length - 1]! - 0.007;
+  b.box(offsetFrame(f, pullU, zipV, Math.max(...cover.us.filter((u) => Math.abs(u - pullU) <= 0.007 + w / (cover.us.length - 1)).map((u) => cover.colTop(u, zipV - 0.004, zipV + 0.004))) + 0.0012 + 0.0006 + 0.002), 0.007, 0.004, 0.002, 0.001, ctx.m('steel'));
   for (const x of strapU) {
     // The strap in its groove, from the wall side below the bag over the front to the wall side above it.
-    const half = 0.0125;
-    const nj = Math.max(12, Math.round(h / 0.012));
-    b.surface(1, nj, (i, j) => {
-      const v = -h / 2 + (h * j) / nj;
-      return { p: local(f, x + (i - 0.5) * 2 * half, v, cover(x, v) + 0.0016), uv: [(i - 0.5) * 2 * half, v] };
+    // (Its vertices on the cover's own rows, over the highest of the cover under its width: it lies in the
+    // groove's flat floor and never dips into the cloth, whose edge against it would be a saw.)
+    const half = COVER_STRAP_HALF;
+    b.surface(1, cover.vs.length - 1, (i, j) => {
+      const v = cover.vs[j]!;
+      return { p: local(f, x + (i - 0.5) * 2 * half, v, cover.rowTop(v, x - half, x + half) + 0.0016), uv: [(i - 0.5) * 2 * half, v] };
     }, ctx.m(strapMat, { flags: FLAG_OVERLAY }));
     b.group(`mount:${name}`);
     for (const sy of [-1, 1]) {
@@ -401,13 +457,15 @@ function stowageBag(ctx: CabinContext, az: number, y: number, w: number, h: numb
     b.group(name);
     // Cam buckle where the strap crosses the front.
     const bv = -h * 0.18;
-    b.box(offsetFrame(f, x, bv, cover(x, bv) + 0.0045), 0.016, 0.011, 0.0028, 0.0012, ctx.m('aluminium'));
-    b.box(offsetFrame(f, x, bv - 0.006, cover(x, bv) + 0.0078), 0.013, 0.0035, 0.0012, 0.0006, ctx.m('steel'));
+    const bz = Math.max(...cover.vs.filter((v) => Math.abs(v - bv) <= 0.011 + h / (cover.vs.length - 1)).map((v) => cover.rowTop(v, x - 0.016, x + 0.016)));
+    b.box(offsetFrame(f, x, bv, bz + 0.0052), 0.016, 0.011, 0.0028, 0.0012, ctx.m('aluminium'));
+    b.box(offsetFrame(f, x, bv - 0.006, bz + 0.0085), 0.013, 0.0035, 0.0012, 0.0006, ctx.m('steel'));
   }
   // Name tag on hook-and-loop, sewn on over the bag's crown.
   const tagV = h * 0.1;
+  // (Over the highest vertex of the cover's mesh under it: a stiff patch on the crown.)
   let top = -Infinity;
-  for (const du of [-1, 0, 1]) for (const dv of [-1, 0, 1]) top = Math.max(top, cover(du * w * 0.15, tagV + dv * 0.015));
+  for (const u of cover.us) if (Math.abs(u) <= w * 0.16 + w / (cover.us.length - 1)) top = Math.max(top, cover.colTop(u, tagV - 0.016, tagV + 0.016));
   b.box(offsetFrame(f, 0, tagV, top + 0.0015), w * 0.16, 0.016, 0.0015, 0.0008, ctx.m('velcro', { flags: FLAG_OVERLAY }));
   ctx.labelQuad(offsetFrame(f, 0, tagV, top + 0.003), 0, 0, w * 0.3, 0.012, label, 'pouch', { color: 1 });
 }

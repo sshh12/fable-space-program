@@ -671,29 +671,51 @@ export class MeshBuilder {
   /**
    * Disc or annulus in a frame (z = c), facing +n (or -n with flip): concentric rings no wider than `maxEdge`
    * (a wide disc as one ring of quads to its centre is a fan, and whatever is baked per vertex then runs along
-   * its spokes).
+   * its spokes). The rim has `sides` vertices; each ring inward has as many as keep its cells about as long
+   * round the ring as the ring is wide (never fewer than six), and neighbouring rings are stitched vertex by
+   * vertex in the order of their angles: the cells stay near square down to the centre, so a disc lit per
+   * vertex shows no star of spokes (round 6: the docking hatch's face seen from the couch).
    */
   disc(f: Frame, rOuter: number, rInner: number, sides: number, a: Attr, opts: { c?: number; flip?: boolean } = {}): void {
     this.part();
     const c = opts.c ?? 0;
     const n = opts.flip ? v3.neg(f.n) : f.n;
     const rings = Math.max(1, Math.min(32, Math.ceil((rOuter - rInner) / this.maxEdge)));
-    const base0 = this.vertexCount;
-    const row = sides + 1;
+    const width = (rOuter - rInner) / rings;
+    const ring: { start: number; count: number }[] = [];
     for (let k = 0; k <= rings; k++) {
       const r = rOuter + ((rInner - rOuter) * k) / rings;
-      for (let i = 0; i <= sides; i++) {
-        const ang = (i / sides) * 2 * Math.PI;
+      const count = r < 1e-9 ? 1 : k === 0 ? sides : Math.max(6, Math.min(sides, Math.round((2 * Math.PI * r) / width)));
+      ring.push({ start: this.vertexCount, count });
+      for (let i = 0; i < count; i++) {
+        const ang = (i / count) * 2 * Math.PI;
         const cx = Math.cos(ang);
         const sy = Math.sin(ang);
         this.vertex(local(f, cx * r, sy * r, c), n, f.x, [cx * r, sy * r], a);
       }
     }
+    const tri = (p: number, q: number, s: number): void => {
+      if (p === q || q === s || p === s) return;
+      if (opts.flip) this.tri(p, s, q);
+      else this.tri(p, q, s);
+    };
     for (let k = 0; k < rings; k++) {
-      for (let i = 0; i < sides; i++) {
-        const o = base0 + k * row + i;
-        if (opts.flip) this.quad(o, o + row, o + row + 1, o + 1);
-        else this.quad(o, o + 1, o + row + 1, o + row);
+      const A = ring[k]!;
+      const B = ring[k + 1]!;
+      let i = 0;
+      let j = 0;
+      while (i < A.count || j < B.count) {
+        const a0 = A.start + (i % A.count);
+        const a1 = A.start + ((i + 1) % A.count);
+        const b0 = B.start + (j % B.count);
+        const b1 = B.start + ((j + 1) % B.count);
+        if (j >= B.count || (i < A.count && (i + 1) / A.count <= (j + 1) / B.count)) {
+          tri(a0, a1, b0);
+          i++;
+        } else {
+          tri(a0, b1, b0);
+          j++;
+        }
       }
     }
   }

@@ -282,10 +282,25 @@ export function buildHatch(ctx: CabinContext): void {
   const floorF = g.plane(T - pocket);
   // In rings a few centimetres apart (the light baked per vertex then falls off smoothly over the floor, not
   // in streaks along long radial quads).
-  const floorRings = ctx.detail === 0 ? 12 : 1;
+  // (Round 6: cells of about a centimetre, twice as many round the loop and twice as many rings: at twelve
+  // rings the corners' cells were still wedges 2 cm by 4 cm, and the ribs' shadows, baked per vertex, ran
+  // along them as bands.)
+  const floorRings = ctx.detail === 0 ? 24 : 1;
+  const fine = (loop: Loop): Loop =>
+    ctx.detail === 0
+      ? loop.flatMap(([u, v], i): Loop => {
+          const [u1, v1] = loop[(i + 1) % loop.length]!;
+          return [[u, v], [(u + u1) / 2, (v + v1) / 2]];
+        })
+      : loop;
+  const outerFine = fine(pocketLoop);
+  const holeFine: Loop = outerFine.map(([u, v]) => {
+    const a = Math.atan2(v, u);
+    return [Math.cos(a) * (wr + 0.035), Math.sin(a) * (wr + 0.035)];
+  });
   for (let k = 0; k < floorRings; k++) {
-    const ring = (t: number): Vec3[] => pocketLoop.map(([u, v], i) => local(floorF, u + (holeLoop[i]![0] - u) * t, v + (holeLoop[i]![1] - v) * t));
-    ringBetween(ctx, ring(k / floorRings), ring((k + 1) / floorRings), ctx.m('hatch', { ao: 0.7 }), () => g.inward, (i) => v3.normalize(localDirOf(floorF, -pocketLoop[i]![1], pocketLoop[i]![0])));
+    const ring = (t: number): Vec3[] => outerFine.map(([u, v], i) => local(floorF, u + (holeFine[i]![0] - u) * t, v + (holeFine[i]![1] - v) * t));
+    ringBetween(ctx, ring(k / floorRings), ring((k + 1) / floorRings), ctx.m('hatch', { ao: 0.7 }), () => g.inward, (i) => v3.normalize(localDirOf(floorF, -outerFine[i]![1], outerFine[i]![0])));
   }
   // The door's outer skin, half a millimetre inside the wall: from under the frame's seal to under the
   // window's bezel. The door is a closed body, so no joint of its inner side (the seal round its edge, the

@@ -542,14 +542,19 @@ function fdai(ctx: CabinContext, f: Frame, ballR: number, housing: number): void
   b.lathe(face.o, f.n, [[holeR + 0.0055, 0], [holeR + 0.0055, 0.0022], [holeR + 0.0035, 0.0034], [holeR + 0.0008, 0.0034], [holeR, 0.002], [holeR, -0.003]], 64, ctx.m('matteBlack'), { ref: f.x });
   // Rate needles on the three outer scales (roll above, pitch at the right, yaw below): each slides along
   // its slot with the body rate about its axis, centred at rest.
-  const scales: { key: string; rate: number; o: [number, number]; along: [number, number] }[] = [
-    { key: 'roll', rate: 1, o: [0, hs - 0.0125], along: [1, 0] },
-    { key: 'pitch', rate: 0, o: [hs - 0.0125, 0], along: [0, 1] },
-    { key: 'yaw', rate: 2, o: [0, -hs + 0.0125], along: [1, 0] },
+  // (Each scale lies OUTSIDE the retaining ring, clear of it by two millimetres, on the flat of the bezel
+  // between the ring and the bevel; its marks stand on its outer side. Round 6: the slots and the needles
+  // lay half under the ring, which the penetration check now finds: webbing and overlays against the solid
+  // parts of their own assembly.)
+  const r0 = holeR + 0.0055 + 0.002 + 0.0028;
+  const scales: { key: string; rate: number; out: [number, number]; along: [number, number] }[] = [
+    { key: 'roll', rate: 1, out: [0, 1], along: [1, 0] },
+    { key: 'pitch', rate: 0, out: [1, 0], along: [0, 1] },
+    { key: 'yaw', rate: 2, out: [0, -1], along: [1, 0] },
   ];
   const travel = 0.016;
   for (const sc of scales) {
-    const sf = offsetFrame(face, sc.o[0], sc.o[1], 0);
+    const sf = offsetFrame(face, sc.out[0] * r0, sc.out[1] * r0, 0);
     const lx = sc.along[0] ? travel + 0.004 : 0.0028;
     const ly = sc.along[0] ? 0.0028 : travel + 0.004;
     // Slot (a dark recess printed with its scale), centre mark and end marks.
@@ -557,12 +562,12 @@ function fdai(ctx: CabinContext, f: Frame, ballR: number, housing: number): void
     for (const t of [-1, -0.5, 0, 0.5, 1]) {
       const mx = sc.along[0] * t * travel;
       const my = sc.along[1] * t * travel;
-      const side = t === 0 ? 0.0052 : 0.0042;
-      b.box(offsetFrame(sf, mx + sc.along[1] * side, my + sc.along[0] * side, 0.0003), sc.along[0] ? 0.0003 : 0.0012, sc.along[0] ? 0.0012 : 0.0003, 0.0002, 0.00005, ctx.m('pointer', { flags: FLAG_OVERLAY }));
+      const side = t === 0 ? 0.003 : 0.0026;
+      b.box(offsetFrame(sf, mx + sc.out[0] * side, my + sc.out[1] * side, 0.0003), sc.along[0] ? 0.0003 : 0.0012, sc.along[0] ? 0.0012 : 0.0003, 0.0002, 0.00005, ctx.m('pointer', { flags: FLAG_OVERLAY }));
     }
     const axis = localDir(face, sc.along[0], sc.along[1], 0);
     const c = ctx.control(`fdai:${sc.key}`, () => ({ kind: 'needle', pivot: sf.o, axis, binding: 'none', fixed: sc.rate, travel }));
-    b.box(offsetFrame(sf, 0, 0, 0.0009), sc.along[0] ? 0.0006 : 0.0026, sc.along[0] ? 0.0026 : 0.0006, 0.0005, 0.0002, ctx.m('caution', { ctl: c.index }));
+    b.box(offsetFrame(sf, 0, 0, 0.0009), sc.along[0] ? 0.0006 : 0.0022, sc.along[0] ? 0.0022 : 0.0006, 0.0005, 0.0002, ctx.m('caution', { ctl: c.index }));
   }
 }
 

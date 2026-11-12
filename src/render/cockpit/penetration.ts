@@ -22,6 +22,12 @@
  * Sample points: every vertex of the full detail level (labels are paint: skipped), plus the centroid and
  * the edge mid-points of every triangle with an edge longer than 3 cm. Thin overlays (webbing, fastener
  * heads, hook-and-loop) are sampled but are no targets: they occupy no space of their own.
+ *
+ * Webbing and the other soft overlays against the hardware of their OWN assembly (round 6: a harness
+ * adjuster stood through the shoulder strap it is threaded on): every sample of a thin overlay, and the
+ * centre and edge mid-points of each of its triangles whatever their size, is also tested against the solid
+ * parts of its own assembly, with a tolerance of its own (overlayTolerance, default 0.8 mm: the fittings are
+ * a few millimetres thick). Reported with `into` = the assembly's name + ' (own hardware)'.
  */
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import { v3, type Vec3 } from '@/core/math';
@@ -46,8 +52,10 @@ export interface PenetrationOptions {
   tolerance?: number;
   /** Index range to test (default 'lod0'). */
   range?: string;
-  /** Vertex flag of thin overlays (context.ts FLAG_OVERLAY): not sampled. */
+  /** Vertex flag of thin overlays (context.ts FLAG_OVERLAY): sampled, never a target. */
   overlayFlag?: number;
+  /** Depth (m) from which a thin overlay's sample inside the hardware of its own assembly counts (default 0.8 mm). */
+  overlayTolerance?: number;
 }
 
 const DIRS: Vec3[] = (() => {
@@ -74,6 +82,8 @@ interface Group {
   min: Vec3;
   max: Vec3;
   samples: Vec3[];
+  /** Samples of the assembly's thin overlays (also in `samples`), denser: tested against its own solids. */
+  thin: Vec3[];
 }
 
 /**
@@ -105,6 +115,7 @@ export const groupKind = (name: string): Group['kind'] => (name === 'shell' ? 's
  */
 export function findPenetrations(mesh: BuiltMesh, mould: CapsuleMouldLineDef, opts: PenetrationOptions = {}): Penetration[] {
   const tol = opts.tolerance ?? 0.003;
+  const thinTol = opts.overlayTolerance ?? 0.0008;
   const overlay = opts.overlayFlag ?? 64;
   const range = mesh.ranges[opts.range ?? 'lod0']!;
   const f32 = new Float32Array(mesh.vertices);
@@ -125,6 +136,7 @@ export function findPenetrations(mesh: BuiltMesh, mould: CapsuleMouldLineDef, op
     min: { x: Infinity, y: Infinity, z: Infinity },
     max: { x: -Infinity, y: -Infinity, z: -Infinity },
     samples: [],
+    thin: [],
   }));
   const seen = new Uint8Array(mesh.vertexCount);
   for (let i = range.start; i < range.start + range.count; i += 3) {
@@ -147,8 +159,10 @@ export function findPenetrations(mesh: BuiltMesh, mould: CapsuleMouldLineDef, op
       if (!seen[v]) {
         seen[v] = 1;
         g.samples.push(p);
+        if (thin) g.thin.push(p);
       }
     }
+    if (thin) g.thin.push(v3.scale(v3.add(v3.add(P[0]!, P[1]!), P[2]!), 1 / 3), v3.lerp(P[0]!, P[1]!, 0.5), v3.lerp(P[1]!, P[2]!, 0.5), v3.lerp(P[2]!, P[0]!, 0.5));
     const longest = Math.max(v3.dist(P[0]!, P[1]!), v3.dist(P[1]!, P[2]!), v3.dist(P[2]!, P[0]!));
     if (longest > 0.03) {
       g.samples.push(v3.scale(v3.add(v3.add(P[0]!, P[1]!), P[2]!), 1 / 3), v3.lerp(P[0]!, P[1]!, 0.5), v3.lerp(P[1]!, P[2]!, 0.5), v3.lerp(P[2]!, P[0]!, 0.5));
@@ -162,8 +176,8 @@ export function findPenetrations(mesh: BuiltMesh, mould: CapsuleMouldLineDef, op
 
   const m = mouldOf(mould);
   const found = new Map<string, Penetration>();
-  const report = (group: string, into: string, depth: number, at: Vec3): void => {
-    if (depth <= tol) return;
+  const report = (group: string, into: string, depth: number, at: Vec3, limit = tol): void => {
+    if (depth <= limit) return;
     const key = `${group}|${into}`;
     const f = found.get(key);
     if (!f) found.set(key, { group, into, depth, at, samples: 1 });
@@ -218,6 +232,21 @@ export function findPenetrations(mesh: BuiltMesh, mould: CapsuleMouldLineDef, op
         }
         if (votes >= INSIDE_VOTES) report(g.name, s.name, nearest, p);
       }
+    }
+    // ---- its own hardware, for the thin overlays (a strap through the fitting threaded on it)
+    if (g.kind !== 'solid' || !g.bvh) continue;
+    for (const p of g.thin) {
+      if (p.x < g.min.x || p.y < g.min.y || p.z < g.min.z || p.x > g.max.x || p.y > g.max.y || p.z > g.max.z) continue;
+      let votes = 0;
+      let nearest = Infinity;
+      for (let k = 0; k < DIRS.length; k++) {
+        const t = leaves(g.bvh, p, DIRS[k]!, SOLID_REACH);
+        if (t !== null) {
+          votes++;
+          nearest = Math.min(nearest, t);
+        } else if (k + 1 - votes > DIRS.length - INSIDE_VOTES) break;
+      }
+      if (votes >= INSIDE_VOTES) report(g.name, `${g.name} (own hardware)`, nearest, p, thinTol);
     }
   }
   return [...found.values()].sort((a, b) => b.depth - a.depth);

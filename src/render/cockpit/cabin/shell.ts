@@ -431,6 +431,14 @@ function ringFrameArc(ctx: CabinContext, y: number, a0: number, a1: number, dept
     const p2 = at(a, rIn, y + hf);
     const p3 = at(a, m.innerRadius(y + hf), y + hf);
     b.strip(p0, p1, p2, p3, n, { x: 0, y: 1, z: 0 }, attr);
+    // No sawn end in view (round 6): where a ring frame stops at an opening's surround it ends in a fitting
+    // riveted to the wall, as the stringers do: a shoe round the section's last two centimetres.
+    if (ctx.detail === 0 && a1 - a0 < TWO_PI - 1e-6) {
+      const aa = a + ((a === a0 ? 1 : -1) * 0.011) / m.innerRadius(y);
+      const nIn = v3.neg(coneNormal(m, aa));
+      const o = v3.addScaled(wallPoint(ctx, aa, y), nIn, depth * 0.5 + 0.0015);
+      b.box(frameAt(o, { x: Math.cos(aa), y: 0, z: -Math.sin(aa) }, coneGenerator(m, aa)), 0.013, hf + 0.002, depth * 0.5 - 0.0005, 0.002, attr);
+    }
   }
   // Stencilled on the flange every third bay: the frame's number and station, or its part number.
   if (ctx.detail > 0) return;

@@ -72,6 +72,25 @@ describe('the check itself, on boxes', () => {
     expect(f.find((x) => x.group === 'a' && x.into === 'shell')?.depth ?? 0).toBeGreaterThan(0.02);
   });
 
+  // Webbing against the hardware of its own assembly: a band (thin overlay) that runs THROUGH a fitting 5.6 mm
+  // thick is found; the same band under the fitting, a millimetre clear of it, is not.
+  const threaded = (bandHeight: number): Penetration[] => {
+    const b = new MeshBuilder();
+    b.group('harness');
+    b.box(frameAt({ x: 0, y: 1, z: 0 }, X, Y), 0.028, 0.011, 0.0028, 0.0005, attr);
+    b.surface(40, 1, (i, j) => ({ p: { x: (j - 0.5) * 0.045, y: 0.88 + i * 0.006, z: bandHeight }, uv: [i * 0.006, j * 0.045] }), { mat: 0, flags: 64 });
+    b.mark('lod0');
+    return findPenetrations(b.build(), def, { tolerance: TOLERANCE });
+  };
+
+  it('finds webbing that runs through a fitting of its own assembly, and none that passes under it', () => {
+    const through = threaded(0).find((x) => x.group === 'harness' && x.into === 'harness (own hardware)');
+    expect(through, 'the band through the fitting').toBeDefined();
+    expect(through!.depth).toBeGreaterThan(0.002);
+    expect(through!.depth).toBeLessThan(0.0029);
+    expect(threaded(-0.0038).filter((x) => x.into !== 'shell')).toEqual([]);
+  });
+
   it('tells the kinds of assembly by name', () => {
     expect([groupKind('shell'), groupKind('skin:blankets'), groupKind('mount:panel'), groupKind('console')]).toEqual(['shell', 'skin', 'mount', 'solid']);
   });
@@ -101,6 +120,10 @@ describe('the cabin', () => {
 
   it('nothing reaches into the blankets, the frames and stringers or the close-out panels', () => {
     expect(found.filter((f) => f.into.startsWith('skin:')).map((f) => `${f.group} -> ${f.into}: ${(f.depth * 1000).toFixed(1)} mm`)).toEqual([]);
+  });
+
+  it('no webbing or other soft overlay runs through the hardware of its own assembly (harness fittings, strap buckles)', () => {
+    expect(found.filter((f) => f.into.endsWith('(own hardware)')).map((f) => `${f.group}: ${(f.depth * 1000).toFixed(1)} mm, ${f.samples} samples`)).toEqual([]);
   });
 
   it('no assembly reaches into another (console, couches, harnesses, hatches, fixtures)', () => {

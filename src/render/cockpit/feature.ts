@@ -29,10 +29,10 @@ import { ATLAS_HEIGHT, ATLAS_WIDTH, seatFrames } from './cabin/context';
 import { createCockpitControls, type CockpitControlsImpl } from './controls';
 import { DISPLAY_CPU_BUDGET, MfdDisplays } from './displays';
 import { controlStates, instrumentSource, updateMemory, type ControlState, type InstrumentMemory } from './instruments';
-import { CabinLampMaps, lampMatrix } from './lampmap';
+import { CabinLampMaps, LAMP_NEAR, lampMatrix } from './lampmap';
 import { cockpitLayouts, DETAIL_KINDS, MAX_WINDOWS } from './layout';
 import { CabinProbe, PROBE_DEPTH_FORMAT, PROBE_FORMAT } from './probe';
-import { cabinSources, coveredWindows, floodLevel, floodLuminance, frameCoverage, glassTransmittance, MAX_CABIN_POLYS, sheathLuminance, type CabinPoly } from './lighting';
+import { cabinSources, castCabinRay, coveredWindows, floodLevel, floodLuminance, frameCoverage, glassTransmittance, MAX_CABIN_POLYS, sheathLuminance, type CabinPoly } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 import { insideDistance, mouldOf } from './mould';
 import { bakeOcclusion, OCC_STRIDE, occlusionAt, occlusionSources, type VertexOcclusion } from './occlusion';
@@ -142,6 +142,11 @@ export const ABLATE = {
   depthPrepass: 4096,
   /** The displays' painting and uploads (the screens keep their last image). */
   displayPaint: 8192,
+  /**
+   * The cabin sun map's cache: the map is rendered in every frame, as it is while the vessel turns (the sun
+   * then moves in the part frame). The perf spec holds the interior's line in this state as well as at rest.
+   */
+  sunMapCache: 16384,
 } as const;
 
 /** A run of consecutive triangles of one assembly of the full detail level, with its bounding sphere (part frame). */
@@ -784,7 +789,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         // stands still in that frame (a vessel holding its attitude), no control moves and the detail level
         // and the lit windows are the same; it is rendered again as soon as any of them changes.
         const key = `${gm.model.layoutId}|${active.lod}|${active.sun.perSide}|${active.sun.l.map((x) => x.toFixed(6)).join(',')}|${active.sun.tiles.map((t) => `${t.window}:${t.col}:${t.row}:${t.u.map((x) => x.toFixed(5)).join(',')}:${t.v.map((x) => x.toFixed(5)).join(',')}`).join(';')}`;
-        if (key !== gm.sunKey || gm.sunStale || sunMapModel !== gm) {
+        if (key !== gm.sunKey || gm.sunStale || sunMapModel !== gm || (ablation & ABLATE.sunMapCache) !== 0) {
           gm.sunKey = key;
           gm.sunStale = false;
           sunMapModel = gm;
@@ -1233,6 +1238,18 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
   const cabinData = new Float32Array(CABIN_UNIFORM_FLOATS);
   const lampMatrices = model.floods.map((f) => lampMatrix(f));
   lampMatrices.forEach((m, i) => cabinData.set(m, (CABIN.lamps + 4 * i) * 4));
+  // Each lamp's pool: the first surface along its lens normal, that surface's normal toward the lamp and what
+  // it reflects (the source of the lamp's first bounce: shaders.ts cabinVertexLight). Static in the part frame.
+  model.floods.forEach((f, i) => {
+    const eye = v3.scale(v3.add(f.p0, f.p1), 0.5);
+    const n = v3.normalize(f.n);
+    const hit = castCabinRay(model, v3.addScaled(eye, n, LAMP_NEAR), n);
+    const q = v3.addScaled(eye, n, hit ? hit.t + LAMP_NEAR : 1.5);
+    let qn = hit ? hit.n : v3.neg(n);
+    if (v3.dot(qn, n) > 0) qn = v3.neg(qn);
+    const rho = Math.max(0.1, Math.min(0.8, hit ? hit.albedo : 0.4));
+    cabinData.set([q.x, q.y, q.z, rho, qn.x, qn.y, qn.z, 0], (CABIN.pools + 2 * i) * 4);
+  });
   return {
     model,
     vertex,

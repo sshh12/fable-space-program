@@ -98,6 +98,20 @@ test('cockpit interior, glass and displays within their budget at 1440p', async 
     expect(s.uploadMean, 'display uploads GPU, mean per frame').toBeLessThan(0.2);
     expect(cpuPerFrame, 'display uploads CPU, mean per frame').toBeLessThan(0.4);
     expect(s.total, 'cockpit total (ARCHITECTURE 17.1)').toBeLessThan(1.2);
+
+    // The same lines with the vessel TURNING: the sun then moves in the part frame and the cabin's sun map,
+    // cached while the vessel holds its attitude, is rendered in every frame (ABLATE.sunMapCache = 16384
+    // switches the cache off; everything else of the interior is the same in both states).
+    await page.evaluate(() => window.__cockpit!.setAblation(16384));
+    const turning = await measure(page, 330);
+    const t = summary(turning.gpu);
+    console.log(
+      `turning (sun map every frame) GPU (ms): interior p99 ${fmt(t.interior)} (gbuffer ${fmt(t.gbuffer)}, shadow p99 ${fmt(t.shadowP99)}, ambient ${fmt(t.ambient)}, sun map ${fmt(t.sunMap)}, probe ${fmt(t.probe)}), glass p99 ${fmt(t.glass)}, uploads mean ${fmt(t.uploadMean)}, total ${fmt(t.total)}`,
+    );
+    await page.evaluate(() => window.__cockpit!.setAblation(0));
+    expect(t.sunMap, 'the sun map is rendered while turning').toBeGreaterThan(0);
+    expect(t.interior, 'interior p99 with the vessel turning').toBeLessThan(0.8);
+    expect(t.total, 'cockpit total with the vessel turning (ARCHITECTURE 17.1)').toBeLessThan(1.2);
     await expectNoErrors(page, pageLog);
   });
 });

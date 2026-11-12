@@ -36,7 +36,7 @@ export const CONTROL_FLOATS = 24;
 /** vec4s of one occlusion record as the shaders unpack it (occlusion.ts: 24 bytes per vertex). */
 export const OCC_VEC4 = 6;
 /** vec4s of the cabin uniform's header (CabinFrame in CABIN_CHUNK, before `polys`). */
-export const CABIN_HEADER_VEC4 = 24 + OCC_VEC4 + 7 * MAX_WINDOWS + 4 * MAX_FLOODS;
+export const CABIN_HEADER_VEC4 = 24 + OCC_VEC4 + 7 * MAX_WINDOWS + 6 * MAX_FLOODS;
 export const CABIN_HEADER_FLOATS = 4 * CABIN_HEADER_VEC4;
 export const CABIN_POLY_FLOATS = 4 * 6;
 export const CABIN_UNIFORM_FLOATS = CABIN_HEADER_FLOATS + MAX_CABIN_POLYS * CABIN_POLY_FLOATS;
@@ -71,6 +71,7 @@ export const CABIN = {
   apertures: 24 + OCC_VEC4,
   sunTiles: 24 + OCC_VEC4 + 4 * MAX_WINDOWS,
   lamps: 24 + OCC_VEC4 + 7 * MAX_WINDOWS,
+  pools: 24 + OCC_VEC4 + 7 * MAX_WINDOWS + 4 * MAX_FLOODS,
 } as const;
 
 /** Declarations of group 1 (prefix of every cabin module); `scene` is the createSceneBindings WGSL. */
@@ -215,7 +216,9 @@ var<workgroup> wShared: vec4f;
   if (i == 0u) {
     var total = wShared.xyz;
     for (var k = 0u; k < ${MAX_CABIN_POLYS}u; k++) { total += wFlux[k]; }
-    outAmb[0] = vec4f(total * cabin.bounce.x, brightness);
+    // x = the lamps' share of the flux that enters the cabin: their first bounce is taken at the lamps' own
+    // pools (cabinVertexLight), and the probe's bounce light is lowered by as much (INTERIOR_WGSL shade).
+    outAmb[0] = vec4f(cabin.bounce.z / max(luminance(total), 1e-3), 0.0, 0.0, brightness);
   }
 }
 `;
@@ -285,9 +288,13 @@ const LAMP_SHADOW_MIN = 0.04;
 /// luminance) leaves the diffuser to every side: the wall beside the fixture, a hand's width from the lens,
 /// stands in its spill. The same flux as the bare Lambertian lens: FLOOD_BEAM_GAIN is
 /// 1 / (FLOOD_SKIRT + (1 - FLOOD_SKIRT) x 0.488), 0.488 being twice the integral of the ramp x cosine.
-const FLOOD_SKIRT = 0.3;
-const FLOOD_BEAM_GAIN = 1.557;
-fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * (FLOOD_SKIRT + (1.0 - FLOOD_SKIRT) * smoothstep(0.45, 0.95, c)); }
+/// (The skirt reaches a little behind the lens's plane: the diffuser is a block whose sides shine too, so
+/// the wall the fixture stands on is lit beside it. c: the cosine off the lens normal, negative behind it.)
+const FLOOD_SKIRT = 0.22;
+const FLOOD_BEAM_GAIN = 1.66;
+fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * (FLOOD_SKIRT * smoothstep(-0.35, 0.1, c) + (1.0 - FLOOD_SKIRT) * smoothstep(0.45, 0.95, c)); }
+/// Squared radius (m^2) of a lamp's pool as a source of bounce light: nearer than this its light does not grow.
+const POOL_MIN2 = 0.1;
 const POLY_WINDOW = 0u;
 const POLY_PATCH = 1u;
 const POLY_FLOOD = 2u;
@@ -338,6 +345,7 @@ struct CabinFrame {
   apertures: array<vec4f, ${4 * MAX_WINDOWS}>,  // per window (WindowMeta.aperture): outer-end centre + half width, inward normal + half height, tangent + corner radius, generator + prism length
   sunTiles: array<vec4f, ${3 * MAX_WINDOWS}>,   // per window, its tile of the cabin sun map: atlas u = dot(xyz, p_part) + w; atlas v likewise; x, y = metres per unit of atlas u, v (0 = the sun does not enter here), z, w = the tile's first atlas u, v
   lamps: array<mat4x4f, ${MAX_FLOODS}>,         // per flood light: part frame -> clip space of its shadow map (lampmap.ts)
+  pools: array<vec4f, ${2 * MAX_FLOODS}>,       // per flood light, its pool (where the beam's axis meets the cabin; part frame): xyz = the point, w = what the surface there reflects; xyz = its normal toward the lamp
   polys: array<CabinPoly, ${MAX_CABIN_POLYS}>,
 }
 
@@ -605,6 +613,23 @@ fn cabinVertexLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occ: Occ
     o.e += c;
     o.d += normalize(toC) * luminance(c);
   }
+  // The lamps' first bounce, with a position: each lamp's pool (where its beam meets the cabin) sends back
+  // what it reflects of the lamp's flux as a small Lambertian source, so the wall near a lit pool stands in
+  // its glow and the far end of the cabin does not (the probe's bounce light, which has no position, is
+  // lowered by the lamps' share: INTERIOR_WGSL shade). Times the vertex's baked openness.
+  for (var i = floods0; i < displays0; i++) {
+    let P = cabin.polys[i];
+    if (P.normal.w < 0.5) { continue; }
+    let index = min(u32(P.p1.w), ${MAX_FLOODS - 1}u);
+    let q = cabin.pools[2u * index];
+    let qn = cabin.pools[2u * index + 1u];
+    let toQ = q.xyz - posPart;
+    let dq = dot(toQ, toQ);
+    let dir = toQ * inverseSqrt(max(dq, 1e-8));
+    let c = P.radiance.rgb * (P.radiance.w * q.w * max(-dot(qn.xyz, dir), 0.0) * max(dot(nPart, dir), 0.0) / max(dq, POOL_MIN2) * vis.ao);
+    o.e += c;
+    o.d += dirRoot(dir) * luminance(c);
+  }
   return o;
 }
 
@@ -621,9 +646,9 @@ fn cabinLampLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, f0: vec4f,
     if (P.normal.w < 0.5) { continue; }
     let index = min(u32(P.p1.w), ${MAX_FLOODS - 1}u);
     let toC = (P.p0.xyz + P.p2.xyz) * 0.5 - pos;
-    // Nothing arrives behind the lens, nor on a surface that faces away from it.
+    // Nothing arrives well behind the lens (its spill reaches a little behind its plane: floodBeam), nor on a
+    // surface that faces away from it.
     let side = -dot(toC, P.normal.xyz);
-    if (side <= 0.0) { continue; }
     let cr = dot(n, toC);
     if (cr <= -0.5 * length(P.p2.xyz - P.p0.xyz)) { continue; }
     var vis = select(f0, f1, index >= 4u)[index & 3u];
@@ -632,21 +657,25 @@ fn cabinLampLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, f0: vec4f,
     if (luminance(P.radiance.rgb) * FLOOD_BEAM_GAIN * P.radiance.w * vis < CABIN_NEGLIGIBLE * (eKnown + luminance(diffuse)) * max(d2, 0.01)) { continue; }
     let inv = inverseSqrt(d2);
     let cs = side * inv;
+    if (cs <= -0.35) { continue; }
     let beam = floodBeam(cs);
+    // (The lens seen from the side still shows a quarter of its face: its own depth.)
+    let face = max(cs, 0.25);
     // Inside the beam the lamp's shadow map; in the spill beside it the baked visibility (see cabinLight).
     // (A lamp that adds under LAMP_SHADOW_MIN of what the surface already receives keeps its baked visibility:
     // its shadow would be an edge of a few per cent, as in a daylit cabin with the floods at their standby level.)
     let inMap = smoothstep(0.45, 0.55, cs);
-    let most = luminance(P.radiance.rgb) * beam * P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis;
+    let most = luminance(P.radiance.rgb) * beam * P.radiance.w * max(cr, 0.0) * face * inv * inv * inv * vis;
     if (inMap > 0.0 && (d2 <= FLOOD_FAR2 || most > LAMP_SHADOW_MIN * (eKnown + luminance(diffuse)))) {
       vis = mix(vis, lampVisibility(index, posPart, nPart, clamp(0.6 / max(cr * inv, 0.05), 1.0, 2.0)), inMap);
     }
     if (vis <= 0.0) { continue; }
     if (d2 > FLOOD_FAR2) {
-      diffuse += P.radiance.rgb * (beam * P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
+      diffuse += P.radiance.rgb * (beam * P.radiance.w * max(cr, 0.0) * face * inv * inv * inv * vis);
       continue;
     }
-    let ff = max(dot(n, polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz)), 0.0);
+    // (Beside or behind the lens's plane the polygon's own form factor vanishes: the small-source form with the lens's depth.)
+    let ff = max(max(dot(n, polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz)), 0.0), P.radiance.w * max(cr, 0.0) * 0.25 * inv * inv * inv / PI);
     diffuse += P.radiance.rgb * (beam * PI * ff * vis);
   }
   return diffuse;
@@ -904,22 +933,42 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   // (On a receiver the light only grazes, one texel of the map spans many pixels along the light: the floor
   // grows to four texels there, so a caster's rasterised edge does not show as teeth.)
   // (... over the texel's footprint on the receiver, 1 / NoL: the teeth where a bezel cast a patch's edge.)
-  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, min(texelM * (1.5 + 2.5 * sinL * sinL) / max(NoL, 0.25), SUN_PENUMBRA_MAX), SUN_PENUMBRA_MAX);
+  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, min(texelM * (1.5 + 2.5 * sinL * sinL) / max(NoL, 0.12), SUN_PENUMBRA_MAX), SUN_PENUMBRA_MAX);
   // Bilinear comparisons on a grid over the penumbra, a texel and a half apart (wide penumbrae take more taps,
   // 5 x 5 to 7 x 7; beyond that the spacing grows, over a ramp already several millimetres wide): a smooth
   // ramp across the edge, no stacked copies of it.
   let penUv = vec2f(pen) / mPerUv;
-  let nAx = u32(clamp(ceil(2.0 * max(penUv.x, penUv.y) * size / 1.5), 5.0, 7.0));
-  let stepUv = 2.0 * penUv / f32(nAx);
-  let mid = 0.5 * f32(nAx - 1u);
+  // The grid of comparisons resolves a filter up to about seven texels in radius (its taps then lie two texels
+  // apart); over a wider one the taps would show as stacked copies of the edge (the slivers beside a bezel's
+  // shadow on a panel the sun grazes). A wide filter is therefore taken as the open share of sixteen gathers
+  // of four texels spread over its disc (64 depths), and the two are blended between five and eight texels.
+  let texels = max(penUv.x, penUv.y) * size;
+  let wide = smoothstep(5.0, 8.0, texels);
   var lit = 0.0;
-  for (var j = 0u; j < nAx; j++) {
-    for (var i = 0u; i < nAx; i++) {
-      let o = (vec2f(f32(i), f32(j)) - mid) * stepUv;
-      lit += textureSampleCompareLevel(cabinSunMap, shadowCompare, clamp(q.xy + o, lo, hi), q.z + dot(o, dzduv) - bias);
+  if (wide < 1.0) {
+    let gridUv = penUv * min(1.0, 7.0 / max(texels, 1e-3));
+    let nAx = u32(clamp(ceil(2.0 * max(gridUv.x, gridUv.y) * size / 1.5), 5.0, 7.0));
+    let stepUv = 2.0 * gridUv / f32(nAx);
+    let mid = 0.5 * f32(nAx - 1u);
+    var sum = 0.0;
+    for (var j = 0u; j < nAx; j++) {
+      for (var i = 0u; i < nAx; i++) {
+        let o = (vec2f(f32(i), f32(j)) - mid) * stepUv;
+        sum += textureSampleCompareLevel(cabinSunMap, shadowCompare, clamp(q.xy + o, lo, hi), q.z + dot(o, dzduv) - bias);
+      }
     }
+    lit = (1.0 - wide) * sum / f32(nAx * nAx);
   }
-  return lit / f32(nAx * nAx);
+  if (wide > 0.0) {
+    var open = 0.0;
+    for (var k = 0u; k < 16u; k++) {
+      let o = SUN_TAPS[k] * penUv;
+      let d4 = textureGather(cabinSunMap, nearestClamp, clamp(q.xy + o, lo, hi));
+      open += dot(select(vec4f(0.0), vec4f(1.0), d4 >= vec4f(q.z + dot(o, dzduv) - bias)), vec4f(1.0));
+    }
+    lit += wide * open / 64.0;
+  }
+  return lit;
 }
 
 /// The sun at a part-frame point of a cabin surface with geometric normal ngIn (part frame): rgb
@@ -943,6 +992,20 @@ fn cabinSun(p: vec3f, ngIn: vec3f, twoSided: bool) -> vec3f {
 /// Sun illuminance (lux, rgb) at the vessel through the atmosphere and the clouds (before the windows).
 fn cabinSunIlluminance(amb: CabinAmbient) -> vec3f {
   return cabin.sun.w * cabin.sunColor.rgb * amb.sunT * amb.cloudT;
+}
+
+/// The latitude of the cabin's sunlit surfaces. A sun patch stands three to seven stops over a cabin lit
+/// by the Earth and its lamps; written as it is, black anodise and white cloth in the patch are one paper
+/// white. Above SUN_SHOULDER_KNEE of the frame's exposed white the sunlit luminance (cd/m^2, L) is laid on a
+/// logarithmic shoulder, as a negative does: each stop adds SUN_SHOULDER_GAIN x ln 2 of the knee, so the patch
+/// stays the brightest thing in the cabin and what it falls on keeps its tones and its texture. (Not applied
+/// in the cabin probe: the light a patch throws back into the cabin is its true light.)
+const SUN_SHOULDER_KNEE = 0.8;
+const SUN_SHOULDER_GAIN = 0.5;
+fn sunShoulder(L: vec3f) -> vec3f {
+  let x = luminance(L) * frame.exposure.x;
+  if (x <= SUN_SHOULDER_KNEE) { return L; }
+  return L * (SUN_SHOULDER_KNEE * (1.0 + SUN_SHOULDER_GAIN * log(x / SUN_SHOULDER_KNEE)) / x);
 }
 `;
 
@@ -1064,6 +1127,8 @@ const QUILT_HEIGHT = ${QUILT.height};
 const QUILT_POWER = ${QUILT.power};
 /// Amplitude (m) of the slow folds in which a blanket's cover lies.
 const QUILT_WRINKLE = 0.0022;
+/// Footprint factor of the detail layers' lookups (see materialDetail).
+const DETAIL_BIAS = 1.5;
 
 /// Surface detail of a material at surface coordinates uv (metres; quilted blankets: quilt cells, cabin/quilt.ts):
 /// the baked detail textures (tone, gloss, normal, cavity, wear and grime masks) with a per-part phase, tone
@@ -1093,11 +1158,18 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
     let shift = vec2f(partHash(seed, 2), partHash(seed, 3));
     let t = uv / tile + shift;
     // Trilinear: the detail is fine and low in contrast, anisotropic filtering would cost more than it shows.
-    let tN = textureSampleGrad(detailN, linearRepeat, t, layer, dx / tile, dy / tile);
-    let tM = textureSampleGrad(detailM, linearRepeat, t, layer, dx / tile, dy / tile);
-    d.slope = (tN.xy * 2.0 - 1.0) * strength;
-    d.cavity = mix(1.0, tN.z, strength);
-    d.albedo *= mix(1.0, tM.r * 2.0, strength);
+    // (Round 6, the seat fabric's moire: a weave whose yarns fall near two texels of a mip level beats there
+    // against the texel grid, in tone and in relief, and the beat is what the pixel then shows. The lookup is
+    // taken half a level coarser than the footprint asks for, and from a footprint of two texels of the
+    // layer's finest level on, its relief and three quarters of its tone are faded toward their mean: gone at
+    // six texels, where a yarn is under a pixel.)
+    let tN = textureSampleGrad(detailN, linearRepeat, t, layer, dx * (DETAIL_BIAS / tile), dy * (DETAIL_BIAS / tile));
+    let tM = textureSampleGrad(detailM, linearRepeat, t, layer, dx * (DETAIL_BIAS / tile), dy * (DETAIL_BIAS / tile));
+    let footprint = max(length(dx), length(dy)) / tile * f32(textureDimensions(detailN).x);
+    let keep = 1.0 - smoothstep(2.0, 6.0, footprint);
+    d.slope = (tN.xy * 2.0 - 1.0) * (strength * keep);
+    d.cavity = mix(1.0, tN.z, strength * keep);
+    d.albedo *= mix(1.0, tM.r * 2.0, strength * mix(0.25, 1.0, keep));
     d.rough += (tM.g - 0.5) * strength;
     // Paint wears through along the middle of a chamfer (uv.y runs 0 .. EDGE_SPAN across it), in runs: a
     // slow variation along the edge decides where a run is worn (mat.d.y of the edge's length), the fine
@@ -1341,7 +1413,8 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let nPart = dirPart(n);
   let NoV = max(dot(n, viewDir), 1e-3);
   var Ebounce = vec3f(0.0);
-  if ((off & 32u) == 0u) { Ebounce = cabinBounce(nPart) * (ao * cavity); }
+  // (Less the lamps' share of the first bounce, which arrives from their pools: cabinVertexLight.)
+  if ((off & 32u) == 0u) { Ebounce = cabinBounce(nPart) * (ao * cavity) * (1.0 - cabinAmb[0].x * (1.0 - cabin.bounce.w)); }
   var Edirect = vec3f(0.0);
   if ((off & 1u) == 0u) {
     // The windows and the screens: their irradiance at the vertices, turned toward this pixel's own normal
@@ -1423,6 +1496,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
     if (shading == 1u) { f = brdfClothDirect(s, l); }
     if (probe) { f = albedo * (max(dot(n, l), 0.0) / PI); }
     sunLit = f * cabinSunIlluminance(amb) * sunVis;
+    if (!probe) { sunLit = sunShoulder(sunLit); }
   }
 
   var o: Shaded;
@@ -1610,7 +1684,7 @@ const PANEL_ALBEDO = vec3f(0.012, 0.013, 0.015);
   let n = normalize(in.n);
   // The sun on the screen: the dark panel's diffuse reflection (the cover glass adds its own reflection).
   let sunVis = cabinSun(in.part, normalize(in.nPart), false);
-  let sunLit = PANEL_ALBEDO / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
+  let sunLit = sunShoulder(PANEL_ALBEDO / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis);
   // The screen's light is complete here, as for the rest of the interior (see INTERIOR_WGSL pack): the image at
   // the brightness the cabin's light sets, through the front glass toward the eye relative to normal incidence
   // ((1 - F(NoV)) / (1 - F0): a display states its luminance head-on and fades at grazing angles), plus the sun
@@ -1688,7 +1762,7 @@ fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3
   let spec = cabinProbeAt(in.part, reflect(-dirPart(v), nP), 0.38) * (0.04 * dfg.x + dfg.y) * cabinSpecOcclusion(NoV, occ.ao, 0.38);
   var emissive = albedo * E / PI + spec + albedo * cabin.atmo.z;
   let sunVis = cabinSun(in.part, nP, false);
-  emissive += albedo / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
+  emissive += sunShoulder(albedo / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis);
   // (A black, rough record: the light is all in the emission, as for the rest of the interior; see pack.)
   return gbufferPack(vec3f(0.0), 0.0, n, 1.0, 1.0, MATERIAL_STANDARD, 0.0, velocityFromClip(in.currClip, in.prevClip), emissive * frame.exposure.x);
 }
