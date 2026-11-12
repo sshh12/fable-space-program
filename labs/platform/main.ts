@@ -6,6 +6,8 @@
  */
 import type { Vec3 } from '@/core/math/vec3';
 import { fetchDefSource } from '@/core/defs/fetchSource';
+import { acquireGpu } from '@/core/gpu/device';
+import { installTestApi } from '@/core/testing/testApi';
 import { loadDefs } from '@/core/defs/loader';
 import type { TileKey } from '@/core/geo/cubeSphere';
 import { openOpfsCache, OPFS_CACHE_DIR } from '@/terrain/opfsCache';
@@ -103,6 +105,19 @@ window.__platform = {
     return m.contentHash;
   },
 };
-say('pack source lab: ready');
+// The harness contract (labs/template): the test API, the adapter report, ready. The lab draws nothing; the
+// adapter is asserted because every browser spec runs on the real GPU.
+const testApi = installTestApi({ kind: 'lab', name: 'platform', scenarioId: 'none' });
+acquireGpu({ onError: testApi.reportError }).then(
+  (gpu) => {
+    testApi.setAdapter(gpu.report);
+    say('pack source lab: ready');
+    testApi.markReady(true);
+  },
+  (err: unknown) => {
+    testApi.reportError(err instanceof Error ? err.message : String(err));
+    testApi.markReady(false);
+  },
+);
 
 export type { TileKey };

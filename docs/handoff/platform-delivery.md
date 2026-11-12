@@ -4,8 +4,166 @@ Wave 3.1 of `docs/WORK_PACKAGES_V2.json`: tile packs and their delivery, the til
 the program entry and the static roles, CI and the image, the local stack, the stage-0 skeleton on Railway's
 Hobby plan and the first cloud measurements.
 
-This file is the running log while the package is in progress; the sections after the log are filled as the
-work lands.
+Measured numbers of the cloud part are in `docs/capacity/2026-11-12-platform.md`; the running log of the
+session is at the end of this file.
+
+## 0. In five lines
+
+- **Local: done and proven.** Packs of every baked tile set (13.96 GB in 96 packs), the pack source with the
+  tile-source seam, byte-identical to the plain files for all 862,220 tiles in four modes; the boot pack (22.4 MB
+  boot set); the program entry and the static roles; the local stack on host processes with an embedded
+  Postgres 18 (UTF8, built-in C.UTF-8) in three shapes, with its slot, lock, status and down all tested.
+- **CI: green on a branch** (`platform-delivery-ci`) in about 2.5 minutes of wall time, and it fails on a planted
+  secret, a planted TODO and a planted boundary violation (three throwaway branches, deleted).
+- **Cloud: the stage-0 skeleton is up on the Hobby plan** (game, shell with CDN, postgres 18, hourly dump, two
+  buckets; Modal environment `fsp`), and costs U + $5 = $8.75 against the $30 idle ceiling on the first reading.
+- **Not done**: the 6-hour and 72-hour idle cost readings (time), the cloud derating benchmark D7 (not built),
+  the compose suites (Docker not allowed this round). Section 7.
+- **Findings that change figures of ARCHITECTURE**: the boot pack cannot hold levels 0-3 (122 MB); Railway's CDN
+  never caches a ranged response, so the mirror serves 256 KiB slices; a first session is 461-577 MB, not 300.
+
+## 1. What exists locally
+
+| Item | Where | State |
+|---|---|---|
+| Pack format (`TilePackIndex` and the boot pack format, the pack list type) | `src/terrain/packIndex.ts` | done; the lead lifts `TilePackIndex` into `terrain.ts` |
+| The packer: content-defined, incremental, deterministic | `tools/pack/packer.ts`, CLI `tools/pack/cli.ts` | done |
+| Packs | `data/packs/` (git-ignored): earth 66 packs 10.30 GB (index 4.55 MB), moon 27 packs 3.39 GB (index 1.66 MB), sky 1 pack 135 MB, assets 2 packs 136 MB; **13.96 GB in all**, plus the boot pack 20 MB | built 2026-11-12 from earth contentHash of that day and moon `597c5d666b132450`; **keep until the Modal copy exists and the lead says so** |
+| The pack source | `src/terrain/packSource.ts` | done: ranges and slices, coalescing, bounded requests, failover, OPFS cache, boot pack |
+| OPFS cache | `src/terrain/opfsCache.ts` | done |
+| `createTileSource(spec)` | `src/terrain/tileSource.ts` (fetch, pack), `src/terrain/tileSource.node.ts` (adds fs) | done |
+| Boot pack and manifest | `tools/pack/boot.ts`, `deploy/boot-pack.json` (what goes in, by priority), `deploy/boot-manifest.json` (tracked: hash, bytes, included, deferred) | done; uploaded |
+| Program entry, role manifest, roles | `deploy/main.ts`, `deploy/roles/*` | done (server roles are the hello stand-in) |
+| Server bundle, build identity, image | `deploy/build/*`, `deploy/buildInfo.ts`, `deploy/Dockerfile` (+ `Dockerfile.dockerignore`) | done; built by CI and by Railway |
+| Local stack | `deploy/local/stack.mjs` -> `launcher.ts`, `bucketStandIn.ts`, `compose.ts`, `compose.yml` | host form done and tested; compose form built, not run |
+| CI | `.github/workflows/ci.yml`, `deploy/ci/secret-patterns.mjs` | green |
+| Railway and Modal tooling | `deploy/railway/*` (provision, usage, env and list tools), `deploy/modal/*` (probe, offsite copy, secret) | done |
+| Tests | `tests/unit/platform/*` (unit, in-stack, self-test, sweep), `src/terrain/tileSource.test.ts`, `tests/browser/platform/*`, `labs/platform/` | see section 5 |
+
+## 2. What exists in the cloud (every resource, its id, how to delete it)
+
+Railway project **fable-space-program** (`7cc16fa5-1790-44e6-8087-4e75673a5a7a`), environment **production**
+(`11958a85-d81f-4639-9d77-90bbef65e27b`), Hobby plan, region us-east4-eqdc4a. Nothing else in the workspace was
+touched; `haulpoint-tms` is as it was. No usage limit was set (a hard limit is per workspace and would stop
+`haulpoint-tms`; a soft limit is an e-mail alert, which the user does not want); the budget guards are the
+replica limits below and the egress budgets in the roles.
+
+| Resource | Id | Settings | Delete |
+|---|---|---|---|
+| service `game` | c3c9e85c-d3c2-4f72-bf90-86c59ab0929d | hello role, `ROLES=game`; limit 2 vCPU / 2 GB; health `/healthz`; draining 45 s; restart Always; no repo source (autodeploy off); domain game-production-dfc41bff.up.railway.app; holds the packs credential | `railway service delete --service game --environment production --yes` (or the dashboard) |
+| service `shell` | f86d5d8f-67a3-4828-9bca-5ac4707043be | `ROLES=shell`; limit 0.5 vCPU / 0.25 GB; CDN on; health `/healthz` (waits for the boot pack); domain shell-production-b6007648.up.railway.app; holds the packs credential | as above, `--service shell` |
+| service `postgres` | 77bea2f1-a875-4eee-8889-c7e43368a7ca | image ghcr.io/railwayapp-templates/postgres-ssl:18; POSTGRES_INITDB_ARGS set before the first boot; ALTER SYSTEM values in force; limit 1 vCPU / 0.5 GB; private network only; password generated inside Railway | `--service postgres` (then its volume) |
+| volume of postgres | (listed by `railway volume list`) | 5 GB at /var/lib/postgresql/data | `railway volume delete` |
+| service `dump` | c93a9302-50e5-41b6-b21c-631a3bba04f9 | `ROLES=dump`, cron `7 * * * *`, restart Never, limit 1 vCPU / 0.5 GB; holds ONLY the dumps credential | `--service dump` |
+| bucket `packs` | 3ca8455f-988e-4425-a9f0-f024512cecfd | US East (iad); S3 name and endpoint in `deploy/railway/buckets.json`; CORS set; holds `p/<hash>` objects (packs, indexes, the boot pack) | `railway bucket delete --bucket packs --yes` (never while anything serves from it) |
+| bucket `dumps` | 56ba9069-0144-4099-b8bf-a6497a9e98f3 | US East; `dumps/<utc>-<marker>.dump` | `railway bucket delete --bucket dumps --yes` |
+| bucket `packs-orphan-undeployed` | 4dad6994-31d6-47e2-865c-1521299558d6 | empty, in no environment (a race between the two `bucket create` calls) | the dashboard (the CLI cannot reach a bucket that is in no environment) |
+| service `ops` (temporary) | c1aebc95-55ee-4da2-95c0-90837faa0a2a | ran `pgsettings` twice | deleted |
+
+Modal, environment **fsp** (created by this package; the four apps of `main` untouched):
+
+| Resource | Kind | Delete |
+|---|---|---|
+| `fsp-offsite` | deployed app: `copy_dump` nightly at 04:17 UTC, `copy_packs` on demand | `modal app stop --env fsp fsp-offsite` |
+| `fsp-probe` | ephemeral app (`modal run`), gone when a run ends | - |
+| `fsp-dumps` | secret: the dumps bucket credential (the only copy outside Railway) | `modal secret delete --env fsp fsp-dumps` |
+| `fsp-dumps` | volume: the newest dumps (one so far: 20261112T100751Z-none.dump) | `modal volume delete --env fsp fsp-dumps` |
+| `fsp-packs` | volume: the copy of the packs (filled by `copy_packs`) | `modal volume delete --env fsp fsp-packs` |
+| `fsp` | the environment | `modal environment delete fsp` |
+
+GitHub: branch `platform-delivery-ci` (CI proof; main untouched); delete with
+`git push origin --delete platform-delivery-ci`. Credentials: the packs key pair is in this machine's
+git-ignored `.env` (`PACKS_ACCESS_KEY_ID`, `PACKS_SECRET_ACCESS_KEY`; the rest of the bucket settings is not
+secret and is tracked in `deploy/railway/buckets.json`); the dumps credential exists only in Railway (`dump`)
+and the Modal secret; the database password only in Railway.
+
+## 3. Public API (exact signatures)
+
+`src/terrain/tileSource.ts` (browser main thread, workers, Node):
+
+```ts
+export function createTileSource(spec: TileSourceSpec): TileSource            // 'fetch' | 'pack'; 'fs' throws, naming tileSource.node.ts
+export function createFetchTileSource(baseUrl: string): TileSource           // unchanged
+export function validateTileManifest(m: unknown, tileset: string): TileManifest  // unchanged
+```
+
+`src/terrain/tileSource.node.ts` (Node only): `export function createTileSource(spec: TileSourceSpec): TileSource`
+(all three kinds; `fs` is `createFsTileSource`, unchanged).
+
+`src/terrain/packSource.ts`:
+
+```ts
+export function createPackTileSource(o: PackSourceOptions): PackTileSource
+export interface PackSourceOptions {
+  packListUrl: string;
+  cache?: ByteCache | Promise<ByteCache> | null;   // e.g. openOpfsCache({ maxBytes })
+  fetch?: typeof fetch;                            // injected (tests, whole-pack mode)
+  timeoutMs?: number;                              // 15 000: a mirror that does not answer is failed over
+  coalesceGapBytes?: number;                       // 64 KiB
+  maxRangeBytes?: number;                          // 8 MiB
+  sliceCacheBytes?: number;                        // 64 MiB of slices in memory (slice mode)
+  batchTurns?: number;                             // 3 microtask turns to collect a batch
+  maxConcurrent?: number;                          // 24 requests in flight
+  now?: () => number;                              // a clock, injected: refresh the list after refreshAfterS
+}
+export interface PackTileSource extends TileSource {
+  fileRange(set: string, relPath: string, from: number, length: number): Promise<Uint8Array>;
+  addBootPack(bytes: Uint8Array): void;            // FPB1 bytes, verified by the caller
+  packList(): Promise<PackList>;
+  sets(): Promise<string[]>;
+  stats(): PackSourceStats;                        // requests, bytes and failures per mirror, bytesNeeded, fromBoot/Cache/Network
+}
+export const PENALTY_READS = 64;
+```
+
+`src/terrain/opfsCache.ts`: `openOpfsCache(o: { maxBytes: number; dirName?: string }): Promise<ByteCache>`;
+`interface ByteCache { get(key); put(key, bytes); usage(); flush() }`; keys `<hash>.<offset>.<length>`;
+`OPFS_CACHE_DIR = 'fsp-packs'`.
+
+`src/terrain/packIndex.ts` (shared by packer and client; the lead lifts `TilePackIndex`): `TilePackIndex`,
+`PackRef`, `PackKind`, `PackSection`, `PackFileEntry`, `GroupRecord`, `PackList`, `PackListMirror`, `BootEntry`,
+`BootPackHeader`; constants `PACK_MIN_BYTES` (64 MiB), `PACK_MAX_BYTES` (256 MiB), `SECTION_MAX_RECORDS` (4096),
+`ABSENT_LENGTH`, `HASH_HEX` (32), `MAX_PACK_LEVEL` (15); functions `mortonEncode/Decode`, `tileKinds`,
+`kindMaxLevel`, `groupSet`, `groupSetSize`, `groupCodeAt`, `groupOrdinal`, `findSection`, `recordBytes`,
+`encodeRecord`, `decodeRecord`, `layerRange`, `groupBytes`, `encodeIndexObject`, `indexHeaderLength`,
+`decodeIndexHeader`, `encodeBootPack`, `decodeBootPack`, `bootTileKey`, `validatePackList`, `isContentHash`.
+
+The pack format in one paragraph: a set (tile set or file set) is packs `<hash>.pack` (content-addressed,
+64-256 MiB, content-defined boundaries) and one index object `<hash>.idx` (FPI1: header JSON with packs, kinds,
+sections and plain files; binary sections of records `u16 pack, u32 offset, u32 length per layer`). A tile
+group is every layer of one kind at one coordinate, adjacent; kinds are `height` and `surface` for a large body,
+one per layer for a small one, and `files`. Groups go by level, face, Morton order; a group's ordinal is computed
+from the manifest (no key in the file). The pack list (`PackList`): ordered mirrors (`objects` per-hash URLs
+or `base` + hash [+ `/n`]; mode `ranges` or `slices` with `sliceBytes`) and per set the index hash and size.
+
+Server side (`deploy/`): the role contract (`deploy/roles/types.ts`: `RoleModule { kind; start(ctx) }`,
+`RoleContext { name, env, log, egress, build, http, services: { packList } }`, `RoleHandle { health(), drain() }`),
+the role manifest (`ROLE_MANIFEST`, `parseRoles`), `EgressMeter` (`open`, `record`, `refuse`, `request`,
+`addressOpen`, `secondsToReset`, `snapshot`), `createPackListService`, `createMirrorHandler`, the bucket helpers
+(`bucketFromEnv`, `presignGet`, `putIfAbsent`, ...). Variables per service: `deploy/README.md`.
+
+The endpoint document (`GET /endpoints.json` of `shell`, no-cache): `{ v: 1, build, gate: string[], api: string[],
+pub: string[], bootPack: { url, hash, bytes } }`. The pack list: `GET /packs.json` of the process that carries
+`api` (the hello game today), CORS `*`.
+
+## 4. How to run and verify
+
+```
+npx vitest run tests/unit/platform src/terrain/tileSource.test.ts             # 46 tests (in-stack suite skipped)
+npx tsx tests/unit/platform/stack-selftest.ts                                 # the slot, kill, names, refusal, shapes, status (starts stacks itself)
+STACK_NAME=fsp-platform-delivery npm run stack -- -- npx vitest run tests/unit/platform/localStack.stack.test.ts
+EGRESS_MIRROR_BYTES_PER_DAY=1e13 MIRROR_PER_ADDRESS_BYTES=1e13 STACK_NAME=fsp-platform-delivery npm run stack -- -- node tools/dev/heavy.mjs --class=cpu -- npx tsx tests/unit/platform/pack-sweep.ts sweep
+node tools/dev/heavy.mjs --class=cpu -- npx tsx tests/unit/platform/pack-sweep.ts trace-local docs/capacity/traces/first-session-2026-11-12.json
+STACK_NAME=fsp-platform-delivery npm run stack -- -- node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/platform/packs.spec.ts --project=functional
+STACK_NAME=fsp-platform-delivery npm run stack -- --page=build -- node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/platform/coldstart.spec.ts --project=functional
+DEPLOYED_GAME=https://game-production-dfc41bff.up.railway.app DEPLOYED_EXPIRED_LIST=out/platform/expired-list.json node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/platform/deployed.spec.ts --project=functional
+RECORD_SESSION=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/platform/session-trace.spec.ts --project=functional
+```
+
+The sweep lifts the stack shell's mirror budgets through the environment (8 GB a day and 300 MB per address
+in 10 minutes would refuse a 14 GB sweep: that is the budget working). Compose (when `.wslconfig` caps the VM
+at 6 GB): `STACK_NAME=fsp-platform-delivery npm run stack -- --compose -- <suite>`; `docker compose run --rm dump`
+inside it dumps the compose Postgres to MinIO.
 
 ## Running log
 
@@ -30,7 +188,7 @@ work lands.
   its own lock under data/stack. The compose form is built and refuses to run without a 6 GB cap.
 - 01:12 first stack run hung: `pg_ctl start` under spawnSync on Windows (the server inherits the pipe).
   Fixed (output to a file); `down` cleaned the hung run (launcher, Postgres, ports, slot).
-- 01:17 58d520c: roles, entry, launcher; the in-stack suite (9 tests) green: Postgres 18.0 (180006) UTF8 /
+- 01:17 58d520c: roles, entry, launcher; the in-stack suite (9 tests) green: Postgres 18.6 (180006) UTF8 /
   builtin C.UTF-8 ready in 172-393 ms, production settings, advisory lock, fenced write, hard kill of
   Postgres, citext, non-1252 text, endpoint document, boot pack served and verified.
 - 01:25 Railway baseline (`railway usage --json`, read 09:25 UTC): workspace "Shrivu Shankar's Projects",
