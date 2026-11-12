@@ -55,7 +55,10 @@ def run() -> None:
         freed += _rm(src / "clouds-solarsystemscope")
     if regions and reg_done("height") and reg_done("watermask") and reg_done("albedo") and reg_done("landcover"):
         freed += _rm(src / "terrarium")
+        freed += _rm(src / "copernicus-glo30")
         freed += _rm(src / "worldcover")
+        for p in list(work.glob("glo30-*")) + list(work.glob("inlandbad-*")):
+            freed += _rm(p)
         for p in list(src.glob("s2cloudless-*")):
             freed += _rm(p)
         for p in (list(work.glob("stack-*")) + list(work.glob("coastdist-*")) + list(work.glob("worldcover-*"))
