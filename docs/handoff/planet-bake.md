@@ -43,6 +43,10 @@ the log are the hand-off proper.
   hemisphere around Pwyll, Iapetus' bright trailing hemisphere (brightest 60-degree band centred at 81 E); the
   mirrored reading puts every one of them in the wrong place. All seven configs now say `lonPositive: east`
   (the config key describes the pixel layout); the landmark tests lock it in.
+- 01:50 (09:36 UTC) disk at 32 GB free while site-bake stages its region: the Mercury and Mars downloads
+  (11.2 GB, checksums recorded) were deleted again; they are re-fetched (about 4 minutes) right before their
+  bakes, one body at a time, and deleted after each is verified. 8-bit sources now keep their mips in
+  float16 (half the intermediate disk).
 
 ## 1. What consumers get
 
