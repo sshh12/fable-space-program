@@ -994,4 +994,13 @@ machine load, read 0.065 / 0.19 ms all-in: the numbers move with the load, not w
 Verification: `npm run typecheck:paths -- src/input src/camera src/ui labs/flight-ui tests/browser/flight-ui
 tests/unit/flight-ui` OK; `npx vitest run src/input src/camera src/ui tests/unit/flight-ui
 tools/dev/boundaries.test.ts` all passed; `playwright tests/browser/flight-ui --project=functional --project=perf`
-81 passed (run 2), and the functional project re-run after the last caption change (run 3, below).
+81 passed (run 2); the functional project re-run after the last caption change, 78 passed and 2 failed on a page
+that never booted (`window.__test` missing after 60 s while other agents' commits recompiled shared modules; the same
+tests passed in run 2), both re-run with the milestone test after the data titles landed: 8 passed. Every picture in
+`out/screens/flight-ui/` is from runs 3 and 4 (the final code) and was looked at: the gauge captions and the dose
+tape cropped at 720p and 4K, the capture switch at 4K, the navball rim at 4K, the toast, the entry panel's chute row.
+
+Own estimate after this round (honest): photo lens about 8, artifact lens about 8. The wrong information the real
+app showed is gone at its causes (and the two further faults found on the way), the r5 major is closed and checked
+in the pictures; what still holds the pictures back is the evidence rather than the HUD: most lab views sit over the
+lab backdrop, and two stills of the real renderer carry the renderer's own faults (the lander's shadow, the streak).
