@@ -51,9 +51,9 @@
   "colourSource": null,
   "transfer": "srgb",
   "tint": [
+   1.0463,
    1.0,
-   0.93,
-   0.85
+   0.9462
   ],
   "calibration": {
    "meanAlbedo": 0.5,
@@ -102,7 +102,8 @@
     ]
    ],
    "ref": "The USGS mosaic equalises brightness region by region (the dark Cassini Regio is mid-grey in it). Iapetus' two-tone albedo, NSSDC 0.05 (dark leading) / 0.5 (bright trailing), dark material over roughly 40 % of the surface: restored from the mosaic's own low-frequency pattern by percentile rank; the detail above 150 km is the mosaic's"
-  }
+  },
+  "tintRef": "disc-integrated colour whole-disc B-V 0.71 (Harris 1961 via Pace 1971, JPL TR 32-1523, table 1); leading 0.75, trailing 0.69 (Morrison & Cruikshank 1974, SSRv 15:641); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001). The map itself is monochrome."
  },
  "landmarks": [
   {

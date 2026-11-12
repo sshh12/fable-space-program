@@ -48,10 +48,10 @@ interface Job {
 }
 
 /**
- * Crater relief of one class at P with the complex-crater depth law: every crater whose fresh simple depth
- * (freshDepthToDiameter D) exceeds the law's fresh depth has its depth and rim scaled by the ratio (the
- * crater's degradation, the share of its fresh depth, is kept). The records are the class's own (same cells,
- * same order as CraterClass.heightAt), so the population is unchanged; only large craters are shallower.
+ * Crater relief of one class at P with the complex-crater depth law: above the simple-to-complex transition a
+ * crater's depth and rim are scaled by (law's fresh depth) / (freshDepthToDiameter D), at most 1, so a crater
+ * keeps its degradation (its share of the fresh depth). The records are the class's own (same cells, same
+ * order as CraterClass.heightAt): the population is unchanged; only large craters are shallower.
  */
 class ComplexRelief {
   private bx = 0x7fffffff;
@@ -68,11 +68,17 @@ class ComplexRelief {
     this.rec = new Float64Array(8 * c.slots * CRATER_STRIDE);
   }
 
-  /** Depth scale of a crater of diameter D (m): 1 up to the transition, then law / simple. */
+  /**
+   * Depth scale of a crater of diameter D (m): 1 up to the transition D_t; from 2 D_t on, the complex law's
+   * fresh depth over the simple one (never above 1); between, a smootherstep blend in log2 D, so the relief is
+   * continuous in diameter.
+   */
   scale(D: number): number {
     const Dk = D / 1000;
-    if (Dk <= this.law.transitionDiameterKm) return 1;
-    return Math.min(1, (this.law.depthKm * Dk ** this.law.exponent) / (this.freshRatio * Dk));
+    const Dt = this.law.transitionDiameterKm;
+    if (Dk <= Dt) return 1;
+    const sc = Math.min(1, (this.law.depthKm * Dk ** this.law.exponent) / (this.freshRatio * Dk));
+    return 1 + smootherstep01(Math.log2(Dk / Dt)) * (sc - 1);
   }
 
   heightAt(px: number, py: number, pz: number, ext: number): number {

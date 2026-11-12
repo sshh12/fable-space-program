@@ -218,7 +218,7 @@ def validate(raw: dict, where: str) -> None:
             raise ConfigError(f"{where}.height: a DEM and procedural craters exclude each other")
         al = raw["albedo"]
         _keys(al, f"{where}.albedo", ("maxLevel", "source", "colourSource", "transfer", "tint", "calibration", "procedural"),
-              ("lowFrequency", "colourMode"))
+              ("lowFrequency", "colourMode", "tintRef"))
         if al.get("colourMode") not in (None, "chroma", "detail"):
             raise ConfigError(f"{where}.albedo.colourMode: chroma (mono luminance x colour chroma) | detail (colour x mono detail)")
         if al.get("lowFrequency") is not None:

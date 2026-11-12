@@ -53,16 +53,17 @@
   "colourSource": null,
   "transfer": "srgb",
   "tint": [
+   1.1803,
    1.0,
-   0.96,
-   0.88
+   0.8166
   ],
   "calibration": {
    "meanAlbedo": 0.68,
    "region": null,
    "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
   },
-  "procedural": null
+  "procedural": null,
+  "tintRef": "disc-integrated colour B-V 0.87 (Harris 1961 via Pace 1971, JPL TR 32-1523, table 1); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001). The map itself is monochrome."
  },
  "landmarks": [
   {

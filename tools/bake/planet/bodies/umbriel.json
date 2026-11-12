@@ -26,7 +26,13 @@
   "dem": null,
   "craters": {
    "maxDiameterRadii": 0.4,
-   "named": []
+   "named": [],
+   "complex": {
+    "transitionDiameterKm": 11.0,
+    "depthKm": 0.366,
+    "exponent": 0.559,
+    "ref": "g = 24.9 cm/s^2; simple-to-complex transition D_t = 39.7 g^-0.4 km (g in cm/s^2; icy-body fit of Aponte-Hernandez et al. 2021, PSJ 2:235, as stated in Bottke et al. 2024, PSJ, eq. 3), g = GM / R^2 from the JPL satellite physical parameters (solar-system.md 2.3); complex fresh depth d = 0.366 D^0.559 km (Schenk 1989, JGR 94:3813, the Rhea fit as reproduced in Stern, Porter & Zangari 2015, arXiv:1412.1405, eqs. 3-6; Cassini complex slopes 0.49-0.59 on Rhea, Iapetus and Mimas, White & Schenk 2011, LPSC 42 #2283); blended from D_t to 2 D_t"
+   }
   }
  },
  "albedo": {
@@ -42,12 +48,12 @@
   },
   "procedural": {
    "color": [
+    1.0093,
     1.0,
-    1.0,
-    1.0
+    0.9908
    ],
    "freshBrightening": 0.35,
-   "ref": "approximate colour of Voyager/Viking images; brightening of fresh crater interiors and ejecta"
+   "ref": "disc-integrated colour B-V 0.66, V-R 0.54 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta"
   }
  },
  "landmarks": []
