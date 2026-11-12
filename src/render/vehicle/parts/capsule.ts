@@ -868,8 +868,17 @@ export const capsuleApexCover: PartGenerator = ({ def, params }) => {
     }
     p.hard().corner(0, H);
     lathe(b, p, { segs: b.pick(72, 36, 16), tag: 'apex-cover' });
+    if (b.lod < 2) {
+      // The cover is the forward bay's lid, built like the bay under it: gore panels with taped joints, a
+      // seal band at its seat and a fastener ring.
+      b.mat('tape-silver').masks(0, 1, 0.3, 0);
+      seams(b, R, 0.03, H * 0.45 - 0.02, 8, 0.03, 0.0015, 0.2);
+      b.mat('anodised').masks(0.15, 0.9, 0.6, 0);
+      band(b, R, 0.03, 0.04, 0.004, b.pick(72, 36, 16));
+    }
     if (b.lod === 0) {
       b.mat('steel-bare').masks(0.3, 1, 0.3, 0);
+      boltRing(b, R, H * 0.45 - 0.05, 32, 0.005, 0.003);
       // Countersunk flush with the land the escape tower sits on.
       boltCircle(b, seat - 0.2, H - 0.008, 8, 0.012, 0.008);
       b.mat('alu-machined');

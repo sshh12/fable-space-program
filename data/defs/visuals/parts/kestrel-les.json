@@ -6,7 +6,7 @@
     "coverWall": 0.025,
     "windowPorts": ["hatch-window", "fwd-left"],
     "apexCoverRadius": 0.55,
-    "cover": "paint-white",
+    "cover": "skin-white-b",
     "tower": "paint-white",
     "motorRadius": 0.45,
     "motorTop": 6.6,

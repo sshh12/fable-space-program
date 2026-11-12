@@ -591,7 +591,9 @@ export const padLightningMast: SiteGenerator = ({ params }) => {
   const r0 = numParam(params, 'baseHalf', 6.5);
   const r1 = numParam(params, 'topHalf', 1.1);
   const bays = numParam(params, 'bays', 14);
-  const lodPixels = [numParam(params, 'lod1Pixels', 520), numParam(params, 'lod2Pixels', 170)];
+  // A lattice is drawn only where its braces cover a pixel: the full one within about 120 m, the heavy-membered
+  // middle LOD to about 450 m, the solid beyond (thinner members bead into dots along the diagonals).
+  const lodPixels = [numParam(params, 'lod1Pixels', 1500), numParam(params, 'lod2Pixels', 420)];
   // Lattice tower in aviation red and white bands, carrying an insulating mast for the catenary wires.
   const half = (y: number): number => r0 + (r1 - r0) * Math.pow(y / steel, 0.8);
   const levelY = (l: number): number => steel * (1 - Math.pow(1 - l / bays, 1.35));
