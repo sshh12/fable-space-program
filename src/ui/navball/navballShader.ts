@@ -16,8 +16,8 @@
  *   1  the HUD instrument: a strongly rounded sphere (wrap-diffuse key light from the upper left with a dark
  *      terminator side, limb darkening, a contact shadow under the bezel's lip), a faint graded window
  *      reflection on its varnish, a faint Fresnel rim and the bank sky pointer. Ink (the white markings) is
- *      darkened less than the painted background, so numerals on the shaded side keep their contrast. Markers keep
- *      full strength until their centre reaches the lip and are gone within a degree or two beyond it.
+ *      darkened less than the painted background, so numerals on the shaded side keep their contrast. A marker the
+ *      lip would hide (on the near hemisphere, past the window) is held at the window's edge, partly under the lip.
  * Ball.params.w is the lip: the part of the ball's radius that is drawn (1 for the shared texture; the HUD's
  * bezel covers the outer rim).
  */
@@ -256,20 +256,24 @@ fn vsMarker(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) ->
   // Width / height of the cell in pixels (the atlas is four times wider than tall).
   let aspect = (m.uv.z - m.uv.x) / (m.uv.w - m.uv.y) * 4.0;
   let half = vec2f(m.pos.z * aspect, m.pos.z);
-  let bp = m.pos.xy + c * half;
+  // Behind a bezel lip (the HUD instrument) a marker that the lip would hide - between about 70 and 90 degrees off
+  // the nose, still on the near hemisphere - is held at the window's edge, its outer part under the lip, so it
+  // reads as lying beyond that edge in that direction (a prograde 75 degrees off the nose in a translunar climb
+  // stays on the instrument). The shared texture (lip 1) draws every marker where it is, with the limb fade.
+  var centre = m.pos.xy;
+  if (ball.params.w < 0.999) {
+    let edge = ball.params.w - m.pos.z * 0.55;
+    let r = length(centre);
+    if (r > edge) {
+      centre = centre * (edge / r);
+    }
+  }
+  let bp = centre + c * half;
   var o: VsMarker;
   o.pos = vec4f(bp * ball.params.x, 0.0, 1.0);
   let t = c * 0.5 + 0.5;
   o.uv = vec2f(mix(m.uv.x, m.uv.z, t.x), mix(m.uv.w, m.uv.y, t.y));
-  // Behind a bezel lip (the HUD instrument) a marker is paint on the ball: full strength while its centre is in
-  // the window (its outer edge passes under the lip), gone within about two degrees of rotation once the centre
-  // is under it (so no sliver of a hidden icon stays at the edge). The shared texture (lip 1) keeps the limb
-  // fade of its alpha only.
-  var lipFade = 1.0;
-  if (ball.params.w < 0.999) {
-    lipFade = 1.0 - smoothstep(ball.params.w - 0.003, ball.params.w + 0.012, length(m.pos.xy));
-  }
-  o.alpha = m.pos.w * lipFade;
+  o.alpha = m.pos.w;
   o.bp = bp;
   return o;
 }
