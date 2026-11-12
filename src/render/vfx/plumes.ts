@@ -190,14 +190,14 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   let disc = cells.y * decay * ((tail + 0.7 * lead) * diamond + 1.5 * plate);
   // An over- or under-expanded jet is dim where it leaves the nozzle and lights up at the first shock.
   let ramp = mix(1.0, 0.3 + 0.7 * smoothstep(0.0, 0.75, u), cells.y);
-  // What the eye sees of the cells: the first two or three, bright, within a few tens of exit radii of the
+  // What the eye sees of the cells: the first two or three, bright, within about twenty exit radii of the
   // nozzle, where the gas is dense and hot. Further down the shocks still stand in the gas (the density above
   // keeps every cell) but the mixing layer has eaten into the core and the gas radiates little: a cell that
   // lies hundreds of exit radii out (a jet that balloons at altitude) is not a second plume with a bright
   // face, and a jet whose first shock is that far out is not dark all the way to it.
-  let near = 1.0 - smoothstep(16.0 * re, 40.0 * re, xc);
+  let near = 1.0 - smoothstep(8.0 * re, 22.0 * re, xc);
   let seen = near * exp(-max(u - 0.75, 0.0) / 1.6);
-  let rampSeen = mix(1.0, 0.55 + 0.45 * smoothstep(0.0, 0.75, u), cells.y * (1.0 - smoothstep(16.0 * re, 40.0 * re, 0.75 * cells.x)));
+  let rampSeen = mix(1.0, 0.55 + 0.45 * smoothstep(0.0, 0.75, u), cells.y * (1.0 - smoothstep(8.0 * re, 22.0 * re, 0.75 * cells.x)));
   // Close to the nozzle the gas is as dense and hot as at the exit whatever the ambient pressure; further
   // out a jet that expands into (near) vacuum radiates only a fraction of that.
   let thin = mix(1.0, inst.extra.z, 1.0 - exp(-xc / inst.extra.w));

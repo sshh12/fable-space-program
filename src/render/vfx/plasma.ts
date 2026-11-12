@@ -315,12 +315,14 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let stream = 1.0 - e;
       let tex = 1.0 + (0.35 + 0.6 * stream) * (mix(nb.g, na.g, wa) - 0.5) + (0.25 + 0.5 * stream) * (mix(nb.r, na.r, wa) - 0.5);
       let face = e * e * e;
-      let layer = exp(-B.sd / delta) / delta;
+      // (Beyond the shock the air is cold: the glow ends within a couple of standoffs, softly, and what is seen
+      // round it is the bloom of the clipped layer, not a long exponential tail that clips metres out.)
+      let layer = exp(-sq(B.sd / (1.1 * delta))) * (1.13 / delta);
       let heat = saturate(e * e * (0.35 + 0.65 * k));
       j += mix(I.color.rgb, hot, heat) * (face * layer * tex * (0.55 + 0.45 * k));
-      // The hot gas around the head: a faint envelope that reaches a third of a radius out and wraps the
-      // windward shoulder (what the eye sees as the haze round the glare).
-      j += I.color.rgb * (0.02 * (0.3 + 0.7 * k) * exp(-B.sd / (0.3 * Rb)) * (0.15 + 0.85 * e * e) / (0.3 * Rb));
+      // The hot gas around the head: a faint envelope that reaches a third of a radius out on the windward
+      // side (the glare round the head is the bloom's business: a bright envelope would be a halo disc).
+      j += I.color.rgb * (0.003 * (0.3 + 0.7 * k) * exp(-B.sd / (0.3 * Rb)) * (0.05 + 0.95 * e * e * e) / (0.3 * Rb));
     }
     // Behind the shoulder: the gas leaves the wall as a skirt that is hot where the windward shoulder was hot,
     // necks down behind the body into a filled wake (brighter on its axis than at its edge), and streams away
