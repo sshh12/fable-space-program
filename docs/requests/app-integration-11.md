@@ -1,41 +1,64 @@
 Status: open
 From: app-integration-v1
-Owner path: src/render/terrain (feature.ts, streamer.ts; terrain-render), src/render/core (shader library, mesh system; shared-code maintainer), src/render/atmosphere (feature.ts; atmosphere-clouds)
-Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for the numbers it lacks)
+Owner path: src/render/core (pipeline creation, shader library, mesh system; shared-code maintainer), src/render/terrain (streamer.ts, feature.ts; terrain-render), src/render/atmosphere (feature.ts; atmosphere-clouds)
+Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for a shorter load and for the numbers the screen lacks)
 
 ## Problem
-The app's loading screen (`src/app/loading.ts`, docs/handoff/app-integration-v1.md "Loading") shows what is loading
-and how far along it is from real counts only. Three subsystems expose less than a player needs to see:
-- terrain: the stream counters (`TerrainDebug.stats().stream`: ready, queued, loading, uploading) and the deepest
-  READY tile under a point (`readyTileAt`) are exposed, but not what the view WANTS: the screen can say "level 14
-  under the vehicle, 1,180 tiles resident, 212 pending" but not "level 14 of 19", and its bar's total (resident +
-  pending) grows while the selection refines, so the bar can move backwards.
-- render core: `CoreShaderLibrary.pendingCompilations()` is a count without a total, and `MeshSystem.isIdle()` a
-  boolean: the "Render pipelines" row counts features initialised (10 of 10) and then only "N shader modules
-  compiling"; the "Vehicle and site models" row shows its phase with no count at all.
-- atmosphere: `isIdle()` only (tables ready, cloud noise ready, coverage maps loaded): phase with no count.
+The app now shows an honest loading screen until the view at the start position is final (`src/app/loading.ts`,
+docs/handoff/app-integration-v1.md "Loading"). Measured on the pad it takes 32 s, and two thirds of that is not
+loading data: (A) 11 s in which the first 19 frames cannot be presented because the GPU process is still compiling
+the pipelines created synchronously during start-up, and (B) 11 s of terrain streaming that only starts after
+that and proceeds one quadtree level per round trip. And (C) three subsystems expose no count the screen could
+show.
 
 ## Evidence
-`tests/browser/app/app.spec.ts`, "the loading screen shows real progress ...": the pictures
-`out/screens/app/loading-2-pipelines.png`, `loading-3-terrain.png`, `loading-4-view.png` (rows "Vehicle and site
-models" and "Atmosphere and clouds" without a count; the terrain row's total changing between samples in the
-spec's log).
+`tests/browser/app/app.spec.ts`, "the loading screen shows real progress ..." (1280 x 720, `/?hud=0`, nothing else
+on the GPU, 2026-11-11 23:10; times are `performance.now()` of the page):
 
-## Requested change (all additive, read-only, cheap enough to call every frame)
-terrain-render:
-1. `TerrainDebug.residency(bodyId: string): { wantedLevel: number; residentLevel: number; wanted: number[]; resident: number[] } | null`
-   for the latest camera selection of that body: per level 0..maxRenderLevel, how many tiles the selection wants
-   drawn (`wanted[l]`) and how many of those are READY (`resident[l]`); `wantedLevel` / `residentLevel` = the
-   deepest level wanted / fully resident. With it the row reads "level 14 of 19" with one cell per level, and the
-   reveal condition can be stated as `resident[l] === wanted[l]` for every level instead of `isIdle()`.
-2. A tile that cannot get a pool layer is dropped from the wanted set instead of waiting in `uploading` for ever
-   (the third option of request app-integration-7): today the app has to recognise the full pool itself
-   (`queued === 0 && loading === 0 && uploading > 0`, nothing uploaded and every waiting tile refused in the
-   frame) to let the loading screen go at 1440p.
-render core (shared-code maintainer):
-3. `CoreShaderLibrary.compilations(): { pending: number; total: number }` (modules created so far and still
-   compiling), and `MeshSystem.loads(): { pending: number; total: number }` (texture loads started / outstanding).
-atmosphere-clouds:
-4. `AtmosphereFeature.status(): { tablesReady: boolean; noiseReady: boolean; coverage: { loaded: number; total: number } }`.
+| Step | start -> end, s | |
+|---|---|---|
+| Graphics device, definitions | 0.4 -> 0.7 | 84 of 86 definition files |
+| Simulation (`sim.ready`), sound (38 assets) | 0.7 -> 2.6 | |
+| `createRenderer` | 2.1 -> 5.8 | the core's own pipelines |
+| Feature start-up, one by one | 5.8 -> 9.3 | terrain 1.6 s, cockpit 1.0, ocean 0.5, vehicle 0.3, site 0.1, the rest < 0.05 |
+| First frames | 9.3 -> 20.1 | **19 frames in 10.8 s**; `pendingCompilations()` 70 at the start, 0 at 20.1 s; sky probe and atmosphere tables done at 20.3 s |
+| Terrain | 20.4 -> 31.3 | frame 19: 32 tiles resident, 546 queued, 8 baking, 50 uploading; 24.5 s: 636 resident (the pinned and preloaded levels), nothing queued; then 719 (26.6 s), 867 (28.6 s), 1,050 (30.6 s), 1,079 at level 20 (31.3 s), with the queue empty in every second sample |
+| Fade | 31.5 -> 31.9 | 12 settled frames, exposure at its target |
 
-Must not change: `isIdle()` of any of them (the harness's `waitIdle` and the app's reveal condition use it).
+So: (A) between 9.3 s and 20.1 s nothing the player waits for is being loaded; the frame loop delivers a frame
+every 0.57 s. (B) In those 11 s the eight tile workers did 90 tiles (the streamer hands out jobs once per frame,
+in `update()`); after it they bake the 636 pinned tiles in 4 s and then need 7 s for the 440 tiles of the pad view,
+level after level, with idle workers in between (bake 25 ms + image 6 ms per tile: `stream.bakeMs`, `imageMs`).
+The first run of the evening (before the pool fix under way for app-integration-7) showed the same shape: loop
+start 8.5 s, compiles done 18.7 s, terrain done 32.0 s.
+
+## Requested change
+(A) render core and every feature (shared-code maintainer to coordinate):
+1. Create pipelines with `createRenderPipelineAsync` / `createComputePipelineAsync` during `init` (in parallel,
+   awaited before `init` resolves), or give the core a `warmPipelines(): Promise<void>` that does so for every
+   `tracked` pipeline registered so far, so that compilation runs on Dawn's worker threads while the other
+   features start, and the first frame does not wait for 70 modules. Target: first presented frame within 1 s
+   of the last feature's `init`.
+2. `CoreShaderLibrary.compilations(): { pending: number; total: number }` and
+   `MeshSystem.loads(): { pending: number; total: number }` (texture loads started / outstanding): the "Render
+   pipelines" row can then count modules, and "Vehicle and site models" gets a count at all.
+(B) terrain-render:
+3. Hand the next job to a worker when it reports back (`onMessage`), not only in `update()`: the bake rate must
+   not depend on the frame rate (it matters most when frames are slow: start-up, a hitch).
+4. Load the pinned and preloaded levels from `init` on (today only the six roots; the other 624 tiles are first
+   asked for by the first frame's selection), and let a caller name the start view so the chain of tiles under it
+   is requested at once instead of one level per round trip, e.g.
+   `TerrainFeatureOptions.startView?: { bodyId: string; latDeg: number; lonDeg: number; altitude: number }`
+   (the app has it from the scenario before any frame) or a request-only selection pass that descends through
+   tiles that are not resident yet.
+5. `TerrainDebug.residency(bodyId: string): { wantedLevel: number; residentLevel: number; wanted: number[]; resident: number[] } | null`
+   for the latest camera selection (per level: tiles the selection wants drawn, and how many of those are READY).
+   Today the screen can say "level 14 under the vehicle, 1,180 tiles resident, 212 pending" but not "level 14 of
+   20", and its total (resident + pending) grows while the selection refines, so the bar can move backwards.
+6. An upload budget the app can raise while the loading screen is up (`TerrainDebug.setUploadBudget(tiles, ms)`
+   or a `loading` flag): 2 ms and 8 tiles per frame protects a frame nobody sees.
+(C) atmosphere-clouds:
+7. `AtmosphereFeature.status(): { tablesReady: boolean; noiseReady: boolean; coverage: { loaded: number; total: number } }`.
+
+Must not change: `isIdle()` of any of them (the harness's `waitIdle` and the app's reveal condition use it), the
+picture, the VRAM lines of ARCHITECTURE 17.
