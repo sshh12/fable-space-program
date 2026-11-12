@@ -576,3 +576,44 @@ Suites (05:00): `npm run typecheck` (both configurations, through the gate) clea
 `src/core/contracts`, `src/core/defs`, `src/core/fakes`, `tests/unit/sim-vessel`, `tests/unit/sim-world`,
 `tools/dev`, `tests/unit/site-bake/pads.test.ts`: 43 files, 483 tests pass. `npx tsx tools/sim/writeRules.ts
 --check`: the three files as derived. `check-stubs`, `check-secrets` OK. Headless mission (through the gate, 05:02): 35 of 36 pass; the one failure is the determinism test's precondition, not a result of this round: the Earth tile set was re-baked at 04:59 (site-bake's Madrakah region; content hash f70a61d55dca902f, golden.json still says ab20fdfc579d4015), so the test refuses to compare. Flown once more with the recorder: state hash b8221b0fd316207e, 596,933 steps on the new tiles, equal to the golden, so neither this round nor the re-bake changed the flight and only the tiles.earth field of tests/mission/golden.json is out of date (not edited: not the lead-baseline paths; reported to the coordinator). No browser run.
+
+## 15. Request site-bake-1: the Madrakah region in the lead's records (2026-11-12, 05:15-05:40)
+
+site-bake swapped the Madrakah region into the live `earth` tile set at 04:59 (manifest content hash
+`ab20fdfc579d4015` -> `f70a61d55dca902f`). This closes the bullet on that request in section 14.
+
+| Step | What was done | Commit |
+|---|---|---|
+| Golden | `tests/mission/golden.json` `tiles.earth` = `f70a61d55dca902f`. Not re-flown for it (the flight on the new tiles was flown in section 14: `b8221b0fd316207e`, 596,933 steps) | f072a36 |
+| Audit, then the tile summary | `terrain-guard.record.ts --tiles-additions --changed earth/.` through the bake slot: every file of both tile sets read once (Earth 37 s, Moon 8 s) and held against the recording of 2026-11-11. Earth: 8,379 of 8,380 recorded directories byte-identical (files, names, bytes, content); the root changed as named (`manifest.json`, 15,109 -> 21,925 bytes); 840 directories added, 53,140 files, 0.461 GB. Moon: 2,344 of 2,344 byte-identical, nothing added. The added directories are exactly `{height,albedo,watermask,landcover}/2/{8..12}/{x}`, x 43..51, 87..102, 175..203, 352..404, 706..808: site-bake's table. No violation, so the run wrote the new summary (Earth 9,220 directories, 750,489 files, 10.76 GB). The whole audit: `out/terrain-guard/additions.json` | f072a36 |
+| Heights | `--add-place earth site:madrakah 18.996043 57.793818`: 800 points about Madrakah's reference pad, sampled on `f70a61d55dca902f` (the group says so: `recordedOn`). Earth has 2,800 points. Checked against the committed file: the directions and the three height strings of the 2,000 earlier Earth points and of the 2,000 Moon points are prefixes of the new ones (index, direction and height of every existing point unchanged) | f072a36 |
+| Not changed | `tests/mission/baseline-v1.json`: the record of the v1 flight on the tiles of its day; nothing compares its `tiles` field; pinned | - |
+| Documents | Request site-bake-1 resolved with the audit's numbers. MIGRATION_V2: lead steps "before 4.1" and "with fleet-data", section 8. fleet-data's brief: a third LEAD NOTE (pad files, flatten radii heavy 450/900, medium 300/600, light 150/300 m with their two bounds, the guard, the Earth bake). Request `lead-4` (open): re-stamp the Ka Lae unit records without baking | 9d34177 |
+
+**New in the guard** (the lead's files): `auditAdditions(recorded, current, expectChanged)` in
+`terrain-guard.ts` and the recorder mode `--tiles-additions [--changed <tileset>/<dir> ...]`. It is how a
+bake that ADDS tiles is re-recorded from now on: one pass over every file, and nothing is written unless
+every recorded directory is byte-identical except the ones named (which must exist and must differ). A
+unit test plants each violation (a rewritten tile of the same size, a file added to an existing directory,
+a directory gone, an unnamed manifest change, a named change that is none, a summary without content
+hashes). `--tiles` stays for a first recording. `GuardGroup.recordedOn`: the tile set a group was appended
+on.
+
+**Still to come, the lead's act.** The flatten discs of the fifteen new Ka Lae pads and the sixteen
+Madrakah pads do not exist yet: they are derived from the site files, which fleet-data writes (wave 4.1).
+From that commit the guard's height test fails at the points inside the new discs. The lead re-records
+then (`terrain-guard.record.ts --resample`), under the rule **only points inside new flatten discs may
+change**: the guard names every changed point with its group and place; each is held against the pad
+centres and the flat and blend radii in fleet-data's hand-off; a changed point outside every new disc is a
+defect, not a re-record. Ka Lae has no group of its own for the new pads (they lie in the 20 km and 200 km
+discs of `site:ka-lae-lc1`, where the points are sparse: few of them will fall inside a disc of 900 m);
+Madrakah's group has 200 points within 200 m and 200 within 2 km of its reference pad.
+
+**Found on the way.** `heights.region_is_baked('earth-ka-lae')` is False on this machine (read-only question
+of the bake tools; True for `earth-madrakah`): site-bake's remark is confirmed, the Ka Lae unit records do
+not match the configuration since the site rename. Request `lead-4`.
+
+Suites (05:35): the terrain guard 7 of 7 through the gate, in the every-commit form (cpu slot, 20 s) and
+in the full form (`TERRAIN_GUARD_FULL=1`, bake slot, 54 s). `npm run test:mission`: 5 files, 36 of 36.
+`npm run typecheck:paths -- tests/unit/terrain-core` (both configurations) clean. `check-stubs`,
+`check-secrets` OK. No browser run.
