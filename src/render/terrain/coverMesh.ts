@@ -503,10 +503,11 @@ function rawTree(variant: number, lod: number): Builder {
   // A short trunk that leans downwind, its foot flared where the roots run out.
   const fork: P3 = [0.07 + 0.05 * w(), 0.06 * (w() - 0.5), 0.2 + 0.07 * w()];
   const trunkR = 0.044 + 0.01 * w();
-  const trunk: P3[] = [[0, 0, -0.05], [0.003, 0.002, 0.012], lerp([0, 0, 0], fork, 0.3), lerp([0, 0, 0], fork, 0.65), fork];
-  trunk[2] = add(trunk[2]!, [0.035 * (w() - 0.5), 0.035 * (w() - 0.5), 0]);
-  trunk[3] = add(trunk[3]!, [0.03 * (w() - 0.5), 0.03 * (w() - 0.5), 0]);
-  if (lod < 2) tube(b, trunk, [1.9 * trunkR, 1.25 * trunkR, 1.03 * trunkR, 0.97 * trunkR, 0.92 * trunkR], [7, 5][lod]!, w());
+  // (The foot widens over a fifth of the trunk's height, not in one step: a step read as a stump the tree stood on.)
+  const trunk: P3[] = [[0, 0, -0.05], [0.002, 0.001, 0.0], lerp([0, 0, 0], fork, 0.12), lerp([0, 0, 0], fork, 0.3), lerp([0, 0, 0], fork, 0.65), fork];
+  trunk[3] = add(trunk[3]!, [0.035 * (w() - 0.5), 0.035 * (w() - 0.5), 0]);
+  trunk[4] = add(trunk[4]!, [0.03 * (w() - 0.5), 0.03 * (w() - 0.5), 0]);
+  if (lod < 2) tube(b, trunk, [1.75 * trunkR, 1.55 * trunkR, 1.2 * trunkR, 1.04 * trunkR, 0.97 * trunkR, 0.92 * trunkR], [7, 5][lod]!, w());
   else ribbons(b, [0, 0, -0.05], [0.6 * fork[0], 0.6 * fork[1], 0.45], 1.6 * trunkR);
   for (let k = 0; k < lobes; k++) {
     const a = (2 * Math.PI * (k + 0.7 * u())) / lobes;

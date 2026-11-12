@@ -20,6 +20,13 @@ export interface View {
   ev?: number;
 }
 
+/**
+ * Views of the ground by day are exposed as a photographer exposes in daylight (EV100 14.5: "sunny 16" less
+ * half a stop), not by the lab's meter: it lifts a frame filled with dark lava by two stops and more, to a
+ * grey plain, and no photograph of a lava field is taken that way.
+ */
+const DAYLIGHT_EV = 14.5;
+
 const nadir = (lat: number, lon: number, height: number, heading = 0): View['cam'] => ({ type: 'surface', lat, lon, height, agl: false, heading, pitch: -89.9 });
 
 export const VIEWS: View[] = [
@@ -33,28 +40,28 @@ export const VIEWS: View[] = [
   { name: 'earth-leo-lowland-coast', body: 'earth', cam: { type: 'surface', lat: 25.3, lon: -80.9, height: 200e3, agl: false, heading: 0, pitch: -89.9 }, sun: { az: 120, el: 45, lat: 25.3, lon: -80.9 } },
   { name: 'earth-leo-nadir-night', body: 'earth', cam: { type: 'surface', lat: 44.5, lon: 9.5, height: 250e3, agl: false, heading: 0, pitch: -89.9 }, sun: { az: 300, el: -40, lat: 44.5, lon: 9.5 }, ev: 1 },
   { name: 'earth-night-side', body: 'earth', cam: nadir(38, 12, 16_000e3), fov: 40, sun: { subsolar: [-38, -168] }, ev: 1 },
-  { name: 'earth-40km', body: 'earth', cam: { type: 'surface', ...PAD, height: 40e3, agl: false, heading: 330, pitch: -35 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'earth-10km', body: 'earth', cam: { type: 'surface', ...PAD, height: 10e3, agl: false, heading: 340, pitch: -25 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-inland', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 2, pitch: 2 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-coast', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0002, lon: PAD.lon + 0.0004, height: 1.7, agl: true, heading: 62, pitch: -1 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'earth-40km', body: 'earth', cam: { type: 'surface', ...PAD, height: 40e3, agl: false, heading: 330, pitch: -35 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'earth-10km', body: 'earth', cam: { type: 'surface', ...PAD, height: 10e3, agl: false, heading: 340, pitch: -25 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'pad-inland', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 2, pitch: 2 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'pad-coast', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0002, lon: PAD.lon + 0.0004, height: 1.7, agl: true, heading: 62, pitch: -1 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
   // The ground around the pad at the distances a launch shows it: on the apron looking down, off the apron
   // at eye height, from 30 m, and from 1 km (the detail layers carry the texture, the imagery the colour).
-  { name: 'pad-apron-down', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0003, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 300, pitch: -30 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-off-apron', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -12 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-ground-close', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -50 }, fov: 35, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'pad-30m', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, height: 30, agl: true, heading: 40, pitch: -22 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'pad-apron-down', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0003, lon: PAD.lon + 0.0003, height: 1.7, agl: true, heading: 300, pitch: -30 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'pad-off-apron', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -12 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'pad-ground-close', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, height: 1.7, agl: true, heading: 20, pitch: -50 }, fov: 35, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'pad-30m', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.0016, lon: PAD.lon - 0.0012, height: 30, agl: true, heading: 40, pitch: -22 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
   // What stands up from the ground (ground cover) where the land cover says grass and trees, 500 to 700 m
   // north-east and north of the pad: at eye height, and the same thickets from 120 m up.
-  { name: 'grass-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0041, lon: PAD.lon + 0.0052, height: 1.7, agl: true, heading: 320, pitch: -5 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'kiawe-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, height: 1.7, agl: true, heading: 70, pitch: -3 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'kiawe-120m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, height: 120, agl: true, heading: 15, pitch: -24 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'earth-1km', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.004, lon: PAD.lon - 0.004, height: 1000, agl: false, heading: 45, pitch: -35 }, sun: { az: 105, el: 31, ...PAD } },
+  { name: 'grass-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0041, lon: PAD.lon + 0.0052, height: 1.7, agl: true, heading: 320, pitch: -5 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'kiawe-eye', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, height: 1.7, agl: true, heading: 70, pitch: -3 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'kiawe-120m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, height: 120, agl: true, heading: 15, pitch: -24 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'earth-1km', body: 'earth', cam: { type: 'surface', lat: PAD.lat - 0.004, lon: PAD.lon - 0.004, height: 1000, agl: false, heading: 45, pitch: -35 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
   // Broken, stony ground 1 km south-west of the pad at eye height: relief of the height function under the
   // detail layers, and the rock field (the pad's own surroundings are flattened and hold no rocks).
-  { name: 'earth-stony-ground', body: 'earth', cam: { type: 'surface', lat: 18.981197, lon: -155.609964, height: 1.7, agl: true, heading: 200, pitch: -8 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'shoreline-200m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.001, lon: PAD.lon + 0.0085, height: 200, agl: false, heading: 30, pitch: -20 }, sun: { az: 105, el: 31, ...PAD } },
-  { name: 'earth-edge-5km', body: 'earth', cam: { type: 'surface', lat: 19.93, lon: -155.72, height: 6.2e3, agl: false, heading: 0, pitch: -28 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 } },
-  { name: 'earth-edge-50km', body: 'earth', cam: { type: 'surface', lat: 19.55, lon: -155.72, height: 50e3, agl: false, heading: 0, pitch: -42 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 } },
+  { name: 'earth-stony-ground', body: 'earth', cam: { type: 'surface', lat: 18.981197, lon: -155.609964, height: 1.7, agl: true, heading: 200, pitch: -8 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'shoreline-200m', body: 'earth', cam: { type: 'surface', lat: PAD.lat + 0.001, lon: PAD.lon + 0.0085, height: 200, agl: false, heading: 30, pitch: -20 }, sun: { az: 105, el: 31, ...PAD }, ev: DAYLIGHT_EV },
+  { name: 'earth-edge-5km', body: 'earth', cam: { type: 'surface', lat: 19.93, lon: -155.72, height: 6.2e3, agl: false, heading: 0, pitch: -28 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 }, ev: DAYLIGHT_EV },
+  { name: 'earth-edge-50km', body: 'earth', cam: { type: 'surface', lat: 19.55, lon: -155.72, height: 50e3, agl: false, heading: 0, pitch: -42 }, sun: { az: 110, el: 35, lat: 20, lon: -155.72 }, ev: DAYLIGHT_EV },
   // ---- Moon
   { name: 'moon-60000km', body: 'moon', cam: nadir(2, 5, 60_000e3), fov: 3.7, sun: { subsolar: [3, 9] } },
   { name: 'moon-terminator-20000km', body: 'moon', cam: nadir(-18, 8, 20_000e3), fov: 4.4, sun: { subsolar: [0, 96] } },

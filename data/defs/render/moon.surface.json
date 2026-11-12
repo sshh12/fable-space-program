@@ -58,6 +58,7 @@
     "gravelAlbedoB": 0,
     "imageryCalibrationLevel": -1,
     "imagerySaturation": 0.4,
+    "imagerySaturationGlobal": 1,
     "imageryRefLuminance": 0.1,
     "imageryContrast": 1,
     "anchorNear": 0,

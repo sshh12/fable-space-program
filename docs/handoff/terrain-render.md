@@ -6,10 +6,11 @@ detail, night lights, shore), the far water sheet with the hand-over to the ocea
 every cascade, and the rock field around the camera. Everything below was measured on the real baked tile
 sets (`earth`, content hash `ab20fdfc579d4015`; `moon`).
 
-This note is the state after the review fixes (section 10) and after round 1 of the visual close-out
-(section 12: every item of the two critics' lists, what was done, what was not, measured performance).
-Sections 1 to 7 describe the code as it is now; sections 8, 9 and 11 are the review-stage record and are
-superseded by section 12 where they differ (performance of the final code: section 12, "Performance").
+This note is the state after the review fixes (section 10) and after rounds 1 and 2 of the visual close-out
+(sections 12 and 14: every item of the critics' lists, what was done, what was not, measured performance).
+Sections 1 to 7 describe the code as it is now (where round 2 changed it, section 14 says how); sections 8, 9
+and 11 are the review-stage record and are superseded by sections 12 and 14 where they differ (performance
+of the final code: section 14, "Performance").
 
 ## 1. Where things are
 
@@ -30,7 +31,9 @@ superseded by section 12 where they differ (performance of the final code: secti
 | `lowResAlbedo.ts` | CPU lookup of `globals/albedoLowRes` (rock tint) |
 | `rockMesh.ts`, `rocks.ts` | 12 rock shapes in 4 classes x 3 LODs (welded, broken-rock meshes), chunked instance lists, G-buffer and shadow draws |
 | `sitePlan.ts` | the ground plan of a launch site from its structures: slabs, lane beds, gravel shoulder (pure; the twin of `siteGround` in the surface shader) |
-| `cover.ts`, `coverMesh.ts` | ground cover: tussocks, scrub, trees, stands of trees, loose stones, placed by land-cover class around the camera and drawn instanced with shadows |
+| `cover.ts`, `coverMesh.ts` | ground cover: tussocks, scrub, trees, stands of trees, loose stones, placed by land-cover class around the camera and drawn instanced with shadows; shrubs and trees are frames of wood with leaf sprays of the set's leaf atlas (`foliage.webp`) |
+| `tools/terrain/gen_foliage.py` | draws the leaf atlas (2 x 2 sprays: kiawe, coastal scrub) |
+| `tools/terrain/dump-cover.ts`, `preview_cover.py` | a picture of a cover or rock mesh without a GPU (software rasteriser with the leaf atlas): shape and density of a plant can be judged before a browser run |
 | `shaders/common.ts` | body uniform, `TileRecord` / `TileFrame`, the CDLOD vertex (`terrainVertex`), shadow pass |
 | `shaders/surface.ts` | sampling, water logic, night lights, detail materials, orbital detail, `TERRAIN_GBUFFER_WGSL`, `TERRAIN_WATER_WGSL` |
 | `shaders/lighting.ts` | this package's `brdf_terrain` and `brdf_regolith` chunks (section 3, "Relief shadows", "Regolith") |

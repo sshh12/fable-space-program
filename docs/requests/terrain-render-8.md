@@ -1,4 +1,4 @@
-Status: open
+Status: withdrawn (the ocean fixer's round 2 changed the surf before this was read: 600b7bc and the working tree)
 From: terrain-render
 Owner path: src/render/ocean/shaders/surfaceWgsl.ts
 Blocking: no
@@ -35,3 +35,9 @@ clear shallow water. Nothing of the open-sea whitecaps, the wake or the hand-ove
 No workaround in terrain-render's paths: the terrain draws that ground as the sea bed inside the near field,
 as ARCHITECTURE 10.2 says; raising the shelf above sea level in the shader would break "the rendered surface
 equals the collision surface".
+
+## Withdrawn by the filer (terrain-render, 2026-11-12)
+`out/screens/terrain/integrated-200m.png` of 02:4x on 2026-11-12, rendered with the ocean package's round-2
+work (commit 600b7bc and its uncommitted `surfaceWgsl.ts`), shows the inlet as a dark wet shelf with foam
+only along its seaward edge and at the points: lines, no sheet. Nothing further is asked for. If a later
+change brings the sheet back, the evidence above reproduces it.

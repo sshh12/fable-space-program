@@ -323,9 +323,13 @@ class PhotoSpec:
 # Slopes are kept low: a height derived from brightness is right about cracks, gaps and pits and wrong about
 # everything a colour difference is not a height difference of, and strong relief from it reads as embossing.
 PHOTO: dict[str, PhotoSpec] = {
-    "pahoehoe": PhotoSpec((0.062, 0.058, 0.055), 0.72, 0.15, (0.22, 0.18, 0.09, 0.04), (0.5, 1.0, 0.9)),
+    # (Ropy lava is all form: lobes and ropes of decimetres, cracks between them. Its mid and far layers
+    # carry more relief than the photographs of flat ground.)
+    "pahoehoe": PhotoSpec((0.062, 0.058, 0.055), 0.72, 0.15, (0.26, 0.27, 0.15, 0.05), (0.5, 1.0, 0.9), ao_gain=1.2),
     "aa": PhotoSpec((0.040, 0.034, 0.030), 0.92, 0.0, (0.50, 0.38, 0.15, 0.06), (0.7, 1.0, 0.8), ao_gain=1.5),
-    "black-sand": PhotoSpec((0.052, 0.050, 0.048), 0.88, 0.0, (0.10, 0.08, 0.035, 0.015), (0.8, 0.6, 0.8)),
+    # Black sand with pebbles and cinder, also the bed of a launch site's gravel: every stone stands up from
+    # the sand between (with a tenth of slope the stones were a blurred print on a plane).
+    "black-sand": PhotoSpec((0.052, 0.050, 0.048), 0.88, 0.0, (0.30, 0.22, 0.06, 0.02), (1.0, 0.9, 0.6), ao_gain=1.4),
     "scrub-soil": PhotoSpec((0.150, 0.105, 0.072), 0.92, 0.0, (0.16, 0.13, 0.06, 0.03), (0.7, 1.0, 0.7)),
     # Dry bunch grass of a windswept coast: olive and straw (sRGB about 108, 102, 64), not a lawn.
     "pasture": PhotoSpec((0.150, 0.132, 0.052), 0.90, 0.0, (0.30, 0.14, 0.05, 0.02), (1.0, 0.8, 0.5), ao_gain=1.3),
@@ -568,15 +572,17 @@ def boulder(scale: int, metres: float) -> Layer:
     h = gauss(h, 1.2)
     edge = f2 - f1
     crack = 1.0 - smoothstep(0.0, 0.05, edge)
-    h -= crack * 0.004 * metres
-    h += spectral(n, seed + 4, 1.6, 8, n // 2) * 0.0009 * metres
-    scatter_craters(h, metres, seed + 5, 0.006 * metres, 0.03 * metres, 0.05, exponent=2.2, fresh_power=1.0)
-    shade = 0.84 + 0.32 * cell_random(ids, seed + 6)
+    # (The joints between facets are steps, hardly grooves: as dark lines on a smooth face they read as
+    # the cracks of an eggshell. What marks a lunar rock is its pitted, granular skin: zap pits and vesicles.)
+    h -= crack * 0.0015 * metres
+    h += spectral(n, seed + 4, 1.6, 8, n // 2) * 0.0014 * metres
+    scatter_craters(h, metres, seed + 5, 0.004 * metres, 0.03 * metres, 0.14, exponent=2.2, fresh_power=0.7)
+    shade = 0.92 + 0.16 * cell_random(ids, seed + 6)
     speck = unit(spectral(n, seed + 7, 0.3, 80, n // 2))
     crystals = smoothstep(0.9, 0.98, speck)
     dust = smoothstep(0.4, 1.2, spectral(n, seed + 8, 2.4, 2, 16))
     albedo = tint((0.150, 0.147, 0.140), n) * shade[..., None] * (0.93 + 0.14 * speck)[..., None]
-    albedo = albedo * (1.0 - 0.45 * crack)[..., None] * (1.0 + 0.5 * crystals)[..., None]
+    albedo = albedo * (1.0 - 0.15 * crack)[..., None] * (1.0 + 0.5 * crystals)[..., None]
     albedo = albedo * (1.0 - 0.5 * dust)[..., None] + tint(GREY, n) * (0.5 * dust)[..., None]
     rough = 0.9 - 0.1 * crystals + 0.05 * dust
     return Layer(metres, h, albedo, rough, 1.3).scaled_to_slope((0.30, 0.22, 0.14, 0.08)[scale]).with_feature_height(n / 12)
@@ -635,7 +641,7 @@ SETS = {
         },
         # From where the trees over a ground are no longer drawn, a class of trees is its crowns: half as
         # bright as the dry grass under them, and leaf green (brightness, share of green).
-        "classTone": {"trees": [0.5, 0.7], "shrub": [0.8, 0.3], "wetland": [0.6, 0.6], "crop": [1.0, 0.3]},
+        "classTone": {"trees": [0.5, 0.7], "shrub": [0.75, 0.35], "grass": [0.85, 0.2], "wetland": [0.6, 0.6], "crop": [0.9, 0.3]},
         "channelGain": {"aa": 0.6, "scrub-soil": -0.3, "black-sand": -0.3, "pasture": -0.5},
         # Steep ground is broken rock: a cliff or a bluff shows clinker, never turf or sand.
         "slopeGain": {"aa": 2.0, "pahoehoe": 0.2, "black-sand": -2.0, "scrub-soil": -0.6, "pasture": -1.0},
@@ -664,7 +670,7 @@ SETS = {
         # Basalt is dark and cool: pahoehoe photographed in sun under a blue sky is sRGB (55, 62, 73), 0.15 of
         # the sky's luminance, old flows from orbit no brighter than twice the sea (out/qa/ref/INDEX.md,
         # earth-terrain-aerial). Albedo 0.043 with blue above red; clinker darker and neutral.
-        "anchorAlbedo": {"scrub-soil": [0.098, 0.08, 0.057], "pasture": [0.108, 0.097, 0.04], "pahoehoe": [0.039, 0.043, 0.05], "aa": [0.027, 0.027, 0.029], "black-sand": [0.036, 0.036, 0.037]},
+        "anchorAlbedo": {"scrub-soil": [0.098, 0.08, 0.057], "pasture": [0.086, 0.082, 0.038], "pahoehoe": [0.039, 0.043, 0.05], "aa": [0.027, 0.027, 0.029], "black-sand": [0.036, 0.036, 0.037]},
         # How far above its own albedo the brightness of the imagery may lift the ground of a material (default
         # 1.1): rock is as dark as it is wherever the mosaic is pale; dry grass and soil do vary.
         "toneMax": {"pasture": 1.45, "scrub-soil": 1.3},
@@ -685,9 +691,9 @@ SETS = {
             "kinds": [
                 {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.13, 0.125, 0.045], "tintDry": [0.26, 0.21, 0.09], "clump": 0.7, "clumpM": 9.0},
-                {"id": "scrub", "shape": "bush", "radiusM": [0.5, 1.7], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 64.0,
-                 "tint": [0.05, 0.07, 0.028], "tintDry": [0.10, 0.095, 0.045], "clump": 0.6, "clumpM": 40.0},
-                {"id": "kiawe", "shape": "tree", "radiusM": [2.2, 4.8], "heightPerRadius": [0.75, 1.1], "rangeM": 1800.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 256.0,
+                {"id": "scrub", "shape": "bush", "radiusM": [0.4, 2.3], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 64.0,
+                 "tint": [0.038, 0.054, 0.023], "tintDry": [0.07, 0.07, 0.036], "clump": 0.6, "clumpM": 40.0},
+                {"id": "kiawe", "shape": "tree", "radiusM": [1.9, 5.6], "heightPerRadius": [0.75, 1.1], "rangeM": 1800.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 256.0,
                  "tint": [0.04, 0.053, 0.024], "tintDry": [0.07, 0.075, 0.038], "clump": 0.5, "clumpM": 120.0},
                 # Stands of kiawe as single meshes, from where the single trees have shrunk away out to 7 km.
                 {"id": "stand", "shape": "grove", "radiusM": [12.0, 24.0], "heightPerRadius": [0.26, 0.36], "rangeM": 7000.0, "minPixels": 4.0, "nearM": 1800.0, "chunkM": 512.0,

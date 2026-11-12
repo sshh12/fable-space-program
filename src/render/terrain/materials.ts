@@ -150,6 +150,7 @@ export const SURFACE_PARAM_KEYS = [
   'gravelAlbedoB',
   'imageryCalibrationLevel',
   'imagerySaturation',
+  'imagerySaturationGlobal',
   'imageryRefLuminance',
   'imageryContrast',
   'anchorNear',
@@ -341,7 +342,8 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: 
   f.set([p.gravelAlbedoR, p.gravelAlbedoG, p.gravelAlbedoB, p.reliefShadow], o + 8);
   if (regions.length > MAX_REGIONS) throw new Error(`terrain material set "${m.id}": ${regions.length} regions, at most ${MAX_REGIONS}`);
   f.set([Math.max(p.shoreReachM, 1e-3), Math.max(p.shoreWetnessHeightM, 1e-3), regions.length, Math.max(2, Math.round(p.reliefShadowTaps))], o + 12);
-  o += 16;
+  f.set([p.imagerySaturationGlobal, 0, 0, 0], o + 16);
+  o += 20;
   m.materials.forEach((mt, i) => f.set(m.anchorAlbedo[mt.id] ?? mt.layers[0].meanAlbedo, o + i * 4));
   o += MAX_MATERIALS * 4;
   if (sites.length > MAX_SITES) throw new Error(`terrain: ${sites.length} launch sites on one body, at most ${MAX_SITES}`);

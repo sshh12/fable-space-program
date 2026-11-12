@@ -28,7 +28,7 @@ export const HEX_PERIOD = 64;
  */
 export const MAX_REGIONS = 4;
 /** Floats of the TerrainMaterial uniform. */
-export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6 + 2 + 4 + MAX_MATERIALS + 2 * MAX_SITES + 2 * MAX_SITE_SHAPES + 4 * MAX_REGIONS) * 4;
+export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6 + 2 + 5 + MAX_MATERIALS + 2 * MAX_SITES + 2 * MAX_SITE_SHAPES + 4 * MAX_REGIONS) * 4;
 
 const SURFACE_BINDINGS_WGSL = /* wgsl */ `
 struct TerrainMaterial {
@@ -47,10 +47,11 @@ struct TerrainMaterial {
   p4: vec4f,                                  // texel size on the ground of the near, mid, far and aerial layers (m)
   p5: vec4f,                                  // hexagon blend: weight (octaves) per unit of height above / below the layer's mean; share of the far and aerial relief the terrain's own normal map replaces; width of the gravel shoulder around a site's concrete (m)
   shoreGain: array<vec4f, 2>,                 // weight added on low, level ground at the water's edge
-  p6: vec4f,                                  // imagery calibration: data level above which the imagery is regional (the regions below lie where it has such data; below 0 = the whole body is one region), share of its saturation kept, its reference luminance, exponent of (luminance / reference)
+  p6: vec4f,                                  // imagery calibration: data level above which the imagery is regional (the regions below lie where it has such data; below 0 = the whole body is one region), share of its saturation kept inside a region, its reference luminance, exponent of (luminance / reference)
   p7: vec4f,                                  // share of the material's own hue in the ground colour where a pixel is a few metres, and where it is tens of metres; joint spacing of concrete slabs (m); gravel material (-1 = none)
   p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
   p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); number of regions; taps of the relief-shadow march
+  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; unused
   anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
   siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
   siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
@@ -760,11 +761,21 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   }
   o.first = first;
   o.second = second;
+  // From where a pixel covers many patches the ground is the mixture of all its materials by their weights
+  // (the two heaviest are what is drawn near the eye, in patches).
+  var mixture = vec3f(0.0);
+  var mixtureW = 0.0;
+  for (var m = 0; m < count; m++) {
+    let w = pick8(w0, w1, m);
+    mixture += w * mat.anchor[m].rgb;
+    mixtureW += w;
+  }
   var meanA = mat.anchor[first].rgb;
   var meanB = mat.anchor[second].rgb;
   if (first == gravelM && !slab) { meanA = mat.p8.rgb; }
   if (second == gravelM && slab) { meanB = mat.p8.rgb; }
   o.matAlbedo = mix(meanA, meanB, blend);
+  if (!slab && mixtureW > 0.0 && max(site.x, site.y) <= 0.0) { o.matAlbedo = mix(o.matAlbedo, mixture / mixtureW, smoothstep(4.0, 16.0, footprint)); }
   let chromaA = mat.layerB[first * ${DETAIL_SCALES}].z;
   let chromaB = mat.layerB[second * ${DETAIL_SCALES}].z;
   o.chroma = mix(chromaA, chromaB, blend);
@@ -851,6 +862,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   o.ratioFirst = ratioA;
   o.ratioSecond = ratioB;
   o.matAlbedo = mix(meanA, meanB, bl);
+  if (!slab && mixtureW > 0.0 && max(site.x, site.y) <= 0.0) { o.matAlbedo = mix(o.matAlbedo, mixture / mixtureW, smoothstep(4.0, 16.0, footprint)); }
   o.chroma = mix(chromaA, chromaB, bl);
   o.toneMax = mix(toneA, toneB, bl);
   o.grad = mix(gradA, gradB, bl) * mat.p1.y;
@@ -989,7 +1001,8 @@ ${DETAIL_WGSL}
     // (Level means level: a lake in the height data is flat to a fraction of a degree. Ground that falls two
     // degrees to the sea is a lava plain, whatever the land cover calls it; with a looser test, 0.03 to 0.07,
     // four ponds lay on the slope beside the pad.)
-    let levelGround = 1.0 - smoothstep(0.006, 0.018, tn.slopeMag);
+    // And the imagery must show water there, not lava: blue at least about as strong as red.
+    let levelGround = (1.0 - smoothstep(0.006, 0.018, tn.slopeMag)) * smoothstep(0.8, 1.05, s.albedo.b / max(s.albedo.r, 1e-5));
     let threshold = mix(mix(1.01, 0.5, levelGround), mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {
       water = true;
@@ -1082,12 +1095,22 @@ ${DETAIL_WGSL}
     // (Across the boundary's own direction as often as along it: the two points lie on a line that turns with
     // the ground, by noise of 45 m.)
     let turn = 6.2832 * noiseAt(classLattice * c0 + vec3f(8.8, 3.3, 5.5)).a;
-    let reach = (1.0 - patches) * band * vec2f(cos(turn), sin(turn)) / tileSize;
+    // (At least over half a class texel: from afar the raster's cells are a few pixels each, and the weights
+    // of one bilinear lookup drew their corners.)
+    let reach = max((1.0 - patches) * band, 0.55 * classTexel * (1.0 - classSharp)) * vec2f(cos(turn), sin(turn)) / tileSize;
     let ca = classBlend(t, uv, k, warp + classWarp + reach, classSharp);
     let cc = classBlend(t, uv, k, warp + classWarp - reach, classSharp);
     cb.w0 = 0.5 * cb.w0 + 0.25 * (ca.w0 + cc.w0);
     cb.w1 = 0.5 * cb.w1 + 0.25 * (ca.w1 + cc.w1);
     cb.orb = 0.5 * cb.orb + 0.25 * (ca.orb + cc.orb);
+    if (classTexel > band) {
+      let across = vec2f(-reach.y, reach.x);
+      let cd = classBlend(t, uv, k, warp + classWarp + across, classSharp);
+      let ce = classBlend(t, uv, k, warp + classWarp - across, classSharp);
+      cb.w0 = 0.6 * cb.w0 + 0.2 * (cd.w0 + ce.w0);
+      cb.w1 = 0.6 * cb.w1 + 0.2 * (cd.w1 + ce.w1);
+      cb.orb = 0.6 * cb.orb + 0.2 * (cd.orb + ce.orb);
+    }
   }
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
@@ -1143,7 +1166,9 @@ ${DETAIL_WGSL}
   // albedo of the material it is made of, times the imagery's brightness relative to its usual one (bounded):
   // mostly so where a pixel is finer than the imagery (the materials are what one sees), less from afar.
   let lumI = luminance(s.albedo);
-  let image = mix(vec3f(lumI), s.albedo, mix(1.0, mat.p6.y, calibrated));
+  // (Outside the regions the body-wide imagery keeps mat.p10.x of its saturation: it is a picture graded
+  // for display, more saturated than the ground it shows.)
+  let image = mix(vec3f(lumI), s.albedo, mix(mat.p10.x, mat.p6.y, calibrated));
   var ground = image;
   var own = 0.0;
   if (mat.p7.x > 0.0) {

@@ -131,11 +131,26 @@ export interface CoverObserver {
 }
 
 const RECORD_FLOATS = 16;
-const CHUNK_FLOATS = 12;
+const CHUNK_FLOATS = 8;
+/** Floats of the CoverBody uniform before its table of kinds. */
+const BODY_FLOATS = 36;
+/**
+ * Chunk origins go to the GPU relative to an anchor, a body-fixed point near the camera, and the anchor goes
+ * up every frame relative to the camera: a chunk's row is written when the chunk is built, not every frame
+ * (the body turns under the camera, so camera-relative rows changed every frame even at rest). The anchor
+ * is moved to the camera when the camera has left it by this much, m (32-bit positions stay exact to a
+ * fraction of a millimetre near the eye).
+ */
+const ANCHOR_REACH_M = 64;
 const MAX_RECORDS = 1 << 19;
 const MAX_CHUNKS = 4096;
 const MAX_INSTANCES = 1 << 19;
 const MAX_KINDS = 6;
+/** Density of a clumped kind across its drifts: in the bare lanes and in the thick of a drift, relative to the class's own. */
+const DRIFT_MIN = 0.3;
+const DRIFT_MAX = 1.7;
+/** A plant takes the class of the ground up to this far from where it stands, m (class boundaries are bands). */
+const EDGE_REACH_M = 22;
 /** Chunk builds per frame are limited by time (ms). */
 const BUILD_BUDGET_MS = 0.5;
 /** IDENTITY[i] = i: instance lists are runs of consecutive record indices. */
@@ -157,8 +172,8 @@ const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree
  * one from this many, and not at all below the last: the shadow of a crown beside the eye is then drawn by
  * its sprays, not by the few large ones of a coarser level, and a tussock under two texels across is left out.
  */
-const SHADOW_FINE_TEXELS = 20;
-const SHADOW_MIDDLE_TEXELS = 6;
+const SHADOW_FINE_TEXELS = 48;
+const SHADOW_MIDDLE_TEXELS = 8;
 const SHADOW_MIN_TEXELS = 1;
 
 const COVER_WGSL = /* wgsl */ `
@@ -166,6 +181,8 @@ struct CoverBody {
   rot: mat3x3f,
   prevRot: mat3x3f,
   p0: vec4f,                       // material id, frame body index, unused
+  anchor: vec4f,                   // xyz = the body's anchor (a body-fixed point near the camera) relative to the camera (ROOT axes)
+  prevAnchor: vec4f,               // the same a frame ago
   kinds: array<vec4f, ${MAX_KINDS}>, // per kind: largest range (m), range per metre of radius, shading mode (0 grass, 1 foliage, 2 stone), distance it is drawn from (m)
 }
 struct CoverRecord {
@@ -175,8 +192,7 @@ struct CoverRecord {
   tint: vec4f,     // rgb = linear albedo, a = unused
 }
 struct CoverChunk {
-  origin: vec4f,      // xyz = chunk origin relative to the camera (ROOT axes), w = fade-in 0..1
-  prevOrigin: vec4f,
+  origin: vec4f,      // xyz = chunk origin relative to the body's anchor (body-fixed, m), w = fade-in 0..1
   wind: vec4f,        // xyz = unit direction the wind blows towards (body-fixed), w = lean of grass (share of its height)
 }
 @group(2) @binding(0) var<uniform> coverBody: CoverBody;
@@ -198,7 +214,7 @@ fn coverVertex(position: vec3f, normal: vec3f, instance: u32) -> CoverVertex {
   let r = coverRecords[ri];
   let c = coverChunks[u32(r.misc.y)];
   let kind = coverBody.kinds[u32(r.misc.w)];
-  let centre = coverBody.rot * r.pos.xyz + c.origin.xyz;
+  let centre = coverBody.rot * (r.pos.xyz + c.origin.xyz) + coverBody.anchor.xyz;
   let range = min(r.pos.w * kind.y, kind.x);
   let dist = length(centre);
   var grow = saturate((range - dist) / (0.3 * range)) * c.origin.w;
@@ -212,7 +228,7 @@ fn coverVertex(position: vec3f, normal: vec3f, instance: u32) -> CoverVertex {
     // Grass bends with the prevailing wind: the higher on the blade, the further.
     o.fixed += c.wind.xyz * (c.wind.w * local.z * position.z);
   }
-  o.pos = coverBody.rot * o.fixed + c.origin.xyz;
+  o.pos = coverBody.rot * (o.fixed + c.origin.xyz) + coverBody.anchor.xyz;
   o.normal = quatRotate(r.q, normalize(normal / scale));
   o.rec = ri;
   return o;
@@ -305,7 +321,7 @@ struct CoverVaryings {
   o.position = frame.viewProj * vec4f(v.pos, 1.0);
   o.normal = v.normal;
   o.currClip = frame.viewProjUnjittered * vec4f(v.pos, 1.0);
-  o.prevClip = frame.prevViewProj * vec4f(coverBody.prevRot * v.fixed + c.prevOrigin.xyz, 1.0);
+  o.prevClip = frame.prevViewProj * vec4f(coverBody.prevRot * (v.fixed + c.origin.xyz) + coverBody.prevAnchor.xyz, 1.0);
   o.rec = v.rec;
   o.model = position;
   o.fixed = v.fixed;
@@ -392,7 +408,8 @@ struct CoverVaryings {
       albedo *= leaf.rgb * (0.8 + 0.4 * fract(in.aux.y)) * mix(0.62, 1.1, h) * mix(0.6, 1.0, depth);
       ao = mix(0.4, 1.0, h) * mix(0.5, 1.0, depth);
       shade = 0.5 * (1.0 - depth);
-      rough = 0.62;
+      // (Leaves of a dry coast are matt: with a gloss the crowns looked frosted against the light.)
+      rough = 0.88;
       through = 0.6;
     } else {
       // Leaf clusters of a stand of trees: gaps between the leaves when the stand is large on screen (not
@@ -499,6 +516,9 @@ interface Chunk {
   /** Ends of the listed prefixes per variant (for the shadow lists). */
   listEnd: Int32Array;
   listed: boolean;
+  /** What the chunk's row on the GPU was written with: the anchor's version and the fade-in (-1: never). */
+  rowAnchor: number;
+  rowFade: number;
 }
 
 interface Tier {
@@ -539,6 +559,20 @@ interface CoverBody {
   eye: Vec3;
   /** The G-buffer lists of the last build: what they were built from (signature of the listed chunks, eye, pixel scale) and where they lie in the instance buffer. */
   list: { sig: number; eye: Vec3; pixelAngle: number; start: number; count: number; triangles: number } | null;
+  /** The anchor (body-fixed, m), a counter of its moves, and where it is relative to the camera now and a frame ago (ROOT axes). */
+  anchor: Vec3 | null;
+  anchorVersion: number;
+  anchorRel: Vec3;
+  prevAnchorRel: Vec3;
+  /** This frame's observer of the body (null: the body is out of range). */
+  observer: CoverObserver | null;
+  ground: number;
+  /**
+   * The view the body was last worked through for, when that left nothing to do (every chunk built and faded
+   * in): while the camera stands in it, the chunks, their rows and the lists are as they are, and a frame
+   * costs the uniform only.
+   */
+  rest: { eye: Vec3; planes: Vec3[]; pixelAngle: number; empty: boolean } | null;
 }
 
 /** Land-cover classes of a body's deepest baked level around the camera, decoded on the main thread. */
@@ -653,7 +687,9 @@ export class CoverRenderer {
   private bucketData: Uint32Array<ArrayBuffer>[] = Array.from({ length: BUCKETS }, () => new Uint32Array(1024));
   private readonly bucketCount = new Int32Array(BUCKETS);
   private readonly shadowRanges = new Int32Array(BUCKETS * 2);
-  private readonly uniformData = new Float32Array(28 + MAX_KINDS * 4);
+  private readonly uniformData = new Float32Array(BODY_FLOATS + MAX_KINDS * 4);
+  /** Rows of chunkData that differ from the GPU's: first and last slot. */
+  private chunkDirty: [number, number] = [Infinity, -1];
   private readonly freeSlots: number[] = Array.from({ length: MAX_CHUNKS }, (_, i) => MAX_CHUNKS - 1 - i);
   private instanceCount = 0;
   /** The CPU copy of the instance lists differs from the GPU's in [0, instanceCount) this frame. */
@@ -809,6 +845,13 @@ export class CoverRenderer {
         wind: { x: 1, y: 0, z: 0 },
         eye: v3.zero(),
         list: null,
+        anchor: null,
+        anchorVersion: 0,
+        anchorRel: v3.zero(),
+        prevAnchorRel: v3.zero(),
+        observer: null,
+        ground: 0,
+        rest: null,
       });
     }
   }
@@ -832,15 +875,21 @@ export class CoverRenderer {
         densest = Math.max(densest, tier.density[cls]!);
       }
     }
-    const ceiling = densest * (1 + kind.clump);
+    const ceiling = densest * (1 + kind.clump) * (kind.clump > 0 ? DRIFT_MAX : 1);
     const candidates = Math.ceil(area * ceiling);
+    // Where two classes meet, each thins out into the other over some tens of metres (the class of a plant
+    // is looked up a random step away from where it stands), as the ground's materials do.
+    const reachDir = EDGE_REACH_M / R;
     const found: { data: number[]; radius: number; variant: number }[] = [];
     const [r0, r1] = kind.radiusM;
     const seed = hash4(c.key.face, c.key.x, c.key.y, 0x0c07e4 + tier.kindIndex);
     for (let i = 0; i < candidates; i++) {
       const h = hash4(i, seed, 1, 0);
       const dir = tileUvToDir(c.key, hashToUnit(h), hashToUnit(hash4(i, seed, 2, 0)));
-      const cls = b.land.classAt(dir);
+      const jx = (hashToUnit(hash4(i, seed, 11, 0)) - 0.5) * 2 * reachDir;
+      const jy = (hashToUnit(hash4(i, seed, 12, 0)) - 0.5) * 2 * reachDir;
+      const jz = (hashToUnit(hash4(i, seed, 13, 0)) - 0.5) * 2 * reachDir;
+      const cls = b.land.classAt({ x: dir.x + jx, y: dir.y + jy, z: dir.z + jz });
       if (cls < 0) return false;
       let density = tier.density[cls]!;
       if (density <= 0) continue;
@@ -851,6 +900,10 @@ export class CoverRenderer {
         const n = valueNoise(px / kind.clumpM, py / kind.clumpM, pz / kind.clumpM, 0x1234 + tier.kindIndex);
         const t = Math.min(1, Math.max(0, (n - 0.35) / 0.3));
         density *= 1 - kind.clump + kind.clump * 2 * t * t * (3 - 2 * t);
+        // Drifts and bare lanes at four times the size of the clumps: cover is never evenly sprinkled.
+        const wide = valueNoise(px / (4.3 * kind.clumpM), py / (4.3 * kind.clumpM), pz / (4.3 * kind.clumpM), 0x4321 + tier.kindIndex);
+        const d = Math.min(1, Math.max(0, (wide - 0.3) / 0.4));
+        density *= DRIFT_MIN + (DRIFT_MAX - DRIFT_MIN) * d * d * (3 - 2 * d);
       }
       if (hashToUnit(hash4(i, seed, 3, 0)) * ceiling >= density) continue;
       // Nothing grows or lies on a launch site's concrete and gravel, and little beside it.
@@ -1017,6 +1070,8 @@ export class CoverRenderer {
             lastUsed: -1,
             listEnd: new Int32Array(COVER_VARIANTS),
             listed: false,
+            rowAnchor: -1,
+            rowFade: -1,
           };
           tier.chunks.set(id, c);
         }
@@ -1034,11 +1089,13 @@ export class CoverRenderer {
     this.fading = 0;
     const t0 = performance.now();
     const pixelAngle = (2 * Math.tan(frame.camera.fovY / 2)) / frame.renderSize[1];
-    let any = false;
+    // Which bodies are in range, and where their anchors are.
+    let resting = true;
     for (const b of this.bodies) {
       const o = observers.find((x) => x.id === b.info.id);
       b.active = false;
       b.empty = true;
+      b.observer = null;
       if (!o) continue;
       const R = b.info.def.radius;
       const pose = frame.bodies[o.bodyIndex]!;
@@ -1049,86 +1106,46 @@ export class CoverRenderer {
       b.prevCentre = pose.prevCenterRelCam;
       const longest = b.tiers.reduce((m, t) => Math.max(m, t.kind.rangeM), 0);
       if (o.r - R > longest + 12000) continue;
-      const ground = this.provider.heightAt(b.info.id, o.dir, 20);
-      if (o.r - R - ground > longest) continue;
-      // Height data around the camera for the placements (pinned under one slot).
-      const groundPos = v3.scale(o.dir, R + ground);
-      const wantRadius = Math.min(longest, 1500) + 300;
-      if (!b.loading && (!b.loaded || v3.dist(b.loaded.centre, groundPos) > 250)) {
-        b.loading = true;
-        this.provider.ensureLoaded(b.info.id, o.dir, wantRadius, 'terrain-render:cover').then(
-          () => {
-            b.loaded = { centre: groundPos, radius: wantRadius };
-            b.loading = false;
-          },
-          (e: unknown) => {
-            b.loading = false;
-            coreOf(this.ctx).reportError(`terrain cover: ${e instanceof Error ? e.message : String(e)}`);
-          },
-        );
+      b.ground = this.provider.heightAt(b.info.id, o.dir, 20);
+      if (o.r - R - b.ground > longest) continue;
+      b.observer = o;
+      if (!b.anchor || v3.dist(b.anchor, o.eye) > ANCHOR_REACH_M) {
+        b.anchor = v3.clone(o.eye);
+        b.anchorVersion++;
+        b.rest = null;
       }
-      if (!b.loaded) {
-        this.unbuilt++;
-        continue;
-      }
-      // The wind is a compass direction: its body-fixed vector is taken at the camera.
-      const east = v3.normalize(v3.cross(Math.abs(o.dir.z) < 0.99 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 }, o.dir));
-      const north = v3.cross(o.dir, east);
-      const az = b.info.cover.windToDeg * DEG;
-      b.wind = v3.add(v3.scale(east, Math.sin(az)), v3.scale(north, Math.cos(az)));
-      b.eye = o.eye;
-      b.active = true;
-
-      let build: { tier: Tier; c: Chunk }[] | null = null;
-      for (const tier of b.tiers) {
-        tier.rangePerRadius = 2 / (Math.max(tier.kind.minPixels, 0.5) * pixelAngle);
-        if (!tier.scanned || v3.dist(o.eye, tier.scanned) > 0.25 * tier.chunkSize) this.scan(b, tier, o, ground);
-        const range = tier.kind.rangeM;
-        for (const c of tier.wanted) {
-          const dx = c.origin.x - o.eye.x;
-          const dy = c.origin.y - o.eye.y;
-          const dz = c.origin.z - o.eye.z;
-          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          c.near = Math.max(0, d - c.reach);
-          c.visible = false;
-          if (c.near > range || d + c.reach < 0.7 * tier.kind.nearM) continue;
-          c.lastUsed = this.frameIndex;
-          let inside = true;
-          for (const pl of o.frustum.planes) {
-            if (dx * pl.x + dy * pl.y + dz * pl.z < -c.reach) {
-              inside = false;
-              break;
-            }
-          }
-          c.visible = inside;
-          if (!c.built) (build ??= []).push({ tier, c });
-        }
-      }
-      if (build) {
-        // In view first, then nearest first.
-        build.sort((p, q) => Number(q.c.visible) - Number(p.c.visible) || p.c.near / p.tier.kind.rangeM - q.c.near / q.tier.kind.rangeM);
-        for (const { tier, c } of build) {
-          if (performance.now() - t0 > BUILD_BUDGET_MS || !this.buildChunk(b, tier, c)) this.unbuilt++;
-        }
-      }
-      this.unbuilt += b.land.pending;
-      // Forget chunks that have not been in range for a while (their records become a hole in the buffer,
-      // closed when its end is reached).
-      if (this.frameIndex % 120 === 0) {
-        for (const tier of b.tiers) {
-          for (const [id, c] of tier.chunks) {
-            if (c.lastUsed < this.frameIndex - 600 && !tier.wanted.includes(c)) {
-              tier.chunks.delete(id);
-              this.freeSlots.push(c.slot);
-            }
-          }
-        }
-      }
+      const a = b.anchor;
+      const m = b.rot;
+      const q = b.prevRot;
+      b.anchorRel = { x: m[0] * a.x + m[1] * a.y + m[2] * a.z + b.centre.x, y: m[3] * a.x + m[4] * a.y + m[5] * a.z + b.centre.y, z: m[6] * a.x + m[7] * a.y + m[8] * a.z + b.centre.z };
+      b.prevAnchorRel = { x: q[0] * a.x + q[1] * a.y + q[2] * a.z + b.prevCentre.x, y: q[3] * a.x + q[4] * a.y + q[5] * a.z + b.prevCentre.y, z: q[6] * a.x + q[7] * a.y + q[8] * a.z + b.prevCentre.z };
+      const rest = b.rest;
+      if (!rest || !b.list || rest.pixelAngle !== pixelAngle || v3.dist(rest.eye, o.eye) >= LIST_TOLERANCE_M || rest.planes.length !== o.frustum.planes.length || rest.planes.some((pl, i) => v3.dist(pl, o.frustum.planes[i]!) > 1e-5)) resting = false;
     }
+    // (The lists of every body lie one after another in the instance buffer: they are kept only together.)
+    if (!resting) for (const b of this.bodies) b.rest = null;
     this.instancesDirty = false;
+    let any = false;
     for (const b of this.bodies) {
-      if (!b.active) continue;
-      this.buildDraws(b, pixelAngle);
+      const o = b.observer;
+      if (!o) continue;
+      const rest = b.rest;
+      if (rest && b.list) {
+        // Nothing has changed since the last frame that was worked through.
+        b.active = true;
+        b.empty = rest.empty;
+        this.instanceCount += b.list.count;
+        this.triangles += b.list.triangles;
+      } else {
+        const unbuiltBefore = this.unbuilt;
+        this.refresh(b, o, t0, pixelAngle);
+        if (!b.active) continue;
+        const fadingBefore = this.fading;
+        this.buildDraws(b, pixelAngle);
+        if (this.unbuilt === unbuiltBefore && this.fading === fadingBefore && !b.loading) {
+          b.rest = { eye: v3.clone(o.eye), planes: o.frustum.planes.map((pl) => v3.clone(pl)), pixelAngle, empty: b.empty };
+        }
+      }
       if (b.empty) continue;
       any = true;
       const u = this.uniformData;
@@ -1138,12 +1155,94 @@ export class CoverRenderer {
       u.set([m[0], m[3], m[6], 0, m[1], m[4], m[7], 0, m[2], m[5], m[8], 0], 0);
       u.set([pm[0], pm[3], pm[6], 0, pm[1], pm[4], pm[7], 0, pm[2], pm[5], pm[8], 0], 12);
       u.set([MATERIAL_ID.terrain, b.bodyIndex, 0, 0], 24);
-      for (const tier of b.tiers) u.set([tier.kind.rangeM, tier.rangePerRadius, SHAPE_MODE[tier.kind.shape], tier.kind.nearM], 28 + tier.kindIndex * 4);
+      u.set([b.anchorRel.x, b.anchorRel.y, b.anchorRel.z, 0, b.prevAnchorRel.x, b.prevAnchorRel.y, b.prevAnchorRel.z, 0], 28);
+      for (const tier of b.tiers) u.set([tier.kind.rangeM, tier.rangePerRadius, SHAPE_MODE[tier.kind.shape], tier.kind.nearM], BODY_FLOATS + tier.kindIndex * 4);
       this.device.queue.writeBuffer(b.uniform, 0, u);
     }
-    if (any) {
-      this.device.queue.writeBuffer(this.chunkBuffer, 0, this.chunkData);
-      if (this.instanceCount > 0 && this.instancesDirty) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
+    if (this.chunkDirty[1] >= this.chunkDirty[0]) {
+      this.device.queue.writeBuffer(this.chunkBuffer, this.chunkDirty[0] * CHUNK_FLOATS * 4, this.chunkData, this.chunkDirty[0] * CHUNK_FLOATS, (this.chunkDirty[1] - this.chunkDirty[0] + 1) * CHUNK_FLOATS);
+      this.chunkDirty = [Infinity, -1];
+    }
+    if (any && this.instanceCount > 0 && this.instancesDirty) this.device.queue.writeBuffer(this.instanceBuffer, 0, this.instances, 0, this.instanceCount);
+  }
+
+  /** Work a body through for this frame's view: the height data around the camera, the chunks in range (scanned, tested against the view, built within the frame's budget). */
+  private refresh(b: CoverBody, o: CoverObserver, t0: number, pixelAngle: number): void {
+    const R = b.info.def.radius;
+    const ground = b.ground;
+    const longest = b.tiers.reduce((m, t) => Math.max(m, t.kind.rangeM), 0);
+    // Height data around the camera for the placements (pinned under one slot).
+    const groundPos = v3.scale(o.dir, R + ground);
+    const wantRadius = Math.min(longest, 1500) + 300;
+    if (!b.loading && (!b.loaded || v3.dist(b.loaded.centre, groundPos) > 250)) {
+      b.loading = true;
+      this.provider.ensureLoaded(b.info.id, o.dir, wantRadius, 'terrain-render:cover').then(
+        () => {
+          b.loaded = { centre: groundPos, radius: wantRadius };
+          b.loading = false;
+        },
+        (e: unknown) => {
+          b.loading = false;
+          coreOf(this.ctx).reportError(`terrain cover: ${e instanceof Error ? e.message : String(e)}`);
+        },
+      );
+    }
+    if (!b.loaded) {
+      this.unbuilt++;
+      return;
+    }
+    // The wind is a compass direction: its body-fixed vector is taken at the camera.
+    const east = v3.normalize(v3.cross(Math.abs(o.dir.z) < 0.99 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 }, o.dir));
+    const north = v3.cross(o.dir, east);
+    const az = b.info.cover.windToDeg * DEG;
+    b.wind = v3.add(v3.scale(east, Math.sin(az)), v3.scale(north, Math.cos(az)));
+    b.eye = o.eye;
+    b.active = true;
+
+    let build: { tier: Tier; c: Chunk }[] | null = null;
+    for (const tier of b.tiers) {
+      tier.rangePerRadius = 2 / (Math.max(tier.kind.minPixels, 0.5) * pixelAngle);
+      if (!tier.scanned || v3.dist(o.eye, tier.scanned) > 0.25 * tier.chunkSize) this.scan(b, tier, o, ground);
+      const range = tier.kind.rangeM;
+      for (const c of tier.wanted) {
+        const dx = c.origin.x - o.eye.x;
+        const dy = c.origin.y - o.eye.y;
+        const dz = c.origin.z - o.eye.z;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        c.near = Math.max(0, d - c.reach);
+        c.visible = false;
+        if (c.near > range || d + c.reach < 0.7 * tier.kind.nearM) continue;
+        c.lastUsed = this.frameIndex;
+        let inside = true;
+        for (const pl of o.frustum.planes) {
+          if (dx * pl.x + dy * pl.y + dz * pl.z < -c.reach) {
+            inside = false;
+            break;
+          }
+        }
+        c.visible = inside;
+        if (!c.built) (build ??= []).push({ tier, c });
+      }
+    }
+    if (build) {
+      // In view first, then nearest first.
+      build.sort((p, q) => Number(q.c.visible) - Number(p.c.visible) || p.c.near / p.tier.kind.rangeM - q.c.near / q.tier.kind.rangeM);
+      for (const { tier, c } of build) {
+        if (performance.now() - t0 > BUILD_BUDGET_MS || !this.buildChunk(b, tier, c)) this.unbuilt++;
+      }
+    }
+    this.unbuilt += b.land.pending;
+    // Forget chunks that have not been in range for a while (their records become a hole in the buffer,
+    // closed when its end is reached).
+    if (this.frameIndex % 120 === 0) {
+      for (const tier of b.tiers) {
+        for (const [id, c] of tier.chunks) {
+          if (c.lastUsed < this.frameIndex - 600 && !tier.wanted.includes(c)) {
+            tier.chunks.delete(id);
+            this.freeSlots.push(c.slot);
+          }
+        }
+      }
     }
   }
 
@@ -1197,11 +1296,11 @@ export class CoverRenderer {
    */
   private buildDraws(b: CoverBody, pixelAngle: number): void {
     const lean = b.info.cover.windLean;
-    // First the chunk rows (every frame: they are relative to the camera) and which chunks are listed, with a
-    // signature of everything the lists are built from apart from the eye. The lists themselves are kept
-    // between frames while that signature, the pixel scale and the eye (within LIST_TOLERANCE_M) stay: a
-    // camera that stands still (on the pad before lift-off) costs the rows only, not some hundred thousand
-    // instance indices sorted into buckets and uploaded again.
+    // First the chunk rows (relative to the body's anchor: written when a chunk is first listed, while it
+    // fades in and when the anchor has moved) and which chunks are listed, with a signature of everything
+    // the lists are built from apart from the eye. The lists themselves are kept between frames while that
+    // signature, the pixel scale and the eye (within LIST_TOLERANCE_M) stay: a camera that moves a little
+    // costs neither rows nor some hundred thousand instance indices sorted into buckets and uploaded again.
     let sig = 0x811c9dc5;
     const mix = (x: number): void => {
       sig = Math.imul(sig ^ (x | 0), 0x01000193);
@@ -1210,25 +1309,27 @@ export class CoverRenderer {
       for (const c of tier.wanted) {
         c.listed = false;
         if (!c.built || c.base < 0 || c.count === 0 || c.lastUsed !== this.frameIndex) continue;
-        const g = c.origin;
-        const m = b.rot;
-        const q = b.prevRot;
-        const o = c.slot * CHUNK_FLOATS;
-        const d = this.chunkData;
         const age = this.clock - c.born;
         const fade = age >= FADE_SECONDS ? 1 : Math.max(0, age / FADE_SECONDS);
         if (fade < 1) this.fading++;
-        d[o] = m[0] * g.x + m[1] * g.y + m[2] * g.z + b.centre.x;
-        d[o + 1] = m[3] * g.x + m[4] * g.y + m[5] * g.z + b.centre.y;
-        d[o + 2] = m[6] * g.x + m[7] * g.y + m[8] * g.z + b.centre.z;
-        d[o + 3] = fade * fade * (3 - 2 * fade);
-        d[o + 4] = q[0] * g.x + q[1] * g.y + q[2] * g.z + b.prevCentre.x;
-        d[o + 5] = q[3] * g.x + q[4] * g.y + q[5] * g.z + b.prevCentre.y;
-        d[o + 6] = q[6] * g.x + q[7] * g.y + q[8] * g.z + b.prevCentre.z;
-        d[o + 8] = b.wind.x;
-        d[o + 9] = b.wind.y;
-        d[o + 10] = b.wind.z;
-        d[o + 11] = lean;
+        if (c.rowAnchor !== b.anchorVersion || c.rowFade !== fade) {
+          const g = c.origin;
+          const a = b.anchor!;
+          const o = c.slot * CHUNK_FLOATS;
+          const d = this.chunkData;
+          d[o] = g.x - a.x;
+          d[o + 1] = g.y - a.y;
+          d[o + 2] = g.z - a.z;
+          d[o + 3] = fade * fade * (3 - 2 * fade);
+          d[o + 4] = b.wind.x;
+          d[o + 5] = b.wind.y;
+          d[o + 6] = b.wind.z;
+          d[o + 7] = lean;
+          c.rowAnchor = b.anchorVersion;
+          c.rowFade = fade;
+          if (c.slot < this.chunkDirty[0]) this.chunkDirty[0] = c.slot;
+          if (c.slot > this.chunkDirty[1]) this.chunkDirty[1] = c.slot;
+        }
         const minRadius = c.near / tier.rangePerRadius;
         if (c.maxRadius < minRadius) continue;
         c.listed = true;
@@ -1338,6 +1439,7 @@ export class CoverRenderer {
     const b = this.bodies.find((x) => x.info.id === bodyId);
     if (!b || !b.active || b.empty) return;
     const m = cascade.viewProj;
+    const rot = b.rot;
     const texelRadius = SHADOW_MIN_TEXELS * cascade.texelSize;
     const ndcPerMetre = 1 / (cascade.texelSize * 1024);
     const start0 = this.instanceCount;
@@ -1347,10 +1449,14 @@ export class CoverRenderer {
       const base = tier.shape * COVER_VARIANTS * COVER_LODS;
       for (const c of tier.wanted) {
         if (!c.listed || c.maxRadius < texelRadius) continue;
+        // The chunk relative to the camera (ROOT axes), from its anchor-relative row.
         const o = c.slot * CHUNK_FLOATS;
-        const px = this.chunkData[o]!;
-        const py = this.chunkData[o + 1]!;
-        const pz = this.chunkData[o + 2]!;
+        const ox = this.chunkData[o]!;
+        const oy = this.chunkData[o + 1]!;
+        const oz = this.chunkData[o + 2]!;
+        const px = rot[0] * ox + rot[1] * oy + rot[2] * oz + b.anchorRel.x;
+        const py = rot[3] * ox + rot[4] * oy + rot[5] * oz + b.anchorRel.y;
+        const pz = rot[6] * ox + rot[7] * oy + rot[8] * oz + b.anchorRel.z;
         const margin = 1 + (c.reach + 8) * ndcPerMetre;
         if (Math.abs(m[0]! * px + m[4]! * py + m[8]! * pz + m[12]!) > margin || Math.abs(m[1]! * px + m[5]! * py + m[9]! * pz + m[13]!) > margin) continue;
         for (let v = 0; v < COVER_VARIANTS; v++) {

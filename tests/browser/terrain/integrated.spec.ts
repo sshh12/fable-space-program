@@ -1,5 +1,5 @@
 import { assertDiscreteGpu, expect, openPage, saveScreenshot, test, waitIdle } from '../harness';
-import { PAD } from './util';
+import { LUNAR_SITE, PAD } from './util';
 
 test.use({ viewport: { width: 1920, height: 1080 } });
 
@@ -27,10 +27,18 @@ interface IntegratedView {
  * The game's own views of the two surfaces (the lab's default chase camera on the vessel, every package
  * that is in the tree): the stack on the pad and the lander on the Moon, as a player sees the ground.
  */
-const GAME_VIEWS: { name: string; scene: string }[] = [
-  { name: 'game-pad', scene: 'pad' },
-  { name: 'game-lunar-surface', scene: 'lunarSurface' },
+const GAME_VIEWS: { name: string; scene: string; extra: string }[] = [
+  { name: 'game-pad', scene: 'pad', extra: `&sun=105,31&sunsite=earth,${PAD.lat},${PAD.lon}` },
+  { name: 'game-lunar-surface', scene: 'lunarSurface', extra: `&sun=92,11&sunsite=moon,${LUNAR_SITE.lat},${LUNAR_SITE.lon}` },
 ];
+
+/**
+ * The views of the ground are exposed as a photographer exposes in daylight (EV100 14.5: "sunny 16" less
+ * half a stop), not by the lab's meter: a frame filled with lava is metered up two and a half stops, to a
+ * grey plain under a blown sky, and a photograph of a lava field is not taken that way. The game's own
+ * views (GAME_VIEWS) keep the meter. The far views (10 km and up) keep it too: sea, cloud and land.
+ */
+const DAYLIGHT_EV = 14.5;
 
 const VIEWS: IntegratedView[] = [
   { name: 'apron-eye', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, alt: PAD_ELEVATION + 1.7, heading: 2, pitch: -6 },
@@ -73,6 +81,7 @@ test('the ground around the pad with sky, atmosphere and ocean (integration lab)
       sunsite: `earth,${PAD.lat},${PAD.lon}`,
     });
     if (v.fov) q.set('fov', String(v.fov));
+    if (v.alt < 5000) q.set('ev', String(DAYLIGHT_EV));
     await openPage(page, `/labs/integration/?${q.toString()}`, { timeoutMs: 180_000 });
     await assertDiscreteGpu(page);
     await waitIdle(page, 20, 240_000);
@@ -92,7 +101,7 @@ test('the ground under the vessel as the game shows it (integration lab, every p
   test.setTimeout(20 * 60_000);
   for (const v of GAME_VIEWS) {
     if (only && !only.includes(v.name)) continue;
-    await openPage(page, `/labs/integration/?features=all&scene=${v.scene}&paused=1`, { timeoutMs: 180_000 });
+    await openPage(page, `/labs/integration/?features=all&scene=${v.scene}&paused=1${v.extra}`, { timeoutMs: 180_000 });
     await assertDiscreteGpu(page);
     await waitIdle(page, 20, 240_000);
     const info = await page.evaluate(() => {

@@ -470,8 +470,11 @@ export class RockRenderer {
     // material's own albedo.
     const anchored = b.info.params.anchorNear > 0.5;
     const rockLayer = b.info.set.index.get(b.info.set.manifest.rockMaterial)!;
-    const tint = anchored ? b.info.set.manifest.materials[rockLayer]!.layers[0].meanAlbedo : b.info.albedoAt(c.centre);
-    const scale = anchored ? 1.5 * b.info.params.rockAlbedoScale : b.info.params.rockAlbedoScale;
+    const rockId = b.info.set.manifest.rockMaterial;
+    const tint = anchored ? (b.info.set.manifest.anchorAlbedo[rockId] ?? b.info.set.manifest.materials[rockLayer]!.layers[0].meanAlbedo) : b.info.albedoAt(c.centre);
+    // (No lift over the material's albedo: a block of clinker is as dark as the flow it broke from. With one
+    // and a half times the mean of the photographs the blocks were pale boxes on dark ground.)
+    const scale = b.info.params.rockAlbedoScale;
     c.variantStart.fill(found.length);
     found.forEach((rock, n) => {
       const variant = shape(rock);

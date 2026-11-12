@@ -52,10 +52,11 @@
     "gravelAlbedoB": 0.09,
     "imageryCalibrationLevel": 7,
     "imagerySaturation": 0.7,
+    "imagerySaturationGlobal": 0.8,
     "imageryRefLuminance": 0.035,
     "imageryContrast": 0.6,
     "anchorNear": 0.9,
-    "anchorFar": 0.6,
+    "anchorFar": 0.8,
     "reliefShadow": 1,
     "reliefShadowTaps": 4,
     "shoreReachM": 4
