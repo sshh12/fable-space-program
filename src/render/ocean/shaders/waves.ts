@@ -227,9 +227,11 @@ fn oceanFftDisplacement(p: vec2f, filterWidth: f32, amp: vec4f, prev: bool) -> O
   return o;
 }
 
-/// Fraction (0..1) of complete wave detail at eye distance d: 1 inside fade.z, 0 from fadeStart on; and 0
-/// everywhere for a camera so high that no pixel resolves more than the far-wave bank of brdf_water draws.
-fn oceanDetail(d: f32) -> f32 { return (1.0 - smoothstep(oceanU.fade.z, oceanU.fade.x, d)) * oceanU.glint.z; }
+/// Fraction (0..1) of complete wave detail at eye distance d: 1 inside fade.z, 0 from 0.98 fadeStart on (the last
+/// 2 % before fadeStart are already the flat surface with the far sheet's own inputs: there the two passes must give
+/// the same pixel, and a sparkle is a count of facets, which a normal tilted in the fourth digit can change by one);
+/// and 0 everywhere for a camera so high that no pixel resolves more than the far-wave bank of brdf_water draws.
+fn oceanDetail(d: f32) -> f32 { return (1.0 - smoothstep(oceanU.fade.z, 0.98 * oceanU.fade.x, d)) * oceanU.glint.z; }
 
 /// Height of the shared swell at sphere offset 'delta' as it was 'back' seconds ago (deep-water dispersion; for the
 /// foam a breaking swell crest leaves behind, not for the drawn surface).

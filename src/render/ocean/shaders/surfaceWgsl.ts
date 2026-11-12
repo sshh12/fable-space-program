@@ -724,7 +724,7 @@ struct FsOut {
     breaker = wc.x;
     // What a breaker left stays dense and loses AREA as it ages (it tears and shrinks; it does not thin to dust).
     // (Never quite solid: a breaker is torn water, with holes where the lace is thinnest.)
-    density = min(saturate(wc.x + oceanU.foam.x * smoothstep(0.3, 0.7, wc.y) * (1.0 - wc.x)), 0.86);
+    density = min(saturate(wc.x + oceanU.foam.x * smoothstep(0.25, 0.6, wc.y) * (1.0 - wc.x)), 0.95);
   }
   // Surf, where the water is shallower than the swell can stand in:
   //  - bores run shoreward at sqrt(g h) (lines of equal travel time to the shore, a sharp front with the foam it
