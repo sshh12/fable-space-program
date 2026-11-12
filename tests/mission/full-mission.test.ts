@@ -23,6 +23,7 @@ import { compareEnvelope, describeEnvelope, parseControls, type MissionRecord } 
 import { BASELINE_FILE, captureMilestones, readRecord } from '../../tools/dev/record-mission-baseline';
 import { ScenarioCapturer, scenarioFileText } from '../../tools/sim/qaScenarios';
 import { compareToReference, readReference, referenceRecorder, referenceTable, type ReferenceDifference } from '../../tools/sim/referenceFlight';
+import { DEBRIS_DISTANCE_TOLERANCE, DEBRIS_TIME_TOLERANCE, debrisDifferences, fatesOf, guardObserver, readGuard, sampleDifference, survivorsOf, type GuardSample } from '../../tools/sim/trajectoryGuard';
 import {
   CLEARANCE_SETTLE,
   deepestDataLevel,
@@ -56,6 +57,8 @@ let b: Flight;
 let capturer: ScenarioCapturer;
 let record: MissionRecord;
 let sameStart: ReferenceDifference[];
+/** The samples of the trajectory guard as this flight gives them (tests/mission/trajectory-guard.json). */
+let guardSamples: GuardSample[];
 /** Control ticks of the nominal flight whose state time is not a whole tick (none on the tick grid). */
 let offGridTicks = 0;
 let delayed: ReturnType<typeof delayedSource> | null = null;
@@ -71,17 +74,20 @@ beforeAll(async () => {
   const milestones = captureMilestones('this flight');
   const reference = readReference();
   const ascent = referenceRecorder(reference.lastMilestone);
+  const guard = guardObserver(readGuard().samples.map((s) => s.controlTick));
   a = await fly({
     scenario: SCENARIO,
     onPilotTick: (s, phase) => {
       capturer.onTick(s, phase);
       milestones.onPilotTick(s);
       ascent.onTick(s);
+      guard.onTick(s);
       if (!isTickInstant(s.simUt)) offGridTicks++;
     },
   });
   record = milestones.finish(a, tileContentHashes(a.defs));
   sameStart = compareToReference(reference, ascent.states((bodyId) => a.defs.bodies[bodyId]!.mu));
+  guardSamples = guard.samples();
   b = await fly({ scenario: SCENARIO, replay: { inputLog: a.run.inputLog, ticks: a.run.stats.ticks }, wrapSource: (source) => (delayed = delayedSource(source)) });
 }, 900_000);
 
@@ -400,6 +406,31 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     expect(apart).toBeLessThan(50);
     note('envelope', `all 17 milestones inside twice the spread of ${controls.length} v1 control flights; touchdown ${apart.toFixed(2)} m from the baseline's point; splashdown in "${record.final.recoveryZone}"`, 'event time and da/a within 2 x the controls; 50 m; the same recovery zone');
     console.log(`\nEnvelope against tests/mission/baseline-v1.json:\n${describeEnvelope(rows)}`);
+  });
+
+  it('trajectory guard: the attended craft and the launch clamps at 400 ticks are bit-identical to the recording', () => {
+    // tests/mission/trajectory-guard.json, recorded once on the tick-grid tree and never again (MIGRATION_V2
+    // principle 4): body-centred position, velocity, attitude and mass as float64 bit patterns.
+    const guard = readGuard();
+    expect(guard.samples).toHaveLength(400);
+    expect(guardSamples).toHaveLength(400);
+    expect(a.run.stats.ticks).toBe(guard.flight.controlTicks);
+    expect(a.run.stats.steps).toBe(guard.flight.steps);
+    expect(a.run.stats.railsAdvances).toBe(guard.flight.railsAdvances);
+    expect(Math.round(a.run.finalUt * 120)).toBe(guard.flight.endTick);
+    expect(sampleDifference(guard, guardSamples)).toBeNull();
+    const clamps = guard.samples.filter((s) => s.firstShed !== null).length;
+    note('trajectory guard', `all 400 samples bit-identical: the attended craft (${guard.samples.filter((s) => s.attended.bodyId === a.defs.rootBodyId).length} about ${a.defs.rootBodyId}, ${guard.samples.filter((s) => s.attended.bodyId !== a.defs.rootBodyId).length} about another body) and the first vessel it shed, the launch clamps (${clamps} samples)`, 'bit for bit');
+  });
+
+  it('trajectory guard: every piece of debris meets its recorded fate within 2 s and 500 m', () => {
+    const guard = readGuard();
+    const rows = debrisDifferences(guard, fatesOf(a.debris), survivorsOf(a.run.last), (id) => a.defs.bodies[id]!);
+    expect(rows).toHaveLength(guard.debris.length + guard.survivors.length);
+    for (const r of rows) expect(r.problem, r.name).toBeNull();
+    const worstTime = Math.max(...rows.map((r) => Math.abs(r.dTime)));
+    const worstDistance = Math.max(...rows.map((r) => r.distance));
+    note('debris', `${guard.debris.length} fates and ${guard.survivors.length} survivors as recorded: at most ${worstTime.toFixed(3)} s and ${worstDistance.toFixed(3)} m from the recording`, `${DEBRIS_TIME_TOLERANCE} s, ${DEBRIS_DISTANCE_TOLERANCE} m`);
   });
 
   it('cost: under 5 minutes of wall clock and under 100 microseconds per step', () => {

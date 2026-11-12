@@ -30,7 +30,8 @@ function fly(v: Vessel, env: FakeEnv, altitude: number, speed: number, tiltDeg: 
   v.w = v3.zero();
 }
 
-function drain(v: Vessel, defId: string, keep: number): void {
+/** Leave the fraction `keep` of every engine propellant in the parts of one definition (thruster propellant untouched). */
+export function drain(v: Vessel, defId: string, keep: number): void {
   for (const p of v.parts) {
     if (p.def.id !== defId) continue;
     (p.def.resources ?? []).forEach((r, k) => {

@@ -1,0 +1,7002 @@
+{
+ "name": "staging",
+ "description": "First-stage separation with its retro and ullage motors, tower and fairing jettison, second-stage separation: each from its nominal flight condition, followed for 12 s with every vessel it sheds.",
+ "dt": 0.008333333333333333,
+ "runs": [
+  {
+   "label": "first-stage separation at 68 km",
+   "steps": 1440,
+   "samples": [
+    {
+     "step": 0,
+     "vessels": [
+      {
+       "r": [
+        "40a2b8c24135b556",
+        "4158916e284c8bcf",
+        "bf40e70f20445e81"
+       ],
+       "v": [
+        "409f585b1fd97ef2",
+        "4091eabb45cecdc3",
+        "bf53f46cfb9b81de"
+       ],
+       "q": [
+        "bed381a7f983d24a",
+        "3ec6862649bc1b02",
+        "bfe0000000c85e0f",
+        "3febb67ae7e25435"
+       ],
+       "w": [
+        "3f91df46a2529d39",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "412ee582799cf230",
+       "parts": 38,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 60,
+     "vessels": [
+      {
+       "r": [
+        "40aa924be5a133a4",
+        "415891fd7102a58f",
+        "3f6ab949cef7d880"
+       ],
+       "v": [
+        "409f6f49afef3394",
+        "4091e4c2153b5352",
+        "3f95497d08a6e060"
+       ],
+       "q": [
+        "3f6ee80c960f3ee5",
+        "bf61d80616db9425",
+        "bfdfffec1deb9870",
+        "3febb669ab23c56e"
+       ],
+       "w": [
+        "3f91dca27907c463",
+        "bde5aa5daf8e624d",
+        "be6005441a439850"
+       ],
+       "mass": "412ed5ec323d4bc4",
+       "parts": 38,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 120,
+     "vessels": [
+      {
+       "r": [
+        "40b1378d53a19afb",
+        "4158928c5c736934",
+        "3f945c417764cd20"
+       ],
+       "v": [
+        "409f75d5e13685a8",
+        "4091d554986d785c",
+        "3fa6528bad252b30"
+       ],
+       "q": [
+        "3f7eeb8a21284f2b",
+        "bf71da09f988e0d7",
+        "bfdfffb06715200d",
+        "3febb635e336fa96"
+       ],
+       "w": [
+        "3f91dbd5f7d86288",
+        "be03a75641822106",
+        "be7c516dd7d1d481"
+       ],
+       "mass": "412ed174f654b235",
+       "parts": 38,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 180,
+     "vessels": [
+      {
+       "r": [
+        "40b5266bb5bbd213",
+        "4158931abf6cd912",
+        "3fa6f8aa3152cbe0"
+       ],
+       "v": [
+        "409f77adfdc162b7",
+        "4091c33140e1426c",
+        "3fac097da58dad20"
+       ],
+       "q": [
+        "3f87313ce6f9e586",
+        "bf7ac7bb55c60586",
+        "bfdfff4ced01b18b",
+        "3febb5df8faada0f"
+       ],
+       "w": [
+        "3f91db86654ba6ca",
+        "be16f2f82ce3d3cc",
+        "be902070acd68a09"
+       ],
+       "mass": "412ed02d6b923693",
+       "parts": 38,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 240,
+     "vessels": [
+      {
+       "r": [
+        "40b9156b49e56c9a",
+        "415893a88d96d428",
+        "3fb2d57895af8000"
+       ],
+       "v": [
+        "409f78e0d2f8318f",
+        "4091b0afcedd2436",
+        "3fb0f4b987ec9c80"
+       ],
+       "q": [
+        "3f8eec7c5356161f",
+        "bf81da95ba2ad908",
+        "bfdffec1c0127a00",
+        "3febb566ad9de613"
+       ],
+       "w": [
+        "3f91db4dcad52e61",
+        "be2613f9c0a9e0ef",
+        "be9c83ad7fe547c4"
+       ],
+       "mass": "4129d1ce9970bfcf",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40b8e3a51a1b17ec",
+        "415893a15e6a08f5",
+        "bffee77d4dd7df45"
+       ],
+       "v": [
+        "409f7522408a8f3f",
+        "4091ae8668a59d2f",
+        "bfef2ff777e07db2"
+       ],
+       "q": [
+        "3f8eec7c6d015d27",
+        "bf81da95c926f3ef",
+        "bfdffec1bfd28113",
+        "3febb566adadf8d6"
+       ],
+       "w": [
+        "3f91db5bba117c8b",
+        "be255465e7fffeed",
+        "be98536ad9602fda"
+       ],
+       "mass": "4103f7626850357f",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 300,
+     "vessels": [
+      {
+       "r": [
+        "40bd04938d927b28",
+        "41589435c810e0b5",
+        "3fbbdd78a7d45db0"
+       ],
+       "v": [
+        "409f79a34926d754",
+        "40919deedb030bb0",
+        "3fb34171df4336f0"
+       ],
+       "q": [
+        "3f9353d345f8eece",
+        "bf865141fbbd467a",
+        "bfdffe0e5c3edbbd",
+        "3febb4cb60a53ba9"
+       ],
+       "w": [
+        "3f91dbe02001d296",
+        "be42959020168fb8",
+        "3ea2d0eff34b3009"
+       ],
+       "mass": "4129d12b71f68a37",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40bcd1695041522d",
+        "4158942e6580b01c",
+        "c003a7b809d2028b"
+       ],
+       "v": [
+        "409f669c5c20f491",
+        "409192f2d385d51c",
+        "bff2373b8e7052f3"
+       ],
+       "q": [
+        "3f93543eb8ed1102",
+        "bf8651bf8a08ec53",
+        "bfdffe0c49de2479",
+        "3febb4cbe0b108ff"
+       ],
+       "w": [
+        "3f91dfdea4049ed3",
+        "be255465e7fffde7",
+        "3ed50a370161dcc8"
+       ],
+       "mass": "4103eeaf460967b4",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 360,
+     "vessels": [
+      {
+       "r": [
+        "40c079ea0a2833b4",
+        "415894c26c86ecd1",
+        "3fc316a40acbecb0"
+       ],
+       "v": [
+        "409f7a6502e1b2d3",
+        "40918b2ecde9386e",
+        "3fb613fbd5ce62d8"
+       ],
+       "q": [
+        "3f9731781d9c4bd7",
+        "bf8ac801a27a8c3a",
+        "bfdffd320e636bb0",
+        "3febb40dd3830335"
+       ],
+       "w": [
+        "3f91dcbfb47a0d59",
+        "be51ad78abb8e5d6",
+        "3ebea804552ab6e7"
+       ],
+       "mass": "4129d0884a631000",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c05ecba27020f3",
+        "415894ba98711a81",
+        "c0087a1e0884a411"
+       ],
+       "v": [
+        "409f5fecbcda3a47",
+        "40917be6f3592868",
+        "bff39946d04989b6"
+       ],
+       "q": [
+        "3f97334fd9562378",
+        "bf8aca295bd7f1a2",
+        "bfdffd29099bda61",
+        "3febb40fe9e8591c"
+       ],
+       "w": [
+        "3f91e619175aa6aa",
+        "be255465e7fffc95",
+        "3ee92b14ec0789ea"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 420,
+     "vessels": [
+      {
+       "r": [
+        "40c2719663275504",
+        "4158954e7b0021cb",
+        "3fc903f49230b390"
+       ],
+       "v": [
+        "409f7b26924d6aee",
+        "4091786ffb237e07",
+        "3fb96f5843cb8750"
+       ],
+       "q": [
+        "3f9b0f38f19f8edb",
+        "bf8f3ee360622f4e",
+        "bfdffc2c8bfcaf8c",
+        "3febb32e11c3bf35"
+       ],
+       "w": [
+        "3f91ddf0584cfc78",
+        "be5bf1fcab105ced",
+        "3ecc58bce4de682b"
+       ],
+       "mass": "4129cfe522cf95ca",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c254c901661423",
+        "415895462a855a0d",
+        "c00d60f7c240bb48"
+       ],
+       "v": [
+        "409f5fbf766a2e79",
+        "4091689e8710210f",
+        "bff39d824d92c559"
+       ],
+       "q": [
+        "3f9b13cca2be5275",
+        "bf8f443f08be385a",
+        "bfdffc164dffe4cb",
+        "3febb332fe7bfafb"
+       ],
+       "w": [
+        "3f91ee14f7eae35a",
+        "be255465e7fffb02",
+        "3ef5902d9640d415"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 480,
+     "vessels": [
+      {
+       "r": [
+        "40c469638c71196e",
+        "415895d9f982fb8c",
+        "3fd0b3c5752e9248"
+       ],
+       "v": [
+        "409f7f83f940da51",
+        "409167c7dc8779c9",
+        "3fc7889fcf592b2e"
+       ],
+       "q": [
+        "3f9eed0c0bcfea17",
+        "bf91daee51a3036d",
+        "bfdffafd8eb9acde",
+        "3febb22c2aed465f"
+       ],
+       "w": [
+        "3f91de58cadbabca",
+        "be640aebcb70b591",
+        "3ed5dfa1ba0fd221"
+       ],
+       "mass": "4129cdb854940da1",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c44ac39b0c2365",
+        "415895d122601855",
+        "c0112467b53a87c4"
+       ],
+       "v": [
+        "409f5f94094a8957",
+        "409155588d1248b0",
+        "bff3a132c25b200a"
+       ],
+       "q": [
+        "3f9ef6118016f797",
+        "bf91e03739bc553e",
+        "bfdffad25c306401",
+        "3febb23543f554f2"
+       ],
+       "w": [
+        "3f91f7d9d1fb1ba2",
+        "be255465e7fff940",
+        "3f00177669dab998"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 540,
+     "vessels": [
+      {
+       "r": [
+        "40c6619f071c85ef",
+        "41589664fe79b643",
+        "3fd96dc3248d83d0"
+       ],
+       "v": [
+        "409f887738008dd1",
+        "409159c6c9d29440",
+        "3fd820faaac78ba6"
+       ],
+       "q": [
+        "3fa16555fe912983",
+        "bf94164efd003adb",
+        "bfdff9a4e7dd5a99",
+        "3febb10841d28e6b"
+       ],
+       "w": [
+        "3f91ddabd4e97361",
+        "be6b07dcb6fc2a44",
+        "3edebd0a69a89757"
+       ],
+       "mass": "4129c9839ac14371",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c640bb8b3051c0",
+        "4158965b80145ede",
+        "c01398becfa39eff"
+       ],
+       "v": [
+        "409f5f6a3d691015",
+        "40914214e3973456",
+        "bff3a4351f49a172"
+       ],
+       "q": [
+        "3fa16d3dc712f197",
+        "bf941f93668ff98e",
+        "bfdff95b6da7251c",
+        "3febb116d09ed571"
+       ],
+       "w": [
+        "3f9203678ddbd8c2",
+        "be255465e7fff6e8",
+        "3f063504bf5d665d"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 600,
+     "vessels": [
+      {
+       "r": [
+        "40c85a7f5f129fb2",
+        "415896ef99adfdf4",
+        "3fe4d8dc48e079fc"
+       ],
+       "v": [
+        "409f93dea01b42c0",
+        "40914d31b754fd31",
+        "3fe4d85e1cd85f52"
+       ],
+       "q": [
+        "3fa353f5e705a877",
+        "bf96517a243fbac2",
+        "bfdff8226b5d784a",
+        "3febafc27956462b"
+       ],
+       "w": [
+        "3f91dc8e6b614a98",
+        "be7173fab8cd63ae",
+        "3ee45cde3747b04c"
+       ],
+       "mass": "4129c43895daba05",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c836b0ea44a853",
+        "415896e543b4328f",
+        "c0160d69cdb8d8b6"
+       ],
+       "v": [
+        "409f5f41df488f03",
+        "40912ed36b368f1f",
+        "bff3a670f6690968"
+       ],
+       "q": [
+        "3fa360b363c64298",
+        "bf96606b37160cf5",
+        "bfdff7afb5878bad",
+        "3febafd7aa844071"
+       ],
+       "w": [
+        "3f9210b656c100eb",
+        "be255465e7fff4b0",
+        "3f0d1a435a64d263"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 660,
+     "vessels": [
+      {
+       "r": [
+        "40ca5421c50de722",
+        "41589779d397ae62",
+        "3ff0f2f9eefc84dc"
+       ],
+       "v": [
+        "409fa09629937793",
+        "409141600b4f00a8",
+        "3fefaa3df6bc3340"
+       ],
+       "q": [
+        "3fa5425c59c2d69a",
+        "bf988c655ecbd7f7",
+        "bfdff675eafb4413",
+        "3febae5aef42c4fd"
+       ],
+       "w": [
+        "3f91db56e0fd1911",
+        "be75d05adf4f51a9",
+        "3ee9e3d67621b085"
+       ],
+       "mass": "4129be589b485a58",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40ca2ca3cda5a913",
+        "4158976e6d50a609",
+        "c018824ed1690bf8"
+       ],
+       "v": [
+        "409f5f1abfa63aad",
+        "40911b9406c481dc",
+        "bff3a7d6ac1a46cf"
+       ],
+       "q": [
+        "3fa5559643a3940c",
+        "bf98a2f488adb12e",
+        "bfdff5cd655dc631",
+        "3febae77c6f154d9"
+       ],
+       "w": [
+        "3f921fb84c5084fc",
+        "be255465e7fff219",
+        "3f125f59bf4dc359"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 720,
+     "vessels": [
+      {
+       "r": [
+        "40cc4e93c84f11af",
+        "41589803b02b88d5",
+        "3ffa5dcd80dafcfe"
+       ],
+       "v": [
+        "409fad8cfae4066c",
+        "409135b43e407ba0",
+        "3ff5df5dd4221614"
+       ],
+       "q": [
+        "3fa73087d7d82d03",
+        "bf9ac70f6af073ab",
+        "bfdff49f3699b1b9",
+        "3febacd1bbe33ea9"
+       ],
+       "w": [
+        "3f91da55054b98e2",
+        "be7a92ca841f5d47",
+        "3eefeb39bb961e36"
+       ],
+       "mass": "4129b8824bb04429",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc229447db49ed",
+        "415897f6fcf9eb0f",
+        "c01af75281f5c3d8"
+       ],
+       "v": [
+        "409f5ef4b3254f86",
+        "409108569b2ecaa5",
+        "bff3a85deb9f5c15"
+       ],
+       "q": [
+        "3fa74c1130bd777f",
+        "bf9ae76338a5939e",
+        "bfdff3b2b11385a6",
+        "3febacf70a62d036"
+       ],
+       "w": [
+        "3f92305aec2a2bd7",
+        "be255465e7fff006",
+        "3f168c2cbdcfccfe"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 780,
+     "vessels": [
+      {
+       "r": [
+        "40ce49d42260ff97",
+        "4158988d2f160030",
+        "400375f5bffe71b4"
+       ],
+       "v": [
+        "409fba8999ea4f46",
+        "40912a0d21c59c50",
+        "3ffc7591255645cc"
+       ],
+       "q": [
+        "3fa91e7e3f34f025",
+        "bf9d017f8d595dad",
+        "bfdff29e1a0a452a",
+        "3febab26ef9e3d04"
+       ],
+       "w": [
+        "3f91d99609c80e87",
+        "be7fb43990b0dfee",
+        "3ef33502951c9b81"
+       ],
+       "mass": "4129b2cb0fbad299",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40ce188268d4da02",
+        "4158987ef2bf62cd",
+        "c01d6c58df0c289b"
+       ],
+       "v": [
+        "409f5ecf9200abc1",
+        "4090f51b0f5ad1c1",
+        "bff3a804562ef4a4"
+       ],
+       "q": [
+        "3fa9444ca20c2123",
+        "bf9d2de89c49c4da",
+        "bfdff15dd23627ed",
+        "3febab5548cf9a5f"
+       ],
+       "w": [
+        "3f9242883e170048",
+        "be255465e7ffed7f",
+        "3f1b0e1471d9787d"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 840,
+     "vessels": [
+      {
+       "r": [
+        "40d022f302a56685",
+        "41589916514df751",
+        "400b77585b5cf42f"
+       ],
+       "v": [
+        "409fc7b8b4e98c24",
+        "40911e84835a7b49",
+        "4001d7f3b4be4748"
+       ],
+       "q": [
+        "3fab0c4280621142",
+        "bf9f3bb9addc998d",
+        "bfdff07266009ab9",
+        "3feba95a9a5b91c0"
+       ],
+       "w": [
+        "3f91d907272eac50",
+        "be82969523bc9798",
+        "3ef6ab4c4cd0f4bd"
+       ],
+       "mass": "4129acfcfbc87ac9",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d007371f101727",
+        "415899064eafacfe",
+        "c01fe145ed02bd06"
+       ],
+       "v": [
+        "409f5eab37c218a7",
+        "4090e1e14c04f45c",
+        "bff3a6cc648b9be9"
+       ],
+       "q": [
+        "3fab3e6e698146ed",
+        "bf9f76b31b4bce97",
+        "bfdfeecd0aa6cdb9",
+        "3feba9924634d4c7"
+       ],
+       "w": [
+        "3f925627cc2c5245",
+        "be255465e7ffeac3",
+        "3f1fdf2ea6ac1fad"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 900,
+     "vessels": [
+      {
+       "r": [
+        "40d12165e1915c99",
+        "4158999f1789b585",
+        "4012ad629b3d3623"
+       ],
+       "v": [
+        "409fd502113fdb02",
+        "4091130c6712095f",
+        "4005c2550d9a0e16"
+       ],
+       "q": [
+        "3facf9d775aeded0",
+        "bfa0bae0ced8e21f",
+        "bfdfee1bee0653e2",
+        "3feba76cc980eaad"
+       ],
+       "w": [
+        "3f91d8aa6ecef71f",
+        "be857aea09fb2af4",
+        "3efa537d3acab493"
+       ],
+       "mass": "4129a722ada255b0",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d1022be98e3746",
+        "4158998d10d8b63a",
+        "c0212aff200c2351"
+       ],
+       "v": [
+        "409f5e8782fef54c",
+        "4090cea93ba12d4c",
+        "bff3a4bc7413ac98"
+       ],
+       "q": [
+        "3fad3a997aa7ee69",
+        "bfa0e0f6f35376b5",
+        "bfdfebfea6c9beca",
+        "3feba7adb7539c7e"
+       ],
+       "w": [
+        "3f926b1f6eeaaee3",
+        "be255465e7ffe8c6",
+        "3f227cb0af5a66ba"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 960,
+     "vessels": [
+      {
+       "r": [
+        "40d22043464ed8f2",
+        "41589a27822c0287",
+        "4018a3087e6d7a4e"
+       ],
+       "v": [
+        "409fe2589687e093",
+        "4091079d3eb460ec",
+        "4009f714223b6364"
+       ],
+       "q": [
+        "3faee73ff94ec368",
+        "bfa1d7cd97cfea05",
+        "bfdfeb9a88821ae8",
+        "3feba55d87d8feb7"
+       ],
+       "w": [
+        "3f91d87e541b335a",
+        "be88832464930706",
+        "3efe2885630f9b0a"
+       ],
+       "mass": "4129a141d4022f4f",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d1fd1f98946ab7",
+        "41589a133947c53d",
+        "c0226533b5dec508"
+       ],
+       "v": [
+        "409f5e645519f27c",
+        "4090bb72ca3d358b",
+        "bff3a1ddf9245b40"
+       ],
+       "q": [
+        "3faf38edc568fabf",
+        "bfa207e06383c9b2",
+        "bfdfe8f0ff47bed3",
+        "3feba5a74292a731"
+       ],
+       "w": [
+        "3f928153f43f8508",
+        "be255465e7ffe3aa",
+        "3f252b3c17b60d4a"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1020,
+     "vessels": [
+      {
+       "r": [
+        "40d31f8b7ac373de",
+        "41589aaf916a64ca",
+        "401faefbaaaea4f5"
+       ],
+       "v": [
+        "409fefb5221587a3",
+        "4090fc32ed08a643",
+        "400e748aada64346"
+       ],
+       "q": [
+        "3fb06a3f4dc33237",
+        "bfa2f4a4f0bceb28",
+        "bfdfe8ee0f23f88b",
+        "3feba32cdde90d14"
+       ],
+       "w": [
+        "3f91d87f5e412b54",
+        "be8bab4a9fd71d56",
+        "3f0112aae069345d"
+       ],
+       "mass": "41299b5d7990a13a",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d2f8122fe7d9ad",
+        "41589a98c809872a",
+        "c0239f342d1e0ca3"
+       ],
+       "v": [
+        "409f5e4192098ecf",
+        "4090a83de5642bbd",
+        "bff39e3cd17914ef"
+       ],
+       "q": [
+        "3fb09cc4109f9e3f",
+        "bfa33027ff41439c",
+        "bfdfe5a27a718187",
+        "3feba37e80f8a1b7"
+       ],
+       "w": [
+        "3f9298a9a750480f",
+        "be255465e7ffe0bd",
+        "3f27f81df187408f"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1080,
+     "vessels": [
+      {
+       "r": [
+        "40d41f3e9dd41100",
+        "41589b3745619a9e",
+        "4023f1a473e5b922"
+       ],
+       "v": [
+        "409ffd13c1e70394",
+        "4090f0cb2c730179",
+        "40119ce34c20e09a"
+       ],
+       "q": [
+        "3fb160cabe0db0ed",
+        "bfa411685735c308",
+        "bfdfe6165f3275db",
+        "3feba0dad23d9cfa"
+       ],
+       "w": [
+        "3f91d8a91879a677",
+        "be8eef6dde17f741",
+        "3f0322784b3cae3d"
+       ],
+       "mass": "412995773f16dce6",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d3f303b276fe48",
+        "41589b1dbd2a1b22",
+        "c024d8f4c836b920"
+       ],
+       "v": [
+        "409f5e1f2023034c",
+        "4090950a7c03c8e5",
+        "bff399e6b1e8bd1b"
+       ],
+       "q": [
+        "3fb19e4122ded531",
+        "bfa459de1d0867a2",
+        "bfdfe2118d533fd0",
+        "3feba132ff3674c5"
+       ],
+       "w": [
+        "3f92b104be161b14",
+        "be255465e7ffdce6",
+        "3f2ae042a9793a4f"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1140,
+     "vessels": [
+      {
+       "r": [
+        "40d51f5cb65ed11e",
+        "41589bbe9e208fa7",
+        "4028a8e7636882ca"
+       ],
+       "v": [
+        "40a005391c888c79",
+        "4090e564b3cc0146",
+        "4014231f63976174"
+       ],
+       "q": [
+        "3fb257431bb79c3e",
+        "bfa52e18fc0b3799",
+        "bfdfe31359bf9fce",
+        "3feb9e6769b10ec8"
+       ],
+       "w": [
+        "3f91d8f699264c30",
+        "be9125da4468472e",
+        "3f05413b3a7c2291"
+       ],
+       "mass": "41298f9003abc6af",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d4edf4226bd3da",
+        "41589ba218b51ce8",
+        "c026126ab0562c69"
+       ],
+       "v": [
+        "409f5dfce7e95282",
+        "409081d87e532127",
+        "bff394eaab85177c"
+       ],
+       "q": [
+        "3fb2a0f966e5ce8d",
+        "bfa5851147ead3c5",
+        "bfdfde3cbc84859b",
+        "3feb9ec43eba6809"
+       ],
+       "w": [
+        "3f92ca49b10ef0cf",
+        "be255465e7ffd8dc",
+        "3f2de0a623b0e347"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1200,
+     "vessels": [
+      {
+       "r": [
+        "40d61fe5bd62f055",
+        "41589c459bae3af1",
+        "402e0628eb9a6e16"
+       ],
+       "v": [
+        "40a00be79a478b02",
+        "4090d9fec10e74e3",
+        "4016ccd35aa57d95"
+       ],
+       "q": [
+        "3fb34da8ef604009",
+        "bfa64ab7be5527e2",
+        "bfdfdfe4e3cb3625",
+        "3feb9bd2a7ad862b"
+       ],
+       "w": [
+        "3f91d962cf2cf91d",
+        "be92de3153cd0f62",
+        "3f076c983bf374c2"
+       ],
+       "mass": "412989a83eb8a09a",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d5e8e3813c8e51",
+        "41589c25dab5aed3",
+        "c0274b8c07da07a9"
+       ],
+       "v": [
+        "409f5ddad3e02f43",
+        "40906ea7ddbaeae5",
+        "bff38f58c4af4ad6"
+       ],
+       "q": [
+        "3fb3a4f6a1b43cd8",
+        "bfa6b1ce43d7260f",
+        "bfdfda229cbea097",
+        "3feb9c31b6c6976c"
+       ],
+       "w": [
+        "3f92e45d80a1b40f",
+        "be255465e7ffd6bd",
+        "3f307b2cc2624e73"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1260,
+     "vessels": [
+      {
+       "r": [
+        "40d720d9a36fed48",
+        "41589ccc3e0cc284",
+        "40320922106d995a"
+       ],
+       "v": [
+        "40a01294ef403d9c",
+        "4090ce98da89f0e9",
+        "401999ea38920c2b"
+       ],
+       "q": [
+        "3fb443fc7b6f0a39",
+        "bfa767452a450f65",
+        "bfdfdc8ae655f201",
+        "3feb991c8e6afca0"
+       ],
+       "w": [
+        "3f91d9e8af30af4c",
+        "be949ef02a9a7f78",
+        "3f09a24c11802c65"
+       ],
+       "mass": "412983c03027f5fe",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d6e3d1cfbaf70d",
+        "41589ca9033682f6",
+        "c028844ff6ddbae8"
+       ],
+       "v": [
+        "409f5db8d0627280",
+        "40905b788cbf4186",
+        "bff38941a330b082"
+       ],
+       "q": [
+        "3fb4aa4119127222",
+        "bfa7e02015f9aa62",
+        "bfdfd5c1d342a074",
+        "3feb997ad5866306"
+       ],
+       "w": [
+        "3f92ff25eb438e9e",
+        "be255465e7ffcd66",
+        "3f320f43ce24a04d"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1320,
+     "vessels": [
+      {
+       "r": [
+        "40d82238538dbb17",
+        "41589d52853b29ce",
+        "40356b081750290a"
+       ],
+       "v": [
+        "40a01940d1f99a9a",
+        "4090c332ad44a4d5",
+        "401c8a58bd0cb402"
+       ],
+       "q": [
+        "3fb53a3dbd542a08",
+        "bfa883c17a387c72",
+        "bfdfd9054e68d81a",
+        "3feb96451f29d8d2"
+       ],
+       "w": [
+        "3f91da834e923cc7",
+        "be96665f4efa709e",
+        "3f0be02e9f864d0e"
+       ],
+       "mass": "41297dd7fa300408",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d7debf0e228ae9",
+        "41589d2b9241e3ad",
+        "c029bcaeb2e17742"
+       ],
+       "v": [
+        "409f5d96cb7bdcd8",
+        "4090484a7eead6eb",
+        "bff382b644d2e1ee"
+       ],
+       "q": [
+        "3fb5b0df9f66e780",
+        "bfa910101055b07a",
+        "bfdfd119161691bf",
+        "3feb969f011f7b10"
+       ],
+       "w": [
+        "3f931a8996f1dcae",
+        "be255465e7ffc8b6",
+        "3f33ab3c16eac58a"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1380,
+     "vessels": [
+      {
+       "r": [
+        "40d92401b4cab372",
+        "41589dd8713637d8",
+        "40392d311646336c"
+       ],
+       "v": [
+        "40a01feb0ade63eb",
+        "4090b7cbfafc90a2",
+        "401f9e18fe01c2df"
+       ],
+       "q": [
+        "3fb6306c6fee4e8f",
+        "bfa9a02c992b2bcf",
+        "bfdfd5540d12dacc",
+        "3feb934c5a6a27ea"
+       ],
+       "w": [
+        "3f91db2df3d60abf",
+        "be9832dd83f902c6",
+        "3f0e243503b47b4f"
+       ],
+       "mass": "412977efaf20bd43",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d8d9ab3c2572ab",
+        "41589dad87e1bb91",
+        "c02af4a18260a43f"
+       ],
+       "v": [
+        "409f5d74b4c5e357",
+        "4090351da8bb8480",
+        "bff37bc7c44f0419"
+       ],
+       "q": [
+        "3fb6b8d7a183d0c4",
+        "bfaa41a5dfdc96ae",
+        "bfdfcc272c208100",
+        "3feb939d98bbf30c"
+       ],
+       "w": [
+        "3f933670302c18d0",
+        "be255465e7ffc3f5",
+        "3f354dc925c05122"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1440,
+     "vessels": [
+      {
+       "r": [
+        "40da2635ab103f81",
+        "41589e5e01f8f28b",
+        "403d54070dcdc404"
+       ],
+       "v": [
+        "40a026936be797e6",
+        "4090ac6490857e6a",
+        "40216a93efc9804a"
+       ],
+       "q": [
+        "3fb726880ea2d227",
+        "bfaabc862603cec3",
+        "bfdfd177175e9644",
+        "3feb9032401f76ba"
+       ],
+       "w": [
+        "3f91dbe420a6e36e",
+        "be9a02e0fe13d31b",
+        "3f1036397b8f507b"
+       ],
+       "mass": "4129720758c768b7",
+       "parts": 26,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d9d49658f86d1b",
+        "41589e2ee41f9ca3",
+        "c02c2c22bd0e0eb3"
+       ],
+       "v": [
+        "409f5d527d474aa2",
+        "409021f1ff902b3f",
+        "bff3748728bc6bec"
+       ],
+       "q": [
+        "3fb7c22d35e791d0",
+        "bfab74e79c66f53e",
+        "bfdfc6eaed24def4",
+        "3feb9075f58b698f"
+       ],
+       "w": [
+        "3f9352c280409af4",
+        "be255465e7ffbf12",
+        "3f36f5aef6471c52"
+       ],
+       "mass": "4103ea8935fac865",
+       "parts": 12,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    }
+   ],
+   "events": [
+    "0:stageFired",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "199:engineShutdown",
+    "203:engineIgnition",
+    "239:decoupled",
+    "239:engineIgnition",
+    "367:engineShutdown",
+    "420:engineIgnition",
+    "420:engineIgnition",
+    "420:engineIgnition",
+    "420:engineIgnition",
+    "420:engineIgnition",
+    "420:engineIgnition",
+    "728:engineShutdown"
+   ]
+  },
+  {
+   "label": "tower and fairing jettison at 100 km",
+   "steps": 1440,
+   "samples": [
+    {
+     "step": 0,
+     "vessels": [
+      {
+       "r": [
+        "40c6b81d57c1928b",
+        "4158b24e2eb4c2bb",
+        "bf806b8779ffc666"
+       ],
+       "v": [
+        "40a6d407045e63fa",
+        "408747372775183f",
+        "bf76647ec6087281"
+       ],
+       "q": [
+        "bf11f34ce65687e3",
+        "3f0b8c2f6e1ecf28",
+        "bfe37af939fc7bf2",
+        "3fe963268d1d21b9"
+       ],
+       "w": [
+        "3f857254c2c98977",
+        "3f81df46a2529d39",
+        "3f857254c2c98977"
+       ],
+       "mass": "41295902ada255b0",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c6b9a2cdd85c2c",
+        "4158b24e62e24f13",
+        "bf81889dc6f85849"
+       ],
+       "v": [
+        "40a6d440c37238ba",
+        "408747bafc8ab6d9",
+        "3f9c2876c95fa4c7"
+       ],
+       "q": [
+        "bf11f34ce65687e3",
+        "3f0b8c2f6e1ecf28",
+        "bfe37af939fc7bf2",
+        "3fe963268d1d21b9"
+       ],
+       "w": [
+        "3f857254c2c98977",
+        "3f81df46a2529d39",
+        "3f857254c2c98977"
+       ],
+       "mass": "40af400000000000",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c6b386c6ea8fea",
+        "4158b24d91581769",
+        "bf7a1f7c402c5ddd"
+       ],
+       "v": [
+        "40a6d7809827633f",
+        "40872f52593e0818",
+        "40090a5640bb2efb"
+       ],
+       "q": [
+        "bf11f34ce65687e4",
+        "3f0b8c2f6e1ecf29",
+        "bfe37af939fc7bf3",
+        "3fe963268d1d21ba"
+       ],
+       "w": [
+        "3fcc7d51436b1425",
+        "3f81df46a2529d39",
+        "bfc9cf06ab11e2f6"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c6b386c6ea8fea",
+        "4158b24d91581769",
+        "bf7a1f7c402c5ddd"
+       ],
+       "v": [
+        "40a6d7800abecb79",
+        "40872f51c1ae3cc4",
+        "c00ab8dacb050be5"
+       ],
+       "q": [
+        "bf11f34ce65687e4",
+        "3f0b8c2f6e1ecf29",
+        "bfe37af939fc7bf3",
+        "3fe963268d1d21ba"
+       ],
+       "w": [
+        "bfc9cf06ab11e2f6",
+        "3f81df46a2529d39",
+        "bfc9cf06ab11e2f7"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c6b386c6ea8fea",
+        "4158b24d91581769",
+        "bf7a1f7c402c5ddd"
+       ],
+       "v": [
+        "40a6d426a06fdfdf",
+        "408761516cc41016",
+        "c00ab8dacb20e0d0"
+       ],
+       "q": [
+        "bf11f34ce65687e4",
+        "3f0b8c2f6e1ecf29",
+        "bfe37af939fc7bf3",
+        "3fe963268d1d21ba"
+       ],
+       "w": [
+        "bfc9cf06ab11e2f5",
+        "3f81df46a2529d39",
+        "3fcc7d51436b1422"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c6b386c6ea8fea",
+        "4158b24d91581769",
+        "bf7a1f7c402c5ddd"
+       ],
+       "v": [
+        "40a6d4272dd877a5",
+        "408761520453db6a",
+        "40090a56409f5a0e"
+       ],
+       "q": [
+        "bf11f34ce65687e4",
+        "3f0b8c2f6e1ecf29",
+        "bfe37af939fc7bf3",
+        "3fe963268d1d21ba"
+       ],
+       "w": [
+        "3fcc7d51436b1423",
+        "3f81df46a2529d39",
+        "3fcc7d51436b1425"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 60,
+     "vessels": [
+      {
+       "r": [
+        "40c99317e95c2b68",
+        "4158b2ab0ff12831",
+        "bf83417fd72a1ab0"
+       ],
+       "v": [
+        "40a6dba2d6ec3c6d",
+        "4087296f671e5721",
+        "3f6bffed0c218680"
+       ],
+       "q": [
+        "3f6b48c4511e54e6",
+        "3f297f9c52946b6e",
+        "bfe369e10f3ca08a",
+        "3fe9702cb45ff553"
+       ],
+       "w": [
+        "3f85524458c049d7",
+        "3f81df4d18631aab",
+        "3f85892b25378c6a"
+       ],
+       "mass": "4129533af1977d74",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c9972cbc80c257",
+        "4158b2ab9d78e146",
+        "3fffaa0dccfaa00c"
+       ],
+       "v": [
+        "40a706e36c8d297b",
+        "4087586aa1c1b101",
+        "4020b84eb8e8d981"
+       ],
+       "q": [
+        "3f6e0852f8b0397b",
+        "bf104c85282bd3fe",
+        "bfe369e03b6eb819",
+        "3fe9702a48dedddd"
+       ],
+       "w": [
+        "3f8fc8e8b70d6d2a",
+        "3f81df46a2529d39",
+        "3f858b35f2354ca7"
+       ],
+       "mass": "40aee10925915c3b",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c98e7db6cd8733",
+        "4158b2aa01fc009a",
+        "3ff965d8e0efce98"
+       ],
+       "v": [
+        "40a6d7ecdd6c870d",
+        "408708f6d7a55968",
+        "4009fdb26e931100"
+       ],
+       "q": [
+        "3fa755ece6f55526",
+        "bfa05576efd83ea0",
+        "bfe4b3aa9f77debe",
+        "3fe85624dcff7882"
+       ],
+       "w": [
+        "3fcc900b09fc1707",
+        "3f862a860331b214",
+        "bfc9b8ec386122d4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c98e7d0f9895b8",
+        "4158b2aa01d9fb10",
+        "bffb30ca15c1a44e"
+       ],
+       "v": [
+        "40a6d7e33a8c91da",
+        "408708e7337d9f07",
+        "c00b7af3b934ddf1"
+       ],
+       "q": [
+        "bfa3c976f7849a2c",
+        "3fa0969ab5636947",
+        "bfe4b60aa9438887",
+        "3fe857184e7dadf0"
+       ],
+       "w": [
+        "bfc9bd9c766ded02",
+        "3f81f8fa1e33ab04",
+        "bfc9e05dd6447de2"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c98e10ce21597e",
+        "4158b2aacd1ef72f",
+        "bffb34fb5c5e2f20"
+       ],
+       "v": [
+        "40a6d4775024d11e",
+        "40873c97e16ce7f6",
+        "c00b84534e972919"
+       ],
+       "q": [
+        "bfa3eac10ed7b5d9",
+        "3fa086e6bfa3cf9c",
+        "bfe203f5ba851224",
+        "3fea65c08d6f2661"
+       ],
+       "w": [
+        "bfc9e071e1fa621a",
+        "3f7b995efea0cec3",
+        "3fcc6e6ea4e28f55"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40c98e11714a9a60",
+        "4158b2aacd48dbed",
+        "3ff96380cff7f98a"
+       ],
+       "v": [
+        "40a6d4809ad4f21c",
+        "40873cacdd729292",
+        "4009f9a92cdd1a51"
+       ],
+       "q": [
+        "3fa731fc2175a18d",
+        "bfa0631f6abd59cb",
+        "bfe201cedef4c719",
+        "3fea64a1602a9793"
+       ],
+       "w": [
+        "3fcc6a15f4995241",
+        "3f81fe999bc342ef",
+        "3fcc90778a2db518"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 120,
+     "vessels": [
+      {
+       "r": [
+        "40cc6f062c0764e4",
+        "4158b3077a71600d",
+        "bf53054b698d1700"
+       ],
+       "v": [
+        "40a6e34198386d8d",
+        "40870bd89385f735",
+        "3fa0ebee31cf4f50"
+       ],
+       "q": [
+        "3f7b83be5d3e4e8a",
+        "3f36a983baac0072",
+        "bfe3589f51114bc6",
+        "3fe97d2207f67d64"
+       ],
+       "w": [
+        "3f853213f7e5c2b9",
+        "3f81df538994e816",
+        "3f859fe0cb62a968"
+       ],
+       "mass": "41294d56a1f6c069",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc7b665124a64b",
+        "4158b30928da6290",
+        "4020d4d161a6a8d1"
+       ],
+       "v": [
+        "40a73cc91d210385",
+        "40876d8199db8e2e",
+        "40317437a78dd909"
+       ],
+       "q": [
+        "3f8338bd6621d107",
+        "bf5bb30d4b514af0",
+        "bfe3588572ead53c",
+        "3fe97cf97f90d278"
+       ],
+       "w": [
+        "3f9e6331590155ca",
+        "3f81df46a2529d39",
+        "3f85b850256ab07b"
+       ],
+       "mass": "40ae7b10696bc501",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc69818d13b510",
+        "4158b305d8c84640",
+        "4009f8a2235f7482"
+       ],
+       "v": [
+        "40a6d84e872add6e",
+        "4086e26662731c2b",
+        "400b20cd44e202e2"
+       ],
+       "q": [
+        "3fb767f0bafecc40",
+        "bfb03980cf61e5e0",
+        "bfe5cd0d0bbb7b1c",
+        "3fe727128e910ee6"
+       ],
+       "w": [
+        "3fcca6c63873dbe0",
+        "3f8abbf8adfd12e7",
+        "bfc99dcd391bb6e4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc697f37c5f725",
+        "4158b305d851f538",
+        "c00b8e8589e286e4"
+       ],
+       "v": [
+        "40a6d83da0ff40d5",
+        "4086e24ca9cfe082",
+        "c00c63cc9eee2e44"
+       ],
+       "q": [
+        "bfb3b0a8b3dd507e",
+        "3fb08394facec8bc",
+        "bfe5d7059e735891",
+        "3fe72ab07c764c1a"
+       ],
+       "w": [
+        "bfc9abecdcdbbf8e",
+        "3f82465e3042c8ea",
+        "bfc9f1d377f1d4a2"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc68a3eb861e70",
+        "4158b307764560b8",
+        "c00b985f5a317b1c"
+       ],
+       "v": [
+        "40a6d4b796ecf163",
+        "40871800554587e1",
+        "c00c7a48cf0e0fce"
+       ],
+       "q": [
+        "bfb3f0407ac3b8e6",
+        "3fb06153070ac678",
+        "bfe0736db674754a",
+        "3feb41e2f075d18c"
+       ],
+       "w": [
+        "bfc9ed709f9010a6",
+        "3f73cbbf735392cd",
+        "3fcc6340bf274614"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cc68a626dba2d2",
+        "4158b30776edf01c",
+        "4009f543e1e4e35a"
+       ],
+       "v": [
+        "40a6d4c76167bed3",
+        "4087182b0fa6e431",
+        "400b1ca00c45e25c"
+       ],
+       "q": [
+        "3fb71ce258928e56",
+        "bfb052ec18475504",
+        "bfe06b201ce5279e",
+        "3feb3cffacea27bc"
+       ],
+       "w": [
+        "3fcc5681d36591de",
+        "3f825cfff76187b6",
+        "3fcca3cb6b5e2341"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 180,
+     "vessels": [
+      {
+       "r": [
+        "40cf4be85686f3af",
+        "4158b3636ef438e5",
+        "3f9bbea1a09e07e0"
+       ],
+       "v": [
+        "40a6eae10f0b2312",
+        "4086ee707226eb6d",
+        "3fb55ed650830614"
+       ],
+       "q": [
+        "3f84ab1243b905c8",
+        "3f4097033cec1d33",
+        "bfe347342b1bf71e",
+        "3fe98a067df0bd72"
+       ],
+       "w": [
+        "3f8511c6980b894c",
+        "3f81df59f50fb727",
+        "3f85b676020fd4b8"
+       ],
+       "mass": "412947706d470680",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cf666316fca95a",
+        "4158b3670b47decc",
+        "40338521e132cddc"
+       ],
+       "v": [
+        "40a7730ff2b48484",
+        "408783e93c022a84",
+        "403b1370e3742ea9"
+       ],
+       "q": [
+        "3f92f5cff2515a16",
+        "bf7832f4d7df5937",
+        "bfe3468b8bee9916",
+        "3fe9891b9b75a7cf"
+       ],
+       "w": [
+        "3fa919f7c001754a",
+        "3f81df46a2529d39",
+        "3f860853a413ab62"
+       ],
+       "mass": "40ae1517ad3f62e3",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cf4490c84a2b96",
+        "4158b36114e893a7",
+        "4013ed8806b10ed2"
+       ],
+       "v": [
+        "40a6d8a2ad8dea09",
+        "4086bba114535038",
+        "400c6fb683a6c919"
+       ],
+       "q": [
+        "3fc19271efb6020f",
+        "bfb81f585d1cc063",
+        "bfe6c50fe4023449",
+        "3fe5d7fc0b9429af"
+       ],
+       "w": [
+        "3fccc1b474b95e9f",
+        "3f8fa1fa87811b20",
+        "bfc97d401a778df4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cf448c005b0a98",
+        "4158b36113ff8ee9",
+        "c0150126c2394390"
+       ],
+       "v": [
+        "40a6d88cd6cb91c8",
+        "4086bb822fd8254a",
+        "c00d710243eee42a"
+       ],
+       "q": [
+        "bfbd5ad28bdabed9",
+        "3fb8a1ebf221be80",
+        "bfe6dc798090c9f2",
+        "3fe5df6ff58667d9"
+       ],
+       "w": [
+        "bfc999c414b236e0",
+        "3f82c8507eacf087",
+        "bfca0398bd325bcf"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cf433de9d7efb7",
+        "4158b3638d46ff38",
+        "c0150d9cb8f9e4cf"
+       ],
+       "v": [
+        "40a6d4e4f8ccfa81",
+        "4086f38432e73781",
+        "c00d976d328cbe82"
+       ],
+       "q": [
+        "bfbde3022e6abdf2",
+        "3fb84fe6773f38e8",
+        "bfdd969fe612dc46",
+        "3febf69371fd16ad"
+       ],
+       "w": [
+        "bfc9f6346a6219e7",
+        "3f6879eb75f60c26",
+        "3fcc5bad394a1407"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40cf434263b444ed",
+        "4158b3638ec58468",
+        "4013eb232515d696"
+       ],
+       "v": [
+        "40a6d4f8995304f0",
+        "4086f3c48615525c",
+        "400c6ea1fc5ef9fc"
+       ],
+       "q": [
+        "3fc13a88ef70271a",
+        "bfb852cf100886e0",
+        "bfdd72ce3ab1bc3d",
+        "3febeaf223647d1b"
+       ],
+       "w": [
+        "3fcc424efc8c7dc0",
+        "3f82fbc375801d7a",
+        "3fccb78f4284c7d6"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 240,
+     "vessels": [
+      {
+       "r": [
+        "40d114df34e9958c",
+        "4158b3beee31c25a",
+        "3fb5f4ccd6b4e460"
+       ],
+       "v": [
+        "40a6f27ffdd91d43",
+        "4086d135c4bfdd70",
+        "3fc3cdd34f49699e"
+       ],
+       "q": [
+        "3f8b8db964b92986",
+        "3f4626553d4dbac2",
+        "bfe3359fc8f43324",
+        "3fe996da0cb50ad4"
+       ],
+       "w": [
+        "3f84f15df87a1644",
+        "3f81df605a1955f8",
+        "3f85cceb05f29e85"
+       ],
+       "mass": "4129418934f537c6",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d12a8e72182aa7",
+        "4158b3c4db3d77e8",
+        "4040a7cff517279b"
+       ],
+       "v": [
+        "40a775e0a1e1421e",
+        "4087611285c5b615",
+        "403b98ceb8d160bf"
+       ],
+       "q": [
+        "3f9e8337c6151349",
+        "bf88129789fb1117",
+        "bfe33373702780bd",
+        "3fe99427faadcc7c"
+       ],
+       "w": [
+        "3fa99f92dbc433ff",
+        "3f81df46a2529d39",
+        "3f866cfb892798e5"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d10fd4c4585e6c",
+        "4158b3bbb58dba78",
+        "401b374a842d5f02"
+       ],
+       "v": [
+        "40a6d8e660acae7a",
+        "408694a977906e05",
+        "400de3dce701ae62"
+       ],
+       "q": [
+        "3fc76a21279b2fec",
+        "bfbfd366843f2c91",
+        "bfe799c7ca326bed",
+        "3fe46b2326293bfa"
+       ],
+       "w": [
+        "3fcce10e2c4bf308",
+        "3f9275eff1abbc5f",
+        "bfc956c4e8695646"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d10fd0edb3b185",
+        "4158b3bbb4268002",
+        "c01c8272e57e4374"
+       ],
+       "v": [
+        "40a6d8ce601f2e79",
+        "40869489dff3a7d8",
+        "c00e9e25c1c37cc9"
+       ],
+       "q": [
+        "bfc36ae840a4df23",
+        "3fc04df42e6b26fa",
+        "bfe7c51ed1fedae8",
+        "3fe476fb79388f7a"
+       ],
+       "w": [
+        "bfc986ec48061dfb",
+        "3f83804519ee0a2a",
+        "bfca15df0054c8e3"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d10eee2436aadc",
+        "4158b3bf128039a2",
+        "c01c9aa61d8213a3"
+       ],
+       "v": [
+        "40a6d4fd4922033a",
+        "4086cf1a7a1623f5",
+        "c00ed5fc2f3ea1ba"
+       ],
+       "q": [
+        "bfc3ddcf7385a25f",
+        "3fc0014430d63a0f",
+        "bfda1b60870482c0",
+        "3fec830d68914e4e"
+       ],
+       "w": [
+        "bfc9fade8690e21c",
+        "3f53541fd57f1153",
+        "3fcc57a1fc61b640"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d10ef1a64aac33",
+        "4158b3bf1527e9d5",
+        "401b3542b3bb58a6"
+       ],
+       "v": [
+        "40a6d511c629b860",
+        "4086cf6e78e978fd",
+        "400de80fb9b17221"
+       ],
+       "q": [
+        "3fc6c7b47e2838f5",
+        "bfc011bf43ea19bf",
+        "bfd9de83144315b6",
+        "3fec6d721b9b2f6d"
+       ],
+       "w": [
+        "3fcc2d346f3ab0a8",
+        "3f83dd0e82d86c74",
+        "3fcccc05f74761c2"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 300,
+     "vessels": [
+      {
+       "r": [
+        "40d28444243e6888",
+        "4158b419f8de420d",
+        "3fc7b6b142fdb368"
+       ],
+       "v": [
+        "40a6fa1dadc42927",
+        "4086b427d6d7c745",
+        "3fcf964da45c3877"
+       ],
+       "q": [
+        "3f9134e1fb8f034f",
+        "3f4c025e478f5a7e",
+        "bfe323e25631720d",
+        "3fe9a39caaf14dc4"
+       ],
+       "w": [
+        "3f84d0db2a9ebe56",
+        "3f81df66b811ba78",
+        "3f85e340051cc1ba"
+       ],
+       "mass": "41293ba171aaae50",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d2a1ec539304ad",
+        "4158b42213815412",
+        "40478e066553c463"
+       ],
+       "v": [
+        "40a775db75b29609",
+        "40873b0fa45cb416",
+        "403b98e6631b8a54"
+       ],
+       "q": [
+        "3fa50674411f24ba",
+        "bf920403a573c0b0",
+        "bfe31f385670a19b",
+        "3fe99e55823aa097"
+       ],
+       "w": [
+        "3fa996037bdb11f9",
+        "3f81df46a2529d39",
+        "3f86cdbc59938953"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d27d64ca1ae426",
+        "4158b415b9f8082c",
+        "402170e94fd612c6"
+       ],
+       "v": [
+        "40a6d916f8a01f83",
+        "40866d84c1cab8dd",
+        "400f7436618c65f6"
+       ],
+       "q": [
+        "3fcd34457c5e4348",
+        "bfc3a6cd62b3a5a1",
+        "bfe8496fe57eb586",
+        "3fe2e2fd13a69b42"
+       ],
+       "w": [
+        "3fcd0511ae22ae47",
+        "3f95550ee80d58ab",
+        "bfc929c2b6653292"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d27d5f76c8e926",
+        "4158b415b8176226",
+        "c022292f8417e266"
+       ],
+       "v": [
+        "40a6d8ffed08030e",
+        "40866d6811f41447",
+        "c00fe4ca1555620a"
+       ],
+       "q": [
+        "bfc80a2cd2f7ff66",
+        "3fc4338ca02d9c62",
+        "bfe88fd8d4b76de4",
+        "3fe2f3198e804555"
+       ],
+       "w": [
+        "bfc9732ce90ca093",
+        "3f84704a7ae26a1c",
+        "bfca28d840ec1bd3"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d27c3e250fc772",
+        "4158b41a06256184",
+        "c0223d57e7265a1a"
+       ],
+       "v": [
+        "40a6d4fef869f922",
+        "4086aab83d2ebe7b",
+        "c01016f3d9a62827"
+       ],
+       "q": [
+        "bfc8b41a170bfbf8",
+        "3fc3b690843d31da",
+        "bfd6798771dd43c4",
+        "3fece6c39a957438"
+       ],
+       "w": [
+        "bfc9fb809c8b7b68",
+        "bf441c69b55683ba",
+        "3fcc57154d09bb38"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d27c42e12db35f",
+        "4158b41a0a3dfb17",
+        "402170cde5dcc5ac"
+       ],
+       "v": [
+        "40a6d51133cdc529",
+        "4086ab1c1aa8b645",
+        "400f7e7f4eae0676"
+       ],
+       "q": [
+        "3fcc2ce959a171e9",
+        "bfc3dbbd2a49ee7c",
+        "bfd61ed8ed292fe5",
+        "3fecc3c332aac879"
+       ],
+       "w": [
+        "3fcc16e4f0b4d64c",
+        "3f8503f386b934f9",
+        "3fcce173c42cf4b5"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 360,
+     "vessels": [
+      {
+       "r": [
+        "40d3f422e198afd3",
+        "4158b4748fabd148",
+        "3fd580dde6f2e846"
+       ],
+       "v": [
+        "40a701b9b0003dda",
+        "408697463f17975c",
+        "3fd70467755e14a0"
+       ],
+       "q": [
+        "3f949f90cd663464",
+        "3f51156133315d62",
+        "bfe311fbfe746d42",
+        "3fe9b04e4f8f7eb6"
+       ],
+       "w": [
+        "3f84b03edda0d8d5",
+        "3f81df6d0e6ffbee",
+        "3f85f975204f71c3"
+       ],
+       "mass": "412935b963fd4af0",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d41949dde16759",
+        "4158b47eb3bc3678",
+        "404e74443c91269d"
+       ],
+       "v": [
+        "40a775d5bbfda651",
+        "4087150e086fc276",
+        "403b990a1f5f3b43"
+       ],
+       "q": [
+        "3faac81a4813bbba",
+        "bf97fb2d1f9d03d1",
+        "bfe309df314af625",
+        "3fe9a7a23ec804c6"
+       ],
+       "w": [
+        "3fa989adceb948c0",
+        "3f81df46a2529d39",
+        "3f8729c0c91ee4ed"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d3eaf7321cd3d8",
+        "4158b46f2181cd83",
+        "4025796b0c41fea9"
+       ],
+       "v": [
+        "40a6d9325f912316",
+        "4086463ab1cd11bb",
+        "40108ae3e3122c08"
+       ],
+       "q": [
+        "3fd17514414fca16",
+        "bfc74368d949d874",
+        "bfe8d26b023e4e12",
+        "3fe1423030b2dad1"
+       ],
+       "w": [
+        "3fcd2e01e2e6c09f",
+        "3f987739538d0309",
+        "bfc8f58481e397a0"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d3eaf08bbe7d7f",
+        "4158b46f1f388384",
+        "c0263b281041f8c3"
+       ],
+       "v": [
+        "40a6d91f96978841",
+        "408646233d3b54ac",
+        "c0109e6c29cd63c3"
+       ],
+       "q": [
+        "bfcc84ad6b40fd09",
+        "3fc7fc86442f04f9",
+        "bfe93bb6f7420fc4",
+        "3fe155b040e199b5"
+       ],
+       "w": [
+        "bfc95e49f6717f04",
+        "3f859b0f22f5152e",
+        "bfca3cb7941ba4b7"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d3e98d866a0e23",
+        "4158b474683c85bb",
+        "c026596eed122e88"
+       ],
+       "v": [
+        "40a6d4e94e647ed0",
+        "408686516fbb0827",
+        "c010caad22ae8814"
+       ],
+       "q": [
+        "bfcd6b895f30782f",
+        "3fc74218a028f394",
+        "bfd2b5b95727c6d7",
+        "3fed2161be4d948c"
+       ],
+       "w": [
+        "bfc9f81d11484059",
+        "bf63c83c7da9b66d",
+        "3fcc5a05d7a3c6c3"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d3e9933fc56d31",
+        "4158b4746dfaff05",
+        "40257af37d3e8241"
+       ],
+       "v": [
+        "40a6d4f6391684e5",
+        "408686bf9fa2ea3b",
+        "401092b54a124e40"
+       ],
+       "q": [
+        "3fd0b0970d38af7a",
+        "bfc780cdee1fea29",
+        "bfd239803772d442",
+        "3feced747374c918"
+       ],
+       "w": [
+        "3fcbff0dd31d16f0",
+        "3f8674773481d4fd",
+        "3fccf81ef1985c81"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 420,
+     "vessels": [
+      {
+       "r": [
+        "40d5647b4fb6eafe",
+        "4158b4ceb34b3de2",
+        "3fe18c210dbefcaa"
+       ],
+       "v": [
+        "40a70953bc540893",
+        "40867a90bd05cb63",
+        "3fdf92a089292357"
+       ],
+       "q": [
+        "3f9806e10d9a2b8f",
+        "3f544f91ff1f2942",
+        "bfe2ffeced6ff339",
+        "3fe9bceef1ac2ab5"
+       ],
+       "w": [
+        "3f848f8987a29f93",
+        "3f81df735cbfc32b",
+        "3f860f8a6c425fa4"
+       ],
+       "mass": "41292fd12e7f003a",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d590a7081877a7",
+        "4158b4dabbf3319b",
+        "4052ad4657278cb2"
+       ],
+       "v": [
+        "40a775cf726f76d8",
+        "4086ef0db018efdf",
+        "403b993b520f41d6"
+       ],
+       "q": [
+        "3fb042d547ffdf86",
+        "bf9dedbb576d3532",
+        "bfe2f36dda05ac77",
+        "3fe9b00c3da6d326"
+       ],
+       "w": [
+        "3fa97a09dc217cca",
+        "3f81df46a2529d39",
+        "3f878066c39572fc"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d5588a9dc4f608",
+        "4158b4c7eba8b0c6",
+        "4029b6913c465cd2"
+       ],
+       "v": [
+        "40a6d937496aaecb",
+        "40861ed51a133044",
+        "40115e38416df45b"
+       ],
+       "q": [
+        "3fd4428fac27f0c7",
+        "bfcabc7bf9e3007c",
+        "bfe9334494bc45b6",
+        "3fdf17232a905d29"
+       ],
+       "w": [
+        "3fcd5c2481e9b87e",
+        "3f9be60708db8fc2",
+        "bfc8b9357ef86ee2"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d55883030de270",
+        "4158b4c7e90db5b0",
+        "c02a78bf0f5d3c50"
+       ],
+       "v": [
+        "40a6d92c0f62b750",
+        "40861ec39708c8aa",
+        "c0114e8cbbf8c5db"
+       ],
+       "q": [
+        "bfd06a03407a50e8",
+        "3fcba3aa43ae6d99",
+        "bfe9c7f607335afd",
+        "3fdf418572a6366b"
+       ],
+       "w": [
+        "bfc948032c9bfa1c",
+        "3f8703e8e7036445",
+        "bfca51b18cce3085"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d556dad34729a8",
+        "4158b4ce389ae035",
+        "c02aa2dcb38f79e4"
+       ],
+       "v": [
+        "40a6d4bc8769ace6",
+        "408661d9de2d2ae6",
+        "c01180ba6e33fb51"
+       ],
+       "q": [
+        "bfd0fdb2f9dcc533",
+        "3fca9e6fbefaa46c",
+        "bfcda99aa6b0ce72",
+        "3fed32cd9e74eb88"
+       ],
+       "w": [
+        "bfc9f0a712373c28",
+        "bf716417ff13d0f4",
+        "3fcc607ab1ef6597"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d556e11df8b4dc",
+        "4158b4ce401b06b5",
+        "4029ba48ba535263"
+       ],
+       "v": [
+        "40a6d4c15546a768",
+        "4086624b6aee0be7",
+        "401167955f3a26b2"
+       ],
+       "q": [
+        "3fd32dd1e196a91d",
+        "bfcafa9b03d47578",
+        "bfcc68adc9f6c0e0",
+        "3fecea610772e89a"
+       ],
+       "w": [
+        "3fcbe5559919b2ab",
+        "3f88339df62e18dc",
+        "3fcd1050845d9ce5"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 480,
+     "vessels": [
+      {
+       "r": [
+        "40d6d54d4d8a4d92",
+        "4158b528646c849d",
+        "3feaa5ff2f11fe46"
+       ],
+       "v": [
+        "40a710eb9f2cc0cf",
+        "40865e07264abb43",
+        "3fe4bae2be7fb21a"
+       ],
+       "q": [
+        "3f9b6acab345cc7c",
+        "3f57af921d0f66e8",
+        "bfe2edb54ef10168",
+        "3fe9c97e888e6901"
+       ],
+       "w": [
+        "3f846ebb7c789ba4",
+        "3f81df79a29f07d2",
+        "3f86257ff2dd08fb"
+       ],
+       "mass": "412929e8e3b0d73e",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d70803c926e5fc",
+        "4158b5362c2b4e7a",
+        "405620719dc85d20"
+       ],
+       "v": [
+        "40a775c8968fe5e9",
+        "4086c90e98870a5d",
+        "403b997b04a59057"
+       ],
+       "q": [
+        "3fb31f159d7e3bb9",
+        "bfa1ed3e00a1795b",
+        "bfe2dbeb1825d796",
+        "3fe9b791ee4d9b7d"
+       ],
+       "w": [
+        "3fa966add15e3743",
+        "3f81df46a2529d39",
+        "3f87d126fb469660"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d6c61da0de3f66",
+        "4158b5201814aa2d",
+        "402e2838691c9f39"
+       ],
+       "v": [
+        "40a6d9255143976b",
+        "4085f75f3054a685",
+        "40122dea971065d3"
+       ],
+       "q": [
+        "3fd6ff449fa3f373",
+        "bfce0f96ff57d7b3",
+        "bfe96ab1af82f788",
+        "3fdb844500ecb486"
+       ],
+       "w": [
+        "3fcd8fbf97abf86a",
+        "3f9fabdb9b273e8d",
+        "bfc873dcbea08f7c"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d6c615a3f838ea",
+        "4158b520153e2ba9",
+        "c02ee2603df51798"
+       ],
+       "v": [
+        "40a6d924c0e22f37",
+        "4085f7527f74dfa7",
+        "c011fdeee374d332"
+       ],
+       "q": [
+        "bfd27902e12a9c9a",
+        "3fcf23c66ef5413f",
+        "bfea340126073406",
+        "3fdbacdd7117eebd"
+       ],
+       "w": [
+        "bfc93013204fb994",
+        "3f88aeddeeee00c8",
+        "bfca67fc9ae1ed41"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d6c424a21706ee",
+        "4158b52776e62b78",
+        "c02f19847d8f278b"
+       ],
+       "v": [
+        "40a6d479d1e90e3c",
+        "40863d4622d0f652",
+        "c0123392a51569e0"
+       ],
+       "q": [
+        "bfd32d8f5cbca6ab",
+        "3fcdc6836cdefa07",
+        "bfc5b7895f1e4eee",
+        "3fed1b27de3d3b64"
+       ],
+       "w": [
+        "bfc9e502553c6843",
+        "bf791b473249b94d",
+        "3fcc6a8352510a4e"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d6c42ae8b80bf7",
+        "4158b5278025ed40",
+        "402e2e4be25a1208"
+       ],
+       "v": [
+        "40a6d4742557b041",
+        "40863db3297d7ea8",
+        "40123707ac44aa24"
+       ],
+       "q": [
+        "3fd589c7455ed208",
+        "bfce431ac885f9e8",
+        "bfc42abee1e1c16f",
+        "3fecbab06cd62e08"
+       ],
+       "w": [
+        "3fcbc95a6eeb2e07",
+        "3f8a477c89922bc7",
+        "3fcd2a54ddfe91d5"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 540,
+     "vessels": [
+      {
+       "r": [
+        "40d84698b72c80fa",
+        "4158b581a3bf1317",
+        "3ff331a150a4fb32"
+       ],
+       "v": [
+        "40a7188130077dd6",
+        "408641a95c743ee1",
+        "3fea56e452673691"
+       ],
+       "q": [
+        "3f9ecb45c433f190",
+        "3f5b3531a759ffc4",
+        "bfe2db554ee621b5",
+        "3fe9d5fd0ba0f2b3"
+       ],
+       "w": [
+        "3f844dd4fa5e3b68",
+        "3f81df7fdfbc09a1",
+        "3f863b55b45d738e"
+       ],
+       "mass": "412924008d7a5d64",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d87f6017d3359f",
+        "4158b59104698945",
+        "405993a5ce685695"
+       ],
+       "v": [
+        "40a775c125d48769",
+        "4086a310be2ae07c",
+        "403b99c9eb52295f"
+       ],
+       "q": [
+        "3fb5f8490c9ad1d3",
+        "bfa4e01035851fe5",
+        "bfe2c35e96a84139",
+        "3fe9be3243411691"
+       ],
+       "w": [
+        "3fa94f4b36ccc806",
+        "3f81df46a2529d39",
+        "3f881b92031c042d"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d833aed0359b2a",
+        "4158b577a69bfe02",
+        "4031665cf57e3a51"
+       ],
+       "v": [
+        "40a6d8fcfa0a42a7",
+        "4085cfe4c283ab04",
+        "4012f420aa2f9c4e"
+       ],
+       "q": [
+        "3fd9a7e5800fb27e",
+        "bfd09d7b02f13f4f",
+        "bfe9779203cac8a0",
+        "3fd7d21b49b0d250"
+       ],
+       "w": [
+        "3fcdc91626f8b09e",
+        "3fa1e9fbc2ec0dcf",
+        "bfc824581f20b872"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d833a7324d86e9",
+        "4158b577a397d1db",
+        "c031bba163fa54d0"
+       ],
+       "v": [
+        "40a6d909d2e20a8a",
+        "4085cfd9d5dac9e5",
+        "c012a7d3a2f3179d"
+       ],
+       "q": [
+        "bfd46c5aa7b47cc9",
+        "3fd13bd7abf8ff12",
+        "bfea7f727d34ba85",
+        "3fd7f1d3f278331c"
+       ],
+       "w": [
+        "bfc9162e3e78b96e",
+        "3f8aa0af742f756e",
+        "bfca7fd15f8f294d"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d83169a300b9d2",
+        "4158b58022998373",
+        "c031ddf76a417680"
+       ],
+       "v": [
+        "40a6d4232f116eda",
+        "4086188c70b783ae",
+        "c012ddf8a14d3bf0"
+       ],
+       "q": [
+        "bfd5412706265c12",
+        "3fd05ad1fdda3e52",
+        "bfbb3f0a7dc2f21b",
+        "3fecdacc58bc1053"
+       ],
+       "w": [
+        "bfc9d5028b102bfd",
+        "bf8091104fd2f0c2",
+        "3fcc78377aeb2424"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d8316f2e93d2cb",
+        "4158b5802d764fee",
+        "40316a6916e5af2b"
+       ],
+       "v": [
+        "40a6d411364d8d37",
+        "408618ecac98edfb",
+        "4012faaf4320ff1f"
+       ],
+       "q": [
+        "3fd7c02f058f8d94",
+        "bfd0aa5071445c9c",
+        "bfb78adf6a52df2c",
+        "3fec5ed62fa7509c"
+       ],
+       "w": [
+        "3fcbaab0701e0842",
+        "3f8cb74beb793b18",
+        "3fcd467c4af5ed56"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 600,
+     "vessels": [
+      {
+       "r": [
+        "40d9b85d66635973",
+        "4158b5da71f1eb25",
+        "3ffa8c9087a57642"
+       ],
+       "v": [
+        "40a720144c501455",
+        "40862577475eb6dd",
+        "3ff04ea6a48c2e1a"
+       ],
+       "q": [
+        "3fa1142529903971",
+        "3f5ee04053180a67",
+        "bfe2c8cd19660d4a",
+        "3fe9e26a726c2dde"
+       ],
+       "w": [
+        "3f842cd6313dabfa",
+        "3f81df8613d37c36",
+        "3f86510ba869bbb9"
+       ],
+       "mass": "41291e183128c196",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d9f6bbeabb24e7",
+        "4158b5eb44b2ceaa",
+        "405d06e4d6be6828"
+       ],
+       "v": [
+        "40a775b91db1cbc6",
+        "40867d141cdc6ce7",
+        "403b9a286b6c8fee"
+       ],
+       "q": [
+        "3fb8cde5217f5779",
+        "bfa7cea2daf2ef43",
+        "bfe2a9d0d66c7e94",
+        "3fe9c3ecca976b2d"
+       ],
+       "w": [
+        "3fa933ac27f4f32a",
+        "3f81df46a2529d39",
+        "3f885f4e9da60045"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d9a13ccf6d106f",
+        "4158b5ce97440e4c",
+        "4033d0866510cbc5"
+       ],
+       "v": [
+        "40a6d8bf956aff3e",
+        "4085a8717300d9a9",
+        "4013abaf0c97fc54"
+       ],
+       "q": [
+        "3fdc392354c56158",
+        "bfd21ec96cb2ec61",
+        "bfe958f10a8a5c8b",
+        "3fd40748bf46a1cb"
+       ],
+       "w": [
+        "3fce08639f32a05f",
+        "3fa43542f6cc838e",
+        "bfc7c95679d2ab3d"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d9a13679ff7ad5",
+        "4158b5ce940ff2a2",
+        "c0341abc94706523"
+       ],
+       "v": [
+        "40a6d8dc1df81286",
+        "4085a8634f046e30",
+        "c01347df77d3407b"
+       ],
+       "q": [
+        "bfd64133836f24c4",
+        "3fd2cd2104ec9b1b",
+        "bfeaaa13ae6dff7b",
+        "3fd414ff030b68c4"
+       ],
+       "w": [
+        "bfc8fa01ac3fae5c",
+        "3f8cdee648bf14af",
+        "bfca996af461ef12"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d99ea8ab8147dd",
+        "4158b5d83b0ced1d",
+        "c03443b395209503"
+       ],
+       "v": [
+        "40a6d3bb3e863ec8",
+        "4085f3a518ed849f",
+        "c0137b4be3a50998"
+       ],
+       "q": [
+        "bfd7345f243d031e",
+        "3fd1b3c6f155827a",
+        "bfa5b020bc0703a6",
+        "3fec725218e016e2"
+       ],
+       "w": [
+        "bfc9c06a806fa314",
+        "bf84c9053b70d643",
+        "3fcc89b7145682a0"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40d99eacaca9a461",
+        "4158b5d847433a52",
+        "4033d519bf6cf817"
+       ],
+       "v": [
+        "40a6d39bc012cd71",
+        "4085f3f0664a4920",
+        "4013ad0b1638da9d"
+       ],
+       "q": [
+        "3fd9ccda6397f9ec",
+        "bfd214f773ba98bd",
+        "bf9a290b08fd8134",
+        "3febd7912447b2f6"
+       ],
+       "w": [
+        "3fcb88dfaf6ca3e3",
+        "3f8f8b80a9fc6a51",
+        "3fcd651b79664a37"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 660,
+     "vessels": [
+      {
+       "r": [
+        "40db2a9b32e7888e",
+        "4158b632cfb3b548",
+        "4001c732fe84ac6d"
+       ],
+       "v": [
+        "40a727a4d4a2b1b5",
+        "40860970d22812ae",
+        "3ff3c70a50e6311a"
+       ],
+       "q": [
+        "3fa2c0e83f43787a",
+        "3f615846bfa4d16a",
+        "bfe2b61cdab59cfd",
+        "3fe9eec6b4910c16"
+       ],
+       "w": [
+        "3f840bbf47023e0d",
+        "3f81df8c3eaedf49",
+        "3f8666a1bf0bc123"
+       ],
+       "mass": "4129182fd1927691",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40db6e173854180b",
+        "4158b644ed0bf9bb",
+        "40603d18564706cc"
+       ],
+       "v": [
+        "40a775b07baa2bfc",
+        "40865718affbe6d9",
+        "403b9a96a24b6b78"
+       ],
+       "q": [
+        "3fbb9f5c93fcd42a",
+        "bfaab83e20f52c60",
+        "bfe28f4b1dc8d88a",
+        "3fe9c8c1bf451e64"
+       ],
+       "w": [
+        "3fa913b0aa0938ab",
+        "3f81df46a2529d39",
+        "3f889c1863cb9eda"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40db0ec65c9e1b80",
+        "4158b624ea3f5d04",
+        "4036507cbb6eb482"
+       ],
+       "v": [
+        "40a6d86f185165ee",
+        "4085811018a9fc2f",
+        "4014505321a86fd7"
+       ],
+       "q": [
+        "3fdeafa79f3440c3",
+        "bfd38b9b1b73d445",
+        "bfe90e077e9f01d4",
+        "3fd02ab7c9767460"
+       ],
+       "w": [
+        "3fce4dd5d12a5d7a",
+        "3fa6be5269faeb14",
+        "bfc7615108650aec"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40db0ec2594e0d2d",
+        "4158b624e6c15f2f",
+        "c0368d08af822946"
+       ],
+       "v": [
+        "40a6d89d0d35852c",
+        "408580f7e483bd15",
+        "c013da5122ba583d"
+       ],
+       "q": [
+        "bfd7f4dff586eb54",
+        "3fd44332ab5f15ef",
+        "bfeab3ddfd1990d9",
+        "3fd01b19d7f41289"
+       ],
+       "w": [
+        "bfc8db3201bd3c93",
+        "3f8f6fe12c6606e6",
+        "bfcab50720f84c60"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40db0be0be655860",
+        "4158b62fbf7e50cc",
+        "c036bc14fd2262f9"
+       ],
+       "v": [
+        "40a6d344fff32469",
+        "4085ce8abdd70975",
+        "c01407bac3b58697"
+       ],
+       "q": [
+        "bfd90336d72c98c2",
+        "3fd2ec3a02c78d6a",
+        "3f96c2826ab49098",
+        "3febe28ae81927b4"
+       ],
+       "w": [
+        "bfc9a6eae886ff4c",
+        "bf8942d39fa7d0bb",
+        "3fcc9f29f129a2d4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40db0be256e5c33c",
+        "4158b62fccaaf751",
+        "403654c47cab037d"
+       ],
+       "v": [
+        "40a6d31757af5653",
+        "4085ceb97fe3413d",
+        "401449ab4f74ac65"
+       ],
+       "q": [
+        "3fdbabb78094bb2d",
+        "bfd35f22aabdafe3",
+        "3fa526dd82b02291",
+        "3feb25ea227ab268"
+       ],
+       "w": [
+        "3fcb6361f493c047",
+        "3f9166f2d8398839",
+        "3fcd868bcfe1d82e"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 720,
+     "vessels": [
+      {
+       "r": [
+        "40dc9d51f28aae4b",
+        "4158b68abdb2ca07",
+        "400730dbff4623c6"
+       ],
+       "v": [
+        "40a72f32ab543640",
+        "4085ed95e985e14c",
+        "3ff79497dd5d729d"
+       ],
+       "q": [
+        "3fa46be837e3b2e0",
+        "3f6352f41ff4c7c6",
+        "bfe2a344bf4d1234",
+        "3fe9fb11c9c4a456"
+       ],
+       "w": [
+        "3f83ea905a4912bb",
+        "3f81df926022fea6",
+        "3f867c17e197630a"
+       ],
+       "mass": "41291247703c5343",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dce571f6ec65f7",
+        "4158b69dfd79d24d",
+        "4061f6c5a28cc910"
+       ],
+       "v": [
+        "40a775a73d5b456d",
+        "4086311e728fdc6c",
+        "403b9b146c5d8f18"
+       ],
+       "q": [
+        "3fbe6c218ad1c1a2",
+        "bfad9c2728f61667",
+        "bfe273d765a85744",
+        "3fe9ccb21411ae72"
+       ],
+       "w": [
+        "3fa8ef4c2571f80e",
+        "3f81df46a2529d39",
+        "3f88d1be7ffc80db"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dc7c4a58f30706",
+        "4158b67a9fe9771c",
+        "4038e3aba6b234bd"
+       ],
+       "v": [
+        "40a6d80de70dae7f",
+        "408559ca555ea9b4",
+        "4014dec7576ab7d1"
+       ],
+       "q": [
+        "3fe08405fa07f484",
+        "bfd4e44402021589",
+        "bfe8963d5d1604cf",
+        "3fc88729a8138326"
+       ],
+       "w": [
+        "3fce9984f7c05d49",
+        "3fa98c325a8f0356",
+        "bfc6ea8407dd5197"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dc7c49c8b3079b",
+        "4158b67a9be8a570",
+        "c039109fe2a85ba3"
+       ],
+       "v": [
+        "40a6d84e758294c7",
+        "4085599f6e293268",
+        "c0145c1fa22b760a"
+       ],
+       "q": [
+        "bfd984e1d370b783",
+        "3fd59b855bc66b70",
+        "bfea9cfa2e3ba961",
+        "3fc811fec566489a"
+       ],
+       "w": [
+        "bfc8b959d8c4f83b",
+        "3f912d72785164fd",
+        "bfcad2e67a486b0b"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dc79110fd7bb66",
+        "4158b686af1aa249",
+        "c03944cda1270bfc"
+       ],
+       "v": [
+        "40a6d2c395e75175",
+        "4085a93a38be5a55",
+        "c0148053096971d3"
+       ],
+       "q": [
+        "bfdaa9c8d7b59e3a",
+        "3fd402857100f153",
+        "3fb645a4ab14123c",
+        "3feb2c8272f67641"
+       ],
+       "w": [
+        "bfc98820c8f51456",
+        "bf8e0c914cfc7564",
+        "3fccb8bf706d7a5d"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dc790f5b869a05",
+        "4158b686bcbd8319",
+        "4038e679a09fc952"
+       ],
+       "v": [
+        "40a6d287a79c7ba8",
+        "4085a945979e35c8",
+        "4014cd39ba0854b2"
+       ],
+       "q": [
+        "3fdd58d471eab481",
+        "bfd486ba776a3200",
+        "3fbbb546124ba0c8",
+        "3fea4b32410f69e7"
+       ],
+       "w": [
+        "3fcb39a021cc20a0",
+        "3f9344dd4879716f",
+        "3fcdab2b989f7115"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 780,
+     "vessels": [
+      {
+       "r": [
+        "40de1081794bf6ae",
+        "4158b6e23c9d365e",
+        "400d988cfb40c161"
+       ],
+       "v": [
+        "40a736bdb3a95a7d",
+        "4085d1e67add38bb",
+        "3ffbb74908ebc8d0"
+       ],
+       "q": [
+        "3fa615212d40b3be",
+        "3f65600fb3353fff",
+        "bfe29044f3dcc453",
+        "3fea074ba9cc735c"
+       ],
+       "w": [
+        "3f83c94984274f6f",
+        "3f81df98780e962f",
+        "3f86916df37c5772"
+       ],
+       "mass": "41290c5f0df6791a",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40de5ccc1cad665b",
+        "4158b6f676010bd0",
+        "4063b07b46bd0f0a"
+       ],
+       "v": [
+        "40a7759d6088e355",
+        "40860b255f60abda",
+        "403b9ba16c69e024"
+       ],
+       "q": [
+        "3fc099d3ce2a6e8d",
+        "bfb03cd17b9dfd21",
+        "bfe2578044b18b97",
+        "3fe9cfbf78f55dde"
+       ],
+       "w": [
+        "3fa8c683028ef448",
+        "3f81df46a2529d39",
+        "3f8900226718e959"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dde9c7ce0703b4",
+        "4158b6cfb8c1b29b",
+        "403b8725552c1956"
+       ],
+       "v": [
+        "40a6d79ea3b87025",
+        "408532a868d73b4d",
+        "401554b483cdc7f5"
+       ],
+       "q": [
+        "3fe19f6793edf56c",
+        "bfd6298eeca4c5c5",
+        "bfe7f12cb0443983",
+        "3fc0b2916a921e11"
+       ],
+       "w": [
+        "3fceeb695332906e",
+        "3faca65dac4d2f14",
+        "bfc662e6b46c40b4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dde9cbe0219a17",
+        "4158b6cfb3df0fc7",
+        "c03ba3471df288ae"
+       ],
+       "v": [
+        "40a6d7f26a00069f",
+        "408532606de65b35",
+        "c014cafefbe046fe"
+       ],
+       "q": [
+        "bfdaeef01e089a73",
+        "3fd6d3975f829369",
+        "bfea65c01c3c348d",
+        "3fbf8e93eb672d9e"
+       ],
+       "w": [
+        "bfc89408284ec05e",
+        "3f92d417308d98ee",
+        "bfcaf34c64664b94"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dde63905eb2311",
+        "4158b6dd09061f7e",
+        "c03bdb3e9dadaae8"
+       ],
+       "v": [
+        "40a6d23a13c6a3d2",
+        "408583b243607e8e",
+        "c014e2f466d25cf5"
+       ],
+       "q": [
+        "bfdc244cdcf34fdc",
+        "3fd4f54a517fc895",
+        "3fc368c5f8c9bdce",
+        "3fea517d042d7875"
+       ],
+       "w": [
+        "bfc963937db39fa8",
+        "bf919a9ff83c8c61",
+        "3fccd6adf168632f"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dde63322a756b1",
+        "4158b6dd1685703f",
+        "403b86eef59fd029"
+       ],
+       "v": [
+        "40a6d1f039e32d96",
+        "40858394425fecab",
+        "4015355cd36ee7f2"
+       ],
+       "q": [
+        "3fded06205684d36",
+        "bfd589f8437d54f5",
+        "3fc66137097cdec1",
+        "3fe94900936767da"
+       ],
+       "w": [
+        "3fcb0aef30529724",
+        "3f9565ea9b0c5971",
+        "3fcdd35df1195f10"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 840,
+     "vessels": [
+      {
+       "r": [
+        "40df84299963638f",
+        "4158b7394d20bd67",
+        "401289c6fb862efc"
+       ],
+       "v": [
+        "40a73e45d16b55f4",
+        "4085b66273c463bc",
+        "4000178b46a24800"
+       ],
+       "q": [
+        "3fa7bc8f3e0a4055",
+        "3f677f80c43a0996",
+        "bfe27d1da5513e93",
+        "3fea13744c7b30d2"
+       ],
+       "w": [
+        "3f83a7ead96917c4",
+        "3f81df9e86591690",
+        "3f86a6a3d304eca8"
+       ],
+       "mass": "41290676ab304fa4",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40dfd4259f9e1f7a",
+        "4158b74e56a6446f",
+        "40656a3a31f06b2c"
+       ],
+       "v": [
+        "40a77592e325fbe4",
+        "4085e52d71116e76",
+        "403b9c3d12dcf2b9"
+       ],
+       "q": [
+        "3fc1fab2c7459c8f",
+        "bfb1a7fc83e1e37f",
+        "bfe23a50d8fbe026",
+        "3fe9d1ec5b9515bf"
+       ],
+       "w": [
+        "3fa899686942d735",
+        "3f81df46a2529d39",
+        "3f89273687d43cbb"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40df573df07d2b9d",
+        "4158b7243565a6d1",
+        "403e37bdf2e8ff8c"
+       ],
+       "v": [
+        "40a6d72407f799ec",
+        "40850bb138bd6fb4",
+        "4015b089b2fca790"
+       ],
+       "q": [
+        "3fe2a823f6ea0709",
+        "bfd75cc38572b5cc",
+        "bfe71ea57d739b49",
+        "3fb1cdccb9e52d96"
+       ],
+       "w": [
+        "3fcf434dbebe0d0e",
+        "3fb00a5904b5c6de",
+        "bfc5c822da475757"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40df5747d9a37cb1",
+        "4158b7242f1538ee",
+        "c03e4284dc391b73"
+       ],
+       "v": [
+        "40a6d78b14679484",
+        "40850b400d4916e9",
+        "c015254fa0efa1e0"
+       ],
+       "q": [
+        "bfdc30fcf2f42d6f",
+        "3fd7e8ec92bfe20b",
+        "bfea0eb5fc42d911",
+        "3fad80a9a7a4c459"
+       ],
+       "w": [
+        "bfc86abe64023419",
+        "3f94b082eb6b40c7",
+        "bfcb167eed804010"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40df53583689bc39",
+        "4158b732cc62e8e9",
+        "c03e7c9064b8ee56"
+       ],
+       "v": [
+        "40a6d1ab5d5451c7",
+        "40855df300317e25",
+        "c0152e2d78847290"
+       ],
+       "q": [
+        "bfdd6f18cfd6bb12",
+        "3fd5c3770e74dd4a",
+        "3fcb9f7a496a5996",
+        "3fe952f5d7d0f53b"
+       ],
+       "w": [
+        "bfc938b24921431e",
+        "bf94667a97a974e6",
+        "3fccf9320693979e"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40df534d4b2a068a",
+        "4158b732d90e99f0",
+        "403e329c3b74af18"
+       ],
+       "v": [
+        "40a6d1545a842891",
+        "40855da676ef76d0",
+        "40158083c76edf41"
+       ],
+       "q": [
+        "3fe0075b20b2affa",
+        "bfd6676fa8d23554",
+        "3fced1242a45aa00",
+        "3fe8212f6b7df528"
+       ],
+       "w": [
+        "3fcad68cb0f33a6c",
+        "3f97d1635f7f3dfa",
+        "3fcdff8a687796a6"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 900,
+     "vessels": [
+      {
+       "r": [
+        "40e07c2511a40d10",
+        "4158b78fefead865",
+        "4016db9281c766c8"
+       ],
+       "v": [
+        "40a745cae8ae8a24",
+        "40859b09c1be3fe8",
+        "40027dfc08b7fcc4"
+       ],
+       "q": [
+        "3fa9622e8d9dab3d",
+        "3f69b12e82ae2ac3",
+        "bfe269cf00d6da25",
+        "3fea1f8ba9ae28c7"
+       ],
+       "w": [
+        "3f8386746b7f6bf5",
+        "3f81dfa48af187ac",
+        "3f86bbb95a031c43"
+       ],
+       "mass": "4129008e4825784d",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e0a5bf3ad339f5",
+        "4158b7a59f6e04d1",
+        "4067240348e096fe"
+       ],
+       "v": [
+        "40a77587c35bb0e4",
+        "4085bf36a236517a",
+        "403b9ce6a50b1e50"
+       ],
+       "q": [
+        "3fc3586b6c808625",
+        "bfb30f3ac54007b3",
+        "bfe21c54b0d74fe1",
+        "3fe9d33be3899f7b"
+       ],
+       "w": [
+        "3fa8681c2317341f",
+        "3f81df46a2529d39",
+        "3f8946fcefb2f04d"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e06256105ce094",
+        "4158b778168c1304",
+        "404079109cb346cd"
+       ],
+       "v": [
+        "40a6d6a0d02cb2c3",
+        "4084e4ea7c2e4bf9",
+        "4015f147ef424e80"
+       ],
+       "q": [
+        "3fe39c4a70b30649",
+        "bfd87faa8d82a2ca",
+        "bfe61eb3439f92f5",
+        "3f833cb055b34b41"
+       ],
+       "w": [
+        "3fcfa0be933eaeec",
+        "3fb1efa96fc1216d",
+        "bfc5178c6a7a4c18"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e0625e88e0e8be",
+        "4158b7780e0deb88",
+        "c04075da6d579e69"
+       ],
+       "v": [
+        "40a6d71a96dfa875",
+        "4084e44243aa6fa5",
+        "c01569ff55270e93"
+       ],
+       "q": [
+        "bfdd493b9ecb5c9b",
+        "3fd8d90e3cd1f298",
+        "bfe9988f534941a9",
+        "bf81929ff69b7275"
+       ],
+       "w": [
+        "bfc83cee565ea04a",
+        "3f96c7ea226f2820",
+        "bfcb3cc675f52e1f"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e0603731fe5796",
+        "4158b787f855aa33",
+        "c04092e2ebc820d4"
+       ],
+       "v": [
+        "40a6d11a1a2b7052",
+        "408537fd7effc350",
+        "c015610ef071724d"
+       ],
+       "q": [
+        "bfde86a1e01157ac",
+        "3fd66c4e5ad163f7",
+        "3fd1de287295f282",
+        "3fe8329d0a0b1f3e"
+       ],
+       "w": [
+        "bfc906d1627c03b9",
+        "bf977281994d508c",
+        "3fcd208d4fda5345"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e0602ed348f257",
+        "4158b788036a9489",
+        "404072e84bfdd74d"
+       ],
+       "v": [
+        "40a6d0b712ae48f5",
+        "4085377e07a65c8d",
+        "4015adac92dad7a4"
+       ],
+       "q": [
+        "3fe088275a9922d1",
+        "bfd71e17e18dea6b",
+        "3fd38f218e92380c",
+        "3fe6d5d924cf37e4"
+       ],
+       "w": [
+        "3fca9b9abb0d5c06",
+        "3f9a8f81841602b1",
+        "3fce301c2ff004a0"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 960,
+     "vessels": [
+      {
+       "r": [
+        "40e1367172da03a5",
+        "4158b7e625a8b65b",
+        "401bcc4afc1b78c7"
+       ],
+       "v": [
+        "40a74d4cddb3edfa",
+        "40857fdc52150c7f",
+        "40050ef210d6c649"
+       ],
+       "q": [
+        "3fab05fb43ddaa3c",
+        "3f6bf5000554c9f9",
+        "bfe2565933dcdf72",
+        "3fea2b91b94b0b15"
+       ],
+       "w": [
+        "3f8364e6493ac6bb",
+        "3f81dfaa85cd8660",
+        "3f86d0ae5e6d539a"
+       ],
+       "mass": "4128faa5e4f5de1d",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1616b4a495860",
+        "4158b7fc505cbfe8",
+        "4068ddd76370b2da"
+       ],
+       "v": [
+        "40a7757bff8e6afd",
+        "40859940ed6856ac",
+        "403b9d9d444e217f"
+       ],
+       "q": [
+        "3fc4b2be7588b917",
+        "bfb47235a5a4b55f",
+        "bfe1fd97b323b5cf",
+        "3fe9d3b1eb18e326"
+       ],
+       "w": [
+        "3fa832c8a0150cc4",
+        "3f81df46a2529d39",
+        "3f895f85e7a9a408"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e11908f574bd7e",
+        "4158b7cb5d00915f",
+        "4041d970c0b4a976"
+       ],
+       "v": [
+        "40a6d617b9f9d291",
+        "4084be58f1ee8b51",
+        "4016165110518827"
+       ],
+       "q": [
+        "3fe479c50e56a99e",
+        "bfd9948f97ea4a1b",
+        "bfe4f1a4938ddd99",
+        "bfa95b17bb382fda"
+       ],
+       "w": [
+        "3fd0017a0e27c6e4",
+        "3fb4073d13e57ff1",
+        "bfc44e19cdafea9c"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e119158336e0cb",
+        "4158b7cb5159d3b8",
+        "c041ce0bbb423b46"
+       ],
+       "v": [
+        "40a6d6a2fa6f941f",
+        "4084bd6a1667ea36",
+        "c01598642060badc"
+       ],
+       "q": [
+        "bfde3626d77cbc6e",
+        "3fd9a18ac51269b6",
+        "bfe9042b998ddd30",
+        "bfb334cb60a00ec1"
+       ],
+       "w": [
+        "bfc809f7aafba393",
+        "3f99201cb5445999",
+        "bfcb666d15dc2eed"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e116bdbca0563d",
+        "4158b7dc8c087b82",
+        "c041e9e4e59eff40"
+       ],
+       "v": [
+        "40a6d088bb4608e2",
+        "408511d358949a8c",
+        "c0157b0100f3b437"
+       ],
+       "q": [
+        "bfdf677d950b017c",
+        "3fd6ef6e9e718fae",
+        "3fd5da63cd1a0d3b",
+        "3fe6f25526825c75"
+       ],
+       "w": [
+        "bfc8cd26737f23ff",
+        "bf9ac8107aac1519",
+        "3fcd4d04dd1db29f"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e116b21a9cc68d",
+        "4158b7dc94b35429",
+        "4041ce60a5bccc08"
+       ],
+       "v": [
+        "40a6d01b37ceba13",
+        "4085111d4792a1a2",
+        "4015bc348862c6e6"
+       ],
+       "q": [
+        "3fe0e8e95bfecb2f",
+        "bfd7ad558812e7d0",
+        "3fd79e4f685e87ed",
+        "3fe569547ea38e00"
+       ],
+       "w": [
+        "3fca591b32387b2b",
+        "3f9da98502d424fc",
+        "3fce6580b7057d28"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1020,
+     "vessels": [
+      {
+       "r": [
+        "40e1f0f9d6d30cc8",
+        "4158b83bef073ad5",
+        "4020b3488ae9836c"
+       ],
+       "v": [
+        "40a754cb94d8c8d5",
+        "408564da11c659af",
+        "4007ca681560eb1e"
+       ],
+       "q": [
+        "3faca7f18d1268e6",
+        "3f6e4adc4be6b7a1",
+        "bfe242bc6c18391b",
+        "3fea3786733e22f7"
+       ],
+       "w": [
+        "3f8343407f633f38",
+        "3f81dfb076e85af9",
+        "3f86e582b2ec46ce"
+       ],
+       "mass": "4128f4bd81b2969f",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e21d16f90baf84",
+        "4158b8526976d32c",
+        "406a97b74aa59499"
+       ],
+       "v": [
+        "40a7756f96612eed",
+        "4085734c4d5679cb",
+        "403b9e5ff4e69ef4"
+       ],
+       "q": [
+        "3fc609701ccf7947",
+        "bfb5d09aa50da052",
+        "bfe1de2607ab5934",
+        "3fe9d352f500c06b"
+       ],
+       "w": [
+        "3fa7f9a11e9d2bcf",
+        "3f81df46a2529d39",
+        "3f8970ee8bc1a48c"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1cfb783bf39b9",
+        "4158b81e09a00b2e",
+        "40433b40cdad0ca0"
+       ],
+       "v": [
+        "40a6d58b93adf96d",
+        "4084980086a0fba3",
+        "40161f475812112b"
+       ],
+       "q": [
+        "3fe53e4e60a22c59",
+        "bfda9e3f60eb4e61",
+        "bfe398156506cebc",
+        "bfbb510a278173e7"
+       ],
+       "w": [
+        "3fd0345bf4d810f2",
+        "3fb6551840c77bc1",
+        "bfc3685e1a335e72"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1cfc8aa9d83e2",
+        "4158b81df9944933",
+        "c043286e3e2b734a"
+       ],
+       "v": [
+        "40a6d6262aab1485",
+        "408496b9e1c553c2",
+        "c015b019d02a0542"
+       ],
+       "q": [
+        "bfdef6872758b2f1",
+        "3fda3ff553479d55",
+        "bfe852948bc829ec",
+        "bfc2192b5457140a"
+       ],
+       "w": [
+        "bfc7d1251d89c24c",
+        "3f9bbf915351f026",
+        "bfcb93bdabe81bc4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1cd3fc390ec6c",
+        "4158b83086ac8044",
+        "c04341bbf508bd61"
+       ],
+       "v": [
+        "40a6cff98d47956f",
+        "4084eb767418d76b",
+        "c0157ba52cbdcf8c"
+       ],
+       "q": [
+        "bfe007317f3978ce",
+        "3fd74cd9dc379c28",
+        "3fd9bf3fe4939328",
+        "3fe594305fc297d1"
+       ],
+       "w": [
+        "bfc88ac474e078c7",
+        "bf9e71489a11f686",
+        "3fcd7edef10e4f2d"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1cd3091efed47",
+        "4158b8308c0cdb6b",
+        "404329c9e0edfd43"
+       ],
+       "v": [
+        "40a6cf8385a82653",
+        "4084ea86eab3e58c",
+        "4015abbf12bdbcdc"
+       ],
+       "q": [
+        "3fe1280ae063abf3",
+        "bfd81504ac59cefc",
+        "3fdb903e06a1e557",
+        "3fe3de308ee9669d"
+       ],
+       "w": [
+        "3fca0dea48ffb81b",
+        "3fa094e461d25763",
+        "3fcea02581be44ae"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1080,
+     "vessels": [
+      {
+       "r": [
+        "40e2abbe2331dcbf",
+        "4158b8914cb2fc9c",
+        "4023da820add9bbc"
+       ],
+       "v": [
+        "40a75c46f28e149d",
+        "40854a02ed78487b",
+        "400ab0583bb3af20"
+       ],
+       "q": [
+        "3fae480d99d0715d",
+        "3f705955204eb950",
+        "bfe22ef8d785c21f",
+        "3fea4369cf78eb1a"
+       ],
+       "w": [
+        "3f8321831937ded0",
+        "3f81dfb65e422686",
+        "3f86fa36275b0f9c"
+       ],
+       "mass": "4128eed51e64c6cd",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e2d8c241ea9e9d",
+        "4158b8a7eac0871f",
+        "406c51a3b709b14a"
+       ],
+       "v": [
+        "40a7756286b7507e",
+        "40854d58bcd442a0",
+        "403b9f2da48bce93"
+       ],
+       "q": [
+        "3fc75c488bc800fc",
+        "bfb72a1c04430e27",
+        "bfe1be0bffe8d492",
+        "3fe9d2241fead913"
+       ],
+       "w": [
+        "3fa7bcdff6949691",
+        "3f81df46a2529d39",
+        "3f897b5f61bfe657"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e28661ae8182b7",
+        "4158b8701d557d46",
+        "40449cbe1ab8add0"
+       ],
+       "v": [
+        "40a6d4ff564063fa",
+        "408471e4535cb706",
+        "40160c07e89d1afe"
+       ],
+       "q": [
+        "3fe5e7669f106ab1",
+        "bfdba0019f0778d5",
+        "bfe212fce69f26a8",
+        "bfc4b0eb2aad87bc"
+       ],
+       "w": [
+        "3fd0682235d2a884",
+        "3fb8dcf2512a991c",
+        "bfc26286e61f6791"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e28677dcda0a32",
+        "4158b8700761315b",
+        "c04483951901c462"
+       ],
+       "v": [
+        "40a6d5a5fcbd4afa",
+        "4084703399913f76",
+        "c015b0e918560be7"
+       ],
+       "q": [
+        "bfdf8979921efbdb",
+        "3fdab1e570dadfcd",
+        "bfe784fc2a6f59d8",
+        "bfca8b14876a7a5a"
+       ],
+       "w": [
+        "bfc791a941bde47c",
+        "3f9ead70d0e5a2f5",
+        "bfcbc5027c12d292"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e283bd61590e11",
+        "4158b883e77afe86",
+        "c04498d178827132"
+       ],
+       "v": [
+        "40a6cf6ed02e47aa",
+        "4084c4e8fe5327ea",
+        "c01562cae56958cc"
+       ],
+       "q": [
+        "bfe03c1619c973a9",
+        "3fd784fe12d4f5e9",
+        "3fdd87a18ee2b537",
+        "3fe41a6d78a9d0b0"
+       ],
+       "w": [
+        "bfc83e96d99c5690",
+        "bfa13c918f059ee6",
+        "3fcdb65ff15e1de3"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e283aa6574716c",
+        "4158b883e8a6e451",
+        "40448333188960eb"
+       ],
+       "v": [
+        "40a6cef2b900617e",
+        "4084c3be21ac66bc",
+        "40157c380d36e743"
+       ],
+       "q": [
+        "3fe1440d08e1c520",
+        "bfd8558341ade5ee",
+        "3fdf5f2eebb59623",
+        "3fe237305a07835c"
+       ],
+       "w": [
+        "3fc9b8b826bdda48",
+        "3fa28deb4ddf9269",
+        "3fcee074f7fa206c"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1140,
+     "vessels": [
+      {
+       "r": [
+        "40e366be3cbcee7e",
+        "4158b8e63f584468",
+        "40276120dce2dc47"
+       ],
+       "v": [
+        "40a763bedb53f7ce",
+        "40852f56d173db69",
+        "400dc0bc17864aba"
+       ],
+       "q": [
+        "3fafe64b9ee564a8",
+        "3f7196285cbc09ce",
+        "bfe21b0ea46c382a",
+        "3fea4f3bc5f0f2fe"
+       ],
+       "w": [
+        "3f82ffae20dafe59",
+        "3f81dfbc3bdf24a5",
+        "3f870ec8893ac238"
+       ],
+       "mass": "4128e8ecbb1153db",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e3946d1faea3f2",
+        "4158b8fcd43e0feb",
+        "406e0b9d4f76e967"
+       ],
+       "v": [
+        "40a77554cfb4ad8f",
+        "4085276636e5d255",
+        "403ba0053096858f"
+       ],
+       "q": [
+        "3fc8ab142e55757c",
+        "bfb87e7148c3d1eb",
+        "bfe19d560093aa53",
+        "3fe9d02b18171042"
+       ],
+       "w": [
+        "3fa77cc5082048c9",
+        "3f81df46a2529d39",
+        "3f897f0af2f3083e"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e33d0781d24909",
+        "4158b8c199164ab4",
+        "4045fc264202ecc8"
+       ],
+       "v": [
+        "40a6d47640a05a96",
+        "40844c0664824d26",
+        "4015dcc49e453fd1"
+       ],
+       "q": [
+        "3fe67248d86c3777",
+        "bfdc9d8ce6e0d565",
+        "bfe063bf9702cfd1",
+        "bfcb5f412d97f986"
+       ],
+       "w": [
+        "3fd09b8f52dbf65b",
+        "3fbba1ec5da83247",
+        "bfc13860312ec8de"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e33d230630fa48",
+        "4158b8c17b6bbc04",
+        "c045de110f54ba88"
+       ],
+       "v": [
+        "40a6d5243e1900cf",
+        "408449d8f3f55136",
+        "c0159abcd4c5117a"
+       ],
+       "q": [
+        "bfdfee767e42d25b",
+        "3fdaf4f6c812b603",
+        "bfe69cba689b1d16",
+        "bfd172db77c96959"
+       ],
+       "w": [
+        "bfc74a9ad878db08",
+        "3fa0f8d0699ec246",
+        "bfcbfa833db732a8"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e33a36c298a0bf",
+        "4158b8d6adb6b36f",
+        "c045ed8d6600472d"
+       ],
+       "v": [
+        "40a6ceeacc9b08d5",
+        "40849e2d8f953f9a",
+        "c0153078be5f9a62"
+       ],
+       "q": [
+        "bfe050ec2fbe8c5b",
+        "3fd798be16aab3f5",
+        "3fe097414c65ae22",
+        "3fe287746d026ab0"
+       ],
+       "w": [
+        "bfc7e75bfb28706c",
+        "bfa375bffde4999e",
+        "3fcdf3c643bddc11"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e33a1fd7864653",
+        "4158b8d6a9bf5a25",
+        "4045d8ad16fd4bdc"
+       ],
+       "v": [
+        "40a6ce6ba1372ddd",
+        "40849cc6e34d8c3c",
+        "40152deff8a9a4e6"
+       ],
+       "q": [
+        "3fe13b8a02d60214",
+        "bfd86fbbe375b4b5",
+        "3fe182c1842eeaa8",
+        "3fe077462002a51f"
+       ],
+       "w": [
+        "3fc9580198926643",
+        "3fa4c63c61a7c8fc",
+        "3fcf26d1da61e10c"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1200,
+     "vessels": [
+      {
+       "r": [
+        "40e421fa075ef28c",
+        "4158b93ac7a30b4e",
+        "402b4c73094afa1e"
+       ],
+       "v": [
+        "40a76b3333b7703a",
+        "408514d5a9a205eb",
+        "40107dc65555e80e"
+       ],
+       "q": [
+        "3fb0c153eaa4d9a1",
+        "3f72dbdb3ca1eb87",
+        "bfe206fe015dda53",
+        "3fea5afc4e9f0bbc"
+       ],
+       "w": [
+        "3f82ddc19faf5da0",
+        "3f81dfc20fc70090",
+        "3f872339a41a8c5b"
+       ],
+       "mass": "4128e30457badc5e",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e450178d1a5d7d",
+        "4158b95125f38e39",
+        "406fc5a4a83f6b04"
+       ],
+       "v": [
+        "40a7754670bc9eb7",
+        "40850174b6c9864b",
+        "403ba0e56bb80738"
+       ],
+       "q": [
+        "3fc9f5a3ef53decd",
+        "bfb9cd57a0994939",
+        "bfe17c106c414d2f",
+        "3fe9cd6e07bfab13"
+       ],
+       "w": [
+        "3fa739944df86376",
+        "3f81df46a2529d39",
+        "3f897c2c6d2d59bd"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e3f3a9251b4c6d",
+        "4158b9127ddd3028",
+        "404757be05f42d0b"
+       ],
+       "v": [
+        "40a6d3f3e9a4d5b3",
+        "40842667438c320a",
+        "4015923b676191ec"
+       ],
+       "q": [
+        "3fe6dbe1477df4f6",
+        "bfdd9af2f3884475",
+        "bfdd188ce9ee3e64",
+        "bfd0d15b016565e2"
+       ],
+       "w": [
+        "3fd0ccf53bf61455",
+        "3fbea62dcff32b86",
+        "bfbfcac3a5b220dc"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e3f3ca216e5fc0",
+        "4158b91256659110",
+        "c0473672ba0fc77c"
+       ],
+       "v": [
+        "40a6d4a2c601d563",
+        "408423ab762c59b6",
+        "c0156da6d5904bd0"
+       ],
+       "q": [
+        "bfe012ac769e83ce",
+        "3fdb06c92890b927",
+        "bfe59b4a8d958233",
+        "bfd58f53b8656955"
+       ],
+       "w": [
+        "bfc6faf0a7b371b7",
+        "3fa2ca667e86bb51",
+        "bfcc34827081aeeb"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e3f0ac26841efb",
+        "4158b928d8ae08cd",
+        "c0473e5a80fd6e34"
+       ],
+       "v": [
+        "40a6ce6fdffa0383",
+        "40847747738b413f",
+        "c014e507654401cd"
+       ],
+       "q": [
+        "bfe0444755ab56cb",
+        "3fd7897adefcab84",
+        "3fe257786a33e830",
+        "3fe0ddd2ea391bd3"
+       ],
+       "w": [
+        "bfc7839ebdf91ac0",
+        "bfa5ea98194d1f35",
+        "3fce3744c6c022b4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e3f09141528803",
+        "4158b928cea6304a",
+        "40472852032d0111"
+       ],
+       "v": [
+        "40a6cdf121ac3e01",
+        "408475a64f6472bf",
+        "4014c1cb502b18cc"
+       ],
+       "q": [
+        "3fe10d37338fe4c5",
+        "bfd86530e8ceb626",
+        "3fe33edc7262e75e",
+        "3fdd431ce80c5679"
+       ],
+       "w": [
+        "3fc8ea07bb5988dc",
+        "3fa744e3289ecf69",
+        "3fcf7390f272e581"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1260,
+     "vessels": [
+      {
+       "r": [
+        "40e4dd71662730a4",
+        "4158b98ee63ef94d",
+        "402fa1c5af834adf"
+       ],
+       "v": [
+        "40a772a3e051297a",
+        "4084fa7f618a3837",
+        "40123061328742fd"
+       ],
+       "q": [
+        "3fb18e8f3d0b567d",
+        "3f742a6118381e7c",
+        "bfe1f2c71d39bbad",
+        "3fea66ab617eb395"
+       ],
+       "w": [
+        "3f82bbbd9ea8767d",
+        "3f81dfc7da043b24",
+        "3f87378941f55ca2"
+       ],
+       "mass": "4128dd1bf462c770",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e50bc184ec7cc8",
+        "4158b9a4dfe5103a",
+        "4070bfdd215700f7"
+       ],
+       "v": [
+        "40a77537696fcca1",
+        "4084db8437ff534d",
+        "403ba1cd2330aac3"
+       ],
+       "q": [
+        "3fcb3bcd603d2d01",
+        "bfbb169228dd425e",
+        "bfe15a478f5a8f04",
+        "3fe9c9f386ae1a50"
+       ],
+       "w": [
+        "3fa6f39493168127",
+        "3f81df46a2529d39",
+        "3f8973064ea1b868"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e4aa46dde0f2b3",
+        "4158b962cca2ee67",
+        "4048addc64a3d4de"
+       ],
+       "v": [
+        "40a6d37c3e0592ff",
+        "408401054b3242e6",
+        "40152e033697682c"
+       ],
+       "q": [
+        "3fe720c66b6b2d5a",
+        "bfde9c836782d3a0",
+        "bfd91e37d9e98e16",
+        "bfd3b53ec87ba3d9"
+       ],
+       "w": [
+        "3fd0fa1d9a66726b",
+        "3fc0f530fe4a1af1",
+        "bfbcc995d5d8bb8a"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e4aa6d387509bf",
+        "4158b9629905f02f",
+        "c0488b4d7c236d07"
+       ],
+       "v": [
+        "40a6d42384fa8fd4",
+        "4083fdac6119052f",
+        "c01529f28bf02857"
+       ],
+       "q": [
+        "bfe0173306ff3e23",
+        "3fdae501050f2962",
+        "bfe482484e2f5808",
+        "bfd995bd92c495a7"
+       ],
+       "w": [
+        "bfc6a17ccda3c1d7",
+        "3fa4d036b5f867a1",
+        "bfcc7339c5b9b12b"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e4a71ddf8f201e",
+        "4158b97a67be9022",
+        "c04889aca7635278"
+       ],
+       "v": [
+        "40a6ce007ac7ce59",
+        "4084503b050e1814",
+        "c01481499e3451eb"
+       ],
+       "q": [
+        "bfe014d138328728",
+        "3fd7591d39c9174d",
+        "3fe4020596b81dc9",
+        "3fde40715afd34ac"
+       ],
+       "w": [
+        "bfc711af700583e2",
+        "bfa8a1fc418f2c2c",
+        "3fce80fb8283336a"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e4a6ff12f73d3c",
+        "4158b97a56c43122",
+        "40487052849fc7b9"
+       ],
+       "v": [
+        "40a6cd8601aeec39",
+        "40844e642408f914",
+        "401439e61e703b48"
+       ],
+       "q": [
+        "3fe0b7e82d568c77",
+        "bfd83807b41aee91",
+        "3fe4e1342f356f23",
+        "3fd9729671b5da9c"
+       ],
+       "w": [
+        "3fc86cc69906a252",
+        "3faa11939afce075",
+        "3fcfc6f07797192d"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1320,
+     "vessels": [
+      {
+       "r": [
+        "40e599243b49e2bf",
+        "4158b9e29bd763be",
+        "4032333279ec96ae"
+       ],
+       "v": [
+        "40a77a10c5c4f3f8",
+        "4084e053e451b84d",
+        "4013f82a9265e87e"
+       ],
+       "q": [
+        "3fb25ad5e7402c7f",
+        "3f7581ad3edac021",
+        "bfe1de6a272cd11a",
+        "3fea7248f68db7ba"
+       ],
+       "w": [
+        "3f8299a2268fdc67",
+        "3f81dfcd9aa3a0eb",
+        "3f874bb72b85fc1f"
+       ],
+       "mass": "4128d7339109d533",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e5c76b01e1a570",
+        "4158b9f80216929f",
+        "40719cef466ac5d2"
+       ],
+       "v": [
+        "40a77527b9a919fd",
+        "4084b594b64e026c",
+        "403ba2bb237e1aa8"
+       ],
+       "q": [
+        "3fcc7d6acdf87f2d",
+        "bfbc59ea19c6cb1d",
+        "bfe138078d97b6b2",
+        "3fe9c5c2896acf1a"
+       ],
+       "w": [
+        "3fa6ab0e4b34da91",
+        "3f81df46a2529d39",
+        "3f8963e11fed7444"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e560e1120338f7",
+        "4158b9b28653ae0f",
+        "4049fcfd17aa0c0b"
+       ],
+       "v": [
+        "40a6d3135c9e1016",
+        "4083dbdb9d3a73f7",
+        "4014b358e95220f4"
+       ],
+       "q": [
+        "3fe73d372f0a53f3",
+        "bfdfa6a2fdc2111d",
+        "bfd4df1d8dde7a27",
+        "bfd652ff3101f9e5"
+       ],
+       "w": [
+        "3fd12032101d102c",
+        "3fc2b689b5832eef",
+        "bfb963a1b6afc974"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e5610c6532437b",
+        "4158b9b244084895",
+        "c049db3bf6745fea"
+       ],
+       "v": [
+        "40a6d3a88dd94946",
+        "4083d7dc81c86c0a",
+        "c014d041667970c8"
+       ],
+       "q": [
+        "bfe0052a9a0c7177",
+        "3fda8d48ae76a385",
+        "bfe3536ca5633148",
+        "bfdd80e2e227442a"
+       ],
+       "w": [
+        "bfc63ce78d1dcf0b",
+        "3fa70f646fc43800",
+        "bfccb6d55fc4c73c"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e55d8c537f8331",
+        "4158b9cb5a5b7bca",
+        "c049ce0bca17a139"
+       ],
+       "v": [
+        "40a6cd9ef0c90d58",
+        "4084290f24ad75c0",
+        "c01407141c97498e"
+       ],
+       "q": [
+        "bfdf82993a406e28",
+        "3fd70a1fcead3386",
+        "3fe5947e484d43f5",
+        "3fdaa2e7c336d132"
+       ],
+       "w": [
+        "bfc68f9bf4afc0a3",
+        "bfaba34469cf08c4",
+        "3fced0ee173f0aed"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e55d69d0d293cc",
+        "4158b9cb41a86666",
+        "4049af0e9d309603"
+       ],
+       "v": [
+        "40a6cd2c7ed5b8e3",
+        "4084270b50fe3038",
+        "401399e6a956b0b3"
+       ],
+       "q": [
+        "3fe03a92c6815a2d",
+        "bfd7eb141b68bec2",
+        "3fe6671ddf6ca414",
+        "3fd583bd4604ff6a"
+       ],
+       "w": [
+        "3fc7ddeaca6e2905",
+        "3fad34a558a4b5da",
+        "3fd0108641a495f4"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1380,
+     "vessels": [
+      {
+       "r": [
+        "40e6551268208d07",
+        "4158ba35e9174bc1",
+        "4034cfcdf6a19594"
+       ],
+       "v": [
+        "40a78179c8c191f1",
+        "4084c6531cbb68de",
+        "4015d51e1b3101cd"
+       ],
+       "q": [
+        "3fb326260be94c4a",
+        "3f76e1b2f749a002",
+        "bfe1c9e74eb2c056",
+        "3fea7dd505cc05a8"
+       ],
+       "w": [
+        "3f82776f40410fb2",
+        "3f81dfd351b3ce66",
+        "3f875fc3289270d4"
+       ],
+       "mass": "4128d14b2db06c83",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e68313feb62ffa",
+        "4158ba4a8c8c01ce",
+        "40727a08f0d36fe9"
+       ],
+       "v": [
+        "40a775176179d209",
+        "40848fa62dc6804b",
+        "403ba3ae3c7c9534"
+       ],
+       "q": [
+        "3fcdba5b44e63e4b",
+        "bfbd972edb13dc64",
+        "bfe1155c5128488b",
+        "3fe9c0e25065660b"
+       ],
+       "w": [
+        "3fa6604a8d430da9",
+        "3f81df46a2529d39",
+        "3f894f0a3f1a1fae"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6177847cd4223",
+        "4158ba01abbff13e",
+        "404b43e322ba204c"
+       ],
+       "v": [
+        "40a6d2bd2abe6f93",
+        "4083b6e14f0bc0c8",
+        "401427c098288d1b"
+       ],
+       "q": [
+        "3fe72d212e15266d",
+        "bfe05ecaa4a0319b",
+        "bfd063b5269b1802",
+        "bfd8a28a4c4eb676"
+       ],
+       "w": [
+        "3fd13ba796207338",
+        "3fc494f2864afaa6",
+        "bfb58fcff83c286a"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e617a7d2b8b4f9",
+        "4158ba015829cada",
+        "c04b24e6938f0004"
+       ],
+       "v": [
+        "40a6d33416e77766",
+        "4083b23bc4e57442",
+        "c01461b9d5f77638"
+       ],
+       "q": [
+        "bfdfba583c83045c",
+        "3fd9fd52a4abafd6",
+        "bfe2108a76e32c14",
+        "bfe0a5c5470debae"
+       ],
+       "w": [
+        "bfc5cba99aaee7ef",
+        "3fa98d782235bb63",
+        "bfccff6d9c82cc20"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e613f7f8fff355",
+        "4158ba1bb019f577",
+        "c04b0a2764728271"
+       ],
+       "v": [
+        "40a6cd4d207c14ef",
+        "408401cd794d86de",
+        "c013795f00a758d8"
+       ],
+       "q": [
+        "bfde913347b4f282",
+        "3fd69f99488a7833",
+        "3fe70c7a3f16f96a",
+        "3fd6e8db3835172b"
+       ],
+       "w": [
+        "bfc5fb276e30c8c0",
+        "bfaef631836fd5ad",
+        "3fcf26f758a412fd"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e613d20edc64b9",
+        "4158ba1b8f0f0c9a",
+        "404ae32597ac73b3"
+       ],
+       "v": [
+        "40a6cce6458d243d",
+        "4083ffa745d44883",
+        "4012e5f8b907fea8"
+       ],
+       "q": [
+        "3fdf28a9896de46e",
+        "bfd781e3ae5033fa",
+        "3fe7cdf3000bc127",
+        "3fd17d8ccf79798f"
+       ],
+       "w": [
+        "3fc73ac654bd3ff2",
+        "3fb05b82501974bd",
+        "3fd040e7e5a516d9"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1440,
+     "vessels": [
+      {
+       "r": [
+        "40e7113bcd2a558b",
+        "4158ba88cea95cbf",
+        "4037a95a49983d6e"
+       ],
+       "v": [
+        "40a788dece00b25f",
+        "4084ac7cf527ca24",
+        "4017c7372a73d16b"
+       ],
+       "q": [
+        "3fb3f07dcfb89381",
+        "3f784a657fd63f38",
+        "bfe1b53ec3967653",
+        "3fea894f873ba54a"
+       ],
+       "w": [
+        "3f825524f4dce813",
+        "3f81dfd8ff44c188",
+        "3f8773ad002f6e04"
+       ],
+       "mass": "4128cb62ca56c45d",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e73ebc7627cbc9",
+        "4158ba9c7f493b02",
+        "4073572a44a227a9"
+       ],
+       "v": [
+        "40a7750661254889",
+        "408469b89ac57233",
+        "403ba4a544fa03dc"
+       ],
+       "q": [
+        "3fcef2828637820a",
+        "bfbece36039ccfc4",
+        "bfe0f2517b9f2126",
+        "3fe9bb5a5765437a"
+       ],
+       "w": [
+        "3fa613922ea71d33",
+        "3f81df46a2529d39",
+        "3f8934d2bdd957d8"
+       ],
+       "mass": "40ae0e15cb790fb6",
+       "parts": 2,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6ce0d225fd52d",
+        "4158ba503d8d1415",
+        "404c81b33579f636"
+       ],
+       "v": [
+        "40a6d27ceccc0d87",
+        "40839209c29792ad",
+        "401391c90471701d"
+       ],
+       "q": [
+        "3fe6ec32e5baf939",
+        "bfe0f29be11043bd",
+        "bfc76d4f36956706",
+        "bfda9c3930768d60"
+       ],
+       "w": [
+        "3fd14831ea6fe70f",
+        "3fc68c58280bd4f1",
+        "bfb14657e627b175"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6ce3fbe37d864",
+        "4158ba4fd622b731",
+        "c04c67103ebe2b7e"
+       ],
+       "v": [
+        "40a6d2c868b01ea7",
+        "40838cc783ceafef",
+        "c013e09707f19db7"
+       ],
+       "q": [
+        "bfdf4024653c2a60",
+        "3fd932dd6ec19b66",
+        "bfe0bb8b09e54225",
+        "bfe2783a56b5a3b0"
+       ],
+       "w": [
+        "bfc54c060130fff7",
+        "3fac50584708a246",
+        "bfcd4cff10b496e8"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6ca6153d22f87",
+        "4158ba6b68b6f2bb",
+        "c04c3ce201f3592b"
+       ],
+       "v": [
+        "40a6cd0c741aac16",
+        "4083da8017682724",
+        "c012db8636040e85"
+       ],
+       "q": [
+        "bfdd53776732acc4",
+        "3fd61d4664a70d2d",
+        "3fe8678e9a3ef4f1",
+        "3fd3184d3da6a138"
+       ],
+       "w": [
+        "bfc551c1c133cbfb",
+        "bfb1516a8deb277f",
+        "3fcf82b96eceb7b8"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6ca386c6b5600",
+        "4158ba6b3ee22aff",
+        "404c0b7c287cb186"
+       ],
+       "v": [
+        "40a6ccb483f2b0a6",
+        "4083d8437179049d",
+        "4012229b32618383"
+       ],
+       "q": [
+        "3fdd88f75a234246",
+        "bfd700c879fa3270",
+        "3fe9130b19713f5f",
+        "3fcace5d1a49b858"
+       ],
+       "w": [
+        "3fc6804536f1d833",
+        "3fb2510a194d8c13",
+        "3fd0746fdb1f4b29"
+       ],
+       "mass": "4097700000000000",
+       "parts": 1,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    }
+   ],
+   "events": [
+    "0:stageFired",
+    "0:decoupled",
+    "0:fairingJettisoned",
+    "0:engineIgnition",
+    "225:engineShutdown"
+   ]
+  },
+  {
+   "label": "second-stage separation in low orbit",
+   "steps": 1440,
+   "samples": [
+    {
+     "step": 0,
+     "vessels": [
+      {
+       "r": [
+        "40d6a38d1f883760",
+        "4159024d91228b07",
+        "bfa2c720b0444e57"
+       ],
+       "v": [
+        "40be5701c00d5f8d",
+        "c03bd24cbcd110fa",
+        "bfa56152ddc75cfc"
+       ],
+       "q": [
+        "bf3746c2e5b2d32a",
+        "3f3746c2e5b2d32a",
+        "bfe6a09e369be500",
+        "3fe6a09e369be501"
+       ],
+       "w": [
+        "3f91df46a2529d39",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "410a80eeb350e771",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 60,
+     "vessels": [
+      {
+       "r": [
+        "40da6efd5aa2ab4f",
+        "41590249cca83dc1",
+        "bfac7dd3c48941ec"
+       ],
+       "v": [
+        "40be5e1d78f2a2dd",
+        "c0403aabfd7bd8ca",
+        "bf9d3fd33f57ce60"
+       ],
+       "q": [
+        "3f664849030f2b89",
+        "bf664849030f2b87",
+        "bfe6a0936dd657ae",
+        "3fe6a0936dd657af"
+       ],
+       "w": [
+        "3f91c7cbfa71a155",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "410a758ba998c1f0",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 120,
+     "vessels": [
+      {
+       "r": [
+        "40de3adbf5569511",
+        "4159024573cc9406",
+        "bfb0dcf5c085b210"
+       ],
+       "v": [
+        "40be5f706fd02865",
+        "c0428c313fb77860",
+        "bf8d7d03c5e48460"
+       ],
+       "q": [
+        "3f77b4ab9aa58135",
+        "bf77b4ab9aa58133",
+        "bfe6a06cba8782c1",
+        "3fe6a06cba8782c2"
+       ],
+       "w": [
+        "3f91c3585a2b9073",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "410a7365153b29b1",
+       "parts": 23,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 180,
+     "vessels": [
+      {
+       "r": [
+        "40e103676766b323",
+        "41590240868fa6c2",
+        "bfb253f284cfaf10"
+       ],
+       "v": [
+        "40be6005fe0f3c26",
+        "c044ddb617833fcb",
+        "bf4591b42be3a800"
+       ],
+       "q": [
+        "3f8221cacc9ac3ba",
+        "bf8221cacc9ac3b9",
+        "bfe6a02a28845359",
+        "3fe6a02a2884535a"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cf9fffffffff",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e1007747bf5153",
+        "41590240868fa6c2",
+        "bfe5213370a9e814"
+       ],
+       "v": [
+        "40be5eaf8ad0a803",
+        "c044ddb61790fbf8",
+        "bfdc447b9d618d5b"
+       ],
+       "q": [
+        "3f8221cacc9ac3ba",
+        "bf8221cacc9ac3b9",
+        "bfe6a02a28845359",
+        "3fe6a02a2884535a"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 240,
+     "vessels": [
+      {
+       "r": [
+        "40e2e9678f663fc1",
+        "4159023b04f19260",
+        "bfb26a516082d8d8"
+       ],
+       "v": [
+        "40be5ffee3da48d9",
+        "c0472f3a765f66d3",
+        "bf4740ec84bbbb00"
+       ],
+       "q": [
+        "3f8869168c3bda72",
+        "bf8869168c3bda70",
+        "bfe69fcbb670e97a",
+        "3fe69fcbb670e97b"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cf9fffffffff",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e2e662055485d8",
+        "4159023b04f191f2",
+        "bfec3282901b2dd7"
+       ],
+       "v": [
+        "40be5ea809d048a2",
+        "c0472f3a79dcdeac",
+        "bfdc4611534327b5"
+       ],
+       "q": [
+        "3f8869168c3bda72",
+        "bf8869168c3bda70",
+        "bfe69fcbb670e97a",
+        "3fe69fcbb670e97b"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 300,
+     "vessels": [
+      {
+       "r": [
+        "40e4cf67402100a2",
+        "41590234eef276b5",
+        "bfb2829e2eea73d8"
+       ],
+       "v": [
+        "40be5ff715762845",
+        "c04980be4f9ecdb6",
+        "bf496d97fcc5f100"
+       ],
+       "q": [
+        "3f8eb044383165c8",
+        "bf8eb044383165c5",
+        "bfe69f5164232961",
+        "3fe69f5164232962"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cf9fffffffff",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e4cc4c4538b203",
+        "41590234eef274ec",
+        "bff1a2230a3e8f44"
+       ],
+       "v": [
+        "40be5e9fd4b05647",
+        "c04980be56fbdc04",
+        "bfdc481ec364821e"
+       ],
+       "q": [
+        "3f8eb044383165c8",
+        "bf8eb044383165c5",
+        "bfe69f5164232961",
+        "3fe69f5164232962"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 360,
+     "vessels": [
+      {
+       "r": [
+        "40e6b5666e5415ad",
+        "4159022e449276d2",
+        "bfb29d565df62c58"
+       ],
+       "v": [
+        "40be5fee92e5327c",
+        "c04bd24195b993cc",
+        "bf4c17abcd736d00"
+       ],
+       "q": [
+        "3f927ba60a1df7f5",
+        "bf927ba60a1df7f3",
+        "bfe69ebb3231ca42",
+        "3fe69ebb3231ca43"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cf9fffffffff",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e6b235fc29ff6e",
+        "4159022e449272ac",
+        "bff52b4df592855b"
+       ],
+       "v": [
+        "40be5e96eb752b00",
+        "c04bd241a169ad22",
+        "bfdc4aa3e38d4d5f"
+       ],
+       "q": [
+        "3f927ba60a1df7f5",
+        "bf927ba60a1df7f3",
+        "bfe69ebb3231ca42",
+        "3fe69ebb3231ca43"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 420,
+     "vessels": [
+      {
+       "r": [
+        "40e89b650ec1a804",
+        "4159022705d1b93a",
+        "bfb2baf51f674028"
+       ],
+       "v": [
+        "40be5fe580d3ca7f",
+        "c04e23c43b27db35",
+        "bf4e2fd75d991000"
+       ],
+       "q": [
+        "3f959f132d9977b9",
+        "bf959f132d9977b7",
+        "bfe69e092156f17a",
+        "3fe69e092156f17b"
+       ],
+       "w": [
+        "3f91c296fd9afcb3",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cf9fffffffff",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40e8981f1ee6dd79",
+        "4159022705d1b192",
+        "bff8b4d0ff47d906"
+       ],
+       "v": [
+        "40be5e8d4e23246f",
+        "c04e23c44ba20def",
+        "bfdc4da0a73157c9"
+       ],
+       "q": [
+        "3f959f1332254cd3",
+        "bf959f1332254cd1",
+        "bfe69e092155db53",
+        "3fe69e092155db54"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 480,
+     "vessels": [
+      {
+       "r": [
+        "40ea816813469d55",
+        "4159021f32b067c0",
+        "bfb0632e53901120"
+       ],
+       "v": [
+        "40be60b9bae688a5",
+        "c0503aa31930200b",
+        "3faba8f322e78a80"
+       ],
+       "q": [
+        "3f98c005fb6eb5b5",
+        "bf98c005fb6eb5b3",
+        "bfe69d3bd8bb0884",
+        "3fe69d3bd8bb0885"
+       ],
+       "w": [
+        "3f919e0a3e0c6b73",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102ceb51e4f979d",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40ea7e07a22e016e",
+        "4159021f32b05b56",
+        "bffc3ebb1ae628b5"
+       ],
+       "v": [
+        "40be5e82fcbea3a5",
+        "c0503aa324105eb7",
+        "bfdc5114ff70cb1b"
+       ],
+       "q": [
+        "3f98c265b6425142",
+        "bf98c265b6425140",
+        "bfe69d3b326ac2eb",
+        "3fe69d3b326ac2ec"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 540,
+     "vessels": [
+      {
+       "r": [
+        "40ec67820f0a6c1f",
+        "41590216cb2eafad",
+        "bf74adcc9e4b0d00"
+       ],
+       "v": [
+        "40be62a73756f4d3",
+        "c0516363b6e4b60a",
+        "3fc8d459bdeec558"
+       ],
+       "q": [
+        "3f9bd5cda9880dd0",
+        "bf9bd5cda9880dcd",
+        "bfe69c56446f36b0",
+        "3fe69c56446f36b1"
+       ],
+       "w": [
+        "3f914b0bda6fb43a",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102cc9403763954",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40ec63ef7abe66d0",
+        "41590216cb2e9d19",
+        "bfffc91b39f3e1af"
+       ],
+       "v": [
+        "40be5e77f74c0d29",
+        "c0516363c4b0beff",
+        "bfdc5500db1875e3"
+       ],
+       "q": [
+        "3f9be599b8a97800",
+        "bf9be599b8a977fe",
+        "bfe69c51666e3d6f",
+        "3fe69c51666e3d70"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 600,
+     "vessels": [
+      {
+       "r": [
+        "40ee4dc010f6510e",
+        "4159020dcf4cc1a3",
+        "3fc1f9773aded4b4"
+       ],
+       "v": [
+        "40be652ae270f3f0",
+        "c0528c23efd84bb4",
+        "3fd96a9b61c95232"
+       ],
+       "q": [
+        "3f9eda54d9ccf8fa",
+        "bf9eda54d9ccf8f7",
+        "bfe69b5b99c0b580",
+        "3fe69b5b99c0b581"
+       ],
+       "w": [
+        "3f90df1fd32e18a2",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102c9ccdbab9298",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40ee49d69d574f75",
+        "4159020dcf4ca75d",
+        "c001aa0025d5ecd0"
+       ],
+       "v": [
+        "40be5e6c3dcfc8c6",
+        "c0528c2400f00acf",
+        "bfdc596426a2202d"
+       ],
+       "q": [
+        "3f9f08ab5bb4ca5f",
+        "bf9f08ab5bb4ca5d",
+        "bfe69b4bbe805c1f",
+        "3fe69b4bbe805c20"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 660,
+     "vessels": [
+      {
+       "r": [
+        "40f01a14886bd813",
+        "415902043f0ad1c1",
+        "3fd99bc66f17ab90"
+       ],
+       "v": [
+        "40be67fe9a77eb7a",
+        "c053b4e3bd26d8c5",
+        "3fe4c487cf56aec6"
+       ],
+       "q": [
+        "3fa0e52b73a731a5",
+        "bfa0e52b73a731a3",
+        "bfe69a4ec8ed52ca",
+        "3fe69a4ec8ed52cb"
+       ],
+       "w": [
+        "3f9065c95470e6bc",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102c6acd27b36d4",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f017de7f5c21eb",
+        "415902043f0aae01",
+        "c0036fbc9e5979dc"
+       ],
+       "v": [
+        "40be5e5fd04e4190",
+        "c053b4e3d20c2716",
+        "bfdc5e3ecc34ebd4"
+       ],
+       "q": [
+        "3fa115cb60f455d2",
+        "bfa115cb60f455d1",
+        "bfe69a2a3be383b1",
+        "3fe69a2a3be383b2"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 720,
+     "vessels": [
+      {
+       "r": [
+        "40f10d60620b11a8",
+        "415901fa1a691793",
+        "3fe977ff46096832"
+       ],
+       "v": [
+        "40be6afcd46ffc86",
+        "c054dda317e35ebe",
+        "3fee1570f42fd8c0"
+       ],
+       "q": [
+        "3fa25208922ad16c",
+        "bfa25208922ad16a",
+        "bfe699328642e512",
+        "3fe699328642e513"
+       ],
+       "w": [
+        "3f8fca6499da7702",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102c35d3646c67c",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f10ad149d0899a",
+        "415901fa1a68e84b",
+        "c00535ca7b66e949"
+       ],
+       "v": [
+        "40be5e52aecbe5bd",
+        "c054dda33142fadc",
+        "bfdc6390b3a5bffc"
+       ],
+       "q": [
+        "3fa2a72c06fc4e17",
+        "bfa2a72c06fc4e16",
+        "bfe698ecdffc6ac1",
+        "3fe698ecdffc6ac2"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 780,
+     "vessels": [
+      {
+       "r": [
+        "40f200c490acb11d",
+        "415901ef6167ce20",
+        "3ff5880d1c842494"
+       ],
+       "v": [
+        "40be6e117563eaae",
+        "c0560661f918e946",
+        "3ff43aed4f761c9b"
+       ],
+       "q": [
+        "3fa3b347e0c8bbff",
+        "bfa3b347e0c8bbfc",
+        "bfe69809557b46c3",
+        "3fe69809557b46c4"
+       ],
+       "w": [
+        "3f8ec14faf193bf4",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102bff4231d396a",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f1fdc3a868e9e4",
+        "415901ef616790dc",
+        "c006fc31304b4c2e"
+       ],
+       "v": [
+        "40be5e44d94d2699",
+        "c056066217d26f5c",
+        "bfdc6959c277c071"
+       ],
+       "q": [
+        "3fa43875b165fe19",
+        "bfa43875b165fe18",
+        "bfe69793ac52181f",
+        "3fe69793ac521820"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 840,
+     "vessels": [
+      {
+       "r": [
+        "40f2f44197ffbd5b",
+        "415901e4140733e9",
+        "40008549e667b33e"
+       ],
+       "v": [
+        "40be7131b7ec88ae",
+        "c0572f2059cb253d",
+        "3ff9e265182ca1c7"
+       ],
+       "q": [
+        "3fa508a6f45d27d0",
+        "bfa508a6f45d27cd",
+        "bfe696d593696b00",
+        "3fe696d593696b01"
+       ],
+       "w": [
+        "3f8db3dd479bba51",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102bc7d6e9af8f2",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f2f0b595857184",
+        "415901e41406e5bb",
+        "c008c2f82e995b05"
+       ],
+       "v": [
+        "40be5e364fd67877",
+        "c0572f207ef87031",
+        "bfdc6f99dbdcd025"
+       ],
+       "q": [
+        "3fa5c9a671c16778",
+        "bfa5c9a671c16777",
+        "bfe6961ea28de0e6",
+        "3fe6961ea28de0e7"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 900,
+     "vessels": [
+      {
+       "r": [
+        "40f3e7d7bb973039",
+        "415901d832478aef",
+        "4007be1f1a67459c"
+       ],
+       "v": [
+        "40be7457d62821d6",
+        "c05857de32f6b92a",
+        "3ffff5f136242f86"
+       ],
+       "q": [
+        "3fa652012e47405b",
+        "bfa652012e474058",
+        "bfe695997d154924",
+        "3fe695997d154925"
+       ],
+       "w": [
+        "3f8ca3f25eb69edb",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102b8ff6e624c74",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f3e3a70b8672d9",
+        "415901d832472844",
+        "c00a8a26e604661c"
+       ],
+       "v": [
+        "40be5e27126c5289",
+        "c05857de5ff2eb7d",
+        "bfdc7650e0b61ef6"
+       ],
+       "q": [
+        "3fa75abc59bd3e4f",
+        "bfa75abc59bd3e4e",
+        "bfe6948dc47b6677",
+        "3fe6948dc47b6678"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 960,
+     "vessels": [
+      {
+       "r": [
+        "40f4db871ca7cd0c",
+        "415901cbbc2918bb",
+        "4010443f8e015b04"
+       ],
+       "v": [
+        "40be7780b79de1af",
+        "c059809b7d917891",
+        "400336cc27258e99"
+       ],
+       "q": [
+        "3fa78f41f794ee33",
+        "bfa78f41f794ee30",
+        "bfe69457348d4332",
+        "3fe69457348d4333"
+       ],
+       "w": [
+        "3f8b9292b9e53e34",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102b57d8672b60f",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f4d69804cc6407",
+        "415901cbbc289d43",
+        "c00c51c4c43b4f3a"
+       ],
+       "v": [
+        "40be5e1721132ede",
+        "c059809bb3ffd1ff",
+        "bfdc7d7eaf94c357"
+       ],
+       "q": [
+        "3fa8ebb57b294a4f",
+        "bfa8ebb57b294a4e",
+        "bfe692e114089440",
+        "3fe692e114089441"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1020,
+     "vessels": [
+      {
+       "r": [
+        "40f5cf4fc9f7bb47",
+        "415901beb1ac2650",
+        "40157e5370bb6806"
+       ],
+       "v": [
+        "40be7aaab3393e88",
+        "c05aa958328a81a8",
+        "4006a1a4ab1fcb6d"
+       ],
+       "q": [
+        "3fa8c05d5e60419c",
+        "bfa8c05d5e604199",
+        "bfe69310c3ff95ad",
+        "3fe69310c3ff95ae"
+       ],
+       "w": [
+        "3f8a804975db6f1b",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102b1f98767517b",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f5c9887bb7df18",
+        "415901beb1ab8ce1",
+        "c00e19d934c38cd3"
+       ],
+       "v": [
+        "40be5e067bcf8a44",
+        "c05aa958745d173a",
+        "bfdc852324ba5eec"
+       ],
+       "q": [
+        "3faa7c8fe7f8c7de",
+        "bfaa7c8fe7f8c7dd",
+        "bfe6911893459d59",
+        "3fe6911893459d5a"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1080,
+     "vessels": [
+      {
+       "r": [
+        "40f6c331c86a3fb9",
+        "415901b112d1004d",
+        "401b98bb0ec49fa4"
+       ],
+       "v": [
+        "40be7dd4e50be892",
+        "c05bd2144aca4e49",
+        "400a3908d861d14a"
+       ],
+       "q": [
+        "3fa9e54c1e9d5baa",
+        "bfa9e54c1e9d5ba7",
+        "bfe691c81fa5908b",
+        "3fe691c81fa5908c"
+       ],
+       "w": [
+        "3f896d61097c713e",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102ae7469efa313",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f6bc786aa9a1fe",
+        "415901b112d042a4",
+        "c00fe26ba0d43881"
+       ],
+       "v": [
+        "40be5df522a5e444",
+        "c05bd2149a48b19e",
+        "bfdc8d3e1a19ceba"
+       ],
+       "q": [
+        "3fac0d49b244c884",
+        "bfac0d49b244c883",
+        "bfe68f344464f9fc",
+        "3fe68f344464f9fd"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1140,
+     "vessels": [
+      {
+       "r": [
+        "40f7b72d1796a761",
+        "415901a2df97f6d5",
+        "40214f29a0264c61"
+       ],
+       "v": [
+        "40be80fed3293b02",
+        "c05cfacfbf32bdac",
+        "400dfad264ddea1e"
+       ],
+       "q": [
+        "3faafe097ff4f0f7",
+        "bfaafe097ff4f0f4",
+        "bfe6907f26ea0638",
+        "3fe6907f26ea0639"
+       ],
+       "w": [
+        "3f885a01483eb341",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102aaeeb3284ad5",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f7af67cc028eb4",
+        "415901a2df970d74",
+        "c010d5c1b7989432"
+       ],
+       "v": [
+        "40be5de3159abef0",
+        "c05cfad01f009aa1",
+        "bfdc95cf6757e6be"
+       ],
+       "q": [
+        "3fad9de0ec4e93a4",
+        "bfad9de0ec4e93a3",
+        "bfe68d3429bb64d0",
+        "3fe68d3429bb64d1"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1200,
+     "vessels": [
+      {
+       "r": [
+        "40f8ab41b440efd5",
+        "4159019418015d9b",
+        "40254cbae5cc74f0"
+       ],
+       "v": [
+        "40be84283cd8ae61",
+        "c05e238a889f19eb",
+        "4010f2854fe941e7"
+       ],
+       "q": [
+        "3fac0a922efade88",
+        "bfac0a922efade85",
+        "bfe68f37a5141dfd",
+        "3fe68f37a5141dfe"
+       ],
+       "w": [
+        "3f87463f76510e05",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102a768aa512ff2",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f8a2569a23ab55",
+        "4159019418003f9f",
+        "c011ba9402030a4f"
+       ],
+       "v": [
+        "40be5dd054b29ee3",
+        "c05e238afbc2cef5",
+        "bfdc9ed6e1cc38d6"
+       ],
+       "q": [
+        "3faf2e53a88206dd",
+        "bfaf2e53a88206dc",
+        "bfe68b1845bfd808",
+        "3fe68b1845bfd809"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1260,
+     "vessels": [
+      {
+       "r": [
+        "40f99f6f99b00b40",
+        "41590184bc0d8be1",
+        "4029ca013e13935d"
+       ],
+       "v": [
+        "40be87510071fffe",
+        "c05f4c449fe41af6",
+        "4012faeaea53f2ea"
+       ],
+       "q": [
+        "3fad0ae39d234868",
+        "bfad0ae39d234865",
+        "bfe68df351a67f0f",
+        "3fe68df351a67f10"
+       ],
+       "w": [
+        "3f863226e6097d64",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102a3e2758d7040",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40f99544cf6e221d",
+        "41590184bc0c2ece",
+        "c0129fb06060e4f2"
+       ],
+       "v": [
+        "40be5dbcdff20b31",
+        "c05f4c4529cd4e99",
+        "bfdca8545c81e6fa"
+       ],
+       "q": [
+        "3fb05f4ffcbbfb08",
+        "bfb05f4ffcbbfb07",
+        "bfe688e09b0b8a59",
+        "3fe688e09b0b8a5a"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1320,
+     "vessels": [
+      {
+       "r": [
+        "40fa93b6c268904b",
+        "41590174cbbcdc94",
+        "402ecbb221356d2d"
+       ],
+       "v": [
+        "40be8a790d5aae9c",
+        "c0603a7efee7f41e",
+        "401515b3b3c05888"
+       ],
+       "q": [
+        "3fadfefba8fd88ce",
+        "bfadfefba8fd88cb",
+        "bfe68cb3d0911623",
+        "3fe68cb3d0911624"
+       ],
+       "w": [
+        "3f851dbd9594737d",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102a05c2946dd94",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40fa883266434199",
+        "41590174cbbb340f",
+        "c013851a81f8b4a3"
+       ],
+       "v": [
+        "40be5da8b75d8d38",
+        "c0603a7f512f0e7e",
+        "bfdcb247a83880b7"
+       ],
+       "q": [
+        "3fb12761f8fc45b6",
+        "bfb12761f8fc45b5",
+        "bfe6868d2c59ebce",
+        "3fe6868d2c59ebcf"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1380,
+     "vessels": [
+      {
+       "r": [
+        "40fb88172893fe15",
+        "41590164470fae27",
+        "40322b2503029253"
+       ],
+       "v": [
+        "40be8da05c8183c0",
+        "c060cedb4d950cb1",
+        "401741fd83a9c3bf"
+       ],
+       "q": [
+        "3faee6d86d3d9045",
+        "bfaee6d86d3d9042",
+        "bfe68b7ab24809b8",
+        "3fe68b7ab24809b9"
+       ],
+       "w": [
+        "3f840906a81d60e3",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "41029cd5d06aa5f1",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40fb7b1f59047c9f",
+        "41590164470dabce",
+        "c0146ad6148ddb3d"
+       ],
+       "v": [
+        "40be5d93daf9b0ad",
+        "c060cedbaf59a09a",
+        "bfdcbcb09364ec4e"
+       ],
+       "q": [
+        "3fb1ef5ed27ed385",
+        "bfb1ef5ed27ed384",
+        "bfe6841dfc88a25c",
+        "3fe6841dfc88a25d"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    },
+    {
+     "step": 1440,
+     "vessels": [
+      {
+       "r": [
+        "40fc7c90c63b32d0",
+        "415901532e0662b8",
+        "4035370693c79b06"
+       ],
+       "v": [
+        "40be90c6ec53a528",
+        "c06163373859db39",
+        "40197ee8678d3f50"
+       ],
+       "q": [
+        "3fafc27824a633ea",
+        "bfafc27824a633e7",
+        "bfe68a4973cb09bd",
+        "3fe68a4973cb09be"
+       ],
+       "w": [
+        "3f82f403b90fa45b",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "4102994f70d20244",
+       "parts": 14,
+       "hold": null,
+       "destroyed": false
+      },
+      {
+       "r": [
+        "40fc6e0ba2136a77",
+        "415901532e03f5d7",
+        "c01550e6c44e3a1b"
+       ],
+       "v": [
+        "40be5d7e4acb0375",
+        "c0616337ac056302",
+        "bfdcc78eea325aa7"
+       ],
+       "q": [
+        "3fb2b74592da9f45",
+        "bfb2b74592da9f44",
+        "bfe681930e978668",
+        "3fe681930e978669"
+       ],
+       "w": [
+        "3f91c29d05550d27",
+        "0000000000000000",
+        "0000000000000000"
+       ],
+       "mass": "40ee8da66f25673a",
+       "parts": 9,
+       "hold": null,
+       "destroyed": false
+      }
+     ]
+    }
+   ],
+   "events": [
+    "0:stageFired",
+    "164:engineShutdown",
+    "164:engineShutdown",
+    "164:engineShutdown",
+    "164:engineShutdown",
+    "164:engineShutdown",
+    "164:engineShutdown",
+    "179:decoupled",
+    "420:engineIgnition"
+   ]
+  }
+ ]
+}

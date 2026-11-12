@@ -19,6 +19,12 @@ This file is a running log first; the sections below it are filled as each step 
   thrust-to-weight after an SOI change on rails) and the sim share of `app-integration-13`; each after the
   tick-grid step, as its own small commit.
 
+- 01:20 requests `flight-ui-6` (2fbbae6) and `flight-ui-8` (af1f292) resolved, each with a test, the mission
+  hash unchanged; the sim share of `app-integration-13` measured and answered in the request (d1312c6): the
+  5.5 ms of the lift-off step are 85 % first execution of that code path (0.6-0.7 ms warm); a rehearsal at
+  load is planned after the vessel-model step.
+- 01:35 step 2 complete: the trajectory guard recorded (mission: 400 samples; six unit fixtures) and asserted.
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -177,3 +183,50 @@ without it (pilot = replay on late tile I/O = golden).
 - Suites after the step: the brief's unit set (`src/sim src/core/defs src/terrain tests/unit/sim-vessel
   tests/unit/sim-world tests/unit/sim-orbits tests/unit/terrain-core tools/dev`): 53 files, 551 tests, all
   pass (terrain guard and boundaries included); `npm run test:mission`: 34 of 34, twice.
+
+## Step 2: the trajectory guard (MIGRATION_V2 3.2)
+
+Recorded once on the tick-grid tree (commit of this step; the state hash of the flight was
+`b850b94ea2dcc1a5`). **Never re-record it**: both recorders refuse to overwrite a recording. What may be
+adapted when ids, the snapshot or the vessel API change is how a vessel is found or driven, never a number.
+
+### The mission: `tests/mission/trajectory-guard.json` (`tools/sim/trajectoryGuard.ts`)
+
+- **Attended craft**, bit for bit: at 400 control ticks of `lunar-direct` (the control tick that first sees
+  each milestone, 15 ticks for the 17 milestones because two pairs share a tick, and 385 spread evenly
+  over the 214,720 control ticks; 228 about the Earth, 172 about the Moon) the universe tick, the SOI body
+  and the body-centred position, velocity, attitude and mass as float64 bit patterns.
+- **The clamp vessel**, bit for bit: at the same ticks the first vessel the craft shed (found by role: the
+  vessel beside the active one when the snapshot first holds two), in 395 of the 400 samples. It is the weld
+  of the four released clamp pieces (`mergeVessels`), held on the ground and riding the rotating Earth.
+- **Debris by fate**, within 2 s and 500 m: 10 removed vessels (M-1, the escape tower, four fairing panels
+  into the sea; M-3 into the Moon; the ascent stage and its engine burnt up; the apex cover into the sea)
+  with reason, time, body and sub-point, and 3 survivors (the clamps landed on Earth, M-2 in orbit, the
+  descent stage landed on the Moon) with body, situation and state; a survivor in flight is compared by
+  orbit (semi-major axis and periapsis within 500 m, plane within 1e-4 rad). Vessels are paired by name.
+- The recorder flew three times (one to count the ticks, two that had to give the identical file).
+- Asserted by `tests/mission/full-mission.test.ts` ("trajectory guard: ...", two tests) on the flight the
+  suite flies anyway; `node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/sim/trajectoryGuard.ts` compares
+  alone (one flight, exit 1 on a difference, the first difference in words).
+
+### The vessel dynamics: `tests/unit/sim-vessel/trajectory-fixtures/`
+
+Six scripted flights of `stepVessel` on the analytic environments of `tests/unit/sim-vessel/helpers.ts`
+(no world, no pilot), every vessel of each flight at fixed steps (position, velocity, attitude, body rate
+and mass as bit patterns, part count, hold, destroyed) and every event type with its step:
+
+| Fixture | What it flies | Steps | Samples | Vessels |
+|---|---|---|---|---|
+| `ascent` | the stack from the pad of a rotating Earth: ignition, clamp release (the weld), 130 s of the pitch programme through max-q | 15,600 | 66 | 2 |
+| `staging` | first-stage separation with retro and ullage motors, tower and fairing jettison, second-stage separation; 12 s each | 4,320 | 75 | 2 + 6 + 2 |
+| `entry` | the capsule from 122 km at 11 km/s and -6.5 deg, shield first on SAS with thrusters, lift banked 60 deg, 300 s: heating, ablation, peak load | 36,000 | 76 | 1 |
+| `touchdown` | the lander at touchdown mass on its legs onto an 8 deg slope of a rotating Moon at about 1.5 m/s, to sleep | 2,400 | 81 | 1 |
+| `splashdown` | the capsule from 7 km: drogues, mains, a sea with a running swell, afloat | 72,000 | 102 | 2 |
+| `lunar-ascent` | the landed stack on a rotating Moon: rest, the ascent stage leaves the descent stage, 45 s of climb | 6,360 | 107 | 2 |
+
+`trajectory-fixtures.test.ts` (7 tests) flies them again and compares bit for bit, naming the first
+difference; one test proves that a single flipped bit is found. `record.ts` flew each fixture twice before
+writing it. **The fixtures are defined by `fixtures.ts`, `../helpers.ts` (`makeEnv`) and `../scenarios.ts`
+together with `data/defs` (parts, `meridian-lunar`)**: a change to the analytic environment or to those
+definitions moves the numbers as surely as a change of the physics (MIGRATION_V2 already keeps
+`meridian-lunar.json` byte-identical through wave 4).
