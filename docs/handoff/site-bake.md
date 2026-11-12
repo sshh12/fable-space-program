@@ -288,8 +288,10 @@ The tile set's root directory `.` changes in one file only: `manifest.json` (add
 `globals/`, `night/`, any other face or any level 0-7 directory changes; the Moon set is not touched. No stored
 guard direction lies in the new coverage: the nearest of the 2,000 Earth directions is 226 km from the region centre
 (17.211 N 58.820 E, level-8 tile 2/50/174, two tiles south of the level-8 coverage), the next 396 km; the guard's
-heights stay bit-identical (section 8). The new site and its pads are a new place: the lead appends its group
-(`--add-place`).
+heights stay bit-identical (section 8). Madrakah is a new place (site `madrakah`, reference pad lc-1 at
+18.996043 N 57.793818 E): the lead appends its group (`--add-place`). Ka Lae's fifteen new pads are new flatten discs
+9-13 km west of LC-1, outside the existing place's 2 km and 200 m discs but inside its 20 km and 200 km ones: guard
+points there change only once fleet-data writes the pads (the discs are derived from the site at load).
 
 **Flatten discs of the new pads** (for the guard's place groups; fleet-data sets the final radii). Each pad's ground
 was checked over a disc of 500 m radius about its centre (the pad rule, every class); the spacing keeps the blend
@@ -298,7 +300,7 @@ discs apart for the radii below (heavy 2.5 km >= 900 + 900 m, heavy-medium 2.0 k
 
 | Class | Flat radius m | Blend radius m | Source |
 |---|---|---|---|
-| heavy | 450 | 900 | LC-1 (`ka-lae-lc1.json` `pad`) |
+| heavy | 450 | 900 | LC-1 (`data/defs/sites/ka-lae.json` `pad`) |
 | medium | 300 | 600 | between the two (fleet-docking 5.1 gives heavy and light only) |
 | light | 150 | 300 | fleet-docking 5.1 |
 
