@@ -20,6 +20,7 @@
  * height), the lander on its feet, the radar altitude measured from the baked ground or the sea.
  *   &throttle=<0..1>            FakeSim: throttle held from the start (engines of the fired stages burn)
  *   &sun=az,el&sunsite=body,lat,lon   pin the sun at azimuth / elevation (deg) as seen from a body-fixed point
+ *                               (default for the FakeSim's lunarSurface scene: 110, 12 over the landing target)
  *   &noshadow=<list>            packages whose features do not cast sun shadows (A/B for the shadow checks)
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
  *   &map=1                      the map view, active while the camera kind is 'map' (window.__integration.mapCamera)
@@ -241,6 +242,8 @@ async function surfacePlace(
 }
 
 /** Stages of the vehicle already fired in each FakeSim scene (the stack that flies that part of the mission). */
+/** Azimuth and elevation (deg) of the sun over the landing target in the `lunarSurface` scene when none is pinned (request vfx-10). */
+const LUNAR_SURFACE_SUN: readonly [number, number] = [110, 12];
 const SCENE_STAGES: Record<FakeScene, number> = { pad: 0, ascent: 1, lowOrbit: 4, translunar: 5, lunarOrbit: 5, lunarSurface: 6, reentry: 8, chutes: 10 };
 
 declare global {
@@ -368,6 +371,12 @@ async function boot(): Promise<void> {
     const first = Object.values(defs.sites)[0];
     const site: Site = body ? { bodyId: body, latDeg: Number(lat), lonDeg: Number(lon), alt: 0 } : { bodyId: first?.bodyId ?? defs.rootBodyId, latDeg: first?.location.latDeg ?? 0, lonDeg: first?.location.lonDeg ?? 0, alt: 0 };
     sunOverride = sunAtSite(site, az ?? 120, el ?? 40);
+  } else if (query.get('sim') !== 'real' && query.get('scene') === 'lunarSurface') {
+    // The landing site lies in the dark at the FakeSim's epoch: the scene was a night picture at a night
+    // exposure, judged as a grey day (request vfx-10). By default the sun stands as on an Apollo morning,
+    // 12 degrees up in the east-south-east of the landing target; `&sun=...` and setSun() still decide.
+    const landing = Object.values(defs.scenarios).find((x) => x.suggestedLanding)?.suggestedLanding;
+    if (landing) sunOverride = sunAtSite({ bodyId: landing.bodyId, latDeg: landing.latDeg, lonDeg: landing.lonDeg, alt: 0 }, LUNAR_SURFACE_SUN[0], LUNAR_SURFACE_SUN[1]);
   }
   let simKind: 'fake' | 'real' = 'fake';
   let inner: Sim;

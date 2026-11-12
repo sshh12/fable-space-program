@@ -39,7 +39,7 @@ requests named below.
 - **Frame-exact capture: `window.__test.renderExact(frames)`** (request lead-3; every `createLabApp` page has it).
   It restarts every temporal sequence, renders exactly `frames` frames and holds the last. What reaches you:
   - `frame.frameIndex` moves to a multiple of 64 at a restart (a step of 2 to 65 frames, still monotonic): a phase you take
-    from it with a power of two starts at 0, and `last === frame.frameIndex - 1` is false once. The frame
+    from it with a power of two up to 64 starts at 0, and `last === frame.frameIndex - 1` is false once. The frame
     uniforms' `time.z` / `counts.z` are the frames SINCE the restart (identical to the frame index until one
     happens). `frame.realTime` is 0 after a restart.
   - Your feature may have `resetTemporal?(): void` (`TemporalFeature` of `@/render/core`): the core calls it
@@ -74,6 +74,11 @@ requests named below.
   that can still fire (`data/defs/audio/engines.json` `standbyVoices`), so an ignition creates no audio nodes
   in its frame. `engine.stats()` gained `standbyVoices` (`engineVoices` counts the voices that sound or have
   sounded). Migration: none.
+
+- **Integration lab, `scene=lunarSurface`** (request vfx-10): the FakeSim's scene pins the sun 12 degrees up at
+  azimuth 110 over the landing target when no `&sun=` is given (it lay in the dark, and every picture of it
+  was a night picture at a night exposure). Migration: none if you pin the sun yourself (`&sun=`, `setSun`,
+  `setSunInVesselFrame` still decide); a picture taken of the bare scene is a sunlit morning now.
 
 ## Resolution
 Notice only.

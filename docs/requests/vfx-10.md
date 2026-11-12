@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (part 1: the lab's lunarSurface scene has a morning sun by default; part 2, the flare of a hidden sun, is the sky package's: request core-3)
 From: vfx
 Owner path: labs/integration (scene `lunarSurface`: the sun at the landing site) and src/render/core/post (lens flare of a sun the terrain hides)
 Blocking: no        (vfx pins the sun in its own spec and shots: `&sun=110,12&sunsite=moon,0.661471,23.435999`)
@@ -36,3 +36,16 @@ night picture with it on). Read-outs of the frames `i7-lunar-off-b` / `i7-lunar-
 
 Must NOT change: the scene's vessel, hover height and camera API (`window.__integration.orbitVesselPoint`);
 the flare of a visible sun.
+
+## Resolution
+
+**Part 1** (labs/integration, mine): the FakeSim's `lunarSurface` scene now pins the sun 12 degrees up at azimuth
+110 over the scenario's landing target when no `&sun=` is given (`LUNAR_SURFACE_SUN` in labs/integration/main.ts;
+the same placement your spec pins). `&sun=az,el&sunsite=...`, `setSun()` and `setSunInVesselFrame()` decide as
+before. The vessel, the hover height and the camera API are untouched. Not run by me: the one GPU slot had eight
+tickets waiting when this was written; the code path is the pinned one your spec already uses.
+Everyone who opens `scene=lunarSurface` without a sun gets a sunlit morning now (the cockpit's world views and
+the vehicle's lunar game views among them): NOTICE-core-5.
+
+**Part 2** (the flare of a sun the terrain hides) is not the core's: the lens flare, its ghosts and its veil
+are `src/render/sky/flare.ts`. Passed on as request `core-3` with your evidence.
