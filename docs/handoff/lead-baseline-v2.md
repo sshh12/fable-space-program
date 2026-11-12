@@ -732,3 +732,65 @@ over a list of pads (`--add-place` makes discs about one centre): to be written 
 
 Suites (10:55): Mission through the gate on the re-baselined golden (10:52): 5 files, 36 of 36. The terrain guard and the pin test were not touched by this round (9 of 9 and
 3 of 3 at 10:41).
+
+## 18. Pad-field groups in the terrain guard (2026-11-12, 11:20-11:30)
+
+site-bake closed (369b4f7) with `data/staged/sites/madrakah.pads.json` (16 pads: 4 heavy, 6 medium, 6 light)
+and `data/staged/sites/ka-lae.pads.json` (9 pads: 2 heavy with LC-1, 2 medium, 5 light), both resolved on
+tile set `f5e6ef420bda7cea`. The step deferred in section 17 is done: one pad-field group per site.
+
+**The recorder mode** `terrain-guard.record.ts --add-pads <bodyId> <key> <pads.json>` (cpu slot) reads a
+resolved layout (every pad's centre; the flat and blend radii of its class from `rule.padRadii`), refuses a
+layout that was resolved on another tile set than the live one, and APPENDS a group `pads:<site>` with the
+pads and radii stored in it. `PAD_LAYOUT` (56 points per pad, `PAD_POINTS`), with F the flat and B the
+blend radius:
+
+| Ring | Points | Radius | When the disc appears |
+|---|---|---|---|
+| centre | 1 | 0 | may change |
+| flat | 11 | inside 0.95 F, uniform by area | may change |
+| flatRimIn / flatRimOut | 4 + 4 | 0.98 F / 1.02 F, one per quarter | may change |
+| blend | 12 | 1.05 F to 0.95 B | may change |
+| outerRimIn | 4 | 0.98 B, one per quarter | may change |
+| outerRimOut | 4 | 1.02 B, one per quarter | **must not change** |
+| beyond, far | 12 + 4 | 1.05 B to 2 B, 2 B to 4 B | **must not change** (unless a neighbour's disc holds the point) |
+
+No point lies ON a radius (2 % is 3 m at the smallest), so rounding never decides the side. A pad's points
+are a function of the body id, the group key and that pad alone (seed `<body>:<key>:<pad id>`).
+`padZoneOf(pads, point, radius)` says which pad's disc holds a point and in which zone: what the later rule
+is decided with.
+
+**Appended:** `pads:ka-lae` (504 points) and `pads:madrakah` (896). Earth has 4,200 points. Checked against
+the committed file: the directions and the three height strings of the 2,800 earlier Earth points and of
+the Moon's 2,000 are prefixes of the new ones, and the five earlier groups are unchanged; LC-1's group
+`site:ka-lae-lc1` is not replaced.
+
+| Group of Earth | Points | Inside a NEW pad's disc (flat, blend) | Inside LC-1's existing disc | Outside every disc |
+|---|---|---|---|---|
+| `uniform` | 1,200 | 0 | 0 | 1,200 |
+| `site:ka-lae-lc1` | 800 | 0 | 249 | 551 |
+| `site:madrakah` | 800 | 1 (0, 1) | 0 | 799 |
+| `pads:ka-lae` (new) | 504 = 9 x 56 | 289 (128, 161) | 36 | 179 |
+| `pads:madrakah` (new) | 896 = 16 x 56 | 594 (261, 333) | 0 | 302 |
+
+(Counted with the radii as resolved; the 249 points of `site:ka-lae-lc1` and the 36 of `pads:ka-lae` about
+LC-1 lie in a disc that exists today and must not move.)
+
+**The re-record still to come** (the lead's, when fleet-data has written the site files): the height test
+then names the changed points by group; every one must lie inside a new pad's disc by `padZoneOf` with the
+radii the site files state; then `--resample`. Expect about 289 of `pads:ka-lae`, 594 of `pads:madrakah`
+and one of `site:madrakah` (fewer where the ground already stands at the pad's level), and nothing else.
+
+**fleet-data's brief**: the note after site-bake is rewritten to the final counts (Madrakah 16, Ka Lae 9;
+the count per site is data; the class limits are the lead's to set from its table) and to the groups it
+must expect to change, with those numbers.
+
+**Not edited, for the lead.** ARCHITECTURE 9.3 still says sixteen pads at Ka Lae (4 heavy, 6 medium, 6
+light) and "32 pads give 768" launches per universe hour; with 25 pads it is 600, and 16.3 reads its
+capacity from there. Request lead-4 is still open: `region_is_baked` is False for both regions.
+
+Suites (11:26): the terrain guard 10 of 10 through the gate (one new test: every pad of a pad-field group
+has its 16 / 20 / 20 points against its own disc, four per quarter on each side of both rims, at least 16
+in a flat disc and 12 outside every disc of the field; `padZoneOf`), `tools/dev/guard-pins.test.ts` 3 of 3.
+`npm run typecheck:paths -- tests/unit/terrain-core` (both configurations) clean. The mission was not flown
+(nothing it reads changed). No browser run.

@@ -129,3 +129,29 @@ was to re-record this group only.
 - **Place groups**: not now. Once for both sites, when `ka-lae.pads.json` has landed: one group per site
   covering the pad field as resolved, before fleet-data writes the site files (MIGRATION_V2, lead steps,
   "with fleet-data").
+
+## Place groups appended (2026-11-12, 11:30, lead), after site-bake closed (369b4f7)
+
+One pad-field group per site, over the pads as resolved (`data/staged/sites/{ka-lae,madrakah}.pads.json`,
+both on tile set `f5e6ef420bda7cea`): `pads:ka-lae` (9 pads, 504 points) and `pads:madrakah` (16 pads, 896
+points), appended to Earth's heights with the recorder's new mode `--add-pads`. 56 points about every pad:
+its centre, 11 in the flat disc, 4 just inside and 4 just outside the flat rim, 12 in the blend ring, 4 just
+inside and 4 just outside the outer rim, 12 beyond to twice the blend radius and 4 to four times (radii of
+the pad's class from `rule.padRadii`: heavy 450 / 900 m, medium 300 / 600 m, light 150 / 300 m). No point
+lies ON a radius. Earth has 4,200 points; the 2,800 earlier ones and the Moon's 2,000 keep index, direction
+and heights (the committed strings are prefixes of the new ones); `site:ka-lae-lc1` and `site:madrakah` are
+as they were.
+
+Where the stored points lie against the future discs, with the radii as resolved:
+
+| Group of Earth | Points | Inside a NEW pad's disc (flat, blend) | Inside LC-1's existing disc | Outside every disc |
+|---|---|---|---|---|
+| `uniform` | 1,200 | 0 | 0 | 1,200 |
+| `site:ka-lae-lc1` | 800 | 0 | 249 | 551 |
+| `site:madrakah` | 800 | 1 (0, 1) | 0 | 799 |
+| `pads:ka-lae` (new) | 504 = 9 x 56 | 289 (128, 161) | 36 | 179 |
+| `pads:madrakah` (new) | 896 = 16 x 56 | 594 (261, 333) | 0 | 302 |
+
+So when fleet-data writes the site files, the rule "only points inside new flatten discs may change" has
+points on both sides at every pad: at least 16 in each pad's flat disc and at least 12 outside every disc
+of the field, and LC-1's 36 points that must not move.
