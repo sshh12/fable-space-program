@@ -377,7 +377,9 @@ struct MarchOut {
   // The light scattered about inside a cloud comes from where the cloud is thinnest, above and towards the
   // sun: the gas is brighter that way and darker towards the ground.
   let eyeIn = saturate(textureSampleLevel(lightTex, linearClamp, smokeToUvw(vec3f(ro.x, max(ro.y, 0.5), ro.z)), 0.0).b / 0.02) * step(abs(ro.x), su.grid.y) * step(abs(ro.z), su.grid.y) * step(ro.y, su.grid.z);
-  let fromLight = mix(1.0, 0.8 + 0.4 * dot(rd, normalize(su.sunSite.xyz * 0.8 + vec3f(0.0, 0.7, 0.0))), eyeIn);
+  // (Strongly: seen from inside, the gas towards the ground is less than half as bright as the gas overhead,
+  // and none of it is the clipped white of the cloud's sunlit outside.)
+  let fromLight = mix(1.0, max(0.42 + 0.62 * dot(rd, normalize(su.sunSite.xyz * 0.8 + vec3f(0.0, 0.7, 0.0))), 0.15), eyeIn);
 
   var Lf = vec3f(0.0); var Tf = 1.0;     // smoke in front of the emitters
   var Lb = vec3f(0.0); var Tb = 1.0;     // smoke behind them
@@ -458,7 +460,7 @@ struct MarchOut {
       let relief = clamp(1.0 - 7.0 * (towards.g - ng) * hard, 0.2, 1.7) * mix(1.0, 0.5 + 0.75 * smoothstep(0.15, 0.7, cavity), hard);
       // (Sunlit steam is the brightest diffuse thing in a launch photograph: as bright as a white surface in
       // the sun, with a floor of light scattered about inside it, so that its shaded folds are grey, not brown.)
-      let sun = sunE * ((0.7 + 0.3 * phase) * 3.6 * lt.r * relief + (0.7 * lt.a + 0.45 * wide) * (0.5 + 0.5 * relief) * fromLight) * (1.0 / (4.0 * PI));
+      let sun = sunE * ((0.7 + 0.3 * phase) * 3.6 * lt.r * relief + (0.7 * lt.a + 0.45 * wide) * (0.5 + 0.5 * relief)) * (fromLight / (4.0 * PI));
       // Plume: the jet is a line of light; gas next to it glows from the light that has been scattered about
       // inside the cloud as well as from what reaches it directly.
       let toL = plumeLightPoint(p) - p;
@@ -468,7 +470,7 @@ struct MarchOut {
       // (Droplets scatter forwards: gas that lies between the eye and the flame glows more than gas beside it.
       // An eye inside the cloud at night sees where the flame is, not one flat fill.)
       let towardsFlame = saturate(dot(rd, toL) * inverseSqrt(max(dot(toL, toL), 1e-4)));
-      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * (0.7 + 0.9 * towardsFlame * towardsFlame) / (dl2 * PI));
+      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * mix(0.7 + 0.9 * towardsFlame * towardsFlame, 0.45 + 1.4 * towardsFlame * towardsFlame, eyeIn) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) * fromLight / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;

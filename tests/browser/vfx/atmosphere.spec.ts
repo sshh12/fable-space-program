@@ -83,11 +83,13 @@ test('behind a synthetic overcast deck the plume and its trail are hidden; below
     await page.evaluate(({ on, deck }) => window.__vfx!.sky.setOvercast(on ? { altitude: deck, transmittance: 0.02 } : null), { on, deck });
     await page.evaluate(() => window.__vfx!.renderExact(3, false));
   };
-  // The probe sits in the body of the flame, 40 m below the nozzles (the flame is about a vehicle length long
-  // and ends in a ragged tip: a point further down is flame in one frame and sky in the next).
+  // The probe sits in the body of the flame, 25 m below the nozzles (the flame is about a vehicle length long
+  // and ends in a ragged tip: a point further down is flame in one frame and sky in the next; since round 3
+  // of the close-out the flame is narrower and dimmer towards its tip, and 40 m down, above the deck, the
+  // reading swung between 4.7 and 18.6 from run to run).
   const plumeAt = async (): Promise<{ x: number; y: number; z: number }> => {
     const n = await page.evaluate(() => window.__vfx!.nozzleEnu('stack'));
-    return { x: n.x, y: n.y, z: n.z - 40 };
+    return { x: n.x, y: n.y, z: n.z - 25 };
   };
 
   // (1) The vehicle below the deck: the plume is seen the same with and without the deck.

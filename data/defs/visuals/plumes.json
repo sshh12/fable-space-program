@@ -148,7 +148,7 @@
     "smoke": { "albedo": [0.6, 0.55, 0.5], "yield": 5 },
     "steam": { "albedo": [0.96, 0.96, 0.97], "yield": 24 },
     "glow": { "color": [1.0, 0.42, 0.12], "luminance": 150000 },
-    "steps": 42,
+    "steps": 34,
     "erosion": 0.6,
     "erosionScale": 0.016
   },
