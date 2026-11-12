@@ -81,6 +81,13 @@ import type { NavballRendererImpl } from '../navball/navballRenderer';
 import { AttrSlot, bar, classFlag, el, FillSlot, Flag, hiddenFlag, hudButton, INTERACTIVE_ATTR, RevealSlot, TextSlot, ToneSlot } from './dom';
 import { HUD_CSS, HUD_STYLE_ID } from './hudStyles';
 
+/**
+ * Everything the HUD draws over the scene that a map label or a floating panel must keep clear of (the plates, the
+ * stage tiles, the pills, the bottom housing with its windows, the toasts and the ball). One list, owned here, so
+ * the app's map obstacles follow the HUD's layout (pass `document.querySelectorAll(HUD_OBSTACLE_SELECTOR)` rects).
+ */
+export const HUD_OBSTACLE_SELECTOR = '.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .housing, .hud .prw, .hud .toast, .hud .ball';
+
 /** One line of the key-help overlay (structurally the input system's KeyHelpEntry). */
 export interface HudKeyHelpEntry {
   group: string;
@@ -207,10 +214,14 @@ function barRow(label: string): { root: HTMLDivElement; value: TextSlot; fill: F
   return { root, value, fill: b.fill, tone: new ToneSlot(b.root) };
 }
 
+/** Punctuation whose ink sits at cap height (a backquote, a quote): lowered to the cap's centre. */
+const RAISED_GLYPHS = new Set(['`', "'"]);
+
 function keyCap(label: string, cls = 'kbd', title?: string): HTMLSpanElement {
   const named = NAMED_CAPS[label];
   const kind = named ? ' glyph punct' : GLYPH_CAPS.has(label) ? ' glyph' : '';
-  return el('span', `${cls}${kind}`, [label], title ? { title } : named ? { title: named } : {});
+  const content = RAISED_GLYPHS.has(label) ? el('span', 'rg', [label]) : label;
+  return el('span', `${cls}${kind}`, [content], title ? { title } : named ? { title: named } : {});
 }
 
 /** Warp step buttons: chevrons pointing back (slower) and forward (faster). */
@@ -537,27 +548,34 @@ export function createHud(opts: HudOptions): HudImpl {
   const azShow = hiddenFlag(azRow.root);
   const padNameEl = el('span', 'pname', [pad.target.node]);
   const padNameShow = hiddenFlag(padNameEl);
-  // Without a target the panel says what the buttons are for (it would otherwise be a title and a button).
-  const padHint = el('div', 'padhint', ['Pick a target body for its launch window']);
+  // Without a target the title says "No target", the panel what the offered bodies are for, and each body is an
+  // explicit "Set <body> as target" button; a set target is a lit chip in the title (a click clears it).
+  const padNone = el('span', 'pname none', ['No target']);
+  const padNoneShow = hiddenFlag(padNone);
+  const padHint = el('div', 'padhint', ['Pick a target for its launch window and plane']);
   const padHintShow = hiddenFlag(padHint);
-  // Title row: "LAUNCH" and the target: the body buttons (the chosen one lit) or, without them, its name.
-  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNameEl]), padHint, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
+  const padSuggest = el('div', 'suggest');
+  const padSuggestShow = hiddenFlag(padSuggest);
+  const padPanel = el('div', 'panel pad', [el('div', 'ptitle', [el('span', '', ['Launch']), padTargets, padNone, padNameEl]), padHint, padSuggest, relIncRow.root, crossRow.root, azRow.root], { 'data-show': 'external' });
   const padShow = hiddenFlag(padPanel);
-  const targetButtons = new Map<string, { btn: HTMLButtonElement; on: Flag; show: Flag }>();
+  const targetButtons = new Map<string, { btn: HTMLButtonElement; on: Flag; show: Flag; offer: Flag }>();
   const commands = opts.commands;
   if (commands) {
     for (const b of Object.values(defs.bodies)) {
       // The root body has no orbit to compare planes with: it is never a launch target.
       if (b.gravityRole !== 'attractor' || b.parent === null) continue;
-      const btn = hudButton([el('span', 'pfx', ['Target']), b.name], '', `Set ${b.name} as target`, () => {
+      const toggle = (): void => {
         const c = commands();
         if (!c) return;
         const current = lastSnapshot?.readouts.targetBodyId ?? null;
         const r = c.setTarget(current === b.id ? null : b.id);
         if (!r.ok) notify(r.reason ?? 'Target refused');
-      });
-      targetButtons.set(b.id, { btn, on: classFlag(btn, 'on'), show: hiddenFlag(btn) });
+      };
+      const btn = hudButton([el('span', 'pfx', ['Target']), b.name], '', `Target: ${b.name} (click to clear)`, toggle);
+      const offer = hudButton([`Set ${b.name} as target`], 'set', `Set ${b.name} as target: its launch window and plane`, toggle);
+      targetButtons.set(b.id, { btn, on: classFlag(btn, 'on'), show: hiddenFlag(btn), offer: hiddenFlag(offer) });
       padTargets.append(btn);
+      padSuggest.append(offer);
     }
   }
   const padTargetsShow = hiddenFlag(padTargets);
@@ -652,7 +670,8 @@ export function createHud(opts: HudOptions): HudImpl {
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
   // Title row: 'Maneuver' and the countdown to the burn's start (amber in its last 10 s); then delta-v and burn time.
-  const nodeStartEl = el('span', 'pname nstart', [node.start.node], { title: 'Time to the start of the burn' });
+  const nodeWord = new TextSlot('Start');
+  const nodeStartEl = el('span', 'nwhen', [el('span', 'nword', [nodeWord.node]), el('span', 'pname nstart', [node.start.node])], { title: 'Time to the start of the burn (during the burn: since its start)' });
   const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', ['Maneuver']), nodeStartEl]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root], {
     'data-show': 'external map',
   });
@@ -1065,9 +1084,10 @@ export function createHud(opts: HudOptions): HudImpl {
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.
-      const show = id !== v?.bodyId;
-      b.show.set(show);
-      if (show) targetButtonsShown++;
+      const allowed = id !== v?.bodyId;
+      b.show.set(allowed && r.targetBodyId === id);
+      b.offer.set(allowed && r.targetBodyId === null);
+      if (allowed) targetButtonsShown++;
     }
     const onGround = v !== null && (v.situation === 'prelaunch' || v.situation === 'landed');
     // The launch panel shows only with something in it: a target to pick, a target, or a launch window.
@@ -1090,7 +1110,9 @@ export function createHud(opts: HudOptions): HudImpl {
     ltLineShow.set(!ltExpanded);
     if (r.landingTarget === null) ltCurrentRows = null;
     padShow.set(showPad);
-    padTargetsShow.set(targetButtonsShown > 0);
+    padTargetsShow.set(targetButtonsShown > 0 && r.targetBodyId !== null);
+    padNoneShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
+    padSuggestShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
     padNameShow.set(targetButtonsShown === 0);
     padHintShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
     relIncShow.set(r.targetRelativeInclination !== null);
@@ -1307,7 +1329,8 @@ export function createHud(opts: HudOptions): HudImpl {
     if (nbv) {
       node.dv.set(nbv.deltaV);
       node.burn.set(nbv.burnTime);
-      node.start.set(nbv.started ? `burning · ${nbv.startIn}` : nbv.startIn);
+      nodeWord.set(nbv.started ? 'Burning' : 'Start');
+      node.start.set(nbv.startIn);
       nodeDvTone.set(nbv.insufficient ? 'warning' : 'accent');
     }
 

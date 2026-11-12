@@ -473,7 +473,7 @@ test.describe('flight-ui controls', () => {
       expect(b.bottom).toBeLessThanOrEqual(next.y + next.height + 0.5);
     }
     // The stack's header strip: its title and the total delta-v.
-    await expect(page.locator('.hud .stagewrap .more .tot')).toHaveText(/^Δv .* total$/);
+    await expect(page.locator('.hud .stagewrap .more .tot')).toHaveText(/^Δv .* vac$/);
     // Without a target the launch panel says what its body buttons are for; the words stay inside the plate.
     await expect(page.locator('.hud .pad .padhint')).toBeVisible();
     const hintFits = await page.evaluate(() => {

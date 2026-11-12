@@ -924,7 +924,7 @@ export function describeWarp(s: SimSnapshot, levels: readonly number[]): WarpVie
     maxIndex: w.maxIndex,
     factor: formatWarp(w.factor),
     onRails: w.onRails,
-    limit: capped && w.limitedBy ? `Limited to ${formatWarp(levels[w.maxIndex] ?? 1)}: ${w.limitedBy}` : null,
+    limit: capped && w.limitedBy ? `Limited to ${formatWarp(levels[w.maxIndex] ?? 1)}: ${w.limitedBy.charAt(0).toLowerCase()}${w.limitedBy.slice(1)}` : null,
   };
 }
 
@@ -946,7 +946,7 @@ export function describeNodeBurn(s: SimSnapshot): NodeBurnView | null {
   const t = nb.timeToBurnStart;
   return {
     deltaV: formatDeltaV(nb.dvRemainingMag),
-    burnTime: nb.burnTime !== null ? formatDuration(nb.burnTime) : 'no engine',
+    burnTime: nb.burnTime === null ? 'no engine' : nb.burnTime < 10 ? `${formatNumber(nb.burnTime, 1)}${NBSP}s` : formatDuration(nb.burnTime),
     startIn: t !== null ? formatCountdown(t) : '—',
     imminent: t !== null && t >= 0 && t < 10,
     started: t !== null && t < 0,

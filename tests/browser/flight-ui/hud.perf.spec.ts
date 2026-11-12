@@ -213,3 +213,25 @@ test('HUD main-thread cost and navball GPU time', async ({ page, pageLog }) => {
     expect(r.navball.p99, r.scene).toBeLessThan(0.05);
   }
 });
+
+test('MFD ORB page: every paint bounded while the orbit changes (request cockpit-17)', async ({ page, pageLog }) => {
+  // The page at 1024 x 768 with the albedo and cloud maps, its orbit's periapsis swinging and its plane tilting on
+  // every paint, so the body graphic is always being re-shaded: the app painter's default budget spreads it.
+  test.setTimeout(25 * 60_000);
+  const times = await withGpuLock(async () => {
+    await openPage(page, '/labs/flight-ui/?scene=lunarOrbit&mfd=1');
+    await assertDiscreteGpu(page);
+    await page.evaluate(() => window.__test!.waitFrames(10));
+    // (Warm-up paints first: the page's chrome and the first graphic.)
+    await page.evaluate(() => window.__flightUi!.orbPaintMs(40));
+    const t = await page.evaluate(() => window.__flightUi!.orbPaintMs(240));
+    await expectNoErrors(page, pageLog);
+    return t;
+  });
+  const sorted = [...times].sort((a, b) => a - b);
+  const q = (p: number): number => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!;
+  const mean = times.reduce((a, b) => a + b, 0) / times.length;
+  console.log(`ORB page paint ms while the orbit changes: mean ${mean.toFixed(3)} p50 ${q(0.5).toFixed(3)} p99 ${q(0.99).toFixed(3)} max ${sorted[sorted.length - 1]!.toFixed(3)} (n ${times.length})`);
+  expect(q(0.99)).toBeLessThan(1.5);
+  expect(mean).toBeLessThan(1);
+});

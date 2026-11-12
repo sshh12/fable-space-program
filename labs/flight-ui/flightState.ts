@@ -229,14 +229,16 @@ export function stageEngineGroup(vehicle: VehicleDef, index: number): string | n
  * every engine stage that has not fired, with the stack it will lift once the stages before it have burnt out and
  * separated, and the fired stage that owns the running engines (`active`), with the mass actually attached. Delta-v
  * is Tsiolkovsky at the vacuum Isp, TWR is at local gravity at full throttle, the burn time at full throttle; every
- * other fired stage, and every stage without engines, carries none. Returns the stages and the total delta-v.
+ * other fired stage, and every stage without engines, carries none. `deltaVNow` is the same at the ambient pressure
+ * (`pressureShare` of sea level's: the Isp falls linearly from its vacuum toward its sea-level value, as the sim's
+ * engines do). Returns the stages and the total delta-v (vacuum, as Readouts.deltaVTotal).
  */
-export function labStageFigures(defs: DefLibrary, vehicle: VehicleDef, parts: readonly PartSnapshot[], stages: readonly StageInfo[], active: number, gLocal: number): { stages: StageInfo[]; total: number } {
+export function labStageFigures(defs: DefLibrary, vehicle: VehicleDef, parts: readonly PartSnapshot[], stages: readonly StageInfo[], active: number, gLocal: number, pressureShare = 0): { stages: StageInfo[]; total: number } {
   const order = vehicle.stageGroups.map((g) => g.id);
   const groupOf = new Map(vehicle.parts.map((p) => [p.id, p.stageGroup]));
   const groupMass = new Map<string, number>();
   const groupProp = new Map<string, { amount: number; capacity: number }>();
-  const groupEngine = new Map<string, { thrust: number; isp: number }>();
+  const groupEngine = new Map<string, { thrust: number; isp: number; ispSL: number }>();
   for (const p of parts) {
     const g = groupOf.get(p.instanceId);
     const def = defs.parts[p.def];
@@ -244,8 +246,8 @@ export function labStageFigures(defs: DefLibrary, vehicle: VehicleDef, parts: re
     groupMass.set(g, (groupMass.get(g) ?? 0) + partsMass(defs, [p]));
     for (const m of def.modules) {
       if (m.type !== 'engine') continue;
-      const e = groupEngine.get(g) ?? { thrust: 0, isp: m.ispVac };
-      groupEngine.set(g, { thrust: e.thrust + m.thrustVac, isp: m.ispVac });
+      const e = groupEngine.get(g) ?? { thrust: 0, isp: m.ispVac, ispSL: m.ispSL };
+      groupEngine.set(g, { thrust: e.thrust + m.thrustVac, isp: m.ispVac, ispSL: m.ispSL });
     }
   }
   // Propellant: what the group's engines burn, held in the group's tanks.
@@ -276,13 +278,15 @@ export function labStageFigures(defs: DefLibrary, vehicle: VehicleDef, parts: re
     let mass0 = 0;
     for (const [id, m] of groupMass) if (order.indexOf(id) >= from) mass0 += m;
     const ve = engine.isp * G0;
-    const dv = ve * Math.log(mass0 / Math.max(1, mass0 - prop.amount));
+    const ratio = Math.log(mass0 / Math.max(1, mass0 - prop.amount));
+    const dv = ve * ratio;
+    const dvNow = (engine.isp + (engine.ispSL - engine.isp) * Math.min(1, Math.max(0, pressureShare))) * G0 * ratio;
     total += dv;
     return {
       ...info,
       propellantFraction: prop.capacity > 0 ? prop.amount / prop.capacity : 0,
       deltaVVac: dv,
-      deltaVNow: dv,
+      deltaVNow: dvNow,
       twr: engine.thrust / (mass0 * gLocal),
       burnTime: prop.amount / (engine.thrust / ve),
     };

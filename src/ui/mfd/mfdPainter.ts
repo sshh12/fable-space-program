@@ -200,7 +200,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       const rows: MfdRow[] = [
         { label: 'Mass', value: formatMass(r.mass) },
         { label: 'Thrust', value: `${formatNumber(r.thrust / 1000, 1)}${NBSP}kN` },
-        { label: 'TWR', value: formatTwr(r.twr) },
+        { label: 'TWR now', value: formatTwr(r.twr) },
         { label: 'Δv total', value: formatDeltaV(r.deltaVTotal), tone: 'accent' },
         { label: 'RCS fuel', value: r.rcsFraction !== null ? formatPercent(r.rcsFraction) : '—' },
         { label: 'Max skin temp', value: formatPercent(r.maxTempFraction), tone: r.maxTempFraction > 0.85 ? 'warning' : r.maxTempFraction > 0.7 ? 'caution' : 'normal' },
@@ -234,7 +234,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
           { label: subject?.thrustLabel === 'Accel' ? 'Stage accel' : 'Stage TWR', value: subject ? subject.thrustValue : '—' },
           { label: 'Stage burn', value: subject ? subject.burnTime : '—' },
           { label: 'Stages left', value: `${remaining.length}` },
-          { label: 'Δv remaining (vac)', value: st.deltaVTotal, tone: 'accent' },
+          { label: 'Δv total (vac)', value: st.deltaVTotal, tone: 'accent' },
           { label: 'Staging', value: st.lockout ? 'LOCKED' : 'READY', tone: st.lockout ? 'caution' : 'good' },
         ],
         status,
@@ -918,10 +918,21 @@ function drawOrbitDiagram(ctx: Ctx, env: PaintEnv, f: Frame, x: number, y: numbe
     ctx.fill();
     // Label above the point and value below it, both clear of the vessel icon that may sit on the apsis.
     const tx = ax + (align === 'left' ? 1 : -1) * f.h * 0.012;
+    // Each on a dark plate: the labels often stand over the lit body (a Pe below the surface lies inside its disc).
+    const plated = (str: string, y: number, color: string): void => {
+      const w = ctx.measureText(str).width;
+      const hh = f.h * 0.024;
+      const x0 = align === 'left' ? tx : tx - w;
+      ctx.fillStyle = 'rgba(4, 8, 14, 0.72)';
+      ctx.beginPath();
+      ctx.roundRect(x0 - f.h * 0.006, y - hh, w + f.h * 0.012, hh * 2, f.h * 0.006);
+      ctx.fill();
+      text(ctx, str, tx, y, align, 'middle', color);
+    };
     setFont(ctx, 700, px(f, 0.036));
-    text(ctx, label, tx, ay - f.h * 0.05, align, 'middle', COLORS.normal);
+    plated(label, ay - f.h * 0.05, COLORS.normal);
     setFont(ctx, 600, px(f, MIN_TEXT));
-    text(ctx, formatApsis(alt), tx, ay + f.h * 0.05, align, 'middle', alt < 0 ? COLORS.warning : LABEL);
+    plated(formatApsis(alt), ay + f.h * 0.05, alt < 0 ? COLORS.warning : LABEL);
   };
   apsis(0, 'Pe', rp - R, 'right');
   if (closed) apsis(Math.PI, 'Ap', ra - R, 'left');
@@ -981,7 +992,17 @@ export interface MfdPainterOptions {
    * `render.clouds.coverageMap`, reduced to about 1024 x 512), laid over its albedo map on the ORB page.
    */
   bodyClouds?: (bodyId: string) => BodyAlbedoMap | null;
+  /**
+   * Main-thread time one paint may spend shading the ORB page's body graphic, ms (default SHADE_BUDGET_MS). A new
+   * graphic (the view's normal, the light or the body's turn moved visibly) is shaded over as many paints as it
+   * takes, the previous one shown meanwhile, turned to the current view: no paint pays for a whole shading.
+   * `Infinity` shades in one paint (a still that must show the final graphic at once).
+   */
+  shadeBudgetMs?: number;
 }
+
+/** Default per-paint shading budget of the ORB page's body graphic, ms (request cockpit-17: a paint under 1 ms). */
+export const SHADE_BUDGET_MS = 0.45;
 
 /** Linear albedo of the cloud tops on the ORB page's body graphic. */
 const CLOUD_ALBEDO = 0.62;
@@ -1012,10 +1033,23 @@ function surfaceMean(map: BodyAlbedoMap, clouds: BodyAlbedoMap | null): readonly
   return mean;
 }
 
+/** A body graphic being shaded over several paints (rows `nextRow` .. `size` still to do). */
+interface DiscJob {
+  key: string;
+  R: number;
+  size: number;
+  img: ImageData;
+  nextRow: number;
+  shade: (row: number) => void;
+}
+
 interface PaintEnv {
   opts: MfdPainterOptions;
-  /** The last shaded disc per body (re-shaded only when its size, the view or the light changes visibly). */
-  discs: Map<string, { key: string; canvas: OffscreenCanvas }>;
+  /**
+   * Per body: the last complete graphic (shaded in the view's canonical frame at a size bucket; drawn turned to the
+   * view and scaled) and the job shading its successor.
+   */
+  discs: Map<string, { done: { key: string; R: number; canvas: OffscreenCanvas } | null; job: DiscJob | null }>;
 }
 
 /** Rotate a vector by the inverse of a unit quaternion (ROOT -> body-fixed for qFixedToRoot). */
@@ -1045,13 +1079,11 @@ function seedOf(id: string): number {
  * darkening under an atmosphere, and the surface from the albedo map (land, cloud and sea; maria and highlands)
  * or, without one, the mean colour with a low-contrast mottle fixed to the body.
  */
-function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], air: readonly number[] | null, sun: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null, map: BodyAlbedoMap | null, clouds: BodyAlbedoMap | null): OffscreenCanvas {
+function shadeDiscJob(key: string, R: number, bodyId: string, meanColor: readonly number[], air: readonly number[] | null, sun: V3 | null, axes: Axes, qFixed: { x: number; y: number; z: number; w: number } | null, map: BodyAlbedoMap | null, clouds: BodyAlbedoMap | null): DiscJob {
   const atmosphere = air !== null;
   const size = Math.ceil(2 * R) + 2;
   const c = size / 2;
-  const canvas = new OffscreenCanvas(size, size);
-  const cx = canvas.getContext('2d') as Ctx;
-  const img = cx.createImageData(size, size);
+  const img = new ImageData(size, size);
   const d = img.data;
   // Body-fixed directions of the screen axes (the surface turns with the body).
   const id = { x: 0, y: 0, z: 0, w: 1 };
@@ -1073,7 +1105,7 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], air:
   const seed = seedOf(bodyId) * 40;
   const soft = atmosphere ? 0.05 : 0.015;
   const night = 0.045;
-  for (let j = 0; j < size; j++) {
+  const shade = (j: number): void => {
     const v = -(j + 0.5 - c) / R;
     for (let i = 0; i < size; i++) {
       const u = (i + 0.5 - c) / R;
@@ -1128,9 +1160,34 @@ function shadeDisc(R: number, bodyId: string, meanColor: readonly number[], air:
       d[o + 2] = toSrgb8(b * s + (haze ? haze[2]! * hz : 0));
       d[o + 3] = Math.round(255 * a);
     }
-  }
-  cx.putImageData(img, 0, 0);
+  };
+  return { key, R, size, img, nextRow: 0, shade };
+}
+
+/** Run a shading job for at most `budgetMs` (at least one row); returns its canvas once every row is done. */
+function advanceDiscJob(job: DiscJob, budgetMs: number): OffscreenCanvas | null {
+  const t0 = performance.now();
+  do {
+    job.shade(job.nextRow++);
+  } while (job.nextRow < job.size && performance.now() - t0 < budgetMs);
+  if (job.nextRow < job.size) return null;
+  const canvas = new OffscreenCanvas(job.size, job.size);
+  (canvas.getContext('2d') as Ctx).putImageData(job.img, 0, 0);
   return canvas;
+}
+
+/**
+ * The view's canonical frame: the same normal W, with an in-plane reference fixed by W alone (not by the conic's
+ * periapsis, which swings round during a burn), and the angle that turns it onto the view (screen right P).
+ */
+function canonicalAxes(axes: Axes): { axes: Axes; turn: number } {
+  const W = axes.W;
+  const ref = Math.abs(W.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  let P0 = { x: ref.y * W.z - ref.z * W.y, y: ref.z * W.x - ref.x * W.z, z: ref.x * W.y - ref.y * W.x };
+  const l = Math.hypot(P0.x, P0.y, P0.z);
+  P0 = { x: P0.x / l, y: P0.y / l, z: P0.z / l };
+  const Q0 = { x: W.y * P0.z - W.z * P0.y, y: W.z * P0.x - W.x * P0.z, z: W.x * P0.y - W.y * P0.x };
+  return { axes: { P: P0, Q: Q0, W }, turn: Math.atan2(dot3(axes.P, Q0), dot3(axes.P, P0)) };
 }
 
 /**
@@ -1141,20 +1198,43 @@ function drawBodyDisc(ctx: Ctx, env: PaintEnv, bodyId: string, x: number, y: num
   const mc = meanColor ?? [0.2, 0.2, 0.2];
   const atmosphere = air !== null;
   if (typeof OffscreenCanvas !== 'undefined') {
-    const Rq = Math.max(2, Math.round(R));
+    // Shaded in the view's canonical frame (turned onto the view when drawn), at a size bucket of 8 px (scaled
+    // when drawn): a burn that swings the periapsis round or grows the orbit does not call for a new graphic.
+    const canon = canonicalAxes(axes);
+    const Rq = Math.max(8, Math.ceil(R / 8) * 8);
     const map = env.opts.bodyAlbedo?.(bodyId) ?? null;
     const clouds = map ? (env.opts.bodyClouds?.(bodyId) ?? null) : null;
-    // Re-shade only when the picture would change visibly: about 0.3 deg of rotation or of the sun's direction.
+    // A new graphic only when it would look different: about 0.3 deg of the normal, the light or the body's turn.
     const qv = (v: V3 | null): string => (v ? `${Math.round(v.x * 200)},${Math.round(v.y * 200)},${Math.round(v.z * 200)}` : '-');
-    const P = qFixed ? rotateInv(qFixed, axes.P) : axes.P;
-    const Q = qFixed ? rotateInv(qFixed, axes.Q) : axes.Q;
-    const key = `${Rq}|${map ? `${map.width}x${map.height}` : 'mean'}|${clouds ? 'c' : ''}|${atmosphere}|${qv(P)}|${qv(Q)}|${sunDir ? qv({ x: dot3(sunDir, axes.P), y: dot3(sunDir, axes.Q), z: dot3(sunDir, axes.W) }) : '-'}`;
+    const P = qFixed ? rotateInv(qFixed, canon.axes.P) : canon.axes.P;
+    const Q = qFixed ? rotateInv(qFixed, canon.axes.Q) : canon.axes.Q;
+    const key = `${Rq}|${map ? `${map.width}x${map.height}` : 'mean'}|${clouds ? 'c' : ''}|${atmosphere}|${qv(P)}|${qv(Q)}|${sunDir ? qv({ x: dot3(sunDir, canon.axes.P), y: dot3(sunDir, canon.axes.Q), z: dot3(sunDir, canon.axes.W) }) : '-'}`;
     let disc = env.discs.get(bodyId);
-    if (!disc || disc.key !== key) {
-      disc = { key, canvas: shadeDisc(Rq, bodyId, mc, air, sunDir, axes, qFixed, map, clouds) };
-      env.discs.set(bodyId, disc);
+    if (!disc) env.discs.set(bodyId, (disc = { done: null, job: null }));
+    // A job once started runs to its end (a key that keeps changing - a planet turning at high warp - would
+    // otherwise never finish one); the next starts from the latest key.
+    if (!disc.job && disc.done?.key !== key) disc.job = shadeDiscJob(key, Rq, bodyId, mc, air, sunDir, canon.axes, qFixed, map, clouds);
+    if (disc.job) {
+      const canvas = advanceDiscJob(disc.job, env.opts.shadeBudgetMs ?? SHADE_BUDGET_MS);
+      if (canvas) {
+        disc.done = { key: disc.job.key, R: disc.job.R, canvas };
+        disc.job = null;
+      }
     }
-    ctx.drawImage(disc.canvas, x - disc.canvas.width / 2, y - disc.canvas.height / 2, disc.canvas.width * (R / Rq), disc.canvas.height * (R / Rq));
+    if (disc.done) {
+      const { canvas, R: Rd } = disc.done;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(canon.turn);
+      ctx.drawImage(canvas, (-canvas.width / 2) * (R / Rd), (-canvas.height / 2) * (R / Rd), canvas.width * (R / Rd), canvas.height * (R / Rd));
+      ctx.restore();
+    } else {
+      // The first paints of a body, while its first graphic is shaded: the mean colour.
+      ctx.fillStyle = bodyColor(mc, 0.6);
+      ctx.beginPath();
+      ctx.arc(x, y, R, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else {
     ctx.fillStyle = bodyColor(mc, 0.6);
     ctx.beginPath();
@@ -1332,7 +1412,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
     [`${who} Δv`, get('Stage Δv')],
     [`${who} ${(model.rows.find((r) => r.label === 'Stage accel') ? 'accel' : 'TWR')}`, model.rows.find((r) => r.label === 'Stage accel') ?? get('Stage TWR')],
     [`${who} burn`, get('Stage burn')],
-    ['Δv remaining', get('Δv remaining (vac)')],
+    ['Δv total', get('Δv total (vac)')],
     ['Staging', get('Staging')],
   ];
   const bw = (f.w - 2 * f.pad - (boxes.length - 1) * gap) / boxes.length;
@@ -1347,7 +1427,7 @@ function paintStaging(ctx: Ctx, f: Frame, s: SimSnapshot, defs: DefLibrary, mode
   if (tiles.length > 0) {
     setFont(ctx, 600, Math.max(f.h * 0.032, f.min));
     const left = tiles.filter((t) => t !== active).length;
-    text(ctx, `STACK · ${left} ${left === 1 ? 'STAGE' : 'STAGES'} LEFT${active ? ' · 1 BURNING' : ''}`, f.pad, y0 - f.h * 0.03, 'left', 'bottom', LABEL);
+    text(ctx, `STACK · ${left} ${left === 1 ? 'STAGE' : 'STAGES'} LEFT${active ? (s.readouts.thrust > 0 ? ' · 1 BURNING' : ' · 1 ACTIVE') : ''}`, f.pad, y0 - f.h * 0.03, 'left', 'bottom', LABEL);
   }
   const x = f.pad;
   const w = f.w - 2 * f.pad;

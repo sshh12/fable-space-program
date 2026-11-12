@@ -167,9 +167,9 @@ export const formatG = (g: number): string => `${formatNumber(g, 2)}${NBSP}g`;
 export const formatMach = (mach: number): string => `M${NBSP}${formatNumber(mach, Math.abs(mach) < 10 ? 2 : 1)}`;
 export const formatTwr = (twr: number): string => formatNumber(twr, 2);
 
+/** Vessel mass, always in tonnes: one decimal below 1 000 t ("6.1 t", "28.5 t"), whole tonnes above. */
 export function formatMass(kg: number): string {
   if (!Number.isFinite(kg)) return '—';
-  if (Math.abs(kg) < 10_000) return `${formatNumber(kg, 0)}${NBSP}kg`;
   return `${formatNumber(kg / 1000, Math.abs(kg) < 1e6 ? 1 : 0)}${NBSP}t`;
 }
 

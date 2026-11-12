@@ -155,6 +155,7 @@ export const HUD_CSS = /* css */ `
 .hud button[aria-disabled="true"] { opacity: 0.32; cursor: default; background: rgba(255, 255, 255, 0.03); border-color: var(--line); }
 /* Only the interactive parts take pointer events (everything else lets the pointer through to the scene). */
 .hud [data-hud-interactive] { pointer-events: auto; }
+.hud .kbd .rg { position: relative; top: 0.32em; }
 .hud .kbd {
   display: inline-block;
   min-width: 1.7em;
@@ -432,6 +433,8 @@ export const HUD_CSS = /* css */ `
 .hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.04em; color: var(--label); font-weight: 600; white-space: nowrap; }
 
 .hud .bottom > .node { position: absolute; left: calc(50% + var(--u) * 15.3); bottom: calc(var(--hh) + var(--u) * 0.8); width: calc(var(--u) * 21); }
+.hud .node .nwhen { display: inline-flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
+.hud .node .nword { font-size: 1em; font-weight: 700; letter-spacing: 0.08em; color: var(--label); }
 .hud .node .nstart { font-size: 1.15em; font-variant-numeric: tabular-nums; }
 .hud .node.imminent .nstart { color: var(--caution); }
 .hud .node.imminent { border-color: var(--caution); --st: var(--caution); }
@@ -476,6 +479,9 @@ export const HUD_CSS = /* css */ `
 .hud .brow .bar { height: calc(var(--u) * 0.6); }
 .hud .brow .bv { font-weight: 600; text-align: right; white-space: nowrap; }
 .hud .pad .padhint { font-size: 0.8em; color: var(--label); line-height: 1.25; margin: calc(var(--u) * 0.1) 0 calc(var(--u) * 0.25); }
+.hud .pad .ptitle .pname.none { color: var(--label); font-size: 1em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.hud .pad .suggest { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 0.4); margin-bottom: calc(var(--u) * 0.3); }
+.hud .pad .suggest button { font-size: 0.92em; font-weight: 600; color: var(--accent); border-color: rgba(85, 212, 255, 0.45); }
 .hud .pad .targets { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 0.4); }
 .hud .pad .targets button { font-size: 1.15em; letter-spacing: 0.03em; text-transform: none; padding: 0 calc(var(--u) * 0.7); color: var(--text); display: inline-flex; align-items: baseline; gap: 0.35em; }
 /* "Target Moon": the verb in the label style, so the chip reads as an action. */

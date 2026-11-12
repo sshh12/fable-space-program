@@ -2,7 +2,7 @@
  * Public API of src/ui (flight-ui package): HUD, navball renderer, MFD painter, shared display models and
  * formatters. See docs/handoff/flight-ui.md.
  */
-export { createHud, HUD_TEXT_HZ, type HudFailureAction, type HudImpl, type HudKeyHelpEntry, type HudOptions } from './hud/hud';
+export { createHud, HUD_OBSTACLE_SELECTOR, HUD_TEXT_HZ, type HudFailureAction, type HudImpl, type HudKeyHelpEntry, type HudOptions } from './hud/hud';
 export { INTERACTIVE_ATTR } from './hud/dom';
 export { createNavballRenderer, markerInstances, NAVBALL_FORMAT, NAVBALL_TEXTURE_SIZE, type MarkerInstance, type NavballRendererImpl, type NavballRendererOptions } from './navball/navballRenderer';
 export {

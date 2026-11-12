@@ -43,6 +43,18 @@ const REAL_STILLS: [string, string, string][] = [
   ['reentry', '', '/out/screens/integration/budget-reentry.png'],
   ['chutes', 'start=120&ground=0', '/out/screens/integration/budget-splashdown.png'],
 ];
+/**
+ * Real-flight states (round 7): the strings the real game produces and the plain scenes never reach - a day-count
+ * clock at warp, 10.8-11 km/s, ten-day countdowns, thousands of km to the zone, the capsule separation next, a
+ * landing site 1.9 km below the Moon's datum (labs/flight-ui/main.ts VARIANTS; values from the browser mission).
+ */
+const REAL_FLIGHT: [string, string][] = [
+  ['tli', 'variant=tli'],
+  ['moonArrival', 'variant=moonArrival'],
+  ['transEarth', 'variant=transEarth'],
+  ['lunarReturn', 'variant=lunarReturn'],
+  ['tranquility', 'scene=lunarSurface&ground=-1902'],
+];
 const repoPath = (url: string): string => path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', ...url.split('/').filter(Boolean));
 
 /**
@@ -62,7 +74,8 @@ async function expectCoherentState(page: Page, scene: string): Promise<void> {
   const r = s.readouts;
   const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
   if (v.situation === 'landed' || v.situation === 'splashed') expect(r.altitudeRadar, `${scene}: radar altitude when landed`).toBeLessThan(5);
-  if (r.verticalSpeed < -50) expect(r.periapsisAltitude, `${scene}: sinking at ${r.verticalSpeed.toFixed(0)} m/s on a path that meets the surface`).toBeLessThan(0);
+  // (Near the ground: a coast toward a perigee far above the surface sinks fast too.)
+  if (r.verticalSpeed < -50 && r.altitudeAsl < 200_000) expect(r.periapsisAltitude, `${scene}: sinking at ${r.verticalSpeed.toFixed(0)} m/s on a path that meets the surface`).toBeLessThan(0);
   if (r.dynamicPressure > 0 && r.verticalSpeed < 0 && r.verticalSpeed > -15 && v.situation === 'flying' && r.thrust === 0) {
     const chutes = s.staging.stages.filter((x) => x.actionKinds.includes('deployParachute'));
     expect(chutes.length, `${scene}: chute stages`).toBeGreaterThan(0);
@@ -198,6 +211,58 @@ async function expectTextFloor(page: Page, what: string): Promise<void> {
     expect(t.size, `${what}: font size of "${t.text}"`).toBeGreaterThanOrEqual(TEXT_FLOOR_PX - 0.05);
     expect(t.overflow, `${what}: "${t.text}" overflows its box (px)`).toBeLessThanOrEqual(1);
   }
+  await expectTextInFrames(page, what);
+}
+
+/**
+ * Every text of the HUD lies inside the frame it is drawn in (the padding box of its panel, tile, window or
+ * pill), and no two texts of one row overlap (a value running into its countdown, the warp factor into the clock).
+ * Measured on the text itself (ranges), so a span that grows past its panel is caught (round 7: "RAILS ×100"
+ * past the clock panel, "HDG 333°" past the speed window, "506.8 MmT− 10d 08:11").
+ */
+async function expectTextInFrames(page: Page, what: string): Promise<void> {
+  const faults = await page.evaluate(() => {
+    const out: string[] = [];
+    const leaves: { e: Element; r: DOMRect; text: string }[] = [];
+    for (const e of document.querySelectorAll('.hud *')) {
+      if (!(e instanceof HTMLElement) || e.getClientRects().length === 0 || getComputedStyle(e).visibility === 'hidden') continue;
+      const own = [...e.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '');
+      if (own.length === 0) continue;
+      const range = document.createRange();
+      range.setStartBefore(own[0]!);
+      range.setEndAfter(own[own.length - 1]!);
+      const r = range.getBoundingClientRect();
+      if (r.width === 0) continue;
+      const text = own.map((n) => n.textContent).join('').trim();
+      leaves.push({ e, r, text });
+      const frame = e.closest('.panel, .tile, .later, .prw, .pill, .toast, .helpbtn, .housing, .keyhelp .box, .failed .card');
+      if (!frame) continue;
+      const f = frame.getBoundingClientRect();
+      const cs = getComputedStyle(frame);
+      const left = f.left + parseFloat(cs.borderLeftWidth);
+      const right = f.right - parseFloat(cs.borderRightWidth);
+      const top = f.top + parseFloat(cs.borderTopWidth);
+      const bottom = f.bottom - parseFloat(cs.borderBottomWidth);
+      const over = Math.max(left - r.left, r.right - right, top - r.top, r.bottom - bottom);
+      if (over > 1) out.push(`"${text}" runs ${over.toFixed(1)} px outside its ${frame.className.split(' ')[0]}`);
+    }
+    // Texts of one row must not overlap each other.
+    const rowOf = (e: Element): Element | null => e.closest('.row, .apsis, .metrow, .ut, .speed, .l1, .l2, .cell, .rrow, .ltline, .zone');
+    for (let i = 0; i < leaves.length; i++) {
+      for (let j = i + 1; j < leaves.length; j++) {
+        const a = leaves[i]!;
+        const b = leaves[j]!;
+        if (a.e.contains(b.e) || b.e.contains(a.e)) continue;
+        const ra = rowOf(a.e);
+        if (!ra || ra !== rowOf(b.e)) continue;
+        const ox = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const oy = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (ox > 0.5 && oy > 0.5) out.push(`"${a.text}" and "${b.text}" overlap by ${ox.toFixed(1)} px`);
+      }
+    }
+    return out;
+  });
+  expect(faults, `${what}: texts outside their frames or over each other`).toEqual([]);
 }
 
 /**
@@ -243,6 +308,17 @@ for (const [w, h, tag] of [
           expect(c, `${scene}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
           await expectTextFloor(page, scene);
           await expectCoherentState(page, scene);
+        }
+      });
+    }
+    for (const [name, query] of REAL_FLIGHT) {
+      test(`real-flight state ${name}`, async ({ page, pageLog }) => {
+        await shoot(page, pageLog, `/labs/flight-ui/?${query}`, `flight-${name}-${tag}`);
+        await expectTextInFrames(page, `flight-${name}-${tag}`);
+        if (tag === '720p') {
+          expect(await hudCoverage(page), `${name}: HUD coverage`).toBeLessThanOrEqual(COVERAGE_BUDGET);
+          await expectTextFloor(page, name);
+          await expectCoherentState(page, name);
         }
       });
     }
@@ -366,7 +442,7 @@ test.describe('flight-ui milestones (720p)', () => {
   test('a milestone is announced by its name, once, with the sphere-of-influence change it hangs on', async ({ page, pageLog }) => {
     // The mission's MOON_SOI_ENTER arrives with the sim's soiChange (out/screens/mission/08 showed both, the
     // milestone title-cased as "Moon Soi Enter").
-    await openPage(page, '/labs/flight-ui/?scene=translunar&milestone=MOON_SOI_ENTER&soi=earth,moon');
+    await openPage(page, '/labs/flight-ui/?variant=moonArrival&milestone=MOON_SOI_ENTER&soi=earth,moon');
     await page.waitForFunction(() => document.querySelectorAll('.hud .toast').length > 0);
     await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     await expect(page.locator('.hud .toast')).toHaveCount(1);
@@ -382,6 +458,76 @@ test.describe('flight-ui milestones (720p)', () => {
 
 test.describe('flight-ui stage stack (720p)', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
+  test('the next tile shows every stage of the stack whole: no name or action words cut', async ({ page, pageLog }) => {
+    // Every stage of the mission's stack in turn as the next stage (the lab vehicle carries its ten stages).
+    for (let n = 0; n < 10; n++) {
+      await openPage(page, `/labs/flight-ui/?scene=pad&stage=${n}`);
+      await page.evaluate(() => window.__test!.waitFrames(5));
+      const label = await page.evaluate((i) => window.__test!.state()!.staging.stages[i]!.label, n);
+      const next = page.locator('.hud .tile.next');
+      await expect(next, `stage ${n + 1} is next`).toBeVisible();
+      await expect(next.locator('.name')).toHaveText(label);
+      const cut = await next.evaluate((t) =>
+        [...t.querySelectorAll('.name, .meta')].map((e) => ({ text: e.textContent, over: (e as HTMLElement).scrollWidth - (e as HTMLElement).clientWidth, ellipsis: getComputedStyle(e).textOverflow })),
+      );
+      for (const c of cut) {
+        expect(c.over, `stage ${n + 1}: "${c.text}" is cut`).toBeLessThanOrEqual(0.5);
+        expect(c.ellipsis, `stage ${n + 1}: "${c.text}" may not ellipsize`).not.toBe('ellipsis');
+      }
+      await expectTextInFrames(page, `next stage ${n + 1}`);
+      await expectNoErrors(page, pageLog);
+    }
+  });
+  test('every delta-v of the stack is in vacuum and the rows add up to the header, on the pad too', async ({ page, pageLog }) => {
+    await openPage(page, '/labs/flight-ui/?scene=pad');
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    const s = await page.evaluate(() => window.__test!.state()!);
+    // At the pad's pressure the stages' current figures fall well below their vacuum ones (the real game's 1 001
+    // against 3 408 m/s for the lunar lift-off stage).
+    expect(s.staging.stages.some((x) => x.propellantFraction !== null && x.deltaVNow < 0.9 * x.deltaVVac)).toBe(true);
+    const num = (t: string): number => Number(t.replace(/[^\d.]/g, ''));
+    const header = (await page.locator('.hud .stagewrap .more').innerText()).replace(/\s+/g, ' ');
+    expect(header).toMatch(/vac/);
+    const rows = await page.locator('.hud .later .dv, .hud .tile .l2 .dv').allInnerTexts();
+    const sum = rows.filter((t) => t.trim() !== '').reduce((a, t) => a + num(t), 0);
+    expect(Math.abs(sum - num(header)), `rows ${rows.join(' + ')} against "${header}"`).toBeLessThanOrEqual(rows.length);
+    await expectNoErrors(page, pageLog);
+  });
+  test('landed 1.9 km below the datum, the altimeter reads the height over the ground, on the HUD and the MFD', async ({ page, pageLog }) => {
+    await openPage(page, '/labs/flight-ui/?scene=lunarSurface&ground=-1902');
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    const s = await page.evaluate(() => window.__test!.state()!);
+    expect(s.readouts.altitudeAsl).toBeLessThan(-1800);
+    const metres = (t: string): number => Number(t.replace(/\s/g, '').replace('−', '-').replace(/m$/, ''));
+    const hud = await page.locator('.hud .tc .alt .big').innerText();
+    expect(Math.abs(metres(hud)), `HUD altitude "${hud}"`).toBeLessThan(5);
+    await expect(page.locator('.hud .tc .alt .ptitle')).toContainText(/landed/i);
+    for (const pg of ['flight', 'landing'] as const) {
+      const row = (await page.evaluate((p) => window.__flightUi!.mfdRows(p), pg))[0]!;
+      expect(row.label, pg).toBe('Radar alt');
+      expect(Math.abs(metres(row.value)), `${pg}: ${row.value}`).toBeLessThan(5);
+    }
+    await expectNoErrors(page, pageLog);
+  });
+  test('no chute light where there is no air: lunar orbit, the Moon, a low Earth orbit', async ({ page, pageLog }) => {
+    for (const scene of ['lunarOrbit', 'lunarSurface', 'lowOrbit']) {
+      await openPage(page, `/labs/flight-ui/?scene=${scene}`);
+      await page.evaluate(() => window.__test!.waitFrames(5));
+      const row = (await page.evaluate(() => window.__flightUi!.mfdRows('entry'))).find((r) => r.label === 'Chutes' || /deploy$/.test(r.label))!;
+      expect(row, scene).toEqual({ label: 'Chutes', value: '—' });
+      await expectNoErrors(page, pageLog);
+    }
+  });
+  test('a vertical climb has no ground track: no down-range or cross-range flipping sides', async ({ page, pageLog }) => {
+    await openPage(page, '/labs/flight-ui/?scene=ascent');
+    await page.evaluate(() => window.__test!.waitFrames(5));
+    const s = await page.evaluate(() => window.__test!.state()!);
+    expect(s.readouts.verticalSpeed).toBeGreaterThan(100);
+    const labels = ((await page.evaluate(() => window.__flightUi!.hudLandingRows())) ?? []).map((r) => r[0]);
+    expect(labels).not.toContain('Down-range');
+    expect(labels).not.toContain('Cross-range');
+    await expectNoErrors(page, pageLog);
+  });
   test('the mass is that of the parts carried: it falls as the stack is staged, and the MFD shows it', async ({ page, pageLog }) => {
     const masses: number[] = [];
     for (const scene of ['pad', 'ascent', 'lowOrbit', 'lunarOrbit', 'lunarSurface', 'reentry']) {
@@ -390,7 +536,8 @@ test.describe('flight-ui stage stack (720p)', () => {
       const s = await page.evaluate(() => window.__test!.state()!);
       masses.push(s.readouts.mass);
       const row = (await page.evaluate(() => window.__flightUi!.mfdRows('systems'))).find((r) => r.label === 'Mass')!;
-      expect(row.value.replace(/\s/g, ' ')).toMatch(s.readouts.mass >= 10000 ? new RegExp(`^${(s.readouts.mass / 1000).toFixed(1).replace('.', '\\.')}`) : /kg$/);
+      // Always in tonnes (round 7: the unit flipped between t and kg from one state to the next).
+      expect(row.value.replace(/\s/g, ' ')).toMatch(new RegExp(`^${(s.readouts.mass / 1000).toFixed(1).replace('.', '\\.')} t$`));
       await expectNoErrors(page, pageLog);
     }
     for (let i = 1; i < masses.length; i++) expect(masses[i], `mass after scene ${i}`).toBeLessThan(masses[i - 1]!);
