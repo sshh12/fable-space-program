@@ -29,6 +29,13 @@
     "reported": "",
     "strict": true,
     "dry": "bareGround",
+    "dryClasses": [
+      "bareRock",
+      "sand",
+      "sparseScrub"
+    ],
+    "forbiddenInOuterRing": [],
+    "fixed": [],
     "padRadii": {
       "heavy": {
         "flat": 450.0,
@@ -348,6 +355,29 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 0.999,
+        "allowedFraction": 0.999,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 450.0,
+            "fractions": {
+              "bareRock": 0.4916,
+              "sand": 0.5073,
+              "grass": 0.0011
+            }
+          },
+          "outerRing": {
+            "radiusM": 1200.0,
+            "fractions": {
+              "water": 0.0438,
+              "bareRock": 0.3429,
+              "sand": 0.5783,
+              "sparseScrub": 0.0332,
+              "grass": 0.0017
+            }
+          }
+        },
         "seaDistanceM": 1000.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -387,6 +417,28 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 450.0,
+            "fractions": {
+              "bareRock": 0.0673,
+              "sand": 0.9327
+            }
+          },
+          "outerRing": {
+            "radiusM": 1200.0,
+            "fractions": {
+              "water": 0.1322,
+              "bareRock": 0.1122,
+              "sand": 0.7334,
+              "sparseScrub": 0.0214,
+              "grass": 0.0008
+            }
+          }
+        },
         "seaDistanceM": 750.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -426,6 +478,25 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 450.0,
+            "fractions": {
+              "bareRock": 0.0044,
+              "sand": 0.9956
+            }
+          },
+          "outerRing": {
+            "radiusM": 1200.0,
+            "fractions": {
+              "bareRock": 0.0111,
+              "sand": 0.9889
+            }
+          }
+        },
         "seaDistanceM": 1701.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -465,6 +536,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 450.0,
+            "fractions": {
+              "bareRock": 0.0066,
+              "sand": 0.9934
+            }
+          },
+          "outerRing": {
+            "radiusM": 1200.0,
+            "fractions": {
+              "bareRock": 0.0714,
+              "sand": 0.9283,
+              "sparseScrub": 0.0003
+            }
+          }
+        },
         "seaDistanceM": 2405.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -504,6 +595,25 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.0262,
+              "sand": 0.9738
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "bareRock": 0.1123,
+              "sand": 0.8877
+            }
+          }
+        },
         "seaDistanceM": 1251.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -543,6 +653,30 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.0631,
+              "sand": 0.9369
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "water": 0.0916,
+              "bareRock": 0.17,
+              "sand": 0.7059,
+              "sparseScrub": 0.0263,
+              "grass": 0.006,
+              "shrub": 0.0003,
+              "trees": 0.0
+            }
+          }
+        },
         "seaDistanceM": 652.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -582,6 +716,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.3006,
+              "sand": 0.6994
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "bareRock": 0.3432,
+              "sand": 0.6567,
+              "grass": 0.0
+            }
+          }
+        },
         "seaDistanceM": 1400.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -621,6 +775,29 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.4718,
+              "sand": 0.5282
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "water": 0.0966,
+              "bareRock": 0.5234,
+              "sand": 0.3499,
+              "sparseScrub": 0.0211,
+              "grass": 0.0089,
+              "shrub": 0.0001
+            }
+          }
+        },
         "seaDistanceM": 608.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -660,6 +837,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.7675,
+              "sand": 0.2325
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "bareRock": 0.7518,
+              "sand": 0.2481,
+              "sparseScrub": 0.0001
+            }
+          }
+        },
         "seaDistanceM": 1450.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -699,6 +896,29 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 300.0,
+            "fractions": {
+              "bareRock": 0.7001,
+              "sand": 0.2999
+            }
+          },
+          "outerRing": {
+            "radiusM": 900.0,
+            "fractions": {
+              "water": 0.1017,
+              "bareRock": 0.4992,
+              "sand": 0.3691,
+              "sparseScrub": 0.0237,
+              "grass": 0.0057,
+              "trees": 0.0005
+            }
+          }
+        },
         "seaDistanceM": 618.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -738,6 +958,29 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.0465,
+              "sand": 0.9535
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.3246,
+              "sand": 0.6621,
+              "sparseScrub": 0.0126,
+              "grass": 0.0004,
+              "shrub": 0.0003,
+              "trees": 0.0001
+            }
+          }
+        },
         "seaDistanceM": 618.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -777,6 +1020,27 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.0353,
+              "sand": 0.9647
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.0798,
+              "sand": 0.9059,
+              "sparseScrub": 0.0139,
+              "grass": 0.0004
+            }
+          }
+        },
         "seaDistanceM": 618.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -816,6 +1080,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.0197,
+              "sand": 0.9803
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.0829,
+              "sand": 0.9083,
+              "sparseScrub": 0.0088
+            }
+          }
+        },
         "seaDistanceM": 626.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -855,6 +1139,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.0056,
+              "sand": 0.9944
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.0887,
+              "sand": 0.8998,
+              "sparseScrub": 0.0115
+            }
+          }
+        },
         "seaDistanceM": 632.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -894,6 +1198,26 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.2102,
+              "sand": 0.7898
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.1329,
+              "sand": 0.8628,
+              "sparseScrub": 0.0043
+            }
+          }
+        },
         "seaDistanceM": 640.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,
@@ -933,6 +1257,25 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 1.0,
+        "allowedFraction": 1.0,
+        "forbiddenM": null,
+        "forbiddenClass": null,
+        "landCover": {
+          "footprint": {
+            "radiusM": 150.0,
+            "fractions": {
+              "bareRock": 0.0409,
+              "sand": 0.9591
+            }
+          },
+          "outerRing": {
+            "radiusM": 600.0,
+            "fractions": {
+              "bareRock": 0.1288,
+              "sand": 0.8712
+            }
+          }
+        },
         "seaDistanceM": 800.0,
         "builtUpM": null,
         "builtUpWindowM": 1500.0,

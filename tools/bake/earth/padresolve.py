@@ -188,7 +188,9 @@ class Resolver:
         self.search_m = (search_km if search_km is not None else float(self.cfg["searchRadiusKm"])) * 1000.0
         # bare ground as LC-1 was placed (site.ALLOWED_WC: WorldCover 60 bare / sparse vegetation and 100 moss and
         # lichen, which the regional land cover stores as bareRock, sand or sparseScrub)
-        self.allowed = [CLASS[c] for c in BARE]
+        self.allowed = [CLASS[c] for c in (getattr(self, "dry_classes", None) or BARE)]
+        # land cover never allowed inside a pad's outer ring (its built-up radius): the lead's rule at Ka Lae
+        self.forbid = [CLASS[c] for c in (getattr(self, "forbid_outer", None) or [])]
         if getattr(self, "dry_any_land", False):
             self.allowed = [v for k, v in CLASS.items() if k not in ("water", "wetland", "builtUp", "unknown")]
         self.ground = Ground(region)
@@ -219,6 +221,7 @@ class Resolver:
         out["roughness10M"] = float(np.sqrt(np.mean(d10 ** 2)))
         lc = g.lc(la, lo).reshape(E.shape)[inside]
         out["allowedFraction"] = float(np.isin(lc, self.allowed).mean())
+        out["bareFraction"] = float(np.isin(lc, [CLASS[c] for c in BARE]).mean())
         out["dryFraction"] = float((~np.isin(lc, WET)).mean())
         cls = int(g.lc(np.array([lat]), np.array([lon]))[0])
         out["centreClass"] = CLASS_NAME.get(cls, str(cls))
@@ -260,6 +263,14 @@ class Resolver:
         d4 = np.hypot(E4.ravel(), N4.ravel())
         out["builtUpM"] = float(d4[built].min()) if built.any() else None      # None: none within rb
         out["builtUpWindowM"] = rb
+        if self.forbid:
+            lc4 = g.lc(la4, lo4)
+            bad = np.isin(lc4, self.forbid)
+            if bad.any():
+                i4 = int(np.argmin(np.where(bad, d4, np.inf)))
+                out["forbiddenM"], out["forbiddenClass"] = float(d4[i4]), CLASS_NAME.get(int(lc4[i4]), str(lc4[i4]))
+            else:
+                out["forbiddenM"], out["forbiddenClass"] = None, None
         if (r_ := stop()) is not None:
             return r_
         out["corridorBuiltUp"] = self.corridor_built(lat, lon)
@@ -326,6 +337,8 @@ class Resolver:
             f.append("coast")
         if "builtUpM" in e and e["builtUpM"] is not None and e["builtUpM"] < min(built_radius(k) for k in PAD_RADII):
             f.append("builtUp")
+        if e.get("forbiddenM") is not None and e["forbiddenM"] < min(built_radius(k) for k in PAD_RADII):
+            f.append("outerRing")
         if self.strict and "oceanRays" in e:
             f += [k for k, ok in self.site_tests(e, c).items() if not ok]
         if e.get("corridorBuiltUp") is not None:
@@ -354,6 +367,8 @@ class Resolver:
         shore = ndimage.distance_transform_edt(~water) * g
         sea_d = ndimage.distance_transform_edt(~(H < 0.0)) * g
         built_d = ndimage.distance_transform_edt(~(LC == BUILT)) * g
+        forbid_d = (ndimage.distance_transform_edt(~np.isin(LC, self.forbid)) * g if self.forbid
+                    else np.full(LC.shape, np.inf))
         # built-up land in the launch sector: the built-up cells convolved with the sector seen backwards (a cell
         # whose corridor holds built-up land lies in the opposite sector of that land), on the candidate grid
         rk = int(math.ceil(CORRIDOR_KM * 1000.0 / g))
@@ -410,18 +425,25 @@ class Resolver:
             "latitude": LA.reshape(E.shape) < c["maxLatDeg"],
             "coast": sea_d <= float(c["oceanReachKm"]) * 1000.0 + g,
             "builtUp": built_d >= min(built_radius(k) for k in PAD_RADII) - g,
+            "outerRing": forbid_d >= min(built_radius(k) for k in PAD_RADII) - g,
             "corridorBuiltUp": corridor_clear,
             "search": dist <= self.search_m,
         }
         ok = np.ones(E.shape, bool)
         stats = {"cells": int(E.size), "landCells": int((~water & (dist <= self.search_m)).sum())}
+        radii = [r_km for r_km in (5, 10, 20, 30, 40, 60, 95) if r_km * 1000.0 <= self.search_m + 1.0]
+        funnel = {f"{r_km} km": {} for r_km in radii}           # candidate cells left after each gate, by radius
         for name, t in tests.items():
             ok &= t
             stats[f"after{name.capitalize()}"] = int(ok.sum())
+            for r_km in radii:
+                funnel[f"{r_km} km"][name] = int((ok & (dist <= r_km * 1000.0)).sum())
+        log(f"pads: pre-filter funnel by radius (30 m cells left after each gate): {funnel}")
+        stats["funnel"] = funnel
         idx = np.nonzero(ok.ravel())[0]
         order = idx[np.argsort(dist.ravel()[idx], kind="stable")]
         return {"lat": LA[order], "lon": LO[order], "dist": dist.ravel()[order], "stats": stats,
-                "builtD": built_d.ravel()[order], "gridM": g}
+                "builtD": built_d.ravel()[order], "forbidD": forbid_d.ravel()[order], "gridM": g}
 
 
 # -- placement --------------------------------------------------------------------------------------------------
@@ -458,6 +480,7 @@ def place(res: Resolver, grid: dict, classes: dict, fixed: list[dict], partial: 
         for _ in range(need):
             found = None
             free = grid["builtD"] >= built_radius(cls) - grid["gridM"]      # the class's built-up clearance
+            free &= grid["forbidD"] >= built_radius(cls) - grid["gridM"]     # and its outer ring's land cover
             for p, d, bf, bt in zip(placed, dist_to, b_from, b_to):
                 free &= d >= min_distance(classes, cls, p["class"])
                 # the placed pad's keep-out disc stays out of the candidate's corridor, and the candidate's keep-out
@@ -477,7 +500,8 @@ def place(res: Resolver, grid: dict, classes: dict, fixed: list[dict], partial: 
                         log(f"pads: {tally['explicit']} explicit evaluations, now {grid['dist'][i] / 1000:.2f} km out "
                             f"(rejections so far {tally['rejected']})")
                 e = evaluated[i]
-                if e["pass"] and (e["builtUpM"] is None or e["builtUpM"] >= built_radius(cls)):
+                if e["pass"] and (e["builtUpM"] is None or e["builtUpM"] >= built_radius(cls)) and \
+                        (e.get("forbiddenM") is None or e["forbiddenM"] >= built_radius(cls)):
                     found = e
                     break
             if found is None:
@@ -519,6 +543,11 @@ def run(region_id: str, args) -> dict:
         la_, lo_, r_, reason = spec.split(":", 3)
         excludes.append((float(la_), float(lo_), float(r_), reason))
     Resolver.dry_any_land = bool(getattr(args, "dry_any_land", False))     # a measurement only (out/)
+    Resolver.dry_classes = [c.strip() for c in args.dry_classes.split(",")] if getattr(args, "dry_classes", None) else None
+    Resolver.forbid_outer = [c.strip() for c in args.forbid_outer.split(",")] if getattr(args, "forbid_outer", None) else None
+    for c in (Resolver.dry_classes or []) + (Resolver.forbid_outer or []):
+        if c not in CLASS:
+            raise ValueError(f"unknown land-cover class {c!r} (one of {', '.join(CLASS)})")
     res = Resolver(reg, nominal, args.search_km, strict=bool(getattr(args, "strict", False)), excludes=excludes)
     t0 = time.time()
     fixed = []
@@ -555,7 +584,12 @@ def run(region_id: str, args) -> dict:
                        "reliefM": round(e["reliefM"], 2), "planeRmsM": round(e["planeRmsM"], 3),
                        "roughness10M": round(e["roughness10M"], 3), "shoreDistanceM": round(e["shoreDistanceM"], 0),
                        "shoreBeyondWindow": e["shoreBeyondWindow"],
-                       "dryFraction": round(e["dryFraction"], 3), "bareFraction": round(e["allowedFraction"], 3),
+                       "dryFraction": round(e["dryFraction"], 3), "bareFraction": round(e["bareFraction"], 3),
+                       "allowedFraction": round(e["allowedFraction"], 3),
+                       "forbiddenM": None if e.get("forbiddenM") is None else round(e["forbiddenM"], 0),
+                       "forbiddenClass": e.get("forbiddenClass"),
+                       "landCover": {"footprint": cover_fractions(res, p["latDeg"], p["lonDeg"], PAD_RADII[p["class"]]["flat"]),
+                                     "outerRing": cover_fractions(res, p["latDeg"], p["lonDeg"], built_radius(p["class"]))},
                        "seaDistanceM": None if e.get("seaDistanceM") is None else round(e["seaDistanceM"], 0),
                        "builtUpM": None if e.get("builtUpM") is None else round(e["builtUpM"], 0),
                        "builtUpWindowM": e.get("builtUpWindowM"),
@@ -593,7 +627,17 @@ def run(region_id: str, args) -> dict:
                           + ("; the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm): the full rule that "
                              "placed LC-1" if res.strict else ""),
                  "reported": "" if res.strict else "the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm)",
-                 "strict": res.strict, "dry": "anyLand" if Resolver.dry_any_land else "bareGround",
+                 "strict": res.strict,
+                 "dry": ("anyLand" if Resolver.dry_any_land else
+                         "bareGround" if not Resolver.dry_classes or sorted(Resolver.dry_classes) == sorted(BARE) else
+                         "+".join(Resolver.dry_classes)),
+                 "dryClasses": [CLASS_NAME[v] for v in res.allowed],
+                 "forbiddenInOuterRing": [CLASS_NAME[v] for v in res.forbid],
+                 "fixed": [{"id": p["id"], "reason": getattr(args, "fixed_reason", None) or "fixed by the caller",
+                            "gates": "reported only: the pad stays where it is",
+                            "passes": p["evaluation"]["pass"], "failures": p["evaluation"]["failures"],
+                            "builtUpM": p["evaluation"].get("builtUpM")}
+                           for p in placed if p["fixed"]],
                  "padRadii": PAD_RADII, "builtUpMarginM": BUILT_MARGIN_M,
                  "corridor": {"azimuthDeg": list(CORRIDOR_AZ), "reachKm": CORRIDOR_KM},
                  "excluded": [{"latDeg": x[0], "lonDeg": x[1], "radiusM": x[2], "reason": x[3]} for x in excludes],
@@ -604,7 +648,15 @@ def run(region_id: str, args) -> dict:
     doc["corridors"] = corridor_table(res, pads)
     if tally["unplaced"]:
         doc["unplaced"] = tally["unplaced"]
-    dry = bool(getattr(args, "dry_run", False)) or bool(tally["unplaced"]) or Resolver.dry_any_land
+    # a partial layout is accepted when at least --accept-min pads fit and only light pads are missing (shed from
+    # the light end of the class mix: the lead's rule at Ka Lae)
+    accept = getattr(args, "accept_min", None)
+    shed_ok = bool(tally["unplaced"]) and accept is not None and len(pads) >= int(accept) and \
+        set(tally["unplaced"]) <= {"light"}
+    if shed_ok:
+        doc["shed"] = doc.pop("unplaced")
+        log(f"pads: {len(pads)} pads fit (at least {accept}); shed from the light end: {doc['shed']}")
+    dry = bool(getattr(args, "dry_run", False)) or (bool(tally["unplaced"]) and not shed_ok) or Resolver.dry_any_land
     if not dry:
         STAGED_SITES.mkdir(parents=True, exist_ok=True)
         write_json(STAGED_SITES / f"{args.site}.pads.json", doc)
@@ -620,6 +672,18 @@ def run(region_id: str, args) -> dict:
     print(report_table(doc), flush=True)
     print(corridor_report(doc), flush=True)
     return doc
+
+
+def cover_fractions(res: Resolver, lat: float, lon: float, radius_m: float, step_m: float = 10.0) -> dict:
+    """Land-cover classes inside a disc (10 m grid on the baked level-12 land cover): radius and share per class."""
+    k = np.arange(-radius_m, radius_m + 1e-6, step_m)
+    E, N = np.meshgrid(k, k)
+    inside = (E ** 2 + N ** 2 <= radius_m * radius_m).ravel()
+    la, lo = destination(lat, lon, E.ravel()[inside], N.ravel()[inside])
+    lc = res.ground.lc(la, lo)
+    vals, counts = np.unique(lc, return_counts=True)
+    return {"radiusM": radius_m, "fractions": {CLASS_NAME.get(int(v), str(int(v))): round(float(c) / lc.size, 4)
+                                               for v, c in zip(vals, counts)}}
 
 
 def corridor_table(res: Resolver, pads: list[dict]) -> list[dict]:

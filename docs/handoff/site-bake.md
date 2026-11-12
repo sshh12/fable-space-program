@@ -1,6 +1,6 @@
 # Hand-off: site-bake (wave 3.1)
 
-Status: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
+Status (after the lead's decisions of 2026-11-12, section 0.10): Madrakah resolved and accepted; **Ka Lae STOPPED again: under the lead's rule only 8 pads fit within 40 km (under the 12 the lead set), the corridor's built-up test is the binding gate (section 0.10)**; verify 24 of 27 + 3 waived by the lead, 0 failed. Before the decisions: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
 again (Copernicus GLO-30 instead of SRTM, the lead's near-shore sea floor, false inland water removed, de-shading
 refit) and swapped in by REPLACE (only the region's directories changed: 506 of its 840 plus `manifest.json`;
 section 0.7). Madrakah's 16 pads were re-resolved under the full LC-1 rule with the built-up and corridor gates,
@@ -473,6 +473,94 @@ Region size: 53,140 files, 422,475,736 bytes (round 1: 461,133,283): height 187.
   shading of the imagery on the headland's hills (section 0.6).
 - **The lead**: decide Ka Lae (section 0.3) and the hillshade waiver (section 0.6); audit the changed directories
   (section 0.7), re-record the terrain guard and update the mission golden's earth hash (request site-bake-1).
+
+### 0.10 Lead decisions of 2026-11-12 (on the report of this round) and what followed
+
+Recorded as the lead decided them:
+
+1. **LC-1 is fixed.** It is the site of the original mission (the golden flight, the terrain guard's points and the
+   vehicle-pad ground survey are built on it): it stays at its exact v1 position and elevation as pad `lc-1`, class
+   heavy, exempt from the gates. Its gate results are written to the pads file as reported only (`rule.fixed`, with
+   the reason); the WorldCover built-up land 436 m from it is the complex's own ground (the complex was built
+   there). Every other pad's keep-out and corridor gates still respect LC-1.
+2. **Dry gate for new pads at Ka Lae:** bare ground, grassland or shrubland (pasture is cleared inside the fence).
+   Never tree cover, cropland, built-up, wetland or water inside the outer ring (the class's built-up radius:
+   heavy 1,200, medium 900, light 600 m); no mapped or visible road or track inside the outer ring; the built-up
+   distance gate and the corridor gates unchanged. The land-cover fractions inside the pad footprint (flat radius)
+   and the outer ring are recorded per pad, so the ground cover can be cleared there (fleet-data and the terrain
+   renderer read them).
+3. **Compact:** placements nearest LC-1, search to 40 km, up to 16 with Madrakah's class mix, shed from the light
+   end if fewer fit; at least 12: take them; under 12: stop and report the count per radius. Every placement looked at.
+4. **The Q8 fall-back (all pads at one site) is dropped:** the pad count per site is data, and two sites exist.
+5. **Madrakah relief shading in the imagery** (E/W 1.48-1.51 near the pads, 1.29-1.31 on the headland): accepted as
+   a known limit, no further de-shading work now. The pads stand on a plain of 0.04-1.3 deg where it cannot show; the
+   cliffs and wadi banks will be judged in the engine by the visual critic when Madrakah is first rendered
+   (planet-render / fleet-models-pads), and a different de-shading is decided there from pictures. The check keeps
+   reporting its numbers, waived by the lead with this reason (`verifyWaivers`).
+6. **Level-11 albedo seam statistic** (+0.037 against 0.031 sRGB levels): waived for this region at the measured
+   value (a twenty-seventh of one display level is far below visibility; the bound came from a measurement, not a
+   visibility threshold). The bound stays for every other region. Implemented as a bounded waiver: `verifyWaivers`
+   entries may be `{"reason", "upTo"}`, and the seam waiver covers the check only while the excess stays at or below
+   0.037.
+7. The line on faint tracks and rills stands.
+
+**What followed.**
+
+- `padresolve.py` / `bake.py pads`: `--dry-classes` (the disc's allowed land cover), `--forbid-outer` (land cover
+  never allowed inside the outer ring: a distance gate per class, like built-up, on the grid and exactly),
+  `--fixed-reason` (recorded in `rule.fixed` with the fixed pad's gate results, reported only), `--accept-min`
+  (write a layout of at least N pads when only light pads are missing: `shed`). Every pad now records
+  `report.landCover.{footprint,outerRing}` = {radiusM, fractions per class}, `allowedFraction` (the dry gate),
+  `bareFraction` (bare ground alone), `forbiddenM` / `forbiddenClass`; the rule records `dryClasses`,
+  `forbiddenInOuterRing` and `fixed`. The pre-filter logs the candidate cells left after each gate by radius.
+- **Madrakah** re-resolved with the same arguments to carry the new fields: positions, elevations and ids identical
+  (checked), tile-set hash f5e6ef420bda7cea. Its rule is unchanged (bare ground; no outer-ring land-cover gate: the
+  lead's rule 2 is Ka Lae's). Outer rings by the shore hold 4-13 % sea; footprints are bare rock and sand only.
+- **Ka Lae under the lead's rule: STOPPED again, 8 pads within 40 km (under 12).** Command: `bake.py pads --region
+  earth-ka-lae --site ka-lae --nominal 18.987556,-155.603239 --fixed lc-1:heavy:18.987556:-155.603239:21.62
+  --fixed-reason ... --search-km 40 --dry-classes bareRock,sand,sparseScrub,grass,shrub --forbid-outer
+  trees,crop,builtUp,wetland,water --accept-min 12 --allow-partial --dry-run`
+  (`out/bake/earth/site-bake/pads-ka-lae-lead-40km.json`). Placed: LC-1, 1 heavy, 0 medium, 6 light; 2 heavy and
+  6 medium found no place. The placements were not looked at (the rule stops under 12 before that).
+
+  | Pad | Class | Lat, lon | Elevation m | From LC-1 km | Footprint land cover | Outer ring land cover | Clear azimuths |
+  |---|---|---|---|---|---|---|---|
+  | lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.62 | 0 | bare rock 81 %, trees 13 %, grass 6 % | bare rock 54 %, trees 31 %, grass 8 %, water 4 %, built-up 0.6 % | blocked at 90 (reported) |
+  | lc-2 | heavy | 19.228242, -155.365031 | 165.3 | 36.6 | bare rock 99 % | bare rock 98 %, grass 2 % | 0-180 |
+  | lc-3 | light | 18.950771, -155.634712 | 36.8 | 5.3 | grass 100 % | grass 99.5 % | 59.5-178 |
+  | lc-4 | light | 19.030902, -155.581073 | 158.0 | 5.4 | grass 100 % | grass 100 % | 29.5-169 |
+  | lc-5 | light | 19.161428, -155.458239 | 49.7 | 24.6 | grass 100 % | grass 100 % | 58.5-180 |
+  | lc-6 | light | 19.179491, -155.441656 | 120.2 | 27.3 | bare rock 100 % | bare rock 99.8 % | 60-154 |
+  | lc-7 | light | 19.254428, -155.378139 | 486.1 | 37.9 | bare rock 99.7 % | bare rock 83 %, grass 17 % | 59-143.5 |
+  | lc-8 | light | 19.264682, -155.379554 | 550.3 | 38.8 | bare rock 100 % | bare rock 80 %, grass 20 % | 6.5-151 |
+
+  Count per radius (pads of this layout within the radius of LC-1): 5 km 1 (LC-1), 10 km 3, 20 km 3, 30 km 5, 40 km
+  8. Beyond 40 km almost nothing passes the gates: candidate cells after every pre-filter gate, 40 km 18,142, 60 km
+  18,202, 95 km 18,482 (30 m cells; a 95 km run was stopped once this showed).
+
+  The binding gate is the launch corridor's built-up test (60-130 deg to 12 km free of built-up land). Candidate cells
+  left after each gate, by radius (`pads: pre-filter funnel` in `out/bake/earth/site-bake/kalae-r95.log`):
+
+  | Within | Land, height, shore, flat | + dry (bare, grass, shrub) | + coast (sea within 6 km) | + built-up clearance | + outer ring land cover | + corridor free of built-up |
+  |---|---|---|---|---|---|---|
+  | 5 km | 39,292 | 11,743 | 11,743 | 11,584 | 8,329 | **0** |
+  | 10 km | 133,640 | 70,572 | 60,151 | 49,630 | 35,679 | **1,351** |
+  | 20 km | 308,466 | 179,558 | 125,009 | 111,564 | 82,351 | **1,351** |
+  | 40 km | 753,652 | 510,475 | 246,702 | 226,199 | 124,210 | **18,142** |
+
+  What blocks the corridors near LC-1 (land probes every 1.5 km within 12 km of LC-1: 86 of 92 blocked): many
+  separate WorldCover built-up patches east of the probes, the nearest in a sector being LC-1's own ground (0.4 km
+  from LC-1) for 11 probes, patches 2.0, 2.9, 4.4, 7.0-7.9 and 10.9 km from LC-1 for the others (farms, houses and
+  roads of Ka'u). Exempting LC-1's own ground alone would not open the field. The lead's choice: a shorter corridor
+  reach or a corridor built-up gate that ignores small patches at Ka Lae, a larger radius, or 8 pads.
+- No `ka-lae.pads.json` is written. The two round-2 candidate files were deleted (superseded by decisions 2 and 3; the staged deletion was carried into history by another package's commit, 1f5c754).
+- `tests/unit/site-bake/pads.test.ts`: checks the resolved layouts (Madrakah; Ka Lae when it exists) and that no
+  candidate file is left; the dry classes and the outer-ring land cover per site; land-cover fractions for every pad;
+  `rule.fixed` and LC-1 pinned to the v1 site value (when Ka Lae is resolved); classes shed only from the light end
+  and at least 12. The block that reads baked tiles (the live tile-set hash, the TerrainProvider re-measurement) is
+  `describe.skipIf(!HAS_EARTH)`: skipped explicitly where `data/tiles/earth/manifest.json` is absent (CI), never
+  passed silently (request platform-delivery-1, noted there).
+- Verify and tests after these changes: `verify.py --region earth-madrakah` (live) **24 of 27 pass, 3 waived by the lead (relief shading at levels 10 and 12, the level-11 albedo seam at +0.0367 <= 0.037), 0 failed**; `npx vitest run tests/unit/site-bake` 9 of 9 (Madrakah's TerrainProvider re-measurement: heights within 0.31 m of padElevation, steepest disc 1.32 deg).
 
 ## 1. What a consumer needs
 
@@ -978,3 +1066,8 @@ contentHash, which the swap changes). Open requests against this package's paths
 - 09:55. Final Madrakah pads on the live tiles (commit a0c258b). Live verify 24 of 27, 2 waived, 1 failed. Ka Lae
   candidates re-resolved on the live tile set (identical layouts, new hash). Cleanup freed 6.33 GB (run outside the
   gate while planet-bake held the bake slot and the disk was at 26 GB: deletion only); commit ec38893.
+- 10:30-10:56. Lead decisions on the report (section 0.10). Pad tool: per-site dry classes, outer-ring land cover,
+  land-cover fractions per pad, fixed pads reported only, partial layouts from a minimum count; verify: bounded
+  waivers. Madrakah re-resolved identically with the new fields; verify 24 of 27, 3 waived, 0 failed. Ka Lae under
+  the lead's rule: 8 pads within 40 km (funnel: the corridor's built-up test removes almost everything near LC-1):
+  stopped, reported. Candidate files deleted; pads test split for CI (request platform-delivery-1).

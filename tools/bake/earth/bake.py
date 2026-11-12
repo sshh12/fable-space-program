@@ -95,6 +95,14 @@ def main(argv: list[str]) -> int:
                          "instead of bare ground")
     ap.add_argument("--candidate-out", help="pads: also write the layout (complete or not) to this file as a candidate "
                                             "for the lead's decision (data/staged/sites/candidates/)")
+    ap.add_argument("--dry-classes", help="pads: land-cover classes the disc's dry test allows (default bare ground: "
+                                          "bareRock,sand,sparseScrub; Ka Lae, the lead: + grass,shrub)")
+    ap.add_argument("--forbid-outer", help="pads: land-cover classes never allowed inside a pad's outer ring (its "
+                                           "built-up radius), e.g. trees,crop,builtUp,wetland,water")
+    ap.add_argument("--fixed-reason", help="pads: why the --fixed pads stay where they are (recorded in rule.fixed; their "
+                                           "gate results are reported only)")
+    ap.add_argument("--accept-min", type=int, help="pads: write the layout when at least this many pads fit and only "
+                                                   "light pads are missing (shed from the light end)")
     ap.add_argument("--replace", action="store_true",
                     help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)

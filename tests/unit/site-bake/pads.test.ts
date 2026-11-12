@@ -28,6 +28,8 @@ import { createTerrainProvider } from '../../../src/terrain/provider';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const STAGED = path.join(REPO, 'data', 'staged', 'sites');
 const TILES = path.join(REPO, 'data', 'tiles');
+/** The baked Earth tile set (absent on CI: data/tiles is not tracked); the tests that read it are skipped explicitly. */
+const HAS_EARTH = fs.existsSync(path.join(TILES, 'earth', 'manifest.json'));
 const R_EARTH = 6_371_000;
 const DEG = Math.PI / 180;
 
@@ -49,6 +51,10 @@ interface StagedPad {
     shoreDistanceM: number;
     dryFraction: number;
     bareFraction: number;
+    allowedFraction: number;
+    centreClass: string;
+    forbiddenM: number | null;
+    landCover: Record<'footprint' | 'outerRing', { radiusM: number; fractions: Record<string, number> }>;
     seaDistanceM: number | null;
     builtUpM: number | null;
     builtUpWindowM: number;
@@ -72,7 +78,10 @@ interface StagedSite {
     padRadii: Record<PadClass, { flat: number; blend: number; keepOut: number }>;
     builtUpMarginM: number;
     corridor: { azimuthDeg: [number, number]; reachKm: number };
-    dry: 'bareGround' | 'anyLand';
+    dry: string;
+    dryClasses: string[];
+    forbiddenInOuterRing: string[];
+    fixed: { id: string; reason: string; gates: string; passes: boolean; failures: string[] }[];
     discRadiusM: number;
     maxSlopeDeg: number;
     maxReliefM: number;
@@ -82,6 +91,8 @@ interface StagedSite {
     classes: Record<PadClass, { count: number; spacingM: number }>;
   };
   pads: StagedPad[];
+  /** light pads that did not fit (the class mix shed from the light end: the lead's rule) */
+  shed?: Partial<Record<PadClass, number>>;
 }
 
 /** ARCHITECTURE 9.3. */
@@ -150,63 +161,44 @@ function inCorridor(p: StagedPad, q: StagedPad): boolean {
   return off <= 0.5 * (CORRIDOR.az[1] - CORRIDOR.az[0]) + half;
 }
 
-/**
- * The layouts under test: a site's resolved file `data/staged/sites/<site>.pads.json`, or, where the lead has a
- * decision to take (Ka Lae, 2026-11-12: under every gate only 9 pads fit), the candidate layouts in
- * `data/staged/sites/candidates/` (complete or not; never read by fleet-data).
- */
+/** The resolved layouts: `data/staged/sites/<site>.pads.json` of both sites. */
 interface Layout {
   key: string;
   site: string;
-  doc: StagedSite & { candidate?: boolean; unplaced?: Partial<Record<PadClass, number>> };
-  complete: boolean;
+  doc: StagedSite;
 }
 
-function readJson(p: string): (StagedSite & { candidate?: boolean; unplaced?: Partial<Record<PadClass, number>> }) | null {
-  return fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, 'utf8')) as StagedSite) : null;
-}
+const LAYOUTS: Layout[] = SITES.flatMap((site) => {
+  const p = path.join(STAGED, `${site}.pads.json`);
+  return fs.existsSync(p) ? [{ key: site, site, doc: JSON.parse(fs.readFileSync(p, 'utf8')) as StagedSite }] : [];
+});
 
-function layouts(): Layout[] {
-  const out: Layout[] = [];
-  for (const site of SITES) {
-    const d = readJson(path.join(STAGED, `${site}.pads.json`));
-    if (d) {
-      out.push({ key: site, site, doc: d, complete: true });
-      continue;
-    }
-    const dir = path.join(STAGED, 'candidates');
-    for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => n.startsWith(`${site}.`) && n.endsWith('.json')).sort() : []) {
-      const c = readJson(path.join(dir, f))!;
-      out.push({ key: `${site} candidate ${f}`, site, doc: c, complete: !c.unplaced || Object.keys(c.unplaced).length === 0 });
-    }
-  }
-  return out;
-}
-
-const LAYOUTS = layouts();
+/** Dry classes and the land cover never allowed in a pad's outer ring, per site (the lead's decisions of 2026-11-12). */
+const BARE = ['bareRock', 'sand', 'sparseScrub'];
+const DRY: Record<string, { classes: string[]; forbidOuter: string[] }> = {
+  madrakah: { classes: BARE, forbidOuter: [] },
+  'ka-lae': { classes: [...BARE, 'grass', 'shrub'], forbidOuter: ['trees', 'crop', 'builtUp', 'wetland', 'water'] },
+};
 
 describe('site-bake: resolved pads', () => {
-  it('Madrakah is resolved; Ka Lae is resolved or its candidate layouts await the lead (no stale layout)', () => {
-    expect(LAYOUTS.some((l) => l.key === 'madrakah')).toBe(true);
-    const kalae = LAYOUTS.filter((l) => l.site === 'ka-lae');
-    expect(kalae.length).toBeGreaterThan(0);
-    if (!kalae.some((l) => l.key === 'ka-lae')) {
-      for (const l of kalae) expect(l.doc.candidate, l.key).toBe(true);
-      expect(kalae.some((l) => l.complete), 'at least one complete candidate').toBe(true);
-    }
+  it('Madrakah is resolved (Ka Lae when the lead has decided: 2026-11-12 it is stopped, see the hand-off); no candidate layout is left', () => {
+    expect(LAYOUTS.map((l) => l.site)).toContain('madrakah');
+    const dir = path.join(STAGED, 'candidates');
+    expect(fs.existsSync(dir) ? fs.readdirSync(dir) : []).toEqual([]);
   });
 
   for (const L of LAYOUTS) {
     describe(L.key, () => {
-      it('class counts (4 heavy, 6 medium, 6 light, or what fitted and what did not), unique ids, offsets about the reference pad', () => {
+      it('class counts: 4 heavy, 6 medium, 6 light, shed only from the light end, at least 12; unique ids; offsets about the reference pad', () => {
         const d = L.doc;
         expect(new Set(d.pads.map((p) => p.id)).size).toBe(d.pads.length);
+        expect(Object.keys(d.shed ?? {}).filter((c) => c !== 'light'), 'shed from the light end only').toEqual([]);
         for (const cls of Object.keys(SPEC) as PadClass[]) {
           const placed = d.pads.filter((p) => p.class === cls).length;
-          expect(placed + (L.complete ? 0 : d.unplaced?.[cls] ?? 0), cls).toBe(SPEC[cls].count);
+          expect(placed + (d.shed?.[cls] ?? 0), cls).toBe(SPEC[cls].count);
           expect(d.rule.classes[cls]).toEqual(SPEC[cls]);
         }
-        if (L.complete) expect(d.pads).toHaveLength(16);
+        expect(d.pads.length).toBeGreaterThanOrEqual(12);
         expect(d.pads[0]!.id).toBe(d.referencePad);
         expect(d.pads[0]!.offsetEnu).toEqual([0, 0]);
         for (const p of d.pads) {
@@ -236,7 +228,8 @@ describe('site-bake: resolved pads', () => {
         const r = d.rule;
         expect(r.strict, 'the full rule that placed LC-1 (open ocean east) at Madrakah only').toBe(STRICT[L.site]);
         expect(r.corridor).toEqual({ azimuthDeg: [...CORRIDOR.az], reachKm: CORRIDOR.reachM / 1000 });
-        if (!d.candidate) expect(r.dry, 'a resolved layout keeps the bare-ground rule').toBe('bareGround');
+        expect([...r.dryClasses].sort(), 'the dry classes of the site').toEqual([...DRY[L.site]!.classes].sort());
+        expect([...r.forbiddenInOuterRing].sort()).toEqual([...DRY[L.site]!.forbidOuter].sort());
         for (const p of d.pads.filter((q) => !q.fixed)) {
           expect(p.report.passes, p.id).toBe(true);
           expect(p.report.failures, p.id).toEqual([]);
@@ -245,8 +238,14 @@ describe('site-bake: resolved pads', () => {
           expect(p.report.shoreDistanceM, p.id).toBeGreaterThanOrEqual(r.minShoreDistanceM);
           expect(p.report.naturalHeightM, p.id).toBeGreaterThanOrEqual(r.minHeightM);
           // the dry gate is bare ground (WorldCover bare / sparse vegetation), not merely "not water"
-          if (r.dry === 'bareGround') expect(p.report.bareFraction, p.id).toBeGreaterThanOrEqual(r.minAllowedFraction);
-          else expect(p.report.dryFraction, p.id).toBeGreaterThanOrEqual(r.minAllowedFraction);
+          expect(p.report.allowedFraction, p.id).toBeGreaterThanOrEqual(r.minAllowedFraction);
+          expect(r.dryClasses, `${p.id} centre`).toContain(p.report.centreClass);
+          if (L.site === 'madrakah') expect(p.report.bareFraction, p.id).toBeGreaterThanOrEqual(r.minAllowedFraction);
+          // never a forbidden class inside the outer ring (the built-up radius of the class)
+          const ring = p.report.landCover.outerRing;
+          expect(ring.radiusM, p.id).toBe(p.report.builtUpRadiusM);
+          expect(Object.keys(ring.fractions).filter((c) => r.forbiddenInOuterRing.includes(c)), `${p.id} outer ring`).toEqual([]);
+          if (r.forbiddenInOuterRing.length) expect(p.report.forbiddenM === null || p.report.forbiddenM >= ring.radiusM, p.id).toBe(true);
           expect(p.report.seaDistanceM, p.id).not.toBeNull();
           expect(p.report.seaDistanceM!, p.id).toBeLessThanOrEqual(r.oceanReachKm * 1000);
           // no built-up land within max(blend, keep-out) + margin of the pad's class
@@ -257,6 +256,21 @@ describe('site-bake: resolved pads', () => {
           if (STRICT[L.site]) expect(p.report.oceanRays.ok, `${p.id}: open ocean east`).toBe(true);
           expect(Math.abs(p.padElevation - p.report.naturalHeightM), p.id).toBeLessThan(0.01);
         }
+      });
+
+      it('land-cover fractions recorded for every pad (footprint = flat radius, outer ring = built-up radius); fixed pads reported only', () => {
+        const d = L.doc;
+        for (const p of d.pads) {
+          const lc = p.report.landCover;
+          expect(lc.footprint.radiusM, p.id).toBe(d.rule.padRadii[p.class].flat);
+          for (const k of ['footprint', 'outerRing'] as const) {
+            const sum = Object.values(lc[k].fractions).reduce((a, b) => a + b, 0);
+            expect(Math.abs(sum - 1), `${p.id} ${k}`).toBeLessThan(0.01);
+          }
+        }
+        const fixedIds = d.pads.filter((p) => p.fixed).map((p) => p.id);
+        expect(d.rule.fixed.map((f) => f.id)).toEqual(fixedIds);
+        for (const f of d.rule.fixed) expect(f.reason.length, f.id).toBeGreaterThan(20);
       });
 
       it('launch corridors: no keep-out disc of a pad lies in the 60-130 deg sector of another within 12 km', () => {
@@ -280,8 +294,10 @@ describe('site-bake: resolved pads', () => {
       });
 
       if (L.site === 'ka-lae') {
-        it('LC-1 stays where it is (a heavy pad at its v1 coordinates and elevation)', () => {
+        it('LC-1 stays where it is (a heavy pad at its v1 coordinates and elevation, the reference pad, exempt from the gates)', () => {
           const lc1 = L.doc.pads.find((p) => p.id === 'lc-1')!;
+          expect(L.doc.referencePad).toBe('lc-1');
+          expect(L.doc.rule.fixed.map((f) => f.id)).toEqual(['lc-1']);
           expect(lc1.fixed).toBe(true);
           expect(lc1.class).toBe('heavy');
           expect([lc1.latDeg, lc1.lonDeg, lc1.padElevation]).toEqual([LC1.latDeg, LC1.lonDeg, LC1.padElevation]);
@@ -290,7 +306,8 @@ describe('site-bake: resolved pads', () => {
     });
   }
 
-  describe('measured again with the height authority on the baked tiles (skipped where they are not baked)', () => {
+  // reads the baked tiles: skipped explicitly where they are not baked (CI), never passed silently
+  describe.skipIf(!HAS_EARTH)('measured again with the height authority on the baked tiles', () => {
     let defs: DefLibrary | null = null;
     let terrain: TerrainProvider | null = null;
     let coverage: Record<string, { face: number; x0: number; y0: number; x1: number; y1: number }[]> = {};
@@ -298,7 +315,6 @@ describe('site-bake: resolved pads', () => {
 
     beforeAll(async () => {
       const manifest = path.join(TILES, 'earth', 'manifest.json');
-      if (!fs.existsSync(manifest)) return;
       const m = JSON.parse(fs.readFileSync(manifest, 'utf8')) as { contentHash: string; layers: { height: { coverage: typeof coverage } } };
       coverage = m.layers.height.coverage;
       contentHash = m.contentHash;
@@ -308,10 +324,7 @@ describe('site-bake: resolved pads', () => {
 
     for (const L of LAYOUTS) {
       it(`${L.key}: resolved on the live tile set; height at the centre, slope over the disc and no sea within the shore distance`, async () => {
-        if (!terrain) {
-          console.log('[site-bake] the earth tile set is not baked on this machine: skipped');
-          return;
-        }
+        if (!terrain) throw new Error('the terrain provider did not load');
         const d = L.doc;
         expect(d.tilesetContentHash, 'the pads record the tile set they were resolved on: the live one').toBe(contentHash);
         const finest = Math.max(...Object.keys(coverage).map(Number));

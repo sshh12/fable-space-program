@@ -29,3 +29,12 @@ Each of these files (or the describe blocks that need baked data) skips with a n
 absent (`describe.skipIf(!fs.existsSync(<manifest>))`), exactly as realData.test.ts does; nothing changes on a
 machine that has the data. When a file is fixed, its `--exclude` line in `.github/workflows/ci.yml` is removed
 (platform-delivery owns that file; the lead may remove the line in the same commit).
+
+## Status per file
+
+- tests/unit/site-bake/pads.test.ts (site-bake, 2026-11-12): fixed. What needs only tracked files (the pads files'
+  own consistency: classes, spacing, the gates as recorded, land cover, corridors from the recorded numbers, LC-1
+  pinned when Ka Lae is resolved) runs everywhere; the block that reads the baked tiles (the live tile-set hash and
+  the TerrainProvider re-measurement of heights and slopes) is `describe.skipIf(!HAS_EARTH)` with
+  `HAS_EARTH = existsSync(data/tiles/earth/manifest.json)`, as realData.test.ts does. Its `--exclude` line in
+  `.github/workflows/ci.yml` can be removed.

@@ -48,13 +48,23 @@ RESULTS: list[dict] = []
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 
 
-WAIVERS: dict[str, str] = {}     # check-name prefix -> the lead's waiver (region file `verifyWaivers`)
+WAIVERS: dict = {}     # check-name prefix -> the lead's waiver (region file `verifyWaivers`): its text, or
+#                        {"reason": text, "upTo": value}: waived only while the measured value stays at or below it
 
 
-def check(name: str, ok: bool, detail: str, data=None) -> bool:
+def check(name: str, ok: bool, detail: str, data=None, value: float | None = None) -> bool:
     """A gate. A failing check whose name starts with a key of WAIVERS is reported as WAIVED BY THE LEAD with its
-    measured numbers and the waiver's text; it does not fail the run (the lead decides on it)."""
-    waiver = next((w for k, w in WAIVERS.items() if name.startswith(k)), None) if not ok else None
+    measured numbers and the waiver's text; it does not fail the run (the lead decides on it). A waiver with "upTo"
+    covers the check only while its measured value is at most that."""
+    waiver = None
+    for k, w in (WAIVERS.items() if not ok else ()):
+        if name.startswith(k):
+            text, up_to = (w, None) if isinstance(w, str) else (w["reason"], w.get("upTo"))
+            if up_to is None:
+                waiver = text
+            elif value is not None and value <= float(up_to):
+                waiver = f"{text} (waived up to {float(up_to):g}; measured {value:.4f})"
+            break
     RESULTS.append({"check": name, "pass": bool(ok) or waiver is not None, "waived": waiver, "detail": detail,
                     "data": data})
     status = "PASS" if ok else ("WAIVED BY THE LEAD" if waiver else "FAIL")
@@ -1058,7 +1068,8 @@ def check_region_albedo_seams(reg: dict) -> None:
         border, adjacent = np.array(border), np.array(adjacent)
         d = border - adjacent
         se = float(d.std(ddof=1) / math.sqrt(d.size))
-        check(f"albedo seams {reg['id']} level {lv}", float(d.mean()) <= 2.0 * se,
+        check(f"albedo seams {reg['id']} level {lv}", float(d.mean()) <= 2.0 * se, value=float(d.mean()),
+              detail=
               f"{d.size} tile borders: mean |difference| across the border {border.mean():.3f}, interior pairs next "
               f"to it {adjacent.mean():.3f} (excess {d.mean():+.4f}, 2 s.e. {2 * se:.4f}), all interior pairs "
               f"{np.mean(interior):.3f} (sRGB levels)")

@@ -112,6 +112,10 @@
     "maxLatDeg": 20.5
   },
   "verifyWaivers": {
-    "no baked hillshade earth-madrakah": "the lead (coordinator, 2026-11-12): if the paired relief-shading check still fails after the re-fit with the GLO-30 normals it is reported, not silently passed, with its measured numbers; the lead decides"
+    "no baked hillshade earth-madrakah": "the lead, 2026-11-12: relief shading in the imagery (paired E/W 1.48-1.51 near the pads, 1.29-1.31 on the headland) is accepted as a known limit, no further de-shading work now. The pads stand on a plain of 0.04-1.3 deg where it cannot show; the cliffs and wadi banks are judged in the engine by the visual critic when Madrakah is first rendered (planet-render / fleet-models-pads), and a different de-shading is decided there from pictures, not from this statistic",
+    "albedo seams earth-madrakah level 11": {
+      "reason": "the lead, 2026-11-12: waived for this region at the measured value (+0.037 sRGB levels against the 0.031 bound): a twenty-seventh of one display level is far below visibility, and the bound came from a measurement, not from a visibility threshold; the bound stays for every other region",
+      "upTo": 0.037
+    }
   }
 }
