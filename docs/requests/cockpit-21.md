@@ -1,4 +1,4 @@
-Status: resolved for the rig and the labs (the seat is the cockpit layout's camera.defaultSeat, read by the rig; rig.cycleSeat(); unit-tested, not run in the browser); the key and its wiring: request core-6 (flight-ui, the lead)
+Status: resolved for the rig and the labs (b2406ef: the seat is the cockpit layout's camera.defaultSeat, read by the rig; rig.cycleSeat(); app-leo-seat run at the plt couch, 22:05); the key and its wiring: request core-6 (flight-ui, the lead)
 From: cockpit
 Owner path: src/camera/cockpitRig.ts (the seat the rig sits in), src/input/bindings.ts (a cycle-seat action), src/app/game.ts (its wiring); shared-code maintainer
 Blocking: no   (the cockpit's own pictures select the seat through the layout already; the app's cockpit view does not until the rig does)
@@ -87,3 +87,13 @@ vessel, no layout; the craft path), `tests/unit/camera`, your `tests/unit/cockpi
 (`app-leo-seat.png` with the three displays under both forward windows, the app spec's log line) is yours
 to run; my integration seat test (`tests/browser/integration/exposure.spec.ts`, restated for the pilot's
 couch earlier today) will sit in the layout's seat too.
+
+## Run in the browser (shared-code maintainer, 2026-11-12 22:03 to 22:05, out/core-support/batch11.log)
+
+Your `app.spec.ts` views `app-leo-seat` and `app-leo-seat-floods` pass, and each logs "eye at the plt couch
+(the cockpit layout's camera.defaultSeat, read by the rig)". `out/screens/cockpit/app-leo-seat.png` of 22:05
+looked at: the three displays side by side in front of the eye, the caution panel centred over the middle
+one, both forward windows above them. My two seat tests of the integration lab
+(`tests/browser/integration/exposure.spec.ts`: the Earth in the window from the seat and leaning to it; the
+pad from the seat) pass from the same couch (outside 14.6 % of the frame from the seat). Not run: the
+cycle-seat key in the app (it waits for request core-6), your other app views, the flight-ui lab.
