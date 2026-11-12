@@ -255,9 +255,12 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
     // Particulates: a core 1.3 times as wide as the glow, or the whole cross-section of the jet.
     const s = smokeAt(x);
     const smoke = s > EPS ? (look.smoke.halo > 0.5 ? 1.5 * rb : Math.max(1.3 * look.core.radius * jetBulkRadius(shape, re, x) * Math.sqrt(Math.log(s / EPS)), look.smoke.halo > 0 ? 1.5 * Math.min(rb, 2 * re + BULK_SLOPE * x) : 0)) : 0;
-    // The fan of a free expansion: out to the angle where its density is a hundredth of that on the axis.
-    const fan = far > 0 && fanAt(x) > EPS ? x * Math.tan(Math.min(1.35, farVisibleAngle(look, thetaLimit))) + 2 * re : 0;
-    radius = Math.max(radius, core, shear, Math.min(smoke, 1.5 * rb + re), fan);
+    // The fan of a free expansion: out to the angle where its density is a hundredth of that on the axis. Its
+    // particulates ride with the gas (plumes.ts), so a smoky jet in vacuum is as wide as its fan, not as the
+    // boundary of a column that nothing holds any more (which bounded the retro and ullage motors by a box
+    // three times too wide, marched for nothing).
+    const fan = far > 0 && (fanAt(x) > EPS || s > EPS) ? x * Math.tan(Math.min(1.35, farVisibleAngle(look, thetaLimit))) + 2 * re : 0;
+    radius = Math.max(radius, core, shear, Math.min(smoke, 1.5 * rb + re) * (1 - far), fan);
   }
   shape.visibleRadius = radius;
   return shape;

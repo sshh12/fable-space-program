@@ -168,7 +168,7 @@
       "sheetMinReach": 320,
       "sheetReachRadii": 80,
       "sheetSpeed": 55,
-      "sheetSteps": 14
+      "sheetSteps": 12
     },
     "ice": { "liftoffCount": 1400, "stagingCount": 320, "sheddingRate": 260, "sheddingTime": 9, "size": [0.012, 0.18], "life": [3, 9], "speed": [0.5, 9], "albedo": [0.92, 0.95, 1.0] },
     "gas": { "count": 240, "speed": [140, 360], "size": [0.3, 0.9], "life": [0.12, 0.36], "color": [0.86, 0.88, 0.92], "opacity": 0.05 },
