@@ -1062,4 +1062,50 @@ where there were 50 : 1.
 placement puts nearest to the kiawe-eye view: `TerrainDebug.nearestCover`). Request core-2 says that
 `tests/browser/integration/exact.spec.ts` can be run against 24c6b8b or later.
 
-The final run (functional suite and perf spec on this code) was queued when this was written; its numbers follow below when it has finished.
+**The run after the cuts** (run 5: the whole terrain suite, functional and perf, on ed8136f; 1440p,
+`withGpuLock`, other agents' CPU jobs running). Perf: 8 of 12 (was 6): the 10 km view, LEO, the four lunar
+and far views, the 60 s descent (selection p99 0.64 ms, upload p99 1.98 ms, largest 2.91 ms, no frame over
+33 ms) and the warp pass. **Bold** = over its line.
+
+| View | Terrain G-buffer + cover (budget) | Shadows + cover (budget) | Rocks | Main thread p99 / median (budget 1) | Selection p99 |
+|---|---|---|---|---|---|
+| pad | 1.23 + 0.36 = **1.58** (1.5) | 0.21 + 0.12 = 0.33 (0.5) | 0.00 | 0.88 / 0.50 (cover 0.08) | 0.50 |
+| stony ground | 2.66 + 0.09 = **2.75** (1.5) | 0.29 + 0.20 = 0.49 (0.5) | 0.10 (0.3) | **1.05** / 0.61 (cover 0.08) | 0.56 |
+| kiawe | 1.09 + 0.64 = **1.72** (1.5) | 0.28 + 0.35 = **0.62** (0.5) | 0.01 | 0.98 / 0.55 (cover 0.11) | 0.55 |
+| thickets, 120 m | 2.50 + 0.77 = **3.27** (1.5) | 0.15 + 0.27 = 0.42 (0.5) | 0.00 | 0.85 / 0.49 (cover 0.08) | 0.51 |
+| 10 km | 1.48 (1.5) | 0.07 (0.5) | - | 0.48 / 0.27 | 0.32 |
+| LEO | 0.25 (1.5) | 0.07 (0.4) | - | 0.42 / 0.21 | 0.26 |
+| lunar orbit | 0.81 (1.8) | 0.05 (0.6) | - | 0.40 / 0.21 | 0.27 |
+| lunar surface | 1.19 (1.8) | 0.26 (0.6) | 0.05 (0.3) | 0.87 / 0.50 | 0.55 |
+| Moon from 5,000 km | 1.09 (1.8) | 0.05 (0.6) | - | 0.36 / 0.17 | 0.22 |
+| Earth from 20,000 km | 0.25 (1.5) | 0.04 (0.4) | - | 0.31 / 0.16 | 0.19 |
+
+Against the run before the cuts: shadows with the cover 0.99 / 1.46 / 2.39 / 1.72 -> 0.33 / 0.49 / 0.62 /
+0.42 ms; main thread p99 1.11 / 1.22 / 1.28 / 1.05 -> 0.88 / 1.05 / 0.98 / 0.85 ms (the cover's share 0.27
+to 0.37 -> 0.08 to 0.11); G-buffer with the cover 1.66 / 3.01 / 2.25 / 3.66 -> 1.58 / 2.75 / 1.72 / 3.27 ms.
+
+**What is not met, how far, and the trade** (for the coordinator's decision):
+- *Stony ground, G-buffer 2.75 against 1.5.* The terrain alone is 2.66 there: 1.04 without any detail layer
+  (measured) and about 1.6 for the layers, on ground where two rock materials meet on steep faces (two
+  materials, two to three projection planes, three hexagon copies, three scales, the march). To stand inside
+  the line the layers may cost 0.37 ms: a quarter. That is one material and one plane beyond a few metres,
+  two scales and no relief shadows: the lava field at eye height would be the flat print of round 0 again.
+  The other way is a redesign: the layers composited once into a cached clipmap around the camera and read
+  with one sample (a package of its own).
+- *Thickets from 120 m, 3.27 against 1.5.* Terrain 2.50 (1.30 without detail, measured) plus the cover's
+  0.77, which is the middle level of the trees and shrubs in view. Same trade for the terrain; for the cover,
+  the middle level only from 60 px across or half the shrub density would bring it to about 0.4.
+- *Among kiawe, 1.72 against 1.5 and shadows 0.62 against 0.5.* Terrain 1.09, cover 0.64 and 0.35. The cover
+  would have to cost 0.41 and 0.22: trees' middle level from 60 px across in the G-buffer and no middle
+  level in the shadows (every crown's shadow from its coarsest mesh: larger, softer sprays on the ground
+  beside the eye).
+- *Pad, 1.58 against 1.5.* 0.08 over; tussocks and stones are drawn from 5 px now (ef4df85), which the next
+  run measures.
+- *Main thread on stony ground, p99 1.05 against 1.* Selection 0.56 of it; a selection kept at rest (request
+  core-2, part 3) is what remains to do.
+
+Functional suite in the same run: 21 of 22. Failed: the integrated views, on its sanity check that less
+than a tenth of a frame is black (`fractionNonBlack > 0.9`): `integrated-stony-ground` at the daylight
+exposure had 10.4 % of its pixels under 8 of 255, the shadowed hollows of the lava. Not a check to lower:
+open ground now sees at least 0.45 of its sky (ef4df85). The views after it in the list (10 km, 40 km, LEO
+over Hawai'i) were not rendered in that run.
