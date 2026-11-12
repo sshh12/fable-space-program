@@ -110,7 +110,7 @@ describe('input core', () => {
 
   it('ignores unbound codes', () => {
     const c = createInputCore(DEFAULT_BINDINGS);
-    expect(c.keyDown('KeyV', false, NO_MODS)).toBe(false);
+    expect(c.keyDown('KeyY', false, NO_MODS)).toBe(false);
     expect(c.isBound('Tab')).toBe(true);
     expect(c.sample().pressed.size).toBe(0);
   });

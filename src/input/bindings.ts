@@ -19,7 +19,12 @@ import { SAS_MODES, type AxisAction, type ButtonAction, type SasMode } from '@/c
 export type ModifierKey = 'Shift' | 'Control' | 'Alt' | 'Meta';
 
 /** Presentation-only actions that have no simulation meaning (handled by the HUD). */
-export type UiAction = 'ui:keyHelp';
+/**
+ * Presentation actions (no vessel control: not in the ButtonAction contract), read from `FlightInputFrame.ui`:
+ * the key help, the chase camera back to its default framing (`ChaseRig.resetView()`), and the cockpit eye to the
+ * next couch (`CockpitRig.cycleSeat()`).
+ */
+export type UiAction = 'ui:keyHelp' | 'ui:resetCamera' | 'ui:nextSeat';
 
 interface BindingBase {
   /** KeyboardEvent.code of the key. */
@@ -165,6 +170,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze([
   button('Minus', 'mfdCycle:2'),
   // Presentation.
   button('Backquote', 'ui:keyHelp'),
+  button('Home', 'ui:resetCamera'),
+  button('KeyV', 'ui:nextSeat'),
 ]);
 
 /** Codes that are browser-reserved as keys or modifiers (never bound unless `requiresKeyboardLock`). */
@@ -304,6 +311,8 @@ const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}`> | UiAction, { g
   'mfdCycle:1': { group: 'Cockpit displays', text: 'Centre display page' },
   'mfdCycle:2': { group: 'Cockpit displays', text: 'Right display page' },
   'ui:keyHelp': { group: 'Views', text: 'Key help' },
+  'ui:resetCamera': { group: 'Views', text: 'Reset camera' },
+  'ui:nextSeat': { group: 'Views', text: 'Next couch (cockpit view)' },
 };
 
 /** Group and text of a binding for the key-help overlay. */

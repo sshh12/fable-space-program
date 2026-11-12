@@ -113,4 +113,23 @@ describe('default binding table (ARCHITECTURE section 11)', () => {
     expect(entries.find((e) => e.text === 'Throttle down')!.keys).toEqual(['F']);
     expect(new Set(entries.map((e) => e.text)).size).toBe(entries.length);
   });
+
+  it('binds the presentation actions: reset camera (Home) and next couch (V), with key help, clear of other keys', () => {
+    const ui = DEFAULT_BINDINGS.filter((b) => b.kind === 'button' && b.action.startsWith('ui:'));
+    expect(ui.map((b) => [b.code, b.kind === 'button' ? b.action : ''])).toEqual([
+      ['Backquote', 'ui:keyHelp'],
+      ['Home', 'ui:resetCamera'],
+      ['KeyV', 'ui:nextSeat'],
+    ]);
+    for (const b of ui) {
+      // No modifier, no reserved key, and no other binding on the same code.
+      expect(b.modifiers ?? []).toEqual([]);
+      expect(BROWSER_RESERVED_CODES).not.toContain(b.code);
+      expect(DEFAULT_BINDINGS.filter((x) => x.code === b.code)).toHaveLength(1);
+    }
+    const entries = keyHelpEntries(DEFAULT_BINDINGS);
+    expect(entries.find((e) => e.text === 'Reset camera')).toMatchObject({ group: 'Views', keys: ['Home'] });
+    expect(entries.find((e) => e.text === 'Next couch (cockpit view)')).toMatchObject({ group: 'Views', keys: ['V'] });
+    expect(validateBindings(DEFAULT_BINDINGS)).toEqual([]);
+  });
 });
