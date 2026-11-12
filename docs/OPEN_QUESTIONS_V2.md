@@ -44,6 +44,7 @@ project (`railway usage`, read 2026-11-10; Q1 and Q2). The first measurements re
 | Q17 | Bodies the fleet cannot reach | Asked only if the reachability table says so | - |
 | Q19 | The larger load rehearsals | **Open**: asked by the lead when the stage-0 numbers exist (a fixed checkpoint in wave 6) | Stage-0 measurements only; larger sizes reported as estimates |
 | - | Alert destination (formerly Q18) | **Withdrawn 2026-11-11**: no alerts for now | No alert routing is built; metrics and logs stay |
+| L1 | The launch complex has 25 pads, not the 32 of Q14 | **Lead item, 2026-11-12: open** (the lead decides; nothing below stage 3 is affected) | 25 pads, 14 days, 150 s as they are: 600 launches an hour, 216,000 in the first day; a front-page day at one launch per session no longer fits |
 
 ---
 
@@ -129,13 +130,13 @@ be changed later.
 |---|---|---|
 | Q3 | Where the static shell is served | The `shell` service on Railway with Railway's CDN (about $0.7-1.2 a month at stage 0). Netlify stays an option for the shell only; it would need a Pro team with auto-recharge, a token, a site id and the CLI, and no Netlify configuration is shipped untested |
 | Q7 | How far ahead a stranger may take someone's parked ship or station (`advanceLimit`) | 30 days for ships, 6 years for station modules; the owner can change it per craft. This is the number most likely to change after play-testing (result below) |
-| Q8 | Second launch site | Madrakah, on the Arabian Sea coast of Oman near 19.0 N 57.8 E; fallback to all 32 pads inside the Ka Lae region if no acceptable ground is found there or the 30 m data cannot meet the v1 standard at pad level (the bake's hand-off and the ground checkpoints decide; ARCHITECTURE 31.3) |
+| Q8 | Second launch site | Madrakah, on the Arabian Sea coast of Oman near 19.0 N 57.8 E; fallback to all 32 pads inside the Ka Lae region if no acceptable ground is found there or the 30 m data cannot meet the v1 standard at pad level (the bake's hand-off and the ground checkpoints decide; ARCHITECTURE 31.3). **As resolved (2026-11-12):** Madrakah stands, with 16 pads on GLO-30 land heights; the fall-back was not used |
 | Q9 | Free-text chat | Not built; quick-comms (fixed phrases) only. The design for chat is kept as a forward seam |
 | Q10 | Tile packs as a public Hugging Face dataset | No. Revisit only if the bucket throughput test fails |
 | Q11 | Earth imagery licence | Keep Sentinel-2 cloudless (CC BY-NC-SA 4.0), credited on the Credits screen; swapping the regional imagery source is a precondition of any monetisation |
 | Q12 | Desktop browsers other than Chrome and Edge | Allowed with a "not tested on this browser" banner when they pass every gate check; mobile and tablets are always blocked |
 | Q13 | Server region | US East |
-| Q14 | Player-facing rule values and the launch complex | A ship is kept 14 days after its owner's last session; 10 ship slots; a station lives as long as its most recently active owner and is removed whole 48 h after the last one lapses; debris 2 h, at most 24 pieces per account; an empty account 90 days; warp at most 250 years ahead; 300 s on a pad with one 120 s extension; **32 pads (16 per site)** and future launch slots up to **14 days ahead**. A sustained launch-heavy 5,000 would need 200-400 pads and is not offered by the first release |
+| Q14 | Player-facing rule values and the launch complex | A ship is kept 14 days after its owner's last session; 10 ship slots; a station lives as long as its most recently active owner and is removed whole 48 h after the last one lapses; debris 2 h, at most 24 pieces per account; an empty account 90 days; warp at most 250 years ahead; 300 s on a pad with one 120 s extension; **32 pads (16 per site)** and future launch slots up to **14 days ahead**. A sustained launch-heavy 5,000 would need 200-400 pads and is not offered by the first release. **As resolved (2026-11-12): 25 pads, not 32** (Madrakah 16, Ka Lae 9: under the pad gates the ground at Ka Lae took nine; the count per site is data). What follows from 25 is lead item L1 |
 | Q15 | First person on craft without a cabin | A sensor-camera view on the five vehicles without a cabin; the Egret reuses the Kestrel interior. Real cabins for the Albatross habitat or the Atoll core would be an additional package |
 | Q16 | Offline practice, telemetry, domain | Practice (offline) is offered from the hub and when the server is unreachable; the client sends a CPU score and nothing else, no analytics; provider domains until the user supplies a domain and DNS access (the Hobby plan's two custom domains cover the shell and the game) |
 
@@ -258,6 +259,67 @@ bodies has no profile with a positive margin.
 **Nothing is asked now.** If `fleet-data` cannot close the table by sizing the depot or adding a kick
 stage, the remaining bodies are listed here with the options (a larger cruiser, a second refuel, an
 exception stated to players), instead of being claimed as reachable.
+
+### L1. The launch complex has 25 pads, not 32: what no longer holds (lead item, 2026-11-12)
+
+The pads were resolved on real ground under the pad gates (flat, dry, clear of the shore, no built-up land
+in the launch corridor, every placement looked at): **Madrakah has 16 (4 heavy, 6 medium, 6 light), Ka Lae
+9 (2 heavy with LC-1, 2 medium, 5 light)**. Sixteen were planned at each site, and "32 pads (16 per site)"
+is what stood under Q14. The count per site is data; nothing in the engine states it. The cycle (150 s)
+and the cohort horizon (14 days) are unchanged, so every launch figure is 25/32 of what the design said:
+
+| | As planned (32 pads) | As resolved (25 pads) |
+|---|---|---|
+| Launch slots per wall hour, sustained | 768 | **600** |
+| Launches a day, sustained | 18,400 | 14,400 |
+| Cohort reservoir (14 days) | 258,000 | 201,600 |
+| Launches in the first day (reservoir + one day) | 276,000 | **216,000** |
+| Slots in one 5-minute cohort | 64 | 50 |
+| Heavy pads / launches of heavy vehicles per hour / in the first day | 8 / 192 / 69,120 | 6 / 144 / 51,840 |
+
+**What no longer holds.**
+
+1. **"One front-page day fits."** The design load of the launch topology is 5,000 concurrent players for
+   24 hours in 30-minute sessions: 240,000 sessions. At one launch per session the complex now gives
+   216,000 in the first day: the reservoir is empty after 21 hours (it was 28). From then on 600 of every
+   10,000 sessions an hour get a slot, and about 24,000 sessions of that day find none inside the 14-day
+   horizon. At half a launch per session the day still fits (the reservoir lasts 46 hours). ARCHITECTURE
+   5.9, 16.3 and 29.2 now say this instead of "one front-page day fits".
+2. **The wait for a pad at that load was never a case inside the design day; now it is.** With 32 pads
+   the menu always had a cohort slot to offer during a front-page day. With 25 it has none from about hour
+   21. ARCHITECTURE 5.9 and 23 do not say what the menu shows when no slot is free inside the horizon: a
+   decision the spawn flow needs (shell-menu builds it; its brief names the case).
+3. **At smaller sizes the reservoir is shorter**: 2,000 concurrent, launch-heavy: 59 hours (was 80); 500:
+   21 days (was 46). Stages 0 to 2 are not affected: the admission cap binds before the pads do.
+4. **By class the figures were never stated, and they are a quarter of the total.** A pad hosts its class
+   and anything smaller, so a heavy vehicle has 6 pads: 144 launches an hour, 51,840 in the first day. Four
+   of the fleet's eight vehicles are heavy, the lunar stack among them, and it is the only vehicle that
+   exists today. A launch day flown mostly on heavy vehicles is limited by that, not by 600. (With 8 heavy
+   pads of 32 it was 192 an hour: the gap is not new, it is wider.)
+5. **"Up to about 48 pads per 100 km of coast"** (how a site gets more pads): the ground, not the spacing,
+   limits a site. Ka Lae took 9 within 25 km; seven planned pads found no place.
+
+**What still holds.** The complex is data and costs nothing unused. The load test's first programme (200
+bots, at most about 400 launches an hour) still does not queue the release complex and still measures the
+per-pad cycle on four pads. The cost of a front-page day is not higher (fewer launches, not more). A
+sustained launch-heavy 5,000 was not offered before and is not now.
+
+**What would restore the front-page day at one launch per session** (each is a rules field or data; none
+is code):
+
+| Option | First day | Price |
+|---|---|---|
+| `cohortHorizon` 16 days instead of 14 | 244,800 | players start up to 16 days ahead of the live clock in a spike |
+| mean cycle 135 s instead of 150 s (dwell and safing defaults) | 240,000 | 15 s less on the pad for everyone |
+| three more pads (28) | 241,920 | a resolve run; Madrakah's coast would have to yield them, which is not known |
+| keep 25 pads, 14 days, 150 s | 216,000 | the design day is stated as 0.9 launches per session; the rehearsal reports the hour the horizon fills |
+
+None of them touches the heavy class: more heavy launches need more heavy pads, or heavy vehicles allowed
+to wait longer than the others.
+
+**Proceeding on:** nothing changed (25 pads, 14 days, 150 s), every figure stated as it is. The lead
+decides before the launch rehearsal (Q19, programme 3) or before stage 3 is first provisioned (Q6),
+whichever comes first, and the user is told with that question.
 
 ### Small things (told, not asked; say if any is unwelcome)
 

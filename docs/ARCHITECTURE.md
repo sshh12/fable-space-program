@@ -62,7 +62,7 @@ a low and a high value.
 | 51 | Chat | Quick-comms (fixed phrases) only. Free-text chat is not built and has no rules flag; it is a forward seam (section 32, OPEN_QUESTIONS Q9). | An anonymous free-text channel at front-page scale is a moderation job nobody has taken on; a flag that switches nothing is a stub. |
 | 52 | Rules are data | Every number of sections 5, 7.4-7.6, 9.4 and 15.5 is a field of one versioned `UniverseRules` document served to clients, which render the rules screen and every countdown from it. A staging rule set with lifetimes of minutes demonstrates expiry. | "Configurable, visible to players." |
 | 53 | Accepted inconsistencies | (a) An object launched at an earlier time is not collided against histories already committed. (b) Two passive vessels never collide with each other. (c) After a private warp a player is alone in their time until someone jumps, holds or arranges a meeting. (d) A server crash may re-run up to 250 ms of flight; an outcome between two owners that was shown inside that window is marked provisional until it is durable (15.1). All four are stated on the rules screen. | They cannot be designed away in any forward-only model; hiding them would be merging timelines. |
-| 54 | Launch capacity | The launch complex is sized from a launches-per-day target, not from a pad count: `pads x (cohort horizon + 24 h) / mean cycle` must cover the sessions of a front-page day. Release defaults: 32 pads (16 per site), a 14-day cohort horizon, a 150 s mean cycle: 276,000 launches in the first day, 18,400 a day sustained. The complex is data and costs nothing while unused, so it is the same at every stage; at stages 0 to 2 the admission cap binds before the pads do, and the per-pad cycle is measured there on a rule set with few pads (28.7). Sections 5.9, 9.3, 16.3. | Pads, not CPU, bind first; a capacity plan that ignores them is wrong by an order of magnitude. |
+| 54 | Launch capacity | The launch complex is sized from a launches-per-day target, not from a pad count: `pads x (cohort horizon + 24 h) / mean cycle` must cover the sessions of a front-page day. The release complex as resolved (the count per site is data, section 9.3): 25 pads (Madrakah 16, Ka Lae 9), a 14-day cohort horizon, a 150 s mean cycle: 216,000 launches in the first day, 14,400 a day sustained. (The 32 pads first planned gave 276,000 and 18,400; what no longer fits at 25 is OPEN_QUESTIONS L1.) The complex is data and costs nothing while unused, so it is the same at every stage; at stages 0 to 2 the admission cap binds before the pads do, and the per-pad cycle is measured there on a rule set with few pads (28.7). Sections 5.9, 9.3, 16.3. | Pads, not CPU, bind first; a capacity plan that ignores them is wrong by an order of magnitude. |
 | 55 | Scheduling | Waves 3-7 with sub-waves; contracts are written by the lead before each wave; every shared file has one owner per sub-wave; the three risky switches (tick grid, `LocalSession` replacing `World`, activation of the Sun-rooted body set) and the app integration are packages with gates, not lead chores. Section 33. | The first plan put five packages into one agent and three switches between waves with no owner. |
 
 ### 1.2 Decisions carried over from v1
@@ -71,7 +71,7 @@ Rows 1-28 of the v1 table. Rows revised by v2 are marked "(v2)".
 
 | # | Topic | Decision | Why |
 |---|---|---|---|
-| 1 | Launch site | **Ka Lae Pacific Spaceport LC-1**, Ka'u coast, Hawai'i, nominal 19.10 N 155.50 W (`data/defs/sites/ka-lae.json`, pad `lc-1`; (v2) the site has sixteen pads and a second site exists, section 9.3; exact pad coordinates are snapped to real terrain by the Earth bake). The Florida site in `earth-data.md` is dropped. | Latitude below the Moon's 20.9 deg orbital inclination gives a coplanar launch twice a day, so TLI needs no plane change. Arid lava coast looks real at ground level without vegetation geometry. USGS 10 m elevation and Sentinel-2 imagery cover it. |
+| 1 | Launch site | **Ka Lae Pacific Spaceport LC-1**, Ka'u coast, Hawai'i, nominal 19.10 N 155.50 W (`data/defs/sites/ka-lae.json`, pad `lc-1`; (v2) the site has nine pads as resolved and a second site exists, section 9.3; exact pad coordinates are snapped to real terrain by the Earth bake). The Florida site in `earth-data.md` is dropped. | Latitude below the Moon's 20.9 deg orbital inclination gives a coplanar launch twice a day, so TLI needs no plane change. Arid lava coast looks real at ground level without vegetation geometry. USGS 10 m elevation and Sentinel-2 imagery cover it. |
 | 2 | Cube-sphere mapping | **Plain gnomonic** cube (`src/core/geo/cubeSphere.ts`, Python mirror `tools/bake/common/cube.py`). The tan-warped mapping in `moon-sky-data.md` is dropped. | Tile offsets stay linear in cube space, which the float32-stable vertex formula and crack-free geomorphing rely on. |
 | 3 | Tile URL scheme | `/tiles/{tileset}/{layer}/{face}/{level}/{x}/{y}.{ext}` + `/tiles/{tileset}/manifest.json` | One scheme for every body and layer. |
 | 4 | Height tile encoding (v2) | **FRT1** container, zlib-compressed, 259 x 259 vertex-registered int16 with a delta predictor and per-tile power-of-two scale (`src/core/geo/tileCodec.ts`, `tools/bake/common/frt1.py`). No PNG, no Brotli. Plain files on disk at bake time and in development; production delivery wraps the same tile bytes in range-readable packs (decision 46, section 10.4). | Decodes identically in the browser, in workers and in Node; shared edges are bit-identical; browsers cannot decode 16-bit PNG faithfully. Packs are a delivery container, not a second encoding. |
@@ -728,12 +728,18 @@ result into OPEN_QUESTIONS Q7.
   (`cohortHorizon`, default 14 days). Everyone in a bucket shares one cohort clock and is solid to each
   other; other cohorts are echoes.
 - **What cohorts buy.** Every clock runs at 1x, so the complex produces `pads x 3600 / cycle` launch slots
-  per wall hour for ever (768 with 32 pads and a 150 s mean cycle) plus a one-time **reservoir** of
-  `pads x horizon / cycle` slots (258,000 with a 14-day horizon). The reservoir is what absorbs a front-page
-  day: 240,000 sessions of one launch each fit in the first 24 hours, each bucket flying at once in wall
-  time. It refills only at the sustained rate. The trade is stated to players: during a spike people start
-  up to 14 days ahead of the live clock, 64 to a bucket, and are echoes to the live crowd until someone
-  jumps. Sustained demand above the sustained rate needs more pads, a shorter cycle or fewer launches per
+  per wall hour for ever (600 with the 25 pads of the release complex and a 150 s mean cycle) plus a
+  one-time **reservoir** of `pads x horizon / cycle` slots (201,600 with a 14-day horizon). The pad count
+  is read from the site files and the cycle and the horizon from the rules: none of these figures is a
+  literal anywhere in code, tests or the menu. The reservoir is what absorbs a front-page day: 216,000
+  sessions of one launch each fit in the first 24 hours, each bucket flying at once in wall time. (A
+  front-page day at the design load, 5,000 concurrent players in 30-minute sessions, is 240,000 sessions:
+  it fits at 0.9 launches per session, not at one. The 32 pads first planned held 276,000. OPEN_QUESTIONS
+  L1.) It refills only at the sustained rate. The trade is stated to players: during a spike people start
+  up to 14 days ahead of the live clock, 50 to a bucket, and are echoes to the live crowd until someone
+  jumps. **Each class has its own figure**: a vehicle uses the pads of its class and of every larger class
+  (9.3), so a heavy vehicle has the 6 heavy pads (144 slots an hour, 51,840 in the first day), a medium one
+  14 pads, a light one all 25. Sustained demand above the sustained rate needs more pads, a shorter cycle or fewer launches per
   session (16.3); a longer horizon only postpones it.
 - The menu also offers a **launch-window slot** ("plane crossing in 46 min", as a cohort) and a friend's
   clock. Waiting for a window is done by choosing the slot; there is no rails warp on a pad.
@@ -1410,18 +1416,30 @@ get real cabins is the user's decision (OPEN_QUESTIONS Q15).
   and 9.5 m (what LC-1 states today: 8.7 % over the 2,760 t lunar stack; 9.5 m is under the 9.56 m opening
   of LC-1's own launch mount, to be settled with the table), medium 700 t and 7 m, light 70 t and 2.5 m
   (the research's Solstice and Azimuth sheets rounded up; neither vehicle exists yet).
-- **Ka Lae** (site id `ka-lae`, the v1 site renamed in one sweep): sixteen pads inside the existing 100 km
-  region (4 heavy, 6 medium, 6 light), heavy pads at least 2.5 km apart, medium 1.5 km, light 1 km. LC-1
-  stays where it is.
+- **The layouts are what the resolve run placed, and the count per site is data** (`site-bake`, closed
+  2026-11-12; `data/staged/sites/<site>.pads.json`, `docs/handoff/site-bake.md` section 0.12). Every pad
+  passed the pad gates (flat and dry ground over a 500 m disc, clear of the shore, the sea within reach, no
+  built-up land in the class's clearance, a launch corridor free of settlement and of every other pad's
+  keep-out disc; the rule fields of each layout say which gates it was held to) and was looked at;
+  same-class pads are at least 2.5 km (heavy), 1.5 km (medium) and 1 km (light) apart. The layouts were resolved for flat / blend / keep-out radii of 450 / 900 / 600 m (heavy),
+  300 / 600 / 450 m (medium) and 150 / 300 / 300 m (light).
+- **Ka Lae** (site id `ka-lae`, the v1 site renamed in one sweep): **nine pads** (2 heavy with LC-1, 2
+  medium, 5 light) within 25 km of LC-1: the South Point pasture, the Kahuku lava and one pad above
+  Punalu'u. Sixteen were planned; under the gates the ground took nine (the layout names the seven that
+  found no place), and the lead accepted that the ground, not a rule, limits the field. LC-1 stays where it
+  is.
 - **Madrakah Coast** (site id `madrakah`, a fictional facility on the Arabian Sea coast of Oman near
-  19.0 N 57.8 E): sixteen pads. Same latitude as Ka Lae, 14.2 hours of solar time away, so one of the two
-  sites is in daylight at almost any hour. One regional Earth bake (about 30 m elevation data; if the
-  ground there cannot meet the v1 standard at pad level, the bake's hand-off says so and the pads go to
-  the Ka Lae coast instead, OPEN_QUESTIONS Q8).
+  19.0 N 57.8 E): **sixteen pads** (4 heavy, 6 medium, 6 light), a north-south row behind the cliffed
+  shore from 19.08 to 19.37 N, 9 to 41 km from the nominal point. Same latitude as Ka Lae, 14.2 hours of
+  solar time away, so one of the two sites is in daylight at almost any hour. One regional Earth bake,
+  land heights from Copernicus GLO-30 (30 m); the fall-back of OPEN_QUESTIONS Q8 (all pads at Ka Lae) was
+  not needed.
 - **Pads are data plus a resolve run, and the pad count is the capacity dial of the launch complex**
   (decision 54). With a mean cycle of 150 s (dwell, lift-off, clearance, 20 s of safing; 90-240 s
-  observed range) one pad gives 24 launches per universe hour; 32 pads give 768. What a player count
-  needs is in 16.3.
+  observed range) one pad gives 24 launches per universe hour; the release complex has **25 pads (6
+  heavy, 8 medium, 11 light) and gives 600**. A heavy vehicle can use the 6 heavy pads only: 144. Nothing
+  in the engine, the tests or the menu states a pad count or a rate: counts come from the site files,
+  rates from `pads x 3600 / cycle` with the cycle of the rules. What a player count needs is in 16.3.
 
 ### 9.4 Pad rules (each timer names its base, section 3; all `UniverseRules` fields)
 
@@ -2551,18 +2569,24 @@ the stage's admission cap binds first. With 30-minute sessions, `f` launches per
 session and a 150 s mean cycle, launches per hour are `concurrent x 2 x f` and the pads needed to sustain
 them are that divided by 24:
 
-| Concurrent players | Launches per hour (f = 1 / 0.5) | Pads to sustain it | With the release complex (32 pads, 768 per hour, 258,000 in the 14-day reservoir) |
+| Concurrent players | Launches per hour (f = 1 / 0.5) | Pads to sustain it | With the release complex (25 pads, 600 per hour, 201,600 in the 14-day reservoir) |
 |---|---|---|---|
-| 500 | 1,000 / 500 | 42 / 21 | f = 0.5: sustained for ever. f = 1: the reservoir covers the deficit for 46 days |
-| 2,000 | 4,000 / 2,000 | 167 / 84 | the reservoir lasts 80 hours / 8.7 days |
-| 5,000 | 10,000 / 5,000 | 417 / 209 | the reservoir lasts 28 hours / 61 hours: one front-page day fits, a sustained 5,000 does not |
+| 500 | 1,000 / 500 | 42 / 21 | f = 0.5: sustained for ever. f = 1: the reservoir covers the deficit for 21 days |
+| 2,000 | 4,000 / 2,000 | 167 / 84 | the reservoir lasts 59 hours / 6.0 days |
+| 5,000 | 10,000 / 5,000 | 417 / 209 | the reservoir lasts 21 hours / 46 hours: **one front-page day fits at f = 0.5 and no longer at f = 1** (the reservoir is empty two and a half hours before the day ends: OPEN_QUESTIONS L1); a sustained 5,000 does not fit at either |
+
+These are the figures of the whole complex, for a fleet flown in the proportion of its pads. By class the
+complex is 6 heavy, 8 medium and 11 light pads, and a pad hosts its class and anything smaller: a day on
+which most players fly a heavy vehicle (the lunar stack is one) is limited by 144 launches an hour and a
+heavy reservoir of 48,384, a quarter of the figures above.
 
 How more is obtained, in order of cost: (a) `cohortHorizon`, a rules field (more reservoir, players start
 further from the live clock); (b) a shorter cycle: the dwell and safing defaults are rules fields, and a 90 s
-cycle is 1.67 times the throughput; (c) more pads at a site: the pad generator and one resolve run, up to
-about 48 per 100 km of coast at the stated spacing; (d) more sites: one regional bake and a structures file
-each. A sustained launch-heavy 5,000 needs about 200-400 pads, that is about ten sites, and is not offered
-by the first release; the rules screen says what a player waits at the measured limit, and the load test
+cycle is 1.67 times the throughput; (c) more pads at a site: one resolve run, for as many as the ground
+takes under the pad gates, which is less than the spacing alone allows (Ka Lae took 9 within 25 km,
+Madrakah 16 along 32 km of coast); (d) more sites: one regional bake and a structures file each. A
+sustained launch-heavy 5,000 needs about 200-400 pads, which at what the two resolved sites yielded is
+well over a dozen sites, and is not offered by the first release; the rules screen says what a player waits at the measured limit, and the load test
 makes the wait from Deploy to control-enabled its own service level (28.7).
 
 ### 16.4 The local stack
@@ -3432,7 +3456,7 @@ lead announces first. Three programmes, in the order in which they may spend:
 |---|---|---|---|
 | **1. Stage 0** (always run) | The deployed production stage for the two cost readings, a rollout and the cold start; a rehearsal environment in the stage-0 shape for everything that loads the server | The Hobby plan; a few dollars on Railway; Modal bots are R&D | **The idle floor** (12 hours with nobody connected) and **the cost at 5 players** (5 bots in the normal mix held 6 hours), from Railway's usage figures per service and per project and from the roles' own metrics, projected to a month by the one formula of 29.2: at or under about $30 idle and about $50 at 5 players, or the report says by how much it missed and why. The time from the first Deploy after a quiet spell to control. On the rehearsal environment: ramps of 5, 10, 20, 50, 100 and 200 bots, 15 minutes each, the upper levels with the replica limit raised to what one Hobby replica holds: main-thread utilisation of `game` per connected bot (it sets the admission caps of stages 0 and 1 and the trigger for stage 2), step time with synchronised workers (it replaces the 2.5x derating), memory as billed; **the pad cycle** on a rule set with few pads; a rollout at 20 bots and at the highest level that held; a crash of `game` and of a worker isolate at load; a Postgres restart under load; the churn run; a visitor mix sized for the stage (500 menu clients while 20 bots fly: the publisher's request and byte budgets and its stretch); **the egress budgets under a hostile client**; expiry in real wall-clock time on the staging rules; a cold start from a clean profile. The rules for these rows are below the table |
 | **2. The stage-up drill and the split** | A rehearsal environment walked up the ladder | The Pro plan, so only after the lead has told the user the cost (section 30) and the user has agreed (the checkpoint below) | Every move of 16.2 timed under 50 flying bots (0 to 1, the limits, `pub` behind the CDN, 1 to 2, and 2 back to 1), with nothing lost by island hash and with bots that find the new services only through the endpoint document. Ramps of 200 and 500 on stage 2; step time with 8 synchronised workers under load; a rollout under load at 200; a forced shard kill and a directory kill at load |
-| **3. The launch rehearsal** | A rehearsal environment at stage 3 | Pro; the lead tells the user first; Railway is told before the 2,000 and 5,000 runs | Ramps of 1,000, 2,000 and 5,000; **the pad-storm and launch-day mixes on the release rule set** (32 pads queueing for real); **scale-out under load** (time from the controller's trigger to K new shards taking islands, at 500 bots); a visitor mix of 5,000 menu clients while 500 bots fly; the mirror's throughput (10.4); step time with 16 and 22 synchronised workers and the memory of a 22-worker shard; a rollout at 2,000; a two-hour soak at the highest level that held |
+| **3. The launch rehearsal** | A rehearsal environment at stage 3 | Pro; the lead tells the user first; Railway is told before the 2,000 and 5,000 runs | Ramps of 1,000, 2,000 and 5,000; **the pad-storm and launch-day mixes on the release rule set** (the release complex queueing for real: 25 pads as the site files hold); **scale-out under load** (time from the controller's trigger to K new shards taking islands, at 500 bots); a visitor mix of 5,000 menu clients while 500 bots fly; the mirror's throughput (10.4); step time with 16 and 22 synchronised workers and the memory of a 22-worker shard; a rollout at 2,000; a two-hour soak at the highest level that held |
 
 **The checkpoint between programme 1 and the others.** Programmes 2 and 3 need the user's yes, and the
 user is asked with programme 1's numbers, so the sequence is explicit. When programme 1 ends,
@@ -3502,14 +3526,15 @@ Rules for programme 1's rows:
 - **Pads and compute are measured separately.** The compute ramps run on a load-test rule set with
   synthetic extra pads (`tests/load/rules`), so the CPU, gateway and directory limits are found
   independently of pads, and report the **compute-limited** player count. The **pad-limited** count
-  needs pads that queue. The release complex (32 pads, 768 launches an hour) does not queue under the
+  needs pads that queue. The release complex (25 pads, 600 launches an hour) does not queue under the
   200 bots of programme 1 (at most about 400 launches an hour), so programme 1 runs the pad-storm mix
   on a **pad-scarce** rule set: the release cycle, dwell and safing values and 4 pads, which 100 to 200
   bots saturate. It reports the measured launches per pad per hour, the distribution of the wait from
-  Deploy to control-enabled, and the bot count at which the p95 wait passes 120 s. The figure for 32
-  pads is then stated as **derived** from the measured per-pad cycle, and is measured as such (reservoir
-  and sustained launches per wall hour, median and p95 wait per level on the release rule set) only in
-  programme 3.
+  Deploy to control-enabled, and the bot count at which the p95 wait passes 120 s. The figure for the
+  release complex (its pad count read from the site files) is then stated as **derived** from the measured
+  per-pad cycle, and is measured as such (reservoir and sustained launches per wall hour, median and p95
+  wait per level and per pad class on the release rule set, and the hour at which the menu first has no
+  slot inside the cohort horizon) only in programme 3.
 - **Every ramp level** is held 15 minutes. In each programme: a soak at the highest level that held (one
   hour on stage 0, two in the launch rehearsal), with passive-object count, table and WAL size over time;
   a reconnect storm; a rollout under load (freeze duration); the **visitor mix** (menu clients polling the
@@ -3660,7 +3685,7 @@ under 16.7 ms and GPU p99 at or under 11 ms, one browser measured at a time unde
 | **Cold start** (first visit, 50 Mbit/s, cold OPFS, clean profile) | <= 25 MB and <= 8 s to the title; the rest streams behind it; calibration data (<= 150 MB) resident before the benchmark starts; calibration itself under 30 s. Owners: `capability-settings` (ordering, what is deferred), `platform-delivery` (boot pack layout). Measured against the deployed shell and bucket by `deploy-loadtest` |
 | Menu DOM | 0.5 ms main thread per frame; scrim pass under 0.1 ms GPU |
 | Transit | about 10 s with no frame at or above 33 ms |
-| **Launch slots** | 32 pads, 150 s mean cycle: 768 launches per wall hour sustained, 258,000 in the 14-day reservoir, 276,000 in the first day. p95 wait from Deploy to control-enabled <= 120 s at the stated limit |
+| **Launch slots** | 25 pads (6 heavy, 8 medium, 11 light; the count is data), 150 s mean cycle: 600 launches per wall hour sustained, 201,600 in the 14-day reservoir, 216,000 in the first day; a heavy vehicle: 144 an hour, 51,840 in the first day. p95 wait from Deploy to control-enabled <= 120 s at the stated limit |
 | Passive objects | plateau under the 50,000 cap under account churn (pressure rule, 15.5) |
 | Remote vessels | full detail for as many as fit the pad-row column at Ultra; nameplates for 8 plus target, partners and own ships |
 
@@ -3677,12 +3702,13 @@ thread of `game` (sockets, directory, documents) at 50 % utilisation, assumed at
 measured by programme 1 of 28.7 (stage 2); (d) the Hobby plan's 5 GB volume, only if a retention rule
 were missing; (e) 8 vCPU per Hobby replica, about six worker threads; (f) from there the order below.
 
-Bottlenecks at stage 3, in the order they bind: (1) **launch slots**: the sustained rate is 768 per wall
-hour whatever the CPU does; the cohort reservoir absorbs one front-page day and no more, and sustained demand needs pads,
-sites or a shorter cycle (16.3); (2) sockets and fan-out (about a third to a half of all CPU on derived
+Bottlenecks at stage 3, in the order they bind: (1) **launch slots**: the sustained rate is 600 per wall
+hour whatever the CPU does (144 for heavy vehicles); the cohort reservoir absorbs 216,000 launches in the
+first day, which is nine tenths of a front-page day at one launch per session (OPEN_QUESTIONS L1), and no
+more; sustained demand needs pads, sites or a shorter cycle (16.3); (2) sockets and fan-out (about a third to a half of all CPU on derived
 figures); (3) real-time worker threads, only if the conservative figure is true (about 19 shard services
 for a launch-heavy 5,000, about 12 with the trailing lane); note that a launch-heavy 5,000 exists only
-while the reservoir lasts, so this is a one-day sizing; (4) the shard main thread, if batching is not
+while the reservoir lasts (21 hours at one launch per session), so this is a sizing for less than a day; (4) the shard main thread, if batching is not
 enough; (5) egress as a sustained cost, at the cap on a launch day; (6) memory per shard; (7) one crowded
 island (single-threaded; per-island dilation and the vessel budget of 7.2); (8) directory screening and
 forecast chains against a crowded low-orbit shell (estimated at 1-2 cores at 5,000 players, not measured);
@@ -3913,7 +3939,7 @@ per-checkpoint tolerance. The comparison is a gate of `presentation-sweep`, of `
 Ultra, of `bodies-activation` and of `planet-render`. Re-recording a checkpoint needs a note signed by the
 lead; the pad scenes are re-recorded once, when the new pads and their flatten discs land.
 
-**The new pads.** A player may spawn on any of 32 pads, so the ground is looked at there too: at one pad
+**The new pads.** A player may spawn on any pad of the two sites (25 as resolved), so the ground is looked at there too: at one pad
 per class at each site, in the integrated app: ground level at local noon and at low sun, 300 m up, and the
 lift-off perf column; with image-statistics assertions, a flatten-disc seam check, the shoreline and the
 near ocean in frame where the pad is coastal, and review by eye. Owners: `planet-render` (terrain, ocean),
@@ -4033,7 +4059,7 @@ play-tests the time rules between waves 5 and 6.
 | The always-on bill exceeds what the user set (about $50 at 5 players, about $30 idle) | Stage 0 on the Hobby plan, idle with one warm worker; the estimates ($5-15 idle, $10-25 at 5 players, added to the workspace bill) leave room under both ceilings; billed memory is the largest line and its caps are what the high estimates assume (a 256 MB tile store, Postgres limited to 0.5 GB), measured as cgroup memory in the pinned image before deployment and on Railway in wave 3, at 12 and at 72 hours; the projection from measured usage, by one formula (29.2), is an acceptance criterion of `deploy-loadtest` and `final-gate` |
 | The bill is run up by someone who is not a player (a scraper, a looping client, an abuser), with no alert and no hard limit | Replica limits bound compute; every route that sends bytes without admission has a daily egress budget counted in process, a per-address limit and no query strings on hashed routes; the worst month is stated ($140, of which $40 egress) and the budgets are attacked in the stage-0 load programme (16.2, 28.7) |
 | The workspace is shared with another project, so the Hobby plan's included usage is gone and the Pro break-even is near | Measured before building ($7.4-10.2 a month for the other project); every plan trigger is read from the workspace's usage, not from the game's own metrics; the choice between Hobby and Pro from the first day is put to the user with the real premium of $0-8 a month (OPEN_QUESTIONS Q2) |
-| Launch slots bind long before CPU | Sized from a launches-per-day target (decision 54): 32 pads, a 14-day cohort reservoir; pad wait is its own service level; the load test finds the pad limit and the compute limit separately; the scaling path names pads, sites and cycle with numbers |
+| Launch slots bind long before CPU | Sized from a launches-per-day target (decision 54): 25 pads as the ground allowed (32 were planned; OPEN_QUESTIONS L1), a 14-day cohort reservoir; pad wait is its own service level; the load test finds the pad limit and the compute limit separately; the scaling path names pads, sites and cycle with numbers |
 | The sky is mostly echoes after the first warp | Live clock, range rule, cohorts, follow, meet, in-phase jump, U8b; coherence is measured by the load test with a target and named tuning fields; an acceptance story for two strangers at different leads; a play-test with a written result (Q7) |
 | A front-page day arrives unannounced while the game is at stage 0 | Accepted and stated (16.2): it is not absorbed automatically and nobody is alerted. The admission cap holds the players, the menu queues and shows the rest for as long as the publisher's byte budget lasts, every public byte source has a daily budget, and the day costs about $3-5. The way up is scripted, rehearsed and timed (about an hour of a human's time to the launch topology); an announced launch is moved up the day before; from stage 3 a controller scales inside a pre-approved ceiling |
 | The small stage and the large one drift apart | One program, one role schema, one database schema, one implementation and one owner per role (the publisher included); the combined and the split shapes both run in the suites of 28.4 and 28.6 on every release, with a smoke of the launch shape; the stage move is a tested rollout in both directions (28.6), with clients that find the new gateway only through the endpoint document, and a timed drill (28.7) |
@@ -4052,7 +4078,7 @@ play-tests the time rules between waves 5 and 6.
 | The local stack differs from production | Real Postgres 18 in both, created with the same encoding and locale (UTF8, the built-in C.UTF-8) and refused otherwise; the restart, recovery and replay suites and the image smoke test run in the pinned Linux image; clients find the roles through an endpoint document, as in production; the cold-start rows load a production client build from `shell`; the deployed proofs run on the deployed stage; a local result is never reported as a deployed one |
 | The local stack overloads the machine that once crashed | The launcher holds the one `stack` slot for the stack's whole life, so no second stack and no Docker VM starts beside it; stated memory bounds per profile; the Docker VM capped at 6 GB; rows that do not fit (a 22-worker shard) are derived here and measured in a rehearsal |
 | WebSocket over TCP in one region | Prediction hides stalls up to 500 ms; docking is slow by design; a quarter second of round trip in Asia and Australia is stated |
-| Ground-level realism at 32 pads on two sites; clouds, tiles, corridor, landing data (v1 risks) | Arid coastal sites, landcover-driven detail, one march path, lifting capsule with roll rule, NAC region with calibrated procedural detail; checkpoints at one pad per class per site; the Madrakah fall-back of Q8 |
+| Ground-level realism at every pad of two sites (25); clouds, tiles, corridor, landing data (v1 risks) | Arid coastal sites, landcover-driven detail, one march path, lifting capsule with roll rule, NAC region with calibrated procedural detail; checkpoints at one pad per class per site; Madrakah kept on GLO-30 land heights (the fall-back of Q8 was not used; its known limits are in `docs/handoff/site-bake.md`) |
 | Frame over budget with several launches in view | The v2 budget columns sum to 11 ms at the Ultra default with the vehicle lines as caps; other-craft detail is what fits; frame time is asserted in the integrated app and in the two-browser stories |
 | Not every body is reachable by the fleet | A generated reachability table that fails the build; the refuelled profile is flown; exceptions go to the user (Q17) |
 | Disk space on the development machine | Baked data is capped at 22 GB, packs at 20 GB in a separate deletable directory, 25 GB kept free; raw downloads are deleted after a bake |
