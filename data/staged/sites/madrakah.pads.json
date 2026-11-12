@@ -318,7 +318,7 @@
         "shoreBeyondWindow": false,
         "dryFraction": 1.0,
         "bareFraction": 0.888,
-        "centreClass": "sand",
+        "centreClass": "bareRock",
         "oceanRays": {
           "ok": false,
           "failAzimuthDeg": 128.0,

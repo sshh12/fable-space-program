@@ -126,6 +126,52 @@ slope + 0.5 deg, plane RMS <= the relief limit, bare share - 5 %, latitude, sear
 each is then evaluated exactly. Deterministic: the same tiles and arguments give byte-identical pads (checked: the
 Ka Lae run before and after the resolver was sped up is identical).
 
+### Resolved pads
+
+### Ka Lae (`ka-lae`, region `earth-ka-lae`, nominal = LC-1, search 20 km)
+
+| Pad | Class | Lat, lon | Elevation m | Slope deg | Relief m | Roughness 10 m (m) | Plane RMS m | Water m | Dry | Bare | Centre class | Ocean sector 60-130 | From nominal km |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.62 | 0.89 | 4.2 | 0.20 | 1.25 | 601 | 1.00 | 0.80 | bareRock | open | 0.00 |
+| lc-2 | heavy | 19.004623, -155.690461 | 216.76 | 2.40 | 11.1 | 0.42 | 2.73 | > 3000 | 1.00 | 0.81 | bareRock | no: 60 deg, no sea within reach | 9.37 |
+| lc-3 | heavy | 18.982766, -155.696726 | 84.01 | 2.49 | 8.4 | 0.48 | 2.38 | 3138 | 1.00 | 0.99 | bareRock | no: 60 deg, no sea within reach | 9.84 |
+| lc-4 | heavy | 18.960103, -155.697284 | 31.75 | 0.52 | 6.4 | 0.25 | 2.23 | 1186 | 1.00 | 0.99 | bareRock | no: 60 deg, no sea within reach | 10.35 |
+| lc-5 | medium | 19.029711, -155.697038 | 368.99 | 3.99 | 6.5 | 0.59 | 1.91 | > 3000 | 1.00 | 0.80 | bareRock | no: 60 deg, no sea within reach | 10.92 |
+| lc-6 | medium | 18.997329, -155.708148 | 139.82 | 3.20 | 8.4 | 0.55 | 2.60 | 4035 | 1.00 | 0.99 | bareRock | no: 60 deg, no sea within reach | 11.08 |
+| lc-7 | medium | 19.011898, -155.708443 | 243.76 | 3.26 | 11.8 | 0.52 | 3.38 | > 3000 | 1.00 | 0.83 | bareRock | no: 60 deg, no sea within reach | 11.39 |
+| lc-8 | medium | 18.971696, -155.711841 | 39.63 | 0.99 | 4.1 | 0.16 | 1.44 | 1226 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 11.55 |
+| lc-9 | medium | 18.985723, -155.715559 | 61.67 | 2.13 | 9.6 | 0.43 | 2.85 | 2254 | 1.00 | 0.97 | bareRock | no: 60 deg, no sea within reach | 11.81 |
+| lc-10 | medium | 19.004336, -155.720423 | 175.39 | 3.00 | 6.8 | 0.45 | 1.92 | > 3000 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 12.46 |
+| lc-11 | light | 19.066407, -155.688210 | 661.30 | 2.31 | 5.5 | 0.34 | 1.97 | > 3000 | 1.00 | 0.81 | bareRock | no: 60 deg, no sea within reach | 12.52 |
+| lc-12 | light | 18.976546, -155.722686 | 46.50 | 1.10 | 6.1 | 0.23 | 1.73 | 1026 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 12.62 |
+| lc-13 | light | 19.016748, -155.719290 | 242.37 | 3.95 | 11.2 | 0.63 | 3.74 | > 3000 | 1.00 | 0.97 | bareRock | no: 60 deg, no sea within reach | 12.62 |
+| lc-14 | light | 18.993542, -155.724124 | 104.96 | 3.03 | 7.5 | 0.47 | 1.97 | 2745 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 12.73 |
+| lc-15 | light | 19.075311, -155.685931 | 706.23 | 2.15 | 6.8 | 0.35 | 2.17 | > 3000 | 1.00 | 0.81 | bareRock | no: 60 deg, no sea within reach | 13.07 |
+| lc-16 | light | 18.984906, -155.727542 | 72.15 | 1.46 | 5.5 | 0.23 | 1.66 | 1721 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 13.07 |
+
+### Madrakah (`madrakah`, region `earth-madrakah`, nominal 19.0 N 57.8 E, search 20 km)
+
+| Pad | Class | Lat, lon | Elevation m | Slope deg | Relief m | Roughness 10 m (m) | Plane RMS m | Water m | Dry | Bare | Centre class | Ocean sector 60-130 | From nominal km |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lc-1 | heavy | 18.996043, 57.793818 | 37.04 | 2.95 | 11.5 | 0.68 | 3.38 | 1038 | 1.00 | 1.00 | sand | open | 0.79 |
+| lc-2 | heavy | 19.009531, 57.774698 | 78.47 | 1.53 | 10.2 | 0.53 | 3.56 | 3539 | 1.00 | 1.00 | sand | no: 92 deg, land at 7.5 km | 2.86 |
+| lc-3 | heavy | 19.028688, 57.787538 | 122.19 | 1.30 | 11.9 | 0.53 | 4.38 | 2889 | 1.00 | 0.98 | bareRock | no: 112 deg, land at 6.6 km | 3.45 |
+| lc-4 | heavy | 18.981742, 57.772705 | 15.47 | 1.36 | 8.9 | 0.50 | 3.16 | 1511 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 3.52 |
+| lc-5 | medium | 18.996579, 57.761289 | 75.57 | 1.27 | 9.7 | 0.43 | 3.37 | 3793 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 4.09 |
+| lc-6 | medium | 19.026527, 57.768417 | 121.09 | 0.43 | 8.5 | 0.44 | 2.52 | > 3000 | 1.00 | 0.99 | sand | no: 104 deg, no sea within reach | 4.44 |
+| lc-7 | medium | 19.008988, 57.755579 | 90.85 | 0.85 | 5.3 | 0.36 | 1.73 | > 3000 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 4.78 |
+| lc-8 | medium | 19.043527, 57.798668 | 161.13 | 0.92 | 11.6 | 0.41 | 2.55 | 1590 | 1.00 | 0.89 | bareRock | no: 128 deg, land at 6.5 km | 4.84 |
+| lc-9 | medium | 18.984976, 57.753874 | 54.19 | 1.30 | 11.1 | 0.46 | 2.79 | 2059 | 1.00 | 1.00 | bareRock | no: 60 deg, no sea within reach | 5.13 |
+| lc-10 | medium | 19.039748, 57.772410 | 122.94 | 0.42 | 7.6 | 0.46 | 1.89 | 4214 | 1.00 | 1.00 | sand | no: 116 deg, land at 8.6 km | 5.29 |
+| lc-11 | light | 19.020050, 57.758430 | 106.10 | 0.85 | 7.3 | 0.42 | 2.38 | > 3000 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 4.91 |
+| lc-12 | light | 19.044606, 57.786680 | 145.49 | 1.64 | 7.7 | 0.40 | 2.07 | 2784 | 1.00 | 0.99 | sand | no: 124 deg, land at 7.5 km | 5.15 |
+| lc-13 | light | 18.973106, 57.758727 | 15.21 | 1.85 | 11.8 | 0.53 | 3.36 | 680 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 5.27 |
+| lc-14 | light | 18.999274, 57.749590 | 73.24 | 0.85 | 7.8 | 0.35 | 2.46 | > 3000 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 5.30 |
+| lc-15 | light | 19.018429, 57.749013 | 97.70 | 0.74 | 6.0 | 0.37 | 1.60 | > 3000 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 5.74 |
+| lc-16 | light | 19.006557, 57.743880 | 86.47 | 0.68 | 6.9 | 0.35 | 1.71 | > 3000 | 1.00 | 1.00 | sand | no: 60 deg, no sea within reach | 5.95 |
+
+Columns: natural height at the centre (padElevation); slope of the plane through the 500 m disc; largest deviation from it (relief); roughness at 10 m = RMS height difference of points 10 m apart in the disc; RMS deviation from the plane; distance to the nearest water (sea or inland; "> 3000" = none in the 6 x 6 km window); dry = share of the disc not water or wetland; bare = share of bare ground (the gate, >= 0.80); the open-ocean sector (reported).
+
 ## 4. The Madrakah regional bake
 
 `data/defs/regions/earth-madrakah.json`: a disc of 100 km about the nominal point 19.0 N 57.8 E (4 km inside Ras
@@ -165,7 +211,21 @@ Question: does the 30 m elevation data at Madrakah meet the v1 standard (Ka Lae,
 **What the baked tiles hold at pad level** (one pad per class; Ka Lae's for comparison; `bake.py quality`, every
 number on the level-12 collision surface within 2 km of the pad, 10 m grid):
 
-QUALITY_TABLES
+Madrakah:
+
+| Pad | Class | RMS diff 10 / 30 / 100 m | RMS curvature 10 / 30 m (ratio) | Finer than 30 m RMS | Slope median / p95 deg | Slope histogram 0-1/1-2/2-4/4-8/8-16/16-32/>32 % | Albedo neighbour RMS (sRGB) |
+|---|---|---|---|---|---|---|---|
+| lc-1 | heavy | 0.99 / 2.88 / 8.09 | 0.297 / 2.050 (0.14) | 0.43 | 4.6 / 16.3 | 5/9/28/36/17/5/0 | 11.6 |
+| lc-5 | medium | 0.53 / 1.53 / 3.95 | 0.208 / 1.301 (0.16) | 0.28 | 3.1 / 7.9 | 11/15/42/28/5/0/0 | 9.1 |
+| lc-11 | light | 0.51 / 1.44 / 3.68 | 0.227 / 1.285 (0.18) | 0.28 | 2.7 / 7.7 | 16/16/43/20/4/0/0 | 10.1 |
+
+Ka Lae (v1 standard):
+
+| Pad | Class | RMS diff 10 / 30 / 100 m | RMS curvature 10 / 30 m (ratio) | Finer than 30 m RMS | Slope median / p95 deg | Slope histogram 0-1/1-2/2-4/4-8/8-16/16-32/>32 % | Albedo neighbour RMS (sRGB) |
+|---|---|---|---|---|---|---|---|
+| lc-1 | heavy | 0.40 / 1.11 / 3.21 | 0.172 / 0.709 (0.24) | 0.19 | 1.9 / 6.0 | 24/28/31/14/2/0/0 | 5.9 |
+| lc-5 | medium | 1.28 / 3.75 / 11.29 | 0.378 / 2.225 (0.17) | 0.48 | 4.0 / 18.4 | 1/5/44/41/4/2/3 | 5.1 |
+| lc-11 | light | 0.62 / 1.82 / 5.47 | 0.189 / 1.081 (0.17) | 0.23 | 3.2 / 7.2 | 1/13/56/27/3/1/0 | 3.8 |
 
 - Imagery: the same source and resolution at both sites (Sentinel-2 cloudless, about 9-10 m texels at level 12).
   Madrakah's imagery shows a dissected desert gravel plain with clear wadi networks, dark ophiolite hills on the
