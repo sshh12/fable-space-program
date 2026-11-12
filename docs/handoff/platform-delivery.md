@@ -9,12 +9,17 @@ session is at the end of this file.
 
 ## 0. In five lines
 
-**First line, as the brief asks: the packs bucket FAILS at 2,000 concurrent fetchers** (2.74 % errors, p95
-first byte 553 ms, 1.40 Gbit/s against 0.5 %, 400 ms and 1.5 Gbit/s); it passes at 20 and 500. Stage 0 is
-unaffected; the escalation of OPEN_QUESTIONS ("Outside the three providers") is the lead's to raise before any
-launch is announced. Caveats and the rerun command: `docs/capacity/2026-11-12-platform.md` section 6.
+**First line, as the brief asks, corrected in the fix round: the packs bucket at 2,000 concurrent fetchers is
+INCONCLUSIVE, not a fail** (the fleet's containers started 9.6 minutes apart, the Gbit/s was one container's
+900 s, the requests were 26 kB groups instead of about 85 kB coalesced ranges, Moon packs only, region
+unpinned); it passes at 20 and 500. The pass line is 2.1-2.7 Gbit/s (the front-page day), not 1.5. Nothing is
+escalated: that needs the bucket AND the mirror to fail, and the mirror at launch size is unmeasured. Rerun
+recipe: `docs/capacity/2026-11-12-platform.md` section 6.
 
-- **Local: done and proven.** Packs of every baked tile set (13.96 GB in 96 packs), the pack source with the
+**Fix round (2026-11-12 evening): section 0a lists every review item with its evidence.** The production shell
+no longer serves source maps (it did, with the private sources, until 18:35 UTC).
+
+- **Local: done and proven.** Packs of every baked tile set (17.12 GB in 29 sets since the fix round; first round 13.96 GB in 96 packs), the pack source with the
   tile-source seam, byte-identical to the plain files for all 862,220 tiles in four modes; the boot pack (22.4 MB
   boot set); the program entry and the static roles; the local stack on host processes with an embedded
   Postgres 18 (UTF8, built-in C.UTF-8) in three shapes, with its slot, lock, status and down all tested.
@@ -28,6 +33,51 @@ launch is announced. Caveats and the rerun command: `docs/capacity/2026-11-12-pl
   Node; the GPU queue was 90 minutes deep). Section 7.
 - **Findings that change figures of ARCHITECTURE**: the boot pack cannot hold levels 0-3 (122 MB); Railway's CDN
   never caches a ranged response, so the mirror serves 256 KiB slices; a first session is 461-577 MB, not 300.
+
+## 0a. Fix round: what was fixed, with the evidence
+
+| # | Item | State | Evidence |
+|---|---|---|---|
+| 1 | Source maps were public on the production shell | **Fixed, proven** | Commit a4d824c (the CI and image build has `sourcemap: false`; the image deletes any `*.map` and fails on a `sourceMappingURL`; shell answers 404 to `*.map` unless the local stack sets SHELL_SOURCE_MAPS=1). Deployed shell 68b4093: GET `/assets/main-uVdGZXLE.js.map` 404, the worker's map 404, 0 `sourceMappingURL` in the served JS; the old map URL 404 and `DYNAMIC` at the edge (it had been served `no-cache`, so no CDN edge kept it) |
+| 2 | Egress budgets not a hard stop | **Fixed, proven in unit tests and on the deployed mirror** | `EgressMeter.admit` reserves a response's length against the day and the address window before the first byte and takes a stream slot (mirror 128 / 32 per address, boot 16 / 2); `settle` gives back an aborted stream's rest. Slices mode: an unsliced GET is 404; ranges mode: open-ended, suffix, multiple, missing or > 8 MiB ranges are 416. Tests: 100 admissions at once against 1,000 bytes admit exactly 3; 64 slice requests at once against a 10-slice budget serve exactly 10 (bytes sent = 10 x 64 KiB <= budget, meter settles to it); stream caps; address window. Deployed: `/p/<h>` 404, `/p/<h>` with a Range 404, `/p/<h>/0` (old form) 404, a 100000-byte S 404, a query string 404 |
+| 3 | game served unmetered public bytes | **Fixed, proven** | Every response no role meters itself is admitted against `public` (2 GB a day, 429 past it; Railway's health check of /healthz still answered; unit test). Deployed /hello: `{role, buildId, instance, uptimeS, draining, db:{connected, outages}}`, no deployment or replica id, no pid, no error text; /healthz carries no role detail; /packs.json 6,934 bytes gzip against 48,220 plain |
+| 4 | OPFS cache | **Fixed; proven in unit tests; the browser test is written, not run** | Size checked against the key's length at adoption and on get (a truncated or 0-byte entry is a miss and removed); every error a miss or a no-op (quota on write, a throwing cache, a cache that never opened: `stats.cacheErrors`); one owner per directory via the Web Lock `fsp-opfs-cache:<dir>`, other contexts read-only. Unit tests on an in-memory OPFS and lock manager (truncated, quota, broken cache, two contexts). Browser test (page + worker on real OPFS, a truncated file) in `packs.spec.ts`: see item 13 |
+| 5 | Pack source edge cases | **Fixed, proven in unit tests** | A 403 that persists after the refresh is penalised (the next read goes to the mirror first); a refreshed list naming another index for a set drops the set and reads the new index (test with a real re-pack); time allowance = timeoutMs + bytes at minBytesPerSecond (256 KiB/s); tests for the network-error refresh on presigned URLs and the 24-in-flight cap (peak 20-24 of 200 single-tile requests) |
+| 6 | Slice size in the URL | **Fixed, deployed, proven** | `/p/<hash>/<S>/<n>`, S a power of two from 64 KiB to 4 MiB; the pack list's sliceBytes is the only source (shell no longer reads MIRROR_SLICE_BYTES). Both services redeployed (shell and game at buildId 91cee8cf59e94c17); `/p/<h>/262144/0` 200 with 262,144 bytes |
+| 7 | Packer reuse and the release check | **Fixed, proven, and used** | `tools/pack/cli.ts check` reads every promised tile and file through the pack source in whole-pack mode against the source and writes `verified.json` only when clean; `upload` refuses a set without it or packed from another contentHash than its manifest's now; `verify` reports released sets whose contentHash is not the tree's (it reported earth ab20fdfc579d4015 against f5e6ef420bda7cea before the re-pack). The follow-up (re-pack Earth and pack 25 bodies, upload, redeploy) is section 0b |
+| 8 | Seal the secrets; rotate the dumps key; Modal secret without a file | **Done** | PACKS_SECRET_ACCESS_KEY (game, shell), DUMPS_SECRET_ACCESS_KEY (dump), POSTGRES_PASSWORD (postgres) sealed (`provision.mjs seal-state`). POSTGRES_PASSWORD was sealed only after a deployment proved a cross-service reference to a sealed variable resolves (an ops job reached the database through a sealed probe variable of postgres; probe and ops service deleted). Dumps key rotated (`rotate-dumps.mjs`): the dump service's key id is the bucket's current one, the new pair lists the bucket (38 dumps), the Modal secret was written through the SDK on stdin (no file, no argv; no `fsp-secret-*` file in the temp directory) and `copy_dump` ran with it after the app was redeployed (a deployed Modal app holds the secret object it was deployed with: the script now redeploys it). No value was printed |
+| 9 | Capacity report corrections | **Done** | D6 INCONCLUSIVE with the five reasons, the recomputed pass line (2.1-2.7 Gbit/s) and a rerun recipe; the escalation needs bucket AND mirror; D8's 1.38 on tiles only (533 MB, about $1,330 for the all-miss day, from a local replay); the reviewer's 6.43 h reading (U $2.58, U+5 $7.58) as the floor |
+| 10 | CI and image | **Done; the image job proven on CI** | Actions pinned by SHA; CI on pushes to main, PRs into main and by hand; the PGDG key checked by fingerprint B97B0AFC...ACCC4CF8 and postgresql-client-18 / libpq5 pinned to 18.7-1.pgdg12+2; buildId equality stated (Node base and server bundle, not the client: compared by clientBuild). Run 43289997443 (by hand on `platform-delivery-ci` at 2baffe6): image job green in 146 s with the pinned client; the checks job failed on two other packages' unit files (`tests/unit/planet-bake/landmarks.test.ts`, `tests/unit/sim-vessel/codec.test.ts` corpus), not touched here |
+| 11 | Launcher and self-test | **Fixed, proven** | The use-file regex `/\.use-(\d+)$/`; the refusal checks encoding, provider AND locale C.UTF-8 (unit test: a built-in C cluster is refused); database steps retry a reset connection (kill-row); `offline` samples every TCP connection of the stack's processes. Self-test: kill, kill-row, names-state, refuse, offline all PASS (offline: no Docker process, no connection off the loopback in 5 samples of 5 processes and their children) |
+| 12 | Bucket CORS | **Fixed, proven** | Origins: the shell's, `http://127.0.0.1:47200`, `http://localhost:47200` (Tigris takes no wildcard in an origin: `http://127.0.0.1:*` was not honoured). GET with Origin: the three get their own origin back; `https://evil.example` and another local port get none (preflight 403) |
+| 13 | Browser tests | see section 0b | |
+
+## 0b. The release after the final bakes (the coordinator's follow-up to item 7)
+
+- **Packed** (bake slot): Earth re-packed incrementally at manifest contentHash f5e6ef420bda7cea (Madrakah
+  re-baked): 72 packs, 60 unchanged, 12 rewritten, index a98a3b8296b684fa1e21397ecf6ff6ae, 750,486 tiles,
+  10.72 GB; the 25 small bodies packed (ariel, callisto, ceres, charon, deimos, dione, enceladus, europa,
+  ganymede, iapetus, io, mars, mercury, mimas, miranda, oberon, phobos, pluto, rhea, tethys, titan, titania,
+  triton, umbriel, venus): 85 packs, 147,612 tiles, 2.74 GB (mars 0.89, mercury 0.64, pluto 0.32, venus 0.17,
+  ceres 0.16 GB; the rest 2-66 MB each).
+- **Verified**: `tools/pack/cli.ts check` on all 29 packed sets in whole-pack mode against the plain files:
+  1,062,972 tiles and every plain file, 17.12 GB, **0 mismatches on the 27 tile sets and sky**; the `assets` file
+  set is stale against today's public/assets (66 differences: files added and changed since it was packed by
+  other packages) and was not released again (its released copy is the one the client used before). The sweep
+  inside the stack (`pack-sweep.ts sweep --min-sets=27 --modes=whole,slices`): 27 tile sets, whole packs and the
+  mirror's 256 KiB slices, **0 mismatches**.
+- **Released**: the release check passed for each of the 26 sets; 121 new objects (3.81 GB) uploaded at about
+  30 Mbit/s, nothing overwritten, old objects kept. `verify`: 216 released objects present, no released tile set
+  stale. The packs bucket now holds 222 objects, **17.79 GB** (released sets 17.12 GB; the rest is the boot pack
+  and the objects of the earlier Earth release). Local data/packs 17.12 GB after pruning the earlier Earth
+  objects (free 33.5 GB).
+- **Deployed and proven from outside** (game and shell at commit f025da8, buildId 6df6b1d94ecf397d): the pack
+  list offers 29 sets; through the bucket's presigned ranges and, separately, through the mirror's 256 KiB
+  slices, the Earth manifest read from the deployed index has contentHash **f5e6ef420bda7cea, equal to the
+  tree's**; the Madrakah level-12 height tile 2/12/758/2888 (re-baked today), Mars height 5/5/31/31 and Pluto
+  albedo 0/2/0/0 read back **byte-identical** to data/tiles (12 bucket requests, 10 mirror requests, no
+  failure).
+- **Modal volume fsp-packs**: see the running log (copy_packs from the deployed pack list).
 
 ## 1. What exists locally
 
@@ -83,6 +133,14 @@ GitHub: branch `platform-delivery-ci` (CI proof; main untouched); delete with
 git-ignored `.env` (`PACKS_ACCESS_KEY_ID`, `PACKS_SECRET_ACCESS_KEY`; the rest of the bucket settings is not
 secret and is tracked in `deploy/railway/buckets.json`); the dumps credential exists only in Railway (`dump`)
 and the Modal secret; the database password only in Railway.
+
+Fix round changes in the cloud: PACKS_SECRET_ACCESS_KEY (game, shell), DUMPS_SECRET_ACCESS_KEY (dump) and
+POSTGRES_PASSWORD (postgres) are **sealed** (irreversible; `node deploy/railway/provision.mjs seal-state`); the
+dumps key pair was **rotated** (`node deploy/railway/rotate-dumps.mjs`; the old pair is revoked) and the Modal
+secret `fsp-dumps` rewritten and `fsp-offsite` redeployed with it; the packs bucket's **CORS** names three
+origins (the shell's, `http://127.0.0.1:47200`, `http://localhost:47200`); a second temporary `ops` service
+(31b946ae-edc5-41b1-b9a9-ef55b49f7e93, the sealed-reference probe) was created and deleted; the packs bucket
+holds 222 objects, 17.79 GB (section 0b). Nothing else was created.
 
 ## 3. Public API (exact signatures)
 
@@ -174,26 +232,32 @@ inside it dumps the compose Postgres to MinIO.
 
 ## 5. Acceptance, criterion by criterion
 
-| Criterion | Result |
-|---|---|
-| Every tile through `createTileSource({kind:'pack'})` byte-identical to fs, earth and moon, whole-pack mode and both mirror modes | **Met.** Full sweep (`pack-sweep.ts sweep`, inside the stack): earth 697,346 tiles + 3 files (10.26 GB) and moon 164,874 tiles + 3 files (3.39 GB), every one in four modes (whole packs on disk; bucket presigned ranges; mirror ranges; mirror slices), **0 mismatches**, 162 s. Unit tests do the same on the synthetic fixtures in CI. No small-body tile set exists yet; the sweep iterates whatever is packed |
-| Request count of a recorded flight trace at least 5x lower than per-file fetching | **Met with the client cache, not without it.** The recorded session (4 minutes to orbit, not 10: section 7) has 26,023 tile reads; through the packs with the cache the design puts in front (OPFS; emulated in memory): 2,508 requests, 10.4x fewer. With no client cache at all: 4.2x at the default 64 KiB coalescing gap (5.5x at 128 KiB, at 1.32 bytes per byte needed) |
-| Browser: main thread and worker through the pack source against the local stack (CORS, COEP, no Content-Range), OPFS hit on reload, failover on 429, on a 404 for an indexed object, after one refresh on a 403; terrain hash equals the guard | **Main thread and worker: met** (276 Moon tiles byte-identical in both, cross-origin isolated, Content-Range unreadable to the page and not needed). **OPFS on reload: met** (328 reads from the cache, 0 tile requests, 57 ms against 173 ms cold; after a fix: entries written after the ledger's last save were dropped). **Failover in the browser: met against the deployed services** (expired URL: the bucket's 403 arrives without CORS, the page refreshes the list once and moves to the mirror; 404 for an indexed object: the mirror), and in Node for 429, 5xx, 404 and 403 (unit tests). The local-stack browser failover test failed once on the stand-in (its 429 switch also refused the shell's own reads, so the mirror answered 502: a test-fixture fault, fixed) and **was not re-run**: the GPU queue was six runs deep (about 90 minutes); the queued run was cancelled so that nothing would be left running. **Terrain hash: met in Node** (the real TerrainProvider over the pack source: 2,000 Earth and 2,000 Moon collision heights bit-identical to the guard, `tests/unit/platform/terrainThroughPacks.ts`); **its browser form has not run** (same reason). To finish both: `STACK_NAME=fsp-platform-delivery node tools/dev/heavy.mjs --class=gpu -- npm run stack -- -- npx playwright test tests/browser/platform/packs.spec.ts --project=functional` (the GPU slot first, the stack inside it) |
-| Boot set at most 25 MB, cold over 50 Mbit/s in under 8 s with `--page=build`; shell refuses a missing pack or a wrong hash; boot manifest matches the uploaded object | **25 MB: met** (22.4 MB: pack 19.97, first paint 2.22, definitions 0.23). Shell's health stays failing for a missing pack and a wrong size (unit test), and it verifies the SHA-256 (the deployed shell loaded and verified 5b7c3d4f... in one attempt). The manifest's hash is the bucket object's (`upload --boot` writes it only after the upload). **Cold load over 50 Mbit/s: 22.56 MB in 4.05 s: met** (`coldstart.spec.ts`, real Chrome, clean context, cache off) |
-| Egress budgets: each route stops at its budget and answers as specified; query string 404 no body; per-address limit; reset at 00:00 UTC; /endpoints.json no-cache with candidates in order | **Met** (unit tests against the stand-in: client 503 with Retry-After to midnight, boot 302 to a presigned URL that serves the bytes, mirror 429; per-address window; reset at 00:00 UTC; and on the deployed shell: 404 with 0 bytes for four query variants, the boot redirect with a 1-byte budget) |
-| CI green on a branch under 8 minutes, builds the client and the image, fails on a planted secret, TODO and boundary violation | **Met**: runs 43195587786 and 43196339349 green (checks 1m42s, image 2m21s in parallel); planted runs 43196693530 (secret, caught by the credential-shape scan), 43196699082 (TODO), 43196739442 (boundary) all failed at the right step. Ten unit files that need baked data are excluded on CI (request platform-delivery-1) |
-| Local stack: starts from nothing with Docker stopped and no network | **Met** (selftest `offline`: no Docker process while every stack ran; nothing reaches the network: embedded Postgres, stand-in, local packs) |
-| Postgres ready in under 1 s after its first initialisation | **Met**: initdb 1.0 s, then ready in 152-280 ms on every start |
-| Two sessions, one advisory lock, exactly one gets it; a fenced write with a stale token changes 0 rows; a committed row survives a hard kill of Postgres and of the launcher | **Met** (in-stack suite; selftest `kill-row`) |
-| UTF8 with the built-in C.UTF-8 locale; non-1252 text round-trips; citext case-insensitive; a data directory created otherwise is refused | **Met** (in-stack suite; selftest `refuse`: a WIN1252/libc cluster is refused with its encoding and provider named) |
-| --shape=split and --shape=launch start their processes on their own ports | **Met** (5 and 9 processes, every /healthz 200) |
-| status: resident memory at or under 0.6 GB for this wave's stack | **Met**: 387 MB without the page server (Postgres 140 MB), 504 MB with the Vite dev server |
-| THE SLOT: held while up, a second stack waits, free when done, `down` after a killed launcher leaves no process or port and the slot reclaimed; two STACK_NAMEs separate | **Met** (selftest `slot`, `wait`, `free`, `kill`, `names`, `names-state`); plus the launcher's own exclusive lock `data/stack/.launcher.lock` and the `<build>.use-<pid>` file beside a served client build |
-| Compose form: VM capped at 6 GB, same pack requests, same encoding, dump and restore, image smoke with the same buildId | **Built, not run: waiting for `.wslconfig`** (the coordinator's rule this round). The launcher refuses `--compose` and `--db=docker` unless the VM is capped at 6 GB or less. Commands: section 4. The image smoke test runs in CI on every push (role `game` healthy, buildId printed and recorded) and Railway's own build printed the same buildId as CI (5c50250b3dab3d80) |
-| Stage-0 skeleton deployed on Hobby, reachable: shell serves the boot pack from the bucket with isolation headers through the CDN and the endpoint document; hello game healthy in standby and survives a redeploy with the drain honoured; dump written and pruned, credential only in dump; UTF8 and builtin; nothing needing Pro | **Met** (sections 2 and 6 and the capacity report): dump 20261112T100751Z-none.dump written (915 bytes, pg_dump 18 against server 18), 205 retention-probe objects pruned, 36 kept |
-| Cost by the one formula, per service, at 6 and at 72 hours | **Two readings, neither 6 h**: 25 minutes with the measurement traffic, U = $3.75 a month (U + $5 = $8.75); 4.5 hours nearly idle, U = $2.51 with bucket storage (shell $1.10, game $0.67, postgres $0.52; U + $5 = **$7.51** against $30), workspace bill $10.61. **The 6-hour and 72-hour readings are not taken** (section 7) |
-| docs/capacity report | `docs/capacity/2026-11-12-platform.md` |
-| No existing Modal app or volume and no existing Railway project touched | **Met** (section 2 lists everything created) |
+Updated in the fix round, as the review laid it out: **Proven** (a run whose output is recorded here or in the
+capacity report), **Claimed** (built and reasoned, or proven in a weaker form than the criterion asks), **Not
+done**.
+
+| Criterion | State | Evidence |
+|---|---|---|
+| Every tile through `createTileSource({kind:'pack'})` byte-identical to fs, whole-pack mode and the mirror modes | **Proven** | Full sweeps inside the stack: earth and moon in four modes (first round, 0 mismatches); after the final bakes, 27 tile sets in whole-pack mode and 256 KiB slices (0 mismatches, `--min-sets=27`), plus `check` on all 29 sets (0 mismatches on the tile sets and sky). From outside on the deployed services: Earth's manifest contentHash and three tiles byte-identical through the bucket and through the mirror (section 0b) |
+| Request count of a recorded flight trace at least 5x lower than per-file | **Proven with the client cache; not met without it** | 2,508 requests against 26,023 (10.4x) with the OPFS-like cache; 4.2x with no cache at the 64 KiB gap. A local replay of one 4-minute session |
+| Browser: main thread and worker (CORS, COEP, no Content-Range), OPFS on reload, failover, terrain hash in the page | **Proven**: main + worker, OPFS on reload, failover against the deployed services. **Proven in Node, browser form: see section 0b / running log**: local-stack failover and the terrain hash in the page. OPFS ownership and truncation (fix 4): proven in unit tests, browser form in the same run |
+| Boot set at most 25 MB, cold under 8 s at 50 Mbit/s, shell refuses a wrong pack | **Proven** | 22.4 MB; 22.56 MB in 4.05 s (local stack, `--page=build`); health fails on a missing pack and a wrong size (unit test); the deployed shell verified 5b7c3d4f... |
+| Egress budgets stop each route; query string 404; per-address limit; reset at 00:00 UTC | **Proven (hard stop since the fix round)** | Reservation at admission and stream caps (unit tests: concurrent admissions never pass the budget; 64 concurrent slices against a 10-slice budget serve 10); every other public response against a 2 GB `public` budget; on the deployed shell: query strings, unsliced GETs, wrong slice sizes 404 |
+| CI green under 8 minutes, builds client and image, fails on a planted secret, TODO and boundary | **Proven in the first round; image proven again after the pins** | Runs 43195587786 / 43196339349 green, planted runs failed at the right step. After the fix round (actions pinned, PGDG pinned): run 43289997443, image green in 146 s; checks red on two other packages' unit files (planet-bake landmarks, sim-vessel codec corpus) |
+| Local stack starts with Docker stopped and no network | **Proven** | Self-test `offline`: no Docker process; no TCP connection off the loopback in 5 samples of all stack processes and children |
+| Postgres ready under 1 s | **Proven** | initdb 1.0 s, then 152-280 ms |
+| Advisory lock, fenced write, a committed row survives a hard kill | **Proven** | In-stack suite; self-test `kill-row` (now with retries on a reset connection) |
+| UTF8 with built-in C.UTF-8; refuses another cluster | **Proven** | In-stack suite; self-test `refuse`; the refusal now checks the locale too (unit test: built-in C is refused) |
+| --shape=split and --shape=launch | **Proven** | 5 and 9 processes, every /healthz 200 (first round) |
+| status at or under 0.6 GB | **Proven** | 387 MB (504 MB with the Vite dev server) |
+| THE SLOT, the launcher lock, the use files | **Proven** | Self-test slot, wait, free, kill, names (first round; kill and names again this round); the use-file cleanup regex fixed |
+| Compose form | **Not done** | Built, not run (no `.wslconfig`; Docker not allowed). Image smoke runs in CI |
+| Stage-0 skeleton on Hobby: shell, CDN, endpoint document, hello game, drain, dump, UTF8, nothing needing Pro | **Proven** | Sections 2 and 6; redeployed three times today (fix 1, fixes 2-6, the release) |
+| Secrets: never in a commit, a log line, the client bundle or a document; sealed | **Proven** | check-secrets before every commit; the three secrets sealed; the dumps key rotated; no source map or secret in the served client |
+| Cost by the one formula at 6 and 72 hours | **Not done (time)** | Readings: 25 min (U+5 $8.75), 4.5 h ($7.51), the reviewer's 6.43 h ($7.58, the floor). The 72-hour reading needs the skeleton untouched for three days |
+| Bucket throughput at 2,000 fetchers (D6) | **Not done: inconclusive** | Section 6 of the capacity report: the run measured the fleet; rerun recipe there |
+| docs/capacity report | **Done, corrected** | `docs/capacity/2026-11-12-platform.md` |
+| No existing Modal app or volume, no other Railway project touched | **Proven** | Section 2 lists everything created; haulpoint-tms untouched |
 
 ## 6. Cloud measurements (D1-D8), short
 
@@ -469,3 +533,11 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   queued once more for its last two tests.
 - 10:07 Pacific: the last browser rerun cancelled in the GPU queue (six runs ahead); no stack, database or
   browser of this package is running; the stack slot is free. Hand-off complete.
+- 18:30-20:00 UTC, fix round (13 items from the review): source maps removed from production first (shell
+  redeployed and proven at 18:35 UTC); budgets made a hard stop, public bytes metered, pack-source edge cases,
+  slice URLs naming S (both services redeployed at 18:47); OPFS cache length checks, errors as misses, one owner;
+  the packer's byte verification and release check; secrets sealed (POSTGRES_PASSWORD after a deploy-time probe),
+  dumps key rotated, Modal secret without a file; capacity report corrected; CI pinned, PGDG pinned; launcher and
+  self-test fixes (self-test 5 of 5); CORS by origin. Then the release after the final bakes: Earth re-packed
+  (12 of 72 packs rewritten) and 25 bodies packed, all verified, swept, uploaded (3.81 GB), game and shell
+  redeployed at f025da8, proven from outside. Details in sections 0a and 0b.
