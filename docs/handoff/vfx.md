@@ -699,7 +699,8 @@ min, 2026-11-12 00:06; one GPU slot on the machine, so nothing else used the GPU
 exposure tests, two perf scenarios). What became of each is below: after the short run with the final code the
 suite stands at one failure, the first window of the vacuum burn (0.616 ms against 0.6). All pictures under
 `out/screens/vfx/` are from this run (the sheets of the solid motors, the lunar scenes, staging, the close-ups
-and the vacuum ignition from the short run after it, with the final code: 15 tests, 14 passed, 00:34).
+and the vacuum ignition from the short run after it, with the final code: 15 tests, 14 passed, 00:34; the RCS
+sheet once more at 00:51, since the tighter bound of smoky jets in vacuum also holds the thruster puffs).
 
 | What | Result | Spec |
 |---|---|---|
