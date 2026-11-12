@@ -1,7 +1,7 @@
 {
   "tileset": "deimos",
-  "maxElevation": 1691,
-  "minElevation": -1594,
+  "maxElevation": 1605,
+  "minElevation": -1144,
   "maxRenderLevel": 10,
   "residentLevel": 2,
   "modifiers": [],

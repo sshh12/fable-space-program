@@ -1,7 +1,7 @@
 {
   "tileset": "mars",
-  "maxElevation": 28025,
-  "minElevation": -22011,
+  "maxElevation": 26205,
+  "minElevation": -18863,
   "maxRenderLevel": 19,
   "residentLevel": 3,
   "modifiers": [],

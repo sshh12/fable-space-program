@@ -1,7 +1,7 @@
 {
   "tileset": "charon",
-  "maxElevation": 32805,
-  "minElevation": -32953,
+  "maxElevation": 6945,
+  "minElevation": -14317,
   "maxRenderLevel": 17,
   "residentLevel": 3,
   "modifiers": [],

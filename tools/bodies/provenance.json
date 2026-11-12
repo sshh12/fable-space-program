@@ -447,13 +447,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-16751, 16451],
-        "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
-          "retrievedAt": "2026-11-12T09:37:58.767Z",
-          "sha256": "94f228fa7afc0007f6e06f92ffbcfda76be97af0bda3a0a6e2c8368c5c43297b"
-        },
-        "note": "DEM sphere 2439400 m (0 m); DEM -32767..32767 (x 0.5 + 0); run-time craters to 1871 m"
+        "value": [-5749, 4567],
+        "note": "the baked height range of data/tiles/mercury/manifest.json (-5381.85..4499.61 m); run-time craters to 1871 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4101 overrides {}",
@@ -578,13 +573,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-5571, 11222],
-        "source": {
-          "url": "https://astrogeology.usgs.gov/search/map/venus_magellan_global_topography_4641m",
-          "retrievedAt": "2026-11-12T09:37:59.292Z",
-          "sha256": "0aa146262e68c0feda8adf07a48c7ba85aeb962522c1c6fd27e29d3e77881936"
-        },
-        "note": "DEM sphere 6051000 m (-800 m); DEM -2951..11687 (x 1 + 0); run-time craters to 9283 m"
+        "value": [-5788, 11231],
+        "note": "the baked height range of data/tiles/venus/manifest.json (-3967.8..10896.45 m); run-time craters to 9283 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4102 overrides {\"craterEquilibriumFraction\":0.0002}",
@@ -727,13 +717,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-22011, 28025],
-        "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_MGS_MOLA_DEM_mosaic_global_463m.tif.aux.xml",
-          "retrievedAt": "2026-11-12T09:37:58.615Z",
-          "sha256": "aa498f1470e0666354955c2bee3edb60eb3ea39e9725e870b35ef196d8eadd96"
-        },
-        "note": "ellipsoid -13300..6690 m; DEM -8201..21241 (x 1 + 0); run-time craters to 2600 m"
+        "value": [-18863, 26205],
+        "note": "the baked height range of data/tiles/mars/manifest.json (-18353.3..26110.44 m); run-time craters to 2600 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4103 overrides {\"craterEquilibriumFraction\":0.004}",
@@ -1347,7 +1332,7 @@
       },
       "terrain.elevation": {
         "value": [-1987, 1922],
-        "note": "ellipsoid -1980..1920 m; run-time craters to 34 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/phobos/manifest.json (-1980..1920 m); run-time craters to 34 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4104 overrides {}",
@@ -1436,8 +1421,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-1594, 1691],
-        "note": "ellipsoid -1100..1600 m; procedural craters to 2.5 km (depth 0.196 D, rim 0.036 D); run-time craters to 38 m"
+        "value": [-1144, 1605],
+        "note": "the baked height range of data/tiles/deimos/manifest.json (-1135.88..1603.56 m); run-time craters to 38 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4105 overrides {}",
@@ -1513,12 +1498,11 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.8637, 0.5964, 0.2746],
+        "value": [0.8613, 0.5971, 0.2748],
         "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
-          "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac"
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
-        "note": "mean linear RGB of the global colour map planet-bake bakes from (Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif, 65488290 pixels, area-weighted; tools/bodies/mapcolour.py); luminance scaled to the geometric albedo 0.63"
+        "note": "chromaticity of planet-bake's baked level-0 albedo (colour map); luminance scaled to the geometric albedo 0.63"
       },
       "terrain.maxRenderLevel": {
         "value": 18,
@@ -1526,7 +1510,7 @@
       },
       "terrain.elevation": {
         "value": [-6886, 8112],
-        "note": "ellipsoid -5790..7910 m; run-time craters to 5588 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/io/manifest.json (-5790..7910 m); run-time craters to 5588 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4106 overrides {\"craterEquilibriumFraction\":0.000001}",
@@ -1602,8 +1586,11 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.67, 0.67, 0.67],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.67 (tools/bodies/lib/colour.mjs)"
+        "value": [0.768, 0.6546, 0.5342],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.1803, 1.0, 0.8166]); luminance scaled to the geometric albedo 0.67"
       },
       "terrain.maxRenderLevel": {
         "value": 18,
@@ -1611,7 +1598,7 @@
       },
       "terrain.elevation": {
         "value": [-2258, 1992],
-        "note": "ellipsoid -1300..1800 m; run-time craters to 4788 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/europa/manifest.json (-1300..1800 m); run-time craters to 4788 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4107 overrides {\"craterEquilibriumFraction\":0.0005}",
@@ -1687,12 +1674,11 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.4628, 0.4283, 0.3508],
+        "value": [0.46, 0.4288, 0.3541],
         "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
-          "sha256": "da47087e75bc530456d8206d5100ad3c687706353700b0cb44a8400957005a33"
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
-        "note": "mean linear RGB of the global colour map planet-bake bakes from (Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif, 63944323 pixels, area-weighted; tools/bodies/mapcolour.py); luminance scaled to the geometric albedo 0.43"
+        "note": "chromaticity of planet-bake's baked level-0 albedo (colour map (chroma mode with a mono map)); luminance scaled to the geometric albedo 0.43"
       },
       "terrain.maxRenderLevel": {
         "value": 19,
@@ -1700,7 +1686,7 @@
       },
       "terrain.elevation": {
         "value": [-1615, 323],
-        "note": "ellipsoid 0..0 m; run-time craters to 8072 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/ganymede/manifest.json (0..0 m); run-time craters to 8072 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4108 overrides {}",
@@ -1776,8 +1762,11 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.17, 0.17, 0.17],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.17 (tools/bodies/lib/colour.mjs)"
+        "value": [0.1929, 0.1665, 0.1376],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.1715, 1.0, 0.8241]); luminance scaled to the geometric albedo 0.17"
       },
       "terrain.maxRenderLevel": {
         "value": 19,
@@ -1785,7 +1774,7 @@
       },
       "terrain.elevation": {
         "value": [-1479, 296],
-        "note": "ellipsoid 0..0 m; run-time craters to 7395 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/callisto/manifest.json (0..0 m); run-time craters to 7395 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4109 overrides {}",
@@ -1862,15 +1851,18 @@
       },
       "render.meanColor": {
         "value": [0.6, 0.6, 0.6],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (no measured colour index exists for Mimas (Pace 1971 lists only bracketed values without a reference; Morrison & Cruikshank 1974: photographic magnitudes only): neutral grey; brightening of fresh crater interiors and ejecta)); luminance scaled to the geometric albedo 0.6"
       },
       "terrain.maxRenderLevel": {
         "value": 15,
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-23578, 12796],
-        "note": "ellipsoid -7600..9600 m; procedural craters to 79.3 km (depth 0.2 D, rim 0.04 D); run-time craters to 608 m"
+        "value": [-9748, 9883],
+        "note": "the baked height range of data/tiles/mimas/manifest.json (-9626.13..9858.36 m); run-time craters to 608 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4110 overrides {}",
@@ -1960,7 +1952,7 @@
       },
       "terrain.elevation": {
         "value": [-3955, 4531],
-        "note": "ellipsoid -3800..4500 m; run-time craters to 773 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/enceladus/manifest.json (-3800..4500 m); run-time craters to 773 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4111 overrides {}",
@@ -2050,7 +2042,7 @@
       },
       "terrain.elevation": {
         "value": [-5126, 7366],
-        "note": "ellipsoid -4800..7300 m; run-time craters to 1629 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/tethys/manifest.json (-4800..7300 m); run-time craters to 1629 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4112 overrides {}",
@@ -2140,7 +2132,7 @@
       },
       "terrain.elevation": {
         "value": [-2145, 2069],
-        "note": "ellipsoid -1800..2000 m; run-time craters to 1722 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/dione/manifest.json (-1800..2000 m); run-time craters to 1722 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4113 overrides {}",
@@ -2230,7 +2222,7 @@
       },
       "terrain.elevation": {
         "value": [-1569, 1594],
-        "note": "ellipsoid -1100..1500 m; run-time craters to 2342 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/rhea/manifest.json (-1100..1500 m); run-time craters to 2342 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4114 overrides {}",
@@ -2311,7 +2303,7 @@
         "note": "Huygens HASI (Fulchignoni et al. 2005, Nature 438, 785), PDS data set HP-SSA-HASI-2-3-4-MISSION-V1.1: descent profile (0-147 km) and entry profile (157-1,380 km; density = p M / (R T) with M = 28.557 g/mol, the descent file's own value over its top 10 km); rows averaged over windows of +-0.5 km below 150 km and +-5 km above"
       },
       "atmosphere.simTop": {
-        "value": 909456,
+        "value": 909719,
         "note": "altitude where the table density (log-linear) falls to 3.831e-9 kg/m^3, Earth's density at its simTop"
       },
       "atmosphere.gamma": {
@@ -2344,7 +2336,7 @@
         "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"N2\":0.95,\"CH4\":0.05}): K = 0.10977, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
       },
       "navballSwitchAltitude": {
-        "value": 389767,
+        "value": 389880,
         "note": "simTop x 60000/140000 (the Earth precedent)"
       },
       "render.meanColor": {
@@ -2362,7 +2354,7 @@
       },
       "terrain.elevation": {
         "value": [-1080, 548],
-        "note": "ellipsoid -290..390 m; run-time craters to 3950 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/titan/manifest.json (-290..390 m); run-time craters to 3950 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4115 overrides {\"craterEquilibriumFraction\":0.0005}",
@@ -2449,8 +2441,11 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.6, 0.6, 0.6],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+        "value": [0.6205, 0.5972, 0.5673],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.0463, 1.0, 0.9462]); luminance scaled to the geometric albedo 0.6"
       },
       "terrain.maxRenderLevel": {
         "value": 17,
@@ -2458,7 +2453,7 @@
       },
       "terrain.elevation": {
         "value": [-22651, 11491],
-        "note": "ellipsoid -22200..11400 m; run-time craters to 2253 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/iapetus/manifest.json (-22200..11400 m); run-time craters to 2253 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4116 overrides {}",
@@ -2534,16 +2529,19 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.27, 0.27, 0.27],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.27 (tools/bodies/lib/colour.mjs)"
+        "value": [0.2693, 0.2702, 0.2701],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.64, V-R 0.52 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)); luminance scaled to the geometric albedo 0.27"
       },
       "terrain.maxRenderLevel": {
         "value": 15,
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-21909, 8402],
-        "note": "ellipsoid -2900..4600 m; procedural craters to 94.3 km (depth 0.2 D, rim 0.04 D); run-time craters to 723 m"
+        "value": [-5591, 4848],
+        "note": "the baked height range of data/tiles/miranda/manifest.json (-5445.85..4819.03 m); run-time craters to 723 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4117 overrides {}",
@@ -2619,16 +2617,19 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.34, 0.34, 0.34],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.34 (tools/bodies/lib/colour.mjs)"
+        "value": [0.347, 0.3384, 0.3352],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.55 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)); luminance scaled to the geometric albedo 0.34"
       },
       "terrain.maxRenderLevel": {
         "value": 16,
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-47868, 11534],
-        "note": "ellipsoid -1200..2200 m; procedural craters to 231.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 1776 m"
+        "value": [-6169, 2838],
+        "note": "the baked height range of data/tiles/ariel/manifest.json (-5812.88..2766.19 m); run-time craters to 1776 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4118 overrides {}",
@@ -2704,16 +2705,19 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.18, 0.18, 0.18],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.18 (tools/bodies/lib/colour.mjs)"
+        "value": [0.1802, 0.18, 0.1792],
+        "source": {
+          "path": "data/staged/render/albedo-means.json (planet-bake)"
+        },
+        "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.54 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)); luminance scaled to the geometric albedo 0.18"
       },
       "terrain.maxRenderLevel": {
         "value": 16,
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-47135, 9427],
-        "note": "ellipsoid 0..0 m; procedural craters to 233.9 km (depth 0.2 D, rim 0.04 D); run-time craters to 1794 m"
+        "value": [-6075, 1181],
+        "note": "the baked height range of data/tiles/umbriel/manifest.json (-5716..1108.59 m); run-time craters to 1794 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4119 overrides {}",
@@ -2802,8 +2806,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-63597, 12720],
-        "note": "ellipsoid 0..0 m; procedural craters to 315.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 2420 m"
+        "value": [-7798, 1303],
+        "note": "the baked height range of data/tiles/titania/manifest.json (-7313.29..1205.78 m); run-time craters to 2420 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4120 overrides {}",
@@ -2892,8 +2896,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-61380, 12276],
-        "note": "ellipsoid 0..0 m; procedural craters to 304.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 2336 m"
+        "value": [-6534, 1114],
+        "note": "the baked height range of data/tiles/oberon/manifest.json (-6066.72..1019.84 m); run-time craters to 2336 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4121 overrides {}",
@@ -2983,7 +2987,7 @@
       },
       "terrain.elevation": {
         "value": [-830, 166],
-        "note": "ellipsoid 0..0 m; run-time craters to 4150 m; no DEM and no baked craters: the ellipsoid and the run-time craters only"
+        "note": "the baked height range of data/tiles/triton/manifest.json (0..0 m); run-time craters to 4150 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4122 overrides {\"craterEquilibriumFraction\":0.002}",
@@ -3077,13 +3081,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-32609, 33093],
-        "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016.tif",
-          "retrievedAt": "2026-11-12T09:37:58.310Z",
-          "sha256": "eea77b5388c72545a3212008e5329faf256f8be9a73b81c09c12dbd3894c13e5"
-        },
-        "note": "DEM sphere 470000 m (300 m); DEM -32767..32767 (x 1 + 0); run-time craters to 721 m"
+        "value": [-27791, 17382],
+        "note": "the baked height range of data/tiles/ceres/manifest.json (-27649.32..17355.49 m); run-time craters to 721 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4125 overrides {}",
@@ -3166,13 +3165,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-32950, 32804],
-        "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
-          "retrievedAt": "2026-11-12T09:37:58.881Z",
-          "sha256": "18e915283e74abeac14a1317a060814c05b19428c00c0f89f3fea2d32f08cf42"
-        },
-        "note": "DEM sphere 1188300 m (0 m); DEM -32767..32767 (x 1 + 0); run-time craters to 911 m"
+        "value": [-4284, 6534],
+        "note": "the baked height range of data/tiles/pluto/manifest.json (-4100.79..6496.65 m); run-time craters to 911 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4123 overrides {}",
@@ -3259,13 +3253,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-32953, 32805],
-        "source": {
-          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
-          "retrievedAt": "2026-11-12T09:37:58.560Z",
-          "sha256": "7802f313846f4e950d287d9090d66454e1706d10a790f25ad07bb235a9428e31"
-        },
-        "note": "DEM sphere 606000 m (0 m); DEM -32767..32767 (x 1 + 0); run-time craters to 930 m"
+        "value": [-14317, 6945],
+        "note": "the baked height range of data/tiles/charon/manifest.json (-14130.8..6907.54 m); run-time craters to 930 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4124 overrides {}",

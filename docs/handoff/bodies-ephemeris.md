@@ -15,9 +15,8 @@ tolerance table and a committed held-out truth sample. This package wrote nothin
 - **Earth** reproduces the v1 Sun direction exactly. **The Moon's file** is byte-identical to `data/defs`.
 - An independent review rebuilt the orbits and confirmed the residuals, frames, exceptions, GMs, radii, poles
   and atmospheres. Its majors and minors are all addressed in section 8.
-- **Open:**
-  - request -1 (sim-core-v2): the loader must skip `radii.json`;
-  - request -5 (planet-bake): mean colours, Iapetus' disc mean, crater depths.
+- **Open:** request -1 (sim-core-v2): the loader must skip `radii.json`. Request -5 is resolved by planet-bake
+  (5b5075f) and applied: mean colours from its baked level-0 albedo, terrain bounds from its manifests.
 
 ## 1. What there is
 
@@ -285,16 +284,22 @@ that drifts from reality, Mimas within a decade and Tethys after about 2063.
   - Charon: NSSDC 0.42.
   - **Pluto: NSSDC 0.52**, not JPL's dwarf-planet table value of 0.3, which predates New Horizons and drew
     Pluto darker than Charon.
-  - **Iapetus' 0.6 is its bright hemisphere** (NSSDC: 0.05 / 0.5). Its disc mean is asked of planet-bake in
-    request -5.
+  - **Iapetus' 0.6 is its bright hemisphere** (NSSDC: 0.05 / 0.5). It stays the JPL value; planet-bake's
+    baked level-0 luminance is its own gain-capped calibration and is not used for albedo.
 
 ### Mean colour
 
-- From B-V (V-Rc for the planets) against the Sun's (Ramirez 2012).
-- **Io and Ganymede** from their global colour maps: the area-weighted mean linear RGB of planet-bake's
-  source maps.
-- **Europa, Callisto, Iapetus, Mimas, Miranda, Ariel and Umbriel have no colour map** (monochrome or none):
-  neutral until planet-bake reports its baked level-0 mean (request -5).
+- From B-V (V-Rc for the planets) against the Sun's (Ramirez 2012), for the planets and for Phobos, Deimos,
+  Enceladus, Tethys, Dione, Rhea, Titan, Titania, Oberon, Triton, Ceres, Pluto and Charon.
+- **Io, Ganymede, Europa, Callisto, Iapetus, Mimas, Miranda, Ariel and Umbriel**: the CHROMATICITY of
+  planet-bake's baked level-0 albedo (`data/staged/render/albedo-means.json`, its tracked output; request
+  -5). Its luminance (the bake's gain-capped calibration) is not used: the colour is scaled to the body's
+  geometric albedo from the fact sheets.
+  - Io and Ganymede: their global colour maps.
+  - Europa, Callisto, Iapetus: Harris 1961.
+  - Miranda, Ariel, Umbriel: Karkoschka 2001.
+  - **Mimas alone stays neutral grey**: no measured colour index exists for it (planet-bake's config says why:
+    Pace 1971 lists only bracketed values without a reference).
 
 ### Atmospheres
 
@@ -320,20 +325,14 @@ that drifts from reality, Mimas within a decade and Tethys after about 2063.
   bodies (request -3, resolved by the lead).
 - **`surfaceFriction`** 0.7.
 
-**Elevation bounds, basis per body.** Once planet-bake bakes a body, the bounds come from its manifest's
-`layers.height.elevation` plus the run-time craters (the code path is in place). Until then they enclose what
-the bake can produce:
+**Elevation bounds: from the bake.** All 25 bodies are now baked. Each body's bounds are its manifest's
+`layers.height.elevation` (the range of the finest level's samples above the mean radius) widened by the
+run-time crater classes below the data level. Examples: Titania -7,798 / +1,303 m, Mimas -9,748 / +9,883,
+Mars -18,863 / +26,205, Phobos -1,987 / +1,922.
 
-| Bodies | Basis |
-|---|---|
-| Mars, Venus | Reference surface + the published DEM range |
-| Mercury, Ceres, Pluto, Charon | Reference surface + the DEM's int16 storage range (no published range; loose) |
-| Deimos, Mimas, Miranda, Ariel, Umbriel, Titania, Oberon | Ellipsoid + planet-bake's procedural craters to 0.4 R |
-| Phobos, Io, Europa, Ganymede, Callisto, Enceladus, Tethys, Dione, Rhea, Titan, Iapetus, Triton | The ellipsoid and the **run-time craters only** (no DEM, no baked craters) |
-
-The crater bound uses the depth-to-diameter ratio the generic models apply at every size. Titania
--63.6 km, Oberon -61.4, Ariel -47.9 and Umbriel -47.1 are what the bake would produce: correct as bounds of
-the bake, unphysical as relief. Request -5 asks planet-bake about complex-crater depths.
+planet-bake's large procedural craters now follow a complex-crater depth law (request -5). Without a manifest,
+the generator would fall back to bounding what the bake can produce from its inputs: the reference surface,
+the published or int16 DEM range, and the procedural craters (see `provenance.json`).
 
 ## 6. Deviations and limits
 
@@ -342,7 +341,7 @@ the bake, unphysical as relief. Request -5 asks planet-bake about complex-crater
 2. **Clock and velocity** follow the lead's decisions (section 2). Leap seconds after 2017 are not followed.
 3. **Earth's `soiRadius` is a number.** `warpAltitudeLimits` is absent on the new bodies.
 4. **The contract's fixed poles and the absence of periodic terms** (section 3, limits).
-5. **Seven neutral colours, Iapetus' albedo, the crater depths:** request -5.
+5. **Mimas' mean colour is neutral** (no measured index). **Iapetus' albedo is its bright side** (JPL).
 6. **Radiative heating:** a seam.
 7. **Staleness.** The generator reads the live Earth, Moon and Sun files, planet-bake's configs, parameter
    files and manifests, and (in `fetch-sources.mjs`) its cached colour maps. A change there shows up in
@@ -356,7 +355,7 @@ the bake, unphysical as relief. Request -5 asks planet-bake about complex-crater
 | -2 | planet-bake | resolved |
 | -3 | lead | resolved (`BodyTerrainDef.residentLevel`, commit 00e908b); implemented here |
 | -4 | lead | resolved by decision and implemented (fitted orbits, tolerance table) |
-| -5 | planet-bake | open: level-0 mean colours of seven bodies; Iapetus' disc mean; depth of the large procedural craters |
+| -5 | planet-bake | resolved (5b5075f): baked level-0 mean colours with their colour basis; complex-crater depths; applied here (chromaticity, manifest-based bounds) |
 
 ## 8. Review (independent rebuild): findings and what was done
 
@@ -382,4 +381,7 @@ the bake, unphysical as relief. Request -5 asks planet-bake about complex-crater
 - Lead decision on -4. Fitted orbits and the tolerance table (fad4aec).
 - Independent review, 12 findings. Clock offset, exact velocity, synchronous rotations, explicit planes for
   Triton and Charon, `residentLevel`, Pluto albedo, Titan rows, approvals and slack, held-out truth,
-  outside-window table (bb78061). Request -5 extended (5bb239c). This hand-off.
+  outside-window table (bb78061). Request -5 extended (5bb239c).
+- Request -5 resolved by planet-bake (5b5075f): the colours take the chromaticity of its baked level-0 albedo
+  (only Mimas neutral), and the terrain bounds its manifests' height range. `mapcolour.py` removed (its source
+  maps are deleted after the bake).

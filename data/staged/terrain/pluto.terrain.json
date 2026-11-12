@@ -1,7 +1,7 @@
 {
   "tileset": "pluto",
-  "maxElevation": 32804,
-  "minElevation": -32950,
+  "maxElevation": 6534,
+  "minElevation": -4284,
   "maxRenderLevel": 18,
   "residentLevel": 3,
   "modifiers": [],

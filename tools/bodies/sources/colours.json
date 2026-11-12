@@ -215,71 +215,118 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.35947,
-        0.24823,
-        0.1143
+        0.45202,
+        0.31336,
+        0.14419
       ],
       "source": {
-        "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
-        "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac"
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
       },
-      "note": "mean linear RGB of the global colour map planet-bake bakes from (Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif, 65488290 pixels, area-weighted; tools/bodies/mapcolour.py)"
+      "note": "chromaticity of planet-bake's baked level-0 albedo (colour map)"
     },
     "ganymede": {
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.1933,
-        0.17889,
-        0.14652
+        0.30593,
+        0.28517,
+        0.23549
       ],
       "source": {
-        "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
-        "sha256": "da47087e75bc530456d8206d5100ad3c687706353700b0cb44a8400957005a33"
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
       },
-      "note": "mean linear RGB of the global colour map planet-bake bakes from (Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif, 63944323 pixels, area-weighted; tools/bodies/mapcolour.py)"
+      "note": "chromaticity of planet-bake's baked level-0 albedo (colour map (chroma mode with a mono map))"
     },
     "europa": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.55963,
+        0.477,
+        0.38931
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.1803, 1.0, 0.8166])"
     },
     "callisto": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.17286,
+        0.14922,
+        0.12333
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.1715, 1.0, 0.8241])"
     },
     "mimas": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.62897,
+        0.62897,
+        0.62897
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (no measured colour index exists for Mimas (Pace 1971 lists only bracketed values without a reference; Morrison & Cruikshank 1974: photographic magnitudes only): neutral grey; brightening of fresh crater interiors and ejecta))"
     },
     "iapetus": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.32012,
+        0.30811,
+        0.29266
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (MONOCHROME map x the config's tint [1.0463, 1.0, 0.9462])"
     },
     "miranda": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.33642,
+        0.33751,
+        0.33737
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.64, V-R 0.52 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta))"
     },
     "ariel": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.41836,
+        0.40798,
+        0.40416
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.55 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta))"
     },
     "umbriel": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.22174,
+        0.22159,
+        0.22061
+      ],
+      "source": {
+        "path": "data/staged/render/albedo-means.json (planet-bake)"
+      },
+      "note": "chromaticity of planet-bake's baked level-0 albedo (procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.54 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta))"
     }
   }
 }

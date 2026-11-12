@@ -1,7 +1,7 @@
 {
   "tileset": "mercury",
-  "maxElevation": 16451,
-  "minElevation": -16751,
+  "maxElevation": 4567,
+  "minElevation": -5749,
   "maxRenderLevel": 19,
   "residentLevel": 3,
   "modifiers": [],

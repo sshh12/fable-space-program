@@ -304,7 +304,7 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
     amplification,
   };
   prov('terrain.maxRenderLevel', level, null, `round(log2(R pi/2 / ${DEEPEST_TILE_EDGE_M} m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent`);
-  prov('terrain.elevation', [def.minElevation, def.maxElevation], h.dem ? relief[id].source : null, parts.join('; '));
+  prov('terrain.elevation', [def.minElevation, def.maxElevation], !baked && h.dem ? relief[id].source : null, parts.join('; '));
   prov('terrain.amplification', `${a.model} seed ${a.seed} overrides ${JSON.stringify(a.params)}`, null, `planet-bake: tools/bake/planet/bodies/${id}.json over data/defs/terrain/${a.model}.amplification.json`);
   prov('terrain.residentLevel', def.residentLevel, null, `min(${RESIDENT_LEVEL}, the pyramid's depth ${h.maxLevel}): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)`);
   prov('terrain.surfaceFriction', friction, null, "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces");
