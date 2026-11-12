@@ -17,6 +17,11 @@
  *   'wall'    the wall clock; expiry only
  * Rule documents state durations in SECONDS whatever their base; the engine converts a 'ticks' duration with
  * TICKS_PER_SECOND.
+ *
+ * JSON. Every type of this file travels as JSON (the rules document, the public census, the stores of a
+ * test). JSON has no Infinity and no NaN (JSON.stringify writes both as null), so NO FIELD HERE IS EVER
+ * INFINITE OR NaN: "no such tick" is `null`, stated on the field (`ClockState.untilTick`,
+ * `CensusEntry.horizonTick`, `.limitTick`). A value read back from JSON is then the value that was written.
  */
 import type { ConicElements } from '../math/conic';
 import type { BodyId, SiteId, VehicleId } from './defs';
@@ -183,6 +188,12 @@ export interface UniverseRules {
     maxFragmentsPerCollision: number;
     fragmentMassLimit: number;
     fragmentLifetime: number;
+    /**
+     * Crash tolerance of a part that states none and has no contact points to take one from: normal closing
+     * speed above which a vessel-to-vessel contact destroys it. Default 6 m/s (the value of the stack's
+     * structural contact points).
+     */
+    defaultCrashTolerance: number;
   };
 
   /** Docking, assemblies and the helm (ARCHITECTURE 7.2, 7.5). Port geometry and envelopes are part data. */
@@ -282,6 +293,19 @@ export interface UniverseRules {
     /** `Time` messages per account inside `timeMessageWindow`. Defaults 6 per 10 s. */
     timeMessages: number;
     timeMessageWindow: number;
+    /**
+     * `Subscribe` messages accepted per second per socket ("subscription churn"); the rest is dropped.
+     * ARCHITECTURE 26 names this bound without a number: the default, 5, is THE LEAD'S CHOICE (the map changes
+     * its subscription when it opens, on a focus change and on a zoom across a tier, never more than a few
+     * times a second), to be confirmed by the load test.
+     */
+    subscriptionsPerSecond: number;
+    /**
+     * Accounts one IP address may create per hour (`X-Real-IP` from the edge). ARCHITECTURE 26 names this bound
+     * without a number: the default, 10, is THE LEAD'S CHOICE (a household or a small office behind one
+     * address; bulk provisioning for load tests uses the operator token and is not subject to it).
+     */
+    accountsPerAddressPerHour: number;
   };
 
   /** Where planning work runs (ARCHITECTURE 6.3). */
@@ -370,6 +394,7 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     maxFragmentsPerCollision: 12,
     fragmentMassLimit: 50,
     fragmentLifetime: 60,
+    defaultCrashTolerance: 6,
   },
   docking: {
     hardDockOffset: 0.003,
@@ -428,6 +453,8 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     commandsPerSecond: 20,
     timeMessages: 6,
     timeMessageWindow: 10,
+    subscriptionsPerSecond: 5,
+    accountsPerAddressPerHour: 10,
   },
   planning: {
     workerMaxEstimateMs: 50,
@@ -572,8 +599,8 @@ export interface ClockState {
   tick0: number;
   anchorUpMs: number;
   rate: number;
-  /** The tick the clock stops at (the earliest event, cap or limit), and what sets it. Infinity when nothing does. */
-  untilTick: number;
+  /** The tick the clock stops at (the earliest event, cap or limit), and what sets it; null when nothing does (never Infinity: see "JSON" in the file header). */
+  untilTick: number | null;
   limitedBy: TimeLimit | null;
   members: ClockMember[];
   proposals: TimeProposal[];
@@ -656,17 +683,17 @@ export interface CensusEntry {
   patches: CensusPatch[];
   /** At rest on a body: planetocentric latitude, east longitude (rad) and altitude above the reference radius (m). */
   landed: { bodyId: BodyId; latitude: number; longitude: number; altitude: number } | null;
-  /** Head tick, and the horizon (tick of the next atmosphere entry or impact; Infinity when none). */
+  /** Head tick, and the horizon (tick of the next atmosphere entry or impact); null when there is none: a closed orbit clear of every surface and atmosphere, or at rest. */
   headTick: number;
-  horizonTick: number;
+  horizonTick: number | null;
   /** End of the computed forecast chain; past it the vessel is "not computed this far ahead". */
   chainEndTick: number;
   /** Clock the vessel is on when attended; null when passive. */
   clockId: string | null;
   /** Clock whose island holds the reservation (U4), null when unreserved. */
   reservedBy: string | null;
-  /** Latest tick a visitor may take it to (`liveTick + advanceLimit`); Infinity for unowned objects. */
-  limitTick: number;
+  /** Latest tick a visitor may take it to (`liveTick + advanceLimit`); null = no limit (unowned objects: unowned ships, debris). */
+  limitTick: number | null;
   /** Bounding radius about the centre of mass, m. */
   radius: number;
   /** Wall time (ms since the Unix epoch) at which it is removed, and why it is kept until then; null = not expiring. */

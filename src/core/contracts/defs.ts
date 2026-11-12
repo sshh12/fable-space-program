@@ -688,7 +688,7 @@ export interface PartDef {
   collision?: CollisionShapeDef[];
   /** v2: propellant may flow through this part between its neighbours. Absent = true; false on decouplers and docking ports. */
   crossfeed?: boolean;
-  /** v2: normal closing speed (m/s) above which a vessel-to-vessel contact destroys the part. Absent = the lowest `crashTolerance` of its contact points, else 6. */
+  /** v2: normal closing speed (m/s) above which a vessel-to-vessel contact destroys the part. Absent = the lowest `crashTolerance` of its contact points; a part with neither takes the rules' `contact.defaultCrashTolerance`. */
   crashTolerance?: number;
   /** Tanks. v2: `transferable` (absent = true) is false for resources that cannot be pumped (ablator, solid propellant). */
   resources?: { resource: ResourceId; capacity: number; tankBottomY: number; tankHeight: number; transferable?: boolean }[];

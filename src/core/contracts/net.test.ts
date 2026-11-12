@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PHYSICS_DT, RAILS_WARP_LEVEL_COUNT, WARP_LEVELS, MAX_PHYSICS_WARP_INDEX } from './defs';
-import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, UNIVERSE_RULE_TIMERS, type UniverseRules } from './net';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, UNIVERSE_RULE_TIMERS, type CensusEntry, type ClockState, type UniverseRules } from './net';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 const DAY = 86400;
 const YEAR = 365.25 * DAY;
@@ -68,6 +73,9 @@ describe('UniverseRules: the default document', () => {
     expect([r.expiry.pressureStart, r.expiry.pressureFloorSingleSession, r.expiry.pressureFloor, r.expiry.sweepInterval, r.expiry.outageExtensionThreshold]).toEqual([0.7, 24 * 3600, 72 * 3600, 60, 3600]);
     // 26
     expect([r.limits.inputsPerSecond, r.limits.commandsPerSecond, r.limits.timeMessages, r.limits.timeMessageWindow]).toEqual([60, 20, 6, 10]);
+    // The two bounds section 26 names without a number: the lead's choice.
+    expect([r.limits.subscriptionsPerSecond, r.limits.accountsPerAddressPerHour]).toEqual([5, 10]);
+    expect(r.contact.defaultCrashTolerance).toBe(6);
     expect(r.planning).toEqual({ workerMaxEstimateMs: 50, weakClientCpuScore: null });
   });
 
@@ -91,5 +99,32 @@ describe('UniverseRules: the default document', () => {
       const ticks = (at(DEFAULT_UNIVERSE_RULES, key) as number) * TICKS_PER_SECOND;
       expect(Math.abs(ticks - Math.round(ticks)), key).toBeLessThan(1e-9);
     }
+  });
+});
+
+describe('the types of net.ts are JSON: what is written is what is read', () => {
+  it('"no such tick" is null, never Infinity, so a clock and a census entry survive the wire', () => {
+    const clock: ClockState = { id: 'c1', kind: 'private', tick0: 112_588_898_260, anchorUpMs: 5_000, rate: 1000, untilTick: null, limitedBy: null, members: [], proposals: [] };
+    const entry: CensusEntry = {
+      vesselId: 'v1', craftIds: ['v1'], kind: 'debris', name: 'stage', vehicleId: 'meridian-lunar', ownerIds: [null], ownerCallsigns: [null], bodyId: 'earth', patches: [], landed: null,
+      headTick: 112_588_898_260, horizonTick: null, chainEndTick: 112_589_000_000, clockId: null, reservedBy: null, limitTick: null, radius: 4, expiresWallMs: null, thrusting: false, revision: 3,
+    };
+    expect(JSON.parse(JSON.stringify(clock))).toEqual(clock);
+    expect(JSON.parse(JSON.stringify(entry))).toEqual(entry);
+    // What the old encoding did: Infinity does not survive.
+    expect(JSON.parse(JSON.stringify({ untilTick: Infinity }))).toEqual({ untilTick: null });
+    // A tick is exact in a float64 and in JSON far beyond the lead cap (250 years of ticks from 2030).
+    const far = (1_000_000_000 + 250 * 365.25 * 86400) * TICKS_PER_SECOND;
+    expect(Number.isSafeInteger(far)).toBe(true);
+    expect(JSON.parse(JSON.stringify({ t: far })).t).toBe(far);
+  });
+
+  it('data/defs/rules/default.json, once MIGRATION_V2 step 3.6 has written it, IS the default document', () => {
+    const file = path.join(repoRoot, 'data', 'defs', 'rules', 'default.json');
+    if (!fs.existsSync(file)) {
+      console.log('[rules] data/defs/rules/default.json is not written yet (step 3.6): the equality is checked from then on');
+      return;
+    }
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)));
   });
 });

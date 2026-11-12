@@ -55,7 +55,8 @@ export type MarkerKind =
  *
  * Not yet members of `MarkerKind`: the map keeps a table with one entry per kind (src/map/scene.ts), so the
  * lead joins this type to `MarkerKind` at the start of sub-wave 3.2, when the map's owner adds the entry.
- * A producer may already emit it typed as `MarkerKind | MarkerKindV2`.
+ * Until then no `Marker` carries it: `Marker.kind` is `MarkerKind`, so a producer cannot emit one, and
+ * the fields `otherVesselId` ... `onForecast` of `Marker` stay unset.
  */
 export type MarkerKindV2 = 'targetApproach';
 

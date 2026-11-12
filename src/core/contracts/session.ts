@@ -158,6 +158,11 @@ export interface LaunchWindow {
 }
 
 /**
+ * Every call of the service is keyed by the revisions of what it depends on (ARCHITECTURE 6.3): the vessel's
+ * and the target's in `PlanningKey`, and for the two calls that take no vessel the target's revision as an
+ * argument (`CensusEntry.revision`; 0 for a body, whose ephemeris never changes). The same arguments always
+ * give the same answer, which is what lets a provider cache and the API endpoint share results.
+ *
  * Planning as a service with three providers (ARCHITECTURE 6.3): in process (`LocalSession`, tests, bots), a
  * planning worker in the browser, and the API endpoint, all running the same pure functions of
  * src/sim/orbit and src/sim/nav. Every call is asynchronous and keyed by vessel and target revision, so the
@@ -171,10 +176,10 @@ export interface PlanningService {
   closestApproaches(key: PlanningKey, opts?: { count?: number; horizon?: number }): Promise<ClosestApproach[]>;
   /** Relative motion about the target over `duration` seconds from `fromUt` in `samples` steps. */
   proximityPlot(key: PlanningKey, fromUt: number, duration: number, samples: number): Promise<ProximityPlot>;
-  /** Launch opportunities from a pad toward the target between two times. */
-  launchWindows(site: SiteId, pad: string, target: TargetRef, fromUt: number, toUt: number): Promise<LaunchWindow[]>;
+  /** Launch opportunities from a pad toward the target (at its `targetRevision`) between two times. */
+  launchWindows(site: SiteId, pad: string, target: TargetRef, targetRevision: number, fromUt: number, toUt: number): Promise<LaunchWindow[]>;
   /** Markers (apsides, nodes against the target's plane, SOI events) of one conic, for a vessel that is not the active one. */
-  describeConic(bodyId: BodyId, conic: ConicElements, fromUt: number, toUt: number, target: TargetRef | null): Promise<Marker[]>;
+  describeConic(bodyId: BodyId, conic: ConicElements, fromUt: number, toUt: number, target: TargetRef | null, targetRevision: number): Promise<Marker[]>;
 }
 
 // ----------------------------------------------------------------------------------------------- session

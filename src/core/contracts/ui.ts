@@ -1,7 +1,7 @@
 /**
  * Player-facing interface contracts: HUD, navball, cockpit displays and the map view.
  */
-import type { AudioBusName } from './audio';
+import type { AudioBusName, AudioBusNameV2 } from './audio';
 import type { PlayerCommands, PointerState } from './controls';
 import type { DefLibrary } from './defs';
 import type { CensusEntry, CensusKind } from './net';
@@ -150,8 +150,8 @@ export interface SettingsModel {
   };
   audio: {
     master: number;
-    /** Volume per bus, 0..1 (a bus that is not listed is at 1). */
-    buses: Partial<Record<AudioBusName, number>>;
+    /** Volume per bus, 0..1 (a bus that is not listed is at 1): the buses of today and the v2 buses (music, comms). */
+    buses: Partial<Record<AudioBusName | AudioBusNameV2, number>>;
   };
   controls: {
     /**
