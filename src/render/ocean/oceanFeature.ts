@@ -753,7 +753,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const rip = OceanVessels.rippleConstants(t);
       const cm = coxMunkVariance(t.windSpeed);
       const fftVar = body.cascades.spectra.reduce((s, c) => s + c.slopeVariance, 0) + body.cascades.long.slopeVariance;
-      const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
+      // (1.5 m: the rebound of an impact, half a hull radius of up to 3 m.)
+      const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + 1.5;
       // Water within fadeStart of the camera (the nearest water point is the nadir, at most waveBound above sea level).
       const near = camAboveSea - waveBound < t.fadeStart;
       // The wave detail fades out with the camera's height: from detailAltitudeEnd no pixel resolves more of the sea
@@ -839,6 +840,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         vessels: vf.zones,
         ripples: vf.ripples,
         ripple: rip,
+        rippleAmplitude: t.rippleAmplitude,
+        splashFoamTime: t.splashFoamTime,
+        splashFoamSpread: t.splashFoamSpread,
         wake: vf.wake,
         seaLevel: t.seaRadius - t.radius,
         waveBound,

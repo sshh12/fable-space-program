@@ -83,9 +83,17 @@ export interface OceanTunables {
   vesselDampingHullRadii: number;
   wakeExtent: number;
   wakeFoamPerSplash: number;
+  /**
+   * The water's answer to a vessel entering it (request vfx-9): ring waves of rippleWavelength (m) leave the hull's
+   * radius R0, rippleAmplitude x R0 x strength high there (the parameter is that FRACTION of the radius; strength =
+   * entry speed / 6 m/s, at most 1), for rippleLifetime (s); a foam patch spreads to (1.2 + splashFoamSpread) R0
+   * and is gone after splashFoamTime (s).
+   */
   rippleWavelength: number;
   rippleAmplitude: number;
   rippleLifetime: number;
+  splashFoamTime: number;
+  splashFoamSpread: number;
   wetLineDryingRate: number;
   /** Compression of the first capillary detail layer (the second uses its square). */
   capillaryScale: number;
@@ -193,6 +201,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     rippleWavelength: need(file, p, 'rippleWavelengthM', positive),
     rippleAmplitude: need(file, p, 'rippleAmplitudeM', (v) => v >= 0),
     rippleLifetime: need(file, p, 'rippleLifetimeS', positive),
+    splashFoamTime: need(file, p, 'splashFoamTimeS', positive),
+    splashFoamSpread: need(file, p, 'splashFoamSpread', (v) => v >= 0),
     wetLineDryingRate: need(file, p, 'wetLineDryingRateMps', positive),
     capillaryScale: need(file, p, 'capillaryScale', (v) => v > 1),
     unresolvedFloor: need(file, p, 'unresolvedSlopeVariance', (v) => v >= 0),

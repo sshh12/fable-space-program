@@ -785,6 +785,21 @@ struct FsOut {
     breaker = max(breaker, 0.6 * smoothstep(0.75, 0.98, w));
     density = 1.0 - (1.0 - density) * (1.0 - 0.85 * w);
   }
+  // The foam of an impact (request vfx-9): full inside 1.2 hull radii at once, spreading to (1.2 + spread) radii
+  // with a time constant of 2.5 s and creeping on, thinning towards its rim (where the lace tears it) and with
+  // age, fresh and thick for the first seconds; rides the surface and is lit like every other foam.
+  for (var i = 0u; i < min(oceanU.counts.z, OCEAN_MAX_RIPPLES) && foamOn; i++) {
+    let r = oceanU.ripples[i];
+    let life = oceanU.foam.w;
+    if (r.z <= 0.0 || r.z >= life) { continue; }
+    let im = oceanImpact(r.w);
+    let reach = im.x * (1.2 + oceanU.surf.w * (1.0 - exp(-r.z / 2.5)) + 0.04 * r.z);
+    let d = distance(in.planeF, r.xy) / reach;
+    if (d >= 1.0) { continue; }
+    let aged = 1.0 - smoothstep(0.35 * life, life, r.z);
+    breaker = max(breaker, im.y * (1.0 - smoothstep(0.45, 0.9, d)) * (1.0 - smoothstep(1.0, 3.5, r.z)) * detail);
+    density = 1.0 - (1.0 - density) * (1.0 - 0.92 * im.y * (1.0 - smoothstep(0.5, 1.0, d)) * aged * detail);
+  }
   // The lap at a hull: where the water lies thin over something that floats in it (the eye ray meets the hull
   // within decimetres of the surface), the water works against it and froths: a ragged white ring at the waterline.
   if (objectPix && detail > 0.0 && foamOn) {

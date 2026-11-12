@@ -78,6 +78,10 @@ export interface OceanFrameData {
   vessels: readonly OceanVesselZone[];
   ripples: readonly OceanRippleSource[];
   ripple: { k: number; lifetime: number; groupSpeed: number; omega: number };
+  /** Ring-wave height at the hull's radius as a fraction of that radius; lifetime (s) and spread (hull radii) of an impact's foam. */
+  rippleAmplitude: number;
+  splashFoamTime: number;
+  splashFoamSpread: number;
   wake: { x: number; y: number; extent: number; valid: boolean };
   seaLevel: number;
   waveBound: number;
@@ -173,8 +177,8 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   const [c0, c1] = d.long.copies;
   v4(Math.cos(c0!.angle), Math.sin(c0!.angle), Math.cos(c1!.angle), Math.sin(c1!.angle));
   v4(c0!.origin[0], c0!.origin[1], c1!.origin[0], c1!.origin[1]);
-  v4(d.foamResidualDensity, d.foamLaceAlbedo, 0, 0);
-  v4(d.surf.breakDepth, d.surf.phasePerSqrtDepth, d.surf.boresPerPeriod, 0);
+  v4(d.foamResidualDensity, d.foamLaceAlbedo, d.rippleAmplitude, d.splashFoamTime);
+  v4(d.surf.breakDepth, d.surf.phasePerSqrtDepth, d.surf.boresPerPeriod, d.splashFoamSpread);
   for (let l = 0; l < FOAM_LEVELS; l++) {
     const lv = d.foamLevels[l];
     if (lv) v4(lv.x, lv.y, lv.texel, lv.valid ? 1 : 0);

@@ -175,14 +175,17 @@ export class OceanVessels {
         const xy = chartCoords(chart, v3.normalize(quat.rotateInv(bodyPose.qFixedToRoot, v3.sub(v.rRoot, s.bodies.find((b) => b.id === bodyId)!.rRoot))));
         if (!xy) continue;
         const speed = e.speed;
-        this.ripples.push({ x: xy.x, y: xy.y, ut0: e.ut, amplitude: t.rippleAmplitude * Math.min(1.5, Math.max(0.3, speed / 9)) });
+        // What the shaders need of an impact, in one number: the hull's radius R0 to the centimetre, and above it
+        // (in the third and fourth decimal) the strength of the impact, entry speed / 6 m/s up to 1 (request vfx-9).
+        const r0 = Math.round(Math.max(v.boundingRadius, 0.5) * 100) / 100;
+        this.ripples.push({ x: xy.x, y: xy.y, ut0: e.ut, amplitude: r0 + 0.0099 * Math.min(1, Math.max(0, speed / 6)) });
         const w = this.wet.get(v.id) ?? { maxLevel: -Infinity, lastSplashUt: e.ut };
         w.lastSplashUt = e.ut;
         w.maxLevel = Math.max(w.maxLevel, v.boundingRadius);
         this.wet.set(v.id, w);
       }
     }
-    this.ripples = this.ripples.filter((r) => s.ut - r.ut0 < t.rippleLifetime && s.ut >= r.ut0).slice(-MAX_RIPPLES);
+    this.ripples = this.ripples.filter((r) => s.ut - r.ut0 < Math.max(t.rippleLifetime, t.splashFoamTime) && s.ut >= r.ut0).slice(-MAX_RIPPLES);
 
     // Wetness slots (camera-relative, ROOT axes).
     const wf = new Float32Array(this.wetData);

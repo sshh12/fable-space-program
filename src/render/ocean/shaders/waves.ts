@@ -62,7 +62,7 @@ struct OceanUniforms {
   swellAmpPhase: array<vec4f, ${MAX_SWELL}>, // x = amplitude, y = phase at the reference point now, z = d . cHat, w = phase one frame earlier
   cascades: array<OceanCascade, ${CASCADE_COUNT}>,
   vessels: array<OceanVessel, ${MAX_VESSELS}>,
-  ripples: array<vec4f, ${MAX_RIPPLES}>,     // xy = plane offset from the reference point, z = age now (s), w = amplitude (m)
+  ripples: array<vec4f, ${MAX_RIPPLES}>,     // impacts: xy = plane offset from the reference point, z = age now (s), w = hull radius R0 (m, to the centimetre) + 0.0099 x strength (0..1)
   rippleParams: vec4f,  // x = wavenumber k, y = lifetime (s), z = group speed (m/s), w = omega (rad/s)
   misc: vec4f,          // x = sea level above the reference radius (m), y = wave height bound (m), z = FFT chop scale (1; a debug hook), w = largest TAA reactive value
   // Capillary detail layers: the finest cascade compressed by 'scale' and rotated, slopes x 'amplitude'.
@@ -73,8 +73,8 @@ struct OceanUniforms {
   long: OceanCascade,        // geom = (L, 1 / L, 0, 0), filt0 / filt1, stats = (slope variance, height RMS, band mean omega, 0)
   longRot: vec4f,            // xy = (cos, sin) of copy 0's rotation, zw = copy 1's
   longOrigin: vec4f,         // xy / zw = texture coordinates of the reference point for copy 0 / 1, modulo 1
-  foam: vec4f,               // x = share of the residual foam's density that shows, y = albedo of the thinnest lace relative to fresh foam, zw = 0
-  surf: vec4f,               // x = depth where the swell breaks (m), y = bore phase per sqrt(m) of depth, z = bores per repeat period, w = 0
+  foam: vec4f,               // x = share of the residual foam's density that shows, y = albedo of the thinnest lace relative to fresh foam, z = ring-wave height at a hull's radius / that radius, w = lifetime of an impact's foam (s)
+  surf: vec4f,               // x = depth where the swell breaks (m), y = bore phase per sqrt(m) of depth, z = bores per repeat period, w = spread of an impact's foam (hull radii)
   // Foam map levels (foamMap.ts): xy = plane offset of the centre of texel (0, 0) from the reference point (m),
   // z = texel (m), w = 1 when the level holds foam this frame.
   foamLevel: array<vec4f, ${FOAM_LEVELS}>,
@@ -170,7 +170,20 @@ fn oceanDamping(c: u32, p: vec2f) -> f32 {
   return m;
 }
 
-/// Radial splash ripples: height and plane-space gradient at plane offset p. prev = one frame earlier.
+/// Hull radius R0 (x) and strength 0..1 (y) of an impact from the w of its entry in oceanU.ripples.
+fn oceanImpact(w: f32) -> vec2f {
+  let c = w * 100.0;
+  let r0 = floor(c + 0.004);
+  return vec2f(r0 * 0.01, clamp((c - r0) / 0.99, 0.0, 1.0));
+}
+
+/// The water's answer to a vessel entering it (request vfx-9), around each impact still alive: height and
+/// plane-space gradient at plane offset p. prev = one frame earlier.
+///  - Ring waves: a train of three to four crests that leaves the hull's radius R0 (the first crest stands there
+///    after 0.3 s) and runs out at 0.8 of the waves' phase speed, 'foam.z' x R0 x strength high at R0, falling as
+///    sqrt(R0 / r) and e^(-t / 6 s), gone by rippleParams.y.
+///  - At the centre the cavity (0.3 R0 x strength deep for the first 0.4 s) and its rebound (0.5 R0 x strength high
+///    between 0.4 and 0.9 s); the hull stands in most of it, its rim shows around the hull.
 fn oceanRipples(p: vec2f, prev: bool) -> vec3f {
   var o = vec3f(0.0);
   let k = oceanU.rippleParams.x;
@@ -181,17 +194,27 @@ fn oceanRipples(p: vec2f, prev: bool) -> vec3f {
     let r = oceanU.ripples[i];
     let age = r.z - select(0.0, oceanU.time.w, prev);
     if (age <= 0.0 || age >= life) { continue; }
+    let im = oceanImpact(r.w);
+    let r0 = im.x;
     let rel = p - r.xy;
     let dist = length(rel);
-    let front = cg * age;
-    let width = 1.2 * TWO_PI / k + 0.25 * front;
-    let env = exp(-sq((dist - front) / width)) * sq(1.0 - age / life) * inverseSqrt(1.0 + dist / 3.0);
-    let ph = k * dist - omega * age;
-    let a = r.w * env;
-    o.x += a * cos(ph);
     let dir = rel / max(dist, 1e-3);
+    let front = r0 + 1.6 * cg * age;
+    let width = 1.6 * TWO_PI / k + 0.15 * (front - r0);
+    let fall = sqrt(r0 / max(dist, r0)) * exp(-age / 6.0) * (1.0 - smoothstep(0.75 * life, life, age)) * smoothstep(0.0, 0.3, age);
+    let a = oceanU.foam.z * r0 * im.y * exp(-sq((dist - front) / width)) * fall;
+    let ph = k * (dist - r0) - omega * age;
+    o.x += a * cos(ph);
     o.y += -a * k * sin(ph) * dir.x;
     o.z += -a * k * sin(ph) * dir.y;
+    if (age < 1.0) {
+      let c0 = r0 * im.y * (-0.3 * (1.0 - smoothstep(0.25, 0.45, age)) + 0.5 * smoothstep(0.35, 0.55, age) * (1.0 - smoothstep(0.75, 1.0, age)));
+      let g = exp(-sq(dist / (0.9 * r0)));
+      let dg = c0 * g * (-2.0 * dist / sq(0.9 * r0));
+      o.x += c0 * g;
+      o.y += dg * dir.x;
+      o.z += dg * dir.y;
+    }
   }
   return o;
 }
