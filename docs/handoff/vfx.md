@@ -925,7 +925,7 @@ does not move.
 | Finding | What was done | Where to look |
 |---|---|---|
 | 4 Reentry (airbrushed lobe, white ellipse, ring) | The layer glows from the bow shock inwards: nothing in front of the shock (a clean outer edge the standoff from the wall, standoff 0.045 nose radii), brightest right behind it; it wraps the windward face as a crescent from shoulder to shoulder; turbulence drawn out six to one along the flow; white-hot at the stagnation point, the gas colour over the face, towards orange round the shoulder; held one stop over the meter's white (was three: everything clipped); wake glow 0.12 of the layer (was 0.05) with stronger fine streaks | `reentry-views.png`, `reentry.png`, `dev/i8-reentry*.png` |
-| 5, 15 Pad cloud in the game | The exhaust leaves the trench both ways (double wedge) as two collimated, low, fast sheets that lift off and billow only beyond the exits (`away` in `smokeVelocity`): the space round the vehicle is clear and the flame is seen from the default chase camera, which looks along the trench; sources at the exits (`trenchLength` 78 m, the site's); the trench keeps the jet while the vehicle is low (focus fades over 150 m, was 40: a ring stood round the pad and rose into an arch); sunlit steam as bright as a white surface in the sun with a floor of scattered light (no brown folds); thin gas keeps no hard lumps (the detached arcs and puffs); the outline is sharpened at half resolution in the combine (the ramp of eight pixels between rays steepened to about three about a noise threshold that rides with the cloud); gas between the eye and the flame glows more (inside the cloud at night the flame's side is brighter) | `dev/a8-liftoff-*.png` (game: default camera at T+1, +3, +6; from the side at +6, +10), `liftoff.png`, `liftoff-chase.png` |
+| 5, 15 Pad cloud in the game | The exhaust leaves the trench both ways (double wedge) as two collimated, low, fast sheets that lift off and billow only beyond the exits (`away` in `smokeVelocity`): the space round the vehicle is clear and the flame is seen from the default chase camera, which looks along the trench; sources at the exits (`trenchLength` 78 m, the site's); the trench keeps the jet while the vehicle is low (focus fades over 150 m of nozzle height, was 40); the gas a jet draws in dries out what rises beside its column (the space round the hull stays clear); sunlit steam as bright as a white surface in the sun with a floor of scattered light (no brown folds); thin gas keeps no hard lumps (the detached arcs and puffs); the outline is sharpened at half resolution in the combine (the ramp of eight pixels between rays steepened to about three about a noise threshold that rides with the cloud); gas between the eye and the flame glows more; marched in 30 steps (was 42). Still there: from the game's default camera, which looks along the trench, the fan-shaped front of the far jet stands behind the vehicle as an arch of cloud at T+5 to T+8 s (`dev/a8-liftoff-t6.png`; from the side it is one of two banks of steam: request `vfx-11`) | `dev/a8-liftoff-*.png` (game: default camera at T+1, +3, +6; from the side at +6, +10), `liftoff.png`, `liftoff-chase.png` |
 | 6 Booster flame a white stick | Brightest in its first third, falling by most of a stop towards a ragged tip (large eddies move it by a quarter of its length, no detached islands), narrower eddies at its edge | `engine-atlas-9m.png`, `dev/a8-liftoff-t6.png` |
 | 7 Cut-away canopies as jellyfish | Collapse to 8 % of the inflation within 0.6 s, keel over at 0.6 rad/s, sink at 9 m/s, lines trail above the cloth | `splash/cut-away-1s.png`, `cut-away-6s.png` |
 | 8 Mains: no light through the cloth | Cavity light through the cloth raised by a half (outside face) and a third (inside face against the sun). Reefed shape and cluster spacing unchanged (see 10.5) | `chutes.png`, `dev/i8-chutes.png` |
@@ -934,12 +934,12 @@ does not move.
 | 12 RCS as blobs | Cone of 30 degrees (was 40), core a third as bright and 3 exit radii long, more of the light in the fan | `rcs.png` |
 | 13 Explosion fire weak | Peak luminance 3.5 million cd/m^2 (was 1.2), fragments with four times the drag (curved trails) | `explosion.png` |
 | 16 Splash drops as sprites | See 10.1 | `splash/close-*.png` |
-| 20 Inside the cloud a flat fill | Forward scattering towards the flame (night); by day unchanged | `liftoff-chase/inside-cloud-t6-*.png` |
+| 20 Inside the cloud a flat fill | For an eye inside the cloud the scattered light comes from above and from the sun's side (the gas towards the ground less than half as bright) and the flame's glow is a forward lobe; still no shapes in it | `liftoff-chase/inside-cloud-t6-*.png` |
 
 ### 10.3 Measured
 
-Final run of the round: `tests/browser/vfx`, functional and perf projects in one slot of the GPU gate, 56 tests, 17.5 min, 2026-11-12 05:17: 55 passed, 1 failed (the sheet of the chase-camera lift-off: its tile from inside the cloud by day was one flat colour, 3 colour buckets where the sheet asks for more than 6; fixed after the run, see the note under the tables).
-Earlier runs of the round: `out/vfx-r3/run1.log` .. `run3.log` (waits for the one GPU slot: 19, 57 and 78 minutes).
+Runs of the round (all through the one GPU slot; waits of 19, 57, 78, 98, 78 minutes and more): `out/vfx-r3/run1.log` .. `run6.log`. The first whole run that was green but for one test: `tests/browser/vfx`, functional and perf projects, 56 tests, 17.5 min, 2026-11-12 05:17: 55 passed, 1 failed (the sheet of the chase-camera lift-off: its tile from inside the cloud by day was one flat colour, 3 colour buckets where the sheet asks for more than 6; fixed after the run, see the note under the tables).
+The functional rows of the table are from that run; the GPU times are from the last run of the round (see the note under the tables).
 
 | What | Result | Spec |
 |---|---|---|
@@ -999,6 +999,7 @@ PENDING_LAST_RUN
 - `cockpit-13` (vfx part): what the published `'vfx.plasmaWindow'` values mean (cd/m^2, not pre-exposed,
   radiance of the pane as a light source, a = plasma intensity and "there is a sheath" flag, how it scales),
   and the values after this round's wake change: 317 / 1,664 / 7,288 cd/m^2 at intensity 0.3 / 0.6 / 1.0.
+- `vfx-11` (filed, open): camera, the default chase view at lift-off off the axis of the flame trench.
 
 ### 10.5 Not fixed, and why
 
@@ -1018,10 +1019,15 @@ PENDING_LAST_RUN
 - The minors 17 (half-stop exposure step), 18 (lone puff in the lyra tiles), 19 (dark bar on a fragment
   trail), 21 (haze trail, hydrolox wake) and 22 (night halo, canopy polish): not touched.
 - The crown's drops are still particles drawn over the sheet, not attenuated by it.
+- The arch of cloud behind the vehicle in the game's default view at T+5 to T+8 s (the far jet seen end-on):
+  request `vfx-11` asks the camera for a default azimuth off the trench; nothing was changed in the cloud for it
+  (a first guess, a ring rolled up by the flow about the foot of the jet, was wrong: drying the gas beside the
+  jet column did not touch it).
 
 ### 10.6 What changed in code, data and specs (for the next owner)
 
-- `smoke.ts`: `SmokeU.misc.z` (view depth of the far end of the cloud; march and combine clamp scene depths to
+- `smoke.ts`: `padSmoke.steps` 30; the eye-inside-the-cloud terms (`eyeIn`, `fromLight`); drying beside the jet
+  column in the advection; `SmokeU.misc.z` (view depth of the far end of the cloud; march and combine clamp scene depths to
   it); two-sided, collimated trench flow with `away` (low near the pad); sources at the exits; `hard` gated by
   the gas's own density; the combine tracks the smoke's own opacity and steepens its outline; the moment of
   the image counts the smoke behind the emitters; focus decay 150 m; forward scattering of the plume light.
@@ -1040,7 +1046,8 @@ PENDING_LAST_RUN
 - `data.ts` / `plumes.json`: `light.vacuum` per look, `splash.foamDecal`, the values named above.
 - `labs/vfx/scenes.ts`: the pad camera stands east-south-east of the pad (yaw 112, was 152): beside the
   trench, where both jets and the flame between them are seen (a camera on the trench axis stands in a jet).
-- Specs: `liftoff.spec.ts` (level edge), `lunar.spec.ts` (new).
+- Specs: `liftoff.spec.ts` (level edge), `lunar.spec.ts` (new), `atmosphere.spec.ts` (the overcast probe 25 m
+  below the nozzles, was 40).
 
 ### 10.7 My own score
 
