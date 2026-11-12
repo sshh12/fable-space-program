@@ -31,7 +31,7 @@ in this round. See "Loading", "Measured" and "Requests filed".
 | `loading.ts` | `createLoadingScreen(container): LoadingScreen`: the ten steps (`LOAD_STEPS`) with `begin` / `update` / `finish` / `watch(id, read)`, `reveal(record)` + `frame(now)` (the 450 ms fade, driven by the frame loop), `abort()`, `report(): LoadingReport` (steps with counts and times, the `RevealRecord`), `revealed: Promise<void>`. See "Loading" |
 | `featureTiming.ts` | `timedFeature(feature, sink): RenderFeature`: forwards every hook of the contract and books its main-thread time (the per-feature attribution; the wrapped feature is untouched) |
 | `settings.ts` | `readSettings(query): AppSettings`; `isMissionScenario(s)`; `defaultScenario(defs)` (first scenario in id order that is a mission proof: pad start, nothing fired, milestone rules, i.e. `lunar-direct` today, chosen by the data: no id in code); `resolveScenario(defs, requested)` (unknown id: error naming the defined ones) |
-| `game.ts` | `createGame(deps: GameDeps): Promise<Game>`: builds and owns every subsystem and runs the frame loop. `Game` exposes the subsystems plus `snapshot()`, `camera()`, `paused` / `setPaused`, `setDeterministic`, `setTestControls`, `setView`, `setCameraOrbit`, `frames`, `loading`, `revealed`, `loadingReport()`, `toggleKeyboardCapture()`, `inFlight()`, `stop()`; `SETTLE_FRAMES = 12` |
+| `game.ts` | `createGame(deps: GameDeps): Promise<Game>`: builds and owns every subsystem and runs the frame loop. `Game` exposes the subsystems plus `snapshot()`, `camera()`, `paused` / `setPaused`, `setDeterministic`, `setTestControls`, `setView`, `setCameraOrbit`, `chase` (the chase rig: `resetView()`, `offsets`, `autoAzimuth`), `frames`, `loading`, `revealed`, `loadingReport()`, `toggleKeyboardCapture()`, `inFlight()`, `stop()`; `SETTLE_FRAMES = 12` |
 | `features.ts` | `createGameFeatures(deps: FeatureDeps): GameFeatures`: every RenderFeature through its factory, in registration order, with the cockpit's `CockpitControls`, the map's `MapViewApi` and `packageOf`; `MILKY_WAY_FACE_SIZE = 2048` |
 | `pilot.ts` | `createPilotDriver(defs, sim): PilotDriver` (`engaged`, `pilot`, `start()`, `stop()`, `onControlTick`, `afterFrame()`): the mission pilot of `src/pilot` in `Sim.advance`'s control ticks |
 | `statusLine.ts` | the shell's own line, centred under the HUD's top column: PAUSED (amber), and "TEST PILOT · <phase>" while the pilot flies (not with `?pilotlabel=0`); hidden with the HUD |
@@ -53,7 +53,10 @@ the canvas's CSS size times the device pixel ratio on every ResizeObserver chang
 `'ui.navball'` -> input system, HUD (mounted in `#ui-root`), flight controller, status line -> view manager ->
 features -> audio engine; then the features' start-up (one after the other, each behind its hook timer),
 `audio.init(defs, '/assets/audio')` and `sim.ready` are awaited together; then the loop starts under the loading
-screen. `ready` resolves when the screen has gone.
+screen. `ready` resolves when the screen has gone. The app builds the simulation with `createSim` (not
+`createSession` of `src/session`: that move is the presentation sweep's). Not done, the lead's decision
+(NOTICE-core-5): `await renderer.warm()` after the last `addFeature` and before the loop (the pipelines started
+ahead with `shaders.warm` then exist before the first frame), and `window.__test.renderExact`.
 
 ### Loading (user feedback 2026-11-11: "would be nice to show clear progress")
 
@@ -182,6 +185,8 @@ hooks per frame, `core` = the render stage minus the hooks), `cpuSlowest()` (the
 reset with stages, features, hooks and a note of throttle / thrust / warp / altitude), `startCpuTrace(n)` /
 `takeCpuTrace()` (consecutive frames: total, render, sim, hud, audio and every feature), `loading()`,
 `featureInitMs()`, `terrainResidency()`, `renderLoads()` (shader modules and texture loads: pending / total),
+`chaseFraming()` (the chase rig's default-or-not, pitch offset, zoom factor, roll, distance), `resetCameraView()`,
+`bodiesInFrame()` (bodies whose disc reaches into the presented frame, with their place in it),
 `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
 `toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
 `notifications()`, `pilotReport()`, `mfdPages()`, `mfdPaintStats(reset?)` (the cockpit displays' paints and their
@@ -201,9 +206,8 @@ node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/ap
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.perf.spec.ts --project=perf     # about 4 min
 ```
 
-Footage (`tools/footage/record.mjs` opens `/?scenario=lunar-direct&view=chase&capture=0&scale=1&governor=off`): add
-`&pilotlabel=0&capturepill=0` for frames without the "TEST PILOT" line and the capture switch (`capture=0` is no
-longer needed: nothing is captured unless `capture=1`).
+Footage: `tools/footage/record.mjs` opens `/?scenario=lunar-direct&view=chase&scale=1&governor=off&pilotlabel=0&capturepill=0`
+(no "TEST PILOT" line, no capture switch; `capture=0` is gone: nothing is captured unless `capture=1`).
 
 Specs (`tests/browser/app/app.spec.ts`, nine tests):
 - the loading screen: polled from the first moment of the page (`window.__boot()`); it covers the page, opaque,
@@ -255,7 +259,7 @@ cockpit displays' paint split.
 | P | pause: simulation time stops, the picture keeps rendering, camera keys and views still work, PAUSED shown |
 | F2 | HUD hidden / shown |
 | 9, 0, - | page of the left, centre, right cockpit display (FLT, ORB, SYS, STG, ENT, LND) |
-| arrows, PgUp/PgDn, mouse drag, wheel | orbit / look and zoom the camera |
+| arrows, PgUp/PgDn, mouse drag, wheel | orbit / look and zoom the camera. The chase view's default framing (the nearest body in the frame, the distance by the vessel's size) is kept until the player turns the camera; there is no key yet to return to it (`chase.resetView()`, request app-integration-14: `Home`) |
 | [ / ] | switch between controllable vessels in the bubble (not exercised: none at the pad) |
 | ` | key-help sheet generated from the binding table |
 
@@ -442,8 +446,14 @@ and the pictures and the HUD notes below reflect it.
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test --project=mission     # about 47 minutes; nothing else on the GPU
 ```
 
-`tests/browser/mission/lunar-direct.spec.ts` opens `/?scenario=lunar-direct&pilot=1&view=chase&capture=0&scale=1&governor=off`
+`tests/browser/mission/lunar-direct.spec.ts` opens `/?scenario=lunar-direct&pilot=1&view=chase&scale=1&governor=off`
 at 2560 x 1440 (1440p internal, qualityScale 1: the conditions of the budget table) under the machine-wide GPU lock.
+Since 2026-11-12 (not yet flown with these changes): it measures the harness clock before and after the flight
+(`measureHarnessClock`) and judges the requestAnimationFrame lines only when both are the nominal 60 Hz
+(`expectNominalClock`; otherwise it fails saying they were not judged); a picture in a view just switched to waits
+for the exposure to reach its target (request cockpit-15: `|ev100 - targetEv100| < 0.1`, read from
+`__app.exposure()`); every chase picture asserts the rig's default framing and a body other than the star in the
+frame (`__app.chaseFraming()`, `bodiesInFrame()`), and records both with the exposure.
 It asserts the discrete NVIDIA adapter (`assertDiscreteGpu`), the page and the pad start, and presses F9 once. F9 is
 unbound: the press is only the first gesture, so the AudioContext runs. From then on the spec only watches. Every
 30 frames it polls `window.__app.brief()`, `window.__test.pilot` and `errors`. It reads `perf()` and

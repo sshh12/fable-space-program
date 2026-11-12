@@ -5,6 +5,10 @@
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.perf.spec.ts --project=perf
  *
+ * The requestAnimationFrame lines are judged only on the nominal 60 Hz harness clock (measured after each run's
+ * windows, tests/browser/harness.ts `measureHarnessClock` / `expectNominalClock`; request app-integration-8): with
+ * the monitor asleep Chrome paces frames at 57.5 Hz, and the test then fails saying that they were not judged.
+ *
  * 2560 x 1440 at render scale 1 (1440p internal), quality governor off (qualityScale 1), measured under the
  * machine-wide GPU lock (which serialises perf specs only: other agents' functional Chrome runs may share the GPU;
  * the hand-off notes the load). Each number is the median over three windows of 240 frames of the window's p99
@@ -21,7 +25,7 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import type { AppBrief } from '../../../src/app/testHooks';
 import type { FrameBreakdown, FrameTrace } from '../../../src/app/timing';
-import { assertDiscreteGpu, expect, openPage, test, waitIdle, withGpuLock } from '../harness';
+import { assertDiscreteGpu, expect, expectNominalClock, measureHarnessClock, openPage, test, waitIdle, withGpuLock, type FrameClockStats } from '../harness';
 
 test.setTimeout(20 * 60_000);
 
@@ -300,11 +304,35 @@ async function settle(page: Page): Promise<{ idle: boolean; busy: string[]; terr
   return page.evaluate(({ i, l }) => ({ idle: i, busy: window.__app!.busyFeatures(), terrain: window.__app!.terrainStats().stream, loading: l }), { i: idle, l: loading });
 }
 
+/** The page's frame clock without the game's load, measured under the lock after the windows it qualifies. */
+async function harnessClock(page: Page, label: string): Promise<FrameClockStats> {
+  const clock = await measureHarnessClock(page);
+  console.log(`${label}: harness clock p50 ${clock.p50.toFixed(2)} ms, ${clock.hz.toFixed(2)} Hz`);
+  return clock;
+}
+
+/**
+ * The requestAnimationFrame lines of the checkpoints, judged on a nominal clock only; on any other the test
+ * fails with the reason (they are never judged against a slower clock, and never passed unjudged).
+ */
+function expectPacing(clock: FrameClockStats, checkpoints: Checkpoint[]): void {
+  try {
+    expectNominalClock(clock);
+  } catch (e) {
+    expect.soft(e instanceof Error ? e.message : String(e), 'the requestAnimationFrame lines were not judged').toBe('a nominal 60 Hz harness clock');
+    return;
+  }
+  for (const cp of checkpoints) {
+    expect.soft(cp.median.rafP99, `${cp.name}: rAF p99 (budget 17.5 ms)`).toBeLessThanOrEqual(17.5);
+    expect.soft(cp.median.over33ms, `${cp.name}: frames of 33 ms or more`).toBe(0);
+  }
+}
+
 /** Pad, then Z / T / Space and the climb from 200 m; the numbers go to out/app/perf-<label>.json. */
 async function padAndClimb(
   page: Page,
   label: string,
-): Promise<{ padStreaming: Awaited<ReturnType<typeof settle>>; checkpoints: Checkpoint[]; ignition: TraceSummary; terrain: Record<'pad' | 'climb', Awaited<ReturnType<typeof terrainParts>>> }> {
+): Promise<{ padStreaming: Awaited<ReturnType<typeof settle>>; checkpoints: Checkpoint[]; ignition: TraceSummary; terrain: Record<'pad' | 'climb', Awaited<ReturnType<typeof terrainParts>>>; clock: FrameClockStats }> {
   const run = await withGpuLock(async () => {
     await openWithin(page, '/?scale=1&governor=off&mute=1', 300_000);
     await assertDiscreteGpu(page);
@@ -323,7 +351,8 @@ async function padAndClimb(
     const ignition = summariseTrace(`${label} ignition and lift-off`, (await page.evaluate(() => window.__app!.takeCpuTrace()))!);
     checkpoints.push(await measure(page, `${label} climb`));
     terrain.climb = await terrainParts(page, `${label} climb`);
-    return { padStreaming, checkpoints, ignition, terrain };
+    const clock = await harnessClock(page, label);
+    return { padStreaming, checkpoints, ignition, terrain, clock };
   });
   const dir = path.join(process.cwd(), 'out', 'app');
   fs.mkdirSync(dir, { recursive: true });
@@ -334,13 +363,12 @@ async function padAndClimb(
 test.describe('1440p internal (the budget resolution)', () => {
   test.use({ viewport: { width: 2560, height: 1440 }, deviceScaleFactor: 1 });
   test('frame time at the pad and in the climb (ARCHITECTURE 17)', async ({ page }) => {
-    const { checkpoints } = await padAndClimb(page, '1440p');
+    const { checkpoints, clock } = await padAndClimb(page, '1440p');
     for (const cp of checkpoints) {
       expect.soft(cp.median.gpuP99, `${cp.name}: GPU p99 (budget 11 ms)`).toBeLessThanOrEqual(11);
-      expect.soft(cp.median.rafP99, `${cp.name}: rAF p99 (budget 17.5 ms)`).toBeLessThanOrEqual(17.5);
-      expect.soft(cp.median.over33ms, `${cp.name}: frames of 33 ms or more`).toBe(0);
       expect.soft(cp.median.appCpuP99, `${cp.name}: main-thread frame p99 (budget 6 ms)`).toBeLessThanOrEqual(6);
     }
+    expectPacing(clock, checkpoints);
   });
 });
 
@@ -413,7 +441,8 @@ test.describe('an engine burn away from terrain (1440p): what the slow main-thre
       await page.evaluate(() => window.__app!.mfdPaintStats(true));
       const after = await measure(page, 'orbit after the burn');
       displays.push(await mfd('orbit after the burn'));
-      return { streaming, checkpoints: [coast, burn, burnNoOrbit, after], trace, displays };
+      const clock = await harnessClock(page, 'orbit');
+      return { streaming, checkpoints: [coast, burn, burnNoOrbit, after], trace, displays, clock };
     });
     const dir = path.join(process.cwd(), 'out', 'app');
     fs.mkdirSync(dir, { recursive: true });
@@ -423,5 +452,6 @@ test.describe('an engine burn away from terrain (1440p): what the slow main-thre
       expect.soft(cp.median.gpuP99, `${cp.name}: GPU p99 (budget 11 ms)`).toBeLessThanOrEqual(11);
       expect.soft(cp.median.appCpuP99, `${cp.name}: main-thread frame p99 (budget 6 ms)`).toBeLessThanOrEqual(6);
     }
+    expectPacing(run.clock, run.checkpoints);
   });
 });

@@ -31,13 +31,13 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MapUpdateResult } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
 import { createAudioEngine, type FableAudioEngine } from '@/audio';
-import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, type ViewFrame, type ViewManager } from '@/camera';
+import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, type ChaseRig, type ViewFrame, type ViewManager } from '@/camera';
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel, type FlightController, type InputSystem } from '@/input';
 import { coreOf, createRenderer, type CoreRenderer } from '@/render/core';
 import { createSim, type SimWorld } from '@/sim';
 import { DEFAULT_STREAMER_OPTIONS } from '@/render/terrain';
 import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
-import { createHud, createMfdPainter, createNavballRenderer, type HudImpl, type NavballRendererImpl } from '@/ui';
+import { createHud, createMfdPainter, createNavballRenderer, HUD_OBSTACLE_SELECTOR, type HudImpl, type NavballRendererImpl } from '@/ui';
 import { timedFeature } from './featureTiming';
 import { createGameFeatures, type GameFeatures } from './features';
 import type { LoadingReport, LoadingScreen, StepProgress } from './loading';
@@ -50,8 +50,6 @@ import { createFrameTimings, type FrameTimings } from './timing';
 export const MAX_FRAME_SECONDS = 0.1;
 /** Frames between two hand-overs of the HUD's panel boxes to the map view (its labels keep clear of them). */
 const OBSTACLE_INTERVAL = 10;
-/** The flight HUD's panels: the selectors of its own coverage check (request map-view-5). */
-const HUD_OBSTACLE_SELECTOR = '.hud .panel, .hud .later, .hud .tile:not(.compact), .hud .pill, .hud .helpbtn, .hud .more, .hud .housing, .hud .prw, .hud .toast, .hud .ball';
 
 /** Consecutive frames with nothing pending before the loading screen fades (a stable picture, not one lucky frame). */
 export const SETTLE_FRAMES = 12;
@@ -99,6 +97,8 @@ export interface Game {
   readonly renderer: CoreRenderer;
   readonly features: GameFeatures;
   readonly views: ViewManager;
+  /** The chase rig (its framing: `offsets`, `autoAzimuth`, `roll`, `resetView()`). */
+  readonly chase: ChaseRig;
   readonly hud: HudImpl;
   readonly navball: NavballRendererImpl;
   readonly input: InputSystem;
@@ -203,7 +203,10 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   const status = createStatusLine(uiRoot, { pilotLabel: settings.pilotLabel });
 
   // ------------------------------------------------------------------------------------ cameras and views
-  const views = createViewManager([createChaseRig({ defs, terrain }), createCockpitRig({ defs }), createMapRig({ defs })], { defs, terrain, initialMode: settings.view });
+  // The chase rig's defaults frame the nearest body and follow the size of what is left of the vehicle
+  // (request app-integration-10); `resetView()` returns to them after the player has turned the camera.
+  const chase = createChaseRig({ defs, terrain });
+  const views = createViewManager([chase, createCockpitRig({ defs }), createMapRig({ defs })], { defs, terrain, initialMode: settings.view });
   const mapper = createCameraInputMapper();
 
   // ------------------------------------------------------------------------------------- render features
@@ -493,6 +496,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     renderer,
     features,
     views,
+    chase,
     hud,
     navball,
     input,

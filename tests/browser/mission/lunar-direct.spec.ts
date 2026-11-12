@@ -19,8 +19,15 @@
  *    frames each, reset at every phase change and around every screenshot) of the window's percentile, as in
  *    tests/browser/app/app.perf.spec.ts. Asserted softly so the flight goes on: a miss is a finding, never a
  *    loosened line;
+ *    The requestAnimationFrame lines are judged only when the harness clock (measured before and after the
+ *    flight, tests/browser/harness.ts) is the nominal 60 Hz: with the monitor asleep Chrome paces frames at
+ *    57.5 Hz and the lines cannot be judged (request app-integration-8); the spec then fails saying so;
  *  - a screenshot at every milestone in the chase view (and the cockpit at the parking orbit and on the lunar
  *    surface, ARCHITECTURE 17.1 / 18.3), each with an image-statistics assertion and the HDR target free of NaN.
+ *    A picture in a view just switched to waits for the exposure to reach its target (request cockpit-15, read
+ *    from the exposure, not a time); a chase picture is taken in the
+ *    rig's default framing (nobody turns the camera in this spec), which keeps the Earth or the Moon in the
+ *    frame (request app-integration-10): both are asserted.
  *
  * Output: out/screens/mission/*.png, out/mission/browser-mission.json (gates, windows, per-phase table, phase log).
  */
@@ -30,7 +37,7 @@ import type { Page } from '@playwright/test';
 import type { AppBrief } from '../../../src/app/testHooks';
 import type { FrameBreakdown } from '../../../src/app/timing';
 import type { MilestoneRecord } from '../../../src/core/contracts/sim';
-import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, saveScreenshot, test, withGpuLock } from '../harness';
+import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, expectNominalClock, measureHarnessClock, openPage, saveScreenshot, test, withGpuLock, type FrameClockStats } from '../harness';
 
 const repoRoot = process.cwd();
 const SCENARIO = 'lunar-direct';
@@ -109,6 +116,11 @@ interface Shot {
   stats: { meanLuma: number; stdLuma: number; fractionNonBlack: number; distinctColorBuckets: number };
   hdr: { maxLuminance: number; meanLuminance: number; nanPixels: number };
   audio: Record<string, number> | null;
+  /** EV100 and the meter's target when the picture was taken. */
+  exposure: { ev100: number; targetEv100: number };
+  /** The chase rig's framing and the bodies in the frame (chase pictures). */
+  framing: { auto: boolean; pitch: number; zoom: number; roll: number; distance: number };
+  bodies: { id: string; star: boolean; x: number | null; y: number | null; heightShare: number }[];
 }
 
 const median = (xs: number[]): number => {
@@ -184,8 +196,30 @@ async function setViewAndWait(page: Page, mode: string): Promise<void> {
   await page.evaluate((m) => window.__test!.setView(m), mode);
   // The view mode, not the camera kind: the cockpit rig's camera is of kind 'interior'.
   await page.waitForFunction((k) => !window.__app!.viewBlending() && window.__app!.viewMode() === k, mode, { polling: 100, timeout: 15_000 });
-  // A change of camera kind is a cut for the exposure, which follows within a third of a second (NOTICE-core-4).
-  await page.evaluate(() => window.__test!.waitFrames(45));
+  await exposureSettled(page, `the switch to the ${mode} view`);
+}
+
+/**
+ * Wait until the exposure has reached the meter's target (request cockpit-15): a picture taken while it still
+ * adapts from the previous view's value shows a black cabin or a burnt-out sky. A change of camera kind is a cut
+ * for the core, so this returns within a few frames; it reads the exposure, it does not wait for a time.
+ */
+async function exposureSettled(page: Page, what: string): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const e = window.__app!.exposure();
+        return Math.abs(e.ev100 - e.targetEv100) < 0.1;
+      },
+      undefined,
+      { polling: 100, timeout: 30_000 },
+    );
+  } catch {
+    // The flight goes on: the picture is taken as it is and the miss is reported.
+    const e = await page.evaluate(() => window.__app!.exposure());
+    expect.soft(`EV100 ${e.ev100.toFixed(2)}, target ${e.targetEv100.toFixed(2)}`, `the exposure did not reach its target within 30 s after ${what}`).toBe('on target');
+  }
+  await page.evaluate(() => window.__test!.waitFrames(4));
 }
 
 function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: number }[], endMs: number): PhaseRow[] {
@@ -243,12 +277,14 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   const errorsSeen = new Set<string>();
   let flightEndMs = 0;
   let t0 = 0;
+  /** The harness clock before and after the flight (the page's own frame clock without the game's load). */
+  const clock: { start: FrameClockStats | null; end: FrameClockStats | null } = { start: null, end: null };
   const dump = (record: Record<string, unknown>): string => {
     const dir = path.join(repoRoot, 'out', 'mission');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'browser-mission.json');
     const rows = windows.length > 0 ? aggregate(windows, phaseLog, flightEndMs || Date.now()) : [];
-    fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
+    fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, clock, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
     return file;
   };
 
@@ -258,7 +294,19 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
       if (view !== 'chase') await setViewAndWait(page, view);
       const name = `${String(index).padStart(2, '0')}-${milestone.toLowerCase().replace(/_/g, '-')}-${view}`;
       const shot = await saveScreenshot(page, SHOTS, name);
-      const info = await page.evaluate(async () => ({ hdr: await window.__test!.hdrStats(), audio: window.__test!.audio(), b: window.__app!.brief() }));
+      const info = await page.evaluate(async () => ({
+        hdr: await window.__test!.hdrStats(),
+        audio: window.__test!.audio(),
+        b: window.__app!.brief(),
+        exposure: window.__app!.exposure(),
+        framing: window.__app!.chaseFraming(),
+        bodies: window.__app!.bodiesInFrame(),
+      }));
+      if (view === 'chase') {
+        // The default framing (nothing in this spec turns the camera), and with it a body in the picture.
+        expect.soft(info.framing.auto && Math.abs(info.framing.pitch) < 1e-9 && Math.abs(info.framing.zoom - 1) < 1e-9, `${name}: the chase rig's default framing (${JSON.stringify(info.framing)})`).toBe(true);
+        expect.soft(info.bodies.filter((x) => !x.star).map((x) => x.id), `${name}: the Earth or the Moon in the frame`).not.toEqual([]);
+      }
       const space = view === 'chase' && SPACE.has(milestone);
       try {
         assertRealImage(shot.stats, name, space ? { minNonBlack: 0.02, minStd: 4, minBuckets: 20 } : { minNonBlack: 0.3, minStd: 8, minBuckets: 40 });
@@ -276,8 +324,13 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
         stats: { meanLuma: s.meanLuma, stdLuma: s.stdLuma, fractionNonBlack: s.fractionNonBlack, distinctColorBuckets: s.distinctColorBuckets },
         hdr: info.hdr,
         audio: info.audio ? Object.fromEntries(Object.entries(info.audio.buses).map(([k, v]) => [k, v.rms])) : null,
+        exposure: { ev100: info.exposure.ev100, targetEv100: info.exposure.targetEv100 },
+        framing: info.framing,
+        bodies: info.bodies.map((x) => ({ id: x.id, star: x.star, x: x.x, y: x.y, heightShare: x.heightShare })),
       });
-      console.log(`[${((Date.now() - t0) / 60_000).toFixed(1)} min] shot ${name}: alt ${km(info.b.altitudeAsl)}, luma ${s.meanLuma.toFixed(1)} +/- ${s.stdLuma.toFixed(1)}, non-black ${(s.fractionNonBlack * 100).toFixed(0)} %`);
+      console.log(
+        `[${((Date.now() - t0) / 60_000).toFixed(1)} min] shot ${name}: alt ${km(info.b.altitudeAsl)}, luma ${s.meanLuma.toFixed(1)} +/- ${s.stdLuma.toFixed(1)}, non-black ${(s.fractionNonBlack * 100).toFixed(0)} %, EV100 ${info.exposure.ev100.toFixed(2)} (target ${info.exposure.targetEv100.toFixed(2)}), in frame: ${info.bodies.map((x) => `${x.id}${x.x !== null && x.y !== null ? ` at ${x.x.toFixed(2)},${x.y.toFixed(2)}` : ' (limb)'}`).join(', ') || 'no body'}`,
+      );
       if (view === 'cockpit') {
         // The cockpit column of ARCHITECTURE 17.1: one window in the cabin, then back to the chase view.
         await resetPerf(page);
@@ -298,6 +351,10 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     const start = await stateFacts(page);
     expect(start.scenario).toEqual({ id: SCENARIO, startKind: 'pad', stagesAlreadyFired: 0 });
     expect(start.cheatCounter).toBe(0);
+    // The page's frame clock before the flight's first window (the game's loop stands still while the probe page
+    // is in front: the pilot is waiting on the pad).
+    clock.start = await measureHarnessClock(page);
+    console.log(`harness clock before the flight: p50 ${clock.start.p50.toFixed(2)} ms, ${clock.start.hz.toFixed(2)} Hz`);
     // A key the game does not bind: the first gesture resumes the AudioContext (the engines are heard), nothing else.
     await page.keyboard.press('F9');
 
@@ -354,6 +411,8 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
       if (p.done && now - phaseLog[phaseLog.length - 1]!.wallMs > 120_000) break;
     }
     flightEndMs = Date.now();
+    clock.end = await measureHarnessClock(page);
+    console.log(`harness clock after the flight: p50 ${clock.end.p50.toFixed(2)} ms, ${clock.end.hz.toFixed(2)} Hz`);
   }, 60 * 60_000).catch(async (e: unknown) => {
     // Keep what was measured and seen for the diagnosis, then fail.
     flightEndMs = Date.now();
@@ -513,10 +572,24 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   // ------------------------------------------------------------------------------------- frame time (17, 18.2)
   for (const r of rows) {
     expect.soft(r.gpuP99, `${r.phase}: GPU p99 (17: <= 11 ms)`).toBeLessThanOrEqual(11);
-    expect.soft(r.rafP99, `${r.phase}: rAF p99 (17: <= 17.5 ms)`).toBeLessThanOrEqual(17.5);
-    expect.soft(r.over33ms, `${r.phase}: rAF deltas >= 33 ms (17: none in steady flight)`).toBe(0);
-    expect.soft(r.rafP95, `${r.phase}: rAF p95 (18.2: < 16.7 ms)`).toBeLessThan(16.7);
     expect.soft(r.cpuP99, `${r.phase}: main-thread frame p99 (17: <= 6 ms)`).toBeLessThanOrEqual(6);
+  }
+  // The requestAnimationFrame lines: on the nominal 60 Hz clock, or not at all (and then the spec says why).
+  let nominal = true;
+  try {
+    if (!clock.start || !clock.end) throw new Error('the harness clock was not measured');
+    expectNominalClock(clock.start, 'harness clock before the flight');
+    expectNominalClock(clock.end, 'harness clock after the flight');
+  } catch (e) {
+    nominal = false;
+    expect.soft(e instanceof Error ? e.message : String(e), 'the requestAnimationFrame lines were not judged').toBe('a nominal 60 Hz harness clock');
+  }
+  if (nominal) {
+    for (const r of rows) {
+      expect.soft(r.rafP99, `${r.phase}: rAF p99 (17: <= 17.5 ms)`).toBeLessThanOrEqual(17.5);
+      expect.soft(r.over33ms, `${r.phase}: rAF deltas >= 33 ms (17: none in steady flight)`).toBe(0);
+      expect.soft(r.rafP95, `${r.phase}: rAF p95 (18.2: < 16.7 ms)`).toBeLessThan(16.7);
+    }
   }
   await expectNoErrors(page, pageLog);
 });

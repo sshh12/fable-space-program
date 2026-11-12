@@ -284,6 +284,13 @@ test('the loading screen lets go in other starts too: a dark cabin on the Moon, 
     expect(r.busy).toEqual([]);
     expect(r.terrain.queued + r.terrain.baking + r.terrain.uploading).toBe(0);
     expect(r.terrain.resident).toBe(r.terrain.wanted);
+    // The chase rig's default framing keeps the Earth or the Moon in the frame (request app-integration-10).
+    const view = await page.evaluate(() => ({ mode: window.__app!.viewMode(), framing: window.__app!.chaseFraming(), bodies: window.__app!.bodiesInFrame() }));
+    if (view.mode === 'chase') {
+      console.log(`${name}: chase framing ${JSON.stringify(view.framing)}; in frame: ${view.bodies.map((x) => `${x.id} at ${x.x?.toFixed(2)},${x.y?.toFixed(2)} (${(x.heightShare * 50).toFixed(1)} % of the height)`).join(', ') || 'no body'}`);
+      expect(view.framing.auto).toBe(true);
+      expect(view.bodies.filter((x) => !x.star).map((x) => x.id), `${name}: a body in the default chase frame`).not.toEqual([]);
+    }
     await shoot(page, name, { minNonBlack: 0.02, minStd: 4, minBuckets: 20 });
     await expectNoErrors(page, pageLog);
   }
@@ -466,6 +473,28 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   await openGame(page, '?scenario=qa-leo');
   await waitIdle(page, 8, BOOT_MS);
   await shoot(page, 'leo-chase', { minNonBlack: 0.2 });
+  // The default chase framing has the Earth in the frame; the player's turn is kept, the reset returns to it.
+  const framing = (): Promise<{ auto: boolean; pitch: number; zoom: number; roll: number; distance: number }> => page.evaluate(() => window.__app!.chaseFraming());
+  const earthInFrame = async (): Promise<boolean> => (await page.evaluate(() => window.__app!.bodiesInFrame())).some((x) => !x.star);
+  expect((await framing()).auto).toBe(true);
+  expect(await earthInFrame(), 'the Earth in the default chase frame in low orbit').toBe(true);
+  await page.keyboard.down('ArrowUp');
+  await page.keyboard.down('ArrowLeft');
+  await page.evaluate(() => window.__test!.waitFrames(45));
+  await page.keyboard.up('ArrowUp');
+  await page.keyboard.up('ArrowLeft');
+  await page.evaluate(() => window.__test!.waitFrames(10));
+  const turned = await framing();
+  expect(turned.auto).toBe(false);
+  expect(Math.abs(turned.pitch)).toBeGreaterThan(0.01);
+  await page.evaluate(() => window.__app!.resetCameraView());
+  await page.waitForFunction(() => window.__app!.chaseFraming().auto, undefined, { polling: 100, timeout: 10_000 });
+  // The swing back takes a second and a half.
+  await page.evaluate(() => window.__test!.waitFrames(120));
+  const back = await framing();
+  expect(back.auto && Math.abs(back.pitch) < 1e-9 && Math.abs(back.zoom - 1) < 1e-9, `default framing after the reset (${JSON.stringify(back)})`).toBe(true);
+  expect(await earthInFrame(), 'the Earth in the frame again after the reset').toBe(true);
+  await shoot(page, 'leo-chase-reset', { minNonBlack: 0.2 });
   await viewKey(page, 'KeyC', 'interior');
   await waitIdle(page, 60, BOOT_MS);
   const e = await page.evaluate(() => window.__app!.exposure());

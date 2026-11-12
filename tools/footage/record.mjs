@@ -172,7 +172,8 @@ try {
   page.on('pageerror', (e) => consoleLog.push(`pageerror: ${e.message}`));
   page.on('crash', () => say('PAGE CRASHED'));
 
-  await page.goto(`${BASE}/?scenario=lunar-direct&view=chase&capture=0&scale=1&governor=off`);
+  // No "TEST PILOT" line and no keyboard-capture switch in the footage (the app's footage switches).
+  await page.goto(`${BASE}/?scenario=lunar-direct&view=chase&scale=1&governor=off&pilotlabel=0&capturepill=0`);
   await page.waitForFunction(() => window.__test !== undefined, undefined, { timeout: 120_000 });
   const ok = await page.evaluate(async () => {
     const r = await Promise.race([window.__test.ready, new Promise((res) => setTimeout(() => res('timeout'), 240_000))]);

@@ -4,6 +4,8 @@
  * commands the keyboard drives, the pilot acts through the same two, and nothing here reaches `Sim.debug`.
  */
 import type { TestApi } from '@/core/contracts/testApi';
+import { quat } from '@/core/math/quat';
+import { v3 } from '@/core/math/vec3';
 import type { TestApiController } from '@/core/testing/testApi';
 import { coreOf, type ExposureInfo } from '@/render/core';
 import type { Game } from './game';
@@ -27,6 +29,19 @@ export interface AppDebug {
   /** Record every frame's main-thread breakdown from now on (at most `frames`); `takeCpuTrace` returns and ends it. */
   startCpuTrace(frames: number): void;
   takeCpuTrace(): FrameTrace | null;
+  /**
+   * The chase rig's framing: `auto` = the default azimuth (the player has not turned the camera), the player's
+   * pitch offset (rad) and zoom factor, the roll of the default view (rad) and the distance (m).
+   */
+  chaseFraming(): { auto: boolean; pitch: number; zoom: number; roll: number; distance: number };
+  /** Back to the chase rig's default framing (what a reset key does). */
+  resetCameraView(): void;
+  /**
+   * Bodies whose disc is at least partly inside the presented frame: id, whether it is the star, angular radius
+   * (rad), centre in normalised device coordinates (x right, y up, -1..1 inside; null when the centre is behind
+   * the image plane and only the limb reaches in) and the share of the frame's half-height its radius spans.
+   */
+  bodiesInFrame(): { id: string; star: boolean; angularRadius: number; x: number | null; y: number | null; heightShare: number }[];
   /** What the camera's selection of the active vessel's body wants and has: tiles and levels (null without terrain). */
   terrainResidency(): { wanted: number; resident: number; wantedLevel: number; residentLevel: number } | null;
   /** Shader modules created and still compiling; texture loads started and outstanding (the render core's counts). */
@@ -155,6 +170,39 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     cpuSlowest: () => game.timings.slowest(),
     startCpuTrace: (frames) => game.timings.startTrace(frames),
     takeCpuTrace: () => game.timings.takeTrace(),
+    chaseFraming: () => {
+      const c = game.chase;
+      return { auto: c.autoAzimuth, pitch: c.offsets.pitch, zoom: c.offsets.zoom, roll: c.roll, distance: c.distance };
+    },
+    resetCameraView: () => game.chase.resetView(),
+    bodiesInFrame: () => {
+      const s = game.snapshot();
+      const cam = game.camera();
+      const canvas = game.renderer.canvas;
+      const tanY = Math.tan(cam.fovY / 2);
+      const tanX = tanY * (canvas.width / Math.max(1, canvas.height));
+      const out: { id: string; star: boolean; angularRadius: number; x: number | null; y: number | null; heightShare: number }[] = [];
+      for (const b of s.bodies) {
+        const def = game.defs.bodies[b.id];
+        if (!def) continue;
+        // View space: x right, y up, the eye looks down -z.
+        const d = quat.rotateInv(cam.qViewToRoot, v3.sub(b.rRoot, cam.positionRoot));
+        const distance = Math.hypot(d.x, d.y, d.z);
+        if (distance <= def.radius) continue;
+        const angularRadius = Math.asin(def.radius / distance);
+        const heightShare = Math.tan(Math.min(angularRadius, 1.5)) / tanY;
+        if (d.z < 0) {
+          // Centre in front of the image plane: the disc against the frame's rectangle.
+          const x = d.x / (-d.z * tanX);
+          const y = d.y / (-d.z * tanY);
+          if (Math.abs(x) < 1 + Math.tan(Math.min(angularRadius, 1.5)) / tanX && Math.abs(y) < 1 + heightShare) out.push({ id: b.id, star: b.id === s.starId, angularRadius, x, y, heightShare });
+        } else if (Math.acos(Math.max(-1, Math.min(1, -d.z / distance))) - angularRadius < Math.atan(tanY)) {
+          // Centre behind it (the ground under an eye that looks up): the limb against the vertical half-angle.
+          out.push({ id: b.id, star: b.id === s.starId, angularRadius, x: null, y: null, heightShare });
+        }
+      }
+      return out;
+    },
     terrainResidency: () => {
       const s = game.snapshot();
       const v = s.vessels.find((x) => x.id === s.activeVesselId);
