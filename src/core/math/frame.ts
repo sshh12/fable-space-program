@@ -14,9 +14,17 @@
  * rigs, the renderer's previous-frame state, world-anchored effects, the map focus. Differences of two ROOT
  * positions of the same snapshot, directions and orientations need nothing.
  *
- * Use: keep one `FrameEpochTracker` per consumer, call `observe(snapshot.frame)` once per snapshot, and when
- * it returns a rebase apply it to every held position (`rebasePoint` / `rebasePointInPlace`) and velocity
- * (`rebaseVelocity` / `rebaseVelocityInPlace`) before using them with the new snapshot.
+ * Use: keep one `FrameEpochTracker` per consumer, call `observe(snapshot.frame)` with each snapshot the
+ * consumer uses, and when it returns a rebase apply it to every held position (`rebasePoint` /
+ * `rebasePointInPlace`) and velocity (`rebaseVelocity` / `rebaseVelocityInPlace`) before using them with
+ * the new snapshot.
+ *
+ * A consumer does NOT have to see every snapshot. Every snapshot carries, beside the one-step `rebase`, the
+ * origins of the most recent earlier epochs expressed in the current frame at the snapshot's time
+ * (`frame.previous`, FRAME_HISTORY_EPOCHS of them). The tracker rebases from the epoch the consumer last
+ * observed, however many snapshots lie between: a rig that was inactive for a while, an effect created
+ * three frames ago, a map that updates at 10 Hz. Only a consumer that slept through more than
+ * FRAME_HISTORY_EPOCHS replacements of the origin gets an error, and must drop what it holds (`reset()`).
  *
  * Pure float64 arithmetic; no allocation in the `InPlace` forms.
  */
@@ -28,10 +36,19 @@ export interface FrameRebase {
   velocity: Vec3;
 }
 
+/** The origin of an earlier epoch in the current frame, at the time of the snapshot that carries it. */
+export interface FrameEpochOrigin extends FrameRebase {
+  epoch: number;
+}
+
+/** How many earlier epochs a snapshot describes in `frame.previous` (once that many exist). */
+export const FRAME_HISTORY_EPOCHS = 8;
+
 /** The part of `SimSnapshot.frame` the tracker reads (structural, so this module does not import the contracts). */
 export interface FrameEpoch {
   epoch: number;
   rebase: FrameRebase | null;
+  previous?: readonly FrameEpochOrigin[];
 }
 
 /** A rebase that changes nothing. */
@@ -98,8 +115,14 @@ export function rebaseBetween(oldOrigin: { r: Vec3; v: Vec3 }, newOrigin: { r: V
 }
 
 /**
- * Tells one consumer when to rebase what it holds. Call `observe` exactly once per snapshot the consumer
- * uses, in order. It returns the rebase to apply now, or null when the frame did not change.
+ * Tells one consumer when to rebase what it holds. Call `observe` with each snapshot the consumer uses, in
+ * order (it need not be every snapshot of the session). It returns the rebase to apply now, from the epoch
+ * this consumer last observed to the frame's epoch, or null when the frame did not change.
+ *
+ * Where the rebase comes from: the entry of the last observed epoch in `frame.previous`. A frame without
+ * `previous` (a hand-built snapshot) is trusted only for a single step: its `rebase` is used, which is
+ * right exactly when this consumer observed the snapshot before it; producers of real sessions always
+ * publish `previous`.
  *
  * A frame that is absent (a producer older than MIGRATION_V2 step 3.5, a hand-built snapshot) never changes:
  * `observe(undefined)` returns null and keeps the tracker where it was.
@@ -121,7 +144,16 @@ export class FrameEpochTracker {
     }
     if (frame.epoch === this.epoch) return null;
     if (frame.epoch < this.epoch) throw new Error(`frame epoch went backwards (${this.epoch} -> ${frame.epoch})`);
-    if (frame.rebase === null) throw new Error(`frame epoch changed (${this.epoch} -> ${frame.epoch}) without a rebase`);
+    const held = this.epoch;
+    if (frame.previous !== undefined) {
+      const from = frame.previous.find((p) => p.epoch === held);
+      if (!from) {
+        throw new Error(`frame epoch ${held} is no longer described by the snapshot (now ${frame.epoch}, history ${frame.previous.map((p) => p.epoch).join(', ') || 'empty'}): this holder skipped too many replacements of the origin and must drop what it holds`);
+      }
+      this.epoch = frame.epoch;
+      return { offset: from.offset, velocity: from.velocity };
+    }
+    if (frame.rebase === null) throw new Error(`frame epoch changed (${held} -> ${frame.epoch}) without a rebase`);
     this.epoch = frame.epoch;
     return frame.rebase;
   }

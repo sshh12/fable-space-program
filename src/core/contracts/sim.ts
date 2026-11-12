@@ -25,7 +25,7 @@
  * filled and are removed at the tighten step after sub-wave 3.2.
  */
 import type { ConicElements } from '../math/conic';
-import type { FrameRebase } from '../math/frame';
+import type { FrameEpochOrigin, FrameRebase } from '../math/frame';
 import type { Quat } from '../math/quat';
 import type { Vec3 } from '../math/vec3';
 import type { ControlInputs, NavballMode, SasMode } from './controls';
@@ -764,11 +764,20 @@ export type FrameOrigin =
  * it without clearing it. Anything that holds a ROOT position across frames (camera rigs, the renderer's
  * previous-frame state, world-anchored effects, the map focus) applies it once, through
  * src/core/math/frame.ts. Motion vectors need no rebase.
+ *
+ * `previous` makes that safe for a holder that does not see every snapshot: the origins of the most recent
+ * earlier epochs (FRAME_HISTORY_EPOCHS of them once that many exist, newest first), each as its position and
+ * velocity in THIS frame at this snapshot's time. It is filled in EVERY snapshot, also when the epoch did
+ * not change (an old origin keeps moving in the current frame), in snapshot() and peek() alike. A holder that
+ * last observed epoch k rebases with the entry of epoch k (`FrameEpochTracker` does), however many snapshots
+ * it skipped. When `rebase` is not null it equals the entry of the epoch of the previous snapshot().
+ * Optional in the type only for hand-built snapshots; a session always fills it.
  */
 export interface SnapshotFrame {
   epoch: number;
   origin: FrameOrigin;
   rebase: FrameRebase | null;
+  previous?: FrameEpochOrigin[];
 }
 
 export interface SimSnapshot {
