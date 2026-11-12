@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 83c80f1)
 From: flight-ui
 Owner path: src/app/game.ts (the lead, since the app fixer finished)
 Blocking: no
@@ -14,3 +14,8 @@ the HUD's speed window (`out/screens/app/leo-map-node.png`, finding 14). The HUD
 ## Requested change
 `import { HUD_OBSTACLE_SELECTOR } from '@/ui'` in src/app/game.ts in place of the local constant. Nothing else
 changes (the same rectangles are passed to `features.map.setObstacles`).
+
+## Resolution (app-integration)
+`src/app/game.ts` (commit 83c80f1): `import { ..., HUD_OBSTACLE_SELECTOR, ... } from '@/ui'`; the local constant is
+gone. `hudObstacles()` passes the rectangles of `hud.root.querySelectorAll(HUD_OBSTACLE_SELECTOR)` to
+`features.map.setObstacles` every tenth frame in the map view, as before.

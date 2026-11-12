@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 83c80f1)
 From: cockpit
 Owner path: tests/browser/mission/lunar-direct.spec.ts (`setViewAndWait`, the cockpit pictures at EARTH_ORBIT and LUNAR_TOUCHDOWN; app-integration)
 Blocking: no
@@ -26,3 +26,12 @@ await page.waitForFunction(() => { const e = window.__app!.exposure(); return Ma
 (With cockpit-14 resolved this returns within a few frames; without it, in about five seconds of real time. The
 flight goes on meanwhile: the wait belongs before the screenshot only.) The cockpit perf window that follows
 needs no change.
+
+## Resolution (app-integration)
+`tests/browser/mission/lunar-direct.spec.ts` (commit 83c80f1): `setViewAndWait` ends with `exposureSettled(page, ...)`,
+which waits (polling 100 ms, at most 30 s) until `|ev100 - targetEv100| < 0.1` on `window.__app.exposure()` and then
+four frames; the fixed frame count is gone. It runs after every view switch of the spec (to the cockpit before the
+picture, and back to the chase view). A miss does not stop the flight: the picture is taken and the spec reports
+"the exposure did not reach its target within 30 s after the switch to the cockpit view" with both values (soft).
+Every picture's record now carries `exposure: { ev100, targetEv100 }`, and the log line prints them.
+Not yet flown: the 45-minute mission is re-run when the visual rounds end (the lead's call).
