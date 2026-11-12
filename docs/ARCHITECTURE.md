@@ -1058,7 +1058,16 @@ interface Vessel {
 - **The codec is versioned, because ships outlive deploys.** Every blob starts with a codec version and
   the `defsHash` it was written under. Per craft it carries a vehicle reference of one of two kinds: a
   library id with the content hash of that `VehicleDef`, or an embedded design (the future builder's
-  `craft.design`); vehicles are resolved through an injected resolver, never by indexing the library. Per
+  `craft.design`); vehicles are resolved through an injected resolver, never by indexing the library.
+  **What that hash covers** (lead decision of 2026-11-12, in force from the tighten step after sub-wave
+  3.2): the SIMULATION PROJECTION of the vehicle, not the whole definition. Presentation-only definition
+  fields (cameras and seats, display names and labels, references to visuals and audio) are outside the
+  projection and outside the state hash, so a camera, name or cockpit edit can never change the golden hash
+  or invalidate a save; the snapshot still states them (`CraftSnapshot.cockpit`), read from the
+  definitions. Until that step the reference hashes the whole `VehicleDef` and the command part's camera
+  seat is hashed vessel state: one such edit, the cockpit seat of request cockpit-18, changed the golden
+  hash of a flight that was the same in every number. The change alters saved bytes, so it is made with
+  that step's other codec changes: one codec version step, the corpus recorded once for it. Per
   part it carries the fingerprint of its `PartDef`, and module and resource blocks are length-prefixed, so
   an unknown or changed block is detected instead of mis-read. Rules that keep old blobs readable: part,
   module and resource ids are never removed or renumbered, only deprecated; a change of a part's modules,
