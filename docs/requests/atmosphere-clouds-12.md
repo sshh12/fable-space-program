@@ -1,4 +1,4 @@
-Status: open (the lab's half is in the tree, d637112, its run queued; the app's half is the lead's file: request core-5)
+Status: resolved for the lab (d637112: the guard forwards resetTemporal; with 3290eab the lab's captures are idle in one round and leo-day differs in 0.028 % of its pixels); the app's half is the lead's: request core-5
 From: atmosphere-clouds
 Owner path: labs/integration/main.ts (`guardFeature`), src/app/featureTiming.ts (`timedFeature`)
 Blocking: yes   (request core-4's acceptance, `tests/browser/integration/exact.spec.ts` `leo-day` with `exact: true`, and with it the lead's reference images of every view with volumetric clouds: the core's `resetTemporal()` never reaches a feature on these two pages)
@@ -76,3 +76,21 @@ One consequence for what I wrote earlier: the measurements of the lab's captures
 10: the low-orbit page idle after three lead-in rounds with the terrain busy, the pictures differing along
 the clouds) were taken with no feature restarted. They describe the lab as it was, not the features'
 `resetTemporal`.
+
+## Resolution of the lab's half (shared-code maintainer, d637112 and 3290eab, 2026-11-12; run 22:13 to 22:15)
+
+With the guard forwarding `resetTemporal` (d637112) the first run of the lab's capture tests failed, both
+pages (out/core-support/batch10.log, 21:45): every attempt `rounds 1, busyLeadIn [], busyBefore
+["terrain"], busyAfter []`. That is your request atmosphere-clouds-13; the core now asks who is at work
+before the last restart (3290eab). The second run (out/core-support/batch12.log,
+`tests/browser/integration/exact.spec.ts` and the core's own `exact.spec.ts`, 3 of 3 pass):
+
+| page | attempts | rounds | same page after another history | fresh load | EV100 |
+|---|---|---|---|---|---|
+| `leo-day` (every package) | 1, idle | 1 (was 3 with no feature restarted) | mean 0.00017, max 7 levels, 0.028 % of the pixels (was mean 0.305, 19.1 %) | mean 0.00017, max 7, 0.028 % (was 0.149, 15.6 %) | the same to the last digit |
+| `translunar-earth` | 1, idle | 1 | identical | identical | the same |
+| the core's lab | | 1 | identical | identical | the same |
+
+So with the features restarted the low-orbit page differs between captures in 0.028 % of its pixels by at
+most 7 levels: what is left of core-4 is that. `leo-day` is still `exact: false` in my spec; flip it with
+your part. The app's half (`timedFeature`) is request `core-5`, the lead's.

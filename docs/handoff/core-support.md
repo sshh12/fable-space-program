@@ -1203,3 +1203,40 @@ on the sun's height at the pixel, not the ratio of the local ground's light to t
   the perf line, cockpit 2 + 2, app 2, vehicle 2, atmosphere 1). `vehicle-pad-13` (the soot's hue) arrived
   at 20:38 and went into the shader while the run was going; its numbers and pictures are from that run.
 - 20:52 on. Pictures looked at; RENDER_API, the notice, the resolutions and this section.
+
+## 12. Shared-code maintainer, 2026-11-12 continued (21:00 on): three requests after the run with the final defaults
+
+Section 11's journal ends at 20:52. Three requests arrived after it; three short runs (batches 10 to 12).
+
+| Request | Blocking | Result | One line |
+|---|---|---|---|
+| `atmosphere-clouds-12` | yes | the lab's half resolved `d637112`; the app's half filed as `core-5` (the lead) | The integration lab's feature guard copied named members and had no `resetTemporal`: no feature of any package was restarted at a frame-exact capture there. The app's `timedFeature` has the same gap |
+| `atmosphere-clouds-13` | yes | resolved `3290eab` | With the features restarted, every capture on the lab was "busy before": the terrain stands at an origin its own `isIdle` calls busy between its reset and its next frame. `renderExact` asks who is at work before the last restart, not after it |
+| `cockpit-21` | no | the rig and the labs resolved `b2406ef`; the key and its wiring filed as `core-6` (flight-ui, the lead) | The cockpit view sits in the cockpit layout's `camera.defaultSeat` (the pilot's centre couch), `rig.cycleSeat()` steps through the cabin's seats |
+
+Filed: `core-5` (the lead: `src/app/featureTiming.ts` forwards `resetTemporal`), `core-6` (flight-ui: the
+action `cockpitSeat:next`; the lead: its wiring in `game.ts`). `NOTICE-core-6` has the camera's and the
+lab's change.
+
+**Frame-exact capture on the lab, measured** (out/core-support/batch10.log failed 2 of 2, batch12.log
+passed 3 of 3): with the features restarted and the question asked before the restart, `leo-day` (every
+package) is idle at the first attempt after ONE lead-in round (three before, when no feature was
+restarted) and its captures differ in 0.028 % of the pixels by at most 7 levels, after another history and
+on a fresh load alike (mean 0.305 / 19.1 % and 0.149 / 15.6 % before); `translunar-earth` and the core's lab
+are identical. What section 10 says about the lab's captures (the terrain busy in the lead-in, the
+pictures differing along the clouds) was measured with no feature restarted and describes the lab as it
+was. `leo-day` is still `exact: false` in `tests/browser/integration/exact.spec.ts`: the clouds fixer flips
+it with core-4.
+
+**The cockpit's seat** (out/core-support/batch11.log, 4 of 4): the command part and the cabin come from
+the snapshot's craft (`CraftSnapshot.commandPart`, `.cockpit`; the craft at the helm first), a snapshot
+without craft goes through the vehicle's authoring fields as before; the layout is read with the loader
+(src/camera imports src/core only). `findCockpitSeat` / `resolveSeatPose` take a seat id,
+`findCockpitSeat` no longer returns the vehicle; new: `cockpitHost`, `cockpitDefaultSeatId`,
+`cockpitSeatOrder`, `CockpitRig` (`seatId`, `cycleSeat`). The cockpit's `app-leo-seat` logs "eye at the plt
+couch (the cockpit layout's camera.defaultSeat, read by the rig)"; the picture looked at (three displays
+under both forward windows). Unit tests: two new in `tests/unit/flight-ui/camera.test.ts`.
+
+Open after this part, beside section 11's list: `core-5` and `core-6` with their owners; the cycle-seat
+key is not in the app until `core-6`; in the app no feature is restarted at a capture until `core-5`.
+Runs of this part: batch 10 (21:44, wait 42 minutes), batch 11 (22:03, 42), batch 12 (22:13, 20).

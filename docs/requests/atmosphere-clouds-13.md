@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (3290eab: renderExact asks who is at work before the last restart; the lab's captures are idle at the first attempt, run 22:13)
 From: atmosphere-clouds
 Owner path: src/render/terrain/feature.ts (`resetTemporal`, `isIdle`); or src/render/core/renderer.ts (`renderExact`: where `busyBefore` is taken)
 Blocking: yes   (request core-4's acceptance and the lead's reference images: since the integration lab forwards `resetTemporal` (d637112, request atmosphere-clouds-12) no frame-exact capture of a page with the terrain is idle)
@@ -55,3 +55,39 @@ With this open, `tests/browser/integration/exact.spec.ts` cannot capture `leo-da
 value of its `exact` flag; the atmosphere's own test of that page
 (`tests/browser/atmosphere/exactIntegrated.ts`, run from `exact.spec.ts`) skips itself, naming this
 request, while another feature is busy right after a restart, and runs as soon as none is.
+
+## Maintainer's note (core-support, 3290eab, 2026-11-12 21:55: the core's option, in the tree, its run queued)
+
+I saw the same in my own run of 21:45 (out/core-support/batch10.log: both tests of
+`tests/browser/integration/exact.spec.ts` "not idle through 64 frames in 5 attempts", every attempt
+`rounds 1, busyLeadIn [], busyBefore ["terrain"], busyAfter []`) and took your second option before your
+request arrived: `renderExact` now asks who is at work BEFORE the last restart (the state the lead-in
+left) and after the capture's frames, never between a `resetTemporal()` and the frame after it
+(`src/render/core/renderer.ts`, 3290eab; RENDER_API section 13 says so now, where it said that
+`resetTemporal` must leave the feature idle). The terrain's file is untouched.
+
+Why this one: what the terrain does at its reset is what the contract asks of it (the level ranges and the
+fades start again and the next selection snaps them); that its `isIdle` calls the moment in between busy
+is true to its own state and harmless to the capture, and the same will hold for any feature that needs
+its next frame to apply a restart. What "busy before" still catches is a lead-in that ended with work in
+flight (the rounds used up), and "busy after" a capture that set work going.
+
+What you need from the terrain (the depth during the capture's frames not depending on which tiles
+happened to be resident) is not changed by this: the capture is still refused while tiles stream in (the
+terrain's `isIdle` at the end of the lead-in and after the frames), and after its reset the terrain draws
+its resident tiles without fades and with the level ranges at their targets. Whether the SET of resident
+tiles is the same in two loads of a page is the terrain's (request core-2), not this.
+
+Not yet run: `tests/browser/integration/exact.spec.ts` and `tests/browser/render-core/exact.spec.ts` are
+queued behind the GPU slot (out/core-support/batch12.log); the result goes here and into
+atmosphere-clouds-12.
+
+## Resolution (shared-code maintainer, 3290eab, 2026-11-12; run 22:13 to 22:15)
+
+The core's option, as in the note above. Run (out/core-support/batch12.log, 3 of 3 pass): `leo-day` and
+`translunar-earth` on the integration lab are captured idle at the first attempt, `rounds 1, busyLeadIn [],
+busyBefore [], busyAfter []`; the pictures: `translunar-earth` identical after another history and on a
+fresh load, `leo-day` 0.028 % of the pixels different by at most 7 levels in both comparisons (numbers in
+atmosphere-clouds-12). The capture is still refused while tiles stream in: that is asked at the end of the
+lead-in and after the frames, as before. The terrain's file is untouched; whether its `isIdle` should call
+the moment after its own reset idle is the terrain's to decide and no longer matters to a capture.
