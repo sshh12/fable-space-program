@@ -211,8 +211,8 @@ export class CloudSystem {
   private momentScratchView: GPUTextureView;
   private momentMipGroups: GPUBindGroup[] = [];
   private shadowSize = 0;
-  /** Density steps per line of the shadow map as it was last marched (a change re-marches the whole map). */
-  private shadowSteps = 0;
+  /** The shadow map is marched with half the density steps per line (the camera is far away). */
+  private shadowCoarse = false;
 
   // --- pipelines
   private readonly marchLayout: GPUBindGroupLayout;
@@ -1012,13 +1012,14 @@ export class CloudSystem {
     // (A third of the lines per frame with the long count: the cost of a frame stays that of a high sun.)
     const rounds = steps > 1.5 * params.shadowSteps ? 3 : 1;
     // From so far away that a pixel covers several texels of the map the density is read as wide as the pixel
-    // and has no detail that half the steps would miss.
-    if (pixelOnGround > 4 * texel) steps = Math.max(8, Math.round(steps / 2));
-    // (One step count per map: see above.)
-    if (steps !== this.shadowSteps) {
-      this.shadowSteps = steps;
+    // and has no detail that half the steps would miss. (With hysteresis; the switch re-marches the whole
+    // map: a map whose texels were marched with two counts shows the refresh pattern.)
+    const coarse = pixelOnGround > (this.shadowCoarse ? 3 : 4) * texel;
+    if (coarse !== this.shadowCoarse) {
+      this.shadowCoarse = coarse;
       full = true;
     }
+    if (coarse) steps = Math.max(8, Math.round(steps / 2));
     u.set('shadowOrigin', originRelCam.x, originRelCam.y, originRelCam.z, he);
     u.set('shadowU', axisU.x, axisU.y, axisU.z, steps);
     u.set('shadowV', axisV.x, axisV.y, axisV.z, scale);
