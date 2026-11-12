@@ -250,10 +250,10 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
       // The middle of the flame is the hottest and brightest (white-yellow); its skin is the colour of the look.
       let heart = saturate(1.4 * body - 0.45) * (1.0 - saturate(1.2 * s));
       let colour = mix(inst.afterColor.rgb * cool, vec3f(1.9, 1.7, 1.25) * luminance(inst.afterColor.rgb), heart);
-      // (The flame is brightest in its first third and falls by a stop towards its tip: the far flame is
+      // (The flame is brightest in its first third and falls by most of a stop towards its tip: the far flame is
       // yellow-orange with its eddies showing, not one white stick from the nozzles to the ground. Not by
       // more: thirty metres down it is still eight times a sunlit white surface, tests/browser/vfx/liftoff.)
-      o.e += colour * (1.3 * k * ox * body * tip * begin * sqrt(g.dil) * tex * mix(1.0, 0.5, smoothstep(0.3, 0.95, s)));
+      o.e += colour * (1.3 * k * ox * body * tip * begin * sqrt(g.dil) * tex * mix(1.0, 0.6, smoothstep(0.35, 0.95, s)));
     }
   }
 
