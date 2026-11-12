@@ -526,6 +526,12 @@ async function run(opts: Options, command: string[]): Promise<number> {
   }
 
   try {
+    // A Postgres of THIS stack name left running by a launcher that died (its postmaster.pid is ours): stop it.
+    const leftover = postmasterPid(pgDir);
+    if (leftover && alive(leftover)) {
+      say(`a Postgres of this stack (${name}, pid ${leftover}) was left running by a launcher that died: stopping it`);
+      await stopPostgres(pgDir, 'fast');
+    }
     // Ports: one range, one stack. Anything listening there is a leftover of a dead stack.
     for (const [k, p] of Object.entries(PORTS)) if (await portOpen(p)) throw new Error(`port ${p} (${k}) is in use: another stack, or a leftover of one (\`npm run stack -- down\`)`);
 
