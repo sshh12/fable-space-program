@@ -187,6 +187,8 @@ def main() -> None:
     ap.add_argument("--credits", action="store_true")
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--keep-going", action="store_true", help="bake the remaining bodies when one fails (exit 1 at the end)")
+    ap.add_argument("--clean-after", action="store_true",
+                    help="delete a body's downloads and intermediates as soon as its bake has finished (disk floor)")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
@@ -211,6 +213,8 @@ def main() -> None:
             if bad:
                 ap.error(f"unknown steps {bad}")
             bake_solid(body, steps, a.record_checksums, a.force)
+            if a.clean_after:
+                clean(body)
         except Exception:
             if not a.keep_going:
                 raise
