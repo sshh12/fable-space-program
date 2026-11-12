@@ -77,7 +77,8 @@ no longer serves source maps (it did, with the private sources, until 18:35 UTC)
   tree's**; the Madrakah level-12 height tile 2/12/758/2888 (re-baked today), Mars height 5/5/31/31 and Pluto
   albedo 0/2/0/0 read back **byte-identical** to data/tiles (12 bucket requests, 10 mirror requests, no
   failure).
-- **Modal volume fsp-packs**: see the running log (copy_packs from the deployed pack list).
+- **Modal volume fsp-packs**: `copy_packs` from the deployed pack list: 214 objects, 121 copied (3.81 GB, each
+  checked by its SHA-256 on arrival), 93 already there and re-hashed, 29 sets, 567 s.
 
 ## 1. What exists locally
 
