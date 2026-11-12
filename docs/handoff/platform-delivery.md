@@ -21,7 +21,8 @@ launch is announced. Caveats and the rerun command: `docs/capacity/2026-11-12-pl
 - **CI: green on a branch** (`platform-delivery-ci`) in about 2.5 minutes of wall time, and it fails on a planted
   secret, a planted TODO and a planted boundary violation (three throwaway branches, deleted).
 - **Cloud: the stage-0 skeleton is up on the Hobby plan** (game, shell with CDN, postgres 18, hourly dump, two
-  buckets; Modal environment `fsp`), and costs U + $5 = $8.75 against the $30 idle ceiling on the first reading.
+  buckets; Modal environment `fsp`), and costs U + $5 = $7.51 against the $30 idle ceiling over a 4.5-hour
+  nearly idle window (the hello roles: a floor, not the real game); the whole package spent $0.033 on Railway.
 - **Not done**: the 6-hour and 72-hour idle cost readings (time), the compose suites (Docker not allowed
   this round). Section 7.
 - **Findings that change figures of ARCHITECTURE**: the boot pack cannot hold levels 0-3 (122 MB); Railway's CDN
@@ -189,7 +190,7 @@ inside it dumps the compose Postgres to MinIO.
 | THE SLOT: held while up, a second stack waits, free when done, `down` after a killed launcher leaves no process or port and the slot reclaimed; two STACK_NAMEs separate | **Met** (selftest `slot`, `wait`, `free`, `kill`, `names`, `names-state`); plus the launcher's own exclusive lock `data/stack/.launcher.lock` and the `<build>.use-<pid>` file beside a served client build |
 | Compose form: VM capped at 6 GB, same pack requests, same encoding, dump and restore, image smoke with the same buildId | **Built, not run: waiting for `.wslconfig`** (the coordinator's rule this round). The launcher refuses `--compose` and `--db=docker` unless the VM is capped at 6 GB or less. Commands: section 4. The image smoke test runs in CI on every push (role `game` healthy, buildId printed and recorded) and Railway's own build printed the same buildId as CI (5c50250b3dab3d80) |
 | Stage-0 skeleton deployed on Hobby, reachable: shell serves the boot pack from the bucket with isolation headers through the CDN and the endpoint document; hello game healthy in standby and survives a redeploy with the drain honoured; dump written and pruned, credential only in dump; UTF8 and builtin; nothing needing Pro | **Met** (sections 2 and 6 and the capacity report): dump 20261112T100751Z-none.dump written (915 bytes, pg_dump 18 against server 18), 205 retention-probe objects pruned, 36 kept |
-| Cost by the one formula, per service, at 6 and at 72 hours | **First reading only** (25 minutes, measurement traffic included): U = $3.75 a month, U + $5 = $8.75 against $30, workspace $11.83. **The 6-hour and 72-hour readings are not taken** (section 7) |
+| Cost by the one formula, per service, at 6 and at 72 hours | **Two readings, neither 6 h**: 25 minutes with the measurement traffic, U = $3.75 a month (U + $5 = $8.75); 4.5 hours nearly idle, U = $2.51 with bucket storage (shell $1.10, game $0.67, postgres $0.52; U + $5 = **$7.51** against $30), workspace bill $10.61. **The 6-hour and 72-hour readings are not taken** (section 7) |
 | docs/capacity report | `docs/capacity/2026-11-12-platform.md` |
 | No existing Modal app or volume and no existing Railway project touched | **Met** (section 2 lists everything created) |
 
@@ -197,7 +198,8 @@ inside it dumps the compose Postgres to MinIO.
 
 Details and tables: `docs/capacity/2026-11-12-platform.md`.
 
-- D1 cost: first reading U + $5 = $8.75 (met); 6 h and 72 h not taken.
+- D1 cost: U + $5 = $8.75 over 25 minutes with traffic, $7.51 over 4.5 nearly idle hours (met, against $30;
+  the workspace bill about $10.6); the 6 h and 72 h readings not taken.
 - D2 Postgres: 18.6; POSTGRES_INITDB_ARGS took effect (UTF8, builtin, C.UTF-8); ALTER SYSTEM accepted, in force
   after one restart.
 - D3 overlap: build 2-2.5 min, no pause; standby healthy; SIGTERM 1.4 s after the new one is healthy; 45 s drain
