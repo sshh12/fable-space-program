@@ -255,7 +255,13 @@ export interface LocalSession extends FlightSession {
   terrainPending(): Promise<void> | null;
   /** Exactly one PHYSICS_DT step of integrated time (headless harness). */
   step(): void;
-  /** Rails advance to `targetUt`, clamped to the next event; returns the ut reached (headless harness). */
+  /**
+   * Rails advance toward `targetUt` (headless harness). The state lands on a whole tick: the first tick at
+   * or after `targetUt`, or the first tick at or after the next event when that comes earlier (the event is
+   * processed at its own instant inside that tick). Returns the ut reached, which is the ut of that tick:
+   * at or after `targetUt` by less than one tick unless an event came first, and never an instant between
+   * two ticks. A `targetUt` at or before the present ut does nothing and returns the present ut.
+   */
   advanceRails(targetUt: number): number;
   /** True when the next advance must integrate forces (burn, atmosphere, contact...). */
   readonly needsIntegration: boolean;

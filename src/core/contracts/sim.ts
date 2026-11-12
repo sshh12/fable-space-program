@@ -18,6 +18,13 @@
  *    direction), +X starboard, +Z dorsal.
  *  - CTL: the frame of the helm's control part; control inputs and the navball refer to it.
  *
+ * Ids (docs/ARCHITECTURE.md section 3). A CRAFT id (`CraftSnapshot.id`) is unique in the universe, never
+ * changes and is never reused. A part's INSTANCE id (`PartSnapshot.instanceId`) is unique within its craft
+ * only. Neither may contain '/' or '~': '/' joins the two into the PART KEY `craftId/instanceId`, which is
+ * how a part is addressed outside its craft, and '~' separates the fields of the ids that are DERIVED from
+ * them (the vessel id of a piece of a craft, of a vessel of several craft, a lineage id). A string with a
+ * '/' is therefore always a part key and both kinds parse without a table. Event part ids: see `SimEvent`.
+ *
  * v2 fields (MIGRATION_V2 section 4). Fields marked "v2, optional until the tighten step" were added
  * before their producers exist: the session fills them from MIGRATION_V2 step 3.5 on, a hand-built snapshot
  * (labs, tests) may leave them out, and a consumer treats an absent one as the neutral value its comment
@@ -27,7 +34,7 @@
 import type { ConicElements } from '../math/conic';
 import type { FrameEpochOrigin, FrameRebase } from '../math/frame';
 import type { Quat } from '../math/quat';
-import type { Vec3 } from '../math/vec3';
+import type { Vec3, Vec3Tuple } from '../math/vec3';
 import type { ControlInputs, NavballMode, SasMode } from './controls';
 import type { ScenarioDef } from './defs';
 import type { LendPolicy, Presence, TargetRef, TimeOffer, TimeView } from './net';
@@ -230,7 +237,7 @@ export interface PartSnapshot {
   /**
    * Instance id from VehicleDef.parts: unique within its CRAFT and stable through staging and docking. Outside
    * a vessel a part is addressed by the part key `craftId/instanceId` (two craft of one vehicle in an
-   * assembly share instance ids).
+   * assembly share instance ids). It contains neither '/' nor '~' (the header's "Ids").
    */
   instanceId: string;
   /** v2, optional until the tighten step: the craft this part belongs to (`VesselSnapshot.crafts[].id`). Absent = the vessel's only craft. */
@@ -274,9 +281,40 @@ export interface VesselAeroState {
   plasmaIntensity: number;
 }
 
+/**
+ * The cockpit of a craft, resolved from its command part (v2). The simulation states it per craft so that
+ * no consumer indexes `defs.vehicles` by a runtime id for it: the cockpit eye is the viewer's own command
+ * part (ARCHITECTURE 7.2, 9.1, 20), and a craft whose design is not in the library has one all the same.
+ * The values are the command part's own (`command.cockpit`, `command.sensorCamera` of its definition, with
+ * the vehicle's authoring conveniences `VehicleDef.cockpit` and `cameras.cockpit` copied onto the part at
+ * assembly); nothing here changes during a flight.
+ */
+export interface CraftCockpit {
+  /** Cockpit interior layout id (src/render/cockpit registry); null = the command part has no cabin, the first-person view is the sensor camera. */
+  id: string | null;
+  /**
+   * Id of the seat of the command part that the cockpit camera sits in. Its eye point and directions are
+   * the entry of that id in `command.seats` of the part's definition (`PartSnapshot.def`), in the part
+   * frame. null = the craft places no camera on a seat of this part (always null without a cabin).
+   */
+  cameraSeat: string | null;
+  /**
+   * Mount of the sensor camera on a command part without a cabin: position, look and up directions in the
+   * part frame of the command part (`command.sensorCamera`). null = the part states none and the view is
+   * derived from the part's nose.
+   */
+  sensorMount: { pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple } | null;
+}
+
 /** One craft of a vessel (v2; ARCHITECTURE 7.2). A vessel that never docked has exactly one. */
 export interface CraftSnapshot {
-  /** Universe-unique, never changes, never reused. */
+  /**
+   * Unique in the universe: no two craft share it, whatever vessels they are part of. It never changes
+   * (through staging, docking, undocking and every hand-over between islands and processes) and is never
+   * reused. It contains neither '/' nor '~' (the header's "Ids"). At a separation the piece that keeps the
+   * craft's command root keeps the id; every departing piece is a new craft with a new id that records its
+   * lineage (ARCHITECTURE 7.2, "Craft identity").
+   */
   id: string;
   /** Vehicle the craft was built from: for labels and icons only (never index `defs.vehicles` with it for behaviour). */
   vehicleId: string;
@@ -286,6 +324,12 @@ export interface CraftSnapshot {
   ownerCallsign: string | null;
   /** Instance id of the craft's command part (crew, seats, cockpit interior id, the remote flag live on it); null when it has none (debris). */
   commandPart: string | null;
+  /**
+   * v2, optional until the tighten step: the cockpit of `commandPart`, resolved. null = the craft has no
+   * command part. Absent = not produced yet (the world fills it with request sim-core-v2-3); until then a
+   * consumer keeps the source it has today, and from the tighten step none reads `defs.vehicles` for it.
+   */
+  cockpit?: CraftCockpit | null;
   /** The craft's own stage stack: only its owner fires it, docked or not. */
   staging: { nextStage: number; stages: StageInfo[]; lockout: boolean };
   /** Chase-camera distances for this craft, m (from its vehicle's camera data; the rig combines them with the vessel's bounding radius). */
@@ -672,6 +716,17 @@ interface EventBase {
 /** Envelope limits of a docking port (v2), named in `captureLost`. */
 export type CaptureLimit = 'lateral' | 'angle' | 'roll' | 'closing' | 'lateralSpeed' | 'rate';
 
+/**
+ * Part ids in events (`partId`, `otherPartId`, `partsDestroyed`) have TWO forms until the tighten step
+ * after sub-wave 3.2 (MIGRATION_V2, lead steps):
+ *  - the events of v1 (`engineIgnition` ... `jointBroken`) name a part by its INSTANCE id while the vessel
+ *    is one craft, which is what every v1 consumer compares with `PartSnapshot.instanceId`, and by its PART
+ *    KEY `craftId/instanceId` in a vessel of several craft, where instance ids repeat between craft;
+ *  - the v2 events (`SimEventV2`) carry part keys always.
+ * A consumer written now accepts both: a string with a '/' is a part key (neither id may contain one), a
+ * string without is an instance id of the vessel's only craft. At the tighten step every event part id
+ * becomes the part key, in that one form, and this paragraph goes.
+ */
 export type SimEvent =
   | (EventBase & { type: 'stageFired'; stageIndex: number; label: string })
   | (EventBase & { type: 'engineIgnition'; partId: string })

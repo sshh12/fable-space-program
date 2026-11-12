@@ -3,7 +3,7 @@ import { PHYSICS_DT, RAILS_WARP_LEVEL_COUNT, WARP_LEVELS, MAX_PHYSICS_WARP_INDEX
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, UNIVERSE_RULE_TIMERS, type CensusEntry, type ClockState, type UniverseRules } from './net';
+import { DEFAULT_PAD_CLASS_LIMITS, DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, UNIVERSE_RULE_TIMERS, type CensusEntry, type ClockState, type PadClass, type UniverseRules } from './net';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
@@ -79,6 +79,30 @@ describe('UniverseRules: the default document', () => {
     expect(r.planning).toEqual({ workerMaxEstimateMs: 50, weakClientCpuScore: null });
   });
 
+  it('pad class limits: positive finite numbers that rise with the class; heavy is what LC-1 states today', () => {
+    const order: PadClass[] = ['light', 'medium', 'heavy'];
+    const limits = DEFAULT_UNIVERSE_RULES.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS;
+    // The field of the default document, once it is one, IS the constant.
+    expect(limits).toEqual(DEFAULT_PAD_CLASS_LIMITS);
+    expect(Object.keys(limits).sort()).toEqual([...order].sort());
+    for (const c of order) {
+      for (const v of [limits[c].maxLiftoffMass, limits[c].maxDiameter]) {
+        expect(Number.isFinite(v), c).toBe(true);
+        expect(v, c).toBeGreaterThan(0);
+      }
+    }
+    for (let i = 1; i < order.length; i++) {
+      expect(limits[order[i]!].maxLiftoffMass, order[i]).toBeGreaterThan(limits[order[i - 1]!].maxLiftoffMass);
+      expect(limits[order[i]!].maxDiameter, order[i]).toBeGreaterThan(limits[order[i - 1]!].maxDiameter);
+    }
+    // Provisional (the lead sets them from fleet-data's table): LC-1's 3,000 t and 9.5 m, 8.7 % over the 2,760 t stack.
+    expect(limits.heavy).toEqual({ maxLiftoffMass: 3_000_000, maxDiameter: 9.5 });
+    expect(limits.heavy.maxLiftoffMass / 2_760_000 - 1).toBeCloseTo(0.087, 3);
+    expect(limits.medium).toEqual({ maxLiftoffMass: 700_000, maxDiameter: 7 });
+    expect(limits.light).toEqual({ maxLiftoffMass: 70_000, maxDiameter: 2.5 });
+    expect(JSON.parse(JSON.stringify(limits))).toEqual(limits);
+  });
+
   it('every timer names one of the three bases, and every named timer is a positive number of the document', () => {
     for (const [key, base] of Object.entries(UNIVERSE_RULE_TIMERS)) {
       expect(['ticks', 'upTime', 'wall'], key).toContain(base);
@@ -119,12 +143,28 @@ describe('the types of net.ts are JSON: what is written is what is read', () => 
     expect(JSON.parse(JSON.stringify({ t: far })).t).toBe(far);
   });
 
-  it('data/defs/rules/default.json, once MIGRATION_V2 step 3.6 has written it, IS the default document', () => {
+  it('data/defs/rules/default.json states nothing that differs from the default document', () => {
+    // A rules file is stored as overrides of the default (net.ts, `UniverseRules`), so the `default` file may
+    // state every field (the form step 3.6 wrote), a few, or only its id: whatever it states IS the default.
     const file = path.join(repoRoot, 'data', 'defs', 'rules', 'default.json');
     if (!fs.existsSync(file)) {
-      console.log('[rules] data/defs/rules/default.json is not written yet (step 3.6): the equality is checked from then on');
+      console.log('[rules] data/defs/rules/default.json does not exist: nothing to compare');
       return;
     }
-    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)));
+    const model = JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)) as Record<string, unknown>;
+    const stated = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect(stated['id']).toBe('default');
+    const walk = (value: unknown, def: unknown, at: string): void => {
+      const plainObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+      if (plainObject(value) && plainObject(def)) {
+        for (const k of Object.keys(value)) {
+          expect(k in def, `${at}${k} is a field of UniverseRules`).toBe(true);
+          walk(value[k], def[k], `${at}${k}.`);
+        }
+      } else {
+        expect(value, at.slice(0, -1)).toEqual(def);
+      }
+    };
+    walk(stated, model, '');
   });
 });

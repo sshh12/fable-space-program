@@ -365,9 +365,14 @@ export interface PadDef {
   azimuthDeg: number;
   /** A pad hosts its class and anything smaller. */
   class: PadClass;
-  /** Largest lift-off mass (kg) and stack diameter (m) the pad takes. */
-  maxLiftoffMass: number;
-  maxDiameter: number;
+  /**
+   * Largest lift-off mass (kg) and stack diameter (m) this pad takes, when they differ from the limits of
+   * its class: overrides of `UniverseRules.pads.classLimits[class]` (contracts/net.ts), each on its own.
+   * Absent = the class limit. A stated value is a positive finite number: there is no pad without a limit,
+   * so `Infinity` appears nowhere, neither in a file (JSON has none) nor in memory.
+   */
+  maxLiftoffMass?: number;
+  maxDiameter?: number;
   /** The flatten disc of the pad: flat inside `flatRadius`, blended back to natural terrain by `blendRadius` (m); `shape` refines it as for the single pad. */
   flatRadius: number;
   blendRadius: number;
@@ -719,7 +724,11 @@ export interface PartDef {
 // ---------------------------------------------------------------------------------------------- vehicles
 
 export interface VehiclePartPlacement {
-  /** Instance id, unique within the vehicle (referenced by stage actions). */
+  /**
+   * Instance id, unique within the vehicle (referenced by stage actions). It may not contain '/' or '~':
+   * '/' is the separator of the part key `craftId/instanceId` and '~' that of derived runtime ids
+   * (contracts/sim.ts, "Ids"); the same holds for the prefixed ids of a sub-assembly (`VehicleUseDef.prefix`).
+   */
   id: string;
   def: PartDefId;
   parent: string | null;
@@ -900,7 +909,12 @@ export interface DefLibrary {
   vehicles: Record<VehicleId, VehicleDef>;
   /** v2: sub-assemblies by id (data/defs/assemblies). Optional until the loader fills it (wave 4, with `VehicleDef.uses`); absent = none. */
   assemblies?: Record<string, AssemblyDef>;
-  /** v2: rules documents by id (data/defs/rules: 'default', 'staging', 'local'). Optional until the loader fills it (MIGRATION_V2 step 3.6); absent = none. */
+  /**
+   * v2: rules documents by id (data/defs/rules: 'default', 'staging', 'local'), each COMPLETE: a file is
+   * stored as overrides of the default document and the loader holds the default with the file's values over
+   * it (contracts/net.ts, `UniverseRules`). Optional until the loader fills it (MIGRATION_V2 step 3.6);
+   * absent = none.
+   */
   rules?: Record<string, UniverseRules>;
   scenarios: Record<ScenarioId, ScenarioDef>;
   /**

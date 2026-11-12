@@ -40,6 +40,14 @@ export type TimerBase = 'ticks' | 'upTime' | 'wall';
 /** Pad classes; a pad hosts its class and anything smaller. */
 export type PadClass = 'light' | 'medium' | 'heavy';
 
+/** The largest vehicle a pad of one class takes (ARCHITECTURE 9.3). Both are positive finite numbers. */
+export interface PadClassLimits {
+  /** Largest lift-off mass, kg. */
+  maxLiftoffMass: number;
+  /** Largest stack diameter, m. */
+  maxDiameter: number;
+}
+
 // ------------------------------------------------------------------------------------------------- rules
 
 /**
@@ -60,6 +68,11 @@ export interface LendPolicy {
  * clients, which render the rules screen and every countdown from it; nothing in the engine states one of
  * these numbers. Documents live in data/defs/rules/<id>.json (`default` = production, `staging` = lifetimes
  * of minutes, `local` = offline play and tests); DEFAULT_UNIVERSE_RULES below is the `default` document.
+ * A rules file is stored as OVERRIDES of the default document: it states its id, its version and the
+ * fields in which it differs, and the library holds the complete document (the default with the file's
+ * values over it), so a field this contract gains is the default's value in every document without a
+ * change to a file. A file may state only fields of this interface. (Until the loader reads files that way
+ * it holds each file to every field of the default document; see `DEFAULT_PAD_CLASS_LIMITS`.)
  *
  * Units: seconds, metres, m/s, kg unless a name says otherwise. The timer base of every duration is in
  * UNIVERSE_RULE_TIMERS (same paths).
@@ -246,6 +259,16 @@ export interface UniverseRules {
     safingTime: number;
     /** Keep-out radius by pad class (a pad's own `keepOutRadius` overrides it). Defaults 300 / 450 / 600 m. */
     keepOutRadius: Record<PadClass, number>;
+    /**
+     * Largest lift-off mass (kg) and stack diameter (m) by pad class. A pad's own `maxLiftoffMass` and
+     * `maxDiameter` (PadDef) override them, each on its own; a spawn is refused at a pad whose limit the
+     * vehicle exceeds. Every value is a positive finite number: no class and no pad is without a limit.
+     * Defaults: `DEFAULT_PAD_CLASS_LIMITS` (provisional).
+     *
+     * v2, optional until the lead step that follows the loader reading rules files as overrides of the
+     * default: absent = `DEFAULT_PAD_CLASS_LIMITS`, which then becomes this field of the default document.
+     */
+    classLimits?: Record<PadClass, PadClassLimits>;
     /** Anything at rest inside a keep-out radius is recovered after this long. Default 60 s. */
     restRecoveryTime: number;
     /** Range safety acts on a vehicle below this altitude whose instantaneous impact point enters another pad's keep-out radius. Default 5 km. */
@@ -316,6 +339,30 @@ export interface UniverseRules {
     weakClientCpuScore: number | null;
   };
 }
+
+/**
+ * The default of `UniverseRules.pads.classLimits`: what a pad of each class takes.
+ *
+ * PROVISIONAL, and the lead's to set from fleet-data's table of the fleet's lift-off masses and diameters
+ * (wave 4). The only numbers that come from a vehicle that exists are the heavy class's, which are what
+ * data/defs/sites/ka-lae.json states for LC-1: 3,000 t and 9.5 m. 3,000 t leaves 8.7 % over the 2,760 t
+ * lunar stack. 9.5 m covers the stack's 9.0 m but is UNDER the 9.56 m opening of LC-1's own launch mount,
+ * so the mount takes a wider stack than the class admits: settled with the table. Light and medium are the
+ * research's vehicle sheets rounded up (docs/research/v2/fleet-docking.md section 2: Azimuth 60.5 t and
+ * 2.2 m, Solstice up to 610.5 t and 6.6 m; 16 % and 15 % over in mass); no vehicle of those classes exists.
+ *
+ * Why it is not yet a field of DEFAULT_UNIVERSE_RULES: the definitions loader holds every rules file to
+ * exactly the fields of that document (src/core/defs/loader.ts, `validateRules`), so a field added there
+ * fails the load of the whole library until all three files state it. Once the loader reads rules files as
+ * overrides of the default, the lead moves this into `DEFAULT_UNIVERSE_RULES.pads.classLimits` and makes
+ * the field required (MIGRATION_V2, lead steps); until then a reader takes
+ * `rules.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS`.
+ */
+export const DEFAULT_PAD_CLASS_LIMITS: Readonly<Record<PadClass, PadClassLimits>> = {
+  light: { maxLiftoffMass: 70_000, maxDiameter: 2.5 },
+  medium: { maxLiftoffMass: 700_000, maxDiameter: 7 },
+  heavy: { maxLiftoffMass: 3_000_000, maxDiameter: 9.5 },
+};
 
 /** The `default` rules document (production). `staging` and `local` are data files that differ from it. */
 export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
