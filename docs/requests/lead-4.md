@@ -38,3 +38,16 @@ golden and the pad resolution of both sites stand on.
    whatever else is a name), so that a rename is not a re-bake. Say in the hand-off which fields are hashed.
 3. Until then the rule stands for everyone: a regional step of the Earth bake is run with `--region <id>`.
    A run without it is a re-bake of Ka Lae.
+
+## Note (2026-11-12, 10:40, lead): not settled by site-bake's second round, and it now covers Madrakah
+
+After site-bake's follow-up round (the GLO-30 re-bake of Madrakah, replaced in place at 09:44) the same
+read-only question gives: `heights.region_is_baked('earth-ka-lae')` False (as before), and
+`heights.region_is_baked('earth-madrakah')` **False as well** (it was True at 05:25 after the first bake).
+`data/defs/regions/earth-madrakah.json` was edited at 10:27, after the bake (the texts of two waivers;
+uncommitted when this was written), and the region's dictionary is part of every unit's configuration
+hash. Whether that edit or the layout of the staged bake's records is the cause is for the tools' owner
+to say; either way item 2 of this request (keep what cannot change a tile out of the hash: names, waiver
+texts, anything a verifier reads) is what stops it from happening a third time. Until then: nobody runs a
+step of the Earth bake, with or without `--region`, without the lead's word, and nobody edits a region
+file as a note pad.

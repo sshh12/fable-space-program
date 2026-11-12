@@ -1,4 +1,4 @@
-Status: resolved (lead, 2026-11-12: golden.json tiles.earth updated; the guard's tile summary re-recorded after a full-form audit; the Madrakah place group appended; baseline-v1.json left as recorded)
+Status: resolved twice (lead, 2026-11-12: 05:25 after the additive swap, 10:45 after the GLO-30 re-bake replaced the region in place; each time after a full-form audit; baseline-v1.json left as recorded)
 From: site-bake
 Owner path: tests/mission/golden.json, tests/mission/baseline-v1.json, tests/unit/terrain-core/terrain-guard.*
 Blocking: no
@@ -62,3 +62,60 @@ names, bytes or content. The manifest's `contentHash` is `f70a61d55dca902f`.
    existing group `site:ka-lae-lc1`. **The flatten discs of the 31 new pads do not exist yet**: they appear
    when fleet-data writes the site files. The lead then re-records the heights (`--resample`) under the
    rule "only points inside new flatten discs may change" (MIGRATION_V2, lead steps, "with fleet-data").
+
+## Second time (2026-11-12, lead): the GLO-30 re-bake, replaced in place
+
+site-bake re-baked the Madrakah region on Copernicus GLO-30 and replaced its tiles in the live `earth` set
+at 09:44 (manifest content hash `f70a61d55dca902f` -> `f5e6ef420bda7cea`; hand-off section 0.7). A bake that
+REPLACES is not one that adds, so the audit asked a different question, and asked it of the guard's own
+records, not of the builder's snapshot:
+
+- **The footprint** is what the guard recorded as the region when it first appeared: the 840 directories
+  that the recording of f072a36 has and its parent commit does not
+  (`{height,albedo,watermask,landcover}/2/{8..12}/{x}`, taken from git).
+- **Tiles**, full form through the bake slot (`terrain-guard.record.ts --tiles-replaced --footprint <the 840>
+  --changed earth/.`; every file read once; the audit is `out/terrain-guard/replaced.json`): no directory
+  added or removed; every recorded directory outside the footprint byte-identical in files, names, bytes
+  and content, the root excepted as named; every footprint directory that differs keeps its file names.
+- **Heights** (`--resample-group earth site:madrakah --dry-run` first): every stored direction of both
+  bodies sampled on the new tiles; nothing may differ from the recording outside the group `site:madrakah`.
+
+| | Recorded | Byte-identical | Changed | Added or removed |
+|---|---|---|---|---|
+| `earth` | 9,220 directories | 8,713 | 507: the root as named (`manifest.json`, 21,925 -> 22,126 bytes) and 506 of the footprint's 840 directories (30,989 files, 0.349 GB) | 0 |
+| `moon` | 2,344 directories | 2,344 | 0 | 0 |
+
+Replaced directories `{layer}/2/{level}/{x}`, as the audit printed them (they are site-bake's table, row for row):
+
+| Layer | Level 8 | Level 9 | Level 10 | Level 11 | Level 12 |
+|---|---|---|---|---|---|
+| height | 4 (44-47) | 8 (88-95) | 15 (176-190) | 29 (353-381) | 56 (707-762) |
+| albedo | 9 (43-51) | 13 (87-95, 99-102) | 20 (175-190, 199-202) | 36 (352-381, 398-403) | 67 (706-763, 797-805) |
+| watermask | 8 (43-50) | 9 (88-95, 100) | 18 (176-190, 199-201) | 32 (352-380, 399-401) | 55 (706, 709-760, 799-800) |
+| landcover | 8 (43-50) | 11 (87-95, 99-100) | 19 (175-190, 199-201) | 32 (352-380, 399-401) | 57 (706-760, 799-800) |
+
+Heights: Earth 2,800 points: 497 of the 800 of `site:madrakah` changed on the collision query, 525 on the
+25 m band-limited query, 0 on the 1,000 m one; **0 of the 2,000 points outside the group changed** (the
+1,200 uniform ones and all 800 of `site:ka-lae-lc1`). Moon: all 2,000 as recorded. No finding: the claim
+holds in every number.
+
+Re-recorded, and only this:
+
+1. `tests/unit/terrain-core/terrain-guard.tiles.json`: by the audit's own run (507 Earth entries differ from
+   the committed file, the key set is the same; the Moon's entries are untouched).
+2. `tests/unit/terrain-core/terrain-guard.heights.json`: the heights of `site:madrakah` alone
+   (`--resample-group`), its `recordedOn` now `f5e6ef420bda7cea`. Checked against the committed file: every
+   direction and every height outside the group is the same string.
+3. `tests/mission/golden.json`: `tiles.earth` = `f5e6ef420bda7cea`. Mission through the gate: 35 of 36. The one failure is not of this step: the determinism test gets the state hash e7cdbc4b452f686d where the golden has b8221b0fd316207e (596,933 steps both), because commit 01c4d2f (10:16, cockpit round 6) changed a field of the vehicle file that is in the hashed state; with that field put back in memory the flight on the new tiles ends at the golden exactly, and it asks for no tile of the Madrakah footprint (hand-off of lead-baseline-v2, section 16). The golden hash was not touched.
+4. `tools/dev/guard-pins.test.ts`: no pin changed, because none of the three files above is pinned (the
+   golden and the terrain guard's two files are left out of the pins on purpose, the file's header says
+   why); the pin test passes. `tests/mission/baseline-v1.json` is not touched.
+
+**For the lead to decide.** The place group `site:madrakah` is centred on the reference point of the FIRST
+pad layout (18.996043 N 57.793818 E). The pads have moved 9-41 km north along the coast (reference pad lc-1
+now at 19.078241 N 57.786868 E): the group's 200 m and 2 km discs hold no pad any more, its 20 km disc
+reaches the three southern heavy pads thinly, the rest lie in the 200 km disc only. When fleet-data writes
+the site file, the rule "only points inside new flatten discs may change" will find almost no point to
+change at Madrakah. A group about the new reference pad (and one further north in the medium and light
+field) can be appended with `--add-place` at any time before that; it was not done here, where the order
+was to re-record this group only.
