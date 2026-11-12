@@ -16,3 +16,8 @@ against JPL Horizons, staged under `data/staged/` (nothing under `data/defs` cha
   met by the design's sources for many bodies (Table 1 nominal errors exceeded by most planets; satellite
   table periods too coarse for Phobos and Deimos; Mimas' resonance libration; Earth's v1 formula is of date).
   Details in section "Validation" below; working on the paths and the report.
+- 01:40 requests filed: bodies-ephemeris-1 (radii.json vs the loader's definition rule, to sim-core-v2), -2
+  (terrain-section amplification, to planet-bake), -3 (no resident level in BodyTerrainDef, to the lead).
+  planet-bake's in-progress configs (tools/bake/planet/bodies) give every body a seed and parameter overrides:
+  the generated terrain sections take them (the bake and the run-time crater populations must agree).
+- 01:50 generator, validator and tests written (uncommitted until the atmosphere and colour sources are in).
