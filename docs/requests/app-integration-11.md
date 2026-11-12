@@ -131,8 +131,8 @@ interface AtmosphereStatus {
 - `tablesReady` is false until the first frame with an atmosphere body in range has built the transmittance,
   multi-scattering and sky-irradiance tables (one compute pass, a few milliseconds), and false again while they are
   rebuilt (`invalidate()`, a change of the atmosphere definitions).
-- `noiseReady`: the noise is generated in compute at `init`, read back, equalised on the CPU and uploaded (about a
-  second after `init`); true at once when the definitions hold no body with clouds.
+- `noiseReady`: the noise is generated in compute at `init`, read back, equalised on the CPU and uploaded
+  (asynchronously; not timed here); true at once when the definitions hold no body with clouds.
 - `coverage.total` counts the bodies whose clouds a frame has asked for so far (a map is first asked for in the
   first frame that has its body in range: 0 of 0 before that), `loaded` those whose map is in (with its mips and
   the block statistics built from it) or has turned out not to exist. Earth: 0 / 0, then 0 / 1 while the 8192 x
