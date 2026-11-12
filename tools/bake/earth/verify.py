@@ -1,9 +1,14 @@
 """Acceptance checks of the earth tile set (work package bake-earth).
 
     python -I tools/bake/earth/verify.py [--quick]
+    python -I tools/bake/earth/verify.py --region <id> [--quick]
 
 Prints one line per check (PASS / FAIL with the measured numbers) and writes out/bake/earth/verify.json.
 Exit code 0 only when every check passes. --quick decodes a 1-in-16 sample of the tiles instead of all.
+--region checks one region only (work package site-bake), staged or live: its tiles, the prospective manifest,
+its pads (data/staged/sites), sourceCoverage, seams, coverage edges, coastline, pits, needles, the near-shore sea
+floor, relief shading near the site and the TypeScript decode; writes out/bake/earth/verify-<id>.json. Without
+--region, staged regions (stage.py) are not checked: they are not in the live tile set yet.
 """
 from __future__ import annotations
 
@@ -91,7 +96,7 @@ def _decode_chunk(args) -> dict:
     layer, ext, keys = args
     bad, alpha, n = [], 0, 0
     for f, lv, x, y in keys:
-        p = layout.tile_file(paths.TILESET, layer, f, lv, x, y, ext)
+        p = tiles.tile_file(layer, f, lv, x, y)          # the live path, or the stage of a staged region
         try:
             b = p.read_bytes()
             if ext == "webp":
@@ -197,20 +202,23 @@ def check_pyramid(m: dict) -> None:
     check("pyramid completeness", missing == 0, f"{n} regional tiles, {missing} without a parent; manifest validates")
 
 
-def check_source_coverage(m: dict) -> None:
+def check_source_coverage(m: dict, regions: list[str] | None = None) -> None:
     """`layers.height.sourceCoverage` (docs/requests/terrain-core-1.md, -4.md) lists, per regional level, exactly
-    the tiles that touch the area where the regional source has weight and hold land, all inside the coverage."""
-    from earth.heights import source_land_tiles
+    the tiles that touch the area where the regional source has weight and hold land, all inside the coverage; at a
+    level whose parent's vertices are already finer than the land source (heights.source_finer_than_parent) none."""
+    from earth.heights import source_finer_than_parent, source_land_tiles
     L = m["layers"]["height"]
     sc = L.get("sourceCoverage", {})
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
+        own = {lv: {(r["face"], x, y) for r in regmod.coverage_rects(reg, lv)
+                    for x in range(r["x0"], r["x1"] + 1) for y in range(r["y0"], r["y1"] + 1)} for lv in regmod.levels(reg)}
         rows = []
         ok = True
         for lv in regmod.levels(reg):
             listed = {(r["face"], x, y) for r in sc.get(str(lv), [])
-                      for x in range(r["x0"], r["x1"] + 1) for y in range(r["y0"], r["y1"] + 1)}
-            want = set(source_land_tiles(reg, lv))
+                      for x in range(r["x0"], r["x1"] + 1) for y in range(r["y0"], r["y1"] + 1)} & own[lv]
+            want = set(source_land_tiles(reg, lv)) if source_finer_than_parent(reg, lv) else set()
             inside = all(layout.layer_has_tile(L, f, lv, x, y) for f, x, y in listed)
             ok &= listed == want and inside
             rows.append(f"level {lv}: {len(listed)} tiles in {len(sc.get(str(lv), []))} rects (expected {len(want)}, "
@@ -231,10 +239,55 @@ def check_heights(m: dict) -> None:
     ml = max_near(finest, 19.4794, -155.6028, 3000.0, cache)
     check(f"Mauna Loa level {finest}", abs(ml - 4169) <= 40, f"summit {ml:.1f} m (4169 +/- 40)")
     for r in regs:
-        loc = read_json(paths.SITES_DIR / f"{r['site']}.location.json")
-        h = float(height_at(cache, finest, loc["latDeg"], loc["lonDeg"])[0])
-        check(f"pad {r['site']}", abs(h - loc["padElevation"]) <= 2.0,
-              f"level-{finest} height {h:.2f} m at the location file's coordinates vs padElevation {loc['padElevation']} m")
+        p = paths.SITES_DIR / f"{r['site']}.location.json"
+        if p.is_file():
+            loc = read_json(p)
+            h = float(height_at(cache, finest, loc["latDeg"], loc["lonDeg"])[0])
+            check(f"pad {r['site']}", abs(h - loc["padElevation"]) <= 2.0,
+                  f"level-{finest} height {h:.2f} m at the location file's coordinates vs padElevation {loc['padElevation']} m")
+    check_staged_pads([r["id"] for r in regs], cache)
+
+
+def staged_pads(region_id: str) -> list[dict]:
+    """Pad files of data/staged/sites resolved on this region (padresolve.py)."""
+    d = paths.REPO / "data" / "staged" / "sites"
+    out = []
+    for p in sorted(d.glob("*.pads.json")) if d.is_dir() else []:
+        doc = read_json(p)
+        if doc.get("region") == region_id:
+            out.append(doc)
+    return out
+
+
+def reference_point(reg: dict) -> dict:
+    """The site's reference point on a region: the site's location file when it exists, else the reference pad of
+    a pads file resolved on the region, else the region's centre."""
+    p = paths.SITES_DIR / f"{reg['site']}.location.json"
+    if p.is_file():
+        return read_json(p)
+    for doc in staged_pads(reg["id"]):
+        ref = next(q for q in doc["pads"] if q["id"] == doc["referencePad"])
+        return {"latDeg": ref["latDeg"], "lonDeg": ref["lonDeg"], "padElevation": ref["padElevation"]}
+    c = reg["shape"]["centre"]
+    return {"latDeg": c["latDeg"], "lonDeg": c["lonDeg"], "padElevation": "terrain"}
+
+
+def check_staged_pads(regions: list[str], cache: dict) -> None:
+    """Every resolved pad (data/staged/sites/<site>.pads.json): the finest-level height at its coordinates (the
+    authority's bicubic) within 2 m of its padElevation, and its recorded evaluation passes the rule."""
+    for r_id in regions:
+        reg = regmod.load(r_id)
+        lv = regmod.levels(reg)[-1]
+        for doc in staged_pads(r_id):
+            worst, bad = 0.0, []
+            for p in doc["pads"]:
+                h = float(height_at(cache, lv, p["latDeg"], p["lonDeg"])[0])
+                worst = max(worst, abs(h - p["padElevation"]))
+                if abs(h - p["padElevation"]) > 2.0 or (not p["fixed"] and not p["report"]["passes"]):
+                    bad.append(p["id"])
+            check(f"pads {doc['site']} on {r_id}", not bad,
+                  f"{len(doc['pads'])} pads: level-{lv} height vs padElevation within {worst:.2f} m (need 2), every "
+                  f"resolved pad passes the rule" + (f"; failing: {bad}" if bad else ""))
 
 
 def _min_near(level, lat, lon, radius_m, cache):
@@ -410,10 +463,10 @@ def check_albedo_seams(m: dict) -> None:
               f"{np.mean(interior):.3f} (sRGB levels)")
 
 
-def check_coverage_edges(m: dict) -> None:
+def check_coverage_edges(m: dict, regions: list[str] | None = None) -> None:
     from earth import regional
     from earth.sample import bicubic
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
         cache: dict = {}
         worst_h = 0.0
@@ -577,12 +630,12 @@ def check_coastline() -> None:
           tally)
 
 
-def check_regional_coastline() -> None:
+def check_regional_coastline(regions: list[str] | None = None) -> None:
     """Regional levels: the mask's shoreline lies within one texel of the regional height's zero crossing,
     except at inland water above sea level and where the global level-7 mask also calls the below-sea-level
     ground dry; crossings in the 64-texel coverage feather are skipped (blended into the parent there)."""
     from earth import regional
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
         for lv in regmod.levels(reg):
             rects = regmod.coverage_rects(reg, lv)
@@ -624,14 +677,14 @@ def check_regional_coastline() -> None:
                   f"other disagreements" + (f" ({', '.join(bad[:8])})" if bad else ""), tally)
 
 
-def check_regional_needles() -> None:
+def check_regional_needles(regions: list[str] | None = None) -> None:
     """No needle in the regional heights (docs/requests/terrain-render-2.md: corrupt survey samples on the
     shore stood up to 1,135 m above ground a few metres high): on the finest level of every region, no land
     vertex stands more than heights.SPIKE_EXCESS_M above the 75th percentile of its 9 x 9 neighbourhood,
     judged on 3 x 3 tile mosaics so that vertices at tile edges see their true neighbours. The coarser
     regional levels are averages of the finest one; their largest excess is reported."""
     from earth import heights
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
         lv = regmod.levels(reg)
         finest = lv[-1]
@@ -663,13 +716,13 @@ def check_regional_needles() -> None:
               f"excess {worst:.1f} m)", {"needles": needles, "candidates": len(cands), "largestExcessM": worst})
 
 
-def check_regional_pits() -> None:
+def check_regional_pits(regions: list[str] | None = None) -> None:
     """No closed depression in the regional heights that the source DEM does not have: on every regional
     tile, the 4-connected areas at or below 0.5 m that lie within its 3 x 3 tile neighbourhood, hold no sea floor
     (nothing below -2 m) and are ringed by ground more than 10 m high (median of the 3-vertex ring) are pits
     (inland water baked as sea, for example). Also: no regional vertex is stored as exactly 0 m (the sign of
     every vertex decides water for physics)."""
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
         pits, zeros, tiles_n, big = [], 0, 0, 0
         for lv in regmod.levels(reg):
@@ -732,13 +785,13 @@ def check_regional_pits() -> None:
               + f"; {zeros} vertices stored as exactly 0 m ({big} low areas reach beyond the 3 x 3 neighbourhood: sea)")
 
 
-def near_shore_profile() -> None:
+def near_shore_profile(regions: list[str] | None = None) -> None:
     """INFO: depth of the level-12 sea floor by distance from the shore, 8 x 8 km around each pad."""
     from earth.site import destination
-    for r_id in regmod.list_regions():
+    for r_id in (regmod.list_regions() if regions is None else regions):
         reg = regmod.load(r_id)
         lv = regmod.levels(reg)[-1]
-        loc = read_json(paths.SITES_DIR / f"{reg['site']}.location.json")
+        loc = reference_point(reg)
         k = np.arange(-4000.0, 4000.0, 10.0)
         E, N = np.meshgrid(k, k)
         la, lo = destination(loc["latDeg"], loc["lonDeg"], E.ravel(), N.ravel())
@@ -885,11 +938,11 @@ def check_night() -> None:
           f"level-7 tile {best[3]} over {best[0]}: {best[1]} separate lit blobs (sRGB > 40), {best[2] * 100:.1f} % lit")
 
 
-def check_typescript() -> None:
+def check_typescript(regions: list[str] | None = None) -> None:
     """Python decode of 3 height, 1 watermask and 1 landcover tile -> reference JSON; the TypeScript codec
     (src/core/geo/tileCodec.ts, run with npx tsx) must decode the same files to identical values."""
     import hashlib
-    regs = [regmod.load(r) for r in regmod.list_regions()]
+    regs = [regmod.load(r) for r in (regmod.list_regions() if regions is None else regions)]
     keys = [("height", 2, 7, 60, 98), ("height", 0, 0, 0, 0)]
     if regs:
         c = regs[0]["shape"]["centre"]
@@ -912,7 +965,7 @@ def check_typescript() -> None:
             entry = {"kind": "u8", "width": t["width"], "height": t["height"]}
         flat = arr.reshape(-1)
         idx = rng.integers(0, flat.size, 8)
-        entry.update({"path": p.relative_to(paths.TILES.parent).as_posix(), "sha256": hashlib.sha256(flat.tobytes()).hexdigest(),
+        entry.update({"path": Path(os.path.relpath(p, paths.TILES.parent)).as_posix(), "sha256": hashlib.sha256(flat.tobytes()).hexdigest(),
                       "samples": [{"index": int(i), "value": float(flat[i])} for i in idx]})
         out.append(entry)
     write_json(paths.OUT / "ts-spot-ref.json", {"tiles": out})
@@ -929,9 +982,174 @@ def check_size() -> None:
     check("total baked size", True, f"{b / 1e9:.2f} GB in {n} files under data/tiles/earth")
 
 
+# ---------------------------------------------------------------------------------------------- one region
+def check_region_files(m: dict, reg: dict, quick: bool) -> None:
+    """Every tile the (prospective) manifest promises in the region's coverage exists and decodes."""
+    t0 = time.time()
+    jobs, missing, n = [], [], 0
+    for layer in reg["layers"]:
+        ext = m["layers"][layer]["ext"]
+        keys = [(f, lv, x, y) for lv in regmod.levels(reg) for f, x, y in regmod.rect_tiles(regmod.coverage_rects(reg, lv))]
+        for k in keys:
+            n += 1
+            if not tiles.tile_file(layer, *k).is_file():
+                missing.append(f"{layer}/{k}")
+        keys = keys[::16] if quick else keys
+        for i in range(0, len(keys), 2000):
+            jobs.append((layer, ext, keys[i:i + 2000]))
+    check(f"files {reg['id']}", not missing, f"{n} tiles of the region's coverage (layers {', '.join(reg['layers'])}), "
+          f"{len(missing)} missing ({time.time() - t0:.0f} s)" + (f": {missing[:5]}" if missing else ""))
+    bad, alpha, total = [], 0, 0
+    with pool() as ex:
+        for r in ex.map(_decode_chunk, jobs):
+            bad += r["bad"]
+            alpha += r["alpha"]
+            total += r["n"]
+    check(f"decode {reg['id']}", not bad, f"{total} tiles decoded{' (1 in 16 sample)' if quick else ''}, {len(bad)} failures"
+          + (f": {bad[:5]}" if bad else ""))
+    check(f"no alpha in image tiles {reg['id']}", alpha == 0, f"{alpha} albedo WebP tiles carry alpha")
+
+
+def check_region_seams(reg: dict) -> None:
+    """Shared height edges of random neighbouring tiles of the region, every regional level: bit-identical."""
+    rng = np.random.default_rng(7)
+    compared = mismatched = skipped = 0
+    for lv in regmod.levels(reg):
+        for r in regmod.coverage_rects(reg, lv):
+            for _ in range(150):
+                f, x, y = r["face"], int(rng.integers(r["x0"], r["x1"])), int(rng.integers(r["y0"], r["y1"]))
+                for (dx, dy, sa, sb) in ((1, 0, 1, 0), (0, 1, 3, 2)):
+                    a, _, sa_ = _edge_values(f, lv, x, y, sa)
+                    b, _, sb_ = _edge_values(f, lv, x + dx, y + dy, sb)
+                    compared += 1
+                    if sa_ != sb_:
+                        skipped += 1
+                    elif not np.array_equal(a, b):
+                        mismatched += 1
+    check(f"height seams between neighbouring tiles {reg['id']}", mismatched == 0 and compared > skipped,
+          f"{compared} shared edges compared, {mismatched} differ, {skipped} skipped (scale differs)")
+
+
+def check_region_albedo_seams(reg: dict) -> None:
+    """check_albedo_seams on the region's own levels and coverage (the same paired gate)."""
+    rng = np.random.default_rng(11)
+    for lv in regmod.levels(reg):
+        keys = []
+        for r in regmod.coverage_rects(reg, lv):
+            keys += [(r["face"], lv, int(rng.integers(r["x0"], r["x1"])), int(rng.integers(r["y0"], r["y1"])))
+                     for _ in range(150)]
+        border, adjacent, interior = [], [], []
+        for f, lv_, x, y in keys:
+            a = _read_rgb(f, lv_, x, y)
+            b = _read_rgb(f, lv_, x + 1, y)
+            c = _read_rgb(f, lv_, x, y + 1)
+            for p, q in ((a, b), (np.swapaxes(a, 0, 1), np.swapaxes(c, 0, 1))):
+                border.append(np.abs(p[:, 255] - q[:, 0]).mean())
+                adjacent.append(0.5 * (np.abs(p[:, 254] - p[:, 255]).mean() + np.abs(q[:, 0] - q[:, 1]).mean()))
+                interior.append(np.abs(p[:, 1:] - p[:, :-1]).mean())
+        border, adjacent = np.array(border), np.array(adjacent)
+        d = border - adjacent
+        se = float(d.std(ddof=1) / math.sqrt(d.size))
+        check(f"albedo seams {reg['id']} level {lv}", float(d.mean()) <= 2.0 * se,
+              f"{d.size} tile borders: mean |difference| across the border {border.mean():.3f}, interior pairs next "
+              f"to it {adjacent.mean():.3f} (excess {d.mean():+.4f}, 2 s.e. {2 * se:.4f}), all interior pairs "
+              f"{np.mean(interior):.3f} (sRGB levels)")
+
+
+def aspect_ratios(lv: int, lat: float, lon: float, radius_m: float, min_h: float, local_sigma_m: float = 300.0) -> dict:
+    """The paired relief-shading measure of check_deshade about any point: texels steeper than 5 deg above min_h
+    within radius_m, each divided by the mean luminance of its own local_sigma_m surroundings; mean ratio of
+    east- over west-facing and of north- over south-facing texels, with the counts."""
+    from scipy import ndimage as ndi
+    from earth.albedo import tile_normals
+    from earth.regional import texel_metres
+    from earth.site import gc_distance_m
+    f0, x0, y0, _, _ = cube.dir_to_tile(cube.lat_lon_to_dir(np.radians(lat), np.radians(lon)), lv)
+    tm = texel_metres(f0, lv, x0, y0)
+    span = max(1, int(math.ceil(radius_m / (256 * tm))))
+    n = 2 * span + 1
+    mos = {k: np.zeros((n * 256, n * 256)) for k in ("lum", "ne", "nn", "hc", "dist")}
+    have = np.zeros((n * 256, n * 256), bool)
+    for i, x in enumerate(range(x0 - span, x0 + span + 1)):
+        for j, y in enumerate(range(y0 - span, y0 + span + 1)):
+            if not tiles.exists("albedo", f0, lv, x, y):
+                continue
+            ne, nn, hc = tile_normals(tiles.read_height(f0, lv, x, y), f0, lv, x, y)
+            la, lo = tiles.dirs_latlon(cube.image_tile_dirs(f0, lv, x, y))
+            sl = (slice(j * 256, (j + 1) * 256), slice(i * 256, (i + 1) * 256))
+            mos["lum"][sl] = tiles.srgb_to_linear(tiles.read_webp("albedo", f0, lv, x, y)) @ LUMA
+            mos["ne"][sl], mos["nn"][sl], mos["hc"][sl] = ne, nn, hc
+            mos["dist"][sl] = gc_distance_m(lat, lon, la, lo).reshape(256, 256)
+            have[sl] = True
+    sig = local_sigma_m / tm
+    wsum = ndi.gaussian_filter(have.astype(float), sig)
+    local = ndi.gaussian_filter(np.where(have, mos["lum"], 0.0), sig) / np.maximum(wsum, 1e-9)
+    rel = mos["lum"] / np.maximum(local, 1e-9)
+    slope = np.degrees(np.arcsin(np.clip(np.hypot(mos["ne"], mos["nn"]), 0, 1)))
+    aspect = (np.degrees(np.arctan2(mos["ne"], mos["nn"])) + 360) % 360
+    sel = have & (mos["dist"] < radius_m) & (mos["hc"] > min_h) & (slope > 5)
+    e, w = sel & (aspect > 45) & (aspect < 135), sel & (aspect > 225) & (aspect < 315)
+    nf, s = sel & ((aspect > 315) | (aspect < 45)), sel & (aspect > 135) & (aspect < 225)
+    ratio = lambda a, b: float(rel[a].mean() / rel[b].mean()) if a.any() and b.any() else float("nan")   # noqa: E731
+    return {"ew": ratio(e, w), "ns": ratio(nf, s), "n": [int(e.sum()), int(w.sum()), int(nf.sum()), int(s.sum())]}
+
+
+def check_region_deshade(reg: dict) -> None:
+    """No baked relief shading in the regional imagery near the site: the paired east/west and north/south
+    ratios (aspect_ratios) within 10 km of the site's reference point, at level 10 and the finest level, within
+    1 +/- 0.03 where both sides have at least 1000 texels (reported only otherwise)."""
+    ref = reference_point(reg)
+    for lv in sorted({10, regmod.levels(reg)[-1]}):
+        r = aspect_ratios(lv, ref["latDeg"], ref["lonDeg"], 10000.0, 1.0)
+        detail = (f"slopes > 5 deg within 10 km of the site (texels E/W/N/S {r['n']}): each against its 300 m "
+                  f"surroundings, east/west {r['ew']:.3f}, north/south {r['ns']:.3f} (need 1 +/- 0.03)")
+        if min(r["n"]) >= 1000:
+            check(f"no baked hillshade {reg['id']} level {lv}", abs(r["ew"] - 1) <= 0.03 and abs(r["ns"] - 1) <= 0.03, detail)
+        else:
+            info(f"hillshade measure {reg['id']} level {lv} (too few steep texels to gate)", detail)
+
+
+def main_region(region_id: str, quick: bool) -> int:
+    """Acceptance checks of one region, staged (against the prospective manifest: the live one with the region
+    added, stage.prospective_manifest) or live."""
+    from earth import stage
+    from earth.util import dir_size
+    reg = regmod.load(region_id)
+    hidden = stage.state(region_id) in stage.HIDDEN_STATES
+    m = stage.prospective_manifest(region_id) if hidden else layout.read_manifest(paths.TILESET)
+    if not hidden and not all(r in m["layers"]["height"].get("coverage", {}).get(str(lv), [])
+                              for lv in regmod.levels(reg) for r in regmod.coverage_rects(reg, lv)):
+        print(f"{region_id} is neither staged nor in the live manifest", flush=True)
+        return 1
+    t0 = time.time()
+    info("region", f"{region_id}: {'STAGED: checked against the prospective manifest (the live one with the region added)' if hidden else 'live'}")
+    check_region_files(m, reg, quick)
+    check_pyramid(m)
+    check_staged_pads([region_id], {})
+    check_source_coverage(m, [region_id])
+    check_region_seams(reg)
+    check_region_albedo_seams(reg)
+    check_coverage_edges(m, [region_id])
+    check_regional_coastline([region_id])
+    check_regional_pits([region_id])
+    check_regional_needles([region_id])
+    near_shore_profile([region_id])
+    check_region_deshade(reg)
+    check_typescript([region_id])
+    b, n = dir_size(stage.tiles_root(region_id)) if hidden else (None, None)
+    info("size", f"{region_id}: " + (f"{b / 1e9:.2f} GB in {n} files staged" if hidden else "swapped into data/tiles/earth"))
+    failed = [r for r in RESULTS if not r["pass"]]
+    write_json(paths.OUT / f"verify-{region_id}.json", {"results": RESULTS, "info": INFO, "seconds": time.time() - t0,
+                                                        "quick": quick, "staged": hidden})
+    print(f"{len(RESULTS) - len(failed)} of {len(RESULTS)} checks passed in {time.time() - t0:.0f} s")
+    return 1 if failed else 0
+
+
 def main(argv: list[str]) -> int:
     set_below_normal()
     quick = "--quick" in argv
+    if "--region" in argv:
+        return main_region(argv[argv.index("--region") + 1], quick)
     m = layout.read_manifest(paths.TILESET)
     t0 = time.time()
     check_files(m, quick)

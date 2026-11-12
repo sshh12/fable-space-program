@@ -81,6 +81,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--search-km", type=float, help="pads: search radius (default: the region's siteResolution)")
     ap.add_argument("--classes", default="heavy=4:2500,medium=6:1500,light=6:1000",
                     help="pads: class=count:spacingM,... (ARCHITECTURE 9.3)")
+    ap.add_argument("--strict", action="store_true",
+                    help="pads: also gate LC-1's site-selection tests (bare ground, open ocean sector); a measurement "
+                         "of how far they reach, written to out/ only")
     a = ap.parse_args(argv)
     set_below_normal()
     regions = [a.region] if a.region else regmod.list_regions()
