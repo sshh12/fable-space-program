@@ -17,6 +17,7 @@ import { startBucketStandIn, type StandIn } from '../../../deploy/local/bucketSt
 import { createPackListService, packSetsFromDir } from '../../../deploy/packs/packList';
 import { createLocalPackFetch, LOCAL_PACK_LIST_URL } from '../../../tools/pack/localPacks';
 import { packSet, readCurrent, type PackResult } from '../../../tools/pack/packer';
+import { assertReleasable, verifySetBytes } from '../../../tools/pack/verify';
 import { syntheticTileRoot } from '../../../tools/terrain-core/fixtures';
 
 const SETS = ['fixture-earth', 'fixture-moon'];
@@ -150,6 +151,46 @@ describe('the packer', () => {
     } finally {
       fs.rmSync(copy, { recursive: true, force: true });
       fs.rmSync(outB, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+describe('byte verification and the release check (tools/pack/verify.ts)', () => {
+  it('a clean set verifies in whole-pack mode and may be released; a changed pack byte or a newer bake may not', async () => {
+    const packs = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-packs-v-'));
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-tiles-v-'));
+    try {
+      const sourceDir = path.join(src, 'fixture-moon');
+      fs.cpSync(path.join(tileRoot, 'fixture-moon'), sourceDir, { recursive: true, preserveTimestamps: true });
+      const r = await packSet({ dir: sourceDir, set: 'fixture-moon', type: 'tiles', out: packs, ...SMALL });
+      // released before any verification: refused
+      expect(() => assertReleasable(packs, 'fixture-moon', sourceDir)).toThrow(/no clean byte verification/);
+      const v = await verifySetBytes({ packsDir: packs, sourceDir, set: 'fixture-moon' });
+      expect(v.mismatches).toEqual([]);
+      expect(v.tiles).toBeGreaterThan(100);
+      expect(v.files).toBeGreaterThan(0);
+      expect(v.index).toBe(r.index);
+      expect(assertReleasable(packs, 'fixture-moon', sourceDir).index).toBe(r.index);
+      // One byte of one pack changed on disk (what a bad reuse of an old chunk would look like).
+      const victim = path.join(packs, 'fixture-moon', `${r.packs[1]!.hash}.pack`);
+      const b = fs.readFileSync(victim);
+      b[Math.floor(b.length / 2)] = b[Math.floor(b.length / 2)]! ^ 0xff;
+      fs.writeFileSync(victim, b);
+      const bad = await verifySetBytes({ packsDir: packs, sourceDir, set: 'fixture-moon' });
+      expect(bad.mismatches.length).toBeGreaterThan(0);
+      expect(() => assertReleasable(packs, 'fixture-moon', sourceDir)).toThrow(/no clean byte verification/);
+      b[Math.floor(b.length / 2)] = b[Math.floor(b.length / 2)]! ^ 0xff;
+      fs.writeFileSync(victim, b);
+      expect((await verifySetBytes({ packsDir: packs, sourceDir, set: 'fixture-moon' })).mismatches).toEqual([]);
+      // The tile set re-baked since it was packed: its manifest has another contentHash.
+      const mf = path.join(sourceDir, 'manifest.json');
+      const m = JSON.parse(fs.readFileSync(mf, 'utf8')) as { contentHash: string };
+      fs.writeFileSync(mf, JSON.stringify({ ...m, contentHash: 'f'.repeat(16) }));
+      expect(() => assertReleasable(packs, 'fixture-moon', sourceDir)).toThrow(/packed from contentHash .* the tile set is now f{16}: repack/);
+      expect((await verifySetBytes({ packsDir: packs, sourceDir, set: 'fixture-moon' })).mismatches.some((x) => /manifest|contentHash/.test(x))).toBe(true);
+    } finally {
+      fs.rmSync(packs, { recursive: true, force: true });
+      fs.rmSync(src, { recursive: true, force: true });
     }
   }, 60_000);
 });

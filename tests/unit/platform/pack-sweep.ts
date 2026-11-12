@@ -8,7 +8,8 @@
  * sweep  every tile the manifest promises (every layer, every level), every plain file of every packed tile
  *        set, read through createPackTileSource in four modes and compared byte for byte with the fs source:
  *        whole packs on disk; the bucket (presigned ranges, the stand-in); the mirror in `ranges` mode; the
- *        mirror in `slices` mode (2 MiB). The mirrors are the stack's shell proxying the bucket stand-in.
+ *        mirror in `slices` mode at the deployed 256 KiB. The mirrors are the stack's shell proxying the bucket
+ *        stand-in. --min-sets=N fails the sweep when fewer tile sets are packed.
  * trace  the recorded first session's tile requests, replayed in their order and timing windows (requests
  *        issued within 50 ms of each other are concurrent) through the pack source, against per-file fetching:
  *        requests and bytes on the bucket path, and bytes transferred in the mirror's slice mode
@@ -27,6 +28,7 @@ import { createPackTileSource, type PackTileSource } from '../../../src/terrain/
 import type { StackState } from '../../../deploy/local/launcher';
 import { createLocalPackFetch, LOCAL_PACK_LIST_URL } from '../../../tools/pack/localPacks';
 import { packedSets } from '../../../tools/pack/packer';
+import { MEASURED_SLICE_BYTES } from '../../../deploy/packs/packList';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const TILES = path.join(REPO, 'data', 'tiles');
@@ -82,6 +84,10 @@ function* promised(m: TileManifest): Generator<{ layer: string; key: TileKey }> 
 async function sweep(): Promise<number> {
   const wanted = opt('sets')?.split(',');
   const sets = packedSets(PACKS).filter((s) => s.type === 'tiles' && (!wanted || wanted.includes(s.set)));
+  // A sweep that silently covers fewer sets than it should is not a sweep: --min-sets=N is asserted.
+  const minSets = Number(opt('min-sets') ?? 0);
+  if (sets.length < minSets) throw new Error(`pack-sweep: ${sets.length} tile sets packed, at least ${minSets} required`);
+  console.log(`sweeping ${sets.length} tile sets: ${sets.map((s) => s.set).join(', ')}`);
   const base = await stackList();
   const bucket = base.mirrors.find((m) => m.id === 'bucket')!;
   const mirrorBase = state.urls.mirror;
@@ -89,7 +95,7 @@ async function sweep(): Promise<number> {
     ['whole packs on disk', createPackTileSource({ packListUrl: LOCAL_PACK_LIST_URL, fetch: createLocalPackFetch(PACKS) })],
     ['bucket ranges (presigned)', sourceWith({ ...base, mirrors: [bucket] })],
     ['mirror ranges', sourceWith({ ...base, mirrors: [{ id: 'mirror', mode: 'ranges', base: mirrorBase }] })],
-    ['mirror slices 2 MiB', sourceWith({ ...base, mirrors: [{ id: 'mirror', mode: 'slices', base: mirrorBase, sliceBytes: 2 * 1024 * 1024 }] })],
+    ['mirror slices 256 KiB (deployed)', sourceWith({ ...base, mirrors: [{ id: 'mirror', mode: 'slices', base: mirrorBase, sliceBytes: MEASURED_SLICE_BYTES }] })],
   ];
   const fsSrc = createFsTileSource(TILES);
   let mismatches = 0;

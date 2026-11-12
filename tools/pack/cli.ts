@@ -8,10 +8,16 @@
  *   node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/pack/cli.ts boot --build=<client build dir>
  *       the boot pack into data/packs/boot/<hash>.pack; prints its manifest (deploy/boot-manifest.json is
  *       written by `upload --boot`, once the object is in the bucket)
+ *   node tools/dev/heavy.mjs --class=bake -- npx tsx tools/pack/cli.ts check [--sets=a,b]
+ *       byte verification in whole-pack mode (tools/pack/verify.ts): every tile and file the current index
+ *       promises against the source; writes data/packs/<set>/verified.json when clean. `upload` needs it.
  *   npx tsx tools/pack/cli.ts status            what is packed, sizes, free disk
  *   npx tsx tools/pack/cli.ts prune --sets=x    delete local packs the current index does not name
- *   npx tsx tools/pack/cli.ts upload [--sets=a,b] [--boot=<hash>]    to the packs bucket (PACKS_* from .env)
- *   npx tsx tools/pack/cli.ts verify            every object of deploy/pack-sets.json is in the bucket
+ *   npx tsx tools/pack/cli.ts upload [--sets=a,b] [--boot=<hash>]    to the packs bucket (PACKS_* from .env);
+ *       refuses a set without a clean `check` of its current index, or a tile set packed from another
+ *       contentHash than its manifest's now (the release check)
+ *   npx tsx tools/pack/cli.ts verify            every object of deploy/pack-sets.json is in the bucket, and every
+ *       tile set there has the contentHash of data/tiles/<set>/manifest.json (exit 1 when not)
  *   npx tsx tools/pack/cli.ts cors              set and read back the bucket's CORS rule
  *
  * Disk: a pack is not written when it would leave less than 25 GB free (PACKAGE_RULES 13d); data/packs is
@@ -25,6 +31,7 @@ import { PACK_SETS_FILE, readPackSetsFile } from '../../deploy/packs/packList';
 import { setPacksCors, uploadObject, uploadSets, verifySets } from '../../deploy/packs/upload';
 import { buildBootPack, type BootConfig, type BootManifest } from './boot';
 import { packedSets, packSet, pruneSet } from './packer';
+import { assertReleasable, sourceContentHash, verifySetBytes } from './verify';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(repoRoot, 'data', 'packs');
@@ -84,6 +91,8 @@ const tileSets = (): string[] =>
     .sort();
 
 const FILE_SETS: Record<string, string> = { sky: 'data/sky', assets: 'public/assets' };
+/** The source directory a packed set was made from. */
+const sourceDirOf = (set: string): string => path.join(repoRoot, FILE_SETS[set] ?? path.join('data', 'tiles', set));
 
 async function main(): Promise<void> {
   switch (cmd) {
@@ -109,6 +118,18 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(m, null, 1));
       return;
     }
+    case 'check': {
+      const names = opts.sets ? opts.sets.split(',') : packedSets(OUT).map((s) => s.set);
+      let bad = 0;
+      for (const set of names) {
+        log(`checking ${set} in whole-pack mode against ${path.relative(repoRoot, sourceDirOf(set))}`);
+        const v = await verifySetBytes({ packsDir: OUT, sourceDir: sourceDirOf(set), set, log });
+        console.log(JSON.stringify(v));
+        if (v.mismatches.length > 0) bad++;
+      }
+      if (bad > 0) process.exitCode = 1;
+      return;
+    }
     case 'status': {
       for (const s of packedSets(OUT)) console.log(`${s.set.padEnd(14)} ${s.type.padEnd(6)} index ${s.index} packs ${s.packs.length} ${(s.packs.reduce((n, p) => n + p.bytes, 0) / 1e9).toFixed(3)} GB  packed ${s.packedAt}`);
       console.log(`data/packs ${(packsBytes() / 1e9).toFixed(2)} GB; free ${(freeBytes(OUT) / 1e9).toFixed(1)} GB`);
@@ -131,9 +152,15 @@ async function main(): Promise<void> {
         return;
       }
       if (cmd === 'verify') {
-        const r = await verifySets(client, b, readPackSetsFile(setsFile));
-        console.log(JSON.stringify(r));
-        if (r.missing.length > 0) process.exitCode = 1;
+        const doc = readPackSetsFile(setsFile);
+        const r = await verifySets(client, b, doc);
+        // The release check of what is released: a tile set's contentHash is its manifest's in the tree.
+        const stale = Object.entries(doc.sets)
+          .filter(([, e]) => e.type === 'tiles')
+          .map(([set, e]) => ({ set, released: e.contentHash, tree: sourceContentHash(sourceDirOf(set)) }))
+          .filter((x) => x.released !== x.tree);
+        console.log(JSON.stringify({ ...r, stale }));
+        if (r.missing.length > 0 || stale.length > 0) process.exitCode = 1;
         return;
       }
       if (opts.boot) {
@@ -144,13 +171,15 @@ async function main(): Promise<void> {
         fs.writeFileSync(BOOT_MANIFEST, `${JSON.stringify(m, null, 1)}\n`);
       }
       if (opts.sets) {
+        // The release check, for every set before the first byte goes up.
+        for (const set of opts.sets.split(',')) assertReleasable(OUT, set, sourceDirOf(set));
         const r = await uploadSets({ client, bucket: b, packsDir: OUT, sets: opts.sets.split(','), setsFile, log });
         console.log(JSON.stringify(r));
       }
       return;
     }
     default:
-      console.error('usage: tools/pack/cli.ts tiles|files|boot|status|prune|upload|verify|cors [options]  (see the header of this file)');
+      console.error('usage: tools/pack/cli.ts tiles|files|check|boot|status|prune|upload|verify|cors [options]  (see the header of this file)');
       process.exitCode = 2;
   }
 }
