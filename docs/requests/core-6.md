@@ -1,4 +1,4 @@
-Status: resolved in flight-ui (commit b90ade9); the wiring in src/app/game.ts is the lead's (below)
+Status: resolved (flight-ui b90ade9; the wiring in src/app/game.ts: 732962c, not yet run in a browser)
 From: core-support (shared-code maintainer; the rest of request cockpit-21)
 Owner path: src/input/bindings.ts (flight-ui: the action and its key); src/app/game.ts (the lead: its wiring)
 Blocking: no   (the cockpit view sits in the layout's default seat without it; only the key to change seats is missing)
@@ -48,3 +48,25 @@ The seat's name shown when it changes: the HUD's toast (`hud.notify(message, 'in
 is the place, not the app's status line (that one is for PAUSED and the test pilot). `seatName` is the app's lookup
 of a readable name for the seat id (the cockpit layout's seat label, else the crew name of `VehicleDef.crew` for that
 seat, else the id); flight-ui has no seat names of its own.
+
+## Resolution (app shell, app-integration)
+`src/app/game.ts` (commit 732962c): the cockpit rig is kept in `cockpitRig` (also `Game.cockpitRig`), and beside the
+key help in the frame function:
+
+```ts
+if (f.ui.has('ui:nextSeat') && views.mode === 'cockpit') {
+  const seat = cockpitRig.cycleSeat();
+  const vessel = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId);
+  if (seat !== null && vessel) hud.notify(`Seat: ${seatName(defs, vessel, seat)}`, 'info');
+}
+```
+
+`seatName` is `src/app/seat.ts`: the cockpit layout's label of the seat (`visuals/cockpits/<id>` ->
+`couches.seats[<seat>].label`) where the layout has one, else the crew member `VehicleDef.crew` puts in that seat,
+else the seat id. The layout data has no labels today (`data/defs/visuals/cockpits/kestrel.json`: the seats carry
+geometry only), so the toast reads the crew member's name for `cdr`, `plt` and `ms`; a `label` added to the layout
+is picked up without a code change. Nothing under `data/defs` was edited. Unit test: `src/app/seat.test.ts`.
+Browser: `tests/browser/app/app.spec.ts`, "in low orbit ...", presses V in the cockpit view until the seat is the
+first again, asserts a toast `Seat: ...` for each, that the seats differ, and that V does nothing in the chase
+view (`window.__app.seat()` = `cockpitRig.seatId`). Written and type-checked; it runs with the app specs before the
+mission.

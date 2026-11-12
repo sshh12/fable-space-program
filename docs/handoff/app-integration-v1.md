@@ -14,7 +14,12 @@ lunar-direct from the pad to splashdown in real Chrome in 44.9 minutes. Every mi
 1.94 m from the target on level 12, splashdown inside the Central Pacific zone at 7.82 m/s, `cheatCounter` 0, no
 error. The frame-time budgets are missed: GPU p99 is met everywhere (worst 8.4 ms); rAF is missed in every phase
 because of the headless clock (`app-integration-8`); the main thread is missed in 24 of 80 phases (renderer hooks).
-See "Browser mission". Fourteen requests filed; open: -11 in part, -13, -14.
+See "Browser mission". Fourteen requests filed; open: -11 in part, -13.
+
+**Phase 1 of the re-flight (2026-11-12 afternoon): code, unit tests and specs, NOT yet run in a browser** (the
+GPU was with the visual fix rounds): `await renderer.warm()` before the loop, `window.__test.renderExact`, the
+atmosphere's loading row, the Home and V keys, picture stops and the mission's new pictures, the feature
+wrapper built from the contract (request core-5). What a browser has to confirm is listed under "Known limits".
 
 **Added 2026-11-11 night (after the user's feedback):** an honest loading screen (the scene opens when the view
 at the start position is final: 32 s on the pad, land where land is in the first frame); keyboard capture and
@@ -29,7 +34,10 @@ in this round. See "Loading", "Measured" and "Requests filed".
 |---|---|
 | `main.ts` | Entry: `installTestApi` and the loading screen first (`window.__boot()` = its report), `acquireGpu`, `loadDefs` (through a counting `DefSource`), scenario choice, `createGame`, `installGameTestHooks`; `window.__test.ready` three presented frames after the loading screen has gone (false, with the error in `errors` and the `#fatal` box shown, when boot fails) |
 | `loading.ts` | `createLoadingScreen(container): LoadingScreen`: the ten steps (`LOAD_STEPS`) with `begin` / `update` / `finish` / `watch(id, read)`, `reveal(record)` + `frame(now)` (the 450 ms fade, driven by the frame loop), `abort()`, `report(): LoadingReport` (steps with counts and times, the `RevealRecord`), `revealed: Promise<void>`. See "Loading" |
-| `featureTiming.ts` | `timedFeature(feature, sink): RenderFeature`: forwards every hook of the contract and books its main-thread time (the per-feature attribution; the wrapped feature is untouched) |
+| `featureTiming.ts` | `timedFeature(feature, sink): RenderFeature`: stands in for a feature at the contract and books the main-thread time of each frame hook (the per-feature attribution; the wrapped feature is untouched). Built from `MEMBERS`, a table typed by the keys of `RenderFeature & TemporalFeature`: values (`id`, `order`, `quality`, `requires`) are read through, `init` / `isIdle` / `dispose` / `resetTemporal` forwarded, the ten frame hooks forwarded and timed; a member the feature lacks is absent; a member added to the contract does not compile until it is listed (request core-5) |
+| `pictureStops.ts` | `createPictureStops(): PictureStops` (`set(stops)`, `check(snapshot)`, `fired()`, `pending()`); `PictureStop = { id, trigger, seconds?, after? }` with triggers `{ milestone }`, `{ event, active?, match?, occurrence? }`, `{ radarBelow, bodyId? }`, `{ peak, floor, drop }`. See "Picture stops" |
+| `framing.ts` | `projectToFrame(viewSpacePoint, tanX, tanY)`, `discInFrame(viewSpaceDirection, angularRadius, tanX, tanY)`: where a point or a body's disc falls in the frame (the specs' "the Earth is in the picture" and "land where land is") |
+| `seat.ts` | `seatName(defs, vessel, seatId)`: the cockpit layout's label of a seat (`visuals/cockpits/<id>.couches.seats[seat].label`, none in the data today), else the crew member `VehicleDef.crew` puts there, else the id |
 | `settings.ts` | `readSettings(query): AppSettings`; `isMissionScenario(s)`; `defaultScenario(defs)` (first scenario in id order that is a mission proof: pad start, nothing fired, milestone rules, i.e. `lunar-direct` today, chosen by the data: no id in code); `resolveScenario(defs, requested)` (unknown id: error naming the defined ones) |
 | `game.ts` | `createGame(deps: GameDeps): Promise<Game>`: builds and owns every subsystem and runs the frame loop. `Game` exposes the subsystems plus `snapshot()`, `camera()`, `paused` / `setPaused`, `setDeterministic`, `setTestControls`, `setView`, `setCameraOrbit`, `chase` (the chase rig: `resetView()`, `offsets`, `autoAzimuth`), `frames`, `loading`, `revealed`, `loadingReport()`, `toggleKeyboardCapture()`, `inFlight()`, `stop()`; `SETTLE_FRAMES = 12` |
 | `features.ts` | `createGameFeatures(deps: FeatureDeps): GameFeatures`: every RenderFeature through its factory, in registration order, with the cockpit's `CockpitControls`, the map's `MapViewApi` and `packageOf`; `MILKY_WAY_FACE_SIZE = 2048` |
@@ -54,9 +62,12 @@ the canvas's CSS size times the device pixel ratio on every ResizeObserver chang
 features -> audio engine; then the features' start-up (one after the other, each behind its hook timer),
 `audio.init(defs, '/assets/audio')` and `sim.ready` are awaited together; then the loop starts under the loading
 screen. `ready` resolves when the screen has gone. The app builds the simulation with `createSim` (not
-`createSession` of `src/session`: that move is the presentation sweep's). Not done, the lead's decision
-(NOTICE-core-5): `await renderer.warm()` after the last `addFeature` and before the loop (the pipelines started
-ahead with `shaders.warm` then exist before the first frame), and `window.__test.renderExact`.
+`createSession` of `src/session`: that move is the presentation sweep's). Between the features' start-up and
+the first frame the app awaits `renderer.warm()` (NOTICE-core-5, request app-integration-11 part 1): every
+pipeline the core and the features started ahead with `shaders.warm` exists before the first frame, so the wait
+for them is counted on the loading screen's "Render pipelines" row instead of standing in frames that cannot be
+presented; `window.__app.warmMs()` is how long it took. A pipeline that fails to build rejects there and the
+boot fails with its error.
 
 ### Loading (user feedback 2026-11-11: "would be nice to show clear progress")
 
@@ -71,9 +82,9 @@ clock since the page opened):
 | Graphics device | the adapter's name | `acquireGpu` | the device exists |
 | Definitions | files read / files listed | a counting `DefSource` around `fetchDefSource` | `loadDefs` returns |
 | Simulation | phase only | `createTerrainProvider`, `createSim` | `sim.ready` (the ground under the vehicle for the physics) |
-| Render pipelines | shader modules compiled / created so far, and in words the feature that is starting ("starting terrain (1 of 9)") | `renderer.addFeature` one by one; `coreOf(ctx).shaders.compilations()` | every feature added and no module compiling |
+| Render pipelines | shader modules and pipelines compiled / created so far, and in words what is going on: the feature that is starting ("starting terrain (1 of 9)"), then "pipelines created ahead of the first frame" while `renderer.warm()` is awaited, then "first frames" | `renderer.addFeature` one by one; `renderer.warm()`; `coreOf(ctx).shaders.compilations()` (it counts pipelines being created ahead) | every feature added, `warm()` resolved and nothing compiling |
 | Sky and stars | 3 parts: star catalogue, Milky Way cube (face size), light probe | `SkyFeature.status()`, `.probe().completed` | `sky.isIdle()` |
-| Atmosphere and clouds | phase only. `AtmosphereFeature.status()` (tables, cloud noise, coverage maps loaded / total) exists since `cce44d3` and is not wired yet: one `loading.watch('atmosphere', ...)` in `game.ts` | `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
+| Atmosphere and clouds | parts done / in all: the scattering tables (one flag), the cloud noise (one flag), each cloud coverage map; in words the part being worked on. What the feature does not expose: progress inside the tables or the noise. The ocean, the row's other feature, exposes nothing of its own (its one-off work is its pipelines, counted in the row above) | `AtmosphereFeature.status()`; `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
 | Vehicle and site models | textures loaded / texture loads started | `coreOf(ctx).meshes.loads()`, `.isIdle()`, the vessel / site / cockpit features | all idle |
 | Sound | assets decoded / total | `audio.probe()` | `audio.init` resolves |
 | Terrain at the start | tiles of the view resident / tiles the view wants, "level R of W" (the deepest level complete / wanted), and what is queued, baking, uploading | `TerrainFeature.debug.residency(body of the active vessel)`, `.stats().stream` | `terrain.isIdle()` |
@@ -117,7 +128,9 @@ unless paused or the test pilot flies:
     sim.setControls(controller.update(f, lastSnapshot, sim.commands, realDt, { view: lastCamera.kind, pointerCaptured: map.consumed })
                     with the axes held through window.__test.setControls)
 mfdCycle:i -> cockpitControls.cyclePage(i)
-unless paused: sim.advance(realDt, pilot engaged ? onControlTick : undefined)
+ui:resetCamera (Home, chase view) -> chase.resetView();  ui:nextSeat (V, cockpit view) -> cockpitRig.cycleSeat(), hud.notify('Seat: <name>', 'info')
+unless paused or held at a picture stop: sim.advance(realDt, pilot engaged ? onControlTick : undefined)
+    then pictureStops.check(snapshot): a stop that is due holds the simulation from the next frame on
 snapshot = sim.snapshot()                            (pilot done / gave up: back to the keyboard, lever = applied throttle)
 view = viewManager.update(snapshot, mapper.map(f, realDt, { pointerConsumed: map.consumed, focus: map.focus }), realDt, f.pressed)
 hud.update(snapshot, view.camera, realDt)            (renders the navball texture)
@@ -141,6 +154,40 @@ first key press or click instead. The beforeunload guard (`installUnloadGuard`) 
 while `inFlight()`: the mission has not failed and (a stage has fired or the scenario did not start on a pad).
 A failed mission offers "Revert to launch" (pad scenarios; "Restart scenario" otherwise) on the HUD banner: a page
 reload, i.e. a fresh simulation.
+
+### Picture stops (the mission's pictures)
+
+A spec hands the game a list of moments as data (`window.__app.setPictureStops(stops)`); the frame loop checks
+it against every new snapshot, and in the frame a moment is reached it holds the simulation (no `advance`; the
+picture, the HUD and the sound go on; no PAUSED line) until the spec has taken its pictures and calls
+`resumeFromPictureStop()`. `pictureStop()` is the stop held now, with the time of the frame and of its trigger.
+Triggers: a milestone record; an event of `SimSnapshot.events` (optionally of the active vessel only, with
+fields that must match, the n-th occurrence); the active vessel below a radar altitude and coming down
+(optionally at a named body); a read-out (`heatFlux`, `gLoad`, `dynamicPressure`) just past its peak, once it
+has reached a floor. `seconds` = simulation time after the trigger; `after` = a milestone that must be on record
+first. A stop is exact to the frame (at 4x physics warp a frame is 67 ms of flight). Nothing is written to the
+simulation, and the pilot acts in the simulation's control ticks, which stand still with it: a flight with
+stops is the same flight.
+
+The mission spec sets 37 stops: every milestone (the cockpit as well at EARTH_ORBIT and LUNAR_TOUCHDOWN), and
+- staging: 0.5 s and 2 s after STAGE_SEP_1, FAIRING_JETTISON and STAGE_SEP_2;
+- lunar descent: 30 m, 10 m and 3 m of radar altitude at the Moon, the first `'touchdown'` on land of the active
+  vessel and one second after it;
+- reentry: just past the peak of the heat flux (3 % below it, above 1 MW/m^2), chase and cockpit, and just past
+  the peak of the load (5 % below it, above 3 g);
+- chutes: 3 s after DROGUE_DEPLOY, 8 s after MAIN_DEPLOY;
+- the splash: 0.2, 1, 3 and 10 s after the `'splash'` event of the capsule itself.
+Files: `out/screens/mission/<nn>-<milestone>[-<what>]-<view>.png`, e.g. `17-splashdown-splash-plus-0.2s-chase.png`,
+`14-entry-interface-peak-heating-cockpit.png`, `10-lunar-touchdown-descent-10m-chase.png`.
+
+### Frame-exact capture (`window.__test.renderExact`, request lead-3)
+
+`renderExact(frames)` calls `renderer.renderExact(frames, () => frame(now))`: the render core restarts its
+temporal sequences (and every feature's `resetTemporal`, which the feature wrapper forwards), renders exactly
+`frames` of the game's own frames at the fixed 1/60 s step in one task and holds the last. While the core holds
+(`renderer.holding`) the game's loop renders nothing and only counts the display's frames. Precondition, as the
+contract says: `setDeterministic(true)` and `setPaused(true)` (the core refuses without deterministic mode; the
+app refuses while the loading screen is up). `setDeterministic(false)` ends the hold.
 
 ### Render features (registration order)
 
@@ -185,8 +232,11 @@ hooks per frame, `core` = the render stage minus the hooks), `cpuSlowest()` (the
 reset with stages, features, hooks and a note of throttle / thrust / warp / altitude), `startCpuTrace(n)` /
 `takeCpuTrace()` (consecutive frames: total, render, sim, hud, audio and every feature), `loading()`,
 `featureInitMs()`, `terrainResidency()`, `renderLoads()` (shader modules and texture loads: pending / total),
-`chaseFraming()` (the chase rig's default-or-not, pitch offset, zoom factor, roll, distance), `resetCameraView()`,
-`bodiesInFrame()` (bodies whose disc reaches into the presented frame, with their place in it),
+`chaseFraming()` (the chase rig's default-or-not, pitch offset, zoom factor, roll, distance),
+`bodiesInFrame()` (bodies whose disc reaches into the presented frame, with their place in it), `seat()` (the
+cockpit rig's seat), `groundSamples(distances, bearings)` (points of the ground on rings around the vessel: land
+or water by the height authority, height above the sea, and where each falls in the frame), `warmMs()`,
+`setPictureStops(stops)` / `pictureStop()` / `resumeFromPictureStop()` / `pictureStopsFired()`,
 `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
 `toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
 `notifications()`, `pilotReport()`, `mfdPages()`, `mfdPaintStats(reset?)` (the cockpit displays' paints and their
@@ -225,7 +275,13 @@ Specs (`tests/browser/app/app.spec.ts`, nine tests):
 - a short real flight (Z, T, Space, lift-off, climb to 4 km with pictures in every view, engines heard);
 - the scripted test pilot inside the page (from the pad through the launch window to 2 km, then stopped; the
   status line names it);
-- in low orbit (`qa-leo`): the map takes the pointer, a click on the apoapsis marker adds a node, a 100 px
+- frame-exact capture at the pad: `renderExact(8)` holds frame 8; the harness's `captureDeterministic` takes a
+  64-frame capture; while the core holds, the game renders no frame of its own and the picture on screen does not
+  change; a second capture's distance from the first is logged (not asserted: request core-4); leaving
+  deterministic mode lets the game run again;
+- in low orbit (`qa-leo`): the Earth is in the default chase frame; the arrows turn the camera and Home brings
+  the default back; in the cockpit V steps through the couches with a toast naming each and wraps round, and does
+  nothing in the chase view; then the map takes the pointer, a click on the apoapsis marker adds a node, a 100 px
   Shift-drag on the prograde handle changes it by 1.0 m/s and the throttle lever stays at 0 (ARCHITECTURE 11 and
   18.2; the interrupted agent's test, finished: the map camera is turned until the marker is on the near side of
   the Earth);
@@ -259,7 +315,9 @@ cockpit displays' paint split.
 | P | pause: simulation time stops, the picture keeps rendering, camera keys and views still work, PAUSED shown |
 | F2 | HUD hidden / shown |
 | 9, 0, - | page of the left, centre, right cockpit display (FLT, ORB, SYS, STG, ENT, LND) |
-| arrows, PgUp/PgDn, mouse drag, wheel | orbit / look and zoom the camera. The chase view's default framing (the nearest body in the frame, the distance by the vessel's size) is kept until the player turns the camera; there is no key yet to return to it (`chase.resetView()`, request app-integration-14: `Home`) |
+| arrows, PgUp/PgDn, mouse drag, wheel | orbit / look and zoom the camera. The chase view's default framing (the nearest body in the frame, the distance by the vessel's size) is kept until the player turns the camera |
+| Home | in the chase view: back to the default framing in a 1.5 s swing (`ui:resetCamera`, request app-integration-14) |
+| V | in the cockpit view: the next couch of the cabin, wrapping round; a HUD toast names the seat (`ui:nextSeat`, request core-6). The view starts in the cockpit layout's default seat (the pilot's centre couch) |
 | [ / ] | switch between controllable vessels in the bubble (not exercised: none at the pad) |
 | ` | key-help sheet generated from the binding table |
 
@@ -288,7 +346,7 @@ of the same name in the shared scratchpad), so the figures come from `out/app/pe
 **The two functional fixes have not run in the browser:** the gate's queue was seven deep after this run and the
 re-run was withdrawn after ten minutes. What stands for them: the new statistic computed on this run's two
 pictures, and the geometry checked by script. Not covered by either: the part of the low-orbit test behind the
-line that failed (turning the chase camera with the arrows, `resetCameraView()`, `leo-chase-reset.png`, then the
+line that failed (turning the chase camera with the arrows, the reset (then a test hook, now the Home key), `leo-chase-reset.png`, then the
 map node as before). Run
 `npx playwright test tests/browser/app/app.spec.ts --project=functional -g "shows real progress|in low orbit"`
 through the gate (about two minutes in the slot) to close it.
@@ -776,9 +834,12 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-7 done (`189d1e2`, `aea5efa`, `1e5bceb`, `cce44d3`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`, `AtmosphereFeature.status`); part 1: the core's `shaders.warm` exists (`038cf6f`), the packages' pipelines are theirs to move; `await renderer.warm()` before the app's loop is the lead's decision and not made | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
 | `app-integration-12` | cockpit, flight-ui MFD painter | answered: items 1-2 by the cockpit (round 4), item 3 by flight-ui (round 7); confirmed by the run of 2026-11-12 (no display paint in the chase view, burn 3.88 ms p99) | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
 | `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms (10-23 ms under load on 2026-11-12), first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
-| `app-integration-14` | flight-ui (src/input/bindings.ts) | open | a key for the chase rig's `resetView()`: a presentation action `ui:resetCamera` on `Home` |
+| `app-integration-14` | flight-ui (src/input/bindings.ts) | resolved (`b90ade9`; wired in `732962c`) | a key for the chase rig's `resetView()`: a presentation action `ui:resetCamera` on `Home` |
 
-Also answered: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support),
+Also answered in `732962c`: `core-5` (the feature wrapper carries every member of the contract), the app's line
+of `core-6` (the V key and the seat's name), the app's half of `lead-3` (`window.__test.renderExact`) and of
+`app-integration-11` part 1 (`await renderer.warm()`).
+Earlier: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support),
 `flight-ui-7` (the capture switch's release and hide option wired, fullscreen state passed on) and the app part of
 `flight-ui-3` (map obstacle selectors of the round-6 HUD), both in `1b9f665`; `flight-ui-10` (the HUD's obstacle
 list imported from `@/ui`) and `cockpit-15` (the mission spec waits on the exposure read-out after a view
@@ -798,10 +859,25 @@ switch), both in `83c80f1`.
 - The chase view's default framing changed in `src/camera` while this round ran (request -10, NOTICE-core-4): the
   app needs no wiring for it and none was done; the mission's deep-space pictures have not been re-shot with it
   (`start-trans-earth.png` of the night's third run predates it).
-- The browser mission was not re-flown in this round (by instruction): its spec is updated (no `capture=0`, the
-  per-frame feature times and slowest frames per window) and type-checks, but has not run with the loading
-  screen. `ready` now resolves 30 s later than before; the spec's `openPage` waits for it without a limit of its
-  own.
+- **Phase 1 of the re-flight has not run in a browser.** Type-checked, and unit-tested where it is plain logic
+  (`npx vitest run src/app`: the wrapper, picture stops, frame geometry, timings, seat names). What only a
+  browser can confirm, in the order the short gate run of phase 2 will meet it:
+  - the boot with `await renderer.warm()` (that it resolves, how long it takes, that the first frames then come
+    at once: `warmMs()` and the loading test's timeline);
+  - the atmosphere row's counts against `AtmosphereFeature.status()` (the loading test asserts them equal);
+  - the land statistic at the height authority's points (the loading test; `groundSamples` projects with the
+    camera's quaternion and field of view, which no test has compared with a picture);
+  - `renderExact` in the app (the new capture test): that 64 frames stay idle, that the hold holds, and how far
+    two captures are apart (the clouds' sequence is open as core-4);
+  - picture stops in a flight (the short-flight test holds at the stage, at lift-off and one second later);
+  - the Home and V keys (the low-orbit test; also the part of that test that has never run: turning the chase
+    camera with the arrows);
+  - the mission spec's whole picture flow: 17 milestone stops and 20 added ones, the cockpit pictures at stops,
+    the `'splash'` and `'touchdown'` events of the active vessel as triggers, the 1 MW/m^2 floor of the heating
+    peak and the 3 g floor of the load peak (if a stop is never reached the spec says which, softly).
+- The `qa-leo` scenario's attitude (prograde, forward windows towards space) is the scenario definition
+  `data/defs/scenarios/qa-leo.json`, not the app's code or test data: left as it is.
+- The browser mission has not been re-flown since 2026-11-11.
 - `isIdle()` at 1440p on the pad: true since the pool work for app-integration-7 (`189d1e2`; idle in the second
   run of the night, never idle in the first).
 - Not exercised in a browser spec: abort, RCS / gear / lights / fine-control keys, vessel cycling, a node drag in

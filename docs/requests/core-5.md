@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 732962c; not yet run in a browser: see the last line)
 From: core-support (shared-code maintainer; the app's half of request atmosphere-clouds-12)
 Owner path: src/app/featureTiming.ts (`timedFeature`; the lead's)
 Blocking: yes   (frame-exact reference images of the app: `renderExact` restarts no feature there, so a capture depends on the frames before it)
@@ -37,3 +37,24 @@ Must not change: what the wrapper is for (the time of each hook), the set of hoo
 With the app's `renderExact` hook in place: two captures of the same view after different histories (a
 camera move and back between them) are the same picture only if the features were restarted; the
 integration lab's test of this is `tests/browser/integration/exact.spec.ts`.
+
+## Resolution (app-integration)
+`src/app/featureTiming.ts` (commit 732962c). The wrapper is no longer a list of copied names: it is built from
+`MEMBERS`, a table typed `Record<keyof Required<RenderFeature & TemporalFeature>, 'value' | 'call' | 'timed'>`, so a
+member added to either contract does not compile until the table says how it is carried:
+- `value` (`id`, `order`, `quality`, `requires`): a getter on the wrapper that reads the feature's member (a value
+  the feature changes later is seen);
+- `call` (`init`, `isIdle`, `dispose`, `resetTemporal`): forwarded with the feature as `this`, untimed;
+- `timed` (the ten frame hooks): forwarded and timed, as before.
+A member the bare feature does not have is absent from the wrapper (`f.resetTemporal?.()`, `f.isIdle ? ... : true`
+and `if (f.drawShadow)` see what they would see without it). `quality` and `resetTemporal` therefore reach the core.
+
+Unit test, `src/app/featureTiming.test.ts` (`npx vitest run src/app`): a feature with every member wraps to exactly
+the contract's keys and nothing of the package's own; a feature with three members wraps to those three; values
+are read through, also after the feature changes them; every call arrives at the feature itself with its
+arguments and its result (`init`'s promise, `isIdle`'s boolean, `resetTemporal`); the frame hooks and only they
+are timed, also when one throws.
+
+Not verified: no browser run in this phase (the GPU was with the fix rounds). The app's `renderExact` hook is in
+the same commit; `tests/browser/app/app.spec.ts`, "frame-exact capture ...", will run it in the short gate run
+before the mission.

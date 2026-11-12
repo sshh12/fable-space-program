@@ -1,4 +1,4 @@
-Status: resolved in flight-ui (commit b90ade9); the wiring in src/app/game.ts is the app shell's (below)
+Status: resolved (flight-ui b90ade9; the wiring in src/app/game.ts: 732962c, not yet run in a browser)
 From: app-integration-v1
 Owner path: src/input/bindings.ts (the binding table and its key-help text; flight-ui)
 Blocking: no
@@ -50,3 +50,11 @@ To wire (src/app/game.ts, beside `ui:keyHelp` in the frame function):
 ```ts
 if (f.ui.has('ui:resetCamera')) chase.resetView();
 ```
+
+## Resolution (app shell)
+`src/app/game.ts` (commit 732962c), beside the key help in the frame function:
+`if (f.ui.has('ui:resetCamera') && views.mode === 'chase') chase.resetView();` (in the cockpit and the map the key
+does nothing: a reset of a view that is not on screen would only be seen on the way back).
+`window.__app.resetCameraView()` is gone; `tests/browser/app/app.spec.ts`, "in low orbit ...", turns the chase camera
+with the arrows and presses Home (default framing back, the Earth in the frame). It runs with the app specs
+before the mission.

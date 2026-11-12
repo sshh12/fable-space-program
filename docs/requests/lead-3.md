@@ -120,3 +120,15 @@ captured at all (the terrain busy at every attempt, five of five, twice).
 4. Other packages: the vehicle has `resetTemporal` (vessel and site). Ocean, vfx, sky and cockpit have
    none; nothing of theirs differed on these two pages, which show no sea surface near, no plume and no
    cabin. Checkpoints that do are unproven.
+
+## The app's half (app-integration, commit 732962c; not yet run in a browser)
+`window.__test.renderExact(frames)` exists on the game's page: `src/app/testHooks.ts` -> `Game.renderExact` ->
+`renderer.renderExact(frames, () => frame(performance.now()))`, the game's own frame function at the fixed
+1/60 s step of deterministic mode (it ends in exactly one `render`). The game's loop skips its frame while
+`renderer.holding` and only counts the display's frames. It refuses while the loading screen is up. The feature
+wrapper of the app forwards `resetTemporal` (request core-5), so the features are restarted. Precondition as in
+the contract: `setDeterministic(true)`, `setPaused(true)`, idle.
+Spec: `tests/browser/app/app.spec.ts`, "frame-exact capture ...": `renderExact(8)` holds 8 frames; the harness's
+`captureDeterministic(page, 64)`; no game frame and no change of the picture during the hold; a second capture's
+difference from the first is logged, not asserted (the clouds: request core-4); `setDeterministic(false)` lets the
+game run again. It runs with the app specs in the short gate run before the mission.

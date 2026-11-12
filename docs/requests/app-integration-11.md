@@ -195,3 +195,13 @@ at 11:16).
 sky 6, atmosphere 5, ui / map / app 6, by this request's count), each by its owner; and the pad load measured
 again once they have. Part B of the problem (the terrain's streaming that starts after the compiles and
 proceeds a level per round trip) is unchanged by this.
+
+## The app's side of parts 1 and 7 (app-integration, commit 732962c; not yet run in a browser)
+- Part 1: `src/app/game.ts` awaits `renderer.warm()` after the last `addFeature` and before the frame loop. The
+  loading screen's "Render pipelines" row counts meanwhile (`shaders.compilations()`, which includes the pipelines
+  being created ahead) and reads "pipelines created ahead of the first frame"; `window.__app.warmMs()` is the
+  time it took. How much of the 14 s this moves out of the first frames depends on how many packages create their
+  pipelines through `shaders.warm`; the loading test's timeline will show it.
+- Part 7: the "Atmosphere and clouds" row reads `AtmosphereFeature.status()`: parts done / in all = the tables
+  (one flag) + the cloud noise (one flag) + the coverage maps loaded / total. What the row still lacks: progress
+  inside the tables and the noise, and anything from the ocean (the row's other feature).
